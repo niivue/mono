@@ -18,6 +18,7 @@ export type PropKind =
   | 'string'
   | 'enum' // integer-backed enum, sent as number
   | 'rgba' // [r,g,b,a] 0..1
+  | 'json' // structured JSON value, passed through unchanged
 
 export type PropSpec = {
   kind: PropKind
@@ -36,6 +37,7 @@ export const DEFAULT_PROP_ALLOWLIST: PropAllowlist = {
   multiplanarType: { kind: 'enum', emitOnChange: true },
   showRender: { kind: 'enum', emitOnChange: true },
   mosaicString: { kind: 'string', emitOnChange: true },
+  customLayout: { kind: 'json', emitOnChange: true },
   heroFraction: { kind: 'number', emitOnChange: true },
   isRadiological: { kind: 'boolean', emitOnChange: true },
 
@@ -47,6 +49,10 @@ export const DEFAULT_PROP_ALLOWLIST: PropAllowlist = {
   isCrossLinesVisible: { kind: 'boolean', emitOnChange: true },
   isRulerVisible: { kind: 'boolean', emitOnChange: true },
   isLegendVisible: { kind: 'boolean', emitOnChange: true },
+  // Numeric, but hosts generally present it as a checkbox: any non-zero value
+  // gates a depth-testing-disabled pass that redraws the crosshair (and any
+  // mesh) through solid geometry. Despite the name it is not mesh-only.
+  meshXRay: { kind: 'number', emitOnChange: true },
 
   // Scene
   backgroundColor: { kind: 'rgba', emitOnChange: true },
@@ -64,6 +70,8 @@ export function coerce(kind: PropKind, value: unknown): unknown {
       return Number(value)
     case 'string':
       return String(value ?? '')
+    case 'json':
+      return value
     case 'rgba': {
       if (!Array.isArray(value) || value.length < 3) {
         throw new Error('rgba requires [r,g,b] or [r,g,b,a]')

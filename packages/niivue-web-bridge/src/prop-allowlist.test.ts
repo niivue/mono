@@ -24,6 +24,15 @@ describe('coerce', () => {
     expect(coerce('string', 42)).toBe('42')
   })
 
+  test('json passes structured values through unchanged', () => {
+    const value = [
+      { sliceType: 2, position: [0, 0, 0.5, 1] },
+      { sliceType: 0, position: [0.5, 0, 0.5, 1] },
+    ]
+    expect(coerce('json', value)).toBe(value)
+    expect(coerce('json', null)).toBeNull()
+  })
+
   test('rgba accepts [r,g,b] and fills alpha=1', () => {
     expect(coerce('rgba', [0.1, 0.2, 0.3])).toEqual([0.1, 0.2, 0.3, 1])
   })
@@ -44,6 +53,7 @@ describe('DEFAULT_PROP_ALLOWLIST', () => {
     expect(DEFAULT_PROP_ALLOWLIST.backgroundColor?.kind).toBe('rgba')
     expect(DEFAULT_PROP_ALLOWLIST.isColorbarVisible?.kind).toBe('boolean')
     expect(DEFAULT_PROP_ALLOWLIST.mosaicString?.kind).toBe('string')
+    expect(DEFAULT_PROP_ALLOWLIST.customLayout?.kind).toBe('json')
     expect(DEFAULT_PROP_ALLOWLIST.gamma?.kind).toBe('number')
   })
 

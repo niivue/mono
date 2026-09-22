@@ -34,6 +34,8 @@ export type OrientUniforms = {
   isLabel: number
   labelMin: number
   labelWidth: number
+  /** Label-boundary probe distance in input voxels; 0 = filled regions. */
+  atlasOutline: number
 }
 
 /** Compute orient shader uniform values from an NVImage. Shared by both backends. */
@@ -61,6 +63,9 @@ export function buildOrientUniforms(
     isLabel: isLabelVol ? 1.0 : 0.0,
     labelMin: isLabelVol ? (nvimage.colormapLabel?.min ?? 0) : 0,
     labelWidth: isLabelVol ? (nvimage.colormapLabel?.lut?.length ?? 0) / 4 : 0,
+    // Only a label volume takes the outline branch, so a stray value on a
+    // scalar volume is dropped here rather than in each shader.
+    atlasOutline: isLabelVol ? Math.max(0, nvimage.atlasOutline ?? 0) : 0,
   }
 }
 

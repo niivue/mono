@@ -111,6 +111,9 @@ type LutDef = {
   A: number[]
   I: number[]
   labels?: string[]
+  // Suggested display window, e.g. the Hounsfield range a CT colormap targets.
+  min?: number
+  max?: number
 }
 let _lutIndex: Map<string, LutDef> | null = null
 
@@ -147,6 +150,15 @@ function buildLutIndex(): Map<string, LutDef> {
         }
         if (Array.isArray(mod.labels)) {
           entry.labels = (mod.labels as string[]).slice()
+        }
+        // Some LUTs carry min = max = 0, which means "no window".
+        if (
+          typeof mod.min === 'number' &&
+          typeof mod.max === 'number' &&
+          mod.min < mod.max
+        ) {
+          entry.min = mod.min
+          entry.max = mod.max
         }
         map.set(name, entry)
       } else {
@@ -243,7 +255,35 @@ export function lookupColorMap(name: string): ColorMap | null {
   return def as unknown as ColorMap
 }
 
-export function lutrgba8(lutName?: string): Uint8ClampedArray {
+/**
+ * Reverse the colors of a 256-entry RGBA LUT, so the hue that was at the top of
+ * the range moves to the bottom. Returns a new array; the input is untouched.
+ *
+ * Alpha stays at its own index rather than travelling with its color. The
+ * shaders lean on a colormap being transparent at index 0 to hide voxels below
+ * `calMin`, so carrying a ramped alpha to the other end would paint the whole
+ * volume opaque the moment a statistical overlay was inverted.
+ */
+export function invertLut(lut: Uint8ClampedArray): Uint8ClampedArray {
+  const n = Math.floor(lut.length / 4)
+  const out = new Uint8ClampedArray(lut.length)
+  for (let i = 0; i < n; i++) {
+    const src = (n - 1 - i) * 4
+    const dst = i * 4
+    out[dst] = lut[src]
+    out[dst + 1] = lut[src + 1]
+    out[dst + 2] = lut[src + 2]
+    out[dst + 3] = lut[dst + 3]
+  }
+  return out
+}
+
+export function lutrgba8(lutName?: string, invert = false): Uint8ClampedArray {
+  const lut = buildLutRgba8(lutName)
+  return invert ? invertLut(lut) : lut
+}
+
+function buildLutRgba8(lutName?: string): Uint8ClampedArray {
   const map = buildLutIndex()
   if (!lutName) {
     // unknown -> gray fallback

@@ -1,13 +1,28 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
-import { getControlPoints } from '@/annotation/selection'
+import type { LivewireSlice } from '@/annotation/livewireSlice'
+import { getAnnotationSelection } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
 import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
-import { clearCanvasMessage } from '@/control/canvasMessage'
-import { removeInteractionListeners } from '@/control/interactions'
+import { applyPanFollowsCrosshair } from '@/control/cameraEvents'
+import {
+  clearCanvasMessage,
+  GRAPHICS_LOST_MESSAGE,
+  GRAPHICS_RECOVERING_MESSAGE,
+  showCanvasMessage,
+} from '@/control/canvasMessage'
+import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
+import {
+  clientToBoundsPixel,
+  type ExplodedBlockPick,
+  pickExplodedBlock,
+  removeInteractionListeners,
+} from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
+import type { AddMeasurementOptions } from '@/control/measurements'
+import * as measurementApi from '@/control/measurements'
 import {
   computeBoundsPixelRect,
   getCanvasInstances,
@@ -38,13 +53,22 @@ import * as NVMesh from '@/mesh/NVMesh'
 import type { WriteOptions } from '@/mesh/writers'
 import {
   DRAG_MODE,
+  GAMMA_RANGE,
+  LOD_BRIGHTNESS_RANGE,
+  LOD_OPACITY_RANGE,
+  lodGammaExponent,
+  lodOpacityScale,
   NUM_CLIP_PLANE,
+  normalizeVolumeRenderMode,
   type PEN_SHAPE,
   SLICE_TYPE,
   sliceTypeDim,
+  VOLUME_DEFAULTS,
 } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
+  ChunkStreamCounts,
+  ChunkStreamDetail,
   GraphRangeChangeDetail,
   NVEventListener,
   NVEventMap,
@@ -55,15 +79,20 @@ import type {
   AffineMatrix,
   AffineTransform,
   AnnotationPoint,
+  AnnotationScreenShape,
   AnnotationStyle,
   AnnotationTool,
   BackendType,
   CanvasViewport,
   ColorMap,
+  CompletedMeasurement,
   CustomLayoutTile,
   FocusBox,
   ImageFromUrlOptions,
+  LodCompensationLevel,
+  LodCompensationReport,
   LUT,
+  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
@@ -86,6 +115,7 @@ import type {
   VectorAnnotation,
   ViewHitTest,
   VolumeUpdate,
+  WheelZoomAnchor,
 } from '@/NVTypes'
 import { niftiBufferIsSignal } from '@/signal/detect'
 import type { SignalFromUrlOptions } from '@/signal/NVSignal'
@@ -107,21 +137,48 @@ import {
   signalXValueAtFrac,
 } from '@/view/NVGraph'
 import type { LegendLayout } from '@/view/NVLegend'
+import type {
+  UIKitOverlayFrame,
+  UIKitOverlayRenderer,
+} from '@/view/NVOverlayHook'
 import {
   arePerfMarksEnabled,
   setNextActionTag,
   setPerfMarksEnabled,
   subscribeFrameReports,
 } from '@/view/NVPerfMarks'
-import type { SliceTile } from '@/view/NVSliceLayout'
-import { validateCustomLayout } from '@/view/NVSliceLayout'
+import type { CanvasTilePoint, SliceTile } from '@/view/NVSliceLayout'
+import {
+  cloneSliceTile,
+  projectMMToNearestTile,
+  screenSlicePick,
+  validateCustomLayout,
+} from '@/view/NVSliceLayout'
 import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
+import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
-import type { ChunkPlan } from '@/volume/chunking'
+import {
+  type ChunkPlan,
+  CUBIC_MIN_HALO,
+  dimsDownsample,
+} from '@/volume/chunking'
+import {
+  type ChunkTimingSnapshot,
+  chunkTimingSnapshot,
+  resetChunkTiming as clearChunkTiming,
+} from '@/volume/chunkTiming'
+import {
+  computeDescriptiveStats,
+  type DescriptiveStats,
+} from '@/volume/descriptives'
 import {
   computeModulationData,
   computeModulationWeights,
 } from '@/volume/modulation'
+import {
+  type ChunkedVolumeOptions,
+  NVChunkedVolume,
+} from '@/volume/NVChunkedVolume'
 import * as NVVolume from '@/volume/NVVolume'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
 import type {
@@ -134,6 +191,7 @@ import {
   calculateWorldExtents,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
+  getImageDataRAS,
   reorientDrawingToNative,
   volumeTR,
 } from '@/volume/utils'
@@ -163,13 +221,23 @@ type ViewBackend = {
   clearDrawing: () => void
   destroy: () => void
   forceDevicePixelRatio: number
-  chunkStreamStats: () => {
-    resident: number
-    pending: number
-    inFlight: number
-    total: number
-  }
+  chunkStreamStats: () => ChunkStreamDetail
   rebakeChunkedOverlays: () => void
+  /**
+   * Voxel dims of the whole-volume coarse floor texture, or null when none is
+   * installed. Renderer-owned state (the floor is not a member of
+   * `plan.chunks`), surfaced so `lodCompensation()` can report it.
+   */
+  coarseFloorDims: () => [number, number, number] | null
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
+  onContextLost: (() => void) | null
+  onChunkStream:
+    | ((
+        counts: ChunkStreamCounts,
+        settled: boolean,
+        snapshot: () => ChunkStreamDetail,
+      ) => void)
+    | null
 }
 
 export type { NiiVueOptions }
@@ -201,8 +269,16 @@ type InfrastructureOpts = {
   boundsBorderThickness?: number
   maxTextureDimension3D?: number
   maxChunkResidencyBytes?: number
+  chunkFadeMs?: number
 }
 const DEFAULT_MATCAPS: Record<string, string> = { cortex }
+
+/**
+ * How many times a lost GPU context is automatically rebuilt before giving up.
+ * A scene that genuinely does not fit in VRAM loses the context again as soon as
+ * it re-streams, so an uncapped retry would loop forever.
+ */
+const MAX_CONTEXT_LOSS_RECOVERIES = 2
 
 type EventHandler = ((e: Event) => void) | ((e: Event) => Promise<void>)
 
@@ -217,7 +293,7 @@ type EventHandler = ((e: Event) => void) | ((e: Event) => Promise<void>)
 class NiiVuePerf {
   private _frameUnsub: (() => void) | null = null
 
-  constructor(private readonly _controller: NiiVueGPU) {}
+  constructor(private readonly _controller: NiiVue) {}
 
   get enabled(): boolean {
     return arePerfMarksEnabled()
@@ -255,7 +331,7 @@ function sameRange(
   return a[0] === b[0] && a[1] === b[1]
 }
 
-export default class NiiVueGPU extends EventTarget {
+export default class NiiVue extends EventTarget {
   activeClipPlaneIndex: number
   currentClipPlaneIndex: number
   canvas: HTMLCanvasElement | null = null
@@ -285,6 +361,26 @@ export default class NiiVueGPU extends EventTarget {
   activeButton?: number
   model: NVModel
   view: ViewBackend | null = null
+  /** Privileged UIKit overlay renderers, drawn at the end of every frame. */
+  private _overlayRenderers: UIKitOverlayRenderer[] = []
+  /** Busy/idle transition tracking behind `chunkStreamProgress`/`chunkStreamIdle`. */
+  private _chunkStreamEmitter = new ChunkStreamEmitter()
+  /** The view instance `_onChunkStream` was last wired onto. When
+   *  `_wireViewHooks` sees a different instance (attach, or a recreate after a
+   *  backend switch or context loss), the emitter is reset first so the old
+   *  view's busy episode cannot leak a spurious idle into — or swallow the
+   *  first progress of — the new view. */
+  private _chunkStreamWiredView: ViewBackend | null = null
+  /** View hook: both backends call this once per drawn frame (see
+   *  `ChunkStreamEmitter`). Bound so `_wireViewHooks` can re-point it at a
+   *  recreated view, like `overlayDraw` and `onContextLost`. */
+  private _onChunkStream = (
+    counts: ChunkStreamCounts,
+    settled: boolean,
+    snapshot: () => ChunkStreamDetail,
+  ): void => {
+    this._chunkStreamEmitter.observe(this, counts, settled, snapshot)
+  }
   // Which settings saved documents include (transient; not serialized). Default
   // {} = omit any setting equal to its default. See `settingsSavePolicy`.
   private _settingsSavePolicy: SettingsSavePolicy = {}
@@ -315,6 +411,32 @@ export default class NiiVueGPU extends EventTarget {
   /** Set once `destroy()` runs, so an in-flight async op (e.g. a deferred reload)
    *  can detect a torn-down controller and not mutate/upload against it. */
   private _destroyed = false
+  private _contextLossRecoveries = 0
+  /** Live streamed-volume handles, so a setting that changes the required brick
+   *  halo (currently only `volumeIsCubicInterpolation`) can re-plan them. Each
+   *  handle adds itself on construction and removes itself on `dispose()`. */
+  private _chunkedVolumes = new Set<NVChunkedVolume>()
+
+  /** @internal Registration hook for {@link NVChunkedVolume}. */
+  _registerChunkedVolume(chunked: NVChunkedVolume): void {
+    this._chunkedVolumes.add(chunked)
+  }
+
+  /** @internal Deregistration hook for {@link NVChunkedVolume}. */
+  _unregisterChunkedVolume(chunked: NVChunkedVolume): void {
+    this._chunkedVolumes.delete(chunked)
+  }
+
+  /**
+   * True once {@link destroy} has run. Lets external holders (e.g. an
+   * NVChunkedVolume handle listening for `viewDestroyed`) distinguish a real
+   * controller teardown from a transient view recreation (backend switch /
+   * init fallback), which also emits `viewDestroyed` but leaves the controller
+   * and its volumes alive.
+   */
+  get isDestroyed(): boolean {
+    return this._destroyed
+  }
   private _deferredVolumes: Array<ImageFromUrlOptions | NVImage> | null = null
   private _deferredMeshes: MeshFromUrlOptions[] | null = null
   private _viewLifecycle: ViewLifecycle
@@ -363,6 +485,8 @@ export default class NiiVueGPU extends EventTarget {
   _angleState: 'none' | 'drawing_first_line' | 'drawing_second_line' = 'none'
   _angleFirstLine: number[] = [0, 0, 0, 0]
   _pan2DxyzmmAtDragStart: [number, number, number, number] | null = null
+  /** True once a `crosshairPan` gesture has crossed the drag threshold. */
+  _crosshairPanDidDrag = false
   // Annotation transient state (controller-owned, not serialized)
   _annotationUndoStack = new AnnotationUndoStack()
   _annotationBrushPath: AnnotationPoint[] = []
@@ -381,6 +505,26 @@ export default class NiiVueGPU extends EventTarget {
   // axis-aligned polygon on the block face. null until the first successful pick.
   _annotation3DFace: ExplodedBlockFace | null = null
   _annotationShapeStart: AnnotationPoint | null = null
+  // Multi-click contour (spline / livewire): control points accumulated in
+  // slice-2D coords across clicks until the contour is closed (double-click) or
+  // cancelled (Escape). null when no multi-click contour is in progress.
+  _annotationPolyPoints: AnnotationPoint[] | null = null
+  _annotationPolySliceType = 0
+  _annotationPolySlicePosition = 0
+  _annotationPolyAnchorMM: [number, number, number] = [0, 0, 0]
+  // Live-wire (intelligent scissors) state: the current slice's cost grid, the
+  // Dijkstra predecessor field from the last committed seed, and that seed in
+  // grid pixels. Rebuilt when a contour starts / each seed is committed.
+  _livewireSlice: LivewireSlice | null = null
+  _livewireField: Int32Array | null = null
+  _livewireSeed: { x: number; y: number } | null = null
+  // Last pointer position over the canvas (client px); hotkeys only act when
+  // it lies within this instance's bounds, as in NiiVue 0.6.
+  _pointerClient: [number, number] | null = null
+  // Bidirectional: the committed long axis (drag 1) in slice-2D coords while
+  // waiting for the short axis (drag 2). null when not mid-measurement.
+  _bidirectionalLong: { start: AnnotationPoint; end: AnnotationPoint } | null =
+    null
   _resizingControlPoint = -1
   _resizeOriginalShape: {
     start: AnnotationPoint
@@ -389,7 +533,7 @@ export default class NiiVueGPU extends EventTarget {
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   // Sync/broadcast state
-  private _syncTargets: NiiVueGPU[] = []
+  private _syncTargets: NiiVue[] = []
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
   private _rafId: number | null = null
@@ -428,6 +572,7 @@ export default class NiiVueGPU extends EventTarget {
       boundsBorderThickness: options.boundsBorderThickness ?? 2,
       maxTextureDimension3D: options.maxTextureDimension3D,
       maxChunkResidencyBytes: options.maxChunkResidencyBytes,
+      chunkFadeMs: options.chunkFadeMs,
     }
     // Public properties (controller-level). isDragging defaults false via its
     // backing field; setting it here would run its model-mirroring setter before
@@ -562,8 +707,29 @@ export default class NiiVueGPU extends EventTarget {
   }
   set crosshairPos(v: vec3) {
     this.model.scene.crosshairPos = v
+    applyPanFollowsCrosshair(this)
     this.emit('change', { property: 'crosshairPos', value: v })
+    // Mirror the interaction/setCrosshairPos paths so a programmatic crosshair
+    // move also yields a locationChange (with voxel/intensity readout).
+    this.createOnLocationChange()
     this.drawScene()
+  }
+
+  /**
+   * Resolve a pointer position over the 3D render onto one exploded brick of a
+   * chunked volume, or null when the point misses every visible brick.
+   *
+   * Pass `event.clientX` / `event.clientY` from a click handler: the hit test
+   * runs here, so no drag needs to be in progress. Pair with
+   * `extractChunkBlock(vol, pick.chunkIndex)` to copy the picked brick out as a
+   * standalone volume, and with `focusBox` (using `explodedMin`/`explodedMax`) to
+   * outline it in place.
+   */
+  pickExplodedBlock(
+    clientX: number,
+    clientY: number,
+  ): ExplodedBlockPick | null {
+    return pickExplodedBlock(this, clientX, clientY)
   }
 
   /**
@@ -666,12 +832,124 @@ export default class NiiVueGPU extends EventTarget {
     return true
   }
 
+  /**
+   * Convert a pointer event's client position to the canvas pixel space that
+   * {@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and
+   * {@link getScreenTiles} use. This is the exact conversion the built-in
+   * pointer handlers apply, so a caller never has to reproduce it:
+   * `(client - canvas rect origin) * dpr`, where `dpr` is
+   * `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
+   * then, for an instance sharing a canvas via `bounds`, minus the origin of
+   * this instance's post-viewport pixel rect.
+   *
+   * Returns null when the instance has no canvas or, for a `bounds` instance,
+   * when the point is outside this instance's rect (a sibling's area) or the
+   * rect is offscreen.
+   */
+  clientToCanvas(clientX: number, clientY: number): [number, number] | null {
+    if (!this.canvas) return null
+    return clientToBoundsPixel(this, clientX, clientY)
+  }
+
+  /**
+   * Hit-test a canvas position against the current frame's tiles.
+   *
+   * Coordinate convention (shared by {@link canvasToMM}, {@link mmToCanvas}
+   * and {@link getScreenTiles}): canvas BACKING-STORE pixels — the
+   * `canvas.width`/`canvas.height` space the renderer draws into — origin at
+   * the top-left, y down. These are NOT CSS pixels, and for an instance
+   * sharing one canvas via `bounds` they are bounds-local (the instance's own
+   * pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
+   * event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
+   * the bounds offset exactly as the built-in pointer handlers do.
+   *
+   * Returns the tile index, its slice type, whether it is a 3D render tile,
+   * and the position normalized to the tile rect (half-open [0,1), y down);
+   * null when no
+   * tile contains the point or the view is not initialized.
+   */
+  hitTest(canvasX: number, canvasY: number): ViewHitTest | null {
+    return this.view?.hitTest(canvasX, canvasY) ?? null
+  }
+
+  /**
+   * Convert a canvas position to a world-mm point by picking on the 2D slice
+   * tile under it (ray/slice-plane intersection — the same math the built-in
+   * crosshair click uses, so the result matches `setCrosshairPos` picking).
+   *
+   * Input is canvas backing-store pixels — see {@link hitTest} for the exact
+   * convention and the CSS-pixel/devicePixelRatio conversion.
+   *
+   * Returns null when the point misses every tile, lands on a 3D render tile,
+   * or no volume is loaded.
+   */
+  canvasToMM(
+    canvasX: number,
+    canvasY: number,
+  ): [number, number, number] | null {
+    const view = this.view
+    if (!view) return null
+    const hit = view.hitTest(canvasX, canvasY)
+    if (!hit || hit.isRender) return null
+    return screenSlicePick(view.screenSlices, this.model, canvasX, canvasY, hit)
+  }
+
+  /**
+   * Project a world-mm point to canvas pixels on the best-matching 2D slice
+   * tile, using the MVP each tile cached on its last draw (so the result
+   * reflects the current pan/zoom exactly). Intended for positioning external
+   * overlays (SVG/HTML crosshairs, labels) over slices.
+   *
+   * Tile selection: the 2D slice tile whose slice plane passes nearest the
+   * point (perpendicular distance in mm); ties — e.g. the crosshair, which
+   * lies on every plane of a multiplanar layout — resolve to the lowest tile
+   * index. 3D render tiles are never selected (use {@link mm2renderNDC} for
+   * those).
+   *
+   * The returned x/y are canvas backing-store pixels (see {@link hitTest});
+   * divide by the effective devicePixelRatio to position CSS-pixel-sized
+   * overlay elements. The point may project outside the winning tile's rect
+   * when panned/zoomed out of view — clip against the tile's
+   * `leftTopWidthHeight` if needed. Returns null before the first render or
+   * when the layout has no 2D slice tiles.
+   */
+  mmToCanvas(mm: [number, number, number]): CanvasTilePoint | null {
+    return projectMMToNearestTile(this.view?.screenSlices ?? [], mm)
+  }
+
+  /**
+   * Snapshot of the current frame's tiles for external overlay renderers: each
+   * tile's rect (`leftTopWidthHeight`, canvas backing-store pixels — see
+   * {@link hitTest}), orientation (`axCorSag`; `SLICE_TYPE.RENDER` marks the
+   * 3D tile) and, for 2D slice tiles after their first draw, the cached
+   * projection geometry (`mvpMatrix`, `planeNormal`, `planePoint`) used by
+   * {@link mmToCanvas}/{@link canvasToMM}.
+   *
+   * Each entry is a deep copy (every nested field, including `screen`,
+   * `crossLines` and the geometry arrays), so the snapshot stays coherent
+   * while the renderer keeps drawing, and mutating it cannot reach renderer
+   * state. Recompute per frame if you track a live view; the snapshot does
+   * not update.
+   */
+  getScreenTiles(): readonly SliceTile[] {
+    const tiles = this.view?.screenSlices ?? []
+    return tiles.map(cloneSliceTile)
+  }
+
+  /**
+   * Display gamma for the 3D volume render. Applied to each sample's classified
+   * RGB, never to its alpha, so brightening the image does not change how much
+   * a ray occludes. Values above 1 brighten, below 1 darken; 1 (the default) is
+   * a strict no-op. Clamped to GAMMA_RANGE.
+   */
   get gamma(): number {
     return this.model.scene.gamma
   }
   set gamma(v: number) {
-    this.model.scene.gamma = v
-    this.emit('change', { property: 'gamma', value: v })
+    this.model.scene.gamma = Number.isFinite(v)
+      ? Math.min(Math.max(v, GAMMA_RANGE[0]), GAMMA_RANGE[1])
+      : 1
+    this.emit('change', { property: 'gamma', value: this.model.scene.gamma })
     this.drawScene()
   }
 
@@ -811,6 +1089,23 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   /**
+   * Let a single 2D slice (axial, coronal or sagittal alone) use the whole
+   * canvas rather than a tile letterboxed to the slice's aspect ratio. The
+   * slice draws at the same scale and position either way; filling only means a
+   * zoomed view spends the margins on image instead of clipping them away.
+   * @default `true`
+   * @example nv1.isSingleViewFillCanvas = false
+   */
+  get isSingleViewFillCanvas(): boolean {
+    return this.model.layout.isSingleViewFillCanvas
+  }
+  set isSingleViewFillCanvas(v: boolean) {
+    this.model.layout.isSingleViewFillCanvas = v
+    this.emit('change', { property: 'isSingleViewFillCanvas', value: v })
+    this.drawScene()
+  }
+
+  /**
    * Get or set a custom tile layout. When set to a non-empty array this
    * overrides all built-in layout modes (multiplanar, mosaic, hero).
    * Each tile specifies a slice type and a normalized [left, top, width, height]
@@ -943,6 +1238,29 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  get isMeasurementDrawn(): boolean {
+    return this.model.ui.isMeasurementDrawn
+  }
+  set isMeasurementDrawn(v: boolean) {
+    this.model.ui.isMeasurementDrawn = v
+    this.emit('change', { property: 'isMeasurementDrawn', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * When false, NiiVue's built-in 2D vector-annotation shapes are not drawn, so
+   * an external overlay can render them from `annotationScreenShapes`. The brush
+   * cursor and selection handles are unaffected.
+   */
+  get isAnnotationDrawn(): boolean {
+    return this.model.ui.isAnnotationDrawn
+  }
+  set isAnnotationDrawn(v: boolean) {
+    this.model.ui.isAnnotationDrawn = v
+    this.emit('change', { property: 'isAnnotationDrawn', value: v })
+    this.drawScene()
+  }
+
   get isThumbnailVisible(): boolean {
     return this.model.ui.isThumbnailVisible
   }
@@ -981,6 +1299,21 @@ export default class NiiVueGPU extends EventTarget {
   set crosshairColor(v: number[]) {
     this.model.ui.crosshairColor = v
     this.emit('change', { property: 'crosshairColor', value: v })
+    this.drawScene()
+  }
+
+  get crosshairColorPerAxis(): number[][] {
+    return this.model.ui.crosshairColorPerAxis
+  }
+  /**
+   * Per-axis crosshair colors as `[xColor, yColor, zColor]` (each RGBA, 0..1).
+   * Set to 3 colors to tint each crosshair segment by the world axis it extends
+   * along (X = left-right, Y = anterior-posterior, Z = superior-inferior).
+   * Set to `[]` to fall back to the single {@link crosshairColor} for all axes.
+   */
+  set crosshairColorPerAxis(v: number[][]) {
+    this.model.ui.crosshairColorPerAxis = v
+    this.emit('change', { property: 'crosshairColorPerAxis', value: v })
     this.drawScene()
   }
 
@@ -1054,6 +1387,33 @@ export default class NiiVueGPU extends EventTarget {
     this.model.ui.measureTextColor = v
     this.emit('change', { property: 'measureTextColor', value: v })
     this.drawScene()
+  }
+
+  /**
+   * Every visible measurement projected to the current frame's canvas pixels
+   * (all persisted measurements plus an in-progress drag). Populated during
+   * render; read it from a registered overlay renderer (see
+   * {@link registerOverlayRenderer}) to draw measurements with an external
+   * renderer — e.g. a @niivue/uikit ruler with rotated tick numbers — instead of
+   * the built-in line. Hide the built-in draw by setting `measureLineColor` /
+   * `measureTextColor` alpha to 0. Each persisted entry carries an `index`
+   * into {@link getMeasurements}; the trailing in-progress line omits it.
+   */
+  get measurementScreenLines(): readonly MeasurementScreenLine[] {
+    const active = this.model._activeMeasurementScreenLine
+    return active
+      ? [...this.model._persistedMeasurementScreenLines, active]
+      : this.model._persistedMeasurementScreenLines
+  }
+
+  /**
+   * Vector annotations projected to the current frame's canvas pixels, so an
+   * external overlay (a @niivue/uikit shape renderer through the overlay hook)
+   * can draw the shapes + stats labels itself. Recomputed every frame. Pair with
+   * `isAnnotationDrawn = false` to replace the built-in annotation rendering.
+   */
+  get annotationScreenShapes(): readonly AnnotationScreenShape[] {
+    return this.model._persistedAnnotationScreenShapes
   }
 
   get rulerWidth(): number {
@@ -1150,6 +1510,240 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * What the 3D render tile draws: `VOLUME_RENDER_MODE.COMPOSITE` (default, the
+   * OVER ray-march), `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity
+   * projection), or `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
+   * crosshair planes, composited front to back, with overlays sampled on them
+   * as the 2D tiles do). 2D slices draw a single plane and are unaffected.
+   *
+   * Only those three values are stored: a fractional value rounds to the
+   * nearest mode and anything else falls back to COMPOSITE (see
+   * {@link normalizeVolumeRenderMode}), because the shaders test the mode by
+   * proximity while the CPU tests it exactly, and a value in between would have
+   * the depth pick land on a plane the render never drew. The `change` event
+   * carries the stored value.
+   */
+  get volumeRenderMode(): number {
+    return this.model.volume.renderMode
+  }
+  set volumeRenderMode(v: number) {
+    const mode = normalizeVolumeRenderMode(v)
+    this.model.volume.renderMode = mode
+    this.emit('change', { property: 'volumeRenderMode', value: mode })
+    this.drawScene()
+  }
+
+  /**
+   * Which stencil estimates the in-shader LAYER gradient used to light the
+   * overlay and drawing ray-march passes from their own normals:
+   * `LAYER_GRADIENT_MODE.CENTRAL` (default), `BLOB`, or `SOBEL8`. The
+   * background volume is unaffected -- its gradient is precomputed into a
+   * texture. Only matters when `volumeIllumination` is above 0, which is what
+   * turns layer shading on. An out-of-range value falls back to CENTRAL in the
+   * shader. See LAYER_GRADIENT_MODE for the accuracy measurements.
+   */
+  get volumeLayerGradientMode(): number {
+    return this.model.volume.layerGradientMode
+  }
+  set volumeLayerGradientMode(v: number) {
+    this.model.volume.layerGradientMode = v
+    this.emit('change', { property: 'volumeLayerGradientMode', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Samples per voxel along the ray in the 3D render. Higher values converge the
+   * ray integral at a proportional fragment cost. Clamped to [1, 4]. This does
+   * NOT remove concentric banding on smooth structures; for the reconstruction
+   * filter see volumeIsCubicInterpolation.
+   */
+  get volumeSampleRate(): number {
+    return this.model.volume.sampleRate
+  }
+  set volumeSampleRate(v: number) {
+    this.model.volume.sampleRate = Math.min(4, Math.max(1, v))
+    this.emit('change', {
+      property: 'volumeSampleRate',
+      value: this.model.volume.sampleRate,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Reconstruct the volume with a tricubic B-spline instead of hardware
+   * trilinear in the 3D ray-march, removing the blocky texel staircase that C0
+   * trilinear leaves on band edges. 2D slices are unaffected. Costs 8 fetches
+   * per sample instead of 1. Chunked volumes need a brick halo of at least 2.
+   * See VolumeRenderConfig.isCubicInterpolation.
+   */
+  get volumeIsCubicInterpolation(): boolean {
+    return this.model.volume.isCubicInterpolation
+  }
+  set volumeIsCubicInterpolation(v: boolean) {
+    this.model.volume.isCubicInterpolation = v
+    // The cubic kernel reads two voxels past a brick face, so a streamed volume
+    // planned with the default trilinear halo would reconstruct from
+    // clamp-to-edge data and seam. Re-plan every live streamed volume with the
+    // larger halo; the renderer independently refuses cubic on any plan that
+    // still cannot feed the kernel (a hand-built chunkPlan, say), and warns.
+    if (v) {
+      for (const chunked of this._chunkedVolumes) {
+        void chunked.raiseHaloTo(CUBIC_MIN_HALO)
+      }
+    }
+    this.emit('change', {
+      property: 'volumeIsCubicInterpolation',
+      value: v,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Both LOD compensation settings are exact no-ops unless a multi-LOD chunked
+   * volume is loaded, and nothing on screen says so. Surface that at the moment
+   * the setting is made rather than leaving the caller to wonder. Silent when
+   * no volume is loaded at all: setting these before `loadVolumes` is normal.
+   */
+  private _warnIfLodCompensationInert(property: string, value: number): void {
+    if (value <= 0 || !this.model.volumes.length) return
+    const multiLod = this.model.volumes.some(
+      (v) => (v.chunkPlan?.levelDims?.length ?? 0) > 1,
+    )
+    if (multiLod) return
+    log.warn(
+      `${property} = ${value} has no effect: no loaded volume is a multi-LOD chunked volume. It only changes bricks fetched from a coarse pyramid level. Call lodCompensation() to see what applies.`,
+    )
+  }
+
+  /**
+   * COARSE BRICKS LOOK TOO DARK next to fine ones -> raise this. (Too
+   * TRANSPARENT rather than too dark -> `volumeLodOpacityCompensation`.)
+   *
+   * Coefficient for the per-level brightness compensation applied to coarse
+   * multi-LOD bricks; 0 disables it, clamped to [0, 1]. Useful magnitudes are
+   * small: the default is 0.08 per pyramid level and 0.2 is already strong.
+   *
+   * A coarse brick integrates darker than the fine data it stands in for
+   * (averaging voxels destroys the colour/opacity correlation that front-to-back
+   * compositing weights by), which reads as a brightness step at a LOD boundary.
+   * The correction is one fixed step per pyramid level (`1 - coefficient *
+   * log2(k)`). Empirical: sparse material loses more per level than dense.
+   *
+   * No-op on any volume that is not a multi-LOD chunked volume, and on the 3D
+   * render in `VOLUME_RENDER_MODE.SLICES` (one sample per plane whatever the
+   * level). Call `lodCompensation()` to see whether it applies and what each
+   * level gets. See VolumeRenderConfig.lodBrightnessCompensation.
+   */
+  get volumeLodBrightnessCompensation(): number {
+    return this.model.volume.lodBrightnessCompensation
+  }
+  set volumeLodBrightnessCompensation(v: number) {
+    this.model.volume.lodBrightnessCompensation = Number.isFinite(v)
+      ? Math.min(Math.max(v, LOD_BRIGHTNESS_RANGE[0]), LOD_BRIGHTNESS_RANGE[1])
+      : VOLUME_DEFAULTS.lodBrightnessCompensation
+    this._warnIfLodCompensationInert(
+      'volumeLodBrightnessCompensation',
+      this.model.volume.lodBrightnessCompensation,
+    )
+    this.emit('change', {
+      property: 'volumeLodBrightnessCompensation',
+      value: this.model.volume.lodBrightnessCompensation,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * COARSE BRICKS LOOK TOO TRANSPARENT next to fine ones -> raise this. (Too
+   * DARK rather than too transparent -> `volumeLodBrightnessCompensation`,
+   * which is the one to try first.)
+   *
+   * Coefficient for the per-level OPACITY compensation applied to coarse
+   * multi-LOD bricks in the 3D ray-march; 0 disables it (the default), clamped
+   * to [0, 1], the same range as `volumeLodBrightnessCompensation`. The march's
+   * step-size correction assumes a coarse voxel is homogeneous; where it is not,
+   * the brick renders too see-through. This scales that exponent by
+   * `1 + c * (k - 1)`.
+   *
+   * Measured off by default: it makes dense structure worse (the alpha there is
+   * already correct, and inflating it front-loads the march onto nearer, dimmer
+   * samples).
+   *
+   * No-op on any volume that is not a multi-LOD chunked volume, and on 2D slice
+   * tiles (one sample, no accumulation). Call `lodCompensation()` to see whether
+   * it applies and what each level gets. See
+   * VolumeRenderConfig.lodOpacityCompensation.
+   */
+  get volumeLodOpacityCompensation(): number {
+    return this.model.volume.lodOpacityCompensation
+  }
+  set volumeLodOpacityCompensation(v: number) {
+    this.model.volume.lodOpacityCompensation = Number.isFinite(v)
+      ? Math.min(Math.max(v, LOD_OPACITY_RANGE[0]), LOD_OPACITY_RANGE[1])
+      : VOLUME_DEFAULTS.lodOpacityCompensation
+    this._warnIfLodCompensationInert(
+      'volumeLodOpacityCompensation',
+      this.model.volume.lodOpacityCompensation,
+    )
+    this.emit('change', {
+      property: 'volumeLodOpacityCompensation',
+      value: this.model.volume.lodOpacityCompensation,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Gradient-magnitude opacity modulation for the BACKGROUND volume's 3D
+   * ray-march, [0, 1]; 0 (the default) is a no-op. Raising it suppresses
+   * homogeneous interior while leaving edges intact: each sample's alpha is
+   * scaled by `magnitude ^ (gradientOpacity * 8)`, and the magnitude is near 0
+   * wherever the data is flat.
+   *
+   * Reads the magnitude from the precomputed background gradient texture, so it
+   * does nothing to overlays or the drawing layer (those estimate a gradient
+   * in-shader -- see `volumeLayerGradientMode`) and nothing on 2D slices, which
+   * show one sample with no accumulation. Independent of `volumeIllumination`:
+   * this changes opacity, that changes lighting, and either works alone.
+   * See `volumeSilhouette` for the companion rim effect.
+   */
+  get volumeGradientOpacity(): number {
+    return this.model.volume.gradientOpacity
+  }
+  set volumeGradientOpacity(v: number) {
+    this.model.volume.gradientOpacity = Number.isFinite(v)
+      ? Math.min(Math.max(v, 0), 1)
+      : VOLUME_DEFAULTS.gradientOpacity
+    this.emit('change', {
+      property: 'volumeGradientOpacity',
+      value: this.model.volume.gradientOpacity,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Silhouette (Fresnel rim) enhancement for the BACKGROUND volume's 3D
+   * ray-march, [0, 1]; 0 (the default) is a no-op.
+   *
+   * Alpha is scaled by `(1 - |dot(normal, rayDir)|) ^ silhouette`, fading
+   * material that faces the camera and keeping material seen edge-on, so a
+   * surface reads as an outline; samples more view-aligned than `1 - silhouette`
+   * are culled outright. Same background-only, 3D-only scope as
+   * `volumeGradientOpacity`, and the two are independent.
+   */
+  get volumeSilhouette(): number {
+    return this.model.volume.silhouette
+  }
+  set volumeSilhouette(v: number) {
+    this.model.volume.silhouette = Number.isFinite(v)
+      ? Math.min(Math.max(v, 0), 1)
+      : VOLUME_DEFAULTS.silhouette
+    this.emit('change', {
+      property: 'volumeSilhouette',
+      value: this.model.volume.silhouette,
+    })
+    this.drawScene()
+  }
+
   get volumeOutlineWidth(): number {
     return this.model.volume.outlineWidth
   }
@@ -1184,6 +1778,55 @@ export default class NiiVueGPU extends EventTarget {
     this.model.volume.isAlphaClipDark = v
     this.emit('change', { property: 'volumeIsAlphaClipDark', value: v })
     this.drawScene()
+  }
+
+  /**
+   * Honour the background volume's per-voxel colormap alpha on 2D slices,
+   * the way the 3D ray-march always has. Default false, because most neuro
+   * colormaps ramp alpha near the low end and would gain a fade they never
+   * had in 2D. Turn it on for a colormap that carries structure in alpha
+   * (constant RGB, ramped A) or to make COLORMAP_TYPE's below-threshold
+   * fade visible on the background in 2D.
+   */
+  get volumeIsColormapAlphaOn2D(): boolean {
+    return this.model.volume.isColormapAlphaOn2D
+  }
+  set volumeIsColormapAlphaOn2D(v: boolean) {
+    this.model.volume.isColormapAlphaOn2D = v
+    this.emit('change', { property: 'volumeIsColormapAlphaOn2D', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Draw label/atlas volumes as region outlines rather than filled regions.
+   *
+   * `outline` is the neighbour probe distance in the atlas's own voxels: 0 (the
+   * default) fills every region, 1 keeps a one-voxel border, larger values give
+   * a thicker border. Only the interior is dropped, so the parcellation stays
+   * readable over the anatomy underneath. Non-label volumes ignore it.
+   *
+   * Applies to every loaded label volume when `volumeIndex` is omitted, or to
+   * one volume when it is given. It is a per-volume property, so
+   * `setVolume(i, { atlasOutline })` and the load options reach it too.
+   *
+   * ```js
+   * nv1.setAtlasOutline(1)     // outline every atlas
+   * nv1.setAtlasOutline(0, 1)  // fill volume 1 again
+   * ```
+   */
+  setAtlasOutline(outline: number, volumeIndex?: number): void {
+    const val = Number.isFinite(outline) ? Math.max(0, outline) : 0
+    const volumes = this.model.getVolumes()
+    if (volumeIndex === undefined) {
+      for (const vol of volumes) vol.atlasOutline = val
+    } else {
+      if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
+      volumes[volumeIndex].atlasOutline = val
+    }
+    // The outline is baked by the orient prepass, so the textures must be
+    // rebuilt. Fire-and-forget (this is sync); route a GPU rejection so it
+    // isn't an unhandled promise rejection.
+    this.updateGLVolume().catch((e) => log.error('setAtlasOutline failed', e))
   }
 
   get volumeIsNearestInterpolation(): boolean {
@@ -1434,6 +2077,45 @@ export default class NiiVueGPU extends EventTarget {
     this.emit('change', { property: 'isYoked3DTo2DZoom', value: v })
   }
 
+  /**
+   * Anchor for the 2D wheel zoom: 'crosshair' (default) holds the crosshair
+   * still; 'pointer' holds the point under the mouse pointer still, falling
+   * back to the crosshair when the pointer picks no slice.
+   */
+  get wheelZoomAnchor(): WheelZoomAnchor {
+    return this.model.interaction.wheelZoomAnchor
+  }
+  set wheelZoomAnchor(v: WheelZoomAnchor) {
+    this.model.interaction.wheelZoomAnchor = v
+    this.emit('change', { property: 'wheelZoomAnchor', value: v })
+  }
+
+  get isViewModeHotKeyEnabled(): boolean {
+    return this.model.interaction.isViewModeHotKeyEnabled
+  }
+  set isViewModeHotKeyEnabled(v: boolean) {
+    this.model.interaction.isViewModeHotKeyEnabled = v
+    this.emit('change', { property: 'isViewModeHotKeyEnabled', value: v })
+  }
+
+  get isPanFollowingCrosshair(): boolean {
+    return this.model.interaction.isPanFollowingCrosshair
+  }
+  /**
+   * Opt-in: when the 2D views are zoomed in ({@link pan2Dxyzmm}`[3] > 1`) and
+   * the crosshair moves on its own — keyboard step, {@link setCrosshairPos},
+   * or a linked instance — pan just enough that it stays inside every tile's
+   * visible window. Off by default (the window stays put and the crosshair may
+   * leave it), and explicit pan/zoom gestures are never fought. Enabling also
+   * applies immediately against the last rendered layout, so an already
+   * off-window crosshair is brought back.
+   */
+  set isPanFollowingCrosshair(v: boolean) {
+    this.model.interaction.isPanFollowingCrosshair = v
+    this.emit('change', { property: 'isPanFollowingCrosshair', value: v })
+    if (v && applyPanFollowsCrosshair(this)) this.drawScene()
+  }
+
   // --- Annotation Properties ---
 
   get annotationIsEnabled(): boolean {
@@ -1448,6 +2130,16 @@ export default class NiiVueGPU extends EventTarget {
    */
   set annotationIsEnabled(v: boolean) {
     this.model.annotation.isEnabled = v
+    // Leaving annotation mode abandons any half-drawn multi-click contour so its
+    // preview does not linger.
+    if (!v) {
+      this._annotationPolyPoints = null
+      this._bidirectionalLong = null
+      this.model._annotationPreview = null
+      this._livewireSlice = null
+      this._livewireField = null
+      this._livewireSeed = null
+    }
     this.emit('change', { property: 'annotationIsEnabled', value: v })
     this.drawScene()
   }
@@ -1474,6 +2166,15 @@ export default class NiiVueGPU extends EventTarget {
   set annotationBrushRadius(v: number) {
     this.model.annotation.brushRadius = v
     this.emit('change', { property: 'annotationBrushRadius', value: v })
+  }
+
+  get annotationMergesOverlaps(): boolean {
+    return this.model.annotation.mergesOverlaps
+  }
+
+  set annotationMergesOverlaps(v: boolean) {
+    this.model.annotation.mergesOverlaps = v
+    this.emit('change', { property: 'annotationMergesOverlaps', value: v })
   }
 
   get annotationIsErasing(): boolean {
@@ -1508,6 +2209,15 @@ export default class NiiVueGPU extends EventTarget {
   set annotationTool(v: AnnotationTool) {
     this.model.annotation.tool = v
     this.model._annotationSelection = null
+    // Switching tools abandons any half-drawn multi-click / bidirectional shape.
+    if (this._annotationPolyPoints || this._bidirectionalLong) {
+      this._annotationPolyPoints = null
+      this._bidirectionalLong = null
+      this.model._annotationPreview = null
+      this._livewireSlice = null
+      this._livewireField = null
+      this._livewireSeed = null
+    }
     this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()
   }
@@ -1521,11 +2231,8 @@ export default class NiiVueGPU extends EventTarget {
       this.model._annotationSelection = null
     } else {
       const ann = this.model.annotations.find((a) => a.id === id)
-      if (ann?.shape) {
-        this.model._annotationSelection = {
-          annotationId: id,
-          controlPoints: getControlPoints(ann.shape),
-        }
+      if (ann) {
+        this.model._annotationSelection = getAnnotationSelection(ann)
       }
     }
     this.drawScene()
@@ -1538,6 +2245,18 @@ export default class NiiVueGPU extends EventTarget {
   addAnnotation(annotation: VectorAnnotation): void {
     this.model.annotations.push(annotation)
     this.emit('annotationAdded', { annotation })
+    this.drawScene()
+  }
+
+  /**
+   * Set (or clear, with an empty string) the free-text label on an annotation by
+   * id. The text shows above the annotation's stats via the overlay seam.
+   */
+  setAnnotationText(id: string, text: string): void {
+    const ann = this.model.annotations.find((a) => a.id === id)
+    if (!ann) return
+    ann.text = text.length > 0 ? text : undefined
+    this.emit('annotationChanged', { action: 'move' })
     this.drawScene()
   }
 
@@ -1627,13 +2346,13 @@ export default class NiiVueGPU extends EventTarget {
     }
     if (this.opts.backend === 'webgpu' && !navigator.gpu) {
       throw new Error(
-        'This niivuegpu WebGPU-only distribution requires browser WebGPU support.',
+        'This niivue WebGPU-only distribution requires browser WebGPU support.',
       )
     }
     if (this._distributionBackend === 'webgpu') {
       if (this.opts.backend === 'webgl2') {
         throw new Error(
-          "This niivuegpu distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
+          "This niivue distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
         )
       }
       this.opts.backend = 'webgpu'
@@ -1641,7 +2360,7 @@ export default class NiiVueGPU extends EventTarget {
     }
     if (this.opts.backend === 'webgpu') {
       throw new Error(
-        "This niivuegpu distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
+        "This niivue distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
       )
     }
     this.opts.backend = 'webgl2'
@@ -1849,6 +2568,7 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   set devicePixelRatio(dpr: number) {
+    this.opts.forceDevicePixelRatio = dpr
     if (!this.view) return
     this.view.forceDevicePixelRatio = dpr
     this.view.resize()
@@ -2499,6 +3219,23 @@ export default class NiiVueGPU extends EventTarget {
     await this.updateGLVolume()
   }
 
+  /**
+   * Remove a single volume by index, emitting `volumeRemoved`.
+   * @param volumeIndex - Index of the volume to remove
+   * @example
+   * await nv1.removeVolume(1) // remove the first overlay
+   */
+  async removeVolume(volumeIndex: number): Promise<void> {
+    const volumes = this.model.getVolumes()
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
+    const volume = volumes[volumeIndex]
+    // Emit before removal, matching removeAllVolumes/removeAllMeshes: at emit
+    // time the collection still contains the referenced item.
+    this.emit('volumeRemoved', { volume, index: volumeIndex })
+    this.model.removeVolume(volumeIndex)
+    await this.updateGLVolume()
+  }
+
   async removeAllMeshes(): Promise<void> {
     const meshes = this.model.getMeshes()
     for (let i = meshes.length - 1; i >= 0; i--) {
@@ -2574,23 +3311,37 @@ export default class NiiVueGPU extends EventTarget {
    * continuous colormap interpolation, and locationChange events include label names.
    *
    * @param volumeIndex - Index of the volume to apply the label colormap to
-   * @param cmap - ColorMap definition with R,G,B arrays and optional labels/I arrays,
-   *               or null to remove the label colormap
+   * @param cmap - ColorMap definition with R,G,B arrays and optional labels/I arrays;
+   *               a built-in colormap name (e.g. 'freesurfer', resolved via
+   *               lookupColorMap); or null to remove the label colormap
    */
   async setColormapLabel(
     volumeIndex: number,
-    cmap: ColorMap | null,
+    cmap: ColorMap | string | null,
   ): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     if (cmap === null) {
       volumes[volumeIndex].colormapLabel = null
     } else {
-      volumes[volumeIndex].colormapLabel = NVCmaps.makeLabelLut(cmap)
+      // Accept a built-in colormap name (resolved via lookupColorMap, symmetric
+      // with setVolume({colormap: name})) or a ColorMap object directly.
+      const cm = typeof cmap === 'string' ? NVCmaps.lookupColorMap(cmap) : cmap
+      if (!cm) {
+        throw new Error(`setColormapLabel: unknown colormap '${cmap}'`)
+      }
+      volumes[volumeIndex].colormapLabel = NVCmaps.makeLabelLut(cm)
       volumes[volumeIndex].colormapLabel.centroids =
         computeVolumeLabelCentroids(volumes[volumeIndex])
     }
     volumes[volumeIndex].isDirty = true
+    // Structural change (the label LUT is not a VolumeUpdate option); the volume
+    // reference lets listeners re-read colormapLabel.
+    this.emit('volumeUpdated', {
+      volumeIndex,
+      volume: volumes[volumeIndex],
+      changes: {},
+    })
     await this.updateGLVolume()
   }
 
@@ -2641,6 +3392,96 @@ export default class NiiVueGPU extends EventTarget {
       changes: options,
     })
     await this.updateGLVolume()
+  }
+
+  /**
+   * Region-of-interest statistics for a loaded volume.
+   *
+   * Values are calibrated (`scl_slope`/`scl_inter` applied) and non-finite
+   * voxels are excluded. Every mask must sit on the same RAS grid as the
+   * target volume — overlays are resliced to the background grid, so masks
+   * drawn from the loaded volume list satisfy that by construction, but a mask
+   * on a different grid returns `null` rather than silently wrong numbers.
+   *
+   * @param options.volumeIndex - which volume to measure (default 0, the background)
+   * @param options.masks - volume indices whose non-zero voxels define the region;
+   *   with several, a voxel counts only where ALL of them are non-zero
+   * @param options.isDrawingMask - also require a non-zero voxel in the drawing bitmap
+   * @param options.drawPenValues - when masking by the drawing, restrict to these
+   *   pen values (default: any non-zero voxel)
+   * @returns the statistics, or `null` when the volume has no data or a mask
+   *   does not match the target grid
+   *
+   * @example
+   * const roi = nv1.getDescriptives({ volumeIndex: 0, isDrawingMask: true })
+   * console.log(roi.mean, roi.stdev, roi.volumeML)
+   */
+  getDescriptives(
+    options: {
+      volumeIndex?: number
+      masks?: number[]
+      isDrawingMask?: boolean
+      drawPenValues?: number[]
+    } = {},
+  ): DescriptiveStats | null {
+    const volumes = this.model.getVolumes()
+    const volumeIndex = options.volumeIndex ?? 0
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return null
+    const vol = volumes[volumeIndex]
+    const raw = getImageDataRAS(vol)
+    if (!raw || !vol.dimsRAS || !vol.pixDimsRAS) {
+      log.warn('getDescriptives: volume has no resolvable RAS data')
+      return null
+    }
+    const nVox = raw.length
+    // getImageDataRAS returns unscaled samples; report calibrated intensities.
+    const slope = vol.hdr?.scl_slope || 1
+    const inter = vol.hdr?.scl_inter || 0
+    let values: Float32Array = raw
+    if (slope !== 1 || inter !== 0) {
+      values = new Float32Array(nVox)
+      for (let i = 0; i < nVox; i++) values[i] = raw[i] * slope + inter
+    }
+    // Intersect every requested mask into one inclusion array.
+    let mask: Uint8Array | null = null
+    const requireMask = (): Uint8Array => {
+      if (!mask) mask = new Uint8Array(nVox).fill(1)
+      return mask
+    }
+    for (const maskIndex of options.masks ?? []) {
+      if (!this._checkBounds(volumes, maskIndex, 'Mask volume')) return null
+      const maskData = getImageDataRAS(volumes[maskIndex])
+      if (!maskData || maskData.length !== nVox) {
+        log.warn(
+          `getDescriptives: mask volume ${maskIndex} does not match the target grid`,
+        )
+        return null
+      }
+      const m = requireMask()
+      for (let i = 0; i < nVox; i++) {
+        if (maskData[i] === 0 || Number.isNaN(maskData[i])) m[i] = 0
+      }
+    }
+    if (options.isDrawingMask) {
+      const drawingVol = this.model.drawingVolume
+      const bitmap = drawingVol ? getDrawingBitmap(drawingVol) : null
+      if (!bitmap || bitmap.length !== nVox) {
+        log.warn(
+          'getDescriptives: no drawing, or the drawing does not match the target grid',
+        )
+        return null
+      }
+      const pens = options.drawPenValues
+      const m = requireMask()
+      for (let i = 0; i < nVox; i++) {
+        const v = bitmap[i]
+        const keep = pens ? pens.includes(v) : v !== 0
+        if (!keep) m[i] = 0
+      }
+    }
+    const voxelVolumeMM3 =
+      vol.pixDimsRAS[1] * vol.pixDimsRAS[2] * vol.pixDimsRAS[3]
+    return computeDescriptiveStats(values, voxelVolumeMM3, mask)
   }
 
   getVolumeAffine(volumeIndex: number): AffineMatrix {
@@ -2839,6 +3680,9 @@ export default class NiiVueGPU extends EventTarget {
     }
     m.layers.push(newLayer)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    // Layer state is structural (not a MeshUpdate option diff); the mesh
+    // reference lets listeners re-read mesh.layers.
+    this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
     await this.updateGLVolume()
     return this
   }
@@ -2853,6 +3697,9 @@ export default class NiiVueGPU extends EventTarget {
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return this
     m.layers.splice(layerIndex, 1)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    // Layer state is structural (not a MeshUpdate option diff); the mesh
+    // reference lets listeners re-read mesh.layers.
+    this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
     await this.updateGLVolume()
     return this
   }
@@ -2875,6 +3722,9 @@ export default class NiiVueGPU extends EventTarget {
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return
     Object.assign(m.layers[layerIndex], options)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    // Layer state is structural (not a MeshUpdate option diff); the mesh
+    // reference lets listeners re-read mesh.layers.
+    this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
     await this.updateGLVolume()
   }
 
@@ -3060,7 +3910,14 @@ export default class NiiVueGPU extends EventTarget {
       // NVImage so we can feed it back here. `_urlImageData` is undefined for the
       // common self-contained-NII case, in which case `loadVolume`'s second arg
       // (null) just stays at its default.
-      const nii = await NVVolume.loadVolume(src, vol._urlImageData ?? null)
+      // `name` forwarded: a filename-sensitive reader (MGH label inference,
+      // VMR .v16/.vmr) must take the same branch on reload as on first load.
+      const nii = await NVVolume.loadVolume(
+        src,
+        vol._urlImageData ?? null,
+        Infinity,
+        vol.name,
+      )
       // Reconstruct through nii2volume so datatype/intent conversions (e.g.
       // DT_FLOAT64 -> DT_FLOAT32) are REAPPLIED. The re-fetched bytes are raw, so
       // coercing them through the already-converted `vol.hdr` would corrupt a
@@ -3177,6 +4034,7 @@ export default class NiiVueGPU extends EventTarget {
       frac[i] = Math.max(0, Math.min(1, frac[i]))
     }
     this.model.scene.crosshairPos = frac
+    applyPanFollowsCrosshair(this)
     this.createOnLocationChange()
     this.drawScene()
   }
@@ -3228,6 +4086,14 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   /**
+   * Give this instance the whole canvas again, undoing {@link setBounds}.
+   * Equivalent to `setBounds([0, 0, 1, 1])`.
+   */
+  clearBounds(): void {
+    this.setBounds([0, 0, 1, 1])
+  }
+
+  /**
    * Read the canvas-level viewport (virtual camera) shared with sibling instances.
    * The viewport applies a pan + zoom over the entire canvas before each instance's
    * `bounds` are projected to pixels. Identity is `{pan: [0, 0], zoom: 1}`.
@@ -3238,18 +4104,156 @@ export default class NiiVueGPU extends EventTarget {
 
   /**
    * Streaming stats across all chunked volumes (base + independent overlay) on
-   * the active backend: `{ resident, pending, inFlight, total }` brick counts.
-   * Returns null before a view is attached. Useful for HUD / debug overlays:
-   * `resident < total` with `pending > 0` for many frames indicates the working
-   * set exceeds the residency budget (thrashing).
+   * the active backend: `{ resident, pending, inFlight, total, staleDropped }`
+   * brick counts. Returns null before a view is attached. Useful for HUD / debug
+   * overlays: `resident < total` with `pending > 0` for many frames indicates the
+   * working set exceeds the residency budget (thrashing).
+   *
+   * To find out when streaming finishes, listen for the `chunkStreamIdle`
+   * event (with `chunkStreamProgress` along the way) instead of polling this
+   * on a timer — see {@link ChunkStreamDetail}.
+   *
+   * `staleDropped` is cumulative, not per frame: queued uploads retired because
+   * the view moved on before they ran. It climbing during a pan or rotate is the
+   * queue working as intended, since that work would otherwise have uploaded
+   * bricks for viewports the user had already left.
+   *
+   * `predicted` is also cumulative: source reads started AHEAD of the working
+   * set, from the direction the view is travelling. Those never enter the
+   * upload queue, so they show up here and in the source's byte-cache hit rate
+   * rather than in `resident`.
+   *
+   * `decoded` is the decoded-chunk tier summed over every chunked volume: the
+   * CPU-side source bytes a brick is demoted to when the GPU evicts it. Its
+   * hits are source reads that skipped the network AND the decode entirely,
+   * costing only a texture upload; `bytes` / `maxBytes` is how full it is.
    */
-  chunkStreamStats(): {
-    resident: number
-    pending: number
-    inFlight: number
-    total: number
-  } | null {
+  chunkStreamStats(): ChunkStreamDetail | null {
     return this.view?.chunkStreamStats() ?? null
+  }
+
+  /**
+   * Where a streamed brick's time actually goes: bytes over the wire, the work
+   * of turning them into a texture, and how much of that blocked the render
+   * loop. Returns the process-wide totals since the last
+   * {@link resetChunkTiming} — the recorder is a module-level singleton, so
+   * this aggregates every chunked volume on every instance in the page, not
+   * just this one.
+   *
+   * `mainThreadMs` (assemble + upload + gradient) is the figure that decides
+   * whether a decode worker is worth building, and `netBusyMs` is network wall
+   * clock with overlapping reads counted once. Phase definitions and the
+   * accuracy of each number are in `src/volume/chunkTiming.ts`.
+   */
+  chunkTimingStats(): ChunkTimingSnapshot {
+    return chunkTimingSnapshot()
+  }
+
+  /** Clear {@link chunkTimingStats} to start a fresh measurement window. */
+  resetChunkTiming(): void {
+    clearChunkTiming()
+  }
+
+  /**
+   * What the two LOD compensation settings are actually doing right now.
+   *
+   * `volumeLodBrightnessCompensation` and `volumeLodOpacityCompensation` only
+   * affect bricks fetched from a COARSE level of a multi-LOD chunked volume, so
+   * on an ordinary volume they are exact no-ops with nothing on screen to say
+   * so. This is the way to check: `isActive` answers "is anything being
+   * compensated", `inactiveReason` says why not, and each level reports the
+   * exponent and scale being handed to the shader for its bricks.
+   *
+   * ```js
+   * const report = nv.lodCompensation()
+   * if (!report.isActive) console.log(report.inactiveReason)
+   * for (const each of report.levels) {
+   *   console.log(each.level, each.downsample, each.brickCount, each.brightnessExponent)
+   * }
+   * ```
+   *
+   * Reads the background volume (`volumes[0]`), which is the volume both
+   * settings act on. Cheap enough to call per frame for a debug HUD. In
+   * `VOLUME_RENDER_MODE.SLICES` the reported exponent reaches the 2D tiles
+   * only: the 3D planes take one sample per level and apply none.
+   */
+  lodCompensation(): LodCompensationReport {
+    const brightness = this.model.volume.lodBrightnessCompensation
+    const opacity = this.model.volume.lodOpacityCompensation
+    const describe = (
+      level: number,
+      levelDims: [number, number, number],
+      brickCount: number,
+      volumeDims: readonly number[],
+    ): LodCompensationLevel => {
+      const downsample = dimsDownsample(
+        [volumeDims[0], volumeDims[1], volumeDims[2]],
+        levelDims,
+      )
+      return {
+        level,
+        downsample,
+        levelDims,
+        brickCount,
+        brightnessExponent: lodGammaExponent(downsample, brightness),
+        opacityScale: lodOpacityScale(downsample, opacity),
+      }
+    }
+
+    const plan = this.model.volumes[0]?.chunkPlan
+    const floorDims = this.view?.coarseFloorDims() ?? null
+    const levels: LodCompensationLevel[] = []
+    let inactiveReason: string | null = null
+    if (!this.model.volumes.length) {
+      inactiveReason = 'no volume is loaded'
+    } else if (!plan) {
+      inactiveReason = 'volume 0 is not a chunked volume'
+    } else if (!plan.levelDims || plan.levelDims.length < 2) {
+      // A single-level plan (chunkVolumeGrid) tiles the finest data only, so
+      // every brick is at downsample 1 and both settings are no-ops.
+      inactiveReason = 'the chunked volume has a single resolution level'
+    } else {
+      const counts = new Map<number, number>()
+      for (const chunk of plan.chunks) {
+        const level = chunk.sourceLevel ?? 0
+        counts.set(level, (counts.get(level) ?? 0) + 1)
+      }
+      for (let level = 0; level < plan.levelDims.length; level++) {
+        const dims = plan.levelDims[level]
+        if (!dims) continue
+        levels.push(
+          describe(
+            level,
+            [dims[0], dims[1], dims[2]],
+            counts.get(level) ?? 0,
+            plan.volumeDims,
+          ),
+        )
+      }
+    }
+
+    const floor =
+      plan && floorDims ? describe(-1, floorDims, 1, plan.volumeDims) : null
+    // Active means some drawn brick is being changed: a coarse level has to be
+    // present AND a coefficient has to be non-zero. The coefficients are checked
+    // first because that is the reason the caller can act on directly.
+    if (!inactiveReason && brightness <= 0 && opacity <= 0) {
+      inactiveReason = 'both coefficients are 0'
+    }
+    const hasCoarse =
+      levels.some((l) => l.brickCount > 0 && l.downsample > 1) ||
+      (floor?.downsample ?? 1) > 1
+    if (!inactiveReason && !hasCoarse) {
+      inactiveReason = 'no coarse brick is currently drawn'
+    }
+    return {
+      isActive: inactiveReason === null,
+      inactiveReason,
+      brightnessCompensation: brightness,
+      opacityCompensation: opacity,
+      levels,
+      floor,
+    }
   }
 
   /**
@@ -3294,6 +4298,36 @@ export default class NiiVueGPU extends EventTarget {
     vol.chunkPlan = plan
     await this.view?.swapChunkedVolumePlan?.(vol, plan)
     this.drawScene()
+  }
+
+  /**
+   * Load a multi-resolution (pyramid) volume from a pluggable
+   * {@link ChunkedVolumeSource} and render it with crosshair-focused level of
+   * detail: the finest bricks stay around the crosshair while distant regions
+   * render coarser, all under a brick/VRAM budget, so a very large finest level
+   * (e.g. a 20+ GB whole-slide/OME-Zarr volume) is renderable without ever
+   * making it fully resident. Returns an {@link NVChunkedVolume} handle
+   * (`setFocus` / `setMaxDetail` / `setBudget` / `dispose`); with the default
+   * `focus: 'crosshair'` it follows the crosshair automatically.
+   *
+   * ADDITIVE: the streamed volume is ADDED to the scene (via `addVolume`), not
+   * swapped for the current volumes. To reload/replace a streamed volume, the
+   * caller removes the previous one first. Because the outgoing volume is still
+   * the base while this runs, a reload should call
+   * {@link NVChunkedVolume.applyCoarseFloor} once it has removed it.
+   *
+   * Unless the `coarseFloor` option turns it off, the coarsest pyramid level is
+   * also installed as the base coarse floor (see
+   * {@link NiiVue.setBaseCoarseFloor}), so regions whose bricks are not yet
+   * resident show coarse detail instead of the scene background.
+   */
+  async loadChunkedVolume(
+    source: ChunkedVolumeSource,
+    options?: ChunkedVolumeOptions,
+  ): Promise<NVChunkedVolume> {
+    const chunked = new NVChunkedVolume(this, source, options)
+    await chunked.init()
+    return chunked
   }
 
   /**
@@ -3423,10 +4457,20 @@ export default class NiiVueGPU extends EventTarget {
   ): void {
     const levels = slide.manifest.levels
     if (levels.length === 0) return
+    const pinnedLevel = opts.levelIndex
+    const levelIndex =
+      pinnedLevel !== undefined &&
+      (!Number.isInteger(pinnedLevel) ||
+        !levels.some((level) => level.index === pinnedLevel))
+        ? undefined
+        : pinnedLevel
+    if (pinnedLevel !== undefined && levelIndex === undefined) {
+      log.warn(`setSlidePlane: unknown level index ${pinnedLevel}`)
+    }
     const state: SlidePlaneState = {
       slide,
       pixelToWorld: [...opts.pixelToWorld],
-      levelIndex: opts.levelIndex,
+      levelIndex,
       tilesByLevel: new Map(),
     }
     // Prime the coarsest level so something shows on the first frame before the
@@ -3452,6 +4496,28 @@ export default class NiiVueGPU extends EventTarget {
     this._slidePlaneSlide = slide
     this._slidePlaneOnChange = (): void => this.drawScene()
     slide.addEventListener('change', this._slidePlaneOnChange)
+    this.drawScene()
+  }
+
+  /**
+   * Pin the slide plane's pyramid level (0 = finest), or return to the
+   * camera-driven choice with undefined. Mutates the registered plane in
+   * place, so — unlike re-calling {@link setSlidePlane} — the slide drawing
+   * and vector annotations survive the change. No-op without a plane.
+   */
+  setSlidePlaneLevel(levelIndex?: number): void {
+    if (!this._slidePlane) return
+    if (
+      levelIndex !== undefined &&
+      (!Number.isInteger(levelIndex) ||
+        !this._slidePlane.slide.manifest.levels.some(
+          (level) => level.index === levelIndex,
+        ))
+    ) {
+      log.warn(`setSlidePlaneLevel: unknown level index ${levelIndex}`)
+      return
+    }
+    this._slidePlane.levelIndex = levelIndex
     this.drawScene()
   }
 
@@ -3850,6 +4916,34 @@ export default class NiiVueGPU extends EventTarget {
     return new Uint8Array(ctx.getImageData(0, 0, w, h).data)
   }
 
+  /**
+   * Point the current view's controller hooks (UIKit overlay, GPU-context
+   * recovery, chunk-streaming observer) at this controller. The view lifecycle
+   * calls this the moment a view is published (attach, and every recreate
+   * path), BEFORE the `resize()` that draws its first frame: a preloaded
+   * chunked volume streams from that very first frame, and every frame after
+   * it is self-driven (`view.render()`, not `drawScene()`), so a hook wired
+   * only from `drawScene` would miss the whole episode. `drawScene` re-wires
+   * on every controller-driven frame as well, which is harmless.
+   *
+   * Wiring the chunk-streaming observer onto a NEW view instance first resets
+   * the emitter, so a mid-stream recreation cannot carry the old view's busy
+   * episode into the new one; the old view's own hook is detached by its
+   * `destroy()`.
+   */
+  _wireViewHooks(): void {
+    const view = this.view
+    if (!view) return
+    view.overlayDraw =
+      this._overlayRenderers.length > 0 ? this._dispatchOverlay : null
+    view.onContextLost = this._onGpuContextLost
+    if (view !== this._chunkStreamWiredView) {
+      this._chunkStreamEmitter.reset()
+      this._chunkStreamWiredView = view
+    }
+    view.onChunkStream = this._onChunkStream
+  }
+
   drawScene(needsSync = true): void {
     if (needsSync) this._syncDirty = true
     if (!this.framePending) {
@@ -3862,8 +4956,86 @@ export default class NiiVueGPU extends EventTarget {
           this._flushDrawing()
         }
         this._sync()
-        if (this.view) this.view.render()
+        if (this.view) {
+          // Re-wire the view hooks every controller-driven frame so a change
+          // in what they should point at (an overlay renderer registered or
+          // removed) is picked up. Self-driven frames (streaming/fade) keep the
+          // last-set values on the same view instance.
+          this._wireViewHooks()
+          this.view.render()
+        }
       })
+    }
+  }
+
+  /**
+   * Register a privileged overlay renderer (e.g. a @niivue/uikit widget). It is
+   * called at the end of every frame, on whichever backend is live, to draw into
+   * the same frame in screen space. Returns an unsubscribe function; you may also
+   * call {@link unregisterOverlayRenderer}. See view/NVOverlayHook.ts.
+   */
+  registerOverlayRenderer(renderer: UIKitOverlayRenderer): () => void {
+    if (!this._overlayRenderers.includes(renderer)) {
+      this._overlayRenderers.push(renderer)
+    }
+    this.drawScene()
+    return () => this.unregisterOverlayRenderer(renderer)
+  }
+
+  /** Remove a previously registered overlay renderer. */
+  unregisterOverlayRenderer(renderer: UIKitOverlayRenderer): void {
+    const i = this._overlayRenderers.indexOf(renderer)
+    if (i < 0) return
+    this._overlayRenderers.splice(i, 1)
+    if (this._overlayRenderers.length === 0 && this.view) {
+      this.view.overlayDraw = null
+    }
+    this.drawScene()
+  }
+
+  /**
+   * Automatic recovery from a lost GPU context (WebGL2 'webglcontextrestored',
+   * or a WebGPU device-lost that isn't our own teardown). Everything the view
+   * owned died with the context, so the view is rebuilt wholesale; volumes and
+   * meshes live on the model and re-upload, and a streamed volume re-plans from
+   * its `chunkPlan` on the next frame.
+   *
+   * Capped: if the cause is that this scene simply does not fit in VRAM, an
+   * uncapped retry would loop lose -> rebuild -> lose forever. After the cap we
+   * leave the message up and stop.
+   */
+  private _onGpuContextLost = (): void => {
+    if (this._destroyed) return
+    // The canvas is captured now because recreateView swaps in a fresh one, and
+    // the overlay is keyed by the canvas it was shown for.
+    const canvas = this.canvas
+    if (this._contextLossRecoveries >= MAX_CONTEXT_LOSS_RECOVERIES) {
+      log.error(
+        `GPU context lost ${this._contextLossRecoveries} times; not rebuilding again.`,
+      )
+      if (canvas) showCanvasMessage(canvas, GRAPHICS_LOST_MESSAGE)
+      return
+    }
+    this._contextLossRecoveries += 1
+    if (canvas) showCanvasMessage(canvas, GRAPHICS_RECOVERING_MESSAGE)
+    void this._recreateView()
+      .then(() => {
+        if (canvas) clearCanvasMessage(canvas)
+        if (this.canvas && this.canvas !== canvas) {
+          clearCanvasMessage(this.canvas)
+        }
+        this.drawScene()
+      })
+      .catch((e) => {
+        log.error(`Failed to rebuild the view after a GPU context loss: ${e}`)
+        if (canvas) showCanvasMessage(canvas, GRAPHICS_LOST_MESSAGE)
+      })
+  }
+
+  /** Stable dispatcher fanned out to every registered overlay renderer. */
+  private _dispatchOverlay = (frame: UIKitOverlayFrame): void => {
+    for (const renderer of this._overlayRenderers) {
+      renderer.drawOverlay(frame)
     }
   }
 
@@ -4171,6 +5343,7 @@ export default class NiiVueGPU extends EventTarget {
         angle: DRAG_MODE.angle,
         crosshair: DRAG_MODE.crosshair,
         windowing: DRAG_MODE.windowing,
+        crosshairPan: DRAG_MODE.crosshairPan,
       }
       const val = map[mode]
       if (val !== undefined) this.model.interaction.secondaryDragMode = val
@@ -4180,9 +5353,99 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
+  /**
+   * Add a distance measurement between two mm-space points, exactly as if it
+   * had been drawn interactively in `DRAG_MODE.measurement`: it renders on
+   * every 2D slice tile whose slice plane contains both endpoints, emits
+   * `measurementCompleted` (after the mutation), and redraws. `opts` may pin
+   * the slice metadata (`sliceIndex`/`sliceType`/`slicePosition`); omitted
+   * fields are derived from the segment geometry (see
+   * control/measurements.buildMeasurement). An explicit `sliceType` must be a
+   * 2D orientation (`SLICE_TYPE.AXIAL`/`CORONAL`/`SAGITTAL`); a non-2D value
+   * (`MULTIPLANAR`/`RENDER`/`NONE`) warns and is ignored, deriving the
+   * orientation from geometry. Returns the new measurement's index
+   * (valid for {@link removeMeasurement} until an earlier one is removed).
+   * @example
+   * const idx = nv1.addMeasurement([-20, 10, 0], [25, 10, 0])
+   */
+  addMeasurement(
+    startMM: [number, number, number],
+    endMM: [number, number, number],
+    opts: AddMeasurementOptions = {},
+  ): number {
+    return measurementApi.addMeasurement(this, startMM, endMM, opts)
+  }
+
+  /**
+   * Remove a single completed distance measurement by index, emitting
+   * `measurementRemoved` before the mutation (so the listener can still reach
+   * it) and redrawing. An index that is not an integer in bounds warns and
+   * no-ops, matching {@link removeVolume}.
+   */
+  removeMeasurement(index: number): void {
+    measurementApi.removeMeasurement(this, index)
+  }
+
+  /**
+   * All completed distance measurements, in insertion order (an entry's
+   * position is the index {@link addMeasurement} returned and
+   * {@link removeMeasurement}/{@link pickMeasurement} use). Returns a snapshot:
+   * a fresh array of fresh entries, so editing it (an endpoint tuple included)
+   * cannot change what is rendered, and it does not update when measurements
+   * are later added, removed or cleared. Call it again for the current list,
+   * and use {@link addMeasurement}/{@link removeMeasurement}/
+   * {@link clearMeasurements} to change it so events fire and the scene
+   * redraws.
+   */
+  getMeasurements(): readonly CompletedMeasurement[] {
+    return measurementApi.snapshotMeasurements(this.model.completedMeasurements)
+  }
+
+  /**
+   * Find the completed distance measurement under a canvas point, e.g. to
+   * implement click-to-select or click-to-delete. Each measurement is projected
+   * with the same per-tile filtering and matrices the renderer uses to draw it,
+   * so the hit-test agrees with what is on screen. Returns the index of the
+   * closest measurement whose projected line is within `radiusPx` (default 8)
+   * canvas pixels of the point, or null if none is. Requires a rendered frame
+   * (the projection uses matrices cached during render).
+   *
+   * `canvasX`/`canvasY` are canvas BACKING-STORE pixels, the same convention
+   * as {@link hitTest} and {@link canvasToMM}, not CSS pixels: a pointer
+   * event's `offsetX`/`offsetY` are off by the device pixel ratio on any
+   * display above 1x. Convert with {@link clientToCanvas} first.
+   * @example
+   * canvas.addEventListener('pointerdown', (e) => {
+   *   const px = nv1.clientToCanvas(e.clientX, e.clientY)
+   *   if (!px) return
+   *   const idx = nv1.pickMeasurement(px[0], px[1])
+   *   if (idx !== null) nv1.removeMeasurement(idx)
+   * })
+   */
+  pickMeasurement(
+    canvasX: number,
+    canvasY: number,
+    radiusPx?: number,
+  ): number | null {
+    return measurementApi.pickMeasurement(this, canvasX, canvasY, radiusPx)
+  }
+
+  /** Clear both completed distance measurements and completed angles. */
   clearMeasurements(): void {
     this.model.completedMeasurements = []
     this.model.completedAngles = []
+    this.drawScene()
+  }
+
+  /** Clear completed angles only, leaving distance measurements in place. */
+  clearAngles(): void {
+    this.model.completedAngles = []
+    this.drawScene()
+  }
+
+  /** Clear completed distance measurements only, leaving angles in place. */
+  clearDistanceMeasurements(): void {
+    this.model.completedMeasurements = []
     this.drawScene()
   }
 
@@ -4198,7 +5461,7 @@ export default class NiiVueGPU extends EventTarget {
    * nv1.broadcastTo() // clear sync
    */
   broadcastTo(
-    targets?: NiiVueGPU | NiiVueGPU[],
+    targets?: NiiVue | NiiVue[],
     opts: SyncOpts = { '2d': true, '3d': true, clipPlane: true },
   ): void {
     if (!targets) {
@@ -4236,12 +5499,14 @@ export default class NiiVueGPU extends EventTarget {
       if (opts['2d'] || opts.crosshair) {
         const mm = this.model.scene2mm(src.crosshairPos)
         const frac = target.model.mm2scene(mm)
+        let crosshairMoved = false
         if (
           dst.crosshairPos[0] !== frac[0] ||
           dst.crosshairPos[1] !== frac[1] ||
           dst.crosshairPos[2] !== frac[2]
         ) {
           dst.crosshairPos = frac
+          crosshairMoved = true
           changed = true
         }
         if (opts['2d']) {
@@ -4256,6 +5521,12 @@ export default class NiiVueGPU extends EventTarget {
             dst.pan2Dxyzmm = vec4.clone(sp)
             changed = true
           }
+        }
+        // "By a linked instance" is one of the crosshair-moved-on-its-own
+        // paths: the target's own opt-in keeps the synced crosshair inside its
+        // visible window (after any pan copy, since extents may differ).
+        if (crosshairMoved && applyPanFollowsCrosshair(target)) {
+          changed = true
         }
       }
       if (opts.clipPlane) {
@@ -4523,6 +5794,7 @@ export default class NiiVueGPU extends EventTarget {
       this.model.draw.isEnabled = true
       this._drawLut = null
       this.refreshDrawing()
+      this.emit('drawingChanged', { action: 'load' })
       return true
     } catch (err) {
       log.warn('loadDrawing failed:', err)
@@ -4558,6 +5830,8 @@ export default class NiiVueGPU extends EventTarget {
       this._dprMediaQuery = null
     }
     if (this.view) this.view.destroy()
+    this._chunkStreamEmitter.reset()
+    this._chunkStreamWiredView = null
     // Clear any "graphics unavailable" overlay left by a failed attach.
     if (this.canvas) clearCanvasMessage(this.canvas)
     this._viewLifecycle.unregister?.(this)

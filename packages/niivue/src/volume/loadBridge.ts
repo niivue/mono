@@ -34,10 +34,20 @@ export async function loadVolumePrepared(
   const handledByExternalReader = hasReader(ext) && !builtinReaderExts.has(ext)
   const bridge = handledByExternalReader ? null : getLoadBridge()
   if (bridge) {
+    // Resolve against the DOCUMENT before handing the URL over. A worker's base
+    // is its own script — a blob: URL for `?worker&inline` — so a relative URL
+    // like `../volumes/x.nii.gz` resolves to nonsense there (404 in dev, a
+    // `Failed to parse URL` TypeError from a blob worker in a build). That has
+    // always been broken; it was invisible only because every worker failure was
+    // silently retried on the main thread, where the base is correct.
+    const resolve = (u: string | File | null): string | File | null =>
+      typeof u === 'string' && typeof location !== 'undefined'
+        ? new URL(u, location.href).href
+        : u
     try {
       const res = await bridge.execute<{ volume: NVImage }>({
-        url,
-        urlImageData: pairedImgData,
+        url: resolve(url) as string | File,
+        urlImageData: resolve(pairedImgData),
         limitFrames4D,
         name,
       })
@@ -50,6 +60,12 @@ export async function loadVolumePrepared(
       }
       return volume
     } catch (err) {
+      // Only INFRASTRUCTURE failures are worth retrying here — no Worker, a
+      // terminated one, a transport error. A `VolumeLoadError` means a healthy
+      // worker read the input and the input was bad, so re-running the whole
+      // fetch + decompress + parse on the UI thread burns the same CPU and
+      // transient memory to reach the same failure.
+      if (err instanceof Error && err.name === 'VolumeLoadError') throw err
       log.warn(
         `volumeLoad worker failed, falling back to main thread: ${
           err instanceof Error ? err.message : String(err)
@@ -57,7 +73,11 @@ export async function loadVolumePrepared(
       )
     }
   }
-  const { hdr, img } = await loadVolume(url, pairedImgData)
+  // Pass the limit: `loadVolume`'s third parameter defaults to Infinity, and
+  // its partial fast path is gated on `Number.isFinite(limitFrames4D)`. Omitting
+  // it here meant the bounded 4D loader could never engage on this path, so a
+  // 4D request decoded every frame and `nii2volume` merely discarded them.
+  const { hdr, img } = await loadVolume(url, pairedImgData, limitFrames4D, name)
   return nii2volume(hdr, img, name ?? NVLoader.getName(url), limitFrames4D)
 }
 

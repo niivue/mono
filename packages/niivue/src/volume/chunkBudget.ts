@@ -5,6 +5,8 @@
  *   - the per-chunk scalar texture (sized texDims, format-dependent bpv)
  *   - the per-chunk RGBA output texture (sized texDims, 4 bytes/voxel)
  *   - the per-chunk gradient texture (sized texDims, 4 bytes/voxel, rgba8unorm)
+ *     — only when the volume is lit; an unlit chunk holds a 1x1x1 placeholder
+ *     instead, so `estimateChunkedBytes` is a worst-case (lit) estimate
  *
  * Each chunk's texDims includes the 1-voxel halo per interior face, so the
  * total footprint is larger than the raw volume size — roughly
@@ -81,10 +83,22 @@ export function estimateChunkedBytes(
   }
 }
 
-/** Persistent GPU bytes for one resident chunk after the orient pass. */
-export function residentBytesForChunkDesc(chunk: VolumeChunkDesc): number {
+/**
+ * Persistent GPU bytes for one resident chunk after the orient pass.
+ *
+ * `hasGradient` mirrors the uploader's decision: a lit chunk keeps an RGBA8
+ * color texture plus an RGBA8 gradient texture (8 bytes/voxel); an unlit chunk
+ * keeps only the color texture (4 bytes/voxel) beside a 1x1x1 placeholder
+ * gradient whose 4 bytes are noise. Must agree with each backend's
+ * `chunkResidentBytes` (`bytesOf` hook) so the planner cap and the residency
+ * manager's eviction accounting measure the same currency.
+ */
+export function residentBytesForChunkDesc(
+  chunk: VolumeChunkDesc,
+  hasGradient = true,
+): number {
   const [tx, ty, tz] = chunk.texDims
-  return tx * ty * tz * 8
+  return tx * ty * tz * (hasGradient ? 8 : 4)
 }
 
 /**
@@ -114,6 +128,21 @@ export function chunkIndicesForResidentBudget(
   plan: ChunkPlan,
   orderedChunkIndices: readonly number[],
   budgetBytes: number,
+  // Whether chunks NOT yet resident will be uploaded with a real gradient
+  // texture (lit volume). Unlit chunks cost 4 bytes/voxel instead of 8, so
+  // twice as much volume fits before the working set is capped. Callers pass
+  // the renderer's current lighting state; defaults to the conservative lit
+  // cost.
+  hasGradient = true,
+  // Per-index gradient reality for chunks that are ALREADY resident. A chunk
+  // uploaded lit keeps its 8-byte gradient footprint even after lighting is
+  // toggled off (it only sheds the gradient on re-stream), so pricing the whole
+  // scan at the current lighting state would under-count those bytes and admit
+  // more than the budget holds. Return the resident chunk's actual `hasGradient`
+  // (e.g. `manager.getChunk(index)?.hasGradient`), or `undefined` when the chunk
+  // is not resident yet — undefined falls back to `hasGradient` so a fresh
+  // working set with nothing resident prices exactly as before.
+  hasGradientForIndex?: (chunkIndex: number) => boolean | undefined,
 ): number[] {
   const selected: number[] = []
   const budget = Math.max(0, budgetBytes)
@@ -121,7 +150,10 @@ export function chunkIndicesForResidentBudget(
   for (const chunkIndex of orderedChunkIndices) {
     const chunk = plan.chunks[chunkIndex]
     if (!chunk) continue
-    const nextBytes = residentBytesForChunkDesc(chunk)
+    const residentGradient = hasGradientForIndex?.(chunkIndex)
+    const chunkHasGradient =
+      residentGradient === undefined ? hasGradient : residentGradient
+    const nextBytes = residentBytesForChunkDesc(chunk, chunkHasGradient)
     if (selected.length > 0 && bytes + nextBytes > budget) continue
     selected.push(chunkIndex)
     bytes += nextBytes

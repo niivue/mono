@@ -69,16 +69,22 @@ export default defineConfig({
       },
     }),
   ],
+  // zarrita loads its blosc/lz4/zstd codecs through dynamic imports. Those
+  // would split a worker bundle into chunks, and an inlined worker is a single
+  // blob with nowhere to fetch a chunk from, so fold them into the one output.
+  worker: {
+    rollupOptions: { output: { inlineDynamicImports: true } },
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     lib: {
       entry: {
-        niivuegpu: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
-        'niivuegpu.webgpu': fileURLToPath(
+        niivue: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
+        'niivue.webgpu': fileURLToPath(
           new URL('./src/index.webgpu.ts', import.meta.url),
         ),
-        'niivuegpu.webgl2': fileURLToPath(
+        'niivue.webgl2': fileURLToPath(
           new URL('./src/index.webgl2.ts', import.meta.url),
         ),
         viewport: fileURLToPath(
@@ -97,7 +103,7 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      external: ['cbor-x', 'gl-matrix', 'nifti-reader-js'],
+      external: ['cbor-x', 'gl-matrix', 'nifti-reader-js', 'zarrita'],
     },
   },
 })

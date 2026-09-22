@@ -79,6 +79,28 @@ final class NiiVueModelTests: XCTestCase {
         XCTAssertEqual(payload?["value"] as? Int, SliceType.axial.rawValue)
     }
 
+    func testCustomLayoutPushesStructuredTiles() async throws {
+        let h = await makeHarness()
+        h.model.customLayout.value = [
+            CustomLayoutTile(
+                sliceType: .sagittal,
+                position: [0, 0, 0.5, 1]
+            ),
+        ]
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        let envelopes = h.captured().compactMap { parseEnvelope($0) }
+        let setProp = envelopes.first { envelope in
+            (envelope["method"] as? String) == "setProp"
+                && ((envelope["payload"] as? [String: Any])?["path"] as? String) == "customLayout"
+        }
+        let payload = setProp?["payload"] as? [String: Any]
+        let tiles = payload?["value"] as? [[String: Any]]
+        XCTAssertEqual(tiles?.count, 1)
+        XCTAssertEqual(tiles?.first?["sliceType"] as? Int, SliceType.sagittal.rawValue)
+        XCTAssertEqual(tiles?.first?["position"] as? [Double], [0, 0, 0.5, 1])
+    }
+
     // MARK: inbound propChange + echo suppression
 
     func testPropChangeUpdatesCell() async throws {
@@ -116,6 +138,19 @@ final class NiiVueModelTests: XCTestCase {
         let newEnvelopes = h.captured().dropFirst(baseline).compactMap { parseEnvelope($0) }
         let setProps = newEnvelopes.filter { ($0["method"] as? String) == "setProp" }
         XCTAssertEqual(setProps.count, 0, "inbound update must not echo as setProp")
+    }
+
+    func testImageLoadedUpdatesStatus() async throws {
+        let h = await makeHarness()
+
+        h.bridge.receive(rawBody: [
+            "kind": "event",
+            "name": "imageLoaded",
+            "payload": ["name": "brain.nii.gz", "kind": "volume"],
+        ])
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        XCTAssertEqual(h.model.lastStatus, "brain.nii.gz")
     }
 
     // MARK: ready -> hydrate

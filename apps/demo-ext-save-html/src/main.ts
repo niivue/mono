@@ -5,7 +5,7 @@
  * 2. Fetches the self-contained niivue bundle (built by vite.config.standalone.js).
  * 3. On button click, calls saveHTML() to download the scene as HTML.
  */
-import NiiVueGPU from '@niivue/niivue'
+import NiiVue from '@niivue/niivue'
 import { saveHTML } from '@niivue/nv-ext-save-html'
 
 function $<T extends HTMLElement>(id: string): T {
@@ -19,7 +19,7 @@ const saveBtn = $<HTMLButtonElement>('saveBtn')
 const sliceTypeSelect = $<HTMLSelectElement>('sliceType')
 
 // --- Initialize NiiVue ---
-const nv = new NiiVueGPU()
+const nv = new NiiVue()
 await nv.attachTo('gl1')
 nv.sliceType = 3 // A+C+S+R
 

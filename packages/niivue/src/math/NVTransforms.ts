@@ -162,6 +162,220 @@ export function validateAffine(affine: number[][]): void {
   }
 }
 
+/** Coarsest 2D zoom the wheel will reach, and the step it snaps to. */
+export const ZOOM_2D_MIN = 0.1
+export const ZOOM_2D_MAX = 10
+const ZOOM_2D_SNAP = 0.1
+
+/**
+ * One wheel notch of 2D zoom: 10% of the current zoom, snapped to a tenth and
+ * clamped to `[ZOOM_2D_MIN, ZOOM_2D_MAX]`.
+ *
+ * The snap is what makes the zoom land on readable values, but on its own it
+ * also swallows the whole low end: 10% of 0.5 is 0.05, which rounds straight
+ * back to 0.5, and every zoom below that is fixed in BOTH directions -- 0.2
+ * moves to neither 0.18 nor 0.22. So the wheel could never take the view below
+ * half size and could never leave a smaller zoom set from code, even though the
+ * range says 0.1. When the snap does not move the zoom by at least half a step,
+ * take one whole snap increment instead; the multiplicative feel is untouched
+ * everywhere the proportional step is already larger than that.
+ *
+ * The stall test uses a tolerance, not `===`: the caller keeps the zoom in a
+ * `vec4` and 0.4 comes back as 0.40000000596, which `===` reads as "moved".
+ */
+export function stepZoom2D(zoom: number, direction: number): number {
+  if (!Number.isFinite(zoom) || zoom <= 0) return ZOOM_2D_MIN
+  const dir = Math.sign(direction)
+  if (dir === 0) return zoom
+  let next = Math.round(zoom * (1 + 0.1 * dir) * 10) / 10
+  if (Math.abs(next - zoom) < ZOOM_2D_SNAP / 2) {
+    next = Math.round((zoom + ZOOM_2D_SNAP * dir) * 10) / 10
+  }
+  return Math.max(ZOOM_2D_MIN, Math.min(ZOOM_2D_MAX, next))
+}
+
+/**
+ * New 2D pan that holds `anchorMM` at the same place on screen while the zoom
+ * changes from `pan[3]` to `newZoom`.
+ *
+ * It lives next to {@link calculateMvpMatrix2D} because it is that function's
+ * inverse and is only correct against its convention: the ortho window is the
+ * volume's mm extents scaled about their CENTRE by `1/zoom`, then shifted by
+ * `-pan`. So the window is centred on `c - pan` with half-width `HW0 / zoom`,
+ * and a world point `m` sits at the normalized offset
+ *
+ *   s = (m - c + pan) * zoom / HW0
+ *
+ * Holding `s` across a zoom step is therefore a RATIO in the zooms, not a
+ * difference, and it is measured from the extent centre rather than from the
+ * world origin:
+ *
+ *   pan' = (zoom / newZoom) * (d + pan) - d,   d = anchorMM - c
+ *
+ * Getting either half wrong still looks like zoom-about-a-point at zoom 1 and
+ * drifts further off the deeper the view is zoomed, which is why this is stated
+ * once here and pinned by a test rather than open-coded at the call site.
+ *
+ * Radiological orientation needs no special case: it negates `s` on the U axis,
+ * and holding `-s` fixed is the same condition as holding `s` fixed.
+ *
+ * @param pan - current `[panX, panY, panZ, zoom]`
+ * @param newZoom - the zoom being applied (must be positive and finite)
+ * @param anchorMM - world-mm point to keep put (typically the crosshair)
+ * @param extentsMin - world-mm minimum of the scene extents
+ * @param extentsMax - world-mm maximum of the scene extents
+ * @returns the new `[panX, panY, panZ]`; unchanged when the zoom does not move
+ */
+export function zoomPan2DAbout(
+  pan: ArrayLike<number>,
+  newZoom: number,
+  anchorMM: ArrayLike<number>,
+  extentsMin: ArrayLike<number>,
+  extentsMax: ArrayLike<number>,
+): [number, number, number] {
+  const current = pan[3] ?? 1
+  const out: [number, number, number] = [pan[0], pan[1], pan[2]]
+  if (!Number.isFinite(newZoom) || newZoom <= 0 || !Number.isFinite(current)) {
+    return out
+  }
+  const ratio = current / newZoom
+  for (let i = 0; i < 3; i++) {
+    // A degenerate axis (no volume, or a single slice) has no centre to speak
+    // of; d falls out to 0 and the pan simply rescales, which is the right
+    // no-op rather than a NaN.
+    const centre = (extentsMin[i] + extentsMax[i]) / 2
+    const d = anchorMM[i] - centre
+    const next = ratio * (d + pan[i]) - d
+    out[i] = Number.isFinite(next) ? next : pan[i]
+  }
+  return out
+}
+
+/**
+ * A closed world-mm interval on one axis, or null for an axis with no window.
+ * Structurally the same as `NVSliceLayout.AxisWindowMM`; declared here so the
+ * math layer does not import from the view layer.
+ */
+export type FollowWindowMM = ReadonlyArray<{
+  readonly minMM: number
+  readonly maxMM: number
+} | null>
+
+/**
+ * New 2D pan that moves just enough to bring `crosshairMM` inside `window` on
+ * every world axis, or the unchanged pan when it is already inside.
+ *
+ * This is the spatial analogue of the signal graph's
+ * `NVModel.panViewWindowTo`: the window follows a marker that moved on its own
+ * (keyboard step, API call, linked instance), while explicit pan and zoom are
+ * still free to leave it off-window. Like that precedent it pans MINIMALLY --
+ * the crosshair lands exactly on the window edge it crossed rather than being
+ * recentred, so a slow crosshair walk scrolls the view instead of jumping it.
+ *
+ * `window` is what is on screen NOW, per world axis, with the current pan and
+ * zoom already applied: the intersection over the rendered 2D tiles of
+ * `NVSliceLayout.tileVisibleWindowMM` (see `everyTileWindowMM`). It is not the
+ * scene extents. The extents only equal the window when every tile is
+ * letterboxed to the data; a filled single view, `isMultiplanarEqualSize`
+ * padding, or a custom tile wider than its neighbour all show more world than
+ * the data, and following the data edge there would pan while the crosshair
+ * is still plainly visible. An axis with no window (`null`, nothing shows a
+ * range along it) is skipped.
+ *
+ * The convention is {@link calculateMvpMatrix2D}'s (see {@link zoomPan2DAbout}
+ * for the derivation): the window on an axis is centred on `c - pan`, so
+ * moving the window UP by `d` mm is `pan - d`. Radiological orientation only
+ * negates the normalized U offset, which leaves the mm interval unchanged, so
+ * it needs no special case.
+ *
+ * At `zoom <= 1` the pan is returned untouched: the window already shows the
+ * whole extent (or more), so there is no "outside" to follow the crosshair
+ * into, and the default un-zoomed behaviour must stay byte-identical.
+ *
+ * @param pan - current `[panX, panY, panZ, zoom]`
+ * @param crosshairMM - world-mm point to keep visible (the crosshair)
+ * @param window - per-world-axis `[X, Y, Z]` visible window, post pan and zoom
+ * @returns the new `[panX, panY, panZ]`; unchanged entries are copied as-is
+ */
+export function panFollowCrosshair2D(
+  pan: ArrayLike<number>,
+  crosshairMM: ArrayLike<number>,
+  window: FollowWindowMM,
+): [number, number, number] {
+  const out: [number, number, number] = [pan[0], pan[1], pan[2]]
+  const zoom = pan[3] ?? 1
+  if (!Number.isFinite(zoom) || zoom <= 1) return out
+  for (let i = 0; i < 3; i++) {
+    const w = window[i]
+    if (!w) continue
+    const m = crosshairMM[i]
+    // A zero-width or non-finite window shows no range to follow into (a flat
+    // axis, or nothing laid out), and a NaN crosshair must not poison the pan.
+    if (!Number.isFinite(m) || !(w.maxMM - w.minMM > 0)) continue
+    if (m > w.maxMM) out[i] = pan[i] - (m - w.maxMM)
+    else if (m < w.minMM) out[i] = pan[i] + (w.minMM - m)
+  }
+  return out
+}
+
+/**
+ * Millimetres of world space covered by one canvas pixel on a 2D slice tile.
+ *
+ * The inverse of the scale {@link calculateMvpMatrix2D} sets up: that function
+ * maps the `mn[0]..mx[0]` span (divided by the 2D zoom) across the tile's full
+ * pixel width, so the ratio below is the tile's uniform mm-per-pixel. It is the
+ * same in both axes because the layout already gives the tile the aspect ratio
+ * of its mm extents. Radiological convention only mirrors the U axis, so it
+ * leaves the scale alone.
+ *
+ * Use it to size screen-weight chrome (crosshair thickness, marker radii) that
+ * has to be expressed as world geometry.
+ *
+ * @param mn - world-mm minimum of the tile's ortho window
+ * @param mx - world-mm maximum of the tile's ortho window
+ * @param leftTopWidthHeight - the tile's canvas rectangle
+ * @param pan - the tile's `[panU, panV, zoom]`, as {@link slicePanUV} returns
+ * @returns mm per canvas pixel, or 0 for a degenerate tile
+ */
+export function mmPerPixel2D(
+  mn: ArrayLike<number>,
+  mx: ArrayLike<number>,
+  leftTopWidthHeight: ArrayLike<number>,
+  pan?: ArrayLike<number>,
+): number {
+  const widthPx = leftTopWidthHeight[2]
+  if (!(widthPx > 0)) return 0
+  const zoom = pan && pan.length > 2 ? pan[2] : 1
+  const span = Math.abs(mx[0] - mn[0]) / (zoom > 0 ? zoom : 1)
+  return span / widthPx
+}
+
+/**
+ * Millimetres of world space covered by one canvas pixel on the 3D render tile.
+ *
+ * {@link calculateMvpMatrix} projects orthographically, so this is a single
+ * number rather than a depth-dependent one: the frustum's short side is
+ * `2 * 0.8 * furthestFromPivot / volScaleMultiplier` and it is mapped onto the
+ * tile's short side in pixels. Keep the two in step -- this reads the same
+ * `baseScale` expression that builds the projection.
+ *
+ * @param leftTopWidthHeight - the tile's canvas rectangle
+ * @param furthestFromPivot - scene radius, as passed to {@link calculateMvpMatrix}
+ * @param volScaleMultiplier - the render zoom, likewise
+ * @returns mm per canvas pixel, or 0 for a degenerate tile
+ */
+export function mmPerPixelRender(
+  leftTopWidthHeight: ArrayLike<number>,
+  furthestFromPivot: number,
+  volScaleMultiplier: number,
+): number {
+  const shortSidePx = Math.min(leftTopWidthHeight[2], leftTopWidthHeight[3])
+  if (!(shortSidePx > 0)) return 0
+  const zoom = volScaleMultiplier > 0 ? volScaleMultiplier : 1
+  const scale = (0.8 * furthestFromPivot) / zoom
+  return (2 * scale) / shortSidePx
+}
+
 export function calculateMvpMatrix2D(
   _leftTopWidthHeight: number[],
   mn: number[],
@@ -435,33 +649,30 @@ export function unprojectScreen(
   )
 }
 
-/**
- * Entry point (mm) where the segment `near`→`far` first crosses the axis-aligned
- * mm box `[lo, hi]` while staying on the kept side of any active clip planes, or
- * null if it misses. `near`/`far` are typically two `unprojectScreen` points
- * (depth 0 and 1) bounding the view ray. Used to pick a chunked/multi-LOD
- * volume's near *visible* surface for the crosshair when the GPU depth-pick
- * cannot sample its (non-single) texture.
- *
- * `clipPlanes` is the flat scene clip-plane array ([nx,ny,nz,a] per plane, in the
- * volume's [0,1] cube where the kept side is `dot(n, f-0.5) - a >= 0`; the
- * sentinel `|a| > 1` means "no clip"). When a solid clip plane has carved away
- * the near box face, the entry advances to the clip surface (the visible cut)
- * instead of the clipped-away box face. Cutaway mode carves an interior slab
- * rather than a half-space, so clip refinement is skipped there (box entry).
- */
+/** The part of a view ray that survives the volume box and the clip planes. */
 interface ClippedRaySegment {
   o: number[]
   d: number[]
   tmin: number
   tmax: number
+  /**
+   * Cutaway mode only: the carved-out sub-segment the ray passes through
+   * unseen. `skipMax <= skipMin` means nothing is carved.
+   */
+  skipMin: number
+  skipMax: number
 }
 
 /**
  * Intersect the segment `near`→`far` with the axis-aligned mm box `[lo, hi]`,
- * then trim to the kept side of each solid clip plane. Returns the surviving
- * `[tmin, tmax]` sub-segment (and the ray origin/direction), or null if nothing
- * survives. Shared by `rayBoxEntryMM` and `rayMarchFirstVisibleMM`.
+ * then account for the clip planes. Returns the surviving `[tmin, tmax]`
+ * sub-segment (and the ray origin/direction), or null if nothing survives.
+ * Shared by `rayBoxEntryMM` and `rayMarchFirstVisibleMM`.
+ *
+ * Solid mode trims the segment to the kept side of every plane. Cutaway mode
+ * carves that same region OUT instead (mirroring the render/depth-pick shaders,
+ * which skip `sampleRange` rather than clamp to it), so the segment keeps the
+ * full box range and reports the carved interval as `[skipMin, skipMax]`.
  */
 function clipRaySegment(
   near: ArrayLike<number>,
@@ -493,38 +704,47 @@ function clipRaySegment(
       if (tmin > tmax) return null
     }
   }
-  // Trim the in-box segment to the kept side of each solid clip plane. The plane
+  // Intersect the in-box segment with the kept side of each clip plane. The plane
   // value g(t) = dot(n, f(t)-0.5) - a is affine in t (f = (mm-lo)/(hi-lo)), so a
   // single crossing splits kept (g>=0) from removed (g<0).
-  if (clipPlanes && !isCutaway) {
-    const cx = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
-    const sz = [hi[0] - lo[0] || 1, hi[1] - lo[1] || 1, hi[2] - lo[2] || 1]
-    const planeCount = Math.floor(clipPlanes.length / 4)
-    for (let p = 0; p < planeCount; p++) {
-      const nx = clipPlanes[p * 4 + 0]
-      const ny = clipPlanes[p * 4 + 1]
-      const nz = clipPlanes[p * 4 + 2]
-      const a = clipPlanes[p * 4 + 3]
-      if (a > 1 || a < -1) continue // sentinel: no clip
-      if (nx * nx + ny * ny + nz * nz < 1e-12) continue // degenerate normal
-      const n = [nx, ny, nz]
-      let g0 = -a
-      let gd = 0
-      for (let i = 0; i < 3; i++) {
-        g0 += (n[i] * (o[i] - cx[i])) / sz[i]
-        gd += (n[i] * d[i]) / sz[i]
-      }
-      if (Math.abs(gd) < 1e-12) {
-        if (g0 < 0) return null // ray wholly on the removed side
-      } else if (gd > 0) {
-        tmin = Math.max(tmin, -g0 / gd) // kept for t >= crossing
-      } else {
-        tmax = Math.min(tmax, -g0 / gd) // kept for t <= crossing
-      }
-      if (tmin > tmax) return null
+  const noSkip = { skipMin: 0, skipMax: -1 }
+  if (!clipPlanes) return { o, d, tmin, tmax, ...noSkip }
+  const cx = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
+  const sz = [hi[0] - lo[0] || 1, hi[1] - lo[1] || 1, hi[2] - lo[2] || 1]
+  const planeCount = Math.floor(clipPlanes.length / 4)
+  let keptMin = tmin
+  let keptMax = tmax
+  let keptEmpty = false
+  for (let p = 0; p < planeCount && !keptEmpty; p++) {
+    const nx = clipPlanes[p * 4 + 0]
+    const ny = clipPlanes[p * 4 + 1]
+    const nz = clipPlanes[p * 4 + 2]
+    const a = clipPlanes[p * 4 + 3]
+    if (a > 1 || a < -1) continue // sentinel: no clip
+    if (nx * nx + ny * ny + nz * nz < 1e-12) continue // degenerate normal
+    const n = [nx, ny, nz]
+    let g0 = -a
+    let gd = 0
+    for (let i = 0; i < 3; i++) {
+      g0 += (n[i] * (o[i] - cx[i])) / sz[i]
+      gd += (n[i] * d[i]) / sz[i]
     }
+    if (Math.abs(gd) < 1e-12) {
+      if (g0 < 0) keptEmpty = true // ray wholly on the removed side
+    } else if (gd > 0) {
+      keptMin = Math.max(keptMin, -g0 / gd) // kept for t >= crossing
+    } else {
+      keptMax = Math.min(keptMax, -g0 / gd) // kept for t <= crossing
+    }
+    if (keptMin > keptMax) keptEmpty = true
   }
-  return { o, d, tmin, tmax }
+  if (isCutaway) {
+    // The kept region is what the cutaway carves away: skip it, keep the rest.
+    if (keptEmpty) return { o, d, tmin, tmax, ...noSkip }
+    return { o, d, tmin, tmax, skipMin: keptMin, skipMax: keptMax }
+  }
+  if (keptEmpty) return null
+  return { o, d, tmin: keptMin, tmax: keptMax, ...noSkip }
 }
 
 /**
@@ -539,8 +759,8 @@ function clipRaySegment(
  * volume's [0,1] cube where the kept side is `dot(n, f-0.5) - a >= 0`; the
  * sentinel `|a| > 1` means "no clip"). When a solid clip plane has carved away
  * the near box face, the entry advances to the clip surface (the visible cut)
- * instead of the clipped-away box face. Cutaway mode carves an interior slab
- * rather than a half-space, so clip refinement is skipped there (box entry).
+ * instead of the clipped-away box face. In cutaway mode the carved slab is
+ * skipped instead, so an entry inside it advances to where the ray leaves it.
  */
 export function rayBoxEntryMM(
   near: ArrayLike<number>,
@@ -552,8 +772,13 @@ export function rayBoxEntryMM(
 ): [number, number, number] | null {
   const seg = clipRaySegment(near, far, lo, hi, clipPlanes, isCutaway)
   if (!seg) return null
-  const { o, d, tmin } = seg
-  return [o[0] + d[0] * tmin, o[1] + d[1] * tmin, o[2] + d[2] * tmin]
+  const { o, d, tmax, skipMin, skipMax } = seg
+  let t = seg.tmin
+  if (skipMax > skipMin && t >= skipMin && t <= skipMax) {
+    t = skipMax // entry is inside the cutaway: land where the ray leaves it
+    if (t >= tmax - 1e-9) return null // nothing left: the cutaway took it all
+  }
+  return [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t]
 }
 
 /**
@@ -576,16 +801,62 @@ export function rayMarchFirstVisibleMM(
 ): [number, number, number] | null {
   const seg = clipRaySegment(near, far, lo, hi, clipPlanes, isCutaway)
   if (!seg) return null
-  const { o, d, tmin, tmax } = seg
+  const { o, d, tmin, tmax, skipMin, skipMax } = seg
   const n = Math.max(1, Math.floor(steps))
   for (let s = 0; s <= n; s++) {
     const t = tmin + ((tmax - tmin) * s) / n
+    // Cutaway: the carved slab is not on screen, so it must not be pickable.
+    if (skipMax > skipMin && t >= skipMin && t <= skipMax) continue
     const x = o[0] + d[0] * t
     const y = o[1] + d[1] * t
     const z = o[2] + d[2] * t
     if (sampler(x, y, z) > 0) return [x, y, z]
   }
   return null
+}
+
+/**
+ * Nearest mm point where the segment `near`->`far` crosses one of the three
+ * axis-aligned mm planes through `planeMM`, inside the box `[lo, hi]` and over a
+ * visible voxel (`sampler(x,y,z) > 0`; without a sampler every crossing counts).
+ *
+ * The CPU twin of the SLICES branch in the render and depth-pick shaders, for
+ * chunked volumes whose (non-single) texture the GPU pick cannot sample. Clip
+ * planes are ignored, as they are in that mode. Returns null when the ray
+ * crosses no plane where anything is visible; the caller then falls through to
+ * the GPU pick pass, which is the only one that picks meshes. A null must NOT
+ * send the caller to a near-surface fallback: in this mode that surface is not
+ * on screen, so it would move the crosshair somewhere the user never clicked.
+ */
+export function rayPlaneFirstVisibleMM(
+  near: ArrayLike<number>,
+  far: ArrayLike<number>,
+  lo: ArrayLike<number>,
+  hi: ArrayLike<number>,
+  planeMM: ArrayLike<number>,
+  sampler?: (x: number, y: number, z: number) => number,
+): [number, number, number] | null {
+  const seg = clipRaySegment(near, far, lo, hi)
+  if (!seg) return null
+  const { o, d, tmin, tmax } = seg
+  let best: [number, number, number] | null = null
+  let bestT = Number.POSITIVE_INFINITY
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) continue
+    const t = (planeMM[i] - o[i]) / d[i]
+    if (!(t >= tmin && t <= tmax) || t >= bestT) continue
+    const p: [number, number, number] = [
+      o[0] + d[0] * t,
+      o[1] + d[1] * t,
+      o[2] + d[2] * t,
+    ]
+    // Pin to the plane: the division leaves the hit a float epsilon off it.
+    p[i] = planeMM[i]
+    if (sampler && !(sampler(p[0], p[1], p[2]) > 0)) continue
+    bestT = t
+    best = p
+  }
+  return best
 }
 
 /**

@@ -10,7 +10,9 @@ import { SLICE_TYPE, sliceTypeDim } from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
   AnnotationPoint,
+  AnnotationScreenShape,
   AnnotationStats,
+  AnnotationTool,
   PolygonWithHoles,
   VectorAnnotation,
 } from '@/NVTypes'
@@ -302,6 +304,13 @@ export function buildAnnotation3DRenderData(
 
 function formatAnnotationStats(stats: AnnotationStats): string[] {
   if (stats.length !== undefined) {
+    // Bidirectional carries both axes: long (length) + short (shortLength).
+    if (stats.shortLength !== undefined) {
+      return [
+        `L: ${stats.length.toFixed(1)} mm`,
+        `W: ${stats.shortLength.toFixed(1)} mm`,
+      ]
+    }
     return [`${stats.length.toFixed(1)} mm`]
   }
   return [
@@ -329,7 +338,10 @@ export function buildAnnotationRenderData(
   // Pre-compute anchors to avoid redundant work across tiles
   const anchors = annotations.map(getAnchorMM)
 
-  for (const tile of screenSlices) {
+  // When isAnnotationDrawn is false, an external overlay renders the shapes from
+  // annotationScreenShapes; skip the built-in fill/stroke/labels but still draw
+  // the brush cursor + selection handles below.
+  for (const tile of model.ui.isAnnotationDrawn ? screenSlices : []) {
     if (tile.axCorSag === SLICE_TYPE.RENDER) continue
     if (
       !tile.mvpMatrix ||
@@ -427,9 +439,13 @@ export function buildAnnotationRenderData(
         }
       }
 
-      // Stats text labels for measurement annotations
-      if (buildText && ann.stats && ann.shape) {
-        const textLines = formatAnnotationStats(ann.stats)
+      // Label = the user's free text (if any) above the stats lines (if a
+      // measurement). Drawn for any tool that has one or the other.
+      if (buildText && ann.shape && (ann.text || ann.stats)) {
+        const textLines = [
+          ...(ann.text ? [ann.text] : []),
+          ...(ann.stats ? formatAnnotationStats(ann.stats) : []),
+        ]
         const textStr = textLines.join('\n')
         const textColor = [sr, sg, sb, 1]
         const textBack = [0, 0, 0, 0.6]
@@ -437,7 +453,7 @@ export function buildAnnotationRenderData(
         const pp = tile.planePoint
 
         if (
-          ann.stats.length !== undefined &&
+          ann.stats?.length !== undefined &&
           ann.shape.type === 'measureLine'
         ) {
           const midPt: AnnotationPoint = {
@@ -451,6 +467,34 @@ export function buildAnnotationRenderData(
               textStr,
               midCx,
               midCy - 8,
+              0.7,
+              textColor,
+              0.5,
+              1,
+              textBack,
+            ),
+          )
+        } else if (ann.shape.type === 'arrow') {
+          // Anchor the label just beyond the arrow's start (the tail), offset
+          // backward (away from the head) so it does not cover the start.
+          const startMM = slice2DToMMOnPlane(
+            ann.shape.start,
+            ann.sliceType,
+            pn,
+            pp,
+          )
+          const [scx, scy] = projectMMToCanvas(startMM, mvp, ltwh)
+          const endMM = slice2DToMMOnPlane(ann.shape.end, ann.sliceType, pn, pp)
+          const [ecx, ecy] = projectMMToCanvas(endMM, mvp, ltwh)
+          const dx = scx - ecx
+          const dy = scy - ecy
+          const alen = Math.hypot(dx, dy) || 1
+          const aoff = 22
+          labels.push(
+            buildText(
+              textStr,
+              scx + (dx / alen) * aoff,
+              scy + (dy / alen) * aoff,
               0.7,
               textColor,
               0.5,
@@ -500,4 +544,151 @@ export function buildAnnotationRenderData(
     strokeLines,
     labels,
   }
+}
+
+// Line/arrow are open paths; every other tool is an area shape drawn closed.
+const OPEN_ANNOTATION_TOOLS: ReadonlySet<AnnotationTool> = new Set([
+  'line',
+  'arrow',
+  'measureLine',
+  'bidirectional',
+  'measureBidirectional',
+])
+
+/**
+ * Project every visible annotation to the current frame's canvas pixels and
+ * store the shape-level geometry in `model._persistedAnnotationScreenShapes`,
+ * exposed via NVControlBase.annotationScreenShapes for an external overlay.
+ *
+ * Only runs when the built-in draw is OFF (`ui.isAnnotationDrawn === false`),
+ * i.e. an overlay has taken over: unlike the measurement subsystem (whose
+ * built-in draw reuses the projected screen lines), buildAnnotationRenderData
+ * re-projects independently, so projecting here while the built-in draw is on
+ * would be wasted per-frame work with no consumer. When the built-in draw is on
+ * the persisted shapes are emptied (once) so a stray read never sees stale
+ * geometry.
+ */
+export function projectAnnotationScreenShapes(
+  model: NVModel,
+  screenSlices: SliceTile[],
+): void {
+  if (model.ui.isAnnotationDrawn) {
+    if (model._persistedAnnotationScreenShapes.length > 0)
+      model._persistedAnnotationScreenShapes = []
+    return
+  }
+  const shapes: AnnotationScreenShape[] = []
+  const annotations = resolveAnnotations(model)
+  if (annotations.length > 0) {
+    const tolerance = computeTolerance(model)
+    const anchors = annotations.map(getAnchorMM)
+    const seen = new Set<string>()
+    for (const tile of screenSlices) {
+      if (tile.axCorSag === SLICE_TYPE.RENDER) continue
+      if (
+        !tile.mvpMatrix ||
+        !tile.planeNormal ||
+        !tile.planePoint ||
+        !tile.leftTopWidthHeight
+      )
+        continue
+      const mvp = tile.mvpMatrix
+      const ltwh = tile.leftTopWidthHeight
+      const pn = tile.planeNormal
+      const pp = tile.planePoint
+      const project = (
+        pt: AnnotationPoint,
+        sliceType: number,
+      ): AnnotationPoint => {
+        const mm = slice2DToMMOnPlane(pt, sliceType, pn, pp)
+        const [x, y] = projectMMToCanvas(mm, mvp, ltwh)
+        return { x, y }
+      }
+      for (let i = 0; i < annotations.length; i++) {
+        const ann = annotations[i] as VectorAnnotation
+        if (ann.sliceType !== tile.axCorSag || seen.has(ann.id)) continue
+        const anchor = anchors[i]
+        if (!anchor || !isOnSlice(anchor, pn, pp, tolerance)) continue
+        const poly = ann.polygons[0]
+        if (!poly) continue
+        const tool = ann.shape?.type ?? 'freehand'
+        const shape: AnnotationScreenShape = {
+          id: ann.id,
+          tool,
+          outer: poly.outer.map((pt) => project(pt, ann.sliceType)),
+          holes: poly.holes.map((h) =>
+            h.map((pt) => project(pt, ann.sliceType)),
+          ),
+          isClosed: !OPEN_ANNOTATION_TOOLS.has(tool),
+          style: ann.style,
+        }
+        if (ann.shape) {
+          shape.start = project(ann.shape.start, ann.sliceType)
+          shape.end = project(ann.shape.end, ann.sliceType)
+          if (ann.shape.start2 && ann.shape.end2) {
+            shape.start2 = project(ann.shape.start2, ann.sliceType)
+            shape.end2 = project(ann.shape.end2, ann.sliceType)
+          }
+        }
+        // A single measured line (measureLine) renders downstream as a graduated
+        // ruler from shape.length, which draws its own mm label. So its screen
+        // shape exposes the numeric length and its label carries ONLY the user's
+        // free text (if any) — no stats line, to avoid a duplicate reading. Every
+        // other tool shows its free text above the stats lines.
+        const isMeasureLine =
+          ann.shape?.type === 'measureLine' && ann.stats?.length !== undefined
+        if (isMeasureLine) shape.length = ann.stats?.length
+        const lines = isMeasureLine
+          ? ann.text
+            ? [ann.text]
+            : []
+          : [
+              ...(ann.text ? [ann.text] : []),
+              ...(ann.stats ? formatAnnotationStats(ann.stats) : []),
+            ]
+        if (ann.shape && lines.length > 0) {
+          if (
+            ann.stats?.length !== undefined &&
+            ann.shape.type === 'measureLine'
+          ) {
+            const mid = project(
+              {
+                x: (ann.shape.start.x + ann.shape.end.x) / 2,
+                y: (ann.shape.start.y + ann.shape.end.y) / 2,
+              },
+              ann.sliceType,
+            )
+            shape.label = { lines, x: mid.x, y: mid.y - 8, align: 'center' }
+          } else if (ann.shape.type === 'arrow') {
+            // Anchor the arrow's label just beyond its start (the tail), offset
+            // backward (away from the arrowhead) so it does not cover the start.
+            const s = project(ann.shape.start, ann.sliceType)
+            const e = project(ann.shape.end, ann.sliceType)
+            const dx = s.x - e.x
+            const dy = s.y - e.y
+            const len = Math.hypot(dx, dy) || 1
+            const off = 22
+            shape.label = {
+              lines,
+              x: s.x + (dx / len) * off,
+              y: s.y + (dy / len) * off,
+              align: 'center',
+            }
+          } else {
+            const right = project(
+              {
+                x: Math.max(ann.shape.start.x, ann.shape.end.x),
+                y: (ann.shape.start.y + ann.shape.end.y) / 2,
+              },
+              ann.sliceType,
+            )
+            shape.label = { lines, x: right.x + 6, y: right.y, align: 'left' }
+          }
+        }
+        shapes.push(shape)
+        seen.add(ann.id)
+      }
+    }
+  }
+  model._persistedAnnotationScreenShapes = shapes
 }

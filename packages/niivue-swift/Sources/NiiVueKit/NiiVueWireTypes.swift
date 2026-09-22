@@ -4,7 +4,7 @@
 //
 //  Encodable / Decodable types used for the niivue-specific bridge methods
 //  (loadVolume, setProp, setBackend) and the events the JS side emits
-//  (propChange, locationChange, backendChange, ready).
+//  (propChange, locationChange, imageLoaded, backendChange, ready).
 //
 
 import BridgeCore
@@ -67,4 +67,9 @@ public struct LocationChangeEnvelope: Decodable {
     public let mm: [Double]?
     public let voxel: [Double]?
     public let string: String
+}
+
+public struct ImageLoadedEnvelope: Decodable {
+    public let name: String
+    public let kind: String
 }

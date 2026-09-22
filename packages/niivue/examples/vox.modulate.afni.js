@@ -3,7 +3,7 @@ import NiiVue from '../src/index.ts'
 const nv1 = new NiiVue({
   backgroundColor: [0.0, 0.0, 0.2, 1],
   is3DCrosshairVisible: true,
-  crosshairWidth: 0.5,
+  crosshairWidth: 1,
   isSnapToVoxelCenters: true,
 })
 nv1.addEventListener('locationChange', (e) => {

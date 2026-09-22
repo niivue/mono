@@ -14,7 +14,7 @@ struct Uniforms {
   modMtxRow1 : vec4<f32>, // modulation matrix row 1
   modMtxRow2 : vec4<f32>, // modulation matrix row 2
   modMtxRow3 : vec4<f32>, // modulation matrix row 3
-  modFlags  : vec4<f32>,  // x = modulation mode (0 none, 1 RGB, 2 alpha)
+  modFlags  : vec4<f32>,  // x = modulation mode (0 none, 1 RGB, 2 alpha), y = atlasOutline
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -83,6 +83,31 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     if (rawLabel == 0) {
       textureStore(rgbaOut, vec3<i32>(outX, outY, outZ), vec4<f32>(0.0));
       return;
+    }
+    // Outline mode: keep only voxels on a region boundary. Probe the six
+    // neighbours `outline` input voxels away; if every one carries the same
+    // label this voxel is interior, so drop it and let the anatomy show
+    // through. Neighbours are clamped to the volume, so a region touching the
+    // volume edge has no border there. Mirrors the WebGL2 orient shader.
+    let outline = u.modFlags.y;
+    if (outline > 0.0) {
+      let d = i32(max(1.0, round(outline)));
+      let hi = vec3<i32>(dimsIn) - vec3<i32>(1);
+      var isBoundary = false;
+      for (var axis = 0; axis < 3; axis = axis + 1) {
+        for (var s = -1; s <= 1; s = s + 2) {
+          var probe = texelCoord;
+          probe[axis] = clamp(probe[axis] + s * d, 0, hi[axis]);
+          let nRaw = f32(textureLoad(scalarTex, probe, 0).r) * slope + intercept;
+          if (i32(round(nRaw)) != rawLabel) {
+            isBoundary = true;
+          }
+        }
+      }
+      if (!isBoundary) {
+        textureStore(rgbaOut, vec3<i32>(outX, outY, outZ), vec4<f32>(0.0));
+        return;
+      }
     }
     let labelMin = u.flags.z;
     let labelWidth = u.flags.w;

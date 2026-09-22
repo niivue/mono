@@ -1,13 +1,13 @@
-# NiiVueGPU Events
+# NiiVue Events
 
-NiiVueGPU uses the standard [`EventTarget`](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) API. Every controller instance is an `EventTarget`, so you use `addEventListener` and `removeEventListener` just like a DOM element.
+NiiVue uses the standard [`EventTarget`](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) API. Every controller instance is an `EventTarget`, so you use `addEventListener` and `removeEventListener` just like a DOM element.
 
 All events are fully typed via `NVEventMap`. TypeScript will infer the correct `CustomEvent<T>` detail type for each event name when using `addEventListener`/`removeEventListener`.
 
 ## Quick Start
 
 ```js
-import NiiVue from 'niivuegpu'
+import NiiVue from '@niivue/niivue'
 
 const nv = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
 await nv.attachToCanvas(document.getElementById('gl'))
@@ -35,7 +35,7 @@ nv.removeEventListener('volumeLoaded', handler)
 Event listeners are fully typed. The detail type is inferred from the event name:
 
 ```ts
-import NiiVue from 'niivuegpu'
+import NiiVue from '@niivue/niivue'
 
 const nv = new NiiVue()
 
@@ -48,6 +48,25 @@ nv.addEventListener('documentLoaded', (evt) => {
   // evt is Event (no detail) — events with undefined payload use plain Event
 })
 ```
+
+## Emission timing
+
+Events are emitted so that **the item an event references is present in the
+collection (`nv.volumes` / `nv.meshes`) at the moment the event fires**:
+
+- **Add / update / reorder** fire *after* the model changes — the item is now
+  present or updated (`volumeLoaded`, `meshLoaded`, `volumeUpdated`,
+  `meshUpdated`, `volumeOrderChanged`).
+- **Removal** fires *before* the model changes — the item being removed is still
+  present (`volumeRemoved`, `meshRemoved`, and their bulk forms). This lets a
+  listener inspect the departing item via the collection, not just the `detail`.
+
+**Consumer corollary:** a listener that rebuilds a list by *re-reading the
+collection* will read a stale list if it does so synchronously inside a removal
+event (the item is still there). Read after the mutation instead — on the next
+render, or a microtask. (Listeners that consume the event `detail` directly are
+unaffected.) New emitting methods should preserve this ordering rather than, for
+example, moving removal to emit-after.
 
 ## Event Reference
 
@@ -100,7 +119,9 @@ Fired when any drag interaction completes on a 2D slice.
 | `mmEnd` | `[number, number, number]` | End position in mm |
 
 #### `measurementCompleted`
-Fired when a distance measurement line is completed.
+Fired when a distance measurement line is completed — by an interactive drag in
+`DRAG_MODE.measurement` or by a programmatic `addMeasurement` call. Fired after
+the measurement is appended, so it is already in `getMeasurements()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -109,7 +130,16 @@ Fired when a distance measurement line is completed.
 | `distance` | `number` | Distance in mm |
 | `sliceIndex` | `number` | Slice tile index |
 | `sliceType` | `number` | Slice orientation |
-| `slicePosition` | `number` | Slice position in mm |
+| `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
+
+#### `measurementRemoved`
+Fired by `removeMeasurement` before the measurement is removed, so the
+referenced measurement is still in `getMeasurements()` at emit time.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `measurement` | `CompletedMeasurement` | The measurement being removed |
+| `index` | `number` | Its index in the measurement list |
 
 #### `angleCompleted`
 Fired when an angle measurement (two lines) is completed.
@@ -121,7 +151,7 @@ Fired when an angle measurement (two lines) is completed.
 | `angle` | `number` | Angle in degrees |
 | `sliceIndex` | `number` | Slice tile index |
 | `sliceType` | `number` | Slice orientation |
-| `slicePosition` | `number` | Slice position in mm |
+| `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
 
 #### `pointerUp`
 Fired on every pointer release over the canvas.
@@ -151,7 +181,7 @@ Fired after a mesh is successfully added (via `addMesh()` or `loadMeshes()`). Fi
 | `mesh` | `NVMesh` | The newly loaded mesh |
 
 #### `volumeRemoved`
-Fired before a volume is removed. When removing all volumes, fires once per volume in reverse order.
+Fired before a volume is removed — by `removeVolume(index)`, or once per volume in reverse order by `removeAllVolumes()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -159,7 +189,7 @@ Fired before a volume is removed. When removing all volumes, fires once per volu
 | `index` | `number` | Index in the volumes array |
 
 #### `meshRemoved`
-Fired before a mesh is removed.
+Fired before a mesh is removed — by `removeMesh(index)`, or once per mesh by `removeAllMeshes()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -215,7 +245,8 @@ nv.addEventListener('canvasResize', (e) => {
 ### View Control
 
 #### `azimuthElevationChange`
-Fired when `azimuth` or `elevation` is set programmatically.
+Fired when `azimuth` or `elevation` is set programmatically, or when the user
+rotates the 3D render view (mouse drag or the H/J/K/L keys).
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -241,7 +272,8 @@ Fired when `sliceType` is set.
 ### Data Updates
 
 #### `volumeUpdated`
-Fired after `setVolume()` applies property changes to a volume.
+Fired after `setVolume()` applies property changes to a volume, or after
+`setColormapLabel()` sets/clears a label colormap (for which `changes` is empty).
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -257,13 +289,15 @@ nv.addEventListener('volumeUpdated', (e) => {
 ```
 
 #### `meshUpdated`
-Fired after `setMesh()` applies property changes to a mesh.
+Fired after `setMesh()` applies property changes to a mesh, or after a
+scalar-overlay layer change (`addMeshLayer`, `removeMeshLayer`,
+`setMeshLayerProperty`).
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `meshIndex` | `number` | Index of the updated mesh |
 | `mesh` | `NVMesh` | The mesh (after update) |
-| `changes` | `MeshUpdate` | The options that were applied |
+| `changes` | `MeshUpdate` | The options that were applied — **empty (`{}`) for layer changes**, since layer state isn't a `MeshUpdate` diff; re-read `mesh.layers` |
 
 #### `colormapAdded`
 Fired after `addColormap()` or `addColormapFromUrl()` registers a new user-defined colormap. The new LUT is then visible to volumes, mesh layers, colorbars, connectomes, and tracts.
@@ -281,6 +315,60 @@ nv.addEventListener('colormapAdded', (e) => {
 
 ---
 
+### Chunk Streaming
+
+Chunked (oversized) volumes stream their bricks to the GPU over multiple
+frames. These events replace polling `chunkStreamStats()` on a timer. Both
+carry a `ChunkStreamDetail` — the same shape as the non-null return of
+`chunkStreamStats()`, and the method reads back the same counts at emit time.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `resident` | `number` | Bricks currently GPU-resident |
+| `pending` | `number` | Bricks queued for upload |
+| `inFlight` | `number` | Bricks mid-upload |
+| `total` | `number` | Bricks in the plan |
+| `staleDropped` | `number` | Cumulative queued uploads retired because the view moved on |
+| `predicted` | `number` | Cumulative speculative source reads |
+| `decoded` | `DecodedChunkStats` | Decoded-chunk (CPU byte) tier counters |
+
+#### `chunkStreamProgress`
+Fired on a drawn frame while streaming is outstanding (`pending + inFlight > 0`),
+whenever a count changed since the last emission — identical back-to-back
+snapshots are skipped, so the render loop's cadence bounds the rate (no timer).
+The final, settled counts are also emitted as progress, immediately before
+`chunkStreamIdle`.
+
+#### `chunkStreamIdle`
+Fired when the stream settles: a drawn frame had `pending + inFlight > 0`, and a
+later drawn frame is complete — nothing queued or mid-upload for the working set
+that frame requested, and no brick still cross-fading in. It is emitted after
+that frame's draw has been submitted, so the canvas shows every brick the frame
+asked for and a listener may capture it.
+
+What idle does and does not promise:
+
+- `resident < total` on the idle frame is normal under a residency budget: idle
+  means the visible working set is resident, not the whole plan.
+- A brick whose upload failed is not resident and does not settle the stream;
+  the next drawn frame re-requests it.
+- Because `chunkStreamStats()` returns zeroed counts (not null) whenever a view
+  is attached, idle is defined on this transition — it never fires for a view
+  that is attached but has not streamed.
+- Streaming that resumes (e.g. a camera move queues new bricks) re-arms it, so
+  it fires once per settle.
+
+```js
+nv.addEventListener('chunkStreamProgress', (e) => {
+  spinner.textContent = `${e.detail.resident} / ${e.detail.total} bricks`
+})
+nv.addEventListener('chunkStreamIdle', () => {
+  spinner.hidden = true // the frame on screen shows every brick it asked for
+})
+```
+
+---
+
 ### Drawing
 
 #### `drawingChanged`
@@ -288,12 +376,14 @@ Fired on drawing lifecycle events and user strokes.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `action` | `'stroke' \| 'create' \| 'close' \| 'undo'` | What happened |
+| `action` | `'stroke' \| 'create' \| 'close' \| 'undo' \| 'load' \| 'update'` | What happened |
 
 - `'create'` — `createEmptyDrawing()` was called
 - `'stroke'` — user completed a pen stroke (pointerup)
 - `'undo'` — `drawUndo()` restored a previous state
 - `'close'` — `closeDrawing()` destroyed the drawing
+- `'load'` — `loadDrawing()` loaded a drawing from a volume
+- `'update'` — the drawing bitmap was updated programmatically (extension `ctx.drawing.update()`)
 
 #### `drawingEnabled`
 Fired when `drawIsEnabled` is set.
@@ -420,5 +510,7 @@ import type {
   AnnotationRemovedDetail,
   AnnotationChangedDetail,
   ColormapAddedDetail,
-} from 'niivuegpu'
+  ChunkStreamDetail,
+  DecodedChunkStats,
+} from '@niivue/niivue'
 ```

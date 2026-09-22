@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Intensity Window</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="calMinSlide">Min</label>
+      <input type="range" id="calMinSlide" min="0" max="1000" value="0" />
+      <output id="calMinOut">?</output>
+      &nbsp;
+      <label for="calMaxSlide">Max</label>
+      <input type="range" id="calMaxSlide" min="0" max="1000" value="1000" />
+      <output id="calMaxOut">?</output>
+      &nbsp;
+      <label for="clipDarkCheck">Clip Dark</label>
+      <input type="checkbox" id="clipDarkCheck" checked />
+      &nbsp;
+      <button type="button" id="autoBtn" title="Otsu threshold for min, 99.5th percentile for max">Auto</button>
+      <button type="button" id="resetBtn" title="Full data range">Reset</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">Drag &amp; drop a NIfTI &mdash; the sliders re-scale to each image&rsquo;s intensity range</footer>
+    <script type="module" src="vox.window.js"></script>
+  </body>
+</html>

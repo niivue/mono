@@ -13,6 +13,7 @@ import type {
   VolumeUpdate,
 } from '@/NVTypes'
 import type { FrameReport } from '@/view/NVPerfMarks'
+import type { DecodedChunkStats } from '@/volume/decodedChunkCache'
 
 // ============================================================
 // Event detail types
@@ -23,6 +24,10 @@ export type VolumeLoadedDetail = { volume: NVImage }
 export type MeshLoadedDetail = { mesh: NVMesh }
 export type VolumeRemovedDetail = { volume: NVImage; index: number }
 export type MeshRemovedDetail = { mesh: NVMesh; index: number }
+export type MeasurementRemovedDetail = {
+  measurement: CompletedMeasurement
+  index: number
+}
 export type SignalLoadedDetail = { signal: NVSignal }
 export type SignalRemovedDetail = { signal: NVSignal; index: number }
 export type SignalLocationDetail = {
@@ -57,9 +62,26 @@ export type ClipPlaneChangeDetail = { clipPlane: number[] }
 export type SliceTypeChangeDetail = { sliceType: number }
 export type PenValueChangedDetail = { penValue: number }
 export type DrawingChangedDetail = {
-  action: 'stroke' | 'create' | 'close' | 'undo'
+  action: 'stroke' | 'create' | 'close' | 'undo' | 'load' | 'update'
 }
 export type DrawingEnabledDetail = { isEnabled: boolean }
+/** A click-to-segment ("magic wand") fill finished. */
+export type ClickToSegmentDetail = {
+  /** Seed voxel (RAS ijk) the region grew from. */
+  seed: [number, number, number]
+  /** Pen value painted into the drawing. */
+  penValue: number
+  /** Voxels the fill painted. */
+  voxelCount: number
+  /** Volume of the segmented region. */
+  mm3: number
+  /** `mm3 / 1000`. */
+  mL: number
+  /** True when the grow stopped at the voxel cap rather than at a boundary. */
+  hitCap: boolean
+  /** True when the grow was confined to the clicked slice (`drawClickToSegmentIs2D`). */
+  is2D: boolean
+}
 export type PropertyChangeDetail = { property: string; value: unknown }
 export type PointerUpDetail = { x: number; y: number; button: number }
 export type VolumeUpdatedChanges = VolumeUpdate & {
@@ -89,6 +111,50 @@ export type ColormapAddedDetail = { name: string }
 export type VolumeOrderChangedDetail = { volumes: NVImage[] }
 
 /**
+ * Snapshot of the chunk-streaming counters, carried by `chunkStreamProgress`
+ * and `chunkStreamIdle`. Same shape as the non-null return of
+ * `chunkStreamStats()`, and the counters read back the same values at emit
+ * time, so a listener may use either the `detail` or the method.
+ *
+ * `chunkStreamProgress` fires on a drawn frame while streaming is outstanding
+ * (`pending + inFlight > 0`), and only when a count changed since the last
+ * emission — the render loop's own cadence bounds the rate, no timer involved.
+ *
+ * `chunkStreamIdle` fires when the stream settles: a drawn frame observed
+ * `pending + inFlight > 0`, and a later drawn frame is complete — nothing
+ * queued or mid-upload for the working set that frame requested, and no brick
+ * still cross-fading in. It is emitted after that frame's draw has been
+ * submitted, so the canvas shows every brick the frame asked for and a
+ * listener may capture it. `resident < total` on that frame is normal under a
+ * residency budget: idle means the visible working set is resident, not the
+ * whole plan. It never fires on a view that is attached but has not streamed
+ * (the counters are zeroed, not null, in that state — idle is defined on the
+ * transition, not on the zeros). Streaming that resumes (e.g. a camera move
+ * requests new bricks) re-arms it, so it can fire once per settle, not once
+ * per volume.
+ */
+export type ChunkStreamDetail = {
+  resident: number
+  pending: number
+  inFlight: number
+  total: number
+  staleDropped: number
+  predicted: number
+  decoded: DecodedChunkStats
+}
+
+/**
+ * The cheap per-frame subset of {@link ChunkStreamDetail}: a sum of the chunk
+ * managers' counters, with no decoded-tier walk or allocation. The views pass
+ * these to the `onChunkStream` hook once per drawn frame; the full snapshot is
+ * taken lazily, only when an event actually fires.
+ */
+export type ChunkStreamCounts = Pick<
+  ChunkStreamDetail,
+  'resident' | 'pending' | 'inFlight' | 'total'
+>
+
+/**
  * Per-frame render performance report. Emitted after every render
  * while `nv.perf.enabled` is true. `tag` is the action source set via
  * `nv.perf.tagFrame(...)` (or by an interaction handler) before the
@@ -108,6 +174,7 @@ export interface NVEventMap {
   dragRelease: DragReleaseInfo
   pointerUp: PointerUpDetail
   measurementCompleted: CompletedMeasurement
+  measurementRemoved: MeasurementRemovedDetail
   angleCompleted: CompletedAngle
 
   // Loading
@@ -139,6 +206,7 @@ export interface NVEventMap {
   penValueChanged: PenValueChangedDetail
   drawingChanged: DrawingChangedDetail
   drawingEnabled: DrawingEnabledDetail
+  clickToSegment: ClickToSegmentDetail
 
   // Annotations
   annotationAdded: AnnotationAddedDetail
@@ -150,6 +218,10 @@ export interface NVEventMap {
 
   // Asset registration
   colormapAdded: ColormapAddedDetail
+
+  // Chunk streaming (oversized volumes)
+  chunkStreamProgress: ChunkStreamDetail
+  chunkStreamIdle: ChunkStreamDetail
 
   // Render performance (only fires while nv.perf.enabled)
   perfFrame: PerfFrameDetail

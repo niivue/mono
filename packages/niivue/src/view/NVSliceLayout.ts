@@ -8,11 +8,13 @@ import type {
   NVGlobalCamera,
   ViewHitTest,
 } from '@/NVTypes'
+import { getAxisColor } from '@/view/crosshairColor'
 import type { BuildLineFn, LineData } from './NVLine'
+import { projectMMToCanvas } from './sliceUtils'
 
 // ---------- Types ----------
 
-type ScreenInfo = { mnMM: vec3; mxMM: vec3; fovMM: vec3 }
+export type ScreenInfo = { mnMM: vec3; mxMM: vec3; fovMM: vec3 }
 
 export type SliceTile = {
   leftTopWidthHeight?: number[]
@@ -47,6 +49,19 @@ export type SliceTile = {
   globalCamera?: NVGlobalCamera
 }
 
+/**
+ * Deep copy of a tile for hand-out to callers outside the renderer.
+ *
+ * A tile is plain data (numbers, tuples, gl-matrix typed arrays, and small
+ * plain objects such as `screen`, `crossLines` and `globalCamera`), so a
+ * structured clone copies every nested level. The renderer reads and rewrites
+ * these tiles each frame (`screen.mnMM` feeds the next MVP), so a shallow copy
+ * would hand a consumer a live reference into the layout.
+ */
+export function cloneSliceTile(tile: SliceTile): SliceTile {
+  return structuredClone(tile)
+}
+
 export type SliceLayoutConfig = {
   canvasWH: [number, number]
   extentsMin: vec3
@@ -62,6 +77,7 @@ export type SliceLayoutConfig = {
   isMultiplanarEqualSize?: boolean
   isCrossLines?: boolean
   isCenterMosaic?: boolean
+  isSingleViewFillCanvas?: boolean
   customLayout?: CustomLayoutTile[] | null
 }
 
@@ -94,6 +110,43 @@ export function slicePanUV(
 ): [number, number, number] {
   const map = IDX_MAP[axCorSag]
   return [pan[map[0]], pan[map[1]], pan[3] ?? 1]
+}
+
+/**
+ * World-mm cylinder radius that makes the crosshair `ui.crosshairWidth` canvas
+ * pixels thick on this tile.
+ *
+ * `crosshairWidth` is a screen weight, like every other piece of UI chrome, and
+ * the mosaic cross-lines have always treated it that way. The 2D and 3D
+ * crosshairs are world-space cylinders, so the value has to be converted with
+ * the tile's own mm-per-pixel or the same setting comes out as a solid block on
+ * a millimetre-wide microscopy volume and a hairline on a whole-body scan, and
+ * grows as you zoom. Halved because the width is a diameter.
+ *
+ * Returns 0 for tiles that draw no crosshair (mosaic tiles, global3d tiles) and
+ * for degenerate geometry, which callers can use to skip the draw.
+ */
+export function crosshairRadiusMM(model: NVModel, tile: SliceTile): number {
+  const widthPx = model.ui.crosshairWidth
+  if (!(widthPx > 0)) return 0
+  const ltwh = tile.leftTopWidthHeight
+  if (!ltwh) return 0
+  let mmPerPixel = 0
+  if (tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
+    mmPerPixel = NVTransforms.mmPerPixelRender(
+      ltwh,
+      model.furthestFromPivot,
+      model.scene.scaleMultiplier,
+    )
+  } else if (tile.screen) {
+    mmPerPixel = NVTransforms.mmPerPixel2D(
+      tile.screen.mnMM,
+      tile.screen.mxMM,
+      ltwh,
+      slicePanUV(model.scene.pan2Dxyzmm, tile.axCorSag),
+    )
+  }
+  return (widthPx * mmPerPixel) / 2
 }
 
 const buildScreens = (
@@ -163,6 +216,24 @@ const cloneScreen = (s: ScreenInfo): ScreenInfo => ({
   mxMM: vec3.clone(s.mxMM),
   fovMM: vec3.clone(s.fovMM),
 })
+
+/**
+ * Widen the in-plane mm window about its own centre: scale and centre hold.
+ *
+ * `fovMM` deliberately keeps the DATA's span while `mnMM`/`mxMM` become the
+ * wider ortho window -- the two are equal for every other tile. Chrome that
+ * should size against the image rather than the empty margin (the scale ruler)
+ * reads `fovMM`; anything projecting the window reads `mnMM`/`mxMM`.
+ */
+const fillScreen = (s: ScreenInfo, spans: [number, number]): ScreenInfo => {
+  const out = cloneScreen(s)
+  spans.forEach((span, i) => {
+    const centre = (s.mnMM[i] + s.mxMM[i]) / 2
+    out.mnMM[i] = centre - span / 2
+    out.mxMM[i] = centre + span / 2
+  })
+  return out
+}
 
 // Tile mm dimensions (in-plane width x height) for an orientation
 const tileDimsMM = (
@@ -733,13 +804,22 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
       // Fit the slice's mm aspect ratio within the available tile area
       const fov = screen.screen.fovMM
       const zoom = Math.min(pw / fov[0], ph / fov[1])
-      const fw = fov[0] * zoom
-      const fh = fov[1] * zoom
+      // A zero in-plane span gives a zero or infinite fit scale: widening by
+      // it puts NaN mm bounds in the projection, and 0 * Infinity is a NaN
+      // rect. With no aspect to letterbox to, the tile takes the whole pane.
+      const fit = Number.isFinite(zoom) && zoom > 0
+      const fill = (spec.fill ?? false) && fit
+      const letterbox = fit && !fill
+      const fw = letterbox ? fov[0] * zoom : pw
+      const fh = letterbox ? fov[1] * zoom : ph
       const rot = rotations(idx, isRad)
       const tile: SliceTile = {
         leftTopWidthHeight: [px + (pw - fw) / 2, py + (ph - fh) / 2, fw, fh],
         axCorSag: idx,
-        screen: cloneScreen(screen.screen),
+        // Spans are stored PRE-zoom: calculateMvpMatrix2D divides by it (#68).
+        screen: fill
+          ? fillScreen(screen.screen, [fw / zoom, fh / zoom])
+          : cloneScreen(screen.screen),
         azimuth: rot.azimuth,
         elevation: rot.elevation,
       }
@@ -786,6 +866,7 @@ export function fitSlicesAndGraph(
 ): { screenSlices: SliceTile[]; graphWidth: number } {
   const screenSlices = screenSlicesLayout(config)
   if (baseGraphWidth <= 0) return { screenSlices, graphWidth: 0 }
+  // A filled single slice uses the slack itself, so the graph keeps base width.
   const single =
     (config.sliceType === NVConstants.SLICE_TYPE.AXIAL ||
       config.sliceType === NVConstants.SLICE_TYPE.CORONAL ||
@@ -806,6 +887,45 @@ export function fitSlicesAndGraph(
     }),
     graphWidth: baseGraphWidth + (baseW - usedW),
   }
+}
+
+/**
+ * Both renderers' slice-layout step. Emits no tiles when the spatial view is
+ * hidden (signal-only scene, or `SLICE_TYPE.NONE`), so nothing spatial renders
+ * and the graph has the area to itself. The model-to-config mapping lives here
+ * and nowhere else: a flag threaded into one backend's copy is a parity break.
+ *
+ * @param paneWH - the slice area: canvas minus the legend, graph and colorbar
+ */
+export function fitSlicesFromModel(
+  model: NVModel,
+  paneWH: [number, number],
+  baseGraphWidth: number,
+): { screenSlices: SliceTile[]; graphWidth: number } {
+  if (model.isSpatialViewHidden()) {
+    return { screenSlices: [], graphWidth: baseGraphWidth }
+  }
+  return fitSlicesAndGraph(
+    {
+      canvasWH: paneWH,
+      sliceType: model.layout.sliceType,
+      tileMargin: model.layout.margin,
+      extentsMin: model.extentsMin,
+      extentsMax: model.extentsMax,
+      isRadiologicalConvention: model.layout.isRadiological,
+      multiplanarLayout: model.layout.multiplanarType,
+      multiplanarShowRender: model.layout.showRender,
+      sliceMosaicString: model.layout.mosaicString,
+      heroImageFraction: model.layout.heroFraction,
+      heroSliceType: model.layout.heroSliceType,
+      isMultiplanarEqualSize: model.layout.isEqualSize,
+      isCrossLines: model.ui.isCrossLinesVisible,
+      isCenterMosaic: model.layout.isMosaicCentered,
+      isSingleViewFillCanvas: model.layout.isSingleViewFillCanvas,
+      customLayout: model.layout.customLayout,
+    },
+    baseGraphWidth,
+  )
 }
 
 export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
@@ -852,11 +972,24 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
       throw new Error('Missing fovMM for slice')
     }
     const zoom = Math.min(canvasWH[0] / fov[0], canvasWH[1] / fov[1])
-    const w = fov[0] * zoom
-    const h = fov[1] * zoom
+    // A zero in-plane span gives a zero or infinite fit scale: widening by it
+    // puts NaN mm bounds in the projection, and 0 * Infinity is a NaN rect.
+    // With no aspect to letterbox to, the tile takes the whole canvas.
+    const fit = Number.isFinite(zoom) && zoom > 0
+    const fill = (config.isSingleViewFillCanvas ?? true) && fit
+    const letterbox = fit && !fill
+    const w = letterbox ? fov[0] * zoom : canvasWH[0]
+    const h = letterbox ? fov[1] * zoom : canvasWH[1]
     return [
       {
         ...screens[idx],
+        // Spans are stored PRE-zoom: calculateMvpMatrix2D divides by it (#68).
+        ...(fill && {
+          screen: fillScreen(screens[idx].screen as ScreenInfo, [
+            w / zoom,
+            h / zoom,
+          ]),
+        }),
         leftTopWidthHeight: [
           (canvasWH[0] - w) / 2,
           (canvasWH[1] - h) / 2,
@@ -934,6 +1067,230 @@ export function screenSlicePick(
   )
 }
 
+/** A world-mm point projected onto one slice tile, in canvas pixels. */
+export type CanvasTilePoint = {
+  /** Index into the frame's tile list (`screenSlices`) the point landed on. */
+  tileIndex: number
+  /** Canvas x in backing-store pixels (origin top-left). */
+  x: number
+  /** Canvas y in backing-store pixels (origin top-left, y down). */
+  y: number
+}
+
+/**
+ * Project a world-mm point onto the best-matching 2D slice tile.
+ *
+ * Candidate tiles are 2D slice tiles carrying the picking geometry cached
+ * during render (`mvpMatrix`, `planeNormal`, `planePoint`,
+ * `leftTopWidthHeight`); 3D render tiles are never candidates. Selection rule:
+ * the tile whose slice plane passes nearest the point (perpendicular distance
+ * in mm) wins; ties — e.g. a point on the crosshair, which lies on every plane
+ * of a multiplanar layout — resolve to the lowest tile index. Returns null
+ * when no candidate exists (before the first render, or a render-only layout).
+ *
+ * The returned x/y are canvas backing-store pixels and may fall outside the
+ * tile's rect when the point is panned/zoomed out of view — callers doing
+ * overlay drawing should clip to `leftTopWidthHeight` themselves.
+ */
+export function projectMMToNearestTile(
+  screenSlices: readonly SliceTile[],
+  mm: [number, number, number],
+): CanvasTilePoint | null {
+  let best: { tileIndex: number; mvp: mat4; ltwh: number[] } | null = null
+  let bestDist = Infinity
+  for (let i = 0; i < screenSlices.length; i++) {
+    const tile = screenSlices[i]
+    if (tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) continue
+    const { mvpMatrix, planeNormal, planePoint, leftTopWidthHeight } = tile
+    if (!mvpMatrix || !planeNormal || !planePoint || !leftTopWidthHeight)
+      continue
+    const dist = Math.abs(
+      planeNormal[0] * (mm[0] - planePoint[0]) +
+        planeNormal[1] * (mm[1] - planePoint[1]) +
+        planeNormal[2] * (mm[2] - planePoint[2]),
+    )
+    if (dist < bestDist) {
+      bestDist = dist
+      best = { tileIndex: i, mvp: mvpMatrix, ltwh: leftTopWidthHeight }
+    }
+  }
+  if (!best) return null
+  const [x, y] = projectMMToCanvas(mm, best.mvp, best.ltwh)
+  return { tileIndex: best.tileIndex, x, y }
+}
+
+// ---------- Visible window ----------
+
+/**
+ * A world-mm interval along one world axis.
+ *
+ * Closed at both ends: `maxMM` is the last millimetre visible, not one past it.
+ * Worth stating because the neighbouring box types disagree -- `FocusBox` is
+ * inclusive, `MultiLodBounds` is exclusive -- so a caller converting between
+ * them cannot tell which this is from the shape alone.
+ */
+export type AxisWindowMM = { minMM: number; maxMM: number }
+
+/**
+ * The visible world-mm window on each world axis, indexed `[X, Y, Z]`.
+ *
+ * An axis is `null` when no tile shows a range along it -- either nothing is
+ * laid out, or every tile that touches the axis has it as its depth axis.
+ */
+export type VisibleWindowMM = [
+  AxisWindowMM | null,
+  AxisWindowMM | null,
+  AxisWindowMM | null,
+]
+
+/**
+ * World-mm window a single 2D tile currently shows, per world axis.
+ *
+ * `screen.mnMM`/`mxMM` are the tile's ortho window before interaction and are
+ * stored tile-local (`[u, v, depth]`), so this both applies the 2D pan/zoom the
+ * way {@link NVTransforms.calculateMvpMatrix2D} does -- shrink about the window
+ * centre by `zoom`, then shift by `-pan` -- and remaps the result back onto
+ * world XYZ via {@link IDX_MAP}.
+ *
+ * Radiological convention is deliberately not a parameter: it negates both the
+ * ortho bounds and `panU`, which mirrors what lands on the left of the screen
+ * but leaves the world-mm interval identical.
+ *
+ * Only the two in-plane axes get a window. The depth axis is left `null`
+ * because a slice tile shows a plane there, not a range; callers that want the
+ * slice position already have it from `tile.sliceMM` or the crosshair.
+ *
+ * `global3d` tiles return null: their ortho window is in instance space and
+ * would need the tile's position/scale/orientation applied before it means
+ * anything in world mm. Returning the raw numbers would label instance-space
+ * millimetres as world millimetres, which no caller can detect.
+ *
+ * @param tile - a 2D slice tile (returns null for render, global3d or non-orientation tiles)
+ * @param pan2Dxyzmm - the scene's `[panX, panY, panZ, zoom]`
+ * @returns per-world-axis windows, or null for a tile with no 2D world-mm ortho window
+ */
+export function tileVisibleWindowMM(
+  tile: SliceTile,
+  pan2Dxyzmm: ArrayLike<number> = [0, 0, 0, 1],
+): VisibleWindowMM | null {
+  const map = IDX_MAP[tile.axCorSag]
+  if (!map || !tile.screen || tile.space === 'global3d') return null
+  const { mnMM, mxMM } = tile.screen
+  const pan = slicePanUV(pan2Dxyzmm, tile.axCorSag)
+  // A zero or non-finite zoom would blow the window up to infinity; treat it
+  // the same 1:1 way the MVP does.
+  const zoom = Number.isFinite(pan[2]) && pan[2] > 0 ? pan[2] : 1
+  const out: VisibleWindowMM = [null, null, null]
+  for (let i = 0; i < 2; i++) {
+    const centre = (mnMM[i] + mxMM[i]) / 2 - pan[i]
+    const half = Math.abs(mxMM[i] - mnMM[i]) / (2 * zoom)
+    if (!Number.isFinite(centre) || !Number.isFinite(half)) continue
+    out[map[i]] = { minMM: centre - half, maxMM: centre + half }
+  }
+  return out
+}
+
+/**
+ * Union of every 2D tile's visible window, per world axis.
+ *
+ * The answer to "which world mm are on screen right now" for a whole layout:
+ * a standard multiplanar returns all three axes, a sagittal-only layout returns
+ * Y and Z with X `null`. The window is the ortho window, so it can reach past
+ * the data -- a tile filling the canvas has margin around the volume, and
+ * `isMultiplanarEqualSize` pads the short axes. Intersect with the volume
+ * extents yourself if you want the visible part of the data rather than of the
+ * world.
+ *
+ * A union is what a prefetcher wants: the mm a caller must have loaded to cover
+ * everything on screen. It is NOT what "keep this point visible in every tile"
+ * wants, which needs the intersection. The two coincide in every layout today,
+ * because tiles sharing a world axis are laid out from the same extents and get
+ * the same window (checked on standard and equal-size multiplanar, and on a
+ * custom layout with deliberately mismatched pane aspects). Per-tile fill would
+ * break the tie -- one tile widened, its neighbour not -- so a caller with
+ * every-tile semantics should reduce over {@link tileVisibleWindowMM} itself
+ * rather than assume this stays interchangeable.
+ *
+ * Render and `global3d` tiles are skipped, for the reasons on
+ * {@link tileVisibleWindowMM}.
+ *
+ * @param tiles - the laid-out screen slices
+ * @param pan2Dxyzmm - the scene's `[panX, panY, panZ, zoom]`
+ */
+export function visibleWindowMM(
+  tiles: SliceTile[],
+  pan2Dxyzmm: ArrayLike<number> = [0, 0, 0, 1],
+): VisibleWindowMM {
+  const out: VisibleWindowMM = [null, null, null]
+  for (const tile of tiles) {
+    const windows = tileVisibleWindowMM(tile, pan2Dxyzmm)
+    if (!windows) continue
+    for (let axis = 0; axis < 3; axis++) {
+      const win = windows[axis]
+      if (!win) continue
+      const prev = out[axis]
+      out[axis] = prev
+        ? {
+            minMM: Math.min(prev.minMM, win.minMM),
+            maxMM: Math.max(prev.maxMM, win.maxMM),
+          }
+        : win
+    }
+  }
+  return out
+}
+
+/**
+ * Intersection of every 2D tile's visible window, per world axis.
+ *
+ * The "keep this point visible in every tile" sibling of
+ * {@link visibleWindowMM}: an axis's window is the tightest `[minMM, maxMM]`
+ * every tile showing that axis agrees on, so a point inside it is on screen
+ * in all of them. This is what a follow behaviour wants (pan-follows-crosshair
+ * reduces over this), and it is the reduction the doc above asks such callers
+ * to do rather than assume the union stays interchangeable.
+ *
+ * Same conventions as the union: the window is the ortho window (it can reach
+ * past the data), the depth axis of a tile contributes nothing, and an axis no
+ * tile shows is `null`. Two tiles whose windows do not overlap on an axis
+ * leave that axis `null` too: no point is visible in both, so there is nothing
+ * a caller could move to, and reporting the inverted interval would send a
+ * follower chasing one edge and then the other.
+ *
+ * @param tiles - the rendered slice tiles (`view.screenSlices`)
+ * @param pan2Dxyzmm - the scene's `[panX, panY, panZ, zoom]`
+ * @returns per-world-axis windows common to every 2D tile
+ */
+export function everyTileWindowMM(
+  tiles: SliceTile[],
+  pan2Dxyzmm: ArrayLike<number> = [0, 0, 0, 1],
+): VisibleWindowMM {
+  const out: VisibleWindowMM = [null, null, null]
+  const empty = [false, false, false]
+  for (const tile of tiles) {
+    const windows = tileVisibleWindowMM(tile, pan2Dxyzmm)
+    if (!windows) continue
+    for (let axis = 0; axis < 3; axis++) {
+      const win = windows[axis]
+      if (!win || empty[axis]) continue
+      const prev = out[axis]
+      const next = prev
+        ? {
+            minMM: Math.max(prev.minMM, win.minMM),
+            maxMM: Math.min(prev.maxMM, win.maxMM),
+          }
+        : win
+      if (next.minMM > next.maxMM) {
+        empty[axis] = true
+        out[axis] = null
+      } else {
+        out[axis] = next
+      }
+    }
+  }
+  return out
+}
+
 // ---------- Cross-lines ----------
 
 export function buildCrossLines(
@@ -944,6 +1301,7 @@ export function buildCrossLines(
   thickness: number,
   color: number[],
   lineFn: BuildLineFn,
+  perAxisColors?: number[][],
 ): LineData[] {
   if (
     !tile.crossLines ||
@@ -992,23 +1350,25 @@ export function buildCrossLines(
     if (dim === depthDim || mmValues.length === 0) continue
     for (const mm of mmValues) {
       if (dim === vDim) {
-        // Horizontal line: span full U extent at this V position
+        // Horizontal line: span full U extent at this V position (extends along uDim)
         const [x1, y1] = project(
           ...makePoint(extentsMin[uDim], mm, depthCenter),
         )
         const [x2, y2] = project(
           ...makePoint(extentsMax[uDim], mm, depthCenter),
         )
-        lines.push(lineFn(x1, y1, x2, y2, thickness, color))
+        const lineColor = getAxisColor(uDim, color, perAxisColors)
+        lines.push(lineFn(x1, y1, x2, y2, thickness, lineColor))
       } else if (dim === uDim) {
-        // Vertical line: span full V extent at this U position
+        // Vertical line: span full V extent at this U position (extends along vDim)
         const [x1, y1] = project(
           ...makePoint(mm, extentsMin[vDim], depthCenter),
         )
         const [x2, y2] = project(
           ...makePoint(mm, extentsMax[vDim], depthCenter),
         )
-        lines.push(lineFn(x1, y1, x2, y2, thickness, color))
+        const lineColor = getAxisColor(vDim, color, perAxisColors)
+        lines.push(lineFn(x1, y1, x2, y2, thickness, lineColor))
       }
     }
   }

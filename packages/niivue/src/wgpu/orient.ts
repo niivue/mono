@@ -189,7 +189,7 @@ function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
       ? `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
       : 'label:none'
   }
-  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}`
+  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
 function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
@@ -224,6 +224,7 @@ function writeOrientUniforms(
   const modMtx = mod ? mod.mtx : IDENTITY_MTX
   for (let i = 0; i < 16; i++) dv.setFloat32(112 + i * 4, modMtx[i], true)
   dv.setFloat32(176, mod ? mod.mode : 0, true)
+  dv.setFloat32(180, u.atlasOutline, true)
   device.queue.writeBuffer(uniformBuffer, 0, ab)
 }
 
@@ -354,7 +355,7 @@ export async function prepareOrientTextureCache(
   } else {
     colormapTexture = await wgpu.lutBytes2texture(
       device,
-      NVCmaps.lutrgba8(nvimage.colormap),
+      NVCmaps.lutrgba8(nvimage.colormap, nvimage.isColormapInverted),
     )
     negativeColormapTexture = colormapTexture
     hasNegativeColormap = !!(
@@ -363,7 +364,7 @@ export async function prepareOrientTextureCache(
     if (hasNegativeColormap)
       negativeColormapTexture = await wgpu.lutBytes2texture(
         device,
-        NVCmaps.lutrgba8(nvimage.colormapNegative),
+        NVCmaps.lutrgba8(nvimage.colormapNegative, nvimage.isColormapInverted),
       )
     sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' })
   }
@@ -559,14 +560,17 @@ export async function volume2Texture(
     })
   } else {
     // Continuous colormap: 256-wide LUT with linear filtering
-    const lut = NVCmaps.lutrgba8(nvimage.colormap)
+    const lut = NVCmaps.lutrgba8(nvimage.colormap, nvimage.isColormapInverted)
     colormapTex = await wgpu.lutBytes2texture(device, lut)
     negColormapTex = colormapTex
     hasNegColormap = !!(
       nvimage.colormapNegative && nvimage.colormapNegative.length > 0
     )
     if (hasNegColormap) {
-      const negLut = NVCmaps.lutrgba8(nvimage.colormapNegative)
+      const negLut = NVCmaps.lutrgba8(
+        nvimage.colormapNegative,
+        nvimage.isColormapInverted,
+      )
       negColormapTex = await wgpu.lutBytes2texture(device, negLut)
     }
     sampler = device.createSampler({

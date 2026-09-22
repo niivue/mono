@@ -1,3 +1,31 @@
+## 1.0.0-rc.13 (2026-09-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.13
+
+## 1.0.0-rc.12 (2026-08-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.12
+
+## 1.0.0-rc.11 (2026-07-29)
+
+### Fixes
+
+- **nv-ext-save-html:** saveHTML deadlocked on every real document ([d9fc9e4](https://github.com/niivue/mono/commit/d9fc9e4))
+- harden streaming budget and generated bindings ([577d052](https://github.com/niivue/mono/commit/577d052))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.11
+
+### Thank You
+
+- Chris Drake
+- Claude Fable 5
+
 ## 1.0.0-rc.10 (2026-07-01)
 
 ### Updated Dependencies

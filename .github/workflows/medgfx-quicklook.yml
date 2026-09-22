@@ -1,0 +1,42 @@
+name: medgfx Quick Look safety
+
+# The Quick Look extension is a candidate previewer for every gzip on the
+# machine, so the decompression bound is a security boundary. It has been
+# bypassed twice in review, both times by something the previous regression
+# script could not see. This job runs the checks that call the production gate.
+#
+# Separate from pr_gate.yml because that runs on ubuntu and this needs swiftc.
+# Path-filtered so it only runs when the native extension actually changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/medgfx/QuickLookPreview/**'
+      - 'apps/medgfx/scripts/**'
+      - '.github/workflows/medgfx-quicklook.yml'
+  pull_request:
+    paths:
+      - 'apps/medgfx/QuickLookPreview/**'
+      - 'apps/medgfx/scripts/**'
+      - '.github/workflows/medgfx-quicklook.yml'
+
+jobs:
+  safety-checks:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `check-gzip-bound.sh` asserts that a REAL volume is still accepted.
+          # Without LFS that file is a 3-line pointer, which is not gzip, so the
+          # assertion would pass vacuously — the exact failure mode this repo
+          # keeps hitting. The script also guards against it directly.
+          lfs: true
+
+      - name: Routing (which files we claim, which we decline)
+        working-directory: apps/medgfx
+        run: bash scripts/check-preview-file-kind.sh
+
+      - name: Decompression bound at the production call site
+        working-directory: apps/medgfx
+        run: bash scripts/check-gzip-bound.sh

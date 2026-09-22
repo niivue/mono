@@ -55,7 +55,7 @@ wireNiiVueToBridge(nv, bridge, {
 })
 ```
 
-Add the matching cell on the Swift side (`NiiVueProp<[Double]>(path: "crosshairColor", initial: [1,0,0,1])`) and it round-trips. Prefer passing the cell via `NiiVueModel(bridge:, extraCells:)` at init-time so it's visible to the automatic `hydrate()` on `ready`.
+Add the matching cell on the Swift side (`NiiVueProp<[Double]>(path: "crosshairColor", initial: [1,0,0,1])`) and it round-trips. Prefer passing the cell via `NiiVueModel(bridge:, extraCells:)` at init-time so it's visible to the automatic `hydrate()` on `ready`. Use the `json` kind for structured Codable values that should cross the bridge unchanged.
 
 ## Development
 

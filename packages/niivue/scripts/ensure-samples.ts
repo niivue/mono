@@ -59,10 +59,24 @@ const SAMPLES: Sample[] = [
     default: false,
   },
   {
-    label: 'pig_heart OME-Zarr, int16 (range.html)',
-    marker: 'omezarr/pig_heart.ome.zarr/zarr.json',
+    label: 'chameleon OME-Zarr, uint16 (range.html)',
+    marker: 'omezarr/chameleon.ome.zarr/zarr.json',
     script: 'fetch-omezarr.ts',
-    args: ['--name=pig_heart'],
+    args: ['--name=chameleon'],
+    default: false,
+  },
+  {
+    label: 'kingsnake OME-Zarr, uint8 (range.html)',
+    marker: 'omezarr/kingsnake.ome.zarr/zarr.json',
+    script: 'fetch-omezarr.ts',
+    args: ['--name=kingsnake'],
+    default: false,
+  },
+  {
+    label: 'stag beetle OME-Zarr, uint16 (range.html)',
+    marker: 'omezarr/stag_beetle.ome.zarr/zarr.json',
+    script: 'fetch-omezarr.ts',
+    args: ['--name=stag_beetle'],
     default: false,
   },
 ]

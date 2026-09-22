@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Transform Gizmo</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      #canvas-container {
+        display: block;
+        position: relative;
+        flex: 1;
+      }
+      #gizmo {
+        position: static;
+        flex: none;
+        width: 200px;
+        height: 600px;
+        cursor: grab;
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <label for="target">Volume</label>
+      <select id="target">
+        <option value="0">background (mni152)</option>
+        <option value="1" selected>overlay (mpld_asl)</option>
+      </select>
+      &nbsp; Drag a knob around its ring. One turn = 90 mm or 3.6x scale; rotation is limited to &plusmn;30 deg.
+      &nbsp;
+      <button id="resetAffine" type="button">Reset</button>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+      <br />
+      <span id="dials"></span>
+    </header>
+    <main>
+      <div id="canvas-container"><canvas id="gl1"></canvas></div>
+      <canvas id="gizmo" width="200" height="600"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module" src="./transform.js"></script>
+  </body>
+</html>

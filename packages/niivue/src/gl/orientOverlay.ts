@@ -161,6 +161,8 @@ uniform mat4 mtx;
 uniform int isLabel;
 uniform float labelMin;
 uniform float labelWidth;
+// Label-boundary probe distance in input voxels; 0 = filled regions.
+uniform float atlasOutline;
 // Modulation: scale RGB (mode 1) or alpha (mode 2) by a second volume's
 // windowed intensity. modVol holds [0,1] weights in the modulator's native
 // voxel order; modMtx maps output coords -> modulator native texture coords.
@@ -188,6 +190,31 @@ void main(void) {
         if (rawLabel == 0) {
             FragColor = vec4(0.0);
             return;
+        }
+        // Outline mode: keep only voxels on a region boundary. Probe the six
+        // neighbours atlasOutline input voxels away; if every one carries the
+        // same label this voxel is interior, so drop it and let the anatomy
+        // show through. Neighbours are clamped to the volume, so a region
+        // touching the volume edge has no border there. Mirrors orient.wgsl.
+        if (atlasOutline > 0.0) {
+            ivec3 dimsIn = textureSize(intensityVol, 0);
+            ivec3 hi = dimsIn - ivec3(1);
+            ivec3 tc = ivec3(clamp(vx.xyz * vec3(dimsIn), vec3(0.0), vec3(hi)));
+            int d = int(max(1.0, floor(atlasOutline + 0.5)));
+            bool isBoundary = false;
+            for (int axis = 0; axis < 3; ++axis) {
+                for (int s = -1; s <= 1; s += 2) {
+                    ivec3 probe = tc;
+                    probe[axis] = clamp(probe[axis] + s * d, 0, hi[axis]);
+                    float nRaw = float(texelFetch(intensityVol, probe, 0).r);
+                    if (int(round((scl_slope * nRaw) + scl_inter)) != rawLabel)
+                        isBoundary = true;
+                }
+            }
+            if (!isBoundary) {
+                FragColor = vec4(0.0);
+                return;
+            }
         }
         int labelIdx = rawLabel - int(labelMin);
         int clampedIdx = clamp(labelIdx, 0, int(labelWidth) - 1);
@@ -355,6 +382,7 @@ function getUniformLocations(
     isLabel: gl.getUniformLocation(program, 'isLabel'),
     labelMin: gl.getUniformLocation(program, 'labelMin'),
     labelWidth: gl.getUniformLocation(program, 'labelWidth'),
+    atlasOutline: gl.getUniformLocation(program, 'atlasOutline'),
     modVol: gl.getUniformLocation(program, 'modVol'),
     modMtx: gl.getUniformLocation(program, 'modMtx'),
     modulation: gl.getUniformLocation(program, 'modulation'),
@@ -619,7 +647,7 @@ function overlayColormapKey(nvimage: NVImage): string {
   if (label) {
     return `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
   }
-  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}`
+  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
 function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
@@ -798,7 +826,7 @@ export function prepareOverlayTextureCache(
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      NVCmaps.lutrgba8(nvimage.colormap),
+      NVCmaps.lutrgba8(nvimage.colormap, nvimage.isColormapInverted),
     )
   }
   gl.activeTexture(gl.TEXTURE2)
@@ -821,7 +849,7 @@ export function prepareOverlayTextureCache(
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      NVCmaps.lutrgba8(nvimage.colormapNegative),
+      NVCmaps.lutrgba8(nvimage.colormapNegative, nvimage.isColormapInverted),
     )
   } else {
     gl.texImage2D(
@@ -925,6 +953,7 @@ export function renderOverlayCache(
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
   if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
+  if (uniforms.atlasOutline) gl.uniform1f(uniforms.atlasOutline, u.atlasOutline)
   bindModulation(gl, uniforms, cache.modTexture, mod)
   for (let z = 0; z < cache.dimsOut[2]; z++) {
     if (uniforms.coordZ)
@@ -1272,7 +1301,10 @@ export function overlay2Texture(
     // Continuous colormap: 256-wide LUT with linear filtering
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    const lutData = NVCmaps.lutrgba8(nvimage.colormap)
+    const lutData = NVCmaps.lutrgba8(
+      nvimage.colormap,
+      nvimage.isColormapInverted,
+    )
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -1307,7 +1339,10 @@ export function overlay2Texture(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
   if (hasNegColormap) {
-    const negLutData = NVCmaps.lutrgba8(nvimage.colormapNegative)
+    const negLutData = NVCmaps.lutrgba8(
+      nvimage.colormapNegative,
+      nvimage.isColormapInverted,
+    )
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -1407,6 +1442,7 @@ export function overlay2Texture(
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
   if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
+  if (uniforms.atlasOutline) gl.uniform1f(uniforms.atlasOutline, u.atlasOutline)
   const modTexture = mod ? createModTexture(gl, mod) : null
   bindModulation(gl, uniforms, modTexture, mod)
   // Render each output slice
@@ -1624,7 +1660,7 @@ export function orientChunkToTexture(
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      NVCmaps.lutrgba8(nvimage.colormap),
+      NVCmaps.lutrgba8(nvimage.colormap, nvimage.isColormapInverted),
     )
   }
   const hasNegColormap =
@@ -1647,7 +1683,7 @@ export function orientChunkToTexture(
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      NVCmaps.lutrgba8(nvimage.colormapNegative),
+      NVCmaps.lutrgba8(nvimage.colormapNegative, nvimage.isColormapInverted),
     )
   } else {
     gl.texImage2D(
@@ -1711,6 +1747,11 @@ export function orientChunkToTexture(
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
   if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
+  // atlasOutline probes neighbours in the SOURCE texture; a chunk's texture is
+  // a tile of the volume, so probes at a chunk seam would read the neighbouring
+  // chunk's edge and draw a spurious border. Outlining is therefore off for the
+  // chunked path (matching wgpu/orientChunked.ts).
+  if (uniforms.atlasOutline) gl.uniform1f(uniforms.atlasOutline, 0)
   // Modulation is disabled for chunks, but the shader's modVol sampler must
   // still point at a valid texture unit (else it collides with the intensity
   // sampler at unit 0 -> "two textures of different types use the same sampler

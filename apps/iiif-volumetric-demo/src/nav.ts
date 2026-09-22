@@ -24,6 +24,7 @@ const PAGES: Page[] = [
   { href: '/multiplanar.html', label: 'multiplanar' },
   { href: '/overlay.html', label: 'overlay' },
   { href: '/microscopy.html', label: 'microscopy' },
+  { href: '/microscopy-overlay.html', label: 'micro overlay' },
   { href: '/drawing.html', label: 'drawing' },
   { href: '/wsi.html', label: 'wsi' },
 ]

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - gradient opacity and silhouette on exploded blocks</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      #help {
+        font: 12px/1.5 system-ui, sans-serif;
+        padding: 4px 8px;
+        opacity: 0.85;
+      }
+      #help b { font-weight: 600; }
+      header label { white-space: nowrap; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <label for="volumeSelect">Volume</label>
+      <select id="volumeSelect" title="The two CT volumes are the interesting silhouette cases: air/tissue and tissue/bone steps give the gradient something sharp to work with.">
+        <option value="mni152" selected>mni152 (MR brain)</option>
+        <option value="chris_t1">chris_t1 (MR head)</option>
+        <option value="visiblehuman">visiblehuman (microtome)</option>
+        <option value="torso">torso (CT)</option>
+      </select>
+      &nbsp;
+      <label for="gridSelect" title="Force the volume into this many bricks per axis. Each brick gets its own gradient texture, built with a 3-voxel halo so cut faces are not treated as edges.">Grid</label>
+      <select id="gridSelect">
+        <option value="2">2x2x2</option>
+        <option value="3" selected>3x3x3</option>
+        <option value="4">4x4x4</option>
+      </select>
+      &nbsp;
+      <label for="explode" title="Pull the bricks apart. A render-time per-brick offset, not a data change.">Explode</label>
+      <input type="range" min="100" value="170" max="300" class="slider" id="explode" />
+      <span id="explodeVal">1.70x</span>
+      &nbsp;
+      <label
+        for="opacitySlider"
+        title="volumeGradientOpacity: scales each background sample's alpha by magnitude^(value*8), so flat interior fades and edges stay"
+        >Gradient opacity</label
+      >
+      <input type="range" min="0" max="100" value="70" class="slider" id="opacitySlider" />
+      &nbsp;
+      <label
+        for="silhouetteSlider"
+        title="volumeSilhouette: scales alpha by (1-|dot(normal,rayDir)|)^value and culls anything more view-aligned than 1-value"
+        >Silhouette</label
+      >
+      <input type="range" min="0" max="95" value="0" class="slider" id="silhouetteSlider" />
+      &nbsp;
+      <label
+        for="gradSlider"
+        title="volumeIllumination: matcap lighting from the same precomputed per-brick gradient"
+        >Illumination</label
+      >
+      <input type="range" min="0" max="100" value="70" class="slider" id="gradSlider" />
+      &nbsp;
+      <label for="matcapSelect">Matcap</label>
+      <select id="matcapSelect">
+        <option>Cortex</option>
+        <option>Shiny</option>
+      </select>
+      &nbsp;
+      <label for="clipCheck" title="Cut the render with a clip plane. Right-drag the render to move it.">Clip</label>
+      <input type="checkbox" id="clipCheck" />
+      &nbsp;
+      <label for="backend">Backend</label>
+      <select id="backend">
+        <option value="webgpu" selected>WebGPU</option>
+        <option value="webgl2">WebGL2</option>
+      </select>
+    </header>
+    <div id="help">
+      <b>Explode</b> pulls the volume apart into bricks, so the interior these three features act on
+      is visible without a clip plane. Drag <b>Gradient opacity</b> to fade homogeneous interior and
+      keep edges; add <b>Silhouette</b> to fade whatever faces the camera, leaving rims.
+      &nbsp;|&nbsp;
+      Brick cut faces are <b>not</b> edges: each brick's gradient is built with a halo into its
+      neighbours, so the estimator never sees the cut. Left-drag rotates.
+    </div>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue::Gradient opacity and silhouette on exploded blocks&nbsp;</footer>
+    <script type="module" src="vox.gradopacity.explode.js"></script>
+  </body>
+</html>

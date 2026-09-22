@@ -13,10 +13,10 @@ Requires `@niivue/niivue` as a peer dependency.
 ## Usage
 
 ```ts
-import NiiVueGPU from '@niivue/niivue'
+import NiiVue from '@niivue/niivue'
 import { saveHTML } from '@niivue/nv-ext-save-html'
 
-const nv = new NiiVueGPU()
+const nv = new NiiVue()
 await nv.attachTo('gl1')
 await nv.loadVolumes([{ url: 'brain.nii.gz' }])
 

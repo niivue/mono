@@ -23,8 +23,10 @@
 import FileSystemStore from '@zarrita/storage/fs'
 import * as zarr from 'zarrita'
 import type {
+  AdapterChannel,
   AdapterContext,
   AdapterLevel,
+  ChannelSelector,
   ProbeMeta,
   SubvolumeBbox,
   VolumeAdapter,
@@ -56,13 +58,21 @@ interface NgffMultiscale {
   coordinateTransformations?: NgffCoordinateTransform[]
 }
 
+// `omero.channels` is the rendering-hints block; its only use here is the
+// per-channel human label, which is what makes the split entries findable.
+interface NgffOmero {
+  channels?: Array<{ label?: string }>
+}
+
 interface NgffAttrs {
   // OME-Zarr <= 0.4 places `multiscales` at the top of the group attrs.
   multiscales?: NgffMultiscale[]
+  omero?: NgffOmero
   // OME-Zarr 0.5+ (Zarr v3) nests all OME metadata under an `ome` key.
   ome?: {
     version?: string
     multiscales?: NgffMultiscale[]
+    omero?: NgffOmero
   }
 }
 
@@ -140,28 +150,46 @@ export const omezarrAdapter: VolumeAdapter = {
     }))
   },
 
-  async load(dirPath: string): Promise<VolumeHandle> {
-    return loadLevelInternal(dirPath, 0)
+  // A store with no `c` axis — or one of length 1, where there is nothing
+  // to pick — reports no channels, so the registry keeps making exactly one
+  // entry for it under its plain name.
+  async probeChannels(dirPath: string): Promise<AdapterChannel[]> {
+    const info = await resolveChannelInfo(dirPath)
+    if (!info || info.names.length < 2) return []
+    return info.names.map((name, index) => ({ index, name }))
   },
 
-  async loadLevel(dirPath: string, levelIdx: number): Promise<VolumeHandle> {
-    return loadLevelInternal(dirPath, levelIdx)
+  async load(
+    dirPath: string,
+    channel?: ChannelSelector,
+  ): Promise<VolumeHandle> {
+    return loadLevelInternal(dirPath, 0, channel)
+  },
+
+  async loadLevel(
+    dirPath: string,
+    levelIdx: number,
+    channel?: ChannelSelector,
+  ): Promise<VolumeHandle> {
+    return loadLevelInternal(dirPath, levelIdx, channel)
   },
 
   async loadSubvolume(
     dirPath: string,
     levelIdx: number,
     bbox: SubvolumeBbox,
+    channel?: ChannelSelector,
   ): Promise<VolumeHandle> {
-    return loadSubvolumeInternal(dirPath, levelIdx, bbox)
+    return loadSubvolumeInternal(dirPath, levelIdx, bbox, channel)
   },
 }
 
 async function loadLevelInternal(
   dirPath: string,
   levelIdx: number,
+  channel?: ChannelSelector,
 ): Promise<VolumeHandle> {
-  const { target, arr } = await openLevelArray(dirPath, levelIdx)
+  const { target, arr, channelAxis } = await openLevelArray(dirPath, levelIdx)
   const elemBytes = DTYPE_BYTES[arr.dtype] ?? 1
   const bytes = target.shape.reduce((a, b) => a * b, 1) * elemBytes
   if (bytes > MAX_WHOLE_LEVEL_BYTES) {
@@ -171,12 +199,11 @@ async function loadLevelInternal(
       )} MB) exceeds the whole-level cap; read it via subvolume.`,
     )
   }
-  // For arrays with leading non-spatial axes (t, c), index the first
-  // element of each so we always read the same spatial volume. NGFF
-  // requires spatial axes to be the trailing dims.
-  const ndim = arr.shape.length
-  const selection: Array<number | null> = []
-  for (let i = 0; i < ndim - 3; i++) selection.push(0)
+  const selection: Array<number | null> = leadingSelection(
+    arr.shape,
+    channelAxis,
+    channel,
+  )
   selection.push(null, null, null)
   const view = await zarr.get(arr, selection)
   return new VolumeHandle({
@@ -188,6 +215,7 @@ async function loadLevelInternal(
       omezarr: {
         level: target.index,
         levelPath: target.path,
+        channel: channelAxis >= 0 ? (channel ?? 0) : undefined,
       },
     },
   })
@@ -197,14 +225,17 @@ async function loadSubvolumeInternal(
   dirPath: string,
   levelIdx: number,
   bbox: SubvolumeBbox,
+  channel?: ChannelSelector,
 ): Promise<VolumeHandle> {
-  const { target, arr } = await openLevelArray(dirPath, levelIdx)
+  const { target, arr, channelAxis } = await openLevelArray(dirPath, levelIdx)
   // VolumeHandle uses (X, Y, Z); zarr storage is (..., Z, Y, X). Map the
   // bbox into per-axis slices so zarrita only fetches/decodes the chunks
   // that intersect the requested slab.
-  const ndim = arr.shape.length
-  const selection: Array<number | zarr.Slice> = []
-  for (let i = 0; i < ndim - 3; i++) selection.push(0)
+  const selection: Array<number | zarr.Slice> = leadingSelection(
+    arr.shape,
+    channelAxis,
+    channel,
+  )
   selection.push(zarr.slice(bbox.z0, bbox.z1))
   selection.push(zarr.slice(bbox.y0, bbox.y1))
   selection.push(zarr.slice(bbox.x0, bbox.x1))
@@ -221,6 +252,7 @@ async function loadSubvolumeInternal(
       omezarr: {
         level: target.index,
         levelPath: target.path,
+        channel: channelAxis >= 0 ? (channel ?? 0) : undefined,
         subvolume: { x0: bbox.x0, y0: bbox.y0, z0: bbox.z0 },
       },
     },
@@ -246,7 +278,95 @@ async function openLevelArray(dirPath: string, levelIdx: number) {
       `OME-Zarr dtype '${arr.dtype}' is not supported by this server`,
     )
   }
-  return { target, arr }
+  const info = await resolveChannelInfo(dirPath)
+  const channelAxis =
+    info && info.axisIndex < arr.shape.length - 3 ? info.axisIndex : -1
+  return { target, arr, channelAxis }
+}
+
+// Index each leading (non-spatial) axis down to a single element so the read
+// yields a 3D volume: the channel axis gets the requested channel, every
+// other leading axis (t, and any extra) gets 0. NGFF requires the spatial
+// axes to be the trailing dims, so everything before them is safe to pin.
+function leadingSelection(
+  shape: readonly number[],
+  channelAxis: number,
+  channel: ChannelSelector,
+): number[] {
+  const selection: number[] = []
+  for (let i = 0; i < shape.length - 3; i++) {
+    if (i !== channelAxis) {
+      selection.push(0)
+      continue
+    }
+    const index = channel ?? 0
+    const length = shape[i] ?? 0
+    if (!Number.isInteger(index) || index < 0 || index >= length) {
+      throw new Error(
+        `Channel ${index} is out of range (store has ${length} channel(s))`,
+      )
+    }
+    selection.push(index)
+  }
+  return selection
+}
+
+interface ChannelInfo {
+  // Position of the channel axis in the FULL axis list, not among the
+  // leading axes — callers compare it against `ndim - 3` themselves.
+  axisIndex: number
+  names: string[]
+}
+
+// Read the `c` axis and its labels from the group metadata. This reopens the
+// group on every load; that is one small JSON read next to a chunk fetch of
+// megabytes, so it is not worth threading through resolveLevels.
+async function resolveChannelInfo(
+  dirPath: string,
+): Promise<ChannelInfo | null> {
+  const store = new FileSystemStore(dirPath)
+  const grp = await zarr.open(zarr.root(store), { kind: 'group' })
+  const attrs = grp.attrs as NgffAttrs
+  const ms = attrs.multiscales?.[0] ?? attrs.ome?.multiscales?.[0]
+  const axes = ms?.axes
+  if (!axes || axes.length === 0) return null
+  const axisIndex = axes.findIndex(
+    (a) => a.type === 'channel' || a.name?.toLowerCase() === 'c',
+  )
+  if (axisIndex < 0) return null
+  // The channel axis must be a leading (non-spatial) one. NGFF puts the
+  // spatial axes last, so a `c` inside the trailing three dims (e.g. a 2D
+  // c,y,x store) is read as a spatial dim and cannot be selected per
+  // channel — reporting channels for it would mint N identical entries.
+  if (axisIndex >= axes.length - 3) return null
+
+  // The axis length lives on the array, not the metadata. Use the first
+  // dataset that opens — a partial fixture fetch may be missing the rest.
+  let length = 0
+  for (const ds of ms?.datasets ?? []) {
+    if (!ds?.path) continue
+    try {
+      const arr = await zarr.open(zarr.root(store).resolve(`/${ds.path}`), {
+        kind: 'array',
+      })
+      // A mismatch between the declared axes and the real array means we
+      // cannot trust axisIndex to point at the channel axis.
+      if (arr.shape.length !== axes.length) return null
+      length = arr.shape[axisIndex] ?? 0
+      break
+    } catch (err) {
+      if (err instanceof zarr.NotFoundError) continue
+      throw err
+    }
+  }
+  if (length < 1) return null
+
+  const labels = (attrs.omero ?? attrs.ome?.omero)?.channels ?? []
+  const names = Array.from({ length }, (_unused, i) => {
+    const label = labels[i]?.label
+    return typeof label === 'string' && label.length > 0 ? label : `c${i}`
+  })
+  return { axisIndex, names }
 }
 
 async function resolveLevels(dirPath: string): Promise<ResolvedLevel[]> {

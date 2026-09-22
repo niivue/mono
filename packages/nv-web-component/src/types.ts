@@ -1,4 +1,4 @@
-import type NiiVueGPU from '@niivue/niivue'
+import type NiiVue from '@niivue/niivue'
 import type {
   ImageFromUrlOptions,
   NiiVueOptions,
@@ -8,7 +8,7 @@ import type {
 export type { ImageFromUrlOptions, NiiVueOptions, NVImage }
 
 export interface NvSceneEventMap {
-  viewerCreated: (nv: NiiVueGPU, index: number) => void
+  viewerCreated: (nv: NiiVue, index: number) => void
   viewerRemoved: (index: number) => void
   locationChange: (viewerIndex: number, data: unknown) => void
   imageLoaded: (viewerIndex: number, volume: NVImage) => void

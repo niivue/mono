@@ -20,12 +20,27 @@
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck" checked/>
       &nbsp;
+      <label for="shaderSelect">Shader</label>
+      <select id="shaderSelect"></select>
+      &nbsp;
+      <label for="colormapSelect">Colormap</label>
+      <select id="colormapSelect"></select>
+      &nbsp;
+      <label for="colorBtn">Background</label>
+      <input type="color" id="colorBtn" value="#000000" />
+      &nbsp;
+      <label for="crosshairCheck">Crosshairs</label>
+      <input type="checkbox" id="crosshairCheck"/>
+      &nbsp;
+      <label for="orientCubeCheck">Orient Cube</label>
+      <input type="checkbox" id="orientCubeCheck"/>
+      &nbsp;
       <label for="slideMinNeg"> &nbsp; -Thresh</label>
       <input
         type="range"
         min="1"
-        value="15"
-        max="50"
+        value="12"
+        max="60"
         class="slider"
         id="slideMinNeg"
       />
@@ -33,8 +48,8 @@
       <label for="slideRangeNeg"> &nbsp; -Range</label>
       <input
         type="range"
-        min="1"
-        value="5"
+        min="0"
+        value="30"
         max="100"
         class="slider"
         id="slideRangeNeg"
@@ -61,10 +76,12 @@
       />
       &nbsp;
       <select id="alphaMode">
-        <option selected>restrict colorbar to range</option>
+        <option>restrict colorbar to range</option>
         <option>colorbar from 0,transparent subthreshold</option>
-        <option>colorbar from 0, translucent subthreshold</option>
+        <option selected>colorbar from 0, translucent subthreshold</option>
       </select>
+      &nbsp;
+      <button type="button" id="saveBitmapBtn">Save bitmap</button>
       &nbsp;
       <button type="button" id="aboutBtn">About</button>
     </header>

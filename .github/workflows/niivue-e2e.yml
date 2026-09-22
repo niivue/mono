@@ -1,0 +1,71 @@
+name: niivue browser contracts
+
+# Contracts that only a real browser can hold, and that unit tests cannot
+# reach: NiiVue's module graph uses Vite's `import.meta.glob`, so it will not
+# import under the Bun runner, and the behaviour under test lives in a Web
+# Worker or on the GPU.
+#
+#   partial-decode-4d   `limitFrames4D` must bound DECODING, not just retention.
+#                       It was retention-only on both load paths, and a 4D
+#                       preview peaked at 1.1 GB RSS for one 1.5 MB frame.
+#   reader-name-override  a caller-supplied `name` must reach `reader.read`;
+#                       MGH and VMR change behaviour on it.
+#   texcache-kind-change  a volume that stops being chunked must drop its
+#                       bricks. The entry used to leak for the life of the
+#                       renderer, holding every brick texture (issue #145).
+#                       This one loads mni152, so the checkout pulls that
+#                       single LFS object.
+#
+# Narrow on purpose. The rest of the e2e suite needs a GPU adapter that headless
+# runners do not have, so running it here would be flaky noise rather than
+# signal. These three are deterministic without one: the first two never touch
+# the GPU, and texcache-kind-change forces `--use-angle=swiftshader` for its
+# WebGL2 case, which is the case that was proven to fail on main. Its WebGPU
+# case skips here. `requestAdapter()` does succeed on the runner, but the GPU
+# instance dies partway through, so the spec skips on GPU-loss errors only; a
+# validation error from a destroyed texture, the failure it exists to catch,
+# still fails. `--workers=1` because two Chromium instances sharing one
+# software GPU were what killed the instance.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/niivue/**'
+      - '.github/workflows/niivue-e2e.yml'
+  pull_request:
+    paths:
+      - 'packages/niivue/**'
+      - '.github/workflows/niivue-e2e.yml'
+
+jobs:
+  browser-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Not `lfs: true`: that pulls every object under packages/dev-images
+      # (~93 MB) when one spec needs one 4.3 MB volume.
+      - name: Fetch the one LFS volume the specs need
+        run: git lfs pull --include=packages/dev-images/images/volumes/mni152.nii.gz
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      # Only chromium, and only its deps: the specs pin one project.
+      - name: Install Playwright chromium
+        working-directory: packages/niivue
+        run: bunx playwright install --with-deps chromium
+
+      - name: Browser contracts
+        working-directory: packages/niivue
+        run: |
+          bunx playwright test \
+            e2e/partial-decode-4d.spec.ts \
+            e2e/reader-name-override.spec.ts \
+            e2e/texcache-kind-change.spec.ts \
+            --workers=1 \
+            --reporter=line

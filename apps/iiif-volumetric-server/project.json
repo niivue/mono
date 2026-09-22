@@ -18,14 +18,14 @@
     },
     "lint": {
       "command": "bunx biome check {projectRoot}",
-      "inputs": ["typescript"]
+      "inputs": ["lintable"]
     },
     "format": {
       "command": "bunx biome format {projectRoot} --write",
-      "inputs": ["typescript"]
+      "inputs": ["lintable"]
     },
     "test": {
-      "command": "bun test",
+      "command": "bun test --max-concurrency=1",
       "options": { "cwd": "{projectRoot}" },
       "inputs": ["typescript"]
     },
@@ -35,6 +35,10 @@
     },
     "fetch-omezarr": {
       "command": "bun scripts/fetch-omezarr.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "fetch-allen": {
+      "command": "bun scripts/fetch-allen.ts",
       "options": { "cwd": "{projectRoot}" }
     },
     "fetch-dicom-wsi": {

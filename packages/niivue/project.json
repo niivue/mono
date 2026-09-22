@@ -27,11 +27,11 @@
     },
     "lint": {
       "command": "bunx biome check {projectRoot}",
-      "inputs": ["typescript"]
+      "inputs": ["lintable"]
     },
     "format": {
       "command": "bunx biome format {projectRoot} --write",
-      "inputs": ["typescript"]
+      "inputs": ["lintable"]
     },
     "test": {
       "command": "bun test",
@@ -54,6 +54,9 @@
       "inputs": [
         "{projectRoot}/e2e/**/*",
         "{projectRoot}/playwright.config.ts",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/examples/**/*",
+        "{projectRoot}/scripts/**/*",
         "typescript"
       ]
     }

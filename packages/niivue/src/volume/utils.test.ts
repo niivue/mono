@@ -14,6 +14,7 @@ import {
   getVoxelValue,
   hdrToArrayBuffer,
   reorientDrawingToNative,
+  robustDisplayWindow,
   temporalUnitScale,
   toTypedView,
   toTypedViewOrU8,
@@ -544,5 +545,107 @@ describe('extractVoxelFid', () => {
     // t=0 only: re(v=1,p,0) = 100 + p*10.
     expect(out?.[0]).toBeCloseTo(100, 5)
     expect(out?.[2]).toBeCloseTo(110, 5)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// robustDisplayWindow
+// ---------------------------------------------------------------------------
+describe('robustDisplayWindow', () => {
+  /** A ramp 0..255 with a handful of bright outliers at the top. */
+  const rampWithOutliers = (): { hdr: NIFTIHeader; img: Uint8Array } => {
+    const dim = 16
+    const n = dim * dim * dim
+    const img = new Uint8Array(n)
+    for (let i = 0; i < n; i++) img[i] = Math.floor((i / n) * 200)
+    for (let i = n - 8; i < n; i++) img[i] = 255
+    const hdr = createNiftiHeader(
+      [dim, dim, dim],
+      [1, 1, 1],
+      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      NiiDataType.DT_UINT8,
+    )
+    return { hdr, img }
+  }
+
+  test('ignores a placeholder header window that calMinMax would adopt', () => {
+    const { hdr, img } = rampWithOutliers()
+    // What createStreamingNVImage stamps on a streamed volume before any voxel
+    // has been read: the default display window, not file metadata.
+    hdr.cal_min = 0
+    hdr.cal_max = 1
+
+    // calMinMax honours it, which is the bug this helper exists to avoid.
+    expect(calMinMax(hdr, img).slice(0, 2)).toEqual([0, 1])
+
+    const [lo, hi] = robustDisplayWindow(hdr, img)
+    expect(hi).toBeGreaterThan(1)
+    expect(hi).toBeGreaterThan(lo)
+  })
+
+  test('restores the header window it borrowed', () => {
+    const { hdr, img } = rampWithOutliers()
+    hdr.cal_min = 0
+    hdr.cal_max = 1
+    robustDisplayWindow(hdr, img)
+    expect(hdr.cal_min).toBe(0)
+    expect(hdr.cal_max).toBe(1)
+  })
+
+  test('restores the header window even when the image is all non-finite', () => {
+    const dim = 4
+    const img = new Float32Array(dim * dim * dim).fill(Number.NaN)
+    const hdr = createNiftiHeader(
+      [dim, dim, dim],
+      [1, 1, 1],
+      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      NiiDataType.DT_FLOAT32,
+    )
+    hdr.cal_min = 5
+    hdr.cal_max = 9
+    expect(() => robustDisplayWindow(hdr, img)).toThrow()
+    expect(hdr.cal_min).toBe(5)
+    expect(hdr.cal_max).toBe(9)
+  })
+
+  test('is not skewed inward by NaN padding', () => {
+    // Two volumes with the SAME finite data: one packed, one padded out to 4x
+    // the size with NaN, which is what a DANDI float OCT store looks like
+    // outside the imaged cylinder. The percentile target is a fraction of the
+    // voxels the histogram holds, so the padding must not change the window.
+    const finite = 4096
+    const value = (i: number) => (i / finite) * 200
+    const packed = new Float32Array(finite)
+    for (let i = 0; i < finite; i++) packed[i] = value(i)
+    const padded = new Float32Array(finite * 4).fill(Number.NaN)
+    for (let i = 0; i < finite; i++) padded[i * 4] = value(i)
+
+    const floatHdr = (dims: [number, number, number]): NIFTIHeader =>
+      createNiftiHeader(
+        dims,
+        [1, 1, 1],
+        [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        NiiDataType.DT_FLOAT32,
+      )
+    const packedWin = robustDisplayWindow(floatHdr([16, 16, 16]), packed).slice(
+      0,
+      2,
+    )
+    const paddedWin = robustDisplayWindow(floatHdr([16, 16, 64]), padded).slice(
+      0,
+      2,
+    )
+    // Same bin resolution over the same value range, so this is exact, not close.
+    expect(paddedWin).toEqual(packedWin)
+  })
+
+  test('reports global min/max alongside the robust pair', () => {
+    const { hdr, img } = rampWithOutliers()
+    const [lo, hi, globalMin, globalMax] = robustDisplayWindow(hdr, img)
+    expect(globalMin).toBe(0)
+    expect(globalMax).toBe(255)
+    // The outliers pull globalMax past the robust high.
+    expect(hi).toBeLessThan(globalMax)
+    expect(lo).toBeGreaterThanOrEqual(globalMin)
   })
 })

@@ -1,16 +1,16 @@
 import type { NiiVueOptions, NVImage } from '@niivue/niivue'
-import NiiVueGPU, { DRAG_MODE, SHOW_RENDER, SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, { DRAG_MODE, SHOW_RENDER, SLICE_TYPE } from '@niivue/niivue'
 import type { LayoutConfig } from './layouts'
 import { defaultLayouts } from './layouts'
 import type { ImageFromUrlOptions, NvSceneEventMap, ViewerState } from './types'
 
 export { SLICE_TYPE }
 
-export type NiivueCallback = (nv: NiiVueGPU, index: number) => void
+export type NiivueCallback = (nv: NiiVue, index: number) => void
 
 export interface ViewerSlot {
   id: string
-  niivue: NiiVueGPU
+  niivue: NiiVue
   canvasElement: HTMLCanvasElement
   containerDiv: HTMLDivElement
   ready: Promise<void>
@@ -298,11 +298,11 @@ export class NvSceneController {
     return this.viewers.length < this.slots
   }
 
-  getNiivue(index: number): NiiVueGPU | undefined {
+  getNiivue(index: number): NiiVue | undefined {
     return this.viewers[index]?.niivue
   }
 
-  getAllNiivue(): NiiVueGPU[] {
+  getAllNiivue(): NiiVue[] {
     return this.viewers.map((viewer) => viewer.niivue)
   }
 
@@ -312,11 +312,11 @@ export class NvSceneController {
     })
   }
 
-  private hasSyncableContent(nv: NiiVueGPU): boolean {
+  private hasSyncableContent(nv: NiiVue): boolean {
     return nv.volumes.length > 0 || nv.meshes.length > 0
   }
 
-  private safeBroadcastTo(index: number, targets: NiiVueGPU[]): void {
+  private safeBroadcastTo(index: number, targets: NiiVue[]): void {
     const viewer = this.viewers[index]
     if (!viewer) return
     try {
@@ -383,10 +383,7 @@ export class NvSceneController {
     return this.viewerSliceLayouts.get(viewer.id) ?? null
   }
 
-  private applySliceLayout(
-    nv: NiiVueGPU,
-    layout: SliceLayoutTile[] | null,
-  ): void {
+  private applySliceLayout(nv: NiiVue, layout: SliceLayoutTile[] | null): void {
     if (layout && layout.length > 0) {
       nv.customLayout = layout
     } else {
@@ -396,7 +393,7 @@ export class NvSceneController {
     }
   }
 
-  getNiivueById(id: string): NiiVueGPU | undefined {
+  getNiivueById(id: string): NiiVue | undefined {
     return this.viewersById.get(id)?.niivue
   }
 
@@ -460,8 +457,7 @@ export class NvSceneController {
       (v: NVImage) => v.url === url || v.name === url,
     )
     if (volIdx >= 0) {
-      nv.model.removeVolume(volIdx)
-      await nv.updateGLVolume()
+      await nv.removeVolume(volIdx)
       this.emit('volumeRemoved', index, url)
       if (this.broadcasting) {
         this.rewireBroadcasting()
@@ -479,7 +475,7 @@ export class NvSceneController {
   private async findVolume(
     viewerIndex: number,
     volumeIndex: number,
-  ): Promise<{ nv: NiiVueGPU; vol: NVImage; volumeIndex: number } | undefined> {
+  ): Promise<{ nv: NiiVue; vol: NVImage; volumeIndex: number } | undefined> {
     const viewer = this.viewers[viewerIndex]
     if (!viewer) return undefined
     if (!(await this.waitForViewerReady(viewer))) return undefined
@@ -583,7 +579,7 @@ export class NvSceneController {
       ...options,
     }
 
-    const niivue = new NiiVueGPU(mergedOptions)
+    const niivue = new NiiVue(mergedOptions)
 
     const id = `nv-${this.nextId++}`
     this.viewerSliceLayouts.set(id, null)
@@ -606,7 +602,7 @@ export class NvSceneController {
 
     const index = this.viewers.length - 1
 
-    // Wire NiiVueGPU event listeners (sync — before attachment)
+    // Wire NiiVue event listeners (sync — before attachment)
     niivue.addEventListener('locationChange', (evt) => {
       const currentIndex = this.getViewerIndex(viewer)
       if (currentIndex >= 0) {

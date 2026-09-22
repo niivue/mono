@@ -31,7 +31,8 @@ const DZI_URLS = {
 }
 
 // TIFF/SVS sources build a geotiff-backed SlideTileSource. The OpenSlide server
-// has no CORS, so the .svs must be served same-origin (public/svs/, gitignored).
+// has no CORS, so local development uses public/svs/ and Pages uses the Git LFS
+// media base configured by VITE_STREAMING_MEDIA_BASE.
 const TIFF_URLS = {
   'tiff-cmu1': 'svs/CMU-1-Small-Region.svs',
 }
@@ -41,14 +42,13 @@ const TIFF_URLS = {
 NVSlide.registerTileDecoder('image/jp2', decodeJp2)
 
 const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
-// DICOM-WSI series downloaded + manifest-built by scripts/fetch-dicom-wsi.ts.
-// The manifest is dicom-wsi-range-v1: per-level JPEG tiles addressed by byte
-// offset, which NVSlide fetches over HTTP Range and decodes in-browser. Only
-// present after running the fetch script (the fixture is gitignored).
+// DICOM-WSI manifests use dicom-wsi-range-v1: per-level JPEG tiles addressed
+// by byte offset, which NVSlide fetches over HTTP Range and decodes in-browser.
+// Production manifests resolve from the hosted streaming-data repository.
 const DICOM_WSI_PATH = 'dicom-wsi/cptac-brca/manifest.json'
-// Manifest path per source-dropdown value. OpenSlide DICOM-WSI archives are
-// fetched + manifest-built by scripts/fetch-openslide-dicom.ts (gitignored);
-// only the JPEG TILED_FULL ones are loadable in-browser (see that script).
+// Manifest path per source-dropdown value. The OpenSlide DICOM-WSI archives
+// and manifests are hosted with Git LFS; only JPEG TILED_FULL sources are
+// loadable in-browser (see scripts/fetch-openslide-dicom.ts).
 const MANIFEST_PATHS = {
   synthetic: SYNTHETIC_MANIFEST_PATH,
   'dicom-wsi': DICOM_WSI_PATH,
@@ -127,10 +127,48 @@ function resolveDemoUrl(path) {
   return new URL(`${normalized}${path}`, window.location.href).toString()
 }
 
+function resolveStreamingUrl(path) {
+  const base =
+    import.meta.env.VITE_STREAMING_ASSET_BASE || import.meta.env.BASE_URL || '/'
+  const normalized = base.endsWith('/') ? base : `${base}/`
+  return new URL(`${normalized}${path}`, window.location.href).toString()
+}
+
+function resolveStreamingMediaUrl(path) {
+  const base =
+    import.meta.env.VITE_STREAMING_MEDIA_BASE ||
+    import.meta.env.VITE_STREAMING_ASSET_BASE ||
+    import.meta.env.BASE_URL ||
+    '/'
+  const normalized = base.endsWith('/') ? base : `${base}/`
+  return new URL(`${normalized}${path}`, window.location.href).toString()
+}
+
 function manifestUrl() {
-  return resolveDemoUrl(
-    MANIFEST_PATHS[els.source.value] ?? SYNTHETIC_MANIFEST_PATH,
-  )
+  const path = MANIFEST_PATHS[els.source.value] ?? SYNTHETIC_MANIFEST_PATH
+  return els.source.value === 'synthetic'
+    ? resolveDemoUrl(path)
+    : resolveStreamingUrl(path)
+}
+
+function manifestBinaryBaseUrl() {
+  const path = MANIFEST_PATHS[els.source.value] ?? SYNTHETIC_MANIFEST_PATH
+  return els.source.value === 'synthetic'
+    ? resolveDemoUrl(path)
+    : resolveStreamingMediaUrl(path)
+}
+
+async function slideFromManifest(opts) {
+  const url = manifestUrl()
+  const binaryBaseUrl = manifestBinaryBaseUrl()
+  if (binaryBaseUrl === url) return NVSlide.fromManifestUrl(url, opts)
+
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Slide manifest HTTP ${response.status}`)
+  return new NVSlide(await response.json(), {
+    ...opts,
+    manifestUrl: binaryBaseUrl,
+  })
 }
 
 function html(value) {
@@ -748,6 +786,7 @@ let loadSeq = 0
 // gitignored fixture fetched by a script, or an external host to be reachable;
 // without this a missing SVS or an offline DZI shows only a raw fetch error.
 function hintForSource(src) {
+  if (import.meta.env.VITE_STREAMING_ASSET_BASE) return ''
   if (src.startsWith('openslide-')) {
     return ` Did you run scripts/fetch-openslide-dicom.ts --slide=${src.replace('openslide-', '')}?`
   }
@@ -788,11 +827,11 @@ async function loadSlide() {
       next = NVSlide.fromSource(await DziSource.fromUrl(dziUrl), opts)
     } else if (tiffUrl) {
       next = NVSlide.fromSource(
-        await createTiffSource(resolveDemoUrl(tiffUrl)),
+        await createTiffSource(resolveStreamingMediaUrl(tiffUrl)),
         opts,
       )
     } else {
-      next = await NVSlide.fromManifestUrl(manifestUrl(), opts)
+      next = await slideFromManifest(opts)
     }
     if (seq !== loadSeq) {
       // A newer selection superseded this load; discard it.

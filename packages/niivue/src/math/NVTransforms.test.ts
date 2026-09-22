@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { mat4, vec3 } from 'gl-matrix'
+import { mat4, vec3, vec4 } from 'gl-matrix'
 import type { AffineMatrix, NVGlobalCamera, NVImage } from '@/NVTypes'
 import {
   arrayToMat4,
   calculateGlobalVolumeMvp,
+  calculateMvpMatrix,
+  calculateMvpMatrix2D,
   cart2sphDeg,
   copyAffine,
   createAffineTransformMatrix,
@@ -12,12 +14,20 @@ import {
   mat4ToArray,
   mm2frac,
   mm2vox,
+  mmPerPixel2D,
+  mmPerPixelRender,
   multiplyAffine,
+  panFollowCrosshair2D,
   rayBoxEntryMM,
   rayMarchFirstVisibleMM,
+  rayPlaneFirstVisibleMM,
   slicePlaneEquation,
+  stepZoom2D,
   unprojectScreen,
   vox2mm,
+  ZOOM_2D_MAX,
+  ZOOM_2D_MIN,
+  zoomPan2DAbout,
 } from './NVTransforms'
 
 const EPSILON = 1e-5
@@ -559,6 +569,44 @@ describe('unprojectScreen', () => {
   })
 })
 
+describe('rayPlaneFirstVisibleMM', () => {
+  const lo = [0, 0, 0]
+  const hi = [10, 10, 10]
+  const cross = [4, 6, 5]
+
+  test('takes the first plane the ray reaches', () => {
+    // Along +(1,1,1) from the origin corner: x=4 at t=4, y=6 at t=6, z=5 at t=5.
+    const hit = rayPlaneFirstVisibleMM([0, 0, 0], [10, 10, 10], lo, hi, cross)
+    expect(hit).toEqual([4, 4, 4])
+  })
+
+  test('a crossing outside the box does not count', () => {
+    // x = 40 is on the ray but past the box's far face.
+    expect(
+      rayPlaneFirstVisibleMM([-5, 6, 5], [15, 6, 5], lo, hi, [40, 6, 5]),
+    ).toBeNull()
+  })
+
+  test('skips a crossing where nothing is visible', () => {
+    // Nearest crossing (x=4) is transparent, so the pick falls through to z=5.
+    const hit = rayPlaneFirstVisibleMM(
+      [0, 0, 0],
+      [10, 10, 10],
+      lo,
+      hi,
+      cross,
+      (x) => (x > 4.5 ? 1 : 0),
+    )
+    expect(hit).toEqual([5, 5, 5])
+  })
+
+  test('returns null when no crossing is visible', () => {
+    expect(
+      rayPlaneFirstVisibleMM([0, 0, 0], [10, 10, 10], lo, hi, cross, () => 0),
+    ).toBeNull()
+  })
+})
+
 describe('rayBoxEntryMM', () => {
   const lo = [0, 0, 0]
   const hi = [10, 10, 10]
@@ -607,7 +655,9 @@ describe('rayBoxEntryMM', () => {
     ).toBeNull()
   })
 
-  test('skips clip refinement in cutaway mode', () => {
+  test('keeps the box face when the cutaway carves the far half', () => {
+    // Cutaway removes what a solid plane would keep (fx >= 0.5 -> mm x >= 5), so
+    // the +x ray still enters at the untouched near face.
     const entry = rayBoxEntryMM(
       [-5, 5, 5],
       [15, 5, 5],
@@ -616,7 +666,29 @@ describe('rayBoxEntryMM', () => {
       [1, 0, 0, 0],
       true,
     )
-    expect(entry?.[0]).toBeCloseTo(0) // box face, clip ignored
+    expect(entry?.[0]).toBeCloseTo(0)
+  })
+
+  test('advances past a cutaway that carves the near half', () => {
+    // Plane [-1,0,0,0]: solid would keep mm x <= 5, so the cutaway carves that
+    // near half out. The entry advances to where the ray leaves it (x=5).
+    const entry = rayBoxEntryMM(
+      [-5, 5, 5],
+      [15, 5, 5],
+      lo,
+      hi,
+      [-1, 0, 0, 0],
+      true,
+    )
+    expect(entry?.[0]).toBeCloseTo(5)
+  })
+
+  test('returns null when the cutaway carves the whole ray', () => {
+    // Plane [1,0,0,-0.6]: solid keeps fx >= -0.1, i.e. everything in the cube,
+    // so the cutaway removes the entire in-box segment.
+    expect(
+      rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi, [1, 0, 0, -0.6], true),
+    ).toBeNull()
   })
 })
 
@@ -662,5 +734,558 @@ describe('rayMarchFirstVisibleMM', () => {
       () => 1,
     )
     expect(hit).toBeNull()
+  })
+
+  test('lands on tissue exposed by a solid clip plane, not the cut surface', () => {
+    // The clip keeps mm x >= 5, and the volume is hollow until x=7: the pick must
+    // reach the cavity wall, not stop at the cut surface (x=5).
+    const sampler = (x: number) => (x >= 7 ? 1 : 0)
+    const hit = rayMarchFirstVisibleMM(
+      [-5, 5, 5],
+      [15, 5, 5],
+      lo,
+      hi,
+      sampler,
+      [1, 0, 0, 0],
+    )
+    expect(hit?.[0]).toBeGreaterThanOrEqual(7)
+    expect(hit?.[0]).toBeLessThan(7.1)
+  })
+
+  test('skips voxels inside a cutaway slab', () => {
+    // Cutaway carves out mm x <= 5 (what plane [-1,0,0,0] would keep), so the
+    // visible-everywhere volume is first pickable where the ray leaves it.
+    const hit = rayMarchFirstVisibleMM(
+      [-5, 5, 5],
+      [15, 5, 5],
+      lo,
+      hi,
+      () => 1,
+      [-1, 0, 0, 0],
+      true,
+    )
+    expect(hit?.[0]).toBeGreaterThanOrEqual(5)
+    expect(hit?.[0]).toBeLessThan(5.1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// zoomPan2DAbout
+// ---------------------------------------------------------------------------
+//
+// These assert against calculateMvpMatrix2D itself rather than restating the
+// algebra, because the bug being fixed (niivue/mono#68) was a compensation that
+// disagreed with the ortho window the renderer actually builds. A test that
+// only re-derived the formula would have passed against the broken code too.
+
+/**
+ * Where a world-mm point lands in clip space through the 2D slice transform,
+ * driven exactly as `NVSliceLayout` drives it: extents and pan permuted into
+ * the tile's [U, V, depth] order, with that orientation's rotations.
+ */
+function projectThroughSlice(
+  mm: readonly number[],
+  pan: readonly number[],
+  extentsMin: readonly number[],
+  extentsMax: readonly number[],
+  axCorSag = 0,
+  isRadiological = false,
+): [number, number] {
+  // IDX_MAP and rotations(), mirrored from NVSliceLayout so this test pins the
+  // transform rather than the layout engine's current wiring to it.
+  const map = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 2, 0],
+  ][axCorSag]
+  const rot = [
+    { azimuth: isRadiological ? 180 : 0, elevation: isRadiological ? -90 : 90 },
+    { azimuth: isRadiological ? 180 : 0, elevation: 0 },
+    { azimuth: isRadiological ? 90 : -90, elevation: 0 },
+  ][axCorSag]
+  const mn = [extentsMin[map[0]], extentsMin[map[1]], extentsMin[map[2]]]
+  const mx = [extentsMax[map[0]], extentsMax[map[1]], extentsMax[map[2]]]
+  const [mvp] = calculateMvpMatrix2D(
+    [0, 0, 100, 100],
+    mn,
+    mx,
+    Infinity,
+    undefined,
+    rot.azimuth,
+    rot.elevation,
+    isRadiological,
+    undefined,
+    undefined,
+    [pan[map[0]], pan[map[1]], pan[3]],
+  )
+  const clip = [0, 0, 0, 0]
+  for (let r = 0; r < 4; r++) {
+    clip[r] =
+      mvp[r] * mm[0] + mvp[4 + r] * mm[1] + mvp[8 + r] * mm[2] + mvp[12 + r]
+  }
+  return [clip[0] / clip[3], clip[1] / clip[3]]
+}
+
+describe('zoomPan2DAbout', () => {
+  // Deliberately NOT centred on the world origin: the previous implementation
+  // measured from the origin, so a centred volume hid half the bug.
+  const extentsMin = [-90, -126, -72]
+  const extentsMax = [90, 90, 108]
+
+  test('anchorHoldsItsScreenPositionAcrossOneZoomStep', () => {
+    const pan = [0, 0, 0, 1]
+    const anchor = [40, -30, 12]
+    const before = projectThroughSlice(anchor, pan, extentsMin, extentsMax)
+    const next = zoomPan2DAbout(pan, 1.1, anchor, extentsMin, extentsMax)
+    const after = projectThroughSlice(
+      anchor,
+      [next[0], next[1], next[2], 1.1],
+      extentsMin,
+      extentsMax,
+    )
+    approx(after[0], before[0])
+    approx(after[1], before[1])
+  })
+
+  test('anchorStillHoldsAfterManyStepsIntoADeepZoom', () => {
+    // The old difference-of-zooms compensation was off by a factor of the new
+    // zoom, so it looked passable at 1.0 and drifted badly by 5x.
+    const anchor = [-55, 60, -20]
+    let pan = [0, 0, 0, 1]
+    const before = projectThroughSlice(anchor, pan, extentsMin, extentsMax)
+    for (let i = 0; i < 20; i++) {
+      const zoom = Math.round(pan[3] * 1.1 * 10) / 10
+      const next = zoomPan2DAbout(pan, zoom, anchor, extentsMin, extentsMax)
+      pan = [next[0], next[1], next[2], zoom]
+    }
+    expect(pan[3]).toBeGreaterThan(4)
+    const after = projectThroughSlice(anchor, pan, extentsMin, extentsMax)
+    approx(after[0], before[0])
+    approx(after[1], before[1])
+  })
+
+  test('anchorHoldsUnderRadiologicalOrientation', () => {
+    const pan = [0, 0, 0, 1]
+    const anchor = [40, -30, 12]
+    const before = projectThroughSlice(
+      anchor,
+      pan,
+      extentsMin,
+      extentsMax,
+      0,
+      true,
+    )
+    const next = zoomPan2DAbout(pan, 2, anchor, extentsMin, extentsMax)
+    const after = projectThroughSlice(
+      anchor,
+      [next[0], next[1], next[2], 2],
+      extentsMin,
+      extentsMax,
+      0,
+      true,
+    )
+    approx(after[0], before[0])
+    approx(after[1], before[1])
+  })
+
+  test('anchorHoldsOnEveryTileFromOneCompensation', () => {
+    // One pan serves all three tiles, so the compensation is only correct if it
+    // holds under each tile's permutation of the world axes.
+    const pan = [-6, 4, 9, 1.3]
+    const anchor = [33, -47, 51]
+    for (const axCorSag of [0, 1, 2]) {
+      const before = projectThroughSlice(
+        anchor,
+        pan,
+        extentsMin,
+        extentsMax,
+        axCorSag,
+      )
+      const next = zoomPan2DAbout(pan, 3.1, anchor, extentsMin, extentsMax)
+      const after = projectThroughSlice(
+        anchor,
+        [next[0], next[1], next[2], 3.1],
+        extentsMin,
+        extentsMax,
+        axCorSag,
+      )
+      approx(after[0], before[0])
+      approx(after[1], before[1])
+    }
+  })
+
+  test('anchorHoldsWhenThePanIsAlreadyNonZero', () => {
+    const pan = [12, -8, 3, 1.6]
+    const anchor = [25, 41, -7]
+    const before = projectThroughSlice(anchor, pan, extentsMin, extentsMax)
+    const next = zoomPan2DAbout(pan, 2.4, anchor, extentsMin, extentsMax)
+    const after = projectThroughSlice(
+      anchor,
+      [next[0], next[1], next[2], 2.4],
+      extentsMin,
+      extentsMax,
+    )
+    approx(after[0], before[0])
+    approx(after[1], before[1])
+  })
+
+  test('unchangedZoomLeavesThePanAlone', () => {
+    const pan = [12, -8, 3, 2]
+    const next = zoomPan2DAbout(pan, 2, [1, 2, 3], extentsMin, extentsMax)
+    approx(next[0], 12)
+    approx(next[1], -8)
+    approx(next[2], 3)
+  })
+
+  test('nonPositiveOrNonFiniteZoomIsRefusedRatherThanPropagated', () => {
+    const pan = [5, 6, 7, 2]
+    for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const next = zoomPan2DAbout(pan, bad, [1, 2, 3], extentsMin, extentsMax)
+      expect(next).toEqual([5, 6, 7])
+    }
+  })
+
+  test('degenerateExtentsRescaleThePanRatherThanReturningNaN', () => {
+    const flat = [10, 10, 10]
+    const next = zoomPan2DAbout([4, 4, 4, 2], 4, [10, 10, 10], flat, flat)
+    for (const v of next) expect(Number.isFinite(v)).toBe(true)
+    approx(next[0], 2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// panFollowCrosshair2D
+// ---------------------------------------------------------------------------
+//
+// Like zoomPan2DAbout above, visibility is asserted through
+// calculateMvpMatrix2D itself (via projectThroughSlice): "inside the window"
+// means the crosshair's in-plane clip coordinates are within [-1, 1] on the
+// ortho window the renderer actually builds, not a restatement of the algebra.
+
+describe('panFollowCrosshair2D', () => {
+  // Same deliberately non-origin-centred extents as zoomPan2DAbout.
+  const extentsMin = [-90, -126, -72]
+  const extentsMax = [90, 90, 108]
+
+  /**
+   * The per-axis window a tile with ortho bounds `mn`/`mx` shows under `pan`:
+   * what NVSliceLayout.tileVisibleWindowMM reports, restated here so the test
+   * pins the helper against calculateMvpMatrix2D rather than the layout code.
+   */
+  function windowOf(
+    pan: readonly number[],
+    mn: readonly number[] = extentsMin,
+    mx: readonly number[] = extentsMax,
+  ): Array<{ minMM: number; maxMM: number } | null> {
+    return [0, 1, 2].map((i) => {
+      const centre = (mn[i] + mx[i]) / 2 - pan[i]
+      const half = (mx[i] - mn[i]) / (2 * pan[3])
+      return { minMM: centre - half, maxMM: centre + half }
+    })
+  }
+
+  /** True when `mm` projects inside the tile's clip window on both axes. */
+  function isVisibleOnTile(
+    mm: readonly number[],
+    pan: readonly number[],
+    axCorSag: number,
+    isRadiological = false,
+    mn: readonly number[] = extentsMin,
+    mx: readonly number[] = extentsMax,
+  ): boolean {
+    const [u, v] = projectThroughSlice(
+      mm,
+      pan,
+      mn,
+      mx,
+      axCorSag,
+      isRadiological,
+    )
+    const eps = 1e-4
+    return Math.abs(u) <= 1 + eps && Math.abs(v) <= 1 + eps
+  }
+
+  test('visibleCrosshairLeavesThePanUntouched', () => {
+    const pan = [0, 0, 0, 2]
+    const crosshair = [10, -20, 20]
+    for (const axCorSag of [0, 1, 2]) {
+      expect(isVisibleOnTile(crosshair, pan, axCorSag)).toBe(true)
+    }
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
+    expect(next).toEqual([0, 0, 0])
+  })
+
+  test('crosshairPastOneEdgePansMinimallyOnThatAxisAlone', () => {
+    // At zoom 2 with zero pan the visible x window is [-45, 45]; x = 60 is out.
+    const pan = [0, 0, 0, 2]
+    const crosshair = [60, -20, 20]
+    expect(isVisibleOnTile(crosshair, pan, 0)).toBe(false)
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
+    // Minimal move: the crosshair lands exactly ON the crossed edge, so the
+    // pan moved by the overshoot (15 mm) and no further; other axes untouched.
+    approx(next[0], -15)
+    expect(next[1]).toBe(0)
+    expect(next[2]).toBe(0)
+    const after = [next[0], next[1], next[2], 2]
+    const [u] = projectThroughSlice(crosshair, after, extentsMin, extentsMax, 0)
+    approx(Math.abs(u), 1)
+  })
+
+  test('crosshairBelowTheLowerEdgePansTheOtherWay', () => {
+    // Visible y window at zoom 2, pan 0 is [-72, 36]; y = -100 is below it.
+    const pan = [0, 0, 0, 2]
+    const crosshair = [10, -100, 20]
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
+    expect(next[0]).toBe(0)
+    approx(next[1], 28)
+    expect(next[2]).toBe(0)
+    const after = [next[0], next[1], next[2], 2]
+    const [, v] = projectThroughSlice(
+      crosshair,
+      after,
+      extentsMin,
+      extentsMax,
+      0,
+    )
+    approx(Math.abs(v), 1)
+  })
+
+  test('followedCrosshairIsVisibleOnEveryTileFromOnePan', () => {
+    // Off-window on all three axes at once, with a non-zero starting pan: one
+    // shared pan must satisfy each tile's permutation of the world axes.
+    const pan = [12, -8, 3, 3.5]
+    const crosshair = [-80, 82, -60]
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
+    const after = [next[0], next[1], next[2], 3.5]
+    for (const axCorSag of [0, 1, 2]) {
+      expect(isVisibleOnTile(crosshair, pan, axCorSag)).toBe(false)
+      expect(isVisibleOnTile(crosshair, after, axCorSag)).toBe(true)
+    }
+  })
+
+  test('followsTheTileWindowNotTheDataExtents', () => {
+    // A filled single view widens the ortho window into the margin (here x,
+    // 180 mm of data in a 380 mm window) while the data extents stay put. The
+    // crosshair at x = 60 is past the data's zoom-2 window ([-45, 45]) but
+    // well inside the tile's ([-95, 95]): it is on screen, so nothing moves.
+    const wideMin = [-190, -126, -72]
+    const wideMax = [190, 90, 108]
+    const pan = [0, 0, 0, 2]
+    const onScreen = [60, -20, 20]
+    expect(isVisibleOnTile(onScreen, pan, 0)).toBe(false)
+    expect(isVisibleOnTile(onScreen, pan, 0, false, wideMin, wideMax)).toBe(
+      true,
+    )
+    expect(
+      panFollowCrosshair2D(pan, onScreen, windowOf(pan, wideMin, wideMax)),
+    ).toEqual([0, 0, 0])
+    // Past the tile's window the pan moves to ITS edge (25 mm), not to the
+    // data edge (which would be 75 mm and leave the crosshair mid-screen).
+    const offScreen = [120, -20, 20]
+    const next = panFollowCrosshair2D(
+      pan,
+      offScreen,
+      windowOf(pan, wideMin, wideMax),
+    )
+    approx(next[0], -25)
+    const after = [next[0], next[1], next[2], 2]
+    const [u] = projectThroughSlice(offScreen, after, wideMin, wideMax, 0)
+    approx(Math.abs(u), 1)
+  })
+
+  test('radiologicalOrientationNeedsNoSpecialCase', () => {
+    const pan = [0, 0, 0, 2]
+    const crosshair = [60, -20, 20]
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
+    const after = [next[0], next[1], next[2], 2]
+    expect(isVisibleOnTile(crosshair, after, 0, true)).toBe(true)
+  })
+
+  test('zoomAtOrBelowOneLeavesThePanUntouched', () => {
+    // Un-zoomed views keep the default behaviour byte-identical, even for a
+    // crosshair a nonzero pan has pushed off-window.
+    for (const zoom of [1, 0.5]) {
+      const pan = [40, 0, 0, zoom]
+      const next = panFollowCrosshair2D(pan, [500, 500, 500], windowOf(pan))
+      expect(next).toEqual([40, 0, 0])
+    }
+  })
+
+  test('degenerateAndNonFiniteInputsAreSkippedNotNaN', () => {
+    // An axis no tile shows, or a flat one (single slice), has no window to
+    // follow into.
+    const flat = { minMM: 10, maxMM: 10 }
+    expect(
+      panFollowCrosshair2D([1, 2, 3, 2], [99, 99, 99], [null, flat, null]),
+    ).toEqual([1, 2, 3])
+    // A NaN crosshair coordinate must not poison the pan.
+    const pan = [0, 0, 0, 2]
+    const next = panFollowCrosshair2D(pan, [Number.NaN, 0, 0], windowOf(pan))
+    expect(next).toEqual([0, 0, 0])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// stepZoom2D
+// ---------------------------------------------------------------------------
+
+describe('stepZoom2D', () => {
+  test('everyNotchMovesTheZoom', () => {
+    // The plain snapped 10% step froze at 0.5 on the way down and left every
+    // smaller zoom stuck in both directions.
+    for (const dir of [1, -1]) {
+      let zoom = dir > 0 ? ZOOM_2D_MIN : ZOOM_2D_MAX
+      for (let i = 0; i < 200; i++) {
+        const next = stepZoom2D(zoom, dir)
+        if (next === ZOOM_2D_MAX || next === ZOOM_2D_MIN) break
+        expect(next).not.toBe(zoom)
+        zoom = next
+      }
+    }
+  })
+
+  test('bothEndsOfTheRangeAreReachable', () => {
+    // Second pass through fround: scene.pan2Dxyzmm is a vec4, so 0.4 comes back
+    // as 0.40000000596 and an exact stall test jammed the wheel there.
+    for (const f of [(x: number) => x, Math.fround]) {
+      let zoom = f(1)
+      for (let i = 0; i < 200 && zoom > ZOOM_2D_MIN; i++)
+        zoom = f(stepZoom2D(zoom, -1))
+      expect(zoom).toBe(f(ZOOM_2D_MIN))
+      for (let i = 0; i < 200 && zoom < ZOOM_2D_MAX; i++)
+        zoom = f(stepZoom2D(zoom, 1))
+      expect(zoom).toBe(f(ZOOM_2D_MAX))
+    }
+  })
+
+  test('lowEndStepsAreReversible', () => {
+    // Where the forced increment governs, the grid is walked one tenth at a
+    // time and a notch back undoes a notch in. Higher up the proportional step
+    // takes over and does not round-trip (7 -> 7.7 -> 6.9), which is the
+    // multiplicative curve working as intended, not a defect.
+    for (const zoom of [0.1, 0.2, 0.3, 0.4]) {
+      approx(stepZoom2D(stepZoom2D(zoom, 1), -1), zoom)
+    }
+  })
+
+  test('staysOnTheTenthsGrid', () => {
+    let zoom = 1
+    for (let i = 0; i < 40; i++) {
+      zoom = stepZoom2D(zoom, i % 3 === 0 ? -1 : 1)
+      approx(zoom * 10, Math.round(zoom * 10))
+    }
+  })
+
+  test('clampsRatherThanRunningPastTheRange', () => {
+    expect(stepZoom2D(ZOOM_2D_MAX, 1)).toBe(ZOOM_2D_MAX)
+    expect(stepZoom2D(ZOOM_2D_MIN, -1)).toBe(ZOOM_2D_MIN)
+  })
+
+  test('noDirectionIsANoOp', () => {
+    expect(stepZoom2D(1.7, 0)).toBe(1.7)
+  })
+
+  test('aBrokenZoomRecoversToTheFloor', () => {
+    for (const bad of [0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(stepZoom2D(bad, 1)).toBe(ZOOM_2D_MIN)
+    }
+  })
+})
+
+describe('mmPerPixel2D', () => {
+  // Project a 1 mm step through the very matrix the helper claims to invert and
+  // check it lands one reported pixel away. Pinned against the matrix rather
+  // than against a formula so the two cannot drift apart.
+  const pixelsPerMM = (
+    mn: number[],
+    mx: number[],
+    ltwh: number[],
+    pan?: number[],
+  ): number => {
+    const [mvp] = calculateMvpMatrix2D(
+      ltwh,
+      mn,
+      mx,
+      Infinity,
+      undefined,
+      0,
+      0,
+      false,
+      undefined,
+      undefined,
+      pan,
+      false,
+    )
+    const at = (u: number): number => {
+      const p = vec4.fromValues(u, 0, 0, 1)
+      vec4.transformMat4(p, p, mvp)
+      // NDC x spans [-1, 1] across the tile's pixel width.
+      return ((p[0] / p[3]) * ltwh[2]) / 2
+    }
+    return Math.abs(at(1) - at(0))
+  }
+
+  test('reports the tile scale calculateMvpMatrix2D sets up', () => {
+    const mn = [-90, -110, 0]
+    const mx = [90, 110, 0]
+    const ltwh = [0, 0, 360, 440]
+    const measured = pixelsPerMM(mn, mx, ltwh)
+    expect(mmPerPixel2D(mn, mx, ltwh)).toBeCloseTo(1 / measured, 6)
+    expect(mmPerPixel2D(mn, mx, ltwh)).toBeCloseTo(0.5, 6)
+  })
+
+  test('shrinks with the 2D zoom', () => {
+    const mn = [-90, -110, 0]
+    const mx = [90, 110, 0]
+    const ltwh = [0, 0, 360, 440]
+    const pan = [0, 0, 4]
+    const measured = pixelsPerMM(mn, mx, ltwh, pan)
+    expect(mmPerPixel2D(mn, mx, ltwh, pan)).toBeCloseTo(1 / measured, 6)
+    // A crosshair asking for a fixed pixel weight therefore asks for a quarter
+    // of the world radius once the view is zoomed 4x.
+    expect(mmPerPixel2D(mn, mx, ltwh, pan)).toBeCloseTo(
+      mmPerPixel2D(mn, mx, ltwh) / 4,
+      6,
+    )
+  })
+
+  test('is 0 for a tile with no width', () => {
+    expect(mmPerPixel2D([-1, -1, 0], [1, 1, 0], [0, 0, 0, 10])).toBe(0)
+  })
+})
+
+describe('mmPerPixelRender', () => {
+  const pixelsPerMM = (
+    ltwh: number[],
+    furthest: number,
+    zoom: number,
+  ): number => {
+    const [mvp] = calculateMvpMatrix(ltwh, 0, 0, [0, 0, 0], furthest, zoom)
+    const at = (u: number): number => {
+      const p = vec4.fromValues(u, 0, 0, 1)
+      vec4.transformMat4(p, p, mvp as mat4)
+      return ((p[0] / p[3]) * ltwh[2]) / 2
+    }
+    return Math.abs(at(1) - at(0))
+  }
+
+  test('reports the scale calculateMvpMatrix sets up', () => {
+    const ltwh = [0, 0, 600, 400]
+    const measured = pixelsPerMM(ltwh, 100, 1)
+    expect(mmPerPixelRender(ltwh, 100, 1)).toBeCloseTo(1 / measured, 6)
+  })
+
+  test('shrinks with the render zoom', () => {
+    const ltwh = [0, 0, 400, 600]
+    const measured = pixelsPerMM(ltwh, 100, 2)
+    expect(mmPerPixelRender(ltwh, 100, 2)).toBeCloseTo(1 / measured, 6)
+    expect(mmPerPixelRender(ltwh, 100, 2)).toBeCloseTo(
+      mmPerPixelRender(ltwh, 100, 1) / 2,
+      6,
+    )
+  })
+
+  test('is 0 for a tile with no area', () => {
+    expect(mmPerPixelRender([0, 0, 600, 0], 100, 1)).toBe(0)
   })
 })

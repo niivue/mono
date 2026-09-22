@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Oriented microscopy overlay — niivue</title>
+    <title>Microscopy — niivue</title>
     <style>
       :root { color-scheme: dark; }
       html, body { margin: 0; height: 100%; background: #0b0c0e; color: #e8eaed; font: 13px/1.5 system-ui, sans-serif; }
@@ -16,9 +16,31 @@
       .controls label { color: #9aa0a6; }
       select, button { background: #16181c; color: #e8eaed; border: 1px solid #2a2d31; border-radius: 4px; padding: 3px 8px; font: inherit; }
       button { cursor: pointer; }
-      button:hover { border-color: #3a3d41; }
+      button:hover:not(:disabled) { border-color: #3a3d41; }
+      button:disabled { color: #5f6368; cursor: default; }
       input[type="range"] { accent-color: #8ab4f8; vertical-align: middle; }
-      main { position: relative; flex: 1; min-height: 0; background: #000; }
+      .body { display: flex; flex: 1; min-height: 0; }
+      aside { width: 260px; flex: none; border-right: 1px solid #1f2227; overflow-y: auto; padding: 8px 10px; }
+      aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #9aa0a6; font-weight: 600; margin: 10px 0 6px; }
+      aside h2:first-child { margin-top: 0; }
+      .head-row { display: flex; align-items: baseline; justify-content: space-between; }
+      .head-row .picks { display: flex; gap: 4px; }
+      .head-row button { padding: 0 5px; font-size: 11px; }
+      .head-row select { padding: 0 4px; font-size: 11px; }
+      .channels { display: flex; flex-direction: column; gap: 2px; }
+      .channels label { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+      .channels label.disabled { color: #5f6368; }
+      .channels .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .channels select { padding: 0 4px; font-size: 11px; max-width: 92px; }
+      .channels .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+      .channels .tag { flex: none; color: #9aa0a6; font-size: 10px; }
+      button.on { border-color: #8ab4f8; color: #8ab4f8; }
+      .note { color: #9aa0a6; font-size: 11px; margin: 6px 0 0; }
+      .streaming { display: flex; flex-direction: column; gap: 6px; }
+      .streaming a { display: block; color: #8ab4f8; text-decoration: none; border: 1px solid #2a2d31; border-radius: 4px; padding: 5px 7px; }
+      .streaming a:hover { border-color: #3a3d41; }
+      .streaming .meta { display: block; color: #9aa0a6; font-size: 11px; }
+      main { position: relative; flex: 1; min-width: 0; background: #000; }
       canvas { width: 100%; height: 100%; display: block; }
       .hud { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 6px 9px; border-radius: 5px; font-size: 11px; white-space: pre; pointer-events: none; max-width: 56ch; }
       .hint { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.55); padding: 5px 9px; border-radius: 5px; font-size: 11px; color: #9aa0a6; }
@@ -27,29 +49,57 @@
   </head>
   <body>
     <header>
-      <strong>Oriented microscopy overlay</strong>
+      <strong>Microscopy</strong>
       <span class="links" data-nav-links></span>
     </header>
     <div class="controls">
-      <label for="base">base volume</label>
-      <select id="base"></select>
+      <label for="dataset">dataset</label>
+      <select id="dataset"></select>
       <label for="layout">layout</label>
       <select id="layout">
         <option value="4">3D render</option>
         <option value="3">multiplanar</option>
+        <option value="0">axial</option>
       </select>
-      <label>yaw <input type="range" id="yaw" min="0" max="360" step="2" value="35" /></label>
-      <label>pitch <input type="range" id="pitch" min="-90" max="90" step="2" value="20" /></label>
-      <label>opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.85" /></label>
-      <button id="reset" type="button">reset orientation</button>
-      <span id="mag" style="color:#9aa0a6"></span>
+      <label>overlay opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.6" /></label>
+      <label title="draw segmentation masks as their surface shell, so a filled structure stops hiding what is inside it"><input type="checkbox" id="hollow" checked /> hollow masks</label>
+      <label title="matcap shading from the local intensity gradient, applied to every channel — the flat look of an unlit stack is what makes overlapping structures hard to read">shading <input type="range" id="shading" min="0" max="1" step="0.05" value="0" /></label>
+      <label title="keep the brightest sample along each ray instead of compositing front-to-back, so a faint structure behind a bright one is still visible"><input type="checkbox" id="maxproject" /> max project</label>
+      <label title="drop a clip plane through the stack (right-drag the 3D view repositions it; the wheel adjusts its depth while active)"><input type="checkbox" id="clip" /> clip</label>
+      <label title="cut every channel with the clip plane instead of only the base layer — each channel is an overlay, so without this the plane appears to do nothing"><input type="checkbox" id="clipoverlays" /> clip overlays</label>
+      <label title="honour the first channel's colormap alpha on 2D slices — these palettes carry their structure in alpha, so without it the background channel is a flat wash in the 2D views"><input type="checkbox" id="alpha2d" checked /> 2D colormap alpha</label>
+      <button id="turntable" type="button" title="spin the 3D render, so overlapping structures separate">turntable</button>
+      <button id="reset" type="button" title="return the camera to its starting angle">reset</button>
+      <button id="load" type="button">load channels</button>
+      <button id="clear" type="button">clear</button>
+      <span id="status" style="color:#9aa0a6"></span>
     </div>
-    <main>
-      <canvas id="nv-canvas"></canvas>
-      <div class="hud" id="hud">loading…</div>
-      <div class="hint">a hi-res microscopy patch is placed inside the base with an oblique affine · yaw/pitch re-orient it in place via setVolumeAffine — niivue reslices it onto the base grid</div>
-      <div class="fallback" id="fallback"></div>
-    </main>
+    <div class="body">
+      <aside>
+        <div class="head-row">
+          <h2>channels</h2>
+          <span class="picks">
+            <select id="family" title="list one channel family, so &quot;all&quot; picks that family">
+              <option value="all">both</option>
+              <option value="raw">raw</option>
+              <option value="seg">seg</option>
+            </select>
+            <button id="pick-all" type="button" title="select up to the channel cap, in order">all</button>
+            <button id="pick-none" type="button">none</button>
+          </span>
+        </div>
+        <div class="channels" id="channels"></div>
+        <p class="note" id="channel-note"></p>
+        <h2>streamed elsewhere</h2>
+        <div class="streaming" id="streaming"></div>
+      </aside>
+      <main>
+        <canvas id="nv-canvas"></canvas>
+        <div class="hud" id="hud">loading…</div>
+        <div class="hint">every multi-channel microscopy source the server exposes · one registry entry per channel, stacked as niivue overlays · raw channels windowed floor-to-peak, segmentations thresholded and drawn as shells · Allen structures use the reference viewer's flat-hue palette</div>
+        <div class="fallback" id="fallback"></div>
+      </main>
+    </div>
     <script type="module" src="/src/microscopy.ts"></script>
   </body>
 </html>

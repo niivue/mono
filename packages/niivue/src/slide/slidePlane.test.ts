@@ -157,6 +157,27 @@ describe('selectSlidePlaneLevel', () => {
   test('honours a pinned levelIndex (LOD off)', () => {
     expect(selectSlidePlaneLevel(state(1), IDENTITY, 512, 512).index).toBe(1)
   })
+
+  test('resolves a pinned manifest level identifier, not its array position', () => {
+    const nonContiguous = [
+      pyramidLevel(2, 1, 2, 2),
+      pyramidLevel(7, 2, 1, 1),
+      pyramidLevel(11, 4, 1, 1),
+    ]
+    const pinned: SlidePlaneState = {
+      slide: fakeSlide(nonContiguous, 512, 512).slide,
+      pixelToWorld: unitTransform(512, 512),
+      levelIndex: 7,
+      tilesByLevel: new Map(),
+    }
+    expect(selectSlidePlaneLevel(pinned, IDENTITY, 512, 512).index).toBe(7)
+  })
+
+  test('an invalid pinned level falls back to camera-driven selection', () => {
+    expect(
+      selectSlidePlaneLevel(state(Number.NaN), IDENTITY, 512, 512).index,
+    ).toBe(0)
+  })
 })
 
 describe('resolveSlidePlaneTiles', () => {

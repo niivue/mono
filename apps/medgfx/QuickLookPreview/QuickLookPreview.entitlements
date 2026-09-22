@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Quick Look hands the extension a sandbox extension for the previewed file
+	     itself, so no broad file entitlement is needed to read it. This one covers
+	     user-selected reads only, and grants nothing absent a user selection this
+	     extension never performs. -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+
+	<!-- REQUIRED, and not for networking. Without it WebKit refuses to start its
+	     auxiliary processes inside a sandboxed extension: the content process dies
+	     before any navigation commits and the preview is a black rectangle. This
+	     is true even for a purely local bundled page.
+	     The extension stays offline BY CONSTRUCTION instead — bundled assets only,
+	     a self-only CSP in PreviewSchemeHandler, a navigation delegate restricted
+	     to the app scheme and host, and no remote URLs in any runtime bundle. Do
+	     not remove this expecting the preview to keep working, and do not treat it
+	     as permission to fetch anything. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

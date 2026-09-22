@@ -1,12 +1,70 @@
 import { vec3 } from 'gl-matrix'
+import {
+  emitPan2DChange,
+  emitScaleMultiplierChange,
+} from '@/control/cameraEvents'
 import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
+import { rulerSegments, rulerTickLabels } from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 
+/**
+ * Movement (in CSS pixels) a `crosshairPan` gesture must reach (>=) before it
+ * is treated as a pan instead of a click that places the crosshair.
+ */
+export const crosshairPanThresholdCssPx = 4
+
+/**
+ * True when the pointer has moved at least `thresholdPx` (canvas pixels)
+ * from `start` to `end`. Pure helper for `DRAG_MODE.crosshairPan`.
+ */
+export function isCrosshairPanDrag(
+  start: readonly [number, number],
+  end: readonly [number, number],
+  thresholdPx: number,
+): boolean {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  return dx * dx + dy * dy >= thresholdPx * thresholdPx
+}
+
+/**
+ * The `crosshairPan` drag threshold in canvas pixels. `dragStartXY`/`dragEndXY`
+ * are canvas (backing-store) pixels, so the CSS threshold is scaled by the
+ * canvas' backing-store-to-CSS ratio (1:1 without a canvas).
+ */
+export function crosshairPanThresholdPx(ctrl: NiiVue): number {
+  const canvas = ctrl.canvas
+  if (!canvas) return crosshairPanThresholdCssPx
+  const cssWidth = Math.max(canvas.getBoundingClientRect().width, 1)
+  return crosshairPanThresholdCssPx * (canvas.width / cssWidth)
+}
+
+/**
+ * Advance a `crosshairPan` gesture. Before the threshold is crossed nothing
+ * happens; once crossed (or already crossed earlier in the gesture) the view
+ * pans exactly like `DRAG_MODE.pan`. Returns true once the gesture is a pan.
+ */
+export function dragForCrosshairPan(ctrl: NiiVue): boolean {
+  if (
+    !ctrl._crosshairPanDidDrag &&
+    !isCrosshairPanDrag(
+      ctrl.dragStartXY,
+      ctrl.dragEndXY,
+      crosshairPanThresholdPx(ctrl),
+    )
+  ) {
+    return false
+  }
+  ctrl._crosshairPanDidDrag = true
+  dragForPanZoom(ctrl)
+  return true
+}
+
 /** Return the DRAG_MODE for a given mouse button on 2D slice tiles. */
-export function getDragModeForButton(ctrl: NiiVueGPU, button: number): number {
+export function getDragModeForButton(ctrl: NiiVue, button: number): number {
   if (button === 0) return ctrl.model.interaction.primaryDragMode
   if (button === 2) return ctrl.model.interaction.secondaryDragMode
   return DRAG_MODE.none
@@ -18,7 +76,7 @@ export function getDragModeForButton(ctrl: NiiVueGPU, button: number): number {
  * Returns null if no variability or outside volume.
  */
 export function calculateNewRange(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   volIdx = 0,
 ): { calMin: number; calMax: number } | null {
   const model = ctrl.model
@@ -97,7 +155,7 @@ export function calculateNewRange(
 }
 
 /** Build DragReleaseInfo from current drag state. */
-export function buildDragReleaseInfo(ctrl: NiiVueGPU): DragReleaseInfo | null {
+export function buildDragReleaseInfo(ctrl: NiiVue): DragReleaseInfo | null {
   const startMM = screenSlicePickAt(
     ctrl,
     ctrl.dragStartXY[0],
@@ -110,11 +168,18 @@ export function buildDragReleaseInfo(ctrl: NiiVueGPU): DragReleaseInfo | null {
   const vol = ctrl.model.getVolumes()[0]
   let voxStart: [number, number, number] = [0, 0, 0]
   let voxEnd: [number, number, number] = [0, 0, 0]
-  if (vol) {
-    const sv = NVTransforms.mm2vox(vol, startMM)
-    const ev = NVTransforms.mm2vox(vol, endMM)
-    voxStart = [Math.round(sv[0]), Math.round(sv[1]), Math.round(sv[2])]
-    voxEnd = [Math.round(ev[0]), Math.round(ev[1]), Math.round(ev[2])]
+  const dims = vol?.dimsRAS
+  if (vol && dims) {
+    // Voxel indices, and the tile can now extend past the volume, so a drag
+    // released in the margin would report an out-of-range index. The mm fields
+    // stay unclamped -- they describe the real gesture.
+    const clamp = (v: vec3): [number, number, number] => [
+      Math.max(0, Math.min(dims[1] - 1, Math.round(v[0]))),
+      Math.max(0, Math.min(dims[2] - 1, Math.round(v[1]))),
+      Math.max(0, Math.min(dims[3] - 1, Math.round(v[2]))),
+    ]
+    voxStart = clamp(NVTransforms.mm2vox(vol, startMM))
+    voxEnd = clamp(NVTransforms.mm2vox(vol, endMM))
   }
 
   const mmLength = vec3.distance(
@@ -134,11 +199,14 @@ export function buildDragReleaseInfo(ctrl: NiiVueGPU): DragReleaseInfo | null {
 }
 
 /** Update the model's drag overlay based on the current active drag mode. */
-export function updateDragOverlay(ctrl: NiiVueGPU): void {
+export function updateDragOverlay(ctrl: NiiVue): void {
   const mode = ctrl._activeDragMode
   const [sx, sy] = ctrl.dragStartXY
   const [ex, ey] = ctrl.dragEndXY
   const ui = ctrl.model.ui
+  // Only the measurement branch (re)sets the active-measurement screen line, so
+  // clear it here for every other drag mode.
+  ctrl.model._activeMeasurementScreenLine = null
   const lineColor = ui.measureLineColor
   const lineWidth = ui.rulerWidth
   const textColor = ui.measureTextColor
@@ -160,48 +228,55 @@ export function updateDragOverlay(ctrl: NiiVueGPU): void {
       rect: { ltwh: [x, y, w, h], color: ui.selectionBoxColor },
     }
   } else if (mode === DRAG_MODE.measurement) {
-    const overlay: DragOverlay = {
-      lines: [
-        {
-          startXY: [sx, sy],
-          endXY: [ex, ey],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-      ],
-      text: [],
-    }
-    // End caps: perpendicular segments at start and end
-    const capLen = 6
-    const dx = ex - sx
-    const dy = ey - sy
-    const len = Math.sqrt(dx * dx + dy * dy)
-    if (len > 0) {
-      const px = (-dy / len) * capLen
-      const py = (dx / len) * capLen
-      overlay.lines?.push(
-        {
-          startXY: [sx - px, sy - py],
-          endXY: [sx + px, sy + py],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-        {
-          startXY: [ex - px, ey - py],
-          endXY: [ex + px, ey + py],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-      )
-    }
-    // Distance text at line midpoint
+    // Distance in mm sets the tick spacing, so resolve it before the geometry.
     const startMM = screenSlicePickAt(ctrl, sx, sy)
     const endMM = screenSlicePickAt(ctrl, ex, ey)
+    const dist =
+      startMM && endMM
+        ? vec3.distance(
+            vec3.fromValues(startMM[0], startMM[1], startMM[2]),
+            vec3.fromValues(endMM[0], endMM[1], endMM[2]),
+          )
+        : 0
+    // Expose the in-progress measurement to an external overlay renderer.
+    ctrl.model._activeMeasurementScreenLine = { sx, sy, ex, ey, distance: dist }
+    // An external overlay draws the ruler instead of the built-in one.
+    if (!ui.isMeasurementDrawn) {
+      ctrl.model._dragOverlay = null
+      return
+    }
+    const overlay: DragOverlay = { lines: [], text: [] }
+    // Graduated ruler: plain baseline + end caps + per-mm ticks (majors every fifth),
+    // matching the persisted measurement and the whole-slide UIKit ruler.
+    for (const [x0, y0, x1, y1] of rulerSegments(
+      sx,
+      sy,
+      ex,
+      ey,
+      dist,
+      lineWidth,
+    )) {
+      overlay.lines?.push({
+        startXY: [x0, y0],
+        endXY: [x1, y1],
+        color: lineColor,
+        thickness: lineWidth,
+      })
+    }
+    // Graduation numbers at each major tick, along the ruler edge.
+    for (const t of rulerTickLabels(sx, sy, ex, ey, dist)) {
+      overlay.text?.push({
+        str: t.str,
+        x: t.x,
+        y: t.y,
+        scale: 0.5,
+        color: textColor,
+        anchorX: 0.5,
+        anchorY: 0.5,
+      })
+    }
+    // Distance text at line midpoint
     if (startMM && endMM) {
-      const dist = vec3.distance(
-        vec3.fromValues(startMM[0], startMM[1], startMM[2]),
-        vec3.fromValues(endMM[0], endMM[1], endMM[2]),
-      )
       let decimals = 2
       if (dist > 9) decimals = 1
       if (dist > 99) decimals = 0
@@ -267,8 +342,28 @@ export function updateDragOverlay(ctrl: NiiVueGPU): void {
 }
 
 /** Handle drag release: perform mode-specific action and fire callback. */
-export function handleDragRelease(ctrl: NiiVueGPU): void {
+export function handleDragRelease(ctrl: NiiVue): void {
   const mode = ctrl._activeDragMode
+
+  // Crosshair-pan: a release that never crossed the drag threshold is a click
+  // that places the crosshair. A gesture that panned (or was cancelled) does
+  // not move the crosshair. The threshold is rechecked against the final
+  // release point because pointerup refreshes `dragEndXY` from its own
+  // coordinates: a press-and-release far apart without any pointermove never
+  // set `_crosshairPanDidDrag`, yet it exceeded the threshold, so it is not a
+  // click either.
+  if (
+    mode === DRAG_MODE.crosshairPan &&
+    !ctrl._crosshairPanDidDrag &&
+    !isCrosshairPanDrag(
+      ctrl.dragStartXY,
+      ctrl.dragEndXY,
+      crosshairPanThresholdPx(ctrl),
+    )
+  ) {
+    const mm = screenSlicePickAt(ctrl, ctrl.dragEndXY[0], ctrl.dragEndXY[1])
+    if (mm) ctrl.setCrosshairPos(mm)
+  }
 
   // Angle state machine
   if (mode === DRAG_MODE.angle) {
@@ -380,21 +475,23 @@ export function handleDragRelease(ctrl: NiiVueGPU): void {
 }
 
 /** Fire the dragRelease event. */
-function fireDragRelease(ctrl: NiiVueGPU): void {
+function fireDragRelease(ctrl: NiiVue): void {
   const info = buildDragReleaseInfo(ctrl)
   if (info) ctrl.emit('dragRelease', info)
 }
 
 /** Clear all drag state and overlay. */
-export function clearDragState(ctrl: NiiVueGPU): void {
+export function clearDragState(ctrl: NiiVue): void {
   ctrl._activeDragMode = DRAG_MODE.none
   ctrl._pan2DxyzmmAtDragStart = null
+  ctrl._crosshairPanDidDrag = false
   ctrl.model._dragOverlay = null
+  ctrl.model._activeMeasurementScreenLine = null
   ctrl.drawScene()
 }
 
 /** Pan 2D view based on drag delta in mm space. */
-export function dragForPanZoom(ctrl: NiiVueGPU): void {
+export function dragForPanZoom(ctrl: NiiVue): void {
   const saved = ctrl._pan2DxyzmmAtDragStart
   if (!saved) return
 
@@ -409,10 +506,11 @@ export function dragForPanZoom(ctrl: NiiVueGPU): void {
   ctrl.model.scene.pan2Dxyzmm[0] = saved[0] + (endMM[0] - startMM[0])
   ctrl.model.scene.pan2Dxyzmm[1] = saved[1] + (endMM[1] - startMM[1])
   ctrl.model.scene.pan2Dxyzmm[2] = saved[2] + (endMM[2] - startMM[2])
+  emitPan2DChange(ctrl)
 }
 
 /** Zoom 2D view based on vertical drag delta. */
-export function dragForSlicer3D(ctrl: NiiVueGPU): void {
+export function dragForSlicer3D(ctrl: NiiVue): void {
   const saved = ctrl._pan2DxyzmmAtDragStart
   if (!saved) return
 
@@ -423,17 +521,19 @@ export function dragForSlicer3D(ctrl: NiiVueGPU): void {
   ctrl.model.scene.pan2Dxyzmm[3] = zoom
   if (ctrl.model.interaction.isYoked3DTo2DZoom) {
     ctrl.model.scene.scaleMultiplier = zoom
+    emitScaleMultiplierChange(ctrl)
   }
 
   const mm = ctrl.model.scene2mm(ctrl.model.scene.crosshairPos)
   ctrl.model.scene.pan2Dxyzmm[0] += zoomChange * mm[0]
   ctrl.model.scene.pan2Dxyzmm[1] += zoomChange * mm[1]
   ctrl.model.scene.pan2Dxyzmm[2] += zoomChange * mm[2]
+  emitPan2DChange(ctrl)
 }
 
 /** Windowing: horizontal drag adjusts range width, vertical adjusts center. */
 export function dragForWindowing(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   deltaX: number,
   deltaY: number,
 ): void {
@@ -462,7 +562,7 @@ export function dragForWindowing(
 
 /** Helper: pick mm coordinates at a canvas pixel position using cached slice tiles. */
 function screenSlicePickAt(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   px: number,
   py: number,
 ): [number, number, number] | null {
@@ -477,7 +577,7 @@ function screenSlicePickAt(
 }
 
 /** Get slice info for persisting a measurement/angle. */
-function getSliceInfo(ctrl: NiiVueGPU): {
+function getSliceInfo(ctrl: NiiVue): {
   sliceIndex: number
   sliceType: number
   slicePosition: number

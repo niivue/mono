@@ -45,6 +45,46 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   `dicom-wsi` fixture — run
   `bunx nx run iiif-volumetric-server:fetch-dicom-wsi` and restart the
   server. See `packages/niivue/docs/dicom-wsi.md`.
+- `microscopy.html` — the microscopy index. Groups the server's
+  per-channel registry entries back into datasets (on the `dataset` key
+  the `/api` listing exposes) and offers a dataset picker plus a channel
+  list with a per-channel colormap. Selected channels load whole from
+  `/volumes/{id}/raw.nii.gz` and stack as niivue overlays. Raw channels
+  are windowed by percentile — these channels floor well above 0 (so the
+  robust auto-window saturates) and the whole cell body sits above that
+  floor as a structureless haze, which sums to an opaque brick across 16
+  channels; keeping only the top few percent is what makes the stack
+  read as separate structures. An Allen source also carries a segmentation
+  per structure, named with a `_seg` suffix; those are label masks, not
+  images, so they are thresholded just above their floor instead and, by
+  default, reduced to their surface shell — a filled mask is opaque
+  along any ray through it, so the nucleus would otherwise hide
+  everything inside it at any alpha. The `both / raw / seg` filter picks
+  which family the list shows, so `all` selects one whole family rather
+  than the first 16 ids of the two together.
+  Presentation follows the Allen IMSC reference viewer
+  (`imsc.allencell.org/?page=3d-viewer`): 3D render on black by default
+  with no crosshair or orient chrome, each recognised structure listed by
+  gene symbol plus what it labels, and its own flat hue from that
+  viewer's palette carried by a constant-colour/ramped-alpha colormap, so
+  a structure reads as one colour instead of a gradient. `turntable`
+  spins the render and `reset` returns the camera. `shading` applies
+  matcap lighting from the local intensity gradient to every channel (not
+  just the background volume), which is what gives the stack depth
+  instead of the flat look of an unlit render; `max project` keeps the
+  brightest sample along each ray instead of compositing front-to-back,
+  matching the reference viewer's "Max project". The reference viewer
+  path-traces; niivue single-pass raymarches, so even lit its render is
+  crisper and less diffuse than the reference.
+  Microscopy sources too large to load whole (the FIB-SEM OME-Zarr, the
+  WSI slide) are listed in a sidebar with a link to the page that
+  streams them. Needs a multi-channel fixture — run
+  `bunx nx run iiif-volumetric-server:fetch-allen` and restart the
+  server.
+- `microscopy-overlay.html` — a synthesized hi-res microscopy patch
+  placed inside an anatomical base volume with an *oblique* affine.
+  Yaw/pitch sliders re-aim it in place via `setVolumeAffine`, and niivue
+  reslices it onto the base grid — the point of the demo.
 
 ### Backend switching
 

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Pick an exploded block (side-by-side, anatomical coords)</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      main { display: flex; }
+      .pane {
+        position: relative;
+        flex: 1 1 0;
+        min-width: 0;
+        border-right: 1px solid #555;
+      }
+      .pane:last-child { border-right: none; }
+      .pane canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .tag {
+        position: absolute;
+        top: 8px;
+        left: 10px;
+        z-index: 2;
+        pointer-events: none;
+        font: 11px/1.4 system-ui, sans-serif;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #8fd3ff;
+        text-shadow: 0 1px 4px #000;
+      }
+      .readout {
+        position: absolute;
+        left: 10px;
+        bottom: 10px;
+        right: 10px;
+        z-index: 2;
+        pointer-events: none;
+        box-sizing: border-box;
+        border: 1px solid #2f5a74;
+        background: rgba(0, 0, 0, 0.72);
+        border-radius: 5px;
+        padding: 6px 9px;
+        font: 11px/1.55 ui-monospace, monospace;
+        white-space: pre-wrap;
+      }
+      .readout .k { color: #93a7b3; }
+      .readout .hi { color: #ffd479; }
+      #hint {
+        font: 13px/1.4 system-ui, sans-serif;
+        padding: 5px 8px;
+        background: #16324a;
+        color: #d6ecff;
+      }
+      #hint b { color: #fff; }
+      #hint .warn { color: #ffd479; }
+      #help {
+        font: 12px/1.5 system-ui, sans-serif;
+        padding: 4px 8px;
+        opacity: 0.85;
+      }
+      header label { white-space: nowrap; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <label for="grid" title="How many blocks the volume is split into. The tiling is forced on an ordinary NIfTI so it has pickable bricks.">Blocks</label>
+      <select id="grid" title="How many blocks the volume is split into.">
+        <option value="2">2 x 2 x 2</option>
+        <option value="3" selected>3 x 3 x 3</option>
+        <option value="4">4 x 4 x 4</option>
+      </select>
+      &nbsp;
+      <label for="explode" title="Separate the blocks in the 3D render. This is a render-time offset only; the voxel data never moves.">Explode</label>
+      <input type="range" min="100" value="170" max="280" class="slider" id="explode" title="Separate the blocks in the 3D render (render-time offset only)." />
+      <span id="explodeVal">1.70x</span>
+      &nbsp;
+      <label for="linkCheck" title="Keep both crosshairs on the same anatomical mm. They agree because the extracted block inherits the parent's sform/qform.">Link crosshairs</label>
+      <input type="checkbox" id="linkCheck" checked title="Keep both crosshairs on the same anatomical mm." />
+      &nbsp;
+      <label for="blockView" title="What the block pane draws.">Block view</label>
+      <select id="blockView" title="What the block pane draws.">
+        <option value="3" selected>A+C+S+R</option>
+        <option value="4">Render</option>
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+      </select>
+      &nbsp;
+      <button type="button" id="clearBtn" title="Drop the extracted block and clear the outline.">Clear block</button>
+      &nbsp;
+      <label for="backend" title="Rendering backend (WebGPU or WebGL2). Both panes switch together.">Backend</label>
+      <select id="backend" title="Rendering backend (WebGPU or WebGL2).">
+        <option value="webgpu" selected>WebGPU</option>
+        <option value="webgl2">WebGL2</option>
+      </select>
+    </header>
+    <div id="hint"></div>
+    <div id="help">
+      <b>Click a block</b> in the exploded render on the left. The right pane loads an <b>ephemeral copy</b> of just that block, framed on its own centroid.
+      &nbsp;|&nbsp;
+      The copy's affine is the parent's with the origin walked forward to the block's first voxel, so <b>both crosshairs report the same MNI mm</b> even though the block is a separate volume with its own voxel indices.
+      &nbsp;|&nbsp;
+      Left-drag rotates; the click is only treated as a pick when the pointer did not travel.
+    </div>
+    <main>
+      <section class="pane">
+        <canvas id="gl1"></canvas>
+        <div class="tag">Parent (exploded, pickable)</div>
+        <div class="readout" id="parentOut">Loading...</div>
+      </section>
+      <section class="pane">
+        <canvas id="gl2"></canvas>
+        <div class="tag">Extracted block (ephemeral copy)</div>
+        <div class="readout" id="blockOut">No block picked yet.</div>
+      </section>
+    </main>
+    <footer id="location">NiiVue::Pick an exploded block&nbsp;</footer>
+    <script type="module" src="vox.block.pick.js"></script>
+  </body>
+</html>

@@ -1,7 +1,7 @@
 import * as viewLifecycle from '@/control/viewWebGL2'
-import NiiVueGPUBase, { type NiiVueOptions } from '@/NVControlBase'
+import NiiVueBase, { type NiiVueOptions } from '@/NVControlBase'
 
-export default class NiiVueGPU extends NiiVueGPUBase {
+export default class NiiVue extends NiiVueBase {
   constructor(options: NiiVueOptions = {}) {
     super(
       { ...options, backend: options.backend ?? 'webgl2' },

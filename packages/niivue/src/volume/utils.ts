@@ -201,19 +201,23 @@ function robustRange(
   imgRaw: TypedVoxelArray,
   start: number,
   end: number,
-): { mn: number; mx: number; nZero: number } | null {
+): { mn: number; mx: number; nZero: number; nSkip: number } | null {
   let mn = Number.POSITIVE_INFINITY
   let mx = Number.NEGATIVE_INFINITY
   let nZero = 0
+  let nSkip = 0
   for (let i = start; i < end; i++) {
     const v = imgRaw[i]
-    if (!Number.isFinite(v)) continue
+    if (!Number.isFinite(v)) {
+      nSkip++
+      continue
+    }
     if (v === 0) nZero++
     if (v < mn) mn = v
     if (v > mx) mx = v
   }
   if (!Number.isFinite(mn) || !Number.isFinite(mx)) return null
-  return { mn, mx, nZero }
+  return { mn, mx, nZero, nSkip }
 }
 
 /**
@@ -227,9 +231,16 @@ function histogramPercentiles(
   mn: number,
   mx: number,
   nZero: number,
+  nSkip: number,
 ): [number, number] {
   const nVox = end - start
-  const n2pct = Math.round((nVox - nZero) * 0.02)
+  // The population is the voxels the histogram actually holds. Zeros are
+  // excluded by the original heuristic (a large zero background would otherwise
+  // swallow the low percentile whole); non-finite voxels are excluded because
+  // they were skipped, and counting them would push BOTH percentiles inward --
+  // a store that is 80% NaN padding, as several DANDI float OCT volumes are,
+  // would get a 10%-90% window while asking for 2%-98%.
+  const n2pct = Math.round((nVox - nZero - nSkip) * 0.02)
   const nBins = 1001
   const scl = (nBins - 1) / (mx - mn)
   const hist = new Uint32Array(nBins)
@@ -275,7 +286,7 @@ export function calMinMax(
   const nVox3D = hdr.dims[1] * hdr.dims[2] * hdr.dims[3]
   const stats = robustRange(imgRaw, 0, nVox3D)
   if (!stats) throw new Error('infinite image')
-  const { mn, mx, nZero } = stats
+  const { mn, mx, nZero, nSkip } = stats
   const mnScale = r2c(mn)
   const mxScale = r2c(mx)
   if (mx === mn) return [mnScale, mxScale, mnScale, mxScale]
@@ -288,10 +299,41 @@ export function calMinMax(
       return [hdr.cal_min, hdr.cal_max, mnScale, mxScale]
     }
   }
-  const [lo, hi] = histogramPercentiles(imgRaw, 0, nVox3D, mn, mx, nZero)
+  const [lo, hi] = histogramPercentiles(imgRaw, 0, nVox3D, mn, mx, nZero, nSkip)
   if (lo === hi) return [mnScale, mxScale, mnScale, mxScale]
   const scl = (1001 - 1) / (mx - mn)
   return [r2c(lo / scl + mn), r2c(hi / scl + mn), mnScale, mxScale]
+}
+
+/**
+ * Robust display window for voxels whose header carries a PLACEHOLDER
+ * `cal_min`/`cal_max` rather than real file metadata.
+ *
+ * {@link calMinMax} honours a header window when it finds one, which is correct
+ * for a NIfTI whose author wrote it. A streamed volume's header is synthesized:
+ * `createStreamingNVImage` stamps the caller's (or the default) window onto it
+ * before a single voxel has been read, so that branch would hand back the very
+ * placeholder we are trying to replace. Neutralizing the header window forces
+ * the 2%-98% histogram path.
+ *
+ * Returns `[robustMin, robustMax, globalMin, globalMax]`, calibrated. Throws
+ * for an all-non-finite image, like {@link calMinMax}.
+ */
+export function robustDisplayWindow(
+  hdr: NIFTI1 | NIFTI2,
+  img: ArrayBuffer | TypedVoxelArray,
+): [number, number, number, number] {
+  const savedMin = hdr.cal_min
+  const savedMax = hdr.cal_max
+  // calMinMax adopts the header window only when cal_min < cal_max.
+  hdr.cal_min = 0
+  hdr.cal_max = 0
+  try {
+    return calMinMax(hdr, img)
+  } finally {
+    hdr.cal_min = savedMin
+    hdr.cal_max = savedMax
+  }
 }
 
 /**
@@ -311,11 +353,19 @@ export function calMinMaxFrame(
   const end = Math.min(offset + vol.nVox3D, imgRaw.length)
   const stats = robustRange(imgRaw, offset, end)
   if (!stats) return [0, 0, 0, 0]
-  const { mn, mx, nZero } = stats
+  const { mn, mx, nZero, nSkip } = stats
   const mnScale = r2c(mn)
   const mxScale = r2c(mx)
   if (mx === mn) return [mnScale, mxScale, mnScale, mxScale]
-  const [lo, hi] = histogramPercentiles(imgRaw, offset, end, mn, mx, nZero)
+  const [lo, hi] = histogramPercentiles(
+    imgRaw,
+    offset,
+    end,
+    mn,
+    mx,
+    nZero,
+    nSkip,
+  )
   if (lo === hi) return [mnScale, mxScale, mnScale, mxScale]
   const scl = (1001 - 1) / (mx - mn)
   return [r2c(lo / scl + mn), r2c(hi / scl + mn), mnScale, mxScale]
@@ -439,7 +489,7 @@ export function hdrToArrayBuffer(
   hdr: NIFTIHeader,
   isDrawing8 = false,
   isInputEndian = false,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const SHORT_SIZE = 2
   const FLOAT32_SIZE = 4
   let isLittleEndian = true
@@ -551,9 +601,11 @@ export function createNiftiArray(
   dims: number[] = [256, 256, 256],
   pixDims: number[] = [1, 1, 1],
   affine: number[] = [1, 0, 0, -128, 0, 1, 0, -128, 0, 0, 1, -128, 0, 0, 0, 1],
-  datatypeCode = NiiDataType.DT_UINT8,
+  // Annotated: without it the default narrows the parameter to the DT_UINT8
+  // literal, so a caller computing a datatype at runtime cannot pass it.
+  datatypeCode: number = NiiDataType.DT_UINT8,
   img: TypedVoxelArray | Uint8Array = new Uint8Array(),
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const hdr = createNiftiHeader(dims, pixDims, affine, datatypeCode)
   const hdrBytes = hdrToArrayBuffer(hdr, false)
 

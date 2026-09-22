@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NiiVue + DANDI (volume and slide from one store)</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        --bg: #090b0b;
+        --panel: #111514;
+        --line: #26302d;
+        --muted: #91a099;
+        --text: #edf4f1;
+        --cyan: #7ad7d1;
+        --green: #9cdc85;
+        --amber: #e2b85f;
+        --red: #ef8f7b;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        overflow: hidden;
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+
+      header {
+        min-height: 44px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 94%, #22483d);
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 560;
+        white-space: nowrap;
+      }
+
+      .control {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      select,
+      input[type='text'] {
+        background: #171d1b;
+        border: 1px solid #2f3a36;
+        color: var(--text);
+        border-radius: 4px;
+        font-size: 0.78rem;
+        padding: 3px 8px;
+      }
+
+      select:disabled,
+      input:disabled {
+        opacity: 0.5;
+      }
+
+      input[type='text'] {
+        width: 96px;
+        font-family: ui-monospace, monospace;
+      }
+
+      input[type='checkbox'] {
+        margin: 0 3px 0 0;
+      }
+
+      button {
+        background: #17201d;
+        border: 1px solid #34423d;
+        color: var(--text);
+        padding: 3px 9px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.78rem;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--cyan);
+      }
+
+      header .links {
+        margin-left: auto;
+      }
+
+      header .links a {
+        color: var(--cyan);
+        margin-left: 12px;
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        min-height: 0;
+      }
+
+      .pane {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        border-right: 1px solid var(--line);
+      }
+
+      .pane:last-child {
+        border-right: none;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        outline: none;
+        touch-action: none;
+      }
+
+      .pane-title {
+        position: absolute;
+        top: 10px;
+        left: 12px;
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--cyan);
+        pointer-events: none;
+        text-shadow: 0 1px 4px #000;
+      }
+
+      .hud {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        right: 12px;
+        box-sizing: border-box;
+        border: 1px solid rgba(122, 215, 209, 0.28);
+        background: rgba(5, 8, 8, 0.78);
+        border-radius: 6px;
+        padding: 8px 11px;
+        pointer-events: none;
+        font-family: ui-monospace, monospace;
+        font-size: 0.7rem;
+        line-height: 1.5;
+      }
+
+      .hud .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .hud .key {
+        color: var(--muted);
+      }
+
+      .hud .ok {
+        color: var(--green);
+      }
+
+      .hud .warn {
+        color: var(--amber);
+      }
+
+      .hud .bad {
+        color: var(--red);
+      }
+
+      /* Both panes stream, and at high zoom the newly relevant bytes can take
+         seconds to arrive -- during which the view is busy rather than broken. */
+      .busy {
+        position: absolute;
+        top: 10px;
+        right: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid rgba(122, 215, 209, 0.28);
+        background: rgba(5, 8, 8, 0.82);
+        border-radius: 6px;
+        padding: 5px 9px;
+        pointer-events: none;
+        font-family: ui-monospace, monospace;
+        font-size: 0.68rem;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 180ms ease;
+      }
+
+      .busy.on {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .spinner {
+        flex: none;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        border: 2px solid rgba(122, 215, 209, 0.25);
+        border-top-color: var(--cyan);
+        animation: spin 720ms linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+        .busy {
+          transition: none;
+        }
+      }
+
+      footer {
+        padding: 6px 16px;
+        border-top: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 0.72rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        align-items: center;
+      }
+
+      footer a {
+        color: var(--cyan);
+        text-decoration: none;
+      }
+
+      footer a:hover {
+        text-decoration: underline;
+      }
+
+      .fallback {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: #101412;
+        color: var(--muted);
+        text-align: center;
+        font-size: 0.85rem;
+      }
+
+      .fallback[aria-hidden='false'] {
+        display: flex;
+      }
+
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr 1fr;
+        }
+
+        .pane {
+          border-right: none;
+          border-bottom: 1px solid var(--line);
+        }
+
+        header {
+          align-items: flex-start;
+          max-height: 40vh;
+          overflow-y: auto;
+        }
+
+        header .control {
+          width: 100%;
+          justify-content: space-between;
+        }
+
+        header .links {
+          width: 100%;
+          margin-left: 0;
+        }
+
+        .hud {
+          font-size: 0.64rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>NiiVue + DANDI</h1>
+      <span class="control">
+        <label for="dataset">Dandiset</label>
+        <select id="dataset">
+          <option value="oct-small" selected>
+            000722 human brain OCT, 106 MB (float32)
+          </option>
+          <option value="oct">000722 human brain OCT, 4.5 GB (float32)</option>
+          <option value="spim">
+            000108 light-sheet SPIM, 17.7 GB (uint16)
+          </option>
+          <option value="neun">
+            000026 SPIM NeuN slab, 30 GB (uint16), 10693 x 10915 planes
+          </option>
+          <option value="hipct">
+            000026 HiP-CT, 1.0 TB (uint16), 9413 x 9413 planes
+          </option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="axis" title="Which plane the slide viewer deep-zooms">
+          Plane
+        </label>
+        <select id="axis">
+          <option value="z" selected>axial (z)</option>
+          <option value="y">coronal (y)</option>
+          <option value="x">sagittal (x)</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="plane">Index <span id="planeVal">0</span></label>
+        <input id="plane" type="range" min="0" max="0" step="1" value="0"
+          title="Plane position, in finest-level voxels" />
+      </span>
+      <span class="control">
+        <label for="follow"
+          title="Move the slide plane to the volume crosshair, and the crosshair to a slide click">
+          <input id="follow" type="checkbox" checked />
+          link views
+        </label>
+      </span>
+      <span class="control">
+        <label for="measure"
+          title="Click two points on the deep-zoom pane to measure them with the UIKit ruler">
+          <input id="measure" type="checkbox" />
+          measure
+        </label>
+      </span>
+      <span class="control">
+        <label for="crosshair"
+          title="How the UIKit crosshair marks the linked position on the deep-zoom pane">
+          Crosshair
+        </label>
+        <select id="crosshair">
+          <option value="plain">plain</option>
+          <option value="ticks">graduated</option>
+          <option value="numbers" selected>graduated + numbers</option>
+          <option value="off">off</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="view" title="What the volumetric pane draws">View</label>
+        <select id="view">
+          <option value="render" selected>render (3D)</option>
+          <option value="multiplanar">multiplanar</option>
+          <option value="axial">axial</option>
+          <option value="coronal">coronal</option>
+          <option value="sagittal">sagittal</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="detail" title="Finest pyramid level the volumetric view may stream">
+          Detail
+        </label>
+        <select id="detail">
+          <option value="" selected>n/a</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="zoom">3D zoom <span id="zoomVal">0.80x</span></label>
+        <input id="zoom" type="range" min="0.5" max="2" step="0.01" value="0.8"
+          title="Volumetric zoom (scaleMultiplier); the wheel over the 3D tile moves the same slider" />
+      </span>
+      <span class="control">
+        <label for="colormap">Colormap</label>
+        <select id="colormap">
+          <option value="gray" selected>gray</option>
+          <option value="viridis">viridis</option>
+          <option value="hot">hot</option>
+          <option value="plasma">plasma</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="window">Window</label>
+        <input id="window" type="text" value="" title="calMin,calMax" />
+      </span>
+      <button id="fit" type="button" title="Fit the slide to its pane">fit slide</button>
+      <div class="links">
+        <a href="../index.html">Examples</a>
+        <a href="?backend=webgpu">WebGPU</a>
+        <a href="?backend=webgl2">WebGL2</a>
+      </div>
+    </header>
+    <main>
+      <div class="pane">
+        <canvas id="nv-canvas" aria-label="Streamed DANDI volume"></canvas>
+        <div class="pane-title">Volumetric (loadChunkedVolume)</div>
+        <div class="busy" id="volBusy" role="status" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="volBusyLabel">streaming bricks</span>
+        </div>
+        <div class="hud" id="volHud">Loading...</div>
+        <div class="fallback" id="fallback" aria-hidden="true"></div>
+      </div>
+      <div class="pane">
+        <canvas id="slide-canvas" aria-label="Deep-zoom plane of the same store"></canvas>
+        <div class="pane-title">Deep zoom (NVSlide)</div>
+        <div class="busy" id="slideBusy" role="status" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="slideBusyLabel">streaming tiles</span>
+        </div>
+        <div class="hud" id="slideHud">Loading...</div>
+      </div>
+    </main>
+    <footer id="provenance">
+      Data streamed directly from the
+      <a href="https://dandiarchive.org" target="_blank" rel="noopener noreferrer">DANDI Archive</a>.
+    </footer>
+    <script type="module" src="/src/dandi.js"></script>
+  </body>
+</html>

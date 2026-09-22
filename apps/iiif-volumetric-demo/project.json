@@ -5,11 +5,15 @@
   "targets": {
     "dev": {
       "command": "bunx --bun vite --open /index.html",
-      "options": { "cwd": "{projectRoot}" }
+      "options": {
+        "cwd": "{projectRoot}"
+      }
     },
     "build": {
       "command": "bunx --bun vite build",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
@@ -17,27 +21,40 @@
         "{projectRoot}/src/**/*",
         "{projectRoot}/*.html",
         "{projectRoot}/*.css",
-        { "env": "VITE_BASE" }
+        {
+          "env": "VITE_BASE"
+        }
       ],
       "outputs": ["{projectRoot}/dist"]
     },
+    "test": {
+      "command": "bun test",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["typescript"]
+    },
     "typecheck": {
       "command": "bunx tsc --noEmit",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["^build"],
       "inputs": ["typescript"]
     },
     "lint": {
       "command": "bunx biome check {projectRoot}",
-      "inputs": ["typescript"]
+      "inputs": ["lintable"]
     },
     "format": {
       "command": "bunx biome format {projectRoot} --write",
-      "inputs": ["typescript"]
+      "inputs": ["lintable"]
     },
     "capture-screenshots": {
       "command": "bun scripts/capture-screenshots.ts",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["^build"]
     }
   }

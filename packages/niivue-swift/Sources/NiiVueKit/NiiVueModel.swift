@@ -26,6 +26,7 @@ public final class NiiVueModel {
     public let multiplanarTypeRaw:      NiiVueProp<Int>    = NiiVueProp(path: "multiplanarType",      initial: MultiplanarType.auto.rawValue)
     public let showRenderRaw:           NiiVueProp<Int>    = NiiVueProp(path: "showRender",           initial: ShowRender.auto.rawValue)
     public let mosaicString:            NiiVueProp<String> = NiiVueProp(path: "mosaicString",         initial: "")
+    public let customLayout:            NiiVueProp<[CustomLayoutTile]?> = NiiVueProp(path: "customLayout", initial: nil)
     public let heroFraction:            NiiVueProp<Double> = NiiVueProp(path: "heroFraction",         initial: 0.5)
     public let isRadiological:          NiiVueProp<Bool>   = NiiVueProp(path: "isRadiological",       initial: false)
 
@@ -36,6 +37,10 @@ public final class NiiVueModel {
     public let isCrossLinesVisible:      NiiVueProp<Bool> = NiiVueProp(path: "isCrossLinesVisible",      initial: false)
     public let isRulerVisible:           NiiVueProp<Bool> = NiiVueProp(path: "isRulerVisible",           initial: false)
     public let isLegendVisible:          NiiVueProp<Bool> = NiiVueProp(path: "isLegendVisible",          initial: true)
+    /// Non-zero enables a depth-testing-disabled pass. NiiVue's own default is
+    /// 0; this initial matches what the host web app sets in its constructor,
+    /// and `hydrate()` confirms it from JS on `ready`. See `meshXRayEnabled`.
+    public let meshXRay:                 NiiVueProp<Double> = NiiVueProp(path: "meshXRay",               initial: 0.05)
 
     public let backgroundColor: NiiVueProp<[Double]> = NiiVueProp(path: "backgroundColor", initial: [0, 0, 0, 1])
     public let gamma:           NiiVueProp<Double>   = NiiVueProp(path: "gamma",           initial: 1.0)
@@ -67,6 +72,7 @@ public final class NiiVueModel {
         register(multiplanarTypeRaw)
         register(showRenderRaw)
         register(mosaicString)
+        register(customLayout)
         register(heroFraction)
         register(isRadiological)
 
@@ -77,6 +83,7 @@ public final class NiiVueModel {
         register(isCrossLinesVisible)
         register(isRulerVisible)
         register(isLegendVisible)
+        register(meshXRay)
 
         register(backgroundColor)
         register(gamma)
@@ -105,6 +112,20 @@ public final class NiiVueModel {
         set { multiplanarTypeRaw.value = newValue.rawValue }
     }
 
+    /// The value `meshXRay` takes when enabled. Deliberately faint: enough to
+    /// locate the crosshair through a volume render, not enough to read as an
+    /// artefact. The host web app's constructor uses the same number.
+    public static let meshXRayOnValue = 0.05
+
+    /// `meshXRay` as a checkbox. The property is a continuous strength, but any
+    /// non-zero value gates the same extra render pass, so on/off is the useful
+    /// control. Reading is a `> 0` test rather than an equality check, so a
+    /// value set elsewhere still reads as enabled.
+    public var meshXRayEnabled: Bool {
+        get { meshXRay.value > 0 }
+        set { meshXRay.value = newValue ? Self.meshXRayOnValue : 0 }
+    }
+
     public var showRender: ShowRender {
         get { ShowRender(rawValue: showRenderRaw.value) ?? .auto }
         set { showRenderRaw.value = newValue.rawValue }
@@ -130,6 +151,10 @@ public final class NiiVueModel {
 
     public var multiplanarTypeBinding: Binding<MultiplanarType> {
         Binding(get: { self.multiplanarType }, set: { self.multiplanarType = $0 })
+    }
+
+    public var meshXRayEnabledBinding: Binding<Bool> {
+        Binding(get: { self.meshXRayEnabled }, set: { self.meshXRayEnabled = $0 })
     }
 
     public var showRenderBinding: Binding<ShowRender> {
@@ -168,8 +193,8 @@ public final class NiiVueModel {
             if let resolved = Backend(rawValue: reply.backend) {
                 currentBackend = resolved
                 lastStatus = "Backend: \(resolved.label)"
-                // A reinitialized view drops all loaded volumes -- refresh
-                // our mirror of NiiVue's property state.
+                // Reinitialization recreates rendering resources while keeping
+                // loaded data. Refresh our mirror of NiiVue's property state.
                 await hydrate()
             }
         } catch {
@@ -270,6 +295,15 @@ public final class NiiVueModel {
             }
             Task { @MainActor in
                 self.locationText = payload.string.isEmpty ? "—" : payload.string
+            }
+        }
+        bridge.on("imageLoaded") { [weak self] data in
+            guard let self else { return }
+            guard let payload = try? JSONDecoder().decode(ImageLoadedEnvelope.self, from: data) else {
+                return
+            }
+            Task { @MainActor in
+                self.lastStatus = payload.name
             }
         }
     }

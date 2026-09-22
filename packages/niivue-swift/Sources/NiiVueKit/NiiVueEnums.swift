@@ -8,6 +8,20 @@
 
 import Foundation
 
+/// A single tile in NiiVue's explicit custom layout. Positions are normalized
+/// `[left, top, width, height]` coordinates in the range 0...1.
+public struct CustomLayoutTile: Codable, Equatable, Sendable {
+    public let sliceType: Int
+    public let position: [Double]
+    public let sliceMM: Double?
+
+    public init(sliceType: SliceType, position: [Double], sliceMM: Double? = nil) {
+        self.sliceType = sliceType.rawValue
+        self.position = position
+        self.sliceMM = sliceMM
+    }
+}
+
 public enum SliceType: Int, CaseIterable, Identifiable, Hashable, Sendable {
     case axial = 0
     case coronal = 1

@@ -1,25 +1,27 @@
 {
   "name": "niivue-mono",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "apps/medgfx/web",
-    "packages/*"
-  ],
-  "scripts": {
-    "dev": "nx run-many -t dev",
-    "build": "nx run-many -t build",
-    "lint": "nx run-many -t lint",
-    "format": "nx run-many -t format",
-    "typecheck": "nx run-many -t typecheck",
-    "test": "nx run-many -t test",
-    "check-boundaries": "node nx-tools/check-boundaries.js"
-  },
   "devDependencies": {
     "@biomejs/biome": "latest",
     "@niivue/niivue": "workspace:*",
     "@nx/js": "^22.6.3",
     "@types/bun": "^1.3.12",
     "nx": "latest"
-  }
+  },
+  "private": true,
+  "scripts": {
+    "dev": "nx run-many -t dev",
+    "build": "nx run-many -t build",
+    "lint": "nx run-many -t lint",
+    "format": "nx run-many -t format",
+    "graph:build": "bun nx-tools/repo-graph.ts build",
+    "graph:query": "bun nx-tools/repo-graph.ts query",
+    "typecheck": "nx run-many -t typecheck",
+    "test": "nx run-many -t test",
+    "check-boundaries": "node nx-tools/check-boundaries.js"
+  },
+  "workspaces": [
+    "apps/*",
+    "apps/medgfx/web",
+    "packages/*"
+  ]
 }

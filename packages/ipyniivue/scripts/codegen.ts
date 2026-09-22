@@ -48,12 +48,24 @@ const NON_SERIALIZABLE_METHODS = new Map<string, string>([
     'arguments are not JSON-serializable (DOM handle or JS object)',
   ],
   [
+    'getScreenTiles',
+    'return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)',
+  ],
+  [
     'createExtensionContext',
     'return value is not JSON-serializable (JS extension context handle)',
   ],
   [
     'registerVolumeTransform',
     'argument is not JSON-serializable (volume transform with JS function hooks)',
+  ],
+  [
+    'registerOverlayRenderer',
+    'argument and return value are not JSON-serializable (JS overlay renderer and disposer function)',
+  ],
+  [
+    'unregisterOverlayRenderer',
+    'argument is not JSON-serializable (JS overlay renderer)',
   ],
   [
     'useLoader',
@@ -826,7 +838,7 @@ function emitPython(api: ApiDescriptor): string {
   lines.push(`class _GeneratedNiiVue(anywidget.AnyWidget):`)
   lines.push('    """Auto-generated reactive properties and command methods.')
   lines.push('')
-  lines.push(`    Mirrors NiiVueGPU @ niivue ${api.niivueVersion}.`)
+  lines.push(`    Mirrors NiiVue @ niivue ${api.niivueVersion}.`)
   lines.push('')
   lines.push('    Reactive properties are kept in sync with the JS view via')
   lines.push('    anywidget. Methods send command messages over the same')

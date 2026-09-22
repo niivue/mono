@@ -1,5 +1,6 @@
 import type NVModel from '@/NVModel'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
+import { getAxisColor } from '@/view/crosshairColor'
 import {
   applyCrosshairOffset,
   crosshairExplodeOffsetForModel,
@@ -23,6 +24,40 @@ export type CrosshairResources = WebGLMeshGPU & {
 export class CrosshairRenderer extends NVRenderer {
   private gl: WebGL2RenderingContext | null = null
   private cylinders: CrosshairResources[] = []
+  // radius, one packed colour per axis, 6 segments x 2 endpoints x 3 axes,
+  // explode offset
+  private _geometryKey = new Float64Array(1 + 3 + 36 + 3).fill(Number.NaN)
+
+  /** True when the buffers do not already hold this geometry. */
+  private _geometryChanged(
+    radius: number,
+    axisColors: ArrayLike<number>,
+    segments: ReturnType<typeof calculateCrosshairSegments>,
+    off: ArrayLike<number>,
+  ): boolean {
+    const key = this._geometryKey
+    let k = 0
+    let changed = false
+    const put = (v: number): void => {
+      if (key[k] !== v) changed = true
+      key[k++] = v
+    }
+    put(radius)
+    put(axisColors[0])
+    put(axisColors[1])
+    put(axisColors[2])
+    for (const seg of segments) {
+      for (const pt of seg) {
+        put(pt[0])
+        put(pt[1])
+        put(pt[2])
+      }
+    }
+    put(off[0])
+    put(off[1])
+    put(off[2])
+    return changed
+  }
 
   init(
     gl: WebGL2RenderingContext,
@@ -89,13 +124,20 @@ export class CrosshairRenderer extends NVRenderer {
     this.isReady = true
   }
 
-  update(model: NVModel): void {
+  /**
+   * Rebuild the six cylinders at `radiusMM`, the world radius that renders
+   * `ui.crosshairWidth` canvas pixels thick on the tile about to be drawn
+   * (see `crosshairRadiusMM`). Call it immediately before each tile's draw:
+   * unlike the WebGPU renderer this keeps a single buffer set, so the last
+   * upload is what the next draw uses. Uploads are skipped when nothing that
+   * shapes the geometry has moved since the previous call.
+   */
+  update(model: NVModel, radiusMM: number): void {
     if (!this.gl || !this.isReady) return
     const gl = this.gl
 
     const { extentsMin, extentsMax, scene, ui } = model
-    const radius = ui.crosshairWidth
-    const colorPacked = packColor(ui.crosshairColor)
+    const radius = radiusMM
     const segments = calculateCrosshairSegments(
       extentsMin,
       extentsMax,
@@ -108,8 +150,20 @@ export class CrosshairRenderer extends NVRenderer {
     // block lookup is in volume texture fraction, so convert via mm.
     const off = crosshairExplodeOffsetForModel(model)
 
+    // Cylinders are ordered X-, X+, Y-, Y+, Z-, Z+, so axis = floor(i / 2).
+    const axisColors = [0, 1, 2].map((axis) =>
+      packColor(
+        getAxisColor(axis, ui.crosshairColor, ui.crosshairColorPerAxis),
+      ),
+    )
+
+    // Tiles that share a radius -- the usual case -- share the geometry, so only
+    // the first of them pays for the rebuild.
+    if (!this._geometryChanged(radius, axisColors, segments, off)) return
+
     // Update each cylinder's vertex buffer
     for (let i = 0; i < 6; i++) {
+      const colorPacked = axisColors[Math.floor(i / 2)]
       const seg = segments[i]
       const start = applyCrosshairOffset(seg[0], off)
       const end = applyCrosshairOffset(seg[1], off)

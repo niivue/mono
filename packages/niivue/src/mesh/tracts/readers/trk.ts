@@ -99,31 +99,41 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   m[14] = vox2ras[14]
   m[15] = vox2ras[15]
 
-  // Parse streamline data
-  const i32 = new Int32Array(buffer.slice(hdr_sz))
-  const f32 = new Float32Array(i32.buffer)
-  const ntracks = i32.length
-  if (ntracks < 1) throw new Error('Empty TRK file')
+  // Parse streamline data: views on the original buffer, no copy
+  const nWords = (buffer.byteLength - hdr_sz) >> 2
+  if (nWords < 1) throw new Error('Empty TRK file')
+  const i32 = new Int32Array(buffer, hdr_sz, nWords)
+  const f32 = new Float32Array(buffer, hdr_sz, nWords)
 
-  // Over-provision arrays
-  let vertices = new Float32Array(ntracks)
-  let offsets = new Uint32Array(ntracks / 4)
+  // Pass 1: count streamlines and points for exact allocation
+  let nStreamlines = 0
+  let nPoints = 0
+  let idx = 0
+  while (idx < nWords) {
+    const n_pts = i32[idx]
+    if (n_pts < 1) break
+    const next = idx + 1 + n_pts * (3 + n_scalars) + n_properties
+    if (next > nWords) break
+    nStreamlines++
+    nPoints += n_pts
+    idx = next
+  }
+  const nWordsValid = idx
+
+  const vertices = new Float32Array(nPoints * 3)
+  const offsets = new Uint32Array(nStreamlines + 1)
+  const dpvVals = dpvNames.map(() => new Float32Array(nPoints))
+  const dpsVals = dpsNames.map(() => new Float32Array(nStreamlines))
+
+  // Pass 2: read
   let npt = 0
   let npt3 = 0
   let noffset = 0
-
-  // Temporary arrays for scalars (converted to Float32Array after)
-  const dpvVals: number[][] = dpvNames.map(() => [])
-  const dpsVals: number[][] = dpsNames.map(() => [])
-
-  let idx = 0
-  while (idx < ntracks) {
+  idx = 0
+  while (idx < nWordsValid) {
     const n_pts = i32[idx]
     idx++
-    if (!Number.isFinite(n_pts) || n_pts < 1) break
-
-    offsets[noffset++] = npt
-
+    offsets[noffset] = npt
     for (let j = 0; j < n_pts; j++) {
       const px = f32[idx],
         py = f32[idx + 1],
@@ -135,33 +145,27 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
       vertices[npt3++] = px * m[8] + py * m[9] + pz * m[10] + m[11]
       // Per-vertex scalars
       for (let s = 0; s < n_scalars; s++) {
-        dpvVals[s].push(f32[idx])
-        idx++
+        dpvVals[s][npt] = f32[idx++]
       }
       npt++
     }
     // Per-streamline properties
     for (let s = 0; s < n_properties; s++) {
-      dpsVals[s].push(f32[idx])
-      idx++
+      dpsVals[s][noffset] = f32[idx++]
     }
+    noffset++
   }
 
   // Fence-post: final offset
-  offsets[noffset++] = npt
+  offsets[noffset] = npt
 
-  // Trim arrays
-  vertices = vertices.slice(0, npt3)
-  offsets = offsets.slice(0, noffset)
-
-  // Convert scalar arrays to Record<string, Float32Array>
   const dpv: Record<string, Float32Array> = {}
   for (let i = 0; i < dpvNames.length; i++) {
-    dpv[dpvNames[i]] = Float32Array.from(dpvVals[i])
+    dpv[dpvNames[i]] = dpvVals[i]
   }
   const dps: Record<string, Float32Array> = {}
   for (let i = 0; i < dpsNames.length; i++) {
-    dps[dpsNames[i]] = Float32Array.from(dpsVals[i])
+    dps[dpsNames[i]] = dpsVals[i]
   }
 
   return { vertices, offsets, dpv, dps, groups: {}, dpvMeta: {}, dpsMeta: {} }

@@ -10,6 +10,11 @@ export default defineConfig({
   resolve: {
     conditions: ['development', 'import', 'module', 'browser', 'default'],
   },
+  // Keep the workspace bridge as source in Debug. Prebundling it would hide
+  // edits behind Vite's dependency cache until the dev server is restarted.
+  optimizeDeps: {
+    exclude: ['@niivue/web-bridge'],
+  },
   server: {
     port: 8083,
     strictPort: true,
@@ -22,5 +27,15 @@ export default defineConfig({
     outDir: 'dist',
     target: 'esnext',
     emptyOutDir: true,
+    rollupOptions: {
+      // Two entries, one build. The app page and the Quick Look preview page
+      // are separate documents but share NiiVue, so a multi-page build emits
+      // the library once as a common chunk instead of duplicating ~1.3 MB into
+      // both the app bundle and the extension bundle.
+      input: {
+        index: 'index.html',
+        quicklook: 'quicklook.html',
+      },
+    },
   },
 })

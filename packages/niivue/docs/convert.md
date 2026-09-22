@@ -1,4 +1,4 @@
-# NiiVueGPU Property Migration Reference
+# NiiVue Property Migration Reference
 
 Complete mapping from old property names/locations to new API.
 
@@ -81,6 +81,7 @@ Complete mapping from old property names/locations to new API.
 | `dragModePrimary` | `interaction.primaryDragMode` | `nv1.primaryDragMode` |
 | `isForceMouseClickToVoxelCenters` | `interaction.isSnapToVoxelCenters` | `nv1.isSnapToVoxelCenters` |
 | `yoke3Dto2DZoom` | `interaction.isYoked3DTo2DZoom` | `nv1.isYoked3DTo2DZoom` |
+| `viewModeHotKey` | `interaction.isViewModeHotKeyEnabled` | `nv1.isViewModeHotKeyEnabled`; boolean, key fixed to V, off by default |
 
 ## Per-Volume Properties (NVImage)
 
@@ -159,6 +160,7 @@ Complete mapping from old property names/locations to new API.
 | Old Method | New Property |
 |------------|-------------|
 | `setVolumeRenderIllumination(v)` | `nv1.volumeIllumination = v` |
+| `setVolumeRenderIllumination(v)` with `v < 0` (the 0.6 "slices" render) | `nv1.volumeRenderMode = VOLUME_RENDER_MODE.SLICES` |
 | `setRadiologicalConvention(v)` | `nv1.isRadiological = v` |
 | `setSliceType(v)` | `nv1.sliceType = v` |
 | `setCrosshairColor(v)` | `nv1.crosshairColor = v` |

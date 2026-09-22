@@ -12,10 +12,16 @@ struct SliceUniforms {
     numPaqd: f32,                 // >0 = PAQD overlay loaded
     isV1SliceShader: i32,         // >0 = render fiber lines from RGBA overlay direction
     overlayOutlineWidth: f32,     // >0 = draw black outline at overlay threshold boundary
+    isColormapAlphaOn2D: i32,     // >0 = background's baked colormap alpha scales slice opacity
     paqdUniforms: vec4f,          // easing parameters: [t0, t1, y1, y2]
     // Chunked-volume sampling transform. Identity for non-chunked volumes
     // (chunkSubOrigin 0, chunkSubSize 1, chunkDataOrigin 0, chunkDataSize 1).
     chunkSubOrigin: vec3f,
+    // Display-gamma exponent for intensity-derived colour, in chunkSubOrigin's
+    // trailing pad lane (byte 204 / float 51) so no later vec3f offset moves.
+    // The reciprocal of scene.gamma, times this chunk's per-level brightness
+    // compensation. 1 = exact no-op.
+    invGamma: f32,
     chunkSubSize: vec3f,
     chunkDataOrigin: vec3f,
     chunkDataSize: vec3f,
@@ -78,6 +84,13 @@ fn vertex_main(@builtin(vertex_index) vIdx: u32) -> VertexOutput {
     return out;
 }
 
+// Display gamma for intensity-derived colour. Alpha is never touched, so
+// occlusion and thresholding are unchanged; e = 1 is an exact no-op.
+fn applyGamma(rgb: vec3f, e: f32) -> vec3f {
+    if (e == 1.0) { return rgb; }
+    return pow(max(rgb, vec3f(0.0)), vec3f(e));
+}
+
 // PAQD easing function — piecewise linear alpha from primary probability.
 fn paqdEaseAlpha(alpha: f32, pu: vec4f) -> f32 {
     let t0 = pu[0];
@@ -100,7 +113,15 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
         * u.chunkDataSize + u.chunkDataOrigin;
     // Sample background volume (use textureSampleLevel to avoid uniform control flow issues)
     let background = textureSampleLevel(volume, texSampler, volPos, 0.0);
-    var color = vec4f(background.rgb, u.opacity);
+    var color = vec4f(applyGamma(background.rgb, u.invGamma), u.opacity);
+
+    // Opt-in: scale by the colormap alpha the orient prepass baked, so a
+    // palette that carries its structure in alpha reads the same in 2D as it
+    // does in the 3D ray-march (which always samples this alpha). Off by
+    // default, since most colormaps ramp alpha and would gain a 2D fade.
+    if (u.isColormapAlphaOn2D != 0) {
+        color.a *= background.a;
+    }
 
     // Handle alpha clipping for dark values (FSLeyes style)
     if (u.isAlphaClipDark != 0 && background.a == 0.0) {
@@ -138,6 +159,12 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
                 P = t * v1dir;
                 let dx2 = length(P - vxl);
                 ocolor = vec4f(ocolor.rgb + vec3f(dx2 - dx - 0.5 * pan), ocolor.a);
+            } else {
+                // Gamma the colormapped overlay like the background. Skipped in
+                // the V1 branch above, where rgb is a normalized fiber
+                // DIRECTION, not a colour — a pow() there would bend the
+                // encoded vector.
+                ocolor = vec4f(applyGamma(ocolor.rgb, u.invGamma), ocolor.a);
             }
             // Overlay outline: draw black border at threshold boundary
             if (u.overlayOutlineWidth > 0.0) {

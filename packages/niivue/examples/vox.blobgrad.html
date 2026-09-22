@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - layer gradient comparison</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      /* Two instances, one on top of the other, both filling the container and
+         both showing the same camera (they broadcast to each other). The top
+         one is clipped to the right of the seam, so the pair reads as a single
+         image split down the middle. clip-path also clips hit testing, so a
+         drag on the left half reaches the bottom canvas and a drag on the right
+         half reaches the top one. */
+      #gl2 {
+        clip-path: inset(0 0 0 var(--seam, 50%));
+      }
+      #handle {
+        display: block;
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: var(--seam, 50%);
+        width: 11px;
+        margin-left: -5px;
+        cursor: col-resize;
+        z-index: 2;
+        touch-action: none;
+      }
+      /* The visible hairline sits inside the wider grab target. */
+      #handle::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 5px;
+        width: 1px;
+        background: rgba(255, 255, 255, 0.55);
+      }
+      #handle::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 0;
+        width: 11px;
+        height: 34px;
+        margin-top: -17px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.55);
+      }
+      .paneLabel {
+        display: block;
+        position: absolute;
+        top: 8px;
+        z-index: 3;
+        padding: 2px 7px;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.55);
+        font-size: 13px;
+        pointer-events: none;
+      }
+      #labelLeft {
+        left: 8px;
+      }
+      #labelRight {
+        right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="4" selected>Render</option>
+        <option value="3">A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="overlaySelect">Overlay</label>
+      <select id="overlaySelect">
+        <option value="spmMotor" selected>spmMotor (continuous)</option>
+        <option value="aal">aal (labels)</option>
+        <option value="hippo">hippo (old niivue gradient demo)</option>
+      </select>
+      &nbsp;
+      <label
+        for="leftMode"
+        title="volumeLayerGradientMode on the left instance"
+        >Left</label
+      >
+      <select id="leftMode">
+        <option value="0">central difference (legacy)</option>
+        <option value="2" selected>8-corner Sobel (old niivue)</option>
+        <option value="1">Gaussian blob</option>
+      </select>
+      &nbsp;
+      <label
+        for="rightMode"
+        title="volumeLayerGradientMode on the right instance"
+        >Right</label
+      >
+      <select id="rightMode">
+        <option value="0">central difference (legacy)</option>
+        <option value="2">8-corner Sobel (old niivue)</option>
+        <option value="1" selected>Gaussian blob</option>
+      </select>
+      &nbsp;
+      <label
+        for="gradSlider"
+        title="volumeIllumination: the overlay is lit from its own in-shader gradient (layerShade), which is what volumeLayerGradientMode selects"
+        >Illumination</label
+      >
+      <input type="range" min="0" max="100" value="70" class="slider" id="gradSlider" />
+      &nbsp;
+      <label for="matcapSelect">Matcap</label>
+      <select id="matcapSelect">
+        <option>Cortex</option>
+        <option>Shiny</option>
+      </select>
+      &nbsp;
+      <label for="opacitySlider">Overlay opacity</label>
+      <input type="range" min="1" max="100" value="100" class="slider" id="opacitySlider" />
+      &nbsp;
+      <label for="backCheck" title="Hide the background so only the lit overlay remains">Background</label>
+      <input type="checkbox" id="backCheck" checked />
+      &nbsp;
+      <label for="clipCheck" title="Cut the 3D render with a clip plane. Right-drag the render to move it.">Clip</label>
+      <input type="checkbox" id="clipCheck" />
+      &nbsp;
+      <label for="clipOverlayCheck" title="clipPlaneOverlay: cut the overlay with the same plane instead of leaving it whole">Clip overlay</label>
+      <input type="checkbox" id="clipOverlayCheck" disabled />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+      <canvas id="gl2"></canvas>
+      <div id="handle" title="Drag to move the seam"></div>
+      <span class="paneLabel" id="labelLeft"></span>
+      <span class="paneLabel" id="labelRight"></span>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module" src="vox.blobgrad.js"></script>
+  </body>
+</html>

@@ -240,16 +240,25 @@ viewport formulas in `wsi.ts`. WSI volumes carry spacing `[1,1,1]`, so
 `base-px-per-mm = level downsample factor`. If niivue's 2D pan/zoom convention
 changes, these formulas must change with it.
 
-### The quirk we work around
+### The quirk we used to work around (fixed upstream)
 
 niivue's built-in 2D **wheel zoom anchors on the crosshair**
-(`control/interactions.ts`, the `isPanZoomMode` branch:
-`pan2Dxyzmm[0] += zoomChange * scene2mm(crosshairPos)[0]`). For a volume whose
-mm origin is **not** at its centre — which our server-built window volumes are —
-that term is non-zero and the view **drifts toward a corner** as you zoom. So
-the viewer sets `primaryDragMode: none` (which disables that branch) and drives
-a **centred** wheel zoom and a drag pan itself, writing `pan2Dxyzmm` directly.
-This is the single most important niivue-facing detail of the WSI work.
+(`control/interactions.ts`, the `isPanZoomMode` branch). It used to compensate
+with `pan2Dxyzmm[i] += (zoom - newZoom) * scene2mm(crosshairPos)[i]`, which is
+wrong twice over: the ortho window scales about the extent CENTRE, not the world
+origin, and holding a point across a zoom change takes a RATIO of the two zooms,
+not their difference. For a volume whose mm origin is not at its centre — which
+our server-built window volumes are — the view **drifted toward a corner** as you
+zoomed. That is now fixed (issue #68): the branch calls
+`NVTransforms.zoomPan2DAbout`, the exact inverse of `calculateMvpMatrix2D`'s
+window, and the crosshair holds still on any volume. An opt-in
+`wheelZoomAnchor: 'pointer'` (default `'crosshair'`, unchanged) can instead
+anchor the wheel zoom at the pointer, OpenSeadragon-style.
+
+The viewer is unaffected either way. It sets `primaryDragMode: none`, which
+disables that branch outright, and drives a **centred** wheel zoom and a drag pan
+itself, writing `pan2Dxyzmm` directly. Keep it that way: OSD owns the navigation
+state, so the built-in handler must stay out of it regardless of how it anchors.
 
 ### Streaming path — the niivue features it added
 

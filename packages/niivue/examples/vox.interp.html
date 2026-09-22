@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Volume Interpolation (linear vs cubic B-spline)</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      header {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+      }
+
+      header .control {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      header .control[hidden] {
+        display: none;
+      }
+
+      header .links {
+        margin-left: auto;
+      }
+
+      header .links a {
+        color: #9cf;
+        margin-left: 12px;
+      }
+
+      /* The A/B overlay sits above the live canvas and takes NO pointer events,
+         so every drag, wheel and click still reaches the viewer: the camera
+         behaves exactly as it does with A/B off. The divider is a header slider
+         for the same reason -- nothing on the canvas competes with the mouse. */
+      #ab-overlay {
+        display: none;
+        pointer-events: none;
+        cursor: default;
+      }
+
+      #ab-overlay.on {
+        display: block;
+      }
+
+      #ab-badge {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        display: none;
+        border: 1px solid rgba(160, 200, 255, 0.4);
+        background: rgba(5, 8, 8, 0.82);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-family: ui-monospace, monospace;
+        pointer-events: none;
+      }
+
+      #ab-badge.on {
+        display: block;
+      }
+
+      footer {
+        font-family: ui-monospace, monospace;
+        font-size: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="control">
+        <label for="volume">Volume</label>
+        <select id="volume">
+          <option value="/volumes/chris_t1.nii.gz" selected>chris_t1 (T1)</option>
+          <option value="/volumes/mni152.nii.gz">mni152 (T1 template)</option>
+          <option value="/volumes/visiblehuman.nii.gz">visible human (microtome)</option>
+          <option value="/volumes/torso.nii.gz">torso (CT)</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="interp">Interp</label>
+        <select id="interp"
+          title="Texture reconstruction in the 3D fine ray-march. linear = hardware trilinear (C0: leaves a blocky texel staircase along band edges). cubic B-spline = 8-tap C2 reconstruction (smooth, roughly 2x fragment cost). Trilinear is the library default; cubic is opt-in">
+          <option value="linear" selected>linear</option>
+          <option value="cubic">cubic B-spline</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="ab">A/B</label>
+        <select id="ab"
+          title="Compare the two filters on the IDENTICAL camera, window and lighting. split = both rendered back-to-back and wiped side by side. flip = alternate the live render between them every 700 ms">
+          <option value="off" selected>off</option>
+          <option value="split">split</option>
+          <option value="flip">flip</option>
+        </select>
+      </span>
+      <span class="control" id="splitCtl" hidden>
+        <label for="split">divider <span id="splitVal">50%</span></label>
+        <input id="split" type="range" min="2" max="98" step="0.5" value="50"
+          title="Move the A/B divider. It lives here rather than on the canvas so the mouse stays free to rotate the volume" />
+      </span>
+      <span class="control">
+        <label for="samples">samples <span id="samplesVal">1.0</span></label>
+        <input id="samples" type="range" min="0.5" max="4" step="0.5" value="1"
+          title="Ray samples per voxel in the 3D fine march. Cost is linear in this; the cubic filter costs about 2x on top of it, so cubic at half the sample rate is close to trilinear at full rate" />
+      </span>
+      <span class="control">
+        <label for="illum">light <span id="illumVal">0.00</span></label>
+        <input id="illum" type="range" min="0" max="1" step="0.05" value="0"
+          title="volumeIllumination: gradient/matcap lighting. Lighting differentiates the volume, so it amplifies whatever the reconstruction filter does to the surface" />
+      </span>
+      <button id="measure" type="button"
+        title="Render both filters for a fixed number of frames on the current camera and report ms/frame">measure</button>
+      <button id="savePng" type="button"
+        title="Download exactly what is on screen -- the live render, or the A/B split composite">save PNG</button>
+      <span class="links">
+        <a href="./index.html">Examples</a>
+        <a href="?backend=webgpu">WebGPU</a>
+        <a href="?backend=webgl2">WebGL2</a>
+      </span>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+      <canvas id="ab-overlay" aria-hidden="true"></canvas>
+      <div id="ab-badge" aria-hidden="true"></div>
+    </main>
+    <footer id="status">Loading...</footer>
+    <script type="module" src="vox.interp.js"></script>
+  </body>
+</html>

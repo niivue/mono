@@ -208,9 +208,13 @@ export function selectSlidePlaneLevel(
   h: number,
 ): NVSlideLevelManifest {
   const levels = state.slide.manifest.levels
-  const clampIdx = (i: number): NVSlideLevelManifest =>
-    levels[Math.min(levels.length - 1, Math.max(0, i))]
-  if (state.levelIndex !== undefined) return clampIdx(state.levelIndex)
+  if (state.levelIndex !== undefined) {
+    // `level.index` is a manifest identifier, not its position in the array:
+    // NVSlide.selectLevel uses the same lookup. A bad persisted value falls
+    // through to camera-driven LOD instead of returning undefined to render.
+    const pinned = levels.find((level) => level.index === state.levelIndex)
+    if (pinned) return pinned
+  }
   // Screen pixels spanned by one base (level-0) slide pixel at the plane center.
   const cx = state.slide.manifest.width / 2
   const cy = state.slide.manifest.height / 2

@@ -35,6 +35,9 @@
       &nbsp;
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <label for="axisColorCheck">Axis colors</label>
+      <input type="checkbox" id="axisColorCheck">
     </header>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>
@@ -65,6 +68,14 @@
       }
       darkCheck.onclick = function () {
         nv1.volumeIsAlphaClipDark = this.checked
+      }
+      // crosshairColorPerAxis tints each crosshair segment by the world axis it
+      // extends along: X red, Y green, Z blue, the same colors as the orient
+      // cube. An empty array restores the single crosshairColor.
+      axisColorCheck.onclick = function () {
+        nv1.crosshairColorPerAxis = this.checked
+          ? [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]]
+          : []
       }
       const nv1 = new NiiVue({backgroundColor: [0.2,0.2,0.2, 1], isColorbarVisible: true, showRender: SHOW_RENDER.ALWAYS })
       nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))

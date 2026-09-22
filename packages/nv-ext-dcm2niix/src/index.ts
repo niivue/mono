@@ -14,10 +14,10 @@
  *
  * Usage:
  * ```ts
- * import NiiVueGPU from '@niivue/niivue'
+ * import NiiVue from '@niivue/niivue'
  * import { runDcm2niix } from '@niivue/nv-ext-dcm2niix'
  *
- * const nv = new NiiVueGPU()
+ * const nv = new NiiVue()
  * await nv.attachTo('gl1')
  *
  * input.addEventListener('change', async () => {

@@ -96,6 +96,42 @@ describe('NvSceneController', () => {
     expect(mockInstances[0]?.customLayout).toBe(layout)
   })
 
+  test('removeVolume uses nv.removeVolume and emits volumeRemoved', async () => {
+    attachToCanvasResults.push(Promise.resolve())
+    await controller.addViewer()
+    await controller.loadVolume(0, { url: 'brain.nii.gz' })
+
+    const nv = mockInstances[0]
+    expect(nv?.volumes).toHaveLength(1)
+
+    const removed: Array<[number, string]> = []
+    controller.on('volumeRemoved', (index, url) => {
+      removed.push([index, url])
+    })
+
+    await controller.removeVolume(0, 'brain.nii.gz')
+
+    expect(nv?.removeVolume).toHaveBeenCalledWith(0)
+    expect(nv?.volumes).toHaveLength(0)
+    expect(removed).toEqual([[0, 'brain.nii.gz']])
+  })
+
+  test('removeVolume is a no-op when the volume is not present', async () => {
+    attachToCanvasResults.push(Promise.resolve())
+    await controller.addViewer()
+
+    const nv = mockInstances[0]
+    const removed: Array<[number, string]> = []
+    controller.on('volumeRemoved', (index, url) => {
+      removed.push([index, url])
+    })
+
+    await controller.removeVolume(0, 'missing.nii')
+
+    expect(nv?.removeVolume).not.toHaveBeenCalled()
+    expect(removed).toEqual([])
+  })
+
   test('removes a viewer when attachment fails', async () => {
     const expectedError = new Error('attach failed')
     attachToCanvasResults.push(Promise.reject(expectedError))

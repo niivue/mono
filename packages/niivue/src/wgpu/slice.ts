@@ -1,3 +1,9 @@
+import {
+  invGamma,
+  lodGammaExponent,
+  SCENE_DEFAULTS,
+  VOLUME_DEFAULTS,
+} from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
@@ -44,6 +50,18 @@ export class SliceRenderer extends NVRenderer {
   samplerNearest: GPUSampler | null
   bindGroupLinear: GPUBindGroup | null
   bindGroupNearest: GPUBindGroup | null
+  /**
+   * Display gamma for intensity-derived slice colour (background + colormapped
+   * overlay). Mirrors the volume renderer's field so 2D and 3D agree; alpha is
+   * untouched, so `gamma > 1` brightens and 1 is an exact no-op.
+   */
+  gamma = SCENE_DEFAULTS.gamma
+  /**
+   * Coefficient for the per-chunk compensation of the brightness a coarse
+   * multi-LOD brick loses. 0 disables it; a no-op for single-level and
+   * non-chunked draws whatever the value.
+   */
+  lodBrightnessCompensation = VOLUME_DEFAULTS.lodBrightnessCompensation
   private _bindTexVol: GPUTexture | null = null
   private _bindTexOverlay: GPUTexture | null = null
   private _bindTexDraw: GPUTexture | null = null
@@ -548,6 +566,7 @@ export class SliceRenderer extends NVRenderer {
       overlayAlphaShader?: number
       overlayOutlineWidth?: number
       isAlphaClipDark?: boolean
+      isColormapAlphaOn2D?: boolean
       drawRimOpacity?: number
       isV1SliceShader?: boolean
     },
@@ -647,9 +666,18 @@ export class SliceRenderer extends NVRenderer {
     intView[37] = md.isAlphaClipDark ? 1 : 0 // i32 isAlphaClipDark
     intView[41] = isV1SliceShader ? 1 : 0 // i32 isV1SliceShader
     uniformData[42] = md.overlayOutlineWidth ?? 0 // f32 overlayOutlineWidth
+    intView[43] = md.isColormapAlphaOn2D ? 1 : 0 // i32 isColormapAlphaOn2D
 
     // Chunk transform: 5x vec3f starting at byte 192 (float 48), each vec3f
     // padded to 16 bytes (4 floats). Identity for non-chunked volumes.
+    // invGamma lives in chunkSubOrigin's trailing pad lane (float 51). Two
+    // exponents compose (pow is associative in the exponent): the reciprocal of
+    // the user-facing display gamma, and this chunk's per-level compensation
+    // for the brightness a coarse pyramid brick loses. The second is 1 for
+    // every single-level and non-chunked draw.
+    uniformData[51] =
+      invGamma(this.gamma) *
+      lodGammaExponent(ct.lodDownsample, this.lodBrightnessCompensation)
     uniformData[48] = ct.subOrigin[0]
     uniformData[49] = ct.subOrigin[1]
     uniformData[50] = ct.subOrigin[2]

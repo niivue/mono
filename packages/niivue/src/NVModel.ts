@@ -6,6 +6,7 @@ import * as NVConstants from '@/NVConstants'
 import { COLORMAP_TYPE } from '@/NVConstants'
 import type {
   AnnotationConfig,
+  AnnotationScreenShape,
   ColorbarInfo,
   CompletedAngle,
   CompletedMeasurement,
@@ -15,6 +16,7 @@ import type {
   ImageFromUrlOptions,
   InteractionConfig,
   LayoutConfig,
+  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshRenderConfig,
   NiiVueOptions,
@@ -120,6 +122,17 @@ export default class NVModel {
     | null = null
   completedMeasurements: CompletedMeasurement[] = []
   completedAngles: CompletedAngle[] = []
+  // Measurements projected to the current frame's canvas pixels, for an external
+  // overlay renderer (see NVControlBase.measurementScreenLines). Persisted lines
+  // are refilled each frame by the view; the active line tracks an in-progress
+  // measurement drag and is cleared on release.
+  _persistedMeasurementScreenLines: MeasurementScreenLine[] = []
+  _activeMeasurementScreenLine: MeasurementScreenLine | null = null
+
+  // Vector annotations projected to canvas pixels for the current frame, exposed
+  // via NVControlBase.annotationScreenShapes so an external overlay can draw the
+  // shapes. Refilled each frame by the view (projectAnnotationScreenShapes).
+  _persistedAnnotationScreenShapes: AnnotationScreenShape[] = []
 
   constructor(options: NiiVueOptions = {}) {
     // Scene — flat options mapped to scene group
@@ -167,6 +180,9 @@ export default class NVModel {
       ...(options.tileMargin !== undefined && { margin: options.tileMargin }),
       ...(options.isRadiological !== undefined && {
         isRadiological: options.isRadiological,
+      }),
+      ...(options.isSingleViewFillCanvas !== undefined && {
+        isSingleViewFillCanvas: options.isSingleViewFillCanvas,
       }),
       ...(options.customLayout !== undefined && {
         customLayout: options.customLayout ?? null,
@@ -216,6 +232,9 @@ export default class NVModel {
       }),
       ...(options.crosshairColor !== undefined && {
         crosshairColor: options.crosshairColor,
+      }),
+      ...(options.crosshairColorPerAxis !== undefined && {
+        crosshairColorPerAxis: options.crosshairColorPerAxis,
       }),
       ...(options.crosshairGap !== undefined && {
         crosshairGap: options.crosshairGap,
@@ -287,6 +306,9 @@ export default class NVModel {
       ...(options.volumeIsAlphaClipDark !== undefined && {
         isAlphaClipDark: options.volumeIsAlphaClipDark,
       }),
+      ...(options.volumeIsColormapAlphaOn2D !== undefined && {
+        isColormapAlphaOn2D: options.volumeIsColormapAlphaOn2D,
+      }),
       ...(options.volumeIsNearestInterpolation !== undefined && {
         isNearestInterpolation: options.volumeIsNearestInterpolation,
       }),
@@ -301,6 +323,30 @@ export default class NVModel {
       }),
       ...(options.volumeTransmittanceCutoff !== undefined && {
         transmittanceCutoff: options.volumeTransmittanceCutoff,
+      }),
+      ...(options.volumeRenderMode !== undefined && {
+        renderMode: options.volumeRenderMode,
+      }),
+      ...(options.volumeLayerGradientMode !== undefined && {
+        layerGradientMode: options.volumeLayerGradientMode,
+      }),
+      ...(options.volumeSampleRate !== undefined && {
+        sampleRate: options.volumeSampleRate,
+      }),
+      ...(options.volumeIsCubicInterpolation !== undefined && {
+        isCubicInterpolation: options.volumeIsCubicInterpolation,
+      }),
+      ...(options.volumeLodBrightnessCompensation !== undefined && {
+        lodBrightnessCompensation: options.volumeLodBrightnessCompensation,
+      }),
+      ...(options.volumeLodOpacityCompensation !== undefined && {
+        lodOpacityCompensation: options.volumeLodOpacityCompensation,
+      }),
+      ...(options.volumeGradientOpacity !== undefined && {
+        gradientOpacity: options.volumeGradientOpacity,
+      }),
+      ...(options.volumeSilhouette !== undefined && {
+        silhouette: options.volumeSilhouette,
       }),
     }
     // Mesh — flat options mapped to mesh group
@@ -351,8 +397,17 @@ export default class NVModel {
       ...(options.isYoked3DTo2DZoom !== undefined && {
         isYoked3DTo2DZoom: options.isYoked3DTo2DZoom,
       }),
+      ...(options.isViewModeHotKeyEnabled !== undefined && {
+        isViewModeHotKeyEnabled: options.isViewModeHotKeyEnabled,
+      }),
       ...(options.isDragDropEnabled !== undefined && {
         isDragDropEnabled: options.isDragDropEnabled,
+      }),
+      ...(options.wheelZoomAnchor !== undefined && {
+        wheelZoomAnchor: options.wheelZoomAnchor,
+      }),
+      ...(options.isPanFollowingCrosshair !== undefined && {
+        isPanFollowingCrosshair: options.isPanFollowingCrosshair,
       }),
     }
     // Annotation — flat options mapped to annotation group
@@ -369,6 +424,9 @@ export default class NVModel {
       }),
       ...(options.annotationBrushRadius !== undefined && {
         brushRadius: options.annotationBrushRadius,
+      }),
+      ...(options.annotationMergesOverlaps !== undefined && {
+        mergesOverlaps: options.annotationMergesOverlaps,
       }),
       ...(options.annotationIsErasing !== undefined && {
         isErasing: options.annotationIsErasing,
@@ -650,6 +708,7 @@ export default class NVModel {
         min: isZeroBased ? 0 : v.calMin,
         max: v.calMax,
         thresholdMin: isZeroBased ? v.calMin : undefined,
+        isInverted: v.isColormapInverted,
       })
       if (v.colormapNegative) {
         const [negThresh, negMaxColor] = resolveNegativeRange(
@@ -664,6 +723,7 @@ export default class NVModel {
           max: negMaxColor,
           thresholdMin: isZeroBased ? negThresh : undefined,
           isNegative: true,
+          isInverted: v.isColormapInverted,
         })
       }
     }

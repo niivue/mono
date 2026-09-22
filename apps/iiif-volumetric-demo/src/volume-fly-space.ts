@@ -76,7 +76,7 @@ interface ApiVolume {
 
 interface ApiCatalog {
   volumes?: ApiVolume[]
-  niivuegpu?: { mounted?: boolean }
+  niivue?: { mounted?: boolean }
 }
 
 interface SceneNode {
@@ -385,7 +385,7 @@ async function main(): Promise<void> {
 
   els.subtitle.textContent = 'Starting global niivue renderer'
   // mono's @niivue/niivue is the in-tree replacement for the POC's
-  // /vendor/niivuegpu/niivuegpu.webgl2.js entry. enableInteraction /
+  // /vendor/niivue/niivue.webgl2.js entry. enableInteraction /
   // disableInteraction no longer exist; we set opts.isInteractionEnabled to
   // false in the constructor and skip any runtime toggles. Backend is
   // chosen at runtime from ?backend=webgl2|webgpu (default webgl2).

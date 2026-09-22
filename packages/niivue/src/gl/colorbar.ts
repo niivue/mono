@@ -65,7 +65,7 @@ export class ColorbarRenderer extends NVRenderer {
 
     // Create one texture per colormap
     for (const info of colorbars) {
-      const lutData = NVCmaps.lutrgba8(info.colormapName)
+      const lutData = NVCmaps.lutrgba8(info.colormapName, info.isInverted)
       const tex = gl.createTexture()
       if (!tex) continue
       gl.bindTexture(gl.TEXTURE_2D, tex)

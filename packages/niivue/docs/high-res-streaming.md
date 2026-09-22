@@ -26,7 +26,7 @@ To solve the texture limit and VRAM constraints, NiiVue implements a **Tiled Vol
 
 ### Chunking and Halos
 Instead of uploading one massive texture, NiiVue logically partitions the volume into smaller 3D blocks called **chunks**.
-* Each chunk carries a **3-voxel halo** of overlapping data from its neighbors. One voxel would be enough for seam-free trilinear interpolation alone; the wider halo is needed because the gradient pass (Sobel radius 1, then a radius-1 blur) reads ±2 voxels of the chunk's own data, and we want one extra voxel of margin so the trilinear sample at the seam stays valid.
+* Each chunk carries a **3-voxel halo** of overlapping data from its neighbors. One voxel would be enough for seam-free trilinear interpolation alone; the wider halo is needed because the gradient pass (box blur then Sobel, both radius 0.7) reads ±2 voxels of the chunk's own data, and we want one extra voxel of margin so the trilinear sample at the seam stays valid.
 * During rendering, NiiVue dynamically sorts the chunks back-to-front based on the camera's view direction and composites them together with premultiplied-alpha OVER blending.
 
 ### Visibility-Driven Working Sets
@@ -75,9 +75,84 @@ When a user explores a massive dataset, the client and server engage in a contin
 2. **Zooming In (Drill Down):**
    * As the camera moves closer, the screen-space error rises. NiiVue realizes it needs higher resolution data (Level 0) for the chunks specifically intersecting the center of the screen.
    * The Level 0 chunks are requested from the server.
-   * Because they take longer to download, NiiVue continues rendering the blurry Level 3 chunks as a placeholder.
-   * Once the Level 0 chunks arrive, the `ChunkResidencyManager` admits them to the GPU cache, instantly "popping" the view into sharp focus.
+   * They take longer to download, and the plan swap that asked for them has already released the GPU textures of the Level 3 chunks it could not carry over. What fills the gap in the meantime is the **coarse floor** (see below), not the outgoing chunks: a whole-volume low-resolution texture the renderer draws wherever a brick has no texture yet.
+   * Once the Level 0 chunks arrive, the `ChunkResidencyManager` admits them to the GPU cache and each one dissolves in over the floor across `chunkFadeMs` (120 ms by default; set it to 0 to make them pop in instantly).
    * Simultaneously, if the VRAM budget is exceeded, NiiVue evicts the high-resolution chunks that recently panned off the edges of the screen.
+
+### The coarse floor
+
+A brick with no resident texture draws **nothing**, so without a floor the scene background shows through — briefly for every region of the volume each time a refocus swaps the plan, which is what reads as a flash while zooming. `loadChunkedVolume` therefore builds a floor automatically from the coarsest pyramid level and installs it (`coarseFloor: false` opts out; it is skipped when that level is too large to upload as a single texture). An app that drives the chunked path itself can supply one with `setBaseCoarseFloor(image)` — a small in-memory `NVImage` covering the same mm box, with CPU voxels in `img` and no `chunkSource`.
+
+The floor is what the cross-fade dissolves into, so with no floor installed there is no fade either: `fadeFraction` returns 1 immediately and chunks pop in at full strength.
+
+### Per-level brightness compensation
+
+**Which knob:** coarse bricks look too *dark* -> `volumeLodBrightnessCompensation`. Coarse bricks look too *transparent* -> `volumeLodOpacityCompensation` (next section). Both are exact no-ops on anything that is not a multi-LOD chunked volume; `nv.lodCompensation()` says whether either is doing anything, and what.
+
+A coarse brick does not merely look softer than the fine data it stands in for: it looks **darker**. Downsampling averages voxels, which destroys the correlation between a sample's colour and its opacity, and front-to-back compositing weights each sample's colour by its opacity. The averaged brick therefore integrates to less light than the fine data over the same span, and the boundary between a level-0 brick and its level-3 neighbour reads as a brightness step, not just a sharpness one.
+
+`volumeLodBrightnessCompensation` (default `0.08`, range `[0, 1]`, `0` disables) lifts each brick by an exponent derived from its own pyramid level:
+
+```
+e = 1 - coefficient * log2(k)
+```
+
+where `k` is the brick's linear downsample factor relative to the finest grid — the geometric mean of the three per-axis ratios, so an anisotropically decimated pyramid still yields one scalar (`chunkLodDownsample` in `src/volume/chunking.ts`). Because every pyramid level averages the same 2x2x2 neighbourhood, the correction is **one fixed step per level**: `log2(k)` is just the level index. The shaders multiply `e` into the same exponent that carries `scene.gamma` and raise only the classified RGB to it, so alpha, occlusion and thresholding are untouched. `k` is 1 for the finest level, for single-level plans, and for non-chunked volumes, which makes the whole feature an exact no-op outside multi-LOD plans whatever the coefficient is. The 3D render in `VOLUME_RENDER_MODE.SLICES` skips it too (`_lodGamma`): a plane takes one sample whatever the brick's level, so there is no sparser sampling to compensate, and applying it made a coarse floor brick's planes read brighter than the resident fine ones beside them. The 2D tiles still apply it.
+
+#### Why per level and not per downsample factor
+
+This grew with `k - 1` until it was measured on a deep pyramid, and that form does not survive contact with one. It assumes a level-4 brick loses eight times what a level-1 brick loses; averaging does not work that way, and on the seven-level HiP-CT heart the correction ran away. At the old `0.022` default a level-4 brick asked for exponent `1 - 0.022 * 15 = 0.67` and a level-6 brick for `-0.386`, which the 0.25 clamp caught. Two visible symptoms followed:
+
+* A LOD boundary read as a hard brightness step with the **coarse side too bright**, not too dark. Measured across the strongest brick-face seam on `hoa_heart` (WebGL2, gamma 1, trend removed): `+35.7%` at the shipped default, against `-34.0%` with the compensation off. The correction had overshot the null by roughly 6x and was itself the artifact.
+* The **coarse floor** is built from the coarsest level, so it sat pinned at the 0.25 clamp. That floor is exactly what shows while a refocus streams fine bricks in, which is why zooming flashed pale before settling.
+
+Under `1 - coefficient * log2(k)` neither happens: the deepest level of that pyramid asks for `1 - 0.08 * 6 = 0.52`, well clear of the clamp, and the seam response stays monotonic and gentle across the whole slider range (`-33.0%` at 0, `-28.7%` at 0.02, `-23.4%` at 0.04, `-10.1%` at 0.08). That is the practical gain: the coefficient is now **safe to turn up** on data that needs more, where before it saturated.
+
+#### Picking the coefficient
+
+The size of the deficit depends on how much intensity varies inside one fine voxel, so no coefficient is exact for all data, and the spread is real rather than a rounding error:
+
+| data | character | coefficient that nulls its LOD seam |
+|------|-----------|-------------------------------------|
+| `hoa_heart` (HiP-CT) | sparse, thin, low contrast on a high pedestal | about `0.11` per level |
+| `pawpawsaurus` (CT) | dense, opaque, near-saturated | about `0.05` per level |
+
+`0.08` is the default because it splits them and because the dense case is nearly insensitive to the setting anyway: sweeping `pawpawsaurus` from 0 to 0.08 moves its mean brightness about 4% and changes its strongest edge step from `10.1%` to `9.3%`, while the same sweep on `hoa_heart` takes its seam from `-33%` to `-10%`. Spend the range where the artifact is visible. That is also why it stays a tunable render-time setting rather than a baked constant — the range demo (`examples/range.html`) exposes it as a slider next to `gamma` for A/B comparison.
+
+### Per-level opacity compensation (off by default)
+
+Brightness is only half of what averaging destroys. The other half is opacity, and it has its own correction — `volumeLodOpacityCompensation` (default `0`, range `[0, 1]`, `0` disables) — which is **off by default for a measured reason**, recorded here so it is not switched on by assumption.
+
+The ray-march already corrects a coarse brick's sparser sampling: each sample's alpha is raised to the number of reference steps it stands for, `a' = 1 - (1-a)^k`. That is exact if the coarse voxel is homogeneous. It is not. The true transmittance through the `k` fine voxels the brick replaces is `prod(1-a_i)`, and because `log(1-a)` is concave that product is *smaller* than `(1-mean(a))^k`. A coarse brick is therefore systematically too see-through, by an amount set by the intensity variance inside the coarse voxel. The setting scales the exponent by `1 + coefficient * (k - 1)` to push it back (`lodOpacityScale` in `src/NVConstants.ts`, capped at 8x so a deep level cannot go fully opaque).
+
+Simulating the march over a real OME-Zarr pyramid says that variance term is effectively zero wherever structure is dense enough to saturate the ray. Those regions already integrate the correct alpha, so inflating it only front-loads accumulation onto the nearer — and therefore dimmer — samples, which makes the accumulated **colour** worse. Across four probe regions, raising the coefficient from 0 to 0.5 cut mean alpha error from 6.7% to 5.1% while driving mean colour error from 15.3% to 25.7%. Sweeping colour gamma and opacity jointly finds a shallow optimum (`brightness 0.05`, `opacity 0.10`) worth about 0.2 points of colour and 1.4 points of alpha over gamma alone — not enough to justify changing the default.
+
+Sparse thin material is the one place with a genuine alpha deficit (about -30% at level 3 on the probe used), and no global scale recovers much of it: at coefficient 0.5 it improves to -30.6%. That is expected, since the correction needs the per-voxel variance that mean-downsampling discarded. Fixing that case properly needs a pyramid built to preserve coverage (a max or conservative reduction) rather than a mean, which is a property of the published store, not of the renderer.
+
+It is exposed because the trade is data-dependent: a volume that is mostly thin structure gains more from the alpha than it loses on the colour. Reach for `volumeLodBrightnessCompensation` first, and turn this up only if coarse bricks read as too *transparent* rather than too *dark*. The range demo exposes it as a second slider beside `LOD comp`.
+
+This one is **ray-march only**. A 2D slice tile shows a single sample with no accumulation, so there is no aggregated alpha to correct; the slice renderers take the brightness exponent but not this one.
+
+### Checking what the settings are doing
+
+Both settings only reach bricks fetched from a *coarse* level of a *multi-LOD* plan, so on an ordinary volume they change nothing and nothing on screen says so. `nv.lodCompensation()` answers that directly:
+
+```js
+const report = nv.lodCompensation()
+if (!report.isActive) {
+  console.log(report.inactiveReason)  // e.g. 'volume 0 is not a chunked volume'
+}
+for (const l of report.levels) {
+  // level index, linear downsample k, bricks drawn from this level, and the
+  // exact numbers the shader gets: exponent on RGB, multiplier on the
+  // step-size opacity exponent. Both are 1 where the setting is inert.
+  console.log(l.level, l.downsample, l.brickCount, l.brightnessExponent, l.opacityScale)
+}
+```
+
+`isActive` is true only when a coarse brick is actually drawn *and* a coefficient is non-zero; otherwise `inactiveReason` names the missing precondition. `floor` reports the whole-volume coarse floor separately, since it is not a member of the chunk plan (`level` -1). Setting a non-zero coefficient while no loaded volume is multi-LOD also emits a `log.warn` at the moment of the set. The range demo prints the report as a `LOD comp` row in its HUD.
+
+Both coefficients share the range `[0, 1]`, so a value copied from one into the other is never silently clamped. Useful magnitudes differ: brightness is strong by 0.1 (its exponent is floored at 0.25), opacity is a linear scale on the step exponent and is capped at 8x.
 
 ---
 
@@ -118,10 +193,10 @@ The gradient texture is what gives the 3D render its phong-like matcap shading. 
 
 | Backend | Implementation |
 | --- | --- |
-| WebGPU | Two compute pipelines (`sobel.wgsl`, `blur.wgsl`), `@workgroup_size(8,8,4)`, write via `texture_storage_3d<rgba8unorm, write>`; pipelines cached per device in `wgpu/wgpu.ts` |
+| WebGPU | Two compute entry points in `sobel.wgsl` (`blur`, `sobel`), `@workgroup_size(8,8,4)`, write via `texture_storage_3d<rgba8unorm, write>`; pipelines cached per device in `wgpu/wgpu.ts` |
 | WebGL2 | Two fragment passes, rendering one Z-layer at a time into `gl.RGBA8` 3D textures via `FRAMEBUFFER` + `framebufferTextureLayer` |
 
-Math is identical: Sobel stencil of radius 1, then a separable 3×3×3 box blur (radius 1). 8-bit precision is sufficient for matcap shading.
+Math is identical: an 8-corner box blur of the colormapped alpha at radius 0.7, then an 8-corner Sobel of the blur at radius 0.7. 8-bit precision is sufficient for matcap shading.
 
 Steady-state residency per chunk after stage 2 is **another 4 bytes per voxel** — so 8 bytes per RAS voxel total, colour + gradient. For a 2×2×2 chunked grid with halo `[3,3,3]` the halo overhead adds roughly another 80% on top.
 
@@ -147,6 +222,8 @@ Per-frame draw flow on the chunked path:
 | 4. Stream misses | `uploadChunk(index)` for any not yet resident | `wgpu/orientChunked.ts` / `gl/orientChunked.ts` |
 | 5. Evict under budget | LRU drop of chunks not touched this frame | `ChunkResidencyManager._evictToFit` |
 | 6. Draw | One cube draw per chunk, OVER blended | `wgpu/render.ts:_drawChunked` / `gl/render.ts:_drawChunkedVolume` |
+
+Both the 3D ray-march and the 2D slice shaders raise their classified RGB to one exponent per draw: the reciprocal of `scene.gamma` times the brick's per-level compensation (above). It is a draw-time uniform, deliberately not baked into the stage 1 colour texture — baking would force a re-upload of every resident chunk on each slider tick, add a second 8-bit quantization, and freeze the coefficient at upload time. The exponent reaches intensity-derived layers only; the drawing layer passes `1.0`, since its colours are categorical label swatches rather than brightness.
 
 Frame-order contract: `beginFrame()` must run **before** the working-set request, so working-set chunks carry the current frame stamp and a same-frame `admit` cannot evict the chunks the renderer is about to draw.
 
@@ -240,7 +317,17 @@ Scope / limitations (current):
 | Compositing order | Base and overlay cube sets are each sorted back-to-front but drawn as two sets (overlay always over base) — the same per-cube approximation already used between neighbouring base chunks. |
 | Residency budget | Each `ChunkResidencyManager` uses the full configured `maxChunkResidencyBytes`. With a base + overlay both resident the total can approach 2x; size the streamed levels so base + overlay fit (the demo streams the overlay at one finer level than a deliberately-coarser base). A single split budget is a follow-up. |
 | Layer mix | `chunkExplode` is per-entry, so exploding the base does not explode the overlay. |
+| Render mode | In `SLICES` the overlay contributes its own plane hits over the base's, sampled with the layer alpha the orient pass baked in (`sampleSlice(pos, isLayer)`) rather than the background `opacity` this draw passes as 1. The planes themselves come from the base's crosshair, so it leans on the co-registration above. |
 
 Demo: `apps/iiif-volumetric-demo` overlay page, "stream hi-res" toggle (3D
 render). The overlay streams a finer pyramid level than the base and z-scores
 each brick client-side.
+
+---
+
+## 11. Open follow-ups
+
+Tracked in `docs/streaming-todos.md`: moving chunk decode off the main thread,
+the level-grid texture misregistration, and the residual LOD seams. Named
+**budget plans** (planning policies beyond the crosshair-focused default) have
+their own design doc, `docs/budget-plans.md`.

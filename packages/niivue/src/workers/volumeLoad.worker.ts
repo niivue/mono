@@ -14,30 +14,14 @@
  */
 
 import * as NVLoader from '@/NVLoader'
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 import { hdrToTransferable } from '@/volume/hdrTransfer'
-import { nii2volume } from '@/volume/NVVolume'
+import { loadVolume, nii2volume } from '@/volume/NVVolume'
 
 const post = (
   self as unknown as {
     postMessage: (msg: unknown, transfer?: Transferable[]) => void
   }
 ).postMessage.bind(self) as (msg: unknown, transfer?: Transferable[]) => void
-
-interface VolumeReader {
-  extensions?: string[]
-  read: (
-    buffer: ArrayBuffer,
-    name?: string,
-    pairedImgData?: ArrayBuffer | null,
-  ) => Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }>
-}
-
-const modules = import.meta.glob<VolumeReader>(
-  ['../volume/readers/*.ts', '!../volume/readers/*.test.ts'],
-  { eager: true },
-)
-const readerByExt = NVLoader.buildExtensionMap(modules)
 
 interface LoadRequest {
   _wbId: number
@@ -49,35 +33,45 @@ interface LoadRequest {
 
 self.onmessage = async (e: MessageEvent<LoadRequest>) => {
   const { _wbId: id, url, urlImageData, limitFrames4D, name } = e.data
+  let wire: unknown
+  let transfer: Transferable[] = []
+  // Only the LOAD is tagged. A structured-clone failure from `post` below is a
+  // worker-infrastructure failure -- it is the very thing the main-thread
+  // fallback exists for (see e2e/volume-load-worker.spec.ts) -- so tagging it
+  // `VolumeLoadError` would remove that safety net for the one case it was
+  // written to catch.
   try {
-    const buffer = await NVLoader.fetchFile(url)
-    const pairedBuffer = urlImageData
-      ? await NVLoader.fetchFile(urlImageData)
-      : null
-    const ext = NVLoader.getFileExt(url)
-    let reader = readerByExt.get(ext)
-    if (!reader || typeof reader.read !== 'function') {
-      reader = readerByExt.get('NII')
-    }
-    if (!reader) {
-      throw new Error(`No volume reader available for extension ${ext}`)
-    }
+    // Delegate to `loadVolume` rather than repeating fetch + reader lookup.
+    // The hand-rolled copy that used to live here skipped `loadVolume`'s bounded
+    // 4D fast path, so a `limitFrames4D` request fetched and inflated every
+    // frame and only then threw them away in `nii2volume`. `loadVolume` also
+    // owns the >2 GiB oversize recovery, which this path silently lacked.
     const fileName = name ?? NVLoader.getName(url)
-    const { hdr, img } = await reader.read(buffer, fileName, pairedBuffer)
+    const { hdr, img } = await loadVolume(
+      url,
+      urlImageData ?? null,
+      limitFrames4D ?? Infinity,
+      fileName,
+    )
     const volume = nii2volume(hdr, img, fileName, limitFrames4D ?? Infinity)
-    const transfer: Transferable[] = []
     if (volume.img && 'buffer' in volume.img) {
-      transfer.push(volume.img.buffer as ArrayBuffer)
+      transfer = [volume.img.buffer as ArrayBuffer]
     }
     // `volume.hdr` is a NIFTI1/NIFTI2 instance whose methods are own properties,
     // which structured clone rejects. Post a data-only snapshot; loadBridge
     // rebuilds a real instance from it.
-    const wire = { ...volume, hdr: hdrToTransferable(volume.hdr) }
-    post({ _wbId: id, volume: wire }, transfer)
+    wire = { ...volume, hdr: hdrToTransferable(volume.hdr) }
   } catch (err) {
+    // The worker itself is fine; the input is not. Tagging it stops the bridge
+    // from repeating the same fetch + inflate + parse on the UI thread for a
+    // file that will fail the same way.
     post({
       _wbId: id,
       _wbError: err instanceof Error ? err.message : String(err),
+      _wbErrorName: 'VolumeLoadError',
     })
+    return
   }
+  // Untagged: a failure here is transport, not payload, so the bridge may retry.
+  post({ _wbId: id, volume: wire }, transfer)
 }

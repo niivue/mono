@@ -202,6 +202,102 @@
         border-color: var(--green);
       }
 
+      /* Streaming progress badge. The octree replans as the crosshair moves or
+         the zoom changes, and at high zoom the newly relevant bricks can take
+         seconds to arrive over the wire -- during which the view is legitimately
+         busy rather than broken. Say so, opposite the HUD so neither covers the
+         other. */
+      .loading {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        box-sizing: border-box;
+        min-width: 190px;
+        border: 1px solid rgba(122, 215, 209, 0.28);
+        background: rgba(5, 8, 8, 0.82);
+        border-radius: 6px;
+        padding: 8px 11px;
+        pointer-events: none;
+        font-family: ui-monospace, monospace;
+        font-size: 0.72rem;
+        line-height: 1.4;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 180ms ease;
+      }
+
+      .loading.busy {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .loading-body {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+        gap: 2px;
+      }
+
+      .loading-label {
+        color: var(--text);
+      }
+
+      .loading-count {
+        color: var(--muted);
+        font-size: 0.66rem;
+      }
+
+      .loading-bar {
+        display: block;
+        height: 3px;
+        margin-top: 2px;
+        border-radius: 2px;
+        background: #1d2724;
+        overflow: hidden;
+      }
+
+      .loading-fill {
+        display: block;
+        height: 100%;
+        width: 0;
+        border-radius: 2px;
+        background: var(--cyan);
+        transition: width 160ms linear;
+      }
+
+      .spinner {
+        flex: none;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        border: 2px solid rgba(122, 215, 209, 0.25);
+        border-top-color: var(--cyan);
+        animation: spin 720ms linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* The badge is the one piece of feedback a user with reduced-motion still
+         needs, so drop the rotation rather than the element. */
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+        .loading,
+        .loading-fill {
+          transition: none;
+        }
+      }
+
       .fallback {
         position: absolute;
         inset: 0;
@@ -256,6 +352,15 @@
           width: auto;
           grid-template-columns: repeat(8, minmax(0, 1fr));
         }
+
+        /* The HUD spans the full width at the top here and the chunk strip the
+           full width at the bottom, so the badge sits just above the strip. */
+        .loading {
+          right: 12px;
+          bottom: 30px;
+          min-width: 0;
+          font-size: 0.66rem;
+        }
       }
     </style>
   </head>
@@ -269,13 +374,25 @@
           <option value="stent">stent OME-Zarr</option>
           <option value="pawpawsaurus">pawpawsaurus OME-Zarr</option>
           <option value="richtmyer_meshkov">richtmyer-meshkov OME-Zarr</option>
-          <option value="pig_heart">pig-heart OME-Zarr (int16)</option>
+          <option value="chameleon">chameleon OME-Zarr (uint16)</option>
+          <option value="kingsnake">kingsnake OME-Zarr (uint8)</option>
+          <option value="stag_beetle">stag beetle OME-Zarr (uint16)</option>
+          <option value="hoa_heart">HOA human heart OME-Zarr 0.4 (uint16)</option>
         </select>
       </span>
       <span class="control">
         <label for="level">Level</label>
         <select id="level" title="Pyramid levels present on disk">
           <option value="" selected>n/a</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="plan">Plan</label>
+        <select id="plan"
+          title="Budget plan: the policy that shapes the octree. focus = finest at the crosshair; uniform = finest level that fits the whole volume, ignores the crosshair; interactive = a smaller brick budget for smooth rotate/zoom.">
+          <option value="focus">focus (crosshair)</option>
+          <option value="uniform" selected>uniform (whole volume)</option>
+          <option value="interactive">interactive (fewer bricks)</option>
         </select>
       </span>
       <span class="control">
@@ -313,9 +430,59 @@
           title="Uniformly spread the chunk bricks apart in x, y and z (1.00x = no gap)" />
       </span>
       <span class="control">
+        <label for="samples">samples <span id="samplesVal">2.0</span></label>
+        <input id="samples" type="range" min="1" max="4" step="0.5" value="2"
+          title="Ray samples per voxel in the 3D fine march. Higher converges the ray integral at a linear cost in fill rate. It does not remove the concentric ringing (that is in the data, not the sampling)" />
+      </span>
+      <span class="control">
+        <label for="gamma">gamma <span id="gammaVal">1.00</span></label>
+        <input id="gamma" type="range" min="0.5" max="3" step="0.05" value="1"
+          title="Display gamma for the 3D render. Raises each sample's classified RGB to 1/gamma, so above 1 brightens. Alpha is untouched, so occlusion is unchanged. It also narrows the gap between a coarse LOD brick and a fine one, since mean-downsampled data classifies darker" />
+      </span>
+      <span class="control">
+        <label for="lodComp">LOD comp <span id="lodCompVal">0.080</span></label>
+        <input id="lodComp" type="range" min="0" max="0.2" step="0.005" value="0.08"
+          title="Per-level brightness compensation for coarse multi-LOD bricks. A brick from pyramid level L is lifted by exponent 1 - c*log2(k), where k is its linear downsample factor, so each pyramid level costs one fixed step. Averaging voxels destroys the correlation between a sample's colour and its opacity, and front-to-back compositing weights colour by opacity, so a coarse brick integrates darker than the fine data it stands in for. 0 disables. Fine-level and non-chunked draws are unaffected at any setting" />
+      </span>
+      <span class="control">
+        <label for="lodOpacity">LOD opacity <span id="lodOpacityVal">0.00</span></label>
+        <input id="lodOpacity" type="range" min="0" max="0.5" step="0.01" value="0"
+          title="Per-level OPACITY compensation for coarse multi-LOD bricks. Scales a brick's step-size opacity exponent by 1 + c*(k-1). The march already assumes a coarse voxel is homogeneous; where it is not, the true transmittance is lower, so the brick renders too see-through. Off by default: measured, raising it makes dense structure worse (its alpha is already right, and inflating it front-loads the march onto nearer, dimmer samples). Use LOD comp first; reach for this only if coarse bricks look too transparent rather than too dark" />
+      </span>
+      <span class="control">
+        <label for="interp">Interp</label>
+        <select id="interp"
+          title="Texture reconstruction in the 3D fine march. linear = hardware trilinear (C0: leaves a blocky texel staircase along band edges). cubic B-spline = 8-tap C2 reconstruction (smooth, ~1.9x fragment cost). Opt-in; linear is the default. vox.interp.html has the side-by-side A/B, a benchmark and a figure export">
+          <option value="linear" selected>linear</option>
+          <option value="cubic">cubic B-spline</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="illum">illum <span id="illumVal">0.00</span></label>
+        <input id="illum" type="range" min="0" max="1" step="0.05" value="0"
+          title="3D RENDER ONLY -- set Layout to `render` to see any of the three lighting sliders. Matcap illumination, lit from the precomputed gradient texture. 0 leaves the stream UNLIT, which is the interesting default here: an unlit brick skips its gradient pass entirely, so bricks arrive faster and explode does not flood the pipeline. Raising it off 0 turns the gradient on for every brick, which evicts and re-streams the whole working set once (watch requested/completed and the cache row). Moving it within the non-zero range after that is free" />
+      </span>
+      <span class="control">
+        <label for="gradOpacity">grad opacity <span id="gradOpacityVal">0.00</span></label>
+        <input id="gradOpacity" type="range" min="0" max="1" step="0.05" value="0"
+          title="3D render only. Suppress homogeneous interior by the gradient magnitude (alpha *= magnitude ^ 8c), so the volume reads as a set of surfaces rather than a fog. Needs the same gradient texture as illum. It is also the most expensive setting on this page: emptying the interior stops rays terminating early, so every ray marches the full depth. Measured on mni152, 2.9 -> 13.4 ms per frame on WebGL2" />
+      </span>
+      <span class="control">
+        <label for="silhouette">silhouette <span id="silhouetteVal">0.00</span></label>
+        <input id="silhouette" type="range" min="0" max="0.95" step="0.05" value="0"
+          title="3D render only. Fade material whose gradient normal faces the camera, leaving the rim where the surface turns away (the Fresnel term of a non-photorealistic volume render). Needs the same gradient texture as illum. On exploded bricks this is the one to watch for halo correctness: with a halo the cut faces stay unlit and a brick's rim follows the specimen; the default synthetic shard source has halo 0, so its rims outline the brick boxes instead -- switch to an OME-Zarr source for the positive case" />
+      </span>
+      <span class="control">
         <label for="blocks">
           <input id="blocks" type="checkbox" />
           blocks
+        </label>
+      </span>
+      <span class="control">
+        <label for="crosshair"
+          title="Show the 3D crosshair (its centre gap is sized to the scene, so it stays open on micron-scale stores)">
+          <input id="crosshair" type="checkbox" checked />
+          crosshair
         </label>
       </span>
       <button id="reload" type="button">reload</button>
@@ -329,6 +496,16 @@
       <canvas id="nv-canvas" aria-label="Client-side HTTP Range volume"></canvas>
       <div class="hud" id="hud">Loading...</div>
       <div class="strip" id="chunkStrip" aria-hidden="true"></div>
+      <div class="loading" id="loading" role="status" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span class="loading-body">
+          <span class="loading-label" id="loadingLabel">Loading blocks</span>
+          <span class="loading-count" id="loadingCount" aria-hidden="true"></span>
+          <span class="loading-bar" aria-hidden="true"
+            ><span class="loading-fill" id="loadingFill"></span
+          ></span>
+        </span>
+      </div>
       <div class="fallback" id="fallback" aria-hidden="true"></div>
     </main>
     <script type="module" src="range.js"></script>

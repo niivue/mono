@@ -1,4 +1,8 @@
-import type { AnnotationPoint, AnnotationTool } from '@/NVTypes'
+import type {
+  AnnotationPoint,
+  AnnotationTool,
+  VectorAnnotation,
+} from '@/NVTypes'
 
 export type AnnotationSelection = {
   annotationId: string
@@ -9,6 +13,15 @@ export type ShapeBoundsUpdate = {
   start: AnnotationPoint
   end: AnnotationPoint
   width?: number
+}
+
+export function getAnnotationSelection(
+  annotation: VectorAnnotation,
+): AnnotationSelection {
+  return {
+    annotationId: annotation.id,
+    controlPoints: annotation.shape ? getControlPoints(annotation.shape) : [],
+  }
 }
 
 /**

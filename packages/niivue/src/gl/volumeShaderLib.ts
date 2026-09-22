@@ -76,6 +76,41 @@ uniform vec3 dataSizeTexFrac;
 in vec3 vColor;
 out vec4 FragColor;
 
+// Volume render mode, mirroring VOLUME_RENDER_MODE in NVConstants.ts. It is a
+// float, so always compare by proximity: a \`> 0.5\` test reads SLICES as MAXIMUM.
+uniform float renderMode;
+const float RENDER_MODE_MAXIMUM = 1.0;
+const float RENDER_MODE_SLICES = 2.0;
+// The three crosshair planes in full-volume texture fraction, for
+// RENDER_MODE_SLICES. 1.0 when unused, which is off-cube and hits nothing.
+uniform vec3 sliceFrac;
+// volumeIsAlphaClipDark. A voxel the colormap made fully transparent is dropped
+// rather than painted, which is what lets the planes behind a SLICES plane show
+// through. The 2D tiles take the same flag; the ray-march never needed it,
+// because it samples that alpha directly.
+uniform float isAlphaClipDark;
+
+bool isRenderMode(float mode) {
+  return abs(renderMode - mode) < 0.5;
+}
+
+// PAQD easing: piecewise-linear alpha from the primary label's probability,
+// with volumePaqdUniforms as [t0, t1, y1, y2]. In the preamble because the
+// render and the depth pick both read it: what one draws, the other must pick.
+// Mirrors paqdEaseAlpha in wgpu/volumeShaderLib.ts and view/planeVisibility.ts.
+float paqdEaseAlpha(float alpha, vec4 u) {
+    float t0 = u[0];
+    float t1 = 0.5 * (u[0] + u[1]);
+    float t2 = u[1];
+    float y0 = 0.0;
+    float y1 = abs(u[2]);
+    float y2 = abs(u[3]);
+    if (alpha <= t0) { return y0; }
+    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
+    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
+    return y2;
+}
+
 vec3 chunkTexCoord(vec3 samplePos) {
   vec3 chunkLocal = (samplePos - chunkSubOrigin) / chunkSubSize;
   return dataOriginTexFrac + chunkLocal * dataSizeTexFrac;
@@ -137,6 +172,9 @@ vec3 GetFullFrontPosition(vec3 startTex) {
   return (startObj - (rayDir * t)) / volScale;
 }
 
+// Phase of this ray's sample lattice, in steps, on (0,1]. It is anchored to the
+// full volume's front face, not to the chunk being drawn, so every chunk along
+// one ray shares a single lattice and seams do not reset the ray phase.
 float raySamplePhase(vec3 startTex, float stepSize) {
   vec3 fullFront = GetFullFrontPosition(startTex);
   float traveled = length(startTex - fullFront);
@@ -146,9 +184,22 @@ float raySamplePhase(vec3 startTex, float stepSize) {
   // sample in the nearer chunk so the boundary is not double-counted.
   float phase = floor(grid + 0.5) + 0.5 - grid;
   if (phase <= 0.001) {
-    phase = 1.0;
+    phase += 1.0;
   }
   return clamp(phase, 0.001, 1.0);
+}
+
+// Re-anchor a position handed over by the coarse (fast) pass onto the fine
+// sample lattice. The fast pass strides 1.9 voxels, which is not a whole number
+// of fine steps, so resuming the fine march exactly where the fast pass stopped
+// leaves the fine lattice with a phase set by how many fast steps were taken --
+// floor(depth / 1.9), a sawtooth in depth-to-first-hit. Snapping back to the
+// ray's own phase makes the fine samples land in the same places regardless of
+// where the fast pass stopped, so a chunk's samples do not shift when a
+// neighbouring chunk changes where empty-space skipping ends.
+float snapToSampleLattice(float dist, float phase, float stepSize) {
+  float n = floor(dist / max(stepSize, 1e-8) - phase);
+  return (phase + max(n, 0.0)) * stepSize;
 }
 
 // see if clip plane trims ray sampling range sampleStartEnd.x..y

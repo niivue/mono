@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - gradient opacity and silhouette</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="volumeSelect">Volume</label>
+      <select id="volumeSelect">
+        <option value="mni152" selected>mni152 (MR brain)</option>
+        <option value="chris_t1">chris_t1 (MR head)</option>
+        <option value="visiblehuman">visiblehuman (microtome)</option>
+        <option value="torso">torso (CT)</option>
+      </select>
+      &nbsp;
+      <label
+        for="opacitySlider"
+        title="volumeGradientOpacity: scales each background sample's alpha by magnitude^(value*8), so flat interior fades and edges stay"
+        >Gradient opacity</label
+      >
+      <input type="range" min="0" max="100" value="70" class="slider" id="opacitySlider" />
+      &nbsp;
+      <label
+        for="silhouetteSlider"
+        title="volumeSilhouette: scales alpha by (1-|dot(normal,rayDir)|)^value and culls anything more view-aligned than 1-value"
+        >Silhouette</label
+      >
+      <input type="range" min="0" max="95" value="0" class="slider" id="silhouetteSlider" />
+      &nbsp;
+      <label
+        for="gradSlider"
+        title="volumeIllumination: matcap lighting from the same precomputed gradient"
+        >Illumination</label
+      >
+      <input type="range" min="0" max="100" value="70" class="slider" id="gradSlider" />
+      &nbsp;
+      <label for="matcapSelect">Matcap</label>
+      <select id="matcapSelect">
+        <option>Cortex</option>
+        <option>Shiny</option>
+      </select>
+      &nbsp;
+      <label for="clipCheck" title="Cut the render with a clip plane. Right-drag the render to move it.">Clip</label>
+      <input type="checkbox" id="clipCheck" checked />
+      &nbsp;
+      <label for="colorBtn">Background</label>
+      <input type="color" id="colorBtn" value="#000000" />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module" src="vox.gradopacity.js"></script>
+  </body>
+</html>

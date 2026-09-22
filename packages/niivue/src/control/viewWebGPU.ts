@@ -1,5 +1,5 @@
 import { log } from '@/logger'
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { BackendType } from '@/NVTypes'
 import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
@@ -16,10 +16,10 @@ import {
 import { registerCanvasInstance } from './viewBoth'
 
 export async function attachTo(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   id: string,
   isAntiAlias: boolean | null = null,
-): Promise<NiiVueGPU> {
+): Promise<NiiVue> {
   await attachToCanvas(
     ctrl,
     document.getElementById(id) as HTMLCanvasElement,
@@ -30,10 +30,10 @@ export async function attachTo(
 }
 
 export async function attachToCanvas(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   canvas: HTMLCanvasElement,
   isAntiAlias: boolean | null = null,
-): Promise<NiiVueGPU> {
+): Promise<NiiVue> {
   if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
     throw new Error('NiiVue requires a valid HTMLCanvasElement')
   }
@@ -42,31 +42,38 @@ export async function attachToCanvas(
   }
   if (ctrl.opts.backend === 'webgl2') {
     throw new Error(
-      "This niivuegpu distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
+      "This niivue distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
     )
   }
   ctrl.canvas = canvas
   clearCanvasMessage(canvas)
   registerCanvasInstance(ctrl, canvas)
-  ctrl.view = new NVViewGPU(canvas, ctrl.model, ctrl.opts)
+  // Publish ctrl.view only once init() resolves; a view exposed mid-init is
+  // indistinguishable from a ready one to `if (!this.view) return` callers (#61).
+  const view = new NVViewGPU(canvas, ctrl.model, ctrl.opts)
+  ctrl.view = null
   try {
-    await ctrl.view.init()
+    await view.init()
+    ctrl.view = view
+    // Hooks go on before the resize() below draws the first frame: a preloaded
+    // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
+    ctrl._wireViewHooks()
     if (ctrl.opts.thumbnail) {
       ctrl.model.ui.isThumbnailVisible = true
       ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
-      await ctrl.view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+      await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
     }
     initInteraction(ctrl)
     setupDragAndDrop(ctrl)
     setupResizeHandler(ctrl)
-    ctrl.view.resize()
+    view.resize()
     return ctrl
   } catch (error) {
     log.error('Failed to initialize view:', error)
     // Tear down the partially-initialized view so a retry starts clean (no leaked
     // GPU/context resources, no stale ctrl.view).
     try {
-      ctrl.view?.destroy()
+      view.destroy()
     } catch {
       // a view that failed mid-init may not destroy cleanly; ignore
     }
@@ -77,8 +84,9 @@ export async function attachToCanvas(
   }
 }
 
-export async function recreateView(ctrl: NiiVueGPU): Promise<void> {
+export async function recreateView(ctrl: NiiVue): Promise<void> {
   ctrl.view?.destroy()
+  ctrl.view = null
   ctrl.model.clearAllGPUResources()
   removeInteractionListeners(ctrl)
   if (ctrl.resizeObserver) {
@@ -92,8 +100,12 @@ export async function recreateView(ctrl: NiiVueGPU): Promise<void> {
   const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
   parent?.replaceChild(newCanvas, oldCanvas)
   ctrl.canvas = newCanvas
-  ctrl.view = new NVViewGPU(ctrl.canvas, ctrl.model, ctrl.opts)
-  await ctrl.view.init()
+  const view = new NVViewGPU(ctrl.canvas, ctrl.model, ctrl.opts)
+  await view.init()
+  ctrl.view = view
+  // Hooks go on before the resize() below draws the first frame: a preloaded
+  // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
+  ctrl._wireViewHooks()
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
     await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
   }
@@ -107,7 +119,7 @@ export async function recreateView(ctrl: NiiVueGPU): Promise<void> {
 }
 
 export async function reinitializeView(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   options: {
     backend?: BackendType
     isAntiAlias?: boolean
@@ -123,7 +135,7 @@ export async function reinitializeView(
 
   if (newBackend !== 'webgpu') {
     log.warn(
-      "This niivuegpu distribution includes only WebGPU. Expected backend 'webgpu'.",
+      "This niivue distribution includes only WebGPU. Expected backend 'webgpu'.",
     )
     return false
   }

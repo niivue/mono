@@ -1,7 +1,17 @@
 import type { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
+import {
+  shouldAppendMultiClickPoint,
+  shouldStartFreshMultiClickContour,
+} from '@/annotation/multiClick'
+import {
+  emitOrientationChange,
+  emitPan2DChange,
+  emitScaleMultiplierChange,
+} from '@/control/cameraEvents'
 import * as DragModes from '@/control/dragModes'
 import { computeBoundsPixelRect } from '@/control/viewBoth'
+import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
 import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
 import {
   drawLine,
@@ -17,8 +27,10 @@ import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
-import type NiiVueGPU from '@/NVControl'
+import type NiiVue from '@/NVControl'
 import type {
+  AnnotationPoint,
+  AnnotationTool,
   NVImage,
   PolygonWithHoles,
   VectorAnnotation,
@@ -45,7 +57,7 @@ import {
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
 import { getImageDataRAS } from '@/volume/utils'
 
-function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
+function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
   ctrl.activeButton = evt.button
   ctrl.lastPointerX = evt.clientX
@@ -53,8 +65,265 @@ function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
   ctrl.canvas?.setPointerCapture(evt.pointerId)
 }
 
+// --- Multi-click contour tools (spline / livewire) --------------------------
+// These place control points across successive clicks (not a single drag) and
+// close on double-click, so they need their own small state machine.
+
+function isLivewireTool(tool: AnnotationTool): boolean {
+  return tool === 'livewire' || tool === 'measureLivewire'
+}
+
+function isMultiClickTool(tool: AnnotationTool): boolean {
+  return tool === 'spline' || tool === 'measureSpline' || isLivewireTool(tool)
+}
+
+// Live-wire snapped path (slice-2D points) from the current seed's field to a
+// target slice-2D point. Empty when no slice/field is ready.
+function livewireSnappedPath(
+  ctrl: NiiVue,
+  target: AnnotationPoint,
+): AnnotationPoint[] {
+  const slice = ctrl._livewireSlice
+  const field = ctrl._livewireField
+  if (!slice || !field) return []
+  const g = Annotation.slice2DToGrid(slice, target)
+  const gridPath = Annotation.livewireBacktrack(field, slice.width, g.x, g.y)
+  return gridPath.map((p) => Annotation.gridToSlice2D(slice, p.x, p.y))
+}
+
+// (Re)seed the live wire at a slice-2D point: extract the slice on first use,
+// then compute the Dijkstra field from that point. False if unavailable.
+function seedLivewire(ctrl: NiiVue, pt: AnnotationPoint): boolean {
+  const vol = ctrl.model.getVolumes()[0]
+  if (!vol) return false
+  if (!ctrl._livewireSlice) {
+    ctrl._livewireSlice = Annotation.extractLivewireSlice(
+      vol,
+      ctrl._annotationPolySliceType,
+      ctrl._annotationPolySlicePosition,
+    )
+  }
+  const slice = ctrl._livewireSlice
+  if (!slice) return false
+  const g = Annotation.slice2DToGrid(slice, pt)
+  ctrl._livewireField = Annotation.livewireField(
+    slice.cost,
+    slice.width,
+    slice.height,
+    g.x,
+    g.y,
+  )
+  ctrl._livewireSeed = g
+  return true
+}
+
+function resetLivewire(ctrl: NiiVue): void {
+  ctrl._livewireSlice = null
+  ctrl._livewireField = null
+  ctrl._livewireSeed = null
+}
+
+// The contour polygon for the active tool: spline smooths through the control
+// points; live-wire uses the dense snapped points directly.
+function contourPolygons(
+  ctrl: NiiVue,
+  points: readonly AnnotationPoint[],
+): PolygonWithHoles[] {
+  return isLivewireTool(ctrl.model.annotation.tool)
+    ? Annotation.generatePolygonFromPoints(points)
+    : Annotation.generateSplineFromPoints(points)
+}
+
+// Refresh the live preview: the contour through the placed points plus the
+// hovered cursor (a straight cursor for spline, the snapped path for live wire).
+function updateMultiClickPreview(
+  ctrl: NiiVue,
+  cursor: AnnotationPoint | null,
+): void {
+  const pts = ctrl._annotationPolyPoints
+  if (!pts || pts.length === 0) {
+    ctrl.model._annotationPreview = null
+    return
+  }
+  const cfg = ctrl.model.annotation
+  const all = cursor
+    ? isLivewireTool(cfg.tool)
+      ? [...pts, ...livewireSnappedPath(ctrl, cursor)]
+      : [...pts, cursor]
+    : pts
+  const polygons = contourPolygons(ctrl, all)
+  if (polygons.length === 0) {
+    ctrl.model._annotationPreview = null
+    return
+  }
+  const preview = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationPolySliceType,
+    ctrl._annotationPolySlicePosition,
+    polygons,
+    cfg.style,
+    ctrl._annotationPolyAnchorMM,
+  )
+  preview.shape = { type: cfg.tool, start: all[0], end: all[all.length - 1] }
+  ctrl.model._annotationPreview = preview
+}
+
+// The bounding box of the control points (for the stats-label anchor).
+function pointsBounds(pts: readonly AnnotationPoint[]): {
+  start: AnnotationPoint
+  end: AnnotationPoint
+} {
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  return { start: { x: minX, y: minY }, end: { x: maxX, y: maxY } }
+}
+
+// Close the in-progress contour into a committed annotation (>= 3 points).
+// Returns true when an annotation was created.
+function commitMultiClickContour(ctrl: NiiVue): boolean {
+  const pts = ctrl._annotationPolyPoints
+  if (!pts || pts.length < 3) return false
+  const cfg = ctrl.model.annotation
+  const polygons = contourPolygons(ctrl, pts)
+  if (polygons.length === 0) return false
+  ctrl._annotationUndoStack.push(ctrl.model.annotations)
+  const newAnn = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationPolySliceType,
+    ctrl._annotationPolySlicePosition,
+    polygons,
+    cfg.style,
+    ctrl._annotationPolyAnchorMM,
+  )
+  const bounds = pointsBounds(pts)
+  newAnn.shape = { type: cfg.tool, start: bounds.start, end: bounds.end }
+  if (Annotation.isMeasureTool(cfg.tool)) {
+    const vol = ctrl.model.getVolumes()[0]
+    if (vol)
+      newAnn.stats = Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
+  }
+  ctrl.model.annotations = Annotation.storeAnnotation(
+    ctrl.model.annotations,
+    newAnn,
+    cfg.mergesOverlaps,
+  )
+  ctrl.emit('annotationAdded', { annotation: newAnn })
+  ctrl.emit('annotationChanged', { action: 'draw' })
+  return true
+}
+
+// Abandon the in-progress contour (Escape, or a tool/slice change).
+function cancelMultiClickContour(ctrl: NiiVue): void {
+  if (!ctrl._annotationPolyPoints) return
+  ctrl._annotationPolyPoints = null
+  ctrl.model._annotationPreview = null
+  resetLivewire(ctrl)
+  ctrl.drawScene()
+}
+
+// --- Bidirectional (two perpendicular measured axes) ------------------------
+
+type Axis = { start: AnnotationPoint; end: AnnotationPoint }
+
+function isBidirectionalTool(tool: AnnotationTool): boolean {
+  return tool === 'bidirectional' || tool === 'measureBidirectional'
+}
+
+const axisLen = (a: Axis): number =>
+  Math.hypot(a.end.x - a.start.x, a.end.y - a.start.y)
+
+// Build the annotation for a bidirectional measurement from its two axes: two
+// thin-line polygons (so the built-in draw renders both), plus long/short
+// lengths in stats. The seam projects the second axis for the UIKit overlay.
+function bidirectionalAnnotation(
+  ctrl: NiiVue,
+  long: Axis,
+  short: Axis | null,
+): VectorAnnotation | null {
+  const cfg = ctrl.model.annotation
+  const w = cfg.style.strokeWidth
+  const polys = [
+    ...Annotation.generateShape('measureLine', long.start, long.end, w),
+    ...(short
+      ? Annotation.generateShape('measureLine', short.start, short.end, w)
+      : []),
+  ]
+  if (polys.length === 0) return null
+  const ann = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationSliceType,
+    ctrl._annotationSlicePosition,
+    polys,
+    cfg.style,
+    ctrl._annotationAnchorMM,
+  )
+  ann.shape = {
+    type: cfg.tool,
+    start: long.start,
+    end: long.end,
+    width: w,
+    ...(short ? { start2: short.start, end2: short.end } : {}),
+  }
+  ann.stats = {
+    area: 0,
+    min: 0,
+    mean: 0,
+    max: 0,
+    stdDev: 0,
+    length: axisLen(long),
+    ...(short ? { shortLength: axisLen(short) } : {}),
+  }
+  return ann
+}
+
+// Live preview during a bidirectional measurement: the long axis (fixed once
+// placed) plus the short axis being dragged.
+function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
+  let long: Axis | null
+  let short: Axis | null
+  if (ctrl._bidirectionalLong) {
+    long = ctrl._bidirectionalLong
+    short = ctrl._annotationShapeStart
+      ? { start: ctrl._annotationShapeStart, end: cursor }
+      : null
+  } else {
+    long = ctrl._annotationShapeStart
+      ? { start: ctrl._annotationShapeStart, end: cursor }
+      : null
+    short = null
+  }
+  ctrl.model._annotationPreview = long
+    ? bidirectionalAnnotation(ctrl, long, short)
+    : null
+}
+
+// Commit the finished bidirectional measurement.
+function commitBidirectional(ctrl: NiiVue, long: Axis, short: Axis): void {
+  const ann = bidirectionalAnnotation(ctrl, long, short)
+  if (!ann) return
+  ctrl._annotationUndoStack.push(ctrl.model.annotations)
+  ctrl.model.annotations = Annotation.storeAnnotation(
+    ctrl.model.annotations,
+    ann,
+    ctrl.model.annotation.mergesOverlaps,
+  )
+  ctrl.emit('annotationAdded', { annotation: ann })
+  ctrl.emit('annotationChanged', { action: 'draw' })
+}
+
 function clientToCanvasPixel(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   clientX: number,
   clientY: number,
 ): [number, number] {
@@ -74,9 +343,11 @@ function clientToCanvasPixel(
 
 /** Convert client coords to bounds-local pixel coords. Returns null if outside bounds.
  *  Uses the post-viewport pixel rect so hit testing tracks the same transform
- *  the renderer applies — otherwise pan/zoom would route events to the wrong tile. */
-function clientToBoundsPixel(
-  ctrl: NiiVueGPU,
+ *  the renderer applies — otherwise pan/zoom would route events to the wrong tile.
+ *  Exposed publicly as `NiiVue.clientToCanvas` so callers of `hitTest` /
+ *  `canvasToMM` feed them the same pixels the built-in handlers use. */
+export function clientToBoundsPixel(
+  ctrl: NiiVue,
   clientX: number,
   clientY: number,
 ): [number, number] | null {
@@ -107,7 +378,7 @@ function clientToBoundsPixel(
   return [boundsX, boundsY]
 }
 
-function handleGraphHitTest(ctrl: NiiVueGPU, x: number, y: number): boolean {
+function handleGraphHitTest(ctrl: NiiVue, x: number, y: number): boolean {
   const layout = ctrl.view?.graphLayout as GraphLayout | null
   const hit = graphHitTest(x, y, layout)
   if (!hit) return false
@@ -177,13 +448,39 @@ function legendHitTest(
   return null
 }
 
-function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
-  const tag = document.activeElement?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
+  // composedPath reaches a focused field inside a shadow root.
+  const active = e.composedPath()[0]
+  if (
+    active instanceof HTMLElement &&
+    (active.isContentEditable ||
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
+  )
+    return
+  const pointer = ctrl._pointerClient
+  if (!pointer || !clientToBoundsPixel(ctrl, pointer[0], pointer[1])) return
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
+  if (key === 'ESCAPE') {
+    // Abandon an in-progress multi-click contour (spline / livewire) or a
+    // half-placed bidirectional measurement.
+    if (ctrl._annotationPolyPoints) cancelMultiClickContour(ctrl)
+    if (ctrl._bidirectionalLong) {
+      ctrl._bidirectionalLong = null
+      ctrl.model._annotationPreview = null
+      ctrl.drawScene()
+    }
+    return
+  }
   if (key === 'V') {
-    log.info(`NIIVUE VERSION: 0.1.20260122`)
+    if (!ctrl.model.interaction.isViewModeHotKeyEnabled) {
+      log.info(`NIIVUE VERSION: 0.1.20260122`)
+    } else if (
+      !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat)
+    ) {
+      // Modifiers leave Cmd/Ctrl+V to paste; a held key would spin the views.
+      ctrl.sliceType = NVConstants.nextSliceType(ctrl.model.layout.sliceType)
+    }
   } else if (key === 'A') {
     ctrl.activeClipPlaneIndex++
     if (ctrl.activeClipPlaneIndex >= NVConstants.NUM_CLIP_PLANE) {
@@ -222,25 +519,13 @@ function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
     )
   } else if (ctrl.model.layout.sliceType === NVConstants.SLICE_TYPE.RENDER) {
     if (key === 'H') {
-      ctrl.model.scene.azimuth =
-        (((ctrl.model.scene.azimuth - 1) % 360) + 360) % 360
-      ctrl.drawScene()
+      ctrl.azimuth = (((ctrl.azimuth - 1) % 360) + 360) % 360
     } else if (key === 'L') {
-      ctrl.model.scene.azimuth =
-        (((ctrl.model.scene.azimuth + 1) % 360) + 360) % 360
-      ctrl.drawScene()
+      ctrl.azimuth = (((ctrl.azimuth + 1) % 360) + 360) % 360
     } else if (key === 'K') {
-      ctrl.model.scene.elevation = Math.max(
-        -90,
-        Math.min(90, ctrl.model.scene.elevation - 1),
-      )
-      ctrl.drawScene()
+      ctrl.elevation = Math.max(-90, Math.min(90, ctrl.elevation - 1))
     } else if (key === 'J') {
-      ctrl.model.scene.elevation = Math.max(
-        -90,
-        Math.min(90, ctrl.model.scene.elevation + 1),
-      )
-      ctrl.drawScene()
+      ctrl.elevation = Math.max(-90, Math.min(90, ctrl.elevation + 1))
     }
   } else {
     if (key === 'H') ctrl.moveCrosshairInVox(-1, 0, 0)
@@ -314,7 +599,7 @@ interface ExplodedDrawPick {
 // a Float32Array in RAS order. During a 3D draw/vector stroke it would run on
 // every pointermove, so cache the result for the stroke (keyed by volume
 // identity); the cache is cleared on pointerup/pointercancel.
-function strokeSample(ctrl: NiiVueGPU, vol: NVImage): Float32Array | null {
+function strokeSample(ctrl: NiiVue, vol: NVImage): Float32Array | null {
   const cache = ctrl._draw3DSampleCache
   if (cache && cache.vol === vol) return cache.data
   const data = getImageDataRAS(vol)
@@ -327,10 +612,13 @@ function strokeSample(ctrl: NiiVueGPU, vol: NVImage): Float32Array | null {
 // exploded-block pick (draw, wand, vector face). Null if there is no render-tile
 // hit for this volume.
 function explodedPickRay(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
+  hitOverride?: ViewHitTest | null,
 ): { origin: [number, number, number]; dir: [number, number, number] } | null {
-  const hit = ctrl.activeTileHit
+  // Defaults to the tile the pointer went down on (every drag-driven pick), but
+  // a caller that hit-tested its own point passes it in — see pickExplodedBlock.
+  const hit = hitOverride ?? ctrl.activeTileHit
   if (!hit || !vol.chunkPlan) return null
   const tile = ctrl.view?.screenSlices[hit.tileIndex]
   const ltwh = tile?.leftTopWidthHeight
@@ -373,11 +661,12 @@ function explodedPickRay(
 // clip-visible set, and returns the entered voxel plus a visible-tissue predicate.
 // Null if the ray misses every block or there is no drawing volume.
 function pickExplodedDraw(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
+  hitOverride?: ViewHitTest | null,
 ): ExplodedDrawPick | null {
   const plan = vol.chunkPlan
-  const ray = explodedPickRay(ctrl, vol)
+  const ray = explodedPickRay(ctrl, vol, hitOverride)
   if (!plan || !ray) return null
   const near = ray.origin
   const [dx, dy, dz] = ray.dir
@@ -397,10 +686,6 @@ function pickExplodedDraw(
   const data = strokeSample(ctrl, vol)
   const dimX = (vol.dimsRAS as number[])[1]
   const dimXY = dimX * (vol.dimsRAS as number[])[2]
-  const sample = data
-    ? (x: number, y: number, z: number): number =>
-        data[x + y * dimX + z * dimXY]
-    : undefined
   // The window cal_min/cal_max are in display units; convert to the raw scale
   // getImageDataRAS returns. The first faintly-non-zero voxel is near-transparent
   // ("cloud"), so threshold a short way up the window so the paint lands on the
@@ -409,7 +694,26 @@ function pickExplodedDraw(
   const sclInter = vol.hdr?.scl_inter || 0
   const winLo = (vol.calMin - sclInter) / sclSlope
   const winHi = (vol.calMax - sclInter) / sclSlope
-  const threshold = winLo + 0.15 * (winHi - winLo)
+  let threshold = winLo + 0.15 * (winHi - winLo)
+  let sample: ((x: number, y: number, z: number) => number) | undefined
+  const base = vol.pickSampler
+  if (data) {
+    sample = (x: number, y: number, z: number): number =>
+      data[x + y * dimX + z * dimXY]
+  } else if (base) {
+    // A STREAMED volume has no CPU `img` -- its voxels live in GPU brick
+    // textures -- so fall back to the volume's own mm-space `pickSampler` (the
+    // resident coarse floor NVChunkedVolume installs). It already returns a
+    // WINDOW-VISIBLE value, so its threshold is 0 rather than a fraction of the
+    // window. Same wrapping the 3D depth pick uses (NVViewGPU/NVViewGL), so a
+    // click lands on the same voxel whether the volume is resident or streamed.
+    const matRAS = vol.matRAS as mat4
+    sample = (x: number, y: number, z: number): number => {
+      const mm = NVTransforms.vox2mm(null, [x, y, z], matRAS)
+      return base(mm[0], mm[1], mm[2])
+    }
+    threshold = 0
+  }
   const picked = pickExplodedVoxel(
     plan,
     vol.matRAS as Float32Array,
@@ -431,7 +735,7 @@ function pickExplodedDraw(
 }
 
 // Snapshot the drawing bitmap for undo once per stroke (matches the 2D path).
-function snapshotDrawUndo(ctrl: NiiVueGPU, drawingVol: NVImage): void {
+function snapshotDrawUndo(ctrl: NiiVue, drawingVol: NVImage): void {
   const undoResult = addUndoBitmap({
     drawBitmap: getDrawingBitmap(drawingVol),
     drawUndoBitmaps: ctrl.drawUndoBitmaps,
@@ -451,7 +755,7 @@ function snapshotDrawUndo(ctrl: NiiVueGPU, drawingVol: NVImage): void {
 // Refreshes via the incremental drawing flush; returns the painted voxel (null
 // if the ray missed).
 function draw3DOnExplodedBlock(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
   isStrokeStart: boolean,
 ): [number, number, number] | null {
@@ -500,7 +804,7 @@ function draw3DOnExplodedBlock(
 // region-grow at the picked voxel, filling the connected visible-tissue blob
 // (6-connected, bounded by the same threshold the pick uses) with the pen value.
 // One undo step; refreshes only the touched region. Returns true if it ran.
-function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
+function floodFill3DOnExplodedBlock(ctrl: NiiVue, vol: NVImage): boolean {
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return false
   const { voxel, drawingVol, keep } = pick
@@ -548,7 +852,7 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
 // window, converted to the raw sample scale. One undo step; refreshes only the
 // touched region. Returns true if it ran (there was data + a drawing volume).
 function magicWandFill(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
   seed: [number, number, number],
   // When given, confine the grow to this slice axis at the seed's index (2D
@@ -603,13 +907,27 @@ function magicWandFill(
   ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
   ctrl.refreshDrawing()
   ctrl.emit('drawingChanged', { action: 'stroke' })
+  // Report the segmented region so a host can show its size without walking
+  // the bitmap itself. Voxel volume comes from the segmented volume's own RAS
+  // grid (the drawing shares that grid).
+  const pix = vol.pixDimsRAS
+  const mm3 = pix ? result.filled * pix[1] * pix[2] * pix[3] : 0
+  ctrl.emit('clickToSegment', {
+    seed,
+    penValue: ctrl.model.draw.penValue,
+    voxelCount: result.filled,
+    mm3,
+    mL: mm3 / 1000,
+    hitCap: result.hitCap,
+    is2D: restrictAxis !== undefined,
+  })
   return true
 }
 
 // Magic wand seeded by a 3D exploded-block right-click: pick the block voxel the
 // ray hits, then grow the intensity-similar region from it. Returns true if a
 // block was hit.
-function magicWand3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
+function magicWand3DOnExplodedBlock(ctrl: NiiVue, vol: NVImage): boolean {
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return false
   return magicWandFill(ctrl, vol, pick.voxel)
@@ -621,10 +939,7 @@ function magicWand3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
 // SVG is a flat axis-aligned polygon on one block face (not a path following the
 // tissue surface across blocks/depth). Adjusting the face to the clip plane is a
 // tracked follow-up.
-function pickBlockFace(
-  ctrl: NiiVueGPU,
-  vol: NVImage,
-): ExplodedBlockFace | null {
+function pickBlockFace(ctrl: NiiVue, vol: NVImage): ExplodedBlockFace | null {
   const plan = vol.chunkPlan
   const ray = explodedPickRay(ctrl, vol)
   if (!plan || !ray) return null
@@ -676,7 +991,7 @@ function pickBlockFace(
 // one can be on). pickClipPlaneBlockFace picks the nearest cut the ray hits across
 // them. Empty when no clip is active or every active plane is oblique (the
 // axis-aligned annotation model can't hold an oblique plane yet).
-function clipDrawPlanesMM(ctrl: NiiVueGPU): ClipDrawPlane[] {
+function clipDrawPlanesMM(ctrl: NiiVue): ClipDrawPlane[] {
   const cps = ctrl.model.clipPlanes
   const tex2mm = ctrl.model.tex2mm
   if (!cps || !tex2mm) return []
@@ -693,7 +1008,7 @@ function clipDrawPlanesMM(ctrl: NiiVueGPU): ClipDrawPlane[] {
 // render (both backends) with the block's exploded mm AABB.
 const PICKED_BLOCK_COLOR = [1, 1, 0, 1]
 function setPickedBlockHighlight(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
   chunkIndex: number,
 ): void {
@@ -715,7 +1030,7 @@ function setPickedBlockHighlight(
 // editing is inert. This keeps 2D slices and 3D exploded blocks resolving the
 // conflict the same way (the 2D raster intercept already preceded the annotation
 // one, while the 3D vector intercept preceded the raster one).
-function rasterDrawWins(ctrl: NiiVueGPU): boolean {
+function rasterDrawWins(ctrl: NiiVue): boolean {
   return ctrl.model.draw.isEnabled && !!ctrl.model.drawingVolume
 }
 
@@ -723,8 +1038,8 @@ function rasterDrawWins(ctrl: NiiVueGPU): boolean {
 // is actually ambiguous rather than from the `isEnabled` setters — a caller
 // legitimately passes through a both-on state while switching tools, so setter-
 // time validation of this two-field invariant would cry wolf.
-const warnedBothEditModes = new WeakSet<NiiVueGPU>()
-function warnIfBothEditModes(ctrl: NiiVueGPU): void {
+const warnedBothEditModes = new WeakSet<NiiVue>()
+function warnIfBothEditModes(ctrl: NiiVue): void {
   if (!ctrl.model.annotation.isEnabled || !rasterDrawWins(ctrl)) return
   if (warnedBothEditModes.has(ctrl)) return
   warnedBothEditModes.add(ctrl)
@@ -742,7 +1057,7 @@ function warnIfBothEditModes(ctrl: NiiVueGPU): void {
 // setter calls `drawScene()` on the true->false edge. It is deliberately last so
 // that a throw from the renderer cannot skip any of the resets above it, and the
 // pointerup `finally` releases pointer capture BEFORE calling this.
-function resetDragState(ctrl: NiiVueGPU): void {
+function resetDragState(ctrl: NiiVue): void {
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
@@ -778,7 +1093,7 @@ function resetDragState(ctrl: NiiVueGPU): void {
 // onto it, and create the annotation. It renders explode-aware (tracks its
 // block) and exports via annotationsToSVG. Points are un-exploded mm, so the
 // stored annotation sits at the block's true position.
-function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
+function finish3DAnnotationStroke(ctrl: NiiVue): void {
   const pts = ctrl._annotation3DMMPath
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
@@ -843,16 +1158,17 @@ function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
     cfg.style,
     anchorMM,
   )
-  ctrl.model.annotations = Annotation.mergeAnnotations(
+  ctrl.model.annotations = Annotation.storeAnnotation(
     ctrl.model.annotations,
     newAnn,
+    cfg.mergesOverlaps,
   )
   ctrl.emit('annotationAdded', { annotation: newAnn })
   ctrl.emit('annotationChanged', { action: 'draw' })
   ctrl.drawScene()
 }
 
-export function initInteraction(ctrl: NiiVueGPU): void {
+export function initInteraction(ctrl: NiiVue): void {
   // Prevent browser default touch gestures so pointer events fire instead
   if (ctrl.canvas) ctrl.canvas.style.touchAction = 'none'
   // Store bound handlers for cleanup
@@ -1106,6 +1422,59 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         const cfg = ctrl.model.annotation
         const tool = cfg.tool
 
+        // Multi-click contour tools (spline / livewire): each click drops a
+        // control point; the contour is closed on double-click (see the dblclick
+        // handler) or cancelled with Escape. Do NOT start a drag.
+        if (isMultiClickTool(tool) && !cfg.isErasing) {
+          const fresh = shouldStartFreshMultiClickContour(
+            Boolean(ctrl._annotationPolyPoints),
+            ctrl._annotationPolySliceType,
+            ctrl._annotationPolySlicePosition,
+            sliceType,
+            slicePosition,
+          )
+          if (fresh) {
+            // Start a fresh contour (first point, or the user moved to a new
+            // slice — abandon the old in-progress contour and begin here).
+            ctrl._annotationPolyPoints = []
+            ctrl._annotationPolySliceType = sliceType
+            ctrl._annotationPolySlicePosition = slicePosition
+            ctrl._annotationPolyAnchorMM = mm as [number, number, number]
+            resetLivewire(ctrl)
+          }
+          const poly = ctrl._annotationPolyPoints as AnnotationPoint[]
+          // The second press of a double-click (which closes the contour via
+          // the dblclick handler) and a press coincident with the last placed
+          // point must not append: the duplicate point would let a single
+          // placed point + double-click pass the >= 3-point commit guard as a
+          // degenerate contour, and a normally finished spline would carry a
+          // coincident closing pair (a Catmull-Rom cusp at the close point).
+          const append = shouldAppendMultiClickPoint(
+            evt.detail,
+            poly[poly.length - 1],
+            pt2d,
+            computeTolerance(ctrl.model),
+          )
+          if (isLivewireTool(tool)) {
+            if (fresh || !ctrl._livewireSeed) {
+              seedLivewire(ctrl, pt2d)
+              poly.push(pt2d)
+            } else if (append) {
+              // Commit the snapped path from the last seed to this click (drop
+              // its first point, a duplicate of the last committed one), then
+              // re-seed the live wire here.
+              const seg = livewireSnappedPath(ctrl, pt2d)
+              for (let i = 1; i < seg.length; i++) poly.push(seg[i])
+              seedLivewire(ctrl, pt2d)
+            }
+          } else if (append) {
+            poly.push(pt2d)
+          }
+          updateMultiClickPreview(ctrl, pt2d)
+          ctrl.drawScene()
+          return
+        }
+
         // A) Selection/resize check for shape annotations
         if (!cfg.isErasing && tool !== 'freehand') {
           // Check control point hit on current selection
@@ -1180,6 +1549,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
       const mode = DragModes.getDragModeForButton(ctrl, evt.button)
       ctrl._activeDragMode = mode
+      ctrl._crosshairPanDidDrag = false
       ctrl.dragStartXY = [px, py]
       ctrl.dragEndXY = [px, py]
       // Clear any previous overlay and reset stale angle state
@@ -1196,7 +1566,11 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           ctrl.activeTileHit,
         )
         if (mm) ctrl.setCrosshairPos(mm)
-      } else if (mode === DRAG_MODE.pan || mode === DRAG_MODE.slicer3D) {
+      } else if (
+        mode === DRAG_MODE.pan ||
+        mode === DRAG_MODE.slicer3D ||
+        mode === DRAG_MODE.crosshairPan
+      ) {
         const p = ctrl.model.scene.pan2Dxyzmm
         ctrl._pan2DxyzmmAtDragStart = [p[0], p[1], p[2], p[3]]
       } else if (mode === DRAG_MODE.angle) {
@@ -1322,53 +1696,72 @@ export function initInteraction(ctrl: NiiVueGPU): void {
                 pt2d,
               )
             }
-            const polygons = Annotation.generateShape(
-              cfg.tool,
-              ctrl._annotationShapeStart,
-              pt2d,
-              cfg.style.strokeWidth,
-            )
-            if (polygons.length > 0) {
-              ctrl._annotationUndoStack.push(ctrl.model.annotations)
-              const newAnn = Annotation.createAnnotation(
-                cfg.activeLabel,
-                cfg.activeGroup,
-                ctrl._annotationSliceType,
-                ctrl._annotationSlicePosition,
-                polygons,
-                cfg.style,
-                ctrl._annotationAnchorMM,
-              )
-              const shapeData: typeof newAnn.shape = {
-                type: cfg.tool,
+            if (isBidirectionalTool(cfg.tool)) {
+              // First drag places the long axis; the second commits the pair.
+              const drag: Axis = {
                 start: ctrl._annotationShapeStart,
                 end: pt2d,
               }
-              if (
-                cfg.tool === 'line' ||
-                cfg.tool === 'arrow' ||
-                cfg.tool === 'measureLine'
-              ) {
-                shapeData.width = cfg.style.strokeWidth
+              if (!ctrl._bidirectionalLong) {
+                ctrl._bidirectionalLong = drag
+              } else {
+                commitBidirectional(ctrl, ctrl._bidirectionalLong, drag)
+                ctrl._bidirectionalLong = null
               }
-              newAnn.shape = shapeData
-              if (Annotation.isMeasureTool(cfg.tool)) {
-                const vol = ctrl.model.getVolumes()[0]
-                if (vol)
-                  newAnn.stats =
-                    Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
-              }
-              ctrl.model.annotations = Annotation.mergeAnnotations(
-                ctrl.model.annotations,
-                newAnn,
+            } else {
+              const polygons = Annotation.generateShape(
+                cfg.tool,
+                ctrl._annotationShapeStart,
+                pt2d,
+                cfg.style.strokeWidth,
               )
-              ctrl.emit('annotationAdded', { annotation: newAnn })
-              ctrl.emit('annotationChanged', { action: 'draw' })
+              if (polygons.length > 0) {
+                ctrl._annotationUndoStack.push(ctrl.model.annotations)
+                const newAnn = Annotation.createAnnotation(
+                  cfg.activeLabel,
+                  cfg.activeGroup,
+                  ctrl._annotationSliceType,
+                  ctrl._annotationSlicePosition,
+                  polygons,
+                  cfg.style,
+                  ctrl._annotationAnchorMM,
+                )
+                const shapeData: typeof newAnn.shape = {
+                  type: cfg.tool,
+                  start: ctrl._annotationShapeStart,
+                  end: pt2d,
+                }
+                if (
+                  cfg.tool === 'line' ||
+                  cfg.tool === 'arrow' ||
+                  cfg.tool === 'measureLine'
+                ) {
+                  shapeData.width = cfg.style.strokeWidth
+                }
+                newAnn.shape = shapeData
+                if (Annotation.isMeasureTool(cfg.tool)) {
+                  const vol = ctrl.model.getVolumes()[0]
+                  if (vol)
+                    newAnn.stats =
+                      Annotation.computeAnnotationStats(newAnn, vol) ??
+                      undefined
+                }
+                ctrl.model.annotations = Annotation.storeAnnotation(
+                  ctrl.model.annotations,
+                  newAnn,
+                  cfg.mergesOverlaps,
+                )
+                ctrl.emit('annotationAdded', { annotation: newAnn })
+                ctrl.emit('annotationChanged', { action: 'draw' })
+              }
             }
           }
         }
         ctrl._annotationShapeStart = null
-        ctrl.model._annotationPreview = null
+        // Keep the long axis on screen while waiting for the short-axis drag.
+        ctrl.model._annotationPreview = ctrl._bidirectionalLong
+          ? bidirectionalAnnotation(ctrl, ctrl._bidirectionalLong, null)
+          : null
         ctrl.drawScene()
       }
       // Finalize annotation stroke on mouse-up (freehand/eraser)
@@ -1412,9 +1805,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
                 cfg.style,
                 ctrl._annotationAnchorMM,
               )
-              ctrl.model.annotations = Annotation.mergeAnnotations(
+              ctrl.model.annotations = Annotation.storeAnnotation(
                 ctrl.model.annotations,
                 newAnn,
+                cfg.mergesOverlaps,
               )
               ctrl.emit('annotationAdded', { annotation: newAnn })
               ctrl.emit('annotationChanged', { action: 'draw' })
@@ -1425,6 +1819,17 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       }
       // Handle drag mode release for 2D slices
       if (ctrl._activeDragMode !== DRAG_MODE.none) {
+        // `dragEndXY` is only written by pointerdown and pointermove, so a
+        // click whose release lands away from the last move point (coalesced
+        // moves, or no moves at all) would place the crosshair at a stale
+        // point. Refresh it from the release coordinates for crosshairPan
+        // only: measurement/angle/ROI release semantics expect the last
+        // in-bounds move point, and a null hit (released outside the tile
+        // bounds under pointer capture) keeps the last known point.
+        if (ctrl._activeDragMode === DRAG_MODE.crosshairPan) {
+          const upHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+          if (upHit) ctrl.dragEndXY = [upHit[0], upHit[1]]
+        }
         DragModes.handleDragRelease(ctrl)
       }
       // Commit a freehand vector stroke drawn on the 3D blocks (clears its state).
@@ -1461,6 +1866,12 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   // streaming pump paused (it is gated on !isDragging) and stall streaming.
   ctrl._eventListeners.pointercancel = (e: Event) => {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
+      // A cancelled crosshair-pan gesture must not place the crosshair: the
+      // browser took over (touch scroll, palm rejection), so the release point
+      // is not where the user meant to click.
+      if (ctrl._activeDragMode === DRAG_MODE.crosshairPan) {
+        ctrl._crosshairPanDidDrag = true
+      }
       DragModes.handleDragRelease(ctrl)
     }
     try {
@@ -1482,6 +1893,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   }
   ctrl._eventListeners.pointermove = (e: Event) => {
     const evt = e as PointerEvent
+    ctrl._pointerClient = [evt.clientX, evt.clientY]
     setNextActionTag(ctrl.isDragging ? 'drag' : 'pointermove')
     // Annotation brush cursor preview (hover, no drag required)
     if (ctrl.model.annotation.isEnabled && !ctrl.isDragging) {
@@ -1503,6 +1915,19 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               mm: mm as [number, number, number],
               sliceType,
               slicePosition: mm[depthDim],
+            }
+            // Multi-click contour in progress: preview the spline through the
+            // placed points plus the hovered cursor (same slice only).
+            if (
+              ctrl._annotationPolyPoints &&
+              isMultiClickTool(ctrl.model.annotation.tool) &&
+              sliceType === ctrl._annotationPolySliceType
+            ) {
+              const pt2d = Annotation.mmToSlice2D(
+                mm as [number, number, number],
+                sliceType,
+              )
+              updateMultiClickPreview(ctrl, pt2d)
             }
             ctrl.drawScene()
             return
@@ -1710,6 +2135,11 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           ctrl._annotationSliceType,
         )
         const cfg = ctrl.model.annotation
+        if (isBidirectionalTool(cfg.tool)) {
+          bidirectionalPreview(ctrl, pt2d)
+          ctrl.drawScene()
+          return
+        }
         if (Annotation.isCircleTool(cfg.tool)) {
           pt2d = Annotation.constrainCircleEnd(ctrl._annotationShapeStart, pt2d)
         }
@@ -1919,6 +2349,9 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           DragModes.dragForPanZoom(ctrl)
           ctrl.drawScene()
           break
+        case DRAG_MODE.crosshairPan:
+          if (DragModes.dragForCrosshairPan(ctrl)) ctrl.drawScene()
+          break
         case DRAG_MODE.slicer3D:
           DragModes.dragForSlicer3D(ctrl)
           ctrl.drawScene()
@@ -1960,6 +2393,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       -90,
       Math.min(90, ctrl.model.scene.elevation + deltaY * sensitivity),
     )
+    emitOrientationChange(ctrl)
     ctrl.drawScene()
   }
   ctrl._eventListeners.wheel = (e: Event) => {
@@ -2001,19 +2435,33 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         ctrl.model.interaction.secondaryDragMode === DRAG_MODE.slicer3D
       if (isPanZoomMode) {
         const zoomDirection = evt.deltaY < 0 ? 1 : -1
-        let zoom = ctrl.model.scene.pan2Dxyzmm[3] * (1.0 + 0.1 * zoomDirection)
-        zoom = Math.round(zoom * 10) / 10
-        zoom = Math.max(0.1, Math.min(10.0, zoom))
-        const zoomChange = ctrl.model.scene.pan2Dxyzmm[3] - zoom
+        const zoom = NVTransforms.stepZoom2D(
+          ctrl.model.scene.pan2Dxyzmm[3],
+          zoomDirection,
+        )
         if (ctrl.model.interaction.isYoked3DTo2DZoom) {
           ctrl.model.scene.scaleMultiplier = zoom
+          emitScaleMultiplierChange(ctrl)
         }
+        // Pan so the anchor stays put under the new zoom. The anchor is the
+        // crosshair by default (issue #68), or the pointer's pick on the
+        // hovered tile when interaction.wheelZoomAnchor is 'pointer'. The
+        // compensation is NVTransforms' business, not this handler's: the
+        // ortho window is built there and only it knows that holding a point
+        // takes a ratio of the zooms measured from the extent centre.
+        const mm = resolveWheelZoomAnchorMM(ctrl, px, py, hit)
+        const pan = NVTransforms.zoomPan2DAbout(
+          ctrl.model.scene.pan2Dxyzmm,
+          zoom,
+          mm,
+          ctrl.model.extentsMin,
+          ctrl.model.extentsMax,
+        )
         ctrl.model.scene.pan2Dxyzmm[3] = zoom
-        // Adjust pan so zoom centers on the crosshair
-        const mm = ctrl.model.scene2mm(ctrl.model.scene.crosshairPos)
-        ctrl.model.scene.pan2Dxyzmm[0] += zoomChange * mm[0]
-        ctrl.model.scene.pan2Dxyzmm[1] += zoomChange * mm[1]
-        ctrl.model.scene.pan2Dxyzmm[2] += zoomChange * mm[2]
+        ctrl.model.scene.pan2Dxyzmm[0] = pan[0]
+        ctrl.model.scene.pan2Dxyzmm[1] = pan[1]
+        ctrl.model.scene.pan2Dxyzmm[2] = pan[2]
+        emitPan2DChange(ctrl)
         ctrl.drawScene()
         return
       }
@@ -2056,6 +2504,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       0.5,
       Math.min(2.0, ctrl.model.scene.scaleMultiplier),
     )
+    emitScaleMultiplierChange(ctrl)
     ctrl.drawScene()
   }
   ctrl._eventListeners.keydown = (e: Event) =>
@@ -2065,6 +2514,20 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     const dblHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
+    // Close an in-progress multi-click contour (spline / livewire) instead of
+    // depth-picking. The two clicks of the double-click already added their
+    // points via the pointerdown handler; commit the accumulated contour.
+    if (
+      ctrl._annotationPolyPoints &&
+      isMultiClickTool(ctrl.model.annotation.tool)
+    ) {
+      commitMultiClickContour(ctrl)
+      ctrl._annotationPolyPoints = null
+      ctrl.model._annotationPreview = null
+      resetLivewire(ctrl)
+      ctrl.drawScene()
+      return
+    }
     const [px, py] = dblHit
     // Double-clicking the zoom-out ("-") button jumps straight to the full view
     // (the one-click way back from a deep zoom). The reset is restricted to that
@@ -2089,6 +2552,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     }
   }
   ctrl._eventListeners.pointerleave = () => {
+    ctrl._pointerClient = null
     if (ctrl.model._annotationCursor) {
       setNextActionTag('pointerleave')
       ctrl.model._annotationCursor = null
@@ -2119,7 +2583,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   ctrl.canvas?.addEventListener('dblclick', ctrl._eventListeners.dblclick)
 }
 
-export function removeInteractionListeners(ctrl: NiiVueGPU): void {
+export function removeInteractionListeners(ctrl: NiiVue): void {
   if (ctrl._eventListeners.contextmenu) {
     ctrl.canvas?.removeEventListener(
       'contextmenu',
@@ -2176,7 +2640,7 @@ export function removeInteractionListeners(ctrl: NiiVueGPU): void {
   }
 }
 
-export function setupDragAndDrop(ctrl: NiiVueGPU): void {
+export function setupDragAndDrop(ctrl: NiiVue): void {
   ctrl._eventListeners.dragover = (event: Event) => {
     const evt = event as DragEvent
     evt.preventDefault()
@@ -2229,7 +2693,7 @@ export function setupDragAndDrop(ctrl: NiiVueGPU): void {
   ctrl.canvas?.addEventListener('drop', ctrl._eventListeners.drop)
 }
 
-export function setupResizeHandler(ctrl: NiiVueGPU): void {
+export function setupResizeHandler(ctrl: NiiVue): void {
   if (ctrl.resizeObserver) {
     ctrl.resizeObserver.disconnect()
   }
@@ -2283,9 +2747,91 @@ export function setupResizeHandler(ctrl: NiiVueGPU): void {
 }
 
 export function hitTest(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   x: number,
   y: number,
 ): ViewHitTest | null {
   return ctrl.view?.hitTest(x, y) ?? null
+}
+
+/** What {@link pickExplodedBlock} resolves a click on an exploded brick to. */
+export interface ExplodedBlockPick {
+  /** Index into `ctrl.volumes` of the volume that owns the brick. */
+  volumeIndex: number
+  /** Index into `vol.chunkPlan.chunks`. */
+  chunkIndex: number
+  /** Brick data region in the volume's RAS voxel grid (excludes halo). */
+  voxelOrigin: [number, number, number]
+  voxelDims: [number, number, number]
+  /** The visible-tissue voxel the ray landed on, in RAS voxel coords. */
+  voxel: [number, number, number]
+  /** That voxel in UN-EXPLODED (anatomical) mm. */
+  mm: [number, number, number]
+  /**
+   * The brick's mm bounding box where it is DRAWN, i.e. with the explode offset
+   * applied. Feed straight to `ctrl.focusBox` to outline the picked brick.
+   */
+  explodedMin: [number, number, number]
+  explodedMax: [number, number, number]
+}
+
+/**
+ * Resolve a pointer position over the 3D render onto one exploded brick.
+ *
+ * The exploded view is a render-time per-brick translation, so GPU depth picking
+ * (which ray-marches the un-exploded texture) cannot see it. This runs the same
+ * CPU pick the 3D pen and the vector-face pick use: unproject the point to a
+ * world ray, cast it against the bricks' EXPLODED bounding boxes restricted to
+ * the clip-visible set, then march into the winning brick's data so the hit lands
+ * on the first visible voxel rather than the brick's empty bounding-box face.
+ *
+ * Takes CLIENT coordinates (`event.clientX/clientY`) and does its own hit test,
+ * so it is safe to call from a plain click handler without a drag in progress.
+ *
+ * Returns null when the point is not over a render tile, no loaded volume is a
+ * chunked volume with explode enabled, or the ray misses every visible brick.
+ */
+export function pickExplodedBlock(
+  ctrl: NiiVue,
+  clientX: number,
+  clientY: number,
+): ExplodedBlockPick | null {
+  const px = clientToBoundsPixel(ctrl, clientX, clientY)
+  if (!px) return null
+  const hit = ctrl.view?.hitTest(px[0], px[1]) ?? null
+  if (!hit?.isRender) return null
+  const volumes = ctrl.volumes ?? []
+  for (let volumeIndex = 0; volumeIndex < volumes.length; volumeIndex++) {
+    const vol = volumes[volumeIndex]
+    const plan = vol?.chunkPlan
+    if (!plan || !chunkExplodeEnabled(vol.chunkExplode)) continue
+    const picked = pickExplodedDraw(ctrl, vol, hit)
+    if (!picked) continue
+    const desc = plan.chunks[picked.chunkIndex]
+    if (!desc) continue
+    const aabb = explodedChunkAABB(
+      plan,
+      vol.matRAS as Float32Array,
+      vol.chunkExplode,
+      picked.chunkIndex,
+    )
+    if (!aabb) continue
+    const m = vol.matRAS as ArrayLike<number>
+    const [vx, vy, vz] = picked.voxel
+    return {
+      volumeIndex,
+      chunkIndex: picked.chunkIndex,
+      voxelOrigin: [...desc.voxelOrigin],
+      voxelDims: [...desc.voxelDims],
+      voxel: [vx, vy, vz],
+      mm: [
+        m[0] * vx + m[1] * vy + m[2] * vz + m[3],
+        m[4] * vx + m[5] * vy + m[6] * vz + m[7],
+        m[8] * vx + m[9] * vy + m[10] * vz + m[11],
+      ],
+      explodedMin: [...aabb.min],
+      explodedMax: [...aabb.max],
+    }
+  }
+  return null
 }

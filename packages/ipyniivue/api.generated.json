@@ -1,7 +1,7 @@
 {
-  "niivueVersion": "1.0.0-rc.9",
+  "niivueVersion": "1.0.0-rc.13",
   "source": "packages/niivue/src/NVControlBase.ts",
-  "className": "NiiVueGPU",
+  "className": "NiiVue",
   "properties": [
     {
       "jsName": "annotationActiveGroup",
@@ -70,6 +70,17 @@
       "doc": null
     },
     {
+      "jsName": "annotationMergesOverlaps",
+      "pyName": "annotation_merges_overlaps",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "annotationTool",
       "pyName": "annotation_tool",
       "tsType": "AnnotationTool",
@@ -85,7 +96,13 @@
           "measureRect",
           "measureLine",
           "circle",
-          "measureCircle"
+          "measureCircle",
+          "spline",
+          "measureSpline",
+          "livewire",
+          "measureLivewire",
+          "bidirectional",
+          "measureBidirectional"
         ]
       },
       "hasGetter": true,
@@ -158,6 +175,25 @@
       "hasGetter": true,
       "hasSetter": true,
       "doc": null
+    },
+    {
+      "jsName": "crosshairColorPerAxis",
+      "pyName": "crosshair_color_per_axis",
+      "tsType": "number[][]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "List",
+          "elem": {
+            "kind": "Float"
+          },
+          "length": null
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "Per-axis crosshair colors as `[xColor, yColor, zColor]` (each RGBA, 0..1).\nSet to 3 colors to tint each crosshair segment by the world axis it extends\nalong (X = left-right, Y = anterior-posterior, Z = superior-inferior).\nSet to `[]` to fall back to the single {@link crosshairColor} for all axes."
     },
     {
       "jsName": "crosshairGap",
@@ -487,6 +523,17 @@
       "doc": null
     },
     {
+      "jsName": "isAnnotationDrawn",
+      "pyName": "is_annotation_drawn",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isClipPlaneCutaway",
       "pyName": "is_clip_plane_cutaway",
       "tsType": "boolean",
@@ -575,6 +622,17 @@
       "doc": null
     },
     {
+      "jsName": "isMeasurementDrawn",
+      "pyName": "is_measurement_drawn",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isMeasureUnitsVisible",
       "pyName": "is_measure_units_visible",
       "tsType": "boolean",
@@ -619,6 +677,17 @@
       "doc": null
     },
     {
+      "jsName": "isPanFollowingCrosshair",
+      "pyName": "is_pan_following_crosshair",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "Opt-in: when the 2D views are zoomed in ({@link pan2Dxyzmm}`[3] > 1`) and\nthe crosshair moves on its own — keyboard step, {@link setCrosshairPos},\nor a linked instance — pan just enough that it stays inside every tile's\nvisible window. Off by default (the window stays put and the crosshair may\nleave it), and explicit pan/zoom gestures are never fought. Enabling also\napplies immediately against the last rendered layout, so an already\noff-window crosshair is brought back."
+    },
+    {
       "jsName": "isPositionInMM",
       "pyName": "is_position_in_mm",
       "tsType": "boolean",
@@ -652,6 +721,17 @@
       "doc": null
     },
     {
+      "jsName": "isSingleViewFillCanvas",
+      "pyName": "is_single_view_fill_canvas",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isSnapToVoxelCenters",
       "pyName": "is_snap_to_voxel_centers",
       "tsType": "boolean",
@@ -665,6 +745,17 @@
     {
       "jsName": "isThumbnailVisible",
       "pyName": "is_thumbnail_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isViewModeHotKeyEnabled",
+      "pyName": "is_view_mode_hot_key_enabled",
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
@@ -959,6 +1050,17 @@
       "doc": null
     },
     {
+      "jsName": "volumeGradientOpacity",
+      "pyName": "volume_gradient_opacity",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "volumeIllumination",
       "pyName": "volume_illumination",
       "tsType": "number",
@@ -992,6 +1094,28 @@
       "doc": null
     },
     {
+      "jsName": "volumeIsColormapAlphaOn2D",
+      "pyName": "volume_is_colormap_alpha_on_2d",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeIsCubicInterpolation",
+      "pyName": "volume_is_cubic_interpolation",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "volumeIsNearestInterpolation",
       "pyName": "volume_is_nearest_interpolation",
       "tsType": "boolean",
@@ -1008,6 +1132,39 @@
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeLayerGradientMode",
+      "pyName": "volume_layer_gradient_mode",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeLodBrightnessCompensation",
+      "pyName": "volume_lod_brightness_compensation",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeLodOpacityCompensation",
+      "pyName": "volume_lod_opacity_compensation",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
       },
       "hasGetter": true,
       "hasSetter": true,
@@ -1051,11 +1208,59 @@
       "doc": null
     },
     {
+      "jsName": "volumeRenderMode",
+      "pyName": "volume_render_mode",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeSampleRate",
+      "pyName": "volume_sample_rate",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeSilhouette",
+      "pyName": "volume_silhouette",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "volumeTransmittanceCutoff",
       "pyName": "volume_transmittance_cutoff",
       "tsType": "number",
       "pyTraitlet": {
         "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "wheelZoomAnchor",
+      "pyName": "wheel_zoom_anchor",
+      "tsType": "WheelZoomAnchor",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          "crosshair",
+          "pointer"
+        ]
       },
       "hasGetter": true,
       "hasSetter": true,
@@ -1118,6 +1323,17 @@
       "hasGetter": true,
       "hasSetter": false,
       "doc": null
+    },
+    {
+      "jsName": "isDestroyed",
+      "pyName": "is_destroyed",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "True once {@link destroy} has run. Lets external holders (e.g. an\nNVChunkedVolume handle listening for `viewDestroyed`) distinguish a real\ncontroller teardown from a transient view recreation (backend switch /\ninit fallback), which also emits `viewDestroyed` but leaves the controller\nand its volumes alive."
     },
     {
       "jsName": "meshExtensions",
@@ -1306,6 +1522,35 @@
       ],
       "returns": "Promise<void>",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "addMeasurement",
+      "pyName": "add_measurement",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "startMM",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "endMM",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "opts",
+          "tsType": "Partial<Pick<CompletedMeasurement, \"sliceIndex\" | \"sliceType\" | \"slicePosition\">>",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "number",
+      "doc": "Add a distance measurement between two mm-space points, exactly as if it\nhad been drawn interactively in `DRAG_MODE.measurement`: it renders on\nevery 2D slice tile whose slice plane contains both endpoints, emits\n`measurementCompleted` (after the mutation), and redraws. `opts` may pin\nthe slice metadata (`sliceIndex`/`sliceType`/`slicePosition`); omitted\nfields are derived from the segment geometry (see\ncontrol/measurements.buildMeasurement). An explicit `sliceType` must be a\n2D orientation (`SLICE_TYPE.AXIAL`/`CORONAL`/`SAGITTAL`); a non-2D value\n(`MULTIPLANAR`/`RENDER`/`NONE`) warns and is ignored, deriving the\norientation from geometry. Returns the new measurement's index\n(valid for {@link removeMeasurement} until an earlier one is removed).",
       "returnsDoc": null
     },
     {
@@ -1518,6 +1763,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "canvasToMM",
+      "pyName": "canvas_to_mm",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "canvasX",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "canvasY",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number, number] | null",
+      "doc": "Convert a canvas position to a world-mm point by picking on the 2D slice\ntile under it (ray/slice-plane intersection — the same math the built-in\ncrosshair click uses, so the result matches `setCrosshairPos` picking).\n\nInput is canvas backing-store pixels — see {@link hitTest} for the exact\nconvention and the CSS-pixel/devicePixelRatio conversion.\n\nReturns null when the point misses every tile, lands on a 3D render tile,\nor no volume is loaded.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "centerRenderOnMM",
       "pyName": "center_render_on_mm",
       "isAsync": false,
@@ -1540,8 +1808,28 @@
       "isAsync": false,
       "returnsValue": true,
       "params": [],
-      "returns": "{ resident: number; pending: number; inFlight: number; total: number; } | null",
-      "doc": "Streaming stats across all chunked volumes (base + independent overlay) on\nthe active backend: `{ resident, pending, inFlight, total }` brick counts.\nReturns null before a view is attached. Useful for HUD / debug overlays:\n`resident < total` with `pending > 0` for many frames indicates the working\nset exceeds the residency budget (thrashing).",
+      "returns": "ChunkStreamDetail | null",
+      "doc": "Streaming stats across all chunked volumes (base + independent overlay) on\nthe active backend: `{ resident, pending, inFlight, total, staleDropped }`\nbrick counts. Returns null before a view is attached. Useful for HUD / debug\noverlays: `resident < total` with `pending > 0` for many frames indicates the\nworking set exceeds the residency budget (thrashing).\n\nTo find out when streaming finishes, listen for the `chunkStreamIdle`\nevent (with `chunkStreamProgress` along the way) instead of polling this\non a timer — see {@link ChunkStreamDetail}.\n\n`staleDropped` is cumulative, not per frame: queued uploads retired because\nthe view moved on before they ran. It climbing during a pan or rotate is the\nqueue working as intended, since that work would otherwise have uploaded\nbricks for viewports the user had already left.\n\n`predicted` is also cumulative: source reads started AHEAD of the working\nset, from the direction the view is travelling. Those never enter the\nupload queue, so they show up here and in the source's byte-cache hit rate\nrather than in `resident`.\n\n`decoded` is the decoded-chunk tier summed over every chunked volume: the\nCPU-side source bytes a brick is demoted to when the GPU evicts it. Its\nhits are source reads that skipped the network AND the decode entirely,\ncosting only a texture upload; `bytes` / `maxBytes` is how full it is.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "chunkTimingStats",
+      "pyName": "chunk_timing_stats",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "ChunkTimingSnapshot",
+      "doc": "Where a streamed brick's time actually goes: bytes over the wire, the work\nof turning them into a texture, and how much of that blocked the render\nloop. Returns the process-wide totals since the last\n{@link resetChunkTiming} — the recorder is a module-level singleton, so\nthis aggregates every chunked volume on every instance in the page, not\njust this one.\n\n`mainThreadMs` (assemble + upload + gradient) is the figure that decides\nwhether a decode worker is worth building, and `netBusyMs` is network wall\nclock with overlapping reads counted once. Phase definitions and the\naccuracy of each number are in `src/volume/chunkTiming.ts`.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "clearAngles",
+      "pyName": "clear_angles",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Clear completed angles only, leaving distance measurements in place.",
       "returnsDoc": null
     },
     {
@@ -1555,6 +1843,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "clearBounds",
+      "pyName": "clear_bounds",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Give this instance the whole canvas again, undoing {@link setBounds}.\nEquivalent to `setBounds([0, 0, 1, 1])`.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "clearCustomLayout",
       "pyName": "clear_custom_layout",
       "isAsync": false,
@@ -1565,13 +1863,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "clearDistanceMeasurements",
+      "pyName": "clear_distance_measurements",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Clear completed distance measurements only, leaving angles in place.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "clearMeasurements",
       "pyName": "clear_measurements",
       "isAsync": false,
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null,
+      "doc": "Clear both completed distance measurements and completed angles.",
       "returnsDoc": null
     },
     {
@@ -1592,6 +1900,29 @@
       "params": [],
       "returns": "void",
       "doc": "Remove a slide plane registered with {@link setSlidePlane}.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "clientToCanvas",
+      "pyName": "client_to_canvas",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "clientX",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "clientY",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number] | null",
+      "doc": "Convert a pointer event's client position to the canvas pixel space that\n{@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and\n{@link getScreenTiles} use. This is the exact conversion the built-in\npointer handlers apply, so a caller never has to reproduce it:\n`(client - canvas rect origin) * dpr`, where `dpr` is\n`window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;\nthen, for an instance sharing a canvas via `bounds`, minus the origin of\nthis instance's post-viewport pixel rect.\n\nReturns null when the instance has no canvas or, for a `bounds` instance,\nwhen the point is outside this instance's rect (a sibling's area) or the\nrect is offscreen.",
       "returnsDoc": null
     },
     {
@@ -1766,6 +2097,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "getDescriptives",
+      "pyName": "get_descriptives",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "options",
+          "tsType": "{ volumeIndex?: number | undefined; masks?: number[] | undefined; isDrawingMask?: boolean | undefined; drawPenValues?: number[] | undefined; }",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "DescriptiveStats | null",
+      "doc": "Region-of-interest statistics for a loaded volume.\n\nValues are calibrated (`scl_slope`/`scl_inter` applied) and non-finite\nvoxels are excluded. Every mask must sit on the same RAS grid as the\ntarget volume — overlays are resliced to the background grid, so masks\ndrawn from the loaded volume list satisfy that by construction, but a mask\non a different grid returns `null` rather than silently wrong numbers.",
+      "returnsDoc": "the statistics, or `null` when the volume has no data or a mask\ndoes not match the target grid"
+    },
+    {
       "jsName": "getFrame4D",
       "pyName": "get_frame_4d",
       "isAsync": false,
@@ -1790,6 +2138,16 @@
       "params": [],
       "returns": "GraphRangeChangeDetail | null",
       "doc": "The signal graph's current visible x-range (the synchronous counterpart to\nthe `graphRangeChange` event): `{ min, max, full, axisLabel, isWindowed }`,\nor null when no signal graph is shown. Use `full` to drive a \"reset to full\nextent\" control (e.g. jump range sliders to the data limits).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getMeasurements",
+      "pyName": "get_measurements",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "readonly CompletedMeasurement[]",
+      "doc": "All completed distance measurements, in insertion order (an entry's\nposition is the index {@link addMeasurement} returned and\n{@link removeMeasurement}/{@link pickMeasurement} use). Returns a snapshot:\na fresh array of fresh entries, so editing it (an endpoint tuple included)\ncannot change what is rendered, and it does not update when measurements\nare later added, removed or cleared. Call it again for the current list,\nand use {@link addMeasurement}/{@link removeMeasurement}/\n{@link clearMeasurements} to change it so events fire and the scene\nredraws.",
       "returnsDoc": null
     },
     {
@@ -1932,6 +2290,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "hitTest",
+      "pyName": "hit_test",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "canvasX",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "canvasY",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "ViewHitTest | null",
+      "doc": "Hit-test a canvas position against the current frame's tiles.\n\nCoordinate convention (shared by {@link canvasToMM}, {@link mmToCanvas}\nand {@link getScreenTiles}): canvas BACKING-STORE pixels — the\n`canvas.width`/`canvas.height` space the renderer draws into — origin at\nthe top-left, y down. These are NOT CSS pixels, and for an instance\nsharing one canvas via `bounds` they are bounds-local (the instance's own\npixel rect subtracted). Use {@link clientToCanvas} to convert a pointer\nevent; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and\nthe bounds offset exactly as the built-in pointer handlers do.\n\nReturns the tile index, its slice type, whether it is a 3D render tile,\nand the position normalized to the tile rect (half-open [0,1), y down);\nnull when no\ntile contains the point or the view is not initialized.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "loadAnnotationsJSON",
       "pyName": "load_annotations_json",
       "isAsync": false,
@@ -1946,6 +2327,29 @@
       ],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadChunkedVolume",
+      "pyName": "load_chunked_volume",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "source",
+          "tsType": "ChunkedVolumeSource",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "ChunkedVolumeOptions | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<NVChunkedVolume>",
+      "doc": "Load a multi-resolution (pyramid) volume from a pluggable\n{@link ChunkedVolumeSource} and render it with crosshair-focused level of\ndetail: the finest bricks stay around the crosshair while distant regions\nrender coarser, all under a brick/VRAM budget, so a very large finest level\n(e.g. a 20+ GB whole-slide/OME-Zarr volume) is renderable without ever\nmaking it fully resident. Returns an {@link NVChunkedVolume} handle\n(`setFocus` / `setMaxDetail` / `setBudget` / `dispose`); with the default\n`focus: 'crosshair'` it follows the crosshair automatically.\n\nADDITIVE: the streamed volume is ADDED to the scene (via `addVolume`), not\nswapped for the current volumes. To reload/replace a streamed volume, the\ncaller removes the previous one first. Because the outgoing volume is still\nthe base while this runs, a reload should call\n{@link NVChunkedVolume.applyCoarseFloor} once it has removed it.\n\nUnless the `coarseFloor` option turns it off, the coarsest pyramid level is\nalso installed as the base coarse floor (see\n{@link NiiVue.setBaseCoarseFloor}), so regions whose bricks are not yet\nresident show coarse detail instead of the scene background.",
       "returnsDoc": null
     },
     {
@@ -2132,6 +2536,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "lodCompensation",
+      "pyName": "lod_compensation",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "LodCompensationReport",
+      "doc": "What the two LOD compensation settings are actually doing right now.\n\n`volumeLodBrightnessCompensation` and `volumeLodOpacityCompensation` only\naffect bricks fetched from a COARSE level of a multi-LOD chunked volume, so\non an ordinary volume they are exact no-ops with nothing on screen to say\nso. This is the way to check: `isActive` answers \"is anything being\ncompensated\", `inactiveReason` says why not, and each level reports the\nexponent and scale being handed to the shader for its bricks.\n\n```js\nconst report = nv.lodCompensation()\nif (!report.isActive) console.log(report.inactiveReason)\nfor (const each of report.levels) {\n  console.log(each.level, each.downsample, each.brickCount, each.brightnessExponent)\n}\n```\n\nReads the background volume (`volumes[0]`), which is the volume both\nsettings act on. Cheap enough to call per frame for a debug HUD. In\n`VOLUME_RENDER_MODE.SLICES` the reported exponent reaches the 2D tiles\nonly: the 3D planes take one sample per level and apply none.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "markDrawDirty",
       "pyName": "mark_draw_dirty",
       "isAsync": false,
@@ -2181,6 +2595,23 @@
       ],
       "returns": "[number, number] | null",
       "doc": "Project a world-mm point to the 3D render tile's NDC ([-1,1], y up), using\nthe MVP the renderer cached on its last draw (so it reflects the current\ncamera, zoom, and renderPan exactly). Returns null if no render tile has been\ndrawn yet or the point is at/behind the camera.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "mmToCanvas",
+      "pyName": "mm_to_canvas",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "mm",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "CanvasTilePoint | null",
+      "doc": "Project a world-mm point to canvas pixels on the best-matching 2D slice\ntile, using the MVP each tile cached on its last draw (so the result\nreflects the current pan/zoom exactly). Intended for positioning external\noverlays (SVG/HTML crosshairs, labels) over slices.\n\nTile selection: the 2D slice tile whose slice plane passes nearest the\npoint (perpendicular distance in mm); ties — e.g. the crosshair, which\nlies on every plane of a multiplanar layout — resolve to the lowest tile\nindex. 3D render tiles are never selected (use {@link mm2renderNDC} for\nthose).\n\nThe returned x/y are canvas backing-store pixels (see {@link hitTest});\ndivide by the effective devicePixelRatio to position CSS-pixel-sized\noverlay elements. The point may project outside the winning tile's rect\nwhen panned/zoomed out of view — clip against the tile's\n`leftTopWidthHeight` if needed. Returns null before the first render or\nwhen the layout has no 2D slice tiles.",
       "returnsDoc": null
     },
     {
@@ -2278,6 +2709,58 @@
       ],
       "returns": "Promise<void>",
       "doc": "Move a volume up one index position in the stack of loaded volumes (toward the top layer).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "pickExplodedBlock",
+      "pyName": "pick_exploded_block",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "clientX",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "clientY",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "ExplodedBlockPick | null",
+      "doc": "Resolve a pointer position over the 3D render onto one exploded brick of a\nchunked volume, or null when the point misses every visible brick.\n\nPass `event.clientX` / `event.clientY` from a click handler: the hit test\nruns here, so no drag needs to be in progress. Pair with\n`extractChunkBlock(vol, pick.chunkIndex)` to copy the picked brick out as a\nstandalone volume, and with `focusBox` (using `explodedMin`/`explodedMax`) to\noutline it in place.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "pickMeasurement",
+      "pyName": "pick_measurement",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "canvasX",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "canvasY",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "radiusPx",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "number | null",
+      "doc": "Find the completed distance measurement under a canvas point, e.g. to\nimplement click-to-select or click-to-delete. Each measurement is projected\nwith the same per-tile filtering and matrices the renderer uses to draw it,\nso the hit-test agrees with what is on screen. Returns the index of the\nclosest measurement whose projected line is within `radiusPx` (default 8)\ncanvas pixels of the point, or null if none is. Requires a rendered frame\n(the projection uses matrices cached during render).\n\n`canvasX`/`canvasY` are canvas BACKING-STORE pixels, the same convention\nas {@link hitTest} and {@link canvasToMM}, not CSS pixels: a pointer\nevent's `offsetX`/`offsetY` are off by the device pixel ratio on any\ndisplay above 1x. Convert with {@link clientToCanvas} first.",
       "returnsDoc": null
     },
     {
@@ -2408,6 +2891,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "removeMeasurement",
+      "pyName": "remove_measurement",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "index",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Remove a single completed distance measurement by index, emitting\n`measurementRemoved` before the mutation (so the listener can still reach\nit) and redrawing. An index that is not an integer in bounds warns and\nno-ops, matching {@link removeVolume}.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "removeMesh",
       "pyName": "remove_mesh",
       "isAsync": true,
@@ -2462,6 +2962,33 @@
       ],
       "returns": "this",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeVolume",
+      "pyName": "remove_volume",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to remove"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Remove a single volume by index, emitting `volumeRemoved`.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "resetChunkTiming",
+      "pyName": "reset_chunk_timing",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Clear {@link chunkTimingStats} to start a fresh measurement window.",
       "returnsDoc": null
     },
     {
@@ -2645,6 +3172,52 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setAnnotationText",
+      "pyName": "set_annotation_text",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "id",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "text",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Set (or clear, with an empty string) the free-text label on an annotation by\nid. The text shows above the annotation's stats via the overlay seam.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setAtlasOutline",
+      "pyName": "set_atlas_outline",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "outline",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "volumeIndex",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Draw label/atlas volumes as region outlines rather than filled regions.\n\n`outline` is the neighbour probe distance in the atlas's own voxels: 0 (the\ndefault) fills every region, 1 keeps a one-voxel border, larger values give\na thicker border. Only the interior is dropped, so the parcellation stays\nreadable over the anatomy underneath. Non-label volumes ignore it.\n\nApplies to every loaded label volume when `volumeIndex` is omitted, or to\none volume when it is given. It is a per-volume property, so\n`setVolume(i, { atlasOutline })` and the load options reach it too.\n\n```js\nnv1.setAtlasOutline(1)     // outline every atlas\nnv1.setAtlasOutline(0, 1)  // fill volume 1 again\n```",
+      "returnsDoc": null
+    },
+    {
       "jsName": "setBaseCoarseFloor",
       "pyName": "set_base_coarse_floor",
       "isAsync": true,
@@ -2761,9 +3334,9 @@
         },
         {
           "name": "cmap",
-          "tsType": "ColorMap | null",
+          "tsType": "string | ColorMap | null",
           "optional": false,
-          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays,\n  or null to remove the label colormap"
+          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays;\n  a built-in colormap name (e.g. 'freesurfer', resolved via\n  lookupColorMap); or null to remove the label colormap"
         }
       ],
       "returns": "Promise<void>",
@@ -3132,6 +3705,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setSlidePlaneLevel",
+      "pyName": "set_slide_plane_level",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "levelIndex",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Pin the slide plane's pyramid level (0 = finest), or return to the\ncamera-driven choice with undefined. Mutates the registered plane in\nplace, so — unlike re-calling {@link setSlidePlane} — the slide drawing\nand vector annotations survive the change. No-op without a plane.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "setTractOptions",
       "pyName": "set_tract_options",
       "isAsync": true,
@@ -3401,6 +3991,24 @@
       "doc": null
     },
     {
+      "jsName": "chunkStreamIdle",
+      "pyName": "chunk_stream_idle",
+      "detailType": "ChunkStreamDetail",
+      "doc": null
+    },
+    {
+      "jsName": "chunkStreamProgress",
+      "pyName": "chunk_stream_progress",
+      "detailType": "ChunkStreamDetail",
+      "doc": null
+    },
+    {
+      "jsName": "clickToSegment",
+      "pyName": "click_to_segment",
+      "detailType": "ClickToSegmentDetail",
+      "doc": null
+    },
+    {
       "jsName": "clipPlaneChange",
       "pyName": "clip_plane_change",
       "detailType": "ClipPlaneChangeDetail",
@@ -3458,6 +4066,12 @@
       "jsName": "measurementCompleted",
       "pyName": "measurement_completed",
       "detailType": "CompletedMeasurement",
+      "doc": null
+    },
+    {
+      "jsName": "measurementRemoved",
+      "pyName": "measurement_removed",
+      "detailType": "MeasurementRemovedDetail",
       "doc": null
     },
     {
@@ -3565,6 +4179,11 @@
         "reason": "non-serializable nominal type: VectorAnnotation"
       },
       {
+        "jsName": "annotationScreenShapes",
+        "tsType": "AnnotationScreenShape",
+        "reason": "non-serializable nominal type: AnnotationScreenShape"
+      },
+      {
         "jsName": "annotationStyle",
         "tsType": "AnnotationStyle",
         "reason": "non-serializable nominal type: AnnotationStyle"
@@ -3588,6 +4207,11 @@
         "jsName": "lodBoxes",
         "tsType": "FocusBox",
         "reason": "non-serializable nominal type: FocusBox"
+      },
+      {
+        "jsName": "measurementScreenLines",
+        "tsType": "MeasurementScreenLine",
+        "reason": "non-serializable nominal type: MeasurementScreenLine"
       },
       {
         "jsName": "meshes",
@@ -3640,8 +4264,20 @@
         "reason": "return value is not JSON-serializable (JS extension context handle)"
       },
       {
+        "jsName": "getScreenTiles",
+        "reason": "return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)"
+      },
+      {
+        "jsName": "registerOverlayRenderer",
+        "reason": "argument and return value are not JSON-serializable (JS overlay renderer and disposer function)"
+      },
+      {
         "jsName": "registerVolumeTransform",
         "reason": "argument is not JSON-serializable (volume transform with JS function hooks)"
+      },
+      {
+        "jsName": "unregisterOverlayRenderer",
+        "reason": "argument is not JSON-serializable (JS overlay renderer)"
       },
       {
         "jsName": "useLoader",

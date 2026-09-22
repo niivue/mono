@@ -9,6 +9,24 @@
 const overlays = new WeakMap<HTMLCanvasElement, HTMLElement>()
 
 /**
+ * Shown while the viewer rebuilds itself after the GPU dropped its
+ * context/device. Recovery is automatic, so this is transient.
+ */
+export const GRAPHICS_RECOVERING_MESSAGE =
+  'Graphics context lost. Rebuilding the view...'
+
+/**
+ * Shown when the GPU context was lost and could not be rebuilt (or was lost
+ * repeatedly). The usual cause is VRAM exhaustion, so the actionable advice is
+ * to ask for less of it.
+ */
+export const GRAPHICS_LOST_MESSAGE = [
+  'Graphics context lost and could not be restored.',
+  ' - The GPU most likely ran out of memory.',
+  ' - Reload the page, and load less data at once (a coarser level, or a smaller maxChunkResidencyBytes).',
+].join('\n')
+
+/**
  * Shown when neither WebGPU nor WebGL2 could initialize — usually because the
  * browser's hardware acceleration is off (no GPU adapter, no WebGL2 context).
  * Offers the two concrete fixes a user can apply themselves.

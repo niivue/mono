@@ -30,6 +30,13 @@ export interface VolumeChunkSourceRequest {
   plan: ChunkPlan
   datatypeCode: number
   bytesPerVoxel: number
+  /**
+   * Fires when the renderer no longer wants this chunk -- the view moved on,
+   * or the volume was disposed. A source that reads over the network should
+   * pass it down so the read is abandoned on the wire rather than discarded on
+   * arrival. Optional: a source that ignores it stays correct, only wasteful.
+   */
+  signal?: AbortSignal
 }
 
 export type VolumeChunkSource = (
@@ -158,6 +165,13 @@ export type NVImage = {
   maxShearDeg?: number
   colormap?: string
   colormapNegative?: string
+  /**
+   * Reverse this volume's colormap (and its negative colormap, when set), so
+   * the color at the top of the intensity range moves to the bottom. Applied
+   * where the LUT is built, so it affects 2D slices, the 3D ray-march, and the
+   * colorbar alike. Default: false.
+   */
+  isColormapInverted?: boolean
   calMinNeg?: number
   calMaxNeg?: number
   colormapType?: number
@@ -182,6 +196,16 @@ export type NVImage = {
   id?: string
   /** Label colormap for atlas/parcellation volumes (compiled LUT with optional text labels) */
   colormapLabel?: LUT | null
+  /**
+   * Draw this label/atlas volume as region outlines instead of filled regions.
+   * 0 (default) fills. A positive value is the neighbour probe distance in the
+   * volume's own voxels: a voxel survives only when one of its six neighbours
+   * carries a different label, so interiors become transparent and the anatomy
+   * underneath shows through. Applied in the orient prepass, so it reaches 2D
+   * slices and the 3D ray-march on both backends. Ignored unless
+   * {@link colormapLabel} is set. See {@link NiiVue.setAtlasOutline}.
+   */
+  atlasOutline?: number
   /** Whether this volume has imaginary data (complex) */
   isImaginary?: boolean
   /**
@@ -289,6 +313,8 @@ export type ColorbarInfo = {
   max: number
   thresholdMin?: number
   isNegative?: boolean
+  /** Draw the colormap reversed, matching a volume's `isColormapInverted`. */
+  isInverted?: boolean
 }
 
 // ============================================================
@@ -570,6 +596,15 @@ export type SceneConfig = {
   // (sliceType === RENDER). Each component is in NDC units, so renderPan = [0.5, 0.5]
   // shifts the volume half the viewport right and up. Ignored in 2D / mosaic.
   renderPan: vec2
+  /**
+   * Display gamma for the 3D volume render: each sample's classified RGB is
+   * raised to 1/gamma, so values above 1 brighten and below 1 darken (1 is a
+   * strict no-op). Alpha is deliberately untouched -- gamma is a brightness
+   * control, and raising alpha with it would change how much each sample
+   * occludes what is behind it, flattening the image instead of brightening it.
+   * It also narrows the gap between a coarse LOD brick and a fine one, since
+   * mean-downsampled data classifies darker. 2D slices are unaffected.
+   */
   gamma: number
   backgroundColor: [number, number, number, number]
   clipPlaneColor: number[]
@@ -585,6 +620,11 @@ export type CustomLayoutTile = {
   sliceType: number // SLICE_TYPE.AXIAL | CORONAL | SAGITTAL | RENDER
   position: [number, number, number, number] // [left, top, width, height] normalized 0–1
   sliceMM?: number // optional fixed mm position for the slice
+  /** Let this 2D slice tile fill its pane instead of letterboxing to the
+   * slice's mm aspect ratio, widening the stored mm window about its own
+   * centre (same behaviour as `isSingleViewFillCanvas` for a single view).
+   * Ignored for RENDER tiles. Default false. */
+  fill?: boolean
 }
 
 export type LayoutConfig = {
@@ -598,6 +638,8 @@ export type LayoutConfig = {
   isMosaicCentered: boolean
   margin: number
   isRadiological: boolean
+  /** Let a single 2D slice tile fill the canvas instead of letterboxing it. */
+  isSingleViewFillCanvas: boolean
   customLayout: CustomLayoutTile[] | null
 }
 
@@ -613,11 +655,40 @@ export type UIConfig = {
   isLegendVisible: boolean
   isPositionInMM: boolean
   isMeasureUnitsVisible: boolean
+  /**
+   * Draw the built-in measurement overlay (ruler line, ticks, distance label).
+   * Set false to let an external overlay renderer draw measurements instead (it
+   * still reads `measurementScreenLines`); the built-in geometry is computed but
+   * not drawn, so no line, label, or label background chip appears. Angles are
+   * unaffected. Default true.
+   */
+  isMeasurementDrawn: boolean
+  /**
+   * When false, NiiVue's built-in 2D vector-annotation shapes (ellipse/rect/
+   * circle/line/arrow fill + stroke + stats labels) are NOT drawn, so an external
+   * overlay can render them from `annotationScreenShapes` instead. The brush
+   * cursor and selection handles are unaffected. Default true.
+   */
+  isAnnotationDrawn: boolean
   isThumbnailVisible: boolean
   thumbnailUrl: string
   placeholderText: string
   crosshairColor: number[]
+  /**
+   * Optional per-axis crosshair colors as `[xColor, yColor, zColor]`, each an
+   * RGBA array. When this holds 3 valid colors, each crosshair segment is tinted
+   * by the world axis it extends along (0 = X / left-right, 1 = Y /
+   * anterior-posterior, 2 = Z / superior-inferior). When empty (the default),
+   * every segment falls back to `crosshairColor`.
+   */
+  crosshairColorPerAxis: number[][]
   crosshairGap: number
+  /**
+   * Crosshair thickness in canvas pixels, on 2D slice tiles, on the 3D render
+   * tile and on mosaic cross-lines alike. It is a screen weight, so it holds
+   * steady as you zoom and does not depend on the volume's field of view. 0
+   * hides the crosshair.
+   */
   crosshairWidth: number
   fontColor: number[]
   fontScale: number
@@ -636,11 +707,208 @@ export type VolumeRenderConfig = {
   alphaShader: number
   isBackgroundMasking: boolean
   isAlphaClipDark: boolean
+  /**
+   * Honour the background volume's per-voxel colormap alpha on 2D slices.
+   * The 3D ray-march always uses it; 2D slices historically replaced it with
+   * the flat volume opacity, so a colormap that carries structure in alpha
+   * (constant RGB with a ramped A, as fluorescence palettes use) rendered as
+   * a flat wash and COLORMAP_TYPE's below-threshold fade had no effect on the
+   * background. Off by default: many built-in colormaps ramp alpha, so
+   * enabling it unconditionally would change standard neuro rendering.
+   * Overlays are unaffected either way (the orient prepass already bakes
+   * their alpha, and the slice shader blends it).
+   */
+  isColormapAlphaOn2D: boolean
   isNearestInterpolation: boolean
   isV1SliceShader: boolean
   matcap: string
   paqdUniforms: [number, number, number, number]
   transmittanceCutoff: number
+  /** How the 3D ray-march combines samples. VOLUME_RENDER_MODE.COMPOSITE | MAXIMUM */
+  renderMode: number
+  /**
+   * Which stencil estimates the in-shader LAYER gradient in the overlay and
+   * drawing ray-march passes. LAYER_GRADIENT_MODE.CENTRAL (default) | BLOB |
+   * SOBEL8. Does NOT affect the background volume, whose gradient is
+   * precomputed into a texture. See LAYER_GRADIENT_MODE for the accuracy
+   * measurements and when each is worth choosing.
+   */
+  layerGradientMode: number
+  /**
+   * Samples per voxel along the ray in the 3D render. Oversampling converges the
+   * ray integral at a proportional fragment cost. Clamped to [1, 4]. NOTE: this
+   * does NOT remove concentric banding on smooth structures -- measured ring
+   * contrast is flat from 1 to 4 -- because that banding is in the integrand,
+   * not the sampling of it. See isCubicInterpolation for the reconstruction-side
+   * knob, which cures a different artifact (the trilinear texel staircase).
+   */
+  sampleRate: number
+  /**
+   * Reconstruct the volume with a tricubic B-spline instead of hardware
+   * trilinear in the 3D ray-march (2D slices are unaffected). Trilinear is only
+   * C0, so band edges show a blocky texel staircase; the cubic filter is C2 and
+   * removes it. Approximating, not interpolating, so it also smooths genuine
+   * fine detail slightly. Costs 8 texture fetches per sample instead of 1
+   * (roughly 1.9x fragment cost at sampleRate 2, or about break-even against
+   * trilinear if sampleRate is dropped to 1 alongside it).
+   *
+   * For a CHUNKED volume the filter reads 2 voxels either side of the sample, so
+   * the brick halo must be at least 2 or brick faces will seam. NVChunkedVolume
+   * defaults to a halo of 1; pass `halo: [2, 2, 2]` (or wider) when enabling this.
+   */
+  isCubicInterpolation: boolean
+  /**
+   * Coefficient for the per-level brightness compensation applied to bricks
+   * fetched from a coarse pyramid level of a multi-LOD chunked volume. 0
+   * disables it; clamped to [0, 1] (useful magnitudes are small -- the default
+   * is 0.08 per pyramid level and 0.2 is already strong).
+   *
+   * WHEN TO REACH FOR IT: coarse bricks look too DARK next to fine ones. If
+   * they look too TRANSPARENT instead, use `lodOpacityCompensation`. Both are
+   * exact no-ops on any volume that is not multi-LOD chunked -- call
+   * `nv.lodCompensation()` to see whether either is doing anything.
+   *
+   * A coarse brick renders DARKER than the fine data it stands in for:
+   * downsampling averages voxels, destroying the correlation between a sample's
+   * colour and its opacity, and front-to-back compositing weights colour by
+   * opacity. Measured on a real OME-Zarr pyramid the deficit reaches 16% by
+   * level 3, which reads as a visible brightness step at a LOD boundary. Each
+   * brick's classified RGB is therefore raised to
+   * `1 - coefficient * log2(k)`, where k is its linear downsample factor (see
+   * `lodGammaExponent`) -- one fixed step per pyramid level, since each level
+   * averages the same 2x2x2 neighbourhood. This multiplies with the display
+   * `scene.gamma` exponent and, like it, leaves alpha untouched, so it changes
+   * brightness without changing occlusion.
+   *
+   * The default is an empirical fit and no single value is exact for all data:
+   * sparse thin material loses more per level than dense structure does. It is
+   * safe to raise, because the per-level form stays gentle at depth rather than
+   * running away. Non-chunked and single-level volumes are unaffected (k is 1
+   * for every draw), and so is the 3D render in `VOLUME_RENDER_MODE.SLICES`,
+   * which takes one sample per plane whatever the brick's level.
+   */
+  lodBrightnessCompensation: number
+
+  /**
+   * Per-level OPACITY compensation for coarse multi-LOD bricks, applied in the
+   * 3D ray-march. 0 disables it (the default); clamped to [0, 1], the same
+   * range as `lodBrightnessCompensation`.
+   *
+   * WHEN TO REACH FOR IT: coarse bricks look too TRANSPARENT next to fine ones.
+   * If they look too DARK instead, use `lodBrightnessCompensation` -- that is
+   * the one to try first. Both are exact no-ops on any volume that is not
+   * multi-LOD chunked -- call `nv.lodCompensation()` to see whether either is
+   * doing anything.
+   *
+   * The march already raises a coarse sample's alpha to the number of reference
+   * steps it stands for, which is exact only if the coarse voxel is
+   * homogeneous. Where it is not, the brick is systematically too see-through.
+   * This scales that exponent by `1 + coefficient * (k - 1)` (see
+   * `lodOpacityScale`).
+   *
+   * Off by default because it measures WORSE than `lodBrightnessCompensation`
+   * on dense structure: the alpha there is already right, and inflating it
+   * front-loads the march onto nearer, dimmer samples. Turn it up only when
+   * coarse bricks look too transparent rather than too dark. Ray-march only --
+   * a 2D slice tile shows one sample with no accumulation.
+   */
+  lodOpacityCompensation: number
+  /**
+   * Gradient-magnitude opacity modulation for the BACKGROUND volume's 3D
+   * ray-march. 0 (the default) is a no-op; raising it toward 1 progressively
+   * suppresses homogeneous interior while leaving edges intact, because each
+   * sample's alpha is scaled by `magnitude ^ (gradientOpacity * 8)` and the
+   * gradient magnitude is near 0 wherever the data is flat.
+   *
+   * The exponent form is the analytic version of the old NiiVue's 192-entry
+   * `gradientOpacity` LUT, which sampled exactly this function; there is no
+   * table to upload and `0` yields 1.0 for every magnitude by construction.
+   *
+   * The magnitude comes from the precomputed gradient texture's alpha channel,
+   * so this applies to the background volume only -- the overlay and drawing
+   * passes estimate their gradient in-shader (see `layerGradientMode`) and are
+   * unaffected. 2D slice tiles show one sample with no accumulation and are
+   * unaffected too.
+   */
+  gradientOpacity: number
+  /**
+   * Silhouette (Fresnel rim) enhancement for the BACKGROUND volume's 3D
+   * ray-march. 0 (the default) is a no-op; clamped to [0, 1].
+   *
+   * A sample's alpha is scaled by `(1 - |dot(normal, rayDir)|) ^ silhouette`,
+   * which fades material whose surface faces the camera and keeps material seen
+   * edge-on, so a surface reads as an outline rather than a solid. Samples more
+   * aligned with the view than `1 - silhouette` are culled outright, which is
+   * what opens the interior up at higher settings.
+   *
+   * Independent of `gradientOpacity`: either can be used alone, and both use
+   * the same precomputed background gradient (so, like it, this needs a
+   * background volume and does nothing to overlays or 2D slices).
+   */
+  silhouette: number
+}
+
+/**
+ * One pyramid level's share of a `LodCompensationReport`. `level` indexes the
+ * multi-LOD pyramid (0 is finest); a level with `downsample` 1 is uncompensated
+ * by definition.
+ */
+export type LodCompensationLevel = {
+  /** Pyramid level index; 0 is the finest (full-resolution) level. */
+  level: number
+  /**
+   * Linear downsample factor versus the finest grid: the geometric mean of the
+   * three per-axis dimension ratios. 1 at the finest level, ~2 one level up.
+   */
+  downsample: number
+  /** Voxel dims of this level's full-volume grid. */
+  levelDims: [number, number, number]
+  /** Bricks in the current plan drawn from this level. */
+  brickCount: number
+  /**
+   * Exponent applied to this level's classified RGB. Below 1 brightens; exactly
+   * 1 means the brightness setting is doing nothing here.
+   */
+  brightnessExponent: number
+  /**
+   * Multiplier on this level's step-size opacity exponent. Above 1 makes it
+   * more opaque; exactly 1 means the opacity setting is doing nothing here.
+   */
+  opacityScale: number
+}
+
+/**
+ * What `NiiVue.lodCompensation()` reports: whether the two LOD compensation
+ * settings are affecting the current scene, and the exact numbers each pyramid
+ * level is sending to the shader. Both settings are silent no-ops on a volume
+ * that is not multi-LOD chunked, so `isActive` plus `inactiveReason` is the
+ * cheap way to tell "correctly configured but the data is uniform" from
+ * "configured against a volume that cannot use it".
+ */
+export type LodCompensationReport = {
+  /**
+   * True when at least one coarse level is present AND at least one of the two
+   * coefficients is non-zero, i.e. some brick is actually being compensated.
+   */
+  isActive: boolean
+  /**
+   * Why nothing is being compensated, in plain words, or null when `isActive`.
+   * e.g. 'no volume is loaded', 'volume 0 is not a chunked volume', 'the
+   * chunked volume has a single resolution level', 'both coefficients are 0'.
+   */
+  inactiveReason: string | null
+  /** Current `volumeLodBrightnessCompensation`. */
+  brightnessCompensation: number
+  /** Current `volumeLodOpacityCompensation`. */
+  opacityCompensation: number
+  /** One entry per pyramid level in the current plan, finest first. */
+  levels: LodCompensationLevel[]
+  /**
+   * The whole-volume coarse floor texture drawn behind the bricks, when one is
+   * installed. It is not a member of the chunk plan, so it is reported apart
+   * from `levels` (its `level` is -1 and `brickCount` is 1).
+   */
+  floor: LodCompensationLevel | null
 }
 
 /** Mesh rendering config: global settings for mesh display */
@@ -671,6 +939,14 @@ export type DrawConfig = {
   clickToSegmentIs2D: boolean
 }
 
+/**
+ * Anchor for the 2D wheel zoom: 'crosshair' (default) holds the crosshair
+ * still while zooming; 'pointer' holds the point under the mouse pointer
+ * still, as in OpenSeadragon and other slide viewers. When the pointer picks
+ * no slice, 'pointer' falls back to the crosshair anchor.
+ */
+export type WheelZoomAnchor = 'crosshair' | 'pointer'
+
 /** Interaction config: drag modes, mouse behavior */
 export type InteractionConfig = {
   primaryDragMode: number
@@ -678,6 +954,15 @@ export type InteractionConfig = {
   isSnapToVoxelCenters: boolean
   isDragDropEnabled: boolean
   isYoked3DTo2DZoom: boolean
+  wheelZoomAnchor: WheelZoomAnchor
+  // V key cycles sliceType (NiiVue 0.6 had this always on; opt-in here).
+  isViewModeHotKeyEnabled: boolean
+  // Opt-in: when the 2D views are zoomed in (pan2Dxyzmm[3] > 1) and the
+  // crosshair moves on its own (keyboard, API, linked instance), pan just
+  // enough to keep it inside every tile's visible window. Off by default: the
+  // window stays put and the crosshair may leave it. Explicit pan/zoom
+  // gestures are never fought.
+  isPanFollowingCrosshair: boolean
 }
 
 // ============================================================
@@ -748,7 +1033,7 @@ export type NVInstance = {
 
 export type NVViewOptions = {
   isAntiAlias?: boolean
-  devicePixelRatio?: number
+  forceDevicePixelRatio?: number
   font?: NVFontData
   matcaps?: Record<string, string>
   bounds?: NVBounds
@@ -834,6 +1119,14 @@ export type NiiVueOptions = {
    * memory.
    */
   maxChunkResidencyBytes?: number
+  /**
+   * Duration, in milliseconds, of the cross-fade a freshly-streamed chunk of a
+   * chunked (tiled) volume dissolves in over its coarse floor, so a level-of-
+   * detail change softens rather than cuts. 0 disables the fade (chunks pop in
+   * at full strength). Only applies where a coarse floor is present; unset
+   * leaves the renderer default.
+   */
+  chunkFadeMs?: number
 
   // Scene
   azimuth?: number
@@ -842,6 +1135,7 @@ export type NiiVueOptions = {
   pan2Dxyzmm?: [number, number, number, number]
   scaleMultiplier?: number
   renderPan?: [number, number]
+  /** Display gamma for the 3D volume render, >1 brightens. See SceneConfig.gamma. */
   gamma?: number
   backgroundColor?: [number, number, number, number]
   clipPlaneColor?: number[]
@@ -859,6 +1153,7 @@ export type NiiVueOptions = {
   isMosaicCentered?: boolean
   tileMargin?: number
   isRadiological?: boolean
+  isSingleViewFillCanvas?: boolean
   customLayout?: CustomLayoutTile[] | null
 
   // UI
@@ -876,7 +1171,14 @@ export type NiiVueOptions = {
   thumbnailUrl?: string
   placeholderText?: string
   crosshairColor?: number[]
+  crosshairColorPerAxis?: number[][]
   crosshairGap?: number
+  /**
+   * Crosshair thickness in canvas pixels, on 2D slice tiles, on the 3D render
+   * tile and on mosaic cross-lines alike. It is a screen weight, so it holds
+   * steady as you zoom and does not depend on the volume's field of view. 0
+   * hides the crosshair.
+   */
   crosshairWidth?: number
   fontColor?: number[]
   fontScale?: number
@@ -898,11 +1200,29 @@ export type NiiVueOptions = {
   volumeAlphaShader?: number
   volumeIsBackgroundMasking?: boolean
   volumeIsAlphaClipDark?: boolean
+  /** Honour the background volume's colormap alpha on 2D slices (default false) */
+  volumeIsColormapAlphaOn2D?: boolean
   volumeIsNearestInterpolation?: boolean
   volumeIsV1SliceShader?: boolean
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
   volumeTransmittanceCutoff?: number
+  /** VOLUME_RENDER_MODE.COMPOSITE (default) | MAXIMUM */
+  volumeRenderMode?: number
+  /** Layer-gradient stencil for the overlay/drawing passes. LAYER_GRADIENT_MODE.CENTRAL (default) | BLOB | SOBEL8. See VolumeRenderConfig.layerGradientMode. */
+  volumeLayerGradientMode?: number
+  /** Samples per voxel along the ray in the 3D render, [1, 4]. See VolumeRenderConfig.sampleRate. */
+  volumeSampleRate?: number
+  /** Tricubic B-spline reconstruction in the 3D ray-march. See VolumeRenderConfig.isCubicInterpolation. */
+  volumeIsCubicInterpolation?: boolean
+  /** Per-level brightness compensation for coarse multi-LOD bricks, [0, 0.2]; 0 disables. See VolumeRenderConfig.lodBrightnessCompensation. */
+  volumeLodBrightnessCompensation?: number
+  /** Per-level opacity compensation for coarse multi-LOD bricks in the 3D ray-march, [0, 1]; 0 disables (default). See VolumeRenderConfig.lodOpacityCompensation. */
+  volumeLodOpacityCompensation?: number
+  /** Gradient-magnitude opacity modulation for the background 3D ray-march, [0, 1]; 0 disables (default). See VolumeRenderConfig.gradientOpacity. */
+  volumeGradientOpacity?: number
+  /** Silhouette (Fresnel rim) enhancement for the background 3D ray-march, [0, 1]; 0 disables (default). See VolumeRenderConfig.silhouette. */
+  volumeSilhouette?: number
 
   // Mesh (prefixed)
   meshXRay?: number
@@ -922,12 +1242,22 @@ export type NiiVueOptions = {
   secondaryDragMode?: number
   isSnapToVoxelCenters?: boolean
   isYoked3DTo2DZoom?: boolean
+  /** Anchor for the 2D wheel zoom. Default 'crosshair'. See InteractionConfig.wheelZoomAnchor. */
+  wheelZoomAnchor?: WheelZoomAnchor
+  isViewModeHotKeyEnabled?: boolean
+  isPanFollowingCrosshair?: boolean
 
   // Annotation (prefixed)
   annotationIsEnabled?: boolean
   annotationActiveLabel?: number
   annotationActiveGroup?: string
   annotationBrushRadius?: number
+  /**
+   * Union same-label vector annotations and cut different-label annotations when
+   * they overlap. Disable for measurement integrations where every annotation
+   * must retain an independent identity.
+   */
+  annotationMergesOverlaps?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -978,9 +1308,31 @@ export type CompletedMeasurement = {
 }
 
 /**
+ * A measurement projected to the current frame's canvas pixels, exposed so an
+ * external overlay (e.g. a @niivue/uikit ruler drawn through the overlay hook)
+ * can render the measurement in screen space with its own renderer. Recomputed
+ * every frame; `distance` is in millimetres. See NVControlBase.measurementScreenLines.
+ */
+export type MeasurementScreenLine = {
+  sx: number
+  sy: number
+  ex: number
+  ey: number
+  distance: number
+  /**
+   * Index of the source measurement in `completedMeasurements`, present for
+   * persisted lines. Absent on the transient active (in-progress drag) line,
+   * which has no persisted index yet.
+   */
+  index?: number
+}
+
+/**
  * Transient world-space axis-aligned bounding box drawn as 12 edges on the 3D
  * render tile(s) — e.g. to outline a focused subvolume. `min`/`max` are in the
- * same world-mm space as the scene extents. Controller-owned, not serialized.
+ * same world-mm space as the scene extents, and both are corner positions the
+ * edges pass through (`max` is inclusive, unlike the half-open common-grid
+ * `MultiLodBounds`, which is voxel-indexed). Controller-owned, not serialized.
  */
 export type FocusBox = {
   min: [number, number, number]
@@ -1023,6 +1375,10 @@ export type ImageFromUrlOptions = {
   colormap?: string
   /** Colormap for negative intensities */
   colormapNegative?: string
+  /** Reverse the colormap (and the negative colormap, when set). Default: false */
+  isColormapInverted?: boolean
+  /** Outline width for a label/atlas volume, in its own voxels (default 0 = filled) */
+  atlasOutline?: number
   /** Minimum intensity for negative color mapping (default: NaN = symmetric) */
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */
@@ -1199,6 +1555,15 @@ export type AnnotationTool =
   | 'measureLine'
   | 'circle'
   | 'measureCircle'
+  // Multi-click closed contours (Catmull-Rom spline through control points).
+  | 'spline'
+  | 'measureSpline'
+  // Multi-click edge-snapping contours (intelligent scissors / live wire).
+  | 'livewire'
+  | 'measureLivewire'
+  // Two perpendicular measured axes (RECIST-style long + short diameters).
+  | 'bidirectional'
+  | 'measureBidirectional'
 
 export type AnnotationStats = {
   area: number
@@ -1207,6 +1572,8 @@ export type AnnotationStats = {
   max: number
   stdDev: number
   length?: number
+  /** Short-axis length for a bidirectional measurement (long axis in length). */
+  shortLength?: number
 }
 
 export type AnnotationPoint = { x: number; y: number }
@@ -1232,11 +1599,53 @@ export type VectorAnnotation = {
   polygons: PolygonWithHoles[]
   style: AnnotationStyle
   stats?: AnnotationStats
+  /** Optional user-entered free-text label shown with the annotation. */
+  text?: string
   shape?: {
     type: AnnotationTool
     start: AnnotationPoint
     end: AnnotationPoint
     width?: number
+    /** Second axis endpoints for a bidirectional measurement (short axis). */
+    start2?: AnnotationPoint
+    end2?: AnnotationPoint
+  }
+}
+
+/**
+ * A vector annotation projected to the current frame's canvas pixels, exposed so
+ * an external overlay (a @niivue/uikit shape renderer drawn through the overlay
+ * hook) can draw the shape + its stats label in screen space with its own
+ * renderer. Recomputed every frame. See NVControlBase.annotationScreenShapes.
+ */
+export type AnnotationScreenShape = {
+  id: string
+  tool: AnnotationTool
+  /** Outer boundary projected to canvas px (the outline for closed shapes). */
+  outer: AnnotationPoint[]
+  /** Hole boundaries projected to canvas px (freehand with holes). */
+  holes: AnnotationPoint[][]
+  /** Shape endpoints projected to canvas px (line/arrow path, ellipse bbox). */
+  start?: AnnotationPoint
+  end?: AnnotationPoint
+  /** Second-axis endpoints projected to canvas px (bidirectional short axis). */
+  start2?: AnnotationPoint
+  end2?: AnnotationPoint
+  /** True for area shapes (ellipse/rect/circle/freehand); false for line/arrow. */
+  isClosed: boolean
+  /**
+   * Measured length in mm for a single measured line (`measureLine`), so an
+   * external overlay can render it as a graduated ruler (ticks numbered in mm)
+   * rather than a plain line. Absent for non-measure and multi-segment shapes.
+   */
+  length?: number
+  style: AnnotationStyle
+  /** Stats label text lines + canvas-px anchor + alignment, for measure tools. */
+  label?: {
+    lines: string[]
+    x: number
+    y: number
+    align: 'left' | 'center'
   }
 }
 
@@ -1245,6 +1654,7 @@ export type AnnotationConfig = {
   activeLabel: number
   activeGroup: string
   brushRadius: number
+  mergesOverlaps: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

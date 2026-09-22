@@ -1,0 +1,139 @@
+import { describe, expect, test } from 'bun:test'
+import { NiiDataType } from '@/NVConstants'
+import { createStreamingNVImage } from './streamingVolume'
+
+describe('createStreamingNVImage', () => {
+  test('builds an axis-aligned streamed NVImage skeleton with derived transforms', () => {
+    const vol = createStreamingNVImage({
+      shape: [4, 6, 8],
+      spacing: [2, 1, 0.5],
+      datatypeCode: NiiDataType.DT_INT16,
+      calMin: 10,
+      calMax: 200,
+      colormap: 'viridis',
+      id: 'stream-a',
+    })
+
+    // No resident image data — voxels arrive via a chunkSource the caller attaches.
+    expect(vol.img).toBeNull()
+    expect(vol.id).toBe('stream-a')
+    expect(vol.name).toBe('stream-a')
+    expect(vol.dims).toEqual([3, 4, 6, 8])
+    expect(vol.nVox3D).toBe(4 * 6 * 8)
+    expect(vol.hdr.datatypeCode).toBe(NiiDataType.DT_INT16)
+
+    // Display state carried through.
+    expect(vol.calMin).toBe(10)
+    expect(vol.calMax).toBe(200)
+    expect(vol.colormap).toBe('viridis')
+    expect(vol.isTransparentBelowCalMin).toBe(true)
+
+    // Geometry derived by calculateRAS (axis-aligned diag(spacing) => no reorder).
+    expect(vol.permRAS).toEqual([1, 2, 3])
+    expect(vol.dimsRAS).toEqual([3, 4, 6, 8])
+    expect(vol.matRAS).toBeDefined()
+    expect(vol.frac2mm).toBeDefined()
+    expect(vol.mm000).toBeDefined()
+
+    // Extents are finite and ordered per axis.
+    for (let a = 0; a < 3; a++) {
+      expect(Number.isFinite(vol.extentsMin?.[a] ?? Number.NaN)).toBe(true)
+      expect(Number.isFinite(vol.extentsMax?.[a] ?? Number.NaN)).toBe(true)
+      expect(vol.extentsMax?.[a]).toBeGreaterThan(vol.extentsMin?.[a] ?? 0)
+    }
+
+    // volScale = per-axis mm extent / longest axis; dimsMM = [8, 6, 4], longest 8.
+    expect(vol.volScale?.[0]).toBeCloseTo(1)
+    expect(vol.volScale?.[1]).toBeCloseTo(0.75)
+    expect(vol.volScale?.[2]).toBeCloseTo(0.5)
+  })
+
+  test('defaults name/colormap/opacity when omitted', () => {
+    const vol = createStreamingNVImage({
+      shape: [2, 2, 2],
+      spacing: [1, 1, 1],
+      datatypeCode: NiiDataType.DT_UINT8,
+      calMin: 0,
+      calMax: 255,
+    })
+    expect(vol.name).toBe('streamed volume')
+    expect(vol.colormap).toBe('gray')
+    expect(vol.opacity).toBe(1)
+  })
+
+  test('two default-option volumes get distinct ids but the shared name', () => {
+    const spec = {
+      shape: [2, 2, 2] as [number, number, number],
+      spacing: [1, 1, 1] as [number, number, number],
+      datatypeCode: NiiDataType.DT_UINT8,
+      calMin: 0,
+      calMax: 255,
+    }
+    const a = createStreamingNVImage({ ...spec })
+    const b = createStreamingNVImage({ ...spec })
+    // Human-readable name stays shared; ids are unique so a plan-swap that
+    // resolves find-first by id-or-name routes to exactly one volume.
+    expect(a.name).toBe('streamed volume')
+    expect(b.name).toBe('streamed volume')
+    expect(a.id).not.toBe(b.id)
+    // A find-first lookup by id (mirroring host.swapVolumeChunkPlan) hits only b.
+    const vols = [a, b]
+    const found = vols.find((v) => v.id === b.id || v.name === b.id)
+    expect(found).toBe(b)
+  })
+
+  test('two default-option volumes get distinct texture-cache keys (url||name)', () => {
+    const spec = {
+      shape: [2, 2, 2] as [number, number, number],
+      spacing: [1, 1, 1] as [number, number, number],
+      datatypeCode: NiiDataType.DT_UINT8,
+      calMin: 0,
+      calMax: 255,
+    }
+    const a = createStreamingNVImage({ ...spec })
+    const b = createStreamingNVImage({ ...spec })
+    // Renderers key _texCache on `url || name`. The shared 'streamed volume'
+    // name must NOT be the key, or the second volume reuses the first's chunk
+    // manager/plan — so the default url is unique per (unique) id.
+    const keyOf = (v: typeof a): string => v.url || v.name
+    expect(keyOf(a)).not.toBe(keyOf(b))
+    expect(a.id).not.toBe(b.id)
+    // Ids remain non-null so the id-always-set contract holds.
+    expect(a.id).toBeDefined()
+    expect(b.id).toBeDefined()
+  })
+
+  test('generates a safe unique id when crypto.randomUUID is unavailable', () => {
+    // A plain-http LAN page has no secure context, so crypto.randomUUID is
+    // undefined and calling it would throw. Simulate that and assert default
+    // ids are still produced, unique, and non-empty (loadable).
+    const original = globalThis.crypto
+    Object.defineProperty(globalThis, 'crypto', {
+      value: {},
+      configurable: true,
+      writable: true,
+    })
+    try {
+      const spec = {
+        shape: [2, 2, 2] as [number, number, number],
+        spacing: [1, 1, 1] as [number, number, number],
+        datatypeCode: NiiDataType.DT_UINT8,
+        calMin: 0,
+        calMax: 255,
+      }
+      const a = createStreamingNVImage({ ...spec })
+      const b = createStreamingNVImage({ ...spec })
+      expect(typeof a.id).toBe('string')
+      expect(a.id).not.toBe('')
+      expect(a.id).not.toBe(b.id)
+      // The unique id still drives a distinct texture-cache key.
+      expect(a.url || a.name).not.toBe(b.url || b.name)
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: original,
+        configurable: true,
+        writable: true,
+      })
+    }
+  })
+})

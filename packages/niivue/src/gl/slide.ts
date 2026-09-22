@@ -5,7 +5,13 @@ import type {
   NVSlideScreenRect,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
+import {
+  DEFAULT_TILE_TEXTURE_BYTES,
+  TileTextureCache,
+} from '@/slide/tileTextureCache'
+import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { NVRenderer } from '@/view/NVRenderer'
+import { timeChunkPhase } from '@/volume/chunkTiming'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
 
@@ -21,7 +27,18 @@ export class SlideRenderer extends NVRenderer {
   private _vertexBuffer: WebGLBuffer | null = null
   private _placeholderTexture: WebGLTexture | null = null
   private _gl: WebGL2RenderingContext | null = null
-  private readonly _textures = new Map<string, SlideTexture>()
+  // Byte-budgeted: tile textures for scrolled-away regions are evicted each
+  // frame instead of accumulating for the life of the renderer.
+  private readonly _textures = new TileTextureCache<SlideTexture>(
+    DEFAULT_TILE_TEXTURE_BYTES,
+    (entry) => this._gl?.deleteTexture(entry.texture),
+  )
+  /**
+   * UIKit overlay hook: invoked at the end of every frame (after the slide tiles,
+   * before GL state is restored) so a widget can draw over the slide in screen
+   * space. Mirrors the NiiVue view hook. See view/NVOverlayHook.ts.
+   */
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
@@ -90,6 +107,11 @@ export class SlideRenderer extends NVRenderer {
       Math.floor(screen.heightCss * (screen.devicePixelRatio ?? 1)),
     )
 
+    // Evict BEFORE beginFrame so the previous frame's working set (still
+    // marked with the current frame stamp) is exempt; see TileTextureCache.
+    this._textures.evictToBudget()
+    this._textures.beginFrame()
+
     // Self-contained: own the full canvas viewport and clear it each frame so
     // the demo just calls draw() once per frame.
     gl.viewport(0, 0, width, height)
@@ -120,8 +142,40 @@ export class SlideRenderer extends NVRenderer {
         false,
       )
       const visible = slide.requestVisibleTiles(screen)
+      // Coarser levels first, painted UNDER the target level. Non-empty only
+      // while target tiles are still arriving, so the previous resolution stays
+      // on screen and is overpainted tile by tile as the finer data lands.
+      // No tile grid here: the grid describes the target level.
+      for (const item of visible.fallback) {
+        const bitmap = slide.cachedTileBitmap(item.key)
+        if (!bitmap) continue
+        const texture = this.textureForBitmap(gl, item.key, bitmap)
+        if (!texture) continue
+        this.drawTile(
+          gl,
+          width,
+          height,
+          {
+            x: item.screenX,
+            y: item.screenY,
+            width: item.screenWidth,
+            height: item.screenHeight,
+          },
+          texture.texture,
+          slide.placeholderColor,
+          slide.gridColor,
+          slide.opacity,
+          item,
+          false,
+          false,
+        )
+      }
       for (const item of visible.tiles) {
         const bitmap = slide.cachedTileBitmap(item.key)
+        // A missing tile draws a flat placeholder ONLY when nothing coarser is
+        // behind it; otherwise the placeholder would hide the very fallback
+        // layer that is standing in for it.
+        if (!bitmap && visible.fallback.length > 0) continue
         const texture = bitmap
           ? this.textureForBitmap(gl, item.key, bitmap)
           : null
@@ -147,6 +201,17 @@ export class SlideRenderer extends NVRenderer {
       }
     }
 
+    // UIKit overlay hook: last screen-space draw of the frame, with blend on and
+    // depth/cull off (the widget sets and restores its own state as needed).
+    if (this.overlayDraw) {
+      this.overlayDraw({
+        handle: { backend: 'webgl2', gl },
+        bounds: { x: 0, y: 0, width, height },
+        dpr: screen.devicePixelRatio ?? 1,
+        settled: true,
+      })
+    }
+
     gl.bindVertexArray(null)
     gl.bindTexture(gl.TEXTURE_2D, null)
     gl.enable(gl.CULL_FACE)
@@ -160,26 +225,17 @@ export class SlideRenderer extends NVRenderer {
   // renderer must call this first, or the new slide inherits the old slide's
   // tiles (ghost tiles).
   clearTextures(): void {
-    const gl = this._gl
-    if (gl) {
-      for (const entry of this._textures.values()) {
-        gl.deleteTexture(entry.texture)
-      }
-    }
     this._textures.clear()
   }
 
   destroy(): void {
+    this._textures.clear()
     const gl = this._gl
     if (gl) {
-      for (const entry of this._textures.values()) {
-        gl.deleteTexture(entry.texture)
-      }
       if (this._placeholderTexture) gl.deleteTexture(this._placeholderTexture)
       if (this._vertexBuffer) gl.deleteBuffer(this._vertexBuffer)
       if (this._vao) gl.deleteVertexArray(this._vao)
     }
-    this._textures.clear()
     this._placeholderTexture = null
     this._vertexBuffer = null
     this._vao = null
@@ -201,7 +257,7 @@ export class SlideRenderer extends NVRenderer {
     ) {
       return existing
     }
-    if (existing) gl.deleteTexture(existing.texture)
+    if (existing) this._textures.delete(key)
     const texture = gl.createTexture()
     if (!texture) return null
     gl.bindTexture(gl.TEXTURE_2D, texture)
@@ -210,9 +266,25 @@ export class SlideRenderer extends NVRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
+    const bytes = bitmap.width * bitmap.height * 4
+    // Timed as `upload` alongside the volume path's brick uploads: a slide tile
+    // and a volume brick are two consumers of the same streamed source, and
+    // both pay their texture cost on this thread.
+    timeChunkPhase(
+      'upload',
+      () =>
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          bitmap,
+        ),
+      bytes,
+    )
     const entry = { texture, width: bitmap.width, height: bitmap.height }
-    this._textures.set(key, entry)
+    this._textures.set(key, entry, bitmap.width * bitmap.height * 4)
     return entry
   }
 

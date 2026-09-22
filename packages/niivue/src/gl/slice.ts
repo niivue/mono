@@ -1,3 +1,9 @@
+import {
+  invGamma,
+  lodGammaExponent,
+  SCENE_DEFAULTS,
+  VOLUME_DEFAULTS,
+} from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
@@ -14,6 +20,7 @@ type SliceModel = {
   overlayAlphaShader?: number
   overlayOutlineWidth?: number
   isAlphaClipDark?: boolean
+  isColormapAlphaOn2D?: boolean
   drawRimOpacity?: number
   isV1SliceShader?: boolean
 }
@@ -31,6 +38,18 @@ export class SliceRenderer extends NVRenderer {
   private _placeholderDrawing: WebGLTexture | null = null
   private _placeholderPaqd: WebGLTexture | null = null
   private _placeholderLut2D: WebGLTexture | null = null
+  /**
+   * Display gamma for intensity-derived slice colour (background + colormapped
+   * overlay). Mirrors the volume renderer's field so 2D and 3D agree; alpha is
+   * untouched, so `gamma > 1` brightens and 1 is an exact no-op.
+   */
+  gamma = SCENE_DEFAULTS.gamma
+  /**
+   * Coefficient for the per-chunk compensation of the brightness a coarse
+   * multi-LOD brick loses. 0 disables it; a no-op for single-level and
+   * non-chunked draws whatever the value.
+   */
+  lodBrightnessCompensation = VOLUME_DEFAULTS.lodBrightnessCompensation
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
@@ -283,6 +302,11 @@ export class SliceRenderer extends NVRenderer {
         this._shader.uniforms.isAlphaClipDark,
         md.isAlphaClipDark ? 1 : 0,
       )
+    if (this._shader.uniforms.isColormapAlphaOn2D)
+      gl.uniform1i(
+        this._shader.uniforms.isColormapAlphaOn2D,
+        md.isColormapAlphaOn2D ? 1 : 0,
+      )
     if (this._shader.uniforms.numVolumes)
       gl.uniform1f(this._shader.uniforms.numVolumes, numVolumes)
     if (this._shader.uniforms.drawRimOpacity)
@@ -324,6 +348,16 @@ export class SliceRenderer extends NVRenderer {
       gl.uniform3fv(this._shader.uniforms.volumeTexDimsFull, ct.volumeDims)
     if (this._shader.uniforms.fadeAlpha)
       gl.uniform1f(this._shader.uniforms.fadeAlpha, fadeAlpha)
+    // Two exponents compose here (pow is associative in the exponent): the
+    // reciprocal of the user-facing display gamma, and this chunk's per-level
+    // compensation for the brightness a coarse pyramid brick loses. The second
+    // is 1 for every single-level and non-chunked draw.
+    if (this._shader.uniforms.invGamma)
+      gl.uniform1f(
+        this._shader.uniforms.invGamma,
+        invGamma(this.gamma) *
+          lodGammaExponent(ct.lodDownsample, this.lodBrightnessCompensation),
+      )
 
     // Transform matrices
     if (this._shader.uniforms.frac2mm)

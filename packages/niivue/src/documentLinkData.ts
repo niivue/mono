@@ -32,3 +32,19 @@ export function shouldLinkVolume(
 ): boolean {
   return linkData && isLinkableUrl(url)
 }
+
+/**
+ * A streamed/chunked volume whose voxels live only in a runtime `chunkSource`
+ * closure: `img` is null and it carries a `chunkPlan` and/or `chunkSource`. Such
+ * a volume cannot be embedded (no bytes in memory) nor refetched — its `url` is a
+ * `streamed://<id>` renderer texture-cache key, not a fetchable resource — so
+ * NVDocument.serialize DROPS it rather than write a url that reload would try, and
+ * fail, to fetch. A restorable volume (in-memory `img`) is never transient.
+ */
+export function isTransientStreamedVolume(v: {
+  img: unknown
+  chunkPlan?: unknown
+  chunkSource?: unknown
+}): boolean {
+  return v.img == null && (v.chunkPlan != null || v.chunkSource != null)
+}

@@ -11,6 +11,54 @@ import type { Vec3i } from '@/volume/chunking'
 export const DT_RGB24 = 128
 export const DT_RGBA32 = 2304
 
+// Identity tokens for label-colormap objects: a rebuilt LUT (new object) must
+// change the display key even if its contents happen to match, and comparing
+// contents byte-by-byte per updateVolume would be wasteful.
+const _displayObjectIds = new WeakMap<object, number>()
+let _nextDisplayObjectId = 1
+
+function displayObjectId(o: object): number {
+  let id = _displayObjectIds.get(o)
+  if (id === undefined) {
+    id = _nextDisplayObjectId++
+    _displayObjectIds.set(o, id)
+  }
+  return id
+}
+
+/**
+ * Key over every display-affecting input the chunked uploaders bake into their
+ * per-chunk orient pass: the colormap LUTs (colormap, negative colormap,
+ * inversion, label LUT identity), the intensity window (calMin/calMax and the
+ * negative range), colormapType, the scaling slope/intercept, and the 4D frame
+ * (the uploaders capture the frame's byte window at creation).
+ *
+ * The renderers compare this against the cached chunked entry's key on every
+ * updateVolume: resident chunk textures hold colormapped RGBA, so when any of
+ * these change the only way to present the new state is to rebuild the uploader
+ * and re-stream the chunks (source bytes are not retained after upload).
+ */
+export function chunkedDisplayKey(nvimage: NVImage): string {
+  const label = nvimage.colormapLabel
+  const labelKey = label
+    ? `${displayObjectId(label)}:${label.lut ? displayObjectId(label.lut) : ''}`
+    : ''
+  return [
+    nvimage.colormap,
+    nvimage.colormapNegative ?? '',
+    nvimage.isColormapInverted ? 1 : 0,
+    labelKey,
+    nvimage.calMin,
+    nvimage.calMax,
+    nvimage.calMinNeg ?? '',
+    nvimage.calMaxNeg ?? '',
+    nvimage.colormapType ?? 0,
+    nvimage.hdr.scl_slope,
+    nvimage.hdr.scl_inter,
+    nvimage.frame4D ?? 0,
+  ].join('|')
+}
+
 /** Whether a datatype is a color (RGB/RGBA) source uploaded straight to RGBA8. */
 export function isRGBAChunkDatatype(datatypeCode: number): boolean {
   return datatypeCode === DT_RGB24 || datatypeCode === DT_RGBA32

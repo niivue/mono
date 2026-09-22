@@ -62,6 +62,23 @@ async function main() {
     ext,
   )
   nv.setSlidePlane(slide, { pixelToWorld: transform })
+  // LOD control (meeting request): auto follows the camera (the renderer aims
+  // for ~1 screen px per level px); picking a level pins it. The pin goes
+  // through setSlidePlaneLevel, which mutates the registered plane in place,
+  // so drawings and annotations survive the change.
+  const lodSel = document.getElementById('lodSel')
+  for (const level of slide.manifest.levels) {
+    const opt = document.createElement('option')
+    opt.value = String(level.index)
+    opt.textContent = `L${level.index} · ${level.downsample}x (${level.width}x${level.height})`
+    lodSel.appendChild(opt)
+  }
+  lodSel.onchange = () => {
+    nv.setSlidePlaneLevel(
+      lodSel.value === 'auto' ? undefined : Number(lodSel.value),
+    )
+    updateHud()
+  }
   // Slide-space drawing: a label raster painted with the standard pen tools.
   nv.createSlideDrawing()
   nv.model.draw.penValue = 1
@@ -176,7 +193,9 @@ async function main() {
   const updateHud = () => {
     const label = backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
     const s = slide.stats
-    hud.textContent = `${slide.manifest.name}\nMNI152 + slide plane · ${label}\ntiles ${s.completed}/${s.requested} · ${(s.wireBytes / 1024).toFixed(0)} KB\ndraw mode ${drawMode ? 'ON' : 'off'} (d toggle · u undo · c clear)`
+    const lodLabel =
+      lodSel.value === 'auto' ? 'LOD auto' : `LOD pinned L${lodSel.value}`
+    hud.textContent = `${slide.manifest.name}\nMNI152 + slide plane · ${label} · ${lodLabel}\ntiles ${s.completed}/${s.requested} · ${(s.wireBytes / 1024).toFixed(0)} KB\ndraw mode ${drawMode ? 'ON' : 'off'} (d toggle · u undo · c clear)`
   }
   slide.addEventListener('change', updateHud)
   updateHud()

@@ -117,6 +117,10 @@ slideRangeNeg.oninput = () => {
 outlineSlide.oninput = function () {
   nv1.volumeOutlineWidth = 0.25 * this.value
 }
+invertCheck.onchange = function () {
+  // Reverses redyell and winter together, colorbars included.
+  nv1.setVolume(1, { isColormapInverted: this.checked })
+}
 alphaMode.onchange = () => {
   updateThresholds()
 }

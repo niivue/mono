@@ -493,3 +493,90 @@ describe('ChunkResidencyManager stale-upload guard (plan swap race)', () => {
     expect(m.inFlightUploadCount).toBe(0)
   })
 })
+
+describe('ChunkResidencyManager stale-request drop', () => {
+  // Simulates the render loop: a frame advances the clock, then the working set
+  // asks for exactly the chunks that are visible from the new viewpoint.
+  function frame(m: ChunkResidencyManager<FakeChunk>, workingSet: number[]) {
+    m.beginFrame()
+    for (const ci of workingSet) m.requestUpload(ci)
+  }
+
+  test('a chunk the working set stops asking for is dropped, not uploaded', () => {
+    const m = manager(16)
+    frame(m, [0, 1, 2, 3])
+    // The view moves: none of the original four are visible any more.
+    frame(m, [8, 9])
+    frame(m, [8, 9])
+
+    expect(m.pendingUploadCount).toBe(2)
+    expect(m.takePendingUploads(8)).toEqual([8, 9])
+    expect(m.staleDropCount).toBe(4)
+  })
+
+  test('one frame of slack before a request is considered stale', () => {
+    const m = manager(8)
+    frame(m, [5])
+    // One frame without a re-request: still eligible, just lower priority.
+    frame(m, [])
+    expect(m.pendingUploadCount).toBe(1)
+    expect(m.takePendingUploads(4)).toEqual([5])
+
+    const n = manager(8)
+    frame(n, [5])
+    frame(n, [])
+    frame(n, [])
+    expect(n.pendingUploadCount).toBe(0)
+    expect(n.takePendingUploads(4)).toEqual([])
+    expect(n.staleDropCount).toBe(1)
+  })
+
+  test('re-requesting reorders the queue to follow the current view', () => {
+    const m = manager(8)
+    // Centre-outward order from the first viewpoint.
+    frame(m, [0, 1, 2])
+    // The view moved: 2 is now nearest the centre and 0 furthest.
+    frame(m, [2, 1, 0])
+
+    expect(m.takePendingUploads(3)).toEqual([2, 1, 0])
+  })
+
+  test('this frame comes before last frame regardless of queue age', () => {
+    const m = manager(8)
+    frame(m, [4])
+    // 4 goes unrequested (still within slack) while a new chunk is asked for.
+    frame(m, [7])
+
+    expect(m.takePendingUploads(2)).toEqual([7, 4])
+  })
+
+  test('a dropped chunk prefetches again if the view comes back to it', () => {
+    const prefetched: number[] = []
+    const m = new ChunkResidencyManager<FakeChunk>(8, 1_000_000, {
+      bytesOf: (c) => c.bytes,
+      destroy: () => {},
+      prefetch: (i) => prefetched.push(i),
+    })
+    frame(m, [3])
+    frame(m, [])
+    frame(m, []) // 3 is dropped here
+    expect(m.pendingUploadCount).toBe(0)
+
+    frame(m, [3])
+    expect(prefetched).toEqual([3, 3])
+    expect(m.takePendingUploads(1)).toEqual([3])
+  })
+
+  test('resident and in-flight entries are pruned out of the queue', () => {
+    const m = manager(8)
+    frame(m, [1, 2])
+    expect(m.takePendingUploads(1)).toEqual([1]) // 1 is in-flight
+    // A working set that still wants both leaves the in-flight one alone.
+    frame(m, [1, 2])
+    expect(m.pendingUploadCount).toBe(1)
+
+    m.admit(2, fakeChunk('c2', 100))
+    expect(m.pendingUploadCount).toBe(0)
+    expect(m.staleDropCount).toBe(0)
+  })
+})

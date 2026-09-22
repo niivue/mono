@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import type { NVImage } from '@/NVTypes'
 import type { Vec3i } from '@/volume/chunking'
 import {
+  chunkedDisplayKey,
   chunkRGBA,
   extractChunkBytes,
   extractChunkBytesReoriented,
@@ -308,5 +310,54 @@ describe('chunkRGBA (color chunk → RGBA8)', () => {
 
   test('throws for a non-color datatype', () => {
     expect(() => chunkRGBA(new Uint8Array(4), 16)).toThrow()
+  })
+})
+
+describe('chunkedDisplayKey', () => {
+  // Only the fields the key reads matter; a structural cast keeps the fixture
+  // small instead of building a full NVImage.
+  function makeVol(overrides: Record<string, unknown> = {}): NVImage {
+    return {
+      colormap: 'gray',
+      colormapNegative: '',
+      isColormapInverted: false,
+      colormapLabel: null,
+      calMin: 0,
+      calMax: 100,
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+      colormapType: 0,
+      frame4D: 0,
+      hdr: { scl_slope: 1, scl_inter: 0 },
+      ...overrides,
+    } as unknown as NVImage
+  }
+
+  test('identical display state produces an identical key', () => {
+    expect(chunkedDisplayKey(makeVol())).toBe(chunkedDisplayKey(makeVol()))
+  })
+
+  test.each([
+    ['colormap', { colormap: 'hot' }],
+    ['isColormapInverted', { isColormapInverted: true }],
+    ['colormapNegative', { colormapNegative: 'winter' }],
+    ['calMin', { calMin: 5 }],
+    ['calMax', { calMax: 50 }],
+    ['colormapType', { colormapType: 1 }],
+    ['frame4D', { frame4D: 3 }],
+  ])('a changed %s changes the key', (_field, overrides) => {
+    expect(chunkedDisplayKey(makeVol(overrides))).not.toBe(
+      chunkedDisplayKey(makeVol()),
+    )
+  })
+
+  test('a rebuilt label LUT object changes the key even with equal contents', () => {
+    const lutA = { lut: Uint8Array.from([1, 2, 3, 4]) }
+    const lutB = { lut: Uint8Array.from([1, 2, 3, 4]) }
+    const keyA = chunkedDisplayKey(makeVol({ colormapLabel: lutA }))
+    const keyASame = chunkedDisplayKey(makeVol({ colormapLabel: lutA }))
+    const keyB = chunkedDisplayKey(makeVol({ colormapLabel: lutB }))
+    expect(keyA).toBe(keyASame)
+    expect(keyA).not.toBe(keyB)
   })
 })

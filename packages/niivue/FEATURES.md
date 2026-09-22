@@ -23,12 +23,12 @@ Source of truth: `packages/niivue/src/index.ts` (package exports),
 
 | Feature | Kind | Async | Signature / Notes | Bridge pattern |
 |---|---|---|---|---|
-| `new NiiVueGPU(options)` | Ctor | No | Flat `NiiVueOptions` — see §13 | Inject JS on page load |
+| `new NiiVue(options)` | Ctor | No | Flat `NiiVueOptions` — see §13 | Inject JS on page load |
 | `attachTo(elementId)` | Method | Yes | Binds to a canvas by DOM id | Call once after WKWebView loads the HTML |
 | `attachToCanvas(canvas, isAntiAlias?)` | Method | Yes | Binds to a `HTMLCanvasElement` | Alt. to `attachTo` |
 | `destroy()` | Method | No | Releases GPU resources + listeners | Call before tearing down view |
 | `resize()` | Method | No | Force canvas resize | Call on SwiftUI size-class change |
-| `reinitializeView(options)` | Method | Yes | Recreate view (e.g. backend swap) | Rare; advanced |
+| `reinitializeView(options)` | Method | Yes | Recreate view (e.g. backend swap); `ReinitializeOptions` | Rare; advanced |
 | `backend` | Prop (get) | No | `'webgpu' \| 'webgl2' \| undefined` | Read for UI capability gating |
 | `isAntiAlias` | Prop (get) | No | Read-only | — |
 | `devicePixelRatio` / `forceDevicePixelRatio` | Prop | No | Override DPR | Tune for Retina/ProMotion |
@@ -97,6 +97,8 @@ TRX, TT, TSF (scalars), VTK lines.
 | `getClipPlaneDepthAziElev(i)` | Method | No | |
 | `setClipPlaneDepthAziElev(i, d, a, e)` | Method | No | |
 | `activeClipPlaneIndex`, `currentClipPlaneIndex` | Prop | No | |
+| `focusBox` | Prop (get/set) | No | `FocusBox \| null`; world-mm AABB outlined as 12 edges on the 3D render tile(s). Assigning redraws; `null` clears. Not serialized |
+| `lodBoxes` | Prop (get/set) | No | `FocusBox[] \| null`; the same outline for a set of boxes, e.g. one per streamed LOD brick coloured by level |
 
 ## 5. Layout & View Mode
 
@@ -112,7 +114,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isMosaicCentered` | Prop | No | |
 | `tileMargin` | Prop | No | |
 | `isRadiological` | Prop | No | Flip left/right |
-| `customLayout` | Prop | No | `CustomLayoutTile[]` — explicit tile list |
+| `customLayout` | Prop | No | `CustomLayoutTile[]` — explicit tile list. Per tile: `sliceType`, normalized `position`, optional `sliceMM`, optional `fill` (fill the pane instead of letterboxing to the slice aspect; default false) |
 | `clearCustomLayout()` | Method | No | |
 | `setBounds([x1,y1,x2,y2])` | Method | No | Shared-canvas bounds |
 
@@ -127,6 +129,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isMeasureUnitsVisible` | Prop | |
 | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` | Prop | Load-time preview |
 | `crosshairColor`, `crosshairGap`, `crosshairWidth` | Prop | |
+| `crosshairColorPerAxis` | Prop | `[xColor, yColor, zColor]` RGBA; `[]` (default) uses `crosshairColor` for every axis |
 | `fontColor`, `fontScale`, `fontMinSize` | Prop | |
 | `selectionBoxColor`, `measureLineColor`, `measureTextColor` | Prop | |
 | `rulerWidth` | Prop | |
@@ -137,6 +140,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | Feature | Kind | Notes |
 |---|---|---|
 | `volumeIllumination` | Prop | 0–1; matcap lighting for 3D render |
+| `volumeRenderMode` | Prop | `VOLUME_RENDER_MODE`: `COMPOSITE` (0), `MAXIMUM` (1, MIP), `SLICES` (2, the three crosshair planes in the 3D tile) |
 | `volumeOutlineWidth` | Prop | Overlay outline thickness |
 | `volumeAlphaShader` | Prop | Selects ray-march variant |
 | `volumeIsBackgroundMasking` | Prop | |
@@ -174,6 +178,11 @@ TRX, TT, TSF (scalars), VTK lines.
 | `loadDrawing(…)` | Method | Yes | |
 | `drawPenAutoClose`, `drawPenFilled` | Prop | No | |
 | `maxDrawUndoBitmaps` | Prop | No | Default 8 |
+| `slideTool` | Prop (get/set) | No | `SlideDrawTool`: `'pen' \| 'eraser' \| 'bucket' \| 'filled' \| 'wand' \| 'vector'`. Selects the active tool for slide drawing |
+
+`slideTool` applies to whole-slide (WSI) drawing, which is a separate surface
+from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
+`slideWandTolerance` and `slideVector`. Only the tool selector is listed here.
 
 ## 10. Vector Annotations
 
@@ -205,10 +214,11 @@ TRX, TT, TSF (scalars), VTK lines.
 
 | Feature | Kind | Notes |
 |---|---|---|
-| `primaryDragMode`, `secondaryDragMode` | Prop | `DRAG_MODE` enum: `none(0)`, `contrast(1)`, `measurement(2)`, `pan(3)`, `slicer3D(4)`, `callbackOnly(5)`, `roiSelection(6)`, `angle(7)`, `crosshair(8)`, `windowing(9)` |
+| `primaryDragMode`, `secondaryDragMode` | Prop | `DRAG_MODE` enum: `none(0)`, `contrast(1)`, `measurement(2)`, `pan(3)`, `slicer3D(4)`, `callbackOnly(5)`, `roiSelection(6)`, `angle(7)`, `crosshair(8)`, `windowing(9)`, `crosshairPan(10)` (click sets crosshair, drag past 4 CSS px pans) |
 | `setDragMode(modeOrString)` | Method | Convenience |
 | `isSnapToVoxelCenters` | Prop | |
 | `isYoked3DTo2DZoom` | Prop | |
+| `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |
 | `moveCrosshairInVox(di, dj, dk)` | Method | Keyboard/button navigation |
 | `getCrosshairPos()` / `setCrosshairPos([x,y,z])` | Method | |
 | `vox2frac([i,j,k])` | Method | |
@@ -248,6 +258,7 @@ All flat keys; mirrors the prop list above. Grouping (from source):
 | `setFontFromUrl({ atlas, metrics })` | Method | Yes | Remote atlas + JSON metrics |
 | `colormaps` | Prop (get) | No | Registered names (`string[]`) |
 | `hasColormap(name)` | Method | No | |
+| `lookupColorMap(name)` | Method | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, not auto-applied — pass to `setVolume` as `calMin`/`calMax` |
 | `addColormap(name, ColorMap)` | Method | No | `{ R, G, B, A?, I?, labels? }` |
 | `addColormapFromUrl(url, name?)` | Method | Yes | |
 | `setColormapLabel(volIdx, lut)` | Method | Yes | |
@@ -363,13 +374,14 @@ ship in `@niivue/nv-ext-drawing` and `@niivue/nv-ext-image-processing`.
 From the package root (`@niivue/niivue`):
 
 - **Enums/constants:** `DRAG_MODE`, `SLICE_TYPE`, `SHOW_RENDER`, `NiiDataType`.
-- **Default export:** `NiiVueGPU` (also named export).
+- **Default export:** `NiiVue` (also named export).
 - **Core types:** `NiiVueOptions`, `NiiVueLocation`, `NiiVueLocationValue`,
   `NVImage`, `NVMesh`, `NVMeshLayer`, `NVTractOptions`, `NVConnectomeOptions`,
   `NVFontData`, `ColorMap`, `CustomLayoutTile`, `BackendType`, `NIFTI1`,
   `NIFTI2`, `TypedVoxelArray`, `SyncOpts`, `SaveVolumeOptions`, `ViewHitTest`,
-  `DragReleaseInfo`, `ImageFromUrlOptions`, `MeshFromUrlOptions`,
-  `MeshLayerFromUrlOptions`, `VolumeUpdate`, `MeshUpdate`.
+  `DragReleaseInfo`, `FocusBox`, `ImageFromUrlOptions`, `MeshFromUrlOptions`,
+  `MeshLayerFromUrlOptions`, `VolumeUpdate`, `MeshUpdate`,
+  `ReinitializeOptions`, `SlideDrawTool`.
 - **Events:** `NVEventMap`, `NVEventListener`, `NVEventTarget`, and every
   `*Detail` type.
 - **Extension API:** `NVExtensionContext`, `BackgroundVolumeAccess`,
@@ -383,7 +395,10 @@ From the package root (`@niivue/niivue`):
 
 Package subpath entries also ship bundled asset barrels:
 `@niivue/niivue/assets/fonts`, `@niivue/niivue/assets/matcaps`, plus explicit
-`/webgpu` and `/webgl2` entry points if you want to pin a backend.
+`/webgpu` and `/webgl2` entry points if you want to pin a backend. Those two
+pin the API surface, not the bundle: both currently pull a shared chunk that
+contains each renderer, so neither is smaller than the universal entry. See
+issue #175.
 
 ---
 

@@ -12,6 +12,13 @@ import {
   clipperInflatePath,
   clipperSubtractBrush,
 } from './clipper'
+import { buildLivewireCost, livewireBacktrack, livewireField } from './livewire'
+import {
+  extractLivewireSlice,
+  gridToSlice2D,
+  type LivewireSlice,
+  slice2DToGrid,
+} from './livewireSlice'
 import { pointInRing } from './pointInRing'
 import type { AnnotationSelection } from './selection'
 import {
@@ -19,7 +26,12 @@ import {
   hitTestControlPoint,
   updateShapeBounds,
 } from './selection'
-import { constrainCircleEnd, generateShape } from './shapes'
+import {
+  constrainCircleEnd,
+  generatePolygonFromPoints,
+  generateShape,
+  generateSplineFromPoints,
+} from './shapes'
 import {
   isOnSlice,
   mmToSlice2D,
@@ -30,24 +42,32 @@ import { computeAnnotationStats, isCircleTool, isMeasureTool } from './stats'
 import { triangulatePolygon } from './triangulate'
 import { AnnotationUndoStack } from './undoRedo'
 
-export type { AnnotationSelection }
+export type { AnnotationSelection, LivewireSlice }
 export {
   _clipperDifference as clipperDifference,
   _clipperIntersects as clipperIntersects,
   _clipperUnion as clipperUnion,
   AnnotationUndoStack,
+  buildLivewireCost,
   clipperInflatePath,
   clipperSubtractBrush,
   computeAnnotationStats,
   constrainCircleEnd,
+  extractLivewireSlice,
+  generatePolygonFromPoints,
   generateShape,
+  generateSplineFromPoints,
   getControlPoints,
+  gridToSlice2D,
   hitTestControlPoint,
   isCircleTool,
   isMeasureTool,
   isOnSlice,
+  livewireBacktrack,
+  livewireField,
   mmToSlice2D,
   pointInRing,
+  slice2DToGrid,
   slice2DToMM,
   slice2DToMMOnPlane,
   triangulatePolygon,
@@ -228,4 +248,19 @@ export function mergeAnnotations(
   }
 
   return result
+}
+
+/**
+ * Store a completed vector annotation using the configured overlap policy.
+ * Measurement hosts disable merging so every measurement retains its own id,
+ * geometry, and statistics even when contours overlap.
+ */
+export function storeAnnotation(
+  existing: VectorAnnotation[],
+  newAnnotation: VectorAnnotation,
+  mergesOverlaps: boolean,
+): VectorAnnotation[] {
+  return mergesOverlaps
+    ? mergeAnnotations(existing, newAnnotation)
+    : [...existing, newAnnotation]
 }

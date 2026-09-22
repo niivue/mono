@@ -322,6 +322,19 @@ export async function loadVolume(
   url: string | File,
   pairedImgData: string | File | null = null,
   limitFrames4D = Infinity,
+  /**
+   * Reader metadata: the filename handed to `reader.read`. Some readers are
+   * filename-sensitive — MGH infers label volumes from it, VMR tells `.v16`
+   * from `.vmr` — so a caller passing `{ url, name }` must have that name reach
+   * the reader. Both `loadBridge` and the load worker forward it, so the two
+   * paths agree; deriving it from `url` in only one of them is how they drift.
+   *
+   * It does NOT select the format. Reader dispatch and partial-loader
+   * eligibility both read `url` (see `ext`/`srcName` above), so a `name` whose
+   * extension disagrees with the URL changes what the reader is *told*, not
+   * which reader runs.
+   */
+  name?: string,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
   // Partial fast path: a 4D NIfTI where only some frames are wanted. Avoids reading
   // (and allocating) the whole volume; misses fall through to the full load below.
@@ -354,7 +367,7 @@ export async function loadVolume(
     const pairedBuffer = pairedImgData
       ? await NVLoader.fetchFile(pairedImgData)
       : null
-    const name = NVLoader.getName(url)
+    const readerName = name ?? NVLoader.getName(url)
     let reader = readerByExt.get(ext)
     if (!reader || typeof reader.read !== 'function') {
       log.warn(
@@ -365,7 +378,7 @@ export async function loadVolume(
     if (!reader) {
       throw new Error(`No volume reader available for extension ${ext}`)
     }
-    return await reader.read(result, name, pairedBuffer)
+    return await reader.read(result, readerName, pairedBuffer)
   } catch (e) {
     // A whole 4D volume can exceed V8's ~2 GiB ArrayBuffer cap. A gz volume throws
     // RangeError ("Array buffer allocation failed") while decompressing; an

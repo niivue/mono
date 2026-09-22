@@ -1,5 +1,6 @@
 node_modules/
 .nx/
+.repo-graph/
 .pixi/
 dist/
 _site/
@@ -63,3 +64,6 @@ packages/niivue/public/tile-range-poc/
 # chunks, tile range probes). Multi-GB, regenerated locally — never committed.
 apps/iiif-volumetric-demo/public/range-poc/
 apps/iiif-volumetric-demo/public/tile-range-poc/
+
+# Local scratch: plans, notes, throwaway files. Never checked in.
+/scratch/

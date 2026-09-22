@@ -5,9 +5,11 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+import { allenAtlasAdapter } from './adapters/allenAtlas.ts'
 import { dicomAdapter } from './adapters/dicom.ts'
 import {
   niftiAdapter,
+  type ProbeMeta,
   type SubvolumeBbox,
   type VolumeAdapter,
 } from './adapters/nifti.ts'
@@ -35,6 +37,7 @@ const ADAPTERS: VolumeAdapter[] = [
   niftiAdapter,
   nrrdAdapter,
   omezarrAdapter,
+  allenAtlasAdapter,
   dicomAdapter,
 ]
 
@@ -64,6 +67,20 @@ export interface RegistryEntry {
   levels: LevelMetadata[]
   levelVolumes: Map<number, VolumeHandle>
   volume: VolumeHandle | null
+  // One entry per channel for a multi-channel source; null when the source
+  // has no channel axis. Every adapter read for this entry is scoped to it,
+  // which is what lets the rest of the server stay channel-unaware.
+  channel: number | null
+  channelName: string | null
+  // The id this source would have had if it were single-channel, shared by
+  // every channel of one file. Clients group channels by this instead of
+  // string-munging ids, which cannot be done reliably (a channel name may
+  // itself contain the separator).
+  dataset: string
+}
+
+function channelOf(entry: RegistryEntry): number | undefined {
+  return entry.channel ?? undefined
 }
 
 export interface RawLevelLayout {
@@ -119,6 +136,11 @@ export class Registry {
     dtype: Dtype
     spacing: Vec3
     source: string
+    // Null for a single-channel volume. A client groups the channels of one
+    // dataset by `dataset`, which is shared across them.
+    channel: number | null
+    channelName: string | null
+    dataset: string
     levels: Array<{
       level: number
       shape: Shape3
@@ -136,6 +158,9 @@ export class Registry {
       dtype: e.dtype,
       spacing: e.spacing,
       source: e.source,
+      channel: e.channel,
+      channelName: e.channelName,
+      dataset: e.dataset,
       levels: e.levels.map((l) => ({
         level: l.level,
         shape: l.shape,
@@ -152,11 +177,28 @@ export class Registry {
     return this.entries.get(id)
   }
 
+  /** The first `${id}_${n}` not yet registered, counting up from 2. */
+  private claimFreeId(id: string): string {
+    let n = 2
+    while (this.entries.has(`${id}_${n}`)) n++
+    return `${id}_${n}`
+  }
+
+  /** The first dataset key not already owned by a different source. */
+  private claimFreeDataset(dataset: string): string {
+    const used = new Set(
+      [...this.entries.values()].map((entry) => entry.dataset),
+    )
+    let n = 2
+    while (used.has(`${dataset}_${n}`)) n++
+    return `${dataset}_${n}`
+  }
+
   async load(id: string): Promise<RegistryEntry> {
     const entry = this.entries.get(id)
     if (!entry) throw new HttpError(404, `Unknown volume id: ${id}`)
     if (!entry.volume) {
-      entry.volume = await entry.adapter.load(entry.source)
+      entry.volume = await entry.adapter.load(entry.source, channelOf(entry))
       entry.shape = entry.volume.shape
       entry.dtype = entry.volume.dtype
       entry.spacing = entry.volume.spacing
@@ -195,27 +237,13 @@ export class Registry {
           : null
         const isDirectory = item.isDirectory() || stat?.isDirectory() === true
         const isFile = item.isFile() || stat?.isFile() === true
-        let entry: RegistryEntry | null = null
+        let entries: RegistryEntry[] = []
         if (isDirectory) {
           const adapter = ADAPTERS.find((a) =>
             a.canHandle(full, { isDirectory: true }),
           )
           if (adapter) {
-            const id = sanitizeId(item.name)
-            const probe = await adapter.probe(full)
-            entry = {
-              id,
-              format: adapter.format,
-              adapter,
-              source: full,
-              shape: probe.shape,
-              dtype: probe.dtype,
-              spacing: probe.spacing,
-              affine: probe.affine,
-              levels: [],
-              levelVolumes: new Map(),
-              volume: null,
-            }
+            entries = await buildEntries(adapter, full, sanitizeId(item.name))
           } else {
             const children = await fs.readdir(full, { withFileTypes: true })
             for (const child of children) await scanItem(child, full)
@@ -226,23 +254,35 @@ export class Registry {
             a.canHandle(full, { isDirectory: false }),
           )
           if (!adapter) return
-          const id = sanitizeId(stripVolumeExtensions(item.name))
-          const probe = await adapter.probe(full)
-          entry = {
-            id,
-            format: adapter.format,
+          entries = await buildEntries(
             adapter,
-            source: full,
-            shape: probe.shape,
-            dtype: probe.dtype,
-            spacing: probe.spacing,
-            affine: probe.affine,
-            levels: [],
-            levelVolumes: new Map(),
-            volume: null,
-          }
+            full,
+            sanitizeId(stripVolumeExtensions(item.name)),
+          )
         }
-        if (entry) {
+        const dataset = entries[0]?.dataset
+        if (
+          dataset &&
+          [...this.entries.values()].some(
+            (entry) => entry.dataset === dataset && entry.source !== full,
+          )
+        ) {
+          const renamedDataset = this.claimFreeDataset(dataset)
+          for (const entry of entries) entry.dataset = renamedDataset
+        }
+        for (const entry of entries) {
+          // Two SOURCES can sanitize to colliding ids too (`a b.nii` and
+          // `a_b.nii`). Overwriting would silently drop the earlier source's
+          // entry, so rename the later arrival instead and say so.
+          if (this.entries.has(entry.id)) {
+            const renamed = this.claimFreeId(entry.id)
+            console.warn(
+              `Registry id ${entry.id} (from ${entry.source}) is already ` +
+                `taken by ${this.entries.get(entry.id)?.source}; ` +
+                `registering as ${renamed}`,
+            )
+            entry.id = renamed
+          }
           this.entries.set(entry.id, entry)
           await this.refreshLevels(entry)
           void this.generatePyramidBackground(entry.id)
@@ -287,7 +327,11 @@ export class Registry {
     if (!entry.levelVolumes.has(normalized)) {
       let loaded: VolumeHandle
       if (entry.adapter.loadLevel) {
-        loaded = await entry.adapter.loadLevel(entry.source, normalized)
+        loaded = await entry.adapter.loadLevel(
+          entry.source,
+          normalized,
+          channelOf(entry),
+        )
       } else if (level.path) {
         loaded = await niftiAdapter.load(level.path)
       } else {
@@ -355,6 +399,7 @@ export class Registry {
         entry.source,
         normalized,
         clamped,
+        channelOf(entry),
       )
       return { entry, level, volume }
     }
@@ -753,13 +798,96 @@ function sanitizeId(name: string): string {
 }
 
 function stripVolumeExtensions(name: string): string {
-  return name
-    .replace(/\.nii\.gz$/i, '')
-    .replace(/\.nii$/i, '')
-    .replace(/\.nhdr$/i, '')
-    .replace(/\.nrrd$/i, '')
-    .replace(/\.ome\.tiff?$/i, '')
-    .replace(/\.tiff?$/i, '')
+  return (
+    name
+      .replace(/\.nii\.gz$/i, '')
+      .replace(/\.nii$/i, '')
+      .replace(/\.nhdr$/i, '')
+      .replace(/\.nrrd$/i, '')
+      .replace(/\.ome\.tiff?$/i, '')
+      .replace(/\.tiff?$/i, '')
+      // Allen atlas sidecar: drop the whole `_atlas.json` suffix, not just the
+      // extension, so ids read `COMP_crop_M1-M2_DNA_raw` rather than
+      // `COMP_crop_M1-M2_atlas.json_DNA_raw`.
+      .replace(/_atlas\.json$/i, '')
+  )
+}
+
+// A registry id for one channel, guaranteed unique within `used`. Preference
+// order: the sanitized channel name; then the channel index (two names that
+// sanitize identically); then a numeric suffix (a channel literally NAMED like
+// the index fallback, e.g. `c1`, can collide with it). The loop always
+// terminates because the suffix counts up through untaken ids.
+export function uniqueChannelId(
+  baseId: string,
+  channelName: string,
+  channelIndex: number,
+  used: ReadonlySet<string>,
+): string {
+  const named = `${baseId}_${sanitizeId(channelName)}`
+  if (!used.has(named)) return named
+  const indexed = `${baseId}_c${channelIndex}`
+  if (!used.has(indexed)) return indexed
+  let n = 2
+  while (used.has(`${indexed}_${n}`)) n++
+  return `${indexed}_${n}`
+}
+
+// One source becomes one entry, or one entry PER CHANNEL when the adapter
+// reports a channel axis. Splitting here rather than inside the routes is
+// what keeps channels invisible to the rest of the server: every entry is
+// an ordinary single-channel volume with its own id, levels and cache.
+export async function buildEntries(
+  adapter: VolumeAdapter,
+  source: string,
+  baseId: string,
+): Promise<RegistryEntry[]> {
+  const make = (
+    id: string,
+    probe: ProbeMeta,
+    channel: number | null,
+    channelName: string | null,
+  ): RegistryEntry => ({
+    id,
+    format: adapter.format,
+    adapter,
+    source,
+    shape: probe.shape,
+    dtype: probe.dtype,
+    spacing: probe.spacing,
+    affine: probe.affine,
+    levels: [],
+    levelVolumes: new Map(),
+    volume: null,
+    channel,
+    channelName,
+    dataset: baseId,
+  })
+
+  // An adapter that CAN report channels still returns none for a source
+  // that has no channel axis (a plain 3D OME-Zarr), which is the same
+  // single-entry case as an adapter with no channel support at all.
+  const channels = adapter.probeChannels
+    ? await adapter.probeChannels(source)
+    : []
+  if (channels.length === 0) {
+    return [make(baseId, await adapter.probe(source), null, null)]
+  }
+  // Probe once: every channel of a source shares its geometry, and probing
+  // 32 times would decode 32 sidecars (or re-open 32 zarr groups) to learn
+  // the same shape.
+  const probe = await adapter.probe(source, channels[0].index)
+  const entries: RegistryEntry[] = []
+  const used = new Set<string>()
+  for (const ch of channels) {
+    // A sanitized channel name can collide (two channels differing only by
+    // punctuation), and a duplicate id would silently drop a channel from
+    // the registry, so ids are generated until one is provably unique.
+    const id = uniqueChannelId(baseId, ch.name, ch.index, used)
+    used.add(id)
+    entries.push(make(id, probe, ch.index, ch.name))
+  }
+  return entries
 }
 
 function clampBbox(bbox: SubvolumeBbox, shape: Shape3): SubvolumeBbox {

@@ -1,7 +1,12 @@
 // Download an Open SciVis OME-Zarr volume into public/omezarr/<id>/ so the
-// `range.html` chunk-streaming example can discover and stream it. The stores
-// are NOT checked into git (see .gitignore) -- run this script once per volume
-// to make the source available.
+// `range.html` chunk-streaming example streams it from disk instead of the
+// network. The stores are NOT checked into git (see .gitignore).
+//
+// This is an OPTIONAL speed-up, not a prerequisite: the bucket serves CORS
+// headers and honours Range, so range.html falls back to streaming every store
+// straight from it. Mirroring locally cuts latency, and it is the only way to
+// work offline. range.html prefers whichever base offers the MOST levels, so a
+// default (two-coarsest) fetch does not hide the finer levels upstream.
 //
 // These are OME-Zarr 0.5 (Zarr v3) pyramids in the public `ome-zarr-scivis` S3
 // bucket. The demo only supports uint8/uint16 scalar stores, so the catalog
@@ -49,11 +54,26 @@ const CATALOG: CatalogEntry[] = [
     levelCount: 5,
   },
   {
-    name: 'pig_heart',
-    label: 'microCT, 2048x2048x2612, int16, 5 levels',
-    levelCount: 5,
+    name: 'chameleon',
+    label: 'chameleon CT, 1024x1024x1080, uint16, 4 levels',
+    levelCount: 4,
+  },
+  {
+    name: 'kingsnake',
+    label: 'snake microCT, 1024x1024x795, uint8, 4 levels',
+    levelCount: 4,
+  },
+  {
+    name: 'stag_beetle',
+    label: 'beetle microCT, 832x832x494, uint16, 4 levels',
+    levelCount: 4,
   },
 ]
+// NOT in the catalog: the Open SciVis `pig_heart` store. Its pyramid is broken
+// upstream in a way no renderer can compensate for -- scale0 is clean but covers
+// only 25% of its declared z extent, and every complete level is Z-banded on the
+// chunk grid (scale1 zeroes local z 54..80 of every 81-deep chunk). See the
+// screening rule at the top of examples/range.js before adding a new store here.
 
 interface Options {
   list: boolean

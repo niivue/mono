@@ -4,6 +4,12 @@ import type {
   NVSlideScreen,
   NVSlideScreenRect,
 } from '@/slide/NVSlide'
+import {
+  DEFAULT_TILE_TEXTURE_BYTES,
+  TileTextureCache,
+} from '@/slide/tileTextureCache'
+import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
+import { timeChunkPhase } from '@/volume/chunkTiming'
 
 const shaderCode = /* wgsl */ `
 struct SlideUniforms {
@@ -101,9 +107,24 @@ export class SlideRendererGPU {
   private readonly _bindLayout: GPUBindGroupLayout
   private readonly _sampler: GPUSampler
   private _placeholderTexture: GPUTexture | null
-  private readonly _textures = new Map<string, SlideTexture>()
+  private readonly _format: GPUTextureFormat
+  // Byte-budgeted: tile textures for scrolled-away regions are evicted each
+  // frame instead of accumulating for the life of the renderer. Eviction runs
+  // before beginFrame (see render), so a texture referenced by the frame just
+  // submitted is never destroyed while its commands are in flight.
+  private readonly _textures = new TileTextureCache<SlideTexture>(
+    DEFAULT_TILE_TEXTURE_BYTES,
+    (entry) => entry.texture.destroy(),
+  )
   private readonly _uniformPool: GPUBuffer[] = []
   private _uniformCursor = 0
+  /**
+   * UIKit overlay hook: invoked at the end of every frame (appended to the open
+   * pass, before pass.end()) so a widget can draw over the slide. The slide pass
+   * has no depth attachment and no MSAA, so the frame's handle omits depthFormat
+   * and reports sampleCount 1. See view/NVOverlayHook.ts.
+   */
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -113,6 +134,7 @@ export class SlideRendererGPU {
     bindLayout: GPUBindGroupLayout,
     sampler: GPUSampler,
     placeholderTexture: GPUTexture,
+    format: GPUTextureFormat,
   ) {
     this._canvas = canvas
     this._device = device
@@ -121,6 +143,7 @@ export class SlideRendererGPU {
     this._bindLayout = bindLayout
     this._sampler = sampler
     this._placeholderTexture = placeholderTexture
+    this._format = format
   }
 
   static async create(
@@ -204,6 +227,7 @@ export class SlideRendererGPU {
       bindLayout,
       sampler,
       placeholderTexture,
+      format,
     )
   }
 
@@ -216,6 +240,8 @@ export class SlideRendererGPU {
     if (this._canvas.height !== height) this._canvas.height = height
 
     this._uniformCursor = 0
+    this._textures.evictToBudget()
+    this._textures.beginFrame()
     const encoder = this._device.createCommandEncoder()
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -243,8 +269,43 @@ export class SlideRendererGPU {
       })
 
       const visible = slide.requestVisibleTiles(screen)
+      // Coarser levels first, painted UNDER the target level. Non-empty only
+      // while target tiles are still arriving, so the previous resolution stays
+      // on screen and is overpainted tile by tile as the finer data lands.
+      // No tile grid here: the grid describes the target level.
+      for (const item of visible.fallback) {
+        const bitmap = slide.cachedTileBitmap(item.key)
+        if (!bitmap) continue
+        const texture = this.textureForBitmap(item.key, bitmap)
+        if (!texture) continue
+        this.drawQuad(
+          pass,
+          width,
+          height,
+          {
+            x: item.screenX,
+            y: item.screenY,
+            width: item.screenWidth,
+            height: item.screenHeight,
+          },
+          texture.texture,
+          {
+            uvTop: item.flipY ? 1 : 0,
+            uvBottom: item.flipY ? 0 : 1,
+            opacity: slide.opacity,
+            isPlaceholder: false,
+            showGrid: false,
+            placeholderColor: slide.placeholderColor,
+            gridColor: slide.gridColor,
+          },
+        )
+      }
       for (const item of visible.tiles) {
         const bitmap = slide.cachedTileBitmap(item.key)
+        // A missing tile draws a flat placeholder ONLY when nothing coarser is
+        // behind it; otherwise the placeholder would hide the very fallback
+        // layer that is standing in for it.
+        if (!bitmap && visible.fallback.length > 0) continue
         const texture = bitmap ? this.textureForBitmap(item.key, bitmap) : null
         const rect: NVSlideScreenRect = {
           x: item.screenX,
@@ -271,6 +332,23 @@ export class SlideRendererGPU {
       }
     }
 
+    // UIKit overlay hook: append the widget's draws to the open pass. The slide
+    // pass has no depth attachment (depthFormat omitted) and no MSAA.
+    if (this.overlayDraw) {
+      this.overlayDraw({
+        handle: {
+          backend: 'webgpu',
+          device: this._device,
+          pass,
+          colorFormat: this._format,
+          sampleCount: 1,
+        },
+        bounds: { x: 0, y: 0, width, height },
+        dpr,
+        settled: true,
+      })
+    }
+
     pass.end()
     this._device.queue.submit([encoder.finish()])
   }
@@ -280,16 +358,10 @@ export class SlideRendererGPU {
   // namespace shared across slides, so a consumer swapping the slide must clear
   // first to avoid inheriting the previous slide's tiles (ghost tiles).
   clearTextures(): void {
-    for (const entry of this._textures.values()) {
-      entry.texture.destroy()
-    }
     this._textures.clear()
   }
 
   destroy(): void {
-    for (const entry of this._textures.values()) {
-      entry.texture.destroy()
-    }
     this._textures.clear()
     for (const buffer of this._uniformPool) {
       buffer.destroy()
@@ -328,7 +400,7 @@ export class SlideRendererGPU {
     ) {
       return existing
     }
-    if (existing) existing.texture.destroy()
+    if (existing) this._textures.delete(key)
     const texture = this._device.createTexture({
       size: [bitmap.width, bitmap.height],
       format: 'rgba8unorm',
@@ -337,17 +409,25 @@ export class SlideRendererGPU {
         GPUTextureUsage.COPY_DST |
         GPUTextureUsage.RENDER_ATTACHMENT,
     })
-    this._device.queue.copyExternalImageToTexture(
-      { source: bitmap },
-      { texture },
-      [bitmap.width, bitmap.height],
+    // Timed as `upload` alongside the volume path's brick uploads: a slide tile
+    // and a volume brick are two consumers of the same streamed source, and
+    // both pay their texture cost on this thread.
+    timeChunkPhase(
+      'upload',
+      () =>
+        this._device.queue.copyExternalImageToTexture(
+          { source: bitmap },
+          { texture },
+          [bitmap.width, bitmap.height],
+        ),
+      bitmap.width * bitmap.height * 4,
     )
     const entry: SlideTexture = {
       texture,
       width: bitmap.width,
       height: bitmap.height,
     }
-    this._textures.set(key, entry)
+    this._textures.set(key, entry, bitmap.width * bitmap.height * 4)
     return entry
   }
 

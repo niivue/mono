@@ -110,7 +110,7 @@ Mosaic / multiplanar reuses the same per-chunk loop per tile.
 Gradients are computed via central differences (or Sobel) on the
 volume texture. To keep gradients smooth across chunk boundaries the
 gradient texture is chunked with the same halo, computed from the
-voxel data + halo so that the central-difference stencil at the chunk
+voxel data + halo so that the blur and Sobel corner taps at the chunk
 edge reads valid neighbour data. The drawing-volume gradient (when
 illuminated) inherits the same scheme.
 

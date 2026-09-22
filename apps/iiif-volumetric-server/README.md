@@ -58,7 +58,8 @@ renderer. WebGL2 is the default.
 
 ## Layout
 
-- `src/adapters/` — per-format readers (NIfTI, NRRD, OME-Zarr, DICOM).
+- `src/adapters/` — per-format readers (NIfTI, NRRD, OME-Zarr, DICOM,
+  Allen JSON + PNG atlas).
 - `src/iiif/` — IIIF Image API + Presentation API document builders.
 - `src/routes/` — Express route modules.
 - `src/util/` — encoders (PNG, RLE, NIfTI), occupancy/downsample helpers.
@@ -79,14 +80,35 @@ are real binaries instead of pointer files.
   OpenNeuro NIfTI sample set into `fixtures/`.
 - `bunx nx run iiif-volumetric-server:fetch-omezarr` downloads the
   default FIB-SEM OME-Zarr sample into `fixtures/omezarr/`.
+- `bunx nx run iiif-volumetric-server:fetch-allen` downloads an Allen
+  JSON + PNG atlas dataset (32-channel microscopy, ~800 KB) into
+  `fixtures/allen/`.
 
-To customise the NIfTI dataset or OME-Zarr level, run the scripts from
-`apps/iiif-volumetric-server`:
+To customise the NIfTI dataset, OME-Zarr level, or atlas URL, run the
+scripts from `apps/iiif-volumetric-server`:
 
 ```bash
 bun scripts/fetch-fixtures.ts --dataset=ds002336 --max=10
 bun scripts/fetch-omezarr.ts --level=s3 --max-mb=4000
+bun scripts/fetch-allen.ts --url=https://host/path/foo_atlas.json
 ```
 
 Restart the server after adding fixtures; the volume registry is built
 when the server starts.
+
+## Multi-channel sources
+
+An Allen atlas or an OME-Zarr with a `c` axis holds several independent
+image channels. The registry splits those into **one entry per channel**
+(`<source>_<channelName>`, e.g. `COMP_crop_M1-M2_DNA_raw`), so every
+route — IIIF Image, manifests, raw NIfTI, occupancy — works per channel
+with no channel parameter anywhere. Each entry reports its origin as
+`channel` / `channelName` in `/api`, plus `dataset` — the id the source
+would have had if it were single-channel, shared by all of its channels.
+Group by `dataset`; ids cannot be split back apart reliably, since a
+channel name may itself contain an underscore.
+
+Channel names come from the atlas sidecar's `channel_names` or the
+OME-Zarr `omero.channels[].label`, falling back to `c<index>`. A source
+with no channel axis (or one of length 1) stays a single entry under its
+plain name.

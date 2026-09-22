@@ -59,6 +59,14 @@ export interface NVSlideManifest {
   dataUrl?: string
   order?: string
   levels: NVSlideLevelManifest[]
+  /**
+   * Physical size of one base (level-0) pixel in millimetres, as [x, y] (column,
+   * row). For DICOM-WSI this comes from PixelSpacing (0028,0030). Undefined when
+   * the source carries no physical scale; a measurement UI then falls back to
+   * pixels. `screenToSlide` returns base-pixel coordinates, so distance in mm =
+   * base-pixel distance x this spacing.
+   */
+  pixelSpacingMM?: readonly [number, number]
 }
 
 export interface NVSlideViewport {
@@ -90,6 +98,8 @@ export interface NVSlideOptions {
   viewport?: NVSlideViewport
   levelChoice?: NVSlideLevelChoice
   maxCacheBytes?: number
+  /** Max simultaneous tile fetch+decode operations (default 12). */
+  maxConcurrentLoads?: number
   maxScale?: number
   targetScreenPixelsPerTilePixel?: number
   showTileGrid?: boolean
@@ -123,6 +133,14 @@ export interface NVSlideVisibleTile {
 export interface NVSlideVisibleTiles {
   level: NVSlideLevelManifest | null
   tiles: NVSlideVisibleTile[]
+  /**
+   * Already-cached tiles from COARSER levels covering the same viewport,
+   * ordered coarsest first. A renderer paints these in array order UNDER
+   * `tiles` and skips the placeholder quad for any target tile that is still
+   * loading, so zooming in refines the image in place instead of blanking it.
+   * Empty whenever every target tile is cached. See {@link NVSlide.visibleTiles}.
+   */
+  fallback: NVSlideVisibleTile[]
 }
 
 export interface NVSlideScreenRect {
@@ -132,7 +150,12 @@ export interface NVSlideScreenRect {
   height: number
 }
 
-export type NVSlideRangeStatus = 'pending' | 'hit' | 'fallback' | 'failed'
+export type NVSlideRangeStatus =
+  | 'pending'
+  | 'hit'
+  | 'fallback'
+  | 'failed'
+  | 'aborted'
 
 export interface NVSlideRangeEvent {
   label: string
@@ -145,6 +168,11 @@ export interface NVSlideStats {
   rangeHits: number
   fullFileFallbacks: number
   failures: number
+  /**
+   * Loads NVSlide abandoned on purpose (the view moved on, or the slide was
+   * disposed). Never a failure: nothing was wrong with the tile or the source.
+   */
+  aborted: number
   wireBytes: number
   decodedBytes: number
   cacheHits: number
@@ -160,6 +188,29 @@ type TileBitmap = {
 const DEFAULT_CACHE_BYTES = 96 * 1024 * 1024
 const DEFAULT_TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
 const DEFAULT_RANGE_LOG_LENGTH = 24
+// Cap simultaneous fetch+decode work. Without it a zoom/pan burst fires one
+// concurrent fetch AND createImageBitmap per uncached visible tile (hundreds at
+// once on a gigapixel slide), spiking network sockets, decode threads, and
+// GPU-backed bitmap allocations in the browser's GPU process.
+const DEFAULT_MAX_CONCURRENT_TILE_LOADS = 12
+
+/**
+ * Coerce the caller's tile concurrency cap to a finite positive integer.
+ *
+ * A bare Math.max(1, x) lets Infinity and NaN through, and both remove the
+ * cap rather than raise it: every capacity test is `_activeLoads >= cap`, which
+ * is false for either value, so no tile is ever queued and every request goes
+ * straight to _runLoad. Flooring to a whole number also keeps the effective cap
+ * equal to the number asked for — 2.5 would otherwise admit a third load.
+ */
+function clampTileLoadCap(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_MAX_CONCURRENT_TILE_LOADS
+  return Math.max(1, Math.floor(value) || 1)
+}
+// Safety valve for pathological manifests (e.g. a missing tileSize defaulting
+// to 1px tiles): never enumerate more visible tiles than this per frame. A
+// sane pyramid level never exceeds a few hundred on screen.
+const MAX_VISIBLE_TILES = 4096
 
 function freshStats(): NVSlideStats {
   return {
@@ -168,6 +219,7 @@ function freshStats(): NVSlideStats {
     rangeHits: 0,
     fullFileFallbacks: 0,
     failures: 0,
+    aborted: 0,
     wireBytes: 0,
     decodedBytes: 0,
     cacheHits: 0,
@@ -303,12 +355,32 @@ export interface SlideTileSource {
   readonly manifest: NVSlideManifest
   /** Adopted by an NVSlide before any fetch; wires up telemetry + URL resolution. */
   bind(host: SlideSourceHost): void
-  /** Fetch the encoded bytes for one tile (NVSlide decodes per level.codec). */
+  /**
+   * Fetch the encoded bytes for one tile (NVSlide decodes per level.codec).
+   *
+   * `signal` fires when NVSlide no longer wants the tile -- the view moved on,
+   * or the slide was disposed. A source that reads over the network should
+   * pass it to `fetch()` so the read is abandoned on the wire rather than
+   * discarded on arrival, and reject with an `AbortError`. Optional: a source
+   * that ignores it stays correct, only wasteful, and NVSlide drops whatever
+   * it resolves after the abort.
+   */
   fetchTileBytes(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array>
+}
+
+function isAbortError(err: unknown): boolean {
+  // Structural check: fetch() aborts reject with a DOMException named
+  // 'AbortError', which is not an Error instance in every runtime.
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { name?: unknown }).name === 'AbortError'
+  )
 }
 
 /**
@@ -355,19 +427,35 @@ export class ManifestRangeSource implements SlideTileSource {
     sourceUrl: string,
     fragment: NVSlideTileFragment,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const host = this.requireHost()
     const start = fragment.offset
     const end = fragment.offset + fragment.length - 1
     const rangeLabel = `${label} ${start}-${end}`
     host.pushRangeEvent({ label: rangeLabel, status: 'pending' })
-    const response = await fetch(sourceUrl, {
-      headers: { Range: `bytes=${start}-${end}` },
-    })
-    if (!response.ok && response.status !== 206) {
-      throw new Error(`HTTP ${response.status}`)
+    let response: Response
+    let wireBytes: Uint8Array
+    try {
+      response = await fetch(sourceUrl, {
+        headers: { Range: `bytes=${start}-${end}` },
+        signal,
+      })
+      if (!response.ok && response.status !== 206) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      wireBytes = new Uint8Array(await response.arrayBuffer())
+    } catch (error) {
+      // The 'pending' entry must not outlive the request: a rejected fetch
+      // (the load's signal firing, a network failure, an HTTP error) would
+      // otherwise leave a stale 'pending' row in stats.lastRequests forever
+      // (_runLoad's catch updates the TILE label, not this fragment's).
+      host.updateRangeEvent(
+        rangeLabel,
+        signal?.aborted || isAbortError(error) ? 'aborted' : 'failed',
+      )
+      throw error
     }
-    const wireBytes = new Uint8Array(await response.arrayBuffer())
     host.addWireBytes(wireBytes.byteLength)
     if (response.status === 206) {
       host.rangeHit()
@@ -388,12 +476,13 @@ export class ManifestRangeSource implements SlideTileSource {
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const sourceUrl = this.tileSourceUrl(level)
     const fragments = this.tileFragments(tile)
     const parts = await Promise.all(
       fragments.map((fragment) =>
-        this.fetchFragment(sourceUrl, fragment, label),
+        this.fetchFragment(sourceUrl, fragment, label, signal),
       ),
     )
     return parts.length === 1 ? (parts[0] as Uint8Array) : concatBytes(parts)
@@ -421,6 +510,31 @@ export class NVSlide extends EventTarget {
   private readonly _cache: NVSlideTileCache
   private readonly _pending = new Set<string>()
   private readonly _source: SlideTileSource
+  private readonly _maxConcurrentLoads: number
+  private _activeLoads = 0
+  private readonly _loadQueue: Array<{
+    level: NVSlideLevelManifest
+    tile: NVSlideTileManifest
+    key: string
+  }> = []
+  // Tile keys the CURRENT view still wants. Rebuilt by every
+  // requestVisibleTiles call; requestTile adds to it. Queued loads whose key
+  // has left this set are dropped at dequeue time instead of fetched — without
+  // this, zooming/panning piles stale tiles into the queue and fresh visible
+  // tiles crawl behind the backlog.
+  private readonly _wanted = new Set<string>()
+  // One controller per in-flight load, keyed by tile key. Aborted when the
+  // tile leaves the working set or the slide is disposed, so the source can
+  // abandon the read on the wire instead of NVSlide discarding it on arrival.
+  private readonly _inflight = new Map<string, AbortController>()
+  // Keys whose CURRENT load was started by requestVisibleTiles (the 2D
+  // viewport working-set path). _abortUnwantedLoads only aborts these: a load
+  // begun via requestTile() serves a consumer the 2D viewport knows nothing
+  // about (slide-plane coarsest-level priming, the wand color reference), so
+  // a pan/zoom must not cancel it -- it completes and populates the cache.
+  // dispose() still aborts every in-flight load regardless of origin.
+  private readonly _viewportKeys = new Set<string>()
+  private _warnedTileFlood = false
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
@@ -448,6 +562,9 @@ export class NVSlide extends EventTarget {
     this.stats = freshStats()
     this._cache = new NVSlideTileCache(
       options.maxCacheBytes ?? DEFAULT_CACHE_BYTES,
+    )
+    this._maxConcurrentLoads = clampTileLoadCap(
+      options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,
     )
     this._source = options.source ?? new ManifestRangeSource(manifest)
     this._source.bind({
@@ -582,6 +699,29 @@ export class NVSlide extends EventTarget {
     }
   }
 
+  /**
+   * Inverse of {@link screenToSlide}: map a slide base-pixel coordinate back to
+   * canvas CSS pixels. Used to anchor screen-space overlays (e.g. a UIKit ruler
+   * whose endpoints are stored in slide coordinates so they track the tissue
+   * through pan/zoom) to the live viewport.
+   */
+  slideToScreen(
+    sx: number,
+    sy: number,
+    screen: NVSlideScreen,
+  ): { xCss: number; yCss: number } {
+    const left =
+      this.viewport.centerX - screen.widthCss / (2 * this.viewport.scale)
+    const top =
+      this.viewport.centerY - screen.heightCss / (2 * this.viewport.scale)
+    const xCss = (sx - left) * this.viewport.scale
+    const yCss = this.isYAxisUp()
+      ? screen.heightCss / 2 -
+        (sy - this.viewport.centerY) * this.viewport.scale
+      : (sy - top) * this.viewport.scale
+    return { xCss, yCss }
+  }
+
   zoomBy(
     factor: number,
     anchorXCss: number,
@@ -643,9 +783,69 @@ export class NVSlide extends EventTarget {
     }
   }
 
+  /**
+   * The tiles covering the viewport at the auto-selected (or pinned) level,
+   * plus a `fallback` layer of already-cached tiles from COARSER levels that
+   * the renderer paints underneath them.
+   *
+   * The fallback layer is what keeps a zoom from flashing empty: the tiles for
+   * a newly selected level arrive over hundreds of milliseconds, and until they
+   * do their screen rects have nothing to draw but a flat placeholder. Rather
+   * than discard the resolution already on screen, this hands the renderer the
+   * cached coarser tiles covering the same viewport, ordered COARSEST FIRST so
+   * painting them in array order lets each finer level overpaint the one below
+   * and the target level land on top. The layer is built only when at least one
+   * target tile is still missing, so a settled view pays nothing for it.
+   */
   visibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
     const level = this.selectLevel()
-    if (!level) return { level: null, tiles: [] }
+    if (!level) return { level: null, tiles: [], fallback: [] }
+    const tiles = this.tilesForLevel(level, screen)
+    return { level, tiles, fallback: this.fallbackTiles(level, tiles, screen) }
+  }
+
+  /**
+   * Cached tiles from every level coarser than `target` that covers the
+   * viewport, coarsest first. Empty when every target tile is already cached
+   * (the steady state) or when `target` is the coarsest level.
+   */
+  private fallbackTiles(
+    target: NVSlideLevelManifest,
+    tiles: readonly NVSlideVisibleTile[],
+    screen: NVSlideScreen,
+  ): NVSlideVisibleTile[] {
+    let missing = false
+    for (const item of tiles) {
+      if (!this._cache.has(item.key)) {
+        missing = true
+        break
+      }
+    }
+    if (!missing) return []
+    const levels = this.manifest.levels
+    // Position in the array, not `level.index`: `selectLevel` walks the array
+    // finest-to-coarsest and a manifest may number its levels however it likes.
+    const targetPos = levels.indexOf(target)
+    if (targetPos < 0) return []
+    const out: NVSlideVisibleTile[] = []
+    for (let pos = levels.length - 1; pos > targetPos; pos--) {
+      const coarse = levels[pos]
+      if (!coarse) continue
+      for (const item of this.tilesForLevel(coarse, screen)) {
+        // Only what is ALREADY decoded: the fallback layer never issues a
+        // fetch, so it cannot compete with the target level for the load slots
+        // that will actually retire it.
+        if (this._cache.has(item.key)) out.push(item)
+      }
+    }
+    return out
+  }
+
+  /** The tiles of one pyramid level covering the current viewport. */
+  private tilesForLevel(
+    level: NVSlideLevelManifest,
+    screen: NVSlideScreen,
+  ): NVSlideVisibleTile[] {
     const dpr = screen.devicePixelRatio ?? 1
     const viewLeft =
       this.viewport.centerX - screen.widthCss / (2 * this.viewport.scale)
@@ -664,6 +864,8 @@ export class NVSlide extends EventTarget {
     // each LOD boundary, so annotations appear to jump when zooming across a
     // level. Using the exact scale makes every level cover exactly [0, base], so
     // tiles register with each other and with slide-space drawings across zoom.
+    // It is also what lets a coarse fallback tile sit exactly under the target
+    // tiles it stands in for.
     const dsX =
       level.width > 0 ? this.manifest.width / level.width : level.downsample
     const dsY =
@@ -692,9 +894,17 @@ export class NVSlide extends EventTarget {
     )
     const screenScale = this.viewport.scale * dpr
     const tiles: NVSlideVisibleTile[] = []
+    const spanCount = (lastX - firstX + 1) * (lastY - firstY + 1)
+    if (spanCount > MAX_VISIBLE_TILES && !this._warnedTileFlood) {
+      this._warnedTileFlood = true
+      console.warn(
+        `NVSlide ${this.id}: ${spanCount} tiles in view at L${level.index} exceeds the ${MAX_VISIBLE_TILES}-tile safety cap; drawing a truncated set. Check the manifest's tile size / level dimensions.`,
+      )
+    }
 
-    for (let y = firstY; y <= lastY; y++) {
+    outer: for (let y = firstY; y <= lastY; y++) {
       for (let x = firstX; x <= lastX; x++) {
+        if (tiles.length >= MAX_VISIBLE_TILES) break outer
         const tile = this.tileAt(level, x, y)
         if (!tile) continue
         const baseX = tile.x * tileWidth * dsX
@@ -717,16 +927,19 @@ export class NVSlide extends EventTarget {
         })
       }
     }
-    return { level, tiles }
+    return tiles
   }
 
   requestVisibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
     const visible = this.visibleTiles(screen)
     if (!this.visible || !visible.level) return visible
+    this._wanted.clear()
     for (const item of visible.tiles) {
+      this._wanted.add(item.key)
       if (this._cache.has(item.key) || this._pending.has(item.key)) continue
-      void this.loadTile(item.level, item.tile)
+      this.loadTile(item.level, item.tile, true)
     }
+    this._abortUnwantedLoads()
     return visible
   }
 
@@ -737,8 +950,16 @@ export class NVSlide extends EventTarget {
    */
   requestTile(level: NVSlideLevelManifest, tile: NVSlideTileManifest): void {
     const key = this.tileKey(level, tile)
-    if (this._cache.has(key) || this._pending.has(key)) return
-    void this.loadTile(level, tile)
+    this._wanted.add(key)
+    if (this._cache.has(key)) return
+    if (this._pending.has(key)) {
+      // An explicit requestTile() for a tile the viewport already started
+      // means a second consumer wants it: de-classify it so a later viewport
+      // working-set change cannot abort it out from under that consumer.
+      this._viewportKeys.delete(key)
+      return
+    }
+    this.loadTile(level, tile)
   }
 
   cachedTileBitmap(key: string): ImageBitmap | null {
@@ -756,6 +977,11 @@ export class NVSlide extends EventTarget {
 
   dispose(): void {
     this.clearCache()
+    this._loadQueue.length = 0
+    this._wanted.clear()
+    this._viewportKeys.clear()
+    for (const controller of this._inflight.values()) controller.abort()
+    this._inflight.clear()
     this._pending.clear()
   }
 
@@ -823,31 +1049,120 @@ export class NVSlide extends EventTarget {
     return decoder(tileBytes, { width: tile.width, height: tile.height })
   }
 
-  private async loadTile(
+  private loadTile(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
-  ): Promise<void> {
+    fromViewport = false,
+  ): void {
     const key = this.tileKey(level, tile)
     if (this._cache.has(key) || this._pending.has(key)) return
+    if (fromViewport) this._viewportKeys.add(key)
+    else this._viewportKeys.delete(key)
     this._pending.add(key)
     this.stats.requested++
-    const label = `${key}${typeof tile.frame === 'number' ? ` f${tile.frame}` : ''}`
     this._emitChange()
+    if (this._activeLoads >= this._maxConcurrentLoads) {
+      this._loadQueue.push({ level, tile, key })
+      return
+    }
+    void this._runLoad(level, tile, key)
+  }
 
+  private async _runLoad(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    key: string,
+  ): Promise<void> {
+    this._activeLoads++
+    const label = `${key}${typeof tile.frame === 'number' ? ` f${tile.frame}` : ''}`
+    const controller = new AbortController()
+    const { signal } = controller
+    this._inflight.set(key, controller)
     try {
-      const tileBytes = await this._source.fetchTileBytes(level, tile, label)
-      this.stats.decodedBytes += tileBytes.byteLength
+      const tileBytes = await this._source.fetchTileBytes(
+        level,
+        tile,
+        label,
+        signal,
+      )
+      // A source that cannot stop a read in progress may still resolve after
+      // the abort; the tile is no longer wanted either way.
+      signal.throwIfAborted()
       const bitmap = await this.decodeTileBitmap(level, tile, tileBytes)
-      this._cache.set(key, { bitmap, bytes: tileBytes.byteLength })
+      if (signal.aborted) {
+        // Disposed (or dropped) while decoding. Caching now would leave a
+        // bitmap in a cache that was already cleared, with nobody to close it.
+        bitmap.close()
+        signal.throwIfAborted()
+      }
+      // Account the cache in DECODED bytes (RGBA), not encoded/wire bytes: the
+      // cached resource is the ImageBitmap (often GPU-backed), which is 10-20x
+      // the JPEG size — encoded accounting silently blew maxCacheBytes.
+      const decodedBytes = bitmap.width * bitmap.height * 4
+      this.stats.decodedBytes += decodedBytes
+      this._cache.set(key, { bitmap, bytes: decodedBytes })
       this.stats.cacheBytes = this._cache.bytes
       this.stats.completed++
     } catch (err) {
-      this.stats.failures++
-      this.updateRangeEvent(label, 'failed')
-      console.error(`Failed to load slide tile ${this.id}/${key}`, err)
+      if (signal.aborted || isAbortError(err)) {
+        // An abort is not a failure: nothing was wrong with the tile. It is
+        // not logged, and clearing `pending` below lets it re-request later.
+        this.stats.aborted++
+        this.updateRangeEvent(label, 'aborted')
+      } else {
+        this.stats.failures++
+        this.updateRangeEvent(label, 'failed')
+        console.error(`Failed to load slide tile ${this.id}/${key}`, err)
+      }
     } finally {
+      this._activeLoads--
+      if (this._inflight.get(key) === controller) this._inflight.delete(key)
+      this._viewportKeys.delete(key)
       this._pending.delete(key)
       this._emitChange()
+      this._drainLoadQueue()
+    }
+  }
+
+  /**
+   * Abandon in-flight loads the current view no longer wants. The queued
+   * counterpart is `_drainLoadQueue`, which drops such tiles at dequeue time;
+   * this covers the ones that had already started. The load's own `finally`
+   * clears `pending`, so the tile re-requests if it scrolls back into view.
+   *
+   * Only VIEWPORT-initiated loads (`_viewportKeys`) are eligible: a load
+   * started by `requestTile()` belongs to another consumer (e.g. the 3D
+   * slide-plane), so a 2D pan/zoom leaves it to complete and cache.
+   */
+  private _abortUnwantedLoads(): void {
+    for (const [key, controller] of this._inflight) {
+      if (this._wanted.has(key) || !this._viewportKeys.has(key)) continue
+      this._inflight.delete(key)
+      controller.abort()
+    }
+  }
+
+  private _drainLoadQueue(): void {
+    while (this._activeLoads < this._maxConcurrentLoads) {
+      // Newest-first (LIFO): the most recently requested tiles are the ones
+      // the current view is showing placeholders for.
+      const next = this._loadQueue.pop()
+      if (!next) return
+      // Cached by a racing path: skip without fetching, whoever queued it.
+      // Otherwise drop only VIEWPORT-origin tiles that left the working set
+      // (view moved on) -- the queued counterpart of `_abortUnwantedLoads`. A
+      // tile queued via `requestTile()` belongs to another consumer (3D
+      // slide-plane, wand, setSlidePlane priming), so a 2D pan/zoom that
+      // rebuilds `_wanted` must not cancel it. Clearing `pending` lets a
+      // dropped tile re-request if it scrolls back into view.
+      const droppedFromViewport =
+        this._viewportKeys.has(next.key) && !this._wanted.has(next.key)
+      if (this._cache.has(next.key) || droppedFromViewport) {
+        this._viewportKeys.delete(next.key)
+        this._pending.delete(next.key)
+        continue
+      }
+      void this._runLoad(next.level, next.tile, next.key)
     }
   }
 

@@ -49,6 +49,7 @@ uniform float opacity;
 uniform float overlayAlphaShader;
 uniform float overlayOpacity;  // opacity of overlay volume (0-1)
 uniform int isAlphaClipDark;
+uniform int isColormapAlphaOn2D;  // >0 = background's baked colormap alpha scales slice opacity
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
 uniform highp sampler3D drawing;
 uniform float drawRimOpacity;
@@ -70,9 +71,20 @@ uniform vec3 chunkDataSize;
 uniform vec3 volumeTexDimsFull;
 // Streaming cross-fade weight [0,1]; 1 = fully present (floor / settled chunk).
 uniform float fadeAlpha;
+// Display-gamma exponent for intensity-derived colour: the reciprocal of
+// scene.gamma, times this chunk's per-level brightness compensation.
+// 1 = exact no-op.
+uniform float invGamma;
 
 in vec3 texPos;
 out vec4 color;
+
+// Display gamma for intensity-derived colour. Alpha is never touched, so
+// occlusion and thresholding are unchanged; e = 1 is an exact no-op.
+vec3 applyGamma(vec3 rgb, float e) {
+    if (e == 1.0) { return rgb; }
+    return pow(max(rgb, vec3(0.0)), vec3(e));
+}
 
 // PAQD easing function — piecewise linear alpha from primary probability.
 float paqdEaseAlpha(float alpha, vec4 pu) {
@@ -95,7 +107,15 @@ void main() {
     (texPos - chunkSubOrigin) / chunkSubSize * chunkDataSize + chunkDataOrigin;
   // Sample background volume
   vec4 background = texture(volume, volPos);
-  color = vec4(background.rgb, opacity);
+  color = vec4(applyGamma(background.rgb, invGamma), opacity);
+
+  // Opt-in: scale by the colormap alpha the orient prepass baked, so a
+  // palette that carries its structure in alpha reads the same in 2D as it
+  // does in the 3D ray-march (which always samples this alpha). Off by
+  // default, since most colormaps ramp alpha and would gain a 2D fade.
+  if (isColormapAlphaOn2D != 0) {
+    color.a *= background.a;
+  }
 
   // Handle alpha clipping for dark values (FSLeyes style)
   if ((isAlphaClipDark != 0) && (background.a == 0.0)) {
@@ -133,6 +153,11 @@ void main() {
         P = t * v1;
         float dx2 = length(P - vxl);
         ocolor.rgb += (dx2 - dx - 0.5 * pan);
+      } else {
+        // Gamma the colormapped overlay like the background. Skipped in the V1
+        // branch above, where rgb is a normalized fiber DIRECTION, not a
+        // colour — a pow() there would bend the encoded vector.
+        ocolor.rgb = applyGamma(ocolor.rgb, invGamma);
       }
       // Overlay outline: draw black border at threshold boundary
       if (overlayOutlineWidth > 0.0) {

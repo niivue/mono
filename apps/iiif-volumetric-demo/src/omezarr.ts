@@ -43,8 +43,10 @@ import NiiVue, {
   type ChunkPlan,
   chunkVolumeGrid,
   chunkVolumeMultiLOD,
+  createStreamingNVImage,
   type NVImage,
   SHOW_RENDER,
+  type TypedVoxelArray,
   type VolumeChunkExplode,
   type VolumeChunkSource,
 } from '@niivue/niivue'
@@ -174,6 +176,11 @@ const MULTILOD_CELL_EDGE = 128
 // to keep an L0 focus AND smooth transitions. ?budgetGB overrides (lower it if
 // GPU memory is tight; the focus then coarsens gracefully).
 const MULTILOD_DEFAULT_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
+// One voxel is enough for the trilinear reconstruction and the gradient tap,
+// which is all this demo uses. The tricubic filter (nv.volumeIsCubicInterpolation,
+// off here) reaches two voxels past a brick face, so niivue would decline it on a
+// halo-1 plan rather than reconstruct from clamp-to-edge data at the seams. Raise
+// this to 2 before turning cubic on; it costs ~ (d+4)^3/(d+2)^3 more brick memory.
 const MULTILOD_HALO: Shape3 = [1, 1, 1]
 // Cap below niivue's per-tile chunk limit (MAX_CHUNKS_PER_TILE = 256). The plan's
 // budget pass coarsens until it fits, so a focus that would otherwise generate
@@ -890,6 +897,9 @@ async function reload(): Promise<void> {
       vol.chunkExplode = currentChunkExplode()
     }
     nv.sliceType = currentSliceType()
+    // Single-level load: drop any floor a previous multi-resolution load left,
+    // so it can never draw behind a volume on a different grid.
+    await nv.setBaseCoarseFloor(null)
     loadedLevelShape = shape
     loadedBbox = bbox
     showCanvas()
@@ -961,6 +971,9 @@ async function reloadStreamingLevel(
       return
     }
     nv.sliceType = currentSliceType()
+    // Single-level load: drop any floor a previous multi-resolution load left,
+    // so it can never draw behind a volume on a different grid.
+    await nv.setBaseCoarseFloor(null)
     loadedLevelShape = shape
     loadedBbox = null
     showCanvas()
@@ -1022,6 +1035,9 @@ async function reloadMultiLod(
     }
     nv.sliceType = currentSliceType()
     if (cam) restoreView(cam)
+    // Back the octree with the coarse whole-volume floor, so a refocus swap
+    // softens to coarse detail instead of flashing the background.
+    await applyCoarseFloor(v)
     // Outline the crosshair's block; it draws on the 3D render tile (the render
     // quadrant of a multiplanar layout, or the full render view).
     if (volume.chunkPlan) setMultiLodFocusBox(v, volume.chunkPlan)
@@ -1654,7 +1670,7 @@ function setMultiLodDebugBoxes(v: VolumeApiEntry, plan: ChunkPlan): void {
 function streamScalarView(
   buf: ArrayBuffer,
   dtype: string,
-): ArrayLike<number> | null {
+): TypedVoxelArray | null {
   switch (dtype) {
     case 'uint8':
       return new Uint8Array(buf)
@@ -1681,7 +1697,7 @@ function streamScalarView(
 // percentiles AND the depth-pick surface march (first window-visible voxel).
 let coarsePick: {
   id: string
-  data: ArrayLike<number>
+  data: TypedVoxelArray
   shape: Shape3
   extentsMin: Shape3
   extentsMax: Shape3
@@ -1719,6 +1735,45 @@ async function ensureCoarsePickData(v: VolumeApiEntry): Promise<void> {
   } catch {
     // leave coarsePick as-is; pick falls back to the bounding-box surface
   }
+}
+
+// Install the resident coarse level as niivue's base "coarse floor" — the
+// whole-volume backdrop the renderer draws wherever a fine brick has no texture
+// yet. Every refocus swaps the plan, which drops the bricks it cannot match by
+// content and re-streams them over several frames; without a floor those regions
+// draw nothing and the background shows through, which is the flash users see
+// while zooming. Reuses the array ensureCoarsePickData already fetched, so this
+// costs no extra request. Best-effort: on any failure the view is simply as it
+// was before.
+async function applyCoarseFloor(v: VolumeApiEntry): Promise<void> {
+  if (!nv) return
+  const cp = coarsePick
+  if (!cp || cp.id !== v.id) {
+    await nv.setBaseCoarseFloor(null)
+    return
+  }
+  const levels = (v.levels ?? []).slice().sort((a, b) => a.level - b.level)
+  const coarse = levels[levels.length - 1]
+  if (!coarse) {
+    await nv.setBaseCoarseFloor(null)
+    return
+  }
+  const dtype = niftiDatatype(v.dtype)
+  const win = parseWindow(els.window.value)
+  const floor = createStreamingNVImage({
+    id: `${v.id}:floor`,
+    url: `omezarr-floor://${v.id}/${coarse.level}`,
+    shape: cp.shape,
+    spacing: coarse.spacing,
+    datatypeCode: dtype.code,
+    calMin: win?.min ?? dtype.displayMin,
+    calMax: win?.max ?? dtype.displayMax,
+    colormap: els.colormap.value || 'gray',
+  })
+  // Unlike a streamed volume the floor renders from CPU data: attach the decoded
+  // voxels to the img:null skeleton (no chunkSource).
+  floor.img = cp.data
+  await nv.setBaseCoarseFloor(floor)
 }
 
 // A window-aware value lookup in world mm over the resident coarse level, used

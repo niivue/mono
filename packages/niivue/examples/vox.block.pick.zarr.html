@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Pick an exploded block (streamed OME-Zarr, multi-LOD)</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      main { display: flex; }
+      .pane {
+        position: relative;
+        flex: 1 1 0;
+        min-width: 0;
+        border-right: 1px solid #555;
+      }
+      .pane:last-child { border-right: none; }
+      .pane canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .tag {
+        position: absolute;
+        top: 8px;
+        left: 10px;
+        z-index: 2;
+        pointer-events: none;
+        font: 11px/1.4 system-ui, sans-serif;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #8fd3ff;
+        text-shadow: 0 1px 4px #000;
+      }
+      .busy {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        z-index: 3;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 4px;
+        padding: 4px 8px;
+        background: rgba(20, 44, 62, 0.92);
+        border: 1px solid #2f5a74;
+        color: #ffd479;
+        font: 11px/1.4 ui-monospace, monospace;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      .busy.on { opacity: 1; }
+      .busy .count { color: #8fd3ff; }
+      .busy .bar {
+        width: 74px;
+        height: 4px;
+        border-radius: 2px;
+        background: #123043;
+        overflow: hidden;
+      }
+      .busy .bar i {
+        display: block;
+        height: 100%;
+        width: 0%;
+        background: #ffd479;
+        transition: width 0.12s linear;
+      }
+      .readout {
+        position: absolute;
+        left: 10px;
+        bottom: 10px;
+        right: 10px;
+        z-index: 2;
+        pointer-events: none;
+        box-sizing: border-box;
+        border: 1px solid #2f5a74;
+        background: rgba(0, 0, 0, 0.72);
+        border-radius: 5px;
+        padding: 6px 9px;
+        font: 11px/1.55 ui-monospace, monospace;
+        white-space: pre-wrap;
+      }
+      .readout .k { color: #93a7b3; }
+      .readout .hi { color: #ffd479; }
+      #hint {
+        font: 13px/1.4 system-ui, sans-serif;
+        padding: 5px 8px;
+        background: #16324a;
+        color: #d6ecff;
+      }
+      #hint b { color: #fff; }
+      #hint .warn { color: #ffd479; }
+      #help {
+        font: 12px/1.5 system-ui, sans-serif;
+        padding: 4px 8px;
+        opacity: 0.85;
+      }
+      header label { white-space: nowrap; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <label for="lattice" title="Which pyramid level the left pane's uniform brick lattice is planned at. Coarser = fewer, bigger bricks.">Lattice</label>
+      <select id="lattice" title="Pyramid level of the left pane's uniform brick lattice.">
+        <option value="6">L6 (coarsest)</option>
+        <option value="5" selected>L5</option>
+        <option value="4">L4</option>
+      </select>
+      &nbsp;
+      <label for="blocks" title="How many blocks the left pane's lattice is divided into. The grid is chosen to keep the blocks as close to cubic as the volume allows.">Blocks</label>
+      <select id="blocks" title="How many blocks the left pane's lattice is divided into.">
+        <option value="4">4</option>
+        <option value="9">9</option>
+        <option value="16" selected>16</option>
+      </select>
+      &nbsp;
+      <label for="explode" title="Separate the bricks in the 3D render. This is a render-time offset only; the voxel data never moves.">Explode</label>
+      <input type="range" min="100" value="170" max="280" class="slider" id="explode" title="Separate the bricks in the 3D render (render-time offset only)." />
+      <span id="explodeVal">1.70x</span>
+      &nbsp;
+      <label for="linkCheck" title="Keep both crosshairs on the same point of the heart. The offset is applied by this demo, because the streamed crop's affine does not carry it.">Link crosshairs</label>
+      <input type="checkbox" id="linkCheck" checked title="Keep both crosshairs on the same point of the heart." />
+      &nbsp;
+      <label for="blockView" title="What the block pane draws.">Block view</label>
+      <select id="blockView" title="What the block pane draws.">
+        <option value="4" selected>Render</option>
+        <option value="3">A+C+S+R</option>
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+      </select>
+      &nbsp;
+      <label for="interp" title="Texture reconstruction in the 3D fine march. Cubic is a C2 tricubic B-spline: it removes the trilinear texel staircase at 8 fetches per sample instead of 1. Applies to both panes.">Filter</label>
+      <select id="interp" title="Texture reconstruction in the 3D fine march. Applies to both panes.">
+        <option value="linear" selected>Trilinear</option>
+        <option value="cubic">Cubic</option>
+      </select>
+      &nbsp;
+      <button type="button" id="clearBtn" title="Drop the block volume and clear the outline.">Clear block</button>
+      &nbsp;
+      <label for="backend" title="Rendering backend (WebGPU or WebGL2). Both panes switch together.">Backend</label>
+      <select id="backend" title="Rendering backend (WebGPU or WebGL2).">
+        <option value="webgpu" selected>WebGPU</option>
+        <option value="webgl2">WebGL2</option>
+      </select>
+    </header>
+    <div id="hint"></div>
+    <div id="help">
+      Same idea as <a href="./vox.block.pick.html" target="_blank" rel="noopener noreferrer">the NIfTI block picker</a>, but the volume is <b>streamed</b>: a 270 Gvoxel HiP-CT human heart read straight from a public OME-Zarr store.
+      &nbsp;|&nbsp;
+      A streamed volume has <b>no CPU voxels to copy</b> (they live in GPU brick textures), so the right pane does not extract the block. It opens a <b>second streamed volume over the same store, cropped to the picked brick</b>, and lets the octree pull that box down to level 0 near its crosshair.
+      &nbsp;|&nbsp;
+      Left-drag rotates; the click is only treated as a pick when the pointer did not travel.
+    </div>
+    <main>
+      <section class="pane">
+        <canvas id="gl1"></canvas>
+        <div class="tag">Whole heart (uniform lattice, exploded)</div>
+        <div class="busy" id="busy1" role="status" aria-live="polite">
+          <span class="label" id="busyLabel1">Loading blocks</span>
+          <span class="count" id="busyCount1"></span>
+          <span class="bar"><i id="busyFill1"></i></span>
+        </div>
+        <div class="readout" id="parentOut">Opening the store...</div>
+      </section>
+      <section class="pane">
+        <canvas id="gl2"></canvas>
+        <div class="tag">Picked brick (streamed crop, multi-LOD)</div>
+        <div class="busy" id="busy2" role="status" aria-live="polite">
+          <span class="label" id="busyLabel2">Loading blocks</span>
+          <span class="count" id="busyCount2"></span>
+          <span class="bar"><i id="busyFill2"></i></span>
+        </div>
+        <div class="readout" id="blockOut">No brick picked yet.</div>
+      </section>
+    </main>
+    <footer id="location">NiiVue::Pick an exploded block (OME-Zarr)&nbsp;</footer>
+    <script type="module" src="vox.block.pick.zarr.js"></script>
+  </body>
+</html>

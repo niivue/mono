@@ -31,6 +31,19 @@ export function packColor(rgba: number[]): number {
   return (a << 24) | (b << 16) | (g << 8) | r
 }
 
+/**
+ * Distinct crosshair thicknesses a single frame can hold on the GPU.
+ *
+ * The crosshair is one set of cylinders reused by every tile, so a per-tile
+ * radius needs a per-tile copy of the geometry. WebGPU cannot rewrite one
+ * buffer between draws inside a frame (queue writes all land before the
+ * submit), so it keeps this many slots in a single buffer and selects one per
+ * draw. Ordinary layouts draw the crosshair on at most four tiles; a layout
+ * with more than this many 2D tiles reuses the last slot, which is no worse
+ * than the single shared radius this replaced.
+ */
+export const MAX_CROSSHAIR_TILES = 16
+
 export function buildVertexData(
   start: vec3,
   end: vec3,

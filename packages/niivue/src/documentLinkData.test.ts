@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { decode, encode } from 'cbor-x'
-import { isLinkableUrl, shouldLinkVolume } from './documentLinkData'
+import {
+  isLinkableUrl,
+  isTransientStreamedVolume,
+  shouldLinkVolume,
+} from './documentLinkData'
 
 // A real niivue test-images URL (the "niivue test images repo") plus a served
 // local path — both are the kind of URL a linked document references.
@@ -84,6 +88,100 @@ describe('linked document wire contract (CBOR round-trip)', () => {
     const doc = decode(encode(toDocVolume(local, true))) as DocVolume
     expect(doc.data?.img).toEqual(local.img)
     expect(loaderBranch(doc)).toBe('embedded')
+  })
+})
+
+describe('isTransientStreamedVolume', () => {
+  test('a streamed/chunked volume (img=null + chunkPlan/chunkSource) is transient', () => {
+    expect(isTransientStreamedVolume({ img: null, chunkPlan: {} })).toBe(true)
+    expect(
+      isTransientStreamedVolume({ img: null, chunkSource: () => {} }),
+    ).toBe(true)
+    expect(
+      isTransientStreamedVolume({ img: null, chunkPlan: {}, chunkSource: {} }),
+    ).toBe(true)
+  })
+
+  test('a restorable in-memory volume is never transient', () => {
+    // Normal embedded volume: has bytes, no chunk metadata.
+    expect(isTransientStreamedVolume({ img: new Uint8Array([1, 2, 3]) })).toBe(
+      false,
+    )
+    // A volume with in-memory bytes AND a chunkPlan still embeds (has data).
+    expect(
+      isTransientStreamedVolume({ img: new Uint8Array([1]), chunkPlan: {} }),
+    ).toBe(false)
+    // img=null but no chunk metadata is not a streamed volume either.
+    expect(isTransientStreamedVolume({ img: null })).toBe(false)
+  })
+})
+
+// Mirror NVDocument.serialize's volume loop (skip predicate + wire shape) and
+// reconstructVolume's branch selector, to prove a document holding a streamed
+// volume alongside a normal one round-trips cleanly: the normal volume restores
+// via its embedded data, and the streamed volume is DROPPED (never written), so
+// reload never drives a `streamed://` fetch. The full NVDocument module can't be
+// imported under the Bun harness (its graph uses Vite's import.meta.glob).
+type StreamSrcVolume = {
+  url?: string
+  name: string
+  img: Uint8Array | null
+  chunkPlan?: object
+}
+type StreamDocVolume = {
+  url?: string
+  name: string
+  data?: { img: Uint8Array }
+}
+
+function serializeVolumes(vols: StreamSrcVolume[]): StreamDocVolume[] {
+  return vols
+    .filter((v) => !isTransientStreamedVolume(v))
+    .map((v) => {
+      const doc: StreamDocVolume = { url: v.url, name: v.name }
+      if (v.img) doc.data = { img: v.img }
+      return doc
+    })
+}
+
+function loaderBranchStreamed(v: StreamDocVolume): 'embedded' | 'url' | 'none' {
+  if (v.data) return 'embedded'
+  if (v.url) return 'url'
+  return 'none'
+}
+
+describe('streamed-volume document wire contract (CBOR round-trip)', () => {
+  const normal: StreamSrcVolume = {
+    url: LOCAL_URL,
+    name: 'mni152',
+    img: new Uint8Array([1, 2, 3, 4, 5]),
+  }
+  const streamed: StreamSrcVolume = {
+    url: 'streamed://a1b2c3',
+    name: 'pig-heart',
+    img: null,
+    chunkPlan: { levels: [] },
+  }
+
+  test('the normal volume is embedded; the streamed volume is dropped', () => {
+    const docs = decode(
+      encode(serializeVolumes([normal, streamed])),
+    ) as StreamDocVolume[]
+    expect(docs.length).toBe(1)
+    expect(docs[0].name).toBe('mni152')
+    expect(docs[0].data?.img).toEqual(new Uint8Array([1, 2, 3, 4, 5]))
+    expect(loaderBranchStreamed(docs[0])).toBe('embedded')
+    // No serialized entry carries the streamed:// url, so reload can never take
+    // the url-refetch branch against the unfetchable scheme.
+    expect(docs.some((d) => d.url?.startsWith('streamed://'))).toBe(false)
+  })
+
+  test('a streamed volume ordered first does not shift the normal volume off the embedded branch', () => {
+    const docs = decode(
+      encode(serializeVolumes([streamed, normal])),
+    ) as StreamDocVolume[]
+    expect(docs.map((d) => d.name)).toEqual(['mni152'])
+    expect(loaderBranchStreamed(docs[0])).toBe('embedded')
   })
 })
 

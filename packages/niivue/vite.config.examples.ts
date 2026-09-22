@@ -44,6 +44,14 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // One input per examples/*.html, so this is a code-splitting build. Vite's
+  // default worker.format of 'iife' is rejected outright by Rollup in that
+  // mode, and any worker reached from an example (the OME-Zarr chunk pool)
+  // fails the whole build. The library build does not hit this because it is a
+  // single-entry lib build.
+  worker: {
+    format: 'es',
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

@@ -1,0 +1,43 @@
+name: PR Size
+
+# Labels pull requests whose diff to existing TypeScript/JavaScript files is
+# too large to review, and removes the label again once the PR shrinks.
+# The logic lives in .github/scripts/pr-size.ts.
+#
+# Runs on pull_request_target so it holds a write token for PRs from forks.
+# The checkout below is the base branch (the default for this event), never
+# the PR head, and the script only reads the PR through the REST API. Do not
+# change the checkout ref or run anything from the PR's tree here.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: Check TS/JS lines changed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts
+            .bun-version
+          sparse-checkout-cone-mode: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Count changed lines and set label
+        run: bun .github/scripts/pr-size.ts ${{ github.event.pull_request.number }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -91,6 +91,25 @@ describe('addMeasurement', () => {
     expect(addMeasurement(ctrl, [0, -1, 0], [0, 1, 0])).toBe(1)
   })
 
+  test('returns the index of the measurement it added even when a listener mutates the list', () => {
+    const { ctrl, emit, completedMeasurements } = fakeCtrl()
+    addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0])
+    // A synchronous measurementCompleted listener that removes an earlier
+    // measurement (or adds another) must not change what the call reports.
+    emit.mockImplementation((type: string) => {
+      if (type === 'measurementCompleted') completedMeasurements.splice(0, 1)
+    })
+    const added = completedMeasurements.length
+    const idx = addMeasurement(ctrl, [0, -1, 0], [0, 1, 0])
+    expect(idx).toBe(added)
+    emit.mockImplementation((type: string) => {
+      if (type === 'measurementCompleted')
+        completedMeasurements.push(completedMeasurements[0])
+    })
+    const next = completedMeasurements.length
+    expect(addMeasurement(ctrl, [0, -1, 0], [0, 1, 0])).toBe(next)
+  })
+
   test('computes the mm distance and copies the endpoints', () => {
     const { ctrl } = fakeCtrl()
     const start: [number, number, number] = [0, 3, 0]
@@ -131,6 +150,20 @@ describe('buildMeasurement slice metadata', () => {
     expect(m.sliceIndex).toBe(2)
     expect(m.sliceType).toBe(SLICE_TYPE.CORONAL)
     expect(m.slicePosition).toBe(0.25)
+  })
+
+  test('normalizes a caller-supplied sliceIndex to a non-negative integer', () => {
+    const { ctrl } = fakeCtrl()
+    for (const bad of [Number.NaN, -1, 0.5, Number.POSITIVE_INFINITY]) {
+      expect(
+        buildMeasurement(ctrl, [-5, 0, 10], [5, 0, 10], { sliceIndex: bad })
+          .sliceIndex,
+      ).toBe(0)
+    }
+    expect(
+      buildMeasurement(ctrl, [-5, 0, 10], [5, 0, 10], { sliceIndex: 3 })
+        .sliceIndex,
+    ).toBe(3)
   })
 
   test('honours each explicit 2D orientation and its slicePosition axis', () => {
@@ -222,6 +255,21 @@ describe('removeMeasurement', () => {
 
     expect(() => removeMeasurement(ctrl, -1)).not.toThrow()
     expect(() => removeMeasurement(ctrl, 1)).not.toThrow()
+    expect(completedMeasurements).toHaveLength(1)
+    expect(emit).not.toHaveBeenCalled()
+    expect(drawScene).not.toHaveBeenCalled()
+  })
+
+  test('rejects a non-integer index instead of letting splice coerce it', () => {
+    const { ctrl, emit, drawScene, completedMeasurements } = fakeCtrl()
+    addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0])
+    emit.mockClear()
+    drawScene.mockClear()
+    // NaN and 0.5 pass a plain bounds check but index nothing; splice would
+    // coerce both to 0 and remove the wrong measurement with an empty detail.
+    for (const bad of [Number.NaN, 0.5]) {
+      expect(() => removeMeasurement(ctrl, bad)).not.toThrow()
+    }
     expect(completedMeasurements).toHaveLength(1)
     expect(emit).not.toHaveBeenCalled()
     expect(drawScene).not.toHaveBeenCalled()

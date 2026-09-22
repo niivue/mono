@@ -58,7 +58,11 @@ function is2DSliceType(sliceType: number): boolean {
  * from the segment geometry, `slicePosition` is the segment midpoint's scene
  * fraction on the slice axis (the same [0..1] space the interactive path
  * records from the crosshair), and `sliceIndex` is 0 (the interactive fallback
- * when no tile is hit).
+ * when no tile is hit). A caller-supplied `sliceIndex` is normalized the same
+ * way `slicePosition` is: it must be a non-negative integer (tile indices
+ * always are on the interactive path), and anything else (NaN, negative,
+ * fractional) falls back to 0 so no invalid metadata leaks into
+ * `getMeasurements()` or event payloads.
  *
  * An explicit `opts.sliceType` must be a 2D orientation (AXIAL/CORONAL/
  * SAGITTAL); any other value (`MULTIPLANAR`, `RENDER`, `NONE`) does not name a
@@ -107,11 +111,15 @@ export function buildMeasurement(
     const frac = ctrl.model.mm2scene(mid)[sliceTypeDim(sliceType)]
     slicePosition = Math.min(1, Math.max(0, frac))
   }
+  const sliceIndex =
+    Number.isInteger(opts.sliceIndex) && (opts.sliceIndex as number) >= 0
+      ? (opts.sliceIndex as number)
+      : 0
   return {
     startMM: [...startMM],
     endMM: [...endMM],
     distance,
-    sliceIndex: opts.sliceIndex ?? 0,
+    sliceIndex,
     sliceType,
     slicePosition,
   }
@@ -120,7 +128,10 @@ export function buildMeasurement(
 /**
  * Append a measurement built from two mm points, emit `measurementCompleted`
  * (after the mutation, matching interactive completion), redraw, and return the
- * new measurement's index.
+ * new measurement's index. The index is captured at the push, not recomputed
+ * afterwards: `measurementCompleted` is synchronous, so a listener that adds or
+ * removes a measurement during the callback must not change what this call
+ * reports for the measurement it just added.
  */
 export function addMeasurement(
   ctrl: NiiVue,
@@ -129,22 +140,27 @@ export function addMeasurement(
   opts: AddMeasurementOptions = {},
 ): number {
   const measurement = buildMeasurement(ctrl, startMM, endMM, opts)
+  const index = ctrl.model.completedMeasurements.length
   ctrl.model.completedMeasurements.push(measurement)
   ctrl.emit('measurementCompleted', measurement)
   ctrl.drawScene()
-  return ctrl.model.completedMeasurements.length - 1
+  return index
 }
 
 /**
- * Remove one measurement by index. Out-of-bounds indices warn and no-op
- * (matching removeVolume). Emits `measurementRemoved` BEFORE the mutation, so a
- * listener can still reach the referenced measurement in the collection.
+ * Remove one measurement by index. An index that is not an integer in bounds
+ * warns and no-ops (matching removeVolume). The integer check matters: a NaN
+ * or fractional index fails neither `< 0` nor `>= length`, yet
+ * `measurements[index]` is undefined while `splice` coerces it to 0, which
+ * would emit an empty detail and remove the wrong measurement. Emits
+ * `measurementRemoved` BEFORE the mutation, so a listener can still reach the
+ * referenced measurement in the collection.
  */
 export function removeMeasurement(ctrl: NiiVue, index: number): void {
   const measurements = ctrl.model.completedMeasurements
-  if (index < 0 || index >= measurements.length) {
+  if (!Number.isInteger(index) || index < 0 || index >= measurements.length) {
     log.warn(
-      `Measurement index ${index} out of bounds (${measurements.length} measurements).`,
+      `Measurement index ${index} is not a valid index (${measurements.length} measurements).`,
     )
     return
   }

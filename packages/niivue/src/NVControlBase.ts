@@ -1379,12 +1379,8 @@ export default class NiiVue extends EventTarget {
    * {@link registerOverlayRenderer}) to draw measurements with an external
    * renderer — e.g. a @niivue/uikit ruler with rotated tick numbers — instead of
    * the built-in line. Hide the built-in draw by setting `measureLineColor` /
-   * `measureTextColor` alpha to 0.
-   */
-  /**
-   * Persisted measurements projected to the current frame's canvas pixels, with
-   * the in-progress line (if any) appended. Each persisted entry carries an
-   * `index` into {@link getMeasurements}; the trailing active line omits it.
+   * `measureTextColor` alpha to 0. Each persisted entry carries an `index`
+   * into {@link getMeasurements}; the trailing in-progress line omits it.
    */
   get measurementScreenLines(): readonly MeasurementScreenLine[] {
     const active = this.model._activeMeasurementScreenLine
@@ -5357,8 +5353,8 @@ export default class NiiVue extends EventTarget {
   /**
    * Remove a single completed distance measurement by index, emitting
    * `measurementRemoved` before the mutation (so the listener can still reach
-   * it) and redrawing. An out-of-bounds index warns and no-ops, matching
-   * {@link removeVolume}.
+   * it) and redrawing. An index that is not an integer in bounds warns and
+   * no-ops, matching {@link removeVolume}.
    */
   removeMeasurement(index: number): void {
     measurementApi.removeMeasurement(this, index)

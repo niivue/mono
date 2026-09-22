@@ -237,11 +237,8 @@ vec3 layerShade(sampler3D tex, vec3 p, float amount) {
   vec3 localNormal = normalize(grad);
   mat3 norm3 = mat3(normMtx);
   vec3 n = norm3 * localNormal;
-  // Flip y for the lookup. A matcap PNG is a lit sphere whose light sits near
-  // the TOP of the image, and v=0 is the image's top row (neither backend
-  // flips on upload), so v must count DOWN from the eye-space +y a normal
-  // pointing up produces. Without this the volume is lit from below.
-  vec2 uv = vec2(n.x, -n.y) * 0.5 + 0.5;
+  // Flip X, not y -- see the long note in wgpu/render.wgsl's layerShade.
+  vec2 uv = vec2(-n.x, n.y) * 0.5 + 0.5;
   vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (amount / 3.0));
   return mix(vec3(1.0), mc_rgb, amount);
 }
@@ -858,9 +855,8 @@ void main() {
             float lightingAmount = localGradientAmount;
             if (lightingAmount > 0.0) {
               vec3 n = norm3 * localNormal;
-              // See layerShade() for why y is flipped: the matcap's light is at
-              // the top of the PNG and v=0 is the top row, so v counts down from +y.
-              vec2 uv = vec2(n.x, -n.y) * 0.5 + 0.5;
+              // See layerShade() for why x is flipped, not y.
+              vec2 uv = vec2(-n.x, n.y) * 0.5 + 0.5;
               vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (lightingAmount / 3.0));
               finalRGB *= mix(vec3(1.0), mc_rgb, lightingAmount);
             }

@@ -118,6 +118,11 @@ volumeSelect.onchange = async function () {
 webgpuCheck.onclick = function () {
   nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
+colorBtn.oninput = function () {
+  const hex = this.value
+  const chan = (i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255
+  nv1.backgroundColor = [chan(0), chan(1), chan(2), 1]
+}
 
 nv1.sliceType = 4
 await nv1.loadVolumes([VOLUMES[volumeSelect.value]])

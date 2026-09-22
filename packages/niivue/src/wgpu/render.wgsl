@@ -216,11 +216,19 @@ fn layerShade(tex: texture_3d<f32>, p: vec3f, amount: f32) -> vec3f {
     let localNormal = normalize(grad);
     let norm3 = mat3x3f(params.normMtx[0].xyz, params.normMtx[1].xyz, params.normMtx[2].xyz);
     let n = norm3 * localNormal;
-    // Flip y for the lookup. A matcap PNG is a lit sphere whose light sits near
-    // the TOP of the image, and v=0 is the image's top row (neither backend
-    // flips on upload), so v must count DOWN from the eye-space +y a normal
-    // pointing up produces. Without this the volume is lit from below.
-    let uv = vec2f(n.x, -n.y) * 0.5 + 0.5;
+    // Flip X, not y. The gradient pass writes value(+dir) - value(-dir), which
+    // points from dark to bright -- INTO the volume at a surface -- so the eye
+    // -space normal here is the inward one, and u must count back from it.
+    // v is already correct: v=0 is the image's top row (neither backend flips
+    // on upload) and an inward normal at the top of an object has n.y < 0,
+    // which lands on that row.
+    //
+    // Render a sphere with the matcap, which IS a photograph of a sphere, and
+    // the screen must reproduce the image exactly. `examples/vox.matcap.html`
+    // is set up to do that. Flipping y instead (as this did until 2026-09-22)
+    // rotates the lighting 180 degrees; it reads as "lit from below" only
+    // because the bundled matcaps are near left-right symmetric.
+    let uv = vec2f(-n.x, n.y) * 0.5 + 0.5;
     let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * (1.0 + (amount / 3.0));
     return mix(vec3f(1.0), mc_rgb, amount);
 }
@@ -800,10 +808,8 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 						let lightingAmount = localGradientAmount;
 						if (lightingAmount > 0.0) {
 							let n = norm3 * localNormal;
-							// See layerShade() for why y is flipped: the matcap's light is
-							// at the top of the PNG and v=0 is the top row, so v counts
-							// down from +y.
-							let uv = vec2f(n.x, -n.y) * 0.5 + 0.5;
+							// See layerShade() for why x is flipped, not y.
+							let uv = vec2f(-n.x, n.y) * 0.5 + 0.5;
 							let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * (1.0 + (lightingAmount / 3.0));
 							finalRGB *= mix(vec3f(1.0), mc_rgb, lightingAmount);
 						}

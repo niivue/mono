@@ -31,8 +31,8 @@
       </select>
       &nbsp;
       <select id="volumeSelect">
-        <option selected>sphere</option>
-        <option>mni152</option>
+        <option selected>mni152</option>
+        <option>sphere</option>
         <option>visiblehuman</option>
         <option>shear</option>
       </select>
@@ -51,6 +51,9 @@
       <label for="darkCheck">Clip Dark</label>
       <input type="checkbox" id="darkCheck" />
       &nbsp;
+      <label for="colorBtn">Background</label>
+      <input type="color" id="colorBtn" value="#333333" />
+      &nbsp;
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck" checked />
     </header>
@@ -62,6 +65,11 @@
       import { cortex, shiny } from '../src/assets/matcaps'
       import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 
+      // Pick `sphere` to check the lookup: a matcap IS a photograph of a
+      // sphere, so a correctly oriented render reproduces the image beside the
+      // dropdown exactly. That is how the 180-degree rotation this shader
+      // carried until 2026-09-22 was found.
+      //
       // A matcap ("material capture") is a photograph of a lit sphere. The
       // shader takes the surface normal at a sample, projects it to screen
       // space, and reads the colour at that point of the sphere -- so the
@@ -108,6 +116,11 @@
       }
       darkCheck.onclick = function () {
         nv1.volumeIsAlphaClipDark = this.checked
+      }
+      colorBtn.oninput = function () {
+        const hex = this.value
+        const chan = (i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255
+        nv1.backgroundColor = [chan(0), chan(1), chan(2), 1]
       }
       webgpuCheck.onclick = function () {
         nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })

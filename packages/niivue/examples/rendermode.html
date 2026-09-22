@@ -27,11 +27,11 @@
       </select>
       &nbsp;
       <label
-        for="overlayOpacity"
-        title="opacity of the GM/WM/CSF tissue maps over the T1"
-        >Overlay opacity</label
+        for="tissueOpacity"
+        title="opacity of the GM/WM/CSF tissue maps over the MNI152 template"
+        >Tissue opacity</label
       >
-      <input type="range" id="overlayOpacity" min="0" max="100" value="100" />
+      <input type="range" id="tissueOpacity" min="0" max="100" value="100" />
       &nbsp;
       <label
         title="volumeIsAlphaClipDark: drop voxels the colormap made fully transparent. Off, a plane is a solid slab; on, only tissue is drawn and the planes behind show through."
@@ -66,7 +66,8 @@
       // Volume and mesh URLs live here rather than in HTML attributes: the
       // GitHub Pages build rewrites absolute /volumes/ and /meshes/ paths in
       // page script only.
-      const T1 = '/volumes/chris_t1.nii.gz'
+      // Standard space, so the MNI-space meshes below land where they should.
+      const T1 = '/volumes/mni152.nii.gz'
       const TRACTS = '/meshes/dpsv.trx'
       const CEREBELLUM = '/meshes/atl-Anatom_space-MNI.mz3'
       // Mesh indices, in load order.
@@ -75,9 +76,9 @@
       // A sentinel that cannot collide with a shader name.
       const HIDDEN = '\u0000hidden'
       const TISSUES = [
-        { id: 'gm', file: 'chris_t1_gm.nii.gz', tint: [224, 104, 104] },
-        { id: 'wm', file: 'chris_t1_wm.nii.gz', tint: [250, 250, 250] },
-        { id: 'csf', file: 'chris_t1_csf.nii.gz', tint: [120, 160, 255] },
+        { id: 'gm', file: 'mni152_gm.nii.gz', tint: [224, 104, 104] },
+        { id: 'wm', file: 'mni152_wm.nii.gz', tint: [250, 250, 250] },
+        { id: 'csf', file: 'mni152_csf.nii.gz', tint: [120, 160, 255] },
       ]
 
       const nv1 = new NiiVue({
@@ -163,9 +164,9 @@
         await nv1.setModulationImage(vol.id, vol.id, 1)
       }
 
-      const overlayOpacity = document.getElementById('overlayOpacity')
-      overlayOpacity.oninput = () => {
-        const opacity = Number(overlayOpacity.value) / 100
+      const tissueOpacity = document.getElementById('tissueOpacity')
+      tissueOpacity.oninput = () => {
+        const opacity = Number(tissueOpacity.value) / 100
         for (let i = 0; i < overlays.length; i++) {
           nv1.setVolume(i + 1, { opacity })
         }

@@ -47,6 +47,7 @@ const PROPS_RW = [
   ["drawIsEnabled", "draw_is_enabled"],
   ["drawIsFillOverwriting", "draw_is_fill_overwriting"],
   ["drawOpacity", "draw_opacity"],
+  ["drawPenShape", "draw_pen_shape"],
   ["drawPenSize", "draw_pen_size"],
   ["drawPenValue", "draw_pen_value"],
   ["drawRimOpacity", "draw_rim_opacity"],

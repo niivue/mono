@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PEN_SHAPE } from '@/NVConstants'
 import {
   clampToDimension,
   drawLine,
@@ -375,6 +376,87 @@ describe('drawPoint', () => {
     expect(bitmap[voxelIndex(5, 6, 5, 10, 10)]).toBe(1)
     // Z neighbor should NOT be set for axial plane
     expect(bitmap[voxelIndex(5, 5, 4, 10, 10)]).toBe(0)
+  })
+
+  test('penSize5_circle_skipsCornersOfBoundingSquare', () => {
+    const dims = [3, 10, 10, 10]
+    const bitmap = new Uint8Array(1000)
+    drawPoint({
+      x: 5,
+      y: 5,
+      z: 5,
+      penValue: 1,
+      drawBitmap: bitmap,
+      dims,
+      penSize: 5, // radius 2.5
+      penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.CIRCLE,
+    })
+    expect(bitmap[voxelIndex(5, 5, 5, 10, 10)]).toBe(1) // centre
+    expect(bitmap[voxelIndex(7, 5, 5, 10, 10)]).toBe(1) // on-axis extreme, d^2 = 4
+    expect(bitmap[voxelIndex(7, 6, 5, 10, 10)]).toBe(1) // d^2 = 5 < 6.25
+    expect(bitmap[voxelIndex(7, 7, 5, 10, 10)]).toBe(0) // corner, d^2 = 8 > 6.25
+    expect(bitmap[voxelIndex(3, 3, 5, 10, 10)]).toBe(0)
+  })
+
+  test('penSize5_rectangle_fillsCorners', () => {
+    const dims = [3, 10, 10, 10]
+    const bitmap = new Uint8Array(1000)
+    drawPoint({
+      x: 5,
+      y: 5,
+      z: 5,
+      penValue: 1,
+      drawBitmap: bitmap,
+      dims,
+      penSize: 5,
+      penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.RECTANGLE,
+    })
+    expect(bitmap[voxelIndex(7, 7, 5, 10, 10)]).toBe(1)
+    expect(bitmap[voxelIndex(3, 3, 5, 10, 10)]).toBe(1)
+  })
+
+  test('penShapeOmitted_defaultsToRectangle', () => {
+    const dims = [3, 10, 10, 10]
+    const bitmap = new Uint8Array(1000)
+    drawPoint({
+      x: 5,
+      y: 5,
+      z: 5,
+      penValue: 1,
+      drawBitmap: bitmap,
+      dims,
+      penSize: 5,
+      penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+    })
+    expect(bitmap[voxelIndex(7, 7, 5, 10, 10)]).toBe(1)
+  })
+
+  test('penSize2_circle_keepsOnAxisNeighbours', () => {
+    // Even sizes: radius = 1, so the four on-axis neighbours (d^2 = 1) are
+    // painted and the diagonals (d^2 = 2) are not. A `>=` test would wrongly
+    // collapse this brush to a single voxel.
+    const dims = [3, 10, 10, 10]
+    const bitmap = new Uint8Array(1000)
+    drawPoint({
+      x: 5,
+      y: 5,
+      z: 5,
+      penValue: 1,
+      drawBitmap: bitmap,
+      dims,
+      penSize: 2,
+      penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.CIRCLE,
+    })
+    expect(bitmap[voxelIndex(5, 5, 5, 10, 10)]).toBe(1)
+    expect(bitmap[voxelIndex(6, 5, 5, 10, 10)]).toBe(1)
+    expect(bitmap[voxelIndex(4, 5, 5, 10, 10)]).toBe(1)
+    expect(bitmap[voxelIndex(5, 6, 5, 10, 10)]).toBe(1)
+    expect(bitmap[voxelIndex(5, 4, 5, 10, 10)]).toBe(1)
+    expect(bitmap[voxelIndex(6, 6, 5, 10, 10)]).toBe(0)
+    expect(bitmap[voxelIndex(4, 4, 5, 10, 10)]).toBe(0)
   })
 
   test('penOverwritesFalse_doesNotOverwriteExisting', () => {

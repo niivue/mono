@@ -165,6 +165,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `drawIsEnabled` | Prop | No | Pen on/off |
 | `drawPenValue` | Prop | No | Label index |
 | `drawPenSize` | Prop | No | |
+| `drawPenShape` | Prop | No | `PEN_SHAPE.RECTANGLE` (default) or `PEN_SHAPE.CIRCLE` brush footprint |
 | `drawIsFillOverwriting` | Prop | No | |
 | `drawOpacity`, `drawRimOpacity` | Prop | No | |
 | `drawColormap` | Prop | No | |

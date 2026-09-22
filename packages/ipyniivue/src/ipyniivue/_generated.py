@@ -145,6 +145,9 @@ first such interaction warns). Turn one off before turning the other on.
 `false` stops editing but keeps the drawing visible; see `closeDrawing()`."""
     draw_is_fill_overwriting = traitlets.Bool(None, allow_none=True).tag(sync=True)
     draw_opacity = traitlets.Float(None, allow_none=True).tag(sync=True)
+    draw_pen_shape = traitlets.Enum([0, 1], None, allow_none=True).tag(sync=True)
+    """Footprint of the pen when `drawPenSize` is greater than one: a square
+(`PEN_SHAPE.RECTANGLE`, the default) or a round brush (`PEN_SHAPE.CIRCLE`)."""
     draw_pen_size = traitlets.Float(None, allow_none=True).tag(sync=True)
     draw_pen_value = traitlets.Float(None, allow_none=True).tag(sync=True)
     draw_rim_opacity = traitlets.Float(None, allow_none=True).tag(sync=True)

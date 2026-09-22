@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import { PEN_SHAPE } from '@/NVConstants'
 import { SlideDrawing } from './slideDrawing'
 
 const at = (d: SlideDrawing, x: number, y: number): number =>
@@ -32,6 +33,18 @@ describe('SlideDrawing', () => {
     d.line(0, 0, 7, 0, 3, 1, true)
     for (let x = 0; x < 8; x++) expect(at(d, x, 0)).toBe(3)
     expect(at(d, 0, 1)).toBe(0) // adjacent row untouched
+  })
+
+  test('point() honours the pen shape and defaults to a rectangle', () => {
+    const round = new SlideDrawing(9, 9)
+    round.point(4, 4, 5, 5, true, PEN_SHAPE.CIRCLE)
+    expect(at(round, 4, 4)).toBe(5)
+    expect(at(round, 6, 4)).toBe(5) // on-axis extreme
+    expect(at(round, 6, 6)).toBe(0) // corner of the 5x5 bounding square
+
+    const square = new SlideDrawing(9, 9)
+    square.point(4, 4, 5, 5, true) // penShape omitted
+    expect(at(square, 6, 6)).toBe(5)
   })
 
   test('penValue 0 erases (eraser path)', () => {

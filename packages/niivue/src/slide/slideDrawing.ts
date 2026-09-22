@@ -6,6 +6,7 @@ import {
 } from '@/drawing/penTool'
 import { encodeRLE } from '@/drawing/rle'
 import { drawUndo } from '@/drawing/undo'
+import { PEN_SHAPE } from '@/NVConstants'
 
 // A drawing surface in *slide* space: a 2D label raster covering the whole slide
 // extent. It is intentionally a thin holder over the existing voxel-drawing
@@ -56,12 +57,14 @@ export class SlideDrawing {
     penValue: number,
     penSize: number,
     overwrite: boolean,
+    penShape: PEN_SHAPE = PEN_SHAPE.RECTANGLE,
   ): void {
     drawPoint({
       x,
       y,
       z: 0,
       penValue,
+      penShape,
       drawBitmap: this.img,
       dims: this.dims(),
       penSize,
@@ -80,11 +83,13 @@ export class SlideDrawing {
     penValue: number,
     penSize: number,
     overwrite: boolean,
+    penShape: PEN_SHAPE = PEN_SHAPE.RECTANGLE,
   ): void {
     drawLine({
       ptA: [ax, ay, 0],
       ptB: [bx, by, 0],
       penValue,
+      penShape,
       drawBitmap: this.img,
       dims: this.dims(),
       penSize,

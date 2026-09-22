@@ -120,6 +120,14 @@ export enum SHOW_RENDER {
   AUTO = 2,
 }
 
+/** Footprint of the drawing pen when `penSize` is greater than one voxel. */
+export enum PEN_SHAPE {
+  /** Square brush covering the full `penSize` x `penSize` footprint. */
+  RECTANGLE = 0,
+  /** Round brush: voxels farther than `penSize / 2` from the centre are skipped. */
+  CIRCLE = 1,
+}
+
 export const NiiIntentCode = Object.freeze({
   NIFTI_INTENT_NONE: 0,
   NIFTI_INTENT_CORREL: 2,
@@ -443,6 +451,7 @@ export const DRAW_DEFAULTS: DrawConfig = {
   isClickToSegment: false,
   clickToSegmentTolerance: 0.05,
   clickToSegmentIs2D: true,
+  penShape: PEN_SHAPE.RECTANGLE,
 }
 
 export const INTERACTION_DEFAULTS: InteractionConfig = {

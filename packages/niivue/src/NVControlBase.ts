@@ -60,6 +60,7 @@ import {
   lodOpacityScale,
   NUM_CLIP_PLANE,
   normalizeVolumeRenderMode,
+  type PEN_SHAPE,
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
@@ -1919,6 +1920,18 @@ export default class NiiVue extends EventTarget {
     const val = Math.max(1, Math.round(v))
     this.model.draw.penSize = val
     this.emit('change', { property: 'drawPenSize', value: val })
+  }
+
+  get drawPenShape(): PEN_SHAPE {
+    return this.model.draw.penShape
+  }
+  /**
+   * Footprint of the pen when `drawPenSize` is greater than one: a square
+   * (`PEN_SHAPE.RECTANGLE`, the default) or a round brush (`PEN_SHAPE.CIRCLE`).
+   */
+  set drawPenShape(v: PEN_SHAPE) {
+    this.model.draw.penShape = v
+    this.emit('change', { property: 'drawPenShape', value: v })
   }
 
   get drawIsFillOverwriting(): boolean {
@@ -4652,6 +4665,7 @@ export default class NiiVue extends EventTarget {
     const ry = Math.round(raster[1])
     const penValue = this.model.draw.penValue
     const penSize = this.model.draw.penSize
+    const penShape = this.model.draw.penShape
     const overwrite = this.model.draw.isFillOverwriting
     if (begin) dr.beginStroke() // snapshot for undo (all raster tools)
     if (tool === 'bucket') {
@@ -4673,14 +4687,14 @@ export default class NiiVue extends EventTarget {
       // pen / eraser / filled
       const pv = tool === 'eraser' ? 0 : penValue
       if (begin) {
-        dr.point(rx, ry, pv, penSize, overwrite)
+        dr.point(rx, ry, pv, penSize, overwrite, penShape)
         if (tool === 'filled') this._slideFillPts = [[rx, ry]]
       } else if (this._slideLastRasterPt) {
         const [px, py] = this._slideLastRasterPt
-        dr.line(px, py, rx, ry, pv, penSize, overwrite)
+        dr.line(px, py, rx, ry, pv, penSize, overwrite, penShape)
         if (tool === 'filled') this._slideFillPts.push([rx, ry])
       } else {
-        dr.point(rx, ry, pv, penSize, overwrite)
+        dr.point(rx, ry, pv, penSize, overwrite, penShape)
         if (tool === 'filled') this._slideFillPts.push([rx, ry])
       }
       this._slideLastRasterPt = [rx, ry]

@@ -7,6 +7,8 @@
  *   3. Click "Find Boundaries" to see the first/last drawn slices
  *   4. Click "Interpolate" to fill the gaps between drawn slices
  */
+
+import type { PEN_SHAPE } from '@niivue/niivue'
 import NiiVue from '@niivue/niivue'
 import {
   findDrawingBoundarySlices,
@@ -26,6 +28,7 @@ const sliceTypeSelect = $<HTMLSelectElement>('sliceType')
 const useWebGPUCb = $<HTMLInputElement>('useWebGPU')
 const enableDrawBtn = $<HTMLButtonElement>('enableDrawBtn')
 const penColorSelect = $<HTMLSelectElement>('penColor')
+const penShapeSelect = $<HTMLSelectElement>('penShape')
 const penSizeInput = $<HTMLInputElement>('penSize')
 const penFilledCb = $<HTMLInputElement>('penFilled')
 const undoBtn = $<HTMLButtonElement>('undoBtn')
@@ -97,6 +100,10 @@ enableDrawBtn.onclick = () => {
 
 penColorSelect.onchange = () => {
   nv.drawPenValue = parseInt(penColorSelect.value, 10)
+}
+
+penShapeSelect.onchange = () => {
+  nv.drawPenShape = parseInt(penShapeSelect.value, 10) as PEN_SHAPE
 }
 
 penSizeInput.oninput = () => {

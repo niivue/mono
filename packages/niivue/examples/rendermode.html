@@ -13,9 +13,9 @@
       <label for="modeSelect"
         title="volumeRenderMode: how the 3D render combines samples along a ray">Render mode</label>
       <select id="modeSelect">
-        <option value="0" selected>Composite</option>
+        <option value="0">Composite</option>
         <option value="1">Maximum</option>
-        <option value="2">Slices</option>
+        <option value="2" selected>Slices</option>
       </select>
       &nbsp;
       <select id="sliceType">
@@ -26,7 +26,14 @@
         <option value="3" selected>A+C+S+R</option>
       </select>
       &nbsp;
-      <label title="load the GM/WM/CSF tissue maps as overlays"><input type="checkbox" id="overlayCheck" />Overlays</label>
+      <label title="load the GM/WM/CSF tissue maps as overlays"><input type="checkbox" id="overlayCheck" checked />Overlays</label>
+      &nbsp;
+      <label
+        title="volumeIsAlphaClipDark: drop voxels the colormap made fully transparent. Off, a plane is a solid slab; on, only tissue is drawn and the planes behind show through."
+        ><input type="checkbox" id="darkCheck" />Clip Dark</label>
+      &nbsp;
+      <label for="colorBtn">Background</label>
+      <input type="color" id="colorBtn" value="#808080" />
       &nbsp;
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck" checked />
@@ -43,9 +50,16 @@
       // the 3D tile and composites their hits, so it costs at most three samples
       // per ray and shows overlays exactly where the 2D tiles do.
       //
-      // Volume URLs live here rather than in HTML attributes: the GitHub Pages
-      // build rewrites absolute /volumes/ paths in page script only.
+      // The tracts are here to show what the planes do with an embedded
+      // structure: a mesh is a separate draw that depth-tests against the plane
+      // depth, so a streamline is cut exactly where it crosses a plane rather
+      // than being hidden by it or floating in front of it.
+      //
+      // Volume and mesh URLs live here rather than in HTML attributes: the
+      // GitHub Pages build rewrites absolute /volumes/ and /meshes/ paths in
+      // page script only.
       const T1 = '/volumes/chris_t1.nii.gz'
+      const TRACTS = '/meshes/dpsv.trx'
       const TISSUES = [
         { id: 'gm', file: 'chris_t1_gm.nii.gz', tint: [224, 104, 104] },
         { id: 'wm', file: 'chris_t1_wm.nii.gz', tint: [210, 210, 210] },
@@ -53,7 +67,7 @@
       ]
 
       const nv1 = new NiiVue({
-        backgroundColor: [0, 0, 0, 1],
+        backgroundColor: [0.5, 0.5, 0.5, 1],
         is3DCrosshairVisible: true,
         showRender: SHOW_RENDER.ALWAYS,
       })
@@ -90,14 +104,27 @@
       }
       overlayCheck.onchange = loadScene
       await loadScene()
+      await nv1.loadMeshes([{ url: TRACTS }])
 
       const modeSelect = document.getElementById('modeSelect')
       modeSelect.onchange = () => {
         nv1.volumeRenderMode = parseInt(modeSelect.value, 10)
       }
+      // The markup is the single source of truth for the starting mode.
+      modeSelect.onchange()
 
       document.getElementById('sliceType').onchange = (e) => {
         nv1.sliceType = parseInt(e.target.value, 10)
+      }
+
+      document.getElementById('darkCheck').onchange = (e) => {
+        nv1.volumeIsAlphaClipDark = e.target.checked
+      }
+
+      document.getElementById('colorBtn').oninput = (e) => {
+        const hex = e.target.value
+        const chan = (i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255
+        nv1.backgroundColor = [chan(0), chan(1), chan(2), 1]
       }
 
       const webgpuCheck = document.getElementById('webgpuCheck')

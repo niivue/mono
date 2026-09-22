@@ -79,9 +79,10 @@ struct Params {
     // halo. The fragment shader then clips ray marching back to the chunk's
     // owned data sub-cube and remaps samples into [dataOrigin, dataOrigin+dataSize],
     // letting trilinear sampling pull from halo voxels without double-counting them.
-    // The three trailing .w lanes below are not padding: chunkSubOrigin.w,
+    // Four trailing .w lanes below are not padding: chunkSubOrigin.w,
     // chunkSubSize.w and dataOriginTexFrac.w carry the crosshair planes for
-    // RENDER_MODE_SLICES. See sliceFrac().
+    // RENDER_MODE_SLICES (see sliceFrac()), and dataSizeTexFrac.w carries
+    // isAlphaClipDark (see alphaClipDark()).
     volumeTexDimsFull: vec4f,
     chunkSubOrigin: vec4f,
     chunkSubSize: vec4f,
@@ -137,6 +138,15 @@ fn isRenderMode(mode: f32) -> bool {
 // when unused, which is off-cube and hits nothing.
 fn sliceFrac() -> vec3f {
     return vec3f(params.chunkSubOrigin.w, params.chunkSubSize.w, params.dataOriginTexFrac.w);
+}
+
+// volumeIsAlphaClipDark, in dataSizeTexFrac's trailing lane. A voxel the
+// colormap made fully transparent is dropped rather than painted, which is what
+// lets the planes behind a SLICES plane show through. The 2D tiles take the
+// same flag as a plain uniform; the ray-march never needed it, because it
+// samples that alpha directly.
+fn alphaClipDark() -> bool {
+    return params.dataSizeTexFrac.w > 0.5;
 }
 
 // Remap a sample position from full-volume [0,1] cube space to the local chunk

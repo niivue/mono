@@ -580,12 +580,6 @@ describe('rayPlaneFirstVisibleMM', () => {
     expect(hit).toEqual([4, 4, 4])
   })
 
-  test('a ray parallel to every plane misses', () => {
-    expect(
-      rayPlaneFirstVisibleMM([-5, 0, 0], [15, 0, 0], lo, hi, [40, 6, 5]),
-    ).toBeNull()
-  })
-
   test('a crossing outside the box does not count', () => {
     // x = 40 is on the ray but past the box's far face.
     expect(

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { executablePathOverride } from './e2e/launchOptions'
 
 // End-to-end tests that need a real browser: NiiVue's module graph uses Vite's
 // `import.meta.glob` (so it can't be imported under the Bun unit-test runner) and
@@ -22,12 +23,7 @@ export default defineConfig({
     // that software path behind this flag.
     launchOptions: {
       args: ['--enable-unsafe-swiftshader'],
-      // Opt-in escape hatch for a machine that has a headless shell but not
-      // Playwright's exact pinned revision (a 92 MB download). Unset in CI, so
-      // the pinned browser is still what gates a PR.
-      ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
-        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
-        : {}),
+      ...executablePathOverride,
     },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

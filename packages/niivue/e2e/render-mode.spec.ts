@@ -1,5 +1,6 @@
 import { inflateSync } from 'node:zlib'
 import { expect, type Page, test } from '@playwright/test'
+import { webgpuLaunchOptions } from './launchOptions'
 
 // VOLUME_RENDER_MODE.SLICES draws the three crosshair planes inside the 3D tile
 // instead of ray-marching. It is selected by the same `volumeRenderMode` field
@@ -12,21 +13,7 @@ import { expect, type Page, test } from '@playwright/test'
 // the one readback that works the same on both backends without asking for
 // preserveDrawingBuffer.
 
-test.use({
-  launchOptions: {
-    args: [
-      '--enable-unsafe-swiftshader',
-      '--enable-unsafe-webgpu',
-      '--use-angle=swiftshader',
-      '--enable-features=Vulkan',
-    ],
-    // `use.launchOptions` replaces the config's object rather than merging into
-    // it, so the config's escape hatch has to be repeated here.
-    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
-      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
-      : {}),
-  },
-})
+test.use({ launchOptions: webgpuLaunchOptions })
 
 // Every test here loads a volume and compiles shaders on SwiftShader.
 test.describe.configure({ timeout: 180_000 })
@@ -220,6 +207,62 @@ test('both backends draw SLICES the same', async ({ page }) => {
     'webgl2 vs webgpu',
   )
 })
+
+// Every pick in SLICES must land ON a crosshair plane, or on nothing at all.
+// The chunked CPU-pick path has a near-surface fallback for the marched modes,
+// and letting a plane miss fall into it returns a scalp voxel that is nowhere
+// near the planes and was never on screen -- which is what an earlier revision
+// did. Sweeping the tile is what catches it: the fallback only fires for a ray
+// that crosses the volume's box but no visible plane.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`every SLICES pick lands on a plane or nothing (${backend})`, async ({
+    page,
+  }) => {
+    // Chunked, so the pick takes the CPU fallback where the fallback lives;
+    // Clip Dark, so air really is empty rather than a solid slab.
+    await mountOrSkip(
+      page,
+      backend,
+      '',
+      0,
+      'volumeIsAlphaClipDark: true, maxTextureDimension3D: 128,',
+    )
+    expect(
+      await page.evaluate('window.__nv.view.volumeRenderer.hasChunkedVolume'),
+    ).toBe(true)
+    // Let the bricks settle, or the planes are empty for a different reason.
+    await page.waitForTimeout(4000)
+
+    const swept = await page.evaluate(`(async () => {
+      await window.__setMode(${MODES.SLICES})
+      const nv = window.__nv
+      const cross = nv.model.scene2mm(nv.model.scene.crosshairPos)
+      const px = nv.volumes[0].pixDimsRAS ?? nv.volumes[0].hdr.pixDims
+      const vox = [px[1], px[2], px[3]].map(Math.abs)
+      const off = []
+      let hits = 0
+      let misses = 0
+      for (let y = 16; y < ${SIZE}; y += 16) {
+        for (let x = 16; x < ${SIZE}; x += 16) {
+          const mm = await nv.view.depthPick(x, y)
+          if (!mm) { misses++; continue }
+          hits++
+          const onPlane = mm.some((v, i) => Math.abs(v - cross[i]) <= vox[i])
+          if (!onPlane) off.push({ x, y, mm })
+        }
+      }
+      return { off: off.slice(0, 5), offCount: off.length, hits, misses }
+    })()`)
+
+    // A sweep that never hit a plane, or never missed one, proves nothing.
+    expect(swept.hits).toBeGreaterThan(0)
+    expect(swept.misses).toBeGreaterThan(0)
+    expect(
+      swept.offCount,
+      `picks off every plane: ${JSON.stringify(swept.off)}`,
+    ).toBe(0)
+  })
+}
 
 // A chunked volume draws one cube per brick, so a plane crossing a brick
 // boundary is at risk of being composited twice (a bright seam) or by neither

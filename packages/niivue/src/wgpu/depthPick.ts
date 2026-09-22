@@ -50,7 +50,10 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
       if (tk < 0.0 || tk >= len) { continue; }
       if (best >= 0.0 && tk >= best) { continue; }
       let pos = start + dir * tk;
-      var visible = textureSampleLevel(volume, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0;
+      // The same visibility rule sampleSlice draws with: without alpha clipping
+      // the whole plane is a solid slab, so every in-cube hit is pickable.
+      var visible = !alphaClipDark();
+      if (!visible) { visible = textureSampleLevel(volume, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0; }
       if (!visible && params.numVolumes > 1.0) {
         visible = textureSampleLevel(overlay, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0;
       }

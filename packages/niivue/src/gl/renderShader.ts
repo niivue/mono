@@ -551,9 +551,16 @@ float distance2Plane(vec4 samplePos, vec4 clipPlane) {
 vec4 sampleSlice(vec3 pos, bool isLayer) {
   vec3 volCoord = chunkTexCoord(pos);
   vec4 bg = texture(volume, volCoord);
-  // Air (baked alpha 0) is transparent rather than black: the whole point of
-  // compositing three planes is that the farther ones stay visible.
-  float a = isLayer ? bg.a : (bg.a > 0.0 ? backOpacity : 0.0);
+  // Exactly the 2D tiles' rule (gl/sliceShader.ts): the volume's own opacity,
+  // with a voxel the colormap made fully transparent knocked out only under
+  // isAlphaClipDark. Off, a plane is a solid slab and the nearest one wins,
+  // which is what 0.6 always drew; on, only tissue is drawn and the planes
+  // behind it show through.
+  float a = backOpacity;
+  if (isAlphaClipDark > 0.5 && bg.a == 0.0) { a = 0.0; }
+  // A layer carries its own baked opacity, and 2D clips dark on the background
+  // only.
+  if (isLayer) { a = bg.a; }
   vec3 rgb = applyGamma(bg.rgb, invGamma);
   if (HAS_OVERLAY && textureSize(overlay, 0).x > 2) {
     vec4 ov = texture(overlay, volCoord);

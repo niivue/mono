@@ -1586,14 +1586,26 @@ blend equation.
 `SLICES` does not march at all. It intersects the ray with the three crosshair
 planes, samples the whole layer stack at each hit with `sampleSlice()` (the
 order the 2D tiles blend in, not the march's per-layer passes), and composites
-the hits front to back with air transparent. The planes arrive in the
-`sliceFrac` GLSL uniform / three `.w` lanes of the WebGPU `Params` struct (see
-`sliceFrac()` in `wgpu/volumeShaderLib.ts`) — lanes, not a bigger struct,
-because `Params` is 512 bytes with one 256-byte-aligned slot per tile AND per
-chunk. Geometry needs nothing chunk-specific: `start`/`dir`/`len` already come
+the hits front to back. Whether air is painted or dropped follows
+`isAlphaClipDark`, the same flag the 2D tiles take, so the two agree on what a
+plane shows; the render and BOTH depth picks have to apply the same rule, or a
+click lands somewhere nothing is drawn. The planes arrive in the `sliceFrac`
+GLSL uniform / three `.w` lanes of the WebGPU `Params` struct, and the flag in a
+fourth (see `sliceFrac()` / `alphaClipDark()` in `wgpu/volumeShaderLib.ts`) —
+lanes, not a bigger struct, because `Params` is 512 bytes with one
+256-byte-aligned slot per tile AND per chunk. Geometry needs nothing chunk-specific: `start`/`dir`/`len` already come
 from the drawn cube. The depth-pick shaders carry the same plane test, and
 `NVTransforms.rayPlaneFirstVisibleMM` is its CPU twin for chunked volumes the
-GPU pick cannot sample.
+GPU pick cannot sample; a miss there falls through to the GPU pass, which is the
+only one that picks MESHES.
+
+Two things the march does, SLICES skips. The per-level LOD brightness exponent:
+`_lodGamma()` on both renderers returns 1 in SLICES, because a plane takes one
+sample whatever the brick's level, and applying it made a coarse floor brick's
+planes read brighter than the resident fine ones beside them. And the background
+`opacity`: in the independent hi-res overlay cube draw (`chunkOverlayOf`) the
+bound texture is a LAYER, so `sampleSlice(pos, isLayer)` takes the sample's own
+baked alpha instead.
 
 ### PAQD (probabilistic atlas with quantized distances)
 

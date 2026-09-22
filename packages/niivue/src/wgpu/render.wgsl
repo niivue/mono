@@ -481,9 +481,16 @@ fn distance2Plane(samplePos: vec4f, clipPlane: vec4f) -> f32 {
 fn sampleSlice(pos: vec3f, isLayer: bool) -> vec4f {
     let volCoord = chunkTexCoord(pos);
     let bg = textureSampleLevel(volume, tex_sampler, volCoord, 0.0);
-    // Air (baked alpha 0) is transparent rather than black: the whole point of
-    // compositing three planes is that the farther ones stay visible.
-    var a = select(select(0.0, params.backOpacity, bg.a > 0.0), bg.a, isLayer);
+    // Exactly the 2D tiles' rule (slice.wgsl): the volume's own opacity, with a
+    // voxel the colormap made fully transparent knocked out only under
+    // isAlphaClipDark. Off, a plane is a solid slab and the nearest one wins,
+    // which is what 0.6 always drew; on, only tissue is drawn and the planes
+    // behind it show through.
+    var a = params.backOpacity;
+    if (alphaClipDark() && bg.a == 0.0) { a = 0.0; }
+    // A layer carries its own baked opacity, and 2D clips dark on the
+    // background only.
+    if (isLayer) { a = bg.a; }
     var rgb = applyGamma(bg.rgb, params.invGamma);
     if (HAS_OVERLAY && textureDimensions(overlay, 0).x > 2) {
         let ov = textureSampleLevel(overlay, tex_sampler, volCoord, 0.0);

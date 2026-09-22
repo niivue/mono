@@ -823,8 +823,10 @@ export function rayMarchFirstVisibleMM(
  * The CPU twin of the SLICES branch in the render and depth-pick shaders, for
  * chunked volumes whose (non-single) texture the GPU pick cannot sample. Clip
  * planes are ignored, as they are in that mode. Returns null when the ray
- * crosses no plane where anything is visible — the planes really are empty
- * there, so the crosshair should not move.
+ * crosses no plane where anything is visible; the caller then falls through to
+ * the GPU pick pass, which is the only one that picks meshes. A null must NOT
+ * send the caller to a near-surface fallback: in this mode that surface is not
+ * on screen, so it would move the crosshair somewhere the user never clicked.
  */
 export function rayPlaneFirstVisibleMM(
   near: ArrayLike<number>,

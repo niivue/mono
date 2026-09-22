@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { webgpuLaunchOptions } from './launchOptions'
 
 // The gradient texture (RGB = encoded unit normal, A = log-encoded magnitude)
 // feeds three features -- matcap illumination, gradientOpacity and
@@ -24,21 +25,7 @@ import { expect, test } from '@playwright/test'
 // WebGPU is off by default in headless Chromium. These flags bring up Dawn on
 // SwiftShader, which is enough to run a compute pass; scoped to this file so the
 // rest of the suite keeps the config's plain WebGL2-on-SwiftShader setup.
-test.use({
-  launchOptions: {
-    args: [
-      '--enable-unsafe-swiftshader',
-      '--enable-unsafe-webgpu',
-      '--use-angle=swiftshader',
-      '--enable-features=Vulkan',
-    ],
-    // `use.launchOptions` replaces the config's object rather than merging into
-    // it, so the config's escape hatch has to be repeated here.
-    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
-      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
-      : {}),
-  },
-})
+test.use({ launchOptions: webgpuLaunchOptions })
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/examples/index.html', { waitUntil: 'load' })

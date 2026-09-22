@@ -1490,9 +1490,10 @@ export default class NiiVue extends EventTarget {
    * The correction is one fixed step per pyramid level (`1 - coefficient *
    * log2(k)`). Empirical: sparse material loses more per level than dense.
    *
-   * No-op on any volume that is not a multi-LOD chunked volume. Call
-   * `lodCompensation()` to see whether it applies and what each level gets. See
-   * VolumeRenderConfig.lodBrightnessCompensation.
+   * No-op on any volume that is not a multi-LOD chunked volume, and on the 3D
+   * render in `VOLUME_RENDER_MODE.SLICES` (one sample per plane whatever the
+   * level). Call `lodCompensation()` to see whether it applies and what each
+   * level gets. See VolumeRenderConfig.lodBrightnessCompensation.
    */
   get volumeLodBrightnessCompensation(): number {
     return this.model.volume.lodBrightnessCompensation
@@ -4024,7 +4025,9 @@ export default class NiiVue extends EventTarget {
    * ```
    *
    * Reads the background volume (`volumes[0]`), which is the volume both
-   * settings act on. Cheap enough to call per frame for a debug HUD.
+   * settings act on. Cheap enough to call per frame for a debug HUD. In
+   * `VOLUME_RENDER_MODE.SLICES` the reported exponent reaches the 2D tiles
+   * only: the 3D planes take one sample per level and apply none.
    */
   lodCompensation(): LodCompensationReport {
     const brightness = this.model.volume.lodBrightnessCompensation

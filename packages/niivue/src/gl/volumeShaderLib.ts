@@ -84,6 +84,11 @@ const float RENDER_MODE_SLICES = 2.0;
 // The three crosshair planes in full-volume texture fraction, for
 // RENDER_MODE_SLICES. 1.0 when unused, which is off-cube and hits nothing.
 uniform vec3 sliceFrac;
+// volumeIsAlphaClipDark. A voxel the colormap made fully transparent is dropped
+// rather than painted, which is what lets the planes behind a SLICES plane show
+// through. The 2D tiles take the same flag; the ray-march never needed it,
+// because it samples that alpha directly.
+uniform float isAlphaClipDark;
 
 bool isRenderMode(float mode) {
   return abs(renderMode - mode) < 0.5;

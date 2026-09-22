@@ -775,7 +775,8 @@ export type VolumeRenderConfig = {
    * sparse thin material loses more per level than dense structure does. It is
    * safe to raise, because the per-level form stays gentle at depth rather than
    * running away. Non-chunked and single-level volumes are unaffected (k is 1
-   * for every draw).
+   * for every draw), and so is the 3D render in `VOLUME_RENDER_MODE.SLICES`,
+   * which takes one sample per plane whatever the brick's level.
    */
   lodBrightnessCompensation: number
 

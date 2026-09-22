@@ -44,7 +44,10 @@ void main() {
       if (tk < 0.0 || tk >= len) { continue; }
       if (best >= 0.0 && tk >= best) { continue; }
       vec3 pos = start + dir * tk;
-      bool visible = texture(volume, chunkTexCoord(pos)).a > 0.0;
+      // The same visibility rule sampleSlice draws with: without alpha clipping
+      // the whole plane is a solid slab, so every in-cube hit is pickable.
+      bool visible = isAlphaClipDark <= 0.5;
+      if (!visible) visible = texture(volume, chunkTexCoord(pos)).a > 0.0;
       if (!visible && numVolumes > 1.0) {
         visible = texture(overlay, chunkTexCoord(pos)).a > 0.0;
       }

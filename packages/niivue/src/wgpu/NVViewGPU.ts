@@ -810,6 +810,9 @@ export default class NVView {
     // the same conversion the 2D tiles use, so sheared and oblique volumes line
     // up with them.
     this.volumeRenderer.sliceFrac = [0, 1, 2].map((d) => md.getSliceTexFrac(d))
+    // SLICES honours the same dark-voxel clip the 2D tiles do, so the two agree
+    // on what a plane shows.
+    this.volumeRenderer.isAlphaClipDark = md.volume.isAlphaClipDark
     // Ray samples per voxel in the 3D fine march (anti-aliasing vs fragment cost).
     this.volumeRenderer.sampleRate = md.volume.sampleRate
     // Tricubic B-spline reconstruction in the fine march (8 fetches vs 1).
@@ -2695,9 +2698,14 @@ export default class NVView {
         )
         // SLICES draws three crosshair planes, so the pick lands on the nearest
         // VISIBLE plane crossing rather than on the near surface — the same rule
-        // the GPU shaders use for a non-chunked volume. A miss falls through
-        // like every other exit here, because the GPU pass below is the only
+        // the GPU shaders use for a non-chunked volume.
+        //
+        // A miss must NOT fall through to the surface fallbacks below: in this
+        // mode the volume's near surface is not on screen, so landing the
+        // crosshair there would teleport all three planes to a voxel the user
+        // never clicked. It drops to the GPU pass instead, which is the only
         // one that picks MESHES.
+        //
         // ponytail: un-exploded only, and the planes are the mm-axis ones, as
         // the bounding box around them already is -- an oblique volume's true
         // planes are tilted. Exploded blocks displace the planes with them, so
@@ -2713,15 +2721,16 @@ export default class NVView {
             vol.extentsMin,
             vol.extentsMax,
             md.scene2mm(md.scene.crosshairPos),
-            vol.pickSampler,
+            // Without alpha clipping the plane is a solid slab, so every
+            // in-box crossing is visible and there is nothing to reject.
+            md.volume.isAlphaClipDark ? vol.pickSampler : undefined,
           )
           if (planeMM) return planeMM
-        }
-        // Exploded view: blocks are displaced, so the un-exploded bounding box no
-        // longer matches what's on screen. Pick against each block's exploded
-        // AABB (first window-visible voxel in the hit block) and map the recovered
-        // un-exploded voxel back to mm for the crosshair.
-        if (
+        } else if (
+          // Exploded view: blocks are displaced, so the un-exploded bounding box
+          // no longer matches what's on screen. Pick against each block's
+          // exploded AABB (first window-visible voxel in the hit block) and map
+          // the recovered un-exploded voxel back to mm for the crosshair.
           vol.chunkPlan &&
           vol.matRAS &&
           chunkExplodeEnabled(vol.chunkExplode)
@@ -2756,32 +2765,34 @@ export default class NVView {
             return [mm[0], mm[1], mm[2]]
           }
           return null
+        } else {
+          // With a CPU sampler (the streamed volume's coarse floor, or
+          // app-supplied data), march to the first window-visible voxel.
+          // Without one — or when the ray crosses nothing visible — land on the
+          // bounding-box / clip surface, which is what the GPU shader does with
+          // its own miss.
+          const hitMM =
+            (vol.pickSampler
+              ? NVTransforms.rayMarchFirstVisibleMM(
+                  near,
+                  far,
+                  vol.extentsMin,
+                  vol.extentsMax,
+                  vol.pickSampler,
+                  md.clipPlanes,
+                  md.scene.isClipPlaneCutaway,
+                )
+              : null) ??
+            NVTransforms.rayBoxEntryMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+          if (hitMM) return hitMM
         }
-        // With a CPU sampler (the streamed volume's coarse floor, or app-supplied
-        // data), march to the first window-visible voxel. Without one — or when
-        // the ray crosses nothing visible — land on the bounding-box / clip
-        // surface, which is what the GPU shader does with its own miss.
-        const hitMM =
-          (vol.pickSampler
-            ? NVTransforms.rayMarchFirstVisibleMM(
-                near,
-                far,
-                vol.extentsMin,
-                vol.extentsMax,
-                vol.pickSampler,
-                md.clipPlanes,
-                md.scene.isClipPlaneCutaway,
-              )
-            : null) ??
-          NVTransforms.rayBoxEntryMM(
-            near,
-            far,
-            vol.extentsMin,
-            vol.extentsMax,
-            md.clipPlanes,
-            md.scene.isClipPlaneCutaway,
-          )
-        if (hitMM) return hitMM
       }
     }
     // Build pick-matrix-modified MVP that zooms to 1 pixel
@@ -2851,7 +2862,8 @@ export default class NVView {
           1,
           1,
           1,
-          1,
+          // dataSizeTexFrac.w: isAlphaClipDark, which SLICES picks against.
+          md.volume.isAlphaClipDark ? 1 : 0,
           // rayStepTexVox: identical to volumeTexDimsFull for a non-chunked pick.
           ...volumeTexDimsFull,
           1,

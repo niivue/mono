@@ -435,6 +435,11 @@ export class VolumeRenderer extends NVRenderer {
   // per-frame from model.getSliceTexFrac), read only in SLICES mode. 1 is
   // off-cube, so the default hits nothing.
   sliceFrac: number[] = [1, 1, 1]
+  // Volume flag (set per-frame from md.volume.isAlphaClipDark): drop a voxel the
+  // colormap made fully transparent instead of painting it. Read only in SLICES
+  // mode, where it is what makes a plane a cutout rather than a solid slab; the
+  // ray-march samples that alpha directly and needs no flag.
+  isAlphaClipDark = false
   // Which stencil the overlay/drawing passes estimate their own gradient with
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
@@ -3227,17 +3232,6 @@ export class VolumeRenderer extends NVRenderer {
     }
   }
 
-  /**
-   * This brick's per-level brightness compensation for the display-gamma
-   * exponent. 1 (a strict no-op) in SLICES mode: the compensation exists to
-   * offset what a coarse brick loses to sparser MARCH sampling, and a plane
-   * takes exactly one sample whatever the level.
-   */
-  private _lodGamma(lodDownsample: number): number {
-    if (this.renderMode === VOLUME_RENDER_MODE.SLICES) return 1
-    return lodGammaExponent(lodDownsample, this.lodBrightnessCompensation)
-  }
-
   private _writeRenderParams(
     device: GPUDevice,
     paramsBuffer: GPUBuffer,
@@ -3308,7 +3302,15 @@ export class VolumeRenderer extends NVRenderer {
         // sample per plane and so loses nothing to compensate for. Without that
         // gate a coarse floor brick's planes read brighter than the resident
         // fine ones beside them.
-        invGamma(this.gamma) * this._lodGamma(chunkUniforms.lodDownsample ?? 1),
+        invGamma(this.gamma) *
+          lodGammaExponent(
+            chunkUniforms.lodDownsample ?? 1,
+            // SLICES takes one sample per plane whatever the level, so there is
+            // nothing to compensate; 0 makes lodGammaExponent an exact no-op.
+            this.renderMode === VOLUME_RENDER_MODE.SLICES
+              ? 0
+              : this.lodBrightnessCompensation,
+          ),
         // lodOpacityScale (offset 392, was the first _pad0 lane): scales the
         // step-size opacity exponent for a coarse brick. 1 for every
         // single-level and non-chunked draw, and for the default coefficient 0.
@@ -3333,7 +3335,8 @@ export class VolumeRenderer extends NVRenderer {
         ...chunkUniforms.dataOriginTexFrac,
         this.sliceFrac[2],
         ...chunkUniforms.dataSizeTexFrac,
-        1,
+        // .w: isAlphaClipDark, read by SLICES only (see alphaClipDark()).
+        this.isAlphaClipDark ? 1 : 0,
         ...chunkUniforms.rayStepTexVox,
         // .w lane: ray samples per voxel in the fine march (was pad).
         this.sampleRate,

@@ -386,6 +386,11 @@ export class VolumeRenderer extends NVRenderer {
   // per-frame from model.getSliceTexFrac), read only in SLICES mode. 1 is
   // off-cube, so the default hits nothing.
   sliceFrac: number[] = [1, 1, 1]
+  // Volume flag (set per-frame from md.volume.isAlphaClipDark): drop a voxel the
+  // colormap made fully transparent instead of painting it. Read only in SLICES
+  // mode, where it is what makes a plane a cutout rather than a solid slab; the
+  // ray-march samples that alpha directly and needs no flag.
+  isAlphaClipDark = false
   // Scene display gamma (set per-frame from md.scene.gamma). Applied to the
   // classified RGB of every volume sample, never to alpha, so brightening does
   // not change how much a ray occludes. 1.0 is a strict no-op.
@@ -2526,6 +2531,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
     if (shader.uniforms.sliceFrac)
       gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
+    if (shader.uniforms.isAlphaClipDark)
+      gl.uniform1f(
+        shader.uniforms.isAlphaClipDark,
+        this.isAlphaClipDark ? 1 : 0,
+      )
     // Default fully present; the chunk loop overrides per fading chunk.
     if (shader.uniforms.fadeAlpha) gl.uniform1f(shader.uniforms.fadeAlpha, 1.0)
     if (shader.uniforms.paqdUniforms)
@@ -2607,17 +2617,6 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /** Set the five per-chunk tiled-volume uniforms on the active shader. */
-  /**
-   * This brick's per-level brightness compensation for the display-gamma
-   * exponent. 1 (a strict no-op) in SLICES mode: the compensation exists to
-   * offset what a coarse brick loses to sparser MARCH sampling, and a plane
-   * takes exactly one sample whatever the level.
-   */
-  private _lodGamma(lodDownsample: number): number {
-    if (this.renderMode === VOLUME_RENDER_MODE.SLICES) return 1
-    return lodGammaExponent(lodDownsample, this.lodBrightnessCompensation)
-  }
-
   private _setChunkUniforms(
     gl: WebGL2RenderingContext,
     shader: Shader,
@@ -2662,7 +2661,15 @@ export class VolumeRenderer extends NVRenderer {
     if (shader.uniforms.invGamma)
       gl.uniform1f(
         shader.uniforms.invGamma,
-        invGamma(this.gamma) * this._lodGamma(u.lodDownsample ?? 1),
+        invGamma(this.gamma) *
+          lodGammaExponent(
+            u.lodDownsample ?? 1,
+            // SLICES takes one sample per plane whatever the level, so there is
+            // nothing to compensate; 0 makes lodGammaExponent an exact no-op.
+            this.renderMode === VOLUME_RENDER_MODE.SLICES
+              ? 0
+              : this.lodBrightnessCompensation,
+          ),
       )
     // Scales the step-size opacity exponent for a coarse brick. 1 for every
     // single-level and non-chunked draw, and for the default coefficient of 0.
@@ -2984,6 +2991,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
     if (shader.uniforms.sliceFrac)
       gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
+    if (shader.uniforms.isAlphaClipDark)
+      gl.uniform1f(
+        shader.uniforms.isAlphaClipDark,
+        this.isAlphaClipDark ? 1 : 0,
+      )
     if (shader.uniforms.paqdUniforms)
       gl.uniform4fv(shader.uniforms.paqdUniforms, paqdUniforms as number[])
     if (shader.uniforms.earlyTermination)
@@ -3075,6 +3087,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
     if (shader.uniforms.sliceFrac)
       gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
+    if (shader.uniforms.isAlphaClipDark)
+      gl.uniform1f(
+        shader.uniforms.isAlphaClipDark,
+        this.isAlphaClipDark ? 1 : 0,
+      )
     // Depth pick uses a single volume texture; pass identity chunk uniforms
     // so the shared vertex shader / preamble run in non-chunked mode.
     this._setChunkUniforms(gl, shader, {

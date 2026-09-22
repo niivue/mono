@@ -40,9 +40,12 @@ export enum DRAG_MODE {
  * SLICES does not march at all: it shows the axial, coronal and sagittal
  * planes through the crosshair inside the 3D tile, compositing the (at most
  * three) plane hits front to back. Layers -- overlay, PAQD and drawing -- are
- * sampled on the planes the way the 2D tiles blend them, and a voxel whose
- * baked alpha is 0 is transparent, so air never hides a farther plane. At most
- * three samples per ray makes it the cheapest 3D view. Clip planes and all
+ * sampled on the planes the way the 2D tiles blend them, and `isAlphaClipDark`
+ * decides what a plane does with a voxel the colormap made fully transparent,
+ * exactly as it does in 2D: off (the default) it is painted, so a plane is a
+ * solid slab and the nearest one wins; on, it is dropped, so only tissue is
+ * drawn and the planes behind show through. At most three samples per ray makes
+ * it the cheapest 3D view. Clip planes and all
  * lighting (illumination, gradient opacity, silhouette) are ignored: a plane
  * has no surface to shade.
  *

@@ -37,6 +37,8 @@ NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
     "annotationRemoved",
     "azimuthElevationChange",
     "change",
+    "chunkStreamIdle",
+    "chunkStreamProgress",
     "clickToSegment",
     "clipPlaneChange",
     "colormapAdded",
@@ -386,6 +388,26 @@ and its volumes alive."""
         """
         self.send({"cmd": "broadcastTo", "args": _make_args(targets, opts)})
 
+    async def canvas_to_mm(self, canvas_x: Any, canvas_y: Any) -> Any:
+        """Convert a canvas position to a world-mm point by picking on the 2D slice tile under it (ray/slice-plane intersection — the same math the built-in crosshair click uses, so the result matches `setCrosshairPos` picking).
+
+        Input is canvas backing-store pixels — see {@link hitTest} for the exact
+        convention and the CSS-pixel/devicePixelRatio conversion.
+
+        Returns null when the point misses every tile, lands on a 3D render tile,
+        or no volume is loaded.
+
+        Parameters
+        ----------
+        canvas_x : number
+        canvas_y : number
+
+        Returns
+        -------
+        [number, number, number] | null
+        """
+        return await self._request("canvasToMM", _make_args(canvas_x, canvas_y))
+
     async def center_render_on_mm(self, mm: Any) -> Any:
         """Pan the 3D render so a given world-mm point sits at the centre of the render tile, by adjusting `renderPan` (a clip-space translation; no change to the camera, rotation, or zoom).
 
@@ -411,6 +433,10 @@ and its volumes alive."""
         overlays: `resident < total` with `pending > 0` for many frames indicates the
         working set exceeds the residency budget (thrashing).
 
+        To find out when streaming finishes, listen for the `chunkStreamIdle`
+        event (with `chunkStreamProgress` along the way) instead of polling this
+        on a timer — see {@link ChunkStreamDetail}.
+
         `staleDropped` is cumulative, not per frame: queued uploads retired because
         the view moved on before they ran. It climbing during a pan or rotate is the
         queue working as intended, since that work would otherwise have uploaded
@@ -428,7 +454,7 @@ and its volumes alive."""
 
         Returns
         -------
-        { resident: number; pending: number; inFlight: number; total: number; staleDropped: number; predicted: number; decoded: DecodedChunkStats; } | null
+        ChunkStreamDetail | null
         """
         return await self._request("chunkStreamStats", [])
 
@@ -490,6 +516,31 @@ and its volumes alive."""
         """Remove a slide plane registered with {@link setSlidePlane}.
         """
         self.send({"cmd": "clearSlidePlane", "args": []})
+
+    async def client_to_canvas(self, client_x: Any, client_y: Any) -> Any:
+        """Convert a pointer event's client position to the canvas pixel space that {@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and {@link getScreenTiles} use.
+
+        This is the exact conversion the built-in
+        pointer handlers apply, so a caller never has to reproduce it:
+        `(client - canvas rect origin) * dpr`, where `dpr` is
+        `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
+        then, for an instance sharing a canvas via `bounds`, minus the origin of
+        this instance's post-viewport pixel rect.
+
+        Returns null when the instance has no canvas or, for a `bounds` instance,
+        when the point is outside this instance's rect (a sibling's area) or the
+        rect is offscreen.
+
+        Parameters
+        ----------
+        client_x : number
+        client_y : number
+
+        Returns
+        -------
+        [number, number] | null
+        """
+        return await self._request("clientToCanvas", _make_args(client_x, client_y))
 
     def close_drawing(self) -> None:
         self.send({"cmd": "closeDrawing", "args": []})
@@ -709,6 +760,34 @@ and its volumes alive."""
         """
         return await self._request("hasColormap", _make_args(name))
 
+    async def hit_test(self, canvas_x: Any, canvas_y: Any) -> Any:
+        """Hit-test a canvas position against the current frame's tiles.
+
+        Coordinate convention (shared by {@link canvasToMM}, {@link mmToCanvas}
+        and {@link getScreenTiles}): canvas BACKING-STORE pixels — the
+        `canvas.width`/`canvas.height` space the renderer draws into — origin at
+        the top-left, y down. These are NOT CSS pixels, and for an instance
+        sharing one canvas via `bounds` they are bounds-local (the instance's own
+        pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
+        event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
+        the bounds offset exactly as the built-in pointer handlers do.
+
+        Returns the tile index, its slice type, whether it is a 3D render tile,
+        and the position normalized to the tile rect (half-open [0,1), y down);
+        null when no
+        tile contains the point or the view is not initialized.
+
+        Parameters
+        ----------
+        canvas_x : number
+        canvas_y : number
+
+        Returns
+        -------
+        ViewHitTest | null
+        """
+        return await self._request("hitTest", _make_args(canvas_x, canvas_y))
+
     def load_annotations_json(self, json: Any) -> None:
         self.send({"cmd": "loadAnnotationsJSON", "args": _make_args(json)})
 
@@ -862,6 +941,35 @@ and its volumes alive."""
         [number, number] | null
         """
         return await self._request("mm2renderNDC", _make_args(mm))
+
+    async def mm_to_canvas(self, mm: Any) -> Any:
+        """Project a world-mm point to canvas pixels on the best-matching 2D slice tile, using the MVP each tile cached on its last draw (so the result reflects the current pan/zoom exactly).
+
+        Intended for positioning external
+        overlays (SVG/HTML crosshairs, labels) over slices.
+
+        Tile selection: the 2D slice tile whose slice plane passes nearest the
+        point (perpendicular distance in mm); ties — e.g. the crosshair, which
+        lies on every plane of a multiplanar layout — resolve to the lowest tile
+        index. 3D render tiles are never selected (use {@link mm2renderNDC} for
+        those).
+
+        The returned x/y are canvas backing-store pixels (see {@link hitTest});
+        divide by the effective devicePixelRatio to position CSS-pixel-sized
+        overlay elements. The point may project outside the winning tile's rect
+        when panned/zoomed out of view — clip against the tile's
+        `leftTopWidthHeight` if needed. Returns null before the first render or
+        when the layout has no 2D slice tiles.
+
+        Parameters
+        ----------
+        mm : [number, number, number]
+
+        Returns
+        -------
+        CanvasTilePoint | null
+        """
+        return await self._request("mmToCanvas", _make_args(mm))
 
     def move_crosshair_in_vox(self, di: Any, dj: Any, dk: Any) -> None:
         self.send({"cmd": "moveCrosshairInVox", "args": _make_args(di, dj, dk)})

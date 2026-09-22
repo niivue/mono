@@ -174,6 +174,8 @@ const EVENTS = [
   "azimuthElevationChange",
   "canvasResize",
   "change",
+  "chunkStreamIdle",
+  "chunkStreamProgress",
   "clickToSegment",
   "clipPlaneChange",
   "colormapAdded",

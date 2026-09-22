@@ -11,11 +11,14 @@
   <body>
     <header>
       <label for="modeSelect"
-        title="volumeRenderMode: how the 3D render combines samples along a ray">Render mode</label>
+        title="what the 3D render tile draws: volumeRenderMode, plus matcap lighting for the Matcap preset"
+        >Render mode</label
+      >
       <select id="modeSelect">
-        <option value="0">Composite</option>
-        <option value="1">Maximum</option>
-        <option value="2" selected>Slices</option>
+        <option value="volume">Volume</option>
+        <option value="matcap">Matcap</option>
+        <option value="maximum">Maximum</option>
+        <option value="slices" selected>Slices</option>
       </select>
       &nbsp;
       <select id="sliceType">
@@ -51,7 +54,8 @@
     </main>
     <footer id="location">&nbsp;</footer>
     <script type="module">
-      import NiiVue, { SHOW_RENDER } from '../src/index.ts'
+      import { shiny } from '../src/assets/matcaps'
+      import NiiVue, { SHOW_RENDER, VOLUME_RENDER_MODE } from '../src/index.ts'
 
       // The three volumeRenderMode values side by side. COMPOSITE and MAXIMUM
       // ray-march; SLICES does not — it draws the three crosshair planes inside
@@ -75,6 +79,18 @@
       const CEREBELLUM_MESH = 1
       // A sentinel that cannot collide with a shader name.
       const HIDDEN = '\u0000hidden'
+
+      // Render-mode presets. Matcap is NOT a fourth volumeRenderMode: it is the
+      // composite march with the matcap lighting that the volume's gradient
+      // drives, which is a separate control. Every preset sets both, so
+      // switching away from it turns the lighting back off. SLICES ignores
+      // illumination entirely -- a plane has no surface to shade.
+      const RENDER_PRESETS = {
+        volume: { mode: VOLUME_RENDER_MODE.COMPOSITE, illumination: 0 },
+        matcap: { mode: VOLUME_RENDER_MODE.COMPOSITE, illumination: 0.3 },
+        maximum: { mode: VOLUME_RENDER_MODE.MAXIMUM, illumination: 0 },
+        slices: { mode: VOLUME_RENDER_MODE.SLICES, illumination: 0 },
+      }
       const TISSUES = [
         { id: 'gm', file: 'mni152_gm.nii.gz', tint: [224, 104, 104] },
         { id: 'wm', file: 'mni152_wm.nii.gz', tint: [250, 250, 250] },
@@ -83,6 +99,7 @@
 
       const nv1 = new NiiVue({
         backgroundColor: [0.5, 0.5, 0.5, 1],
+        matcaps: { Shiny: shiny },
         is3DCrosshairVisible: true,
         // The cerebellar atlas labels every lobule, and the legend for them
         // takes a quarter of the canvas away from the render tile this demo is
@@ -95,6 +112,8 @@
         document.getElementById('location').textContent = e.detail.string
       })
       await nv1.attachToCanvas(document.getElementById('gl1'))
+      // No matcap is loaded by default, and the Matcap preset needs one.
+      await nv1.loadMatcap('Shiny')
 
       // A ramp from a pale version of the tint up to the tint, as in
       // vox.tissues.html: a built-in saturated primary would repaint the
@@ -174,7 +193,9 @@
 
       const modeSelect = document.getElementById('modeSelect')
       modeSelect.onchange = () => {
-        nv1.volumeRenderMode = parseInt(modeSelect.value, 10)
+        const preset = RENDER_PRESETS[modeSelect.value]
+        nv1.volumeRenderMode = preset.mode
+        nv1.volumeIllumination = preset.illumination
       }
       // The markup is the single source of truth for the starting mode.
       modeSelect.onchange()

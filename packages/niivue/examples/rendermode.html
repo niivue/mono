@@ -129,7 +129,7 @@
       ])
       await nv1.loadMeshes([
         { url: TRACTS },
-        { url: CEREBELLUM, shaderType: 'outline' },
+        { url: CEREBELLUM, shaderType: 'matte' },
       ])
 
       // Shader choice for the cerebellum only -- the tracts keep their own, so
@@ -142,7 +142,7 @@
           shader === HIDDEN
             ? 'Hidden'
             : shader.charAt(0).toUpperCase() + shader.slice(1)
-        option.selected = shader === 'outline'
+        option.selected = shader === 'matte'
         cerebellumSelect.appendChild(option)
       }
       cerebellumSelect.onchange = () => {

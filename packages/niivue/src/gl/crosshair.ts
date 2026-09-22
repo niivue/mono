@@ -1,5 +1,6 @@
 import type NVModel from '@/NVModel'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
+import { getAxisColor } from '@/view/crosshairColor'
 import {
   applyCrosshairOffset,
   crosshairExplodeOffsetForModel,
@@ -23,13 +24,14 @@ export type CrosshairResources = WebGLMeshGPU & {
 export class CrosshairRenderer extends NVRenderer {
   private gl: WebGL2RenderingContext | null = null
   private cylinders: CrosshairResources[] = []
-  // radius, packed colour, 6 segments x 2 endpoints x 3 axes, explode offset
-  private _geometryKey = new Float64Array(2 + 36 + 3).fill(Number.NaN)
+  // radius, one packed colour per axis, 6 segments x 2 endpoints x 3 axes,
+  // explode offset
+  private _geometryKey = new Float64Array(1 + 3 + 36 + 3).fill(Number.NaN)
 
   /** True when the buffers do not already hold this geometry. */
   private _geometryChanged(
     radius: number,
-    colorPacked: number,
+    axisColors: ArrayLike<number>,
     segments: ReturnType<typeof calculateCrosshairSegments>,
     off: ArrayLike<number>,
   ): boolean {
@@ -41,7 +43,9 @@ export class CrosshairRenderer extends NVRenderer {
       key[k++] = v
     }
     put(radius)
-    put(colorPacked)
+    put(axisColors[0])
+    put(axisColors[1])
+    put(axisColors[2])
     for (const seg of segments) {
       for (const pt of seg) {
         put(pt[0])
@@ -134,7 +138,6 @@ export class CrosshairRenderer extends NVRenderer {
 
     const { extentsMin, extentsMax, scene, ui } = model
     const radius = radiusMM
-    const colorPacked = packColor(ui.crosshairColor)
     const segments = calculateCrosshairSegments(
       extentsMin,
       extentsMax,
@@ -147,12 +150,20 @@ export class CrosshairRenderer extends NVRenderer {
     // block lookup is in volume texture fraction, so convert via mm.
     const off = crosshairExplodeOffsetForModel(model)
 
+    // Cylinders are ordered X-, X+, Y-, Y+, Z-, Z+, so axis = floor(i / 2).
+    const axisColors = [0, 1, 2].map((axis) =>
+      packColor(
+        getAxisColor(axis, ui.crosshairColor, ui.crosshairColorPerAxis),
+      ),
+    )
+
     // Tiles that share a radius -- the usual case -- share the geometry, so only
     // the first of them pays for the rebuild.
-    if (!this._geometryChanged(radius, colorPacked, segments, off)) return
+    if (!this._geometryChanged(radius, axisColors, segments, off)) return
 
     // Update each cylinder's vertex buffer
     for (let i = 0; i < 6; i++) {
+      const colorPacked = axisColors[Math.floor(i / 2)]
       const seg = segments[i]
       const start = applyCrosshairOffset(seg[0], off)
       const end = applyCrosshairOffset(seg[1], off)

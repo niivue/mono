@@ -155,6 +155,13 @@ export function addMeasurement(
  * would emit an empty detail and remove the wrong measurement. Emits
  * `measurementRemoved` BEFORE the mutation, so a listener can still reach the
  * referenced measurement in the collection.
+ *
+ * The event is synchronous, so a listener may itself add or remove
+ * measurements and shift the array under us. The splice therefore targets the
+ * measurement captured before the emit, re-located by identity after the
+ * listeners return, never the stale index: for [A, B, C], removing B while a
+ * listener removes A must leave [C], not delete C and keep B. If a listener
+ * already removed the measurement, nothing is spliced.
  */
 export function removeMeasurement(ctrl: NiiVue, index: number): void {
   const measurements = ctrl.model.completedMeasurements
@@ -164,9 +171,31 @@ export function removeMeasurement(ctrl: NiiVue, index: number): void {
     )
     return
   }
-  ctrl.emit('measurementRemoved', { measurement: measurements[index], index })
-  measurements.splice(index, 1)
+  const measurement = measurements[index]
+  ctrl.emit('measurementRemoved', { measurement, index })
+  // Re-read the model field: a listener may have replaced the array
+  // (clearMeasurements assigns a new one) as well as spliced it.
+  const current = ctrl.model.completedMeasurements
+  const at = current.indexOf(measurement)
+  if (at >= 0) current.splice(at, 1)
   ctrl.drawScene()
+}
+
+/**
+ * Deep copy of the measurement list for {@link NiiVue.getMeasurements}. The
+ * model's entries are what the renderer and the events reference, so handing
+ * them out would let a caller move an endpoint in place, leaving `distance`
+ * stale and nothing redrawn or emitted. Each entry and its endpoint tuples
+ * are fresh objects.
+ */
+export function snapshotMeasurements(
+  measurements: readonly CompletedMeasurement[],
+): CompletedMeasurement[] {
+  return measurements.map((m) => ({
+    ...m,
+    startMM: [m.startMM[0], m.startMM[1], m.startMM[2]],
+    endMM: [m.endMM[0], m.endMM[1], m.endMM[2]],
+  }))
 }
 
 /** Distance from a point to a line segment, all in canvas pixels. */

@@ -9,6 +9,7 @@ import {
   buildMeasurement,
   pickMeasurement,
   removeMeasurement,
+  snapshotMeasurements,
 } from './measurements'
 
 // An axial tile with an identity MVP over a 100x100 px viewport: mm (x, y, 0)
@@ -247,6 +248,57 @@ describe('removeMeasurement', () => {
     expect(drawScene).toHaveBeenCalledTimes(1)
   })
 
+  test('removes the right measurement when a listener removes an earlier one', () => {
+    const { ctrl, emit, completedMeasurements } = fakeCtrl()
+    addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0]) // A
+    addMeasurement(ctrl, [0, -1, 0], [0, 1, 0]) // B
+    addMeasurement(ctrl, [-1, -1, 0], [1, 1, 0]) // C
+    const [a, b, c] = completedMeasurements
+    emit.mockImplementation((type: string, detail?: unknown) => {
+      // Re-entrant: while B is being removed, drop A. The array shifts, so
+      // the outer call's index 1 now names C.
+      if (
+        type === 'measurementRemoved' &&
+        detail &&
+        (detail as { measurement: CompletedMeasurement }).measurement === b
+      ) {
+        removeMeasurement(ctrl, 0)
+      }
+    })
+    removeMeasurement(ctrl, 1)
+    expect(completedMeasurements).toEqual([c])
+    expect(completedMeasurements).not.toContain(a)
+    expect(completedMeasurements).not.toContain(b)
+  })
+
+  test('does not splice twice when a listener already removed the measurement', () => {
+    const { ctrl, emit, completedMeasurements } = fakeCtrl()
+    addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0]) // A
+    addMeasurement(ctrl, [0, -1, 0], [0, 1, 0]) // B
+    const [a, b] = completedMeasurements
+    let nested = false
+    emit.mockImplementation((type: string) => {
+      if (type === 'measurementRemoved' && !nested) {
+        nested = true
+        removeMeasurement(ctrl, 0) // the same measurement, from inside the event
+      }
+    })
+    removeMeasurement(ctrl, 0)
+    expect(completedMeasurements).toEqual([b])
+    expect(completedMeasurements).not.toContain(a)
+  })
+
+  test('survives a listener replacing the array (clearMeasurements)', () => {
+    const { ctrl, emit } = fakeCtrl()
+    addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0])
+    addMeasurement(ctrl, [0, -1, 0], [0, 1, 0])
+    emit.mockImplementation((type: string) => {
+      if (type === 'measurementRemoved') ctrl.model.completedMeasurements = []
+    })
+    expect(() => removeMeasurement(ctrl, 1)).not.toThrow()
+    expect(ctrl.model.completedMeasurements).toEqual([])
+  })
+
   test('warns and no-ops on an out-of-bounds index (matching removeVolume)', () => {
     const { ctrl, emit, drawScene, completedMeasurements } = fakeCtrl()
     addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0])
@@ -318,5 +370,32 @@ describe('pickMeasurement', () => {
     const bare = { axCorSag: SLICE_TYPE.AXIAL } as SliceTile
     ;(ctrl.view as { screenSlices: SliceTile[] }).screenSlices = [bare]
     expect(pickMeasurement(ctrl, 50, 50)).toBeNull()
+  })
+})
+
+describe('snapshotMeasurements', () => {
+  test('returns fresh entries whose endpoint tuples are not the model objects', () => {
+    const { ctrl, completedMeasurements } = fakeCtrl()
+    addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0])
+    const snap = snapshotMeasurements(completedMeasurements)
+    expect(snap).toEqual(completedMeasurements)
+    expect(snap).not.toBe(completedMeasurements)
+    expect(snap[0]).not.toBe(completedMeasurements[0])
+    expect(snap[0]?.endMM).not.toBe(completedMeasurements[0]?.endMM)
+    // Mutating the snapshot cannot reach the rendered measurement.
+    const entry = snap[0]
+    if (!entry) throw new Error('snapshot is empty')
+    entry.endMM[0] = 99
+    entry.distance = 0
+    expect(completedMeasurements[0]?.endMM[0]).toBe(1)
+    expect(completedMeasurements[0]?.distance).toBe(2)
+  })
+
+  test('is a point-in-time copy, not a live view', () => {
+    const { ctrl, completedMeasurements } = fakeCtrl()
+    addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0])
+    const snap = snapshotMeasurements(completedMeasurements)
+    completedMeasurements.length = 0
+    expect(snap).toHaveLength(1)
   })
 })

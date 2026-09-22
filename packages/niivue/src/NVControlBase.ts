@@ -5363,13 +5363,16 @@ export default class NiiVue extends EventTarget {
   /**
    * All completed distance measurements, in insertion order (an entry's
    * position is the index {@link addMeasurement} returned and
-   * {@link removeMeasurement}/{@link pickMeasurement} use). Returns the live
-   * collection typed readonly — do not mutate it; use
-   * {@link addMeasurement}/{@link removeMeasurement}/{@link clearMeasurements}
-   * so events fire and the scene redraws.
+   * {@link removeMeasurement}/{@link pickMeasurement} use). Returns a snapshot:
+   * a fresh array of fresh entries, so editing it (an endpoint tuple included)
+   * cannot change what is rendered, and it does not update when measurements
+   * are later added, removed or cleared. Call it again for the current list,
+   * and use {@link addMeasurement}/{@link removeMeasurement}/
+   * {@link clearMeasurements} to change it so events fire and the scene
+   * redraws.
    */
   getMeasurements(): readonly CompletedMeasurement[] {
-    return this.model.completedMeasurements
+    return measurementApi.snapshotMeasurements(this.model.completedMeasurements)
   }
 
   /**
@@ -5380,9 +5383,16 @@ export default class NiiVue extends EventTarget {
    * closest measurement whose projected line is within `radiusPx` (default 8)
    * canvas pixels of the point, or null if none is. Requires a rendered frame
    * (the projection uses matrices cached during render).
+   *
+   * `canvasX`/`canvasY` are canvas BACKING-STORE pixels, the same convention
+   * as {@link hitTest} and {@link canvasToMM}, not CSS pixels: a pointer
+   * event's `offsetX`/`offsetY` are off by the device pixel ratio on any
+   * display above 1x. Convert with {@link clientToCanvas} first.
    * @example
    * canvas.addEventListener('pointerdown', (e) => {
-   *   const idx = nv1.pickMeasurement(e.offsetX, e.offsetY)
+   *   const px = nv1.clientToCanvas(e.clientX, e.clientY)
+   *   if (!px) return
+   *   const idx = nv1.pickMeasurement(px[0], px[1])
    *   if (idx !== null) nv1.removeMeasurement(idx)
    * })
    */

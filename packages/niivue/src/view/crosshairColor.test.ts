@@ -48,7 +48,7 @@ describe('getAxisColor', () => {
     expect(getAxisColor(2, FALLBACK, perAxis)).toEqual(FALLBACK)
   })
 
-  test('doesNotMutateInputs', () => {
+  test('returnsPerAxisEntryByReference', () => {
     const perAxis = [RED, GREEN, BLUE]
     const result = getAxisColor(0, FALLBACK, perAxis)
     expect(result).toBe(RED)

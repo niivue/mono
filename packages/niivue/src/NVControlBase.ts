@@ -1,4 +1,4 @@
-import { mat4, type vec2, vec3, vec4 } from 'gl-matrix'
+import { mat4, type vec2, type vec3, vec4 } from 'gl-matrix'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
 import { getAnnotationSelection } from '@/annotation/selection'
@@ -144,6 +144,7 @@ import {
 } from '@/view/NVPerfMarks'
 import type { CanvasTilePoint, SliceTile } from '@/view/NVSliceLayout'
 import {
+  cloneSliceTile,
   projectMMToNearestTile,
   screenSlicePick,
   validateCustomLayout,
@@ -918,23 +919,15 @@ export default class NiiVue extends EventTarget {
    * projection geometry (`mvpMatrix`, `planeNormal`, `planePoint`) used by
    * {@link mmToCanvas}/{@link canvasToMM}.
    *
-   * Each entry is a shallow copy with those geometry fields cloned, so the
-   * snapshot stays coherent while the renderer keeps drawing and mutating it
-   * cannot corrupt renderer state. Remaining fields (e.g. `screen`,
-   * `crossLines`) are shared references — treat them as read-only. Recompute
-   * per frame if you track a live view; the snapshot does not update.
+   * Each entry is a deep copy (every nested field, including `screen`,
+   * `crossLines` and the geometry arrays), so the snapshot stays coherent
+   * while the renderer keeps drawing, and mutating it cannot reach renderer
+   * state. Recompute per frame if you track a live view; the snapshot does
+   * not update.
    */
   getScreenTiles(): readonly SliceTile[] {
     const tiles = this.view?.screenSlices ?? []
-    return tiles.map((tile) => {
-      const copy: SliceTile = { ...tile }
-      if (tile.leftTopWidthHeight)
-        copy.leftTopWidthHeight = [...tile.leftTopWidthHeight]
-      if (tile.mvpMatrix) copy.mvpMatrix = mat4.clone(tile.mvpMatrix)
-      if (tile.planeNormal) copy.planeNormal = vec3.clone(tile.planeNormal)
-      if (tile.planePoint) copy.planePoint = vec3.clone(tile.planePoint)
-      return copy
-    })
+    return tiles.map(cloneSliceTile)
   }
 
   /**

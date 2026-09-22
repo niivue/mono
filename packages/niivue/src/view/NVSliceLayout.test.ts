@@ -6,6 +6,7 @@ import type NVModel from '@/NVModel'
 import type { CustomLayoutTile, ViewHitTest } from '@/NVTypes'
 import {
   type AxisWindowMM,
+  cloneSliceTile,
   crosshairRadiusMM,
   everyTileWindowMM,
   fitSlicesAndGraph,
@@ -715,5 +716,38 @@ describe('projectMMToNearestTile', () => {
     expect(proj).not.toBeNull()
     if (!proj) return
     expect(proj.x).toBeGreaterThan(100)
+  })
+})
+
+describe('cloneSliceTile', () => {
+  test('nestedStateIsCopiedNotShared', () => {
+    const tile = orthoAxialTile([0, 0, 100, 100], 0)
+    tile.screen = {
+      mnMM: vec3.fromValues(-50, -50, 0),
+      mxMM: vec3.fromValues(50, 50, 0),
+      fovMM: vec3.fromValues(100, 100, 0),
+    }
+    tile.crossLines = { axialMM: [1, 2], coronalMM: [3, 4], sagittalMM: [5, 6] }
+    tile.pan = [7, 8]
+    tile.globalCamera = { position: [1, 2, 3], yaw: 4 }
+    const copy = cloneSliceTile(tile)
+
+    expect(copy).toEqual(tile)
+    expect(copy).not.toBe(tile)
+    // a consumer writing into the copy must not reach the renderer's layout
+    if (!copy.screen || !tile.screen || !copy.mvpMatrix || !tile.mvpMatrix)
+      throw new Error('fixture lacks geometry')
+    copy.screen.mnMM[0] = -999
+    copy.leftTopWidthHeight?.splice(0, 1, 999)
+    copy.mvpMatrix[0] = 999
+    copy.crossLines?.axialMM.push(999)
+    copy.pan?.splice(0, 1, 999)
+    if (copy.globalCamera) copy.globalCamera.position[0] = 999
+    expect(tile.screen.mnMM[0]).not.toBe(-999)
+    expect(tile.leftTopWidthHeight?.[0]).toBe(0)
+    expect(tile.mvpMatrix[0]).not.toBe(999)
+    expect(tile.crossLines?.axialMM).toEqual([1, 2])
+    expect(tile.pan).toEqual([7, 8])
+    expect(tile.globalCamera?.position[0]).toBe(1)
   })
 })

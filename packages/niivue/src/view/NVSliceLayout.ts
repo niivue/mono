@@ -48,6 +48,19 @@ export type SliceTile = {
   globalCamera?: NVGlobalCamera
 }
 
+/**
+ * Deep copy of a tile for hand-out to callers outside the renderer.
+ *
+ * A tile is plain data (numbers, tuples, gl-matrix typed arrays, and small
+ * plain objects such as `screen`, `crossLines` and `globalCamera`), so a
+ * structured clone copies every nested level. The renderer reads and rewrites
+ * these tiles each frame (`screen.mnMM` feeds the next MVP), so a shallow copy
+ * would hand a consumer a live reference into the layout.
+ */
+export function cloneSliceTile(tile: SliceTile): SliceTile {
+  return structuredClone(tile)
+}
+
 export type SliceLayoutConfig = {
   canvasWH: [number, number]
   extentsMin: vec3

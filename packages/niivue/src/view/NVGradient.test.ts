@@ -47,7 +47,7 @@ describe('gradient encoding constants', () => {
     }
   })
 
-  test('the tap offset is fractional, so the linear sampler smooths it', () => {
+  test('the corner tap offset is fractional, so the linear sampler blends it', () => {
     expect(SOBEL_RADIUS).toBe(0.7)
     expect(Number.isInteger(SOBEL_RADIUS)).toBe(false)
   })
@@ -80,13 +80,12 @@ describe('the two backends run the same estimator', () => {
     }
   })
 
-  test('wgsl differentiates alpha, never red', () => {
-    // One level of nested parens: the offset argument is a vec3f(...) call.
-    const tapRe = /textureSampleLevel\((?:[^()]|\([^()]*\))*\)\.[rgba]/g
-    const taps = wgsl.match(tapRe) ?? []
-    expect(taps.length).toBe(6) // three axes, two taps each
-    for (const tap of taps) {
-      expect(tap.endsWith(`.${GRADIENT_SOURCE_CHANNEL}`)).toBe(true)
+  test('pass 1 taps alpha, pass 2 taps the blurred temp', () => {
+    const tapRe = /texture(?:SampleLevel)?\((?:[^()]|\([^()]*\))*\)\.([rgba])/g
+    for (const src of [wgsl, glsl]) {
+      const taps = [...src.matchAll(tapRe)].map((m) => m[1])
+      // One blur tap on the source, one sobel tap on the blurred temp.
+      expect(taps).toEqual([GRADIENT_SOURCE_CHANNEL, 'r'])
     }
   })
 

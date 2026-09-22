@@ -11,10 +11,10 @@ import { webgpuLaunchOptions } from './launchOptions'
 // linear-sampled central differences over ALPHA. Red is the fatal one: on the
 // `hot` LUT red saturates at 37% of the intensity range and is flat above it,
 // so WebGPU returned NO gradient at all across the top 63% of the data. Alpha
-// is monotonic in intensity for every LUT, so it is the channel both now read;
-// WebGPU adopted the rest of WebGL2's estimator too (WebGL2 has no compute
-// shaders, so it defines what is reachable), and the shared constants live in
-// view/NVGradient.ts.
+// is monotonic in intensity for every LUT, so it is the channel both now read.
+// Both now run the old package's two-pass estimator (8-corner box blur of
+// alpha, then 8-corner Sobel of the blur), reachable on WebGL2 as two FBO
+// passes; the shared constants live in view/NVGradient.ts.
 //
 // This runs both gradient passes over ONE deterministic input volume and diffs
 // the readbacks texel by texel. Both write rgba8unorm through the same

@@ -992,10 +992,10 @@ export class VolumeRenderer extends NVRenderer {
    * overlay — each gets its own cache entry + residency manager, keyed by its
    * own url/name, and the per-frame pump (pumpChunkUploads) drives them all.
    *
-   * Halo is 3 (not the [1,1,1] default): the per-chunk gradient taps at +-0.7
-   * voxel through a LINEAR sampler, so it reads one voxel past the chunk, and
-   * trilinear sampling at the data edge reaches one further -- a 3-voxel halo
-   * keeps the gradient seam-free between chunks with a margin.
+   * Halo is 3 (not the [1,1,1] default): each of the two gradient passes taps
+   * +-0.7 voxel through a LINEAR sampler, so the Sobel reaches two voxels past
+   * the chunk, and trilinear sampling at the data edge reaches one further --
+   * 3 is the exact requirement, not a margin.
    */
   private async _ensureChunkedVolumeEntry(
     device: GPUDevice,

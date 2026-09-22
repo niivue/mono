@@ -48,14 +48,11 @@
 //    gradient opacity -- across the top 63% of the data; on `gray` the two
 //    disagreed by a factor of 2 (red ramps to 255, alpha to 128). Alpha is
 //    monotonic in intensity for every LUT, so both now read alpha.
-// 3. WebGPU ran a different stencil (an 8-corner Sobel plus a 27-tap blur)
-//    against WebGL2's three central differences at +-0.7 voxel. The blur was
-//    the subtle one: it ran on the ENCODED texture, averaging already-
-//    normalized normals and already-log-compressed magnitudes, so it biased the
-//    magnitude field rather than smoothing it. WebGPU now runs WebGL2's
-//    estimator -- WebGL2 has no compute shaders, so it defines what is
-//    reachable -- and gets its smoothing the same way WebGL2 does, free from
-//    the linear sampler at the fractional radius. The blur pass is gone.
+// 3. WebGPU blurred the ENCODED texture, averaging already-normalized normals
+//    and already-log-compressed magnitudes, which biased the magnitude field
+//    rather than smoothing it. Both backends now run the old package's
+//    two-pass estimator -- an 8-corner box blur of alpha, then an 8-corner
+//    Sobel of the blur -- with the blur BEFORE the encoding.
 //
 // The shared constants live in src/view/NVGradient.ts; sobel.wgsl takes them as
 // pipeline-overridable constants and gl/gradient.ts interpolates the same
@@ -66,9 +63,9 @@ import { cortex, shiny } from '../src/assets/matcaps'
 import NiiVue from '../src/index.ts'
 import { SHOW_RENDER } from '../src/NVConstants.ts'
 
-// mni152 and chris_t1 are MR (a skull-stripped brain and a whole head); the two
-// CT volumes are the interesting silhouette cases, because a CT's air/tissue and
-// tissue/bone steps give the gradient something much sharper to work with.
+// mni152 and chris_t1 are MR (a skull-stripped brain and a whole head). The
+// cryosection (visiblehuman) and CT (torso) are the interesting silhouette
+// cases: their air/tissue and tissue/bone steps are much sharper than MR's.
 const VOLUMES = {
   mni152: { url: '/volumes/mni152.nii.gz' },
   chris_t1: { url: '/volumes/chris_t1.nii.gz' },

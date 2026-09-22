@@ -139,7 +139,7 @@ NiiVue logically partitions every volume into 3D **chunks**, each its own GPU te
 Presenter: Halo is the detail people poke at — be ready. Each chunk carries a
 3-voxel skirt of its neighbours' data so sampling at the seam has valid
 neighbours and there's no visible crack. Why 3 not 1? Trilinear alone needs 1,
-but the gradient/lighting (Sobel + blur) reads two voxels out, so we keep margin.
+but the gradient/lighting (blur + Sobel) reads two voxels out, so we keep margin.
 "Treat every volume as chunked" is a software-engineering win: count==1 for a
 normal small volume, so there's exactly ONE render path to maintain, not two.
 -->
@@ -285,7 +285,7 @@ Same three stages on both backends, both single-texture and chunked paths:
 | Stage | In → Out | Fires |
 | --- | --- | --- |
 | 1. Orient + colormap | scalar 3D tex → RGBA8 in RAS | per chunk mutation |
-| 2. Gradient (Sobel + blur) | RGBA8 color → RGBA8 gradient | per chunk mutation |
+| 2. Gradient (blur + Sobel) | RGBA8 color → RGBA8 gradient | per chunk mutation |
 | 3. Ray-march | color + gradient + matcap → framebuffer | every frame |
 
 Steady-state residency: **8 bytes/voxel** (4 color + 4 gradient).

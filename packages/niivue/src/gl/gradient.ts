@@ -1,9 +1,8 @@
 /**
- * gradient.js
- *
- * Computes volume gradients using diagonal sampling with linear interpolation.
- * Single-pass approach that combines Sobel-style edge detection with smoothing.
- * Uses WebGL2 slice-by-slice rendering (no compute shaders needed).
+ * Precomputed gradient volume on WebGL2: two fragment passes rendered one
+ * z-slice at a time through an FBO (no compute shaders). Pass 1 box-blurs the
+ * colormapped alpha into an R8 temp, pass 2 takes an 8-corner Sobel of it.
+ * wgpu/sobel.wgsl mirrors both statement for statement; see view/NVGradient.ts.
  */
 import { log } from '@/logger'
 import {
@@ -13,100 +12,85 @@ import {
   SOBEL_RADIUS,
 } from '@/view/NVGradient'
 
-// Shader program cache (one program per GL context)
-const _programCache = new WeakMap<WebGL2RenderingContext, WebGLProgram>()
+interface Programs {
+  blur: WebGLProgram
+  sobel: WebGLProgram
+}
+const _programCache = new WeakMap<WebGL2RenderingContext, Programs>()
 
-function getOrCreateProgram(gl: WebGL2RenderingContext): WebGLProgram {
-  let program = _programCache.get(gl)
-  if (program) return program
-  program = createGradientProgram(gl)
-  _programCache.set(gl, program)
-  return program
+function getOrCreatePrograms(gl: WebGL2RenderingContext): Programs {
+  let programs = _programCache.get(gl)
+  if (programs) return programs
+  programs = {
+    blur: createProgram(gl, vertShader, blurFragShader),
+    sobel: createProgram(gl, vertShader, sobelFragShader),
+  }
+  _programCache.set(gl, programs)
+  return programs
 }
 
 // Vertex shader - renders a full-screen quad for each output slice
 const vertShader = `#version 300 es
 precision highp float;
-in vec3 vPos;
+layout(location = 0) in vec3 vPos;
 out vec2 TexCoord;
 void main() {
     TexCoord = vPos.xy;
     gl_Position = vec4((vPos.xy - vec2(0.5, 0.5)) * 2.0, 0.0, 1.0);
 }`
 
-// Constants for the LOGARITHMIC gradient magnitude written to alpha, and the
-// tap offset. Shared with wgpu/sobel.wgsl, which takes the same values as
-// pipeline-overridable constants -- the two backends run the SAME estimator,
-// so neither may define these locally. See view/NVGradient.ts.
-
-// Fragment shader - computes gradients using diagonal sampling
-const fragShader = `#version 300 es
+// Both passes tap the 8 corners (+-d) of the fragment's voxel; the loop order
+// is the summation order and wgpu/sobel.wgsl uses the same one, since the two
+// backends must produce a bit-identical texture.
+const fragHeader = `#version 300 es
 precision highp float;
 precision highp sampler3D;
-
 in vec2 TexCoord;
 out vec4 FragColor;
-
 uniform sampler3D intensityVol;
 uniform float coordZ;
-uniform float dX;
-uniform float dY;
-uniform float dZ;
+uniform vec3 d;
+vec3 corner(int i) {
+    return vec3(float(i & 1), float((i >> 1) & 1), float(i >> 2)) * 2.0 - 1.0;
+}`
 
+// Pass 1: 8-corner box blur of the colormapped ALPHA (monotonic in intensity
+// for every LUT, unlike the colour channels) into an R8 temp.
+const blurFragShader = `${fragHeader}
 void main() {
     vec3 vPos = vec3(TexCoord.xy, coordZ);
-
-    // Sample at diagonal offsets for gradient estimation
-    // Using linear interpolation on the texture naturally smooths the result
-    float dx = dX;
-    float dy = dY;
-    float dz = dZ;
-
-    // Central differences with diagonal sampling
-    // X gradient
-    float gx = texture(intensityVol, vPos + vec3(dx, 0.0, 0.0)).a
-             - texture(intensityVol, vPos - vec3(dx, 0.0, 0.0)).a;
-
-    // Y gradient
-    float gy = texture(intensityVol, vPos + vec3(0.0, dy, 0.0)).a
-             - texture(intensityVol, vPos - vec3(0.0, dy, 0.0)).a;
-
-    // Z gradient
-    float gz = texture(intensityVol, vPos + vec3(0.0, 0.0, dz)).a
-             - texture(intensityVol, vPos - vec3(0.0, 0.0, dz)).a;
-
-    // Normalize gradient to [-1, 1] range, then map to [0, 1] for storage
-    vec3 gradient = vec3(gx, gy, gz);
-    float len = length(gradient);
-
-    if (len > 0.0001) {
-        gradient = gradient / len;
-    } else {
-        gradient = vec3(0.0);
+    float sum = 0.0;
+    for (int i = 0; i < 8; i++) {
+        sum += texture(intensityVol, vPos + d * corner(i)).a;
     }
+    FragColor = vec4(sum * 0.125, 0.0, 0.0, 1.0);
+}`
 
-    // Map from [-1, 1] to [0, 1] for RGBA8 storage
-    vec3 normalized = gradient * 0.5 + 0.5;
+// Pass 2: 8-corner Sobel of the blurred temp. The shared constants come from
+// view/NVGradient.ts; the WGSL side takes the same values as overrides.
+const sobelFragShader = `${fragHeader}
+void main() {
+    vec3 vPos = vec3(TexCoord.xy, coordZ);
+    vec3 grad = vec3(0.0);
+    for (int i = 0; i < 8; i++) {
+        vec3 s = corner(i);
+        grad += s * texture(intensityVol, vPos + d * s).r;
+    }
+    // Four taps per side: 0.25 gives the gain of one central difference at
+    // this radius, which is what the magnitude encoding was tuned against.
+    grad *= 0.25;
 
-    // Alpha carries the gradient MAGNITUDE, which the render shader's
-    // gradientOpacity reads to suppress homogeneous interior. It used to be a
-    // constant 1.0, which made that feature a silent no-op on this backend --
-    // WebGPU's sobel.wgsl has always written a magnitude here.
-    //
-    // The encoding is LOGARITHMIC in the SQUARED gradient. That is not
-    // cosmetic: gradientOpacity raises this value to the power
-    // gradientOpacity*8, and a linear magnitude sits near zero through most of
-    // a volume, so any useful slider position would drive the whole render to
-    // black. The log spreads "one 8-bit level of contrast" to "full contrast"
-    // across [0, 1], which is the range those exponents were tuned against.
-    //
-    // wgpu/sobel.wgsl runs this same estimator -- same channel, same stencil,
-    // same offsets, same constants -- so the two backends produce the same
-    // image, which is the whole point. Change one and you must change both.
-    float g2 = gx * gx + gy * gy + gz * gz;
+    // Guarded normalize; a flat voxel stores vec3(0.0) (encoded 0.5), which
+    // the render shaders' own guarded normalize turns back into "no normal".
+    float len = length(grad);
+    vec3 dir = len > 0.0001 ? grad / len : vec3(0.0);
+
+    // Alpha carries the gradient MAGNITUDE, LOGARITHMIC in the squared
+    // gradient; see view/NVGradient.ts for why a linear one is useless.
+    float g2 = dot(grad, grad);
     float magnitude = (log2(g2 + float(${GRAD_EPS})) + float(${GRAD_SHIFT})) * float(${GRAD_SCALE});
 
-    FragColor = vec4(normalized, magnitude);
+    FragColor = vec4(dir * 0.5 + 0.5, magnitude);
 }`
 
 /**
@@ -162,33 +146,59 @@ function createProgram(
   return program
 }
 
-/**
- * Create the gradient computation shader program
- */
-function createGradientProgram(gl: WebGL2RenderingContext): WebGLProgram {
-  return createProgram(gl, vertShader, fragShader)
+function createTexture3D(
+  gl: WebGL2RenderingContext,
+  format: number,
+  dims: [number, number, number],
+): WebGLTexture {
+  const tex = gl.createTexture()
+  if (!tex) throw new Error('Gradient texture creation failed')
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texStorage3D(gl.TEXTURE_3D, 1, format, ...dims)
+  return tex
 }
 
-/**
- * Get uniform locations for the gradient shader
- */
-function getUniformLocations(
+/** Run one pass: `input` on unit 0, one full-screen quad per z-slice of `output`. */
+function renderSlices(
   gl: WebGL2RenderingContext,
   program: WebGLProgram,
-) {
-  return {
-    coordZ: gl.getUniformLocation(program, 'coordZ'),
-    intensityVol: gl.getUniformLocation(program, 'intensityVol'),
-    dX: gl.getUniformLocation(program, 'dX'),
-    dY: gl.getUniformLocation(program, 'dY'),
-    dZ: gl.getUniformLocation(program, 'dZ'),
+  input: WebGLTexture,
+  output: WebGLTexture,
+  [vx, vy, vz]: [number, number, number],
+): void {
+  gl.useProgram(program)
+  gl.uniform1i(gl.getUniformLocation(program, 'intensityVol'), 0)
+  gl.uniform3f(
+    gl.getUniformLocation(program, 'd'),
+    SOBEL_RADIUS / vx,
+    SOBEL_RADIUS / vy,
+    SOBEL_RADIUS / vz,
+  )
+  const coordZ = gl.getUniformLocation(program, 'coordZ')
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_3D, input)
+  for (let z = 0; z < vz; z++) {
+    gl.uniform1f(coordZ, (z + 0.5) / vz)
+    gl.framebufferTextureLayer(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      output,
+      0,
+      z,
+    )
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
   }
 }
 
 /**
  * Create the full-screen quad geometry
  */
-function createQuadGeometry(gl: WebGL2RenderingContext, program: WebGLProgram) {
+function createQuadGeometry(gl: WebGL2RenderingContext) {
   const vertices = new Float32Array([
     0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
   ])
@@ -204,50 +214,31 @@ function createQuadGeometry(gl: WebGL2RenderingContext, program: WebGLProgram) {
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
   gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW)
-  const posLoc = gl.getAttribLocation(program, 'vPos')
-  gl.enableVertexAttribArray(posLoc)
-  gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0)
+  // vPos is pinned to location 0 in vertShader, so one VAO serves both programs.
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
   gl.bindVertexArray(null)
   return { vao, vbo }
 }
 
 /**
- * Compute volume gradients from an RGBA volume texture.
- * Uses diagonal sampling with linear interpolation for single-pass gradient computation.
- *
- * @param {WebGL2RenderingContext} gl - WebGL2 context
- * @param {WebGLTexture} textureRGBA - Input RGBA8 3D texture
- * @param {Array<number>} dims - Volume dimensions [width, height, depth]
- * @returns {WebGLTexture} Output RGBA8 3D texture: normalized gradient
- *   direction in RGB, gradient magnitude in alpha
+ * Compute the gradient texture of an RGBA8 volume texture: RGB = unit normal
+ * encoded to [0, 1], A = log-encoded magnitude. See view/NVGradient.ts.
  */
 export function volume2TextureGradientRGBA(
   gl: WebGL2RenderingContext,
   textureRGBA: WebGLTexture,
   dims: [number, number, number],
 ): WebGLTexture {
-  if (dims.length < 3) {
-    throw new Error('Gradient expects dims [width, height, depth]')
-  }
-  const [vx, vy, vz] = dims
-
-  // Get or create cached shader program
-  const program = getOrCreateProgram(gl)
-  gl.useProgram(program)
-
-  // Get uniform locations
-  const uniforms = getUniformLocations(gl, program)
-
-  // Create quad geometry
-  const { vao, vbo } = createQuadGeometry(gl, program)
+  const [vx, vy] = dims
+  const programs = getOrCreatePrograms(gl)
+  const { vao, vbo } = createQuadGeometry(gl)
 
   // LINEAR + clamp-to-edge on the INPUT, matching the sampler wgpu/wgpu.ts
-  // hands to sobel.wgsl. The filtering is what makes the fractional-radius tap
-  // smooth (it replaces a blur pass), and the wrap decides what the tap reads
-  // one voxel outside the volume -- with REPEAT the boundary face would take
-  // its gradient from the opposite face. Every caller already sets both, but
-  // stating them here is what makes the two backends agree by construction
-  // rather than by the caller's good behaviour.
+  // hands to sobel.wgsl. The wrap decides what a tap reads outside the volume:
+  // with REPEAT the boundary face would take its gradient from the opposite
+  // face. Every caller already sets both; stating them here makes the two
+  // backends agree by construction rather than by the caller's good behaviour.
   gl.activeTexture(gl.TEXTURE0)
   gl.bindTexture(gl.TEXTURE_3D, textureRGBA)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
@@ -256,33 +247,13 @@ export function volume2TextureGradientRGBA(
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
 
-  // Create output gradient texture
-  const outputTexture = gl.createTexture()
-  if (!outputTexture) {
-    gl.deleteBuffer(vbo)
-    gl.deleteVertexArray(vao)
-    throw new Error('Gradient output texture creation failed')
-  }
-  gl.activeTexture(gl.TEXTURE1)
-  gl.bindTexture(gl.TEXTURE_3D, outputTexture)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texStorage3D(gl.TEXTURE_3D, 1, gl.RGBA8, vx, vy, vz)
+  const blurred = createTexture3D(gl, gl.R8, dims)
+  const outputTexture = createTexture3D(gl, gl.RGBA8, dims)
 
-  // Set up framebuffer for render-to-texture
   const framebuffer = gl.createFramebuffer()
-  if (!framebuffer) {
-    gl.deleteTexture(outputTexture)
-    gl.deleteBuffer(vbo)
-    gl.deleteVertexArray(vao)
-    throw new Error('Gradient framebuffer creation failed')
-  }
+  if (!framebuffer) throw new Error('Gradient framebuffer creation failed')
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
 
-  // Save current GL state
   const savedViewport = gl.getParameter(gl.VIEWPORT) as Int32Array
   const savedCullFace = gl.isEnabled(gl.CULL_FACE)
   const savedBlend = gl.isEnabled(gl.BLEND)
@@ -292,82 +263,35 @@ export function volume2TextureGradientRGBA(
     gl.VERTEX_ARRAY_BINDING,
   ) as WebGLVertexArrayObject | null
 
-  // Set viewport to slice dimensions
   gl.viewport(0, 0, vx, vy)
   gl.disable(gl.CULL_FACE)
   gl.disable(gl.BLEND)
   gl.disable(gl.DEPTH_TEST)
-
-  // Bind VAO
   gl.bindVertexArray(vao)
 
-  // Set uniforms
-  if (
-    !uniforms.intensityVol ||
-    !uniforms.coordZ ||
-    !uniforms.dX ||
-    !uniforms.dY ||
-    !uniforms.dZ
-  ) {
-    throw new Error('Gradient shader uniforms missing')
-  }
-  gl.uniform1i(uniforms.intensityVol, 0) // Input texture unit
+  renderSlices(gl, programs.blur, textureRGBA, blurred, dims)
+  renderSlices(gl, programs.sobel, blurred, outputTexture, dims)
 
-  // Fractional on purpose: the input texture is sampled LINEAR, so each tap is
-  // a trilinear blend and the stencil gets its smoothing from the sampler.
-  gl.uniform1f(uniforms.dX, SOBEL_RADIUS / vx)
-  gl.uniform1f(uniforms.dY, SOBEL_RADIUS / vy)
-  gl.uniform1f(uniforms.dZ, SOBEL_RADIUS / vz)
-
-  // Render each output slice
-  for (let z = 0; z < vz; z++) {
-    // Compute normalized z coordinate (center of voxel)
-    const coordZ = (z + 0.5) / vz
-    gl.uniform1f(uniforms.coordZ, coordZ)
-
-    // Attach output texture slice to framebuffer
-    gl.framebufferTextureLayer(
-      gl.FRAMEBUFFER,
-      gl.COLOR_ATTACHMENT0,
-      outputTexture,
-      0,
-      z,
-    )
-
-    // Draw quad
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-  }
-
-  // Cleanup
   gl.bindVertexArray(null)
   gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-
-  // Restore viewport
   gl.viewport(
     savedViewport[0] ?? 0,
     savedViewport[1] ?? 0,
     savedViewport[2] ?? 0,
     savedViewport[3] ?? 0,
   )
-
-  // Restore GL state
   if (savedCullFace) gl.enable(gl.CULL_FACE)
   else gl.disable(gl.CULL_FACE)
   if (savedBlend) gl.enable(gl.BLEND)
   else gl.disable(gl.BLEND)
   if (savedDepthTest) gl.enable(gl.DEPTH_TEST)
   else gl.disable(gl.DEPTH_TEST)
-  gl.activeTexture(savedActiveTexture)
   gl.bindVertexArray(savedVAO)
-
-  // Unbind textures
   gl.activeTexture(gl.TEXTURE0)
   gl.bindTexture(gl.TEXTURE_3D, null)
-  gl.activeTexture(gl.TEXTURE1)
-  gl.bindTexture(gl.TEXTURE_3D, null)
   gl.activeTexture(savedActiveTexture)
 
-  // Delete temporary resources
+  gl.deleteTexture(blurred)
   gl.deleteBuffer(vbo)
   gl.deleteVertexArray(vao)
   gl.deleteFramebuffer(framebuffer)
@@ -379,11 +303,12 @@ export function volume2TextureGradientRGBA(
  * Clean up cached shader programs
  */
 export function destroy(gl: WebGL2RenderingContext): void {
-  const program = _programCache.get(gl)
-  if (!program) return
+  const programs = _programCache.get(gl)
+  if (!programs) return
 
   try {
-    gl.deleteProgram(program)
+    gl.deleteProgram(programs.blur)
+    gl.deleteProgram(programs.sobel)
   } catch (err) {
     log.warn('gradient.destroy: failed to delete program', err)
   }

@@ -33,7 +33,6 @@
       <select id="volumeSelect">
         <option selected>mni152</option>
         <option>sphere</option>
-        <option>visiblehuman</option>
         <option>shear</option>
       </select>
       &nbsp;
@@ -47,6 +46,9 @@
       &nbsp;
       <label for="colormapSelect">Colormap</label>
       <select id="colormapSelect"></select>
+      &nbsp;
+      <label for="xrayCheck">XRay</label>
+      <input type="checkbox" id="xrayCheck" checked />
       &nbsp;
       <label for="darkCheck">Clip Dark</label>
       <input type="checkbox" id="darkCheck" />
@@ -85,6 +87,7 @@
       const nv1 = new NiiVue({
         backgroundColor: [0.2, 0.2, 0.2, 1],
         isColorbarVisible: true,
+        meshXRay: 0.1,
         matcaps: MATCAPS,
         showRender: SHOW_RENDER.ALWAYS,
       })
@@ -116,6 +119,9 @@
       }
       darkCheck.onclick = function () {
         nv1.volumeIsAlphaClipDark = this.checked
+      }
+      document.getElementById('xrayCheck').onclick = function () {
+        nv1.meshXRay = +this.checked * 0.1
       }
       colorBtn.oninput = function () {
         const hex = this.value

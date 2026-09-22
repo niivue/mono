@@ -26,7 +26,7 @@ To solve the texture limit and VRAM constraints, NiiVue implements a **Tiled Vol
 
 ### Chunking and Halos
 Instead of uploading one massive texture, NiiVue logically partitions the volume into smaller 3D blocks called **chunks**.
-* Each chunk carries a **3-voxel halo** of overlapping data from its neighbors. One voxel would be enough for seam-free trilinear interpolation alone; the wider halo is needed because the gradient pass (Sobel radius 1, then a radius-1 blur) reads ±2 voxels of the chunk's own data, and we want one extra voxel of margin so the trilinear sample at the seam stays valid.
+* Each chunk carries a **3-voxel halo** of overlapping data from its neighbors. One voxel would be enough for seam-free trilinear interpolation alone; the wider halo is needed because the gradient pass (box blur then Sobel, both radius 0.7) reads ±2 voxels of the chunk's own data, and we want one extra voxel of margin so the trilinear sample at the seam stays valid.
 * During rendering, NiiVue dynamically sorts the chunks back-to-front based on the camera's view direction and composites them together with premultiplied-alpha OVER blending.
 
 ### Visibility-Driven Working Sets
@@ -193,10 +193,10 @@ The gradient texture is what gives the 3D render its phong-like matcap shading. 
 
 | Backend | Implementation |
 | --- | --- |
-| WebGPU | Two compute pipelines (`sobel.wgsl`, `blur.wgsl`), `@workgroup_size(8,8,4)`, write via `texture_storage_3d<rgba8unorm, write>`; pipelines cached per device in `wgpu/wgpu.ts` |
+| WebGPU | Two compute entry points in `sobel.wgsl` (`blur`, `sobel`), `@workgroup_size(8,8,4)`, write via `texture_storage_3d<rgba8unorm, write>`; pipelines cached per device in `wgpu/wgpu.ts` |
 | WebGL2 | Two fragment passes, rendering one Z-layer at a time into `gl.RGBA8` 3D textures via `FRAMEBUFFER` + `framebufferTextureLayer` |
 
-Math is identical: Sobel stencil of radius 1, then a separable 3×3×3 box blur (radius 1). 8-bit precision is sufficient for matcap shading.
+Math is identical: an 8-corner box blur of the colormapped alpha at radius 0.7, then an 8-corner Sobel of the blur at radius 0.7. 8-bit precision is sufficient for matcap shading.
 
 Steady-state residency per chunk after stage 2 is **another 4 bytes per voxel** — so 8 bytes per RAS voxel total, colour + gradient. For a 2×2×2 chunked grid with halo `[3,3,3]` the halo overhead adds roughly another 80% on top.
 

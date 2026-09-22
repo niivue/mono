@@ -27,7 +27,7 @@
       <span class="sliders">
         <label for="bg">T1<input type="range" id="bg" min="0" max="100" value="100" /></label>
         <label for="gm"><span class="swatch" style="background:#e06868"></span>GM<input type="range" id="gm" min="0" max="100" value="70" /></label>
-        <label for="wm"><span class="swatch" style="background:#d2d2d2"></span>WM<input type="range" id="wm" min="0" max="100" value="70" /></label>
+        <label for="wm"><span class="swatch" style="background:#fafafa"></span>WM<input type="range" id="wm" min="0" max="100" value="70" /></label>
         <label for="csf"><span class="swatch" style="background:#78a0ff"></span>CSF<input type="range" id="csf" min="0" max="100" value="70" /></label>
       </span>
       &nbsp;
@@ -36,6 +36,12 @@
       <input type="range" min="0" max="100" value="40" class="slider" id="gradSlider" />
       &nbsp;
       <label title="isViewModeHotKeyEnabled: press V to cycle the view"><input type="checkbox" id="viewKey" />V key</label>
+      &nbsp;
+      <label for="xrayCheck">XRay</label>
+      <input type="checkbox" id="xrayCheck" checked />
+      &nbsp;
+      <label for="colorBtn">Background</label>
+      <input type="color" id="colorBtn" value="#000000" />
       &nbsp;
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck" checked />
@@ -66,7 +72,7 @@
       // native 188x256x190 0.88mm grid, so no overlay reslicing is involved.
       const TISSUES = [
         { id: 'gm', name: 'grey matter', file: 'chris_t1_gm.nii.gz', tint: [224, 104, 104] },
-        { id: 'wm', name: 'white matter', file: 'chris_t1_wm.nii.gz', tint: [210, 210, 210] },
+        { id: 'wm', name: 'white matter', file: 'chris_t1_wm.nii.gz', tint: [250, 250, 250] },
         { id: 'csf', name: 'CSF', file: 'chris_t1_csf.nii.gz', tint: [120, 160, 255] },
       ]
 
@@ -74,6 +80,7 @@
         backend: document.getElementById('webgpuCheck').checked ? 'webgpu' : 'webgl2',
         backgroundColor: [0, 0, 0, 1],
         is3DCrosshairVisible: true,
+        meshXRay: 0.1,
         showRender: SHOW_RENDER.ALWAYS,
         matcaps: { Shiny: shiny },
       })
@@ -134,6 +141,15 @@
       nv1.addEventListener('sliceTypeChange', (e) => {
         sliceTypeSelect.value = String(e.detail.sliceType)
       })
+      document.getElementById('xrayCheck').onclick = function () {
+        nv1.meshXRay = +this.checked * 0.1
+      }
+      document.getElementById('colorBtn').oninput = (e) => {
+        const hex = e.target.value
+        const chan = (i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255
+        nv1.backgroundColor = [chan(0), chan(1), chan(2), 1]
+      }
+
       const webgpuCheck = document.getElementById('webgpuCheck')
       // Reflects the backend actually running (WebGPU may fall back to WebGL2).
       webgpuCheck.checked = nv1.backend === 'webgpu'

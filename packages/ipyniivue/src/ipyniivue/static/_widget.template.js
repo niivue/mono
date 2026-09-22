@@ -35,6 +35,7 @@ const PROPS_RW = [
   ["clipPlaneColor", "clip_plane_color"],
   ["clipPlaneOverlay", "clip_plane_overlay"],
   ["crosshairColor", "crosshair_color"],
+  ["crosshairColorPerAxis", "crosshair_color_per_axis"],
   ["crosshairGap", "crosshair_gap"],
   ["crosshairPos", "crosshair_pos"],
   ["crosshairWidth", "crosshair_width"],

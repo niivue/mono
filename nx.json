@@ -8,6 +8,19 @@
       "{projectRoot}/tsconfig.json",
       "{projectRoot}/package.json"
     ],
+    "lintable": [
+      "{projectRoot}/**/*.ts",
+      "{projectRoot}/**/*.tsx",
+      "{projectRoot}/**/*.js",
+      "{projectRoot}/**/*.jsx",
+      "{projectRoot}/**/*.mjs",
+      "{projectRoot}/**/*.cjs",
+      "{projectRoot}/**/*.html",
+      "{projectRoot}/**/*.json",
+      "{projectRoot}/**/*.jsonc",
+      "{projectRoot}/**/*.css",
+      "{workspaceRoot}/biome.json"
+    ],
     "python": ["{projectRoot}/**/*.py", "{projectRoot}/pyproject.toml"]
   },
   "targetDefaults": {

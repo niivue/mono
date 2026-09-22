@@ -17,6 +17,7 @@ override HAS_OVERLAY: bool = true;
 override HAS_PAQD: bool = true;
 override HAS_DRAWING: bool = true;
 override CHUNKED: bool = true;
+override IS_SLICES: bool = true;
 
 // Step-size opacity correction 1 - (1 - a)^e. e is 1 / sampleRate for every
 // full sample, so the common rates skip pow().
@@ -215,11 +216,19 @@ fn layerShade(tex: texture_3d<f32>, p: vec3f, amount: f32) -> vec3f {
     let localNormal = normalize(grad);
     let norm3 = mat3x3f(params.normMtx[0].xyz, params.normMtx[1].xyz, params.normMtx[2].xyz);
     let n = norm3 * localNormal;
-    // Flip y for the lookup. A matcap PNG is a lit sphere whose light sits near
-    // the TOP of the image, and v=0 is the image's top row (neither backend
-    // flips on upload), so v must count DOWN from the eye-space +y a normal
-    // pointing up produces. Without this the volume is lit from below.
-    let uv = vec2f(n.x, -n.y) * 0.5 + 0.5;
+    // Flip X, not y. The gradient pass writes value(+dir) - value(-dir), which
+    // points from dark to bright -- INTO the volume at a surface -- so the eye
+    // -space normal here is the inward one, and u must count back from it.
+    // v is already correct: v=0 is the image's top row (neither backend flips
+    // on upload) and an inward normal at the top of an object has n.y < 0,
+    // which lands on that row.
+    //
+    // Render a sphere with the matcap, which IS a photograph of a sphere, and
+    // the screen must reproduce the image exactly. `examples/vox.matcap.html`
+    // is set up to do that. Flipping y instead (as this did until 2026-09-22)
+    // rotates the lighting 180 degrees; it reads as "lit from below" only
+    // because the bundled matcaps are near left-right symmetric.
+    let uv = vec2f(-n.x, n.y) * 0.5 + 0.5;
     let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * (1.0 + (amount / 3.0));
     return mix(vec3f(1.0), mc_rgb, amount);
 }
@@ -324,20 +333,6 @@ fn rayMarchPass(
         samplePos += deltaDir;
     }
     return result;
-}
-
-// PAQD easing function — piecewise linear alpha from primary probability.
-fn paqdEaseAlpha(alpha: f32, u: vec4f) -> f32 {
-    let t0 = u[0];
-    let t1 = 0.5 * (u[0] + u[1]);
-    let t2 = u[1];
-    let y0 = 0.0;
-    let y1 = abs(u[2]);
-    let y2 = abs(u[3]);
-    if (alpha <= t0) { return y0; }
-    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
-    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
-    return y2;
 }
 
 // Specialized PAQD ray-march: samples raw PAQD data (nearest-neighbor),
@@ -469,6 +464,67 @@ fn distance2Plane(samplePos: vec4f, clipPlane: vec4f) -> f32 {
     return abs(signedDist) / nlen;
 }
 
+// One layer-stack sample at a plane hit, blended in the order the 2D tiles use
+// (see wgpu/slice.wgsl). Returns PREMULTIPLIED rgba; alpha 0 means the plane is
+// transparent here, so whatever lies behind it shows through. Mirrored in
+// gl/renderShader.ts -- keep the two in step.
+// `isLayer` is the independent hi-res overlay cube draw: the bound texture is a
+// LAYER, not the background, and the orient pass has already baked its opacity
+// into the alpha -- so take the sample's own alpha rather than the background
+// volume's `opacity`, which that draw passes as 1.
+fn sampleSlice(pos: vec3f, isLayer: bool) -> vec4f {
+    let volCoord = chunkTexCoord(pos);
+    let bg = textureSampleLevel(volume, tex_sampler, volCoord, 0.0);
+    // Exactly the 2D tiles' rule (slice.wgsl): the volume's own opacity, with a
+    // voxel the colormap made fully transparent knocked out only under
+    // isAlphaClipDark. Off, a plane is a solid slab and the nearest one wins,
+    // which is what 0.6 always drew; on, only tissue is drawn and the planes
+    // behind it show through.
+    var a = params.backOpacity;
+    if (alphaClipDark() && bg.a == 0.0) { a = 0.0; }
+    // A layer carries its own baked opacity, and 2D clips dark on the
+    // background only.
+    if (isLayer) { a = bg.a; }
+    var rgb = applyGamma(bg.rgb, params.invGamma);
+    if (HAS_OVERLAY && textureDimensions(overlay, 0).x > 2) {
+        let ov = textureSampleLevel(overlay, tex_sampler, volCoord, 0.0);
+        let oa = a + ov.a * (1.0 - a);
+        if (oa > 0.0) {
+            rgb = mix(rgb, applyGamma(ov.rgb, params.invGamma), ov.a / oa);
+            a = oa;
+        }
+    }
+    if (HAS_PAQD && textureDimensions(paqd, 0).x > 2) {
+        let pDims = vec3f(textureDimensions(paqd, 0));
+        // Nearest for BOTH the label indices and the probabilities. The 2D tiles
+        // sample the probabilities linearly, but the GL PAQD texture is
+        // NEAREST-filtered, so a linear tap there would silently be nearest and
+        // the two backends would drift.
+        let raw = textureLoad(paqd, vec3i(clamp(volCoord * pDims, vec3f(0.0), pDims - 1.0)), 0);
+        let total = raw.b + raw.a;
+        if (total > 0.004) {
+            let c1 = textureLoad(paqdLut, vec2i(clamp(i32(round(raw.r * 255.0)), 0, 255), 0), 0);
+            let c2 = textureLoad(paqdLut, vec2i(clamp(i32(round(raw.g * 255.0)), 0, 255), 0), 0);
+            let prgb = mix(c1.rgb, c2.rgb, raw.a / total);
+            let palpha = paqdEaseAlpha(raw.b, params.paqdUniforms);
+            if (palpha > 0.0) {
+                let na = palpha + a * (1.0 - palpha);
+                rgb = mix(rgb, prgb, palpha / max(na, 0.001));
+                a = na;
+            }
+        }
+    }
+    if (HAS_DRAWING && textureDimensions(drawing, 0).x > 2) {
+        let dDims = vec3f(textureDimensions(drawing, 0));
+        let dc = textureLoad(drawing, vec3i(clamp(volCoord * dDims, vec3f(0.0), dDims - 1.0)), 0);
+        if (dc.a > 0.0) {
+            rgb = mix(rgb, dc.rgb, dc.a);
+            a = max(a, dc.a);
+        }
+    }
+    return vec4f(rgb * a, a);
+}
+
 @fragment
 fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	let rayStart = in.vColor;
@@ -521,7 +577,49 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	// Maximum-intensity projection: every pass takes a component-wise max of the
 	// premultiplied sample instead of compositing OVER, and no pass may early-
 	// terminate (the maximum can lie anywhere along the ray).
-	let mip = IS_MIP && params.renderMode > 0.5;
+	let mip = IS_MIP && isRenderMode(RENDER_MODE_MAXIMUM);
+	// --- Orthogonal slices (VOLUME_RENDER_MODE.SLICES) ---
+	// No march: intersect the ray with the three crosshair planes and composite
+	// the hits front to back. start/dir/len already come from this chunk's own
+	// cube, so a chunked draw needs nothing extra. Mirrored in
+	// gl/renderShader.ts -- keep the two in step.
+	if (IS_SLICES && isRenderMode(RENDER_MODE_SLICES)) {
+		let planes = sliceFrac();
+		let NO_HIT = 1e20;
+		var t = vec3f(NO_HIT);
+		for (var k: i32 = 0; k < 3; k++) {
+			if (abs(dir[k]) < 1e-8) { continue; }
+			let tk = (planes[k] - start[k]) / dir[k];
+			// Half-open [0, len): a hit on a chunk's exit face belongs to the
+			// next chunk along the ray, not to both. The two cubes compute that
+			// boundary from different ends, so the rule is only exact up to
+			// rounding -- which never bites, because a crosshair plane sits at a
+			// voxel CENTRE fraction and a chunk face sits on a voxel boundary.
+			if (tk >= 0.0 && tk < len) { t[k] = tk; }
+		}
+		// Sorting network, nearest first.
+		if (t.x > t.y) { let s = t.x; t.x = t.y; t.y = s; }
+		if (t.y > t.z) { let s = t.y; t.y = t.z; t.z = s; }
+		if (t.x > t.y) { let s = t.x; t.x = t.y; t.y = s; }
+		var acc = vec4f(0.0);
+		var firstHit = vec3f(0.0);
+		var hasHit = false;
+		for (var i: i32 = 0; i < 3; i++) {
+			if (t[i] >= NO_HIT) { break; }
+			let pos = start + dir * t[i];
+			let c = sampleSlice(pos, overlayMode);
+			if (c.a > 0.0) {
+				if (!hasHit) { hasHit = true; firstHit = pos; }
+				acc += (1.0 - acc.a) * c;
+				if (acc.a > 0.999) { break; }
+			}
+		}
+		if (!hasHit) { discard; }
+		var sliceOut: FragmentOutput;
+		sliceOut.color = acc * params.fadeAlpha;
+		sliceOut.fragDepth = frac2ndc(firstHit);
+		return sliceOut;
+	}
 	let stepSize = len / lenVox;
 	let deltaDir = vec4f(dir * stepSize, stepSize);
 	var localGradientAmount = select(params.gradientAmount, 0.0, overlayMode);
@@ -696,10 +794,8 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 						let lightingAmount = localGradientAmount;
 						if (lightingAmount > 0.0) {
 							let n = norm3 * localNormal;
-							// See layerShade() for why y is flipped: the matcap's light is
-							// at the top of the PNG and v=0 is the top row, so v counts
-							// down from +y.
-							let uv = vec2f(n.x, -n.y) * 0.5 + 0.5;
+							// See layerShade() for why x is flipped, not y.
+							let uv = vec2f(-n.x, n.y) * 0.5 + 0.5;
 							let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * (1.0 + (lightingAmount / 3.0));
 							finalRGB *= mix(vec3f(1.0), mc_rgb, lightingAmount);
 						}

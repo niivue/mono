@@ -27,8 +27,6 @@ uniform float overlayLayerMode;
 // color is multiplied by this so a freshly-resident fine chunk dissolves in
 // over the coarse floor instead of popping. 1.0 for every non-fading draw.
 uniform float fadeAlpha;
-// Volume render mode: 0 = composite (OVER), 1 = maximum-intensity projection.
-uniform float renderMode;
 uniform float earlyTermination;
 // Per-brick source-level voxel dims for the ray-step density (multi-LOD). Equals
 // volumeTexDimsFull for single-level/non-chunked draws.
@@ -239,11 +237,8 @@ vec3 layerShade(sampler3D tex, vec3 p, float amount) {
   vec3 localNormal = normalize(grad);
   mat3 norm3 = mat3(normMtx);
   vec3 n = norm3 * localNormal;
-  // Flip y for the lookup. A matcap PNG is a lit sphere whose light sits near
-  // the TOP of the image, and v=0 is the image's top row (neither backend
-  // flips on upload), so v must count DOWN from the eye-space +y a normal
-  // pointing up produces. Without this the volume is lit from below.
-  vec2 uv = vec2(n.x, -n.y) * 0.5 + 0.5;
+  // Flip X, not y -- see the long note in wgpu/render.wgsl's layerShade.
+  vec2 uv = vec2(-n.x, n.y) * 0.5 + 0.5;
   vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (amount / 3.0));
   return mix(vec3(1.0), mc_rgb, amount);
 }
@@ -401,20 +396,6 @@ RayResult rayMarchPass(
     return result;
 }
 
-// PAQD easing function — piecewise linear alpha from primary probability.
-float paqdEaseAlpha(float alpha, vec4 u) {
-    float t0 = u[0];
-    float t1 = 0.5 * (u[0] + u[1]);
-    float t2 = u[1];
-    float y0 = 0.0;
-    float y1 = abs(u[2]);
-    float y2 = abs(u[3]);
-    if (alpha <= t0) { return y0; }
-    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
-    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
-    return y2;
-}
-
 // Specialized PAQD ray-march: samples raw PAQD data (nearest-neighbor),
 // performs LUT lookup, probability blending, and alpha easing per sample.
 RayResult rayMarchPaqd(
@@ -542,6 +523,66 @@ float distance2Plane(vec4 samplePos, vec4 clipPlane) {
   return abs(signedDist) / nlen;
 }
 
+// One layer-stack sample at a plane hit, blended in the order the 2D tiles use
+// (see gl/sliceShader.ts). Returns PREMULTIPLIED rgba; alpha 0 means the plane
+// is transparent here, so whatever lies behind it shows through. Mirrors
+// sampleSlice in wgpu/render.wgsl -- keep the two in step.
+// isLayer is the independent hi-res overlay cube draw: the bound texture is a
+// LAYER, not the background, and the orient pass has already baked its opacity
+// into the alpha -- so take the sample's own alpha rather than the background
+// volume's own opacity, which that draw passes as 1.
+vec4 sampleSlice(vec3 pos, bool isLayer) {
+  vec3 volCoord = chunkTexCoord(pos);
+  vec4 bg = texture(volume, volCoord);
+  // Exactly the 2D tiles' rule (gl/sliceShader.ts): the volume's own opacity,
+  // with a voxel the colormap made fully transparent knocked out only under
+  // isAlphaClipDark. Off, a plane is a solid slab and the nearest one wins,
+  // which is what 0.6 always drew; on, only tissue is drawn and the planes
+  // behind it show through.
+  float a = backOpacity;
+  if (isAlphaClipDark > 0.5 && bg.a == 0.0) { a = 0.0; }
+  // A layer carries its own baked opacity, and 2D clips dark on the background
+  // only.
+  if (isLayer) { a = bg.a; }
+  vec3 rgb = applyGamma(bg.rgb, invGamma);
+  if (HAS_OVERLAY && textureSize(overlay, 0).x > 2) {
+    vec4 ov = texture(overlay, volCoord);
+    float oa = a + ov.a * (1.0 - a);
+    if (oa > 0.0) {
+      rgb = mix(rgb, applyGamma(ov.rgb, invGamma), ov.a / oa);
+      a = oa;
+    }
+  }
+  if (HAS_PAQD && textureSize(paqd, 0).x > 2) {
+    ivec3 pDims = textureSize(paqd, 0);
+    // Nearest for BOTH the label indices and the probabilities. The 2D tiles
+    // sample the probabilities linearly, but this texture is NEAREST-filtered,
+    // so a linear tap would silently be nearest and drift from WebGPU.
+    vec4 raw = texelFetch(paqd, clamp(ivec3(volCoord * vec3(pDims)), ivec3(0), pDims - 1), 0);
+    float total = raw.b + raw.a;
+    if (total > 0.004) {
+      vec4 c1 = texelFetch(paqdLut, ivec2(clamp(int(round(raw.r * 255.0)), 0, 255), 0), 0);
+      vec4 c2 = texelFetch(paqdLut, ivec2(clamp(int(round(raw.g * 255.0)), 0, 255), 0), 0);
+      vec3 prgb = mix(c1.rgb, c2.rgb, raw.a / total);
+      float palpha = paqdEaseAlpha(raw.b, paqdUniforms);
+      if (palpha > 0.0) {
+        float na = palpha + a * (1.0 - palpha);
+        rgb = mix(rgb, prgb, palpha / max(na, 0.001));
+        a = na;
+      }
+    }
+  }
+  if (HAS_DRAWING && textureSize(drawing, 0).x > 2) {
+    ivec3 dDims = textureSize(drawing, 0);
+    vec4 dc = texelFetch(drawing, clamp(ivec3(volCoord * vec3(dDims)), ivec3(0), dDims - 1), 0);
+    if (dc.a > 0.0) {
+      rgb = mix(rgb, dc.rgb, dc.a);
+      a = max(a, dc.a);
+    }
+  }
+  return vec4(rgb * a, a);
+}
+
 void main() {
   vec3 rayStart = vColor;
   vec3 start = GetFrontPosition(rayStart);
@@ -589,7 +630,49 @@ void main() {
   // Maximum-intensity projection: every pass takes a component-wise max of the
   // premultiplied sample instead of compositing OVER, and no pass may early-
   // terminate (the maximum can lie anywhere along the ray).
-  bool mip = IS_MIP && renderMode > 0.5;
+  bool mip = IS_MIP && isRenderMode(RENDER_MODE_MAXIMUM);
+  // --- Orthogonal slices (VOLUME_RENDER_MODE.SLICES) ---
+  // No march: intersect the ray with the three crosshair planes and composite
+  // the hits front to back. start/dir/len already come from this chunk's own
+  // cube, so a chunked draw needs nothing extra. Mirrors the block in
+  // wgpu/render.wgsl -- keep the two in step.
+  if (IS_SLICES && isRenderMode(RENDER_MODE_SLICES)) {
+    const float NO_HIT = 1e20;
+    vec3 t = vec3(NO_HIT);
+    for (int k = 0; k < 3; k++) {
+      if (abs(dir[k]) < 1e-8) { continue; }
+      float tk = (sliceFrac[k] - start[k]) / dir[k];
+      // Half-open [0, len): a hit on a chunk's exit face belongs to the next
+      // chunk along the ray, not to both. The two cubes compute that boundary
+      // from different ends, so the rule is only exact up to rounding -- which
+      // never bites, because a crosshair plane sits at a voxel CENTRE fraction
+      // and a chunk face sits on a voxel boundary.
+      if (tk >= 0.0 && tk < len) { t[k] = tk; }
+    }
+    // Sorting network, nearest first.
+    if (t.x > t.y) { float s = t.x; t.x = t.y; t.y = s; }
+    if (t.y > t.z) { float s = t.y; t.y = t.z; t.z = s; }
+    if (t.x > t.y) { float s = t.x; t.x = t.y; t.y = s; }
+    vec4 acc = vec4(0.0);
+    vec3 firstHit = vec3(0.0);
+    bool hasHit = false;
+    for (int i = 0; i < 3; i++) {
+      if (t[i] >= NO_HIT) { break; }
+      vec3 pos = start + dir * t[i];
+      vec4 c = sampleSlice(pos, overlayMode);
+      if (c.a > 0.0) {
+        if (!hasHit) { hasHit = true; firstHit = pos; }
+        acc += (1.0 - acc.a) * c;
+        if (acc.a > 0.999) { break; }
+      }
+    }
+    if (!hasHit) {
+      discard;
+    }
+    FragColor = acc * fadeAlpha;
+    gl_FragDepth = frac2ndc(firstHit);
+    return;
+  }
   float stepSize = len / lenVox;
   vec4 deltaDir = vec4(dir * stepSize, stepSize);
   float localGradientAmount = overlayMode ? 0.0 : gradientAmount;
@@ -758,9 +841,8 @@ void main() {
             float lightingAmount = localGradientAmount;
             if (lightingAmount > 0.0) {
               vec3 n = norm3 * localNormal;
-              // See layerShade() for why y is flipped: the matcap's light is at
-              // the top of the PNG and v=0 is the top row, so v counts down from +y.
-              vec2 uv = vec2(n.x, -n.y) * 0.5 + 0.5;
+              // See layerShade() for why x is flipped, not y.
+              vec2 uv = vec2(-n.x, n.y) * 0.5 + 0.5;
               vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (lightingAmount / 3.0));
               finalRGB *= mix(vec3(1.0), mc_rgb, lightingAmount);
             }

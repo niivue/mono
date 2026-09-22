@@ -10,9 +10,11 @@ import {
   NiiDataType,
   NiiIntentCode,
   nextSliceType,
+  normalizeVolumeRenderMode,
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
+  VOLUME_RENDER_MODE,
 } from './NVConstants'
 
 describe('isPaqd', () => {
@@ -225,5 +227,40 @@ describe('nextSliceType', () => {
       [AXIAL, CORONAL, SAGITTAL, MULTIPLANAR, RENDER].map(nextSliceType),
     ).toEqual([CORONAL, SAGITTAL, MULTIPLANAR, RENDER, AXIAL])
     expect(nextSliceType(NONE)).toBe(AXIAL)
+  })
+})
+
+describe('normalizeVolumeRenderMode', () => {
+  test('keeps each enum member', () => {
+    for (const mode of [
+      VOLUME_RENDER_MODE.COMPOSITE,
+      VOLUME_RENDER_MODE.MAXIMUM,
+      VOLUME_RENDER_MODE.SLICES,
+    ]) {
+      expect(normalizeVolumeRenderMode(mode)).toBe(mode)
+    }
+  })
+
+  // The shaders test the float uniform within 0.5 of a member, so a fractional
+  // value must land on the member they would read, never stay in between
+  // where the CPU's exact tests disagree with them.
+  test('rounds a fractional value to the mode the shaders would read', () => {
+    expect(normalizeVolumeRenderMode(2.25)).toBe(VOLUME_RENDER_MODE.SLICES)
+    expect(normalizeVolumeRenderMode(1.4)).toBe(VOLUME_RENDER_MODE.MAXIMUM)
+    expect(normalizeVolumeRenderMode(0.3)).toBe(VOLUME_RENDER_MODE.COMPOSITE)
+  })
+
+  test('falls back to COMPOSITE for non-finite and out-of-range values', () => {
+    for (const v of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      -1,
+      3,
+      2.6,
+      42,
+    ]) {
+      expect(normalizeVolumeRenderMode(v)).toBe(VOLUME_RENDER_MODE.COMPOSITE)
+    }
   })
 })

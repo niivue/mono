@@ -37,8 +37,20 @@ export enum DRAG_MODE {
  * sparse bright structure (vessels in an angiogram, labelled structures in a
  * fluorescence stack) visible through everything in front of it.
  *
- * Applies to the 3D render only; a 2D slice draws one plane, where the two
- * modes are identical.
+ * SLICES does not march at all: it shows the axial, coronal and sagittal
+ * planes through the crosshair inside the 3D tile, compositing the (at most
+ * three) plane hits front to back. Layers -- overlay, PAQD and drawing -- are
+ * sampled on the planes the way the 2D tiles blend them, and `isAlphaClipDark`
+ * decides what a plane does with a voxel the colormap made fully transparent,
+ * exactly as it does in 2D: off (the default) it is painted, so a plane is a
+ * solid slab and the nearest one wins; on, it is dropped, so only tissue is
+ * drawn and the planes behind show through. At most three samples per ray makes
+ * it the cheapest 3D view. Clip planes and all
+ * lighting (illumination, gradient opacity, silhouette) are ignored: a plane
+ * has no surface to shade.
+ *
+ * Applies to the 3D render only; a 2D slice draws one plane, where the modes
+ * are identical.
  *
  * MAXIMUM on a CHUNKED (streamed) volume additionally assumes a black
  * background. The per-chunk cube draws are merged with a component-wise MAX
@@ -52,6 +64,27 @@ export enum DRAG_MODE {
 export enum VOLUME_RENDER_MODE {
   COMPOSITE = 0,
   MAXIMUM = 1,
+  SLICES = 2,
+}
+
+/**
+ * The `VOLUME_RENDER_MODE` a caller-supplied `volumeRenderMode` means, or
+ * COMPOSITE when it means none of them. The shaders receive the mode as a float
+ * uniform and test it by proximity (`isRenderMode()`, within 0.5), while the
+ * CPU side -- the variant key, the chunked MIP pipeline, the LOD brightness
+ * gate and the plane pick -- tests exact equality; a fractional value such as
+ * 2.25 would satisfy one and not the other, and the pick would land on a plane
+ * the render never drew. So the setter stores only a member: a fractional value
+ * rounds to the nearest mode, the same reading the shaders take, and anything
+ * non-finite or out of range falls back to COMPOSITE.
+ */
+export function normalizeVolumeRenderMode(v: number): VOLUME_RENDER_MODE {
+  if (!Number.isFinite(v)) return VOLUME_RENDER_MODE.COMPOSITE
+  const mode = Math.round(v)
+  return mode === VOLUME_RENDER_MODE.MAXIMUM ||
+    mode === VOLUME_RENDER_MODE.SLICES
+    ? mode
+    : VOLUME_RENDER_MODE.COMPOSITE
 }
 
 /**

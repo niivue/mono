@@ -26,12 +26,14 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import * as NVMeasurement from '@/view/NVMeasurement'
+import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -67,6 +69,9 @@ export default class NVGlview {
   gl: WebGL2RenderingContext | null
   /** Set when the WebGL2 context is lost (e.g. GPU OOM); halts the render loop. */
   private _contextLost = false
+  // The drawing RGBA the drawing texture(s) were uploaded from, for the chunked
+  // volume's CPU plane pick (view/planeVisibility.ts). Null without a drawing.
+  private _drawingPickGrid: RgbaGrid | null = null
   max2D: number
   max3D: number
   fontTexture: WebGLTexture | null
@@ -530,9 +535,17 @@ export default class NVGlview {
     // (entry creation, request, pump) so chunk uploaders can skip the gradient
     // pass when unlit. Matches the gradientAmount passed to the volume draw.
     this.volumeRenderer.gradientAmount = md.volume.illumination
-    // Composite (OVER) vs maximum-intensity projection, for every volume pass this
-    // frame (base, overlay, PAQD, drawing, and the independent hi-res overlay cube).
+    // Composite (OVER) vs maximum-intensity projection vs orthogonal slices, for
+    // every volume pass this frame (base, overlay, PAQD, drawing, and the
+    // independent hi-res overlay cube).
     this.volumeRenderer.renderMode = md.volume.renderMode
+    // The crosshair planes SLICES draws, in the base volume's texture fraction —
+    // the same conversion the 2D tiles use, so sheared and oblique volumes line
+    // up with them.
+    this.volumeRenderer.sliceFrac = [0, 1, 2].map((d) => md.getSliceTexFrac(d))
+    // SLICES honours the same dark-voxel clip the 2D tiles do, so the two agree
+    // on what a plane shows.
+    this.volumeRenderer.isAlphaClipDark = md.volume.isAlphaClipDark
     // Ray samples per voxel in the 3D fine march (anti-aliasing vs fragment cost).
     this.volumeRenderer.sampleRate = md.volume.sampleRate
     // Tricubic B-spline reconstruction in the fine march (8 fetches vs 1).
@@ -1053,7 +1066,7 @@ export default class NVGlview {
       const meshes =
         tile.space === 'global3d'
           ? []
-          : (md.getMeshes() as NVMesh[]).filter((m) => (m.opacity ?? 1.0) > 0.0)
+          : (md.getMeshes() as NVMesh[]).filter(isMeshDrawn)
       const ccMM = crosscutMM(md, tile.axCorSag)
       // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
       let meshMvp = mvpMatrix
@@ -1778,6 +1791,7 @@ export default class NVGlview {
     dirtyChunks?: readonly number[],
   ): void {
     if (!this.gl) return
+    this._drawingPickGrid = { data: rgba, dims }
     this.sliceRenderer.updateDrawingTexture(
       this.gl,
       rgba,
@@ -1795,6 +1809,7 @@ export default class NVGlview {
   }
 
   clearDrawing(): void {
+    this._drawingPickGrid = null
     if (!this.gl) return
     this.sliceRenderer.destroyDrawing()
     this.volumeRenderer.destroyDrawing(this.gl)
@@ -1898,11 +1913,56 @@ export default class NVGlview {
           1,
           mvpMatrix,
         )
-        // Exploded view: blocks are displaced, so the un-exploded bounding box no
-        // longer matches what's on screen. Pick against each block's exploded
-        // AABB (first window-visible voxel in the hit block) and map the recovered
-        // un-exploded voxel back to mm for the crosshair.
+        // SLICES draws three crosshair planes, so the pick lands on the nearest
+        // VISIBLE plane crossing rather than on the near surface — the same rule
+        // the GPU shaders use for a non-chunked volume.
+        //
+        // A miss must NOT fall through to the surface fallbacks below: in this
+        // mode the volume's near surface is not on screen, so landing the
+        // crosshair there would teleport all three planes to a voxel the user
+        // never clicked. It drops to the GPU pass instead, which is the only
+        // one that picks MESHES.
+        //
+        // ponytail: un-exploded only, and the planes are the mm-axis ones, as
+        // the bounding box around them already is -- an oblique volume's true
+        // planes are tilted. Exploded blocks displace the planes with them, so
+        // they keep the block pick below. Give either its own plane maths if
+        // someone picks in one of those views.
         if (
+          md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.SLICES &&
+          !chunkExplodeEnabled(vol.chunkExplode)
+        ) {
+          const planeMM = NVTransforms.rayPlaneFirstVisibleMM(
+            near,
+            far,
+            vol.extentsMin,
+            vol.extentsMax,
+            md.scene2mm(md.scene.crosshairPos),
+            // Without alpha clipping the plane is a solid slab, so every
+            // in-box crossing is visible and there is nothing to reject. With
+            // it, the base volume's own sampler is widened by the PAQD and
+            // drawing layers the render paints over transparent base.
+            md.volume.isAlphaClipDark
+              ? composePlaneVisibility({
+                  lo: vol.extentsMin,
+                  hi: vol.extentsMax,
+                  base: vol.pickSampler,
+                  drawing: this._drawingPickGrid,
+                  paqd: this.volumeRenderer.paqdPickGrid
+                    ? {
+                        grid: this.volumeRenderer.paqdPickGrid,
+                        uniforms: md.volume.paqdUniforms,
+                      }
+                    : null,
+                })
+              : undefined,
+          )
+          if (planeMM) return planeMM
+        } else if (
+          // Exploded view: blocks are displaced, so the un-exploded bounding box
+          // no longer matches what's on screen. Pick against each block's
+          // exploded AABB (first window-visible voxel in the hit block) and map
+          // the recovered un-exploded voxel back to mm for the crosshair.
           vol.chunkPlan &&
           vol.matRAS &&
           chunkExplodeEnabled(vol.chunkExplode)
@@ -1937,32 +1997,34 @@ export default class NVGlview {
             return [mm[0], mm[1], mm[2]]
           }
           return null
+        } else {
+          // With a CPU sampler (the streamed volume's coarse floor, or
+          // app-supplied data), march to the first window-visible voxel.
+          // Without one — or when the ray crosses nothing visible — land on the
+          // bounding-box / clip surface, which is what the GPU shader does with
+          // its own miss.
+          const hitMM =
+            (vol.pickSampler
+              ? NVTransforms.rayMarchFirstVisibleMM(
+                  near,
+                  far,
+                  vol.extentsMin,
+                  vol.extentsMax,
+                  vol.pickSampler,
+                  md.clipPlanes,
+                  md.scene.isClipPlaneCutaway,
+                )
+              : null) ??
+            NVTransforms.rayBoxEntryMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+          if (hitMM) return hitMM
         }
-        // With a CPU sampler (the streamed volume's coarse floor, or app-supplied
-        // data), march to the first window-visible voxel. Without one — or when
-        // the ray crosses nothing visible — land on the bounding-box / clip
-        // surface, which is what the GPU shader does with its own miss.
-        const hitMM =
-          (vol.pickSampler
-            ? NVTransforms.rayMarchFirstVisibleMM(
-                near,
-                far,
-                vol.extentsMin,
-                vol.extentsMax,
-                vol.pickSampler,
-                md.clipPlanes,
-                md.scene.isClipPlaneCutaway,
-              )
-            : null) ??
-          NVTransforms.rayBoxEntryMM(
-            near,
-            far,
-            vol.extentsMin,
-            vol.extentsMax,
-            md.clipPlanes,
-            md.scene.isClipPlaneCutaway,
-          )
-        if (hitMM) return hitMM
       }
     }
     // Depth-pick via scissor + readPixels (works for all tile types)
@@ -1995,13 +2057,12 @@ export default class NVGlview {
           md.clipPlanes,
           md.scene.isClipPlaneCutaway,
           Math.min(volumes.length, 2),
+          md.volume.paqdUniforms,
         )
       }
     }
     // Draw meshes with depth-pick shader
-    const meshes = (md.getMeshes() as NVMesh[]).filter(
-      (m) => (m.opacity ?? 1.0) > 0.0,
-    )
+    const meshes = (md.getMeshes() as NVMesh[]).filter(isMeshDrawn)
     for (const m of meshes) {
       const mGpu = this._getMeshGpu(m)
       if (!mGpu) continue

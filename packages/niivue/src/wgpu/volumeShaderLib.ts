@@ -32,8 +32,9 @@ struct Params {
     // Lives in what was _pad0's first lane, so struct size/offsets are unchanged.
     fadeAlpha: f32,
     // Volume render mode: 0 = composite (OVER), 1 = maximum-intensity
-    // projection. Sits in the implicit padding f32 between fadeAlpha and the
-    // 8-byte-aligned _pad0, so struct size and all later offsets are unchanged.
+    // projection, 2 = orthogonal slices. Sits in the implicit padding f32
+    // between fadeAlpha and the 8-byte-aligned _pad0, so struct size and all
+    // later offsets are unchanged. Test it with isRenderMode(), never \`> 0.5\`.
     renderMode: f32,
     // 0 = hardware trilinear, 1 = tricubic B-spline reconstruction in the
     // background fine pass. Occupies what was _pad0's first lane, so the struct
@@ -78,6 +79,10 @@ struct Params {
     // halo. The fragment shader then clips ray marching back to the chunk's
     // owned data sub-cube and remaps samples into [dataOrigin, dataOrigin+dataSize],
     // letting trilinear sampling pull from halo voxels without double-counting them.
+    // Four trailing .w lanes below are not padding: chunkSubOrigin.w,
+    // chunkSubSize.w and dataOriginTexFrac.w carry the crosshair planes for
+    // RENDER_MODE_SLICES (see sliceFrac()), and dataSizeTexFrac.w carries
+    // isAlphaClipDark (see alphaClipDark()).
     volumeTexDimsFull: vec4f,
     chunkSubOrigin: vec4f,
     chunkSubSize: vec4f,
@@ -114,6 +119,51 @@ struct Params {
     // this struct but never reads them -- a pick reads geometry, not opacity.
     gradientOpacity: f32,
     silhouettePower: f32,
+}
+
+// Volume render modes, mirroring VOLUME_RENDER_MODE in NVConstants.ts.
+// renderMode is an f32, so always compare by proximity: a \`> 0.5\` test reads
+// SLICES as MAXIMUM.
+const RENDER_MODE_MAXIMUM: f32 = 1.0;
+const RENDER_MODE_SLICES: f32 = 2.0;
+
+fn isRenderMode(mode: f32) -> bool {
+    return abs(params.renderMode - mode) < 0.5;
+}
+
+// The three crosshair planes, in full-volume texture fraction, for
+// RENDER_MODE_SLICES. They ride in three of the vec4 trailing lanes above so
+// the 512-byte Params struct (256-byte aligned, one slot per tile AND per
+// chunk) does not grow. Written by _writeRenderParams in wgpu/render.ts; 1.0
+// when unused, which is off-cube and hits nothing.
+fn sliceFrac() -> vec3f {
+    return vec3f(params.chunkSubOrigin.w, params.chunkSubSize.w, params.dataOriginTexFrac.w);
+}
+
+// volumeIsAlphaClipDark, in dataSizeTexFrac's trailing lane. A voxel the
+// colormap made fully transparent is dropped rather than painted, which is what
+// lets the planes behind a SLICES plane show through. The 2D tiles take the
+// same flag as a plain uniform; the ray-march never needed it, because it
+// samples that alpha directly.
+fn alphaClipDark() -> bool {
+    return params.dataSizeTexFrac.w > 0.5;
+}
+
+// PAQD easing: piecewise-linear alpha from the primary label's probability,
+// with volumePaqdUniforms as [t0, t1, y1, y2]. In the preamble because the
+// render and the depth pick both read it: what one draws, the other must pick.
+// Mirrors paqdEaseAlpha in gl/volumeShaderLib.ts and view/planeVisibility.ts.
+fn paqdEaseAlpha(alpha: f32, u: vec4f) -> f32 {
+    let t0 = u[0];
+    let t1 = 0.5 * (u[0] + u[1]);
+    let t2 = u[1];
+    let y0 = 0.0;
+    let y1 = abs(u[2]);
+    let y2 = abs(u[3]);
+    if (alpha <= t0) { return y0; }
+    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
+    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
+    return y2;
 }
 
 // Remap a sample position from full-volume [0,1] cube space to the local chunk

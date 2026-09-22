@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { webgpuLaunchOptions } from './launchOptions'
 
 // Issue #145, reported by @stebo85 as stale numbers out of `chunkStreamStats()`.
 //
@@ -18,16 +19,7 @@ import { expect, test } from '@playwright/test'
 // wgpu/render.ts. WebGPU is skipped when the runner has no adapter (headless
 // Chromium usually has SwiftShader for WebGL2 only).
 
-test.use({
-  launchOptions: {
-    args: [
-      '--enable-unsafe-swiftshader',
-      '--enable-unsafe-webgpu',
-      '--use-angle=swiftshader',
-      '--enable-features=Vulkan',
-    ],
-  },
-})
+test.use({ launchOptions: webgpuLaunchOptions })
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/examples/index.html', { waitUntil: 'load' })

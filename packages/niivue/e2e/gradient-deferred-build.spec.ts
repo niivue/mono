@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { webgpuLaunchOptions } from './launchOptions'
 
 // The gradient texture is built at upload time, and NONE of its three consumers
 // -- matcap illumination, gradientOpacity, silhouettePower -- is on by default.
@@ -21,16 +22,7 @@ import { expect, test } from '@playwright/test'
 // both instances are equally unlit. Run on both backends: the gate and the
 // lazy fill are mirrored in gl/render.ts and wgpu/render.ts.
 
-test.use({
-  launchOptions: {
-    args: [
-      '--enable-unsafe-swiftshader',
-      '--enable-unsafe-webgpu',
-      '--use-angle=swiftshader',
-      '--enable-features=Vulkan',
-    ],
-  },
-})
+test.use({ launchOptions: webgpuLaunchOptions })
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/examples/index.html', { waitUntil: 'load' })

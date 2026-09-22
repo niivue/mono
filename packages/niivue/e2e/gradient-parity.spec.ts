@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { webgpuLaunchOptions } from './launchOptions'
 
 // The gradient texture (RGB = encoded unit normal, A = log-encoded magnitude)
 // feeds three features -- matcap illumination, gradientOpacity and
@@ -10,10 +11,10 @@ import { expect, test } from '@playwright/test'
 // linear-sampled central differences over ALPHA. Red is the fatal one: on the
 // `hot` LUT red saturates at 37% of the intensity range and is flat above it,
 // so WebGPU returned NO gradient at all across the top 63% of the data. Alpha
-// is monotonic in intensity for every LUT, so it is the channel both now read;
-// WebGPU adopted the rest of WebGL2's estimator too (WebGL2 has no compute
-// shaders, so it defines what is reachable), and the shared constants live in
-// view/NVGradient.ts.
+// is monotonic in intensity for every LUT, so it is the channel both now read.
+// Both now run the old package's two-pass estimator (8-corner box blur of
+// alpha, then 8-corner Sobel of the blur), reachable on WebGL2 as two FBO
+// passes; the shared constants live in view/NVGradient.ts.
 //
 // This runs both gradient passes over ONE deterministic input volume and diffs
 // the readbacks texel by texel. Both write rgba8unorm through the same
@@ -24,16 +25,7 @@ import { expect, test } from '@playwright/test'
 // WebGPU is off by default in headless Chromium. These flags bring up Dawn on
 // SwiftShader, which is enough to run a compute pass; scoped to this file so the
 // rest of the suite keeps the config's plain WebGL2-on-SwiftShader setup.
-test.use({
-  launchOptions: {
-    args: [
-      '--enable-unsafe-swiftshader',
-      '--enable-unsafe-webgpu',
-      '--use-angle=swiftshader',
-      '--enable-features=Vulkan',
-    ],
-  },
-})
+test.use({ launchOptions: webgpuLaunchOptions })
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/examples/index.html', { waitUntil: 'load' })

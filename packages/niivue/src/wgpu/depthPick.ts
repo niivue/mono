@@ -9,12 +9,33 @@ import { volumeShaderPreamble } from './volumeShaderLib'
 // --- Volume depth-pick WGSL ---
 // Preamble (structs, bindings, vertex shader, helpers) from volumeShaderLib.
 // Fragment exits on first non-transparent voxel and packs depth.
-const volumeDepthPickFragment = /* wgsl */ `
+export const volumeDepthPickFragment = /* wgsl */ `
 fn packDepth(d_in: f32) -> vec4f {
   let d = clamp(d_in, 0.0, 1.0);
   var enc = fract(vec3f(1.0, 255.0, 65025.0) * d);
   enc -= enc.yzz * vec3f(1.0 / 255.0, 1.0 / 255.0, 0.0);
   return vec4f(enc, 1.0);
+}
+
+// The layers sampleSlice (wgpu/render.wgsl) composites on a plane over the
+// base and the overlay: a PAQD label with a non-zero eased alpha, or a painted
+// drawing voxel, is drawn even where both of those are transparent, so it has
+// to be pickable there too. Same nearest texel, same thresholds as the render.
+// A missing layer is the placeholder texture, which the size guard skips.
+// Mirrored in gl/depthPickShader.ts and, for chunked volumes the GPU pick
+// cannot sample, in view/planeVisibility.ts.
+fn planeLayerVisible(volCoord: vec3f) -> bool {
+  if (textureDimensions(paqd, 0).x > 2) {
+    let pDims = vec3f(textureDimensions(paqd, 0));
+    let raw = textureLoad(paqd, vec3i(clamp(volCoord * pDims, vec3f(0.0), pDims - 1.0)), 0);
+    if (raw.b + raw.a > 0.004 && paqdEaseAlpha(raw.b, params.paqdUniforms) > 0.0) { return true; }
+  }
+  if (textureDimensions(drawing, 0).x > 2) {
+    let dDims = vec3f(textureDimensions(drawing, 0));
+    let dc = textureLoad(drawing, vec3i(clamp(volCoord * dDims, vec3f(0.0), dDims - 1.0)), 0);
+    if (dc.a > 0.0) { return true; }
+  }
+  return false;
 }
 
 @fragment
@@ -36,6 +57,41 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
     discard;
     var dummy: FragmentOutput;
     return dummy;
+  }
+  // SLICES mode draws three planes, not a marched surface, so the pick lands on
+  // the nearest VISIBLE plane hit. Visibility must be the same rule the render
+  // uses (background baked alpha, the overlay, a PAQD label or the drawing), or
+  // a double-click lands somewhere the user cannot see. Mirrored in
+  // gl/depthPickShader.ts.
+  if (isRenderMode(RENDER_MODE_SLICES)) {
+    let planes = sliceFrac();
+    var best = -1.0;
+    for (var k: i32 = 0; k < 3; k++) {
+      if (abs(dir[k]) < 1e-8) { continue; }
+      let tk = (planes[k] - start[k]) / dir[k];
+      if (tk < 0.0 || tk >= len) { continue; }
+      if (best >= 0.0 && tk >= best) { continue; }
+      let pos = start + dir * tk;
+      // The same visibility rule sampleSlice draws with: without alpha clipping
+      // the whole plane is a solid slab, so every in-cube hit is pickable.
+      var visible = !alphaClipDark();
+      if (!visible) { visible = textureSampleLevel(volume, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0; }
+      if (!visible && params.numVolumes > 1.0) {
+        visible = textureSampleLevel(overlay, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0;
+      }
+      if (!visible) { visible = planeLayerVisible(chunkTexCoord(pos)); }
+      if (visible) { best = tk; }
+    }
+    if (best < 0.0) {
+      discard;
+      var dummy: FragmentOutput;
+      return dummy;
+    }
+    let sliceDepth = frac2ndc(start + dir * best);
+    var sliceOut: FragmentOutput;
+    sliceOut.color = packDepth((sliceDepth + 1.0) / 2.0);
+    sliceOut.fragDepth = sliceDepth;
+    return sliceOut;
   }
   // Save original ray for overlay passes (overlay ignores clip planes)
   let origStart = start;

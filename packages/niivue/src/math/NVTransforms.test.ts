@@ -20,6 +20,7 @@ import {
   panFollowCrosshair2D,
   rayBoxEntryMM,
   rayMarchFirstVisibleMM,
+  rayPlaneFirstVisibleMM,
   slicePlaneEquation,
   stepZoom2D,
   unprojectScreen,
@@ -565,6 +566,44 @@ describe('unprojectScreen', () => {
     expect(Number.isFinite(result[0])).toBe(true)
     expect(Number.isFinite(result[1])).toBe(true)
     expect(Number.isFinite(result[2])).toBe(true)
+  })
+})
+
+describe('rayPlaneFirstVisibleMM', () => {
+  const lo = [0, 0, 0]
+  const hi = [10, 10, 10]
+  const cross = [4, 6, 5]
+
+  test('takes the first plane the ray reaches', () => {
+    // Along +(1,1,1) from the origin corner: x=4 at t=4, y=6 at t=6, z=5 at t=5.
+    const hit = rayPlaneFirstVisibleMM([0, 0, 0], [10, 10, 10], lo, hi, cross)
+    expect(hit).toEqual([4, 4, 4])
+  })
+
+  test('a crossing outside the box does not count', () => {
+    // x = 40 is on the ray but past the box's far face.
+    expect(
+      rayPlaneFirstVisibleMM([-5, 6, 5], [15, 6, 5], lo, hi, [40, 6, 5]),
+    ).toBeNull()
+  })
+
+  test('skips a crossing where nothing is visible', () => {
+    // Nearest crossing (x=4) is transparent, so the pick falls through to z=5.
+    const hit = rayPlaneFirstVisibleMM(
+      [0, 0, 0],
+      [10, 10, 10],
+      lo,
+      hi,
+      cross,
+      (x) => (x > 4.5 ? 1 : 0),
+    )
+    expect(hit).toEqual([5, 5, 5])
+  })
+
+  test('returns null when no crossing is visible', () => {
+    expect(
+      rayPlaneFirstVisibleMM([0, 0, 0], [10, 10, 10], lo, hi, cross, () => 0),
+    ).toBeNull()
   })
 })
 

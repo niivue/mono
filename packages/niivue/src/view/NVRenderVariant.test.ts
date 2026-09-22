@@ -54,7 +54,19 @@ describe('renderVariantKey', () => {
       ...renderVariantConstants(GENERIC_RENDER_VARIANT),
       HAS_CLIP: 0,
       CHUNKED: 0,
+      IS_SLICES: 0,
     })
+  })
+
+  // The modes are distinct values of one field, so a \`> 0.5\` test would make
+  // SLICES compile the MIP shader.
+  test('MAXIMUM and SLICES set different bits', () => {
+    expect(
+      renderVariantConstants(renderVariantKey({ ...idle, renderMode: 1 })),
+    ).toMatchObject({ IS_MIP: 1, IS_SLICES: 0 })
+    expect(
+      renderVariantConstants(renderVariantKey({ ...idle, renderMode: 2 })),
+    ).toMatchObject({ IS_MIP: 0, IS_SLICES: 1 })
   })
 })
 

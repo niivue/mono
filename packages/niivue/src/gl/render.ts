@@ -8,6 +8,7 @@ import {
   lodOpacityScale,
   SCENE_DEFAULTS,
   VOLUME_DEFAULTS,
+  VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import { applyCORS } from '@/NVLoader'
@@ -23,6 +24,7 @@ import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import type { RgbaGrid } from '@/view/planeVisibility'
 import {
   chunkExplodedMatRAS,
   chunkExplodeEnabled,
@@ -356,6 +358,10 @@ export class VolumeRenderer extends NVRenderer {
   // single-texture paqdTexture stays null in that case (and vice versa).
   paqdChunks: WebGLTexture[] | null
   paqdLutTexture: WebGLTexture | null
+  // The resliced PAQD voxels the paqd texture(s) were uploaded from, kept for
+  // the chunked volume's CPU plane pick (view/planeVisibility.ts), which has no
+  // single texture to sample. Null when no PAQD layer is bound.
+  paqdPickGrid: RgbaGrid | null
   drawingTexture: WebGLTexture | null
   // Per-chunk drawing textures, parallel to the active chunked volume's
   // plan.chunks. Non-null only when the drawing layer is chunked; the
@@ -378,8 +384,18 @@ export class VolumeRenderer extends NVRenderer {
   // with the base volume instead of letting them ignore the clip plane.
   clipPlaneOverlay = false
   // Volume flag (set per-frame from md.volume.renderMode): 0 = composite (OVER),
-  // 1 = maximum-intensity projection. See VOLUME_RENDER_MODE.
+  // 1 = maximum-intensity projection, 2 = orthogonal slices. See
+  // VOLUME_RENDER_MODE.
   renderMode = 0
+  // The three crosshair planes in the base volume's texture fraction (set
+  // per-frame from model.getSliceTexFrac), read only in SLICES mode. 1 is
+  // off-cube, so the default hits nothing.
+  sliceFrac: number[] = [1, 1, 1]
+  // Volume flag (set per-frame from md.volume.isAlphaClipDark): drop a voxel the
+  // colormap made fully transparent instead of painting it. Read only in SLICES
+  // mode, where it is what makes a plane a cutout rather than a solid slab; the
+  // ray-march samples that alpha directly and needs no flag.
+  isAlphaClipDark = false
   // Scene display gamma (set per-frame from md.scene.gamma). Applied to the
   // classified RGB of every volume sample, never to alpha, so brightening does
   // not change how much a ray occludes. 1.0 is a strict no-op.
@@ -498,6 +514,7 @@ export class VolumeRenderer extends NVRenderer {
     this.paqdTexture = null
     this.paqdChunks = null
     this.paqdLutTexture = null
+    this.paqdPickGrid = null
     this.drawingTexture = null
     this.drawingChunks = null
     this.drawingLinearSampler = null
@@ -834,10 +851,10 @@ export class VolumeRenderer extends NVRenderer {
    * overlay — each gets its own cache entry + residency manager, keyed by its
    * own url/name, and the per-frame pump (pumpChunkUploads) drives them all.
    *
-   * Halo is 3 (not the [1,1,1] default): the per-chunk gradient taps at +-0.7
-   * voxel through a LINEAR sampler, so it reads one voxel past the chunk, and
-   * trilinear sampling at the data edge reaches one further -- a 3-voxel halo
-   * keeps the gradient seam-free between chunks with a margin.
+   * Halo is 3 (not the [1,1,1] default): each of the two gradient passes taps
+   * +-0.7 voxel through a LINEAR sampler, so the Sobel reaches two voxels past
+   * the chunk, and trilinear sampling at the data edge reaches one further --
+   * 3 is the exact requirement, not a margin.
    */
   private async _ensureChunkedVolumeEntry(
     gl: WebGL2RenderingContext,
@@ -1688,6 +1705,7 @@ export class VolumeRenderer extends NVRenderer {
       const prepared = preparePaqdOverlayData(baseVol, vol, dimsOut)
       if (prepared) {
         const { paqdData, lut256 } = prepared
+        this.paqdPickGrid = { data: paqdData, dims: dimsOut }
         // Chunked (oversized) background: split the raw PAQD volume into one
         // 3D sub-texture per chunk, sharing the volume's ChunkPlan. The single
         // paqdTexture stays null in that case.
@@ -2302,6 +2320,7 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   clearPaqd(gl: WebGL2RenderingContext): void {
+    this.paqdPickGrid = null
     if (this.paqdTexture) {
       gl.deleteTexture(this.paqdTexture)
       this.paqdTexture = null
@@ -2518,6 +2537,13 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.overlayLayerMode, 0.0)
     if (shader.uniforms.renderMode)
       gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
+    if (shader.uniforms.sliceFrac)
+      gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
+    if (shader.uniforms.isAlphaClipDark)
+      gl.uniform1f(
+        shader.uniforms.isAlphaClipDark,
+        this.isAlphaClipDark ? 1 : 0,
+      )
     // Default fully present; the chunk loop overrides per fading chunk.
     if (shader.uniforms.fadeAlpha) gl.uniform1f(shader.uniforms.fadeAlpha, 1.0)
     if (shader.uniforms.paqdUniforms)
@@ -2636,14 +2662,21 @@ export class VolumeRenderer extends NVRenderer {
     // compose here (pow is associative in the exponent): the reciprocal of the
     // user-facing display gamma, and this brick's per-level compensation for
     // the brightness a coarse pyramid level loses in the march. The latter is
-    // 1 for every single-level and non-chunked draw.
+    // 1 for every single-level and non-chunked draw -- and for SLICES, which
+    // takes one sample per plane and so loses nothing to compensate for.
+    // Without that gate a coarse floor brick's planes read brighter than the
+    // resident fine ones beside them.
     if (shader.uniforms.invGamma)
       gl.uniform1f(
         shader.uniforms.invGamma,
         invGamma(this.gamma) *
           lodGammaExponent(
             u.lodDownsample ?? 1,
-            this.lodBrightnessCompensation,
+            // SLICES takes one sample per plane whatever the level, so there is
+            // nothing to compensate; 0 makes lodGammaExponent an exact no-op.
+            this.renderMode === VOLUME_RENDER_MODE.SLICES
+              ? 0
+              : this.lodBrightnessCompensation,
           ),
       )
     // Scales the step-size opacity exponent for a coarse brick. 1 for every
@@ -2686,7 +2719,7 @@ export class VolumeRenderer extends NVRenderer {
     // brighter voxel in a farther chunk). Assumes a black tile behind the cube
     // (the classic MAX-blend MIP convention); non-chunked MIP composites OVER.
     // GL_MAX ignores the blend factors. Restored to FUNC_ADD after the loop.
-    const mip = this.renderMode > 0.5
+    const mip = this.renderMode === VOLUME_RENDER_MODE.MAXIMUM
     if (mip) gl.blendEquation(gl.MAX)
     const explode = entry.volume.chunkExplode
     const order = chunksBackToFront(
@@ -2964,6 +2997,13 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.overlayLayerMode, 1.0)
     if (shader.uniforms.renderMode)
       gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
+    if (shader.uniforms.sliceFrac)
+      gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
+    if (shader.uniforms.isAlphaClipDark)
+      gl.uniform1f(
+        shader.uniforms.isAlphaClipDark,
+        this.isAlphaClipDark ? 1 : 0,
+      )
     if (shader.uniforms.paqdUniforms)
       gl.uniform4fv(shader.uniforms.paqdUniforms, paqdUniforms as number[])
     if (shader.uniforms.earlyTermination)
@@ -3001,6 +3041,7 @@ export class VolumeRenderer extends NVRenderer {
     clipPlanes: number[],
     isClipCutaway = false,
     volumeCount = 1,
+    paqdUniforms: readonly number[] = [0, 0, 0, 0],
   ): void {
     if (
       !this.isReady ||
@@ -3029,6 +3070,25 @@ export class VolumeRenderer extends NVRenderer {
     )
     if (shader.uniforms.overlay) gl.uniform1i(shader.uniforms.overlay, 1)
 
+    // The SLICES plane test also reads the PAQD and drawing layers (see
+    // planeLayerVisible in the shader), nearest-filtered as the render binds
+    // them. An unbound layer is the 2-voxel placeholder the shader skips.
+    gl.activeTexture(gl.TEXTURE2)
+    gl.bindTexture(gl.TEXTURE_3D, this.paqdTexture || this.placeholderOverlay)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    if (shader.uniforms.paqd) gl.uniform1i(shader.uniforms.paqd, 2)
+    gl.activeTexture(gl.TEXTURE3)
+    gl.bindTexture(
+      gl.TEXTURE_3D,
+      this.drawingTexture || this.placeholderOverlay,
+    )
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    if (shader.uniforms.drawing) gl.uniform1i(shader.uniforms.drawing, 3)
+    if (shader.uniforms.paqdUniforms)
+      gl.uniform4fv(shader.uniforms.paqdUniforms, paqdUniforms as number[])
+
     // Upload uniforms
     if (shader.uniforms.mvpMtx)
       gl.uniformMatrix4fv(shader.uniforms.mvpMtx, false, mvpMatrix)
@@ -3050,6 +3110,16 @@ export class VolumeRenderer extends NVRenderer {
       )
     if (shader.uniforms.numVolumes)
       gl.uniform1f(shader.uniforms.numVolumes, volumeCount)
+    // SLICES mode: the pick lands on a plane, not on the first opaque voxel.
+    if (shader.uniforms.renderMode)
+      gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
+    if (shader.uniforms.sliceFrac)
+      gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
+    if (shader.uniforms.isAlphaClipDark)
+      gl.uniform1f(
+        shader.uniforms.isAlphaClipDark,
+        this.isAlphaClipDark ? 1 : 0,
+      )
     // Depth pick uses a single volume texture; pass identity chunk uniforms
     // so the shared vertex shader / preamble run in non-chunked mode.
     this._setChunkUniforms(gl, shader, {

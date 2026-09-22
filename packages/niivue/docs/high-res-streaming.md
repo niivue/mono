@@ -26,7 +26,7 @@ To solve the texture limit and VRAM constraints, NiiVue implements a **Tiled Vol
 
 ### Chunking and Halos
 Instead of uploading one massive texture, NiiVue logically partitions the volume into smaller 3D blocks called **chunks**.
-* Each chunk carries a **3-voxel halo** of overlapping data from its neighbors. One voxel would be enough for seam-free trilinear interpolation alone; the wider halo is needed because the gradient pass (Sobel radius 1, then a radius-1 blur) reads ±2 voxels of the chunk's own data, and we want one extra voxel of margin so the trilinear sample at the seam stays valid.
+* Each chunk carries a **3-voxel halo** of overlapping data from its neighbors. One voxel would be enough for seam-free trilinear interpolation alone; the wider halo is needed because the gradient pass (box blur then Sobel, both radius 0.7) reads ±2 voxels of the chunk's own data, and we want one extra voxel of margin so the trilinear sample at the seam stays valid.
 * During rendering, NiiVue dynamically sorts the chunks back-to-front based on the camera's view direction and composites them together with premultiplied-alpha OVER blending.
 
 ### Visibility-Driven Working Sets
@@ -97,7 +97,7 @@ A coarse brick does not merely look softer than the fine data it stands in for: 
 e = 1 - coefficient * log2(k)
 ```
 
-where `k` is the brick's linear downsample factor relative to the finest grid — the geometric mean of the three per-axis ratios, so an anisotropically decimated pyramid still yields one scalar (`chunkLodDownsample` in `src/volume/chunking.ts`). Because every pyramid level averages the same 2x2x2 neighbourhood, the correction is **one fixed step per level**: `log2(k)` is just the level index. The shaders multiply `e` into the same exponent that carries `scene.gamma` and raise only the classified RGB to it, so alpha, occlusion and thresholding are untouched. `k` is 1 for the finest level, for single-level plans, and for non-chunked volumes, which makes the whole feature an exact no-op outside multi-LOD plans whatever the coefficient is.
+where `k` is the brick's linear downsample factor relative to the finest grid — the geometric mean of the three per-axis ratios, so an anisotropically decimated pyramid still yields one scalar (`chunkLodDownsample` in `src/volume/chunking.ts`). Because every pyramid level averages the same 2x2x2 neighbourhood, the correction is **one fixed step per level**: `log2(k)` is just the level index. The shaders multiply `e` into the same exponent that carries `scene.gamma` and raise only the classified RGB to it, so alpha, occlusion and thresholding are untouched. `k` is 1 for the finest level, for single-level plans, and for non-chunked volumes, which makes the whole feature an exact no-op outside multi-LOD plans whatever the coefficient is. The 3D render in `VOLUME_RENDER_MODE.SLICES` skips it too (`_lodGamma`): a plane takes one sample whatever the brick's level, so there is no sparser sampling to compensate, and applying it made a coarse floor brick's planes read brighter than the resident fine ones beside them. The 2D tiles still apply it.
 
 #### Why per level and not per downsample factor
 
@@ -193,10 +193,10 @@ The gradient texture is what gives the 3D render its phong-like matcap shading. 
 
 | Backend | Implementation |
 | --- | --- |
-| WebGPU | Two compute pipelines (`sobel.wgsl`, `blur.wgsl`), `@workgroup_size(8,8,4)`, write via `texture_storage_3d<rgba8unorm, write>`; pipelines cached per device in `wgpu/wgpu.ts` |
+| WebGPU | Two compute entry points in `sobel.wgsl` (`blur`, `sobel`), `@workgroup_size(8,8,4)`, write via `texture_storage_3d<rgba8unorm, write>`; pipelines cached per device in `wgpu/wgpu.ts` |
 | WebGL2 | Two fragment passes, rendering one Z-layer at a time into `gl.RGBA8` 3D textures via `FRAMEBUFFER` + `framebufferTextureLayer` |
 
-Math is identical: Sobel stencil of radius 1, then a separable 3×3×3 box blur (radius 1). 8-bit precision is sufficient for matcap shading.
+Math is identical: an 8-corner box blur of the colormapped alpha at radius 0.7, then an 8-corner Sobel of the blur at radius 0.7. 8-bit precision is sufficient for matcap shading.
 
 Steady-state residency per chunk after stage 2 is **another 4 bytes per voxel** — so 8 bytes per RAS voxel total, colour + gradient. For a 2×2×2 chunked grid with halo `[3,3,3]` the halo overhead adds roughly another 80% on top.
 
@@ -317,6 +317,7 @@ Scope / limitations (current):
 | Compositing order | Base and overlay cube sets are each sorted back-to-front but drawn as two sets (overlay always over base) — the same per-cube approximation already used between neighbouring base chunks. |
 | Residency budget | Each `ChunkResidencyManager` uses the full configured `maxChunkResidencyBytes`. With a base + overlay both resident the total can approach 2x; size the streamed levels so base + overlay fit (the demo streams the overlay at one finer level than a deliberately-coarser base). A single split budget is a follow-up. |
 | Layer mix | `chunkExplode` is per-entry, so exploding the base does not explode the overlay. |
+| Render mode | In `SLICES` the overlay contributes its own plane hits over the base's, sampled with the layer alpha the orient pass baked in (`sampleSlice(pos, isLayer)`) rather than the background `opacity` this draw passes as 1. The planes themselves come from the base's crosshair, so it leans on the co-registration above. |
 
 Demo: `apps/iiif-volumetric-demo` overlay page, "stream hi-res" toggle (3D
 render). The overlay streams a finer pyramid level than the base and z-scores

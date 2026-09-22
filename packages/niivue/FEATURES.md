@@ -139,6 +139,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | Feature | Kind | Notes |
 |---|---|---|
 | `volumeIllumination` | Prop | 0–1; matcap lighting for 3D render |
+| `volumeRenderMode` | Prop | `VOLUME_RENDER_MODE`: `COMPOSITE` (0), `MAXIMUM` (1, MIP), `SLICES` (2, the three crosshair planes in the 3D tile) |
 | `volumeOutlineWidth` | Prop | Overlay outline thickness |
 | `volumeAlphaShader` | Prop | Selects ray-march variant |
 | `volumeIsBackgroundMasking` | Prop | |

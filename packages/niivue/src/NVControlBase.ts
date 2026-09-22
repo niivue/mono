@@ -57,6 +57,7 @@ import {
   lodGammaExponent,
   lodOpacityScale,
   NUM_CLIP_PLANE,
+  normalizeVolumeRenderMode,
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
@@ -1489,17 +1490,26 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * How the 3D ray-march combines the samples along each ray:
-   * `VOLUME_RENDER_MODE.COMPOSITE` (default, OVER) or
-   * `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity projection). 2D slices draw
-   * a single plane and are unaffected.
+   * What the 3D render tile draws: `VOLUME_RENDER_MODE.COMPOSITE` (default, the
+   * OVER ray-march), `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity
+   * projection), or `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
+   * crosshair planes, composited front to back, with overlays sampled on them
+   * as the 2D tiles do). 2D slices draw a single plane and are unaffected.
+   *
+   * Only those three values are stored: a fractional value rounds to the
+   * nearest mode and anything else falls back to COMPOSITE (see
+   * {@link normalizeVolumeRenderMode}), because the shaders test the mode by
+   * proximity while the CPU tests it exactly, and a value in between would have
+   * the depth pick land on a plane the render never drew. The `change` event
+   * carries the stored value.
    */
   get volumeRenderMode(): number {
     return this.model.volume.renderMode
   }
   set volumeRenderMode(v: number) {
-    this.model.volume.renderMode = v
-    this.emit('change', { property: 'volumeRenderMode', value: v })
+    const mode = normalizeVolumeRenderMode(v)
+    this.model.volume.renderMode = mode
+    this.emit('change', { property: 'volumeRenderMode', value: mode })
     this.drawScene()
   }
 
@@ -1599,9 +1609,10 @@ export default class NiiVue extends EventTarget {
    * The correction is one fixed step per pyramid level (`1 - coefficient *
    * log2(k)`). Empirical: sparse material loses more per level than dense.
    *
-   * No-op on any volume that is not a multi-LOD chunked volume. Call
-   * `lodCompensation()` to see whether it applies and what each level gets. See
-   * VolumeRenderConfig.lodBrightnessCompensation.
+   * No-op on any volume that is not a multi-LOD chunked volume, and on the 3D
+   * render in `VOLUME_RENDER_MODE.SLICES` (one sample per plane whatever the
+   * level). Call `lodCompensation()` to see whether it applies and what each
+   * level gets. See VolumeRenderConfig.lodBrightnessCompensation.
    */
   get volumeLodBrightnessCompensation(): number {
     return this.model.volume.lodBrightnessCompensation
@@ -4133,7 +4144,9 @@ export default class NiiVue extends EventTarget {
    * ```
    *
    * Reads the background volume (`volumes[0]`), which is the volume both
-   * settings act on. Cheap enough to call per frame for a debug HUD.
+   * settings act on. Cheap enough to call per frame for a debug HUD. In
+   * `VOLUME_RENDER_MODE.SLICES` the reported exponent reaches the 2D tiles
+   * only: the 3D planes take one sample per level and apply none.
    */
   lodCompensation(): LodCompensationReport {
     const brightness = this.model.volume.lodBrightnessCompensation

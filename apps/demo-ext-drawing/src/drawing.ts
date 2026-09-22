@@ -7,14 +7,14 @@
  *   3. Click "Find Boundaries" to see the first/last drawn slices
  *   4. Click "Interpolate" to fill the gaps between drawn slices
  */
+
+import type { PEN_SHAPE } from '@niivue/niivue'
 import NiiVue from '@niivue/niivue'
 import {
   findDrawingBoundarySlices,
   interpolateMaskSlices,
   type SliceType,
 } from '@niivue/nv-ext-drawing'
-
-import { PEN_SHAPE } from '@niivue/niivue'
 
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id)

@@ -10,7 +10,7 @@
 // (Phase 2 — never materialising the full drawing bitmap — is future work; here
 // the bitmap is whole but the GPU upload per stroke is incremental.)
 
-import NiiVue, { SLICE_TYPE, PEN_SHAPE } from '@niivue/niivue'
+import NiiVue, { type PEN_SHAPE, SLICE_TYPE } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 

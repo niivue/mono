@@ -26,7 +26,12 @@
         <option value="3" selected>A+C+S+R</option>
       </select>
       &nbsp;
-      <label title="load the GM/WM/CSF tissue maps as overlays"><input type="checkbox" id="overlayCheck" checked />Overlays</label>
+      <label
+        for="overlayOpacity"
+        title="opacity of the GM/WM/CSF tissue maps over the T1"
+        >Overlay opacity</label
+      >
+      <input type="range" id="overlayOpacity" min="0" max="100" value="100" />
       &nbsp;
       <label
         title="volumeIsAlphaClipDark: drop voxels the colormap made fully transparent. Off, a plane is a solid slab; on, only tissue is drawn and the planes behind show through."
@@ -88,23 +93,34 @@
         })
       }
 
-      const overlayCheck = document.getElementById('overlayCheck')
-      async function loadScene() {
-        const layers = overlayCheck.checked
-          ? TISSUES.map((t) => ({
-              url: `/volumes/${t.file}`,
-              colormap: t.id,
-              colormapType: 1,
-              calMin: 0.05,
-              calMax: 1,
-              opacity: 0.7,
-            }))
-          : []
-        await nv1.loadVolumes([{ url: T1, colormap: 'gray' }, ...layers])
-      }
-      overlayCheck.onchange = loadScene
-      await loadScene()
+      await nv1.loadVolumes([
+        { url: T1, colormap: 'gray' },
+        ...TISSUES.map((t) => ({
+          url: `/volumes/${t.file}`,
+          colormap: t.id,
+          colormapType: 1,
+          calMin: 0.05, // below this a voxel is essentially not this tissue
+          calMax: 1,
+        })),
+      ])
       await nv1.loadMeshes([{ url: TRACTS }])
+
+      // These are partial-volume FRACTIONS, not labels, so a voxel on a tissue
+      // boundary is a blend of two of them. Overlay alpha is otherwise
+      // binarised: without this, a voxel that is 5% grey matter is as opaque as
+      // one that is 95%, and the boundary reads as a hard winner-take-all edge.
+      // Each overlay alpha-modulating ITSELF is what turns the fraction into
+      // coverage, so the layers blend by opacity instead.
+      const overlays = nv1.volumes.slice(1)
+      for (const vol of overlays) {
+        await nv1.setModulationImage(vol.id, vol.id, 1)
+      }
+
+      const overlayOpacity = document.getElementById('overlayOpacity')
+      overlayOpacity.oninput = () => {
+        const opacity = Number(overlayOpacity.value) / 100
+        overlays.forEach((_, i) => nv1.setVolume(i + 1, { opacity }))
+      }
 
       const modeSelect = document.getElementById('modeSelect')
       modeSelect.onchange = () => {

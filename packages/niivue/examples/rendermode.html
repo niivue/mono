@@ -119,7 +119,9 @@
       const overlayOpacity = document.getElementById('overlayOpacity')
       overlayOpacity.oninput = () => {
         const opacity = Number(overlayOpacity.value) / 100
-        overlays.forEach((_, i) => nv1.setVolume(i + 1, { opacity }))
+        for (let i = 0; i < overlays.length; i++) {
+          nv1.setVolume(i + 1, { opacity })
+        }
       }
 
       const modeSelect = document.getElementById('modeSelect')

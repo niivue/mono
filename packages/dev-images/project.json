@@ -5,11 +5,11 @@
   "targets": {
     "lint": {
       "command": "bunx biome check {projectRoot}",
-      "inputs": ["typescript"]
+      "inputs": ["lintable"]
     },
     "format": {
       "command": "bunx biome format {projectRoot} --write",
-      "inputs": ["typescript"]
+      "inputs": ["lintable"]
     }
   }
 }

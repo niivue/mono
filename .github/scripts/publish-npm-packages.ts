@@ -3,6 +3,8 @@
 //
 // Usage: bun .github/scripts/publish-npm-packages.ts
 
+import { resolveNpmReleaseProjects } from './npm-release-projects'
+
 const run = (command: string[]) => {
   const result = Bun.spawnSync(command, {
     stdout: 'inherit',
@@ -21,8 +23,11 @@ const output = (command: string[]): string => {
   return result.stdout.toString().trim()
 }
 
+// Only projects in the npm release group (nx.json) are published. Resolving
+// this up front also fails the run if a public package is not in the group.
+const npmReleaseProjects = resolveNpmReleaseProjects()
 const isNpmReleaseProject = (project: string): boolean =>
-  project === 'niivue' || project.startsWith('nv-')
+  npmReleaseProjects.has(project)
 
 const tags = output(['git', 'tag', '--points-at', 'HEAD'])
   .split('\n')

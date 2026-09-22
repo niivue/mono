@@ -19,6 +19,7 @@
 //   bun .github/scripts/publish-tags-to-npm.ts <tag>...   # explicit tags
 
 import { readFileSync } from 'node:fs'
+import { resolveNpmReleaseProjects } from './npm-release-projects'
 
 const run = (command: string[]) => {
   const result = Bun.spawnSync(command, {
@@ -51,8 +52,11 @@ const tryOutput = (command: string[]): string | null => {
   return result.stdout.toString().trim()
 }
 
+// Only projects in the npm release group (nx.json) are published. Resolving
+// this up front also fails the run if a public package is not in the group.
+const npmReleaseProjects = resolveNpmReleaseProjects()
 const isNpmReleaseProject = (project: string): boolean =>
-  project === 'niivue' || project.startsWith('nv-')
+  npmReleaseProjects.has(project)
 
 const parseTag = (tag: string): { project: string; version: string } | null => {
   const atIndex = tag.lastIndexOf('@')
@@ -83,7 +87,9 @@ const discoverReleaseTags = (): string[] => {
       return parsed !== null && isNpmReleaseProject(parsed.project)
     })
     if (releaseTags.length > 0) {
-      console.log(`Discovered release commit ${sha} with ${releaseTags.length} release tag(s)`)
+      console.log(
+        `Discovered release commit ${sha} with ${releaseTags.length} release tag(s)`,
+      )
       return releaseTags
     }
   }
@@ -196,7 +202,12 @@ for (const tag of tags) {
       `Tag ${tag} version (${version}) does not match ${pkgName} package.json version (${pkg.version}) at the checked-out ref.`,
     )
   }
-  const existing = tryOutput(['npm', 'view', `${pkgName}@${version}`, 'version'])
+  const existing = tryOutput([
+    'npm',
+    'view',
+    `${pkgName}@${version}`,
+    'version',
+  ])
   if (existing && existing.trim() === version) {
     console.log(`Skipping ${pkgName}@${version} (already on npm)`)
     summary.push(`skipped ${pkgName}@${version} (already published)`)

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { webgpuLaunchOptions } from './launchOptions'
 
 // `crosshairColorPerAxis` tints each crosshair segment by the world axis it
 // extends along, and the mapping is only observable in the rendered pixels: the
@@ -18,26 +19,10 @@ import { expect, test } from '@playwright/test'
 // "some colour changed" assertion would miss. The default (`[]`) is checked
 // first, and must show red only -- that is the backward-compatibility claim.
 
-// WebGPU is off by default in headless Chromium. These flags bring up Dawn on
-// SwiftShader; scoped to this file so the rest of the suite keeps the config's
-// plain WebGL2-on-SwiftShader setup. `launchOptions` REPLACES the config's
-// object rather than merging into it, so the config's PLAYWRIGHT_CHROMIUM_PATH
-// escape hatch has to be repeated here or this file alone fails to launch on a
-// machine without Playwright's pinned revision.
-test.use({
-  launchOptions: {
-    args: [
-      '--enable-unsafe-swiftshader',
-      '--enable-unsafe-webgpu',
-      '--use-angle=swiftshader',
-      '--enable-features=Vulkan',
-      '--use-vulkan=swiftshader',
-    ],
-    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
-      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
-      : {}),
-  },
-})
+// WebGPU is off by default in headless Chromium. The shared helper brings up
+// Dawn on SwiftShader and carries the config's PLAYWRIGHT_CHROMIUM_PATH escape
+// hatch, which `test.use({ launchOptions })` would otherwise drop.
+test.use({ launchOptions: webgpuLaunchOptions })
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/examples/index.html', { waitUntil: 'load' })

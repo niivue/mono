@@ -68,6 +68,26 @@ export enum VOLUME_RENDER_MODE {
 }
 
 /**
+ * The `VOLUME_RENDER_MODE` a caller-supplied `volumeRenderMode` means, or
+ * COMPOSITE when it means none of them. The shaders receive the mode as a float
+ * uniform and test it by proximity (`isRenderMode()`, within 0.5), while the
+ * CPU side -- the variant key, the chunked MIP pipeline, the LOD brightness
+ * gate and the plane pick -- tests exact equality; a fractional value such as
+ * 2.25 would satisfy one and not the other, and the pick would land on a plane
+ * the render never drew. So the setter stores only a member: a fractional value
+ * rounds to the nearest mode, the same reading the shaders take, and anything
+ * non-finite or out of range falls back to COMPOSITE.
+ */
+export function normalizeVolumeRenderMode(v: number): VOLUME_RENDER_MODE {
+  if (!Number.isFinite(v)) return VOLUME_RENDER_MODE.COMPOSITE
+  const mode = Math.round(v)
+  return mode === VOLUME_RENDER_MODE.MAXIMUM ||
+    mode === VOLUME_RENDER_MODE.SLICES
+    ? mode
+    : VOLUME_RENDER_MODE.COMPOSITE
+}
+
+/**
  * Which stencil estimates the in-shader LAYER gradient, used by the overlay and
  * drawing ray-march passes to light a layer from its own normals. This is NOT
  * the background volume's gradient: that one is precomputed into a texture, so

@@ -56,6 +56,7 @@ import {
   lodGammaExponent,
   lodOpacityScale,
   NUM_CLIP_PLANE,
+  normalizeVolumeRenderMode,
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
@@ -1384,13 +1385,21 @@ export default class NiiVue extends EventTarget {
    * projection), or `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
    * crosshair planes, composited front to back, with overlays sampled on them
    * as the 2D tiles do). 2D slices draw a single plane and are unaffected.
+   *
+   * Only those three values are stored: a fractional value rounds to the
+   * nearest mode and anything else falls back to COMPOSITE (see
+   * {@link normalizeVolumeRenderMode}), because the shaders test the mode by
+   * proximity while the CPU tests it exactly, and a value in between would have
+   * the depth pick land on a plane the render never drew. The `change` event
+   * carries the stored value.
    */
   get volumeRenderMode(): number {
     return this.model.volume.renderMode
   }
   set volumeRenderMode(v: number) {
-    this.model.volume.renderMode = v
-    this.emit('change', { property: 'volumeRenderMode', value: v })
+    const mode = normalizeVolumeRenderMode(v)
+    this.model.volume.renderMode = mode
+    this.emit('change', { property: 'volumeRenderMode', value: mode })
     this.drawScene()
   }
 

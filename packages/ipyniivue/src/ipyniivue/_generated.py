@@ -124,6 +124,11 @@ affect whether annotations *render* — they always do."""
     clip_plane_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
     clip_plane_overlay = traitlets.Bool(None, allow_none=True).tag(sync=True)
     crosshair_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
+    crosshair_color_per_axis = traitlets.List(trait=traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
+    """Per-axis crosshair colors as `[xColor, yColor, zColor]` (each RGBA, 0..1).
+Set to 3 colors to tint each crosshair segment by the world axis it extends
+along (X = left-right, Y = anterior-posterior, Z = superior-inferior).
+Set to `[]` to fall back to the single {@link crosshairColor} for all axes."""
     crosshair_gap = traitlets.Float(None, allow_none=True).tag(sync=True)
     crosshair_pos = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=3, maxlen=3, allow_none=True).tag(sync=True)
     crosshair_width = traitlets.Float(None, allow_none=True).tag(sync=True)

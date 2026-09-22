@@ -177,6 +177,25 @@
       "doc": null
     },
     {
+      "jsName": "crosshairColorPerAxis",
+      "pyName": "crosshair_color_per_axis",
+      "tsType": "number[][]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "List",
+          "elem": {
+            "kind": "Float"
+          },
+          "length": null
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "Per-axis crosshair colors as `[xColor, yColor, zColor]` (each RGBA, 0..1).\nSet to 3 colors to tint each crosshair segment by the world axis it extends\nalong (X = left-right, Y = anterior-posterior, Z = superior-inferior).\nSet to `[]` to fall back to the single {@link crosshairColor} for all axes."
+    },
+    {
       "jsName": "crosshairGap",
       "pyName": "crosshair_gap",
       "tsType": "number",

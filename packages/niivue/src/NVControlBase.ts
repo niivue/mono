@@ -15,6 +15,7 @@ import {
 } from '@/control/canvasMessage'
 import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
 import {
+  clientToBoundsPixel,
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
@@ -141,8 +142,13 @@ import {
   setPerfMarksEnabled,
   subscribeFrameReports,
 } from '@/view/NVPerfMarks'
-import type { SliceTile } from '@/view/NVSliceLayout'
-import { validateCustomLayout } from '@/view/NVSliceLayout'
+import type { CanvasTilePoint, SliceTile } from '@/view/NVSliceLayout'
+import {
+  cloneSliceTile,
+  projectMMToNearestTile,
+  screenSlicePick,
+  validateCustomLayout,
+} from '@/view/NVSliceLayout'
 import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
 import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
@@ -818,6 +824,110 @@ export default class NiiVue extends EventTarget {
     const cur = this.model.scene.renderPan
     this.renderPan = [cur[0] - ndc[0], cur[1] - ndc[1]] as vec2
     return true
+  }
+
+  /**
+   * Convert a pointer event's client position to the canvas pixel space that
+   * {@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and
+   * {@link getScreenTiles} use. This is the exact conversion the built-in
+   * pointer handlers apply, so a caller never has to reproduce it:
+   * `(client - canvas rect origin) * dpr`, where `dpr` is
+   * `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
+   * then, for an instance sharing a canvas via `bounds`, minus the origin of
+   * this instance's post-viewport pixel rect.
+   *
+   * Returns null when the instance has no canvas or, for a `bounds` instance,
+   * when the point is outside this instance's rect (a sibling's area) or the
+   * rect is offscreen.
+   */
+  clientToCanvas(clientX: number, clientY: number): [number, number] | null {
+    if (!this.canvas) return null
+    return clientToBoundsPixel(this, clientX, clientY)
+  }
+
+  /**
+   * Hit-test a canvas position against the current frame's tiles.
+   *
+   * Coordinate convention (shared by {@link canvasToMM}, {@link mmToCanvas}
+   * and {@link getScreenTiles}): canvas BACKING-STORE pixels — the
+   * `canvas.width`/`canvas.height` space the renderer draws into — origin at
+   * the top-left, y down. These are NOT CSS pixels, and for an instance
+   * sharing one canvas via `bounds` they are bounds-local (the instance's own
+   * pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
+   * event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
+   * the bounds offset exactly as the built-in pointer handlers do.
+   *
+   * Returns the tile index, its slice type, whether it is a 3D render tile,
+   * and the position normalized to the tile rect (half-open [0,1), y down);
+   * null when no
+   * tile contains the point or the view is not initialized.
+   */
+  hitTest(canvasX: number, canvasY: number): ViewHitTest | null {
+    return this.view?.hitTest(canvasX, canvasY) ?? null
+  }
+
+  /**
+   * Convert a canvas position to a world-mm point by picking on the 2D slice
+   * tile under it (ray/slice-plane intersection — the same math the built-in
+   * crosshair click uses, so the result matches `setCrosshairPos` picking).
+   *
+   * Input is canvas backing-store pixels — see {@link hitTest} for the exact
+   * convention and the CSS-pixel/devicePixelRatio conversion.
+   *
+   * Returns null when the point misses every tile, lands on a 3D render tile,
+   * or no volume is loaded.
+   */
+  canvasToMM(
+    canvasX: number,
+    canvasY: number,
+  ): [number, number, number] | null {
+    const view = this.view
+    if (!view) return null
+    const hit = view.hitTest(canvasX, canvasY)
+    if (!hit || hit.isRender) return null
+    return screenSlicePick(view.screenSlices, this.model, canvasX, canvasY, hit)
+  }
+
+  /**
+   * Project a world-mm point to canvas pixels on the best-matching 2D slice
+   * tile, using the MVP each tile cached on its last draw (so the result
+   * reflects the current pan/zoom exactly). Intended for positioning external
+   * overlays (SVG/HTML crosshairs, labels) over slices.
+   *
+   * Tile selection: the 2D slice tile whose slice plane passes nearest the
+   * point (perpendicular distance in mm); ties — e.g. the crosshair, which
+   * lies on every plane of a multiplanar layout — resolve to the lowest tile
+   * index. 3D render tiles are never selected (use {@link mm2renderNDC} for
+   * those).
+   *
+   * The returned x/y are canvas backing-store pixels (see {@link hitTest});
+   * divide by the effective devicePixelRatio to position CSS-pixel-sized
+   * overlay elements. The point may project outside the winning tile's rect
+   * when panned/zoomed out of view — clip against the tile's
+   * `leftTopWidthHeight` if needed. Returns null before the first render or
+   * when the layout has no 2D slice tiles.
+   */
+  mmToCanvas(mm: [number, number, number]): CanvasTilePoint | null {
+    return projectMMToNearestTile(this.view?.screenSlices ?? [], mm)
+  }
+
+  /**
+   * Snapshot of the current frame's tiles for external overlay renderers: each
+   * tile's rect (`leftTopWidthHeight`, canvas backing-store pixels — see
+   * {@link hitTest}), orientation (`axCorSag`; `SLICE_TYPE.RENDER` marks the
+   * 3D tile) and, for 2D slice tiles after their first draw, the cached
+   * projection geometry (`mvpMatrix`, `planeNormal`, `planePoint`) used by
+   * {@link mmToCanvas}/{@link canvasToMM}.
+   *
+   * Each entry is a deep copy (every nested field, including `screen`,
+   * `crossLines` and the geometry arrays), so the snapshot stays coherent
+   * while the renderer keeps drawing, and mutating it cannot reach renderer
+   * state. Recompute per frame if you track a live view; the snapshot does
+   * not update.
+   */
+  getScreenTiles(): readonly SliceTile[] {
+    const tiles = this.view?.screenSlices ?? []
+    return tiles.map(cloneSliceTile)
   }
 
   /**

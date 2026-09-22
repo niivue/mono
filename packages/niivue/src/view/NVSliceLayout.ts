@@ -9,6 +9,7 @@ import type {
   ViewHitTest,
 } from '@/NVTypes'
 import type { BuildLineFn, LineData } from './NVLine'
+import { projectMMToCanvas } from './sliceUtils'
 
 // ---------- Types ----------
 
@@ -45,6 +46,19 @@ export type SliceTile = {
   orientation?: [number, number, number]
   /** Shared 3D camera (passed through from controller) */
   globalCamera?: NVGlobalCamera
+}
+
+/**
+ * Deep copy of a tile for hand-out to callers outside the renderer.
+ *
+ * A tile is plain data (numbers, tuples, gl-matrix typed arrays, and small
+ * plain objects such as `screen`, `crossLines` and `globalCamera`), so a
+ * structured clone copies every nested level. The renderer reads and rewrites
+ * these tiles each frame (`screen.mnMM` feeds the next MVP), so a shallow copy
+ * would hand a consumer a live reference into the layout.
+ */
+export function cloneSliceTile(tile: SliceTile): SliceTile {
+  return structuredClone(tile)
 }
 
 export type SliceLayoutConfig = {
@@ -1050,6 +1064,58 @@ export function screenSlicePick(
     hit.sliceType,
     sliceFrac,
   )
+}
+
+/** A world-mm point projected onto one slice tile, in canvas pixels. */
+export type CanvasTilePoint = {
+  /** Index into the frame's tile list (`screenSlices`) the point landed on. */
+  tileIndex: number
+  /** Canvas x in backing-store pixels (origin top-left). */
+  x: number
+  /** Canvas y in backing-store pixels (origin top-left, y down). */
+  y: number
+}
+
+/**
+ * Project a world-mm point onto the best-matching 2D slice tile.
+ *
+ * Candidate tiles are 2D slice tiles carrying the picking geometry cached
+ * during render (`mvpMatrix`, `planeNormal`, `planePoint`,
+ * `leftTopWidthHeight`); 3D render tiles are never candidates. Selection rule:
+ * the tile whose slice plane passes nearest the point (perpendicular distance
+ * in mm) wins; ties — e.g. a point on the crosshair, which lies on every plane
+ * of a multiplanar layout — resolve to the lowest tile index. Returns null
+ * when no candidate exists (before the first render, or a render-only layout).
+ *
+ * The returned x/y are canvas backing-store pixels and may fall outside the
+ * tile's rect when the point is panned/zoomed out of view — callers doing
+ * overlay drawing should clip to `leftTopWidthHeight` themselves.
+ */
+export function projectMMToNearestTile(
+  screenSlices: readonly SliceTile[],
+  mm: [number, number, number],
+): CanvasTilePoint | null {
+  let best: { tileIndex: number; mvp: mat4; ltwh: number[] } | null = null
+  let bestDist = Infinity
+  for (let i = 0; i < screenSlices.length; i++) {
+    const tile = screenSlices[i]
+    if (tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) continue
+    const { mvpMatrix, planeNormal, planePoint, leftTopWidthHeight } = tile
+    if (!mvpMatrix || !planeNormal || !planePoint || !leftTopWidthHeight)
+      continue
+    const dist = Math.abs(
+      planeNormal[0] * (mm[0] - planePoint[0]) +
+        planeNormal[1] * (mm[1] - planePoint[1]) +
+        planeNormal[2] * (mm[2] - planePoint[2]),
+    )
+    if (dist < bestDist) {
+      bestDist = dist
+      best = { tileIndex: i, mvp: mvpMatrix, ltwh: leftTopWidthHeight }
+    }
+  }
+  if (!best) return null
+  const [x, y] = projectMMToCanvas(mm, best.mvp, best.ltwh)
+  return { tileIndex: best.tileIndex, x, y }
 }
 
 // ---------- Visible window ----------

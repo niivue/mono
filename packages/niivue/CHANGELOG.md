@@ -1,3 +1,95 @@
+## 1.0.0-rc.14 (2026-09-23)
+
+### Features
+
+- **niivue:** programmatic measurement add, remove, list and pick ([#155](https://github.com/niivue/mono/issues/155))
+- **niivue:** add clientToCanvas so pointer events reach the projection API ([68706c3](https://github.com/niivue/mono/commit/68706c3))
+- **niivue:** screen-space projection API for external overlays ([#150](https://github.com/niivue/mono/issues/150))
+- **examples:** vox.matcap opens on a sphere at full illumination ([ea902bb](https://github.com/niivue/mono/commit/ea902bb))
+- **examples:** vox.matcap, showing the matcap image that does the lighting ([e3d7ad3](https://github.com/niivue/mono/commit/e3d7ad3))
+- **examples:** vox.stats-multi, three statistical maps on one threshold ([52e9da3](https://github.com/niivue/mono/commit/52e9da3))
+- **examples:** raise the Matcap preset to 0.6 illumination ([f440fb2](https://github.com/niivue/mono/commit/f440fb2))
+- **examples:** rename Composite to Volume, add a Matcap preset ([122a092](https://github.com/niivue/mono/commit/122a092))
+- **examples:** default the cerebellum to the matte shader ([8371bf9](https://github.com/niivue/mono/commit/8371bf9))
+- **examples:** put the rendermode scene in standard space ([759b543](https://github.com/niivue/mono/commit/759b543))
+- **niivue:** implement mesh `visible`, and add the cerebellum to the demo ([1f3a316](https://github.com/niivue/mono/commit/1f3a316))
+- **niivue:** SLICES honours volumeIsAlphaClipDark, like the 2D tiles ([9003af5](https://github.com/niivue/mono/commit/9003af5))
+- **niivue:** orthogonal slices as a third volume render mode ([c47e859](https://github.com/niivue/mono/commit/c47e859))
+- **niivue:** let a custom layout tile fill its pane ([#148](https://github.com/niivue/mono/issues/148))
+- **control:** optional V hotkey to cycle the view ([dd2de03](https://github.com/niivue/mono/commit/dd2de03))
+- **niivue:** opt-in pan follows crosshair when zoomed ([#156](https://github.com/niivue/mono/issues/156))
+- **niivue:** per-axis multi-LOD focus radius ([bae3897](https://github.com/niivue/mono/commit/bae3897))
+- **niivue:** reserve uniform LOD inside focus bounds ([e497c50](https://github.com/niivue/mono/commit/e497c50))
+- **niivue:** resolve NVChunkedVolume refocus when the plan swap applies ([#153](https://github.com/niivue/mono/issues/153))
+- **niivue:** pass an AbortSignal to SlideTileSource.fetchTileBytes ([a5ff769](https://github.com/niivue/mono/commit/a5ff769))
+- **niivue:** optional pointer-anchored 2D wheel zoom ([#68](https://github.com/niivue/mono/issues/68), [#157](https://github.com/niivue/mono/issues/157))
+- **niivue:** add crosshairPan drag mode ([#149](https://github.com/niivue/mono/issues/149))
+- **niivue:** emit chunkStreamIdle when streaming settles ([#151](https://github.com/niivue/mono/issues/151))
+- **niivue:** add per-axis crosshair colors ([02f431d](https://github.com/niivue/mono/commit/02f431d))
+- **niivue:** export the visible-mm-window helper from all three entries ([f9ca3bb](https://github.com/niivue/mono/commit/f9ca3bb))
+- **niivue:** report the visible mm window per world axis ([5e046b4](https://github.com/niivue/mono/commit/5e046b4))
+- **niivue:** export the screen-space projection surface ([#150](https://github.com/niivue/mono/issues/150))
+- **niivue:** add a um ruler step below mm ([#147](https://github.com/niivue/mono/issues/147))
+- add circular pen shape option to drawing tools and update drawing app ([dedd17a](https://github.com/niivue/mono/commit/dedd17a))
+
+### Fixes
+
+- **niivue:** wheel steps the clip plane by a fixed notch, as 0.6 did ([9ff9090](https://github.com/niivue/mono/commit/9ff9090))
+- **niivue:** harden the circular pen shape option ([fa326fa](https://github.com/niivue/mono/commit/fa326fa))
+- **niivue:** make measurement removal re-entrant safe and getMeasurements a snapshot ([814b51c](https://github.com/niivue/mono/commit/814b51c))
+- **niivue:** validate measurement indices and pin addMeasurement's return ([8453058](https://github.com/niivue/mono/commit/8453058))
+- **niivue:** pick SLICES planes where PAQD or the drawing is drawn over transparent base ([#198](https://github.com/niivue/mono/issues/198), [#197](https://github.com/niivue/mono/issues/197))
+- **niivue:** store only a VOLUME_RENDER_MODE member in volumeRenderMode ([8d8dce2](https://github.com/niivue/mono/commit/8d8dce2))
+- **niivue:** drop the mat4 import getScreenTiles no longer uses ([87b14c2](https://github.com/niivue/mono/commit/87b14c2))
+- **niivue:** make getScreenTiles a deep copy of the layout ([4b45534](https://github.com/niivue/mono/commit/4b45534))
+- **niivue:** fold the projection exports into the existing entry lines ([8fec9fa](https://github.com/niivue/mono/commit/8fec9fa))
+- **niivue:** two-pass gradient estimator restores smooth normals on both backends ([c5370b5](https://github.com/niivue/mono/commit/c5370b5))
+- **niivue:** matcap lookup flips x, not y ([c65c7e3](https://github.com/niivue/mono/commit/c65c7e3))
+- **examples:** tint white matter white, so partial volumes ramp smoothly ([ffc1c17](https://github.com/niivue/mono/commit/ffc1c17))
+- lint and format caches ignored most of what Biome checks ([8133ef3](https://github.com/niivue/mono/commit/8133ef3))
+- **examples:** blend the tissue overlays by fraction, and expose their opacity ([bd7b56f](https://github.com/niivue/mono/commit/bd7b56f))
+- **niivue:** audit fixes for the SLICES render mode ([6b4b5a8](https://github.com/niivue/mono/commit/6b4b5a8))
+- **niivue:** derive chunkStreamIdle from a settled frame, wire hooks on attach ([#171](https://github.com/niivue/mono/issues/171))
+- **examples:** harden the CT and worker demos after review ([94b4b9d](https://github.com/niivue/mono/commit/94b4b9d))
+- **cmap:** keep the display window of bundled colormaps ([7730078](https://github.com/niivue/mono/commit/7730078))
+- **niivue:** keep a finite tile rect when the in-plane span is zero ([84cf859](https://github.com/niivue/mono/commit/84cf859))
+- **control:** send hotkeys only to the viewer under the pointer ([b28ab34](https://github.com/niivue/mono/commit/b28ab34))
+- **control:** see focused fields inside shadow roots before hotkeys ([2e062d8](https://github.com/niivue/mono/commit/2e062d8))
+- **render:** compile WebGL2 shader variants without stalling a frame ([894704d](https://github.com/niivue/mono/commit/894704d))
+- **niivue:** honour the devicePixelRatio option ([3a75147](https://github.com/niivue/mono/commit/3a75147))
+- **niivue:** pan-follows-crosshair reads the window off the rendered tiles ([63dfb6f](https://github.com/niivue/mono/commit/63dfb6f))
+- **niivue:** copy a per-axis radius on resolve; balance the octree that passed the bound ([17f1b52](https://github.com/niivue/mono/commit/17f1b52))
+- **niivue:** re-plan an 'auto' radius when the 2D zoom changes ([a761dac](https://github.com/niivue/mono/commit/a761dac))
+- **niivue:** circumscribe the 2D 'auto' focus ellipsoid ([4a6bed4](https://github.com/niivue/mono/commit/4a6bed4))
+- **niivue:** skip render centering when a swap settles after dispose ([9757272](https://github.com/niivue/mono/commit/9757272))
+- **niivue:** export WheelZoomAnchor from the backend entries too ([ade2f16](https://github.com/niivue/mono/commit/ade2f16))
+- **niivue:** use a 1x1x1 placeholder gradient for unlit chunked volumes ([#154](https://github.com/niivue/mono/issues/154))
+- **render:** fade the background by its accumulated alpha, not per sample ([678481a](https://github.com/niivue/mono/commit/678481a))
+- **niivue:** export DecodedChunkStats from the backend entries too ([a1c023d](https://github.com/niivue/mono/commit/a1c023d))
+- **niivue:** export the types named in public signatures ([#171](https://github.com/niivue/mono/issues/171))
+- **niivue:** close the entry-point export drift and pin it with a test ([b19e92e](https://github.com/niivue/mono/commit/b19e92e))
+- **niivue:** evict a stale chunked entry on the ordinary volume path ([d520f38](https://github.com/niivue/mono/commit/d520f38))
+- **niivue:** correct the bind group binding numbers in the evict comment ([efe8713](https://github.com/niivue/mono/commit/efe8713))
+- **niivue:** delete the texture cache key when destroying its entry ([#145](https://github.com/niivue/mono/issues/145))
+
+### Performance
+
+- **render:** specialize the volume ray-march shader per draw ([e4b2369](https://github.com/niivue/mono/commit/e4b2369))
+- **niivue:** bound budget candidates before balancing them ([254dae3](https://github.com/niivue/mono/commit/254dae3))
+
+### Thank You
+
+- Chris Drake
+- Claude Fable 5
+- Claude Fable 5.1
+- Claude Opus 5
+- Claude Opus 5 (1M context)
+- Mohannad
+- neurolabusc
+- Steffen Bollmann
+- Taylor Hanayik @hanayik
+- yosukey
+
 ## 1.0.0-rc.13 (2026-09-02)
 
 ### Features

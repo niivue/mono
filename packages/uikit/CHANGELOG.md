@@ -1,3 +1,21 @@
+## 1.0.0-rc.1 (2026-09-23)
+
+### Fixes
+
+- **release:** derive the npm publish allowlist from the nx.json release group ([56c7883](https://github.com/niivue/mono/commit/56c7883))
+- lint and format caches ignored most of what Biome checks ([8133ef3](https://github.com/niivue/mono/commit/8133ef3))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.14
+
+### Thank You
+
+- Claude Fable 5.1
+- Claude Opus 5 (1M context)
+- neurolabusc
+- Taylor Hanayik @hanayik
+
 ## 0.1.0-rc.0 (2026-09-02)
 
 ### Features

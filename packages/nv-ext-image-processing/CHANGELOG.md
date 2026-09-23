@@ -1,3 +1,18 @@
+## 1.0.0-rc.14 (2026-09-23)
+
+### Fixes
+
+- lint and format caches ignored most of what Biome checks ([8133ef3](https://github.com/niivue/mono/commit/8133ef3))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.14
+
+### Thank You
+
+- Claude Opus 5 (1M context)
+- neurolabusc
+
 ## 1.0.0-rc.13 (2026-09-02)
 
 ### Updated Dependencies

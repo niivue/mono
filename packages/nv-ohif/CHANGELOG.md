@@ -1,3 +1,25 @@
+## 1.0.0-rc.1 (2026-09-23)
+
+### Features
+
+- **niivue:** pass an AbortSignal to SlideTileSource.fetchTileBytes ([a5ff769](https://github.com/niivue/mono/commit/a5ff769))
+
+### Fixes
+
+- lint and format caches ignored most of what Biome checks ([8133ef3](https://github.com/niivue/mono/commit/8133ef3))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.14
+- Updated uikit to 1.0.0-rc.1
+
+### Thank You
+
+- Claude Fable 5
+- Claude Opus 5 (1M context)
+- neurolabusc
+- Steffen Bollmann
+
 ## 0.1.0-rc.0 (2026-09-02)
 
 ### Features

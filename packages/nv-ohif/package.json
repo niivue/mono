@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ohif",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "private": false,
   "type": "module",
   "description": "NiiVue viewport extension for the OHIF Viewer (render series with NiiVue: 3D volume rendering, meshes, overlays, multiplanar, drawing).",

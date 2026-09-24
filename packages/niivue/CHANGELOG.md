@@ -1,3 +1,14 @@
+## 1.0.0-rc.16 (2026-09-24)
+
+### Features
+
+- **niivue:** two-finger pinch zoom on touch screens ([19af1de](https://github.com/niivue/mono/commit/19af1de))
+
+### Thank You
+
+- Claude Opus 5.5 (1M context)
+- neurolabusc
+
 ## 1.0.0-rc.15 (2026-09-24)
 
 ### Fixes

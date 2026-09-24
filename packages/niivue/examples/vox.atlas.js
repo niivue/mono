@@ -1,7 +1,9 @@
 import NiiVue from '../src/index.ts'
 
+// Label volumes default to nearest (NIFTI_INTENT_LABEL or a label colormap);
+// this overrides it for the atlas.
 nearestCheck.onclick = function () {
-  nv1.volumeIsNearestInterpolation = this.checked
+  nv1.setVolume(1, { isNearestInterpolation: this.checked })
 }
 darkCheck.onclick = function () {
   nv1.volumeIsAlphaClipDark = this.checked

@@ -1828,6 +1828,11 @@ export default class NiiVue extends EventTarget {
     this.updateGLVolume().catch((e) => log.error('setAtlasOutline failed', e))
   }
 
+  /**
+   * Force nearest-neighbour 2D sampling for every volume. When false (the
+   * default), each volume's `isNearestInterpolation` decides, which defaults to
+   * nearest for label data and linear otherwise. The 3D render is always linear.
+   */
   get volumeIsNearestInterpolation(): boolean {
     return this.model.volume.isNearestInterpolation
   }

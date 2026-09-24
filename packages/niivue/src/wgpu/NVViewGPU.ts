@@ -41,6 +41,7 @@ import {
   chunksCrossingSlice,
   identityChunkSampleTransform,
 } from '@/volume/chunking'
+import { sliceInterpolation } from '@/volume/interpolation'
 import { WGPUBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -936,6 +937,10 @@ export default class NVView {
     }
     const pass = commandEncoder.beginRenderPass(renderPassDesc)
     const volumes = md.getVolumes()
+    const interpolation = sliceInterpolation(
+      volumes,
+      md.volume.isNearestInterpolation,
+    )
     // Reserve vertical space for colorbars so tiles don't overlap them
     const cbHeight = md.ui.isColorbarVisible
       ? colorbarTotalHeight(
@@ -1200,7 +1205,7 @@ export default class NVView {
                 sliceFrac,
                 i,
                 numSliceVolumes,
-                md.volume.isNearestInterpolation,
+                interpolation,
                 1,
                 0,
                 md.volume.paqdUniforms,
@@ -1244,7 +1249,7 @@ export default class NVView {
                 sliceFrac,
                 i,
                 numSliceVolumes,
-                md.volume.isNearestInterpolation,
+                interpolation,
                 1,
                 numSlicePaqd,
                 md.volume.paqdUniforms,
@@ -1276,7 +1281,7 @@ export default class NVView {
               sliceFrac,
               i,
               numSliceVolumes,
-              md.volume.isNearestInterpolation,
+              interpolation,
               1,
               numSlicePaqd,
               md.volume.paqdUniforms,

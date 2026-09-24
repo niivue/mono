@@ -192,7 +192,7 @@ Note: `setDragMode(v)` still exists as a method (for string-to-number mapping).
 ### Volume Options
 Used by `loadVolumes()`, `addVolume()`, and `setVolume()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
-- Behavior: `isTransparentBelowCalMin`, `opacity`, `modulateAlpha`
+- Behavior: `isTransparentBelowCalMin`, `opacity`, `modulateAlpha`, `isNearestInterpolation` (2D sampling; unset = nearest for label data, linear otherwise)
 - UI: `isColorbarVisible`, `isLegendVisible`
 - 4D: `frame4D`, `limitFrames4D`
 

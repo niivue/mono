@@ -197,6 +197,13 @@ export type NVImage = {
   /** Label colormap for atlas/parcellation volumes (compiled LUT with optional text labels) */
   colormapLabel?: LUT | null
   /**
+   * 2D slice sampling: true = nearest-neighbour, false = linear. Unset (the
+   * default) picks nearest for categorical data (NIFTI_INTENT_LABEL or a label
+   * colormap) and linear otherwise. The 3D render always samples linearly. The
+   * scene-wide `volumeIsNearestInterpolation` forces nearest for every volume.
+   */
+  isNearestInterpolation?: boolean
+  /**
    * Draw this label/atlas volume as region outlines instead of filled regions.
    * 0 (default) fills. A positive value is the neighbour probe distance in the
    * volume's own voxels: a voxel survives only when one of its six neighbours
@@ -1411,6 +1418,13 @@ export type ImageFromUrlOptions = {
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
+  /**
+   * 2D slice sampling: true = nearest-neighbour, false = linear. Unset (the
+   * default) picks nearest for categorical data (NIFTI_INTENT_LABEL or a label
+   * colormap) and linear otherwise. The 3D render always samples linearly. The
+   * scene-wide `volumeIsNearestInterpolation` forces nearest for every volume.
+   */
+  isNearestInterpolation?: boolean
 }
 
 /**

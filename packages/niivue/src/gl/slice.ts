@@ -12,6 +12,7 @@ import {
   identityChunkSampleTransform,
   type Vec3i,
 } from '@/volume/chunking'
+import type { SliceInterpolation } from '@/volume/interpolation'
 import { extractChunkBytes } from '@/volume/orientChunked'
 import { Shader } from './shader'
 import { sliceFragShader, sliceVertShader } from './sliceShader'
@@ -38,6 +39,10 @@ export class SliceRenderer extends NVRenderer {
   private _placeholderDrawing: WebGLTexture | null = null
   private _placeholderPaqd: WebGLTexture | null = null
   private _placeholderLut2D: WebGLTexture | null = null
+  // 2D filtering goes through sampler objects, unbound after each draw, so it
+  // never touches the textures' own (LINEAR) filter state that the 3D pass reads.
+  private _samplerLinear: WebGLSampler | null = null
+  private _samplerNearest: WebGLSampler | null = null
   /**
    * Display gamma for intensity-derived slice colour (background + colormapped
    * overlay). Mirrors the volume renderer's field so 2D and 3D agree; alpha is
@@ -57,6 +62,9 @@ export class SliceRenderer extends NVRenderer {
 
     // Create shader program
     this._shader = new Shader(gl, sliceVertShader, sliceFragShader)
+
+    this._samplerLinear = createSampler(gl, gl.LINEAR)
+    this._samplerNearest = createSampler(gl, gl.NEAREST)
 
     // Create VAO and vertex buffer for a unit quad
     this._vao = gl.createVertexArray()
@@ -199,7 +207,7 @@ export class SliceRenderer extends NVRenderer {
     axCorSag: number,
     sliceFrac: number,
     numVolumes = 1,
-    isNearest = false,
+    interpolation: SliceInterpolation = { background: false, overlay: false },
     overlayOpacity = 1,
     paqdTexture: WebGLTexture | null = null,
     paqdLutTexture: WebGLTexture | null = null,
@@ -236,20 +244,19 @@ export class SliceRenderer extends NVRenderer {
 
     this._shader.use(gl)
 
-    const filter = isNearest ? gl.NEAREST : gl.LINEAR
+    const sampler = (isNearest: boolean): WebGLSampler | null =>
+      isNearest ? this._samplerNearest : this._samplerLinear
 
     // Bind volume texture to unit 0
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_3D, volumeTexture)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, filter)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, filter)
+    gl.bindSampler(0, sampler(interpolation.background))
     gl.uniform1i(this._shader.uniforms.volume, 0)
 
     // Bind overlay texture to unit 1 (use placeholder if none provided)
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_3D, overlayTexture || this._placeholderOverlay)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, filter)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, filter)
+    gl.bindSampler(1, sampler(interpolation.overlay))
     gl.uniform1i(this._shader.uniforms.overlay, 1)
 
     // Bind drawing texture to unit 2 (nearest-neighbor). For chunked volumes
@@ -383,6 +390,8 @@ export class SliceRenderer extends NVRenderer {
 
     // Restore state
     gl.enable(gl.CULL_FACE)
+    gl.bindSampler(0, null)
+    gl.bindSampler(1, null)
   }
 
   updateDrawingTexture(
@@ -549,6 +558,8 @@ export class SliceRenderer extends NVRenderer {
     if (this._drawingTexture) gl.deleteTexture(this._drawingTexture)
     this._destroyDrawingChunks(gl)
     if (this._shader?.program) gl.deleteProgram(this._shader.program)
+    gl.deleteSampler(this._samplerLinear)
+    gl.deleteSampler(this._samplerNearest)
 
     this._vao = null
     this._vertexBuffer = null
@@ -558,7 +569,22 @@ export class SliceRenderer extends NVRenderer {
     this._placeholderLut2D = null
     this._drawingTexture = null
     this._shader = null
+    this._samplerLinear = null
+    this._samplerNearest = null
     this.isReady = false
     this._gl = null
   }
+}
+
+function createSampler(
+  gl: WebGL2RenderingContext,
+  filter: number,
+): WebGLSampler | null {
+  const s = gl.createSampler()
+  if (!s) return null
+  gl.samplerParameteri(s, gl.TEXTURE_MIN_FILTER, filter)
+  gl.samplerParameteri(s, gl.TEXTURE_MAG_FILTER, filter)
+  for (const wrap of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R])
+    gl.samplerParameteri(s, wrap, gl.CLAMP_TO_EDGE)
+  return s
 }

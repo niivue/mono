@@ -41,6 +41,7 @@ import {
   chunksCrossingSlice,
   identityChunkSampleTransform,
 } from '@/volume/chunking'
+import { sliceInterpolation } from '@/volume/interpolation'
 import { GLBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -627,6 +628,10 @@ export default class NVGlview {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     // Get volumes
     const volumes = md.getVolumes()
+    const interpolation = sliceInterpolation(
+      volumes,
+      md.volume.isNearestInterpolation,
+    )
     // Reserve vertical space for colorbars so tiles don't overlap them
     const cbHeight = md.ui.isColorbarVisible
       ? colorbarTotalHeight(
@@ -904,7 +909,7 @@ export default class NVGlview {
                 tile.axCorSag,
                 sliceFrac,
                 chunkedNumVolumes,
-                md.volume.isNearestInterpolation,
+                interpolation,
                 1,
                 this.volumeRenderer.paqdTexture,
                 this.volumeRenderer.paqdLutTexture,
@@ -948,7 +953,7 @@ export default class NVGlview {
                 tile.axCorSag,
                 sliceFrac,
                 chunkedNumVolumes,
-                md.volume.isNearestInterpolation,
+                interpolation,
                 1,
                 chunked.paqdChunks
                   ? chunked.paqdChunks[ci]
@@ -975,7 +980,7 @@ export default class NVGlview {
               tile.axCorSag,
               sliceFrac,
               numSliceVolumes,
-              md.volume.isNearestInterpolation,
+              interpolation,
               1,
               this.volumeRenderer.paqdTexture,
               this.volumeRenderer.paqdLutTexture,

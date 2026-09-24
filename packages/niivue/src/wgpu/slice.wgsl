@@ -37,6 +37,7 @@ struct SliceUniforms {
 @group(0) @binding(5) var paqdTex: texture_3d<f32>;
 @group(0) @binding(6) var paqdLutTex: texture_2d<f32>;
 @group(0) @binding(7) var paqdSampler: sampler;  // always linear, for smooth PAQD probabilities
+@group(0) @binding(8) var overlaySampler: sampler;  // the overlay's 2D filter, independent of the background's
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -134,7 +135,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     // Overlay blending (only when overlay volumes are loaded)
     if (u.numVolumes > 1.0) {
         {
-            var ocolor = textureSampleLevel(overlay, texSampler, volPos, 0.0);
+            var ocolor = textureSampleLevel(overlay, overlaySampler, volPos, 0.0);
             ocolor.a *= u.overlayOpacity;
             // V1 fiber line visualization: render colored line along fiber direction within each voxel
             if (u.isV1SliceShader != 0 && ocolor.a > 0.0) {
@@ -178,20 +179,20 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
                 if (ocolor.a < 1.0) {
                     // Sub-threshold voxel: check if any in-plane neighbor is supra-threshold
                     var na = 0.0;
-                    if (u.axCorSag != 2) { na = max(na, textureSampleLevel(overlay, texSampler, vxR, 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vxL, 0.0).a); }
-                    if (u.axCorSag != 1) { na = max(na, textureSampleLevel(overlay, texSampler, vxA, 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vxP, 0.0).a); }
-                    if (u.axCorSag != 0) { na = max(na, textureSampleLevel(overlay, texSampler, vxS, 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vxI, 0.0).a); }
+                    if (u.axCorSag != 2) { na = max(na, textureSampleLevel(overlay, overlaySampler, vxR, 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vxL, 0.0).a); }
+                    if (u.axCorSag != 1) { na = max(na, textureSampleLevel(overlay, overlaySampler, vxA, 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vxP, 0.0).a); }
+                    if (u.axCorSag != 0) { na = max(na, textureSampleLevel(overlay, overlaySampler, vxS, 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vxI, 0.0).a); }
                     // In-plane diagonal corners
-                    if (u.axCorSag == 0) { na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x + vx.x, volPos.y + vx.y, volPos.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x - vx.x, volPos.y + vx.y, volPos.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x + vx.x, volPos.y - vx.y, volPos.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x - vx.x, volPos.y - vx.y, volPos.z), 0.0).a); }
-                    if (u.axCorSag == 1) { na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x + vx.x, volPos.y, volPos.z + vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x - vx.x, volPos.y, volPos.z + vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x + vx.x, volPos.y, volPos.z - vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x - vx.x, volPos.y, volPos.z - vx.z), 0.0).a); }
-                    if (u.axCorSag == 2) { na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x, volPos.y + vx.y, volPos.z + vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x, volPos.y - vx.y, volPos.z + vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x, volPos.y + vx.y, volPos.z - vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, texSampler, vec3f(volPos.x, volPos.y - vx.y, volPos.z - vx.z), 0.0).a); }
+                    if (u.axCorSag == 0) { na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x + vx.x, volPos.y + vx.y, volPos.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x - vx.x, volPos.y + vx.y, volPos.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x + vx.x, volPos.y - vx.y, volPos.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x - vx.x, volPos.y - vx.y, volPos.z), 0.0).a); }
+                    if (u.axCorSag == 1) { na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x + vx.x, volPos.y, volPos.z + vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x - vx.x, volPos.y, volPos.z + vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x + vx.x, volPos.y, volPos.z - vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x - vx.x, volPos.y, volPos.z - vx.z), 0.0).a); }
+                    if (u.axCorSag == 2) { na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x, volPos.y + vx.y, volPos.z + vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x, volPos.y - vx.y, volPos.z + vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x, volPos.y + vx.y, volPos.z - vx.z), 0.0).a); na = max(na, textureSampleLevel(overlay, overlaySampler, vec3f(volPos.x, volPos.y - vx.y, volPos.z - vx.z), 0.0).a); }
                     if (na >= 1.0) { ocolor = vec4f(0.0, 0.0, 0.0, 1.0); }
                 } else {
                     // Supra-threshold voxel: check if any in-plane neighbor is sub-threshold
                     var na = 1.0;
-                    if (u.axCorSag != 2) { na = min(na, textureSampleLevel(overlay, texSampler, vxR, 0.0).a); na = min(na, textureSampleLevel(overlay, texSampler, vxL, 0.0).a); }
-                    if (u.axCorSag != 1) { na = min(na, textureSampleLevel(overlay, texSampler, vxA, 0.0).a); na = min(na, textureSampleLevel(overlay, texSampler, vxP, 0.0).a); }
-                    if (u.axCorSag != 0) { na = min(na, textureSampleLevel(overlay, texSampler, vxS, 0.0).a); na = min(na, textureSampleLevel(overlay, texSampler, vxI, 0.0).a); }
+                    if (u.axCorSag != 2) { na = min(na, textureSampleLevel(overlay, overlaySampler, vxR, 0.0).a); na = min(na, textureSampleLevel(overlay, overlaySampler, vxL, 0.0).a); }
+                    if (u.axCorSag != 1) { na = min(na, textureSampleLevel(overlay, overlaySampler, vxA, 0.0).a); na = min(na, textureSampleLevel(overlay, overlaySampler, vxP, 0.0).a); }
+                    if (u.axCorSag != 0) { na = min(na, textureSampleLevel(overlay, overlaySampler, vxS, 0.0).a); na = min(na, textureSampleLevel(overlay, overlaySampler, vxI, 0.0).a); }
                     if (na < 1.0) { ocolor = vec4f(0.0, 0.0, 0.0, 1.0); }
                 }
             }

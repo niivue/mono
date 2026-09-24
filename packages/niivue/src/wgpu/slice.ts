@@ -12,6 +12,7 @@ import {
   identityChunkSampleTransform,
   type Vec3i,
 } from '@/volume/chunking'
+import type { SliceInterpolation } from '@/volume/interpolation'
 import { extractChunkBytes } from '@/volume/orientChunked'
 import sliceShaderCode from './slice.wgsl?raw'
 
@@ -48,8 +49,8 @@ export class SliceRenderer extends NVRenderer {
   placeholderLut2D: GPUTexture | null
   samplerLinear: GPUSampler | null
   samplerNearest: GPUSampler | null
-  bindGroupLinear: GPUBindGroup | null
-  bindGroupNearest: GPUBindGroup | null
+  // Indexed by samplerIndex(): background and overlay filters are independent.
+  bindGroups: GPUBindGroup[] | null
   /**
    * Display gamma for intensity-derived slice colour (background + colormapped
    * overlay). Mirrors the volume renderer's field so 2D and 3D agree; alpha is
@@ -68,14 +69,13 @@ export class SliceRenderer extends NVRenderer {
   private _bindTexPaqd: GPUTexture | null = null
   private _bindTexLut: GPUTexture | null = null
   // Per-chunk-texture bind group cache for chunked volumes. Keyed by the
-  // chunk's volume texture; the linear/nearest pair reuses the shared
+  // chunk's volume texture; the sampler variants reuse the shared
   // overlay/drawing/paqd/lut textures captured by updateBindGroup. Cleared
   // whenever updateBindGroup rebuilds (any bound texture changed).
   private _chunkBindGroups = new Map<
     GPUTexture,
     {
-      linear: GPUBindGroup
-      nearest: GPUBindGroup
+      groups: GPUBindGroup[]
       overlay: GPUTexture
       draw: GPUTexture
       paqd: GPUTexture
@@ -95,8 +95,7 @@ export class SliceRenderer extends NVRenderer {
     this.placeholderLut2D = null
     this.samplerLinear = null
     this.samplerNearest = null
-    this.bindGroupLinear = null
-    this.bindGroupNearest = null
+    this.bindGroups = null
   }
 
   async init(
@@ -205,6 +204,11 @@ export class SliceRenderer extends NVRenderer {
           visibility: GPUShaderStage.FRAGMENT,
           sampler: { type: 'filtering' },
         },
+        {
+          binding: 8,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: 'filtering' },
+        },
       ],
     })
 
@@ -292,8 +296,7 @@ export class SliceRenderer extends NVRenderer {
     if (!paqdTex || !lutTex) return
 
     if (
-      this.bindGroupLinear &&
-      this.bindGroupNearest &&
+      this.bindGroups &&
       this._bindTexVol === volumeTexture &&
       this._bindTexOverlay === overlay &&
       this._bindTexDraw === drawTex &&
@@ -312,38 +315,14 @@ export class SliceRenderer extends NVRenderer {
     const drawView = drawTex.createView()
     const paqdView = paqdTex.createView()
     const lutView = lutTex.createView()
-    this.bindGroupLinear = device.createBindGroup({
-      layout: this.bindLayout,
-      entries: [
-        {
-          binding: 0,
-          resource: { buffer: this.paramsBuffer, size: SLICE_UNIFORM_SIZE },
-        },
-        { binding: 1, resource: volView },
-        { binding: 2, resource: ovlView },
-        { binding: 3, resource: this.samplerLinear },
-        { binding: 4, resource: drawView },
-        { binding: 5, resource: paqdView },
-        { binding: 6, resource: lutView },
-        { binding: 7, resource: this.samplerLinear },
-      ],
-    })
-    this.bindGroupNearest = device.createBindGroup({
-      layout: this.bindLayout,
-      entries: [
-        {
-          binding: 0,
-          resource: { buffer: this.paramsBuffer, size: SLICE_UNIFORM_SIZE },
-        },
-        { binding: 1, resource: volView },
-        { binding: 2, resource: ovlView },
-        { binding: 3, resource: this.samplerNearest },
-        { binding: 4, resource: drawView },
-        { binding: 5, resource: paqdView },
-        { binding: 6, resource: lutView },
-        { binding: 7, resource: this.samplerLinear },
-      ],
-    })
+    this.bindGroups = this._samplerVariants(
+      device,
+      volView,
+      ovlView,
+      drawView,
+      paqdView,
+      lutView,
+    )
     this._bindTexVol = volumeTexture
     this._bindTexOverlay = overlay
     this._bindTexDraw = drawTex
@@ -359,15 +338,11 @@ export class SliceRenderer extends NVRenderer {
   private _chunkBindGroupFor(
     device: GPUDevice,
     chunkVolumeTexture: GPUTexture,
-    isNearest: boolean,
+    interpolation: SliceInterpolation,
     drawingTexture?: GPUTexture,
     overlayTexture?: GPUTexture,
     paqdTexture?: GPUTexture,
   ): GPUBindGroup | null {
-    const bindLayout = this.bindLayout
-    const paramsBuffer = this.paramsBuffer
-    const samplerLinear = this.samplerLinear
-    const samplerNearest = this.samplerNearest
     // Chunked overlay layer: binding 2 is the chunk's own overlay texture.
     // Falls back to the shared overlay texture when not chunked or absent.
     const overlay = overlayTexture ?? this._bindTexOverlay
@@ -378,21 +353,11 @@ export class SliceRenderer extends NVRenderer {
     // Falls back to the shared PAQD texture when not chunked or absent.
     const paqdTex = paqdTexture ?? this._bindTexPaqd
     const lutTex = this._bindTexLut
-    if (
-      !bindLayout ||
-      !paramsBuffer ||
-      !samplerLinear ||
-      !samplerNearest ||
-      !overlay ||
-      !drawTex ||
-      !paqdTex ||
-      !lutTex
-    )
-      return null
+    if (!overlay || !drawTex || !paqdTex || !lutTex) return null
 
     let pair = this._chunkBindGroups.get(chunkVolumeTexture)
     // Per-chunk overlay/drawing/paqd textures are rebuilt as fresh GPUTexture
-    // objects when their layer changes; a cached pair built from stale
+    // objects when their layer changes; a cached entry built from stale
     // textures must be discarded.
     if (
       pair &&
@@ -403,38 +368,52 @@ export class SliceRenderer extends NVRenderer {
       pair = undefined
     }
     if (!pair) {
-      const volView = chunkVolumeTexture.createView()
-      const ovlView = overlay.createView()
-      const drawView = drawTex.createView()
-      const paqdView = paqdTex.createView()
-      const lutView = lutTex.createView()
-      const make = (sampler: GPUSampler): GPUBindGroup =>
-        device.createBindGroup({
-          layout: bindLayout,
-          entries: [
-            {
-              binding: 0,
-              resource: { buffer: paramsBuffer, size: SLICE_UNIFORM_SIZE },
-            },
-            { binding: 1, resource: volView },
-            { binding: 2, resource: ovlView },
-            { binding: 3, resource: sampler },
-            { binding: 4, resource: drawView },
-            { binding: 5, resource: paqdView },
-            { binding: 6, resource: lutView },
-            { binding: 7, resource: samplerLinear },
-          ],
-        })
-      pair = {
-        linear: make(samplerLinear),
-        nearest: make(samplerNearest),
-        overlay,
-        draw: drawTex,
-        paqd: paqdTex,
-      }
+      const groups = this._samplerVariants(
+        device,
+        chunkVolumeTexture.createView(),
+        overlay.createView(),
+        drawTex.createView(),
+        paqdTex.createView(),
+        lutTex.createView(),
+      )
+      if (!groups) return null
+      pair = { groups, overlay, draw: drawTex, paqd: paqdTex }
       this._chunkBindGroups.set(chunkVolumeTexture, pair)
     }
-    return isNearest ? pair.nearest : pair.linear
+    return pair.groups[samplerIndex(interpolation)]
+  }
+
+  /** One bind group per background x overlay filter; see samplerIndex(). */
+  private _samplerVariants(
+    device: GPUDevice,
+    volView: GPUTextureView,
+    ovlView: GPUTextureView,
+    drawView: GPUTextureView,
+    paqdView: GPUTextureView,
+    lutView: GPUTextureView,
+  ): GPUBindGroup[] | null {
+    const { bindLayout, paramsBuffer, samplerLinear, samplerNearest } = this
+    if (!bindLayout || !paramsBuffer || !samplerLinear || !samplerNearest)
+      return null
+    return [0, 1, 2, 3].map((i) =>
+      device.createBindGroup({
+        layout: bindLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: { buffer: paramsBuffer, size: SLICE_UNIFORM_SIZE },
+          },
+          { binding: 1, resource: volView },
+          { binding: 2, resource: ovlView },
+          { binding: 3, resource: i & 1 ? samplerNearest : samplerLinear },
+          { binding: 4, resource: drawView },
+          { binding: 5, resource: paqdView },
+          { binding: 6, resource: lutView },
+          { binding: 7, resource: samplerLinear },
+          { binding: 8, resource: i & 2 ? samplerNearest : samplerLinear },
+        ],
+      }),
+    )
   }
 
   updateDrawingTexture(
@@ -575,7 +554,7 @@ export class SliceRenderer extends NVRenderer {
     sliceFrac: number,
     tileIndex = 0,
     numVolumes = 1,
-    isNearest = false,
+    interpolation: SliceInterpolation = { background: false, overlay: false },
     overlayOpacity = 1,
     numPaqd = 0,
     paqdUniforms: readonly number[] = [0, 0, 0, 0],
@@ -614,14 +593,12 @@ export class SliceRenderer extends NVRenderer {
       ? this._chunkBindGroupFor(
           device,
           chunk.volumeTexture,
-          isNearest,
+          interpolation,
           chunkDrawTex,
           chunk.overlayTexture,
           chunk.paqdTexture,
         )
-      : isNearest
-        ? this.bindGroupNearest
-        : this.bindGroupLinear
+      : (this.bindGroups?.[samplerIndex(interpolation)] ?? null)
     if (!bindGroup) return
 
     // Chunked draws live in the chunk region of the buffer, one slot per
@@ -735,8 +712,7 @@ export class SliceRenderer extends NVRenderer {
       this.paramsBuffer.destroy()
       this.paramsBuffer = null
     }
-    this.bindGroupLinear = null
-    this.bindGroupNearest = null
+    this.bindGroups = null
     this._chunkBindGroups.clear()
     this.samplerLinear = null
     this.samplerNearest = null
@@ -749,4 +725,8 @@ export class SliceRenderer extends NVRenderer {
     this._bindTexLut = null
     this.isReady = false
   }
+}
+
+function samplerIndex(interpolation: SliceInterpolation): number {
+  return (interpolation.background ? 1 : 0) + (interpolation.overlay ? 2 : 0)
 }

@@ -145,7 +145,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `volumeAlphaShader` | Prop | Selects ray-march variant |
 | `volumeIsBackgroundMasking` | Prop | |
 | `volumeIsAlphaClipDark` | Prop | |
-| `volumeIsNearestInterpolation` | Prop | Nearest vs linear |
+| `volumeIsNearestInterpolation` | Prop | Force nearest 2D sampling for all volumes; otherwise per-volume `isNearestInterpolation` (default: nearest for label intent/colormap) |
 | `volumeIsV1SliceShader` | Prop | Treat overlay as fiber direction |
 | `volumeMatcap` | Prop | Matcap name |
 | `volumePaqdUniforms` | Prop | PAQD atlas tuning |

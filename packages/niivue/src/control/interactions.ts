@@ -10,6 +10,7 @@ import {
   emitScaleMultiplierChange,
 } from '@/control/cameraEvents'
 import * as DragModes from '@/control/dragModes'
+import { type Pinch, pinchCamera } from '@/control/pinchZoom'
 import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
 import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
@@ -1057,6 +1058,77 @@ function warnIfBothEditModes(ctrl: NiiVue): void {
 // setter calls `drawScene()` on the true->false edge. It is deliberately last so
 // that a throw from the renderer cannot skip any of the resets above it, and the
 // pointerup `finally` releases pointer capture BEFORE calling this.
+// Two-finger pinch zoom on touch screens. Touch points are tracked per
+// instance; once the second finger lands the pinch owns the gesture until a
+// finger lifts, and the single-pointer handlers skip its events.
+const _touches = new WeakMap<NiiVue, Map<number, [number, number]>>()
+const _pinches = new WeakMap<NiiVue, Pinch>()
+
+function touchDistance(touches: Map<number, [number, number]>): number {
+  const [a, b] = [...touches.values()]
+  return Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1]))
+}
+
+/** Track a touch pointer; true when the event belongs to a pinch. */
+function pinchPointer(
+  ctrl: NiiVue,
+  evt: PointerEvent,
+  phase: 'down' | 'move' | 'up',
+): boolean {
+  if (evt.pointerType !== 'touch') return false
+  let touches = _touches.get(ctrl)
+  if (!touches) {
+    touches = new Map()
+    _touches.set(ctrl, touches)
+  }
+  if (phase === 'up') {
+    touches.delete(evt.pointerId)
+    return _pinches.delete(ctrl)
+  }
+  if (phase === 'move' && !touches.has(evt.pointerId)) return false
+  touches.set(evt.pointerId, [evt.clientX, evt.clientY])
+  if (touches.size !== 2) return _pinches.has(ctrl)
+  const scene = ctrl.model.scene
+  if (phase === 'down') {
+    const [a, b] = [...touches.values()]
+    const px = clientToBoundsPixel(ctrl, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    const hit = px && ctrl.view?.hitTest(px[0], px[1])
+    if (!px || !hit) return false
+    // The first finger's drag gives way to the pinch.
+    if (ctrl._activeDragMode !== DRAG_MODE.none)
+      DragModes.handleDragRelease(ctrl)
+    resetDragState(ctrl)
+    _pinches.set(ctrl, {
+      distance: touchDistance(touches),
+      pan: [...scene.pan2Dxyzmm],
+      scale: scene.scaleMultiplier,
+      anchorMM: hit.isRender
+        ? null
+        : resolveWheelZoomAnchorMM(ctrl, px[0], px[1], hit),
+    })
+    return true
+  }
+  const pinch = _pinches.get(ctrl)
+  if (!pinch) return false
+  const camera = pinchCamera(
+    pinch,
+    touchDistance(touches),
+    ctrl.model.extentsMin,
+    ctrl.model.extentsMax,
+    ctrl.model.interaction.isYoked3DTo2DZoom,
+  )
+  if (camera.pan2Dxyzmm) {
+    for (let i = 0; i < 4; i++) scene.pan2Dxyzmm[i] = camera.pan2Dxyzmm[i]
+    emitPan2DChange(ctrl)
+  }
+  if (camera.scaleMultiplier !== undefined) {
+    scene.scaleMultiplier = camera.scaleMultiplier
+    emitScaleMultiplierChange(ctrl)
+  }
+  ctrl.drawScene()
+  return true
+}
+
 function resetDragState(ctrl: NiiVue): void {
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
@@ -1180,6 +1252,7 @@ export function initInteraction(ctrl: NiiVue): void {
   }
   ctrl._eventListeners.pointerdown = (e: Event) => {
     const evt = e as PointerEvent
+    if (pinchPointer(ctrl, evt, 'down')) return
     setNextActionTag('pointerdown')
     // Dismiss thumbnail on click
     if (ctrl.model.ui.isThumbnailVisible) {
@@ -1586,8 +1659,9 @@ export function initInteraction(ctrl: NiiVue): void {
     ctrl.canvas?.setPointerCapture(evt.pointerId)
   }
   ctrl._eventListeners.pointerup = (e: Event) => {
-    setNextActionTag('pointerup')
     const evt = e as PointerEvent
+    if (pinchPointer(ctrl, evt, 'up')) return
+    setNextActionTag('pointerup')
     // Stroke finalize (below) can throw. Cleanup lives in the `finally` so an
     // interrupted finalize cannot strand `isDragging`/pointer capture; the
     // pointerUp emits run after, and are intentionally skipped on a throw.
@@ -1865,6 +1939,7 @@ export function initInteraction(ctrl: NiiVue): void {
   // does not leave isDragging stuck true — which would keep the chunked-volume
   // streaming pump paused (it is gated on !isDragging) and stall streaming.
   ctrl._eventListeners.pointercancel = (e: Event) => {
+    pinchPointer(ctrl, e as PointerEvent, 'up')
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       // A cancelled crosshair-pan gesture must not place the crosshair: the
       // browser took over (touch scroll, palm rejection), so the release point
@@ -1893,6 +1968,7 @@ export function initInteraction(ctrl: NiiVue): void {
   }
   ctrl._eventListeners.pointermove = (e: Event) => {
     const evt = e as PointerEvent
+    if (pinchPointer(ctrl, evt, 'move')) return
     ctrl._pointerClient = [evt.clientX, evt.clientY]
     setNextActionTag(ctrl.isDragging ? 'drag' : 'pointermove')
     // Annotation brush cursor preview (hover, no drag required)

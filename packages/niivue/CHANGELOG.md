@@ -1,3 +1,15 @@
+## 1.0.0-rc.15 (2026-09-24)
+
+### Fixes
+
+- **niivue:** wheel scrolls 2D slices in slicer3D mode, as in 0.6 ([41aeea6](https://github.com/niivue/mono/commit/41aeea6))
+- **niivue:** pick 2D interpolation per volume; keep the 3D render linear ([7c40ccc](https://github.com/niivue/mono/commit/7c40ccc))
+
+### Thank You
+
+- Claude Opus 5.5 (1M context)
+- neurolabusc
+
 ## 1.0.0-rc.14 (2026-09-23)
 
 ### Features

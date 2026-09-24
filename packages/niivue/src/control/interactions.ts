@@ -2426,13 +2426,12 @@ export function initInteraction(ctrl: NiiVue): void {
     }
     const hit = ctrl.view?.hitTest(px, py)
     if (!hit) return
-    // 2D slice: zoom when pan/slicer3D mode, otherwise step crosshair
+    // 2D slice: zoom in pan mode, otherwise step the crosshair through slices.
+    // slicer3D also pans/zooms on drag, but its wheel scrolls slices, as in 0.6.
     if (!hit.isRender) {
       const isPanZoomMode =
         ctrl.model.interaction.primaryDragMode === DRAG_MODE.pan ||
-        ctrl.model.interaction.primaryDragMode === DRAG_MODE.slicer3D ||
-        ctrl.model.interaction.secondaryDragMode === DRAG_MODE.pan ||
-        ctrl.model.interaction.secondaryDragMode === DRAG_MODE.slicer3D
+        ctrl.model.interaction.secondaryDragMode === DRAG_MODE.pan
       if (isPanZoomMode) {
         const zoomDirection = evt.deltaY < 0 ? 1 : -1
         const zoom = NVTransforms.stepZoom2D(

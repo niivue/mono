@@ -16,7 +16,7 @@ import {
   depthThrough,
   namePlane,
   PLANE_NONE,
-  PLANE_OFF,
+  planeDepthCuts,
   resolvePlane,
 } from '../planes'
 import type { PlaneState, RegionSummary, TabState } from '../protocol'
@@ -28,23 +28,24 @@ export type Triple = { [index: number]: number; readonly length: number }
 
 export interface View {
   canvas: HTMLCanvasElement | null
-  volumes: ReadonlyArray<{ name: string }>
+  /** The volumes on show, the base first. NiiVue keeps how each was loaded on it. */
+  volumes: ReadonlyArray<ShownVolume>
   azimuth: number
   elevation: number
-  /** The crosshair as fractions of the volume; moved by writing its three slots. gl-matrix's vec3 fits. */
+  /**
+   * The crosshair as fractions of the volume. Read live; moved by assigning
+   * three numbers, which NiiVue's setter turns into its events (`change`,
+   * `locationChange`) and its pan-follows-crosshair, as a click would.
+   */
   crosshairPos: Triple
   /** The crosshair in world millimetres. */
   getCrosshairPos(): Triple
   getClipPlaneDepthAziElev(index: number): [number, number, number]
   setClipPlane(plane: number[]): void
-  loadVolumes(
-    volumes: Array<{
-      url: string
-      name?: string
-      colormap?: string
-      opacity?: number
-    }>,
-  ): Promise<unknown>
+  /** Replaces every volume on show with these. */
+  loadVolumes(volumes: VolumeToLoad[]): Promise<unknown>
+  /** Adds one volume over those on show, keeping them. */
+  addVolume(volume: VolumeToLoad): Promise<unknown>
   /** Draws a volume as labels from a lookup table, by name (`freesurfer`) or definition. NiiVue 1.0 has it. */
   setColormapLabel?(
     volumeIndex: number,
@@ -60,6 +61,23 @@ export interface View {
     mm2scene(mm: number[]): Triple
     scene2mm(frac: number[]): Triple
   }
+}
+
+/** A volume as `View.loadVolumes` and `View.addVolume` take it: NiiVue's `ImageFromUrlOptions`, in part. */
+export interface VolumeToLoad {
+  url: string
+  name?: string
+  colormap?: string
+  opacity?: number
+}
+
+/** A volume as NiiVue keeps it once loaded, in the part the core reads. */
+export interface ShownVolume {
+  name: string
+  /** Where it was fetched from; absent for a file the person dropped in. */
+  url?: string
+  colormap?: string
+  opacity?: number
 }
 
 /** A region as an atlas keeps it: what `list_regions` reports plus its voxel value. */
@@ -191,16 +209,6 @@ const summary = ({
   voxels,
 }: RegionSummary): RegionSummary => ({ label, name, centroid, voxels })
 
-/** A volume as the page shows it: the base first, then any overlays in order. */
-interface Shown {
-  url: string
-  name: string
-  colormap: string
-  opacity?: number
-  /** A label lookup table by name, for a label map. */
-  labels?: string
-}
-
 /** Label lookup tables the core knows by name; NiiVue 1.0 has each built in. */
 export const LABEL_TABLES = ['freesurfer'] as const
 
@@ -234,22 +242,22 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     return host.atlas()
   }
 
-  // What is on show, so an overlay can be added without losing the base.
-  let shown: Shown[] = []
+  // The label table each label-map overlay was drawn with, by the volume
+  // NiiVue keeps; a new base clears the volumes, and the map with them.
+  const labelled = new WeakMap<ShownVolume, string>()
 
-  const loadShown = async (): Promise<void> => {
-    await view.loadVolumes(
-      shown.map(({ url, name, colormap, opacity }) => ({
-        url,
-        name,
-        colormap,
-        ...(opacity === undefined ? {} : { opacity }),
-      })),
-    )
-    for (const [index, volume] of shown.entries()) {
-      if (volume.labels) await view.setColormapLabel?.(index, volume.labels)
-    }
-  }
+  /** The volumes on show, as `add_overlay` reports them. */
+  const volumesShown = () =>
+    view.volumes.map((volume, index) => {
+      const labels = labelled.get(volume)
+      return {
+        index,
+        name: volume.name,
+        ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
+        ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+        ...(labels ? { labels } : {}),
+      }
+    })
 
   /** Moves the crosshair to `frac`, cuts `plane` through it facing the camera at the cut, and draws. */
   const moveTo = (
@@ -262,10 +270,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     // the near side rather than hidden behind the part the cut keeps.
     facePlane(view, plane.azimuth, plane.elevation)
     view.setClipPlane([depth, plane.azimuth, plane.elevation])
-    const position = view.crosshairPos
-    position[0] = frac[0]
-    position[1] = frac[1]
-    position[2] = frac[2]
+    view.crosshairPos = new Float32Array(frac)
     view.drawScene()
     host.moved?.(frac)
     return depth
@@ -286,7 +291,6 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const mni = flag(params, 'mni') ?? looksMni(name)
       try {
         await view.loadVolumes([{ url, name, colormap }])
-        shown = [{ url, name, colormap }]
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error)
         throw new Error(`The volume at ${url} could not be loaded: ${why}`)
@@ -398,10 +402,6 @@ export function coreHandlers(host: NiiVueHost): Handlers {
 
     async add_overlay(params) {
       requireVolume()
-      if (!shown.length)
-        throw new Error(
-          'Load the base volume with load_volume before adding an overlay.',
-        )
       const url = text(params, 'url')
       if (!url) throw new Error('add_overlay needs a url.')
       const name = text(params, 'name') ?? nameFromUrl(url)
@@ -418,30 +418,25 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         Math.max(0, number(params, 'opacity') ?? (labels ? 0.5 : 0.7)),
       )
       const colormap = text(params, 'colormap') ?? (labels ? 'gray' : 'warm')
-      const before = shown
-      shown = [
-        ...shown,
-        { url, name, colormap, opacity, ...(labels ? { labels } : {}) },
-      ]
+      // Added over what is shown, whoever loaded it: the page's own start-up
+      // volume as much as one from load_volume. A failed add leaves the
+      // scene as it was.
       try {
-        await loadShown()
+        await view.addVolume({ url, name, colormap, opacity })
       } catch (error) {
-        shown = before
         const why = error instanceof Error ? error.message : String(error)
         throw new Error(`The overlay at ${url} could not be loaded: ${why}`)
+      }
+      const index = view.volumes.length - 1
+      const added = view.volumes[index]
+      if (labels && added) {
+        await view.setColormapLabel?.(index, labels)
+        labelled.set(added, labels)
       }
       host.beforeAnswer?.()
       view.drawScene()
       return {
-        volumes: shown.map(
-          ({ name: n, colormap: c, opacity: o, labels: l }, index) => ({
-            index,
-            name: n,
-            colormap: c,
-            ...(o === undefined ? {} : { opacity: o }),
-            ...(l ? { labels: l } : {}),
-          }),
-        ),
+        volumes: volumesShown(),
         crosshair: { mm: Array.from(view.getCrosshairPos()) },
       }
     },
@@ -575,7 +570,7 @@ function scaledCopy(
 
 /** Whether a plane by NiiVue's numbers is cut at all. */
 export function planeIsCut(plane: readonly [number, number, number]): boolean {
-  return plane[0] < PLANE_OFF
+  return planeDepthCuts(plane[0])
 }
 
 /**

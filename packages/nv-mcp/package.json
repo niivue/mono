@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-mcp",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.0",
   "type": "module",
   "description": "An MCP server for a NiiVue page: an agent drives the crosshair, clip plane, camera, volumes and atlas regions of whatever a person is looking at",
   "main": "./dist/index.js",

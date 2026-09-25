@@ -356,10 +356,11 @@ export function registerCoreTools(
     {
       title: 'Add an overlay',
       description:
-        'Draws a second volume over the loaded one, keeping the base: a statistical map with a ' +
+        'Draws another volume over whatever the page shows, keeping it: a statistical map with a ' +
         'colormap, or a segmentation as labels with `labels: freesurfer` (FreeSurfer and SynthSeg ' +
         "label ids, named and coloured as FreeSurfer does). The overlay must share the base volume's " +
-        'space. Load the base with load_volume first; loading a new base clears the overlays.',
+        'space. The base may be what the page opened with or one from load_volume; loading a new ' +
+        'base clears the overlays.',
       inputSchema: CORE_SCHEMAS.add_overlay,
     },
     async (params) =>

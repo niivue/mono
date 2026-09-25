@@ -46,6 +46,17 @@ That listens on `127.0.0.1:4242` (both configurable) and serves three paths:
 
 `startServer` returns the running server with its `bridge`, `url`, `appUrl` and a `stop()`. Pass `log` to route its lines somewhere other than the console, `bridge` options to tune timeouts or the message an agent reads when no page is connected, and a `Bridge` of your own if you wire the HTTP yourself.
 
+Loopback keeps the network out but not other web pages: any site open in the same browser can ask it to open a socket to `127.0.0.1`, and a hostname an attacker controls can resolve there. So `/app` refuses a page whose `Origin` is not loopback (`localhost`, `127.0.0.1` or `[::1]` on any port; a client that sends no `Origin`, which is not a browser, is let in), and `/mcp` refuses a request whose `Host` header does not name this server. A page served from elsewhere goes in `allowedOrigins`; a name for the server other than loopback goes in `allowedHosts`, with its port:
+
+```ts
+startServer({
+  allowedOrigins: ['https://viewer.example.org'],
+  allowedHosts: ['niivue.local:4242'],
+})
+```
+
+Calls to one tab go one at a time, in the order they were made. The page's handlers all change the one scene, so an agent that fires several tools together gets each answered against the scene the one before left rather than racing them.
+
 ### The page
 
 ```ts
@@ -136,7 +147,7 @@ Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`). Vite's WebSoc
 | `list_tabs` | | The connected tabs: id, title, address, when each connected and which one answers |
 | `use_tab` | `id` | Makes one tab the one that answers every later call |
 | `load_volume` | `url`, `name?`, `colormap?`, `mni?` | Loads a volume from an address the page can fetch, replacing what is shown. `mni` says whether the atlas applies; guessed from the name when left out. Reports the name and the volume's bounds in millimetres |
-| `add_overlay` | `url`, `name?`, `labels?`, `colormap?`, `opacity?` | Draws a second volume over the loaded one, keeping the base. `labels: freesurfer` draws a segmentation with FreeSurfer's names and colours; otherwise a colormap. A new `load_volume` clears the overlays |
+| `add_overlay` | `url`, `name?`, `labels?`, `colormap?`, `opacity?` | Draws another volume over whatever the page shows, keeping it, whether the page opened with it or `load_volume` brought it. `labels: freesurfer` draws a segmentation with FreeSurfer's names and colours; otherwise a colormap. A new `load_volume` clears the overlays |
 | `where_am_i` | | The crosshair in millimetres and fractions, the plane cut, the camera, the page's description of the place, and whatever state the app adds. Says which tab answered |
 | `list_regions` | `query?` | The atlas regions the page can navigate to: label, spoken name, centroid in millimetres, voxel count. `query` filters by label or name |
 | `go_to_region` | `region`, `plane?` | Moves the crosshair to a region's centroid, turns the camera to face the cut, cuts a plane through the point, and announces the place. `plane` is a side, a slice name or `current`. An ambiguous name fails and lists the candidates |

@@ -26,8 +26,10 @@ export type {
   Handlers,
   LoadedVolume,
   NiiVueHost,
+  ShownVolume,
   Triple,
   View,
+  VolumeToLoad,
 } from './scene'
 export {
   coreHandlers,

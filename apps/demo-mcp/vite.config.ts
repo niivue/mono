@@ -7,6 +7,11 @@ const MCP_HOST = process.env.NV_MCP_HOST ?? '127.0.0.1'
 export default defineConfig({
   base: '/',
   plugins: [devImagesPlugin()],
+  define: {
+    // The page's "connect an agent" hint, so it follows NV_MCP_HOST and
+    // NV_MCP_PORT rather than repeating the defaults.
+    __NV_MCP_URL__: JSON.stringify(`http://${MCP_HOST}:${MCP_PORT}/mcp`),
+  },
   server: {
     port: 8091,
     proxy: {

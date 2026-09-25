@@ -38,7 +38,7 @@ Claude Code:
 claude mcp add --transport http niivue http://127.0.0.1:4242/mcp
 ```
 
-Then ask it to go to the left insula, cut an axial plane through the crosshair, or send a screenshot. `http://127.0.0.1:4242/` lists the connected tabs. The [package README](../../packages/nv-mcp/README.md) covers the Claude desktop app, the tools and how tabs and reloads are handled.
+The page's own "Connect an agent" panel shows the same line, with whatever `NV_MCP_HOST` and `NV_MCP_PORT` were set to. Then ask it to go to the left insula, cut an axial plane through the crosshair, or send a screenshot. `http://127.0.0.1:4242/` lists the connected tabs. The [package README](../../packages/nv-mcp/README.md) covers the Claude desktop app, the tools and how tabs and reloads are handled.
 
 ## How it works
 

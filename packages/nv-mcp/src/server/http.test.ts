@@ -190,6 +190,18 @@ describe('the server, end to end', () => {
     expect(failed.isError).toBe(true)
     expect(text(failed)).toMatch(/could not be loaded: 404/)
 
+    const overlaid = await call('add_overlay', {
+      url: 'https://example.test/zstat.nii.gz',
+      colormap: 'red',
+    })
+    expect(overlaid.isError).toBeUndefined()
+    expect(json(overlaid)).toMatchObject({
+      volumes: [
+        { index: 0, name: 'mni152.nii.gz' },
+        { index: 1, name: 'zstat.nii.gz', colormap: 'red', opacity: 0.7 },
+      ],
+    })
+
     const regions = json(
       await call('list_regions', { query: 'insula' }),
     ) as unknown as Array<{ label: string }>
@@ -293,6 +305,67 @@ describe('the server, end to end', () => {
       /chosen with use_tab \(t2\) is no longer connected/,
     )
   }, 20000)
+
+  it('answers calls to one tab in the order they were made, one at a time', async () => {
+    await openPage('t2', 'second tab')
+    const load = call('load_volume', {
+      url: 'https://example.test/mni152.nii.gz',
+    })
+    const go = call('go_to_region', { region: 'left insula', plane: 'left' })
+    const here = call('where_am_i')
+    const [loaded, went, where] = await Promise.all([load, go, here])
+    expect(loaded.isError).toBeUndefined()
+    expect(went.isError).toBeUndefined()
+    expect(json(where)).toMatchObject({
+      volume: 'mni152.nii.gz',
+      crosshair: { mm: mm(-36, 6, 2) },
+      plane: { name: 'left' },
+    })
+    await closePage('t2')
+  }, 20000)
+
+  it('refuses the socket to a page from a foreign origin and takes one from loopback', async () => {
+    const opened = (origin: string) =>
+      new Promise<boolean>((resolve) => {
+        const ws = new WebSocket(server.appUrl, {
+          headers: { origin },
+        } as unknown as string[])
+        ws.onopen = () => {
+          ws.close()
+          resolve(true)
+        }
+        ws.onerror = () => resolve(false)
+      })
+    expect(await opened('https://evil.example')).toBe(false)
+    expect(logged.at(-1)).toBe('refused a socket from https://evil.example')
+    expect(await opened('http://localhost:8091')).toBe(true)
+    expect(await opened('http://[::1]:5173')).toBe(true)
+    expect(await opened(`http://${server.host}:${server.port}`)).toBe(true)
+  })
+
+  it('refuses an MCP request whose Host header does not name this server', async () => {
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: {},
+    })
+    const post = (host: string) =>
+      fetch(server.url, {
+        method: 'POST',
+        headers: {
+          host,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body,
+      })
+    const rebound = await post('niivue.attacker.example')
+    expect(rebound.status).toBe(403)
+    expect(await rebound.text()).toMatch(/Invalid Host header/)
+    const own = await post(`localhost:${server.port}`)
+    expect(own.status).toBe(200)
+  })
 
   it('re-binds a reloaded tab by id and reports the reset once', async () => {
     await openPage('t3', 'third tab')

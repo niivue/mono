@@ -18,6 +18,7 @@ export {
   PLANE_ANGLES,
   PLANE_NONE,
   PLANE_OFF,
+  planeDepthCuts,
   resolvePlane,
   samePlane,
   viewDirection,

@@ -33,6 +33,11 @@ const whereLine = $('where')
 const announceLine = $('announce')
 const status = $('status')
 
+// The hint follows the server's address as vite.config.ts read it.
+$('mcp').textContent = __NV_MCP_URL__
+$('claude').textContent =
+  `claude mcp add --transport http niivue ${__NV_MCP_URL__}`
+
 const nv = new NiiVue()
 
 // --- The page as the core sees it ---

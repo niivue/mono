@@ -7,6 +7,7 @@ import {
   namePlane,
   PLANE_ANGLES,
   PLANE_NONE,
+  planeDepthCuts,
   resolvePlane,
   samePlane,
   viewDirection,
@@ -121,6 +122,8 @@ describe('resolvePlane', () => {
       elevation: 10,
     })
     expect(resolvePlane('current', [2, 0, 0])?.name).toBe('posterior')
+    // NiiVue's default plane reads back as depth -2: off, so coronal too.
+    expect(resolvePlane('current', [-2, 0, 0])?.name).toBe('posterior')
     expect(resolvePlane(undefined, null)?.name).toBe('posterior')
   })
 })
@@ -140,7 +143,19 @@ describe('namePlane', () => {
   it('says off past the depth the shader ignores, and custom for any other angles', () => {
     expect(namePlane(PLANE_NONE, 0, 0)).toBe('off')
     expect(namePlane(1.8, 90, 0)).toBe('off')
+    // A fresh NiiVue reads its default plane back as -2, not +2.
+    expect(namePlane(-PLANE_NONE, 0, 0)).toBe('off')
+    expect(namePlane(-1.8, 0, 0)).toBe('off')
+    expect(namePlane(-1.5, 0, 0)).toBe('posterior')
     expect(namePlane(0.2, 45, 10)).toBe('custom')
+  })
+
+  it('treats either side of the off depth as no plane', () => {
+    expect(planeDepthCuts(0)).toBe(true)
+    expect(planeDepthCuts(1.5)).toBe(true)
+    expect(planeDepthCuts(-1.5)).toBe(true)
+    expect(planeDepthCuts(1.8)).toBe(false)
+    expect(planeDepthCuts(-2)).toBe(false)
   })
 })
 

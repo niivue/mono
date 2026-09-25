@@ -38,8 +38,18 @@ export const PLANE_ALIASES: Readonly<Record<string, string>> = {
   horizontal: 'superior',
 }
 
-/** Past this depth NiiVue's shader treats the plane as no plane at all. */
+/**
+ * Past this depth, either way, NiiVue's shader treats the plane as no plane
+ * at all. NiiVue's own default reads back as depth -2 and its "off" as +2,
+ * so a test of whether a plane is cut looks at the size of the depth, not
+ * its sign.
+ */
 export const PLANE_OFF = 1.8
+
+/** Whether a plane at this depth cuts anything: within `PLANE_OFF` of the centre on either side. */
+export function planeDepthCuts(depth: number): boolean {
+  return Math.abs(depth) < PLANE_OFF
+}
 
 /**
  * The angles for a plane an agent named, or null when the name is not one
@@ -54,7 +64,7 @@ export function resolvePlane(
 ): { name: string; azimuth: number; elevation: number } | null {
   const wanted = (name ?? 'current').trim().toLowerCase()
   if (wanted === 'current') {
-    if (current && current[0] < PLANE_OFF) {
+    if (current && planeDepthCuts(current[0])) {
       const known = PLANE_ANGLES.find(
         (plane) =>
           plane.azimuth === current[1] && plane.elevation === current[2],
@@ -185,7 +195,7 @@ export function namePlane(
   azimuth: number,
   elevation: number,
 ): string {
-  if (depth >= PLANE_OFF) return 'off'
+  if (!planeDepthCuts(depth)) return 'off'
   const known = PLANE_ANGLES.find((plane) =>
     samePlane([plane.azimuth, plane.elevation], [azimuth, elevation]),
   )

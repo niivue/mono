@@ -127,6 +127,75 @@ describe('Bridge', () => {
     )
   })
 
+  it('puts calls to one tab one at a time, in order, however many arrive at once', async () => {
+    const bridge = new Bridge()
+    const answers: Array<() => void> = []
+    const s: Fake = {
+      sent: [],
+      send(text: string) {
+        s.sent.push(text)
+        const request = JSON.parse(text) as { id: number; method: string }
+        answers.push(() =>
+          bridge.receive(
+            s,
+            JSON.stringify({ id: request.id, result: request.method }),
+          ),
+        )
+      },
+    }
+    bridge.attach(s)
+    bridge.receive(
+      s,
+      JSON.stringify({ hello: { id: 't1', title: 'one', url: 'http://x' } }),
+    )
+    const methods = () =>
+      s.sent.map((text) => (JSON.parse(text) as { method: string }).method)
+
+    const first = bridge.call('load_volume', { url: 'a' })
+    const second = bridge.call('go_to_region', { region: 'b' })
+    const third = bridge.call('screenshot')
+    await tick()
+    expect(methods()).toEqual(['load_volume'])
+    answers.shift()?.()
+    await tick()
+    expect(methods()).toEqual(['load_volume', 'go_to_region'])
+    expect((await first).result).toBe('load_volume')
+    answers.shift()?.()
+    await tick()
+    expect(methods()).toEqual(['load_volume', 'go_to_region', 'screenshot'])
+    expect((await second).result).toBe('go_to_region')
+    answers.shift()?.()
+    expect((await third).result).toBe('screenshot')
+  })
+
+  it('sends the next call once the one ahead of it fails', async () => {
+    const bridge = new Bridge({ timeoutMs: 20 })
+    const s: Fake = {
+      sent: [],
+      send(text: string) {
+        s.sent.push(text)
+        const request = JSON.parse(text) as { id: number; method: string }
+        // The first call is never answered, so it times out; the rest are.
+        if (request.method === 'load_volume') return
+        queueMicrotask(() =>
+          bridge.receive(s, JSON.stringify({ id: request.id, result: 'ok' })),
+        )
+      },
+    }
+    bridge.attach(s)
+    bridge.receive(
+      s,
+      JSON.stringify({ hello: { id: 't1', title: 'one', url: 'http://x' } }),
+    )
+    const first = bridge.call('load_volume', { url: 'a' })
+    const second = bridge.call('where_am_i')
+    await tick()
+    expect(s.sent.length).toBe(1)
+    await expect(first).rejects.toThrow('did not answer load_volume')
+    expect((await second).result).toBe('ok')
+    expect(s.sent.length).toBe(2)
+  })
+
   it('answers from the only tab, then asks for a choice once there are two', async () => {
     const bridge = new Bridge()
     tab(bridge, 't1', 'one', () => 'from one')

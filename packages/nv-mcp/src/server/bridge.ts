@@ -14,6 +14,11 @@
  * worse than asking. A tab that reloads comes back with the same id and is
  * picked up again where it was, and the next call is told that the scene
  * started over, with what it was showing before.
+ *
+ * Calls to one tab go one at a time, in the order they were made. The
+ * page's handlers all change the one scene, and two loads or moves running
+ * at once would race each other in it; an agent that fires several tools
+ * together still gets each answered against the scene the one before left.
  */
 
 import {
@@ -107,6 +112,8 @@ export class Bridge {
     id: string
     resolve: (tab: Tab | null) => void
   }> = []
+  /** The last call queued to each tab, which the next one waits behind. */
+  private readonly queues = new Map<string, Promise<unknown>>()
   private chosen: string | null = null
   private lastUsed: string | null = null
   private nextId = 1
@@ -205,17 +212,51 @@ export class Bridge {
     return info(tab)
   }
 
-  /** Puts one tool call to the answering tab and waits for its answer. */
+  /**
+   * Puts one tool call to the answering tab and waits for its answer. The
+   * tab is chosen now; the request is written once every call queued to
+   * that tab before it has been answered, or has failed.
+   */
   async call(
     method: string,
     params: Record<string, unknown> = {},
   ): Promise<CallResult> {
-    const tab = await this.target()
-    const result = await this.send(tab, method, params)
+    const chosen = await this.target()
+    const ahead = this.queues.get(chosen.id) ?? Promise.resolve()
+    const turn = ahead
+      .catch(() => undefined)
+      .then(() => this.sendWhenLive(chosen, method, params))
+    this.queues.set(chosen.id, turn)
+    let answered: { tab: Tab; result: unknown }
+    try {
+      answered = await turn
+    } finally {
+      if (this.queues.get(chosen.id) === turn) this.queues.delete(chosen.id)
+    }
+    const { tab, result } = answered
     this.lastUsed = tab.id
     const reloaded = tab.reset
     tab.reset = null
     return { result, tab: info(tab), reloaded }
+  }
+
+  /**
+   * Writes the request to the tab once its turn comes: to its connection
+   * now, which may be a newer one than when the call was queued, or to
+   * the one it comes back on if it is mid-reload.
+   */
+  private async sendWhenLive(
+    chosen: Tab,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<{ tab: Tab; result: unknown }> {
+    const tab = this.tabs.get(chosen.id) ?? (await this.awaitReturn(chosen.id))
+    if (!tab) {
+      throw new Error(
+        `The tab "${chosen.title}" disconnected before ${method} was sent.`,
+      )
+    }
+    return { tab, result: await this.send(tab, method, params) }
   }
 
   private greet(socket: AppSocket, { hello }: Hello): void {

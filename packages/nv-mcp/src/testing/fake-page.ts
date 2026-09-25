@@ -15,8 +15,10 @@ import {
   type AtlasRegion,
   coreHandlers,
   type Handlers,
+  type ShownVolume,
   sceneState,
   type View,
+  type VolumeToLoad,
 } from '../browser/index'
 
 export const REGIONS: AtlasRegion[] = [
@@ -81,9 +83,17 @@ export interface FakePage {
 }
 
 export function fakePage(options: FakePageOptions): FakePage {
-  const crosshairPos = [0.5, 0.5, 0.5]
   let plane: [number, number, number] = [2, 0, 0]
-  const volumes: Array<{ name: string }> = []
+  const volumes: ShownVolume[] = []
+  const shown = (volume: VolumeToLoad): ShownVolume => ({
+    name: volume.name ?? volume.url,
+    url: volume.url,
+    ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
+    ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+  })
+  const fetching = async (volume: VolumeToLoad): Promise<void> => {
+    if (volume.url.includes('missing')) throw new Error('404 Not Found')
+  }
   const view: View = {
     canvas: {
       width: 320,
@@ -93,9 +103,9 @@ export function fakePage(options: FakePageOptions): FakePage {
     volumes,
     azimuth: 110,
     elevation: 15,
-    crosshairPos,
+    crosshairPos: [0.5, 0.5, 0.5],
     getCrosshairPos: () =>
-      Array.from(crosshairPos).map((f) => (f - 0.5) * 200) as [
+      Array.from(view.crosshairPos).map((f) => (f - 0.5) * 200) as [
         number,
         number,
         number,
@@ -104,9 +114,13 @@ export function fakePage(options: FakePageOptions): FakePage {
     setClipPlane: (next) => {
       plane = [next[0], next[1], next[2]]
     },
-    loadVolumes: async ([volume]) => {
-      if (volume.url.includes('missing')) throw new Error('404 Not Found')
-      volumes.splice(0, volumes.length, { name: volume.name ?? volume.url })
+    loadVolumes: async (next) => {
+      for (const volume of next) await fetching(volume)
+      volumes.splice(0, volumes.length, ...next.map(shown))
+    },
+    addVolume: async (volume) => {
+      await fetching(volume)
+      volumes.push(shown(volume))
     },
     drawScene: () => {},
     model: {

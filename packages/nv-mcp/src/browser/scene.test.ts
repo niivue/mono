@@ -8,25 +8,45 @@ import {
   looksMni,
   type NiiVueHost,
   nameFromUrl,
+  planeIsCut,
+  type ShownVolume,
   sceneState,
   type View,
+  type VolumeToLoad,
 } from './scene'
 
-/** A volume 200 mm across, centred on the origin: mm = (frac - 0.5) * 200. */
+/** A volume as NiiVue would keep it after loading `volume`. */
+const shown = (volume: VolumeToLoad): ShownVolume => ({
+  name: volume.name ?? volume.url,
+  url: volume.url,
+  ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
+  ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+})
+
+/**
+ * A volume 200 mm across, centred on the origin: mm = (frac - 0.5) * 200.
+ * Loading replaces or extends `volumes` as NiiVue's model would.
+ */
 function fakeView(overrides: Partial<View> = {}): View {
-  const crosshairPos = new Float32Array([0.5, 0.5, 0.5])
+  const volumes = () => view.volumes as ShownVolume[]
   const view: View = {
     canvas: null,
     volumes: [{ name: 'mni152.nii.gz' }],
     azimuth: 110,
     elevation: 15,
-    crosshairPos,
-    getCrosshairPos: () => Array.from(crosshairPos).map((f) => (f - 0.5) * 200),
+    crosshairPos: new Float32Array([0.5, 0.5, 0.5]),
+    getCrosshairPos: () =>
+      Array.from(view.crosshairPos).map((f) => (f - 0.5) * 200),
     getClipPlaneDepthAziElev: mock(
       () => [PLANE_NONE, 0, 0] as [number, number, number],
     ),
     setClipPlane: mock(),
-    loadVolumes: mock(async () => undefined),
+    loadVolumes: mock(async (next: VolumeToLoad[]) => {
+      volumes().splice(0, volumes().length, ...next.map(shown))
+    }),
+    addVolume: mock(async (volume: VolumeToLoad) => {
+      volumes().push(shown(volume))
+    }),
     drawScene: mock(),
     model: {
       mm2scene: (mm) => mm.map((v) => v / 200 + 0.5),
@@ -109,6 +129,21 @@ describe('sceneState', () => {
       crosshair: null,
       plane: null,
     })
+  })
+
+  it("calls a fresh NiiVue's default plane off, though it reads back at depth -2", () => {
+    const view = fakeView({
+      getClipPlaneDepthAziElev: () => [-PLANE_NONE, 0, 0],
+    })
+    expect(sceneState(host(view)).plane).toEqual({
+      name: 'off',
+      depth: -PLANE_NONE,
+      azimuth: 0,
+      elevation: 0,
+    })
+    expect(planeIsCut([-PLANE_NONE, 0, 0])).toBe(false)
+    expect(planeIsCut([PLANE_NONE, 0, 0])).toBe(false)
+    expect(planeIsCut([0, 0, 0])).toBe(true)
   })
 })
 
@@ -455,68 +490,63 @@ describe('load_volume', () => {
 })
 
 describe('add_overlay', () => {
-  it('keeps the base, loads the overlay over it, and draws a label map with its table', async () => {
+  it('adds the overlay over whatever is shown, however it got there, and draws a label map with its table', async () => {
     const setColormapLabel = mock()
+    // The page's own start-up volume, never seen by load_volume.
     const view = fakeView({ setColormapLabel })
     const handlers = coreHandlers(host(view))
-    await handlers.load_volume({ url: 'http://h/t1/sub-01_T1w.nii.gz' })
     const result = (await handlers.add_overlay({
       url: 'http://h/labels/synthseg.nii.gz',
       labels: 'freesurfer',
-    })) as {
-      volumes: Array<{ name: string; labels?: string; opacity?: number }>
-    }
-    expect(view.loadVolumes).toHaveBeenLastCalledWith([
+    })) as { volumes: unknown[] }
+    expect(view.loadVolumes).not.toHaveBeenCalled()
+    expect(view.addVolume).toHaveBeenCalledWith({
+      url: 'http://h/labels/synthseg.nii.gz',
+      name: 'synthseg.nii.gz',
+      colormap: 'gray',
+      opacity: 0.5,
+    })
+    expect(setColormapLabel).toHaveBeenCalledWith(1, 'freesurfer')
+    expect(result.volumes).toEqual([
+      { index: 0, name: 'mni152.nii.gz' },
       {
-        url: 'http://h/t1/sub-01_T1w.nii.gz',
-        name: 'sub-01_T1w.nii.gz',
-        colormap: 'gray',
-      },
-      {
-        url: 'http://h/labels/synthseg.nii.gz',
+        index: 1,
         name: 'synthseg.nii.gz',
         colormap: 'gray',
         opacity: 0.5,
+        labels: 'freesurfer',
       },
     ])
-    expect(setColormapLabel).toHaveBeenCalledWith(1, 'freesurfer')
-    expect(result.volumes.map((v) => v.name)).toEqual([
-      'sub-01_T1w.nii.gz',
-      'synthseg.nii.gz',
-    ])
-    expect(result.volumes[1]).toMatchObject({
-      labels: 'freesurfer',
-      opacity: 0.5,
-    })
+    expect(view.drawScene).toHaveBeenCalled()
   })
 
   it('uses a colormap for a non-label overlay and clamps the opacity', async () => {
     const view = fakeView()
     const handlers = coreHandlers(host(view))
     await handlers.load_volume({ url: 'http://h/t1.nii.gz' })
-    await handlers.add_overlay({
+    const result = (await handlers.add_overlay({
       url: 'http://h/zstat.nii.gz',
       colormap: 'red',
       opacity: 3,
+    })) as { volumes: Array<{ name: string }> }
+    expect(view.addVolume).toHaveBeenCalledWith({
+      url: 'http://h/zstat.nii.gz',
+      name: 'zstat.nii.gz',
+      colormap: 'red',
+      opacity: 1,
     })
-    expect(view.loadVolumes).toHaveBeenLastCalledWith([
-      { url: 'http://h/t1.nii.gz', name: 't1.nii.gz', colormap: 'gray' },
-      {
-        url: 'http://h/zstat.nii.gz',
-        name: 'zstat.nii.gz',
-        colormap: 'red',
-        opacity: 1,
-      },
+    expect(result.volumes.map((v) => v.name)).toEqual([
+      't1.nii.gz',
+      'zstat.nii.gz',
     ])
   })
 
-  it('refuses without a base loaded through load_volume, an unknown table, or a page that cannot draw labels', async () => {
-    const view = fakeView()
-    const handlers = coreHandlers(host(view))
+  it('refuses with nothing shown, an unknown table, or a page that cannot draw labels', async () => {
+    const empty = coreHandlers(host(fakeView({ volumes: [] })))
     await expect(
-      handlers.add_overlay({ url: 'http://h/x.nii.gz' }),
+      empty.add_overlay({ url: 'http://h/x.nii.gz' }),
     ).rejects.toThrow(/load_volume/)
-    await handlers.load_volume({ url: 'http://h/t1.nii.gz' })
+    const handlers = coreHandlers(host(fakeView()))
     await expect(
       handlers.add_overlay({ url: 'http://h/x.nii.gz', labels: 'aal' }),
     ).rejects.toThrow(/Unknown label table/)
@@ -526,27 +556,39 @@ describe('add_overlay', () => {
   })
 
   it('keeps what was shown when the overlay fails to load', async () => {
-    let calls = 0
-    const view = fakeView({
-      loadVolumes: mock(async () => {
-        if (++calls === 2) throw new Error('404')
-      }),
+    const view = fakeView()
+    const add = view.addVolume
+    view.addVolume = mock(async (volume: VolumeToLoad) => {
+      if (volume.url.includes('missing')) throw new Error('404')
+      await add(volume)
     })
     const handlers = coreHandlers(host(view))
     await handlers.load_volume({ url: 'http://h/t1.nii.gz' })
     await expect(
       handlers.add_overlay({ url: 'http://h/missing.nii.gz' }),
     ).rejects.toThrow(/could not be loaded: 404/)
-    await handlers.add_overlay({ url: 'http://h/ok.nii.gz' })
-    expect(view.loadVolumes).toHaveBeenLastCalledWith([
-      { url: 'http://h/t1.nii.gz', name: 't1.nii.gz', colormap: 'gray' },
-      {
-        url: 'http://h/ok.nii.gz',
-        name: 'ok.nii.gz',
-        colormap: 'warm',
-        opacity: 0.7,
-      },
+    expect(view.volumes.map((v) => v.name)).toEqual(['t1.nii.gz'])
+    const result = (await handlers.add_overlay({
+      url: 'http://h/ok.nii.gz',
+    })) as { volumes: unknown[] }
+    expect(result.volumes).toEqual([
+      { index: 0, name: 't1.nii.gz', colormap: 'gray' },
+      { index: 1, name: 'ok.nii.gz', colormap: 'warm', opacity: 0.7 },
     ])
+  })
+
+  it('forgets the label tables once a new base replaces the volumes', async () => {
+    const view = fakeView({ setColormapLabel: mock() })
+    const handlers = coreHandlers(host(view))
+    await handlers.add_overlay({
+      url: 'http://h/synthseg.nii.gz',
+      labels: 'freesurfer',
+    })
+    await handlers.load_volume({ url: 'http://h/t1.nii.gz' })
+    const result = (await handlers.add_overlay({
+      url: 'http://h/zstat.nii.gz',
+    })) as { volumes: Array<{ labels?: string }> }
+    expect(result.volumes.map((v) => v.labels)).toEqual([undefined, undefined])
   })
 })
 

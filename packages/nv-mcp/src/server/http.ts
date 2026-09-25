@@ -9,7 +9,12 @@
  *
  * Bound to the loopback address only. The socket lets a caller move the
  * crosshair of whoever is looking, and that is not something to offer the
- * network.
+ * network. Loopback alone does not keep a web page out, though: any site
+ * open in the same browser can ask it to open a socket to 127.0.0.1, or
+ * to post to a hostname that resolves there. So `/app` takes a page from a
+ * loopback origin, or one listed in `allowedOrigins`, and refuses the
+ * rest; and `/mcp` takes a request only when its Host header names this
+ * server, which is the SDK's guard against DNS rebinding.
  */
 
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
@@ -26,6 +31,18 @@ export interface ServerOptions {
   bridge?: BridgeOptions
   /** Where a line about a tab connecting or leaving goes; the console otherwise. */
   log?: (line: string) => void
+  /**
+   * Page origins, such as `https://viewer.example.org`, allowed to open the
+   * `/app` socket besides loopback ones. A page on `localhost`, `127.0.0.1`
+   * or `[::1]` on any port is always allowed, as is a client that sends no
+   * Origin at all, which is not a browser.
+   */
+  allowedOrigins?: readonly string[]
+  /**
+   * Host header values, such as `niivue.local:4242`, that `/mcp` answers
+   * to besides this server's own address on loopback names.
+   */
+  allowedHosts?: readonly string[]
 }
 
 export interface RunningServer {
@@ -42,6 +59,26 @@ export interface RunningServer {
 export const DEFAULT_HOST = '127.0.0.1'
 export const DEFAULT_PORT = 4242
 
+const LOOPBACK_NAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/** Whether a page at this Origin may open the socket: none sent, loopback on any port, or listed. */
+export function originAllowed(
+  origin: string | null,
+  host: string,
+  allowed: readonly string[],
+): boolean {
+  if (origin === null) return true
+  if (allowed.includes(origin)) return true
+  let name: string
+  try {
+    name = new URL(origin).hostname
+  } catch {
+    return false
+  }
+  // URL keeps the brackets on an IPv6 hostname, as the Origin header does.
+  return LOOPBACK_NAMES.has(name) || name === host
+}
+
 /** Starts the server. `Bun.serve` is the only runtime dependency. */
 export function startServer(options: ServerOptions = {}): RunningServer {
   const host = options.host ?? DEFAULT_HOST
@@ -51,15 +88,33 @@ export function startServer(options: ServerOptions = {}): RunningServer {
   const name = options.name ?? 'niivue'
   const version = options.version ?? '0.1.0'
   const extensions = options.extensions ?? []
+  const allowedOrigins = options.allowedOrigins ?? []
+  const extraHosts = options.allowedHosts ?? []
+
+  /** The Host header values that mean this server, once the port is known. */
+  const allowedHosts = (): string[] => [
+    ...new Set([
+      ...[...LOOPBACK_NAMES, host].map((n) => `${n}:${running.port}`),
+      ...extraHosts,
+    ]),
+  ]
 
   async function handleMcp(request: Request): Promise<Response> {
     const server = buildServer({ bridge, extensions, name, version })
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
+      enableDnsRebindingProtection: true,
+      allowedHosts: allowedHosts(),
     })
     await server.connect(transport)
-    return transport.handleRequest(request)
+    try {
+      // With JSON responses the reply is whole by the time this resolves,
+      // so the per-request server can go as soon as it has been sent.
+      return await transport.handleRequest(request)
+    } finally {
+      await server.close()
+    }
   }
 
   const listening = Bun.serve({
@@ -71,6 +126,11 @@ export function startServer(options: ServerOptions = {}): RunningServer {
     fetch(request, server) {
       const { pathname } = new URL(request.url)
       if (pathname === '/app') {
+        const origin = request.headers.get('origin')
+        if (!originAllowed(origin, host, allowedOrigins)) {
+          log(`refused a socket from ${origin}`)
+          return new Response('Forbidden origin.', { status: 403 })
+        }
         return server.upgrade(request)
           ? undefined
           : new Response('Expected a WebSocket.', { status: 426 })

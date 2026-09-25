@@ -1,0 +1,77 @@
+/**
+ * What crosses the socket between the server and a page.
+ *
+ * The server in `server/` turns each MCP tool call into one request and
+ * waits for one response; the page in `browser/` answers it from the
+ * scene. Nothing here touches NiiVue, the DOM or Bun, so both ends and
+ * their tests share it.
+ */
+
+/** The first message a page sends after connecting: who it is. */
+export interface Hello {
+  hello: {
+    /** Stable across a reload of the same tab; see `tabId` in the browser part. */
+    id: string
+    title: string
+    url: string
+    /** Where the scene stands as the page connects. */
+    state: TabState
+  }
+}
+
+/**
+ * The part of a scene the server keeps an eye on between calls, so a page
+ * that reloads can be told apart from one that answers from where it was.
+ * The core fills the three named fields; a host may add its own.
+ */
+export interface TabState {
+  volume: string | null
+  crosshair: { mm: number[] } | null
+  plane: PlaneState | null
+  [extra: string]: unknown
+}
+
+/** The plane that is cut, by name and by NiiVue's numbers. */
+export interface PlaneState {
+  name: string
+  depth: number
+  azimuth: number
+  elevation: number
+}
+
+/** A tool call as it crosses the socket from the server to the page. */
+export interface AgentRequest {
+  id: number
+  method: string
+  params: Record<string, unknown>
+}
+
+/**
+ * The page's answer: exactly one of `result` or `error`, plus where the
+ * scene stands now and what the tab is called, since a title changes.
+ */
+export interface AgentResponse {
+  id: number
+  result?: unknown
+  error?: string
+  tab?: { title: string; url: string }
+  state?: TabState
+}
+
+/** Whether a message from a page is its hello. */
+export function isHello(message: unknown): message is Hello {
+  const hello = (message as Hello)?.hello
+  return typeof hello?.id === 'string' && typeof hello?.title === 'string'
+}
+
+/** One region of an atlas, as `list_regions` reports it. */
+export interface RegionSummary {
+  /** The label as the atlas spells it, `Precentral_L`. */
+  label: string
+  /** The same, as it is spoken: `left precentral gyrus`. */
+  name: string
+  /** The mean position of its voxels, in world millimetres. */
+  centroid: [number, number, number]
+  /** How many voxels carry the label. */
+  voxels: number
+}

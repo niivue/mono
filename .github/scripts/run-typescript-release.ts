@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 // Run the TypeScript Nx release flow. In dry-run mode, append a compact
-// release summary to GITHUB_STEP_SUMMARY.
+// release summary to GITHUB_STEP_SUMMARY. Otherwise, report whether Nx
+// created a release commit via the `created` GITHUB_OUTPUT so later
+// workflow steps can skip pushing and publishing when nothing was released.
 //
 // Usage: bun .github/scripts/run-typescript-release.ts [--rc] [--dry-run]
 
@@ -33,12 +35,40 @@ if (!isDryRun) {
   releaseArgs.push('--verbose')
 }
 
+const gitHead = (): string => {
+  const result = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+    stdout: 'pipe',
+    stderr: 'inherit',
+  })
+  if (result.exitCode !== 0) {
+    throw new Error('Failed to resolve git HEAD')
+  }
+  return result.stdout.toString().trim()
+}
+
 if (!isDryRun) {
+  const headBefore = gitHead()
   const result = Bun.spawnSync(['bunx', ...releaseArgs], {
     stdout: 'inherit',
     stderr: 'inherit',
   })
-  process.exit(result.exitCode)
+  if (result.exitCode !== 0) {
+    process.exit(result.exitCode)
+  }
+
+  // Nx skips the commit and tags when conventional commits detect no
+  // changes, so HEAD is unchanged in that case.
+  const created = gitHead() !== headBefore
+  console.log(
+    created
+      ? 'Nx created a release commit and tags.'
+      : 'No releasable changes were found. No release commit or tags were created.',
+  )
+  const outputPath = process.env.GITHUB_OUTPUT
+  if (outputPath) {
+    appendFileSync(outputPath, `created=${created}\n`)
+  }
+  process.exit(0)
 }
 
 const result = Bun.spawnSync(['bunx', ...releaseArgs], {

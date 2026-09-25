@@ -93,20 +93,23 @@ jobs:
         run: bun .github/scripts/run-typescript-release.ts --dry-run ${{ env.RELEASE_RC == 'true' && '--rc' || '' }}
 
       - name: Release
+        id: release
         if: env.RELEASE_DRY_RUN != 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         # When no package has releasable commits, Nx creates no commit and no
-        # tags, and the remaining steps are no-ops.
+        # tags. The script sets `created=false` and the remaining steps are
+        # skipped, so a rerun at an existing release commit does not republish
+        # the tags already pointing at HEAD.
         run: bun .github/scripts/run-typescript-release.ts ${{ env.RELEASE_RC == 'true' && '--rc' || '' }}
 
       - name: Push release commit and tags
-        if: env.RELEASE_DRY_RUN != 'true'
+        if: env.RELEASE_DRY_RUN != 'true' && steps.release.outputs.created == 'true'
         run: bun .github/scripts/push-release-commit.ts
 
       - name: Create GitHub Releases
-        if: env.RELEASE_DRY_RUN != 'true'
+        if: env.RELEASE_DRY_RUN != 'true' && steps.release.outputs.created == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         # For each tag Nx created at HEAD, create (or update, if rerunning) a
@@ -115,7 +118,7 @@ jobs:
         run: bun .github/scripts/create-github-releases.ts
 
       - name: Publish to npm
-        if: env.RELEASE_DRY_RUN != 'true'
+        if: env.RELEASE_DRY_RUN != 'true' && steps.release.outputs.created == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}

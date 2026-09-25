@@ -1,0 +1,138 @@
+/**
+ * Demo: a NiiVue page an agent can drive over MCP.
+ *
+ * 1. Describes the page to `@niivue/nv-mcp` as a `NiiVueHost`: the NiiVue
+ *    instance, the AAL atlas for `list_regions` and `go_to_region`, and how
+ *    the page describes a place and tells the person about a move.
+ * 2. Opens the client, which keeps a WebSocket to the MCP server started by
+ *    `server/server.ts` and answers each tool call from the scene.
+ * 3. Attaches NiiVue to the canvas and loads the MNI152 template in a
+ *    render view. This comes last: both await an animation frame, which a
+ *    tab in the background is not given, and the page should be reachable
+ *    by an agent before then. Until it is, `where_am_i` says so.
+ */
+import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+import {
+  AgentClient,
+  type AtlasLike,
+  coreHandlers,
+  type Handlers,
+  type NiiVueHost,
+  sceneState,
+} from '@niivue/nv-mcp/browser'
+import { loadAtlas } from './atlas'
+
+function $<T extends HTMLElement>(id: string): T {
+  const el = document.getElementById(id)
+  if (!el) throw new Error(`Element #${id} not found`)
+  return el as T
+}
+
+const agentLine = $('agent')
+const whereLine = $('where')
+const announceLine = $('announce')
+const status = $('status')
+
+const nv = new NiiVue()
+
+// --- The page as the core sees it ---
+
+/** Whether the loaded scan is in the atlas's space. The MNI152 template is. */
+let isMni = true
+/** One fetch of the atlas, shared by every call that asks. */
+let atlas: Promise<AtlasLike> | null = null
+
+function requireAtlas(): Promise<AtlasLike> {
+  atlas ??= loadAtlas().catch((err) => {
+    atlas = null
+    throw new Error(
+      `The atlas could not be fetched (${err instanceof Error ? err.message : String(err)}).`,
+    )
+  })
+  return atlas
+}
+
+function mmText(mm: ArrayLike<number>): string {
+  return `${mm[0].toFixed(0)}, ${mm[1].toFixed(0)}, ${mm[2].toFixed(0)} mm`
+}
+
+/** The place in words: the crosshair, and the region under it once the atlas is here. */
+async function describe(): Promise<string> {
+  if (!nv.volumes[0]) return 'No volume is loaded yet.'
+  const mm = nv.getCrosshairPos()
+  let place = `Crosshair at ${mmText(mm)} in ${nv.volumes[0].name}`
+  if (isMni && atlas) {
+    const region = (await atlas).regionAt(mm)
+    place += region ? `, in the ${region}` : ', outside any labelled region'
+  }
+  return `${place}.`
+}
+
+/** Describes the place, and keeps the sidebar's line current while at it. */
+async function refreshWhere(): Promise<string> {
+  const described = await describe()
+  whereLine.textContent = described
+  return described
+}
+
+const host: NiiVueHost = {
+  view: nv,
+  atlas: requireAtlas,
+  atlasApplies: () => isMni,
+  loaded: ({ mni }) => {
+    isMni = mni
+    void refreshWhere()
+  },
+  describe: refreshWhere,
+  announce: (text) => {
+    announceLine.textContent = text
+    announceLine.classList.remove('quiet')
+  },
+}
+
+// --- The client ---
+
+/** Every tool waits for NiiVue: a tab in the background does not finish starting until it is shown. */
+let ready = false
+const handlers: Handlers = Object.fromEntries(
+  Object.entries(coreHandlers(host)).map(([name, handler]) => [
+    name,
+    (params: Record<string, unknown>) => {
+      if (!ready) {
+        throw new Error(
+          'The page is still starting NiiVue. A tab in the background gets there once it is brought to the front.',
+        )
+      }
+      return handler(params)
+    },
+  ]),
+)
+
+const client = new AgentClient(handlers, {
+  state: () => sceneState(host),
+  onStatus: (connected) => {
+    agentLine.textContent = connected
+      ? `agent server connected (tab ${client.id})`
+      : 'agent server not reached'
+    agentLine.classList.toggle('connected', connected)
+  },
+})
+client.attach()
+
+// --- The scene ---
+status.textContent = 'Starting NiiVue'
+await nv.attachTo('gl1')
+nv.sliceType = SLICE_TYPE.RENDER
+status.textContent = 'Loading volume'
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+status.textContent = 'Ready.'
+ready = true
+
+// Warm the atlas so the first `where_am_i` already names the region, and
+// keep the readout current when the person moves the crosshair themselves.
+void requireAtlas().then(refreshWhere, refreshWhere)
+for (const type of ['pointerup', 'keyup', 'wheel'] as const) {
+  nv.canvas?.addEventListener(type, () => void refreshWhere(), {
+    passive: true,
+  })
+}

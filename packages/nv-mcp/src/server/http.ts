@@ -38,6 +38,13 @@ export interface ServerOptions {
    */
   pageUrl?: string
   /**
+   * What an agent reads when it connects, in a few sentences: what the page
+   * shows, what it can fetch and how the tools fit it. The tools describe
+   * themselves; this is for what only this app knows, such as the volumes
+   * its server serves, which an agent would otherwise guess at.
+   */
+  instructions?: string
+  /**
    * Page origins, such as `https://viewer.example.org`, allowed to open the
    * `/app` socket besides loopback ones. A page on `localhost`, `127.0.0.1`
    * or `[::1]` on any port is always allowed, as is a client that sends no
@@ -97,6 +104,7 @@ export function startServer(options: ServerOptions = {}): RunningServer {
   const allowedOrigins = options.allowedOrigins ?? []
   const extraHosts = options.allowedHosts ?? []
   const pageUrl = options.pageUrl
+  const instructions = options.instructions
 
   /** The Host header values that mean this server, once the port is known. */
   const allowedHosts = (): string[] => [
@@ -107,7 +115,14 @@ export function startServer(options: ServerOptions = {}): RunningServer {
   ]
 
   async function handleMcp(request: Request): Promise<Response> {
-    const server = buildServer({ bridge, extensions, name, version, pageUrl })
+    const server = buildServer({
+      bridge,
+      extensions,
+      name,
+      version,
+      pageUrl,
+      instructions,
+    })
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

@@ -841,6 +841,71 @@ describe('add_overlay', () => {
     ])
   })
 
+  it('draws a label map with a table fetched from an address, filled in as NiiVue would', async () => {
+    const setColormapLabel = mock()
+    const view = fakeView({ setColormapLabel })
+    const fetched = mock(
+      async (_url: string) =>
+        new Response(
+          JSON.stringify({
+            R: [0, 255],
+            G: [0, 0],
+            B: [0, 0],
+            labels: ['Air', 'Hippocampus_L'],
+          }),
+        ),
+    )
+    const realFetch = globalThis.fetch
+    globalThis.fetch = fetched as unknown as typeof fetch
+    try {
+      const result = (await coreHandlers(host(view)).add_overlay({
+        url: 'http://h/aal.nii.gz',
+        labels: 'http://h/aal.json',
+      })) as { volumes: Array<{ labels?: string }> }
+      expect(fetched).toHaveBeenCalledWith('http://h/aal.json')
+      expect(setColormapLabel).toHaveBeenCalledWith(1, {
+        R: [0, 255],
+        G: [0, 0],
+        B: [0, 0],
+        A: [0, 255],
+        I: [0, 1],
+        labels: ['Air', 'Hippocampus_L'],
+      })
+      expect(result.volumes[1].labels).toBe('http://h/aal.json')
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('refuses a table it cannot fetch or read, leaving the scene as it was', async () => {
+    const view = fakeView({ setColormapLabel: mock() })
+    const handlers = coreHandlers(host(view))
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string) =>
+      url.endsWith('missing.json')
+        ? new Response('gone', { status: 404 })
+        : new Response(
+            JSON.stringify({ R: [1], G: [1, 2], B: [1] }),
+          )) as unknown as typeof fetch
+    try {
+      await expect(
+        handlers.add_overlay({
+          url: 'http://h/aal.nii.gz',
+          labels: 'http://h/missing.json',
+        }),
+      ).rejects.toThrow(/could not be fetched: 404/)
+      await expect(
+        handlers.add_overlay({
+          url: 'http://h/aal.nii.gz',
+          labels: '/volumes/odd.json',
+        }),
+      ).rejects.toThrow(/not one NiiVue can read/)
+      expect(view.addVolume).not.toHaveBeenCalled()
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
   it('refuses with nothing shown, an unknown table, or a page that cannot draw labels', async () => {
     const empty = coreHandlers(host(fakeView({ volumes: [] })))
     await expect(

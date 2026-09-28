@@ -63,15 +63,18 @@ export const CONNECT_MS = 5000
 export type IdStorage = Pick<Storage, 'getItem' | 'setItem'>
 
 /**
- * This tab's id. A `?tab=<id>` in the page's address names it outright:
- * an agent's `new_tab` hands such an address out, so the id is agreed
- * before the page opens, and a reload keeps the address. Otherwise it is
- * kept in `sessionStorage`, which a browser scopes to one tab and keeps
- * across its reloads but does not copy to a new tab, other than by
- * duplicating it; the server catches that case and hands the copy an id
- * of its own. Made up fresh when storage is not available. Whichever way
- * it came, it is written to storage, so the page keeps it should it
- * navigate to an address without the parameter.
+ * This tab's id. A `?tab=<id>` in the page's address names it: an agent's
+ * `new_tab` hands such an address out, so the id is agreed before the page
+ * opens, and a reload keeps the address. Otherwise it is kept in
+ * `sessionStorage`, which a browser scopes to one tab and keeps across its
+ * reloads but does not copy to a new tab, other than by duplicating it;
+ * the server catches that case and hands the copy an id of its own. A
+ * duplicate of a `?tab` page keeps that spare id too: the address that
+ * claimed the storage is remembered, and while the address still names
+ * it, the stored id wins over it, so the copy's reloads do not take the
+ * original's id back. Made up fresh when storage is not available.
+ * Whichever way it came, it is written to storage, so the page keeps it
+ * should it navigate to an address without the parameter.
  */
 export function tabId(
   storage: IdStorage | null = sessionStore(),

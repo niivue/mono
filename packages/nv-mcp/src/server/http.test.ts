@@ -124,6 +124,7 @@ describe('the server, end to end', () => {
       port: 0,
       extensions: [light],
       pageUrl: 'http://localhost:8091/',
+      instructions: 'The test page serves fake volumes.',
       bridge: { noTabHint: 'Open the test page.' },
       log: (line) => logged.push(line),
     })
@@ -135,6 +136,10 @@ describe('the server, end to end', () => {
     await client?.close().catch(() => {})
     for (const page of pages.values()) page.close()
     server?.stop()
+  })
+
+  it('tells a connecting agent what the app said to', () => {
+    expect(client.getInstructions()).toBe('The test page serves fake volumes.')
   })
 
   it('serves a status page and logs where it listens', async () => {

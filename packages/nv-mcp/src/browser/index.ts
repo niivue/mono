@@ -24,6 +24,7 @@ export type {
   AtlasRegion,
   Handler,
   Handlers,
+  LabelTable,
   LoadedVolume,
   NiiVueHost,
   ShownVolume,
@@ -34,6 +35,7 @@ export type {
 } from './scene'
 export {
   coreHandlers,
+  fetchLabelTable,
   looksMni,
   nameFromUrl,
   planeIsCut,

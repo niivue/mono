@@ -33,6 +33,20 @@ import {
 /** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
 export type Triple = { [index: number]: number; readonly length: number }
 
+/**
+ * A label table as NiiVue reads one: a colour per label, each for the
+ * value in `I` at the same place, and the labels' names. `fetchLabelTable`
+ * fills `I` and `A` in as NiiVue would when a table leaves them out.
+ */
+export interface LabelTable {
+  R: number[]
+  G: number[]
+  B: number[]
+  A: number[]
+  I: number[]
+  labels?: string[]
+}
+
 export interface View {
   canvas: HTMLCanvasElement | null
   /** The volumes on show, the base first. NiiVue keeps how each was loaded on it. */
@@ -53,10 +67,10 @@ export interface View {
   loadVolumes(volumes: VolumeToLoad[]): Promise<unknown>
   /** Adds one volume over those on show, keeping them. */
   addVolume(volume: VolumeToLoad): Promise<unknown>
-  /** Draws a volume as labels from a lookup table, by name (`freesurfer`) or definition. NiiVue 1.0 has it. */
+  /** Draws a volume as labels from a lookup table, by name (`freesurfer`) or as a table. NiiVue 1.0 has it. */
   setColormapLabel?(
     volumeIndex: number,
-    cmap: string,
+    cmap: string | LabelTable,
   ): Promise<unknown> | unknown
   /** Changes how a loaded volume is drawn, keeping the rest as it is. NiiVue 1.0 has it. */
   setVolume?(
@@ -272,6 +286,67 @@ const summary = ({
 
 /** Label lookup tables the core knows by name; NiiVue 1.0 has each built in. */
 export const LABEL_TABLES = ['freesurfer'] as const
+
+/** Whether `labels` is an address to fetch a table from, rather than a name the core knows. */
+function isAddress(labels: string): boolean {
+  return labels.includes('/')
+}
+
+/**
+ * Fetches a label table from an address the page can reach, and fills in
+ * what NiiVue's own reader would: `I` counting from 0, and `A` opaque with
+ * label 0 clear. Refuses in words when the address cannot be fetched or
+ * what it holds is not a table.
+ */
+export async function fetchLabelTable(address: string): Promise<LabelTable> {
+  let body: unknown
+  try {
+    const response = await fetch(address)
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`.trim())
+    }
+    body = await response.json()
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `The label table at ${address} could not be fetched: ${why}`,
+    )
+  }
+  const numbers = (value: unknown): value is number[] =>
+    Array.isArray(value) && value.every((v) => typeof v === 'number')
+  const strings = (value: unknown): value is string[] =>
+    Array.isArray(value) && value.every((v) => typeof v === 'string')
+  const table =
+    body && typeof body === 'object'
+      ? (body as Partial<Record<keyof LabelTable, unknown>>)
+      : {}
+  const { R, G, B, A, I, labels } = table
+  const unreadable = () =>
+    new Error(
+      `The label table at ${address} is not one NiiVue can read: it needs R, G and B arrays of one length, with I, A and labels optional.`,
+    )
+  if (!numbers(R) || R.length === 0) throw unreadable()
+  const fits = (value: unknown): value is number[] =>
+    numbers(value) && value.length === R.length
+  if (
+    !fits(G) ||
+    !fits(B) ||
+    (A !== undefined && !fits(A)) ||
+    (I !== undefined && !fits(I)) ||
+    (labels !== undefined && !strings(labels))
+  ) {
+    throw unreadable()
+  }
+  const indices = I ?? R.map((_, i) => i)
+  return {
+    R,
+    G,
+    B,
+    A: A ?? indices.map((i) => (i === 0 ? 0 : 255)),
+    I: indices,
+    ...(labels ? { labels } : {}),
+  }
+}
 
 /** Three finite numbers, or a message saying what is wrong. */
 function point(
@@ -511,13 +586,21 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (!url) throw new Error('add_overlay needs a url.')
       const name = text(params, 'name') ?? nameFromUrl(url)
       const labels = text(params, 'labels')
-      if (labels && !(LABEL_TABLES as readonly string[]).includes(labels)) {
+      if (
+        labels &&
+        !isAddress(labels) &&
+        !(LABEL_TABLES as readonly string[]).includes(labels)
+      ) {
         throw new Error(
-          `Unknown label table "${labels}". One of: ${LABEL_TABLES.join(', ')}.`,
+          `Unknown label table "${labels}". One of: ${LABEL_TABLES.join(', ')}, or the address of a label table JSON the page can fetch.`,
         )
       }
       if (labels && !view.setColormapLabel)
         throw new Error("This page's NiiVue cannot draw label maps.")
+      // A table from an address is fetched before anything is added, so a
+      // bad address leaves the scene as it was.
+      const table =
+        labels && isAddress(labels) ? await fetchLabelTable(labels) : labels
       const opacity = Math.min(
         1,
         Math.max(0, number(params, 'opacity') ?? (labels ? 0.5 : 0.7)),
@@ -538,8 +621,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       const index = view.volumes.length - 1
       const added = view.volumes[index]
-      if (labels && added) {
-        await view.setColormapLabel?.(index, labels)
+      if (labels && table && added) {
+        await view.setColormapLabel?.(index, table)
         labelled.set(added, labels)
       }
       view.crosshairPos = new Float32Array(

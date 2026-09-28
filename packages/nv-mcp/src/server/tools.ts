@@ -107,10 +107,11 @@ export const CORE_SCHEMAS = {
       .optional()
       .describe('A name for it; the file name otherwise.'),
     labels: z
-      .enum(['freesurfer'])
+      .string()
+      .min(1)
       .optional()
       .describe(
-        'Draw it as a label map with this lookup table, e.g. freesurfer for FreeSurfer or SynthSeg segmentations.',
+        'Draw it as a label map: freesurfer for FreeSurfer or SynthSeg ids, or, for any other atlas, the address of a label table JSON the page can fetch (R, G, B and labels arrays, as NiiVue reads them).',
       ),
     colormap: z
       .string()
@@ -540,10 +541,11 @@ export function registerCoreTools(
       title: 'Add an overlay',
       description:
         'Draws another volume over whatever the page shows, keeping it: a statistical map with a ' +
-        'colormap, or a segmentation as labels with `labels: freesurfer` (FreeSurfer and SynthSeg ' +
-        "label ids, named and coloured as FreeSurfer does). The overlay must share the base volume's " +
-        'space. The base may be what the page opened with or one from load_volume; loading a new ' +
-        'base clears the overlays.',
+        'colormap, or a segmentation as labels. `labels: freesurfer` fits FreeSurfer and SynthSeg ' +
+        'label ids, named and coloured as FreeSurfer does; any other atlas needs its own table, ' +
+        'passed as the address of a label table JSON the page can fetch. The overlay must share ' +
+        "the base volume's space. The base may be what the page opened with or one from " +
+        'load_volume; loading a new base clears the overlays.',
       inputSchema: CORE_SCHEMAS.add_overlay,
     },
     async ({ tab, ...params }) =>
@@ -760,11 +762,18 @@ export function buildServer(options: {
   version?: string
   /** Where the page is, for `new_tab`. */
   pageUrl?: string
+  /** What an agent reads on connecting: what the page shows and can fetch. */
+  instructions?: string
 }): McpServer {
-  const server = new McpServer({
-    name: options.name ?? 'niivue',
-    version: options.version ?? '0.1.0',
-  })
+  const server = new McpServer(
+    {
+      name: options.name ?? 'niivue',
+      version: options.version ?? '0.1.0',
+    },
+    options.instructions === undefined
+      ? {}
+      : { instructions: options.instructions },
+  )
   const context = toolContext(options.bridge, { pageUrl: options.pageUrl })
   registerCoreTools(server, context)
   for (const extension of options.extensions ?? [])

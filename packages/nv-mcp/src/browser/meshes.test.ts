@@ -51,10 +51,12 @@ function meshView(overrides: Partial<View> = {}) {
     addMesh: mock(async (mesh: MeshToLoad) => {
       meshes.push(shown(mesh))
     }),
-    removeMesh: mock((index: number) => {
+    removeMesh: mock(async (index: number) => {
+      await Promise.resolve()
       meshes.splice(index, 1)
     }),
-    removeAllMeshes: mock(() => {
+    removeAllMeshes: mock(async () => {
+      await Promise.resolve()
       meshes.splice(0)
     }),
     setMesh: mock(async (index: number, update: MeshUpdate) => {
@@ -216,24 +218,24 @@ describe('list_meshes and remove_mesh', () => {
     )
   })
 
-  it('removes one mesh by name or index, or all of them', () => {
+  it('removes one mesh by name or index, or all of them, once NiiVue has', async () => {
     const view = meshView()
     const { remove_mesh } = meshHandlers(hostOf(view))
-    expect(remove_mesh({ mesh: 'tract' })).toEqual({
+    expect(await remove_mesh({ mesh: 'tract' })).toEqual({
       removed: 'tract.trk',
       meshes: [expect.objectContaining({ name: 'lh.pial' })],
     })
-    expect(() => remove_mesh({})).toThrow(
+    await expect(remove_mesh({})).rejects.toThrow(
       'Say which mesh: an index from 0, or a name (lh.pial).',
     )
-    expect(() => remove_mesh({ mesh: 5 })).toThrow('There is no mesh 5')
-    expect(remove_mesh({ all: true })).toEqual({ meshes: [] })
+    await expect(remove_mesh({ mesh: 5 })).rejects.toThrow('There is no mesh 5')
+    expect(await remove_mesh({ all: true })).toEqual({ meshes: [] })
     expect(view.removeAllMeshes).toHaveBeenCalledTimes(1)
     const bare = meshHandlers(hostOf(baseView({ meshes: [{ name: 'a' }] })))
-    expect(() => bare.remove_mesh({ mesh: 0 })).toThrow(
+    await expect(bare.remove_mesh({ mesh: 0 })).rejects.toThrow(
       "This page's NiiVue cannot remove a mesh.",
     )
-    expect(() => bare.remove_mesh({ all: true })).toThrow(
+    await expect(bare.remove_mesh({ all: true })).rejects.toThrow(
       "This page's NiiVue cannot remove its meshes.",
     )
   })

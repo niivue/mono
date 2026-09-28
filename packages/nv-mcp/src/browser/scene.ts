@@ -523,6 +523,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         Math.max(0, number(params, 'opacity') ?? (labels ? 0.5 : 0.7)),
       )
       const colormap = text(params, 'colormap') ?? (labels ? 'gray' : 'warm')
+      // NiiVue keeps the crosshair as a fraction of the scene, and a volume
+      // with a different box changes the scene, so the same fraction would
+      // land somewhere else. It is read in millimetres first and put back.
+      const before = Array.from(view.getCrosshairPos())
       // Added over what is shown, whoever loaded it: the page's own start-up
       // volume as much as one from load_volume. A failed add leaves the
       // scene as it was.
@@ -538,6 +542,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         await view.setColormapLabel?.(index, labels)
         labelled.set(added, labels)
       }
+      view.crosshairPos = new Float32Array(
+        view.model.mm2scene([before[0], before[1], before[2]]),
+      )
       host.beforeAnswer?.()
       view.drawScene()
       return {

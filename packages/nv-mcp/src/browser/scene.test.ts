@@ -799,6 +799,27 @@ describe('add_overlay', () => {
     expect(view.drawScene).toHaveBeenCalled()
   })
 
+  it('keeps the crosshair at the same millimetres when the overlay changes the scene', async () => {
+    const view = fakeView()
+    view.crosshairPos = new Float32Array([0.5, 0.5, 0.75])
+    view.getCrosshairPos = () =>
+      view.model.scene2mm(Array.from(view.crosshairPos))
+    view.addVolume = mock(async (volume: VolumeToLoad) => {
+      ;(view.volumes as ShownVolume[]).push(shown(volume))
+      // A bigger box: the scene is 400 mm across now, so the fraction that
+      // was 50 mm up would be 100 mm up.
+      view.model = {
+        mm2scene: (mm) => mm.map((v) => v / 400 + 0.5),
+        scene2mm: (frac) => frac.map((f) => (f - 0.5) * 400),
+      }
+    })
+    const result = (await coreHandlers(host(view)).add_overlay({
+      url: 'http://h/zstat.nii.gz',
+    })) as { crosshair: { mm: number[] } }
+    expect(result.crosshair.mm).toEqual([0, 0, 50])
+    expect(Array.from(view.crosshairPos)).toEqual([0.5, 0.5, 0.625])
+  })
+
   it('uses a colormap for a non-label overlay and clamps the opacity', async () => {
     const view = fakeView()
     const handlers = coreHandlers(host(view))

@@ -7,6 +7,28 @@
  * their tests share it.
  */
 
+/**
+ * The query parameter that names the tab a page opens as: `?tab=<id>` in
+ * the page's address makes it say hello with that id, so an agent can hand
+ * out an address and then reach the tab by `tab` on every later call.
+ */
+export const TAB_PARAM = 'tab'
+
+/** The longest id a page takes from its address; longer ones are ignored. */
+export const TAB_ID_MAX = 64
+
+/** The id in a page's query string, or null when there is none it can use. */
+export function tabFromSearch(search: string): string | null {
+  let id: string | null
+  try {
+    id = new URLSearchParams(search).get(TAB_PARAM)
+  } catch {
+    return null
+  }
+  const trimmed = id?.trim() ?? ''
+  return trimmed.length > 0 && trimmed.length <= TAB_ID_MAX ? trimmed : null
+}
+
 /** The first message a page sends after connecting: who it is. */
 export interface Hello {
   hello: {

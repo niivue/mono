@@ -66,8 +66,12 @@ function echoTab(
   return socket
 }
 
-async function connect(bridge: Bridge, extensions: Extension[] = []) {
-  const server = buildServer({ bridge, extensions })
+async function connect(
+  bridge: Bridge,
+  extensions: Extension[] = [],
+  pageUrl?: string,
+) {
+  const server = buildServer({ bridge, extensions, pageUrl })
   const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
   await server.connect(serverEnd)
   const client = new Client({ name: 'test', version: '0' })
@@ -89,7 +93,7 @@ const json = (reply: Awaited<ReturnType<Client['callTool']>>): unknown => {
 }
 
 describe('core tool schemas', () => {
-  it('lists the nine core tools with the arguments each one takes', async () => {
+  it('lists the ten core tools with the arguments each one takes', async () => {
     const client = await connect(new Bridge())
     const { tools } = await client.listTools()
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
@@ -106,8 +110,19 @@ describe('core tool schemas', () => {
       'colormap',
       'mni',
       'name',
+      'tab',
       'url',
     ])
+    // Every tool a page answers takes the tab to ask; the others do not.
+    for (const name of Object.keys(CORE_SCHEMAS)) {
+      const asksAPage = !['list_tabs', 'use_tab', 'new_tab'].includes(name)
+      expect([name, properties(name).includes('tab')]).toEqual([
+        name,
+        asksAPage,
+      ])
+    }
+    expect(required('new_tab')).toEqual([])
+    expect(byName.new_tab.annotations?.readOnlyHint).toBe(true)
     expect(required('go_to_region')).toEqual(['region'])
     expect(required('set_clip_plane')).toEqual(['plane'])
     expect(required('set_camera').sort()).toEqual(['azimuth', 'elevation'])
@@ -275,6 +290,97 @@ describe('core tools over the bridge', () => {
     })
     expect(missing.isError).toBe(true)
     expect(text(missing)).toMatch(/No connected tab has the id "t9"/)
+  })
+
+  it('sends a call with `tab` to that tab, without forwarding the argument, and leaves the choice alone', async () => {
+    const bridge = new Bridge()
+    echoTab(bridge, 't1', 'one')
+    echoTab(bridge, 't2', 'two')
+    const client = await connect(bridge)
+    await client.callTool({ name: 'use_tab', arguments: { id: 't1' } })
+    const named = await client.callTool({
+      name: 'go_to_region',
+      arguments: { tab: 't2', region: 'Insula_L' },
+    })
+    expect(named.isError).toBeUndefined()
+    expect(json(named)).toEqual({
+      method: 'go_to_region',
+      params: { region: 'Insula_L' },
+      description: 'somewhere',
+    })
+    const where = await client.callTool({
+      name: 'where_am_i',
+      arguments: { tab: 't2' },
+    })
+    expect(json(where)).toMatchObject({ tab: { id: 't2', title: 'two' } })
+    expect(json(where)).not.toHaveProperty('params.tab')
+    const shot = await client.callTool({
+      name: 'screenshot',
+      arguments: { tab: 't2' },
+    })
+    expect(
+      (shot.content as Array<{ type: string }>).map((c) => c.type),
+    ).toEqual(['text', 'image'])
+    // The choice stands: a call without `tab` still goes to t1.
+    expect(
+      json(await client.callTool({ name: 'where_am_i', arguments: {} })),
+    ).toMatchObject({ tab: { id: 't1' } })
+    const listed = json(
+      await client.callTool({ name: 'list_tabs', arguments: {} }),
+    ) as { tabs: Array<{ id: string; bound: boolean }> }
+    expect(listed.tabs.find((t) => t.bound)?.id).toBe('t1')
+    const missing = await client.callTool({
+      name: 'set_camera',
+      arguments: { tab: 't9', azimuth: 0, elevation: 0 },
+    })
+    expect(missing.isError).toBe(true)
+    expect(text(missing)).toMatch(
+      /^No connected tab has the id "t9"\. Connected: /,
+    )
+    const blank = await client.callTool({
+      name: 'set_camera',
+      arguments: { tab: '', azimuth: 0, elevation: 0 },
+    })
+    expect(blank.isError).toBe(true)
+    expect(text(blank)).toMatch(/tab/)
+  })
+
+  it('makes up a tab id and the address that opens the page as that tab', async () => {
+    const bridge = new Bridge()
+    const client = await connect(bridge, [], 'http://localhost:8091/?agent')
+    const made = await client.callTool({ name: 'new_tab', arguments: {} })
+    const { id, url } = json(made) as { id: string; url: string }
+    expect(id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
+    expect(url).toBe(`http://localhost:8091/?agent=&tab=${id}`)
+    expect(text(made)).toMatch(
+      new RegExp(
+        `^Open ${url.replace(/[?]/g, '\\?')} to connect a tab with the id ${id}\\.\n`,
+      ),
+    )
+    const again = json(
+      await client.callTool({ name: 'new_tab', arguments: {} }),
+    ) as { id: string }
+    expect(again.id).not.toBe(id)
+    // A page opened at that address says hello with the id, and is then reachable by it.
+    echoTab(bridge, 'other', 'other')
+    echoTab(bridge, id, 'named')
+    const reached = await client.callTool({
+      name: 'where_am_i',
+      arguments: { tab: id },
+    })
+    expect(json(reached)).toMatchObject({ tab: { id, title: 'named' } })
+  })
+
+  it('gives the id alone, and says where to put it, when the page address is not known', async () => {
+    const client = await connect(new Bridge())
+    const made = await client.callTool({ name: 'new_tab', arguments: {} })
+    const body = json(made) as { id: string; url?: string }
+    expect(body.url).toBeUndefined()
+    expect(text(made)).toMatch(
+      new RegExp(`^Open the page with \\?tab=${body.id} in its address`),
+    )
   })
 
   it('leads the first reply after a reload with what the scene was showing', async () => {

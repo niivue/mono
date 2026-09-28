@@ -261,6 +261,22 @@ describe('AgentClient', () => {
     c.detach()
   })
 
+  it('says hello with the id its address names', () => {
+    const store = new Map<string, string>()
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    }
+    const c = client({}, { id: undefined, storage, search: '?tab=from-url' })
+    expect(c.id).toBe('from-url')
+    c.attach()
+    const socket = FakeSocket.opened[0]
+    socket.accept()
+    expect(JSON.parse(socket.sent[0]).hello.id).toBe('from-url')
+    expect(store.get(TAB_ID_KEY)).toBe('from-url')
+    c.detach()
+  })
+
   it('takes a welcomed id without touching storage when the id was given', () => {
     const store = new Map<string, string>([[TAB_ID_KEY, 'kept']])
     const storage = {
@@ -292,6 +308,31 @@ describe('AgentClient', () => {
 })
 
 describe('tabId', () => {
+  it('takes the id from ?tab= in the address over the stored one, and keeps it', () => {
+    const store = new Map<string, string>([[TAB_ID_KEY, 'kept']])
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    }
+    const named = '3f1c2e4a-0b7d-4c1e-9a2b-5d6e7f8a9b0c'
+    expect(tabId(storage, `?x=1&tab=${named}`)).toBe(named)
+    expect(store.get(TAB_ID_KEY)).toBe(named)
+    // Back on an address without it, the stored one holds.
+    expect(tabId(storage, '')).toBe(named)
+    expect(tabId(storage, '?tab=')).toBe(named)
+    expect(tabId(storage, '?tab=%20')).toBe(named)
+    expect(tabId(storage, `?tab=${'a'.repeat(65)}`)).toBe(named)
+    expect(tabId(storage, '?tab=%20short%20')).toBe('short')
+    expect(tabId(null, '?tab=alone')).toBe('alone')
+    const broken = {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+      setItem: () => {},
+    }
+    expect(tabId(broken, '?tab=named')).toBe('named')
+  })
+
   it('keeps one id per storage and makes one up without storage', () => {
     const store = new Map<string, string>()
     const storage = {

@@ -6,14 +6,18 @@
  * to say and then the details as JSON, and when the answering tab has
  * reloaded since the last call the line says so first, with what the scene
  * was showing before, so an agent does not read a fresh scene as the one
- * it left.
+ * it left. Each tool that asks a page takes an optional `tab`, the id of
+ * the tab to ask; without it the bridge's answering tab is asked. The ids
+ * come from `list_tabs`, or from `new_tab`, which makes one up and gives
+ * the address that opens the page as that tab, so an agent can name the
+ * tab it means across a whole conversation.
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
 import { PLANE_ALIASES, PLANE_ANGLES } from '../planes'
-import type { TabState } from '../protocol'
+import { TAB_PARAM, type TabState } from '../protocol'
 import type { Bridge, ResetReport, TabInfo } from './bridge'
 
 type Content =
@@ -39,6 +43,22 @@ export const CUT_NAMES = [
   ...PLANE_NAMES.filter((name) => name !== 'current'),
 ] as [string, ...string[]]
 
+/**
+ * The argument that names the tab a call goes to, for every tool a page
+ * answers. An extension spreads it into its own schemas and passes the
+ * value as `tab` to `context.answer`.
+ */
+export const TAB_ARG = {
+  tab: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'The id of the tab to ask, from list_tabs or new_tab. Without it, the tab chosen with ' +
+        'use_tab answers, or the only one, or the one that answered last.',
+    ),
+}
+
 /** The input schema of each core tool, by name, so a test can read them. */
 export const CORE_SCHEMAS = {
   list_tabs: {},
@@ -48,7 +68,9 @@ export const CORE_SCHEMAS = {
       .min(1)
       .describe('The id of a connected tab, from list_tabs.'),
   },
+  new_tab: {},
   load_volume: {
+    ...TAB_ARG,
     url: z
       .string()
       .min(1)
@@ -69,6 +91,7 @@ export const CORE_SCHEMAS = {
       ),
   },
   add_overlay: {
+    ...TAB_ARG,
     url: z
       .string()
       .min(1)
@@ -96,14 +119,16 @@ export const CORE_SCHEMAS = {
       .optional()
       .describe('0 to 1; 0.5 for labels and 0.7 otherwise.'),
   },
-  where_am_i: {},
+  where_am_i: { ...TAB_ARG },
   list_regions: {
+    ...TAB_ARG,
     query: z
       .string()
       .optional()
       .describe('Text the label or name must contain.'),
   },
   go_to_region: {
+    ...TAB_ARG,
     region: z.string().min(1).describe('An atlas label or spoken region name.'),
     plane: z
       .enum(PLANE_NAMES)
@@ -111,6 +136,7 @@ export const CORE_SCHEMAS = {
       .describe('The cut to make through the centroid.'),
   },
   go_to_point: {
+    ...TAB_ARG,
     mm: z
       .array(z.number())
       .length(3)
@@ -129,6 +155,7 @@ export const CORE_SCHEMAS = {
       ),
   },
   set_clip_plane: {
+    ...TAB_ARG,
     plane: z
       .enum(CUT_NAMES)
       .describe('The side to take off, a slice name, or off.'),
@@ -146,6 +173,7 @@ export const CORE_SCHEMAS = {
       .describe('Turn the render camera to face the cut. On otherwise.'),
   },
   set_camera: {
+    ...TAB_ARG,
     azimuth: z
       .number()
       .describe(
@@ -160,6 +188,7 @@ export const CORE_SCHEMAS = {
       ),
   },
   screenshot: {
+    ...TAB_ARG,
     max_width: z
       .number()
       .int()
@@ -175,15 +204,18 @@ export const CORE_SCHEMAS = {
 /** What a tool handler has to work with. */
 export interface ToolContext {
   bridge: Bridge
+  /** Where the page is, for `new_tab` to give an address that opens one; unset when not known. */
+  pageUrl?: string
   /**
-   * Puts `method` to the answering tab and shapes the reply: `lead` gives a
-   * line to say above the JSON, `image` picks a picture out of the result.
-   * A thrown error, from the page or the bridge, becomes an error reply.
+   * Puts `method` to the answering tab, or to the tab `options.tab` names,
+   * and shapes the reply: `lead` gives a line to say above the JSON,
+   * `image` picks a picture out of the result. A thrown error, from the
+   * page or the bridge, becomes an error reply.
    */
   answer(
     method: string,
     params?: Record<string, unknown>,
-    shape?: ReplyShape,
+    options?: AnswerOptions,
   ): Promise<ToolReply>
   reply(result: unknown, lead?: string): ToolReply
   failure(error: unknown): ToolReply
@@ -194,6 +226,11 @@ export interface ReplyShape {
   image?: (result: unknown) => { data: string; mimeType: string } | undefined
   /** Put the answering tab into the JSON. */
   withTab?: boolean
+}
+
+export interface AnswerOptions extends ReplyShape {
+  /** The id of the tab to ask, as `TAB_ARG` takes it; the answering tab otherwise. */
+  tab?: string
 }
 
 /** Something that adds tools to the server: the app's own, over the core's. */
@@ -213,28 +250,38 @@ export function failure(error: unknown): ToolReply {
 }
 
 /** A context over this bridge. */
-export function toolContext(bridge: Bridge): ToolContext {
+export function toolContext(
+  bridge: Bridge,
+  options: { pageUrl?: string } = {},
+): ToolContext {
   return {
     bridge,
+    ...(options.pageUrl === undefined ? {} : { pageUrl: options.pageUrl }),
     reply,
     failure,
-    async answer(method, params = {}, shape = {}) {
+    async answer(method, params = {}, options = {}) {
       try {
-        const { result, tab, reloaded } = await bridge.call(method, params)
+        const { result, tab, reloaded } = await bridge.call(
+          method,
+          params,
+          options.tab,
+        )
         const lines: string[] = []
         if (reloaded) lines.push(reloadNotice(tab, reloaded))
-        const lead = shape.lead?.(result, tab)
+        const lead = options.lead?.(result, tab)
         if (lead) lines.push(lead)
         let payload = result
-        if (isRecord(result) && (shape.withTab || reloaded)) {
+        if (isRecord(result) && (options.withTab || reloaded)) {
           payload = {
-            ...(shape.withTab ? { tab: { id: tab.id, title: tab.title } } : {}),
+            ...(options.withTab
+              ? { tab: { id: tab.id, title: tab.title } }
+              : {}),
             ...result,
             ...(reloaded ? { reloaded } : {}),
           }
         }
         const out = reply(payload, lines.length ? lines.join('\n') : undefined)
-        const image = shape.image?.(result)
+        const image = options.image?.(result)
         if (image)
           out.content.push({
             type: 'image',
@@ -290,6 +337,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** The address that opens the page as the tab `id`, or null without a page address. */
+export function tabAddress(
+  pageUrl: string | undefined,
+  id: string,
+): string | null {
+  if (!pageUrl) return null
+  try {
+    const url = new URL(pageUrl)
+    url.searchParams.set(TAB_PARAM, id)
+    return url.href
+  } catch {
+    return null
+  }
+}
+
 /** Registers the core tools: tabs, the volume, the crosshair and the atlas, the cut and the camera, a picture. */
 export function registerCoreTools(
   server: McpServer,
@@ -304,7 +366,7 @@ export function registerCoreTools(
       description:
         "Lists the NiiVue tabs connected to this server: each one's id, title, address, when it " +
         'connected, where its scene stands, and which one answers calls now. With one tab it answers; ' +
-        'with several, use_tab chooses.',
+        'with several, use_tab chooses, or each call names its tab with `tab`.',
       inputSchema: CORE_SCHEMAS.list_tabs,
       annotations: { readOnlyHint: true },
     },
@@ -321,7 +383,8 @@ export function registerCoreTools(
       title: 'Choose the tab to drive',
       description:
         'Makes one connected tab the one that answers every later call, until it is closed for good ' +
-        'or another is chosen. A reload of the same tab keeps the choice.',
+        'or another is chosen. A reload of the same tab keeps the choice. A call that names a `tab` ' +
+        'goes there instead, without changing the choice.',
       inputSchema: CORE_SCHEMAS.use_tab,
     },
     async ({ id }) => {
@@ -335,6 +398,31 @@ export function registerCoreTools(
   )
 
   server.registerTool(
+    'new_tab',
+    {
+      title: 'Name a tab before it opens',
+      description:
+        'Makes up an id for a tab that is not open yet and gives the address that opens the page ' +
+        'as that tab. Give the address to the person to open, then pass the id as `tab` on later ' +
+        'calls to reach that tab whatever else is connected; the page keeps the id across reloads. ' +
+        'Any id works the same way when put in the address as `?tab=<id>`, so an agent may make ' +
+        'its own; this tool only spares it the guessing and the address.',
+      inputSchema: CORE_SCHEMAS.new_tab,
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const id = crypto.randomUUID()
+      const url = tabAddress(context.pageUrl, id)
+      return reply(
+        { id, ...(url ? { url } : {}) },
+        url
+          ? `Open ${url} to connect a tab with the id ${id}.`
+          : `Open the page with ?${TAB_PARAM}=${id} in its address to connect a tab with that id.`,
+      )
+    },
+  )
+
+  server.registerTool(
     'load_volume',
     {
       title: 'Load a volume',
@@ -344,8 +432,9 @@ export function registerCoreTools(
         'volume is in MNI space; pass `mni` to say so, or leave it to be guessed from the name.',
       inputSchema: CORE_SCHEMAS.load_volume,
     },
-    async (params) =>
+    async ({ tab, ...params }) =>
       context.answer('load_volume', params, {
+        tab,
         lead: (r) =>
           `Loaded ${(r as { name?: string })?.name ?? 'the volume'}.`,
       }),
@@ -363,8 +452,9 @@ export function registerCoreTools(
         'base clears the overlays.',
       inputSchema: CORE_SCHEMAS.add_overlay,
     },
-    async (params) =>
+    async ({ tab, ...params }) =>
       context.answer('add_overlay', params, {
+        tab,
         lead: (r) => {
           const volumes = (r as { volumes?: Array<{ name?: string }> })?.volumes
           return volumes?.length
@@ -385,7 +475,7 @@ export function registerCoreTools(
       inputSchema: CORE_SCHEMAS.where_am_i,
       annotations: { readOnlyHint: true },
     },
-    async () => context.answer('where_am_i', {}, { withTab: true }),
+    async ({ tab }) => context.answer('where_am_i', {}, { tab, withTab: true }),
   )
 
   server.registerTool(
@@ -399,7 +489,8 @@ export function registerCoreTools(
       inputSchema: CORE_SCHEMAS.list_regions,
       annotations: { readOnlyHint: true },
     },
-    async ({ query }) => context.answer('list_regions', { query }),
+    async ({ tab, query }) =>
+      context.answer('list_regions', { query }, { tab }),
   )
 
   server.registerTool(
@@ -417,11 +508,12 @@ export function registerCoreTools(
         'Only works when the loaded volume is in MNI space.',
       inputSchema: CORE_SCHEMAS.go_to_region,
     },
-    async ({ region, plane }) =>
+    async ({ tab, region, plane }) =>
       context.answer(
         'go_to_region',
         { region, plane },
         {
+          tab,
           lead: (r) => {
             const said = (r as { description?: string })?.description
             return said ? `Moved to ${said}` : undefined
@@ -442,11 +534,12 @@ export function registerCoreTools(
         '`plane` names the side the cut takes off, or a slice orientation; `current` keeps the cut.',
       inputSchema: CORE_SCHEMAS.go_to_point,
     },
-    async ({ mm, plane, label }) =>
+    async ({ tab, mm, plane, label }) =>
       context.answer(
         'go_to_point',
         { mm, plane, label },
         {
+          tab,
           lead: (r) => {
             const said = (r as { description?: string })?.description
             return said ? `Moved to ${said}` : undefined
@@ -466,8 +559,9 @@ export function registerCoreTools(
         'removes the cut and leaves the camera where it is.',
       inputSchema: CORE_SCHEMAS.set_clip_plane,
     },
-    async (params) =>
+    async ({ tab, ...params }) =>
       context.answer('set_clip_plane', params, {
+        tab,
         lead: (r) =>
           `Cut plane: ${(r as { plane?: { name?: string } })?.plane?.name ?? 'set'}.`,
       }),
@@ -482,7 +576,7 @@ export function registerCoreTools(
         "ties its clip plane to the camera, the turn re-cuts the plane the page's way.",
       inputSchema: CORE_SCHEMAS.set_camera,
     },
-    async (params) => context.answer('set_camera', params),
+    async ({ tab, ...params }) => context.answer('set_camera', params, { tab }),
   )
 
   server.registerTool(
@@ -496,11 +590,12 @@ export function registerCoreTools(
       inputSchema: CORE_SCHEMAS.screenshot,
       annotations: { readOnlyHint: true },
     },
-    async ({ max_width }) =>
+    async ({ tab, max_width }) =>
       context.answer(
         'screenshot',
         { max_width },
         {
+          tab,
           image: (r) => {
             const shot = r as { data?: string; mimeType?: string }
             return shot?.data && shot.mimeType
@@ -524,12 +619,14 @@ export function buildServer(options: {
   extensions?: readonly Extension[]
   name?: string
   version?: string
+  /** Where the page is, for `new_tab`. */
+  pageUrl?: string
 }): McpServer {
   const server = new McpServer({
     name: options.name ?? 'niivue',
     version: options.version ?? '0.1.0',
   })
-  const context = toolContext(options.bridge)
+  const context = toolContext(options.bridge, { pageUrl: options.pageUrl })
   registerCoreTools(server, context)
   for (const extension of options.extensions ?? [])
     extension.register(server, context)

@@ -17,7 +17,13 @@ export type {
 export { Bridge, CALL_TIMEOUT_MS, NO_APP, RETURN_GRACE_MS } from './bridge'
 export type { RunningServer, ServerOptions } from './http'
 export { DEFAULT_HOST, DEFAULT_PORT, startServer } from './http'
-export type { Extension, ReplyShape, ToolContext, ToolReply } from './tools'
+export type {
+  AnswerOptions,
+  Extension,
+  ReplyShape,
+  ToolContext,
+  ToolReply,
+} from './tools'
 export {
   buildServer,
   CORE_SCHEMAS,
@@ -27,5 +33,7 @@ export {
   registerCoreTools,
   reloadNotice,
   reply,
+  TAB_ARG,
+  tabAddress,
   toolContext,
 } from './tools'

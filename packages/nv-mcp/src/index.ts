@@ -30,8 +30,15 @@ export type {
   PlaneState,
   RegionSummary,
   TabState,
+  Welcome,
 } from './protocol'
-export { isHello } from './protocol'
+export {
+  isHello,
+  isWelcome,
+  TAB_ID_MAX,
+  TAB_PARAM,
+  tabFromSearch,
+} from './protocol'
 export type { Nameable, RegionMatch } from './regions'
 export {
   ambiguityMessage,

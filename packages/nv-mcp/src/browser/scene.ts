@@ -838,7 +838,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (affine !== undefined && affine !== null) {
         if (!view.setVolumeAffine)
           throw new Error("This page's NiiVue cannot move a volume.")
-        view.setVolumeAffine(index, matrix4(affine, 'affine'))
+        await view.setVolumeAffine(index, matrix4(affine, 'affine'))
       }
       if (transform) {
         if (!view.applyVolumeTransform)
@@ -873,7 +873,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (flag(params, 'replace')) {
         if (!view.removeVolume)
           throw new Error("This page's NiiVue cannot remove a volume.")
-        view.removeVolume(index)
+        await view.removeVolume(index)
       }
       await view.addVolume(made)
       view.drawScene()
@@ -886,13 +886,13 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
     },
 
-    remove_volume(params) {
+    async remove_volume(params) {
       requireVolume()
       host.beforeAnswer?.()
       if (flag(params, 'all')) {
         if (!view.removeAllVolumes)
           throw new Error("This page's NiiVue cannot remove its volumes.")
-        view.removeAllVolumes()
+        await view.removeAllVolumes()
         view.drawScene()
         return { volumes: [] }
       }
@@ -900,29 +900,31 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         throw new Error("This page's NiiVue cannot remove a volume.")
       const index = pickIndex(view.volumes, params?.volume, 'volume')
       const removed = view.volumes[index].name
-      view.removeVolume(index)
+      await view.removeVolume(index)
       view.drawScene()
       return { removed, volumes: volumesShown() }
     },
 
-    reorder_volume(params) {
+    async reorder_volume(params) {
       requireVolume()
       host.beforeAnswer?.()
       const index = pickIndex(view.volumes, params?.volume, 'volume')
       const move = text(params, 'move')?.toLowerCase()
-      const moves: Record<string, (() => unknown) | undefined> = {
-        up: view.moveVolumeUp && (() => view.moveVolumeUp?.(index)),
-        down: view.moveVolumeDown && (() => view.moveVolumeDown?.(index)),
-        top: view.moveVolumeToTop && (() => view.moveVolumeToTop?.(index)),
-        bottom:
-          view.moveVolumeToBottom && (() => view.moveVolumeToBottom?.(index)),
+      const moves: Record<
+        string,
+        ((index: number) => Promise<unknown>) | undefined
+      > = {
+        up: view.moveVolumeUp?.bind(view),
+        down: view.moveVolumeDown?.bind(view),
+        top: view.moveVolumeToTop?.bind(view),
+        bottom: view.moveVolumeToBottom?.bind(view),
       }
       if (!move || !Object.hasOwn(moves, move))
         throw new Error('reorder_volume needs move: up, down, top or bottom.')
       const go = moves[move]
       if (!go) throw new Error("This page's NiiVue cannot reorder its volumes.")
       const name = view.volumes[index].name
-      go()
+      await go(index)
       view.drawScene()
       return {
         moved: name,

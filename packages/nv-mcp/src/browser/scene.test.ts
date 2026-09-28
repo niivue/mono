@@ -708,6 +708,175 @@ describe('screenshot', () => {
   })
 })
 
+/**
+ * Three volumes whose remove, move and affine members finish on a later
+ * microtask, as NiiVue's GPU update does: an answer given too soon would
+ * describe the stack before the change.
+ */
+function stackView(): View {
+  const view = fakeView({
+    volumes: [
+      { name: 'mni152.nii.gz' },
+      { name: 'bold.nii.gz' },
+      { name: 'bold_mask.nii.gz' },
+    ],
+  })
+  const volumes = () => view.volumes as ShownVolume[]
+  const later = async (change: () => void) => {
+    await Promise.resolve()
+    change()
+  }
+  const moveTo = (index: number, to: number) => {
+    const [moved] = volumes().splice(index, 1)
+    volumes().splice(to, 0, moved)
+  }
+  return Object.assign(view, {
+    removeVolume: mock((index: number) =>
+      later(() => volumes().splice(index, 1)),
+    ),
+    removeAllVolumes: mock(() => later(() => volumes().splice(0))),
+    moveVolumeUp: mock((index: number) =>
+      later(() => moveTo(index, index + 1)),
+    ),
+    moveVolumeDown: mock((index: number) =>
+      later(() => moveTo(index, index - 1)),
+    ),
+    moveVolumeToTop: mock((index: number) => later(() => moveTo(index, 2))),
+    moveVolumeToBottom: mock((index: number) => later(() => moveTo(index, 0))),
+    setVolume: mock(async () => {}),
+    volumeTransforms: ['smooth'],
+    volumeTransform: {
+      smooth: async (volume: ShownVolume) => ({
+        name: `${volume.name}+smooth`,
+      }),
+    },
+  })
+}
+
+describe('remove_volume', () => {
+  it('removes one volume by name or index, or all of them, answering once NiiVue has', async () => {
+    const view = stackView()
+    const { remove_volume } = coreHandlers(host(view))
+    expect(await remove_volume({ volume: 'mask' })).toEqual({
+      removed: 'bold_mask.nii.gz',
+      volumes: [
+        expect.objectContaining({ index: 0, name: 'mni152.nii.gz' }),
+        expect.objectContaining({ index: 1, name: 'bold.nii.gz' }),
+      ],
+    })
+    expect(view.drawScene).toHaveBeenCalled()
+    await expect(remove_volume({})).rejects.toThrow('Say which volume')
+    expect(await remove_volume({ all: true })).toEqual({ volumes: [] })
+    expect(view.volumes).toHaveLength(0)
+    const bare = coreHandlers(host(fakeView()))
+    await expect(bare.remove_volume({ volume: 0 })).rejects.toThrow(
+      "This page's NiiVue cannot remove a volume.",
+    )
+    await expect(bare.remove_volume({ all: true })).rejects.toThrow(
+      "This page's NiiVue cannot remove its volumes.",
+    )
+  })
+})
+
+describe('reorder_volume', () => {
+  it('moves a volume each way and reports where it landed, once NiiVue has moved it', async () => {
+    const view = stackView()
+    const { reorder_volume } = coreHandlers(host(view))
+    expect(await reorder_volume({ volume: 0, move: 'up' })).toMatchObject({
+      moved: 'mni152.nii.gz',
+      index: 1,
+    })
+    expect(await reorder_volume({ volume: 1, move: 'Down' })).toMatchObject({
+      moved: 'mni152.nii.gz',
+      index: 0,
+    })
+    expect(await reorder_volume({ volume: 0, move: 'top' })).toMatchObject({
+      moved: 'mni152.nii.gz',
+      index: 2,
+    })
+    expect(await reorder_volume({ volume: 2, move: 'bottom' })).toMatchObject({
+      moved: 'mni152.nii.gz',
+      index: 0,
+      volumes: [
+        expect.objectContaining({ index: 0, name: 'mni152.nii.gz' }),
+        expect.objectContaining({ index: 1, name: 'bold.nii.gz' }),
+        expect.objectContaining({ index: 2, name: 'bold_mask.nii.gz' }),
+      ],
+    })
+    await expect(reorder_volume({ volume: 0 })).rejects.toThrow(
+      'reorder_volume needs move: up, down, top or bottom.',
+    )
+    await expect(
+      coreHandlers(host(fakeView())).reorder_volume({ volume: 0, move: 'up' }),
+    ).rejects.toThrow("This page's NiiVue cannot reorder its volumes.")
+  })
+})
+
+describe('transform_volume', () => {
+  it('runs a page transform, adds the result, and drops the source only once it is gone', async () => {
+    const view = stackView()
+    const { transform_volume } = coreHandlers(host(view))
+    expect(
+      await transform_volume({
+        volume: 1,
+        name: 'smooth',
+        options: { fwhm: 2 },
+      }),
+    ).toMatchObject({
+      transform: 'smooth',
+      options: { fwhm: 2 },
+      volume: { index: 3, name: 'bold.nii.gz+smooth' },
+    })
+    expect(
+      await transform_volume({ volume: 'mask', name: 'smooth', replace: true }),
+    ).toMatchObject({
+      volume: { index: 3, name: 'bold_mask.nii.gz+smooth' },
+      volumes: [
+        expect.objectContaining({ name: 'mni152.nii.gz' }),
+        expect.objectContaining({ name: 'bold.nii.gz' }),
+        expect.objectContaining({ name: 'bold.nii.gz+smooth' }),
+        expect.objectContaining({ name: 'bold_mask.nii.gz+smooth' }),
+      ],
+    })
+    expect(view.removeVolume).toHaveBeenCalledWith(2)
+    await expect(transform_volume({ name: 'sharpen' })).rejects.toThrow(
+      'Unknown transform "sharpen". One of: smooth.',
+    )
+    await expect(transform_volume({})).rejects.toThrow(
+      'transform_volume needs a name. One of: smooth.',
+    )
+    await expect(
+      coreHandlers(host(fakeView())).transform_volume({ name: 'smooth' }),
+    ).rejects.toThrow("This page's NiiVue has no volume transforms.")
+  })
+})
+
+describe('set_volume affine', () => {
+  it('waits for NiiVue to place the volume before drawing and answering', async () => {
+    const view = stackView()
+    let drawn = 0
+    let drawnWhenPlaced = -1
+    view.drawScene = () => {
+      drawn += 1
+    }
+    view.setVolumeAffine = mock(async () => {
+      await Promise.resolve()
+      drawnWhenPlaced = drawn
+    })
+    const affine = [
+      [1, 0, 0, 5],
+      [0, 1, 0, 0],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1],
+    ]
+    const got = await coreHandlers(host(view)).set_volume({ volume: 1, affine })
+    expect(view.setVolumeAffine).toHaveBeenCalledWith(1, affine)
+    expect(drawnWhenPlaced).toBe(0)
+    expect(drawn).toBe(1)
+    expect(got).toMatchObject({ volume: { index: 1, name: 'bold.nii.gz' } })
+  })
+})
+
 describe('load_volume', () => {
   it('loads by url with a name and colormap, guesses MNI from the name, and reports the extent', async () => {
     const view = fakeView()

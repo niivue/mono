@@ -125,6 +125,8 @@ export function signalHandlers(host: NiiVueHost): Handlers {
       const replace = flag(params, 'replace') ?? false
       if ((replace ? !view.loadSignals : !view.addSignal) || !view.signals)
         throw new Error("This page's NiiVue cannot load a signal.")
+      if (replace && !view.removeAllSignals)
+        throw new Error("This page's NiiVue cannot replace its signals.")
       const signal: SignalToLoad = {
         url,
         name: text(params, 'name') ?? nameFromUrl(url),
@@ -134,6 +136,9 @@ export function signalHandlers(host: NiiVueHost): Handlers {
       if (display) signal.display = displayFields(display)
       put(signal, 'attachToId', attachTo(params))
       put(signal, 'annotations', annotationList(params))
+      // NiiVue's loadSignals appends, so a replacement clears first; it
+      // then goes through loadSignals for the graph window reset.
+      if (replace) view.removeAllSignals?.()
       try {
         if (replace) await view.loadSignals?.([signal])
         else await view.addSignal?.(signal)

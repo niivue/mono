@@ -420,12 +420,12 @@ export interface View {
   }
 
   // Volumes beyond the first tools.
-  removeVolume?(index: number): unknown
-  removeAllVolumes?(): unknown
-  moveVolumeUp?(index: number): unknown
-  moveVolumeDown?(index: number): unknown
-  moveVolumeToTop?(index: number): unknown
-  moveVolumeToBottom?(index: number): unknown
+  removeVolume?(index: number): Promise<unknown>
+  removeAllVolumes?(): Promise<unknown>
+  moveVolumeUp?(index: number): Promise<unknown>
+  moveVolumeDown?(index: number): Promise<unknown>
+  moveVolumeToTop?(index: number): Promise<unknown>
+  moveVolumeToBottom?(index: number): Promise<unknown>
   getDescriptives?(options: {
     volumeIndex?: number
     masks?: number[]
@@ -463,8 +463,8 @@ export interface View {
   meshShaders?: readonly string[]
   loadMeshes?(meshes: MeshToLoad[]): Promise<unknown>
   addMesh?(mesh: MeshToLoad): Promise<unknown>
-  removeMesh?(index: number): unknown
-  removeAllMeshes?(): unknown
+  removeMesh?(index: number): Promise<unknown>
+  removeAllMeshes?(): Promise<unknown>
   setMesh?(index: number, update: MeshUpdate): Promise<unknown>
   addMeshLayer?(index: number, layer: MeshLayerToLoad): Promise<unknown>
   removeMeshLayer?(index: number, layer: number): Promise<unknown>

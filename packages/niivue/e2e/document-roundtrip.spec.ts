@@ -105,6 +105,67 @@ test('sparse settings: fill policy — default resets omitted, current keeps, sp
   expect(r.overriddenCrosshair).toEqual([0.1, 0.2, 0.3]) // specified -> wins under fill:current
 })
 
+test('optional containers: a document may omit scene, layout, clipPlanes, volumes and meshes', async ({
+  page,
+}) => {
+  test.setTimeout(90_000) // fetches one volume for the URL-only document
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const mkCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = 64
+      c.height = 64
+      c.style.cssText = 'position:fixed;left:-9999px'
+      document.body.appendChild(c)
+      return c
+    }
+    const asFile = (doc: unknown, name: string) =>
+      new File([JSON.stringify(doc)], name, { type: 'application/json' })
+
+    // (a) The minimal document: version only. Under the default fill policy
+    // every omitted setting resets; azimuth started non-default to prove it.
+    const tReset = new NiiVue({ azimuth: 200 })
+    tReset.setClipPlane([0.25, 30, 15])
+    const clipBefore = [...tReset.model.clipPlanes]
+    await tReset.loadDocument(asFile({ version: 9 }, 'minimal.json'))
+
+    // (b) Same document, fill 'current': every omitted setting is kept.
+    const tKeep = new NiiVue({ azimuth: 200 })
+    await tKeep.loadDocument(asFile({ version: 9 }, 'minimal.json'), {
+      fill: 'current',
+    })
+
+    // (c) volumes without any other container still loads the volume.
+    const tVol = new NiiVue({ backend: 'webgl2' })
+    await tVol.attachToCanvas(mkCanvas())
+    await tVol.loadDocument(
+      asFile(
+        { version: 9, volumes: [{ url: '/volumes/mni152.nii.gz' }] },
+        'volume-only.json',
+      ),
+    )
+
+    return {
+      resetAzimuth: tReset.azimuth,
+      clipUnchanged:
+        JSON.stringify([...tReset.model.clipPlanes]) ===
+        JSON.stringify(clipBefore),
+      resetVolumes: tReset.volumes.length,
+      resetMeshes: tReset.meshes.length,
+      keptAzimuth: tKeep.azimuth,
+      volVoxels: tVol.volumes[0]?.img?.length ?? 0,
+    }
+  })
+
+  expect(r.resetAzimuth).toBe(110) // SCENE_DEFAULTS.azimuth: omitted scene -> reset
+  expect(r.clipUnchanged).toBe(true) // omitted clipPlanes -> untouched
+  expect(r.resetVolumes).toBe(0)
+  expect(r.resetMeshes).toBe(0)
+  expect(r.keptAzimuth).toBe(200) // omitted scene + fill:current -> kept
+  expect(r.volVoxels).toBeGreaterThan(1_000_000) // volumes-only document loads
+})
+
 test('json format: saves portable JSON that loadDocument reads back (linked + embedded)', async ({
   page,
 }) => {

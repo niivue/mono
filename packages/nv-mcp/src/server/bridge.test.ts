@@ -2,11 +2,27 @@ import { describe, expect, it } from 'bun:test'
 import type { TabState } from '../protocol'
 import { type AppSocket, Bridge, NO_APP } from './bridge'
 
-type Fake = AppSocket & { sent: string[] }
+/** Requests written to the socket go to `sent`; the welcome, to `welcomes`. */
+type Fake = AppSocket & { sent: string[]; welcomes: string[] }
 
 const socket = (): Fake => {
-  const sent: string[] = []
-  return { sent, send: (text: string) => sent.push(text) }
+  const s: Fake = {
+    sent: [],
+    welcomes: [],
+    send: (text: string) => sort(s, text),
+  }
+  return s
+}
+
+/** Files the text where it belongs, and says whether it is a request to answer. */
+function sort(s: Fake, text: string): boolean {
+  const message = JSON.parse(text) as { welcome?: { id: string } }
+  if (message.welcome) {
+    s.welcomes.push(message.welcome.id)
+    return false
+  }
+  s.sent.push(text)
+  return true
 }
 
 /** Lets the bridge's own awaits run, so a call has been written before the test answers it. */
@@ -29,11 +45,13 @@ function tab(
     params: Record<string, unknown>,
   ) => unknown = () => ({ ok: true }),
   tabState: TabState = state(),
+  reconnect = false,
 ): Fake {
   const s: Fake = {
     sent: [],
+    welcomes: [],
     send(text: string) {
-      s.sent.push(text)
+      if (!sort(s, text)) return
       const request = JSON.parse(text) as {
         id: number
         method: string
@@ -55,7 +73,15 @@ function tab(
   bridge.attach(s)
   bridge.receive(
     s,
-    JSON.stringify({ hello: { id, title, url: 'http://x', state: tabState } }),
+    JSON.stringify({
+      hello: {
+        id,
+        title,
+        url: 'http://x',
+        state: tabState,
+        ...(reconnect ? { reconnect } : {}),
+      },
+    }),
   )
   return s
 }
@@ -132,8 +158,9 @@ describe('Bridge', () => {
     const answers: Array<() => void> = []
     const s: Fake = {
       sent: [],
+      welcomes: [],
       send(text: string) {
-        s.sent.push(text)
+        if (!sort(s, text)) return
         const request = JSON.parse(text) as { id: number; method: string }
         answers.push(() =>
           bridge.receive(
@@ -172,8 +199,9 @@ describe('Bridge', () => {
     const bridge = new Bridge({ timeoutMs: 20 })
     const s: Fake = {
       sent: [],
+      welcomes: [],
       send(text: string) {
-        s.sent.push(text)
+        if (!sort(s, text)) return
         const request = JSON.parse(text) as { id: number; method: string }
         // The first call is never answered, so it times out; the rest are.
         if (request.method === 'load_volume') return
@@ -305,7 +333,16 @@ describe('Bridge', () => {
     await expect(bridge.call('where_am_i')).rejects.toThrow(NO_APP)
   })
 
-  it('treats the same id on a new socket as the live one, even before the old socket closes', async () => {
+  it('welcomes each tab with the id it goes by', () => {
+    const bridge = new Bridge()
+    const one = tab(bridge, 't1', 'one')
+    const two = tab(bridge, 't2', 'two')
+    expect(one.welcomes).toEqual(['t1'])
+    expect(two.welcomes).toEqual(['t2'])
+    expect(one.sent).toHaveLength(0)
+  })
+
+  it('takes the same page back on a new socket when it says it reconnected, before the old socket closes', async () => {
     const bridge = new Bridge()
     const old = socket()
     bridge.attach(old)
@@ -317,14 +354,76 @@ describe('Bridge', () => {
     )
     const stuck = bridge.call('where_am_i')
     await tick()
-    tab(bridge, 't1', 'one again', () => 'new socket')
+    const again = tab(
+      bridge,
+      't1',
+      'one again',
+      () => 'new socket',
+      state(),
+      true,
+    )
+    expect(again.welcomes).toEqual(['t1'])
     await expect(stuck).rejects.toThrow('reconnected before it answered')
     const answer = await bridge.call('where_am_i')
     expect(answer.result).toBe('new socket')
-    expect(answer.reloaded).not.toBeNull()
+    // The page did not reload, so nothing started over.
+    expect(answer.reloaded).toBeNull()
     bridge.detach(old)
     expect(bridge.connected).toBe(true)
     expect(bridge.list()).toHaveLength(1)
+  })
+
+  it('keeps a live tab and gives a fresh page with its id a spare one, so both can be driven', async () => {
+    const bridge = new Bridge()
+    const original = tab(bridge, 't1', 'one', () => 'original')
+    // The duplicate: a fresh load whose copied sessionStorage says t1.
+    const copy = tab(bridge, 't1', 'one (copy)', () => 'copy')
+    expect(copy.welcomes).toEqual(['t1-2'])
+    expect(original.welcomes).toEqual(['t1'])
+    expect(bridge.list()).toMatchObject([
+      { id: 't1', title: 'one', bound: false },
+      { id: 't1-2', title: 'one (copy)', bound: false },
+    ])
+    await expect(bridge.call('where_am_i')).rejects.toThrow(
+      '2 tabs are connected and none is chosen',
+    )
+    bridge.use('t1')
+    expect((await bridge.call('where_am_i')).result).toBe('original')
+    expect(copy.sent).toHaveLength(0)
+    bridge.use('t1-2')
+    const answer = await bridge.call('where_am_i')
+    expect(answer.result).toBe('copy')
+    expect(answer.tab.id).toBe('t1-2')
+    expect(answer.reloaded).toBeNull()
+    // A third copy, and a copy of the copy, each get the next spare id.
+    expect(tab(bridge, 't1', 'one (copy 2)').welcomes).toEqual(['t1-3'])
+    expect(tab(bridge, 't1-2', 'copy of copy').welcomes).toEqual(['t1-2-2'])
+    bridge.detach(original)
+    expect(bridge.list().map((t) => t.id)).toEqual(['t1-2', 't1-3', 't1-2-2'])
+  })
+
+  it('reloads a spare id as any other, and the copy comes back as itself', async () => {
+    const bridge = new Bridge({ returnGraceMs: 50 })
+    tab(bridge, 't1', 'one')
+    const copy = tab(bridge, 't1', 'one (copy)')
+    bridge.use('t1-2')
+    await bridge.call('where_am_i')
+    bridge.detach(copy)
+    const back = tab(bridge, 't1-2', 'one (copy)', () => 'back')
+    expect(back.welcomes).toEqual(['t1-2'])
+    const answer = await bridge.call('where_am_i')
+    expect(answer.result).toBe('back')
+    expect(answer.reloaded).not.toBeNull()
+  })
+
+  it('does not report a reset for a page that reconnects after its socket dropped', async () => {
+    const bridge = new Bridge()
+    const one = tab(bridge, 't1', 'one')
+    bridge.detach(one)
+    tab(bridge, 't1', 'one', () => 'again', state(), true)
+    const answer = await bridge.call('where_am_i')
+    expect(answer.result).toBe('again')
+    expect(answer.reloaded).toBeNull()
   })
 
   it('takes the title and state from each answer, so a renamed tab lists under its new name', async () => {

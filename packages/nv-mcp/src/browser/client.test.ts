@@ -214,6 +214,69 @@ describe('AgentClient', () => {
     c.detach()
   })
 
+  it('says it is reconnecting when it comes back on a new socket, and not on the first', () => {
+    jest.useFakeTimers()
+    const c = client()
+    c.attach()
+    const first = FakeSocket.opened[0]
+    first.accept()
+    expect(JSON.parse(first.sent[0]).hello.reconnect).toBeUndefined()
+    first.drop()
+    jest.advanceTimersByTime(RETRY_MS.first)
+    const second = FakeSocket.opened[1]
+    second.accept()
+    expect(JSON.parse(second.sent[0]).hello).toMatchObject({
+      id: 'tab-1',
+      reconnect: true,
+    })
+    c.detach()
+  })
+
+  it('takes the id the server welcomes it with, keeps it for a reload, and says hello with it from then on', () => {
+    jest.useFakeTimers()
+    const store = new Map<string, string>([[TAB_ID_KEY, 'tab-1']])
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    }
+    const c = client({}, { id: undefined, storage })
+    expect(c.id).toBe('tab-1')
+    c.attach()
+    const first = FakeSocket.opened[0]
+    first.accept()
+    first.receive(JSON.stringify({ welcome: { id: 'tab-1' } }))
+    expect(c.id).toBe('tab-1')
+    first.receive(JSON.stringify({ welcome: { id: 'tab-1-2' } }))
+    expect(c.id).toBe('tab-1-2')
+    expect(store.get(TAB_ID_KEY)).toBe('tab-1-2')
+    expect(first.sent).toHaveLength(1)
+    first.drop()
+    jest.advanceTimersByTime(RETRY_MS.first)
+    const second = FakeSocket.opened[1]
+    second.accept()
+    expect(JSON.parse(second.sent[0]).hello).toMatchObject({
+      id: 'tab-1-2',
+      reconnect: true,
+    })
+    c.detach()
+  })
+
+  it('takes a welcomed id without touching storage when the id was given', () => {
+    const store = new Map<string, string>([[TAB_ID_KEY, 'kept']])
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    }
+    const c = client({}, { storage })
+    c.attach()
+    const socket = FakeSocket.opened[0]
+    socket.accept()
+    socket.receive(JSON.stringify({ welcome: { id: 'tab-1-2' } }))
+    expect(c.id).toBe('tab-1-2')
+    expect(store.get(TAB_ID_KEY)).toBe('kept')
+    c.detach()
+  })
+
   it('does not answer on a socket it has left', async () => {
     const c = client({
       slow: () => new Promise((r) => setTimeout(() => r('late'), 5)),

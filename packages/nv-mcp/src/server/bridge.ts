@@ -13,7 +13,10 @@
  * with the list, since guessing which window a person is looking at is
  * worse than asking. A tab that reloads comes back with the same id and is
  * picked up again where it was, and the next call is told that the scene
- * started over, with what it was showing before.
+ * started over, with what it was showing before. A tab that was duplicated
+ * arrives with the original's id while the original is still here; it is
+ * given a spare id and told, and both are listed, since either may be the
+ * one a person is looking at.
  *
  * Calls to one tab go one at a time, in the order they were made. The
  * page's handlers all change the one scene, and two loads or moves running
@@ -27,6 +30,7 @@ import {
   type Hello,
   isHello,
   type TabState,
+  type Welcome,
 } from '../protocol'
 
 /** Anything that can carry text to a page. `Bun.serve`'s socket does. */
@@ -261,29 +265,37 @@ export class Bridge {
 
   private greet(socket: AppSocket, { hello }: Hello): void {
     this.forget()
-    const previous = this.tabs.get(hello.id)
-    const gone = this.lost.get(hello.id)
-    this.lost.delete(hello.id)
+    let id = hello.id
     let reset: ResetReport | null = null
-    if (previous) {
-      // The same id on a new socket while the old one is still open: the
-      // reload's close has not arrived yet, or the tab was duplicated. The
-      // newer connection is the live one either way.
+    const previous = this.tabs.get(id)
+    if (previous && !hello.reconnect) {
+      // A page loaded fresh with an id a live tab holds: a browser copies
+      // sessionStorage into a duplicated tab. Either may be the one a person
+      // is looking at, so the newcomer gets a spare id, which the welcome
+      // below tells it, and the original goes on as it was.
+      id = this.spareId(hello.id)
+    } else if (previous) {
+      // The same page again on a new socket: it lost its old one, whose
+      // close has not arrived here. The new connection is the live one, and
+      // the scene is as it was, so there is no reset to report.
       this.bySocket.delete(previous.socket)
       this.failPending(
-        hello.id,
+        id,
         `The tab "${previous.title}" reconnected before it answered.`,
       )
-      reset = {
-        reloadedAt: this.now(),
-        before: previous.state,
-        after: hello.state,
+    } else {
+      const gone = this.lost.get(id)
+      if (gone && !hello.reconnect) {
+        reset = {
+          reloadedAt: this.now(),
+          before: gone.state,
+          after: hello.state,
+        }
       }
-    } else if (gone) {
-      reset = { reloadedAt: this.now(), before: gone.state, after: hello.state }
     }
+    this.lost.delete(id)
     const tab: Tab = {
-      id: hello.id,
+      id,
       title: hello.title,
       url: hello.url,
       connectedAt: this.now(),
@@ -291,11 +303,32 @@ export class Bridge {
       state: hello.state ?? null,
       reset,
     }
-    this.tabs.set(hello.id, tab)
-    this.bySocket.set(socket, hello.id)
+    this.tabs.set(id, tab)
+    this.bySocket.set(socket, id)
+    const welcome: Welcome = { welcome: { id } }
+    try {
+      socket.send(JSON.stringify(welcome))
+    } catch {
+      // A socket that cannot be written closes, and detach takes it from here.
+    }
     for (let i = this.returning.length - 1; i >= 0; i--) {
-      if (this.returning[i].id === hello.id)
+      if (this.returning[i].id === id)
         this.returning.splice(i, 1)[0].resolve(tab)
+    }
+  }
+
+  /** An id near `base` that no tab holds, held, was chosen, or answered last. */
+  private spareId(base: string): string {
+    for (let n = 2; ; n++) {
+      const candidate = `${base}-${n}`
+      if (
+        !this.tabs.has(candidate) &&
+        !this.lost.has(candidate) &&
+        candidate !== this.chosen &&
+        candidate !== this.lastUsed
+      ) {
+        return candidate
+      }
     }
   }
 

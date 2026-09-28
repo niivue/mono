@@ -72,7 +72,10 @@ export const PNG =
 export interface FakePageOptions {
   /** The server's page socket, `ws://host:port/app`. */
   url: string
-  id: string
+  /** The id to say hello with; or leave it to `search`. */
+  id?: string
+  /** The page's query string, `?tab=<id>`, when the id comes from the address. */
+  search?: string
   title: string
 }
 
@@ -166,9 +169,11 @@ export function fakePage(options: FakePageOptions): FakePage {
     { ...coreHandlers(host), ...extra },
     {
       urls: [options.url],
-      id: options.id,
+      ...(options.id === undefined
+        ? { storage: null, search: options.search ?? '' }
+        : { id: options.id }),
       title: () => options.title,
-      url: () => `http://fake/${options.id}`,
+      url: () => `http://fake/${options.id ?? options.search ?? ''}`,
       state: () => sceneState(host),
     },
   )

@@ -7,11 +7,12 @@
  * matched by id. The server does nothing itself: every answer comes from
  * a page, which is where the volume and the atlas are.
  *
- * Which tab answers: the one `use_tab` chose, for as long as it is there;
- * otherwise the only tab connected; otherwise the tab that answered last,
- * if it is still connected. With several tabs and no history a call fails
- * with the list, since guessing which window a person is looking at is
- * worse than asking. A tab that reloads comes back with the same id and is
+ * Which tab answers: the one the call names, when it names one; otherwise
+ * the one `use_tab` chose, for as long as it is there; otherwise the only
+ * tab connected; otherwise the tab that answered last, if it is still
+ * connected. With several tabs and no history a call fails with the list,
+ * since guessing which window a person is looking at is worse than
+ * asking. A tab that reloads comes back with the same id and is
  * picked up again where it was, and the next call is told that the scene
  * started over, with what it was showing before. A tab that was duplicated
  * arrives with the original's id while the original is still here; it is
@@ -217,15 +218,17 @@ export class Bridge {
   }
 
   /**
-   * Puts one tool call to the answering tab and waits for its answer. The
-   * tab is chosen now; the request is written once every call queued to
-   * that tab before it has been answered, or has failed.
+   * Puts one tool call to the answering tab, or to the tab `to` names,
+   * and waits for its answer. The tab is chosen now; the request is
+   * written once every call queued to that tab before it has been
+   * answered, or has failed.
    */
   async call(
     method: string,
     params: Record<string, unknown> = {},
+    to?: string,
   ): Promise<CallResult> {
-    const chosen = await this.target()
+    const chosen = to === undefined ? await this.target() : await this.named(to)
     const ahead = this.queues.get(chosen.id) ?? Promise.resolve()
     const turn = ahead
       .catch(() => undefined)
@@ -332,6 +335,15 @@ export class Bridge {
     }
   }
 
+  /** The tab with this id, waiting briefly for one that is mid-reload. */
+  private async named(id: string): Promise<Tab> {
+    const tab = this.tabs.get(id) ?? (await this.awaitReturn(id))
+    if (tab) return tab
+    throw new Error(
+      `No connected tab has the id "${id}". ${this.describeTabs()}`,
+    )
+  }
+
   /** The tab a call goes to now, waiting briefly for one that is mid-reload. */
   private async target(): Promise<Tab> {
     if (this.chosen !== null) {
@@ -414,7 +426,7 @@ export class Bridge {
     const lines = tabs.map(
       (tab) => `${tab.id} "${tab.title}"${tab.bound ? ' (answering)' : ''}`,
     )
-    return `Connected: ${lines.join('; ')}. Call use_tab with the id to drive.`
+    return `Connected: ${lines.join('; ')}. Call use_tab with the id to drive, or pass it as tab.`
   }
 
   private failPending(tab: string, reason: string): void {

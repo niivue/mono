@@ -426,6 +426,44 @@ describe('Bridge', () => {
     expect(answer.reloaded).toBeNull()
   })
 
+  it('sends a call that names its tab there, whatever is chosen, and leaves the choice alone', async () => {
+    const bridge = new Bridge()
+    tab(bridge, 't1', 'one', () => 'from one')
+    tab(bridge, 't2', 'two', () => 'from two')
+    bridge.use('t1')
+    const named = await bridge.call('where_am_i', {}, 't2')
+    expect(named.result).toBe('from two')
+    expect(named.tab.id).toBe('t2')
+    expect(bridge.list().find((t) => t.bound)?.id).toBe('t1')
+    expect((await bridge.call('where_am_i')).tab.id).toBe('t1')
+  })
+
+  it('fails a call that names a tab nobody has, listing the tabs and both ways to pick one', async () => {
+    const bridge = new Bridge()
+    tab(bridge, 't1', 'one')
+    await expect(bridge.call('where_am_i', {}, 'nope')).rejects.toThrow(
+      /^No connected tab has the id "nope"\. Connected: t1 "one" \(answering\)\. Call use_tab with the id to drive, or pass it as tab\.$/,
+    )
+    const empty = new Bridge()
+    await expect(empty.call('where_am_i', {}, 'nope')).rejects.toThrow(
+      `No connected tab has the id "nope". ${NO_APP}`,
+    )
+  })
+
+  it('waits for a named tab that is mid-reload, as it does for the answering one', async () => {
+    const bridge = new Bridge({ returnGraceMs: 500 })
+    tab(bridge, 't1', 'one', () => 'other')
+    const second = tab(bridge, 't2', 'two', () => 'before')
+    await bridge.call('where_am_i', {}, 't2')
+    bridge.detach(second)
+    const during = bridge.call('where_am_i', {}, 't2')
+    tab(bridge, 't2', 'two', () => 'after')
+    const answer = await during
+    expect(answer.result).toBe('after')
+    expect(answer.tab.id).toBe('t2')
+    expect(answer.reloaded).not.toBeNull()
+  })
+
   it('takes the title and state from each answer, so a renamed tab lists under its new name', async () => {
     const bridge = new Bridge()
     const app = socket()

@@ -11,11 +11,12 @@ import { z } from 'zod'
 
 import { type FakePage, fakePage } from '../testing/fake-page'
 import { type RunningServer, startServer } from './http'
-import type { Extension } from './tools'
+import { type Extension, TAB_ARG } from './tools'
 
 const CORE_TOOLS = [
   'list_tabs',
   'use_tab',
+  'new_tab',
   'load_volume',
   'add_overlay',
   'where_am_i',
@@ -36,10 +37,11 @@ const light: Extension = {
       {
         title: 'Turn the light',
         description: 'Turns the page light on or off.',
-        inputSchema: { on: z.boolean() },
+        inputSchema: { ...TAB_ARG, on: z.boolean() },
       },
-      async (params) =>
+      async ({ tab, ...params }) =>
         context.answer('set_light', params, {
+          tab,
           lead: (r) =>
             `Light ${(r as { light: boolean }).light ? 'on' : 'off'}.`,
         }),
@@ -119,6 +121,7 @@ describe('the server, end to end', () => {
       name: 'test',
       port: 0,
       extensions: [light],
+      pageUrl: 'http://localhost:8091/',
       bridge: { noTabHint: 'Open the test page.' },
       log: (line) => logged.push(line),
     })
@@ -420,4 +423,42 @@ describe('the server, end to end', () => {
     await closePage('t4')
     await until('the copy to go', async () => (await tabs()).length === 0)
   })
+
+  it('reaches a tab named by new_tab and opened from its address, past whatever is chosen', async () => {
+    await openPage('t5', 'fifth tab')
+    await call('use_tab', { id: 't5' })
+    const made = json(await call('new_tab')) as { id: string; url: string }
+    expect(made.url).toBe(`http://localhost:8091/?tab=${made.id}`)
+    const gone = await call('where_am_i', { tab: made.id })
+    expect(gone.isError).toBe(true)
+    expect(text(gone)).toMatch(
+      new RegExp(`^No connected tab has the id "${made.id}"\\. Connected: t5`),
+    )
+    // The person opens the address: the page takes its id from the query string.
+    const search = new URL(made.url).search
+    pages.set(
+      made.id,
+      fakePage({ url: server.appUrl, title: 'named tab', search }),
+    )
+    await until(`tab ${made.id}`, async () =>
+      (await tabs()).some((tab) => tab.id === made.id),
+    )
+    expect(pages.get(made.id)?.client.id).toBe(made.id)
+    const reached = await call('where_am_i', { tab: made.id })
+    expect(json(reached)).toMatchObject({
+      tab: { id: made.id, title: 'named tab' },
+    })
+    // Named calls do not move the choice.
+    expect(json(await call('where_am_i'))).toMatchObject({ tab: { id: 't5' } })
+    const lit = await call('set_light', { on: true, tab: made.id })
+    expect(text(lit)).toMatch(/^Light on\./)
+    expect(json(await call('where_am_i', { tab: made.id }))).toMatchObject({
+      light: true,
+    })
+    expect(json(await call('where_am_i'))).toMatchObject({ light: false })
+    await closePage(made.id)
+    await closePage('t5')
+    // The choice of t5 stands until a bare call finds it gone, which this
+    // test does not make; it runs last so no other test inherits the wait.
+  }, 20000)
 })

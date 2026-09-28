@@ -5,7 +5,9 @@
  * connecting, the page says hello with an id that survives a reload of the
  * same tab, so the server can tell a tab that came back from a new one; the
  * server welcomes it with the id it will go by, which is its own unless a
- * live tab already holds it, as a duplicated tab's does. Each tool call
+ * live tab already holds it, as a duplicated tab's does. A page opened
+ * with `?tab=<id>` in its address takes that id, so an agent that handed
+ * the address out can name the tab before it is open. Each tool call
  * then arrives as one JSON request, is put to a handler, and is
  * answered with one JSON response carrying the result or the reason it
  * could not be done, plus the tab's title and where the scene stands, so
@@ -23,6 +25,7 @@ import {
   type Hello,
   isWelcome,
   type TabState,
+  tabFromSearch,
 } from '../protocol'
 import type { Handlers } from './scene'
 
@@ -57,20 +60,40 @@ export const CONNECT_MS = 5000
 export type IdStorage = Pick<Storage, 'getItem' | 'setItem'>
 
 /**
- * This tab's id: kept in `sessionStorage`, which a browser scopes to one
- * tab and keeps across its reloads but does not copy to a new tab, other
- * than by duplicating it; the server catches that case and hands the copy
- * an id of its own. Made up fresh when storage is not available.
+ * This tab's id. A `?tab=<id>` in the page's address names it outright:
+ * an agent's `new_tab` hands such an address out, so the id is agreed
+ * before the page opens, and a reload keeps the address. Otherwise it is
+ * kept in `sessionStorage`, which a browser scopes to one tab and keeps
+ * across its reloads but does not copy to a new tab, other than by
+ * duplicating it; the server catches that case and hands the copy an id
+ * of its own. Made up fresh when storage is not available. Whichever way
+ * it came, it is written to storage, so the page keeps it should it
+ * navigate to an address without the parameter.
  */
-export function tabId(storage: IdStorage | null = sessionStore()): string {
+export function tabId(
+  storage: IdStorage | null = sessionStore(),
+  search: string = pageSearch(),
+): string {
+  const named = tabFromSearch(search)
   try {
-    const kept = storage?.getItem(TAB_ID_KEY)
-    if (kept) return kept
+    const kept = named ?? storage?.getItem(TAB_ID_KEY)
+    if (kept) {
+      if (named) storage?.setItem(TAB_ID_KEY, kept)
+      return kept
+    }
     const fresh = freshId()
     storage?.setItem(TAB_ID_KEY, fresh)
     return fresh
   } catch {
-    return freshId()
+    return named ?? freshId()
+  }
+}
+
+function pageSearch(): string {
+  try {
+    return typeof location === 'undefined' ? '' : location.search
+  } catch {
+    return ''
   }
 }
 
@@ -94,6 +117,8 @@ export interface ClientOptions {
   id?: string
   /** Where `tabId()` keeps the id, and a spare one the server hands out; `sessionStorage` otherwise. */
   storage?: IdStorage | null
+  /** The query string `tabId()` reads `?tab=` from; `location.search` otherwise. */
+  search?: string
   /** What the tab is called now; `document.title` otherwise. */
   title?: () => string
   /** Where the page is; `location.href` otherwise. */
@@ -148,7 +173,7 @@ export class AgentClient {
   ) {
     this.storage =
       options.id === undefined ? (options.storage ?? sessionStore()) : null
-    this.ownId = options.id ?? tabId(this.storage)
+    this.ownId = options.id ?? tabId(this.storage, options.search)
     this.urls = options.urls ?? agentUrls()
     this.Socket = options.WebSocket ?? WebSocket
   }

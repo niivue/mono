@@ -32,6 +32,12 @@ export interface ServerOptions {
   /** Where a line about a tab connecting or leaving goes; the console otherwise. */
   log?: (line: string) => void
   /**
+   * The page's address, such as `http://localhost:8091`, so `new_tab` can
+   * give an agent the address that opens the page as a named tab. Without
+   * it the tool gives the id and says to add `?tab=<id>` to the address.
+   */
+  pageUrl?: string
+  /**
    * Page origins, such as `https://viewer.example.org`, allowed to open the
    * `/app` socket besides loopback ones. A page on `localhost`, `127.0.0.1`
    * or `[::1]` on any port is always allowed, as is a client that sends no
@@ -90,6 +96,7 @@ export function startServer(options: ServerOptions = {}): RunningServer {
   const extensions = options.extensions ?? []
   const allowedOrigins = options.allowedOrigins ?? []
   const extraHosts = options.allowedHosts ?? []
+  const pageUrl = options.pageUrl
 
   /** The Host header values that mean this server, once the port is known. */
   const allowedHosts = (): string[] => [
@@ -100,7 +107,7 @@ export function startServer(options: ServerOptions = {}): RunningServer {
   ]
 
   async function handleMcp(request: Request): Promise<Response> {
-    const server = buildServer({ bridge, extensions, name, version })
+    const server = buildServer({ bridge, extensions, name, version, pageUrl })
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

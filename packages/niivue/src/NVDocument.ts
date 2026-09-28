@@ -328,8 +328,9 @@ export interface SerializeOptions {
    * place — embed it (the default) instead. (Display state and the drawing bitmap
    * are serialized separately and survive; only the raw voxels can diverge.)
    *
-   * NOTE: meshes are always embedded (their URL-restore path does not yet reapply
-   * overlay layers / tract options).
+   * NOTE: meshes are always embedded (their URL-restore path reapplies only
+   * URL-referenced overlay layers, not embedded layer data or tract/connectome
+   * options).
    */
   linkData?: boolean
   /**
@@ -473,9 +474,10 @@ export function serialize(
     }
 
     // Meshes are always embedded, even under linkData: the mesh URL-restore path
-    // does not yet reapply scalar-overlay layers or tract/connectome options, so
-    // linking a mesh would silently drop that state. linkData covers volumes
-    // (whose URL-restore is complete); mesh linking is a tracked follow-up.
+    // reapplies only URL-referenced scalar-overlay layers (not embedded layer
+    // data or tract/connectome options), so linking a mesh could silently drop
+    // that state. linkData covers volumes (whose URL-restore is complete); mesh
+    // linking is a tracked follow-up.
     // Always embed mesh data for self-contained documents
     if (m.positions && m.indices && m.colors) {
       mesh.data = {

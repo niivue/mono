@@ -13,6 +13,8 @@ const PORT = Number(process.env.NV_MCP_PORT ?? 4242)
 const HOST = process.env.NV_MCP_HOST ?? '127.0.0.1'
 // Where the dev server puts the page, for the no-tab hint and for new_tab.
 const PAGE = process.env.NV_MCP_PAGE ?? 'http://localhost:8091'
+// Where the dev server serves @niivue/dev-images from, for the agent to name.
+const VOLUMES = new URL('/volumes/', PAGE).href
 
 startServer({
   name: 'demo-mcp',
@@ -23,4 +25,16 @@ startServer({
   bridge: {
     noTabHint: `Open ${PAGE} (bunx nx dev demo-mcp) and try again.`,
   },
+  // What only this app knows: the volumes its dev server serves, so an
+  // agent asks for these rather than guessing at a public address.
+  instructions:
+    `The page opens with the MNI152 template, ${VOLUMES}mni152.nii.gz, in MNI space, so the ` +
+    'AAL atlas applies: list_regions and go_to_region know its regions. The same server serves ' +
+    `more for load_volume and add_overlay, each at the same address as the template: ` +
+    'aal.nii.gz, the AAL atlas as a label map, drawn with its own names and colours when ' +
+    `${VOLUMES}aal.json is passed as labels; mni152_gm.nii.gz, mni152_wm.nii.gz and ` +
+    "mni152_csf.nii.gz, tissue maps on the template's grid; spmMotor.nii.gz, a whole-brain " +
+    't-map of right against left finger tapping in MNI space; hippo.nii.gz, a small map of the ' +
+    "left hippocampus in MNI space; and chris_t1.nii.gz, one person's T1 scan in its own " +
+    'space, where no atlas applies.',
 })

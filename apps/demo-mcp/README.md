@@ -42,7 +42,7 @@ The page's own "Connect an agent" panel shows the same line, with whatever `NV_M
 
 ## How it works
 
-1. `server/server.ts` calls `startServer` with a name and a hint for the agent to read when no page is connected.
+1. `server/server.ts` calls `startServer` with a name, a hint for the agent to read when no page is connected, and instructions naming the volumes the dev server serves, so an agent asks for `aal.nii.gz` with its own label table rather than guessing at an address.
 2. `src/main.ts` builds the host and opens an `AgentClient` with `coreHandlers(host)`. The client tries `/agent` on the page's own origin first, which Vite proxies to the server's WebSocket, then the server directly.
 3. `src/atlas.ts` fetches `aal.nii.gz` and `aal.json`, reads them with `nifti-reader-js` and NiiVue's `nii2volume`, and answers the four `AtlasLike` questions from the voxel grid, so a region's centroid and the region under any point come from the same volume.
 

@@ -3,8 +3,10 @@
  *
  * The server holds the door open for agents; this end holds the scene. On
  * connecting, the page says hello with an id that survives a reload of the
- * same tab, so the server can tell a tab that came back from a new one. Each
- * tool call then arrives as one JSON request, is put to a handler, and is
+ * same tab, so the server can tell a tab that came back from a new one; the
+ * server welcomes it with the id it will go by, which is its own unless a
+ * live tab already holds it, as a duplicated tab's does. Each tool call
+ * then arrives as one JSON request, is put to a handler, and is
  * answered with one JSON response carrying the result or the reason it
  * could not be done, plus the tab's title and where the scene stands, so
  * the server can name who answered and notice a reset. The connection is
@@ -15,7 +17,13 @@
  * the next one gets its turn.
  */
 
-import type { AgentRequest, AgentResponse, Hello, TabState } from '../protocol'
+import {
+  type AgentRequest,
+  type AgentResponse,
+  type Hello,
+  isWelcome,
+  type TabState,
+} from '../protocol'
 import type { Handlers } from './scene'
 
 /** Where the server itself listens for pages. */
@@ -45,14 +53,16 @@ export const RETRY_MS = { first: 1000, longest: 30000 } as const
 /** How long an address gets to open before it is closed and the next one tried. */
 export const CONNECT_MS = 5000
 
+/** Where a tab's id is kept between its reloads. */
+export type IdStorage = Pick<Storage, 'getItem' | 'setItem'>
+
 /**
  * This tab's id: kept in `sessionStorage`, which a browser scopes to one
  * tab and keeps across its reloads but does not copy to a new tab, other
- * than by duplicating it. Made up fresh when storage is not available.
+ * than by duplicating it; the server catches that case and hands the copy
+ * an id of its own. Made up fresh when storage is not available.
  */
-export function tabId(
-  storage: Pick<Storage, 'getItem' | 'setItem'> | null = sessionStore(),
-): string {
+export function tabId(storage: IdStorage | null = sessionStore()): string {
   try {
     const kept = storage?.getItem(TAB_ID_KEY)
     if (kept) return kept
@@ -80,8 +90,10 @@ function freshId(): string {
 export interface ClientOptions {
   /** The addresses to try in turn; `agentUrls()` otherwise. */
   urls?: readonly string[]
-  /** The id to say hello with; `tabId()` otherwise. */
+  /** The id to say hello with, used as given; `tabId()` otherwise. */
   id?: string
+  /** Where `tabId()` keeps the id, and a spare one the server hands out; `sessionStorage` otherwise. */
+  storage?: IdStorage | null
   /** What the tab is called now; `document.title` otherwise. */
   title?: () => string
   /** Where the page is; `location.href` otherwise. */
@@ -115,7 +127,8 @@ export async function serve(
 }
 
 export class AgentClient {
-  readonly id: string
+  private ownId: string
+  private readonly storage: IdStorage | null
   private readonly urls: readonly string[]
   private readonly Socket: typeof WebSocket
   private socket: WebSocket | null = null
@@ -126,14 +139,23 @@ export class AgentClient {
   private attempt = 0
   /** Whether the settled retry has been reported since the last connection. */
   private reported = false
+  /** Whether this page has reached the server before, so a new socket is a reconnect. */
+  private connectedBefore = false
 
   constructor(
     private readonly handlers: Handlers,
     private readonly options: ClientOptions,
   ) {
-    this.id = options.id ?? tabId()
+    this.storage =
+      options.id === undefined ? (options.storage ?? sessionStore()) : null
+    this.ownId = options.id ?? tabId(this.storage)
     this.urls = options.urls ?? agentUrls()
     this.Socket = options.WebSocket ?? WebSocket
+  }
+
+  /** The id the server lists this tab under. */
+  get id(): string {
+    return this.ownId
   }
 
   /** Whether the server is reached now. */
@@ -172,11 +194,26 @@ export class AgentClient {
   private hello(): Hello {
     return {
       hello: {
-        id: this.id,
+        id: this.ownId,
         title: this.title(),
         url: this.url(),
         state: this.options.state(),
+        ...(this.connectedBefore ? { reconnect: true } : {}),
       },
+    }
+  }
+
+  /** Takes the id the server welcomed this tab with, and keeps it where a reload will find it. */
+  private welcomed(id: string): void {
+    if (id === this.ownId) return
+    console.info(
+      `nv-mcp: another tab already holds the id ${this.ownId}; this one is ${id}`,
+    )
+    this.ownId = id
+    try {
+      this.storage?.setItem(TAB_ID_KEY, id)
+    } catch {
+      // Without storage the id lasts as long as the page does, as a fresh one would.
     }
   }
 
@@ -201,6 +238,7 @@ export class AgentClient {
       this.wait = RETRY_MS.first
       this.reported = false
       socket.send(JSON.stringify(this.hello()))
+      this.connectedBefore = true
       console.info(`nv-mcp: agent server connected at ${url}`)
       this.options.onStatus?.(true)
     })
@@ -245,12 +283,17 @@ export class AgentClient {
   }
 
   private async handle(text: string): Promise<AgentResponse | null> {
-    let request: AgentRequest
+    let message: unknown
     try {
-      request = JSON.parse(text) as AgentRequest
+      message = JSON.parse(text)
     } catch {
       return null
     }
+    if (isWelcome(message)) {
+      this.welcomed(message.welcome.id)
+      return null
+    }
+    const request = message as AgentRequest
     if (typeof request?.id !== 'number') return null
     const response = await serve(this.handlers, request)
     let state: TabState | undefined

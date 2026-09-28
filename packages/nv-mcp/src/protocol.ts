@@ -16,6 +16,23 @@ export interface Hello {
     url: string
     /** Where the scene stands as the page connects. */
     state: TabState
+    /**
+     * Set when this same page connected before and is back on a new
+     * socket, as after the server restarted or the socket dropped. A
+     * fresh load of the page, reload included, leaves it out.
+     */
+    reconnect?: boolean
+  }
+}
+
+/**
+ * The server's answer to a hello: the id it lists the tab under. That is
+ * the page's own id unless a live tab already holds it, as when a tab is
+ * duplicated; then it is a spare one, which the page keeps from there on.
+ */
+export interface Welcome {
+  welcome: {
+    id: string
   }
 }
 
@@ -62,6 +79,11 @@ export interface AgentResponse {
 export function isHello(message: unknown): message is Hello {
   const hello = (message as Hello)?.hello
   return typeof hello?.id === 'string' && typeof hello?.title === 'string'
+}
+
+/** Whether a message from the server is its answer to the hello. */
+export function isWelcome(message: unknown): message is Welcome {
+  return typeof (message as Welcome)?.welcome?.id === 'string'
 }
 
 /** One region of an atlas, as `list_regions` reports it. */

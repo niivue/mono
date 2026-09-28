@@ -232,14 +232,14 @@ describe('AgentClient', () => {
     c.detach()
   })
 
-  it('takes the id the server welcomes it with, keeps it for a reload, and says hello with it from then on', () => {
+  it('takes the id the server welcomes it with, keeps it across a duplicate URL reload, and says hello with it from then on', () => {
     jest.useFakeTimers()
     const store = new Map<string, string>([[TAB_ID_KEY, 'tab-1']])
     const storage = {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
     }
-    const c = client({}, { id: undefined, storage })
+    const c = client({}, { id: undefined, storage, search: '?tab=tab-1' })
     expect(c.id).toBe('tab-1')
     c.attach()
     const first = FakeSocket.opened[0]
@@ -259,6 +259,18 @@ describe('AgentClient', () => {
       reconnect: true,
     })
     c.detach()
+
+    // The duplicate's address still says tab-1, but its stored spare id
+    // must win when the page is recreated for a reload.
+    const reloaded = client(
+      {},
+      { id: undefined, storage, search: '?tab=tab-1' },
+    )
+    reloaded.attach()
+    const third = FakeSocket.opened[2]
+    third.accept()
+    expect(JSON.parse(third.sent[0]).hello.id).toBe('tab-1-2')
+    reloaded.detach()
   })
 
   it('says hello with the id its address names', () => {
@@ -308,7 +320,7 @@ describe('AgentClient', () => {
 })
 
 describe('tabId', () => {
-  it('takes the id from ?tab= in the address over the stored one, and keeps it', () => {
+  it('takes a new id from ?tab= in the address, but keeps a server-renamed duplicate id', () => {
     const store = new Map<string, string>([[TAB_ID_KEY, 'kept']])
     const storage = {
       getItem: (k: string) => store.get(k) ?? null,
@@ -317,11 +329,19 @@ describe('tabId', () => {
     const named = '3f1c2e4a-0b7d-4c1e-9a2b-5d6e7f8a9b0c'
     expect(tabId(storage, `?x=1&tab=${named}`)).toBe(named)
     expect(store.get(TAB_ID_KEY)).toBe(named)
+    // The bridge renamed a duplicate of this address. Its unchanged URL
+    // must not take the old id back when it reloads.
+    store.set(TAB_ID_KEY, `${named}-2`)
+    expect(tabId(storage, `?x=1&tab=${named}`)).toBe(`${named}-2`)
+    // A deliberately different tab address still wins and becomes this
+    // storage's new address claim.
+    expect(tabId(storage, '?tab=new-tab')).toBe('new-tab')
+    expect(store.get(TAB_ID_KEY)).toBe('new-tab')
     // Back on an address without it, the stored one holds.
-    expect(tabId(storage, '')).toBe(named)
-    expect(tabId(storage, '?tab=')).toBe(named)
-    expect(tabId(storage, '?tab=%20')).toBe(named)
-    expect(tabId(storage, `?tab=${'a'.repeat(65)}`)).toBe(named)
+    expect(tabId(storage, '')).toBe('new-tab')
+    expect(tabId(storage, '?tab=')).toBe('new-tab')
+    expect(tabId(storage, '?tab=%20')).toBe('new-tab')
+    expect(tabId(storage, `?tab=${'a'.repeat(65)}`)).toBe('new-tab')
     expect(tabId(storage, '?tab=%20short%20')).toBe('short')
     expect(tabId(null, '?tab=alone')).toBe('alone')
     const broken = {

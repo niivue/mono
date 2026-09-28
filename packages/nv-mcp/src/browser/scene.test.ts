@@ -411,6 +411,24 @@ describe('screenshot', () => {
     )
   })
 
+  it('sizes an unsized canvas first and has the render backend draw the frame now', () => {
+    const calls: string[] = []
+    const canvas = {
+      width: 300,
+      height: 150,
+      getBoundingClientRect: () => ({ width: 640, height: 480 }),
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    } as unknown as HTMLCanvasElement
+    const view = fakeView({
+      canvas,
+      resize: mock(() => calls.push('resize')),
+      drawScene: mock(() => calls.push('draw')),
+      view: { render: () => calls.push('render') },
+    })
+    coreHandlers(host(view)).screenshot({})
+    expect(calls).toEqual(['resize', 'draw', 'render'])
+  })
+
   it('refuses while the tab is in the background, where nothing is drawn', () => {
     const global = globalThis as { document?: unknown }
     const before = global.document

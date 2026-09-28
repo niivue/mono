@@ -93,7 +93,7 @@ const json = (reply: Awaited<ReturnType<Client['callTool']>>): unknown => {
 }
 
 describe('core tool schemas', () => {
-  it('lists the ten core tools with the arguments each one takes', async () => {
+  it('lists the fourteen core tools with the arguments each one takes', async () => {
     const client = await connect(new Bridge())
     const { tools } = await client.listTools()
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
@@ -126,6 +126,27 @@ describe('core tool schemas', () => {
     expect(required('go_to_region')).toEqual(['region'])
     expect(required('set_clip_plane')).toEqual(['plane'])
     expect(required('set_camera').sort()).toEqual(['azimuth', 'elevation'])
+    expect(required('set_volume')).toEqual([])
+    expect(properties('set_volume').sort()).toEqual([
+      'cal_max',
+      'cal_min',
+      'colormap',
+      'frame',
+      'invert',
+      'opacity',
+      'tab',
+      'volume',
+    ])
+    expect(required('set_view')).toEqual([])
+    expect(properties('set_view').sort()).toEqual([
+      'colorbar',
+      'layout',
+      'mosaic',
+      'radiological',
+      'show_render',
+      'slice',
+      'tab',
+    ])
     expect(required('list_regions')).toEqual([])
     expect(required('where_am_i')).toEqual([])
     expect(required('screenshot')).toEqual([])
@@ -178,6 +199,34 @@ describe('core tool schemas', () => {
     )
   })
 
+  it('offers the slice types, the layouts and when to show the render by name', async () => {
+    const client = await connect(new Bridge())
+    const { tools } = await client.listTools()
+    const found = tools.find((t) => t.name === 'set_view')
+    if (!found) throw new Error('no tool set_view')
+    const schema = found.inputSchema as {
+      properties: Record<string, { enum?: string[] }>
+    }
+    expect(schema.properties.slice.enum).toEqual([
+      'axial',
+      'coronal',
+      'sagittal',
+      'multiplanar',
+      'render',
+    ])
+    expect(schema.properties.layout.enum).toEqual([
+      'auto',
+      'column',
+      'grid',
+      'row',
+    ])
+    expect(schema.properties.show_render.enum).toEqual([
+      'never',
+      'always',
+      'auto',
+    ])
+  })
+
   it('refuses arguments outside the schema as a tool error, before any tab is asked', async () => {
     const client = await connect(new Bridge())
     const refused = async (name: string, args: Record<string, unknown>) => {
@@ -196,6 +245,10 @@ describe('core tool schemas', () => {
     expect(
       await refused('set_clip_plane', { plane: 'left', depth: 3 }),
     ).toMatch(/depth/)
+    expect(await refused('set_volume', { opacity: 2 })).toMatch(/opacity/)
+    expect(await refused('set_volume', { frame: -1 })).toMatch(/frame/)
+    expect(await refused('set_volume', { volume: true })).toMatch(/volume/)
+    expect(await refused('set_view', { slice: 'oblique' })).toMatch(/slice/)
   })
 })
 
@@ -239,6 +292,21 @@ describe('core tools over the bridge', () => {
     })
     expect(json(load)).toMatchObject({
       params: { url: 'http://x/vol.nii.gz', mni: true },
+    })
+    const drawn = await client.callTool({
+      name: 'set_volume',
+      arguments: { volume: 'zstat', colormap: 'red', cal_min: 2.3 },
+    })
+    expect(json(drawn)).toMatchObject({
+      params: { volume: 'zstat', colormap: 'red', cal_min: 2.3 },
+    })
+    expect(json(drawn)).not.toHaveProperty('params.tab')
+    const laid = await client.callTool({
+      name: 'set_view',
+      arguments: { slice: 'multiplanar', layout: 'row', colorbar: true },
+    })
+    expect(json(laid)).toMatchObject({
+      params: { slice: 'multiplanar', layout: 'row', colorbar: true },
     })
   })
 

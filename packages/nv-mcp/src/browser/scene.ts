@@ -21,6 +21,13 @@ import {
 } from '../planes'
 import type { PlaneState, RegionSummary, TabState } from '../protocol'
 import { ambiguityMessage, findRegion, regionMentions } from '../regions'
+import {
+  LAYOUTS,
+  nameFor,
+  SHOW_RENDER,
+  SLICE_TYPES,
+  type ViewState,
+} from '../views'
 
 /** The part of a NiiVue instance the core drives. NiiVue 1.0 satisfies it as is. */
 /** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
@@ -51,6 +58,23 @@ export interface View {
     volumeIndex: number,
     cmap: string,
   ): Promise<unknown> | unknown
+  /** Changes how a loaded volume is drawn, keeping the rest as it is. NiiVue 1.0 has it. */
+  setVolume?(
+    volumeIndex: number,
+    update: VolumeUpdate,
+  ): Promise<unknown> | unknown
+  /**
+   * The view layout, by NiiVue's numbers (`views.ts` names them). Each is
+   * read live and set by assignment, which NiiVue 1.0 turns into its
+   * `change` event and a redraw. A page whose NiiVue has none of them
+   * cannot answer `set_view`.
+   */
+  sliceType?: number
+  multiplanarType?: number
+  mosaicString?: string
+  showRender?: number
+  isRadiological?: boolean
+  isColorbarVisible?: boolean
   /** Schedules a frame. NiiVue 1.0 draws it on the next animation frame, not now. */
   drawScene(): unknown
   /** Fits the canvas's drawing buffer to its box; NiiVue 1.0 has it. */
@@ -71,6 +95,16 @@ export interface VolumeToLoad {
   opacity?: number
 }
 
+/** What `View.setVolume` can change about a volume: NiiVue's `VolumeUpdate`, in part. */
+export interface VolumeUpdate {
+  colormap?: string
+  opacity?: number
+  calMin?: number
+  calMax?: number
+  frame4D?: number
+  isColormapInverted?: boolean
+}
+
 /** A volume as NiiVue keeps it once loaded, in the part the core reads. */
 export interface ShownVolume {
   name: string
@@ -78,6 +112,16 @@ export interface ShownVolume {
   url?: string
   colormap?: string
   opacity?: number
+  /** The display window: the intensities drawn as the darkest and brightest colours. */
+  calMin?: number
+  calMax?: number
+  /** The intensities the volume actually spans. */
+  globalMin?: number
+  globalMax?: number
+  /** For a 4D volume, the frame shown and how many there are. */
+  frame4D?: number
+  nFrame4D?: number
+  isColormapInverted?: boolean
 }
 
 /** A region as an atlas keeps it: what `list_regions` reports plus its voxel value. */
@@ -152,6 +196,23 @@ function planeState(host: NiiVueHost): PlaneState {
 
 function camera(view: View): { azimuth: number; elevation: number } {
   return { azimuth: view.azimuth, elevation: view.elevation }
+}
+
+/** Whether the page's NiiVue exposes its view layout. */
+function hasLayout(view: View): boolean {
+  return view.sliceType !== undefined
+}
+
+/** The view layout by name. */
+export function viewState(view: View): ViewState {
+  return {
+    slice: nameFor(SLICE_TYPES, view.sliceType),
+    layout: nameFor(LAYOUTS, view.multiplanarType),
+    ...(view.mosaicString ? { mosaic: view.mosaicString } : {}),
+    showRender: nameFor(SHOW_RENDER, view.showRender),
+    radiological: view.isRadiological ?? false,
+    colorbar: view.isColorbarVisible ?? false,
+  }
 }
 
 /** Turns the camera to look straight at the face a plane at these angles exposes. */
@@ -246,18 +307,60 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   // NiiVue keeps; a new base clears the volumes, and the map with them.
   const labelled = new WeakMap<ShownVolume, string>()
 
-  /** The volumes on show, as `add_overlay` reports them. */
-  const volumesShown = () =>
-    view.volumes.map((volume, index) => {
-      const labels = labelled.get(volume)
-      return {
-        index,
-        name: volume.name,
-        ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
-        ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
-        ...(labels ? { labels } : {}),
+  /** A volume as the tools report it: how it is drawn, its window and span, and its frame when it has several. */
+  const describeVolume = (volume: ShownVolume, index: number) => {
+    const labels = labelled.get(volume)
+    const windowed = volume.calMin !== undefined && volume.calMax !== undefined
+    const spanned =
+      volume.globalMin !== undefined && volume.globalMax !== undefined
+    const frames = volume.nFrame4D ?? 1
+    return {
+      index,
+      name: volume.name,
+      ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
+      ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+      ...(labels ? { labels } : {}),
+      ...(windowed ? { calMin: volume.calMin, calMax: volume.calMax } : {}),
+      ...(spanned
+        ? { globalMin: volume.globalMin, globalMax: volume.globalMax }
+        : {}),
+      ...(frames > 1 ? { frame: volume.frame4D ?? 0, frames } : {}),
+      ...(volume.isColormapInverted ? { inverted: true } : {}),
+    }
+  }
+
+  /** The volumes on show, as `add_overlay` and `where_am_i` report them. */
+  const volumesShown = () => view.volumes.map(describeVolume)
+
+  /** The index of the volume `params.volume` names, by index or by name; the base without it. */
+  const volumeIndex = (params: Record<string, unknown>): number => {
+    const wanted = params?.volume
+    if (wanted === undefined || wanted === null || wanted === '') return 0
+    const shown = view.volumes.map((v) => v.name).join(', ')
+    if (typeof wanted === 'number' || /^\d+$/.test(String(wanted).trim())) {
+      const index = Number(wanted)
+      if (!view.volumes[index]) {
+        throw new Error(
+          `There is no volume ${index}: ${view.volumes.length} shown, numbered from 0 (${shown}).`,
+        )
       }
-    })
+      return index
+    }
+    const name = String(wanted).trim().toLowerCase()
+    const exact = view.volumes.findIndex((v) => v.name.toLowerCase() === name)
+    if (exact >= 0) return exact
+    const hits = view.volumes
+      .map((v, index) => (v.name.toLowerCase().includes(name) ? index : -1))
+      .filter((index) => index >= 0)
+    if (hits.length === 1) return hits[0]
+    if (hits.length > 1) {
+      const which = hits.map((i) => `${i} (${view.volumes[i].name})`).join(', ')
+      throw new Error(
+        `"${wanted}" could mean ${hits.length} volumes: ${which}. Say which, or give its index.`,
+      )
+    }
+    throw new Error(`No volume is named "${wanted}". Shown: ${shown}.`)
+  }
 
   /** Moves the crosshair to `frac`, cuts `plane` through it facing the camera at the cut, and draws. */
   const moveTo = (
@@ -322,9 +425,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const mm = Array.from(view.getCrosshairPos())
       return {
         volume,
+        volumes: volumesShown(),
         crosshair: { mm, frac },
         plane: planeState(host),
         camera: camera(view),
+        ...(hasLayout(view) ? { view: viewState(view) } : {}),
         description: await describe(),
         ...(host.extraState?.() ?? {}),
       }
@@ -514,6 +619,129 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       view.elevation = Math.min(90, Math.max(-90, elevation))
       view.drawScene()
       return { camera: camera(view), plane: planeState(host) }
+    },
+
+    async set_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      // Only what was asked for goes to NiiVue: it assigns the update
+      // onto the volume as it is, so an undefined field would wipe one.
+      const update: VolumeUpdate = {}
+      const colormap = text(params, 'colormap')
+      if (colormap !== undefined) update.colormap = colormap
+      const opacity = number(params, 'opacity')
+      if (opacity !== undefined)
+        update.opacity = Math.min(1, Math.max(0, opacity))
+      const calMin = number(params, 'cal_min')
+      const calMax = number(params, 'cal_max')
+      if (calMin !== undefined) update.calMin = calMin
+      if (calMax !== undefined) update.calMax = calMax
+      const low = calMin ?? volume.calMin
+      const high = calMax ?? volume.calMax
+      if (low !== undefined && high !== undefined && low > high) {
+        throw new Error(
+          `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
+        )
+      }
+      const frame = number(params, 'frame')
+      if (frame !== undefined) {
+        if (!Number.isInteger(frame) || frame < 0)
+          throw new Error('frame must be a whole number, counted from 0.')
+        const frames = volume.nFrame4D ?? 1
+        if (frame >= frames) {
+          throw new Error(
+            frames > 1
+              ? `${volume.name} has ${frames} frames, numbered 0 to ${frames - 1}.`
+              : `${volume.name} has one frame only.`,
+          )
+        }
+        update.frame4D = frame
+      }
+      const inverted = flag(params, 'invert')
+      if (inverted !== undefined) update.isColormapInverted = inverted
+      if (Object.keys(update).length === 0) {
+        throw new Error(
+          'set_volume needs something to set: colormap, opacity, cal_min, cal_max, frame or invert.',
+        )
+      }
+      if (!view.setVolume)
+        throw new Error(
+          "This page's NiiVue cannot change a volume once loaded.",
+        )
+      await view.setVolume(index, update)
+      view.drawScene()
+      return { volume: describeVolume(volume, index) }
+    },
+
+    set_view(params) {
+      host.beforeAnswer?.()
+      if (!hasLayout(view))
+        throw new Error("This page's NiiVue has no view layout to set.")
+      let changed = false
+      const slice = text(params, 'slice')?.toLowerCase()
+      if (slice !== undefined) {
+        const type = Object.hasOwn(SLICE_TYPES, slice)
+          ? SLICE_TYPES[slice as keyof typeof SLICE_TYPES]
+          : undefined
+        if (type === undefined) {
+          throw new Error(
+            `Unknown slice "${slice}". One of: ${Object.keys(SLICE_TYPES).join(', ')}.`,
+          )
+        }
+        view.sliceType = type
+        changed = true
+      }
+      const layout = text(params, 'layout')?.toLowerCase()
+      if (layout !== undefined) {
+        const type = Object.hasOwn(LAYOUTS, layout)
+          ? LAYOUTS[layout as keyof typeof LAYOUTS]
+          : undefined
+        if (type === undefined) {
+          throw new Error(
+            `Unknown layout "${layout}". One of: ${Object.keys(LAYOUTS).join(', ')}.`,
+          )
+        }
+        view.multiplanarType = type
+        changed = true
+      }
+      const showRender = text(params, 'show_render')?.toLowerCase()
+      if (showRender !== undefined) {
+        const when = Object.hasOwn(SHOW_RENDER, showRender)
+          ? SHOW_RENDER[showRender as keyof typeof SHOW_RENDER]
+          : undefined
+        if (when === undefined) {
+          throw new Error(
+            `Unknown show_render "${showRender}". One of: ${Object.keys(SHOW_RENDER).join(', ')}.`,
+          )
+        }
+        view.showRender = when
+        changed = true
+      }
+      // An empty mosaic clears the one drawn, so this one is read raw.
+      const mosaic = params?.mosaic
+      if (mosaic !== undefined && mosaic !== null) {
+        view.mosaicString = String(mosaic).trim()
+        changed = true
+      }
+      const radiological = flag(params, 'radiological')
+      if (radiological !== undefined) {
+        view.isRadiological = radiological
+        changed = true
+      }
+      const colorbar = flag(params, 'colorbar')
+      if (colorbar !== undefined) {
+        view.isColorbarVisible = colorbar
+        changed = true
+      }
+      if (!changed) {
+        throw new Error(
+          'set_view needs something to set: slice, layout, mosaic, show_render, radiological or colorbar.',
+        )
+      }
+      view.drawScene()
+      return { view: viewState(view) }
     },
 
     screenshot(params) {

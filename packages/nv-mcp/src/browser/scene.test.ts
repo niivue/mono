@@ -13,6 +13,8 @@ import {
   sceneState,
   type View,
   type VolumeToLoad,
+  type VolumeUpdate,
+  viewState,
 } from './scene'
 
 /** A volume as NiiVue would keep it after loading `volume`. */
@@ -308,6 +310,7 @@ describe('where_am_i', () => {
     })
     expect(await coreHandlers(h).where_am_i({})).toEqual({
       volume: 'mni152.nii.gz',
+      volumes: [{ index: 0, name: 'mni152.nii.gz' }],
       crosshair: { mm: [0, 0, 50], frac: [0.5, 0.5, 0.75] },
       plane: { name: 'off', depth: PLANE_NONE, azimuth: 0, elevation: 0 },
       camera: { azimuth: 110, elevation: 15 },
@@ -315,6 +318,60 @@ describe('where_am_i', () => {
       sounding: false,
       mode: 'tone',
     })
+  })
+
+  it('adds the view layout by name when the page has one, and each volume with its window', async () => {
+    const view = fakeView({
+      volumes: [
+        { name: 'mni152.nii.gz', calMin: 0, calMax: 100, nFrame4D: 1 },
+        {
+          name: 'bold.nii.gz',
+          colormap: 'warm',
+          opacity: 0.7,
+          calMin: 10,
+          calMax: 90,
+          globalMin: -5,
+          globalMax: 120,
+          frame4D: 3,
+          nFrame4D: 200,
+          isColormapInverted: true,
+        },
+      ],
+      sliceType: 3,
+      multiplanarType: 2,
+      mosaicString: '',
+      showRender: 2,
+      isRadiological: false,
+      isColorbarVisible: true,
+    })
+    expect(await coreHandlers(host(view)).where_am_i({})).toMatchObject({
+      volumes: [
+        { index: 0, name: 'mni152.nii.gz', calMin: 0, calMax: 100 },
+        {
+          index: 1,
+          name: 'bold.nii.gz',
+          colormap: 'warm',
+          opacity: 0.7,
+          calMin: 10,
+          calMax: 90,
+          globalMin: -5,
+          globalMax: 120,
+          frame: 3,
+          frames: 200,
+          inverted: true,
+        },
+      ],
+      view: {
+        slice: 'multiplanar',
+        layout: 'grid',
+        showRender: 'auto',
+        radiological: false,
+        colorbar: true,
+      },
+    })
+    expect(
+      (await coreHandlers(host(view)).where_am_i({})) as { view: object },
+    ).not.toHaveProperty('view.mosaic')
   })
 
   it('describes the position itself when the host does not, and says so before a volume', async () => {
@@ -380,6 +437,210 @@ describe('set_camera', () => {
         elevation: 0,
       }),
     ).toThrow('azimuth must be a number')
+  })
+})
+
+/** A view whose NiiVue can change a volume, with a 4D overlay over the base. */
+function settableView(): View {
+  const view = fakeView({
+    volumes: [
+      { name: 'mni152.nii.gz', calMin: 0, calMax: 100, nFrame4D: 1 },
+      {
+        name: 'bold.nii.gz',
+        colormap: 'warm',
+        opacity: 0.7,
+        calMin: 10,
+        calMax: 90,
+        globalMin: -5,
+        globalMax: 120,
+        frame4D: 0,
+        nFrame4D: 200,
+      },
+      { name: 'bold_mask.nii.gz' },
+    ],
+    setVolume: mock(async (index: number, update: VolumeUpdate) => {
+      Object.assign(view.volumes[index], update)
+    }),
+  })
+  return view
+}
+
+describe('set_volume', () => {
+  it('changes only what was asked on the base volume, and reports it as drawn now', async () => {
+    const view = settableView()
+    const result = await coreHandlers(host(view)).set_volume({
+      colormap: 'bone',
+      cal_max: 80,
+    })
+    expect(view.setVolume).toHaveBeenCalledWith(0, {
+      colormap: 'bone',
+      calMax: 80,
+    })
+    expect(result).toEqual({
+      volume: {
+        index: 0,
+        name: 'mni152.nii.gz',
+        colormap: 'bone',
+        calMin: 0,
+        calMax: 80,
+      },
+    })
+    expect(view.drawScene).toHaveBeenCalled()
+  })
+
+  it('finds the volume by index or by name, clamps the opacity, and picks a frame', async () => {
+    const view = settableView()
+    const handlers = coreHandlers(host(view))
+    expect(
+      await handlers.set_volume({ volume: 1, opacity: 2, frame: 7 }),
+    ).toMatchObject({
+      volume: {
+        index: 1,
+        name: 'bold.nii.gz',
+        opacity: 1,
+        frame: 7,
+        frames: 200,
+      },
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      opacity: 1,
+      frame4D: 7,
+    })
+    expect(
+      await handlers.set_volume({ volume: 'bold_mask', invert: true }),
+    ).toMatchObject({ volume: { index: 2, inverted: true } })
+    expect(
+      await handlers.set_volume({ volume: 'BOLD.nii.gz', invert: false }),
+    ).toMatchObject({ volume: { index: 1 } })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      isColormapInverted: false,
+    })
+    expect(
+      await handlers.set_volume({ volume: '2', opacity: 0 }),
+    ).toMatchObject({ volume: { index: 2, opacity: 0 } })
+  })
+
+  it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {
+    const handlers = coreHandlers(host(settableView()))
+    await expect(
+      handlers.set_volume({ volume: 1, cal_min: 95 }),
+    ).rejects.toThrow('cal_min (95) must not be above cal_max (90)')
+    await expect(
+      handlers.set_volume({ cal_min: 50, cal_max: 40 }),
+    ).rejects.toThrow('cal_min (50) must not be above cal_max (40)')
+    await expect(handlers.set_volume({ frame: 1 })).rejects.toThrow(
+      'mni152.nii.gz has one frame only',
+    )
+    await expect(
+      handlers.set_volume({ volume: 1, frame: 200 }),
+    ).rejects.toThrow('bold.nii.gz has 200 frames, numbered 0 to 199')
+    await expect(
+      handlers.set_volume({ volume: 1, frame: 1.5 }),
+    ).rejects.toThrow('whole number')
+    await expect(handlers.set_volume({})).rejects.toThrow(
+      'needs something to set',
+    )
+    await expect(handlers.set_volume({ opacity: 'thin' })).rejects.toThrow(
+      'opacity must be a number',
+    )
+  })
+
+  it('refuses a volume it cannot find, an ambiguous name, no volume, or a page that cannot change one', async () => {
+    const handlers = coreHandlers(host(settableView()))
+    await expect(
+      handlers.set_volume({ volume: 3, opacity: 1 }),
+    ).rejects.toThrow('There is no volume 3: 3 shown, numbered from 0')
+    await expect(
+      handlers.set_volume({ volume: 'bold', opacity: 1 }),
+    ).rejects.toThrow(
+      '"bold" could mean 2 volumes: 1 (bold.nii.gz), 2 (bold_mask.nii.gz). Say which',
+    )
+    await expect(
+      handlers.set_volume({ volume: 'zstat', opacity: 1 }),
+    ).rejects.toThrow('No volume is named "zstat". Shown: mni152.nii.gz, bold')
+    await expect(
+      coreHandlers(host(fakeView({ volumes: [] }))).set_volume({ opacity: 1 }),
+    ).rejects.toThrow(/load_volume/)
+    await expect(
+      coreHandlers(host(fakeView())).set_volume({ opacity: 1 }),
+    ).rejects.toThrow('cannot change a volume')
+  })
+})
+
+describe('set_view', () => {
+  const laidOut = () =>
+    fakeView({
+      sliceType: 4,
+      multiplanarType: 0,
+      mosaicString: '',
+      showRender: 2,
+      isRadiological: false,
+      isColorbarVisible: false,
+    })
+
+  it('sets each part by name, leaving the rest, and reports the whole layout', () => {
+    const view = laidOut()
+    const handlers = coreHandlers(host(view))
+    expect(handlers.set_view({ slice: 'multiplanar', layout: 'grid' })).toEqual(
+      {
+        view: {
+          slice: 'multiplanar',
+          layout: 'grid',
+          showRender: 'auto',
+          radiological: false,
+          colorbar: false,
+        },
+      },
+    )
+    expect([view.sliceType, view.multiplanarType]).toEqual([3, 2])
+    expect(
+      handlers.set_view({
+        show_render: 'never',
+        radiological: true,
+        colorbar: true,
+      }),
+    ).toMatchObject({
+      view: { showRender: 'never', radiological: true, colorbar: true },
+    })
+    expect(view.showRender).toBe(0)
+    expect(
+      handlers.set_view({ mosaic: ' A 0 20 40; C -10 0 10 ' }),
+    ).toMatchObject({
+      view: { mosaic: 'A 0 20 40; C -10 0 10', slice: 'multiplanar' },
+    })
+    expect(handlers.set_view({ mosaic: '' })).not.toHaveProperty('view.mosaic')
+    expect(view.mosaicString).toBe('')
+    expect(handlers.set_view({ slice: 'Axial' })).toMatchObject({
+      view: { slice: 'axial' },
+    })
+    expect(view.drawScene).toHaveBeenCalledTimes(5)
+  })
+
+  it('works before a volume is loaded, and names a number it does not know as other', () => {
+    const view = laidOut()
+    view.volumes = []
+    expect(
+      coreHandlers(host(view)).set_view({ slice: 'render' }),
+    ).toMatchObject({ view: { slice: 'render' } })
+    view.sliceType = 5
+    expect(viewState(view).slice).toBe('other')
+  })
+
+  it('refuses an unknown name, nothing to set, or a page without a layout', () => {
+    const handlers = coreHandlers(host(laidOut()))
+    expect(() => handlers.set_view({ slice: 'oblique' })).toThrow(
+      'Unknown slice "oblique". One of: axial, coronal, sagittal, multiplanar, render.',
+    )
+    expect(() => handlers.set_view({ layout: 'stack' })).toThrow(
+      'Unknown layout "stack"',
+    )
+    expect(() => handlers.set_view({ show_render: 'maybe' })).toThrow(
+      'Unknown show_render "maybe"',
+    )
+    expect(() => handlers.set_view({})).toThrow('needs something to set')
+    expect(() =>
+      coreHandlers(host(fakeView())).set_view({ slice: 'axial' }),
+    ).toThrow('no view layout')
   })
 })
 

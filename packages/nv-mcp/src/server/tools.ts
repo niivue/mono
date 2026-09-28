@@ -18,6 +18,12 @@ import { z } from 'zod'
 
 import { PLANE_ALIASES, PLANE_ANGLES } from '../planes'
 import { TAB_PARAM, type TabState } from '../protocol'
+import {
+  LAYOUT_NAMES,
+  SHOW_RENDER_NAMES,
+  SLICE_NAMES,
+  type ViewState,
+} from '../views'
 import type { Bridge, ResetReport, TabInfo } from './bridge'
 
 type Content =
@@ -187,6 +193,79 @@ export const CORE_SCHEMAS = {
         'Degrees above the horizontal, from -90 (below) to 90 (above).',
       ),
   },
+  set_volume: {
+    ...TAB_ARG,
+    volume: z
+      .union([z.number().int().min(0), z.string().min(1)])
+      .optional()
+      .describe(
+        'Which volume: its index as where_am_i and add_overlay list them (0 is the base), or its name. The base otherwise.',
+      ),
+    colormap: z.string().optional().describe('A NiiVue colormap name.'),
+    opacity: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe('0 (hidden) to 1 (opaque).'),
+    cal_min: z
+      .number()
+      .optional()
+      .describe(
+        "The low end of the display window: the intensity drawn as the colormap's darkest colour.",
+      ),
+    cal_max: z
+      .number()
+      .optional()
+      .describe(
+        "The high end of the display window: the intensity drawn as the colormap's brightest colour.",
+      ),
+    frame: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe('The frame of a 4D volume to show, counted from 0.'),
+    invert: z
+      .boolean()
+      .optional()
+      .describe('Whether the colormap runs backwards.'),
+  },
+  set_view: {
+    ...TAB_ARG,
+    slice: z
+      .enum(SLICE_NAMES)
+      .optional()
+      .describe(
+        'What the canvas shows: one slice orientation, all three with the render (multiplanar), or the render alone.',
+      ),
+    layout: z
+      .enum(LAYOUT_NAMES)
+      .optional()
+      .describe(
+        'How the multiplanar tiles are arranged; auto picks by the shape of the canvas.',
+      ),
+    mosaic: z
+      .string()
+      .optional()
+      .describe(
+        'A NiiVue mosaic string, e.g. "A 0 20 40; C -10 0 10" for three axial and three coronal slices ' +
+          'in a grid; the empty string clears the mosaic.',
+      ),
+    show_render: z
+      .enum(SHOW_RENDER_NAMES)
+      .optional()
+      .describe(
+        'Whether the multiplanar view includes the render tile; auto adds it when there is room.',
+      ),
+    radiological: z
+      .boolean()
+      .optional()
+      .describe(
+        "Radiological convention: the subject's left on the right of the picture.",
+      ),
+    colorbar: z.boolean().optional().describe('Whether a colorbar is drawn.'),
+  },
   screenshot: {
     ...TAB_ARG,
     max_width: z
@@ -352,7 +431,14 @@ export function tabAddress(
   }
 }
 
-/** Registers the core tools: tabs, the volume, the crosshair and the atlas, the cut and the camera, a picture. */
+/** A line that says what the view shows: the slice type, and the mosaic when one is drawn. */
+export function describeView(state: ViewState): string {
+  if (state.mosaic) return `View: mosaic "${state.mosaic}".`
+  const layout = state.slice === 'multiplanar' ? `, ${state.layout} layout` : ''
+  return `View: ${state.slice}${layout}.`
+}
+
+/** Registers the core tools: tabs, the volume, the crosshair and the atlas, the cut and the camera, how each volume and the view are drawn, a picture. */
 export function registerCoreTools(
   server: McpServer,
   context: ToolContext,
@@ -470,8 +556,9 @@ export function registerCoreTools(
       title: 'Where the crosshair is',
       description:
         'Reports where the crosshair is now: its position in millimetres and as fractions of the ' +
-        'volume, the atlas region there if any, which plane is cut, where the camera looks from, ' +
-        'which tab answered, and the description a listener would hear.',
+        'volume, the volumes shown and how each is drawn, the atlas region there if any, which ' +
+        'plane is cut, where the camera looks from, the view layout, which tab answered, and the ' +
+        'description a listener would hear.',
       inputSchema: CORE_SCHEMAS.where_am_i,
       annotations: { readOnlyHint: true },
     },
@@ -577,6 +664,50 @@ export function registerCoreTools(
       inputSchema: CORE_SCHEMAS.set_camera,
     },
     async ({ tab, ...params }) => context.answer('set_camera', params, { tab }),
+  )
+
+  server.registerTool(
+    'set_volume',
+    {
+      title: 'Change how a volume is drawn',
+      description:
+        'Changes how one loaded volume is drawn, leaving the rest as it is: its colormap, its ' +
+        'opacity, its display window (`cal_min` and `cal_max`, the intensities drawn as the ' +
+        "colormap's darkest and brightest colours), the frame shown of a 4D volume, or whether the " +
+        'colormap is inverted. `volume` is an index as where_am_i lists them, or a name; the base ' +
+        'volume otherwise. Reports the volume as it is drawn now, with the intensities it spans.',
+      inputSchema: CORE_SCHEMAS.set_volume,
+    },
+    async ({ tab, ...params }) =>
+      context.answer('set_volume', params, {
+        tab,
+        lead: (r) => {
+          const volume = (r as { volume?: { name?: string } })?.volume
+          return volume?.name ? `Changed ${volume.name}.` : undefined
+        },
+      }),
+  )
+
+  server.registerTool(
+    'set_view',
+    {
+      title: 'Set the view layout',
+      description:
+        'Sets what the canvas shows: `slice` picks one slice orientation, the multiplanar view of ' +
+        'all three with the render, or the render alone; `layout` arranges the multiplanar tiles ' +
+        'and `show_render` says whether the render tile joins them; `mosaic` draws the slices a ' +
+        'NiiVue mosaic string names; `radiological` and `colorbar` are switches. Each is optional ' +
+        'and only what is given changes. Reports the whole layout afterwards.',
+      inputSchema: CORE_SCHEMAS.set_view,
+    },
+    async ({ tab, ...params }) =>
+      context.answer('set_view', params, {
+        tab,
+        lead: (r) => {
+          const view = (r as { view?: ViewState })?.view
+          return view ? describeView(view) : undefined
+        },
+      }),
   )
 
   server.registerTool(

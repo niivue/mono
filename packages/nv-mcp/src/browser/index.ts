@@ -30,6 +30,7 @@ export type {
   Triple,
   View,
   VolumeToLoad,
+  VolumeUpdate,
 } from './scene'
 export {
   coreHandlers,
@@ -38,4 +39,5 @@ export {
   planeIsCut,
   SCREENSHOT_WIDTH,
   sceneState,
+  viewState,
 } from './scene'

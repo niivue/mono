@@ -19,6 +19,7 @@ import {
   sceneState,
   type View,
   type VolumeToLoad,
+  type VolumeUpdate,
 } from '../browser/index'
 
 export const REGIONS: AtlasRegion[] = [
@@ -93,6 +94,10 @@ export function fakePage(options: FakePageOptions): FakePage {
     url: volume.url,
     ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
     ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+    calMin: 0,
+    calMax: 100,
+    globalMin: 0,
+    globalMax: 255,
   })
   const fetching = async (volume: VolumeToLoad): Promise<void> => {
     if (volume.url.includes('missing')) throw new Error('404 Not Found')
@@ -125,6 +130,15 @@ export function fakePage(options: FakePageOptions): FakePage {
       await fetching(volume)
       volumes.push(shown(volume))
     },
+    setVolume: async (index: number, update: VolumeUpdate) => {
+      Object.assign(volumes[index], update)
+    },
+    sliceType: 4,
+    multiplanarType: 0,
+    mosaicString: '',
+    showRender: 2,
+    isRadiological: false,
+    isColorbarVisible: false,
     drawScene: () => {},
     model: {
       mm2scene: (mm) =>

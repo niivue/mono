@@ -46,6 +46,21 @@ export {
   matchRegion,
   regionMentions,
 } from './regions'
+export type { Setting, SettingKind } from './settings'
+export {
+  ANNOTATION_TOOLS,
+  COLORMAP_TYPES,
+  coerceSetting,
+  DRAG_MODES,
+  findSetting,
+  GRADIENT_MODES,
+  PEN_SHAPES,
+  RENDER_MODES,
+  readSetting,
+  SETTINGS,
+  SLIDE_TOOLS,
+  settingChoices,
+} from './settings'
 export type {
   LayoutName,
   ShowRenderName,

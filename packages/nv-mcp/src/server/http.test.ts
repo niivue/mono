@@ -10,8 +10,8 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { z } from 'zod'
 
 import { type FakePage, fakePage } from '../testing/fake-page'
+import { type Extension, TAB_ARG } from './context'
 import { type RunningServer, startServer } from './http'
-import { type Extension, TAB_ARG } from './tools'
 
 const CORE_TOOLS = [
   'list_tabs',
@@ -28,6 +28,40 @@ const CORE_TOOLS = [
   'set_volume',
   'set_view',
   'screenshot',
+  'nudge_crosshair',
+  'transform_volume',
+  'remove_volume',
+  'reorder_volume',
+  'describe_volume',
+  'get_options',
+  'set_options',
+  'capabilities',
+  'add_colormap',
+  'set_font',
+  'set_custom_layout',
+  'load_mesh',
+  'list_meshes',
+  'set_mesh',
+  'remove_mesh',
+  'add_mesh_layer',
+  'set_mesh_layer',
+  'remove_mesh_layer',
+  'load_signal',
+  'list_signals',
+  'set_signal',
+  'remove_signal',
+  'set_graph',
+  'edit_drawing',
+  'list_annotations',
+  'edit_annotations',
+  'list_measurements',
+  'edit_measurements',
+  'set_viewport',
+  'map_point',
+  'set_slide',
+  'chunk_stats',
+  'save',
+  'load_document',
 ]
 
 /** The smallest extension: one tool, answered by the page's `set_light` handler. */

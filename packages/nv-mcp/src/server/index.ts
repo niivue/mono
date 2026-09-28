@@ -15,25 +15,27 @@ export type {
 } from './bridge'
 // biome-ignore lint/performance/noBarrelFile: package entry point
 export { Bridge, CALL_TIMEOUT_MS, NO_APP, RETURN_GRACE_MS } from './bridge'
-export type { RunningServer, ServerOptions } from './http'
-export { DEFAULT_HOST, DEFAULT_PORT, startServer } from './http'
 export type {
   AnswerOptions,
   Extension,
   ReplyShape,
   ToolContext,
   ToolReply,
-} from './tools'
+} from './context'
 export {
-  buildServer,
-  CORE_SCHEMAS,
-  CUT_NAMES,
   failure,
-  PLANE_NAMES,
-  registerCoreTools,
   reloadNotice,
   reply,
   TAB_ARG,
   tabAddress,
   toolContext,
+} from './context'
+export type { RunningServer, ServerOptions } from './http'
+export { DEFAULT_HOST, DEFAULT_PORT, startServer } from './http'
+export {
+  buildServer,
+  CORE_SCHEMAS,
+  CUT_NAMES,
+  PLANE_NAMES,
+  registerCoreTools,
 } from './tools'

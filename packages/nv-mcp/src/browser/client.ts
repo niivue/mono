@@ -38,6 +38,9 @@ export const AGENT_PATH = '/agent'
 /** The key the tab's id is kept under in `sessionStorage`. */
 export const TAB_ID_KEY = 'nv-mcp.tab'
 
+/** The `?tab` name that initially claimed this storage, when there was one. */
+const TAB_ADDRESS_ID_KEY = 'nv-mcp.tab.address'
+
 /**
  * The addresses to try, in turn: the page's own origin first, since a browser
  * that allows a page one origin only (Claude's built-in pane) can reach
@@ -76,11 +79,18 @@ export function tabId(
 ): string {
   const named = tabFromSearch(search)
   try {
-    const kept = named ?? storage?.getItem(TAB_ID_KEY)
-    if (kept) {
-      if (named) storage?.setItem(TAB_ID_KEY, kept)
-      return kept
+    const kept = storage?.getItem(TAB_ID_KEY)
+    const addressId = storage?.getItem(TAB_ADDRESS_ID_KEY)
+    if (named) {
+      // A duplicated page keeps the original `?tab` in its address, but
+      // the server may have welcomed it with a spare id. Keep that spare
+      // on reload; a different address still deliberately claims its id.
+      if (kept && addressId === named) return kept
+      storage?.setItem(TAB_ID_KEY, named)
+      storage?.setItem(TAB_ADDRESS_ID_KEY, named)
+      return named
     }
+    if (kept) return kept
     const fresh = freshId()
     storage?.setItem(TAB_ID_KEY, fresh)
     return fresh

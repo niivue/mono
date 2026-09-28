@@ -330,6 +330,8 @@ describe('core tools over the bridge', () => {
       mimeType: 'image/png',
     })
     expect(content[0].text).toMatch(/^12×8 pixels\./)
+    // The picture is not in the text as well.
+    expect(json(shot)).toEqual({ width: 12, height: 8 })
   })
 
   it('lists tabs, lets one be chosen, and refuses an unknown id in words', async () => {

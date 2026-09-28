@@ -316,6 +316,7 @@ describe('the server, end to end', () => {
     expect(content[1].mimeType).toBe('image/png')
     expect(content[1].data?.startsWith('iVBORw0KGgo')).toBe(true)
     expect(json(shot)).toMatchObject({ width: 320, height: 240 })
+    expect(json(shot)).not.toHaveProperty('data')
 
     expect(text(await call('set_light', { on: true }))).toMatch(/^Light on\./)
     expect(json(await call('set_light', { on: true }))).toEqual({ light: true })

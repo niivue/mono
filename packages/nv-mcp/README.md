@@ -153,16 +153,82 @@ Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`). Vite's WebSoc
 | `where_am_i` | | The crosshair in millimetres and fractions, the volumes shown and how each is drawn, the plane cut, the camera, the view layout, the page's description of the place, and whatever state the app adds. Says which tab answered |
 | `list_regions` | `query?` | The atlas regions the page can navigate to: label, spoken name, centroid in millimetres, voxel count. `query` filters by label or name |
 | `go_to_region` | `region`, `plane?` | Moves the crosshair to a region's centroid, turns the camera to face the cut, cuts a plane through the point, and announces the place. `plane` is a side, a slice name or `current`. An ambiguous name fails and lists the candidates |
-| `go_to_point` | `mm`, `plane?`, `label?` | Moves the crosshair to a point in the volume's world millimetres, cuts a plane through it facing the camera, and announces it, prefixed with `label` when given. The same move as `go_to_region`, for any space |
-| `set_clip_plane` | `plane`, `depth?`, `face?` | Cuts the volume with a whole plane named for the side it takes off, or `off`. `depth` is NiiVue's, clamped to plus or minus 1.5; `face` turns the camera to look at the cut, on by default |
-| `set_camera` | `azimuth`, `elevation` | Points the render camera |
-| `set_volume` | `volume?`, `colormap?`, `opacity?`, `cal_min?`, `cal_max?`, `frame?`, `invert?` | Changes how one loaded volume is drawn, leaving the rest: the colormap, the opacity, the display window (the intensities drawn as the darkest and brightest colours), the frame of a 4D volume, or an inverted colormap. `volume` is an index as `where_am_i` lists them or a name; the base otherwise. Reports the volume as drawn now, with the intensities it spans |
+| `go_to_point` | `mm?`, `vox?`, `plane?`, `label?` | Moves the crosshair to a point in the volume's world millimetres, or to a voxel of the base volume, cuts a plane through it facing the camera, and announces it, prefixed with `label` when given. The same move as `go_to_region`, for any space |
+| `set_clip_plane` | `plane?`, `depth?`, `azimuth?`, `elevation?`, `index?`, `planes?`, `face?` | Cuts the volume with a whole plane named for the side it takes off, or `off`; or at any `azimuth` and `elevation`; or several planes at once with `planes`, each `[depth, azimuth, elevation]`. `depth` is NiiVue's, clamped to plus or minus 1.5; `index` picks one of the six planes; `face` turns the camera to look at the cut, on by default |
+| `set_camera` | `azimuth?`, `elevation?`, `pan_2d?`, `render_pan?`, `pivot?`, `center_on?`, `global?` | Points the render camera, pans the slices (`pan_2d`, NiiVue's `[x, y, z, zoom]`) or the render, sets or clears the point the render turns about, centres the render on a point in millimetres, or places the camera outright with `global` (`position`, `yaw`, `pitch`, `fov`, `near`, `far`). Only what is given changes |
+| `set_volume` | `volume?`, `colormap?`, `colormap_negative?`, `opacity?`, `cal_min?`, `cal_max?`, `cal_min_neg?`, `cal_max_neg?`, `colormap_type?`, `transparent_below_cal_min?`, `frame?`, `invert?`, `colorbar?`, `nearest?`, `atlas_outline?`, `modulate_alpha?`, `labels?`, `modulate?`, `load_all_frames?`, `auto_window?`, `affine?`, `reset_affine?`, `transform?` | Changes how one loaded volume is drawn, leaving the rest: the colormaps for positive and negative values, the opacity, the display windows, how the window is drawn below its minimum, the frame of a 4D volume, an inverted colormap, its colorbar, nearest-neighbour sampling, an atlas outline, a label table (`labels`, as `add_overlay` takes it), modulation by another volume, loading every frame of a deferred 4D volume, a recomputed window, its voxel-to-world affine set outright or reset, or a translation, rotation and scale applied to it. `volume` is an index as `where_am_i` lists them or a name; the base otherwise. Reports the volume as drawn now |
 | `set_view` | `slice?`, `layout?`, `mosaic?`, `show_render?`, `radiological?`, `colorbar?` | Sets what the canvas shows: one slice orientation, all three with the render (`multiplanar`), or the render alone; how the multiplanar tiles are arranged and whether the render tile joins them; a NiiVue mosaic string; radiological convention; the colorbar. Only what is given changes. Reports the whole layout |
 | `screenshot` | `max_width?` | Draws the scene now and returns the canvas as a PNG, scaled down to fit. Refuses while the tab is in the background, where the browser draws nothing |
 
 Every tool below `new_tab` also takes `tab?`, the id of the tab to ask; without it the answering tab is asked, as the Tabs section explains.
 
 Every reply is a line of prose for the agent to read, then the JSON the page returned. Failures are tool errors with the page's own message.
+
+### More on volumes
+
+| Tool | Input | What it does |
+|---|---|---|
+| `nudge_crosshair` | `vox` | Steps the crosshair a whole number of voxels along each of the base volume's axes and reports where it lands |
+| `transform_volume` | `name`, `volume?`, `options?`, `replace?` | Runs one of NiiVue's registered volume transforms (`capabilities` lists them with their options) on a loaded volume and adds the result on top of the stack, removing the source when `replace` is set |
+| `remove_volume` | `volume?`, `all?` | Unloads one volume, or every volume with `all`. Reports the volumes that remain |
+| `reorder_volume` | `volume`, `move` | Moves a volume `up`, `down`, to the `top` or to the `bottom` of the stack. The bottom volume is the base that sets the space |
+| `describe_volume` | `volume?`, `stats?`, `mask?`, `mask_labels?`, `drawing?`, `affine?` | One volume in full: how it is drawn, its dimensions, its label table, its voxel statistics (over the whole volume, within a mask volume, its labels, or the drawing), and its affine when asked |
+
+### Settings and capabilities
+
+| Tool | Input | What it does |
+|---|---|---|
+| `get_options` | `names?`, `describe?` | Reads NiiVue's settings by their own names: crosshair, colours, fonts, 3D rendering, drawing pen, drag behaviour and the rest. Without `names` it describes every setting the page has, with its kind, its choices or bounds and what it does |
+| `set_options` | `options` | Changes any of those settings, several at once. A choice is given by its word (a drag mode, a pen shape, a render mode), a colour as `[r, g, b, a]` 0 to 1. Every value is checked before any is set |
+| `capabilities` | | What this page's NiiVue offers: its backend, which tool features it supports by group, which settings it has, its colormaps, drawing colormaps and mesh shaders, its volume transforms with their options, and the file types it reads and writes. A page whose NiiVue lacks a feature refuses that tool in words and answers every other |
+| `add_colormap` | `name?`, `R?`, `G?`, `B?`, `A?`, `I?`, `labels?`, `url?` | Adds a colormap from its stops, or fetches one from an address as a NiiVue colormap JSON |
+| `set_font` | `atlas`, `metrics` | Loads the font NiiVue draws its text with, from an atlas PNG and a metrics JSON |
+| `set_custom_layout` | `tiles?`, `clear?` | Places tiles on the canvas by hand, each a slice orientation or the render at `[left, top, width, height]` as fractions, in place of the ordinary layout; `clear` goes back to it |
+
+### Meshes
+
+| Tool | Input | What it does |
+|---|---|---|
+| `load_mesh` | `url`, `name?`, `replace?`, `opacity?`, `color?`, `shader?`, `slice_shader?`, `visible?`, `colorbar?`, `legend?`, `layers?` | Loads a surface, tract or connectome over the volumes, with overlay layers when given; `replace` unloads the meshes shown first |
+| `list_meshes` | | The meshes shown, each with how it is drawn and its layers, and the shaders the page knows |
+| `set_mesh` | `mesh?`, `name?`, `opacity?`, `color?`, `shader?`, `slice_shader?`, `visible?`, `colorbar?`, `legend?`, `tract?`, `connectome?` | Changes how a mesh is drawn, leaving the rest; `tract` and `connectome` take NiiVue's option objects for those kinds and report a tract's groups |
+| `remove_mesh` | `mesh?`, `all?` | Unloads one mesh, or every mesh |
+| `add_mesh_layer` | `url`, `mesh?`, `name?`, `colormap?`, `colormap_negative?`, `cal_min?`, `cal_max?`, `cal_min_neg?`, `cal_max_neg?`, `opacity?`, `colorbar?`, `invert?`, `transparent_below_cal_min?`, `additive?`, `outline_width?` | Draws a per-vertex overlay (a curvature, a thickness, a statistic) on a mesh |
+| `set_mesh_layer` | `mesh?`, `layer?`, the layer fields above, `frame?` | Changes how a layer is drawn, or the frame of a 4D layer |
+| `remove_mesh_layer` | `mesh?`, `layer?` | Takes a layer off a mesh |
+
+### Signals and the graph
+
+| Tool | Input | What it does |
+|---|---|---|
+| `load_signal` | `url`, `name?`, `replace?`, `as_signal?`, `display?`, `attach_to?`, `annotations?` | Loads a physiological trace or a spectroscopy voxel for the graph, drawn as `display` says (`mode`, `ppm_range`, `ppm_ref`, `use_hz`, `apodize_hz`, `phase0`, `phase1_ms`, `columns`, `average`, `legend`), attached to a volume, with notes on the graph |
+| `list_signals` | | The signals shown and the graph's range |
+| `set_signal` | `signal?`, `display?`, `attach_to?`, `annotations?` | Changes how a signal is drawn, what it is attached to, or its notes |
+| `remove_signal` | `signal?`, `all?` | Unloads one signal, or every signal |
+| `set_graph` | `cursor?`, `step?`, `zoom?`, `pan?`, `range?`, `reset?` | Moves the graph cursor to a fraction or steps it, zooms and pans the graph, windows its range or clears the window, or resets the view |
+
+### The drawing, annotations and measurements
+
+| Tool | Input | What it does |
+|---|---|---|
+| `edit_drawing` | `action`, `url?`, `slice?`, `slice_index?` | Works on the voxel drawing over the base volume: `create` an empty one, `load` one from an address, `undo` the last stroke, `close` it, or trace a slice of it as `svg`. Strokes are made by hand on the page; the pen settings are in `set_options` |
+| `list_annotations` | `polygons?`, `json?`, `svg?`, `slice?`, `slice_position?` | The vector annotations drawn on the slices, with their polygons, as JSON, or traced as SVG when asked |
+| `edit_annotations` | `action`, `id?`, `text?`, `annotation?`, `json?` | `add` a NiiVue VectorAnnotation, `remove` or `select` one by id, `set_text` on one, `clear` them, `undo`, `redo`, or `load` a set from JSON |
+| `list_measurements` | | The distance measurements drawn on the slices, each with its ends in millimetres and its length |
+| `edit_measurements` | `action`, `start_mm?`, `end_mm?`, `slice?`, `slice_index?`, `slice_position?`, `index?` | `add` a distance between two points, `remove` one by index, or `clear` them all, the angles (`clear_angles`) or the distances (`clear_distances`) |
+
+### The canvas, the slide plane, chunks and files
+
+| Tool | Input | What it does |
+|---|---|---|
+| `set_viewport` | `pan?`, `zoom?`, `bounds?`, `reset?` | Pans and zooms the canvas in 2D, bounds where NiiVue draws to a box of fractions (or `null` to clear it), or resets |
+| `map_point` | `canvas?`, `mm?`, `vox?` | What is under a canvas pixel (the tile, the slice, the point in millimetres), or where a point in millimetres or a voxel lands on the canvas |
+| `set_slide` | `level?`, `clear_plane?`, `drawing?`, `max_raster?` | For a whole-slide image: the level the slide plane shows (or `null` for automatic), clearing the plane, and the slide drawing (`create`, `clear`, `undo`, `end`) |
+| `chunk_stats` | `rebake?`, `reset_timing?` | For a chunked (OME-Zarr, IIIF) volume: the streaming, timing and level-of-detail statistics; rebakes the chunked overlays or resets the timing when asked |
+| `save` | `what`, `filename?`, `volume?`, `drawing?`, `mesh?`, `quality?`, `format?`, `settings_never_saved?`, `settings_always_saved?` | Has the browser download the scene as a NiiVue document, a volume (with the drawing when asked), a mesh, the canvas as a picture, or the drawing |
+| `load_document` | `url`, `fill?` | Loads a NiiVue document from an address, replacing the scene; `fill` says whether settings the document leaves out take their defaults or stay as they are |
+
+What is left out is what an MCP tool cannot carry: the members of NiiVue that take a DOM node, a canvas, a `File`, a callback or another object rather than a value. Attaching to a canvas, resizing, the draw and refresh methods, the event listeners, loaders, custom overlay renderers and volume transforms are registered by the page; pointer-driven picking (`slideDrawAt`, `slidePlanePick`, `pickMeasurement`, `pickExplodedBlock`) belongs to the pointer; `loadChunkedVolume`, `setSlidePlane`, `swapVolumeChunkPlan` and `addMrsiSignal` take live source objects a page builds; `setFont` takes decoded font data, so `set_font` takes the addresses instead; `broadcastTo` and `setInstances` link instances on one page, which the page does. Every one of those is a page concern, not a scene state, and the page an agent drives is free to expose any of them through its own extension tools.
 
 ### Planes and cameras
 

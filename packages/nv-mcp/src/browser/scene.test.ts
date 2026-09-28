@@ -1,21 +1,23 @@
 import { describe, expect, it, mock } from 'bun:test'
 
 import { clipNormal, PLANE_ANGLES, PLANE_NONE, viewDirection } from '../planes'
+import { nameFromUrl } from './params'
 import {
-  type AtlasLike,
-  type AtlasRegion,
   coreHandlers,
   looksMni,
-  type NiiVueHost,
-  nameFromUrl,
   planeIsCut,
-  type ShownVolume,
   sceneState,
-  type View,
-  type VolumeToLoad,
-  type VolumeUpdate,
   viewState,
 } from './scene'
+import type {
+  AtlasLike,
+  AtlasRegion,
+  NiiVueHost,
+  ShownVolume,
+  View,
+  VolumeToLoad,
+  VolumeUpdate,
+} from './view'
 
 /** A volume as NiiVue would keep it after loading `volume`. */
 const shown = (volume: VolumeToLoad): ShownVolume => ({

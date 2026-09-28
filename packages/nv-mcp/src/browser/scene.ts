@@ -21,6 +21,7 @@ import {
 } from '../planes'
 import type { PlaneState, RegionSummary, TabState } from '../protocol'
 import { ambiguityMessage, findRegion, regionMentions } from '../regions'
+import { COLORMAP_TYPES } from '../settings'
 import {
   LAYOUTS,
   nameFor,
@@ -28,164 +29,37 @@ import {
   SLICE_TYPES,
   type ViewState,
 } from '../views'
-
-/** The part of a NiiVue instance the core drives. NiiVue 1.0 satisfies it as is. */
-/** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
-export type Triple = { [index: number]: number; readonly length: number }
-
-/**
- * A label table as NiiVue reads one: a colour per label, each for the
- * value in `I` at the same place, and the labels' names. `fetchLabelTable`
- * fills `I` and `A` in as NiiVue would when a table leaves them out.
- */
-export interface LabelTable {
-  R: number[]
-  G: number[]
-  B: number[]
-  A: number[]
-  I: number[]
-  labels?: string[]
-}
-
-export interface View {
-  canvas: HTMLCanvasElement | null
-  /** The volumes on show, the base first. NiiVue keeps how each was loaded on it. */
-  volumes: ReadonlyArray<ShownVolume>
-  azimuth: number
-  elevation: number
-  /**
-   * The crosshair as fractions of the volume. Read live; moved by assigning
-   * three numbers, which NiiVue's setter turns into its events (`change`,
-   * `locationChange`) and its pan-follows-crosshair, as a click would.
-   */
-  crosshairPos: Triple
-  /** The crosshair in world millimetres. */
-  getCrosshairPos(): Triple
-  getClipPlaneDepthAziElev(index: number): [number, number, number]
-  setClipPlane(plane: number[]): void
-  /** Replaces every volume on show with these. */
-  loadVolumes(volumes: VolumeToLoad[]): Promise<unknown>
-  /** Adds one volume over those on show, keeping them. */
-  addVolume(volume: VolumeToLoad): Promise<unknown>
-  /** Draws a volume as labels from a lookup table, by name (`freesurfer`) or as a table. NiiVue 1.0 has it. */
-  setColormapLabel?(
-    volumeIndex: number,
-    cmap: string | LabelTable,
-  ): Promise<unknown> | unknown
-  /** Changes how a loaded volume is drawn, keeping the rest as it is. NiiVue 1.0 has it. */
-  setVolume?(
-    volumeIndex: number,
-    update: VolumeUpdate,
-  ): Promise<unknown> | unknown
-  /**
-   * The view layout, by NiiVue's numbers (`views.ts` names them). Each is
-   * read live and set by assignment, which NiiVue 1.0 turns into its
-   * `change` event and a redraw. A page whose NiiVue has none of them
-   * cannot answer `set_view`.
-   */
-  sliceType?: number
-  multiplanarType?: number
-  mosaicString?: string
-  showRender?: number
-  isRadiological?: boolean
-  isColorbarVisible?: boolean
-  /** Schedules a frame. NiiVue 1.0 draws it on the next animation frame, not now. */
-  drawScene(): unknown
-  /** Fits the canvas's drawing buffer to its box; NiiVue 1.0 has it. */
-  resize?(): void
-  /** NiiVue 1.0's render backend, whose `render()` draws a frame now. */
-  view?: { render(): void } | null
-  model: {
-    mm2scene(mm: number[]): Triple
-    scene2mm(frac: number[]): Triple
-  }
-}
-
-/** A volume as `View.loadVolumes` and `View.addVolume` take it: NiiVue's `ImageFromUrlOptions`, in part. */
-export interface VolumeToLoad {
-  url: string
-  name?: string
-  colormap?: string
-  opacity?: number
-}
-
-/** What `View.setVolume` can change about a volume: NiiVue's `VolumeUpdate`, in part. */
-export interface VolumeUpdate {
-  colormap?: string
-  opacity?: number
-  calMin?: number
-  calMax?: number
-  frame4D?: number
-  isColormapInverted?: boolean
-}
-
-/** A volume as NiiVue keeps it once loaded, in the part the core reads. */
-export interface ShownVolume {
-  name: string
-  /** Where it was fetched from; absent for a file the person dropped in. */
-  url?: string
-  colormap?: string
-  opacity?: number
-  /** The display window: the intensities drawn as the darkest and brightest colours. */
-  calMin?: number
-  calMax?: number
-  /** The intensities the volume actually spans. */
-  globalMin?: number
-  globalMax?: number
-  /** For a 4D volume, the frame shown and how many there are. */
-  frame4D?: number
-  nFrame4D?: number
-  isColormapInverted?: boolean
-}
-
-/** A region as an atlas keeps it: what `list_regions` reports plus its voxel value. */
-export interface AtlasRegion extends RegionSummary {
-  value: number
-}
-
-/** What the core needs of an atlas: four questions over millimetre coordinates. */
-export interface AtlasLike {
-  regions(): readonly AtlasRegion[]
-  regionAt(mm: readonly number[]): string | null
-  valueAt(mm: readonly number[]): number
-  nearestIn(
-    value: number,
-    mm: readonly number[],
-  ): [number, number, number] | null
-}
-
-export interface LoadedVolume {
-  url: string
-  name: string
-  /** Whether the volume is taken to be in MNI space. */
-  mni: boolean
-}
-
-/** A NiiVue instance and the hooks an app fills in. Every hook is optional. */
-export interface NiiVueHost {
-  view: View
-  /** The atlas, fetched if it has not been. Throws in words when it cannot be. */
-  atlas?(): Promise<AtlasLike>
-  /** Whether the atlas applies to the loaded volume. Taken as yes when absent. */
-  atlasApplies?(): boolean
-  /** Called before any answer is read off the scene: a page that sizes its canvas lazily does so here. */
-  beforeAnswer?(): void
-  /** Called with the new position after the core moves the crosshair. */
-  moved?(frac: readonly number[]): void
-  /** The place in words, as the app would say it to a person. May look something up first. */
-  describe?(): string | Promise<string>
-  /** Tells the person something changed that they did not do. */
-  announce?(text: string): void
-  /** Called after `load_volume` has loaded one. */
-  loaded?(volume: LoadedVolume): void
-  /** State of the app's own the server should watch between calls. */
-  extraState?(): Record<string, unknown>
-  /** The name of the plane cut now, when the app has its own names. */
-  planeName?(): string
-}
-
-export type Handler = (params: Record<string, unknown>) => unknown
-export type Handlers = Record<string, Handler>
+import { markHandlers } from './marks'
+import { meshHandlers } from './meshes'
+import {
+  clamp,
+  flag,
+  integer,
+  nameFromUrl,
+  nothingIn,
+  number,
+  numbers,
+  point,
+  pointIfGiven,
+  put,
+  record,
+  text,
+} from './params'
+import { pickIndex } from './pick'
+import { settingHandlers } from './settings'
+import { signalHandlers } from './signals'
+import type {
+  AffineTransform,
+  AtlasLike,
+  GlobalCamera,
+  Handlers,
+  LabelTable,
+  NiiVueHost,
+  ShownVolume,
+  View,
+  VolumeUpdate,
+} from './view'
+import { viewportHandlers } from './viewport'
 
 /** The default width a screenshot is scaled down to. */
 export const SCREENSHOT_WIDTH = 1024
@@ -236,45 +110,9 @@ function facePlane(view: View, azimuth: number, elevation: number): void {
   view.elevation = at.elevation
 }
 
-function text(
-  params: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  const value = params?.[key]
-  if (value === undefined || value === null) return undefined
-  const trimmed = String(value).trim()
-  return trimmed ? trimmed : undefined
-}
-
-function number(
-  params: Record<string, unknown>,
-  key: string,
-): number | undefined {
-  const value = params?.[key]
-  if (value === undefined || value === null || value === '') return undefined
-  const n = Number(value)
-  if (!Number.isFinite(n)) throw new Error(`${key} must be a number.`)
-  return n
-}
-
-function flag(
-  params: Record<string, unknown>,
-  key: string,
-): boolean | undefined {
-  const value = params?.[key]
-  if (value === undefined || value === null) return undefined
-  return value === true || value === 'true'
-}
-
 /** Whether a volume's name says it is in MNI space, when nobody said. */
 export function looksMni(name: string): boolean {
   return /mni/i.test(name)
-}
-
-/** The file name at the end of a URL, without its query. */
-export function nameFromUrl(url: string): string {
-  const path = url.split(/[?#]/)[0]
-  return path.slice(path.lastIndexOf('/') + 1) || url
 }
 
 const summary = ({
@@ -349,21 +187,6 @@ export async function fetchLabelTable(address: string): Promise<LabelTable> {
 }
 
 /** Three finite numbers, or a message saying what is wrong. */
-function point(
-  params: Record<string, unknown>,
-  key: string,
-): [number, number, number] {
-  const value = params?.[key]
-  if (
-    !Array.isArray(value) ||
-    value.length !== 3 ||
-    value.some((v) => !Number.isFinite(Number(v)))
-  ) {
-    throw new Error(`${key} must be three numbers, [x, y, z] in millimetres.`)
-  }
-  return [Number(value[0]), Number(value[1]), Number(value[2])]
-}
-
 /** The handlers for the core tools, over this host. */
 export function coreHandlers(host: NiiVueHost): Handlers {
   const { view } = host
@@ -400,42 +223,49 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ? { globalMin: volume.globalMin, globalMax: volume.globalMax }
         : {}),
       ...(frames > 1 ? { frame: volume.frame4D ?? 0, frames } : {}),
+      ...(volume.nTotalFrame4D !== undefined && volume.nTotalFrame4D > frames
+        ? { framesInFile: volume.nTotalFrame4D }
+        : {}),
       ...(volume.isColormapInverted ? { inverted: true } : {}),
+      ...(volume.colormapNegative
+        ? { colormapNegative: volume.colormapNegative }
+        : {}),
+      ...(volume.calMinNeg !== undefined && volume.calMaxNeg !== undefined
+        ? { calMinNeg: volume.calMinNeg, calMaxNeg: volume.calMaxNeg }
+        : {}),
+      ...(volume.colormapType
+        ? { colormapType: nameFor(COLORMAP_TYPES, volume.colormapType) }
+        : {}),
+      ...(volume.isTransparentBelowCalMin
+        ? { transparentBelowCalMin: true }
+        : {}),
+      ...(volume.isColorbarVisible ? { colorbar: true } : {}),
+      ...(volume.isNearestInterpolation ? { nearest: true } : {}),
+      ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
+      ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
     }
+  }
+
+  /** A label table by name or fetched from an address, checked before anything changes. */
+  const knownLabelTable = (labels: string): void => {
+    if (isAddress(labels)) return
+    if (!(LABEL_TABLES as readonly string[]).includes(labels)) {
+      throw new Error(
+        `Unknown label table "${labels}". One of: ${LABEL_TABLES.join(', ')}, or the address of a label table JSON the page can fetch.`,
+      )
+    }
+  }
+  const labelTable = async (labels: string): Promise<string | LabelTable> => {
+    knownLabelTable(labels)
+    return isAddress(labels) ? fetchLabelTable(labels) : labels
   }
 
   /** The volumes on show, as `add_overlay` and `where_am_i` report them. */
   const volumesShown = () => view.volumes.map(describeVolume)
 
   /** The index of the volume `params.volume` names, by index or by name; the base without it. */
-  const volumeIndex = (params: Record<string, unknown>): number => {
-    const wanted = params?.volume
-    if (wanted === undefined || wanted === null || wanted === '') return 0
-    const shown = view.volumes.map((v) => v.name).join(', ')
-    if (typeof wanted === 'number' || /^\d+$/.test(String(wanted).trim())) {
-      const index = Number(wanted)
-      if (!view.volumes[index]) {
-        throw new Error(
-          `There is no volume ${index}: ${view.volumes.length} shown, numbered from 0 (${shown}).`,
-        )
-      }
-      return index
-    }
-    const name = String(wanted).trim().toLowerCase()
-    const exact = view.volumes.findIndex((v) => v.name.toLowerCase() === name)
-    if (exact >= 0) return exact
-    const hits = view.volumes
-      .map((v, index) => (v.name.toLowerCase().includes(name) ? index : -1))
-      .filter((index) => index >= 0)
-    if (hits.length === 1) return hits[0]
-    if (hits.length > 1) {
-      const which = hits.map((i) => `${i} (${view.volumes[i].name})`).join(', ')
-      throw new Error(
-        `"${wanted}" could mean ${hits.length} volumes: ${which}. Say which, or give its index.`,
-      )
-    }
-    throw new Error(`No volume is named "${wanted}". Shown: ${shown}.`)
-  }
+  const volumeIndex = (params: Record<string, unknown>): number =>
+    pickIndex(view.volumes, params?.volume, 'volume', 0)
 
   /** Moves the crosshair to `frac`, cuts `plane` through it facing the camera at the cut, and draws. */
   const moveTo = (
@@ -461,6 +291,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   }
 
   return {
+    ...settingHandlers(host),
+    ...viewportHandlers(host),
+    ...meshHandlers(host),
+    ...signalHandlers(host),
+    ...markHandlers(host),
+
     async load_volume(params) {
       const url = text(params, 'url')
       if (!url) throw new Error('load_volume needs a url.')
@@ -505,6 +341,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         plane: planeState(host),
         camera: camera(view),
         ...(hasLayout(view) ? { view: viewState(view) } : {}),
+        ...counts(view),
         description: await describe(),
         ...(host.extraState?.() ?? {}),
       }
@@ -586,24 +423,16 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (!url) throw new Error('add_overlay needs a url.')
       const name = text(params, 'name') ?? nameFromUrl(url)
       const labels = text(params, 'labels')
-      if (
-        labels &&
-        !isAddress(labels) &&
-        !(LABEL_TABLES as readonly string[]).includes(labels)
-      ) {
-        throw new Error(
-          `Unknown label table "${labels}". One of: ${LABEL_TABLES.join(', ')}, or the address of a label table JSON the page can fetch.`,
-        )
-      }
+      if (labels) knownLabelTable(labels)
       if (labels && !view.setColormapLabel)
         throw new Error("This page's NiiVue cannot draw label maps.")
       // A table from an address is fetched before anything is added, so a
       // bad address leaves the scene as it was.
-      const table =
-        labels && isAddress(labels) ? await fetchLabelTable(labels) : labels
-      const opacity = Math.min(
+      const table = labels ? await labelTable(labels) : undefined
+      const opacity = clamp(
+        number(params, 'opacity') ?? (labels ? 0.5 : 0.7),
+        0,
         1,
-        Math.max(0, number(params, 'opacity') ?? (labels ? 0.5 : 0.7)),
       )
       const colormap = text(params, 'colormap') ?? (labels ? 'gray' : 'warm')
       // NiiVue keeps the crosshair as a fraction of the scene, and a volume
@@ -639,14 +468,29 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     async go_to_point(params) {
       requireVolume()
       host.beforeAnswer?.()
-      const mm = point(params, 'mm')
       const planeName = text(params, 'plane')
       const plane = resolvePlane(planeName, view.getClipPlaneDepthAziElev(0))
       if (!plane) throw new Error(`Unknown plane "${planeName}".`)
-      const at = view.model.mm2scene([mm[0], mm[1], mm[2]])
-      const frac: [number, number, number] = [at[0], at[1], at[2]]
+      const vox = pointIfGiven(params, 'vox')
+      let mm = pointIfGiven(params, 'mm')
+      let frac: [number, number, number]
+      if (vox) {
+        if (!view.vox2frac)
+          throw new Error("This page's NiiVue cannot place a voxel.")
+        if (vox.some((v) => !Number.isInteger(v)))
+          throw new Error('vox must be three whole numbers, [i, j, k].')
+        frac = view.vox2frac(vox)
+        const at = view.model.scene2mm(frac)
+        mm = [at[0], at[1], at[2]]
+      } else {
+        if (!mm) throw new Error('go_to_point needs mm or vox.')
+        const at = view.model.mm2scene([mm[0], mm[1], mm[2]])
+        frac = [at[0], at[1], at[2]]
+      }
       if (frac.some((f) => !Number.isFinite(f) || f < 0 || f > 1)) {
-        throw new Error(`[${mm.join(', ')}] mm lies outside the loaded volume.`)
+        throw new Error(
+          `${vox ? `Voxel [${vox.join(', ')}]` : `[${mm.join(', ')}] mm`} lies outside the loaded volume.`,
+        )
       }
       const depth = moveTo(frac, plane)
       const label = text(params, 'label')
@@ -654,7 +498,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const description = label ? `${label}. ${place}` : place
       host.announce?.(description)
       return {
-        landed: { mm, frac },
+        landed: { mm, frac, ...(vox ? { vox } : {}) },
         plane: {
           name: plane.name,
           depth,
@@ -667,48 +511,196 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
     },
 
+    nudge_crosshair(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (!view.moveCrosshairInVox)
+        throw new Error(
+          "This page's NiiVue cannot step the crosshair by voxels.",
+        )
+      const by = numbers(params, 'vox', 3)
+      if (!by || by.some((v) => !Number.isInteger(v)))
+        throw new Error(
+          'nudge_crosshair needs vox: three whole numbers, [di, dj, dk].',
+        )
+      view.moveCrosshairInVox(by[0], by[1], by[2])
+      view.drawScene()
+      const frac = Array.from(view.crosshairPos)
+      host.moved?.(frac)
+      return {
+        crosshair: { mm: Array.from(view.getCrosshairPos()), frac },
+      }
+    },
+
     set_clip_plane(params) {
       requireVolume()
       host.beforeAnswer?.()
-      const name = (text(params, 'plane') ?? '').toLowerCase()
-      if (!name) throw new Error('set_clip_plane needs a plane name, or off.')
-      if (name === 'off') {
-        view.setClipPlane([PLANE_NONE, 0, 0])
+      const planes = params?.planes
+      if (planes !== undefined && planes !== null) {
+        if (!view.setClipPlanes)
+          throw new Error("This page's NiiVue cannot set several clip planes.")
+        if (
+          !Array.isArray(planes) ||
+          !planes.length ||
+          planes.length > CLIP_PLANES ||
+          planes.some(
+            (p) =>
+              !Array.isArray(p) ||
+              p.length !== 3 ||
+              p.some((v) => !Number.isFinite(Number(v))),
+          )
+        ) {
+          throw new Error(
+            `planes must be one to ${CLIP_PLANES} triples, [depth, azimuth, elevation] each.`,
+          )
+        }
+        const set = planes.map((p: unknown[]) => p.map(Number))
+        view.setClipPlanes(set)
         view.drawScene()
-        host.announce?.('Cut plane: off.')
-        return { plane: planeState(host), camera: camera(view) }
+        return {
+          planes: set.map(([depth, azimuth, elevation]) => ({
+            name: namePlane(depth, azimuth, elevation),
+            depth,
+            azimuth,
+            elevation,
+          })),
+          camera: camera(view),
+        }
       }
-      const plane = resolvePlane(name, null)
-      if (!plane || name === 'current')
-        throw new Error(`Unknown plane "${name}".`)
-      const depth = Math.min(1.5, Math.max(-1.5, number(params, 'depth') ?? 0))
-      if (flag(params, 'face') ?? true)
-        facePlane(view, plane.azimuth, plane.elevation)
-      view.setClipPlane([depth, plane.azimuth, plane.elevation])
-      view.drawScene()
-      host.announce?.(`Cut plane: ${plane.name}.`)
-      return {
+      const index = integer(params, 'index') ?? 0
+      if (index >= CLIP_PLANES)
+        throw new Error(`index must be 0 to ${CLIP_PLANES - 1}.`)
+      const setAt = (plane: [number, number, number]) => {
+        if (index === 0) {
+          view.setClipPlane(plane)
+          return
+        }
+        if (!view.setClipPlaneDepthAziElev)
+          throw new Error("This page's NiiVue has one clip plane only.")
+        view.setClipPlaneDepthAziElev(plane[0], plane[1], plane[2], index)
+      }
+      const reported = (plane: [number, number, number], name?: string) => ({
+        ...(index ? { index } : {}),
         plane: {
-          name: plane.name,
-          depth,
-          azimuth: plane.azimuth,
-          elevation: plane.elevation,
+          name: name ?? namePlane(plane[0], plane[1], plane[2]),
+          depth: plane[0],
+          azimuth: plane[1],
+          elevation: plane[2],
         },
         camera: camera(view),
+      })
+      const name = (text(params, 'plane') ?? '').toLowerCase()
+      const azimuth = number(params, 'azimuth')
+      const elevation = number(params, 'elevation')
+      if (name === 'off') {
+        setAt([PLANE_NONE, 0, 0])
+        view.drawScene()
+        host.announce?.('Cut plane: off.')
+        return reported([PLANE_NONE, 0, 0])
       }
+      let plane: { name: string; azimuth: number; elevation: number }
+      if (azimuth !== undefined || elevation !== undefined) {
+        if (azimuth === undefined || elevation === undefined)
+          throw new Error('A plane by angle needs both azimuth and elevation.')
+        plane = { name: '', azimuth, elevation }
+      } else {
+        if (!name)
+          throw new Error(
+            'set_clip_plane needs a plane name, an azimuth and elevation, or off.',
+          )
+        const named = resolvePlane(name, null)
+        if (!named || name === 'current')
+          throw new Error(`Unknown plane "${name}".`)
+        plane = named
+      }
+      const depth = clamp(number(params, 'depth') ?? 0, -1.5, 1.5)
+      if (!plane.name)
+        plane.name = namePlane(depth, plane.azimuth, plane.elevation)
+      if (flag(params, 'face') ?? true)
+        facePlane(view, plane.azimuth, plane.elevation)
+      setAt([depth, plane.azimuth, plane.elevation])
+      view.drawScene()
+      host.announce?.(`Cut plane: ${plane.name}.`)
+      return reported([depth, plane.azimuth, plane.elevation], plane.name)
     },
 
     set_camera(params) {
       requireVolume()
       host.beforeAnswer?.()
+      let changed = false
       const azimuth = number(params, 'azimuth')
       const elevation = number(params, 'elevation')
-      if (azimuth === undefined || elevation === undefined)
-        throw new Error('set_camera needs an azimuth and an elevation.')
-      view.azimuth = ((azimuth % 360) + 360) % 360
-      view.elevation = Math.min(90, Math.max(-90, elevation))
+      if (azimuth !== undefined) {
+        view.azimuth = ((azimuth % 360) + 360) % 360
+        changed = true
+      }
+      if (elevation !== undefined) {
+        view.elevation = clamp(elevation, -90, 90)
+        changed = true
+      }
+      const pan = numbers(params, 'pan_2d', 4)
+      if (pan) {
+        if (view.pan2Dxyzmm === undefined)
+          throw new Error("This page's NiiVue cannot pan its slices.")
+        view.pan2Dxyzmm = new Float32Array(pan)
+        changed = true
+      }
+      const renderPan = numbers(params, 'render_pan', 2)
+      if (renderPan) {
+        if (view.renderPan === undefined)
+          throw new Error("This page's NiiVue cannot pan its render.")
+        view.renderPan = new Float32Array(renderPan)
+        changed = true
+      }
+      const pivot = params?.pivot
+      if (pivot !== undefined) {
+        if (view.renderPivotMM === undefined)
+          throw new Error("This page's NiiVue cannot pivot its render.")
+        view.renderPivotMM =
+          pivot === null ? null : new Float32Array(point(params, 'pivot'))
+        changed = true
+      }
+      const centre = pointIfGiven(params, 'center_on')
+      if (centre) {
+        if (!view.centerRenderOnMM)
+          throw new Error(
+            "This page's NiiVue cannot centre its render on a point.",
+          )
+        if (!view.centerRenderOnMM(centre))
+          throw new Error(
+            `The render could not be centred on [${centre.join(', ')}] mm.`,
+          )
+        changed = true
+      }
+      const placed = record(params, 'global')
+      if (placed) {
+        if (!view.setGlobalCamera)
+          throw new Error("This page's NiiVue has no global camera to place.")
+        const position = point(placed, 'position')
+        const cam: GlobalCamera = { position }
+        put(cam, 'yaw', number(placed, 'yaw'))
+        put(cam, 'pitch', number(placed, 'pitch'))
+        put(cam, 'fov', number(placed, 'fov'))
+        put(cam, 'near', number(placed, 'near'))
+        put(cam, 'far', number(placed, 'far'))
+        view.setGlobalCamera(cam)
+        changed = true
+      }
+      if (!changed) {
+        throw new Error(
+          'set_camera needs something to set: azimuth, elevation, pan_2d, render_pan, pivot, center_on or global.',
+        )
+      }
       view.drawScene()
-      return { camera: camera(view), plane: planeState(host) }
+      return {
+        camera: camera(view),
+        plane: planeState(host),
+        ...(view.pan2Dxyzmm ? { pan2D: Array.from(view.pan2Dxyzmm) } : {}),
+        ...(view.renderPan ? { renderPan: Array.from(view.renderPan) } : {}),
+        ...(view.renderPivotMM
+          ? { pivot: Array.from(view.renderPivotMM) }
+          : {}),
+      }
     },
 
     async set_volume(params) {
@@ -719,15 +711,14 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // Only what was asked for goes to NiiVue: it assigns the update
       // onto the volume as it is, so an undefined field would wipe one.
       const update: VolumeUpdate = {}
-      const colormap = text(params, 'colormap')
-      if (colormap !== undefined) update.colormap = colormap
+      put(update, 'colormap', text(params, 'colormap'))
+      put(update, 'colormapNegative', text(params, 'colormap_negative'))
       const opacity = number(params, 'opacity')
-      if (opacity !== undefined)
-        update.opacity = Math.min(1, Math.max(0, opacity))
+      if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
       const calMin = number(params, 'cal_min')
       const calMax = number(params, 'cal_max')
-      if (calMin !== undefined) update.calMin = calMin
-      if (calMax !== undefined) update.calMax = calMax
+      put(update, 'calMin', calMin)
+      put(update, 'calMax', calMax)
       const low = calMin ?? volume.calMin
       const high = calMax ?? volume.calMax
       if (low !== undefined && high !== undefined && low > high) {
@@ -735,6 +726,23 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
         )
       }
+      put(update, 'calMinNeg', number(params, 'cal_min_neg'))
+      put(update, 'calMaxNeg', number(params, 'cal_max_neg'))
+      const type = text(params, 'colormap_type')?.toLowerCase()
+      if (type !== undefined) {
+        if (!Object.hasOwn(COLORMAP_TYPES, type)) {
+          throw new Error(
+            `Unknown colormap_type "${type}". One of: ${Object.keys(COLORMAP_TYPES).join(', ')}.`,
+          )
+        }
+        update.colormapType =
+          COLORMAP_TYPES[type as keyof typeof COLORMAP_TYPES]
+      }
+      put(
+        update,
+        'isTransparentBelowCalMin',
+        flag(params, 'transparent_below_cal_min'),
+      )
       const frame = number(params, 'frame')
       if (frame !== undefined) {
         if (!Number.isInteger(frame) || frame < 0)
@@ -749,20 +757,217 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         }
         update.frame4D = frame
       }
-      const inverted = flag(params, 'invert')
-      if (inverted !== undefined) update.isColormapInverted = inverted
-      if (Object.keys(update).length === 0) {
+      put(update, 'isColormapInverted', flag(params, 'invert'))
+      put(update, 'isColorbarVisible', flag(params, 'colorbar'))
+      put(update, 'isNearestInterpolation', flag(params, 'nearest'))
+      const outline = number(params, 'atlas_outline')
+      if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
+      const modulateAlpha = number(params, 'modulate_alpha')
+      if (modulateAlpha !== undefined)
+        update.modulateAlpha = clamp(modulateAlpha, 0, 1)
+
+      // What is not a field of the volume: each its own NiiVue call.
+      const labels = text(params, 'labels')
+      const modulate = params?.modulate
+      const autoWindow = flag(params, 'auto_window')
+      const allFrames = flag(params, 'load_all_frames')
+      const affine = params?.affine
+      const resetAffine = flag(params, 'reset_affine')
+      const transform = record(params, 'transform')
+      const extras = [
+        labels,
+        modulate,
+        autoWindow,
+        allFrames,
+        affine,
+        resetAffine,
+        transform,
+      ].some((v) => v !== undefined && v !== null)
+      if (nothingIn(update) && !extras) {
         throw new Error(
-          'set_volume needs something to set: colormap, opacity, cal_min, cal_max, frame or invert.',
+          'set_volume needs something to set: colormap, opacity, cal_min, cal_max, frame, invert, or one of the others its schema lists.',
         )
       }
-      if (!view.setVolume)
-        throw new Error(
-          "This page's NiiVue cannot change a volume once loaded.",
-        )
-      await view.setVolume(index, update)
+      if (!nothingIn(update)) {
+        if (!view.setVolume)
+          throw new Error(
+            "This page's NiiVue cannot change a volume once loaded.",
+          )
+        await view.setVolume(index, update)
+      }
+      if (labels !== undefined) {
+        if (!view.setColormapLabel)
+          throw new Error("This page's NiiVue cannot draw label maps.")
+        const table = await labelTable(labels)
+        await view.setColormapLabel(index, table)
+        labelled.set(volume, labels)
+      }
+      if (modulate !== undefined && modulate !== null) {
+        if (!view.setModulationImage)
+          throw new Error("This page's NiiVue cannot modulate a volume.")
+        const by = record(params, 'modulate') ?? {}
+        const other = pickIndex(view.volumes, by.volume, 'volume')
+        const target = volume.id
+        const modulator = view.volumes[other].id
+        if (target === undefined || modulator === undefined)
+          throw new Error("This page's NiiVue does not give its volumes ids.")
+        const alpha = clamp(number(by, 'alpha') ?? 0, 0, 1)
+        await view.setModulationImage(target, modulator, alpha)
+      }
+      if (allFrames) {
+        if (!view.loadDeferred4DVolumes)
+          throw new Error(
+            "This page's NiiVue cannot load a volume's remaining frames.",
+          )
+        if (volume.id === undefined)
+          throw new Error("This page's NiiVue does not give its volumes ids.")
+        await view.loadDeferred4DVolumes(volume.id)
+      }
+      if (autoWindow) {
+        if (!view.recalculateCalMinMax)
+          throw new Error(
+            "This page's NiiVue cannot recompute a volume's window.",
+          )
+        await view.recalculateCalMinMax(index, update.frame4D)
+      }
+      if (resetAffine) {
+        if (!view.resetVolumeAffine)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        await view.resetVolumeAffine(index)
+      }
+      if (affine !== undefined && affine !== null) {
+        if (!view.setVolumeAffine)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        view.setVolumeAffine(index, matrix4(affine, 'affine'))
+      }
+      if (transform) {
+        if (!view.applyVolumeTransform)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        const moved: AffineTransform = {
+          translation: pointIfGiven(transform, 'translation') ?? [0, 0, 0],
+          rotation: pointIfGiven(transform, 'rotation') ?? [0, 0, 0],
+          scale: pointIfGiven(transform, 'scale') ?? [1, 1, 1],
+        }
+        await view.applyVolumeTransform(index, moved)
+      }
       view.drawScene()
       return { volume: describeVolume(volume, index) }
+    },
+
+    async transform_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      const name = text(params, 'name')
+      const known = view.volumeTransforms ?? []
+      if (!view.volumeTransform || !known.length)
+        throw new Error("This page's NiiVue has no volume transforms.")
+      if (!name || !Object.hasOwn(view.volumeTransform, name)) {
+        throw new Error(
+          `${name ? `Unknown transform "${name}"` : 'transform_volume needs a name'}. One of: ${known.join(', ')}.`,
+        )
+      }
+      const options = record(params, 'options')
+      const made = await view.volumeTransform[name](volume, options)
+      if (flag(params, 'replace')) {
+        if (!view.removeVolume)
+          throw new Error("This page's NiiVue cannot remove a volume.")
+        view.removeVolume(index)
+      }
+      await view.addVolume(made)
+      view.drawScene()
+      const added = view.volumes.length - 1
+      return {
+        transform: name,
+        ...(options ? { options } : {}),
+        volume: describeVolume(view.volumes[added], added),
+        volumes: volumesShown(),
+      }
+    },
+
+    remove_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (flag(params, 'all')) {
+        if (!view.removeAllVolumes)
+          throw new Error("This page's NiiVue cannot remove its volumes.")
+        view.removeAllVolumes()
+        view.drawScene()
+        return { volumes: [] }
+      }
+      if (!view.removeVolume)
+        throw new Error("This page's NiiVue cannot remove a volume.")
+      const index = pickIndex(view.volumes, params?.volume, 'volume')
+      const removed = view.volumes[index].name
+      view.removeVolume(index)
+      view.drawScene()
+      return { removed, volumes: volumesShown() }
+    },
+
+    reorder_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = pickIndex(view.volumes, params?.volume, 'volume')
+      const move = text(params, 'move')?.toLowerCase()
+      const moves: Record<string, (() => unknown) | undefined> = {
+        up: view.moveVolumeUp && (() => view.moveVolumeUp?.(index)),
+        down: view.moveVolumeDown && (() => view.moveVolumeDown?.(index)),
+        top: view.moveVolumeToTop && (() => view.moveVolumeToTop?.(index)),
+        bottom:
+          view.moveVolumeToBottom && (() => view.moveVolumeToBottom?.(index)),
+      }
+      if (!move || !Object.hasOwn(moves, move))
+        throw new Error('reorder_volume needs move: up, down, top or bottom.')
+      const go = moves[move]
+      if (!go) throw new Error("This page's NiiVue cannot reorder its volumes.")
+      const name = view.volumes[index].name
+      go()
+      view.drawScene()
+      return {
+        moved: name,
+        index: view.volumes.findIndex((v) => v.name === name),
+        volumes: volumesShown(),
+      }
+    },
+
+    describe_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      const out: Record<string, unknown> = {
+        volume: describeVolume(volume, index),
+      }
+      if (volume.dims) {
+        const dims = Array.from(volume.dims)
+        out.dims = dims.slice(1, 1 + Math.max(3, Math.min(dims[0] ?? 3, 4)))
+      }
+      if (volume.id !== undefined) out.id = volume.id
+      if (flag(params, 'stats') ?? true) {
+        if (!view.getDescriptives)
+          throw new Error("This page's NiiVue cannot compute voxel statistics.")
+        const masks = numbers(params, 'mask_labels')
+        const mask = params?.mask
+        const options: Parameters<NonNullable<View['getDescriptives']>>[0] = {
+          volumeIndex: index,
+        }
+        if (mask !== undefined && mask !== null) {
+          options.masks = [pickIndex(view.volumes, mask, 'volume')]
+          if (masks) options.drawPenValues = masks
+        } else if (flag(params, 'drawing')) {
+          options.isDrawingMask = true
+          if (masks) options.drawPenValues = masks
+        }
+        const stats = view.getDescriptives(options)
+        if (stats) out.stats = stats
+      }
+      if (flag(params, 'affine')) {
+        if (!view.getVolumeAffine)
+          throw new Error("This page's NiiVue cannot report a volume's affine.")
+        out.affine = view.getVolumeAffine(index)
+      }
+      return out
     },
 
     set_view(params) {
@@ -884,6 +1089,41 @@ function scaledCopy(
     throw new Error('The page cannot scale the picture: no 2d context.')
   context.drawImage(canvas, 0, 0, copy.width, copy.height)
   return copy
+}
+
+/** How many clip planes NiiVue keeps. */
+export const CLIP_PLANES = 6
+
+/** How many of each other thing is on show, for `where_am_i`; only what the page's NiiVue keeps. */
+function counts(view: View): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (view.meshes) out.meshes = view.meshes.length
+  if (view.signals) out.signals = view.signals.length
+  if (view.annotations) out.annotations = view.annotations.length
+  if (view.getMeasurements) out.measurements = view.getMeasurements().length
+  return out
+}
+
+/** A 4 by 4 matrix, as four rows of four numbers or sixteen numbers row by row. */
+export function matrix4(value: unknown, key: string): number[][] {
+  const bad = () =>
+    new Error(`${key} must be a 4 by 4 matrix: four rows of four numbers.`)
+  if (!Array.isArray(value)) throw bad()
+  const rows =
+    value.length === 16 && value.every((v) => !Array.isArray(v))
+      ? [0, 4, 8, 12].map((i) => value.slice(i, i + 4))
+      : value
+  if (
+    rows.length !== 4 ||
+    rows.some(
+      (row) =>
+        !Array.isArray(row) ||
+        row.length !== 4 ||
+        row.some((v) => !Number.isFinite(Number(v))),
+    )
+  )
+    throw bad()
+  return rows.map((row: unknown[]) => row.map(Number))
 }
 
 /** Whether a plane by NiiVue's numbers is cut at all. */

@@ -27,7 +27,7 @@ import {
   type TabState,
   tabFromSearch,
 } from '../protocol'
-import type { Handlers } from './scene'
+import type { Handlers } from './view'
 
 /** Where the server itself listens for pages. */
 export const AGENT_URL = 'ws://127.0.0.1:4242/app'

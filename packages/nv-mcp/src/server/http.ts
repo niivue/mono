@@ -20,7 +20,8 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 
 import { Bridge, type BridgeOptions } from './bridge'
-import { buildServer, type Extension } from './tools'
+import type { Extension } from './context'
+import { buildServer } from './tools'
 
 export interface ServerOptions {
   host?: string

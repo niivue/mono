@@ -4,12 +4,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
 import type { TabState } from '../protocol'
 import { type AppSocket, Bridge, NO_APP } from './bridge'
-import {
-  buildServer,
-  CORE_SCHEMAS,
-  type Extension,
-  reloadNotice,
-} from './tools'
+import { type Extension, reloadNotice } from './context'
+import { buildServer, CORE_SCHEMAS } from './tools'
 
 const state = (extra: Partial<TabState> = {}): TabState => ({
   volume: 'mni152.nii.gz',
@@ -93,7 +89,7 @@ const json = (reply: Awaited<ReturnType<Client['callTool']>>): unknown => {
 }
 
 describe('core tool schemas', () => {
-  it('lists the fourteen core tools with the arguments each one takes', async () => {
+  it('lists every core tool with the arguments each one takes', async () => {
     const client = await connect(new Bridge())
     const { tools } = await client.listTools()
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
@@ -124,17 +120,66 @@ describe('core tool schemas', () => {
     expect(required('new_tab')).toEqual([])
     expect(byName.new_tab.annotations?.readOnlyHint).toBe(true)
     expect(required('go_to_region')).toEqual(['region'])
-    expect(required('set_clip_plane')).toEqual(['plane'])
-    expect(required('set_camera').sort()).toEqual(['azimuth', 'elevation'])
+    expect(required('set_clip_plane')).toEqual([])
+    expect(required('set_camera')).toEqual([])
+    expect(properties('set_camera').sort()).toEqual([
+      'azimuth',
+      'center_on',
+      'elevation',
+      'global',
+      'pan_2d',
+      'pivot',
+      'render_pan',
+      'tab',
+    ])
     expect(required('set_volume')).toEqual([])
+    // The tools that must be told what to act on say so in their schemas.
+    expect(required('reorder_volume')).toEqual(['volume', 'move'])
+    expect(required('transform_volume')).toEqual(['name'])
+    expect(required('set_options')).toEqual(['options'])
+    expect(required('set_font')).toEqual(['atlas', 'metrics'])
+    expect(required('load_mesh')).toEqual(['url'])
+    expect(required('add_mesh_layer')).toEqual(['url'])
+    expect(required('load_signal')).toEqual(['url'])
+    expect(required('edit_drawing')).toEqual(['action'])
+    expect(required('edit_annotations')).toEqual(['action'])
+    expect(required('edit_measurements')).toEqual(['action'])
+    expect(required('save')).toEqual(['what'])
+    expect(required('load_document')).toEqual(['url'])
+    for (const name of [
+      'describe_volume',
+      'capabilities',
+      'list_meshes',
+      'map_point',
+    ])
+      expect([name, byName[name].annotations?.readOnlyHint]).toEqual([
+        name,
+        true,
+      ])
     expect(properties('set_volume').sort()).toEqual([
+      'affine',
+      'atlas_outline',
+      'auto_window',
       'cal_max',
+      'cal_max_neg',
       'cal_min',
+      'cal_min_neg',
+      'colorbar',
       'colormap',
+      'colormap_negative',
+      'colormap_type',
       'frame',
       'invert',
+      'labels',
+      'load_all_frames',
+      'modulate',
+      'modulate_alpha',
+      'nearest',
       'opacity',
+      'reset_affine',
       'tab',
+      'transform',
+      'transparent_below_cal_min',
       'volume',
     ])
     expect(required('set_view')).toEqual([])

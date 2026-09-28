@@ -46,3 +46,18 @@ export {
   matchRegion,
   regionMentions,
 } from './regions'
+export type {
+  LayoutName,
+  ShowRenderName,
+  SliceName,
+  ViewState,
+} from './views'
+export {
+  LAYOUT_NAMES,
+  LAYOUTS,
+  nameFor,
+  SHOW_RENDER,
+  SHOW_RENDER_NAMES,
+  SLICE_NAMES,
+  SLICE_TYPES,
+} from './views'

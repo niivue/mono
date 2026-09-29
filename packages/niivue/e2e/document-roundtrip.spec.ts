@@ -216,6 +216,101 @@ test('load events: loadDocument emits change (and sliceTypeChange) for the setti
   })
 })
 
+test('load events: loadDocument emits volumeLoaded, meshLoaded, signalLoaded, signalRemoved and drawingChanged for the layers it replaces', async ({
+  page,
+}) => {
+  test.setTimeout(120_000) // fetches a volume, a mesh and a signal, then reloads them
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const mkCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = 64
+      c.height = 64
+      c.style.cssText = 'position:fixed;left:-9999px'
+      document.body.appendChild(c)
+      return c
+    }
+
+    // Source scene: one linked volume, one embedded mesh, one signal, a drawing.
+    const src = new NiiVue({ backend: 'webgl2' })
+    await src.attachToCanvas(mkCanvas())
+    await src.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    await src.loadMeshes([{ url: '/meshes/BrainMesh_ICBM152.lh.mz3' }])
+    await src.loadSignals([{ url: '/signals/cardiac.tsv.gz' }])
+    src.createEmptyDrawing()
+    const bytes = src.serializeDocument({ linkData: true })
+
+    // Destination already holds a volume and a signal the load must replace.
+    const dst = new NiiVue({ backend: 'webgl2' })
+    await dst.attachToCanvas(mkCanvas())
+    await dst.loadVolumes([{ url: '/volumes/hippo.nii.gz' }])
+    await dst.loadSignals([{ url: '/signals/cardiac.tsv.gz' }])
+
+    const seen: string[] = []
+    const inCollectionAtEmit: Record<string, boolean> = {}
+    dst.addEventListener('volumeRemoved', () => seen.push('volumeRemoved'))
+    dst.addEventListener('meshRemoved', () => seen.push('meshRemoved'))
+    dst.addEventListener('signalRemoved', () => seen.push('signalRemoved'))
+    dst.addEventListener('volumeLoaded', (e) => {
+      seen.push('volumeLoaded')
+      inCollectionAtEmit.volume = dst.volumes.includes(e.detail.volume)
+    })
+    dst.addEventListener('meshLoaded', (e) => {
+      seen.push('meshLoaded')
+      inCollectionAtEmit.mesh = dst.meshes.includes(e.detail.mesh)
+    })
+    dst.addEventListener('signalLoaded', (e) => {
+      seen.push('signalLoaded')
+      inCollectionAtEmit.signal = dst.model.signals.includes(e.detail.signal)
+    })
+    dst.addEventListener('drawingChanged', (e) =>
+      seen.push(`drawingChanged:${e.detail.action}`),
+    )
+    dst.addEventListener('change', () => seen.push('change'))
+    dst.addEventListener('documentLoaded', () => seen.push('documentLoaded'))
+
+    await dst.loadDocument(new File([bytes], 'scene.nvd'))
+
+    return {
+      seen,
+      inCollectionAtEmit,
+      volumes: dst.volumes.length,
+      meshes: dst.meshes.length,
+      signals: dst.model.signals.length,
+      hasDrawing: !!dst.drawingVolume,
+    }
+  })
+
+  const count = (t: string) => r.seen.filter((e) => e === t).length
+  expect(count('volumeRemoved')).toBe(1) // the destination's hippo
+  expect(count('signalRemoved')).toBe(1) // the destination's signal
+  expect(count('volumeLoaded')).toBe(1)
+  expect(count('meshLoaded')).toBe(1)
+  expect(count('signalLoaded')).toBe(1)
+  expect(count('drawingChanged:load')).toBe(1)
+  expect(r.seen[r.seen.length - 1]).toBe('documentLoaded') // last, as the "all in place" marker
+  // Removals precede the settings changes, which precede the loads.
+  const idx = (t: string) => r.seen.indexOf(t)
+  expect(idx('volumeRemoved')).toBeLessThan(idx('signalRemoved'))
+  expect(idx('signalRemoved')).toBeLessThan(idx('volumeLoaded'))
+  expect(idx('volumeLoaded')).toBeLessThan(idx('meshLoaded'))
+  expect(idx('meshLoaded')).toBeLessThan(idx('signalLoaded'))
+  expect(idx('signalLoaded')).toBeLessThan(idx('drawingChanged:load'))
+  // A *Loaded listener can reach the item through the collection at emit time.
+  expect(r.inCollectionAtEmit).toEqual({
+    volume: true,
+    mesh: true,
+    signal: true,
+  })
+  expect([r.volumes, r.meshes, r.signals, r.hasDrawing]).toEqual([
+    1,
+    1,
+    1,
+    true,
+  ])
+})
+
 test('json format: saves portable JSON that loadDocument reads back (linked + embedded)', async ({
   page,
 }) => {

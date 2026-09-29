@@ -6149,11 +6149,17 @@ export default class NiiVue extends EventTarget {
     // setters, so emit the `change` events they would have: one per key whose
     // value differs from before the load (a key the fill policy reset counts).
     const settingsBefore = snapshotSettings(this.model)
+    // applyDocumentToModel also replaces the signal list on the model; announce
+    // the removals it implies the way removeAllSignals would.
+    const signalsBefore = [...this.model.signals]
     NVDocument.applyDocumentToModel(
       this.model,
       doc,
       options?.fill ?? this._settingsFillPolicy,
     )
+    for (let i = 0; i < signalsBefore.length; i++) {
+      this.emit('signalRemoved', { signal: signalsBefore[i], index: i })
+    }
     this.emitSettingsChanges(settingsBefore)
 
     // Restore thumbnail if present in document
@@ -6167,13 +6173,29 @@ export default class NiiVue extends EventTarget {
     // addVolume pushes when its async prepare resolves, so a parallel map would
     // let a fast-loading volume land in the wrong slot (volume order defines
     // background vs overlays, and modulator/drawing links depend on it).
+    // Reconstruction goes through the model (one GPU update for the whole
+    // load, below), so emit the events the controller's addVolume/addMesh/
+    // addSignal would have: each after its item is in the collection.
     for (const v of doc.volumes) {
+      const before = this.model.volumes.length
       await NVDocument.reconstructVolume(this.model, v)
+      if (this.model.volumes.length > before) {
+        this.emit('volumeLoaded', {
+          volume: this.model.volumes[this.model.volumes.length - 1],
+        })
+      }
     }
     // Meshes have no background/overlay ordering role; load them in parallel.
+    const meshesBefore = this.model.meshes.length
     await Promise.all(
       doc.meshes.map((m) => NVDocument.reconstructMesh(this.model, m)),
     )
+    for (const mesh of this.model.meshes.slice(meshesBefore)) {
+      this.emit('meshLoaded', { mesh })
+    }
+    for (const signal of this.model.signals) {
+      this.emit('signalLoaded', { signal })
+    }
 
     // Update GPU resources and render
     await this.updateGLVolume()
@@ -6195,6 +6217,7 @@ export default class NiiVue extends EventTarget {
         this.model.draw.isEnabled = true
         this._drawLut = null
         this.refreshDrawing()
+        this.emit('drawingChanged', { action: 'load' })
       }
     }
 

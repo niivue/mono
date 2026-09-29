@@ -290,18 +290,19 @@ nv1.addEventListener('clipPlaneChange', (e) => { ... }) // clip plane adjusted
 
 See `docs/events.md` for the full event catalog and detail types.
 
-**Emission order — the event's referenced item is present in the collection at emit time.**
-Add / update / reorder events fire *after* the model mutation, so the item is
-present (or updated) when the event fires: `addVolume`→`volumeLoaded`,
-`setVolume`→`volumeUpdated`, `moveVolume*`→`volumeOrderChanged`, and the mesh
-equivalents. Removal events fire *before* the mutation, so the item being removed
-is still present: `removeVolume` / `removeMesh` / `removeAllVolumes` /
-`removeAllMeshes` → `volumeRemoved` / `meshRemoved`. New methods should follow
-this so a listener can always reach the referenced item — via the collection or
-the event `detail` — at emit time. Corollary: do **not** switch removal to
-emit-after; a consumer that rebuilds a list by re-reading the collection must
-read *after* the mutation instead (e.g. on the next render, or a microtask), the
-same way it must for the bulk-removal methods.
+**Emission order — every event fires after its mutation.** Add / update /
+reorder / remove events all fire once the model has changed: `addVolume`→
+`volumeLoaded` (the volume is in `nv.volumes`), `setVolume`→`volumeUpdated`,
+`moveVolume*`→`volumeOrderChanged`, `removeVolume`→`volumeRemoved` (the volume
+is no longer in `nv.volumes`), and the mesh, signal and measurement
+equivalents. A removal event's `detail` carries the removed item and its former
+index, so a listener reaches a departing item through `detail`, never the
+collection. A listener that rebuilds a list by re-reading the collection can do
+so synchronously inside any of these events and see the post-mutation state.
+`loadDocument` follows the same rule for everything it replaces and restores
+(`volumeRemoved`/`meshRemoved`/`signalRemoved`, then `change` per applied
+setting, then `volumeLoaded`/`meshLoaded`/`signalLoaded`/`drawingChanged`, then
+`documentLoaded` last). New methods should follow this.
 
 ### Per-item options (unified load + update)
 

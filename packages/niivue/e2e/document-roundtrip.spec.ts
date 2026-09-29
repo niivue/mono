@@ -249,9 +249,17 @@ test('load events: loadDocument emits volumeLoaded, meshLoaded, signalLoaded, si
 
     const seen: string[] = []
     const inCollectionAtEmit: Record<string, boolean> = {}
-    dst.addEventListener('volumeRemoved', () => seen.push('volumeRemoved'))
+    dst.addEventListener('volumeRemoved', (e) => {
+      seen.push('volumeRemoved')
+      inCollectionAtEmit.removedVolume = dst.volumes.includes(e.detail.volume)
+    })
     dst.addEventListener('meshRemoved', () => seen.push('meshRemoved'))
-    dst.addEventListener('signalRemoved', () => seen.push('signalRemoved'))
+    dst.addEventListener('signalRemoved', (e) => {
+      seen.push('signalRemoved')
+      inCollectionAtEmit.removedSignal = dst.model.signals.includes(
+        e.detail.signal,
+      )
+    })
     dst.addEventListener('volumeLoaded', (e) => {
       seen.push('volumeLoaded')
       inCollectionAtEmit.volume = dst.volumes.includes(e.detail.volume)
@@ -297,8 +305,11 @@ test('load events: loadDocument emits volumeLoaded, meshLoaded, signalLoaded, si
   expect(idx('volumeLoaded')).toBeLessThan(idx('meshLoaded'))
   expect(idx('meshLoaded')).toBeLessThan(idx('signalLoaded'))
   expect(idx('signalLoaded')).toBeLessThan(idx('drawingChanged:load'))
-  // A *Loaded listener can reach the item through the collection at emit time.
+  // A *Loaded listener can reach the item through the collection at emit time;
+  // a *Removed listener finds it already gone (it is in the detail instead).
   expect(r.inCollectionAtEmit).toEqual({
+    removedVolume: false,
+    removedSignal: false,
     volume: true,
     mesh: true,
     signal: true,
@@ -309,6 +320,63 @@ test('load events: loadDocument emits volumeLoaded, meshLoaded, signalLoaded, si
     1,
     true,
   ])
+})
+
+test('removal events fire after the removal, with the item and its former index in the detail', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const c = document.createElement('canvas')
+    c.width = 64
+    c.height = 64
+    c.style.cssText = 'position:fixed;left:-9999px'
+    document.body.appendChild(c)
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachToCanvas(c)
+    await nv.loadVolumes([
+      { url: '/volumes/mni152.nii.gz' },
+      { url: '/volumes/hippo.nii.gz' },
+    ])
+    await nv.loadMeshes([{ url: '/meshes/BrainMesh_ICBM152.lh.mz3' }])
+
+    const log: {
+      type: string
+      index: number
+      gone: boolean
+      lengthAtEmit: number
+    }[] = []
+    nv.addEventListener('volumeRemoved', (e) =>
+      log.push({
+        type: 'volumeRemoved',
+        index: e.detail.index,
+        gone: !nv.volumes.includes(e.detail.volume),
+        lengthAtEmit: nv.volumes.length,
+      }),
+    )
+    nv.addEventListener('meshRemoved', (e) =>
+      log.push({
+        type: 'meshRemoved',
+        index: e.detail.index,
+        gone: !nv.meshes.includes(e.detail.mesh),
+        lengthAtEmit: nv.meshes.length,
+      }),
+    )
+
+    await nv.removeMesh(0)
+    await nv.removeVolume(1) // the overlay
+    await nv.removeAllVolumes() // the remaining background
+    return { log, volumes: nv.volumes.length, meshes: nv.meshes.length }
+  })
+
+  expect(r.log).toEqual([
+    { type: 'meshRemoved', index: 0, gone: true, lengthAtEmit: 0 },
+    { type: 'volumeRemoved', index: 1, gone: true, lengthAtEmit: 1 },
+    { type: 'volumeRemoved', index: 0, gone: true, lengthAtEmit: 0 },
+  ])
+  expect([r.volumes, r.meshes]).toEqual([0, 0])
 })
 
 test('json format: saves portable JSON that loadDocument reads back (linked + embedded)', async ({

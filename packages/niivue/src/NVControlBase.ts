@@ -3218,17 +3218,22 @@ export default class NiiVue extends EventTarget {
     const meshes = this.model.getMeshes()
     if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const mesh = meshes[meshIndex]
-    this.emit('meshRemoved', { mesh, index: meshIndex })
     this.model.removeMesh(meshIndex)
+    // Emit after the removal, like every other mutation event: the detail
+    // carries the removed mesh and its former index; the collection no longer
+    // holds it.
+    this.emit('meshRemoved', { mesh, index: meshIndex })
     await this.updateGLVolume()
   }
 
   async removeAllVolumes(): Promise<void> {
-    const vols = this.model.getVolumes()
+    const vols = [...this.model.getVolumes()]
+    await this.model.removeAllVolumes()
+    // One event per volume, after the removal, in reverse index order (so
+    // each detail's index was valid at the time that volume was removed).
     for (let i = vols.length - 1; i >= 0; i--) {
       this.emit('volumeRemoved', { volume: vols[i], index: i })
     }
-    await this.model.removeAllVolumes()
     await this.updateGLVolume()
   }
 
@@ -3242,19 +3247,20 @@ export default class NiiVue extends EventTarget {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
-    // Emit before removal, matching removeAllVolumes/removeAllMeshes: at emit
-    // time the collection still contains the referenced item.
-    this.emit('volumeRemoved', { volume, index: volumeIndex })
     this.model.removeVolume(volumeIndex)
+    // Emit after the removal, like every other mutation event: the detail
+    // carries the removed volume and its former index; the collection no
+    // longer holds it.
+    this.emit('volumeRemoved', { volume, index: volumeIndex })
     await this.updateGLVolume()
   }
 
   async removeAllMeshes(): Promise<void> {
-    const meshes = this.model.getMeshes()
+    const meshes = [...this.model.getMeshes()]
+    this.model.removeAllMeshes()
     for (let i = meshes.length - 1; i >= 0; i--) {
       this.emit('meshRemoved', { mesh: meshes[i], index: i })
     }
-    this.model.removeAllMeshes()
     await this.updateGLVolume()
   }
 

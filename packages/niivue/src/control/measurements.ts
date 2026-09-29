@@ -172,12 +172,11 @@ export function removeMeasurement(ctrl: NiiVue, index: number): void {
     return
   }
   const measurement = measurements[index]
+  measurements.splice(index, 1)
+  // Emit after the removal, like every other mutation event: the detail
+  // carries the removed measurement and its former index, and a listener that
+  // removes further measurements re-enters with the array already updated.
   ctrl.emit('measurementRemoved', { measurement, index })
-  // Re-read the model field: a listener may have replaced the array
-  // (clearMeasurements assigns a new one) as well as spliced it.
-  const current = ctrl.model.completedMeasurements
-  const at = current.indexOf(measurement)
-  if (at >= 0) current.splice(at, 1)
   ctrl.drawScene()
 }
 

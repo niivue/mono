@@ -569,6 +569,248 @@ describe('set_volume', () => {
   })
 })
 
+describe('set_volume chunk_grid and spread', () => {
+  /** A view whose NiiVue tiles and spreads, keeping the volume's fields as NiiVue would. */
+  function chunkableView(): View {
+    const view = settableView()
+    view.setVolumeChunkGrid = mock(async (index: number, grid) => {
+      const volume = view.volumes[index]
+      volume.chunkPlan = grid ? { gridDims: grid } : undefined
+      if (!grid) volume.chunkExplode = undefined
+    })
+    view.setVolumeChunkExplode = mock((index: number, explode) => {
+      view.volumes[index].chunkExplode = explode ?? undefined
+    })
+    return view
+  }
+
+  it('tiles the volume into the grid asked for and reports it', async () => {
+    const view = chunkableView()
+    const got = await coreHandlers(host(view)).set_volume({
+      chunk_grid: [2, 3, 4],
+    })
+    expect(view.setVolumeChunkGrid).toHaveBeenCalledWith(0, [2, 3, 4])
+    expect(view.setVolumeChunkExplode).not.toHaveBeenCalled()
+    expect(got).toMatchObject({ volume: { chunkGrid: [2, 3, 4] } })
+    expect(got).not.toHaveProperty('volume.spread')
+    expect(view.drawScene).toHaveBeenCalled()
+  })
+
+  it('tiles 3 by 3 by 3 before spreading a volume that is one texture', async () => {
+    const view = chunkableView()
+    const got = await coreHandlers(host(view)).set_volume({ spread: 1.5 })
+    expect(view.setVolumeChunkGrid).toHaveBeenCalledWith(0, [3, 3, 3])
+    expect(view.setVolumeChunkExplode).toHaveBeenCalledWith(0, {
+      enabled: true,
+      scale: [1.5, 1.5, 1.5],
+    })
+    expect(got).toMatchObject({
+      volume: { chunkGrid: [3, 3, 3], spread: 1.5 },
+    })
+  })
+
+  it('uses the grid given in the same call, and a spread of 1 closes the bricks up', async () => {
+    const view = chunkableView()
+    const handlers = coreHandlers(host(view))
+    await handlers.set_volume({ volume: 1, chunk_grid: [2, 2, 2], spread: 2 })
+    expect(view.setVolumeChunkGrid).toHaveBeenCalledTimes(1)
+    expect(view.setVolumeChunkGrid).toHaveBeenCalledWith(1, [2, 2, 2])
+    expect(view.setVolumeChunkExplode).toHaveBeenCalledWith(1, {
+      enabled: true,
+      scale: [2, 2, 2],
+    })
+    const closed = await handlers.set_volume({ volume: 1, spread: 1 })
+    expect(view.setVolumeChunkExplode).toHaveBeenLastCalledWith(1, null)
+    expect(closed).toMatchObject({ volume: { chunkGrid: [2, 2, 2] } })
+    expect(closed).not.toHaveProperty('volume.spread')
+    const single = await handlers.set_volume({ volume: 1, chunk_grid: null })
+    expect(view.setVolumeChunkGrid).toHaveBeenLastCalledWith(1, null)
+    expect(single).not.toHaveProperty('volume.chunkGrid')
+  })
+
+  it('refuses a bad grid or spread before changing anything, and a page that cannot', async () => {
+    const view = chunkableView()
+    const handlers = coreHandlers(host(view))
+    await expect(handlers.set_volume({ chunk_grid: [2, 2] })).rejects.toThrow(
+      /chunk_grid/,
+    )
+    await expect(
+      handlers.set_volume({ chunk_grid: [2, 2.5, 2] }),
+    ).rejects.toThrow(/chunk_grid/)
+    await expect(handlers.set_volume({ spread: 0.5 })).rejects.toThrow(/spread/)
+    expect(view.setVolumeChunkGrid).not.toHaveBeenCalled()
+    const plain = coreHandlers(host(settableView()))
+    await expect(plain.set_volume({ chunk_grid: [2, 2, 2] })).rejects.toThrow(
+      /cannot chunk/,
+    )
+    await expect(plain.set_volume({ spread: 2 })).rejects.toThrow(
+      /cannot spread/,
+    )
+  })
+})
+
+describe('set_labels', () => {
+  it('labels regions at their centroids with their spoken names, and points with their text', async () => {
+    const labels = mock()
+    const view = fakeView()
+    const got = await coreHandlers(host(view, { labels })).set_labels({
+      labels: [
+        { region: 'Insula_L' },
+        { region: 'right insula', text: 'Insula' },
+        { mm: [1, 2, 3], text: 'here' },
+      ],
+    })
+    expect(labels).toHaveBeenCalledWith([
+      { text: 'left insula', mm: [-36, 6, 2] },
+      { text: 'Insula', mm: [38, 6, 2] },
+      { text: 'here', mm: [1, 2, 3] },
+    ])
+    expect(got).toEqual({
+      labels: [
+        { text: 'left insula', mm: [-36, 6, 2], region: 'Insula_L' },
+        { text: 'Insula', mm: [38, 6, 2], region: 'Insula_R' },
+        { text: 'here', mm: [1, 2, 3] },
+      ],
+    })
+    expect(view.drawScene).toHaveBeenCalled()
+  })
+
+  function brickedView(): View {
+    const corners = (mm: ArrayLike<number>): Array<[number, number, number]> =>
+      Array.from({ length: 8 }, (_, c) => [
+        mm[0] + (c & 1 ? 1 : -1),
+        mm[1] + (c & 2 ? 1 : -1),
+        mm[2] + (c & 4 ? 1 : -1),
+      ])
+    return fakeView({
+      volumes: [{ name: 'mni152.nii.gz', chunkPlan: { gridDims: [2, 1, 1] } }],
+      chunkBrickIndexAt: mock((mm: ArrayLike<number>) =>
+        mm[0] < 0 ? 0 : mm[0] < 100 ? 1 : -1,
+      ),
+      chunkBrickCornersAt: mock(corners),
+      setVolumeBrickOpacity: mock(),
+    })
+  }
+
+  it('on a tiled volume names and outlines each brick, and dims the others when asked', async () => {
+    const labels = mock()
+    const view = brickedView()
+    const handlers = coreHandlers(host(view, { labels }))
+    const got = await handlers.set_labels({
+      labels: [{ region: 'Insula_L' }, { mm: [500, 0, 0], text: 'outside' }],
+      dim_others: 0.2,
+    })
+    expect(got).toEqual({
+      labels: [
+        { text: 'left insula', mm: [-36, 6, 2], region: 'Insula_L', brick: 0 },
+        { text: 'outside', mm: [500, 0, 0] },
+      ],
+      dimOthers: 0.2,
+    })
+    expect(labels).toHaveBeenCalledWith([
+      {
+        text: 'left insula',
+        mm: [-36, 6, 2],
+        boxMM: [
+          [-37, 5, 1],
+          [-35, 5, 1],
+          [-37, 7, 1],
+          [-35, 7, 1],
+          [-37, 5, 3],
+          [-35, 5, 3],
+          [-37, 7, 3],
+          [-35, 7, 3],
+        ],
+      },
+      { text: 'outside', mm: [500, 0, 0] },
+    ])
+    expect(view.setVolumeBrickOpacity).toHaveBeenLastCalledWith(0, [1, 0.2])
+    // Without dim_others the bricks are drawn alike again, as they are on clear.
+    await handlers.set_labels({ labels: [{ mm: [10, 0, 0], text: 'right' }] })
+    expect(view.setVolumeBrickOpacity).toHaveBeenLastCalledWith(0, null)
+    await handlers.set_labels({ clear: true })
+    expect(view.setVolumeBrickOpacity).toHaveBeenLastCalledWith(0, null)
+    expect(labels).toHaveBeenLastCalledWith([])
+  })
+
+  it('counts bricks from the plan and refuses dim_others where it cannot apply', async () => {
+    const labels = mock()
+    const view = brickedView()
+    view.volumes[0].chunkPlan = { gridDims: [3, 1, 1], chunks: [1, 2, 3] }
+    await coreHandlers(host(view, { labels })).set_labels({
+      labels: [{ mm: [10, 0, 0], text: 'b' }],
+      dim_others: 0,
+    })
+    expect(view.setVolumeBrickOpacity).toHaveBeenLastCalledWith(0, [0, 1, 0])
+    await expect(
+      coreHandlers(host(view, { labels })).set_labels({
+        labels: [{ mm: [10, 0, 0], text: 'b' }],
+        dim_others: 2,
+      }),
+    ).rejects.toThrow(/0 to 1/)
+    await expect(
+      coreHandlers(
+        host(fakeView({ setVolumeBrickOpacity: mock() }), { labels }),
+      ).set_labels({
+        labels: [{ mm: [10, 0, 0], text: 'b' }],
+        dim_others: 0.5,
+      }),
+    ).rejects.toThrow(/chunk_grid/)
+    const plain = brickedView()
+    plain.setVolumeBrickOpacity = undefined
+    await expect(
+      coreHandlers(host(plain, { labels })).set_labels({
+        labels: [{ mm: [10, 0, 0], text: 'b' }],
+        dim_others: 0.5,
+      }),
+    ).rejects.toThrow(/cannot dim/)
+    // A plain volume's labels carry no brick and no box.
+    await coreHandlers(host(fakeView(), { labels })).set_labels({
+      labels: [{ mm: [10, 0, 0], text: 'b' }],
+    })
+    expect(labels).toHaveBeenLastCalledWith([{ text: 'b', mm: [10, 0, 0] }])
+  })
+
+  it('clears with an empty list, and refuses nothing to do', async () => {
+    const labels = mock()
+    const handlers = coreHandlers(host(fakeView(), { labels }))
+    expect(await handlers.set_labels({ clear: true })).toEqual({ labels: [] })
+    expect(labels).toHaveBeenCalledWith([])
+    await expect(handlers.set_labels({})).rejects.toThrow(/needs labels/)
+    await expect(handlers.set_labels({ labels: [] })).rejects.toThrow(
+      /needs labels/,
+    )
+  })
+
+  it('refuses an unknown or ambiguous region, a point without text, and a page without the hook', async () => {
+    const labels = mock()
+    const handlers = coreHandlers(host(fakeView(), { labels }))
+    await expect(
+      handlers.set_labels({ labels: [{ region: 'Amygdala' }] }),
+    ).rejects.toThrow(/No region matches/)
+    await expect(
+      handlers.set_labels({ labels: [{ region: 'insula' }] }),
+    ).rejects.toThrow(/Insula_L/)
+    await expect(
+      handlers.set_labels({ labels: [{ mm: [0, 0, 0] }] }),
+    ).rejects.toThrow(/needs its text/)
+    await expect(
+      handlers.set_labels({ labels: [{ text: 'lost' }] }),
+    ).rejects.toThrow(/region or gives mm/)
+    expect(labels).not.toHaveBeenCalled()
+    await expect(
+      coreHandlers(host(fakeView())).set_labels({
+        labels: [{ region: 'Insula_L' }],
+      }),
+    ).rejects.toThrow(/cannot draw labels/)
+    await expect(
+      coreHandlers(
+        host(fakeView(), { labels, atlasApplies: () => false }),
+      ).set_labels({ labels: [{ region: 'Insula_L' }] }),
+    ).rejects.toThrow(/MNI/)
+  })
+})
+
 describe('set_view', () => {
   const laidOut = () =>
     fakeView({
@@ -647,7 +889,7 @@ describe('set_view', () => {
 })
 
 describe('screenshot', () => {
-  it('draws, then returns the canvas as base64 PNG with its size', () => {
+  it('draws, then returns the canvas as base64 PNG with its size', async () => {
     const calls: string[] = []
     const canvas = {
       width: 640,
@@ -661,7 +903,7 @@ describe('screenshot', () => {
       canvas,
       drawScene: mock(() => calls.push('draw')),
     })
-    expect(coreHandlers(host(view)).screenshot({})).toEqual({
+    expect(await coreHandlers(host(view)).screenshot({})).toEqual({
       data: 'iVBORw0KGgo=',
       mimeType: 'image/png',
       width: 640,
@@ -669,12 +911,30 @@ describe('screenshot', () => {
       canvas: { width: 640, height: 480 },
     })
     expect(calls).toEqual(['draw', 'toDataURL:image/png'])
-    expect(() => coreHandlers(host(fakeView())).screenshot({})).toThrow(
+    await expect(coreHandlers(host(fakeView())).screenshot({})).rejects.toThrow(
       'no canvas',
     )
   })
 
-  it('sizes an unsized canvas first and has the render backend draw the frame now', () => {
+  it('waits for the bricks of a chunked volume to arrive before drawing', async () => {
+    const calls: string[] = []
+    const canvas = {
+      width: 640,
+      height: 480,
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    } as unknown as HTMLCanvasElement
+    const view = fakeView({
+      canvas,
+      whenChunkStreamSettles: mock(async () => {
+        calls.push('settle')
+      }),
+      drawScene: mock(() => calls.push('draw')),
+    })
+    await coreHandlers(host(view)).screenshot({})
+    expect(calls).toEqual(['settle', 'draw'])
+  })
+
+  it('sizes an unsized canvas first and has the render backend draw the frame now', async () => {
     const calls: string[] = []
     const canvas = {
       width: 300,
@@ -688,19 +948,19 @@ describe('screenshot', () => {
       drawScene: mock(() => calls.push('draw')),
       view: { render: () => calls.push('render') },
     })
-    coreHandlers(host(view)).screenshot({})
+    await coreHandlers(host(view)).screenshot({})
     expect(calls).toEqual(['resize', 'draw', 'render'])
   })
 
-  it('refuses while the tab is in the background, where nothing is drawn', () => {
+  it('refuses while the tab is in the background, where nothing is drawn', async () => {
     const global = globalThis as { document?: unknown }
     const before = global.document
     global.document = { visibilityState: 'hidden' }
     try {
       const canvas = { width: 1, height: 1 } as unknown as HTMLCanvasElement
-      expect(() =>
+      await expect(
         coreHandlers(host(fakeView({ canvas }))).screenshot({}),
-      ).toThrow(/background/)
+      ).rejects.toThrow(/background/)
     } finally {
       if (before === undefined) delete global.document
       else global.document = before

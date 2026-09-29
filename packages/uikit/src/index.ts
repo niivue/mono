@@ -16,6 +16,18 @@ export { UIKitCrosshairOverlay } from './crosshairOverlay'
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'
+export type {
+  PointLabelBounds,
+  PointLabelGeometry,
+  PointLabelSpec,
+} from './pointLabel'
+export { buildPointLabel } from './pointLabel'
+export type {
+  MMPoint,
+  MMProjector,
+  PointLabelPlacement,
+} from './pointLabelOverlay'
+export { UIKitPointLabelOverlay } from './pointLabelOverlay'
 export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
 export { buildRuler } from './ruler'
 export { UIKitRulerOverlay } from './rulerOverlay'

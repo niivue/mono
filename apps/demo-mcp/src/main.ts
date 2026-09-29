@@ -10,6 +10,10 @@
  *    render view. This comes last: both await an animation frame, which a
  *    tab in the background is not given, and the page should be reachable
  *    by an agent before then. Until it is, `where_am_i` says so.
+ * 4. Draws the labels `set_labels` asks for with a `@niivue/uikit` point
+ *    label overlay, projected onto the render each frame (through the
+ *    volume's explode, so a label follows its brick when the volume is
+ *    spread apart).
  */
 import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import {
@@ -18,8 +22,10 @@ import {
   coreHandlers,
   type Handlers,
   type NiiVueHost,
+  type PointLabel,
   sceneState,
 } from '@niivue/nv-mcp/browser'
+import { loadDefaultFont, UIKitPointLabelOverlay } from '@niivue/uikit'
 import { loadAtlas } from './atlas'
 
 function $<T extends HTMLElement>(id: string): T {
@@ -80,9 +86,22 @@ async function refreshWhere(): Promise<string> {
   return described
 }
 
+/** The labels an agent asked for, drawn once the font is here and NiiVue is up. */
+let pins: UIKitPointLabelOverlay | null = null
+let pendingLabels: PointLabel[] = []
+
+function showLabels(labels: PointLabel[]): void {
+  // The exploded-label film dims every brick except the ROI's, so an extra
+  // twelve-edge box around that brick makes the scene needlessly busy.
+  pendingLabels = labels.map(({ boxMM: _box, ...label }) => label)
+  pins?.setLabels(pendingLabels)
+  nv.drawScene()
+}
+
 const host: NiiVueHost = {
   view: nv,
   atlas: requireAtlas,
+  labels: showLabels,
   atlasApplies: () => isMni,
   loaded: ({ mni }) => {
     isMni = mni
@@ -132,6 +151,15 @@ status.textContent = 'Loading volume'
 await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 status.textContent = 'Ready.'
 ready = true
+
+// The label overlay: each frame it projects the labelled points onto the
+// render tile, moved by the explode when the volume is spread apart.
+const font = await loadDefaultFont()
+pins = new UIKitPointLabelOverlay(font, (mm) =>
+  nv.mmToRenderCanvas(nv.explodedMM([mm[0], mm[1], mm[2]])),
+)
+pins.setLabels(pendingLabels)
+nv.registerOverlayRenderer(pins)
 
 // Warm the atlas so the first `where_am_i` already names the region, and
 // keep the readout current when the person moves the crosshair themselves.

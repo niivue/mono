@@ -164,6 +164,7 @@ describe('core tool schemas', () => {
       'cal_max_neg',
       'cal_min',
       'cal_min_neg',
+      'chunk_grid',
       'colorbar',
       'colormap',
       'colormap_negative',
@@ -177,10 +178,18 @@ describe('core tool schemas', () => {
       'nearest',
       'opacity',
       'reset_affine',
+      'spread',
       'tab',
       'transform',
       'transparent_below_cal_min',
       'volume',
+    ])
+    expect(required('set_labels')).toEqual([])
+    expect(properties('set_labels').sort()).toEqual([
+      'clear',
+      'dim_others',
+      'labels',
+      'tab',
     ])
     expect(required('set_view')).toEqual([])
     expect(properties('set_view').sort()).toEqual([
@@ -293,6 +302,13 @@ describe('core tool schemas', () => {
     expect(await refused('set_volume', { opacity: 2 })).toMatch(/opacity/)
     expect(await refused('set_volume', { frame: -1 })).toMatch(/frame/)
     expect(await refused('set_volume', { volume: true })).toMatch(/volume/)
+    expect(await refused('set_volume', { spread: 0.5 })).toMatch(/spread/)
+    expect(await refused('set_volume', { chunk_grid: [2, 2] })).toMatch(
+      /chunk_grid/,
+    )
+    expect(await refused('set_labels', { labels: 'Insula_L' })).toMatch(
+      /labels/,
+    )
     expect(await refused('set_view', { slice: 'oblique' })).toMatch(/slice/)
   })
 })

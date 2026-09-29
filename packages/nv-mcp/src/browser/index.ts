@@ -78,6 +78,7 @@ export type {
   MeshToLoad,
   MeshUpdate,
   NiiVueHost,
+  PointLabel,
   ShownMesh,
   ShownMeshLayer,
   ShownSignal,

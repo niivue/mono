@@ -67,3 +67,6 @@ apps/iiif-volumetric-demo/public/tile-range-poc/
 
 # Local scratch: plans, notes, throwaway files. Never checked in.
 /scratch/
+
+# demo-mcp animation frames
+apps/demo-mcp/out/

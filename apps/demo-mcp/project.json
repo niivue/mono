@@ -24,6 +24,12 @@
       },
       "dependsOn": ["^build"]
     },
+    "exploded-labels": {
+      "command": "bun scripts/exploded-labels.ts",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    },
     "build": {
       "command": "bunx --bun vite build",
       "options": {

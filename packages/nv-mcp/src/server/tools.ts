@@ -388,6 +388,56 @@ export const CORE_SCHEMAS = {
       })
       .optional()
       .describe('Move, turn or scale it in the world, applied to its affine.'),
+    chunk_grid: z
+      .array(z.number().int().min(1))
+      .length(3)
+      .nullable()
+      .optional()
+      .describe(
+        'Tile it into this many bricks along x, y and z and render it through them, whatever its size; null makes it one texture again and closes any spread.',
+      ),
+    spread: z
+      .number()
+      .min(1)
+      .optional()
+      .describe(
+        "Spread its bricks apart in the 3D render (an exploded view): each brick's offset from the centre is multiplied by this. 1 closes them up. A volume not yet chunked is tiled 3 by 3 by 3 first.",
+      ),
+  },
+  set_labels: {
+    ...TAB_ARG,
+    labels: z
+      .array(
+        z.object({
+          text: z
+            .string()
+            .optional()
+            .describe("The words to draw; a region's spoken name otherwise."),
+          region: z
+            .string()
+            .optional()
+            .describe(
+              'An atlas region, a label (Insula_L) or a spoken name; the label points at its centroid.',
+            ),
+          mm: triple('The labelled point in world millimetres.').optional(),
+        }),
+      )
+      .optional()
+      .describe('The labels to draw, replacing any drawn before.'),
+    dim_others: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe(
+        'On a volume tiled into bricks (set_volume chunk_grid), the opacity, 0 to 1, of every brick holding no label; the labelled bricks keep theirs.',
+      ),
+    clear: z
+      .boolean()
+      .optional()
+      .describe(
+        'Take every label down; with `labels` too, the same as giving only them.',
+      ),
   },
   set_view: {
     ...TAB_ARG,
@@ -693,9 +743,11 @@ export function registerCoreTools(
         'one for negative values), its opacity, its display window (`cal_min` and `cal_max`, the ' +
         "intensities drawn as the colormap's darkest and brightest colours), how the colormap " +
         'spans it, the frame shown of a 4D volume, the colorbar, sampling, atlas outline, a label ' +
-        'table, modulation by another volume, and its place in the world (an affine outright, a ' +
-        'translation, rotation and scale, or a reset). `volume` is an index as where_am_i lists ' +
-        'them, or a name; the base volume otherwise. Reports the volume as it is drawn now.',
+        'table, modulation by another volume, its place in the world (an affine outright, a ' +
+        'translation, rotation and scale, or a reset), and how it is tiled and spread in the 3D ' +
+        'render (`chunk_grid` and `spread`, an exploded view of its bricks). `volume` is an index ' +
+        'as where_am_i lists them, or a name; the base volume otherwise. Reports the volume as it ' +
+        'is drawn now.',
       inputSchema: CORE_SCHEMAS.set_volume,
     },
     async ({ tab, ...params }) =>
@@ -704,6 +756,34 @@ export function registerCoreTools(
         lead: (r) => {
           const volume = (r as { volume?: { name?: string } })?.volume
           return volume?.name ? `Changed ${volume.name}.` : undefined
+        },
+      }),
+  )
+
+  server.registerTool(
+    'set_labels',
+    {
+      title: 'Label points of the scene',
+      description:
+        'Draws text labels on the scene, each tied by a line to a point: an atlas region, ' +
+        'whose centroid the line reaches and whose spoken name is the text unless `text` is ' +
+        'given, or a point in world millimetres with its own text. The labels follow the ' +
+        'render as it turns and a spread volume as its bricks move. On a volume tiled into ' +
+        'bricks each label outlines the brick holding its point, and `dim_others` fades the ' +
+        'bricks holding none. Each call replaces the labels drawn before, and the fading; ' +
+        '`clear` takes them all down. Reports each label with the point it marks and, on a tiled ' +
+        'volume, its brick. Only a page that draws labels answers.',
+      inputSchema: CORE_SCHEMAS.set_labels,
+    },
+    async ({ tab, ...params }) =>
+      context.answer('set_labels', params, {
+        tab,
+        lead: (r) => {
+          const labels = (r as { labels?: unknown[] })?.labels
+          if (!labels) return undefined
+          return labels.length === 0
+            ? 'Cleared the labels.'
+            : `Drew ${labels.length} label${labels.length === 1 ? '' : 's'}.`
         },
       }),
   )
@@ -736,8 +816,8 @@ export function registerCoreTools(
       title: 'Picture of the canvas',
       description:
         "Draws the scene and returns NiiVue's canvas as a PNG, scaled down to `max_width` pixels " +
-        "wide at most. The picture is NiiVue's alone: anything the page draws over its canvas is " +
-        'not in it.',
+        'wide at most. On a volume tiled into bricks it waits for every brick to arrive first. The ' +
+        "picture is NiiVue's alone: anything the page draws over its canvas is not in it.",
       inputSchema: CORE_SCHEMAS.screenshot,
       annotations: { readOnlyHint: true },
     },

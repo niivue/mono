@@ -11,6 +11,6 @@
     "skipLibCheck": true,
     "types": ["vite/client", "bun"]
   },
-  "include": ["src", "server"],
+  "include": ["src", "server", "scripts"],
   "exclude": ["dist", "node_modules"]
 }

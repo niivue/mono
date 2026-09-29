@@ -6,15 +6,18 @@
     "server": "bun server/server.ts",
     "frontend": "bunx vite --open /index.html",
     "dev": "bun server/dev.ts",
-    "build": "bunx --bun vite build"
+    "build": "bunx --bun vite build",
+    "exploded-labels": "bun scripts/exploded-labels.ts"
   },
   "dependencies": {
     "@niivue/dev-images": "workspace:*",
     "@niivue/niivue": "workspace:*",
     "@niivue/nv-mcp": "workspace:*",
+    "@niivue/uikit": "workspace:*",
     "nifti-reader-js": "^0.8.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/bun": "^1.3.12",
     "vite": "^6.3.2"
   }

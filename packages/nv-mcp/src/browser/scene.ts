@@ -55,6 +55,7 @@ import type {
   Handlers,
   LabelTable,
   NiiVueHost,
+  PointLabel,
   ShownVolume,
   View,
   VolumeUpdate,
@@ -205,6 +206,28 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   // NiiVue keeps; a new base clears the volumes, and the map with them.
   const labelled = new WeakMap<ShownVolume, string>()
 
+  /** How many bricks a chunked volume has. */
+  const brickCount = (volume: ShownVolume): number => {
+    const plan = volume.chunkPlan
+    if (!plan) return 0
+    if (plan.chunks) return plan.chunks.length
+    let n = 1
+    for (let i = 0; i < plan.gridDims.length; i++) n *= plan.gridDims[i]
+    return n
+  }
+
+  /** How far a volume's bricks are spread: one number when they are spread alike along each axis, else the three. */
+  const spreadOf = (
+    volume: ShownVolume,
+  ): number | [number, number, number] | undefined => {
+    const explode = volume.chunkExplode
+    if (!volume.chunkPlan || !explode?.enabled) return undefined
+    const scale = explode.scale ? Array.from(explode.scale) : [1.5, 1.5, 1.5]
+    return scale[0] === scale[1] && scale[1] === scale[2]
+      ? scale[0]
+      : [scale[0], scale[1], scale[2]]
+  }
+
   /** A volume as the tools report it: how it is drawn, its window and span, and its frame when it has several. */
   const describeVolume = (volume: ShownVolume, index: number) => {
     const labels = labelled.get(volume)
@@ -243,6 +266,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       ...(volume.isNearestInterpolation ? { nearest: true } : {}),
       ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
       ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
+      ...(volume.chunkPlan
+        ? { chunkGrid: Array.from(volume.chunkPlan.gridDims) }
+        : {}),
+      ...(spreadOf(volume) === undefined ? {} : { spread: spreadOf(volume) }),
     }
   }
 
@@ -774,6 +801,24 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const affine = params?.affine
       const resetAffine = flag(params, 'reset_affine')
       const transform = record(params, 'transform')
+      const chunkGrid = params?.chunk_grid
+      const spread = number(params, 'spread')
+      if (chunkGrid !== undefined && chunkGrid !== null) {
+        const grid = numbers(params, 'chunk_grid') ?? []
+        if (
+          grid.length !== 3 ||
+          grid.some((n) => !Number.isInteger(n) || n < 1)
+        ) {
+          throw new Error(
+            'chunk_grid is three whole numbers, the bricks along x, y and z, each at least 1.',
+          )
+        }
+      }
+      if (spread !== undefined && !(spread >= 1)) {
+        throw new Error(
+          'spread is 1 (the bricks touching) or more: how far each brick moves from the centre.',
+        )
+      }
       const extras = [
         labels,
         modulate,
@@ -782,8 +827,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         affine,
         resetAffine,
         transform,
+        chunkGrid,
+        spread,
       ].some((v) => v !== undefined && v !== null)
-      if (nothingIn(update) && !extras) {
+      // `chunk_grid: null` is an ask too: it makes the volume one texture.
+      const untiling = chunkGrid === null
+      if (nothingIn(update) && !extras && !untiling) {
         throw new Error(
           'set_volume needs something to set: colormap, opacity, cal_min, cal_max, frame, invert, or one of the others its schema lists.',
         )
@@ -850,8 +899,130 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         }
         await view.applyVolumeTransform(index, moved)
       }
+      if (chunkGrid !== undefined) {
+        if (!view.setVolumeChunkGrid)
+          throw new Error("This page's NiiVue cannot chunk a volume.")
+        const grid = numbers(params, 'chunk_grid')
+        await view.setVolumeChunkGrid(
+          index,
+          grid ? [grid[0], grid[1], grid[2]] : null,
+        )
+      }
+      if (spread !== undefined) {
+        if (!view.setVolumeChunkExplode || !view.setVolumeChunkGrid)
+          throw new Error("This page's NiiVue cannot spread a volume's bricks.")
+        // Spreading needs bricks: a volume that is one texture is tiled
+        // 3 x 3 x 3 first, unless a grid was asked for in the same call.
+        if (spread > 1 && !volume.chunkPlan && chunkGrid === undefined) {
+          await view.setVolumeChunkGrid(index, [3, 3, 3])
+        }
+        view.setVolumeChunkExplode(
+          index,
+          spread > 1 && volume.chunkPlan
+            ? { enabled: true, scale: [spread, spread, spread] }
+            : null,
+        )
+      }
       view.drawScene()
       return { volume: describeVolume(volume, index) }
+    },
+
+    async set_labels(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (!host.labels) throw new Error('This page cannot draw labels.')
+      const asked = params?.labels
+      if (asked !== undefined && !Array.isArray(asked)) {
+        throw new Error('labels is a list: each with text, and a region or mm.')
+      }
+      const wanted = (asked ?? []) as unknown[]
+      if (flag(params, 'clear') === undefined && wanted.length === 0) {
+        throw new Error(
+          'set_labels needs labels to draw, or clear to take them down.',
+        )
+      }
+      const dimOthers = number(params, 'dim_others')
+      if (dimOthers !== undefined && (dimOthers < 0 || dimOthers > 1)) {
+        throw new Error('dim_others is an opacity from 0 to 1.')
+      }
+      const base = view.volumes[0]
+      const bricked = Boolean(base?.chunkPlan)
+      if (dimOthers !== undefined && wanted.length > 0) {
+        if (!view.setVolumeBrickOpacity)
+          throw new Error("This page's NiiVue cannot dim a volume's bricks.")
+        if (!bricked) {
+          throw new Error(
+            'dim_others needs a volume tiled into bricks: set_volume with chunk_grid first.',
+          )
+        }
+      }
+      const placed: (PointLabel & { region?: string; brick?: number })[] = []
+      for (const item of wanted) {
+        const label = (item ?? {}) as Record<string, unknown>
+        const region = text(label, 'region')
+        const mm = pointIfGiven(label, 'mm')
+        const given = text(label, 'text')
+        if (region) {
+          const loaded = await requireAtlas()
+          if (host.atlasApplies && !host.atlasApplies()) {
+            throw new Error(
+              'The loaded volume is not in MNI space, so the atlas does not apply to it. Load one that is.',
+            )
+          }
+          const found = findRegion(loaded.regions(), region)
+          if (!found.region) {
+            if (found.candidates.length)
+              throw new Error(ambiguityMessage(region, found.candidates))
+            throw new Error(
+              `No region matches "${region}". Call list_regions to see the names.`,
+            )
+          }
+          placed.push({
+            text: given ?? found.region.name,
+            mm: [...found.region.centroid],
+            region: found.region.label,
+          })
+        } else if (mm) {
+          if (!given) throw new Error('A label at mm needs its text.')
+          placed.push({ text: given, mm })
+        } else {
+          throw new Error('Each label names a region or gives mm.')
+        }
+      }
+      // On a chunked volume each label names its brick and outlines it, and
+      // the bricks holding no label can be dimmed. Every call resets the
+      // dimming, as it does the labels.
+      if (bricked && view.chunkBrickIndexAt) {
+        for (const label of placed) {
+          const brick = view.chunkBrickIndexAt(label.mm)
+          if (brick < 0) continue
+          label.brick = brick
+          label.boxMM = view.chunkBrickCornersAt?.(label.mm) ?? undefined
+        }
+      }
+      if (bricked && view.setVolumeBrickOpacity) {
+        const kept = new Set(placed.map((label) => label.brick))
+        view.setVolumeBrickOpacity(
+          0,
+          dimOthers !== undefined && placed.length > 0
+            ? Array.from({ length: brickCount(base) }, (_, i) =>
+                kept.has(i) ? 1 : dimOthers,
+              )
+            : null,
+        )
+      }
+      host.labels(
+        placed.map(({ text: str, mm, boxMM }) => ({
+          text: str,
+          mm,
+          ...(boxMM ? { boxMM } : {}),
+        })),
+      )
+      view.drawScene()
+      return {
+        labels: placed.map(({ boxMM: _box, ...label }) => label),
+        ...(dimOthers !== undefined && placed.length > 0 ? { dimOthers } : {}),
+      }
     },
 
     async transform_volume(params) {
@@ -1042,7 +1213,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       return { view: viewState(view) }
     },
 
-    screenshot(params) {
+    async screenshot(params) {
       host.beforeAnswer?.()
       const canvas = view.canvas
       if (!canvas) throw new Error('NiiVue has no canvas to draw.')
@@ -1055,6 +1226,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         1,
         Math.floor(number(params, 'max_width') ?? SCREENSHOT_WIDTH),
       )
+      // A chunked volume streams its bricks over the frames after the grid
+      // is set, and again after a change that rebuilds them, so the picture
+      // waits for the last of them: a frame drawn before then shows a part
+      // of the volume, or none of it.
+      await view.whenChunkStreamSettles?.()
       drawNow(view, canvas)
       const picture =
         canvas.width > maxWidth ? scaledCopy(canvas, maxWidth) : canvas

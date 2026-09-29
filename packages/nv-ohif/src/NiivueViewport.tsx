@@ -25,11 +25,7 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
-import {
-  ohifToolToAnnotationTool,
-  ohifToolToDragMode,
-  UNSUPPORTED_MEASUREMENT_TOOLS,
-} from './toolBridge'
+import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { mountWsiSlideView } from './wsiSlideView'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
@@ -541,19 +537,6 @@ export function NiivueViewport(props: OhifViewportProps) {
       } else {
         nv.annotationIsEnabled = false
         nv.primaryDragMode = ohifToolToDragMode(tool)
-        if (tool && UNSUPPORTED_MEASUREMENT_TOOLS.has(tool)) {
-          const message = `${tool} is not supported in NiiVue`
-          setStatus({ kind: 'note', message })
-          window.setTimeout(
-            () =>
-              setStatus((s) =>
-                s.kind === 'note' && s.message === message
-                  ? { kind: 'idle' }
-                  : s,
-              ),
-            2500,
-          )
-        }
       }
       slideViewRef.current?.setTool(tool)
     }

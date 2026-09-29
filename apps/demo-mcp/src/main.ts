@@ -91,8 +91,10 @@ let pins: UIKitPointLabelOverlay | null = null
 let pendingLabels: PointLabel[] = []
 
 function showLabels(labels: PointLabel[]): void {
-  pendingLabels = labels
-  pins?.setLabels(labels)
+  // The exploded-label film dims every brick except the ROI's, so an extra
+  // twelve-edge box around that brick makes the scene needlessly busy.
+  pendingLabels = labels.map(({ boxMM: _box, ...label }) => label)
+  pins?.setLabels(pendingLabels)
   nv.drawScene()
 }
 

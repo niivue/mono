@@ -35,6 +35,7 @@ import type {
 } from '@/control/viewLifecycle'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
+  addUndoBitmap,
   calculateLoadDrawingTransform,
   clearAllUndoBitmaps,
   createDrawingVolume,
@@ -44,7 +45,7 @@ import {
 } from '@/drawing/drawingManager'
 import { drawingSliceToSVG } from '@/drawing/drawingSvg'
 import { decodeRLE, encodeRLE } from '@/drawing/rle'
-import { drawUndo } from '@/drawing/undo'
+import { drawUndo, setDrawingBitmap } from '@/drawing/undo'
 import { NVExtensionContext } from '@/extension/context'
 import { type LogLevel, log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
@@ -5633,6 +5634,31 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Push the current drawing bitmap onto the undo stack, so the next
+   * `drawUndo()` restores it. The built-in pen, fill and magic wand do this
+   * before each edit; call it yourself before an edit made through the
+   * extension context (`ctx.drawing.update(bitmap)`: an extension's wand,
+   * slice interpolation, ...) so that edit is undoable too. Push once per
+   * committed edit, not per hover preview. No-op without a drawing.
+   * @example nv1.drawAddUndoBitmap(); ctx.drawing.update(bitmap)
+   */
+  drawAddUndoBitmap(): void {
+    const drawingVol = this.model.drawingVolume
+    if (!drawingVol) return
+    const undoResult = addUndoBitmap({
+      drawBitmap: getDrawingBitmap(drawingVol),
+      drawUndoBitmaps: this.drawUndoBitmaps,
+      currentDrawUndoBitmap: this.currentDrawUndoBitmap,
+      maxDrawUndoBitmaps: this.maxDrawUndoBitmaps,
+      drawFillOverwrites: this.model.draw.isFillOverwriting,
+    })
+    this.drawUndoBitmaps = undoResult.drawUndoBitmaps
+    this.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
+    if (undoResult.drawBitmap)
+      setDrawingBitmap(drawingVol, undoResult.drawBitmap)
+  }
+
   drawUndo(): void {
     if (!this.model.drawingVolume) return
     const result = drawUndo({
@@ -5641,7 +5667,7 @@ export default class NiiVue extends EventTarget {
       drawBitmap: getDrawingBitmap(this.model.drawingVolume),
     })
     if (result) {
-      this.model.drawingVolume.img = result.drawBitmap
+      setDrawingBitmap(this.model.drawingVolume, result.drawBitmap)
       this.currentDrawUndoBitmap = result.currentDrawUndoBitmap
       this.emit('drawingChanged', { action: 'undo' })
       this.refreshDrawing()

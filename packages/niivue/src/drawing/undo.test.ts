@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import type { NVImage } from '@/NVTypes'
 import { encodeRLE } from './rle'
-import { drawUndo } from './undo'
+import { drawUndo, setDrawingBitmap } from './undo'
 
 describe('drawUndo', () => {
   test('emptyBitmaps_returnsUndefined', () => {
@@ -56,5 +57,34 @@ describe('drawUndo', () => {
     })
     expect(result).toBeDefined()
     expect(result?.currentDrawUndoBitmap).toBe(0)
+  })
+})
+
+// Undo and the fill-overwrite merge install a bitmap through this. It must
+// write into the drawing's existing array: an extension that swapped that
+// array for a SharedArrayBuffer view (MagicWandShared's zero-copy preview)
+// would otherwise be left writing into an array nothing displays.
+describe('setDrawingBitmap', () => {
+  test('writes into the existing array when the sizes match, keeping its identity', () => {
+    const img = new Uint8Array([1, 2, 3, 4])
+    const vol = { img } as unknown as NVImage
+    setDrawingBitmap(vol, new Uint8Array([9, 8, 7, 6]))
+    expect(vol.img).toBe(img)
+    expect(Array.from(img)).toEqual([9, 8, 7, 6])
+  })
+
+  test('replaces the array when the sizes differ', () => {
+    const img = new Uint8Array([1, 2, 3, 4])
+    const vol = { img } as unknown as NVImage
+    const next = new Uint8Array([5, 5])
+    setDrawingBitmap(vol, next)
+    expect(vol.img).toBe(next)
+  })
+
+  test('installs the bitmap when the drawing has none yet', () => {
+    const vol = {} as unknown as NVImage
+    const next = new Uint8Array([1])
+    setDrawingBitmap(vol, next)
+    expect(vol.img).toBe(next)
   })
 })

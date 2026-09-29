@@ -13,7 +13,7 @@ import * as DragModes from '@/control/dragModes'
 import { type Pinch, pinchCamera } from '@/control/pinchZoom'
 import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
-import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
+import { getDrawingBitmap } from '@/drawing/drawingManager'
 import {
   drawLine,
   drawPenFilled,
@@ -735,20 +735,6 @@ function pickExplodedDraw(
   }
 }
 
-// Snapshot the drawing bitmap for undo once per stroke (matches the 2D path).
-function snapshotDrawUndo(ctrl: NiiVue, drawingVol: NVImage): void {
-  const undoResult = addUndoBitmap({
-    drawBitmap: getDrawingBitmap(drawingVol),
-    drawUndoBitmaps: ctrl.drawUndoBitmaps,
-    currentDrawUndoBitmap: ctrl.currentDrawUndoBitmap,
-    maxDrawUndoBitmaps: ctrl.maxDrawUndoBitmaps,
-    drawFillOverwrites: ctrl.model.draw.isFillOverwriting,
-  })
-  ctrl.drawUndoBitmaps = undoResult.drawUndoBitmaps
-  ctrl.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
-  if (undoResult.drawBitmap) drawingVol.img = undoResult.drawBitmap
-}
-
 // Paint the exploded block under the cursor on the 3D render tile with a 3D
 // ball. On a drag continuation it connects the new voxel to the previous one
 // (drawSphereSegment) so pen strokes and the eraser leave no gaps.
@@ -767,7 +753,7 @@ function draw3DOnExplodedBlock(
   // Snapshot for undo on the first successful paint of the stroke (set at
   // pointer-down), so a stroke that starts on a ray-miss still gets a baseline.
   if (ctrl._draw3DNeedsUndo) {
-    snapshotDrawUndo(ctrl, drawingVol)
+    ctrl.drawAddUndoBitmap()
     ctrl._draw3DNeedsUndo = false
   }
   const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
@@ -812,7 +798,7 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVue, vol: NVImage): boolean {
   if (!drawingVol) return false
   const prevUndoBitmaps = ctrl.drawUndoBitmaps
   const prevUndoIndex = ctrl.currentDrawUndoBitmap
-  snapshotDrawUndo(ctrl, drawingVol)
+  ctrl.drawAddUndoBitmap()
   const dims = vol.dimsRAS as number[]
   // Cap the fill so a click on a huge connected structure can't run unbounded.
   // The cap applies to erase (penValue 0) too; on a volume with more than 4M
@@ -879,7 +865,7 @@ function magicWandFill(
     ctrl.model.draw.clickToSegmentTolerance * Math.abs(winHi - winLo)
   const prevUndoBitmaps = ctrl.drawUndoBitmaps
   const prevUndoIndex = ctrl.currentDrawUndoBitmap
-  snapshotDrawUndo(ctrl, drawingVol)
+  ctrl.drawAddUndoBitmap()
   const maxVoxels = Math.min(dims[1] * dims[2] * dims[3], 4_000_000)
   const result = magicWand3D({
     seed,
@@ -1421,17 +1407,7 @@ export function initInteraction(ctrl: NiiVue): void {
             return
           }
           // Save undo state before first stroke
-          const undoResult = addUndoBitmap({
-            drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
-            drawUndoBitmaps: ctrl.drawUndoBitmaps,
-            currentDrawUndoBitmap: ctrl.currentDrawUndoBitmap,
-            maxDrawUndoBitmaps: ctrl.maxDrawUndoBitmaps,
-            drawFillOverwrites: ctrl.model.draw.isFillOverwriting,
-          })
-          ctrl.drawUndoBitmaps = undoResult.drawUndoBitmaps
-          ctrl.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
-          if (undoResult.drawBitmap)
-            (ctrl.model.drawingVolume as NVImage).img = undoResult.drawBitmap
+          ctrl.drawAddUndoBitmap()
           // Convert screen → mm → voxel
           const vox = NVTransforms.mm2vox(vol, mm)
           const pt = [

@@ -322,9 +322,15 @@ ctx.on('slicePointerUp', (e: CustomEvent<SlicePointerDetail>) => {
   const bg = ctx.backgroundVolume
 
   if (previewActive) {
-    // Preview is already rendered — just commit it
+    // Preview is already rendered — commit it. The preview bitmap is already
+    // in the drawing, so to make this apply undoable put the pre-preview
+    // bitmap back, push the undo snapshot, then re-apply the preview.
     if (dr?.bitmap) {
-      committedBitmap = dr.bitmap.slice()
+      const previewBitmap = dr.bitmap.slice()
+      if (committedBitmap) dr.update(committedBitmap)
+      dr.pushUndo()
+      dr.update(previewBitmap)
+      committedBitmap = previewBitmap
       previewActive = false
       if (wandShared) wandShared.updateCommitted(committedBitmap)
       status.textContent = status.textContent
@@ -350,6 +356,7 @@ ctx.on('slicePointerUp', (e: CustomEvent<SlicePointerDetail>) => {
     opts,
     dr.voxelSizeMM,
   ).then(({ bitmap, result }) => {
+    dr.pushUndo() // one snapshot per applied fill, so Undo reverts it
     dr.update(bitmap)
     snapshotCommitted()
     if (wandShared && committedBitmap)

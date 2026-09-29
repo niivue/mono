@@ -849,6 +849,29 @@ describe('transform_volume', () => {
       coreHandlers(host(fakeView())).transform_volume({ name: 'smooth' }),
     ).rejects.toThrow("This page's NiiVue has no volume transforms.")
   })
+
+  it('keeps the source when its replacement cannot be added', async () => {
+    const view = stackView()
+    view.addVolume = mock(async () => {
+      await Promise.resolve()
+      throw new Error('out of GPU memory')
+    })
+    const { transform_volume } = coreHandlers(host(view))
+    await expect(
+      transform_volume({ volume: 'mask', name: 'smooth', replace: true }),
+    ).rejects.toThrow('out of GPU memory')
+    expect(view.volumes.map((volume) => volume.name)).toEqual([
+      'mni152.nii.gz',
+      'bold.nii.gz',
+      'bold_mask.nii.gz',
+    ])
+    expect(view.removeVolume).not.toHaveBeenCalled()
+    await expect(
+      coreHandlers(
+        host(Object.assign(stackView(), { removeVolume: undefined })),
+      ).transform_volume({ volume: 'mask', name: 'smooth', replace: true }),
+    ).rejects.toThrow("This page's NiiVue cannot remove a volume.")
+  })
 })
 
 describe('set_volume affine', () => {

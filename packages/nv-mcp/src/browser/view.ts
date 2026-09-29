@@ -127,7 +127,7 @@ export interface ShownMesh {
   connectomeOptions?: Record<string, unknown> | null
 }
 
-/** A mesh as `View.loadMeshes` and `View.addMesh` take it: NiiVue's `MeshFromUrlOptions`, in part. */
+/** A mesh as `View.addMesh` takes it: NiiVue's `MeshFromUrlOptions`, in part. */
 export interface MeshToLoad {
   url: string
   name?: string
@@ -461,7 +461,6 @@ export interface View {
   // Meshes.
   meshes?: ReadonlyArray<ShownMesh>
   meshShaders?: readonly string[]
-  loadMeshes?(meshes: MeshToLoad[]): Promise<unknown>
   addMesh?(mesh: MeshToLoad): Promise<unknown>
   removeMesh?(index: number): Promise<unknown>
   removeAllMeshes?(): Promise<unknown>

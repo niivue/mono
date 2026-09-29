@@ -151,13 +151,14 @@ describe('load_signal', () => {
       url: 'https://x/a.tsv',
       replace: true,
     })) as { signals: unknown[] }
-    expect(view.removeAllSignals).toHaveBeenCalledTimes(1)
     expect(view.loadSignals).toHaveBeenCalledWith([
       { url: 'https://x/a.tsv', name: 'a.tsv' },
     ])
+    expect(view.removeSignal).toHaveBeenCalledWith(0)
+    expect(view.removeAllSignals).not.toHaveBeenCalled()
     expect(got.signals).toEqual([expect.objectContaining({ name: 'a.tsv' })])
     const stuck = signalHandlers(
-      hostOf(signalView({ removeAllSignals: undefined })),
+      hostOf(signalView({ removeSignal: undefined })),
     )
     await expect(
       stuck.load_signal({ url: 'https://x/a.tsv', replace: true }),
@@ -174,6 +175,26 @@ describe('load_signal', () => {
     await expect(failing.load_signal({ url: 'https://x/b' })).rejects.toThrow(
       'The signal at https://x/b could not be loaded: bad json',
     )
+  })
+
+  it('keeps the signals it has when a replacement fails to load', async () => {
+    const view = signalView({
+      loadSignals: mock(async () => {
+        await Promise.resolve()
+        throw new Error('bad tsv')
+      }),
+    })
+    const { load_signal } = signalHandlers(hostOf(view))
+    await expect(
+      load_signal({ url: 'https://x/b.tsv', replace: true }),
+    ).rejects.toThrow(
+      'The signal at https://x/b.tsv could not be loaded: bad tsv',
+    )
+    expect(view.signals).toEqual([
+      expect.objectContaining({ name: 'pulse.tsv' }),
+    ])
+    expect(view.removeSignal).not.toHaveBeenCalled()
+    expect(view.removeAllSignals).not.toHaveBeenCalled()
   })
 
   it('refuses a missing url, a bad note, an unknown volume, and a page that cannot', async () => {

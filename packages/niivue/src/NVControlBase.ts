@@ -33,6 +33,11 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import {
+  type SettingsSnapshot,
+  settingsChangeEvents,
+  snapshotSettings,
+} from '@/documentEvents'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   calculateLoadDrawingTransform,
@@ -6101,6 +6106,26 @@ export default class NiiVue extends EventTarget {
     NVDocument.triggerDownload(data, filename)
   }
 
+  // Emit the `change` events (and the specialised events some setters pair
+  // with them) for every setting that differs from `before`.
+  private emitSettingsChanges(before: SettingsSnapshot): void {
+    const changes = settingsChangeEvents(before, snapshotSettings(this.model))
+    for (const change of changes) this.emit('change', change)
+    if (changes.some((c) => c.property === 'sliceType')) {
+      this.emit('sliceTypeChange', { sliceType: this.model.layout.sliceType })
+    }
+    if (
+      changes.some(
+        (c) => c.property === 'azimuth' || c.property === 'elevation',
+      )
+    ) {
+      this.emit('azimuthElevationChange', {
+        azimuth: this.model.scene.azimuth,
+        elevation: this.model.scene.elevation,
+      })
+    }
+  }
+
   async loadDocument(
     source: string | File,
     options?: { fill?: SettingsFillPolicy },
@@ -6120,11 +6145,16 @@ export default class NiiVue extends EventTarget {
 
     // Apply non-data state (scene, config, display settings). Settings the
     // document omits are filled per the fill policy (default: reset to defaults).
+    // applyDocumentToModel writes into the model directly, bypassing the
+    // setters, so emit the `change` events they would have: one per key whose
+    // value differs from before the load (a key the fill policy reset counts).
+    const settingsBefore = snapshotSettings(this.model)
     NVDocument.applyDocumentToModel(
       this.model,
       doc,
       options?.fill ?? this._settingsFillPolicy,
     )
+    this.emitSettingsChanges(settingsBefore)
 
     // Restore thumbnail if present in document
     if (this.model.ui.thumbnailUrl) {

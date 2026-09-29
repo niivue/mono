@@ -105,6 +105,117 @@ test('sparse settings: fill policy — default resets omitted, current keeps, sp
   expect(r.overriddenCrosshair).toEqual([0.1, 0.2, 0.3]) // specified -> wins under fill:current
 })
 
+test('load events: loadDocument emits change (and sliceTypeChange) for the settings it applies', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+    // The containers are still required on this branch (they become optional
+    // in a separate PR), so every fixture carries them empty.
+    const asFile = (doc: Record<string, unknown>, name: string) =>
+      new File(
+        [
+          JSON.stringify({
+            scene: {},
+            layout: {},
+            clipPlanes: [],
+            volumes: [],
+            meshes: [],
+            ...doc,
+          }),
+        ],
+        name,
+        { type: 'application/json' },
+      )
+    const record = (nv: InstanceType<typeof NiiVue>) => {
+      const seen: { type: string; property?: string; value?: unknown }[] = []
+      nv.addEventListener('change', (e) =>
+        seen.push({
+          type: 'change',
+          property: e.detail.property,
+          value: e.detail.value,
+        }),
+      )
+      nv.addEventListener('sliceTypeChange', (e) =>
+        seen.push({ type: 'sliceTypeChange', value: e.detail.sliceType }),
+      )
+      nv.addEventListener('azimuthElevationChange', () =>
+        seen.push({ type: 'azimuthElevationChange' }),
+      )
+      nv.addEventListener('documentLoaded', () =>
+        seen.push({ type: 'documentLoaded' }),
+      )
+      return seen
+    }
+
+    // (a) fill:'current' — only the keys the document sets change.
+    const nv = new NiiVue({ sliceType: SLICE_TYPE.MULTIPLANAR })
+    const seen = record(nv)
+    await nv.loadDocument(
+      asFile(
+        {
+          version: 9,
+          layout: { sliceType: SLICE_TYPE.AXIAL },
+          volume: { matcap: 'shiny' },
+        },
+        'a.json',
+      ),
+      { fill: 'current' },
+    )
+
+    // (b) a document that sets nothing, under fill:'current', emits no change.
+    const quiet = new NiiVue({ sliceType: SLICE_TYPE.MULTIPLANAR })
+    const seenQuiet = record(quiet)
+    await quiet.loadDocument(asFile({ version: 9 }, 'b.json'), {
+      fill: 'current',
+    })
+
+    // (c) default fill: a non-default azimuth the document omits is reset, and
+    // that reset is reported like any change.
+    const reset = new NiiVue({ azimuth: 200 })
+    const seenReset = record(reset)
+    await reset.loadDocument(asFile({ version: 9 }, 'c.json'))
+
+    return {
+      seen,
+      sliceTypeAfter: nv.sliceType,
+      quiet: seenQuiet.map((e) => e.type),
+      resetAzimuth: reset.azimuth,
+      resetEvents: seenReset.filter(
+        (e) => e.type !== 'change' || e.property === 'azimuth',
+      ),
+    }
+  })
+
+  const changes = r.seen.filter((e) => e.type === 'change')
+  expect(changes).toEqual([
+    { type: 'change', property: 'sliceType', value: 0 },
+    { type: 'change', property: 'volumeMatcap', value: 'shiny' },
+  ])
+  expect(r.sliceTypeAfter).toBe(0)
+  // sliceType changed -> the paired specialised event fires too, then documentLoaded last.
+  expect(r.seen.map((e) => e.type)).toEqual([
+    'change',
+    'change',
+    'sliceTypeChange',
+    'documentLoaded',
+  ])
+  expect(r.quiet).toEqual(['documentLoaded']) // nothing applied -> no change
+  expect(r.resetAzimuth).toBe(110) // omitted + default fill -> reset to SCENE_DEFAULTS
+  expect(r.resetEvents.map((e) => e.type)).toEqual([
+    'change',
+    'azimuthElevationChange',
+    'documentLoaded',
+  ])
+  expect(r.resetEvents[0]).toEqual({
+    type: 'change',
+    property: 'azimuth',
+    value: 110,
+  })
+})
+
 test('json format: saves portable JSON that loadDocument reads back (linked + embedded)', async ({
   page,
 }) => {

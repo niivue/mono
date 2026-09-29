@@ -24,6 +24,7 @@ import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import { isVolumeDrawn } from '@/view/NVVolumeVisibility'
 import type { RgbaGrid } from '@/view/planeVisibility'
 import {
   chunkExplodedMatRAS,
@@ -1688,8 +1689,10 @@ export class VolumeRenderer extends NVRenderer {
     }
     const dimsOut = [baseVol.dimsRAS[1], baseVol.dimsRAS[2], baseVol.dimsRAS[3]]
 
-    // Filter out overlays with zero opacity
-    const visible = overlayVols.filter((v) => (v.opacity ?? 1) > 0)
+    // Drop hidden overlays (visible: false or zero opacity) before the bake:
+    // an overlayOpacity of 0 means background semantics in the orient shader,
+    // not transparency, so a hidden overlay must leave the list entirely.
+    const visible = overlayVols.filter(isVolumeDrawn)
     if (visible.length === 0) {
       this.clearOverlay(gl)
       return

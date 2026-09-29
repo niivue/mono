@@ -868,14 +868,15 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           `${name ? `Unknown transform "${name}"` : 'transform_volume needs a name'}. One of: ${known.join(', ')}.`,
         )
       }
+      const replace = flag(params, 'replace') ?? false
+      if (replace && !view.removeVolume)
+        throw new Error("This page's NiiVue cannot remove a volume.")
       const options = record(params, 'options')
       const made = await view.volumeTransform[name](volume, options)
-      if (flag(params, 'replace')) {
-        if (!view.removeVolume)
-          throw new Error("This page's NiiVue cannot remove a volume.")
-        await view.removeVolume(index)
-      }
+      // The source goes only once its replacement is in, so a failed add
+      // leaves the stack as it was.
       await view.addVolume(made)
+      if (replace) await view.removeVolume?.(index)
       view.drawScene()
       const added = view.volumes.length - 1
       return {

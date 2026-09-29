@@ -145,9 +145,10 @@ export function meshHandlers(host: NiiVueHost): Handlers {
       const url = text(params, 'url')
       if (!url) throw new Error('load_mesh needs a url.')
       const replace = flag(params, 'replace') ?? false
-      const loader = replace ? view.loadMeshes : view.addMesh
-      if (!loader || !view.meshes)
+      if (!view.addMesh || !view.meshes)
         throw new Error("This page's NiiVue cannot load a mesh.")
+      if (replace && !view.removeMesh)
+        throw new Error("This page's NiiVue cannot replace its meshes.")
       const mesh: MeshToLoad = {
         url,
         name: text(params, 'name') ?? nameFromUrl(url),
@@ -174,13 +175,18 @@ export function meshHandlers(host: NiiVueHost): Handlers {
           return made
         })
       }
+      // NiiVue's loadMeshes clears the scene before it fetches, so a
+      // replacement adds first and drops the prior meshes only once the
+      // new one is in: a failed load leaves the scene as it was.
+      const prior = view.meshes.length
       try {
-        if (replace) await view.loadMeshes?.([mesh])
-        else await view.addMesh?.(mesh)
+        await view.addMesh(mesh)
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error)
         throw new Error(`The mesh at ${url} could not be loaded: ${why}`)
       }
+      if (replace)
+        for (let i = prior - 1; i >= 0; i--) await view.removeMesh?.(i)
       view.drawScene()
       const index = view.meshes.length - 1
       return {

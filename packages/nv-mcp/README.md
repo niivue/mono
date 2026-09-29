@@ -189,7 +189,7 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 
 | Tool | Input | What it does |
 |---|---|---|
-| `load_mesh` | `url`, `name?`, `replace?`, `opacity?`, `color?`, `shader?`, `slice_shader?`, `visible?`, `colorbar?`, `legend?`, `layers?` | Loads a surface, tract or connectome over the volumes, with overlay layers when given; `replace` unloads the meshes shown first |
+| `load_mesh` | `url`, `name?`, `replace?`, `opacity?`, `color?`, `shader?`, `slice_shader?`, `visible?`, `colorbar?`, `legend?`, `layers?` | Loads a surface, tract or connectome over the volumes, with overlay layers when given; `replace` drops the meshes shown once it has loaded |
 | `list_meshes` | | The meshes shown, each with how it is drawn and its layers, and the shaders the page knows |
 | `set_mesh` | `mesh?`, `name?`, `opacity?`, `color?`, `shader?`, `slice_shader?`, `visible?`, `colorbar?`, `legend?`, `tract?`, `connectome?` | Changes how a mesh is drawn, leaving the rest; `tract` and `connectome` take NiiVue's option objects for those kinds and report a tract's groups |
 | `remove_mesh` | `mesh?`, `all?` | Unloads one mesh, or every mesh |

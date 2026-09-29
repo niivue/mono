@@ -45,9 +45,6 @@ function meshView(overrides: Partial<View> = {}) {
   const view = baseView({
     meshes,
     meshShaders: ['Phong', 'Matte', 'Outline'],
-    loadMeshes: mock(async (next: MeshToLoad[]) => {
-      meshes.splice(0, meshes.length, ...next.map(shown))
-    }),
     addMesh: mock(async (mesh: MeshToLoad) => {
       meshes.push(shown(mesh))
     }),
@@ -140,20 +137,62 @@ describe('load_mesh', () => {
     expect(view.drawScene).toHaveBeenCalledTimes(1)
   })
 
-  it('replaces the meshes when asked', async () => {
+  it('replaces the meshes when asked, dropping the old ones only once the new one is in', async () => {
     const view = meshView()
+    const meshes = view.meshes as ShownMesh[]
+    const order: string[] = []
+    view.addMesh = mock(async (mesh: MeshToLoad) => {
+      await Promise.resolve()
+      order.push('add')
+      meshes.push({ url: mesh.url, name: mesh.name })
+    })
+    view.removeMesh = mock(async (index: number) => {
+      await Promise.resolve()
+      order.push(`remove ${index}`)
+      meshes.splice(index, 1)
+    })
     const { load_mesh } = meshHandlers(hostOf(view))
     const got = (await load_mesh({
       url: 'https://x/a.mz3',
       name: 'A',
       replace: true,
     })) as { meshes: unknown[] }
-    expect(view.loadMeshes).toHaveBeenCalledWith([
-      { url: 'https://x/a.mz3', name: 'A' },
-    ])
+    expect(view.addMesh).toHaveBeenCalledWith({
+      url: 'https://x/a.mz3',
+      name: 'A',
+    })
+    expect(order).toEqual(['add', 'remove 1', 'remove 0'])
+    expect(view.removeAllMeshes).not.toHaveBeenCalled()
     expect(got.meshes).toEqual([
       { index: 0, name: 'A', url: 'https://x/a.mz3' },
     ])
+    await expect(
+      meshHandlers(hostOf(meshView({ removeMesh: undefined }))).load_mesh({
+        url: 'https://x/a.mz3',
+        replace: true,
+      }),
+    ).rejects.toThrow("This page's NiiVue cannot replace its meshes.")
+  })
+
+  it('keeps the meshes it has when a replacement fails to load', async () => {
+    const view = meshView({
+      addMesh: mock(async () => {
+        await Promise.resolve()
+        throw new Error('not a mesh')
+      }),
+    })
+    const { load_mesh } = meshHandlers(hostOf(view))
+    await expect(
+      load_mesh({ url: 'https://x/a.mz3', replace: true }),
+    ).rejects.toThrow(
+      'The mesh at https://x/a.mz3 could not be loaded: not a mesh',
+    )
+    expect(view.meshes?.map((mesh) => mesh.name)).toEqual([
+      'lh.pial',
+      'tract.trk',
+    ])
+    expect(view.removeMesh).not.toHaveBeenCalled()
+    expect(view.removeAllMeshes).not.toHaveBeenCalled()
   })
 
   it('refuses a missing url, an unknown shader, a bad layer, and a failed load', async () => {

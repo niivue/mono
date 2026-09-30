@@ -148,6 +148,10 @@ export class NVExtensionContext {
         nv.emit('drawingChanged', { action: 'update' })
       },
 
+      pushUndo(): void {
+        nv.drawAddUndoBitmap()
+      },
+
       refresh(): void {
         nv.refreshDrawing()
       },

@@ -1470,7 +1470,7 @@ Voxel-level drawing/annotation on 2D slices, visible in both 2D and 3D views. Mo
 
 **Data model:** `model.drawingVolume` is an `NVImage | null` — a proper NIfTI volume with its own header and RAS transforms. Its `img` field (`Uint8Array`) holds label indices (0 = transparent) matching background volume's `dimsRAS`. Converted to RGBA via `drawingBitmapToRGBA()`, uploaded as 3D texture. Use `Drawing.getDrawingBitmap(vol)` to access the bitmap. `Drawing.createDrawingVolume(back)` creates an empty drawing from a background volume.
 
-**Undo:** Circular buffer of RLE-compressed (PackBits) snapshots, controller-owned (not serialized). `addUndoBitmap()` saves *before* each stroke. `drawUndo()` loads then decrements (load-then-decrement order).
+**Undo:** Circular buffer of RLE-compressed (PackBits) snapshots, controller-owned (not serialized). `addUndoBitmap()` saves *before* each stroke. `drawUndo()` loads then decrements (load-then-decrement order). The public `drawAddUndoBitmap()` (and `ctx.drawing.pushUndo()` on the extension context) pushes the same snapshot, so an edit made through `ctx.drawing.update()` — an extension's wand, slice interpolation — can join the undo stack; push once per committed edit, not per hover preview.
 
 **Persistence:** `drawingVolume` lives in model, survives view reinitialization. NVD documents serialize bitmap via RLE (v6). Undo buffers not persisted.
 
@@ -1659,7 +1659,7 @@ Slice pointer events are emitted from `control/interactions.ts` via `computeSlic
 
 ### Actions
 
-- **Drawing:** `createEmptyDrawing()`, `closeDrawing()`, `drawUndo()`, `refreshDrawing()`
+- **Drawing:** `createEmptyDrawing()`, `closeDrawing()`, `drawUndo()`, `refreshDrawing()`; on `context.drawing`: `update(bitmap)`, `refresh()`, `pushUndo()`
 - **Volumes:** `addVolume(vol)`, `removeAllVolumes()`
 - **Transforms:** `registerVolumeTransform(transform)`, `applyVolumeTransform(name, volume, options?)`
 

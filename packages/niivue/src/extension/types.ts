@@ -156,9 +156,18 @@ export interface DrawingAccess {
 
   /**
    * Copy a new bitmap into the drawing volume and refresh the display.
-   * Equivalent to `drawVol.img.set(bitmap); nv.refreshDrawing()`.
+   * Equivalent to `drawVol.img.set(bitmap); nv.refreshDrawing()`. Does not
+   * touch the undo stack: call `pushUndo()` first for an edit that should be
+   * undoable.
    */
   update(bitmap: Uint8Array): void
+
+  /**
+   * Push the current bitmap onto the undo stack so the next `drawUndo()`
+   * restores it. Call once before a committed `update()` (not before every
+   * hover preview). Equivalent to `nv.drawAddUndoBitmap()`.
+   */
+  pushUndo(): void
 
   /**
    * Refresh the drawing display without changing data.

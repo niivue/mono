@@ -121,7 +121,7 @@ Use **property setters** for:
 
 Use **methods** for:
 - Async operations (loading data): `loadVolumes()`, `loadMeshes()`
-- Actions (not state): `drawUndo()`, `createEmptyDrawing()`, `destroy()`, `annotationUndo()`, `annotationRedo()`
+- Actions (not state): `drawUndo()`, `drawAddUndoBitmap()`, `createEmptyDrawing()`, `destroy()`, `annotationUndo()`, `annotationRedo()`
 - Annotation management: `addAnnotation()`, `removeAnnotation()`, `clearAnnotations()`
 - Multi-target operations (need to specify which item): `setVolume(idx, opts)`, `setFrame4D(id, frame)`
 - Special formats: `setClipPlane([depth, azimuth, elevation])`

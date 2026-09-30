@@ -102,6 +102,17 @@ export function NiivueViewport(props: OhifViewportProps) {
     if (!container) return
 
     let disposed = false
+    let noteTimeout: number | undefined
+    const flashNote = (message: string, ms = 2000) => {
+      window.clearTimeout(noteTimeout)
+      const note: Status = { kind: 'note', message }
+      setStatus(note)
+      noteTimeout = window.setTimeout(() => {
+        noteTimeout = undefined
+        // Only clear this occurrence, never a newer status with the same text.
+        setStatus((current) => (current === note ? { kind: 'idle' } : current))
+      }, ms)
+    }
     // UIKit annotation overlay for volume measurements + ROIs (registered after
     // the font loads); torn down on unmount.
     let annotationOverlay: VolumeAnnotationOverlay | null = null
@@ -176,14 +187,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       )
       if (!wl) return
       const message = `W: ${Math.round(wl.window)}  L: ${Math.round(wl.level)}`
-      setStatus({ kind: 'note', message })
-      window.setTimeout(
-        () =>
-          setStatus((s) =>
-            s.kind === 'note' && s.message === message ? { kind: 'idle' } : s,
-          ),
-        2000,
-      )
+      flashNote(message)
     }
     canvas.addEventListener('pointerup', onPointerUp)
 
@@ -214,14 +218,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         stats.length !== undefined
           ? `Length: ${stats.length.toFixed(1)} mm`
           : `Area: ${stats.area.toFixed(1)} mm²`
-      setStatus({ kind: 'note', message })
-      window.setTimeout(
-        () =>
-          setStatus((s) =>
-            s.kind === 'note' && s.message === message ? { kind: 'idle' } : s,
-          ),
-        2000,
-      )
+      flashNote(message)
     }
     const onAnnotationRemoved = (e: Event) => {
       const id = (e as CustomEvent<{ id: string }>).detail?.id
@@ -250,6 +247,7 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     return () => {
       disposed = true
+      window.clearTimeout(noteTimeout)
       setReady(false)
       // Drop this viewport's reflected measurement rows and their bookkeeping:
       // nv.destroy() fires no 'clear' event, so without this the panel rows and

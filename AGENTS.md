@@ -197,6 +197,12 @@ bunx nx run <project>:build
 
 The `@niivue/niivue` package in this repo is a complete rewrite of the old niivue package (`~/github/niivue/niivue/packages/niivue`). The new package does **not** aim for API compatibility — the public API is different and that is expected. However, most features from the old package should eventually be available in the new one. See `packages/niivue/FEATURE_PARITY.md` for a detailed tracking table of which features are present, missing, or deferred. Consult it before implementing features.
 
+## MCP API parity
+
+Every new or changed public NiiVue API that accepts and returns serializable scene or viewer state must be accessible through `@niivue/nv-mcp`. Add or update the MCP server tool schema, browser-side handler, documentation, and coverage in the same change; verify that the tool drives the real NiiVue API rather than a demo-only substitute. Do not merge a public API change without its MCP surface.
+
+Browser-integration APIs are exempt when they require DOM nodes, canvas attachment, event or callback registration, functions, browser-only objects such as `File`, or other non-serializable values. Document the exemption in the API change when it is not self-evident. Do not use an exemption for serializable scene operations, viewer state, or data-loading operations merely because their implementation runs in the browser.
+
 ## Releases
 
 Managed via Nx Release with conventional commits (config in root `nx.json`):

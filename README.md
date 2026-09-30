@@ -78,7 +78,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup, tooling, and developm
 
 ## Releasing and Publishing
 
-Packages are versioned and published using [Nx Release](https://nx.dev/features/manage-releases) and `bun publish`. Ensure you are logged in to npm (`npm login`) and have publish access to the `@niivue` scope.
+Packages are versioned and published using [Nx Release](https://nx.dev/features/manage-releases) via the Release GitHub workflow:
+
+- **Release candidates** are published automatically on every push to `main`. Each merged PR that contains releasable conventional commits produces new `x.y.z-rc.N` versions on the npm `next` dist-tag.
+- **Stable releases** are manual. Run the Release workflow from the Actions tab on `main` with the "release candidate" box unchecked to publish `x.y.z` versions on the npm `latest` dist-tag.
+
+See the Releases section of [CONTRIBUTING.md](CONTRIBUTING.md) for details. To publish by hand instead, ensure you are logged in to npm (`npm login`) and have publish access to the `@niivue` scope:
 
 ```bash
 # 1. Version — bumps package.json and updates workspace deps

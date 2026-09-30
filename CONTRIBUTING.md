@@ -113,17 +113,29 @@ Commit messages determine the version bump:
 
 Only commits that touch files within a package's directory trigger a release for that package. TypeScript and Python packages are versioned independently.
 
-#### Release workflow
+#### Release workflow (GitHub Actions)
+
+TypeScript packages are released by `.github/workflows/release.yml`:
+
+- **Release candidates are automatic.** Every push to `main` (normally a merged PR) runs `nx release` with the `rc` preid. Any package with releasable conventional commits gets a new `<project>@<x.y.z>-rc.N` tag, a GitHub pre-release, and an npm publish under the `next` dist-tag. A merge that touches nothing releasable (docs, apps, CI) is a no-op.
+- **Stable releases are manual.** Open the Release workflow in the Actions tab, run it from `main`, and leave the "release candidate" box unchecked. This cuts the real `x.y.z` versions and publishes them under the npm `latest` dist-tag. Stable releases are never created automatically.
+- **Dry run** prints the plan (versions, dist-tags) to the job summary without creating commits, tags, or publishing.
+
+Every PR also gets a release preview comment (`release-preview.yml`) showing which packages and versions its merge would produce.
+
+The release commit is pushed with the `RELEASE_TOKEN` PAT, so that push triggers the workflow again; the job skips itself when the head commit is a `chore(release): publish` commit. If two PRs merge in quick succession the runs are queued, and each run releases the current tip of `main`, so a later run simply finds nothing new to release.
+
+#### Running a release locally
 
 ```bash
 # Preview what would happen (always do this first)
 bunx nx release --dry-run
 
-# Create a release
+# Create a release (version bump + changelog + git tag), without publishing
 bunx nx release --skip-publish
 ```
 
-Use `--skip-publish` since these are private packages. Remove it when you're ready to publish to npm. For the very first release in a brand new repo, add `--first-release` to establish the baseline git tags.
+Prefer the GitHub workflow above so tags, GitHub Releases, and npm publishes stay in sync. For the very first release in a brand new repo, add `--first-release` to establish the baseline git tags.
 
 #### What a release does
 

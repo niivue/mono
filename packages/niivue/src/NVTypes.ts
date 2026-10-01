@@ -178,6 +178,10 @@ export type NVImage = {
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean
   opacity?: number
+  /** Whether the volume is drawn (default: true). Hidden volumes are neither
+   * drawn nor picked but keep their `opacity`, so a hide/show round trip
+   * restores it. Symmetric with `NVMesh.visible`. */
+  visible?: boolean
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
@@ -1410,6 +1414,9 @@ export type ImageFromUrlOptions = {
   limitFrames4D?: number
   /** Volume opacity 0-1 (default: 1) */
   opacity?: number
+  /** Whether the volume is drawn (default: true). Hidden volumes keep their
+   * opacity; `setVolume(i, { visible: false })` is the hide toggle. */
+  visible?: boolean
   /** Minimum intensity for color mapping */
   calMin?: number
   /** Maximum intensity for color mapping */

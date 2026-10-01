@@ -87,6 +87,9 @@ export type NVDocumentVolume = {
   isNearestInterpolation?: boolean
   atlasOutline?: number
   opacity?: number
+  /** The explicit hide toggle (`setVolume(i, { visible: false })`); written
+   * only when false, so documents without hidden volumes are unchanged. */
+  visible?: boolean
   calMin?: number
   calMax?: number
   calMinNeg?: number
@@ -394,6 +397,7 @@ export function serialize(
         isLegendVisible: v.isLegendVisible,
         frame4D: v.frame4D,
       }
+      if (v.visible === false) vol.visible = false
 
       // Serialize label colormap if present
       if (v.colormapLabel) {
@@ -886,6 +890,7 @@ export async function reconstructVolume(
         base.isNearestInterpolation = v.isNearestInterpolation
       if (v.atlasOutline !== undefined) base.atlasOutline = v.atlasOutline
       if (v.opacity !== undefined) base.opacity = v.opacity
+      if (v.visible !== undefined) base.visible = v.visible
       if (v.calMin !== undefined) base.calMin = v.calMin
       if (v.calMax !== undefined) base.calMax = v.calMax
       if (v.calMinNeg !== undefined) base.calMinNeg = v.calMinNeg

@@ -6,6 +6,7 @@ import {
 } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
+import { drawnOpacity } from '@/view/NVVolumeVisibility'
 import {
   type ChunkPlan,
   type ChunkSampleTransform,
@@ -296,7 +297,7 @@ export class SliceRenderer extends NVRenderer {
     if (this._shader.uniforms.slice)
       gl.uniform1f(this._shader.uniforms.slice, sliceFrac)
     if (this._shader.uniforms.opacity)
-      gl.uniform1f(this._shader.uniforms.opacity, vol.opacity ?? 1)
+      gl.uniform1f(this._shader.uniforms.opacity, drawnOpacity(vol))
     if (this._shader.uniforms.overlayAlphaShader)
       gl.uniform1f(
         this._shader.uniforms.overlayAlphaShader,

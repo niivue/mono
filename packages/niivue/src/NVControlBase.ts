@@ -6163,12 +6163,12 @@ export default class NiiVue extends EventTarget {
     // addVolume pushes when its async prepare resolves, so a parallel map would
     // let a fast-loading volume land in the wrong slot (volume order defines
     // background vs overlays, and modulator/drawing links depend on it).
-    for (const v of doc.volumes) {
+    for (const v of doc.volumes ?? []) {
       await NVDocument.reconstructVolume(this.model, v)
     }
     // Meshes have no background/overlay ordering role; load them in parallel.
     await Promise.all(
-      doc.meshes.map((m) => NVDocument.reconstructMesh(this.model, m)),
+      (doc.meshes ?? []).map((m) => NVDocument.reconstructMesh(this.model, m)),
     )
 
     // Update GPU resources and render

@@ -33,6 +33,11 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import {
+  type SettingsSnapshot,
+  settingsChangeEvents,
+  snapshotSettings,
+} from '@/documentEvents'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   addUndoBitmap,
@@ -3214,17 +3219,22 @@ export default class NiiVue extends EventTarget {
     const meshes = this.model.getMeshes()
     if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const mesh = meshes[meshIndex]
-    this.emit('meshRemoved', { mesh, index: meshIndex })
     this.model.removeMesh(meshIndex)
+    // Emit after the removal, like every other mutation event: the detail
+    // carries the removed mesh and its former index; the collection no longer
+    // holds it.
+    this.emit('meshRemoved', { mesh, index: meshIndex })
     await this.updateGLVolume()
   }
 
   async removeAllVolumes(): Promise<void> {
-    const vols = this.model.getVolumes()
+    const vols = [...this.model.getVolumes()]
+    await this.model.removeAllVolumes()
+    // One event per volume, after the removal, in reverse index order (so
+    // each detail's index was valid at the time that volume was removed).
     for (let i = vols.length - 1; i >= 0; i--) {
       this.emit('volumeRemoved', { volume: vols[i], index: i })
     }
-    await this.model.removeAllVolumes()
     await this.updateGLVolume()
   }
 
@@ -3238,19 +3248,20 @@ export default class NiiVue extends EventTarget {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
-    // Emit before removal, matching removeAllVolumes/removeAllMeshes: at emit
-    // time the collection still contains the referenced item.
-    this.emit('volumeRemoved', { volume, index: volumeIndex })
     this.model.removeVolume(volumeIndex)
+    // Emit after the removal, like every other mutation event: the detail
+    // carries the removed volume and its former index; the collection no
+    // longer holds it.
+    this.emit('volumeRemoved', { volume, index: volumeIndex })
     await this.updateGLVolume()
   }
 
   async removeAllMeshes(): Promise<void> {
-    const meshes = this.model.getMeshes()
+    const meshes = [...this.model.getMeshes()]
+    this.model.removeAllMeshes()
     for (let i = meshes.length - 1; i >= 0; i--) {
       this.emit('meshRemoved', { mesh: meshes[i], index: i })
     }
-    this.model.removeAllMeshes()
     await this.updateGLVolume()
   }
 
@@ -6127,6 +6138,26 @@ export default class NiiVue extends EventTarget {
     NVDocument.triggerDownload(data, filename)
   }
 
+  // Emit the `change` events (and the specialised events some setters pair
+  // with them) for every setting that differs from `before`.
+  private emitSettingsChanges(before: SettingsSnapshot): void {
+    const changes = settingsChangeEvents(before, snapshotSettings(this.model))
+    for (const change of changes) this.emit('change', change)
+    if (changes.some((c) => c.property === 'sliceType')) {
+      this.emit('sliceTypeChange', { sliceType: this.model.layout.sliceType })
+    }
+    if (
+      changes.some(
+        (c) => c.property === 'azimuth' || c.property === 'elevation',
+      )
+    ) {
+      this.emit('azimuthElevationChange', {
+        azimuth: this.model.scene.azimuth,
+        elevation: this.model.scene.elevation,
+      })
+    }
+  }
+
   async loadDocument(
     source: string | File,
     options?: { fill?: SettingsFillPolicy },
@@ -6146,11 +6177,22 @@ export default class NiiVue extends EventTarget {
 
     // Apply non-data state (scene, config, display settings). Settings the
     // document omits are filled per the fill policy (default: reset to defaults).
+    // applyDocumentToModel writes into the model directly, bypassing the
+    // setters, so emit the `change` events they would have: one per key whose
+    // value differs from before the load (a key the fill policy reset counts).
+    const settingsBefore = snapshotSettings(this.model)
+    // applyDocumentToModel also replaces the signal list on the model; announce
+    // the removals it implies the way removeAllSignals would.
+    const signalsBefore = [...this.model.signals]
     NVDocument.applyDocumentToModel(
       this.model,
       doc,
       options?.fill ?? this._settingsFillPolicy,
     )
+    for (let i = 0; i < signalsBefore.length; i++) {
+      this.emit('signalRemoved', { signal: signalsBefore[i], index: i })
+    }
+    this.emitSettingsChanges(settingsBefore)
 
     // Restore thumbnail if present in document
     if (this.model.ui.thumbnailUrl) {
@@ -6163,13 +6205,29 @@ export default class NiiVue extends EventTarget {
     // addVolume pushes when its async prepare resolves, so a parallel map would
     // let a fast-loading volume land in the wrong slot (volume order defines
     // background vs overlays, and modulator/drawing links depend on it).
+    // Reconstruction goes through the model (one GPU update for the whole
+    // load, below), so emit the events the controller's addVolume/addMesh/
+    // addSignal would have: each after its item is in the collection.
     for (const v of doc.volumes) {
+      const before = this.model.volumes.length
       await NVDocument.reconstructVolume(this.model, v)
+      if (this.model.volumes.length > before) {
+        this.emit('volumeLoaded', {
+          volume: this.model.volumes[this.model.volumes.length - 1],
+        })
+      }
     }
     // Meshes have no background/overlay ordering role; load them in parallel.
+    const meshesBefore = this.model.meshes.length
     await Promise.all(
       doc.meshes.map((m) => NVDocument.reconstructMesh(this.model, m)),
     )
+    for (const mesh of this.model.meshes.slice(meshesBefore)) {
+      this.emit('meshLoaded', { mesh })
+    }
+    for (const signal of this.model.signals) {
+      this.emit('signalLoaded', { signal })
+    }
 
     // Update GPU resources and render
     await this.updateGLVolume()
@@ -6191,6 +6249,7 @@ export default class NiiVue extends EventTarget {
         this.model.draw.isEnabled = true
         this._drawLut = null
         this.refreshDrawing()
+        this.emit('drawingChanged', { action: 'load' })
       }
     }
 

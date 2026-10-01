@@ -146,20 +146,37 @@ test('json format: saves portable JSON that loadDocument reads back (linked + em
     await nvEmbedded.attachToCanvas(mkCanvas())
     await nvEmbedded.loadDocument(new File([jsonEmbedded], 'embed.json'))
 
+    // Non-finite numbers: calMinNeg defaults to NaN on a loaded volume. JSON has
+    // no NaN, so the codec tags it; a reload must yield NaN again, not null.
+    // (Computed here: page.evaluate's own JSON transport would turn NaN into
+    // null on the way back to the test.)
+    const isNaNAfterReload = (v: unknown): boolean =>
+      typeof v === 'number' && Number.isNaN(v)
+
     return {
       startsWithBrace: text.trimStart().startsWith('{'),
       parseable,
+      taggedNaN: text.includes('"$num":"NaN"'),
+      bareNullCalMinNeg: text.includes('"calMinNeg":null'),
       linkedAzimuth: nvLinked.azimuth,
       linkedUrl: nvLinked.volumes[0]?.url,
       linkedVoxels: nvLinked.volumes[0]?.img?.length ?? 0,
+      linkedCalMinNegIsNaN: isNaNAfterReload(nvLinked.volumes[0]?.calMinNeg),
       embeddedVoxels: nvEmbedded.volumes[0]?.img?.length ?? 0,
+      embeddedCalMinNegIsNaN: isNaNAfterReload(
+        nvEmbedded.volumes[0]?.calMinNeg,
+      ),
     }
   })
 
   expect(r.startsWithBrace).toBe(true) // human-readable JSON, not binary
   expect(r.parseable).toBe(true)
+  expect(r.taggedNaN).toBe(true) // NaN survives as a { $num } tag ...
+  expect(r.bareNullCalMinNeg).toBe(false) // ... not as JSON.stringify's null
   expect(r.linkedAzimuth).toBe(175) // scene restored from JSON
   expect(r.linkedUrl).toBe('/volumes/mni152.nii.gz')
   expect(r.linkedVoxels).toBeGreaterThan(1_000_000) // linked -> refetched
+  expect(r.linkedCalMinNegIsNaN).toBe(true) // NaN round-trips on the URL path
   expect(r.embeddedVoxels).toBeGreaterThan(1_000_000) // embedded JSON -> base64 voxels
+  expect(r.embeddedCalMinNegIsNaN).toBe(true) // and on the embedded path
 })

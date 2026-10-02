@@ -4,7 +4,7 @@ import { vec3 } from 'gl-matrix'
 import * as NVShapes from '@/mesh/NVShapes'
 import type { NVMesh } from '@/NVTypes'
 
-export function calculateExtents(positions: Float32Array): {
+function calculateExtents(positions: Float32Array): {
   extentsMin: vec3
   extentsMax: vec3
 } {
@@ -24,10 +24,7 @@ export function calculateExtents(positions: Float32Array): {
   return { extentsMin: mn, extentsMax: mx }
 }
 
-export function buildSolidColorArray(
-  color: number,
-  numVerts: number,
-): Uint32Array {
+function buildSolidColorArray(color: number, numVerts: number): Uint32Array {
   const colors = new Uint32Array(numVerts)
   colors.fill(color)
   return colors

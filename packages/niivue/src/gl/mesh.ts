@@ -2,7 +2,6 @@ import { log } from '@/logger'
 import * as NVMeshUtils from '@/mesh/NVMesh'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
 import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
-import { buildCylinderMeshData, buildSphereMeshData } from '@/view/NVMeshView'
 import {
   meshDepthPickFragmentShader,
   meshDepthPickVertexShader,
@@ -38,10 +37,6 @@ export function init(gl: WebGL2RenderingContext): void {
   _contextCache.set(gl, { shaders, depthPickShader })
 }
 
-export function isReady(gl: WebGL2RenderingContext): boolean {
-  return _contextCache.has(gl)
-}
-
 export function getAttributeLocations(
   gl: WebGL2RenderingContext,
   shaderType = 'phong',
@@ -57,34 +52,6 @@ export function getAttributeLocations(
     aNormal: gl.getAttribLocation(shader.program, 'normal'),
     aColor: gl.getAttribLocation(shader.program, 'color'),
   }
-}
-
-export function loadSphereMesh(
-  gl: WebGL2RenderingContext,
-  origin: number[] = [1, 1, 1],
-  radius = 1,
-  color: number[] = [1, 1, 1, 1],
-  subdivisions = 2,
-): NVMesh {
-  return createMeshBuffers(
-    gl,
-    buildSphereMeshData(origin, radius, color, subdivisions),
-  )
-}
-
-export function loadCylinderMesh(
-  gl: WebGL2RenderingContext,
-  start: number[],
-  dest: number[],
-  radius: number,
-  color: number[] = [1, 1, 1, 1],
-  sides = 20,
-  endcaps = true,
-): NVMesh {
-  return createMeshBuffers(
-    gl,
-    buildCylinderMeshData(start, dest, radius, color, sides, endcaps),
-  )
 }
 
 function createMeshGpu(
@@ -163,22 +130,6 @@ function createMeshGpu(
     indexBuffer,
     indexCount: meshData.indices.length,
   }
-}
-
-export function createMeshBuffers(
-  _gl: WebGL2RenderingContext,
-  meshData: Omit<NVMesh, 'layers' | 'perVertexColors'> &
-    Partial<Pick<NVMesh, 'layers' | 'perVertexColors'>>,
-  options: Record<string, unknown> = {},
-): NVMesh {
-  const { shaderType = 'phong' } = options as { shaderType?: string }
-  const mesh = meshData as NVMesh
-  mesh.opacity = mesh.opacity ?? 1
-  mesh.shaderType = shaderType
-  mesh.layers ??= []
-  mesh.perVertexColors ??= null
-  Object.assign(mesh, options)
-  return mesh
 }
 
 export function uploadMeshGPU(

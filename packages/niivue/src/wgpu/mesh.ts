@@ -1,7 +1,6 @@
 import * as NVMeshUtils from '@/mesh/NVMesh'
 import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
 import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
-import { buildCylinderMeshData, buildSphereMeshData } from '@/view/NVMeshView'
 import meshShaderWGSL from './mesh.wgsl?raw'
 
 export const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
@@ -9,51 +8,6 @@ export const MESH_UNIFORM_SIZE = 176
 export const alignedMeshSize =
   Math.ceil(MESH_UNIFORM_SIZE / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 export const MAX_TILES = 128
-
-export function loadSphereMesh(
-  device: GPUDevice,
-  origin: number[] = [1, 1, 1],
-  radius = 1,
-  color: number[] = [1, 1, 1, 1],
-  subdivisions = 2,
-): NVMesh {
-  return createMeshBuffers(
-    device,
-    buildSphereMeshData(origin, radius, color, subdivisions),
-  )
-}
-
-export function loadCylinderMesh(
-  device: GPUDevice,
-  start: number[],
-  dest: number[],
-  radius: number,
-  color: number[] = [1, 1, 1, 1],
-  sides = 20,
-  endcaps = true,
-): NVMesh {
-  return createMeshBuffers(
-    device,
-    buildCylinderMeshData(start, dest, radius, color, sides, endcaps),
-  )
-}
-
-export function createMeshBuffers(
-  _device: GPUDevice,
-  meshData: Omit<NVMesh, 'layers' | 'perVertexColors'> &
-    Partial<Pick<NVMesh, 'layers' | 'perVertexColors'>>,
-  options: Record<string, unknown> = {},
-): NVMesh {
-  const { shaderType = 'phong' } = options as { shaderType?: string }
-  const mesh = meshData as NVMesh
-  mesh.opacity ??= 1
-  mesh.shaderType = shaderType
-  mesh.layers ??= []
-  mesh.perVertexColors ??= null
-  // Add any additional options to meshData
-  Object.assign(mesh, options)
-  return mesh
-}
 
 export function uploadMeshGPU(
   device: GPUDevice,

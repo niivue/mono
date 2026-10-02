@@ -24,8 +24,6 @@ import {
   compositeLayers,
   computeMeshLabelCentroids,
   createLayer,
-  layerExtensions,
-  loadLayerFromUrl,
   loadLayersFromOptions,
 } from './layers'
 import { probeVTKContent, readVTKLines } from './readers/vtk'
@@ -40,17 +38,6 @@ import {
 import { loadTractScalars } from './tracts/scalars'
 import * as meshWriters from './writers'
 import { writeMesh } from './writers'
-
-export {
-  compositeLayers,
-  connectomeExtensions,
-  createLayer,
-  isConnectomeExtension,
-  isTractExtension,
-  layerExtensions,
-  loadLayerFromUrl,
-  tractExtensions,
-}
 
 type MeshReader = {
   extensions?: string[]

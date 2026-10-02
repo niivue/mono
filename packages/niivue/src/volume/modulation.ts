@@ -9,8 +9,8 @@ export const IDENTITY_MTX = new Float32Array([
 ])
 
 /** Modulation modes (must match the `modulation`/`modMode` shader uniforms). */
-export const MOD_RGB = 1
-export const MOD_ALPHA = 2
+const MOD_RGB = 1
+const MOD_ALPHA = 2
 
 /** True for volumes whose colour is pre-baked RGB/RGBA (modulated CPU-side). */
 function isRgbaTarget(vol: NVImage): boolean {

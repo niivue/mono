@@ -8,8 +8,8 @@ import type { NVImage } from '@/NVTypes'
 import type { Vec3i } from '@/volume/chunking'
 
 /** NIfTI datatype codes for color volumes. */
-export const DT_RGB24 = 128
-export const DT_RGBA32 = 2304
+const DT_RGB24 = 128
+const DT_RGBA32 = 2304
 
 // Identity tokens for label-colormap objects: a rebuilt LUT (new object) must
 // change the display key even if its contents happen to match, and comparing

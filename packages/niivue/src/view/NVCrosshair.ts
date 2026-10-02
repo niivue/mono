@@ -3,8 +3,8 @@ import * as NVMeshUtils from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
 
-export const CYLINDER_SIDES = 20
-export const CYLINDER_ENDCAPS = true
+const CYLINDER_SIDES = 20
+const CYLINDER_ENDCAPS = true
 export const VERTS_PER_CYLINDER =
   (CYLINDER_SIDES + 1) * 2 + 2 + (CYLINDER_SIDES + 1) * 2
 export const BYTES_PER_VERTEX = 28 // position(12) + normal(12) + color(4)

@@ -2,7 +2,7 @@ import { COLORMAP_TYPE } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
 import { reorientRGBA } from '@/volume/utils'
 
-export function computeNegRange(nvimage: NVImage): {
+function computeNegRange(nvimage: NVImage): {
   mnNeg: number
   mxNeg: number
 } {

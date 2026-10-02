@@ -48,6 +48,15 @@
         "{projectRoot}/package.json"
       ]
     },
+    "knip": {
+      "command": "bunx --bun knip --workspace packages/niivue --config knip.jsonc",
+      "cache": false,
+      "configurations": {
+        "production": {
+          "command": "bunx --bun knip --workspace packages/niivue --config knip.production.jsonc --production --strict"
+        }
+      }
+    },
     "e2e": {
       "command": "bun run test:e2e",
       "options": { "cwd": "{projectRoot}" },

@@ -8,12 +8,6 @@ const dpvExtensions = new Set(['TSF'])
 /** Extensions that provide per-streamline scalar data for tracts. */
 const dpsExtensions = new Set(['TXT'])
 
-/** Check whether a file extension is a tract scalar overlay format. */
-export function isTractScalarExtension(ext: string): boolean {
-  const upper = ext.toUpperCase()
-  return dpvExtensions.has(upper) || dpsExtensions.has(upper)
-}
-
 /**
  * Read MRtrix TSF (Track Scalar File) format — per-vertex scalars.
  * https://mrtrix.readthedocs.io/en/dev/getting_started/image_data.html#track-scalar-file-format-tsf

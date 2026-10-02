@@ -17,7 +17,7 @@ export function chunkExplodeEnabled(
   return scale.some((axisScale) => axisScale > 1)
 }
 
-export function chunkExplodeScale(
+function chunkExplodeScale(
   explode: ChunkExplodeOptions | null | undefined,
 ): Vec3f {
   if (!explode?.enabled) return IDENTITY_SCALE

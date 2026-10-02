@@ -146,7 +146,7 @@ export function multiplyAffine(
   return mat4ToArray(result)
 }
 
-export function validateAffine(affine: number[][]): void {
+function validateAffine(affine: number[][]): void {
   if (!Array.isArray(affine) || affine.length !== 4) {
     throw new Error('Affine matrix must have 4 rows')
   }

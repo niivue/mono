@@ -156,7 +156,7 @@ export function createLayer(
  * Tries layer-only readers, then mesh readers (MZ3/GII in scalar mode),
  * then volume readers (NII/MGH).
  */
-export async function readLayerFile(
+async function readLayerFile(
   buffer: ArrayBuffer,
   ext: string,
   nVert: number,

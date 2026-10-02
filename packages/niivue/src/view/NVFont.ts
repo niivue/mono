@@ -22,8 +22,8 @@ export type BuildTextFn = (
 ) => GlyphBatch
 
 export const FLOATS_PER_PANEL = 12
-export const BACK_PADDING = 0.3
-export const BACK_RADIUS = 0.25
+const BACK_PADDING = 0.3
+const BACK_RADIUS = 0.25
 
 export function emptyBatch(): GlyphBatch {
   return {

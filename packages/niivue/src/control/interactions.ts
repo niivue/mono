@@ -2795,14 +2795,6 @@ export function setupResizeHandler(ctrl: NiiVue): void {
   }
 }
 
-export function hitTest(
-  ctrl: NiiVue,
-  x: number,
-  y: number,
-): ViewHitTest | null {
-  return ctrl.view?.hitTest(x, y) ?? null
-}
-
 /** What {@link pickExplodedBlock} resolves a click on an exploded brick to. */
 export interface ExplodedBlockPick {
   /** Index into `ctrl.volumes` of the volume that owns the brick. */

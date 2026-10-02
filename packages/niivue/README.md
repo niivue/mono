@@ -22,6 +22,32 @@ bun run lint:fix     # Biome auto-fix
 bun run typecheck    # TypeScript type checking (tsc --noEmit)
 ```
 
+### Unused-code audit
+
+From the monorepo root, run the pinned Knip 6.39.0 audit:
+
+```bash
+bunx nx run niivue:knip
+bunx nx run niivue:knip:production
+```
+
+The normal audit includes tests, examples (including their worker), and standalone
+scripts. The production configuration checks library sources without treating
+examples or test consumers as usage; it retains Vite support for `import.meta.glob`.
+Both protect exports from all published package entry points. These targets scope
+reporting to `packages/niivue`; they are not a complete audit of the monorepo.
+
+This is a manual review tool, not a CI gate. It exits with status 1 while findings
+remain, including deliberately deferred exports. An unused export is a candidate,
+not permission to remove an API: check extension packages, external consumers,
+public type signatures, and recent PRs before changing it. Production-only findings
+may be helpers used by tests. The duplicate named/default export of
+`NVCanvasViewportController` is intentional and remains visible in the report.
+Do not use `--include-entry-exports` or broad ignores to make the report pass.
+
+See [Knip getting started](https://knip.dev/overview/getting-started) and
+[how Knip works](https://knip.dev/explanations/how-knip-works) for interpreting results.
+
 ### Perf instrumentation
 
 The renderer carries `performance.mark`/`measure` instrumentation

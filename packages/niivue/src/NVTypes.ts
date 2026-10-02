@@ -586,12 +586,6 @@ export type WebGPUMeshGPU = {
   alignedMeshSize?: number
 }
 
-export type MeshGPU = WebGLMeshGPU | WebGPUMeshGPU
-
-export type MeshGPUResource = { destroy?: () => void }
-
-export type ClipPlane = [number, number, number, number]
-
 // ============================================================
 // Model Config Groups
 // ============================================================

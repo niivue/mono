@@ -75,7 +75,7 @@ export function getDragModeForButton(ctrl: NiiVue, button: number): number {
  * Uses direct array iteration with hoisted index math for cache efficiency.
  * Returns null if no variability or outside volume.
  */
-export function calculateNewRange(
+function calculateNewRange(
   ctrl: NiiVue,
   volIdx = 0,
 ): { calMin: number; calMax: number } | null {
@@ -155,7 +155,7 @@ export function calculateNewRange(
 }
 
 /** Build DragReleaseInfo from current drag state. */
-export function buildDragReleaseInfo(ctrl: NiiVue): DragReleaseInfo | null {
+function buildDragReleaseInfo(ctrl: NiiVue): DragReleaseInfo | null {
   const startMM = screenSlicePickAt(
     ctrl,
     ctrl.dragStartXY[0],
@@ -481,7 +481,7 @@ function fireDragRelease(ctrl: NiiVue): void {
 }
 
 /** Clear all drag state and overlay. */
-export function clearDragState(ctrl: NiiVue): void {
+function clearDragState(ctrl: NiiVue): void {
   ctrl._activeDragMode = DRAG_MODE.none
   ctrl._pan2DxyzmmAtDragStart = null
   ctrl._crosshairPanDidDrag = false
@@ -594,10 +594,7 @@ function getSliceInfo(ctrl: NiiVue): {
 }
 
 /** Calculate angle between two lines (in degrees). */
-export function calculateAngleBetweenLines(
-  line1: number[],
-  line2: number[],
-): number {
+function calculateAngleBetweenLines(line1: number[], line2: number[]): number {
   const ix = line1[2]
   const iy = line1[3]
   const v1x = line1[0] - ix

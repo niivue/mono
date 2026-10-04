@@ -36,11 +36,9 @@ import type {
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   addUndoBitmap,
-  calculateLoadDrawingTransform,
   clearAllUndoBitmaps,
   createDrawingVolume,
   getDrawingBitmap,
-  transformBitmap,
   validateDrawingDimensions,
 } from '@/drawing/drawingManager'
 import { drawingSliceToSVG } from '@/drawing/drawingSvg'
@@ -195,6 +193,7 @@ import {
   calMinMaxFrame,
   getImageDataRAS,
   reorientDrawingToNative,
+  reorientDrawingToRAS,
   volumeTR,
 } from '@/volume/utils'
 
@@ -5806,11 +5805,6 @@ export default class NiiVue extends EventTarget {
         )
         return false
       }
-      // Transform from native voxel order to RAS to match background volume
-      const transform = calculateLoadDrawingTransform({
-        permRAS: back.permRAS,
-        dims: back.dimsRAS,
-      })
       const img = nii.img
       const imgData =
         img instanceof ArrayBuffer
@@ -5832,15 +5826,8 @@ export default class NiiVue extends EventTarget {
         )
         return false
       }
-      const transformedBitmap = transformBitmap({
-        inputData: imgData,
-        dims: back.dimsRAS,
-        xlut: transform.xlut,
-        ylut: transform.ylut,
-        zlut: transform.zlut,
-      })
       const dv = createDrawingVolume(back)
-      dv.img = transformedBitmap
+      dv.img = reorientDrawingToRAS(back, imgData)
       this.model.drawingVolume = dv
       // Initialize undo
       const cleared = clearAllUndoBitmaps(

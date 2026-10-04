@@ -775,7 +775,7 @@ export function reorientDrawingToRAS(
   nativeBytes: ArrayLike<number>,
 ): Uint8Array {
   const permRAS = backgroundVolume.permRAS ?? [1, 2, 3]
-  const dims = backgroundVolume.dimsRAS ?? backgroundVolume.hdr.dims
+  const dims = backgroundVolume.hdr.dims
   const { xlut, ylut, zlut } = calculateLoadDrawingTransform({ permRAS, dims })
   return transformBitmap({ inputData: nativeBytes, dims, xlut, ylut, zlut })
 }

@@ -31,11 +31,24 @@
         <label for="csf"><span class="swatch" style="background:#78a0ff"></span>CSF<input type="range" id="csf" min="0" max="100" value="70" /></label>
       </span>
       &nbsp;
+      <label for="alphaBlend" title="volumeOverlayAlphaBlend: how overlapping maps combine opacity">Blend</label>
+      <select id="alphaBlend">
+        <option>max</option>
+        <option selected>additive</option>
+        <option>over</option>
+      </select>
+      <select id="colorBlend" title="volumeOverlayColorBlend: how overlapping maps combine colour">
+        <option selected>add colors</option>
+        <option>mean color</option>
+      </select>
+      &nbsp;
       <label for="gradSlider"
         title="volumeIllumination: matcap lighting in the 3D render, from the volume's gradient">Shading</label>
       <input type="range" min="0" max="100" value="40" class="slider" id="gradSlider" />
       &nbsp;
       <label title="isViewModeHotKeyEnabled: press V to cycle the view"><input type="checkbox" id="viewKey" />V key</label>
+      &nbsp;
+      <label title="volumeIsNearestInterpolation: show voxel boundaries rather than smoothing them"><input type="checkbox" id="nearestCheck" />Nearest</label>
       &nbsp;
       <label for="xrayCheck">XRay</label>
       <input type="checkbox" id="xrayCheck" checked />
@@ -52,7 +65,7 @@
     <footer id="location">&nbsp;</footer>
     <script type="module">
       import { shiny } from '../src/assets/matcaps'
-      import NiiVue, { SHOW_RENDER } from '../src/index.ts'
+      import NiiVue, { OVERLAY_ALPHA_BLEND, SHOW_RENDER } from '../src/index.ts'
 
       // Three partial-volume tissue maps (grey matter, white matter, CSF) over
       // the T1 they were segmented from, each with its own opacity slider.
@@ -80,6 +93,10 @@
         backend: document.getElementById('webgpuCheck').checked ? 'webgpu' : 'webgl2',
         backgroundColor: [0, 0, 0, 1],
         is3DCrosshairVisible: true,
+        isSnapToVoxelCenters: true,
+        // The tissue fractions sum to 1, so their opacities must add: with the
+        // default MAX a voxel split 50/50 between GM and WM is only 50% opaque.
+        volumeOverlayAlphaBlend: OVERLAY_ALPHA_BLEND.ADDITIVE,
         meshXRay: 0.1,
         showRender: SHOW_RENDER.ALWAYS,
         matcaps: { Shiny: shiny },
@@ -94,14 +111,14 @@
       // surfaces in the 3D render read as shape rather than as flat colour.
       await nv1.loadMatcap('Shiny')
 
-      // A light ramp from a pale version of the tint up to the tint itself. A
-      // colormap that starts at black would darken bright white matter before
-      // it tinted it, which reads as a dark halo rather than a tissue overlay.
+      // A flat colormap: every nonzero voxel is the full tint, and the tissue
+      // fraction lives only in alpha (self-modulation below). A ramp would also
+      // darken low fractions, so 30% white matter would read as grey rather
+      // than as translucent white. A[0] = 0 keeps zero voxels transparent.
       for (const t of TISSUES) {
         const [r, g, b] = t.tint
-        const pale = (c) => Math.round(c * 0.75)
         nv1.addColormap(t.id, {
-          R: [pale(r), r], G: [pale(g), g], B: [pale(b), b], A: [0, 255], I: [0, 255],
+          R: [r, r], G: [g, g], B: [b, b], A: [0, 255], I: [0, 255],
         })
       }
 
@@ -111,7 +128,10 @@
           url: `/volumes/${t.file}`,
           colormap: t.id,
           colormapType: 1,
-          calMin: 0.05, // below this a voxel is essentially not this tissue
+          // The window also scales the modulation weight, (f - calMin) / (calMax -
+          // calMin), so 0..1 makes alpha the tissue fraction itself and the three
+          // fractions sum to full opacity.
+          calMin: 0,
           calMax: 1,
           opacity: 0.7,
         })),
@@ -141,6 +161,15 @@
       nv1.addEventListener('sliceTypeChange', (e) => {
         sliceTypeSelect.value = String(e.detail.sliceType)
       })
+      document.getElementById('alphaBlend').onchange = (e) => {
+        nv1.volumeOverlayAlphaBlend = e.target.selectedIndex
+      }
+      document.getElementById('colorBlend').onchange = (e) => {
+        nv1.volumeOverlayColorBlend = e.target.selectedIndex
+      }
+      document.getElementById('nearestCheck').onchange = (e) => {
+        nv1.volumeIsNearestInterpolation = e.target.checked
+      }
       document.getElementById('xrayCheck').onclick = function () {
         nv1.meshXRay = +this.checked * 0.1
       }

@@ -458,6 +458,10 @@ export default class NVGlview {
 
       // Handle overlays (all volumes after the first)
       if (vols.length > 1 && !this.options.instances) {
+        this.volumeRenderer.overlayAlphaBlend =
+          this.model.volume.overlayAlphaBlend
+        this.volumeRenderer.overlayColorBlend =
+          this.model.volume.overlayColorBlend
         await this.volumeRenderer.updateOverlays(
           gl,
           vols[0],

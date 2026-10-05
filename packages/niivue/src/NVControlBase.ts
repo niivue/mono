@@ -61,6 +61,8 @@ import {
   lodOpacityScale,
   NUM_CLIP_PLANE,
   normalizeVolumeRenderMode,
+  type OVERLAY_ALPHA_BLEND,
+  type OVERLAY_COLOR_BLEND,
   type PEN_SHAPE,
   SLICE_TYPE,
   sliceTypeDim,
@@ -1841,6 +1843,37 @@ export default class NiiVue extends EventTarget {
     this.model.volume.isNearestInterpolation = v
     this.emit('change', { property: 'volumeIsNearestInterpolation', value: v })
     this.drawScene()
+  }
+
+  /**
+   * How overlapping overlays combine opacity: `OVERLAY_ALPHA_BLEND.MAX`
+   * (default), `ADDITIVE` (for maps whose values sum to 1, e.g. tissue
+   * fractions), or `OVER`. Only matters with two or more overlays.
+   */
+  get volumeOverlayAlphaBlend(): OVERLAY_ALPHA_BLEND {
+    return this.model.volume.overlayAlphaBlend
+  }
+  set volumeOverlayAlphaBlend(v: OVERLAY_ALPHA_BLEND) {
+    this.model.volume.overlayAlphaBlend = v
+    this.emit('change', { property: 'volumeOverlayAlphaBlend', value: v })
+    this.updateGLVolume().catch((e) =>
+      log.error('volumeOverlayAlphaBlend failed', e),
+    )
+  }
+
+  /**
+   * How overlapping overlays combine colour: `OVERLAY_COLOR_BLEND.ADDITIVE`
+   * (default) or `MEAN`. Only matters with two or more overlays.
+   */
+  get volumeOverlayColorBlend(): OVERLAY_COLOR_BLEND {
+    return this.model.volume.overlayColorBlend
+  }
+  set volumeOverlayColorBlend(v: OVERLAY_COLOR_BLEND) {
+    this.model.volume.overlayColorBlend = v
+    this.emit('change', { property: 'volumeOverlayColorBlend', value: v })
+    this.updateGLVolume().catch((e) =>
+      log.error('volumeOverlayColorBlend failed', e),
+    )
   }
 
   get volumeIsV1SliceShader(): boolean {

@@ -1,6 +1,10 @@
 import type { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import type { LogLevel } from '@/logger'
-import type { PEN_SHAPE } from '@/NVConstants'
+import type {
+  OVERLAY_ALPHA_BLEND,
+  OVERLAY_COLOR_BLEND,
+  PEN_SHAPE,
+} from '@/NVConstants'
 import type { FontMetrics } from '@/view/NVFont'
 import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 
@@ -728,6 +732,8 @@ export type VolumeRenderConfig = {
   isColormapAlphaOn2D: boolean
   isNearestInterpolation: boolean
   isV1SliceShader: boolean
+  overlayAlphaBlend: OVERLAY_ALPHA_BLEND
+  overlayColorBlend: OVERLAY_COLOR_BLEND
   matcap: string
   paqdUniforms: [number, number, number, number]
   transmittanceCutoff: number
@@ -1211,6 +1217,8 @@ export type NiiVueOptions = {
   volumeIsColormapAlphaOn2D?: boolean
   volumeIsNearestInterpolation?: boolean
   volumeIsV1SliceShader?: boolean
+  volumeOverlayAlphaBlend?: OVERLAY_ALPHA_BLEND
+  volumeOverlayColorBlend?: OVERLAY_COLOR_BLEND
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
   volumeTransmittanceCutoff?: number

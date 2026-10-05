@@ -68,6 +68,29 @@ export enum VOLUME_RENDER_MODE {
 }
 
 /**
+ * How overlapping overlays combine their opacities before being drawn over the
+ * background. MAX suits independent thresholded maps (overlap is no more
+ * opaque than its parts); ADDITIVE suits fractions that sum to 1 (tissue or
+ * probability maps), so a voxel split between two maps is fully opaque; OVER
+ * stacks them like transparencies, 1 - (1-a1)(1-a2)...
+ */
+export enum OVERLAY_ALPHA_BLEND {
+  MAX = 0,
+  ADDITIVE = 1,
+  OVER = 2,
+}
+
+/**
+ * How overlapping overlays combine their colours. ADDITIVE sums the
+ * opacity-weighted colours (red + green = yellow, may clip); MEAN takes their
+ * opacity-weighted average (red + green = dark yellow, never clips).
+ */
+export enum OVERLAY_COLOR_BLEND {
+  ADDITIVE = 0,
+  MEAN = 1,
+}
+
+/**
  * The `VOLUME_RENDER_MODE` a caller-supplied `volumeRenderMode` means, or
  * COMPOSITE when it means none of them. The shaders receive the mode as a float
  * uniform and test it by proximity (`isRenderMode()`, within 0.5), while the
@@ -422,6 +445,8 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   isColormapAlphaOn2D: false,
   isNearestInterpolation: false,
   isV1SliceShader: false,
+  overlayAlphaBlend: OVERLAY_ALPHA_BLEND.MAX,
+  overlayColorBlend: OVERLAY_COLOR_BLEND.ADDITIVE,
   matcap: '',
   paqdUniforms: [0.01, 0.5, 0.25, 0.4] as [number, number, number, number],
   transmittanceCutoff: 0.95,

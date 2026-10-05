@@ -294,7 +294,7 @@
     },
     "packages/nv-mcp": {
       "name": "@niivue/nv-mcp",
-      "version": "0.1.0",
+      "version": "1.0.0-rc.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.30.0",
         "zod": "^4.6.5",

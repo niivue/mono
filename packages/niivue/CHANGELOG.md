@@ -1,3 +1,13 @@
+## 1.0.0-rc.17 (2026-10-05)
+
+### Features
+
+- **niivue:** an undo snapshot API for external drawing edits ([813ecf1](https://github.com/niivue/mono/commit/813ecf1))
+
+### Thank You
+
+- Paul Wighton
+
 ## 1.0.0-rc.16 (2026-09-24)
 
 ### Features

@@ -1,3 +1,22 @@
+## 1.0.0-rc.4 (2026-10-05)
+
+### Fixes
+
+- **nv-ohif:** share transient note timer lifecycle ([82d9050](https://github.com/niivue/mono/commit/82d9050))
+
+### Performance
+
+- **nv-ohif:** cache WSI thumbnails per display set ([698da71](https://github.com/niivue/mono/commit/698da71))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.17
+- Updated uikit to 1.0.0-rc.4
+
+### Thank You
+
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.3 (2026-09-24)
 
 ### Updated Dependencies

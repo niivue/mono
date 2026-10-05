@@ -48,30 +48,30 @@ describe('convertLegacyDocument', () => {
   })
 
   test('maps sceneData to scene (volScaleMultiplier -> scaleMultiplier)', () => {
-    expect(doc.scene.azimuth).toBe(110)
-    expect(doc.scene.crosshairPos).toEqual([0.5, 0.5, 0.6])
-    expect(doc.scene.scaleMultiplier).toBe(1.43)
+    expect(doc.scene?.azimuth).toBe(110)
+    expect(doc.scene?.crosshairPos).toEqual([0.5, 0.5, 0.6])
+    expect(doc.scene?.scaleMultiplier).toBe(1.43)
   })
 
   test('maps opts into the right groups (and colors onto scene)', () => {
-    expect(doc.scene.backgroundColor).toEqual([0, 0, 0, 1])
-    expect(doc.ui.crosshairColor).toEqual([1, 0, 0, 1])
-    expect(doc.ui.isColorbarVisible).toBe(true)
-    expect(doc.layout.isRadiological).toBe(true)
-    expect(doc.volume.isNearestInterpolation).toBe(true)
-    expect(doc.draw.penValue).toBe(3)
-    expect(doc.interaction.primaryDragMode).toBe(2)
+    expect(doc.scene?.backgroundColor).toEqual([0, 0, 0, 1])
+    expect(doc.ui?.crosshairColor).toEqual([1, 0, 0, 1])
+    expect(doc.ui?.isColorbarVisible).toBe(true)
+    expect(doc.layout?.isRadiological).toBe(true)
+    expect(doc.volume?.isNearestInterpolation).toBe(true)
+    expect(doc.draw?.penValue).toBe(3)
+    expect(doc.interaction?.primaryDragMode).toBe(2)
   })
 
   test('links volumes by URL and skips URL-less ones (with a warning)', () => {
-    expect(doc.volumes.length).toBe(1)
-    expect(doc.volumes[0]).toEqual({
+    expect(doc.volumes?.length).toBe(1)
+    expect(doc.volumes?.[0]).toEqual({
       url: '../images/mni152.nii.gz',
       name: 'mni152',
       colormap: 'gray',
       opacity: 1,
     })
-    expect(doc.volumes[0].data).toBeUndefined() // linked, not embedded
+    expect(doc.volumes?.[0].data).toBeUndefined() // linked, not embedded
     expect(warnings.some((w) => w.includes('no-url-vol'))).toBe(true)
   })
 

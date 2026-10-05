@@ -4,7 +4,7 @@
 // Usage: bun .github/scripts/push-release-commit.ts
 
 const result = Bun.spawnSync(
-  ['git', 'push', '--follow-tags', 'origin', 'HEAD:main'],
+  ['git', 'push', '--atomic', '--follow-tags', 'origin', 'HEAD:main'],
   {
     stdout: 'inherit',
     stderr: 'inherit',

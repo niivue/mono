@@ -110,18 +110,7 @@ For Claude Code:
 claude mcp add --transport http my-niivue-app http://127.0.0.1:4242/mcp
 ```
 
-The Claude desktop app only takes a custom connector over HTTPS, so it reaches the server through the `mcp-remote` bridge instead, as a local server in `claude_desktop_config.json`:
-
-```json
-"mcpServers": {
-  "my-niivue-app": {
-    "command": "/opt/homebrew/bin/npx",
-    "args": ["-y", "mcp-remote", "http://127.0.0.1:4242/mcp"]
-  }
-}
-```
-
-The full path to `npx` matters: the app is launched without a shell, so it does not have Homebrew on its `PATH`.
+[docs/connecting-agents.md](docs/connecting-agents.md) has the same for the Claude desktop app, Codex CLI, Gemini CLI, VS Code, Cursor, Windsurf, stdio-only clients through `mcp-remote`, and a program of your own with the TypeScript or Python SDK, plus how to check the connection with the MCP Inspector and what the common failures mean.
 
 The page's first address, `/agent` on its own origin, is for browsers that let a page reach one origin only, such as the pane inside Claude's desktop app. It needs the dev server to proxy it. In Vite:
 

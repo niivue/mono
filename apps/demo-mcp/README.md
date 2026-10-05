@@ -38,7 +38,7 @@ Claude Code:
 claude mcp add --transport http niivue http://127.0.0.1:4242/mcp
 ```
 
-The page's own "Connect an agent" panel shows the same line, with whatever `NV_MCP_HOST` and `NV_MCP_PORT` were set to. Then ask it to go to the left insula, cut an axial plane through the crosshair, or send a screenshot. `http://127.0.0.1:4242/` lists the connected tabs. With several pages open, ask for a new tab: the `new_tab` tool returns an address with `?tab=<id>` on it (`NV_MCP_PAGE` sets the page's address when it is not `http://localhost:8091`), and a page opened from it answers to that id for the rest of the conversation. The [package README](../../packages/nv-mcp/README.md) covers the Claude desktop app, the tools and how tabs and reloads are handled.
+The page's own "Connect an agent" panel shows the same line, with whatever `NV_MCP_HOST` and `NV_MCP_PORT` were set to. Then ask it to go to the left insula, cut an axial plane through the crosshair, or send a screenshot. `http://127.0.0.1:4242/` lists the connected tabs. With several pages open, ask for a new tab: the `new_tab` tool returns an address with `?tab=<id>` on it (`NV_MCP_PAGE` sets the page's address when it is not `http://localhost:8091`), and a page opened from it answers to that id for the rest of the conversation. [Connecting agents](../../packages/nv-mcp/docs/connecting-agents.md) has the same for the Claude desktop app, Codex, Gemini, VS Code, Cursor and Windsurf, and what to check when a call fails; the [package README](../../packages/nv-mcp/README.md) covers the tools and how tabs and reloads are handled.
 
 ## How it works
 

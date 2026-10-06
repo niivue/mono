@@ -86,6 +86,12 @@ function updateThresholds() {
 slideMin.oninput = updateThresholds
 slideRange.oninput = updateThresholds
 alphaMode.onchange = updateThresholds
+document.getElementById('alphaBlend').onchange = (e) => {
+  nv1.volumeOverlayAlphaBlend = e.target.selectedIndex
+}
+document.getElementById('colorBlend').onchange = (e) => {
+  nv1.volumeOverlayColorBlend = e.target.selectedIndex
+}
 slideOpacity.oninput = applyOpacity
 
 outlineSlide.oninput = function () {

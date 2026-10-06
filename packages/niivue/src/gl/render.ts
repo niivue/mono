@@ -6,6 +6,8 @@ import {
   isPaqd,
   lodGammaExponent,
   lodOpacityScale,
+  OVERLAY_ALPHA_BLEND,
+  OVERLAY_COLOR_BLEND,
   SCENE_DEFAULTS,
   VOLUME_DEFAULTS,
   VOLUME_RENDER_MODE,
@@ -13,7 +15,6 @@ import {
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import { applyCORS } from '@/NVLoader'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
-import { blendOverlayData } from '@/view/NVMeshView'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
   GENERIC_RENDER_VARIANT,
@@ -72,6 +73,7 @@ import {
   chunkOverlayMatrix,
   extractChunkBytes,
 } from '@/volume/orientChunked'
+import { blendOverlayData } from '@/volume/overlayBlend'
 import * as depthPickShader from './depthPickShader'
 import * as gradient from './gradient'
 import {
@@ -407,6 +409,10 @@ export class VolumeRenderer extends NVRenderer {
   // mode, where it is what makes a plane a cutout rather than a solid slab; the
   // ray-march samples that alpha directly and needs no flag.
   isAlphaClipDark = false
+  // Multi-overlay blend modes (set from md.volume before updateOverlays).
+  // See OVERLAY_ALPHA_BLEND / OVERLAY_COLOR_BLEND.
+  overlayAlphaBlend = OVERLAY_ALPHA_BLEND.MAX
+  overlayColorBlend = OVERLAY_COLOR_BLEND.ADDITIVE
   // Scene display gamma (set per-frame from md.scene.gamma). Applied to the
   // classified RGB of every volume sample, never to alpha, so brightening does
   // not change how much a ray occludes. 1.0 is a strict no-op.
@@ -1897,7 +1903,12 @@ export class VolumeRenderer extends NVRenderer {
         gl.deleteTexture(tex)
         overlayData.push(data)
       }
-      const blended = blendOverlayData(overlayData, dimsOut)
+      const blended = blendOverlayData(
+        overlayData,
+        dimsOut,
+        this.overlayAlphaBlend,
+        this.overlayColorBlend,
+      )
       this.deleteNonCachedOverlayTexture(gl)
       this.overlayTexture = gl.createTexture()
       if (!this.overlayTexture) return
@@ -2343,11 +2354,16 @@ export class VolumeRenderer extends NVRenderer {
           gl.deleteTexture(tex)
         }
         finals.push(
-          this._createOverlayChunkTexture(gl, blendOverlayData(layers, dims), [
-            dims[0],
-            dims[1],
-            dims[2],
-          ]),
+          this._createOverlayChunkTexture(
+            gl,
+            blendOverlayData(
+              layers,
+              dims,
+              this.overlayAlphaBlend,
+              this.overlayColorBlend,
+            ),
+            [dims[0], dims[1], dims[2]],
+          ),
         )
       }
     } finally {

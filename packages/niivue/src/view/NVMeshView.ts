@@ -99,39 +99,3 @@ export function buildCylinderMeshData(
     colorbarVisible: false,
   }
 }
-
-/**
- * Blend multiple overlay RGBA8 textures into one using additive premultiplied color
- * and max alpha. The result is un-premultiplied so render/slice shaders work unchanged.
- * Each overlay's opacity is already baked into its alpha by the orient shader.
- */
-export function blendOverlayData(
-  overlays: Uint8Array[],
-  dims: number[],
-): Uint8Array {
-  const nVoxels = dims[0] * dims[1] * dims[2]
-  const accum = new Float32Array(nVoxels * 4)
-  for (const data of overlays) {
-    for (let i = 0; i < nVoxels; i++) {
-      const j = i * 4
-      const a = data[j + 3] / 255
-      if (a <= 0) continue
-      accum[j] += (data[j] / 255) * a
-      accum[j + 1] += (data[j + 1] / 255) * a
-      accum[j + 2] += (data[j + 2] / 255) * a
-      accum[j + 3] = Math.max(accum[j + 3], a)
-    }
-  }
-  const result = new Uint8Array(nVoxels * 4)
-  for (let i = 0; i < nVoxels; i++) {
-    const j = i * 4
-    const maxA = accum[j + 3]
-    if (maxA > 0) {
-      result[j] = Math.min(Math.round((accum[j] / maxA) * 255), 255)
-      result[j + 1] = Math.min(Math.round((accum[j + 1] / maxA) * 255), 255)
-      result[j + 2] = Math.min(Math.round((accum[j + 2] / maxA) * 255), 255)
-      result[j + 3] = Math.round(maxA * 255)
-    }
-  }
-  return result
-}

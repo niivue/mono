@@ -6,6 +6,8 @@ import {
   isPaqd,
   lodGammaExponent,
   lodOpacityScale,
+  OVERLAY_ALPHA_BLEND,
+  OVERLAY_COLOR_BLEND,
   SCENE_DEFAULTS,
   VOLUME_DEFAULTS,
   VOLUME_RENDER_MODE,
@@ -456,6 +458,10 @@ export class VolumeRenderer extends NVRenderer {
   // mode, where it is what makes a plane a cutout rather than a solid slab; the
   // ray-march samples that alpha directly and needs no flag.
   isAlphaClipDark = false
+  // Multi-overlay blend modes (set from md.volume before updateOverlays).
+  // See OVERLAY_ALPHA_BLEND / OVERLAY_COLOR_BLEND.
+  overlayAlphaBlend = OVERLAY_ALPHA_BLEND.MAX
+  overlayColorBlend = OVERLAY_COLOR_BLEND.ADDITIVE
   // Which stencil the overlay/drawing passes estimate their own gradient with
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
@@ -2039,6 +2045,8 @@ export class VolumeRenderer extends NVRenderer {
         device,
         overlayTextures,
         dimsOut,
+        this.overlayAlphaBlend,
+        this.overlayColorBlend,
       )
       for (const tex of overlayTextures) tex.destroy()
     }
@@ -2426,11 +2434,13 @@ export class VolumeRenderer extends NVRenderer {
           )
         }
         finals.push(
-          await orient.blendOverlaysGPU(device, layers, [
-            dims[0],
-            dims[1],
-            dims[2],
-          ]),
+          await orient.blendOverlaysGPU(
+            device,
+            layers,
+            [dims[0], dims[1], dims[2]],
+            this.overlayAlphaBlend,
+            this.overlayColorBlend,
+          ),
         )
         for (const tex of layers) tex.destroy()
       }

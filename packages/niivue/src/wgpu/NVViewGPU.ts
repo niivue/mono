@@ -49,7 +49,7 @@ import * as depthPick from './depthPick'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
-import { maskOverlayByBackground } from './orient'
+import { maskOverlayByBackground, maxBlendSliceDim } from './orient'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
@@ -689,6 +689,10 @@ export default class NVView {
         }
       }
       if (vols.length > 1 && !this.options.instances) {
+        this.volumeRenderer.overlayAlphaBlend =
+          this.model.volume.overlayAlphaBlend
+        this.volumeRenderer.overlayColorBlend =
+          this.model.volume.overlayColorBlend
         await this.volumeRenderer.updateOverlays(
           device,
           vols[0],
@@ -2261,10 +2265,16 @@ export default class NVView {
     // below the GPU limit so the tiled-volume path can be exercised on
     // normally-sized volumes.
     const override = this.options.maxTextureDimension3D
+    // Also cap it so one z-slice of the overlay blend accumulator fits the
+    // storage-buffer budget; larger volumes take the chunked path instead.
+    const deviceLimit = Math.min(
+      this.maxTextureDimension3D,
+      maxBlendSliceDim(this.device.limits),
+    )
     const chunkLimit =
       typeof override === 'number' && override > 0
-        ? Math.min(this.maxTextureDimension3D, override)
-        : this.maxTextureDimension3D
+        ? Math.min(deviceLimit, override)
+        : deviceLimit
     // `maxChunkResidencyBytes`, when set, overrides the GPU memory budget for a
     // chunked volume's resident chunk set; the manager evicts least-recently-
     // visible chunks to stay within it. Unset leaves the renderer default.

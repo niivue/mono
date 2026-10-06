@@ -315,6 +315,12 @@ export default class NVModel {
       ...(options.volumeIsV1SliceShader !== undefined && {
         isV1SliceShader: options.volumeIsV1SliceShader,
       }),
+      ...(options.volumeOverlayAlphaBlend !== undefined && {
+        overlayAlphaBlend: options.volumeOverlayAlphaBlend,
+      }),
+      ...(options.volumeOverlayColorBlend !== undefined && {
+        overlayColorBlend: options.volumeOverlayColorBlend,
+      }),
       ...(options.volumeMatcap !== undefined && {
         matcap: options.volumeMatcap,
       }),

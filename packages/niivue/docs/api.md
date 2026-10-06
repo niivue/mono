@@ -88,7 +88,7 @@ nv1.drawPenValue = 3
 `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible`, `is3DCrosshairVisible`, `isGraphVisible`, `isRulerVisible`, `isCrossLinesVisible`, `isLegendVisible`, `isPositionInMM`, `isMeasureUnitsVisible`, `isThumbnailVisible`, `thumbnailUrl`, `placeholderText`, `crosshairColor`, `crosshairGap`, `crosshairWidth`, `fontColor`, `fontScale`, `fontMinSize`, `selectionBoxColor`, `measureLineColor`, `measureTextColor`, `rulerWidth`, `graphNormalizeValues`, `graphIsRangeCalMinMax`
 
 **Volume** (prefix `volume` -- delegate to `model.volume`):
-`volumeIllumination`, `volumeRenderMode`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeMatcap`, `volumePaqdUniforms`
+`volumeIllumination`, `volumeRenderMode`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeOverlayAlphaBlend`, `volumeOverlayColorBlend`, `volumeMatcap`, `volumePaqdUniforms`
 
 `volumeRenderMode` takes a `VOLUME_RENDER_MODE` and applies to the 3D render only:
 

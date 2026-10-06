@@ -9,6 +9,27 @@ export {
   buildAnnotationGeometry,
   UIKitAnnotationOverlay,
 } from './annotationOverlay'
+export type {
+  ButtonLayout,
+  ButtonSpec,
+  ButtonStyle,
+  ButtonVisual,
+} from './button'
+export {
+  advancePress,
+  buildButton,
+  buttonContains,
+  DEFAULT_BUTTON_STYLE,
+  layoutButton,
+  mixColor,
+  resolveButtonStyle,
+  scaleButton,
+} from './button'
+export type {
+  UIKitButtonHost,
+  UIKitButtonOverlayOptions,
+} from './buttonOverlay'
+export { UIKitButtonOverlay } from './buttonOverlay'
 export type { CrosshairGeometry, CrosshairSpec } from './crosshair'
 export { buildCrosshair } from './crosshair'
 export type { CrosshairPlacement } from './crosshairOverlay'
@@ -16,6 +37,9 @@ export { UIKitCrosshairOverlay } from './crosshairOverlay'
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'
+export type { RectData, RectSpec } from './rect'
+export { buildRect, rectContains } from './rect'
+export { UIKitRectOverlay } from './rectOverlay'
 export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
 export { buildRuler } from './ruler'
 export { UIKitRulerOverlay } from './rulerOverlay'
@@ -30,6 +54,7 @@ export { parseFont, screenPxRange } from './text/font'
 export type { RGBA, TextLayoutOptions } from './text/layout'
 export {
   autoOutlineColor,
+  capHeight,
   layoutText,
   measureWidth,
   readableAngle,

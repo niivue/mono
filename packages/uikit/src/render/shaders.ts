@@ -190,3 +190,141 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     return vec4f(in.color.rgb, in.color.a * opacity);
 }
 `
+
+// Filled rounded rectangles. Same instancing model as the lines (one record per
+// instance, a 4-vertex strip expanded in the vertex stage), but the fragment stage
+// evaluates a rounded-box signed distance so the corners, the inner border ring
+// and a 1px antialiased edge all come from one quad with no extra geometry. The
+// quad is grown by one pixel on every side so the antialiased edge has room.
+
+const GLSL_ROUND_BOX = `
+float sdRoundBox(vec2 p, vec2 halfSize, float r) {
+  vec2 q = abs(p) - halfSize + r;
+  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+`
+
+export const GL_RECT_VERT = `#version 300 es
+precision highp float;
+uniform vec2 canvasSize;
+in vec2 rectPos;
+in vec2 rectSize;
+in vec2 rectShape; // (cornerRadius, borderWidth)
+in vec4 rectFill;
+in vec4 rectBorder;
+out vec2 vLocal;
+out vec2 vHalfSize;
+out vec2 vShape;
+out vec4 vFill;
+out vec4 vBorder;
+
+void main() {
+  int vIdx = gl_VertexID;
+  // Corner order (0,0) (0,1) (1,0) (1,1): the strip's first triangle winds
+  // counter-clockwise in clip space like the line and text quads, so the quad
+  // survives when the host leaves back-face culling enabled.
+  vec2 corner = vec2(float(vIdx >> 1), float(vIdx & 1));
+  vec2 halfSize = rectSize * 0.5;
+  vec2 centre = rectPos + halfSize;
+  vec2 grown = halfSize + 1.0;
+  vec2 local = (corner * 2.0 - 1.0) * grown;
+  vec2 pixelPos = centre + local;
+  vec2 ndc = (pixelPos / canvasSize) * 2.0 - 1.0;
+  gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
+  vLocal = local;
+  vHalfSize = halfSize;
+  vShape = rectShape;
+  vFill = rectFill;
+  vBorder = rectBorder;
+}
+`
+
+export const GL_RECT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec2 vHalfSize;
+in vec2 vShape;
+in vec4 vFill;
+in vec4 vBorder;
+out vec4 fragColor;
+${GLSL_ROUND_BOX}
+void main() {
+  float d = sdRoundBox(vLocal, vHalfSize, vShape.x);
+  float coverage = 1.0 - smoothstep(-0.5, 0.5, d);
+  // The border ring is the band within borderWidth of the outer edge.
+  float ring = vShape.y > 0.0 ? smoothstep(-0.5, 0.5, d + vShape.y) : 0.0;
+  vec4 color = mix(vFill, vBorder, ring);
+  float alpha = color.a * coverage;
+  if (alpha <= 0.0) discard;
+  fragColor = vec4(color.rgb, alpha);
+}
+`
+
+export const WGSL_RECT = `
+struct RectUniforms {
+    canvasSize: vec2f,
+};
+
+struct Rect {
+    pos: vec2f,
+    size: vec2f,
+    radius: f32,
+    border: f32,
+    _pad0: f32,
+    _pad1: f32,
+    fill: vec4f,
+    borderColor: vec4f,
+};
+
+@group(0) @binding(0) var<uniform> u: RectUniforms;
+@group(0) @binding(1) var<storage, read> rects: array<Rect>;
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) local: vec2f,
+    @location(1) halfSize: vec2f,
+    @location(2) shape: vec2f,
+    @location(3) fill: vec4f,
+    @location(4) borderColor: vec4f,
+};
+
+@vertex
+fn vertex_main(
+    @builtin(vertex_index) vIdx: u32,
+    @builtin(instance_index) iIdx: u32
+) -> VertexOutput {
+    let rect = rects[iIdx];
+    let corner = vec2f(f32(vIdx >> 1u), f32(vIdx & 1u));
+    let halfSize = rect.size * 0.5;
+    let centre = rect.pos + halfSize;
+    let grown = halfSize + 1.0;
+    let local = (corner * 2.0 - 1.0) * grown;
+    let pixelPos = centre + local;
+    let ndc = (pixelPos / u.canvasSize) * 2.0 - 1.0;
+    var out: VertexOutput;
+    out.position = vec4f(ndc.x, -ndc.y, 0.0, 1.0);
+    out.local = local;
+    out.halfSize = halfSize;
+    out.shape = vec2f(rect.radius, rect.border);
+    out.fill = rect.fill;
+    out.borderColor = rect.borderColor;
+    return out;
+}
+
+fn sdRoundBox(p: vec2f, halfSize: vec2f, r: f32) -> f32 {
+    let q = abs(p) - halfSize + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2f(0.0))) - r;
+}
+
+@fragment
+fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
+    let d = sdRoundBox(in.local, in.halfSize, in.shape.x);
+    let coverage = 1.0 - smoothstep(-0.5, 0.5, d);
+    var ring = 0.0;
+    if (in.shape.y > 0.0) {
+        ring = smoothstep(-0.5, 0.5, d + in.shape.y);
+    }
+    let color = mix(in.fill, in.borderColor, ring);
+    return vec4f(color.rgb, color.a * coverage);
+}
+`

@@ -61,6 +61,7 @@ import {
 import {
   buildModulationParams,
   type ModulationTextureParams,
+  modulationFitsTextureLimit,
 } from '@/volume/modulation'
 import {
   chunkedDisplayKey,
@@ -2386,36 +2387,55 @@ export class VolumeRenderer extends NVRenderer {
     }
 
     // Multiple overlays: orient + GPU-blend per chunk.
+    const safeMods = mods.map((mod) => {
+      if (
+        modulationFitsTextureLimit(mod, device.limits.maxTextureDimension3D)
+      ) {
+        return mod
+      }
+      log.warn(
+        `modulation disabled: grid ${mod?.dims.join('x')} exceeds WebGPU maxTextureDimension3D (${device.limits.maxTextureDimension3D})`,
+      )
+      return null
+    })
+    const sharedModTextures = safeMods.map((mod) =>
+      mod ? orient.createModTexture(device, mod) : null,
+    )
     const [dx, dy, dz] = plan.volumeDims
     const finals: GPUTexture[] = []
-    for (const desc of plan.chunks) {
-      const dims = desc.texDims
-      const [ox, oy, oz] = desc.texOrigin
-      const scale = [dims[0] / dx, dims[1] / dy, dims[2] / dz]
-      const offset = [ox / dx, oy / dy, oz / dz]
-      const layers: GPUTexture[] = []
-      for (let i = 0; i < supported.length; i++) {
-        const chunkMtx = chunkOverlayMatrix(mtxs[i], scale, offset)
-        layers.push(
-          await orient.volume2Texture(
-            device,
-            supported[i],
-            baseVol,
-            chunkMtx,
-            supported[i].opacity ?? 1,
-            dims,
-            chunkModulationParams(mods[i], scale, offset),
-          ),
+    try {
+      for (const desc of plan.chunks) {
+        const dims = desc.texDims
+        const [ox, oy, oz] = desc.texOrigin
+        const scale = [dims[0] / dx, dims[1] / dy, dims[2] / dz]
+        const offset = [ox / dx, oy / dy, oz / dz]
+        const layers: GPUTexture[] = []
+        for (let i = 0; i < supported.length; i++) {
+          const chunkMtx = chunkOverlayMatrix(mtxs[i], scale, offset)
+          layers.push(
+            await orient.volume2Texture(
+              device,
+              supported[i],
+              baseVol,
+              chunkMtx,
+              supported[i].opacity ?? 1,
+              dims,
+              chunkModulationParams(safeMods[i], scale, offset),
+              sharedModTextures[i],
+            ),
+          )
+        }
+        finals.push(
+          await orient.blendOverlaysGPU(device, layers, [
+            dims[0],
+            dims[1],
+            dims[2],
+          ]),
         )
+        for (const tex of layers) tex.destroy()
       }
-      finals.push(
-        await orient.blendOverlaysGPU(device, layers, [
-          dims[0],
-          dims[1],
-          dims[2],
-        ]),
-      )
-      for (const tex of layers) tex.destroy()
+    } finally {
+      for (const texture of sharedModTextures) texture?.destroy()
     }
     this.overlayChunks = finals
     this._invalidateBindGroupCache()

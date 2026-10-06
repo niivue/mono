@@ -64,6 +64,7 @@ import {
 import {
   buildModulationParams,
   type ModulationTextureParams,
+  modulationFitsTextureLimit,
 } from '@/volume/modulation'
 import {
   chunkedDisplayKey,
@@ -2304,35 +2305,55 @@ export class VolumeRenderer extends NVRenderer {
     }
 
     // Multiple overlays: orient + read back + blend per chunk.
+    const maxTextureDimension3D = gl.getParameter(
+      gl.MAX_3D_TEXTURE_SIZE,
+    ) as number
+    const safeMods = mods.map((mod) => {
+      if (modulationFitsTextureLimit(mod, maxTextureDimension3D)) return mod
+      log.warn(
+        `modulation disabled: grid ${mod?.dims.join('x')} exceeds WebGL max 3D texture size (${maxTextureDimension3D})`,
+      )
+      return null
+    })
+    const sharedModTextures = safeMods.map((mod) =>
+      mod ? orientOverlay.createModTexture(gl, mod) : null,
+    )
     const [dx, dy, dz] = plan.volumeDims
     const finals: WebGLTexture[] = []
-    for (const desc of plan.chunks) {
-      const dims = desc.texDims
-      const [ox, oy, oz] = desc.texOrigin
-      const scale = [dims[0] / dx, dims[1] / dy, dims[2] / dz]
-      const offset = [ox / dx, oy / dy, oz / dz]
-      const layers: Uint8Array[] = []
-      for (let i = 0; i < supported.length; i++) {
-        const chunkMtx = chunkOverlayMatrix(mtxs[i], scale, offset)
-        const tex = orientOverlay.overlay2Texture(
-          gl,
-          supported[i],
-          baseVol,
-          chunkMtx,
-          supported[i].opacity ?? 1,
-          dims,
-          chunkModulationParams(mods[i], scale, offset),
+    try {
+      for (const desc of plan.chunks) {
+        const dims = desc.texDims
+        const [ox, oy, oz] = desc.texOrigin
+        const scale = [dims[0] / dx, dims[1] / dy, dims[2] / dz]
+        const offset = [ox / dx, oy / dy, oz / dz]
+        const layers: Uint8Array[] = []
+        for (let i = 0; i < supported.length; i++) {
+          const chunkMtx = chunkOverlayMatrix(mtxs[i], scale, offset)
+          const tex = orientOverlay.overlay2Texture(
+            gl,
+            supported[i],
+            baseVol,
+            chunkMtx,
+            supported[i].opacity ?? 1,
+            dims,
+            chunkModulationParams(safeMods[i], scale, offset),
+            sharedModTextures[i],
+          )
+          layers.push(orientOverlay.readTexture3D(gl, tex, dims))
+          gl.deleteTexture(tex)
+        }
+        finals.push(
+          this._createOverlayChunkTexture(gl, blendOverlayData(layers, dims), [
+            dims[0],
+            dims[1],
+            dims[2],
+          ]),
         )
-        layers.push(orientOverlay.readTexture3D(gl, tex, dims))
-        gl.deleteTexture(tex)
       }
-      finals.push(
-        this._createOverlayChunkTexture(gl, blendOverlayData(layers, dims), [
-          dims[0],
-          dims[1],
-          dims[2],
-        ]),
-      )
+    } finally {
+      for (const texture of sharedModTextures) {
+        if (texture) gl.deleteTexture(texture)
+      }
     }
     this.overlayChunks = finals
   }

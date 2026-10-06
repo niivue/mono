@@ -11,7 +11,11 @@ import { log } from '@/logger'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
 import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
-import { IDENTITY_MTX, type ModulationTextureParams } from '@/volume/modulation'
+import {
+  IDENTITY_MTX,
+  type ModulationTextureParams,
+  modulationFitsTextureLimit,
+} from '@/volume/modulation'
 import {
   chunkModulationParams,
   chunkOverlayMatrix,
@@ -394,6 +398,18 @@ function getUniformLocations(
 
 const MODULATION_TEXTURE_UNIT = 4
 
+function supportedModulation(
+  gl: WebGL2RenderingContext,
+  mod: ModulationTextureParams | null,
+): ModulationTextureParams | null {
+  const limit = gl.getParameter(gl.MAX_3D_TEXTURE_SIZE) as number
+  if (modulationFitsTextureLimit(mod, limit)) return mod
+  log.warn(
+    `modulation disabled: grid ${mod?.dims.join('x')} exceeds WebGL max 3D texture size (${limit})`,
+  )
+  return null
+}
+
 // Per-context 1x1x1 R32F placeholder bound when modulation is inactive, so the
 // modVol sampler always has a valid texture (the shader never samples it).
 const _dummyModTexture = new WeakMap<WebGL2RenderingContext, WebGLTexture>()
@@ -714,6 +730,7 @@ export function prepareOverlayTextureCache(
   existingCache: OverlayTextureCache | null = null,
   mod: ModulationTextureParams | null = null,
 ): OverlayTextureCache {
+  mod = supportedModulation(gl, mod)
   if (!nvimageTarget.dimsRAS) {
     throw new Error('overlay2Texture: nvimageTarget.dimsRAS missing')
   }
@@ -1152,7 +1169,9 @@ export function overlay2Texture(
   overlayOpacity = 1,
   outDimsOverride?: readonly number[],
   mod: ModulationTextureParams | null = null,
+  sharedModTexture: WebGLTexture | null = null,
 ): WebGLTexture {
+  mod = supportedModulation(gl, mod)
   if (nvimage.hdr.datatypeCode === 128 || nvimage.hdr.datatypeCode === 2304) {
     return rgba2Texture(gl, nvimage)
   }
@@ -1446,7 +1465,8 @@ export function overlay2Texture(
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
   if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
   if (uniforms.atlasOutline) gl.uniform1f(uniforms.atlasOutline, u.atlasOutline)
-  const modTexture = mod ? createModTexture(gl, mod) : null
+  const modTexture =
+    sharedModTexture ?? (mod ? createModTexture(gl, mod) : null)
   bindModulation(gl, uniforms, modTexture, mod)
   // Render each output slice
   for (let z = 0; z < dimsOut[2]; z++) {
@@ -1499,7 +1519,7 @@ export function overlay2Texture(
   gl.deleteTexture(inputTexture)
   gl.deleteTexture(colormapTexture)
   gl.deleteTexture(negColormapTexture)
-  if (modTexture) gl.deleteTexture(modTexture)
+  if (!sharedModTexture && modTexture) gl.deleteTexture(modTexture)
   gl.deleteBuffer(vbo)
   gl.deleteVertexArray(vao)
   gl.deleteFramebuffer(framebuffer)
@@ -1529,24 +1549,31 @@ export function overlay2TextureChunked(
   overlayOpacity = 1,
   mod: ModulationTextureParams | null = null,
 ): WebGLTexture[] {
+  mod = supportedModulation(gl, mod)
   const [dx, dy, dz] = plan.volumeDims
   const out: WebGLTexture[] = []
-  for (const desc of plan.chunks) {
-    const [ox, oy, oz] = desc.texOrigin
-    const [sx, sy, sz] = desc.texDims
-    const scale = [sx / dx, sy / dy, sz / dz]
-    const offset = [ox / dx, oy / dy, oz / dz]
-    out.push(
-      overlay2Texture(
-        gl,
-        nvimage,
-        nvimageTarget,
-        chunkOverlayMatrix(mtx, scale, offset),
-        overlayOpacity,
-        desc.texDims,
-        chunkModulationParams(mod, scale, offset),
-      ),
-    )
+  const sharedModTexture = mod ? createModTexture(gl, mod) : null
+  try {
+    for (const desc of plan.chunks) {
+      const [ox, oy, oz] = desc.texOrigin
+      const [sx, sy, sz] = desc.texDims
+      const scale = [sx / dx, sy / dy, sz / dz]
+      const offset = [ox / dx, oy / dy, oz / dz]
+      out.push(
+        overlay2Texture(
+          gl,
+          nvimage,
+          nvimageTarget,
+          chunkOverlayMatrix(mtx, scale, offset),
+          overlayOpacity,
+          desc.texDims,
+          chunkModulationParams(mod, scale, offset),
+          sharedModTexture,
+        ),
+      )
+    }
+  } finally {
+    if (sharedModTexture) gl.deleteTexture(sharedModTexture)
   }
   return out
 }
@@ -1767,7 +1794,7 @@ export function orientChunkToTexture(
   // collides with the intensity sampler at unit 0 -> "two textures of
   // different types use the same sampler location"): the shared modulator
   // texture when modulated, else the placeholder with modulation=0.
-  bindModulation(gl, uniforms, mod ? modTexture : null, mod)
+  bindModulation(gl, uniforms, modTexture, mod)
   for (let z = 0; z < texDims[2]; z++) {
     if (uniforms.coordZ) gl.uniform1f(uniforms.coordZ, (z + 0.5) / texDims[2])
     gl.framebufferTextureLayer(

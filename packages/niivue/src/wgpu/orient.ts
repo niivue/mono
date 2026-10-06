@@ -1,8 +1,13 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
 import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
-import { IDENTITY_MTX, type ModulationTextureParams } from '@/volume/modulation'
+import {
+  IDENTITY_MTX,
+  type ModulationTextureParams,
+  modulationFitsTextureLimit,
+} from '@/volume/modulation'
 import {
   chunkModulationParams,
   chunkOverlayMatrix,
@@ -12,6 +17,19 @@ import * as wgpu from './wgpu'
 
 // Uniform buffer: 12 vec4 = matrix(4) + params/negParams/flags(3) + modMtx(4) + modFlags(1)
 const ORIENT_UNIFORM_SIZE = 12 * 16
+
+function supportedModulation(
+  device: GPUDevice,
+  mod: ModulationTextureParams | null,
+): ModulationTextureParams | null {
+  if (modulationFitsTextureLimit(mod, device.limits.maxTextureDimension3D)) {
+    return mod
+  }
+  log.warn(
+    `modulation disabled: grid ${mod?.dims.join('x')} exceeds WebGPU maxTextureDimension3D (${device.limits.maxTextureDimension3D})`,
+  )
+  return null
+}
 
 /** Create an r32float 3D modulation-weight texture, or a 1x1x1 placeholder. */
 export function createModTexture(
@@ -252,6 +270,7 @@ export async function prepareOrientTextureCache(
   existingCache: OrientTextureCache | null = null,
   mod: ModulationTextureParams | null = null,
 ): Promise<OrientTextureCache> {
+  mod = supportedModulation(device, mod)
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS)
     throw new Error('overlay2Texture: missing dimsRAS')
   if (!nvimage.img) throw new Error('overlay2Texture: missing image data')
@@ -437,7 +456,9 @@ export async function volume2Texture(
   overlayOpacity = 1,
   outDimsOverride?: readonly number[],
   mod: ModulationTextureParams | null = null,
+  sharedModTexture: GPUTexture | null = null,
 ): Promise<GPUTexture> {
+  mod = supportedModulation(device, mod)
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS) {
     throw new Error('overlay2Texture: missing dimsRAS')
   }
@@ -522,7 +543,7 @@ export async function volume2Texture(
   })
   writeOrientUniforms(device, uniformBuffer, nvimage, mtx, overlayOpacity, mod)
   const isLabelVol = buildOrientUniforms(nvimage, overlayOpacity).isLabel > 0
-  const modTexture = createModTexture(device, mod)
+  const modTexture = sharedModTexture ?? createModTexture(device, mod)
   // 3) Create RGBA storage texture sized dimsOut
   const rgbaTexture = device.createTexture({
     size: dimsOut,
@@ -609,7 +630,7 @@ export async function volume2Texture(
   await device.queue.onSubmittedWorkDone()
   // Cleanup intermediate resources (keep rgbaTexture for caller)
   scalarTexture.destroy()
-  modTexture.destroy()
+  if (!sharedModTexture) modTexture.destroy()
   colormapTex.destroy()
   if (hasNegColormap) {
     negColormapTex.destroy()
@@ -641,24 +662,31 @@ export async function overlay2TextureChunked(
   overlayOpacity = 1,
   mod: ModulationTextureParams | null = null,
 ): Promise<GPUTexture[]> {
+  mod = supportedModulation(device, mod)
   const [dx, dy, dz] = plan.volumeDims
   const out: GPUTexture[] = []
-  for (const desc of plan.chunks) {
-    const [ox, oy, oz] = desc.texOrigin
-    const [sx, sy, sz] = desc.texDims
-    const scale = [sx / dx, sy / dy, sz / dz]
-    const offset = [ox / dx, oy / dy, oz / dz]
-    out.push(
-      await volume2Texture(
-        device,
-        nvimage,
-        nvimageTarget,
-        chunkOverlayMatrix(mtx, scale, offset),
-        overlayOpacity,
-        desc.texDims,
-        chunkModulationParams(mod, scale, offset),
-      ),
-    )
+  const sharedModTexture = mod ? createModTexture(device, mod) : null
+  try {
+    for (const desc of plan.chunks) {
+      const [ox, oy, oz] = desc.texOrigin
+      const [sx, sy, sz] = desc.texDims
+      const scale = [sx / dx, sy / dy, sz / dz]
+      const offset = [ox / dx, oy / dy, oz / dz]
+      out.push(
+        await volume2Texture(
+          device,
+          nvimage,
+          nvimageTarget,
+          chunkOverlayMatrix(mtx, scale, offset),
+          overlayOpacity,
+          desc.texDims,
+          chunkModulationParams(mod, scale, offset),
+          sharedModTexture,
+        ),
+      )
+    }
+  } finally {
+    sharedModTexture?.destroy()
   }
   return out
 }

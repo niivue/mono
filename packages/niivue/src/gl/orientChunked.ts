@@ -14,12 +14,16 @@
 //     Non-identity sources are reoriented to RAS order during the per-chunk CPU
 //     extraction, so the orient pass runs with an identity matrix.
 
+import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
 import { bytesPerSourceVoxel } from '@/volume/chunkBudget'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import { timeChunkPhase } from '@/volume/chunkTiming'
 import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
-import type { ModulationTextureParams } from '@/volume/modulation'
+import {
+  type ModulationTextureParams,
+  modulationFitsTextureLimit,
+} from '@/volume/modulation'
 import {
   chunkModulationForDesc,
   chunkRGBA,
@@ -189,6 +193,15 @@ export function createChunkUploaderGL(
   // so the renderer's display key must cover it (chunkedDisplayKey).
   modulation: ModulationTextureParams | null = null,
 ): ChunkUploaderGL {
+  const maxTextureDimension3D = gl.getParameter(
+    gl.MAX_3D_TEXTURE_SIZE,
+  ) as number
+  if (!modulationFitsTextureLimit(modulation, maxTextureDimension3D)) {
+    log.warn(
+      `modulation disabled: grid ${modulation?.dims.join('x')} exceeds WebGL max 3D texture size (${maxTextureDimension3D})`,
+    )
+    modulation = null
+  }
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunkedGL: missing dimsRAS')
   }

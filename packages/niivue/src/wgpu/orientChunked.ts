@@ -17,17 +17,22 @@
 //
 // The orient uniform buffer, colormap textures, modulator texture and sampler
 // are shared across chunks (one upload, N bind groups); only the modulation
-// matrix is rewritten per chunk, because it maps the chunk's own grid. Per-chunk source textures are destroyed
-// after the orient pass; per-chunk RGBA + gradient textures are returned to
-// the caller and live for the chunk's lifetime in the renderer cache.
+// matrix is rewritten per chunk, because it maps the chunk's own grid.
+// Per-chunk source textures are destroyed after the orient pass; per-chunk
+// RGBA + gradient textures are returned to the caller and live for the
+// chunk's lifetime in the renderer cache.
 
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
 import { buildOrientUniforms } from '@/view/NVOrient'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import { recordChunkPhase } from '@/volume/chunkTiming'
 import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
-import type { ModulationTextureParams } from '@/volume/modulation'
+import {
+  type ModulationTextureParams,
+  modulationFitsTextureLimit,
+} from '@/volume/modulation'
 import {
   chunkModulationForDesc,
   chunkRGBA,
@@ -374,6 +379,14 @@ export async function createChunkUploaderGPU(
   // so the renderer's display key must cover it (chunkedDisplayKey).
   modulation: ModulationTextureParams | null = null,
 ): Promise<ChunkUploaderGPU> {
+  if (
+    !modulationFitsTextureLimit(modulation, device.limits.maxTextureDimension3D)
+  ) {
+    log.warn(
+      `modulation disabled: grid ${modulation?.dims.join('x')} exceeds WebGPU maxTextureDimension3D (${device.limits.maxTextureDimension3D})`,
+    )
+    modulation = null
+  }
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunked: missing dimsRAS')
   }

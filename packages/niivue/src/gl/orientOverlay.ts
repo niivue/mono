@@ -429,7 +429,7 @@ function getDummyModTexture(gl: WebGL2RenderingContext): WebGLTexture {
 }
 
 /** Create an R32F 3D texture holding modulation weights in native voxel order. */
-function createModTexture(
+export function createModTexture(
   gl: WebGL2RenderingContext,
   mod: ModulationTextureParams,
 ): WebGLTexture {
@@ -1572,6 +1572,11 @@ export function orientChunkToTexture(
   datatypeCode: number,
   texDims: readonly [number, number, number],
   nvimage: NVImage,
+  // This chunk's modulation (matrix already lifted to the chunk's grid, see
+  // chunkModulationForDesc) and the shared weight texture it samples. Both
+  // null when the volume has no modulator.
+  mod: ModulationTextureParams | null = null,
+  modTexture: WebGLTexture | null = null,
 ): WebGLTexture {
   const texConfig = getTextureConfig(datatypeCode)
   if (texConfig.convertTo) {
@@ -1758,11 +1763,11 @@ export function orientChunkToTexture(
   // chunk's edge and draw a spurious border. Outlining is therefore off for the
   // chunked path (matching wgpu/orientChunked.ts).
   if (uniforms.atlasOutline) gl.uniform1f(uniforms.atlasOutline, 0)
-  // Modulation is disabled for chunks, but the shader's modVol sampler must
-  // still point at a valid texture unit (else it collides with the intensity
-  // sampler at unit 0 -> "two textures of different types use the same sampler
-  // location"). Bind the placeholder + modulation=0.
-  bindModulation(gl, uniforms, null, null)
+  // The modVol sampler must always point at a valid texture unit (else it
+  // collides with the intensity sampler at unit 0 -> "two textures of
+  // different types use the same sampler location"): the shared modulator
+  // texture when modulated, else the placeholder with modulation=0.
+  bindModulation(gl, uniforms, mod ? modTexture : null, mod)
   for (let z = 0; z < texDims[2]; z++) {
     if (uniforms.coordZ) gl.uniform1f(uniforms.coordZ, (z + 0.5) / texDims[2])
     gl.framebufferTextureLayer(
@@ -1795,6 +1800,8 @@ export function orientChunkToTexture(
   gl.activeTexture(gl.TEXTURE2)
   gl.bindTexture(gl.TEXTURE_2D, null)
   gl.activeTexture(gl.TEXTURE3)
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  gl.activeTexture(gl.TEXTURE0 + MODULATION_TEXTURE_UNIT)
   gl.bindTexture(gl.TEXTURE_3D, null)
   gl.activeTexture(savedActiveTexture)
   gl.bindVertexArray(savedVAO)

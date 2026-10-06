@@ -61,7 +61,10 @@ import {
   type DecodedChunkStats,
   decodedTierBudgetBytes,
 } from '@/volume/decodedChunkCache'
-import { buildModulationParams } from '@/volume/modulation'
+import {
+  buildModulationParams,
+  type ModulationTextureParams,
+} from '@/volume/modulation'
 import {
   chunkedDisplayKey,
   chunkModulationParams,
@@ -223,6 +226,12 @@ interface ChunkedTexEntry {
    * uploader rebuild + full re-stream (see _ensureChunkedVolumeEntry).
    */
   displayKey: string
+  /**
+   * Modulation the uploader bakes into every chunk (resolved against the
+   * volume's own grid), or null. Kept so a plan swap rebuilds the uploader
+   * with the same modulator; `displayKey` covers it for change detection.
+   */
+  modulation: ModulationTextureParams | null
   /** planSupportsCubic(plan), cached: the plan is immutable for the entry's life. */
   cubicSafe: boolean
   /** Tracks how this volume's working set travels across its chunk grid. */
@@ -705,10 +714,13 @@ export class VolumeRenderer extends NVRenderer {
     const cacheKey = vol.url || vol.name
 
     if (forcedPlan || oversized) {
+      // Same modulation the whole-volume path below resolves; the uploader
+      // bakes it into every brick.
       const chunkedEntry = await this._ensureChunkedVolumeEntry(
         gl,
         vol,
         this._chunkResidencyBytes,
+        buildModulationParams(vol, vol, allVolumes),
       )
       this._activeChunked = chunkedEntry
       this._cubicVolumeSafe = !vol.colormapLabel
@@ -861,6 +873,7 @@ export class VolumeRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     vol: NVImage,
     budgetBytes: number,
+    modulation: ModulationTextureParams | null,
   ): Promise<ChunkedTexEntry> {
     const srcDims: Vec3i = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
     const rasDims: Vec3i = vol.dimsRAS
@@ -888,7 +901,7 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
     const cacheKey = vol.url || vol.name
-    const displayKey = chunkedDisplayKey(vol)
+    const displayKey = chunkedDisplayKey(vol, modulation)
     const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
     if (existing && existing.kind === 'chunked') {
       existing.volume = vol
@@ -899,6 +912,7 @@ export class VolumeRenderer extends NVRenderer {
         // new state so the volume stays present while the working set refills —
         // the same drop-and-refill mechanism as _refreshUnlitChunksForLighting.
         existing.displayKey = displayKey
+        existing.modulation = modulation
         // The decoded tier is deliberately kept: it holds SOURCE bytes, and a
         // colormap or window change re-orients the same source. The re-stream
         // below therefore costs uploads, not fetches.
@@ -908,6 +922,7 @@ export class VolumeRenderer extends NVRenderer {
           existing.plan,
           () => this._needsGradient(),
           existing.decoded,
+          modulation,
         )
         existing.uploader.dispose()
         existing.uploader = newUploader
@@ -936,9 +951,11 @@ export class VolumeRenderer extends NVRenderer {
         plan,
         () => this._needsGradient(),
         decoded,
+        modulation,
       ),
       plan,
       displayKey,
+      modulation,
       cubicSafe: planSupportsCubic(plan),
       predictor: new ChunkTravelPredictor(),
       requestedThisFrame: [],
@@ -1006,6 +1023,7 @@ export class VolumeRenderer extends NVRenderer {
       newPlan,
       () => this._needsGradient(),
       entry.decoded,
+      entry.modulation,
     )
     entry.uploader.dispose()
     entry.uploader = newUploader
@@ -1027,7 +1045,7 @@ export class VolumeRenderer extends NVRenderer {
       this.isCubicInterpolation,
     )
     entry.volume = vol
-    entry.displayKey = chunkedDisplayKey(vol)
+    entry.displayKey = chunkedDisplayKey(vol, entry.modulation)
     vol.chunkPlan = newPlan
     if (entry.manager.residentCount === 0) {
       const chunk0 = await entry.uploader.uploadChunk(0)
@@ -1770,7 +1788,10 @@ export class VolumeRenderer extends NVRenderer {
     const independentVols = standardVols.filter((v) => v.chunkOverlayOf)
     const reslicedVols = standardVols.filter((v) => !v.chunkOverlayOf)
     if (independentVols.length > 0) {
-      await this._updateOverlayChunkedIndependent(gl, independentVols[0])
+      await this._updateOverlayChunkedIndependent(gl, independentVols[0], [
+        baseVol,
+        ...overlayVols,
+      ])
       if (independentVols.length > 1) {
         log.warn(
           'only one independently-chunked overlay is supported; ' +
@@ -1793,7 +1814,10 @@ export class VolumeRenderer extends NVRenderer {
       const wholeReslice = reslicedVols.filter(
         (v) => !(v.chunkSource && this._dimsMatchBase(v, baseVol)),
       )
-      await this._updateCombinedOverlayChunked(gl, streamedCombined)
+      await this._updateCombinedOverlayChunked(gl, streamedCombined, [
+        baseVol,
+        ...overlayVols,
+      ])
       this._updateOverlayChunks(
         gl,
         baseVol,
@@ -2025,12 +2049,20 @@ export class VolumeRenderer extends NVRenderer {
   private async _updateOverlayChunkedIndependent(
     gl: WebGL2RenderingContext,
     vol: NVImage,
+    volumes: NVImage[],
   ): Promise<void> {
     // Split the single configured residency budget: the overlay gets a share,
     // the base keeps the rest, so base + overlay together stay within the
     // configured cap instead of each filling it.
     const overlayBudget = this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION
-    const entry = await this._ensureChunkedVolumeEntry(gl, vol, overlayBudget)
+    // The overlay streams on its own grid, so its modulation matrix is
+    // resolved against itself, not the base.
+    const entry = await this._ensureChunkedVolumeEntry(
+      gl,
+      vol,
+      overlayBudget,
+      buildModulationParams(vol, vol, volumes),
+    )
     // Apply the split even when the entry was reused from the cache (its
     // manager may have been built with a different budget).
     setChunkBudget(entry, overlayBudget)
@@ -2076,13 +2108,21 @@ export class VolumeRenderer extends NVRenderer {
   private async _updateCombinedOverlayChunked(
     gl: WebGL2RenderingContext,
     vols: NVImage[],
+    volumes: NVImage[],
   ): Promise<void> {
     this._combinedOverlayEntries = []
     if (vols.length === 0) return
     const overlayBudget =
       (this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION) / vols.length
     for (const vol of vols) {
-      const entry = await this._ensureChunkedVolumeEntry(gl, vol, overlayBudget)
+      // Co-registered at the base grid, so resolving against the overlay's
+      // own grid is the base-grid matrix the whole-volume path would use.
+      const entry = await this._ensureChunkedVolumeEntry(
+        gl,
+        vol,
+        overlayBudget,
+        buildModulationParams(vol, vol, volumes),
+      )
       setChunkBudget(entry, overlayBudget)
       this._combinedOverlayEntries.push(entry)
     }

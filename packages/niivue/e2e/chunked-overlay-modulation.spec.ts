@@ -15,6 +15,15 @@ import { webgpuLaunchOptions } from './launchOptions'
 // agreement is not two unmodulated pictures). The mask is a distinct file
 // because volume ids are URLs: a second copy of mni152 would share the base's
 // id and setModulationImage would modulate the background instead.
+//
+// A chunked background reaches an overlay by three routes, and the first fix
+// covered only the first: an in-memory overlay is resliced whole and cut into
+// bricks; an overlay with a `chunkSource` co-registered at the base grid is
+// streamed brick by brick through the generic chunk uploader (the "streamed
+// combined" path); an overlay with `chunkOverlayOf` streams independently
+// through that same uploader. The second case below gives the mask a
+// chunkSource that serves its own in-memory bytes, so the picture must still
+// match the whole render.
 
 test.use({ launchOptions: webgpuLaunchOptions })
 test.describe.configure({ timeout: 180_000 })
@@ -97,6 +106,30 @@ const mount = (
     await nv.setModulationImage(nv.volumes[1].id, '', 0)
     await nextFrame(); await nextFrame()
   }
+  // Turn the in-memory mask into a streamed overlay: the chunkSource hands the
+  // uploader each brick's bytes in RAS order, cut from the image it already
+  // holds, so the only thing that changes is which code path builds the
+  // bricks. Returns the chunk count before and after, so the test can assert
+  // that the overlay really did become a second streamed volume.
+  window.__stream${id} = async () => {
+    const { extractChunkBytes, extractChunkBytesReoriented, isIdentityPermutation } =
+      await import('/src/volume/orientChunked.ts')
+    const vol = nv.volumes[1]
+    const img = vol.img
+    const dims = [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+    const before = nv.chunkStreamStats().total
+    vol.chunkSource = (req) => {
+      const bpv = req.bytesPerVoxel
+      const src = new Uint8Array(img.buffer, img.byteOffset, vol.nVox3D * bpv)
+      return isIdentityPermutation(vol)
+        ? extractChunkBytes(src, dims, bpv, req.desc.texOrigin, req.desc.texDims)
+        : extractChunkBytesReoriented(src, bpv, req.desc.texOrigin,
+            req.desc.texDims, vol.img2RASstart, vol.img2RASstep)
+    }
+    await nv.updateGLVolume()
+    await nextFrame()
+    return { before, after: nv.chunkStreamStats().total }
+  }
   return { ok: true, backend: nv.backend }
 })()`
 
@@ -173,6 +206,32 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(
       maxDelta(chunked, unmodulated),
       `chunked modulated ${JSON.stringify(chunked)} vs unmodulated ${JSON.stringify(unmodulated)}`,
+    ).toBeGreaterThan(40)
+  })
+
+  test(`a streamed (chunkSource) overlay keeps its modulation (${backend})`, async ({
+    page,
+  }) => {
+    await mountOrSkip(page, backend, 'A', 0)
+    await mountOrSkip(page, backend, 'C', SIZE, 'maxTextureDimension3D: 128,')
+    const counts = await page.evaluate('window.__streamC()')
+    // The base alone is `before` bricks; the streamed overlay is co-registered
+    // at the base grid, so it adds the same number again. A streamed overlay
+    // that fell back to whole reslicing would add none.
+    expect(counts.before).toBeGreaterThan(1)
+    expect(counts.after).toBe(2 * counts.before)
+    await page.waitForTimeout(4000)
+    await page.evaluate('window.__settleC()')
+
+    const whole = await gridProbes(page, 0)
+    const streamed = await gridProbes(page, SIZE)
+    expectProbesClose(whole, streamed, 'whole vs streamed, modulated')
+
+    await page.evaluate('window.__unmodulateC()')
+    const unmodulated = await gridProbes(page, SIZE)
+    expect(
+      maxDelta(streamed, unmodulated),
+      `streamed modulated ${JSON.stringify(streamed)} vs unmodulated ${JSON.stringify(unmodulated)}`,
     ).toBeGreaterThan(40)
   })
 }

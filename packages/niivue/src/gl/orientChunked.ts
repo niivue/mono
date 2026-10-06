@@ -19,7 +19,9 @@ import { bytesPerSourceVoxel } from '@/volume/chunkBudget'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import { timeChunkPhase } from '@/volume/chunkTiming'
 import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
+import type { ModulationTextureParams } from '@/volume/modulation'
 import {
+  chunkModulationForDesc,
   chunkRGBA,
   extractChunkBytes,
   extractChunkBytesReoriented,
@@ -27,7 +29,11 @@ import {
   isRGBAChunkDatatype,
 } from '@/volume/orientChunked'
 import * as gradient from './gradient'
-import { orientChunkToTexture, rgba2TextureChunk } from './orientOverlay'
+import {
+  createModTexture,
+  orientChunkToTexture,
+  rgba2TextureChunk,
+} from './orientOverlay'
 
 export interface VolumeChunkGL {
   /** RGBA8 color texture for this chunk; sized desc.texDims (includes halo). */
@@ -116,7 +122,7 @@ export interface ChunkUploaderGL {
    * and for a chunk with nothing outstanding.
    */
   cancelChunk(index: number): void
-  /** Abandon every outstanding source read. */
+  /** Abandon every outstanding source read and free the modulator texture. */
   dispose(): void
 }
 
@@ -158,6 +164,10 @@ function bytesFromChunkSource(
  * RGBA texture, and runs the gradient pass; only the returned RGBA + gradient
  * textures persist. The renderer pumps these calls a few per frame so a tiled
  * volume streams in rather than stalling the main thread.
+ *
+ * The modulator's weight texture, when the volume has one, is the only GPU
+ * resource shared across chunks; it is created lazily on the first scalar
+ * upload and freed by `dispose`.
  */
 export function createChunkUploaderGL(
   gl: WebGL2RenderingContext,
@@ -174,6 +184,10 @@ export function createChunkUploaderGL(
   // in-memory volume, whose chunks are a cheap copy out of a buffer we are
   // already holding -- shadowing those would only duplicate the image.
   decoded: DecodedChunkCache | null = null,
+  // Resolved modulation for this volume (buildModulationParams against its
+  // OWN grid), or null. Baked into every chunk texture like the colormap is,
+  // so the renderer's display key must cover it (chunkedDisplayKey).
+  modulation: ModulationTextureParams | null = null,
 ): ChunkUploaderGL {
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunkedGL: missing dimsRAS')
@@ -236,6 +250,14 @@ export function createChunkUploaderGL(
   // entry carries the controller that cancels its read, so a chunk the view
   // stops wanting is abandoned on the wire rather than paid for and dropped.
   const fetchCache = new Map<number, ChunkFetch>()
+
+  // Shared modulator weights, uploaded once for all chunks of this uploader.
+  let modTexture: WebGLTexture | null = null
+  function ensureModTexture(): WebGLTexture | null {
+    if (!modulation) return null
+    if (!modTexture) modTexture = createModTexture(gl, modulation)
+    return modTexture
+  }
 
   function computeBytes(
     index: number,
@@ -334,6 +356,10 @@ export function createChunkUploaderGL(
   function dispose(): void {
     for (const entry of fetchCache.values()) entry.controller.abort()
     fetchCache.clear()
+    if (modTexture) {
+      gl.deleteTexture(modTexture)
+      modTexture = null
+    }
   }
 
   async function uploadChunk(index: number): Promise<VolumeChunkGL> {
@@ -355,7 +381,15 @@ export function createChunkUploaderGL(
       () =>
         isRGBA
           ? rgba2TextureChunk(gl, chunkRGBA(chunkBytes, dt), desc.texDims)
-          : orientChunkToTexture(gl, chunkBytes, dt, desc.texDims, nvimage),
+          : orientChunkToTexture(
+              gl,
+              chunkBytes,
+              dt,
+              desc.texDims,
+              nvimage,
+              chunkModulationForDesc(modulation, desc, plan),
+              ensureModTexture(),
+            ),
       chunkBytes.byteLength,
     )
     const dims: [number, number, number] = [

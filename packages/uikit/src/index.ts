@@ -42,6 +42,26 @@ export type { CrosshairGeometry, CrosshairSpec } from './crosshair'
 export { buildCrosshair } from './crosshair'
 export type { CrosshairPlacement } from './crosshairOverlay'
 export { UIKitCrosshairOverlay } from './crosshairOverlay'
+export type {
+  DialogBoxes,
+  DialogButtonRole,
+  DialogButtonSize,
+  DialogButtonSpec,
+  DialogLayout,
+  DialogSpec,
+  DialogStyle,
+} from './dialog'
+export {
+  buildDialog,
+  DEFAULT_DIALOG_STYLE,
+  dialogContains,
+  layoutDialog,
+  resolveDialogStyle,
+  scaleDialog,
+  wrapText,
+} from './dialog'
+export type { UIKitDialogOverlayOptions } from './dialogOverlay'
+export { UIKitDialogOverlay } from './dialogOverlay'
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'

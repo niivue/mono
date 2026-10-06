@@ -35,6 +35,7 @@ and draws that data through the lifecycle hook.
 | `buildSlider` | `UIKitSliderOverlay` | Horizontal sliders with min/max/step, ticks, a value readout, drag and arrow keys |
 | `buildNumberInput` | `UIKitNumberInputOverlay` | Number fields: typed entry with validation, a spinner, arrow keys and the wheel |
 | `buildTextInput` | `UIKitTextInputOverlay` | Single-line text fields with a placeholder, selection, Enter to submit |
+| `buildDialog` | `UIKitDialogOverlay` | Modal dialogs: a scrim, a panel with a title, wrapped message, hosted widgets and action buttons |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
@@ -450,3 +451,57 @@ and its focus color, text, placeholder and disabled text colors, the label
 halo (`textOutlineWidth`, `textOutlineColor`), padding, the default
 `fieldWidth`, and the caret and selection colors. The overlay options take
 `doubleClickMs` (default 400) and a `now` clock for it.
+
+## Dialogs
+
+`UIKitDialogOverlay` holds dialogs that open one at a time. An open dialog is
+modal: a scrim covers the canvas, the panel (centered, or placed at the spec's
+`x`, `y`) shows a title, a message wrapped to the panel width (`\n` forces a
+line), a content box `contentHeight` tall for hosted widgets, and a row of
+right-aligned action buttons. Pressing a button closes the dialog and fires
+`onClose` with that button's id. Enter presses the button with the `default`
+role (drawn in the accent style), Escape the one with the `cancel` role, or
+closes with a null result when there is none. A press on the scrim closes with
+null only when `closeOnScrim` is set; otherwise it does nothing, and every
+other pointer, wheel and key event is swallowed while the dialog is open.
+
+Hosted widgets are ordinary overlays (text inputs, number inputs, toggles,
+selects, ...) added with `addChild`: while the dialog is open it routes
+events among them like a control layer (a press captures and focuses, a
+modal child such as an open select sees everything first) and draws them over
+the panel. They must use the same units as the dialog. `onLayout` reports the
+panel and content boxes in spec units whenever the panel is placed (the first
+draw, a resize), which is where to position them. A dialog is not a popup: a
+press elsewhere in the page only blurs its children, so a window blur never
+closes a half-filled form.
+
+```ts
+const dialogs = new UIKitDialogOverlay(font, units)
+const fields = new UIKitTextInputOverlay(font, units)
+controls.add(dialogs) // the dialog hosts `fields`; do not add them to the layer
+dialogs.addDialog({
+  id: 'rename',
+  title: 'Rename volume',
+  message: 'The name shows in the layer list and in exports.',
+  contentHeight: 36,
+  buttons: [
+    { id: 'cancel', label: 'Cancel', role: 'cancel' },
+    { id: 'ok', label: 'Rename', role: 'default' },
+  ],
+  onLayout: ({ content }) => {
+    fields.updateTextInput('name', { x: content.x, y: content.y + 4 })
+  },
+  onClose: (result) => {
+    if (result === 'ok') rename(fields.getValue('name'))
+  },
+})
+dialogs.addChild('rename', fields)
+fields.addTextInput({ id: 'name', x: 0, y: 0, width: 300, value: 'mni152' })
+dialogs.open('rename')
+dialogs.close('cancel') // from code, with any result
+```
+
+`DialogStyle` holds the scrim color, the panel fill, border and radius, its
+default `width`, `padding` and `gap`, the title and message colors and sizes,
+the message `lineHeight`, the `buttonGap`, and `button` and `defaultButton`
+overrides of the button style.

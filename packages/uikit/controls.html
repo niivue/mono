@@ -24,7 +24,7 @@
       <header>
         <b>UIKit controls</b>
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
-        <span>Menus, toggles, sliders, number and text fields and buttons drawn in the scene, sharing one
+        <span>Menus, toggles, sliders, number and text fields, buttons and a modal dialog drawn in the scene, sharing one
           control layer: a click on any of them never reaches the viewer, an open menu
           swallows the click that dismisses it, and the keyboard drives the focused
           control (<kbd>Tab</kbd>-free: click a control, then use arrows, Space, Enter,
@@ -41,6 +41,7 @@
         loadDefaultFont,
         UIKitButtonOverlay,
         UIKitControls,
+        UIKitDialogOverlay,
         UIKitMenuOverlay,
         UIKitNumberInputOverlay,
         UIKitSegmentedOverlay,
@@ -78,6 +79,7 @@
       const selects = new UIKitSelectOverlay(font, units)
       const numbers = new UIKitNumberInputOverlay(font, units)
       const texts = new UIKitTextInputOverlay(font, units)
+      const dialogs = new UIKitDialogOverlay(font, units)
       const controls = new UIKitControls()
         .add(buttons)
         .add(sliders)
@@ -87,6 +89,7 @@
         .add(segmented)
         .add(menus)
         .add(selects)
+        .add(dialogs)
       nv.registerOverlayRenderer(controls)
       const detach = controls.attach(nv)
 
@@ -140,6 +143,7 @@
           { id: 'reset', label: 'Reset view', shortcut: 'R', onSelect: resetView },
           { id: 'center', label: 'Center crosshair', onSelect: () => { nv.crosshairPos = [0.5, 0.5, 0.5] } },
           { id: 'sep', kind: 'separator' },
+          { id: 'settings', label: 'Settings...', onSelect: () => dialogs.open('settings') },
           { id: 'undo', label: 'Undo', shortcut: 'Z', enabled: false },
         ],
         onSelect: (itemId) => say(`edit: ${itemId}`),
@@ -233,6 +237,45 @@
         maxLength: 80,
         onInput: (text) => say(`note: ${text}`),
         onSubmit: (text) => say(`note submitted: ${JSON.stringify(text)}`),
+      })
+
+      // A modal dialog hosting its own widgets: a text input and a number
+      // input live in overlays the dialog routes and draws while it is open
+      // (they are not added to the control layer). OK applies both values,
+      // Cancel and Escape discard them, Enter is OK.
+      const dialogFields = new UIKitTextInputOverlay(font, units)
+      const dialogNumbers = new UIKitNumberInputOverlay(font, units)
+      let applied = { name: 'mni152', opacity: 1 }
+      dialogs.addDialog({
+        id: 'settings',
+        title: 'Settings',
+        message: 'Name the volume and set its opacity. Enter applies, Escape cancels; the fields and the Opacity spinner work as they do outside the dialog.',
+        contentHeight: 76,
+        buttons: [
+          { id: 'cancel', label: 'Cancel', role: 'cancel' },
+          { id: 'ok', label: 'Apply', role: 'default' },
+        ],
+        onLayout: ({ content }) => {
+          dialogFields.updateTextInput('name', { x: content.x + 64, y: content.y + 2, width: content.width - 64 })
+          dialogNumbers.updateNumberInput('opacity', { x: content.x + 64, y: content.y + 42, width: 80 })
+        },
+        onClose: (result) => {
+          if (result === 'ok') {
+            applied = { name: dialogFields.getValue('name'), opacity: dialogNumbers.getValue('opacity') }
+            nv.setVolume(0, { opacity: applied.opacity })
+            say(`applied: ${JSON.stringify(applied.name)}, opacity ${applied.opacity}`)
+          } else {
+            dialogFields.setValue('name', applied.name)
+            dialogNumbers.setValue('opacity', applied.opacity)
+            say('settings cancelled')
+          }
+        },
+      })
+      dialogs.addChild('settings', dialogFields)
+      dialogs.addChild('settings', dialogNumbers)
+      dialogFields.addTextInput({ id: 'name', label: 'Name', x: 0, y: 0, width: 200, value: 'mni152', maxLength: 40 })
+      dialogNumbers.addNumberInput({
+        id: 'opacity', label: 'Opacity', x: 0, y: 0, width: 80, min: 0, max: 1, step: 0.05, value: 1,
       })
 
       function resetView() {

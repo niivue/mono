@@ -24,7 +24,7 @@
       <header>
         <b>UIKit controls</b>
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
-        <span>Menus, toggles, sliders, number and text fields, buttons, a color control, a file picker and a modal dialog drawn in the scene, sharing one
+        <span>Menus, toggles, sliders, number and text fields, buttons, a color control, a file picker, a text area and a modal dialog drawn in the scene, sharing one
           control layer: a click on any of them never reaches the viewer, an open menu
           swallows the click that dismisses it, and the keyboard drives the focused
           control (<kbd>Tab</kbd>-free: click a control, then use arrows, Space, Enter,
@@ -51,6 +51,7 @@
         UIKitSegmentedOverlay,
         UIKitSelectOverlay,
         UIKitSliderOverlay,
+        UIKitTextAreaOverlay,
         UIKitTextInputOverlay,
         UIKitToggleOverlay,
       } from './src/index.ts'
@@ -83,6 +84,7 @@
       const selects = new UIKitSelectOverlay(font, units)
       const numbers = new UIKitNumberInputOverlay(font, units)
       const texts = new UIKitTextInputOverlay(font, units)
+      const areas = new UIKitTextAreaOverlay(font, units)
       const colors = new UIKitColorControlOverlay(font, units)
       const pickers = new UIKitFilePickerOverlay(font, units)
       const dialogs = new UIKitDialogOverlay(font, units)
@@ -93,6 +95,7 @@
         .add(texts)
         .add(colors)
         .add(pickers)
+        .add(areas)
         .add(toggles)
         .add(segmented)
         .add(menus)
@@ -287,6 +290,15 @@
         onCancel: () => say('open cancelled'),
       })
       pickers.setFiles('volume', ['mni152.nii.gz'])
+
+      // A text area: multi-line notes that soft-wrap and scroll by whole
+      // rows (wheel over it); Meta or Ctrl plus Enter commits.
+      areas.addTextArea({
+        id: 'notes', label: 'Notes', x: 12, y: 520, width: 300, rows: 3,
+        placeholder: 'Findings, one per line. Cmd/Ctrl+Enter commits.',
+        maxLength: 2000,
+        onChange: (text) => say(`notes: ${text.split('\n').length} line(s), ${text.length} chars`),
+      })
       const download = createBrowserDownload()
       function exportSettings() {
         const settings = {

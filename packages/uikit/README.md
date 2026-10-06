@@ -35,6 +35,7 @@ and draws that data through the lifecycle hook.
 | `buildSlider` | `UIKitSliderOverlay` | Horizontal sliders with min/max/step, ticks, a value readout, drag and arrow keys |
 | `buildNumberInput` | `UIKitNumberInputOverlay` | Number fields: typed entry with validation, a spinner, arrow keys and the wheel |
 | `buildTextInput` | `UIKitTextInputOverlay` | Single-line text fields with a placeholder, selection, Enter to submit |
+| `buildTextArea` | `UIKitTextAreaOverlay` | Multi-line text fields that soft-wrap and scroll by whole rows |
 | `buildColorControl` | `UIKitColorControlOverlay` | Color pickers the legacy way: a preview, R/G/B(/A) channel sliders and palette swatches |
 | `buildFilePicker` | `UIKitFilePickerOverlay` | File pickers: a Choose button and a readout; the host chooser and downloads go through bridges |
 | `buildDialog` | `UIKitDialogOverlay` | Modal dialogs: a scrim, a panel with a title, wrapped message, hosted widgets and action buttons |
@@ -455,6 +456,54 @@ and its focus color, text, placeholder and disabled text colors, the label
 halo (`textOutlineWidth`, `textOutlineColor`), padding, the default
 `fieldWidth`, and the caret and selection colors. The overlay options take
 `doubleClickMs` (default 400) and a `now` clock for it.
+
+## Text areas
+
+`UIKitTextAreaOverlay` draws a bordered field of a fixed number of rows with
+an optional label above it. Text soft-wraps at the field's width (after the
+last space that fits, else by glyph) and scrolls by whole rows through the
+shared scroll model, with a scrollbar once the rows overflow: the wheel
+scrolls a hovered area, and the caret is kept in view while editing. A press
+takes keyboard focus and places the caret at the pointer, dragging selects
+across rows, and a second press within the double-click interval selects
+all. Enter inserts a newline; the arrows move by glyph and by row (a run of
+vertical moves keeps its column), Home and End move within the row, PageUp
+and PageDown move by a page of rows, and Meta or Ctrl jumps to the text's
+ends. Shift extends the selection; Backspace, Delete and Meta or Ctrl plus A
+come from the single-line model. `onInput` fires on every keystroke that
+changes the text. Meta or Ctrl plus Enter commits (firing `onChange` when the
+text changed) and then fires `onSubmit`; Escape reverts to the committed
+text; losing focus commits.
+
+Entry is keyboard-only, like the text input: no paste and no IME.
+
+```ts
+const areas = new UIKitTextAreaOverlay(font, units)
+areas.addTextArea({
+  id: 'notes',
+  label: 'Notes',
+  x: 12,
+  y: 540,
+  width: 300,
+  rows: 4, // visible rows; longer text scrolls
+  placeholder: 'Findings...',
+  maxLength: 2000,
+  onInput: (text) => preview(text), // every change
+  onChange: (text) => save(text), // Meta/Ctrl+Enter or blur, when changed
+  onSubmit: (text) => run(text), // Meta/Ctrl+Enter, always
+})
+areas.setValue('notes', '') // silent
+areas.getValue('notes') // the committed text
+areas.getText('notes') // what the field shows, edit in progress included
+areas.getFirstRow('notes') // the scroll position, in rows
+```
+
+`TextAreaStyle` adds to the text-input knobs a `lineHeight` (rows are
+`textSizePx * lineHeight`, default 1.4), the default `rows`, and the
+scrollbar's `scrollbarWidth`, `scrollbarGap`, `scrollbarColor` and
+`scrollbarTrackColor`. The pure model (`wrapRows`, `rowOfCaret`,
+`moveCaretRows`, `textAreaKey`) is exported for hosts that lay out
+multi-line text themselves.
 
 ## Color controls
 

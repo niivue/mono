@@ -274,6 +274,33 @@ export {
   measureWidth,
   readableAngle,
 } from './text/layout'
+export type {
+  TextAreaLayout,
+  TextAreaSpec,
+  TextAreaStyle,
+  TextAreaVisual,
+  TextRow,
+} from './textArea'
+export {
+  buildTextArea,
+  caretInRow,
+  caretXInRow,
+  DEFAULT_TEXT_AREA_STYLE,
+  layoutTextArea,
+  moveCaretRows,
+  resolveTextAreaStyle,
+  rowOfCaret,
+  scaleTextArea,
+  textAreaCaretAt,
+  textAreaContains,
+  textAreaKey,
+  textAreaRows,
+  textAreaWindow,
+  textAreaWrapWidth,
+  wrapRows,
+} from './textArea'
+export type { UIKitTextAreaOverlayOptions } from './textAreaOverlay'
+export { UIKitTextAreaOverlay } from './textAreaOverlay'
 export type { TextEditState } from './textEdit'
 export {
   advanceBetween,

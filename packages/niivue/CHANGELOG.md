@@ -1,3 +1,14 @@
+## 1.0.0-rc.19 (2026-10-06)
+
+### Features
+
+- **niivue:** overlay alpha and colour blend modes ([307a45b](https://github.com/niivue/mono/commit/307a45b))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.18 (2026-10-06)
 
 ### Fixes

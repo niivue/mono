@@ -38,6 +38,13 @@ export interface ToggleStyle {
   disabledTextColor: RGBA
   /** Label em size. */
   textSizePx: number
+  /**
+   * Halo outline width around the label, so it reads over any scene; 0 draws
+   * none. 1 to 2 reads best with the bundled font.
+   */
+  textOutlineWidth: number
+  /** Halo color; null picks black or white for contrast with `textColor`. */
+  textOutlineColor: RGBA | null
   /** Scale of the box while the pointer holds it down. */
   pressScale: number
   /** Focus ring color (drawn around the box while the toggle has keyboard focus). */
@@ -61,6 +68,8 @@ export const DEFAULT_TOGGLE_STYLE: ToggleStyle = {
   textColor: [1, 1, 1, 1],
   disabledTextColor: [1, 1, 1, 0.45],
   textSizePx: 16,
+  textOutlineWidth: 1,
+  textOutlineColor: null,
   pressScale: 0.88,
   focusRing: [0.55, 0.7, 1, 0.9],
   focusRingWidth: 2,
@@ -149,6 +158,7 @@ export function scaleToggle(
       borderWidth: style.borderWidth * k,
       checkWidth: style.checkWidth * k,
       textSizePx: style.textSizePx * k,
+      textOutlineWidth: style.textOutlineWidth * k,
       focusRingWidth: style.focusRingWidth * k,
     },
   }
@@ -294,6 +304,12 @@ export function buildToggle(
     sizePx: style.textSizePx,
     align: 0,
     color: textColor,
+    ...(style.textOutlineWidth > 0
+      ? {
+          outlineWidthPx: style.textOutlineWidth,
+          outlineColor: style.textOutlineColor ?? undefined,
+        }
+      : {}),
   }
   return { rects, lines, text }
 }

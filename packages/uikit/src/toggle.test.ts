@@ -137,6 +137,29 @@ describe('buildToggle', () => {
     // Baseline sits so the cap height is centred on the box centre (59).
     expect(geo.text.y).toBeCloseTo(59 + 5.6)
     expectColor(geo.text.color ?? [], STYLE.textColor)
+    // The label wears a contrast halo so it reads over the scene.
+    expect(geo.text.outlineWidthPx).toBe(1)
+    expect(geo.text.outlineColor).toBeUndefined()
+  })
+
+  it('takes a fixed halo color, and no halo at width 0', () => {
+    const halo = buildToggle(
+      SPEC,
+      { ...STYLE, textOutlineWidth: 2, textOutlineColor: [0, 0, 0, 1] },
+      METRICS,
+      layout,
+      IDLE,
+    )
+    expect(halo.text.outlineWidthPx).toBe(2)
+    expect(halo.text.outlineColor).toEqual([0, 0, 0, 1])
+    const bare = buildToggle(
+      SPEC,
+      { ...STYLE, textOutlineWidth: 0 },
+      METRICS,
+      layout,
+      IDLE,
+    )
+    expect(bare.text.outlineWidthPx).toBeUndefined()
   })
 
   it('adds the check mark and the checked fill when checked', () => {

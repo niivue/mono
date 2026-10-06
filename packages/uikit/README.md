@@ -193,7 +193,9 @@ toggles.setEnabled('colorbar', false)
 ```
 
 `ToggleStyle` holds the box size, radius, gap, fills for each state, border,
-check color and width, text color and size, press scale and focus ring.
+check color and width, text color and size, the label halo
+(`textOutlineWidth`, default 1, and `textOutlineColor`, null for automatic
+contrast), press scale and focus ring.
 
 ## Sliders
 

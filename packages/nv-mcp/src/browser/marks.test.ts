@@ -258,6 +258,107 @@ describe('edit_annotations', () => {
     expect(view.drawScene).toHaveBeenCalledTimes(9)
   })
 
+  it('hands NiiVue each polygon as outer and holes, from a point list or that shape', () => {
+    const view = markView()
+    const { edit_annotations } = markHandlers(hostOf(view))
+    edit_annotations({ action: 'add', annotation: note('p1') })
+    expect(view.addAnnotation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: 'p1',
+        polygons: [
+          {
+            outer: [
+              { x: 0, y: 0 },
+              { x: 1, y: 0 },
+              { x: 1, y: 1 },
+            ],
+            holes: [],
+          },
+        ],
+      }),
+    )
+    edit_annotations({
+      action: 'add',
+      annotation: note('p2', {
+        polygons: [
+          {
+            outer: [{ x: 0, y: 0 }, [1, 0], { x: 1, y: 1 }, [0, 1]],
+            holes: [
+              [
+                [0.2, 0.2],
+                [0.4, 0.2],
+                [0.4, 0.4],
+              ],
+            ],
+          },
+        ] as unknown as Annotation['polygons'],
+      }),
+    })
+    expect(view.addAnnotation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        polygons: [
+          {
+            outer: [
+              { x: 0, y: 0 },
+              { x: 1, y: 0 },
+              { x: 1, y: 1 },
+              { x: 0, y: 1 },
+            ],
+            holes: [
+              [
+                { x: 0.2, y: 0.2 },
+                { x: 0.4, y: 0.2 },
+                { x: 0.4, y: 0.4 },
+              ],
+            ],
+          },
+        ],
+      }),
+    )
+  })
+
+  it('refuses a polygon with too few points, a bad point, or no slice position', () => {
+    const view = markView()
+    const { edit_annotations } = markHandlers(hostOf(view))
+    const bad = (extra: Record<string, unknown>) => () =>
+      edit_annotations({
+        action: 'add',
+        annotation: { ...note('x'), ...extra },
+      })
+    expect(
+      bad({
+        polygons: [
+          [
+            [0, 0],
+            [1, 1],
+          ],
+        ],
+      }),
+    ).toThrow(
+      'Each polygon needs at least three points: a list of them, or {outer, holes}.',
+    )
+    expect(
+      bad({
+        polygons: [
+          [
+            [0, 0],
+            [1, 'a'],
+            [1, 1],
+          ],
+        ],
+      }),
+    ).toThrow(
+      'Each polygon point must be [x, y] or {x, y}, in mm on the slice plane.',
+    )
+    expect(bad({ polygons: [] })).toThrow(
+      'annotation needs at least id, sliceType, slicePosition and polygons.',
+    )
+    expect(bad({ slicePosition: '0.5' })).toThrow(
+      'annotation needs at least id',
+    )
+    expect(view.addAnnotation).not.toHaveBeenCalled()
+  })
+
   it('refuses a missing or unknown id, a bad annotation, and missing text or json', () => {
     const { edit_annotations } = markHandlers(hostOf(markView()))
     expect(() => edit_annotations({})).toThrow(
@@ -275,7 +376,7 @@ describe('edit_annotations', () => {
     expect(() =>
       edit_annotations({ action: 'add', annotation: { id: 'x' } }),
     ).toThrow(
-      'annotation needs at least id, sliceType, slicePosition, polygons and style.',
+      'annotation needs at least id, sliceType, slicePosition and polygons.',
     )
     expect(() => edit_annotations({ action: 'set_text', id: 'a1' })).toThrow(
       'set_text needs text.',

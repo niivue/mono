@@ -34,7 +34,13 @@ export interface VolumeToLoad {
   url: string
   name?: string
   colormap?: string
+  colormapNegative?: string
   opacity?: number
+  calMin?: number
+  calMax?: number
+  calMinNeg?: number
+  calMaxNeg?: number
+  isColorbarVisible?: boolean
 }
 
 /** What `View.setVolume` can change about a volume: NiiVue's `VolumeUpdate`. */
@@ -419,8 +425,12 @@ export interface View {
   drawScene(): unknown
   /** Fits the canvas's drawing buffer to its box; NiiVue 1.0 has it. */
   resize?(): void
-  /** NiiVue 1.0's render backend, whose `render()` draws a frame now. */
-  view?: { render(): void } | null
+  /**
+   * NiiVue 1.0's render backend, whose `render()` draws a frame now, and
+   * which skips frames while `isBusy`: during an async texture upload, as
+   * after a 4D frame change.
+   */
+  view?: { render(): void; isBusy?: boolean } | null
   model: {
     mm2scene(mm: number[]): Triple
     scene2mm(frac: number[]): Triple
@@ -508,6 +518,8 @@ export interface View {
   graphResetView?(): unknown
   setGraphRange?(range: [number, number] | null): unknown
   getGraphRange?(): GraphRange | null
+  /** Whether the graph is drawn at all; NiiVue 1.0 starts with it hidden. */
+  isGraphVisible?: boolean
 
   // The clip planes and the camera beyond the first plane.
   setClipPlanes?(planes: number[][]): unknown
@@ -693,6 +705,8 @@ export interface NiiVueHost {
   planeName?(): string
   /** Draws these labels on the scene, replacing any drawn before; an empty list clears them. */
   labels?(labels: PointLabel[]): void
+  /** How long a screenshot waits, in milliseconds, for bricks to arrive and for the render backend to free up. */
+  screenshotWaits?: { settleMs?: number; busyMs?: number }
 }
 
 export type Handler = (params: Record<string, unknown>) => unknown

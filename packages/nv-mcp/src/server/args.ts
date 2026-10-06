@@ -42,6 +42,16 @@ export function rgba(description: string) {
     )
 }
 
+/**
+ * The schema of a tool's arguments, as the server checks them: the shape,
+ * and nothing besides. An argument the tool does not take is refused by
+ * name, where a loose object would drop it and the agent would read
+ * success for a call that changed nothing.
+ */
+export function strict<S extends z.ZodRawShape>(shape: S) {
+  return z.strictObject(shape)
+}
+
 /** How a simple tool is registered: its words, its schema, and what its reply leads with. */
 export interface SimpleTool {
   title: string
@@ -64,7 +74,7 @@ export function registerSimple(
     {
       title: tool.title,
       description: tool.description,
-      inputSchema: tool.inputSchema,
+      inputSchema: strict(tool.inputSchema),
       ...(tool.readOnly ? { annotations: { readOnlyHint: true } } : {}),
     },
     async (args: { tab?: string } & Record<string, unknown>) => {

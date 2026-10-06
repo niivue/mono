@@ -267,6 +267,7 @@ describe('core tool schemas', () => {
       'sagittal',
       'multiplanar',
       'render',
+      'none',
     ])
     expect(schema.properties.layout.enum).toEqual([
       'auto',
@@ -310,6 +311,43 @@ describe('core tool schemas', () => {
       /labels/,
     )
     expect(await refused('set_view', { slice: 'oblique' })).toMatch(/slice/)
+  })
+
+  it('refuses an argument no tool declares, naming it, instead of dropping it silently', async () => {
+    const client = await connect(new Bridge())
+    const refused = async (name: string, args: Record<string, unknown>) => {
+      const reply = await client.callTool({ name, arguments: args })
+      expect(reply.isError).toBe(true)
+      return text(reply)
+    }
+    // A tool registered directly, and one through registerSimple.
+    expect(await refused('set_view', { sliec: 'axial' })).toMatch(/sliec/)
+    expect(await refused('set_mesh', { opacty: 0.5 })).toMatch(/opacty/)
+    expect(
+      await refused('add_overlay', { url: 'http://h/a.nii.gz', calMin: 1 }),
+    ).toMatch(/calMin/)
+  })
+
+  it('offers add_overlay the display window and a negative colormap', async () => {
+    const client = await connect(new Bridge())
+    const { tools } = await client.listTools()
+    const found = tools.find((t) => t.name === 'add_overlay')
+    if (!found) throw new Error('no tool add_overlay')
+    const schema = found.inputSchema as { properties: Record<string, unknown> }
+    expect(Object.keys(schema.properties).sort()).toEqual([
+      'cal_max',
+      'cal_max_neg',
+      'cal_min',
+      'cal_min_neg',
+      'colorbar',
+      'colormap',
+      'colormap_negative',
+      'labels',
+      'name',
+      'opacity',
+      'tab',
+      'url',
+    ])
   })
 })
 

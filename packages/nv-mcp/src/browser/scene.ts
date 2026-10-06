@@ -58,6 +58,7 @@ import type {
   PointLabel,
   ShownVolume,
   View,
+  VolumeToLoad,
   VolumeUpdate,
 } from './view'
 import { viewportHandlers } from './viewport'
@@ -231,14 +232,19 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   /** A volume as the tools report it: how it is drawn, its window and span, and its frame when it has several. */
   const describeVolume = (volume: ShownVolume, index: number) => {
     const labels = labelled.get(volume)
-    const windowed = volume.calMin !== undefined && volume.calMax !== undefined
+    // A label map draws each voxel by its table, so its colormap and window
+    // are not in use and would only mislead.
+    const windowed =
+      !labels && volume.calMin !== undefined && volume.calMax !== undefined
     const spanned =
       volume.globalMin !== undefined && volume.globalMax !== undefined
     const frames = volume.nFrame4D ?? 1
     return {
       index,
       name: volume.name,
-      ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
+      ...(volume.colormap === undefined || labels
+        ? {}
+        : { colormap: volume.colormap }),
       ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
       ...(labels ? { labels } : {}),
       ...(windowed ? { calMin: volume.calMin, calMax: volume.calMax } : {}),
@@ -462,6 +468,25 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         1,
       )
       const colormap = text(params, 'colormap') ?? (labels ? 'gray' : 'warm')
+      const toLoad: VolumeToLoad = { url, name, colormap, opacity }
+      put(toLoad, 'calMin', number(params, 'cal_min'))
+      put(toLoad, 'calMax', number(params, 'cal_max'))
+      put(toLoad, 'calMinNeg', number(params, 'cal_min_neg'))
+      put(toLoad, 'calMaxNeg', number(params, 'cal_max_neg'))
+      put(toLoad, 'colormapNegative', text(params, 'colormap_negative'))
+      // A label map has no window to show on a colorbar.
+      put(
+        toLoad,
+        'isColorbarVisible',
+        flag(params, 'colorbar') ?? (labels ? false : undefined),
+      )
+      if (
+        labels &&
+        (toLoad.calMin !== undefined || toLoad.calMax !== undefined)
+      )
+        throw new Error(
+          'A label overlay has no display window: leave cal_min and cal_max out.',
+        )
       // NiiVue keeps the crosshair as a fraction of the scene, and a volume
       // with a different box changes the scene, so the same fraction would
       // land somewhere else. It is read in millimetres first and put back.
@@ -470,7 +495,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // volume as much as one from load_volume. A failed add leaves the
       // scene as it was.
       try {
-        await view.addVolume({ url, name, colormap, opacity })
+        await view.addVolume(toLoad)
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error)
         throw new Error(`The overlay at ${url} could not be loaded: ${why}`)
@@ -1229,8 +1254,18 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // A chunked volume streams its bricks over the frames after the grid
       // is set, and again after a change that rebuilds them, so the picture
       // waits for the last of them: a frame drawn before then shows a part
-      // of the volume, or none of it.
-      await view.whenChunkStreamSettles?.()
+      // of the volume, or none of it. The wait is bounded well inside the
+      // server's own limit on a call, since NiiVue 1.0 does not settle a
+      // 2D view whose slices never cross every brick.
+      const waits = host.screenshotWaits
+      if (view.whenChunkStreamSettles)
+        await within(
+          view.whenChunkStreamSettles(),
+          waits?.settleMs ?? SETTLE_WAIT_MS,
+        )
+      // The render backend skips frames while it uploads a texture, as
+      // after a 4D frame change, and a frame drawn then is blank.
+      await untilIdle(view, waits?.busyMs ?? BUSY_WAIT_MS)
       drawNow(view, canvas)
       const picture =
         canvas.width > maxWidth ? scaledCopy(canvas, maxWidth) : canvas
@@ -1245,6 +1280,44 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
     },
   }
+}
+
+/** How long a screenshot waits for a chunked volume's bricks, inside the server's limit on a call. */
+const SETTLE_WAIT_MS = 8_000
+
+/** How long a screenshot waits for the render backend to finish an upload. */
+const BUSY_WAIT_MS = 4_000
+
+/** `promise`, or nothing once `ms` have passed, whichever is first. */
+function within(promise: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    promise.then(
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+    )
+  })
+}
+
+/** Waits a frame at a time, up to `ms`, while the render backend is busy. */
+async function untilIdle(view: View, ms: number): Promise<void> {
+  const until = Date.now() + ms
+  while (view.view?.isBusy && Date.now() < until) await nextFrame()
+}
+
+/** The next animation frame, or a short tick where there are none. */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function')
+      requestAnimationFrame(() => resolve())
+    else setTimeout(resolve, 16)
+  })
 }
 
 /** Whether the browser has stopped drawing the page: a tab behind another gets no frames. */

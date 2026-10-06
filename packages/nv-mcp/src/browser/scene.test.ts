@@ -25,6 +25,8 @@ const shown = (volume: VolumeToLoad): ShownVolume => ({
   url: volume.url,
   ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
   ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+  ...(volume.calMin === undefined ? {} : { calMin: volume.calMin }),
+  ...(volume.calMax === undefined ? {} : { calMax: volume.calMax }),
 })
 
 /**
@@ -866,14 +868,22 @@ describe('set_view', () => {
     expect(
       coreHandlers(host(view)).set_view({ slice: 'render' }),
     ).toMatchObject({ view: { slice: 'render' } })
-    view.sliceType = 5
+    view.sliceType = 6
     expect(viewState(view).slice).toBe('other')
+  })
+
+  it('gives the whole canvas to the signal graph with none', () => {
+    const view = laidOut()
+    expect(coreHandlers(host(view)).set_view({ slice: 'none' })).toMatchObject({
+      view: { slice: 'none' },
+    })
+    expect(view.sliceType).toBe(5)
   })
 
   it('refuses an unknown name, nothing to set, or a page without a layout', () => {
     const handlers = coreHandlers(host(laidOut()))
     expect(() => handlers.set_view({ slice: 'oblique' })).toThrow(
-      'Unknown slice "oblique". One of: axial, coronal, sagittal, multiplanar, render.',
+      'Unknown slice "oblique". One of: axial, coronal, sagittal, multiplanar, render, none.',
     )
     expect(() => handlers.set_view({ layout: 'stack' })).toThrow(
       'Unknown layout "stack"',
@@ -932,6 +942,65 @@ describe('screenshot', () => {
     })
     await coreHandlers(host(view)).screenshot({})
     expect(calls).toEqual(['settle', 'draw'])
+  })
+
+  it('gives up waiting for bricks that never settle, as a 2D view leaves some unrequested', async () => {
+    const calls: string[] = []
+    const canvas = {
+      width: 640,
+      height: 480,
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    } as unknown as HTMLCanvasElement
+    const view = fakeView({
+      canvas,
+      whenChunkStreamSettles: mock(() => new Promise<void>(() => {})),
+      drawScene: mock(() => calls.push('draw')),
+    })
+    const started = Date.now()
+    await coreHandlers(
+      host(view, { screenshotWaits: { settleMs: 30 } }),
+    ).screenshot({})
+    expect(calls).toEqual(['draw'])
+    expect(Date.now() - started).toBeLessThan(2000)
+  })
+
+  it('waits for the render backend to finish an upload, as after a 4D frame change', async () => {
+    const calls: string[] = []
+    const canvas = {
+      width: 640,
+      height: 480,
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    } as unknown as HTMLCanvasElement
+    const backend = { render: () => calls.push('render'), isBusy: true }
+    setTimeout(() => {
+      backend.isBusy = false
+      calls.push('idle')
+    }, 40)
+    const view = fakeView({
+      canvas,
+      drawScene: mock(() => calls.push('draw')),
+      view: backend,
+    })
+    await coreHandlers(host(view)).screenshot({})
+    expect(calls).toEqual(['idle', 'draw', 'render'])
+  })
+
+  it('draws anyway when the backend stays busy past the wait', async () => {
+    const calls: string[] = []
+    const canvas = {
+      width: 640,
+      height: 480,
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    } as unknown as HTMLCanvasElement
+    const view = fakeView({
+      canvas,
+      drawScene: mock(() => calls.push('draw')),
+      view: { render: () => calls.push('render'), isBusy: true },
+    })
+    await coreHandlers(
+      host(view, { screenshotWaits: { busyMs: 40 } }),
+    ).screenshot({})
+    expect(calls).toEqual(['draw', 'render'])
   })
 
   it('sizes an unsized canvas first and has the render backend draw the frame now', async () => {
@@ -1238,19 +1307,68 @@ describe('add_overlay', () => {
       name: 'synthseg.nii.gz',
       colormap: 'gray',
       opacity: 0.5,
+      isColorbarVisible: false,
     })
     expect(setColormapLabel).toHaveBeenCalledWith(1, 'freesurfer')
+    // A label map draws by its table, so no colormap is reported for it.
     expect(result.volumes).toEqual([
       { index: 0, name: 'mni152.nii.gz' },
       {
         index: 1,
         name: 'synthseg.nii.gz',
-        colormap: 'gray',
         opacity: 0.5,
         labels: 'freesurfer',
       },
     ])
     expect(view.drawScene).toHaveBeenCalled()
+  })
+
+  it('passes the display window and a negative colormap through, and reports the window', async () => {
+    const view = fakeView()
+    const handlers = coreHandlers(host(view))
+    const result = (await handlers.add_overlay({
+      url: 'http://h/stats/zstat1.nii.gz',
+      colormap: 'warm',
+      cal_min: 2.3,
+      cal_max: 6,
+      colormap_negative: 'cool',
+      cal_min_neg: -6,
+      cal_max_neg: -2.3,
+      colorbar: true,
+    })) as { volumes: Record<string, unknown>[] }
+    expect(view.addVolume).toHaveBeenCalledWith({
+      url: 'http://h/stats/zstat1.nii.gz',
+      name: 'zstat1.nii.gz',
+      colormap: 'warm',
+      opacity: 0.7,
+      calMin: 2.3,
+      calMax: 6,
+      calMinNeg: -6,
+      calMaxNeg: -2.3,
+      colormapNegative: 'cool',
+      isColorbarVisible: true,
+    })
+    expect(result.volumes[1]).toMatchObject({
+      name: 'zstat1.nii.gz',
+      colormap: 'warm',
+      calMin: 2.3,
+      calMax: 6,
+    })
+  })
+
+  it('refuses a display window on a label map, which has none', async () => {
+    const view = fakeView({ setColormapLabel: mock() })
+    const handlers = coreHandlers(host(view))
+    await expect(
+      handlers.add_overlay({
+        url: 'http://h/labels/synthseg.nii.gz',
+        labels: 'freesurfer',
+        cal_min: 1,
+      }),
+    ).rejects.toThrow(
+      'A label overlay has no display window: leave cal_min and cal_max out.',
+    )
+    expect(view.addVolume).not.toHaveBeenCalled()
   })
 
   it('keeps the crosshair at the same millimetres when the overlay changes the scene', async () => {

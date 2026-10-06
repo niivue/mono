@@ -24,7 +24,7 @@ import {
   SLICE_NAMES,
   type ViewState,
 } from '../views'
-import { triple, VOLUME_ARG } from './args'
+import { strict, triple, VOLUME_ARG } from './args'
 import type { Bridge } from './bridge'
 import {
   type Extension,
@@ -114,6 +114,37 @@ export const CORE_SCHEMAS = {
       .max(1)
       .optional()
       .describe('0 to 1; 0.5 for labels and 0.7 otherwise.'),
+    cal_min: z
+      .number()
+      .optional()
+      .describe(
+        'The display window: the intensity drawn as the darkest colour; set_volume changes it later. Not for a label overlay.',
+      ),
+    cal_max: z
+      .number()
+      .optional()
+      .describe(
+        'The intensity drawn as the brightest colour. Not for a label overlay.',
+      ),
+    colormap_negative: z
+      .string()
+      .optional()
+      .describe(
+        'A second colormap for the values below zero, as a statistical map wants; none otherwise.',
+      ),
+    cal_min_neg: z
+      .number()
+      .optional()
+      .describe(
+        'With colormap_negative: the window for the negative values, mirrored from cal_min and cal_max otherwise.',
+      ),
+    cal_max_neg: z.number().optional(),
+    colorbar: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this overlay gets a colorbar when the view shows them; off for a label overlay otherwise.',
+      ),
   },
   where_am_i: { ...TAB_ARG },
   list_regions: {
@@ -445,7 +476,7 @@ export const CORE_SCHEMAS = {
       .enum(SLICE_NAMES)
       .optional()
       .describe(
-        'What the canvas shows: one slice orientation, all three with the render (multiplanar), or the render alone.',
+        'What the canvas shows: one slice orientation, all three with the render (multiplanar), the render alone, or none, which gives the whole canvas to the signal graph.',
       ),
     layout: z
       .enum(LAYOUT_NAMES)
@@ -515,7 +546,7 @@ export function registerCoreTools(
         "Lists the NiiVue tabs connected to this server: each one's id, title, address, when it " +
         'connected, where its scene stands, and which one answers calls now. With one tab it answers; ' +
         'with several, use_tab chooses, or each call names its tab with `tab`.',
-      inputSchema: CORE_SCHEMAS.list_tabs,
+      inputSchema: strict(CORE_SCHEMAS.list_tabs),
       annotations: { readOnlyHint: true },
     },
     async () => {
@@ -533,7 +564,7 @@ export function registerCoreTools(
         'Makes one connected tab the one that answers every later call, until it is closed for good ' +
         'or another is chosen. A reload of the same tab keeps the choice. A call that names a `tab` ' +
         'goes there instead, without changing the choice.',
-      inputSchema: CORE_SCHEMAS.use_tab,
+      inputSchema: strict(CORE_SCHEMAS.use_tab),
     },
     async ({ id }) => {
       try {
@@ -555,7 +586,7 @@ export function registerCoreTools(
         'calls to reach that tab whatever else is connected; the page keeps the id across reloads. ' +
         'Any id works the same way when put in the address as `?tab=<id>`, so an agent may make ' +
         'its own; this tool only spares it the guessing and the address.',
-      inputSchema: CORE_SCHEMAS.new_tab,
+      inputSchema: strict(CORE_SCHEMAS.new_tab),
       annotations: { readOnlyHint: true },
     },
     async () => {
@@ -578,7 +609,7 @@ export function registerCoreTools(
         'Loads a volume into the page from an address it can fetch, replacing what is shown. ' +
         "Reports the volume's name and its extent in millimetres. An atlas only applies when the " +
         'volume is in MNI space; pass `mni` to say so, or leave it to be guessed from the name.',
-      inputSchema: CORE_SCHEMAS.load_volume,
+      inputSchema: strict(CORE_SCHEMAS.load_volume),
     },
     async ({ tab, ...params }) =>
       context.answer('load_volume', params, {
@@ -599,7 +630,7 @@ export function registerCoreTools(
         'passed as the address of a label table JSON the page can fetch. The overlay must share ' +
         "the base volume's space. The base may be what the page opened with or one from " +
         'load_volume; loading a new base clears the overlays.',
-      inputSchema: CORE_SCHEMAS.add_overlay,
+      inputSchema: strict(CORE_SCHEMAS.add_overlay),
     },
     async ({ tab, ...params }) =>
       context.answer('add_overlay', params, {
@@ -622,7 +653,7 @@ export function registerCoreTools(
         'volume, the volumes shown and how each is drawn, the atlas region there if any, which ' +
         'plane is cut, where the camera looks from, the view layout, which tab answered, and the ' +
         'description a listener would hear.',
-      inputSchema: CORE_SCHEMAS.where_am_i,
+      inputSchema: strict(CORE_SCHEMAS.where_am_i),
       annotations: { readOnlyHint: true },
     },
     async ({ tab }) => context.answer('where_am_i', {}, { tab, withTab: true }),
@@ -636,7 +667,7 @@ export function registerCoreTools(
         "Lists the regions of the atlas the page can navigate to, with each one's label as the " +
         'atlas spells it, its spoken name, its centroid in MNI millimetres, and its size in voxels. ' +
         'Pass `query` to keep only regions whose label or name contains it.',
-      inputSchema: CORE_SCHEMAS.list_regions,
+      inputSchema: strict(CORE_SCHEMAS.list_regions),
       annotations: { readOnlyHint: true },
     },
     async ({ tab, query }) =>
@@ -656,7 +687,7 @@ export function registerCoreTools(
         'plane is cut now, and cuts coronal when none is. When the centroid falls outside its own ' +
         'region (a curved one), the nearest voxel of the region is used instead and `snapped` says so. ' +
         'Only works when the loaded volume is in MNI space.',
-      inputSchema: CORE_SCHEMAS.go_to_region,
+      inputSchema: strict(CORE_SCHEMAS.go_to_region),
     },
     async ({ tab, region, plane }) =>
       context.answer(
@@ -683,7 +714,7 @@ export function registerCoreTools(
         "for an atlas region. Works in any space, so it reaches structures of a subject's own scan, " +
         "for example a segmentation label's centroid. `label` names what is there for the listener. " +
         '`plane` names the side the cut takes off, or a slice orientation; `current` keeps the cut.',
-      inputSchema: CORE_SCHEMAS.go_to_point,
+      inputSchema: strict(CORE_SCHEMAS.go_to_point),
     },
     async ({ tab, mm, vox, plane, label }) =>
       context.answer(
@@ -710,7 +741,7 @@ export function registerCoreTools(
         'removes the cut and leaves the camera where it is. A plane can instead be given by the ' +
         'azimuth and elevation of its normal; `index` picks one of the six planes NiiVue keeps, ' +
         'and `planes` sets several at once.',
-      inputSchema: CORE_SCHEMAS.set_clip_plane,
+      inputSchema: strict(CORE_SCHEMAS.set_clip_plane),
     },
     async ({ tab, ...params }) =>
       context.answer('set_clip_plane', params, {
@@ -729,7 +760,7 @@ export function registerCoreTools(
         'render, sets the point the render turns about or centres it on one, or places a free ' +
         'camera with `global`. Only what is given changes. Note that when the page ' +
         "ties its clip plane to the camera, a turn re-cuts the plane the page's way.",
-      inputSchema: CORE_SCHEMAS.set_camera,
+      inputSchema: strict(CORE_SCHEMAS.set_camera),
     },
     async ({ tab, ...params }) => context.answer('set_camera', params, { tab }),
   )
@@ -748,7 +779,7 @@ export function registerCoreTools(
         'render (`chunk_grid` and `spread`, an exploded view of its bricks). `volume` is an index ' +
         'as where_am_i lists them, or a name; the base volume otherwise. Reports the volume as it ' +
         'is drawn now.',
-      inputSchema: CORE_SCHEMAS.set_volume,
+      inputSchema: strict(CORE_SCHEMAS.set_volume),
     },
     async ({ tab, ...params }) =>
       context.answer('set_volume', params, {
@@ -773,7 +804,7 @@ export function registerCoreTools(
         'bricks holding none. Each call replaces the labels drawn before, and the fading; ' +
         '`clear` takes them all down. Reports each label with the point it marks and, on a tiled ' +
         'volume, its brick. Only a page that draws labels answers.',
-      inputSchema: CORE_SCHEMAS.set_labels,
+      inputSchema: strict(CORE_SCHEMAS.set_labels),
     },
     async ({ tab, ...params }) =>
       context.answer('set_labels', params, {
@@ -798,7 +829,7 @@ export function registerCoreTools(
         'and `show_render` says whether the render tile joins them; `mosaic` draws the slices a ' +
         'NiiVue mosaic string names; `radiological` and `colorbar` are switches. Each is optional ' +
         'and only what is given changes. Reports the whole layout afterwards.',
-      inputSchema: CORE_SCHEMAS.set_view,
+      inputSchema: strict(CORE_SCHEMAS.set_view),
     },
     async ({ tab, ...params }) =>
       context.answer('set_view', params, {
@@ -818,7 +849,7 @@ export function registerCoreTools(
         "Draws the scene and returns NiiVue's canvas as a PNG, scaled down to `max_width` pixels " +
         'wide at most. On a volume tiled into bricks it waits for every brick to arrive first. The ' +
         "picture is NiiVue's alone: anything the page draws over its canvas is not in it.",
-      inputSchema: CORE_SCHEMAS.screenshot,
+      inputSchema: strict(CORE_SCHEMAS.screenshot),
       annotations: { readOnlyHint: true },
     },
     async ({ tab, max_width }) =>

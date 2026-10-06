@@ -219,8 +219,12 @@ export function meshHandlers(host: NiiVueHost): Handlers {
       put(update, 'isColorbarVisible', flag(params, 'colorbar'))
       put(update, 'isLegendVisible', flag(params, 'legend'))
       put(update, 'name', text(params, 'name'))
-      const tract = record(params, 'tract')
-      const connectome = record(params, 'connectome')
+      const tract = options(record(params, 'tract'), 'tract', TRACT_OPTIONS)
+      const connectome = options(
+        record(params, 'connectome'),
+        'connectome',
+        CONNECTOME_OPTIONS,
+      )
       if (nothingIn(update) && !tract && !connectome) {
         throw new Error(
           'set_mesh needs something to set: opacity, color, shader, slice_shader, visible, colorbar, legend, name, tract or connectome.',
@@ -350,4 +354,59 @@ export function meshHandlers(host: NiiVueHost): Handlers {
       return { mesh: describeMesh(meshes()[index], index), removed: layerAt }
     },
   }
+}
+
+/** NiiVue 1.0's `NVTractOptions` keys: how a tract's fibres are drawn and coloured. */
+const TRACT_OPTIONS = [
+  'fiberRadius',
+  'fiberSides',
+  'minLength',
+  'decimation',
+  'colormap',
+  'colormapNegative',
+  'colorBy',
+  'calMin',
+  'calMax',
+  'calMinNeg',
+  'calMaxNeg',
+  'fixedColor',
+  'groupColors',
+] as const
+
+/** NiiVue 1.0's `NVConnectomeOptions` keys: how a connectome's nodes and edges are drawn. */
+const CONNECTOME_OPTIONS = [
+  'nodeColormap',
+  'nodeColormapNegative',
+  'nodeMinColor',
+  'nodeMaxColor',
+  'nodeScale',
+  'edgeColormap',
+  'edgeColormapNegative',
+  'edgeMin',
+  'edgeMax',
+  'edgeScale',
+] as const
+
+/**
+ * `given` once every key is one NiiVue knows. NiiVue 1.0 merges the object
+ * as it is, so a misspelt key would sit on the mesh as a field that changes
+ * nothing, and the agent would read success.
+ */
+function options(
+  given: Record<string, unknown> | undefined,
+  kind: string,
+  known: readonly string[],
+): Record<string, unknown> | undefined {
+  if (!given) return undefined
+  const keys = Object.keys(given)
+  if (keys.length === 0)
+    throw new Error(`${kind} needs at least one option: ${known.join(', ')}.`)
+  const unknown = keys.filter((key) => !known.includes(key))
+  if (unknown.length)
+    throw new Error(
+      `Unknown ${kind} option${unknown.length > 1 ? 's' : ''} ${unknown
+        .map((key) => `"${key}"`)
+        .join(', ')}. One of: ${known.join(', ')}.`,
+    )
+  return given
 }

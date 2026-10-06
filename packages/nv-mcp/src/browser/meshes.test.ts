@@ -32,7 +32,7 @@ function meshView(overrides: Partial<View> = {}) {
         },
       ],
     },
-    { name: 'tract.trk', kind: 'tract', tractOptions: { dither: 0.1 } },
+    { name: 'tract.trk', kind: 'tract', tractOptions: { decimation: 1 } },
   ]
   const shown = (mesh: MeshToLoad): ShownMesh => {
     const { url, layers, ...rest } = mesh
@@ -248,7 +248,12 @@ describe('list_meshes and remove_mesh', () => {
             },
           ],
         },
-        { index: 1, name: 'tract.trk', kind: 'tract', tract: { dither: 0.1 } },
+        {
+          index: 1,
+          name: 'tract.trk',
+          kind: 'tract',
+          tract: { decimation: 1 },
+        },
       ],
       shaders: ['Phong', 'Matte', 'Outline'],
     })
@@ -309,13 +314,13 @@ describe('set_mesh', () => {
   it('sets tract options on a tract and reports its groups, refusing them on a surface', async () => {
     const view = meshView()
     const { set_mesh } = meshHandlers(hostOf(view))
-    const got = (await set_mesh({ mesh: 1, tract: { dither: 0.5 } })) as {
+    const got = (await set_mesh({ mesh: 1, tract: { decimation: 2 } })) as {
       mesh: Record<string, unknown>
       tractGroups: string[]
     }
-    expect(view.setTractOptions).toHaveBeenCalledWith(1, { dither: 0.5 })
+    expect(view.setTractOptions).toHaveBeenCalledWith(1, { decimation: 2 })
     expect(view.setMesh).not.toHaveBeenCalled()
-    expect(got.mesh.tract).toEqual({ dither: 0.5 })
+    expect(got.mesh.tract).toEqual({ decimation: 2 })
     expect(got.tractGroups).toEqual(['CST', 'AF'])
     await expect(
       set_mesh({ mesh: 1, connectome: { nodeScale: 2 } }),
@@ -338,9 +343,32 @@ describe('set_mesh', () => {
     await expect(bare.set_mesh({ opacity: 1 })).rejects.toThrow(
       "This page's NiiVue cannot change a mesh once loaded.",
     )
-    await expect(bare.set_mesh({ tract: {} })).rejects.toThrow(
+    await expect(bare.set_mesh({ tract: { decimation: 2 } })).rejects.toThrow(
       "This page's NiiVue cannot change how tracts are drawn.",
     )
+  })
+
+  it('refuses tract and connectome options NiiVue does not know, or none at all', async () => {
+    const view = meshView()
+    const { set_mesh } = meshHandlers(hostOf(view))
+    await expect(
+      set_mesh({ mesh: 1, tract: { dither: 0.5, fiberRadius: 1 } }),
+    ).rejects.toThrow(
+      'Unknown tract option "dither". One of: fiberRadius, fiberSides, minLength, decimation, colormap, colormapNegative, colorBy, calMin, calMax, calMinNeg, calMaxNeg, fixedColor, groupColors.',
+    )
+    await expect(set_mesh({ mesh: 1, tract: {} })).rejects.toThrow(
+      'tract needs at least one option: fiberRadius',
+    )
+    await expect(
+      set_mesh({ mesh: 'lh', connectome: { nodeSize: 2 } }),
+    ).rejects.toThrow(
+      'Unknown connectome option "nodeSize". One of: nodeColormap',
+    )
+    await expect(set_mesh({ mesh: 'lh', connectome: {} })).rejects.toThrow(
+      'connectome needs at least one option',
+    )
+    expect(view.setTractOptions).not.toHaveBeenCalled()
+    expect(view.setConnectomeOptions).not.toHaveBeenCalled()
   })
 })
 

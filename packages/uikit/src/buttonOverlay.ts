@@ -8,7 +8,9 @@
 //
 // Pointer events that land on a button are consumed before NiiVue's own canvas
 // handlers see them (a capture-phase listener plus stopImmediatePropagation), so
-// a click on a button never also starts a drag or moves the crosshair.
+// a click on a button never also starts a drag or moves the crosshair. The
+// overlay is a `UIKitInteractive`, so it can share a `UIKitControls` layer with
+// toggles, sliders and menus; `attach` is a one-widget layer for convenience.
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import {
@@ -23,19 +25,20 @@ import {
   resolveButtonStyle,
   scaleButton,
 } from './button'
+import {
+  UIKitControls,
+  type UIKitHost,
+  type UIKitInteractive,
+  type UIKitKeyEvent,
+  type UIKitRedrawSource,
+} from './controls'
 import type { RectData } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
 import type { UIKitFont } from './text/font'
 import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
 /** What `attach` needs from a host: NiiVue satisfies it as-is. */
-export interface UIKitButtonHost {
-  canvas: HTMLCanvasElement | null
-  /** Client (CSS) coordinates to canvas backing-store pixels, or null if outside. */
-  clientToCanvas(clientX: number, clientY: number): [number, number] | null
-  /** Schedule a redraw of the scene (and so of this overlay). */
-  drawScene(): void
-}
+export type UIKitButtonHost = UIKitHost
 
 export interface UIKitButtonOverlayOptions {
   /**
@@ -68,7 +71,10 @@ interface ButtonEntry {
   pulse: boolean
 }
 
-export class UIKitButtonOverlay implements UIKitOverlayRenderer {
+export class UIKitButtonOverlay
+  implements UIKitOverlayRenderer, UIKitInteractive
+{
+  readonly hoverCursor = 'pointer'
   private readonly font: UIKitFont
   private readonly rects = new UIKitRectOverlay()
   private readonly labels: UIKitTextOverlay
@@ -83,6 +89,8 @@ export class UIKitButtonOverlay implements UIKitOverlayRenderer {
   private lastTick = 0
   private pressedId: string | null = null
   private hoverId: string | null = null
+  /** The button that takes Enter/Space, set by the last press on it. */
+  private focusedId: string | null = null
 
   constructor(font: UIKitFont, options: UIKitButtonOverlayOptions = {}) {
     this.font = font
@@ -138,6 +146,7 @@ export class UIKitButtonOverlay implements UIKitOverlayRenderer {
     if (!this.entries.delete(id)) return
     if (this.pressedId === id) this.pressedId = null
     if (this.hoverId === id) this.hoverId = null
+    if (this.focusedId === id) this.focusedId = null
     this.invalidate()
   }
 
@@ -193,14 +202,21 @@ export class UIKitButtonOverlay implements UIKitOverlayRenderer {
     entry.spec.onClick?.(id)
   }
 
+  /** True when canvas point (x, y) is over an enabled button. */
+  hitTest(x: number, y: number): boolean {
+    return this.hitEntry(x, y) !== null
+  }
+
   /**
    * Pointer down at canvas pixel (x, y). Returns true when a button took it
-   * (the host should then not treat it as a scene interaction).
+   * (the host should then not treat it as a scene interaction). The button
+   * also takes keyboard focus: Enter or Space clicks it until focus moves.
    */
   pointerDown(x: number, y: number): boolean {
-    const entry = this.hitTest(x, y)
+    const entry = this.hitEntry(x, y)
     if (!entry) return false
     this.pressedId = entry.spec.id
+    this.focusedId = entry.spec.id
     entry.pressTarget = 1
     this.startAnimation()
     return true
@@ -225,7 +241,7 @@ export class UIKitButtonOverlay implements UIKitOverlayRenderer {
       }
       return true
     }
-    const hit = this.hitTest(x, y)
+    const hit = this.hitEntry(x, y)
     const id = hit ? hit.spec.id : null
     if (id !== this.hoverId) {
       const prev = this.hoverId ? this.entries.get(this.hoverId) : null
@@ -269,71 +285,29 @@ export class UIKitButtonOverlay implements UIKitOverlayRenderer {
     }
   }
 
+  /** Enter or Space clicks the last-pressed button. */
+  keyDown(e: UIKitKeyEvent): boolean {
+    if (this.focusedId === null) return false
+    if (e.key !== 'Enter' && e.key !== ' ') return false
+    this.click(this.focusedId)
+    return true
+  }
+
+  blur(): void {
+    this.focusedId = null
+  }
+
+  bindLayer(layer: UIKitRedrawSource): void {
+    this.requestRedraw ??= () => layer.requestRedraw()
+  }
+
   /**
-   * Wire the host canvas's pointer events to this overlay and return a
-   * function that unwires them. Events over a button are consumed before the
-   * host's own handlers run. Also shows a pointer cursor over buttons.
+   * Wire the host canvas's pointer events to this overlay alone and return a
+   * function that unwires them: a one-widget `UIKitControls` layer. To combine
+   * buttons with other widgets, add this overlay to a shared layer instead.
    */
   attach(host: UIKitButtonHost): () => void {
-    const canvas = host.canvas
-    if (!canvas) throw new Error('UIKit: host has no canvas to attach to')
-    this.requestRedraw ??= () => host.drawScene()
-    const savedCursor = canvas.style.cursor
-    const syncCursor = (): void => {
-      canvas.style.cursor = this.hoverId !== null ? 'pointer' : savedCursor
-    }
-    const consume = (e: Event): void => {
-      e.stopImmediatePropagation()
-      e.preventDefault()
-    }
-    const onDown = (e: PointerEvent): void => {
-      if (e.button !== 0) return
-      const p = host.clientToCanvas(e.clientX, e.clientY)
-      if (!p || !this.pointerDown(p[0], p[1])) return
-      consume(e)
-      try {
-        canvas.setPointerCapture(e.pointerId)
-      } catch {
-        // Capture is best-effort: pointerleave/cancel still release the press.
-      }
-    }
-    const onMove = (e: PointerEvent): void => {
-      const p = host.clientToCanvas(e.clientX, e.clientY)
-      const consumed = p
-        ? this.pointerMove(p[0], p[1])
-        : this.pointerMove(-1, -1)
-      syncCursor()
-      if (consumed) consume(e)
-    }
-    const onUp = (e: PointerEvent): void => {
-      const p = host.clientToCanvas(e.clientX, e.clientY) ?? [-1, -1]
-      const consumed = this.pointerUp(p[0], p[1])
-      syncCursor()
-      if (consumed) consume(e)
-    }
-    const onLeave = (): void => {
-      this.pointerMove(-1, -1)
-      syncCursor()
-    }
-    const onCancel = (): void => {
-      this.pointerCancel()
-      onLeave()
-    }
-    const opts = { capture: true }
-    canvas.addEventListener('pointerdown', onDown, opts)
-    canvas.addEventListener('pointermove', onMove, opts)
-    canvas.addEventListener('pointerup', onUp, opts)
-    canvas.addEventListener('pointerleave', onLeave, opts)
-    canvas.addEventListener('pointercancel', onCancel, opts)
-    return () => {
-      canvas.removeEventListener('pointerdown', onDown, opts)
-      canvas.removeEventListener('pointermove', onMove, opts)
-      canvas.removeEventListener('pointerup', onUp, opts)
-      canvas.removeEventListener('pointerleave', onLeave, opts)
-      canvas.removeEventListener('pointercancel', onCancel, opts)
-      canvas.style.cursor = savedCursor
-      this.pointerCancel()
-    }
+    return new UIKitControls().add(this).attach(host)
   }
 
   /** Current press amount of a button (0 at rest, 1 fully pressed). */
@@ -419,7 +393,7 @@ export class UIKitButtonOverlay implements UIKitOverlayRenderer {
   }
 
   /** The topmost (last added) enabled button under a canvas point. */
-  private hitTest(x: number, y: number): ButtonEntry | null {
+  private hitEntry(x: number, y: number): ButtonEntry | null {
     const list = [...this.entries.values()]
     for (let i = list.length - 1; i >= 0; i--) {
       const entry = list[i]

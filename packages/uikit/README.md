@@ -31,6 +31,10 @@ and draws that data through the lifecycle hook.
 | `buildAnnotationGeometry` | `UIKitAnnotationOverlay` | Free-form annotation lines |
 | `buildRect` | `UIKitRectOverlay` | Filled rounded rectangles with an optional border ring (the first filled primitive) |
 | `buildButton` | `UIKitButtonOverlay` | Clickable, stylable push buttons with a text label and a press animation |
+| `buildToggle` | `UIKitToggleOverlay` | Check boxes with a label: pointer or Space/Enter flips them |
+| `buildSlider` | `UIKitSliderOverlay` | Horizontal sliders with min/max/step, ticks, a value readout, drag and arrow keys |
+| `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
+| | `UIKitControls` | The control layer: one owner of the pointer and keyboard for every widget above |
 
 ```ts
 import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
@@ -113,3 +117,141 @@ A host that is not a NiiVue controller can feed the overlay itself: call
 `pointerDown`, `pointerMove`, `pointerUp` and `pointerCancel` with canvas-pixel
 coordinates (each returns whether a button consumed the event) and pass a
 `requestRedraw` option so the press animation can ask for frames.
+
+## Control layer
+
+`UIKitControls` is the one place that owns the canvas pointer and keyboard for
+every interactive widget, so widgets never compete for an event. Add the widget
+overlays to it in draw order, register the layer as NiiVue's overlay renderer,
+and `attach(nv)` to the canvas. Pointer down goes to the topmost widget that
+claims it; that widget then captures every move and the up and takes keyboard
+focus. Only the topmost widget under the pointer hovers. A widget that is modal
+(a menu with its popup open) sees every event first until it closes, and the
+click that dismisses it is consumed. Keys go to the modal widget, else the
+focused one. Events a widget consumes are stopped in the capture phase, so a
+click on a control never starts a NiiVue drag or moves the crosshair. Popups are
+drawn after every widget.
+
+```ts
+import {
+  loadDefaultFont, UIKitButtonOverlay, UIKitControls, UIKitMenuOverlay,
+  UIKitSliderOverlay, UIKitToggleOverlay,
+} from '@niivue/uikit'
+
+const font = await loadDefaultFont()
+const units = { cssUnits: true }
+const buttons = new UIKitButtonOverlay(font, units)
+const toggles = new UIKitToggleOverlay(font, units)
+const sliders = new UIKitSliderOverlay(font, units)
+const menus = new UIKitMenuOverlay(font, units)
+const controls = new UIKitControls().add(buttons).add(toggles).add(sliders).add(menus)
+nv.registerOverlayRenderer(controls)
+const detach = controls.attach(nv) // call detach() to unwire the events
+```
+
+A widget added to a layer takes the layer's redraw requester, which `attach`
+defaults to `nv.drawScene`. A host that is not a NiiVue controller can feed the
+layer itself through `pointerDown`, `pointerMove`, `pointerUp`, `pointerCancel`
+and `keyDown` in canvas pixels; each returns whether a widget consumed the event.
+`UIKitButtonOverlay.attach` still works on its own: it is a one-widget layer.
+
+## Toggles
+
+A toggle is a square box with a check mark and a label beside it. Pointer press
+and release inside flips it; the pressed toggle takes focus (a ring around the
+box) and Space or Enter flips it from the keyboard. `onChange` fires for user
+changes only; `setChecked` is silent.
+
+```ts
+toggles.addToggle({
+  id: 'colorbar',
+  label: 'Colorbar',
+  x: 12,
+  y: 52,
+  checked: false,
+  onChange: (checked) => { nv.isColorbarVisible = checked },
+})
+toggles.setChecked('colorbar', true) // from code, no callback
+toggles.toggle('colorbar') // as the user would: fires onChange
+toggles.setEnabled('colorbar', false)
+```
+
+`ToggleStyle` holds the box size, radius, gap, fills for each state, border,
+check color and width, text color and size, press scale and focus ring.
+
+## Sliders
+
+A slider is a horizontal track with a round thumb, an optional label on the
+left and value readout on the right, and optional tick marks. Pressing the track
+jumps the value there and starts a drag; the thumb follows the pointer however
+far it strays vertically. Values snap to `step` (default: a hundredth of the
+range) and clamp to `[min, max]`. With focus, ArrowLeft/Down and ArrowRight/Up
+move one step, Shift and PageUp/PageDown move ten, Home and End go to the ends.
+
+```ts
+sliders.addSlider({
+  id: 'gamma',
+  label: 'Gamma',
+  x: 12,
+  y: 84,
+  width: 220,
+  min: 0.1,
+  max: 3,
+  step: 0.05,
+  value: 1,
+  showValue: true,
+  format: (v) => v.toFixed(2), // optional; default shows the step's decimals
+  tickStep: 0.5, // optional tick marks
+  onInput: (v) => { nv.gamma = v }, // every change, including during a drag
+  onChange: (v) => save(v), // once, when a drag or key press settles a new value
+})
+sliders.setValue('gamma', 1) // silent
+sliders.getValue('gamma')
+```
+
+The callback contract: `onInput` fires on every value change the user makes
+and `onChange` fires when the interaction ends with a value different from the
+one it started with (a drag releases, a key press lands). Neither fires for
+`setValue`.
+
+## Menus
+
+`UIKitMenuOverlay` draws menu buttons (a label with a chevron) and, when one is
+open, its popup. Items are actions, check items, radio items (exclusive within
+their `group`) or separators, each with an optional right-aligned shortcut
+label and `enabled` flag. The popup opens below the button and flips above it
+when it would overflow the canvas. While open the overlay is modal: it
+highlights the row under the pointer, a click on a row activates it, a click
+anywhere else closes the menu (and is not passed on), and Escape closes it.
+ArrowUp/Down, Home and End move the highlight over selectable rows, Enter or
+Space activates. A focused closed menu opens on Enter, Space or ArrowDown.
+
+```ts
+menus.addMenu({
+  id: 'view',
+  label: 'View',
+  x: 12,
+  y: 12,
+  items: [
+    { id: 'axial', label: 'Axial', kind: 'radio', group: 'view', shortcut: '1' },
+    { id: 'mpr', label: 'Multiplanar', kind: 'radio', group: 'view', checked: true },
+    { id: 'sep', kind: 'separator' },
+    { id: 'colorbar', label: 'Colorbar', kind: 'check' },
+    { id: 'reset', label: 'Reset view', onSelect: resetView },
+    { id: 'undo', label: 'Undo', enabled: false },
+  ],
+  onSelect: (itemId, menuId) => { /* every activation */ },
+  onChange: (itemId, checked, menuId) => { /* check and radio state changes */ },
+})
+menus.setItemChecked('view', 'colorbar', true) // silent; radio items clear their group
+menus.isItemChecked('view', 'axial')
+menus.setItems('view', newItems)
+menus.open('view'); menus.close()
+```
+
+Activating a check item flips it; activating a radio item checks it and clears
+the rest of its group. `onChange` reports each item whose state changed (the
+activated one first), then the item's `onSelect` and the menu's `onSelect`
+fire. `MenuStyle` holds the popup fill, border, radius and padding, row height,
+highlight fill, text, mark and shortcut colors, separator and chevron sizes, and
+`buttonStyle` is a `ButtonStyle` for the trigger.

@@ -30,6 +30,14 @@ export type {
   UIKitButtonOverlayOptions,
 } from './buttonOverlay'
 export { UIKitButtonOverlay } from './buttonOverlay'
+export type {
+  UIKitControlsOptions,
+  UIKitHost,
+  UIKitInteractive,
+  UIKitKeyEvent,
+  UIKitRedrawSource,
+} from './controls'
+export { UIKitControls } from './controls'
 export type { CrosshairGeometry, CrosshairSpec } from './crosshair'
 export { buildCrosshair } from './crosshair'
 export type { CrosshairPlacement } from './crosshairOverlay'
@@ -37,12 +45,64 @@ export { UIKitCrosshairOverlay } from './crosshairOverlay'
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'
+export type {
+  MenuBounds,
+  MenuButtonSpec,
+  MenuButtonVisual,
+  MenuItemKind,
+  MenuItemSpec,
+  MenuPopupLayout,
+  MenuRowLayout,
+  MenuStyle,
+} from './menu'
+export {
+  activateMenuItem,
+  buildMenuButton,
+  buildMenuPopup,
+  DEFAULT_MENU_BUTTON_STYLE,
+  DEFAULT_MENU_STYLE,
+  isMenuItemSelectable,
+  layoutMenuButton,
+  layoutMenuPopup,
+  menuButtonSpec,
+  menuRowAt,
+  nextSelectableIndex,
+  popupContains,
+  resolveMenuStyle,
+  scaleMenu,
+} from './menu'
+export type { UIKitMenuOverlayOptions } from './menuOverlay'
+export { UIKitMenuOverlay } from './menuOverlay'
 export type { RectData, RectSpec } from './rect'
 export { buildRect, rectContains } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
 export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
 export { buildRuler } from './ruler'
 export { UIKitRulerOverlay } from './rulerOverlay'
+export type {
+  SliderLayout,
+  SliderSpec,
+  SliderStyle,
+  SliderVisual,
+} from './slider'
+export {
+  buildSlider,
+  DEFAULT_SLIDER_STYLE,
+  effectiveStep,
+  formatSliderValue,
+  fractionToValue,
+  layoutSlider,
+  resolveSliderStyle,
+  scaleSlider,
+  sliderContains,
+  sliderThumbX,
+  sliderValueAt,
+  snapValue,
+  stepValue,
+  valueToFraction,
+} from './slider'
+export type { UIKitSliderOverlayOptions } from './sliderOverlay'
+export { UIKitSliderOverlay } from './sliderOverlay'
 export { loadDefaultFont } from './text/defaultFont'
 export type {
   RawFontFile,
@@ -61,3 +121,21 @@ export {
 } from './text/layout'
 export type { UIKitTextItem } from './textOverlay'
 export { UIKitTextOverlay } from './textOverlay'
+export type {
+  ToggleLayout,
+  ToggleSpec,
+  ToggleStyle,
+  ToggleVisual,
+} from './toggle'
+export {
+  buildCheckMark,
+  buildFocusRing,
+  buildToggle,
+  DEFAULT_TOGGLE_STYLE,
+  layoutToggle,
+  resolveToggleStyle,
+  scaleToggle,
+  toggleContains,
+} from './toggle'
+export type { UIKitToggleOverlayOptions } from './toggleOverlay'
+export { UIKitToggleOverlay } from './toggleOverlay'

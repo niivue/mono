@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@niivue/uikit - Controls demo</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee;
+        font: 14px/1.4 system-ui, sans-serif; }
+      #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      header b { color: #ffd500; }
+      nav a { color: #9cf; margin-right: 10px; }
+      #canvasHolder { flex: 1; position: relative; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      a { color: #ffd500; }
+      #status { color: #ffd500; }
+      kbd { background: #333; border-radius: 3px; padding: 1px 5px; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <header>
+        <b>UIKit controls</b>
+        <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
+        <span>Menus, toggles, sliders and buttons drawn in the scene, sharing one
+          control layer: a click on any of them never reaches the viewer, an open menu
+          swallows the click that dismisses it, and the keyboard drives the focused
+          control (<kbd>Tab</kbd>-free: click a control, then use arrows, Space, Enter,
+          Escape).
+          <a href="?backend=webgl2">webgl2</a> | <a href="?backend=webgpu">webgpu</a></span>
+        <span id="status">loading...</span>
+      </header>
+      <div id="canvasHolder"><canvas id="gl"></canvas></div>
+    </div>
+
+    <script type="module">
+      import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+      import {
+        loadDefaultFont,
+        UIKitButtonOverlay,
+        UIKitControls,
+        UIKitMenuOverlay,
+        UIKitSliderOverlay,
+        UIKitToggleOverlay,
+      } from './src/index.ts'
+
+      const params = new URLSearchParams(location.search)
+      const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
+      const status = document.getElementById('status')
+      const canvas = document.getElementById('gl')
+      const say = (msg) => { status.textContent = msg }
+
+      const nv = new NiiVue({
+        backend,
+        backgroundColor: [0.05, 0.05, 0.08, 1],
+        sliceType: SLICE_TYPE.MULTIPLANAR,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(canvas)
+      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
+
+      const font = await loadDefaultFont()
+      // One control layer owns the pointer and keyboard for every widget. It is
+      // registered as the overlay renderer and draws its widgets in order, with
+      // open menus on top. cssUnits: positions below are CSS pixels.
+      const units = { cssUnits: true }
+      const menus = new UIKitMenuOverlay(font, units)
+      const toggles = new UIKitToggleOverlay(font, units)
+      const sliders = new UIKitSliderOverlay(font, units)
+      const buttons = new UIKitButtonOverlay(font, units)
+      const controls = new UIKitControls().add(buttons).add(sliders).add(toggles).add(menus)
+      nv.registerOverlayRenderer(controls)
+      const detach = controls.attach(nv)
+
+      // A menu bar: a radio group for the view, check items for overlays, and
+      // plain actions. A disabled item and separators show the other states.
+      const viewItems = [
+        { id: 'axial', label: 'Axial', kind: 'radio', group: 'view', shortcut: '1' },
+        { id: 'coronal', label: 'Coronal', kind: 'radio', group: 'view', shortcut: '2' },
+        { id: 'sagittal', label: 'Sagittal', kind: 'radio', group: 'view', shortcut: '3' },
+        { id: 'mpr', label: 'Multiplanar', kind: 'radio', group: 'view', checked: true, shortcut: '4' },
+        { id: 'render', label: 'Render', kind: 'radio', group: 'view', shortcut: '5' },
+        { id: 'sep1', kind: 'separator' },
+        { id: 'colorbar', label: 'Colorbar', kind: 'check' },
+        { id: 'cube', label: 'Orientation cube', kind: 'check' },
+        { id: 'radiological', label: 'Radiological', kind: 'check' },
+      ]
+      const sliceTypes = {
+        axial: SLICE_TYPE.AXIAL,
+        coronal: SLICE_TYPE.CORONAL,
+        sagittal: SLICE_TYPE.SAGITTAL,
+        mpr: SLICE_TYPE.MULTIPLANAR,
+        render: SLICE_TYPE.RENDER,
+      }
+      menus.addMenu({
+        id: 'view', label: 'View', x: 12, y: 12, items: viewItems,
+        onChange: (itemId, checked) => {
+          if (itemId in sliceTypes) {
+            if (checked) { nv.sliceType = sliceTypes[itemId]; say(`${itemId} view`) }
+            return
+          }
+          if (itemId === 'colorbar') {
+            nv.isColorbarVisible = checked
+            toggles.setChecked('colorbar', checked)
+          } else if (itemId === 'cube') {
+            nv.isOrientCubeVisible = checked
+          } else if (itemId === 'radiological') {
+            nv.isRadiological = checked
+          }
+          say(`${itemId}: ${checked ? 'on' : 'off'}`)
+        },
+      })
+      menus.addMenu({
+        id: 'edit', label: 'Edit', x: 12 + menus.getLayout('view').width + 6, y: 12,
+        items: [
+          { id: 'reset', label: 'Reset view', shortcut: 'R', onSelect: resetView },
+          { id: 'center', label: 'Center crosshair', onSelect: () => { nv.crosshairPos = [0.5, 0.5, 0.5] } },
+          { id: 'sep', kind: 'separator' },
+          { id: 'undo', label: 'Undo', shortcut: 'Z', enabled: false },
+        ],
+        onSelect: (itemId) => say(`edit: ${itemId}`),
+      })
+
+      // Toggles mirror the check items where it helps to have them in view.
+      toggles.addToggle({
+        id: 'colorbar', label: 'Colorbar', x: 12, y: 52,
+        onChange: (checked) => {
+          nv.isColorbarVisible = checked
+          menus.setItemChecked('view', 'colorbar', checked)
+          say(`colorbar: ${checked ? 'on' : 'off'}`)
+        },
+      })
+      toggles.addToggle({
+        id: 'nearest', label: 'Nearest interpolation', x: 112, y: 52,
+        onChange: (checked) => { nv.volumeIsNearestInterpolation = checked },
+      })
+      toggles.addToggle({
+        id: 'locked', label: 'Disabled', x: 310, y: 52, checked: true, enabled: false,
+      })
+
+      // Sliders: continuous, stepped, and one with ticks; `onInput` fires on
+      // every change during a drag and `onChange` once when it ends.
+      sliders.addSlider({
+        id: 'gamma', label: 'Gamma', x: 12, y: 84, width: 220,
+        min: 0.1, max: 3, step: 0.05, value: 1, showValue: true,
+        onInput: (v) => { nv.gamma = v },
+        onChange: (v) => say(`gamma ${v}`),
+      })
+      sliders.addSlider({
+        id: 'crosshair', label: 'Crosshair width', x: 12, y: 126, width: 220,
+        min: 0, max: 6, step: 1, value: 1, showValue: true, tickStep: 1,
+        onInput: (v) => { nv.crosshairWidth = v },
+      })
+      sliders.addSlider({
+        id: 'azimuth', label: 'Azimuth', x: 12, y: 172, width: 220,
+        min: 0, max: 360, step: 1, value: 110, showValue: true,
+        format: (v) => `${v} deg`,
+        onInput: (v) => { nv.azimuth = v },
+      })
+
+      buttons.addButton({ id: 'reset', label: 'Reset view', x: 12, y: 218, onClick: resetView })
+
+      function resetView() {
+        nv.crosshairPos = [0.5, 0.5, 0.5]
+        nv.pan2Dxyzmm = [0, 0, 0, 1]
+        nv.azimuth = 110
+        nv.elevation = 10
+        nv.scaleMultiplier = 1
+        nv.renderPan = [0, 0]
+        nv.gamma = 1
+        nv.crosshairWidth = 1
+        sliders.setValue('azimuth', 110)
+        sliders.setValue('gamma', 1)
+        sliders.setValue('crosshair', 1)
+        say('view reset')
+      }
+
+      say('ready')
+      addEventListener('beforeunload', detach)
+    </script>
+  </body>
+</html>

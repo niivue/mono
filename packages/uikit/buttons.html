@@ -96,9 +96,14 @@
           radius: 14,
         },
         onClick: () => {
+          // Back to NiiVue's scene defaults: crosshair at the volume centre,
+          // no 2D pan/zoom, and the stock 3D rotation, zoom and pan.
+          nv.crosshairPos = [0.5, 0.5, 0.5]
+          nv.pan2Dxyzmm = [0, 0, 0, 1]
           nv.azimuth = 110
           nv.elevation = 10
-          nv.pan2Dxyzmm = [0, 0, 0, 1]
+          nv.scaleMultiplier = 1
+          nv.renderPan = [0, 0]
           say('view reset')
         },
       })

@@ -40,6 +40,7 @@ import {
   textAreaContains,
   textAreaKey,
   textAreaRows,
+  textAreaScrollbar,
   textAreaWindow,
 } from './textArea'
 import {
@@ -80,7 +81,13 @@ interface TextAreaEntry {
   goalX: number | null
   hover: boolean
   wheelCarry: WheelAccumulator | null
+  /** A wheel or thumb drag intentionally moved the viewport away from the caret. */
+  manualScroll: boolean
 }
+
+// The visible thumb is intentionally slim. Its pointer target reaches into
+// the empty gutter beside the text so it remains usable at normal DPR.
+const SCROLLBAR_HIT_PADDING = 8
 
 export class UIKitTextAreaOverlay
   implements UIKitOverlayRenderer, UIKitInteractive
@@ -97,9 +104,12 @@ export class UIKitTextAreaOverlay
   private scale = 1
   private geometryDirty = true
   private hoverId: string | null = null
+  private hoverScrollbarId: string | null = null
   private focusedId: string | null = null
   /** The held press, which drags the selection. */
   private pressId: string | null = null
+  /** The held scrollbar thumb and the pointer's offset from its top edge. */
+  private scrollDrag: { id: string; offsetY: number } | null = null
   private lastDownId: string | null = null
   private lastDownAt = Number.NEGATIVE_INFINITY
 
@@ -116,9 +126,11 @@ export class UIKitTextAreaOverlay
     this.requestRedraw = options.requestRedraw ?? null
   }
 
-  /** CSS cursor while a field is hovered: a text beam. */
+  /** CSS cursor while a field is hovered: resize over a scrollbar thumb. */
   get hoverCursor(): string {
-    return 'text'
+    return this.scrollDrag || this.hoverScrollbarId !== null
+      ? 'ns-resize'
+      : 'text'
   }
 
   /** Replace the default style for every area (per-spec overrides still win). */
@@ -157,6 +169,7 @@ export class UIKitTextAreaOverlay
         goalX: null,
         hover: false,
         wheelCarry: null,
+        manualScroll: false,
       })
     }
     this.invalidate()
@@ -174,7 +187,9 @@ export class UIKitTextAreaOverlay
   removeTextArea(id: string): void {
     if (!this.entries.delete(id)) return
     if (this.pressId === id) this.pressId = null
+    if (this.scrollDrag?.id === id) this.scrollDrag = null
     if (this.hoverId === id) this.hoverId = null
+    if (this.hoverScrollbarId === id) this.hoverScrollbarId = null
     if (this.focusedId === id) this.focusedId = null
     this.invalidate()
   }
@@ -295,6 +310,14 @@ export class UIKitTextAreaOverlay
   pointerDown(x: number, y: number): boolean {
     const entry = this.hitEntry(x, y)
     if (!entry) return false
+    const scrollbar = this.scrollbarOf(entry)
+    if (scrollbar && this.thumbContains(scrollbar, x, y)) {
+      this.scrollDrag = { id: entry.spec.id, offsetY: y - scrollbar.thumb.y }
+      this.hoverScrollbarId = entry.spec.id
+      entry.manualScroll = true
+      this.invalidate()
+      return true
+    }
     const id = entry.spec.id
     const t = this.now()
     const twice =
@@ -308,6 +331,7 @@ export class UIKitTextAreaOverlay
     this.focus(id)
     entry.firstRow = firstRow
     if (entry.edit) {
+      entry.manualScroll = false
       entry.edit = twice
         ? selectAll(entry.edit)
         : setCaret(entry.edit, this.caretAt(entry, x, y))
@@ -318,6 +342,11 @@ export class UIKitTextAreaOverlay
   }
 
   pointerMove(x: number, y: number): boolean {
+    if (this.scrollDrag) {
+      const entry = this.entries.get(this.scrollDrag.id)
+      if (entry) this.setScrollFromThumb(entry, y - this.scrollDrag.offsetY)
+      return true
+    }
     if (this.pressId !== null) {
       const entry = this.entries.get(this.pressId)
       if (entry?.edit) {
@@ -332,6 +361,10 @@ export class UIKitTextAreaOverlay
     }
     const hit = this.hitEntry(x, y)
     const id = hit ? hit.spec.id : null
+    const overScrollbar =
+      hit && this.thumbContains(this.scrollbarOf(hit), x, y)
+        ? hit.spec.id
+        : null
     if (id !== this.hoverId) {
       const prev = this.hoverId ? this.entries.get(this.hoverId) : null
       if (prev) {
@@ -342,10 +375,22 @@ export class UIKitTextAreaOverlay
       this.hoverId = id
       this.invalidate()
     }
+    if (overScrollbar !== this.hoverScrollbarId) {
+      this.hoverScrollbarId = overScrollbar
+      this.invalidate()
+    }
     return false
   }
 
   pointerUp(x: number, y: number): boolean {
+    if (this.scrollDrag) {
+      const drag = this.scrollDrag
+      this.scrollDrag = null
+      const entry = this.entries.get(drag.id)
+      if (entry) this.setScrollFromThumb(entry, y - drag.offsetY)
+      this.pointerMove(x, y)
+      return true
+    }
     if (this.pressId === null) return false
     this.pressId = null
     this.pointerMove(x, y)
@@ -353,6 +398,11 @@ export class UIKitTextAreaOverlay
   }
 
   pointerCancel(): void {
+    if (this.scrollDrag) {
+      this.scrollDrag = null
+      this.invalidate()
+      return
+    }
     if (this.pressId === null) return
     this.pressId = null
     this.invalidate()
@@ -375,6 +425,7 @@ export class UIKitTextAreaOverlay
       ).first
       if (next !== entry.firstRow) {
         entry.firstRow = next
+        entry.manualScroll = true
         this.invalidate()
       }
     }
@@ -423,6 +474,7 @@ export class UIKitTextAreaOverlay
     if (next !== entry.edit) {
       const textChanged = next.text !== entry.edit.text
       entry.edit = next
+      entry.manualScroll = false
       this.invalidate()
       if (textChanged) entry.spec.onInput?.(next.text, entry.spec.id)
     }
@@ -465,6 +517,7 @@ export class UIKitTextAreaOverlay
   private resetLayout(entry: TextAreaEntry): void {
     entry.layout = null
     entry.wheelCarry = null
+    entry.manualScroll = false
   }
 
   private truncate(spec: TextAreaSpec, text: string): string {
@@ -475,6 +528,7 @@ export class UIKitTextAreaOverlay
   private freshEdit(entry: TextAreaEntry): TextEditState {
     entry.firstRow = 0
     entry.goalX = null
+    entry.manualScroll = false
     return selectAll(textEditState(entry.value))
   }
 
@@ -519,6 +573,55 @@ export class UIKitTextAreaOverlay
     )
   }
 
+  /** Current thumb geometry, or null when the text fits without scrolling. */
+  private scrollbarOf(entry: TextAreaEntry) {
+    const { style } = this.scaled(entry)
+    const layout = this.layoutOf(entry)
+    const rows = this.rowsOf(entry)
+    const shown = textAreaWindow(
+      layout,
+      rows,
+      entry.firstRow,
+      entry.edit && !entry.manualScroll ? entry.edit.caret : null,
+    )
+    return textAreaScrollbar(layout, style, shown, rows.length)
+  }
+
+  /** Hit-test the visible thumb plus a gutter-sized pointer target. */
+  private thumbContains(
+    scrollbar: ReturnType<UIKitTextAreaOverlay['scrollbarOf']>,
+    x: number,
+    y: number,
+  ): boolean {
+    if (!scrollbar) return false
+    const { track, thumb } = scrollbar
+    const left = track.x - SCROLLBAR_HIT_PADDING
+    const right = track.x + track.width
+    const top = Math.max(track.y, thumb.y - SCROLLBAR_HIT_PADDING)
+    const bottom = Math.min(
+      track.y + track.height,
+      thumb.y + thumb.height + SCROLLBAR_HIT_PADDING,
+    )
+    return x >= left && x < right && y >= top && y < bottom
+  }
+
+  /** Map a dragged thumb top to the nearest whole-row viewport position. */
+  private setScrollFromThumb(entry: TextAreaEntry, thumbY: number): void {
+    const scrollbar = this.scrollbarOf(entry)
+    if (!scrollbar) return
+    const travel = scrollbar.track.height - scrollbar.thumb.height
+    const top = Math.max(
+      scrollbar.track.y,
+      Math.min(thumbY, scrollbar.track.y + travel),
+    )
+    const fraction = travel > 0 ? (top - scrollbar.track.y) / travel : 0
+    const next = Math.round(fraction * scrollbar.maxFirst)
+    if (next === entry.firstRow) return
+    entry.firstRow = next
+    entry.manualScroll = true
+    this.invalidate()
+  }
+
   private scaled(entry: TextAreaEntry): {
     spec: TextAreaSpec
     style: TextAreaStyle
@@ -557,7 +660,7 @@ export class UIKitTextAreaOverlay
         layout,
         this.rowsOf(entry),
         entry.firstRow,
-        entry.edit ? entry.edit.caret : null,
+        entry.edit && !entry.manualScroll ? entry.edit.caret : null,
       ).first
       const visual: TextAreaVisual = {
         text: this.shownText(entry),

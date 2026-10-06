@@ -259,6 +259,52 @@ export function textAreaContains(
   return px >= b.x && px < b.x + b.width && py >= b.y && py < b.y + b.height
 }
 
+/** The track and thumb for an overflowing area's row-based scrollbar. */
+export interface TextAreaScrollbar {
+  track: UIKitBox
+  thumb: UIKitBox
+  /** Largest valid first-row index for this content and viewport. */
+  maxFirst: number
+}
+
+/**
+ * Returns the scrollbar geometry when `rowCount` overflows `shown`, otherwise
+ * null. Keeping this calculation shared means the drawn thumb and its pointer
+ * hit target cannot drift apart.
+ */
+export function textAreaScrollbar(
+  layout: TextAreaLayout,
+  style: TextAreaStyle,
+  shown: ScrollWindow,
+  rowCount: number,
+): TextAreaScrollbar | null {
+  const visibleRows = shown.end - shown.first
+  if (rowCount <= visibleRows) return null
+  const track: UIKitBox = {
+    x:
+      layout.field.x +
+      layout.field.width -
+      style.borderWidth -
+      style.scrollbarGap -
+      style.scrollbarWidth,
+    y: layout.textArea.y,
+    width: style.scrollbarWidth,
+    height: layout.textArea.height,
+  }
+  const thumbHeight = Math.min(
+    track.height,
+    Math.max(style.scrollbarWidth * 2, track.height * (visibleRows / rowCount)),
+  )
+  const travel = track.height - thumbHeight
+  const thumbY =
+    track.y + (shown.maxFirst > 0 ? (travel * shown.first) / shown.maxFirst : 0)
+  return {
+    track,
+    thumb: { x: track.x, y: thumbY, width: track.width, height: thumbHeight },
+    maxFirst: shown.maxFirst,
+  }
+}
+
 /** The width the rows have for glyphs, keeping room for the caret. */
 export function textAreaWrapWidth(
   layout: TextAreaLayout,
@@ -613,38 +659,18 @@ export function buildTextArea(
     }
   }
 
-  if (rows.length > shown.end - shown.first) {
-    const trackX =
-      layout.field.x +
-      layout.field.width -
-      style.borderWidth -
-      style.scrollbarGap -
-      style.scrollbarWidth
+  const scrollbar = textAreaScrollbar(layout, style, shown, rows.length)
+  if (scrollbar) {
     rects.push(
       buildRect({
-        x: trackX,
-        y: area.y,
-        width: style.scrollbarWidth,
-        height: area.height,
+        ...scrollbar.track,
         radius: style.scrollbarWidth / 2,
         fill: dim(style.scrollbarTrackColor),
       }),
     )
-    const visibleFraction = (shown.end - shown.first) / rows.length
-    const thumbH = Math.max(
-      style.scrollbarWidth * 2,
-      area.height * visibleFraction,
-    )
-    const travel = area.height - thumbH
-    const thumbY =
-      area.y +
-      (shown.maxFirst > 0 ? (travel * shown.first) / shown.maxFirst : 0)
     rects.push(
       buildRect({
-        x: trackX,
-        y: thumbY,
-        width: style.scrollbarWidth,
-        height: thumbH,
+        ...scrollbar.thumb,
         radius: style.scrollbarWidth / 2,
         fill: dim(style.scrollbarColor),
       }),

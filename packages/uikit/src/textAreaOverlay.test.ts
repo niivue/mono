@@ -153,6 +153,18 @@ describe('UIKitTextAreaOverlay', () => {
     expect(overlay.getFirstRow('a')).toBe(0)
   })
 
+  it('drags an overflowing scrollbar thumb by whole rows without moving the caret', () => {
+    const { overlay } = make({ t: 0 }, 'a\nb\nc\nd\ne')
+    // The two-row viewport's thumb starts at y=70 and ends at y=86.
+    overlay.pointerMove(150, 75) // gutter beside the 4 px visible thumb
+    expect(overlay.hoverCursor).toBe('ns-resize')
+    expect(overlay.pointerDown(150, 75)).toBe(true)
+    expect(overlay.focusedArea).toBeNull()
+    overlay.pointerMove(153, 99)
+    overlay.pointerUp(153, 99)
+    expect(overlay.getFirstRow('a')).toBe(3)
+  })
+
   it('places the caret on the scrolled row under the pointer', () => {
     const { overlay } = make({ t: 0 }, 'a\nb\nc\nd\ne')
     overlay.wheel(130, 80, 0, 40)

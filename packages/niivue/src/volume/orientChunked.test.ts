@@ -3,6 +3,8 @@ import type { NVImage } from '@/NVTypes'
 import type { Vec3i } from '@/volume/chunking'
 import {
   chunkedDisplayKey,
+  chunkModulationParams,
+  chunkOverlayMatrix,
   chunkRGBA,
   extractChunkBytes,
   extractChunkBytesReoriented,
@@ -359,5 +361,63 @@ describe('chunkedDisplayKey', () => {
     const keyB = chunkedDisplayKey(makeVol({ colormapLabel: lutB }))
     expect(keyA).toBe(keyASame)
     expect(keyA).not.toBe(keyB)
+  })
+})
+
+describe('chunkModulationParams', () => {
+  const mod = {
+    weight: new Float32Array([0.25, 0.5]),
+    dims: [2, 1, 1] as [number, number, number],
+    // Non-trivial matrix so every scale/offset term is exercised.
+    mtx: new Float32Array([
+      0.5, 0, 0, 0.1, 0, 2, 0, 0.2, 0, 0, 1, 0.3, 0, 0, 0, 1,
+    ]),
+    mode: 2,
+    key: 'k',
+  }
+  const scale = [0.5, 0.25, 1]
+  const offset = [0.5, 0.75, 0]
+
+  test('passes null through for an unmodulated overlay', () => {
+    expect(chunkModulationParams(null, scale, offset)).toBeNull()
+  })
+
+  test('re-targets only the matrix, exactly as chunkOverlayMatrix does', () => {
+    const out = chunkModulationParams(mod, scale, offset)
+    expect(out).not.toBeNull()
+    if (!out) return
+    expect(Array.from(out.mtx)).toEqual(
+      Array.from(chunkOverlayMatrix(mod.mtx, scale, offset)),
+    )
+    // The modulator texture is whole, so everything that describes it is shared.
+    expect(out.weight).toBe(mod.weight)
+    expect(out.dims).toBe(mod.dims)
+    expect(out.mode).toBe(mod.mode)
+    expect(out.key).toBe(mod.key)
+    // And the caller's full-volume params are left intact for the next chunk.
+    expect(mod.mtx[3]).toBeCloseTo(0.1)
+  })
+
+  test('a chunk-local coordinate lands where the whole volume would', () => {
+    // Whole-volume output coord o maps to modulator coord m = M * o. For a
+    // chunk, local coord c lifts to o = c * scale + offset, so the chunked
+    // matrix applied to c must equal M applied to o.
+    const out = chunkModulationParams(mod, scale, offset)
+    if (!out) throw new Error('expected params')
+    const c = [0.3, 0.6, 0.9, 1]
+    const o = [
+      c[0] * scale[0] + offset[0],
+      c[1] * scale[1] + offset[1],
+      c[2] * scale[2] + offset[2],
+      1,
+    ]
+    const apply = (m: Float32Array, v: number[], k: number): number =>
+      m[k * 4] * v[0] +
+      m[k * 4 + 1] * v[1] +
+      m[k * 4 + 2] * v[2] +
+      m[k * 4 + 3] * v[3]
+    for (let k = 0; k < 3; k++) {
+      expect(apply(out.mtx, c, k)).toBeCloseTo(apply(mod.mtx, o, k), 6)
+    }
   })
 })

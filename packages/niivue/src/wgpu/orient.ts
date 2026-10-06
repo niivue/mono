@@ -3,7 +3,10 @@ import type { NVImage } from '@/NVTypes'
 import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
 import { IDENTITY_MTX, type ModulationTextureParams } from '@/volume/modulation'
-import { chunkOverlayMatrix } from '@/volume/orientChunked'
+import {
+  chunkModulationParams,
+  chunkOverlayMatrix,
+} from '@/volume/orientChunked'
 import orientWGSL from './orient.wgsl?raw'
 import * as wgpu from './wgpu'
 
@@ -624,6 +627,10 @@ export async function volume2Texture(
  * lift into the overlay matrix. The per-chunk textures align 1:1 with the
  * volume chunks (shared ChunkPlan), so the renderer's per-chunk uniforms and
  * `chunkTexCoord` sample them seam-free. Returns one texture per `plan.chunks`.
+ *
+ * `mod` is the overlay's full-volume modulation (see `buildModulationParams`);
+ * its matrix is re-targeted per chunk with `chunkModulationParams` so the
+ * modulator is sampled at the same voxels the whole-volume path would use.
  */
 export async function overlay2TextureChunked(
   device: GPUDevice,
@@ -632,25 +639,24 @@ export async function overlay2TextureChunked(
   mtx: Float32Array,
   plan: ChunkPlan,
   overlayOpacity = 1,
+  mod: ModulationTextureParams | null = null,
 ): Promise<GPUTexture[]> {
   const [dx, dy, dz] = plan.volumeDims
   const out: GPUTexture[] = []
   for (const desc of plan.chunks) {
     const [ox, oy, oz] = desc.texOrigin
     const [sx, sy, sz] = desc.texDims
-    const mtxChunk = chunkOverlayMatrix(
-      mtx,
-      [sx / dx, sy / dy, sz / dz],
-      [ox / dx, oy / dy, oz / dz],
-    )
+    const scale = [sx / dx, sy / dy, sz / dz]
+    const offset = [ox / dx, oy / dy, oz / dz]
     out.push(
       await volume2Texture(
         device,
         nvimage,
         nvimageTarget,
-        mtxChunk,
+        chunkOverlayMatrix(mtx, scale, offset),
         overlayOpacity,
         desc.texDims,
+        chunkModulationParams(mod, scale, offset),
       ),
     )
   }

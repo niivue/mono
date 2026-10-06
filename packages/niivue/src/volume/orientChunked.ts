@@ -6,6 +6,7 @@
 
 import type { NVImage } from '@/NVTypes'
 import type { Vec3i } from '@/volume/chunking'
+import type { ModulationTextureParams } from '@/volume/modulation'
 
 /** NIfTI datatype codes for color volumes. */
 export const DT_RGB24 = 128
@@ -209,6 +210,29 @@ export function chunkOverlayMatrix(
       mtx[b + 3]
   }
   return out
+}
+
+/**
+ * Re-target modulation parameters at one chunk's output grid.
+ *
+ * The orient shaders (both backends) apply the modulation matrix to the same
+ * chunk-local output coordinate as the overlay matrix, so a modulator sampled
+ * through the full-volume matrix would read the wrong voxels on every chunk
+ * but the first. This folds the identical chunk-local -> full-volume lift into
+ * `mod.mtx` via {@link chunkOverlayMatrix}; weight, dims, mode and cache key
+ * are untouched because the modulator texture itself is whole, not chunked.
+ *
+ * @param mod     Full-volume modulation params, or null when unmodulated.
+ * @param scale   Per-axis chunk extent fraction of the full volume.
+ * @param offset  Per-axis chunk origin fraction of the full volume.
+ */
+export function chunkModulationParams(
+  mod: ModulationTextureParams | null,
+  scale: Vec3i | readonly number[],
+  offset: Vec3i | readonly number[],
+): ModulationTextureParams | null {
+  if (!mod) return null
+  return { ...mod, mtx: chunkOverlayMatrix(mod.mtx, scale, offset) }
 }
 
 export function extractChunkBytesReoriented(

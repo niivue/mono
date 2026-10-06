@@ -61,6 +61,7 @@ import {
 import { buildModulationParams } from '@/volume/modulation'
 import {
   chunkedDisplayKey,
+  chunkModulationParams,
   chunkOverlayMatrix,
   extractChunkBytes,
 } from '@/volume/orientChunked'
@@ -1937,6 +1938,7 @@ export class VolumeRenderer extends NVRenderer {
         baseVol,
         baseVol.chunkPlan,
         wholeReslice,
+        overlayVols,
       )
       return
     }
@@ -2293,12 +2295,16 @@ export class VolumeRenderer extends NVRenderer {
    *
    * RGB/RGBA-datatype overlays are skipped on chunked volumes (the chunked
    * orient pass only supports scalar sources, matching the volume chunker).
+   *
+   * `overlayVols` is the full overlay list (not just the chunk-rendered subset)
+   * so a modulator that is itself hidden or streamed can still be resolved.
    */
   private async _updateOverlayChunks(
     device: GPUDevice,
     baseVol: NVImage,
     plan: ChunkPlan,
     standardVols: NVImage[],
+    overlayVols: NVImage[],
   ): Promise<void> {
     // Chunked overlay path: drop the single-texture representation.
     this.destroyNonCachedOverlayTexture()
@@ -2328,6 +2334,10 @@ export class VolumeRenderer extends NVRenderer {
           v,
         ) as Float32Array,
     )
+    // Same modulation the non-chunked path applies; re-targeted per chunk below.
+    const mods = supported.map((v) =>
+      buildModulationParams(v, baseVol, [baseVol, ...overlayVols]),
+    )
 
     if (supported.length === 1) {
       this.overlayChunks = await orient.overlay2TextureChunked(
@@ -2337,6 +2347,7 @@ export class VolumeRenderer extends NVRenderer {
         mtxs[0],
         plan,
         supported[0].opacity ?? 1,
+        mods[0],
       )
       this._invalidateBindGroupCache()
       return
@@ -2361,6 +2372,7 @@ export class VolumeRenderer extends NVRenderer {
             chunkMtx,
             supported[i].opacity ?? 1,
             dims,
+            chunkModulationParams(mods[i], scale, offset),
           ),
         )
       }

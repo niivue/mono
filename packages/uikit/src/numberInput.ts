@@ -13,15 +13,12 @@ import { buildScrollArrow, type ScrollWindow, type UIKitBox } from './scroll'
 import { stepDecimals } from './slider'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
+import type { TextEditState } from './textEdit'
 import {
-  advanceBetween,
-  caretIndexAt,
-  glyphAdvances,
-  hasSelection,
-  selectionOf,
-  type TextEditState,
-  textWindow,
-} from './textEdit'
+  buildTextFieldContent,
+  textFieldCaretAt,
+  textFieldWindow,
+} from './textField'
 import type { UIKitTextItem } from './textOverlay'
 
 /** Every visual knob on a number input. All lengths are in canvas pixels. */
@@ -350,14 +347,6 @@ export function numberInputSpinAt(
   return 0
 }
 
-/** The width the text area has for glyphs, keeping room for the caret. */
-function textViewport(
-  layout: NumberInputLayout,
-  style: NumberInputStyle,
-): number {
-  return Math.max(0, layout.textArea.width - style.caretWidth)
-}
-
 /**
  * The run of glyphs the text area shows, starting at `firstGlyph` but
  * scrolled the least distance that keeps `caret` in view.
@@ -370,8 +359,14 @@ export function numberInputTextWindow(
   firstGlyph: number,
   caret: number,
 ): ScrollWindow {
-  const advances = glyphAdvances(metrics, text, style.textSizePx)
-  return textWindow(advances, textViewport(layout, style), firstGlyph, caret)
+  return textFieldWindow(
+    layout.textArea,
+    style,
+    metrics,
+    text,
+    firstGlyph,
+    caret,
+  )
 }
 
 /** The caret index for a canvas x over text shown from `firstGlyph`. */
@@ -383,8 +378,7 @@ export function numberInputCaretAt(
   firstGlyph: number,
   px: number,
 ): number {
-  const advances = glyphAdvances(metrics, text, style.textSizePx)
-  return caretIndexAt(advances, firstGlyph, px - layout.textArea.x)
+  return textFieldCaretAt(layout.textArea, style, metrics, text, firstGlyph, px)
 }
 
 /**
@@ -465,64 +459,20 @@ export function buildNumberInput(
   )
 
   // The text: only the glyphs that fit, scrolled to keep the caret in view.
-  const advances = glyphAdvances(metrics, visual.text, style.textSizePx)
-  const caret = visual.edit ? visual.edit.caret : 0
-  const shown = textWindow(
-    advances,
-    textViewport(layout, style),
-    visual.firstGlyph,
-    caret,
-  )
-  const area = layout.textArea
-  const xAt = (index: number): number =>
-    area.x + advanceBetween(advances, shown.first, index)
-  const capH = capHeight(metrics) * style.textSizePx
-  const inkTop = layout.baseline - capH * 1.15
-  const inkH = capH * 1.4
-  if (visual.edit && hasSelection(visual.edit)) {
-    const [a, b] = selectionOf(visual.edit)
-    const from = Math.max(a, shown.first)
-    const to = Math.min(b, shown.end)
-    if (to > from) {
-      rects.push(
-        buildRect({
-          x: xAt(from),
-          y: inkTop,
-          width: advanceBetween(advances, from, to),
-          height: inkH,
-          fill: style.selectionFill,
-        }),
-      )
-    }
-  }
   const color = visual.enabled ? style.textColor : style.disabledTextColor
-  if (shown.end > shown.first) {
-    text.push({
-      str: visual.text.slice(shown.first, shown.end),
-      x: area.x,
-      y: layout.baseline,
-      sizePx: style.textSizePx,
-      align: 0,
-      color,
-    })
-  }
-  if (
-    visual.edit &&
-    visual.enabled &&
-    !hasSelection(visual.edit) &&
-    caret >= shown.first &&
-    caret <= shown.end
-  ) {
-    rects.push(
-      buildRect({
-        x: xAt(caret),
-        y: inkTop,
-        width: style.caretWidth,
-        height: inkH,
-        fill: style.caretColor,
-      }),
-    )
-  }
+  const content = buildTextFieldContent(
+    layout.textArea,
+    layout.baseline,
+    style,
+    metrics,
+    visual.text,
+    visual.edit,
+    visual.firstGlyph,
+    color,
+    visual.enabled,
+  )
+  rects.push(...content.rects)
+  text.push(...content.text)
 
   if (spec.label) {
     text.push({

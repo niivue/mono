@@ -24,7 +24,7 @@
       <header>
         <b>UIKit controls</b>
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
-        <span>Menus, toggles, sliders, number fields and buttons drawn in the scene, sharing one
+        <span>Menus, toggles, sliders, number and text fields and buttons drawn in the scene, sharing one
           control layer: a click on any of them never reaches the viewer, an open menu
           swallows the click that dismisses it, and the keyboard drives the focused
           control (<kbd>Tab</kbd>-free: click a control, then use arrows, Space, Enter,
@@ -46,6 +46,7 @@
         UIKitSegmentedOverlay,
         UIKitSelectOverlay,
         UIKitSliderOverlay,
+        UIKitTextInputOverlay,
         UIKitToggleOverlay,
       } from './src/index.ts'
 
@@ -76,10 +77,12 @@
       const segmented = new UIKitSegmentedOverlay(font, units)
       const selects = new UIKitSelectOverlay(font, units)
       const numbers = new UIKitNumberInputOverlay(font, units)
+      const texts = new UIKitTextInputOverlay(font, units)
       const controls = new UIKitControls()
         .add(buttons)
         .add(sliders)
         .add(numbers)
+        .add(texts)
         .add(toggles)
         .add(segmented)
         .add(menus)
@@ -221,6 +224,17 @@
 
       buttons.addButton({ id: 'reset', label: 'Reset view', x: 12, y: 218, onClick: resetView })
 
+      // A text input: the status line echoes what is typed, Enter commits it
+      // and Escape reverts. Keyboard-only entry (no paste), with the text
+      // scrolling by whole glyphs once it outgrows the field.
+      texts.addTextInput({
+        id: 'note', label: 'Note', x: 12, y: 338, width: 200,
+        placeholder: 'type, then Enter',
+        maxLength: 80,
+        onInput: (text) => say(`note: ${text}`),
+        onSubmit: (text) => say(`note submitted: ${JSON.stringify(text)}`),
+      })
+
       function resetView() {
         nv.crosshairPos = [0.5, 0.5, 0.5]
         nv.pan2Dxyzmm = [0, 0, 0, 1]
@@ -237,6 +251,7 @@
         numbers.setValue('elevation', 10)
         nv.setVolume(0, { colormap: 'Gray' })
         selects.setValue('colormap', 'Gray')
+        texts.setValue('note', '')
         say('view reset')
       }
 

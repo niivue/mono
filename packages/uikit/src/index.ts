@@ -213,6 +213,31 @@ export {
   textEditState,
   textWindow,
 } from './textEdit'
+export type { TextFieldStyle } from './textField'
+export {
+  buildTextFieldContent,
+  textFieldCaretAt,
+  textFieldViewport,
+  textFieldWindow,
+} from './textField'
+export type {
+  TextInputLayout,
+  TextInputSpec,
+  TextInputStyle,
+  TextInputVisual,
+} from './textInput'
+export {
+  buildTextInput,
+  DEFAULT_TEXT_INPUT_STYLE,
+  layoutTextInput,
+  resolveTextInputStyle,
+  scaleTextInput,
+  textInputCaretAt,
+  textInputContains,
+  textInputTextWindow,
+} from './textInput'
+export type { UIKitTextInputOverlayOptions } from './textInputOverlay'
+export { UIKitTextInputOverlay } from './textInputOverlay'
 export type { UIKitTextItem } from './textOverlay'
 export { UIKitTextOverlay } from './textOverlay'
 export type {

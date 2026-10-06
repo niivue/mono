@@ -34,11 +34,13 @@ and draws that data through the lifecycle hook.
 | `buildToggle` | `UIKitToggleOverlay` | Check boxes with a label: pointer or Space/Enter flips them |
 | `buildSlider` | `UIKitSliderOverlay` | Horizontal sliders with min/max/step, ticks, a value readout, drag and arrow keys |
 | `buildNumberInput` | `UIKitNumberInputOverlay` | Number fields: typed entry with validation, a spinner, arrow keys and the wheel |
+| `buildTextInput` | `UIKitTextInputOverlay` | Single-line text fields with a placeholder, selection, Enter to submit |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
 | `scrollWindow`, `revealRow`, `buildScrollArrow` | (used by the overlays above) | Row scrolling for any container whose list outgrows its viewport |
 | `editKey`, `textWindow`, `caretIndexAt` | (used by the overlays above) | Single-line text editing: caret, selection, key edits, whole-glyph scrolling |
+| `buildTextFieldContent` | (used by the overlays above) | The text, selection and caret of any field, clipped to the glyphs that fit |
 | | `UIKitControls` | The control layer: one owner of the pointer, wheel and keyboard for every widget above |
 
 ```ts
@@ -403,4 +405,48 @@ The editing itself is the shared model in `textEdit.ts`: a `TextEditState`
 (text, caret, selection anchor), `editKey` for the caret moves, Backspace,
 Delete, select-all and typed characters a key means, `caretIndexAt` for the
 pointer, and `textWindow`, which scrolls a field by whole glyphs through the
-scroll model. A text input reuses it with a different `accept` filter.
+scroll model. `textField.ts` turns that state into the selection, text and
+caret geometry of any field. Text inputs reuse both.
+
+## Text inputs
+
+`UIKitTextInputOverlay` draws a bordered single-line field with an optional
+label and a dimmed placeholder while it is empty. A press takes keyboard
+focus and places the caret at the pointer, dragging selects, and a second
+press within the double-click interval selects all. The arrows, Home and End
+move the caret (Shift extends the selection, Meta or Ctrl jumps to the ends),
+Backspace and Delete edit, Meta or Ctrl plus A selects all. `onInput` fires
+on every keystroke that changes the text. Enter commits the text (firing
+`onChange` when it differs from the committed text) and then fires `onSubmit`
+whether or not it changed; Escape reverts to the committed text; losing focus
+commits. Long text scrolls by whole glyphs to keep the caret in view.
+
+Entry is keyboard-only: no DOM input backs the field, so there is no paste
+and no IME composition. Tab and other keys the field does not use fall
+through to the host.
+
+```ts
+const texts = new UIKitTextInputOverlay(font, units)
+texts.addTextInput({
+  id: 'command',
+  label: 'niimath',
+  x: 12,
+  y: 340,
+  width: 220, // the field; the label adds to it
+  placeholder: '-sqr -add 2',
+  maxLength: 200,
+  accept: (ch) => ch !== '\t', // optional keyboard filter
+  onInput: (text) => preview(text), // every change
+  onChange: (text) => save(text), // Enter or blur, when changed
+  onSubmit: (text) => run(text), // Enter, always
+})
+texts.setValue('command', '') // silent
+texts.getValue('command') // the committed text
+texts.getText('command') // what the field shows, edit in progress included
+```
+
+`TextInputStyle` holds the field fill, hover and disabled fills, the border
+and its focus color, text, placeholder and disabled text colors, the label
+halo (`textOutlineWidth`, `textOutlineColor`), padding, the default
+`fieldWidth`, and the caret and selection colors. The overlay options take
+`doubleClickMs` (default 400) and a `now` clock for it.

@@ -36,7 +36,8 @@ and draws that data through the lifecycle hook.
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
-| | `UIKitControls` | The control layer: one owner of the pointer and keyboard for every widget above |
+| `scrollWindow`, `revealRow`, `buildScrollArrow` | (used by the overlays above) | Row scrolling for any container whose list outgrows its viewport |
+| | `UIKitControls` | The control layer: one owner of the pointer, wheel and keyboard for every widget above |
 
 ```ts
 import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
@@ -122,16 +123,18 @@ coordinates (each returns whether a button consumed the event) and pass a
 
 ## Control layer
 
-`UIKitControls` is the one place that owns the canvas pointer and keyboard for
-every interactive widget, so widgets never compete for an event. Add the widget
+`UIKitControls` is the one place that owns the canvas pointer, wheel and
+keyboard for every interactive widget, so widgets never compete for an event. Add the widget
 overlays to it in draw order, register the layer as NiiVue's overlay renderer,
 and `attach(nv)` to the canvas. Pointer down goes to the topmost widget that
 claims it; that widget then captures every move and the up and takes keyboard
 focus. Only the topmost widget under the pointer hovers. A widget that is modal
 (a menu with its popup open) sees every event first until it closes, and the
 click that dismisses it is consumed. Keys go to the modal widget, else the
-focused one. Events a widget consumes are stopped in the capture phase, so a
-click on a control never starts a NiiVue drag or moves the crosshair. Popups are
+focused one. A wheel turn goes to the modal widget, else to the topmost widget
+under the pointer that handles wheels (an open popup scrolls with it; the page
+scrolls otherwise). Events a widget consumes are stopped in the capture phase,
+so a click on a control never starts a NiiVue drag or moves the crosshair. Popups are
 drawn after every widget. A press anywhere else in the page, focus moving to
 another element or the window losing focus deactivates the layer (held press
 cancelled, popups dismissed, focus dropped), so keys reach the page again
@@ -226,7 +229,9 @@ one it started with (a drag releases, a key press lands). Neither fires for
 open, its popup. Items are actions, check items, radio items (exclusive within
 their `group`) or separators, each with an optional right-aligned shortcut
 label and `enabled` flag. The popup opens below the button and flips above it
-when it would overflow the canvas. While open the overlay is modal: it
+when it would overflow the canvas; when it fits neither way it takes the
+roomier side and scrolls (see "Scrolling containers" below). While open the
+overlay is modal: it
 highlights the row under the pointer, a click on a row activates it, a click
 anywhere else closes the menu (and is not passed on), and Escape closes it.
 ArrowUp/Down, Home and End move the highlight over selectable rows, Enter or
@@ -269,8 +274,8 @@ chosen option (or a `placeholder` while nothing is chosen) over a popup listing
 every option as one radio group. The button is sized to the widest option so it
 keeps its width as the value changes. Opening, highlighting, choosing on release
 or Enter, dismissing on an outside press or Escape and being modal while open
-all behave as for a menu, and the list opens with the current option
-highlighted. A focused closed select also changes its value straight from the
+all behave as for a menu, a long list scrolls, and the list opens with the
+current option highlighted and in view. A focused closed select also changes its value straight from the
 keyboard: ArrowUp/Down (or Left/Right) step over the enabled options without
 wrapping, Shift or PageUp/PageDown step by ten, Home and End jump to the ends,
 and Enter, Space or Alt+ArrowDown open the list.
@@ -294,6 +299,24 @@ selects.getValue('colormap')
 is chosen again or the value is set from code. Options carry `enabled`; a
 disabled option draws dimmed and is skipped by the keyboard. `buttonStyle` and
 `style` are the menu's `ButtonStyle` and `MenuStyle`.
+
+## Scrolling containers
+
+Any container that shows a list taller than the space it has scrolls by whole
+rows through the shared model in `scroll.ts`, so a container only ever draws
+rows that lie fully inside its viewport and needs no GPU scissor.
+`scrollWindow(heights, viewport, first)` returns the run of rows that fits from
+`first`, clamped so the list never scrolls past its end; `revealRow` finds the
+least scroll that brings a row into view (a keyboard move, or opening on an
+item); `WheelAccumulator` turns a trackpad's small wheel deltas into row steps;
+`buildScrollArrow` draws the chevron on a strip. Menu and select popups are the
+first consumers: a scrollable popup reserves a strip at each end
+(`scrollStripHeight`, `scrollArrowSize`, `scrollArrowWidth`, `scrollArrowColor`
+in `MenuStyle`), shows an arrow on a strip with rows beyond it, scrolls on the
+wheel or a press on a strip, keeps the keyboard highlight in view, and reports
+`scrollable`, `firstRow`, `endRow` and the strip boxes in its popup layout. A
+widget that scrolls implements `wheel(x, y, deltaX, deltaY)` from
+`UIKitInteractive`; the control layer routes the canvas wheel to it.
 
 ## Segmented controls
 

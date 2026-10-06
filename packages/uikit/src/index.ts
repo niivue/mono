@@ -65,7 +65,10 @@ export {
   layoutMenuButton,
   layoutMenuPopup,
   menuButtonSpec,
+  menuRevealRow,
   menuRowAt,
+  menuRowHeight,
+  menuScrollStripAt,
   nextSelectableIndex,
   popupContains,
   resolveMenuStyle,
@@ -79,6 +82,20 @@ export { UIKitRectOverlay } from './rectOverlay'
 export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
 export { buildRuler } from './ruler'
 export { UIKitRulerOverlay } from './rulerOverlay'
+export type {
+  ScrollRange,
+  ScrollStripStyle,
+  ScrollWindow,
+  UIKitBox,
+} from './scroll'
+export {
+  buildScrollArrow,
+  canScrollDown,
+  canScrollUp,
+  revealRow,
+  scrollWindow,
+  WheelAccumulator,
+} from './scroll'
 export type {
   SegmentedLayout,
   SegmentedSpec,

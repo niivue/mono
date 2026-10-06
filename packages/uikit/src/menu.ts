@@ -2,9 +2,10 @@
 // opens a popup of items. Items are plain actions, checkable items that keep a
 // boolean, radio items that are exclusive within a group, or separators. This
 // file holds style resolution, layout (button box; popup placed below the
-// button and flipped above it when it would overflow), item-state transitions
-// and keyboard navigation, and the geometry for one visual state. No GPU and no
-// DOM here; UIKitMenuOverlay wires it to the pointer, the keyboard and the
+// button, flipped above it when it would overflow, and scrolled by whole rows
+// when it fits neither way), item-state transitions and keyboard navigation,
+// and the geometry for one visual state. No GPU and no DOM here;
+// UIKitMenuOverlay wires it to the pointer, the wheel, the keyboard and the
 // overlay draw hook.
 
 import {
@@ -18,6 +19,14 @@ import {
 } from './button'
 import { buildLine, type LineData } from './line'
 import { buildRect, type RectData } from './rect'
+import {
+  buildScrollArrow,
+  canScrollDown,
+  canScrollUp,
+  revealRow,
+  scrollWindow,
+  type UIKitBox,
+} from './scroll'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -88,6 +97,12 @@ export interface MenuStyle {
   chevronGap: number
   /** Least popup width. */
   minWidth: number
+  /** Height of the strips at each end of a scrolled popup (they hold the arrows). */
+  scrollStripHeight: number
+  /** Width of the scroll arrows, and their stroke width. */
+  scrollArrowSize: number
+  scrollArrowWidth: number
+  scrollArrowColor: RGBA
 }
 
 export const DEFAULT_MENU_STYLE: MenuStyle = {
@@ -115,6 +130,10 @@ export const DEFAULT_MENU_STYLE: MenuStyle = {
   chevronWidth: 2,
   chevronGap: 6,
   minWidth: 120,
+  scrollStripHeight: 14,
+  scrollArrowSize: 10,
+  scrollArrowWidth: 1.5,
+  scrollArrowColor: [1, 1, 1, 0.8],
 }
 
 /** The button style menus start from: a push button that does not shrink. */
@@ -166,9 +185,22 @@ export interface MenuPopupLayout {
   y: number
   width: number
   height: number
+  /**
+   * The visible rows only. When the popup scrolls these are the run from
+   * `firstRow` that fits between the strips.
+   */
   rows: MenuRowLayout[]
   /** Whether the panel sits above the button (it would overflow below). */
   above: boolean
+  /** True when the items do not all fit and the popup scrolls by rows. */
+  scrollable: boolean
+  /** Index of the first visible item (0 when not scrollable). */
+  firstRow: number
+  /** Index after the last visible item (the item count when not scrollable). */
+  endRow: number
+  /** The strips at the top and bottom of a scrollable popup, else null. */
+  scrollUp: UIKitBox | null
+  scrollDown: UIKitBox | null
 }
 
 /** A rectangle popups must stay within (the overlay frame's bounds). */
@@ -232,9 +264,23 @@ export function layoutMenuButton(
   }
 }
 
+/** The height of one row: a separator's or an item's. */
+export function menuRowHeight(item: MenuItemSpec, style: MenuStyle): number {
+  return item.kind === 'separator' ? style.separatorHeight : style.itemHeight
+}
+
+/** The height of the row area of a scrollable popup (between its strips). */
+function menuViewportHeight(height: number, style: MenuStyle): number {
+  return height - 2 * style.panelPadding - 2 * style.scrollStripHeight
+}
+
 /**
  * Place the popup under the button (above it when it would overflow the
  * bounds below), clamped into the bounds horizontally, and lay out its rows.
+ * When the items fit neither below nor above, the popup takes the roomier
+ * side and scrolls: it keeps a strip at each end and shows the whole rows
+ * from `firstRow` (clamped so the list never scrolls past its end) that fit
+ * between them. Without bounds a popup never scrolls.
  */
 export function layoutMenuPopup(
   items: readonly MenuItemSpec[],
@@ -242,17 +288,16 @@ export function layoutMenuPopup(
   metrics: UIKitFontMetrics,
   button: ButtonLayout,
   bounds: MenuBounds | null = null,
+  firstRow = 0,
 ): MenuPopupLayout {
   const size = style.textSizePx
+  const heights = items.map((item) => menuRowHeight(item, style))
   let labelW = 0
   let shortcutW = 0
   let rowsH = 0
-  for (const item of items) {
-    if (item.kind === 'separator') {
-      rowsH += style.separatorHeight
-      continue
-    }
-    rowsH += style.itemHeight
+  items.forEach((item, i) => {
+    rowsH += heights[i]
+    if (item.kind === 'separator') return
     labelW = Math.max(labelW, measureWidth(metrics, item.label ?? '', size))
     if (item.shortcut) {
       shortcutW = Math.max(
@@ -260,7 +305,7 @@ export function layoutMenuPopup(
         measureWidth(metrics, item.shortcut, size),
       )
     }
-  }
+  })
   const inner =
     2 * style.itemPaddingX +
     style.markSize +
@@ -270,38 +315,126 @@ export function layoutMenuPopup(
   const width = Math.ceil(
     Math.max(style.minWidth, inner + 2 * style.panelPadding),
   )
-  const height = Math.ceil(rowsH + 2 * style.panelPadding)
+  const contentHeight = Math.ceil(rowsH + 2 * style.panelPadding)
 
   let x = button.x
   let y = button.y + button.height + style.gapToButton
+  let height = contentHeight
   let above = false
   if (bounds) {
-    const bottom = bounds.y + bounds.height
-    if (
-      y + height > bottom &&
-      button.y - style.gapToButton - height >= bounds.y
-    ) {
-      y = button.y - style.gapToButton - height
-      above = true
+    const below = bounds.y + bounds.height - y
+    const over = button.y - style.gapToButton - bounds.y
+    if (height > below) {
+      if (height <= over) {
+        above = true
+      } else {
+        // Fits neither way: scroll on the roomier side, or fill the bounds
+        // when even that side cannot show one row between the strips.
+        const usable = Math.floor(Math.max(below, over))
+        const least =
+          2 * style.panelPadding +
+          2 * style.scrollStripHeight +
+          style.itemHeight
+        if (usable >= least) {
+          height = Math.min(contentHeight, usable)
+          above = over > below
+        } else {
+          height = Math.min(contentHeight, Math.floor(bounds.height))
+          y = bounds.y
+        }
+      }
+      if (above) y = button.y - style.gapToButton - height
     }
     x = Math.max(bounds.x, Math.min(x, bounds.x + bounds.width - width))
   }
 
-  const rows: MenuRowLayout[] = []
+  const scrollable = height < contentHeight
+  let first = 0
+  let end = items.length
   let cursor = y + style.panelPadding
-  items.forEach((item, index) => {
-    const h =
-      item.kind === 'separator' ? style.separatorHeight : style.itemHeight
+  if (scrollable) {
+    const w = scrollWindow(heights, menuViewportHeight(height, style), firstRow)
+    first = w.first
+    end = w.end
+    cursor += style.scrollStripHeight
+  }
+  const rows: MenuRowLayout[] = []
+  for (let index = first; index < end; index++) {
     rows.push({
       index,
       x: x + style.panelPadding,
       y: cursor,
       width: width - 2 * style.panelPadding,
-      height: h,
+      height: heights[index],
     })
-    cursor += h
+    cursor += heights[index]
+  }
+  const strip = (top: number): UIKitBox => ({
+    x: x + style.panelPadding,
+    y: top,
+    width: width - 2 * style.panelPadding,
+    height: style.scrollStripHeight,
   })
-  return { x, y, width, height, rows, above }
+  return {
+    x,
+    y,
+    width,
+    height,
+    rows,
+    above,
+    scrollable,
+    firstRow: first,
+    endRow: end,
+    scrollUp: scrollable ? strip(y + style.panelPadding) : null,
+    scrollDown: scrollable
+      ? strip(y + height - style.panelPadding - style.scrollStripHeight)
+      : null,
+  }
+}
+
+/**
+ * The `firstRow` that brings item `index` into view in a scrollable popup,
+ * moving as little as possible (see `revealRow`). The current `firstRow` when
+ * the popup does not scroll or the item is already visible.
+ */
+export function menuRevealRow(
+  items: readonly MenuItemSpec[],
+  style: MenuStyle,
+  layout: MenuPopupLayout,
+  index: number,
+): number {
+  if (!layout.scrollable) return layout.firstRow
+  const heights = items.map((item) => menuRowHeight(item, style))
+  return revealRow(
+    heights,
+    menuViewportHeight(layout.height, style),
+    { first: layout.firstRow, end: layout.endRow },
+    index,
+  )
+}
+
+/** True when canvas point (px, py) lies inside a box. */
+function boxContains(box: UIKitBox, px: number, py: number): boolean {
+  return (
+    px >= box.x &&
+    px < box.x + box.width &&
+    py >= box.y &&
+    py < box.y + box.height
+  )
+}
+
+/**
+ * The scroll strip under a canvas point of a scrollable popup: -1 for the top
+ * strip, 1 for the bottom one, 0 for neither.
+ */
+export function menuScrollStripAt(
+  layout: MenuPopupLayout,
+  px: number,
+  py: number,
+): -1 | 0 | 1 {
+  if (layout.scrollUp && boxContains(layout.scrollUp, px, py)) return -1
+  if (layout.scrollDown && boxContains(layout.scrollDown, px, py)) return 1
+  return 0
 }
 
 /** Scale every length in a menu spec and its styles by `k`. */
@@ -351,6 +484,9 @@ export function scaleMenu(
       chevronWidth: style.chevronWidth * k,
       chevronGap: style.chevronGap * k,
       minWidth: style.minWidth * k,
+      scrollStripHeight: style.scrollStripHeight * k,
+      scrollArrowSize: style.scrollArrowSize * k,
+      scrollArrowWidth: style.scrollArrowWidth * k,
     },
   }
 }
@@ -361,12 +497,7 @@ export function popupContains(
   px: number,
   py: number,
 ): boolean {
-  return (
-    px >= layout.x &&
-    px < layout.x + layout.width &&
-    py >= layout.y &&
-    py < layout.y + layout.height
-  )
+  return boxContains(layout, px, py)
 }
 
 /** The index of the row under a canvas point, or -1 (separators count as rows). */
@@ -500,9 +631,10 @@ export function buildMenuButton(
 
 /**
  * The draw data for an open popup: the panel, the highlight under
- * `highlightIndex` (when that item is selectable), then per row the mark
- * (check mark or radio dot when checked), the label, the shortcut and the
- * separator rules.
+ * `highlightIndex` (when that item is selectable), then per visible row the
+ * mark (check mark or radio dot when checked), the label, the shortcut and
+ * the separator rules, and on a scrollable popup an arrow on each strip that
+ * has rows beyond it.
  */
 export function buildMenuPopup(
   items: readonly MenuItemSpec[],
@@ -527,6 +659,19 @@ export function buildMenuPopup(
   const text: UIKitTextItem[] = []
   const size = style.textSizePx
   const baselineDrop = (capHeight(metrics) * size) / 2
+  const strips = {
+    height: style.scrollStripHeight,
+    arrowSize: style.scrollArrowSize,
+    arrowWidth: style.scrollArrowWidth,
+    arrowColor: style.scrollArrowColor,
+  }
+  const shown = { first: layout.firstRow, end: layout.endRow }
+  if (layout.scrollUp && canScrollUp(shown)) {
+    lines.push(...buildScrollArrow(layout.scrollUp, -1, strips))
+  }
+  if (layout.scrollDown && canScrollDown(shown, items.length)) {
+    lines.push(...buildScrollArrow(layout.scrollDown, 1, strips))
+  }
   for (const row of layout.rows) {
     const item = items[row.index]
     if (!item) continue

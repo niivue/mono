@@ -6,6 +6,10 @@
 // group, actions just fire) and closes the menu. A press outside the popup, or
 // Escape, closes it without activating. Arrow keys, Home and End move the
 // highlight; a focused closed button opens on Enter, Space or ArrowDown.
+// A popup that fits neither below nor above its button scrolls by whole rows
+// (see scroll.ts): the wheel, a press on either end strip, and keyboard moves
+// that leave the visible rows all scroll it, and the highlight is always kept
+// in view.
 //
 // The popup is drawn after every other widget through `drawPopup` when the
 // overlay sits in a control layer, so it never ends up under a later widget.
@@ -38,7 +42,9 @@ import {
   type MenuItemSpec,
   type MenuPopupLayout,
   type MenuStyle,
+  menuRevealRow,
   menuRowAt,
+  menuScrollStripAt,
   nextSelectableIndex,
   popupContains,
   resolveMenuStyle,
@@ -46,6 +52,7 @@ import {
 } from './menu'
 import type { RectData } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
+import { WheelAccumulator } from './scroll'
 import type { UIKitFont } from './text/font'
 import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
@@ -97,6 +104,9 @@ export class UIKitMenuOverlay
   private openId: string | null = null
   private popup: MenuPopupLayout | null = null
   private highlight = -1
+  /** First visible row of a scrolled popup (the layout clamps it). */
+  private firstRow = 0
+  private wheelCarry: WheelAccumulator | null = null
   /** The button the pointer went down on and still holds. */
   private pressedId: string | null = null
   /** Whether the held press opened the menu (a release then keeps it open). */
@@ -254,9 +264,11 @@ export class UIKitMenuOverlay
       height: r.height / k,
     })
     return {
+      ...l,
       ...s(l),
       rows: l.rows.map((r) => ({ index: r.index, ...s(r) })),
-      above: l.above,
+      scrollUp: l.scrollUp && s(l.scrollUp),
+      scrollDown: l.scrollDown && s(l.scrollDown),
     }
   }
 
@@ -325,6 +337,8 @@ export class UIKitMenuOverlay
     this.openId = id
     this.popup = null
     this.highlight = highlightIndex
+    this.firstRow = 0
+    this.wheelCarry = null
     this.focus(id)
     this.invalidate()
   }
@@ -335,6 +349,8 @@ export class UIKitMenuOverlay
     this.openId = null
     this.popup = null
     this.highlight = -1
+    this.firstRow = 0
+    this.wheelCarry = null
     this.invalidate()
   }
 
@@ -358,7 +374,9 @@ export class UIKitMenuOverlay
     if (this.openId !== null) {
       const popup = this.popupLayout()
       if (popup && popupContains(popup, x, y)) {
-        this.setHighlight(menuRowAt(popup, x, y))
+        const strip = menuScrollStripAt(popup, x, y)
+        if (strip !== 0) this.scrollBy(strip, x, y)
+        else this.setHighlight(menuRowAt(popup, x, y))
         this.pressedId = null
         return true
       }
@@ -427,6 +445,22 @@ export class UIKitMenuOverlay
   pointerCancel(): void {
     this.pressedId = null
     this.pressOpened = false
+  }
+
+  /**
+   * While a popup is open the wheel scrolls it by rows (a trackpad's small
+   * deltas add up) and the row under the pointer takes the highlight. Every
+   * wheel turn is consumed while a menu is up; a closed menu ignores it.
+   */
+  wheel(x: number, y: number, _deltaX: number, deltaY: number): boolean {
+    if (this.openId === null) return false
+    const entry = this.entries.get(this.openId)
+    const popup = this.popupLayout()
+    if (!entry || !popup?.scrollable) return true
+    this.wheelCarry ??= new WheelAccumulator(entry.style.itemHeight)
+    const steps = this.wheelCarry.add(deltaY)
+    if (steps !== 0) this.scrollBy(steps, x, y)
+    return true
   }
 
   /**
@@ -535,9 +569,38 @@ export class UIKitMenuOverlay
     this.requestRedraw?.()
   }
 
+  /**
+   * Scroll the open popup by `rows` (negative is up), drop a highlight that
+   * scrolled out of view, and re-highlight whatever row is now under (x, y).
+   */
+  private scrollBy(rows: number, x: number, y: number): void {
+    const popup = this.popupLayout()
+    if (!popup?.scrollable) return
+    const highlight = this.highlight
+    this.highlight = -1
+    this.firstRow = Math.max(0, popup.firstRow + rows)
+    this.popup = null
+    const next = this.popupLayout()
+    if (next && highlight >= next.firstRow && highlight < next.endRow) {
+      this.highlight = highlight
+    }
+    this.popupDirty = true
+    this.requestRedraw?.()
+    this.pointerMove(x, y)
+  }
+
   private setHighlight(index: number): void {
     if (index === this.highlight) return
     this.highlight = index
+    // A highlight outside the visible rows needs a fresh layout to reveal it.
+    const popup = this.popup
+    if (
+      popup?.scrollable &&
+      index >= 0 &&
+      (index < popup.firstRow || index >= popup.endRow)
+    ) {
+      this.popup = null
+    }
     this.popupDirty = true
     this.requestRedraw?.()
   }
@@ -580,13 +643,30 @@ export class UIKitMenuOverlay
       const entry = this.entries.get(this.openId)
       if (!entry) return null
       const { style } = this.scaled(entry)
-      this.popup = layoutMenuPopup(
+      const button = this.layoutOf(entry)
+      let popup = layoutMenuPopup(
         entry.items,
         style,
         this.font.metrics,
-        this.layoutOf(entry),
+        button,
         this.bounds,
+        this.firstRow,
       )
+      // Keep the highlight in view: after opening on an item, a keyboard
+      // move past the visible rows, or a resize that hid it.
+      const first = menuRevealRow(entry.items, style, popup, this.highlight)
+      if (first !== popup.firstRow) {
+        popup = layoutMenuPopup(
+          entry.items,
+          style,
+          this.font.metrics,
+          button,
+          this.bounds,
+          first,
+        )
+      }
+      this.firstRow = popup.firstRow
+      this.popup = popup
     }
     return this.popup
   }

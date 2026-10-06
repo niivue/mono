@@ -316,4 +316,73 @@ describe('UIKitMenuOverlay', () => {
     overlay.pointerMove(-1, -1)
     expect(redraws()).toBe(n + 1)
   })
+
+  it('scrolls a popup that does not fit: wheel, strips, keys and open()', () => {
+    const { overlay } = make()
+    overlay.addMenu({
+      id: 'long',
+      label: 'Hi',
+      x: 100,
+      y: 50,
+      items: Array.from({ length: 10 }, (_, i) => ({
+        id: `i${i}`,
+        label: 'Hi',
+      })),
+    })
+    overlay.setBounds({ x: 0, y: 0, width: 400, height: 200 })
+    expect(overlay.wheel(110, 120, 0, 50)).toBe(false) // closed: not ours
+    overlay.open('long')
+    expect(overlay.getPopupLayout()?.scrollable).toBe(true)
+    expect(overlay.getPopupLayout()?.rows.map((r) => r.index)).toEqual([0, 1])
+    // The wheel scrolls by rows, carrying small deltas, and is always consumed.
+    expect(overlay.wheel(110, 120, 0, 10)).toBe(true)
+    expect(overlay.getPopupLayout()?.firstRow).toBe(0)
+    expect(overlay.wheel(110, 120, 0, 20)).toBe(true)
+    expect(overlay.getPopupLayout()?.firstRow).toBe(1)
+    expect(overlay.highlightedIndex).toBe(1) // the row now under the pointer
+    overlay.wheel(110, 120, 0, -500)
+    expect(overlay.getPopupLayout()?.firstRow).toBe(0)
+    expect(overlay.highlightedIndex).toBe(0)
+    // A press on a strip steps one row, selects nothing and is consumed.
+    expect(overlay.pointerDown(110, 189)).toBe(true)
+    expect(overlay.pointerUp(110, 189)).toBe(true)
+    expect(overlay.getPopupLayout()?.firstRow).toBe(1)
+    expect(overlay.highlightedIndex).toBe(-1) // row 0 scrolled out of view
+    expect(overlay.openMenu).toBe('long')
+    overlay.pointerDown(110, 93)
+    overlay.pointerUp(110, 93)
+    expect(overlay.getPopupLayout()?.firstRow).toBe(0)
+    // Keys keep the highlight in view, scrolling as little as possible.
+    overlay.keyDown(key('End'))
+    expect(overlay.highlightedIndex).toBe(9)
+    expect(overlay.getPopupLayout()?.firstRow).toBe(8)
+    overlay.keyDown(key('ArrowUp'))
+    expect(overlay.getPopupLayout()?.firstRow).toBe(8)
+    overlay.keyDown(key('ArrowDown'))
+    overlay.keyDown(key('ArrowDown')) // wraps to the top
+    expect(overlay.highlightedIndex).toBe(0)
+    expect(overlay.getPopupLayout()?.firstRow).toBe(0)
+    // Opening on an item shows it; a resize keeps it in view; closing resets.
+    overlay.close()
+    overlay.open('long', 7)
+    expect(overlay.getPopupLayout()?.firstRow).toBe(6)
+    overlay.setBounds({ x: 0, y: 0, width: 400, height: 300 })
+    expect(overlay.getPopupLayout()?.rows.map((r) => r.index)).toEqual([
+      4, 5, 6, 7, 8, 9,
+    ])
+    overlay.close()
+    overlay.open('long')
+    expect(overlay.getPopupLayout()?.firstRow).toBe(0)
+  })
+
+  it('consumes the wheel over a popup that fits without moving it', () => {
+    const { overlay, openByClick } = make()
+    overlay.setBounds({ x: 0, y: 0, width: 400, height: 400 })
+    openByClick()
+    expect(overlay.wheel(110, 120, 0, 300)).toBe(true)
+    expect(overlay.getPopupLayout()).toMatchObject({
+      scrollable: false,
+      firstRow: 0,
+    })
+  })
 })

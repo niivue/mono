@@ -140,8 +140,8 @@
       })
 
       // A segmented control mirrors the View menu's radio group, and a select
-      // picks the volume's colormap from a short list (popups do not scroll,
-      // so a list must fit the canvas).
+      // picks the volume's colormap from every one NiiVue has: the list is far
+      // taller than the canvas, so its popup scrolls.
       segmented.addSegmented({
         id: 'view', x: 12, y: 258,
         segments: [
@@ -156,9 +156,7 @@
       })
       selects.addSelect({
         id: 'colormap', x: 12, y: 298, width: 160,
-        options: ['Gray', 'Hot', 'Cool', 'Viridis', 'Plasma', 'Inferno', 'Jet', 'Bone', 'Copper', 'Winter']
-          .filter((name) => nv.colormaps.includes(name))
-          .map((name) => ({ value: name, label: name })),
+        options: nv.colormaps.map((name) => ({ value: name, label: name })),
         value: 'Gray',
         onChange: (value) => {
           nv.setVolume(0, { colormap: value })

@@ -49,6 +49,10 @@ class FakeWidget implements UIKitInteractive {
     this.log.push(`key ${e.key}`)
     return e.key !== 'ignored'
   }
+  wheel(x: number, y: number, dx: number, dy: number): boolean {
+    this.log.push(`wheel ${x},${y} ${dx},${dy}`)
+    return true
+  }
   blur(): void {
     this.log.push('blur')
   }
@@ -434,5 +438,41 @@ describe('UIKitControls.attach', () => {
     expect(layer.focusedWidget).toBeNull()
     canvas.dispatchEvent(pointer('pointerdown', 37, 37))
     expect(seen).toEqual(['down'])
+  })
+
+  it('routes the wheel to the modal widget, else the widget under it', () => {
+    const { layer, hi, lo } = make()
+    expect(layer.wheel(300, 300, 0, 10)).toBe(false)
+    expect(layer.wheel(75, 75, 0, 10)).toBe(true) // hi is on top of lo there
+    expect(hi.log).toEqual(['wheel 75,75 0,10'])
+    expect(lo.log).toEqual([])
+    lo.modal = true
+    expect(layer.wheel(300, 300, 5, -10)).toBe(true)
+    expect(lo.log).toEqual(['wheel 300,300 5,-10'])
+  })
+
+  it('consumes a wheel turn a widget handles and scales line deltas', () => {
+    const { hi, canvas, seen, detach } = attach()
+    canvas.addEventListener('wheel', () => seen.push('wheel'))
+    const turn = (x: number, deltaMode: number): Event =>
+      Object.assign(new Event('wheel', { cancelable: true }), {
+        clientX: x,
+        clientY: 37,
+        deltaX: 0,
+        deltaY: 3,
+        deltaMode,
+      })
+    const inside = turn(37, 1) // client 37 is canvas 74: over hi; 3 lines = 48 px
+    canvas.dispatchEvent(inside)
+    expect(hi.log).toEqual(['wheel 74,74 0,48'])
+    expect(inside.defaultPrevented).toBe(true)
+    expect(seen).toEqual([])
+    const outside = turn(200, 0) // canvas 400: over nothing
+    canvas.dispatchEvent(outside)
+    expect(outside.defaultPrevented).toBe(false)
+    expect(seen).toEqual(['wheel'])
+    detach()
+    canvas.dispatchEvent(turn(37, 0))
+    expect(hi.log).toHaveLength(1)
   })
 })

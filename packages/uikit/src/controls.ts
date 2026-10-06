@@ -68,6 +68,12 @@ export interface UIKitInteractive extends UIKitOverlayRenderer {
   pointerCancel(): void
   /** Handle a key while focused or modal. Return true to consume it. */
   keyDown?(e: UIKitKeyEvent): boolean
+  /**
+   * Handle a wheel turn over (x, y), deltas in pixels (positive is down and
+   * right). Sent to the modal widget first, else the widget under the point.
+   * Return true to consume it (the page then does not scroll).
+   */
+  wheel?(x: number, y: number, deltaX: number, deltaY: number): boolean
   /** Drop keyboard focus (another widget took it, or the scene was clicked). */
   blur?(): void
   /** True while this widget must see every event first (an open popup). */
@@ -263,8 +269,22 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
   }
 
   /**
-   * Wire the host canvas's pointer events (and the window's keydown) to this
-   * layer and return a function that unwires them. Events a widget consumes are
+   * Route a wheel turn to the modal widget, else to the topmost widget under
+   * (x, y) that handles wheels. True if consumed.
+   */
+  wheel(x: number, y: number, deltaX: number, deltaY: number): boolean {
+    const modal = this.modalWidget
+    if (modal) return modal.wheel?.(x, y, deltaX, deltaY) ?? false
+    for (let i = this.children.length - 1; i >= 0; i--) {
+      const c = this.children[i]
+      if (c.wheel && c.hitTest(x, y)) return c.wheel(x, y, deltaX, deltaY)
+    }
+    return false
+  }
+
+  /**
+   * Wire the host canvas's pointer and wheel events (and the window's keydown)
+   * to this layer and return a function that unwires them. Events a widget consumes are
    * stopped before the host's own handlers run; the cursor follows the widgets.
    */
   attach(host: UIKitHost): () => void {
@@ -326,6 +346,20 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
     }
     // Anything outside the canvas (a press elsewhere in the page, focus moving
     // to another element, the window losing focus) ends our turn with the keys.
+    const onWheel = (e: WheelEvent): void => {
+      const p = host.clientToCanvas(e.clientX, e.clientY)
+      if (!p) return
+      // Lines and pages become pixels so widgets see one unit.
+      const k =
+        e.deltaMode === 1
+          ? 16
+          : e.deltaMode === 2
+            ? canvas.clientHeight || 1
+            : 1
+      if (!this.wheel(p[0], p[1], e.deltaX * k, e.deltaY * k)) return
+      consume(e)
+      syncCursor()
+    }
     const onOutsideDown = (e: Event): void => {
       if (e.target === canvas) return
       this.deactivate()
@@ -336,11 +370,14 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       syncCursor()
     }
     const opts = { capture: true }
+    // A wheel listener must opt out of passive to be allowed to preventDefault.
+    const wheelOpts = { capture: true, passive: false }
     canvas.addEventListener('pointerdown', onDown, opts)
     canvas.addEventListener('pointermove', onMove, opts)
     canvas.addEventListener('pointerup', onUp, opts)
     canvas.addEventListener('pointerleave', onLeave, opts)
     canvas.addEventListener('pointercancel', onCancel, opts)
+    canvas.addEventListener('wheel', onWheel, wheelOpts)
     window.addEventListener('keydown', onKey, opts)
     window.addEventListener('pointerdown', onOutsideDown, opts)
     window.addEventListener('focusin', onOutsideDown, opts)
@@ -351,6 +388,7 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       canvas.removeEventListener('pointerup', onUp, opts)
       canvas.removeEventListener('pointerleave', onLeave, opts)
       canvas.removeEventListener('pointercancel', onCancel, opts)
+      canvas.removeEventListener('wheel', onWheel, wheelOpts)
       window.removeEventListener('keydown', onKey, opts)
       window.removeEventListener('pointerdown', onOutsideDown, opts)
       window.removeEventListener('focusin', onOutsideDown, opts)

@@ -19,6 +19,7 @@ import type {
 import {
   DEFAULT_MENU_BUTTON_STYLE,
   DEFAULT_MENU_STYLE,
+  type MenuBounds,
   type MenuPopupLayout,
   type MenuStyle,
   resolveMenuStyle,
@@ -229,6 +230,20 @@ export class UIKitSelectOverlay
    * PageUp/PageDown by ten), Home and End jump to the ends, Enter, Space or
    * Alt+ArrowDown open the list on the current option.
    */
+  /**
+   * The area popups must stay inside, in canvas pixels. `drawOverlay`
+   * refreshes it from every frame; call it yourself when driving the overlay
+   * without one. A list taller than the bounds scrolls.
+   */
+  setBounds(bounds: MenuBounds | null): void {
+    this.menu.setBounds(bounds)
+  }
+
+  /** An open popup scrolls with the wheel; a closed select ignores it. */
+  wheel(x: number, y: number, deltaX: number, deltaY: number): boolean {
+    return this.menu.wheel(x, y, deltaX, deltaY)
+  }
+
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.menu.isModal()) return this.menu.keyDown(e)
     const id = this.menu.focusedMenu

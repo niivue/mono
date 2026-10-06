@@ -228,4 +228,41 @@ describe('UIKitSelectOverlay', () => {
     expect(overlay.isModal()).toBe(false)
     expect(overlay.openSelect).toBeNull()
   })
+
+  it('opens a long list scrolled to its value and scrolls while open', () => {
+    const { overlay, changes } = make()
+    overlay.addSelect({
+      id: 'long',
+      x: 100,
+      y: 150,
+      options: Array.from({ length: 10 }, (_, i) => ({
+        value: `v${i}`,
+        label: 'Hi',
+      })),
+      value: 'v7',
+      onChange: (value, id) => changes.push(`${id}:${value}`),
+    })
+    overlay.setBounds({ x: 0, y: 0, width: 400, height: 300 })
+    overlay.open('long')
+    // 288 px of options fit neither below (118) nor above (146): scroll above.
+    const popup = overlay.getPopupLayout()
+    expect(popup).toMatchObject({
+      above: true,
+      scrollable: true,
+      y: 0,
+      height: 146,
+    })
+    expect(popup?.rows.map((r) => r.index)).toEqual([5, 6, 7])
+    expect(overlay.highlightedIndex).toBe(7)
+    expect(overlay.wheel(110, 5, 0, 56)).toBe(true) // over the top strip: no row
+    expect(overlay.getPopupLayout()?.rows.map((r) => r.index)).toEqual([
+      7, 8, 9,
+    ])
+    expect(overlay.highlightedIndex).toBe(7)
+    overlay.keyDown(key('ArrowDown'))
+    overlay.keyDown(key('Enter'))
+    expect(changes).toEqual(['long:v8'])
+    expect(overlay.getValue('long')).toBe('v8')
+    expect(overlay.wheel(110, 5, 0, 56)).toBe(false) // closed again
+  })
 })

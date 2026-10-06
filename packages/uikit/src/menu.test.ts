@@ -10,7 +10,9 @@ import {
   layoutMenuPopup,
   type MenuButtonSpec,
   type MenuItemSpec,
+  menuRevealRow,
   menuRowAt,
+  menuScrollStripAt,
   nextSelectableIndex,
   popupContains,
   scaleMenu,
@@ -282,5 +284,117 @@ describe('buildMenuPopup', () => {
     expect(geo.lines.length).toBe(3)
     const dim = geo.text[5].color ?? []
     expect(dim[3]).toBeCloseTo(STYLE.disabledTextColor[3])
+  })
+})
+
+describe('layoutMenuPopup scrolling', () => {
+  const LONG: MenuItemSpec[] = Array.from({ length: 10 }, (_, i) => ({
+    id: `i${i}`,
+    label: 'Hi',
+  }))
+  const button = layoutMenuButton(SPEC, BSTYLE, STYLE, METRICS)
+  const bounds = { x: 0, y: 0, width: 400, height: 200 }
+
+  it('scrolls on the roomier side when the items fit neither below nor above', () => {
+    const l = layoutMenuPopup(LONG, STYLE, METRICS, button, bounds)
+    expect(l.scrollable).toBe(true)
+    expect(l.above).toBe(false)
+    expect(l.y).toBe(82)
+    expect(l.height).toBe(118) // all that is left below the button
+    // 118 - 8 padding - 28 strips = 82: two 28 px rows fit, three do not.
+    expect(l.firstRow).toBe(0)
+    expect(l.endRow).toBe(2)
+    expect(l.rows).toEqual([
+      { index: 0, x: 104, y: 100, width: 112, height: 28 },
+      { index: 1, x: 104, y: 128, width: 112, height: 28 },
+    ])
+    expect(l.scrollUp).toEqual({ x: 104, y: 86, width: 112, height: 14 })
+    expect(l.scrollDown).toEqual({ x: 104, y: 182, width: 112, height: 14 })
+    // Above is roomier for a low button: 12 items (344 px) do not fit the 296 above.
+    const twelve = [
+      ...LONG,
+      { id: 'i10', label: 'Hi' },
+      { id: 'i11', label: 'Hi' },
+    ]
+    const up = layoutMenuPopup(
+      twelve,
+      STYLE,
+      METRICS,
+      { ...button, y: 300 },
+      {
+        ...bounds,
+        height: 400,
+      },
+    )
+    expect(up).toMatchObject({
+      above: true,
+      scrollable: true,
+      y: 0,
+      height: 296,
+    })
+    expect(up.endRow).toBe(9) // (296 - 36) / 28
+  })
+
+  it('clamps the first row, and fills the bounds when neither side can show a row', () => {
+    const l = layoutMenuPopup(LONG, STYLE, METRICS, button, bounds, 20)
+    expect(l.firstRow).toBe(8)
+    expect(l.endRow).toBe(10)
+    expect(l.rows.map((r) => r.index)).toEqual([8, 9])
+    expect(l.rows[0].y).toBe(100) // the first visible row keeps its slot
+    const tight = layoutMenuPopup(LONG, STYLE, METRICS, button, {
+      ...bounds,
+      height: 100,
+    })
+    expect(tight).toMatchObject({
+      y: 0,
+      height: 100,
+      scrollable: true,
+      endRow: 2,
+    })
+  })
+
+  it('never scrolls without bounds or when the items fit', () => {
+    const free = layoutMenuPopup(LONG, STYLE, METRICS, button)
+    expect(free.scrollable).toBe(false)
+    expect(free.rows).toHaveLength(10)
+    expect(free.scrollUp).toBeNull()
+    expect(free.scrollDown).toBeNull()
+    const fits = layoutMenuPopup(ITEMS, STYLE, METRICS, button, bounds)
+    expect(fits.scrollable).toBe(true) // 157 px into 118: the old stay-below case
+    expect(
+      layoutMenuPopup(ITEMS, STYLE, METRICS, button, { ...bounds, height: 400 })
+        .scrollable,
+    ).toBe(false)
+  })
+
+  it('reveals a row with the least scroll, and finds the strips', () => {
+    const l = layoutMenuPopup(LONG, STYLE, METRICS, button, bounds)
+    expect(menuRevealRow(LONG, STYLE, l, 1)).toBe(0)
+    expect(menuRevealRow(LONG, STYLE, l, 5)).toBe(4)
+    expect(menuRevealRow(LONG, STYLE, l, -1)).toBe(0)
+    const tail = layoutMenuPopup(LONG, STYLE, METRICS, button, bounds, 8)
+    expect(menuRevealRow(LONG, STYLE, tail, 3)).toBe(3)
+    const free = layoutMenuPopup(LONG, STYLE, METRICS, button)
+    expect(menuRevealRow(LONG, STYLE, free, 9)).toBe(0)
+    expect(menuScrollStripAt(l, 110, 90)).toBe(-1)
+    expect(menuScrollStripAt(l, 110, 190)).toBe(1)
+    expect(menuScrollStripAt(l, 110, 110)).toBe(0)
+    expect(menuScrollStripAt(free, 110, 90)).toBe(0)
+  })
+
+  it('draws an arrow only on a strip with rows beyond it, and no hidden highlight', () => {
+    const top = layoutMenuPopup(LONG, STYLE, METRICS, button, bounds)
+    const geo = buildMenuPopup(LONG, STYLE, METRICS, top, 5)
+    expect(geo.rects).toHaveLength(1) // panel only: row 5 is not visible
+    expect(geo.lines).toHaveLength(2) // the down chevron
+    expect(geo.lines[0].data[1]).toBe(186.5) // centred on the bottom strip (182..196)
+    expect(geo.text).toHaveLength(2)
+    const mid = layoutMenuPopup(LONG, STYLE, METRICS, button, bounds, 4)
+    expect(buildMenuPopup(LONG, STYLE, METRICS, mid, 4).lines).toHaveLength(4)
+    expect(buildMenuPopup(LONG, STYLE, METRICS, mid, 4).rects).toHaveLength(2)
+    const end = layoutMenuPopup(LONG, STYLE, METRICS, button, bounds, 8)
+    const up = buildMenuPopup(LONG, STYLE, METRICS, end, -1).lines
+    expect(up).toHaveLength(2)
+    expect(up[0].data[1]).toBe(95.5) // the up chevron sits in the top strip (86..100)
   })
 })

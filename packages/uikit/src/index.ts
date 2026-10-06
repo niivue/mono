@@ -31,6 +31,29 @@ export type {
 } from './buttonOverlay'
 export { UIKitButtonOverlay } from './buttonOverlay'
 export type {
+  ColorChannel,
+  ColorControlLayout,
+  ColorControlSpec,
+  ColorControlStyle,
+  ColorControlVisual,
+  ColorSwatch,
+} from './colorControl'
+export {
+  buildColorControl,
+  COLOR_CHANNELS,
+  colorControlContains,
+  colorSwatchAt,
+  colorsEqual,
+  DEFAULT_COLOR_CONTROL_STYLE,
+  layoutColorControl,
+  resolveColorControlStyle,
+  scaleColorControl,
+  selectedSwatch,
+  withChannel,
+} from './colorControl'
+export type { UIKitColorControlOverlayOptions } from './colorControlOverlay'
+export { UIKitColorControlOverlay } from './colorControlOverlay'
+export type {
   UIKitControlsOptions,
   UIKitHost,
   UIKitInteractive,

@@ -35,6 +35,7 @@ and draws that data through the lifecycle hook.
 | `buildSlider` | `UIKitSliderOverlay` | Horizontal sliders with min/max/step, ticks, a value readout, drag and arrow keys |
 | `buildNumberInput` | `UIKitNumberInputOverlay` | Number fields: typed entry with validation, a spinner, arrow keys and the wheel |
 | `buildTextInput` | `UIKitTextInputOverlay` | Single-line text fields with a placeholder, selection, Enter to submit |
+| `buildColorControl` | `UIKitColorControlOverlay` | Color pickers the legacy way: a preview, R/G/B(/A) channel sliders and palette swatches |
 | `buildDialog` | `UIKitDialogOverlay` | Modal dialogs: a scrim, a panel with a title, wrapped message, hosted widgets and action buttons |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
@@ -451,6 +452,46 @@ and its focus color, text, placeholder and disabled text colors, the label
 halo (`textOutlineWidth`, `textOutlineColor`), padding, the default
 `fieldWidth`, and the caret and selection colors. The overlay options take
 `doubleClickMs` (default 400) and a `now` clock for it.
+
+## Color controls
+
+`UIKitColorControlOverlay` edits a color the way the legacy demos do, with
+channel sliders and named palette choices rather than a browser color picker.
+Each control shows a preview swatch (over a grey backdrop, so a translucent
+color shows its alpha), a stack of R, G and B sliders (and A with `alpha`)
+composed from a slider overlay, and a row of palette swatches that wraps to
+the control's width. Dragging a slider, or pressing an arrow, Home, End or
+Page key on the focused one, changes a channel; pressing a swatch sets the
+whole color, and the swatch matching the current color wears a ring.
+`onInput` fires on every change and `onChange` once per committed one (a
+slider release, a key press, a swatch press).
+
+```ts
+const colors = new UIKitColorControlOverlay(font, units)
+colors.addColorControl({
+  id: 'crosshair',
+  label: 'Crosshair',
+  x: 12,
+  y: 380,
+  width: 220,
+  value: [1, 0, 0, 1],
+  alpha: false,
+  palette: [
+    { name: 'Red', color: [1, 0, 0, 1] },
+    { name: 'Green', color: [0, 1, 0, 1] },
+    { name: 'White', color: [1, 1, 1, 1] },
+  ],
+  onInput: (c) => { nv.crosshairColor = c },
+  onChange: (c) => save(c),
+})
+colors.setValue('crosshair', [0, 1, 0, 1]) // silent
+colors.getValue('crosshair')
+```
+
+`ColorControlStyle` holds the text color and size with the label halo
+(`textOutlineWidth`, `textOutlineColor`), the preview size, radius, border
+and backdrop, the gaps, `slider` overrides for the channel sliders, and the
+swatch size, gap, radius, border and the selected and hover rings.
 
 ## Dialogs
 

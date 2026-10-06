@@ -24,7 +24,7 @@
       <header>
         <b>UIKit controls</b>
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
-        <span>Menus, toggles, sliders, number and text fields, buttons and a modal dialog drawn in the scene, sharing one
+        <span>Menus, toggles, sliders, number and text fields, buttons, a color control and a modal dialog drawn in the scene, sharing one
           control layer: a click on any of them never reaches the viewer, an open menu
           swallows the click that dismisses it, and the keyboard drives the focused
           control (<kbd>Tab</kbd>-free: click a control, then use arrows, Space, Enter,
@@ -40,6 +40,7 @@
       import {
         loadDefaultFont,
         UIKitButtonOverlay,
+        UIKitColorControlOverlay,
         UIKitControls,
         UIKitDialogOverlay,
         UIKitMenuOverlay,
@@ -79,12 +80,14 @@
       const selects = new UIKitSelectOverlay(font, units)
       const numbers = new UIKitNumberInputOverlay(font, units)
       const texts = new UIKitTextInputOverlay(font, units)
+      const colors = new UIKitColorControlOverlay(font, units)
       const dialogs = new UIKitDialogOverlay(font, units)
       const controls = new UIKitControls()
         .add(buttons)
         .add(sliders)
         .add(numbers)
         .add(texts)
+        .add(colors)
         .add(toggles)
         .add(segmented)
         .add(menus)
@@ -239,6 +242,24 @@
         onSubmit: (text) => say(`note submitted: ${JSON.stringify(text)}`),
       })
 
+      // A color control for the crosshair: channel sliders and a palette of
+      // named colors, as the legacy demos edit colors (no browser picker).
+      colors.addColorControl({
+        id: 'crosshair', label: 'Crosshair color', x: 12, y: 372, width: 220,
+        value: nv.crosshairColor,
+        palette: [
+          { name: 'Red', color: [1, 0, 0, 1] },
+          { name: 'Green', color: [0, 1, 0, 1] },
+          { name: 'Blue', color: [0.3, 0.5, 1, 1] },
+          { name: 'Yellow', color: [1, 1, 0, 1] },
+          { name: 'Cyan', color: [0, 1, 1, 1] },
+          { name: 'Magenta', color: [1, 0, 1, 1] },
+          { name: 'White', color: [1, 1, 1, 1] },
+        ],
+        onInput: (c) => { nv.crosshairColor = c },
+        onChange: (c) => say(`crosshair color ${c.map((v) => v.toFixed(2)).join(', ')}`),
+      })
+
       // A modal dialog hosting its own widgets: a text input and a number
       // input live in overlays the dialog routes and draws while it is open
       // (they are not added to the control layer). OK applies both values,
@@ -287,6 +308,8 @@
         nv.renderPan = [0, 0]
         nv.gamma = 1
         nv.crosshairWidth = 1
+        nv.crosshairColor = [1, 0, 0, 1]
+        colors.setValue('crosshair', [1, 0, 0, 1])
         sliders.setValue('azimuth', 110)
         sliders.setValue('gamma', 1)
         sliders.setValue('crosshair', 1)

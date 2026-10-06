@@ -35,6 +35,13 @@ export interface SliderStyle {
   disabledTextColor: RGBA
   /** Label and value em size. */
   textSizePx: number
+  /**
+   * Halo outline width around the label and value, so they read over any
+   * scene; 0 draws none. 1 to 2 reads best with the bundled font.
+   */
+  textOutlineWidth: number
+  /** Halo color; null picks black or white for contrast with `textColor`. */
+  textOutlineColor: RGBA | null
   /** Space between the label row baseline and the thumb row. */
   labelGap: number
   /** Focus ring color (drawn around the thumb while the slider has keyboard focus). */
@@ -59,6 +66,8 @@ export const DEFAULT_SLIDER_STYLE: SliderStyle = {
   textColor: [1, 1, 1, 1],
   disabledTextColor: [1, 1, 1, 0.45],
   textSizePx: 14,
+  textOutlineWidth: 1,
+  textOutlineColor: null,
   labelGap: 6,
   focusRing: [0.55, 0.7, 1, 0.9],
   focusRingWidth: 2,
@@ -133,8 +142,8 @@ export function resolveSliderStyle(
   return override ? { ...base, ...override } : base
 }
 
-/** The number of decimal places needed to print multiples of `step` exactly. */
-function decimalsOf(step: number): number {
+/** The number of decimal places needed to print multiples of `step` exactly (0 for no step). */
+export function stepDecimals(step: number): number {
   if (!Number.isFinite(step) || step <= 0) return 0
   const s = step.toString()
   const [mantissa, exponent] = s.split('e')
@@ -158,7 +167,7 @@ export function snapValue(
     // The tiny bias keeps a half-way value (0.35 by 0.1) rounding up as a
     // reader expects, despite the division landing a hair under .5.
     const n = Math.round((v - min) / step + 1e-9)
-    v = Number((min + n * step).toFixed(decimalsOf(step)))
+    v = Number((min + n * step).toFixed(stepDecimals(step)))
     v = Math.min(hi, Math.max(lo, v))
   }
   return v
@@ -212,7 +221,7 @@ export function formatSliderValue(
 ): string {
   if (spec.format) return spec.format(value)
   if (spec.step !== undefined && spec.step > 0) {
-    return value.toFixed(decimalsOf(spec.step))
+    return value.toFixed(stepDecimals(spec.step))
   }
   return String(Number(value.toFixed(2)))
 }
@@ -267,6 +276,7 @@ export function scaleSlider(
       tickLength: style.tickLength * k,
       tickWidth: style.tickWidth * k,
       textSizePx: style.textSizePx * k,
+      textOutlineWidth: style.textOutlineWidth * k,
       labelGap: style.labelGap * k,
       focusRingWidth: style.focusRingWidth * k,
     },
@@ -402,6 +412,10 @@ export function buildSlider(
 
   if (layout.labelBaseline !== null) {
     const color = visual.enabled ? style.textColor : style.disabledTextColor
+    const outline = {
+      outlineWidthPx: style.textOutlineWidth,
+      outlineColor: style.textOutlineColor ?? undefined,
+    }
     if (spec.label) {
       text.push({
         str: spec.label,
@@ -410,6 +424,7 @@ export function buildSlider(
         sizePx: style.textSizePx,
         align: 0,
         color,
+        ...outline,
       })
     }
     if (spec.showValue) {
@@ -420,6 +435,7 @@ export function buildSlider(
         sizePx: style.textSizePx,
         align: 1,
         color,
+        ...outline,
       })
     }
   }

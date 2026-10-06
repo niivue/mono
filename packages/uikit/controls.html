@@ -24,7 +24,7 @@
       <header>
         <b>UIKit controls</b>
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
-        <span>Menus, toggles, sliders and buttons drawn in the scene, sharing one
+        <span>Menus, toggles, sliders, number fields and buttons drawn in the scene, sharing one
           control layer: a click on any of them never reaches the viewer, an open menu
           swallows the click that dismisses it, and the keyboard drives the focused
           control (<kbd>Tab</kbd>-free: click a control, then use arrows, Space, Enter,
@@ -42,6 +42,7 @@
         UIKitButtonOverlay,
         UIKitControls,
         UIKitMenuOverlay,
+        UIKitNumberInputOverlay,
         UIKitSegmentedOverlay,
         UIKitSelectOverlay,
         UIKitSliderOverlay,
@@ -74,9 +75,11 @@
       const buttons = new UIKitButtonOverlay(font, units)
       const segmented = new UIKitSegmentedOverlay(font, units)
       const selects = new UIKitSelectOverlay(font, units)
+      const numbers = new UIKitNumberInputOverlay(font, units)
       const controls = new UIKitControls()
         .add(buttons)
         .add(sliders)
+        .add(numbers)
         .add(toggles)
         .add(segmented)
         .add(menus)
@@ -186,8 +189,23 @@
       sliders.addSlider({
         id: 'gamma', label: 'Gamma', x: 12, y: 84, width: 220,
         min: 0.1, max: 3, step: 0.05, value: 1, showValue: true,
-        onInput: (v) => { nv.gamma = v },
+        onInput: (v) => { nv.gamma = v; numbers.setValue('gamma', v) },
         onChange: (v) => say(`gamma ${v}`),
+      })
+      // Number inputs for exact entry: one mirrors the gamma slider both ways,
+      // one sets a value no slider shows. Click, type, Enter; or spin, arrow
+      // keys and the wheel.
+      numbers.addNumberInput({
+        id: 'gamma', x: 250, y: 90, width: 72,
+        min: 0.1, max: 3, step: 0.05, value: 1,
+        onInput: (v) => { nv.gamma = v; sliders.setValue('gamma', v) },
+        onChange: (v) => say(`gamma ${v}`),
+      })
+      numbers.addNumberInput({
+        id: 'elevation', label: 'Elevation', x: 250, y: 178, width: 72,
+        min: -90, max: 90, step: 5, value: 10,
+        onInput: (v) => { nv.elevation = v },
+        onChange: (v) => say(`elevation ${v}`),
       })
       sliders.addSlider({
         id: 'crosshair', label: 'Crosshair width', x: 12, y: 126, width: 220,
@@ -215,6 +233,8 @@
         sliders.setValue('azimuth', 110)
         sliders.setValue('gamma', 1)
         sliders.setValue('crosshair', 1)
+        numbers.setValue('gamma', 1)
+        numbers.setValue('elevation', 10)
         nv.setVolume(0, { colormap: 'Gray' })
         selects.setValue('colormap', 'Gray')
         say('view reset')

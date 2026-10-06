@@ -260,3 +260,25 @@ describe('buildSlider', () => {
     expect(geo.rects.length).toBe(2)
   })
 })
+
+describe('label outline', () => {
+  it('halos the label and value by default, with an automatic contrast color', () => {
+    const layout = layoutSlider({ ...SPEC, showValue: true }, STYLE, METRICS)
+    const g = buildSlider({ ...SPEC, showValue: true }, STYLE, layout, IDLE)
+    expect(g.text).toHaveLength(2)
+    for (const t of g.text) {
+      expect(t.outlineWidthPx).toBe(1)
+      expect(t.outlineColor).toBeUndefined()
+    }
+    const style = resolveSliderStyle(STYLE, {
+      textOutlineWidth: 2,
+      textOutlineColor: [0, 0, 0, 1],
+    })
+    const h = buildSlider(SPEC, style, layout, IDLE)
+    expect(h.text[0]).toMatchObject({
+      outlineWidthPx: 2,
+      outlineColor: [0, 0, 0, 1],
+    })
+    expect(scaleSlider(SPEC, style, 2).style.textOutlineWidth).toBe(4)
+  })
+})

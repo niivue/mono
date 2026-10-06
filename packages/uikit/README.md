@@ -33,10 +33,12 @@ and draws that data through the lifecycle hook.
 | `buildButton` | `UIKitButtonOverlay` | Clickable, stylable push buttons with a text label and a press animation |
 | `buildToggle` | `UIKitToggleOverlay` | Check boxes with a label: pointer or Space/Enter flips them |
 | `buildSlider` | `UIKitSliderOverlay` | Horizontal sliders with min/max/step, ticks, a value readout, drag and arrow keys |
+| `buildNumberInput` | `UIKitNumberInputOverlay` | Number fields: typed entry with validation, a spinner, arrow keys and the wheel |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
 | `scrollWindow`, `revealRow`, `buildScrollArrow` | (used by the overlays above) | Row scrolling for any container whose list outgrows its viewport |
+| `editKey`, `textWindow`, `caretIndexAt` | (used by the overlays above) | Single-line text editing: caret, selection, key edits, whole-glyph scrolling |
 | | `UIKitControls` | The control layer: one owner of the pointer, wheel and keyboard for every widget above |
 
 ```ts
@@ -223,6 +225,11 @@ and `onChange` fires when the interaction ends with a value different from the
 one it started with (a drag releases, a key press lands). Neither fires for
 `setValue`.
 
+The label and value sit on the scene, so they draw with a halo outline:
+`textOutlineWidth` (default 1; 0 for none) and `textOutlineColor` (default
+null, which picks black or white for contrast with `textColor`) in
+`SliderStyle`.
+
 ## Menus
 
 `UIKitMenuOverlay` draws menu buttons (a label with a chevron) and, when one is
@@ -349,3 +356,51 @@ segmented.select('view', 'axial') // as the user would: fires onChange
 `segmentWidth` fixes every segment's width instead of fitting the widest label;
 `SegmentedStyle` holds the track fill and border, inset, radius, the selected,
 hover and pressed faces, text colors and size, the divider and the focus ring.
+
+## Number inputs
+
+`UIKitNumberInputOverlay` draws a bordered field showing a number, with a
+two-button spinner at its right end and an optional label to its left. A
+press on the text takes keyboard focus and selects the whole number, so typing
+replaces it; a second press places the caret and dragging selects. Typed text
+is checked on every keystroke (the border turns `invalidBorder` while it is
+not a number) and `onInput` fires whenever it means a new valid number. Enter
+commits, Escape reverts to the committed value, and losing focus commits, as
+does every step: ArrowUp/Down (Shift: ten steps), PageUp/PageDown, the spinner
+buttons and the wheel over a focused field. A committed value is clamped to
+`[min, max]` (either end optional) and snapped to `step` (counted from `min`,
+or 0), and `onChange` fires once per committed change. The field shows only
+the glyphs that fit, scrolled by whole glyphs to keep the caret in view.
+
+```ts
+const numbers = new UIKitNumberInputOverlay(font, units)
+numbers.addNumberInput({
+  id: 'elevation',
+  label: 'Elevation',
+  x: 250,
+  y: 172,
+  width: 80, // the field; the label adds to it
+  min: -90,
+  max: 90,
+  step: 5,
+  value: 10,
+  format: (v) => `${v}`, // optional; default shows the step's decimals
+  onInput: (v) => { nv.elevation = v }, // each new valid number while typing, each step
+  onChange: (v) => save(v), // once per committed change
+})
+numbers.setValue('elevation', 0) // silent
+numbers.getValue('elevation') // the committed value
+numbers.getText('elevation') // what the field shows, edit in progress included
+```
+
+`NumberInputStyle` holds the field fill, hover and disabled fills, the border
+with its focus and invalid colors, text color and size, the label halo
+(`textOutlineWidth`, `textOutlineColor`), padding, the default `fieldWidth`,
+the spinner width, faces, dividers and chevrons, and the caret and selection
+colors. `parse` on a spec replaces the default `Number` parser.
+
+The editing itself is the shared model in `textEdit.ts`: a `TextEditState`
+(text, caret, selection anchor), `editKey` for the caret moves, Backspace,
+Delete, select-all and typed characters a key means, `caretIndexAt` for the
+pointer, and `textWindow`, which scrolls a field by whole glyphs through the
+scroll model. A text input reuses it with a different `accept` filter.

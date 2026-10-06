@@ -76,6 +76,30 @@ export {
 } from './menu'
 export type { UIKitMenuOverlayOptions } from './menuOverlay'
 export { UIKitMenuOverlay } from './menuOverlay'
+export type {
+  NumberInputLayout,
+  NumberInputSpec,
+  NumberInputStyle,
+  NumberInputVisual,
+} from './numberInput'
+export {
+  acceptNumberChar,
+  buildNumberInput,
+  DEFAULT_NUMBER_INPUT_STYLE,
+  formatNumberInput,
+  layoutNumberInput,
+  numberInputCaretAt,
+  numberInputContains,
+  numberInputSpinAt,
+  numberInputTextWindow,
+  parseNumberInput,
+  resolveNumberInputStyle,
+  scaleNumberInput,
+  snapNumberInput,
+  stepNumberInput,
+} from './numberInput'
+export type { UIKitNumberInputOverlayOptions } from './numberInputOverlay'
+export { UIKitNumberInputOverlay } from './numberInputOverlay'
 export type { RectData, RectSpec } from './rect'
 export { buildRect, rectContains } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
@@ -151,6 +175,7 @@ export {
   sliderThumbX,
   sliderValueAt,
   snapValue,
+  stepDecimals,
   stepValue,
   valueToFraction,
 } from './slider'
@@ -172,6 +197,22 @@ export {
   measureWidth,
   readableAngle,
 } from './text/layout'
+export type { TextEditState } from './textEdit'
+export {
+  advanceBetween,
+  caretIndexAt,
+  deleteBackward,
+  deleteForward,
+  editKey,
+  glyphAdvances,
+  hasSelection,
+  insertText,
+  selectAll,
+  selectionOf,
+  setCaret,
+  textEditState,
+  textWindow,
+} from './textEdit'
 export type { UIKitTextItem } from './textOverlay'
 export { UIKitTextOverlay } from './textOverlay'
 export type {

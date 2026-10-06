@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTIHeader, NVImage } from '@/NVTypes'
-import { computeModulationData, computeModulationWeights } from './modulation'
+import {
+  computeModulationData,
+  computeModulationWeights,
+  modulationFitsTextureLimit,
+} from './modulation'
 
 function makeHeader(overrides: Partial<NIFTIHeader> = {}): NIFTIHeader {
   return {
@@ -284,5 +288,24 @@ describe('computeModulationWeights', () => {
     const scalarTarget = makeVolume({ id: 'target', modulationImage: 'mod1' })
     computeModulationData([scalarTarget, modVol])
     expect(scalarTarget._modulationData).toBeNull()
+  })
+})
+
+describe('modulationFitsTextureLimit', () => {
+  const mod = {
+    weight: new Float32Array(1),
+    dims: [128, 64, 32] as [number, number, number],
+    mtx: new Float32Array(16),
+    mode: 1,
+    key: 'test',
+  }
+
+  test('accepts null and grids at the device limit', () => {
+    expect(modulationFitsTextureLimit(null, 128)).toBe(true)
+    expect(modulationFitsTextureLimit(mod, 128)).toBe(true)
+  })
+
+  test('rejects a grid with an oversized dimension', () => {
+    expect(modulationFitsTextureLimit(mod, 127)).toBe(false)
   })
 })

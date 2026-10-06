@@ -15,18 +15,26 @@
 //     voxel-by-voxel during the per-chunk CPU extraction, so the orient pass
 //     still runs with an identity matrix on an already-RAS chunk texture.
 //
-// The orient uniform buffer, colormap textures, and sampler are shared across
-// chunks (one upload, N bind groups). Per-chunk source textures are destroyed
-// after the orient pass; per-chunk RGBA + gradient textures are returned to
-// the caller and live for the chunk's lifetime in the renderer cache.
+// The orient uniform buffer, colormap textures, modulator texture and sampler
+// are shared across chunks (one upload, N bind groups); only the modulation
+// matrix is rewritten per chunk, because it maps the chunk's own grid.
+// Per-chunk source textures are destroyed after the orient pass; per-chunk
+// RGBA + gradient textures are returned to the caller and live for the
+// chunk's lifetime in the renderer cache.
 
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
 import { buildOrientUniforms } from '@/view/NVOrient'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import { recordChunkPhase } from '@/volume/chunkTiming'
 import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
 import {
+  type ModulationTextureParams,
+  modulationFitsTextureLimit,
+} from '@/volume/modulation'
+import {
+  chunkModulationForDesc,
   chunkRGBA,
   extractChunkBytes,
   extractChunkBytesReoriented,
@@ -128,8 +136,9 @@ function writeIdentityOrientUniforms(
   dv.setFloat32(100, u.isLabel, true)
   dv.setFloat32(104, u.labelMin, true)
   dv.setFloat32(108, u.labelWidth, true)
-  // modMtx (offset 112, 4 vec4s) + mode flag (offset 176): modulation is
-  // disabled for chunks — identity matrix + mode 0.
+  // modMtx (offset 112, 4 vec4s) + mode flag (offset 176): identity + mode 0
+  // here; writeChunkModulationUniforms overwrites them per chunk when the
+  // volume has a modulator.
   for (let i = 0; i < 16; i++)
     dv.setFloat32(112 + i * 4, IDENTITY_MAT4[i], true)
   dv.setFloat32(176, 0, true)
@@ -139,6 +148,23 @@ function writeIdentityOrientUniforms(
   // chunked path.
   dv.setFloat32(180, 0, true)
   device.queue.writeBuffer(uniformBuffer, 0, ab)
+}
+
+// Per-chunk modulation uniforms (offsets 112..180 of the orient struct): the
+// matrix maps the chunk's output grid to the modulator's texture, so it differs
+// per brick even though the modulator texture is shared. Written to the
+// shared uniform buffer right before the brick's dispatch; both go through
+// the same queue in order, and uploadChunk never awaits between the two.
+function writeChunkModulationUniforms(
+  device: GPUDevice,
+  uniformBuffer: GPUBuffer,
+  mod: ModulationTextureParams,
+): void {
+  const ab = new ArrayBuffer(17 * 4)
+  const dv = new DataView(ab)
+  for (let i = 0; i < 16; i++) dv.setFloat32(i * 4, mod.mtx[i], true)
+  dv.setFloat32(64, mod.mode, true)
+  device.queue.writeBuffer(uniformBuffer, 112, ab)
 }
 
 async function createColormapResources(
@@ -280,22 +306,23 @@ interface OrientMachinery {
   negativeColormapTexture: GPUTexture
   hasNegativeColormap: boolean
   sampler: GPUSampler
-  // Placeholder for the orient pass's modulation binding (binding 6). Chunks
-  // are never modulated, but main's orient bind group layout requires the
-  // entry, so bind a 1x1x1 r32float placeholder.
-  modPlaceholder: GPUTexture
+  // The orient pass's modulation binding (binding 6): the whole modulator's
+  // weights when the volume has one, else a 1x1x1 r32float placeholder (the
+  // bind group layout requires the entry either way).
+  modTexture: GPUTexture
 }
 
 async function buildOrientMachinery(
   device: GPUDevice,
   nvimage: NVImage,
   dt: number,
+  modulation: ModulationTextureParams | null,
 ): Promise<OrientMachinery> {
   const { format, pipelineType } = getTextureFormat(dt)
   const cached = ensureOrientPipeline(device, pipelineType)
   const uniformBuffer = device.createBuffer({
-    // 12*16 to match main's orient uniform struct (grown for modulation:
-    // modMtx at offset 112 + mode flag at 176). Chunks disable modulation.
+    // 12*16 to match main's orient uniform struct (modMtx at offset 112 +
+    // mode flag at 176, rewritten per chunk).
     size: 12 * 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
@@ -306,7 +333,7 @@ async function buildOrientMachinery(
     hasNegativeColormap,
     sampler,
   } = await createColormapResources(device, nvimage)
-  const modPlaceholder = createModTexture(device, null)
+  const modTexture = createModTexture(device, modulation)
   return {
     format,
     cached,
@@ -315,7 +342,7 @@ async function buildOrientMachinery(
     negativeColormapTexture,
     hasNegativeColormap,
     sampler,
-    modPlaceholder,
+    modTexture,
   }
 }
 
@@ -347,7 +374,19 @@ export async function createChunkUploaderGPU(
   // in-memory volume, whose chunks are a cheap copy out of a buffer we are
   // already holding -- shadowing those would only duplicate the image.
   decoded: DecodedChunkCache | null = null,
+  // Resolved modulation for this volume (buildModulationParams against its
+  // OWN grid), or null. Baked into every chunk texture like the colormap is,
+  // so the renderer's display key must cover it (chunkedDisplayKey).
+  modulation: ModulationTextureParams | null = null,
 ): Promise<ChunkUploaderGPU> {
+  if (
+    !modulationFitsTextureLimit(modulation, device.limits.maxTextureDimension3D)
+  ) {
+    log.warn(
+      `modulation disabled: grid ${modulation?.dims.join('x')} exceeds WebGPU maxTextureDimension3D (${device.limits.maxTextureDimension3D})`,
+    )
+    modulation = null
+  }
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunked: missing dimsRAS')
   }
@@ -383,7 +422,9 @@ export async function createChunkUploaderGPU(
       ? 3
       : 4
     : getTextureFormat(dt).bytesPerVoxel
-  const orient = isRGBA ? null : await buildOrientMachinery(device, nvimage, dt)
+  const orient = isRGBA
+    ? null
+    : await buildOrientMachinery(device, nvimage, dt, modulation)
 
   const frame4D = nvimage.frame4D ?? 0
   const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
@@ -564,6 +605,10 @@ export async function createChunkUploaderGPU(
           GPUTextureUsage.STORAGE_BINDING |
           GPUTextureUsage.COPY_SRC,
       })
+      const chunkMod = chunkModulationForDesc(modulation, desc, plan)
+      if (chunkMod) {
+        writeChunkModulationUniforms(device, om.uniformBuffer, chunkMod)
+      }
       const bindGroup = device.createBindGroup({
         layout: om.cached.layout,
         entries: [
@@ -573,7 +618,7 @@ export async function createChunkUploaderGPU(
           { binding: 3, resource: rgbaTexture.createView() },
           { binding: 4, resource: om.sampler },
           { binding: 5, resource: om.negativeColormapTexture.createView() },
-          { binding: 6, resource: om.modPlaceholder.createView() },
+          { binding: 6, resource: om.modTexture.createView() },
         ],
       })
       const encoder = device.createCommandEncoder()
@@ -620,7 +665,7 @@ export async function createChunkUploaderGPU(
     orient.uniformBuffer.destroy()
     orient.colormapTexture.destroy()
     if (orient.hasNegativeColormap) orient.negativeColormapTexture.destroy()
-    orient.modPlaceholder.destroy()
+    orient.modTexture.destroy()
   }
 
   return { uploadChunk, prefetchChunk, cancelChunk, dispose }

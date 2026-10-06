@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVImage } from '@/NVTypes'
 import type { Vec3i } from '@/volume/chunking'
+import { chunkVolumeGrid } from '@/volume/chunking'
 import {
   chunkedDisplayKey,
+  chunkModulationForDesc,
+  chunkModulationParams,
+  chunkOverlayMatrix,
   chunkRGBA,
   extractChunkBytes,
   extractChunkBytesReoriented,
@@ -351,6 +355,31 @@ describe('chunkedDisplayKey', () => {
     )
   })
 
+  // Resident chunk textures bake the modulator in, so the key has to move
+  // when a modulator appears, changes identity/window (its `key`), swaps
+  // RGB<->alpha (`mode`), or goes away -- else the uploader is never rebuilt
+  // and the bricks keep the stale gating.
+  const modA = {
+    weight: new Float32Array(1),
+    dims: [1, 1, 1] as [number, number, number],
+    mtx: new Float32Array(16),
+    mode: 2,
+    key: 'mod-a',
+  }
+  test('a modulator is part of the key', () => {
+    const plain = chunkedDisplayKey(makeVol())
+    const modulated = chunkedDisplayKey(makeVol(), modA)
+    expect(modulated).not.toBe(plain)
+    expect(chunkedDisplayKey(makeVol(), modA)).toBe(modulated)
+    expect(chunkedDisplayKey(makeVol(), { ...modA, key: 'mod-b' })).not.toBe(
+      modulated,
+    )
+    expect(chunkedDisplayKey(makeVol(), { ...modA, mode: 1 })).not.toBe(
+      modulated,
+    )
+    expect(chunkedDisplayKey(makeVol(), null)).toBe(plain)
+  })
+
   test('a rebuilt label LUT object changes the key even with equal contents', () => {
     const lutA = { lut: Uint8Array.from([1, 2, 3, 4]) }
     const lutB = { lut: Uint8Array.from([1, 2, 3, 4]) }
@@ -359,5 +388,117 @@ describe('chunkedDisplayKey', () => {
     const keyB = chunkedDisplayKey(makeVol({ colormapLabel: lutB }))
     expect(keyA).toBe(keyASame)
     expect(keyA).not.toBe(keyB)
+  })
+})
+
+describe('chunkModulationParams', () => {
+  const mod = {
+    weight: new Float32Array([0.25, 0.5]),
+    dims: [2, 1, 1] as [number, number, number],
+    // Non-trivial matrix so every scale/offset term is exercised.
+    mtx: new Float32Array([
+      0.5, 0, 0, 0.1, 0, 2, 0, 0.2, 0, 0, 1, 0.3, 0, 0, 0, 1,
+    ]),
+    mode: 2,
+    key: 'k',
+  }
+  const scale = [0.5, 0.25, 1]
+  const offset = [0.5, 0.75, 0]
+
+  test('passes null through for an unmodulated overlay', () => {
+    expect(chunkModulationParams(null, scale, offset)).toBeNull()
+  })
+
+  test('re-targets only the matrix, exactly as chunkOverlayMatrix does', () => {
+    const out = chunkModulationParams(mod, scale, offset)
+    expect(out).not.toBeNull()
+    if (!out) return
+    expect(Array.from(out.mtx)).toEqual(
+      Array.from(chunkOverlayMatrix(mod.mtx, scale, offset)),
+    )
+    // The modulator texture is whole, so everything that describes it is shared.
+    expect(out.weight).toBe(mod.weight)
+    expect(out.dims).toBe(mod.dims)
+    expect(out.mode).toBe(mod.mode)
+    expect(out.key).toBe(mod.key)
+    // And the caller's full-volume params are left intact for the next chunk.
+    expect(mod.mtx[3]).toBeCloseTo(0.1)
+  })
+
+  test('a chunk-local coordinate lands where the whole volume would', () => {
+    // Whole-volume output coord o maps to modulator coord m = M * o. For a
+    // chunk, local coord c lifts to o = c * scale + offset, so the chunked
+    // matrix applied to c must equal M applied to o.
+    const out = chunkModulationParams(mod, scale, offset)
+    if (!out) throw new Error('expected params')
+    const c = [0.3, 0.6, 0.9, 1]
+    const o = [
+      c[0] * scale[0] + offset[0],
+      c[1] * scale[1] + offset[1],
+      c[2] * scale[2] + offset[2],
+      1,
+    ]
+    const apply = (m: Float32Array, v: number[], k: number): number =>
+      m[k * 4] * v[0] +
+      m[k * 4 + 1] * v[1] +
+      m[k * 4 + 2] * v[2] +
+      m[k * 4 + 3] * v[3]
+    for (let k = 0; k < 3; k++) {
+      expect(apply(out.mtx, c, k)).toBeCloseTo(apply(mod.mtx, o, k), 6)
+    }
+  })
+})
+
+describe('chunkModulationForDesc', () => {
+  const mod = {
+    weight: new Float32Array([1]),
+    dims: [1, 1, 1] as [number, number, number],
+    mtx: new Float32Array([
+      0.5, 0, 0, 0.1, 0, 2, 0, 0.2, 0, 0, 1, 0.3, 0, 0, 0, 1,
+    ]),
+    mode: 1,
+    key: 'k',
+  }
+  // A 2x2x2 grid over 40x60x80 with a 3-voxel halo: interior bricks carry a
+  // halo on one side and the boundary clips it, so texOrigin/texDims differ
+  // from the un-haloed voxelOrigin/voxelDims and from each other.
+  const plan = chunkVolumeGrid([40, 60, 80], [2, 2, 2], 4096, [3, 3, 3])
+
+  test('passes null through', () => {
+    expect(chunkModulationForDesc(null, plan.chunks[0], plan)).toBeNull()
+  })
+
+  test('lifts by the brick TEXTURE box (halo included), not its data box', () => {
+    const desc = plan.chunks[plan.chunks.length - 1]
+    expect(desc.haloLow).not.toEqual([0, 0, 0])
+    const [dx, dy, dz] = plan.volumeDims
+    const expected = chunkModulationParams(
+      mod,
+      [desc.texDims[0] / dx, desc.texDims[1] / dy, desc.texDims[2] / dz],
+      [desc.texOrigin[0] / dx, desc.texOrigin[1] / dy, desc.texOrigin[2] / dz],
+    )
+    const out = chunkModulationForDesc(mod, desc, plan)
+    if (!out || !expected) throw new Error('expected params')
+    expect(Array.from(out.mtx)).toEqual(Array.from(expected.mtx))
+    expect(out.weight).toBe(mod.weight)
+    expect(out.mode).toBe(mod.mode)
+    expect(out.key).toBe(mod.key)
+  })
+
+  test('the first brick of an un-haloed origin is the identity lift on its box', () => {
+    // Brick 0 starts at the volume origin (no low halo), so offset is zero and
+    // the scale is just its texture extent over the volume.
+    const desc = plan.chunks[0]
+    expect(desc.texOrigin).toEqual([0, 0, 0])
+    const out = chunkModulationForDesc(mod, desc, plan)
+    if (!out) throw new Error('expected params')
+    const [dx, dy, dz] = plan.volumeDims
+    const [tx, ty, tz] = desc.texDims
+    // Row 0 of M is [0.5, 0, 0, 0.1]: the x scale folds into the x column and
+    // the translation is untouched with a zero offset.
+    expect(out.mtx[0]).toBeCloseTo(0.5 * (tx / dx))
+    expect(out.mtx[3]).toBeCloseTo(0.1)
+    expect(out.mtx[5]).toBeCloseTo(2 * (ty / dy))
+    expect(out.mtx[10]).toBeCloseTo(1 * (tz / dz))
   })
 })

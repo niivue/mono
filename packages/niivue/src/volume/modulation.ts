@@ -49,6 +49,17 @@ export type ModulationTextureParams = {
   key: string
 }
 
+/** Whether a modulation grid fits in a backend's native 3D texture limit. */
+export function modulationFitsTextureLimit(
+  mod: ModulationTextureParams | null,
+  maxTextureDimension3D: number,
+): boolean {
+  return (
+    mod === null ||
+    mod.dims.every((dim) => dim > 0 && dim <= maxTextureDimension3D)
+  )
+}
+
 /**
  * Build the modulation sampling parameters for a target volume, or null when it
  * has no (resolvable) modulator. `baseVol` is the background volume that defines

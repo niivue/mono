@@ -5,7 +5,8 @@
 // (wgpu/orientChunked.ts and gl/orientChunked.ts) and have no GPU dependency.
 
 import type { NVImage } from '@/NVTypes'
-import type { Vec3i } from '@/volume/chunking'
+import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
+import type { ModulationTextureParams } from '@/volume/modulation'
 
 /** NIfTI datatype codes for color volumes. */
 export const DT_RGB24 = 128
@@ -38,7 +39,10 @@ function displayObjectId(o: object): number {
  * these change the only way to present the new state is to rebuild the uploader
  * and re-stream the chunks (source bytes are not retained after upload).
  */
-export function chunkedDisplayKey(nvimage: NVImage): string {
+export function chunkedDisplayKey(
+  nvimage: NVImage,
+  modulation: ModulationTextureParams | null = null,
+): string {
   const label = nvimage.colormapLabel
   const labelKey = label
     ? `${displayObjectId(label)}:${label.lut ? displayObjectId(label.lut) : ''}`
@@ -56,6 +60,11 @@ export function chunkedDisplayKey(nvimage: NVImage): string {
     nvimage.hdr.scl_slope,
     nvimage.hdr.scl_inter,
     nvimage.frame4D ?? 0,
+    // Resident chunk textures bake the modulator in, so a modulator that
+    // appears, changes or goes away must rebuild the uploader like a colormap
+    // change does. `key` already covers the modulator's identity, window,
+    // frame and exponent; `mode` covers RGB vs alpha.
+    modulation ? `${modulation.key}#${modulation.mode}` : '',
   ].join('|')
 }
 
@@ -209,6 +218,51 @@ export function chunkOverlayMatrix(
       mtx[b + 3]
   }
   return out
+}
+
+/**
+ * Re-target modulation parameters at one chunk's output grid.
+ *
+ * The orient shaders (both backends) apply the modulation matrix to the same
+ * chunk-local output coordinate as the overlay matrix, so a modulator sampled
+ * through the full-volume matrix would read the wrong voxels on every chunk
+ * but the first. This folds the identical chunk-local -> full-volume lift into
+ * `mod.mtx` via {@link chunkOverlayMatrix}; weight, dims, mode and cache key
+ * are untouched because the modulator texture itself is whole, not chunked.
+ *
+ * @param mod     Full-volume modulation params, or null when unmodulated.
+ * @param scale   Per-axis chunk extent fraction of the full volume.
+ * @param offset  Per-axis chunk origin fraction of the full volume.
+ */
+export function chunkModulationParams(
+  mod: ModulationTextureParams | null,
+  scale: Vec3i | readonly number[],
+  offset: Vec3i | readonly number[],
+): ModulationTextureParams | null {
+  if (!mod) return null
+  return { ...mod, mtx: chunkOverlayMatrix(mod.mtx, scale, offset) }
+}
+
+/**
+ * {@link chunkModulationParams} for one brick of a plan. The chunk uploaders
+ * orient each brick with an identity matrix, so their output grid IS the
+ * brick's texture (`texDims`, halo included, at `texOrigin`), and the lift to
+ * the full volume is that box as a fraction of `plan.volumeDims`.
+ */
+export function chunkModulationForDesc(
+  mod: ModulationTextureParams | null,
+  desc: VolumeChunkDesc,
+  plan: ChunkPlan,
+): ModulationTextureParams | null {
+  if (!mod) return null
+  const [dx, dy, dz] = plan.volumeDims
+  const [tx, ty, tz] = desc.texDims
+  const [ox, oy, oz] = desc.texOrigin
+  return chunkModulationParams(
+    mod,
+    [tx / dx, ty / dy, tz / dz],
+    [ox / dx, oy / dy, oz / dz],
+  )
 }
 
 export function extractChunkBytesReoriented(

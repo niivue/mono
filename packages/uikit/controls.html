@@ -24,7 +24,7 @@
       <header>
         <b>UIKit controls</b>
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
-        <span>Menus, toggles, sliders, number and text fields, buttons, a color control and a modal dialog drawn in the scene, sharing one
+        <span>Menus, toggles, sliders, number and text fields, buttons, a color control, a file picker and a modal dialog drawn in the scene, sharing one
           control layer: a click on any of them never reaches the viewer, an open menu
           swallows the click that dismisses it, and the keyboard drives the focused
           control (<kbd>Tab</kbd>-free: click a control, then use arrows, Space, Enter,
@@ -38,11 +38,14 @@
     <script type="module">
       import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
       import {
+        acceptExtensions,
+        createBrowserDownload,
         loadDefaultFont,
         UIKitButtonOverlay,
         UIKitColorControlOverlay,
         UIKitControls,
         UIKitDialogOverlay,
+        UIKitFilePickerOverlay,
         UIKitMenuOverlay,
         UIKitNumberInputOverlay,
         UIKitSegmentedOverlay,
@@ -81,6 +84,7 @@
       const numbers = new UIKitNumberInputOverlay(font, units)
       const texts = new UIKitTextInputOverlay(font, units)
       const colors = new UIKitColorControlOverlay(font, units)
+      const pickers = new UIKitFilePickerOverlay(font, units)
       const dialogs = new UIKitDialogOverlay(font, units)
       const controls = new UIKitControls()
         .add(buttons)
@@ -88,6 +92,7 @@
         .add(numbers)
         .add(texts)
         .add(colors)
+        .add(pickers)
         .add(toggles)
         .add(segmented)
         .add(menus)
@@ -147,6 +152,9 @@
           { id: 'center', label: 'Center crosshair', onSelect: () => { nv.crosshairPos = [0.5, 0.5, 0.5] } },
           { id: 'sep', kind: 'separator' },
           { id: 'settings', label: 'Settings...', onSelect: () => dialogs.open('settings') },
+          { id: 'sep2', kind: 'separator' },
+          { id: 'open', label: 'Open volume...', onSelect: () => pickers.open('volume') },
+          { id: 'export', label: 'Export settings', onSelect: exportSettings },
           { id: 'undo', label: 'Undo', shortcut: 'Z', enabled: false },
         ],
         onSelect: (itemId) => say(`edit: ${itemId}`),
@@ -259,6 +267,36 @@
         onInput: (c) => { nv.crosshairColor = c },
         onChange: (c) => say(`crosshair color ${c.map((v) => v.toFixed(2)).join(', ')}`),
       })
+
+      // A file picker: the Choose button and the readout live on the canvas,
+      // the chooser is the browser's (a hidden file input behind a bridge).
+      // The Edit menu's "Open volume..." opens the same picker, and "Export
+      // settings" hands a JSON blob to the download bridge.
+      pickers.addFilePicker({
+        id: 'volume', label: 'Open volume...', x: 12, y: 480, width: 300,
+        accept: acceptExtensions(['nii', 'nii.gz', 'mgz', 'mgh', 'nrrd', 'mha', 'mhd']),
+        onPick: async ([file]) => {
+          say(`loading ${file.name}`)
+          try {
+            await nv.loadVolumes([{ url: file, colormap: 'Gray' }])
+            say(`loaded ${file.name}`)
+          } catch (err) {
+            say(`could not load ${file.name}: ${err.message}`)
+          }
+        },
+        onCancel: () => say('open cancelled'),
+      })
+      pickers.setFiles('volume', ['mni152.nii.gz'])
+      const download = createBrowserDownload()
+      function exportSettings() {
+        const settings = {
+          sliceType: nv.sliceType, azimuth: nv.azimuth, elevation: nv.elevation,
+          gamma: nv.gamma, crosshairWidth: nv.crosshairWidth, crosshairColor: nv.crosshairColor,
+          colormap: selects.getValue('colormap'), note: texts.getValue('note'),
+        }
+        download(new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' }), 'controls-settings.json')
+        say('exported controls-settings.json')
+      }
 
       // A modal dialog hosting its own widgets: a text input and a number
       // input live in overlays the dialog routes and draws while it is open

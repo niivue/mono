@@ -36,6 +36,7 @@ and draws that data through the lifecycle hook.
 | `buildNumberInput` | `UIKitNumberInputOverlay` | Number fields: typed entry with validation, a spinner, arrow keys and the wheel |
 | `buildTextInput` | `UIKitTextInputOverlay` | Single-line text fields with a placeholder, selection, Enter to submit |
 | `buildColorControl` | `UIKitColorControlOverlay` | Color pickers the legacy way: a preview, R/G/B(/A) channel sliders and palette swatches |
+| `buildFilePicker` | `UIKitFilePickerOverlay` | File pickers: a Choose button and a readout; the host chooser and downloads go through bridges |
 | `buildDialog` | `UIKitDialogOverlay` | Modal dialogs: a scrim, a panel with a title, wrapped message, hosted widgets and action buttons |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
@@ -492,6 +493,56 @@ colors.getValue('crosshair')
 (`textOutlineWidth`, `textOutlineColor`), the preview size, radius, border
 and backdrop, the gaps, `slider` overrides for the channel sliders, and the
 swatch size, gap, radius, border and the selected and hover rings.
+
+## File pickers and downloads
+
+Opening a file chooser and saving a download are the two things a canvas
+widget cannot do by itself. UIKit keeps the affordance and its state on the
+canvas and hands the browser-only step to a host bridge: `FilePickerBridge`
+opens the chooser and resolves with the files (an empty array on cancel),
+`DownloadBridge` saves a blob under a name. `createBrowserFilePicker()` and
+`createBrowserDownload()` are the browser implementations (a hidden
+`<input type="file">`, a temporary anchor over an object URL); both take the
+DOM as a parameter so a test or another host can supply its own. Browsers
+only open a chooser inside a user activation, so call a bridge synchronously
+from a click, menu or key handler, as the widgets below do.
+
+`UIKitFilePickerOverlay` is the canvas half of `<input type="file">`: a push
+button ("Choose file...") composed from a button overlay beside a readout of
+what was chosen ("No file chosen", one name, or "3 files"; a long name keeps
+its tail behind leading dots). Pressing the button, Enter or Space on it, or
+`open(id)` asks the bridge with the spec's `accept`, `multiple` and
+`directory`; the picker then shows the names and fires `onPick`, or
+`onCancel` when the chooser closed empty.
+
+```ts
+import {
+  acceptExtensions,
+  createBrowserDownload,
+  UIKitFilePickerOverlay,
+} from '@niivue/uikit'
+
+const pickers = new UIKitFilePickerOverlay(font, units) // pickFiles: a custom bridge
+pickers.addFilePicker({
+  id: 'volume',
+  label: 'Open volume...',
+  x: 12,
+  y: 480,
+  width: 300,
+  accept: acceptExtensions(['nii', 'nii.gz', 'mgz']),
+  onPick: ([file]) => nv.loadVolumes([{ url: file, colormap: 'Gray' }]),
+})
+pickers.setFiles('volume', ['mni152.nii.gz']) // silent
+
+const download = createBrowserDownload()
+menus.addMenu({ id: 'file', label: 'File', x: 12, y: 12, items: [
+  { id: 'export', label: 'Export settings', onSelect: () =>
+    download(new Blob([JSON.stringify(settings)], { type: 'application/json' }), 'settings.json') },
+]})
+```
+
+`FilePickerStyle` holds the `button` overrides, the gap, the readout colors
+(chosen, empty and disabled), size and halo, and the default readout width.
 
 ## Dialogs
 

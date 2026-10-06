@@ -85,6 +85,40 @@ export {
 } from './dialog'
 export type { UIKitDialogOverlayOptions } from './dialogOverlay'
 export { UIKitDialogOverlay } from './dialogOverlay'
+export type {
+  FilePickerLayout,
+  FilePickerSpec,
+  FilePickerStyle,
+  FilePickerVisual,
+} from './filePicker'
+export {
+  buildFilePicker,
+  DEFAULT_FILE_PICKER_LABEL,
+  DEFAULT_FILE_PICKER_PLACEHOLDER,
+  DEFAULT_FILE_PICKER_STYLE,
+  ellipsizeStart,
+  filePickerButtonStyle,
+  filePickerContains,
+  filePickerSummary,
+  layoutFilePicker,
+  resolveFilePickerStyle,
+  scaleFilePicker,
+} from './filePicker'
+export type { UIKitFilePickerOverlayOptions } from './filePickerOverlay'
+export { UIKitFilePickerOverlay } from './filePickerOverlay'
+export type {
+  DownloadBridge,
+  DownloadDocument,
+  DownloadUrlFactory,
+  FilePickerBridge,
+  FilePickerDocument,
+  FilePickerOptions,
+} from './host'
+export {
+  acceptExtensions,
+  createBrowserDownload,
+  createBrowserFilePicker,
+} from './host'
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'

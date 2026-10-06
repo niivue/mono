@@ -1,3 +1,16 @@
+## 1.0.0-rc.18 (2026-10-06)
+
+### Fixes
+
+- **niivue:** fall back when modulation exceeds texture limits ([7de0545](https://github.com/niivue/mono/commit/7de0545))
+- **niivue:** modulate streamed and independent chunked overlays too ([#256](https://github.com/niivue/mono/issues/256))
+- **niivue:** keep overlay modulation on the chunked path ([#256](https://github.com/niivue/mono/issues/256))
+
+### Thank You
+
+- Chris Drake
+- Claude Fable 5.1
+
 ## 1.0.0-rc.17 (2026-10-05)
 
 ### Features

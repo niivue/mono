@@ -14,6 +14,10 @@
 //     event first, until it stops being modal; a click outside its popup is its
 //     own to dismiss.
 //   - keys go to the modal widget, else the focused one.
+//   - a press anywhere else in the page, focus moving to another element, or
+//     the window losing focus deactivates the layer: the capture is cancelled,
+//     popups are dismissed and the focus is dropped, so keys reach the page
+//     again instead of the last widget the user touched.
 //
 // `attach(host)` installs capture-phase listeners on the canvas (and a
 // capture-phase keydown on the window, where NiiVue listens too) and stops
@@ -68,6 +72,8 @@ export interface UIKitInteractive extends UIKitOverlayRenderer {
   blur?(): void
   /** True while this widget must see every event first (an open popup). */
   isModal?(): boolean
+  /** Close any popup without choosing (the pointer or focus went elsewhere in the page). */
+  dismiss?(): void
   /** CSS cursor to show while this widget is hovered or captured. */
   readonly hoverCursor?: string
   /** Draw anything that must sit above every other widget (a popup). */
@@ -174,6 +180,20 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
 
   blur(): void {
     this.focus(null)
+  }
+
+  /**
+   * Drop every live interaction: cancel a held press, dismiss open popups and
+   * blur the focus. `attach` calls this when the user presses outside the
+   * canvas, moves focus to another element or leaves the window, so the
+   * layer stops consuming keys the page should get.
+   */
+  deactivate(): void {
+    this.pointerCancel()
+    for (const c of this.children) {
+      if (c.isModal?.()) c.dismiss?.()
+    }
+    this.blur()
   }
 
   /** Pointer down at canvas pixel (x, y): true when a widget took it. */
@@ -304,6 +324,17 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       })
       if (consumed) consume(e)
     }
+    // Anything outside the canvas (a press elsewhere in the page, focus moving
+    // to another element, the window losing focus) ends our turn with the keys.
+    const onOutsideDown = (e: Event): void => {
+      if (e.target === canvas) return
+      this.deactivate()
+      syncCursor()
+    }
+    const onWindowBlur = (): void => {
+      this.deactivate()
+      syncCursor()
+    }
     const opts = { capture: true }
     canvas.addEventListener('pointerdown', onDown, opts)
     canvas.addEventListener('pointermove', onMove, opts)
@@ -311,6 +342,9 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
     canvas.addEventListener('pointerleave', onLeave, opts)
     canvas.addEventListener('pointercancel', onCancel, opts)
     window.addEventListener('keydown', onKey, opts)
+    window.addEventListener('pointerdown', onOutsideDown, opts)
+    window.addEventListener('focusin', onOutsideDown, opts)
+    window.addEventListener('blur', onWindowBlur)
     return () => {
       canvas.removeEventListener('pointerdown', onDown, opts)
       canvas.removeEventListener('pointermove', onMove, opts)
@@ -318,6 +352,9 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       canvas.removeEventListener('pointerleave', onLeave, opts)
       canvas.removeEventListener('pointercancel', onCancel, opts)
       window.removeEventListener('keydown', onKey, opts)
+      window.removeEventListener('pointerdown', onOutsideDown, opts)
+      window.removeEventListener('focusin', onOutsideDown, opts)
+      window.removeEventListener('blur', onWindowBlur)
       canvas.style.cursor = savedCursor
       this.pointerCancel()
       this.blur()

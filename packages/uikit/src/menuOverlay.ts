@@ -280,6 +280,11 @@ export class UIKitMenuOverlay
   }
 
   /** True while a popup is open: the overlay then wants every event first. */
+  /** Close an open popup without choosing (the control layer's outside-press hook). */
+  dismiss(): void {
+    this.close()
+  }
+
   isModal(): boolean {
     return this.openId !== null
   }
@@ -306,14 +311,20 @@ export class UIKitMenuOverlay
     this.popupDirty = true
   }
 
-  /** Open a menu's popup with nothing highlighted (closing any other). */
-  open(id: string): void {
+  /**
+   * Open a menu's popup (closing any other) with `highlightIndex` highlighted,
+   * or nothing by default. Opening the already open menu only moves the highlight.
+   */
+  open(id: string, highlightIndex = -1): void {
     const entry = this.entries.get(id)
     if (!entry || entry.spec.enabled === false) return
-    if (this.openId === id) return
+    if (this.openId === id) {
+      this.setHighlight(highlightIndex)
+      return
+    }
     this.openId = id
     this.popup = null
-    this.highlight = -1
+    this.highlight = highlightIndex
     this.focus(id)
     this.invalidate()
   }

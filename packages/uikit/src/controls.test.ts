@@ -55,6 +55,10 @@ class FakeWidget implements UIKitInteractive {
   isModal(): boolean {
     return this.modal
   }
+  dismiss(): void {
+    this.log.push('dismiss')
+    this.modal = false
+  }
   bindLayer(layer: UIKitRedrawSource): void {
     this.layer = layer
   }
@@ -353,6 +357,70 @@ describe('UIKitControls.attach', () => {
     expect(seen).toEqual(['down', 'key'])
     expect(hi.log).toContain('key a')
     expect(key2.defaultPrevented).toBe(true)
+    detach()
+  })
+
+  function keyEvent(k: string): Event {
+    const e = new Event('keydown', { cancelable: true })
+    Object.assign(e, {
+      key: k,
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+    })
+    return e
+  }
+
+  it('drops focus and keys when the user presses elsewhere in the page', () => {
+    const { layer, hi, canvas, seen, detach } = attach()
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37))
+    canvas.dispatchEvent(pointer('pointerup', 37, 37))
+    expect(layer.focusedWidget).toBe(hi)
+    // A press on another element: dispatched on the window, as a page press
+    // bubbles there, with a target that is not the canvas.
+    const elsewhere = new EventTarget()
+    const outside = pointer('pointerdown', 500, 500)
+    Object.defineProperty(outside, 'target', { value: elsewhere })
+    g.window?.dispatchEvent(outside)
+    expect(layer.focusedWidget).toBeNull()
+    expect(hi.log).toContain('blur')
+    // Keys now reach the page untouched.
+    const k = keyEvent('ArrowLeft')
+    g.window?.dispatchEvent(k)
+    expect(seen).toEqual(['key'])
+    expect(k.defaultPrevented).toBe(false)
+    expect(hi.log).not.toContain('key ArrowLeft')
+    // A press on the canvas itself must not deactivate (the canvas hook handles it).
+    const own = pointer('pointerdown', 37, 37)
+    Object.defineProperty(own, 'target', { value: canvas })
+    g.window?.dispatchEvent(own)
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37))
+    expect(layer.focusedWidget).toBe(hi)
+    detach()
+  })
+
+  it('dismisses an open popup and cancels a press when focus leaves', () => {
+    const { layer, hi, canvas, seen, detach } = attach()
+    hi.modal = true
+    expect(layer.modalWidget).toBe(hi)
+    const focusin = new Event('focusin')
+    Object.defineProperty(focusin, 'target', { value: new EventTarget() })
+    g.window?.dispatchEvent(focusin)
+    expect(hi.log).toContain('dismiss')
+    expect(layer.modalWidget).toBeNull()
+    const k = keyEvent('Escape')
+    g.window?.dispatchEvent(k)
+    expect(seen).toEqual(['key'])
+    expect(k.defaultPrevented).toBe(false)
+    // A held press is abandoned when the window loses focus.
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37))
+    expect(layer.capturedWidget).toBe(hi)
+    hi.log.length = 0
+    g.window?.dispatchEvent(new Event('blur'))
+    expect(hi.log).toEqual(['cancel', 'blur'])
+    expect(layer.capturedWidget).toBeNull()
+    expect(canvas.style.cursor).toBe('')
     detach()
   })
 

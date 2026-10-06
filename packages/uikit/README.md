@@ -34,6 +34,8 @@ and draws that data through the lifecycle hook.
 | `buildToggle` | `UIKitToggleOverlay` | Check boxes with a label: pointer or Space/Enter flips them |
 | `buildSlider` | `UIKitSliderOverlay` | Horizontal sliders with min/max/step, ticks, a value readout, drag and arrow keys |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
+| `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
+| `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
 | | `UIKitControls` | The control layer: one owner of the pointer and keyboard for every widget above |
 
 ```ts
@@ -130,7 +132,11 @@ focus. Only the topmost widget under the pointer hovers. A widget that is modal
 click that dismisses it is consumed. Keys go to the modal widget, else the
 focused one. Events a widget consumes are stopped in the capture phase, so a
 click on a control never starts a NiiVue drag or moves the crosshair. Popups are
-drawn after every widget.
+drawn after every widget. A press anywhere else in the page, focus moving to
+another element or the window losing focus deactivates the layer (held press
+cancelled, popups dismissed, focus dropped), so keys reach the page again
+instead of the last widget the user touched; `deactivate()` does the same from
+code.
 
 ```ts
 import {
@@ -255,3 +261,68 @@ activated one first), then the item's `onSelect` and the menu's `onSelect`
 fire. `MenuStyle` holds the popup fill, border, radius and padding, row height,
 highlight fill, text, mark and shortcut colors, separator and chevron sizes, and
 `buttonStyle` is a `ButtonStyle` for the trigger.
+
+## Selects
+
+`UIKitSelectOverlay` draws drop-down lists: a menu button whose label is the
+chosen option (or a `placeholder` while nothing is chosen) over a popup listing
+every option as one radio group. The button is sized to the widest option so it
+keeps its width as the value changes. Opening, highlighting, choosing on release
+or Enter, dismissing on an outside press or Escape and being modal while open
+all behave as for a menu, and the list opens with the current option
+highlighted. A focused closed select also changes its value straight from the
+keyboard: ArrowUp/Down (or Left/Right) step over the enabled options without
+wrapping, Shift or PageUp/PageDown step by ten, Home and End jump to the ends,
+and Enter, Space or Alt+ArrowDown open the list.
+
+```ts
+const selects = new UIKitSelectOverlay(font, units)
+selects.addSelect({
+  id: 'colormap',
+  x: 12,
+  y: 12,
+  options: nv.colormaps.map((name) => ({ value: name, label: name })),
+  value: 'gray',
+  onChange: (value) => nv.setVolume(0, { colormap: value }),
+})
+selects.setValue('colormap', 'hot') // silent; a value no option holds clears it
+selects.setOptions('colormap', fewerOptions) // a value no longer offered clears
+selects.getValue('colormap')
+```
+
+`onChange(value, id)` fires once per user choice and not when the same option
+is chosen again or the value is set from code. Options carry `enabled`; a
+disabled option draws dimmed and is skipped by the keyboard. `buttonStyle` and
+`style` are the menu's `ButtonStyle` and `MenuStyle`.
+
+## Segmented controls
+
+`UIKitSegmentedOverlay` draws a row of equal-width segments in one rounded
+track with exactly one selected: a compact radio group for a mode or a view.
+The pointer tints the segment under it, pressing darkens it, and releasing on
+the segment the press started on selects it. The pressed control takes
+keyboard focus (a ring around the track); ArrowLeft/Right (or Up/Down) then
+move the selection through the enabled segments, wrapping, and Home and End
+jump to the ends.
+
+```ts
+const segmented = new UIKitSegmentedOverlay(font, units)
+segmented.addSegmented({
+  id: 'view',
+  x: 12,
+  y: 52,
+  segments: [
+    { value: 'axial', label: 'Axial' },
+    { value: 'mpr', label: 'MPR' },
+    { value: 'render', label: 'Render', enabled: false },
+  ],
+  value: 'mpr',
+  onChange: (value) => { /* apply the view */ },
+})
+segmented.setValue('view', 'axial') // silent
+segmented.select('view', 'axial') // as the user would: fires onChange
+```
+
+`segmentWidth` fixes every segment's width instead of fitting the widest label;
+`SegmentedStyle` holds the track fill and border, inset, radius, the selected,
+hover and pressed faces, text colors and size, the divider and the focus ring.

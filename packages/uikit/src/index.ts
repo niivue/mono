@@ -80,6 +80,42 @@ export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
 export { buildRuler } from './ruler'
 export { UIKitRulerOverlay } from './rulerOverlay'
 export type {
+  SegmentedLayout,
+  SegmentedSpec,
+  SegmentedStyle,
+  SegmentedVisual,
+  SegmentLayout,
+  SegmentSpec,
+} from './segmented'
+export {
+  buildSegmented,
+  DEFAULT_SEGMENTED_STYLE,
+  endSegmentValue,
+  layoutSegmented,
+  resolveSegmentedStyle,
+  scaleSegmented,
+  segmentAt,
+  segmentedContains,
+  segmentIndex,
+  stepSegmentValue,
+} from './segmented'
+export type { UIKitSegmentedOverlayOptions } from './segmentedOverlay'
+export { UIKitSegmentedOverlay } from './segmentedOverlay'
+export type { SelectOption, SelectSpec } from './select'
+export {
+  endSelectValue,
+  SELECT_GROUP,
+  selectIndex,
+  selectItems,
+  selectLabel,
+  selectMenuSpec,
+  selectOption,
+  selectWidth,
+  stepSelectValue,
+} from './select'
+export type { UIKitSelectOverlayOptions } from './selectOverlay'
+export { UIKitSelectOverlay } from './selectOverlay'
+export type {
   SliderLayout,
   SliderSpec,
   SliderStyle,

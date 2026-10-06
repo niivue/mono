@@ -42,6 +42,8 @@
         UIKitButtonOverlay,
         UIKitControls,
         UIKitMenuOverlay,
+        UIKitSegmentedOverlay,
+        UIKitSelectOverlay,
         UIKitSliderOverlay,
         UIKitToggleOverlay,
       } from './src/index.ts'
@@ -70,7 +72,15 @@
       const toggles = new UIKitToggleOverlay(font, units)
       const sliders = new UIKitSliderOverlay(font, units)
       const buttons = new UIKitButtonOverlay(font, units)
-      const controls = new UIKitControls().add(buttons).add(sliders).add(toggles).add(menus)
+      const segmented = new UIKitSegmentedOverlay(font, units)
+      const selects = new UIKitSelectOverlay(font, units)
+      const controls = new UIKitControls()
+        .add(buttons)
+        .add(sliders)
+        .add(toggles)
+        .add(segmented)
+        .add(menus)
+        .add(selects)
       nv.registerOverlayRenderer(controls)
       const detach = controls.attach(nv)
 
@@ -94,11 +104,17 @@
         mpr: SLICE_TYPE.MULTIPLANAR,
         render: SLICE_TYPE.RENDER,
       }
+      const setView = (id) => {
+        nv.sliceType = sliceTypes[id]
+        menus.setItemChecked('view', id, true)
+        segmented.setValue('view', id)
+        say(`${id} view`)
+      }
       menus.addMenu({
         id: 'view', label: 'View', x: 12, y: 12, items: viewItems,
         onChange: (itemId, checked) => {
           if (itemId in sliceTypes) {
-            if (checked) { nv.sliceType = sliceTypes[itemId]; say(`${itemId} view`) }
+            if (checked) setView(itemId)
             return
           }
           if (itemId === 'colorbar') {
@@ -121,6 +137,33 @@
           { id: 'undo', label: 'Undo', shortcut: 'Z', enabled: false },
         ],
         onSelect: (itemId) => say(`edit: ${itemId}`),
+      })
+
+      // A segmented control mirrors the View menu's radio group, and a select
+      // picks the volume's colormap from a short list (popups do not scroll,
+      // so a list must fit the canvas).
+      segmented.addSegmented({
+        id: 'view', x: 12, y: 258,
+        segments: [
+          { value: 'axial', label: 'Axial' },
+          { value: 'coronal', label: 'Coronal' },
+          { value: 'sagittal', label: 'Sagittal' },
+          { value: 'mpr', label: 'MPR' },
+          { value: 'render', label: 'Render' },
+        ],
+        value: 'mpr',
+        onChange: setView,
+      })
+      selects.addSelect({
+        id: 'colormap', x: 12, y: 298, width: 160,
+        options: ['Gray', 'Hot', 'Cool', 'Viridis', 'Plasma', 'Inferno', 'Jet', 'Bone', 'Copper', 'Winter']
+          .filter((name) => nv.colormaps.includes(name))
+          .map((name) => ({ value: name, label: name })),
+        value: 'Gray',
+        onChange: (value) => {
+          nv.setVolume(0, { colormap: value })
+          say(`colormap: ${value}`)
+        },
       })
 
       // Toggles mirror the check items where it helps to have them in view.
@@ -174,6 +217,8 @@
         sliders.setValue('azimuth', 110)
         sliders.setValue('gamma', 1)
         sliders.setValue('crosshair', 1)
+        nv.setVolume(0, { colormap: 'Gray' })
+        selects.setValue('colormap', 'Gray')
         say('view reset')
       }
 

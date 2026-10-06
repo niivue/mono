@@ -4,6 +4,8 @@ import {
   coerceSetting,
   DRAG_MODES,
   findSetting,
+  OVERLAY_ALPHA_BLENDS,
+  OVERLAY_COLOR_BLENDS,
   readSetting,
   SETTINGS,
   type Setting,
@@ -94,6 +96,20 @@ describe('the settings table', () => {
     expect(readSetting(setting, 3)).toBe('pan')
     expect(readSetting(setting, 99)).toBe(99)
     expect(settingChoices(setting)).toEqual(Object.keys(DRAG_MODES))
+  })
+
+  it('names the overlay blend modes as NiiVue numbers them', () => {
+    const alpha = named('volumeOverlayAlphaBlend')
+    expect(settingChoices(alpha)).toEqual(['max', 'additive', 'over'])
+    expect(coerceSetting(alpha, 'additive')).toBe(OVERLAY_ALPHA_BLENDS.additive)
+    expect(readSetting(alpha, 2)).toBe('over')
+    expect(() => coerceSetting(alpha, 'screen')).toThrow(
+      'volumeOverlayAlphaBlend must be one of max, additive, over.',
+    )
+    const colour = named('volumeOverlayColorBlend')
+    expect(settingChoices(colour)).toEqual(['additive', 'mean'])
+    expect(coerceSetting(colour, 'mean')).toBe(OVERLAY_COLOR_BLENDS.mean)
+    expect(readSetting(colour, 0)).toBe('additive')
   })
 
   it('takes a choice only as one of its words', () => {

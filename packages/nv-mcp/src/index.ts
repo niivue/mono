@@ -54,6 +54,8 @@ export {
   DRAG_MODES,
   findSetting,
   GRADIENT_MODES,
+  OVERLAY_ALPHA_BLENDS,
+  OVERLAY_COLOR_BLENDS,
   PEN_SHAPES,
   RENDER_MODES,
   readSetting,

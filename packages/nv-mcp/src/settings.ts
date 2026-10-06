@@ -68,6 +68,12 @@ export const RENDER_MODES = { composite: 0, maximum: 1, slices: 2 } as const
 /** NiiVue's `LAYER_GRADIENT_MODE`. */
 export const GRADIENT_MODES = { central: 0, blob: 1, sobel8: 2 } as const
 
+/** NiiVue's `OVERLAY_ALPHA_BLEND`: how overlapping overlays combine their opacities. */
+export const OVERLAY_ALPHA_BLENDS = { max: 0, additive: 1, over: 2 } as const
+
+/** NiiVue's `OVERLAY_COLOR_BLEND`: how overlapping overlays combine their colours. */
+export const OVERLAY_COLOR_BLENDS = { additive: 0, mean: 1 } as const
+
 /** NiiVue's `COLORMAP_TYPE`: how a volume's window is drawn below its minimum. */
 export const COLORMAP_TYPES = {
   min_to_max: 0,
@@ -410,6 +416,22 @@ export const SETTINGS: readonly Setting[] = [
     'How overlay gradients are computed.',
     {
       values: GRADIENT_MODES,
+    },
+  ),
+  setting(
+    'volumeOverlayAlphaBlend',
+    'enum',
+    'How overlapping overlays combine their opacities: max (no more opaque than either), additive (fractions that sum to 1, as tissue maps do), or over (stacked like transparencies).',
+    {
+      values: OVERLAY_ALPHA_BLENDS,
+    },
+  ),
+  setting(
+    'volumeOverlayColorBlend',
+    'enum',
+    'How overlapping overlays combine their colours: additive (red and green make yellow, may clip) or mean (their average, never clips).',
+    {
+      values: OVERLAY_COLOR_BLENDS,
     },
   ),
   num(

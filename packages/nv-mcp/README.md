@@ -135,6 +135,7 @@ A `bind` names one of these:
 | `mesh.<i>.tract.<option>` | An option of the tract at index `i`, as `set_mesh` takes it: `fiberRadius`, `fiberSides`, `minLength`, `decimation`, `colormap`, `colormapNegative`, `colorBy`, `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `fixedColor` |
 | `mesh.<i>.connectome.<option>` | An option of the connectome at index `i`: `nodeColormap`, `nodeColormapNegative`, `nodeMinColor`, `nodeMaxColor`, `nodeScale`, `edgeColormap`, `edgeColormapNegative`, `edgeMin`, `edgeMax`, `edgeScale` |
 | `dialog.<id>` | Opens that dialog when a button or menu item is pressed. Add the dialog first with `open: false`, so it waits hidden |
+| `data.<id>` | Loads that entry of the page's data palette when a button or menu item is pressed. Pass the palette to `bindControls` as `data` |
 | `action.<name>` | One of the page's `actions`. A button or menu runs it when pressed, a value control when its value is committed, a file picker with the files, a dialog with the button that closed it |
 
 The binding works both ways. A control the person moves writes its target: a slider or colour control as it moves, any other once the value is committed. A value changed elsewhere, by the person in NiiVue or by an agent's `set_options`, is read back before the next frame and shown on the control. A control bound with no range or choices takes them from its target, and starts at the target's value. `capabilities` lists the bind forms and the page's actions as `controlBindings`.
@@ -254,6 +255,25 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `list_controls` | | The controls there, each with its kind, grid cell or position, drawn `box`, value, options and binding; their ids also ride in every reply's state |
 | `set_control` | `id`, and any of the fields above | Changes what is given on a control: a `row` or `col` moves it into the grid and `x` and `y` out of it; its value is checked and clamped as it was when added, and a range that moves takes the value with it. A value set on a bound control is written to its target |
 | `remove_control` | `id?`, `all?` | Takes one control away, or all of them |
+
+### The data palette
+
+A page that sets `host.data = dataPalette(catalog)` offers data by id. An entry is a load held for later: one of the loading tools (`load_volume`, `add_overlay`, `load_mesh`, `add_mesh_layer`, `load_signal`, `load_document`) with the arguments it takes, so loading an entry does exactly what that call would. The page seeds the palette with its own sample data (`source: 'page'`), which stays; an agent adds more (`source: 'agent'`). A button or menu item bound to `data.<id>` loads the entry when pressed. The ids ride in every reply's state, and `capabilities` lists the entries as `data`.
+
+```ts
+host.data = dataPalette([
+  { id: 'mni152', label: 'MNI152', tool: 'load_volume', args: { url: '/volumes/mni152.nii.gz', mni: true } },
+  { id: 'aal', label: 'AAL atlas', tool: 'add_overlay', args: { url: '/volumes/aal.nii.gz', labels: '/volumes/aal.json' } },
+])
+host.controls = bindControls(surface, { view: nv, actions, data: host.data })
+```
+
+| Tool | Input | What it does |
+|---|---|---|
+| `list_data` | | The entries, each with its `id`, `label`, `description`, `tool`, `args` and `source` |
+| `add_data` | `id`, `tool?`, `args?`, `label?`, `description?`, `from?` | Adds an entry: a call to one of the loading tools with its arguments (`url` at least), held for later; nothing loads now. `from` starts from an entry already there, `tool` and `args` laid over its own, such as a sample with another colormap. A `tab` among the arguments is dropped: an entry loads where it is pressed |
+| `remove_data` | `id` | Takes an agent's entry away; the page's own stay |
+| `load_data` | `id` | Loads the entry and reports what its loading tool reports |
 
 ### The canvas, the slide plane, chunks and files
 

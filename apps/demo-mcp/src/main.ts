@@ -26,6 +26,8 @@ import {
   type ControlEvent,
   type ControlState,
   coreHandlers,
+  type DataEntry,
+  dataPalette,
   type Handlers,
   type NiiVueHost,
   type PageAction,
@@ -107,8 +109,77 @@ function showLabels(labels: PointLabel[]): void {
   nv.drawScene()
 }
 
+/**
+ * The sample data the page offers in its data palette, by id: an agent
+ * binds a button to `data.<id>` to load one, and add_data puts more there.
+ */
+const CATALOG: DataEntry[] = [
+  {
+    id: 'mni152',
+    label: 'MNI152',
+    description: 'The MNI152 T1 template, the base the atlas applies to.',
+    tool: 'load_volume',
+    args: { url: '/volumes/mni152.nii.gz', mni: true },
+  },
+  {
+    id: 'aal',
+    label: 'AAL atlas',
+    description: 'The AAL atlas as labels, over an MNI152 base.',
+    tool: 'add_overlay',
+    args: { url: '/volumes/aal.nii.gz', labels: '/volumes/aal.json' },
+  },
+  {
+    id: 'spm_motor',
+    label: 'Motor map',
+    description: 'An SPM motor task statistical map, over an MNI152 base.',
+    tool: 'add_overlay',
+    args: {
+      url: '/volumes/spmMotor.nii.gz',
+      colormap: 'warm',
+      cal_min: 2,
+      cal_max: 8,
+    },
+  },
+  {
+    id: 'pial_lh',
+    label: 'Left pial',
+    description: 'The left hemisphere pial surface of ICBM152.',
+    tool: 'load_mesh',
+    args: { url: '/meshes/BrainMesh_ICBM152.lh.mz3' },
+  },
+  {
+    id: 'cit168',
+    label: 'CIT168',
+    description: 'The CIT168 subcortical atlas as meshes.',
+    tool: 'load_mesh',
+    args: { url: '/meshes/CIT168.mz3' },
+  },
+  {
+    id: 'yeh2022',
+    label: 'Yeh 2022 tracts',
+    description: 'The Yeh 2022 tractography atlas (TRX), in MNI space.',
+    tool: 'load_mesh',
+    args: { url: '/meshes/yeh2022.trx' },
+  },
+  {
+    id: 'dpsv',
+    label: 'DPSV tracts',
+    description: 'Tracts with per-streamline values (TRX).',
+    tool: 'load_mesh',
+    args: { url: '/meshes/dpsv.trx' },
+  },
+  {
+    id: 'connectome',
+    label: 'Connectome',
+    description: 'A connectome of nodes and edges (JCON).',
+    tool: 'load_mesh',
+    args: { url: '/meshes/connectome.jcon' },
+  },
+]
+
 const host: NiiVueHost = {
   view: nv,
+  data: dataPalette(CATALOG),
   atlas: requireAtlas,
   labels: showLabels,
   atlasApplies: () => isMni,
@@ -216,6 +287,7 @@ host.controls = bindControls(
   {
     view: nv,
     actions,
+    data: host.data,
     onError: (error, event) => {
       announceLine.textContent = `${event.id}: ${error.message}`
       announceLine.classList.remove('quiet')

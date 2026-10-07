@@ -11,6 +11,7 @@
  * - a property of a loaded mesh, or an option of a tract or connectome:
  *   `mesh.0.opacity`, `mesh.0.tract.fiberRadius`, `mesh.1.connectome.nodeScale`;
  * - a dialog to open, for a button or menu item: `dialog.<id>`;
+ * - data to load from the page's palette: `data.<id>`;
  * - an action the page offers: `action.<name>`.
  *
  * Each is checked against the control's kind when it is bound, and fills in
@@ -42,6 +43,7 @@ import {
   patched,
   VALUE_KINDS,
 } from './controls'
+import type { DataPalette } from './data'
 import type {
   MeshUpdate,
   ShownMesh,
@@ -65,6 +67,8 @@ export interface BindOptions {
   view: View
   /** The page's own actions, which `action.<name>` binds a control to. */
   actions?: Readonly<Record<string, PageAction>>
+  /** The page's data palette, which `data.<id>` loads from. */
+  data?: DataPalette
   /** Hears an action or a write that failed after the person used a control. */
   onError?(error: Error, event: ControlEvent): void
 }
@@ -270,6 +274,11 @@ const FORMS: BindingVocabulary['forms'] = [
       'Opens the dialog with that id, for a button or menu item. Add the dialog first with open: false, so it waits hidden until then.',
   },
   {
+    form: 'data.<id>',
+    description:
+      'Loads that entry of the data palette (list_data), for a button or menu item. add_data puts more there.',
+  },
+  {
     form: 'action.<name>',
     description:
       'One of the actions listed. Any kind of control runs one: a button or menu item when pressed, a value control when its value is committed, a file picker with the files, a dialog with the button that closed it.',
@@ -422,10 +431,15 @@ export function resolveBinding(
       `${bind} opens a dialog, which only bindControls can do: it needs the controls.`,
     )
 
+  if (bind.startsWith('data.'))
+    throw new Error(
+      `${bind} loads from the data palette, which only bindControls can do: it needs the palette.`,
+    )
+
   const setting = findSetting(bind)
   if (!setting)
     throw new Error(
-      `There is nothing called "${bind}" to bind. A bind is a setting as get_options names it, view.slice, view.layout, view.radiological, volume.<index>.<property>, mesh.<index>.<property>, mesh.<index>.tract.<option>, mesh.<index>.connectome.<option>, dialog.<id>, or action.<name>.`,
+      `There is nothing called "${bind}" to bind. A bind is a setting as get_options names it, view.slice, view.layout, view.radiological, volume.<index>.<property>, mesh.<index>.<property>, mesh.<index>.tract.<option>, mesh.<index>.connectome.<option>, dialog.<id>, data.<id>, or action.<name>.`,
     )
   if (!(setting.name in bag))
     throw new Error(`This page's NiiVue has no ${setting.name} setting.`)
@@ -694,8 +708,33 @@ export function bindControls(
     )
   }
 
-  /** What `bind` names: a dialog to open here, anything else as `resolveBinding` finds it. */
+  /** The palette entry `id` names, or a throw in words when there is none. */
+  const entryOf = (id: string) => {
+    if (!options.data)
+      throw new Error('This page has no data palette to load from.')
+    const entry = options.data.get(id)
+    if (entry) return { palette: options.data, entry }
+    const known = options.data.list().map((e) => e.id)
+    throw new Error(
+      known.length
+        ? `There is no data "${id}". There is: ${known.join(', ')}. add_data puts more there.`
+        : `There is no data "${id}": the palette is empty. add_data puts an entry there.`,
+    )
+  }
+
+  /** What `bind` names: a dialog to open or data to load here, anything else as `resolveBinding` finds it. */
   const resolve = (bind: string): Target => {
+    if (bind.startsWith('data.')) {
+      const id = bind.slice('data.'.length)
+      const { entry } = entryOf(id)
+      return {
+        shape: 'action',
+        action: {
+          description: `Loads ${entry.label}.`,
+          run: () => entryOf(id).palette.load(id),
+        },
+      }
+    }
     if (!bind.startsWith('dialog.')) return resolveBinding(bind, view, actions)
     const id = bind.slice('dialog.'.length)
     dialogOf(id)

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import {
   acceptExtensions,
+  type ClipboardSource,
+  createBrowserClipboard,
   createBrowserDownload,
   createBrowserFilePicker,
   type DownloadDocument,
@@ -143,5 +145,35 @@ describe('acceptExtensions', () => {
     expect(acceptExtensions(['nii', '.nii.gz', 'mgz'])).toBe(
       '.nii,.nii.gz,.mgz',
     )
+  })
+})
+
+describe('createBrowserClipboard', () => {
+  it('forwards writes and reads to the async clipboard', async () => {
+    const written: string[] = []
+    const source: ClipboardSource = {
+      readText: () => Promise.resolve('from host'),
+      writeText: (text) => {
+        written.push(text)
+        return Promise.resolve()
+      },
+    }
+    const clipboard = createBrowserClipboard(source)
+    clipboard.write('out')
+    expect(written).toEqual(['out'])
+    expect(await clipboard.read()).toBe('from host')
+  })
+
+  it('reads empty and drops writes when the host refuses or has no clipboard', async () => {
+    const refusing: ClipboardSource = {
+      readText: () => Promise.reject(new Error('denied')),
+      writeText: () => Promise.reject(new Error('denied')),
+    }
+    const clipboard = createBrowserClipboard(refusing)
+    expect(() => clipboard.write('out')).not.toThrow()
+    expect(await clipboard.read()).toBe('')
+    const none = createBrowserClipboard(undefined)
+    expect(() => none.write('out')).not.toThrow()
+    expect(await none.read()).toBe('')
   })
 })

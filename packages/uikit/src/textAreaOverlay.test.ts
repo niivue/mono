@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { UIKitKeyEvent } from './controls'
+import type { ClipboardBridge } from './host'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 import { UIKitTextAreaOverlay } from './textAreaOverlay'
 
@@ -33,7 +34,23 @@ function type(overlay: UIKitTextAreaOverlay, text: string): void {
   for (const ch of text) overlay.keyDown(key(ch === '\n' ? 'Enter' : ch))
 }
 
-function make(now = { t: 0 }, value = 'abc def ghij') {
+/** A clipboard that remembers what was written and hands back `held` on read. */
+function fakeClipboard(held = '') {
+  const written: string[] = []
+  const clipboard: ClipboardBridge = {
+    write: (text) => {
+      written.push(text)
+    },
+    read: () => Promise.resolve(held),
+  }
+  return { clipboard, written }
+}
+
+function make(
+  now = { t: 0 },
+  value = 'abc def ghij',
+  clipboard?: ClipboardBridge,
+) {
   const inputs: string[] = []
   const changes: string[] = []
   const submits: string[] = []
@@ -41,6 +58,7 @@ function make(now = { t: 0 }, value = 'abc def ghij') {
   const overlay = new UIKitTextAreaOverlay(FONT, {
     requestRedraw: () => redraws++,
     now: () => now.t,
+    clipboard,
   })
   // Label 'Hi' over a 60x48 two-row field at (100,66): rows 20 px tall from
   // y 70, text from x 106 at 7 px per glyph, five glyphs per row.
@@ -193,6 +211,25 @@ describe('UIKitTextAreaOverlay', () => {
     expect(overlay.keyDown(key('x'))).toBe(false)
     overlay.setEnabled('a', true)
     expect(overlay.pointerDown(130, 80)).toBe(true)
+  })
+
+  it('copies, cuts and pastes multi-line text through the clipboard bridge', async () => {
+    const { clipboard, written } = fakeClipboard('one\r\ntwo')
+    const { overlay, inputs } = make(undefined, 'abc def ghij', clipboard)
+    overlay.focus('a')
+    overlay.keyDown(key('c', { metaKey: true }))
+    expect(written).toEqual(['abc def ghij'])
+    overlay.keyDown(key('Home', { metaKey: true }))
+    overlay.keyDown(key('ArrowDown', { shiftKey: true }))
+    overlay.keyDown(key('x', { ctrlKey: true }))
+    expect(written[1]).toBe('abc ')
+    expect(overlay.getText('a')).toBe('def ghij')
+    expect(overlay.keyDown(key('v', { metaKey: true }))).toBe(true)
+    await Promise.resolve()
+    expect(overlay.getText('a')).toBe('one\ntwodef ghij')
+    expect(inputs).toEqual(['def ghij', 'one\ntwodef ghij'])
+    overlay.blur()
+    expect(overlay.paste('x')).toBe(false)
   })
 
   it('sets a value silently and reports it', () => {

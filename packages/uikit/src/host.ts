@@ -1,5 +1,6 @@
 // Host bridges for the browser-only work a canvas widget cannot do itself:
-// opening the file chooser and saving a download. A widget keeps its
+// opening the file chooser, saving a download and reaching the clipboard. A
+// widget keeps its
 // affordance and state on the canvas and calls one of these, so a host that
 // is not a browser (a test, an Electron shell, a native wrapper) can supply
 // its own. The browser implementations here take the DOM as a parameter so
@@ -103,4 +104,49 @@ export function createBrowserDownload(
 /** A `.ext` list or MIME list from file extensions, for `FilePickerOptions.accept`. */
 export function acceptExtensions(extensions: readonly string[]): string {
   return extensions.map((e) => (e.startsWith('.') ? e : `.${e}`)).join(',')
+}
+
+/**
+ * The clipboard a text widget copies to and pastes from. `write` puts text
+ * on it; `read` resolves with its text, or with an empty string when it
+ * holds none or the host refuses. Browsers grant both only inside a user
+ * activation, so the widgets call them synchronously from a key handler.
+ */
+export interface ClipboardBridge {
+  write(text: string): void
+  read(): Promise<string>
+}
+
+/** The subset of `navigator.clipboard` the browser clipboard bridge uses. */
+export interface ClipboardSource {
+  readText(): Promise<string>
+  writeText(text: string): Promise<void>
+}
+
+/**
+ * A clipboard bridge over the async clipboard API. Without a source (an
+ * insecure context, or no navigator) writes are dropped and reads resolve
+ * empty; a refused read also resolves empty.
+ */
+export function createBrowserClipboard(
+  source: ClipboardSource | undefined = globalThis.navigator?.clipboard,
+): ClipboardBridge {
+  return {
+    write(text) {
+      if (!source) return
+      try {
+        source.writeText(text).catch(() => undefined)
+      } catch {
+        // The host refused; the copy is lost, nothing else changes.
+      }
+    },
+    async read() {
+      if (!source) return ''
+      try {
+        return await source.readText()
+      } catch {
+        return ''
+      }
+    },
+  }
 }

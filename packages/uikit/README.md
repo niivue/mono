@@ -427,9 +427,13 @@ on every keystroke that changes the text. Enter commits the text (firing
 whether or not it changed; Escape reverts to the committed text; losing focus
 commits. Long text scrolls by whole glyphs to keep the caret in view.
 
-Entry is keyboard-only: no DOM input backs the field, so there is no paste
-and no IME composition. Tab and other keys the field does not use fall
-through to the host.
+Meta or Ctrl plus C, X and V copy, cut and paste the selection through a
+`ClipboardBridge` (the browser's async clipboard unless the overlay's
+`clipboard` option supplies one; see "Host bridges" below). A pasted text
+loses its line breaks, and the spec's `accept` and `maxLength` apply to it.
+A host that handles the DOM paste event itself can call `paste(text)`
+instead. No DOM input backs the field, so there is no IME composition. Tab
+and other keys the field does not use fall through to the host.
 
 ```ts
 const texts = new UIKitTextInputOverlay(font, units)
@@ -475,7 +479,9 @@ changes the text. Meta or Ctrl plus Enter commits (firing `onChange` when the
 text changed) and then fires `onSubmit`; Escape reverts to the committed
 text; losing focus commits.
 
-Entry is keyboard-only, like the text input: no paste and no IME.
+Copy, cut and paste work as in the text input, through the same
+`ClipboardBridge`; a pasted text keeps its line breaks (CRLF becomes LF).
+There is no IME composition.
 
 ```ts
 const areas = new UIKitTextAreaOverlay(font, units)
@@ -545,18 +551,23 @@ colors.getValue('crosshair')
 and backdrop, the gaps, `slider` overrides for the channel sliders, and the
 swatch size, gap, radius, border and the selected and hover rings.
 
-## File pickers and downloads
+## Host bridges: file pickers, downloads and the clipboard
 
-Opening a file chooser and saving a download are the two things a canvas
-widget cannot do by itself. UIKit keeps the affordance and its state on the
-canvas and hands the browser-only step to a host bridge: `FilePickerBridge`
-opens the chooser and resolves with the files (an empty array on cancel),
-`DownloadBridge` saves a blob under a name. `createBrowserFilePicker()` and
-`createBrowserDownload()` are the browser implementations (a hidden
-`<input type="file">`, a temporary anchor over an object URL); both take the
-DOM as a parameter so a test or another host can supply its own. Browsers
-only open a chooser inside a user activation, so call a bridge synchronously
-from a click, menu or key handler, as the widgets below do.
+Opening a file chooser, saving a download and reaching the clipboard are the
+things a canvas widget cannot do by itself. UIKit keeps the affordance and
+its state on the canvas and hands the browser-only step to a host bridge:
+`FilePickerBridge` opens the chooser and resolves with the files (an empty
+array on cancel), `DownloadBridge` saves a blob under a name, and
+`ClipboardBridge` writes text and reads it back (`read` resolves empty when
+the host refuses). `createBrowserFilePicker()`, `createBrowserDownload()`
+and `createBrowserClipboard()` are the browser implementations (a hidden
+`<input type="file">`, a temporary anchor over an object URL,
+`navigator.clipboard`); each takes the browser object as a parameter so a
+test or another host can supply its own. Browsers only open a chooser or
+grant the clipboard inside a user activation, so call a bridge synchronously
+from a click, menu or key handler, as the widgets do. The text input and
+text area create the browser clipboard on first use unless their `clipboard`
+option names another bridge.
 
 `UIKitFilePickerOverlay` is the canvas half of `<input type="file">`: a push
 button ("Choose file...") composed from a button overlay beside a readout of

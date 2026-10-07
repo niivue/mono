@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { UIKitKeyEvent } from './controls'
+import type { ClipboardBridge } from './host'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 import { UIKitTextInputOverlay } from './textInputOverlay'
 
@@ -33,7 +34,19 @@ function type(overlay: UIKitTextInputOverlay, text: string): void {
   for (const ch of text) overlay.keyDown(key(ch))
 }
 
-function make(now = { t: 0 }) {
+/** A clipboard that remembers what was written and hands back `held` on read. */
+function fakeClipboard(held = '') {
+  const written: string[] = []
+  const clipboard: ClipboardBridge = {
+    write: (text) => {
+      written.push(text)
+    },
+    read: () => Promise.resolve(held),
+  }
+  return { clipboard, written }
+}
+
+function make(now = { t: 0 }, clipboard?: ClipboardBridge) {
   const inputs: string[] = []
   const changes: string[] = []
   const submits: string[] = []
@@ -41,6 +54,7 @@ function make(now = { t: 0 }) {
   const overlay = new UIKitTextInputOverlay(FONT, {
     requestRedraw: () => redraws++,
     now: () => now.t,
+    clipboard,
   })
   // Label 'Hi' then a 60x20 field at (122,50): text from x 128, 7 px per glyph.
   overlay.addTextInput({
@@ -173,6 +187,49 @@ describe('UIKitTextInputOverlay', () => {
     expect(overlay.hitTest(150, 60)).toBe(false)
     overlay.focus('t')
     expect(overlay.focusedInput).toBeNull()
+  })
+
+  it('copies and cuts the selection through the clipboard bridge', () => {
+    const { clipboard, written } = fakeClipboard()
+    const { overlay, inputs } = make(undefined, clipboard)
+    overlay.focus('t')
+    overlay.keyDown(key('c', { metaKey: true }))
+    expect(written).toEqual(['abc'])
+    overlay.keyDown(key('ArrowLeft'))
+    overlay.keyDown(key('ArrowRight', { shiftKey: true }))
+    expect(overlay.keyDown(key('x', { ctrlKey: true }))).toBe(true)
+    expect(written).toEqual(['abc', 'a'])
+    expect(overlay.getText('t')).toBe('bc')
+    expect(inputs).toEqual(['bc'])
+    // Nothing selected: the key is consumed but the clipboard untouched.
+    overlay.keyDown(key('c', { metaKey: true }))
+    expect(written).toHaveLength(2)
+  })
+
+  it('pastes over the selection, dropping line breaks and honoring maxLength', async () => {
+    const { clipboard } = fakeClipboard('x\r\ny\nz')
+    const { overlay, inputs } = make(undefined, clipboard)
+    overlay.updateTextInput('t', { maxLength: 4 })
+    overlay.focus('t')
+    expect(overlay.keyDown(key('v', { metaKey: true }))).toBe(true)
+    await Promise.resolve()
+    expect(overlay.getText('t')).toBe('xyz')
+    expect(inputs).toEqual(['xyz'])
+    overlay.keyDown(key('End'))
+    expect(overlay.paste('abc')).toBe(true)
+    expect(overlay.getText('t')).toBe('xyza')
+  })
+
+  it('drops a paste that arrives after the field lost focus', async () => {
+    const { clipboard } = fakeClipboard('late')
+    const { overlay, inputs } = make(undefined, clipboard)
+    overlay.focus('t')
+    overlay.keyDown(key('v', { metaKey: true }))
+    overlay.blur()
+    await Promise.resolve()
+    expect(overlay.getText('t')).toBe('abc')
+    expect(inputs).toEqual([])
+    expect(overlay.paste('x')).toBe(false)
   })
 
   it('requests a redraw for edits and counts entries', () => {

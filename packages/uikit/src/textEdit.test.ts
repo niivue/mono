@@ -4,13 +4,16 @@ import type { UIKitFontMetrics } from './text/font'
 import {
   advanceBetween,
   caretIndexAt,
+  clipboardKey,
   deleteBackward,
   deleteForward,
   editKey,
   glyphAdvances,
   hasSelection,
   insertText,
+  pasteText,
   selectAll,
+  selectedText,
   selectionOf,
   setCaret,
   textEditState,
@@ -155,6 +158,31 @@ describe('editKey', () => {
     expect(editKey(s, key('ArrowUp'))).toBeNull()
     expect(editKey(s, key('Tab'))).toBeNull()
     expect(editKey(s, key('s', { metaKey: true }))).toBeNull()
+  })
+})
+
+describe('clipboard helpers', () => {
+  it('recognizes Meta or Ctrl plus C, X and V in either case', () => {
+    expect(clipboardKey(key('c', { metaKey: true }))).toBe('copy')
+    expect(clipboardKey(key('X', { ctrlKey: true }))).toBe('cut')
+    expect(clipboardKey(key('v', { ctrlKey: true }))).toBe('paste')
+    expect(clipboardKey(key('v'))).toBeNull()
+    expect(clipboardKey(key('v', { metaKey: true, altKey: true }))).toBeNull()
+    expect(clipboardKey(key('a', { metaKey: true }))).toBeNull()
+  })
+
+  it('reads the selection and pastes over it within accept and maxLength', () => {
+    const s = textEditState('abcdef', 4, 1)
+    expect(selectedText(s)).toBe('bcd')
+    expect(selectedText(textEditState('abc', 1))).toBe('')
+    expect(pasteText(s, 'XY')).toMatchObject({ text: 'aXYef', caret: 3 })
+    // 'abcdef' minus the three selected leaves three; a limit of five keeps two.
+    expect(pasteText(s, 'WXYZ', undefined, 5).text).toBe('aWXef')
+    expect(pasteText(s, 'W1X2', (ch) => /[A-Z]/.test(ch)).text).toBe('aWXef')
+    // Nothing allowed and nothing selected: the state is untouched.
+    const plain = textEditState('abc', 3)
+    expect(pasteText(plain, '12', (ch) => /[a-z]/.test(ch))).toBe(plain)
+    expect(pasteText(plain, 'xyz', undefined, 3)).toBe(plain)
   })
 })
 

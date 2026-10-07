@@ -123,6 +123,52 @@ export function editKey(
   return accept(e.key) ? insertText(s, e.key) : s
 }
 
+/** The selected text, empty when nothing is selected. */
+export function selectedText(s: TextEditState): string {
+  const [a, b] = selectionOf(s)
+  return s.text.slice(a, b)
+}
+
+/** The clipboard action a key asks for: Meta or Ctrl plus C, X or V. */
+export function clipboardKey(
+  e: UIKitKeyEvent,
+): 'copy' | 'cut' | 'paste' | null {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return null
+  switch (e.key) {
+    case 'c':
+    case 'C':
+      return 'copy'
+    case 'x':
+    case 'X':
+      return 'cut'
+    case 'v':
+    case 'V':
+      return 'paste'
+    default:
+      return null
+  }
+}
+
+/**
+ * Replace the selection with the characters of `str` that `accept` allows,
+ * as many as keep the text within `maxLength` (pasting into a full field
+ * inserts nothing).
+ */
+export function pasteText(
+  s: TextEditState,
+  str: string,
+  accept: (ch: string) => boolean = () => true,
+  maxLength?: number,
+): TextEditState {
+  let kept = [...str].filter(accept).join('')
+  if (maxLength !== undefined) {
+    const [a, b] = selectionOf(s)
+    const room = Math.max(0, maxLength - (s.text.length - (b - a)))
+    kept = kept.slice(0, room)
+  }
+  return kept === '' && !hasSelection(s) ? s : insertText(s, kept)
+}
+
 /** The advance of each code unit of `text` at `sizePx` (0 for a glyph the font lacks). */
 export function glyphAdvances(
   metrics: UIKitFontMetrics,

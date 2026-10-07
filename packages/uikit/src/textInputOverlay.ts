@@ -6,9 +6,11 @@
 // selection, Backspace, Delete and select-all handled by the shared text-edit
 // model. Enter commits (firing `onChange` when the text changed, then
 // `onSubmit`), Escape reverts to the committed text, and losing focus
-// commits. `onInput` fires on every keystroke that changes the text. Entry
-// is keyboard-only: there is no paste and no IME composition, since no DOM
-// input backs the field. Add it to a `UIKitControls` layer with the other
+// commits. `onInput` fires on every keystroke that changes the text. Meta or
+// Ctrl plus C, X and V copy, cut and paste through a clipboard bridge (the
+// browser's async clipboard unless the host supplies one; a pasted text
+// loses its line breaks). There is no IME composition, since no DOM input
+// backs the field. Add it to a `UIKitControls` layer with the other
 // widgets, or feed the pointer and keyboard entry points from any host.
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
@@ -17,12 +19,18 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
+import { type ClipboardBridge, createBrowserClipboard } from './host'
 import type { RectData } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
 import type { UIKitFont } from './text/font'
 import {
+  clipboardKey,
   editKey,
+  hasSelection,
+  insertText,
+  pasteText,
   selectAll,
+  selectedText,
   setCaret,
   type TextEditState,
   textEditState,
@@ -57,6 +65,8 @@ export interface UIKitTextInputOverlayOptions {
   doubleClickMs?: number
   /** Clock for the double-click interval. Default `performance.now`. */
   now?: () => number
+  /** Where copy, cut and paste go. Default: the browser's async clipboard. */
+  clipboard?: ClipboardBridge
 }
 
 interface TextInputEntry {
@@ -83,6 +93,7 @@ export class UIKitTextInputOverlay
   private readonly doubleClickMs: number
   private readonly now: () => number
   private requestRedraw: (() => void) | null
+  private clipboard: ClipboardBridge | null
   private scale = 1
   private geometryDirty = true
   private hoverId: string | null = null
@@ -103,6 +114,7 @@ export class UIKitTextInputOverlay
     this.doubleClickMs = options.doubleClickMs ?? 400
     this.now = options.now ?? (() => performance.now())
     this.requestRedraw = options.requestRedraw ?? null
+    this.clipboard = options.clipboard ?? null
   }
 
   /** CSS cursor while a field is hovered: a text beam. */
@@ -329,7 +341,10 @@ export class UIKitTextInputOverlay
     this.invalidate()
   }
 
-  /** Editing keys change the text; Enter commits and submits; Escape reverts. */
+  /**
+   * Editing keys change the text; Enter commits and submits; Escape reverts;
+   * Meta or Ctrl plus C, X and V go through the clipboard.
+   */
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.focusedId === null) return false
     const entry = this.entries.get(this.focusedId)
@@ -344,16 +359,37 @@ export class UIKitTextInputOverlay
       this.invalidate()
       return true
     }
+    const clip = clipboardKey(e)
+    if (clip !== null) {
+      this.clipboardAction(entry, clip)
+      return true
+    }
     const next = editKey(entry.edit, e, entry.spec.accept)
     if (next === null) return false
     const max = entry.spec.maxLength
     if (max !== undefined && next.text.length > max) return true
-    if (next !== entry.edit) {
-      const textChanged = next.text !== entry.edit.text
-      entry.edit = next
-      this.invalidate()
-      if (textChanged) entry.spec.onInput?.(next.text, entry.spec.id)
-    }
+    this.applyEdit(entry, next)
+    return true
+  }
+
+  /**
+   * Paste text into the focused input from code, as a host that catches the
+   * DOM paste event itself would. Line breaks are dropped, the spec's
+   * `accept` and `maxLength` apply.
+   */
+  paste(text: string): boolean {
+    if (this.focusedId === null) return false
+    const entry = this.entries.get(this.focusedId)
+    if (!entry || entry.spec.enabled === false || !entry.edit) return false
+    this.applyEdit(
+      entry,
+      pasteText(
+        entry.edit,
+        text.replace(/\r?\n/g, ''),
+        entry.spec.accept,
+        entry.spec.maxLength,
+      ),
+    )
     return true
   }
 
@@ -388,6 +424,41 @@ export class UIKitTextInputOverlay
   private invalidate(): void {
     this.geometryDirty = true
     this.requestRedraw?.()
+  }
+
+  /** Take a new edit state, redrawing and firing `onInput` when the text changed. */
+  private applyEdit(entry: TextInputEntry, next: TextEditState): void {
+    if (!entry.edit || next === entry.edit) return
+    const textChanged = next.text !== entry.edit.text
+    entry.edit = next
+    this.invalidate()
+    if (textChanged) entry.spec.onInput?.(next.text, entry.spec.id)
+  }
+
+  /**
+   * Copy or cut the selection to the clipboard, or start a paste: the read
+   * is asynchronous, and its text lands only if the input is still being
+   * edited when it arrives.
+   */
+  private clipboardAction(
+    entry: TextInputEntry,
+    action: 'copy' | 'cut' | 'paste',
+  ): void {
+    this.clipboard ??= createBrowserClipboard()
+    const clipboard = this.clipboard
+    const edit = entry.edit
+    if (!edit) return
+    if (action === 'paste') {
+      void clipboard.read().then((text) => {
+        if (this.entries.get(entry.spec.id) !== entry) return
+        if (this.focusedId !== entry.spec.id || !entry.edit) return
+        this.paste(text)
+      })
+      return
+    }
+    if (!hasSelection(edit)) return
+    clipboard.write(selectedText(edit))
+    if (action === 'cut') this.applyEdit(entry, insertText(edit, ''))
   }
 
   private truncate(spec: TextInputSpec, text: string): string {

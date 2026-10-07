@@ -107,6 +107,8 @@ export {
 export type { UIKitFilePickerOverlayOptions } from './filePickerOverlay'
 export { UIKitFilePickerOverlay } from './filePickerOverlay'
 export type {
+  ClipboardBridge,
+  ClipboardSource,
   DownloadBridge,
   DownloadDocument,
   DownloadUrlFactory,
@@ -116,6 +118,7 @@ export type {
 } from './host'
 export {
   acceptExtensions,
+  createBrowserClipboard,
   createBrowserDownload,
   createBrowserFilePicker,
 } from './host'
@@ -305,13 +308,16 @@ export type { TextEditState } from './textEdit'
 export {
   advanceBetween,
   caretIndexAt,
+  clipboardKey,
   deleteBackward,
   deleteForward,
   editKey,
   glyphAdvances,
   hasSelection,
   insertText,
+  pasteText,
   selectAll,
+  selectedText,
   selectionOf,
   setCaret,
   textEditState,

@@ -2,6 +2,11 @@
 // integrate into NiiVue's rendering lifecycle. Each widget is a pure geometry
 // builder plus an overlay that owns the GPU resources and draws it (see
 // docs/ruler-port.md in @niivue/niivue for the design).
+//
+// The surface is the overlays, the control layer, the spec/style/option types,
+// the default styles and the host bridges. The pure widget models (layout,
+// build, hit-test and state helpers) stay package-private: they are the
+// overlays' implementation, exercised by their own tests, not an API.
 
 // biome-ignore-all lint/performance/noBarrelFile: package entry point
 export type { AnnotationGeometryOptions } from './annotationOverlay'
@@ -15,16 +20,7 @@ export type {
   ButtonStyle,
   ButtonVisual,
 } from './button'
-export {
-  advancePress,
-  buildButton,
-  buttonContains,
-  DEFAULT_BUTTON_STYLE,
-  layoutButton,
-  mixColor,
-  resolveButtonStyle,
-  scaleButton,
-} from './button'
+export { DEFAULT_BUTTON_STYLE } from './button'
 export type {
   UIKitButtonHost,
   UIKitButtonOverlayOptions,
@@ -38,19 +34,7 @@ export type {
   ColorControlVisual,
   ColorSwatch,
 } from './colorControl'
-export {
-  buildColorControl,
-  COLOR_CHANNELS,
-  colorControlContains,
-  colorSwatchAt,
-  colorsEqual,
-  DEFAULT_COLOR_CONTROL_STYLE,
-  layoutColorControl,
-  resolveColorControlStyle,
-  scaleColorControl,
-  selectedSwatch,
-  withChannel,
-} from './colorControl'
+export { DEFAULT_COLOR_CONTROL_STYLE } from './colorControl'
 export type { UIKitColorControlOverlayOptions } from './colorControlOverlay'
 export { UIKitColorControlOverlay } from './colorControlOverlay'
 export type {
@@ -74,15 +58,7 @@ export type {
   DialogSpec,
   DialogStyle,
 } from './dialog'
-export {
-  buildDialog,
-  DEFAULT_DIALOG_STYLE,
-  dialogContains,
-  layoutDialog,
-  resolveDialogStyle,
-  scaleDialog,
-  wrapText,
-} from './dialog'
+export { DEFAULT_DIALOG_STYLE } from './dialog'
 export type { UIKitDialogOverlayOptions } from './dialogOverlay'
 export { UIKitDialogOverlay } from './dialogOverlay'
 export type {
@@ -92,17 +68,9 @@ export type {
   FilePickerVisual,
 } from './filePicker'
 export {
-  buildFilePicker,
   DEFAULT_FILE_PICKER_LABEL,
   DEFAULT_FILE_PICKER_PLACEHOLDER,
   DEFAULT_FILE_PICKER_STYLE,
-  ellipsizeStart,
-  filePickerButtonStyle,
-  filePickerContains,
-  filePickerSummary,
-  layoutFilePicker,
-  resolveFilePickerStyle,
-  scaleFilePicker,
 } from './filePicker'
 export type { UIKitFilePickerOverlayOptions } from './filePickerOverlay'
 export { UIKitFilePickerOverlay } from './filePickerOverlay'
@@ -136,23 +104,8 @@ export type {
   MenuStyle,
 } from './menu'
 export {
-  activateMenuItem,
-  buildMenuButton,
-  buildMenuPopup,
   DEFAULT_MENU_BUTTON_STYLE,
   DEFAULT_MENU_STYLE,
-  isMenuItemSelectable,
-  layoutMenuButton,
-  layoutMenuPopup,
-  menuButtonSpec,
-  menuRevealRow,
-  menuRowAt,
-  menuRowHeight,
-  menuScrollStripAt,
-  nextSelectableIndex,
-  popupContains,
-  resolveMenuStyle,
-  scaleMenu,
 } from './menu'
 export type { UIKitMenuOverlayOptions } from './menuOverlay'
 export { UIKitMenuOverlay } from './menuOverlay'
@@ -162,26 +115,11 @@ export type {
   NumberInputStyle,
   NumberInputVisual,
 } from './numberInput'
-export {
-  acceptNumberChar,
-  buildNumberInput,
-  DEFAULT_NUMBER_INPUT_STYLE,
-  formatNumberInput,
-  layoutNumberInput,
-  numberInputCaretAt,
-  numberInputContains,
-  numberInputSpinAt,
-  numberInputTextWindow,
-  parseNumberInput,
-  resolveNumberInputStyle,
-  scaleNumberInput,
-  snapNumberInput,
-  stepNumberInput,
-} from './numberInput'
+export { DEFAULT_NUMBER_INPUT_STYLE } from './numberInput'
 export type { UIKitNumberInputOverlayOptions } from './numberInputOverlay'
 export { UIKitNumberInputOverlay } from './numberInputOverlay'
 export type { RectData, RectSpec } from './rect'
-export { buildRect, rectContains } from './rect'
+export { buildRect } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
 export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
 export { buildRuler } from './ruler'
@@ -192,14 +130,6 @@ export type {
   ScrollWindow,
   UIKitBox,
 } from './scroll'
-export {
-  buildScrollArrow,
-  canScrollDown,
-  canScrollUp,
-  revealRow,
-  scrollWindow,
-  WheelAccumulator,
-} from './scroll'
 export type {
   SegmentedLayout,
   SegmentedSpec,
@@ -208,32 +138,10 @@ export type {
   SegmentLayout,
   SegmentSpec,
 } from './segmented'
-export {
-  buildSegmented,
-  DEFAULT_SEGMENTED_STYLE,
-  endSegmentValue,
-  layoutSegmented,
-  resolveSegmentedStyle,
-  scaleSegmented,
-  segmentAt,
-  segmentedContains,
-  segmentIndex,
-  stepSegmentValue,
-} from './segmented'
+export { DEFAULT_SEGMENTED_STYLE } from './segmented'
 export type { UIKitSegmentedOverlayOptions } from './segmentedOverlay'
 export { UIKitSegmentedOverlay } from './segmentedOverlay'
 export type { SelectOption, SelectSpec } from './select'
-export {
-  endSelectValue,
-  SELECT_GROUP,
-  selectIndex,
-  selectItems,
-  selectLabel,
-  selectMenuSpec,
-  selectOption,
-  selectWidth,
-  stepSelectValue,
-} from './select'
 export type { UIKitSelectOverlayOptions } from './selectOverlay'
 export { UIKitSelectOverlay } from './selectOverlay'
 export type {
@@ -242,23 +150,7 @@ export type {
   SliderStyle,
   SliderVisual,
 } from './slider'
-export {
-  buildSlider,
-  DEFAULT_SLIDER_STYLE,
-  effectiveStep,
-  formatSliderValue,
-  fractionToValue,
-  layoutSlider,
-  resolveSliderStyle,
-  scaleSlider,
-  sliderContains,
-  sliderThumbX,
-  sliderValueAt,
-  snapValue,
-  stepDecimals,
-  stepValue,
-  valueToFraction,
-} from './slider'
+export { DEFAULT_SLIDER_STYLE } from './slider'
 export type { UIKitSliderOverlayOptions } from './sliderOverlay'
 export { UIKitSliderOverlay } from './sliderOverlay'
 export { loadDefaultFont } from './text/defaultFont'
@@ -272,7 +164,6 @@ export { parseFont, screenPxRange } from './text/font'
 export type { RGBA, TextLayoutOptions } from './text/layout'
 export {
   autoOutlineColor,
-  capHeight,
   layoutText,
   measureWidth,
   readableAngle,
@@ -284,68 +175,18 @@ export type {
   TextAreaVisual,
   TextRow,
 } from './textArea'
-export {
-  buildTextArea,
-  caretInRow,
-  caretXInRow,
-  DEFAULT_TEXT_AREA_STYLE,
-  layoutTextArea,
-  moveCaretRows,
-  resolveTextAreaStyle,
-  rowOfCaret,
-  scaleTextArea,
-  textAreaCaretAt,
-  textAreaContains,
-  textAreaKey,
-  textAreaRows,
-  textAreaWindow,
-  textAreaWrapWidth,
-  wrapRows,
-} from './textArea'
+export { DEFAULT_TEXT_AREA_STYLE } from './textArea'
 export type { UIKitTextAreaOverlayOptions } from './textAreaOverlay'
 export { UIKitTextAreaOverlay } from './textAreaOverlay'
 export type { TextEditState } from './textEdit'
-export {
-  advanceBetween,
-  caretIndexAt,
-  clipboardKey,
-  deleteBackward,
-  deleteForward,
-  editKey,
-  glyphAdvances,
-  hasSelection,
-  insertText,
-  pasteText,
-  selectAll,
-  selectedText,
-  selectionOf,
-  setCaret,
-  textEditState,
-  textWindow,
-} from './textEdit'
 export type { TextFieldStyle } from './textField'
-export {
-  buildTextFieldContent,
-  textFieldCaretAt,
-  textFieldViewport,
-  textFieldWindow,
-} from './textField'
 export type {
   TextInputLayout,
   TextInputSpec,
   TextInputStyle,
   TextInputVisual,
 } from './textInput'
-export {
-  buildTextInput,
-  DEFAULT_TEXT_INPUT_STYLE,
-  layoutTextInput,
-  resolveTextInputStyle,
-  scaleTextInput,
-  textInputCaretAt,
-  textInputContains,
-  textInputTextWindow,
-} from './textInput'
+export { DEFAULT_TEXT_INPUT_STYLE } from './textInput'
 export type { UIKitTextInputOverlayOptions } from './textInputOverlay'
 export { UIKitTextInputOverlay } from './textInputOverlay'
 export type { UIKitTextItem } from './textOverlay'
@@ -356,15 +197,6 @@ export type {
   ToggleStyle,
   ToggleVisual,
 } from './toggle'
-export {
-  buildCheckMark,
-  buildFocusRing,
-  buildToggle,
-  DEFAULT_TOGGLE_STYLE,
-  layoutToggle,
-  resolveToggleStyle,
-  scaleToggle,
-  toggleContains,
-} from './toggle'
+export { DEFAULT_TOGGLE_STYLE } from './toggle'
 export type { UIKitToggleOverlayOptions } from './toggleOverlay'
 export { UIKitToggleOverlay } from './toggleOverlay'

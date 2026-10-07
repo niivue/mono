@@ -515,8 +515,8 @@ areas.getFirstRow('notes') // the scroll position, in rows
 `textSizePx * lineHeight`, default 1.4), the default `rows`, and the
 scrollbar's `scrollbarWidth`, `scrollbarGap`, `scrollbarColor` and
 `scrollbarTrackColor`. The pure model (`wrapRows`, `rowOfCaret`,
-`moveCaretRows`, `textAreaKey`) is exported for hosts that lay out
-multi-line text themselves.
+`moveCaretRows`, `textAreaKey`) is package-private; hosts that lay out
+multi-line text themselves should ask for it to be exported.
 
 ## Color controls
 
@@ -723,6 +723,8 @@ from `/volumes/...`. Each page's nav links to the others.
 - **Units.** Specs and styles are canvas pixels unless the overlay was made
   with `cssUnits`, in which case the overlay scales them by the device pixel
   ratio at draw time; widgets hosted by a dialog must use the dialog's units.
-- **Export every new public name from `src/index.ts`** (the one permitted
-  barrel) and add the widget to the table at the top of this file and to
-  `controls.html`.
+- **Export the overlay, its options type, the spec and style types and the
+  default style from `src/index.ts`** (the one permitted barrel). The pure
+  model (layout, build, hit-test and state helpers) stays package-private:
+  it is exercised by the widget's own tests and is not an API. Add the widget
+  to the table at the top of this file and to `controls.html`.

@@ -1,5 +1,5 @@
 // Pure single-line text editing model shared by UIKit's text-entry widgets
-// (number inputs today, text inputs later): a string with a caret and a
+// (number inputs, text inputs and, by row, text areas): a string with a caret and a
 // selection anchor, the edits a key press makes to it, the mapping from a
 // pointer x to a caret, and the whole-glyph horizontal scrolling that keeps
 // the caret in view (through the shared scroll model, so an overflowing field
@@ -150,6 +150,17 @@ export function clipboardKey(
 }
 
 /**
+ * A usable `maxLength`: a non-negative finite count, else undefined (no
+ * limit), so a NaN or negative option neither empties the field nor blocks
+ * every key.
+ */
+export function maxLengthOf(maxLength: number | undefined): number | undefined {
+  return maxLength !== undefined && Number.isFinite(maxLength) && maxLength >= 0
+    ? Math.floor(maxLength)
+    : undefined
+}
+
+/**
  * Replace the selection with the characters of `str` that `accept` allows,
  * as many as keep the text within `maxLength` (pasting into a full field
  * inserts nothing).
@@ -161,6 +172,7 @@ export function pasteText(
   maxLength?: number,
 ): TextEditState {
   let kept = [...str].filter(accept).join('')
+  maxLength = maxLengthOf(maxLength)
   if (maxLength !== undefined) {
     const [a, b] = selectionOf(s)
     const room = Math.max(0, maxLength - (s.text.length - (b - a)))

@@ -173,6 +173,25 @@ describe('UIKitSliderOverlay', () => {
     expect(redraws()).toBe(n + 1)
   })
 
+  it('rejects a slider without finite bounds', () => {
+    const { overlay } = make()
+    expect(() =>
+      overlay.addSlider({
+        id: 'x',
+        x: 0,
+        y: 0,
+        width: 100,
+        min: 0,
+        max: Infinity,
+        value: 1,
+      }),
+    ).toThrow(RangeError)
+    expect(() => overlay.updateSlider('s', { min: Number.NaN })).toThrow(
+      RangeError,
+    )
+    expect(overlay.getValue('s')).toBe(2)
+  })
+
   it('replaces the set with setSliders and drops stale focus', () => {
     const { overlay } = make()
     overlay.focus('s')

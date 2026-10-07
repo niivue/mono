@@ -190,19 +190,32 @@ type Range = Pick<NumberInputSpec, 'min' | 'max' | 'step'>
 
 /** Clamp `value` into the spec's bounds and snap it to its step grid. NaN clamps to the low end, or 0. */
 export function snapNumberInput(spec: Range, value: number): number {
-  const lo = spec.min ?? Number.NEGATIVE_INFINITY
-  const hi = spec.max ?? Number.POSITIVE_INFINITY
+  const lo = boundOf(spec.min, Number.NEGATIVE_INFINITY)
+  const hi = boundOf(spec.max, Number.POSITIVE_INFINITY)
   const clamp = (v: number): number => Math.min(hi, Math.max(lo, v))
-  if (!Number.isFinite(value)) return clamp(spec.min ?? 0)
+  if (!Number.isFinite(value)) return clamp(Number.isFinite(lo) ? lo : 0)
   let v = clamp(value)
-  if (spec.step !== undefined && spec.step > 0) {
-    const origin = spec.min ?? 0
+  const step = usableStep(spec.step)
+  if (step !== undefined) {
+    const origin = Number.isFinite(lo) ? lo : 0
     // The tiny bias keeps a half-way value rounding up as a reader expects.
-    const n = Math.round((v - origin) / spec.step + 1e-9)
-    v = Number((origin + n * spec.step).toFixed(stepDecimals(spec.step)))
+    const n = Math.round((v - origin) / step + 1e-9)
+    v = Number((origin + n * step).toFixed(stepDecimals(step)))
     v = clamp(v)
   }
   return v
+}
+
+/** A bound as given when finite (or an infinity), else `fallback`: NaN never leaks into a value. */
+function boundOf(bound: number | undefined, fallback: number): number {
+  return bound !== undefined && !Number.isNaN(bound) ? bound : fallback
+}
+
+/** A `step` that can snap: finite and positive, else undefined (continuous). */
+function usableStep(step: number | undefined): number | undefined {
+  return step !== undefined && Number.isFinite(step) && step > 0
+    ? step
+    : undefined
 }
 
 /** Move `value` by one step (ten with `big`) in `direction`, snapped. */
@@ -212,10 +225,11 @@ export function stepNumberInput(
   direction: 1 | -1,
   big = false,
 ): number {
-  const step =
-    (spec.step !== undefined && spec.step > 0 ? spec.step : 1) * (big ? 10 : 1)
+  const step = (usableStep(spec.step) ?? 1) * (big ? 10 : 1)
   const next = snapNumberInput(spec, value + direction * step)
-  return spec.step === undefined ? Number(next.toPrecision(12)) : next
+  return usableStep(spec.step) === undefined
+    ? Number(next.toPrecision(12))
+    : next
 }
 
 /** The displayed text for a value: the spec's formatter, else the step's precision. */
@@ -224,9 +238,8 @@ export function formatNumberInput(
   value: number,
 ): string {
   if (spec.format) return spec.format(value)
-  if (spec.step !== undefined && spec.step > 0) {
-    return value.toFixed(stepDecimals(spec.step))
-  }
+  const step = usableStep(spec.step)
+  if (step !== undefined) return value.toFixed(stepDecimals(step))
   return String(Number(value.toPrecision(12)))
 }
 

@@ -82,6 +82,16 @@ describe('number arithmetic', () => {
     expect(formatNumberInput({ format: (v) => `${v} deg` }, 90)).toBe('90 deg')
   })
 
+  it('survives non-finite steps and bounds', () => {
+    expect(snapNumberInput({ step: Number.POSITIVE_INFINITY }, 3)).toBe(3)
+    expect(snapNumberInput({ step: Number.NaN }, 3)).toBe(3)
+    expect(snapNumberInput({ min: Number.NaN, max: Number.NaN }, 3)).toBe(3)
+    expect(snapNumberInput({ min: Number.NaN }, Number.NaN)).toBe(0)
+    expect(stepNumberInput({ step: Number.NaN }, 3, 1)).toBe(4)
+    expect(formatNumberInput({ step: Number.POSITIVE_INFINITY }, 3)).toBe('3')
+    expect(() => formatNumberInput({ step: 1e-200 }, 1)).not.toThrow()
+  })
+
   it('parses trimmed text and rejects empty or non-numeric text', () => {
     expect(parseNumberInput({}, ' 12.5 ')).toBe(12.5)
     expect(parseNumberInput({}, '-.5')).toBe(-0.5)

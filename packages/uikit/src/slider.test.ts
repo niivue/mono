@@ -259,6 +259,18 @@ describe('buildSlider', () => {
     const geo = buildSlider(spec, style, l, { ...IDLE, value: 0 })
     expect(geo.rects.length).toBe(2)
   })
+
+  it('draws no ticks when they would be denser than a pixel or unbounded', () => {
+    const spec: SliderSpec = { ...SPEC, tickStep: 1 }
+    const layout = layoutSlider(spec, STYLE, METRICS)
+    const some = buildSlider(spec, STYLE, layout, IDLE).lines.length
+    const dense = buildSlider({ ...spec, tickStep: 1e-6 }, STYLE, layout, IDLE)
+    expect(dense.lines.length).toBeLessThan(some)
+    const open = buildSlider({ ...spec, max: Infinity }, STYLE, layout, IDLE)
+    expect(open.lines.length).toBe(dense.lines.length)
+    expect(snapValue(5, 0, 10, Infinity)).toBe(5)
+    expect(snapValue(5, 0, 10, Number.NaN)).toBe(5)
+  })
 })
 
 describe('label outline', () => {

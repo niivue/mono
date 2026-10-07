@@ -16,6 +16,10 @@ export class WgpuRectRenderer {
   private bindGroup: GPUBindGroup | null = null
   private capacity = 0
   private key = ''
+  // CPU staging reused across frames (grown on demand) so an idle control
+  // layer drawing every frame does not allocate per overlay per frame.
+  private scratch = new Float32Array(0)
+  private readonly params = new Float32Array(4)
 
   private ensurePipeline(
     device: GPUDevice,
@@ -119,17 +123,22 @@ export class WgpuRectRenderer {
     this.ensurePipeline(device, colorFormat, sampleCount, depthFormat)
     this.ensureCapacity(device, rects.length)
     if (!this.pipeline || !this.bindGroup || !this.storageBuffer) return
-    device.queue.writeBuffer(
-      this.paramsBuffer as GPUBuffer,
-      0,
-      new Float32Array([width, height]),
-    )
-    const data = new Float32Array(rects.length * FLOATS_PER_RECT)
+    this.params[0] = width
+    this.params[1] = height
+    device.queue.writeBuffer(this.paramsBuffer as GPUBuffer, 0, this.params)
+    const need = rects.length * FLOATS_PER_RECT
+    if (this.scratch.length < need) {
+      this.scratch = new Float32Array(Math.max(need, this.scratch.length * 2))
+    }
+    const data = this.scratch
     for (let i = 0; i < rects.length; i++) {
       const rect = rects[i]
-      if (rect) data.set(rect.data, i * FLOATS_PER_RECT)
+      const off = i * FLOATS_PER_RECT
+      // A zeroed slot is a zero-size (invisible) rect, matching a fresh alloc.
+      if (rect) data.set(rect.data, off)
+      else data.fill(0, off, off + FLOATS_PER_RECT)
     }
-    device.queue.writeBuffer(this.storageBuffer, 0, data)
+    device.queue.writeBuffer(this.storageBuffer, 0, data, 0, need)
     pass.setPipeline(this.pipeline)
     pass.setBindGroup(0, this.bindGroup)
     pass.draw(4, rects.length)

@@ -51,6 +51,7 @@ import {
   glyphAdvances,
   hasSelection,
   insertText,
+  maxLengthOf,
   pasteText,
   selectAll,
   selectedText,
@@ -86,6 +87,8 @@ interface TextAreaEntry {
   value: string
   /** The edit in progress while focused, else null. */
   edit: TextEditState | null
+  /** Bumped whenever an edit starts or ends, so a slow paste read knows its session is over. */
+  session: number
   firstRow: number
   /** The x a run of vertical caret moves aims for, else null. */
   goalX: number | null
@@ -177,6 +180,7 @@ export class UIKitTextAreaOverlay
         layout: null,
         value,
         edit: null,
+        session: 0,
         firstRow: 0,
         goalX: null,
         hover: false,
@@ -214,7 +218,11 @@ export class UIKitTextAreaOverlay
     const entry = this.entries.get(id)
     if (!entry) return
     const value = patch.value ?? entry.value
+    // A patch that leaves the value alone (a host re-laying out on resize)
+    // must not throw away what the user is typing.
+    const edit = patch.value === undefined ? entry.edit : null
     this.addTextArea({ ...entry.spec, ...patch, id, value })
+    if (edit && entry.edit) entry.edit = this.keepEdit(entry, edit)
     if (entry.spec.enabled === false) {
       if (this.pressId === id) this.pressId = null
       if (this.focusedId === id) {
@@ -485,7 +493,7 @@ export class UIKitTextAreaOverlay
     )
     if (result === null) return false
     const next = result.state
-    const max = entry.spec.maxLength
+    const max = maxLengthOf(entry.spec.maxLength)
     if (max !== undefined && next.text.length > max) return true
     entry.goalX = result.goalX
     this.applyEdit(entry, next)
@@ -566,9 +574,13 @@ export class UIKitTextAreaOverlay
     const edit = entry.edit
     if (!edit) return
     if (action === 'paste') {
+      const session = entry.session
       void clipboard.read().then((text) => {
         if (this.entries.get(entry.spec.id) !== entry) return
         if (this.focusedId !== entry.spec.id || !entry.edit) return
+        // A blur and refocus in the meantime started a new edit (all
+        // selected): the old paste must not replace the committed text.
+        if (entry.session !== session) return
         this.paste(text)
       })
       return
@@ -593,7 +605,18 @@ export class UIKitTextAreaOverlay
   }
 
   private truncate(spec: TextAreaSpec, text: string): string {
-    return spec.maxLength === undefined ? text : text.slice(0, spec.maxLength)
+    const max = maxLengthOf(spec.maxLength)
+    return max === undefined ? text : text.slice(0, max)
+  }
+
+  /** An edit carried across a spec patch: the text within the new `maxLength`, the caret still inside it. */
+  private keepEdit(entry: TextAreaEntry, edit: TextEditState): TextEditState {
+    const text = this.truncate(entry.spec, edit.text)
+    return {
+      text,
+      caret: Math.min(edit.caret, text.length),
+      anchor: Math.min(edit.anchor, text.length),
+    }
   }
 
   /** The edit state for a freshly focused (or reverted) area: all selected. */
@@ -601,6 +624,7 @@ export class UIKitTextAreaOverlay
     entry.firstRow = 0
     entry.goalX = null
     entry.manualScroll = false
+    entry.session++
     return selectAll(textEditState(entry.value))
   }
 
@@ -614,6 +638,7 @@ export class UIKitTextAreaOverlay
       entry.spec.onChange?.(entry.value, entry.spec.id)
     }
     entry.edit = stayFocused ? this.freshEdit(entry) : null
+    if (!stayFocused) entry.session++
     entry.firstRow = 0
     this.invalidate()
   }
@@ -738,6 +763,7 @@ export class UIKitTextAreaOverlay
         text: this.shownText(entry),
         edit: entry.edit,
         firstRow: entry.firstRow,
+        revealCaret: !entry.manualScroll,
         hover: entry.hover,
         enabled: entry.spec.enabled !== false,
       }

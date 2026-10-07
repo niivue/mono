@@ -243,8 +243,8 @@
       buttons.addButton({ id: 'reset', label: 'Reset view', x: 12, y: 218, onClick: resetView })
 
       // A text input: the status line echoes what is typed, Enter commits it
-      // and Escape reverts. Keyboard-only entry (no paste), with the text
-      // scrolling by whole glyphs once it outgrows the field.
+      // and Escape reverts. Copy, cut and paste go through the clipboard
+      // bridge; the text scrolls by whole glyphs once it outgrows the field.
       texts.addTextInput({
         id: 'note', label: 'Note', x: 12, y: 338, width: 200,
         placeholder: 'type, then Enter',

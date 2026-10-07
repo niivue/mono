@@ -189,7 +189,11 @@ export class UIKitNumberInputOverlay
     const entry = this.entries.get(id)
     if (!entry) return
     const value = patch.value ?? entry.value
+    // A patch that leaves the value alone (a host re-laying out on resize)
+    // must not throw away what the user is typing.
+    const edit = patch.value === undefined ? entry.edit : null
     this.addNumberInput({ ...entry.spec, ...patch, id, value })
+    if (edit && entry.edit) entry.edit = edit
     if (entry.spec.enabled === false) {
       if (this.pressId === id) this.pressId = null
       if (this.focusedId === id) {
@@ -312,7 +316,7 @@ export class UIKitNumberInputOverlay
     if (this.pressId !== null) {
       const entry = this.entries.get(this.pressId)
       if (entry && this.pressPart === 'text' && entry.edit) {
-        const next = setCaret(entry.edit, this.caretAt(entry, x), true)
+        const next = setCaret(entry.edit, this.dragCaretAt(entry, x), true)
         if (next.caret !== entry.edit.caret) {
           entry.edit = next
           this.invalidate()
@@ -506,6 +510,14 @@ export class UIKitNumberInputOverlay
     this.invalidate()
   }
 
+  /** The caret for a drag: a pointer left of the shown text pulls one hidden glyph into view. */
+  private dragCaretAt(entry: NumberInputEntry, x: number): number {
+    const caret = this.caretAt(entry, x)
+    const first = this.firstShown(entry)
+    const pastLeft = first > 0 && x < this.layoutOf(entry).textArea.x
+    return pastLeft && caret === first ? first - 1 : caret
+  }
+
   private caretAt(entry: NumberInputEntry, x: number): number {
     const { style } = this.scaled(entry)
     const text = entry.edit ? entry.edit.text : this.display(entry)
@@ -514,9 +526,29 @@ export class UIKitNumberInputOverlay
       style,
       this.font.metrics,
       text,
-      entry.firstGlyph,
+      this.firstShown(entry),
       x,
     )
+  }
+
+  /**
+   * The first glyph the next frame shows: the stored scroll position, moved
+   * the least distance that keeps the caret in view, stored as the new scroll
+   * position. Pointer math settles the window too, so a press right after a
+   * key edit lands on the glyphs the user is about to see, drawn or not.
+   */
+  private firstShown(entry: NumberInputEntry): number {
+    const { style } = this.scaled(entry)
+    const text = entry.edit ? entry.edit.text : this.display(entry)
+    entry.firstGlyph = numberInputTextWindow(
+      this.layoutOf(entry),
+      style,
+      this.font.metrics,
+      text,
+      entry.firstGlyph,
+      entry.edit ? entry.edit.caret : 0,
+    ).first
+    return entry.firstGlyph
   }
 
   private scaled(entry: NumberInputEntry): {
@@ -554,14 +586,7 @@ export class UIKitNumberInputOverlay
       const layout = this.layoutOf(entry)
       const shown = entry.edit ? entry.edit.text : this.display(entry)
       // Keep the scroll position between frames so the text does not jump.
-      entry.firstGlyph = numberInputTextWindow(
-        layout,
-        style,
-        this.font.metrics,
-        shown,
-        entry.firstGlyph,
-        entry.edit ? entry.edit.caret : 0,
-      ).first
+      entry.firstGlyph = this.firstShown(entry)
       const id = entry.spec.id
       const geo = buildNumberInput(spec, style, layout, this.font.metrics, {
         text: shown,

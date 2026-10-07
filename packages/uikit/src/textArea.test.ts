@@ -284,6 +284,23 @@ describe('buildTextArea', () => {
     expect(geo.shown).toMatchObject({ first: 0, end: 2 })
   })
 
+  it('keeps a manual scroll instead of revealing the caret when told to', () => {
+    // Five rows, two visible, caret on the first row, scrolled to row 2.
+    const edit = { text: 'a\nb\nc\nd\ne', caret: 1, anchor: 1 }
+    const scrolled = { ...visual, text: edit.text, edit, firstRow: 2 }
+    const revealed = buildTextArea(SPEC, STYLE, layout, METRICS, scrolled)
+    expect(revealed.shown).toMatchObject({ first: 0, end: 2 })
+    const kept = buildTextArea(SPEC, STYLE, layout, METRICS, {
+      ...scrolled,
+      revealCaret: false,
+    })
+    expect(kept.shown).toMatchObject({ first: 2, end: 4 })
+    expect(kept.text.map((t) => t.str)).toEqual(['c', 'd', 'Hi'])
+    // The thumb sits where the hit test expects it: at firstRow 2 of 3.
+    const thumbY = (r: { data: Float32Array }) => r.data[1]
+    expect(thumbY(kept.rects[2])).toBeGreaterThan(thumbY(revealed.rects[2]))
+  })
+
   it('draws no scrollbar when every row fits', () => {
     const geo = buildTextArea(SPEC, STYLE, layout, METRICS, {
       ...visual,

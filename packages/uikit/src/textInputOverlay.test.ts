@@ -232,6 +232,67 @@ describe('UIKitTextInputOverlay', () => {
     expect(overlay.paste('x')).toBe(false)
   })
 
+  it('keeps an edit in progress across a patch that leaves the value alone', () => {
+    const { overlay, changes } = make()
+    overlay.focus('t')
+    overlay.keyDown(key('End'))
+    type(overlay, 'x')
+    overlay.updateTextInput('t', { x: 10 })
+    expect(overlay.getText('t')).toBe('abcx')
+    expect(overlay.focusedInput).toBe('t')
+    // A new value replaces the edit; a shorter maxLength trims it and the caret.
+    overlay.updateTextInput('t', { maxLength: 2 })
+    expect(overlay.getText('t')).toBe('ab')
+    type(overlay, 'y')
+    expect(overlay.getText('t')).toBe('ab')
+    overlay.updateTextInput('t', { value: 'new', maxLength: undefined })
+    expect(overlay.getText('t')).toBe('new')
+    expect(changes).toEqual([])
+  })
+
+  it('treats a non-finite or negative maxLength as no limit', () => {
+    const { overlay } = make()
+    overlay.updateTextInput('t', { maxLength: Number.NaN })
+    expect(overlay.getText('t')).toBe('abc')
+    overlay.focus('t')
+    overlay.keyDown(key('End'))
+    type(overlay, 'd')
+    expect(overlay.getText('t')).toBe('abcd')
+    overlay.updateTextInput('t', { maxLength: -1 })
+    expect(overlay.getText('t')).toBe('abcd')
+    type(overlay, 'e')
+    expect(overlay.getText('t')).toBe('abcde')
+  })
+
+  it('drops a paste that arrives after a blur and refocus', async () => {
+    const { clipboard } = fakeClipboard('late')
+    const { overlay, inputs } = make(undefined, clipboard)
+    overlay.focus('t')
+    overlay.keyDown(key('v', { metaKey: true }))
+    overlay.blur()
+    overlay.focus('t') // a new session with everything selected
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overlay.getText('t')).toBe('abc')
+    expect(inputs).toEqual([])
+  })
+
+  it('pulls hidden glyphs into a selection dragged past the left edge', () => {
+    const { overlay } = make()
+    overlay.setValue('t', 'abcdefghijkl')
+    overlay.focus('t')
+    overlay.keyDown(key('End')) // scrolls the start out of view
+    // Press at the left edge of the text (caret before the first shown
+    // glyph), then drag left of it: one hidden glyph joins the selection.
+    overlay.pointerDown(122, 60)
+    overlay.pointerMove(100, 60)
+    overlay.pointerUp(100, 60)
+    type(overlay, 'z')
+    const text = overlay.getText('t')
+    expect(text).toHaveLength(12)
+    expect(text).toMatch(/^[a-l]+z[a-l]+$/)
+  })
+
   it('requests a redraw for edits and counts entries', () => {
     const { overlay, redraws } = make()
     const before = redraws()

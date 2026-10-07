@@ -64,6 +64,9 @@ class Child implements UIKitInteractive {
   pointerCancel(): void {
     this.log.push('cancel')
   }
+  destroy(): void {
+    this.log.push('destroy')
+  }
   /**
    * Takes 'x', Enter (a field committing) and, while modal, Escape and Enter
    * (a popup closing or choosing), like a select.
@@ -272,6 +275,34 @@ describe('UIKitDialogOverlay', () => {
     overlay.removeDialog('e')
     expect(overlay.openDialog).toBeNull()
     expect(overlay.ids).toEqual(['d'])
+  })
+
+  it('owns its hosted children: removeDialog and destroy release them', () => {
+    const { overlay } = make()
+    const kept = new Child({ x: 300, y: 300, w: 50, h: 20 })
+    const owned = new Child({ x: 400, y: 300, w: 50, h: 20 })
+    overlay.addChild('d', kept)
+    overlay.addChild('d', owned)
+    overlay.removeChild('d', kept)
+    overlay.destroy()
+    expect(owned.log).toContain('destroy')
+    expect(kept.log).not.toContain('destroy')
+    const second = make().overlay
+    const c = new Child({ x: 300, y: 300, w: 50, h: 20 })
+    second.addChild('d', c)
+    second.removeDialog('d')
+    expect(c.log).toContain('destroy')
+  })
+
+  it('keeps plain keys but lets browser shortcuts through', () => {
+    const { overlay, closed } = make()
+    overlay.open('d')
+    expect(overlay.keyDown(key('a'))).toBe(true)
+    expect(overlay.keyDown(key('Tab'))).toBe(true)
+    expect(overlay.keyDown(key('r', { metaKey: true }))).toBe(false)
+    expect(overlay.keyDown(key('f', { ctrlKey: true }))).toBe(false)
+    expect(overlay.isModal()).toBe(true)
+    expect(closed).toEqual([])
   })
 
   it('clicks a button from code and ignores a disabled one', () => {

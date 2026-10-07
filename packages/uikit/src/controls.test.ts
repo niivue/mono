@@ -196,6 +196,43 @@ describe('UIKitControls routing', () => {
     expect(hi.log).toEqual(['key a'])
   })
 
+  it('cancels the captured widget when a second pointer presses another', () => {
+    const { layer, lo, hi, clear } = make()
+    expect(layer.pointerDown(25, 25)).toBe(true)
+    expect(layer.capturedWidget).toBe(lo)
+    clear()
+    expect(layer.pointerDown(75, 75)).toBe(true)
+    expect(layer.capturedWidget).toBe(hi)
+    expect(lo.log).toEqual(['cancel', 'blur'])
+    layer.pointerUp(75, 75)
+    expect(layer.capturedWidget).toBeNull()
+  })
+
+  it('stops routing keys after deactivate even while a modal widget stays open', () => {
+    const { layer, lo, hi, clear } = make()
+    layer.pointerDown(75, 75)
+    layer.pointerUp(75, 75)
+    lo.modal = true
+    clear()
+    expect(layer.keyDown(key('a'))).toBe(true)
+    expect(lo.log).toEqual(['key a'])
+    clear()
+    // The user pressed elsewhere in the page: the dialog stays open but the
+    // page gets its keys back until the canvas is pressed again.
+    layer.deactivate()
+    expect(lo.log).toEqual(['dismiss']) // 'hi' took the press and the focus
+    lo.modal = true // a dialog stays open through dismiss; the fake does not
+    clear()
+    expect(layer.keyDown(key('a'))).toBe(false)
+    expect(lo.log).toEqual([])
+    layer.pointerDown(75, 75)
+    layer.pointerUp(75, 75)
+    clear()
+    expect(layer.keyDown(key('a'))).toBe(true)
+    expect(lo.log).toEqual(['key a'])
+    expect(hi.log).toEqual([])
+  })
+
   it('sends keys to the focused widget and reports whether it consumed them', () => {
     const { layer, hi } = make()
     expect(layer.keyDown(key('a'))).toBe(false)
@@ -330,6 +367,36 @@ describe('UIKitControls.attach', () => {
     canvas.dispatchEvent(pointer('pointermove', 300, 300))
     expect(seen).toEqual(['move'])
     expect(canvas.style.cursor).toBe('')
+    detach()
+  })
+
+  it('ends a capture from the window when pointer capture was refused', () => {
+    const { layer, hi, canvas, detach } = attach()
+    canvas.setPointerCapture = () => {
+      throw new DOMException('no such pointer', 'NotFoundError')
+    }
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37))
+    expect(layer.capturedWidget).toBe(hi)
+    // The release happens over another element: it reaches the window only,
+    // with a client point the host cannot map onto the canvas.
+    g.window?.dispatchEvent(pointer('pointerup', -1, -1))
+    expect(layer.capturedWidget).toBeNull()
+    expect(hi.log).toContain('up -1,-1')
+    // A canvas-targeted release (capture granted) is left to the canvas
+    // handler: the window listener does not double-handle it.
+    hi.log.length = 0
+    canvas.setPointerCapture = () => {}
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37))
+    canvas.dispatchEvent(pointer('pointerup', 37, 37))
+    expect(hi.log.filter((l) => l.startsWith('up'))).toEqual(['up 74,74'])
+    // And a cancel outside the canvas cancels the captured widget.
+    canvas.setPointerCapture = () => {
+      throw new DOMException('no such pointer', 'NotFoundError')
+    }
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37))
+    g.window?.dispatchEvent(pointer('pointercancel', -1, -1))
+    expect(layer.capturedWidget).toBeNull()
+    expect(hi.log).toContain('cancel')
     detach()
   })
 

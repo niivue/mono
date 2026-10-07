@@ -11,6 +11,7 @@ import {
   glyphAdvances,
   hasSelection,
   insertText,
+  maxLengthOf,
   pasteText,
   selectAll,
   selectedText,
@@ -183,6 +184,21 @@ describe('clipboard helpers', () => {
     const plain = textEditState('abc', 3)
     expect(pasteText(plain, '12', (ch) => /[a-z]/.test(ch))).toBe(plain)
     expect(pasteText(plain, 'xyz', undefined, 3)).toBe(plain)
+  })
+})
+
+describe('maxLengthOf', () => {
+  it('keeps a usable count and drops NaN, infinite or negative ones', () => {
+    expect(maxLengthOf(3)).toBe(3)
+    expect(maxLengthOf(2.7)).toBe(2)
+    expect(maxLengthOf(0)).toBe(0)
+    expect(maxLengthOf(undefined)).toBeUndefined()
+    expect(maxLengthOf(Number.NaN)).toBeUndefined()
+    expect(maxLengthOf(Number.POSITIVE_INFINITY)).toBeUndefined()
+    expect(maxLengthOf(-1)).toBeUndefined()
+    // pasteText goes through it: a NaN limit pastes everything.
+    const s = textEditState('ab')
+    expect(pasteText(s, 'cd', undefined, Number.NaN).text).toBe('abcd')
   })
 })
 

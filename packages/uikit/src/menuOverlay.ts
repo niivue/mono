@@ -291,12 +291,12 @@ export class UIKitMenuOverlay
     return this.focusedId
   }
 
-  /** True while a popup is open: the overlay then wants every event first. */
   /** Close an open popup without choosing (the control layer's outside-press hook). */
   dismiss(): void {
     this.close()
   }
 
+  /** True while a popup is open: the overlay then wants every event first. */
   isModal(): boolean {
     return this.openId !== null
   }

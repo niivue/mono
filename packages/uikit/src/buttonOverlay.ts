@@ -289,6 +289,8 @@ export class UIKitButtonOverlay
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.focusedId === null) return false
     if (e.key !== 'Enter' && e.key !== ' ') return false
+    const entry = this.entries.get(this.focusedId)
+    if (!entry || entry.spec.enabled === false) return false
     this.click(this.focusedId)
     return true
   }

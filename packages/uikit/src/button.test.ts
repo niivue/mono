@@ -157,6 +157,13 @@ describe('scaleButton', () => {
 })
 
 describe('advancePress', () => {
+  it('snaps to the target on a non-finite duration, clock or value', () => {
+    expect(advancePress(0, 1, 16, Number.NaN)).toBe(1)
+    expect(advancePress(0, 1, 16, Infinity)).toBe(1)
+    expect(advancePress(0, 1, Number.NaN, 100)).toBe(1)
+    expect(advancePress(Number.NaN, 1, 16, 100)).toBe(1)
+  })
+
   it('moves at a constant rate and clamps at the target', () => {
     expect(advancePress(0, 1, 50, 100)).toBeCloseTo(0.5)
     expect(advancePress(0.5, 1, 500, 100)).toBe(1)

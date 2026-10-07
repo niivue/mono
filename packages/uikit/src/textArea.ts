@@ -167,6 +167,12 @@ export interface TextAreaVisual {
   edit: TextEditState | null
   /** Index of the first row the text area shows (the overlay keeps it between frames). */
   firstRow: number
+  /**
+   * Scroll `firstRow` just far enough to show the caret (the default). The
+   * overlay passes false after the user scrolled by wheel or thumb, so the
+   * drawn rows match the viewport its hit tests use.
+   */
+  revealCaret?: boolean
   hover: boolean
   enabled: boolean
 }
@@ -607,7 +613,8 @@ export function buildTextArea(
 
   const advances = glyphAdvances(metrics, visual.text, style.textSizePx)
   const rows = wrapRows(visual.text, advances, wrapWidth)
-  const caret = visual.edit ? visual.edit.caret : null
+  const caret =
+    visual.edit && visual.revealCaret !== false ? visual.edit.caret : null
   const shown = textAreaWindow(layout, rows, visual.firstRow, caret)
   const selected =
     visual.edit && hasSelection(visual.edit) ? selectionOf(visual.edit) : null

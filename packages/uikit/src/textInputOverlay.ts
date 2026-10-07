@@ -28,6 +28,7 @@ import {
   editKey,
   hasSelection,
   insertText,
+  maxLengthOf,
   pasteText,
   selectAll,
   selectedText,
@@ -77,6 +78,8 @@ interface TextInputEntry {
   value: string
   /** The edit in progress while focused, else null. */
   edit: TextEditState | null
+  /** Bumped whenever an edit starts or ends, so a slow paste read knows its session is over. */
+  session: number
   firstGlyph: number
   hover: boolean
 }
@@ -154,6 +157,7 @@ export class UIKitTextInputOverlay
         layout: null,
         value,
         edit: null,
+        session: 0,
         firstGlyph: 0,
         hover: false,
       })
@@ -186,7 +190,11 @@ export class UIKitTextInputOverlay
     const entry = this.entries.get(id)
     if (!entry) return
     const value = patch.value ?? entry.value
+    // A patch that leaves the value alone (a host re-laying out on resize)
+    // must not throw away what the user is typing.
+    const edit = patch.value === undefined ? entry.edit : null
     this.addTextInput({ ...entry.spec, ...patch, id, value })
+    if (edit && entry.edit) entry.edit = this.keepEdit(entry, edit)
     if (entry.spec.enabled === false) {
       if (this.pressId === id) this.pressId = null
       if (this.focusedId === id) {
@@ -308,7 +316,7 @@ export class UIKitTextInputOverlay
     if (this.pressId !== null) {
       const entry = this.entries.get(this.pressId)
       if (entry?.edit) {
-        const next = setCaret(entry.edit, this.caretAt(entry, x), true)
+        const next = setCaret(entry.edit, this.dragCaretAt(entry, x), true)
         if (next.caret !== entry.edit.caret) {
           entry.edit = next
           this.invalidate()
@@ -366,7 +374,7 @@ export class UIKitTextInputOverlay
     }
     const next = editKey(entry.edit, e, entry.spec.accept)
     if (next === null) return false
-    const max = entry.spec.maxLength
+    const max = maxLengthOf(entry.spec.maxLength)
     if (max !== undefined && next.text.length > max) return true
     this.applyEdit(entry, next)
     return true
@@ -449,9 +457,13 @@ export class UIKitTextInputOverlay
     const edit = entry.edit
     if (!edit) return
     if (action === 'paste') {
+      const session = entry.session
       void clipboard.read().then((text) => {
         if (this.entries.get(entry.spec.id) !== entry) return
         if (this.focusedId !== entry.spec.id || !entry.edit) return
+        // A blur and refocus in the meantime started a new edit (all
+        // selected): the old paste must not replace the committed text.
+        if (entry.session !== session) return
         this.paste(text)
       })
       return
@@ -462,12 +474,24 @@ export class UIKitTextInputOverlay
   }
 
   private truncate(spec: TextInputSpec, text: string): string {
-    return spec.maxLength === undefined ? text : text.slice(0, spec.maxLength)
+    const max = maxLengthOf(spec.maxLength)
+    return max === undefined ? text : text.slice(0, max)
+  }
+
+  /** An edit carried across a spec patch: the text within the new `maxLength`, the caret still inside it. */
+  private keepEdit(entry: TextInputEntry, edit: TextEditState): TextEditState {
+    const text = this.truncate(entry.spec, edit.text)
+    return {
+      text,
+      caret: Math.min(edit.caret, text.length),
+      anchor: Math.min(edit.anchor, text.length),
+    }
   }
 
   /** The edit state for a freshly focused (or reverted) input: all selected. */
   private freshEdit(entry: TextInputEntry): TextEditState {
     entry.firstGlyph = 0
+    entry.session++
     return selectAll(textEditState(entry.value))
   }
 
@@ -481,8 +505,17 @@ export class UIKitTextInputOverlay
       entry.spec.onChange?.(entry.value, entry.spec.id)
     }
     entry.edit = stayFocused ? this.freshEdit(entry) : null
+    if (!stayFocused) entry.session++
     entry.firstGlyph = 0
     this.invalidate()
+  }
+
+  /** The caret for a drag: a pointer left of the shown text pulls one hidden glyph into view. */
+  private dragCaretAt(entry: TextInputEntry, x: number): number {
+    const caret = this.caretAt(entry, x)
+    const first = this.firstShown(entry)
+    const pastLeft = first > 0 && x < this.layoutOf(entry).textArea.x
+    return pastLeft && caret === first ? first - 1 : caret
   }
 
   private caretAt(entry: TextInputEntry, x: number): number {
@@ -493,9 +526,29 @@ export class UIKitTextInputOverlay
       style,
       this.font.metrics,
       text,
-      entry.firstGlyph,
+      this.firstShown(entry),
       x,
     )
+  }
+
+  /**
+   * The first glyph the next frame shows: the stored scroll position, moved
+   * the least distance that keeps the caret in view, stored as the new scroll
+   * position. Pointer math settles the window too, so a press right after a
+   * key edit lands on the glyphs the user is about to see, drawn or not.
+   */
+  private firstShown(entry: TextInputEntry): number {
+    const { style } = this.scaled(entry)
+    const text = entry.edit ? entry.edit.text : entry.value
+    entry.firstGlyph = textInputTextWindow(
+      this.layoutOf(entry),
+      style,
+      this.font.metrics,
+      text,
+      entry.firstGlyph,
+      entry.edit ? entry.edit.caret : 0,
+    ).first
+    return entry.firstGlyph
   }
 
   private scaled(entry: TextInputEntry): {
@@ -532,14 +585,7 @@ export class UIKitTextInputOverlay
       const layout = this.layoutOf(entry)
       const shown = entry.edit ? entry.edit.text : entry.value
       // Keep the scroll position between frames so the text does not jump.
-      entry.firstGlyph = textInputTextWindow(
-        layout,
-        style,
-        this.font.metrics,
-        shown,
-        entry.firstGlyph,
-        entry.edit ? entry.edit.caret : 0,
-      ).first
+      entry.firstGlyph = this.firstShown(entry)
       const visual: TextInputVisual = {
         text: shown,
         edit: entry.edit,

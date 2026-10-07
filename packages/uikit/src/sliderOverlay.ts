@@ -97,6 +97,11 @@ export class UIKitSliderOverlay
    * snapped to its range and step; a replacement takes the new spec's value.
    */
   addSlider(spec: SliderSpec): void {
+    if (!Number.isFinite(spec.min) || !Number.isFinite(spec.max)) {
+      throw new RangeError(
+        `UIKit: slider "${spec.id}" needs finite min and max`,
+      )
+    }
     const existing = this.entries.get(spec.id)
     const style = resolveSliderStyle(this.baseStyle, spec.style)
     const value = snapValue(spec.value, spec.min, spec.max, spec.step)

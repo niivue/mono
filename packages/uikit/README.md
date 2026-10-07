@@ -1,13 +1,16 @@
 # @niivue/uikit
 
-UIKit: a collection of controls and widgets (rulers, crosshairs, annotations,
-buttons, and later sliders and panels) integrated into the
+UIKit: a collection of controls and widgets (rulers, crosshairs and
+annotations, plus an on-canvas control layer of buttons, toggles, sliders,
+menus, selects, segmented controls, number and text fields, color controls,
+file pickers and dialogs) integrated into the
 [NiiVue](https://github.com/niivue/niivue) rendering lifecycle.
 
 > **Status: shipping widgets.** The rendering-lifecycle hook, UIKit's own
-> line/text/rect renderers (WebGL2 + WebGPU, with a text transform), and the
-> first widgets (ruler, annotation, crosshair, button) are in. See
-> `docs/ruler-port.md` in `@niivue/niivue` for the design.
+> line/text/rect renderers (WebGL2 + WebGPU, with a text transform), the
+> measuring widgets (ruler, annotation, crosshair) and the control layer with
+> every widget in the table below are in. See `docs/ruler-port.md` in
+> `@niivue/niivue` for the design.
 
 ## Design in one paragraph
 
@@ -147,7 +150,8 @@ drawn after every widget. A press anywhere else in the page, focus moving to
 another element or the window losing focus deactivates the layer (held press
 cancelled, popups dismissed, focus dropped), so keys reach the page again
 instead of the last widget the user touched; `deactivate()` does the same from
-code.
+code. The layer owns keys again on the next canvas press or `focus` call; an
+open dialog does not keep them while the user is elsewhere in the page.
 
 ```ts
 import {
@@ -203,9 +207,11 @@ contrast), press scale and focus ring.
 A slider is a horizontal track with a round thumb, an optional label on the
 left and value readout on the right, and optional tick marks. Pressing the track
 jumps the value there and starts a drag; the thumb follows the pointer however
-far it strays vertically. Values snap to `step` (default: a hundredth of the
-range) and clamp to `[min, max]`. With focus, ArrowLeft/Down and ArrowRight/Up
-move one step, Shift and PageUp/PageDown move ten, Home and End go to the ends.
+far it strays vertically. Values clamp to `[min, max]` and snap to `step`
+when one is given; without a step the slider is continuous and the keyboard
+moves by a hundredth of the range. With focus, ArrowLeft/Down and
+ArrowRight/Up move one step, Shift and PageUp/PageDown move ten, Home and End
+go to the ends.
 
 ```ts
 sliders.addSlider({
@@ -220,7 +226,7 @@ sliders.addSlider({
   value: 1,
   showValue: true,
   format: (v) => v.toFixed(2), // optional; default shows the step's decimals
-  tickStep: 0.5, // optional tick marks
+  tickStep: 0.5, // optional tick marks (skipped when denser than a pixel)
   onInput: (v) => { nv.gamma = v }, // every change, including during a drag
   onChange: (v) => save(v), // once, when a drag or key press settles a new value
 })
@@ -405,7 +411,8 @@ numbers.getText('elevation') // what the field shows, edit in progress included
 with its focus and invalid colors, text color and size, the label halo
 (`textOutlineWidth`, `textOutlineColor`), padding, the default `fieldWidth`,
 the spinner width, faces, dividers and chevrons, and the caret and selection
-colors. `parse` on a spec replaces the default `Number` parser.
+colors. `parse` on a spec replaces the default `Number` parser. The overlay
+option `wheelStepPx` (default 40) is how many wheel pixels make one step.
 
 The editing itself is the shared model in `textEdit.ts`: a `TextEditState`
 (text, caret, selection anchor), `editKey` for the caret moves, Backspace,
@@ -595,6 +602,7 @@ pickers.addFilePicker({
   onPick: ([file]) => nv.loadVolumes([{ url: file, colormap: 'Gray' }]),
 })
 pickers.setFiles('volume', ['mni152.nii.gz']) // silent
+pickers.getFiles('volume') // the shown names
 
 const download = createBrowserDownload()
 menus.addMenu({ id: 'file', label: 'File', x: 12, y: 12, items: [
@@ -627,7 +635,11 @@ the panel. They must use the same units as the dialog. `onLayout` reports the
 panel and content boxes in spec units whenever the panel is placed (the first
 draw, a resize), which is where to position them. A dialog is not a popup: a
 press elsewhere in the page only blurs its children, so a window blur never
-closes a half-filled form.
+closes a half-filled form. Keys with Meta or Ctrl held that the form does not
+use (reload, find, zoom) pass through to the browser. The dialog owns what it hosts: `removeDialog` and
+`destroy` release the children's GPU resources along with the action
+buttons, so `controls.destroy()` tears a whole form down; `removeChild`
+first to keep a child alive.
 
 ```ts
 const dialogs = new UIKitDialogOverlay(font, units)
@@ -652,6 +664,7 @@ dialogs.addDialog({
 dialogs.addChild('rename', fields)
 fields.addTextInput({ id: 'name', x: 0, y: 0, width: 300, value: 'mni152' })
 dialogs.open('rename')
+dialogs.click('ok') // as the user would: closes and fires onClose('ok')
 dialogs.close('cancel') // from code, with any result
 ```
 
@@ -659,3 +672,57 @@ dialogs.close('cancel') // from code, with any result
 default `width`, `padding` and `gap`, the title and message colors and sizes,
 the message `lineHeight`, the `buttonGap`, and `button` and `defaultButton`
 overrides of the button style.
+
+## Demo pages
+
+`bunx nx dev uikit` serves the package's own demo pages with Vite; the dev
+server also mounts `@niivue/dev-images`, so the pages can load real volumes
+from `/volumes/...`. Each page's nav links to the others.
+
+| Page | Shows |
+| --- | --- |
+| `index.html` | The ruler on a blank pane |
+| `volume.html` | The ruler over a NiiVue volume, measuring in millimetres from the slice pick |
+| `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile, measuring in screen pixels |
+| `slide-wsi.html` | The ruler on the standalone WSI viewer with a DICOM whole-slide image |
+| `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |
+| `controls.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog |
+
+## Conventions for contributors
+
+- **A widget is a model file plus an overlay file.** `foo.ts` holds the pure
+  model: the `FooSpec` and `FooStyle` interfaces, `DEFAULT_FOO_STYLE`,
+  `resolveFooStyle`, `layoutFoo` (spec to boxes), `scaleFoo` (spec and style
+  into device pixels for `cssUnits`), `fooContains` (hit test) and `buildFoo`
+  (layout and state to line, text and rect draw data). It imports no GPU code
+  and is tested in `foo.test.ts` without one. `fooOverlay.ts` holds
+  `UIKitFooOverlay`: it keeps the specs and interaction state, implements
+  `UIKitInteractive` (`hitTest`, the pointer methods, `keyDown`, `wheel` where
+  it scrolls, `blur`, `bindLayer`) and draws through the lifecycle hook.
+  `fooOverlay.test.ts` drives it through those methods with a stub renderer.
+  (The select is the exception: `select.ts` is helper functions that turn a
+  `SelectSpec` into a menu spec, and its overlay wraps a menu overlay.)
+- **Overlays share the primitives.** Draw through `UIKitRectOverlay`,
+  `UIKitLineOverlay` and `UIKitTextOverlay` (and the `render/` renderers under
+  them); a composite widget composes another overlay (the file picker holds a
+  button overlay, the color control a slider overlay, the select a menu
+  overlay) rather than redrawing it.
+- **Shared behaviour lives in shared models.** Row scrolling is `scroll.ts`,
+  single-line editing `textEdit.ts` and `textField.ts`, multi-line editing
+  `textArea.ts`, text wrapping `wrapText` in `dialog.ts`. Extend those before
+  adding a widget-local copy.
+- **Browser-only steps are host bridges in `host.ts`.** A widget never touches
+  the DOM, the clipboard or a download itself: it calls a bridge type
+  (`FilePickerBridge`, `DownloadBridge`, `ClipboardBridge`) that the overlay
+  option names and `createBrowser*` implements, so tests and non-browser hosts
+  supply their own.
+- **Callbacks follow one contract.** `onInput` fires on every user change,
+  `onChange` once per committed change, `onSubmit` on an explicit submit;
+  setters from code (`setValue`, `setChecked`, `setItemChecked`) are silent.
+  Every callback receives the widget id last.
+- **Units.** Specs and styles are canvas pixels unless the overlay was made
+  with `cssUnits`, in which case the overlay scales them by the device pixel
+  ratio at draw time; widgets hosted by a dialog must use the dialog's units.
+- **Export every new public name from `src/index.ts`** (the one permitted
+  barrel) and add the widget to the table at the top of this file and to
+  `controls.html`.

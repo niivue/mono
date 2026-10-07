@@ -193,6 +193,32 @@ describe('UIKitTextAreaOverlay', () => {
     expect(overlay.getText('a')).toBe('a\nb\nc\ndz\ne')
   })
 
+  it('keeps an edit in progress across a patch that leaves the value alone', () => {
+    const { overlay, changes } = make()
+    overlay.focus('a')
+    overlay.keyDown(key('End', { metaKey: true }))
+    type(overlay, 'x')
+    overlay.updateTextArea('a', { x: 10 })
+    expect(overlay.getText('a')).toBe('abc def ghijx')
+    expect(overlay.focusedArea).toBe('a')
+    overlay.updateTextArea('a', { value: 'new' })
+    expect(overlay.getText('a')).toBe('new')
+    expect(changes).toEqual([])
+  })
+
+  it('drops a paste that arrives after a blur and refocus', async () => {
+    const { clipboard } = fakeClipboard('late')
+    const { overlay, inputs } = make({ t: 0 }, 'abc', clipboard)
+    overlay.focus('a')
+    overlay.keyDown(key('v', { metaKey: true }))
+    overlay.blur()
+    overlay.focus('a')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overlay.getText('a')).toBe('abc')
+    expect(inputs).toEqual([])
+  })
+
   it('stops typing at maxLength and refuses rejected characters', () => {
     const { overlay } = make()
     overlay.updateTextArea('a', { maxLength: 13, accept: (ch) => ch !== 'y' })

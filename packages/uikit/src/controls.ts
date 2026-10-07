@@ -117,6 +117,7 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
   private captured: UIKitInteractive | null = null
   private focused: UIKitInteractive | null = null
   private hovered: UIKitInteractive | null = null
+  private active = false
 
   constructor(options: UIKitControlsOptions = {}) {
     this.redraw = options.requestRedraw ?? null
@@ -179,6 +180,7 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
 
   /** Give keyboard focus to a widget (blurring the previous one). */
   focus(child: UIKitInteractive | null): void {
+    if (child) this.active = true
     if (this.focused === child) return
     this.focused?.blur?.()
     this.focused = child
@@ -195,6 +197,7 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
    * layer stops consuming keys the page should get.
    */
   deactivate(): void {
+    this.active = false
     this.pointerCancel()
     for (const c of this.children) {
       if (c.isModal?.()) c.dismiss?.()
@@ -204,10 +207,14 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
 
   /** Pointer down at canvas pixel (x, y): true when a widget took it. */
   pointerDown(x: number, y: number): boolean {
+    this.active = true
     const modal = this.modalWidget
     const targets = modal ? [modal] : this.topDown()
     for (const c of targets) {
       if (c.pointerDown(x, y)) {
+        // A second pointer (another touch, or a down with no up seen) ends
+        // the press the first one still holds.
+        if (this.captured && this.captured !== c) this.captured.pointerCancel()
         this.captured = c
         this.focus(c)
         return true
@@ -262,8 +269,14 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
     c?.pointerCancel()
   }
 
-  /** Route a key to the modal widget, else the focused one. True if consumed. */
+  /**
+   * Route a key to the modal widget, else the focused one. True if consumed.
+   * The layer owns keys from a canvas press or a `focus` call until
+   * `deactivate`; an open dialog does not keep them once the user has moved
+   * to the rest of the page.
+   */
   keyDown(e: UIKitKeyEvent): boolean {
+    if (!this.active) return false
     const target = this.modalWidget ?? this.focused
     return target?.keyDown?.(e) ?? false
   }
@@ -308,7 +321,8 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       try {
         canvas.setPointerCapture(e.pointerId)
       } catch {
-        // Capture is best-effort: pointerleave/cancel still end the interaction.
+        // Capture is best-effort: the window-level pointerup/pointercancel
+        // listeners below end the interaction when it was not granted.
       }
     }
     const onMove = (e: PointerEvent): void => {
@@ -333,6 +347,18 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       this.pointerCancel()
       onLeave()
     }
+    // Without pointer capture a release (or cancel) outside the canvas lands
+    // on whatever element is under the pointer, never on the canvas, and the
+    // captured widget would stay captured. Finish it from the window instead;
+    // with capture the event targets the canvas and the handlers above run.
+    const onOutsideUp = (e: PointerEvent): void => {
+      if (e.target === canvas || !this.captured) return
+      onUp(e)
+    }
+    const onOutsideCancel = (e: PointerEvent): void => {
+      if (e.target === canvas || !this.captured) return
+      onCancel()
+    }
     const onKey = (e: KeyboardEvent): void => {
       if (isEditableTarget(e.target)) return
       const consumed = this.keyDown({
@@ -344,8 +370,6 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       })
       if (consumed) consume(e)
     }
-    // Anything outside the canvas (a press elsewhere in the page, focus moving
-    // to another element, the window losing focus) ends our turn with the keys.
     const onWheel = (e: WheelEvent): void => {
       const p = host.clientToCanvas(e.clientX, e.clientY)
       if (!p) return
@@ -360,6 +384,8 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       consume(e)
       syncCursor()
     }
+    // Anything outside the canvas (a press elsewhere in the page, focus moving
+    // to another element, the window losing focus) ends our turn with the keys.
     const onOutsideDown = (e: Event): void => {
       if (e.target === canvas) return
       this.deactivate()
@@ -379,6 +405,8 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
     canvas.addEventListener('pointercancel', onCancel, opts)
     canvas.addEventListener('wheel', onWheel, wheelOpts)
     window.addEventListener('keydown', onKey, opts)
+    window.addEventListener('pointerup', onOutsideUp, opts)
+    window.addEventListener('pointercancel', onOutsideCancel, opts)
     window.addEventListener('pointerdown', onOutsideDown, opts)
     window.addEventListener('focusin', onOutsideDown, opts)
     window.addEventListener('blur', onWindowBlur)
@@ -390,6 +418,8 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
       canvas.removeEventListener('pointercancel', onCancel, opts)
       canvas.removeEventListener('wheel', onWheel, wheelOpts)
       window.removeEventListener('keydown', onKey, opts)
+      window.removeEventListener('pointerup', onOutsideUp, opts)
+      window.removeEventListener('pointercancel', onOutsideCancel, opts)
       window.removeEventListener('pointerdown', onOutsideDown, opts)
       window.removeEventListener('focusin', onOutsideDown, opts)
       window.removeEventListener('blur', onWindowBlur)

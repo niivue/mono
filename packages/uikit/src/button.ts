@@ -212,7 +212,8 @@ export function buildButton(
 
 /**
  * Move a press amount toward its target at a constant rate so the full travel
- * takes `durationMs`. A non-positive duration snaps to the target.
+ * takes `durationMs`. A non-positive or non-finite duration (or a non-finite
+ * clock) snaps to the target, so the animation always ends.
  */
 export function advancePress(
   current: number,
@@ -221,7 +222,9 @@ export function advancePress(
   durationMs: number,
 ): number {
   if (current === target) return target
-  if (durationMs <= 0 || dtMs <= 0) return durationMs <= 0 ? target : current
+  if (!Number.isFinite(current) || !Number.isFinite(dtMs)) return target
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return target
+  if (dtMs <= 0) return current
   const step = dtMs / durationMs
   if (target > current) return Math.min(target, current + step)
   return Math.max(target, current - step)

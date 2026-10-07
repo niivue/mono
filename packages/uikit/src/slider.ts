@@ -150,7 +150,8 @@ export function stepDecimals(step: number): number {
   const dot = mantissa.indexOf('.')
   const mantissaDecimals = dot < 0 ? 0 : mantissa.length - dot - 1
   const exp = exponent === undefined ? 0 : Number(exponent)
-  return Math.max(0, mantissaDecimals - exp)
+  // toFixed accepts at most 100 digits: a vanishingly small step prints at that.
+  return Math.min(100, Math.max(0, mantissaDecimals - exp))
 }
 
 /** Clamp `value` into [min, max] and, with a positive step, snap it to the step grid from min. */
@@ -163,7 +164,7 @@ export function snapValue(
   const lo = Math.min(min, max)
   const hi = Math.max(min, max)
   let v = Math.min(hi, Math.max(lo, Number.isFinite(value) ? value : lo))
-  if (step !== undefined && step > 0) {
+  if (step !== undefined && step > 0 && Number.isFinite(step)) {
     // The tiny bias keeps a half-way value (0.35 by 0.1) rounding up as a
     // reader expects, despite the division landing a hair under .5.
     const n = Math.round((v - min) / step + 1e-9)
@@ -369,7 +370,11 @@ export function buildSlider(
     const count = Math.floor(
       Math.abs(spec.max - spec.min) / spec.tickStep + 1e-9,
     )
-    for (let i = 0; i <= count; i++) {
+    // Ticks denser than a pixel (or an unbounded range) draw as nothing
+    // rather than as a solid bar or an endless loop.
+    const railPx = Math.abs(layout.rail.x1 - layout.rail.x0)
+    const ticks = count <= railPx ? count : -1
+    for (let i = 0; i <= ticks; i++) {
       const v = spec.min + i * spec.tickStep * Math.sign(spec.max - spec.min)
       const x = sliderThumbX(layout, spec, v)
       lines.push(

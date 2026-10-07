@@ -18,6 +18,11 @@
 // A dialog is not a popup: `dismiss` (the control layer's hook for a press or
 // focus elsewhere in the page) only blurs the children; the dialog stays
 // open until a result closes it.
+//
+// The dialog owns what it hosts: `removeDialog` and `destroy` release the
+// hosted children's GPU resources along with the action buttons, so the
+// control layer's `destroy` tears a form down in one call. `removeChild`
+// first to keep a child alive.
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import {
@@ -154,6 +159,7 @@ export class UIKitDialogOverlay
     if (!entry) return
     if (this.openId === id) this.close(null)
     entry.buttons.destroy()
+    for (const child of entry.children) child.destroy?.()
     this.entries.delete(id)
     this.invalidate()
   }
@@ -377,7 +383,9 @@ export class UIKitDialogOverlay
       else this.close(null)
       return true
     }
-    return true
+    // The dialog is modal to the canvas, not the page: reload, find and zoom
+    // (keys with Meta or Ctrl held) pass; every other key stays in the form.
+    return !(e.metaKey || e.ctrlKey)
   }
 
   /** A modal child, else the child under the point, may scroll; the page never does. */
@@ -438,10 +446,14 @@ export class UIKitDialogOverlay
   }
 
   /** Release GPU resources on both backends (the children's are their owner's). */
+  /** Release the surfaces, the action buttons and every hosted child. */
   destroy(): void {
     this.rects.destroy()
     this.labels.destroy()
-    for (const entry of this.entries.values()) entry.buttons.destroy()
+    for (const entry of this.entries.values()) {
+      entry.buttons.destroy()
+      for (const child of entry.children) child.destroy?.()
+    }
   }
 
   private invalidate(): void {

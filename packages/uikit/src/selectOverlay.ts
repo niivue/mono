@@ -174,11 +174,12 @@ export class UIKitSelectOverlay
     return this.menu.focusedMenu
   }
 
-  /** True while a list is open: the overlay then wants every event first. */
+  /** Close an open list without choosing (the control layer's outside-press hook). */
   dismiss(): void {
     this.menu.dismiss()
   }
 
+  /** True while a list is open: the overlay then wants every event first. */
   isModal(): boolean {
     return this.menu.isModal()
   }
@@ -225,12 +226,6 @@ export class UIKitSelectOverlay
   }
 
   /**
-   * Open: the list handles the key (arrows move, Enter or Space choose, Escape
-   * closes). Closed and focused: ArrowUp/Down step the value (Shift or
-   * PageUp/PageDown by ten), Home and End jump to the ends, Enter, Space or
-   * Alt+ArrowDown open the list on the current option.
-   */
-  /**
    * The area popups must stay inside, in canvas pixels. `drawOverlay`
    * refreshes it from every frame; call it yourself when driving the overlay
    * without one. A list taller than the bounds scrolls.
@@ -244,6 +239,12 @@ export class UIKitSelectOverlay
     return this.menu.wheel(x, y, deltaX, deltaY)
   }
 
+  /**
+   * Open: the list handles the key (arrows move, Enter or Space choose, Escape
+   * closes). Closed and focused: ArrowUp/Down step the value (Shift or
+   * PageUp/PageDown by ten), Home and End jump to the ends, Enter, Space or
+   * Alt+ArrowDown open the list on the current option.
+   */
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.menu.isModal()) return this.menu.keyDown(e)
     const id = this.menu.focusedMenu

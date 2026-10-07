@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@niivue/uikit - Controls demo</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee;
+        font: 14px/1.4 system-ui, sans-serif; }
+      #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      header b { color: #ffd500; }
+      nav a { color: #9cf; margin-right: 10px; }
+      #canvasHolder { flex: 1; position: relative; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      a { color: #ffd500; }
+      #status { color: #ffd500; }
+      kbd { background: #333; border-radius: 3px; padding: 1px 5px; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <header>
+        <b>UIKit controls</b>
+        <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
+        <span>Menus, toggles, sliders, number and text fields, buttons, a color control, a file picker, a text area and a modal dialog drawn in the scene, sharing one
+          control layer: a click on any of them never reaches the viewer, an open menu
+          swallows the click that dismisses it, and the keyboard drives the focused
+          control (<kbd>Tab</kbd>-free: click a control, then use arrows, Space, Enter,
+          Escape).
+          <a href="?backend=webgl2">webgl2</a> | <a href="?backend=webgpu">webgpu</a></span>
+        <span id="status">loading...</span>
+      </header>
+      <div id="canvasHolder"><canvas id="gl"></canvas></div>
+    </div>
+
+    <script type="module">
+      import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+      import {
+        acceptExtensions,
+        createBrowserDownload,
+        loadDefaultFont,
+        UIKitButtonOverlay,
+        UIKitColorControlOverlay,
+        UIKitControls,
+        UIKitDialogOverlay,
+        UIKitFilePickerOverlay,
+        UIKitMenuOverlay,
+        UIKitNumberInputOverlay,
+        UIKitSegmentedOverlay,
+        UIKitSelectOverlay,
+        UIKitSliderOverlay,
+        UIKitTextAreaOverlay,
+        UIKitTextInputOverlay,
+        UIKitToggleOverlay,
+      } from './src/index.ts'
+
+      const params = new URLSearchParams(location.search)
+      const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
+      const status = document.getElementById('status')
+      const canvas = document.getElementById('gl')
+      const say = (msg) => { status.textContent = msg }
+
+      const nv = new NiiVue({
+        backend,
+        backgroundColor: [0.05, 0.05, 0.08, 1],
+        sliceType: SLICE_TYPE.MULTIPLANAR,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(canvas)
+      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
+
+      const font = await loadDefaultFont()
+      // One control layer owns the pointer and keyboard for every widget. It is
+      // registered as the overlay renderer and draws its widgets in order, with
+      // open menus on top. cssUnits: positions below are CSS pixels.
+      const units = { cssUnits: true }
+      const menus = new UIKitMenuOverlay(font, units)
+      const toggles = new UIKitToggleOverlay(font, units)
+      const sliders = new UIKitSliderOverlay(font, units)
+      const buttons = new UIKitButtonOverlay(font, units)
+      const segmented = new UIKitSegmentedOverlay(font, units)
+      const selects = new UIKitSelectOverlay(font, units)
+      const numbers = new UIKitNumberInputOverlay(font, units)
+      const texts = new UIKitTextInputOverlay(font, units)
+      const areas = new UIKitTextAreaOverlay(font, units)
+      const colors = new UIKitColorControlOverlay(font, units)
+      const pickers = new UIKitFilePickerOverlay(font, units)
+      const dialogs = new UIKitDialogOverlay(font, units)
+      const controls = new UIKitControls()
+        .add(buttons)
+        .add(sliders)
+        .add(numbers)
+        .add(texts)
+        .add(colors)
+        .add(pickers)
+        .add(areas)
+        .add(toggles)
+        .add(segmented)
+        .add(menus)
+        .add(selects)
+        .add(dialogs)
+      nv.registerOverlayRenderer(controls)
+      const detach = controls.attach(nv)
+
+      // A menu bar: a radio group for the view, check items for overlays, and
+      // plain actions. A disabled item and separators show the other states.
+      const viewItems = [
+        { id: 'axial', label: 'Axial', kind: 'radio', group: 'view', shortcut: '1' },
+        { id: 'coronal', label: 'Coronal', kind: 'radio', group: 'view', shortcut: '2' },
+        { id: 'sagittal', label: 'Sagittal', kind: 'radio', group: 'view', shortcut: '3' },
+        { id: 'mpr', label: 'Multiplanar', kind: 'radio', group: 'view', checked: true, shortcut: '4' },
+        { id: 'render', label: 'Render', kind: 'radio', group: 'view', shortcut: '5' },
+        { id: 'sep1', kind: 'separator' },
+        { id: 'colorbar', label: 'Colorbar', kind: 'check' },
+        { id: 'cube', label: 'Orientation cube', kind: 'check' },
+        { id: 'radiological', label: 'Radiological', kind: 'check' },
+      ]
+      const sliceTypes = {
+        axial: SLICE_TYPE.AXIAL,
+        coronal: SLICE_TYPE.CORONAL,
+        sagittal: SLICE_TYPE.SAGITTAL,
+        mpr: SLICE_TYPE.MULTIPLANAR,
+        render: SLICE_TYPE.RENDER,
+      }
+      const setView = (id) => {
+        nv.sliceType = sliceTypes[id]
+        menus.setItemChecked('view', id, true)
+        segmented.setValue('view', id)
+        say(`${id} view`)
+      }
+      menus.addMenu({
+        id: 'view', label: 'View', x: 12, y: 12, items: viewItems,
+        onChange: (itemId, checked) => {
+          if (itemId in sliceTypes) {
+            if (checked) setView(itemId)
+            return
+          }
+          if (itemId === 'colorbar') {
+            nv.isColorbarVisible = checked
+            toggles.setChecked('colorbar', checked)
+          } else if (itemId === 'cube') {
+            nv.isOrientCubeVisible = checked
+          } else if (itemId === 'radiological') {
+            nv.isRadiological = checked
+          }
+          say(`${itemId}: ${checked ? 'on' : 'off'}`)
+        },
+      })
+      menus.addMenu({
+        id: 'edit', label: 'Edit', x: 12 + menus.getLayout('view').width + 6, y: 12,
+        items: [
+          { id: 'reset', label: 'Reset view', shortcut: 'R', onSelect: resetView },
+          { id: 'center', label: 'Center crosshair', onSelect: () => { nv.crosshairPos = [0.5, 0.5, 0.5] } },
+          { id: 'sep', kind: 'separator' },
+          { id: 'settings', label: 'Settings...', onSelect: () => dialogs.open('settings') },
+          { id: 'sep2', kind: 'separator' },
+          { id: 'open', label: 'Open volume...', onSelect: () => pickers.open('volume') },
+          { id: 'export', label: 'Export settings', onSelect: exportSettings },
+          { id: 'undo', label: 'Undo', shortcut: 'Z', enabled: false },
+        ],
+        onSelect: (itemId) => say(`edit: ${itemId}`),
+      })
+
+      // A segmented control mirrors the View menu's radio group, and a select
+      // picks the volume's colormap from every one NiiVue has: the list is far
+      // taller than the canvas, so its popup scrolls.
+      segmented.addSegmented({
+        id: 'view', x: 12, y: 258,
+        segments: [
+          { value: 'axial', label: 'Axial' },
+          { value: 'coronal', label: 'Coronal' },
+          { value: 'sagittal', label: 'Sagittal' },
+          { value: 'mpr', label: 'MPR' },
+          { value: 'render', label: 'Render' },
+        ],
+        value: 'mpr',
+        onChange: setView,
+      })
+      selects.addSelect({
+        id: 'colormap', x: 12, y: 298, width: 160,
+        options: nv.colormaps.map((name) => ({ value: name, label: name })),
+        value: 'Gray',
+        onChange: (value) => {
+          nv.setVolume(0, { colormap: value })
+          say(`colormap: ${value}`)
+        },
+      })
+
+      // Toggles mirror the check items where it helps to have them in view.
+      toggles.addToggle({
+        id: 'colorbar', label: 'Colorbar', x: 12, y: 52,
+        onChange: (checked) => {
+          nv.isColorbarVisible = checked
+          menus.setItemChecked('view', 'colorbar', checked)
+          say(`colorbar: ${checked ? 'on' : 'off'}`)
+        },
+      })
+      toggles.addToggle({
+        id: 'nearest', label: 'Nearest interpolation', x: 112, y: 52,
+        onChange: (checked) => { nv.volumeIsNearestInterpolation = checked },
+      })
+      toggles.addToggle({
+        id: 'locked', label: 'Disabled', x: 310, y: 52, checked: true, enabled: false,
+      })
+
+      // Sliders: continuous, stepped, and one with ticks; `onInput` fires on
+      // every change during a drag and `onChange` once when it ends.
+      sliders.addSlider({
+        id: 'gamma', label: 'Gamma', x: 12, y: 84, width: 220,
+        min: 0.1, max: 3, step: 0.05, value: 1, showValue: true,
+        onInput: (v) => { nv.gamma = v; numbers.setValue('gamma', v) },
+        onChange: (v) => say(`gamma ${v}`),
+      })
+      // Number inputs for exact entry: one mirrors the gamma slider both ways,
+      // one sets a value no slider shows. Click, type, Enter; or spin, arrow
+      // keys and the wheel.
+      numbers.addNumberInput({
+        id: 'gamma', x: 250, y: 90, width: 72,
+        min: 0.1, max: 3, step: 0.05, value: 1,
+        onInput: (v) => { nv.gamma = v; sliders.setValue('gamma', v) },
+        onChange: (v) => say(`gamma ${v}`),
+      })
+      numbers.addNumberInput({
+        id: 'elevation', label: 'Elevation', x: 250, y: 178, width: 72,
+        min: -90, max: 90, step: 5, value: 10,
+        onInput: (v) => { nv.elevation = v },
+        onChange: (v) => say(`elevation ${v}`),
+      })
+      sliders.addSlider({
+        id: 'crosshair', label: 'Crosshair width', x: 12, y: 126, width: 220,
+        min: 0, max: 6, step: 1, value: 1, showValue: true, tickStep: 1,
+        onInput: (v) => { nv.crosshairWidth = v },
+      })
+      sliders.addSlider({
+        id: 'azimuth', label: 'Azimuth', x: 12, y: 172, width: 220,
+        min: 0, max: 360, step: 1, value: 110, showValue: true,
+        format: (v) => `${v} deg`,
+        onInput: (v) => { nv.azimuth = v },
+      })
+
+      buttons.addButton({ id: 'reset', label: 'Reset view', x: 12, y: 218, onClick: resetView })
+
+      // A text input: the status line echoes what is typed, Enter commits it
+      // and Escape reverts. Copy, cut and paste go through the clipboard
+      // bridge; the text scrolls by whole glyphs once it outgrows the field.
+      texts.addTextInput({
+        id: 'note', label: 'Note', x: 12, y: 338, width: 200,
+        placeholder: 'type, then Enter',
+        maxLength: 80,
+        onInput: (text) => say(`note: ${text}`),
+        onSubmit: (text) => say(`note submitted: ${JSON.stringify(text)}`),
+      })
+
+      // A color control for the crosshair: channel sliders and a palette of
+      // named colors, as the legacy demos edit colors (no browser picker).
+      colors.addColorControl({
+        id: 'crosshair', label: 'Crosshair color', x: 12, y: 372, width: 220,
+        value: nv.crosshairColor,
+        palette: [
+          { name: 'Red', color: [1, 0, 0, 1] },
+          { name: 'Green', color: [0, 1, 0, 1] },
+          { name: 'Blue', color: [0.3, 0.5, 1, 1] },
+          { name: 'Yellow', color: [1, 1, 0, 1] },
+          { name: 'Cyan', color: [0, 1, 1, 1] },
+          { name: 'Magenta', color: [1, 0, 1, 1] },
+          { name: 'White', color: [1, 1, 1, 1] },
+        ],
+        onInput: (c) => { nv.crosshairColor = c },
+        onChange: (c) => say(`crosshair color ${c.map((v) => v.toFixed(2)).join(', ')}`),
+      })
+
+      // A file picker: the Choose button and the readout live on the canvas,
+      // the chooser is the browser's (a hidden file input behind a bridge).
+      // The Edit menu's "Open volume..." opens the same picker, and "Export
+      // settings" hands a JSON blob to the download bridge.
+      pickers.addFilePicker({
+        id: 'volume', label: 'Open volume...', x: 12, y: 480, width: 300,
+        accept: acceptExtensions(['nii', 'nii.gz', 'mgz', 'mgh', 'nrrd', 'mha', 'mhd']),
+        onPick: async ([file]) => {
+          say(`loading ${file.name}`)
+          try {
+            await nv.loadVolumes([{ url: file, colormap: 'Gray' }])
+            say(`loaded ${file.name}`)
+          } catch (err) {
+            say(`could not load ${file.name}: ${err.message}`)
+          }
+        },
+        onCancel: () => say('open cancelled'),
+      })
+      pickers.setFiles('volume', ['mni152.nii.gz'])
+
+      // A text area: multi-line notes that soft-wrap and scroll by whole
+      // rows (wheel over it); Meta or Ctrl plus Enter commits.
+      areas.addTextArea({
+        id: 'notes', label: 'Notes', x: 12, y: 520, width: 300, rows: 3,
+        placeholder: 'Findings, one per line. Cmd/Ctrl+Enter commits.',
+        maxLength: 2000,
+        onChange: (text) => say(`notes: ${text.split('\n').length} line(s), ${text.length} chars`),
+      })
+      const download = createBrowserDownload()
+      function exportSettings() {
+        const settings = {
+          sliceType: nv.sliceType, azimuth: nv.azimuth, elevation: nv.elevation,
+          gamma: nv.gamma, crosshairWidth: nv.crosshairWidth, crosshairColor: nv.crosshairColor,
+          colormap: selects.getValue('colormap'), note: texts.getValue('note'),
+        }
+        download(new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' }), 'controls-settings.json')
+        say('exported controls-settings.json')
+      }
+
+      // A modal dialog hosting its own widgets: a text input and a number
+      // input live in overlays the dialog routes and draws while it is open
+      // (they are not added to the control layer). OK applies both values,
+      // Cancel and Escape discard them, Enter is OK.
+      const dialogFields = new UIKitTextInputOverlay(font, units)
+      const dialogNumbers = new UIKitNumberInputOverlay(font, units)
+      let applied = { name: 'mni152', opacity: 1 }
+      dialogs.addDialog({
+        id: 'settings',
+        title: 'Settings',
+        message: 'Name the volume and set its opacity. Enter applies, Escape cancels; the fields and the Opacity spinner work as they do outside the dialog.',
+        contentHeight: 76,
+        buttons: [
+          { id: 'cancel', label: 'Cancel', role: 'cancel' },
+          { id: 'ok', label: 'Apply', role: 'default' },
+        ],
+        onLayout: ({ content }) => {
+          dialogFields.updateTextInput('name', { x: content.x + 64, y: content.y + 2, width: content.width - 64 })
+          dialogNumbers.updateNumberInput('opacity', { x: content.x + 64, y: content.y + 42, width: 80 })
+        },
+        onClose: (result) => {
+          if (result === 'ok') {
+            applied = { name: dialogFields.getValue('name'), opacity: dialogNumbers.getValue('opacity') }
+            nv.setVolume(0, { opacity: applied.opacity })
+            say(`applied: ${JSON.stringify(applied.name)}, opacity ${applied.opacity}`)
+          } else {
+            dialogFields.setValue('name', applied.name)
+            dialogNumbers.setValue('opacity', applied.opacity)
+            say('settings cancelled')
+          }
+        },
+      })
+      dialogs.addChild('settings', dialogFields)
+      dialogs.addChild('settings', dialogNumbers)
+      dialogFields.addTextInput({ id: 'name', label: 'Name', x: 0, y: 0, width: 200, value: 'mni152', maxLength: 40 })
+      dialogNumbers.addNumberInput({
+        id: 'opacity', label: 'Opacity', x: 0, y: 0, width: 80, min: 0, max: 1, step: 0.05, value: 1,
+      })
+
+      function resetView() {
+        nv.crosshairPos = [0.5, 0.5, 0.5]
+        nv.pan2Dxyzmm = [0, 0, 0, 1]
+        nv.azimuth = 110
+        nv.elevation = 10
+        nv.scaleMultiplier = 1
+        nv.renderPan = [0, 0]
+        nv.gamma = 1
+        nv.crosshairWidth = 1
+        nv.crosshairColor = [1, 0, 0, 1]
+        colors.setValue('crosshair', [1, 0, 0, 1])
+        sliders.setValue('azimuth', 110)
+        sliders.setValue('gamma', 1)
+        sliders.setValue('crosshair', 1)
+        numbers.setValue('gamma', 1)
+        numbers.setValue('elevation', 10)
+        nv.setVolume(0, { colormap: 'Gray' })
+        selects.setValue('colormap', 'Gray')
+        texts.setValue('note', '')
+        say('view reset')
+      }
+
+      say('ready')
+      addEventListener('beforeunload', detach)
+    </script>
+  </body>
+</html>

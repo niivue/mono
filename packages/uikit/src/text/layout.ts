@@ -67,6 +67,19 @@ export function measureWidth(
 }
 
 /**
+ * Cap height of the font in em units: how far the top of a capital letter sits
+ * above the baseline. Used to centre a label on its button vertically by the
+ * capitals rather than by each string's own ink, so a row of buttons keeps one
+ * baseline whether or not a label has descenders. Falls back to a typical 0.7em
+ * when the atlas has no capital H.
+ */
+export function capHeight(metrics: UIKitFontMetrics): number {
+  const h = metrics.glyphs.get('H')
+  if (!h || h.plane[3] <= 0) return 0.7
+  return h.plane[1] + h.plane[3]
+}
+
+/**
  * Normalize a line direction angle so text drawn along it is never upside down.
  * When the raw angle points leftward (cos < 0), the label would render mirrored;
  * flip it by pi. Returns the readable angle and whether a flip occurred (the

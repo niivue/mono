@@ -52,7 +52,7 @@ function getOrCreatePrograms(gl: WebGL2RenderingContext): ShaderPrograms {
  *                           dims (NIfTI dims array), dimsRAS, img2RASstep
  * @returns {WebGLTexture}
  */
-export function rgba2Texture(
+function rgba2Texture(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
 ): WebGLTexture {
@@ -923,7 +923,7 @@ export function prepareOverlayTextureCache(
   return cache
 }
 
-export function renderOverlayCache(
+function renderOverlayCache(
   gl: WebGL2RenderingContext,
   cache: OverlayTextureCache,
   nvimage: NVImage,

@@ -12,15 +12,13 @@ import {
   clipperInflatePath,
   clipperSubtractBrush,
 } from './clipper'
-import { buildLivewireCost, livewireBacktrack, livewireField } from './livewire'
+import { livewireBacktrack, livewireField } from './livewire'
 import {
   extractLivewireSlice,
   gridToSlice2D,
-  type LivewireSlice,
   slice2DToGrid,
 } from './livewireSlice'
 import { pointInRing } from './pointInRing'
-import type { AnnotationSelection } from './selection'
 import {
   getControlPoints,
   hitTestControlPoint,
@@ -32,23 +30,10 @@ import {
   generateShape,
   generateSplineFromPoints,
 } from './shapes'
-import {
-  isOnSlice,
-  mmToSlice2D,
-  slice2DToMM,
-  slice2DToMMOnPlane,
-} from './sliceProjection'
+import { isOnSlice, mmToSlice2D } from './sliceProjection'
 import { computeAnnotationStats, isCircleTool, isMeasureTool } from './stats'
-import { triangulatePolygon } from './triangulate'
-import { AnnotationUndoStack } from './undoRedo'
 
-export type { AnnotationSelection, LivewireSlice }
 export {
-  _clipperDifference as clipperDifference,
-  _clipperIntersects as clipperIntersects,
-  _clipperUnion as clipperUnion,
-  AnnotationUndoStack,
-  buildLivewireCost,
   clipperInflatePath,
   clipperSubtractBrush,
   computeAnnotationStats,
@@ -66,11 +51,7 @@ export {
   livewireBacktrack,
   livewireField,
   mmToSlice2D,
-  pointInRing,
   slice2DToGrid,
-  slice2DToMM,
-  slice2DToMMOnPlane,
-  triangulatePolygon,
   updateShapeBounds,
 }
 

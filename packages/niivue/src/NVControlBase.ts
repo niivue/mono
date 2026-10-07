@@ -36,11 +36,9 @@ import type {
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   addUndoBitmap,
-  calculateLoadDrawingTransform,
   clearAllUndoBitmaps,
   createDrawingVolume,
   getDrawingBitmap,
-  transformBitmap,
   validateDrawingDimensions,
 } from '@/drawing/drawingManager'
 import { drawingSliceToSVG } from '@/drawing/drawingSvg'
@@ -196,6 +194,7 @@ import {
   computeVolumeLabelCentroids,
   getImageDataRAS,
   reorientDrawingToNative,
+  reorientDrawingToRAS,
   volumeTR,
 } from '@/volume/utils'
 
@@ -5815,41 +5814,30 @@ export default class NiiVue extends EventTarget {
         )
         return false
       }
-      // Transform from native voxel order to RAS to match background volume
-      const transform = calculateLoadDrawingTransform({
-        permRAS: back.permRAS,
-        dims: back.dimsRAS,
-      })
       const img = nii.img
       const imgData =
         img instanceof ArrayBuffer
           ? new Uint8Array(img)
           : new Uint8Array(img.buffer, img.byteOffset, img.byteLength)
-      // Drawing voxel count must match background, otherwise transformBitmap
-      // will read out-of-bounds or write truncated output.
-      const backVoxels = back.dimsRAS[1] * back.dimsRAS[2] * back.dimsRAS[3]
-      const drawVoxels = nii.hdr.dims[1] * nii.hdr.dims[2] * nii.hdr.dims[3]
-      if (drawVoxels !== backVoxels) {
+      // The drawing's native grid must match the background's: an equal voxel
+      // count with transposed dims would load without error but misplaced.
+      const nd = nii.hdr.dims
+      const bd = back.hdr.dims
+      if (!validateDrawingDimensions(nd, bd)) {
         log.warn(
-          `loadDrawing: drawing dimensions (${nii.hdr.dims[1]}x${nii.hdr.dims[2]}x${nii.hdr.dims[3]} = ${drawVoxels} voxels) do not match background (${back.dimsRAS[1]}x${back.dimsRAS[2]}x${back.dimsRAS[3]} = ${backVoxels} voxels)`,
+          `loadDrawing: drawing dimensions (${nd[1]}x${nd[2]}x${nd[3]}) do not match background (${bd[1]}x${bd[2]}x${bd[3]})`,
         )
         return false
       }
+      const drawVoxels = nd[1] * nd[2] * nd[3]
       if (imgData.length < drawVoxels) {
         log.warn(
           `loadDrawing: image data (${imgData.length} bytes) smaller than expected (${drawVoxels})`,
         )
         return false
       }
-      const transformedBitmap = transformBitmap({
-        inputData: imgData,
-        dims: back.dimsRAS,
-        xlut: transform.xlut,
-        ylut: transform.ylut,
-        zlut: transform.zlut,
-      })
       const dv = createDrawingVolume(back)
-      dv.img = transformedBitmap
+      dv.img = reorientDrawingToRAS(back, imgData)
       this.model.drawingVolume = dv
       // Initialize undo
       const cleared = clearAllUndoBitmaps(

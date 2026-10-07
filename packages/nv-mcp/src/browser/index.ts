@@ -6,6 +6,14 @@
  * those handlers, plus any the app adds.
  */
 
+export type {
+  ControlKind,
+  ControlOption,
+  ControlPatch,
+  ControlSpec,
+  ControlState,
+  ControlValue,
+} from '../controls'
 export type { ClientOptions } from './client'
 // biome-ignore lint/performance/noBarrelFile: package entry point
 export {
@@ -19,6 +27,13 @@ export {
   TAB_ID_KEY,
   tabId,
 } from './client'
+export type { ControlSurface } from './controls'
+export {
+  coerceValue,
+  controlHandlers,
+  defaultValue,
+  memoryControls,
+} from './controls'
 export { markHandlers } from './marks'
 export { describeMesh, meshHandlers } from './meshes'
 export type { Params } from './params'

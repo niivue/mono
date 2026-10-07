@@ -8,6 +8,7 @@
  * an agent knows what to ask for before it asks.
  */
 
+import { CONTROL_KINDS } from '../controls'
 import {
   coerceSetting,
   findSetting,
@@ -250,6 +251,7 @@ export function settingHandlers(host: NiiVueHost): Handlers {
           : {}),
         ...(view.meshShaders ? { meshShaders: view.meshShaders } : {}),
         ...(transforms.length ? { volumeTransforms: transforms } : {}),
+        ...(host.controls ? { controls: [...CONTROL_KINDS] } : {}),
         ...(view.volumeExtensions
           ? { volumeExtensions: view.volumeExtensions }
           : {}),

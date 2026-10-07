@@ -19,8 +19,10 @@ import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import {
   AgentClient,
   type AtlasLike,
+  type ControlState,
   coreHandlers,
   type Handlers,
+  memoryControls,
   type NiiVueHost,
   type PointLabel,
   sceneState,
@@ -37,6 +39,7 @@ function $<T extends HTMLElement>(id: string): T {
 const agentLine = $('agent')
 const whereLine = $('where')
 const announceLine = $('announce')
+const controlsList = $('controls')
 const status = $('status')
 
 // The hint follows the server's address as vite.config.ts read it.
@@ -112,6 +115,29 @@ const host: NiiVueHost = {
     announceLine.textContent = text
     announceLine.classList.remove('quiet')
   },
+  // The controls an agent adds are kept and listed here, not drawn: the
+  // UIKit widgets that will draw them on the canvas are still landing.
+  controls: memoryControls({ onChange: showControls }),
+}
+
+/** One line per control: its kind, id, label, value and what it drives. */
+function showControls(controls: ControlState[]): void {
+  controlsList.replaceChildren()
+  controlsList.classList.toggle('quiet', controls.length === 0)
+  if (controls.length === 0) {
+    controlsList.textContent =
+      'None yet. An agent can add_control a slider, toggle, menu or field.'
+    return
+  }
+  for (const control of controls) {
+    const li = document.createElement('li')
+    const value =
+      control.value === null ? '' : ` = ${JSON.stringify(control.value)}`
+    const bound = control.bind ? ` -> ${control.bind}` : ''
+    const state = control.enabled ? '' : ' (disabled)'
+    li.textContent = `${control.kind} ${control.id}${control.label ? ` "${control.label}"` : ''}${value}${bound}${state}`
+    controlsList.append(li)
+  }
 }
 
 // --- The client ---

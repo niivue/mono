@@ -145,6 +145,13 @@ describe('core tool schemas', () => {
     expect(required('edit_annotations')).toEqual(['action'])
     expect(required('edit_measurements')).toEqual(['action'])
     expect(required('save')).toEqual(['what'])
+    expect(required('add_control')).toEqual(['id', 'kind', 'x', 'y'])
+    expect(required('list_controls')).toEqual([])
+    expect(required('set_control')).toEqual(['id'])
+    expect(required('remove_control')).toEqual([])
+    expect(properties('set_control')).toContain('value')
+    expect(properties('set_control')).toContain('bind')
+    expect(properties('add_control')).toContain('options')
     expect(required('load_document')).toEqual(['url'])
     for (const name of [
       'describe_volume',

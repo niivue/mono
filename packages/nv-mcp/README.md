@@ -98,8 +98,11 @@ const host: NiiVueHost = {
   extraState: () => ({ light }),     // state the server should watch across a reload
   planeName: () => currentCutName(), // the page's own name for the plane
   labels: (labels) => pins.setLabels(labels), // draws set_labels' labels, an empty list clears
+  controls: memoryControls(),        // where add_control puts its widgets
 }
 ```
+
+`controls` is a `ControlSurface`: `add`, `update`, `remove`, `clear` and `list` over the controls an agent asks for, each a `ControlSpec` of one of the `CONTROL_KINDS` (button, toggle, slider, menu, select, segmented, number, text, textarea, dialog, color, file) at a position on the canvas, with a `bind` naming what it drives in the page's own words. `memoryControls` keeps them and draws nothing, which is enough to list them in the page and to run the tools until a widget layer backs the surface; `@niivue/uikit`'s control widgets are the intended one, and the surface is the seam they plug into. A page without `controls` declines the control tools.
 
 `urls` defaults to `agentUrls()`: `/agent` on the page's own origin, then the server directly on port 4242. The client retries with a backoff that settles at half a minute, so the order the two are started in does not matter. An address that neither opens nor refuses within five seconds is closed and the next one tried, so a proxy that hangs cannot keep the page from the server.
 
@@ -207,6 +210,15 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `edit_annotations` | `action`, `id?`, `text?`, `annotation?`, `json?` | `add` a NiiVue VectorAnnotation (`id`; `sliceType` 0 axial, 1 coronal or 2 sagittal; `slicePosition`, where the slice is in mm along its own axis; `polygons`, each at least three `[x, y]` points in mm on the slice plane or `{outer, holes}`; and, if wanted, `label`, `group`, `text` and `style` with `fillColor`, `strokeColor` and `strokeWidth`, red otherwise), `remove` or `select` one by id, `set_text` on one, `clear` them, `undo`, `redo`, or `load` a set from JSON |
 | `list_measurements` | | The distance measurements drawn on the slices, each with its ends in millimetres and its length |
 | `edit_measurements` | `action`, `start_mm?`, `end_mm?`, `slice?`, `slice_index?`, `slice_position?`, `index?` | `add` a distance between two points, `remove` one by index, or `clear` them all, the angles (`clear_angles`) or the distances (`clear_distances`) |
+
+### Controls
+
+| Tool | Input | What it does |
+|---|---|---|
+| `add_control` | `id`, `kind`, `x`, `y`, `label?`, `width?`, `value?`, `min?`, `max?`, `step?`, `options?`, `placeholder?`, `max_length?`, `rows?`, `accept?`, `multiple?`, `alpha?`, `palette?`, `enabled?`, `bind?` | Puts a control on the canvas: a `button`, `toggle`, `slider`, `menu`, `select`, `segmented` row, `number` or `text` field, `textarea`, `dialog`, `color` control or `file` picker, at a position, with the fields its kind takes; `bind` names what it drives. A value left out takes the kind's start: off, the low end of the range, empty, the first option, white |
+| `list_controls` | | The controls there, each with its kind, position, value, options and binding; their ids also ride in every reply's state |
+| `set_control` | `id`, and any of the fields above | Changes what is given on a control: its value is checked and clamped as it was when added, and a range that moves takes the value with it |
+| `remove_control` | `id?`, `all?` | Takes one control away, or all of them |
 
 ### The canvas, the slide plane, chunks and files
 

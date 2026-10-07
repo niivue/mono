@@ -29,6 +29,7 @@ import {
   SLICE_TYPES,
   type ViewState,
 } from '../views'
+import { controlHandlers } from './controls'
 import { markHandlers } from './marks'
 import { meshHandlers } from './meshes'
 import {
@@ -74,6 +75,9 @@ export function sceneState(host: NiiVueHost): TabState {
     volume,
     crosshair: volume ? { mm: Array.from(view.getCrosshairPos()) } : null,
     plane: volume ? planeState(host) : null,
+    ...(host.controls
+      ? { controls: host.controls.list().map((c) => c.id) }
+      : {}),
     ...(host.extraState?.() ?? {}),
   }
 }
@@ -329,6 +333,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     ...meshHandlers(host),
     ...signalHandlers(host),
     ...markHandlers(host),
+    ...controlHandlers(host),
 
     async load_volume(params) {
       const url = text(params, 'url')

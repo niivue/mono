@@ -6,7 +6,7 @@ import type {
 
 const ELLIPSE_SEGMENTS = 64
 
-export function generateEllipse(
+function generateEllipse(
   start: AnnotationPoint,
   end: AnnotationPoint,
 ): PolygonWithHoles[] {
@@ -23,7 +23,7 @@ export function generateEllipse(
   return [{ outer, holes: [] }]
 }
 
-export function generateRectangle(
+function generateRectangle(
   start: AnnotationPoint,
   end: AnnotationPoint,
 ): PolygonWithHoles[] {
@@ -49,7 +49,7 @@ function perp(dx: number, dy: number, len: number): [number, number] {
   return [(-dy / d) * len, (dx / d) * len]
 }
 
-export function generateLine(
+function generateLine(
   start: AnnotationPoint,
   end: AnnotationPoint,
   width: number,
@@ -69,7 +69,7 @@ export function generateLine(
   return [{ outer, holes: [] }]
 }
 
-export function generateArrow(
+function generateArrow(
   start: AnnotationPoint,
   end: AnnotationPoint,
   width: number,
@@ -116,7 +116,7 @@ export function constrainCircleEnd(
   }
 }
 
-export function generateCircle(
+function generateCircle(
   start: AnnotationPoint,
   end: AnnotationPoint,
 ): PolygonWithHoles[] {

@@ -175,7 +175,7 @@ export function hitTestAnnotationPolygon(
  * that geometrically overlap are merged via boolean union; non-overlapping
  * same-label annotations remain as separate instances.
  */
-export function mergeAnnotations(
+function mergeAnnotations(
   existing: VectorAnnotation[],
   newAnnotation: VectorAnnotation,
 ): VectorAnnotation[] {

@@ -73,6 +73,7 @@ export class UIKitSliderOverlay
   private dragStartValue = 0
   private hoverId: string | null = null
   private focusedId: string | null = null
+  private layer: UIKitRedrawSource | null = null
 
   constructor(font: UIKitFont, options: UIKitSliderOverlayOptions = {}) {
     this.font = font
@@ -110,6 +111,12 @@ export class UIKitSliderOverlay
       existing.style = style
       existing.layout = null
       existing.value = value
+      // Disabling ends a drag as a cancel does, with its onChange, and
+      // drops focus.
+      if (spec.enabled === false) {
+        if (this.dragId === spec.id) this.endDrag()
+        if (this.focusedId === spec.id) this.focusedId = null
+      }
     } else {
       this.entries.set(spec.id, {
         spec,
@@ -149,10 +156,6 @@ export class UIKitSliderOverlay
     if (!entry) return
     const value = patch.value ?? entry.value
     this.addSlider({ ...entry.spec, ...patch, id, value })
-    if (entry.spec.enabled === false) {
-      if (this.dragId === id) this.dragId = null
-      if (this.focusedId === id) this.focusedId = null
-    }
   }
 
   setEnabled(id: string, enabled: boolean): void {
@@ -212,6 +215,7 @@ export class UIKitSliderOverlay
     const next = entry && entry.spec.enabled !== false ? id : null
     if (next === this.focusedId) return
     this.focusedId = next
+    if (next !== null) this.layer?.focus?.(this)
     this.invalidate()
   }
 
@@ -319,6 +323,7 @@ export class UIKitSliderOverlay
 
   bindLayer(layer: UIKitRedrawSource): void {
     this.requestRedraw ??= () => layer.requestRedraw()
+    this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {

@@ -242,7 +242,10 @@ export class UIKitDialogOverlay
     entry?.spec.onClose?.(result, id)
   }
 
-  /** Press an action button of the open dialog from code (animated, then closes). */
+  /**
+   * Press an action button of the open dialog from code, as a click would:
+   * the dialog closes at once and fires `onClose` with the button's id.
+   */
   click(buttonId: string): void {
     const entry = this.openEntry()
     if (!entry) return
@@ -360,10 +363,10 @@ export class UIKitDialogOverlay
 
   /**
    * A modal child sees the key first and keeps what it takes. Then the
-   * focused child, except that Enter it takes (a field committing its text)
-   * still presses the default button, as Enter in a form field submits the
-   * form. Otherwise Enter presses the default button and Escape the cancel
-   * button (or closes with null). Every other key is swallowed while open.
+   * focused child keeps what it takes, unless it says the key submits the
+   * form (Enter in a text or number field, as in an HTML form). Otherwise
+   * Enter presses the default button and Escape the cancel button (or
+   * closes with null). Every other key is swallowed while open.
    */
   keyDown(e: UIKitKeyEvent): boolean {
     const entry = this.openEntry()
@@ -371,8 +374,9 @@ export class UIKitDialogOverlay
     const modal = this.modalChild(entry)
     if (modal) {
       if (modal.keyDown?.(e)) return true
-    } else if (this.focused?.keyDown?.(e) && e.key !== 'Enter') {
-      return true
+    } else {
+      const focused = this.focused
+      if (focused?.keyDown?.(e) && !focused.submitsForm?.(e)) return true
     }
     if (e.key === 'Enter') {
       const b = entry.spec.buttons?.find((x) => x.role === 'default')
@@ -416,7 +420,10 @@ export class UIKitDialogOverlay
     // which routes to the child; the child itself is unknown to the layer.
     this.childLayer = {
       requestRedraw: () => layer.requestRedraw(),
-      focus: () => layer.focus?.(this),
+      focus: (child) => {
+        this.setFocus(child)
+        layer.focus?.(this)
+      },
     }
     for (const entry of this.entries.values()) {
       for (const c of entry.children) c.bindLayer?.(this.childLayer)

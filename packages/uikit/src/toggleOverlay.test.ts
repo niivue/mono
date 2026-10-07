@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { UIKitControls } from './controls'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 import { UIKitToggleOverlay } from './toggleOverlay'
 
@@ -174,3 +175,19 @@ function key(k: string) {
     metaKey: false,
   }
 }
+
+describe('UIKitToggleOverlay in a control layer', () => {
+  it("takes the layer's keys when focused from code", () => {
+    const { overlay, changes } = make()
+    const other = new UIKitToggleOverlay(FONT)
+    other.addToggle({ id: 'o', label: 'Hi', x: 100, y: 200 })
+    const layer = new UIKitControls().add(other).add(overlay)
+    other.focus('o')
+    expect(layer.focusedWidget).toBe(other)
+    overlay.focus('a')
+    expect(layer.focusedWidget).toBe(overlay)
+    expect(layer.keyDown(key(' '))).toBe(true)
+    expect(changes).toEqual([['a', true]])
+    expect(other.isChecked('o')).toBe(false)
+  })
+})

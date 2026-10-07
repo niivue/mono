@@ -366,6 +366,11 @@ export class UIKitTextInputOverlay
    * Editing keys change the text; Enter commits and submits; Escape reverts;
    * Meta or Ctrl plus C, X and V go through the clipboard.
    */
+  /** Enter commits the field and, in a dialog, submits it. */
+  submitsForm(e: UIKitKeyEvent): boolean {
+    return e.key === 'Enter'
+  }
+
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.focusedId === null) return false
     const entry = this.entries.get(this.focusedId)

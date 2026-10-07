@@ -77,6 +77,7 @@ export {
 export type { UIKitFilePickerOverlayOptions } from './filePickerOverlay'
 export { UIKitFilePickerOverlay } from './filePickerOverlay'
 export type {
+  BridgeWindow,
   ClipboardBridge,
   ClipboardSource,
   DownloadBridge,
@@ -91,6 +92,8 @@ export {
   createBrowserClipboard,
   createBrowserDownload,
   createBrowserFilePicker,
+  DOWNLOAD_REVOKE_DELAY_MS,
+  FILE_PICKER_CANCEL_GRACE_MS,
 } from './host'
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'

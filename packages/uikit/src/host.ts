@@ -31,15 +31,39 @@ export interface FilePickerDocument {
   body: Pick<HTMLElement, 'appendChild' | 'removeChild'>
 }
 
+/** The subset of a Window the browser bridges use: timers and focus. */
+export interface BridgeWindow {
+  setTimeout(handler: () => void, ms: number): number
+  clearTimeout(id: number): void
+  addEventListener(type: 'focus', listener: () => void): void
+  removeEventListener(type: 'focus', listener: () => void): void
+}
+
+/**
+ * How long after the window regains focus a chooser with neither a `change`
+ * nor a `cancel` event counts as cancelled. A pick's `change` can trail the
+ * focus, so this leaves it room.
+ */
+export const FILE_PICKER_CANCEL_GRACE_MS = 1000
+
+/**
+ * How long a download keeps its object URL: revoking it in the tick that
+ * clicks the anchor can cancel the download before it starts.
+ */
+export const DOWNLOAD_REVOKE_DELAY_MS = 40_000
+
 /**
  * A file picker that drives a hidden `<input type="file">`. The input is
  * attached to the body while the chooser is open (some browsers ignore a
  * detached input) and removed once it settles. Cancelling resolves to an
- * empty array through the input's `cancel` event; `directory` sets
+ * empty array through the input's `cancel` event or, where there is none
+ * (Safari before 16.4, Chrome before 113), once the window has had focus
+ * back for `FILE_PICKER_CANCEL_GRACE_MS` with no pick. `directory` sets
  * `webkitdirectory`, which every current engine honours.
  */
 export function createBrowserFilePicker(
   doc: FilePickerDocument = document,
+  win: BridgeWindow = window,
 ): FilePickerBridge {
   return (options) =>
     new Promise<File[]>((resolve) => {
@@ -50,18 +74,26 @@ export function createBrowserFilePicker(
       if (options.directory) input.webkitdirectory = true
       input.style.display = 'none'
       let settled = false
+      let timer: number | null = null
       const settle = (files: File[]) => {
         if (settled) return
         settled = true
         input.removeEventListener('change', onChange)
         input.removeEventListener('cancel', onCancel)
+        win.removeEventListener('focus', onFocus)
+        if (timer !== null) win.clearTimeout(timer)
         doc.body.removeChild(input)
         resolve(files)
       }
       const onChange = () => settle(input.files ? [...input.files] : [])
       const onCancel = () => settle([])
+      const onFocus = () => {
+        if (timer !== null) win.clearTimeout(timer)
+        timer = win.setTimeout(onChange, FILE_PICKER_CANCEL_GRACE_MS)
+      }
       input.addEventListener('change', onChange)
       input.addEventListener('cancel', onCancel)
+      win.addEventListener('focus', onFocus)
       doc.body.appendChild(input)
       input.click()
     })
@@ -79,11 +111,13 @@ export interface DownloadUrlFactory {
 
 /**
  * A download that clicks a temporary anchor with a `download` name over an
- * object URL of the blob, then revokes the URL.
+ * object URL of the blob, then revokes the URL `DOWNLOAD_REVOKE_DELAY_MS`
+ * later.
  */
 export function createBrowserDownload(
   doc: DownloadDocument = document,
   urls: DownloadUrlFactory = URL,
+  win: Pick<BridgeWindow, 'setTimeout'> = window,
 ): DownloadBridge {
   return (blob, filename) => {
     const url = urls.createObjectURL(blob)
@@ -96,7 +130,7 @@ export function createBrowserDownload(
       a.click()
     } finally {
       doc.body.removeChild(a)
-      urls.revokeObjectURL(url)
+      win.setTimeout(() => urls.revokeObjectURL(url), DOWNLOAD_REVOKE_DELAY_MS)
     }
   }
 }

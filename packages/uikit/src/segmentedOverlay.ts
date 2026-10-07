@@ -77,6 +77,7 @@ export class UIKitSegmentedOverlay
   private pressInside = false
   private hoverId: string | null = null
   private focusedId: string | null = null
+  private layer: UIKitRedrawSource | null = null
 
   constructor(font: UIKitFont, options: UIKitSegmentedOverlayOptions = {}) {
     this.font = font
@@ -222,6 +223,7 @@ export class UIKitSegmentedOverlay
     const next = entry && entry.spec.enabled !== false ? id : null
     if (next === this.focusedId) return
     this.focusedId = next
+    if (next !== null) this.layer?.focus?.(this)
     this.invalidate()
   }
 
@@ -335,6 +337,7 @@ export class UIKitSegmentedOverlay
 
   bindLayer(layer: UIKitRedrawSource): void {
     this.requestRedraw ??= () => layer.requestRedraw()
+    this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {

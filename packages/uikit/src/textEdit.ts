@@ -115,7 +115,10 @@ export function editKey(
     default:
       break
   }
-  if (jump) {
+  // AltGr arrives as Ctrl plus Alt on Windows: with it, a character is
+  // typed (@, {, [, \ or ~ on a German or French keyboard), not a shortcut.
+  const altGr = e.ctrlKey && e.altKey && !e.metaKey && e.key.length === 1
+  if (jump && !altGr) {
     if (e.key === 'a' || e.key === 'A') return selectAll(s)
     return null
   }

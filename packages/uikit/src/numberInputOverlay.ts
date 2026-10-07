@@ -373,6 +373,11 @@ export class UIKitNumberInputOverlay
    * Editing keys change the text; Enter commits; Escape reverts; ArrowUp and
    * ArrowDown step (Shift: ten steps), as do PageUp and PageDown.
    */
+  /** Enter commits the field and, in a dialog, submits it. */
+  submitsForm(e: UIKitKeyEvent): boolean {
+    return e.key === 'Enter'
+  }
+
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.focusedId === null) return false
     const entry = this.entries.get(this.focusedId)

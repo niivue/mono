@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { UIKitControls } from './controls'
 import { UIKitSliderOverlay } from './sliderOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 
@@ -95,6 +96,18 @@ describe('UIKitSliderOverlay', () => {
     overlay.pointerDown(200, 70)
     overlay.pointerCancel()
     expect(overlay.isDragging).toBe(false)
+    expect(overlay.pointerUp(200, 70)).toBe(false)
+    expect(changes).toEqual([5])
+  })
+
+  it('ends a drag with its onChange when the slider is disabled mid-drag', () => {
+    const { overlay, inputs, changes } = make()
+    overlay.pointerDown(200, 70)
+    expect(inputs).toEqual([5])
+    overlay.setEnabled('s', false)
+    expect(overlay.isDragging).toBe(false)
+    expect(changes).toEqual([5])
+    expect(overlay.focusedSlider).toBeNull()
     expect(overlay.pointerUp(200, 70)).toBe(false)
     expect(changes).toEqual([5])
   })
@@ -200,5 +213,27 @@ describe('UIKitSliderOverlay', () => {
     ])
     expect(overlay.ids).toEqual(['u'])
     expect(overlay.focusedSlider).toBeNull()
+  })
+
+  it("takes the layer's keys when focused from code", () => {
+    const { overlay, inputs } = make()
+    const other = new UIKitSliderOverlay(FONT)
+    other.addSlider({
+      id: 'o',
+      x: 100,
+      y: 200,
+      width: 200,
+      min: 0,
+      max: 10,
+      value: 0,
+    })
+    const layer = new UIKitControls().add(other).add(overlay)
+    other.focus('o')
+    expect(layer.focusedWidget).toBe(other)
+    overlay.focus('s')
+    expect(layer.focusedWidget).toBe(overlay)
+    expect(layer.keyDown(key('ArrowRight'))).toBe(true)
+    expect(inputs).toEqual([3])
+    expect(other.focusedSlider).toBeNull()
   })
 })

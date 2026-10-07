@@ -18,7 +18,7 @@ import {
   scaleButton,
 } from './button'
 import { buildLine, type LineData } from './line'
-import { buildRect, type RectData } from './rect'
+import { buildRect, type RectData, rectContains } from './rect'
 import {
   buildScrollArrow,
   canScrollDown,
@@ -413,16 +413,6 @@ export function menuRevealRow(
   )
 }
 
-/** True when canvas point (px, py) lies inside a box. */
-function boxContains(box: UIKitBox, px: number, py: number): boolean {
-  return (
-    px >= box.x &&
-    px < box.x + box.width &&
-    py >= box.y &&
-    py < box.y + box.height
-  )
-}
-
 /**
  * The scroll strip under a canvas point of a scrollable popup: -1 for the top
  * strip, 1 for the bottom one, 0 for neither.
@@ -432,8 +422,8 @@ export function menuScrollStripAt(
   px: number,
   py: number,
 ): -1 | 0 | 1 {
-  if (layout.scrollUp && boxContains(layout.scrollUp, px, py)) return -1
-  if (layout.scrollDown && boxContains(layout.scrollDown, px, py)) return 1
+  if (layout.scrollUp && rectContains(layout.scrollUp, px, py)) return -1
+  if (layout.scrollDown && rectContains(layout.scrollDown, px, py)) return 1
   return 0
 }
 
@@ -497,7 +487,7 @@ export function popupContains(
   px: number,
   py: number,
 ): boolean {
-  return boxContains(layout, px, py)
+  return rectContains(layout, px, py)
 }
 
 /** The index of the row under a canvas point, or -1 (separators count as rows). */

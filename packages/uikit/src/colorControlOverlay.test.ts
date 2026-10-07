@@ -86,6 +86,15 @@ describe('UIKitColorControlOverlay', () => {
     expect(overlay.getValue('c')).toEqual([0, 0, 0, 1])
   })
 
+  it('ends a drag with its onChange when the control is disabled mid-drag', () => {
+    const { overlay, changes } = make()
+    overlay.pointerDown(railX(0.5), RAIL.cy)
+    overlay.setEnabled('c', false)
+    expect(changes).toEqual([[0.5, 0, 0, 1]])
+    expect(overlay.pointerUp(railX(0), RAIL.cy)).toBe(false)
+    expect(changes).toHaveLength(1)
+  })
+
   it('steps the focused channel with the arrow keys', () => {
     const { overlay, inputs, changes } = make()
     // Press the G slider (second row at y 14..26) at its left end.

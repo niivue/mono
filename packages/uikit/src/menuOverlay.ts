@@ -130,7 +130,9 @@ export class UIKitMenuOverlay
 
   /**
    * Add a menu, or replace the one with the same id. A replacement takes the
-   * new spec's items and their `checked` states; an open replaced menu closes.
+   * new spec's items and their `checked` states. An open menu stays open and
+   * is laid out again (it may have moved) unless the replacement disables it
+   * or changes its items' ids or kinds: then it closes.
    */
   addMenu(spec: MenuButtonSpec): void {
     const existing = this.entries.get(spec.id)
@@ -145,8 +147,18 @@ export class UIKitMenuOverlay
       existing.buttonStyle = buttonStyle
       existing.style = style
       existing.layout = null
+      const sameRows = sameMenuRows(existing.items, items)
       existing.items = items
-      if (this.openId === spec.id) this.close()
+      if (this.openId === spec.id) {
+        if (spec.enabled === false || !sameRows) {
+          this.close()
+        } else {
+          this.popup = null
+          this.popupDirty = true
+          const lit = items[this.highlight]
+          if (lit && !isMenuItemSelectable(lit)) this.highlight = -1
+        }
+      }
     } else {
       this.entries.set(spec.id, {
         spec,
@@ -193,7 +205,7 @@ export class UIKitMenuOverlay
     this.updateMenu(id, { enabled })
   }
 
-  /** Replace a menu's items (closing it if open). */
+  /** Replace a menu's items (closing it if open and the ids or kinds change). */
   setItems(id: string, items: readonly MenuItemSpec[]): void {
     this.updateMenu(id, { items })
   }
@@ -733,4 +745,19 @@ export class UIKitMenuOverlay
     this.popupText.setItems(geo.text)
     this.popupDirty = false
   }
+}
+
+/** Whether two item lists have the same rows: ids and kinds, in order. */
+function sameMenuRows(
+  a: readonly MenuItemSpec[],
+  b: readonly MenuItemSpec[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (item, i) =>
+        item.id === b[i].id &&
+        (item.kind ?? 'action') === (b[i].kind ?? 'action'),
+    )
+  )
 }

@@ -274,13 +274,23 @@ describe('UIKitMenuOverlay', () => {
     const { overlay, openByClick } = make()
     overlay.setItemChecked('m', 'b', true)
     openByClick()
+    const before = overlay.getPopupLayout()?.x ?? 0
+    // A move (a relayout on resize, say) keeps the menu open, popup and all.
     overlay.updateMenu('m', { x: 120 })
-    expect(overlay.openMenu).toBeNull() // a replaced open menu closes
+    expect(overlay.openMenu).toBe('m')
     expect(overlay.getLayout('m')?.x).toBe(120)
+    expect(overlay.getPopupLayout()?.x).toBe(before + 20)
     expect(overlay.isItemChecked('m', 'b')).toBe(true)
+    // New rows close it: the open list no longer matches what was shown.
     overlay.setItems('m', [{ id: 'z', label: 'Hi', kind: 'check' }])
+    expect(overlay.openMenu).toBeNull()
     expect(overlay.getItems('m').map((i) => i.id)).toEqual(['z'])
     expect(overlay.isItemChecked('m', 'b')).toBe(false)
+    // Disabling an open menu closes it too.
+    openByClick(130)
+    expect(overlay.openMenu).toBe('m')
+    overlay.setEnabled('m', false)
+    expect(overlay.openMenu).toBeNull()
   })
 
   it('places the popup inside the bounds it is given', () => {

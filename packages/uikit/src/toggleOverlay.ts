@@ -68,6 +68,7 @@ export class UIKitToggleOverlay
   private pressInside = false
   private hoverId: string | null = null
   private focusedId: string | null = null
+  private layer: UIKitRedrawSource | null = null
 
   constructor(font: UIKitFont, options: UIKitToggleOverlayOptions = {}) {
     this.font = font
@@ -196,6 +197,7 @@ export class UIKitToggleOverlay
     const next = entry && entry.spec.enabled !== false ? id : null
     if (next === this.focusedId) return
     this.focusedId = next
+    if (next !== null) this.layer?.focus?.(this)
     this.invalidate()
   }
 
@@ -274,6 +276,7 @@ export class UIKitToggleOverlay
 
   bindLayer(layer: UIKitRedrawSource): void {
     this.requestRedraw ??= () => layer.requestRedraw()
+    this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {

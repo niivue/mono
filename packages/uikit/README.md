@@ -584,7 +584,9 @@ Opening a file chooser, saving a download and reaching the clipboard are the
 things a canvas widget cannot do by itself. UIKit keeps the affordance and
 its state on the canvas and hands the browser-only step to a host bridge:
 `FilePickerBridge` opens the chooser and resolves with the files (an empty
-array on cancel), `DownloadBridge` saves a blob under a name, and
+array on cancel; where the browser has no `cancel` event, once the window
+has had focus back for a second with no pick), `DownloadBridge` saves a blob
+under a name (revoking its object URL well after the click), and
 `ClipboardBridge` writes text and reads it back (`read` resolves empty when
 the host refuses). `createBrowserFilePicker()`, `createBrowserDownload()`
 and `createBrowserClipboard()` are the browser implementations (a hidden
@@ -651,7 +653,10 @@ Hosted widgets are ordinary overlays (text inputs, number inputs, toggles,
 selects, ...) added with `addChild`: while the dialog is open it routes
 events among them like a control layer (a press captures and focuses, a
 modal child such as an open select sees everything first) and draws them over
-the panel. They must use the same units as the dialog. `onLayout` reports the
+the panel. A focused child keeps the keys it takes: Enter submits the dialog
+only from a child whose `submitsForm` says so (a text or number input's
+Enter, a text area's Meta or Ctrl plus Enter), so a text area's Enter is a new
+line and a select's opens its list. They must use the same units as the dialog. `onLayout` reports the
 panel and content boxes in spec units whenever the panel is placed (the first
 draw, a resize), which is where to position them. A dialog is not a popup: a
 press elsewhere in the page only blurs its children, so a window blur never

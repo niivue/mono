@@ -154,7 +154,6 @@ export function stepDecimals(step: number): number {
   return Math.min(100, Math.max(0, mantissaDecimals - exp))
 }
 
-/** Clamp `value` into [min, max] and, with a positive step, snap it to the step grid from min. */
 /** A `step` that can snap: finite and positive, else undefined (continuous). */
 export function usableStep(step: number | undefined): number | undefined {
   return step !== undefined && Number.isFinite(step) && step > 0
@@ -162,6 +161,19 @@ export function usableStep(step: number | undefined): number | undefined {
     : undefined
 }
 
+/** Round `value` to the nearest multiple of `step` from `origin`, printed exactly. */
+export function snapToStep(
+  value: number,
+  origin: number,
+  step: number,
+): number {
+  // The tiny bias keeps a half-way value (0.35 by 0.1) rounding up as a
+  // reader expects, despite the division landing a hair under .5.
+  const n = Math.round((value - origin) / step + 1e-9)
+  return Number((origin + n * step).toFixed(stepDecimals(step)))
+}
+
+/** Clamp `value` into [min, max] and, with a positive step, snap it to the step grid from min. */
 export function snapValue(
   value: number,
   min: number,
@@ -173,11 +185,7 @@ export function snapValue(
   let v = Math.min(hi, Math.max(lo, Number.isFinite(value) ? value : lo))
   const by = usableStep(step)
   if (by !== undefined) {
-    // The tiny bias keeps a half-way value (0.35 by 0.1) rounding up as a
-    // reader expects, despite the division landing a hair under .5.
-    const n = Math.round((v - min) / by + 1e-9)
-    v = Number((min + n * by).toFixed(stepDecimals(by)))
-    v = Math.min(hi, Math.max(lo, v))
+    v = Math.min(hi, Math.max(lo, snapToStep(v, min, by)))
   }
   return v
 }

@@ -276,4 +276,19 @@ describe('UIKitSelectOverlay', () => {
     overlay.open('s')
     expect(claimed).toEqual([overlay])
   })
+
+  it('keeps an open list open through a relayout, closing it on new options', () => {
+    const { overlay, click } = make()
+    click(110, 60)
+    expect(overlay.isModal()).toBe(true)
+    const before = overlay.getPopupLayout()?.x ?? 0
+    overlay.updateSelect('s', { x: 120 })
+    expect(overlay.isModal()).toBe(true)
+    expect(overlay.getPopupLayout()?.x).toBe(before + 20)
+    // A new value from code is a relayout too: same options, same rows.
+    overlay.setValue('s', 'd')
+    expect(overlay.isModal()).toBe(true)
+    overlay.setOptions('s', [{ value: 'z', label: 'Hi' }])
+    expect(overlay.isModal()).toBe(false)
+  })
 })

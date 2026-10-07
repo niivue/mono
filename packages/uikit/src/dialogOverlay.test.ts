@@ -8,7 +8,10 @@ import {
 } from './controls'
 import { DEFAULT_DIALOG_STYLE, type DialogBoxes } from './dialog'
 import { UIKitDialogOverlay } from './dialogOverlay'
+import { UIKitSelectOverlay } from './selectOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
+import { UIKitTextAreaOverlay } from './textAreaOverlay'
+import { UIKitTextInputOverlay } from './textInputOverlay'
 
 // Opening, routing and closing never touch the GPU, so the overlay is driven
 // headlessly: `setBounds` stands in for the frame the draw hook would bring.
@@ -46,6 +49,8 @@ function key(k: string, mods: Partial<UIKitKeyEvent> = {}): UIKitKeyEvent {
 class Child implements UIKitInteractive {
   readonly log: string[] = []
   modal = false
+  /** Whether its Enter also submits the dialog, as a text input's does. */
+  submits = false
   layer: UIKitRedrawSource | null = null
   constructor(
     private readonly box: { x: number; y: number; w: number; h: number },
@@ -87,6 +92,9 @@ class Child implements UIKitInteractive {
       return true
     }
     return e.key === 'x' || e.key === 'Enter'
+  }
+  submitsForm(e: UIKitKeyEvent): boolean {
+    return this.submits && e.key === 'Enter'
   }
   wheel(): boolean {
     this.log.push('wheel')
@@ -219,7 +227,13 @@ describe('UIKitDialogOverlay', () => {
     expect(a.log.at(-1)).toBe('key:x')
     expect(overlay.keyDown(key('q'))).toBe(true)
     expect(overlay.isModal()).toBe(true)
+    // A focused child that keeps its Enter (a text area's new line, a
+    // select opening) does not submit the dialog with it.
+    expect(overlay.keyDown(key('Enter'))).toBe(true)
+    expect(a.log.at(-1)).toBe('key:Enter')
+    expect(closed).toEqual([])
     // Enter in a focused field commits it and still submits the dialog.
+    a.submits = true
     expect(overlay.keyDown(key('Enter'))).toBe(true)
     expect(a.log.at(-2)).toBe('key:Enter')
     expect(closed).toEqual(['ok'])
@@ -343,5 +357,73 @@ describe('UIKitDialogOverlay', () => {
     layer.deactivate()
     child.layer?.focus?.(child)
     expect(layer.focusedWidget).toBe(overlay)
+    // ...and the child gets the dialog's keys.
+    overlay.open('d')
+    child.layer?.focus?.(child)
+    expect(layer.keyDown(key('x'))).toBe(true)
+    expect(child.log.at(-1)).toBe('key:x')
+  })
+
+  it("submits on a text input's Enter, not a text area's or a select's", () => {
+    const { overlay, closed } = make()
+    const area = new UIKitTextAreaOverlay(FONT)
+    area.addTextArea({
+      id: 'a',
+      x: 300,
+      y: 260,
+      width: 60,
+      rows: 2,
+      value: 'ab',
+    })
+    const input = new UIKitTextInputOverlay(FONT)
+    const submits: string[] = []
+    input.addTextInput({
+      id: 'i',
+      x: 300,
+      y: 300,
+      width: 60,
+      value: 'cd',
+      onSubmit: (v) => submits.push(v),
+    })
+    const select = new UIKitSelectOverlay(FONT)
+    select.addSelect({
+      id: 's',
+      x: 300,
+      y: 330,
+      options: [
+        { value: 'a', label: 'a' },
+        { value: 'b', label: 'b' },
+      ],
+      value: 'a',
+    })
+    for (const c of [area, input, select]) overlay.addChild('d', c)
+    const layer = new UIKitControls().add(overlay)
+    overlay.open('d')
+    // Enter in a text area is a new line; Ctrl or Cmd plus Enter submits.
+    area.focus('a')
+    layer.keyDown(key('End'))
+    expect(layer.keyDown(key('Enter'))).toBe(true)
+    expect(area.getText('a')).toBe('ab\n')
+    expect(closed).toEqual([])
+    // Enter on a select opens its list, and Enter again chooses.
+    select.focus('s')
+    expect(layer.keyDown(key('Enter'))).toBe(true)
+    expect(select.isModal()).toBe(true)
+    expect(closed).toEqual([])
+    layer.keyDown(key('Escape'))
+    expect(closed).toEqual([])
+    // A text input's Enter commits the field and submits the dialog.
+    input.focus('i')
+    // AltGr (Ctrl plus Alt on Windows) types into the field, not past it.
+    layer.keyDown(key('End'))
+    expect(layer.keyDown(key('@', { ctrlKey: true, altKey: true }))).toBe(true)
+    expect(input.getText('i')).toBe('cd@')
+    expect(layer.keyDown(key('Enter'))).toBe(true)
+    expect(submits).toEqual(['cd@'])
+    expect(closed).toEqual(['ok'])
+    overlay.open('d')
+    area.focus('a')
+    expect(layer.keyDown(key('Enter', { ctrlKey: true }))).toBe(true)
+    expect(closed).toEqual(['ok', 'ok'])
   })
 })

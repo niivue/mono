@@ -10,7 +10,7 @@ import { mixColor } from './button'
 import { buildLine, type LineData } from './line'
 import { buildRect, type RectData } from './rect'
 import { buildScrollArrow, type ScrollWindow, type UIKitBox } from './scroll'
-import { stepDecimals, usableStep } from './slider'
+import { snapToStep, stepDecimals, usableStep } from './slider'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { TextEditState } from './textEdit'
@@ -197,11 +197,7 @@ export function snapNumberInput(spec: Range, value: number): number {
   let v = clamp(value)
   const step = usableStep(spec.step)
   if (step !== undefined) {
-    const origin = Number.isFinite(lo) ? lo : 0
-    // The tiny bias keeps a half-way value rounding up as a reader expects.
-    const n = Math.round((v - origin) / step + 1e-9)
-    v = Number((origin + n * step).toFixed(stepDecimals(step)))
-    v = clamp(v)
+    v = clamp(snapToStep(v, Number.isFinite(lo) ? lo : 0, step))
   }
   return v
 }

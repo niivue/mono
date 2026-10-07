@@ -81,6 +81,12 @@ export interface UIKitInteractive extends UIKitOverlayRenderer {
   /** Handle a key while focused or modal. Return true to consume it. */
   keyDown?(e: UIKitKeyEvent): boolean
   /**
+   * Whether a key this widget took should also submit the dialog it sits
+   * in, as Enter in a form's text field submits the form. A text area's
+   * Enter (a new line) and a select's (opening its list) do not.
+   */
+  submitsForm?(e: UIKitKeyEvent): boolean
+  /**
    * Handle a wheel turn over (x, y), deltas in pixels (positive is down and
    * right). Sent to the modal widget first, else the widget under the point.
    * Return true to consume it (the page then does not scroll).

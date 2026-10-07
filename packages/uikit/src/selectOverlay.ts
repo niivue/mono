@@ -117,7 +117,10 @@ export class UIKitSelectOverlay
     this.updateSelect(id, { enabled })
   }
 
-  /** Replace a select's options (closing it if open). A value no longer offered clears. */
+  /**
+   * Replace a select's options (closing it if open and the values offered
+   * change). A value no longer offered clears.
+   */
   setOptions(id: string, options: readonly SelectOption[]): void {
     this.updateSelect(id, { options })
   }

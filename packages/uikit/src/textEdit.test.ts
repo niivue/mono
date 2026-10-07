@@ -162,6 +162,23 @@ describe('editKey', () => {
     expect(editKey(s, key('Tab'))).toBeNull()
     expect(editKey(s, key('s', { metaKey: true }))).toBeNull()
   })
+
+  it('types an AltGr character, which Windows sends as Ctrl plus Alt', () => {
+    const s = textEditState('ab', 2)
+    const altGr = { ctrlKey: true, altKey: true }
+    for (const ch of ['@', '{', '[', '\\', '~']) {
+      expect(editKey(s, key(ch, altGr))?.text).toBe(`ab${ch}`)
+    }
+    // Ctrl alone is still a shortcut, and Ctrl plus A still selects all.
+    expect(editKey(s, key('s', { ctrlKey: true }))).toBeNull()
+    expect(editKey(s, key('a', { ctrlKey: true }))).toEqual({
+      text: 'ab',
+      caret: 2,
+      anchor: 0,
+    })
+    // Ctrl plus Alt plus an arrow is not a character: it still jumps.
+    expect(editKey(s, key('ArrowLeft', altGr))?.caret).toBe(0)
+  })
 })
 
 describe('clipboard helpers', () => {

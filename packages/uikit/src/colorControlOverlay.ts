@@ -127,7 +127,12 @@ export class UIKitColorControlOverlay
       }
       this.entries.set(spec.id, entry)
     }
+    // Disabled channel sliders end their drag (with its onChange) as they
+    // are placed.
     this.placeSliders(entry)
+    if (spec.enabled === false && this.draggingId === spec.id) {
+      this.draggingId = null
+    }
     this.invalidate()
   }
 

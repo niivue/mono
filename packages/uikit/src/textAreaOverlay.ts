@@ -459,6 +459,11 @@ export class UIKitTextAreaOverlay
     return true
   }
 
+  /** Meta or Ctrl plus Enter submits a dialog; a plain Enter is a new line. */
+  submitsForm(e: UIKitKeyEvent): boolean {
+    return e.key === 'Enter' && (e.metaKey || e.ctrlKey)
+  }
+
   /**
    * Editing keys change the text; Meta or Ctrl plus Enter commits and
    * submits; Escape reverts.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { UIKitControls } from './controls'
 import { UIKitSegmentedOverlay } from './segmentedOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 
@@ -160,5 +161,30 @@ describe('UIKitSegmentedOverlay', () => {
     overlay.removeSegmented('g')
     expect(overlay.ids).toEqual([])
     expect(overlay.getLayout('g')).toBeNull()
+  })
+})
+
+describe('UIKitSegmentedOverlay in a control layer', () => {
+  it("takes the layer's keys when focused from code", () => {
+    const { overlay, changes } = make()
+    const other = new UIKitSegmentedOverlay(FONT)
+    other.addSegmented({
+      id: 'o',
+      x: 100,
+      y: 200,
+      segments: [
+        { value: 'a', label: 'Hi' },
+        { value: 'b', label: 'Hi' },
+      ],
+      value: 'a',
+    })
+    const layer = new UIKitControls().add(other).add(overlay)
+    other.focus('o')
+    expect(layer.focusedWidget).toBe(other)
+    overlay.focus('g')
+    expect(layer.focusedWidget).toBe(overlay)
+    expect(layer.keyDown(key('ArrowRight'))).toBe(true)
+    expect(changes).toEqual(['g:b'])
+    expect(other.getValue('o')).toBe('a')
   })
 })

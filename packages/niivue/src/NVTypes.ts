@@ -314,8 +314,6 @@ export type LUT = {
   min?: number
   max?: number
   labels?: string[]
-  /** Label name → center-of-mass in mm (precomputed, not serialized) */
-  centroids?: Record<string, [number, number, number]>
 }
 
 export type ColorbarInfo = {

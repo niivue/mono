@@ -1261,9 +1261,8 @@ export function initInteraction(ctrl: NiiVue): void {
     const legendEntry = legendHitTest(px, py, ctrl.view?.legendLayout ?? null)
     if (legendEntry) {
       log.info(`Legend clicked: ${legendEntry.label}`)
-      if (legendEntry.centroid) {
-        ctrl.setCrosshairPos(legendEntry.centroid)
-      }
+      const centroid = legendEntry.centroid?.()
+      if (centroid) ctrl.setCrosshairPos(centroid)
       return // Don't process tile interactions if legend was clicked
     }
 

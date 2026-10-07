@@ -1,13 +1,15 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { colormapLookup } from '@/mesh/connectome'
 import type { NVImage, NVMesh } from '@/NVTypes'
+import { meshLabelCentroid, volumeLabelCentroid } from './legendCentroids'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
 import { estimateFontSize } from './NVUILayout'
 
 export type LegendEntry = {
   label: string
   color: [number, number, number, number] // RGBA 0-255
-  centroid?: [number, number, number] // center-of-mass in mm (for crosshair navigation)
+  /** Center-of-mass in mm, for crosshair navigation on click */
+  centroid?: () => [number, number, number] | undefined
 }
 
 export type LegendLayout = {
@@ -57,15 +59,16 @@ export function collectLegendEntries(
       // Skip transparent labels (typically index 0 = background)
       if (alpha === 0) continue
 
+      const label = labels[i]
       entries.push({
-        label: labels[i],
+        label,
         color: [
           lut.lut[lutOffset],
           lut.lut[lutOffset + 1],
           lut.lut[lutOffset + 2],
           lut.lut[lutOffset + 3],
         ],
-        centroid: lut.centroids?.[labels[i]],
+        centroid: () => volumeLabelCentroid(volume, label),
       })
     }
   }
@@ -90,15 +93,16 @@ export function collectLegendEntries(
         // Skip transparent labels (typically index 0 = background)
         if (alpha === 0) continue
 
+        const label = labels[i]
         entries.push({
-          label: labels[i],
+          label,
           color: [
             lut.lut[lutOffset],
             lut.lut[lutOffset + 1],
             lut.lut[lutOffset + 2],
             lut.lut[lutOffset + 3],
           ],
-          centroid: lut.centroids?.[labels[i]],
+          centroid: () => meshLabelCentroid(mesh, layer, label),
         })
       }
     }
@@ -136,7 +140,7 @@ export function collectLegendEntries(
           Math.round(clr[2] * 255),
           Math.round(clr[3] * 255),
         ],
-        centroid: [node.x, node.y, node.z],
+        centroid: () => [node.x, node.y, node.z],
       })
     }
   }

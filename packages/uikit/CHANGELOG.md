@@ -1,3 +1,34 @@
+## 1.0.0-rc.7 (2026-10-07)
+
+### Features
+
+- **uikit:** clipboard bridge for the text input and text area ([16433f6](https://github.com/niivue/mono/commit/16433f6))
+- **uikit:** enable textarea scrollbar dragging ([b0c09bd](https://github.com/niivue/mono/commit/b0c09bd))
+- **uikit:** multi-line text areas that soft-wrap and scroll by rows ([06c79b3](https://github.com/niivue/mono/commit/06c79b3))
+- **uikit:** contrast halo on toggle labels ([3eaa387](https://github.com/niivue/mono/commit/3eaa387))
+- **uikit:** file pickers and host bridges for the chooser and downloads ([3c3b7f2](https://github.com/niivue/mono/commit/3c3b7f2))
+- **uikit:** color controls with channel sliders and palette swatches ([a3933f6](https://github.com/niivue/mono/commit/a3933f6))
+- **uikit:** modal dialogs hosting widgets, with action buttons ([a25d19b](https://github.com/niivue/mono/commit/a25d19b))
+- **uikit:** single-line text inputs on the shared text-edit model ([3921fbc](https://github.com/niivue/mono/commit/3921fbc))
+- **uikit:** number inputs with a shared text-edit model, slider label halo ([98231b3](https://github.com/niivue/mono/commit/98231b3))
+- **uikit:** row scrolling for popups through a shared scroll model ([a32c79a](https://github.com/niivue/mono/commit/a32c79a))
+- **uikit:** selects and segmented controls, keys stop at the canvas edge ([#261](https://github.com/niivue/mono/issues/261))
+- **uikit:** toggles, sliders and menus on a shared control layer ([7038866](https://github.com/niivue/mono/commit/7038866))
+- **uikit:** stylable push buttons with labels and a press animation ([290e573](https://github.com/niivue/mono/commit/290e573))
+
+### Fixes
+
+- **uikit:** address review on dialog keys, AltGr, picker cancel, focus and menu relayout ([fe3bb69](https://github.com/niivue/mono/commit/fe3bb69))
+- **uikit:** pointer ids, code-driven focus and caret placement after the audit ([8b7df88](https://github.com/niivue/mono/commit/8b7df88))
+- **uikit:** audit fixes for the control layer, dialog, sliders and text widgets ([#261](https://github.com/niivue/mono/issues/261), [#263](https://github.com/niivue/mono/issues/263), [#264](https://github.com/niivue/mono/issues/264), [#265](https://github.com/niivue/mono/issues/265), [#266](https://github.com/niivue/mono/issues/266), [#267](https://github.com/niivue/mono/issues/267), [#268](https://github.com/niivue/mono/issues/268))
+- **uikit:** make the demo reset button restore the whole view ([74cb5a4](https://github.com/niivue/mono/commit/74cb5a4))
+
+### Thank You
+
+- Chris Drake
+- Claude Fable 5.1
+- Claude Opus 5.5
+
 ## 1.0.0-rc.6 (2026-10-06)
 
 ### Updated Dependencies

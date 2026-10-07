@@ -20,12 +20,7 @@ import {
   getConnectomeReader,
   isConnectomeExtension,
 } from './connectome'
-import {
-  compositeLayers,
-  computeMeshLabelCentroids,
-  createLayer,
-  loadLayersFromOptions,
-} from './layers'
+import { compositeLayers, createLayer, loadLayersFromOptions } from './layers'
 import { probeVTKContent, readVTKLines } from './readers/vtk'
 import {
   computeAllScalarMeta,
@@ -281,16 +276,6 @@ export async function loadMesh(mesh: MeshFromUrlOptions): Promise<NVMeshType> {
   if (layerOptions && layerOptions.length > 0) {
     const externalLayers = await loadLayersFromOptions(layerOptions, numVerts)
     layers.push(...externalLayers)
-  }
-
-  // Compute label centroids for layers with label colormaps
-  for (const layer of layers) {
-    if (layer.colormapLabel) {
-      layer.colormapLabel.centroids = computeMeshLabelCentroids(
-        meshData.positions,
-        layer,
-      )
-    }
   }
 
   // Composite layers over base colors

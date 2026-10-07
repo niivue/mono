@@ -47,7 +47,6 @@ import {
 import type { NVSlideManifest } from '@/slide/NVSlide'
 import type { SlideVectorShape } from '@/slide/slideVector'
 import * as NVVolume from '@/volume/NVVolume'
-import { computeVolumeLabelCentroids } from '@/volume/utils'
 
 // v8 added two independent optional, additive fields: the `signals` array
 // (NVSignal persistence, incl. each signal's optional `annotations`) and the
@@ -931,7 +930,6 @@ export async function reconstructVolume(
           max: v.colormapLabel.max,
           labels: v.colormapLabel.labels,
         }
-        vol.colormapLabel.centroids = computeVolumeLabelCentroids(vol)
       }
     }
   } catch (err) {
@@ -1017,8 +1015,6 @@ export async function reconstructMesh(
                 max: docLayer.colormapLabel.max,
                 labels: docLayer.colormapLabel.labels,
               }
-              layer.colormapLabel.centroids =
-                NVMeshLayers.computeMeshLabelCentroids(positions, layer)
             }
             layers.push(layer)
           }

@@ -193,7 +193,6 @@ import * as NVVolumeTransforms from '@/volume/transforms'
 import {
   calculateWorldExtents,
   calMinMaxFrame,
-  computeVolumeLabelCentroids,
   getImageDataRAS,
   reorientDrawingToNative,
   volumeTR,
@@ -3373,8 +3372,6 @@ export default class NiiVue extends EventTarget {
         throw new Error(`setColormapLabel: unknown colormap '${cmap}'`)
       }
       volumes[volumeIndex].colormapLabel = NVCmaps.makeLabelLut(cm)
-      volumes[volumeIndex].colormapLabel.centroids =
-        computeVolumeLabelCentroids(volumes[volumeIndex])
     }
     volumes[volumeIndex].isDirty = true
     // Structural change (the label LUT is not a VolumeUpdate option); the volume
@@ -3714,12 +3711,6 @@ export default class NiiVue extends EventTarget {
       url: urlString,
       name: layerOpts.name ?? urlString,
     })
-    if (newLayer.colormapLabel) {
-      newLayer.colormapLabel.centroids = NVMeshLayers.computeMeshLabelCentroids(
-        m.positions,
-        newLayer,
-      )
-    }
     m.layers.push(newLayer)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
     // Layer state is structural (not a MeshUpdate option diff); the mesh

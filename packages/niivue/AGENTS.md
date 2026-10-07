@@ -1486,6 +1486,8 @@ Volumes apply in GPU shader. Mesh layers apply during CPU compositing (`mesh/lay
 
 **Label colormaps:** Discrete indexed colors for atlas volumes. `NVCmaps.makeLabelLut()` → `NVImage.colormapLabel`. Orient shader uses nearest-neighbor LUT sampling. `calMin`/`calMax`/`colormapType` are ignored for label volumes. When a colormap registered via `addColormap(name, cmap)` includes a `labels?: string[]` field (e.g. the built-in `_draw` colormap), the drawing volume surfaces the human-readable label (e.g. `"11bladder"`) in the `locationChange` event's `string` field instead of a numeric fallback like `"draw:11"`.
 
+**Legend centroids are lazy.** Nothing computes label centroids at load (`setColormapLabel`, `addVolume({ colormapLabel })`, document load, mesh layer load); `LegendEntry.centroid` is a function that `view/legendCentroids.ts` evaluates on the first legend click and memoizes in a `WeakMap` keyed on the data array: `volume.img` for volumes, with `[colormapLabel, matRAS]` as dependencies, and `layer.values` for mesh layers, with `[mesh.positions, layer.colormapLabel]` as dependencies. A dependency is compared by identity, so replace these objects, never mutate them in place; `applyVolumeTransform` and `resetVolumeAffine` assign a new `volume.matRAS` without touching `img` or the LUT, which is why `matRAS` is a dependency. Volume centroids are means of RAS voxel coordinates mapped through `matRAS` once; mesh centroids are means of vertex positions, already in mm. `LUT.centroids` no longer exists. A 256³ scan is ~60 ms (Chrome), down from 515-850 ms when it ran eagerly on every label load.
+
 ## Drawing (voxel bitmap editing)
 
 Voxel-level drawing/annotation on 2D slices, visible in both 2D and 3D views. Module: `src/drawing/`.

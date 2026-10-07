@@ -290,7 +290,7 @@ type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 // example. 512 is exactly the old alignedRenderSize, so the params buffer does
 // not grow and every *_PARAMS_BASE offset below is unchanged.
 const renderParamsSize = 512
-export const alignedRenderSize =
+const alignedRenderSize =
   Math.ceil(renderParamsSize / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 // Byte offset of the base chunk-params region (after the per-tile non-chunked
 // slots) and of the independent-overlay chunk-params region (after the base

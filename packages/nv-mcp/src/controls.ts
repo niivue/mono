@@ -50,9 +50,20 @@ export interface ControlSpec {
   kind: ControlKind
   /** The label beside or on the control; a dialog's title. */
   label?: string
-  /** Where it goes, in canvas pixels from the top left. */
-  x: number
-  y: number
+  /**
+   * Where it goes, in canvas pixels from the top left. Without x and y a
+   * control goes in the grid instead (a dialog is centred).
+   */
+  x?: number
+  y?: number
+  /**
+   * Its cell in the grid, counted from 0 at the top left: rows and columns
+   * size to the widgets in them, so controls in the grid never overlap. A
+   * control given neither x and y nor a cell goes in column 0, under the
+   * rest of that column. Not for a dialog.
+   */
+  row?: number
+  col?: number
   width?: number
   value?: ControlValue
   /** For a slider or number field. */
@@ -63,6 +74,12 @@ export interface ControlSpec {
   options?: ControlOption[]
   /** For a dialog: the text under its title. */
   message?: string
+  /**
+   * For a dialog: whether it shows. A dialog is added open unless this is
+   * false, is closed when the person picks one of its buttons, and shows
+   * again when set open (by set_control, or a control bound to `dialog.<id>`).
+   */
+  open?: boolean
   /** For a text field or text area. */
   placeholder?: string
   maxLength?: number
@@ -85,8 +102,18 @@ export interface ControlSpec {
 /** What `set_control` may change on a control that is already there. */
 export type ControlPatch = Partial<Omit<ControlSpec, 'id' | 'kind'>>
 
+/** Where a control was drawn, in canvas pixels. */
+export interface ControlBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 /** A control as the page reports it: its spec, with the value it holds now. */
 export interface ControlState extends ControlSpec {
   value: ControlValue
   enabled: boolean
+  /** Where it was drawn, when the surface draws (a dialog's only while open). */
+  box?: ControlBox
 }

@@ -3,7 +3,13 @@ import { baseView, hostOf } from '../testing/fake-view'
 import { bindControls, type PageAction, resolveBinding } from './bindings'
 import { controlHandlers, memoryControls } from './controls'
 import { settingHandlers } from './settings'
-import type { ShownVolume, View, VolumeUpdate } from './view'
+import type {
+  MeshUpdate,
+  ShownMesh,
+  ShownVolume,
+  View,
+  VolumeUpdate,
+} from './view'
 
 /** A view with a setting of each kind a control holds, a view layout and two volumes. */
 function settingsView(): View & Record<string, unknown> {
@@ -407,6 +413,194 @@ describe('bindControls: actions', () => {
     expect(caps.controlBindings.actions).toEqual([
       { name: 'reset', description: 'Puts the view back.' },
     ])
+  })
+})
+
+/** A view with a surface, a tract and a connectome. */
+function meshView() {
+  const meshes: ShownMesh[] = [
+    { name: 'lh.pial', kind: 'mesh', opacity: 1, shaderType: 'phong' },
+    {
+      name: 'yeh2022.trx',
+      kind: 'tract',
+      opacity: 1,
+      tractOptions: {
+        fiberRadius: 0.5,
+        colorBy: 'fixed',
+        fixedColor: [255, 0, 0, 128],
+      },
+    },
+    {
+      name: 'net.jcon',
+      kind: 'connectome',
+      connectomeOptions: { nodeScale: 3 },
+    },
+  ]
+  const options =
+    (key: 'tractOptions' | 'connectomeOptions') =>
+    (index: number, update: Record<string, unknown>) => {
+      meshes[index][key] = { ...meshes[index][key], ...update }
+      return Promise.resolve()
+    }
+  const view = baseView({
+    meshes,
+    meshShaders: ['phong', 'matte', 'flat'],
+    colormaps: ['gray', 'warm'],
+    setMesh: mock((index: number, update: MeshUpdate) => {
+      Object.assign(meshes[index], update)
+      return Promise.resolve()
+    }),
+    setTractOptions: mock(options('tractOptions')),
+    setConnectomeOptions: mock(options('connectomeOptions')),
+  })
+  const memory = memoryControls()
+  const onError = mock((_error: Error) => {})
+  const controls = bindControls(memory, { view, onError })
+  const host = hostOf(view)
+  host.controls = controls
+  const { add_control, list_controls } = controlHandlers(host)
+  return { view, meshes, memory, onError, add_control, list_controls }
+}
+
+describe('bindControls: meshes', () => {
+  it('drives a tract option from a slider as it moves', () => {
+    const { add_control, memory, view } = meshView()
+    const got = add_control({
+      id: 'r',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      max: 2,
+      step: 0.1,
+      bind: 'mesh.1.tract.fiberRadius',
+    }) as Reported
+    expect(got.control).toMatchObject({ value: 0.5, min: 0, max: 2 })
+    memory.simulate({ id: 'r', type: 'input', value: 1.2 })
+    expect(view.setTractOptions).toHaveBeenLastCalledWith(1, {
+      fiberRadius: 1.2,
+    })
+  })
+
+  it("takes a tract slider's range from NiiVue's examples when given none", () => {
+    const { add_control } = meshView()
+    const got = add_control({
+      id: 'r',
+      kind: 'slider',
+      bind: 'mesh.1.tract.fiberRadius',
+    }) as Reported
+    expect(got.control).toMatchObject({ min: 0, max: 3, step: 0.1, value: 0.5 })
+  })
+
+  it('shows a mesh with visible unset as shown', () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 'v',
+      kind: 'toggle',
+      bind: 'mesh.0.visible',
+    }) as Reported
+    expect(got.control.value).toBe(true)
+    memory.simulate({ id: 'v', type: 'change', value: false })
+    expect(meshes[0].visible).toBe(false)
+  })
+
+  it('offers the mesh shaders and writes a mesh property', () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 's',
+      kind: 'select',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.shader',
+    }) as Reported
+    expect(got.control.value).toBe('phong')
+    expect(
+      (got.control.options as Array<{ id: string }>).map((o) => o.id),
+    ).toEqual(['phong', 'matte', 'flat'])
+    memory.simulate({ id: 's', type: 'change', value: 'matte' })
+    expect(meshes[0].shaderType).toBe('matte')
+  })
+
+  it('holds a tract colour 0 to 1 and keeps the alpha it drives', () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 'c',
+      kind: 'color',
+      x: 0,
+      y: 0,
+      bind: 'mesh.1.tract.fixedColor',
+    }) as Reported
+    expect(got.control.value).toEqual([1, 0, 0])
+    memory.simulate({ id: 'c', type: 'change', value: [0, 1, 0] })
+    expect(meshes[1].tractOptions?.fixedColor).toEqual([0, 255, 0, 128])
+  })
+
+  it('shows a tract option changed elsewhere', () => {
+    const { add_control, list_controls, meshes } = meshView()
+    add_control({
+      id: 'n',
+      kind: 'number',
+      x: 0,
+      y: 0,
+      bind: 'mesh.2.connectome.nodeScale',
+    })
+    meshes[2].connectomeOptions = { nodeScale: 5 }
+    const { controls } = list_controls({}) as {
+      controls: Array<{ value: unknown }>
+    }
+    expect(controls[0].value).toBe(5)
+  })
+
+  it('declines a mesh it cannot reach, saying what a mesh bind may name', () => {
+    const { add_control } = meshView()
+    const bind = (b: string) => () =>
+      add_control({ id: 'x', kind: 'slider', x: 0, y: 0, bind: b })
+    expect(bind('mesh.4.opacity')).toThrow('There is no mesh 4: 3 are loaded.')
+    expect(bind('mesh.0.tract.fiberRadius')).toThrow(
+      'lh.pial is a mesh, not a tract.',
+    )
+    expect(bind('mesh.1.tract.groupColors')).toThrow('not a mesh binding')
+    expect(bind('mesh.1.width')).toThrow('fiberRadius')
+    expect(bind('mesh.1.opacity.x')).toThrow('not a mesh binding')
+  })
+})
+
+describe('bindControls: dialogs', () => {
+  it('opens a hidden dialog from a button bound to it', () => {
+    const { add_control, memory } = setup()
+    add_control({
+      id: 'about',
+      kind: 'dialog',
+      label: 'About',
+      x: 0,
+      y: 0,
+      open: false,
+    })
+    const open = () => memory.list().find((c) => c.id === 'about')?.open
+    expect(open()).toBe(false)
+    add_control({ id: 'b', kind: 'button', x: 0, y: 0, bind: 'dialog.about' })
+    memory.simulate({ id: 'b', type: 'press' })
+    expect(open()).toBe(true)
+    memory.simulate({ id: 'about', type: 'press', item: 'ok' })
+    expect(open()).toBe(false)
+    memory.simulate({ id: 'b', type: 'press' })
+    expect(open()).toBe(true)
+  })
+
+  it('declines a dialog that is not there, and reports one removed since', () => {
+    const { add_control, remove_control, memory, onError } = setup()
+    expect(() =>
+      add_control({ id: 'b', kind: 'button', x: 0, y: 0, bind: 'dialog.nope' }),
+    ).toThrow('There is no dialog "nope". Add it first, with open: false')
+    add_control({ id: 't', kind: 'toggle', x: 0, y: 0 })
+    expect(() =>
+      add_control({ id: 'b', kind: 'button', x: 0, y: 0, bind: 'dialog.t' }),
+    ).toThrow('"t" is a toggle, not a dialog.')
+    add_control({ id: 'd', kind: 'dialog', x: 0, y: 0, open: false })
+    add_control({ id: 'b', kind: 'button', x: 0, y: 0, bind: 'dialog.d' })
+    remove_control({ id: 'd' })
+    memory.simulate({ id: 'b', type: 'press' })
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0].message).toContain('no dialog "d"')
   })
 })
 

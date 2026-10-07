@@ -185,8 +185,27 @@ describe('uikitControls', () => {
     expect(dialogs.isOpen('d')).toBe(true)
     dialogs.close('ok')
     expect(events).toEqual([{ id: 'd', type: 'press', item: 'ok' }])
+    expect(surface.list()[0].open).toBe(false)
+    // A change leaves a closed dialog closed; open: true shows it again.
     surface.update('d', { message: 'Again' })
+    expect(dialogs.isOpen('d')).toBe(false)
+    surface.update('d', { open: true })
     expect(dialogs.isOpen('d')).toBe(true)
+  })
+
+  it('adds a dialog hidden, and hides or removes one without a press', () => {
+    const { surface, overlay, events } = setup()
+    surface.add({ id: 'd', kind: 'dialog', x: 0, y: 0, open: false })
+    const dialogs = overlay(UIKitDialogOverlay)
+    expect(dialogs.ids).toEqual(['d'])
+    expect(dialogs.isOpen('d')).toBe(false)
+    surface.update('d', { open: true })
+    expect(dialogs.isOpen('d')).toBe(true)
+    surface.update('d', { open: false })
+    expect(dialogs.isOpen('d')).toBe(false)
+    surface.update('d', { open: true })
+    surface.clear()
+    expect(events).toEqual([])
   })
 
   it('remakes a control under a new kind and takes it away on remove', () => {
@@ -226,6 +245,54 @@ describe('uikitControls', () => {
     })
     const layout = overlay(UIKitSegmentedOverlay).getLayout('v')
     expect(layout?.width).toBeGreaterThan(2 * 2 * 12)
+  })
+
+  it('lays the grid out by the widgets in it, and reports boxes in canvas pixels', () => {
+    const { surface, overlay } = setup()
+    surface.add({ id: 's', kind: 'slider', row: 0, col: 0, value: 1 })
+    surface.add({ id: 'b', kind: 'button', label: 'Go', row: 1, col: 0 })
+    surface.add({ id: 't', kind: 'toggle', label: 'On', row: 0, col: 1 })
+    const sliders = overlay(UIKitSliderOverlay)
+    const slider = sliders.getLayout('s')
+    const button = overlay(UIKitButtonOverlay).getLayout('b')
+    const toggle = overlay(UIKitToggleOverlay).getLayout('t')
+    if (!slider || !button || !toggle) throw new Error('not drawn')
+    expect(slider).toMatchObject({ x: 12, y: 12 })
+    expect(button.x).toBe(12)
+    expect(button.y).toBeGreaterThanOrEqual(slider.y + slider.height)
+    expect(toggle.y).toBe(12)
+    expect(toggle.x).toBeGreaterThanOrEqual(slider.x + slider.width)
+    // The box is in canvas pixels: twice the CSS layout on this display.
+    const listed = surface.list().find((c) => c.id === 'b')
+    expect(listed?.box).toEqual({
+      x: button.x * 2,
+      y: Math.round(button.y * 2),
+      width: Math.round(button.width * 2),
+      height: Math.round(button.height * 2),
+    })
+    // Taking the slider away moves the button up, and widens nothing.
+    surface.remove('s')
+    expect(overlay(UIKitButtonOverlay).getLayout('b')?.y).toBe(
+      slider.y + toggle.height + 8,
+    )
+    // A wider slider in the first column moves the second column out.
+    surface.add({ id: 'w', kind: 'slider', row: 2, col: 0, width: 600 })
+    expect(overlay(UIKitToggleOverlay).getLayout('t')?.x).toBe(12 + 300 + 8)
+  })
+
+  it('keeps a control placed at a point out of the grid', () => {
+    const { surface, overlay } = setup()
+    surface.add({ id: 'p', kind: 'button', x: 100, y: 100 })
+    surface.add({ id: 'g', kind: 'button', row: 0, col: 0, width: 400 })
+    expect(overlay(UIKitButtonOverlay).getLayout('p')).toMatchObject({
+      x: 50,
+      y: 50,
+    })
+    surface.update('p', { row: 0, col: 1 })
+    expect(overlay(UIKitButtonOverlay).getLayout('p')).toMatchObject({
+      x: 12 + 200 + 8,
+      y: 12,
+    })
   })
 
   it('unregisters its renderer when destroyed', () => {

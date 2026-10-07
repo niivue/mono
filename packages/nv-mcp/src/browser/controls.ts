@@ -207,6 +207,10 @@ function fields(params: Params): ControlPatch {
     const n = number(params, key)
     if (n !== undefined) out[key] = n
   }
+  for (const key of ['row', 'col'] as const) {
+    const n = integer(params, key)
+    if (n !== undefined) out[key] = n
+  }
   const opts = options(params)
   if (opts) out.options = opts
   const message = text(params, 'message')
@@ -227,6 +231,8 @@ function fields(params: Params): ControlPatch {
   if (palette) out.palette = palette
   const enabled = flag(params, 'enabled')
   if (enabled !== undefined) out.enabled = enabled
+  const open = flag(params, 'open')
+  if (open !== undefined) out.open = open
   // An empty bind unbinds the control.
   const bind = params?.bind === '' ? '' : text(params, 'bind')
   if (bind !== undefined) out.bind = bind
@@ -270,17 +276,24 @@ export function memoryControls(
         spec.value === undefined || spec.value === null
           ? defaultValue(spec)
           : coerceValue(spec, spec.value)
-      const control: ControlState = {
-        ...spec,
-        value,
-        enabled: spec.enabled ?? true,
-      }
+      const { open, ...rest } = spec
+      const control: ControlState = settled(
+        {
+          ...rest,
+          value,
+          enabled: spec.enabled ?? true,
+          // Only a dialog shows and hides; it is added open unless told not to be.
+          ...(spec.kind === 'dialog' ? { open: open ?? true } : {}),
+        },
+        [...controls.values()],
+      )
       controls.set(spec.id, control)
       changed()
       return control
     },
     update(id, patch) {
-      const next = patched(get(id), patch)
+      const others = [...controls.values()].filter((c) => c.id !== id)
+      const next = settled(patched(get(id), patch), others)
       controls.set(id, next)
       changed()
       return next
@@ -312,6 +325,10 @@ export function memoryControls(
           value: coerceValue(control, event.value),
         })
         changed()
+      } else if (control.kind === 'dialog' && event.type === 'press') {
+        // A dialog is closed by the button the person picked, or dismissed.
+        controls.set(event.id, { ...control, open: false })
+        changed()
       }
       for (const listener of [...listeners]) listener(event)
     },
@@ -329,11 +346,61 @@ export function patched(was: ControlState, patch: ControlPatch): ControlState {
   const { value, ...rest } = patch
   const next: ControlState = { ...was, ...rest }
   if (next.bind === '') delete next.bind
+  if (next.kind !== 'dialog') delete next.open
+  delete next.box
+  // A move to a point leaves the grid, and a move to a cell joins it.
+  if (patch.x !== undefined || patch.y !== undefined) {
+    delete next.row
+    delete next.col
+  } else if (patch.row !== undefined || patch.col !== undefined) {
+    delete next.x
+    delete next.y
+  }
   if (value !== undefined) next.value = coerceValue(next, value)
   else if (rest.options || rest.min !== undefined || rest.max !== undefined)
     next.value =
       VALUE_KINDS[next.kind] === 'none' ? null : coerceValue(next, was.value)
   return next
+}
+
+/** Whether a control goes in the grid: one placed at no point that is not a dialog. */
+export function inGrid(c: ControlSpec): boolean {
+  return c.kind !== 'dialog' && c.x === undefined && c.y === undefined
+}
+
+/**
+ * A control's placement checked and completed: x and y together, or a
+ * cell in the grid, whose column defaults to 0 and whose row to the one
+ * under the last of `others` in that column. A dialog takes no cell.
+ */
+export function settled<T extends ControlSpec>(
+  control: T,
+  others: readonly ControlSpec[],
+): T {
+  const cell = control.row !== undefined || control.col !== undefined
+  const point = control.x !== undefined || control.y !== undefined
+  if (control.kind === 'dialog') {
+    if (cell)
+      throw new Error(
+        'A dialog is centred, or placed with x and y; it takes no row or col.',
+      )
+  } else if (point && cell) {
+    throw new Error(
+      'Place a control with x and y, or with a row and col in the grid, not both.',
+    )
+  }
+  if (point && (control.x === undefined || control.y === undefined))
+    throw new Error('Give x and y together, or a row and col for the grid.')
+  if (!inGrid(control)) return control
+  const col = control.col ?? 0
+  let row = control.row
+  if (row === undefined) {
+    row = 0
+    for (const c of others)
+      if (inGrid(c) && (c.col ?? 0) === col)
+        row = Math.max(row, (c.row ?? 0) + 1)
+  }
+  return { ...control, row, col }
 }
 
 /** The handlers for the control tools, over the host's surface. */
@@ -355,11 +422,7 @@ export function controlHandlers(host: NiiVueHost): Handlers {
         )
       const id = text(params, 'id')
       if (!id) throw new Error('add_control needs an id for the control.')
-      const x = number(params, 'x')
-      const y = number(params, 'y')
-      if (x === undefined || y === undefined)
-        throw new Error('add_control needs x and y, in canvas pixels.')
-      const spec: ControlSpec = { id, kind, ...fields(params), x, y }
+      const spec: ControlSpec = { id, kind, ...fields(params) }
       if (params?.value !== undefined && params.value !== null)
         spec.value = coerceValue(spec, params.value)
       const control = surface().add(spec)

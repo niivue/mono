@@ -8,6 +8,9 @@
  * - a NiiVue setting, as `get_options` names it (`gamma`, `crosshairColor`);
  * - part of the view: `view.slice`, `view.layout`, `view.radiological`;
  * - a property of a loaded volume: `volume.0.opacity`, `volume.1.colormap`;
+ * - a property of a loaded mesh, or an option of a tract or connectome:
+ *   `mesh.0.opacity`, `mesh.0.tract.fiberRadius`, `mesh.1.connectome.nodeScale`;
+ * - a dialog to open, for a button or menu item: `dialog.<id>`;
  * - an action the page offers: `action.<name>`.
  *
  * Each is checked against the control's kind when it is bound, and fills in
@@ -39,7 +42,13 @@ import {
   patched,
   VALUE_KINDS,
 } from './controls'
-import type { ShownVolume, View, VolumeUpdate } from './view'
+import type {
+  MeshUpdate,
+  ShownMesh,
+  ShownVolume,
+  View,
+  VolumeUpdate,
+} from './view'
 
 /** Something the page can do when a control is used, by name. */
 export interface PageAction {
@@ -143,6 +152,72 @@ const VOLUME_PROPS: Record<
   },
 }
 
+/** The mesh properties a control can bind, by the names `set_mesh` takes. */
+const MESH_PROPS: Record<
+  string,
+  {
+    field: keyof MeshUpdate & keyof ShownMesh
+    shape: Shape
+    range?: { min?: number; max?: number; step?: number }
+    shaders?: true
+    /** What NiiVue takes the property to be while it is unset. */
+    unset?: ControlValue
+  }
+> = {
+  opacity: {
+    field: 'opacity',
+    shape: 'number',
+    range: { min: 0, max: 1, step: 0.01 },
+  },
+  shader: { field: 'shaderType', shape: 'string', shaders: true },
+  // NiiVue draws a mesh unless visible is false.
+  visible: { field: 'visible', shape: 'boolean', unset: true },
+  colorbar: { field: 'isColorbarVisible', shape: 'boolean' },
+  legend: { field: 'isLegendVisible', shape: 'boolean' },
+}
+
+/** One option of a tract or connectome, as a control holds it. */
+interface MeshOption {
+  shape: Shape
+  min?: number
+  /** A slider's end when it is left without one: the range NiiVue's own examples give. */
+  max?: number
+  step?: number
+  colormaps?: true
+  /** A colour NiiVue keeps as channels 0 to 255, which a control holds 0 to 1. */
+  bytes?: true
+}
+
+/** NiiVue's `NVTractOptions` a control can hold, by the names `set_mesh` takes. */
+const TRACT_PROPS: Record<string, MeshOption> = {
+  fiberRadius: { shape: 'number', min: 0, max: 3, step: 0.1 },
+  fiberSides: { shape: 'number', min: 3, max: 20, step: 1 },
+  minLength: { shape: 'number', min: 0 },
+  decimation: { shape: 'number', min: 1, max: 20, step: 1 },
+  colormap: { shape: 'string', colormaps: true },
+  colormapNegative: { shape: 'string', colormaps: true },
+  colorBy: { shape: 'string' },
+  calMin: { shape: 'number' },
+  calMax: { shape: 'number' },
+  calMinNeg: { shape: 'number' },
+  calMaxNeg: { shape: 'number' },
+  fixedColor: { shape: 'color', bytes: true },
+}
+
+/** NiiVue's `NVConnectomeOptions` a control can hold, by the names `set_mesh` takes. */
+const CONNECTOME_PROPS: Record<string, MeshOption> = {
+  nodeColormap: { shape: 'string', colormaps: true },
+  nodeColormapNegative: { shape: 'string', colormaps: true },
+  nodeMinColor: { shape: 'number' },
+  nodeMaxColor: { shape: 'number' },
+  nodeScale: { shape: 'number', min: 0, max: 10, step: 0.5 },
+  edgeColormap: { shape: 'string', colormaps: true },
+  edgeColormapNegative: { shape: 'string', colormaps: true },
+  edgeMin: { shape: 'number' },
+  edgeMax: { shape: 'number' },
+  edgeScale: { shape: 'number', min: 0, max: 5, step: 0.1 },
+}
+
 function intensityRange(volume: ShownVolume): { min?: number; max?: number } {
   const { globalMin, globalMax } = volume
   if (
@@ -176,6 +251,23 @@ const FORMS: BindingVocabulary['forms'] = [
   {
     form: 'volume.<index>.<property>',
     description: `A property of a loaded volume, the base being 0: ${Object.keys(VOLUME_PROPS).join(', ')}.`,
+  },
+  {
+    form: 'mesh.<index>.<property>',
+    description: `A property of a loaded mesh, the base being 0: ${Object.keys(MESH_PROPS).join(', ')}.`,
+  },
+  {
+    form: 'mesh.<index>.tract.<option>',
+    description: `An option of a loaded tract, as set_mesh names it: ${Object.keys(TRACT_PROPS).join(', ')}.`,
+  },
+  {
+    form: 'mesh.<index>.connectome.<option>',
+    description: `An option of a loaded connectome, as set_mesh names it: ${Object.keys(CONNECTOME_PROPS).join(', ')}.`,
+  },
+  {
+    form: 'dialog.<id>',
+    description:
+      'Opens the dialog with that id, for a button or menu item. Add the dialog first with open: false, so it waits hidden until then.',
   },
   {
     form: 'action.<name>',
@@ -313,13 +405,7 @@ export function resolveBinding(
       write: (value) => {
         if (!view.volumes[index])
           throw new Error(`Volume ${index} is no longer loaded.`)
-        const ok =
-          shape === 'boolean'
-            ? typeof value === 'boolean'
-            : shape === 'number'
-              ? typeof value === 'number' && Number.isFinite(value)
-              : typeof value === 'string'
-        if (!ok) throw new Error(`${bind} takes ${article(shape)}.`)
+        check(bind, shape, value)
         if (choices && !choices.includes(value as string))
           throw new Error(
             `${bind} takes one of the colormaps: ${choices.join(', ')}.`,
@@ -329,10 +415,17 @@ export function resolveBinding(
     }
   }
 
+  if (bind.startsWith('mesh.')) return meshTarget(bind, view)
+
+  if (bind.startsWith('dialog.'))
+    throw new Error(
+      `${bind} opens a dialog, which only bindControls can do: it needs the controls.`,
+    )
+
   const setting = findSetting(bind)
   if (!setting)
     throw new Error(
-      `There is nothing called "${bind}" to bind. A bind is a setting as get_options names it, view.slice, view.layout, view.radiological, volume.<index>.<property>, or action.<name>.`,
+      `There is nothing called "${bind}" to bind. A bind is a setting as get_options names it, view.slice, view.layout, view.radiological, volume.<index>.<property>, mesh.<index>.<property>, mesh.<index>.tract.<option>, mesh.<index>.connectome.<option>, dialog.<id>, or action.<name>.`,
     )
   if (!(setting.name in bag))
     throw new Error(`This page's NiiVue has no ${setting.name} setting.`)
@@ -365,6 +458,126 @@ export function resolveBinding(
         given = [...value, alpha]
       }
       bag[name] = coerceSetting(setting, given)
+    },
+  }
+}
+
+/** Throws in words unless `value` is of the shape `bind` takes. */
+function check(bind: string, shape: Shape, value: ControlValue): void {
+  const ok =
+    shape === 'boolean'
+      ? typeof value === 'boolean'
+      : shape === 'number'
+        ? typeof value === 'number' && Number.isFinite(value)
+        : shape === 'color'
+          ? Array.isArray(value) && value.length >= 3
+          : typeof value === 'string'
+  if (!ok) throw new Error(`${bind} takes ${article(shape)}.`)
+}
+
+/** What a `mesh.` bind names, or a throw in words saying what it may name. */
+function meshTarget(bind: string, view: View): Target {
+  const [, which, part, option, ...rest] = bind.split('.')
+  const index = Number(which)
+  const group = part === 'tract' || part === 'connectome' ? part : undefined
+  const table =
+    group === 'tract'
+      ? TRACT_PROPS
+      : group === 'connectome'
+        ? CONNECTOME_PROPS
+        : undefined
+  const name = group ? option : part
+  const known =
+    name !== undefined &&
+    (table
+      ? Object.hasOwn(table, name) && rest.length === 0
+      : Object.hasOwn(MESH_PROPS, name) && option === undefined)
+  if (!Number.isInteger(index) || index < 0 || !known)
+    throw new Error(
+      `"${bind}" is not a mesh binding: it takes the form mesh.<index>.<property> (${Object.keys(MESH_PROPS).join(', ')}), ` +
+        `mesh.<index>.tract.<option> (${Object.keys(TRACT_PROPS).join(', ')}) or ` +
+        `mesh.<index>.connectome.<option> (${Object.keys(CONNECTOME_PROPS).join(', ')}).`,
+    )
+  const meshes = view.meshes ?? []
+  const mesh = meshes[index]
+  if (!mesh)
+    throw new Error(
+      `There is no mesh ${index}: ${meshes.length} ${meshes.length === 1 ? 'is' : 'are'} loaded.`,
+    )
+  const gone = () => {
+    if (!view.meshes?.[index])
+      throw new Error(`Mesh ${index} is no longer loaded.`)
+  }
+
+  if (!group || !table) {
+    if (!view.setMesh)
+      throw new Error("This page's NiiVue cannot change a mesh once loaded.")
+    const setMesh = view.setMesh.bind(view)
+    const { field, shape, range, shaders, unset } = MESH_PROPS[name]
+    const choices =
+      shaders && view.meshShaders ? [...view.meshShaders] : undefined
+    return {
+      shape,
+      ...(choices ? { choices } : {}),
+      ...range,
+      read: () => {
+        const value = view.meshes?.[index]?.[field]
+        return value === undefined ? unset : (value as ControlValue)
+      },
+      write: (value) => {
+        gone()
+        check(bind, shape, value)
+        if (choices && !choices.includes(value as string))
+          throw new Error(
+            `${bind} takes one of the mesh shaders: ${choices.join(', ')}.`,
+          )
+        void setMesh(index, { [field]: value } as MeshUpdate)
+      },
+    }
+  }
+
+  if (mesh.kind && mesh.kind !== group)
+    throw new Error(
+      `${mesh.name ?? `Mesh ${index}`} is a ${mesh.kind}, not a ${group}.`,
+    )
+  const set =
+    group === 'tract' ? view.setTractOptions : view.setConnectomeOptions
+  if (!set)
+    throw new Error(`This page's NiiVue cannot change how ${group}s are drawn.`)
+  const setOptions = set.bind(view)
+  const key = group === 'tract' ? 'tractOptions' : 'connectomeOptions'
+  const { shape, min, max, step, colormaps, bytes } = table[name]
+  const choices = colormaps && view.colormaps ? [...view.colormaps] : undefined
+  return {
+    shape,
+    ...(choices ? { choices } : {}),
+    ...(min === undefined ? {} : { min }),
+    ...(max === undefined ? {} : { max }),
+    ...(step === undefined ? {} : { step }),
+    read: () => {
+      const value = view.meshes?.[index]?.[key]?.[name]
+      if (value === undefined || value === null) return undefined
+      if (shape === 'color') {
+        const channels = plainColor(value)
+        return bytes ? channels?.map((c) => c / 255) : channels
+      }
+      return value as ControlValue
+    },
+    write: (value) => {
+      gone()
+      check(bind, shape, value)
+      if (choices && !choices.includes(value as string))
+        throw new Error(
+          `${bind} takes one of the colormaps: ${choices.join(', ')}.`,
+        )
+      let given: unknown = value
+      if (shape === 'color' && Array.isArray(value)) {
+        // A colour control without alpha keeps the alpha the option has.
+        const had = plainColor(view.meshes?.[index]?.[key]?.[name])
+        const rgba = [...value.slice(0, 3), value[3] ?? (had?.[3] ?? 255) / 255]
+        given = bytes ? rgba.map((c) => Math.round(c * 255)) : rgba
+      }
+      void setOptions(index, { [name]: given })
     },
   }
 }
@@ -470,6 +683,35 @@ export function bindControls(
   }
   const find = (id: string) => surface.list().find((c) => c.id === id)
 
+  /** The dialog `id` names, or a throw in words when there is none. */
+  const dialogOf = (id: string) => {
+    const control = find(id)
+    if (control?.kind === 'dialog') return control
+    throw new Error(
+      control
+        ? `"${id}" is a ${control.kind}, not a dialog.`
+        : `There is no dialog "${id}". Add it first, with open: false to keep it hidden until the control opens it.`,
+    )
+  }
+
+  /** What `bind` names: a dialog to open here, anything else as `resolveBinding` finds it. */
+  const resolve = (bind: string): Target => {
+    if (!bind.startsWith('dialog.')) return resolveBinding(bind, view, actions)
+    const id = bind.slice('dialog.'.length)
+    dialogOf(id)
+    return {
+      shape: 'action',
+      action: {
+        description: `Opens the dialog "${id}".`,
+        run() {
+          dialogOf(id)
+          surface.update(id, { open: true })
+          view.drawScene()
+        },
+      },
+    }
+  }
+
   const sync = () => {
     for (const [id, entry] of bound) {
       const now = entry.target.read?.()
@@ -523,7 +765,7 @@ export function bindControls(
         throw new Error(
           `There is already a control with the id "${spec.id}". Use set_control to change it or remove_control first.`,
         )
-      const target = resolveBinding(spec.bind, view, actions)
+      const target = resolve(spec.bind)
       const filled = fitted(spec, target, spec.bind)
       const given = spec.value
       if (given !== undefined && given !== null) {
@@ -551,7 +793,7 @@ export function bindControls(
       let target = entry?.target
       if (rebinding) {
         if (patch.bind) {
-          target = resolveBinding(patch.bind, view, actions)
+          target = resolve(patch.bind)
           const merged = fitted({ ...was, ...patch }, target, patch.bind)
           for (const key of ['min', 'max', 'step'] as const)
             if (merged[key] !== undefined) next[key] = merged[key]

@@ -11,7 +11,11 @@
  *
  * Positions and widths come in canvas pixels, as the control tools give
  * them, and are drawn at CSS-pixel sizes, so a control reads the same on
- * a high-density display as on any other.
+ * a high-density display as on any other. A control placed at no point
+ * goes in the grid: a cell by row and column from the top left, each
+ * column as wide as its widest widget and each row as tall as its
+ * tallest, so the controls in it never overlap. Every control is
+ * reported with the box it was drawn in, in canvas pixels.
  */
 
 import type { UIKitOverlayRenderer } from '@niivue/niivue'
@@ -41,9 +45,15 @@ import {
   type ControlEvent,
   type ControlListener,
   type ControlSurface,
+  inGrid,
   memoryControls,
 } from '../browser/controls'
-import type { ControlOption, ControlState, ControlValue } from '../controls'
+import type {
+  ControlBox,
+  ControlOption,
+  ControlState,
+  ControlValue,
+} from '../controls'
 
 /** What the surface needs of NiiVue: a NiiVue instance is one as it is. */
 export interface UIKitSurfaceHost extends UIKitHost {
@@ -71,6 +81,9 @@ export interface UIKitSurface extends ControlSurface {
 
 /** The width of a slider the agent gave none, in CSS pixels. */
 const SLIDER_WIDTH = 200
+/** The grid's space from the canvas edge, and between its cells, in CSS pixels. */
+const GRID_MARGIN = 12
+const GRID_GAP = 8
 
 /**
  * Draws the controls an agent adds on `host`'s canvas with UIKit widgets.
@@ -125,14 +138,30 @@ export function uikitControls(
   const unregister = host.registerOverlayRenderer(renderer)
   const detach = layer.attach(host)
 
-  /** Canvas pixels to CSS pixels, by how the canvas is sized now. */
-  const css = (n: number) => {
+  /** Canvas pixels per CSS pixel, by how the canvas is sized now. */
+  const ratio = () => {
     const canvas = host.canvas
-    const ratio =
-      canvas && canvas.clientWidth > 0 ? canvas.width / canvas.clientWidth : 1
-    return n / ratio
+    return canvas && canvas.clientWidth > 0
+      ? canvas.width / canvas.clientWidth
+      : 1
   }
+  /** Canvas pixels to CSS pixels. */
+  const css = (n: number) => n / ratio()
+  /** Where each control in the grid was put, in CSS pixels. */
+  const cells = new Map<string, { x: number; y: number }>()
   const find = (id: string) => memory.list().find((c) => c.id === id)
+
+  /** Set while a dialog is hidden from code, so its close is not taken for the person's. */
+  let hiding = false
+  /** Closes or removes a dialog without telling anyone the person closed it. */
+  const quietly = (close: () => void) => {
+    hiding = true
+    try {
+      close()
+    } finally {
+      hiding = false
+    }
+  }
 
   /** What the person did, kept on the control and told to the listeners. */
   const person = (event: ControlEvent) => {
@@ -154,8 +183,10 @@ export function uikitControls(
   /** Makes the widget for `c`, or remakes the one there. */
   const draw = (c: ControlState) => {
     const { id, label, enabled } = c
-    const x = css(c.x)
-    const y = css(c.y)
+    const at = inGrid(c)
+      ? (cells.get(id) ?? { x: GRID_MARGIN, y: GRID_MARGIN })
+      : { x: css(c.x ?? 0), y: css(c.y ?? 0) }
+    const { x, y } = at
     const width = c.width === undefined ? undefined : css(c.width)
     const sized = width === undefined ? {} : { width }
     switch (c.kind) {
@@ -331,18 +362,20 @@ export function uikitControls(
           id,
           title: label,
           message: c.message,
-          x,
-          y,
+          // A dialog placed at no point is centred.
+          ...(c.x === undefined ? {} : { x, y }),
           ...sized,
           buttons: given.map((o) => ({
             id: o.id,
             label: o.label,
             ...(o.enabled === undefined ? {} : { enabled: o.enabled }),
           })),
-          onClose: (result) => person({ id, type: 'press', item: result }),
+          onClose: (result) => {
+            if (!hiding) person({ id, type: 'press', item: result })
+          },
         })
-        // A dialog shows when it is added, and again whenever it is changed.
-        dialogs.open(id)
+        if (c.open !== false) dialogs.open(id)
+        else if (dialogs.isOpen(id)) quietly(() => dialogs.close(null))
         return
       }
     }
@@ -393,6 +426,110 @@ export function uikitControls(
     }
   }
 
+  /** The box the widget for `c` is drawn in, in CSS pixels. */
+  const boxOf = (c: ControlState): ControlBox | null => {
+    const getters: Record<
+      ControlState['kind'],
+      (id: string) => ControlBox | null
+    > = {
+      button: (id) => buttons.getLayout(id),
+      toggle: (id) => toggles.getLayout(id),
+      slider: (id) => sliders.getLayout(id),
+      number: (id) => numbers.getLayout(id),
+      text: (id) => texts.getLayout(id),
+      textarea: (id) => areas.getLayout(id),
+      select: (id) => selects.getLayout(id),
+      segmented: (id) => segmented.getLayout(id),
+      menu: (id) => menus.getLayout(id),
+      color: (id) => colors.getLayout(id),
+      file: (id) => files.getLayout(id),
+      dialog: (id) =>
+        dialogs.isOpen(id) ? (dialogs.getBoxes(id)?.panel ?? null) : null,
+    }
+    const box = getters[c.kind](c.id)
+    return box
+      ? { x: box.x, y: box.y, width: box.width, height: box.height }
+      : null
+  }
+
+  /** Moves the widget for `c` to a point in CSS pixels, keeping its focus. */
+  const move = (c: ControlState, x: number, y: number) => {
+    const at = { x, y }
+    const movers: Record<ControlState['kind'], (id: string) => void> = {
+      button: (id) => buttons.updateButton(id, at),
+      toggle: (id) => toggles.updateToggle(id, at),
+      slider: (id) => sliders.updateSlider(id, at),
+      number: (id) => numbers.updateNumberInput(id, at),
+      text: (id) => texts.updateTextInput(id, at),
+      textarea: (id) => areas.updateTextArea(id, at),
+      select: (id) => selects.updateSelect(id, at),
+      segmented: (id) => segmented.updateSegmented(id, at),
+      menu: (id) => menus.updateMenu(id, at),
+      color: (id) => colors.updateColorControl(id, at),
+      file: (id) => files.updateFilePicker(id, at),
+      dialog: (id) => dialogs.updateDialog(id, at),
+    }
+    movers[c.kind](c.id)
+  }
+
+  /**
+   * Lays out the grid: each column as wide as its widest widget, each row
+   * as tall as its tallest, from the top left, and moves every widget in
+   * it to its cell. Empty rows and columns take no space.
+   */
+  const arrange = () => {
+    const gridded = memory.list().filter(inGrid)
+    const widths = new Map<number, number>()
+    const heights = new Map<number, number>()
+    const sizes = new Map<string, ControlBox | null>()
+    for (const c of gridded) {
+      const box = boxOf(c)
+      sizes.set(c.id, box)
+      const row = c.row ?? 0
+      const col = c.col ?? 0
+      widths.set(col, Math.max(widths.get(col) ?? 0, box?.width ?? 0))
+      heights.set(row, Math.max(heights.get(row) ?? 0, box?.height ?? 0))
+    }
+    const offsets = (sizes: Map<number, number>) => {
+      const out = new Map<number, number>()
+      let at = GRID_MARGIN
+      for (const index of [...sizes.keys()].sort((a, b) => a - b)) {
+        out.set(index, at)
+        at += (sizes.get(index) ?? 0) + GRID_GAP
+      }
+      return out
+    }
+    const left = offsets(widths)
+    const top = offsets(heights)
+    for (const id of cells.keys())
+      if (!gridded.some((c) => c.id === id)) cells.delete(id)
+    for (const c of gridded) {
+      const x = left.get(c.col ?? 0) ?? GRID_MARGIN
+      const y = top.get(c.row ?? 0) ?? GRID_MARGIN
+      const was = cells.get(c.id)
+      cells.set(c.id, { x, y })
+      const box = sizes.get(c.id)
+      if (box && (box.x !== x || box.y !== y)) move(c, x, y)
+      else if (!box && (was?.x !== x || was?.y !== y)) draw(c)
+    }
+  }
+
+  /** A control with the box it was drawn in, in canvas pixels. */
+  const boxed = (c: ControlState): ControlState => {
+    const box = boxOf(c)
+    if (!box) return c
+    const r = ratio()
+    return {
+      ...c,
+      box: {
+        x: Math.round(box.x * r),
+        y: Math.round(box.y * r),
+        width: Math.round(box.width * r),
+        height: Math.round(box.height * r),
+      },
+    }
+  }
+
   /** Takes the widget for `c` away. */
   const erase = (c: ControlState) => {
     const removers: Record<ControlState['kind'], (id: string) => void> = {
@@ -407,7 +544,7 @@ export function uikitControls(
       menu: (id) => menus.removeMenu(id),
       color: (id) => colors.removeColorControl(id),
       file: (id) => files.removeFilePicker(id),
-      dialog: (id) => dialogs.removeDialog(id),
+      dialog: (id) => quietly(() => dialogs.removeDialog(id)),
     }
     removers[c.kind](c.id)
   }
@@ -424,8 +561,9 @@ export function uikitControls(
         memory.remove(control.id)
         throw error
       }
+      if (inGrid(control)) arrange()
       redraw()
-      return control
+      return boxed(control)
     },
     update(id, patch) {
       const was = find(id)
@@ -437,24 +575,28 @@ export function uikitControls(
       else {
         if (was && was.kind !== control.kind) erase(was)
         draw(control)
+        // A widget that may have changed size or cell moves the grid.
+        if ((was && inGrid(was)) || inGrid(control)) arrange()
       }
       redraw()
-      return control
+      return boxed(control)
     },
     remove(id) {
       const control = find(id)
       memory.remove(id)
       if (control) {
         erase(control)
+        if (inGrid(control)) arrange()
         redraw()
       }
     },
     clear() {
       for (const control of memory.list()) erase(control)
       memory.clear()
+      cells.clear()
       redraw()
     },
-    list: () => memory.list(),
+    list: () => memory.list().map(boxed),
     listen: (listener) => memory.listen(listener),
     onFrame: (callback) => memory.onFrame(callback),
     destroy() {

@@ -82,7 +82,18 @@ describe('add_control', () => {
     expect(() => add_control({ id: 'a', kind: 'dial', x: 0, y: 0 })).toThrow(
       /Unknown kind/,
     )
-    expect(() => add_control({ id: 'a', kind: 'toggle' })).toThrow(/x and y/)
+    expect(() => add_control({ id: 'a', kind: 'toggle', x: 4 })).toThrow(
+      /x and y together/,
+    )
+    expect(() =>
+      add_control({ id: 'a', kind: 'toggle', x: 0, y: 0, row: 1 }),
+    ).toThrow(/not both/)
+    expect(() => add_control({ id: 'a', kind: 'dialog', row: 0 })).toThrow(
+      /takes no row or col/,
+    )
+    expect(() => add_control({ id: 'a', kind: 'toggle', row: -1 })).toThrow(
+      /row must be a whole number/,
+    )
     expect(() =>
       add_control({ id: 'a', kind: 'toggle', x: 0, y: 0, value: 'yes' }),
     ).toThrow(/true or false/)
@@ -100,6 +111,28 @@ describe('add_control', () => {
     expect(() => add_control({ id: 'a', kind: 'button', x: 0, y: 0 })).toThrow(
       /already a control with the id "a"/,
     )
+  })
+
+  it('puts a control placed at no point in the grid, under the rest of its column', () => {
+    const { add_control } = controlHandlers(hostWithControls())
+    const cell = (params: Record<string, unknown>) =>
+      (add_control(params) as { control: { row?: number; col?: number } })
+        .control
+    expect(cell({ id: 'a', kind: 'slider' })).toMatchObject({ row: 0, col: 0 })
+    expect(cell({ id: 'b', kind: 'toggle' })).toMatchObject({ row: 1, col: 0 })
+    expect(cell({ id: 'c', kind: 'button', col: 1 })).toMatchObject({
+      row: 0,
+      col: 1,
+    })
+    expect(cell({ id: 'd', kind: 'button', row: 4 })).toMatchObject({
+      row: 4,
+      col: 0,
+    })
+    expect(cell({ id: 'e', kind: 'button' })).toMatchObject({ row: 5 })
+    // A point keeps it out of the grid, and a dialog is centred.
+    const free = cell({ id: 'f', kind: 'button', x: 3, y: 4 })
+    expect(free.row).toBeUndefined()
+    expect(cell({ id: 'g', kind: 'dialog' }).row).toBeUndefined()
   })
 
   it('declines on a page without a control surface', () => {
@@ -148,6 +181,20 @@ describe('set_control', () => {
       control: { value: number }
     }
     expect(got.control.value).toBe(5)
+  })
+
+  it('moves a control between a point and a cell', () => {
+    const { add_control, set_control } = controlHandlers(hostWithControls())
+    add_control({ id: 'a', kind: 'button' })
+    add_control({ id: 'b', kind: 'button', x: 5, y: 6 })
+    type Placed = { control: Record<string, unknown> }
+    const out = (set_control({ id: 'a', x: 40, y: 50 }) as Placed).control
+    expect(out).toMatchObject({ x: 40, y: 50 })
+    expect(out.row).toBeUndefined()
+    const back = (set_control({ id: 'b', col: 2 }) as Placed).control
+    expect(back).toMatchObject({ row: 0, col: 2 })
+    expect(back.x).toBeUndefined()
+    expect(() => set_control({ id: 'b', x: 1 })).toThrow(/x and y together/)
   })
 
   it('refuses an unknown control and an empty change', () => {

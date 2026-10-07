@@ -41,6 +41,23 @@ const VALUE = z
 
 /** The fields a control is made with, which set_control may also change. */
 const FIELDS = {
+  row: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      'Its row in the grid, from 0 at the top. Rows are as tall as their tallest control, so ' +
+        'controls in the grid never overlap. Defaults to the row under the last control in its column.',
+    ),
+  col: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      'Its column in the grid, from 0 at the left; defaults to 0. Columns are as wide as their widest control.',
+    ),
   label: z
     .string()
     .optional()
@@ -67,8 +84,14 @@ const FIELDS = {
   message: z
     .string()
     .optional()
+    .describe('For a dialog: the text under its title.'),
+  open: z
+    .boolean()
+    .optional()
     .describe(
-      'For a dialog: the text under its title. A dialog opens when added and again when set_control changes it.',
+      'For a dialog: whether it shows. A dialog is added open unless this is false, and closes when ' +
+        'the person picks one of its buttons. Set it true to show the dialog again, or bind a button to ' +
+        'dialog.<id> so the person can open it.',
     ),
   placeholder: z
     .string()
@@ -112,8 +135,11 @@ const FIELDS = {
       'What the control drives, both ways: a NiiVue setting as get_options names it (a toggle for a ' +
         'boolean, a slider or number field for a number, a select or segmented row for one with choices, ' +
         'a color control for a colour); view.slice, view.layout or view.radiological; ' +
-        'volume.<index>.<property> (opacity, colormap, cal_min, cal_max, frame, invert, ...); or ' +
-        'action.<name>, one of the actions the page offers, which any kind of control can run. ' +
+        'volume.<index>.<property> (opacity, colormap, cal_min, cal_max, frame, invert, ...); ' +
+        'mesh.<index>.<property> (opacity, shader, visible, colorbar, legend); ' +
+        'mesh.<index>.tract.<option> or mesh.<index>.connectome.<option>, the options set_mesh takes ' +
+        '(fiberRadius, colorBy, nodeScale, ...); dialog.<id>, for a button or menu item that opens ' +
+        'that dialog; or action.<name>, one of the actions the page offers, which any kind of control can run. ' +
         'capabilities lists the forms and the actions under controlBindings. A bound control left ' +
         'without a range, options or value takes them from what it drives. An empty string unbinds it.',
     ),
@@ -127,15 +153,29 @@ export const CONTROL_SCHEMAS = {
       .min(1)
       .describe('A name for the control, used to change or remove it later.'),
     kind: z.enum(CONTROL_KINDS).describe('What kind of control to make.'),
-    x: z.number().describe('Where it goes, in canvas pixels from the left.'),
-    y: z.number().describe('Where it goes, in canvas pixels from the top.'),
+    x: z
+      .number()
+      .optional()
+      .describe(
+        'An exact spot instead of the grid, in canvas pixels from the left; give y with it. ' +
+          'Prefer row and col: the page knows the sizes of its widgets and you do not.',
+      ),
+    y: z
+      .number()
+      .optional()
+      .describe(
+        'An exact spot, in canvas pixels from the top; give x with it.',
+      ),
     ...FIELDS,
   },
   list_controls: { ...TAB_ARG },
   set_control: {
     ...TAB_ARG,
     id: z.string().min(1).describe('The control, as add_control named it.'),
-    x: z.number().optional(),
+    x: z
+      .number()
+      .optional()
+      .describe('Moves it to an exact spot, out of the grid; give y with it.'),
     y: z.number().optional(),
     ...FIELDS,
   },
@@ -154,10 +194,13 @@ export function registerControlTools(
     title: 'Add a control',
     description:
       'Puts a control on the canvas: a button, toggle, slider, menu, select, segmented row, number ' +
-      'or text field, text area, dialog, color control or file picker, at a position, with a label, ' +
-      'a value and the fields its kind takes. bind names what it drives: when the person uses the ' +
-      'control it sets what it names or runs the action, and a change made anywhere else shows on it. ' +
-      'Reports the control as made. ' +
+      'or text field, text area, dialog, color control or file picker, with a label, a value and the ' +
+      'fields its kind takes. Place it in the grid with row and col (both optional: left out, it goes ' +
+      'under the rest of column 0); the page sizes rows and columns to the widgets, so nothing overlaps. ' +
+      'x and y place it at an exact spot instead. A dialog is centred and takes neither. ' +
+      'bind names what it drives: when the person uses the control it sets what it names or runs the ' +
+      'action, and a change made anywhere else shows on it. ' +
+      'Reports the control as made, with the box it was drawn in, in canvas pixels. ' +
       'A page without a control surface declines.',
     inputSchema: CONTROL_SCHEMAS.add_control,
     lead: (result) => {
@@ -172,7 +215,8 @@ export function registerControlTools(
   registerSimple(server, context, 'list_controls', {
     title: 'List the controls',
     description:
-      'Lists the controls on the canvas, each with its kind, position, label, value, options and what it is bound to.',
+      'Lists the controls on the canvas, each with its kind, grid cell or position, the box it was ' +
+      'drawn in (canvas pixels), label, value, options and what it is bound to.',
     inputSchema: CONTROL_SCHEMAS.list_controls,
     readOnly: true,
   })
@@ -180,7 +224,8 @@ export function registerControlTools(
   registerSimple(server, context, 'set_control', {
     title: 'Change a control',
     description:
-      'Changes a control that is there: its value, label, position, options, range, enabled state or binding. ' +
+      'Changes a control that is there: its value, label, grid cell or position, options, range, enabled state, binding, or whether a dialog shows. ' +
+      'A row or col moves it into the grid; x and y move it out. ' +
       'Only what is given changes; a value given to a bound control sets what it drives too. ' +
       'Reports the control afterwards.',
     inputSchema: CONTROL_SCHEMAS.set_control,

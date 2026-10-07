@@ -26,7 +26,7 @@ export function volumeLabelCentroid(
   label: string,
 ): Vec3 | undefined {
   if (!volume.img) return undefined
-  return memoized(volume.img, [volume.colormapLabel], () =>
+  return memoized(volume.img, [volume.colormapLabel, volume.matRAS], () =>
     computeVolumeLabelCentroids(volume),
   )[label]
 }

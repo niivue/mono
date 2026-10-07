@@ -154,6 +154,19 @@ describe('legend centroids', () => {
     expect(volumeLabelCentroid(vol, 'a')).not.toBe(second) // new LUT: recomputed
   })
 
+  test('recomputed when the affine changes (applyVolumeTransform assigns a new matRAS)', () => {
+    const img = new Uint8Array(nx * ny * nz)
+    img[native(1, 1, 1)] = 1
+    const vol = volume(img, ['bg', 'a'])
+    expect(volumeLabelCentroid(vol, 'a')).toEqual(mm([1, 1, 1]))
+    const shifted = matRAS.slice()
+    shifted[3] += 50
+    vol.matRAS = shifted as unknown as NVImage['matRAS']
+    const want = mm([1, 1, 1])
+    want[0] += 50
+    expect(volumeLabelCentroid(vol, 'a')).toEqual(want)
+  })
+
   test('mesh layers: vertex positions averaged per name, cached on the values array', () => {
     const positions = new Float32Array([0, 0, 0, 2, 4, 6, 10, 10, 10, 1, 1, 1])
     const layer = {

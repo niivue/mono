@@ -14,19 +14,25 @@
  *    label overlay, projected onto the render each frame (through the
  *    volume's explode, so a label follows its brick when the volume is
  *    spread apart).
+ * 5. Gives the agent a control surface: UIKit widgets drawn on the canvas,
+ *    bound to NiiVue settings, volume properties and the page's actions,
+ *    so an agent can lay out a demo's controls and the person can use them.
  */
 import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import {
   AgentClient,
   type AtlasLike,
+  bindControls,
+  type ControlEvent,
   type ControlState,
   coreHandlers,
   type Handlers,
-  memoryControls,
   type NiiVueHost,
+  type PageAction,
   type PointLabel,
   sceneState,
 } from '@niivue/nv-mcp/browser'
+import { uikitControls } from '@niivue/nv-mcp/uikit'
 import { loadDefaultFont, UIKitPointLabelOverlay } from '@niivue/uikit'
 import { loadAtlas } from './atlas'
 
@@ -115,9 +121,8 @@ const host: NiiVueHost = {
     announceLine.textContent = text
     announceLine.classList.remove('quiet')
   },
-  // The controls an agent adds are kept and listed here, not drawn: the
-  // UIKit widgets that will draw them on the canvas are still landing.
-  controls: memoryControls({ onChange: showControls }),
+  // The control surface needs the canvas, so it is set once NiiVue is
+  // attached (see the end). Until then every tool says NiiVue is starting.
 }
 
 /** One line per control: its kind, id, label, value and what it drives. */
@@ -174,13 +179,54 @@ status.textContent = 'Starting NiiVue'
 await nv.attachTo('gl1')
 nv.sliceType = SLICE_TYPE.RENDER
 status.textContent = 'Loading volume'
-await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+await loadTemplate()
+
+// --- The controls ---
+
+/** Loads the template again, in the atlas's space. */
+async function loadTemplate(): Promise<void> {
+  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+  isMni = true
+  void refreshWhere()
+}
+
+/** What a control bound to `action.<name>` can do on this page. */
+const actions: Record<string, PageAction> = {
+  open_files: {
+    description:
+      'Loads the files picked (bind a file control), replacing what is shown. The atlas no longer applies.',
+    async run(event: ControlEvent) {
+      const files = event.files ?? []
+      if (files.length === 0) return
+      await nv.loadVolumes(files.map((file) => ({ url: file })))
+      isMni = false
+      void refreshWhere()
+    },
+  },
+  load_template: {
+    description: 'Loads the MNI152 template again, replacing what is shown.',
+    run: loadTemplate,
+  },
+}
+
+// One font for the controls and the labels.
+const font = await loadDefaultFont()
+host.controls = bindControls(
+  uikitControls(nv, { font, onChange: showControls }),
+  {
+    view: nv,
+    actions,
+    onError: (error, event) => {
+      announceLine.textContent = `${event.id}: ${error.message}`
+      announceLine.classList.remove('quiet')
+    },
+  },
+)
 status.textContent = 'Ready.'
 ready = true
 
 // The label overlay: each frame it projects the labelled points onto the
 // render tile, moved by the explode when the volume is spread apart.
-const font = await loadDefaultFont()
 pins = new UIKitPointLabelOverlay(font, (mm) =>
   nv.mmToRenderCanvas(nv.explodedMM([mm[0], mm[1], mm[2]])),
 )

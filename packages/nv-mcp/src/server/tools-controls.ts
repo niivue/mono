@@ -64,6 +64,12 @@ const FIELDS = {
     .describe(
       'For a select, segmented row or menu: its entries, each an id or {id, label, checked?, group?, enabled?}; for a dialog: its buttons.',
     ),
+  message: z
+    .string()
+    .optional()
+    .describe(
+      'For a dialog: the text under its title. A dialog opens when added and again when set_control changes it.',
+    ),
   placeholder: z
     .string()
     .optional()
@@ -103,8 +109,13 @@ const FIELDS = {
     .string()
     .optional()
     .describe(
-      "What the control drives, in the page's own vocabulary: a NiiVue setting as get_options names " +
-        'them (a toggle for a boolean, a slider for a number, a color control for a colour), or an action the page knows.',
+      'What the control drives, both ways: a NiiVue setting as get_options names it (a toggle for a ' +
+        'boolean, a slider or number field for a number, a select or segmented row for one with choices, ' +
+        'a color control for a colour); view.slice, view.layout or view.radiological; ' +
+        'volume.<index>.<property> (opacity, colormap, cal_min, cal_max, frame, invert, ...); or ' +
+        'action.<name>, one of the actions the page offers, which any kind of control can run. ' +
+        'capabilities lists the forms and the actions under controlBindings. A bound control left ' +
+        'without a range, options or value takes them from what it drives. An empty string unbinds it.',
     ),
 }
 
@@ -144,7 +155,9 @@ export function registerControlTools(
     description:
       'Puts a control on the canvas: a button, toggle, slider, menu, select, segmented row, number ' +
       'or text field, text area, dialog, color control or file picker, at a position, with a label, ' +
-      'a value and the fields its kind takes. bind names what it drives. Reports the control as made. ' +
+      'a value and the fields its kind takes. bind names what it drives: when the person uses the ' +
+      'control it sets what it names or runs the action, and a change made anywhere else shows on it. ' +
+      'Reports the control as made. ' +
       'A page without a control surface declines.',
     inputSchema: CONTROL_SCHEMAS.add_control,
     lead: (result) => {
@@ -168,7 +181,8 @@ export function registerControlTools(
     title: 'Change a control',
     description:
       'Changes a control that is there: its value, label, position, options, range, enabled state or binding. ' +
-      'Only what is given changes. Reports the control afterwards.',
+      'Only what is given changes; a value given to a bound control sets what it drives too. ' +
+      'Reports the control afterwards.',
     inputSchema: CONTROL_SCHEMAS.set_control,
   })
 

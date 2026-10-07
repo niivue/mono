@@ -14,8 +14,14 @@ export type {
   ControlState,
   ControlValue,
 } from '../controls'
-export type { ClientOptions } from './client'
+export type {
+  BindOptions,
+  BoundControls,
+  PageAction,
+} from './bindings'
 // biome-ignore lint/performance/noBarrelFile: package entry point
+export { bindControls, resolveBinding } from './bindings'
+export type { ClientOptions } from './client'
 export {
   AGENT_PATH,
   AGENT_URL,
@@ -27,12 +33,20 @@ export {
   TAB_ID_KEY,
   tabId,
 } from './client'
-export type { ControlSurface } from './controls'
+export type {
+  BindingVocabulary,
+  ControlEvent,
+  ControlListener,
+  ControlSurface,
+  MemoryControls,
+} from './controls'
 export {
   coerceValue,
   controlHandlers,
   defaultValue,
   memoryControls,
+  patched,
+  VALUE_KINDS,
 } from './controls'
 export { markHandlers } from './marks'
 export { describeMesh, meshHandlers } from './meshes'

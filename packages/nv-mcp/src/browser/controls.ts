@@ -2,8 +2,10 @@
  * The tools that put controls on the page. The page keeps the widgets
  * behind a `ControlSurface`, which these handlers add to, change, list
  * and clear; a page with no surface declines in words. `memoryControls`
- * is a surface that only remembers: the stand-in for a page until a
- * widget layer draws them, and the one the tests use.
+ * is a surface that only remembers: what a page without a widget layer
+ * uses, and what the tests drive. `uikitControls` (in the `./uikit`
+ * entry) draws them on the canvas, and `bindControls` (in `./bindings`)
+ * makes a control drive what its `bind` names.
  */
 
 import {
@@ -27,6 +29,31 @@ import {
 } from './params'
 import type { Handlers, NiiVueHost } from './view'
 
+/**
+ * What the person did with a control. `input` is a value still moving (a
+ * slider being dragged, a field being typed in); `change` is a value
+ * committed; `press` is a button clicked, a menu item chosen (`item`), a
+ * dialog closed by one of its buttons (`item`, or null when dismissed) or
+ * files picked (`files`).
+ */
+export interface ControlEvent {
+  id: string
+  type: 'input' | 'change' | 'press'
+  value?: ControlValue
+  item?: string | null
+  files?: readonly File[]
+}
+
+export type ControlListener = (event: ControlEvent) => void
+
+/** A target a control can be bound to, as `capabilities` lists them. */
+export interface BindingVocabulary {
+  /** The forms a `bind` takes, each with what it reaches. */
+  forms: Array<{ form: string; description: string }>
+  /** The page's own actions, by name. */
+  actions: Array<{ name: string; description: string }>
+}
+
 /** What a page implements to host the controls an agent asks for. */
 export interface ControlSurface {
   /** Makes the control and reports it. Throws when the id is taken or the spec cannot be drawn. */
@@ -39,10 +66,20 @@ export interface ControlSurface {
   clear(): void
   /** The controls there now, in the order they were added. */
   list(): ControlState[]
+  /**
+   * Hears what the person does with the controls; returns the function
+   * that stops hearing. A surface nobody can touch has none. The surface
+   * keeps its own value current before it tells the listener.
+   */
+  listen?(listener: ControlListener): () => void
+  /** Calls `callback` before each frame the surface draws; returns the function that stops it. */
+  onFrame?(callback: () => void): () => void
+  /** What a control's `bind` may name here, when the page binds controls. */
+  bindings?(): BindingVocabulary
 }
 
 /** The kinds whose value is the kind of thing given. */
-const VALUE_KINDS: Record<
+export const VALUE_KINDS: Record<
   ControlKind,
   'boolean' | 'number' | 'string' | 'color' | 'none'
 > = {
@@ -172,6 +209,8 @@ function fields(params: Params): ControlPatch {
   }
   const opts = options(params)
   if (opts) out.options = opts
+  const message = text(params, 'message')
+  if (message !== undefined) out.message = message
   const placeholder = text(params, 'placeholder')
   if (placeholder !== undefined) out.placeholder = placeholder
   const maxLength = integer(params, 'max_length')
@@ -188,20 +227,33 @@ function fields(params: Params): ControlPatch {
   if (palette) out.palette = palette
   const enabled = flag(params, 'enabled')
   if (enabled !== undefined) out.enabled = enabled
-  const bind = text(params, 'bind')
+  // An empty bind unbinds the control.
+  const bind = params?.bind === '' ? '' : text(params, 'bind')
   if (bind !== undefined) out.bind = bind
   return out
 }
 
+/** A surface in memory, with the person's side played by the caller. */
+export interface MemoryControls extends ControlSurface {
+  listen(listener: ControlListener): () => void
+  onFrame(callback: () => void): () => void
+  /** Acts as the person would: sets the control's value when the event has one, then tells the listeners. */
+  simulate(event: ControlEvent): void
+  /** Runs the frame callbacks, as a surface does before it draws. */
+  frame(): void
+}
+
 /**
- * A surface that keeps the controls in memory and draws nothing: the
- * stand-in for a page until a widget layer backs it, and what the tests
- * drive. `onChange` hears every change with the controls as they are.
+ * A surface that keeps the controls in memory and draws nothing: what a
+ * page without a widget layer uses, and what the tests drive.
+ * `onChange` hears every change with the controls as they are.
  */
 export function memoryControls(
   options: { onChange?: (controls: ControlState[]) => void } = {},
-): ControlSurface {
+): MemoryControls {
   const controls = new Map<string, ControlState>()
+  const listeners = new Set<ControlListener>()
+  const frames = new Set<() => void>()
   const changed = () => options.onChange?.([...controls.values()])
   const get = (id: string) => {
     const control = controls.get(id)
@@ -228,15 +280,7 @@ export function memoryControls(
       return control
     },
     update(id, patch) {
-      const was = get(id)
-      const { value, ...rest } = patch
-      const next: ControlState = { ...was, ...rest }
-      if (value !== undefined) next.value = coerceValue(next, value)
-      else if (rest.options || rest.min !== undefined || rest.max !== undefined)
-        next.value =
-          VALUE_KINDS[next.kind] === 'none'
-            ? null
-            : coerceValue(next, was.value)
+      const next = patched(get(id), patch)
       controls.set(id, next)
       changed()
       return next
@@ -252,7 +296,44 @@ export function memoryControls(
     list() {
       return [...controls.values()]
     },
+    listen(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    onFrame(callback) {
+      frames.add(callback)
+      return () => frames.delete(callback)
+    },
+    simulate(event) {
+      const control = get(event.id)
+      if (event.value !== undefined) {
+        controls.set(event.id, {
+          ...control,
+          value: coerceValue(control, event.value),
+        })
+        changed()
+      }
+      for (const listener of [...listeners]) listener(event)
+    },
+    frame() {
+      for (const callback of [...frames]) callback()
+    },
   }
+}
+
+/**
+ * A control with a patch applied: a new value coerced to it, or the value
+ * it holds coerced again when its options or range changed under it.
+ */
+export function patched(was: ControlState, patch: ControlPatch): ControlState {
+  const { value, ...rest } = patch
+  const next: ControlState = { ...was, ...rest }
+  if (next.bind === '') delete next.bind
+  if (value !== undefined) next.value = coerceValue(next, value)
+  else if (rest.options || rest.min !== undefined || rest.max !== undefined)
+    next.value =
+      VALUE_KINDS[next.kind] === 'none' ? null : coerceValue(next, was.value)
+  return next
 }
 
 /** The handlers for the control tools, over the host's surface. */

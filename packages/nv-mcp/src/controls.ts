@@ -61,6 +61,8 @@ export interface ControlSpec {
   step?: number
   /** For a select, segmented row or menu: its entries; for a dialog: its buttons. */
   options?: ControlOption[]
+  /** For a dialog: the text under its title. */
+  message?: string
   /** For a text field or text area. */
   placeholder?: string
   maxLength?: number

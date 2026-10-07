@@ -4,13 +4,14 @@ An [MCP](https://modelcontextprotocol.io) server for a [NiiVue](https://github.c
 
 An agent connects to the server over streamable HTTP; the page keeps a WebSocket open to the same server; each tool call is written to the page as one JSON request and answered with one JSON response. The server holds no anatomy and no scene of its own, so it stays small and the page stays the one place the state lives.
 
-The package has three entry points, and nothing in it knows about the app that hosts it:
+The package has four entry points, and nothing in it knows about the app that hosts it:
 
 | Entry | Runs in | Holds |
 |---|---|---|
 | `@niivue/nv-mcp` | both | The wire messages, the plane arithmetic, region matching and the AAL spoken-name table |
 | `@niivue/nv-mcp/server` | Bun | The bridge that knows tabs by id, the core tools, `startServer` |
-| `@niivue/nv-mcp/browser` | the page | The client that keeps the socket open, and the handlers that answer the core tools from a NiiVue instance |
+| `@niivue/nv-mcp/browser` | the page | The client that keeps the socket open, the handlers that answer the core tools from a NiiVue instance, and `bindControls` |
+| `@niivue/nv-mcp/uikit` | the page | `uikitControls`, a control surface that draws an agent's controls on the canvas with `@niivue/uikit` |
 
 An app adds its own tools as an *extension* without touching the core. `apps/demo-mcp` in this repository is a complete page and server.
 
@@ -20,7 +21,7 @@ An app adds its own tools as an *extension* without touching the core. `apps/dem
 bun add @niivue/nv-mcp
 ```
 
-The server side runs under [Bun](https://bun.sh), because it uses `Bun.serve` for the HTTP and WebSocket ends together. The browser side is plain DOM and WebSocket. `@niivue/niivue` is an optional peer dependency: the browser entry is written against its 1.0 API but imports nothing from it, so any object with the same member names will do (see `View` in `browser/scene.ts`).
+The server side runs under [Bun](https://bun.sh), because it uses `Bun.serve` for the HTTP and WebSocket ends together. The browser side is plain DOM and WebSocket. `@niivue/niivue` is an optional peer dependency: the browser entry is written against its 1.0 API but imports nothing from it, so any object with the same member names will do (see `View` in `browser/scene.ts`). `@niivue/uikit` is an optional peer dependency too, needed only by the `uikit` entry.
 
 ## Usage
 
@@ -102,7 +103,37 @@ const host: NiiVueHost = {
 }
 ```
 
-`controls` is a `ControlSurface`: `add`, `update`, `remove`, `clear` and `list` over the controls an agent asks for, each a `ControlSpec` of one of the `CONTROL_KINDS` (button, toggle, slider, menu, select, segmented, number, text, textarea, dialog, color, file) at a position on the canvas, with a `bind` naming what it drives in the page's own words. `memoryControls` keeps them and draws nothing, which is enough to list them in the page and to run the tools until a widget layer backs the surface; `@niivue/uikit`'s control widgets are the intended one, and the surface is the seam they plug into. A page without `controls` declines the control tools.
+`controls` is a `ControlSurface`: `add`, `update`, `remove`, `clear` and `list` over the controls an agent asks for, each a `ControlSpec` of one of the `CONTROL_KINDS` (button, toggle, slider, menu, select, segmented, number, text, textarea, dialog, color, file) at a position on the canvas, with a `bind` naming what it drives. A page without `controls` declines the control tools. Two surfaces come with the package:
+
+- **`memoryControls()`** keeps the controls and draws nothing. It is enough to list them in the page and to run the tools in a test.
+- **`uikitControls(nv, { font })`** from `@niivue/nv-mcp/uikit` draws each control on the NiiVue canvas with the `@niivue/uikit` widget for its kind. It registers its own overlay renderer, so it needs a NiiVue that is attached, and a font such as `await loadDefaultFont()`.
+
+Either surface can be wrapped in `bindControls` so the controls drive the page:
+
+```ts
+import { bindControls } from '@niivue/nv-mcp/browser'
+import { uikitControls } from '@niivue/nv-mcp/uikit'
+import { loadDefaultFont } from '@niivue/uikit'
+
+host.controls = bindControls(uikitControls(nv, { font: await loadDefaultFont() }), {
+  view: nv,
+  actions: {
+    reload: { description: 'Loads the template again.', run: () => loadTemplate() },
+  },
+  onError: (error, event) => say(`${event.id}: ${error.message}`),
+})
+```
+
+A `bind` names one of these:
+
+| Bind | Drives |
+|---|---|
+| a setting, such as `gamma` or `crosshairColor` | That NiiVue setting, as `get_options` names it. A slider takes the setting's bounds, a select its choices, a color control its colour |
+| `view.slice`, `view.layout`, `view.radiological` | The slice type, the multiplanar layout and the radiological flag, by the names `set_view` uses |
+| `volume.<i>.<prop>` | A property of the volume at index `i`: `opacity`, `colormap`, `colormap_negative`, `cal_min`, `cal_max`, `cal_min_neg`, `cal_max_neg`, `frame`, `invert`, `colorbar`, `nearest`, `transparent_below_cal_min`, `atlas_outline` or `modulate_alpha` |
+| `action.<name>` | One of the page's `actions`. A button or menu runs it when pressed, a value control when its value is committed, a file picker with the files, a dialog with the button that closed it |
+
+The binding works both ways. A control the person moves writes its target: a slider or colour control as it moves, any other once the value is committed. A value changed elsewhere, by the person in NiiVue or by an agent's `set_options`, is read back before the next frame and shown on the control. A control bound with no range or choices takes them from its target, and starts at the target's value. `capabilities` lists the bind forms and the page's actions as `controlBindings`.
 
 `urls` defaults to `agentUrls()`: `/agent` on the page's own origin, then the server directly on port 4242. The client retries with a backoff that settles at half a minute, so the order the two are started in does not matter. An address that neither opens nor refuses within five seconds is closed and the next one tried, so a proxy that hangs cannot keep the page from the server.
 
@@ -174,7 +205,7 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 |---|---|---|
 | `get_options` | `names?`, `describe?` | Reads NiiVue's settings by their own names: crosshair, colours, fonts, 3D rendering, drawing pen, drag behaviour and the rest. Without `names` it describes every setting the page has, with its kind, its choices or bounds and what it does |
 | `set_options` | `options` | Changes any of those settings, several at once. A choice is given by its word (a drag mode, a pen shape, a render mode), a colour as `[r, g, b, a]` 0 to 1. Every value is checked before any is set |
-| `capabilities` | | What this page's NiiVue offers: its backend, which tool features it supports by group, which settings it has, its colormaps, drawing colormaps and mesh shaders, its volume transforms with their options, and the file types it reads and writes. A page whose NiiVue lacks a feature refuses that tool in words and answers every other |
+| `capabilities` | | What this page's NiiVue offers: its backend, which tool features it supports by group, which settings it has, its colormaps, drawing colormaps and mesh shaders, its volume transforms with their options, and the file types it reads and writes. With controls, it also lists the control kinds and what they can bind to. A page whose NiiVue lacks a feature refuses that tool in words and answers every other |
 | `add_colormap` | `name?`, `R?`, `G?`, `B?`, `A?`, `I?`, `labels?`, `url?` | Adds a colormap from its stops, or fetches one from an address as a NiiVue colormap JSON |
 | `set_font` | `atlas`, `metrics` | Loads the font NiiVue draws its text with, from an atlas PNG and a metrics JSON |
 | `set_custom_layout` | `tiles?`, `clear?` | Places tiles on the canvas by hand, each a slice orientation or the render at `[left, top, width, height]` as fractions, in place of the ordinary layout; `clear` goes back to it |
@@ -215,9 +246,9 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 
 | Tool | Input | What it does |
 |---|---|---|
-| `add_control` | `id`, `kind`, `x`, `y`, `label?`, `width?`, `value?`, `min?`, `max?`, `step?`, `options?`, `placeholder?`, `max_length?`, `rows?`, `accept?`, `multiple?`, `alpha?`, `palette?`, `enabled?`, `bind?` | Puts a control on the canvas: a `button`, `toggle`, `slider`, `menu`, `select`, `segmented` row, `number` or `text` field, `textarea`, `dialog`, `color` control or `file` picker, at a position, with the fields its kind takes; `bind` names what it drives. A value left out takes the kind's start: off, the low end of the range, empty, the first option, white |
+| `add_control` | `id`, `kind`, `x`, `y`, `label?`, `width?`, `value?`, `min?`, `max?`, `step?`, `options?`, `placeholder?`, `max_length?`, `rows?`, `accept?`, `multiple?`, `alpha?`, `palette?`, `message?`, `enabled?`, `bind?` | Puts a control on the canvas: a `button`, `toggle`, `slider`, `menu`, `select`, `segmented` row, `number` or `text` field, `textarea`, `dialog`, `color` control or `file` picker, at a position, with the fields its kind takes; `bind` names what it drives, and an empty `bind` unbinds. A dialog opens when added. A value left out takes the kind's start: off, the low end of the range, empty, the first option, white |
 | `list_controls` | | The controls there, each with its kind, position, value, options and binding; their ids also ride in every reply's state |
-| `set_control` | `id`, and any of the fields above | Changes what is given on a control: its value is checked and clamped as it was when added, and a range that moves takes the value with it |
+| `set_control` | `id`, and any of the fields above | Changes what is given on a control: its value is checked and clamped as it was when added, and a range that moves takes the value with it. A value set on a bound control is written to its target |
 | `remove_control` | `id?`, `all?` | Takes one control away, or all of them |
 
 ### The canvas, the slide plane, chunks and files

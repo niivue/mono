@@ -160,6 +160,32 @@ export function maxLengthOf(maxLength: number | undefined): number | undefined {
     : undefined
 }
 
+/** `text` cut to `maxLength` (see `maxLengthOf`); the same string when it fits. */
+export function truncateText(
+  text: string,
+  maxLength: number | undefined,
+): string {
+  const max = maxLengthOf(maxLength)
+  return max === undefined ? text : text.slice(0, max)
+}
+
+/**
+ * An edit carried across a `maxLength` change: the text cut to the limit with
+ * the caret and anchor still inside it. The same state when nothing changes.
+ */
+export function truncateEdit(
+  s: TextEditState,
+  maxLength: number | undefined,
+): TextEditState {
+  const text = truncateText(s.text, maxLength)
+  if (text === s.text) return s
+  return {
+    text,
+    caret: Math.min(s.caret, text.length),
+    anchor: Math.min(s.anchor, text.length),
+  }
+}
+
 /**
  * Replace the selection with the characters of `str` that `accept` allows,
  * as many as keep the text within `maxLength` (pasting into a full field

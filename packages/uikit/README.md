@@ -25,9 +25,13 @@ proven, core's overlays cut over onto it and the duplicate in core is removed.
 
 Each widget is a pure geometry builder (spec in, plain line + text draw data out,
 unit-testable without a GPU) paired with an overlay that owns the GPU resources
-and draws that data through the lifecycle hook.
+and draws that data through the lifecycle hook. The overlays are the API. Of
+the builders, only the measuring widgets' and the primitives' (`buildRuler`,
+`buildCrosshair`, `buildAnnotationGeometry`, `buildRect`, `buildLine`,
+`buildTerminatedLine`) are exported; the control widgets' models are
+package-private (see "Conventions for contributors").
 
-| Builder | Overlay | Draws |
+| Model | Overlay | Draws |
 | --- | --- | --- |
 | `buildRuler` | `UIKitRulerOverlay` | A measuring ruler with graduated ticks and a distance label |
 | `buildCrosshair` | `UIKitCrosshairOverlay` | A screen-space cross marking a point, optionally graduated and numbered |
@@ -68,8 +72,8 @@ crosshair.setCrosshair({
 })
 ```
 
-The builders are usable on their own if you want the geometry but not UIKit's
-renderers:
+The exported builders are usable on their own if you want the geometry but not
+UIKit's renderers:
 
 ```ts
 import { buildTerminatedLine, LineTerminator } from '@niivue/uikit'
@@ -139,7 +143,15 @@ keyboard for every interactive widget, so widgets never compete for an event. Ad
 overlays to it in draw order, register the layer as NiiVue's overlay renderer,
 and `attach(nv)` to the canvas. Pointer down goes to the topmost widget that
 claims it; that widget then captures every move and the up and takes keyboard
-focus. Only the topmost widget under the pointer hovers. A widget that is modal
+focus. The layer is single-pointer: one pointer at a time, and a second down
+(another touch, or a down whose up was never seen) cancels the held press
+before any widget, including the one holding it, sees the new press, so a
+drag or button press restarts from the new pointer rather than sharing two.
+Moves and releases from any other pointer are ignored while one holds the
+press. When pointer capture is refused and the release lands outside the
+canvas, the layer ends the press from the window but leaves the event to the
+element under it, so a page button still gets its click.
+Only the topmost widget under the pointer hovers. A widget that is modal
 (a menu with its popup open) sees every event first until it closes, and the
 click that dismisses it is consumed. Keys go to the modal widget, else the
 focused one. A wheel turn goes to the modal widget, else to the topmost widget
@@ -150,8 +162,11 @@ drawn after every widget. A press anywhere else in the page, focus moving to
 another element or the window losing focus deactivates the layer (held press
 cancelled, popups dismissed, focus dropped), so keys reach the page again
 instead of the last widget the user touched; `deactivate()` does the same from
-code. The layer owns keys again on the next canvas press or `focus` call; an
-open dialog does not keep them while the user is elsewhere in the page.
+code. The layer owns keys again on the next canvas press or `focus` call, and
+a widget opened or focused from code takes them back the same way: a dialog
+opened from a page button, a menu opened with `open`, or a text field given
+`focus` claims the keyboard through the layer at once. An open dialog does not
+keep the keys while the user is elsewhere in the page.
 
 ```ts
 import {
@@ -172,8 +187,9 @@ const detach = controls.attach(nv) // call detach() to unwire the events
 
 A widget added to a layer takes the layer's redraw requester, which `attach`
 defaults to `nv.drawScene`. A host that is not a NiiVue controller can feed the
-layer itself through `pointerDown`, `pointerMove`, `pointerUp`, `pointerCancel`
-and `keyDown` in canvas pixels; each returns whether a widget consumed the event.
+layer itself through `pointerDown`, `pointerMove`, `pointerUp`, `pointerCancel`,
+`wheel` and `keyDown` in canvas pixels; each returns whether a widget consumed
+the event.
 `UIKitButtonOverlay.attach` still works on its own: it is a one-widget layer.
 
 ## Toggles
@@ -337,7 +353,9 @@ in `MenuStyle`), shows an arrow on a strip with rows beyond it, scrolls on the
 wheel or a press on a strip, keeps the keyboard highlight in view, and reports
 `scrollable`, `firstRow`, `endRow` and the strip boxes in its popup layout. A
 widget that scrolls implements `wheel(x, y, deltaX, deltaY)` from
-`UIKitInteractive`; the control layer routes the canvas wheel to it.
+`UIKitInteractive`; the control layer routes the canvas wheel to it. The scroll
+functions are package-private; only the `ScrollRange`, `ScrollWindow`,
+`ScrollStripStyle` and `UIKitBox` types are exported.
 
 ## Segmented controls
 
@@ -419,7 +437,9 @@ The editing itself is the shared model in `textEdit.ts`: a `TextEditState`
 Delete, select-all and typed characters a key means, `caretIndexAt` for the
 pointer, and `textWindow`, which scrolls a field by whole glyphs through the
 scroll model. `textField.ts` turns that state into the selection, text and
-caret geometry of any field. Text inputs reuse both.
+caret geometry of any field. Text inputs reuse both. Like the other widget
+models they are package-private; only the `TextEditState` and
+`TextFieldStyle` types are exported.
 
 ## Text inputs
 

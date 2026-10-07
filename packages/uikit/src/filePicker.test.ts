@@ -4,7 +4,6 @@ import {
   DEFAULT_FILE_PICKER_STYLE,
   ellipsizeStart,
   type FilePickerSpec,
-  filePickerContains,
   filePickerSummary,
   layoutFilePicker,
   scaleFilePicker,
@@ -57,12 +56,6 @@ describe('layoutFilePicker', () => {
     expect(style.textSizePx).toBe(28)
     expect(style.button.textSizePx).toBe(32)
     expect(scaleFilePicker(SPEC, STYLE, 1).style).toBe(STYLE)
-  })
-
-  it('hits only the button', () => {
-    const l = layoutFilePicker(SPEC, STYLE, METRICS)
-    expect(filePickerContains(l, 50, 30)).toBe(true)
-    expect(filePickerContains(l, 200, 30)).toBe(false)
   })
 })
 

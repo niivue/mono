@@ -10,7 +10,7 @@ import { mixColor } from './button'
 import { buildLine, type LineData } from './line'
 import { buildRect, type RectData } from './rect'
 import { buildScrollArrow, type ScrollWindow, type UIKitBox } from './scroll'
-import { stepDecimals } from './slider'
+import { stepDecimals, usableStep } from './slider'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { TextEditState } from './textEdit'
@@ -211,13 +211,6 @@ function boundOf(bound: number | undefined, fallback: number): number {
   return bound !== undefined && !Number.isNaN(bound) ? bound : fallback
 }
 
-/** A `step` that can snap: finite and positive, else undefined (continuous). */
-function usableStep(step: number | undefined): number | undefined {
-  return step !== undefined && Number.isFinite(step) && step > 0
-    ? step
-    : undefined
-}
-
 /** Move `value` by one step (ten with `big`) in `direction`, snapped. */
 export function stepNumberInput(
   spec: Range,
@@ -225,11 +218,10 @@ export function stepNumberInput(
   direction: 1 | -1,
   big = false,
 ): number {
-  const step = (usableStep(spec.step) ?? 1) * (big ? 10 : 1)
-  const next = snapNumberInput(spec, value + direction * step)
-  return usableStep(spec.step) === undefined
-    ? Number(next.toPrecision(12))
-    : next
+  const step = usableStep(spec.step)
+  const by = (step ?? 1) * (big ? 10 : 1)
+  const next = snapNumberInput(spec, value + direction * by)
+  return step === undefined ? Number(next.toPrecision(12)) : next
 }
 
 /** The displayed text for a value: the spec's formatter, else the step's precision. */

@@ -92,6 +92,7 @@ export class UIKitDialogOverlay
   private readonly now: (() => number) | undefined
   private requestRedraw: (() => void) | null
   private layer: UIKitRedrawSource | null = null
+  private childLayer: UIKitRedrawSource | null = null
   private inLayer = false
   private scale = 1
   private bounds: { width: number; height: number } = { width: 0, height: 0 }
@@ -176,7 +177,7 @@ export class UIKitDialogOverlay
     const entry = this.entries.get(id)
     if (!entry || entry.children.includes(child)) return
     entry.children.push(child)
-    if (this.layer) child.bindLayer?.(this.layer)
+    if (this.childLayer) child.bindLayer?.(this.childLayer)
     this.invalidate()
   }
 
@@ -217,6 +218,7 @@ export class UIKitDialogOverlay
     this.openId = id
     entry.layout = null
     entry.reported = null
+    this.layer?.focus?.(this)
     this.invalidate()
   }
 
@@ -410,8 +412,14 @@ export class UIKitDialogOverlay
     this.requestRedraw ??= () => layer.requestRedraw()
     this.layer = layer
     this.inLayer = true
+    // A hosted child focusing from code claims the keyboard for the dialog,
+    // which routes to the child; the child itself is unknown to the layer.
+    this.childLayer = {
+      requestRedraw: () => layer.requestRedraw(),
+      focus: () => layer.focus?.(this),
+    }
     for (const entry of this.entries.values()) {
-      for (const c of entry.children) c.bindLayer?.(layer)
+      for (const c of entry.children) c.bindLayer?.(this.childLayer)
     }
   }
 
@@ -445,7 +453,6 @@ export class UIKitDialogOverlay
     for (const c of entry.children) c.drawPopup?.(frame)
   }
 
-  /** Release GPU resources on both backends (the children's are their owner's). */
   /** Release the surfaces, the action buttons and every hosted child. */
   destroy(): void {
     this.rects.destroy()

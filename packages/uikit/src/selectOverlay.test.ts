@@ -265,4 +265,15 @@ describe('UIKitSelectOverlay', () => {
     expect(overlay.getValue('long')).toBe('v8')
     expect(overlay.wheel(110, 5, 0, 56)).toBe(false) // closed again
   })
+
+  it('claims the layer keyboard as the select, not its inner menu', () => {
+    const { overlay } = make()
+    const claimed: unknown[] = []
+    overlay.bindLayer({
+      requestRedraw: () => {},
+      focus: (child) => claimed.push(child),
+    })
+    overlay.open('s')
+    expect(claimed).toEqual([overlay])
+  })
 })

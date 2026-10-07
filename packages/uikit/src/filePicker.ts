@@ -227,16 +227,6 @@ export function scaleFilePicker(
   }
 }
 
-/** True when (x, y) is over the picker's button (the readout is inert). */
-export function filePickerContains(
-  layout: FilePickerLayout,
-  x: number,
-  y: number,
-): boolean {
-  const b = layout.button
-  return x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height
-}
-
 /** The readout text of a picker; its button is drawn by a button overlay. */
 export function buildFilePicker(
   spec: FilePickerSpec,

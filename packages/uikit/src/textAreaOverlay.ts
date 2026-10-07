@@ -58,6 +58,8 @@ import {
   setCaret,
   type TextEditState,
   textEditState,
+  truncateEdit,
+  truncateText,
 } from './textEdit'
 import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
@@ -87,7 +89,7 @@ interface TextAreaEntry {
   value: string
   /** The edit in progress while focused, else null. */
   edit: TextEditState | null
-  /** Bumped whenever an edit starts or ends, so a slow paste read knows its session is over. */
+  /** Bumped whenever an edit starts, so a slow paste read knows its session is over. */
   session: number
   firstRow: number
   /** The x a run of vertical caret moves aims for, else null. */
@@ -114,6 +116,7 @@ export class UIKitTextAreaOverlay
   private readonly doubleClickMs: number
   private readonly now: () => number
   private requestRedraw: (() => void) | null
+  private layer: UIKitRedrawSource | null = null
   private clipboard: ClipboardBridge | null
   private scale = 1
   private geometryDirty = true
@@ -165,7 +168,7 @@ export class UIKitTextAreaOverlay
   addTextArea(spec: TextAreaSpec): void {
     const existing = this.entries.get(spec.id)
     const style = resolveTextAreaStyle(this.baseStyle, spec.style)
-    const value = this.truncate(spec, spec.value ?? '')
+    const value = truncateText(spec.value ?? '', spec.maxLength)
     if (existing) {
       existing.spec = spec
       existing.style = style
@@ -222,7 +225,8 @@ export class UIKitTextAreaOverlay
     // must not throw away what the user is typing.
     const edit = patch.value === undefined ? entry.edit : null
     this.addTextArea({ ...entry.spec, ...patch, id, value })
-    if (edit && entry.edit) entry.edit = this.keepEdit(entry, edit)
+    if (edit && entry.edit)
+      entry.edit = truncateEdit(edit, entry.spec.maxLength)
     if (entry.spec.enabled === false) {
       if (this.pressId === id) this.pressId = null
       if (this.focusedId === id) {
@@ -240,7 +244,7 @@ export class UIKitTextAreaOverlay
   setValue(id: string, value: string): void {
     const entry = this.entries.get(id)
     if (!entry) return
-    const v = this.truncate(entry.spec, value)
+    const v = truncateText(value, entry.spec.maxLength)
     if (v === entry.value && !entry.edit) return
     entry.value = v
     entry.firstRow = 0
@@ -315,7 +319,10 @@ export class UIKitTextAreaOverlay
       this.focusedId !== null ? this.entries.get(this.focusedId) : undefined
     if (prev) this.commit(prev, false)
     this.focusedId = next
-    if (entry && next !== null) entry.edit = this.freshEdit(entry)
+    if (entry && next !== null) {
+      entry.edit = this.freshEdit(entry)
+      this.layer?.focus?.(this)
+    }
     this.invalidate()
   }
 
@@ -529,6 +536,7 @@ export class UIKitTextAreaOverlay
 
   bindLayer(layer: UIKitRedrawSource): void {
     this.requestRedraw ??= () => layer.requestRedraw()
+    this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
@@ -604,21 +612,6 @@ export class UIKitTextAreaOverlay
     entry.manualScroll = false
   }
 
-  private truncate(spec: TextAreaSpec, text: string): string {
-    const max = maxLengthOf(spec.maxLength)
-    return max === undefined ? text : text.slice(0, max)
-  }
-
-  /** An edit carried across a spec patch: the text within the new `maxLength`, the caret still inside it. */
-  private keepEdit(entry: TextAreaEntry, edit: TextEditState): TextEditState {
-    const text = this.truncate(entry.spec, edit.text)
-    return {
-      text,
-      caret: Math.min(edit.caret, text.length),
-      anchor: Math.min(edit.anchor, text.length),
-    }
-  }
-
   /** The edit state for a freshly focused (or reverted) area: all selected. */
   private freshEdit(entry: TextAreaEntry): TextEditState {
     entry.firstRow = 0
@@ -638,7 +631,6 @@ export class UIKitTextAreaOverlay
       entry.spec.onChange?.(entry.value, entry.spec.id)
     }
     entry.edit = stayFocused ? this.freshEdit(entry) : null
-    if (!stayFocused) entry.session++
     entry.firstRow = 0
     this.invalidate()
   }

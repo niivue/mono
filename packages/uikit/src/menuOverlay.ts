@@ -96,6 +96,7 @@ export class UIKitMenuOverlay
   private baseStyle: MenuStyle
   private readonly cssUnits: boolean
   private requestRedraw: (() => void) | null
+  private layer: UIKitRedrawSource | null = null
   private inLayer = false
   private scale = 1
   private geometryDirty = true
@@ -360,6 +361,7 @@ export class UIKitMenuOverlay
     const next = entry && entry.spec.enabled !== false ? id : null
     if (next === this.focusedId) return
     this.focusedId = next
+    if (next !== null) this.layer?.focus?.(this)
     this.invalidate()
   }
 
@@ -522,6 +524,7 @@ export class UIKitMenuOverlay
 
   bindLayer(layer: UIKitRedrawSource): void {
     this.requestRedraw ??= () => layer.requestRedraw()
+    this.layer = layer
     this.inLayer = true
   }
 

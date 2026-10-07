@@ -19,6 +19,8 @@ import {
   setCaret,
   textEditState,
   textWindow,
+  truncateEdit,
+  truncateText,
 } from './textEdit'
 
 function key(k: string, mods: Partial<UIKitKeyEvent> = {}): UIKitKeyEvent {
@@ -199,6 +201,23 @@ describe('maxLengthOf', () => {
     // pasteText goes through it: a NaN limit pastes everything.
     const s = textEditState('ab')
     expect(pasteText(s, 'cd', undefined, Number.NaN).text).toBe('abcd')
+  })
+})
+
+describe('truncateText and truncateEdit', () => {
+  it('cuts to a usable limit and leaves the rest alone', () => {
+    expect(truncateText('abcdef', 3)).toBe('abc')
+    expect(truncateText('abc', 3)).toBe('abc')
+    expect(truncateText('abc', undefined)).toBe('abc')
+    expect(truncateText('abc', Number.NaN)).toBe('abc')
+  })
+
+  it('keeps the caret and anchor inside the cut text', () => {
+    const s = { text: 'abcdef', caret: 5, anchor: 2 }
+    expect(truncateEdit(s, 3)).toEqual({ text: 'abc', caret: 3, anchor: 2 })
+    // The same state object when nothing changes.
+    expect(truncateEdit(s, 10)).toBe(s)
+    expect(truncateEdit(s, undefined)).toBe(s)
   })
 })
 

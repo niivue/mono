@@ -4,9 +4,11 @@
 // docs/ruler-port.md in @niivue/niivue for the design).
 //
 // The surface is the overlays, the control layer, the spec/style/option types,
-// the default styles and the host bridges. The pure widget models (layout,
-// build, hit-test and state helpers) stay package-private: they are the
-// overlays' implementation, exercised by their own tests, not an API.
+// the default styles, the host bridges, the measuring-widget and primitive
+// builders (ruler, crosshair, annotation, rect, line) and the text/font
+// helpers. The control widgets' models (layout, build, hit-test and state
+// helpers) stay package-private: they are the overlays' implementation,
+// exercised by their own tests, not an API.
 
 // biome-ignore-all lint/performance/noBarrelFile: package entry point
 export type { AnnotationGeometryOptions } from './annotationOverlay'

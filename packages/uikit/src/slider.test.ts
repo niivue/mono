@@ -85,6 +85,12 @@ describe('value and fraction', () => {
     expect(effectiveStep({ min: 0, max: 10, step: 0.5 })).toBe(0.5)
     expect(effectiveStep({ min: 0, max: 10 })).toBe(0.1)
     expect(stepValue(2, SPEC, 1)).toBe(3)
+    // A non-finite or non-positive step is continuous everywhere.
+    expect(
+      effectiveStep({ min: 0, max: 10, step: Number.POSITIVE_INFINITY }),
+    ).toBe(0.1)
+    expect(effectiveStep({ min: 0, max: 10, step: Number.NaN })).toBe(0.1)
+    expect(formatSliderValue({ step: Number.NaN }, 1 / 3)).toBe('0.33')
     expect(stepValue(2, SPEC, -1, true)).toBe(0)
     expect(stepValue(9, SPEC, 1, true)).toBe(10)
     expect(stepValue(0.5, { min: 0, max: 1 }, 1)).toBe(0.51)

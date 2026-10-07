@@ -91,6 +91,7 @@ export class UIKitNumberInputOverlay
   private readonly cssUnits: boolean
   private readonly wheelCarry: WheelAccumulator
   private requestRedraw: (() => void) | null
+  private layer: UIKitRedrawSource | null = null
   private scale = 1
   private geometryDirty = true
   private hoverId: string | null = null
@@ -282,7 +283,10 @@ export class UIKitNumberInputOverlay
       this.focusedId !== null ? this.entries.get(this.focusedId) : undefined
     if (prev) this.commit(prev, false)
     this.focusedId = next
-    if (entry && next !== null) entry.edit = this.freshEdit(entry)
+    if (entry && next !== null) {
+      entry.edit = this.freshEdit(entry)
+      this.layer?.focus?.(this)
+    }
     this.invalidate()
   }
 
@@ -302,11 +306,16 @@ export class UIKitNumberInputOverlay
     const wasFocused = this.focusedId === entry.spec.id
     this.pressId = entry.spec.id
     this.pressPart = spin === 0 ? 'text' : spin
+    // Focusing selects all, which would scroll to the end; a press keeps the
+    // glyphs the user is looking at so a drag starts where they pressed.
+    const first = entry.firstGlyph
     this.focus(entry.spec.id)
+    entry.firstGlyph = first
     if (spin !== 0) {
       this.step(entry, spin, false)
     } else if (wasFocused && entry.edit) {
       entry.edit = setCaret(entry.edit, this.caretAt(entry, x))
+      this.firstShown(entry)
     }
     this.invalidate()
     return true
@@ -319,6 +328,7 @@ export class UIKitNumberInputOverlay
         const next = setCaret(entry.edit, this.dragCaretAt(entry, x), true)
         if (next.caret !== entry.edit.caret) {
           entry.edit = next
+          this.firstShown(entry)
           this.invalidate()
         }
       }
@@ -395,6 +405,7 @@ export class UIKitNumberInputOverlay
     if (next !== entry.edit) {
       const textChanged = next.text !== entry.edit.text
       entry.edit = next
+      this.firstShown(entry)
       this.invalidate()
       if (textChanged) this.reportInput(entry)
     }
@@ -419,6 +430,7 @@ export class UIKitNumberInputOverlay
 
   bindLayer(layer: UIKitRedrawSource): void {
     this.requestRedraw ??= () => layer.requestRedraw()
+    this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
@@ -513,7 +525,7 @@ export class UIKitNumberInputOverlay
   /** The caret for a drag: a pointer left of the shown text pulls one hidden glyph into view. */
   private dragCaretAt(entry: NumberInputEntry, x: number): number {
     const caret = this.caretAt(entry, x)
-    const first = this.firstShown(entry)
+    const first = entry.firstGlyph
     const pastLeft = first > 0 && x < this.layoutOf(entry).textArea.x
     return pastLeft && caret === first ? first - 1 : caret
   }
@@ -526,16 +538,17 @@ export class UIKitNumberInputOverlay
       style,
       this.font.metrics,
       text,
-      this.firstShown(entry),
+      entry.firstGlyph,
       x,
     )
   }
 
   /**
-   * The first glyph the next frame shows: the stored scroll position, moved
-   * the least distance that keeps the caret in view, stored as the new scroll
-   * position. Pointer math settles the window too, so a press right after a
-   * key edit lands on the glyphs the user is about to see, drawn or not.
+   * Settle the scroll position for the next frame: the stored first glyph,
+   * moved the least distance that keeps the caret in view. Every caret move
+   * (key edit, press, drag) settles, so `firstGlyph` is always the window
+   * the next frame shows and pointer math can read it as is; `rebuild` settles
+   * again for caret moves that bypass this (focus, step, commit).
    */
   private firstShown(entry: NumberInputEntry): number {
     const { style } = this.scaled(entry)
@@ -585,8 +598,7 @@ export class UIKitNumberInputOverlay
       const { spec, style } = this.scaled(entry)
       const layout = this.layoutOf(entry)
       const shown = entry.edit ? entry.edit.text : this.display(entry)
-      // Keep the scroll position between frames so the text does not jump.
-      entry.firstGlyph = this.firstShown(entry)
+      this.firstShown(entry)
       const id = entry.spec.id
       const geo = buildNumberInput(spec, style, layout, this.font.metrics, {
         text: shown,

@@ -294,7 +294,12 @@ export class UIKitSelectOverlay
   }
 
   bindLayer(layer: UIKitRedrawSource): void {
-    this.menu.bindLayer(layer)
+    // The layer knows the select, not its inner menu: a focus claim from
+    // the menu must name the select so keys keep coming through it.
+    this.menu.bindLayer({
+      requestRedraw: () => layer.requestRedraw(),
+      focus: () => layer.focus?.(this),
+    })
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {

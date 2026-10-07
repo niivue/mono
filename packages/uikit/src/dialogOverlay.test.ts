@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 import type { UIKitOverlayFrame } from '@niivue/niivue'
-import type { UIKitInteractive, UIKitKeyEvent } from './controls'
+import {
+  UIKitControls,
+  type UIKitInteractive,
+  type UIKitKeyEvent,
+  type UIKitRedrawSource,
+} from './controls'
 import { DEFAULT_DIALOG_STYLE, type DialogBoxes } from './dialog'
 import { UIKitDialogOverlay } from './dialogOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
@@ -41,6 +46,7 @@ function key(k: string, mods: Partial<UIKitKeyEvent> = {}): UIKitKeyEvent {
 class Child implements UIKitInteractive {
   readonly log: string[] = []
   modal = false
+  layer: UIKitRedrawSource | null = null
   constructor(
     private readonly box: { x: number; y: number; w: number; h: number },
   ) {}
@@ -66,6 +72,9 @@ class Child implements UIKitInteractive {
   }
   destroy(): void {
     this.log.push('destroy')
+  }
+  bindLayer(layer: UIKitRedrawSource): void {
+    this.layer = layer
   }
   /**
    * Takes 'x', Enter (a field committing) and, while modal, Escape and Enter
@@ -318,5 +327,21 @@ describe('UIKitDialogOverlay', () => {
     expect(closed).toEqual([])
     overlay.click('ok')
     expect(closed).toEqual(['ok'])
+  })
+
+  it('takes the keyboard from the layer when opened from code', () => {
+    const { overlay, closed } = make()
+    const child = new Child({ x: 300, y: 300, w: 50, h: 20 })
+    overlay.addChild('d', child)
+    const layer = new UIKitControls().add(overlay)
+    layer.deactivate() // the user pressed a page button
+    overlay.open('d')
+    expect(layer.focusedWidget).toBe(overlay)
+    expect(layer.keyDown(key('Escape'))).toBe(true)
+    expect(closed).toEqual(['cancel'])
+    // A hosted child focusing from code claims the dialog, not itself.
+    layer.deactivate()
+    child.layer?.focus?.(child)
+    expect(layer.focusedWidget).toBe(overlay)
   })
 })

@@ -208,6 +208,25 @@ describe('UIKitControls routing', () => {
     expect(layer.capturedWidget).toBeNull()
   })
 
+  it('cancels the held press when a second pointer presses the same widget', () => {
+    const { layer, lo, hi, clear } = make()
+    layer.pointerDown(75, 75)
+    clear()
+    // The widget sees the cancel before the new press, so a slider drag or
+    // button press restarts instead of sharing two pointers.
+    expect(layer.pointerDown(80, 80)).toBe(true)
+    expect(hi.log).toEqual(['cancel', 'down 80,80 true'])
+    expect(layer.capturedWidget).toBe(hi)
+    clear()
+    // A second down that misses every widget also ends the held press.
+    expect(layer.pointerDown(150, 20)).toBe(false)
+    expect(hi.log).toEqual(['cancel', 'down 150,20 false', 'blur'])
+    expect(lo.log).toEqual(['down 150,20 false'])
+    expect(layer.capturedWidget).toBeNull()
+    layer.pointerUp(80, 80)
+    expect(hi.log).toEqual(['cancel', 'down 150,20 false', 'blur'])
+  })
+
   it('stops routing keys after deactivate even while a modal widget stays open', () => {
     const { layer, lo, hi, clear } = make()
     layer.pointerDown(75, 75)
@@ -231,6 +250,26 @@ describe('UIKitControls routing', () => {
     expect(layer.keyDown(key('a'))).toBe(true)
     expect(lo.log).toEqual(['key a'])
     expect(hi.log).toEqual([])
+  })
+
+  it('routes keys to a modal widget opened from code before any canvas press', () => {
+    const { layer, lo } = make()
+    lo.modal = true
+    expect(layer.keyDown(key('Escape'))).toBe(true)
+    expect(lo.log).toEqual(['key Escape'])
+  })
+
+  it('lets a widget take keys back after deactivate through its bound layer', () => {
+    const { layer, hi, clear } = make()
+    layer.deactivate()
+    expect(layer.keyDown(key('a'))).toBe(false)
+    // A dialog opened from a page button, or a field focused from code,
+    // claims the keyboard the way a canvas press would.
+    hi.layer?.focus?.(hi)
+    clear()
+    expect(layer.focusedWidget).toBe(hi)
+    expect(layer.keyDown(key('a'))).toBe(true)
+    expect(hi.log).toEqual(['key a'])
   })
 
   it('sends keys to the focused widget and reports whether it consumed them', () => {
@@ -307,12 +346,12 @@ function fakeCanvas(): FakeCanvas {
   return target
 }
 
-function pointer(type: string, x: number, y: number): Event {
+function pointer(type: string, x: number, y: number, pointerId = 7): Event {
   return Object.assign(new Event(type, { cancelable: true }), {
     button: 0,
     clientX: x,
     clientY: y,
-    pointerId: 7,
+    pointerId,
   })
 }
 
@@ -397,6 +436,43 @@ describe('UIKitControls.attach', () => {
     g.window?.dispatchEvent(pointer('pointercancel', -1, -1))
     expect(layer.capturedWidget).toBeNull()
     expect(hi.log).toContain('cancel')
+    detach()
+  })
+
+  it('leaves an outside release to the element under it', () => {
+    const { layer, canvas, detach } = attach()
+    canvas.setPointerCapture = () => {
+      throw new DOMException('no such pointer', 'NotFoundError')
+    }
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37))
+    // The release lands on a page button: the layer ends its capture but
+    // must not prevent the button's own click.
+    const up = pointer('pointerup', -1, -1)
+    g.window?.dispatchEvent(up)
+    expect(layer.capturedWidget).toBeNull()
+    expect(up.defaultPrevented).toBe(false)
+    detach()
+  })
+
+  it('ignores moves and releases from a pointer other than the one pressing', () => {
+    const { layer, hi, canvas, detach } = attach()
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37, 1))
+    hi.log.length = 0
+    // A second finger moving or lifting elsewhere leaves the first press alone.
+    canvas.dispatchEvent(pointer('pointermove', 40, 40, 2))
+    canvas.dispatchEvent(pointer('pointerup', 40, 40, 2))
+    expect(hi.log).toEqual([])
+    expect(layer.capturedWidget).toBe(hi)
+    // Its down is a new press though (single-pointer): it takes over.
+    canvas.dispatchEvent(pointer('pointerdown', 37, 37, 2))
+    expect(hi.log).toEqual(['cancel', 'down 74,74 true'])
+    hi.log.length = 0
+    // Now the first pointer's release is the stale one.
+    canvas.dispatchEvent(pointer('pointerup', 37, 37, 1))
+    expect(hi.log).toEqual([])
+    canvas.dispatchEvent(pointer('pointerup', 37, 37, 2))
+    expect(hi.log[0]).toBe('up 74,74')
+    expect(layer.capturedWidget).toBeNull()
     detach()
   })
 

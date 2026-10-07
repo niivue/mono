@@ -277,6 +277,18 @@ describe('UIKitTextInputOverlay', () => {
     expect(inputs).toEqual([])
   })
 
+  it('places the caret where an unfocused overflowing field was pressed', () => {
+    const { overlay } = make()
+    overlay.setValue('t', 'abcdefghijklmnop')
+    // Unfocused, the field shows its start. Focusing on the press selects
+    // all with the caret at the end, which must not scroll the window the
+    // pointer is mapped against.
+    overlay.pointerDown(132, 60) // over 'a'
+    overlay.pointerUp(132, 60)
+    type(overlay, 'z')
+    expect(overlay.getText('t')).toBe('azbcdefghijklmnop')
+  })
+
   it('pulls hidden glyphs into a selection dragged past the left edge', () => {
     const { overlay } = make()
     overlay.setValue('t', 'abcdefghijkl')
@@ -303,5 +315,19 @@ describe('UIKitTextInputOverlay', () => {
     overlay.removeTextInput('t')
     expect(overlay.ids).toEqual([])
     expect(overlay.focusedInput).toBeNull()
+  })
+
+  it('claims the layer keyboard when focused from code', () => {
+    const { overlay } = make()
+    const claimed: unknown[] = []
+    overlay.bindLayer({
+      requestRedraw: () => {},
+      focus: (child) => claimed.push(child),
+    })
+    overlay.focus('t')
+    expect(claimed).toEqual([overlay])
+    overlay.blur()
+    overlay.focus('missing')
+    expect(claimed).toEqual([overlay])
   })
 })

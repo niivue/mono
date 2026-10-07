@@ -155,6 +155,13 @@ export function stepDecimals(step: number): number {
 }
 
 /** Clamp `value` into [min, max] and, with a positive step, snap it to the step grid from min. */
+/** A `step` that can snap: finite and positive, else undefined (continuous). */
+export function usableStep(step: number | undefined): number | undefined {
+  return step !== undefined && Number.isFinite(step) && step > 0
+    ? step
+    : undefined
+}
+
 export function snapValue(
   value: number,
   min: number,
@@ -164,11 +171,12 @@ export function snapValue(
   const lo = Math.min(min, max)
   const hi = Math.max(min, max)
   let v = Math.min(hi, Math.max(lo, Number.isFinite(value) ? value : lo))
-  if (step !== undefined && step > 0 && Number.isFinite(step)) {
+  const by = usableStep(step)
+  if (by !== undefined) {
     // The tiny bias keeps a half-way value (0.35 by 0.1) rounding up as a
     // reader expects, despite the division landing a hair under .5.
-    const n = Math.round((v - min) / step + 1e-9)
-    v = Number((min + n * step).toFixed(stepDecimals(step)))
+    const n = Math.round((v - min) / by + 1e-9)
+    v = Number((min + n * by).toFixed(stepDecimals(by)))
     v = Math.min(hi, Math.max(lo, v))
   }
   return v
@@ -196,7 +204,8 @@ export function fractionToValue(
 export function effectiveStep(
   spec: Pick<SliderSpec, 'min' | 'max' | 'step'>,
 ): number {
-  if (spec.step !== undefined && spec.step > 0) return spec.step
+  const step = usableStep(spec.step)
+  if (step !== undefined) return step
   const range = Math.abs(spec.max - spec.min)
   return range > 0 ? range / 100 : 1
 }
@@ -221,9 +230,8 @@ export function formatSliderValue(
   value: number,
 ): string {
   if (spec.format) return spec.format(value)
-  if (spec.step !== undefined && spec.step > 0) {
-    return value.toFixed(stepDecimals(spec.step))
-  }
+  const step = usableStep(spec.step)
+  if (step !== undefined) return value.toFixed(stepDecimals(step))
   return String(Number(value.toFixed(2)))
 }
 

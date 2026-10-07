@@ -207,6 +207,30 @@ describe('UIKitNumberInputOverlay', () => {
     expect(overlay.hoverCursor).toBe('text')
   })
 
+  it('starts a drag where an unfocused overflowing field was pressed', () => {
+    const overlay = new UIKitNumberInputOverlay(FONT, {
+      requestRedraw: () => {},
+    })
+    overlay.addNumberInput({
+      id: 'n',
+      label: 'Hi',
+      x: 100,
+      y: 50,
+      min: 0,
+      max: 1e15,
+      step: 1,
+      value: 123456789012,
+    })
+    // Unfocused, the field shows its start. The press focuses (select all,
+    // caret at the end) and must not scroll the window the drag is mapped
+    // against: the drag from '1' to '3' selects '12'.
+    overlay.pointerDown(130, 60)
+    overlay.pointerMove(143, 60)
+    overlay.pointerUp(143, 60)
+    type(overlay, '9')
+    expect(overlay.getText('n')).toBe('93456789012')
+  })
+
   it('steps on the wheel only while focused and over the field', () => {
     const { overlay, changes } = make()
     expect(overlay.wheel(130, 60, 0, -40)).toBe(false)

@@ -1,3 +1,26 @@
+## 1.0.0-rc.20 (2026-10-07)
+
+### Fixes
+
+- **niivue:** recompute legend centroids when the volume affine changes ([a878eeb](https://github.com/niivue/mono/commit/a878eeb))
+
+### Performance
+
+- ⚠️  **niivue:** compute legend label centroids lazily ([fe79675](https://github.com/niivue/mono/commit/fe79675))
+
+### Breaking Changes
+
+- **niivue:** compute legend label centroids lazily  ([fe79675](https://github.com/niivue/mono/commit/fe79675))
+  LUT.centroids is removed, and LegendEntry.centroid is now
+  `() => [number, number, number] | undefined` instead of a precomputed vec3.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.19 (2026-10-06)
 
 ### Features

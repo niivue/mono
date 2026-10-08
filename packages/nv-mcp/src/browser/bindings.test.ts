@@ -542,6 +542,17 @@ describe('bindControls: meshes', () => {
     expect(onError.mock.calls[0][0].message).toContain('Bind it again')
   })
 
+  it('keeps the last value of a mesh property once its mesh is replaced', () => {
+    const { add_control, meshes, list_controls } = meshView()
+    meshes[0].visible = false
+    add_control({ id: 'v', kind: 'toggle', bind: 'mesh.0.visible' })
+    meshes[0] = { ...meshes[0], visible: false }
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'v')?.value).toBe(false)
+  })
+
   it('stops driving a mesh loaded again at its index from the same source', () => {
     const { add_control, memory, meshes, view, onError, list_controls } =
       meshView()

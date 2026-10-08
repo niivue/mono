@@ -556,7 +556,10 @@ function meshTarget(bind: string, view: View): Target {
       ...(choices ? { choices } : {}),
       ...range,
       read: () => {
-        const value = current()?.[field]
+        // A mesh gone from under the bind reads as nothing, not as the default.
+        const bound = current()
+        if (!bound) return undefined
+        const value = bound[field]
         return value === undefined ? unset : (value as ControlValue)
       },
       write: (value) => {
@@ -582,7 +585,7 @@ function meshTarget(bind: string, view: View): Target {
   const setOptions = set.bind(view)
   const key = group === 'tract' ? 'tractOptions' : 'connectomeOptions'
   if (group === 'tract' && (name === 'colorBy' || name === 'group'))
-    return tractChoice(bind, name, index, mesh, view, setOptions, gone)
+    return tractChoice(bind, name, index, mesh, current, setOptions, gone)
   const { shape, min, max, step, colormaps, bytes } = table[name]
   const choices = colormaps && view.colormaps ? [...view.colormaps] : undefined
   return {
@@ -629,13 +632,12 @@ function tractChoice(
   name: 'colorBy' | 'group',
   index: number,
   mesh: ShownMesh,
-  view: View,
+  current: () => ShownMesh | undefined,
   setOptions: (index: number, options: Record<string, unknown>) => unknown,
   gone: () => void,
 ): Target {
   const data = tractData(mesh)
-  const options = () =>
-    view.meshes?.[index] === mesh ? mesh.tractOptions : undefined
+  const options = () => current()?.tractOptions
   if (name === 'colorBy') {
     const choices = [
       ...TRACT_COLOR_MODES,

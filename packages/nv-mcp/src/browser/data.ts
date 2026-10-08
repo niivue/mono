@@ -137,7 +137,7 @@ export function dataHandlers(host: NiiVueHost): Handlers {
         )
       // Another loader takes other arguments, so only the same one keeps the base's.
       const same = base?.tool === tool
-      const kept = base && same ? base.args : {}
+      const kept = same ? base?.args : undefined
       const args = { ...kept, ...(record(params, 'args') ?? {}) }
       const label = text(params, 'label')
       const description =

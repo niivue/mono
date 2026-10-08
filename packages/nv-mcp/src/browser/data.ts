@@ -26,12 +26,16 @@ export interface DataPalette {
   remove(id: string): void
   /** Loads the entry, through the handlers `connect` gave it. */
   load(id: string): Promise<unknown>
-  /** The handlers that answer the loading tools, which `load` calls. */
+  /**
+   * The handlers that answer the loading tools, which `load` calls. `coreHandlers`
+   * connects its own; a page that wraps a loader (to track or check what
+   * loads) connects its own map afterwards, or `load_data` and `data.<id>` skip the wrapper.
+   */
   connect(handlers: Handlers): void
 }
 
 /** An entry checked: a loader, an object of arguments with a url, and no tab (the entry loads where it is pressed). */
-export function checkedEntry(entry: DataEntry): DataEntry {
+function checkedEntry(entry: DataEntry): DataEntry {
   const id = entry.id?.trim()
   if (!id) throw new Error('A data entry needs an id.')
   if (!DATA_LOADERS.includes(entry.tool))

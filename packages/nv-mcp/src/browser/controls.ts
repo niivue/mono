@@ -98,12 +98,13 @@ export const VALUE_KINDS: Record<
 }
 
 /** The value a control of `kind` starts with when the agent gives none. */
-export function defaultValue(spec: ControlSpec): ControlValue {
+function defaultValue(spec: ControlSpec): ControlValue {
   switch (VALUE_KINDS[spec.kind]) {
     case 'boolean':
       return false
     case 'number':
-      return spec.min ?? 0
+      // The low end of the range, or 0 when that falls inside it.
+      return spec.min ?? Math.min(0, spec.max ?? 0)
     case 'string':
       return spec.options?.[0]?.id ?? ''
     case 'color':
@@ -377,6 +378,11 @@ export function settled<T extends ControlSpec>(
   control: T,
   others: readonly ControlSpec[],
 ): T {
+  const { min, max } = control
+  if (min !== undefined && max !== undefined && min > max)
+    throw new Error(
+      `"${control.id}" has min ${min} above max ${max}. Give a min no greater than its max.`,
+    )
   const cell = control.row !== undefined || control.col !== undefined
   const point = control.x !== undefined || control.y !== undefined
   if (control.kind === 'dialog') {

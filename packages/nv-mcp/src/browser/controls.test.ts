@@ -212,6 +212,20 @@ describe('set_control', () => {
     add_control({ id: 'c', kind: 'button', row: 0, col: 0 })
   })
 
+  it('refuses a range whose min is above its max, and starts inside it', () => {
+    const { add_control, set_control } = controlHandlers(hostWithControls())
+    expect(() =>
+      add_control({ id: 's', kind: 'slider', min: 50, max: 10 }),
+    ).toThrow(/min 50 above max 10/)
+    const below = add_control({ id: 'b', kind: 'slider', max: -10 }) as {
+      control: { value: number }
+    }
+    expect(below.control.value).toBe(-10)
+    expect(() => set_control({ id: 'b', min: 0 })).toThrow(
+      /min 0 above max -10/,
+    )
+  })
+
   it('refuses an unknown control and an empty change', () => {
     const { set_control } = controlHandlers(hostWithControls())
     expect(() => set_control({ id: 'nope', value: 1 })).toThrow(

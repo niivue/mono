@@ -15,8 +15,9 @@
  *    volume's explode, so a label follows its brick when the volume is
  *    spread apart).
  * 5. Gives the agent a control surface: UIKit widgets drawn on the canvas,
- *    bound to NiiVue settings, volume properties and the page's actions,
- *    so an agent can lay out a demo's controls and the person can use them.
+ *    bound to NiiVue settings, the view, volume and mesh properties, dialogs,
+ *    the data palette and the page's actions, so an agent can lay out a
+ *    demo's controls and the person can use them.
  */
 import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import {
@@ -288,10 +289,7 @@ host.controls = bindControls(
     view: nv,
     actions,
     data: host.data,
-    onError: (error, event) => {
-      announceLine.textContent = `${event.id}: ${error.message}`
-      announceLine.classList.remove('quiet')
-    },
+    onError: (error, event) => host.announce?.(`${event.id}: ${error.message}`),
   },
 )
 status.textContent = 'Ready.'

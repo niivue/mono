@@ -7,6 +7,7 @@
  */
 
 export type {
+  ControlBox,
   ControlKind,
   ControlOption,
   ControlPatch,
@@ -42,16 +43,9 @@ export type {
   ControlSurface,
   MemoryControls,
 } from './controls'
-export {
-  coerceValue,
-  controlHandlers,
-  defaultValue,
-  memoryControls,
-  patched,
-  VALUE_KINDS,
-} from './controls'
+export { coerceValue, controlHandlers, memoryControls } from './controls'
 export type { DataPalette } from './data'
-export { checkedEntry, dataHandlers, dataPalette } from './data'
+export { dataHandlers, dataPalette } from './data'
 export { markHandlers } from './marks'
 export { describeMesh, meshHandlers } from './meshes'
 export type { Params } from './params'

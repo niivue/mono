@@ -644,7 +644,7 @@ function swatches(palette: readonly string[]): ColorSwatch[] {
 let probe: CanvasRenderingContext2D | null | undefined
 
 /** A CSS colour as four channels 0 to 1, by painting a pixel with it. */
-export function cssColor(text: string): RGBA | undefined {
+function cssColor(text: string): RGBA | undefined {
   if (probe === undefined) {
     probe =
       typeof document === 'undefined'

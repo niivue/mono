@@ -199,7 +199,7 @@ export function registerControlTools(
       'or text field, text area, dialog, color control or file picker, with a label, a value and the ' +
       'fields its kind takes. Place it in the grid with row and col (both optional: left out, it goes ' +
       'under the rest of column 0); the page sizes rows and columns to the widgets, so nothing overlaps. ' +
-      'x and y place it at an exact spot instead. A dialog is centred and takes neither. ' +
+      'x and y place it at an exact spot instead. A dialog takes no row or col; it is centred unless given x and y. ' +
       'bind names what it drives: when the person uses the control it sets what it names or runs the ' +
       'action, and a change made anywhere else shows on it. ' +
       'Reports the control as made, with the box it was drawn in, in canvas pixels. ' +

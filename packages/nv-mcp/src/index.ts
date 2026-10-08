@@ -8,6 +8,7 @@
  */
 
 export type {
+  ControlBox,
   ControlKind,
   ControlOption,
   ControlPatch,

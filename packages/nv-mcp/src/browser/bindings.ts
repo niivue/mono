@@ -40,6 +40,7 @@ import {
   type ControlEvent,
   type ControlSurface,
   coerceValue,
+  type HostedControls,
   patched,
   settled,
   VALUE_KINDS,
@@ -75,8 +76,12 @@ export interface BindOptions {
   onError?(error: Error, event: ControlEvent): void
 }
 
-/** A surface whose controls drive what they are bound to. */
-export interface BoundControls extends ControlSurface {
+/**
+ * A surface whose controls drive what they are bound to. `add` and
+ * `update` given a value return a promise when NiiVue finishes setting
+ * what the control drives later, and reject when it fails.
+ */
+export interface BoundControls extends HostedControls {
   /** Reads every bound value and shows the ones that changed. */
   sync(): void
   /** Stops listening to the surface it wraps. */
@@ -891,8 +896,36 @@ export function bindControls(
     bound.set(id, { bind, target, last: target.read?.() })
   }
 
+  /**
+   * The control whose agent write NiiVue is still finishing. Until it
+   * reports, other changes to the controls are turned away, so none lands
+   * between the write and its control (a taken id or cell, a remove, a
+   * rebind) to fail the call after what it drives has changed.
+   */
+  let busy: string | undefined
+  const idle = () => {
+    if (busy !== undefined)
+      throw new Error(
+        `NiiVue is still setting what "${busy}" drives. Call again once that call reports.`,
+      )
+  }
+  /** `then` once `done` resolves, holding the other changes off until it settles. */
+  const waited = (
+    id: string,
+    done: Promise<unknown>,
+    then: () => ControlState,
+  ) => {
+    busy = id
+    return done
+      .finally(() => {
+        busy = undefined
+      })
+      .then(then)
+  }
+
   return {
     add(spec) {
+      idle()
       if (!spec.bind) return surface.add(spec)
       if (find(spec.id))
         throw new Error(
@@ -902,24 +935,32 @@ export function bindControls(
       const filled = fitted(spec, target, spec.bind)
       // Placed first: a refused cell must leave what it drives untouched.
       settled(filled, surface.list())
+      const bind = spec.bind
       const given = spec.value
-      if (given !== undefined && given !== null) {
+      const writing = given !== undefined && given !== null
+      const place = () => {
+        const control = surface.add(filled)
+        remember(control.id, bind, target)
+        if (writing) view.drawScene()
+        return control
+      }
+      if (writing) {
         // The agent's value is set on what the control drives first, so a
-        // bad one leaves nothing behind.
+        // bad one leaves nothing behind; a write NiiVue finishes later is
+        // waited for, so its failure is the agent's error and no control.
         const value = coerceValue(filled, given)
-        settle(target.write?.(value), { id: spec.id, type: 'change', value })
         filled.value = value
+        const done = target.write?.(value)
+        if (done instanceof Promise) return waited(spec.id, done, place)
       } else {
         const now = shown(filled, target.read?.())
         if (now !== undefined) filled.value = now
       }
-      const control = surface.add(filled)
-      remember(control.id, spec.bind, target)
-      if (given !== undefined && given !== null) view.drawScene()
-      return control
+      return place()
     },
 
     update(id, patch) {
+      idle()
       const was = find(id)
       if (!was) throw new Error(`There is no control with the id "${id}".`)
       let entry = bound.get(id)
@@ -942,35 +983,40 @@ export function bindControls(
         after,
         surface.list().filter((c) => c.id !== id),
       )
-      if (target?.write && patch.value !== undefined)
-        settle(target.write(after.value), {
-          id,
-          type: 'change',
-          value: after.value,
-        })
-      if (rebinding && target && patch.value === undefined) {
-        const now = shown(after, target.read?.())
-        if (now !== undefined) next.value = now
+      const finish = () => {
+        if (rebinding && target && patch.value === undefined) {
+          const now = shown(after, target.read?.())
+          if (now !== undefined) next.value = now
+        }
+        const control = surface.update(id, next)
+        if (rebinding) {
+          if (target && patch.bind) remember(id, patch.bind, target)
+          else bound.delete(id)
+          entry = bound.get(id)
+        }
+        if (entry && patch.value !== undefined) {
+          entry.last = entry.target.read?.()
+          view.drawScene()
+        }
+        return control
       }
-      const control = surface.update(id, next)
-      if (rebinding) {
-        if (target && patch.bind) remember(id, patch.bind, target)
-        else bound.delete(id)
-        entry = bound.get(id)
-      }
-      if (entry && patch.value !== undefined) {
-        entry.last = entry.target.read?.()
-        view.drawScene()
-      }
-      return control
+      // As in add: a write NiiVue finishes later is waited for, and its
+      // failure leaves the control as it was.
+      const done =
+        target?.write && patch.value !== undefined
+          ? target.write(after.value)
+          : undefined
+      return done instanceof Promise ? waited(id, done, finish) : finish()
     },
 
     remove(id) {
+      idle()
       bound.delete(id)
       surface.remove(id)
     },
 
     clear() {
+      idle()
       bound.clear()
       surface.clear()
     },

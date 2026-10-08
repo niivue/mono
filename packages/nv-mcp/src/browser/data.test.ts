@@ -82,6 +82,17 @@ describe('the data palette', () => {
     })
   })
 
+  it("drops the base's arguments when the loader changes", () => {
+    const { add_data } = setup()
+    const got = add_data({
+      id: 'doc',
+      from: 'motor',
+      tool: 'load_document',
+      args: { url: '/docs/a.nvd' },
+    }) as { data: { args: unknown } }
+    expect(got.data.args).toEqual({ url: '/docs/a.nvd' })
+  })
+
   it('declines what is not a load, a taken id and an entry not there', () => {
     const { add_data, load_data } = setup()
     expect(() => add_data({ id: 'x', args: { url: 'a' } })).toThrow(

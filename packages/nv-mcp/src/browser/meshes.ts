@@ -57,8 +57,40 @@ function describeLayer(layer: ShownMeshLayer, index: number) {
   }
 }
 
+/** A tract's scalars as `colorBy` names them, each with its range when NiiVue knows it. */
+export interface TractScalar {
+  colorBy: string
+  min?: number
+  max?: number
+}
+
+/** The colour modes every tract takes, as `colorBy` names them; `direction` stands for NiiVue's ''. */
+export const TRACT_COLOR_MODES = ['direction', 'global', 'fixed'] as const
+
+/** A tract's groups and scalars, read off the data it was loaded with. */
+export function tractData(mesh: ShownMesh): {
+  groups: string[]
+  scalars: TractScalar[]
+} {
+  const trx = mesh.trx
+  const scalars = (kind: 'dpv' | 'dps'): TractScalar[] =>
+    Object.keys(trx?.[kind] ?? {}).map((name) => {
+      const meta = trx?.[`${kind}Meta`]?.[name]
+      return {
+        colorBy: `${kind}:${name}`,
+        ...(Number.isFinite(meta?.globalMin) ? { min: meta?.globalMin } : {}),
+        ...(Number.isFinite(meta?.globalMax) ? { max: meta?.globalMax } : {}),
+      }
+    })
+  return {
+    groups: Object.keys(trx?.groups ?? {}),
+    scalars: [...scalars('dpv'), ...scalars('dps')],
+  }
+}
+
 /** A mesh as the tools report it. */
 export function describeMesh(mesh: ShownMesh, index: number) {
+  const tract = mesh.kind === 'tract' && mesh.trx ? tractData(mesh) : undefined
   return {
     index,
     name: mesh.name ?? `mesh ${index}`,
@@ -73,6 +105,8 @@ export function describeMesh(mesh: ShownMesh, index: number) {
     ...(mesh.isLegendVisible ? { legend: true } : {}),
     ...(mesh.layers?.length ? { layers: mesh.layers.map(describeLayer) } : {}),
     ...(mesh.tractOptions ? { tract: mesh.tractOptions } : {}),
+    ...(tract?.groups.length ? { groups: tract.groups } : {}),
+    ...(tract?.scalars.length ? { scalars: tract.scalars } : {}),
     ...(mesh.connectomeOptions ? { connectome: mesh.connectomeOptions } : {}),
   }
 }

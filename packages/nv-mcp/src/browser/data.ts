@@ -135,7 +135,9 @@ export function dataHandlers(host: NiiVueHost): Handlers {
         throw new Error(
           `add_data needs the tool the entry calls: one of ${DATA_LOADERS.join(', ')}.`,
         )
-      const args = { ...(base?.args ?? {}), ...(record(params, 'args') ?? {}) }
+      // Another loader takes other arguments, so only the same one keeps the base's.
+      const kept = base && base.tool === tool ? base.args : {}
+      const args = { ...kept, ...(record(params, 'args') ?? {}) }
       const label = text(params, 'label')
       const description = text(params, 'description') ?? base?.description
       const data = palette().add({

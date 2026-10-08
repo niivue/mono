@@ -44,6 +44,7 @@ import {
   VALUE_KINDS,
 } from './controls'
 import type { DataPalette } from './data'
+import { TRACT_COLOR_MODES, tractData } from './meshes'
 import type {
   MeshUpdate,
   ShownMesh,
@@ -94,8 +95,8 @@ interface Target {
   step?: number
   /** Its value now; undefined when it cannot be read just now. */
   read?(): ControlValue | undefined
-  /** Sets it, throwing in words before changing anything when it cannot. */
-  write?(value: ControlValue): void
+  /** Sets it, throwing in words before changing anything when it cannot; NiiVue may finish later. */
+  write?(value: ControlValue): unknown
   action?: PageAction
 }
 
@@ -206,7 +207,12 @@ const TRACT_PROPS: Record<string, MeshOption> = {
   calMinNeg: { shape: 'number' },
   calMaxNeg: { shape: 'number' },
   fixedColor: { shape: 'color', bytes: true },
+  // Not an option of NiiVue's: the one group shown, through groupColors.
+  group: { shape: 'string' },
 }
+
+/** The colour a group shown alone is drawn in: the first of NiiVue's tract.group example palette. */
+const GROUP_COLOR = [230, 25, 75, 255]
 
 /** NiiVue's `NVConnectomeOptions` a control can hold, by the names `set_mesh` takes. */
 const CONNECTOME_PROPS: Record<string, MeshOption> = {
@@ -262,7 +268,7 @@ const FORMS: BindingVocabulary['forms'] = [
   },
   {
     form: 'mesh.<index>.tract.<option>',
-    description: `An option of a loaded tract, as set_mesh names it: ${Object.keys(TRACT_PROPS).join(', ')}.`,
+    description: `An option of a loaded tract, as set_mesh names it: ${Object.keys(TRACT_PROPS).join(', ')}. A select bound to colorBy takes direction, global, fixed and the tract's scalars (list_meshes reports them); one bound to group shows all groups or one alone.`,
   },
   {
     form: 'mesh.<index>.connectome.<option>',
@@ -419,7 +425,7 @@ export function resolveBinding(
           throw new Error(
             `${bind} takes one of the colormaps: ${choices.join(', ')}.`,
           )
-        void setVolume(index, { [field]: value } as VolumeUpdate)
+        return setVolume(index, { [field]: value } as VolumeUpdate)
       },
     }
   }
@@ -518,9 +524,19 @@ function meshTarget(bind: string, view: View): Target {
     throw new Error(
       `There is no mesh ${index}: ${meshes.length} ${meshes.length === 1 ? 'is' : 'are'} loaded.`,
     )
+  // The bind names an index, so a mesh removed or loaded in its place
+  // would take writes meant for this one.
   const gone = () => {
-    if (!view.meshes?.[index])
-      throw new Error(`Mesh ${index} is no longer loaded.`)
+    const now = view.meshes?.[index]
+    if (!now) throw new Error(`Mesh ${index} is no longer loaded.`)
+    if (
+      now.kind !== mesh.kind ||
+      now.url !== mesh.url ||
+      now.name !== mesh.name
+    )
+      throw new Error(
+        `Mesh ${index} is now ${now.name ?? 'another mesh'}, not the one this control was bound to. Bind it again.`,
+      )
   }
 
   if (!group || !table) {
@@ -545,7 +561,7 @@ function meshTarget(bind: string, view: View): Target {
           throw new Error(
             `${bind} takes one of the mesh shaders: ${choices.join(', ')}.`,
           )
-        void setMesh(index, { [field]: value } as MeshUpdate)
+        return setMesh(index, { [field]: value } as MeshUpdate)
       },
     }
   }
@@ -560,6 +576,8 @@ function meshTarget(bind: string, view: View): Target {
     throw new Error(`This page's NiiVue cannot change how ${group}s are drawn.`)
   const setOptions = set.bind(view)
   const key = group === 'tract' ? 'tractOptions' : 'connectomeOptions'
+  if (group === 'tract' && (name === 'colorBy' || name === 'group'))
+    return tractChoice(bind, name, index, mesh, view, setOptions, gone)
   const { shape, min, max, step, colormaps, bytes } = table[name]
   const choices = colormaps && view.colormaps ? [...view.colormaps] : undefined
   return {
@@ -591,7 +609,73 @@ function meshTarget(bind: string, view: View): Target {
         const rgba = [...value.slice(0, 3), value[3] ?? (had?.[3] ?? 255) / 255]
         given = bytes ? rgba.map((c) => Math.round(c * 255)) : rgba
       }
-      void setOptions(index, { [name]: given })
+      return setOptions(index, { [name]: given })
+    },
+  }
+}
+
+/**
+ * A tract's colour mode or its one group shown, as a select holds them:
+ * the choices come from the tract, `direction` standing for NiiVue's ''
+ * colour mode and `all` for every group shown (groupColors null).
+ */
+function tractChoice(
+  bind: string,
+  name: 'colorBy' | 'group',
+  index: number,
+  mesh: ShownMesh,
+  view: View,
+  setOptions: (index: number, options: Record<string, unknown>) => unknown,
+  gone: () => void,
+): Target {
+  const data = tractData(mesh)
+  const options = () => view.meshes?.[index]?.tractOptions
+  if (name === 'colorBy') {
+    const choices = [
+      ...TRACT_COLOR_MODES,
+      ...data.scalars.map((s) => s.colorBy),
+    ]
+    return {
+      shape: 'string',
+      choices,
+      read: () => {
+        const value = options()?.colorBy
+        if (typeof value !== 'string') return undefined
+        return value === '' ? 'direction' : value
+      },
+      write: (value) => {
+        gone()
+        if (typeof value !== 'string' || !choices.includes(value))
+          throw new Error(`${bind} takes one of: ${choices.join(', ')}.`)
+        return setOptions(index, {
+          colorBy: value === 'direction' ? '' : value,
+        })
+      },
+    }
+  }
+  if (!data.groups.length)
+    throw new Error(
+      `${mesh.name ?? `Mesh ${index}`} has no groups to choose among.`,
+    )
+  const choices = ['all', ...data.groups]
+  return {
+    shape: 'string',
+    choices,
+    read: () => {
+      const shown = options()?.groupColors
+      if (shown === undefined) return undefined
+      if (shown === null) return 'all'
+      const keys = Object.keys(shown as object)
+      // Several groups shown is no one choice of the select.
+      return keys.length === 1 ? keys[0] : undefined
+    },
+    write: (value) => {
+      gone()
+      if (typeof value !== 'string' || !choices.includes(value))
+        throw new Error(`${bind} takes one of: ${choices.join(', ')}.`)
+      return setOptions(index, {
+        groupColors: value === 'all' ? null : { [value]: GROUP_COLOR },
+      })
     },
   }
 }
@@ -695,6 +779,10 @@ export function bindControls(
     if (options.onError) options.onError(err, event)
     else console.error(`Control ${event.id}:`, err)
   }
+  /** Hears a write NiiVue finishes later failing, as `fail` hears one that throws now. */
+  const settle = (done: unknown, event: ControlEvent) => {
+    if (done instanceof Promise) done.catch((error) => fail(error, event))
+  }
   const find = (id: string) => surface.list().find((c) => c.id === id)
 
   /** The dialog `id` names, or a throw in words when there is none. */
@@ -708,35 +796,33 @@ export function bindControls(
     )
   }
 
-  /** The palette entry `id` names, or a throw in words when there is none. */
-  const entryOf = (id: string) => {
-    if (!options.data)
-      throw new Error('This page has no data palette to load from.')
-    const entry = options.data.get(id)
-    if (entry) return { palette: options.data, entry }
-    const known = options.data.list().map((e) => e.id)
-    throw new Error(
-      known.length
-        ? `There is no data "${id}". There is: ${known.join(', ')}. add_data puts more there.`
-        : `There is no data "${id}": the palette is empty. add_data puts an entry there.`,
-    )
-  }
-
   /** What `bind` names: a dialog to open or data to load here, anything else as `resolveBinding` finds it. */
   const resolve = (bind: string): Target => {
     if (bind.startsWith('data.')) {
-      const id = bind.slice('data.'.length)
-      const { entry } = entryOf(id)
+      const id = bind.slice('data.'.length).trim()
+      const palette = options.data
+      if (!palette)
+        throw new Error('This page has no data palette to load from.')
+      const entry = palette.get(id)
+      if (!entry) {
+        const known = palette.list().map((e) => e.id)
+        throw new Error(
+          known.length
+            ? `There is no data "${id}". There is: ${known.join(', ')}. add_data puts more there.`
+            : `There is no data "${id}": the palette is empty. add_data puts an entry there.`,
+        )
+      }
+      // The palette throws in words if the entry is removed after binding.
       return {
         shape: 'action',
         action: {
           description: `Loads ${entry.label}.`,
-          run: () => entryOf(id).palette.load(id),
+          run: () => palette.load(id),
         },
       }
     }
     if (!bind.startsWith('dialog.')) return resolveBinding(bind, view, actions)
-    const id = bind.slice('dialog.'.length)
+    const id = bind.slice('dialog.'.length).trim()
     dialogOf(id)
     return {
       shape: 'action',
@@ -782,7 +868,7 @@ export function bindControls(
     const control = find(event.id)
     if (event.type === 'input' && !(control && LIVE.has(control.kind))) return
     try {
-      target.write(control ? control.value : event.value)
+      settle(target.write(control ? control.value : event.value), event)
       entry.last = target.read?.()
       view.drawScene()
     } catch (error) {
@@ -811,7 +897,7 @@ export function bindControls(
         // The agent's value is set on what the control drives first, so a
         // bad one leaves nothing behind.
         const value = coerceValue(filled, given)
-        target.write?.(value)
+        settle(target.write?.(value), { id: spec.id, type: 'change', value })
         filled.value = value
       } else {
         const now = shown(filled, target.read?.())
@@ -842,7 +928,12 @@ export function bindControls(
         }
       }
       const after = patched(was, next)
-      if (target?.write && patch.value !== undefined) target.write(after.value)
+      if (target?.write && patch.value !== undefined)
+        settle(target.write(after.value), {
+          id,
+          type: 'change',
+          value: after.value,
+        })
       if (rebinding && target && patch.value === undefined) {
         const now = shown(after, target.read?.())
         if (now !== undefined) next.value = now

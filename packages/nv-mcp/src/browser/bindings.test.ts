@@ -430,6 +430,11 @@ function meshView() {
         colorBy: 'fixed',
         fixedColor: [255, 0, 0, 128],
       },
+      trx: {
+        groups: { CST: [], AF: [] },
+        dps: { z_score: [] },
+        dpsMeta: { z_score: { globalMin: 0, globalMax: 5 } },
+      },
     },
     {
       name: 'net.jcon',
@@ -464,6 +469,78 @@ function meshView() {
 }
 
 describe('bindControls: meshes', () => {
+  it("offers a tract's colour modes and scalars, direction standing for ''", () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 'c',
+      kind: 'select',
+      bind: 'mesh.1.tract.colorBy',
+    }) as Reported
+    expect(
+      (got.control.options as Array<{ id: string }>).map((o) => o.id),
+    ).toEqual(['direction', 'global', 'fixed', 'dps:z_score'])
+    expect(got.control.value).toBe('fixed')
+    memory.simulate({ id: 'c', type: 'change', value: 'direction' })
+    expect(meshes[1].tractOptions?.colorBy).toBe('')
+    memory.simulate({ id: 'c', type: 'change', value: 'dps:z_score' })
+    expect(meshes[1].tractOptions?.colorBy).toBe('dps:z_score')
+  })
+
+  it('shows one group of a tract alone, or all of them', () => {
+    const { add_control, memory, meshes, list_controls } = meshView()
+    const got = add_control({
+      id: 'g',
+      kind: 'select',
+      bind: 'mesh.1.tract.group',
+    }) as Reported
+    expect(
+      (got.control.options as Array<{ id: string }>).map((o) => o.id),
+    ).toEqual(['all', 'CST', 'AF'])
+    memory.simulate({ id: 'g', type: 'change', value: 'AF' })
+    expect(meshes[1].tractOptions?.groupColors).toEqual({
+      AF: [230, 25, 75, 255],
+    })
+    memory.simulate({ id: 'g', type: 'change', value: 'all' })
+    expect(meshes[1].tractOptions?.groupColors).toBeNull()
+    // A change made elsewhere shows on the select.
+    meshes[1].tractOptions = {
+      ...meshes[1].tractOptions,
+      groupColors: { CST: [0, 0, 0, 255] },
+    }
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'g')?.value).toBe('CST')
+  })
+
+  it('stops driving a mesh that another has replaced at its index', () => {
+    const { add_control, memory, meshes, view, onError } = meshView()
+    add_control({ id: 'g', kind: 'select', bind: 'mesh.1.tract.group' })
+    meshes[1] = { name: 'net.jcon', kind: 'connectome' }
+    memory.simulate({ id: 'g', type: 'change', value: 'AF' })
+    expect(view.setTractOptions).not.toHaveBeenCalled()
+    expect(onError.mock.calls[0][0].message).toContain('Bind it again')
+  })
+
+  it('hears a write that NiiVue fails later', async () => {
+    const { add_control, memory, view, onError } = meshView()
+    // The bind holds the setter it was made with, so it fails from the start.
+    view.setTractOptions = mock(() => Promise.reject(new Error('boom')))
+    add_control({ id: 'r', kind: 'slider', bind: 'mesh.1.tract.fiberRadius' })
+    memory.simulate({ id: 'r', type: 'change', value: 1 })
+    await Promise.resolve()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0].message).toBe('boom')
+  })
+
+  it('declines a group select on a tract with no groups', () => {
+    const { add_control, meshes } = meshView()
+    meshes[1].trx = null
+    expect(() =>
+      add_control({ id: 'g', kind: 'select', bind: 'mesh.1.tract.group' }),
+    ).toThrow('has no groups')
+  })
+
   it('drives a tract option from a slider as it moves', () => {
     const { add_control, memory, view } = meshView()
     const got = add_control({

@@ -197,6 +197,21 @@ describe('set_control', () => {
     expect(() => set_control({ id: 'b', x: 1 })).toThrow(/x and y together/)
   })
 
+  it('keeps one control to a grid cell', () => {
+    const { add_control, set_control } = controlHandlers(hostWithControls())
+    add_control({ id: 'a', kind: 'button', row: 0, col: 1 })
+    expect(() =>
+      add_control({ id: 'b', kind: 'button', row: 0, col: 1 }),
+    ).toThrow(/Row 0, col 1 holds "a"/)
+    // Left without a row, it goes under the rest of the column instead.
+    add_control({ id: 'b', kind: 'button', col: 1 })
+    expect(() => set_control({ id: 'b', row: 0 })).toThrow(/holds "a"/)
+    // A control may stay in its own cell, and a point is outside the grid.
+    set_control({ id: 'a', row: 0, col: 1, label: 'A' })
+    add_control({ id: 'p', kind: 'button', x: 0, y: 0 })
+    add_control({ id: 'c', kind: 'button', row: 0, col: 0 })
+  })
+
   it('refuses an unknown control and an empty change', () => {
     const { set_control } = controlHandlers(hostWithControls())
     expect(() => set_control({ id: 'nope', value: 1 })).toThrow(

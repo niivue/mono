@@ -41,6 +41,7 @@ import {
   type ControlSurface,
   coerceValue,
   patched,
+  settled,
   VALUE_KINDS,
 } from './controls'
 import type { DataPalette } from './data'
@@ -268,7 +269,13 @@ const FORMS: BindingVocabulary['forms'] = [
   },
   {
     form: 'mesh.<index>.tract.<option>',
-    description: `An option of a loaded tract, as set_mesh names it: ${Object.keys(TRACT_PROPS).join(', ')}. A select bound to colorBy takes direction, global, fixed and the tract's scalars (list_meshes reports them); one bound to group shows all groups or one alone.`,
+    description: `An option of a loaded tract, as set_mesh names it: ${Object.keys(
+      TRACT_PROPS,
+    )
+      .filter((k) => k !== 'group')
+      .join(
+        ', ',
+      )}. A select bound to colorBy takes direction, global, fixed and the tract's scalars (list_meshes reports them); one bound to group shows all groups or one alone, drawn in one flat colour.`,
   },
   {
     form: 'mesh.<index>.connectome.<option>',
@@ -524,16 +531,14 @@ function meshTarget(bind: string, view: View): Target {
     throw new Error(
       `There is no mesh ${index}: ${meshes.length} ${meshes.length === 1 ? 'is' : 'are'} loaded.`,
     )
-  // The bind names an index, so a mesh removed or loaded in its place
-  // would take writes meant for this one.
+  // The bind names an index, so a mesh removed, or loaded again in its
+  // place, would take writes meant for this one. NiiVue changes a mesh in
+  // place, so the object itself says whether it is still the one bound.
+  const current = () => (view.meshes?.[index] === mesh ? mesh : undefined)
   const gone = () => {
     const now = view.meshes?.[index]
     if (!now) throw new Error(`Mesh ${index} is no longer loaded.`)
-    if (
-      now.kind !== mesh.kind ||
-      now.url !== mesh.url ||
-      now.name !== mesh.name
-    )
+    if (now !== mesh)
       throw new Error(
         `Mesh ${index} is now ${now.name ?? 'another mesh'}, not the one this control was bound to. Bind it again.`,
       )
@@ -551,7 +556,7 @@ function meshTarget(bind: string, view: View): Target {
       ...(choices ? { choices } : {}),
       ...range,
       read: () => {
-        const value = view.meshes?.[index]?.[field]
+        const value = current()?.[field]
         return value === undefined ? unset : (value as ControlValue)
       },
       write: (value) => {
@@ -587,7 +592,7 @@ function meshTarget(bind: string, view: View): Target {
     ...(max === undefined ? {} : { max }),
     ...(step === undefined ? {} : { step }),
     read: () => {
-      const value = view.meshes?.[index]?.[key]?.[name]
+      const value = current()?.[key]?.[name]
       if (value === undefined || value === null) return undefined
       if (shape === 'color') {
         const channels = plainColor(value)
@@ -605,7 +610,7 @@ function meshTarget(bind: string, view: View): Target {
       let given: unknown = value
       if (shape === 'color' && Array.isArray(value)) {
         // A colour control without alpha keeps the alpha the option has.
-        const had = plainColor(view.meshes?.[index]?.[key]?.[name])
+        const had = plainColor(current()?.[key]?.[name])
         const rgba = [...value.slice(0, 3), value[3] ?? (had?.[3] ?? 255) / 255]
         given = bytes ? rgba.map((c) => Math.round(c * 255)) : rgba
       }
@@ -629,7 +634,8 @@ function tractChoice(
   gone: () => void,
 ): Target {
   const data = tractData(mesh)
-  const options = () => view.meshes?.[index]?.tractOptions
+  const options = () =>
+    view.meshes?.[index] === mesh ? mesh.tractOptions : undefined
   if (name === 'colorBy') {
     const choices = [
       ...TRACT_COLOR_MODES,
@@ -664,8 +670,9 @@ function tractChoice(
     read: () => {
       const shown = options()?.groupColors
       if (shown === undefined) return undefined
-      if (shown === null) return 'all'
-      const keys = Object.keys(shown as object)
+      const keys = shown === null ? [] : Object.keys(shown as object)
+      // NiiVue shows every group when none is named.
+      if (keys.length === 0) return 'all'
       // Several groups shown is no one choice of the select.
       return keys.length === 1 ? keys[0] : undefined
     },
@@ -857,8 +864,7 @@ export function bindControls(
     if (target.action) {
       if (event.type === 'input') return
       try {
-        const done = target.action.run(event)
-        if (done instanceof Promise) done.catch((error) => fail(error, event))
+        settle(target.action.run(event), event)
       } catch (error) {
         fail(error, event)
       }
@@ -892,6 +898,8 @@ export function bindControls(
         )
       const target = resolve(spec.bind)
       const filled = fitted(spec, target, spec.bind)
+      // Placed first: a refused cell must leave what it drives untouched.
+      settled(filled, surface.list())
       const given = spec.value
       if (given !== undefined && given !== null) {
         // The agent's value is set on what the control drives first, so a
@@ -928,6 +936,10 @@ export function bindControls(
         }
       }
       const after = patched(was, next)
+      settled(
+        after,
+        surface.list().filter((c) => c.id !== id),
+      )
       if (target?.write && patch.value !== undefined)
         settle(target.write(after.value), {
           id,

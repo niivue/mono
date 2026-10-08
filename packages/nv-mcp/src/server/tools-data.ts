@@ -42,7 +42,8 @@ export const DATA_SCHEMAS = {
           '(and mesh, for add_mesh_layer), plus any of its options, like colormap, cal_min or opacity.',
       ),
     from: ID.optional().describe(
-      'An entry to start from: its tool, arguments and description, with tool and args given here laid over them.',
+      'An entry to start from: its tool, arguments and description, with what is given here laid over them. ' +
+        'A tool naming another loader starts its arguments and description afresh.',
     ),
   },
   remove_data: {

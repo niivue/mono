@@ -403,11 +403,14 @@ export function settled<T extends ControlSpec>(
   // One control to a cell, so the grid never draws one over another.
   const holder = others.find(
     (c) =>
-      c.id !== control.id && inGrid(c) && c.row === row && (c.col ?? 0) === col,
+      c.id !== control.id &&
+      inGrid(c) &&
+      (c.row ?? 0) === row &&
+      (c.col ?? 0) === col,
   )
   if (holder)
     throw new Error(
-      `Row ${row}, col ${col} holds "${holder.id}". Pick a free cell, or leave row out to go under the rest of column ${col}.`,
+      `Row ${row}, col ${col} holds "${holder.id}". Pick a free row or column.`,
     )
   return { ...control, row, col }
 }

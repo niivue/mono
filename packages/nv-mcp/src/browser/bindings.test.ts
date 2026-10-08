@@ -353,6 +353,26 @@ describe('bindControls: both ways', () => {
     expect(view.volumes[1].opacity).toBe(0.5)
   })
 
+  it('leaves what a control drives alone when its cell is refused', () => {
+    const { add_control, set_control, view } = setup()
+    add_control({ id: 'a', kind: 'button', row: 0, col: 0 })
+    add_control({ id: 's', kind: 'slider', row: 1, col: 0, bind: 'gamma' })
+    expect(() =>
+      add_control({
+        id: 't',
+        kind: 'slider',
+        row: 0,
+        col: 0,
+        bind: 'gamma',
+        value: 2,
+      }),
+    ).toThrow(/holds "a"/)
+    expect(() => set_control({ id: 's', row: 0, value: 3 })).toThrow(
+      /holds "a"/,
+    )
+    expect(view.gamma).toBe(1)
+  })
+
   it('stops tracking a control once it is removed', () => {
     const { add_control, remove_control, controls, view } = setup()
     add_control({ id: 'g', kind: 'slider', x: 0, y: 0, max: 4, bind: 'gamma' })
@@ -522,6 +542,24 @@ describe('bindControls: meshes', () => {
     expect(onError.mock.calls[0][0].message).toContain('Bind it again')
   })
 
+  it('stops driving a mesh loaded again at its index from the same source', () => {
+    const { add_control, memory, meshes, view, onError, list_controls } =
+      meshView()
+    add_control({ id: 'r', kind: 'slider', bind: 'mesh.1.tract.fiberRadius' })
+    meshes[1] = {
+      ...meshes[1],
+      tractOptions: { ...meshes[1].tractOptions, fiberRadius: 2 },
+    }
+    // The new mesh's value does not show on the control bound to the old one.
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'r')?.value).toBe(0.5)
+    memory.simulate({ id: 'r', type: 'change', value: 1 })
+    expect(view.setTractOptions).not.toHaveBeenCalled()
+    expect(onError.mock.calls[0][0].message).toContain('Bind it again')
+  })
+
   it('hears a write that NiiVue fails later', async () => {
     const { add_control, memory, view, onError } = meshView()
     // The bind holds the setter it was made with, so it fails from the start.
@@ -531,6 +569,16 @@ describe('bindControls: meshes', () => {
     await Promise.resolve()
     expect(onError).toHaveBeenCalledTimes(1)
     expect(onError.mock.calls[0][0].message).toBe('boom')
+  })
+
+  it('reads no named groups as all of them shown', () => {
+    const { add_control, meshes, list_controls } = meshView()
+    add_control({ id: 'g', kind: 'select', bind: 'mesh.1.tract.group' })
+    meshes[1].tractOptions = { ...meshes[1].tractOptions, groupColors: {} }
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'g')?.value).toBe('all')
   })
 
   it('declines a group select on a tract with no groups', () => {

@@ -91,6 +91,14 @@ export interface ShownVolume {
   dims?: ArrayLike<number>
 }
 
+/** A tile of a custom layout: NiiVue's `CustomLayoutTile`. */
+export interface LayoutTile {
+  sliceType: number
+  position: [number, number, number, number]
+  sliceMM?: number
+  fill?: boolean
+}
+
 /** Statistics over a volume's voxels: NiiVue's `DescriptiveStats`. */
 export interface Descriptives {
   nVox: number
@@ -105,6 +113,19 @@ export interface Descriptives {
   maxNot0: number
   volumeMM3: number
   volumeML: number
+}
+
+/** A named volume transform, as NiiVue describes it: `TransformInfo`. */
+export interface TransformInfo {
+  name: string
+  description: string
+  options: Array<{
+    name: string
+    label: string
+    type: 'checkbox' | 'select'
+    default: unknown
+    options?: unknown[]
+  }>
 }
 
 /** A translation, rotation and scale to apply to a volume: NiiVue's `AffineTransform`. */
@@ -137,6 +158,16 @@ export interface TransformedVolume {
   name?: string
   hdr?: unknown
   img?: unknown
+}
+
+/** A colormap as `View.addColormap` takes it. */
+export interface ColormapToAdd {
+  R: number[]
+  G: number[]
+  B: number[]
+  A?: number[]
+  I?: number[]
+  labels?: string[]
 }
 
 export interface View {
@@ -221,6 +252,7 @@ export interface View {
     transform: AffineTransform,
   ): Promise<unknown>
   volumeTransforms?: readonly string[]
+  getVolumeTransformInfo?(name: string): TransformInfo | undefined
   /**
    * Each named transform as a function of a loaded volume, giving a new
    * one. A method signature, so a NiiVue whose transforms take its own
@@ -243,6 +275,23 @@ export interface View {
   pan2Dxyzmm?: ArrayLike<number>
   renderPan?: ArrayLike<number>
   renderPivotMM?: ArrayLike<number> | null
+  customLayout?: LayoutTile[] | null
+  clearCustomLayout?(): unknown
+
+  // Colormaps and fonts.
+  colormaps?: readonly string[]
+  drawingColormaps?: readonly string[]
+  hasColormap?(name: string): boolean
+  addColormap?(name: string, colormap: ColormapToAdd): string
+  addColormapFromUrl?(url: string, name?: string): Promise<unknown>
+  setFontFromUrl?(urls: { atlas: string; metrics: string }): Promise<boolean>
+
+  // What the page's NiiVue is.
+  backend?: string
+  volumeExtensions?: readonly string[]
+  meshExtensions?: readonly string[]
+  volumeWriteExtensions?: readonly string[]
+  meshWriteExtensions?: readonly string[]
 }
 
 /** A region as an atlas keeps it: what `list_regions` reports plus its voxel value. */

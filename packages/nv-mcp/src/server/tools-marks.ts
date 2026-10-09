@@ -92,8 +92,13 @@ export const MARK_SCHEMAS = {
       .record(z.string(), z.unknown())
       .optional()
       .describe(
-        'For add: a NiiVue VectorAnnotation as JSON, with id, label, group, sliceType, ' +
-          'slicePosition, polygons (each a list of [x, y] points in slice fractions) and style.',
+        'For add: a NiiVue VectorAnnotation as JSON, with id, sliceType (0 axial, 1 coronal, ' +
+          '2 sagittal), slicePosition (where the slice is in mm along its own axis: the ' +
+          "crosshair's z for an axial slice, as where_am_i reports it) and polygons; and, if " +
+          'wanted, label (a number), group, text and style ({fillColor, strokeColor} as ' +
+          '[r, g, b, a] 0 to 1, strokeWidth in pixels; red otherwise). Each polygon is a list ' +
+          'of at least three [x, y] points in mm on the slice plane (axial x and y, coronal x ' +
+          'and z, sagittal y and z), or {outer, holes} with such lists.',
       ),
     json: z
       .string()

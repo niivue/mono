@@ -34,7 +34,13 @@ export interface VolumeToLoad {
   url: string
   name?: string
   colormap?: string
+  colormapNegative?: string
   opacity?: number
+  calMin?: number
+  calMax?: number
+  calMinNeg?: number
+  calMaxNeg?: number
+  isColorbarVisible?: boolean
 }
 
 /** What `View.setVolume` can change about a volume: NiiVue's `VolumeUpdate`. */
@@ -89,6 +95,13 @@ export interface ShownVolume {
   colormapLabel?: unknown
   /** The voxel grid, NIfTI style: [ndim, nx, ny, nz, nt, ...]. */
   dims?: ArrayLike<number>
+  /** The brick grid it is rendered through, when it is chunked. */
+  chunkPlan?: {
+    gridDims: ArrayLike<number>
+    chunks?: ArrayLike<unknown>
+  } | null
+  /** How far its bricks are spread apart in the render, when they are. */
+  chunkExplode?: { enabled?: boolean; scale?: ArrayLike<number> } | null
 }
 
 /** A mesh's overlay layer as NiiVue keeps it: `NVMeshLayer`, in the part the tools read. */
@@ -412,8 +425,12 @@ export interface View {
   drawScene(): unknown
   /** Fits the canvas's drawing buffer to its box; NiiVue 1.0 has it. */
   resize?(): void
-  /** NiiVue 1.0's render backend, whose `render()` draws a frame now. */
-  view?: { render(): void } | null
+  /**
+   * NiiVue 1.0's render backend, whose `render()` draws a frame now, and
+   * which skips frames while `isBusy`: during an async texture upload, as
+   * after a 4D frame change.
+   */
+  view?: { render(): void; isBusy?: boolean } | null
   model: {
     mm2scene(mm: number[]): Triple
     scene2mm(frac: number[]): Triple
@@ -501,6 +518,8 @@ export interface View {
   graphResetView?(): unknown
   setGraphRange?(range: [number, number] | null): unknown
   getGraphRange?(): GraphRange | null
+  /** Whether the graph is drawn at all; NiiVue 1.0 starts with it hidden. */
+  isGraphVisible?: boolean
 
   // The clip planes and the camera beyond the first plane.
   setClipPlanes?(planes: number[][]): unknown
@@ -590,6 +609,29 @@ export interface View {
   slideDrawEnd?(): unknown
 
   // Chunked volumes.
+  /** Tile a volume into a grid of bricks (or `null` to make it one texture again). */
+  setVolumeChunkGrid?(
+    index: number,
+    grid: [number, number, number] | null,
+  ): Promise<unknown>
+  /** Spread a chunked volume's bricks apart in the render, or `null` to close them up. */
+  setVolumeChunkExplode?(
+    index: number,
+    explode: { enabled?: boolean; scale?: [number, number, number] } | null,
+  ): unknown
+  /** The brick of the base volume holding a world-mm point, or -1 outside it. */
+  chunkBrickIndexAt?(mm: ArrayLike<number>): number
+  /** That brick's eight world-mm corners, where the render draws them, or null. */
+  chunkBrickCornersAt?(
+    mm: ArrayLike<number>,
+  ): Array<[number, number, number]> | null
+  /** An opacity multiplier per brick, or `null` to draw every brick alike. */
+  setVolumeBrickOpacity?(
+    index: number,
+    opacity: ArrayLike<number> | null,
+  ): unknown
+  /** Resolves once every brick the render asked for is resident and drawn. */
+  whenChunkStreamSettles?(): Promise<unknown>
   // Each report is NiiVue's own snapshot object, passed through as it is.
   chunkStreamStats?(): object | null
   chunkTimingStats?(): object
@@ -628,6 +670,18 @@ export interface LoadedVolume {
   mni: boolean
 }
 
+/** A label pinned to a point of the scene, as `set_labels` hands them to the page. */
+export interface PointLabel {
+  text: string
+  /** The labelled point in world millimetres. */
+  mm: [number, number, number]
+  /**
+   * The eight world-mm corners of the brick holding the point, where the
+   * render draws them, when the volume is chunked: the page outlines it.
+   */
+  boxMM?: Array<[number, number, number]>
+}
+
 /** A NiiVue instance and the hooks an app fills in. Every hook is optional. */
 export interface NiiVueHost {
   view: View
@@ -649,6 +703,10 @@ export interface NiiVueHost {
   extraState?(): Record<string, unknown>
   /** The name of the plane cut now, when the app has its own names. */
   planeName?(): string
+  /** Draws these labels on the scene, replacing any drawn before; an empty list clears them. */
+  labels?(labels: PointLabel[]): void
+  /** How long a screenshot waits, in milliseconds, for bricks to arrive and for the render backend to free up. */
+  screenshotWaits?: { settleMs?: number; busyMs?: number }
 }
 
 export type Handler = (params: Record<string, unknown>) => unknown

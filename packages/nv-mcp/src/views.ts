@@ -8,13 +8,17 @@
  * are NiiVue 1.0's `SLICE_TYPE`, `MULTIPLANAR_TYPE` and `SHOW_RENDER`.
  */
 
-/** What the canvas shows, by NiiVue's `sliceType`. `none` is left out: it shows nothing. */
+/**
+ * What the canvas shows, by NiiVue's `sliceType`. `none` draws no slice
+ * or render at all: the signal graph, when there is one, takes the canvas.
+ */
 export const SLICE_TYPES = {
   axial: 0,
   coronal: 1,
   sagittal: 2,
   multiplanar: 3,
   render: 4,
+  none: 5,
 } as const
 
 /** How the multiplanar tiles are arranged, by NiiVue's `multiplanarType`. */

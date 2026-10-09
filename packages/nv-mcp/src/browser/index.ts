@@ -23,7 +23,7 @@ export type {
   BoundControls,
   PageAction,
 } from './bindings'
-export { bindControls, resolveBinding } from './bindings'
+export { bindControls, resolveBinding, WRITE_WAIT_MS } from './bindings'
 export type { ClientOptions } from './client'
 export {
   AGENT_PATH,

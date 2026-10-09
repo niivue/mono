@@ -19,6 +19,10 @@ test.beforeEach(async ({ page }) => {
 })
 
 const VOLUME = '/volumes/mni152.nii.gz'
+// On VOLUME's grid, so it can be loaded as an overlay.
+const OVERLAY = '/volumes/mni152_mask.nii.gz'
+// Small 4D (2-frame) int16 volume, for the one-frame form of updateVolumeData.
+const VOLUME_4D = '/volumes/i16.nii.gz'
 const MESH = '/meshes/BrainMesh_ICBM152.lh.mz3'
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
@@ -84,7 +88,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       await nv.loadVolumes([{ url: '${VOLUME}' }])
       await nv.loadMeshes([{ url: '${MESH}' }])
       await nextFrame()
-      nv.meshes[0].opacity = 0
       await nv.setMesh(0, { opacity: 0 })
       const volBefore = await litPixels()
       const meshGpuBefore = nv.view._getMeshGpu(nv.meshes[0])
@@ -93,15 +96,79 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       // Raw (unscaled) maximum: img holds raw values, calMax is scaled.
       let rawMax = 0
       for (let i = 0; i < vol.img.length; i++) rawMax = Math.max(rawMax, vol.img[i])
-      // Zero one frame through the API: copies into the SAME buffer.
-      await nv.updateVolumeData(0, new Array(vol.nVox3D).fill(0))
+      // Zero the whole (3D) volume through the API: copies into the SAME
+      // buffer, which the orient cache must notice via _dataVersion.
+      const bgCacheBefore = nv.view.volumeRenderer.volumeOrientCache
+      const bgSourceBefore = bgCacheBefore
+        ? bgCacheBefore.inputTexture ?? bgCacheBefore.sourceTexture
+        : null
+      await nv.updateVolumeData(0, new Array(vol.img.length).fill(0))
       const volZeroed = await litPixels()
       const meshGpuAfterVolume = nv.view._getMeshGpu(nv.meshes[0])
+      const bgCacheAfter = nv.view.volumeRenderer.volumeOrientCache
+      const bgTexturesKept =
+        !!bgCacheBefore &&
+        bgCacheAfter === bgCacheBefore &&
+        (bgCacheAfter.inputTexture ?? bgCacheAfter.sourceTexture) ===
+          bgSourceBefore
 
       // In-place edit by the caller, then a data-less call.
       vol.img.fill(rawMax)
       await nv.updateVolumeData(0)
       const volFilled = await litPixels()
+
+      // ---- overlay: only the overlay pass re-runs ----
+      await nv.loadVolumes([
+        { url: '${VOLUME}' },
+        { url: '${OVERLAY}', colormap: 'red', calMin: 0, calMax: 1 },
+      ])
+      await nextFrame()
+      // Pixels where red clearly leads: the overlay, not the gray background.
+      const redPixels = async () => {
+        await nextFrame()
+        if (nv.view) nv.view.render()
+        ctx.clearRect(0, 0, readback.width, readback.height)
+        ctx.drawImage(canvas, 0, 0)
+        const px = ctx.getImageData(0, 0, readback.width, readback.height).data
+        let red = 0
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] - px[i + 1] > 40 && px[i] - px[i + 2] > 40) red++
+        }
+        return red
+      }
+      const ovBefore = await redPixels()
+      const ovCacheBefore = nv.view.volumeRenderer.overlayOrientCache
+      let backgroundPasses = 0
+      const renderer = nv.view.volumeRenderer
+      const origUpdateVolume = renderer.updateVolume.bind(renderer)
+      renderer.updateVolume = (...args) => {
+        backgroundPasses++
+        return origUpdateVolume(...args)
+      }
+      await nv.updateVolumeData(1, new Array(nv.volumes[1].img.length).fill(0))
+      const ovZeroed = await redPixels()
+      renderer.updateVolume = origUpdateVolume
+      const ovCacheKept =
+        !!ovCacheBefore &&
+        nv.view.volumeRenderer.overlayOrientCache === ovCacheBefore
+
+      // ---- 4D: the one-frame form writes only the current frame ----
+      await nv.loadVolumes([{ url: '${VOLUME_4D}' }])
+      const v4 = nv.volumes[0]
+      await nv.setFrame4D(v4.id, 1)
+      const f4Before = await litPixels()
+      const sumFrame = (f) => {
+        let sum = 0
+        for (let i = f * v4.nVox3D; i < (f + 1) * v4.nVox3D; i++) {
+          sum += Math.abs(v4.img[i])
+        }
+        return sum
+      }
+      const frame0Before = sumFrame(0)
+      await nv.updateVolumeData(0, new Array(v4.nVox3D).fill(0))
+      const f4Zeroed = await litPixels()
+      const frame0After = sumFrame(0)
+      const frame1After = sumFrame(1)
 
       // ---- mesh ----
       await nv.removeAllVolumes()
@@ -133,6 +200,16 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         volBefore,
         volZeroed,
         volFilled,
+        bgTexturesKept,
+        ovBefore,
+        ovZeroed,
+        backgroundPasses,
+        ovCacheKept,
+        f4Before,
+        f4Zeroed,
+        frame0Before,
+        frame0After,
+        frame1After,
         meshKeptOnVolumeUpdate: meshGpuBefore === meshGpuAfterVolume,
         meshBefore,
         meshShrunk,
@@ -161,8 +238,24 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.volBefore).toBeGreaterThan(1000)
     expect(r.volZeroed).toBeLessThan(r.volBefore * 0.05)
     expect(r.volFilled).toBeGreaterThan(r.volBefore)
-    // A volume-data update leaves mesh GPU resources alone.
+    // A volume-data update leaves mesh GPU resources alone, and re-uploads
+    // into the existing orient cache rather than reallocating it.
     expect(r.meshKeptOnVolumeUpdate).toBe(true)
+    expect(r.bgTexturesKept).toBe(true)
+
+    // Overlay: zeroing it removes the red, without re-running the background
+    // pass, through the existing overlay cache.
+    expect(r.ovBefore).toBeGreaterThan(1000)
+    expect(r.ovZeroed).toBeLessThan(r.ovBefore * 0.05)
+    expect(r.backgroundPasses).toBe(0)
+    expect(r.ovCacheKept).toBe(true)
+
+    // 4D: one frame's worth of values replaces only the displayed frame.
+    expect(r.f4Before).toBeGreaterThan(100)
+    expect(r.f4Zeroed).toBeLessThan(r.f4Before * 0.05)
+    expect(r.frame0After).toBe(r.frame0Before)
+    expect(r.frame0Before).toBeGreaterThan(0)
+    expect(r.frame1After).toBe(0)
 
     // Mesh: shrinking shows up, through the in-place buffer write.
     expect(r.meshBefore).toBeGreaterThan(1000)

@@ -7,7 +7,17 @@
  * page's end under `@niivue/nv-mcp/browser` (DOM).
  */
 
+export type {
+  ControlBox,
+  ControlKind,
+  ControlOption,
+  ControlPatch,
+  ControlSpec,
+  ControlState,
+  ControlValue,
+} from './controls'
 // biome-ignore lint/performance/noBarrelFile: package entry point
+export { CONTROL_KINDS } from './controls'
 export { SPOKEN_NAMES } from './names'
 export {
   cameraForPlane,

@@ -8,6 +8,8 @@
  * - a NiiVue setting, as `get_options` names it (`gamma`, `crosshairColor`);
  * - part of the view: `view.slice`, `view.layout`, `view.radiological`;
  * - a property of a loaded volume: `volume.0.opacity`, `volume.1.colormap`;
+ * - a property of a loaded mesh, or an option of a tract or connectome:
+ *   `mesh.0.opacity`, `mesh.0.tract.fiberRadius`, `mesh.1.connectome.nodeScale`;
  * - a dialog to open, for a button or menu item: `dialog.<id>`;
  * - an action the page offers: `action.<name>`.
  *
@@ -41,7 +43,14 @@ import {
   settled,
   VALUE_KINDS,
 } from './controls'
-import type { ShownVolume, View, VolumeUpdate } from './view'
+import { TRACT_COLOR_MODES, tractData } from './meshes'
+import type {
+  MeshUpdate,
+  ShownMesh,
+  ShownVolume,
+  View,
+  VolumeUpdate,
+} from './view'
 
 /** Something the page can do when a control is used, by name. */
 export interface PageAction {
@@ -145,6 +154,77 @@ const VOLUME_PROPS: Record<
   },
 }
 
+/** The mesh properties a control can bind, by the names `set_mesh` takes. */
+const MESH_PROPS: Record<
+  string,
+  {
+    field: keyof MeshUpdate & keyof ShownMesh
+    shape: Shape
+    range?: { min?: number; max?: number; step?: number }
+    shaders?: true
+    /** What NiiVue takes the property to be while it is unset. */
+    unset?: ControlValue
+  }
+> = {
+  opacity: {
+    field: 'opacity',
+    shape: 'number',
+    range: { min: 0, max: 1, step: 0.01 },
+  },
+  shader: { field: 'shaderType', shape: 'string', shaders: true },
+  // NiiVue draws a mesh unless visible is false.
+  visible: { field: 'visible', shape: 'boolean', unset: true },
+  colorbar: { field: 'isColorbarVisible', shape: 'boolean' },
+  legend: { field: 'isLegendVisible', shape: 'boolean' },
+}
+
+/** One option of a tract or connectome, as a control holds it. */
+interface MeshOption {
+  shape: Shape
+  min?: number
+  /** A slider's end when it is left without one: the range NiiVue's own examples give. */
+  max?: number
+  step?: number
+  colormaps?: true
+  /** A colour NiiVue keeps as channels 0 to 255, which a control holds 0 to 1. */
+  bytes?: true
+}
+
+/** NiiVue's `NVTractOptions` a control can hold, by the names `set_mesh` takes. */
+const TRACT_PROPS: Record<string, MeshOption> = {
+  fiberRadius: { shape: 'number', min: 0, max: 3, step: 0.1 },
+  fiberSides: { shape: 'number', min: 3, max: 20, step: 1 },
+  minLength: { shape: 'number', min: 0 },
+  decimation: { shape: 'number', min: 1, max: 20, step: 1 },
+  colormap: { shape: 'string', colormaps: true },
+  colormapNegative: { shape: 'string', colormaps: true },
+  colorBy: { shape: 'string' },
+  calMin: { shape: 'number' },
+  calMax: { shape: 'number' },
+  calMinNeg: { shape: 'number' },
+  calMaxNeg: { shape: 'number' },
+  fixedColor: { shape: 'color', bytes: true },
+  // Not an option of NiiVue's: the one group shown, through groupColors.
+  group: { shape: 'string' },
+}
+
+/** The colour a group shown alone is drawn in: the first of NiiVue's tract.group example palette. */
+const GROUP_COLOR = [230, 25, 75, 255]
+
+/** NiiVue's `NVConnectomeOptions` a control can hold, by the names `set_mesh` takes. */
+const CONNECTOME_PROPS: Record<string, MeshOption> = {
+  nodeColormap: { shape: 'string', colormaps: true },
+  nodeColormapNegative: { shape: 'string', colormaps: true },
+  nodeMinColor: { shape: 'number' },
+  nodeMaxColor: { shape: 'number' },
+  nodeScale: { shape: 'number', min: 0, max: 10, step: 0.5 },
+  edgeColormap: { shape: 'string', colormaps: true },
+  edgeColormapNegative: { shape: 'string', colormaps: true },
+  edgeMin: { shape: 'number' },
+  edgeMax: { shape: 'number' },
+  edgeScale: { shape: 'number', min: 0, max: 5, step: 0.1 },
+}
+
 function intensityRange(volume: ShownVolume): { min?: number; max?: number } {
   const { globalMin, globalMax } = volume
   if (
@@ -178,6 +258,24 @@ const FORMS: BindingVocabulary['forms'] = [
   {
     form: 'volume.<index>.<property>',
     description: `A property of a loaded volume, the base being 0: ${Object.keys(VOLUME_PROPS).join(', ')}.`,
+  },
+  {
+    form: 'mesh.<index>.<property>',
+    description: `A property of a loaded mesh, the base being 0: ${Object.keys(MESH_PROPS).join(', ')}.`,
+  },
+  {
+    form: 'mesh.<index>.tract.<option>',
+    description: `An option of a loaded tract, as set_mesh names it: ${Object.keys(
+      TRACT_PROPS,
+    )
+      .filter((k) => k !== 'group')
+      .join(
+        ', ',
+      )}. A select bound to colorBy takes direction, global, fixed and the tract's scalars (list_meshes reports them); one bound to group shows all groups or one alone, drawn in one flat colour.`,
+  },
+  {
+    form: 'mesh.<index>.connectome.<option>',
+    description: `An option of a loaded connectome, as set_mesh names it: ${Object.keys(CONNECTOME_PROPS).join(', ')}.`,
   },
   {
     form: 'dialog.<id>',
@@ -330,6 +428,8 @@ export function resolveBinding(
     }
   }
 
+  if (bind.startsWith('mesh.')) return meshTarget(bind, view)
+
   if (bind.startsWith('dialog.'))
     throw new Error(
       `${bind} opens a dialog, which only bindControls can do: it needs the controls.`,
@@ -338,7 +438,7 @@ export function resolveBinding(
   const setting = findSetting(bind)
   if (!setting)
     throw new Error(
-      `There is nothing called "${bind}" to bind. A bind is a setting as get_options names it, view.slice, view.layout, view.radiological, volume.<index>.<property>, dialog.<id>, or action.<name>.`,
+      `There is nothing called "${bind}" to bind. A bind is a setting as get_options names it, view.slice, view.layout, view.radiological, volume.<index>.<property>, mesh.<index>.<property>, mesh.<index>.tract.<option>, mesh.<index>.connectome.<option>, dialog.<id>, or action.<name>.`,
     )
   if (!(setting.name in bag))
     throw new Error(`This page's NiiVue has no ${setting.name} setting.`)
@@ -386,6 +486,193 @@ function check(bind: string, shape: Shape, value: ControlValue): void {
           ? Array.isArray(value) && value.length >= 3
           : typeof value === 'string'
   if (!ok) throw new Error(`${bind} takes ${article(shape)}.`)
+}
+
+/** What a `mesh.` bind names, or a throw in words saying what it may name. */
+function meshTarget(bind: string, view: View): Target {
+  const [, which, part, option, ...rest] = bind.split('.')
+  const index = Number(which)
+  const group = part === 'tract' || part === 'connectome' ? part : undefined
+  const table =
+    group === 'tract'
+      ? TRACT_PROPS
+      : group === 'connectome'
+        ? CONNECTOME_PROPS
+        : undefined
+  const name = group ? option : part
+  const known =
+    name !== undefined &&
+    (table
+      ? Object.hasOwn(table, name) && rest.length === 0
+      : Object.hasOwn(MESH_PROPS, name) && option === undefined)
+  if (!Number.isInteger(index) || index < 0 || !known)
+    throw new Error(
+      `"${bind}" is not a mesh binding: it takes the form mesh.<index>.<property> (${Object.keys(MESH_PROPS).join(', ')}), ` +
+        `mesh.<index>.tract.<option> (${Object.keys(TRACT_PROPS).join(', ')}) or ` +
+        `mesh.<index>.connectome.<option> (${Object.keys(CONNECTOME_PROPS).join(', ')}).`,
+    )
+  const meshes = view.meshes ?? []
+  const mesh = meshes[index]
+  if (!mesh)
+    throw new Error(
+      `There is no mesh ${index}: ${meshes.length} ${meshes.length === 1 ? 'is' : 'are'} loaded.`,
+    )
+  // The bind names an index, so a mesh removed, or loaded again in its
+  // place, would take writes meant for this one. NiiVue changes a mesh in
+  // place, so the object itself says whether it is still the one bound.
+  const current = () => (view.meshes?.[index] === mesh ? mesh : undefined)
+  const gone = () => {
+    const now = view.meshes?.[index]
+    if (!now) throw new Error(`Mesh ${index} is no longer loaded.`)
+    if (now !== mesh)
+      throw new Error(
+        `Mesh ${index} is now ${now.name ?? 'another mesh'}, not the one this control was bound to. Bind it again.`,
+      )
+  }
+
+  if (!group || !table) {
+    if (!view.setMesh)
+      throw new Error("This page's NiiVue cannot change a mesh once loaded.")
+    const setMesh = view.setMesh.bind(view)
+    const { field, shape, range, shaders, unset } = MESH_PROPS[name]
+    const choices =
+      shaders && view.meshShaders ? [...view.meshShaders] : undefined
+    return {
+      shape,
+      ...(choices ? { choices } : {}),
+      ...range,
+      read: () => {
+        // A mesh gone from under the bind reads as nothing, not as the default.
+        const bound = current()
+        if (!bound) return undefined
+        const value = bound[field]
+        return value === undefined ? unset : (value as ControlValue)
+      },
+      write: (value) => {
+        gone()
+        check(bind, shape, value)
+        if (choices && !choices.includes(value as string))
+          throw new Error(
+            `${bind} takes one of the mesh shaders: ${choices.join(', ')}.`,
+          )
+        return setMesh(index, { [field]: value } as MeshUpdate)
+      },
+    }
+  }
+
+  if (mesh.kind && mesh.kind !== group)
+    throw new Error(
+      `${mesh.name ?? `Mesh ${index}`} is a ${mesh.kind}, not a ${group}.`,
+    )
+  const set =
+    group === 'tract' ? view.setTractOptions : view.setConnectomeOptions
+  if (!set)
+    throw new Error(`This page's NiiVue cannot change how ${group}s are drawn.`)
+  const setOptions = set.bind(view)
+  const key = group === 'tract' ? 'tractOptions' : 'connectomeOptions'
+  if (group === 'tract' && (name === 'colorBy' || name === 'group'))
+    return tractChoice(bind, name, index, mesh, current, setOptions, gone)
+  const { shape, min, max, step, colormaps, bytes } = table[name]
+  const choices = colormaps && view.colormaps ? [...view.colormaps] : undefined
+  return {
+    shape,
+    ...(choices ? { choices } : {}),
+    ...(min === undefined ? {} : { min }),
+    ...(max === undefined ? {} : { max }),
+    ...(step === undefined ? {} : { step }),
+    read: () => {
+      const value = current()?.[key]?.[name]
+      if (value === undefined || value === null) return undefined
+      if (shape === 'color') {
+        const channels = plainColor(value)
+        return bytes ? channels?.map((c) => c / 255) : channels
+      }
+      return value as ControlValue
+    },
+    write: (value) => {
+      gone()
+      check(bind, shape, value)
+      if (choices && !choices.includes(value as string))
+        throw new Error(
+          `${bind} takes one of the colormaps: ${choices.join(', ')}.`,
+        )
+      let given: unknown = value
+      if (shape === 'color' && Array.isArray(value)) {
+        // A colour control without alpha keeps the alpha the option has.
+        const had = plainColor(current()?.[key]?.[name])
+        const rgba = [...value.slice(0, 3), value[3] ?? (had?.[3] ?? 255) / 255]
+        given = bytes ? rgba.map((c) => Math.round(c * 255)) : rgba
+      }
+      return setOptions(index, { [name]: given })
+    },
+  }
+}
+
+/**
+ * A tract's colour mode or its one group shown, as a select holds them:
+ * the choices come from the tract, `direction` standing for NiiVue's ''
+ * colour mode and `all` for every group shown (groupColors null).
+ */
+function tractChoice(
+  bind: string,
+  name: 'colorBy' | 'group',
+  index: number,
+  mesh: ShownMesh,
+  current: () => ShownMesh | undefined,
+  setOptions: (index: number, options: Record<string, unknown>) => unknown,
+  gone: () => void,
+): Target {
+  const data = tractData(mesh)
+  const options = () => current()?.tractOptions
+  if (name === 'colorBy') {
+    const choices = [
+      ...TRACT_COLOR_MODES,
+      ...data.scalars.map((s) => s.colorBy),
+    ]
+    return {
+      shape: 'string',
+      choices,
+      read: () => {
+        const value = options()?.colorBy
+        if (typeof value !== 'string') return undefined
+        return value === '' ? 'direction' : value
+      },
+      write: (value) => {
+        gone()
+        if (typeof value !== 'string' || !choices.includes(value))
+          throw new Error(`${bind} takes one of: ${choices.join(', ')}.`)
+        return setOptions(index, {
+          colorBy: value === 'direction' ? '' : value,
+        })
+      },
+    }
+  }
+  if (!data.groups.length)
+    throw new Error(
+      `${mesh.name ?? `Mesh ${index}`} has no groups to choose among.`,
+    )
+  const choices = ['all', ...data.groups]
+  return {
+    shape: 'string',
+    choices,
+    read: () => {
+      const shown = options()?.groupColors
+      if (shown === undefined) return undefined
+      const keys = shown === null ? [] : Object.keys(shown as object)
+      // NiiVue shows every group when none is named.
+      if (keys.length === 0) return 'all'
+      // Several groups shown is no one choice of the select.
+      return keys.length === 1 ? keys[0] : undefined
+    },
+    write: (value) => {
+      gone()
+      if (typeof value !== 'string' || !choices.includes(value))
+        throw new Error(`${bind} takes one of: ${choices.join(', ')}.`)
+      return setOptions(index, {
+        groupColors: value === 'all' ? null : { [value]: GROUP_COLOR },
+      })
+    },
+  }
 }
 
 function article(shape: Shape): string {

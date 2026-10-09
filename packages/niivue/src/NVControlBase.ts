@@ -3523,16 +3523,28 @@ export default class NiiVue extends EventTarget {
    * Replace a loaded volume's voxel values and re-upload them to the GPU,
    * reusing its existing textures — the fast path for animating or live-editing
    * volume data. Only the edited volume is reprocessed (plus any volume it
-   * modulates); meshes, colorbars and unrelated volume layers are left alone. Pass `data` with either every value of `img` (all frames) or
-   * one frame (written into the current `frame4D`): `nVox3D` values for scalar
-   * volumes, `nVox3D * 3` / `nVox3D * 4` bytes for RGB / RGBA. It is copied into
-   * the existing `img` in its native datatype and voxel order.
-   * Omit `data` after editing `volume.img` in place yourself.
+   * modulates); meshes, colorbars and unrelated volume layers are left alone.
+   *
+   * Pass `data` with either every value of `img` (all frames) or one frame
+   * (written into the current `frame4D`): `nVox3D` values for scalar volumes,
+   * `nVox3D * 3` / `nVox3D * 4` bytes for RGB / RGBA. Values are RAW, in the
+   * volume's native datatype and voxel order, before `scl_slope`/`scl_inter`
+   * scaling (the same units as `img`, not as calMin/calMax). They are copied
+   * into the existing `img`. Omit `data` after editing `volume.img` in place.
    *
    * The display window (calMin/calMax), robust range and other values derived
    * at load are NOT recomputed; call {@link recalculateCalMinMax} if the data's
-   * range changed. Volumes streamed in chunks are not supported. Concurrent
-   * calls coalesce into one upload of the latest data.
+   * range changed. Volumes streamed in chunks (`chunkPlan`, including volumes
+   * the renderer chunked because they exceed the GPU texture limit) are
+   * rejected with a warning.
+   *
+   * No `volumeUpdated` event is emitted: this is meant to be called every
+   * frame, and it changes no display option.
+   *
+   * Calls that arrive while another GPU update is running are coalesced into a
+   * single follow-up that uploads the latest data. Such a call's promise
+   * resolves when it has been queued, before that follow-up runs, so awaiting
+   * it does not guarantee the new voxels are on screen yet.
    *
    * @example
    * const vol = nv1.volumes[0]
@@ -3572,7 +3584,6 @@ export default class NiiVue extends EventTarget {
       }
     }
     vol._dataVersion = (vol._dataVersion ?? 0) + 1
-    vol.isDirty = true
     await this._updateGL(false, [vol])
   }
 
@@ -3787,7 +3798,10 @@ export default class NiiVue extends EventTarget {
    *
    * Scene extents are NOT recomputed, so the camera framing stays put while
    * vertices move. Only `kind: 'mesh'` is supported (tract and connectome
-   * geometry is regenerated from their source data).
+   * geometry is regenerated from their source data). No `meshUpdated` event is
+   * emitted: this is meant to be called every frame, and it changes no display
+   * option. If the mesh has no GPU buffer yet (e.g. while the view is being
+   * rebuilt), a full GPU update is scheduled instead.
    *
    * @example
    * const pts = nv1.meshes[0].positions

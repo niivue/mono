@@ -916,9 +916,13 @@ the full `updateGLVolume()` rebuild.
   (`prepareOverlayTextureCache` / `prepareOrientTextureCache`) and the
   per-volume `_texCache` single entries record `dataVersion`: a mismatch
   re-uploads the source texture in place (orient caches) or rebuilds the entry
-  (`_texCache`). The window (calMin/calMax) is not recomputed. Chunk-streamed
-  volumes (`chunkPlan`) are rejected; oversized volumes the renderer chunks on
-  its own are not refreshed.
+  (`_texCache`). The window (calMin/calMax) is not recomputed. Volumes with a
+  `chunkPlan` are rejected. An oversized volume gets one from
+  `_ensureChunkedVolumeEntry` on its first render, so it is rejected from then
+  on; a call before that first render is not refreshed. Neither method emits an
+  event (`volumeUpdated`/`meshUpdated` are for display-option changes, and these
+  run per frame). A coalesced `updateVolumeData` resolves when queued, before
+  its follow-up upload runs.
 - **`_dataVersion` is the general in-place-edit token** for `NVImage`. Any cache
   keyed on `img` buffer identity must also compare it (orient caches,
   `_texCache`, modulation weight key, extension `imgRAS`, legend centroids).

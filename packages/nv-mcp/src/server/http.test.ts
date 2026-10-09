@@ -19,6 +19,9 @@ const CORE_TOOLS = [
   'new_tab',
   'load_volume',
   'where_am_i',
+  'set_camera',
+  'set_view',
+  'screenshot',
 ]
 
 /** The smallest extension: one tool, answered by the page's `set_light` handler. */
@@ -193,6 +196,43 @@ describe('the server, end to end', () => {
       tab: { id: 't1' },
       light: false,
     })
+
+    const turned = json(
+      await call('set_camera', { azimuth: 45, elevation: -20 }),
+    )
+    expect(turned).toMatchObject({ camera: { azimuth: 45, elevation: -20 } })
+
+    const laid = await call('set_view', {
+      slice: 'multiplanar',
+      layout: 'grid',
+      colorbar: true,
+    })
+    expect(laid.isError).toBeUndefined()
+    expect(text(laid)).toMatch(/^View: multiplanar, grid layout\./)
+    expect(json(laid)).toMatchObject({
+      view: {
+        slice: 'multiplanar',
+        layout: 'grid',
+        showRender: 'auto',
+        radiological: false,
+        colorbar: true,
+      },
+    })
+    expect(json(await call('where_am_i'))).toMatchObject({
+      view: { slice: 'multiplanar', colorbar: true },
+    })
+
+    const shot = await call('screenshot', { max_width: 800 })
+    const content = shot.content as Array<{
+      type: string
+      mimeType?: string
+      data?: string
+    }>
+    expect(content.map((c) => c.type)).toEqual(['text', 'image'])
+    expect(content[1].mimeType).toBe('image/png')
+    expect(content[1].data?.startsWith('iVBORw0KGgo')).toBe(true)
+    expect(json(shot)).toMatchObject({ width: 320, height: 240 })
+    expect(json(shot)).not.toHaveProperty('data')
 
     expect(text(await call('set_light', { on: true }))).toMatch(/^Light on\./)
     expect(json(await call('set_light', { on: true }))).toEqual({ light: true })

@@ -17,6 +17,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
 import { TAB_PARAM } from '../protocol'
+import {
+  LAYOUT_NAMES,
+  SHOW_RENDER_NAMES,
+  SLICE_NAMES,
+  type ViewState,
+} from '../views'
+import { triple } from './args'
 import type { Bridge } from './bridge'
 import {
   type Extension,
@@ -60,7 +67,108 @@ export const CORE_SCHEMAS = {
       ),
   },
   where_am_i: { ...TAB_ARG },
+  set_camera: {
+    ...TAB_ARG,
+    azimuth: z
+      .number()
+      .optional()
+      .describe(
+        'Degrees round the vertical: 0 from behind, 90 from the right, 180 from the front, 270 from the left.',
+      ),
+    elevation: z
+      .number()
+      .min(-90)
+      .max(90)
+      .optional()
+      .describe(
+        'Degrees above the horizontal, from -90 (below) to 90 (above).',
+      ),
+    pan_2d: z
+      .array(z.number())
+      .length(4)
+      .optional()
+      .describe('The 2D pan and zoom, [x, y, z, zoom] as NiiVue keeps them.'),
+    render_pan: z
+      .array(z.number())
+      .length(2)
+      .optional()
+      .describe('The render pan, [x, y].'),
+    pivot: triple('The point in millimetres the render turns about.')
+      .nullable()
+      .optional()
+      .describe(
+        'The point in millimetres the render turns about; null for the centre.',
+      ),
+    center_on: triple(
+      'Centre the render on this point in millimetres.',
+    ).optional(),
+    global: z
+      .object({
+        position: triple('Where the camera is, in millimetres.'),
+        yaw: z.number().optional().describe('Degrees.'),
+        pitch: z.number().optional().describe('Degrees.'),
+        fov: z.number().optional().describe('The field of view, degrees.'),
+        near: z.number().optional(),
+        far: z.number().optional(),
+      })
+      .optional()
+      .describe('Place a free camera in the world instead of orbiting.'),
+  },
+  set_view: {
+    ...TAB_ARG,
+    slice: z
+      .enum(SLICE_NAMES)
+      .optional()
+      .describe(
+        'What the canvas shows: one slice orientation, all three with the render (multiplanar), or the render alone.',
+      ),
+    layout: z
+      .enum(LAYOUT_NAMES)
+      .optional()
+      .describe(
+        'How the multiplanar tiles are arranged; auto picks by the shape of the canvas.',
+      ),
+    mosaic: z
+      .string()
+      .optional()
+      .describe(
+        'A NiiVue mosaic string, e.g. "A 0 20 40; C -10 0 10" for three axial and three coronal slices ' +
+          'in a grid; the empty string clears the mosaic.',
+      ),
+    show_render: z
+      .enum(SHOW_RENDER_NAMES)
+      .optional()
+      .describe(
+        'Whether the multiplanar view includes the render tile; auto adds it when there is room.',
+      ),
+    radiological: z
+      .boolean()
+      .optional()
+      .describe(
+        "Radiological convention: the subject's left on the right of the picture.",
+      ),
+    colorbar: z.boolean().optional().describe('Whether a colorbar is drawn.'),
+  },
+  screenshot: {
+    ...TAB_ARG,
+    max_width: z
+      .number()
+      .int()
+      .min(64)
+      .max(4096)
+      .optional()
+      .describe(
+        'Scale the picture down to at most this many pixels wide. 1024 otherwise.',
+      ),
+  },
 } as const
+
+/** A line that says what the view shows: the slice type, and the mosaic when one is drawn. */
+function describeView(state: ViewState): string {
+  if (state.mosaic) return `View: mosaic "${state.mosaic}".`
+  const layout = state.slice === 'multiplanar' ? `, ${state.layout} layout` : ''
+  return `View: ${state.slice}${layout}.`
+}
 
 /** Registers the core tools: tabs, the volume, the crosshair and the atlas, the cut and the camera, how each volume and the view are drawn, a picture. */
 export function registerCoreTools(
@@ -163,6 +271,75 @@ export function registerCoreTools(
       annotations: { readOnlyHint: true },
     },
     async ({ tab }) => context.answer('where_am_i', {}, { tab, withTab: true }),
+  )
+
+  server.registerTool(
+    'set_camera',
+    {
+      title: 'Turn the render camera',
+      description:
+        'Points the render camera from the given azimuth and elevation, pans the 2D view or the ' +
+        'render, sets the point the render turns about or centres it on one, or places a free ' +
+        'camera with `global`. Only what is given changes. Note that when the page ' +
+        "ties its clip plane to the camera, a turn re-cuts the plane the page's way.",
+      inputSchema: CORE_SCHEMAS.set_camera,
+    },
+    async ({ tab, ...params }) => context.answer('set_camera', params, { tab }),
+  )
+
+  server.registerTool(
+    'set_view',
+    {
+      title: 'Set the view layout',
+      description:
+        'Sets what the canvas shows: `slice` picks one slice orientation, the multiplanar view of ' +
+        'all three with the render, or the render alone; `layout` arranges the multiplanar tiles ' +
+        'and `show_render` says whether the render tile joins them; `mosaic` draws the slices a ' +
+        'NiiVue mosaic string names; `radiological` and `colorbar` are switches. Each is optional ' +
+        'and only what is given changes. Reports the whole layout afterwards.',
+      inputSchema: CORE_SCHEMAS.set_view,
+    },
+    async ({ tab, ...params }) =>
+      context.answer('set_view', params, {
+        tab,
+        lead: (r) => {
+          const view = (r as { view?: ViewState })?.view
+          return view ? describeView(view) : undefined
+        },
+      }),
+  )
+
+  server.registerTool(
+    'screenshot',
+    {
+      title: 'Picture of the canvas',
+      description:
+        "Draws the scene and returns NiiVue's canvas as a PNG, scaled down to `max_width` pixels " +
+        "wide at most. The picture is NiiVue's alone: anything the page draws over its canvas is " +
+        'not in it.',
+      inputSchema: CORE_SCHEMAS.screenshot,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ tab, max_width }) =>
+      context.answer(
+        'screenshot',
+        { max_width },
+        {
+          tab,
+          image: (r) => {
+            const shot = r as { data?: string; mimeType?: string }
+            return shot?.data && shot.mimeType
+              ? { data: shot.data, mimeType: shot.mimeType }
+              : undefined
+          },
+          lead: (r) => {
+            const shot = r as { width?: number; height?: number }
+            return shot?.width
+              ? `${shot.width}×${shot.height} pixels.`
+              : undefined
+          },
+        },
+      ),
   )
 }
 

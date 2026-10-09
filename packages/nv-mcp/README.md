@@ -12,7 +12,7 @@ The package has three entry points, and nothing in it knows about the app that h
 | `@niivue/nv-mcp/server` | Bun | The bridge that knows tabs by id, the core tools, `startServer` |
 | `@niivue/nv-mcp/browser` | the page | The client that keeps the socket open, and the handlers that answer the core tools from a NiiVue instance |
 
-An app adds its own tools as an *extension* without touching the core.
+An app adds its own tools as an *extension* without touching the core. `apps/demo-mcp` in this repository is a complete page and server.
 
 ## Installation
 
@@ -109,6 +109,8 @@ For Claude Code:
 ```bash
 claude mcp add --transport http my-niivue-app http://127.0.0.1:4242/mcp
 ```
+
+[docs/connecting-agents.md](docs/connecting-agents.md) has the same for the Claude desktop app, Codex CLI, Gemini CLI, VS Code, Cursor, Windsurf, stdio-only clients through `mcp-remote`, and a program of your own with the TypeScript or Python SDK, plus how to check the connection with the MCP Inspector and what the common failures mean.
 
 The page's first address, `/agent` on its own origin, is for browsers that let a page reach one origin only, such as the pane inside Claude's desktop app. It needs the dev server to proxy it. In Vite:
 
@@ -275,6 +277,7 @@ bunx nx build nv-mcp       # Build
 bunx nx test nv-mcp        # Run the tests (bun test)
 bunx nx typecheck nv-mcp   # Type-check
 bunx nx lint nv-mcp        # Biome
+bunx nx dev demo-mcp       # The demo page and its server together
 ```
 
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

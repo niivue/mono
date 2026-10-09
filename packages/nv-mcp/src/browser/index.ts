@@ -15,12 +15,14 @@ export type {
   ControlState,
   ControlValue,
 } from '../controls'
+export type { DataEntry, DataItem, DataLoader } from '../data'
+// biome-ignore lint/performance/noBarrelFile: package entry point
+export { DATA_LOADERS } from '../data'
 export type {
   BindOptions,
   BoundControls,
   PageAction,
 } from './bindings'
-// biome-ignore lint/performance/noBarrelFile: package entry point
 export { bindControls, resolveBinding } from './bindings'
 export type { ClientOptions } from './client'
 export {
@@ -42,6 +44,8 @@ export type {
   MemoryControls,
 } from './controls'
 export { coerceValue, controlHandlers, memoryControls } from './controls'
+export type { DataPalette } from './data'
+export { dataHandlers, dataPalette } from './data'
 export { markHandlers } from './marks'
 export { describeMesh, meshHandlers } from './meshes'
 export type { Params } from './params'

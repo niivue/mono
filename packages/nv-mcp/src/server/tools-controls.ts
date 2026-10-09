@@ -202,6 +202,8 @@ export function registerControlTools(
       'x and y place it at an exact spot instead. A dialog takes no row or col; it is centred unless given x and y. ' +
       'bind names what it drives: when the person uses the control it sets what it names or runs the ' +
       'action, and a change made anywhere else shows on it. ' +
+      'A value given to a bound control is set on what it drives first; when NiiVue cannot set it, ' +
+      'the call fails and no control is added. ' +
       'Reports the control as made, with the box it was drawn in, in canvas pixels. ' +
       'A page without a control surface declines.',
     inputSchema: CONTROL_SCHEMAS.add_control,
@@ -228,7 +230,8 @@ export function registerControlTools(
     description:
       'Changes a control that is there: its value, label, grid cell or position, options, range, enabled state, binding, or whether a dialog shows. ' +
       'A row or col moves it into the grid; x and y move it out. ' +
-      'Only what is given changes; a value given to a bound control sets what it drives too. ' +
+      'Only what is given changes; a value given to a bound control sets what it drives too, and ' +
+      'when NiiVue cannot set it the call fails and the control is left as it was. ' +
       'Reports the control afterwards.',
     inputSchema: CONTROL_SCHEMAS.set_control,
   })

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue MCP demo</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>NiiVue MCP demo</h1>
+      <span id="agent" class="agent">agent server not reached</span>
+    </header>
+
+    <main>
+      <canvas id="gl1"></canvas>
+    </main>
+
+    <aside>
+      <div class="section">
+        <h2>Where</h2>
+        <p id="where">Loading volume</p>
+      </div>
+      <div class="section">
+        <h2>Last announcement</h2>
+        <p id="announce" class="quiet">Nothing yet. An agent's navigation lands here.</p>
+      </div>
+      <div class="section">
+        <h2>Connect an agent</h2>
+        <p>The MCP endpoint is <code id="mcp">http://127.0.0.1:4242/mcp</code>.</p>
+        <pre id="claude">claude mcp add --transport http niivue http://127.0.0.1:4242/mcp</pre>
+        <p class="quiet">Then ask for a region, a plane or a screenshot.</p>
+      </div>
+    </aside>
+
+    <footer>
+      <span id="status">Ready.</span>
+    </footer>
+
+    <script type="module" src="src/main.ts"></script>
+  </body>
+</html>

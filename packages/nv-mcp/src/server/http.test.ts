@@ -39,6 +39,13 @@ const CORE_TOOLS = [
   'add_colormap',
   'set_font',
   'set_custom_layout',
+  'load_mesh',
+  'list_meshes',
+  'set_mesh',
+  'remove_mesh',
+  'add_mesh_layer',
+  'set_mesh_layer',
+  'remove_mesh_layer',
 ]
 
 /** The smallest extension: one tool, answered by the page's `set_light` handler. */

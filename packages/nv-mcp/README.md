@@ -172,6 +172,18 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `set_font` | `atlas`, `metrics` | Loads the font NiiVue draws its text with, from an atlas PNG and a metrics JSON |
 | `set_custom_layout` | `tiles?`, `clear?` | Places tiles on the canvas by hand, each a slice orientation or the render at `[left, top, width, height]` as fractions, in place of the ordinary layout; `clear` goes back to it |
 
+### Meshes
+
+| Tool | Input | What it does |
+|---|---|---|
+| `load_mesh` | `url`, `name?`, `replace?`, `opacity?`, `color?`, `shader?`, `slice_shader?`, `visible?`, `colorbar?`, `legend?`, `layers?` | Loads a surface, tract or connectome over the volumes, with overlay layers when given; `replace` drops the meshes shown once it has loaded |
+| `list_meshes` | | The meshes shown, each with how it is drawn and its layers, and the shaders the page knows |
+| `set_mesh` | `mesh?`, `name?`, `opacity?`, `color?`, `shader?`, `slice_shader?`, `visible?`, `colorbar?`, `legend?`, `tract?`, `connectome?` | Changes how a mesh is drawn, leaving the rest; `tract` and `connectome` take NiiVue's option objects for those kinds and report a tract's groups |
+| `remove_mesh` | `mesh?`, `all?` | Unloads one mesh, or every mesh |
+| `add_mesh_layer` | `url`, `mesh?`, `name?`, `colormap?`, `colormap_negative?`, `cal_min?`, `cal_max?`, `cal_min_neg?`, `cal_max_neg?`, `opacity?`, `colorbar?`, `invert?`, `transparent_below_cal_min?`, `additive?`, `outline_width?` | Draws a per-vertex overlay (a curvature, a thickness, a statistic) on a mesh |
+| `set_mesh_layer` | `mesh?`, `layer?`, the layer fields above, `frame?` | Changes how a layer is drawn, or the frame of a 4D layer |
+| `remove_mesh_layer` | `mesh?`, `layer?` | Takes a layer off a mesh |
+
 ### Planes and cameras
 
 A plane is named for the side it takes off: `left`, `right`, `posterior`, `anterior`, `inferior`, `superior`, with `sagittal`, `coronal` and `axial` as aliases for the first of each pair. NiiVue keeps a clip plane as `[depth, azimuth, elevation]`, with the shader keeping the side the plane's normal points to; the camera that sees the exposed face square on looks along the normal, which works out to the plane's own elevation and its azimuth turned half a turn. `cameraForPlane` does that sum and `depthThrough` finds the depth that puts the plane through a point, both checked for all six sides in `planes.test.ts`.

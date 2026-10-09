@@ -15,8 +15,14 @@ export type {
   ControlState,
   ControlValue,
 } from '../controls'
-export type { ClientOptions } from './client'
+export type {
+  BindOptions,
+  BoundControls,
+  PageAction,
+} from './bindings'
 // biome-ignore lint/performance/noBarrelFile: package entry point
+export { bindControls, resolveBinding } from './bindings'
+export type { ClientOptions } from './client'
 export {
   AGENT_PATH,
   AGENT_URL,

@@ -4579,9 +4579,13 @@ export default class NiiVue extends EventTarget {
    * finer chunks stream in — a smooth level-of-detail transition. `coarseVol`
    * is a small in-memory pyramid level (its own colormap/window); niivue stays
    * level-of-detail-agnostic and the app supplies it. No-op before a view
-   * attaches or on a backend that has not implemented it.
+   * attaches or on a backend that has not implemented it. Calling it again
+   * with the same level re-orients it only when what the floor bakes changed
+   * (display options, grid, `img` buffer); after editing its `img` in place,
+   * set its `isDirty` first.
    */
   async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    if (coarseVol) commitDirtyVolumes([coarseVol])
     await this.view?.setCoarseFloor?.(coarseVol)
     this.drawScene()
   }

@@ -177,7 +177,9 @@ Volumes drawn in chunks (those with a `chunkPlan`, including volumes NiiVue
 chunked because they exceed the GPU texture limit) are not supported by
 `updateVolumeData`, which logs a warning and returns. Setting `isDirty` on one
 whose `img` is in memory works, but the next GPU update re-streams every
-chunk, so it is not suited to per-frame updates.
+chunk, so it is not suited to per-frame updates. A coarse floor level passed
+to `setBaseCoarseFloor` is not a loaded volume: after editing its `img` in place,
+set its `isDirty` and pass it to `setBaseCoarseFloor` again.
 
 For a 4D RGB/RGBA volume the displayed frame is `frame4D`, as for scalar
 volumes, so the one-frame form of `updateVolumeData` writes the frame on

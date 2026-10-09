@@ -2074,14 +2074,14 @@ export class VolumeRenderer extends NVRenderer {
       this._coarseFloorKey = null
       return
     }
-    const key = coarseFloorKey(coarseVol)
-    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // Orient the coarse level into its own (small) RGBA grid. It shares the base
     // volume's mm box, so the slice samples it at the base's texture fraction.
     const mtx = NVTransforms.calculateOverlayTransformMatrix(
       coarseVol,
       coarseVol,
     )
+    const key = coarseFloorKey(coarseVol, mtx)
+    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // overlayOpacity 0: the floor stands in for the BASE volume, so it must be
     // baked with base semantics (alpha straight from the colormap LUT). Passing
     // 1 selects the overlay path, which makes alpha binary (`step()`); every

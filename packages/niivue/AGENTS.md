@@ -958,8 +958,9 @@ the full `updateGLVolume()` rebuild.
 - **`isDirty` reports an in-place edit to the ordinary path.** A caller that
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
-  (`_updateGL`, `updateVolumeAffineOnly`, `_rebuildViewResources`), bumps
-  each flagged volume's `_dataVersion` and resets the flag. Every path
+  (`_updateGL`, `updateVolumeAffineOnly`, `_rebuildViewResources`; also
+  `setBaseCoarseFloor` for the floor level, which is not a model volume),
+  bumps each flagged volume's `_dataVersion` and resets the flag. Every path
   that then rebuilds volume textures recomputes the modulation data and
   weights first (a view recreation included), so a dirty modulator never
   bakes its old weights. The flag is cleared at that bump, not after the
@@ -981,9 +982,11 @@ the full `updateGLVolume()` rebuild.
   graph cache). `chunkedDisplayKey` carries it, so an `isDirty` edit of an
   in-memory chunked volume rebuilds the uploader and re-streams every brick
   from `img` (the decoded tier only holds `chunkSource` bytes, which an
-  in-place edit cannot reach); `coarseFloorKey` is the source plus
-  `chunkedDisplayKey`. `updateVolumeData` still rejects `chunkPlan` volumes:
-  a full re-stream is not a per-frame fast path.
+  in-place edit cannot reach). `coarseFloorKey` is the source (url/name and
+  `img` buffer identity) plus `wholeVolumeTextureKey` with the floor's orient
+  matrix, so it also covers the label outline width, the RAS grid and RGB/RGBA
+  floors. `updateVolumeData` still rejects `chunkPlan` volumes: a full
+  re-stream is not a per-frame fast path.
 - **Colormap re-registration:** the orient caches, `chunkedDisplayKey`,
   `wholeVolumeTextureKey` and `coarseFloorKey` key colormaps by
   `NVCmaps.colormapKey(name)` (name plus how many times `addColormap`

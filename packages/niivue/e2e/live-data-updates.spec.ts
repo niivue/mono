@@ -1219,3 +1219,47 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(res.frame0Again.lit).toBe(res.frame0.lit)
   })
 }
+
+// setBaseCoarseFloor skips re-orienting a level it already baked. Its key
+// missed inputs the orient pass bakes (label outline width, grid, buffer), and
+// the floor level is not a model volume, so its isDirty flag was never
+// committed: an in-place edit re-passed to it kept the old texture.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`the coarse floor re-orients only when its baked inputs change (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+    const r = await runInPage(
+      page,
+      `${setupPage(backend)}
+      await nv.loadVolumes([
+        { url: '${VOLUME}' },
+        { url: '${OVERLAY}' },
+      ])
+      const floor = nv.volumes[1]
+      const tex = () => nv.view.volumeRenderer.coarseFloorTexture
+      await nv.setBaseCoarseFloor(floor)
+      const first = tex()
+      await nv.setBaseCoarseFloor(floor)
+      const reused = tex() === first
+      floor.img.fill(0)
+      floor.isDirty = true
+      await nv.setBaseCoarseFloor(floor)
+      const afterEdit = tex()
+      const edited = afterEdit !== first && floor.isDirty === false
+      floor.img = floor.img.slice()
+      await nv.setBaseCoarseFloor(floor)
+      const newBuffer = tex() !== afterEdit
+      await nv.setBaseCoarseFloor(null)
+      return { hasFloor: !!first, reused, edited, newBuffer }
+      `,
+    )
+    if (!r) return
+    // biome-ignore lint/suspicious/noExplicitAny: page result
+    const res = r as any
+    expect(res.hasFloor).toBe(true)
+    expect(res.reused).toBe(true)
+    expect(res.edited).toBe(true)
+    expect(res.newBuffer).toBe(true)
+  })
+}

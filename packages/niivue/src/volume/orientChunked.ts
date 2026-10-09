@@ -9,6 +9,7 @@ import type { NVImage } from '@/NVTypes'
 import { rgbaTextureKey } from '@/view/NVOrient'
 import { isRgbaDatatype } from '@/view/NVRenderVolumeData'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
+import { objectId } from '@/volume/dataVersion'
 import type { ModulationTextureParams } from '@/volume/modulation'
 
 /** NIfTI datatype codes for color volumes. */
@@ -109,14 +110,21 @@ export function wholeVolumeTextureKey(
 
 /**
  * Key over what the coarse floor texture (`setCoarseFloor`, both backends)
- * bakes in when it orients a pyramid level: the source plus
- * {@link chunkedDisplayKey}, the same display inputs (colormaps with their
- * addColormap revision, window, scaling, frame, data version) a chunk bakes.
+ * bakes in when it orients a pyramid level with the orient matrix `mtx`: the
+ * source (url or name, and the `img` buffer identity, since the app may pass a
+ * new level under the same name) plus {@link wholeVolumeTextureKey}, the
+ * inputs a whole-volume texture bakes (display state with the data version,
+ * label outline width, RAS grid, `mtx`; rgbaTextureKey for RGB/RGBA).
  */
-export function coarseFloorKey(coarseVol: NVImage): string {
-  return [coarseVol.url || coarseVol.name, chunkedDisplayKey(coarseVol)].join(
-    '|',
-  )
+export function coarseFloorKey(
+  coarseVol: NVImage,
+  mtx: ArrayLike<number>,
+): string {
+  return [
+    coarseVol.url || coarseVol.name,
+    coarseVol.img ? objectId(coarseVol.img.buffer) : 0,
+    wholeVolumeTextureKey(coarseVol, mtx),
+  ].join('|')
 }
 
 /** Whether a datatype is a color (RGB/RGBA) source uploaded straight to RGBA8. */

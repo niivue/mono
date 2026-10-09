@@ -518,26 +518,34 @@ describe('chunkModulationForDesc', () => {
 })
 
 describe('coarseFloorKey', () => {
+  const IMG = new Uint8Array(8)
+  const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
   function makeVol(overrides: Record<string, unknown> = {}): NVImage {
     return {
       url: '/coarse.nii.gz',
       name: 'coarse',
+      img: IMG,
       colormap: 'gray',
       colormapNegative: '',
       isColormapInverted: false,
+      colormapLabel: null,
       calMin: 0,
       calMax: 100,
       calMinNeg: Number.NaN,
       calMaxNeg: Number.NaN,
-      hdr: { scl_slope: 1, scl_inter: 0 },
+      dimsRAS: [3, 2, 2, 2],
+      hdr: { datatypeCode: 2, scl_slope: 1, scl_inter: 0 },
       ...overrides,
     } as unknown as NVImage
   }
+  const key = (vol: NVImage, mtx: number[] = IDENTITY) =>
+    coarseFloorKey(vol, mtx)
 
   test('identical floor state produces an identical key', () => {
-    expect(coarseFloorKey(makeVol())).toBe(coarseFloorKey(makeVol()))
+    expect(key(makeVol())).toBe(key(makeVol()))
   })
 
+  const label = { lut: new Uint8Array(8), min: 0 }
   test.each([
     ['url', { url: '/other.nii.gz' }],
     ['colormap', { colormap: 'hot' }],
@@ -548,22 +556,36 @@ describe('coarseFloorKey', () => {
     ['calMinNeg', { calMinNeg: -50 }],
     ['calMaxNeg', { calMaxNeg: -5 }],
     ['_dataVersion', { _dataVersion: 1 }],
-    // Inputs it now shares with chunkedDisplayKey.
     ['colormapType', { colormapType: 1 }],
     ['frame4D', { frame4D: 1 }],
-    ['scl_slope', { hdr: { scl_slope: 2, scl_inter: 0 } }],
+    ['scl_slope', { hdr: { datatypeCode: 2, scl_slope: 2, scl_inter: 0 } }],
+    // The orient pass also bakes these, which the chunk key alone misses.
+    ['img buffer', { img: new Uint8Array(8) }],
+    ['RAS grid', { dimsRAS: [3, 2, 2, 4] }],
+    [
+      'RGB datatype',
+      { hdr: { datatypeCode: 128, scl_slope: 1, scl_inter: 0 } },
+    ],
   ])('a changed %s changes the key', (_field, overrides) => {
-    expect(coarseFloorKey(makeVol(overrides))).not.toBe(
-      coarseFloorKey(makeVol()),
+    expect(key(makeVol(overrides))).not.toBe(key(makeVol()))
+  })
+
+  test('a changed label outline width changes the key', () => {
+    expect(key(makeVol({ colormapLabel: label, atlasOutline: 2 }))).not.toBe(
+      key(makeVol({ colormapLabel: label, atlasOutline: 0 })),
     )
   })
 
+  test('a changed orient matrix changes the key', () => {
+    const shifted = IDENTITY.slice()
+    shifted[3] = 1
+    expect(key(makeVol(), shifted)).not.toBe(key(makeVol()))
+  })
+
   test('re-registering the colormap changes the key', () => {
-    const before = coarseFloorKey(makeVol({ colormap: 'floorKeyCmap' }))
+    const before = key(makeVol({ colormap: 'floorKeyCmap' }))
     addColormap('floorKeyCmap', { R: [0, 255], G: [0, 0], B: [0, 0] })
-    expect(coarseFloorKey(makeVol({ colormap: 'floorKeyCmap' }))).not.toBe(
-      before,
-    )
+    expect(key(makeVol({ colormap: 'floorKeyCmap' }))).not.toBe(before)
   })
 })
 

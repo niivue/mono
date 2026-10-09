@@ -41,6 +41,7 @@ export {
   coreHandlers,
   looksMni,
   planeIsCut,
+  SCREENSHOT_WIDTH,
   sceneState,
   viewState,
 } from './scene'

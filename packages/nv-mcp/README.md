@@ -137,6 +137,9 @@ Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`). Vite's WebSoc
 | `new_tab` | | Makes up an id for a tab that is not open yet and gives the address that opens the page as that tab, `pageUrl` with `?tab=<id>` on it |
 | `load_volume` | `url`, `name?`, `colormap?`, `mni?` | Loads a volume from an address the page can fetch, replacing what is shown. `mni` says whether the atlas applies; guessed from the name when left out. Reports the name and the volume's bounds in millimetres |
 | `where_am_i` | | The crosshair in millimetres and fractions, the volumes shown and how each is drawn, the plane cut, the camera, the view layout, the page's description of the place, and whatever state the app adds. Says which tab answered |
+| `set_camera` | `azimuth?`, `elevation?`, `pan_2d?`, `render_pan?`, `pivot?`, `center_on?`, `global?` | Points the render camera, pans the slices (`pan_2d`, NiiVue's `[x, y, z, zoom]`) or the render, sets or clears the point the render turns about, centres the render on a point in millimetres, or places the camera outright with `global` (`position`, `yaw`, `pitch`, `fov`, `near`, `far`). Only what is given changes |
+| `set_view` | `slice?`, `layout?`, `mosaic?`, `show_render?`, `radiological?`, `colorbar?` | Sets what the canvas shows: one slice orientation, all three with the render (`multiplanar`), or the render alone; how the multiplanar tiles are arranged and whether the render tile joins them; a NiiVue mosaic string; radiological convention; the colorbar. Only what is given changes. Reports the whole layout |
+| `screenshot` | `max_width?` | Draws the scene now and returns the canvas as a PNG, scaled down to fit. Refuses while the tab is in the background, where the browser draws nothing |
 
 Every tool below `new_tab` also takes `tab?`, the id of the tab to ask; without it the answering tab is asked, as the Tabs section explains.
 

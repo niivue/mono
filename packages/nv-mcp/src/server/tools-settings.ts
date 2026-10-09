@@ -147,8 +147,10 @@ export function registerSettingTools(
     description:
       "Reports what this page's NiiVue offers: its backend, which tool features it supports " +
       '(by group), which settings it has, the colormaps and drawing colormaps it knows, its mesh ' +
-      'shaders, the volume transforms it can run with their options, and the file types it ' +
-      'reads and writes. Ask before using a tool a page may lack.',
+      'shaders, the volume transforms it can run with their options, the file types it ' +
+      'reads and writes, the control kinds it hosts, and what a control may be bound to ' +
+      '(controlBindings: the forms a bind takes and the actions the page offers). ' +
+      'Ask before using a tool a page may lack.',
     inputSchema: SETTING_SCHEMAS.capabilities,
     readOnly: true,
   })

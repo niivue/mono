@@ -168,6 +168,9 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `get_options` | `names?`, `describe?` | Reads NiiVue's settings by their own names: crosshair, colours, fonts, 3D rendering, drawing pen, drag behaviour and the rest. Without `names` it describes every setting the page has, with its kind, its choices or bounds and what it does |
 | `set_options` | `options` | Changes any of those settings, several at once. A choice is given by its word (a drag mode, a pen shape, a render mode), a colour as `[r, g, b, a]` 0 to 1. Every value is checked before any is set |
 | `capabilities` | | What this page's NiiVue offers: its backend, which tool features it supports by group, which settings it has, its colormaps, drawing colormaps and mesh shaders, its volume transforms with their options, and the file types it reads and writes. A page whose NiiVue lacks a feature refuses that tool in words and answers every other |
+| `add_colormap` | `name?`, `R?`, `G?`, `B?`, `A?`, `I?`, `labels?`, `url?` | Adds a colormap from its stops, or fetches one from an address as a NiiVue colormap JSON |
+| `set_font` | `atlas`, `metrics` | Loads the font NiiVue draws its text with, from an atlas PNG and a metrics JSON |
+| `set_custom_layout` | `tiles?`, `clear?` | Places tiles on the canvas by hand, each a slice orientation or the render at `[left, top, width, height]` as fractions, in place of the ordinary layout; `clear` goes back to it |
 
 ### Planes and cameras
 

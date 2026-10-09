@@ -144,7 +144,14 @@ describe('core tool schemas', () => {
     expect(required('edit_drawing')).toEqual(['action'])
     expect(required('edit_annotations')).toEqual(['action'])
     expect(required('edit_measurements')).toEqual(['action'])
-    for (const name of ['describe_volume', 'capabilities', 'list_meshes'])
+    expect(required('save')).toEqual(['what'])
+    expect(required('load_document')).toEqual(['url'])
+    for (const name of [
+      'describe_volume',
+      'capabilities',
+      'list_meshes',
+      'map_point',
+    ])
       expect([name, byName[name].annotations?.readOnlyHint]).toEqual([
         name,
         true,

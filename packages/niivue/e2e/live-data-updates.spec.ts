@@ -269,7 +269,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
 // The ordinary update path after an in-place edit: the caller rewrites `img`
 // (same buffer) and sets `isDirty`, then calls setVolume / updateGLVolume /
 // setFrame4D. The orient caches key on the buffer identity, so before
-// `isDirty` was honoured these redraws kept the old voxels.
+// `isDirty` was honoured these redraws kept the old voxels. Also covers
+// re-registering a colormap name, which the same caches keyed by name.
 for (const backend of ['webgl2', 'webgpu'] as const) {
   test(`isDirty in-place edits redraw through the ordinary update path (${backend})`, async ({
     page,
@@ -417,6 +418,14 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       await nv.updateGLVolume()
       const f4Zeroed = await count()
 
+      // ---- re-registering a colormap name ----
+      nv.addColormap('liveSwap', { R: [0, 255], G: [0, 0], B: [0, 0] })
+      await nv.loadVolumes([{ url: '${VOLUME}', colormap: 'liveSwap' }])
+      const cmapRed = await count()
+      nv.addColormap('liveSwap', { R: [0, 0], G: [0, 255], B: [0, 0] })
+      await nv.updateGLVolume()
+      const cmapGreen = await count()
+
       return {
         start,
         ovZeroed,
@@ -430,6 +439,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         affineZeroed,
         f4Before,
         f4Zeroed,
+        cmapRed,
+        cmapGreen,
       }
      } catch (e) {
       const m = String(e && e.message ? e.message : e)
@@ -473,5 +484,10 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     // 4D: the displayed frame's in-place edit shows.
     expect(r.f4Before.lit).toBeGreaterThan(100)
     expect(r.f4Zeroed.lit).toBeLessThan(r.f4Before.lit * 0.05)
+
+    // Colormap: the re-registered colors replace the cached ones.
+    expect(r.cmapRed.red).toBeGreaterThan(1000)
+    expect(r.cmapGreen.green).toBeGreaterThan(1000)
+    expect(r.cmapGreen.red).toBeLessThan(r.cmapRed.red * 0.05)
   })
 }

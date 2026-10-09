@@ -71,6 +71,7 @@ import {
   chunkedDisplayKey,
   chunkModulationParams,
   chunkOverlayMatrix,
+  coarseFloorKey,
   extractChunkBytes,
 } from '@/volume/orientChunked'
 import { blendOverlayData } from '@/volume/overlayBlend'
@@ -2026,7 +2027,7 @@ export class VolumeRenderer extends NVRenderer {
    * active base. `coarseVol` is a small in-memory pyramid level supplied by the
    * app; it is oriented once into a single RGBA texture (its own colormap /
    * calibration) that the 2D slice path samples behind the resident fine
-   * chunks. Re-orients only when the source/colormap/window changes.
+   * chunks. Re-orients only when {@link coarseFloorKey} changes.
    */
   setCoarseFloor(gl: WebGL2RenderingContext, coarseVol: NVImage | null): void {
     if (!coarseVol) {
@@ -2039,7 +2040,7 @@ export class VolumeRenderer extends NVRenderer {
       this._coarseFloorKey = null
       return
     }
-    const key = `${coarseVol.url || coarseVol.name}|${coarseVol.colormap}|${coarseVol.calMin}|${coarseVol.calMax}`
+    const key = coarseFloorKey(coarseVol)
     if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // Orient the coarse level into its own (small) RGBA grid. It shares the base
     // volume's mm box, so the slice samples it at the base's texture fraction.

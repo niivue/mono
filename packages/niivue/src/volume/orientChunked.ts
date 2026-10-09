@@ -4,6 +4,7 @@
 // image buffer. They are shared by both GPU backends' chunked upload paths
 // (wgpu/orientChunked.ts and gl/orientChunked.ts) and have no GPU dependency.
 
+import { colormapKey } from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import type { ModulationTextureParams } from '@/volume/modulation'
@@ -29,10 +30,11 @@ function displayObjectId(o: object): number {
 
 /**
  * Key over every display-affecting input the chunked uploaders bake into their
- * per-chunk orient pass: the colormap LUTs (colormap, negative colormap,
- * inversion, label LUT identity), the intensity window (calMin/calMax and the
- * negative range), colormapType, the scaling slope/intercept, and the 4D frame
- * (the uploaders capture the frame's byte window at creation).
+ * per-chunk orient pass: the colormap LUTs (colormap and negative colormap,
+ * each with its addColormap revision, inversion, label LUT identity), the
+ * intensity window (calMin/calMax and the negative range), colormapType, the
+ * scaling slope/intercept, and the 4D frame (the uploaders capture the frame's
+ * byte window at creation).
  *
  * The renderers compare this against the cached chunked entry's key on every
  * updateVolume: resident chunk textures hold colormapped RGBA, so when any of
@@ -48,8 +50,8 @@ export function chunkedDisplayKey(
     ? `${displayObjectId(label)}:${label.lut ? displayObjectId(label.lut) : ''}`
     : ''
   return [
-    nvimage.colormap,
-    nvimage.colormapNegative ?? '',
+    colormapKey(nvimage.colormap),
+    colormapKey(nvimage.colormapNegative),
     nvimage.isColormapInverted ? 1 : 0,
     labelKey,
     nvimage.calMin,
@@ -65,6 +67,26 @@ export function chunkedDisplayKey(
     // change does. `key` already covers the modulator's identity, window,
     // frame and exponent; `mode` covers RGB vs alpha.
     modulation ? `${modulation.key}#${modulation.mode}` : '',
+  ].join('|')
+}
+
+/**
+ * Key over what the coarse floor texture (`setCoarseFloor`, both backends)
+ * bakes in when it orients a pyramid level: the source, its colormaps (each
+ * with its addColormap revision, so a re-registered name re-orients it), the
+ * inversion, both intensity windows, and the in-place data version.
+ */
+export function coarseFloorKey(coarseVol: NVImage): string {
+  return [
+    coarseVol.url || coarseVol.name,
+    colormapKey(coarseVol.colormap),
+    colormapKey(coarseVol.colormapNegative),
+    coarseVol.isColormapInverted ? 1 : 0,
+    coarseVol.calMin,
+    coarseVol.calMax,
+    coarseVol.calMinNeg ?? '',
+    coarseVol.calMaxNeg ?? '',
+    coarseVol._dataVersion ?? 0,
   ].join('|')
 }
 

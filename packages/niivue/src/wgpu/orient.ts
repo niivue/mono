@@ -213,7 +213,7 @@ function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
       ? `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
       : 'label:none'
   }
-  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}:${nvimage.isColormapInverted ? 1 : 0}`
+  return `${NVCmaps.colormapKey(nvimage.colormap)}:${NVCmaps.colormapKey(nvimage.colormapNegative)}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
 function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {

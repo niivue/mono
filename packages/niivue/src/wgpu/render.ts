@@ -69,6 +69,7 @@ import {
   chunkedDisplayKey,
   chunkModulationParams,
   chunkOverlayMatrix,
+  coarseFloorKey,
   extractChunkBytes,
 } from '@/volume/orientChunked'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
@@ -3479,7 +3480,7 @@ export class VolumeRenderer extends NVRenderer {
    * calibration). The 2D slice path samples it behind the resident fine chunks;
    * the 3D ray-march draws a floor cube (with its gradient, for matcap lighting)
    * for each chunk region whose fine chunk has not streamed in. Re-orients only
-   * when the source/colormap/window changes.
+   * when {@link coarseFloorKey} changes.
    */
   async setCoarseFloor(
     device: GPUDevice,
@@ -3496,7 +3497,7 @@ export class VolumeRenderer extends NVRenderer {
       this._coarseFloorKey = null
       return
     }
-    const key = `${coarseVol.url || coarseVol.name}|${coarseVol.colormap}|${coarseVol.calMin}|${coarseVol.calMax}`
+    const key = coarseFloorKey(coarseVol)
     if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // Orient the coarse level into its own (small) RGBA grid. It shares the base
     // volume's mm box, so the slice can sample it at the base's texture fraction.

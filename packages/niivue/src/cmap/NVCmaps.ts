@@ -188,7 +188,8 @@ export function colormapNames(): string[] {
  * Register a colormap at runtime so it becomes visible to `lutrgba8()`,
  * `lookupColorMap()`, and `colormapNames()`. Names are canonicalized to
  * match the auto-discovered luts (first letter uppercased). Re-registering
- * an existing name replaces the entry. `A` and `I` are derived when absent
+ * an existing name replaces the entry and changes its {@link colormapKey}, so
+ * cached colormap textures are rebuilt on the next update. `A` and `I` are derived when absent
  * (A defaults to opaque; I distributes stops evenly across 0..255 so the
  * LUT fills the full range instead of collapsing to the first N slots).
  *
@@ -237,7 +238,23 @@ export function addColormap(
   const entry: LutDef = { R, G, B, A, I }
   if (Array.isArray(cmap.labels)) entry.labels = cmap.labels.slice()
   map.set(canonical, entry)
+  _revisions.set(canonical, (_revisions.get(canonical) ?? 0) + 1)
   return canonical
+}
+
+// How many times each canonical name has been (re)registered by addColormap.
+const _revisions = new Map<string, number>()
+
+/**
+ * A cache key for the colormap a name currently resolves to: the name plus how
+ * many times `addColormap` has registered it. Caches of colormap textures key
+ * on this rather than the bare name, so re-registering a name with new colors
+ * invalidates them. `undefined` (no colormap) gives `''`.
+ */
+export function colormapKey(name?: string): string {
+  if (!name) return ''
+  const canonical = name.charAt(0).toUpperCase() + name.slice(1)
+  return `${name}#${_revisions.get(canonical) ?? 0}`
 }
 
 export function drawingColormapNames(): string[] {

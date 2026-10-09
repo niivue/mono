@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { addColormap } from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
 import type { Vec3i } from '@/volume/chunking'
 import { chunkVolumeGrid } from '@/volume/chunking'
@@ -8,6 +9,7 @@ import {
   chunkModulationParams,
   chunkOverlayMatrix,
   chunkRGBA,
+  coarseFloorKey,
   extractChunkBytes,
   extractChunkBytesReoriented,
   isRGBAChunkDatatype,
@@ -355,6 +357,15 @@ describe('chunkedDisplayKey', () => {
     )
   })
 
+  test('re-registering the colormap changes the key', () => {
+    // Same name, new colors: the resident chunks bake the old LUT in.
+    const before = chunkedDisplayKey(makeVol({ colormap: 'chunkKeyCmap' }))
+    addColormap('chunkKeyCmap', { R: [0, 255], G: [0, 0], B: [0, 0] })
+    expect(chunkedDisplayKey(makeVol({ colormap: 'chunkKeyCmap' }))).not.toBe(
+      before,
+    )
+  })
+
   // Resident chunk textures bake the modulator in, so the key has to move
   // when a modulator appears, changes identity/window (its `key`), swaps
   // RGB<->alpha (`mode`), or goes away -- else the uploader is never rebuilt
@@ -500,5 +511,49 @@ describe('chunkModulationForDesc', () => {
     expect(out.mtx[3]).toBeCloseTo(0.1)
     expect(out.mtx[5]).toBeCloseTo(2 * (ty / dy))
     expect(out.mtx[10]).toBeCloseTo(1 * (tz / dz))
+  })
+})
+
+describe('coarseFloorKey', () => {
+  function makeVol(overrides: Record<string, unknown> = {}): NVImage {
+    return {
+      url: '/coarse.nii.gz',
+      name: 'coarse',
+      colormap: 'gray',
+      colormapNegative: '',
+      isColormapInverted: false,
+      calMin: 0,
+      calMax: 100,
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+      ...overrides,
+    } as unknown as NVImage
+  }
+
+  test('identical floor state produces an identical key', () => {
+    expect(coarseFloorKey(makeVol())).toBe(coarseFloorKey(makeVol()))
+  })
+
+  test.each([
+    ['url', { url: '/other.nii.gz' }],
+    ['colormap', { colormap: 'hot' }],
+    ['colormapNegative', { colormapNegative: 'winter' }],
+    ['isColormapInverted', { isColormapInverted: true }],
+    ['calMin', { calMin: 5 }],
+    ['calMax', { calMax: 50 }],
+    ['calMinNeg', { calMinNeg: -50 }],
+    ['_dataVersion', { _dataVersion: 1 }],
+  ])('a changed %s changes the key', (_field, overrides) => {
+    expect(coarseFloorKey(makeVol(overrides))).not.toBe(
+      coarseFloorKey(makeVol()),
+    )
+  })
+
+  test('re-registering the colormap changes the key', () => {
+    const before = coarseFloorKey(makeVol({ colormap: 'floorKeyCmap' }))
+    addColormap('floorKeyCmap', { R: [0, 255], G: [0, 0], B: [0, 0] })
+    expect(coarseFloorKey(makeVol({ colormap: 'floorKeyCmap' }))).not.toBe(
+      before,
+    )
   })
 })

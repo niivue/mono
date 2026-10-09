@@ -945,6 +945,13 @@ the full `updateGLVolume()` rebuild.
   `_texCache`, modulation weight key, extension `imgRAS`, legend centroids,
   graph cache). The chunked GPU caches (`chunkPlan`) do not compare it, so
   in-place edits of chunk-streamed volumes are unsupported on either path.
+- **Colormap re-registration:** the orient caches, `chunkedDisplayKey` and
+  `coarseFloorKey` key colormaps by `NVCmaps.colormapKey(name)` (name plus how
+  many times `addColormap` registered it), so re-registering a name rebuilds
+  the cached LUT textures on the next update. Mesh layer, tract and
+  connectome colors are baked into `m.colors` only when those change
+  (`compositeLayers`, `retessellateTract`, `reextrudeConnectome`), so they
+  keep the old colors until their next property change.
 - **Coalescing:** `_updateGL(meshes, volumes?)` shares `_updating` /
   `_pendingUpdate` with `updateVolumeAffineOnly`; the queued follow-up takes
   the union of the callers' needs (`_pendingMeshes`, `_pendingVolumes`, and

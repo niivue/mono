@@ -6214,7 +6214,11 @@ export default class NiiVue extends EventTarget {
    * `setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh
    * layers, and so on. Use this to add user-defined LUTs at runtime.
    * Re-registering an existing name replaces the entry. Does not trigger a
-   * redraw — the colormap is inert until a volume references it.
+   * redraw — the colormap is inert until a volume references it. Volumes
+   * that already use the name show the new colors on their next GPU update
+   * (e.g. `updateGLVolume()`). Mesh layers, tracts and connectomes bake their
+   * colors when built, so they pick them up on their next change
+   * (`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).
    *
    * Label colormaps (for atlas volumes with per-index labels) have their
    * own registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`.

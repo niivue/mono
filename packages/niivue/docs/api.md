@@ -165,6 +165,12 @@ their textures. Set `isDirty` after assigning a new `img` array too, so caches
 keyed only on the data version (such as the signal graph) refresh. Values are
 raw (before `scl_slope`/`scl_inter`), and calMin/calMax are not recomputed.
 
+Re-registering a colormap name with `addColormap` replaces its colors in
+volumes that use it on their next GPU update (e.g. `updateGLVolume()`). Mesh
+layers, tracts and connectomes bake their colors when they are built, so they
+pick up the new colors on their next change (`setMeshLayerProperty`,
+`setTractOptions`, `setConnectomeOptions`, ...).
+
 ### Constructor (Flat Options)
 ```js
 const nv1 = new NiiVue({

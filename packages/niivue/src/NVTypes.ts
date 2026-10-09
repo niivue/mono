@@ -232,6 +232,12 @@ export type NVImage = {
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
   _modulationData?: Float32Array | null
+  /**
+   * @internal Key {@link _modulationData} was computed for (modulator identity,
+   * data version, grid, scaling, window, frame), so an unchanged modulator
+   * keeps the same array and the RGBA upload cache keyed on it stays valid.
+   */
+  _modulationDataKey?: string
   /** Tiling plan for volumes whose dims exceed maxTextureDimension3D. Absent ⇒ legacy single-texture path. */
   chunkPlan?: ChunkPlan
   /** Optional source-backed chunk loader for volumes whose full voxel array is not resident in browser memory. */

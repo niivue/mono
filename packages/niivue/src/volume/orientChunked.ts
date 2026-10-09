@@ -78,13 +78,15 @@ export function chunkedDisplayKey(
  * `_texCache` entries of both renderers store it and rebuild when it changes,
  * so an edited voxel or modulator (`_dataVersion`, which the modulation key
  * carries too), a new window or frame, a re-registered colormap name, a new
- * label LUT or outline width, or a changed modulation mode all show. Scalar
- * volumes use {@link chunkedDisplayKey} plus the label outline width (the
- * chunked path never outlines, so that key omits it); RGB/RGBA volumes use
- * rgbaTextureKey, since they bypass the colormap.
+ * label LUT or outline width, a changed modulation mode, or a new affine all
+ * show. Scalar volumes use {@link chunkedDisplayKey}, the label outline width
+ * (the chunked path never outlines, so that key omits it), the RAS grid and
+ * the orient matrix `mtx`, plus the modulator's sampling matrix; RGB/RGBA
+ * volumes use rgbaTextureKey, since they bypass the colormap and the matrix.
  */
 export function wholeVolumeTextureKey(
   nvimage: NVImage,
+  mtx: ArrayLike<number>,
   modulation: ModulationTextureParams | null = null,
 ): string {
   if (isRgbaDatatype(nvimage.hdr.datatypeCode)) {
@@ -96,6 +98,9 @@ export function wholeVolumeTextureKey(
   return [
     nvimage._dataVersion ?? 0,
     outline,
+    nvimage.dimsRAS?.slice(1, 4).join('x') ?? '',
+    Array.from(mtx).join(','),
+    modulation ? Array.from(modulation.mtx).join(',') : '',
     chunkedDisplayKey(nvimage, modulation),
   ].join('|')
 }

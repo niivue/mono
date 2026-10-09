@@ -789,7 +789,7 @@ export class VolumeRenderer extends NVRenderer {
       // colormap, label LUT, modulation): rebuild the entry.
       // Computed before the awaits below: an edit landing during them must
       // leave this entry stale (rebuilt next time), not marked current.
-      const textureKey = wholeVolumeTextureKey(vol, modParams)
+      const textureKey = wholeVolumeTextureKey(vol, mtx, modParams)
       if (entry && entry.textureKey !== textureKey) {
         this._evictTexEntry(gl, cacheKey, entry)
         entry = undefined
@@ -845,7 +845,6 @@ export class VolumeRenderer extends NVRenderer {
           gl,
           vol,
           this.volumeRgbaCache,
-          true,
         )
         this.volumeTexture = this.volumeRgbaCache.texture
       } else {
@@ -1885,16 +1884,14 @@ export class VolumeRenderer extends NVRenderer {
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
       this.deleteNonCachedOverlayTexture(gl)
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        // Written into the kept texture on every overlay pass: background
-        // masking edits it in place, so an unchanged key is no proof that it
-        // still holds the voxels.
+        // Like the background: rewritten only when its voxels changed, or
+        // after background masking edited it (maskOverlayByBackground).
         orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
         this.overlayOrientCache = null
         this.overlayRgbaCache = orientOverlay.prepareRGBATextureCache(
           gl,
           vol,
           this.overlayRgbaCache,
-          false,
         )
         this.overlayTexture = this.overlayRgbaCache.texture
         return
@@ -1991,6 +1988,28 @@ export class VolumeRenderer extends NVRenderer {
     )
     this.overlayTexture = this.overlayOrientCache.outputTexture
     return true
+  }
+
+  /**
+   * Clip the overlay to the background's non-transparent voxels
+   * (isBackgroundMasking), in place. A kept RGBA overlay texture then no
+   * longer holds the volume's voxels, so its key is cleared and the next
+   * overlay pass rewrites it.
+   */
+  maskOverlayByBackground(
+    gl: WebGL2RenderingContext,
+    dims: readonly number[],
+  ): void {
+    if (!this.overlayTexture || !this.volumeTexture) return
+    orientOverlay.maskOverlayByBackground(
+      gl,
+      this.volumeTexture,
+      this.overlayTexture,
+      [dims[0], dims[1], dims[2]],
+    )
+    if (this.overlayTexture === this.overlayRgbaCache?.texture) {
+      this.overlayRgbaCache.key = ''
+    }
   }
 
   private deleteNonCachedVolumeTexture(gl: WebGL2RenderingContext): void {

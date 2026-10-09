@@ -41,21 +41,46 @@ export function createModTexture(
   device: GPUDevice,
   mod: ModulationTextureParams | null,
 ): GPUTexture {
-  const dims = mod ? mod.dims : [1, 1, 1]
+  const dims = modTextureDims(mod)
   const tex = device.createTexture({
-    size: dims as [number, number, number],
+    size: dims,
     format: 'r32float',
     dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
+  writeModTexture(device, tex, mod)
+  return tex
+}
+
+function modTextureDims(
+  mod: ModulationTextureParams | null,
+): [number, number, number] {
+  return mod ? [mod.dims[0], mod.dims[1], mod.dims[2]] : [1, 1, 1]
+}
+
+/** Overwrite a texture made by createModTexture(mod) with mod's weights. */
+function writeModTexture(
+  device: GPUDevice,
+  tex: GPUTexture,
+  mod: ModulationTextureParams | null,
+): void {
+  const dims = modTextureDims(mod)
   const data = mod ? mod.weight : new Float32Array([1])
   device.queue.writeTexture(
     { texture: tex },
     data as Float32Array<ArrayBuffer>,
     { bytesPerRow: dims[0] * 4, rowsPerImage: dims[1] },
-    dims as [number, number, number],
+    dims,
   )
-  return tex
+}
+
+/** Whether `tex` (a mod texture) has the grid createModTexture(mod) would. */
+function modTextureFits(
+  tex: GPUTexture,
+  mod: ModulationTextureParams | null,
+): boolean {
+  const [x, y, z] = modTextureDims(mod)
+  return tex.width === x && tex.height === y && tex.depthOrArrayLayers === z
 }
 
 type PipelineCacheEntry = {
@@ -216,18 +241,17 @@ export type RGBATextureCache = {
 /**
  * Upload an RGB/RGBA volume into `existing`'s texture when its dims still
  * match (queue.writeTexture, no allocation), else into a new texture
- * (destroying the old one). `skipUnchanged` returns `existing` untouched when
- * its rgbaTextureKey still matches; the overlay slot passes false, matching
- * the WebGL2 renderer, whose background masking rewrites that texture.
+ * (destroying the old one). Returns `existing` untouched while its
+ * rgbaTextureKey still matches. Background masking writes a new texture
+ * (VolumeRenderer.maskOverlayByBackground), so nothing else writes this one.
  */
 export function prepareRGBATextureCache(
   device: GPUDevice,
   nvimage: NVImage,
   existing: RGBATextureCache | null,
-  skipUnchanged: boolean,
 ): RGBATextureCache {
   const key = rgbaTextureKey(nvimage)
-  if (existing && skipUnchanged && existing.key === key) return existing
+  if (existing && existing.key === key) return existing
   const { rgbaData, texDims } = prepareRGBAData(nvimage)
   let cache = existing
   if (!cache || !dimensionsMatch(cache.texDims, texDims)) {
@@ -399,7 +423,10 @@ export async function prepareOrientTextureCache(
     dimensionsMatch(existingCache.dimsIn, dimsIn) &&
     dimensionsMatch(existingCache.dimsOut, dimsOut) &&
     existingCache.colormapKey === colormapKey &&
-    existingCache.modKey === modKey
+    // A modulator edited in place keeps its grid: its weights are rewritten
+    // below. A new grid needs a new texture and so a new bind group.
+    (existingCache.modKey === modKey ||
+      modTextureFits(existingCache.modTexture, mod))
   if (canReuse) {
     // Same buffer, but the voxels may have been edited in place
     // (updateVolumeData): rewrite the source texture without reallocating it.
@@ -413,6 +440,10 @@ export async function prepareOrientTextureCache(
         bytesPerVoxel,
       )
       existingCache.dataVersion = dataVersion
+    }
+    if (existingCache.modKey !== modKey) {
+      writeModTexture(device, existingCache.modTexture, mod)
+      existingCache.modKey = modKey
     }
     writeOrientUniforms(
       device,

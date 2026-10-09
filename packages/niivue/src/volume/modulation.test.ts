@@ -124,6 +124,49 @@ describe('computeModulationData', () => {
     computeModulationData([vol])
     expect(vol._modulationData).toBeNull()
   })
+
+  // Every GPU update recomputes modulation data. The RGBA upload cache keys
+  // on the array's identity, so an unchanged modulator must keep the array,
+  // and only a real change may replace it.
+  function rgbaPair() {
+    const modImg = new Float32Array([0, 1, 2, 3, 4, 5, 6, 7])
+    const modVol = makeVolume({ id: 'mod1', img: modImg, calMin: 0, calMax: 7 })
+    const targetVol = makeVolume({
+      id: 'target',
+      modulationImage: 'mod1',
+      hdr: makeHeader({ datatypeCode: 2304 }),
+    })
+    computeModulationData([targetVol, modVol])
+    return { modImg, modVol, targetVol, first: targetVol._modulationData }
+  }
+
+  test('unchangedModulator_keepsTheArray', () => {
+    const { modVol, targetVol, first } = rgbaPair()
+    computeModulationData([targetVol, modVol])
+    expect(targetVol._modulationData).toBe(first)
+  })
+
+  test('inPlaceModulatorEdit_withDataVersionBump_recomputes', () => {
+    const { modImg, modVol, targetVol, first } = rgbaPair()
+    modImg.set([7, 6, 5, 4, 3, 2, 1, 0])
+    computeModulationData([targetVol, modVol])
+    // Not reported: still the cached array.
+    expect(targetVol._modulationData).toBe(first)
+    markVolumeDataChanged(modVol)
+    computeModulationData([targetVol, modVol])
+    const second = targetVol._modulationData ?? new Float32Array(0)
+    expect(second).not.toBe(first)
+    expect(second[0]).toBeCloseTo(1, 5)
+  })
+
+  test('modulatorWindowChange_recomputes', () => {
+    const { modVol, targetVol, first } = rgbaPair()
+    modVol.calMax = 14
+    computeModulationData([targetVol, modVol])
+    const second = targetVol._modulationData ?? new Float32Array(0)
+    expect(second).not.toBe(first)
+    expect(second[7]).toBeCloseTo(0.5, 5)
+  })
 })
 
 describe('computeModulationWeights', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVImage } from '@/NVTypes'
 import { markVolumeDataChanged } from '@/volume/dataVersion'
+import { computeModulationData } from '@/volume/modulation'
 import { prepareRGBAData, rgbaTextureKey } from './NVOrient'
 
 const DT_RGB24 = 128
@@ -69,6 +70,32 @@ describe('rgbaTextureKey', () => {
     expect(rgbaTextureKey(vol)).toBe(modulated)
     vol._modulationData = new Float32Array(4).fill(1)
     expect(rgbaTextureKey(vol)).not.toBe(modulated)
+  })
+})
+
+describe('rgbaTextureKey with a modulator', () => {
+  test('stays put across GPU updates while the modulator is unchanged', () => {
+    // computeModulationData runs on every GPU update; a modulated RGBA
+    // background must not re-upload each time.
+    const target = makeVol({ id: 'rgba', modulationImage: 'mod' })
+    const modulator = {
+      id: 'mod',
+      hdr: { datatypeCode: 16, scl_slope: 1, scl_inter: 0 },
+      img: new Float32Array([0, 1, 2, 3]),
+      nVox3D: 4,
+      dimsRAS: [3, 2, 2, 1],
+      img2RASstart: [0, 0, 0],
+      img2RASstep: [1, 2, 4],
+      calMin: 0,
+      calMax: 3,
+    } as unknown as NVImage
+    computeModulationData([target, modulator])
+    const before = rgbaTextureKey(target)
+    computeModulationData([target, modulator])
+    expect(rgbaTextureKey(target)).toBe(before)
+    markVolumeDataChanged(modulator)
+    computeModulationData([target, modulator])
+    expect(rgbaTextureKey(target)).not.toBe(before)
   })
 })
 

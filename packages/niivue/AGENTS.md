@@ -914,27 +914,37 @@ the full `updateGLVolume()` rebuild.
   Multi-instance mode (`instances`) still visits every volume (cache hits are
   cheap). The orient caches
   (`prepareOverlayTextureCache` / `prepareOrientTextureCache`) record
-  `dataVersion`, and a mismatch re-uploads the source texture in place. The
-  per-volume `_texCache` single entries (multi-instance) are reused by
-  url/name, so they store `wholeVolumeTextureKey` (`volume/orientChunked.ts`:
-  `_dataVersion`, `chunkedDisplayKey` with the modulation, the label outline
-  width; `rgbaTextureKey` for RGB/RGBA), computed before the build's awaits,
-  and rebuild on any mismatch: an edit, a window/frame/colormap change, a
-  re-registered colormap name or a modulator change. RGB/RGBA volumes have no orient pass; the renderers keep their
-  texture in `volumeRgbaCache` / `overlayRgbaCache` (`prepareRGBATextureCache`
-  in `gl/orientOverlay.ts` and `wgpu/orient.ts`), which rewrites it in place
-  (`texSubImage3D` / `queue.writeTexture`) while the RGBA dims match. The
-  background slot skips the upload while `rgbaTextureKey` (`view/NVOrient.ts`:
-  buffer identity, `_dataVersion`, dims, RAS mapping, `_modulationData`
-  identity) is unchanged; the overlay slot rewrites it on every overlay pass,
-  because WebGL2 background masking edits it in place. WebGPU masking writes a
-  new texture (`VolumeRenderer.maskOverlayByBackground`), destroying its input
-  only when no cache owns it. Still allocating per update, by design: two or
-  more resliced overlays (each is re-oriented into a temporary texture and the
-  blend goes to a new one; caching every oriented overlay would cost one RGBA
-  volume of GPU memory per overlay, and the blend has to be redone on any
-  change anyway), multi-instance `_texCache` entries (rebuilt whole), the
-  WebGPU masked overlay, and the gradient texture when lighting needs it.
+  `dataVersion`, and a mismatch re-uploads the source texture in place. They
+  also survive a modulator edited in place: a new `mod.key` on the same grid
+  only rewrites the weight texture (`syncModTexture` on WebGL2; WebGPU keeps
+  the cache while `modTextureFits`); a modulator that appears, goes away or
+  changes grid replaces the mod texture (WebGL2) or rebuilds the cache
+  (WebGPU, whose bind group holds it). The per-volume `_texCache` single
+  entries (multi-instance) are reused by url/name, so they store
+  `wholeVolumeTextureKey` (`volume/orientChunked.ts`: `_dataVersion`,
+  `chunkedDisplayKey` with the modulation, the label outline width, the RAS
+  grid, the orient matrix and the modulator's matrix; `rgbaTextureKey` for
+  RGB/RGBA), computed before the build's awaits, and rebuild on any mismatch:
+  an edit, a window/frame/colormap change, a re-registered colormap name, a
+  modulator change or a new affine. RGB/RGBA volumes have no orient pass; the
+  renderers keep their texture in `volumeRgbaCache` / `overlayRgbaCache`
+  (`prepareRGBATextureCache` in `gl/orientOverlay.ts` and `wgpu/orient.ts`),
+  which rewrites it in place (`texSubImage3D` / `queue.writeTexture`) while
+  the RGBA dims match, and skips the upload while `rgbaTextureKey`
+  (`view/NVOrient.ts`: buffer identity, `_dataVersion`, dims, RAS mapping,
+  `_modulationData` identity) is unchanged. `computeModulationData` keeps the
+  same `_modulationData` array while `_modulationDataKey` (modulator identity,
+  data version, grid, scaling, window, frame) matches, so a modulated RGBA
+  volume is not re-uploaded on every update. Background masking goes through
+  `VolumeRenderer.maskOverlayByBackground` on both backends: WebGL2 masks the
+  overlay texture in place and clears the RGBA cache's key so the next pass
+  rewrites it; WebGPU writes a new texture and destroys its input only when no
+  cache owns it. Still allocating per update, by design: two or more resliced
+  overlays (each is re-oriented into a temporary texture and the blend goes to
+  a new one; caching every oriented overlay would cost one RGBA volume of GPU
+  memory per overlay, and the blend has to be redone on any change anyway),
+  multi-instance `_texCache` entries (rebuilt whole), the WebGPU masked
+  overlay, and the gradient texture when lighting needs it.
   The window (calMin/calMax) is not recomputed. Volumes with a
   `chunkPlan` are rejected. An oversized volume gets one from
   `_ensureChunkedVolumeEntry` on its first render, so it is rejected from then
@@ -965,8 +975,9 @@ the full `updateGLVolume()` rebuild.
   graph cache). The chunked GPU caches (`chunkPlan`) do not compare it, so
   in-place edits of chunk-streamed volumes are unsupported on either path.
 - **Colormap re-registration:** the orient caches, `chunkedDisplayKey`,
-  `wholeVolumeTextureKey` and `coarseFloorKey` key colormaps by `NVCmaps.colormapKey(name)` (name plus how
-  many times `addColormap` registered it), so re-registering a name rebuilds
+  `wholeVolumeTextureKey` and `coarseFloorKey` key colormaps by
+  `NVCmaps.colormapKey(name)` (name plus how many times `addColormap`
+  registered it), so re-registering a name rebuilds
   the cached LUT textures on the next update. Mesh layer, tract and
   connectome colors are baked into `m.colors` only when those change
   (`compositeLayers`, `retessellateTract`, `reextrudeConnectome`), so they

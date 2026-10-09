@@ -54,7 +54,7 @@ function createRGBATexture(
 ): WebGLTexture {
   const tex = gl.createTexture()
   if (!tex) {
-    throw new Error('rgba2Texture: failed to create texture')
+    throw new Error('createRGBATexture: failed to create texture')
   }
   gl.bindTexture(gl.TEXTURE_3D, tex)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
@@ -132,18 +132,17 @@ export type RGBATextureCache = {
 /**
  * Upload an RGB/RGBA volume into `existing`'s texture when its dims still
  * match (texSubImage3D, no allocation), else into a new texture (freeing the
- * old one). `skipUnchanged` returns `existing` untouched when its
- * rgbaTextureKey still matches, which is only safe when nothing else writes
- * into the texture (background masking rewrites the overlay's in place).
+ * old one). Returns `existing` untouched while its rgbaTextureKey still
+ * matches; whoever else writes into the texture (background masking) clears
+ * `key` so the next call rewrites it.
  */
 export function prepareRGBATextureCache(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
   existing: RGBATextureCache | null,
-  skipUnchanged: boolean,
 ): RGBATextureCache {
   const key = rgbaTextureKey(nvimage)
-  if (existing && skipUnchanged && existing.key === key) return existing
+  if (existing && existing.key === key) return existing
   const { rgbaData, texDims } = prepareRGBAData(nvimage)
   let cache = existing
   if (!cache || !dimensionsMatch(cache.texDims, texDims)) {
@@ -544,6 +543,19 @@ export function createModTexture(
     mod.dims[1],
     mod.dims[2],
   )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  writeModTexture(gl, tex, mod)
+  return tex
+}
+
+/** Overwrite a mod texture of `mod.dims` with `mod.weight`, in place. */
+function writeModTexture(
+  gl: WebGL2RenderingContext,
+  tex: WebGLTexture,
+  mod: ModulationTextureParams,
+): void {
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
   gl.texSubImage3D(
     gl.TEXTURE_3D,
     0,
@@ -558,7 +570,34 @@ export function createModTexture(
     mod.weight,
   )
   gl.bindTexture(gl.TEXTURE_3D, null)
-  return tex
+}
+
+/**
+ * Bring a cache's mod texture up to date with `mod` without touching the rest
+ * of the cache: a modulator edited in place (new `mod.key`, same grid) is
+ * rewritten into the existing texture; a modulator that appears, goes away or
+ * changes grid gets a new texture (or none).
+ */
+function syncModTexture(
+  gl: WebGL2RenderingContext,
+  cache: OverlayTextureCache,
+  mod: ModulationTextureParams | null,
+): void {
+  const modKey = mod ? mod.key : ''
+  if (cache.modKey === modKey) return
+  if (
+    mod &&
+    cache.modTexture &&
+    cache.modDims &&
+    dimensionsMatch(cache.modDims, mod.dims)
+  ) {
+    writeModTexture(gl, cache.modTexture, mod)
+  } else {
+    if (cache.modTexture) gl.deleteTexture(cache.modTexture)
+    cache.modTexture = mod ? createModTexture(gl, mod) : null
+    cache.modDims = mod ? [...mod.dims] : null
+  }
+  cache.modKey = modKey
 }
 
 /** Bind modulation uniforms + texture for a draw (or disable when absent). */
@@ -727,6 +766,8 @@ export type OverlayTextureCache = {
   dataVersion: number
   shaderType: keyof ShaderPrograms
   modTexture: WebGLTexture | null
+  /** Grid of `modTexture` (WebGL cannot query a texture's size). */
+  modDims: number[] | null
   modKey: string
 }
 
@@ -861,8 +902,7 @@ export function prepareOverlayTextureCache(
     existingCache.imageBuffer === nvimage.img.buffer &&
     dimensionsMatch(existingCache.dimsIn, dimsIn) &&
     dimensionsMatch(existingCache.dimsOut, dimsOut) &&
-    existingCache.colormapKey === colormapKey &&
-    existingCache.modKey === modKey
+    existingCache.colormapKey === colormapKey
   if (canReuse) {
     // Same buffer, but the voxels may have been edited in place
     // (updateVolumeData): rewrite the input texture without reallocating it.
@@ -873,6 +913,8 @@ export function prepareOverlayTextureCache(
       uploadInputTexture(gl, nvimage, texConfig, dimsIn)
       existingCache.dataVersion = dataVersion
     }
+    // Likewise a modulator edited in place only rewrites the weights.
+    syncModTexture(gl, existingCache, mod)
     renderOverlayCache(gl, existingCache, nvimage, mtx, overlayOpacity, mod)
     return existingCache
   }
@@ -1018,6 +1060,7 @@ export function prepareOverlayTextureCache(
     dataVersion: nvimage._dataVersion ?? 0,
     shaderType: texConfig.shaderType,
     modTexture: mod ? createModTexture(gl, mod) : null,
+    modDims: mod ? [...mod.dims] : null,
     modKey,
   }
   renderOverlayCache(gl, cache, nvimage, mtx, overlayOpacity, mod)

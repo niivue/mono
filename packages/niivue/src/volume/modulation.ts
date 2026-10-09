@@ -87,19 +87,44 @@ export function computeModulationData(volumes: NVImage[]): void {
   for (const vol of volumes) {
     if (!vol.modulationImage || !isRgbaTarget(vol)) {
       vol._modulationData = null
+      vol._modulationDataKey = undefined
       continue
     }
     const mod = volumes.find((v) => v.id === vol.modulationImage)
     if (!mod?.img || !mod.dimsRAS || !mod.img2RASstep || !mod.img2RASstart) {
       vol._modulationData = null
+      vol._modulationDataKey = undefined
       continue
     }
     const hdr = mod.hdr
     const Ctor = getTypedArrayConstructor(hdr.datatypeCode)
     if (!Ctor) {
       vol._modulationData = null
+      vol._modulationDataKey = undefined
       continue
     }
+    // Everything the loop below reads. An unchanged key keeps the array, so
+    // caches keyed on its identity (rgbaTextureKey) are not invalidated on
+    // every GPU update.
+    const key = [
+      mod.id,
+      objectId(mod.img.buffer),
+      mod.img.byteOffset,
+      mod.img.byteLength,
+      mod._dataVersion ?? 0,
+      hdr.datatypeCode,
+      mod.dimsRAS.join(','),
+      mod.img2RASstart.join(','),
+      mod.img2RASstep.join(','),
+      mod.nVox3D,
+      hdr.scl_slope,
+      hdr.scl_inter,
+      mod.calMin,
+      mod.calMax,
+      mod.frame4D ?? 0,
+    ].join(':')
+    if (vol._modulationData && vol._modulationDataKey === key) continue
+    vol._modulationDataKey = key
     const imgData = mod.img
     const dims = mod.dimsRAS
     const nVoxRAS = dims[1] * dims[2] * dims[3]

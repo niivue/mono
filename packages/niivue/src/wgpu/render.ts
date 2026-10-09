@@ -953,7 +953,7 @@ export class VolumeRenderer extends NVRenderer {
       // colormap, label LUT, modulation): rebuild the entry.
       // Computed before the awaits below: an edit landing during them must
       // leave this entry stale (rebuilt next time), not marked current.
-      const textureKey = wholeVolumeTextureKey(vol, modParams)
+      const textureKey = wholeVolumeTextureKey(vol, mtx, modParams)
       if (entry && entry.textureKey !== textureKey) {
         this._evictTexEntry(cacheKey, entry)
         entry = undefined
@@ -1001,7 +1001,6 @@ export class VolumeRenderer extends NVRenderer {
           device,
           vol,
           this.volumeRgbaCache,
-          true,
         )
         this.volumeTexture = this.volumeRgbaCache.texture
       } else {
@@ -2024,15 +2023,14 @@ export class VolumeRenderer extends NVRenderer {
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
       this.destroyNonCachedOverlayTexture()
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        // Written into the kept texture on every overlay pass, like WebGL2
-        // (where background masking edits the texture in place).
+        // Like the background: rewritten only when its voxels changed.
+        // Masking writes a new texture, leaving this one intact.
         orient.destroyOrientTextureCache(this.overlayOrientCache)
         this.overlayOrientCache = null
         this.overlayRgbaCache = orient.prepareRGBATextureCache(
           device,
           vol,
           this.overlayRgbaCache,
-          false,
         )
         this.overlayTexture = this.overlayRgbaCache.texture
         return

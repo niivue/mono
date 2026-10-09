@@ -596,6 +596,39 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         }
         return { count: () => n, restore: () => { device.createTexture = orig } }
       }
+      const uploadsTo = (tex) => {
+        // Count voxel uploads into one texture: proves an unchanged volume's
+        // upload was skipped, not merely written into the same texture.
+        let n = 0
+        if ('${backend}' === 'webgl2') {
+          const gl = nv.view.gl
+          const orig = gl.texSubImage3D.bind(gl)
+          gl.texSubImage3D = (...a) => {
+            if (gl.getParameter(gl.TEXTURE_BINDING_3D) === tex) n++
+            return orig(...a)
+          }
+          return { count: () => n, restore: () => { gl.texSubImage3D = orig } }
+        }
+        const queue = nv.view.device.queue
+        const orig = queue.writeTexture.bind(queue)
+        queue.writeTexture = (dst, ...a) => {
+          if (dst.texture === tex) n++
+          return orig(dst, ...a)
+        }
+        return { count: () => n, restore: () => { queue.writeTexture = orig } }
+      }
+      const redPixels = async () => {
+        await nextFrame()
+        if (nv.view) nv.view.render()
+        ctx.clearRect(0, 0, readback.width, readback.height)
+        ctx.drawImage(canvas, 0, 0)
+        const px = ctx.getImageData(0, 0, readback.width, readback.height).data
+        let red = 0
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] - px[i + 1] > 40 && px[i] - px[i + 2] > 40) red++
+        }
+        return red
+      }
 
       // ---- background ----
       await nv.loadVolumes([{ url: '${RGB_VOLUME}' }])
@@ -609,17 +642,18 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         : null
 
       let allocs = gpuAllocs()
+      let uploads = uploadsTo(bgCacheTex)
       await nv.updateVolumeData(0, zeros)
       const bgZeroed = await litPixels()
       await nv.updateVolumeData(0, original)
       const bgRestored = await litPixels()
-      // A full update with unchanged voxels uploads nothing new.
-      const bgCache = renderer().volumeRgbaCache
-      const keyBefore = bgCache ? bgCache.key : null
+      const bgEditUploads = uploads.count()
+      uploads.restore()
+      // A full update with unchanged voxels uploads nothing at all.
+      uploads = uploadsTo(bgCacheTex)
       await nv.setVolume(0, { opacity: 1 })
-      const keyAfter = renderer().volumeRgbaCache
-        ? renderer().volumeRgbaCache.key
-        : null
+      const bgIdleUploads = uploads.count()
+      uploads.restore()
       const bgAllocs = allocs.count()
       allocs.restore()
       const bgKept =
@@ -639,6 +673,10 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       const ovZeroed = await litPixels()
       await nv.updateVolumeData(1, original)
       const ovRestored = await litPixels()
+      uploads = uploadsTo(ovTex)
+      await nv.setVolume(1, { opacity: 1 })
+      const ovIdleUploads = uploads.count()
+      uploads.restore()
       const ovAllocs = allocs.count()
       allocs.restore()
       const ovKept =
@@ -658,6 +696,39 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       // A zeroed background masks the whole overlay out.
       await nv.updateVolumeData(0, zeros)
       const ovMasked = await litPixels()
+      // Masking off again: the overlay's own voxels come back, so a texture
+      // masking edited in place (WebGL2) is not mistaken for current.
+      nv.volumeIsBackgroundMasking = false
+      await nv.setVolume(1, { opacity: 1 })
+      const ovUnmasked = await litPixels()
+
+      // ---- scalar overlay under masking ----
+      // The WebGPU mask pass also freed the scalar orient cache's output.
+      nv.volumeIsBackgroundMasking = true
+      await nv.loadVolumes([
+        { url: '${VOLUME}' },
+        { url: '${OVERLAY}', colormap: 'red', calMin: 0, calMax: 1 },
+      ])
+      const scalarOriginal = nv.volumes[1].img.slice()
+      const scalarBefore = await redPixels()
+      await nv.updateVolumeData(1, new Array(scalarOriginal.length).fill(0))
+      const scalarZeroed = await redPixels()
+      await nv.updateVolumeData(1, scalarOriginal)
+      const scalarRestored = await redPixels()
+      nv.volumeIsBackgroundMasking = false
+
+      // ---- a modulator edited in place keeps its target's orient cache ----
+      const bg = nv.volumes[0]
+      const bgOriginal = bg.img.slice()
+      await nv.setModulationImage(nv.volumes[1].id, bg.id)
+      const modBefore = await redPixels()
+      const modCache = renderer().overlayOrientCache
+      await nv.updateVolumeData(0, new Array(bgOriginal.length).fill(0))
+      const modZeroed = await redPixels()
+      await nv.updateVolumeData(0, bgOriginal)
+      const modRestored = await redPixels()
+      const modCacheKept =
+        !!modCache && renderer().overlayOrientCache === modCache
 
       return {
         bgBefore,
@@ -665,17 +736,26 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         bgRestored,
         bgKept,
         bgAllocs,
-        keyBefore,
-        keyAfter,
+        bgEditUploads,
+        bgIdleUploads,
         ovBefore,
         ovZeroed,
         ovRestored,
         ovKept,
         ovAllocs,
+        ovIdleUploads,
         maskZeroed,
         maskRestored,
         maskKept,
         ovMasked,
+        ovUnmasked,
+        scalarBefore,
+        scalarZeroed,
+        scalarRestored,
+        modBefore,
+        modZeroed,
+        modRestored,
+        modCacheKept,
         errors,
       }
      } catch (e) {
@@ -700,7 +780,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.bgRestored).toBe(r.bgBefore)
     expect(r.bgKept).toBe(true)
     expect(r.bgAllocs).toBe(0)
-    expect(r.keyAfter).toBe(r.keyBefore)
+    expect(r.bgEditUploads).toBe(2)
+    expect(r.bgIdleUploads).toBe(0)
 
     // Overlay: the edits show, written into the overlay's kept texture.
     expect(r.ovBefore).toBeGreaterThan(1000)
@@ -708,6 +789,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.ovRestored).toBe(r.ovBefore)
     expect(r.ovKept).toBe(true)
     expect(r.ovAllocs).toBe(0)
+    expect(r.ovIdleUploads).toBe(0)
 
     // Masking: further edits still show, the kept texture survives it (the
     // WebGPU mask pass used to destroy its input), and a black background
@@ -716,6 +798,19 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.maskRestored).toBe(r.ovBefore)
     expect(r.maskKept).toBe(true)
     expect(r.ovMasked).toBeLessThan(r.ovBefore * 0.05)
+    // (Not exactly ovBefore: the background is black now, not dim.)
+    expect(r.ovUnmasked).toBeGreaterThan(r.ovBefore * 0.9)
+
+    // A scalar overlay keeps working under masking too.
+    expect(r.scalarBefore).toBeGreaterThan(1000)
+    expect(r.scalarZeroed).toBeLessThan(r.scalarBefore * 0.05)
+    expect(r.scalarRestored).toBe(r.scalarBefore)
+
+    // Editing the modulator rewrites only the target's weights.
+    expect(r.modBefore).toBeGreaterThan(1000)
+    expect(r.modZeroed).toBeLessThan(r.modBefore * 0.05)
+    expect(r.modRestored).toBe(r.modBefore)
+    expect(r.modCacheKept).toBe(true)
     expect(r.errors).toEqual([])
   })
 }

@@ -2675,6 +2675,7 @@ export default class NiiVue extends EventTarget {
     target.modulationImage = modulatorId || undefined
     target.modulateAlpha = modulateAlpha
     target._modulationData = null
+    target._modulationDataKey = undefined
     target._modulationWeight = null
     target._modulationWeightKey = undefined
     await this.updateGLVolume()
@@ -3543,8 +3544,9 @@ export default class NiiVue extends EventTarget {
    *
    * The new voxels are written into the volume's existing textures when it is
    * the background or the only overlay, scalar or RGB/RGBA alike (RGB/RGBA
-   * voxels are reordered and padded to RGBA on the CPU first). These cases
-   * still allocate: with two or more overlays, every overlay is re-oriented
+   * voxels are reordered and padded to RGBA on the CPU first). The same holds
+   * for a volume this one modulates: only its weight texture is rewritten,
+   * as long as the modulator keeps its grid. These cases still allocate: with two or more overlays, every overlay is re-oriented
    * and blended into a new overlay texture; in multi-instance mode
    * (`instances`) the edited volume's texture is rebuilt; WebGPU background
    * masking writes the masked overlay to a new texture; and the gradient

@@ -166,7 +166,8 @@ keyed only on the data version (such as the signal graph) refresh. Values are
 raw (before `scl_slope`/`scl_inter`), and calMin/calMax are not recomputed.
 
 `updateVolumeData` writes into the volume's existing texture when the volume
-is the background or the only overlay, for scalar and RGB/RGBA data. It still
+is the background or the only overlay, for scalar and RGB/RGBA data, and a
+volume it modulates only has its modulation weights rewritten. It still
 allocates new textures with two or more overlays (they are re-oriented and
 blended into a new texture), in multi-instance mode (`instances`, the edited
 volume's texture is rebuilt), for WebGPU background masking, and for the

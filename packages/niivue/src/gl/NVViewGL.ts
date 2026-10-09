@@ -52,7 +52,6 @@ import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
-import { maskOverlayByBackground } from './orientOverlay'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
@@ -494,19 +493,12 @@ export default class NVGlview {
       vols.slice(1),
       this.model.volume.paqdUniforms,
     )
-    if (
-      this.model.volume.isBackgroundMasking &&
-      this.volumeRenderer.overlayTexture &&
-      this.volumeRenderer.volumeTexture &&
-      vols[0].dimsRAS
-    ) {
-      const dims = [vols[0].dimsRAS[1], vols[0].dimsRAS[2], vols[0].dimsRAS[3]]
-      maskOverlayByBackground(
-        gl,
-        this.volumeRenderer.volumeTexture,
-        this.volumeRenderer.overlayTexture,
-        dims,
-      )
+    if (this.model.volume.isBackgroundMasking && vols[0].dimsRAS) {
+      this.volumeRenderer.maskOverlayByBackground(gl, [
+        vols[0].dimsRAS[1],
+        vols[0].dimsRAS[2],
+        vols[0].dimsRAS[3],
+      ])
     }
   }
 

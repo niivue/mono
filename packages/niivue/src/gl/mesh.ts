@@ -125,6 +125,17 @@ export function uploadMeshGPU(
   return { ...gpu, shaderType, sliceShaderType }
 }
 
+// Per-mesh staging buffer for live vertex updates, so animating a mesh does
+// not allocate a fresh interleaved buffer every frame. Safe to reuse: the
+// upload copies the data before returning.
+const _staging = new WeakMap<WebGLMeshGPU, ArrayBuffer>()
+
+function stagingFor(gpu: WebGLMeshGPU, meshData: NVMesh): ArrayBuffer {
+  const packed = packMeshVertices(meshData, _staging.get(gpu))
+  _staging.set(gpu, packed)
+  return packed
+}
+
 /**
  * Rewrite an existing mesh's vertex buffer in place from `meshData`. Used for
  * live vertex updates, which would otherwise rebuild every mesh's GPU
@@ -140,7 +151,7 @@ export function writeMeshVertices(
   const bytes = (meshData.positions.length / 3) * BYTES_PER_VERTEX
   if (gpu.vertexBytes !== bytes) return false
   gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vertexBuffer)
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, packMeshVertices(meshData))
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, stagingFor(gpu, meshData))
   gl.bindBuffer(gl.ARRAY_BUFFER, null)
   return true
 }

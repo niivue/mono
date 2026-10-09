@@ -9,15 +9,21 @@ import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
 /**
  * Interleave a mesh's positions, generated normals and packed colors into the
  * vertex layout both backends draw (pos float32x3, normal float32x3, color
- * unorm8x4; BYTES_PER_VERTEX bytes per vertex).
+ * unorm8x4; BYTES_PER_VERTEX bytes per vertex). Writes into `target` when it
+ * is exactly the right size (a reused staging buffer), else allocates.
  */
-export function packMeshVertices(meshData: NVMesh): ArrayBuffer {
+export function packMeshVertices(
+  meshData: NVMesh,
+  target?: ArrayBuffer,
+): ArrayBuffer {
   const normals = NVMeshUtils.generateNormals(
     meshData.positions,
     meshData.indices,
   )
   const numVerts = meshData.positions.length / 3
-  const vertexData = new ArrayBuffer(numVerts * BYTES_PER_VERTEX)
+  const bytes = numVerts * BYTES_PER_VERTEX
+  const vertexData =
+    target && target.byteLength === bytes ? target : new ArrayBuffer(bytes)
   const f32 = new Float32Array(vertexData)
   const u32 = new Uint32Array(vertexData)
   for (let i = 0; i < numVerts; i++) {

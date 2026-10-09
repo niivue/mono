@@ -56,6 +56,12 @@ const CORE_TOOLS = [
   'edit_annotations',
   'list_measurements',
   'edit_measurements',
+  'set_viewport',
+  'map_point',
+  'set_slide',
+  'chunk_stats',
+  'save',
+  'load_document',
 ]
 
 /** The smallest extension: one tool, answered by the page's `set_light` handler. */

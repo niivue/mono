@@ -313,6 +313,28 @@ export interface GlobalCamera {
   far?: number
 }
 
+/** The 2D pan and zoom of the canvas: NiiVue's `CanvasViewport`. */
+export interface Viewport {
+  pan: [number, number]
+  zoom: number
+}
+
+/** What is under a canvas point: NiiVue's `ViewHitTest`. */
+export interface HitTest {
+  isRender: boolean
+  sliceType: number
+  normalizedX: number
+  normalizedY: number
+  tileIndex: number
+}
+
+/** A canvas point in a tile: NiiVue's `CanvasTilePoint`. */
+export interface TilePoint {
+  tileIndex: number
+  x: number
+  y: number
+}
+
 /** A volume a named transform made: NiiVue's `NVImage`, which `addVolume` takes as it is. */
 /** A transform of a loaded volume into a new one, as `View.volumeTransform` keeps them. */
 export type VolumeTransform = {
@@ -336,6 +358,12 @@ export interface ColormapToAdd {
   A?: number[]
   I?: number[]
   labels?: string[]
+}
+
+/** What a document's settings do on save or load. */
+export interface DocumentOptions {
+  settings?: { neverSave?: string[]; alwaysSave?: string[] }
+  format?: 'json' | 'cbor'
 }
 
 export interface View {
@@ -487,6 +515,13 @@ export interface View {
   pan2Dxyzmm?: ArrayLike<number>
   renderPan?: ArrayLike<number>
   renderPivotMM?: ArrayLike<number> | null
+  getViewport?(): Viewport
+  setViewport?(viewport: Viewport): unknown
+  setBounds?(bounds: [number, number, number, number]): unknown
+  clearBounds?(): unknown
+  hitTest?(x: number, y: number): HitTest | null
+  canvasToMM?(x: number, y: number): [number, number, number] | null
+  mmToCanvas?(mm: [number, number, number]): TilePoint | null
   customLayout?: LayoutTile[] | null
   clearCustomLayout?(): unknown
 
@@ -531,6 +566,36 @@ export interface View {
   clearMeasurements?(): unknown
   clearAngles?(): unknown
   clearDistanceMeasurements?(): unknown
+
+  // Documents and saving, each a download the browser makes.
+  saveDocument?(filename?: string, options?: DocumentOptions): unknown
+  loadDocument?(
+    url: string,
+    options?: { fill?: 'default' | 'current' },
+  ): Promise<unknown>
+  saveVolume?(options: {
+    filename?: string
+    isSaveDrawing?: boolean
+    volumeByIndex?: number
+  }): Promise<unknown>
+  saveMesh?(index: number, filename?: string): Promise<unknown>
+  saveBitmap?(filename?: string, quality?: number): Promise<unknown>
+
+  // The slide plane, for a whole-slide image.
+  setSlidePlaneLevel?(level?: number): unknown
+  clearSlidePlane?(): unknown
+  createSlideDrawing?(options?: { maxRaster?: number }): unknown
+  clearSlideDrawing?(): unknown
+  slideDrawUndo?(): unknown
+  slideDrawEnd?(): unknown
+
+  // Chunked volumes.
+  // Each report is NiiVue's own snapshot object, passed through as it is.
+  chunkStreamStats?(): object | null
+  chunkTimingStats?(): object
+  resetChunkTiming?(): unknown
+  lodCompensation?(): object
+  rebakeChunkedOverlays?(): unknown
 
   // What the page's NiiVue is.
   backend?: string

@@ -35,6 +35,7 @@ import {
   tabAddress,
   toolContext,
 } from './context'
+import { EXTRA_SCHEMAS, registerExtraTools } from './tools-extras'
 import { LAYER_SCHEMAS, registerLayerTools } from './tools-layers'
 import { MARK_SCHEMAS, registerMarkTools } from './tools-marks'
 import { registerSettingTools, SETTING_SCHEMAS } from './tools-settings'
@@ -439,6 +440,7 @@ export const CORE_SCHEMAS = {
   ...SETTING_SCHEMAS,
   ...LAYER_SCHEMAS,
   ...MARK_SCHEMAS,
+  ...EXTRA_SCHEMAS,
 } as const
 
 /** A line that says what the view shows: the slice type, and the mosaic when one is drawn. */
@@ -765,6 +767,7 @@ export function registerCoreTools(
   registerSettingTools(server, context)
   registerLayerTools(server, context)
   registerMarkTools(server, context)
+  registerExtraTools(server, context)
 }
 
 /** An MCP server with the core tools and each extension's, over one bridge. */

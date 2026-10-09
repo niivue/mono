@@ -3590,13 +3590,15 @@ export default class NiiVue extends EventTarget {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const vol = volumes[volumeIndex]
+    // Checked first: a streamed chunked volume has no img either, and this
+    // is the reason that applies to it.
+    if (vol.chunkPlan) {
+      log.warn('updateVolumeData: chunk-streamed volumes are not supported')
+      return
+    }
     const img = vol.img
     if (!img) {
       log.warn(`updateVolumeData: volume ${volumeIndex} has no image data`)
-      return
-    }
-    if (vol.chunkPlan) {
-      log.warn('updateVolumeData: chunk-streamed volumes are not supported')
       return
     }
     if (data) {

@@ -173,6 +173,12 @@ blended into a new texture), in multi-instance mode (`instances`, the edited
 volume's texture is rebuilt), for WebGPU background masking, and for the
 gradient texture when lighting is on.
 
+Volumes drawn in chunks (those with a `chunkPlan`, including volumes NiiVue
+chunked because they exceed the GPU texture limit) are not supported by
+`updateVolumeData`, which logs a warning and returns. Setting `isDirty` on one
+whose `img` is in memory works, but the next GPU update re-streams every
+chunk, so it is not suited to per-frame updates.
+
 Re-registering a colormap name with `addColormap` replaces its colors in
 volumes that use it on their next GPU update (e.g. `updateGLVolume()`). Mesh
 layers, tracts and connectomes bake their colors when they are built, so they

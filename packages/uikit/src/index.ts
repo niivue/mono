@@ -5,7 +5,7 @@
 //
 // The surface is the overlays, the control layer, the spec/style/option types,
 // the default styles, the host bridges, the measuring-widget and primitive
-// builders (ruler, crosshair, annotation, rect, line) and the text/font
+// builders (ruler, crosshair, annotation, rect, line, point label) and the text/font
 // helpers. The control widgets' models (layout, build, hit-test and state
 // helpers) stay package-private: they are the overlays' implementation,
 // exercised by their own tests, not an API.
@@ -123,6 +123,18 @@ export type {
 export { DEFAULT_NUMBER_INPUT_STYLE } from './numberInput'
 export type { UIKitNumberInputOverlayOptions } from './numberInputOverlay'
 export { UIKitNumberInputOverlay } from './numberInputOverlay'
+export type {
+  PointLabelBounds,
+  PointLabelGeometry,
+  PointLabelSpec,
+} from './pointLabel'
+export { buildPointLabel } from './pointLabel'
+export type {
+  MMPoint,
+  MMProjector,
+  PointLabelPlacement,
+} from './pointLabelOverlay'
+export { UIKitPointLabelOverlay } from './pointLabelOverlay'
 export type { RectData, RectSpec } from './rect'
 export { buildRect } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'

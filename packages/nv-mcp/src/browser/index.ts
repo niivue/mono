@@ -37,25 +37,33 @@ export {
   strings,
   text,
 } from './params'
+export type { Named } from './pick'
+export { pickIndex } from './pick'
 export {
   CLIP_PLANES,
   coreHandlers,
+  fetchLabelTable,
+  LABEL_TABLES,
   looksMni,
+  matrix4,
   planeIsCut,
   SCREENSHOT_WIDTH,
   sceneState,
   viewState,
 } from './scene'
 export type {
+  AffineTransform,
   AtlasLike,
   AtlasRegion,
   GlobalCamera,
   Handler,
   Handlers,
+  LabelTable,
   LoadedVolume,
   NiiVueHost,
   ShownVolume,
   Triple,
   View,
   VolumeToLoad,
+  VolumeUpdate,
 } from './view'

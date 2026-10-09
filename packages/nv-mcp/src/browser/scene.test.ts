@@ -16,6 +16,7 @@ import type {
   ShownVolume,
   View,
   VolumeToLoad,
+  VolumeUpdate,
 } from './view'
 
 /** A volume as NiiVue would keep it after loading `volume`. */
@@ -46,6 +47,9 @@ function fakeView(overrides: Partial<View> = {}): View {
     setClipPlane: mock(),
     loadVolumes: mock(async (next: VolumeToLoad[]) => {
       volumes().splice(0, volumes().length, ...next.map(shown))
+    }),
+    addVolume: mock(async (volume: VolumeToLoad) => {
+      volumes().push(shown(volume))
     }),
     drawScene: mock(),
     model: {
@@ -308,6 +312,7 @@ describe('where_am_i', () => {
     })
     expect(await coreHandlers(h).where_am_i({})).toEqual({
       volume: 'mni152.nii.gz',
+      volumes: [{ index: 0, name: 'mni152.nii.gz' }],
       crosshair: { mm: [0, 0, 50], frac: [0.5, 0.5, 0.75] },
       plane: { name: 'off', depth: PLANE_NONE, azimuth: 0, elevation: 0 },
       camera: { azimuth: 110, elevation: 15 },
@@ -315,6 +320,60 @@ describe('where_am_i', () => {
       sounding: false,
       mode: 'tone',
     })
+  })
+
+  it('adds the view layout by name when the page has one, and each volume with its window', async () => {
+    const view = fakeView({
+      volumes: [
+        { name: 'mni152.nii.gz', calMin: 0, calMax: 100, nFrame4D: 1 },
+        {
+          name: 'bold.nii.gz',
+          colormap: 'warm',
+          opacity: 0.7,
+          calMin: 10,
+          calMax: 90,
+          globalMin: -5,
+          globalMax: 120,
+          frame4D: 3,
+          nFrame4D: 200,
+          isColormapInverted: true,
+        },
+      ],
+      sliceType: 3,
+      multiplanarType: 2,
+      mosaicString: '',
+      showRender: 2,
+      isRadiological: false,
+      isColorbarVisible: true,
+    })
+    expect(await coreHandlers(host(view)).where_am_i({})).toMatchObject({
+      volumes: [
+        { index: 0, name: 'mni152.nii.gz', calMin: 0, calMax: 100 },
+        {
+          index: 1,
+          name: 'bold.nii.gz',
+          colormap: 'warm',
+          opacity: 0.7,
+          calMin: 10,
+          calMax: 90,
+          globalMin: -5,
+          globalMax: 120,
+          frame: 3,
+          frames: 200,
+          inverted: true,
+        },
+      ],
+      view: {
+        slice: 'multiplanar',
+        layout: 'grid',
+        showRender: 'auto',
+        radiological: false,
+        colorbar: true,
+      },
+    })
+    expect(
+      (await coreHandlers(host(view)).where_am_i({})) as { view: object },
+    ).not.toHaveProperty('view.mosaic')
   })
 
   it('describes the position itself when the host does not, and says so before a volume', async () => {
@@ -380,6 +439,133 @@ describe('set_camera', () => {
         elevation: 0,
       }),
     ).toThrow('azimuth must be a number')
+  })
+})
+
+/** A view whose NiiVue can change a volume, with a 4D overlay over the base. */
+function settableView(): View {
+  const view = fakeView({
+    volumes: [
+      { name: 'mni152.nii.gz', calMin: 0, calMax: 100, nFrame4D: 1 },
+      {
+        name: 'bold.nii.gz',
+        colormap: 'warm',
+        opacity: 0.7,
+        calMin: 10,
+        calMax: 90,
+        globalMin: -5,
+        globalMax: 120,
+        frame4D: 0,
+        nFrame4D: 200,
+      },
+      { name: 'bold_mask.nii.gz' },
+    ],
+    setVolume: mock(async (index: number, update: VolumeUpdate) => {
+      Object.assign(view.volumes[index], update)
+    }),
+  })
+  return view
+}
+
+describe('set_volume', () => {
+  it('changes only what was asked on the base volume, and reports it as drawn now', async () => {
+    const view = settableView()
+    const result = await coreHandlers(host(view)).set_volume({
+      colormap: 'bone',
+      cal_max: 80,
+    })
+    expect(view.setVolume).toHaveBeenCalledWith(0, {
+      colormap: 'bone',
+      calMax: 80,
+    })
+    expect(result).toEqual({
+      volume: {
+        index: 0,
+        name: 'mni152.nii.gz',
+        colormap: 'bone',
+        calMin: 0,
+        calMax: 80,
+      },
+    })
+    expect(view.drawScene).toHaveBeenCalled()
+  })
+
+  it('finds the volume by index or by name, clamps the opacity, and picks a frame', async () => {
+    const view = settableView()
+    const handlers = coreHandlers(host(view))
+    expect(
+      await handlers.set_volume({ volume: 1, opacity: 2, frame: 7 }),
+    ).toMatchObject({
+      volume: {
+        index: 1,
+        name: 'bold.nii.gz',
+        opacity: 1,
+        frame: 7,
+        frames: 200,
+      },
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      opacity: 1,
+      frame4D: 7,
+    })
+    expect(
+      await handlers.set_volume({ volume: 'bold_mask', invert: true }),
+    ).toMatchObject({ volume: { index: 2, inverted: true } })
+    expect(
+      await handlers.set_volume({ volume: 'BOLD.nii.gz', invert: false }),
+    ).toMatchObject({ volume: { index: 1 } })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      isColormapInverted: false,
+    })
+    expect(
+      await handlers.set_volume({ volume: '2', opacity: 0 }),
+    ).toMatchObject({ volume: { index: 2, opacity: 0 } })
+  })
+
+  it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {
+    const handlers = coreHandlers(host(settableView()))
+    await expect(
+      handlers.set_volume({ volume: 1, cal_min: 95 }),
+    ).rejects.toThrow('cal_min (95) must not be above cal_max (90)')
+    await expect(
+      handlers.set_volume({ cal_min: 50, cal_max: 40 }),
+    ).rejects.toThrow('cal_min (50) must not be above cal_max (40)')
+    await expect(handlers.set_volume({ frame: 1 })).rejects.toThrow(
+      'mni152.nii.gz has one frame only',
+    )
+    await expect(
+      handlers.set_volume({ volume: 1, frame: 200 }),
+    ).rejects.toThrow('bold.nii.gz has 200 frames, numbered 0 to 199')
+    await expect(
+      handlers.set_volume({ volume: 1, frame: 1.5 }),
+    ).rejects.toThrow('whole number')
+    await expect(handlers.set_volume({})).rejects.toThrow(
+      'needs something to set',
+    )
+    await expect(handlers.set_volume({ opacity: 'thin' })).rejects.toThrow(
+      'opacity must be a number',
+    )
+  })
+
+  it('refuses a volume it cannot find, an ambiguous name, no volume, or a page that cannot change one', async () => {
+    const handlers = coreHandlers(host(settableView()))
+    await expect(
+      handlers.set_volume({ volume: 3, opacity: 1 }),
+    ).rejects.toThrow('There is no volume 3: 3 shown, numbered from 0')
+    await expect(
+      handlers.set_volume({ volume: 'bold', opacity: 1 }),
+    ).rejects.toThrow(
+      '"bold" could mean 2 volumes: 1 (bold.nii.gz), 2 (bold_mask.nii.gz). Say which',
+    )
+    await expect(
+      handlers.set_volume({ volume: 'zstat', opacity: 1 }),
+    ).rejects.toThrow('No volume is named "zstat". Shown: mni152.nii.gz, bold')
+    await expect(
+      coreHandlers(host(fakeView({ volumes: [] }))).set_volume({ opacity: 1 }),
+    ).rejects.toThrow(/load_volume/)
+    await expect(
+      coreHandlers(host(fakeView())).set_volume({ opacity: 1 }),
+    ).rejects.toThrow('cannot change a volume')
   })
 })
 
@@ -581,6 +767,195 @@ describe('load_volume', () => {
     expect(nameFromUrl('blob:http://localhost/abc')).toBe('abc')
     expect(looksMni('mni152.nii.gz')).toBe(true)
     expect(looksMni('chris_t1.nii.gz')).toBe(false)
+  })
+})
+
+describe('add_overlay', () => {
+  it('adds the overlay over whatever is shown, however it got there, and draws a label map with its table', async () => {
+    const setColormapLabel = mock()
+    // The page's own start-up volume, never seen by load_volume.
+    const view = fakeView({ setColormapLabel })
+    const handlers = coreHandlers(host(view))
+    const result = (await handlers.add_overlay({
+      url: 'http://h/labels/synthseg.nii.gz',
+      labels: 'freesurfer',
+    })) as { volumes: unknown[] }
+    expect(view.loadVolumes).not.toHaveBeenCalled()
+    expect(view.addVolume).toHaveBeenCalledWith({
+      url: 'http://h/labels/synthseg.nii.gz',
+      name: 'synthseg.nii.gz',
+      colormap: 'gray',
+      opacity: 0.5,
+    })
+    expect(setColormapLabel).toHaveBeenCalledWith(1, 'freesurfer')
+    expect(result.volumes).toEqual([
+      { index: 0, name: 'mni152.nii.gz' },
+      {
+        index: 1,
+        name: 'synthseg.nii.gz',
+        colormap: 'gray',
+        opacity: 0.5,
+        labels: 'freesurfer',
+      },
+    ])
+    expect(view.drawScene).toHaveBeenCalled()
+  })
+
+  it('keeps the crosshair at the same millimetres when the overlay changes the scene', async () => {
+    const view = fakeView()
+    view.crosshairPos = new Float32Array([0.5, 0.5, 0.75])
+    view.getCrosshairPos = () =>
+      view.model.scene2mm(Array.from(view.crosshairPos))
+    view.addVolume = mock(async (volume: VolumeToLoad) => {
+      ;(view.volumes as ShownVolume[]).push(shown(volume))
+      // A bigger box: the scene is 400 mm across now, so the fraction that
+      // was 50 mm up would be 100 mm up.
+      view.model = {
+        mm2scene: (mm) => mm.map((v) => v / 400 + 0.5),
+        scene2mm: (frac) => frac.map((f) => (f - 0.5) * 400),
+      }
+    })
+    const result = (await coreHandlers(host(view)).add_overlay({
+      url: 'http://h/zstat.nii.gz',
+    })) as { crosshair: { mm: number[] } }
+    expect(result.crosshair.mm).toEqual([0, 0, 50])
+    expect(Array.from(view.crosshairPos)).toEqual([0.5, 0.5, 0.625])
+  })
+
+  it('uses a colormap for a non-label overlay and clamps the opacity', async () => {
+    const view = fakeView()
+    const handlers = coreHandlers(host(view))
+    await handlers.load_volume({ url: 'http://h/t1.nii.gz' })
+    const result = (await handlers.add_overlay({
+      url: 'http://h/zstat.nii.gz',
+      colormap: 'red',
+      opacity: 3,
+    })) as { volumes: Array<{ name: string }> }
+    expect(view.addVolume).toHaveBeenCalledWith({
+      url: 'http://h/zstat.nii.gz',
+      name: 'zstat.nii.gz',
+      colormap: 'red',
+      opacity: 1,
+    })
+    expect(result.volumes.map((v) => v.name)).toEqual([
+      't1.nii.gz',
+      'zstat.nii.gz',
+    ])
+  })
+
+  it('draws a label map with a table fetched from an address, filled in as NiiVue would', async () => {
+    const setColormapLabel = mock()
+    const view = fakeView({ setColormapLabel })
+    const fetched = mock(
+      async (_url: string) =>
+        new Response(
+          JSON.stringify({
+            R: [0, 255],
+            G: [0, 0],
+            B: [0, 0],
+            labels: ['Air', 'Hippocampus_L'],
+          }),
+        ),
+    )
+    const realFetch = globalThis.fetch
+    globalThis.fetch = fetched as unknown as typeof fetch
+    try {
+      const result = (await coreHandlers(host(view)).add_overlay({
+        url: 'http://h/aal.nii.gz',
+        labels: 'http://h/aal.json',
+      })) as { volumes: Array<{ labels?: string }> }
+      expect(fetched).toHaveBeenCalledWith('http://h/aal.json')
+      expect(setColormapLabel).toHaveBeenCalledWith(1, {
+        R: [0, 255],
+        G: [0, 0],
+        B: [0, 0],
+        A: [0, 255],
+        I: [0, 1],
+        labels: ['Air', 'Hippocampus_L'],
+      })
+      expect(result.volumes[1].labels).toBe('http://h/aal.json')
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('refuses a table it cannot fetch or read, leaving the scene as it was', async () => {
+    const view = fakeView({ setColormapLabel: mock() })
+    const handlers = coreHandlers(host(view))
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string) =>
+      url.endsWith('missing.json')
+        ? new Response('gone', { status: 404 })
+        : new Response(
+            JSON.stringify({ R: [1], G: [1, 2], B: [1] }),
+          )) as unknown as typeof fetch
+    try {
+      await expect(
+        handlers.add_overlay({
+          url: 'http://h/aal.nii.gz',
+          labels: 'http://h/missing.json',
+        }),
+      ).rejects.toThrow(/could not be fetched: 404/)
+      await expect(
+        handlers.add_overlay({
+          url: 'http://h/aal.nii.gz',
+          labels: '/volumes/odd.json',
+        }),
+      ).rejects.toThrow(/not one NiiVue can read/)
+      expect(view.addVolume).not.toHaveBeenCalled()
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('refuses with nothing shown, an unknown table, or a page that cannot draw labels', async () => {
+    const empty = coreHandlers(host(fakeView({ volumes: [] })))
+    await expect(
+      empty.add_overlay({ url: 'http://h/x.nii.gz' }),
+    ).rejects.toThrow(/load_volume/)
+    const handlers = coreHandlers(host(fakeView()))
+    await expect(
+      handlers.add_overlay({ url: 'http://h/x.nii.gz', labels: 'aal' }),
+    ).rejects.toThrow(/Unknown label table/)
+    await expect(
+      handlers.add_overlay({ url: 'http://h/x.nii.gz', labels: 'freesurfer' }),
+    ).rejects.toThrow(/label maps/)
+  })
+
+  it('keeps what was shown when the overlay fails to load', async () => {
+    const view = fakeView()
+    const add = view.addVolume
+    view.addVolume = mock(async (volume: VolumeToLoad) => {
+      if (volume.url.includes('missing')) throw new Error('404')
+      await add(volume)
+    })
+    const handlers = coreHandlers(host(view))
+    await handlers.load_volume({ url: 'http://h/t1.nii.gz' })
+    await expect(
+      handlers.add_overlay({ url: 'http://h/missing.nii.gz' }),
+    ).rejects.toThrow(/could not be loaded: 404/)
+    expect(view.volumes.map((v) => v.name)).toEqual(['t1.nii.gz'])
+    const result = (await handlers.add_overlay({
+      url: 'http://h/ok.nii.gz',
+    })) as { volumes: unknown[] }
+    expect(result.volumes).toEqual([
+      { index: 0, name: 't1.nii.gz', colormap: 'gray' },
+      { index: 1, name: 'ok.nii.gz', colormap: 'warm', opacity: 0.7 },
+    ])
+  })
+
+  it('forgets the label tables once a new base replaces the volumes', async () => {
+    const view = fakeView({ setColormapLabel: mock() })
+    const handlers = coreHandlers(host(view))
+    await handlers.add_overlay({
+      url: 'http://h/synthseg.nii.gz',
+      labels: 'freesurfer',
+    })
+    await handlers.load_volume({ url: 'http://h/t1.nii.gz' })
+    const result = (await handlers.add_overlay({
+      url: 'http://h/zstat.nii.gz',
+    })) as { volumes: Array<{ labels?: string }> }
+    expect(result.volumes.map((v) => v.labels)).toEqual([undefined, undefined])
   })
 })
 

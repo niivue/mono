@@ -24,7 +24,7 @@ import {
   SLICE_NAMES,
   type ViewState,
 } from '../views'
-import { triple } from './args'
+import { triple, VOLUME_ARG } from './args'
 import type { Bridge } from './bridge'
 import {
   type Extension,
@@ -79,6 +79,36 @@ export const CORE_SCHEMAS = {
       .describe(
         'Whether the volume is in MNI space, so an atlas applies. Guessed from the name otherwise.',
       ),
+  },
+  add_overlay: {
+    ...TAB_ARG,
+    url: z
+      .string()
+      .min(1)
+      .describe('Where the overlay is: an http(s) address the page can fetch.'),
+    name: z
+      .string()
+      .optional()
+      .describe('A name for it; the file name otherwise.'),
+    labels: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Draw it as a label map: freesurfer for FreeSurfer or SynthSeg ids, or, for any other atlas, the address of a label table JSON the page can fetch (R, G, B and labels arrays, as NiiVue reads them).',
+      ),
+    colormap: z
+      .string()
+      .optional()
+      .describe(
+        'A NiiVue colormap name for a non-label overlay; warm otherwise.',
+      ),
+    opacity: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe('0 to 1; 0.5 for labels and 0.7 otherwise.'),
   },
   where_am_i: { ...TAB_ARG },
   list_regions: {
@@ -213,6 +243,146 @@ export const CORE_SCHEMAS = {
       })
       .optional()
       .describe('Place a free camera in the world instead of orbiting.'),
+  },
+  set_volume: {
+    ...TAB_ARG,
+    volume: VOLUME_ARG.optional().describe(
+      'Which volume: its index as where_am_i and add_overlay list them (0 is the base), or its name. The base otherwise.',
+    ),
+    colormap: z.string().optional().describe('A NiiVue colormap name.'),
+    colormap_negative: z
+      .string()
+      .optional()
+      .describe(
+        'The colormap for values below zero, when they get their own; the empty string drops it.',
+      ),
+    opacity: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe('0 (hidden) to 1 (opaque).'),
+    cal_min: z
+      .number()
+      .optional()
+      .describe(
+        "The low end of the display window: the intensity drawn as the colormap's darkest colour.",
+      ),
+    cal_max: z
+      .number()
+      .optional()
+      .describe(
+        "The high end of the display window: the intensity drawn as the colormap's brightest colour.",
+      ),
+    cal_min_neg: z
+      .number()
+      .optional()
+      .describe('The low end of the negative window.'),
+    cal_max_neg: z
+      .number()
+      .optional()
+      .describe('The high end of the negative window.'),
+    colormap_type: z
+      .enum([
+        'min_to_max',
+        'zero_to_max_transparent_below_min',
+        'zero_to_max_translucent_below_min',
+      ])
+      .optional()
+      .describe(
+        'How the colormap spans the window and treats values under cal_min.',
+      ),
+    transparent_below_cal_min: z
+      .boolean()
+      .optional()
+      .describe('Whether values under cal_min are left unpainted.'),
+    frame: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe('The frame of a 4D volume to show, counted from 0.'),
+    invert: z
+      .boolean()
+      .optional()
+      .describe('Whether the colormap runs backwards.'),
+    colorbar: z
+      .boolean()
+      .optional()
+      .describe('Whether a colorbar is drawn for it.'),
+    nearest: z
+      .boolean()
+      .optional()
+      .describe(
+        'Nearest-neighbour sampling instead of linear, for label maps.',
+      ),
+    atlas_outline: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe(
+        'For a label map: how strongly region outlines are drawn, 0 for none.',
+      ),
+    modulate_alpha: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe(
+        'How much the modulation volume, if any, also fades the opacity.',
+      ),
+    labels: z
+      .string()
+      .optional()
+      .describe(
+        'A label table for it: the address of a NiiVue label JSON, or a table the server knows (freesurfer).',
+      ),
+    modulate: z
+      .object({
+        volume: VOLUME_ARG.describe(
+          'The volume whose intensity modulates this one.',
+        ),
+        alpha: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe('How much it fades the opacity too. 0 otherwise.'),
+      })
+      .optional()
+      .describe("Modulate this volume's colours by another's intensity."),
+    load_all_frames: z
+      .boolean()
+      .optional()
+      .describe(
+        'Fetch the remaining frames of a 4D volume that loaded its first only.',
+      ),
+    auto_window: z
+      .boolean()
+      .optional()
+      .describe('Recompute cal_min and cal_max from the intensities.'),
+    affine: z
+      .union([
+        z.array(z.array(z.number()).length(4)).length(4),
+        z.array(z.number()).length(16),
+      ])
+      .optional()
+      .describe(
+        'Set its voxel-to-world matrix outright: 4 rows of 4, or 16 numbers row by row.',
+      ),
+    reset_affine: z
+      .boolean()
+      .optional()
+      .describe("Put its affine back to the file's."),
+    transform: z
+      .object({
+        translation: triple('Millimetres along x, y and z.').optional(),
+        rotation: triple('Degrees about x, y and z.').optional(),
+        scale: triple('Factors along x, y and z.').optional(),
+      })
+      .optional()
+      .describe('Move, turn or scale it in the world, applied to its affine.'),
   },
   set_view: {
     ...TAB_ARG,
@@ -359,6 +529,31 @@ export function registerCoreTools(
   )
 
   server.registerTool(
+    'add_overlay',
+    {
+      title: 'Add an overlay',
+      description:
+        'Draws another volume over whatever the page shows, keeping it: a statistical map with a ' +
+        'colormap, or a segmentation as labels. `labels: freesurfer` fits FreeSurfer and SynthSeg ' +
+        'label ids, named and coloured as FreeSurfer does; any other atlas needs its own table, ' +
+        'passed as the address of a label table JSON the page can fetch. The overlay must share ' +
+        "the base volume's space. The base may be what the page opened with or one from " +
+        'load_volume; loading a new base clears the overlays.',
+      inputSchema: CORE_SCHEMAS.add_overlay,
+    },
+    async ({ tab, ...params }) =>
+      context.answer('add_overlay', params, {
+        tab,
+        lead: (r) => {
+          const volumes = (r as { volumes?: Array<{ name?: string }> })?.volumes
+          return volumes?.length
+            ? `Showing ${volumes.map((v) => v.name).join(' with ')}.`
+            : undefined
+        },
+      }),
+  )
+
+  server.registerTool(
     'where_am_i',
     {
       title: 'Where the crosshair is',
@@ -477,6 +672,30 @@ export function registerCoreTools(
       inputSchema: CORE_SCHEMAS.set_camera,
     },
     async ({ tab, ...params }) => context.answer('set_camera', params, { tab }),
+  )
+
+  server.registerTool(
+    'set_volume',
+    {
+      title: 'Change how a volume is drawn',
+      description:
+        'Changes how one loaded volume is drawn, leaving the rest as it is: its colormap (and ' +
+        'one for negative values), its opacity, its display window (`cal_min` and `cal_max`, the ' +
+        "intensities drawn as the colormap's darkest and brightest colours), how the colormap " +
+        'spans it, the frame shown of a 4D volume, the colorbar, sampling, atlas outline, a label ' +
+        'table, modulation by another volume, and its place in the world (an affine outright, a ' +
+        'translation, rotation and scale, or a reset). `volume` is an index as where_am_i lists ' +
+        'them, or a name; the base volume otherwise. Reports the volume as it is drawn now.',
+      inputSchema: CORE_SCHEMAS.set_volume,
+    },
+    async ({ tab, ...params }) =>
+      context.answer('set_volume', params, {
+        tab,
+        lead: (r) => {
+          const volume = (r as { volume?: { name?: string } })?.volume
+          return volume?.name ? `Changed ${volume.name}.` : undefined
+        },
+      }),
   )
 
   server.registerTool(

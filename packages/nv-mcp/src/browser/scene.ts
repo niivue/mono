@@ -21,6 +21,7 @@ import {
 } from '../planes'
 import type { PlaneState, RegionSummary, TabState } from '../protocol'
 import { ambiguityMessage, findRegion, regionMentions } from '../regions'
+import { COLORMAP_TYPES } from '../settings'
 import {
   LAYOUTS,
   nameFor,
@@ -33,6 +34,7 @@ import {
   flag,
   integer,
   nameFromUrl,
+  nothingIn,
   number,
   numbers,
   point,
@@ -41,12 +43,17 @@ import {
   record,
   text,
 } from './params'
+import { pickIndex } from './pick'
 import type {
+  AffineTransform,
   AtlasLike,
   GlobalCamera,
   Handlers,
+  LabelTable,
   NiiVueHost,
+  ShownVolume,
   View,
+  VolumeUpdate,
 } from './view'
 
 /** The default width a screenshot is scaled down to. */
@@ -110,6 +117,70 @@ const summary = ({
   voxels,
 }: RegionSummary): RegionSummary => ({ label, name, centroid, voxels })
 
+/** Label lookup tables the core knows by name; NiiVue 1.0 has each built in. */
+export const LABEL_TABLES = ['freesurfer'] as const
+
+/** Whether `labels` is an address to fetch a table from, rather than a name the core knows. */
+function isAddress(labels: string): boolean {
+  return labels.includes('/')
+}
+
+/**
+ * Fetches a label table from an address the page can reach, and fills in
+ * what NiiVue's own reader would: `I` counting from 0, and `A` opaque with
+ * label 0 clear. Refuses in words when the address cannot be fetched or
+ * what it holds is not a table.
+ */
+export async function fetchLabelTable(address: string): Promise<LabelTable> {
+  let body: unknown
+  try {
+    const response = await fetch(address)
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`.trim())
+    }
+    body = await response.json()
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `The label table at ${address} could not be fetched: ${why}`,
+    )
+  }
+  const numbers = (value: unknown): value is number[] =>
+    Array.isArray(value) && value.every((v) => typeof v === 'number')
+  const strings = (value: unknown): value is string[] =>
+    Array.isArray(value) && value.every((v) => typeof v === 'string')
+  const table =
+    body && typeof body === 'object'
+      ? (body as Partial<Record<keyof LabelTable, unknown>>)
+      : {}
+  const { R, G, B, A, I, labels } = table
+  const unreadable = () =>
+    new Error(
+      `The label table at ${address} is not one NiiVue can read: it needs R, G and B arrays of one length, with I, A and labels optional.`,
+    )
+  if (!numbers(R) || R.length === 0) throw unreadable()
+  const fits = (value: unknown): value is number[] =>
+    numbers(value) && value.length === R.length
+  if (
+    !fits(G) ||
+    !fits(B) ||
+    (A !== undefined && !fits(A)) ||
+    (I !== undefined && !fits(I)) ||
+    (labels !== undefined && !strings(labels))
+  ) {
+    throw unreadable()
+  }
+  const indices = I ?? R.map((_, i) => i)
+  return {
+    R,
+    G,
+    B,
+    A: A ?? indices.map((i) => (i === 0 ? 0 : 255)),
+    I: indices,
+    ...(labels ? { labels } : {}),
+  }
+}
+
 /** Three finite numbers, or a message saying what is wrong. */
 /** The handlers for the core tools, over this host. */
 export function coreHandlers(host: NiiVueHost): Handlers {
@@ -124,6 +195,72 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     if (!host.atlas) throw new Error('This page has no atlas.')
     return host.atlas()
   }
+
+  // The label table each label-map overlay was drawn with, by the volume
+  // NiiVue keeps; a new base clears the volumes, and the map with them.
+  const labelled = new WeakMap<ShownVolume, string>()
+
+  /** A volume as the tools report it: how it is drawn, its window and span, and its frame when it has several. */
+  const describeVolume = (volume: ShownVolume, index: number) => {
+    const labels = labelled.get(volume)
+    const windowed = volume.calMin !== undefined && volume.calMax !== undefined
+    const spanned =
+      volume.globalMin !== undefined && volume.globalMax !== undefined
+    const frames = volume.nFrame4D ?? 1
+    return {
+      index,
+      name: volume.name,
+      ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
+      ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+      ...(labels ? { labels } : {}),
+      ...(windowed ? { calMin: volume.calMin, calMax: volume.calMax } : {}),
+      ...(spanned
+        ? { globalMin: volume.globalMin, globalMax: volume.globalMax }
+        : {}),
+      ...(frames > 1 ? { frame: volume.frame4D ?? 0, frames } : {}),
+      ...(volume.nTotalFrame4D !== undefined && volume.nTotalFrame4D > frames
+        ? { framesInFile: volume.nTotalFrame4D }
+        : {}),
+      ...(volume.isColormapInverted ? { inverted: true } : {}),
+      ...(volume.colormapNegative
+        ? { colormapNegative: volume.colormapNegative }
+        : {}),
+      ...(volume.calMinNeg !== undefined && volume.calMaxNeg !== undefined
+        ? { calMinNeg: volume.calMinNeg, calMaxNeg: volume.calMaxNeg }
+        : {}),
+      ...(volume.colormapType
+        ? { colormapType: nameFor(COLORMAP_TYPES, volume.colormapType) }
+        : {}),
+      ...(volume.isTransparentBelowCalMin
+        ? { transparentBelowCalMin: true }
+        : {}),
+      ...(volume.isColorbarVisible ? { colorbar: true } : {}),
+      ...(volume.isNearestInterpolation ? { nearest: true } : {}),
+      ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
+      ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
+    }
+  }
+
+  /** A label table by name or fetched from an address, checked before anything changes. */
+  const knownLabelTable = (labels: string): void => {
+    if (isAddress(labels)) return
+    if (!(LABEL_TABLES as readonly string[]).includes(labels)) {
+      throw new Error(
+        `Unknown label table "${labels}". One of: ${LABEL_TABLES.join(', ')}, or the address of a label table JSON the page can fetch.`,
+      )
+    }
+  }
+  const labelTable = async (labels: string): Promise<string | LabelTable> => {
+    knownLabelTable(labels)
+    return isAddress(labels) ? fetchLabelTable(labels) : labels
+  }
+
+  /** The volumes on show, as `add_overlay` and `where_am_i` report them. */
+  const volumesShown = () => view.volumes.map(describeVolume)
+
+  /** The index of the volume `params.volume` names, by index or by name; the base without it. */
+  const volumeIndex = (params: Record<string, unknown>): number =>
+    pickIndex(view.volumes, params?.volume, 'volume', 0)
 
   /** Moves the crosshair to `frac`, cuts `plane` through it facing the camera at the cut, and draws. */
   const moveTo = (
@@ -188,6 +325,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const mm = Array.from(view.getCrosshairPos())
       return {
         volume,
+        volumes: volumesShown(),
         crosshair: { mm, frac },
         plane: planeState(host),
         camera: camera(view),
@@ -264,6 +402,54 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         camera: camera(view),
         description,
         ...(host.extraState?.() ?? {}),
+      }
+    },
+
+    async add_overlay(params) {
+      requireVolume()
+      const url = text(params, 'url')
+      if (!url) throw new Error('add_overlay needs a url.')
+      const name = text(params, 'name') ?? nameFromUrl(url)
+      const labels = text(params, 'labels')
+      if (labels) knownLabelTable(labels)
+      if (labels && !view.setColormapLabel)
+        throw new Error("This page's NiiVue cannot draw label maps.")
+      // A table from an address is fetched before anything is added, so a
+      // bad address leaves the scene as it was.
+      const table = labels ? await labelTable(labels) : undefined
+      const opacity = clamp(
+        number(params, 'opacity') ?? (labels ? 0.5 : 0.7),
+        0,
+        1,
+      )
+      const colormap = text(params, 'colormap') ?? (labels ? 'gray' : 'warm')
+      // NiiVue keeps the crosshair as a fraction of the scene, and a volume
+      // with a different box changes the scene, so the same fraction would
+      // land somewhere else. It is read in millimetres first and put back.
+      const before = Array.from(view.getCrosshairPos())
+      // Added over what is shown, whoever loaded it: the page's own start-up
+      // volume as much as one from load_volume. A failed add leaves the
+      // scene as it was.
+      try {
+        await view.addVolume({ url, name, colormap, opacity })
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        throw new Error(`The overlay at ${url} could not be loaded: ${why}`)
+      }
+      const index = view.volumes.length - 1
+      const added = view.volumes[index]
+      if (labels && table && added) {
+        await view.setColormapLabel?.(index, table)
+        labelled.set(added, labels)
+      }
+      view.crosshairPos = new Float32Array(
+        view.model.mm2scene([before[0], before[1], before[2]]),
+      )
+      host.beforeAnswer?.()
+      view.drawScene()
+      return {
+        volumes: volumesShown(),
+        crosshair: { mm: Array.from(view.getCrosshairPos()) },
       }
     },
 
@@ -484,6 +670,157 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
     },
 
+    async set_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      // Only what was asked for goes to NiiVue: it assigns the update
+      // onto the volume as it is, so an undefined field would wipe one.
+      const update: VolumeUpdate = {}
+      put(update, 'colormap', text(params, 'colormap'))
+      put(update, 'colormapNegative', text(params, 'colormap_negative'))
+      const opacity = number(params, 'opacity')
+      if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
+      const calMin = number(params, 'cal_min')
+      const calMax = number(params, 'cal_max')
+      put(update, 'calMin', calMin)
+      put(update, 'calMax', calMax)
+      const low = calMin ?? volume.calMin
+      const high = calMax ?? volume.calMax
+      if (low !== undefined && high !== undefined && low > high) {
+        throw new Error(
+          `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
+        )
+      }
+      put(update, 'calMinNeg', number(params, 'cal_min_neg'))
+      put(update, 'calMaxNeg', number(params, 'cal_max_neg'))
+      const type = text(params, 'colormap_type')?.toLowerCase()
+      if (type !== undefined) {
+        if (!Object.hasOwn(COLORMAP_TYPES, type)) {
+          throw new Error(
+            `Unknown colormap_type "${type}". One of: ${Object.keys(COLORMAP_TYPES).join(', ')}.`,
+          )
+        }
+        update.colormapType =
+          COLORMAP_TYPES[type as keyof typeof COLORMAP_TYPES]
+      }
+      put(
+        update,
+        'isTransparentBelowCalMin',
+        flag(params, 'transparent_below_cal_min'),
+      )
+      const frame = number(params, 'frame')
+      if (frame !== undefined) {
+        if (!Number.isInteger(frame) || frame < 0)
+          throw new Error('frame must be a whole number, counted from 0.')
+        const frames = volume.nFrame4D ?? 1
+        if (frame >= frames) {
+          throw new Error(
+            frames > 1
+              ? `${volume.name} has ${frames} frames, numbered 0 to ${frames - 1}.`
+              : `${volume.name} has one frame only.`,
+          )
+        }
+        update.frame4D = frame
+      }
+      put(update, 'isColormapInverted', flag(params, 'invert'))
+      put(update, 'isColorbarVisible', flag(params, 'colorbar'))
+      put(update, 'isNearestInterpolation', flag(params, 'nearest'))
+      const outline = number(params, 'atlas_outline')
+      if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
+      const modulateAlpha = number(params, 'modulate_alpha')
+      if (modulateAlpha !== undefined)
+        update.modulateAlpha = clamp(modulateAlpha, 0, 1)
+
+      // What is not a field of the volume: each its own NiiVue call.
+      const labels = text(params, 'labels')
+      const modulate = params?.modulate
+      const autoWindow = flag(params, 'auto_window')
+      const allFrames = flag(params, 'load_all_frames')
+      const affine = params?.affine
+      const resetAffine = flag(params, 'reset_affine')
+      const transform = record(params, 'transform')
+      const extras = [
+        labels,
+        modulate,
+        autoWindow,
+        allFrames,
+        affine,
+        resetAffine,
+        transform,
+      ].some((v) => v !== undefined && v !== null)
+      if (nothingIn(update) && !extras) {
+        throw new Error(
+          'set_volume needs something to set: colormap, opacity, cal_min, cal_max, frame, invert, or one of the others its schema lists.',
+        )
+      }
+      if (!nothingIn(update)) {
+        if (!view.setVolume)
+          throw new Error(
+            "This page's NiiVue cannot change a volume once loaded.",
+          )
+        await view.setVolume(index, update)
+      }
+      if (labels !== undefined) {
+        if (!view.setColormapLabel)
+          throw new Error("This page's NiiVue cannot draw label maps.")
+        const table = await labelTable(labels)
+        await view.setColormapLabel(index, table)
+        labelled.set(volume, labels)
+      }
+      if (modulate !== undefined && modulate !== null) {
+        if (!view.setModulationImage)
+          throw new Error("This page's NiiVue cannot modulate a volume.")
+        const by = record(params, 'modulate') ?? {}
+        const other = pickIndex(view.volumes, by.volume, 'volume')
+        const target = volume.id
+        const modulator = view.volumes[other].id
+        if (target === undefined || modulator === undefined)
+          throw new Error("This page's NiiVue does not give its volumes ids.")
+        const alpha = clamp(number(by, 'alpha') ?? 0, 0, 1)
+        await view.setModulationImage(target, modulator, alpha)
+      }
+      if (allFrames) {
+        if (!view.loadDeferred4DVolumes)
+          throw new Error(
+            "This page's NiiVue cannot load a volume's remaining frames.",
+          )
+        if (volume.id === undefined)
+          throw new Error("This page's NiiVue does not give its volumes ids.")
+        await view.loadDeferred4DVolumes(volume.id)
+      }
+      if (autoWindow) {
+        if (!view.recalculateCalMinMax)
+          throw new Error(
+            "This page's NiiVue cannot recompute a volume's window.",
+          )
+        await view.recalculateCalMinMax(index, update.frame4D)
+      }
+      if (resetAffine) {
+        if (!view.resetVolumeAffine)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        await view.resetVolumeAffine(index)
+      }
+      if (affine !== undefined && affine !== null) {
+        if (!view.setVolumeAffine)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        await view.setVolumeAffine(index, matrix4(affine, 'affine'))
+      }
+      if (transform) {
+        if (!view.applyVolumeTransform)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        const moved: AffineTransform = {
+          translation: pointIfGiven(transform, 'translation') ?? [0, 0, 0],
+          rotation: pointIfGiven(transform, 'rotation') ?? [0, 0, 0],
+          scale: pointIfGiven(transform, 'scale') ?? [1, 1, 1],
+        }
+        await view.applyVolumeTransform(index, moved)
+      }
+      view.drawScene()
+      return { volume: describeVolume(volume, index) }
+    },
+
     set_view(params) {
       host.beforeAnswer?.()
       if (!hasLayout(view))
@@ -607,6 +944,28 @@ function scaledCopy(
 
 /** How many clip planes NiiVue keeps. */
 export const CLIP_PLANES = 6
+
+/** A 4 by 4 matrix, as four rows of four numbers or sixteen numbers row by row. */
+export function matrix4(value: unknown, key: string): number[][] {
+  const bad = () =>
+    new Error(`${key} must be a 4 by 4 matrix: four rows of four numbers.`)
+  if (!Array.isArray(value)) throw bad()
+  const rows =
+    value.length === 16 && value.every((v) => !Array.isArray(v))
+      ? [0, 4, 8, 12].map((i) => value.slice(i, i + 4))
+      : value
+  if (
+    rows.length !== 4 ||
+    rows.some(
+      (row) =>
+        !Array.isArray(row) ||
+        row.length !== 4 ||
+        row.some((v) => !Number.isFinite(Number(v))),
+    )
+  )
+    throw bad()
+  return rows.map((row: unknown[]) => row.map(Number))
+}
 
 /** Whether a plane by NiiVue's numbers is cut at all. */
 export function planeIsCut(plane: readonly [number, number, number]): boolean {

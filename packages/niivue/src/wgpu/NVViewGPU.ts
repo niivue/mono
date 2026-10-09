@@ -34,6 +34,10 @@ import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
+import {
+  type UpdateBindGroupsOptions,
+  volumeUpdateScope,
+} from '@/view/volumeUpdateScope'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -630,10 +634,10 @@ export default class NVView {
   }
 
   /**
-   * Rebuild GPU resources from the model. `meshes: false` skips the mesh
-   * rebuild, for updates that only touch volume data (updateVolumeData).
+   * Rebuild GPU resources from the model. See UpdateBindGroupsOptions for the
+   * scoped form updateVolumeData uses.
    */
-  async updateBindGroups(opts: { meshes?: boolean } = {}): Promise<void> {
+  async updateBindGroups(opts: UpdateBindGroupsOptions = {}): Promise<void> {
     // try/finally so an early return (no device / no mesh layout) or a thrown
     // await never leaves isBusy stuck true — the render loop skips while busy, so a
     // stuck flag would permanently freeze drawing (e.g. after a failed deferred
@@ -644,12 +648,20 @@ export default class NVView {
       const device = this.device
       if (!device) return
       const vols = this.model.getVolumes()
-
-      await this.colorbarRenderer.buildColorbars(
-        device,
-        this.model.collectColorbars(),
-        this.model.scene.backgroundColor,
+      const scope = volumeUpdateScope(
+        vols,
+        opts.volumes,
+        this.model.volume.isBackgroundMasking,
       )
+      // A data-only update (opts.volumes) leaves the colorbars as they are:
+      // their range comes from calMin/calMax, which it does not change.
+      if (!opts.volumes) {
+        await this.colorbarRenderer.buildColorbars(
+          device,
+          this.model.collectColorbars(),
+          this.model.scene.backgroundColor,
+        )
+      }
       if (vols.length > 0) {
         if (this.options.instances) {
           // Multi-instance mode (global3d): upload every volume's GPU texture
@@ -677,7 +689,7 @@ export default class NVView {
             if (key) keepKeys.add(key)
           }
           this.volumeRenderer.pruneVolumeCache(keepKeys)
-        } else {
+        } else if (scope.background) {
           try {
             await this.volumeRenderer.updateVolume(
               device,
@@ -693,27 +705,7 @@ export default class NVView {
         }
       }
       if (vols.length > 1 && !this.options.instances) {
-        this.volumeRenderer.overlayAlphaBlend =
-          this.model.volume.overlayAlphaBlend
-        this.volumeRenderer.overlayColorBlend =
-          this.model.volume.overlayColorBlend
-        await this.volumeRenderer.updateOverlays(
-          device,
-          vols[0],
-          vols.slice(1),
-          this.model.volume.paqdUniforms,
-        )
-        if (
-          this.model.volume.isBackgroundMasking &&
-          this.volumeRenderer.overlayTexture &&
-          this.volumeRenderer.volumeTexture
-        ) {
-          this.volumeRenderer.overlayTexture = await maskOverlayByBackground(
-            device,
-            this.volumeRenderer.volumeTexture,
-            this.volumeRenderer.overlayTexture,
-          )
-        }
+        if (scope.overlays) await this._updateOverlayStack(device, vols)
       } else {
         this.volumeRenderer.clearOverlay()
       }
@@ -2535,6 +2527,32 @@ export default class NVView {
 
   coarseFloorDims(): [number, number, number] | null {
     return this.volumeRenderer.coarseFloorDims
+  }
+
+  /** Re-run the overlay pass (volumes[1..]) and the optional background mask. */
+  private async _updateOverlayStack(
+    device: GPUDevice,
+    vols: NVImage[],
+  ): Promise<void> {
+    this.volumeRenderer.overlayAlphaBlend = this.model.volume.overlayAlphaBlend
+    this.volumeRenderer.overlayColorBlend = this.model.volume.overlayColorBlend
+    await this.volumeRenderer.updateOverlays(
+      device,
+      vols[0],
+      vols.slice(1),
+      this.model.volume.paqdUniforms,
+    )
+    if (
+      this.model.volume.isBackgroundMasking &&
+      this.volumeRenderer.overlayTexture &&
+      this.volumeRenderer.volumeTexture
+    ) {
+      this.volumeRenderer.overlayTexture = await maskOverlayByBackground(
+        device,
+        this.volumeRenderer.volumeTexture,
+        this.volumeRenderer.overlayTexture,
+      )
+    }
   }
 
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {

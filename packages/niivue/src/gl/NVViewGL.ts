@@ -34,6 +34,10 @@ import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
+import {
+  type UpdateBindGroupsOptions,
+  volumeUpdateScope,
+} from '@/view/volumeUpdateScope'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -398,7 +402,7 @@ export default class NVGlview {
     // Mesh pipelines are statically defined
   }
 
-  async _updateBindings(opts: { meshes?: boolean } = {}): Promise<void> {
+  async _updateBindings(opts: UpdateBindGroupsOptions = {}): Promise<void> {
     // try/finally so an early return or a thrown await never leaves isBusy stuck
     // true — the render loop skips while busy, so a stuck flag freezes drawing.
     this.isBusy = true
@@ -408,11 +412,20 @@ export default class NVGlview {
         return
       }
       const vols = this.model.getVolumes()
-      this.colorbarRenderer.buildColorbars(
-        gl,
-        this.model.collectColorbars(),
-        this.model.scene.backgroundColor,
+      const scope = volumeUpdateScope(
+        vols,
+        opts.volumes,
+        this.model.volume.isBackgroundMasking,
       )
+      // A data-only update (opts.volumes) leaves the colorbars as they are:
+      // their range comes from calMin/calMax, which it does not change.
+      if (!opts.volumes) {
+        this.colorbarRenderer.buildColorbars(
+          gl,
+          this.model.collectColorbars(),
+          this.model.scene.backgroundColor,
+        )
+      }
       if (vols.length > 0) {
         if (this.options.instances) {
           // Multi-instance mode (global3d): upload every volume's GPU texture
@@ -440,7 +453,7 @@ export default class NVGlview {
             if (key) keepKeys.add(key)
           }
           this.volumeRenderer.pruneVolumeCache(keepKeys)
-        } else {
+        } else if (scope.background) {
           try {
             await this.volumeRenderer.updateVolume(
               gl,
@@ -458,40 +471,42 @@ export default class NVGlview {
 
       // Handle overlays (all volumes after the first)
       if (vols.length > 1 && !this.options.instances) {
-        this.volumeRenderer.overlayAlphaBlend =
-          this.model.volume.overlayAlphaBlend
-        this.volumeRenderer.overlayColorBlend =
-          this.model.volume.overlayColorBlend
-        await this.volumeRenderer.updateOverlays(
-          gl,
-          vols[0],
-          vols.slice(1),
-          this.model.volume.paqdUniforms,
-        )
-        if (
-          this.model.volume.isBackgroundMasking &&
-          this.volumeRenderer.overlayTexture &&
-          this.volumeRenderer.volumeTexture &&
-          vols[0].dimsRAS
-        ) {
-          const dims = [
-            vols[0].dimsRAS[1],
-            vols[0].dimsRAS[2],
-            vols[0].dimsRAS[3],
-          ]
-          maskOverlayByBackground(
-            gl,
-            this.volumeRenderer.volumeTexture,
-            this.volumeRenderer.overlayTexture,
-            dims,
-          )
-        }
+        if (scope.overlays) await this._updateOverlayStack(gl, vols)
       } else {
         this.volumeRenderer.clearOverlay(gl)
       }
       if (opts.meshes !== false) this._rebuildMeshResources()
     } finally {
       this.isBusy = false
+    }
+  }
+
+  /** Re-run the overlay pass (volumes[1..]) and the optional background mask. */
+  private async _updateOverlayStack(
+    gl: WebGL2RenderingContext,
+    vols: NVImage[],
+  ): Promise<void> {
+    this.volumeRenderer.overlayAlphaBlend = this.model.volume.overlayAlphaBlend
+    this.volumeRenderer.overlayColorBlend = this.model.volume.overlayColorBlend
+    await this.volumeRenderer.updateOverlays(
+      gl,
+      vols[0],
+      vols.slice(1),
+      this.model.volume.paqdUniforms,
+    )
+    if (
+      this.model.volume.isBackgroundMasking &&
+      this.volumeRenderer.overlayTexture &&
+      this.volumeRenderer.volumeTexture &&
+      vols[0].dimsRAS
+    ) {
+      const dims = [vols[0].dimsRAS[1], vols[0].dimsRAS[2], vols[0].dimsRAS[3]]
+      maskOverlayByBackground(
+        gl,
+        this.volumeRenderer.volumeTexture,
+        this.volumeRenderer.overlayTexture,
+        dims,
+      )
     }
   }
 
@@ -522,10 +537,10 @@ export default class NVGlview {
   }
 
   /**
-   * Rebuild GPU resources from the model. `meshes: false` skips the mesh
-   * rebuild, for updates that only touch volume data (updateVolumeData).
+   * Rebuild GPU resources from the model. See UpdateBindGroupsOptions for the
+   * scoped form updateVolumeData uses.
    */
-  updateBindGroups(opts: { meshes?: boolean } = {}): Promise<void> {
+  updateBindGroups(opts: UpdateBindGroupsOptions = {}): Promise<void> {
     return this._updateBindings(opts)
   }
 

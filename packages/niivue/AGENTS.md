@@ -904,8 +904,15 @@ the full `updateGLVolume()` rebuild.
   recomputed, so the camera does not chase a moving mesh.
 - **`updateVolumeData(volumeIndex, data?)`** (async): copies all frames or one
   frame (`nVox3D` values into the current `frame4D`) into the existing `img`,
-  bumps `vol._dataVersion`, and runs `_updateGL(false)`, i.e. `updateBindGroups({
-  meshes: false })`, which skips the mesh rebuild. The orient caches
+  bumps `vol._dataVersion`, and runs `_updateGL(false, [vol])`, i.e.
+  `updateBindGroups({ meshes: false, volumes: [vol] })`. That skips the mesh
+  rebuild and the colorbars, and `view/volumeUpdateScope.ts` (shared by both
+  backends) limits the volume work: an edited overlay re-runs only the overlay
+  pass (not the background orient pass or its gradient); an edited background
+  re-runs only the background, plus the overlays when `isBackgroundMasking` is
+  on. Volumes modulated by an edited volume are included, transitively.
+  Multi-instance mode (`instances`) still visits every volume (cache hits are
+  cheap). The orient caches
   (`prepareOverlayTextureCache` / `prepareOrientTextureCache`) and the
   per-volume `_texCache` single entries record `dataVersion`: a mismatch
   re-uploads the source texture in place (orient caches) or rebuilds the entry
@@ -915,9 +922,12 @@ the full `updateGLVolume()` rebuild.
 - **`_dataVersion` is the general in-place-edit token** for `NVImage`. Any cache
   keyed on `img` buffer identity must also compare it (orient caches,
   `_texCache`, modulation weight key, extension `imgRAS`, legend centroids).
-- **Coalescing:** `_updateGL(meshes)` shares `_updating` / `_pendingUpdate` with
-  `updateVolumeAffineOnly`; `_pendingMeshes` ORs the queued callers' needs, and
-  `_pendingFull` makes an affine-only rerun yield to a queued full update.
+- **Coalescing:** `_updateGL(meshes, volumes?)` shares `_updating` /
+  `_pendingUpdate` with `updateVolumeAffineOnly`; the queued follow-up takes
+  the union of the callers' needs (`_pendingMeshes`, `_pendingVolumes`, and
+  `_pendingAllVolumes`, which any unscoped caller, including an affine-only
+  one, sets). `_pendingFull` makes an affine-only rerun yield to a queued full
+  update.
 
 ## Mesh layers (scalar overlays)
 

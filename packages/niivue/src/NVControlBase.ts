@@ -157,6 +157,7 @@ import {
   screenSlicePick,
   validateCustomLayout,
 } from '@/view/NVSliceLayout'
+import type { UpdateBindGroupsOptions } from '@/view/volumeUpdateScope'
 import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
 import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
@@ -202,7 +203,7 @@ type ViewBackend = {
   init: () => Promise<void>
   resize: () => void
   render: () => void
-  updateBindGroups: (opts?: { meshes?: boolean }) => Promise<void>
+  updateBindGroups: (opts?: UpdateBindGroupsOptions) => Promise<void>
   updateMeshVertices: (mesh: NVMeshType) => boolean
   updateAffineOverlays?: () => Promise<boolean>
   setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
@@ -419,6 +420,10 @@ export default class NiiVue extends EventTarget {
   private _pendingFull = false
   /** Whether any update queued behind `_updating` needs the mesh rebuild. */
   private _pendingMeshes = false
+  /** Whether any update queued behind `_updating` needs every volume rebuilt. */
+  private _pendingAllVolumes = false
+  /** Volumes whose data changed, for queued scoped (updateVolumeData) updates. */
+  private _pendingVolumes = new Set<NVImage>()
   /** Volume ids with an in-flight deferred 4D reload (guards rapid ellipsis clicks
    *  from launching duplicate multi-GB re-fetches and racing rollbacks). */
   private _deferredReloads = new Set<string>()
@@ -2474,22 +2479,28 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Rebuild GPU resources, coalescing calls that arrive while one is in
-   * flight into a single follow-up. `meshes: false` skips the mesh rebuild
-   * (volume-data-only updates); a queued follow-up rebuilds meshes if any
-   * coalesced caller asked for it.
+   * flight into a single follow-up. `meshes: false` skips the mesh rebuild;
+   * `volumes` limits the volume rebuild to those whose data changed
+   * (updateVolumeData; omitted = every volume). A queued follow-up takes the
+   * union of what the coalesced callers asked for.
    */
-  private async _updateGL(meshes: boolean): Promise<void> {
+  private async _updateGL(
+    meshes: boolean,
+    volumes?: readonly NVImage[],
+  ): Promise<void> {
     if (this._updating) {
       this._pendingUpdate = true
       this._pendingFull = true
       this._pendingMeshes ||= meshes
+      if (volumes) for (const v of volumes) this._pendingVolumes.add(v)
+      else this._pendingAllVolumes = true
       return
     }
     const token = this._beginUpdate()
     try {
       this._computeModulationData()
       if (!this.view) return
-      await this.view.updateBindGroups({ meshes })
+      await this.view.updateBindGroups({ meshes, volumes })
       this.drawScene()
     } finally {
       if (this._endUpdate(token)) await this._runPendingUpdate()
@@ -2533,10 +2544,17 @@ export default class NiiVue extends EventTarget {
   private async _runPendingUpdate(): Promise<void> {
     if (!this._pendingUpdate) return
     const pendingMeshes = this._pendingMeshes
+    // Only scoped data updates were queued: rebuild just those volumes.
+    const pendingVolumes =
+      this._pendingAllVolumes || this._pendingVolumes.size === 0
+        ? undefined
+        : [...this._pendingVolumes]
     this._pendingUpdate = false
     this._pendingFull = false
     this._pendingMeshes = false
-    await this._updateGL(pendingMeshes)
+    this._pendingAllVolumes = false
+    this._pendingVolumes.clear()
+    await this._updateGL(pendingMeshes, pendingVolumes)
   }
 
   /**
@@ -2566,6 +2584,8 @@ export default class NiiVue extends EventTarget {
   private async updateVolumeAffineOnly(): Promise<void> {
     if (this._updating) {
       this._pendingUpdate = true
+      // A moved volume needs every volume resliced, not a data-only scope.
+      this._pendingAllVolumes = true
       return
     }
     const token = this._beginUpdate()
@@ -2588,6 +2608,7 @@ export default class NiiVue extends EventTarget {
           await this._runPendingUpdate()
         } else if (this._pendingUpdate) {
           this._pendingUpdate = false
+          this._pendingAllVolumes = false
           await this.updateVolumeAffineOnly()
         }
       }
@@ -3501,7 +3522,8 @@ export default class NiiVue extends EventTarget {
   /**
    * Replace a loaded volume's voxel values and re-upload them to the GPU,
    * reusing its existing textures — the fast path for animating or live-editing
-   * volume data. Pass `data` with either every value of `img` (all frames) or
+   * volume data. Only the edited volume is reprocessed (plus any volume it
+   * modulates); meshes, colorbars and unrelated volume layers are left alone. Pass `data` with either every value of `img` (all frames) or
    * one frame (written into the current `frame4D`): `nVox3D` values for scalar
    * volumes, `nVox3D * 3` / `nVox3D * 4` bytes for RGB / RGBA. It is copied into
    * the existing `img` in its native datatype and voxel order.
@@ -3551,7 +3573,7 @@ export default class NiiVue extends EventTarget {
     }
     vol._dataVersion = (vol._dataVersion ?? 0) + 1
     vol.isDirty = true
-    await this._updateGL(false)
+    await this._updateGL(false, [vol])
   }
 
   /**

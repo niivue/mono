@@ -36,6 +36,7 @@ import {
   toolContext,
 } from './context'
 import { CONTROL_SCHEMAS, registerControlTools } from './tools-controls'
+import { DATA_SCHEMAS, registerDataTools } from './tools-data'
 import { EXTRA_SCHEMAS, registerExtraTools } from './tools-extras'
 import { LAYER_SCHEMAS, registerLayerTools } from './tools-layers'
 import { MARK_SCHEMAS, registerMarkTools } from './tools-marks'
@@ -523,6 +524,7 @@ export const CORE_SCHEMAS = {
   ...LAYER_SCHEMAS,
   ...MARK_SCHEMAS,
   ...CONTROL_SCHEMAS,
+  ...DATA_SCHEMAS,
   ...EXTRA_SCHEMAS,
 } as const
 
@@ -881,6 +883,7 @@ export function registerCoreTools(
   registerLayerTools(server, context)
   registerMarkTools(server, context)
   registerControlTools(server, context)
+  registerDataTools(server, context)
   registerExtraTools(server, context)
 }
 

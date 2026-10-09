@@ -239,6 +239,14 @@ export type NVImage = {
   /** Optional draw-time spacing for chunked 3D rendering. Sampling remains in original voxel coordinates. */
   chunkExplode?: VolumeChunkExplode
   /**
+   * Optional per-brick opacity for chunked 3D rendering, indexed like
+   * `chunkPlan.chunks`; a missing entry means 1. Scales what that brick draws,
+   * colour and coverage together (the same lane as the streaming cross-fade),
+   * so one brick can be kept while the rest are dimmed and show what is behind
+   * them (see `NiiVue.setVolumeBrickOpacity`). Read every frame.
+   */
+  chunkBrickOpacity?: ArrayLike<number>
+  /**
    * Optional CPU value lookup in world mm, used by the 3D depth-pick to find the
    * first visible voxel along the view ray for a chunked/streamed volume (which
    * has no single GPU texture to sample). Return the window-visible value at the

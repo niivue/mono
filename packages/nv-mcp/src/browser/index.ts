@@ -19,6 +19,7 @@ export {
   TAB_ID_KEY,
   tabId,
 } from './client'
+export { describeMesh, meshHandlers } from './meshes'
 export type { Params } from './params'
 export {
   choice,
@@ -64,7 +65,13 @@ export type {
   LabelTable,
   LayoutTile,
   LoadedVolume,
+  MeshLayerToLoad,
+  MeshLayerUpdate,
+  MeshToLoad,
+  MeshUpdate,
   NiiVueHost,
+  ShownMesh,
+  ShownMeshLayer,
   ShownVolume,
   TransformedVolume,
   TransformInfo,

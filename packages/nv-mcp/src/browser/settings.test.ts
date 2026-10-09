@@ -116,8 +116,11 @@ describe('capabilities', () => {
     const view = settingsView({
       backend: 'webgpu',
       setVolume: mock(),
+      meshes: [],
+      addMesh: mock(async () => {}),
       colormaps: ['gray', 'hot'],
       drawingColormaps: ['$slicer3d'],
+      meshShaders: ['Phong', 'Matte'],
       volumeTransforms: ['smooth', 'flip'],
       getVolumeTransformInfo: (name) =>
         name === 'smooth'
@@ -143,6 +146,7 @@ describe('capabilities', () => {
     expect(got.backend).toBe('webgpu')
     const features = got.features as Record<string, string[]>
     expect(features.volumes).toEqual(['setVolume'])
+    expect(features.meshes).toEqual(['meshes', 'addMesh'])
     expect(features.colormaps).toEqual(['colormaps'])
     expect(got.settings).toEqual([
       'backgroundColor',
@@ -153,6 +157,7 @@ describe('capabilities', () => {
     ])
     expect(got.colormaps).toEqual(['gray', 'hot'])
     expect(got.drawingColormaps).toEqual(['$slicer3d'])
+    expect(got.meshShaders).toEqual(['Phong', 'Matte'])
     expect(got.volumeTransforms).toEqual([
       {
         name: 'smooth',

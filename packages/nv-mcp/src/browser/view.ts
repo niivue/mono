@@ -91,6 +91,81 @@ export interface ShownVolume {
   dims?: ArrayLike<number>
 }
 
+/** A mesh's overlay layer as NiiVue keeps it: `NVMeshLayer`, in the part the tools read. */
+export interface ShownMeshLayer {
+  name?: string
+  url?: string
+  colormap?: string
+  colormapNegative?: string
+  opacity?: number
+  calMin?: number
+  calMax?: number
+  calMinNeg?: number
+  calMaxNeg?: number
+  globalMin?: number
+  globalMax?: number
+  isColormapInverted?: boolean
+  frame4D?: number
+  nFrame4D?: number
+  isColorbarVisible?: boolean
+}
+
+/** A mesh as NiiVue keeps it once loaded: `NVMesh`, in the part the tools read. */
+export interface ShownMesh {
+  name?: string
+  url?: string
+  kind?: 'mesh' | 'tract' | 'connectome'
+  opacity?: number
+  color?: ArrayLike<number>
+  shaderType?: string
+  sliceShaderType?: string
+  visible?: boolean
+  isColorbarVisible?: boolean
+  isLegendVisible?: boolean
+  layers?: ReadonlyArray<ShownMeshLayer>
+  tractOptions?: Record<string, unknown> | null
+  connectomeOptions?: Record<string, unknown> | null
+}
+
+/** A mesh as `View.addMesh` takes it: NiiVue's `MeshFromUrlOptions`, in part. */
+export interface MeshToLoad {
+  url: string
+  name?: string
+  opacity?: number
+  color?: [number, number, number, number]
+  shaderType?: string
+  sliceShaderType?: string
+  visible?: boolean
+  isColorbarVisible?: boolean
+  isLegendVisible?: boolean
+  layers?: MeshLayerToLoad[]
+}
+
+/** What `View.setMesh` can change: NiiVue's `MeshUpdate`, in part. */
+export type MeshUpdate = Omit<MeshToLoad, 'url' | 'layers'>
+
+/** A layer as `View.addMeshLayer` takes it: NiiVue's `MeshLayerFromUrlOptions`, in part. */
+export interface MeshLayerToLoad {
+  url: string
+  name?: string
+  colormap?: string
+  colormapNegative?: string
+  calMin?: number
+  calMax?: number
+  calMinNeg?: number
+  calMaxNeg?: number
+  opacity?: number
+  isColorbarVisible?: boolean
+  isColormapInverted?: boolean
+  colormapType?: number
+  isTransparentBelowCalMin?: boolean
+  isAdditiveBlend?: boolean
+  outlineWidth?: number
+}
+
+/** What `View.setMeshLayerProperty` can change: NiiVue's `NVMeshLayer`, in part. */
+export type MeshLayerUpdate = Omit<MeshLayerToLoad, 'url' | 'name'>
+
 /** A tile of a custom layout: NiiVue's `CustomLayoutTile`. */
 export interface LayoutTile {
   sliceType: number
@@ -261,6 +336,35 @@ export interface View {
   volumeTransform?: Record<string, VolumeTransform>
   vox2frac?(vox: [number, number, number]): [number, number, number]
   moveCrosshairInVox?(di: number, dj: number, dk: number): unknown
+
+  // Meshes.
+  meshes?: ReadonlyArray<ShownMesh>
+  meshShaders?: readonly string[]
+  addMesh?(mesh: MeshToLoad): Promise<unknown>
+  removeMesh?(index: number): Promise<unknown>
+  removeAllMeshes?(): Promise<unknown>
+  setMesh?(index: number, update: MeshUpdate): Promise<unknown>
+  addMeshLayer?(index: number, layer: MeshLayerToLoad): Promise<unknown>
+  removeMeshLayer?(index: number, layer: number): Promise<unknown>
+  setMeshLayerProperty?(
+    index: number,
+    layer: number,
+    update: MeshLayerUpdate,
+  ): Promise<unknown>
+  setMeshLayerFrame4D?(
+    index: number,
+    layer: number,
+    frame: number,
+  ): Promise<unknown> | unknown
+  setTractOptions?(
+    index: number,
+    options: Record<string, unknown>,
+  ): Promise<unknown>
+  setConnectomeOptions?(
+    index: number,
+    options: Record<string, unknown>,
+  ): Promise<unknown>
+  getTractGroups?(index: number): string[]
 
   // The clip planes and the camera beyond the first plane.
   setClipPlanes?(planes: number[][]): unknown

@@ -9,6 +9,15 @@ import type { NVMesh } from '@/NVTypes'
 export const BYTES_PER_VERTEX = 28
 
 /**
+ * Encode an RGBA color in 0..1 as the vertex color field: unorm8x4, R in the
+ * lowest byte (little-endian Uint32 read as bytes R, G, B, A).
+ */
+export function packColor(rgba: number[]): number {
+  const [r, g, b, a] = rgba.map((v) => Math.round(v * 255))
+  return (a << 24) | (b << 16) | (g << 8) | r
+}
+
+/**
  * Interleave a mesh's positions, generated normals and packed colors into the
  * vertex layout both backends draw (BYTES_PER_VERTEX bytes per vertex). Writes
  * into `target` when it is exactly the right size (a reused staging buffer),

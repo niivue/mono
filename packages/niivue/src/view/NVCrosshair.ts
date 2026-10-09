@@ -26,11 +26,6 @@ export function getCylinderIndices(): Uint32Array {
   return cachedIndices
 }
 
-export function packColor(rgba: number[]): number {
-  const [r, g, b, a] = rgba.map((v) => Math.round(v * 255))
-  return (a << 24) | (b << 16) | (g << 8) | r
-}
-
 /**
  * Distinct crosshair thicknesses a single frame can hold on the GPU.
  *

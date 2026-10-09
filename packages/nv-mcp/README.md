@@ -11,6 +11,7 @@ The package has four entry points, and nothing in it knows about the app that ho
 | `@niivue/nv-mcp` | both | The wire messages, the plane arithmetic, region matching and the AAL spoken-name table |
 | `@niivue/nv-mcp/server` | Bun | The bridge that knows tabs by id, the core tools, `startServer` |
 | `@niivue/nv-mcp/browser` | the page | The client that keeps the socket open, the handlers that answer the core tools from a NiiVue instance, and `bindControls` |
+| `@niivue/nv-mcp/uikit` | the page | `uikitControls`, a control surface that draws an agent's controls on the canvas with `@niivue/uikit` |
 
 An app adds its own tools as an *extension* without touching the core. `apps/demo-mcp` in this repository is a complete page and server.
 
@@ -20,7 +21,7 @@ An app adds its own tools as an *extension* without touching the core. `apps/dem
 bun add @niivue/nv-mcp
 ```
 
-The server side runs under [Bun](https://bun.sh), because it uses `Bun.serve` for the HTTP and WebSocket ends together. The browser side is plain DOM and WebSocket. `@niivue/niivue` is an optional peer dependency: the browser entry is written against its 1.0 API but imports nothing from it, so any object with the same member names will do (see `View` in `browser/scene.ts`).
+The server side runs under [Bun](https://bun.sh), because it uses `Bun.serve` for the HTTP and WebSocket ends together. The browser side is plain DOM and WebSocket. `@niivue/niivue` is an optional peer dependency: the browser entry is written against its 1.0 API but imports nothing from it, so any object with the same member names will do (see `View` in `browser/scene.ts`). `@niivue/uikit` is an optional peer dependency too, needed only by the `uikit` entry.
 
 ## Usage
 
@@ -102,16 +103,19 @@ const host: NiiVueHost = {
 }
 ```
 
-`controls` is a `ControlSurface`: `add`, `update`, `remove`, `clear` and `list` over the controls an agent asks for, each a `ControlSpec` of one of the `CONTROL_KINDS` (button, toggle, slider, menu, select, segmented, number, text, textarea, dialog, color, file) in a grid cell or at a position on the canvas, with a `bind` naming what it drives. A page without `controls` declines the control tools. One surface comes with the package:
+`controls` is a `ControlSurface`: `add`, `update`, `remove`, `clear` and `list` over the controls an agent asks for, each a `ControlSpec` of one of the `CONTROL_KINDS` (button, toggle, slider, menu, select, segmented, number, text, textarea, dialog, color, file) in a grid cell or at a position on the canvas, with a `bind` naming what it drives. A page without `controls` declines the control tools. Two surfaces come with the package:
 
 - **`memoryControls()`** keeps the controls and draws nothing. It is enough to list them in the page and to run the tools in a test.
+- **`uikitControls(nv, { font })`** from `@niivue/nv-mcp/uikit` draws each control on the NiiVue canvas with the `@niivue/uikit` widget for its kind. It registers its own overlay renderer, so it needs a NiiVue that is attached, and a font such as `await loadDefaultFont()`.
 
-A surface can be wrapped in `bindControls` so the controls drive the page:
+Either surface can be wrapped in `bindControls` so the controls drive the page:
 
 ```ts
-import { bindControls, memoryControls } from '@niivue/nv-mcp/browser'
+import { bindControls } from '@niivue/nv-mcp/browser'
+import { uikitControls } from '@niivue/nv-mcp/uikit'
+import { loadDefaultFont } from '@niivue/uikit'
 
-host.controls = bindControls(memoryControls(), {
+host.controls = bindControls(uikitControls(nv, { font: await loadDefaultFont() }), {
   view: nv,
   actions: {
     reload: { description: 'Loads the template again.', run: () => loadTemplate() },

@@ -22,6 +22,7 @@ const nv1 = new NiiVue({
 })
 window.nv1 = nv1
 await nv1.attachToCanvas(gl1)
+webgpuCheck.checked = nv1.backend === 'webgpu'
 await nv1.loadVolumes([
   { url: '/volumes/mni152.nii.gz', colormap: 'gray' },
   // Any volume on the background's grid works as the animated overlay; its
@@ -137,6 +138,9 @@ function rippleMesh(t) {
 let t = 0
 let last = performance.now()
 let volumeBusy = false
+// True while reinitializeView swaps the backend: pause updates until the new
+// view's GPU resources exist.
+let switchingBackend = false
 let frames = 0
 let voxelMs = 0
 let meshMs = 0
@@ -148,6 +152,10 @@ function tick(now) {
   t += dt * (speedSlider.value / 10)
   // updateVolumeData is async; skip a voxel frame while the previous upload is
   // still in flight rather than queueing edits behind it.
+  if (switchingBackend) {
+    requestAnimationFrame(tick)
+    return
+  }
   if (voxelCheck.checked && !volumeBusy) {
     const start = performance.now()
     drawBlob(t)
@@ -203,5 +211,12 @@ meshCheck.onchange = () => {
   if (!meshCheck.checked) nv1.updateMeshPositions(0, basePositions)
 }
 webgpuCheck.onchange = async function () {
-  await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+  switchingBackend = true
+  try {
+    await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+  } finally {
+    // Reflect the backend actually in use (WebGPU can fall back to WebGL2).
+    webgpuCheck.checked = nv1.backend === 'webgpu'
+    switchingBackend = false
+  }
 }

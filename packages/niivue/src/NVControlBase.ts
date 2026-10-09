@@ -407,6 +407,13 @@ export default class NiiVue extends EventTarget {
   } | null = null
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
+  /** Identifies the current holder of `_updating` (see `_beginUpdate`). */
+  private _updateToken: object | null = null
+  /** The view the current lock holder is rebuilding. */
+  private _updatingView: ViewBackend | null = null
+  /** Resolves when the update holding `_updating` releases it. */
+  private _updateIdle: Promise<void> = Promise.resolve()
+  private _resolveUpdateIdle: (() => void) | null = null
   private _pendingUpdate = false
   /** A full (not affine-only) update is queued behind `_updating`. */
   private _pendingFull = false
@@ -2478,21 +2485,81 @@ export default class NiiVue extends EventTarget {
       this._pendingMeshes ||= meshes
       return
     }
-    this._updating = true
+    const token = this._beginUpdate()
     try {
       this._computeModulationData()
       if (!this.view) return
       await this.view.updateBindGroups({ meshes })
       this.drawScene()
     } finally {
-      this._updating = false
-      if (this._pendingUpdate) {
-        const pendingMeshes = this._pendingMeshes
-        this._pendingUpdate = false
-        this._pendingFull = false
-        this._pendingMeshes = false
-        await this._updateGL(pendingMeshes)
-      }
+      if (this._endUpdate(token)) await this._runPendingUpdate()
+    }
+  }
+
+  /**
+   * Take the update lock (`_updating`) for the current view. Returns a token
+   * that `_endUpdate` checks, so a holder whose lock was taken over (see
+   * `_rebuildViewResources`) cannot release its successor's lock.
+   */
+  private _beginUpdate(): object {
+    // Wake any waiter on the previous holder (only non-null on a takeover).
+    this._resolveUpdateIdle?.()
+    const token = {}
+    this._updateToken = token
+    this._updatingView = this.view
+    this._updating = true
+    this._updateIdle = new Promise((resolve) => {
+      this._resolveUpdateIdle = resolve
+    })
+    return token
+  }
+
+  /**
+   * Release the update lock if `token` still holds it and wake anything
+   * awaiting `_updateIdle`. Returns false when the lock was taken over, in
+   * which case the new holder runs the pending follow-up.
+   */
+  private _endUpdate(token: object): boolean {
+    if (this._updateToken !== token) return false
+    this._updateToken = null
+    this._updatingView = null
+    this._updating = false
+    this._resolveUpdateIdle?.()
+    this._resolveUpdateIdle = null
+    return true
+  }
+
+  /** Run the single follow-up for updates coalesced while the lock was held. */
+  private async _runPendingUpdate(): Promise<void> {
+    if (!this._pendingUpdate) return
+    const pendingMeshes = this._pendingMeshes
+    this._pendingUpdate = false
+    this._pendingFull = false
+    this._pendingMeshes = false
+    await this._updateGL(pendingMeshes)
+  }
+
+  /**
+   * Rebuild every GPU resource of the current view while holding the update
+   * lock. View creation/recreation calls this rather than
+   * `view.updateBindGroups()` directly: otherwise an update arriving meanwhile
+   * (e.g. a per-frame `updateVolumeData`, or an `updateMeshPositions` falling
+   * back to a rebuild because the new view has no buffers yet) runs a second
+   * `updateBindGroups` on the same view concurrently. An in-flight update on
+   * this same view is waited for. One still running on the view this one
+   * replaced cannot touch the new view's resources, and may never settle if
+   * that view's device is gone, so the lock is taken over instead of waited
+   * for. Updates arriving during the rebuild queue behind it.
+   */
+  async _rebuildViewResources(): Promise<void> {
+    while (this._updating && this._updatingView === this.view) {
+      await this._updateIdle
+    }
+    const token = this._beginUpdate()
+    try {
+      if (this.view) await this.view.updateBindGroups()
+    } finally {
+      if (this._endUpdate(token)) await this._runPendingUpdate()
     }
   }
 
@@ -2501,7 +2568,7 @@ export default class NiiVue extends EventTarget {
       this._pendingUpdate = true
       return
     }
-    this._updating = true
+    const token = this._beginUpdate()
     try {
       if (!this.view) return
       const handled = await this.view.updateAffineOverlays?.()
@@ -2513,17 +2580,14 @@ export default class NiiVue extends EventTarget {
       await this.view.updateBindGroups()
       this.drawScene()
     } finally {
-      this._updating = false
-      if (this._pendingUpdate) {
-        this._pendingUpdate = false
+      // A takeover (false) leaves the follow-up to the new holder.
+      if (this._endUpdate(token)) {
         if (this._pendingFull) {
           // A full update queued behind this one is a superset of the
           // affine-only rerun; an affine rerun alone would drop it.
-          const pendingMeshes = this._pendingMeshes
-          this._pendingFull = false
-          this._pendingMeshes = false
-          await this._updateGL(pendingMeshes)
-        } else {
+          await this._runPendingUpdate()
+        } else if (this._pendingUpdate) {
+          this._pendingUpdate = false
           await this.updateVolumeAffineOnly()
         }
       }

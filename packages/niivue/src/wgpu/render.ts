@@ -69,7 +69,9 @@ import {
   chunkedDisplayKey,
   chunkModulationParams,
   chunkOverlayMatrix,
+  coarseFloorKey,
   extractChunkBytes,
+  wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
 import * as orient from './orient'
@@ -212,6 +214,12 @@ interface SingleTexEntry {
   volumeGradientTexture: GPUTexture | null
   /** Categorical volume: never smooth its baked label colors (see _cubicVolumeSafe). */
   isLabel: boolean
+  /**
+   * wholeVolumeTextureKey the texture was baked with: voxels, window, frame,
+   * colormaps (with their addColormap revision), label LUT and modulation. A
+   * mismatch rebuilds the entry.
+   */
+  textureKey: string
 }
 
 /** Chunked (tiled) volume: one or more axes exceed maxTextureDimension3D. */
@@ -593,6 +601,10 @@ export class VolumeRenderer extends NVRenderer {
     lut: GPUTexture | null
   } = { matcap: null, overlay: null, paqd: null, draw: null, lut: null }
   private volumeOrientCache: orient.OrientTextureCache | null = null
+  // RGB/RGBA volumes skip the orient pass, so their textures are kept here
+  // instead, and new voxels are written into them in place.
+  private overlayRgbaCache: orient.RGBATextureCache | null = null
+  private volumeRgbaCache: orient.RGBATextureCache | null = null
 
   constructor() {
     super()
@@ -937,6 +949,15 @@ export class VolumeRenderer extends NVRenderer {
       // compiler checks.
       const prior = cacheKey ? this._texCache.get(cacheKey) : undefined
       let entry = prior?.kind === 'single' ? prior : undefined
+      // Anything the texture bakes in changed (voxels, window, frame,
+      // colormap, label LUT, modulation): rebuild the entry.
+      // Computed before the awaits below: an edit landing during them must
+      // leave this entry stale (rebuilt next time), not marked current.
+      const textureKey = wholeVolumeTextureKey(vol, mtx, modParams)
+      if (entry && entry.textureKey !== textureKey) {
+        this._evictTexEntry(cacheKey, entry)
+        entry = undefined
+      }
       if (!entry) {
         const volumeTexture = await orient.volume2Texture(
           device,
@@ -958,6 +979,7 @@ export class VolumeRenderer extends NVRenderer {
           volumeTexture,
           volumeGradientTexture,
           isLabel: !!vol.colormapLabel,
+          textureKey,
         }
         if (cacheKey) this._texCache.set(cacheKey, entry)
       }
@@ -969,20 +991,21 @@ export class VolumeRenderer extends NVRenderer {
       // volumes go through the orient-texture cache so cal_min/max/colormap
       // tweaks only re-run the cheap orient compute pass.
       if (this.volumeGradientTexture) this.volumeGradientTexture.destroy()
+      this.destroyNonCachedVolumeTexture()
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
-        this.clearVolume()
-        this.volumeTexture = await orient.volume2Texture(
+        // RGB/RGBA volumes bypass the orient pass: their voxels go straight
+        // into a kept texture, and only when they changed.
+        orient.destroyOrientTextureCache(this.volumeOrientCache)
+        this.volumeOrientCache = null
+        this.volumeRgbaCache = orient.prepareRGBATextureCache(
           device,
           vol,
-          vol,
-          mtx as Float32Array,
-          0,
-          undefined,
-          modParams,
+          this.volumeRgbaCache,
         )
+        this.volumeTexture = this.volumeRgbaCache.texture
       } else {
-        this.destroyNonCachedVolumeTexture()
+        orient.destroyRGBATextureCache(this.volumeRgbaCache)
+        this.volumeRgbaCache = null
         this.volumeOrientCache = await orient.prepareOrientTextureCache(
           device,
           vol,
@@ -1998,18 +2021,22 @@ export class VolumeRenderer extends NVRenderer {
     } else if (inMem.length === 1) {
       const vol = inMem[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
+      this.destroyNonCachedOverlayTexture()
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        this.clearOverlay()
-        this.overlayTexture = await orient.volume2Texture(
+        // Like the background: rewritten only when its voxels changed.
+        // Masking writes a new texture, leaving this one intact.
+        orient.destroyOrientTextureCache(this.overlayOrientCache)
+        this.overlayOrientCache = null
+        this.overlayRgbaCache = orient.prepareRGBATextureCache(
           device,
           vol,
-          baseVol,
-          mtx as Float32Array,
-          vol.opacity ?? 1,
+          this.overlayRgbaCache,
         )
+        this.overlayTexture = this.overlayRgbaCache.texture
         return
       }
-      this.destroyNonCachedOverlayTexture()
+      orient.destroyRGBATextureCache(this.overlayRgbaCache)
+      this.overlayRgbaCache = null
       this.overlayOrientCache = await orient.prepareOrientTextureCache(
         device,
         vol,
@@ -2025,6 +2052,8 @@ export class VolumeRenderer extends NVRenderer {
       this.destroyNonCachedOverlayTexture()
       orient.destroyOrientTextureCache(this.overlayOrientCache)
       this.overlayOrientCache = null
+      orient.destroyRGBATextureCache(this.overlayRgbaCache)
+      this.overlayRgbaCache = null
       const overlayTextures: GPUTexture[] = []
       for (const vol of inMem) {
         const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
@@ -2050,6 +2079,23 @@ export class VolumeRenderer extends NVRenderer {
       )
       for (const tex of overlayTextures) tex.destroy()
     }
+  }
+
+  /**
+   * Clip the overlay to the background's non-transparent voxels
+   * (isBackgroundMasking). The masked copy replaces overlayTexture; the input
+   * is destroyed only when no cache owns it, because the orient and RGBA
+   * caches write into their texture again on the next update.
+   */
+  async maskOverlayByBackground(device: GPUDevice): Promise<void> {
+    if (!this.overlayTexture || !this.volumeTexture) return
+    const masked = await orient.maskOverlayByBackground(
+      device,
+      this.volumeTexture,
+      this.overlayTexture,
+    )
+    this.destroyNonCachedOverlayTexture()
+    this.overlayTexture = masked
   }
 
   async updateAffineOverlay(
@@ -2083,7 +2129,8 @@ export class VolumeRenderer extends NVRenderer {
   private destroyNonCachedVolumeTexture(): void {
     if (
       this.volumeTexture &&
-      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture &&
+      this.volumeTexture !== this.volumeRgbaCache?.texture
     ) {
       this.volumeTexture.destroy()
     }
@@ -2094,12 +2141,15 @@ export class VolumeRenderer extends NVRenderer {
     this.destroyNonCachedVolumeTexture()
     orient.destroyOrientTextureCache(this.volumeOrientCache)
     this.volumeOrientCache = null
+    orient.destroyRGBATextureCache(this.volumeRgbaCache)
+    this.volumeRgbaCache = null
   }
 
   private destroyNonCachedOverlayTexture(): void {
     if (
       this.overlayTexture &&
-      this.overlayTexture !== this.overlayOrientCache?.outputTexture
+      this.overlayTexture !== this.overlayOrientCache?.outputTexture &&
+      this.overlayTexture !== this.overlayRgbaCache?.texture
     ) {
       this.overlayTexture.destroy()
     }
@@ -2110,6 +2160,8 @@ export class VolumeRenderer extends NVRenderer {
     this.destroyNonCachedOverlayTexture()
     orient.destroyOrientTextureCache(this.overlayOrientCache)
     this.overlayOrientCache = null
+    orient.destroyRGBATextureCache(this.overlayRgbaCache)
+    this.overlayRgbaCache = null
     this._destroyOverlayChunks()
     this.clearOverlayChunked()
     this._clearCombinedOverlayChunked()
@@ -2351,6 +2403,8 @@ export class VolumeRenderer extends NVRenderer {
     this.destroyNonCachedOverlayTexture()
     orient.destroyOrientTextureCache(this.overlayOrientCache)
     this.overlayOrientCache = null
+    orient.destroyRGBATextureCache(this.overlayRgbaCache)
+    this.overlayRgbaCache = null
     this._destroyOverlayChunks()
 
     const supported = standardVols.filter(
@@ -3458,7 +3512,7 @@ export class VolumeRenderer extends NVRenderer {
    * calibration). The 2D slice path samples it behind the resident fine chunks;
    * the 3D ray-march draws a floor cube (with its gradient, for matcap lighting)
    * for each chunk region whose fine chunk has not streamed in. Re-orients only
-   * when the source/colormap/window changes.
+   * when {@link coarseFloorKey} changes.
    */
   async setCoarseFloor(
     device: GPUDevice,
@@ -3475,14 +3529,14 @@ export class VolumeRenderer extends NVRenderer {
       this._coarseFloorKey = null
       return
     }
-    const key = `${coarseVol.url || coarseVol.name}|${coarseVol.colormap}|${coarseVol.calMin}|${coarseVol.calMax}`
-    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // Orient the coarse level into its own (small) RGBA grid. It shares the base
     // volume's mm box, so the slice can sample it at the base's texture fraction.
     const mtx = NVTransforms.calculateOverlayTransformMatrix(
       coarseVol,
       coarseVol,
     )
+    const key = coarseFloorKey(coarseVol, mtx)
+    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // overlayOpacity 0: the floor stands in for the BASE volume, so it must be
     // baked with base semantics (alpha straight from the colormap LUT). Passing
     // 1 selects the overlay path, which makes alpha binary (`step()`); every

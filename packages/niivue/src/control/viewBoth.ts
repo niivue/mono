@@ -353,7 +353,7 @@ export async function recreateView(
   if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
   setupResizeHandler(ctrl)
   // 9. Rebuild GPU resources
-  await ctrl.view.updateBindGroups()
+  await ctrl._rebuildViewResources()
   // 10. Restore drawing texture if a drawing bitmap exists in the model
   if (ctrl.model.drawingVolume) {
     ctrl.refreshDrawing()

@@ -232,6 +232,12 @@ export type NVImage = {
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
   _modulationData?: Float32Array | null
+  /**
+   * @internal Key {@link _modulationData} was computed for (modulator identity,
+   * data version, grid, scaling, window, frame), so an unchanged modulator
+   * keeps the same array and the RGBA upload cache keyed on it stays valid.
+   */
+  _modulationDataKey?: string
   /** Tiling plan for volumes whose dims exceed maxTextureDimension3D. Absent ⇒ legacy single-texture path. */
   chunkPlan?: ChunkPlan
   /** Optional source-backed chunk loader for volumes whose full voxel array is not resident in browser memory. */
@@ -270,6 +276,29 @@ export type NVImage = {
   _modulationWeight?: Float32Array | null
   /** @internal Cache key for {@link _modulationWeight} (modulator id/buffer/window/exponent). */
   _modulationWeightKey?: string
+  /**
+   * Set to true after changing the values in `img`: in place (same array) or
+   * by assigning a new array of the same shape. The next GPU update
+   * (`updateGLVolume`, `setVolume`, `updateVolumeData`, `setFrame4D` when the
+   * frame actually changes, ...) then re-uploads this volume's voxels and
+   * resets the flag to false; volumes without the flag keep their uploaded
+   * textures. Not needed for the volume passed to `updateVolumeData`, which
+   * marks it itself. If that upload fails, the next update that rebuilds this
+   * volume retries it. Values are raw (before `scl_slope`/`scl_inter`), and
+   * calMin/calMax are not recomputed. A volume streamed from a `chunkSource`
+   * reads its bricks from that source, not from `img`, so the flag is ignored
+   * for it: the update clears it (with a one-time warning) and re-uploads
+   * nothing.
+   */
+  isDirty?: boolean
+  /**
+   * @internal Bumped whenever voxel values in `img` change in place: by
+   * `updateVolumeData`, and by the next GPU update for a volume flagged
+   * {@link isDirty} (see `volume/dataVersion.ts`). Caches keyed on the `img`
+   * buffer identity, which an in-place edit keeps, compare this counter to
+   * know when to re-read it. Absent ⇒ 0.
+   */
+  _dataVersion?: number
   /**
    * @internal Original dropped/loaded `File` for this volume, kept so a deferred
    * 4D re-read (`loadDeferred4DVolumes`) can re-open it — a `File` has no URL to
@@ -564,6 +593,8 @@ export type NVMesh = {
   layers: NVMeshLayer[]
   /** Per-vertex colors from the mesh file (packed ABGR Uint32). Null when mesh uses uniform color. */
   perVertexColors: Uint32Array | null
+  /** @internal Bumped by `updateMeshPositions`, which edits `positions` in place. */
+  _positionsVersion?: number
   /** @internal Index signature allows createMesh to assign defaults */
   [key: string]: unknown
 }
@@ -573,6 +604,8 @@ export type WebGLMeshGPU = {
   vertexBuffer: WebGLBuffer | null
   indexBuffer: WebGLBuffer | null
   indexCount: number
+  /** Byte size of vertexBuffer (WebGL cannot cheaply query it). */
+  vertexBytes?: number
 }
 
 export type WebGPUMeshGPU = {

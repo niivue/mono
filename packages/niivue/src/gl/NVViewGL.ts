@@ -5,6 +5,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
 import { generateNormals } from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
+import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type NVModel from '@/NVModel'
@@ -20,7 +21,6 @@ import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
-import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
@@ -34,6 +34,10 @@ import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
+import {
+  type UpdateBindGroupsOptions,
+  volumeUpdateScope,
+} from '@/view/volumeUpdateScope'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -48,7 +52,6 @@ import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
-import { maskOverlayByBackground } from './orientOverlay'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
@@ -398,7 +401,7 @@ export default class NVGlview {
     // Mesh pipelines are statically defined
   }
 
-  async _updateBindings(): Promise<void> {
+  async _updateBindings(opts: UpdateBindGroupsOptions = {}): Promise<void> {
     // try/finally so an early return or a thrown await never leaves isBusy stuck
     // true — the render loop skips while busy, so a stuck flag freezes drawing.
     this.isBusy = true
@@ -408,11 +411,20 @@ export default class NVGlview {
         return
       }
       const vols = this.model.getVolumes()
-      this.colorbarRenderer.buildColorbars(
-        gl,
-        this.model.collectColorbars(),
-        this.model.scene.backgroundColor,
+      const scope = volumeUpdateScope(
+        vols,
+        opts.volumes,
+        this.model.volume.isBackgroundMasking,
       )
+      // A data-only update (opts.volumes) leaves the colorbars as they are:
+      // their range comes from calMin/calMax, which it does not change.
+      if (!opts.volumes) {
+        this.colorbarRenderer.buildColorbars(
+          gl,
+          this.model.collectColorbars(),
+          this.model.scene.backgroundColor,
+        )
+      }
       if (vols.length > 0) {
         if (this.options.instances) {
           // Multi-instance mode (global3d): upload every volume's GPU texture
@@ -440,7 +452,7 @@ export default class NVGlview {
             if (key) keepKeys.add(key)
           }
           this.volumeRenderer.pruneVolumeCache(keepKeys)
-        } else {
+        } else if (scope.background) {
           try {
             await this.volumeRenderer.updateVolume(
               gl,
@@ -458,40 +470,35 @@ export default class NVGlview {
 
       // Handle overlays (all volumes after the first)
       if (vols.length > 1 && !this.options.instances) {
-        this.volumeRenderer.overlayAlphaBlend =
-          this.model.volume.overlayAlphaBlend
-        this.volumeRenderer.overlayColorBlend =
-          this.model.volume.overlayColorBlend
-        await this.volumeRenderer.updateOverlays(
-          gl,
-          vols[0],
-          vols.slice(1),
-          this.model.volume.paqdUniforms,
-        )
-        if (
-          this.model.volume.isBackgroundMasking &&
-          this.volumeRenderer.overlayTexture &&
-          this.volumeRenderer.volumeTexture &&
-          vols[0].dimsRAS
-        ) {
-          const dims = [
-            vols[0].dimsRAS[1],
-            vols[0].dimsRAS[2],
-            vols[0].dimsRAS[3],
-          ]
-          maskOverlayByBackground(
-            gl,
-            this.volumeRenderer.volumeTexture,
-            this.volumeRenderer.overlayTexture,
-            dims,
-          )
-        }
+        if (scope.overlays) await this._updateOverlayStack(gl, vols)
       } else {
         this.volumeRenderer.clearOverlay(gl)
       }
-      this._rebuildMeshResources()
+      if (opts.meshes !== false) this._rebuildMeshResources()
     } finally {
       this.isBusy = false
+    }
+  }
+
+  /** Re-run the overlay pass (volumes[1..]) and the optional background mask. */
+  private async _updateOverlayStack(
+    gl: WebGL2RenderingContext,
+    vols: NVImage[],
+  ): Promise<void> {
+    this.volumeRenderer.overlayAlphaBlend = this.model.volume.overlayAlphaBlend
+    this.volumeRenderer.overlayColorBlend = this.model.volume.overlayColorBlend
+    await this.volumeRenderer.updateOverlays(
+      gl,
+      vols[0],
+      vols.slice(1),
+      this.model.volume.paqdUniforms,
+    )
+    if (this.model.volume.isBackgroundMasking && vols[0].dimsRAS) {
+      this.volumeRenderer.maskOverlayByBackground(gl, [
+        vols[0].dimsRAS[1],
+        vols[0].dimsRAS[2],
+        vols[0].dimsRAS[3],
+      ])
     }
   }
 
@@ -521,8 +528,12 @@ export default class NVGlview {
     return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)
   }
 
-  updateBindGroups(): Promise<void> {
-    return this._updateBindings()
+  /**
+   * Rebuild GPU resources from the model. See UpdateBindGroupsOptions for the
+   * scoped form updateVolumeData uses.
+   */
+  updateBindGroups(opts: UpdateBindGroupsOptions = {}): Promise<void> {
+    return this._updateBindings(opts)
   }
 
   render(): void {
@@ -1735,6 +1746,22 @@ export default class NVGlview {
 
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
     return this.meshResources.get(m) ?? null
+  }
+
+  /**
+   * Re-upload one mesh's vertices into its existing GPU buffer. Returns false
+   * when the mesh has no GPU resources yet (or its vertex count changed); the
+   * caller then falls back to a full rebuild via updateBindGroups().
+   */
+  updateMeshVertices(m: NVMesh): boolean {
+    const gl = this.gl
+    if (!gl) return false
+    // A lost context/device cannot be written to, and a full rebuild would fail
+    // the same way every frame. Report success; recovery re-uploads every mesh.
+    if (this._contextLost || gl.isContextLost()) return true
+    const gpu = this.meshResources.get(m)
+    if (!gpu) return false
+    return mesh.writeMeshVertices(gl, m, gpu)
   }
 
   _destroyMeshResources(): void {

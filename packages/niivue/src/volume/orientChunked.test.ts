@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { addColormap } from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
 import type { Vec3i } from '@/volume/chunking'
 import { chunkVolumeGrid } from '@/volume/chunking'
@@ -8,9 +9,11 @@ import {
   chunkModulationParams,
   chunkOverlayMatrix,
   chunkRGBA,
+  coarseFloorKey,
   extractChunkBytes,
   extractChunkBytesReoriented,
   isRGBAChunkDatatype,
+  wholeVolumeTextureKey,
 } from './orientChunked'
 
 // Build a row-major source buffer where each voxel's value is a deterministic
@@ -349,9 +352,20 @@ describe('chunkedDisplayKey', () => {
     ['calMax', { calMax: 50 }],
     ['colormapType', { colormapType: 1 }],
     ['frame4D', { frame4D: 3 }],
+    // An isDirty edit of an in-memory chunked volume must re-stream it.
+    ['_dataVersion', { _dataVersion: 1 }],
   ])('a changed %s changes the key', (_field, overrides) => {
     expect(chunkedDisplayKey(makeVol(overrides))).not.toBe(
       chunkedDisplayKey(makeVol()),
+    )
+  })
+
+  test('re-registering the colormap changes the key', () => {
+    // Same name, new colors: the resident chunks bake the old LUT in.
+    const before = chunkedDisplayKey(makeVol({ colormap: 'chunkKeyCmap' }))
+    addColormap('chunkKeyCmap', { R: [0, 255], G: [0, 0], B: [0, 0] })
+    expect(chunkedDisplayKey(makeVol({ colormap: 'chunkKeyCmap' }))).not.toBe(
+      before,
     )
   })
 
@@ -500,5 +514,191 @@ describe('chunkModulationForDesc', () => {
     expect(out.mtx[3]).toBeCloseTo(0.1)
     expect(out.mtx[5]).toBeCloseTo(2 * (ty / dy))
     expect(out.mtx[10]).toBeCloseTo(1 * (tz / dz))
+  })
+})
+
+describe('coarseFloorKey', () => {
+  const IMG = new Uint8Array(8)
+  const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+  function makeVol(overrides: Record<string, unknown> = {}): NVImage {
+    return {
+      url: '/coarse.nii.gz',
+      name: 'coarse',
+      img: IMG,
+      colormap: 'gray',
+      colormapNegative: '',
+      isColormapInverted: false,
+      colormapLabel: null,
+      calMin: 0,
+      calMax: 100,
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+      dimsRAS: [3, 2, 2, 2],
+      hdr: { datatypeCode: 2, scl_slope: 1, scl_inter: 0 },
+      ...overrides,
+    } as unknown as NVImage
+  }
+  const key = (vol: NVImage, mtx: number[] = IDENTITY) =>
+    coarseFloorKey(vol, mtx)
+
+  test('identical floor state produces an identical key', () => {
+    expect(key(makeVol())).toBe(key(makeVol()))
+  })
+
+  const label = { lut: new Uint8Array(8), min: 0 }
+  test.each([
+    ['url', { url: '/other.nii.gz' }],
+    ['colormap', { colormap: 'hot' }],
+    ['colormapNegative', { colormapNegative: 'winter' }],
+    ['isColormapInverted', { isColormapInverted: true }],
+    ['calMin', { calMin: 5 }],
+    ['calMax', { calMax: 50 }],
+    ['calMinNeg', { calMinNeg: -50 }],
+    ['calMaxNeg', { calMaxNeg: -5 }],
+    ['_dataVersion', { _dataVersion: 1 }],
+    ['colormapType', { colormapType: 1 }],
+    ['frame4D', { frame4D: 1 }],
+    ['scl_slope', { hdr: { datatypeCode: 2, scl_slope: 2, scl_inter: 0 } }],
+    // The orient pass also bakes these, which the chunk key alone misses.
+    ['img buffer', { img: new Uint8Array(8) }],
+    ['img view offset', { img: new Uint8Array(IMG.buffer, 4, 4) }],
+    ['img view length', { img: new Uint8Array(IMG.buffer, 0, 4) }],
+    ['RAS grid', { dimsRAS: [3, 2, 2, 4] }],
+    [
+      'RGB datatype',
+      { hdr: { datatypeCode: 128, scl_slope: 1, scl_inter: 0 } },
+    ],
+  ])('a changed %s changes the key', (_field, overrides) => {
+    expect(key(makeVol(overrides))).not.toBe(key(makeVol()))
+  })
+
+  test('a changed label outline width changes the key', () => {
+    expect(key(makeVol({ colormapLabel: label, atlasOutline: 2 }))).not.toBe(
+      key(makeVol({ colormapLabel: label, atlasOutline: 0 })),
+    )
+  })
+
+  test('a changed orient matrix changes the key', () => {
+    const shifted = IDENTITY.slice()
+    shifted[3] = 1
+    expect(key(makeVol(), shifted)).not.toBe(key(makeVol()))
+  })
+
+  test('re-registering the colormap changes the key', () => {
+    const before = key(makeVol({ colormap: 'floorKeyCmap' }))
+    addColormap('floorKeyCmap', { R: [0, 255], G: [0, 0], B: [0, 0] })
+    expect(key(makeVol({ colormap: 'floorKeyCmap' }))).not.toBe(before)
+  })
+})
+
+describe('wholeVolumeTextureKey', () => {
+  // A multi-instance _texCache entry is reused by url/name, so this key is all
+  // that tells it a baked texture went stale.
+  function makeVol(overrides: Record<string, unknown> = {}): NVImage {
+    return {
+      colormap: 'gray',
+      colormapNegative: '',
+      isColormapInverted: false,
+      colormapLabel: null,
+      calMin: 0,
+      calMax: 100,
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+      colormapType: 0,
+      frame4D: 0,
+      hdr: { datatypeCode: 16, scl_slope: 1, scl_inter: 0 },
+      ...overrides,
+    } as unknown as NVImage
+  }
+  const mod = {
+    weight: new Float32Array(1),
+    dims: [1, 1, 1] as [number, number, number],
+    mtx: new Float32Array(16),
+    mode: 1,
+    key: 'mod-a',
+  }
+
+  const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+  const key = (
+    vol: NVImage,
+    modulation: typeof mod | null = null,
+    mtx: number[] = IDENTITY,
+  ) => wholeVolumeTextureKey(vol, mtx, modulation)
+
+  test('identical state produces an identical key', () => {
+    expect(key(makeVol(), mod)).toBe(key(makeVol(), mod))
+  })
+
+  test.each([
+    ['_dataVersion', { _dataVersion: 1 }],
+    ['colormap', { colormap: 'hot' }],
+    ['colormapNegative', { colormapNegative: 'winter' }],
+    ['isColormapInverted', { isColormapInverted: true }],
+    ['calMin', { calMin: 5 }],
+    ['calMax', { calMax: 50 }],
+    ['calMinNeg', { calMinNeg: -50 }],
+    ['colormapType', { colormapType: 1 }],
+    ['frame4D', { frame4D: 1 }],
+  ])('a changed %s changes the key', (_field, overrides) => {
+    expect(key(makeVol(overrides))).not.toBe(key(makeVol()))
+  })
+
+  test('the modulator, its data and its mode are part of the key', () => {
+    const plain = key(makeVol())
+    const modulated = key(makeVol(), mod)
+    expect(modulated).not.toBe(plain)
+    // The modulation key carries the modulator's _dataVersion.
+    expect(key(makeVol(), { ...mod, key: 'mod-a-v2' })).not.toBe(modulated)
+    expect(key(makeVol(), { ...mod, mode: 2 })).not.toBe(modulated)
+  })
+
+  test('a new RAS grid or orient matrix changes the key', () => {
+    // setVolumeAffine recomputes the RAS mapping the bake reslices through.
+    const base = key(makeVol({ dimsRAS: [3, 4, 5, 6] }))
+    expect(key(makeVol({ dimsRAS: [3, 5, 4, 6] }))).not.toBe(base)
+    const shifted = [...IDENTITY]
+    shifted[3] = 0.25
+    expect(key(makeVol({ dimsRAS: [3, 4, 5, 6] }), null, shifted)).not.toBe(
+      base,
+    )
+    const modMoved = { ...mod, mtx: new Float32Array(IDENTITY) }
+    expect(key(makeVol(), modMoved)).not.toBe(key(makeVol(), mod))
+  })
+
+  test('re-registering the colormap changes the key', () => {
+    const before = key(makeVol({ colormap: 'wholeKeyCmap' }))
+    addColormap('wholeKeyCmap', { R: [0, 255], G: [0, 0], B: [0, 0] })
+    expect(key(makeVol({ colormap: 'wholeKeyCmap' }))).not.toBe(before)
+  })
+
+  test('a label volume keys its LUT and outline width', () => {
+    const label = { lut: Uint8Array.from([1, 2, 3, 4]), min: 0 }
+    const base = key(makeVol({ colormapLabel: label }))
+    expect(
+      key(makeVol({ colormapLabel: { ...label, lut: label.lut } })),
+    ).not.toBe(base)
+    expect(key(makeVol({ colormapLabel: label, atlasOutline: 1 }))).not.toBe(
+      base,
+    )
+    // A scalar volume never outlines, so the width is not part of its key.
+    expect(key(makeVol({ atlasOutline: 1 }))).toBe(key(makeVol()))
+  })
+
+  test('an RGB/RGBA volume keys its voxels, not its colormap', () => {
+    const img = new Uint8Array(4)
+    const rgba = (overrides: Record<string, unknown> = {}) =>
+      makeVol({
+        hdr: { datatypeCode: 2304, scl_slope: 1, scl_inter: 0 },
+        img,
+        dims: [3, 1, 1, 1],
+        dimsRAS: [3, 1, 1, 1],
+        img2RASstart: [0, 0, 0],
+        img2RASstep: [1, 1, 1],
+        ...overrides,
+      })
+    const base = key(rgba())
+    expect(key(rgba({ colormap: 'hot' }))).toBe(base)
+    expect(key(rgba({ _dataVersion: 1 }))).not.toBe(base)
+    expect(key(rgba({ _modulationData: new Float32Array(1) }))).not.toBe(base)
   })
 })

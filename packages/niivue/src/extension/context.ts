@@ -66,6 +66,8 @@ export class NVExtensionContext {
   private _cachedImgRAS: Float32Array | null = null
   /** Volume that _cachedImgRAS was computed from (identity check). */
   private _cachedImgRASVol: NVImage | null = null
+  /** `_dataVersion` of that volume when _cachedImgRAS was computed. */
+  private _cachedImgRASVersion = 0
 
   constructor(private readonly nv: NiiVue) {}
 
@@ -113,12 +115,18 @@ export class NVExtensionContext {
       },
       get imgRAS(): Float32Array | null {
         // Return cached copy if the volume hasn't changed
-        if (self._cachedImgRASVol === vol && self._cachedImgRAS) {
+        const version = vol._dataVersion ?? 0
+        if (
+          self._cachedImgRASVol === vol &&
+          self._cachedImgRASVersion === version &&
+          self._cachedImgRAS
+        ) {
           return self._cachedImgRAS
         }
         const data = getImageDataRAS(vol)
         self._cachedImgRAS = data
         self._cachedImgRASVol = vol
+        self._cachedImgRASVersion = version
         return data
       },
     }

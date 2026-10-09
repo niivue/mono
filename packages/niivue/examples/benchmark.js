@@ -6,6 +6,8 @@
  *     Each scenario reports a CPU vs GPU-submit split via the
  *     `performance.mark`/`measure` instrumentation in `src/view/NVPerfMarks.ts`,
  *     consumed through a `PerformanceObserver`.
+ *     The two "Animated ..." scenarios also time an updateVolumeData /
+ *     updateMeshPositions call before each frame.
  *  2. Compute function scenarios (vox2mm, generateNormals, encodeRLE, etc.).
  *     This package is JS-only — there's no WASM toggle.
  *  3. Scaling sweeps (opt-in checkbox):
@@ -594,8 +596,20 @@ async function benchRenderFrames(nv, frames, warmup = 30) {
  * Collect CPU vs submit split timings via the renderer's perf marks.
  * Returns { wall, cpu, submit, frame } each holding one sample per render() call.
  * Falls back to empty arrays if PerformanceObserver isn't available.
+ *
+ * `beforeFrame(i)`, when given, runs (and is awaited) before each render and
+ * is included in `wall` and, on WebGL2, in the GPU timer query, so an
+ * animation scenario measures update + draw. The `cpu`, `submit` and `frame`
+ * perf marks are taken inside render() and so cover the draw only. On WebGPU,
+ * `wall` includes GPU time only with `?paced=1` (see `_waitGpu`); compare
+ * animation rows across backends only in paced runs.
  */
-async function benchRenderFramesWithSplit(nv, frames, warmup = 30) {
+async function benchRenderFramesWithSplit(
+  nv,
+  frames,
+  warmup = 30,
+  beforeFrame = null,
+) {
   const cpu = []
   const submit = []
   const frame = []
@@ -628,6 +642,7 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 30) {
   const tq = nv.view?.gl ? setupGlTimerQuery(nv.view.gl) : null
   setPerfMarksEnabled(true)
   for (let i = 0; i < warmup; i++) {
+    if (beforeFrame) await beforeFrame(i)
     nv.view.render()
     await _waitGpu(nv)
   }
@@ -641,6 +656,7 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 30) {
   for (let i = 0; i < frames; i++) {
     const t0 = performance.now()
     tq?.begin()
+    if (beforeFrame) await beforeFrame(i)
     nv.view.render()
     tq?.end()
     await _waitGpu(nv)
@@ -694,7 +710,7 @@ async function rendererScenarios(nv, frames) {
     }
   }
 
-  const run = async (name, setup) => {
+  const run = async (name, setup, beforeFrame = null) => {
     setStatus(`Renderer: ${name}...`)
     checkAbort()
     await setup()
@@ -702,7 +718,7 @@ async function rendererScenarios(nv, frames) {
       requestAnimationFrame(() => requestAnimationFrame(r)),
     )
     checkAbort()
-    const split = await benchRenderFramesWithSplit(nv, frames)
+    const split = await benchRenderFramesWithSplit(nv, frames, 30, beforeFrame)
     const cpuStats = split.cpu.length ? summarize(split.cpu) : null
     const submitStats = split.submit.length ? summarize(split.submit) : null
     const frameStats = split.frame.length ? summarize(split.frame) : null
@@ -776,6 +792,39 @@ async function rendererScenarios(nv, frames) {
     await ensureAssets(nv, { volumes: VOL_MNI, meshes: MESH_TRACT })
     nv.sliceType = 4
   })
+
+  // Animations: each frame swaps in new data through the live-update fast
+  // paths, then draws. Two prebuilt states alternate, so the timing is
+  // NiiVue's copy + upload + draw, not the cost of generating the data.
+  let volumeStates = null
+  await run(
+    'Animated volume (updateVolumeData)',
+    async () => {
+      await ensureAssets(nv, { volumes: VOL_MNI })
+      nv.sliceType = 3
+      nv.mosaicString = ''
+      nv.showRender = 1
+      const img = nv.volumes[0].img
+      const dimmed = img.slice()
+      for (let i = 0; i < dimmed.length; i++) dimmed[i] >>= 1
+      volumeStates = [img.slice(), dimmed]
+    },
+    (i) => nv.updateVolumeData(0, volumeStates[i % 2]),
+  )
+
+  let meshStates = null
+  await run(
+    'Animated mesh (updateMeshPositions)',
+    async () => {
+      await ensureAssets(nv, { meshes: MESH_BRAIN })
+      nv.sliceType = 4
+      const pts = nv.meshes[0].positions
+      const shrunk = pts.slice()
+      for (let i = 0; i < shrunk.length; i++) shrunk[i] *= 0.9
+      meshStates = [pts.slice(), shrunk]
+    },
+    (i) => nv.updateMeshPositions(0, meshStates[i % 2]),
+  )
 
   return scenarios
 }

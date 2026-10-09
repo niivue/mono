@@ -71,7 +71,9 @@ import {
   chunkedDisplayKey,
   chunkModulationParams,
   chunkOverlayMatrix,
+  coarseFloorKey,
   extractChunkBytes,
+  wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
 import { blendOverlayData } from '@/volume/overlayBlend'
 import * as depthPickShader from './depthPickShader'
@@ -211,6 +213,12 @@ interface SingleTexEntry {
   dims: Vec3f
   /** Categorical volume: never smooth its baked label colors (see _cubicVolumeSafe). */
   isLabel: boolean
+  /**
+   * wholeVolumeTextureKey the texture was baked with: voxels, window, frame,
+   * colormaps (with their addColormap revision), label LUT and modulation. A
+   * mismatch rebuilds the entry.
+   */
+  textureKey: string
 }
 
 /** Chunked (tiled) volume: one or more axes exceed max3D. */
@@ -516,6 +524,10 @@ export class VolumeRenderer extends NVRenderer {
   private _fadeActive = false
   private overlayOrientCache: orientOverlay.OverlayTextureCache | null = null
   private volumeOrientCache: orientOverlay.OverlayTextureCache | null = null
+  // RGB/RGBA volumes skip the orient pass, so their textures are kept here
+  // instead, and new voxels are written into them in place.
+  private overlayRgbaCache: orientOverlay.RGBATextureCache | null = null
+  private volumeRgbaCache: orientOverlay.RGBATextureCache | null = null
 
   constructor() {
     super()
@@ -773,6 +785,15 @@ export class VolumeRenderer extends NVRenderer {
       // compiler checks.
       const prior = cacheKey ? this._texCache.get(cacheKey) : undefined
       let entry = prior?.kind === 'single' ? prior : undefined
+      // Anything the texture bakes in changed (voxels, window, frame,
+      // colormap, label LUT, modulation): rebuild the entry.
+      // Computed before the awaits below: an edit landing during them must
+      // leave this entry stale (rebuilt next time), not marked current.
+      const textureKey = wholeVolumeTextureKey(vol, mtx, modParams)
+      if (entry && entry.textureKey !== textureKey) {
+        this._evictTexEntry(gl, cacheKey, entry)
+        entry = undefined
+      }
       if (!entry) {
         const volumeTexture = await orientOverlay.overlay2Texture(
           gl,
@@ -802,6 +823,7 @@ export class VolumeRenderer extends NVRenderer {
           gradDims,
           dims: [rasDims[0], rasDims[1], rasDims[2]],
           isLabel: !!vol.colormapLabel,
+          textureKey,
         }
         if (cacheKey) this._texCache.set(cacheKey, entry)
       }
@@ -813,20 +835,21 @@ export class VolumeRenderer extends NVRenderer {
       // Normal single-volume path: orient-texture cache + modulation. Scalar
       // volumes go through the orient-texture cache so cal_min/max/colormap
       // tweaks only re-run the cheap orient pass.
+      this.deleteNonCachedVolumeTexture(gl)
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
-        this.clearVolume(gl)
-        this.volumeTexture = await orientOverlay.overlay2Texture(
+        // RGB/RGBA volumes bypass the orient pass: their voxels go straight
+        // into a kept texture, and only when they changed.
+        orientOverlay.destroyOverlayTextureCache(gl, this.volumeOrientCache)
+        this.volumeOrientCache = null
+        this.volumeRgbaCache = orientOverlay.prepareRGBATextureCache(
           gl,
           vol,
-          vol,
-          mtx as Float32Array,
-          0,
-          undefined,
-          modParams,
+          this.volumeRgbaCache,
         )
+        this.volumeTexture = this.volumeRgbaCache.texture
       } else {
-        this.deleteNonCachedVolumeTexture(gl)
+        orientOverlay.destroyRGBATextureCache(gl, this.volumeRgbaCache)
+        this.volumeRgbaCache = null
         this.volumeOrientCache = orientOverlay.prepareOverlayTextureCache(
           gl,
           vol,
@@ -1859,19 +1882,22 @@ export class VolumeRenderer extends NVRenderer {
     } else if (inMem.length === 1) {
       const vol = inMem[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
+      this.deleteNonCachedOverlayTexture(gl)
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        this.clearOverlay(gl)
-        this.overlayTexture = orientOverlay.overlay2Texture(
+        // Like the background: rewritten only when its voxels changed, or
+        // after background masking edited it (maskOverlayByBackground).
+        orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
+        this.overlayOrientCache = null
+        this.overlayRgbaCache = orientOverlay.prepareRGBATextureCache(
           gl,
           vol,
-          baseVol,
-          mtx as Float32Array,
-          vol.opacity ?? 1,
+          this.overlayRgbaCache,
         )
-        gl.bindTexture(gl.TEXTURE_3D, null)
+        this.overlayTexture = this.overlayRgbaCache.texture
         return
       }
-      this.deleteNonCachedOverlayTexture(gl)
+      orientOverlay.destroyRGBATextureCache(gl, this.overlayRgbaCache)
+      this.overlayRgbaCache = null
       this.overlayOrientCache = orientOverlay.prepareOverlayTextureCache(
         gl,
         vol,
@@ -1887,6 +1913,8 @@ export class VolumeRenderer extends NVRenderer {
       this.deleteNonCachedOverlayTexture(gl)
       orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
       this.overlayOrientCache = null
+      orientOverlay.destroyRGBATextureCache(gl, this.overlayRgbaCache)
+      this.overlayRgbaCache = null
       const overlayData: Uint8Array[] = []
       for (const vol of inMem) {
         const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
@@ -1962,15 +1990,38 @@ export class VolumeRenderer extends NVRenderer {
     return true
   }
 
+  /**
+   * Clip the overlay to the background's non-transparent voxels
+   * (isBackgroundMasking), in place. A kept RGBA overlay texture then no
+   * longer holds the volume's voxels, so its key is cleared and the next
+   * overlay pass rewrites it.
+   */
+  maskOverlayByBackground(
+    gl: WebGL2RenderingContext,
+    dims: readonly number[],
+  ): void {
+    if (!this.overlayTexture || !this.volumeTexture) return
+    orientOverlay.maskOverlayByBackground(
+      gl,
+      this.volumeTexture,
+      this.overlayTexture,
+      [dims[0], dims[1], dims[2]],
+    )
+    if (this.overlayTexture === this.overlayRgbaCache?.texture) {
+      this.overlayRgbaCache.key = ''
+    }
+  }
+
   private deleteNonCachedVolumeTexture(gl: WebGL2RenderingContext): void {
     if (
       this.volumeTexture &&
-      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture &&
+      this.volumeTexture !== this.volumeRgbaCache?.texture
     ) {
       gl.deleteTexture(this.volumeTexture)
     }
-    // Always drop the reference: either we just deleted the texture, or the
-    // cache still owns it via volumeOrientCache.outputTexture. The caller
+    // Always drop the reference: either we just deleted the texture, or a
+    // cache (volumeOrientCache / volumeRgbaCache) still owns it. The caller
     // reassigns this.volumeTexture immediately after.
     this.volumeTexture = null
   }
@@ -1979,12 +2030,15 @@ export class VolumeRenderer extends NVRenderer {
     this.deleteNonCachedVolumeTexture(gl)
     orientOverlay.destroyOverlayTextureCache(gl, this.volumeOrientCache)
     this.volumeOrientCache = null
+    orientOverlay.destroyRGBATextureCache(gl, this.volumeRgbaCache)
+    this.volumeRgbaCache = null
   }
 
   private deleteNonCachedOverlayTexture(gl: WebGL2RenderingContext): void {
     if (
       this.overlayTexture &&
-      this.overlayTexture !== this.overlayOrientCache?.outputTexture
+      this.overlayTexture !== this.overlayOrientCache?.outputTexture &&
+      this.overlayTexture !== this.overlayRgbaCache?.texture
     ) {
       gl.deleteTexture(this.overlayTexture)
     }
@@ -1995,6 +2049,8 @@ export class VolumeRenderer extends NVRenderer {
     this.deleteNonCachedOverlayTexture(gl)
     orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
     this.overlayOrientCache = null
+    orientOverlay.destroyRGBATextureCache(gl, this.overlayRgbaCache)
+    this.overlayRgbaCache = null
     this._destroyOverlayChunks(gl)
     this.clearOverlayChunked()
     this._clearCombinedOverlayChunked()
@@ -2005,7 +2061,7 @@ export class VolumeRenderer extends NVRenderer {
    * active base. `coarseVol` is a small in-memory pyramid level supplied by the
    * app; it is oriented once into a single RGBA texture (its own colormap /
    * calibration) that the 2D slice path samples behind the resident fine
-   * chunks. Re-orients only when the source/colormap/window changes.
+   * chunks. Re-orients only when {@link coarseFloorKey} changes.
    */
   setCoarseFloor(gl: WebGL2RenderingContext, coarseVol: NVImage | null): void {
     if (!coarseVol) {
@@ -2018,14 +2074,14 @@ export class VolumeRenderer extends NVRenderer {
       this._coarseFloorKey = null
       return
     }
-    const key = `${coarseVol.url || coarseVol.name}|${coarseVol.colormap}|${coarseVol.calMin}|${coarseVol.calMax}`
-    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // Orient the coarse level into its own (small) RGBA grid. It shares the base
     // volume's mm box, so the slice samples it at the base's texture fraction.
     const mtx = NVTransforms.calculateOverlayTransformMatrix(
       coarseVol,
       coarseVol,
     )
+    const key = coarseFloorKey(coarseVol, mtx)
+    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // overlayOpacity 0: the floor stands in for the BASE volume, so it must be
     // baked with base semantics (alpha straight from the colormap LUT). Passing
     // 1 selects the overlay path, which makes alpha binary (`step()`); every
@@ -2276,6 +2332,8 @@ export class VolumeRenderer extends NVRenderer {
     this.deleteNonCachedOverlayTexture(gl)
     orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
     this.overlayOrientCache = null
+    orientOverlay.destroyRGBATextureCache(gl, this.overlayRgbaCache)
+    this.overlayRgbaCache = null
     this._destroyOverlayChunks(gl)
 
     const supported = standardVols.filter(

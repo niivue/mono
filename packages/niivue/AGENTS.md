@@ -842,11 +842,11 @@ arrays are derived (never serialized).
   early-return for `colormapLabel` targets (no wasted setup).
 - **NaN-safe weights** — both compute loops map a NaN/`<=0` window AND any NaN
   modulator voxel (finite window) to weight 0 (transparent), never NaN.
-- **Cache key = modulator buffer identity** (WeakMap id) + offset + datatype +
-  dims + scaling + frame + window + exponent. It does NOT detect **in-place**
-  mutation of `mod.img` (a drawing/segmentation modulator edited without swapping
-  the buffer) — re-call `setModulationImage` after such an edit. A repo-wide
-  `NVImage` data-revision token is the deferred general fix.
+- **Cache key = modulator buffer identity** (WeakMap id) + offset + data
+  version (`_dataVersion`) + datatype + dims + scaling + frame + window +
+  exponent. An in-place edit reported through `updateVolumeData` or the
+  modulator's `isDirty` bumps the version and invalidates it; an unreported
+  in-place mutation of `mod.img` is invisible.
 - **Affine fast path** (`updateAffineOverlays`, 2-volume case) bails to a full
   update when `vols[0].modulationImage` is set — otherwise a modulated
   background's baked modulator matrix would go stale on an overlay affine change.
@@ -888,13 +888,133 @@ Discriminated by `kind: MeshKind`. All share GPU pipeline (`positions`/`indices`
 
 Exactly one of `mz3`, `trx`, `jcon` is non-null per mesh. Source data is immutable; only derived GPU arrays change. VTK files use `probeVTKContent()` for content-based dispatch (LINES→tract, POLYGONS→mesh).
 
+## Live data updates (`updateMeshPositions`, `updateVolumeData`)
+
+Fast paths for animating or live-editing data that is already loaded, without
+the full `updateGLVolume()` rebuild.
+
+- **`updateMeshPositions(meshIndex, positions?)`** (sync): copies into the
+  existing `mesh.positions` (same vertex count, `kind === 'mesh'` only), bumps
+  `mesh._positionsVersion`, then `view.updateMeshVertices(mesh)` repacks the
+  interleaved vertices (`packMeshVertices` in `mesh/vertexFormat.ts`, normals
+  regenerated) and writes them into the existing buffer (`bufferSubData` /
+  `queue.writeBuffer`; WebGPU mesh vertex buffers carry `COPY_DST` for this).
+  If the mesh has no GPU buffer yet, or the byte size no longer matches, it
+  falls back to `updateGLVolume()`. Scene extents are deliberately not
+  recomputed, so the camera does not chase a moving mesh.
+- **`updateVolumeData(volumeIndex, data?)`** (async): copies all frames or one
+  frame (`nVox3D` values into the current `frame4D`) into the existing `img`,
+  bumps `vol._dataVersion`, and runs `_updateGL(false, [vol])`, i.e.
+  `updateBindGroups({ meshes: false, volumes: [vol] })`. That skips the mesh
+  rebuild and the colorbars, and `view/volumeUpdateScope.ts` (shared by both
+  backends) limits the volume work: an edited overlay re-runs only the overlay
+  pass (not the background orient pass or its gradient); an edited background
+  re-runs only the background, plus the overlays when `isBackgroundMasking` is
+  on. Volumes modulated by an edited volume are included, transitively.
+  Multi-instance mode (`instances`) still visits every volume (cache hits are
+  cheap). The orient caches
+  (`prepareOverlayTextureCache` / `prepareOrientTextureCache`) record
+  `dataVersion`, and a mismatch re-uploads the source texture in place. They
+  also survive a modulator edited in place: a new `mod.key` on the same grid
+  only rewrites the weight texture (`syncModTexture` on WebGL2; WebGPU keeps
+  the cache while `modTextureFits`); a modulator that appears, goes away or
+  changes grid replaces the mod texture (WebGL2) or rebuilds the cache
+  (WebGPU, whose bind group holds it). The per-volume `_texCache` single
+  entries (multi-instance) are reused by url/name, so they store
+  `wholeVolumeTextureKey` (`volume/orientChunked.ts`: `_dataVersion`,
+  `chunkedDisplayKey` with the modulation, the label outline width, the RAS
+  grid, the orient matrix and the modulator's matrix; `rgbaTextureKey` for
+  RGB/RGBA), computed before the build's awaits, and rebuild on any mismatch:
+  an edit, a window/frame/colormap change, a re-registered colormap name, a
+  modulator change or a new affine. RGB/RGBA volumes have no orient pass; the
+  renderers keep their texture in `volumeRgbaCache` / `overlayRgbaCache`
+  (`prepareRGBATextureCache` in `gl/orientOverlay.ts` and `wgpu/orient.ts`),
+  which rewrites it in place (`texSubImage3D` / `queue.writeTexture`) while
+  the RGBA dims match, and skips the upload while `rgbaTextureKey`
+  (`view/NVOrient.ts`: buffer identity, `_dataVersion`, `frame4D`, dims, RAS
+  mapping, `_modulationData` identity) is unchanged. `prepareRGBAData` reads
+  only the displayed `frame4D` of a 4D RGB/RGBA volume, so `setFrame4D` and
+  the one-frame form of `updateVolumeData` show on color volumes too.
+  `computeModulationData` keeps the same `_modulationData` array while
+  `_modulationDataKey` (modulator identity, data version, grid, scaling,
+  window, frame) matches, so a modulated RGBA volume is not re-uploaded on
+  every update. Background masking goes through
+  `VolumeRenderer.maskOverlayByBackground` on both backends: WebGL2 masks the
+  overlay texture in place and clears the RGBA cache's key so the next pass
+  rewrites it; WebGPU writes a new texture and destroys its input only when no
+  cache owns it. Still allocating per update, by design: two or more resliced
+  overlays (each is re-oriented into a temporary texture and the blend goes to
+  a new one; caching every oriented overlay would cost one RGBA volume of GPU
+  memory per overlay, and the blend has to be redone on any change anyway),
+  multi-instance `_texCache` entries (rebuilt whole), the WebGPU masked
+  overlay, and the gradient texture when lighting needs it.
+  The window (calMin/calMax) is not recomputed. Volumes with a
+  `chunkPlan` are rejected. An oversized volume gets one from
+  `_ensureChunkedVolumeEntry` on its first render, so it is rejected from then
+  on; a call before that first render is not refreshed. Neither method emits an
+  event (`volumeUpdated`/`meshUpdated` are for display-option changes, and these
+  run per frame). A coalesced `updateVolumeData` resolves when queued, before
+  its follow-up upload runs.
+- **`isDirty` reports an in-place edit to the ordinary path.** A caller that
+  rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
+  (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
+  (`_updateGL`, `updateVolumeAffineOnly`, `_rebuildViewResources`; also
+  `setBaseCoarseFloor` for a separate floor level, while a loaded volume
+  passed as the floor goes through a scoped `_updateGL`), bumps each flagged
+  volume's `_dataVersion` and resets the flag. `_updateGL`, the affine full
+  path and `_rebuildViewResources` recompute the modulation data and weights
+  after that bump, before they rebuild textures. A view's `init()` already
+  bakes from the cached arrays before `_rebuildViewResources` runs, but that
+  rebuild replaces every texture, so a dirty modulator's old weights do not
+  stay on screen. The flag is cleared at the bump, not after the upload, so
+  an edit flagged during an in-flight upload gets its own version and the
+  queued follow-up uploads it. A `chunkSource` volume's flag is cleared
+  without a bump (warned once): its bricks come from the source, and a bump
+  would only evict and re-stream them. A scoped `_updateGL` adds the dirty
+  volumes to its scope; `updateVolumeAffineOnly` skips its overlay-only fast
+  path when any volume was dirty. `isDirty` means
+  only "voxel values changed": internal code must not set it for display,
+  affine or GPU-lifetime changes, since every set costs a re-upload (and
+  invalidates the CPU caches below). `loadImgV1` sets it because it assigns a
+  new `img`: the GPU caches would notice the new buffer, but caches keyed only
+  on `_dataVersion` (the graph cache) would not, so callers that assign a new
+  `img` should set it too. A failed upload leaves the cache's recorded version
+  behind, so the next update that rebuilds that volume retries it.
+- **`_dataVersion` is the general in-place-edit token** for `NVImage`, bumped
+  only through `markVolumeDataChanged` (`updateVolumeData`, `isDirty`). Any
+  cache keyed on `img` buffer identity must also compare it (orient caches,
+  `_texCache`, modulation weight key, extension `imgRAS`, legend centroids,
+  graph cache). `chunkedDisplayKey` carries it, so an `isDirty` edit of an
+  in-memory chunked volume rebuilds the uploader and re-streams every brick
+  from `img` (the decoded tier only holds `chunkSource` bytes, which an
+  in-place edit cannot reach). `coarseFloorKey` is the source (url/name and
+  the `img` view: buffer identity, offset, length) plus
+  `wholeVolumeTextureKey` with the floor's orient matrix, so it also covers
+  the label outline width, the RAS grid and RGB/RGBA floors.
+  `updateVolumeData` still rejects `chunkPlan` volumes: a full re-stream is
+  not a per-frame fast path.
+- **Colormap re-registration:** the orient caches, `chunkedDisplayKey`,
+  `wholeVolumeTextureKey` and `coarseFloorKey` key colormaps by
+  `NVCmaps.colormapKey(name)` (name plus how many times `addColormap`
+  registered it), so re-registering a name rebuilds
+  the cached LUT textures on the next update. Mesh layer, tract and
+  connectome colors are baked into `m.colors` only when those change
+  (`compositeLayers`, `retessellateTract`, `reextrudeConnectome`), so they
+  keep the old colors until their next property change.
+- **Coalescing:** `_updateGL(meshes, volumes?)` shares `_updating` /
+  `_pendingUpdate` with `updateVolumeAffineOnly`; the queued follow-up takes
+  the union of the callers' needs (`_pendingMeshes`, `_pendingVolumes`, and
+  `_pendingAllVolumes`, which any unscoped caller, including an affine-only
+  one, sets). `_pendingFull` makes an affine-only rerun yield to a queued full
+  update.
+
 ## Mesh layers (scalar overlays)
 
 CPU-composited scalar overlays on meshes. `perVertexColors` (nullable `Uint32Array`, packed ABGR) preserves file-provided vertex colors for recompositing; null for uniform-color meshes. Layer readers in `mesh/layers/readers/` (CURV, SMP, STC) plus fallthrough to mesh/volume readers. Layers only apply to `kind === 'mesh'`; tract/connectome coloring happens during tessellation/extrusion.
 
 ## Mesh shaders
 
-Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong, flat, matte, toon, outline, rim, silhouette, crevice, vertexColor, crosscut. Selected per-mesh via `shaderType`. Vertex layout: interleaved `BYTES_PER_VERTEX` bytes (pos `float32x3` + normal `float32x3` + color `unorm8x4`), defined in `view/NVCrosshair.ts`.
+Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong, flat, matte, toon, outline, rim, silhouette, crevice, vertexColor, crosscut. Selected per-mesh via `shaderType`. Vertex layout: interleaved `BYTES_PER_VERTEX` bytes (pos `float32x3` + normal `float32x3` + color `unorm8x4`), defined in `mesh/vertexFormat.ts` with the one mesh packer, `packMeshVertices`, and the color encoding, `packColor`. The crosshair cylinder and the orientation cube still pack their own vertices, and the attribute offsets are still literals (#304).
 
 **Crosscut shader** (`shaderType: 'crosscut'`): Renders crosshair-aligned ribbons using `fwidth()`-based screen-space line width. Unique render state: **no depth test, no face culling**. `crosscutMM` uniform computed by `view/NVCrosscut.ts`.
 
@@ -1486,7 +1606,7 @@ Volumes apply in GPU shader. Mesh layers apply during CPU compositing (`mesh/lay
 
 **Label colormaps:** Discrete indexed colors for atlas volumes. `NVCmaps.makeLabelLut()` → `NVImage.colormapLabel`. Orient shader uses nearest-neighbor LUT sampling. `calMin`/`calMax`/`colormapType` are ignored for label volumes. When a colormap registered via `addColormap(name, cmap)` includes a `labels?: string[]` field (e.g. the built-in `_draw` colormap), the drawing volume surfaces the human-readable label (e.g. `"11bladder"`) in the `locationChange` event's `string` field instead of a numeric fallback like `"draw:11"`.
 
-**Legend centroids are lazy.** Nothing computes label centroids at load (`setColormapLabel`, `addVolume({ colormapLabel })`, document load, mesh layer load); `LegendEntry.centroid` is a function that `view/legendCentroids.ts` evaluates on the first legend click and memoizes in a `WeakMap` keyed on the data array: `volume.img` for volumes, with `[colormapLabel, matRAS]` as dependencies, and `layer.values` for mesh layers, with `[mesh.positions, layer.colormapLabel]` as dependencies. A dependency is compared by identity, so replace these objects, never mutate them in place; `applyVolumeTransform` and `resetVolumeAffine` assign a new `volume.matRAS` without touching `img` or the LUT, which is why `matRAS` is a dependency. Volume centroids are means of RAS voxel coordinates mapped through `matRAS` once; mesh centroids are means of vertex positions, already in mm. `LUT.centroids` no longer exists. A 256³ scan is ~60 ms (Chrome), down from 515-850 ms when it ran eagerly on every label load.
+**Legend centroids are lazy.** Nothing computes label centroids at load (`setColormapLabel`, `addVolume({ colormapLabel })`, document load, mesh layer load); `LegendEntry.centroid` is a function that `view/legendCentroids.ts` evaluates on the first legend click and memoizes in a `WeakMap` keyed on the data array: `volume.img` for volumes, with `[colormapLabel, matRAS, _dataVersion]` as dependencies, and `layer.values` for mesh layers, with `[mesh.positions, layer.colormapLabel, mesh._positionsVersion]` as dependencies. A dependency is compared by identity, so replace these objects, never mutate them in place (the version counters cover the in-place edits `updateVolumeData` / `updateMeshPositions` make); `applyVolumeTransform` and `resetVolumeAffine` assign a new `volume.matRAS` without touching `img` or the LUT, which is why `matRAS` is a dependency. Volume centroids are means of RAS voxel coordinates mapped through `matRAS` once; mesh centroids are means of vertex positions, already in mm. `LUT.centroids` no longer exists. A 256³ scan is ~60 ms (Chrome), down from 515-850 ms when it ran eagerly on every label load.
 
 ## Drawing (voxel bitmap editing)
 

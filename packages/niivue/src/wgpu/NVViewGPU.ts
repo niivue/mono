@@ -5,6 +5,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
 import { generateNormals } from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
+import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type NVModel from '@/NVModel'
@@ -20,7 +21,6 @@ import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
-import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
@@ -34,6 +34,10 @@ import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
+import {
+  type UpdateBindGroupsOptions,
+  volumeUpdateScope,
+} from '@/view/volumeUpdateScope'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -49,7 +53,7 @@ import * as depthPick from './depthPick'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
-import { maskOverlayByBackground, maxBlendSliceDim } from './orient'
+import { maxBlendSliceDim } from './orient'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
@@ -629,7 +633,11 @@ export default class NVView {
     return true
   }
 
-  async updateBindGroups(): Promise<void> {
+  /**
+   * Rebuild GPU resources from the model. See UpdateBindGroupsOptions for the
+   * scoped form updateVolumeData uses.
+   */
+  async updateBindGroups(opts: UpdateBindGroupsOptions = {}): Promise<void> {
     // try/finally so an early return (no device / no mesh layout) or a thrown
     // await never leaves isBusy stuck true — the render loop skips while busy, so a
     // stuck flag would permanently freeze drawing (e.g. after a failed deferred
@@ -640,12 +648,20 @@ export default class NVView {
       const device = this.device
       if (!device) return
       const vols = this.model.getVolumes()
-
-      await this.colorbarRenderer.buildColorbars(
-        device,
-        this.model.collectColorbars(),
-        this.model.scene.backgroundColor,
+      const scope = volumeUpdateScope(
+        vols,
+        opts.volumes,
+        this.model.volume.isBackgroundMasking,
       )
+      // A data-only update (opts.volumes) leaves the colorbars as they are:
+      // their range comes from calMin/calMax, which it does not change.
+      if (!opts.volumes) {
+        await this.colorbarRenderer.buildColorbars(
+          device,
+          this.model.collectColorbars(),
+          this.model.scene.backgroundColor,
+        )
+      }
       if (vols.length > 0) {
         if (this.options.instances) {
           // Multi-instance mode (global3d): upload every volume's GPU texture
@@ -673,7 +689,7 @@ export default class NVView {
             if (key) keepKeys.add(key)
           }
           this.volumeRenderer.pruneVolumeCache(keepKeys)
-        } else {
+        } else if (scope.background) {
           try {
             await this.volumeRenderer.updateVolume(
               device,
@@ -689,27 +705,7 @@ export default class NVView {
         }
       }
       if (vols.length > 1 && !this.options.instances) {
-        this.volumeRenderer.overlayAlphaBlend =
-          this.model.volume.overlayAlphaBlend
-        this.volumeRenderer.overlayColorBlend =
-          this.model.volume.overlayColorBlend
-        await this.volumeRenderer.updateOverlays(
-          device,
-          vols[0],
-          vols.slice(1),
-          this.model.volume.paqdUniforms,
-        )
-        if (
-          this.model.volume.isBackgroundMasking &&
-          this.volumeRenderer.overlayTexture &&
-          this.volumeRenderer.volumeTexture
-        ) {
-          this.volumeRenderer.overlayTexture = await maskOverlayByBackground(
-            device,
-            this.volumeRenderer.volumeTexture,
-            this.volumeRenderer.overlayTexture,
-          )
-        }
+        if (scope.overlays) await this._updateOverlayStack(device, vols)
       } else {
         this.volumeRenderer.clearOverlay()
       }
@@ -734,6 +730,7 @@ export default class NVView {
           this.sampler,
         )
       }
+      if (opts.meshes === false) return
       const meshes = this.model.getMeshes() as NVMesh[]
       const availableShaders = this.getAvailableShaders()
       if (!this.meshBindGroupLayout) return
@@ -2532,8 +2529,42 @@ export default class NVView {
     return this.volumeRenderer.coarseFloorDims
   }
 
+  /** Re-run the overlay pass (volumes[1..]) and the optional background mask. */
+  private async _updateOverlayStack(
+    device: GPUDevice,
+    vols: NVImage[],
+  ): Promise<void> {
+    this.volumeRenderer.overlayAlphaBlend = this.model.volume.overlayAlphaBlend
+    this.volumeRenderer.overlayColorBlend = this.model.volume.overlayColorBlend
+    await this.volumeRenderer.updateOverlays(
+      device,
+      vols[0],
+      vols.slice(1),
+      this.model.volume.paqdUniforms,
+    )
+    if (this.model.volume.isBackgroundMasking) {
+      await this.volumeRenderer.maskOverlayByBackground(device)
+    }
+  }
+
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
     return this.meshResources.get(m) ?? null
+  }
+
+  /**
+   * Re-upload one mesh's vertices into its existing GPU buffer. Returns false
+   * when the mesh has no GPU resources yet (or its vertex count changed); the
+   * caller then falls back to a full rebuild via updateBindGroups().
+   */
+  updateMeshVertices(m: NVMesh): boolean {
+    const device = this.device
+    if (!device) return false
+    // A lost context/device cannot be written to, and a full rebuild would fail
+    // the same way every frame. Report success; recovery re-uploads every mesh.
+    if (this._deviceLost) return true
+    const gpu = this.meshResources.get(m)
+    if (!gpu) return false
+    return mesh.writeMeshVertices(device, m, gpu)
   }
 
   _destroyMeshResources(): void {

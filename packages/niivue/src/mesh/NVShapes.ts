@@ -1,5 +1,5 @@
 import { vec3 } from 'gl-matrix'
-import { packColor } from '@/view/NVCrosshair'
+import { packColor } from '@/mesh/vertexFormat'
 
 export function getCubeMesh(): { vertices: number[]; indices: number[] } {
   const cubeVertices = [

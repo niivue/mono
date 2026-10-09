@@ -1,7 +1,6 @@
 import { log } from '@/logger'
-import * as NVMeshUtils from '@/mesh/NVMesh'
+import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
-import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
 import {
   meshDepthPickFragmentShader,
   meshDepthPickVertexShader,
@@ -59,28 +58,7 @@ function createMeshGpu(
   meshData: NVMesh,
   shaderType: string,
 ): WebGLMeshGPU {
-  const normals = NVMeshUtils.generateNormals(
-    meshData.positions,
-    meshData.indices,
-  )
-  const numVerts = meshData.positions.length / 3
-  // Interleaved vertex data: pos(3) + norm(3) + color(1 as u32) = 28 bytes per vertex
-  const vertexData = new ArrayBuffer(numVerts * BYTES_PER_VERTEX)
-  const f32 = new Float32Array(vertexData)
-  const u32 = new Uint32Array(vertexData)
-  for (let i = 0; i < numVerts; i++) {
-    const offset = (i * 28) / 4 // offset in 4-byte units
-    f32[offset] = meshData.positions[i * 3] ?? 0
-    f32[offset + 1] = meshData.positions[i * 3 + 1] ?? 0
-    f32[offset + 2] = meshData.positions[i * 3 + 2] ?? 0
-    f32[offset + 3] = normals[i * 3] ?? 0
-    f32[offset + 4] = normals[i * 3 + 1] ?? 0
-    f32[offset + 5] = normals[i * 3 + 2] ?? 0
-    u32[offset + 6] =
-      meshData.colors instanceof Uint32Array
-        ? meshData.colors[i]
-        : meshData.colors
-  }
+  const vertexData = packMeshVertices(meshData)
   // Create VAO
   const vao = gl.createVertexArray()
   if (!vao) {
@@ -129,6 +107,7 @@ function createMeshGpu(
     vertexBuffer,
     indexBuffer,
     indexCount: meshData.indices.length,
+    vertexBytes: vertexData.byteLength,
   }
 }
 
@@ -143,6 +122,37 @@ export function uploadMeshGPU(
   }
   const gpu = createMeshGpu(gl, meshData, shaderType)
   return { ...gpu, shaderType, sliceShaderType }
+}
+
+// Per-mesh staging buffer for live vertex updates, so animating a mesh does
+// not allocate a fresh interleaved buffer every frame. Safe to reuse: the
+// upload copies the data before returning.
+const _staging = new WeakMap<WebGLMeshGPU, ArrayBuffer>()
+
+function stagingFor(gpu: WebGLMeshGPU, meshData: NVMesh): ArrayBuffer {
+  const packed = packMeshVertices(meshData, _staging.get(gpu))
+  _staging.set(gpu, packed)
+  return packed
+}
+
+/**
+ * Rewrite an existing mesh's vertex buffer in place from `meshData`. Used for
+ * live vertex updates, which would otherwise rebuild every mesh's GPU
+ * resources. Returns false (nothing written) when the vertex count no longer
+ * matches the buffer, so the caller can fall back to a full rebuild.
+ */
+export function writeMeshVertices(
+  gl: WebGL2RenderingContext,
+  meshData: NVMesh,
+  gpu: WebGLMeshGPU,
+): boolean {
+  if (!gpu.vertexBuffer) return false
+  const bytes = (meshData.positions.length / 3) * BYTES_PER_VERTEX
+  if (gpu.vertexBytes !== bytes) return false
+  gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vertexBuffer)
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, stagingFor(gpu, meshData))
+  gl.bindBuffer(gl.ARRAY_BUFFER, null)
+  return true
 }
 
 export function useShader(

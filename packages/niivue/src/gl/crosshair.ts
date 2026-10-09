@@ -1,3 +1,4 @@
+import { BYTES_PER_VERTEX, packColor } from '@/mesh/vertexFormat'
 import type NVModel from '@/NVModel'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
 import { getAxisColor } from '@/view/crosshairColor'
@@ -6,11 +7,9 @@ import {
   crosshairExplodeOffsetForModel,
 } from '@/view/crosshairExplode'
 import {
-  BYTES_PER_VERTEX,
   buildVertexData,
   calculateCrosshairSegments,
   getCylinderIndices,
-  packColor,
   shouldCullCylinder,
   VERTS_PER_CYLINDER,
 } from '@/view/NVCrosshair'

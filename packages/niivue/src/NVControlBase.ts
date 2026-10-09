@@ -130,6 +130,7 @@ import { SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
+import { type MeshRebuild, mergeMeshRebuild } from '@/view/meshGpuSync'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import {
@@ -199,6 +200,26 @@ import {
   reorientDrawingToNative,
   volumeTR,
 } from '@/volume/utils'
+
+/** MeshUpdate options read only while drawing: setMesh just redraws. */
+const MESH_REDRAW_OPTIONS = new Set(['name', 'opacity', 'visible'])
+
+/**
+ * MeshUpdate options that leave vertex data alone (shader choice, colorbar and
+ * legend): setMesh rebuilds without re-uploading the mesh.
+ */
+const MESH_DRAW_TIME_OPTIONS = new Set([
+  ...MESH_REDRAW_OPTIONS,
+  'shaderType',
+  'sliceShaderType',
+  'isColorbarVisible',
+  'isLegendVisible',
+])
+
+/** Mark a mesh's vertex data as edited in place so the GPU re-uploads it. */
+function markMeshDataChanged(m: NVMeshType): void {
+  m._dataVersion = (m._dataVersion ?? 0) + 1
+}
 
 type ViewBackend = {
   init: () => Promise<void>
@@ -419,12 +440,14 @@ export default class NiiVue extends EventTarget {
   private _pendingUpdate = false
   /** A full (not affine-only) update is queued behind `_updating`. */
   private _pendingFull = false
-  /** Whether any update queued behind `_updating` needs the mesh rebuild. */
-  private _pendingMeshes = false
+  /** The mesh rebuild covering every update queued behind `_updating`. */
+  private _pendingMeshes: MeshRebuild = 'none'
   /** Whether any update queued behind `_updating` needs every volume rebuilt. */
   private _pendingAllVolumes = false
   /** Volumes whose data changed, for queued scoped (updateVolumeData) updates. */
   private _pendingVolumes = new Set<NVImage>()
+  /** Whether any update queued behind `_updating` needs the colorbars rebuilt. */
+  private _pendingColorbars = false
   /** Volume ids with an in-flight deferred 4D reload (guards rapid ellipsis clicks
    *  from launching duplicate multi-GB re-fetches and racing rollbacks). */
   private _deferredReloads = new Set<string>()
@@ -1845,7 +1868,7 @@ export default class NiiVue extends EventTarget {
     // The outline is baked by the orient prepass, so the textures must be
     // rebuilt. Fire-and-forget (this is sync); route a GPU rejection so it
     // isn't an unhandled promise rejection.
-    this.updateGLVolume().catch((e) => log.error('setAtlasOutline failed', e))
+    this._updateGLChanged().catch((e) => log.error('setAtlasOutline failed', e))
   }
 
   /**
@@ -1873,7 +1896,7 @@ export default class NiiVue extends EventTarget {
   set volumeOverlayAlphaBlend(v: OVERLAY_ALPHA_BLEND) {
     this.model.volume.overlayAlphaBlend = v
     this.emit('change', { property: 'volumeOverlayAlphaBlend', value: v })
-    this.updateGLVolume().catch((e) =>
+    this._updateGLChanged().catch((e) =>
       log.error('volumeOverlayAlphaBlend failed', e),
     )
   }
@@ -1888,7 +1911,7 @@ export default class NiiVue extends EventTarget {
   set volumeOverlayColorBlend(v: OVERLAY_COLOR_BLEND) {
     this.model.volume.overlayColorBlend = v
     this.emit('change', { property: 'volumeOverlayColorBlend', value: v })
-    this.updateGLVolume().catch((e) =>
+    this._updateGLChanged().catch((e) =>
       log.error('volumeOverlayColorBlend failed', e),
     )
   }
@@ -2475,27 +2498,54 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Rebuild every GPU resource from the current model. Cached volume textures
-   * are reused unless something they were built from changed; after editing a
-   * volume's `img` in place, set its `isDirty` first so its voxels are
-   * re-uploaded (see {@link updateVolumeData} for the faster, scoped path).
+   * Rebuild every GPU resource from the model, re-uploading every mesh. The
+   * setters (setVolume, setMesh, addMesh, ...) already rebuild only what they
+   * changed; call this after editing loaded data in place yourself (e.g. a
+   * mesh's `colors`): a setter does not notice such an edit. Cached volume
+   * textures are reused unless something they were built from changed; after
+   * editing a volume's `img` in place, set its `isDirty` first so its voxels
+   * are re-uploaded (see {@link updateVolumeData} for the faster, scoped
+   * path). Distinct meshes must not share their `positions`, `indices` or
+   * `colors` arrays (e.g. a `{ ...mesh }` copy): recolouring one through
+   * setMesh writes the shared array but re-uploads only that mesh, leaving the
+   * other stale on screen.
    */
   async updateGLVolume() {
-    await this._updateGL(true)
+    await this._updateGL('all')
+  }
+
+  /**
+   * @internal Rebuild GPU resources after a setter changed volumes or scene
+   * state: every volume and the colorbars, but only the meshes that are new,
+   * removed or whose vertex data changed (see `NVMesh._dataVersion`).
+   */
+  async _updateGLChanged(): Promise<void> {
+    await this._updateGL('changed')
+  }
+
+  /**
+   * Rebuild GPU resources after a mesh setter: upload new or edited meshes,
+   * free removed ones and rebuild the colorbars (mesh layers and connectomes
+   * add colorbars). Volume textures are left alone.
+   */
+  private async _updateGLMeshes(): Promise<void> {
+    await this._updateGL('changed', [], true)
   }
 
   /**
    * Rebuild GPU resources, coalescing calls that arrive while one is in
-   * flight into a single follow-up. `meshes: false` skips the mesh rebuild;
-   * `volumes` limits the volume rebuild to those whose data changed
-   * (updateVolumeData; omitted = every volume). A queued follow-up takes the
-   * union of what the coalesced callers asked for. Volumes flagged `isDirty`
-   * get a data-version bump first (so their textures are re-uploaded) and join
-   * a scoped rebuild.
+   * flight into a single follow-up. `meshes` picks which mesh resources to
+   * rebuild (see MeshRebuild); `volumes` limits the volume rebuild to those
+   * whose data changed (omitted = every volume, [] = none); `colorbars`
+   * defaults to rebuilding them for a full volume rebuild only. A queued
+   * follow-up takes the union of what the coalesced callers asked for.
+   * Volumes flagged `isDirty` get a data-version bump first (so their textures
+   * are re-uploaded) and join a scoped rebuild.
    */
   private async _updateGL(
-    meshes: boolean,
+    meshes: MeshRebuild,
     volumes?: readonly NVImage[],
+    colorbars = !volumes,
   ): Promise<void> {
     const dirty = commitDirtyVolumes(this.model.getVolumes())
     const changed = volumes && [
@@ -2505,7 +2555,8 @@ export default class NiiVue extends EventTarget {
     if (this._updating) {
       this._pendingUpdate = true
       this._pendingFull = true
-      this._pendingMeshes ||= meshes
+      this._pendingMeshes = mergeMeshRebuild(this._pendingMeshes, meshes)
+      this._pendingColorbars ||= colorbars
       if (changed) for (const v of changed) this._pendingVolumes.add(v)
       else this._pendingAllVolumes = true
       return
@@ -2514,7 +2565,7 @@ export default class NiiVue extends EventTarget {
     try {
       this._computeModulationData()
       if (!this.view) return
-      await this.view.updateBindGroups({ meshes, volumes: changed })
+      await this.view.updateBindGroups({ meshes, volumes: changed, colorbars })
       this.drawScene()
     } finally {
       if (this._endUpdate(token)) await this._runPendingUpdate()
@@ -2558,17 +2609,19 @@ export default class NiiVue extends EventTarget {
   private async _runPendingUpdate(): Promise<void> {
     if (!this._pendingUpdate) return
     const pendingMeshes = this._pendingMeshes
-    // Only scoped data updates were queued: rebuild just those volumes.
-    const pendingVolumes =
-      this._pendingAllVolumes || this._pendingVolumes.size === 0
-        ? undefined
-        : [...this._pendingVolumes]
+    // Only scoped updates were queued: rebuild just the volumes whose data
+    // changed (none for mesh-only updates).
+    const pendingVolumes = this._pendingAllVolumes
+      ? undefined
+      : [...this._pendingVolumes]
+    const pendingColorbars = this._pendingColorbars || this._pendingAllVolumes
     this._pendingUpdate = false
     this._pendingFull = false
-    this._pendingMeshes = false
+    this._pendingMeshes = 'none'
     this._pendingAllVolumes = false
     this._pendingVolumes.clear()
-    await this._updateGL(pendingMeshes, pendingVolumes)
+    this._pendingColorbars = false
+    await this._updateGL(pendingMeshes, pendingVolumes, pendingColorbars)
   }
 
   /**
@@ -2618,7 +2671,8 @@ export default class NiiVue extends EventTarget {
         return
       }
       this._computeModulationData()
-      await this.view.updateBindGroups()
+      // A moved volume leaves mesh buffers valid; only pick up mesh changes.
+      await this.view.updateBindGroups({ meshes: 'changed' })
       this.drawScene()
     } finally {
       // A takeover (false) leaves the follow-up to the new holder.
@@ -2680,7 +2734,7 @@ export default class NiiVue extends EventTarget {
     target._modulationDataKey = undefined
     target._modulationWeight = null
     target._modulationWeightKey = undefined
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -2706,7 +2760,7 @@ export default class NiiVue extends EventTarget {
     const ok = NVTensorProcessing.loadImgV1(vol, isFlipX, isFlipY, isFlipZ)
     if (ok) {
       vol.isDirty = true
-      await this.updateGLVolume()
+      await this._updateGLChanged()
     }
     return ok
   }
@@ -2820,14 +2874,14 @@ export default class NiiVue extends EventTarget {
     const matcaps = this.opts.matcaps
     const url = matcaps?.[matcapName] ?? matcapName
     this.model.volume.matcap = url
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<this> {
     await this.model.addVolume(volume)
     const vols = this.model.getVolumes()
     this.emit('volumeLoaded', { volume: vols[vols.length - 1] })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
     return this
   }
 
@@ -2865,7 +2919,7 @@ export default class NiiVue extends EventTarget {
     for (const vol of loaded) {
       this.emit('volumeLoaded', { volume: vol })
     }
-    await this.updateGLVolume()
+    await this._updateGLChanged()
     // New bind groups are live; the old GPU textures are no longer referenced.
     for (const vol of previous) {
       this.model._releaseGPU(vol as unknown as Record<string, unknown>)
@@ -2878,7 +2932,7 @@ export default class NiiVue extends EventTarget {
     await this.model.addMesh(mesh)
     const meshes = this.model.getMeshes()
     this.emit('meshLoaded', { mesh: meshes[meshes.length - 1] })
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
     return this
   }
 
@@ -2898,7 +2952,7 @@ export default class NiiVue extends EventTarget {
       const allMeshes = this.model.getMeshes()
       this.emit('meshLoaded', { mesh: allMeshes[allMeshes.length - 1] })
     }
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
     return this
   }
 
@@ -3382,7 +3436,7 @@ export default class NiiVue extends EventTarget {
     const mesh = meshes[meshIndex]
     this.emit('meshRemoved', { mesh, index: meshIndex })
     this.model.removeMesh(meshIndex)
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
   }
 
   async removeAllVolumes(): Promise<void> {
@@ -3391,7 +3445,7 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: vols[i], index: i })
     }
     await this.model.removeAllVolumes()
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3408,7 +3462,7 @@ export default class NiiVue extends EventTarget {
     // time the collection still contains the referenced item.
     this.emit('volumeRemoved', { volume, index: volumeIndex })
     this.model.removeVolume(volumeIndex)
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   async removeAllMeshes(): Promise<void> {
@@ -3417,7 +3471,7 @@ export default class NiiVue extends EventTarget {
       this.emit('meshRemoved', { mesh: meshes[i], index: i })
     }
     this.model.removeAllMeshes()
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
   }
 
   /**
@@ -3431,7 +3485,7 @@ export default class NiiVue extends EventTarget {
     const changed = this.model.moveVolume(volumeIndex, volumeIndex + 1)
     if (!changed) return
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3445,7 +3499,7 @@ export default class NiiVue extends EventTarget {
     const changed = this.model.moveVolume(volumeIndex, volumeIndex - 1)
     if (!changed) return
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3462,7 +3516,7 @@ export default class NiiVue extends EventTarget {
     )
     if (!changed) return
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3476,7 +3530,7 @@ export default class NiiVue extends EventTarget {
     const changed = this.model.moveVolume(volumeIndex, 0)
     if (!changed) return
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3514,7 +3568,7 @@ export default class NiiVue extends EventTarget {
       volume: volumes[volumeIndex],
       changes: {},
     })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3619,7 +3673,7 @@ export default class NiiVue extends EventTarget {
       }
     }
     markVolumeDataChanged(vol)
-    await this._updateGL(false, [vol])
+    await this._updateGL('none', [vol])
   }
 
   /**
@@ -3647,7 +3701,7 @@ export default class NiiVue extends EventTarget {
       volume: volumes[volumeIndex],
       changes: options,
     })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3835,7 +3889,7 @@ export default class NiiVue extends EventTarget {
    * geometry is regenerated from their source data). No `meshUpdated` event is
    * emitted: this is meant to be called every frame, and it changes no display
    * option. If the mesh has no GPU buffer yet (e.g. while the view is being
-   * rebuilt), a full GPU update is scheduled instead.
+   * rebuilt), a GPU update that uploads this mesh is scheduled instead.
    *
    * @example
    * const pts = nv1.meshes[0].positions
@@ -3870,9 +3924,9 @@ export default class NiiVue extends EventTarget {
       this.drawScene()
       return
     }
-    // No GPU buffer for this mesh yet (or a mid-rebuild view): a full rebuild
-    // reads the new positions.
-    this.updateGLVolume().catch((e) =>
+    // No GPU buffer for this mesh yet (or a mid-rebuild view): a rebuild
+    // uploads the new positions (the _positionsVersion bump marks it stale).
+    this._updateGLMeshes().catch((e) =>
       log.error('updateMeshPositions failed', e),
     )
   }
@@ -3880,7 +3934,10 @@ export default class NiiVue extends EventTarget {
   /**
    * Update display properties of a loaded mesh.
    * Accepts any subset of mesh display options (opacity, shaderType, color, etc.)
-   * and triggers a single GPU update.
+   * and triggers a single GPU update. Only this mesh is re-uploaded, and only
+   * when an option changes its vertex data (e.g. `color`); `opacity`,
+   * `visible` and `name` just redraw. Meshes must not share their data
+   * arrays (see {@link updateGLVolume}).
    *
    * @example
    * await nv1.setMesh(0, { shaderType: 'toon', opacity: 0.5 })
@@ -3936,12 +3993,22 @@ export default class NiiVue extends EventTarget {
       }
     }
     Object.assign(meshes[meshIndex], options)
+    const keys = Object.keys(options)
+    // Anything beyond draw-time options may change vertex data (color is
+    // baked into the per-vertex colors), so re-upload this mesh.
+    if (keys.some((k) => !MESH_DRAW_TIME_OPTIONS.has(k))) {
+      markMeshDataChanged(meshes[meshIndex])
+    }
     this.emit('meshUpdated', {
       meshIndex,
       mesh: meshes[meshIndex],
       changes: options,
     })
-    await this.updateGLVolume()
+    if (keys.every((k) => MESH_REDRAW_OPTIONS.has(k))) {
+      this.drawScene()
+      return
+    }
+    await this._updateGLMeshes()
   }
 
   /**
@@ -3983,10 +4050,11 @@ export default class NiiVue extends EventTarget {
     })
     m.layers.push(newLayer)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    markMeshDataChanged(m)
     // Layer state is structural (not a MeshUpdate option diff); the mesh
     // reference lets listeners re-read mesh.layers.
     this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
     return this
   }
 
@@ -4000,10 +4068,11 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return this
     m.layers.splice(layerIndex, 1)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    markMeshDataChanged(m)
     // Layer state is structural (not a MeshUpdate option diff); the mesh
     // reference lets listeners re-read mesh.layers.
     this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
     return this
   }
 
@@ -4025,10 +4094,11 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return
     Object.assign(m.layers[layerIndex], options)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    markMeshDataChanged(m)
     // Layer state is structural (not a MeshUpdate option diff); the mesh
     // reference lets listeners re-read mesh.layers.
     this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
   }
 
   /**
@@ -4072,7 +4142,8 @@ export default class NiiVue extends EventTarget {
       m.isColorbarVisible = cb.startsWith('dpv:') || cb.startsWith('dps:')
     }
     NVMesh.retessellateTract(m)
-    await this.updateGLVolume()
+    markMeshDataChanged(m)
+    await this._updateGLMeshes()
   }
 
   /**
@@ -4106,7 +4177,8 @@ export default class NiiVue extends EventTarget {
     }
     Object.assign(m.connectomeOptions, options)
     NVMesh.reextrudeConnectome(m)
-    await this.updateGLVolume()
+    markMeshDataChanged(m)
+    await this._updateGLMeshes()
   }
 
   /**
@@ -4141,7 +4213,7 @@ export default class NiiVue extends EventTarget {
     if (clamped === vol.frame4D) return
     vol.frame4D = clamped
     this.emit('frameChange', { volume: vol, frame: clamped })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
     // A frame change moves the signal-graph marker (frame*TR); pan the window to
     // keep it visible FIRST, so the readout that createOnLocationChange emits is
     // sampled against the new (in-window) marker, not the old window's edge.
@@ -4174,7 +4246,7 @@ export default class NiiVue extends EventTarget {
     vol.robustMax = pct98
     vol.globalMin = mnScale
     vol.globalMax = mxScale
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -4284,7 +4356,7 @@ export default class NiiVue extends EventTarget {
       vol.globalMin = rebuilt.globalMin
       vol.globalMax = rebuilt.globalMax
       try {
-        await this.updateGLVolume()
+        await this._updateGLChanged()
       } catch (e) {
         // GPU texture allocation/upload failed — restore the prior CPU state so the
         // model stays consistent with the unchanged GPU texture, then rethrow.
@@ -4590,7 +4662,7 @@ export default class NiiVue extends EventTarget {
       if (this.model.getVolumes().includes(coarseVol)) {
         // A loaded volume: commit its flag through a scoped update, so its
         // own textures are re-uploaded too, not only the floor.
-        await this._updateGL(false, [coarseVol])
+        await this._updateGL('none', [coarseVol])
       } else {
         commitDirtyVolumes([coarseVol])
       }
@@ -5868,14 +5940,14 @@ export default class NiiVue extends EventTarget {
       if (opts.calMin && this.volumes.length > 0 && target.volumes.length > 0) {
         if (this.volumes[0].calMin !== target.volumes[0].calMin) {
           target.volumes[0].calMin = this.volumes[0].calMin
-          target.updateGLVolume()
+          target._updateGLChanged()
           changed = true
         }
       }
       if (opts.calMax && this.volumes.length > 0 && target.volumes.length > 0) {
         if (this.volumes[0].calMax !== target.volumes[0].calMax) {
           target.volumes[0].calMax = this.volumes[0].calMax
-          target.updateGLVolume()
+          target._updateGLChanged()
           changed = true
         }
       }
@@ -6483,7 +6555,7 @@ export default class NiiVue extends EventTarget {
     )
 
     // Update GPU resources and render
-    await this.updateGLVolume()
+    await this._updateGLChanged()
 
     // Restore drawing from RLE-encoded bitmap in document
     if (doc.drawingBitmapRLE && doc.drawingBitmapLength) {

@@ -595,6 +595,14 @@ export type NVMesh = {
   perVertexColors: Uint32Array | null
   /** @internal Bumped by `updateMeshPositions`, which edits `positions` in place. */
   _positionsVersion?: number
+  /**
+   * @internal Bumped whenever `colors` or `indices` change in place
+   * (recolouring, layer edits), so GPU rebuilds re-upload only meshes whose
+   * vertex data changed. In-place `positions` edits use `_positionsVersion`
+   * (via `updateMeshPositions`) instead. Replacing an array is detected
+   * without either token.
+   */
+  _dataVersion?: number
   /** @internal Index signature allows createMesh to assign defaults */
   [key: string]: unknown
 }

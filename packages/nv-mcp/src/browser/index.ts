@@ -19,6 +19,7 @@ export {
   TAB_ID_KEY,
   tabId,
 } from './client'
+export { markHandlers } from './marks'
 export { describeMesh, meshHandlers } from './meshes'
 export type { Params } from './params'
 export {
@@ -55,6 +56,7 @@ export {
 export { settingHandlers } from './settings'
 export type {
   AffineTransform,
+  Annotation,
   AtlasLike,
   AtlasRegion,
   ColormapToAdd,
@@ -65,6 +67,8 @@ export type {
   LabelTable,
   LayoutTile,
   LoadedVolume,
+  Measurement,
+  MeasurementOptions,
   MeshLayerToLoad,
   MeshLayerUpdate,
   MeshToLoad,

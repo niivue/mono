@@ -166,6 +166,38 @@ export interface MeshLayerToLoad {
 /** What `View.setMeshLayerProperty` can change: NiiVue's `NVMeshLayer`, in part. */
 export type MeshLayerUpdate = Omit<MeshLayerToLoad, 'url' | 'name'>
 
+/** A completed distance measurement: NiiVue's `CompletedMeasurement`. */
+export interface Measurement {
+  startMM: [number, number, number]
+  endMM: [number, number, number]
+  distance: number
+  sliceIndex: number
+  sliceType: number
+  slicePosition: number
+}
+
+/** What `View.addMeasurement` takes beside the two ends. */
+export interface MeasurementOptions {
+  sliceIndex?: number
+  sliceType?: number
+  slicePosition?: number
+}
+
+/** A vector annotation as NiiVue keeps it: `VectorAnnotation`. Passed through as JSON. */
+export interface Annotation {
+  id: string
+  label: number
+  group: string
+  sliceType: number
+  slicePosition: number
+  anchorMM?: [number, number, number]
+  polygons: unknown[]
+  style: Record<string, unknown>
+  stats?: Record<string, unknown>
+  text?: string
+  shape?: Record<string, unknown>
+}
+
 /** A tile of a custom layout: NiiVue's `CustomLayoutTile`. */
 export interface LayoutTile {
   sliceType: number
@@ -389,6 +421,40 @@ export interface View {
   addColormap?(name: string, colormap: ColormapToAdd): string
   addColormapFromUrl?(url: string, name?: string): Promise<unknown>
   setFontFromUrl?(urls: { atlas: string; metrics: string }): Promise<boolean>
+
+  // The drawing.
+  createEmptyDrawing?(): unknown
+  drawUndo?(): unknown
+  closeDrawing?(): unknown
+  loadDrawing?(url: string): Promise<boolean>
+  saveDrawing?(filename?: string): Promise<unknown>
+  drawingToSVG?(sliceType?: number, sliceIndex?: number): string | null
+
+  // Vector annotations.
+  annotations?: ReadonlyArray<Annotation>
+  selectedAnnotation?: string | null
+  addAnnotation?(annotation: Annotation): unknown
+  removeAnnotation?(id: string): unknown
+  clearAnnotations?(): unknown
+  selectAnnotation?(id: string | null): unknown
+  setAnnotationText?(id: string, text: string): unknown
+  annotationUndo?(): unknown
+  annotationRedo?(): unknown
+  getAnnotationsJSON?(): string
+  loadAnnotationsJSON?(json: string): unknown
+  annotationsToSVG?(sliceType?: number, slicePosition?: number): string | null
+
+  // Measurements.
+  getMeasurements?(): readonly Measurement[]
+  addMeasurement?(
+    start: [number, number, number],
+    end: [number, number, number],
+    options?: MeasurementOptions,
+  ): number
+  removeMeasurement?(index: number): unknown
+  clearMeasurements?(): unknown
+  clearAngles?(): unknown
+  clearDistanceMeasurements?(): unknown
 
   // What the page's NiiVue is.
   backend?: string

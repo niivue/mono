@@ -29,6 +29,7 @@ import {
   SLICE_TYPES,
   type ViewState,
 } from '../views'
+import { markHandlers } from './marks'
 import { meshHandlers } from './meshes'
 import {
   clamp,
@@ -290,6 +291,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   return {
     ...settingHandlers(host),
     ...meshHandlers(host),
+    ...markHandlers(host),
 
     async load_volume(params) {
       const url = text(params, 'url')
@@ -1095,6 +1097,8 @@ export const CLIP_PLANES = 6
 function counts(view: View): Record<string, number> {
   const out: Record<string, number> = {}
   if (view.meshes) out.meshes = view.meshes.length
+  if (view.annotations) out.annotations = view.annotations.length
+  if (view.getMeasurements) out.measurements = view.getMeasurements().length
   return out
 }
 

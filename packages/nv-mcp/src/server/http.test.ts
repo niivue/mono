@@ -46,6 +46,11 @@ const CORE_TOOLS = [
   'add_mesh_layer',
   'set_mesh_layer',
   'remove_mesh_layer',
+  'edit_drawing',
+  'list_annotations',
+  'edit_annotations',
+  'list_measurements',
+  'edit_measurements',
 ]
 
 /** The smallest extension: one tool, answered by the page's `set_light` handler. */

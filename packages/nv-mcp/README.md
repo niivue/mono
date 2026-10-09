@@ -184,6 +184,16 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `set_mesh_layer` | `mesh?`, `layer?`, the layer fields above, `frame?` | Changes how a layer is drawn, or the frame of a 4D layer |
 | `remove_mesh_layer` | `mesh?`, `layer?` | Takes a layer off a mesh |
 
+### The drawing, annotations and measurements
+
+| Tool | Input | What it does |
+|---|---|---|
+| `edit_drawing` | `action`, `url?`, `slice?`, `slice_index?` | Works on the voxel drawing over the base volume: `create` an empty one, `load` one from an address, `undo` the last stroke, `close` it, or trace a slice of it as `svg`. Strokes are made by hand on the page; the pen settings are in `set_options` |
+| `list_annotations` | `polygons?`, `json?`, `svg?`, `slice?`, `slice_position?` | The vector annotations drawn on the slices, with their polygons, as JSON, or traced as SVG when asked |
+| `edit_annotations` | `action`, `id?`, `text?`, `annotation?`, `json?` | `add` a NiiVue VectorAnnotation, `remove` or `select` one by id, `set_text` on one, `clear` them, `undo`, `redo`, or `load` a set from JSON |
+| `list_measurements` | | The distance measurements drawn on the slices, each with its ends in millimetres and its length |
+| `edit_measurements` | `action`, `start_mm?`, `end_mm?`, `slice?`, `slice_index?`, `slice_position?`, `index?` | `add` a distance between two points, `remove` one by index, or `clear` them all, the angles (`clear_angles`) or the distances (`clear_distances`) |
+
 ### Planes and cameras
 
 A plane is named for the side it takes off: `left`, `right`, `posterior`, `anterior`, `inferior`, `superior`, with `sagittal`, `coronal` and `axial` as aliases for the first of each pair. NiiVue keeps a clip plane as `[depth, azimuth, elevation]`, with the shader keeping the side the plane's normal points to; the camera that sees the exposed face square on looks along the normal, which works out to the plane's own elevation and its azimuth turned half a turn. `cameraForPlane` does that sum and `depthThrough` finds the depth that puts the plane through a point, both checked for all six sides in `planes.test.ts`.

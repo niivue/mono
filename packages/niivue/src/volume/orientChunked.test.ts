@@ -561,6 +561,8 @@ describe('coarseFloorKey', () => {
     ['scl_slope', { hdr: { datatypeCode: 2, scl_slope: 2, scl_inter: 0 } }],
     // The orient pass also bakes these, which the chunk key alone misses.
     ['img buffer', { img: new Uint8Array(8) }],
+    ['img view offset', { img: new Uint8Array(IMG.buffer, 4, 4) }],
+    ['img view length', { img: new Uint8Array(IMG.buffer, 0, 4) }],
     ['RAS grid', { dimsRAS: [3, 2, 2, 4] }],
     [
       'RGB datatype',

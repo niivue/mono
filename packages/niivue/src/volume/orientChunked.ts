@@ -111,8 +111,8 @@ export function wholeVolumeTextureKey(
 /**
  * Key over what the coarse floor texture (`setCoarseFloor`, both backends)
  * bakes in when it orients a pyramid level with the orient matrix `mtx`: the
- * source (url or name, and the `img` buffer identity, since the app may pass a
- * new level under the same name) plus {@link wholeVolumeTextureKey}, the
+ * source (url or name, and the `img` view: buffer identity, offset and length,
+ * since the app may pass a new level under the same name) plus {@link wholeVolumeTextureKey}, the
  * inputs a whole-volume texture bakes (display state with the data version,
  * label outline width, RAS grid, `mtx`; rgbaTextureKey for RGB/RGBA).
  */
@@ -122,7 +122,9 @@ export function coarseFloorKey(
 ): string {
   return [
     coarseVol.url || coarseVol.name,
-    coarseVol.img ? objectId(coarseVol.img.buffer) : 0,
+    coarseVol.img
+      ? `${objectId(coarseVol.img.buffer)}:${coarseVol.img.byteOffset}:${coarseVol.img.byteLength}`
+      : '',
     wholeVolumeTextureKey(coarseVol, mtx),
   ].join('|')
 }

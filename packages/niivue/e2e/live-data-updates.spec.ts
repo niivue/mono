@@ -1223,7 +1223,9 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
 // setBaseCoarseFloor skips re-orienting a level it already baked. Its key
 // missed inputs the orient pass bakes (label outline width, grid, buffer), and
 // the floor level is not a model volume, so its isDirty flag was never
-// committed: an in-place edit re-passed to it kept the old texture.
+// committed: an in-place edit re-passed to it kept the old texture. A loaded
+// volume passed as the floor must have its flag committed through an update,
+// or its own texture would miss the edit.
 for (const backend of ['webgl2', 'webgpu'] as const) {
   test(`the coarse floor re-orients only when its baked inputs change (${backend})`, async ({
     page,
@@ -1234,9 +1236,13 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       `${setupPage(backend)}
       await nv.loadVolumes([
         { url: '${VOLUME}' },
-        { url: '${OVERLAY}' },
+        { url: '${OVERLAY}', colormap: 'red', calMin: 0, calMax: 1 },
       ])
-      const floor = nv.volumes[1]
+      const ov = nv.volumes[1]
+      // A separate level, as the app supplies it (not one of nv.volumes).
+      const floor = Object.assign(Object.create(Object.getPrototypeOf(ov)), ov, {
+        img: ov.img.slice(),
+      })
       const tex = () => nv.view.volumeRenderer.coarseFloorTexture
       await nv.setBaseCoarseFloor(floor)
       const first = tex()
@@ -1250,8 +1256,26 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       floor.img = floor.img.slice()
       await nv.setBaseCoarseFloor(floor)
       const newBuffer = tex() !== afterEdit
+      // A loaded volume passed as the floor: its own texture must follow the
+      // edit too, not only the floor.
+      const redBefore = (await count()).red
+      await nv.setBaseCoarseFloor(ov)
+      const loadedFirst = tex()
+      ov.img.fill(0)
+      ov.isDirty = true
+      await nv.setBaseCoarseFloor(ov)
+      const loadedFloorRebuilt = tex() !== loadedFirst && ov.isDirty === false
       await nv.setBaseCoarseFloor(null)
-      return { hasFloor: !!first, reused, edited, newBuffer }
+      const redAfter = (await count()).red
+      return {
+        hasFloor: !!first,
+        reused,
+        edited,
+        newBuffer,
+        redBefore,
+        loadedFloorRebuilt,
+        redAfter,
+      }
       `,
     )
     if (!r) return
@@ -1261,5 +1285,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(res.reused).toBe(true)
     expect(res.edited).toBe(true)
     expect(res.newBuffer).toBe(true)
+    expect(res.redBefore).toBeGreaterThan(1000)
+    expect(res.loadedFloorRebuilt).toBe(true)
+    expect(res.redAfter).toBeLessThan(res.redBefore * 0.05)
   })
 }

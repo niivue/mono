@@ -19,6 +19,7 @@ import {
   sceneState,
   type View,
   type VolumeToLoad,
+  type VolumeUpdate,
 } from '../browser/index'
 
 const REGIONS: AtlasRegion[] = [
@@ -124,6 +125,13 @@ export function fakePage(options: FakePageOptions): FakePage {
     loadVolumes: async (next) => {
       for (const volume of next) await fetching(volume)
       volumes.splice(0, volumes.length, ...next.map(shown))
+    },
+    addVolume: async (volume) => {
+      await fetching(volume)
+      volumes.push(shown(volume))
+    },
+    setVolume: async (index: number, update: VolumeUpdate) => {
+      Object.assign(volumes[index], update)
     },
     sliceType: 4,
     multiplanarType: 0,

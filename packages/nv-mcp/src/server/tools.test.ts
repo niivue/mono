@@ -132,6 +132,33 @@ describe('core tool schemas', () => {
       'render_pan',
       'tab',
     ])
+    expect(required('set_volume')).toEqual([])
+    expect(properties('set_volume').sort()).toEqual([
+      'affine',
+      'atlas_outline',
+      'auto_window',
+      'cal_max',
+      'cal_max_neg',
+      'cal_min',
+      'cal_min_neg',
+      'colorbar',
+      'colormap',
+      'colormap_negative',
+      'colormap_type',
+      'frame',
+      'invert',
+      'labels',
+      'load_all_frames',
+      'modulate',
+      'modulate_alpha',
+      'nearest',
+      'opacity',
+      'reset_affine',
+      'tab',
+      'transform',
+      'transparent_below_cal_min',
+      'volume',
+    ])
     expect(required('set_view')).toEqual([])
     expect(properties('set_view').sort()).toEqual([
       'colorbar',
@@ -240,6 +267,9 @@ describe('core tool schemas', () => {
     expect(
       await refused('set_clip_plane', { plane: 'left', depth: 3 }),
     ).toMatch(/depth/)
+    expect(await refused('set_volume', { opacity: 2 })).toMatch(/opacity/)
+    expect(await refused('set_volume', { frame: -1 })).toMatch(/frame/)
+    expect(await refused('set_volume', { volume: true })).toMatch(/volume/)
     expect(await refused('set_view', { slice: 'oblique' })).toMatch(/slice/)
   })
 })
@@ -285,6 +315,14 @@ describe('core tools over the bridge', () => {
     expect(json(load)).toMatchObject({
       params: { url: 'http://x/vol.nii.gz', mni: true },
     })
+    const drawn = await client.callTool({
+      name: 'set_volume',
+      arguments: { volume: 'zstat', colormap: 'red', cal_min: 2.3 },
+    })
+    expect(json(drawn)).toMatchObject({
+      params: { volume: 'zstat', colormap: 'red', cal_min: 2.3 },
+    })
+    expect(json(drawn)).not.toHaveProperty('params.tab')
     const laid = await client.callTool({
       name: 'set_view',
       arguments: { slice: 'multiplanar', layout: 'row', colorbar: true },

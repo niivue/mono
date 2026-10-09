@@ -46,6 +46,7 @@ export {
   matchRegion,
   regionMentions,
 } from './regions'
+export { COLORMAP_TYPES } from './settings'
 export type {
   LayoutName,
   ShowRenderName,

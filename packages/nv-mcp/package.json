@@ -14,6 +14,10 @@
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server.js"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser.js"
     }
   },
   "files": [

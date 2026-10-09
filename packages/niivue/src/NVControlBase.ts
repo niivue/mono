@@ -117,6 +117,7 @@ import type {
   SyncOpts,
   VectorAnnotation,
   ViewHitTest,
+  VolumeChunkExplode,
   VolumeUpdate,
   WheelZoomAnchor,
 } from '@/NVTypes'
@@ -130,6 +131,7 @@ import { SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
+import { crosshairExplodeOffset } from '@/view/crosshairExplode'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import {
@@ -154,16 +156,20 @@ import type { CanvasTilePoint, SliceTile } from '@/view/NVSliceLayout'
 import {
   cloneSliceTile,
   projectMMToNearestTile,
+  projectMMToRenderTile,
   screenSlicePick,
   validateCustomLayout,
 } from '@/view/NVSliceLayout'
 import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
+import { chunkIndexAtFrac, explodedChunkCornersMM } from '@/volume/ChunkExplode'
 import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import {
   type ChunkPlan,
   CUBIC_MIN_HALO,
+  chunkVolumeGrid,
   dimsDownsample,
+  type Vec3i,
 } from '@/volume/chunking'
 import {
   type ChunkTimingSnapshot,
@@ -3562,6 +3568,187 @@ export default class NiiVue extends EventTarget {
     this._setVolumeAffine(volume, originalAffine)
     this._emitVolumeAffineUpdate(volumeIndex, volume)
     await this.updateVolumeAffineOnly()
+  }
+
+  /**
+   * Tile a loaded volume into a `gridDims` grid of bricks and render it through
+   * the chunked path, whatever its size. This is what makes
+   * {@link setVolumeChunkExplode} possible on an ordinary volume. The halo is
+   * the voxel overlap between bricks; the default of 3 satisfies cubic
+   * interpolation. `deviceLimit` caps each brick's edge in texels and defaults
+   * to 4096, which every WebGL2/WebGPU device this renders on accepts. Pass
+   * `null` to return the volume to a single texture; this also clears any
+   * explode. Reloads the volume's GPU textures, so it resolves once the bricks
+   * are resident.
+   */
+  async setVolumeChunkGrid(
+    volumeIndex: number,
+    gridDims: Vec3i | null,
+    options: { halo?: Vec3i; deviceLimit?: number } = {},
+  ): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    if (gridDims === null) {
+      volume.chunkPlan = undefined
+      volume.chunkExplode = undefined
+    } else {
+      if (!volume.dimsRAS) NVTransforms.calculateRAS(volume)
+      const d = volume.dimsRAS
+      if (!d) throw new Error(`Volume ${volume.name} has no RAS dimensions`)
+      volume.chunkPlan = chunkVolumeGrid(
+        [d[1], d[2], d[3]],
+        gridDims,
+        options.deviceLimit ?? 4096,
+        options.halo ?? [3, 3, 3],
+      )
+    }
+    volume.chunkBrickOpacity = undefined
+    await this.updateGLVolume()
+    await this.whenChunkStreamSettles()
+  }
+
+  /**
+   * Resolves once the bricks the view asked for are resident and drawn: the
+   * renderer admits one brick when the plan is set and streams the rest over
+   * the following frames, and a change that rebuilds the bricks' textures
+   * (turning on `volumeIllumination`, say) streams them again, so a
+   * screenshot taken straight after {@link setVolumeChunkGrid} or such a
+   * change would show a partly-tiled volume. Listens for `chunkStreamIdle`
+   * after kicking a draw; resolves at once when nothing is outstanding, or no
+   * volume is chunked, and gives up quietly after `timeoutMs`.
+   */
+  whenChunkStreamSettles(timeoutMs = 30_000): Promise<void> {
+    const stats = this.chunkStreamStats()
+    if (
+      !stats ||
+      (stats.pending === 0 &&
+        stats.inFlight === 0 &&
+        stats.resident >= stats.total)
+    ) {
+      return Promise.resolve()
+    }
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const done = (): void => {
+        this.removeEventListener('chunkStreamIdle', done)
+        if (timer !== null) clearTimeout(timer)
+        resolve()
+      }
+      this.addEventListener('chunkStreamIdle', done)
+      timer = setTimeout(done, timeoutMs)
+      this.drawScene()
+    })
+  }
+
+  /**
+   * Index into `chunkPlan.chunks` of the background volume's brick holding the
+   * world-mm point, or -1 when the volume is not chunked or the point lies
+   * outside it. The index is stable across explode changes, so it can key a
+   * per-brick setting such as {@link setVolumeBrickOpacity}.
+   */
+  chunkBrickIndexAt(mm: ArrayLike<number>): number {
+    const volume = this.volumes[0]
+    const mm2tex = this.model.mm2tex
+    if (!volume?.chunkPlan || !mm2tex) return -1
+    const tex = vec4.transformMat4(
+      vec4.create(),
+      vec4.fromValues(mm[0], mm[1], mm[2], 1),
+      mm2tex,
+    )
+    return chunkIndexAtFrac(volume.chunkPlan, [tex[0], tex[1], tex[2]])
+  }
+
+  /**
+   * The eight world-mm corners of the background volume's brick holding the
+   * point, where the render draws them (so moved by the explode when one is
+   * on), or null when the volume is not chunked or the point is outside it.
+   * Corner `c` takes the brick's high edge on x when bit 0 of `c` is set, on
+   * y for bit 1 and on z for bit 2, so an edge joins corners whose indices
+   * differ in one bit. Project them with {@link mmToRenderCanvas} to outline
+   * the brick on the render.
+   */
+  chunkBrickCornersAt(
+    mm: ArrayLike<number>,
+  ): Array<[number, number, number]> | null {
+    const volume = this.volumes[0]
+    const index = this.chunkBrickIndexAt(mm)
+    if (index < 0 || !volume?.chunkPlan || !volume.matRAS) return null
+    return explodedChunkCornersMM(
+      volume.chunkPlan,
+      volume.matRAS,
+      volume.chunkExplode,
+      index,
+    )
+  }
+
+  /**
+   * Give each brick of a chunked volume its own opacity, indexed like
+   * `chunkPlan.chunks` (see {@link chunkBrickIndexAt}); entries missing from
+   * a short array count as 1. Each scales what that brick draws, colour and
+   * coverage together, so the bricks behind a dimmed one show through it and
+   * passing 1 for one brick and a small value for the rest keeps that brick
+   * in focus. Pass `null` to restore every brick. The volume
+   * must be chunked (see {@link setVolumeChunkGrid}); the renderer reads the
+   * setting each frame, so this only redraws.
+   */
+  setVolumeBrickOpacity(
+    volumeIndex: number,
+    opacity: ArrayLike<number> | null,
+  ): void {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    if (opacity && !volume.chunkPlan) {
+      throw new Error(
+        `Volume ${volume.name} is not chunked; call setVolumeChunkGrid first`,
+      )
+    }
+    volume.chunkBrickOpacity = opacity ?? undefined
+    this.drawScene()
+  }
+
+  /**
+   * Spread a chunked volume's bricks apart in the 3D render (an "exploded"
+   * view). `scale` is the per-axis factor applied to each brick's offset from
+   * the volume centre; 1 is unexploded and the default when `enabled` is set
+   * without a scale is 1.5. Pass `null` to remove the explode. The volume must
+   * be chunked first (see {@link setVolumeChunkGrid}); the renderer reads the
+   * setting each frame, so this only redraws.
+   */
+  setVolumeChunkExplode(
+    volumeIndex: number,
+    explode: VolumeChunkExplode | null,
+  ): void {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    if (explode && !volume.chunkPlan) {
+      throw new Error(
+        `Volume ${volume.name} is not chunked; call setVolumeChunkGrid first`,
+      )
+    }
+    volume.chunkExplode = explode ?? undefined
+    this.drawScene()
+  }
+
+  /**
+   * Where a world-mm point of the background volume is drawn once the
+   * volume's explode (see {@link setVolumeChunkExplode}) has moved its brick.
+   * Returns the input unchanged when the volume is not exploded. Overlays that
+   * mark anatomy on an exploded render project this, not the raw point.
+   */
+  explodedMM(mm: [number, number, number]): [number, number, number] {
+    const volume = this.model.volumes[0]
+    if (!volume?.chunkPlan || !volume.chunkExplode) return mm
+    const off = crosshairExplodeOffset(volume, mm, this.model.mm2tex)
+    return [mm[0] + off[0], mm[1] + off[1], mm[2] + off[2]]
+  }
+
+  /**
+   * Project a world-mm point onto the 3D render tile in canvas backing-store
+   * pixels (origin top-left, y down), through the MVP the renderer cached on
+   * its last draw. Returns null before the render tile has been drawn or when
+   * the point is behind the camera. Unlike {@link mmToCanvas}, which serves
+   * the 2D slice tiles, this is the projection an overlay needs to annotate the
+   * 3D render.
+   */
+  mmToRenderCanvas(mm: [number, number, number]): [number, number] | null {
+    return projectMMToRenderTile(this.view?.screenSlices ?? [], mm)
   }
 
   private _getVolumeOrThrow(volumeIndex: number): NVImage {

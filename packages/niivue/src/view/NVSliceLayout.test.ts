@@ -11,6 +11,7 @@ import {
   everyTileWindowMM,
   fitSlicesAndGraph,
   projectMMToNearestTile,
+  projectMMToRenderTile,
   type SliceLayoutConfig,
   type SliceTile,
   screenSlicePick,
@@ -716,6 +717,68 @@ describe('projectMMToNearestTile', () => {
     expect(proj).not.toBeNull()
     if (!proj) return
     expect(proj.x).toBeGreaterThan(100)
+  })
+})
+
+describe('projectMMToRenderTile', () => {
+  // A perspective render tile whose camera sits 100 mm down +z looking at the
+  // origin, so a point's screen position depends on its depth (the w divide).
+  function renderTile(ltwh: number[]): SliceTile {
+    const proj = mat4.perspective(mat4.create(), Math.PI / 2, 1, 1, 1000)
+    const view = mat4.lookAt(
+      mat4.create(),
+      vec3.fromValues(0, 0, 100),
+      vec3.fromValues(0, 0, 0),
+      vec3.fromValues(0, 1, 0),
+    )
+    return {
+      axCorSag: NVConstants.SLICE_TYPE.RENDER,
+      leftTopWidthHeight: ltwh,
+      mvpMatrix: mat4.multiply(mat4.create(), proj, view),
+    }
+  }
+
+  test('mapsTheLookAtPointToTheTileCentreAndDividesByW', () => {
+    const tile = renderTile([100, 50, 200, 200])
+    const centre = projectMMToRenderTile([tile], [0, 0, 0])
+    expect(centre).not.toBeNull()
+    if (!centre) return
+    expect(centre[0]).toBeCloseTo(200, 5)
+    expect(centre[1]).toBeCloseTo(150, 5)
+    // +y in mm is up on screen (smaller canvas y); a point at half the camera
+    // distance projects twice as far from the centre as one at full distance.
+    const near = projectMMToRenderTile([tile], [10, 10, 50])
+    const far = projectMMToRenderTile([tile], [10, 10, 0])
+    expect(near).not.toBeNull()
+    expect(far).not.toBeNull()
+    if (!near || !far) return
+    expect(far[1]).toBeLessThan(150)
+    expect(near[0] - 200).toBeCloseTo(2 * (far[0] - 200), 5)
+    expect(150 - near[1]).toBeCloseTo(2 * (150 - far[1]), 5)
+  })
+
+  test('returnsNullWithoutADrawnRenderTileOrBehindTheCamera', () => {
+    expect(projectMMToRenderTile([], [0, 0, 0])).toBeNull()
+    expect(
+      projectMMToRenderTile([orthoAxialTile([0, 0, 100, 100], 0)], [0, 0, 0]),
+    ).toBeNull()
+    const bare: SliceTile = {
+      axCorSag: NVConstants.SLICE_TYPE.RENDER,
+      leftTopWidthHeight: [0, 0, 100, 100],
+    }
+    expect(projectMMToRenderTile([bare], [0, 0, 0])).toBeNull()
+    const tile = renderTile([0, 0, 100, 100])
+    expect(projectMMToRenderTile([tile], [0, 0, 200])).toBeNull()
+  })
+
+  test('skipsSliceTilesToFindTheRenderTile', () => {
+    const slice = orthoAxialTile([0, 0, 100, 100], 0)
+    const tile = renderTile([100, 0, 100, 100])
+    const p = projectMMToRenderTile([slice, tile], [0, 0, 0])
+    expect(p).not.toBeNull()
+    if (!p) return
+    expect(p[0]).toBeCloseTo(150, 5)
+    expect(p[1]).toBeCloseTo(50, 5)
   })
 })
 

@@ -1058,7 +1058,12 @@ export class VolumeRenderer extends NVRenderer {
     const cacheKey = vol.url || vol.name
     const displayKey = chunkedDisplayKey(vol, modulation)
     const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (existing && existing.kind === 'chunked') {
+    // A cached entry built for a different plan object (the caller set a new
+    // `vol.chunkPlan`, as setVolumeChunkGrid does) cannot be reused: its
+    // uploader, manager and brick textures are laid out for the old grid.
+    // Fall through to the eviction below and rebuild. In-place swaps via
+    // swapChunkedVolumePlan keep `existing.plan` in step, so they still hit.
+    if (existing && existing.kind === 'chunked' && existing.plan === plan) {
       existing.volume = vol
       if (existing.displayKey !== displayKey) {
         // Colormap/window/frame changed after load. Resident chunk textures
@@ -3078,6 +3083,7 @@ export class VolumeRenderer extends NVRenderer {
         : null
 
     const explode = entry.volume.chunkExplode
+    const brickOpacity = entry.volume.chunkBrickOpacity
     const order = chunksBackToFront(
       entry.plan,
       rayDir,
@@ -3202,10 +3208,11 @@ export class VolumeRenderer extends NVRenderer {
           cubicSafe: entry.cubicSafe,
         },
         0,
-        // Full strength: the fine cube in front of this one carries the
-        // cross-fade weight. The floor is base-volume data, so it takes the
-        // base's opacity along with it.
-        1,
+        // The fine cube in front of this one carries the cross-fade weight;
+        // the floor only takes the brick's own opacity (chunkBrickOpacity),
+        // so a dimmed brick's backdrop dims with it. The floor is base-volume
+        // data, so it takes the base's opacity along with it.
+        brickOpacity?.[chunkIndex] ?? 1,
         backOpacity,
       )
       pass.setBindGroup(0, this._floorBindGroup, [floorRenderOffset])
@@ -3305,7 +3312,13 @@ export class VolumeRenderer extends NVRenderer {
           cubicSafe: entry.cubicSafe,
         },
         overlayMode ? 1 : 0,
-        fade,
+        // The brick's own opacity (chunkBrickOpacity) rides the fade lane, not
+        // backOpacity: a chunked draw applies backOpacity per sample, where a
+        // ray through solid tissue saturates whatever the value, so dimming
+        // that way barely shows. Scaling the brick's premultiplied result
+        // fades its presence and coverage together, and deeper bricks show
+        // through it.
+        fade * (brickOpacity?.[chunkIndex] ?? 1),
         backOpacity,
       )
 

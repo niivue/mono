@@ -209,16 +209,28 @@ export function markHandlers(host: NiiVueHost): Handlers {
             throw new Error(
               'Adding needs annotation: a NiiVue VectorAnnotation as JSON.',
             )
-          const made = given as unknown as Annotation
+          const made = given as Record<string, unknown>
+          const { id: madeId, sliceType, slicePosition, polygons } = made
           if (
-            typeof made.id !== 'string' ||
-            !Array.isArray(made.polygons) ||
-            typeof made.sliceType !== 'number'
+            typeof madeId !== 'string' ||
+            !Array.isArray(polygons) ||
+            polygons.length === 0 ||
+            typeof sliceType !== 'number' ||
+            typeof slicePosition !== 'number'
           )
             throw new Error(
-              'annotation needs at least id, sliceType, slicePosition, polygons and style.',
+              'annotation needs at least id, sliceType, slicePosition and polygons.',
             )
-          view.addAnnotation(made)
+          view.addAnnotation({
+            ...made,
+            id: madeId,
+            sliceType,
+            slicePosition,
+            label: typeof made.label === 'number' ? made.label : 1,
+            group: typeof made.group === 'string' ? made.group : 'default',
+            style: styleFrom(made.style),
+            polygons: polygons.map(polygonFrom),
+          })
           break
         }
         case 'remove':
@@ -340,5 +352,91 @@ export function markHandlers(host: NiiVueHost): Handlers {
         measurements: kept.map(describeMeasurement),
       }
     },
+  }
+}
+
+/** A point as NiiVue keeps it, from `[x, y]` or `{x, y}`; both are slice fractions. */
+function pointFrom(given: unknown): { x: number; y: number } {
+  const pair = Array.isArray(given)
+    ? given
+    : given && typeof given === 'object'
+      ? [(given as { x?: unknown }).x, (given as { y?: unknown }).y]
+      : []
+  const [x, y] = pair
+  if (
+    typeof x !== 'number' ||
+    typeof y !== 'number' ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y)
+  )
+    throw new Error(
+      'Each polygon point must be [x, y] or {x, y}, in mm on the slice plane.',
+    )
+  return { x, y }
+}
+
+const RED: [number, number, number, number] = [1, 0, 0, 1]
+
+/**
+ * An annotation's style as NiiVue needs it, every field present. NiiVue 1.0
+ * reads fillColor, strokeColor and strokeWidth at draw time with no defaults
+ * of its own, so a missing one would draw nothing; the defaults here are
+ * NiiVue's for a drawn annotation, and a fill given no colour takes the
+ * stroke's at a third of its alpha.
+ */
+function styleFrom(given: unknown): Record<string, unknown> {
+  const style =
+    given && typeof given === 'object' ? (given as Record<string, unknown>) : {}
+  const colour = (
+    key: string,
+  ): [number, number, number, number] | undefined => {
+    const value = style[key]
+    if (value === undefined) return undefined
+    if (
+      !Array.isArray(value) ||
+      value.length !== 4 ||
+      value.some((n) => typeof n !== 'number' || !Number.isFinite(n))
+    )
+      throw new Error(`style.${key} must be [r, g, b, a], each 0 to 1.`)
+    return value as [number, number, number, number]
+  }
+  const strokeColor = colour('strokeColor') ?? RED
+  const fillColor = colour('fillColor') ?? [
+    strokeColor[0],
+    strokeColor[1],
+    strokeColor[2],
+    strokeColor[3] * 0.3,
+  ]
+  const strokeWidth = style.strokeWidth ?? 2
+  if (typeof strokeWidth !== 'number' || !(strokeWidth >= 0))
+    throw new Error('style.strokeWidth must be a number of pixels, 0 or more.')
+  return { ...style, fillColor, strokeColor, strokeWidth }
+}
+
+/**
+ * A polygon as NiiVue keeps it, `{outer, holes}`, from that or from a bare
+ * list of points. NiiVue 1.0 takes what it is given and reads `outer` and
+ * `holes` at draw time, so a point list handed straight through would
+ * break the render and the svg trace.
+ */
+function polygonFrom(given: unknown): {
+  outer: { x: number; y: number }[]
+  holes: { x: number; y: number }[][]
+} {
+  const shaped =
+    given && typeof given === 'object' && !Array.isArray(given)
+      ? (given as { outer?: unknown; holes?: unknown })
+      : undefined
+  const outer = shaped ? shaped.outer : given
+  if (!Array.isArray(outer) || outer.length < 3)
+    throw new Error(
+      'Each polygon needs at least three points: a list of them, or {outer, holes}.',
+    )
+  const holes = shaped?.holes ?? []
+  if (!Array.isArray(holes) || holes.some((h) => !Array.isArray(h)))
+    throw new Error("A polygon's holes must be a list of point lists.")
+  return {
+    outer: outer.map(pointFrom),
+    holes: holes.map((hole: unknown[]) => hole.map(pointFrom)),
   }
 }

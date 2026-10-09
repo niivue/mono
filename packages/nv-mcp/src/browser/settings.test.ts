@@ -341,7 +341,15 @@ describe('set_custom_layout', () => {
       set_custom_layout({
         tiles: [{ slice: 'oblique', position: [0, 0, 1, 1] }],
       }),
-    ).toThrow('Tile 0 needs a slice: one of axial, coronal, sagittal')
+    ).toThrow(
+      'Tile 0 needs a slice: one of axial, coronal, sagittal, multiplanar, render.',
+    )
+    // none hides the slices, so a tile of it would be empty.
+    expect(() =>
+      set_custom_layout({
+        tiles: [{ slice: 'none', position: [0, 0, 1, 1] }],
+      }),
+    ).toThrow('Tile 0 needs a slice')
     expect(() =>
       set_custom_layout({
         tiles: [{ slice: 'axial', position: [0, 0, 2, 1] }],

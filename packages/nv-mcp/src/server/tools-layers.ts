@@ -188,14 +188,17 @@ export const LAYER_SCHEMAS = {
       .record(z.string(), z.unknown())
       .optional()
       .describe(
-        'For a tract: NiiVue tract options (colormap, dither, fiberRadius, fiberLength, ' +
-          'fiberDecimation, fiberGroupColormap and the rest), only what changes.',
+        'For a tract, only what changes: fiberRadius, fiberSides, minLength, decimation, ' +
+          'colormap, colormapNegative, colorBy, calMin, calMax, calMinNeg, calMaxNeg, ' +
+          'fixedColor, groupColors. Any other key is refused.',
       ),
     connectome: z
       .record(z.string(), z.unknown())
       .optional()
       .describe(
-        'For a connectome: NiiVue connectome options, only what changes.',
+        'For a connectome, only what changes: nodeColormap, nodeColormapNegative, ' +
+          'nodeMinColor, nodeMaxColor, nodeScale, edgeColormap, edgeColormapNegative, ' +
+          'edgeMin, edgeMax, edgeScale. Any other key is refused.',
       ),
   },
   remove_mesh: {

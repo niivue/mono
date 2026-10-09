@@ -113,8 +113,18 @@ export function signalHandlers(host: NiiVueHost): Handlers {
       throw new Error("This page's NiiVue does not give its volumes ids.")
     return id
   }
+  // NiiVue 1.0 starts with the graph hidden, so a signal loaded into a
+  // page that never showed it would be invisible and its range null.
+  const graphHidden = () =>
+    'isGraphVisible' in view && view.isGraphVisible === false
   const graph = () => ({
     ...(view.getGraphRange ? { graph: view.getGraphRange() } : {}),
+    ...(graphHidden()
+      ? {
+          graphHidden: true,
+          hint: 'The graph is hidden: set_options with isGraphVisible true shows it.',
+        }
+      : {}),
   })
 
   return {
@@ -148,6 +158,8 @@ export function signalHandlers(host: NiiVueHost): Handlers {
         throw new Error(`The signal at ${url} could not be loaded: ${why}`)
       }
       if (replace) for (let i = prior - 1; i >= 0; i--) view.removeSignal?.(i)
+      // A signal is loaded to be seen, so a hidden graph is shown.
+      if (graphHidden()) view.isGraphVisible = true
       view.drawScene()
       const index = view.signals.length - 1
       return {

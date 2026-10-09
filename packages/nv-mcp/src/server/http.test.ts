@@ -26,6 +26,7 @@ const CORE_TOOLS = [
   'set_clip_plane',
   'set_camera',
   'set_volume',
+  'set_labels',
   'set_view',
   'screenshot',
   'nudge_crosshair',

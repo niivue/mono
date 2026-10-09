@@ -74,6 +74,8 @@ export interface BindOptions {
   data?: DataPalette
   /** Hears an action or a write that failed after the person used a control. */
   onError?(error: Error, event: ControlEvent): void
+  /** How long an agent's write may take before its call fails, in ms (30000). */
+  writeWait?: number
 }
 
 /**
@@ -851,8 +853,23 @@ export function bindControls(
     }
   }
 
+  /**
+   * The control whose agent write NiiVue is still finishing. Until it
+   * reports, other changes to the controls are turned away, so none lands
+   * between the write and its control (a taken id or cell, a remove, a
+   * rebind) to fail the call after what it drives has changed.
+   */
+  let busy: string | undefined
+  const idle = () => {
+    if (busy !== undefined)
+      throw new Error(
+        `NiiVue is still setting what "${busy}" drives. Call again once that call reports.`,
+      )
+  }
   const sync = () => {
     for (const [id, entry] of bound) {
+      // An agent write still in flight decides that control when it reports.
+      if (id === busy) continue
       const now = entry.target.read?.()
       if (now === undefined || same(now, entry.last)) continue
       entry.last = now
@@ -897,31 +914,50 @@ export function bindControls(
   }
 
   /**
-   * The control whose agent write NiiVue is still finishing. Until it
-   * reports, other changes to the controls are turned away, so none lands
-   * between the write and its control (a taken id or cell, a remove, a
-   * rebind) to fail the call after what it drives has changed.
+   * `then` once `done` resolves, holding the other changes off until it
+   * settles. NiiVue sets what a control drives before its upload can fail,
+   * so on a failure the controls are read again to show what it holds.
    */
-  let busy: string | undefined
-  const idle = () => {
-    if (busy !== undefined)
-      throw new Error(
-        `NiiVue is still setting what "${busy}" drives. Call again once that call reports.`,
-      )
-  }
-  /** `then` once `done` resolves, holding the other changes off until it settles. */
   const waited = (
     id: string,
     done: Promise<unknown>,
     then: () => ControlState,
   ) => {
     busy = id
-    return done
-      .finally(() => {
+    const wait = options.writeWait ?? 30_000
+    let timer: ReturnType<typeof setTimeout> | undefined
+    // A write that never settles (a stalled GPU) must not hold the controls for good.
+    const late = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `NiiVue did not finish setting what "${id}" drives within ${wait / 1000} s. list_controls shows where it stands.`,
+            ),
+          ),
+        wait,
+      )
+    })
+    return Promise.race([done, late]).then(
+      () => {
+        clearTimeout(timer)
         busy = undefined
-      })
-      .then(then)
+        return then()
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        busy = undefined
+        sync()
+        throw error
+      },
+    )
   }
+  /** The target's value as the control shows it, else `value`: the person or a page may have set it during the wait. */
+  const held = (
+    control: ControlSpec,
+    target: Target,
+    value: ControlValue | undefined,
+  ) => shown(control, target.read?.()) ?? value
 
   return {
     add(spec) {
@@ -939,6 +975,11 @@ export function bindControls(
       const given = spec.value
       const writing = given !== undefined && given !== null
       const place = () => {
+        if (writing) {
+          // The grid may have changed during the wait, and so may the target.
+          settled(filled, surface.list())
+          filled.value = held(filled, target, filled.value)
+        }
         const control = surface.add(filled)
         remember(control.id, bind, target)
         if (writing) view.drawScene()
@@ -987,6 +1028,8 @@ export function bindControls(
         if (rebinding && target && patch.value === undefined) {
           const now = shown(after, target.read?.())
           if (now !== undefined) next.value = now
+        } else if (target && patch.value !== undefined) {
+          next.value = held(after, target, next.value)
         }
         const control = surface.update(id, next)
         if (rebinding) {
@@ -1000,8 +1043,8 @@ export function bindControls(
         }
         return control
       }
-      // As in add: a write NiiVue finishes later is waited for, and its
-      // failure leaves the control as it was.
+      // As in add: a write NiiVue finishes later is waited for. Its failure
+      // leaves the change unmade, the value showing what the target holds.
       const done =
         target?.write && patch.value !== undefined
           ? target.write(after.value)

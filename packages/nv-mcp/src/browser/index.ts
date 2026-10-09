@@ -41,6 +41,7 @@ export type {
   ControlEvent,
   ControlListener,
   ControlSurface,
+  HostedControls,
   MemoryControls,
 } from './controls'
 export { coerceValue, controlHandlers, memoryControls } from './controls'

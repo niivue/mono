@@ -2590,6 +2590,8 @@ export default class NiiVue extends EventTarget {
     commitDirtyVolumes(this.model.getVolumes())
     const token = this._beginUpdate()
     try {
+      // A modulator committed just above must not bake its old weights.
+      this._computeModulationData()
       if (this.view) await this.view.updateBindGroups()
     } finally {
       if (this._endUpdate(token)) await this._runPendingUpdate()

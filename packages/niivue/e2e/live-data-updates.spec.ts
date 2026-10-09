@@ -1049,3 +1049,119 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.restored).toBe(r.before)
   })
 }
+
+// Shared page-side setup for the tests below: a NiiVue on an off-screen
+// canvas (or a skip reason) plus pixel counters that read whichever canvas the
+// controller currently owns (a view recreation swaps in a fresh one).
+const setupPage = (backend: 'webgl2' | 'webgpu') => `
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        let adapter = null
+        try {
+          adapter = await navigator.gpu.requestAdapter()
+        } catch (e) {
+          return { skip: 'requestAdapter threw: ' + e }
+        }
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+      const nextFrame = () => new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r)))
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      document.body.appendChild(canvas)
+      const nv = new NiiVue({
+        backend: '${backend}',
+        backgroundColor: [0, 0, 0, 1],
+        sliceType: SLICE_TYPE.AXIAL,
+        crosshairWidth: 0,
+        isOrientCubeVisible: false,
+        isOrientationTextVisible: false,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(canvas)
+      if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
+        return { skip: 'WebGPU init fell back to ' + nv.backend }
+      }
+      const readback = document.createElement('canvas')
+      readback.width = canvas.width
+      readback.height = canvas.height
+      const ctx = readback.getContext('2d', { willReadFrequently: true })
+      if (!ctx) return { skip: 'no 2D readback context' }
+      const count = async () => {
+        await nextFrame()
+        if (nv.view) nv.view.render()
+        ctx.clearRect(0, 0, readback.width, readback.height)
+        ctx.drawImage(nv.canvas, 0, 0)
+        const px = ctx.getImageData(0, 0, readback.width, readback.height).data
+        let lit = 0
+        let red = 0
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] > 30 || px[i + 1] > 30 || px[i + 2] > 30) lit++
+          if (px[i] - px[i + 1] > 40 && px[i] - px[i + 2] > 40) red++
+        }
+        return { lit, red }
+      }
+`
+
+const runInPage = async (
+  page: import('@playwright/test').Page,
+  body: string,
+): Promise<Record<string, unknown> | null> => {
+  const result = await page.evaluate(`(async () => {
+     try {
+      ${body}
+     } catch (e) {
+      const m = String(e && e.message ? e.message : e)
+      if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+        return { skip: 'GPU unavailable: ' + m }
+      }
+      throw e
+     }
+    })()`)
+  // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+  const r = result as any
+  if (r.skip) {
+    test.skip(true, r.skip)
+    return null
+  }
+  return r
+}
+
+// View recreation rebuilds every texture from the model. A modulator edited in
+// place and flagged isDirty gets its data-version bump there, so the weights
+// it feeds must be recomputed too, or the new view bakes the old ones.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`view recreation recomputes modulation from an isDirty modulator (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+    const r = await runInPage(
+      page,
+      `${setupPage(backend)}
+      await nv.loadVolumes([
+        { url: '${VOLUME}' },
+        { url: '${OVERLAY}', colormap: 'red', calMin: 0, calMax: 1 },
+      ])
+      const bg = nv.volumes[0]
+      const ov = nv.volumes[1]
+      // The red overlay is scaled by the background's windowed intensity.
+      await nv.setModulationImage(ov.id, bg.id, 0)
+      const modulated = await count()
+      bg.img.fill(0)
+      bg.isDirty = true
+      await nv.reinitializeView({})
+      const recreated = await count()
+      return { modulated, recreated, flagCleared: bg.isDirty === false }
+      `,
+    )
+    if (!r) return
+    // biome-ignore lint/suspicious/noExplicitAny: page result
+    const res = r as any
+    expect(res.modulated.red).toBeGreaterThan(1000)
+    expect(res.flagCleared).toBe(true)
+    // A zero modulator weighs the overlay down to nothing.
+    expect(res.recreated.red).toBeLessThan(res.modulated.red * 0.05)
+  })
+}

@@ -955,10 +955,13 @@ the full `updateGLVolume()` rebuild.
 - **`isDirty` reports an in-place edit to the ordinary path.** A caller that
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
-  (`_updateGL`, `updateVolumeAffineOnly`, `_rebuildViewResources`), bumps each
-  flagged volume's `_dataVersion` and resets the flag. The flag is cleared at
-  that bump, not after the upload, so an edit flagged during an in-flight
-  upload gets its own version and the queued follow-up uploads it. A scoped
+  (`_updateGL`, `updateVolumeAffineOnly`, `_rebuildViewResources`), bumps
+  each flagged volume's `_dataVersion` and resets the flag. Every path
+  that then rebuilds volume textures recomputes the modulation data and
+  weights first (a view recreation included), so a dirty modulator never
+  bakes its old weights. The flag is cleared at that bump, not after the
+  upload, so an edit flagged during an in-flight upload gets its own version
+  and the queued follow-up uploads it. A scoped
   `_updateGL` adds the dirty volumes to its scope; `updateVolumeAffineOnly`
   skips its overlay-only fast path when any volume was dirty. `isDirty` means
   only "voxel values changed": internal code must not set it for display,

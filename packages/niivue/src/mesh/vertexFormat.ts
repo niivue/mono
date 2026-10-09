@@ -2,7 +2,7 @@
 // cylinders, the orientation cube) is drawn with on both backends: position
 // float32x3, normal float32x3, color unorm8x4.
 
-import * as NVMeshUtils from '@/mesh/NVMesh'
+import { meshNormals } from '@/mesh/normals'
 import type { NVMesh } from '@/NVTypes'
 
 /** position(12) + normal(12) + color(4) */
@@ -18,19 +18,16 @@ export function packColor(rgba: number[]): number {
 }
 
 /**
- * Interleave a mesh's positions, generated normals and packed colors into the
- * vertex layout both backends draw (BYTES_PER_VERTEX bytes per vertex). Writes
- * into `target` when it is exactly the right size (a reused staging buffer),
- * else allocates.
+ * Interleave a mesh's positions, normals (cached per geometry by `meshNormals`)
+ * and packed colors into the vertex layout both backends draw (BYTES_PER_VERTEX
+ * bytes per vertex). Writes into `target` when it is exactly the right size (a
+ * reused staging buffer), else allocates.
  */
 export function packMeshVertices(
   meshData: NVMesh,
   target?: ArrayBuffer,
 ): ArrayBuffer {
-  const normals = NVMeshUtils.generateNormals(
-    meshData.positions,
-    meshData.indices,
-  )
+  const normals = meshNormals(meshData)
   const numVerts = meshData.positions.length / 3
   const bytes = numVerts * BYTES_PER_VERTEX
   const vertexData =

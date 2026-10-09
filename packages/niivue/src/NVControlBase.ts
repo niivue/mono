@@ -3830,6 +3830,11 @@ export default class NiiVue extends EventTarget {
    * vertex count the mesh already has; it is copied into `mesh.positions`.
    * Omit `positions` after editing `mesh.positions` in place yourself.
    *
+   * Vertex normals are cached per mesh and recomputed only when `positions`
+   * or `indices` is replaced with a new array or this method is called. If
+   * you edit `mesh.positions` in place, call this method (or assign a new
+   * array); otherwise later redraws keep the old normals.
+   *
    * Scene extents are NOT recomputed, so the camera framing stays put while
    * vertices move. Only `kind: 'mesh'` is supported (tract and connectome
    * geometry is regenerated from their source data). No `meshUpdated` event is

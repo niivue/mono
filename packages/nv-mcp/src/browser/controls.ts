@@ -3,7 +3,8 @@
  * behind a `ControlSurface`, which these handlers add to, change, list
  * and clear; a page with no surface declines in words. `memoryControls`
  * is a surface that only remembers: what a page without a widget layer
- * uses, and what the tests drive.
+ * uses, and what the tests drive. `bindControls` (in `./bindings`)
+ * makes a control drive what its `bind` names.
  */
 
 import {
@@ -77,7 +78,7 @@ export interface ControlSurface {
 }
 
 /** The kinds whose value is the kind of thing given. */
-const VALUE_KINDS: Record<
+export const VALUE_KINDS: Record<
   ControlKind,
   'boolean' | 'number' | 'string' | 'color' | 'none'
 > = {
@@ -341,7 +342,7 @@ export function memoryControls(
  * A control with a patch applied: a new value coerced to it, or the value
  * it holds coerced again when its options or range changed under it.
  */
-function patched(was: ControlState, patch: ControlPatch): ControlState {
+export function patched(was: ControlState, patch: ControlPatch): ControlState {
   const { value, ...rest } = patch
   const next: ControlState = { ...was, ...rest }
   if (next.bind === '') delete next.bind
@@ -372,7 +373,7 @@ function inGrid(c: ControlSpec): boolean {
  * cell in the grid, whose column defaults to 0 and whose row to the one
  * under the last of `others` in that column. A dialog takes no cell.
  */
-function settled<T extends ControlSpec>(
+export function settled<T extends ControlSpec>(
   control: T,
   others: readonly ControlSpec[],
 ): T {

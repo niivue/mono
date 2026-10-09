@@ -719,3 +719,129 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.errors).toEqual([])
   })
 }
+
+// Multi-instance mode (`instances`) caches each volume's baked RGBA texture
+// by url/name. The entry used to be checked only against the voxel and
+// modulator data versions, so a colormap change, a re-registered colormap
+// name or a new window kept drawing the old texture.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`multi-instance volume textures follow display changes (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+
+    const result = await page.evaluate(`(async () => {
+     try {
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        let adapter = null
+        try {
+          adapter = await navigator.gpu.requestAdapter()
+        } catch (e) {
+          return { skip: 'requestAdapter threw: ' + e }
+        }
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const { default: NiiVue } = await import('/src/index.ts')
+      const nextFrame = () => new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r)))
+
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      document.body.appendChild(canvas)
+      const nv = new NiiVue({
+        backend: '${backend}',
+        backgroundColor: [0, 0, 0, 1],
+        instances: [{ id: 'only', bounds: [[0, 0], [1, 1]] }],
+        isOrientCubeVisible: false,
+        isOrientationTextVisible: false,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(canvas)
+      if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
+        return { skip: 'WebGPU init fell back to ' + nv.backend }
+      }
+
+      const readback = document.createElement('canvas')
+      readback.width = canvas.width
+      readback.height = canvas.height
+      const ctx = readback.getContext('2d', { willReadFrequently: true })
+      if (!ctx) return { skip: 'no 2D readback context' }
+      const count = async () => {
+        await nextFrame()
+        if (nv.view) nv.view.render()
+        ctx.clearRect(0, 0, readback.width, readback.height)
+        ctx.drawImage(canvas, 0, 0)
+        const px = ctx.getImageData(0, 0, readback.width, readback.height).data
+        let lit = 0
+        let red = 0
+        let green = 0
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] > 30 || px[i + 1] > 30 || px[i + 2] > 30) lit++
+          if (px[i] - px[i + 1] > 40 && px[i] - px[i + 2] > 40) red++
+          if (px[i + 1] - px[i] > 40 && px[i + 1] - px[i + 2] > 40) green++
+        }
+        return { lit, red, green }
+      }
+
+      // Transparent at the low end, so the 3D render is not an opaque box.
+      nv.addColormap('instSwap', {
+        R: [0, 255],
+        G: [0, 0],
+        B: [0, 0],
+        A: [0, 255],
+      })
+      await nv.loadVolumes([{ url: '${VOLUME}', colormap: 'red' }])
+      // Tiles are built from instances on resize / setInstances.
+      nv.setInstances([{ id: 'only', bounds: [[0, 0], [1, 1]] }])
+      const vol = nv.volumes[0]
+      const red = await count()
+      // A plain display change.
+      await nv.setVolume(0, { colormap: 'green' })
+      const green = await count()
+      // A window that leaves every voxel below calMin.
+      const { calMin, calMax } = vol
+      await nv.setVolume(0, { calMin: 1e9, calMax: 2e9 })
+      const windowedOut = await count()
+      // A re-registered colormap name, through an ordinary update.
+      await nv.setVolume(0, { colormap: 'instSwap', calMin, calMax })
+      const swapRed = await count()
+      nv.addColormap('instSwap', {
+        R: [0, 0],
+        G: [0, 255],
+        B: [0, 0],
+        A: [0, 255],
+      })
+      await nv.updateGLVolume()
+      const swapGreen = await count()
+      // An in-place voxel edit.
+      await nv.updateVolumeData(0, new Array(vol.img.length).fill(0))
+      const zeroed = await count()
+      return { red, green, windowedOut, swapRed, swapGreen, zeroed }
+     } catch (e) {
+      const m = String(e && e.message ? e.message : e)
+      if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+        return { skip: 'GPU unavailable: ' + m }
+      }
+      throw e
+     }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+
+    expect(r.red.red).toBeGreaterThan(1000)
+    expect(r.green.green).toBeGreaterThan(1000)
+    expect(r.green.red).toBeLessThan(r.red.red * 0.05)
+    expect(r.windowedOut.lit).toBeLessThan(r.red.lit * 0.05)
+    expect(r.swapRed.red).toBeGreaterThan(1000)
+    expect(r.swapGreen.green).toBeGreaterThan(1000)
+    expect(r.swapGreen.red).toBeLessThan(r.swapRed.red * 0.05)
+    expect(r.zeroed.lit).toBeLessThan(r.red.lit * 0.05)
+  })
+}

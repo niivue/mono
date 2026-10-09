@@ -6,6 +6,8 @@
 
 import { colormapKey } from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
+import { rgbaTextureKey } from '@/view/NVOrient'
+import { isRgbaDatatype } from '@/view/NVRenderVolumeData'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import type { ModulationTextureParams } from '@/volume/modulation'
 
@@ -67,6 +69,34 @@ export function chunkedDisplayKey(
     // change does. `key` already covers the modulator's identity, window,
     // frame and exponent; `mode` covers RGB vs alpha.
     modulation ? `${modulation.key}#${modulation.mode}` : '',
+  ].join('|')
+}
+
+/**
+ * Key over everything a whole-volume texture baked by the orient pass (or, for
+ * RGB/RGBA data, by prepareRGBAData) depends on. The multi-instance per-volume
+ * `_texCache` entries of both renderers store it and rebuild when it changes,
+ * so an edited voxel or modulator (`_dataVersion`, which the modulation key
+ * carries too), a new window or frame, a re-registered colormap name, a new
+ * label LUT or outline width, or a changed modulation mode all show. Scalar
+ * volumes use {@link chunkedDisplayKey} plus the label outline width (the
+ * chunked path never outlines, so that key omits it); RGB/RGBA volumes use
+ * rgbaTextureKey, since they bypass the colormap.
+ */
+export function wholeVolumeTextureKey(
+  nvimage: NVImage,
+  modulation: ModulationTextureParams | null = null,
+): string {
+  if (isRgbaDatatype(nvimage.hdr.datatypeCode)) {
+    return `rgba|${rgbaTextureKey(nvimage)}`
+  }
+  const outline = nvimage.colormapLabel
+    ? Math.max(0, nvimage.atlasOutline ?? 0)
+    : 0
+  return [
+    nvimage._dataVersion ?? 0,
+    outline,
+    chunkedDisplayKey(nvimage, modulation),
   ].join('|')
 }
 

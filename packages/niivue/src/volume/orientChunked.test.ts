@@ -13,6 +13,7 @@ import {
   extractChunkBytes,
   extractChunkBytesReoriented,
   isRGBAChunkDatatype,
+  wholeVolumeTextureKey,
 } from './orientChunked'
 
 // Build a row-major source buffer where each voxel's value is a deterministic
@@ -555,5 +556,113 @@ describe('coarseFloorKey', () => {
     expect(coarseFloorKey(makeVol({ colormap: 'floorKeyCmap' }))).not.toBe(
       before,
     )
+  })
+})
+
+describe('wholeVolumeTextureKey', () => {
+  // A multi-instance _texCache entry is reused by url/name, so this key is all
+  // that tells it a baked texture went stale.
+  function makeVol(overrides: Record<string, unknown> = {}): NVImage {
+    return {
+      colormap: 'gray',
+      colormapNegative: '',
+      isColormapInverted: false,
+      colormapLabel: null,
+      calMin: 0,
+      calMax: 100,
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+      colormapType: 0,
+      frame4D: 0,
+      hdr: { datatypeCode: 16, scl_slope: 1, scl_inter: 0 },
+      ...overrides,
+    } as unknown as NVImage
+  }
+  const mod = {
+    weight: new Float32Array(1),
+    dims: [1, 1, 1] as [number, number, number],
+    mtx: new Float32Array(16),
+    mode: 1,
+    key: 'mod-a',
+  }
+
+  test('identical state produces an identical key', () => {
+    expect(wholeVolumeTextureKey(makeVol(), mod)).toBe(
+      wholeVolumeTextureKey(makeVol(), mod),
+    )
+  })
+
+  test.each([
+    ['_dataVersion', { _dataVersion: 1 }],
+    ['colormap', { colormap: 'hot' }],
+    ['colormapNegative', { colormapNegative: 'winter' }],
+    ['isColormapInverted', { isColormapInverted: true }],
+    ['calMin', { calMin: 5 }],
+    ['calMax', { calMax: 50 }],
+    ['calMinNeg', { calMinNeg: -50 }],
+    ['colormapType', { colormapType: 1 }],
+    ['frame4D', { frame4D: 1 }],
+  ])('a changed %s changes the key', (_field, overrides) => {
+    expect(wholeVolumeTextureKey(makeVol(overrides))).not.toBe(
+      wholeVolumeTextureKey(makeVol()),
+    )
+  })
+
+  test('the modulator, its data and its mode are part of the key', () => {
+    const plain = wholeVolumeTextureKey(makeVol())
+    const modulated = wholeVolumeTextureKey(makeVol(), mod)
+    expect(modulated).not.toBe(plain)
+    // The modulation key carries the modulator's _dataVersion.
+    expect(
+      wholeVolumeTextureKey(makeVol(), { ...mod, key: 'mod-a-v2' }),
+    ).not.toBe(modulated)
+    expect(wholeVolumeTextureKey(makeVol(), { ...mod, mode: 2 })).not.toBe(
+      modulated,
+    )
+  })
+
+  test('re-registering the colormap changes the key', () => {
+    const before = wholeVolumeTextureKey(makeVol({ colormap: 'wholeKeyCmap' }))
+    addColormap('wholeKeyCmap', { R: [0, 255], G: [0, 0], B: [0, 0] })
+    expect(
+      wholeVolumeTextureKey(makeVol({ colormap: 'wholeKeyCmap' })),
+    ).not.toBe(before)
+  })
+
+  test('a label volume keys its LUT and outline width', () => {
+    const label = { lut: Uint8Array.from([1, 2, 3, 4]), min: 0 }
+    const base = wholeVolumeTextureKey(makeVol({ colormapLabel: label }))
+    expect(
+      wholeVolumeTextureKey(
+        makeVol({ colormapLabel: { ...label, lut: label.lut } }),
+      ),
+    ).not.toBe(base)
+    expect(
+      wholeVolumeTextureKey(makeVol({ colormapLabel: label, atlasOutline: 1 })),
+    ).not.toBe(base)
+    // A scalar volume never outlines, so the width is not part of its key.
+    expect(wholeVolumeTextureKey(makeVol({ atlasOutline: 1 }))).toBe(
+      wholeVolumeTextureKey(makeVol()),
+    )
+  })
+
+  test('an RGB/RGBA volume keys its voxels, not its colormap', () => {
+    const img = new Uint8Array(4)
+    const rgba = (overrides: Record<string, unknown> = {}) =>
+      makeVol({
+        hdr: { datatypeCode: 2304, scl_slope: 1, scl_inter: 0 },
+        img,
+        dims: [3, 1, 1, 1],
+        dimsRAS: [3, 1, 1, 1],
+        img2RASstart: [0, 0, 0],
+        img2RASstep: [1, 1, 1],
+        ...overrides,
+      })
+    const base = wholeVolumeTextureKey(rgba())
+    expect(wholeVolumeTextureKey(rgba({ colormap: 'hot' }))).toBe(base)
+    expect(wholeVolumeTextureKey(rgba({ _dataVersion: 1 }))).not.toBe(base)
+    expect(
+      wholeVolumeTextureKey(rgba({ _modulationData: new Float32Array(1) })),
+    ).not.toBe(base)
   })
 })

@@ -913,10 +913,14 @@ the full `updateGLVolume()` rebuild.
   on. Volumes modulated by an edited volume are included, transitively.
   Multi-instance mode (`instances`) still visits every volume (cache hits are
   cheap). The orient caches
-  (`prepareOverlayTextureCache` / `prepareOrientTextureCache`) and the
-  per-volume `_texCache` single entries record `dataVersion`: a mismatch
-  re-uploads the source texture in place (orient caches) or rebuilds the entry
-  (`_texCache`). RGB/RGBA volumes have no orient pass; the renderers keep their
+  (`prepareOverlayTextureCache` / `prepareOrientTextureCache`) record
+  `dataVersion`, and a mismatch re-uploads the source texture in place. The
+  per-volume `_texCache` single entries (multi-instance) are reused by
+  url/name, so they store `wholeVolumeTextureKey` (`volume/orientChunked.ts`:
+  `_dataVersion`, `chunkedDisplayKey` with the modulation, the label outline
+  width; `rgbaTextureKey` for RGB/RGBA), computed before the build's awaits,
+  and rebuild on any mismatch: an edit, a window/frame/colormap change, a
+  re-registered colormap name or a modulator change. RGB/RGBA volumes have no orient pass; the renderers keep their
   texture in `volumeRgbaCache` / `overlayRgbaCache` (`prepareRGBATextureCache`
   in `gl/orientOverlay.ts` and `wgpu/orient.ts`), which rewrites it in place
   (`texSubImage3D` / `queue.writeTexture`) while the RGBA dims match. The
@@ -960,8 +964,8 @@ the full `updateGLVolume()` rebuild.
   `_texCache`, modulation weight key, extension `imgRAS`, legend centroids,
   graph cache). The chunked GPU caches (`chunkPlan`) do not compare it, so
   in-place edits of chunk-streamed volumes are unsupported on either path.
-- **Colormap re-registration:** the orient caches, `chunkedDisplayKey` and
-  `coarseFloorKey` key colormaps by `NVCmaps.colormapKey(name)` (name plus how
+- **Colormap re-registration:** the orient caches, `chunkedDisplayKey`,
+  `wholeVolumeTextureKey` and `coarseFloorKey` key colormaps by `NVCmaps.colormapKey(name)` (name plus how
   many times `addColormap` registered it), so re-registering a name rebuilds
   the cached LUT textures on the next update. Mesh layer, tract and
   connectome colors are baked into `m.colors` only when those change

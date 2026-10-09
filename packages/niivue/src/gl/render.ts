@@ -73,6 +73,7 @@ import {
   chunkOverlayMatrix,
   coarseFloorKey,
   extractChunkBytes,
+  wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
 import { blendOverlayData } from '@/volume/overlayBlend'
 import * as depthPickShader from './depthPickShader'
@@ -212,13 +213,12 @@ interface SingleTexEntry {
   dims: Vec3f
   /** Categorical volume: never smooth its baked label colors (see _cubicVolumeSafe). */
   isLabel: boolean
-  /** `vol._dataVersion` this entry was built from; a mismatch rebuilds it. */
-  dataVersion: number
   /**
-   * Modulation key the entry's texture was baked with ('' = none). It carries
-   * the modulator's data version, so editing a modulator rebuilds the entry.
+   * wholeVolumeTextureKey the texture was baked with: voxels, window, frame,
+   * colormaps (with their addColormap revision), label LUT and modulation. A
+   * mismatch rebuilds the entry.
    */
-  modKey: string
+  textureKey: string
 }
 
 /** Chunked (tiled) volume: one or more axes exceed max3D. */
@@ -785,19 +785,16 @@ export class VolumeRenderer extends NVRenderer {
       // compiler checks.
       const prior = cacheKey ? this._texCache.get(cacheKey) : undefined
       let entry = prior?.kind === 'single' ? prior : undefined
-      // Voxels (or the modulator's voxels) edited in place: rebuild the entry.
-      if (
-        entry &&
-        (entry.dataVersion !== (vol._dataVersion ?? 0) ||
-          entry.modKey !== (modParams?.key ?? ''))
-      ) {
+      // Anything the texture bakes in changed (voxels, window, frame,
+      // colormap, label LUT, modulation): rebuild the entry.
+      // Computed before the awaits below: an edit landing during them must
+      // leave this entry stale (rebuilt next time), not marked current.
+      const textureKey = wholeVolumeTextureKey(vol, modParams)
+      if (entry && entry.textureKey !== textureKey) {
         this._evictTexEntry(gl, cacheKey, entry)
         entry = undefined
       }
       if (!entry) {
-        // Captured before the awaits below: an updateVolumeData during them
-        // must leave this entry stale (rebuilt next time), not marked current.
-        const dataVersion = vol._dataVersion ?? 0
         const volumeTexture = await orientOverlay.overlay2Texture(
           gl,
           vol,
@@ -826,8 +823,7 @@ export class VolumeRenderer extends NVRenderer {
           gradDims,
           dims: [rasDims[0], rasDims[1], rasDims[2]],
           isLabel: !!vol.colormapLabel,
-          dataVersion,
-          modKey: modParams?.key ?? '',
+          textureKey,
         }
         if (cacheKey) this._texCache.set(cacheKey, entry)
       }

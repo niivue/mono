@@ -47,6 +47,7 @@ import {
 } from './params'
 import { pickIndex } from './pick'
 import { settingHandlers } from './settings'
+import { signalHandlers } from './signals'
 import type {
   AffineTransform,
   AtlasLike,
@@ -291,6 +292,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   return {
     ...settingHandlers(host),
     ...meshHandlers(host),
+    ...signalHandlers(host),
     ...markHandlers(host),
 
     async load_volume(params) {
@@ -1097,6 +1099,7 @@ export const CLIP_PLANES = 6
 function counts(view: View): Record<string, number> {
   const out: Record<string, number> = {}
   if (view.meshes) out.meshes = view.meshes.length
+  if (view.signals) out.signals = view.signals.length
   if (view.annotations) out.annotations = view.annotations.length
   if (view.getMeasurements) out.measurements = view.getMeasurements().length
   return out

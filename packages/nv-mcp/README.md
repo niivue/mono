@@ -184,6 +184,16 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `set_mesh_layer` | `mesh?`, `layer?`, the layer fields above, `frame?` | Changes how a layer is drawn, or the frame of a 4D layer |
 | `remove_mesh_layer` | `mesh?`, `layer?` | Takes a layer off a mesh |
 
+### Signals and the graph
+
+| Tool | Input | What it does |
+|---|---|---|
+| `load_signal` | `url`, `name?`, `replace?`, `as_signal?`, `display?`, `attach_to?`, `annotations?` | Loads a physiological trace or a spectroscopy voxel for the graph, drawn as `display` says (`mode`, `ppm_range`, `ppm_ref`, `use_hz`, `apodize_hz`, `phase0`, `phase1_ms`, `columns`, `average`, `legend`), attached to a volume, with notes on the graph |
+| `list_signals` | | The signals shown and the graph's range |
+| `set_signal` | `signal?`, `display?`, `attach_to?`, `annotations?` | Changes how a signal is drawn, what it is attached to, or its notes |
+| `remove_signal` | `signal?`, `all?` | Unloads one signal, or every signal |
+| `set_graph` | `cursor?`, `step?`, `zoom?`, `pan?`, `range?`, `reset?` | Moves the graph cursor to a fraction or steps it, zooms and pans the graph, windows its range or clears the window, or resets the view |
+
 ### The drawing, annotations and measurements
 
 | Tool | Input | What it does |

@@ -21,6 +21,11 @@ export const MESH_ARG = z
   .union([z.number().int().min(0), z.string().min(1)])
   .describe('Which mesh: its index as list_meshes lists them, or its name.')
 
+/** Which signal a tool means: its index as list_signals lists them, or its name. */
+export const SIGNAL_ARG = z
+  .union([z.number().int().min(0), z.string().min(1)])
+  .describe('Which signal: its index as list_signals lists them, or its name.')
+
 /** A point, three numbers. */
 export function triple(description: string) {
   return z.array(z.number()).length(3).describe(description)

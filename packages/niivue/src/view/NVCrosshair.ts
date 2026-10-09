@@ -1,13 +1,13 @@
 import { vec3 } from 'gl-matrix'
 import * as NVMeshUtils from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
+import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 
 const CYLINDER_SIDES = 20
 const CYLINDER_ENDCAPS = true
 export const VERTS_PER_CYLINDER =
   (CYLINDER_SIDES + 1) * 2 + 2 + (CYLINDER_SIDES + 1) * 2
-export const BYTES_PER_VERTEX = 28 // position(12) + normal(12) + color(4)
 
 // Pre-computed index buffer (same topology for all cylinders)
 let cachedIndices: Uint32Array | null = null

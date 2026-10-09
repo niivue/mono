@@ -1,6 +1,5 @@
+import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
 import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
-import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
-import { packMeshVertices } from '@/view/NVMeshView'
 import meshShaderWGSL from './mesh.wgsl?raw'
 
 export const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment

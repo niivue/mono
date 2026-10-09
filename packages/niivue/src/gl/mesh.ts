@@ -1,7 +1,6 @@
 import { log } from '@/logger'
+import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
-import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
-import { packMeshVertices } from '@/view/NVMeshView'
 import {
   meshDepthPickFragmentShader,
   meshDepthPickVertexShader,

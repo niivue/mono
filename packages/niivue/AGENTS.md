@@ -896,7 +896,7 @@ the full `updateGLVolume()` rebuild.
 - **`updateMeshPositions(meshIndex, positions?)`** (sync): copies into the
   existing `mesh.positions` (same vertex count, `kind === 'mesh'` only), bumps
   `mesh._positionsVersion`, then `view.updateMeshVertices(mesh)` repacks the
-  interleaved vertices (`packMeshVertices` in `view/NVMeshView.ts`, normals
+  interleaved vertices (`packMeshVertices` in `mesh/vertexFormat.ts`, normals
   regenerated) and writes them into the existing buffer (`bufferSubData` /
   `queue.writeBuffer`; WebGPU mesh vertex buffers carry `COPY_DST` for this).
   If the mesh has no GPU buffer yet, or the byte size no longer matches, it
@@ -999,7 +999,7 @@ CPU-composited scalar overlays on meshes. `perVertexColors` (nullable `Uint32Arr
 
 ## Mesh shaders
 
-Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong, flat, matte, toon, outline, rim, silhouette, crevice, vertexColor, crosscut. Selected per-mesh via `shaderType`. Vertex layout: interleaved `BYTES_PER_VERTEX` bytes (pos `float32x3` + normal `float32x3` + color `unorm8x4`), defined in `view/NVCrosshair.ts`.
+Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong, flat, matte, toon, outline, rim, silhouette, crevice, vertexColor, crosscut. Selected per-mesh via `shaderType`. Vertex layout: interleaved `BYTES_PER_VERTEX` bytes (pos `float32x3` + normal `float32x3` + color `unorm8x4`), defined in `mesh/vertexFormat.ts` with the one mesh packer, `packMeshVertices`. The crosshair cylinder and the orientation cube still pack their own vertices, and the attribute offsets are still literals (#304).
 
 **Crosscut shader** (`shaderType: 'crosscut'`): Renders crosshair-aligned ribbons using `fwidth()`-based screen-space line width. Unique render state: **no depth test, no face culling**. `crosscutMM` uniform computed by `view/NVCrosscut.ts`.
 

@@ -286,8 +286,9 @@ export type NVImage = {
    * marks it itself. If that upload fails, the next update that rebuilds this
    * volume retries it. Values are raw (before `scl_slope`/`scl_inter`), and
    * calMin/calMax are not recomputed. A volume streamed from a `chunkSource`
-   * reads its bricks from that source, not from `img`, so the flag does not
-   * apply to it.
+   * reads its bricks from that source, not from `img`, so the flag is ignored
+   * for it: the update clears it (with a one-time warning) and re-uploads
+   * nothing.
    */
   isDirty?: boolean
   /**

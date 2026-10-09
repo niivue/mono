@@ -959,15 +959,20 @@ the full `updateGLVolume()` rebuild.
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
   (`_updateGL`, `updateVolumeAffineOnly`, `_rebuildViewResources`; also
-  `setBaseCoarseFloor` for the floor level, which is not a model volume),
-  bumps each flagged volume's `_dataVersion` and resets the flag. Every path
-  that then rebuilds volume textures recomputes the modulation data and
-  weights first (a view recreation included), so a dirty modulator never
-  bakes its old weights. The flag is cleared at that bump, not after the
-  upload, so an edit flagged during an in-flight upload gets its own version
-  and the queued follow-up uploads it. A scoped
-  `_updateGL` adds the dirty volumes to its scope; `updateVolumeAffineOnly`
-  skips its overlay-only fast path when any volume was dirty. `isDirty` means
+  `setBaseCoarseFloor` for a separate floor level, while a loaded volume
+  passed as the floor goes through a scoped `_updateGL`), bumps each flagged
+  volume's `_dataVersion` and resets the flag. `_updateGL`, the affine full
+  path and `_rebuildViewResources` recompute the modulation data and weights
+  after that bump, before they rebuild textures. A view's `init()` already
+  bakes from the cached arrays before `_rebuildViewResources` runs, but that
+  rebuild replaces every texture, so a dirty modulator's old weights do not
+  stay on screen. The flag is cleared at the bump, not after the upload, so
+  an edit flagged during an in-flight upload gets its own version and the
+  queued follow-up uploads it. A `chunkSource` volume's flag is cleared
+  without a bump (warned once): its bricks come from the source, and a bump
+  would only evict and re-stream them. A scoped `_updateGL` adds the dirty
+  volumes to its scope; `updateVolumeAffineOnly` skips its overlay-only fast
+  path when any volume was dirty. `isDirty` means
   only "voxel values changed": internal code must not set it for display,
   affine or GPU-lifetime changes, since every set costs a re-upload (and
   invalidates the CPU caches below). `loadImgV1` sets it because it assigns a
@@ -982,12 +987,12 @@ the full `updateGLVolume()` rebuild.
   graph cache). `chunkedDisplayKey` carries it, so an `isDirty` edit of an
   in-memory chunked volume rebuilds the uploader and re-streams every brick
   from `img` (the decoded tier only holds `chunkSource` bytes, which an
-  in-place edit cannot reach); a `chunkSource` volume keeps no full `img`, so
-  `isDirty` does not apply to it. `coarseFloorKey` is the source (url/name and
-  `img` buffer identity) plus `wholeVolumeTextureKey` with the floor's orient
-  matrix, so it also covers the label outline width, the RAS grid and RGB/RGBA
-  floors. `updateVolumeData` still rejects `chunkPlan` volumes: a full
-  re-stream is not a per-frame fast path.
+  in-place edit cannot reach). `coarseFloorKey` is the source (url/name and
+  the `img` view: buffer identity, offset, length) plus
+  `wholeVolumeTextureKey` with the floor's orient matrix, so it also covers
+  the label outline width, the RAS grid and RGB/RGBA floors.
+  `updateVolumeData` still rejects `chunkPlan` volumes: a full re-stream is
+  not a per-frame fast path.
 - **Colormap re-registration:** the orient caches, `chunkedDisplayKey`,
   `wholeVolumeTextureKey` and `coarseFloorKey` key colormaps by
   `NVCmaps.colormapKey(name)` (name plus how many times `addColormap`

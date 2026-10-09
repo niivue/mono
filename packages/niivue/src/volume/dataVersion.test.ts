@@ -53,4 +53,16 @@ describe('commitDirtyVolumes', () => {
     commitDirtyVolumes([vol])
     expect(vol._dataVersion).toBe(2)
   })
+
+  test('ignores a chunkSource volume: clears its flag without a bump', () => {
+    // Its bricks come from the source, so a bump would only re-stream them.
+    const streamed = makeVol({
+      _dataVersion: 3,
+      isDirty: true,
+      chunkSource: (() => {}) as unknown as NVImage['chunkSource'],
+    })
+    expect(commitDirtyVolumes([streamed])).toEqual([])
+    expect(streamed.isDirty).toBe(false)
+    expect(streamed._dataVersion).toBe(3)
+  })
 })

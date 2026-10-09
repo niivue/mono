@@ -4,7 +4,7 @@ An [MCP](https://modelcontextprotocol.io) server for a [NiiVue](https://github.c
 
 An agent connects to the server over streamable HTTP; the page keeps a WebSocket open to the same server; each tool call is written to the page as one JSON request and answered with one JSON response. The server holds no anatomy and no scene of its own, so it stays small and the page stays the one place the state lives.
 
-The package has three entry points, and nothing in it knows about the app that hosts it:
+The package has four entry points, and nothing in it knows about the app that hosts it:
 
 | Entry | Runs in | Holds |
 |---|---|---|
@@ -98,8 +98,13 @@ const host: NiiVueHost = {
   extraState: () => ({ light }),     // state the server should watch across a reload
   planeName: () => currentCutName(), // the page's own name for the plane
   labels: (labels) => pins.setLabels(labels), // draws set_labels' labels, an empty list clears
+  controls: memoryControls(),        // where add_control puts its widgets
 }
 ```
+
+`controls` is a `ControlSurface`: `add`, `update`, `remove`, `clear` and `list` over the controls an agent asks for, each a `ControlSpec` of one of the `CONTROL_KINDS` (button, toggle, slider, menu, select, segmented, number, text, textarea, dialog, color, file) in a grid cell or at a position on the canvas, with a `bind` naming what it drives. A page without `controls` declines the control tools. One surface comes with the package:
+
+- **`memoryControls()`** keeps the controls and draws nothing. It is enough to list them in the page and to run the tools in a test.
 
 `urls` defaults to `agentUrls()`: `/agent` on the page's own origin, then the server directly on port 4242. The client retries with a backoff that settles at half a minute, so the order the two are started in does not matter. An address that neither opens nor refuses within five seconds is closed and the next one tried, so a proxy that hangs cannot keep the page from the server.
 
@@ -171,7 +176,7 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 |---|---|---|
 | `get_options` | `names?`, `describe?` | Reads NiiVue's settings by their own names: crosshair, colours, fonts, 3D rendering, drawing pen, drag behaviour and the rest. Without `names` it describes every setting the page has, with its kind, its choices or bounds and what it does |
 | `set_options` | `options` | Changes any of those settings, several at once. A choice is given by its word (a drag mode, a pen shape, a render mode), a colour as `[r, g, b, a]` 0 to 1. Every value is checked before any is set |
-| `capabilities` | | What this page's NiiVue offers: its backend, which tool features it supports by group, which settings it has, its colormaps, drawing colormaps and mesh shaders, its volume transforms with their options, and the file types it reads and writes. A page whose NiiVue lacks a feature refuses that tool in words and answers every other |
+| `capabilities` | | What this page's NiiVue offers: its backend, which tool features it supports by group, which settings it has, its colormaps, drawing colormaps and mesh shaders, its volume transforms with their options, and the file types it reads and writes. With controls, it also lists the control kinds and what they can bind to. A page whose NiiVue lacks a feature refuses that tool in words and answers every other |
 | `add_colormap` | `name?`, `R?`, `G?`, `B?`, `A?`, `I?`, `labels?`, `url?` | Adds a colormap from its stops, or fetches one from an address as a NiiVue colormap JSON |
 | `set_font` | `atlas`, `metrics` | Loads the font NiiVue draws its text with, from an atlas PNG and a metrics JSON |
 | `set_custom_layout` | `tiles?`, `clear?` | Places tiles on the canvas by hand, each a slice orientation or the render at `[left, top, width, height]` as fractions, in place of the ordinary layout; `clear` goes back to it |
@@ -207,6 +212,15 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `edit_annotations` | `action`, `id?`, `text?`, `annotation?`, `json?` | `add` a NiiVue VectorAnnotation (`id`; `sliceType` 0 axial, 1 coronal or 2 sagittal; `slicePosition`, where the slice is in mm along its own axis; `polygons`, each at least three `[x, y]` points in mm on the slice plane or `{outer, holes}`; and, if wanted, `label`, `group`, `text` and `style` with `fillColor`, `strokeColor` and `strokeWidth`, red otherwise), `remove` or `select` one by id, `set_text` on one, `clear` them, `undo`, `redo`, or `load` a set from JSON |
 | `list_measurements` | | The distance measurements drawn on the slices, each with its ends in millimetres and its length |
 | `edit_measurements` | `action`, `start_mm?`, `end_mm?`, `slice?`, `slice_index?`, `slice_position?`, `index?` | `add` a distance between two points, `remove` one by index, or `clear` them all, the angles (`clear_angles`) or the distances (`clear_distances`) |
+
+### Controls
+
+| Tool | Input | What it does |
+|---|---|---|
+| `add_control` | `id`, `kind`, `row?`, `col?`, `x?`, `y?`, `label?`, `width?`, `value?`, `min?`, `max?`, `step?`, `options?`, `placeholder?`, `max_length?`, `rows?`, `accept?`, `multiple?`, `alpha?`, `palette?`, `message?`, `open?`, `enabled?`, `bind?` | Puts a control on the canvas: a `button`, `toggle`, `slider`, `menu`, `select`, `segmented` row, `number` or `text` field, `textarea`, `dialog`, `color` control or `file` picker, with the fields its kind takes. It goes in the grid, at `row` and `col` from 0 at the top left (`col` left out is 0, `row` left out is the one under the rest of that column); each column is as wide as its widest widget and each row as tall as its tallest, so controls in the grid never overlap; a cell holds one control, and a control asked into a taken cell is refused before it writes anything. `x` and `y` together (canvas pixels) place it at an exact spot instead, never with a `row` or `col`; a dialog takes no cell and is centred unless given `x` and `y`. The reply carries the `box` it was drawn in, in canvas pixels, when the surface draws; `bind` names what it drives, and an empty `bind` unbinds; a `value` given with it is written to the target, and a write NiiVue fails later goes to `onError`, not to the reply. A dialog opens when added unless `open` is false, and closes when the person picks one of its buttons; `set_control` with `open: true` shows it again. A value left out takes the kind's start: off, the low end of the range, empty, the first option, white |
+| `list_controls` | | The controls there, each with its kind, grid cell or position, drawn `box`, value, options and binding; their ids also ride in every reply's state |
+| `set_control` | `id`, and any of the fields above | Changes what is given on a control: a `row` or `col` moves it into the grid and `x` and `y` out of it; its value is checked and clamped as it was when added, and a range that moves takes the value with it. A value set on a bound control is written to its target; a write NiiVue fails later goes to `onError`, not to the reply (niivue/mono#271) |
+| `remove_control` | `id?`, `all?` | Takes one control away, or all of them |
 
 ### The canvas, the slide plane, chunks and files
 

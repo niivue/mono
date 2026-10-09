@@ -11,6 +11,7 @@
  */
 
 import type { RegionSummary } from '../protocol'
+import type { ControlSurface } from './controls'
 
 /** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
 export type Triple = { [index: number]: number; readonly length: number }
@@ -707,6 +708,8 @@ export interface NiiVueHost {
   labels?(labels: PointLabel[]): void
   /** How long a screenshot waits, in milliseconds, for bricks to arrive and for the render backend to free up. */
   screenshotWaits?: { settleMs?: number; busyMs?: number }
+  /** The controls the page hosts for an agent; a page without one declines the control tools. */
+  controls?: ControlSurface
 }
 
 export type Handler = (params: Record<string, unknown>) => unknown

@@ -601,6 +601,10 @@ export class VolumeRenderer extends NVRenderer {
     lut: GPUTexture | null
   } = { matcap: null, overlay: null, paqd: null, draw: null, lut: null }
   private volumeOrientCache: orient.OrientTextureCache | null = null
+  // RGB/RGBA volumes skip the orient pass, so their textures are kept here
+  // instead, and new voxels are written into them in place.
+  private overlayRgbaCache: orient.RGBATextureCache | null = null
+  private volumeRgbaCache: orient.RGBATextureCache | null = null
 
   constructor() {
     super()
@@ -991,20 +995,22 @@ export class VolumeRenderer extends NVRenderer {
       // volumes go through the orient-texture cache so cal_min/max/colormap
       // tweaks only re-run the cheap orient compute pass.
       if (this.volumeGradientTexture) this.volumeGradientTexture.destroy()
+      this.destroyNonCachedVolumeTexture()
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
-        this.clearVolume()
-        this.volumeTexture = await orient.volume2Texture(
+        // RGB/RGBA volumes bypass the orient pass: their voxels go straight
+        // into a kept texture, and only when they changed.
+        orient.destroyOrientTextureCache(this.volumeOrientCache)
+        this.volumeOrientCache = null
+        this.volumeRgbaCache = orient.prepareRGBATextureCache(
           device,
           vol,
-          vol,
-          mtx as Float32Array,
-          0,
-          undefined,
-          modParams,
+          this.volumeRgbaCache,
+          true,
         )
+        this.volumeTexture = this.volumeRgbaCache.texture
       } else {
-        this.destroyNonCachedVolumeTexture()
+        orient.destroyRGBATextureCache(this.volumeRgbaCache)
+        this.volumeRgbaCache = null
         this.volumeOrientCache = await orient.prepareOrientTextureCache(
           device,
           vol,
@@ -2020,18 +2026,23 @@ export class VolumeRenderer extends NVRenderer {
     } else if (inMem.length === 1) {
       const vol = inMem[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
+      this.destroyNonCachedOverlayTexture()
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        this.clearOverlay()
-        this.overlayTexture = await orient.volume2Texture(
+        // Written into the kept texture on every overlay pass, like WebGL2
+        // (where background masking edits the texture in place).
+        orient.destroyOrientTextureCache(this.overlayOrientCache)
+        this.overlayOrientCache = null
+        this.overlayRgbaCache = orient.prepareRGBATextureCache(
           device,
           vol,
-          baseVol,
-          mtx as Float32Array,
-          vol.opacity ?? 1,
+          this.overlayRgbaCache,
+          false,
         )
+        this.overlayTexture = this.overlayRgbaCache.texture
         return
       }
-      this.destroyNonCachedOverlayTexture()
+      orient.destroyRGBATextureCache(this.overlayRgbaCache)
+      this.overlayRgbaCache = null
       this.overlayOrientCache = await orient.prepareOrientTextureCache(
         device,
         vol,
@@ -2047,6 +2058,8 @@ export class VolumeRenderer extends NVRenderer {
       this.destroyNonCachedOverlayTexture()
       orient.destroyOrientTextureCache(this.overlayOrientCache)
       this.overlayOrientCache = null
+      orient.destroyRGBATextureCache(this.overlayRgbaCache)
+      this.overlayRgbaCache = null
       const overlayTextures: GPUTexture[] = []
       for (const vol of inMem) {
         const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
@@ -2072,6 +2085,23 @@ export class VolumeRenderer extends NVRenderer {
       )
       for (const tex of overlayTextures) tex.destroy()
     }
+  }
+
+  /**
+   * Clip the overlay to the background's non-transparent voxels
+   * (isBackgroundMasking). The masked copy replaces overlayTexture; the input
+   * is destroyed only when no cache owns it, because the orient and RGBA
+   * caches write into their texture again on the next update.
+   */
+  async maskOverlayByBackground(device: GPUDevice): Promise<void> {
+    if (!this.overlayTexture || !this.volumeTexture) return
+    const masked = await orient.maskOverlayByBackground(
+      device,
+      this.volumeTexture,
+      this.overlayTexture,
+    )
+    this.destroyNonCachedOverlayTexture()
+    this.overlayTexture = masked
   }
 
   async updateAffineOverlay(
@@ -2105,7 +2135,8 @@ export class VolumeRenderer extends NVRenderer {
   private destroyNonCachedVolumeTexture(): void {
     if (
       this.volumeTexture &&
-      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture &&
+      this.volumeTexture !== this.volumeRgbaCache?.texture
     ) {
       this.volumeTexture.destroy()
     }
@@ -2116,12 +2147,15 @@ export class VolumeRenderer extends NVRenderer {
     this.destroyNonCachedVolumeTexture()
     orient.destroyOrientTextureCache(this.volumeOrientCache)
     this.volumeOrientCache = null
+    orient.destroyRGBATextureCache(this.volumeRgbaCache)
+    this.volumeRgbaCache = null
   }
 
   private destroyNonCachedOverlayTexture(): void {
     if (
       this.overlayTexture &&
-      this.overlayTexture !== this.overlayOrientCache?.outputTexture
+      this.overlayTexture !== this.overlayOrientCache?.outputTexture &&
+      this.overlayTexture !== this.overlayRgbaCache?.texture
     ) {
       this.overlayTexture.destroy()
     }
@@ -2132,6 +2166,8 @@ export class VolumeRenderer extends NVRenderer {
     this.destroyNonCachedOverlayTexture()
     orient.destroyOrientTextureCache(this.overlayOrientCache)
     this.overlayOrientCache = null
+    orient.destroyRGBATextureCache(this.overlayRgbaCache)
+    this.overlayRgbaCache = null
     this._destroyOverlayChunks()
     this.clearOverlayChunked()
     this._clearCombinedOverlayChunked()
@@ -2373,6 +2409,8 @@ export class VolumeRenderer extends NVRenderer {
     this.destroyNonCachedOverlayTexture()
     orient.destroyOrientTextureCache(this.overlayOrientCache)
     this.overlayOrientCache = null
+    orient.destroyRGBATextureCache(this.overlayRgbaCache)
+    this.overlayRgbaCache = null
     this._destroyOverlayChunks()
 
     const supported = standardVols.filter(

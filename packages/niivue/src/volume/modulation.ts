@@ -1,6 +1,7 @@
 import { calculateOverlayTransformMatrix } from '@/math/NVTransforms'
 import type { NVImage } from '@/NVTypes'
 import { isRgbaDatatype } from '@/view/NVRenderVolumeData'
+import { objectId } from './dataVersion'
 import { getTypedArrayConstructor } from './utils'
 
 /** Identity 4x4 (column-major); shared by both backends' modulation prepass. */
@@ -21,19 +22,6 @@ function isRgbaTarget(vol: NVImage): boolean {
  * modulation block, so modulation has no visual effect on them. */
 function isLabelTarget(vol: NVImage): boolean {
   return vol.colormapLabel !== null && vol.colormapLabel !== undefined
-}
-
-// Per-buffer identity tokens so a cache key can detect a swapped/replaced
-// modulator buffer even when the new buffer has the same byte length.
-const _bufferIds = new WeakMap<object, number>()
-let _nextBufferId = 1
-function bufferId(buf: ArrayBufferLike): number {
-  let id = _bufferIds.get(buf)
-  if (id === undefined) {
-    id = _nextBufferId++
-    _bufferIds.set(buf, id)
-  }
-  return id
 }
 
 /**
@@ -192,7 +180,7 @@ export function computeModulationWeights(volumes: NVImage[]): void {
     // the GPU texture (whose modKey derives from this key). See audit P2.
     const key = [
       mod.id,
-      bufferId(mod.img.buffer),
+      objectId(mod.img.buffer),
       mod.img.byteOffset,
       mod.img.byteLength,
       mod._dataVersion ?? 0,

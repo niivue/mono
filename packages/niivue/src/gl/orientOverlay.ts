@@ -9,7 +9,11 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
-import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import {
+  buildOrientUniforms,
+  prepareRGBAData,
+  rgbaTextureKey,
+} from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
   IDENTITY_MTX,
@@ -43,6 +47,58 @@ function getOrCreatePrograms(gl: WebGL2RenderingContext): ShaderPrograms {
   return cache
 }
 
+/** Allocate an empty, immutable RGBA8 3D texture with linear filtering. */
+function createRGBATexture(
+  gl: WebGL2RenderingContext,
+  texDims: readonly number[],
+): WebGLTexture {
+  const tex = gl.createTexture()
+  if (!tex) {
+    throw new Error('rgba2Texture: failed to create texture')
+  }
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texStorage3D(
+    gl.TEXTURE_3D,
+    1,
+    gl.RGBA8,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  return tex
+}
+
+/** Write RGBA8 voxels over the whole of an existing 3D texture. */
+function writeRGBATexture(
+  gl: WebGL2RenderingContext,
+  tex: WebGLTexture,
+  rgbaData: Uint8Array,
+  texDims: readonly number[],
+): void {
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    rgbaData,
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+}
+
 /**
  * Create a 3D RGBA8 WebGL texture directly from an RGB/RGBA NIfTI image.
  * Mirrors the WebGPU rgba2Texture() behavior.
@@ -57,31 +113,53 @@ function rgba2Texture(
   nvimage: NVImage,
 ): WebGLTexture {
   const { rgbaData, texDims } = prepareRGBAData(nvimage)
-  const tex = gl.createTexture()
-  if (!tex) {
-    throw new Error('rgba2Texture: failed to create texture')
-  }
-  gl.bindTexture(gl.TEXTURE_3D, tex)
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-  gl.texImage3D(
-    gl.TEXTURE_3D,
-    0,
-    gl.RGBA8,
-    texDims[0],
-    texDims[1],
-    texDims[2],
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    rgbaData,
-  )
-  gl.bindTexture(gl.TEXTURE_3D, null)
+  const tex = createRGBATexture(gl, texDims)
+  writeRGBATexture(gl, tex, rgbaData, texDims)
   return tex
+}
+
+/**
+ * An RGB/RGBA volume's RGBA8 texture, kept across updates so new voxels are
+ * written into it instead of a new allocation (see prepareRGBATextureCache).
+ */
+export type RGBATextureCache = {
+  texture: WebGLTexture
+  texDims: number[]
+  /** rgbaTextureKey of the voxels last written. */
+  key: string
+}
+
+/**
+ * Upload an RGB/RGBA volume into `existing`'s texture when its dims still
+ * match (texSubImage3D, no allocation), else into a new texture (freeing the
+ * old one). `skipUnchanged` returns `existing` untouched when its
+ * rgbaTextureKey still matches, which is only safe when nothing else writes
+ * into the texture (background masking rewrites the overlay's in place).
+ */
+export function prepareRGBATextureCache(
+  gl: WebGL2RenderingContext,
+  nvimage: NVImage,
+  existing: RGBATextureCache | null,
+  skipUnchanged: boolean,
+): RGBATextureCache {
+  const key = rgbaTextureKey(nvimage)
+  if (existing && skipUnchanged && existing.key === key) return existing
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  let cache = existing
+  if (!cache || !dimensionsMatch(cache.texDims, texDims)) {
+    destroyRGBATextureCache(gl, existing)
+    cache = { texture: createRGBATexture(gl, texDims), texDims, key }
+  }
+  writeRGBATexture(gl, cache.texture, rgbaData, texDims)
+  cache.key = key
+  return cache
+}
+
+export function destroyRGBATextureCache(
+  gl: WebGL2RenderingContext,
+  cache: RGBATextureCache | null,
+): void {
+  if (cache) gl.deleteTexture(cache.texture)
 }
 
 /**

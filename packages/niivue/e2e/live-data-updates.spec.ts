@@ -491,3 +491,231 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.cmapGreen.red).toBeLessThan(r.cmapRed.red * 0.05)
   })
 }
+
+// RGB/RGBA volumes skip the orient pass, so they had no cache to reuse:
+// every update allocated a new 3D texture (and, on WebGPU, copied the voxels
+// first). They now keep one texture per slot and write new voxels into it.
+// The background slot skips the upload while its voxels are unchanged; the
+// overlay slot re-uploads on each overlay pass, and background masking must
+// not free the texture it keeps.
+const RGB_VOLUME = '/volumes/visiblehuman.nii.gz'
+
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`updateVolumeData reuses RGB volume textures (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+
+    const result = await page.evaluate(`(async () => {
+     try {
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        let adapter = null
+        try {
+          adapter = await navigator.gpu.requestAdapter()
+        } catch (e) {
+          return { skip: 'requestAdapter threw: ' + e }
+        }
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+      const nextFrame = () => new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r)))
+
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      document.body.appendChild(canvas)
+      const nv = new NiiVue({
+        backend: '${backend}',
+        backgroundColor: [0, 0, 0, 1],
+        sliceType: SLICE_TYPE.AXIAL,
+        crosshairWidth: 0,
+        isOrientCubeVisible: false,
+        isOrientationTextVisible: false,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(canvas)
+      if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
+        return { skip: 'WebGPU init fell back to ' + nv.backend }
+      }
+      const errors = []
+      if (nv.view && nv.view.device) {
+        nv.view.device.addEventListener('uncapturederror', (e) => {
+          errors.push(String(e.error && e.error.message))
+        })
+      }
+
+      const readback = document.createElement('canvas')
+      readback.width = canvas.width
+      readback.height = canvas.height
+      const ctx = readback.getContext('2d', { willReadFrequently: true })
+      if (!ctx) return { skip: 'no 2D readback context' }
+      const litPixels = async () => {
+        await nextFrame()
+        if (nv.view) nv.view.render()
+        ctx.clearRect(0, 0, readback.width, readback.height)
+        ctx.drawImage(canvas, 0, 0)
+        const px = ctx.getImageData(0, 0, readback.width, readback.height).data
+        let lit = 0
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] > 30 || px[i + 1] > 30 || px[i + 2] > 30) lit++
+        }
+        return lit
+      }
+      const renderer = () => nv.view.volumeRenderer
+      const gpuAllocs = () => {
+        // Count 3D texture allocations, so a reused texture can be told apart
+        // from a fresh one that happens to be cached in the same slot.
+        let n = 0
+        if ('${backend}' === 'webgl2') {
+          const gl = nv.view.gl
+          const storage = gl.texStorage3D.bind(gl)
+          const image = gl.texImage3D.bind(gl)
+          gl.texStorage3D = (...a) => {
+            n++
+            return storage(...a)
+          }
+          gl.texImage3D = (...a) => {
+            n++
+            return image(...a)
+          }
+          return {
+            count: () => n,
+            restore: () => {
+              gl.texStorage3D = storage
+              gl.texImage3D = image
+            },
+          }
+        }
+        const device = nv.view.device
+        const orig = device.createTexture.bind(device)
+        device.createTexture = (desc) => {
+          if (desc.dimension === '3d') n++
+          return orig(desc)
+        }
+        return { count: () => n, restore: () => { device.createTexture = orig } }
+      }
+
+      // ---- background ----
+      await nv.loadVolumes([{ url: '${RGB_VOLUME}' }])
+      const vol = nv.volumes[0]
+      const original = vol.img.slice()
+      const zeros = new Array(original.length).fill(0)
+      const bgBefore = await litPixels()
+      const bgTex = renderer().volumeTexture
+      const bgCacheTex = renderer().volumeRgbaCache
+        ? renderer().volumeRgbaCache.texture
+        : null
+
+      let allocs = gpuAllocs()
+      await nv.updateVolumeData(0, zeros)
+      const bgZeroed = await litPixels()
+      await nv.updateVolumeData(0, original)
+      const bgRestored = await litPixels()
+      // A full update with unchanged voxels uploads nothing new.
+      const bgCache = renderer().volumeRgbaCache
+      const keyBefore = bgCache ? bgCache.key : null
+      await nv.setVolume(0, { opacity: 1 })
+      const keyAfter = renderer().volumeRgbaCache
+        ? renderer().volumeRgbaCache.key
+        : null
+      const bgAllocs = allocs.count()
+      allocs.restore()
+      const bgKept =
+        !!bgTex && bgTex === bgCacheTex && renderer().volumeTexture === bgTex
+
+      // ---- overlay (same grid) ----
+      await nv.loadVolumes([{ url: '${RGB_VOLUME}' }, { url: '${RGB_VOLUME}' }])
+      // A dim background (alpha 10): not lit, but not masked either, so the
+      // lit pixels are the overlay's.
+      await nv.updateVolumeData(0, new Array(original.length).fill(10))
+      const ovBefore = await litPixels()
+      const ovTex = renderer().overlayRgbaCache
+        ? renderer().overlayRgbaCache.texture
+        : null
+      allocs = gpuAllocs()
+      await nv.updateVolumeData(1, zeros)
+      const ovZeroed = await litPixels()
+      await nv.updateVolumeData(1, original)
+      const ovRestored = await litPixels()
+      const ovAllocs = allocs.count()
+      allocs.restore()
+      const ovKept =
+        !!ovTex &&
+        !!renderer().overlayRgbaCache &&
+        renderer().overlayRgbaCache.texture === ovTex
+
+      // ---- background masking: it must not free the kept overlay texture ----
+      nv.volumeIsBackgroundMasking = true
+      await nv.updateVolumeData(1, zeros)
+      const maskZeroed = await litPixels()
+      await nv.updateVolumeData(1, original)
+      const maskRestored = await litPixels()
+      const maskKept =
+        !!renderer().overlayRgbaCache &&
+        renderer().overlayRgbaCache.texture === ovTex
+      // A zeroed background masks the whole overlay out.
+      await nv.updateVolumeData(0, zeros)
+      const ovMasked = await litPixels()
+
+      return {
+        bgBefore,
+        bgZeroed,
+        bgRestored,
+        bgKept,
+        bgAllocs,
+        keyBefore,
+        keyAfter,
+        ovBefore,
+        ovZeroed,
+        ovRestored,
+        ovKept,
+        ovAllocs,
+        maskZeroed,
+        maskRestored,
+        maskKept,
+        ovMasked,
+        errors,
+      }
+     } catch (e) {
+      const m = String(e && e.message ? e.message : e)
+      if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+        return { skip: 'GPU unavailable: ' + m }
+      }
+      throw e
+     }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+
+    // Background: the edits show, through the texture the volume loaded with.
+    expect(r.bgBefore).toBeGreaterThan(1000)
+    expect(r.bgZeroed).toBeLessThan(r.bgBefore * 0.05)
+    expect(r.bgRestored).toBe(r.bgBefore)
+    expect(r.bgKept).toBe(true)
+    expect(r.bgAllocs).toBe(0)
+    expect(r.keyAfter).toBe(r.keyBefore)
+
+    // Overlay: the edits show, written into the overlay's kept texture.
+    expect(r.ovBefore).toBeGreaterThan(1000)
+    expect(r.ovZeroed).toBeLessThan(r.ovBefore * 0.05)
+    expect(r.ovRestored).toBe(r.ovBefore)
+    expect(r.ovKept).toBe(true)
+    expect(r.ovAllocs).toBe(0)
+
+    // Masking: further edits still show, the kept texture survives it (the
+    // WebGPU mask pass used to destroy its input), and a black background
+    // masks the overlay out.
+    expect(r.maskZeroed).toBeLessThan(r.ovBefore * 0.05)
+    expect(r.maskRestored).toBe(r.ovBefore)
+    expect(r.maskKept).toBe(true)
+    expect(r.ovMasked).toBeLessThan(r.ovBefore * 0.05)
+    expect(r.errors).toEqual([])
+  })
+}

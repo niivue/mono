@@ -53,7 +53,7 @@ import * as depthPick from './depthPick'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
-import { maskOverlayByBackground, maxBlendSliceDim } from './orient'
+import { maxBlendSliceDim } from './orient'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
@@ -2542,16 +2542,8 @@ export default class NVView {
       vols.slice(1),
       this.model.volume.paqdUniforms,
     )
-    if (
-      this.model.volume.isBackgroundMasking &&
-      this.volumeRenderer.overlayTexture &&
-      this.volumeRenderer.volumeTexture
-    ) {
-      this.volumeRenderer.overlayTexture = await maskOverlayByBackground(
-        device,
-        this.volumeRenderer.volumeTexture,
-        this.volumeRenderer.overlayTexture,
-      )
+    if (this.model.volume.isBackgroundMasking) {
+      await this.volumeRenderer.maskOverlayByBackground(device)
     }
   }
 

@@ -1,5 +1,6 @@
 import { COLORMAP_TYPE } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
+import { objectId } from '@/volume/dataVersion'
 import { reorientRGBA } from '@/volume/utils'
 
 function computeNegRange(nvimage: NVImage): {
@@ -144,6 +145,9 @@ export function prepareRGBAData(nvimage: NVImage): {
   // Apply modulation if present (brightness/opacity scaled by another volume)
   const modData = nvimage._modulationData as Float32Array | null | undefined
   if (modData) {
+    // An RAS-ordered RGBA volume passes its own img bytes through; scale a
+    // copy so the volume's voxels are not modulated again on every upload.
+    if (rgbaData === raw) rgbaData = raw.slice()
     const nVox = (isRAS ? dimsIn : dimsOut).reduce((a, b) => a * b, 1)
     const len = Math.min(nVox, modData.length)
     for (let i = 0; i < len; i++) {
@@ -157,4 +161,27 @@ export function prepareRGBAData(nvimage: NVImage): {
 
   const texDims = isRAS ? dimsIn : dimsOut
   return { rgbaData, texDims }
+}
+
+/**
+ * Key over every input of {@link prepareRGBAData}: the `img` buffer identity,
+ * offset, length and data version, the datatype, the native and RAS dims, the
+ * RAS mapping, and the identity of the CPU modulation array. A renderer that
+ * keeps an RGB/RGBA volume's texture skips the upload while it is unchanged.
+ */
+export function rgbaTextureKey(nvimage: NVImage): string {
+  const img = nvimage.img
+  const mod = nvimage._modulationData
+  return [
+    img ? objectId(img.buffer) : 0,
+    img?.byteOffset ?? 0,
+    img?.byteLength ?? 0,
+    nvimage._dataVersion ?? 0,
+    nvimage.hdr.datatypeCode,
+    nvimage.dims?.slice(1, 4).join('x') ?? '',
+    nvimage.dimsRAS?.slice(1, 4).join('x') ?? '',
+    nvimage.img2RASstart?.join(',') ?? '',
+    nvimage.img2RASstep?.join(',') ?? '',
+    mod ? objectId(mod) : 0,
+  ].join('|')
 }

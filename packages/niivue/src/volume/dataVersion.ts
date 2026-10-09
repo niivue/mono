@@ -36,3 +36,19 @@ export function commitDirtyVolumes(volumes: readonly NVImage[]): NVImage[] {
   }
   return dirty
 }
+
+const _objectIds = new WeakMap<object, number>()
+let _nextObjectId = 1
+
+/**
+ * A stable number for an object's identity, for cache keys that must notice a
+ * replaced buffer or array even when the new one has the same length.
+ */
+export function objectId(o: object): number {
+  let id = _objectIds.get(o)
+  if (id === undefined) {
+    id = _nextObjectId++
+    _objectIds.set(o, id)
+  }
+  return id
+}

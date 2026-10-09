@@ -2,7 +2,11 @@ import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import { OVERLAY_ALPHA_BLEND, OVERLAY_COLOR_BLEND } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
-import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import {
+  buildOrientUniforms,
+  prepareRGBAData,
+  rgbaTextureKey,
+} from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
   IDENTITY_MTX,
@@ -154,10 +158,12 @@ export type OrientTextureCache = {
   modKey: string
 }
 
-function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
-  const { rgbaData, texDims } = prepareRGBAData(nvimage)
-  const rgbaTexture = device.createTexture({
-    size: texDims,
+function createRGBATexture(
+  device: GPUDevice,
+  texDims: readonly number[],
+): GPUTexture {
+  return device.createTexture({
+    size: [texDims[0], texDims[1], texDims[2]],
     format: 'rgba8unorm',
     dimension: '3d',
     usage:
@@ -165,13 +171,76 @@ function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.COPY_SRC,
   })
+}
+
+/** Write RGBA8 voxels over the whole of an existing 3D texture. */
+function writeRGBATexture(
+  device: GPUDevice,
+  texture: GPUTexture,
+  rgbaData: Uint8Array,
+  texDims: readonly number[],
+): void {
+  // writeTexture reads straight from the view; only a SharedArrayBuffer-backed
+  // one needs copying first.
+  const data =
+    typeof SharedArrayBuffer !== 'undefined' &&
+    rgbaData.buffer instanceof SharedArrayBuffer
+      ? new Uint8Array(rgbaData)
+      : rgbaData
   device.queue.writeTexture(
-    { texture: rgbaTexture },
-    new Uint8Array(rgbaData),
+    { texture },
+    data as Uint8Array<ArrayBuffer>,
     { bytesPerRow: texDims[0] * 4, rowsPerImage: texDims[1] },
-    texDims,
+    [texDims[0], texDims[1], texDims[2]],
   )
+}
+
+function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  const rgbaTexture = createRGBATexture(device, texDims)
+  writeRGBATexture(device, rgbaTexture, rgbaData, texDims)
   return rgbaTexture
+}
+
+/**
+ * An RGB/RGBA volume's RGBA8 texture, kept across updates so new voxels are
+ * written into it instead of a new allocation (see prepareRGBATextureCache).
+ */
+export type RGBATextureCache = {
+  texture: GPUTexture
+  texDims: number[]
+  /** rgbaTextureKey of the voxels last written. */
+  key: string
+}
+
+/**
+ * Upload an RGB/RGBA volume into `existing`'s texture when its dims still
+ * match (queue.writeTexture, no allocation), else into a new texture
+ * (destroying the old one). `skipUnchanged` returns `existing` untouched when
+ * its rgbaTextureKey still matches; the overlay slot passes false, matching
+ * the WebGL2 renderer, whose background masking rewrites that texture.
+ */
+export function prepareRGBATextureCache(
+  device: GPUDevice,
+  nvimage: NVImage,
+  existing: RGBATextureCache | null,
+  skipUnchanged: boolean,
+): RGBATextureCache {
+  const key = rgbaTextureKey(nvimage)
+  if (existing && skipUnchanged && existing.key === key) return existing
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  let cache = existing
+  if (!cache || !dimensionsMatch(cache.texDims, texDims)) {
+    destroyRGBATextureCache(existing)
+    cache = { texture: createRGBATexture(device, texDims), texDims, key }
+  }
+  writeRGBATexture(device, cache.texture, rgbaData, texDims)
+  cache.key = key
+  return cache
+}
+
+export function destroyRGBATextureCache(cache: RGBATextureCache | null): void {
+  cache?.texture.destroy()
 }
 
 function getTextureFormat(nvimage: NVImage): {
@@ -785,7 +854,8 @@ function ensureMaskPipeline(device: GPUDevice): PipelineCacheEntry {
 
 /**
  * Mask overlay texture by background volume: zero out overlay alpha wherever
- * the background volume alpha is zero. Returns a new texture (old overlay is destroyed).
+ * the background volume alpha is zero. Returns a new texture; the input is
+ * left alone, since an orient or RGBA cache may own it and write to it again.
  */
 export async function maskOverlayByBackground(
   device: GPUDevice,
@@ -827,7 +897,6 @@ export async function maskOverlayByBackground(
   pass.end()
   device.queue.submit([encoder.finish()])
   await device.queue.onSubmittedWorkDone()
-  overlayTexture.destroy()
   return outputTexture
 }
 

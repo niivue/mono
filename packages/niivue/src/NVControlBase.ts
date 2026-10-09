@@ -3536,10 +3536,19 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Replace a loaded volume's voxel values and re-upload them to the GPU,
-   * reusing its existing textures — the fast path for animating or live-editing
-   * volume data. Only the edited volume is reprocessed (plus any volume it
-   * modulates); meshes, colorbars and unrelated volume layers are left alone.
+   * Replace a loaded volume's voxel values and re-upload them to the GPU —
+   * the fast path for animating or live-editing volume data. Only the edited
+   * volume is reprocessed (plus any volume it modulates); meshes, colorbars
+   * and unrelated volume layers are left alone.
+   *
+   * The new voxels are written into the volume's existing textures when it is
+   * the background or the only overlay, scalar or RGB/RGBA alike (RGB/RGBA
+   * voxels are reordered and padded to RGBA on the CPU first). These cases
+   * still allocate: with two or more overlays, every overlay is re-oriented
+   * and blended into a new overlay texture; in multi-instance mode
+   * (`instances`) the edited volume's texture is rebuilt; WebGPU background
+   * masking writes the masked overlay to a new texture; and the gradient
+   * texture is rebuilt when lighting needs one.
    *
    * Pass `data` with either every value of `img` (all frames) or one frame
    * (written into the current `frame4D`): `nVox3D` values for scalar volumes,

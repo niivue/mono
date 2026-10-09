@@ -3437,9 +3437,10 @@ export default class NiiVue extends EventTarget {
   /**
    * Replace a loaded volume's voxel values and re-upload them to the GPU,
    * reusing its existing textures — the fast path for animating or live-editing
-   * volume data. Pass `data` with either every voxel of `img` (all frames) or
-   * one frame (`nVox3D` values, written into the current `frame4D`); it is
-   * copied into the existing `img` in its native datatype and voxel order.
+   * volume data. Pass `data` with either every value of `img` (all frames) or
+   * one frame (written into the current `frame4D`): `nVox3D` values for scalar
+   * volumes, `nVox3D * 3` / `nVox3D * 4` bytes for RGB / RGBA. It is copied into
+   * the existing `img` in its native datatype and voxel order.
    * Omit `data` after editing `volume.img` in place yourself.
    *
    * The display window (calMin/calMax), robust range and other values derived
@@ -3470,13 +3471,16 @@ export default class NiiVue extends EventTarget {
       return
     }
     if (data) {
+      // One frame's length in img elements: nVox3D for scalar data, but 3x/4x
+      // that for RGB/RGBA, whose img holds one byte per channel.
+      const frameLength = img.length / Math.max(1, vol.nFrame4D ?? 1)
       if (data.length === img.length) {
         img.set(data)
-      } else if (data.length === vol.nVox3D) {
-        img.set(data, (vol.frame4D ?? 0) * vol.nVox3D)
+      } else if (data.length === frameLength) {
+        img.set(data, (vol.frame4D ?? 0) * frameLength)
       } else {
         log.warn(
-          `updateVolumeData: expected ${img.length} (all frames) or ${vol.nVox3D} (one frame) values, got ${data.length}`,
+          `updateVolumeData: expected ${img.length} (all frames) or ${frameLength} (one frame) values, got ${data.length}`,
         )
         return
       }

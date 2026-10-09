@@ -83,7 +83,7 @@ const client = new AgentClient(coreHandlers(host), {
 client.attach()
 ```
 
-Only `view` is required. The other hooks are where an app adds what NiiVue does not know:
+Only `view` is required. The core works on a plain NiiVue with no atlas, with `list_regions` and `go_to_region` declining politely. The other hooks are where an app adds what NiiVue does not know:
 
 ```ts
 const host: NiiVueHost = {
@@ -137,7 +137,9 @@ Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`). Vite's WebSoc
 | `new_tab` | | Makes up an id for a tab that is not open yet and gives the address that opens the page as that tab, `pageUrl` with `?tab=<id>` on it |
 | `load_volume` | `url`, `name?`, `colormap?`, `mni?` | Loads a volume from an address the page can fetch, replacing what is shown. `mni` says whether the atlas applies; guessed from the name when left out. Reports the name and the volume's bounds in millimetres |
 | `where_am_i` | | The crosshair in millimetres and fractions, the volumes shown and how each is drawn, the plane cut, the camera, the view layout, the page's description of the place, and whatever state the app adds. Says which tab answered |
-| `go_to_point` | `mm?`, `vox?`, `plane?`, `label?` | Moves the crosshair to a point in the volume's world millimetres, or to a voxel of the base volume, cuts a plane through it facing the camera, and announces it, prefixed with `label` when given |
+| `list_regions` | `query?` | The atlas regions the page can navigate to: label, spoken name, centroid in millimetres, voxel count. `query` filters by label or name |
+| `go_to_region` | `region`, `plane?` | Moves the crosshair to a region's centroid, turns the camera to face the cut, cuts a plane through the point, and announces the place. `plane` is a side, a slice name or `current`. An ambiguous name fails and lists the candidates |
+| `go_to_point` | `mm?`, `vox?`, `plane?`, `label?` | Moves the crosshair to a point in the volume's world millimetres, or to a voxel of the base volume, cuts a plane through it facing the camera, and announces it, prefixed with `label` when given. The same move as `go_to_region`, for any space |
 | `set_clip_plane` | `plane?`, `depth?`, `azimuth?`, `elevation?`, `index?`, `planes?`, `face?` | Cuts the volume with a whole plane named for the side it takes off, or `off`; or at any `azimuth` and `elevation`; or several planes at once with `planes`, each `[depth, azimuth, elevation]`. `depth` is NiiVue's, clamped to plus or minus 1.5; `index` picks one of the six planes; `face` turns the camera to look at the cut, on by default |
 | `set_camera` | `azimuth?`, `elevation?`, `pan_2d?`, `render_pan?`, `pivot?`, `center_on?`, `global?` | Points the render camera, pans the slices (`pan_2d`, NiiVue's `[x, y, z, zoom]`) or the render, sets or clears the point the render turns about, centres the render on a point in millimetres, or places the camera outright with `global` (`position`, `yaw`, `pitch`, `fov`, `near`, `far`). Only what is given changes |
 | `set_view` | `slice?`, `layout?`, `mosaic?`, `show_render?`, `radiological?`, `colorbar?` | Sets what the canvas shows: one slice orientation, all three with the render (`multiplanar`), or the render alone; how the multiplanar tiles are arranged and whether the render tile joins them; a NiiVue mosaic string; radiological convention; the colorbar. Only what is given changes. Reports the whole layout |
@@ -150,6 +152,10 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 ### Planes and cameras
 
 A plane is named for the side it takes off: `left`, `right`, `posterior`, `anterior`, `inferior`, `superior`, with `sagittal`, `coronal` and `axial` as aliases for the first of each pair. NiiVue keeps a clip plane as `[depth, azimuth, elevation]`, with the shader keeping the side the plane's normal points to; the camera that sees the exposed face square on looks along the normal, which works out to the plane's own elevation and its azimuth turned half a turn. `cameraForPlane` does that sum and `depthThrough` finds the depth that puts the plane through a point, both checked for all six sides in `planes.test.ts`.
+
+### Regions
+
+`findRegion` matches a query against each region's label and spoken name: exactly first, then by containment with case and underscores ignored. One hit is a match; several hits are an ambiguity, reported with the candidate names, unless one of them is exact. `SPOKEN_NAMES` is the AAL table in anatomical English (`Frontal_Inf_Tri_L` is `left inferior frontal gyrus, triangular part`), with a name generated from the label's parts for any label not in it.
 
 ## Tabs
 

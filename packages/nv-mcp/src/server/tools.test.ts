@@ -119,6 +119,7 @@ describe('core tool schemas', () => {
     }
     expect(required('new_tab')).toEqual([])
     expect(byName.new_tab.annotations?.readOnlyHint).toBe(true)
+    expect(required('go_to_region')).toEqual(['region'])
     expect(required('set_clip_plane')).toEqual([])
     expect(required('set_camera')).toEqual([])
     expect(properties('set_camera').sort()).toEqual([
@@ -141,10 +142,11 @@ describe('core tool schemas', () => {
       'slice',
       'tab',
     ])
+    expect(required('list_regions')).toEqual([])
     expect(required('where_am_i')).toEqual([])
     expect(required('screenshot')).toEqual([])
     expect(byName.where_am_i.annotations?.readOnlyHint).toBe(true)
-    expect(byName.go_to_point.annotations?.readOnlyHint).toBeUndefined()
+    expect(byName.go_to_region.annotations?.readOnlyHint).toBeUndefined()
   })
 
   it('offers the six sides, the slice names and current or off as plane names', async () => {
@@ -158,7 +160,7 @@ describe('core tool schemas', () => {
       }
       return (schema.properties[field].enum ?? []).sort()
     }
-    expect(enumOf('go_to_point', 'plane')).toEqual(
+    expect(enumOf('go_to_region', 'plane')).toEqual(
       [
         'current',
         'left',
@@ -231,6 +233,9 @@ describe('core tool schemas', () => {
     expect(await refused('set_camera', { azimuth: 0, elevation: 120 })).toMatch(
       /elevation/,
     )
+    expect(
+      await refused('go_to_region', { region: 'Insula_L', plane: 'diagonal' }),
+    ).toMatch(/plane/)
     expect(await refused('screenshot', { max_width: 10 })).toMatch(/max_width/)
     expect(
       await refused('set_clip_plane', { plane: 'left', depth: 3 }),
@@ -260,13 +265,13 @@ describe('core tools over the bridge', () => {
       method: 'where_am_i',
     })
     const go = await client.callTool({
-      name: 'go_to_point',
-      arguments: { mm: [-36, 6, 2], plane: 'left' },
+      name: 'go_to_region',
+      arguments: { region: 'Insula_L', plane: 'left' },
     })
     expect(text(go)).toMatch(/^Moved to somewhere\n/)
     expect(json(go)).toMatchObject({
-      method: 'go_to_point',
-      params: { mm: [-36, 6, 2], plane: 'left' },
+      method: 'go_to_region',
+      params: { region: 'Insula_L', plane: 'left' },
     })
     const cut = await client.callTool({
       name: 'set_clip_plane',
@@ -348,13 +353,13 @@ describe('core tools over the bridge', () => {
     const client = await connect(bridge)
     await client.callTool({ name: 'use_tab', arguments: { id: 't1' } })
     const named = await client.callTool({
-      name: 'go_to_point',
-      arguments: { tab: 't2', mm: [-36, 6, 2] },
+      name: 'go_to_region',
+      arguments: { tab: 't2', region: 'Insula_L' },
     })
     expect(named.isError).toBeUndefined()
     expect(json(named)).toEqual({
-      method: 'go_to_point',
-      params: { mm: [-36, 6, 2] },
+      method: 'go_to_region',
+      params: { region: 'Insula_L' },
       description: 'somewhere',
     })
     const where = await client.callTool({
@@ -444,7 +449,7 @@ describe('core tools over the bridge', () => {
     await client.callTool({ name: 'where_am_i', arguments: {} })
     bridge.detach(first)
     echoTab(bridge, 't1', 'one', state({ sounding: false }))
-    const after = await client.callTool({ name: 'where_am_i', arguments: {} })
+    const after = await client.callTool({ name: 'list_regions', arguments: {} })
     expect(text(after)).toMatch(
       /^Note: the tab "one" reloaded at 2026-09-24T01:02:03.000Z, since the last call, so its scene started over\. Changed: crosshair was \[-38, -22, 5\] mm, now \[0, 0, 0\] mm; plane was left, now off; sounding was true, now false\.\n/,
     )
@@ -452,7 +457,7 @@ describe('core tools over the bridge', () => {
       reloaded: { before, reloadedAt: Date.UTC(2026, 8, 24, 1, 2, 3) },
     })
     expect(
-      text(await client.callTool({ name: 'where_am_i', arguments: {} })),
+      text(await client.callTool({ name: 'list_regions', arguments: {} })),
     ).not.toMatch(/^Note/)
   })
 

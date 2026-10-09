@@ -19,7 +19,8 @@ import {
   planeDepthCuts,
   resolvePlane,
 } from '../planes'
-import type { PlaneState, TabState } from '../protocol'
+import type { PlaneState, RegionSummary, TabState } from '../protocol'
+import { ambiguityMessage, findRegion, regionMentions } from '../regions'
 import {
   LAYOUTS,
   nameFor,
@@ -40,7 +41,13 @@ import {
   record,
   text,
 } from './params'
-import type { GlobalCamera, Handlers, NiiVueHost, View } from './view'
+import type {
+  AtlasLike,
+  GlobalCamera,
+  Handlers,
+  NiiVueHost,
+  View,
+} from './view'
 
 /** The default width a screenshot is scaled down to. */
 export const SCREENSHOT_WIDTH = 1024
@@ -96,6 +103,13 @@ export function looksMni(name: string): boolean {
   return /mni/i.test(name)
 }
 
+const summary = ({
+  label,
+  name,
+  centroid,
+  voxels,
+}: RegionSummary): RegionSummary => ({ label, name, centroid, voxels })
+
 /** Three finite numbers, or a message saying what is wrong. */
 /** The handlers for the core tools, over this host. */
 export function coreHandlers(host: NiiVueHost): Handlers {
@@ -104,6 +118,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   const requireVolume = () => {
     if (!view.volumes[0])
       throw new Error('No volume is loaded yet. Call load_volume first.')
+  }
+
+  const requireAtlas = async (): Promise<AtlasLike> => {
+    if (!host.atlas) throw new Error('This page has no atlas.')
+    return host.atlas()
   }
 
   /** Moves the crosshair to `frac`, cuts `plane` through it facing the camera at the cut, and draws. */
@@ -174,6 +193,76 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         camera: camera(view),
         ...(hasLayout(view) ? { view: viewState(view) } : {}),
         description: await describe(),
+        ...(host.extraState?.() ?? {}),
+      }
+    },
+
+    async list_regions(params) {
+      const loaded = await requireAtlas()
+      const wanted = text(params, 'query')
+      const regions = wanted
+        ? loaded.regions().filter((r) => regionMentions(r, wanted))
+        : loaded.regions()
+      return regions.map(summary)
+    },
+
+    async go_to_region(params) {
+      const query = text(params, 'region')
+      if (!query) throw new Error('go_to_region needs a region name.')
+      requireVolume()
+      host.beforeAnswer?.()
+      const loaded = await requireAtlas()
+      if (host.atlasApplies && !host.atlasApplies()) {
+        throw new Error(
+          'The loaded volume is not in MNI space, so the atlas does not apply to it. Load one that is.',
+        )
+      }
+      const planeName = text(params, 'plane')
+      const plane = resolvePlane(planeName, view.getClipPlaneDepthAziElev(0))
+      if (!plane) throw new Error(`Unknown plane "${planeName}".`)
+      const { region, candidates } = findRegion(loaded.regions(), query)
+      if (!region) {
+        if (candidates.length)
+          throw new Error(ambiguityMessage(query, candidates))
+        throw new Error(
+          `No region matches "${query}". Call list_regions to see the names.`,
+        )
+      }
+
+      // A curved region's mean can lie outside it; land inside rather than
+      // on the neighbour that happens to be there.
+      let target = region.centroid
+      let snapped = false
+      if (loaded.valueAt(target) !== region.value) {
+        const inside = loaded.nearestIn(region.value, target)
+        if (inside) {
+          target = inside
+          snapped = true
+        }
+      }
+
+      const at = view.model.mm2scene([target[0], target[1], target[2]])
+      const frac: [number, number, number] = [at[0], at[1], at[2]]
+      if (frac.some((f) => f < 0 || f > 1)) {
+        throw new Error(`${region.name} lies outside the loaded volume.`)
+      }
+
+      const depth = moveTo(frac, plane)
+
+      const description = await describe()
+      host.announce?.(description)
+      return {
+        region: summary(region),
+        landed: { mm: target, frac },
+        snapped,
+        plane: {
+          name: plane.name,
+          depth,
+          azimuth: plane.azimuth,
+          elevation: plane.elevation,
+        },
+        camera: camera(view),
+        description,
         ...(host.extraState?.() ?? {}),
       }
     },

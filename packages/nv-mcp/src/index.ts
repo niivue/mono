@@ -8,6 +8,7 @@
  */
 
 // biome-ignore lint/performance/noBarrelFile: package entry point
+export { SPOKEN_NAMES } from './names'
 export {
   cameraForPlane,
   clipNormal,
@@ -38,6 +39,13 @@ export {
   TAB_PARAM,
   tabFromSearch,
 } from './protocol'
+export type { Nameable, RegionMatch } from './regions'
+export {
+  ambiguityMessage,
+  findRegion,
+  matchRegion,
+  regionMentions,
+} from './regions'
 export type {
   LayoutName,
   ShowRenderName,

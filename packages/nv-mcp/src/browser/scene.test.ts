@@ -9,7 +9,14 @@ import {
   sceneState,
   viewState,
 } from './scene'
-import type { NiiVueHost, ShownVolume, View, VolumeToLoad } from './view'
+import type {
+  AtlasLike,
+  AtlasRegion,
+  NiiVueHost,
+  ShownVolume,
+  View,
+  VolumeToLoad,
+} from './view'
 
 /** A volume as NiiVue would keep it after loading `volume`. */
 const shown = (volume: VolumeToLoad): ShownVolume => ({
@@ -50,11 +57,57 @@ function fakeView(overrides: Partial<View> = {}): View {
   return view
 }
 
+const REGIONS: AtlasRegion[] = [
+  {
+    label: 'Insula_L',
+    name: 'left insula',
+    centroid: [-36, 6, 2],
+    voxels: 100,
+    value: 29,
+  },
+  {
+    label: 'Insula_R',
+    name: 'right insula',
+    centroid: [38, 6, 2],
+    voxels: 100,
+    value: 30,
+  },
+  {
+    label: 'Precentral_L',
+    name: 'left precentral gyrus',
+    centroid: [-40, -6, 50],
+    voxels: 300,
+    value: 1,
+  },
+  {
+    label: 'Hippocampus_L',
+    name: 'left hippocampus',
+    centroid: [-24, -20, -14],
+    voxels: 200,
+    value: 37,
+  },
+]
+
+/** Each region owns the 10 mm around its centroid, except the hippocampus, whose centroid is outside it. */
+const fakeAtlas = (): AtlasLike => ({
+  regions: () => REGIONS,
+  regionAt: (mm) => REGIONS.find((r) => near(r.centroid, mm))?.name ?? null,
+  valueAt: (mm) => {
+    const region = REGIONS.find((r) => near(r.centroid, mm))
+    if (!region) return 0
+    return region.label === 'Hippocampus_L' ? 0 : region.value
+  },
+  nearestIn: (value, mm) => (value === 37 ? [mm[0], mm[1] - 6, mm[2]] : null),
+})
+
 /** Rounded, with -0 tidied, so two directions compare as numbers. */
 const tidy = (v: readonly number[]) => v.map((n) => +n.toFixed(6) + 0)
 
+const near = (a: readonly number[], b: readonly number[]) =>
+  Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 10
+
 function host(view = fakeView(), extra: Partial<NiiVueHost> = {}): NiiVueHost {
-  return { view, ...extra }
+  return { view, atlas: async () => fakeAtlas(), ...extra }
 }
 
 describe('sceneState', () => {
@@ -91,6 +144,157 @@ describe('sceneState', () => {
     expect(planeIsCut([-PLANE_NONE, 0, 0])).toBe(false)
     expect(planeIsCut([PLANE_NONE, 0, 0])).toBe(false)
     expect(planeIsCut([0, 0, 0])).toBe(true)
+  })
+})
+
+describe('go_to_region', () => {
+  it('lands on the centroid, cuts through it, faces the cut, samples, and announces', async () => {
+    const view = fakeView()
+    const moved = mock()
+    const announce = mock()
+    const h = host(view, {
+      moved,
+      announce,
+      describe: () => 'left insula. left, front, level.',
+      beforeAnswer: mock(),
+    })
+    const result = (await coreHandlers(h).go_to_region({
+      region: 'left insula',
+      plane: 'left',
+    })) as Record<string, unknown>
+    expect(result).toMatchObject({
+      region: { label: 'Insula_L', name: 'left insula' },
+      landed: { mm: [-36, 6, 2], frac: [0.32, 0.53, 0.51] },
+      snapped: false,
+      plane: { name: 'left', azimuth: 270, elevation: 0 },
+      camera: { azimuth: 90, elevation: 0 },
+      description: 'left insula. left, front, level.',
+    })
+    expect(Array.from(view.crosshairPos)).toEqual(
+      [0.32, 0.53, 0.51].map((f) => Math.fround(f)),
+    )
+    expect(moved).toHaveBeenCalledWith([0.32, 0.53, 0.51])
+    expect(announce).toHaveBeenCalledWith('left insula. left, front, level.')
+    expect(h.beforeAnswer).toHaveBeenCalled()
+    // The plane passes through the landing point: the plane's depth undoes the point's offset along the normal.
+    const [depth, az, el] = (view.setClipPlane as ReturnType<typeof mock>).mock
+      .calls[0][0] as number[]
+    const n = clipNormal(az, el)
+    expect(n[0] * (0.32 - 0.5) + n[1] * 0.03 + n[2] * 0.01 + depth).toBeCloseTo(
+      0,
+      6,
+    )
+  })
+
+  it.each(
+    PLANE_ANGLES.map((p) => [p.name, p.azimuth, p.elevation] as const),
+  )('cuts %s and looks along the normal at the exposed face', async (name, azimuth, elevation) => {
+    const view = fakeView()
+    const result = (await coreHandlers(host(view)).go_to_region({
+      region: 'Insula_R',
+      plane: name,
+    })) as {
+      plane: { azimuth: number; elevation: number }
+      camera: { azimuth: number; elevation: number }
+    }
+    expect(result.plane).toMatchObject({ name, azimuth, elevation })
+    const looking = viewDirection(
+      result.camera.azimuth,
+      result.camera.elevation,
+    )
+    const normal = clipNormal(azimuth, elevation)
+    expect(tidy(looking)).toEqual(tidy(normal))
+    expect(view.azimuth).toBe(result.camera.azimuth)
+  })
+
+  it('accepts the slice names and `current`, and cuts coronal when nothing is cut', async () => {
+    const view = fakeView()
+    const handlers = coreHandlers(host(view))
+    expect(
+      await handlers.go_to_region({ region: 'Insula_R', plane: 'axial' }),
+    ).toMatchObject({ plane: { name: 'superior' } })
+    expect(await handlers.go_to_region({ region: 'Insula_R' })).toMatchObject({
+      plane: { name: 'posterior' },
+    })
+    ;(view.getClipPlaneDepthAziElev as ReturnType<typeof mock>).mockReturnValue(
+      [0.1, 90, 0],
+    )
+    expect(
+      await handlers.go_to_region({ region: 'Insula_R', plane: 'current' }),
+    ).toMatchObject({ plane: { name: 'right' } })
+  })
+
+  it('refuses an ambiguous name with the choices, and an unknown one with advice', async () => {
+    const handlers = coreHandlers(host())
+    await expect(handlers.go_to_region({ region: 'insula' })).rejects.toThrow(
+      '"insula" could mean 2 regions: Insula_L (left insula), Insula_R (right insula). Say which.',
+    )
+    await expect(handlers.go_to_region({ region: 'thalamus' })).rejects.toThrow(
+      'No region matches "thalamus". Call list_regions',
+    )
+    await expect(handlers.go_to_region({})).rejects.toThrow(
+      'needs a region name',
+    )
+    await expect(
+      handlers.go_to_region({ region: 'Insula_L', plane: 'diagonal' }),
+    ).rejects.toThrow('Unknown plane "diagonal"')
+  })
+
+  it('snaps into a region whose centroid lies outside it', async () => {
+    const result = await coreHandlers(host()).go_to_region({
+      region: 'Hippocampus_L',
+    })
+    expect(result).toMatchObject({
+      snapped: true,
+      landed: { mm: [-24, -26, -14] },
+    })
+  })
+
+  it('refuses without a volume, without an atlas that applies, or outside the volume', async () => {
+    await expect(
+      coreHandlers(host(fakeView({ volumes: [] }))).go_to_region({
+        region: 'Insula_L',
+      }),
+    ).rejects.toThrow('No volume is loaded yet')
+    await expect(
+      coreHandlers(
+        host(fakeView(), { atlasApplies: () => false }),
+      ).go_to_region({ region: 'Insula_L' }),
+    ).rejects.toThrow('not in MNI space')
+    await expect(
+      coreHandlers({ view: fakeView() }).go_to_region({ region: 'Insula_L' }),
+    ).rejects.toThrow('no atlas')
+    const small = fakeView({
+      model: {
+        mm2scene: (mm) => mm.map((v) => v / 20 + 0.5),
+        scene2mm: (f) => f.map((v) => (v - 0.5) * 20),
+      },
+    })
+    await expect(
+      coreHandlers(host(small)).go_to_region({ region: 'Insula_L' }),
+    ).rejects.toThrow('lies outside the loaded volume')
+  })
+})
+
+describe('list_regions', () => {
+  it('lists every region as a summary, or those a query mentions', async () => {
+    const handlers = coreHandlers(host())
+    const all = (await handlers.list_regions({})) as unknown[]
+    expect(all).toHaveLength(4)
+    expect(all[0]).toEqual({
+      label: 'Insula_L',
+      name: 'left insula',
+      centroid: [-36, 6, 2],
+      voxels: 100,
+    })
+    expect(await handlers.list_regions({ query: 'precentral' })).toEqual([
+      {
+        label: 'Precentral_L',
+        name: 'left precentral gyrus',
+        centroid: [-40, -6, 50],
+        voxels: 300,
+      },
+    ])
   })
 })
 

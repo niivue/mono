@@ -61,6 +61,14 @@ describe('rgbaTextureKey', () => {
     )
   })
 
+  test('a new 4D frame changes it', () => {
+    // setFrame4D on a 4D color volume must not reuse the old frame's upload.
+    const img = makeVol().img
+    expect(rgbaTextureKey(makeVol({ img, frame4D: 1 }))).not.toBe(
+      rgbaTextureKey(makeVol({ img, frame4D: 0 })),
+    )
+  })
+
   test('a new modulation array changes it', () => {
     const vol = makeVol()
     const plain = rgbaTextureKey(vol)
@@ -109,5 +117,22 @@ describe('prepareRGBAData', () => {
     expect(first[0]).toBe(5)
     expect(Array.from(vol.img ?? [])).toEqual(Array.from(original))
     expect(prepareRGBAData(vol).rgbaData[0]).toBe(5)
+  })
+
+  test.each([
+    ['RGBA', DT_RGBA32, 4],
+    ['RGB', DT_RGB24, 3],
+  ])('a 4D %s volume reads only the selected frame', (_name, dt, bpv) => {
+    // Two frames of 2x2x1 voxels: every byte of frame 0 is 1, of frame 1 is 2.
+    const frameBytes = 4 * bpv
+    const img = new Uint8Array(2 * frameBytes)
+    img.fill(1, 0, frameBytes)
+    img.fill(2, frameBytes)
+    const vol = makeVol({ img, hdr: { datatypeCode: dt }, nFrame4D: 2 })
+    expect(prepareRGBAData(vol).rgbaData[0]).toBe(1)
+    vol.frame4D = 1
+    const { rgbaData } = prepareRGBAData(vol)
+    expect(rgbaData.length).toBe(16)
+    expect(Array.from(rgbaData.subarray(0, 3))).toEqual([2, 2, 2])
   })
 })

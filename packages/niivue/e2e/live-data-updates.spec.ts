@@ -1165,3 +1165,57 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(res.recreated.red).toBeLessThan(res.modulated.red * 0.05)
   })
 }
+
+// prepareRGBAData used to read a color volume from the start of img, and the
+// RGBA caches did not key on frame4D, so a 4D RGB/RGBA volume always showed
+// frame 0: setFrame4D did nothing and the one-frame form of updateVolumeData
+// wrote a frame that never appeared.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`4D RGB volumes show the selected frame (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+    const r = await runInPage(
+      page,
+      `${setupPage(backend)}
+      await nv.loadVolumes([{ url: '${RGB_VOLUME}' }])
+      const vol = nv.volumes[0]
+      const frame = vol.img.slice()
+      // Two frames: the original, then a blank one.
+      const img = new Uint8Array(frame.length * 2)
+      img.set(frame)
+      vol.img = img
+      vol.nFrame4D = 2
+      vol.isDirty = true
+      await nv.updateGLVolume()
+      const frame0 = await count()
+      await nv.setFrame4D(vol.id, 1)
+      const frame1 = await count()
+      // One-frame form: written into the displayed frame 1.
+      await nv.updateVolumeData(0, frame)
+      const frame1Written = await count()
+      await nv.updateVolumeData(0, new Uint8Array(frame.length))
+      const frame1Cleared = await count()
+      let frame0Intact = true
+      for (let i = 0; i < frame.length; i++) {
+        if (vol.img[i] !== frame[i]) {
+          frame0Intact = false
+          break
+        }
+      }
+      await nv.setFrame4D(vol.id, 0)
+      const frame0Again = await count()
+      return { frame0, frame1, frame1Written, frame1Cleared, frame0Intact, frame0Again }
+      `,
+    )
+    if (!r) return
+    // biome-ignore lint/suspicious/noExplicitAny: page result
+    const res = r as any
+    expect(res.frame0.lit).toBeGreaterThan(1000)
+    expect(res.frame1.lit).toBeLessThan(res.frame0.lit * 0.05)
+    expect(res.frame1Written.lit).toBe(res.frame0.lit)
+    expect(res.frame1Cleared.lit).toBeLessThan(res.frame0.lit * 0.05)
+    expect(res.frame0Intact).toBe(true)
+    expect(res.frame0Again.lit).toBe(res.frame0.lit)
+  })
+}

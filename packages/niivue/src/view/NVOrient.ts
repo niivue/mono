@@ -93,10 +93,17 @@ export function prepareRGBAData(nvimage: NVImage): {
   if (!nvimage.img) {
     throw new Error('prepareRGBAData: nvimage.img is null')
   }
+  // Only the displayed 4D frame: img holds every frame back to back.
+  const frameBytes = nVox3D * (dt === 128 ? 3 : 4)
+  const nFrames = Math.max(
+    1,
+    Math.floor(nvimage.img.byteLength / Math.max(1, frameBytes)),
+  )
+  const frame = Math.min(Math.max(0, nvimage.frame4D ?? 0), nFrames - 1)
   const raw = new Uint8Array(
     nvimage.img.buffer,
-    nvimage.img.byteOffset,
-    nvimage.img.byteLength,
+    nvimage.img.byteOffset + frame * frameBytes,
+    Math.min(frameBytes, nvimage.img.byteLength),
   )
 
   let rgbaData: Uint8Array
@@ -165,9 +172,10 @@ export function prepareRGBAData(nvimage: NVImage): {
 
 /**
  * Key over every input of {@link prepareRGBAData}: the `img` buffer identity,
- * offset, length and data version, the datatype, the native and RAS dims, the
- * RAS mapping, and the identity of the CPU modulation array. A renderer that
- * keeps an RGB/RGBA volume's texture skips the upload while it is unchanged.
+ * offset, length and data version, the 4D frame, the datatype, the native and
+ * RAS dims, the RAS mapping, and the identity of the CPU modulation array. A
+ * renderer that keeps an RGB/RGBA volume's texture skips the upload while it
+ * is unchanged.
  */
 export function rgbaTextureKey(nvimage: NVImage): string {
   const img = nvimage.img
@@ -177,6 +185,7 @@ export function rgbaTextureKey(nvimage: NVImage): string {
     img?.byteOffset ?? 0,
     img?.byteLength ?? 0,
     nvimage._dataVersion ?? 0,
+    nvimage.frame4D ?? 0,
     nvimage.hdr.datatypeCode,
     nvimage.dims?.slice(1, 4).join('x') ?? '',
     nvimage.dimsRAS?.slice(1, 4).join('x') ?? '',

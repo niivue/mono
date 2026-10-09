@@ -179,6 +179,10 @@ chunked because they exceed the GPU texture limit) are not supported by
 whose `img` is in memory works, but the next GPU update re-streams every
 chunk, so it is not suited to per-frame updates.
 
+For a 4D RGB/RGBA volume the displayed frame is `frame4D`, as for scalar
+volumes, so the one-frame form of `updateVolumeData` writes the frame on
+screen.
+
 Re-registering a colormap name with `addColormap` replaces its colors in
 volumes that use it on their next GPU update (e.g. `updateGLVolume()`). Mesh
 layers, tracts and connectomes bake their colors when they are built, so they

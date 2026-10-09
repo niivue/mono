@@ -931,11 +931,14 @@ the full `updateGLVolume()` rebuild.
   (`prepareRGBATextureCache` in `gl/orientOverlay.ts` and `wgpu/orient.ts`),
   which rewrites it in place (`texSubImage3D` / `queue.writeTexture`) while
   the RGBA dims match, and skips the upload while `rgbaTextureKey`
-  (`view/NVOrient.ts`: buffer identity, `_dataVersion`, dims, RAS mapping,
-  `_modulationData` identity) is unchanged. `computeModulationData` keeps the
-  same `_modulationData` array while `_modulationDataKey` (modulator identity,
-  data version, grid, scaling, window, frame) matches, so a modulated RGBA
-  volume is not re-uploaded on every update. Background masking goes through
+  (`view/NVOrient.ts`: buffer identity, `_dataVersion`, `frame4D`, dims, RAS
+  mapping, `_modulationData` identity) is unchanged. `prepareRGBAData` reads
+  only the displayed `frame4D` of a 4D RGB/RGBA volume, so `setFrame4D` and
+  the one-frame form of `updateVolumeData` show on color volumes too.
+  `computeModulationData` keeps the same `_modulationData` array while
+  `_modulationDataKey` (modulator identity, data version, grid, scaling,
+  window, frame) matches, so a modulated RGBA volume is not re-uploaded on
+  every update. Background masking goes through
   `VolumeRenderer.maskOverlayByBackground` on both backends: WebGL2 masks the
   overlay texture in place and clears the RGBA cache's key so the next pass
   rewrites it; WebGPU writes a new texture and destroys its input only when no

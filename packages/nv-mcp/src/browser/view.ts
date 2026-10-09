@@ -166,6 +166,67 @@ export interface MeshLayerToLoad {
 /** What `View.setMeshLayerProperty` can change: NiiVue's `NVMeshLayer`, in part. */
 export type MeshLayerUpdate = Omit<MeshLayerToLoad, 'url' | 'name'>
 
+/** How a signal is drawn: NiiVue's `NVSignalDisplay`. */
+export interface SignalDisplay {
+  average?: boolean
+  mode?: 'real' | 'imag' | 'magnitude' | 'phase'
+  ppmRange?: [number, number] | null
+  ppmRef?: number | null
+  useHz?: boolean
+  halveFirstPoint?: boolean
+  apodizeHz?: number
+  phase0?: number
+  phase1Ms?: number
+  selectedColumns?: number[] | null
+  showLegend?: boolean
+}
+
+/** A note on a signal's graph: NiiVue's `SignalAnnotation`. */
+export interface SignalAnnotation {
+  text: string
+  x: number
+  y: number
+  color?: [number, number, number, number]
+}
+
+/** A signal as NiiVue keeps it: `NVSignal`, in the part the tools read. */
+export interface ShownSignal {
+  id?: string
+  name?: string
+  url?: string
+  kind?: 'physio' | 'spectroscopy'
+  display?: SignalDisplay
+  attachedToId?: string
+  followsCrosshair?: boolean
+  annotations?: SignalAnnotation[]
+}
+
+/** A signal as `View.loadSignals` and `View.addSignal` take it: NiiVue's `SignalFromUrlOptions`, in part. */
+export interface SignalToLoad {
+  url: string
+  name?: string
+  asSignal?: boolean
+  display?: SignalDisplay
+  attachToId?: string
+  annotations?: SignalAnnotation[]
+}
+
+/** What `View.setSignal` takes. */
+export interface SignalUpdate {
+  display?: SignalDisplay
+  attachToId?: string
+  annotations?: SignalAnnotation[]
+}
+
+/** What NiiVue reports of the signal graph's range. */
+export interface GraphRange {
+  min: number
+  max: number
+  full: [number, number]
+  axisLabel: string
+  isWindowed: boolean
+}
+
 /** A completed distance measurement: NiiVue's `CompletedMeasurement`. */
 export interface Measurement {
   startMM: [number, number, number]
@@ -397,6 +458,21 @@ export interface View {
     options: Record<string, unknown>,
   ): Promise<unknown>
   getTractGroups?(index: number): string[]
+
+  // Signals and their graph.
+  signals?: ReadonlyArray<ShownSignal>
+  loadSignals?(signals: SignalToLoad[]): Promise<unknown>
+  addSignal?(signal: SignalToLoad): Promise<unknown>
+  removeSignal?(index: number): unknown
+  removeAllSignals?(): unknown
+  setSignal?(index: number, update: SignalUpdate): unknown
+  setSignalCursorFraction?(fraction: number): unknown
+  stepSignalCursor?(direction: number): unknown
+  graphZoom?(factor?: number): unknown
+  graphPan?(fraction: number): unknown
+  graphResetView?(): unknown
+  setGraphRange?(range: [number, number] | null): unknown
+  getGraphRange?(): GraphRange | null
 
   // The clip planes and the camera beyond the first plane.
   setClipPlanes?(planes: number[][]): unknown

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTIHeader, NVImage } from '@/NVTypes'
+import { markVolumeDataChanged } from './dataVersion'
 import {
   computeModulationData,
   computeModulationWeights,
@@ -206,6 +207,28 @@ describe('computeModulationWeights', () => {
     const second = targetVol._modulationWeight ?? new Float32Array(0)
     expect(second).not.toBe(first) // recomputed (buffer identity in key)
     expect(second[0]).toBeCloseTo(1, 5) // reflects the new data, not stale
+  })
+
+  test('inPlaceEdit_withDataVersionBump_recomputes', () => {
+    // updateVolumeData / isDirty edit the modulator's img in place: the buffer
+    // identity, offset and length all stay the same, so only _dataVersion
+    // tells the cache the values changed.
+    const modImg = new Float32Array([0, 1, 2, 3, 4, 5, 6, 7])
+    const modVol = makeVolume({ id: 'mod1', img: modImg, calMin: 0, calMax: 7 })
+    const targetVol = makeVolume({ id: 'target', modulationImage: 'mod1' })
+    computeModulationWeights([targetVol, modVol])
+    const first = targetVol._modulationWeight
+    const firstKey = targetVol._modulationWeightKey
+    expect(first?.[0]).toBeCloseTo(0, 5)
+
+    modImg.set([7, 6, 5, 4, 3, 2, 1, 0])
+    markVolumeDataChanged(modVol)
+    computeModulationWeights([targetVol, modVol])
+    const second = targetVol._modulationWeight ?? new Float32Array(0)
+    expect(second).not.toBe(first)
+    expect(targetVol._modulationWeightKey).not.toBe(firstKey)
+    expect(second[0]).toBeCloseTo(1, 5)
+    expect(second[7]).toBeCloseTo(0, 5)
   })
 
   test('nanWindow_yieldsFiniteWeights (audit P3 NaN guard)', () => {

@@ -972,8 +972,12 @@ the full `updateGLVolume()` rebuild.
   only through `markVolumeDataChanged` (`updateVolumeData`, `isDirty`). Any
   cache keyed on `img` buffer identity must also compare it (orient caches,
   `_texCache`, modulation weight key, extension `imgRAS`, legend centroids,
-  graph cache). The chunked GPU caches (`chunkPlan`) do not compare it, so
-  in-place edits of chunk-streamed volumes are unsupported on either path.
+  graph cache). `chunkedDisplayKey` carries it, so an `isDirty` edit of an
+  in-memory chunked volume rebuilds the uploader and re-streams every brick
+  from `img` (the decoded tier only holds `chunkSource` bytes, which an
+  in-place edit cannot reach); `coarseFloorKey` is the source plus
+  `chunkedDisplayKey`. `updateVolumeData` still rejects `chunkPlan` volumes:
+  a full re-stream is not a per-frame fast path.
 - **Colormap re-registration:** the orient caches, `chunkedDisplayKey`,
   `wholeVolumeTextureKey` and `coarseFloorKey` key colormaps by
   `NVCmaps.colormapKey(name)` (name plus how many times `addColormap`

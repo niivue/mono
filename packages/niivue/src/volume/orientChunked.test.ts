@@ -352,6 +352,8 @@ describe('chunkedDisplayKey', () => {
     ['calMax', { calMax: 50 }],
     ['colormapType', { colormapType: 1 }],
     ['frame4D', { frame4D: 3 }],
+    // An isDirty edit of an in-memory chunked volume must re-stream it.
+    ['_dataVersion', { _dataVersion: 1 }],
   ])('a changed %s changes the key', (_field, overrides) => {
     expect(chunkedDisplayKey(makeVol(overrides))).not.toBe(
       chunkedDisplayKey(makeVol()),
@@ -527,6 +529,7 @@ describe('coarseFloorKey', () => {
       calMax: 100,
       calMinNeg: Number.NaN,
       calMaxNeg: Number.NaN,
+      hdr: { scl_slope: 1, scl_inter: 0 },
       ...overrides,
     } as unknown as NVImage
   }
@@ -543,7 +546,12 @@ describe('coarseFloorKey', () => {
     ['calMin', { calMin: 5 }],
     ['calMax', { calMax: 50 }],
     ['calMinNeg', { calMinNeg: -50 }],
+    ['calMaxNeg', { calMaxNeg: -5 }],
     ['_dataVersion', { _dataVersion: 1 }],
+    // Inputs it now shares with chunkedDisplayKey.
+    ['colormapType', { colormapType: 1 }],
+    ['frame4D', { frame4D: 1 }],
+    ['scl_slope', { hdr: { scl_slope: 2, scl_inter: 0 } }],
   ])('a changed %s changes the key', (_field, overrides) => {
     expect(coarseFloorKey(makeVol(overrides))).not.toBe(
       coarseFloorKey(makeVol()),

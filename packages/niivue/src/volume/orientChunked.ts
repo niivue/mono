@@ -35,8 +35,9 @@ function displayObjectId(o: object): number {
  * per-chunk orient pass: the colormap LUTs (colormap and negative colormap,
  * each with its addColormap revision, inversion, label LUT identity), the
  * intensity window (calMin/calMax and the negative range), colormapType, the
- * scaling slope/intercept, and the 4D frame (the uploaders capture the frame's
- * byte window at creation).
+ * scaling slope/intercept, the 4D frame (the uploaders capture the frame's
+ * byte window at creation), and the in-place data version (`_dataVersion`), so
+ * an `isDirty` edit of an in-memory chunked volume re-streams its chunks.
  *
  * The renderers compare this against the cached chunked entry's key on every
  * updateVolume: resident chunk textures hold colormapped RGBA, so when any of
@@ -64,6 +65,7 @@ export function chunkedDisplayKey(
     nvimage.hdr.scl_slope,
     nvimage.hdr.scl_inter,
     nvimage.frame4D ?? 0,
+    nvimage._dataVersion ?? 0,
     // Resident chunk textures bake the modulator in, so a modulator that
     // appears, changes or goes away must rebuild the uploader like a colormap
     // change does. `key` already covers the modulator's identity, window,
@@ -79,7 +81,8 @@ export function chunkedDisplayKey(
  * so an edited voxel or modulator (`_dataVersion`, which the modulation key
  * carries too), a new window or frame, a re-registered colormap name, a new
  * label LUT or outline width, a changed modulation mode, or a new affine all
- * show. Scalar volumes use {@link chunkedDisplayKey}, the label outline width
+ * show. Scalar volumes use {@link chunkedDisplayKey} (which carries
+ * `_dataVersion`), the label outline width
  * (the chunked path never outlines, so that key omits it), the RAS grid and
  * the orient matrix `mtx`, plus the modulator's sampling matrix; RGB/RGBA
  * volumes use rgbaTextureKey, since they bypass the colormap and the matrix.
@@ -96,7 +99,6 @@ export function wholeVolumeTextureKey(
     ? Math.max(0, nvimage.atlasOutline ?? 0)
     : 0
   return [
-    nvimage._dataVersion ?? 0,
     outline,
     nvimage.dimsRAS?.slice(1, 4).join('x') ?? '',
     Array.from(mtx).join(','),
@@ -107,22 +109,14 @@ export function wholeVolumeTextureKey(
 
 /**
  * Key over what the coarse floor texture (`setCoarseFloor`, both backends)
- * bakes in when it orients a pyramid level: the source, its colormaps (each
- * with its addColormap revision, so a re-registered name re-orients it), the
- * inversion, both intensity windows, and the in-place data version.
+ * bakes in when it orients a pyramid level: the source plus
+ * {@link chunkedDisplayKey}, the same display inputs (colormaps with their
+ * addColormap revision, window, scaling, frame, data version) a chunk bakes.
  */
 export function coarseFloorKey(coarseVol: NVImage): string {
-  return [
-    coarseVol.url || coarseVol.name,
-    colormapKey(coarseVol.colormap),
-    colormapKey(coarseVol.colormapNegative),
-    coarseVol.isColormapInverted ? 1 : 0,
-    coarseVol.calMin,
-    coarseVol.calMax,
-    coarseVol.calMinNeg ?? '',
-    coarseVol.calMaxNeg ?? '',
-    coarseVol._dataVersion ?? 0,
-  ].join('|')
+  return [coarseVol.url || coarseVol.name, chunkedDisplayKey(coarseVol)].join(
+    '|',
+  )
 }
 
 /** Whether a datatype is a color (RGB/RGBA) source uploaded straight to RGBA8. */

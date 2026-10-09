@@ -940,3 +940,112 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.zeroed.lit).toBeLessThan(r.red.lit * 0.05)
   })
 }
+
+// A volume drawn as chunks bakes its colormapped bricks, and chunkedDisplayKey
+// decides when to re-stream them. Without the data version in that key, an
+// in-place edit flagged isDirty kept drawing the old bricks.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`isDirty edits of a chunked volume re-stream its bricks (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+
+    const result = await page.evaluate(`(async () => {
+     try {
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        let adapter = null
+        try {
+          adapter = await navigator.gpu.requestAdapter()
+        } catch (e) {
+          return { skip: 'requestAdapter threw: ' + e }
+        }
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const { default: NiiVue, SLICE_TYPE, chunkVolumeGrid } =
+        await import('/src/index.ts')
+      const nextFrame = () => new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r)))
+
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      document.body.appendChild(canvas)
+      const nv = new NiiVue({
+        backend: '${backend}',
+        backgroundColor: [0, 0, 0, 1],
+        sliceType: SLICE_TYPE.AXIAL,
+        crosshairWidth: 0,
+        isOrientCubeVisible: false,
+        isOrientationTextVisible: false,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(canvas)
+      if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
+        return { skip: 'WebGPU init fell back to ' + nv.backend }
+      }
+
+      const readback = document.createElement('canvas')
+      readback.width = canvas.width
+      readback.height = canvas.height
+      const ctx = readback.getContext('2d', { willReadFrequently: true })
+      if (!ctx) return { skip: 'no 2D readback context' }
+      // Chunks stream in over several frames; render until the count settles.
+      const litPixels = async () => {
+        let last = -1
+        for (let i = 0; i < 30; i++) {
+          await nextFrame()
+          if (nv.view) nv.view.render()
+          ctx.clearRect(0, 0, readback.width, readback.height)
+          ctx.drawImage(canvas, 0, 0)
+          const px = ctx.getImageData(0, 0, readback.width, readback.height).data
+          let lit = 0
+          for (let j = 0; j < px.length; j += 4) {
+            if (px[j] > 30 || px[j + 1] > 30 || px[j + 2] > 30) lit++
+          }
+          if (lit === last) return lit
+          last = lit
+        }
+        return last
+      }
+
+      await nv.loadVolumes([{ url: '${VOLUME}' }])
+      const vol = nv.volumes[0]
+      const d = vol.dimsRAS
+      vol.chunkPlan = chunkVolumeGrid([d[1], d[2], d[3]], [2, 2, 2], 4096, [
+        3, 3, 3,
+      ])
+      await nv.updateGLVolume()
+      const chunked = !!nv.chunkStreamStats()
+      const before = await litPixels()
+      const original = vol.img.slice()
+      vol.img.fill(0)
+      vol.isDirty = true
+      await nv.updateGLVolume()
+      const zeroed = await litPixels()
+      vol.img.set(original)
+      vol.isDirty = true
+      await nv.updateGLVolume()
+      const restored = await litPixels()
+      return { chunked, before, zeroed, restored }
+     } catch (e) {
+      const m = String(e && e.message ? e.message : e)
+      if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+        return { skip: 'GPU unavailable: ' + m }
+      }
+      throw e
+     }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+    expect(r.chunked).toBe(true)
+    expect(r.before).toBeGreaterThan(1000)
+    expect(r.zeroed).toBeLessThan(r.before * 0.05)
+    expect(r.restored).toBe(r.before)
+  })
+}

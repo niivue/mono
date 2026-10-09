@@ -28,6 +28,11 @@ const CORE_TOOLS = [
   'set_volume',
   'set_view',
   'screenshot',
+  'nudge_crosshair',
+  'transform_volume',
+  'remove_volume',
+  'reorder_volume',
+  'describe_volume',
 ]
 
 /** The smallest extension: one tool, answered by the page's `set_light` handler. */

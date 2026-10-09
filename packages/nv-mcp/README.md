@@ -151,6 +151,16 @@ Every tool below `new_tab` also takes `tab?`, the id of the tab to ask; without 
 
 Every reply is a line of prose for the agent to read, then the JSON the page returned. Failures are tool errors with the page's own message.
 
+### More on volumes
+
+| Tool | Input | What it does |
+|---|---|---|
+| `nudge_crosshair` | `vox` | Steps the crosshair a whole number of voxels along each of the base volume's axes and reports where it lands |
+| `transform_volume` | `name`, `volume?`, `options?`, `replace?` | Runs one of NiiVue's registered volume transforms (`capabilities` lists them with their options) on a loaded volume and adds the result on top of the stack, removing the source when `replace` is set |
+| `remove_volume` | `volume?`, `all?` | Unloads one volume, or every volume with `all`. Reports the volumes that remain |
+| `reorder_volume` | `volume`, `move` | Moves a volume `up`, `down`, to the `top` or to the `bottom` of the stack. The bottom volume is the base that sets the space |
+| `describe_volume` | `volume?`, `stats?`, `mask?`, `mask_labels?`, `drawing?`, `affine?` | One volume in full: how it is drawn, its dimensions, its label table, its voxel statistics (over the whole volume, within a mask volume, its labels, or the drawing), and its affine when asked |
+
 ### Planes and cameras
 
 A plane is named for the side it takes off: `left`, `right`, `posterior`, `anterior`, `inferior`, `superior`, with `sagittal`, `coronal` and `axial` as aliases for the first of each pair. NiiVue keeps a clip plane as `[depth, azimuth, elevation]`, with the shader keeping the side the plane's normal points to; the camera that sees the exposed face square on looks along the normal, which works out to the plane's own elevation and its azimuth turned half a turn. `cameraForPlane` does that sum and `depthThrough` finds the depth that puts the plane through a point, both checked for all six sides in `planes.test.ts`.

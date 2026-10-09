@@ -55,6 +55,7 @@ export type {
   AffineTransform,
   AtlasLike,
   AtlasRegion,
+  Descriptives,
   GlobalCamera,
   Handler,
   Handlers,
@@ -62,8 +63,10 @@ export type {
   LoadedVolume,
   NiiVueHost,
   ShownVolume,
+  TransformedVolume,
   Triple,
   View,
   VolumeToLoad,
+  VolumeTransform,
   VolumeUpdate,
 } from './view'

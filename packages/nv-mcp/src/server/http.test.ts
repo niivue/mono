@@ -19,6 +19,8 @@ const CORE_TOOLS = [
   'new_tab',
   'load_volume',
   'where_am_i',
+  'list_regions',
+  'go_to_region',
   'go_to_point',
   'set_clip_plane',
   'set_camera',
@@ -196,15 +198,26 @@ describe('the server, end to end', () => {
     expect(failed.isError).toBe(true)
     expect(text(failed)).toMatch(/could not be loaded: 404/)
 
-    const went = await call('go_to_point', {
-      mm: [-36, 6, 2],
+    const regions = json(
+      await call('list_regions', { query: 'insula' }),
+    ) as unknown as Array<{ label: string }>
+    expect(regions.map((r) => r.label)).toEqual(['Insula_L', 'Insula_R'])
+
+    const ambiguous = await call('go_to_region', { region: 'insula' })
+    expect(ambiguous.isError).toBe(true)
+    expect(text(ambiguous)).toMatch(/could mean 2 regions/)
+
+    const went = await call('go_to_region', {
+      region: 'left insula',
       plane: 'left',
     })
     expect(went.isError).toBeUndefined()
     expect(text(went)).toMatch(/^Moved to left insula at -36, 6, 2 mm\./)
     expect(json(went)).toMatchObject({
+      region: { label: 'Insula_L' },
       plane: { name: 'left', azimuth: 270 },
       camera: { azimuth: 90, elevation: 0 },
+      snapped: false,
     })
 
     const here = json(await call('where_am_i'))
@@ -315,7 +328,7 @@ describe('the server, end to end', () => {
     const load = call('load_volume', {
       url: 'https://example.test/mni152.nii.gz',
     })
-    const go = call('go_to_point', { mm: [-36, 6, 2], plane: 'left' })
+    const go = call('go_to_region', { region: 'left insula', plane: 'left' })
     const here = call('where_am_i')
     const [loaded, went, where] = await Promise.all([load, go, here])
     expect(loaded.isError).toBeUndefined()
@@ -374,7 +387,7 @@ describe('the server, end to end', () => {
   it('re-binds a reloaded tab by id and reports the reset once', async () => {
     await openPage('t3', 'third tab')
     await call('load_volume', { url: 'https://example.test/mni152.nii.gz' })
-    await call('go_to_point', { mm: [-40, -6, 50], plane: 'superior' })
+    await call('go_to_region', { region: 'Precentral_L', plane: 'superior' })
     await call('set_light', { on: true })
     expect(json(await call('where_am_i'))).toMatchObject({
       crosshair: { mm: mm(-40, -6, 50) },

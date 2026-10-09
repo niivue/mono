@@ -87,6 +87,32 @@ function meshView(overrides: Partial<View> = {}) {
 }
 
 describe('describeMesh', () => {
+  it("reports a tract's groups and scalars, as colorBy names them", () => {
+    expect(
+      describeMesh(
+        {
+          kind: 'tract',
+          trx: {
+            groups: { CST: [], AF: [] },
+            dpv: { fa: [] },
+            dps: { z: [] },
+            dpvMeta: { fa: { globalMin: 0.1, globalMax: 0.9 } },
+          },
+        },
+        0,
+      ),
+    ).toEqual({
+      index: 0,
+      name: 'mesh 0',
+      kind: 'tract',
+      groups: ['CST', 'AF'],
+      scalars: [
+        { colorBy: 'dpv:fa', min: 0.1, max: 0.9 },
+        { colorBy: 'dps:z' },
+      ],
+    })
+  })
+
   it('reports what is set and leaves out what is not', () => {
     expect(describeMesh({}, 2)).toEqual({ index: 2, name: 'mesh 2' })
     expect(

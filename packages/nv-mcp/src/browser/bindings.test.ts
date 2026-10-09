@@ -3,7 +3,13 @@ import { baseView, hostOf } from '../testing/fake-view'
 import { bindControls, type PageAction, resolveBinding } from './bindings'
 import { controlHandlers, memoryControls } from './controls'
 import { settingHandlers } from './settings'
-import type { ShownVolume, View, VolumeUpdate } from './view'
+import type {
+  MeshUpdate,
+  ShownMesh,
+  ShownVolume,
+  View,
+  VolumeUpdate,
+} from './view'
 
 /** A view with a setting of each kind a control holds, a view layout and two volumes. */
 function settingsView(): View & Record<string, unknown> {
@@ -427,6 +433,270 @@ describe('bindControls: actions', () => {
     expect(caps.controlBindings.actions).toEqual([
       { name: 'reset', description: 'Puts the view back.' },
     ])
+  })
+})
+
+/** A view with a surface, a tract and a connectome. */
+function meshView() {
+  const meshes: ShownMesh[] = [
+    { name: 'lh.pial', kind: 'mesh', opacity: 1, shaderType: 'phong' },
+    {
+      name: 'yeh2022.trx',
+      kind: 'tract',
+      opacity: 1,
+      tractOptions: {
+        fiberRadius: 0.5,
+        colorBy: 'fixed',
+        fixedColor: [255, 0, 0, 128],
+      },
+      trx: {
+        groups: { CST: [], AF: [] },
+        dps: { z_score: [] },
+        dpsMeta: { z_score: { globalMin: 0, globalMax: 5 } },
+      },
+    },
+    {
+      name: 'net.jcon',
+      kind: 'connectome',
+      connectomeOptions: { nodeScale: 3 },
+    },
+  ]
+  const options =
+    (key: 'tractOptions' | 'connectomeOptions') =>
+    (index: number, update: Record<string, unknown>) => {
+      meshes[index][key] = { ...meshes[index][key], ...update }
+      return Promise.resolve()
+    }
+  const view = baseView({
+    meshes,
+    meshShaders: ['phong', 'matte', 'flat'],
+    colormaps: ['gray', 'warm'],
+    setMesh: mock((index: number, update: MeshUpdate) => {
+      Object.assign(meshes[index], update)
+      return Promise.resolve()
+    }),
+    setTractOptions: mock(options('tractOptions')),
+    setConnectomeOptions: mock(options('connectomeOptions')),
+  })
+  const memory = memoryControls()
+  const onError = mock((_error: Error) => {})
+  const controls = bindControls(memory, { view, onError })
+  const host = hostOf(view)
+  host.controls = controls
+  const { add_control, list_controls } = controlHandlers(host)
+  return { view, meshes, memory, onError, add_control, list_controls }
+}
+
+describe('bindControls: meshes', () => {
+  it("offers a tract's colour modes and scalars, direction standing for ''", () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 'c',
+      kind: 'select',
+      bind: 'mesh.1.tract.colorBy',
+    }) as Reported
+    expect(
+      (got.control.options as Array<{ id: string }>).map((o) => o.id),
+    ).toEqual(['direction', 'global', 'fixed', 'dps:z_score'])
+    expect(got.control.value).toBe('fixed')
+    memory.simulate({ id: 'c', type: 'change', value: 'direction' })
+    expect(meshes[1].tractOptions?.colorBy).toBe('')
+    memory.simulate({ id: 'c', type: 'change', value: 'dps:z_score' })
+    expect(meshes[1].tractOptions?.colorBy).toBe('dps:z_score')
+  })
+
+  it('shows one group of a tract alone, or all of them', () => {
+    const { add_control, memory, meshes, list_controls } = meshView()
+    const got = add_control({
+      id: 'g',
+      kind: 'select',
+      bind: 'mesh.1.tract.group',
+    }) as Reported
+    expect(
+      (got.control.options as Array<{ id: string }>).map((o) => o.id),
+    ).toEqual(['all', 'CST', 'AF'])
+    memory.simulate({ id: 'g', type: 'change', value: 'AF' })
+    expect(meshes[1].tractOptions?.groupColors).toEqual({
+      AF: [230, 25, 75, 255],
+    })
+    memory.simulate({ id: 'g', type: 'change', value: 'all' })
+    expect(meshes[1].tractOptions?.groupColors).toBeNull()
+    // A change made elsewhere shows on the select.
+    meshes[1].tractOptions = {
+      ...meshes[1].tractOptions,
+      groupColors: { CST: [0, 0, 0, 255] },
+    }
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'g')?.value).toBe('CST')
+  })
+
+  it('stops driving a mesh that another has replaced at its index', () => {
+    const { add_control, memory, meshes, view, onError } = meshView()
+    add_control({ id: 'g', kind: 'select', bind: 'mesh.1.tract.group' })
+    meshes[1] = { name: 'net.jcon', kind: 'connectome' }
+    memory.simulate({ id: 'g', type: 'change', value: 'AF' })
+    expect(view.setTractOptions).not.toHaveBeenCalled()
+    expect(onError.mock.calls[0][0].message).toContain('Bind it again')
+  })
+
+  it('keeps the last value of a mesh property once its mesh is replaced', () => {
+    const { add_control, meshes, list_controls } = meshView()
+    meshes[0].visible = false
+    add_control({ id: 'v', kind: 'toggle', bind: 'mesh.0.visible' })
+    meshes[0] = { ...meshes[0], visible: false }
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'v')?.value).toBe(false)
+  })
+
+  it('stops driving a mesh loaded again at its index from the same source', () => {
+    const { add_control, memory, meshes, view, onError, list_controls } =
+      meshView()
+    add_control({ id: 'r', kind: 'slider', bind: 'mesh.1.tract.fiberRadius' })
+    meshes[1] = {
+      ...meshes[1],
+      tractOptions: { ...meshes[1].tractOptions, fiberRadius: 2 },
+    }
+    // The new mesh's value does not show on the control bound to the old one.
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'r')?.value).toBe(0.5)
+    memory.simulate({ id: 'r', type: 'change', value: 1 })
+    expect(view.setTractOptions).not.toHaveBeenCalled()
+    expect(onError.mock.calls[0][0].message).toContain('Bind it again')
+  })
+
+  it('hears a write that NiiVue fails later', async () => {
+    const { add_control, memory, view, onError } = meshView()
+    // The bind holds the setter it was made with, so it fails from the start.
+    view.setTractOptions = mock(() => Promise.reject(new Error('boom')))
+    add_control({ id: 'r', kind: 'slider', bind: 'mesh.1.tract.fiberRadius' })
+    memory.simulate({ id: 'r', type: 'change', value: 1 })
+    await Promise.resolve()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0].message).toBe('boom')
+  })
+
+  it('reads no named groups as all of them shown', () => {
+    const { add_control, meshes, list_controls } = meshView()
+    add_control({ id: 'g', kind: 'select', bind: 'mesh.1.tract.group' })
+    meshes[1].tractOptions = { ...meshes[1].tractOptions, groupColors: {} }
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'g')?.value).toBe('all')
+  })
+
+  it('declines a group select on a tract with no groups', () => {
+    const { add_control, meshes } = meshView()
+    meshes[1].trx = null
+    expect(() =>
+      add_control({ id: 'g', kind: 'select', bind: 'mesh.1.tract.group' }),
+    ).toThrow('has no groups')
+  })
+
+  it('drives a tract option from a slider as it moves', () => {
+    const { add_control, memory, view } = meshView()
+    const got = add_control({
+      id: 'r',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      max: 2,
+      step: 0.1,
+      bind: 'mesh.1.tract.fiberRadius',
+    }) as Reported
+    expect(got.control).toMatchObject({ value: 0.5, min: 0, max: 2 })
+    memory.simulate({ id: 'r', type: 'input', value: 1.2 })
+    expect(view.setTractOptions).toHaveBeenLastCalledWith(1, {
+      fiberRadius: 1.2,
+    })
+  })
+
+  it("takes a tract slider's range from NiiVue's examples when given none", () => {
+    const { add_control } = meshView()
+    const got = add_control({
+      id: 'r',
+      kind: 'slider',
+      bind: 'mesh.1.tract.fiberRadius',
+    }) as Reported
+    expect(got.control).toMatchObject({ min: 0, max: 3, step: 0.1, value: 0.5 })
+  })
+
+  it('shows a mesh with visible unset as shown', () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 'v',
+      kind: 'toggle',
+      bind: 'mesh.0.visible',
+    }) as Reported
+    expect(got.control.value).toBe(true)
+    memory.simulate({ id: 'v', type: 'change', value: false })
+    expect(meshes[0].visible).toBe(false)
+  })
+
+  it('offers the mesh shaders and writes a mesh property', () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 's',
+      kind: 'select',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.shader',
+    }) as Reported
+    expect(got.control.value).toBe('phong')
+    expect(
+      (got.control.options as Array<{ id: string }>).map((o) => o.id),
+    ).toEqual(['phong', 'matte', 'flat'])
+    memory.simulate({ id: 's', type: 'change', value: 'matte' })
+    expect(meshes[0].shaderType).toBe('matte')
+  })
+
+  it('holds a tract colour 0 to 1 and keeps the alpha it drives', () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 'c',
+      kind: 'color',
+      x: 0,
+      y: 0,
+      bind: 'mesh.1.tract.fixedColor',
+    }) as Reported
+    expect(got.control.value).toEqual([1, 0, 0])
+    memory.simulate({ id: 'c', type: 'change', value: [0, 1, 0] })
+    expect(meshes[1].tractOptions?.fixedColor).toEqual([0, 255, 0, 128])
+  })
+
+  it('shows a tract option changed elsewhere', () => {
+    const { add_control, list_controls, meshes } = meshView()
+    add_control({
+      id: 'n',
+      kind: 'number',
+      x: 0,
+      y: 0,
+      bind: 'mesh.2.connectome.nodeScale',
+    })
+    meshes[2].connectomeOptions = { nodeScale: 5 }
+    const { controls } = list_controls({}) as {
+      controls: Array<{ value: unknown }>
+    }
+    expect(controls[0].value).toBe(5)
+  })
+
+  it('declines a mesh it cannot reach, saying what a mesh bind may name', () => {
+    const { add_control } = meshView()
+    const bind = (b: string) => () =>
+      add_control({ id: 'x', kind: 'slider', x: 0, y: 0, bind: b })
+    expect(bind('mesh.4.opacity')).toThrow('There is no mesh 4: 3 are loaded.')
+    expect(bind('mesh.0.tract.fiberRadius')).toThrow(
+      'lh.pial is a mesh, not a tract.',
+    )
+    expect(bind('mesh.1.tract.groupColors')).toThrow('not a mesh binding')
+    expect(bind('mesh.1.width')).toThrow('fiberRadius')
+    expect(bind('mesh.1.opacity.x')).toThrow('not a mesh binding')
   })
 })
 

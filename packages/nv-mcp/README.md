@@ -10,6 +10,7 @@ The package has three entry points, and nothing in it knows about the app that h
 |---|---|---|
 | `@niivue/nv-mcp` | both | The wire messages, the plane arithmetic, region matching and the AAL spoken-name table |
 | `@niivue/nv-mcp/server` | Bun | The bridge that knows tabs by id, the core tools, `startServer` |
+| `@niivue/nv-mcp/browser` | the page | The client that keeps the socket open, and the handlers that answer the core tools from a NiiVue instance |
 
 An app adds its own tools as an *extension* without touching the core.
 

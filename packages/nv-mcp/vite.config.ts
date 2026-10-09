@@ -15,6 +15,7 @@ export default defineConfig({
       entry: {
         index: 'src/index.ts',
         server: 'src/server/index.ts',
+        browser: 'src/browser/index.ts',
       },
       formats: ['es'],
     },

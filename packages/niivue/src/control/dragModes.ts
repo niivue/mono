@@ -428,7 +428,7 @@ export function handleDragRelease(ctrl: NiiVue): void {
             volume: vol,
             changes: { calMin: range.calMin, calMax: range.calMax },
           })
-          ctrl.updateGLVolume()
+          ctrl._updateGLChanged()
         }
       }
     }
@@ -557,7 +557,7 @@ export function dragForWindowing(
     volume: vol,
     changes: { calMin: vol.calMin, calMax: vol.calMax },
   })
-  ctrl.updateGLVolume()
+  ctrl._updateGLChanged()
 }
 
 /** Helper: pick mm coordinates at a canvas pixel position using cached slice tiles. */

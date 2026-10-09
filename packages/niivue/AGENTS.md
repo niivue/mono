@@ -81,6 +81,7 @@ canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 
 - **Drawing tools** (`src/drawing/`) — RLE codec, pen/line/flood-fill, undo stack
 - **Annotations** (`src/annotation/`) — undo/redo, point-in-polygon, slice projection, shape selection and control points
+- **GPU rebuild planning** (`src/view/volumeUpdateScope.ts`, `src/view/meshGpuSync.ts`) — which volumes and meshes a rebuild redoes
 - **Math/transforms** (`src/math/`) — vox↔mm, spherical coordinates, slice plane equations, screen unprojection
 - **Volume utilities** (`src/volume/`) — intensity range, NIfTI header creation, voxel lookup, reorientation, modulation
 - **Colormaps** (`src/cmap/`) — LUT generation, label colormap construction
@@ -888,10 +889,53 @@ Discriminated by `kind: MeshKind`. All share GPU pipeline (`positions`/`indices`
 
 Exactly one of `mz3`, `trx`, `jcon` is non-null per mesh. Source data is immutable; only derived GPU arrays change. VTK files use `probeVTKContent()` for content-based dispatch (LINES→tract, POLYGONS→mesh).
 
+## Scoped GPU rebuilds
+
+Every controller change that needs new GPU resources goes through
+`_updateGL(meshes, volumes?, colorbars?)` → `view.updateBindGroups(opts)`
+(`UpdateBindGroupsOptions` in `view/volumeUpdateScope.ts`), which rebuilds only
+what the change touched. Both backends share the planning code, so keep them
+in step.
+
+- **Meshes** (`view/meshGpuSync.ts`, `MeshRebuild`): `'all'` frees and
+  re-uploads every mesh; `'changed'` reconciles `meshResources` with the model
+  through `planMeshSync`: new meshes are uploaded, removed ones freed, and a
+  kept mesh is re-uploaded only when its `uploadStamp` (the `positions`,
+  `indices` and `colors` arrays plus `mesh._dataVersion` and
+  `mesh._positionsVersion`, recorded at upload) no longer matches; `'none'` skips meshes. Kept meshes still pick up
+  `shaderType` / `sliceShaderType`, which are draw-time state. Packing a mesh
+  (normals + interleave, `packMeshVertices`) is the expensive part: ~0.2 s per
+  4M vertices, which every setter used to pay for every mesh.
+- **Mesh version tokens.** `mesh._dataVersion` is the in-place-edit token
+  for `colors` and `indices` (`markMeshDataChanged` in `NVControlBase.ts`):
+  `setMesh` bumps it for any option outside `MESH_DRAW_TIME_OPTIONS` (e.g.
+  `color`, which is baked into `colors`), as do the mesh-layer setters and
+  `setTractOptions` / `setConnectomeOptions`. In-place `positions` edits use
+  `mesh._positionsVersion` only (bumped by `updateMeshPositions`), the token
+  that position-derived caches such as cached normals key on; do not bump
+  `_dataVersion` for them. Replacing an array is detected without either token.
+- **Meshes must not share data arrays.** Resources and stamps are per mesh
+  object, so two meshes sharing `positions` / `indices` / `colors` (e.g. a
+  `{ ...mesh }` copy) go stale: recolouring one through `setMesh` writes the
+  shared array but re-uploads only that mesh.
+- **Who asks for what:** the public `updateGLVolume()` is the full rebuild
+  (`'all'`), for callers who edited loaded data in place themselves. Volume
+  and scene setters use `_updateGLChanged()` (every volume, colorbars, meshes
+  `'changed'`, which is a no-op when no mesh changed). Mesh setters (`addMesh`,
+  `removeMesh`, `setMesh`, layers, tract/connectome options) use
+  `_updateGLMeshes()`: meshes `'changed'`, `volumes: []` (no volume pass) and
+  colorbars (mesh layers and connectomes carry colorbars). `setMesh` with only
+  `MESH_REDRAW_OPTIONS` (`opacity`, `visible`, `name`) just calls `drawScene()`.
+  `setVolumeAffine`'s fallback rebuild uses meshes `'changed'`; view creation
+  (`_rebuildViewResources`) and context restore use the full rebuild.
+- **e2e:** `e2e/scoped-mesh-rebuild.spec.ts` asserts, on both backends, which
+  meshes each setter re-uploads (by `view._getMeshGpu(mesh)` identity) and that
+  the redraw-only and recolour paths reach the screen.
+
 ## Live data updates (`updateMeshPositions`, `updateVolumeData`)
 
 Fast paths for animating or live-editing data that is already loaded, without
-the full `updateGLVolume()` rebuild.
+a rebuild.
 
 - **`updateMeshPositions(meshIndex, positions?)`** (sync): copies into the
   existing `mesh.positions` (same vertex count, `kind === 'mesh'` only), bumps
@@ -900,14 +944,17 @@ the full `updateGLVolume()` rebuild.
   regenerated) and writes them into the existing buffer (`bufferSubData` /
   `queue.writeBuffer`; WebGPU mesh vertex buffers carry `COPY_DST` for this).
   If the mesh has no GPU buffer yet, or the byte size no longer matches, it
-  falls back to `updateGLVolume()`. Scene extents are deliberately not
-  recomputed, so the camera does not chase a moving mesh.
+  falls back to `_updateGLMeshes()`, which re-uploads it because its stamp's
+  `_positionsVersion` no longer matches. Scene extents are deliberately not
+  recomputed, so the camera does not chase a moving mesh. On success only the
+  stamp's `positions` / `positionsVersion` are refreshed
+  (`stampAfterVertexWrite`): the index buffer was not rewritten.
 - **`updateVolumeData(volumeIndex, data?)`** (async): copies all frames or one
   frame (`nVox3D` values into the current `frame4D`) into the existing `img`,
-  bumps `vol._dataVersion`, and runs `_updateGL(false, [vol])`, i.e.
-  `updateBindGroups({ meshes: false, volumes: [vol] })`. That skips the mesh
-  rebuild and the colorbars, and `view/volumeUpdateScope.ts` (shared by both
-  backends) limits the volume work: an edited overlay re-runs only the overlay
+  bumps `vol._dataVersion`, and runs `_updateGL('none', [vol])`, i.e.
+  `updateBindGroups({ meshes: 'none', volumes: [vol], colorbars: false })`.
+  That skips the meshes and the colorbars, and `view/volumeUpdateScope.ts`
+  (shared by both backends) limits the volume work: an edited overlay re-runs only the overlay
   pass (not the background orient pass or its gradient); an edited background
   re-runs only the background, plus the overlays when `isBackgroundMasking` is
   on. Volumes modulated by an edited volume are included, transitively.
@@ -1001,12 +1048,14 @@ the full `updateGLVolume()` rebuild.
   connectome colors are baked into `m.colors` only when those change
   (`compositeLayers`, `retessellateTract`, `reextrudeConnectome`), so they
   keep the old colors until their next property change.
-- **Coalescing:** `_updateGL(meshes, volumes?)` shares `_updating` /
-  `_pendingUpdate` with `updateVolumeAffineOnly`; the queued follow-up takes
-  the union of the callers' needs (`_pendingMeshes`, `_pendingVolumes`, and
+- **Coalescing:** `_updateGL(meshes, volumes?, colorbars?)` shares
+  `_updating` / `_pendingUpdate` with `updateVolumeAffineOnly`; the queued
+  follow-up takes the union of the callers' needs (`_pendingMeshes` via
+  `mergeMeshRebuild`, `_pendingVolumes`, `_pendingColorbars`, and
   `_pendingAllVolumes`, which any unscoped caller, including an affine-only
-  one, sets). `_pendingFull` makes an affine-only rerun yield to a queued full
-  update.
+  one, sets; without it the follow-up rebuilds only `_pendingVolumes`, which
+  is empty when only mesh setters queued). `_pendingFull` makes an
+  affine-only rerun yield to a queued full update.
 
 ## Mesh layers (scalar overlays)
 

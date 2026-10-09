@@ -22,6 +22,7 @@ import {
   type Extension,
   failure,
   reply,
+  TAB_ARG,
   type ToolContext,
   tabAddress,
   toolContext,
@@ -37,6 +38,28 @@ export const CORE_SCHEMAS = {
       .describe('The id of a connected tab, from list_tabs.'),
   },
   new_tab: {},
+  load_volume: {
+    ...TAB_ARG,
+    url: z
+      .string()
+      .min(1)
+      .describe('Where the volume is: an http(s) address the page can fetch.'),
+    name: z
+      .string()
+      .optional()
+      .describe('A name for it; the file name otherwise.'),
+    colormap: z
+      .string()
+      .optional()
+      .describe('A NiiVue colormap name; gray otherwise.'),
+    mni: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the volume is in MNI space, so an atlas applies. Guessed from the name otherwise.',
+      ),
+  },
+  where_am_i: { ...TAB_ARG },
 } as const
 
 /** Registers the core tools: tabs, the volume, the crosshair and the atlas, the cut and the camera, how each volume and the view are drawn, a picture. */
@@ -107,6 +130,39 @@ export function registerCoreTools(
           : `Open the page with ?${TAB_PARAM}=${id} in its address to connect a tab with that id.`,
       )
     },
+  )
+
+  server.registerTool(
+    'load_volume',
+    {
+      title: 'Load a volume',
+      description:
+        'Loads a volume into the page from an address it can fetch, replacing what is shown. ' +
+        "Reports the volume's name and its extent in millimetres. An atlas only applies when the " +
+        'volume is in MNI space; pass `mni` to say so, or leave it to be guessed from the name.',
+      inputSchema: CORE_SCHEMAS.load_volume,
+    },
+    async ({ tab, ...params }) =>
+      context.answer('load_volume', params, {
+        tab,
+        lead: (r) =>
+          `Loaded ${(r as { name?: string })?.name ?? 'the volume'}.`,
+      }),
+  )
+
+  server.registerTool(
+    'where_am_i',
+    {
+      title: 'Where the crosshair is',
+      description:
+        'Reports where the crosshair is now: its position in millimetres and as fractions of the ' +
+        'volume, the volumes shown and how each is drawn, the atlas region there if any, which ' +
+        'plane is cut, where the camera looks from, the view layout, which tab answered, and the ' +
+        'description a listener would hear.',
+      inputSchema: CORE_SCHEMAS.where_am_i,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ tab }) => context.answer('where_am_i', {}, { tab, withTab: true }),
   )
 }
 

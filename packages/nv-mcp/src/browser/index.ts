@@ -37,6 +37,13 @@ export {
   strings,
   text,
 } from './params'
+export {
+  coreHandlers,
+  looksMni,
+  planeIsCut,
+  sceneState,
+  viewState,
+} from './scene'
 export type {
   AtlasLike,
   AtlasRegion,

@@ -91,6 +91,22 @@ export interface ShownVolume {
   dims?: ArrayLike<number>
 }
 
+/** Statistics over a volume's voxels: NiiVue's `DescriptiveStats`. */
+export interface Descriptives {
+  nVox: number
+  mean: number
+  stdev: number
+  min: number
+  max: number
+  nVoxNot0: number
+  meanNot0: number
+  stdevNot0: number
+  minNot0: number
+  maxNot0: number
+  volumeMM3: number
+  volumeML: number
+}
+
 /** A translation, rotation and scale to apply to a volume: NiiVue's `AffineTransform`. */
 export interface AffineTransform {
   translation: [number, number, number]
@@ -106,6 +122,21 @@ export interface GlobalCamera {
   fov?: number
   near?: number
   far?: number
+}
+
+/** A volume a named transform made: NiiVue's `NVImage`, which `addVolume` takes as it is. */
+/** A transform of a loaded volume into a new one, as `View.volumeTransform` keeps them. */
+export type VolumeTransform = {
+  transform(
+    volume: ShownVolume,
+    options?: Record<string, unknown>,
+  ): Promise<TransformedVolume>
+}['transform']
+
+export interface TransformedVolume {
+  name?: string
+  hdr?: unknown
+  img?: unknown
 }
 
 export interface View {
@@ -126,8 +157,8 @@ export interface View {
   setClipPlane(plane: number[]): void
   /** Replaces every volume on show with these. */
   loadVolumes(volumes: VolumeToLoad[]): Promise<unknown>
-  /** Adds one volume over those on show, keeping them. */
-  addVolume(volume: VolumeToLoad): Promise<unknown>
+  /** Adds one volume over those on show, keeping them: one to fetch, or one a transform made. */
+  addVolume(volume: VolumeToLoad | TransformedVolume): Promise<unknown>
   /** Draws a volume as labels from a lookup table, by name (`freesurfer`) or as a table. */
   setColormapLabel?(
     volumeIndex: number,
@@ -162,6 +193,18 @@ export interface View {
   }
 
   // Volumes beyond the first tools.
+  removeVolume?(index: number): Promise<unknown>
+  removeAllVolumes?(): Promise<unknown>
+  moveVolumeUp?(index: number): Promise<unknown>
+  moveVolumeDown?(index: number): Promise<unknown>
+  moveVolumeToTop?(index: number): Promise<unknown>
+  moveVolumeToBottom?(index: number): Promise<unknown>
+  getDescriptives?(options: {
+    volumeIndex?: number
+    masks?: number[]
+    isDrawingMask?: boolean
+    drawPenValues?: number[]
+  }): Descriptives | null
   recalculateCalMinMax?(volumeIndex: number, frame?: number): Promise<unknown>
   loadDeferred4DVolumes?(id: string): Promise<unknown>
   setModulationImage?(
@@ -170,13 +213,22 @@ export interface View {
     modulateAlpha?: number,
   ): Promise<unknown>
   setAtlasOutline?(outline: number, volumeIndex?: number): unknown
+  getVolumeAffine?(index: number): number[][]
   setVolumeAffine?(index: number, affine: number[][]): Promise<unknown>
   resetVolumeAffine?(index: number): Promise<unknown>
   applyVolumeTransform?(
     index: number,
     transform: AffineTransform,
   ): Promise<unknown>
+  volumeTransforms?: readonly string[]
+  /**
+   * Each named transform as a function of a loaded volume, giving a new
+   * one. A method signature, so a NiiVue whose transforms take its own
+   * volume class fits: the handler only ever passes a volume of this view.
+   */
+  volumeTransform?: Record<string, VolumeTransform>
   vox2frac?(vox: [number, number, number]): [number, number, number]
+  moveCrosshairInVox?(di: number, dj: number, dk: number): unknown
 
   // The clip planes and the camera beyond the first plane.
   setClipPlanes?(planes: number[][]): unknown

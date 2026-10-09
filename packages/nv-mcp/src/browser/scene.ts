@@ -499,6 +499,27 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
     },
 
+    nudge_crosshair(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (!view.moveCrosshairInVox)
+        throw new Error(
+          "This page's NiiVue cannot step the crosshair by voxels.",
+        )
+      const by = numbers(params, 'vox', 3)
+      if (!by || by.some((v) => !Number.isInteger(v)))
+        throw new Error(
+          'nudge_crosshair needs vox: three whole numbers, [di, dj, dk].',
+        )
+      view.moveCrosshairInVox(by[0], by[1], by[2])
+      view.drawScene()
+      const frac = Array.from(view.crosshairPos)
+      host.moved?.(frac)
+      return {
+        crosshair: { mm: Array.from(view.getCrosshairPos()), frac },
+      }
+    },
+
     set_clip_plane(params) {
       requireVolume()
       host.beforeAnswer?.()
@@ -819,6 +840,125 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       view.drawScene()
       return { volume: describeVolume(volume, index) }
+    },
+
+    async transform_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      const name = text(params, 'name')
+      const known = view.volumeTransforms ?? []
+      if (!view.volumeTransform || !known.length)
+        throw new Error("This page's NiiVue has no volume transforms.")
+      if (!name || !Object.hasOwn(view.volumeTransform, name)) {
+        throw new Error(
+          `${name ? `Unknown transform "${name}"` : 'transform_volume needs a name'}. One of: ${known.join(', ')}.`,
+        )
+      }
+      const replace = flag(params, 'replace') ?? false
+      if (replace && !view.removeVolume)
+        throw new Error("This page's NiiVue cannot remove a volume.")
+      const options = record(params, 'options')
+      const made = await view.volumeTransform[name](volume, options)
+      // The source goes only once its replacement is in, so a failed add
+      // leaves the stack as it was.
+      await view.addVolume(made)
+      if (replace) await view.removeVolume?.(index)
+      view.drawScene()
+      const added = view.volumes.length - 1
+      return {
+        transform: name,
+        ...(options ? { options } : {}),
+        volume: describeVolume(view.volumes[added], added),
+        volumes: volumesShown(),
+      }
+    },
+
+    async remove_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (flag(params, 'all')) {
+        if (!view.removeAllVolumes)
+          throw new Error("This page's NiiVue cannot remove its volumes.")
+        await view.removeAllVolumes()
+        view.drawScene()
+        return { volumes: [] }
+      }
+      if (!view.removeVolume)
+        throw new Error("This page's NiiVue cannot remove a volume.")
+      const index = pickIndex(view.volumes, params?.volume, 'volume')
+      const removed = view.volumes[index].name
+      await view.removeVolume(index)
+      view.drawScene()
+      return { removed, volumes: volumesShown() }
+    },
+
+    async reorder_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = pickIndex(view.volumes, params?.volume, 'volume')
+      const move = text(params, 'move')?.toLowerCase()
+      const moves: Record<
+        string,
+        ((index: number) => Promise<unknown>) | undefined
+      > = {
+        up: view.moveVolumeUp?.bind(view),
+        down: view.moveVolumeDown?.bind(view),
+        top: view.moveVolumeToTop?.bind(view),
+        bottom: view.moveVolumeToBottom?.bind(view),
+      }
+      if (!move || !Object.hasOwn(moves, move))
+        throw new Error('reorder_volume needs move: up, down, top or bottom.')
+      const go = moves[move]
+      if (!go) throw new Error("This page's NiiVue cannot reorder its volumes.")
+      const name = view.volumes[index].name
+      await go(index)
+      view.drawScene()
+      return {
+        moved: name,
+        index: view.volumes.findIndex((v) => v.name === name),
+        volumes: volumesShown(),
+      }
+    },
+
+    describe_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      const out: Record<string, unknown> = {
+        volume: describeVolume(volume, index),
+      }
+      if (volume.dims) {
+        const dims = Array.from(volume.dims)
+        out.dims = dims.slice(1, 1 + Math.max(3, Math.min(dims[0] ?? 3, 4)))
+      }
+      if (volume.id !== undefined) out.id = volume.id
+      if (flag(params, 'stats') ?? true) {
+        if (!view.getDescriptives)
+          throw new Error("This page's NiiVue cannot compute voxel statistics.")
+        const masks = numbers(params, 'mask_labels')
+        const mask = params?.mask
+        const options: Parameters<NonNullable<View['getDescriptives']>>[0] = {
+          volumeIndex: index,
+        }
+        if (mask !== undefined && mask !== null) {
+          options.masks = [pickIndex(view.volumes, mask, 'volume')]
+          if (masks) options.drawPenValues = masks
+        } else if (flag(params, 'drawing')) {
+          options.isDrawingMask = true
+          if (masks) options.drawPenValues = masks
+        }
+        const stats = view.getDescriptives(options)
+        if (stats) out.stats = stats
+      }
+      if (flag(params, 'affine')) {
+        if (!view.getVolumeAffine)
+          throw new Error("This page's NiiVue cannot report a volume's affine.")
+        out.affine = view.getVolumeAffine(index)
+      }
+      return out
     },
 
     set_view(params) {

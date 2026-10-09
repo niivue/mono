@@ -1,5 +1,6 @@
 import { log } from '@/logger'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
+import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
 import { packMeshVertices } from '@/view/NVMeshView'
 import {
   meshDepthPickFragmentShader,
@@ -107,6 +108,7 @@ function createMeshGpu(
     vertexBuffer,
     indexBuffer,
     indexCount: meshData.indices.length,
+    vertexBytes: vertexData.byteLength,
   }
 }
 
@@ -135,13 +137,12 @@ export function writeMeshVertices(
   gpu: WebGLMeshGPU,
 ): boolean {
   if (!gpu.vertexBuffer) return false
-  const vertexData = packMeshVertices(meshData)
+  const bytes = (meshData.positions.length / 3) * BYTES_PER_VERTEX
+  if (gpu.vertexBytes !== bytes) return false
   gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vertexBuffer)
-  const size = gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) as number
-  const ok = size === vertexData.byteLength
-  if (ok) gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertexData)
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, packMeshVertices(meshData))
   gl.bindBuffer(gl.ARRAY_BUFFER, null)
-  return ok
+  return true
 }
 
 export function useShader(

@@ -1,4 +1,5 @@
 import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
+import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
 import { packMeshVertices } from '@/view/NVMeshView'
 import meshShaderWGSL from './mesh.wgsl?raw'
 
@@ -57,9 +58,9 @@ export function writeMeshVertices(
   gpu: WebGPUMeshGPU,
 ): boolean {
   if (!gpu.vertexBuffer) return false
-  const vertexData = packMeshVertices(meshData)
-  if (gpu.vertexBuffer.size !== vertexData.byteLength) return false
-  device.queue.writeBuffer(gpu.vertexBuffer, 0, vertexData)
+  const bytes = (meshData.positions.length / 3) * BYTES_PER_VERTEX
+  if (gpu.vertexBuffer.size !== bytes) return false
+  device.queue.writeBuffer(gpu.vertexBuffer, 0, packMeshVertices(meshData))
   return true
 }
 

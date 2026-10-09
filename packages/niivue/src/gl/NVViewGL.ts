@@ -1763,8 +1763,12 @@ export default class NVGlview {
    */
   updateMeshVertices(m: NVMesh): boolean {
     const gl = this.gl
+    if (!gl) return false
+    // A lost context/device cannot be written to, and a full rebuild would fail
+    // the same way every frame. Report success; recovery re-uploads every mesh.
+    if (this._contextLost || gl.isContextLost()) return true
     const gpu = this.meshResources.get(m)
-    if (!gl || !gpu) return false
+    if (!gpu) return false
     return mesh.writeMeshVertices(gl, m, gpu)
   }
 

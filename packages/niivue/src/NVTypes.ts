@@ -582,6 +582,8 @@ export type WebGLMeshGPU = {
   vertexBuffer: WebGLBuffer | null
   indexBuffer: WebGLBuffer | null
   indexCount: number
+  /** Byte size of vertexBuffer (WebGL cannot cheaply query it). */
+  vertexBytes?: number
 }
 
 export type WebGPUMeshGPU = {

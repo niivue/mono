@@ -2566,8 +2566,12 @@ export default class NVView {
    */
   updateMeshVertices(m: NVMesh): boolean {
     const device = this.device
+    if (!device) return false
+    // A lost context/device cannot be written to, and a full rebuild would fail
+    // the same way every frame. Report success; recovery re-uploads every mesh.
+    if (this._deviceLost) return true
     const gpu = this.meshResources.get(m)
-    if (!device || !gpu) return false
+    if (!gpu) return false
     return mesh.writeMeshVertices(device, m, gpu)
   }
 

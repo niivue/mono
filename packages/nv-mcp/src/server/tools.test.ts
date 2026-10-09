@@ -137,6 +137,7 @@ describe('core tool schemas', () => {
     expect(required('reorder_volume')).toEqual(['volume', 'move'])
     expect(required('transform_volume')).toEqual(['name'])
     expect(required('set_options')).toEqual(['options'])
+    expect(required('set_font')).toEqual(['atlas', 'metrics'])
     for (const name of ['describe_volume', 'capabilities'])
       expect([name, byName[name].annotations?.readOnlyHint]).toEqual([
         name,

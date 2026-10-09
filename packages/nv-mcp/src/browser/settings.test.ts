@@ -187,3 +187,168 @@ describe('capabilities', () => {
       expect(members).toEqual([])
   })
 })
+
+describe('add_colormap', () => {
+  it('adds a colormap from its stops and reports the names known', () => {
+    const known = ['gray']
+    const view = baseView({
+      colormaps: known,
+      addColormap: mock((name: string) => {
+        known.push(name)
+        return name
+      }),
+    })
+    const { add_colormap } = settingHandlers(hostOf(view))
+    expect(
+      add_colormap({
+        name: 'fire',
+        R: [0, 255],
+        G: [0, 128],
+        B: [0, 0],
+        A: [0, 255],
+        I: [0, 255],
+        labels: ['cold', 'hot'],
+      }),
+    ).resolves.toEqual({ name: 'fire', colormaps: ['gray', 'fire'] })
+    expect(view.addColormap).toHaveBeenCalledWith('fire', {
+      R: [0, 255],
+      G: [0, 128],
+      B: [0, 0],
+      A: [0, 255],
+      I: [0, 255],
+      labels: ['cold', 'hot'],
+    })
+  })
+
+  it('refuses stops of different lengths and a missing name', async () => {
+    const view = baseView({ addColormap: mock(() => 'x') })
+    const { add_colormap } = settingHandlers(hostOf(view))
+    await expect(
+      add_colormap({ name: 'x', R: [0, 1], G: [0], B: [0, 1] }),
+    ).rejects.toThrow('add_colormap needs R, G and B: lists of the same length')
+    await expect(
+      add_colormap({ name: 'x', R: [0, 1], G: [0, 1], B: [0, 1], A: [1] }),
+    ).rejects.toThrow('A must be as long as R, G and B (2).')
+    await expect(add_colormap({ R: [0], G: [0], B: [0] })).rejects.toThrow(
+      'add_colormap needs a name, and R, G and B or a url.',
+    )
+    await expect(
+      settingHandlers(hostOf(baseView())).add_colormap({
+        name: 'x',
+        R: [0],
+        G: [0],
+        B: [0],
+      }),
+    ).rejects.toThrow("This page's NiiVue cannot add a colormap.")
+  })
+
+  it('fetches a colormap from a url, saying why when it cannot', async () => {
+    const view = baseView({
+      addColormapFromUrl: mock(async (url: string) => {
+        if (url.endsWith('bad.json')) throw new Error('404')
+      }),
+    })
+    const { add_colormap } = settingHandlers(hostOf(view))
+    expect(
+      await add_colormap({ url: 'https://x/maps/fire.json', name: 'fire' }),
+    ).toEqual({ name: 'fire' })
+    expect(view.addColormapFromUrl).toHaveBeenCalledWith(
+      'https://x/maps/fire.json',
+      'fire',
+    )
+    await expect(add_colormap({ url: 'https://x/bad.json' })).rejects.toThrow(
+      'The colormap at https://x/bad.json could not be loaded: 404',
+    )
+    await expect(
+      settingHandlers(hostOf(baseView())).add_colormap({ url: 'https://x/a' }),
+    ).rejects.toThrow("This page's NiiVue cannot fetch a colormap.")
+  })
+})
+
+describe('set_font', () => {
+  it('loads the font from its atlas and metrics', async () => {
+    const view = baseView({
+      setFontFromUrl: mock(async ({ atlas }: { atlas: string }) =>
+        atlas.includes('good'),
+      ),
+    })
+    const { set_font } = settingHandlers(hostOf(view))
+    expect(
+      await set_font({
+        atlas: 'https://x/good.png',
+        metrics: 'https://x/m.json',
+      }),
+    ).toEqual({ atlas: 'https://x/good.png', metrics: 'https://x/m.json' })
+    expect(view.drawScene).toHaveBeenCalledTimes(1)
+    await expect(
+      set_font({ atlas: 'https://x/bad.png', metrics: 'https://x/m.json' }),
+    ).rejects.toThrow('The font at https://x/bad.png could not be loaded.')
+    await expect(set_font({ atlas: 'https://x/good.png' })).rejects.toThrow(
+      'set_font needs atlas and metrics',
+    )
+    await expect(
+      settingHandlers(hostOf(baseView())).set_font({
+        atlas: 'a',
+        metrics: 'b',
+      }),
+    ).rejects.toThrow("This page's NiiVue cannot change its font.")
+  })
+})
+
+describe('set_custom_layout', () => {
+  it('places tiles by slice name and fractions, and clears them', () => {
+    const view = baseView({ customLayout: null, clearCustomLayout: mock() })
+    const { set_custom_layout } = settingHandlers(hostOf(view))
+    expect(
+      set_custom_layout({
+        tiles: [
+          { slice: 'Axial', position: [0, 0, 0.5, 1], mm: 10, fill: true },
+          { slice: 'render', position: [0.5, 0, 0.5, 1] },
+        ],
+      }),
+    ).toEqual({
+      layout: [
+        { sliceType: 0, position: [0, 0, 0.5, 1], sliceMM: 10, fill: true },
+        { sliceType: 4, position: [0.5, 0, 0.5, 1] },
+      ],
+    })
+    expect(view.customLayout).toHaveLength(2)
+    expect(set_custom_layout({ clear: true })).toEqual({ layout: null })
+    expect(view.clearCustomLayout).toHaveBeenCalledTimes(1)
+    expect(view.drawScene).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears by assignment when the page has no clearing method', () => {
+    const view = baseView({ customLayout: [] })
+    const { set_custom_layout } = settingHandlers(hostOf(view))
+    set_custom_layout({ clear: true })
+    expect(view.customLayout).toBeNull()
+  })
+
+  it('refuses bad tiles and a page without the layout', () => {
+    const view = baseView({ customLayout: null })
+    const { set_custom_layout } = settingHandlers(hostOf(view))
+    expect(() => set_custom_layout({})).toThrow(
+      'set_custom_layout needs tiles, or clear: true.',
+    )
+    expect(() =>
+      set_custom_layout({
+        tiles: [{ slice: 'oblique', position: [0, 0, 1, 1] }],
+      }),
+    ).toThrow('Tile 0 needs a slice: one of axial, coronal, sagittal')
+    expect(() =>
+      set_custom_layout({
+        tiles: [{ slice: 'axial', position: [0, 0, 2, 1] }],
+      }),
+    ).toThrow('Tile 0 needs a position: [left, top, width, height]')
+    expect(() =>
+      set_custom_layout({
+        tiles: [{ slice: 'axial', position: [0, 0, 1, 1], mm: 'far' }],
+      }),
+    ).toThrow('Tile 0: mm must be a number.')
+    expect(view.customLayout).toBeNull()
+    expect(() =>
+      settingHandlers(hostOf(baseView())).set_custom_layout({ clear: true }),
+    ).toThrow("This page's NiiVue has no custom layout.")
+  })
+})

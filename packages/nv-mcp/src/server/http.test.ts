@@ -36,6 +36,9 @@ const CORE_TOOLS = [
   'get_options',
   'set_options',
   'capabilities',
+  'add_colormap',
+  'set_font',
+  'set_custom_layout',
 ]
 
 /** The smallest extension: one tool, answered by the page's `set_light` handler. */

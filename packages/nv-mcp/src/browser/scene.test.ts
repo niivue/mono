@@ -2,7 +2,13 @@ import { describe, expect, it, mock } from 'bun:test'
 
 import { PLANE_NONE } from '../planes'
 import { nameFromUrl } from './params'
-import { coreHandlers, looksMni, planeIsCut, sceneState } from './scene'
+import {
+  coreHandlers,
+  looksMni,
+  planeIsCut,
+  sceneState,
+  viewState,
+} from './scene'
 import type { NiiVueHost, ShownVolume, View, VolumeToLoad } from './view'
 
 /** A volume as NiiVue would keep it after loading `volume`. */
@@ -111,6 +117,163 @@ describe('where_am_i', () => {
     expect(
       await coreHandlers(host(fakeView({ volumes: [] }))).where_am_i({}),
     ).toEqual({ volume: null, description: 'No volume is loaded yet.' })
+  })
+})
+
+describe('set_camera', () => {
+  it('turns the camera, wrapping the azimuth and clamping the elevation', () => {
+    const view = fakeView()
+    const result = coreHandlers(host(view)).set_camera({
+      azimuth: -90,
+      elevation: 120,
+    })
+    expect(result).toMatchObject({ camera: { azimuth: 270, elevation: 90 } })
+    expect(view.drawScene).toHaveBeenCalled()
+    expect(() =>
+      coreHandlers(host(view)).set_camera({
+        azimuth: 'sideways',
+        elevation: 0,
+      }),
+    ).toThrow('azimuth must be a number')
+  })
+})
+
+describe('set_view', () => {
+  const laidOut = () =>
+    fakeView({
+      sliceType: 4,
+      multiplanarType: 0,
+      mosaicString: '',
+      showRender: 2,
+      isRadiological: false,
+      isColorbarVisible: false,
+    })
+
+  it('sets each part by name, leaving the rest, and reports the whole layout', () => {
+    const view = laidOut()
+    const handlers = coreHandlers(host(view))
+    expect(handlers.set_view({ slice: 'multiplanar', layout: 'grid' })).toEqual(
+      {
+        view: {
+          slice: 'multiplanar',
+          layout: 'grid',
+          showRender: 'auto',
+          radiological: false,
+          colorbar: false,
+        },
+      },
+    )
+    expect([view.sliceType, view.multiplanarType]).toEqual([3, 2])
+    expect(
+      handlers.set_view({
+        show_render: 'never',
+        radiological: true,
+        colorbar: true,
+      }),
+    ).toMatchObject({
+      view: { showRender: 'never', radiological: true, colorbar: true },
+    })
+    expect(view.showRender).toBe(0)
+    expect(
+      handlers.set_view({ mosaic: ' A 0 20 40; C -10 0 10 ' }),
+    ).toMatchObject({
+      view: { mosaic: 'A 0 20 40; C -10 0 10', slice: 'multiplanar' },
+    })
+    expect(handlers.set_view({ mosaic: '' })).not.toHaveProperty('view.mosaic')
+    expect(view.mosaicString).toBe('')
+    expect(handlers.set_view({ slice: 'Axial' })).toMatchObject({
+      view: { slice: 'axial' },
+    })
+    expect(view.drawScene).toHaveBeenCalledTimes(5)
+  })
+
+  it('works before a volume is loaded, and names a number it does not know as other', () => {
+    const view = laidOut()
+    view.volumes = []
+    expect(
+      coreHandlers(host(view)).set_view({ slice: 'render' }),
+    ).toMatchObject({ view: { slice: 'render' } })
+    view.sliceType = 5
+    expect(viewState(view).slice).toBe('other')
+  })
+
+  it('refuses an unknown name, nothing to set, or a page without a layout', () => {
+    const handlers = coreHandlers(host(laidOut()))
+    expect(() => handlers.set_view({ slice: 'oblique' })).toThrow(
+      'Unknown slice "oblique". One of: axial, coronal, sagittal, multiplanar, render.',
+    )
+    expect(() => handlers.set_view({ layout: 'stack' })).toThrow(
+      'Unknown layout "stack"',
+    )
+    expect(() => handlers.set_view({ show_render: 'maybe' })).toThrow(
+      'Unknown show_render "maybe"',
+    )
+    expect(() => handlers.set_view({})).toThrow('needs something to set')
+    expect(() =>
+      coreHandlers(host(fakeView())).set_view({ slice: 'axial' }),
+    ).toThrow('no view layout')
+  })
+})
+
+describe('screenshot', () => {
+  it('draws, then returns the canvas as base64 PNG with its size', () => {
+    const calls: string[] = []
+    const canvas = {
+      width: 640,
+      height: 480,
+      toDataURL: (type: string) => {
+        calls.push(`toDataURL:${type}`)
+        return 'data:image/png;base64,iVBORw0KGgo='
+      },
+    } as unknown as HTMLCanvasElement
+    const view = fakeView({
+      canvas,
+      drawScene: mock(() => calls.push('draw')),
+    })
+    expect(coreHandlers(host(view)).screenshot({})).toEqual({
+      data: 'iVBORw0KGgo=',
+      mimeType: 'image/png',
+      width: 640,
+      height: 480,
+      canvas: { width: 640, height: 480 },
+    })
+    expect(calls).toEqual(['draw', 'toDataURL:image/png'])
+    expect(() => coreHandlers(host(fakeView())).screenshot({})).toThrow(
+      'no canvas',
+    )
+  })
+
+  it('sizes an unsized canvas first and has the render backend draw the frame now', () => {
+    const calls: string[] = []
+    const canvas = {
+      width: 300,
+      height: 150,
+      getBoundingClientRect: () => ({ width: 640, height: 480 }),
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    } as unknown as HTMLCanvasElement
+    const view = fakeView({
+      canvas,
+      resize: mock(() => calls.push('resize')),
+      drawScene: mock(() => calls.push('draw')),
+      view: { render: () => calls.push('render') },
+    })
+    coreHandlers(host(view)).screenshot({})
+    expect(calls).toEqual(['resize', 'draw', 'render'])
+  })
+
+  it('refuses while the tab is in the background, where nothing is drawn', () => {
+    const global = globalThis as { document?: unknown }
+    const before = global.document
+    global.document = { visibilityState: 'hidden' }
+    try {
+      const canvas = { width: 1, height: 1 } as unknown as HTMLCanvasElement
+      expect(() =>
+        coreHandlers(host(fakeView({ canvas }))).screenshot({}),
+      ).toThrow(/background/)
+    } finally {
+      if (before === undefined) delete global.document
+      else global.document = before
+    }
   })
 })
 

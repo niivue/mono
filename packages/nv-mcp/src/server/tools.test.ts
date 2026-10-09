@@ -138,7 +138,9 @@ describe('core tool schemas', () => {
     expect(required('transform_volume')).toEqual(['name'])
     expect(required('set_options')).toEqual(['options'])
     expect(required('set_font')).toEqual(['atlas', 'metrics'])
-    for (const name of ['describe_volume', 'capabilities'])
+    expect(required('load_mesh')).toEqual(['url'])
+    expect(required('add_mesh_layer')).toEqual(['url'])
+    for (const name of ['describe_volume', 'capabilities', 'list_meshes'])
       expect([name, byName[name].annotations?.readOnlyHint]).toEqual([
         name,
         true,

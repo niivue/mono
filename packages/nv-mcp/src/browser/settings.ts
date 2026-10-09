@@ -81,6 +81,16 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'renderPan',
     'renderPivotMM',
   ],
+  meshes: [
+    'meshes',
+    'addMesh',
+    'setMesh',
+    'removeMesh',
+    'addMeshLayer',
+    'setMeshLayerProperty',
+    'setTractOptions',
+    'setConnectomeOptions',
+  ],
   colormaps: [
     'colormaps',
     'addColormap',
@@ -173,6 +183,7 @@ export function settingHandlers(host: NiiVueHost): Handlers {
         ...(view.drawingColormaps
           ? { drawingColormaps: view.drawingColormaps }
           : {}),
+        ...(view.meshShaders ? { meshShaders: view.meshShaders } : {}),
         ...(transforms.length ? { volumeTransforms: transforms } : {}),
         ...(view.volumeExtensions
           ? { volumeExtensions: view.volumeExtensions }

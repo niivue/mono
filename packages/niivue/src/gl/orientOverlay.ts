@@ -645,6 +645,8 @@ export type OverlayTextureCache = {
   frame4D: number
   colormapKey: string
   imageBuffer: ArrayBufferLike
+  /** `nvimage._dataVersion` the input texture was last uploaded from. */
+  dataVersion: number
   shaderType: keyof ShaderPrograms
   modTexture: WebGLTexture | null
   modKey: string
@@ -721,6 +723,30 @@ function prepareFrameData(
   ) as ArrayBufferView
 }
 
+/** Upload the current frame into the bound TEXTURE_3D (storage already allocated). */
+function uploadInputTexture(
+  gl: WebGL2RenderingContext,
+  nvimage: NVImage,
+  texConfig: TextureConfig,
+  dimsIn: number[],
+): void {
+  const glAny = gl as WebGL2RenderingContext & Record<string, number>
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    dimsIn[0],
+    dimsIn[1],
+    dimsIn[2],
+    glAny[texConfig.format],
+    glAny[texConfig.type],
+    prepareFrameData(nvimage, texConfig),
+  )
+}
+
 export function prepareOverlayTextureCache(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
@@ -760,6 +786,15 @@ export function prepareOverlayTextureCache(
     existingCache.colormapKey === colormapKey &&
     existingCache.modKey === modKey
   if (canReuse) {
+    // Same buffer, but the voxels may have been edited in place
+    // (updateVolumeData): rewrite the input texture without reallocating it.
+    const dataVersion = nvimage._dataVersion ?? 0
+    if (existingCache.dataVersion !== dataVersion) {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_3D, existingCache.inputTexture)
+      uploadInputTexture(gl, nvimage, texConfig, dimsIn)
+      existingCache.dataVersion = dataVersion
+    }
     renderOverlayCache(gl, existingCache, nvimage, mtx, overlayOpacity, mod)
     return existingCache
   }
@@ -790,7 +825,6 @@ export function prepareOverlayTextureCache(
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
   gl.texStorage3D(
     gl.TEXTURE_3D,
     1,
@@ -799,19 +833,7 @@ export function prepareOverlayTextureCache(
     dimsIn[1],
     dimsIn[2],
   )
-  gl.texSubImage3D(
-    gl.TEXTURE_3D,
-    0,
-    0,
-    0,
-    0,
-    dimsIn[0],
-    dimsIn[1],
-    dimsIn[2],
-    glAny[texConfig.format],
-    glAny[texConfig.type],
-    prepareFrameData(nvimage, texConfig),
-  )
+  uploadInputTexture(gl, nvimage, texConfig, dimsIn)
   const isLabelVol =
     nvimage.colormapLabel !== null && nvimage.colormapLabel !== undefined
   gl.activeTexture(gl.TEXTURE1)
@@ -915,6 +937,7 @@ export function prepareOverlayTextureCache(
     frame4D,
     colormapKey,
     imageBuffer: nvimage.img.buffer,
+    dataVersion: nvimage._dataVersion ?? 0,
     shaderType: texConfig.shaderType,
     modTexture: mod ? createModTexture(gl, mod) : null,
     modKey,

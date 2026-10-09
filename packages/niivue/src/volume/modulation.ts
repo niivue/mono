@@ -186,8 +186,8 @@ export function computeModulationWeights(volumes: NVImage[]): void {
     }
     const hdr = mod.hdr
     const pow = Math.max(1, Math.abs(vol.modulateAlpha ?? 0))
-    // Key on the modulator's data identity (buffer + offset, not just length),
-    // datatype, native dims, scaling, frame, window, and exponent — so a
+    // Key on the modulator's data identity (buffer + offset, not just length,
+    // plus the in-place edit counter), datatype, native dims, scaling, frame, window, and exponent — so a
     // swapped/rescaled/re-windowed modulator invalidates the cached weight and
     // the GPU texture (whose modKey derives from this key). See audit P2.
     const key = [
@@ -195,6 +195,7 @@ export function computeModulationWeights(volumes: NVImage[]): void {
       bufferId(mod.img.buffer),
       mod.img.byteOffset,
       mod.img.byteLength,
+      mod._dataVersion ?? 0,
       hdr.datatypeCode,
       mod.dims[1],
       mod.dims[2],

@@ -842,11 +842,11 @@ arrays are derived (never serialized).
   early-return for `colormapLabel` targets (no wasted setup).
 - **NaN-safe weights** — both compute loops map a NaN/`<=0` window AND any NaN
   modulator voxel (finite window) to weight 0 (transparent), never NaN.
-- **Cache key = modulator buffer identity** (WeakMap id) + offset + datatype +
-  dims + scaling + frame + window + exponent. It does NOT detect **in-place**
-  mutation of `mod.img` (a drawing/segmentation modulator edited without swapping
-  the buffer) — re-call `setModulationImage` after such an edit. A repo-wide
-  `NVImage` data-revision token is the deferred general fix.
+- **Cache key = modulator buffer identity** (WeakMap id) + offset + data
+  version (`_dataVersion`) + datatype + dims + scaling + frame + window +
+  exponent. An in-place edit made through `updateVolumeData` bumps the version
+  and invalidates it; any other in-place mutation of `mod.img` is invisible —
+  re-call `setModulationImage` after such an edit.
 - **Affine fast path** (`updateAffineOverlays`, 2-volume case) bails to a full
   update when `vols[0].modulationImage` is set — otherwise a modulated
   background's baked modulator matrix would go stale on an overlay affine change.
@@ -887,6 +887,37 @@ Discriminated by `kind: MeshKind`. All share GPU pipeline (`positions`/`indices`
 | Connectome | `'connectome'` | `jcon` | Yes (node/edge scale, thresholds) |
 
 Exactly one of `mz3`, `trx`, `jcon` is non-null per mesh. Source data is immutable; only derived GPU arrays change. VTK files use `probeVTKContent()` for content-based dispatch (LINES→tract, POLYGONS→mesh).
+
+## Live data updates (`updateMeshPositions`, `updateVolumeData`)
+
+Fast paths for animating or live-editing data that is already loaded, without
+the full `updateGLVolume()` rebuild.
+
+- **`updateMeshPositions(meshIndex, positions?)`** (sync): copies into the
+  existing `mesh.positions` (same vertex count, `kind === 'mesh'` only), bumps
+  `mesh._positionsVersion`, then `view.updateMeshVertices(mesh)` repacks the
+  interleaved vertices (`packMeshVertices` in `view/NVMeshView.ts`, normals
+  regenerated) and writes them into the existing buffer (`bufferSubData` /
+  `queue.writeBuffer`; WebGPU mesh vertex buffers carry `COPY_DST` for this).
+  If the mesh has no GPU buffer yet, or the byte size no longer matches, it
+  falls back to `updateGLVolume()`. Scene extents are deliberately not
+  recomputed, so the camera does not chase a moving mesh.
+- **`updateVolumeData(volumeIndex, data?)`** (async): copies all frames or one
+  frame (`nVox3D` values into the current `frame4D`) into the existing `img`,
+  bumps `vol._dataVersion`, and runs `_updateGL(false)`, i.e. `updateBindGroups({
+  meshes: false })`, which skips the mesh rebuild. The orient caches
+  (`prepareOverlayTextureCache` / `prepareOrientTextureCache`) and the
+  per-volume `_texCache` single entries record `dataVersion`: a mismatch
+  re-uploads the source texture in place (orient caches) or rebuilds the entry
+  (`_texCache`). The window (calMin/calMax) is not recomputed. Chunk-streamed
+  volumes (`chunkPlan`) are rejected; oversized volumes the renderer chunks on
+  its own are not refreshed.
+- **`_dataVersion` is the general in-place-edit token** for `NVImage`. Any cache
+  keyed on `img` buffer identity must also compare it (orient caches,
+  `_texCache`, modulation weight key, extension `imgRAS`, legend centroids).
+- **Coalescing:** `_updateGL(meshes)` shares `_updating` / `_pendingUpdate` with
+  `updateVolumeAffineOnly`; `_pendingMeshes` ORs the queued callers' needs, and
+  `_pendingFull` makes an affine-only rerun yield to a queued full update.
 
 ## Mesh layers (scalar overlays)
 
@@ -1486,7 +1517,7 @@ Volumes apply in GPU shader. Mesh layers apply during CPU compositing (`mesh/lay
 
 **Label colormaps:** Discrete indexed colors for atlas volumes. `NVCmaps.makeLabelLut()` → `NVImage.colormapLabel`. Orient shader uses nearest-neighbor LUT sampling. `calMin`/`calMax`/`colormapType` are ignored for label volumes. When a colormap registered via `addColormap(name, cmap)` includes a `labels?: string[]` field (e.g. the built-in `_draw` colormap), the drawing volume surfaces the human-readable label (e.g. `"11bladder"`) in the `locationChange` event's `string` field instead of a numeric fallback like `"draw:11"`.
 
-**Legend centroids are lazy.** Nothing computes label centroids at load (`setColormapLabel`, `addVolume({ colormapLabel })`, document load, mesh layer load); `LegendEntry.centroid` is a function that `view/legendCentroids.ts` evaluates on the first legend click and memoizes in a `WeakMap` keyed on the data array: `volume.img` for volumes, with `[colormapLabel, matRAS]` as dependencies, and `layer.values` for mesh layers, with `[mesh.positions, layer.colormapLabel]` as dependencies. A dependency is compared by identity, so replace these objects, never mutate them in place; `applyVolumeTransform` and `resetVolumeAffine` assign a new `volume.matRAS` without touching `img` or the LUT, which is why `matRAS` is a dependency. Volume centroids are means of RAS voxel coordinates mapped through `matRAS` once; mesh centroids are means of vertex positions, already in mm. `LUT.centroids` no longer exists. A 256³ scan is ~60 ms (Chrome), down from 515-850 ms when it ran eagerly on every label load.
+**Legend centroids are lazy.** Nothing computes label centroids at load (`setColormapLabel`, `addVolume({ colormapLabel })`, document load, mesh layer load); `LegendEntry.centroid` is a function that `view/legendCentroids.ts` evaluates on the first legend click and memoizes in a `WeakMap` keyed on the data array: `volume.img` for volumes, with `[colormapLabel, matRAS, _dataVersion]` as dependencies, and `layer.values` for mesh layers, with `[mesh.positions, layer.colormapLabel, mesh._positionsVersion]` as dependencies. A dependency is compared by identity, so replace these objects, never mutate them in place (the version counters cover the in-place edits `updateVolumeData` / `updateMeshPositions` make); `applyVolumeTransform` and `resetVolumeAffine` assign a new `volume.matRAS` without touching `img` or the LUT, which is why `matRAS` is a dependency. Volume centroids are means of RAS voxel coordinates mapped through `matRAS` once; mesh centroids are means of vertex positions, already in mm. `LUT.centroids` no longer exists. A 256³ scan is ~60 ms (Chrome), down from 515-850 ms when it ran eagerly on every label load.
 
 ## Drawing (voxel bitmap editing)
 

@@ -398,7 +398,7 @@ export default class NVGlview {
     // Mesh pipelines are statically defined
   }
 
-  async _updateBindings(): Promise<void> {
+  async _updateBindings(opts: { meshes?: boolean } = {}): Promise<void> {
     // try/finally so an early return or a thrown await never leaves isBusy stuck
     // true — the render loop skips while busy, so a stuck flag freezes drawing.
     this.isBusy = true
@@ -489,7 +489,7 @@ export default class NVGlview {
       } else {
         this.volumeRenderer.clearOverlay(gl)
       }
-      this._rebuildMeshResources()
+      if (opts.meshes !== false) this._rebuildMeshResources()
     } finally {
       this.isBusy = false
     }
@@ -521,8 +521,12 @@ export default class NVGlview {
     return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)
   }
 
-  updateBindGroups(): Promise<void> {
-    return this._updateBindings()
+  /**
+   * Rebuild GPU resources from the model. `meshes: false` skips the mesh
+   * rebuild, for updates that only touch volume data (updateVolumeData).
+   */
+  updateBindGroups(opts: { meshes?: boolean } = {}): Promise<void> {
+    return this._updateBindings(opts)
   }
 
   render(): void {
@@ -1735,6 +1739,18 @@ export default class NVGlview {
 
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
     return this.meshResources.get(m) ?? null
+  }
+
+  /**
+   * Re-upload one mesh's vertices into its existing GPU buffer. Returns false
+   * when the mesh has no GPU resources yet (or its vertex count changed); the
+   * caller then falls back to a full rebuild via updateBindGroups().
+   */
+  updateMeshVertices(m: NVMesh): boolean {
+    const gl = this.gl
+    const gpu = this.meshResources.get(m)
+    if (!gl || !gpu) return false
+    return mesh.writeMeshVertices(gl, m, gpu)
   }
 
   _destroyMeshResources(): void {

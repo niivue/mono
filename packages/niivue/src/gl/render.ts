@@ -211,6 +211,8 @@ interface SingleTexEntry {
   dims: Vec3f
   /** Categorical volume: never smooth its baked label colors (see _cubicVolumeSafe). */
   isLabel: boolean
+  /** `vol._dataVersion` this entry was built from; a mismatch rebuilds it. */
+  dataVersion: number
 }
 
 /** Chunked (tiled) volume: one or more axes exceed max3D. */
@@ -773,6 +775,11 @@ export class VolumeRenderer extends NVRenderer {
       // compiler checks.
       const prior = cacheKey ? this._texCache.get(cacheKey) : undefined
       let entry = prior?.kind === 'single' ? prior : undefined
+      // Voxels edited in place (updateVolumeData): rebuild this entry.
+      if (entry && entry.dataVersion !== (vol._dataVersion ?? 0)) {
+        this._evictTexEntry(gl, cacheKey, entry)
+        entry = undefined
+      }
       if (!entry) {
         const volumeTexture = await orientOverlay.overlay2Texture(
           gl,
@@ -802,6 +809,7 @@ export class VolumeRenderer extends NVRenderer {
           gradDims,
           dims: [rasDims[0], rasDims[1], rasDims[2]],
           isLabel: !!vol.colormapLabel,
+          dataVersion: vol._dataVersion ?? 0,
         }
         if (cacheKey) this._texCache.set(cacheKey, entry)
       }

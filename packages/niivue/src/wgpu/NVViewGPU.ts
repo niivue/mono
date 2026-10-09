@@ -629,7 +629,11 @@ export default class NVView {
     return true
   }
 
-  async updateBindGroups(): Promise<void> {
+  /**
+   * Rebuild GPU resources from the model. `meshes: false` skips the mesh
+   * rebuild, for updates that only touch volume data (updateVolumeData).
+   */
+  async updateBindGroups(opts: { meshes?: boolean } = {}): Promise<void> {
     // try/finally so an early return (no device / no mesh layout) or a thrown
     // await never leaves isBusy stuck true — the render loop skips while busy, so a
     // stuck flag would permanently freeze drawing (e.g. after a failed deferred
@@ -734,6 +738,7 @@ export default class NVView {
           this.sampler,
         )
       }
+      if (opts.meshes === false) return
       const meshes = this.model.getMeshes() as NVMesh[]
       const availableShaders = this.getAvailableShaders()
       if (!this.meshBindGroupLayout) return
@@ -2534,6 +2539,18 @@ export default class NVView {
 
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
     return this.meshResources.get(m) ?? null
+  }
+
+  /**
+   * Re-upload one mesh's vertices into its existing GPU buffer. Returns false
+   * when the mesh has no GPU resources yet (or its vertex count changed); the
+   * caller then falls back to a full rebuild via updateBindGroups().
+   */
+  updateMeshVertices(m: NVMesh): boolean {
+    const device = this.device
+    const gpu = this.meshResources.get(m)
+    if (!device || !gpu) return false
+    return mesh.writeMeshVertices(device, m, gpu)
   }
 
   _destroyMeshResources(): void {

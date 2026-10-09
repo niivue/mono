@@ -271,6 +271,13 @@ export type NVImage = {
   /** @internal Cache key for {@link _modulationWeight} (modulator id/buffer/window/exponent). */
   _modulationWeightKey?: string
   /**
+   * @internal Bumped by `updateVolumeData` whenever voxel values in `img` change
+   * in place. The orient-texture caches key on the `img` buffer identity, which
+   * an in-place edit keeps, so they compare this counter to know when to
+   * re-upload the source texture. Absent ⇒ 0.
+   */
+  _dataVersion?: number
+  /**
    * @internal Original dropped/loaded `File` for this volume, kept so a deferred
    * 4D re-read (`loadDeferred4DVolumes`) can re-open it — a `File` has no URL to
    * re-fetch. Runtime-only: the serializer (NVDocument) uses an explicit field
@@ -564,6 +571,8 @@ export type NVMesh = {
   layers: NVMeshLayer[]
   /** Per-vertex colors from the mesh file (packed ABGR Uint32). Null when mesh uses uniform color. */
   perVertexColors: Uint32Array | null
+  /** @internal Bumped by `updateMeshPositions`, which edits `positions` in place. */
+  _positionsVersion?: number
   /** @internal Index signature allows createMesh to assign defaults */
   [key: string]: unknown
 }

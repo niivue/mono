@@ -146,6 +146,8 @@ export type OrientTextureCache = {
   frame4D: number
   colormapKey: string
   imageBuffer: ArrayBufferLike
+  /** `nvimage._dataVersion` the source texture was last uploaded from. */
+  dataVersion: number
   pipelineType: string
   hasNegativeColormap: boolean
   modTexture: GPUTexture
@@ -262,6 +264,39 @@ export function destroyOrientTextureCache(
   cache.modTexture.destroy()
 }
 
+/** Upload the current frame of `nvimage.img` into the orient source texture. */
+function writeSourceTexture(
+  device: GPUDevice,
+  sourceTexture: GPUTexture,
+  nvimage: NVImage,
+  dimsIn: number[],
+  bytesPerVoxel: number,
+): void {
+  if (!nvimage.img) throw new Error('overlay2Texture: missing image data')
+  const frame4D = nvimage.frame4D ?? 0
+  const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
+  const frameByteLength = nvimage.nVox3D * bytesPerVoxel
+  const imgView = new Uint8Array(
+    nvimage.img.buffer,
+    nvimage.img.byteOffset + frameByteOffset,
+    frameByteLength,
+  )
+  const imgData =
+    typeof SharedArrayBuffer !== 'undefined' &&
+    imgView.buffer instanceof SharedArrayBuffer
+      ? new Uint8Array(imgView)
+      : imgView
+  device.queue.writeTexture(
+    { texture: sourceTexture },
+    imgData as Uint8Array<ArrayBuffer>,
+    {
+      bytesPerRow: Math.floor(dimsIn[0] * bytesPerVoxel),
+      rowsPerImage: dimsIn[1],
+    },
+    dimsIn,
+  )
+}
+
 export async function prepareOrientTextureCache(
   device: GPUDevice,
   nvimage: NVImage,
@@ -297,6 +332,19 @@ export async function prepareOrientTextureCache(
     existingCache.colormapKey === colormapKey &&
     existingCache.modKey === modKey
   if (canReuse) {
+    // Same buffer, but the voxels may have been edited in place
+    // (updateVolumeData): rewrite the source texture without reallocating it.
+    const dataVersion = nvimage._dataVersion ?? 0
+    if (existingCache.dataVersion !== dataVersion) {
+      writeSourceTexture(
+        device,
+        existingCache.sourceTexture,
+        nvimage,
+        dimsIn,
+        bytesPerVoxel,
+      )
+      existingCache.dataVersion = dataVersion
+    }
     writeOrientUniforms(
       device,
       existingCache.uniformBuffer,
@@ -315,27 +363,7 @@ export async function prepareOrientTextureCache(
     dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
-  const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
-  const frameByteLength = nvimage.nVox3D * bytesPerVoxel
-  const imgView = new Uint8Array(
-    nvimage.img.buffer,
-    nvimage.img.byteOffset + frameByteOffset,
-    frameByteLength,
-  )
-  const imgData =
-    typeof SharedArrayBuffer !== 'undefined' &&
-    imgView.buffer instanceof SharedArrayBuffer
-      ? new Uint8Array(imgView)
-      : imgView
-  device.queue.writeTexture(
-    { texture: sourceTexture },
-    imgData as Uint8Array<ArrayBuffer>,
-    {
-      bytesPerRow: Math.floor(dimsIn[0] * bytesPerVoxel),
-      rowsPerImage: dimsIn[1],
-    },
-    dimsIn,
-  )
+  writeSourceTexture(device, sourceTexture, nvimage, dimsIn, bytesPerVoxel)
   const uniformBuffer = device.createBuffer({
     size: ORIENT_UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -417,6 +445,7 @@ export async function prepareOrientTextureCache(
     frame4D,
     colormapKey,
     imageBuffer: nvimage.img.buffer,
+    dataVersion: nvimage._dataVersion ?? 0,
     pipelineType,
     hasNegativeColormap,
     modTexture,

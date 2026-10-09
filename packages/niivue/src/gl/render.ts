@@ -213,6 +213,11 @@ interface SingleTexEntry {
   isLabel: boolean
   /** `vol._dataVersion` this entry was built from; a mismatch rebuilds it. */
   dataVersion: number
+  /**
+   * Modulation key the entry's texture was baked with ('' = none). It carries
+   * the modulator's data version, so editing a modulator rebuilds the entry.
+   */
+  modKey: string
 }
 
 /** Chunked (tiled) volume: one or more axes exceed max3D. */
@@ -775,8 +780,12 @@ export class VolumeRenderer extends NVRenderer {
       // compiler checks.
       const prior = cacheKey ? this._texCache.get(cacheKey) : undefined
       let entry = prior?.kind === 'single' ? prior : undefined
-      // Voxels edited in place (updateVolumeData): rebuild this entry.
-      if (entry && entry.dataVersion !== (vol._dataVersion ?? 0)) {
+      // Voxels (or the modulator's voxels) edited in place: rebuild the entry.
+      if (
+        entry &&
+        (entry.dataVersion !== (vol._dataVersion ?? 0) ||
+          entry.modKey !== (modParams?.key ?? ''))
+      ) {
         this._evictTexEntry(gl, cacheKey, entry)
         entry = undefined
       }
@@ -813,6 +822,7 @@ export class VolumeRenderer extends NVRenderer {
           dims: [rasDims[0], rasDims[1], rasDims[2]],
           isLabel: !!vol.colormapLabel,
           dataVersion,
+          modKey: modParams?.key ?? '',
         }
         if (cacheKey) this._texCache.set(cacheKey, entry)
       }

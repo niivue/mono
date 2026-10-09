@@ -81,6 +81,21 @@ export const CORE_SCHEMAS = {
       ),
   },
   where_am_i: { ...TAB_ARG },
+  list_regions: {
+    ...TAB_ARG,
+    query: z
+      .string()
+      .optional()
+      .describe('Text the label or name must contain.'),
+  },
+  go_to_region: {
+    ...TAB_ARG,
+    region: z.string().min(1).describe('An atlas label or spoken region name.'),
+    plane: z
+      .enum(PLANE_NAMES)
+      .optional()
+      .describe('The cut to make through the centroid.'),
+  },
   go_to_point: {
     ...TAB_ARG,
     mm: triple(
@@ -359,14 +374,58 @@ export function registerCoreTools(
   )
 
   server.registerTool(
+    'list_regions',
+    {
+      title: 'List atlas regions',
+      description:
+        "Lists the regions of the atlas the page can navigate to, with each one's label as the " +
+        'atlas spells it, its spoken name, its centroid in MNI millimetres, and its size in voxels. ' +
+        'Pass `query` to keep only regions whose label or name contains it.',
+      inputSchema: CORE_SCHEMAS.list_regions,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ tab, query }) =>
+      context.answer('list_regions', { query }, { tab }),
+  )
+
+  server.registerTool(
+    'go_to_region',
+    {
+      title: 'Go to a region',
+      description:
+        'Moves the crosshair to the centroid of an atlas region and cuts the volume with a plane ' +
+        'through that point, so the region is on the exposed face under the crosshair, with the ' +
+        'render camera turned to face it. `region` is a label (Precentral_L) or a spoken name ' +
+        '(left precentral gyrus); a name that fits several regions is refused with the choices. ' +
+        '`plane` names the side the cut takes off, or a slice orientation; `current` keeps whatever ' +
+        'plane is cut now, and cuts coronal when none is. When the centroid falls outside its own ' +
+        'region (a curved one), the nearest voxel of the region is used instead and `snapped` says so. ' +
+        'Only works when the loaded volume is in MNI space.',
+      inputSchema: CORE_SCHEMAS.go_to_region,
+    },
+    async ({ tab, region, plane }) =>
+      context.answer(
+        'go_to_region',
+        { region, plane },
+        {
+          tab,
+          lead: (r) => {
+            const said = (r as { description?: string })?.description
+            return said ? `Moved to ${said}` : undefined
+          },
+        },
+      ),
+  )
+
+  server.registerTool(
     'go_to_point',
     {
       title: 'Go to a point',
       description:
         "Moves the crosshair to a point given in the loaded volume's world millimetres, or as a " +
         'voxel of the base volume, and cuts the ' +
-        'volume with a plane through it, facing the render camera at the cut. ' +
-        "Works in any space, so it reaches structures of a subject's own scan, " +
+        'volume with a plane through it, facing the render camera at the cut, as go_to_region does ' +
+        "for an atlas region. Works in any space, so it reaches structures of a subject's own scan, " +
         "for example a segmentation label's centroid. `label` names what is there for the listener. " +
         '`plane` names the side the cut takes off, or a slice orientation; `current` keeps the cut.',
       inputSchema: CORE_SCHEMAS.go_to_point,

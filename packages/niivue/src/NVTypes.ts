@@ -285,7 +285,9 @@ export type NVImage = {
    * textures. Not needed for the volume passed to `updateVolumeData`, which
    * marks it itself. If that upload fails, the next update that rebuilds this
    * volume retries it. Values are raw (before `scl_slope`/`scl_inter`), and
-   * calMin/calMax are not recomputed.
+   * calMin/calMax are not recomputed. A volume streamed from a `chunkSource`
+   * reads its bricks from that source, not from `img`, so the flag does not
+   * apply to it.
    */
   isDirty?: boolean
   /**

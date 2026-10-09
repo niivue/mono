@@ -982,7 +982,8 @@ the full `updateGLVolume()` rebuild.
   graph cache). `chunkedDisplayKey` carries it, so an `isDirty` edit of an
   in-memory chunked volume rebuilds the uploader and re-streams every brick
   from `img` (the decoded tier only holds `chunkSource` bytes, which an
-  in-place edit cannot reach). `coarseFloorKey` is the source (url/name and
+  in-place edit cannot reach); a `chunkSource` volume keeps no full `img`, so
+  `isDirty` does not apply to it. `coarseFloorKey` is the source (url/name and
   `img` buffer identity) plus `wholeVolumeTextureKey` with the floor's orient
   matrix, so it also covers the label outline width, the RAS grid and RGB/RGBA
   floors. `updateVolumeData` still rejects `chunkPlan` volumes: a full

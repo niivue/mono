@@ -177,8 +177,10 @@ Volumes drawn in chunks (those with a `chunkPlan`, including volumes NiiVue
 chunked because they exceed the GPU texture limit) are not supported by
 `updateVolumeData`, which logs a warning and returns. Setting `isDirty` on one
 whose `img` is in memory works, but the next GPU update re-streams every
-chunk, so it is not suited to per-frame updates. A coarse floor level passed
-to `setBaseCoarseFloor` is not a loaded volume: after editing its `img` in place,
+chunk, so it is not suited to per-frame updates. A volume streamed from a
+`chunkSource` (`loadChunkedVolume`) keeps no full `img`; its bricks come from
+the source, so `isDirty` does not apply to it. A coarse floor level passed to
+`setBaseCoarseFloor` is not a loaded volume: after editing its `img` in place,
 set its `isDirty` and pass it to `setBaseCoarseFloor` again.
 
 For a 4D RGB/RGBA volume the displayed frame is `frame4D`, as for scalar

@@ -85,7 +85,7 @@ canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 - **Volume utilities** (`src/volume/`) — intensity range, NIfTI header creation, voxel lookup, reorientation, modulation
 - **Colormaps** (`src/cmap/`) — LUT generation, label colormap construction
 - **Constants** (`src/NVConstants.ts`) — PAQD detection, slice type dimension mapping
-- **Mesh I/O** (`src/mesh/`) — STL/OBJ writers, STL/OFF readers (roundtrip tests); vertex normals
+- **Mesh I/O** (`src/mesh/`) — STL/OBJ writers, STL/OFF readers (roundtrip tests); vertex normals and their per-mesh cache
 - **View utilities** (`src/view/`) — mm-to-canvas projection
 
 ### What's NOT yet covered by unit tests
@@ -896,8 +896,9 @@ the full `updateGLVolume()` rebuild.
 - **`updateMeshPositions(meshIndex, positions?)`** (sync): copies into the
   existing `mesh.positions` (same vertex count, `kind === 'mesh'` only), bumps
   `mesh._positionsVersion`, then `view.updateMeshVertices(mesh)` repacks the
-  interleaved vertices (`packMeshVertices` in `mesh/vertexFormat.ts`, normals
-  regenerated) and writes them into the existing buffer (`bufferSubData` /
+  interleaved vertices (`packMeshVertices` in `mesh/vertexFormat.ts`; the version
+  bump makes `meshNormals` recompute normals into its cached array) and writes
+  them into the existing buffer (`bufferSubData` /
   `queue.writeBuffer`; WebGPU mesh vertex buffers carry `COPY_DST` for this).
   If the mesh has no GPU buffer yet, or the byte size no longer matches, it
   falls back to `updateGLVolume()`. Scene extents are deliberately not
@@ -1020,7 +1021,13 @@ Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong
 `generateNormals` sums each triangle's unnormalised (area-weighted) cross product
 into a `Float32Array`, then negates and normalises (zero sums stay zero); keep the
 accumulator type and operation order, which `normals.test.ts` pins bit for bit
-against the original.
+against the original. `packMeshVertices` (every upload and live update) calls
+`meshNormals(mesh)`, which caches per mesh object in a `WeakMap`. Contract:
+normals are recomputed only when `positions` or `indices` is replaced with a new
+array or `_positionsVersion` changes; for a version change they are rewritten
+into the cached array (`generateNormals(pts, tris, out)`), so live updates do not
+allocate. Any other in-place edit of `positions` keeps the cached normals: replace
+the array or call `updateMeshPositions`.
 
 **Crosscut shader** (`shaderType: 'crosscut'`): Renders crosshair-aligned ribbons using `fwidth()`-based screen-space line width. Unique render state: **no depth test, no face culling**. `crosscutMM` uniform computed by `view/NVCrosscut.ts`.
 

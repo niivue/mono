@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { generateNormals } from './normals'
+import type { NVMesh } from '@/NVTypes'
+import { generateNormals, meshNormals } from './normals'
 
 // The allocation-heavy implementation generateNormals replaced, kept verbatim
 // as the reference: the rewrite must reproduce it bit for bit.
@@ -111,6 +112,10 @@ function randomSoup(
   return { positions, indices }
 }
 
+function makeMesh(positions: Float32Array, indices: Uint32Array): NVMesh {
+  return { positions, indices } as unknown as NVMesh
+}
+
 describe('generateNormals', () => {
   test('matches the reference on a closed sphere with shared vertices', () => {
     const { positions, indices } = noisySphere(40, 64, 1)
@@ -179,11 +184,97 @@ describe('generateNormals', () => {
     }
   })
 
+  test('writes into a dirty output array with the same result', () => {
+    const { positions, indices } = noisySphere(12, 20, 9)
+    const out = new Float32Array(positions.length).fill(Number.NaN)
+    const result = generateNormals(positions, indices, out)
+    expect(result).toBe(out)
+    expectIdentical(out, referenceNormals(positions, indices))
+  })
+
+  test('rejects an output array of the wrong length', () => {
+    const { positions, indices } = noisySphere(4, 6, 10)
+    expect(() =>
+      generateNormals(positions, indices, new Float32Array(3)),
+    ).toThrow(RangeError)
+  })
+
   test('returns zeros for an empty index list', () => {
     const positions = new Float32Array([1, 2, 3, 4, 5, 6])
     expectIdentical(
       generateNormals(positions, new Uint32Array(0)),
       new Float32Array(6),
     )
+  })
+})
+
+describe('meshNormals', () => {
+  test('equals generateNormals and is reused across uploads', () => {
+    const { positions, indices } = noisySphere(10, 16, 2)
+    const mesh = makeMesh(positions, indices)
+    const first = meshNormals(mesh)
+    expectIdentical(first, generateNormals(positions, indices))
+    expect(meshNormals(mesh)).toBe(first)
+  })
+
+  test('recomputes when positions are replaced', () => {
+    const a = noisySphere(10, 16, 3)
+    const b = noisySphere(10, 16, 4)
+    const mesh = makeMesh(a.positions, a.indices)
+    const first = meshNormals(mesh)
+    mesh.positions = b.positions
+    const second = meshNormals(mesh)
+    expect(second).not.toBe(first)
+    expectIdentical(second, generateNormals(b.positions, a.indices))
+  })
+
+  test('recomputes when indices are replaced', () => {
+    const { positions, indices } = noisySphere(10, 16, 5)
+    const mesh = makeMesh(positions, indices)
+    const first = meshNormals(mesh)
+    const flipped = new Uint32Array(indices.length)
+    for (let i = 0; i < indices.length; i += 3) {
+      flipped[i] = indices[i]
+      flipped[i + 1] = indices[i + 2]
+      flipped[i + 2] = indices[i + 1]
+    }
+    mesh.indices = flipped
+    const second = meshNormals(mesh)
+    expect(second).not.toBe(first)
+    expectIdentical(second, generateNormals(positions, flipped))
+    expect(second[0]).toBe(-first[0])
+  })
+
+  test('recomputes in place, without allocating, when _positionsVersion changes', () => {
+    const { positions, indices } = noisySphere(10, 16, 6)
+    const mesh = makeMesh(positions, indices)
+    const first = meshNormals(mesh)
+    const before = Float32Array.from(first)
+    for (let i = 2; i < positions.length; i += 3) positions[i] *= 3
+    // Without a version bump the cached normals are returned unchanged.
+    expect(meshNormals(mesh)).toBe(first)
+    expectIdentical(first, before)
+    mesh._positionsVersion = 1
+    const second = meshNormals(mesh)
+    // Same array, rewritten for the new positions.
+    expect(second).toBe(first)
+    expectIdentical(second, generateNormals(positions, indices))
+    let changed = 0
+    for (let i = 0; i < before.length; i++) {
+      if (!Object.is(second[i], before[i])) changed++
+    }
+    expect(changed).toBeGreaterThan(0)
+    expect(meshNormals(mesh)).toBe(second)
+  })
+
+  test('keeps a separate entry per mesh sharing the same arrays', () => {
+    const { positions, indices } = noisySphere(6, 8, 7)
+    const a = makeMesh(positions, indices)
+    const b = makeMesh(positions, indices)
+    const na = meshNormals(a)
+    const nb = meshNormals(b)
+    expectIdentical(na, nb)
+    expect(meshNormals(a)).toBe(na)
+    expect(meshNormals(b)).toBe(nb)
   })
 })

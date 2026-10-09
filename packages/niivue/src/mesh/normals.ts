@@ -1,3 +1,5 @@
+import type { NVMesh } from '@/NVTypes'
+
 /**
  * Per-vertex normals for an indexed triangle mesh: each vertex sums the
  * unnormalised (area-weighted) cross products of its triangles, then the sum
@@ -8,12 +10,26 @@
  * locals and no per-triangle allocation. The Float32Array accumulator and the
  * operation order are part of the result (they fix the float32 rounding), so
  * keep both when editing.
+ *
+ * Pass `out` (length `pts.length`) to write into an existing array instead of
+ * allocating one; it is zero-filled first, so the result is the same.
  */
 export function generateNormals(
   pts: Float32Array,
   tris: Uint32Array,
+  out?: Float32Array,
 ): Float32Array {
-  const norms = new Float32Array(pts.length)
+  let norms: Float32Array
+  if (out) {
+    if (out.length !== pts.length) {
+      throw new RangeError(
+        `generateNormals: out has ${out.length} values, expected ${pts.length}`,
+      )
+    }
+    norms = out.fill(0)
+  } else {
+    norms = new Float32Array(pts.length)
+  }
   const nTriIdx = tris.length
   for (let i = 0; i < nTriIdx; i += 3) {
     const i1 = tris[i] * 3
@@ -54,4 +70,45 @@ export function generateNormals(
     }
   }
   return norms
+}
+
+type NormalsCacheEntry = {
+  positions: Float32Array
+  indices: Uint32Array
+  positionsVersion: number
+  normals: Float32Array
+}
+
+// Keyed by the mesh object (not stored on it) so copies, serialisation and
+// Object.assign never carry a stale entry along.
+const _normalsCache = new WeakMap<NVMesh, NormalsCacheEntry>()
+
+/**
+ * The mesh's vertex normals, computed by {@link generateNormals} once per
+ * geometry and reused by every later GPU upload (a shader, color or layer
+ * change rebuilds the GPU resources but not the geometry).
+ *
+ * Contract: the cache is invalidated when `positions` or `indices` is
+ * replaced with a new array (retessellation, re-extrusion) or when
+ * `_positionsVersion` changes, which `updateMeshPositions` bumps. Editing
+ * `positions` in place any other way leaves the cached normals in use.
+ *
+ * When only `_positionsVersion` changed (a live update), the cached array is
+ * recomputed in place rather than reallocated, so per-frame updates do not
+ * allocate. Callers must not modify or keep the returned array.
+ */
+export function meshNormals(mesh: NVMesh): Float32Array {
+  const { positions, indices } = mesh
+  const positionsVersion = mesh._positionsVersion ?? 0
+  const cached = _normalsCache.get(mesh)
+  if (cached && cached.positions === positions && cached.indices === indices) {
+    if (cached.positionsVersion !== positionsVersion) {
+      generateNormals(positions, indices, cached.normals)
+      cached.positionsVersion = positionsVersion
+    }
+    return cached.normals
+  }
+  const normals = generateNormals(positions, indices)
+  _normalsCache.set(mesh, { positions, indices, positionsVersion, normals })
+  return normals
 }

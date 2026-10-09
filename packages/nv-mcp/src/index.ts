@@ -7,6 +7,21 @@
  * page's end under `@niivue/nv-mcp/browser` (DOM).
  */
 
+// biome-ignore lint/performance/noBarrelFile: package entry point
+export {
+  cameraForPlane,
+  clipNormal,
+  depthThrough,
+  namePlane,
+  PLANE_ALIASES,
+  PLANE_ANGLES,
+  PLANE_NONE,
+  PLANE_OFF,
+  planeDepthCuts,
+  resolvePlane,
+  samePlane,
+  viewDirection,
+} from './planes'
 export type {
   AgentRequest,
   AgentResponse,
@@ -16,7 +31,6 @@ export type {
   TabState,
   Welcome,
 } from './protocol'
-// biome-ignore lint/performance/noBarrelFile: package entry point
 export {
   isHello,
   isWelcome,
@@ -24,3 +38,18 @@ export {
   TAB_PARAM,
   tabFromSearch,
 } from './protocol'
+export type {
+  LayoutName,
+  ShowRenderName,
+  SliceName,
+  ViewState,
+} from './views'
+export {
+  LAYOUT_NAMES,
+  LAYOUTS,
+  nameFor,
+  SHOW_RENDER,
+  SHOW_RENDER_NAMES,
+  SLICE_NAMES,
+  SLICE_TYPES,
+} from './views'

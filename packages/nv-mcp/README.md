@@ -96,6 +96,10 @@ Every tool below `new_tab` also takes `tab?`, the id of the tab to ask; without 
 
 Every reply is a line of prose for the agent to read, then the JSON the page returned. Failures are tool errors with the page's own message.
 
+### Planes and cameras
+
+A plane is named for the side it takes off: `left`, `right`, `posterior`, `anterior`, `inferior`, `superior`, with `sagittal`, `coronal` and `axial` as aliases for the first of each pair. NiiVue keeps a clip plane as `[depth, azimuth, elevation]`, with the shader keeping the side the plane's normal points to; the camera that sees the exposed face square on looks along the normal, which works out to the plane's own elevation and its azimuth turned half a turn. `cameraForPlane` does that sum and `depthThrough` finds the depth that puts the plane through a point, both checked for all six sides in `planes.test.ts`.
+
 ## Tabs
 
 Every page that connects says hello with an id, a title, its address and its state, and the server welcomes it with the id it will list the tab under. The id is kept in the tab's `sessionStorage`, which a browser scopes to one tab and keeps across reloads, so a reload arrives as the same id on a new socket and a second tab arrives as a new id. A duplicated tab is the exception: the browser copies its `sessionStorage`, so the copy arrives with the original's id while the original is still connected. The bridge keeps the original as it is and welcomes the copy with a spare id, the original's with `-2` on the end, which the copy keeps for its own reloads; both are then listed, and a call with neither chosen asks, as with any two tabs.

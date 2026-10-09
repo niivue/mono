@@ -154,6 +154,20 @@ describe('core tool schemas', () => {
     expect(properties('add_control')).toContain('options')
     expect(properties('add_control')).toContain('row')
     expect(required('load_document')).toEqual(['url'])
+    expect(required('list_data')).toEqual([])
+    expect(required('add_data')).toEqual(['id'])
+    expect(properties('add_data').sort()).toEqual([
+      'args',
+      'description',
+      'from',
+      'id',
+      'label',
+      'tab',
+      'tool',
+    ])
+    expect(required('remove_data')).toEqual(['id'])
+    expect(required('load_data')).toEqual(['id'])
+    expect(byName.list_data.annotations?.readOnlyHint).toBe(true)
     for (const name of [
       'describe_volume',
       'capabilities',

@@ -30,6 +30,7 @@ import {
   type ViewState,
 } from '../views'
 import { controlHandlers } from './controls'
+import { dataHandlers } from './data'
 import { markHandlers } from './marks'
 import { meshHandlers } from './meshes'
 import {
@@ -78,6 +79,7 @@ export function sceneState(host: NiiVueHost): TabState {
     ...(host.controls
       ? { controls: host.controls.list().map((c) => c.id) }
       : {}),
+    ...(host.data ? { data: host.data.list().map((e) => e.id) } : {}),
     ...(host.extraState?.() ?? {}),
   }
 }
@@ -327,13 +329,14 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     return `Crosshair at ${mm.join(', ')} mm.`
   }
 
-  return {
+  const handlers: Handlers = {
     ...settingHandlers(host),
     ...viewportHandlers(host),
     ...meshHandlers(host),
     ...signalHandlers(host),
     ...markHandlers(host),
     ...controlHandlers(host),
+    ...dataHandlers(host),
 
     async load_volume(params) {
       const url = text(params, 'url')
@@ -1285,6 +1288,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
     },
   }
+  host.data?.connect(handlers)
+  return handlers
 }
 
 /** How long a screenshot waits for a chunked volume's bricks, inside the server's limit on a call. */

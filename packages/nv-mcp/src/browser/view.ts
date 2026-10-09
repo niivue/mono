@@ -12,6 +12,7 @@
 
 import type { RegionSummary } from '../protocol'
 import type { ControlSurface } from './controls'
+import type { DataPalette } from './data'
 
 /** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
 export type Triple = { [index: number]: number; readonly length: number }
@@ -721,6 +722,8 @@ export interface NiiVueHost {
   screenshotWaits?: { settleMs?: number; busyMs?: number }
   /** The controls the page hosts for an agent; a page without one declines the control tools. */
   controls?: ControlSurface
+  /** The data the page can load by id; a page without one declines the data tools. */
+  data?: DataPalette
 }
 
 export type Handler = (params: Record<string, unknown>) => unknown

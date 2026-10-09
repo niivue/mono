@@ -271,10 +271,23 @@ export type NVImage = {
   /** @internal Cache key for {@link _modulationWeight} (modulator id/buffer/window/exponent). */
   _modulationWeightKey?: string
   /**
-   * @internal Bumped by `updateVolumeData` whenever voxel values in `img` change
-   * in place. The orient-texture caches key on the `img` buffer identity, which
-   * an in-place edit keeps, so they compare this counter to know when to
-   * re-upload the source texture. Absent ⇒ 0.
+   * Set to true after changing the values in `img`: in place (same array) or
+   * by assigning a new array of the same shape. The next GPU update
+   * (`updateGLVolume`, `setVolume`, `updateVolumeData`, `setFrame4D` when the
+   * frame actually changes, ...) then re-uploads this volume's voxels and
+   * resets the flag to false; volumes without the flag keep their uploaded
+   * textures. Not needed for the volume passed to `updateVolumeData`, which
+   * marks it itself. If that upload fails, the next update that rebuilds this
+   * volume retries it. Values are raw (before `scl_slope`/`scl_inter`), and
+   * calMin/calMax are not recomputed.
+   */
+  isDirty?: boolean
+  /**
+   * @internal Bumped whenever voxel values in `img` change in place: by
+   * `updateVolumeData`, and by the next GPU update for a volume flagged
+   * {@link isDirty} (see `volume/dataVersion.ts`). Caches keyed on the `img`
+   * buffer identity, which an in-place edit keeps, compare this counter to
+   * know when to re-read it. Absent ⇒ 0.
    */
   _dataVersion?: number
   /**

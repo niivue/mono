@@ -698,7 +698,6 @@ export default class NVModel {
     }
     for (const vol of this.volumes) {
       this._releaseGPU(vol)
-      vol.isDirty = true
     }
   }
 
@@ -1432,7 +1431,6 @@ export default class NVModel {
     colormapType: 0,
     isTransparentBelowCalMin: true,
     modulateAlpha: 0,
-    isDirty: true,
     isColorbarVisible: true,
   }
 

@@ -844,9 +844,9 @@ arrays are derived (never serialized).
   modulator voxel (finite window) to weight 0 (transparent), never NaN.
 - **Cache key = modulator buffer identity** (WeakMap id) + offset + data
   version (`_dataVersion`) + datatype + dims + scaling + frame + window +
-  exponent. An in-place edit made through `updateVolumeData` bumps the version
-  and invalidates it; any other in-place mutation of `mod.img` is invisible —
-  re-call `setModulationImage` after such an edit.
+  exponent. An in-place edit reported through `updateVolumeData` or the
+  modulator's `isDirty` bumps the version and invalidates it; an unreported
+  in-place mutation of `mod.img` is invisible.
 - **Affine fast path** (`updateAffineOverlays`, 2-volume case) bails to a full
   update when `vols[0].modulationImage` is set — otherwise a modulated
   background's baked modulator matrix would go stale on an overlay affine change.
@@ -923,9 +923,28 @@ the full `updateGLVolume()` rebuild.
   event (`volumeUpdated`/`meshUpdated` are for display-option changes, and these
   run per frame). A coalesced `updateVolumeData` resolves when queued, before
   its follow-up upload runs.
-- **`_dataVersion` is the general in-place-edit token** for `NVImage`. Any cache
-  keyed on `img` buffer identity must also compare it (orient caches,
-  `_texCache`, modulation weight key, extension `imgRAS`, legend centroids).
+- **`isDirty` reports an in-place edit to the ordinary path.** A caller that
+  rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
+  (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
+  (`_updateGL`, `updateVolumeAffineOnly`, `_rebuildViewResources`), bumps each
+  flagged volume's `_dataVersion` and resets the flag. The flag is cleared at
+  that bump, not after the upload, so an edit flagged during an in-flight
+  upload gets its own version and the queued follow-up uploads it. A scoped
+  `_updateGL` adds the dirty volumes to its scope; `updateVolumeAffineOnly`
+  skips its overlay-only fast path when any volume was dirty. `isDirty` means
+  only "voxel values changed": internal code must not set it for display,
+  affine or GPU-lifetime changes, since every set costs a re-upload (and
+  invalidates the CPU caches below). `loadImgV1` sets it because it assigns a
+  new `img`: the GPU caches would notice the new buffer, but caches keyed only
+  on `_dataVersion` (the graph cache) would not, so callers that assign a new
+  `img` should set it too. A failed upload leaves the cache's recorded version
+  behind, so the next update that rebuilds that volume retries it.
+- **`_dataVersion` is the general in-place-edit token** for `NVImage`, bumped
+  only through `markVolumeDataChanged` (`updateVolumeData`, `isDirty`). Any
+  cache keyed on `img` buffer identity must also compare it (orient caches,
+  `_texCache`, modulation weight key, extension `imgRAS`, legend centroids,
+  graph cache). The chunked GPU caches (`chunkPlan`) do not compare it, so
+  in-place edits of chunk-streamed volumes are unsupported on either path.
 - **Coalescing:** `_updateGL(meshes, volumes?)` shares `_updating` /
   `_pendingUpdate` with `updateVolumeAffineOnly`; the queued follow-up takes
   the union of the callers' needs (`_pendingMeshes`, `_pendingVolumes`, and

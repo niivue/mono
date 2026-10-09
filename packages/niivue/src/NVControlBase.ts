@@ -171,6 +171,7 @@ import {
   chunkTimingSnapshot,
   resetChunkTiming as clearChunkTiming,
 } from '@/volume/chunkTiming'
+import { commitDirtyVolumes, markVolumeDataChanged } from '@/volume/dataVersion'
 import {
   computeDescriptiveStats,
   type DescriptiveStats,
@@ -2473,6 +2474,12 @@ export default class NiiVue extends EventTarget {
     return this
   }
 
+  /**
+   * Rebuild every GPU resource from the current model. Cached volume textures
+   * are reused unless something they were built from changed; after editing a
+   * volume's `img` in place, set its `isDirty` first so its voxels are
+   * re-uploaded (see {@link updateVolumeData} for the faster, scoped path).
+   */
   async updateGLVolume() {
     await this._updateGL(true)
   }
@@ -2482,17 +2489,24 @@ export default class NiiVue extends EventTarget {
    * flight into a single follow-up. `meshes: false` skips the mesh rebuild;
    * `volumes` limits the volume rebuild to those whose data changed
    * (updateVolumeData; omitted = every volume). A queued follow-up takes the
-   * union of what the coalesced callers asked for.
+   * union of what the coalesced callers asked for. Volumes flagged `isDirty`
+   * get a data-version bump first (so their textures are re-uploaded) and join
+   * a scoped rebuild.
    */
   private async _updateGL(
     meshes: boolean,
     volumes?: readonly NVImage[],
   ): Promise<void> {
+    const dirty = commitDirtyVolumes(this.model.getVolumes())
+    const changed = volumes && [
+      ...volumes,
+      ...dirty.filter((v) => !volumes.includes(v)),
+    ]
     if (this._updating) {
       this._pendingUpdate = true
       this._pendingFull = true
       this._pendingMeshes ||= meshes
-      if (volumes) for (const v of volumes) this._pendingVolumes.add(v)
+      if (changed) for (const v of changed) this._pendingVolumes.add(v)
       else this._pendingAllVolumes = true
       return
     }
@@ -2500,7 +2514,7 @@ export default class NiiVue extends EventTarget {
     try {
       this._computeModulationData()
       if (!this.view) return
-      await this.view.updateBindGroups({ meshes, volumes })
+      await this.view.updateBindGroups({ meshes, volumes: changed })
       this.drawScene()
     } finally {
       if (this._endUpdate(token)) await this._runPendingUpdate()
@@ -2573,6 +2587,7 @@ export default class NiiVue extends EventTarget {
     while (this._updating && this._updatingView === this.view) {
       await this._updateIdle
     }
+    commitDirtyVolumes(this.model.getVolumes())
     const token = this._beginUpdate()
     try {
       if (this.view) await this.view.updateBindGroups()
@@ -2582,16 +2597,20 @@ export default class NiiVue extends EventTarget {
   }
 
   private async updateVolumeAffineOnly(): Promise<void> {
+    // An isDirty volume needs its voxels re-uploaded, which the overlay-only
+    // affine fast path below may not do (it can skip the background).
+    const hasDirty = commitDirtyVolumes(this.model.getVolumes()).length > 0
     if (this._updating) {
       this._pendingUpdate = true
       // A moved volume needs every volume resliced, not a data-only scope.
       this._pendingAllVolumes = true
+      if (hasDirty) this._pendingFull = true
       return
     }
     const token = this._beginUpdate()
     try {
       if (!this.view) return
-      const handled = await this.view.updateAffineOverlays?.()
+      const handled = !hasDirty && (await this.view.updateAffineOverlays?.())
       if (handled) {
         this.drawScene()
         return
@@ -2640,9 +2659,8 @@ export default class NiiVue extends EventTarget {
    *
    * Re-invalidation: the scalar weight is cached by the modulator's buffer
    * identity + window + data version. Edit a modulator's voxels through
-   * {@link updateVolumeData} and the weight is recomputed; after mutating its
-   * `img` in place any other way, call this method again (same target +
-   * modulator) to force a recompute.
+   * {@link updateVolumeData}, or mutate its `img` in place and set its
+   * `isDirty` before the next update, and the weight is recomputed.
    */
   async setModulationImage(
     targetId: string,
@@ -2659,7 +2677,6 @@ export default class NiiVue extends EventTarget {
     target._modulationData = null
     target._modulationWeight = null
     target._modulationWeightKey = undefined
-    target.isDirty = true
     await this.updateGLVolume()
   }
 
@@ -3487,7 +3504,6 @@ export default class NiiVue extends EventTarget {
       }
       volumes[volumeIndex].colormapLabel = NVCmaps.makeLabelLut(cm)
     }
-    volumes[volumeIndex].isDirty = true
     // Structural change (the label LUT is not a VolumeUpdate option); the volume
     // reference lets listeners re-read colormapLabel.
     this.emit('volumeUpdated', {
@@ -3531,6 +3547,10 @@ export default class NiiVue extends EventTarget {
    * volume's native datatype and voxel order, before `scl_slope`/`scl_inter`
    * scaling (the same units as `img`, not as calMin/calMax). They are copied
    * into the existing `img`. Omit `data` after editing `volume.img` in place.
+   * (The ordinary update path also picks up an in-place edit when the volume's
+   * `isDirty` is set first: `vol.isDirty = true; await setVolume(...)` or
+   * `updateGLVolume()`. That re-uploads the same data, but as part of a full
+   * rebuild; volumes that are not dirty keep their textures either way.)
    *
    * The display window (calMin/calMax), robust range and other values derived
    * at load are NOT recomputed; call {@link recalculateCalMinMax} if the data's
@@ -3583,7 +3603,7 @@ export default class NiiVue extends EventTarget {
         return
       }
     }
-    vol._dataVersion = (vol._dataVersion ?? 0) + 1
+    markVolumeDataChanged(vol)
     await this._updateGL(false, [vol])
   }
 
@@ -3785,7 +3805,6 @@ export default class NiiVue extends EventTarget {
     )
     volume.extentsMin = extentsMin
     volume.extentsMax = extentsMax
-    volume.isDirty = true
     this.model._setupPivot3D()
   }
 

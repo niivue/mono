@@ -148,6 +148,23 @@ nv1.setVolume(0, {
 
 Same pattern for meshes, layers, tracts, connectomes.
 
+### Editing Voxel Values
+A volume's GPU textures are cached against its `img` array, so an in-place
+edit (same array, new values) must be reported. Either call
+`updateVolumeData(idx, data?)`, the fast path that re-uploads only that volume,
+or set `isDirty` and let the next GPU update re-upload it:
+```js
+const vol = nv1.volumes[1]
+vol.img.fill(0, 0, vol.nVox3D) // edit in place
+vol.isDirty = true
+await nv1.setVolume(1, { opacity: 0.8 }) // or updateGLVolume(), ...
+```
+Any call that runs a GPU update works; `setFrame4D` does only when the frame
+changes. The update resets `isDirty` to false, and volumes without it keep
+their textures. Set `isDirty` after assigning a new `img` array too, so caches
+keyed only on the data version (such as the signal graph) refresh. Values are
+raw (before `scl_slope`/`scl_inter`), and calMin/calMax are not recomputed.
+
 ### Constructor (Flat Options)
 ```js
 const nv1 = new NiiVue({

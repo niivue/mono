@@ -265,3 +265,213 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.positionsCopied).toBe(true)
   })
 }
+
+// The ordinary update path after an in-place edit: the caller rewrites `img`
+// (same buffer) and sets `isDirty`, then calls setVolume / updateGLVolume /
+// setFrame4D. The orient caches key on the buffer identity, so before
+// `isDirty` was honoured these redraws kept the old voxels.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`isDirty in-place edits redraw through the ordinary update path (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+
+    const result = await page.evaluate(`(async () => {
+     try {
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        let adapter = null
+        try {
+          adapter = await navigator.gpu.requestAdapter()
+        } catch (e) {
+          return { skip: 'requestAdapter threw: ' + e }
+        }
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+      const nextFrame = () => new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r)))
+
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      document.body.appendChild(canvas)
+      const nv = new NiiVue({
+        backend: '${backend}',
+        backgroundColor: [0, 0, 0, 1],
+        sliceType: SLICE_TYPE.AXIAL,
+        crosshairWidth: 0,
+        isOrientCubeVisible: false,
+        isOrientationTextVisible: false,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(canvas)
+      if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
+        return { skip: 'WebGPU init fell back to ' + nv.backend }
+      }
+
+      const readback = document.createElement('canvas')
+      readback.width = canvas.width
+      readback.height = canvas.height
+      const ctx = readback.getContext('2d', { willReadFrequently: true })
+      if (!ctx) return { skip: 'no 2D readback context' }
+      // Pixels that are lit, and pixels where one channel clearly leads.
+      const count = async () => {
+        await nextFrame()
+        if (nv.view) nv.view.render()
+        ctx.clearRect(0, 0, readback.width, readback.height)
+        ctx.drawImage(canvas, 0, 0)
+        const px = ctx.getImageData(0, 0, readback.width, readback.height).data
+        let lit = 0
+        let red = 0
+        let green = 0
+        let gray = 0
+        for (let i = 0; i < px.length; i += 4) {
+          const isLit = px[i] > 30 || px[i + 1] > 30 || px[i + 2] > 30
+          const isRed = px[i] - px[i + 1] > 40 && px[i] - px[i + 2] > 40
+          const isGreen = px[i + 1] - px[i] > 40 && px[i + 1] - px[i + 2] > 40
+          if (isLit) lit++
+          if (isRed) red++
+          if (isGreen) green++
+          if (isLit && !isRed && !isGreen) gray++
+        }
+        return { lit, red, green, gray }
+      }
+      const renderer = () => nv.view.volumeRenderer
+
+      await nv.loadVolumes([
+        { url: '${VOLUME}' },
+        { url: '${OVERLAY}', colormap: 'red', calMin: 0, calMax: 1 },
+      ])
+      const bg = nv.volumes[0]
+      const ov = nv.volumes[1]
+      const start = await count()
+
+      // ---- overlay edited in place, then setVolume ----
+      const bgCache = renderer().volumeOrientCache
+      const bgCacheVersion = bgCache ? bgCache.dataVersion : null
+      const bgVersion = bg._dataVersion ?? 0
+      const ovCache = renderer().overlayOrientCache
+      const ovSource = ovCache
+        ? ovCache.inputTexture ?? ovCache.sourceTexture
+        : null
+      const ovOriginal = ov.img.slice()
+      ov.img.fill(0)
+      ov.isDirty = true
+      await nv.setVolume(1, { opacity: 1 })
+      const ovZeroed = await count()
+      const ovFlagCleared = ov.isDirty === false
+      const ovCacheAfter = renderer().overlayOrientCache
+      // The overlay re-uploaded into its existing texture...
+      const ovTexturesKept =
+        !!ovCache &&
+        ovCacheAfter === ovCache &&
+        (ovCacheAfter.inputTexture ?? ovCacheAfter.sourceTexture) === ovSource
+      // ...and the clean background was not re-uploaded.
+      const bgCacheAfter = renderer().volumeOrientCache
+      const bgUntouched =
+        !!bgCache &&
+        bgCacheAfter === bgCache &&
+        bgCacheAfter.dataVersion === bgCacheVersion &&
+        (bg._dataVersion ?? 0) === bgVersion
+
+      // ---- background edited in place, then updateGLVolume ----
+      const bgOriginal = bg.img.slice()
+      bg.img.fill(0)
+      bg.isDirty = true
+      await nv.updateGLVolume()
+      const bgZeroed = await count()
+
+      // ---- a dirty overlay joins a scoped updateVolumeData(background) ----
+      ov.img.set(ovOriginal)
+      ov.isDirty = true
+      await nv.updateVolumeData(0, bgOriginal)
+      const bothRestored = await count()
+
+      // ---- affine-only update: its overlay fast path stands aside ----
+      const view = nv.view
+      const origBind = view.updateBindGroups.bind(view)
+      let fullBinds = 0
+      view.updateBindGroups = (...args) => {
+        fullBinds++
+        return origBind(...args)
+      }
+      const still = { translation: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }
+      // Nothing dirty: the overlay-only fast path handles it.
+      await nv.applyVolumeTransform(1, still)
+      const fastPathBinds = fullBinds
+      bg.img.fill(0)
+      bg.isDirty = true
+      await nv.applyVolumeTransform(1, still)
+      const affineDirtyBinds = fullBinds - fastPathBinds
+      const affineZeroed = await count()
+      view.updateBindGroups = origBind
+
+      // ---- 4D: an in-place edit of the displayed frame ----
+      await nv.loadVolumes([{ url: '${VOLUME_4D}' }])
+      const v4 = nv.volumes[0]
+      await nv.setFrame4D(v4.id, 1)
+      const f4Before = await count()
+      v4.img.fill(0, v4.nVox3D, 2 * v4.nVox3D)
+      v4.isDirty = true
+      await nv.updateGLVolume()
+      const f4Zeroed = await count()
+
+      return {
+        start,
+        ovZeroed,
+        ovFlagCleared,
+        ovTexturesKept,
+        bgUntouched,
+        bgZeroed,
+        bothRestored,
+        fastPathBinds,
+        affineDirtyBinds,
+        affineZeroed,
+        f4Before,
+        f4Zeroed,
+      }
+     } catch (e) {
+      const m = String(e && e.message ? e.message : e)
+      if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+        return { skip: 'GPU unavailable: ' + m }
+      }
+      throw e
+     }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+
+    // Overlay: setVolume after an in-place zeroing removes the red, reusing
+    // the overlay's textures and leaving the clean background's alone.
+    expect(r.start.lit).toBeGreaterThan(1000)
+    expect(r.start.red).toBeGreaterThan(1000)
+    expect(r.ovZeroed.red).toBeLessThan(r.start.red * 0.05)
+    expect(r.ovFlagCleared).toBe(true)
+    expect(r.ovTexturesKept).toBe(true)
+    expect(r.bgUntouched).toBe(true)
+
+    // Background: updateGLVolume after an in-place zeroing blanks the slice.
+    expect(r.bgZeroed.lit).toBeLessThan(r.start.lit * 0.05)
+
+    // A scoped update of the background also uploads the dirty overlay.
+    expect(r.bothRestored.lit).toBeGreaterThan(r.start.lit * 0.9)
+    expect(r.bothRestored.red).toBeGreaterThan(r.start.red * 0.9)
+
+    // Affine-only update: without dirty volumes it takes the overlay-only fast
+    // path; with a dirty background it rebuilds, so the edit shows.
+    expect(r.fastPathBinds).toBe(0)
+    expect(r.affineDirtyBinds).toBeGreaterThan(0)
+    // The overlay is back by now, so count the gray background only.
+    expect(r.affineZeroed.gray).toBeLessThan(r.start.gray * 0.05)
+
+    // 4D: the displayed frame's in-place edit shows.
+    expect(r.f4Before.lit).toBeGreaterThan(100)
+    expect(r.f4Zeroed.lit).toBeLessThan(r.f4Before.lit * 0.05)
+  })
+}

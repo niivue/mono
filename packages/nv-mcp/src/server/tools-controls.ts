@@ -141,7 +141,7 @@ const FIELDS = {
         'mesh.<index>.tract.<option> or mesh.<index>.connectome.<option>, the options set_mesh takes ' +
         '(fiberRadius, colorBy, nodeScale, ...), and mesh.<index>.tract.group for a select of the groups ' +
         'list_meshes reports (all, or one shown alone); dialog.<id>, for a button or menu item that opens ' +
-        'that dialog; or action.<name>, one of the actions the page offers, which any kind of control can run. ' +
+        'that dialog; data.<id>, for a button or menu item that loads that entry of list_data; or action.<name>, one of the actions the page offers, which any kind of control can run. ' +
         'capabilities lists the forms and the actions under controlBindings. A bound control left ' +
         'without a range, options or value takes them from what it drives. An empty string unbinds it.',
     ),

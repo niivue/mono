@@ -36,5 +36,7 @@ startServer({
     "mni152_csf.nii.gz, tissue maps on the template's grid; spmMotor.nii.gz, a whole-brain " +
     't-map of right against left finger tapping in MNI space; hippo.nii.gz, a small map of the ' +
     "left hippocampus in MNI space; and chris_t1.nii.gz, one person's T1 scan in its own " +
-    'space, where no atlas applies.',
+    'space, where no atlas applies. The page hosts controls: add_control draws a button, slider, ' +
+    'toggle, select, field, dialog or other widget on the canvas, in a grid by row and col, and ' +
+    'lists it in the Controls panel; bind ties it to what it drives.',
 })

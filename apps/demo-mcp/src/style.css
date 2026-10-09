@@ -87,6 +87,18 @@ aside {
   color: #9a9aa3;
 }
 
+#controls {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+#controls li + li {
+  margin-top: 0.25rem;
+}
+
 code,
 pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

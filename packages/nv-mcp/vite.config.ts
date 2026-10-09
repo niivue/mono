@@ -16,13 +16,21 @@ export default defineConfig({
         index: 'src/index.ts',
         server: 'src/server/index.ts',
         browser: 'src/browser/index.ts',
+        uikit: 'src/uikit/index.ts',
       },
       formats: ['es'],
     },
     rollupOptions: {
       // The server entry runs under Bun and imports its SDK from there; the
-      // browser entry imports nothing. Neither is bundled in.
-      external: [/^@modelcontextprotocol\/sdk/, 'zod', 'bun', /^node:/],
+      // browser entry imports nothing; the uikit entry imports the page's
+      // own @niivue/uikit. None of them is bundled in.
+      external: [
+        /^@modelcontextprotocol\/sdk/,
+        'zod',
+        'bun',
+        /^node:/,
+        /^@niivue\//,
+      ],
     },
   },
 })

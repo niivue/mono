@@ -38,6 +38,7 @@ export {
   text,
 } from './params'
 export {
+  CLIP_PLANES,
   coreHandlers,
   looksMni,
   planeIsCut,

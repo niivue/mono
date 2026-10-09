@@ -16,6 +16,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
+import { PLANE_ALIASES, PLANE_ANGLES } from '../planes'
 import { TAB_PARAM } from '../protocol'
 import {
   LAYOUT_NAMES,
@@ -34,6 +35,19 @@ import {
   tabAddress,
   toolContext,
 } from './context'
+
+/** The sides a plane can be named for, the slice names, and `current`. */
+export const PLANE_NAMES = [
+  'current',
+  ...PLANE_ANGLES.map((plane) => plane.name),
+  ...Object.keys(PLANE_ALIASES),
+] as [string, ...string[]]
+
+/** The same without `current` and with `off`, for setting a plane outright. */
+export const CUT_NAMES = [
+  'off',
+  ...PLANE_NAMES.filter((name) => name !== 'current'),
+] as [string, ...string[]]
 
 /** The input schema of each core tool, by name, so a test can read them. */
 export const CORE_SCHEMAS = {
@@ -67,6 +81,77 @@ export const CORE_SCHEMAS = {
       ),
   },
   where_am_i: { ...TAB_ARG },
+  go_to_point: {
+    ...TAB_ARG,
+    mm: triple(
+      "The point, [x, y, z] in the loaded volume's world millimetres.",
+    ).optional(),
+    vox: z
+      .array(z.number().int())
+      .length(3)
+      .optional()
+      .describe(
+        'The point as a voxel of the base volume, [i, j, k], instead of mm.',
+      ),
+    plane: z
+      .enum(PLANE_NAMES)
+      .optional()
+      .describe('The cut to make through the point.'),
+    label: z
+      .string()
+      .optional()
+      .describe(
+        "What is there, said before the page's own description, e.g. left hippocampus.",
+      ),
+  },
+  set_clip_plane: {
+    ...TAB_ARG,
+    plane: z
+      .enum(CUT_NAMES)
+      .optional()
+      .describe('The side to take off, a slice name, or off.'),
+    azimuth: z
+      .number()
+      .optional()
+      .describe(
+        "Instead of a plane name: the normal's azimuth in degrees, with elevation. The plane is named by the nearest side.",
+      ),
+    elevation: z
+      .number()
+      .min(-90)
+      .max(90)
+      .optional()
+      .describe(
+        "Instead of a plane name: the normal's elevation in degrees, with azimuth.",
+      ),
+    index: z
+      .number()
+      .int()
+      .min(0)
+      .max(5)
+      .optional()
+      .describe('Which of the six clip planes to set. The first otherwise.'),
+    planes: z
+      .array(z.array(z.number()).length(3))
+      .min(1)
+      .max(6)
+      .optional()
+      .describe(
+        'Set several clip planes at once, [depth, azimuth, elevation] each, in place of the rest.',
+      ),
+    depth: z
+      .number()
+      .min(-1.5)
+      .max(1.5)
+      .optional()
+      .describe(
+        "Where along the normal, in NiiVue's fraction units: 0 through the middle, positive towards the side taken off. 0 otherwise.",
+      ),
+    face: z
+      .boolean()
+      .optional()
+      .describe('Turn the render camera to face the cut. On otherwise.'),
+  },
   set_camera: {
     ...TAB_ARG,
     azimuth: z
@@ -271,6 +356,54 @@ export function registerCoreTools(
       annotations: { readOnlyHint: true },
     },
     async ({ tab }) => context.answer('where_am_i', {}, { tab, withTab: true }),
+  )
+
+  server.registerTool(
+    'go_to_point',
+    {
+      title: 'Go to a point',
+      description:
+        "Moves the crosshair to a point given in the loaded volume's world millimetres, or as a " +
+        'voxel of the base volume, and cuts the ' +
+        'volume with a plane through it, facing the render camera at the cut. ' +
+        "Works in any space, so it reaches structures of a subject's own scan, " +
+        "for example a segmentation label's centroid. `label` names what is there for the listener. " +
+        '`plane` names the side the cut takes off, or a slice orientation; `current` keeps the cut.',
+      inputSchema: CORE_SCHEMAS.go_to_point,
+    },
+    async ({ tab, mm, vox, plane, label }) =>
+      context.answer(
+        'go_to_point',
+        { mm, vox, plane, label },
+        {
+          tab,
+          lead: (r) => {
+            const said = (r as { description?: string })?.description
+            return said ? `Moved to ${said}` : undefined
+          },
+        },
+      ),
+  )
+
+  server.registerTool(
+    'set_clip_plane',
+    {
+      title: 'Cut the volume',
+      description:
+        'Cuts the volume with a whole plane named for the side it takes off (left, right, anterior, ' +
+        'posterior, superior, inferior) or a slice orientation (sagittal, coronal, axial), at a depth ' +
+        'along its normal, and turns the render camera to face the cut unless told not to. `off` ' +
+        'removes the cut and leaves the camera where it is. A plane can instead be given by the ' +
+        'azimuth and elevation of its normal; `index` picks one of the six planes NiiVue keeps, ' +
+        'and `planes` sets several at once.',
+      inputSchema: CORE_SCHEMAS.set_clip_plane,
+    },
+    async ({ tab, ...params }) =>
+      context.answer('set_clip_plane', params, {
+        tab,
+        lead: (r) =>
+          `Cut plane: ${(r as { plane?: { name?: string } })?.plane?.name ?? 'set'}.`,
+      }),
   )
 
   server.registerTool(

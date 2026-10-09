@@ -10,7 +10,15 @@
  * place to a person, and what it does when the crosshair is moved for it.
  */
 
-import { namePlane, planeDepthCuts } from '../planes'
+import {
+  cameraForPlane,
+  clipNormal,
+  depthThrough,
+  namePlane,
+  PLANE_NONE,
+  planeDepthCuts,
+  resolvePlane,
+} from '../planes'
 import type { PlaneState, TabState } from '../protocol'
 import {
   LAYOUTS,
@@ -22,6 +30,7 @@ import {
 import {
   clamp,
   flag,
+  integer,
   nameFromUrl,
   number,
   numbers,
@@ -75,6 +84,13 @@ export function viewState(view: View): ViewState {
   }
 }
 
+/** Turns the camera to look straight at the face a plane at these angles exposes. */
+function facePlane(view: View, azimuth: number, elevation: number): void {
+  const at = cameraForPlane(azimuth, elevation)
+  view.azimuth = at.azimuth
+  view.elevation = at.elevation
+}
+
 /** Whether a volume's name says it is in MNI space, when nobody said. */
 export function looksMni(name: string): boolean {
   return /mni/i.test(name)
@@ -88,6 +104,23 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   const requireVolume = () => {
     if (!view.volumes[0])
       throw new Error('No volume is loaded yet. Call load_volume first.')
+  }
+
+  /** Moves the crosshair to `frac`, cuts `plane` through it facing the camera at the cut, and draws. */
+  const moveTo = (
+    frac: [number, number, number],
+    plane: { azimuth: number; elevation: number },
+  ): number => {
+    const normal = clipNormal(plane.azimuth, plane.elevation)
+    const depth = depthThrough(normal, frac)
+    // Face the cut first, so the exposed face with the target on it is
+    // the near side rather than hidden behind the part the cut keeps.
+    facePlane(view, plane.azimuth, plane.elevation)
+    view.setClipPlane([depth, plane.azimuth, plane.elevation])
+    view.crosshairPos = new Float32Array(frac)
+    view.drawScene()
+    host.moved?.(frac)
+    return depth
   }
 
   const describe = async (): Promise<string> => {
@@ -143,6 +176,144 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         description: await describe(),
         ...(host.extraState?.() ?? {}),
       }
+    },
+
+    async go_to_point(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const planeName = text(params, 'plane')
+      const plane = resolvePlane(planeName, view.getClipPlaneDepthAziElev(0))
+      if (!plane) throw new Error(`Unknown plane "${planeName}".`)
+      const vox = pointIfGiven(params, 'vox')
+      let mm = pointIfGiven(params, 'mm')
+      let frac: [number, number, number]
+      if (vox) {
+        if (!view.vox2frac)
+          throw new Error("This page's NiiVue cannot place a voxel.")
+        if (vox.some((v) => !Number.isInteger(v)))
+          throw new Error('vox must be three whole numbers, [i, j, k].')
+        frac = view.vox2frac(vox)
+        const at = view.model.scene2mm(frac)
+        mm = [at[0], at[1], at[2]]
+      } else {
+        if (!mm) throw new Error('go_to_point needs mm or vox.')
+        const at = view.model.mm2scene([mm[0], mm[1], mm[2]])
+        frac = [at[0], at[1], at[2]]
+      }
+      if (frac.some((f) => !Number.isFinite(f) || f < 0 || f > 1)) {
+        throw new Error(
+          `${vox ? `Voxel [${vox.join(', ')}]` : `[${mm.join(', ')}] mm`} lies outside the loaded volume.`,
+        )
+      }
+      const depth = moveTo(frac, plane)
+      const label = text(params, 'label')
+      const place = await describe()
+      const description = label ? `${label}. ${place}` : place
+      host.announce?.(description)
+      return {
+        landed: { mm, frac, ...(vox ? { vox } : {}) },
+        plane: {
+          name: plane.name,
+          depth,
+          azimuth: plane.azimuth,
+          elevation: plane.elevation,
+        },
+        camera: camera(view),
+        description,
+        ...(host.extraState?.() ?? {}),
+      }
+    },
+
+    set_clip_plane(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const planes = params?.planes
+      if (planes !== undefined && planes !== null) {
+        if (!view.setClipPlanes)
+          throw new Error("This page's NiiVue cannot set several clip planes.")
+        if (
+          !Array.isArray(planes) ||
+          !planes.length ||
+          planes.length > CLIP_PLANES ||
+          planes.some(
+            (p) =>
+              !Array.isArray(p) ||
+              p.length !== 3 ||
+              p.some((v) => !Number.isFinite(Number(v))),
+          )
+        ) {
+          throw new Error(
+            `planes must be one to ${CLIP_PLANES} triples, [depth, azimuth, elevation] each.`,
+          )
+        }
+        const set = planes.map((p: unknown[]) => p.map(Number))
+        view.setClipPlanes(set)
+        view.drawScene()
+        return {
+          planes: set.map(([depth, azimuth, elevation]) => ({
+            name: namePlane(depth, azimuth, elevation),
+            depth,
+            azimuth,
+            elevation,
+          })),
+          camera: camera(view),
+        }
+      }
+      const index = integer(params, 'index') ?? 0
+      if (index >= CLIP_PLANES)
+        throw new Error(`index must be 0 to ${CLIP_PLANES - 1}.`)
+      const setAt = (plane: [number, number, number]) => {
+        if (index === 0) {
+          view.setClipPlane(plane)
+          return
+        }
+        if (!view.setClipPlaneDepthAziElev)
+          throw new Error("This page's NiiVue has one clip plane only.")
+        view.setClipPlaneDepthAziElev(plane[0], plane[1], plane[2], index)
+      }
+      const reported = (plane: [number, number, number], name?: string) => ({
+        ...(index ? { index } : {}),
+        plane: {
+          name: name ?? namePlane(plane[0], plane[1], plane[2]),
+          depth: plane[0],
+          azimuth: plane[1],
+          elevation: plane[2],
+        },
+        camera: camera(view),
+      })
+      const name = (text(params, 'plane') ?? '').toLowerCase()
+      const azimuth = number(params, 'azimuth')
+      const elevation = number(params, 'elevation')
+      if (name === 'off') {
+        setAt([PLANE_NONE, 0, 0])
+        view.drawScene()
+        host.announce?.('Cut plane: off.')
+        return reported([PLANE_NONE, 0, 0])
+      }
+      let plane: { name: string; azimuth: number; elevation: number }
+      if (azimuth !== undefined || elevation !== undefined) {
+        if (azimuth === undefined || elevation === undefined)
+          throw new Error('A plane by angle needs both azimuth and elevation.')
+        plane = { name: '', azimuth, elevation }
+      } else {
+        if (!name)
+          throw new Error(
+            'set_clip_plane needs a plane name, an azimuth and elevation, or off.',
+          )
+        const named = resolvePlane(name, null)
+        if (!named || name === 'current')
+          throw new Error(`Unknown plane "${name}".`)
+        plane = named
+      }
+      const depth = clamp(number(params, 'depth') ?? 0, -1.5, 1.5)
+      if (!plane.name)
+        plane.name = namePlane(depth, plane.azimuth, plane.elevation)
+      if (flag(params, 'face') ?? true)
+        facePlane(view, plane.azimuth, plane.elevation)
+      setAt([depth, plane.azimuth, plane.elevation])
+      view.drawScene()
+      host.announce?.(`Cut plane: ${plane.name}.`)
+      return reported([depth, plane.azimuth, plane.elevation], plane.name)
     },
 
     set_camera(params) {
@@ -344,6 +515,9 @@ function scaledCopy(
   context.drawImage(canvas, 0, 0, copy.width, copy.height)
   return copy
 }
+
+/** How many clip planes NiiVue keeps. */
+export const CLIP_PLANES = 6
 
 /** Whether a plane by NiiVue's numbers is cut at all. */
 export function planeIsCut(plane: readonly [number, number, number]): boolean {

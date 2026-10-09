@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test'
 
-import { PLANE_NONE } from '../planes'
+import { clipNormal, PLANE_ANGLES, PLANE_NONE, viewDirection } from '../planes'
 import { nameFromUrl } from './params'
 import {
   coreHandlers,
@@ -49,6 +49,9 @@ function fakeView(overrides: Partial<View> = {}): View {
   }
   return view
 }
+
+/** Rounded, with -0 tidied, so two directions compare as numbers. */
+const tidy = (v: readonly number[]) => v.map((n) => +n.toFixed(6) + 0)
 
 function host(view = fakeView(), extra: Partial<NiiVueHost> = {}): NiiVueHost {
   return { view, ...extra }
@@ -117,6 +120,44 @@ describe('where_am_i', () => {
     expect(
       await coreHandlers(host(fakeView({ volumes: [] }))).where_am_i({}),
     ).toEqual({ volume: null, description: 'No volume is loaded yet.' })
+  })
+})
+
+describe('set_clip_plane', () => {
+  it.each(
+    PLANE_ANGLES.map((p) => [p.name, p.azimuth, p.elevation] as const),
+  )('cuts %s at the depth asked and faces it', async (name, azimuth, elevation) => {
+    const view = fakeView()
+    const result = coreHandlers(host(view)).set_clip_plane({
+      plane: name,
+      depth: 0.25,
+    })
+    expect(view.setClipPlane).toHaveBeenCalledWith([0.25, azimuth, elevation])
+    expect(result).toMatchObject({
+      plane: { name, depth: 0.25, azimuth, elevation },
+    })
+    const looking = viewDirection(view.azimuth, view.elevation)
+    expect(tidy(looking)).toEqual(tidy(clipNormal(azimuth, elevation)))
+  })
+
+  it('leaves the camera alone when told not to face the cut, and turns the plane off', () => {
+    const view = fakeView()
+    const announce = mock()
+    const handlers = coreHandlers(host(view, { announce }))
+    handlers.set_clip_plane({ plane: 'coronal', face: false })
+    expect(view.setClipPlane).toHaveBeenLastCalledWith([0, 0, 0])
+    expect(view.azimuth).toBe(110)
+    expect(announce).toHaveBeenLastCalledWith('Cut plane: posterior.')
+    handlers.set_clip_plane({ plane: 'off' })
+    expect(view.setClipPlane).toHaveBeenLastCalledWith([PLANE_NONE, 0, 0])
+    expect(announce).toHaveBeenLastCalledWith('Cut plane: off.')
+    expect(() => handlers.set_clip_plane({ plane: 'current' })).toThrow(
+      'Unknown plane "current"',
+    )
+    expect(() =>
+      handlers.set_clip_plane({ plane: 'left', depth: 9 }),
+    ).not.toThrow()
+    expect(view.setClipPlane).toHaveBeenLastCalledWith([1.5, 270, 0])
   })
 })
 
@@ -336,5 +377,58 @@ describe('load_volume', () => {
     expect(nameFromUrl('blob:http://localhost/abc')).toBe('abc')
     expect(looksMni('mni152.nii.gz')).toBe(true)
     expect(looksMni('chris_t1.nii.gz')).toBe(false)
+  })
+})
+
+describe('go_to_point', () => {
+  it('lands on the point, cuts through it facing the camera, samples, and announces with the label', async () => {
+    const view = fakeView()
+    const moved = mock()
+    const announce = mock()
+    const handlers = coreHandlers(
+      host(view, { moved, announce, describe: () => 'left, back, low.' }),
+    )
+    const result = (await handlers.go_to_point({
+      mm: [-24, -20, -14],
+      plane: 'left',
+      label: 'Left hippocampus',
+    })) as {
+      landed: { mm: number[]; frac: number[] }
+      plane: { name: string; depth: number }
+      description: string
+    }
+    expect(tidy(result.landed.frac)).toEqual([0.38, 0.4, 0.43])
+    expect(tidy(Array.from(view.crosshairPos))).toEqual([0.38, 0.4, 0.43])
+    expect(view.setClipPlane).toHaveBeenCalledTimes(1)
+    expect(result.plane.name).toBe('left')
+    expect(moved).toHaveBeenCalledWith(
+      [0.38, 0.4, 0.43].map((f) => expect.closeTo(f, 6)),
+    )
+    expect(result.description).toBe('Left hippocampus. left, back, low.')
+    expect(announce).toHaveBeenCalledWith('Left hippocampus. left, back, low.')
+  })
+
+  it("works without an atlas, which a subject's own scan does not have", async () => {
+    const view = fakeView({ volumes: [{ name: 'sub-01_T1w.nii.gz' }] })
+    const handlers = coreHandlers({ view })
+    const result = (await handlers.go_to_point({ mm: [10, 0, 0] })) as {
+      description: string
+    }
+    expect(result.description).toBe('Crosshair at 10, 0, 0 mm.')
+  })
+
+  it('refuses a point outside the volume, a malformed point, or no volume', async () => {
+    const handlers = coreHandlers(host())
+    await expect(handlers.go_to_point({ mm: [500, 0, 0] })).rejects.toThrow(
+      /outside the loaded volume/,
+    )
+    await expect(handlers.go_to_point({ mm: [1, 2] })).rejects.toThrow(
+      /three numbers/,
+    )
+    await expect(
+      coreHandlers(host(fakeView({ volumes: [] }))).go_to_point({
+        mm: [0, 0, 0],
+      }),
+    ).rejects.toThrow(/load_volume/)
   })
 })

@@ -19,6 +19,8 @@ const CORE_TOOLS = [
   'new_tab',
   'load_volume',
   'where_am_i',
+  'go_to_point',
+  'set_clip_plane',
   'set_camera',
   'set_view',
   'screenshot',
@@ -58,6 +60,9 @@ async function until<T>(
   }
   throw new Error(`Timed out waiting for ${what}`)
 }
+
+/** Millimetres as the page hands them back: a frac-to-mm round trip, so within a hair. */
+const mm = (...values: number[]) => values.map((v) => expect.closeTo(v, 3))
 
 type Reply = Awaited<ReturnType<Client['callTool']>>
 const text = (reply: Reply): string =>
@@ -191,11 +196,34 @@ describe('the server, end to end', () => {
     expect(failed.isError).toBe(true)
     expect(text(failed)).toMatch(/could not be loaded: 404/)
 
+    const went = await call('go_to_point', {
+      mm: [-36, 6, 2],
+      plane: 'left',
+    })
+    expect(went.isError).toBeUndefined()
+    expect(text(went)).toMatch(/^Moved to left insula at -36, 6, 2 mm\./)
+    expect(json(went)).toMatchObject({
+      plane: { name: 'left', azimuth: 270 },
+      camera: { azimuth: 90, elevation: 0 },
+    })
+
     const here = json(await call('where_am_i'))
     expect(here).toMatchObject({
       tab: { id: 't1' },
+      crosshair: { mm: mm(-36, 6, 2) },
+      plane: { name: 'left' },
       light: false,
     })
+
+    const cut = json(
+      await call('set_clip_plane', { plane: 'axial', depth: 0.3, face: false }),
+    )
+    expect(cut).toMatchObject({
+      plane: { name: 'superior', depth: 0.3, azimuth: 0, elevation: 90 },
+      camera: { azimuth: 90, elevation: 0 },
+    })
+    const off = json(await call('set_clip_plane', { plane: 'off' }))
+    expect(off).toMatchObject({ plane: { name: 'off' } })
 
     const turned = json(
       await call('set_camera', { azimuth: 45, elevation: -20 }),
@@ -220,6 +248,14 @@ describe('the server, end to end', () => {
     })
     expect(json(await call('where_am_i'))).toMatchObject({
       view: { slice: 'multiplanar', colorbar: true },
+    })
+
+    const point = json(
+      await call('go_to_point', { mm: [10, 20, 30], plane: 'anterior' }),
+    )
+    expect(point).toMatchObject({
+      landed: { mm: mm(10, 20, 30), frac: [0.55, 0.6, 0.65] },
+      plane: { name: 'anterior' },
     })
 
     const shot = await call('screenshot', { max_width: 800 })
@@ -279,11 +315,15 @@ describe('the server, end to end', () => {
     const load = call('load_volume', {
       url: 'https://example.test/mni152.nii.gz',
     })
+    const go = call('go_to_point', { mm: [-36, 6, 2], plane: 'left' })
     const here = call('where_am_i')
-    const [loaded, where] = await Promise.all([load, here])
+    const [loaded, went, where] = await Promise.all([load, go, here])
     expect(loaded.isError).toBeUndefined()
+    expect(went.isError).toBeUndefined()
     expect(json(where)).toMatchObject({
       volume: 'mni152.nii.gz',
+      crosshair: { mm: mm(-36, 6, 2) },
+      plane: { name: 'left' },
     })
     await closePage('t2')
   }, 20000)
@@ -334,8 +374,10 @@ describe('the server, end to end', () => {
   it('re-binds a reloaded tab by id and reports the reset once', async () => {
     await openPage('t3', 'third tab')
     await call('load_volume', { url: 'https://example.test/mni152.nii.gz' })
+    await call('go_to_point', { mm: [-40, -6, 50], plane: 'superior' })
     await call('set_light', { on: true })
     expect(json(await call('where_am_i'))).toMatchObject({
+      crosshair: { mm: mm(-40, -6, 50) },
       light: true,
     })
 
@@ -346,7 +388,7 @@ describe('the server, end to end', () => {
     const after = await call('where_am_i')
     expect(after.isError).toBeUndefined()
     expect(text(after)).toMatch(
-      /^Note: the tab "third tab" reloaded at .* so its scene started over\. Changed: volume was mni152\.nii\.gz, now unset; crosshair was \[0, 0, 0\] mm, now unset; plane was off, now unset; light was true, now false\./,
+      /^Note: the tab "third tab" reloaded at .* so its scene started over\. Changed: volume was mni152\.nii\.gz, now unset; crosshair was \[-40, -6, 50\] mm, now unset; plane was superior, now unset; light was true, now false\./,
     )
     expect(json(after)).toMatchObject({
       tab: { id: 't3' },

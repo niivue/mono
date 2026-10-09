@@ -781,6 +781,9 @@ export class VolumeRenderer extends NVRenderer {
         entry = undefined
       }
       if (!entry) {
+        // Captured before the awaits below: an updateVolumeData during them
+        // must leave this entry stale (rebuilt next time), not marked current.
+        const dataVersion = vol._dataVersion ?? 0
         const volumeTexture = await orientOverlay.overlay2Texture(
           gl,
           vol,
@@ -809,7 +812,7 @@ export class VolumeRenderer extends NVRenderer {
           gradDims,
           dims: [rasDims[0], rasDims[1], rasDims[2]],
           isLabel: !!vol.colormapLabel,
-          dataVersion: vol._dataVersion ?? 0,
+          dataVersion,
         }
         if (cacheKey) this._texCache.set(cacheKey, entry)
       }

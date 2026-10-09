@@ -364,6 +364,11 @@ export async function prepareOrientTextureCache(
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
   writeSourceTexture(device, sourceTexture, nvimage, dimsIn, bytesPerVoxel)
+  // Record what was just uploaded NOW: the colormap uploads below await, and an
+  // updateVolumeData landing in that gap bumps the version. Reading it after the
+  // awaits would mark those newer voxels as uploaded when they are not.
+  const uploadedBuffer = nvimage.img.buffer
+  const uploadedVersion = nvimage._dataVersion ?? 0
   const uniformBuffer = device.createBuffer({
     size: ORIENT_UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -444,8 +449,8 @@ export async function prepareOrientTextureCache(
     datatypeCode: nvimage.hdr.datatypeCode,
     frame4D,
     colormapKey,
-    imageBuffer: nvimage.img.buffer,
-    dataVersion: nvimage._dataVersion ?? 0,
+    imageBuffer: uploadedBuffer,
+    dataVersion: uploadedVersion,
     pipelineType,
     hasNegativeColormap,
     modTexture,

@@ -44,6 +44,7 @@ import {
   text,
 } from './params'
 import { pickIndex } from './pick'
+import { settingHandlers } from './settings'
 import type {
   AffineTransform,
   AtlasLike,
@@ -286,6 +287,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   }
 
   return {
+    ...settingHandlers(host),
+
     async load_volume(params) {
       const url = text(params, 'url')
       if (!url) throw new Error('load_volume needs a url.')

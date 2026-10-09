@@ -33,6 +33,9 @@ const CORE_TOOLS = [
   'remove_volume',
   'reorder_volume',
   'describe_volume',
+  'get_options',
+  'set_options',
+  'capabilities',
 ]
 
 /** The smallest extension: one tool, answered by the page's `set_light` handler. */

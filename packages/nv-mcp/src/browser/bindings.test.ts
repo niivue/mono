@@ -484,8 +484,16 @@ function meshView() {
   const controls = bindControls(memory, { view, onError })
   const host = hostOf(view)
   host.controls = controls
-  const { add_control, list_controls } = controlHandlers(host)
-  return { view, meshes, memory, onError, add_control, list_controls }
+  const { add_control, set_control, list_controls } = controlHandlers(host)
+  return {
+    view,
+    meshes,
+    memory,
+    onError,
+    add_control,
+    set_control,
+    list_controls,
+  }
 }
 
 describe('bindControls: meshes', () => {
@@ -580,6 +588,77 @@ describe('bindControls: meshes', () => {
     await Promise.resolve()
     expect(onError).toHaveBeenCalledTimes(1)
     expect(onError.mock.calls[0][0].message).toBe('boom')
+  })
+
+  it('reports a write NiiVue fails later as the error, with no control left', async () => {
+    const { add_control, list_controls, view, onError } = meshView()
+    view.setTractOptions = mock(() => Promise.reject(new Error('boom')))
+    await expect(
+      Promise.resolve(
+        add_control({
+          id: 'r',
+          kind: 'slider',
+          bind: 'mesh.1.tract.fiberRadius',
+          value: 1,
+        }),
+      ),
+    ).rejects.toThrow('boom')
+    expect(list_controls({})).toEqual({ controls: [] })
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('reports a change NiiVue fails later as the error, the control as it was', async () => {
+    const { add_control, set_control, list_controls, view } = meshView()
+    view.setTractOptions = mock(() => Promise.reject(new Error('boom')))
+    add_control({ id: 'r', kind: 'slider', bind: 'mesh.1.tract.fiberRadius' })
+    await expect(
+      Promise.resolve(set_control({ id: 'r', value: 1, label: 'Radius' })),
+    ).rejects.toThrow('boom')
+    const listed = list_controls({}) as {
+      controls: Array<{ value: unknown; label?: string }>
+    }
+    expect(listed.controls[0]).toMatchObject({ value: 0.5 })
+    expect(listed.controls[0].label).toBeUndefined()
+  })
+
+  it('holds other control changes off while a write is unfinished', async () => {
+    const { add_control, set_control, list_controls, view } = meshView()
+    let finish = () => {}
+    view.setTractOptions = mock(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    )
+    const made = add_control({
+      id: 'r',
+      kind: 'slider',
+      bind: 'mesh.1.tract.fiberRadius',
+      value: 1,
+    })
+    expect(() => add_control({ id: 'r', kind: 'button' })).toThrow(
+      'still setting what "r" drives',
+    )
+    expect(() => set_control({ id: 'r', label: 'R' })).toThrow('still setting')
+    finish()
+    await made
+    set_control({ id: 'r', label: 'R' })
+    expect(list_controls({})).toMatchObject({
+      controls: [{ id: 'r', label: 'R', value: 1 }],
+    })
+  })
+
+  it('reports the control once NiiVue has set what it drives', async () => {
+    const { add_control, list_controls, meshes } = meshView()
+    const made = add_control({
+      id: 'r',
+      kind: 'slider',
+      max: 2,
+      bind: 'mesh.1.tract.fiberRadius',
+      value: 1.5,
+    })
+    expect(made).toBeInstanceOf(Promise)
+    expect(list_controls({})).toEqual({ controls: [] })
+    const got = (await made) as Reported
+    expect(got.control).toMatchObject({ id: 'r', value: 1.5 })
+    expect(meshes[1].tractOptions?.fiberRadius).toBe(1.5)
   })
 
   it('reads no named groups as all of them shown', () => {

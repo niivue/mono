@@ -15,7 +15,7 @@
  *    volume's explode, so a label follows its brick when the volume is
  *    spread apart).
  * 5. Gives the agent a control surface: UIKit widgets drawn on the canvas,
- *    bound to NiiVue settings, the view, volume properties, dialogs
+ *    bound to NiiVue settings, the view, volume and mesh properties, dialogs
  *    and the page's actions, so an agent can lay out a demo's controls and
  *    the person can use them.
  */

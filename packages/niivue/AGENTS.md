@@ -85,7 +85,7 @@ canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 - **Volume utilities** (`src/volume/`) — intensity range, NIfTI header creation, voxel lookup, reorientation, modulation
 - **Colormaps** (`src/cmap/`) — LUT generation, label colormap construction
 - **Constants** (`src/NVConstants.ts`) — PAQD detection, slice type dimension mapping
-- **Mesh I/O** (`src/mesh/`) — STL/OBJ writers, STL/OFF readers (roundtrip tests)
+- **Mesh I/O** (`src/mesh/`) — STL/OBJ writers, STL/OFF readers (roundtrip tests); vertex normals
 - **View utilities** (`src/view/`) — mm-to-canvas projection
 
 ### What's NOT yet covered by unit tests
@@ -1015,6 +1015,12 @@ CPU-composited scalar overlays on meshes. `perVertexColors` (nullable `Uint32Arr
 ## Mesh shaders
 
 Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong, flat, matte, toon, outline, rim, silhouette, crevice, vertexColor, crosscut. Selected per-mesh via `shaderType`. Vertex layout: interleaved `BYTES_PER_VERTEX` bytes (pos `float32x3` + normal `float32x3` + color `unorm8x4`), defined in `mesh/vertexFormat.ts` with the one mesh packer, `packMeshVertices`, and the color encoding, `packColor`. The crosshair cylinder and the orientation cube still pack their own vertices, and the attribute offsets are still literals (#304).
+
+**Normals** are not read from mesh files; `mesh/normals.ts` derives them.
+`generateNormals` sums each triangle's unnormalised (area-weighted) cross product
+into a `Float32Array`, then negates and normalises (zero sums stay zero); keep the
+accumulator type and operation order, which `normals.test.ts` pins bit for bit
+against the original.
 
 **Crosscut shader** (`shaderType: 'crosscut'`): Renders crosshair-aligned ribbons using `fwidth()`-based screen-space line width. Unique render state: **no depth test, no face culling**. `crosscutMM` uniform computed by `view/NVCrosscut.ts`.
 

@@ -143,19 +143,21 @@ let volumeBusy = false
 let switchingBackend = false
 let frames = 0
 let voxelMs = 0
+let voxelUpdates = 0
 let meshMs = 0
+let meshUpdates = 0
 let statsSince = performance.now()
 
 function tick(now) {
   const dt = (now - last) / 1000
   last = now
   t += dt * (speedSlider.value / 10)
-  // updateVolumeData is async; skip a voxel frame while the previous upload is
-  // still in flight rather than queueing edits behind it.
   if (switchingBackend) {
     requestAnimationFrame(tick)
     return
   }
+  // updateVolumeData is async; skip a voxel frame while the previous upload is
+  // still in flight rather than queueing edits behind it.
   if (voxelCheck.checked && !volumeBusy) {
     const start = performance.now()
     drawBlob(t)
@@ -166,29 +168,35 @@ function tick(now) {
       .finally(() => {
         volumeBusy = false
         voxelMs += performance.now() - start
+        voxelUpdates++
       })
   }
   if (meshCheck.checked) {
     const start = performance.now()
     rippleMesh(t)
     meshMs += performance.now() - start
+    meshUpdates++
   }
   frames++
   const elapsed = now - statsSince
   if (elapsed > 1000) {
+    // Averages are per update, not per rendered frame (voxel updates skip
+    // frames while an upload is in flight).
     const parts = [`${((frames * 1000) / elapsed).toFixed(0)} fps`]
-    if (voxelCheck.checked) {
-      parts.push(`voxel update ${(voxelMs / frames).toFixed(1)} ms`)
+    if (voxelUpdates > 0) {
+      parts.push(`voxel update ${(voxelMs / voxelUpdates).toFixed(1)} ms`)
     }
-    if (meshCheck.checked) {
+    if (meshUpdates > 0) {
       parts.push(
-        `mesh update ${(meshMs / frames).toFixed(1)} ms (${nVert.toLocaleString()} vertices)`,
+        `mesh update ${(meshMs / meshUpdates).toFixed(1)} ms (${nVert.toLocaleString()} vertices)`,
       )
     }
     stats.textContent = parts.join(' | ')
     frames = 0
     voxelMs = 0
+    voxelUpdates = 0
     meshMs = 0
+    meshUpdates = 0
     statsSince = now
   }
   requestAnimationFrame(tick)
@@ -205,7 +213,7 @@ voxelCheck.onchange = () => {
   // Leave the overlay empty rather than frozen mid-orbit.
   if (prevBox) clearBox(prevBox)
   prevBox = null
-  nv1.updateVolumeData(1)
+  nv1.updateVolumeData(1).catch((e) => console.error(e))
 }
 meshCheck.onchange = () => {
   if (!meshCheck.checked) nv1.updateMeshPositions(0, basePositions)

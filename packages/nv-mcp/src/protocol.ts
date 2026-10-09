@@ -14,6 +14,13 @@
  */
 export const TAB_PARAM = 'tab'
 
+/**
+ * How long the server waits for a page to answer a call before the agent
+ * is told it did not. A page that waits on NiiVue itself, as a control
+ * write does, gives up sooner, so its own error reaches the agent.
+ */
+export const CALL_TIMEOUT_MS = 15000
+
 /** The longest id a page takes from its address; longer ones are ignored. */
 export const TAB_ID_MAX = 64
 

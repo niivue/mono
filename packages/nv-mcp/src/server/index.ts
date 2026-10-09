@@ -5,6 +5,8 @@
  * helpers are exported for an app that wires its own HTTP, and for tests.
  */
 
+// biome-ignore lint/performance/noBarrelFile: package entry point
+export { CALL_TIMEOUT_MS } from '../protocol'
 export type {
   AppSocket,
   BridgeOptions,
@@ -13,8 +15,7 @@ export type {
   TabInfo,
   TabListing,
 } from './bridge'
-// biome-ignore lint/performance/noBarrelFile: package entry point
-export { Bridge, CALL_TIMEOUT_MS, NO_APP, RETURN_GRACE_MS } from './bridge'
+export { Bridge, NO_APP, RETURN_GRACE_MS } from './bridge'
 export type {
   AnswerOptions,
   Extension,

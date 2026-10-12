@@ -3,17 +3,24 @@
 // the same work on WebGL2 and WebGPU.
 
 import type { NVImage } from '@/NVTypes'
+import type { MeshRebuild } from '@/view/meshGpuSync'
 
 /** Options for a view's updateBindGroups (both backends). */
 export type UpdateBindGroupsOptions = {
-  /** false skips the mesh rebuild. */
-  meshes?: boolean
+  /** Which mesh GPU resources to rebuild (see MeshRebuild). Default 'all'. */
+  meshes?: MeshRebuild
   /**
-   * Only these volumes' voxel data changed (updateVolumeData). The rebuild is
-   * then scoped by volumeUpdateScope and skips the colorbars. Omitted: rebuild
-   * every volume.
+   * Only these volumes' voxel data changed (updateVolumeData; [] for a
+   * mesh-only update). The rebuild is then scoped by volumeUpdateScope.
+   * Omitted: rebuild every volume.
    */
   volumes?: readonly NVImage[]
+  /**
+   * Rebuild the colorbars. Defaults to true for a full volume rebuild
+   * (`volumes` omitted) and false for a scoped one; mesh updates, which pass
+   * `volumes: []`, set it because mesh layers carry colorbars.
+   */
+  colorbars?: boolean
 }
 
 export type VolumeUpdateScope = {

@@ -18,6 +18,13 @@ import type {
 } from '@/NVTypes'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
+import {
+  type MeshRebuild,
+  type MeshUploadStamp,
+  meshUploadStamp,
+  planMeshSync,
+  stampAfterVertexWrite,
+} from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
@@ -62,6 +69,8 @@ import { ThumbnailRenderer } from './thumbnail'
 type MeshGpuWithShader = WebGLMeshGPU & {
   shaderType?: string
   sliceShaderType?: string
+  /** The vertex data these buffers were built from (see meshGpuSync). */
+  uploadStamp?: MeshUploadStamp
 }
 
 export default class NVGlview {
@@ -418,7 +427,7 @@ export default class NVGlview {
       )
       // A data-only update (opts.volumes) leaves the colorbars as they are:
       // their range comes from calMin/calMax, which it does not change.
-      if (!opts.volumes) {
+      if (opts.colorbars ?? !opts.volumes) {
         this.colorbarRenderer.buildColorbars(
           gl,
           this.model.collectColorbars(),
@@ -474,7 +483,7 @@ export default class NVGlview {
       } else {
         this.volumeRenderer.clearOverlay(gl)
       }
-      if (opts.meshes !== false) this._rebuildMeshResources()
+      this._rebuildMeshResources(opts.meshes ?? 'all')
     } finally {
       this.isBusy = false
     }
@@ -1760,8 +1769,9 @@ export default class NVGlview {
     // the same way every frame. Report success; recovery re-uploads every mesh.
     if (this._contextLost || gl.isContextLost()) return true
     const gpu = this.meshResources.get(m)
-    if (!gpu) return false
-    return mesh.writeMeshVertices(gl, m, gpu)
+    if (!gpu || !mesh.writeMeshVertices(gl, m, gpu)) return false
+    gpu.uploadStamp = stampAfterVertexWrite(gpu.uploadStamp, m)
+    return true
   }
 
   _destroyMeshResources(): void {
@@ -1773,12 +1783,23 @@ export default class NVGlview {
     this.meshResources.clear()
   }
 
-  _rebuildMeshResources(): void {
+  /**
+   * Bring mesh GPU resources in line with the model. `'changed'` uploads only
+   * new or edited meshes and frees removed ones; every kept mesh still picks
+   * up its current shader choice, which is draw-time state.
+   */
+  _rebuildMeshResources(mode: MeshRebuild = 'all'): void {
     const gl = this.gl
-    if (!gl) return
-    this._destroyMeshResources()
-    const availableShaders = this.getAvailableShaders()
+    if (!gl || mode === 'none') return
     const meshes = this.model.getMeshes() as NVMesh[]
+    const plan = planMeshSync(this.meshResources, meshes, mode)
+    for (const m of plan.free) {
+      const gpu = this.meshResources.get(m)
+      if (gpu) mesh.destroyMeshGpu(gl, gpu)
+      this.meshResources.delete(m)
+    }
+    const upload = new Set(plan.upload)
+    const availableShaders = this.getAvailableShaders()
     for (const m of meshes) {
       let shaderType = m.shaderType || 'phong'
       if (!availableShaders.includes(shaderType)) {
@@ -1795,8 +1816,17 @@ export default class NVGlview {
         )
         sliceShaderType = ''
       }
+      const kept = this.meshResources.get(m)
+      if (kept && !upload.has(m)) {
+        kept.shaderType = shaderType
+        kept.sliceShaderType = sliceShaderType
+        continue
+      }
+      // A mesh listed twice in the model is uploaded once.
+      upload.delete(m)
+      const uploadStamp = meshUploadStamp(m)
       const gpu = mesh.uploadMeshGPU(gl, m, { shaderType, sliceShaderType })
-      this.meshResources.set(m, gpu)
+      this.meshResources.set(m, { ...gpu, uploadStamp })
     }
   }
 

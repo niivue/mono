@@ -18,6 +18,13 @@ import type {
 } from '@/NVTypes'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
+import {
+  type MeshRebuild,
+  type MeshUploadStamp,
+  meshUploadStamp,
+  planMeshSync,
+  stampAfterVertexWrite,
+} from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
@@ -65,6 +72,8 @@ import * as wgpu from './wgpu'
 type MeshGpuWithShader = WebGPUMeshGPU & {
   shaderType?: string
   sliceShaderType?: string
+  /** The vertex data these buffers were built from (see meshGpuSync). */
+  uploadStamp?: MeshUploadStamp
 }
 
 /** Shared GPU context per canvas for multi-instance bounds support */
@@ -655,7 +664,7 @@ export default class NVView {
       )
       // A data-only update (opts.volumes) leaves the colorbars as they are:
       // their range comes from calMin/calMax, which it does not change.
-      if (!opts.volumes) {
+      if (opts.colorbars ?? !opts.volumes) {
         await this.colorbarRenderer.buildColorbars(
           device,
           this.model.collectColorbars(),
@@ -730,60 +739,7 @@ export default class NVView {
           this.sampler,
         )
       }
-      if (opts.meshes === false) return
-      const meshes = this.model.getMeshes() as NVMesh[]
-      const availableShaders = this.getAvailableShaders()
-      if (!this.meshBindGroupLayout) return
-      this._destroyMeshResources()
-      for (const m of meshes) {
-        let shaderType = m.shaderType || 'phong'
-        if (!availableShaders.includes(shaderType)) {
-          log.warn(
-            `Shader '${shaderType}' not available in WebGPU, falling back to 'phong'`,
-          )
-          shaderType = 'phong'
-        }
-        // '' = inherit shaderType on slices; an invalid name also falls back to ''.
-        let sliceShaderType = m.sliceShaderType || ''
-        if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
-          log.warn(
-            `Slice shader '${sliceShaderType}' not available in WebGPU, falling back to '${shaderType}'`,
-          )
-          sliceShaderType = ''
-        }
-        const gpuData = mesh.uploadMeshGPU(device, m, { shaderType })
-        const mGpu: MeshGpuWithShader = {
-          vertexBuffer: gpuData.vertexBuffer,
-          indexBuffer: gpuData.indexBuffer,
-          uniformBuffer: gpuData.uniformBuffer,
-          indexCount: gpuData.indexCount,
-          bindGroup: null,
-          alignedMeshSize: mesh.alignedMeshSize,
-          shaderType,
-          sliceShaderType,
-        }
-        this.meshResources.set(m, mGpu)
-        if (!mGpu) {
-          continue
-        }
-        if (!mGpu.uniformBuffer) {
-          continue
-        }
-        if (!mGpu?.bindGroup) {
-          mGpu.bindGroup = device.createBindGroup({
-            layout: this.meshBindGroupLayout,
-            entries: [
-              {
-                binding: 0,
-                resource: {
-                  buffer: mGpu.uniformBuffer,
-                  size: mesh.MESH_UNIFORM_SIZE,
-                },
-              },
-            ],
-          })
-        }
-      }
+      this._rebuildMeshResources(device, opts.meshes ?? 'all')
     } finally {
       this.isBusy = false
     }
@@ -2563,8 +2519,80 @@ export default class NVView {
     // the same way every frame. Report success; recovery re-uploads every mesh.
     if (this._deviceLost) return true
     const gpu = this.meshResources.get(m)
-    if (!gpu) return false
-    return mesh.writeMeshVertices(device, m, gpu)
+    if (!gpu || !mesh.writeMeshVertices(device, m, gpu)) return false
+    gpu.uploadStamp = stampAfterVertexWrite(gpu.uploadStamp, m)
+    return true
+  }
+
+  /**
+   * Bring mesh GPU resources in line with the model. `'changed'` uploads only
+   * new or edited meshes and frees removed ones; every kept mesh still picks
+   * up its current shader choice, which is draw-time state.
+   */
+  private _rebuildMeshResources(device: GPUDevice, mode: MeshRebuild): void {
+    const layout = this.meshBindGroupLayout
+    if (!layout || mode === 'none') return
+    const meshes = this.model.getMeshes() as NVMesh[]
+    const plan = planMeshSync(this.meshResources, meshes, mode)
+    for (const m of plan.free) {
+      const gpu = this.meshResources.get(m)
+      if (gpu) mesh.destroyMesh(gpu)
+      this.meshResources.delete(m)
+    }
+    const upload = new Set(plan.upload)
+    const availableShaders = this.getAvailableShaders()
+    for (const m of meshes) {
+      let shaderType = m.shaderType || 'phong'
+      if (!availableShaders.includes(shaderType)) {
+        log.warn(
+          `Shader '${shaderType}' not available in WebGPU, falling back to 'phong'`,
+        )
+        shaderType = 'phong'
+      }
+      // '' = inherit shaderType on slices; an invalid name also falls back to ''.
+      let sliceShaderType = m.sliceShaderType || ''
+      if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
+        log.warn(
+          `Slice shader '${sliceShaderType}' not available in WebGPU, falling back to '${shaderType}'`,
+        )
+        sliceShaderType = ''
+      }
+      const kept = this.meshResources.get(m)
+      if (kept && !upload.has(m)) {
+        kept.shaderType = shaderType
+        kept.sliceShaderType = sliceShaderType
+        continue
+      }
+      // A mesh listed twice in the model is uploaded once.
+      upload.delete(m)
+      const uploadStamp = meshUploadStamp(m)
+      const gpuData = mesh.uploadMeshGPU(device, m, { shaderType })
+      const uniformBuffer = gpuData.uniformBuffer
+      this.meshResources.set(m, {
+        vertexBuffer: gpuData.vertexBuffer,
+        indexBuffer: gpuData.indexBuffer,
+        uniformBuffer,
+        indexCount: gpuData.indexCount,
+        bindGroup: uniformBuffer
+          ? device.createBindGroup({
+              layout,
+              entries: [
+                {
+                  binding: 0,
+                  resource: {
+                    buffer: uniformBuffer,
+                    size: mesh.MESH_UNIFORM_SIZE,
+                  },
+                },
+              ],
+            })
+          : null,
+        alignedMeshSize: mesh.alignedMeshSize,
+        shaderType,
+        sliceShaderType,
+        uploadStamp,
+      })
+    }
   }
 
   _destroyMeshResources(): void {

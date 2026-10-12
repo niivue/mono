@@ -98,6 +98,15 @@ animateCheck.onclick = () => {
   }
 }
 
+xraySlide.oninput = function () {
+  nv1.meshXRay = this.value * 0.01
+}
+
+crosshairCheck.onclick = function () {
+  nv1.is3DCrosshairVisible = this.checked
+  nv1.crosshairWidth = this.checked ? 2 : 0
+}
+
 radioCheck.onclick = function () {
   nv1.isRadiological = this.checked
 }
@@ -123,19 +132,39 @@ const parseNames = (input) => {
     .filter(Boolean)
 }
 
+// Surface meshes (kind 'mesh') are swapped by meshSelect; the connectome and tract persist
+const meshIndices = (kind) =>
+  nv1.meshes.flatMap((m, i) => (m.kind === kind ? [i] : []))
+
 meshSelect.onchange = async () => {
-  if (meshSelect.value === 'none') {
-    await nv1.loadMeshes([])
-    return
+  for (const i of meshIndices('mesh').reverse()) await nv1.removeMesh(i)
+  for (const n of parseNames(meshSelect.value)) {
+    await nv1.addMesh({
+      url: `/meshes/${n}.mz3`,
+      opacity: Number(meshOpacitySlider.value) * 0.01,
+      color: [1, 0.8, 1, 0.9],
+      shaderType: shaderSelect.value,
+    })
   }
-  const names = parseNames(meshSelect.value)
-  const meshList = names.map((n) => ({
-    url: `/meshes/${n}.mz3`,
-    opacity: Number(meshOpacitySlider.value) * 0.01,
-    color: [1, 0.8, 1, 0.9],
-    shaderType: shaderSelect.value,
-  }))
-  await nv1.loadMeshes(meshList)
+}
+
+// 0 unloads; otherwise scales nodes and edges, 3 matching the defaults (nodeScale 3, edgeScale 1)
+connectomeSlider.oninput = async function () {
+  const scale = Number(this.value)
+  const connectomeOptions = { nodeScale: scale, edgeScale: scale / 3 }
+  const [i] = meshIndices('connectome')
+  if (scale === 0) {
+    if (i !== undefined) await nv1.removeMesh(i)
+  } else if (i === undefined) {
+    await nv1.addMesh({ url: '/meshes/connectome.jcon', connectomeOptions })
+  } else {
+    await nv1.setConnectomeOptions(i, connectomeOptions)
+  }
+}
+
+tractCheck.onclick = function () {
+  for (const i of meshIndices('tract'))
+    nv1.setMesh(i, { visible: this.checked })
 }
 
 volumeSelect.onchange = async () => {
@@ -188,17 +217,13 @@ dprSelect.onchange = async () => {
 }
 
 shaderSelect.onchange = () => {
-  const meshes = nv1.model.getMeshes()
-  if (meshes.length < 1) return
-  nv1.setMesh(meshes.length - 1, { shaderType: shaderSelect.value })
+  for (const i of meshIndices('mesh'))
+    nv1.setMesh(i, { shaderType: shaderSelect.value })
 }
 
 meshOpacitySlider.oninput = () => {
-  const meshes = nv1.model.getMeshes()
-  if (meshes.length < 1) return
-  nv1.setMesh(meshes.length - 1, {
-    opacity: Number(meshOpacitySlider.value) * 0.01,
-  })
+  for (const i of meshIndices('mesh'))
+    nv1.setMesh(i, { opacity: Number(meshOpacitySlider.value) * 0.01 })
 }
 
 sliceType.onchange = () => {
@@ -261,7 +286,7 @@ for (const cmap of nv1.colormaps) {
 //nv1.setClipPlaneDepthAziElev(0, 0, 0)
 nv1.volumeIsAlphaClipDark = true
 gradSlider.oninput()
-meshSelect.onchange()
+await meshSelect.onchange()
 //await volumeSelect.onchange()
 clipSelect.onchange()
 //nv1.setClipPlane([-0.15, 180, 30])
@@ -272,4 +297,9 @@ checkCutaway.onclick()
 //nv1.setCrosshairPos([25, 33, 48])
 //nv1.colorSelect.onchange()
 colorSelect.onchange()
-await nv1.loadMeshes({ url: `/meshes/connectome.jcon` })
+await connectomeSlider.oninput()
+await nv1.addMesh({
+  url: '/meshes/TR_S_R.tt.gz',
+  rgba255: [0, 255, 255, 255],
+  tractOptions: { fiberRadius: 0.5 },
+})

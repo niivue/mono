@@ -31,6 +31,7 @@ import type {
 import { deriveSeries, type SignalPlot } from '@/signal/processing'
 import type { GraphData } from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
+import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import { loadVolumePrepared } from '@/volume/loadBridge'
 import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
@@ -733,6 +734,7 @@ export default class NVModel {
       }
     }
     for (const m of this.meshes) {
+      if (!isMeshDrawn(m)) continue
       // Connectome colorbars: node and edge colormaps
       if (
         m.kind === 'connectome' &&

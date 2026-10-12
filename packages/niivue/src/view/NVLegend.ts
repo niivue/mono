@@ -3,6 +3,7 @@ import { colormapLookup } from '@/mesh/connectome'
 import type { NVImage, NVMesh } from '@/NVTypes'
 import { meshLabelCentroid, volumeLabelCentroid } from './legendCentroids'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
+import { isMeshDrawn } from './NVMeshVisibility'
 import { estimateFontSize } from './NVUILayout'
 
 export type LegendEntry = {
@@ -76,7 +77,7 @@ export function collectLegendEntries(
   // Collect from mesh layers with label colormaps
   for (const mesh of meshes) {
     // Skip if showLegend is explicitly false
-    if (mesh.showLegend === false) continue
+    if (mesh.showLegend === false || !isMeshDrawn(mesh)) continue
     if (!mesh.layers) continue
 
     for (const layer of mesh.layers) {
@@ -110,7 +111,7 @@ export function collectLegendEntries(
 
   // Collect from connectome meshes (named nodes)
   for (const mesh of meshes) {
-    if (mesh.showLegend === false) continue
+    if (mesh.showLegend === false || !isMeshDrawn(mesh)) continue
     if (mesh.kind !== 'connectome' || !mesh.jcon || !mesh.connectomeOptions)
       continue
 
@@ -138,7 +139,8 @@ export function collectLegendEntries(
           Math.round(clr[0] * 255),
           Math.round(clr[1] * 255),
           Math.round(clr[2] * 255),
-          Math.round(clr[3] * 255),
+          // Nodes render opaque; the LUT alpha (e.g. viridis 0 at min) is for volume overlays
+          255,
         ],
         centroid: () => [node.x, node.y, node.z],
       })

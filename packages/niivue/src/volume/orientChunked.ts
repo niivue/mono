@@ -4,8 +4,12 @@
 // image buffer. They are shared by both GPU backends' chunked upload paths
 // (wgpu/orientChunked.ts and gl/orientChunked.ts) and have no GPU dependency.
 
+import { colormapKey } from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
+import { rgbaTextureKey } from '@/view/NVOrient'
+import { isRgbaDatatype } from '@/view/NVRenderVolumeData'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
+import { objectId } from '@/volume/dataVersion'
 import type { ModulationTextureParams } from '@/volume/modulation'
 
 /** NIfTI datatype codes for color volumes. */
@@ -29,10 +33,12 @@ function displayObjectId(o: object): number {
 
 /**
  * Key over every display-affecting input the chunked uploaders bake into their
- * per-chunk orient pass: the colormap LUTs (colormap, negative colormap,
- * inversion, label LUT identity), the intensity window (calMin/calMax and the
- * negative range), colormapType, the scaling slope/intercept, and the 4D frame
- * (the uploaders capture the frame's byte window at creation).
+ * per-chunk orient pass: the colormap LUTs (colormap and negative colormap,
+ * each with its addColormap revision, inversion, label LUT identity), the
+ * intensity window (calMin/calMax and the negative range), colormapType, the
+ * scaling slope/intercept, the 4D frame (the uploaders capture the frame's
+ * byte window at creation), and the in-place data version (`_dataVersion`), so
+ * an `isDirty` edit of an in-memory chunked volume re-streams its chunks.
  *
  * The renderers compare this against the cached chunked entry's key on every
  * updateVolume: resident chunk textures hold colormapped RGBA, so when any of
@@ -48,8 +54,8 @@ export function chunkedDisplayKey(
     ? `${displayObjectId(label)}:${label.lut ? displayObjectId(label.lut) : ''}`
     : ''
   return [
-    nvimage.colormap,
-    nvimage.colormapNegative ?? '',
+    colormapKey(nvimage.colormap),
+    colormapKey(nvimage.colormapNegative),
     nvimage.isColormapInverted ? 1 : 0,
     labelKey,
     nvimage.calMin,
@@ -60,11 +66,66 @@ export function chunkedDisplayKey(
     nvimage.hdr.scl_slope,
     nvimage.hdr.scl_inter,
     nvimage.frame4D ?? 0,
+    nvimage._dataVersion ?? 0,
     // Resident chunk textures bake the modulator in, so a modulator that
     // appears, changes or goes away must rebuild the uploader like a colormap
     // change does. `key` already covers the modulator's identity, window,
     // frame and exponent; `mode` covers RGB vs alpha.
     modulation ? `${modulation.key}#${modulation.mode}` : '',
+  ].join('|')
+}
+
+/**
+ * Key over everything a whole-volume texture baked by the orient pass (or, for
+ * RGB/RGBA data, by prepareRGBAData) depends on. The multi-instance per-volume
+ * `_texCache` entries of both renderers store it and rebuild when it changes,
+ * so an edited voxel or modulator (`_dataVersion`, which the modulation key
+ * carries too), a new window or frame, a re-registered colormap name, a new
+ * label LUT or outline width, a changed modulation mode, or a new affine all
+ * show. Scalar volumes use {@link chunkedDisplayKey} (which carries
+ * `_dataVersion`), the label outline width
+ * (the chunked path never outlines, so that key omits it), the RAS grid and
+ * the orient matrix `mtx`, plus the modulator's sampling matrix; RGB/RGBA
+ * volumes use rgbaTextureKey, since they bypass the colormap and the matrix.
+ */
+export function wholeVolumeTextureKey(
+  nvimage: NVImage,
+  mtx: ArrayLike<number>,
+  modulation: ModulationTextureParams | null = null,
+): string {
+  if (isRgbaDatatype(nvimage.hdr.datatypeCode)) {
+    return `rgba|${rgbaTextureKey(nvimage)}`
+  }
+  const outline = nvimage.colormapLabel
+    ? Math.max(0, nvimage.atlasOutline ?? 0)
+    : 0
+  return [
+    outline,
+    nvimage.dimsRAS?.slice(1, 4).join('x') ?? '',
+    Array.from(mtx).join(','),
+    modulation ? Array.from(modulation.mtx).join(',') : '',
+    chunkedDisplayKey(nvimage, modulation),
+  ].join('|')
+}
+
+/**
+ * Key over what the coarse floor texture (`setCoarseFloor`, both backends)
+ * bakes in when it orients a pyramid level with the orient matrix `mtx`: the
+ * source (url or name, and the `img` view: buffer identity, offset and length,
+ * since the app may pass a new level under the same name) plus {@link wholeVolumeTextureKey}, the
+ * inputs a whole-volume texture bakes (display state with the data version,
+ * label outline width, RAS grid, `mtx`; rgbaTextureKey for RGB/RGBA).
+ */
+export function coarseFloorKey(
+  coarseVol: NVImage,
+  mtx: ArrayLike<number>,
+): string {
+  return [
+    coarseVol.url || coarseVol.name,
+    coarseVol.img
+      ? `${objectId(coarseVol.img.buffer)}:${coarseVol.img.byteOffset}:${coarseVol.img.byteLength}`
+      : '',
+    wholeVolumeTextureKey(coarseVol, mtx),
   ].join('|')
 }
 

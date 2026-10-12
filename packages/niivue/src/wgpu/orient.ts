@@ -2,7 +2,11 @@ import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import { OVERLAY_ALPHA_BLEND, OVERLAY_COLOR_BLEND } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
-import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import {
+  buildOrientUniforms,
+  prepareRGBAData,
+  rgbaTextureKey,
+} from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
   IDENTITY_MTX,
@@ -37,21 +41,46 @@ export function createModTexture(
   device: GPUDevice,
   mod: ModulationTextureParams | null,
 ): GPUTexture {
-  const dims = mod ? mod.dims : [1, 1, 1]
+  const dims = modTextureDims(mod)
   const tex = device.createTexture({
-    size: dims as [number, number, number],
+    size: dims,
     format: 'r32float',
     dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
+  writeModTexture(device, tex, mod)
+  return tex
+}
+
+function modTextureDims(
+  mod: ModulationTextureParams | null,
+): [number, number, number] {
+  return mod ? [mod.dims[0], mod.dims[1], mod.dims[2]] : [1, 1, 1]
+}
+
+/** Overwrite a texture made by createModTexture(mod) with mod's weights. */
+function writeModTexture(
+  device: GPUDevice,
+  tex: GPUTexture,
+  mod: ModulationTextureParams | null,
+): void {
+  const dims = modTextureDims(mod)
   const data = mod ? mod.weight : new Float32Array([1])
   device.queue.writeTexture(
     { texture: tex },
     data as Float32Array<ArrayBuffer>,
     { bytesPerRow: dims[0] * 4, rowsPerImage: dims[1] },
-    dims as [number, number, number],
+    dims,
   )
-  return tex
+}
+
+/** Whether `tex` (a mod texture) has the grid createModTexture(mod) would. */
+function modTextureFits(
+  tex: GPUTexture,
+  mod: ModulationTextureParams | null,
+): boolean {
+  const [x, y, z] = modTextureDims(mod)
+  return tex.width === x && tex.height === y && tex.depthOrArrayLayers === z
 }
 
 type PipelineCacheEntry = {
@@ -146,16 +175,20 @@ export type OrientTextureCache = {
   frame4D: number
   colormapKey: string
   imageBuffer: ArrayBufferLike
+  /** `nvimage._dataVersion` the source texture was last uploaded from. */
+  dataVersion: number
   pipelineType: string
   hasNegativeColormap: boolean
   modTexture: GPUTexture
   modKey: string
 }
 
-function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
-  const { rgbaData, texDims } = prepareRGBAData(nvimage)
-  const rgbaTexture = device.createTexture({
-    size: texDims,
+function createRGBATexture(
+  device: GPUDevice,
+  texDims: readonly number[],
+): GPUTexture {
+  return device.createTexture({
+    size: [texDims[0], texDims[1], texDims[2]],
     format: 'rgba8unorm',
     dimension: '3d',
     usage:
@@ -163,13 +196,75 @@ function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.COPY_SRC,
   })
+}
+
+/** Write RGBA8 voxels over the whole of an existing 3D texture. */
+function writeRGBATexture(
+  device: GPUDevice,
+  texture: GPUTexture,
+  rgbaData: Uint8Array,
+  texDims: readonly number[],
+): void {
+  // writeTexture reads straight from the view; only a SharedArrayBuffer-backed
+  // one needs copying first.
+  const data =
+    typeof SharedArrayBuffer !== 'undefined' &&
+    rgbaData.buffer instanceof SharedArrayBuffer
+      ? new Uint8Array(rgbaData)
+      : rgbaData
   device.queue.writeTexture(
-    { texture: rgbaTexture },
-    new Uint8Array(rgbaData),
+    { texture },
+    data as Uint8Array<ArrayBuffer>,
     { bytesPerRow: texDims[0] * 4, rowsPerImage: texDims[1] },
-    texDims,
+    [texDims[0], texDims[1], texDims[2]],
   )
+}
+
+function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  const rgbaTexture = createRGBATexture(device, texDims)
+  writeRGBATexture(device, rgbaTexture, rgbaData, texDims)
   return rgbaTexture
+}
+
+/**
+ * An RGB/RGBA volume's RGBA8 texture, kept across updates so new voxels are
+ * written into it instead of a new allocation (see prepareRGBATextureCache).
+ */
+export type RGBATextureCache = {
+  texture: GPUTexture
+  texDims: number[]
+  /** rgbaTextureKey of the voxels last written. */
+  key: string
+}
+
+/**
+ * Upload an RGB/RGBA volume into `existing`'s texture when its dims still
+ * match (queue.writeTexture, no allocation), else into a new texture
+ * (destroying the old one). Returns `existing` untouched while its
+ * rgbaTextureKey still matches. Background masking writes a new texture
+ * (VolumeRenderer.maskOverlayByBackground), so nothing else writes this one.
+ */
+export function prepareRGBATextureCache(
+  device: GPUDevice,
+  nvimage: NVImage,
+  existing: RGBATextureCache | null,
+): RGBATextureCache {
+  const key = rgbaTextureKey(nvimage)
+  if (existing && existing.key === key) return existing
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  let cache = existing
+  if (!cache || !dimensionsMatch(cache.texDims, texDims)) {
+    destroyRGBATextureCache(existing)
+    cache = { texture: createRGBATexture(device, texDims), texDims, key }
+  }
+  writeRGBATexture(device, cache.texture, rgbaData, texDims)
+  cache.key = key
+  return cache
+}
+
+export function destroyRGBATextureCache(cache: RGBATextureCache | null): void {
+  cache?.texture.destroy()
 }
 
 function getTextureFormat(nvimage: NVImage): {
@@ -211,7 +306,7 @@ function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
       ? `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
       : 'label:none'
   }
-  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}:${nvimage.isColormapInverted ? 1 : 0}`
+  return `${NVCmaps.colormapKey(nvimage.colormap)}:${NVCmaps.colormapKey(nvimage.colormapNegative)}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
 function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
@@ -262,6 +357,39 @@ export function destroyOrientTextureCache(
   cache.modTexture.destroy()
 }
 
+/** Upload the current frame of `nvimage.img` into the orient source texture. */
+function writeSourceTexture(
+  device: GPUDevice,
+  sourceTexture: GPUTexture,
+  nvimage: NVImage,
+  dimsIn: number[],
+  bytesPerVoxel: number,
+): void {
+  if (!nvimage.img) throw new Error('overlay2Texture: missing image data')
+  const frame4D = nvimage.frame4D ?? 0
+  const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
+  const frameByteLength = nvimage.nVox3D * bytesPerVoxel
+  const imgView = new Uint8Array(
+    nvimage.img.buffer,
+    nvimage.img.byteOffset + frameByteOffset,
+    frameByteLength,
+  )
+  const imgData =
+    typeof SharedArrayBuffer !== 'undefined' &&
+    imgView.buffer instanceof SharedArrayBuffer
+      ? new Uint8Array(imgView)
+      : imgView
+  device.queue.writeTexture(
+    { texture: sourceTexture },
+    imgData as Uint8Array<ArrayBuffer>,
+    {
+      bytesPerRow: Math.floor(dimsIn[0] * bytesPerVoxel),
+      rowsPerImage: dimsIn[1],
+    },
+    dimsIn,
+  )
+}
+
 export async function prepareOrientTextureCache(
   device: GPUDevice,
   nvimage: NVImage,
@@ -295,8 +423,28 @@ export async function prepareOrientTextureCache(
     dimensionsMatch(existingCache.dimsIn, dimsIn) &&
     dimensionsMatch(existingCache.dimsOut, dimsOut) &&
     existingCache.colormapKey === colormapKey &&
-    existingCache.modKey === modKey
+    // A modulator edited in place keeps its grid: its weights are rewritten
+    // below. A new grid needs a new texture and so a new bind group.
+    (existingCache.modKey === modKey ||
+      modTextureFits(existingCache.modTexture, mod))
   if (canReuse) {
+    // Same buffer, but the voxels may have been edited in place
+    // (updateVolumeData): rewrite the source texture without reallocating it.
+    const dataVersion = nvimage._dataVersion ?? 0
+    if (existingCache.dataVersion !== dataVersion) {
+      writeSourceTexture(
+        device,
+        existingCache.sourceTexture,
+        nvimage,
+        dimsIn,
+        bytesPerVoxel,
+      )
+      existingCache.dataVersion = dataVersion
+    }
+    if (existingCache.modKey !== modKey) {
+      writeModTexture(device, existingCache.modTexture, mod)
+      existingCache.modKey = modKey
+    }
     writeOrientUniforms(
       device,
       existingCache.uniformBuffer,
@@ -315,27 +463,12 @@ export async function prepareOrientTextureCache(
     dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
-  const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
-  const frameByteLength = nvimage.nVox3D * bytesPerVoxel
-  const imgView = new Uint8Array(
-    nvimage.img.buffer,
-    nvimage.img.byteOffset + frameByteOffset,
-    frameByteLength,
-  )
-  const imgData =
-    typeof SharedArrayBuffer !== 'undefined' &&
-    imgView.buffer instanceof SharedArrayBuffer
-      ? new Uint8Array(imgView)
-      : imgView
-  device.queue.writeTexture(
-    { texture: sourceTexture },
-    imgData as Uint8Array<ArrayBuffer>,
-    {
-      bytesPerRow: Math.floor(dimsIn[0] * bytesPerVoxel),
-      rowsPerImage: dimsIn[1],
-    },
-    dimsIn,
-  )
+  writeSourceTexture(device, sourceTexture, nvimage, dimsIn, bytesPerVoxel)
+  // Record what was just uploaded NOW: the colormap uploads below await, and an
+  // updateVolumeData landing in that gap bumps the version. Reading it after the
+  // awaits would mark those newer voxels as uploaded when they are not.
+  const uploadedBuffer = nvimage.img.buffer
+  const uploadedVersion = nvimage._dataVersion ?? 0
   const uniformBuffer = device.createBuffer({
     size: ORIENT_UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -416,7 +549,8 @@ export async function prepareOrientTextureCache(
     datatypeCode: nvimage.hdr.datatypeCode,
     frame4D,
     colormapKey,
-    imageBuffer: nvimage.img.buffer,
+    imageBuffer: uploadedBuffer,
+    dataVersion: uploadedVersion,
     pipelineType,
     hasNegativeColormap,
     modTexture,
@@ -751,7 +885,8 @@ function ensureMaskPipeline(device: GPUDevice): PipelineCacheEntry {
 
 /**
  * Mask overlay texture by background volume: zero out overlay alpha wherever
- * the background volume alpha is zero. Returns a new texture (old overlay is destroyed).
+ * the background volume alpha is zero. Returns a new texture; the input is
+ * left alone, since an orient or RGBA cache may own it and write to it again.
  */
 export async function maskOverlayByBackground(
   device: GPUDevice,
@@ -793,7 +928,6 @@ export async function maskOverlayByBackground(
   pass.end()
   device.queue.submit([encoder.finish()])
   await device.queue.onSubmittedWorkDone()
-  overlayTexture.destroy()
   return outputTexture
 }
 

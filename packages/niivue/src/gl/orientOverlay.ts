@@ -9,7 +9,11 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
-import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import {
+  buildOrientUniforms,
+  prepareRGBAData,
+  rgbaTextureKey,
+} from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
   IDENTITY_MTX,
@@ -43,6 +47,58 @@ function getOrCreatePrograms(gl: WebGL2RenderingContext): ShaderPrograms {
   return cache
 }
 
+/** Allocate an empty, immutable RGBA8 3D texture with linear filtering. */
+function createRGBATexture(
+  gl: WebGL2RenderingContext,
+  texDims: readonly number[],
+): WebGLTexture {
+  const tex = gl.createTexture()
+  if (!tex) {
+    throw new Error('createRGBATexture: failed to create texture')
+  }
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texStorage3D(
+    gl.TEXTURE_3D,
+    1,
+    gl.RGBA8,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  return tex
+}
+
+/** Write RGBA8 voxels over the whole of an existing 3D texture. */
+function writeRGBATexture(
+  gl: WebGL2RenderingContext,
+  tex: WebGLTexture,
+  rgbaData: Uint8Array,
+  texDims: readonly number[],
+): void {
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    rgbaData,
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+}
+
 /**
  * Create a 3D RGBA8 WebGL texture directly from an RGB/RGBA NIfTI image.
  * Mirrors the WebGPU rgba2Texture() behavior.
@@ -57,31 +113,52 @@ function rgba2Texture(
   nvimage: NVImage,
 ): WebGLTexture {
   const { rgbaData, texDims } = prepareRGBAData(nvimage)
-  const tex = gl.createTexture()
-  if (!tex) {
-    throw new Error('rgba2Texture: failed to create texture')
-  }
-  gl.bindTexture(gl.TEXTURE_3D, tex)
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-  gl.texImage3D(
-    gl.TEXTURE_3D,
-    0,
-    gl.RGBA8,
-    texDims[0],
-    texDims[1],
-    texDims[2],
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    rgbaData,
-  )
-  gl.bindTexture(gl.TEXTURE_3D, null)
+  const tex = createRGBATexture(gl, texDims)
+  writeRGBATexture(gl, tex, rgbaData, texDims)
   return tex
+}
+
+/**
+ * An RGB/RGBA volume's RGBA8 texture, kept across updates so new voxels are
+ * written into it instead of a new allocation (see prepareRGBATextureCache).
+ */
+export type RGBATextureCache = {
+  texture: WebGLTexture
+  texDims: number[]
+  /** rgbaTextureKey of the voxels last written. */
+  key: string
+}
+
+/**
+ * Upload an RGB/RGBA volume into `existing`'s texture when its dims still
+ * match (texSubImage3D, no allocation), else into a new texture (freeing the
+ * old one). Returns `existing` untouched while its rgbaTextureKey still
+ * matches; whoever else writes into the texture (background masking) clears
+ * `key` so the next call rewrites it.
+ */
+export function prepareRGBATextureCache(
+  gl: WebGL2RenderingContext,
+  nvimage: NVImage,
+  existing: RGBATextureCache | null,
+): RGBATextureCache {
+  const key = rgbaTextureKey(nvimage)
+  if (existing && existing.key === key) return existing
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  let cache = existing
+  if (!cache || !dimensionsMatch(cache.texDims, texDims)) {
+    destroyRGBATextureCache(gl, existing)
+    cache = { texture: createRGBATexture(gl, texDims), texDims, key }
+  }
+  writeRGBATexture(gl, cache.texture, rgbaData, texDims)
+  cache.key = key
+  return cache
+}
+
+export function destroyRGBATextureCache(
+  gl: WebGL2RenderingContext,
+  cache: RGBATextureCache | null,
+): void {
+  if (cache) gl.deleteTexture(cache.texture)
 }
 
 /**
@@ -466,6 +543,19 @@ export function createModTexture(
     mod.dims[1],
     mod.dims[2],
   )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  writeModTexture(gl, tex, mod)
+  return tex
+}
+
+/** Overwrite a mod texture of `mod.dims` with `mod.weight`, in place. */
+function writeModTexture(
+  gl: WebGL2RenderingContext,
+  tex: WebGLTexture,
+  mod: ModulationTextureParams,
+): void {
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
   gl.texSubImage3D(
     gl.TEXTURE_3D,
     0,
@@ -480,7 +570,34 @@ export function createModTexture(
     mod.weight,
   )
   gl.bindTexture(gl.TEXTURE_3D, null)
-  return tex
+}
+
+/**
+ * Bring a cache's mod texture up to date with `mod` without touching the rest
+ * of the cache: a modulator edited in place (new `mod.key`, same grid) is
+ * rewritten into the existing texture; a modulator that appears, goes away or
+ * changes grid gets a new texture (or none).
+ */
+function syncModTexture(
+  gl: WebGL2RenderingContext,
+  cache: OverlayTextureCache,
+  mod: ModulationTextureParams | null,
+): void {
+  const modKey = mod ? mod.key : ''
+  if (cache.modKey === modKey) return
+  if (
+    mod &&
+    cache.modTexture &&
+    cache.modDims &&
+    dimensionsMatch(cache.modDims, mod.dims)
+  ) {
+    writeModTexture(gl, cache.modTexture, mod)
+  } else {
+    if (cache.modTexture) gl.deleteTexture(cache.modTexture)
+    cache.modTexture = mod ? createModTexture(gl, mod) : null
+    cache.modDims = mod ? [...mod.dims] : null
+  }
+  cache.modKey = modKey
 }
 
 /** Bind modulation uniforms + texture for a draw (or disable when absent). */
@@ -645,8 +762,12 @@ export type OverlayTextureCache = {
   frame4D: number
   colormapKey: string
   imageBuffer: ArrayBufferLike
+  /** `nvimage._dataVersion` the input texture was last uploaded from. */
+  dataVersion: number
   shaderType: keyof ShaderPrograms
   modTexture: WebGLTexture | null
+  /** Grid of `modTexture` (WebGL cannot query a texture's size). */
+  modDims: number[] | null
   modKey: string
 }
 
@@ -666,7 +787,7 @@ function overlayColormapKey(nvimage: NVImage): string {
   if (label) {
     return `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
   }
-  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}:${nvimage.isColormapInverted ? 1 : 0}`
+  return `${NVCmaps.colormapKey(nvimage.colormap)}:${NVCmaps.colormapKey(nvimage.colormapNegative)}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
 function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
@@ -721,6 +842,30 @@ function prepareFrameData(
   ) as ArrayBufferView
 }
 
+/** Upload the current frame into the bound TEXTURE_3D (storage already allocated). */
+function uploadInputTexture(
+  gl: WebGL2RenderingContext,
+  nvimage: NVImage,
+  texConfig: TextureConfig,
+  dimsIn: number[],
+): void {
+  const glAny = gl as WebGL2RenderingContext & Record<string, number>
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    dimsIn[0],
+    dimsIn[1],
+    dimsIn[2],
+    glAny[texConfig.format],
+    glAny[texConfig.type],
+    prepareFrameData(nvimage, texConfig),
+  )
+}
+
 export function prepareOverlayTextureCache(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
@@ -757,9 +902,19 @@ export function prepareOverlayTextureCache(
     existingCache.imageBuffer === nvimage.img.buffer &&
     dimensionsMatch(existingCache.dimsIn, dimsIn) &&
     dimensionsMatch(existingCache.dimsOut, dimsOut) &&
-    existingCache.colormapKey === colormapKey &&
-    existingCache.modKey === modKey
+    existingCache.colormapKey === colormapKey
   if (canReuse) {
+    // Same buffer, but the voxels may have been edited in place
+    // (updateVolumeData): rewrite the input texture without reallocating it.
+    const dataVersion = nvimage._dataVersion ?? 0
+    if (existingCache.dataVersion !== dataVersion) {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_3D, existingCache.inputTexture)
+      uploadInputTexture(gl, nvimage, texConfig, dimsIn)
+      existingCache.dataVersion = dataVersion
+    }
+    // Likewise a modulator edited in place only rewrites the weights.
+    syncModTexture(gl, existingCache, mod)
     renderOverlayCache(gl, existingCache, nvimage, mtx, overlayOpacity, mod)
     return existingCache
   }
@@ -790,7 +945,6 @@ export function prepareOverlayTextureCache(
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
   gl.texStorage3D(
     gl.TEXTURE_3D,
     1,
@@ -799,19 +953,7 @@ export function prepareOverlayTextureCache(
     dimsIn[1],
     dimsIn[2],
   )
-  gl.texSubImage3D(
-    gl.TEXTURE_3D,
-    0,
-    0,
-    0,
-    0,
-    dimsIn[0],
-    dimsIn[1],
-    dimsIn[2],
-    glAny[texConfig.format],
-    glAny[texConfig.type],
-    prepareFrameData(nvimage, texConfig),
-  )
+  uploadInputTexture(gl, nvimage, texConfig, dimsIn)
   const isLabelVol =
     nvimage.colormapLabel !== null && nvimage.colormapLabel !== undefined
   gl.activeTexture(gl.TEXTURE1)
@@ -915,8 +1057,10 @@ export function prepareOverlayTextureCache(
     frame4D,
     colormapKey,
     imageBuffer: nvimage.img.buffer,
+    dataVersion: nvimage._dataVersion ?? 0,
     shaderType: texConfig.shaderType,
     modTexture: mod ? createModTexture(gl, mod) : null,
+    modDims: mod ? [...mod.dims] : null,
     modKey,
   }
   renderOverlayCache(gl, cache, nvimage, mtx, overlayOpacity, mod)

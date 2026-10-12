@@ -130,6 +130,7 @@ import { SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
+import { type MeshRebuild, mergeMeshRebuild } from '@/view/meshGpuSync'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import {
@@ -157,6 +158,7 @@ import {
   screenSlicePick,
   validateCustomLayout,
 } from '@/view/NVSliceLayout'
+import type { UpdateBindGroupsOptions } from '@/view/volumeUpdateScope'
 import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
 import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
@@ -170,6 +172,7 @@ import {
   chunkTimingSnapshot,
   resetChunkTiming as clearChunkTiming,
 } from '@/volume/chunkTiming'
+import { commitDirtyVolumes, markVolumeDataChanged } from '@/volume/dataVersion'
 import {
   computeDescriptiveStats,
   type DescriptiveStats,
@@ -198,11 +201,32 @@ import {
   volumeTR,
 } from '@/volume/utils'
 
+/** MeshUpdate options read only while drawing: setMesh just redraws. */
+const MESH_REDRAW_OPTIONS = new Set(['name', 'opacity', 'visible'])
+
+/**
+ * MeshUpdate options that leave vertex data alone (shader choice, colorbar and
+ * legend): setMesh rebuilds without re-uploading the mesh.
+ */
+const MESH_DRAW_TIME_OPTIONS = new Set([
+  ...MESH_REDRAW_OPTIONS,
+  'shaderType',
+  'sliceShaderType',
+  'isColorbarVisible',
+  'isLegendVisible',
+])
+
+/** Mark a mesh's vertex data as edited in place so the GPU re-uploads it. */
+function markMeshDataChanged(m: NVMeshType): void {
+  m._dataVersion = (m._dataVersion ?? 0) + 1
+}
+
 type ViewBackend = {
   init: () => Promise<void>
   resize: () => void
   render: () => void
-  updateBindGroups: () => Promise<void>
+  updateBindGroups: (opts?: UpdateBindGroupsOptions) => Promise<void>
+  updateMeshVertices: (mesh: NVMeshType) => boolean
   updateAffineOverlays?: () => Promise<boolean>
   setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
   swapChunkedVolumePlan?: (vol: NVImage, plan: ChunkPlan) => Promise<void>
@@ -406,7 +430,24 @@ export default class NiiVue extends EventTarget {
   } | null = null
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
+  /** Identifies the current holder of `_updating` (see `_beginUpdate`). */
+  private _updateToken: object | null = null
+  /** The view the current lock holder is rebuilding. */
+  private _updatingView: ViewBackend | null = null
+  /** Resolves when the update holding `_updating` releases it. */
+  private _updateIdle: Promise<void> = Promise.resolve()
+  private _resolveUpdateIdle: (() => void) | null = null
   private _pendingUpdate = false
+  /** A full (not affine-only) update is queued behind `_updating`. */
+  private _pendingFull = false
+  /** The mesh rebuild covering every update queued behind `_updating`. */
+  private _pendingMeshes: MeshRebuild = 'none'
+  /** Whether any update queued behind `_updating` needs every volume rebuilt. */
+  private _pendingAllVolumes = false
+  /** Volumes whose data changed, for queued scoped (updateVolumeData) updates. */
+  private _pendingVolumes = new Set<NVImage>()
+  /** Whether any update queued behind `_updating` needs the colorbars rebuilt. */
+  private _pendingColorbars = false
   /** Volume ids with an in-flight deferred 4D reload (guards rapid ellipsis clicks
    *  from launching duplicate multi-GB re-fetches and racing rollbacks). */
   private _deferredReloads = new Set<string>()
@@ -1827,7 +1868,7 @@ export default class NiiVue extends EventTarget {
     // The outline is baked by the orient prepass, so the textures must be
     // rebuilt. Fire-and-forget (this is sync); route a GPU rejection so it
     // isn't an unhandled promise rejection.
-    this.updateGLVolume().catch((e) => log.error('setAtlasOutline failed', e))
+    this._updateGLChanged().catch((e) => log.error('setAtlasOutline failed', e))
   }
 
   /**
@@ -1855,7 +1896,7 @@ export default class NiiVue extends EventTarget {
   set volumeOverlayAlphaBlend(v: OVERLAY_ALPHA_BLEND) {
     this.model.volume.overlayAlphaBlend = v
     this.emit('change', { property: 'volumeOverlayAlphaBlend', value: v })
-    this.updateGLVolume().catch((e) =>
+    this._updateGLChanged().catch((e) =>
       log.error('volumeOverlayAlphaBlend failed', e),
     )
   }
@@ -1870,7 +1911,7 @@ export default class NiiVue extends EventTarget {
   set volumeOverlayColorBlend(v: OVERLAY_COLOR_BLEND) {
     this.model.volume.overlayColorBlend = v
     this.emit('change', { property: 'volumeOverlayColorBlend', value: v })
-    this.updateGLVolume().catch((e) =>
+    this._updateGLChanged().catch((e) =>
       log.error('volumeOverlayColorBlend failed', e),
     )
   }
@@ -2456,47 +2497,195 @@ export default class NiiVue extends EventTarget {
     return this
   }
 
+  /**
+   * Rebuild every GPU resource from the model, re-uploading every mesh. The
+   * setters (setVolume, setMesh, addMesh, ...) already rebuild only what they
+   * changed; call this after editing loaded data in place yourself (e.g. a
+   * mesh's `colors`): a setter does not notice such an edit. Cached volume
+   * textures are reused unless something they were built from changed; after
+   * editing a volume's `img` in place, set its `isDirty` first so its voxels
+   * are re-uploaded (see {@link updateVolumeData} for the faster, scoped
+   * path). Distinct meshes must not share their `positions`, `indices` or
+   * `colors` arrays (e.g. a `{ ...mesh }` copy): recolouring one through
+   * setMesh writes the shared array but re-uploads only that mesh, leaving the
+   * other stale on screen.
+   */
   async updateGLVolume() {
+    await this._updateGL('all')
+  }
+
+  /**
+   * @internal Rebuild GPU resources after a setter changed volumes or scene
+   * state: every volume and the colorbars, but only the meshes that are new,
+   * removed or whose vertex data changed (see `NVMesh._dataVersion`).
+   */
+  async _updateGLChanged(): Promise<void> {
+    await this._updateGL('changed')
+  }
+
+  /**
+   * Rebuild GPU resources after a mesh setter: upload new or edited meshes,
+   * free removed ones and rebuild the colorbars (mesh layers and connectomes
+   * add colorbars). Volume textures are left alone.
+   */
+  private async _updateGLMeshes(): Promise<void> {
+    await this._updateGL('changed', [], true)
+  }
+
+  /**
+   * Rebuild GPU resources, coalescing calls that arrive while one is in
+   * flight into a single follow-up. `meshes` picks which mesh resources to
+   * rebuild (see MeshRebuild); `volumes` limits the volume rebuild to those
+   * whose data changed (omitted = every volume, [] = none); `colorbars`
+   * defaults to rebuilding them for a full volume rebuild only. A queued
+   * follow-up takes the union of what the coalesced callers asked for.
+   * Volumes flagged `isDirty` get a data-version bump first (so their textures
+   * are re-uploaded) and join a scoped rebuild.
+   */
+  private async _updateGL(
+    meshes: MeshRebuild,
+    volumes?: readonly NVImage[],
+    colorbars = !volumes,
+  ): Promise<void> {
+    const dirty = commitDirtyVolumes(this.model.getVolumes())
+    const changed = volumes && [
+      ...volumes,
+      ...dirty.filter((v) => !volumes.includes(v)),
+    ]
     if (this._updating) {
       this._pendingUpdate = true
+      this._pendingFull = true
+      this._pendingMeshes = mergeMeshRebuild(this._pendingMeshes, meshes)
+      this._pendingColorbars ||= colorbars
+      if (changed) for (const v of changed) this._pendingVolumes.add(v)
+      else this._pendingAllVolumes = true
       return
     }
-    this._updating = true
+    const token = this._beginUpdate()
     try {
       this._computeModulationData()
       if (!this.view) return
-      await this.view.updateBindGroups()
+      await this.view.updateBindGroups({ meshes, volumes: changed, colorbars })
       this.drawScene()
     } finally {
-      this._updating = false
-      if (this._pendingUpdate) {
-        this._pendingUpdate = false
-        await this.updateGLVolume()
-      }
+      if (this._endUpdate(token)) await this._runPendingUpdate()
+    }
+  }
+
+  /**
+   * Take the update lock (`_updating`) for the current view. Returns a token
+   * that `_endUpdate` checks, so a holder whose lock was taken over (see
+   * `_rebuildViewResources`) cannot release its successor's lock.
+   */
+  private _beginUpdate(): object {
+    // Wake any waiter on the previous holder (only non-null on a takeover).
+    this._resolveUpdateIdle?.()
+    const token = {}
+    this._updateToken = token
+    this._updatingView = this.view
+    this._updating = true
+    this._updateIdle = new Promise((resolve) => {
+      this._resolveUpdateIdle = resolve
+    })
+    return token
+  }
+
+  /**
+   * Release the update lock if `token` still holds it and wake anything
+   * awaiting `_updateIdle`. Returns false when the lock was taken over, in
+   * which case the new holder runs the pending follow-up.
+   */
+  private _endUpdate(token: object): boolean {
+    if (this._updateToken !== token) return false
+    this._updateToken = null
+    this._updatingView = null
+    this._updating = false
+    this._resolveUpdateIdle?.()
+    this._resolveUpdateIdle = null
+    return true
+  }
+
+  /** Run the single follow-up for updates coalesced while the lock was held. */
+  private async _runPendingUpdate(): Promise<void> {
+    if (!this._pendingUpdate) return
+    const pendingMeshes = this._pendingMeshes
+    // Only scoped updates were queued: rebuild just the volumes whose data
+    // changed (none for mesh-only updates).
+    const pendingVolumes = this._pendingAllVolumes
+      ? undefined
+      : [...this._pendingVolumes]
+    const pendingColorbars = this._pendingColorbars || this._pendingAllVolumes
+    this._pendingUpdate = false
+    this._pendingFull = false
+    this._pendingMeshes = 'none'
+    this._pendingAllVolumes = false
+    this._pendingVolumes.clear()
+    this._pendingColorbars = false
+    await this._updateGL(pendingMeshes, pendingVolumes, pendingColorbars)
+  }
+
+  /**
+   * Rebuild every GPU resource of the current view while holding the update
+   * lock. View creation/recreation calls this rather than
+   * `view.updateBindGroups()` directly: otherwise an update arriving meanwhile
+   * (e.g. a per-frame `updateVolumeData`, or an `updateMeshPositions` falling
+   * back to a rebuild because the new view has no buffers yet) runs a second
+   * `updateBindGroups` on the same view concurrently. An in-flight update on
+   * this same view is waited for. One still running on the view this one
+   * replaced cannot touch the new view's resources, and may never settle if
+   * that view's device is gone, so the lock is taken over instead of waited
+   * for. Updates arriving during the rebuild queue behind it.
+   */
+  async _rebuildViewResources(): Promise<void> {
+    while (this._updating && this._updatingView === this.view) {
+      await this._updateIdle
+    }
+    commitDirtyVolumes(this.model.getVolumes())
+    const token = this._beginUpdate()
+    try {
+      // A modulator committed just above must not bake its old weights.
+      this._computeModulationData()
+      if (this.view) await this.view.updateBindGroups()
+    } finally {
+      if (this._endUpdate(token)) await this._runPendingUpdate()
     }
   }
 
   private async updateVolumeAffineOnly(): Promise<void> {
+    // An isDirty volume needs its voxels re-uploaded, which the overlay-only
+    // affine fast path below may not do (it can skip the background).
+    const hasDirty = commitDirtyVolumes(this.model.getVolumes()).length > 0
     if (this._updating) {
       this._pendingUpdate = true
+      // A moved volume needs every volume resliced, not a data-only scope.
+      this._pendingAllVolumes = true
+      if (hasDirty) this._pendingFull = true
       return
     }
-    this._updating = true
+    const token = this._beginUpdate()
     try {
       if (!this.view) return
-      const handled = await this.view.updateAffineOverlays?.()
+      const handled = !hasDirty && (await this.view.updateAffineOverlays?.())
       if (handled) {
         this.drawScene()
         return
       }
       this._computeModulationData()
-      await this.view.updateBindGroups()
+      // A moved volume leaves mesh buffers valid; only pick up mesh changes.
+      await this.view.updateBindGroups({ meshes: 'changed' })
       this.drawScene()
     } finally {
-      this._updating = false
-      if (this._pendingUpdate) {
-        this._pendingUpdate = false
-        await this.updateVolumeAffineOnly()
+      // A takeover (false) leaves the follow-up to the new holder.
+      if (this._endUpdate(token)) {
+        if (this._pendingFull) {
+          // A full update queued behind this one is a superset of the
+          // affine-only rerun; an affine rerun alone would drop it.
+          await this._runPendingUpdate()
+        } else if (this._pendingUpdate) {
+          this._pendingUpdate = false
+          this._pendingAllVolumes = false
+          await this.updateVolumeAffineOnly()
+        }
       }
     }
   }
@@ -2525,10 +2714,9 @@ export default class NiiVue extends EventTarget {
    *   NiiVue). RGB/RGBA volumes always modulate RGB only.
    *
    * Re-invalidation: the scalar weight is cached by the modulator's buffer
-   * identity + window, so it does NOT detect an IN-PLACE edit of the modulator's
-   * voxel data (same buffer). After mutating a modulator in place (e.g. a
-   * drawing/segmentation used as a modulator), call this method again (same
-   * target + modulator) to force a recompute.
+   * identity + window + data version. Edit a modulator's voxels through
+   * {@link updateVolumeData}, or mutate its `img` in place and set its
+   * `isDirty` before the next update, and the weight is recomputed.
    */
   async setModulationImage(
     targetId: string,
@@ -2543,10 +2731,10 @@ export default class NiiVue extends EventTarget {
     target.modulationImage = modulatorId || undefined
     target.modulateAlpha = modulateAlpha
     target._modulationData = null
+    target._modulationDataKey = undefined
     target._modulationWeight = null
     target._modulationWeightKey = undefined
-    target.isDirty = true
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -2572,7 +2760,7 @@ export default class NiiVue extends EventTarget {
     const ok = NVTensorProcessing.loadImgV1(vol, isFlipX, isFlipY, isFlipZ)
     if (ok) {
       vol.isDirty = true
-      await this.updateGLVolume()
+      await this._updateGLChanged()
     }
     return ok
   }
@@ -2686,14 +2874,14 @@ export default class NiiVue extends EventTarget {
     const matcaps = this.opts.matcaps
     const url = matcaps?.[matcapName] ?? matcapName
     this.model.volume.matcap = url
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<this> {
     await this.model.addVolume(volume)
     const vols = this.model.getVolumes()
     this.emit('volumeLoaded', { volume: vols[vols.length - 1] })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
     return this
   }
 
@@ -2731,7 +2919,7 @@ export default class NiiVue extends EventTarget {
     for (const vol of loaded) {
       this.emit('volumeLoaded', { volume: vol })
     }
-    await this.updateGLVolume()
+    await this._updateGLChanged()
     // New bind groups are live; the old GPU textures are no longer referenced.
     for (const vol of previous) {
       this.model._releaseGPU(vol as unknown as Record<string, unknown>)
@@ -2744,7 +2932,7 @@ export default class NiiVue extends EventTarget {
     await this.model.addMesh(mesh)
     const meshes = this.model.getMeshes()
     this.emit('meshLoaded', { mesh: meshes[meshes.length - 1] })
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
     return this
   }
 
@@ -2764,7 +2952,7 @@ export default class NiiVue extends EventTarget {
       const allMeshes = this.model.getMeshes()
       this.emit('meshLoaded', { mesh: allMeshes[allMeshes.length - 1] })
     }
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
     return this
   }
 
@@ -3248,7 +3436,7 @@ export default class NiiVue extends EventTarget {
     const mesh = meshes[meshIndex]
     this.emit('meshRemoved', { mesh, index: meshIndex })
     this.model.removeMesh(meshIndex)
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
   }
 
   async removeAllVolumes(): Promise<void> {
@@ -3257,7 +3445,7 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: vols[i], index: i })
     }
     await this.model.removeAllVolumes()
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3274,7 +3462,7 @@ export default class NiiVue extends EventTarget {
     // time the collection still contains the referenced item.
     this.emit('volumeRemoved', { volume, index: volumeIndex })
     this.model.removeVolume(volumeIndex)
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   async removeAllMeshes(): Promise<void> {
@@ -3283,7 +3471,7 @@ export default class NiiVue extends EventTarget {
       this.emit('meshRemoved', { mesh: meshes[i], index: i })
     }
     this.model.removeAllMeshes()
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
   }
 
   /**
@@ -3297,7 +3485,7 @@ export default class NiiVue extends EventTarget {
     const changed = this.model.moveVolume(volumeIndex, volumeIndex + 1)
     if (!changed) return
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3311,7 +3499,7 @@ export default class NiiVue extends EventTarget {
     const changed = this.model.moveVolume(volumeIndex, volumeIndex - 1)
     if (!changed) return
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3328,7 +3516,7 @@ export default class NiiVue extends EventTarget {
     )
     if (!changed) return
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3342,7 +3530,7 @@ export default class NiiVue extends EventTarget {
     const changed = this.model.moveVolume(volumeIndex, 0)
     if (!changed) return
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3373,7 +3561,6 @@ export default class NiiVue extends EventTarget {
       }
       volumes[volumeIndex].colormapLabel = NVCmaps.makeLabelLut(cm)
     }
-    volumes[volumeIndex].isDirty = true
     // Structural change (the label LUT is not a VolumeUpdate option); the volume
     // reference lets listeners re-read colormapLabel.
     this.emit('volumeUpdated', {
@@ -3381,7 +3568,7 @@ export default class NiiVue extends EventTarget {
       volume: volumes[volumeIndex],
       changes: {},
     })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3403,6 +3590,90 @@ export default class NiiVue extends EventTarget {
     const meshes = this.model.getMeshes()
     if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     return meshes[meshIndex].shaderType
+  }
+
+  /**
+   * Replace a loaded volume's voxel values and re-upload them to the GPU —
+   * the fast path for animating or live-editing volume data. Only the edited
+   * volume is reprocessed (plus any volume it modulates); meshes, colorbars
+   * and unrelated volume layers are left alone.
+   *
+   * The new voxels are written into the volume's existing textures when it is
+   * the background or the only overlay, scalar or RGB/RGBA alike (RGB/RGBA
+   * voxels are reordered and padded to RGBA on the CPU first). The same holds
+   * for a volume this one modulates: only its weight texture is rewritten,
+   * as long as the modulator keeps its grid. These cases still allocate: with two or more overlays, every overlay is re-oriented
+   * and blended into a new overlay texture; in multi-instance mode
+   * (`instances`) the edited volume's texture is rebuilt; WebGPU background
+   * masking writes the masked overlay to a new texture; and the gradient
+   * texture is rebuilt when lighting needs one.
+   *
+   * Pass `data` with either every value of `img` (all frames) or one frame
+   * (written into the current `frame4D`): `nVox3D` values for scalar volumes,
+   * `nVox3D * 3` / `nVox3D * 4` bytes for RGB / RGBA. Values are RAW, in the
+   * volume's native datatype and voxel order, before `scl_slope`/`scl_inter`
+   * scaling (the same units as `img`, not as calMin/calMax). They are copied
+   * into the existing `img`. Omit `data` after editing `volume.img` in place.
+   * (The ordinary update path also picks up an in-place edit when the volume's
+   * `isDirty` is set first: `vol.isDirty = true; await setVolume(...)` or
+   * `updateGLVolume()`. That re-uploads the same data, but as part of a full
+   * rebuild; volumes that are not dirty keep their textures either way.)
+   *
+   * The display window (calMin/calMax), robust range and other values derived
+   * at load are NOT recomputed; call {@link recalculateCalMinMax} if the data's
+   * range changed. Volumes streamed in chunks (`chunkPlan`, including volumes
+   * the renderer chunked because they exceed the GPU texture limit) are
+   * rejected with a warning.
+   *
+   * No `volumeUpdated` event is emitted: this is meant to be called every
+   * frame, and it changes no display option.
+   *
+   * Calls that arrive while another GPU update is running are coalesced into a
+   * single follow-up that uploads the latest data. Such a call's promise
+   * resolves when it has been queued, before that follow-up runs, so awaiting
+   * it does not guarantee the new voxels are on screen yet.
+   *
+   * @example
+   * const vol = nv1.volumes[0]
+   * const next = new Float32Array(vol.nVox3D)
+   * // ...fill next...
+   * await nv1.updateVolumeData(0, next)
+   */
+  async updateVolumeData(
+    volumeIndex: number,
+    data?: ArrayLike<number>,
+  ): Promise<void> {
+    const volumes = this.model.getVolumes()
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
+    const vol = volumes[volumeIndex]
+    // Checked first: a streamed chunked volume has no img either, and this
+    // is the reason that applies to it.
+    if (vol.chunkPlan) {
+      log.warn('updateVolumeData: chunk-streamed volumes are not supported')
+      return
+    }
+    const img = vol.img
+    if (!img) {
+      log.warn(`updateVolumeData: volume ${volumeIndex} has no image data`)
+      return
+    }
+    if (data) {
+      // One frame's length in img elements: nVox3D for scalar data, but 3x/4x
+      // that for RGB/RGBA, whose img holds one byte per channel.
+      const frameLength = img.length / Math.max(1, vol.nFrame4D ?? 1)
+      if (data.length === img.length) {
+        img.set(data)
+      } else if (data.length === frameLength) {
+        img.set(data, (vol.frame4D ?? 0) * frameLength)
+      } else {
+        log.warn(
+          `updateVolumeData: expected ${img.length} (all frames) or ${frameLength} (one frame) values, got ${data.length}`,
+        )
+        return
+      }
+    }
+    markVolumeDataChanged(vol)
+    await this._updateGL('none', [vol])
   }
 
   /**
@@ -3430,7 +3701,7 @@ export default class NiiVue extends EventTarget {
       volume: volumes[volumeIndex],
       changes: options,
     })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -3603,14 +3874,75 @@ export default class NiiVue extends EventTarget {
     )
     volume.extentsMin = extentsMin
     volume.extentsMax = extentsMax
-    volume.isDirty = true
     this.model._setupPivot3D()
+  }
+
+  /**
+   * Replace a triangulated mesh's vertex positions and re-upload them into its
+   * existing GPU buffer (normals are regenerated) — the fast path for animating
+   * or deforming a mesh. Pass `positions` as x,y,z triples in mm with the same
+   * vertex count the mesh already has; it is copied into `mesh.positions`.
+   * Omit `positions` after editing `mesh.positions` in place yourself.
+   *
+   * Vertex normals are cached per mesh and recomputed only when `positions`
+   * or `indices` is replaced with a new array or this method is called. If
+   * you edit `mesh.positions` in place, call this method (or assign a new
+   * array); otherwise later redraws keep the old normals.
+   *
+   * Scene extents are NOT recomputed, so the camera framing stays put while
+   * vertices move. Only `kind: 'mesh'` is supported (tract and connectome
+   * geometry is regenerated from their source data). No `meshUpdated` event is
+   * emitted: this is meant to be called every frame, and it changes no display
+   * option. If the mesh has no GPU buffer yet (e.g. while the view is being
+   * rebuilt), a GPU update that uploads this mesh is scheduled instead.
+   *
+   * @example
+   * const pts = nv1.meshes[0].positions
+   * function frame(t) {
+   *   for (let i = 2; i < pts.length; i += 3) pts[i] += Math.sin(t / 300) * 0.05
+   *   nv1.updateMeshPositions(0)
+   *   requestAnimationFrame(frame)
+   * }
+   * requestAnimationFrame(frame)
+   */
+  updateMeshPositions(meshIndex: number, positions?: ArrayLike<number>): void {
+    const meshes = this.model.getMeshes()
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
+    const m = meshes[meshIndex]
+    if (m.kind !== 'mesh') {
+      log.warn(
+        `updateMeshPositions: only triangulated meshes are supported (got '${m.kind}')`,
+      )
+      return
+    }
+    if (positions) {
+      if (positions.length !== m.positions.length) {
+        log.warn(
+          `updateMeshPositions: expected ${m.positions.length} values, got ${positions.length}`,
+        )
+        return
+      }
+      m.positions.set(positions)
+    }
+    m._positionsVersion = (m._positionsVersion ?? 0) + 1
+    if (this.view?.updateMeshVertices(m)) {
+      this.drawScene()
+      return
+    }
+    // No GPU buffer for this mesh yet (or a mid-rebuild view): a rebuild
+    // uploads the new positions (the _positionsVersion bump marks it stale).
+    this._updateGLMeshes().catch((e) =>
+      log.error('updateMeshPositions failed', e),
+    )
   }
 
   /**
    * Update display properties of a loaded mesh.
    * Accepts any subset of mesh display options (opacity, shaderType, color, etc.)
-   * and triggers a single GPU update.
+   * and triggers a single GPU update. Only this mesh is re-uploaded, and only
+   * when an option changes its vertex data (e.g. `color`); `opacity`,
+   * `visible` and `name` just redraw. Meshes must not share their data
+   * arrays (see {@link updateGLVolume}).
    *
    * @example
    * await nv1.setMesh(0, { shaderType: 'toon', opacity: 0.5 })
@@ -3666,12 +3998,22 @@ export default class NiiVue extends EventTarget {
       }
     }
     Object.assign(meshes[meshIndex], options)
+    const keys = Object.keys(options)
+    // Anything beyond draw-time options may change vertex data (color is
+    // baked into the per-vertex colors), so re-upload this mesh.
+    if (keys.some((k) => !MESH_DRAW_TIME_OPTIONS.has(k))) {
+      markMeshDataChanged(meshes[meshIndex])
+    }
     this.emit('meshUpdated', {
       meshIndex,
       mesh: meshes[meshIndex],
       changes: options,
     })
-    await this.updateGLVolume()
+    if (keys.every((k) => MESH_REDRAW_OPTIONS.has(k))) {
+      this.drawScene()
+      return
+    }
+    await this._updateGLMeshes()
   }
 
   /**
@@ -3713,10 +4055,11 @@ export default class NiiVue extends EventTarget {
     })
     m.layers.push(newLayer)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    markMeshDataChanged(m)
     // Layer state is structural (not a MeshUpdate option diff); the mesh
     // reference lets listeners re-read mesh.layers.
     this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
     return this
   }
 
@@ -3730,10 +4073,11 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return this
     m.layers.splice(layerIndex, 1)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    markMeshDataChanged(m)
     // Layer state is structural (not a MeshUpdate option diff); the mesh
     // reference lets listeners re-read mesh.layers.
     this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
     return this
   }
 
@@ -3755,10 +4099,11 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return
     Object.assign(m.layers[layerIndex], options)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    markMeshDataChanged(m)
     // Layer state is structural (not a MeshUpdate option diff); the mesh
     // reference lets listeners re-read mesh.layers.
     this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
-    await this.updateGLVolume()
+    await this._updateGLMeshes()
   }
 
   /**
@@ -3802,7 +4147,8 @@ export default class NiiVue extends EventTarget {
       m.isColorbarVisible = cb.startsWith('dpv:') || cb.startsWith('dps:')
     }
     NVMesh.retessellateTract(m)
-    await this.updateGLVolume()
+    markMeshDataChanged(m)
+    await this._updateGLMeshes()
   }
 
   /**
@@ -3836,7 +4182,8 @@ export default class NiiVue extends EventTarget {
     }
     Object.assign(m.connectomeOptions, options)
     NVMesh.reextrudeConnectome(m)
-    await this.updateGLVolume()
+    markMeshDataChanged(m)
+    await this._updateGLMeshes()
   }
 
   /**
@@ -3871,7 +4218,7 @@ export default class NiiVue extends EventTarget {
     if (clamped === vol.frame4D) return
     vol.frame4D = clamped
     this.emit('frameChange', { volume: vol, frame: clamped })
-    await this.updateGLVolume()
+    await this._updateGLChanged()
     // A frame change moves the signal-graph marker (frame*TR); pan the window to
     // keep it visible FIRST, so the readout that createOnLocationChange emits is
     // sampled against the new (in-window) marker, not the old window's edge.
@@ -3904,7 +4251,7 @@ export default class NiiVue extends EventTarget {
     vol.robustMax = pct98
     vol.globalMin = mnScale
     vol.globalMax = mxScale
-    await this.updateGLVolume()
+    await this._updateGLChanged()
   }
 
   /**
@@ -4014,7 +4361,7 @@ export default class NiiVue extends EventTarget {
       vol.globalMin = rebuilt.globalMin
       vol.globalMax = rebuilt.globalMax
       try {
-        await this.updateGLVolume()
+        await this._updateGLChanged()
       } catch (e) {
         // GPU texture allocation/upload failed — restore the prior CPU state so the
         // model stays consistent with the unchanged GPU texture, then rethrow.
@@ -4309,9 +4656,22 @@ export default class NiiVue extends EventTarget {
    * finer chunks stream in — a smooth level-of-detail transition. `coarseVol`
    * is a small in-memory pyramid level (its own colormap/window); niivue stays
    * level-of-detail-agnostic and the app supplies it. No-op before a view
-   * attaches or on a backend that has not implemented it.
+   * attaches or on a backend that has not implemented it. The level is meant
+   * to be a separate volume, not one of `volumes`. Calling it again with the
+   * same level re-orients it only when what the floor bakes changed (display
+   * options, grid, `img`); after editing its `img` in place, set its `isDirty`
+   * first.
    */
   async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    if (coarseVol?.isDirty) {
+      if (this.model.getVolumes().includes(coarseVol)) {
+        // A loaded volume: commit its flag through a scoped update, so its
+        // own textures are re-uploaded too, not only the floor.
+        await this._updateGL('none', [coarseVol])
+      } else {
+        commitDirtyVolumes([coarseVol])
+      }
+    }
     await this.view?.setCoarseFloor?.(coarseVol)
     this.drawScene()
   }
@@ -5585,14 +5945,14 @@ export default class NiiVue extends EventTarget {
       if (opts.calMin && this.volumes.length > 0 && target.volumes.length > 0) {
         if (this.volumes[0].calMin !== target.volumes[0].calMin) {
           target.volumes[0].calMin = this.volumes[0].calMin
-          target.updateGLVolume()
+          target._updateGLChanged()
           changed = true
         }
       }
       if (opts.calMax && this.volumes.length > 0 && target.volumes.length > 0) {
         if (this.volumes[0].calMax !== target.volumes[0].calMax) {
           target.volumes[0].calMax = this.volumes[0].calMax
-          target.updateGLVolume()
+          target._updateGLChanged()
           changed = true
         }
       }
@@ -5959,7 +6319,11 @@ export default class NiiVue extends EventTarget {
    * `setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh
    * layers, and so on. Use this to add user-defined LUTs at runtime.
    * Re-registering an existing name replaces the entry. Does not trigger a
-   * redraw — the colormap is inert until a volume references it.
+   * redraw — the colormap is inert until a volume references it. Volumes
+   * that already use the name show the new colors on their next GPU update
+   * (e.g. `updateGLVolume()`). Mesh layers, tracts and connectomes bake their
+   * colors when built, so they pick them up on their next change
+   * (`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).
    *
    * Label colormaps (for atlas volumes with per-index labels) have their
    * own registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`.
@@ -6196,7 +6560,7 @@ export default class NiiVue extends EventTarget {
     )
 
     // Update GPU resources and render
-    await this.updateGLVolume()
+    await this._updateGLChanged()
 
     // Restore drawing from RLE-encoded bitmap in document
     if (doc.drawingBitmapRLE && doc.drawingBitmapLength) {

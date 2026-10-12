@@ -5,6 +5,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
 import { generateNormals } from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
+import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type NVModel from '@/NVModel'
@@ -17,10 +18,16 @@ import type {
 } from '@/NVTypes'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
+import {
+  type MeshRebuild,
+  type MeshUploadStamp,
+  meshUploadStamp,
+  planMeshSync,
+  stampAfterVertexWrite,
+} from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
-import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
@@ -34,6 +41,10 @@ import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
+import {
+  type UpdateBindGroupsOptions,
+  volumeUpdateScope,
+} from '@/view/volumeUpdateScope'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -49,7 +60,7 @@ import * as depthPick from './depthPick'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
-import { maskOverlayByBackground, maxBlendSliceDim } from './orient'
+import { maxBlendSliceDim } from './orient'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
@@ -61,6 +72,8 @@ import * as wgpu from './wgpu'
 type MeshGpuWithShader = WebGPUMeshGPU & {
   shaderType?: string
   sliceShaderType?: string
+  /** The vertex data these buffers were built from (see meshGpuSync). */
+  uploadStamp?: MeshUploadStamp
 }
 
 /** Shared GPU context per canvas for multi-instance bounds support */
@@ -629,7 +642,11 @@ export default class NVView {
     return true
   }
 
-  async updateBindGroups(): Promise<void> {
+  /**
+   * Rebuild GPU resources from the model. See UpdateBindGroupsOptions for the
+   * scoped form updateVolumeData uses.
+   */
+  async updateBindGroups(opts: UpdateBindGroupsOptions = {}): Promise<void> {
     // try/finally so an early return (no device / no mesh layout) or a thrown
     // await never leaves isBusy stuck true — the render loop skips while busy, so a
     // stuck flag would permanently freeze drawing (e.g. after a failed deferred
@@ -640,12 +657,20 @@ export default class NVView {
       const device = this.device
       if (!device) return
       const vols = this.model.getVolumes()
-
-      await this.colorbarRenderer.buildColorbars(
-        device,
-        this.model.collectColorbars(),
-        this.model.scene.backgroundColor,
+      const scope = volumeUpdateScope(
+        vols,
+        opts.volumes,
+        this.model.volume.isBackgroundMasking,
       )
+      // A data-only update (opts.volumes) leaves the colorbars as they are:
+      // their range comes from calMin/calMax, which it does not change.
+      if (opts.colorbars ?? !opts.volumes) {
+        await this.colorbarRenderer.buildColorbars(
+          device,
+          this.model.collectColorbars(),
+          this.model.scene.backgroundColor,
+        )
+      }
       if (vols.length > 0) {
         if (this.options.instances) {
           // Multi-instance mode (global3d): upload every volume's GPU texture
@@ -673,7 +698,7 @@ export default class NVView {
             if (key) keepKeys.add(key)
           }
           this.volumeRenderer.pruneVolumeCache(keepKeys)
-        } else {
+        } else if (scope.background) {
           try {
             await this.volumeRenderer.updateVolume(
               device,
@@ -689,27 +714,7 @@ export default class NVView {
         }
       }
       if (vols.length > 1 && !this.options.instances) {
-        this.volumeRenderer.overlayAlphaBlend =
-          this.model.volume.overlayAlphaBlend
-        this.volumeRenderer.overlayColorBlend =
-          this.model.volume.overlayColorBlend
-        await this.volumeRenderer.updateOverlays(
-          device,
-          vols[0],
-          vols.slice(1),
-          this.model.volume.paqdUniforms,
-        )
-        if (
-          this.model.volume.isBackgroundMasking &&
-          this.volumeRenderer.overlayTexture &&
-          this.volumeRenderer.volumeTexture
-        ) {
-          this.volumeRenderer.overlayTexture = await maskOverlayByBackground(
-            device,
-            this.volumeRenderer.volumeTexture,
-            this.volumeRenderer.overlayTexture,
-          )
-        }
+        if (scope.overlays) await this._updateOverlayStack(device, vols)
       } else {
         this.volumeRenderer.clearOverlay()
       }
@@ -734,59 +739,7 @@ export default class NVView {
           this.sampler,
         )
       }
-      const meshes = this.model.getMeshes() as NVMesh[]
-      const availableShaders = this.getAvailableShaders()
-      if (!this.meshBindGroupLayout) return
-      this._destroyMeshResources()
-      for (const m of meshes) {
-        let shaderType = m.shaderType || 'phong'
-        if (!availableShaders.includes(shaderType)) {
-          log.warn(
-            `Shader '${shaderType}' not available in WebGPU, falling back to 'phong'`,
-          )
-          shaderType = 'phong'
-        }
-        // '' = inherit shaderType on slices; an invalid name also falls back to ''.
-        let sliceShaderType = m.sliceShaderType || ''
-        if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
-          log.warn(
-            `Slice shader '${sliceShaderType}' not available in WebGPU, falling back to '${shaderType}'`,
-          )
-          sliceShaderType = ''
-        }
-        const gpuData = mesh.uploadMeshGPU(device, m, { shaderType })
-        const mGpu: MeshGpuWithShader = {
-          vertexBuffer: gpuData.vertexBuffer,
-          indexBuffer: gpuData.indexBuffer,
-          uniformBuffer: gpuData.uniformBuffer,
-          indexCount: gpuData.indexCount,
-          bindGroup: null,
-          alignedMeshSize: mesh.alignedMeshSize,
-          shaderType,
-          sliceShaderType,
-        }
-        this.meshResources.set(m, mGpu)
-        if (!mGpu) {
-          continue
-        }
-        if (!mGpu.uniformBuffer) {
-          continue
-        }
-        if (!mGpu?.bindGroup) {
-          mGpu.bindGroup = device.createBindGroup({
-            layout: this.meshBindGroupLayout,
-            entries: [
-              {
-                binding: 0,
-                resource: {
-                  buffer: mGpu.uniformBuffer,
-                  size: mesh.MESH_UNIFORM_SIZE,
-                },
-              },
-            ],
-          })
-        }
-      }
+      this._rebuildMeshResources(device, opts.meshes ?? 'all')
     } finally {
       this.isBusy = false
     }
@@ -2532,8 +2485,114 @@ export default class NVView {
     return this.volumeRenderer.coarseFloorDims
   }
 
+  /** Re-run the overlay pass (volumes[1..]) and the optional background mask. */
+  private async _updateOverlayStack(
+    device: GPUDevice,
+    vols: NVImage[],
+  ): Promise<void> {
+    this.volumeRenderer.overlayAlphaBlend = this.model.volume.overlayAlphaBlend
+    this.volumeRenderer.overlayColorBlend = this.model.volume.overlayColorBlend
+    await this.volumeRenderer.updateOverlays(
+      device,
+      vols[0],
+      vols.slice(1),
+      this.model.volume.paqdUniforms,
+    )
+    if (this.model.volume.isBackgroundMasking) {
+      await this.volumeRenderer.maskOverlayByBackground(device)
+    }
+  }
+
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
     return this.meshResources.get(m) ?? null
+  }
+
+  /**
+   * Re-upload one mesh's vertices into its existing GPU buffer. Returns false
+   * when the mesh has no GPU resources yet (or its vertex count changed); the
+   * caller then falls back to a full rebuild via updateBindGroups().
+   */
+  updateMeshVertices(m: NVMesh): boolean {
+    const device = this.device
+    if (!device) return false
+    // A lost context/device cannot be written to, and a full rebuild would fail
+    // the same way every frame. Report success; recovery re-uploads every mesh.
+    if (this._deviceLost) return true
+    const gpu = this.meshResources.get(m)
+    if (!gpu || !mesh.writeMeshVertices(device, m, gpu)) return false
+    gpu.uploadStamp = stampAfterVertexWrite(gpu.uploadStamp, m)
+    return true
+  }
+
+  /**
+   * Bring mesh GPU resources in line with the model. `'changed'` uploads only
+   * new or edited meshes and frees removed ones; every kept mesh still picks
+   * up its current shader choice, which is draw-time state.
+   */
+  private _rebuildMeshResources(device: GPUDevice, mode: MeshRebuild): void {
+    const layout = this.meshBindGroupLayout
+    if (!layout || mode === 'none') return
+    const meshes = this.model.getMeshes() as NVMesh[]
+    const plan = planMeshSync(this.meshResources, meshes, mode)
+    for (const m of plan.free) {
+      const gpu = this.meshResources.get(m)
+      if (gpu) mesh.destroyMesh(gpu)
+      this.meshResources.delete(m)
+    }
+    const upload = new Set(plan.upload)
+    const availableShaders = this.getAvailableShaders()
+    for (const m of meshes) {
+      let shaderType = m.shaderType || 'phong'
+      if (!availableShaders.includes(shaderType)) {
+        log.warn(
+          `Shader '${shaderType}' not available in WebGPU, falling back to 'phong'`,
+        )
+        shaderType = 'phong'
+      }
+      // '' = inherit shaderType on slices; an invalid name also falls back to ''.
+      let sliceShaderType = m.sliceShaderType || ''
+      if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
+        log.warn(
+          `Slice shader '${sliceShaderType}' not available in WebGPU, falling back to '${shaderType}'`,
+        )
+        sliceShaderType = ''
+      }
+      const kept = this.meshResources.get(m)
+      if (kept && !upload.has(m)) {
+        kept.shaderType = shaderType
+        kept.sliceShaderType = sliceShaderType
+        continue
+      }
+      // A mesh listed twice in the model is uploaded once.
+      upload.delete(m)
+      const uploadStamp = meshUploadStamp(m)
+      const gpuData = mesh.uploadMeshGPU(device, m, { shaderType })
+      const uniformBuffer = gpuData.uniformBuffer
+      this.meshResources.set(m, {
+        vertexBuffer: gpuData.vertexBuffer,
+        indexBuffer: gpuData.indexBuffer,
+        uniformBuffer,
+        indexCount: gpuData.indexCount,
+        bindGroup: uniformBuffer
+          ? device.createBindGroup({
+              layout,
+              entries: [
+                {
+                  binding: 0,
+                  resource: {
+                    buffer: uniformBuffer,
+                    size: mesh.MESH_UNIFORM_SIZE,
+                  },
+                },
+              ],
+            })
+          : null,
+        alignedMeshSize: mesh.alignedMeshSize,
+        shaderType,
+        sliceShaderType,
+        uploadStamp,
+      })
+    }
   }
 
   _destroyMeshResources(): void {

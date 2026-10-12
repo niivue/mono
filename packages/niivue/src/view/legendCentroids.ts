@@ -26,8 +26,10 @@ export function volumeLabelCentroid(
   label: string,
 ): Vec3 | undefined {
   if (!volume.img) return undefined
-  return memoized(volume.img, [volume.colormapLabel, volume.matRAS], () =>
-    computeVolumeLabelCentroids(volume),
+  return memoized(
+    volume.img,
+    [volume.colormapLabel, volume.matRAS, volume._dataVersion ?? 0],
+    () => computeVolumeLabelCentroids(volume),
   )[label]
 }
 
@@ -38,8 +40,10 @@ export function meshLabelCentroid(
 ): Vec3 | undefined {
   const positions = mesh.positions
   if (!positions) return undefined
-  return memoized(layer.values, [positions, layer.colormapLabel], () =>
-    computeMeshLabelCentroids(positions, layer),
+  return memoized(
+    layer.values,
+    [positions, layer.colormapLabel, mesh._positionsVersion ?? 0],
+    () => computeMeshLabelCentroids(positions, layer),
   )[label]
 }
 

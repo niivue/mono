@@ -1,6 +1,6 @@
 import { vec3 } from 'gl-matrix'
-import * as NVMeshUtils from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
+import { generateNormals } from '@/mesh/normals'
 import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 
@@ -54,10 +54,7 @@ export function buildVertexData(
     CYLINDER_ENDCAPS,
   )
   const positions = new Float32Array(cylData.positions)
-  const normals = NVMeshUtils.generateNormals(
-    positions,
-    new Uint32Array(cylData.indices),
-  )
+  const normals = generateNormals(positions, new Uint32Array(cylData.indices))
   const numVerts = positions.length / 3
 
   const vertexData = new ArrayBuffer(numVerts * BYTES_PER_VERTEX)

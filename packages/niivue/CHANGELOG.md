@@ -1,3 +1,43 @@
+## 1.0.0-rc.21 (2026-10-12)
+
+### Features
+
+- **niivue:** add updateMeshPositions and updateVolumeData live-update fast paths ([9aae6cc](https://github.com/niivue/mono/commit/9aae6cc))
+
+### Fixes
+
+- **niivue:** ignore isDirty on chunkSource volumes ([91db4ec](https://github.com/niivue/mono/commit/91db4ec))
+- **niivue:** update a loaded volume passed as the coarse floor ([d2e91b0](https://github.com/niivue/mono/commit/d2e91b0))
+- **niivue:** key the coarse floor on everything its orient pass bakes ([5fdf117](https://github.com/niivue/mono/commit/5fdf117))
+- **niivue:** show the selected frame of 4D RGB/RGBA volumes ([f12f257](https://github.com/niivue/mono/commit/f12f257))
+- **niivue:** recompute modulation when a view is recreated ([f2d2d42](https://github.com/niivue/mono/commit/f2d2d42))
+- **niivue:** report chunked volumes first in updateVolumeData and document them ([16a9fca](https://github.com/niivue/mono/commit/16a9fca))
+- **niivue:** re-stream chunked volumes after an in-place edit ([0298137](https://github.com/niivue/mono/commit/0298137))
+- **niivue:** rebuild multi-instance volume textures on any display change ([ad3d104](https://github.com/niivue/mono/commit/ad3d104))
+- **niivue:** rebuild cached volume colormap textures when addColormap re-registers a name ([5225106](https://github.com/niivue/mono/commit/5225106))
+- **niivue:** re-upload in-place voxel edits flagged isDirty on any update ([950d1c3](https://github.com/niivue/mono/commit/950d1c3))
+- **niivue:** rebuild multi-instance volume textures when their modulator changes ([85b5fd4](https://github.com/niivue/mono/commit/85b5fd4))
+- **niivue:** make updateMeshPositions a no-op on a lost GPU context ([796bf89](https://github.com/niivue/mono/commit/796bf89))
+- **niivue:** resample the volume+physio time-course after updateVolumeData ([75be85f](https://github.com/niivue/mono/commit/75be85f))
+- **niivue:** rebuild a recreated view's GPU resources under the update lock ([322edc7](https://github.com/niivue/mono/commit/322edc7))
+- **niivue:** size updateVolumeData's one-frame write by channels per voxel ([770dd2f](https://github.com/niivue/mono/commit/770dd2f))
+- **niivue:** record a volume's data version at upload time, not after awaits ([a809e03](https://github.com/niivue/mono/commit/a809e03))
+
+### Performance
+
+- **niivue:** rebuild only the GPU resources a change touches ([#303](https://github.com/niivue/mono/pull/303))
+- **niivue:** cheap mesh normals, cached per geometry and reused by live updates ([#302](https://github.com/niivue/mono/pull/302))
+- **niivue:** add live-data animation scenarios to the benchmark ([f5596a4](https://github.com/niivue/mono/commit/f5596a4))
+- **niivue:** keep caches across modulator edits and unchanged RGBA uploads ([d445e70](https://github.com/niivue/mono/commit/d445e70))
+- **niivue:** write RGB/RGBA volume updates into their existing texture ([1007bc7](https://github.com/niivue/mono/commit/1007bc7))
+- **niivue:** reuse a staging buffer for updateMeshPositions uploads ([283f143](https://github.com/niivue/mono/commit/283f143))
+- **niivue:** limit updateVolumeData's rebuild to the edited volume ([0ca1a57](https://github.com/niivue/mono/commit/0ca1a57))
+
+### Thank You
+
+- Claude Opus 5.5
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.20 (2026-10-07)
 
 ### Fixes

@@ -228,7 +228,7 @@ export async function attachToCanvas(
   view.resize()
   ctrl.emit('viewAttached', {
     canvas: ctrl.canvas as HTMLCanvasElement,
-    backend: (ctrl.opts.backend ?? 'webgpu') as 'webgpu' | 'webgl2',
+    backend: (ctrl.opts.backend ?? 'webgl2') as 'webgpu' | 'webgl2',
   })
   return ctrl
 }
@@ -288,7 +288,7 @@ function replaceCanvasElement(ctrl: NiiVue): void {
   // contract preserved. NOTE: external listeners on the original canvas are lost.
   const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
   parent.replaceChild(newCanvas, oldCanvas)
-  freshCanvasBackend.set(newCanvas, ctrl.opts.backend ?? 'webgpu')
+  freshCanvasBackend.set(newCanvas, ctrl.opts.backend ?? 'webgl2')
   // Update this controller
   ctrl.canvas = newCanvas
   // Update all siblings sharing the old canvas
@@ -366,7 +366,7 @@ export async function recreateView(
   // 12. Notify listeners of the new view
   ctrl.emit('viewAttached', {
     canvas: ctrl.canvas as HTMLCanvasElement,
-    backend: (ctrl.opts.backend ?? 'webgpu') as 'webgpu' | 'webgl2',
+    backend: (ctrl.opts.backend ?? 'webgl2') as 'webgpu' | 'webgl2',
   })
 }
 

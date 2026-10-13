@@ -1135,6 +1135,7 @@ export type NiiVueOptions = {
   // Infrastructure (set once at construction)
   instances?: NVInstance[]
   globalCamera?: NVGlobalCamera
+  /** Rendering backend. Defaults to 'webgl2' ('webgpu' in the WebGPU-only build). */
   backend?: BackendType
   isAntiAlias?: boolean
   devicePixelRatio?: number

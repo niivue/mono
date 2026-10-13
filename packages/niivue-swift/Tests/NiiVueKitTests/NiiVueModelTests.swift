@@ -246,4 +246,22 @@ final class NiiVueModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 10_000_000)
         XCTAssertEqual(h.model.locationText, "—")
     }
+
+    // MARK: volumesChange
+
+    func testVolumesChangeReplacesVolumeList() async throws {
+        let h = await makeHarness()
+        h.bridge.receive(rawBody: [
+            "kind": "event",
+            "name": "volumesChange",
+            "payload": [[
+                "name": "mni152.nii.gz", "colormap": "gray", "colormapStops": [[0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]],
+                "calMin": 40.0, "calMax": 80.0, "globalMin": 0.0, "globalMax": 91.0,
+                "opacity": 1.0, "dims": [207, 256, 215], "pixDims": [0.74, 0.74, 0.74],
+            ]],
+        ])
+        try await Task.sleep(nanoseconds: 10_000_000)
+        XCTAssertEqual(h.model.volumes.map(\.name), ["mni152.nii.gz"])
+        XCTAssertEqual(h.model.volumes.first?.dims, [207, 256, 215])
+    }
 }

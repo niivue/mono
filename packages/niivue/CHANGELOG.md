@@ -1,3 +1,20 @@
+## 1.0.0-rc.22 (2026-10-13)
+
+### Features
+
+- **niivue:** make WebGL2 the default rendering backend ([65d16bc](https://github.com/niivue/mono/commit/65d16bc))
+- **medgfx:** redesign inspector, add layers and overlay loading ([eb6d813](https://github.com/niivue/mono/commit/eb6d813))
+
+### Fixes
+
+- **niivue:** show the real backend in example WebGPU checkboxes ([f3bb3c9](https://github.com/niivue/mono/commit/f3bb3c9))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.21 (2026-10-12)
 
 ### Features

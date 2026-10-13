@@ -188,6 +188,10 @@
 			</dict>
 		</dict>
 	</array>
+	<!-- No encryption beyond what the OS provides, so App Store Connect can skip
+	     the export compliance question on every upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSExceptionDomains</key>

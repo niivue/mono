@@ -105,6 +105,68 @@ test('sparse settings: fill policy — default resets omitted, current keeps, sp
   expect(r.overriddenCrosshair).toEqual([0.1, 0.2, 0.3]) // specified -> wins under fill:current
 })
 
+test('volume visible: a hidden volume stays hidden, with its opacity, across a document round-trip', async ({
+  page,
+}) => {
+  test.setTimeout(120_000) // fetches one volume, embeds it, reloads it twice
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const mkCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = 64
+      c.height = 64
+      c.style.cssText = 'position:fixed;left:-9999px'
+      document.body.appendChild(c)
+      return c
+    }
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachToCanvas(mkCanvas())
+    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    await nv.setVolume(0, { opacity: 0.5 })
+    await nv.setVolume(0, { visible: false })
+    const hiddenOpacity = nv.volumes[0].opacity
+
+    const embedded = nv.serializeDocument()
+    const linked = nv.serializeDocument({ format: 'json', linkData: true })
+    const text = new TextDecoder().decode(linked)
+
+    const nvA = new NiiVue({ backend: 'webgl2' })
+    await nvA.attachToCanvas(mkCanvas())
+    await nvA.loadDocument(new File([embedded], 'hidden.nvd'))
+
+    const nvB = new NiiVue({ backend: 'webgl2' })
+    await nvB.attachToCanvas(mkCanvas())
+    await nvB.loadDocument(new File([linked], 'hidden.json'))
+
+    // Showing it again restores the stored opacity and writes no key.
+    await nv.setVolume(0, { visible: true })
+    const shownText = new TextDecoder().decode(
+      nv.serializeDocument({ format: 'json', linkData: true }),
+    )
+
+    return {
+      hiddenOpacity,
+      hiddenKeyWritten: text.includes('"visible":false'),
+      embeddedVisible: nvA.volumes[0]?.visible,
+      embeddedOpacity: nvA.volumes[0]?.opacity,
+      linkedVisible: nvB.volumes[0]?.visible,
+      linkedOpacity: nvB.volumes[0]?.opacity,
+      shownOpacity: nv.volumes[0].opacity,
+      shownKeyWritten: shownText.includes('"visible"'),
+    }
+  })
+
+  expect(r.hiddenOpacity).toBeCloseTo(0.5) // hiding leaves opacity alone
+  expect(r.hiddenKeyWritten).toBe(true)
+  expect(r.embeddedVisible).toBe(false) // hidden survives the embedded path
+  expect(r.embeddedOpacity).toBeCloseTo(0.5)
+  expect(r.linkedVisible).toBe(false) // hidden survives the URL path
+  expect(r.linkedOpacity).toBeCloseTo(0.5)
+  expect(r.shownOpacity).toBeCloseTo(0.5) // show -> the 0.5 is back
+  expect(r.shownKeyWritten).toBe(false) // shown -> no key written
+})
+
 test('json format: saves portable JSON that loadDocument reads back (linked + embedded)', async ({
   page,
 }) => {

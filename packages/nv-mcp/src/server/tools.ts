@@ -35,6 +35,7 @@ import {
   tabAddress,
   toolContext,
 } from './context'
+import { ANIMATE_SCHEMAS, registerAnimateTools } from './tools-animate'
 import { CONTROL_SCHEMAS, registerControlTools } from './tools-controls'
 import { DATA_SCHEMAS, registerDataTools } from './tools-data'
 import { EXTRA_SCHEMAS, registerExtraTools } from './tools-extras'
@@ -526,6 +527,7 @@ export const CORE_SCHEMAS = {
   ...CONTROL_SCHEMAS,
   ...DATA_SCHEMAS,
   ...EXTRA_SCHEMAS,
+  ...ANIMATE_SCHEMAS,
 } as const
 
 /** A line that says what the view shows: the slice type, and the mosaic when one is drawn. */
@@ -889,6 +891,7 @@ export function registerCoreTools(
   registerControlTools(server, context)
   registerDataTools(server, context)
   registerExtraTools(server, context)
+  registerAnimateTools(server, context)
 }
 
 /** An MCP server with the core tools and each extension's, over one bridge. */

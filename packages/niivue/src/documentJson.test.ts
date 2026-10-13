@@ -53,6 +53,84 @@ describe('encodeDocumentJSON / decodeDocumentJSON', () => {
     expect(json).toContain('"$ta":"Uint8Array"')
     expect(json).toContain('"b64":')
   })
+
+  test('throws on a typed-array kind the decoder cannot rebuild', () => {
+    expect(() =>
+      encodeDocumentJSON({ big: new BigInt64Array([1n, 2n]) }),
+    ).toThrow(/BigInt64Array/)
+  })
+})
+
+describe('non-finite numbers', () => {
+  test('round-trips NaN and +/-Infinity as the same values', () => {
+    const doc = {
+      calMinNeg: Number.NaN,
+      thicknessOn2D: Number.POSITIVE_INFINITY,
+      pinBottom: Number.NEGATIVE_INFINITY,
+    }
+    const out = decodeDocumentJSON(encodeDocumentJSON(doc)) as typeof doc
+    expect(Number.isNaN(out.calMinNeg)).toBe(true)
+    expect(out.thicknessOn2D).toBe(Number.POSITIVE_INFINITY)
+    expect(out.pinBottom).toBe(Number.NEGATIVE_INFINITY)
+  })
+
+  test('round-trips non-finite numbers inside arrays', () => {
+    const doc = { ys: [0.5, Number.NaN, Number.POSITIVE_INFINITY, -1] }
+    const out = decodeDocumentJSON(encodeDocumentJSON(doc)) as typeof doc
+    expect(out.ys[0]).toBe(0.5)
+    expect(Number.isNaN(out.ys[1])).toBe(true)
+    expect(out.ys[2]).toBe(Number.POSITIVE_INFINITY)
+    expect(out.ys[3]).toBe(-1)
+  })
+
+  test('writes a $num tag, never a bare null', () => {
+    const json = encodeDocumentJSON({
+      a: Number.NaN,
+      b: Number.POSITIVE_INFINITY,
+      c: Number.NEGATIVE_INFINITY,
+    })
+    expect(json).toContain('"a":{"$num":"NaN"}')
+    expect(json).toContain('"b":{"$num":"Infinity"}')
+    expect(json).toContain('"c":{"$num":"-Infinity"}')
+    expect(json).not.toContain('null')
+  })
+
+  test('never tags a finite number', () => {
+    const doc = {
+      zero: 0,
+      neg: -0.25,
+      max: Number.MAX_VALUE,
+      min: -Number.MAX_VALUE,
+    }
+    const json = encodeDocumentJSON(doc)
+    expect(json).not.toContain('$num')
+    expect(decodeDocumentJSON(json)).toEqual(doc)
+  })
+
+  test('leaves an unknown $num tag as a plain object', () => {
+    const out = decodeDocumentJSON('{"x":{"$num":"Banana"}}') as {
+      x: unknown
+    }
+    expect(out.x).toEqual({ $num: 'Banana' })
+  })
+
+  test('a bare null written by an older encoder still decodes as null', () => {
+    const out = decodeDocumentJSON('{"volumes":[{"calMinNeg":null}]}') as {
+      volumes: { calMinNeg: unknown }[]
+    }
+    expect(out.volumes[0].calMinNeg).toBeNull()
+  })
+
+  test('non-finite values inside a Float32Array go through the $ta path', () => {
+    const doc = {
+      f32: new Float32Array([Number.NaN, Number.POSITIVE_INFINITY]),
+    }
+    const json = encodeDocumentJSON(doc)
+    expect(json).not.toContain('$num')
+    const out = decodeDocumentJSON(json) as typeof doc
+    expect(Number.isNaN(out.f32[0])).toBe(true)
+    expect(out.f32[1]).toBe(Number.POSITIVE_INFINITY)
+  })
 })
 
 describe('looksLikeJSON', () => {

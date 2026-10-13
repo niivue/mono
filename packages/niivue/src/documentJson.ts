@@ -3,8 +3,13 @@
 // alternative that round-trips the SAME document structure. JSON has no binary
 // type, so every typed array (embedded volume/mesh bytes, RLE drawing rasters,
 // colormap LUTs, ...) is marshalled as base64 behind a `{ $ta, b64 }` tag and
-// reconstructed to its original TypedArray on decode. Pure + dependency-free, so
-// it is unit-testable under the Bun harness (unlike NVDocument itself).
+// reconstructed to its original TypedArray on decode. JSON also has no non-finite
+// numbers (JSON.stringify writes NaN and +/-Infinity as null), and the model uses
+// them as ordinary values (calMinNeg/calMaxNeg default to NaN, mesh thicknessOn2D
+// to Infinity, graph annotations pin at +/-Infinity), so a plain number that is
+// not finite is marshalled behind a `{ $num }` tag and restored on decode. Pure +
+// dependency-free, so it is unit-testable under the Bun harness (unlike
+// NVDocument itself).
 
 const TYPED_ARRAYS = {
   Int8Array,
@@ -19,6 +24,28 @@ const TYPED_ARRAYS = {
 } as const
 
 type TypedArrayName = keyof typeof TYPED_ARRAYS
+
+function isTypedArrayName(name: string): name is TypedArrayName {
+  return Object.hasOwn(TYPED_ARRAYS, name)
+}
+
+// The three non-finite doubles, keyed by the tag text a document carries.
+const NON_FINITE = {
+  NaN: Number.NaN,
+  Infinity: Number.POSITIVE_INFINITY,
+  '-Infinity': Number.NEGATIVE_INFINITY,
+} as const
+
+type NonFiniteName = keyof typeof NON_FINITE
+
+function isNonFiniteName(name: string): name is NonFiniteName {
+  return Object.hasOwn(NON_FINITE, name)
+}
+
+function nonFiniteName(value: number): NonFiniteName {
+  if (Number.isNaN(value)) return 'NaN'
+  return value > 0 ? 'Infinity' : '-Infinity'
+}
 
 // btoa/atob exist in both the browser and Bun, so this is environment-portable
 // (no Buffer). Chunked so a large volume doesn't overflow the argument list.
@@ -50,32 +77,55 @@ function isTaggedTypedArray(v: unknown): v is TaggedTypedArray {
     v !== null &&
     typeof (v as { $ta?: unknown }).$ta === 'string' &&
     typeof (v as { b64?: unknown }).b64 === 'string' &&
-    (v as { $ta: string }).$ta in TYPED_ARRAYS
+    isTypedArrayName((v as { $ta: string }).$ta)
   )
 }
 
-/** Serialize an NVD document object to a JSON string, tagging typed arrays. */
+interface TaggedNonFinite {
+  $num: NonFiniteName
+}
+
+function isTaggedNonFinite(v: unknown): v is TaggedNonFinite {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof (v as { $num?: unknown }).$num === 'string' &&
+    isNonFiniteName((v as { $num: string }).$num)
+  )
+}
+
+/** Serialize an NVD document object to a JSON string, tagging typed arrays
+ * and non-finite numbers. Throws on a typed-array kind the decoder cannot
+ * rebuild (BigInt64Array, ...) rather than emitting a tag it would not
+ * recognise. */
 export function encodeDocumentJSON(doc: unknown): string {
   return JSON.stringify(doc, (_key: string, value: unknown): unknown => {
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      const name = value.constructor.name
+      if (!isTypedArrayName(name)) {
+        throw new Error(`documentJson: cannot encode a ${name}`)
+      }
       const view = value as ArrayBufferView
       const bytes = new Uint8Array(
         view.buffer,
         view.byteOffset,
         view.byteLength,
       )
-      return {
-        $ta: value.constructor.name as TypedArrayName,
-        b64: bytesToBase64(bytes),
-      }
+      return { $ta: name, b64: bytesToBase64(bytes) }
+    }
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      return { $num: nonFiniteName(value) }
     }
     return value
   })
 }
 
-/** Parse a JSON NVD document string, reconstructing tagged typed arrays. */
+/** Parse a JSON NVD document string, reconstructing tagged typed arrays and
+ * non-finite numbers. A bare `null` (what an older encoder wrote for a
+ * non-finite number) is left as `null`. */
 export function decodeDocumentJSON(text: string): unknown {
   return JSON.parse(text, (_key: string, value: unknown): unknown => {
+    if (isTaggedNonFinite(value)) return NON_FINITE[value.$num]
     if (isTaggedTypedArray(value)) {
       const bytes = base64ToBytes(value.b64)
       const Ctor = TYPED_ARRAYS[value.$ta]

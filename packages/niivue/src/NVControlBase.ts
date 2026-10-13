@@ -592,7 +592,7 @@ export default class NiiVue extends EventTarget {
     log.setLogLevel(options.logLevel ?? 'info')
     this.activeClipPlaneIndex = 0
     this.currentClipPlaneIndex = 0
-    const backend = options.backend ?? 'webgpu'
+    const backend = options.backend ?? 'webgl2'
     this.opts = {
       backend,
       isAntiAlias: options.isAntiAlias ?? true,

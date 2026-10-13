@@ -156,6 +156,24 @@ bunx nx test <project>               # Run a project's tests via Nx
 cd packages/niivue && bun test       # Run niivue tests directly with coverage
 ```
 
+## Branch scope
+
+One branch resolves one issue. Work on a branch regularly turns up something
+else: a pre-existing bug on a neighbouring code path, stale generated output,
+an API sharp edge, a test gap. Do not fix it on that branch.
+
+- Open a GitHub issue for it with a repro and what the fix involves, so the
+  context is not lost when the branch merges.
+- If it affects how the current PR should be reviewed or merged, link the
+  issue from the PR description and say so.
+- Resolve it later on its own branch, as its own PR.
+- Before committing, revert incidental changes that a build or codegen step
+  made to files the issue does not touch (for example regenerated bindings).
+  If the regenerated output is stale on `main`, that is an issue of its own.
+
+Two exceptions, both to be called out in the PR: a change the issue cannot be
+fixed without, and a trivial correction on a line the branch already edits.
+
 ## Before finishing a task
 
 Run this sequence from the repo root. All commands must exit 0.

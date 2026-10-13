@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { calculateRAS } from '@/math/NVTransforms'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTIHeader, NVImage } from '@/NVTypes'
 import {
@@ -14,6 +15,7 @@ import {
   getVoxelValue,
   hdrToArrayBuffer,
   reorientDrawingToNative,
+  reorientDrawingToRAS,
   robustDisplayWindow,
   temporalUnitScale,
   toTypedView,
@@ -424,6 +426,72 @@ describe('reorientDrawingToNative', () => {
     const vol = makeMinimalVolume({ permRAS: undefined })
     const result = reorientDrawingToNative(vol, drawing)
     expect(result).toBe(drawing)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// reorientDrawingToRAS
+// ---------------------------------------------------------------------------
+// Sagittal-style acquisition: native i -> anterior, j -> superior, k -> left.
+// The permutation reorders axes of unequal length (6x5x4 native, 4x6x5 RAS).
+const SAGITTAL_AFFINE = [
+  [0, 0, -2, 10],
+  [2, 0, 0, -5],
+  [0, 2, 0, 3],
+  [0, 0, 0, 1],
+]
+
+function makeOrientedVolume(dims: number[], affine: number[][]): NVImage {
+  const vol = {
+    name: 'background',
+    hdr: makeMinimalHeader({ dims: [3, ...dims, 1, 1, 1, 1], affine }),
+  } as NVImage
+  calculateRAS(vol)
+  return vol
+}
+
+function distinctBytes(n: number): Uint8Array {
+  return Uint8Array.from({ length: n }, (_, i) => (i % 255) + 1)
+}
+
+describe('reorientDrawingToRAS', () => {
+  test('permutedUnequalAxes_placesNativeVoxelAtItsRASPosition', () => {
+    const back = makeOrientedVolume([6, 5, 4], SAGITTAL_AFFINE)
+    expect(back.permRAS).toEqual([-3, 1, 2])
+    expect(back.dimsRAS).toEqual([3, 4, 6, 5])
+    const native = new Uint8Array(6 * 5 * 4)
+    // native (i=1, j=2, k=0) is RAS (x=3, y=1, z=2): x = 3 - k is flipped
+    native[1 + 2 * 6 + 0 * 6 * 5] = 7
+
+    const ras = reorientDrawingToRAS(back, native)
+
+    expect(ras[3 + 1 * 4 + 2 * 4 * 6]).toBe(7)
+  })
+
+  test('permutedUnequalAxes_roundTripWithReorientDrawingToNative', () => {
+    const back = makeOrientedVolume([6, 5, 4], SAGITTAL_AFFINE)
+    const native = distinctBytes(6 * 5 * 4)
+
+    const ras = reorientDrawingToRAS(back, native)
+
+    expect(reorientDrawingToNative(back, ras)).toEqual(native)
+  })
+
+  test('flipOnly_roundTripWithReorientDrawingToNative', () => {
+    const back = makeOrientedVolume(
+      [6, 5, 4],
+      [
+        [-2, 0, 0, 10],
+        [0, 2, 0, -5],
+        [0, 0, -2, 3],
+        [0, 0, 0, 1],
+      ],
+    )
+    const native = distinctBytes(6 * 5 * 4)
+
+    const ras = reorientDrawingToRAS(back, native)
+
+    expect(reorientDrawingToNative(back, ras)).toEqual(native)
   })
 })
 

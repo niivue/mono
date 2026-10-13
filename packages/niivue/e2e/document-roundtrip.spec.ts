@@ -105,6 +105,63 @@ test('sparse settings: fill policy — default resets omitted, current keeps, sp
   expect(r.overriddenCrosshair).toEqual([0.1, 0.2, 0.3]) // specified -> wins under fill:current
 })
 
+test('mesh visible: a hidden mesh stays hidden across a document round-trip', async ({
+  page,
+}) => {
+  test.setTimeout(90_000) // fetches one mesh, then reloads it twice
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const mkCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = 64
+      c.height = 64
+      c.style.cssText = 'position:fixed;left:-9999px'
+      document.body.appendChild(c)
+      return c
+    }
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachToCanvas(mkCanvas())
+    await nv.loadMeshes([{ url: '/meshes/BrainMesh_ICBM152.lh.mz3' }])
+    await nv.setMesh(0, { visible: false, opacity: 0.7 })
+
+    // Embedded (default) and linked JSON both carry the flag.
+    const embedded = nv.serializeDocument()
+    const linked = nv.serializeDocument({ format: 'json', linkData: true })
+    const text = new TextDecoder().decode(linked)
+
+    const nvA = new NiiVue({ backend: 'webgl2' })
+    await nvA.attachToCanvas(mkCanvas())
+    await nvA.loadDocument(new File([embedded], 'hidden.nvd'))
+
+    const nvB = new NiiVue({ backend: 'webgl2' })
+    await nvB.attachToCanvas(mkCanvas())
+    await nvB.loadDocument(new File([linked], 'hidden.json'))
+
+    // A shown mesh must not gain a `visible` key (documents stay unchanged).
+    await nv.setMesh(0, { visible: true })
+    const shownText = new TextDecoder().decode(
+      nv.serializeDocument({ format: 'json', linkData: true }),
+    )
+
+    return {
+      hiddenKeyWritten: text.includes('"visible":false'),
+      embeddedVisible: nvA.meshes[0]?.visible,
+      embeddedOpacity: nvA.meshes[0]?.opacity,
+      linkedVisible: nvB.meshes[0]?.visible,
+      linkedOpacity: nvB.meshes[0]?.opacity,
+      shownKeyWritten: shownText.includes('"visible"'),
+    }
+  })
+
+  expect(r.hiddenKeyWritten).toBe(true)
+  expect(r.embeddedVisible).toBe(false) // hidden survives the embedded path
+  expect(r.embeddedOpacity).toBeCloseTo(0.7) // and opacity is untouched
+  expect(r.linkedVisible).toBe(false) // hidden survives the URL path
+  expect(r.linkedOpacity).toBeCloseTo(0.7)
+  expect(r.shownKeyWritten).toBe(false) // shown -> no key written
+})
+
 test('json format: saves portable JSON that loadDocument reads back (linked + embedded)', async ({
   page,
 }) => {

@@ -136,6 +136,24 @@ describe('core tool schemas', () => {
     // The tools that must be told what to act on say so in their schemas.
     expect(required('reorder_volume')).toEqual(['volume', 'move'])
     expect(required('transform_volume')).toEqual(['name'])
+    // One of several sources is required, so the schema itself requires none.
+    expect(required('update_volume_data')).toEqual([])
+    expect(properties('update_volume_data').sort()).toEqual([
+      'auto_window',
+      'from_volume',
+      'tab',
+      'url',
+      'values',
+      'volume',
+    ])
+    expect(required('update_mesh_positions')).toEqual([])
+    expect(properties('update_mesh_positions').sort()).toEqual([
+      'from_mesh',
+      'mesh',
+      'tab',
+      'url',
+      'values',
+    ])
     expect(required('set_options')).toEqual(['options'])
     expect(required('set_font')).toEqual(['atlas', 'metrics'])
     expect(required('load_mesh')).toEqual(['url'])

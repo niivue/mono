@@ -205,6 +205,29 @@ export const LAYER_SCHEMAS = {
           'edgeMin, edgeMax, edgeScale. Any other key is refused.',
       ),
   },
+  update_mesh_positions: {
+    ...TAB_ARG,
+    mesh: MESH_ARG.optional().describe(
+      'The mesh to move: its index as where_am_i lists them, or its name. The first otherwise.',
+    ),
+    values: z
+      .array(z.number())
+      .optional()
+      .describe(
+        'The new vertex positions in millimetres, x, y and z for each vertex in order; the vertex ' +
+          'count and triangles stay as they are. A call is capped at 4 MB, so send a large mesh with `url`.',
+      ),
+    url: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'An address the page can fetch the same positions from, as little-endian float32 bytes, gzipped or not.',
+      ),
+    from_mesh: MESH_ARG.optional().describe(
+      "Copy this other mesh's vertex positions, which must have the same vertex count.",
+    ),
+  },
   remove_mesh: {
     ...TAB_ARG,
     mesh: MESH_ARG.optional(),
@@ -342,6 +365,16 @@ export function registerLayerTools(
       'visibility, colorbar and legend, or the options of a tract or connectome. Reports the mesh afterwards.',
     inputSchema: LAYER_SCHEMAS.set_mesh,
     lead: named('mesh', 'Changed'),
+  })
+
+  registerSimple(server, context, 'update_mesh_positions', {
+    title: "Move a mesh's vertices",
+    description:
+      "Replaces a triangulated mesh's vertex positions in place, keeping its triangles, layers and " +
+      'how it is drawn, from exactly one of `values`, `url` or `from_mesh`. Tracts and connectomes ' +
+      'are refused. Reports the mesh afterwards.',
+    inputSchema: LAYER_SCHEMAS.update_mesh_positions,
+    lead: named('mesh', 'Moved the vertices of'),
   })
 
   registerSimple(server, context, 'remove_mesh', {

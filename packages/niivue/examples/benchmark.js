@@ -6,8 +6,9 @@
  *     Each scenario reports a CPU vs GPU-submit split via the
  *     `performance.mark`/`measure` instrumentation in `src/view/NVPerfMarks.ts`,
  *     consumed through a `PerformanceObserver`.
- *     The two "Animated ..." scenarios also time an updateVolumeData /
- *     updateMeshPositions call before each frame.
+ *     The two "Animated ..." live-data scenarios also time an updateVolumeData /
+ *     updateMeshPositions call before each frame, and the "(animateTo)"
+ *     scenarios time one step of an animateTo transition before each frame.
  *  2. Compute function scenarios (vox2mm, generateNormals, encodeRLE, etc.).
  *     This package is JS-only — there's no WASM toggle.
  *  3. Scaling sweeps (opt-in checkbox):
@@ -27,6 +28,7 @@
  */
 
 import { mat4 } from 'gl-matrix'
+import { Animation, planAnimation } from '../src/control/animate.ts'
 import { decodeRLE, encodeRLE } from '../src/drawing/rle.ts'
 import NiiVue from '../src/index.ts'
 import {
@@ -685,6 +687,56 @@ async function benchRenderFramesWithSplit(
   }
 }
 
+/**
+ * Run an animateTo transition one step per call, off a manual clock instead
+ * of requestAnimationFrame, so each benchmark frame times exactly one step:
+ * the same planning, sampling and setter writes nv.animateTo makes, with
+ * any async write (setVolume's GPU rebuild) awaited. The duration is longer
+ * than the run, so the transition never reaches its target and every step
+ * writes a new value. Call `stop()` when the scenario is done.
+ */
+function steppedAnimation(nv, target, steps, angles = 'shortest') {
+  let now = 0
+  let frame = null
+  const pending = []
+  const channels = planAnimation(nv, target, angles).map((c) => ({
+    ...c,
+    write: (values) => {
+      const out = c.write(values)
+      if (out instanceof Promise) pending.push(out)
+      return out
+    },
+  }))
+  const clock = {
+    now: () => now,
+    requestFrame: (cb) => {
+      frame = cb
+      return 1
+    },
+    cancelFrame: () => {
+      frame = null
+    },
+    setTimer: () => 0,
+    clearTimer: () => {},
+  }
+  const anim = new Animation(
+    channels,
+    { duration: steps, easing: 'linear' },
+    clock,
+  )
+  anim.start()
+  return {
+    async step() {
+      now += 1
+      const tick = frame
+      frame = null
+      tick?.()
+      await Promise.all(pending.splice(0))
+    },
+    stop: () => anim.stop('stopped'),
+  }
+}
+
 async function rendererScenarios(nv, frames) {
   const scenarios = []
 
@@ -824,6 +876,72 @@ async function rendererScenarios(nv, frames) {
       meshStates = [pts.slice(), shrunk]
     },
     (i) => nv.updateMeshPositions(0, meshStates[i % 2]),
+  )
+
+  // animateTo: each frame advances a transition by one step, then draws.
+  // Warmup frames step too, so the transition is sized for both.
+  const steps = frames + 30 + 1
+  let anim = null
+  const animated = async (name, setup, target, angles) => {
+    await run(
+      name,
+      async () => {
+        await setup()
+        anim = steppedAnimation(nv, target(), steps, angles)
+      },
+      () => anim.step(),
+    )
+    anim.stop()
+    anim = null
+  }
+
+  await animated(
+    'Animated camera + clip (animateTo)',
+    async () => {
+      await ensureAssets(nv, { volumes: VOL_MNI })
+      nv.mosaicString = ''
+      nv.showRender = 0 // SHOW_RENDER.NEVER
+      nv.sliceType = 4
+    },
+    () => ({
+      azimuth: nv.azimuth + 360,
+      elevation: 40,
+      scaleMultiplier: 1.4,
+      clipPlanes: { 0: [0.2, 90, 20] },
+    }),
+    'literal',
+  )
+
+  await animated(
+    'Animated crosshair + pan (animateTo)',
+    async () => {
+      await ensureAssets(nv, { volumes: VOL_MNI })
+      nv.sliceType = 3
+      nv.mosaicString = ''
+      nv.showRender = 1
+    },
+    () => ({ crosshairMM: [40, -60, 50], pan2Dxyzmm: [10, -10, 0, 1.8] }),
+  )
+
+  // The costly one: a window or opacity write rebuilds GPU volume state.
+  await animated(
+    'Animated overlay window (animateTo)',
+    async () => {
+      await ensureAssets(nv, { volumes: VOL_OVERLAY })
+      nv.sliceType = 3
+      nv.mosaicString = ''
+      nv.showRender = 1
+    },
+    () => ({ volumes: { 1: { calMin: 4, calMax: 12, opacity: 0.3 } } }),
+  )
+
+  await animated(
+    'Animated mesh opacity (animateTo)',
+    async () => {
+      await ensureAssets(nv, { meshes: MESH_BRAIN })
+      nv.sliceType = 4
+    },
+    () => ({ meshes: { 0: { opacity: 0.2 } } }),
   )
 
   return scenarios

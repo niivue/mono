@@ -42,6 +42,37 @@ export const VOLUME_SCHEMAS = {
         'Whether the source volume is removed once the result is added. Kept otherwise.',
       ),
   },
+  update_volume_data: {
+    ...TAB_ARG,
+    volume: VOLUME_ARG.optional().describe(
+      'The volume to write into: its index as where_am_i lists them, or its name. The base otherwise.',
+    ),
+    values: z
+      .array(z.number())
+      .optional()
+      .describe(
+        "The new voxel values, raw: in the volume's own datatype and voxel order, before scl_slope " +
+          'and scl_inter, a value per channel for RGB or RGBA. Either every frame or the frame shown. ' +
+          'A call is capped at 4 MB, so send a large volume with `url` instead.',
+      ),
+    url: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'An address the page can fetch the same raw values from, as little-endian bytes in the ' +
+          "volume's datatype, gzipped or not.",
+      ),
+    from_volume: VOLUME_ARG.optional().describe(
+      'Copy the raw values of this other volume, which must have the same voxel count.',
+    ),
+    auto_window: z
+      .boolean()
+      .optional()
+      .describe(
+        "Recompute cal_min and cal_max from the new values. The volume's window is kept otherwise.",
+      ),
+  },
   remove_volume: {
     ...TAB_ARG,
     volume: VOLUME_ARG.optional(),
@@ -112,6 +143,17 @@ export function registerVolumeTools(
       'removing the source when `replace` is set. Reports the new volume as where_am_i lists them.',
     inputSchema: VOLUME_SCHEMAS.transform_volume,
     lead: named('volume', 'Added'),
+  })
+
+  registerSimple(server, context, 'update_volume_data', {
+    title: 'Write new voxel values',
+    description:
+      "Replaces a loaded volume's voxel values in place, keeping its header, colormap and window, " +
+      'from exactly one of `values`, `url` or `from_volume`. Takes every frame or only the frame ' +
+      'shown. A volume drawn in bricks (set_volume chunk_grid) is refused. Reports the volume afterwards, ' +
+      'or says it was removed while the values were written.',
+    inputSchema: VOLUME_SCHEMAS.update_volume_data,
+    lead: named('volume', 'Wrote new values into'),
   })
 
   registerSimple(server, context, 'remove_volume', {

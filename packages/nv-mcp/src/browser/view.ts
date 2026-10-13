@@ -17,6 +17,13 @@ import type { DataPalette } from './data'
 /** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
 export type Triple = { [index: number]: number; readonly length: number }
 
+/** A typed array of voxel values: NiiVue keeps a volume's `img` in one. */
+export interface VoxelArray {
+  readonly length: number
+  readonly BYTES_PER_ELEMENT: number
+  [index: number]: number
+}
+
 /**
  * A label table as NiiVue reads one: a colour per label, each for the
  * value in `I` at the same place, and the labels' names. `fetchLabelTable`
@@ -97,6 +104,12 @@ export interface ShownVolume {
   colormapLabel?: unknown
   /** The voxel grid, NIfTI style: [ndim, nx, ny, nz, nt, ...]. */
   dims?: ArrayLike<number>
+  /**
+   * The raw voxel values, every frame, in the file's own datatype; an RGB
+   * or RGBA volume holds a byte per channel. Absent once a chunked source
+   * streams it.
+   */
+  img?: VoxelArray | null
   /** The brick grid it is rendered through, when it is chunked. */
   chunkPlan?: {
     gridDims: ArrayLike<number>
@@ -138,6 +151,8 @@ export interface ShownMesh {
   isColorbarVisible?: boolean
   isLegendVisible?: boolean
   layers?: ReadonlyArray<ShownMeshLayer>
+  /** A triangulated mesh's vertices, x, y, z in world millimetres. */
+  positions?: ArrayLike<number> | null
   tractOptions?: Record<string, unknown> | null
   connectomeOptions?: Record<string, unknown> | null
   /** A tract's source data: NiiVue's `NVTractData`, in the part the tools read. */
@@ -487,6 +502,14 @@ export interface View {
   volumeTransform?: Record<string, VolumeTransform>
   vox2frac?(vox: [number, number, number]): [number, number, number]
   moveCrosshairInVox?(di: number, dj: number, dk: number): unknown
+  /**
+   * Writes new raw voxel values into a loaded volume and re-uploads them:
+   * every frame, or the frame shown. Resolves once queued, not drawn.
+   */
+  updateVolumeData?(
+    volumeIndex: number,
+    data?: ArrayLike<number>,
+  ): Promise<unknown>
 
   // Meshes.
   meshes?: ReadonlyArray<ShownMesh>
@@ -516,6 +539,11 @@ export interface View {
     options: Record<string, unknown>,
   ): Promise<unknown>
   getTractGroups?(index: number): string[]
+  /** Writes new vertex positions into a triangulated mesh and re-uploads them. */
+  updateMeshPositions?(
+    meshIndex: number,
+    positions?: ArrayLike<number>,
+  ): unknown
 
   // Signals and their graph.
   signals?: ReadonlyArray<ShownSignal>

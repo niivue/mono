@@ -504,3 +504,135 @@ describe('the mesh layers', () => {
     ).rejects.toThrow("This page's NiiVue cannot remove a mesh layer.")
   })
 })
+
+describe('update_mesh_positions', () => {
+  /** Two triangles' worth of vertices on the pial mesh and a copy of it. */
+  function liveView(overrides: Partial<View> = {}) {
+    const view = meshView({
+      updateMeshPositions: mock(() => {}),
+      ...overrides,
+    })
+    const meshes = view.meshes as ShownMesh[]
+    meshes[0].positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    meshes.push({
+      name: 'lh.inflated',
+      kind: 'mesh',
+      positions: new Float32Array([0, 0, 0, 2, 0, 0, 0, 2, 0]),
+    })
+    return view
+  }
+
+  it('writes positions given, copied or fetched, then draws', async () => {
+    const view = liveView()
+    const { update_mesh_positions } = meshHandlers(hostOf(view))
+    const moved = [0, 0, 1, 1, 0, 1, 0, 1, 1]
+    expect(
+      await update_mesh_positions({ mesh: 'lh.pial', values: moved }),
+    ).toMatchObject({ vertices: 3, mesh: { index: 0, name: 'lh.pial' } })
+    expect(view.updateMeshPositions).toHaveBeenCalledWith(0, moved)
+    await update_mesh_positions({ from_mesh: 'lh.inflated' })
+    expect(view.updateMeshPositions).toHaveBeenLastCalledWith(
+      0,
+      new Float32Array([0, 0, 0, 2, 0, 0, 0, 2, 0]),
+    )
+    const realFetch = globalThis.fetch
+    globalThis.fetch = mock(
+      async () => new Response(new Float32Array(moved).buffer),
+    ) as unknown as typeof fetch
+    try {
+      await update_mesh_positions({ url: 'moved.bin' })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    expect(view.updateMeshPositions).toHaveBeenLastCalledWith(
+      0,
+      new Float32Array(moved),
+    )
+    expect(view.drawScene).toHaveBeenCalledTimes(3)
+  })
+
+  it('refuses what NiiVue would only log, before writing', async () => {
+    const view = liveView()
+    const { update_mesh_positions } = meshHandlers(hostOf(view))
+    await expect(update_mesh_positions({ values: [1, 2, 3] })).rejects.toThrow(
+      'lh.pial has 3 vertices and takes 9 values, x, y and z for each; got 3.',
+    )
+    const realFetch = globalThis.fetch
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          new Float32Array([0, 0, 0, 1, 0, 0, 0, Number.NaN, 0]).buffer,
+        ),
+    ) as unknown as typeof fetch
+    try {
+      await expect(update_mesh_positions({ url: 'nan.bin' })).rejects.toThrow(
+        'Value 7 is NaN, not a finite position.',
+      )
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    await expect(
+      update_mesh_positions({ mesh: 'tract.trk', values: [0, 0, 0] }),
+    ).rejects.toThrow(
+      "tract.trk is a tract; only a triangulated mesh's vertices can be moved.",
+    )
+    await expect(update_mesh_positions({})).rejects.toThrow(
+      'update_mesh_positions needs exactly one of values, url or from_mesh.',
+    )
+    expect(view.updateMeshPositions).not.toHaveBeenCalled()
+    await expect(
+      meshHandlers(
+        hostOf(liveView({ updateMeshPositions: undefined })),
+      ).update_mesh_positions({ values: [0, 0, 0] }),
+    ).rejects.toThrow("This page's NiiVue cannot move a mesh's vertices.")
+  })
+
+  it('refuses a position Float32 would turn into Infinity', async () => {
+    const view = liveView()
+    const { update_mesh_positions } = meshHandlers(hostOf(view))
+    await expect(
+      update_mesh_positions({ values: [0, 0, 0, 1e100, 0, 0, 0, 1, 0] }),
+    ).rejects.toThrow('lh.pial holds Float32 values')
+    expect(view.updateMeshPositions).not.toHaveBeenCalled()
+  })
+
+  it('writes nothing when the mesh is replaced while its values are fetched', async () => {
+    const view = liveView()
+    const meshes = view.meshes as ShownMesh[]
+    const { update_mesh_positions } = meshHandlers(hostOf(view))
+    const realFetch = globalThis.fetch
+    globalThis.fetch = mock(async () => {
+      // The person loads another mesh of as many vertices in its place.
+      meshes[0] = { ...meshes[1], name: 'rh.pial' }
+      return new Response(new Float32Array(9).buffer)
+    }) as unknown as typeof fetch
+    try {
+      await expect(update_mesh_positions({ url: 'moved.bin' })).rejects.toThrow(
+        'lh.pial was removed or replaced while its values were fetched; nothing was written.',
+      )
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    expect(view.updateMeshPositions).not.toHaveBeenCalled()
+  })
+
+  it('writes at the index the mesh has moved to during the fetch', async () => {
+    const view = liveView()
+    const meshes = view.meshes as ShownMesh[]
+    const { update_mesh_positions } = meshHandlers(hostOf(view))
+    const realFetch = globalThis.fetch
+    globalThis.fetch = mock(async () => {
+      meshes.unshift({ name: 'scalp', kind: 'mesh' })
+      return new Response(new Float32Array(9).buffer)
+    }) as unknown as typeof fetch
+    try {
+      await update_mesh_positions({ mesh: 'lh.pial', url: 'moved.bin' })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    expect(view.updateMeshPositions).toHaveBeenCalledWith(
+      1,
+      new Float32Array(9),
+    )
+  })
+})

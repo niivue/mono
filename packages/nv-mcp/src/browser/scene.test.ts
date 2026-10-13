@@ -1641,3 +1641,246 @@ describe('describe_volume', () => {
     })
   })
 })
+
+describe('update_volume_data', () => {
+  /** Two frames of four Int16 voxels over a base, as NiiVue keeps them. */
+  function liveView(overrides: Partial<View> = {}) {
+    const view = fakeView({
+      volumes: [
+        { name: 'mni152.nii.gz' },
+        {
+          name: 'bold.nii.gz',
+          img: new Int16Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          nFrame4D: 2,
+          frame4D: 1,
+        },
+        { name: 'copy.nii.gz', img: new Int16Array([9, 9, 9, 9]) },
+      ],
+      updateVolumeData: mock(async () => {}),
+      recalculateCalMinMax: mock(async () => {}),
+      ...overrides,
+    })
+    return view
+  }
+
+  it('writes every frame or the frame shown, then draws', async () => {
+    const view = liveView()
+    const { update_volume_data } = coreHandlers(host(view))
+    expect(
+      await update_volume_data({
+        volume: 'bold.nii.gz',
+        values: [8, 7, 6, 5, 4, 3, 2, 1],
+      }),
+    ).toMatchObject({ wrote: 8, volume: { index: 1, name: 'bold.nii.gz' } })
+    expect(view.updateVolumeData).toHaveBeenCalledWith(
+      1,
+      [8, 7, 6, 5, 4, 3, 2, 1],
+    )
+    expect(
+      await update_volume_data({ volume: 1, values: [0, 0, 0, 0] }),
+    ).toMatchObject({ wrote: 4, frame: 1 })
+    expect(view.recalculateCalMinMax).not.toHaveBeenCalled()
+    await update_volume_data({ volume: 1, from_volume: 2, auto_window: true })
+    expect(view.updateVolumeData).toHaveBeenLastCalledWith(
+      1,
+      new Int16Array([9, 9, 9, 9]),
+    )
+    expect(view.recalculateCalMinMax).toHaveBeenCalledWith(1)
+    expect(view.drawScene).toHaveBeenCalledTimes(3)
+  })
+
+  it('refuses what NiiVue would only log, before writing', async () => {
+    const view = liveView()
+    const { update_volume_data } = coreHandlers(host(view))
+    await expect(
+      update_volume_data({ volume: 1, values: [1, 2, 3] }),
+    ).rejects.toThrow(
+      'bold.nii.gz takes 8 values (every frame) or 4 (the frame shown, 1), a value per channel for RGB or RGBA; got 3.',
+    )
+    await expect(
+      update_volume_data({ volume: 1, values: [1, 2.5, 3, 4] }),
+    ).rejects.toThrow(
+      'bold.nii.gz holds Int16 values, whole numbers from -32768 to 32767; value 1 is 2.5.',
+    )
+    await expect(
+      update_volume_data({ volume: 1, values: [1, 2, 3, 40000] }),
+    ).rejects.toThrow('value 3 is 40000.')
+    const bytes = liveView()
+    ;(bytes.volumes[2] as ShownVolume).img = new Uint8Array(4)
+    await expect(
+      coreHandlers(host(bytes)).update_volume_data({
+        volume: 2,
+        values: [0, 1, 255, 256],
+      }),
+    ).rejects.toThrow(
+      'copy.nii.gz holds Uint8 values, whole numbers from 0 to 255; value 3 is 256.',
+    )
+    await expect(update_volume_data({ volume: 1 })).rejects.toThrow(
+      'update_volume_data needs exactly one of values, url or from_volume.',
+    )
+    await expect(
+      update_volume_data({ volume: 1, values: [1], from_volume: 2 }),
+    ).rejects.toThrow('; got values and from_volume.')
+    await expect(
+      update_volume_data({ volume: 0, values: [1] }),
+    ).rejects.toThrow('mni152.nii.gz holds no voxel values to write over.')
+    expect(view.updateVolumeData).not.toHaveBeenCalled()
+    expect(view.drawScene).not.toHaveBeenCalled()
+  })
+
+  it('refuses a chunked volume, and a NiiVue that cannot write or rewindow', async () => {
+    const chunked = liveView()
+    ;(chunked.volumes[1] as ShownVolume).chunkPlan =
+      {} as ShownVolume['chunkPlan']
+    await expect(
+      coreHandlers(host(chunked)).update_volume_data({
+        volume: 1,
+        values: [1, 2, 3, 4],
+      }),
+    ).rejects.toThrow('bold.nii.gz is drawn in bricks')
+    await expect(
+      coreHandlers(
+        host(liveView({ updateVolumeData: undefined })),
+      ).update_volume_data({ volume: 1, values: [1, 2, 3, 4] }),
+    ).rejects.toThrow("This page's NiiVue cannot write new voxel values.")
+    await expect(
+      coreHandlers(
+        host(liveView({ recalculateCalMinMax: undefined })),
+      ).update_volume_data({
+        volume: 1,
+        values: [1, 2, 3, 4],
+        auto_window: true,
+      }),
+    ).rejects.toThrow("This page's NiiVue cannot recompute a volume's window.")
+  })
+
+  it('writes nothing when the volume is replaced while its values are fetched', async () => {
+    const view = liveView()
+    const { update_volume_data } = coreHandlers(host(view))
+    const realFetch = globalThis.fetch
+    globalThis.fetch = mock(async () => {
+      // The person loads another dataset of the same size in its place.
+      ;(view.volumes as ShownVolume[])[1] = {
+        name: 'other.nii.gz',
+        img: new Int16Array(8),
+        nFrame4D: 2,
+      }
+      return new Response(new Int16Array(8).buffer)
+    }) as unknown as typeof fetch
+    try {
+      await expect(
+        update_volume_data({ volume: 1, url: 'new.bin' }),
+      ).rejects.toThrow(
+        'bold.nii.gz was removed or replaced while its values were fetched; nothing was written.',
+      )
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    expect(view.updateVolumeData).not.toHaveBeenCalled()
+  })
+
+  it('writes nothing when the volume is tiled into bricks while its values are fetched', async () => {
+    const view = liveView()
+    const { update_volume_data } = coreHandlers(host(view))
+    const realFetch = globalThis.fetch
+    globalThis.fetch = mock(async () => {
+      ;(view.volumes[1] as ShownVolume).chunkPlan =
+        {} as ShownVolume['chunkPlan']
+      return new Response(new Int16Array(8).buffer)
+    }) as unknown as typeof fetch
+    try {
+      await expect(
+        update_volume_data({ volume: 1, url: 'new.bin' }),
+      ).rejects.toThrow('bold.nii.gz is drawn in bricks')
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    expect(view.updateVolumeData).not.toHaveBeenCalled()
+  })
+
+  it('windows and reports the volume it wrote, wherever it moved during the write', async () => {
+    const view = liveView({
+      updateVolumeData: mock(async () => {
+        // Another volume is put in front of it while the GPU takes the write.
+        ;(view.volumes as ShownVolume[]).splice(1, 0, {
+          name: 'inserted.nii.gz',
+        })
+      }),
+    })
+    const { update_volume_data } = coreHandlers(host(view))
+    expect(
+      await update_volume_data({
+        volume: 1,
+        values: [0, 0, 0, 0],
+        auto_window: true,
+      }),
+    ).toMatchObject({ wrote: 4, volume: { index: 2, name: 'bold.nii.gz' } })
+    expect(view.recalculateCalMinMax).toHaveBeenCalledWith(2)
+  })
+
+  it('says so when the volume it wrote is removed before it could be windowed', async () => {
+    const view = liveView({
+      updateVolumeData: mock(async () => {
+        ;(view.volumes as ShownVolume[]).splice(1, 1)
+      }),
+    })
+    const { update_volume_data } = coreHandlers(host(view))
+    expect(
+      await update_volume_data({
+        volume: 1,
+        values: [0, 0, 0, 0],
+        auto_window: true,
+      }),
+    ).toMatchObject({
+      wrote: 4,
+      removed:
+        'bold.nii.gz was removed while its values were written, so it was not windowed.',
+    })
+    expect(view.recalculateCalMinMax).not.toHaveBeenCalled()
+  })
+
+  it('fetches raw values in the volume datatype, gzipped or not', async () => {
+    const view = liveView()
+    const { update_volume_data } = coreHandlers(host(view))
+    const raw = new Int16Array([10, 20, 30, 40]).buffer
+    const zipped = await new Response(
+      new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip')),
+    ).arrayBuffer()
+    const realFetch = globalThis.fetch
+    const bodies: Record<string, ArrayBuffer | null> = {
+      'raw.bin': raw,
+      'raw.bin.gz': zipped,
+      'odd.bin': new Uint8Array(3).buffer,
+      'gone.bin': null,
+    }
+    globalThis.fetch = mock(async (address: string | URL | Request) => {
+      const body = bodies[String(address)]
+      return body
+        ? new Response(body)
+        : new Response(null, { status: 404, statusText: 'Not Found' })
+    }) as unknown as typeof fetch
+    try {
+      for (const url of ['raw.bin', 'raw.bin.gz']) {
+        expect(await update_volume_data({ volume: 1, url })).toMatchObject({
+          wrote: 4,
+        })
+        expect(view.updateVolumeData).toHaveBeenLastCalledWith(
+          1,
+          new Int16Array([10, 20, 30, 40]),
+        )
+      }
+      await expect(
+        update_volume_data({ volume: 1, url: 'odd.bin' }),
+      ).rejects.toThrow(
+        'The values at odd.bin are 3 bytes, not a whole number of Int16 values of 2 bytes each.',
+      )
+      await expect(
+        update_volume_data({ volume: 1, url: 'gone.bin' }),
+      ).rejects.toThrow(
+        'The values at gone.bin could not be fetched: 404 Not Found',
+      )
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+})

@@ -1625,11 +1625,14 @@ export interface AnimationOptions {
 
 /**
  * Why a transition ended. `'stalled'` means the page stopped drawing frames
- * (a hidden tab, say), so the scene jumped to the target instead.
+ * (a hidden tab, say), so the scene jumped to the target instead. `'failed'`
+ * means a setter threw or rejected while writing the target, so the scene
+ * may not be on it; `AnimationResult.failed` names what did not land.
  */
 export type AnimationEndReason =
   | 'finished'
   | 'stalled'
+  | 'failed'
   | 'superseded'
   | 'input'
   | 'stopped'
@@ -1642,6 +1645,8 @@ export interface AnimationResult {
   reason: AnimationEndReason
   /** Milliseconds from the start to the end. */
   elapsedMs: number
+  /** With `'failed'`: the parts whose target write failed, as `'azimuth'`, `'volumes[1]'`. */
+  failed?: string[]
 }
 
 // ============================================================

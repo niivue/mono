@@ -164,6 +164,7 @@ describe('core tool schemas', () => {
       'cal_max_neg',
       'cal_min',
       'cal_min_neg',
+      'chunk_grid',
       'colorbar',
       'colormap',
       'colormap_negative',
@@ -177,10 +178,18 @@ describe('core tool schemas', () => {
       'nearest',
       'opacity',
       'reset_affine',
+      'spread',
       'tab',
       'transform',
       'transparent_below_cal_min',
       'volume',
+    ])
+    expect(required('set_labels')).toEqual([])
+    expect(properties('set_labels').sort()).toEqual([
+      'clear',
+      'dim_others',
+      'labels',
+      'tab',
     ])
     expect(required('set_view')).toEqual([])
     expect(properties('set_view').sort()).toEqual([
@@ -258,6 +267,7 @@ describe('core tool schemas', () => {
       'sagittal',
       'multiplanar',
       'render',
+      'none',
     ])
     expect(schema.properties.layout.enum).toEqual([
       'auto',
@@ -293,7 +303,51 @@ describe('core tool schemas', () => {
     expect(await refused('set_volume', { opacity: 2 })).toMatch(/opacity/)
     expect(await refused('set_volume', { frame: -1 })).toMatch(/frame/)
     expect(await refused('set_volume', { volume: true })).toMatch(/volume/)
+    expect(await refused('set_volume', { spread: 0.5 })).toMatch(/spread/)
+    expect(await refused('set_volume', { chunk_grid: [2, 2] })).toMatch(
+      /chunk_grid/,
+    )
+    expect(await refused('set_labels', { labels: 'Insula_L' })).toMatch(
+      /labels/,
+    )
     expect(await refused('set_view', { slice: 'oblique' })).toMatch(/slice/)
+  })
+
+  it('refuses an argument no tool declares, naming it, instead of dropping it silently', async () => {
+    const client = await connect(new Bridge())
+    const refused = async (name: string, args: Record<string, unknown>) => {
+      const reply = await client.callTool({ name, arguments: args })
+      expect(reply.isError).toBe(true)
+      return text(reply)
+    }
+    // A tool registered directly, and one through registerSimple.
+    expect(await refused('set_view', { sliec: 'axial' })).toMatch(/sliec/)
+    expect(await refused('set_mesh', { opacty: 0.5 })).toMatch(/opacty/)
+    expect(
+      await refused('add_overlay', { url: 'http://h/a.nii.gz', calMin: 1 }),
+    ).toMatch(/calMin/)
+  })
+
+  it('offers add_overlay the display window and a negative colormap', async () => {
+    const client = await connect(new Bridge())
+    const { tools } = await client.listTools()
+    const found = tools.find((t) => t.name === 'add_overlay')
+    if (!found) throw new Error('no tool add_overlay')
+    const schema = found.inputSchema as { properties: Record<string, unknown> }
+    expect(Object.keys(schema.properties).sort()).toEqual([
+      'cal_max',
+      'cal_max_neg',
+      'cal_min',
+      'cal_min_neg',
+      'colorbar',
+      'colormap',
+      'colormap_negative',
+      'labels',
+      'name',
+      'opacity',
+      'tab',
+      'url',
+    ])
   })
 })
 

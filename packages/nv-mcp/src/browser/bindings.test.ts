@@ -261,6 +261,83 @@ describe('bindControls: the view and volumes', () => {
   })
 })
 
+describe('bindControls: spreading a volume', () => {
+  /** The settings view, able to tile a volume into bricks and spread them. */
+  function spreadable() {
+    const parts = setup()
+    const view = parts.view
+    Object.assign(view, {
+      setVolumeChunkGrid: mock(
+        async (index: number, grid: [number, number, number] | null) => {
+          view.volumes[index].chunkPlan = grid ? { gridDims: grid } : undefined
+        },
+      ),
+      setVolumeChunkExplode: mock(
+        (
+          index: number,
+          explode: {
+            enabled?: boolean
+            scale?: [number, number, number]
+          } | null,
+        ) => {
+          view.volumes[index].chunkExplode = explode
+        },
+      ),
+    })
+    return parts
+  }
+
+  it('binds a slider to how far a volume is spread, tiling it first', async () => {
+    const { add_control, memory, view } = spreadable()
+    const got = add_control({
+      id: 'spread',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.0.spread',
+    }) as Reported
+    expect(got.control).toMatchObject({ value: 1, min: 1, max: 4 })
+    memory.simulate({ id: 'spread', type: 'input', value: 2 })
+    await Bun.sleep(0)
+    expect(view.setVolumeChunkGrid).toHaveBeenCalledWith(0, [3, 3, 3])
+    expect(view.volumes[0].chunkExplode).toEqual({
+      enabled: true,
+      scale: [2, 2, 2],
+    })
+    memory.simulate({ id: 'spread', type: 'input', value: 1 })
+    await Bun.sleep(0)
+    expect(view.volumes[0].chunkExplode).toBeNull()
+    expect(view.setVolumeChunkGrid).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts at the spread a volume already has, keeping its bricks', async () => {
+    const { add_control, memory, view } = spreadable()
+    view.volumes[0].chunkPlan = { gridDims: [9, 9, 9] }
+    view.volumes[0].chunkExplode = { enabled: true, scale: [2, 2, 2] }
+    const got = add_control({
+      id: 'spread',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.0.spread',
+    }) as Reported
+    expect(got.control.value).toBe(2)
+    memory.simulate({ id: 'spread', type: 'input', value: 3 })
+    await Bun.sleep(0)
+    expect(view.setVolumeChunkGrid).not.toHaveBeenCalled()
+    expect(view.volumes[0].chunkExplode).toEqual({
+      enabled: true,
+      scale: [3, 3, 3],
+    })
+  })
+
+  it('names spread among the volume properties', () => {
+    expect(() => resolveBinding('volume.0.spreads', settingsView())).toThrow(
+      /spread\./,
+    )
+  })
+})
+
 describe('bindControls: both ways', () => {
   it('writes what the person does, and redraws', () => {
     const { add_control, memory, view } = setup()

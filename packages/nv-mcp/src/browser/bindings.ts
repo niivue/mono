@@ -176,6 +176,55 @@ const VOLUME_PROPS: Record<
   },
 }
 
+/** Every volume property a control can bind: the fields, and how far its bricks are spread. */
+const VOLUME_NAMES = [...Object.keys(VOLUME_PROPS), 'spread']
+
+/** The most a spread control reaches, as far as set_volume's spread is useful. */
+const MAX_SPREAD = 4
+
+/**
+ * How far a volume's bricks are spread apart in the 3D render, as set_volume's
+ * `spread` sets it: 1 closes them up, and a volume drawn as one texture is
+ * tiled 3 by 3 by 3 before it can spread.
+ */
+function spreadTarget(bind: string, view: View, index: number): Target {
+  if (!view.setVolumeChunkExplode || !view.setVolumeChunkGrid)
+    throw new Error("This page's NiiVue cannot spread a volume's bricks.")
+  const explode = view.setVolumeChunkExplode.bind(view)
+  const tile = view.setVolumeChunkGrid.bind(view)
+  return {
+    shape: 'number',
+    min: 1,
+    max: MAX_SPREAD,
+    step: 0.05,
+    read: () => {
+      const volume = view.volumes[index]
+      if (!volume) return undefined
+      if (!volume.chunkPlan || !volume.chunkExplode?.enabled) return 1
+      return volume.chunkExplode.scale?.[0] ?? 1.5
+    },
+    write: async (value) => {
+      check(bind, 'number', value)
+      const spread = value as number
+      if (!(spread >= 1))
+        throw new Error(`${bind} is 1 (the bricks touching) or more.`)
+      const volume = view.volumes[index]
+      if (!volume) throw new Error(`Volume ${index} is no longer loaded.`)
+      if (spread > 1 && !volume.chunkPlan) await tile(index, [3, 3, 3])
+      // The volume may have been replaced while it was tiled.
+      if (view.volumes[index] !== volume)
+        throw new Error(`Volume ${index} changed while it was tiled.`)
+      explode(
+        index,
+        spread > 1 && volume.chunkPlan
+          ? { enabled: true, scale: [spread, spread, spread] }
+          : null,
+      )
+      view.drawScene()
+    },
+  }
+}
+
 /** The mesh properties a control can bind, by the names `set_mesh` takes. */
 const MESH_PROPS: Record<
   string,
@@ -279,7 +328,7 @@ const FORMS: BindingVocabulary['forms'] = [
   },
   {
     form: 'volume.<index>.<property>',
-    description: `A property of a loaded volume, the base being 0: ${Object.keys(VOLUME_PROPS).join(', ')}.`,
+    description: `A property of a loaded volume, the base being 0: ${VOLUME_NAMES.join(', ')}. spread pulls its bricks apart in the 3D render, 1 closing them up.`,
   },
   {
     form: 'mesh.<index>.<property>',
@@ -418,16 +467,17 @@ export function resolveBinding(
   if (bind.startsWith('volume.')) {
     const [, which, prop, ...rest] = bind.split('.')
     const index = Number(which)
-    const known = prop !== undefined && Object.hasOwn(VOLUME_PROPS, prop)
+    const known = prop !== undefined && VOLUME_NAMES.includes(prop)
     if (!Number.isInteger(index) || index < 0 || !known || rest.length)
       throw new Error(
-        `"${bind}" is not a volume binding: it takes the form volume.<index>.<property>, the property one of ${Object.keys(VOLUME_PROPS).join(', ')}.`,
+        `"${bind}" is not a volume binding: it takes the form volume.<index>.<property>, the property one of ${VOLUME_NAMES.join(', ')}.`,
       )
     const volume = view.volumes[index]
     if (!volume)
       throw new Error(
         `There is no volume ${index}: ${view.volumes.length} ${view.volumes.length === 1 ? 'is' : 'are'} loaded.`,
       )
+    if (prop === 'spread') return spreadTarget(bind, view, index)
     if (!view.setVolume)
       throw new Error("This page's NiiVue cannot change a volume's properties.")
     const setVolume = view.setVolume.bind(view)

@@ -3,7 +3,8 @@
  * behind a `ControlSurface`, which these handlers add to, change, list
  * and clear; a page with no surface declines in words. `memoryControls`
  * is a surface that only remembers: what a page without a widget layer
- * uses, and what the tests drive. `bindControls` (in `./bindings`)
+ * uses, and what the tests drive. `uikitControls` (in the `./uikit`
+ * entry) draws them on the canvas, and `bindControls` (in `./bindings`)
  * makes a control drive what its `bind` names.
  */
 
@@ -364,7 +365,7 @@ export function patched(was: ControlState, patch: ControlPatch): ControlState {
 }
 
 /** Whether a control goes in the grid: one placed at no point that is not a dialog. */
-function inGrid(c: ControlSpec): boolean {
+export function inGrid(c: ControlSpec): boolean {
   return c.kind !== 'dialog' && c.x === undefined && c.y === undefined
 }
 

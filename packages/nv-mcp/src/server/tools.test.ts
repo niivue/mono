@@ -133,6 +133,14 @@ describe('core tool schemas', () => {
       'tab',
     ])
     expect(required('set_volume')).toEqual([])
+    // The tools that must be told what to act on say so in their schemas.
+    expect(required('reorder_volume')).toEqual(['volume', 'move'])
+    expect(required('transform_volume')).toEqual(['name'])
+    for (const name of ['describe_volume'])
+      expect([name, byName[name].annotations?.readOnlyHint]).toEqual([
+        name,
+        true,
+      ])
     expect(properties('set_volume').sort()).toEqual([
       'affine',
       'atlas_outline',

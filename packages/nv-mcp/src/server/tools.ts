@@ -35,6 +35,7 @@ import {
   tabAddress,
   toolContext,
 } from './context'
+import { registerVolumeTools, VOLUME_SCHEMAS } from './tools-volumes'
 
 /** The sides a plane can be named for, the slice names, and `current`. */
 export const PLANE_NAMES = [
@@ -431,6 +432,7 @@ export const CORE_SCHEMAS = {
         'Scale the picture down to at most this many pixels wide. 1024 otherwise.',
       ),
   },
+  ...VOLUME_SCHEMAS,
 } as const
 
 /** A line that says what the view shows: the slice type, and the mosaic when one is drawn. */
@@ -752,6 +754,8 @@ export function registerCoreTools(
         },
       ),
   )
+
+  registerVolumeTools(server, context)
 }
 
 /** An MCP server with the core tools and each extension's, over one bridge. */

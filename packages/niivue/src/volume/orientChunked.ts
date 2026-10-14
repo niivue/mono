@@ -76,6 +76,23 @@ export function chunkedDisplayKey(
 }
 
 /**
+ * Identity of the voxels a volume's textures are built from: its `img` view
+ * (buffer identity, offset and length) and its `chunkSource`. The renderers
+ * cache textures by url or name, so a different image under the same url or
+ * name (a reload, or a replacement with the same name) must not reuse them,
+ * even when its display state and data version (0 for a fresh image) match the
+ * cached ones. A new image always brings its own voxels or source, so this
+ * tells it apart without keying on the NVImage object itself.
+ */
+export function volumeSourceKey(nvimage: NVImage): string {
+  const img = nvimage.img
+  return [
+    img ? `${objectId(img.buffer)}:${img.byteOffset}:${img.byteLength}` : '',
+    nvimage.chunkSource ? objectId(nvimage.chunkSource) : '',
+  ].join(':')
+}
+
+/**
  * Key over everything a whole-volume texture baked by the orient pass (or, for
  * RGB/RGBA data, by prepareRGBAData) depends on. The multi-instance per-volume
  * `_texCache` entries of both renderers store it and rebuild when it changes,
@@ -93,13 +110,15 @@ export function wholeVolumeTextureKey(
   mtx: ArrayLike<number>,
   modulation: ModulationTextureParams | null = null,
 ): string {
+  const source = volumeSourceKey(nvimage)
   if (isRgbaDatatype(nvimage.hdr.datatypeCode)) {
-    return `rgba|${rgbaTextureKey(nvimage)}`
+    return `${source}|rgba|${rgbaTextureKey(nvimage)}`
   }
   const outline = nvimage.colormapLabel
     ? Math.max(0, nvimage.atlasOutline ?? 0)
     : 0
   return [
+    source,
     outline,
     nvimage.dimsRAS?.slice(1, 4).join('x') ?? '',
     Array.from(mtx).join(','),

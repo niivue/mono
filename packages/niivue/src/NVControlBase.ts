@@ -183,10 +183,7 @@ import {
   resetChunkTiming as clearChunkTiming,
 } from '@/volume/chunkTiming'
 import { commitDirtyVolumes, markVolumeDataChanged } from '@/volume/dataVersion'
-import {
-  computeDescriptiveStats,
-  type DescriptiveStats,
-} from '@/volume/descriptives'
+import type { DescriptiveStats } from '@/volume/descriptives'
 import {
   computeModulationData,
   computeModulationWeights,
@@ -196,6 +193,7 @@ import {
   NVChunkedVolume,
 } from '@/volume/NVChunkedVolume'
 import * as NVVolume from '@/volume/NVVolume'
+import { regionDescriptives } from '@/volume/regionDescriptives'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
 import type {
   TransformInfo,
@@ -206,7 +204,6 @@ import * as NVVolumeTransforms from '@/volume/transforms'
 import {
   calculateWorldExtents,
   calMinMaxFrame,
-  getImageDataRAS,
   reorientDrawingToNative,
   volumeTR,
 } from '@/volume/utils'
@@ -3795,84 +3792,38 @@ export default class NiiVue extends EventTarget {
    * on a different grid returns `null` rather than silently wrong numbers.
    *
    * @param options.volumeIndex - which volume to measure (default 0, the background)
-   * @param options.masks - volume indices whose non-zero voxels define the region;
-   *   with several, a voxel counts only where ALL of them are non-zero
+   * @param options.masks - the volumes that define the region. A volume index
+   *   counts that volume's non-zero voxels; `{ index, values }` counts only the
+   *   voxels whose calibrated value is one of `values` (label 0 included), to
+   *   pick regions of an atlas or segmentation. With several masks, a voxel
+   *   counts only where ALL of them keep it
    * @param options.isDrawingMask - also require a non-zero voxel in the drawing bitmap
    * @param options.drawPenValues - when masking by the drawing, restrict to these
    *   pen values (default: any non-zero voxel)
-   * @returns the statistics, or `null` when the volume has no data or a mask
-   *   does not match the target grid
+   * @returns the statistics, or `null` when the volume has no data, a mask
+   *   index is out of bounds, a label list is empty, or a mask does not match
+   *   the target grid
    *
    * @example
    * const roi = nv1.getDescriptives({ volumeIndex: 0, isDrawingMask: true })
    * console.log(roi.mean, roi.stdev, roi.volumeML)
+   * // Statistics of atlas region 17 (the atlas loaded as volume 1)
+   * const region = nv1.getDescriptives({ masks: [{ index: 1, values: [17] }] })
    */
   getDescriptives(
     options: {
       volumeIndex?: number
-      masks?: number[]
+      masks?: Array<number | { index: number; values: number[] }>
       isDrawingMask?: boolean
       drawPenValues?: number[]
     } = {},
   ): DescriptiveStats | null {
-    const volumes = this.model.getVolumes()
-    const volumeIndex = options.volumeIndex ?? 0
-    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return null
-    const vol = volumes[volumeIndex]
-    const raw = getImageDataRAS(vol)
-    if (!raw || !vol.dimsRAS || !vol.pixDimsRAS) {
-      log.warn('getDescriptives: volume has no resolvable RAS data')
-      return null
-    }
-    const nVox = raw.length
-    // getImageDataRAS returns unscaled samples; report calibrated intensities.
-    const slope = vol.hdr?.scl_slope || 1
-    const inter = vol.hdr?.scl_inter || 0
-    let values: Float32Array = raw
-    if (slope !== 1 || inter !== 0) {
-      values = new Float32Array(nVox)
-      for (let i = 0; i < nVox; i++) values[i] = raw[i] * slope + inter
-    }
-    // Intersect every requested mask into one inclusion array.
-    let mask: Uint8Array | null = null
-    const requireMask = (): Uint8Array => {
-      if (!mask) mask = new Uint8Array(nVox).fill(1)
-      return mask
-    }
-    for (const maskIndex of options.masks ?? []) {
-      if (!this._checkBounds(volumes, maskIndex, 'Mask volume')) return null
-      const maskData = getImageDataRAS(volumes[maskIndex])
-      if (!maskData || maskData.length !== nVox) {
-        log.warn(
-          `getDescriptives: mask volume ${maskIndex} does not match the target grid`,
-        )
-        return null
-      }
-      const m = requireMask()
-      for (let i = 0; i < nVox; i++) {
-        if (maskData[i] === 0 || Number.isNaN(maskData[i])) m[i] = 0
-      }
-    }
-    if (options.isDrawingMask) {
-      const drawingVol = this.model.drawingVolume
-      const bitmap = drawingVol ? getDrawingBitmap(drawingVol) : null
-      if (!bitmap || bitmap.length !== nVox) {
-        log.warn(
-          'getDescriptives: no drawing, or the drawing does not match the target grid',
-        )
-        return null
-      }
-      const pens = options.drawPenValues
-      const m = requireMask()
-      for (let i = 0; i < nVox; i++) {
-        const v = bitmap[i]
-        const keep = pens ? pens.includes(v) : v !== 0
-        if (!keep) m[i] = 0
-      }
-    }
-    const voxelVolumeMM3 =
-      vol.pixDimsRAS[1] * vol.pixDimsRAS[2] * vol.pixDimsRAS[3]
-    return computeDescriptiveStats(values, voxelVolumeMM3, mask)
+    const drawingVol = this.model.drawingVolume
+    return regionDescriptives(
+      this.model.getVolumes(),
+      () => (drawingVol ? getDrawingBitmap(drawingVol) : null),
+      options,
+    )
   }
 
   getVolumeAffine(volumeIndex: number): AffineMatrix {

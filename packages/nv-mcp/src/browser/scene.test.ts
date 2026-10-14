@@ -1617,17 +1617,18 @@ describe('go_to_point', () => {
 })
 
 describe('describe_volume', () => {
-  it('refuses mask labels on a mask volume, which NiiVue would ignore', () => {
-    const getDescriptives = mock(() => ({ nvox: 2, mean: 55 }))
+  it('counts labels of a mask volume, or pen values of the drawing', () => {
+    const getDescriptives = mock(() => ({ nvox: 1, mean: 10 }))
     const view = fakeView({
       volumes: [{ name: 'mni152.nii.gz' }, { name: 'labels.nii.gz' }],
       getDescriptives,
     } as unknown as Partial<View>)
     const handlers = coreHandlers(host(view))
-    expect(() =>
-      handlers.describe_volume({ mask: 1, mask_labels: [1] }),
-    ).toThrow('mask_labels picks labels of the drawing only')
-    expect(getDescriptives).not.toHaveBeenCalled()
+    handlers.describe_volume({ mask: 1, mask_labels: [1, 0] })
+    expect(getDescriptives).toHaveBeenLastCalledWith({
+      volumeIndex: 0,
+      masks: [{ index: 1, values: [1, 0] }],
+    })
     handlers.describe_volume({ mask: 1 })
     expect(getDescriptives).toHaveBeenLastCalledWith({
       volumeIndex: 0,
@@ -1639,6 +1640,19 @@ describe('describe_volume', () => {
       isDrawingMask: true,
       drawPenValues: [2],
     })
+  })
+
+  it('refuses an empty label list', () => {
+    const getDescriptives = mock(() => ({ nvox: 0 }))
+    const view = fakeView({
+      volumes: [{ name: 'mni152.nii.gz' }, { name: 'labels.nii.gz' }],
+      getDescriptives,
+    } as unknown as Partial<View>)
+    const handlers = coreHandlers(host(view))
+    expect(() =>
+      handlers.describe_volume({ mask: 1, mask_labels: [] }),
+    ).toThrow('mask_labels needs at least one label')
+    expect(getDescriptives).not.toHaveBeenCalled()
   })
 })
 

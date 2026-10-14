@@ -98,13 +98,15 @@ export const VOLUME_SCHEMAS = {
           'the non-zero voxels, with the volume in cubic millimetres and millilitres. On otherwise.',
       ),
     mask: VOLUME_ARG.optional().describe(
-      'Restrict the statistics to the voxels where this other volume is non-zero. Every non-zero label counts; `mask_labels` cannot pick among them.',
+      'Restrict the statistics to the voxels where this other volume is non-zero, or, with `mask_labels`, ' +
+        'to the voxels where it holds one of those labels (one region of an atlas or segmentation).',
     ),
     mask_labels: z
       .array(z.number())
       .optional()
       .describe(
-        'With `drawing`: the pen values of the drawing to count within. Not taken with `mask`.',
+        'The labels to count within: with `mask`, values of the mask volume (0 included); with `drawing`, ' +
+          'pen values of the drawing.',
       ),
     drawing: z
       .boolean()

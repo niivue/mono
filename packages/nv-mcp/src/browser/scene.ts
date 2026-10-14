@@ -1288,23 +1288,23 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (flag(params, 'stats') ?? true) {
         if (!view.getDescriptives)
           throw new Error("This page's NiiVue cannot compute voxel statistics.")
-        const masks = numbers(params, 'mask_labels')
+        const labels = numbers(params, 'mask_labels')
         const mask = params?.mask
         const options: Parameters<NonNullable<View['getDescriptives']>>[0] = {
           volumeIndex: index,
         }
+        if (labels && labels.length === 0)
+          throw new Error(
+            'mask_labels needs at least one label. Leave it out to count every non-zero voxel.',
+          )
         if (mask !== undefined && mask !== null) {
-          // NiiVue counts every non-zero voxel of a mask volume and reads
-          // pen values only for the drawing, so labels here would be
-          // ignored and the whole mask reported as if it were the labels.
-          if (masks)
-            throw new Error(
-              'mask_labels picks labels of the drawing only; a mask volume counts all its non-zero voxels. Leave mask_labels out, or use drawing.',
-            )
-          options.masks = [pickIndex(view.volumes, mask, 'volume')]
+          const maskIndex = pickIndex(view.volumes, mask, 'volume')
+          options.masks = [
+            labels ? { index: maskIndex, values: labels } : maskIndex,
+          ]
         } else if (flag(params, 'drawing')) {
           options.isDrawingMask = true
-          if (masks) options.drawPenValues = masks
+          if (labels) options.drawPenValues = labels
         }
         const stats = view.getDescriptives(options)
         if (stats) out.stats = stats

@@ -10,7 +10,7 @@ The package has four entry points, and nothing in it knows about the app that ho
 |---|---|---|
 | `@niivue/nv-mcp` | both | The wire messages, the plane arithmetic, region matching and the AAL spoken-name table |
 | `@niivue/nv-mcp/server` | Bun | The bridge that knows tabs by id, the core tools, `startServer` |
-| `@niivue/nv-mcp/browser` | the page | The client that keeps the socket open, and the handlers that answer the core tools from a NiiVue instance |
+| `@niivue/nv-mcp/browser` | the page | The client that keeps the socket open, the handlers that answer the core tools from a NiiVue instance, and `bindControls` |
 
 An app adds its own tools as an *extension* without touching the core. `apps/demo-mcp` in this repository is a complete page and server.
 
@@ -105,6 +105,32 @@ const host: NiiVueHost = {
 `controls` is a `ControlSurface`: `add`, `update`, `remove`, `clear` and `list` over the controls an agent asks for, each a `ControlSpec` of one of the `CONTROL_KINDS` (button, toggle, slider, menu, select, segmented, number, text, textarea, dialog, color, file) in a grid cell or at a position on the canvas, with a `bind` naming what it drives. A page without `controls` declines the control tools. One surface comes with the package:
 
 - **`memoryControls()`** keeps the controls and draws nothing. It is enough to list them in the page and to run the tools in a test.
+
+A surface can be wrapped in `bindControls` so the controls drive the page:
+
+```ts
+import { bindControls, memoryControls } from '@niivue/nv-mcp/browser'
+
+host.controls = bindControls(memoryControls(), {
+  view: nv,
+  actions: {
+    reload: { description: 'Loads the template again.', run: () => loadTemplate() },
+  },
+  onError: (error, event) => say(`${event.id}: ${error.message}`),
+})
+```
+
+A `bind` names one of these:
+
+| Bind | Drives |
+|---|---|
+| a setting, such as `gamma` or `crosshairColor` | That NiiVue setting, as `get_options` names it. A slider takes the setting's bounds, a select its choices, a color control its colour |
+| `view.slice`, `view.layout`, `view.radiological` | The slice type, the multiplanar layout and the radiological flag, by the names `set_view` uses |
+| `volume.<i>.<prop>` | A property of the volume at index `i`: `opacity`, `colormap`, `colormap_negative`, `cal_min`, `cal_max`, `cal_min_neg`, `cal_max_neg`, `frame`, `invert`, `colorbar`, `nearest`, `transparent_below_cal_min`, `atlas_outline` or `modulate_alpha` |
+| `dialog.<id>` | Opens that dialog when a button or menu item is pressed. Add the dialog first with `open: false`, so it waits hidden |
+| `action.<name>` | One of the page's `actions`. A button or menu runs it when pressed, a value control when its value is committed, a file picker with the files, a dialog with the button that closed it |
+
+The binding works both ways. A control the person moves writes its target: a slider or colour control as it moves, any other once the value is committed. A value changed elsewhere, by the person in NiiVue or by an agent's `set_options`, is read back before the next frame and shown on the control. A control bound with no range or choices takes them from its target, and starts at the target's value. A write that fails, at once or when NiiVue finishes it later, goes to `onError`, or to the console without one. `capabilities` lists the bind forms and the page's actions as `controlBindings`.
 
 `urls` defaults to `agentUrls()`: `/agent` on the page's own origin, then the server directly on port 4242. The client retries with a backoff that settles at half a minute, so the order the two are started in does not matter. An address that neither opens nor refuses within five seconds is closed and the next one tried, so a proxy that hangs cannot keep the page from the server.
 

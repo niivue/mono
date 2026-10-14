@@ -59,7 +59,7 @@ export interface AnimationClock {
   clearTimer(id: unknown): void
 }
 
-export const browserClock: AnimationClock = {
+const browserClock: AnimationClock = {
   now: () => performance.now(),
   requestFrame: (cb) => requestAnimationFrame(cb),
   cancelFrame: (id) => cancelAnimationFrame(id),
@@ -68,7 +68,7 @@ export const browserClock: AnimationClock = {
 }
 
 /** Default length of a transition, in milliseconds. */
-export const DEFAULT_DURATION_MS = 500
+const DEFAULT_DURATION_MS = 500
 
 /**
  * Extra time past the end before a transition stops waiting for frames and
@@ -398,33 +398,47 @@ export class Animation {
     const u = this.ease(t)
     for (const s of this.states) {
       if (s.busy) continue
-      this.write(
+      void this.write(
         s,
         s.channel.tracks.map((tr) => sampleTrack(tr, u)),
       )
+      // A setter's listener may have stopped this run or started another.
+      if (this.settled || this.finishing) return
     }
     this.frameId = this.clock.requestFrame(this.tick)
   }
 
-  private write(s: ChannelState, values: number[]): Promise<void> | null {
-    if (same(s.written, values)) return null
+  /**
+   * Hands `values` to the channel's setter, unless they were the last ones
+   * written and landed. Settles true once the write has landed, false if it
+   * threw or rejected (logged here).
+   */
+  private write(s: ChannelState, values: number[]): Promise<boolean> {
+    if (same(s.written, values)) return Promise.resolve(true)
     s.written = values
     let out: void | Promise<void>
     try {
       out = s.channel.write(values)
     } catch (e) {
       log.warn(`animateTo: writing ${s.channel.name} failed`, e)
-      return null
+      s.written = null
+      return Promise.resolve(false)
     }
-    if (!(out instanceof Promise)) return null
-    const busy = out.catch((e) =>
-      log.warn(`animateTo: writing ${s.channel.name} failed`, e),
+    if (!(out instanceof Promise)) return Promise.resolve(true)
+    const landed = out.then(
+      () => true,
+      (e) => {
+        log.warn(`animateTo: writing ${s.channel.name} failed`, e)
+        s.written = null
+        return false
+      },
     )
+    const busy = landed.then(() => {})
     s.busy = busy
     void busy.then(() => {
       if (s.busy === busy) s.busy = null
     })
-    return busy
+    return landed
   }
 
   /** Land every channel exactly on its target, then settle. */
@@ -435,14 +449,24 @@ export class Animation {
     // Let paced writes land first, so the target is the last thing written.
     await Promise.all(this.states.map((s) => s.busy))
     if (this.settled) return
-    const ends = this.states.map((s) =>
-      this.write(
-        s,
-        s.channel.tracks.map((tr) => tr.to),
-      ),
-    )
-    await Promise.all(ends)
-    this.settle(true, reason)
+    const ends: Promise<boolean>[] = []
+    for (const s of this.states) {
+      ends.push(
+        this.write(
+          s,
+          s.channel.tracks.map((tr) => tr.to),
+        ),
+      )
+      // A setter's listener may have stopped this run or started another.
+      if (this.settled) return
+    }
+    const landed = await Promise.all(ends)
+    if (this.settled) return
+    const failed = this.states
+      .filter((_, i) => !landed[i])
+      .map((s) => s.channel.name)
+    if (failed.length > 0) this.settle(false, 'failed', failed)
+    else this.settle(true, reason)
   }
 
   private cancelPending(): void {
@@ -452,13 +476,18 @@ export class Animation {
     this.timer = null
   }
 
-  private settle(completed: boolean, reason: AnimationEndReason): void {
+  private settle(
+    completed: boolean,
+    reason: AnimationEndReason,
+    failed?: string[],
+  ): void {
     if (this.settled) return
     this.settled = true
     this.resolve({
       completed,
       reason,
       elapsedMs: Math.max(0, this.clock.now() - this.startedAt),
+      ...(failed ? { failed } : {}),
     })
   }
 }

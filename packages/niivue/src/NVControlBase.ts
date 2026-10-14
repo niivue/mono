@@ -2865,7 +2865,8 @@ export default class NiiVue extends EventTarget {
    * too. The promise resolves, never rejects, once the target is reached or
    * the transition is stopped. If the page stops drawing frames (a hidden
    * tab), the scene jumps to the target shortly after the duration and the
-   * reason is `'stalled'`.
+   * reason is `'stalled'`. If a setter throws or rejects while writing the
+   * target, the reason is `'failed'` and `failed` names what did not land.
    *
    * A volume's window and opacity go through a GPU rebuild on every write,
    * so on a large or chunked volume those frames are dropped rather than

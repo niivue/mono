@@ -312,20 +312,94 @@ describe('Animation', () => {
     expect(result.completed).toBe(true)
   })
 
-  test('a failing write is logged and the transition still finishes', async () => {
+  test('a target write that fails ends the run as failed, naming the channel', async () => {
     const clock = fakeClock()
-    const channel: AnimationChannel = {
+    const broken: AnimationChannel = {
       name: 'broken',
       tracks: [{ from: 0, to: 1, kind: 'linear' }],
       write: () => {
         throw new Error('nope')
       },
     }
+    const rejecting: AnimationChannel = {
+      name: 'volumes[0]',
+      tracks: [{ from: 0, to: 1, kind: 'linear' }],
+      write: () => Promise.reject(new Error('nope')),
+    }
+    const fine = recorder(0, 1)
     const result = await new Animation(
-      [channel],
+      [broken, fine.channel, rejecting],
       { duration: 0 },
       clock,
     ).start()
-    expect(result.completed).toBe(true)
+    expect(result).toMatchObject({
+      completed: false,
+      reason: 'failed',
+      failed: ['broken', 'volumes[0]'],
+    })
+    expect(fine.writes).toEqual([1])
+  })
+
+  test('a frame write that failed is retried at the target', async () => {
+    const clock = fakeClock()
+    const writes: number[] = []
+    let fail = true
+    const channel: AnimationChannel = {
+      name: 'x',
+      tracks: [{ from: 0, to: 100, kind: 'index' }],
+      write: ([v]) => {
+        writes.push(v)
+        if (fail) throw new Error('nope')
+      },
+    }
+    const done = new Animation(
+      [channel],
+      { duration: 100, easing: 'linear' },
+      clock,
+    ).start()
+    clock.advance(99.6) // samples 100, which fails
+    fail = false
+    clock.advance(10)
+    const result = await done
+    expect(writes).toEqual([100, 100])
+    expect(result).toMatchObject({ completed: true, reason: 'finished' })
+  })
+
+  test('a stop from inside a frame write halts the rest of the frame', async () => {
+    const clock = fakeClock()
+    const later = recorder(0, 100)
+    let run: Animation | null = null
+    const stopper: AnimationChannel = {
+      name: 'first',
+      tracks: [{ from: 0, to: 100, kind: 'linear' }],
+      write: () => run?.stop('superseded'),
+    }
+    run = new Animation(
+      [stopper, later.channel],
+      { duration: 100, easing: 'linear' },
+      clock,
+    )
+    const done = run.start()
+    clock.advance(10)
+    clock.advance(10)
+    expect(await done).toMatchObject({ completed: false, reason: 'superseded' })
+    expect(later.writes).toEqual([])
+  })
+
+  test('a stop from inside a target write halts the rest of the landing', async () => {
+    const clock = fakeClock()
+    const later = recorder(0, 100)
+    let run: Animation | null = null
+    const stopper: AnimationChannel = {
+      name: 'first',
+      tracks: [{ from: 0, to: 100, kind: 'linear' }],
+      write: () => run?.stop('superseded'),
+    }
+    run = new Animation([stopper, later.channel], { duration: 0 }, clock)
+    expect(await run.start()).toMatchObject({
+      completed: false,
+      reason: 'superseded',
+    })
+    expect(later.writes).toEqual([])
   })
 })

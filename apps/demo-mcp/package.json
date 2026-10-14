@@ -12,6 +12,7 @@
     "@niivue/dev-images": "workspace:*",
     "@niivue/niivue": "workspace:*",
     "@niivue/nv-mcp": "workspace:*",
+    "@niivue/uikit": "workspace:*",
     "nifti-reader-js": "^0.8.0"
   },
   "devDependencies": {

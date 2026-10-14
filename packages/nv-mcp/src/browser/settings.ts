@@ -91,6 +91,16 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'setTractOptions',
     'setConnectomeOptions',
   ],
+  signals: [
+    'signals',
+    'loadSignals',
+    'addSignal',
+    'setSignal',
+    'removeSignal',
+    'setSignalCursorFraction',
+    'graphZoom',
+    'setGraphRange',
+  ],
   colormaps: [
     'colormaps',
     'addColormap',

@@ -97,6 +97,31 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'addColormapFromUrl',
     'setFontFromUrl',
   ],
+  drawing: [
+    'createEmptyDrawing',
+    'drawUndo',
+    'closeDrawing',
+    'loadDrawing',
+    'saveDrawing',
+    'drawingToSVG',
+  ],
+  annotations: [
+    'annotations',
+    'addAnnotation',
+    'removeAnnotation',
+    'selectAnnotation',
+    'setAnnotationText',
+    'annotationUndo',
+    'getAnnotationsJSON',
+    'loadAnnotationsJSON',
+    'annotationsToSVG',
+  ],
+  measurements: [
+    'getMeasurements',
+    'addMeasurement',
+    'removeMeasurement',
+    'clearMeasurements',
+  ],
 }
 
 /** The handlers for the settings, capability, colormap, font and layout tools. */

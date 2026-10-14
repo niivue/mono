@@ -3,8 +3,10 @@ import {
   blockFaceOnPlaneMM,
   chunkExplodedMatRAS,
   chunkExplodeOffsetFrac,
+  chunkIndexAtFrac,
   clipPlaneToMMAxisPlane,
   explodedChunkAABB,
+  explodedChunkCornersMM,
   explodeOffsetMMAtFrac,
   isMatRASAxisAligned,
   pickClipPlaneBlockFace,
@@ -633,6 +635,51 @@ describe('explodedChunkAABB', () => {
   test('returns null when explode is off or the chunk is out of range', () => {
     expect(explodedChunkAABB(plan(), IDENTITY_RAS, undefined, 2)).toBeNull()
     expect(explodedChunkAABB(plan(), IDENTITY_RAS, explode, 99)).toBeNull()
+  })
+})
+
+describe('chunkIndexAtFrac', () => {
+  const plan = () => chunkVolume([8, 1, 1], 2, [0, 0, 0])
+
+  test('finds the chunk holding a volume fraction', () => {
+    expect(chunkIndexAtFrac(plan(), [0.1, 0.5, 0.5])).toBe(0)
+    expect(chunkIndexAtFrac(plan(), [0.6, 0.5, 0.5])).toBe(2)
+    expect(chunkIndexAtFrac(plan(), [0.99, 0.5, 0.5])).toBe(3)
+  })
+
+  test('is -1 outside the volume', () => {
+    expect(chunkIndexAtFrac(plan(), [1.2, 0.5, 0.5])).toBe(-1)
+    expect(chunkIndexAtFrac(plan(), [0.5, -0.1, 0.5])).toBe(-1)
+  })
+})
+
+describe('explodedChunkCornersMM', () => {
+  const plan = () => chunkVolume([8, 1, 1], 2, [0, 0, 0])
+  const explode = {
+    enabled: true,
+    scale: [2, 2, 2] as [number, number, number],
+  }
+
+  test('gives the eight corners of the unexploded box, bit-indexed', () => {
+    const corners = explodedChunkCornersMM(plan(), IDENTITY_RAS, undefined, 2)
+    expect(corners).toHaveLength(8)
+    // Bit 0 picks the high x edge: chunk 2 spans x[4,6] before the explode.
+    expect(corners?.[0]).toEqual([4, 0, 0])
+    expect(corners?.[1]).toEqual([6, 0, 0])
+    expect(corners?.[2]).toEqual([4, 1, 0])
+    expect(corners?.[4]).toEqual([4, 0, 1])
+    expect(corners?.[7]).toEqual([6, 1, 1])
+  })
+
+  test('moves with the explode like explodedChunkAABB', () => {
+    const corners = explodedChunkCornersMM(plan(), IDENTITY_RAS, explode, 2)
+    const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, 2)
+    expect(corners?.[0][0]).toBeCloseTo(box?.min[0] ?? Number.NaN)
+    expect(corners?.[7][0]).toBeCloseTo(box?.max[0] ?? Number.NaN)
+  })
+
+  test('is null for a chunk out of range', () => {
+    expect(explodedChunkCornersMM(plan(), IDENTITY_RAS, explode, 99)).toBeNull()
   })
 })
 

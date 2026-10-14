@@ -612,7 +612,10 @@ export function registerCoreTools(
       description:
         'Loads a volume into the page from an address it can fetch, replacing what is shown. ' +
         "Reports the volume's name and its extent in millimetres. An atlas only applies when the " +
-        'volume is in MNI space; pass `mni` to say so, or leave it to be guessed from the name.',
+        'volume is in MNI space; pass `mni` to say so, or leave it to be guessed from the name. ' +
+        "It cannot read a file on the person's computer by its path. When they want to load one, " +
+        'look in capabilities controlBindings for an action that opens files, add a file control ' +
+        'bound to it with add_control, and ask them to pick the file there.',
       inputSchema: strict(CORE_SCHEMAS.load_volume),
     },
     async ({ tab, ...params }) =>
@@ -633,7 +636,8 @@ export function registerCoreTools(
         'label ids, named and coloured as FreeSurfer does; any other atlas needs its own table, ' +
         'passed as the address of a label table JSON the page can fetch. The overlay must share ' +
         "the base volume's space. The base may be what the page opened with or one from " +
-        'load_volume; loading a new base clears the overlays.',
+        'load_volume; loading a new base clears the overlays. Like load_volume, it cannot read a ' +
+        "file on the person's computer by its path.",
       inputSchema: strict(CORE_SCHEMAS.add_overlay),
     },
     async ({ tab, ...params }) =>

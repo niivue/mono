@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from 'bun:test'
 import { baseView, hostOf } from '../testing/fake-view'
 import { bindControls, type PageAction, resolveBinding } from './bindings'
 import { controlHandlers, memoryControls } from './controls'
+import { dataPalette } from './data'
 import { settingHandlers } from './settings'
 import type {
   MeshUpdate,
@@ -737,6 +738,59 @@ describe('bindControls: dialogs', () => {
     memory.simulate({ id: 'b', type: 'press' })
     expect(onError).toHaveBeenCalledTimes(1)
     expect(onError.mock.calls[0][0].message).toContain('no dialog "d"')
+  })
+})
+
+describe('bindControls: data', () => {
+  const palette = () => {
+    const data = dataPalette([
+      {
+        id: 'mni',
+        label: 'MNI152',
+        tool: 'load_volume',
+        args: { url: '/volumes/mni152.nii.gz' },
+      },
+    ])
+    const load_volume = mock((_params: Record<string, unknown>) => ({}))
+    data.connect({ load_volume })
+    return { data, load_volume }
+  }
+
+  it('loads a palette entry from a button bound to it', async () => {
+    const { data, load_volume } = palette()
+    const view = settingsView()
+    const memory = memoryControls()
+    const controls = bindControls(memory, { view, data })
+    const host = hostOf(view)
+    host.controls = controls
+    const { add_control } = controlHandlers(host)
+    add_control({ id: 'b', kind: 'button', bind: 'data.mni' })
+    memory.simulate({ id: 'b', type: 'press' })
+    await Promise.resolve()
+    expect(load_volume).toHaveBeenCalledWith({ url: '/volumes/mni152.nii.gz' })
+    expect(controls.bindings?.().forms.map((f) => f.form)).toContain(
+      'data.<id>',
+    )
+  })
+
+  it('names the entries there when one is not, and declines without a palette', () => {
+    const { data } = palette()
+    const view = settingsView()
+    const host = hostOf(view)
+    host.controls = bindControls(memoryControls(), { view, data })
+    const { add_control } = controlHandlers(host)
+    expect(() =>
+      add_control({ id: 'b', kind: 'button', bind: 'data.nope' }),
+    ).toThrow('There is: mni')
+    host.controls = bindControls(memoryControls(), { view })
+    expect(() =>
+      controlHandlers(host).add_control({
+        id: 'b',
+        kind: 'button',
+        bind: 'data.mni',
+      }),
+    ).toThrow('no data palette')
+    expect(() => resolveBinding('data.mni', view)).toThrow('only bindControls')
   })
 })
 

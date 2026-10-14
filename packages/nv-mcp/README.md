@@ -100,6 +100,7 @@ const host: NiiVueHost = {
   planeName: () => currentCutName(), // the page's own name for the plane
   labels: (labels) => pins.setLabels(labels), // draws set_labels' labels, an empty list clears
   controls: memoryControls(),        // where add_control puts its widgets
+  data: dataPalette(catalog),         // the data an agent can load by id
 }
 ```
 
@@ -135,6 +136,7 @@ A `bind` names one of these:
 | `mesh.<i>.tract.<option>` | An option of the tract at index `i`, as `set_mesh` takes it: `fiberRadius`, `fiberSides`, `minLength`, `decimation`, `colormap`, `colormapNegative`, `colorBy`, `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `fixedColor`. A select bound to `colorBy` takes `direction`, `global`, `fixed` and the tract's scalars (`dpv:<name>`, `dps:<name>`); one bound to `group` takes `all` or one of the tract's groups, shown alone in one flat colour |
 | `mesh.<i>.connectome.<option>` | An option of the connectome at index `i`: `nodeColormap`, `nodeColormapNegative`, `nodeMinColor`, `nodeMaxColor`, `nodeScale`, `edgeColormap`, `edgeColormapNegative`, `edgeMin`, `edgeMax`, `edgeScale` |
 | `dialog.<id>` | Opens that dialog when a button or menu item is pressed. Add the dialog first with `open: false`, so it waits hidden |
+| `data.<id>` | Loads that entry of the page's data palette when a button or menu item is pressed. Pass the palette to `bindControls` as `data`. `coreHandlers` connects the palette to the core loaders; a page that wraps a loader calls `palette.connect` with its own map after |
 | `action.<name>` | One of the page's `actions`. A button or menu runs it when pressed, a value control when its value is committed, a file picker with the files, a dialog with the button that closed it |
 
 The binding works both ways. A control the person moves writes its target: a slider or colour control as it moves, any other once the value is committed. A value changed elsewhere, by the person in NiiVue or by an agent's `set_options`, is read back before the next frame and shown on the control. A control bound with no range or choices takes them from its target, and starts at the target's value. A write that fails, at once or when NiiVue finishes it later, goes to `onError`, or to the console without one. A `mesh.<i>` bind follows only the mesh it was bound to: once that mesh is removed, reloaded or replaced at its index, the control neither shows nor drives the one there now; bind the control again. `capabilities` lists the bind forms and the page's actions as `controlBindings`.
@@ -209,7 +211,7 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 |---|---|---|
 | `get_options` | `names?`, `describe?` | Reads NiiVue's settings by their own names: crosshair, colours, fonts, 3D rendering, drawing pen, drag behaviour and the rest. Without `names` it describes every setting the page has, with its kind, its choices or bounds and what it does |
 | `set_options` | `options` | Changes any of those settings, several at once. A choice is given by its word (a drag mode, a pen shape, a render mode), a colour as `[r, g, b, a]` 0 to 1. Every value is checked before any is set |
-| `capabilities` | | What this page's NiiVue offers: its backend, which tool features it supports by group, which settings it has, its colormaps, drawing colormaps and mesh shaders, its volume transforms with their options, and the file types it reads and writes. With controls, it also lists the control kinds and what they can bind to. A page whose NiiVue lacks a feature refuses that tool in words and answers every other |
+| `capabilities` | | What this page's NiiVue offers: its backend, which tool features it supports by group, which settings it has, its colormaps, drawing colormaps and mesh shaders, its volume transforms with their options, and the file types it reads and writes. With controls, it also lists the control kinds and what they can bind to, and with a data palette its entries as `data`. A page whose NiiVue lacks a feature refuses that tool in words and answers every other |
 | `add_colormap` | `name?`, `R?`, `G?`, `B?`, `A?`, `I?`, `labels?`, `url?` | Adds a colormap from its stops, or fetches one from an address as a NiiVue colormap JSON |
 | `set_font` | `atlas`, `metrics` | Loads the font NiiVue draws its text with, from an atlas PNG and a metrics JSON |
 | `set_custom_layout` | `tiles?`, `clear?` | Places tiles on the canvas by hand, each a slice orientation or the render at `[left, top, width, height]` as fractions, in place of the ordinary layout; `clear` goes back to it |
@@ -254,6 +256,25 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `list_controls` | | The controls there, each with its kind, grid cell or position, drawn `box`, value, options and binding; their ids also ride in every reply's state |
 | `set_control` | `id`, and any of the fields above | Changes what is given on a control: a `row` or `col` moves it into the grid and `x` and `y` out of it; its value is checked and clamped as it was when added, and a range that moves takes the value with it. A value set on a bound control is written to its target; a write NiiVue fails later goes to `onError`, not to the reply (niivue/mono#271) |
 | `remove_control` | `id?`, `all?` | Takes one control away, or all of them |
+
+### The data palette
+
+A page that sets `host.data = dataPalette(catalog)` offers data by id. An entry is a load held for later: one of the loading tools (`load_volume`, `add_overlay`, `load_mesh`, `add_mesh_layer`, `load_signal`, `load_document`) with the arguments it takes, so loading an entry does exactly what that call would. The page seeds the palette with its own sample data (`source: 'page'`), which stays; an agent adds more (`source: 'agent'`). A button or menu item bound to `data.<id>` loads the entry when pressed. The ids ride in every reply's state, and `capabilities` lists the entries as `data`.
+
+```ts
+host.data = dataPalette([
+  { id: 'mni152', label: 'MNI152', tool: 'load_volume', args: { url: '/volumes/mni152.nii.gz', mni: true } },
+  { id: 'aal', label: 'AAL atlas', tool: 'add_overlay', args: { url: '/volumes/aal.nii.gz', labels: '/volumes/aal.json' } },
+])
+host.controls = bindControls(surface, { view: nv, actions, data: host.data })
+```
+
+| Tool | Input | What it does |
+|---|---|---|
+| `list_data` | | The entries, each with its `id`, `label`, `description`, `tool`, `args` and `source` |
+| `add_data` | `id`, `tool?`, `args?`, `label?`, `description?`, `from?` | Adds an entry: a call to one of the loading tools with its arguments (`url` at least), held for later; nothing loads now. `from` starts from an entry already there, such as a sample with another colormap: `args` are laid over its own while `tool` stays the same; a `tool` naming another loader starts its arguments and description afresh. A `tab` among the arguments is dropped: an entry loads where it is pressed |
+| `remove_data` | `id` | Takes an agent's entry away; the page's own stay |
+| `load_data` | `id` | Loads the entry and reports what its loading tool reports |
 
 ### The canvas, the slide plane, chunks and files
 

@@ -255,6 +255,16 @@ export function settingHandlers(host: NiiVueHost): Handlers {
         ...(host.controls?.bindings
           ? { controlBindings: host.controls.bindings() }
           : {}),
+        ...(host.data
+          ? {
+              data: host.data.list().map(({ id, label, tool, source }) => ({
+                id,
+                label,
+                tool,
+                source,
+              })),
+            }
+          : {}),
         ...(view.volumeExtensions
           ? { volumeExtensions: view.volumeExtensions }
           : {}),

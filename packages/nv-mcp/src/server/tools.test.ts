@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
 import type { TabState } from '../protocol'
-import { type AppSocket, Bridge } from './bridge'
+import { type AppSocket, Bridge, NO_APP } from './bridge'
 import { type Extension, reloadNotice } from './context'
 import { buildServer, CORE_SCHEMAS } from './tools'
 
@@ -28,19 +28,11 @@ function echoTab(
         method: string
         params: Record<string, unknown>
       }
-      const result =
-        request.method === 'screenshot'
-          ? {
-              data: 'iVBORw0KGgo=',
-              mimeType: 'image/png',
-              width: 12,
-              height: 8,
-            }
-          : {
-              method: request.method,
-              params: request.params,
-              description: 'somewhere',
-            }
+      const result = {
+        method: request.method,
+        params: request.params,
+        description: 'somewhere',
+      }
       queueMicrotask(() =>
         bridge.receive(
           socket,
@@ -101,6 +93,14 @@ describe('core tool schemas', () => {
         (byName[name].inputSchema as { properties?: object }).properties ?? {},
       )
     expect(required('use_tab')).toEqual(['id'])
+    expect(required('load_volume')).toEqual(['url'])
+    expect(properties('load_volume').sort()).toEqual([
+      'colormap',
+      'mni',
+      'name',
+      'tab',
+      'url',
+    ])
     // Every tool a page answers takes the tab to ask; the others do not.
     for (const name of Object.keys(CORE_SCHEMAS)) {
       const asksAPage = !['list_tabs', 'use_tab', 'new_tab'].includes(name)
@@ -111,6 +111,8 @@ describe('core tool schemas', () => {
     }
     expect(required('new_tab')).toEqual([])
     expect(byName.new_tab.annotations?.readOnlyHint).toBe(true)
+    expect(required('where_am_i')).toEqual([])
+    expect(byName.where_am_i.annotations?.readOnlyHint).toBe(true)
   })
 
   it('refuses arguments outside the schema as a tool error, before any tab is asked', async () => {
@@ -125,6 +127,34 @@ describe('core tool schemas', () => {
 })
 
 describe('core tools over the bridge', () => {
+  it('says what to open when no tab is connected, as a tool error not a protocol one', async () => {
+    const client = await connect(new Bridge())
+    const reply = await client.callTool({ name: 'where_am_i', arguments: {} })
+    expect(reply.isError).toBe(true)
+    expect(text(reply)).toBe(NO_APP)
+    const tabs = await client.callTool({ name: 'list_tabs', arguments: {} })
+    expect(tabs.isError).toBeUndefined()
+    expect(json(tabs)).toEqual({ tabs: [] })
+  })
+
+  it('forwards each call to the tab and names the tab in where_am_i', async () => {
+    const bridge = new Bridge()
+    echoTab(bridge, 't1', 'brainsonify')
+    const client = await connect(bridge)
+    const where = await client.callTool({ name: 'where_am_i', arguments: {} })
+    expect(json(where)).toMatchObject({
+      tab: { id: 't1', title: 'brainsonify' },
+      method: 'where_am_i',
+    })
+    const load = await client.callTool({
+      name: 'load_volume',
+      arguments: { url: 'http://x/vol.nii.gz', mni: true },
+    })
+    expect(json(load)).toMatchObject({
+      params: { url: 'http://x/vol.nii.gz', mni: true },
+    })
+  })
+
   it('lists tabs, lets one be chosen, and refuses an unknown id in words', async () => {
     const bridge = new Bridge()
     echoTab(bridge, 't1', 'one')
@@ -134,11 +164,17 @@ describe('core tools over the bridge', () => {
       await client.callTool({ name: 'list_tabs', arguments: {} }),
     ) as { tabs: Array<{ id: string; bound: boolean }> }
     expect(listed.tabs.map((t) => t.id)).toEqual(['t1', 't2'])
+    const refused = await client.callTool({ name: 'where_am_i', arguments: {} })
+    expect(refused.isError).toBe(true)
+    expect(text(refused)).toMatch(/2 tabs are connected/)
     const chosen = await client.callTool({
       name: 'use_tab',
       arguments: { id: 't2' },
     })
     expect(text(chosen)).toMatch(/^Driving "two"\./)
+    expect(
+      json(await client.callTool({ name: 'where_am_i', arguments: {} })),
+    ).toMatchObject({ tab: { id: 't2' } })
     const missing = await client.callTool({
       name: 'use_tab',
       arguments: { id: 't9' },
@@ -165,6 +201,14 @@ describe('core tools over the bridge', () => {
       await client.callTool({ name: 'new_tab', arguments: {} }),
     ) as { id: string }
     expect(again.id).not.toBe(id)
+    // A page opened at that address says hello with the id, and is then reachable by it.
+    echoTab(bridge, 'other', 'other')
+    echoTab(bridge, id, 'named')
+    const reached = await client.callTool({
+      name: 'where_am_i',
+      arguments: { tab: id },
+    })
+    expect(json(reached)).toMatchObject({ tab: { id, title: 'named' } })
   })
 
   it('gives the id alone, and says where to put it, when the page address is not known', async () => {
@@ -175,6 +219,30 @@ describe('core tools over the bridge', () => {
     expect(text(made)).toMatch(
       new RegExp(`^Open the page with \\?tab=${body.id} in its address`),
     )
+  })
+
+  it('leads the first reply after a reload with what the scene was showing', async () => {
+    const bridge = new Bridge({ now: () => Date.UTC(2026, 8, 24, 1, 2, 3) })
+    const before = state({
+      crosshair: { mm: [-38.4, -21.6, 5.2] },
+      plane: { name: 'left', depth: 0, azimuth: 270, elevation: 0 },
+      sounding: true,
+    })
+    const first = echoTab(bridge, 't1', 'one', before)
+    const client = await connect(bridge)
+    await client.callTool({ name: 'where_am_i', arguments: {} })
+    bridge.detach(first)
+    echoTab(bridge, 't1', 'one', state({ sounding: false }))
+    const after = await client.callTool({ name: 'where_am_i', arguments: {} })
+    expect(text(after)).toMatch(
+      /^Note: the tab "one" reloaded at 2026-09-24T01:02:03.000Z, since the last call, so its scene started over\. Changed: crosshair was \[-38, -22, 5\] mm, now \[0, 0, 0\] mm; plane was left, now off; sounding was true, now false\.\n/,
+    )
+    expect(json(after)).toMatchObject({
+      reloaded: { before, reloadedAt: Date.UTC(2026, 8, 24, 1, 2, 3) },
+    })
+    expect(
+      text(await client.callTool({ name: 'where_am_i', arguments: {} })),
+    ).not.toMatch(/^Note/)
   })
 
   it('lets an extension add tools over the same context', async () => {

@@ -144,6 +144,16 @@ describe('load_signal', () => {
     expect(view.drawScene).toHaveBeenCalledTimes(1)
   })
 
+  it('shows a hidden graph when a signal loads, so the plot is not silently missing', async () => {
+    const view = signalView({ isGraphVisible: false })
+    const { load_signal } = signalHandlers(hostOf(view))
+    const got = (await load_signal({ url: 'https://x/physio.tsv' })) as {
+      graph: unknown
+    }
+    expect(view.isGraphVisible).toBe(true)
+    expect(got.graph).toEqual(RANGE)
+  })
+
   it('replaces the signals when asked, and says why a load failed', async () => {
     const view = signalView()
     const { load_signal } = signalHandlers(hostOf(view))
@@ -321,6 +331,21 @@ describe('set_graph', () => {
     set_graph({ reset: true })
     expect(view.graphResetView).toHaveBeenCalledTimes(1)
     expect(view.drawScene).toHaveBeenCalledTimes(6)
+  })
+
+  it('says when the graph is hidden, and how to show it', () => {
+    const view = signalView({ isGraphVisible: false })
+    const { set_graph, list_signals } = signalHandlers(hostOf(view))
+    const hint =
+      'The graph is hidden: set_options with isGraphVisible true shows it.'
+    expect(set_graph({ cursor: 0.5 })).toEqual({
+      graph: RANGE,
+      graphHidden: true,
+      hint,
+    })
+    expect(list_signals({})).toMatchObject({ graphHidden: true, hint })
+    const shown = signalHandlers(hostOf(signalView({ isGraphVisible: true })))
+    expect(shown.set_graph({ cursor: 0.5 })).toEqual({ graph: RANGE })
   })
 
   it('refuses nothing to do, a bad zoom or range, and a page that cannot', () => {

@@ -204,6 +204,19 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `list_measurements` | | The distance measurements drawn on the slices, each with its ends in millimetres and its length |
 | `edit_measurements` | `action`, `start_mm?`, `end_mm?`, `slice?`, `slice_index?`, `slice_position?`, `index?` | `add` a distance between two points, `remove` one by index, or `clear` them all, the angles (`clear_angles`) or the distances (`clear_distances`) |
 
+### The canvas, the slide plane, chunks and files
+
+| Tool | Input | What it does |
+|---|---|---|
+| `set_viewport` | `pan?`, `zoom?`, `bounds?`, `reset?` | Pans and zooms the canvas in 2D, bounds where NiiVue draws to a box of fractions (or `null` to clear it), or resets |
+| `map_point` | `canvas?`, `mm?`, `vox?` | What is under a canvas pixel (the tile, the slice, the point in millimetres), or where a point in millimetres or a voxel lands on the canvas |
+| `set_slide` | `level?`, `clear_plane?`, `drawing?`, `max_raster?` | For a whole-slide image: the level the slide plane shows (or `null` for automatic), clearing the plane, and the slide drawing (`create`, `clear`, `undo`, `end`) |
+| `chunk_stats` | `rebake?`, `reset_timing?` | For a chunked (OME-Zarr, IIIF) volume: the streaming, timing and level-of-detail statistics; rebakes the chunked overlays or resets the timing when asked |
+| `save` | `what`, `filename?`, `volume?`, `drawing?`, `mesh?`, `quality?`, `format?`, `settings_never_saved?`, `settings_always_saved?` | Has the browser download the scene as a NiiVue document, a volume (with the drawing when asked), a mesh, the canvas as a picture, or the drawing |
+| `load_document` | `url`, `fill?` | Loads a NiiVue document from an address, replacing the scene; `fill` says whether settings the document leaves out take their defaults or stay as they are |
+
+What is left out is what an MCP tool cannot carry: the members of NiiVue that take a DOM node, a canvas, a `File`, a callback or another object rather than a value. Attaching to a canvas, resizing, the draw and refresh methods, the event listeners, loaders and custom overlay renderers are registered by the page (so are volume transforms, but once registered they take a name and options, so `transform_volume` runs them and `capabilities` lists them); pointer-driven picking (`slideDrawAt`, `slidePlanePick`, `pickMeasurement`, `pickExplodedBlock`) belongs to the pointer; `loadChunkedVolume`, `setSlidePlane`, `swapVolumeChunkPlan` and `addMrsiSignal` take live source objects a page builds; `setFont` takes decoded font data, so `set_font` takes the addresses instead; `broadcastTo` and `setInstances` link instances on one page, which the page does. Every one of those is a page concern, not a scene state, and the page an agent drives is free to expose any of them through its own extension tools.
+
 ### Planes and cameras
 
 A plane is named for the side it takes off: `left`, `right`, `posterior`, `anterior`, `inferior`, `superior`, with `sagittal`, `coronal` and `axial` as aliases for the first of each pair. NiiVue keeps a clip plane as `[depth, azimuth, elevation]`, with the shader keeping the side the plane's normal points to; the camera that sees the exposed face square on looks along the normal, which works out to the plane's own elevation and its azimuth turned half a turn. `cameraForPlane` does that sum and `depthThrough` finds the depth that puts the plane through a point, both checked for all six sides in `planes.test.ts`.

@@ -60,6 +60,7 @@ import type {
   View,
   VolumeUpdate,
 } from './view'
+import { viewportHandlers } from './viewport'
 
 /** The default width a screenshot is scaled down to. */
 export const SCREENSHOT_WIDTH = 1024
@@ -312,6 +313,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
 
   return {
     ...settingHandlers(host),
+    ...viewportHandlers(host),
     ...meshHandlers(host),
     ...signalHandlers(host),
     ...markHandlers(host),

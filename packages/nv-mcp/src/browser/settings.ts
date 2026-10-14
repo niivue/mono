@@ -71,7 +71,15 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'vox2frac',
     'moveCrosshairInVox',
   ],
-  view: ['sliceType', 'customLayout'],
+  view: [
+    'sliceType',
+    'customLayout',
+    'setViewport',
+    'setBounds',
+    'hitTest',
+    'canvasToMM',
+    'mmToCanvas',
+  ],
   camera: [
     'setClipPlanes',
     'setClipPlaneDepthAziElev',
@@ -131,6 +139,25 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'addMeasurement',
     'removeMeasurement',
     'clearMeasurements',
+  ],
+  documents: [
+    'saveDocument',
+    'loadDocument',
+    'saveVolume',
+    'saveMesh',
+    'saveBitmap',
+  ],
+  slide: [
+    'setSlidePlaneLevel',
+    'clearSlidePlane',
+    'createSlideDrawing',
+    'slideDrawUndo',
+  ],
+  chunks: [
+    'chunkStreamStats',
+    'chunkTimingStats',
+    'lodCompensation',
+    'rebakeChunkedOverlays',
   ],
 }
 

@@ -13,6 +13,7 @@ import {
   extractChunkBytes,
   extractChunkBytesReoriented,
   isRGBAChunkDatatype,
+  volumeSourceKey,
   wholeVolumeTextureKey,
 } from './orientChunked'
 
@@ -700,5 +701,67 @@ describe('wholeVolumeTextureKey', () => {
     expect(key(rgba({ colormap: 'hot' }))).toBe(base)
     expect(key(rgba({ _dataVersion: 1 }))).not.toBe(base)
     expect(key(rgba({ _modulationData: new Float32Array(1) }))).not.toBe(base)
+  })
+})
+
+describe('volumeSourceKey', () => {
+  // Both renderers cache by url or name, so this key is what tells a cached
+  // texture that a different image now holds that url or name.
+  const vol = (overrides: Record<string, unknown> = {}) =>
+    ({
+      colormap: 'gray',
+      colormapNegative: '',
+      isColormapInverted: false,
+      colormapLabel: null,
+      calMin: 0,
+      calMax: 100,
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+      colormapType: 0,
+      frame4D: 0,
+      hdr: { datatypeCode: 16, scl_slope: 1, scl_inter: 0 },
+      name: 'same.nii',
+      ...overrides,
+    }) as unknown as NVImage
+
+  test('the same voxels or source give the same key', () => {
+    const img = new Float32Array(8)
+    const source = () => new ArrayBuffer(0)
+    expect(volumeSourceKey(vol({ img }))).toBe(volumeSourceKey(vol({ img })))
+    expect(volumeSourceKey(vol({ chunkSource: source }))).toBe(
+      volumeSourceKey(vol({ chunkSource: source })),
+    )
+  })
+
+  test('a replaced image under the same name gets a new key', () => {
+    const a = vol({ img: new Float32Array(8) })
+    const b = vol({ img: new Float32Array(8) })
+    expect(volumeSourceKey(b)).not.toBe(volumeSourceKey(a))
+    const shared = new Float32Array(16)
+    expect(volumeSourceKey(vol({ img: shared.subarray(8) }))).not.toBe(
+      volumeSourceKey(vol({ img: shared.subarray(0, 8) })),
+    )
+    const s1 = () => new ArrayBuffer(0)
+    const s2 = () => new ArrayBuffer(0)
+    expect(volumeSourceKey(vol({ chunkSource: s2 }))).not.toBe(
+      volumeSourceKey(vol({ chunkSource: s1 })),
+    )
+  })
+
+  test('the whole-volume key changes with the source, display state equal', () => {
+    // A reloaded image starts at _dataVersion 0 like the one it replaces, so
+    // without the source the two keys were equal and the old texture stayed.
+    const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const a = vol({ img: new Float32Array(8) })
+    const b = vol({ img: new Float32Array(8) })
+    expect(wholeVolumeTextureKey(b, IDENTITY)).not.toBe(
+      wholeVolumeTextureKey(a, IDENTITY),
+    )
+    const rgb = { datatypeCode: 128, scl_slope: 1, scl_inter: 0 }
+    const c = vol({ hdr: rgb, img: new Uint8Array(24), dimsRAS: [3, 2, 2, 2] })
+    const d = vol({ hdr: rgb, img: new Uint8Array(24), dimsRAS: [3, 2, 2, 2] })
+    expect(wholeVolumeTextureKey(d, IDENTITY)).not.toBe(
+      wholeVolumeTextureKey(c, IDENTITY),
+    )
   })
 })

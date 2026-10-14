@@ -73,6 +73,7 @@ import {
   chunkOverlayMatrix,
   coarseFloorKey,
   extractChunkBytes,
+  volumeSourceKey,
   wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
 import { blendOverlayData } from '@/volume/overlayBlend'
@@ -237,6 +238,12 @@ interface ChunkedTexEntry {
    * uploader rebuild + full re-stream (see _ensureChunkedVolumeEntry).
    */
   displayKey: string
+  /**
+   * volumeSourceKey of the image the entry streams. A different image or
+   * source under the same url or name builds a new entry, decoded tier
+   * included, rather than reusing chunks read from the old one.
+   */
+  sourceKey: string
   /**
    * Modulation the uploader bakes into every chunk (resolved against the
    * volume's own grid), or null. Kept so a plan swap rebuilds the uploader
@@ -932,8 +939,13 @@ export class VolumeRenderer extends NVRenderer {
     }
     const cacheKey = vol.url || vol.name
     const displayKey = chunkedDisplayKey(vol, modulation)
+    const sourceKey = volumeSourceKey(vol)
     const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (existing && existing.kind === 'chunked') {
+    if (
+      existing &&
+      existing.kind === 'chunked' &&
+      existing.sourceKey === sourceKey
+    ) {
       existing.volume = vol
       if (existing.displayKey !== displayKey) {
         // Colormap/window/frame changed after load. Resident chunk textures
@@ -985,6 +997,7 @@ export class VolumeRenderer extends NVRenderer {
       ),
       plan,
       displayKey,
+      sourceKey,
       modulation,
       cubicSafe: planSupportsCubic(plan),
       predictor: new ChunkTravelPredictor(),
@@ -1076,6 +1089,7 @@ export class VolumeRenderer extends NVRenderer {
     )
     entry.volume = vol
     entry.displayKey = chunkedDisplayKey(vol, entry.modulation)
+    entry.sourceKey = volumeSourceKey(vol)
     vol.chunkPlan = newPlan
     if (entry.manager.residentCount === 0) {
       const chunk0 = await entry.uploader.uploadChunk(0)

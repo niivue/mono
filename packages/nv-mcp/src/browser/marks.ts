@@ -34,6 +34,7 @@ const ANNOTATION_ACTIONS = [
   'undo',
   'redo',
   'load',
+  'set_style',
 ] as const
 const MEASUREMENT_ACTIONS = [
   'add',
@@ -162,6 +163,9 @@ export function markHandlers(host: NiiVueHost): Handlers {
         ...(view.selectedAnnotation === undefined
           ? {}
           : { selected: view.selectedAnnotation }),
+        ...(view.annotationStyle === undefined
+          ? {}
+          : { style: view.annotationStyle }),
       }
       if (flag(params, 'json')) {
         if (!view.getAnnotationsJSON)
@@ -270,10 +274,28 @@ export function markHandlers(host: NiiVueHost): Handlers {
           view.loadAnnotationsJSON(json)
           break
         }
+        case 'set_style': {
+          if (view.annotationStyle === undefined)
+            throw new Error(
+              "This page's NiiVue has no style for the annotations drawn by hand.",
+            )
+          const given = record(params, 'style')
+          if (!given)
+            throw new Error(
+              'set_style needs style: {fillColor, strokeColor, strokeWidth}, any of them.',
+            )
+          // Over the current style, so a field left out keeps its value.
+          view.annotationStyle = styleFrom({
+            ...view.annotationStyle,
+            ...given,
+          })
+          break
+        }
       }
       view.drawScene()
       return {
         action,
+        ...(action === 'set_style' ? { style: view.annotationStyle } : {}),
         ...(id ? { id } : {}),
         count: annotations().length,
         ...(view.selectedAnnotation === undefined

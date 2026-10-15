@@ -61,6 +61,7 @@ const CORE_TOOLS = [
   'edit_annotations',
   'list_measurements',
   'edit_measurements',
+  'set_boxes',
   'add_control',
   'list_controls',
   'set_control',

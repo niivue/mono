@@ -285,6 +285,14 @@ export interface MeasurementOptions {
   slicePosition?: number
 }
 
+/** A box NiiVue outlines on the render: corners in mm, colour 0 to 1, edges in pixels. */
+export interface FocusBox {
+  min: [number, number, number]
+  max: [number, number, number]
+  color: number[]
+  thickness: number
+}
+
 /** A vector annotation as NiiVue keeps it: `VectorAnnotation`. Passed through as JSON. */
 export interface Annotation {
   id: string
@@ -706,6 +714,10 @@ export interface View {
   annotationsToSVG?(sliceType?: number, slicePosition?: number): string | null
   /** The style an annotation drawn by hand takes: fillColor, strokeColor, strokeWidth. */
   annotationStyle?: Record<string, unknown>
+
+  // Boxes outlined on the render.
+  focusBox?: FocusBox | null
+  lodBoxes?: FocusBox[] | null
 
   // Measurements.
   getMeasurements?(): readonly Measurement[]

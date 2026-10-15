@@ -7,13 +7,27 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
 import { SLICE_NAMES } from '../views'
-import { registerSimple, triple } from './args'
+import { registerSimple, rgba, triple } from './args'
 import { TAB_ARG, type ToolContext } from './context'
 
 const SLICE_ARG = z
   .enum(SLICE_NAMES)
   .optional()
   .describe('The slice orientation. The one shown otherwise.')
+
+/** The most boxes one call outlines; the page holds the same limit. */
+const MAX_BOXES = 1000
+
+const BOX_ARG = z.strictObject({
+  min: triple('The corner with the lowest x, y and z, in millimetres.'),
+  max: triple('The opposite corner, in millimetres.'),
+  color: rgba('The edge colour. A yellow otherwise.').optional(),
+  thickness: z
+    .number()
+    .positive()
+    .optional()
+    .describe('The edge width in pixels. 2 otherwise.'),
+})
 
 export const MARK_SCHEMAS = {
   edit_drawing: {
@@ -144,6 +158,23 @@ export const MARK_SCHEMAS = {
         'For remove: the measurement, as list_measurements counts them.',
       ),
   },
+  set_boxes: {
+    ...TAB_ARG,
+    focus: BOX_ARG.nullable()
+      .optional()
+      .describe(
+        'One box to outline, such as a region in focus. null takes it down.',
+      ),
+    boxes: z
+      .array(BOX_ARG)
+      .max(MAX_BOXES)
+      .nullable()
+      .optional()
+      .describe(
+        'A set of boxes to outline, such as one per block of a chunked volume. Replaces the ' +
+          'set; null or an empty list takes it down.',
+      ),
+  },
 } as const
 
 export function registerMarkTools(
@@ -191,5 +222,14 @@ export function registerMarkTools(
       'Adds a distance measurement between two points in millimetres, removes one by index, or ' +
       'clears them: all, the angles, or the distances. Reports the measurements afterwards.',
     inputSchema: MARK_SCHEMAS.edit_measurements,
+  })
+
+  registerSimple(server, context, 'set_boxes', {
+    title: 'Outline boxes on the render',
+    description:
+      'Outlines boxes on the 3D render (not the slices), each from its two corners in ' +
+      'millimetres: one focus box, a set of boxes, or both. They are not saved with the ' +
+      'document. Reports the focus box and how many boxes the set has.',
+    inputSchema: MARK_SCHEMAS.set_boxes,
   })
 }

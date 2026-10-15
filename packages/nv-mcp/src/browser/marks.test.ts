@@ -518,3 +518,67 @@ describe('list_measurements and edit_measurements', () => {
     )
   })
 })
+
+describe('set_boxes', () => {
+  /** A view whose box properties keep what they are given, as NiiVue's do. */
+  const boxView = () => baseView({ focusBox: null, lodBoxes: null })
+
+  it('outlines a focus box and a set, with NiiVue defaults filled in', () => {
+    const view = boxView()
+    const { set_boxes } = markHandlers(hostOf(view))
+    expect(
+      set_boxes({
+        focus: { min: [-10, -10, -10], max: [10, 10, 10] },
+        boxes: [
+          { min: [0, 0, 0], max: [1, 1, 1], color: [1, 0, 0], thickness: 1 },
+          { min: [1, 0, 0], max: [2, 1, 1] },
+        ],
+      }),
+    ).toEqual({
+      focus: {
+        min: [-10, -10, -10],
+        max: [10, 10, 10],
+        color: [1, 0.83, 0.28, 1],
+        thickness: 2,
+      },
+      boxes: 2,
+    })
+    expect(view.lodBoxes?.[0].color).toEqual([1, 0, 0, 1])
+    expect(view.drawScene).toHaveBeenCalled()
+  })
+
+  it('takes either down with null, leaving the other', () => {
+    const view = boxView()
+    const { set_boxes } = markHandlers(hostOf(view))
+    const box = { min: [0, 0, 0], max: [1, 1, 1] }
+    set_boxes({ focus: box, boxes: [box] })
+    expect(set_boxes({ focus: null })).toMatchObject({ focus: null, boxes: 1 })
+    expect(set_boxes({ boxes: [] })).toEqual({ focus: null, boxes: 0 })
+    expect(view.lodBoxes).toBeNull()
+  })
+
+  it('refuses a bad box, leaving the render as it was', () => {
+    const view = boxView()
+    const { set_boxes } = markHandlers(hostOf(view))
+    const good = { min: [0, 0, 0], max: [1, 1, 1] }
+    expect(() => set_boxes({})).toThrow('needs focus, boxes, or both')
+    expect(() =>
+      set_boxes({
+        focus: good,
+        boxes: [good, { min: [0, 0, 0], max: [1, 0, 1] }],
+      }),
+    ).toThrow('boxes[1]: each of min must be below max')
+    expect(() => set_boxes({ focus: { ...good, color: [2, 0, 0] } })).toThrow(
+      'color must be',
+    )
+    expect(() => set_boxes({ focus: { ...good, thickness: 0 } })).toThrow(
+      'thickness must be above 0',
+    )
+    expect(() => set_boxes({ boxes: good })).toThrow('list of boxes')
+    expect(view.focusBox).toBeNull()
+    expect(view.lodBoxes).toBeNull()
+    expect(() =>
+      markHandlers(hostOf(baseView())).set_boxes({ focus: good }),
+    ).toThrow('cannot outline boxes')
+  })
+})

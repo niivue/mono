@@ -18,6 +18,7 @@ import {
 } from './params'
 import type {
   Annotation,
+  FocusBox,
   Handlers,
   Measurement,
   MeasurementOptions,
@@ -36,6 +37,41 @@ const ANNOTATION_ACTIONS = [
   'load',
   'set_style',
 ] as const
+/** The most boxes one call outlines. */
+export const MAX_BOXES = 1000
+
+/** NiiVue's colour for a picked brick, for a box given none. */
+const BOX_COLOR = [1, 0.83, 0.28, 1]
+
+/** A box from the tool's words: corners in mm, an optional colour and edge width. */
+function boxFrom(given: unknown, what: string): FocusBox {
+  if (!given || typeof given !== 'object' || Array.isArray(given))
+    throw new Error(`${what} must be {min, max, color?, thickness?}.`)
+  const box = given as Params
+  const min = point(box, 'min')
+  const max = point(box, 'max')
+  if (min.some((v, i) => v >= max[i]))
+    throw new Error(`${what}: each of min must be below max.`)
+  let color = BOX_COLOR
+  if (box.color !== undefined) {
+    const c = box.color
+    if (
+      !Array.isArray(c) ||
+      c.length < 3 ||
+      c.length > 4 ||
+      c.some((v) => typeof v !== 'number' || !(v >= 0 && v <= 1))
+    )
+      throw new Error(
+        `${what}: color must be [r, g, b] or [r, g, b, a], each 0 to 1.`,
+      )
+    color = c.length === 3 ? [...c, 1] : [...c]
+  }
+  const thickness = number(box, 'thickness') ?? 2
+  if (!(thickness > 0))
+    throw new Error(`${what}: thickness must be above 0 pixels.`)
+  return { min, max, color, thickness }
+}
+
 const MEASUREMENT_ACTIONS = [
   'add',
   'remove',
@@ -302,6 +338,34 @@ export function markHandlers(host: NiiVueHost): Handlers {
           ? {}
           : { selected: view.selectedAnnotation }),
       }
+    },
+
+    set_boxes(params: Params) {
+      host.beforeAnswer?.()
+      if (view.focusBox === undefined || view.lodBoxes === undefined)
+        throw new Error(
+          "This page's NiiVue cannot outline boxes on the render.",
+        )
+      const focus = params?.focus
+      const list = params?.boxes
+      if (focus === undefined && list === undefined)
+        throw new Error(
+          'set_boxes needs focus, boxes, or both; null takes either down.',
+        )
+      if (list !== undefined && list !== null && !Array.isArray(list))
+        throw new Error('boxes must be a list of boxes.')
+      if (Array.isArray(list) && list.length > MAX_BOXES)
+        throw new Error(`At most ${MAX_BOXES} boxes at once.`)
+      // Every box is read before NiiVue is touched, so a refused call
+      // leaves the render as it was.
+      const one = focus ? boxFrom(focus, 'focus') : null
+      const many = Array.isArray(list)
+        ? list.map((b, i) => boxFrom(b, `boxes[${i}]`))
+        : null
+      if (focus !== undefined) view.focusBox = one
+      if (list !== undefined) view.lodBoxes = many?.length ? many : null
+      view.drawScene()
+      return { focus: view.focusBox, boxes: view.lodBoxes?.length ?? 0 }
     },
 
     list_measurements() {

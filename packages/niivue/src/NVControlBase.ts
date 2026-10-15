@@ -15,6 +15,7 @@ import {
   showCanvasMessage,
 } from '@/control/canvasMessage'
 import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
+import { applyInstances } from '@/control/instances'
 import {
   clientToBoundsPixel,
   type ExplodedBlockPick,
@@ -5007,15 +5008,14 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Replace the multi-instance descriptor list (canvas tiling + optional global3d
-   * volumes). Triggers a tile rebuild and redraw. Supported on both WebGL2 and
-   * WebGPU backends.
+   * volumes). Triggers a tile rebuild and redraw. `null` or an empty list leaves
+   * instance mode and restores the usual slice layout. Entering or leaving
+   * instance mode rebuilds the GPU resources, since the two modes keep volume
+   * textures differently (a per-volume cache vs. a background + overlay stack).
+   * Supported on both WebGL2 and WebGPU backends.
    */
-  setInstances(instances: NVInstance[]): void {
-    this.opts.instances = instances
-    if (this.view) {
-      this.updateTilesFromInstances()
-      this.drawScene()
-    }
+  async setInstances(instances: NVInstance[] | null): Promise<void> {
+    await applyInstances(this, instances)
   }
 
   /**
@@ -5030,7 +5030,8 @@ export default class NiiVue extends EventTarget {
     }
   }
 
-  private updateTilesFromInstances(): void {
+  /** @internal Rebuild the tiles from `opts.instances`; called by {@link applyInstances}. */
+  updateTilesFromInstances(): void {
     if (!this.view || !this.opts.instances || !this.canvas) return
     const cw = this.canvas.width
     const ch = this.canvas.height

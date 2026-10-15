@@ -889,7 +889,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       })
       await nv.loadVolumes([{ url: '${VOLUME}', colormap: 'red' }])
       // Tiles are built from instances on resize / setInstances.
-      nv.setInstances([{ id: 'only', bounds: [[0, 0], [1, 1]] }])
+      await nv.setInstances([{ id: 'only', bounds: [[0, 0], [1, 1]] }])
       const vol = nv.volumes[0]
       const red = await count()
       // A plain display change.

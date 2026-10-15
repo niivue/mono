@@ -138,6 +138,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'getAnnotationsJSON',
     'loadAnnotationsJSON',
     'annotationsToSVG',
+    'annotationStyle',
   ],
   measurements: [
     'getMeasurements',

@@ -704,6 +704,8 @@ export interface View {
   getAnnotationsJSON?(): string
   loadAnnotationsJSON?(json: string): unknown
   annotationsToSVG?(sliceType?: number, slicePosition?: number): string | null
+  /** The style an annotation drawn by hand takes: fillColor, strokeColor, strokeWidth. */
+  annotationStyle?: Record<string, unknown>
 
   // Measurements.
   getMeasurements?(): readonly Measurement[]

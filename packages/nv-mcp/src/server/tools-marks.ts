@@ -77,10 +77,12 @@ export const MARK_SCHEMAS = {
         'undo',
         'redo',
         'load',
+        'set_style',
       ])
       .describe(
         'add one, remove one by id, clear all, select one by id (none without an id), set the ' +
-          'text of one, undo, redo, or load a set from json.',
+          'text of one, undo, redo, load a set from json, or set the style annotations drawn ' +
+          'by hand take.',
       ),
     id: z
       .string()
@@ -105,6 +107,17 @@ export const MARK_SCHEMAS = {
       .optional()
       .describe(
         'For load: the annotations as list_annotations gives them with json.',
+      ),
+    style: z
+      .strictObject({
+        fillColor: z.array(z.number().min(0).max(1)).length(4).optional(),
+        strokeColor: z.array(z.number().min(0).max(1)).length(4).optional(),
+        strokeWidth: z.number().min(0).optional(),
+      })
+      .optional()
+      .describe(
+        'For set_style: fillColor and strokeColor as [r, g, b, a] 0 to 1, strokeWidth in ' +
+          'pixels. A field left out keeps its value; list_annotations reports the style.',
       ),
   },
   list_measurements: { ...TAB_ARG },
@@ -159,7 +172,8 @@ export function registerMarkTools(
     title: 'Edit the annotations',
     description:
       'Adds a vector annotation, removes or selects one by id, sets its text, clears them all, ' +
-      'undoes or redoes, or loads a set from JSON. Reports how many there are afterwards.',
+      'undoes or redoes, loads a set from JSON, or sets the style annotations drawn by hand ' +
+      'take. Reports how many there are afterwards.',
     inputSchema: MARK_SCHEMAS.edit_annotations,
   })
 

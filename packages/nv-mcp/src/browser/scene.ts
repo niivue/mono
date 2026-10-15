@@ -865,6 +865,30 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const transform = record(params, 'transform')
       const chunkGrid = params?.chunk_grid
       const spread = number(params, 'spread')
+      const v1 = params?.v1
+      let flips: boolean[] | undefined
+      if (v1 !== undefined && v1 !== null) {
+        const flip = v1 === true ? [] : record(params, 'v1')?.flip
+        if (
+          (v1 !== true && (typeof v1 !== 'object' || Array.isArray(v1))) ||
+          !Array.isArray(flip) ||
+          (flip.length !== 0 && flip.length !== 3) ||
+          flip.some((f) => typeof f !== 'boolean')
+        ) {
+          throw new Error(
+            'v1 is true, or { flip: [x, y, z] }: three true or false, each turning that component of the vectors around.',
+          )
+        }
+        flips = flip.length ? (flip as boolean[]) : [false, false, false]
+        const vectors =
+          volume.v1 !== undefined ||
+          (volume.nFrame4D === 3 && volume.img instanceof Float32Array)
+        if (!vectors) {
+          throw new Error(
+            `${volume.name} is not a vector field: v1 needs three float frames (x, y and z), or a tensor file's stored directions.`,
+          )
+        }
+      }
       if (chunkGrid !== undefined && chunkGrid !== null) {
         const grid = numbers(params, 'chunk_grid') ?? []
         if (
@@ -891,6 +915,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         transform,
         chunkGrid,
         spread,
+        flips,
       ].some((v) => v !== undefined && v !== null)
       // `chunk_grid: null` is an ask too: it makes the volume one texture.
       const untiling = chunkGrid === null
@@ -903,6 +928,16 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // The spread write is claimed before anything waits, so a control
       // that writes the spread meanwhile is the later one and wins.
       const spreadClaim = spread === undefined ? undefined : claimSpread(volume)
+      // First, so a window or opacity asked for alongside lands on the colours.
+      if (flips) {
+        if (!view.loadImgV1)
+          throw new Error(
+            "This page's NiiVue cannot draw a vector field as colours.",
+          )
+        const [x, y, z] = flips
+        if (!(await view.loadImgV1(index, x, y, z)))
+          throw new Error(`NiiVue found no vectors in ${volume.name}.`)
+      }
       if (!nothingIn(update)) {
         if (!view.setVolume)
           throw new Error(

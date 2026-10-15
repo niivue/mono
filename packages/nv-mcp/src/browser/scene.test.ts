@@ -593,6 +593,41 @@ describe('set_volume', () => {
     ).toMatchObject({ volume: { index: 2, opacity: 0 } })
   })
 
+  it('draws a vector field as colours before the rest, and refuses a volume that is not one', async () => {
+    const calls: string[] = []
+    const view = fakeView({
+      volumes: [
+        { name: 'mni152.nii.gz', nFrame4D: 1, img: new Float32Array(8) },
+        { name: 'afni_v1', nFrame4D: 3, img: new Float32Array(24) },
+        { name: 'dti.fib', nFrame4D: 1, v1: new Float32Array(24) },
+      ],
+      loadImgV1: mock(async (index: number) => {
+        calls.push(`v1 ${index}`)
+        return true
+      }),
+      setVolume: mock(async () => {
+        calls.push('set')
+      }),
+    })
+    const handlers = coreHandlers(host(view))
+    await handlers.set_volume({ volume: 1, v1: true, opacity: 0.5 })
+    expect(view.loadImgV1).toHaveBeenLastCalledWith(1, false, false, false)
+    expect(calls).toEqual(['v1 1', 'set'])
+    await handlers.set_volume({ volume: 2, v1: { flip: [true, false, true] } })
+    expect(view.loadImgV1).toHaveBeenLastCalledWith(2, true, false, true)
+    await expect(handlers.set_volume({ volume: 0, v1: true })).rejects.toThrow(
+      'mni152.nii.gz is not a vector field',
+    )
+    await expect(
+      handlers.set_volume({ volume: 1, v1: { flip: [true] } }),
+    ).rejects.toThrow('v1 is true, or { flip: [x, y, z] }')
+    expect(view.loadImgV1).toHaveBeenCalledTimes(2)
+    view.loadImgV1 = mock(async () => false)
+    await expect(handlers.set_volume({ volume: 1, v1: true })).rejects.toThrow(
+      'NiiVue found no vectors in afni_v1',
+    )
+  })
+
   it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {
     const handlers = coreHandlers(host(settableView()))
     await expect(

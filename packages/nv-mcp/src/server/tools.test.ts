@@ -248,6 +248,7 @@ describe('core tool schemas', () => {
       'tab',
       'transform',
       'transparent_below_cal_min',
+      'v1',
       'volume',
     ])
     expect(required('set_labels')).toEqual([])
@@ -356,6 +357,9 @@ describe('core tool schemas', () => {
       return text(reply)
     }
     expect(await refused('use_tab', {})).toMatch(/id/)
+    expect(
+      await refused('set_volume', { v1: { flip: [true, false] } }),
+    ).toMatch(/v1/)
     expect(
       await refused('set_boxes', {
         focus: { min: [0, 0, 0], max: [1, 1, 1], thickness: -1 },

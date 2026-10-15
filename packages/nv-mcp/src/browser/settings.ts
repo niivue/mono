@@ -66,6 +66,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'moveVolumeUp',
     'getDescriptives',
     'recalculateCalMinMax',
+    'loadImgV1',
     'loadDeferred4DVolumes',
     'setModulationImage',
     'getVolumeAffine',

@@ -110,6 +110,8 @@ export interface ShownVolume {
    * streams it.
    */
   img?: VoxelArray | null
+  /** The principal diffusion directions a tensor reader kept, x then y then z, for `loadImgV1`. */
+  v1?: Float32Array
   /** The brick grid it is rendered through, when it is chunked. */
   chunkPlan?: {
     gridDims: ArrayLike<number>
@@ -559,6 +561,13 @@ export interface View {
     drawPenValues?: number[]
   }): Descriptives | null
   recalculateCalMinMax?(volumeIndex: number, frame?: number): Promise<unknown>
+  /** Draw a 3-frame float vector field (or a volume's stored V1) as direction colours; false when it has none. */
+  loadImgV1?(
+    volumeIndex: number,
+    isFlipX?: boolean,
+    isFlipY?: boolean,
+    isFlipZ?: boolean,
+  ): Promise<boolean>
   loadDeferred4DVolumes?(id: string): Promise<unknown>
   setModulationImage?(
     targetId: string,

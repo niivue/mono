@@ -434,6 +434,15 @@ export const CORE_SCHEMAS = {
       .describe(
         "Spread its bricks apart in the 3D render (an exploded view): each brick's offset from the centre is multiplied by this. 1 closes them up. A volume not yet chunked is tiled 3 by 3 by 3 first. If a control or another call spreads it while this call waits, the later spread wins and the reply says `superseded`; a `chunk_grid` of null asked for with it is then skipped too, since untiling would clear that spread.",
       ),
+    v1: z
+      .union([
+        z.literal(true),
+        z.strictObject({ flip: z.array(z.boolean()).length(3) }),
+      ])
+      .optional()
+      .describe(
+        "Draw a vector field (three float frames: x, y and z, as AFNI writes a tensor's principal direction) or a tensor file's stored directions as direction colours: red for left-right, green for front-back, blue for up-down. flip turns an axis's component around when the colours come out mirrored. One way: the volume becomes a colour image, so reload it to undo.",
+      ),
   },
   set_labels: {
     ...TAB_ARG,

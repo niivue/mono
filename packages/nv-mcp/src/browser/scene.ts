@@ -32,6 +32,12 @@ import {
 import { animateHandlers } from './animate'
 import { controlHandlers } from './controls'
 import { dataHandlers } from './data'
+import {
+  globalCameraFrom,
+  instanceHandlers,
+  instancesState,
+  reportedCamera,
+} from './instances'
 import { checkFits, fetchValues, oneSource } from './liveData'
 import { markHandlers } from './marks'
 import { meshHandlers } from './meshes'
@@ -62,7 +68,6 @@ import {
 import type {
   AffineTransform,
   AtlasLike,
-  GlobalCamera,
   Handlers,
   LabelTable,
   NiiVueHost,
@@ -89,6 +94,9 @@ export function sceneState(host: NiiVueHost): TabState {
       ? { controls: host.controls.list().map((c) => c.id) }
       : {}),
     ...(host.data ? { data: host.data.list().map((e) => e.id) } : {}),
+    ...(view.opts?.instances?.length
+      ? { instances: view.opts.instances.map((i) => i.id) }
+      : {}),
     ...(host.extraState?.() ?? {}),
   }
 }
@@ -367,6 +375,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     ...controlHandlers(host),
     ...dataHandlers(host),
     ...animateHandlers(host),
+    ...instanceHandlers(host),
 
     async load_volume(params) {
       const url = text(params, 'url')
@@ -413,6 +422,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         camera: camera(view),
         ...(hasLayout(view) ? { view: viewState(view) } : {}),
         ...counts(view),
+        ...instancesState(view),
         description: await describe(),
         ...(host.extraState?.() ?? {}),
       }
@@ -759,14 +769,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (placed) {
         if (!view.setGlobalCamera)
           throw new Error("This page's NiiVue has no global camera to place.")
-        const position = point(placed, 'position')
-        const cam: GlobalCamera = { position }
-        put(cam, 'yaw', number(placed, 'yaw'))
-        put(cam, 'pitch', number(placed, 'pitch'))
-        put(cam, 'fov', number(placed, 'fov'))
-        put(cam, 'near', number(placed, 'near'))
-        put(cam, 'far', number(placed, 'far'))
-        view.setGlobalCamera(cam)
+        view.setGlobalCamera(globalCameraFrom(placed))
         changed = true
       }
       if (!changed) {
@@ -782,6 +785,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ...(view.renderPan ? { renderPan: Array.from(view.renderPan) } : {}),
         ...(view.renderPivotMM
           ? { pivot: Array.from(view.renderPivotMM) }
+          : {}),
+        ...(view.opts?.globalCamera
+          ? { globalCamera: reportedCamera(view.opts.globalCamera) }
           : {}),
       }
     },

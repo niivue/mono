@@ -39,6 +39,11 @@ import { ANIMATE_SCHEMAS, registerAnimateTools } from './tools-animate'
 import { CONTROL_SCHEMAS, registerControlTools } from './tools-controls'
 import { DATA_SCHEMAS, registerDataTools } from './tools-data'
 import { EXTRA_SCHEMAS, registerExtraTools } from './tools-extras'
+import {
+  GLOBAL_CAMERA_ARG,
+  INSTANCE_SCHEMAS,
+  registerInstanceTools,
+} from './tools-instances'
 import { LAYER_SCHEMAS, registerLayerTools } from './tools-layers'
 import { MARK_SCHEMAS, registerMarkTools } from './tools-marks'
 import { registerSettingTools, SETTING_SCHEMAS } from './tools-settings'
@@ -271,17 +276,9 @@ export const CORE_SCHEMAS = {
     center_on: triple(
       'Centre the render on this point in millimetres.',
     ).optional(),
-    global: z
-      .object({
-        position: triple('Where the camera is, in millimetres.'),
-        yaw: z.number().optional().describe('Degrees.'),
-        pitch: z.number().optional().describe('Degrees.'),
-        fov: z.number().optional().describe('The field of view, degrees.'),
-        near: z.number().optional(),
-        far: z.number().optional(),
-      })
-      .optional()
-      .describe('Place a free camera in the world instead of orbiting.'),
+    global: GLOBAL_CAMERA_ARG.optional().describe(
+      'Place the global camera that looks at the global3d instances set_instances lays out. It shows nothing without them.',
+    ),
   },
   set_volume: {
     ...TAB_ARG,
@@ -528,6 +525,7 @@ export const CORE_SCHEMAS = {
   ...DATA_SCHEMAS,
   ...EXTRA_SCHEMAS,
   ...ANIMATE_SCHEMAS,
+  ...INSTANCE_SCHEMAS,
 } as const
 
 /** A line that says what the view shows: the slice type, and the mosaic when one is drawn. */
@@ -767,8 +765,8 @@ export function registerCoreTools(
       title: 'Turn the render camera',
       description:
         'Points the render camera from the given azimuth and elevation, pans the 2D view or the ' +
-        'render, sets the point the render turns about or centres it on one, or places a free ' +
-        'camera with `global`. Only what is given changes. Note that when the page ' +
+        'render, sets the point the render turns about or centres it on one, or places the ' +
+        'global camera of a set_instances scene with `global`. Only what is given changes. Note that when the page ' +
         "ties its clip plane to the camera, a turn re-cuts the plane the page's way.",
       inputSchema: strict(CORE_SCHEMAS.set_camera),
     },
@@ -892,6 +890,7 @@ export function registerCoreTools(
   registerDataTools(server, context)
   registerExtraTools(server, context)
   registerAnimateTools(server, context)
+  registerInstanceTools(server, context)
 }
 
 /** An MCP server with the core tools and each extension's, over one bridge. */

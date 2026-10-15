@@ -132,6 +132,13 @@ describe('core tool schemas', () => {
       'render_pan',
       'tab',
     ])
+    expect(required('set_instances')).toEqual([])
+    expect(properties('set_instances').sort()).toEqual([
+      'camera',
+      'clear',
+      'instances',
+      'tab',
+    ])
     expect(required('animate')).toEqual([])
     expect(properties('animate').sort()).toEqual([
       'angles',
@@ -349,6 +356,19 @@ describe('core tool schemas', () => {
       return text(reply)
     }
     expect(await refused('use_tab', {})).toMatch(/id/)
+    expect(
+      await refused('set_instances', { instances: [{ id: 'a', size: 2 }] }),
+    ).toMatch(/size/)
+    expect(
+      await refused('set_instances', {
+        instances: Array.from({ length: 101 }, () => ({})),
+      }),
+    ).toMatch(/instances/)
+    expect(
+      await refused('set_camera', {
+        global: { position: [0, 0, 0], pitch: 95 },
+      }),
+    ).toMatch(/pitch/)
     expect(await refused('set_camera', { azimuth: 0, elevation: 120 })).toMatch(
       /elevation/,
     )

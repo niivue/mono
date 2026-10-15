@@ -305,6 +305,21 @@ describe('list_regions', () => {
 })
 
 describe('where_am_i', () => {
+  it('reports the instances and global camera when some are set', async () => {
+    const view = fakeView({
+      opts: {
+        instances: [{ id: 'a', space: 'global3d', position: [1, 0, 0] }],
+        globalCamera: { position: [0, 0, 0], yaw: Math.PI },
+      },
+    })
+    expect(await coreHandlers(host(view)).where_am_i({})).toMatchObject({
+      instances: [{ id: 'a', space: 'global3d', position: [1, 0, 0] }],
+      globalCamera: { position: [0, 0, 0], yaw: 180 },
+    })
+    expect(sceneState(host(view)).instances).toEqual(['a'])
+    expect('instances' in sceneState(host())).toBe(false)
+  })
+
   it('reports the crosshair both ways, the plane, the camera, the description, and extras', async () => {
     const view = fakeView()
     view.crosshairPos[2] = 0.75
@@ -449,6 +464,26 @@ describe('clip plane 0', () => {
 })
 
 describe('set_camera', () => {
+  it('places the global camera in radians and reports it in degrees', () => {
+    const setGlobalCamera = mock()
+    const view = fakeView({
+      setGlobalCamera,
+      opts: {
+        globalCamera: { position: [1, 2, 3], yaw: Math.PI / 4, pitch: 0 },
+      },
+    })
+    const result = coreHandlers(host(view)).set_camera({
+      global: { position: [1, 2, 3], yaw: 45, pitch: 0 },
+    })
+    const [cam] = setGlobalCamera.mock.calls[0]
+    expect(cam.position).toEqual([1, 2, 3])
+    expect(cam.yaw).toBeCloseTo(Math.PI / 4)
+    expect(cam.pitch).toBe(0)
+    expect(result).toMatchObject({
+      globalCamera: { position: [1, 2, 3], yaw: 45, pitch: 0 },
+    })
+  })
+
   it('turns the camera, wrapping the azimuth and clamping the elevation', () => {
     const view = fakeView()
     const result = coreHandlers(host(view)).set_camera({

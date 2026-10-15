@@ -88,6 +88,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'setClipPlanes',
     'setClipPlaneDepthAziElev',
     'setGlobalCamera',
+    'setInstances',
     'centerRenderOnMM',
     'pan2Dxyzmm',
     'renderPan',

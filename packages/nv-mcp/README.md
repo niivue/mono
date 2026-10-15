@@ -251,6 +251,7 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `edit_annotations` | `action`, `id?`, `text?`, `annotation?`, `json?`, `style?` | `add` a NiiVue VectorAnnotation (`id`; `sliceType` 0 axial, 1 coronal or 2 sagittal; `slicePosition`, where the slice is in mm along its own axis; `polygons`, each at least three `[x, y]` points in mm on the slice plane or `{outer, holes}`; and, if wanted, `label`, `group`, `text` and `style` with `fillColor`, `strokeColor` and `strokeWidth`, red otherwise), `remove` or `select` one by id, `set_text` on one, `clear` them, `undo`, `redo`, `load` a set from JSON, or `set_style` the style an annotation drawn by hand takes (`fillColor`, `strokeColor`, `strokeWidth`; a field left out keeps its value) |
 | `list_measurements` | | The distance measurements drawn on the slices, each with its ends in millimetres and its length |
 | `edit_measurements` | `action`, `start_mm?`, `end_mm?`, `slice?`, `slice_index?`, `slice_position?`, `index?` | `add` a distance between two points, `remove` one by index, or `clear` them all, the angles (`clear_angles`) or the distances (`clear_distances`) |
+| `set_boxes` | `focus?`, `boxes?` | Outlines boxes on the 3D render (not the slices), each `{min, max, color?, thickness?}` with its corners in millimetres, a colour `[r, g, b, a]` 0 to 1 (a yellow otherwise) and its edges in pixels (2 otherwise): one `focus` box, a set of up to 1000 `boxes`, or both; `null` takes either down. NiiVue's `focusBox` and `lodBoxes`; not saved with the document |
 
 ### Controls
 

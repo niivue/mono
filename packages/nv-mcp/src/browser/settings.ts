@@ -140,6 +140,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'annotationsToSVG',
     'annotationStyle',
   ],
+  boxes: ['focusBox', 'lodBoxes'],
   measurements: [
     'getMeasurements',
     'addMeasurement',

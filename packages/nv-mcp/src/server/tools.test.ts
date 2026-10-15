@@ -357,6 +357,11 @@ describe('core tool schemas', () => {
     }
     expect(await refused('use_tab', {})).toMatch(/id/)
     expect(
+      await refused('set_boxes', {
+        focus: { min: [0, 0, 0], max: [1, 1, 1], thickness: -1 },
+      }),
+    ).toMatch(/thickness/)
+    expect(
       await refused('edit_annotations', {
         action: 'set_style',
         style: { strokeColor: [1, 0, 0] },

@@ -25,6 +25,7 @@ const CORE_TOOLS = [
   'go_to_point',
   'set_clip_plane',
   'set_camera',
+  'set_instances',
   'animate',
   'set_volume',
   'set_labels',

@@ -5,6 +5,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { MAX_BOXES } from '../limits'
 
 import { SLICE_NAMES } from '../views'
 import { registerSimple, rgba, triple } from './args'
@@ -14,9 +15,6 @@ const SLICE_ARG = z
   .enum(SLICE_NAMES)
   .optional()
   .describe('The slice orientation. The one shown otherwise.')
-
-/** The most boxes one call outlines; the page holds the same limit. */
-const MAX_BOXES = 1000
 
 const BOX_ARG = z.strictObject({
   min: triple('The corner with the lowest x, y and z, in millimetres.'),

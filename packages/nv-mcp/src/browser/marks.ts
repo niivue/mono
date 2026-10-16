@@ -5,6 +5,7 @@
  * per kind rather than one per verb.
  */
 
+import { MAX_BOXES } from '../limits'
 import { nameFor, SLICE_TYPES } from '../views'
 import {
   choice,
@@ -37,8 +38,6 @@ const ANNOTATION_ACTIONS = [
   'load',
   'set_style',
 ] as const
-/** The most boxes one call outlines. */
-export const MAX_BOXES = 1000
 
 /** NiiVue's colour for a picked brick, for a box given none. */
 const BOX_COLOR = [1, 0.83, 0.28, 1]

@@ -6,12 +6,10 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { MAX_INSTANCES } from '../limits'
 
 import { registerSimple, triple, VOLUME_ARG } from './args'
 import { TAB_ARG, type ToolContext } from './context'
-
-/** The most instances one call lays out; the page holds to the same. */
-const MAX_INSTANCES = 100
 
 /** The global camera, as set_camera's `global` and set_instances' `camera` take it. */
 export const GLOBAL_CAMERA_ARG = z.object({

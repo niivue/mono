@@ -7,16 +7,10 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { MAX_ANIMATION_MS } from '../limits'
 
 import { MESH_ARG, registerSimple, triple, VOLUME_ARG } from './args'
 import { TAB_ARG, type ToolContext } from './context'
-
-/**
- * The longest transition a call may ask for, in milliseconds: with the
- * page's grace for a stalled transition it stays inside the bridge's
- * 15 second wait for an answer.
- */
-const MAX_ANIMATION_MS = 10000
 
 export const ANIMATE_SCHEMAS = {
   animate: {

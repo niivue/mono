@@ -1,100 +1,155 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4, vec3, vec4 } from 'gl-matrix'
-import { SLICE_TYPE } from '@/NVConstants'
-import { calculateCrosshairSegments, fitSegmentsToSlice } from './NVCrosshair'
+import { slicePlaneEquation } from '@/math/NVTransforms'
+import { SLICE_TYPE, sliceTypeDim } from '@/NVConstants'
+import type NVModel from '@/NVModel'
+import {
+  calculateCrosshairSegments,
+  crosshairSegmentsForTile,
+  fitSegmentsToSlice,
+} from './NVCrosshair'
 
-const extentsMin = [-100, -100, -100]
-const extentsMax = [100, 100, 100]
-const center = vec3.fromValues(10, -20, 30)
-const centerFrac = [0.55, 0.4, 0.65]
+const SLICE_TYPES_2D = [
+  SLICE_TYPE.AXIAL,
+  SLICE_TYPE.CORONAL,
+  SLICE_TYPE.SAGITTAL,
+]
 
-/** mm -> texture fraction for a 200 mm cube rotated `deg` about the given axis. */
-const obliqueMm2tex = (deg: number, axis: [number, number, number]): mat4 => {
-  const tex2mm = mat4.create()
-  mat4.rotate(tex2mm, tex2mm, (deg * Math.PI) / 180, axis)
+/**
+ * The parts of NVModel the crosshair reads, for one 240 mm scene whose
+ * background volume's texture axes are `affine` applied to the world axes.
+ * NVModel itself cannot be imported under Bun.
+ */
+const modelWith = (affine: mat4): NVModel => {
+  const tex2mm = mat4.clone(affine)
   mat4.translate(tex2mm, tex2mm, [-100, -100, -100])
   mat4.scale(tex2mm, tex2mm, [200, 200, 200])
-  const mm2tex = mat4.create()
-  if (!mat4.invert(mm2tex, tex2mm)) throw new Error('singular test matrix')
-  return mm2tex
-}
-
-const texCoord = (mm2tex: mat4, p: vec3, dim: number): number => {
-  const t = vec4.transformMat4(
-    vec4.create(),
-    vec4.fromValues(p[0], p[1], p[2], 1),
+  const mm2tex = mat4.invert(mat4.create(), tex2mm)
+  if (!mm2tex) throw new Error('singular test affine')
+  const extentsMin = vec3.fromValues(-120, -120, -120)
+  const extentsMax = vec3.fromValues(120, 120, 120)
+  const crosshairPos = vec3.fromValues(0.55, 0.4, 0.65)
+  const scene2mm = (frac: ArrayLike<number>): vec3 =>
+    vec3.fromValues(
+      ...([0, 1, 2].map(
+        (i) => extentsMin[i] + frac[i] * (extentsMax[i] - extentsMin[i]),
+      ) as [number, number, number]),
+    )
+  return {
+    extentsMin,
+    extentsMax,
+    scene: { crosshairPos },
+    ui: { crosshairGap: 10 },
+    tex2mm,
     mm2tex,
-  )
-  return t[dim]
+    volumes: [],
+    scene2mm,
+    getSliceTexFrac: (dim: number) => {
+      const mm = scene2mm(crosshairPos)
+      const tex = vec4.transformMat4(
+        vec4.create(),
+        vec4.fromValues(mm[0], mm[1], mm[2], 1),
+        mm2tex,
+      )
+      return tex[dim]
+    },
+  } as unknown as NVModel
 }
 
-const segments = () =>
-  calculateCrosshairSegments(extentsMin, extentsMax, centerFrac, 10)
+const rotation = (deg: number, axis: [number, number, number]): mat4 =>
+  mat4.fromRotation(mat4.create(), (deg * Math.PI) / 180, axis)
 
-describe('fitSegmentsToSlice', () => {
-  test('leaves the arms unchanged for an axis-aligned volume', () => {
-    const mm2tex = obliqueMm2tex(0, [1, 0, 0])
-    for (const sliceType of [
-      SLICE_TYPE.AXIAL,
-      SLICE_TYPE.CORONAL,
-      SLICE_TYPE.SAGITTAL,
-    ]) {
-      const fitted = fitSegmentsToSlice(segments(), mm2tex, center, sliceType)
-      fitted.forEach((seg, i) => {
-        for (let e = 0; e < 2; e++) {
-          for (let d = 0; d < 3; d++) {
-            expect(seg[e][d]).toBeCloseTo(segments()[i][e][d], 4)
-          }
-        }
-      })
-    }
-  })
+const sheared = (): mat4 => {
+  const m = rotation(9, [1, 2, 3])
+  m[4] += 0.15 // y texture axis leans into x
+  m[9] += 0.1 // z texture axis leans into y
+  return m
+}
 
-  test('puts the in-plane arms of an oblique volume on the displayed slice', () => {
-    const cases: [number, [number, number, number]][] = [
-      [SLICE_TYPE.AXIAL, [1, 0, 0]],
-      [SLICE_TYPE.CORONAL, [0, 0, 1]],
-      [SLICE_TYPE.SAGITTAL, [0, 1, 0]],
-    ]
-    for (const [sliceType, axis] of cases) {
-      const mm2tex = obliqueMm2tex(7, axis)
-      const dim = 2 - sliceType
-      const slice = texCoord(mm2tex, center, dim)
-      const original = segments()
-      const fitted = fitSegmentsToSlice(original, mm2tex, center, sliceType)
-      fitted.forEach((seg, i) => {
-        if (Math.floor(i / 2) === dim) {
-          expect(seg).toEqual(original[i])
-          return
-        }
-        for (let e = 0; e < 2; e++) {
-          expect(texCoord(mm2tex, seg[e], dim)).toBeCloseTo(slice, 6)
-          // Only depth moves, so the arm keeps its place on screen.
-          for (let d = 0; d < 3; d++) {
-            if (d !== dim) expect(seg[e][d]).toBe(original[i][e][d])
-          }
-        }
-      })
-      // The tilt is real: the arms had to move off the world-axis plane.
-      const moved = fitted.some((seg, i) =>
-        seg.some((p, e) => p[dim] !== original[i][e][dim]),
+/** The plane the slice shader draws for a tile of `sliceType`. */
+const drawnPlane = (model: NVModel, sliceType: number) => {
+  const plane = slicePlaneEquation(
+    model.tex2mm as mat4,
+    sliceType,
+    model.getSliceTexFrac(sliceTypeDim(sliceType)),
+  )
+  if (!plane) throw new Error('degenerate test plane')
+  return plane
+}
+
+const unfitted = (model: NVModel) =>
+  calculateCrosshairSegments(
+    model.extentsMin,
+    model.extentsMax,
+    model.scene.crosshairPos,
+    model.ui.crosshairGap,
+  )
+
+describe('crosshairSegmentsForTile', () => {
+  test('leaves the arms of an axis-aligned volume exactly unchanged', () => {
+    const model = modelWith(mat4.create())
+    for (const sliceType of [...SLICE_TYPES_2D, SLICE_TYPE.RENDER]) {
+      expect(crosshairSegmentsForTile(model, sliceType)).toEqual(
+        unfitted(model),
       )
-      expect(moved).toBe(true)
     }
   })
+
+  for (const [name, affine] of [
+    ['rotated', rotation(7, [1, 1, 1])],
+    ['sheared', sheared()],
+  ] as const) {
+    test(`puts the in-plane arms of a ${name} volume on the drawn slice`, () => {
+      const model = modelWith(affine)
+      const original = unfitted(model)
+      for (const sliceType of SLICE_TYPES_2D) {
+        const dim = sliceTypeDim(sliceType)
+        const { normal, point } = drawnPlane(model, sliceType)
+        const fitted = crosshairSegmentsForTile(model, sliceType)
+        let moved = false
+        fitted.forEach((seg, i) => {
+          if (Math.floor(i / 2) === dim) return
+          seg.forEach((p, e) => {
+            const toPoint = vec3.subtract(vec3.create(), p, point)
+            expect(vec3.dot(toPoint, normal)).toBeCloseTo(0, 4)
+            // Only depth moves, so the arm keeps its place on screen.
+            for (let d = 0; d < 3; d++) {
+              if (d !== dim) expect(p[d]).toBe(original[i][e][d])
+            }
+            if (p[dim] !== original[i][e][dim]) moved = true
+          })
+        })
+        expect(moved).toBe(true)
+      }
+    })
+  }
 
   test('leaves the arms unchanged in a 3D render tile', () => {
-    const mm2tex = obliqueMm2tex(7, [1, 0, 0])
-    const original = segments()
-    expect(
-      fitSegmentsToSlice(original, mm2tex, center, SLICE_TYPE.RENDER),
-    ).toEqual(original)
+    const model = modelWith(rotation(7, [1, 1, 1]))
+    expect(crosshairSegmentsForTile(model, SLICE_TYPE.RENDER)).toEqual(
+      unfitted(model),
+    )
+  })
+})
+
+describe('fitSegmentsToSlice', () => {
+  const segments = calculateCrosshairSegments(
+    [-100, -100, -100],
+    [100, 100, 100],
+    [0.5, 0.5, 0.5],
+    10,
+  )
+
+  test('leaves the arms unchanged without a plane', () => {
+    expect(fitSegmentsToSlice(segments, null, SLICE_TYPE.AXIAL)).toEqual(
+      segments,
+    )
   })
 
-  test('leaves the arms unchanged without a volume', () => {
-    const original = segments()
-    expect(
-      fitSegmentsToSlice(original, null, center, SLICE_TYPE.AXIAL),
-    ).toEqual(original)
+  test('leaves the arms unchanged for a plane edge-on to the view', () => {
+    const plane = { normal: [1, 0, 0], point: [0, 0, 0] }
+    expect(fitSegmentsToSlice(segments, plane, SLICE_TYPE.AXIAL)).toEqual(
+      segments,
+    )
   })
 })

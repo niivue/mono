@@ -3,13 +3,8 @@ import type NVModel from '@/NVModel'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
 import { getAxisColor } from '@/view/crosshairColor'
 import {
-  applyCrosshairOffset,
-  crosshairExplodeOffsetForModel,
-} from '@/view/crosshairExplode'
-import {
   buildVertexData,
-  calculateCrosshairSegments,
-  fitSegmentsToSlice,
+  crosshairSegmentsForTile,
   getCylinderIndices,
   shouldCullCylinder,
   VERTS_PER_CYLINDER,
@@ -24,16 +19,14 @@ export type CrosshairResources = WebGLMeshGPU & {
 export class CrosshairRenderer extends NVRenderer {
   private gl: WebGL2RenderingContext | null = null
   private cylinders: CrosshairResources[] = []
-  // radius, one packed colour per axis, 6 segments x 2 endpoints x 3 axes,
-  // explode offset
-  private _geometryKey = new Float64Array(1 + 3 + 36 + 3).fill(Number.NaN)
+  // radius, one packed colour per axis, 6 segments x 2 endpoints x 3 axes
+  private _geometryKey = new Float64Array(1 + 3 + 36).fill(Number.NaN)
 
   /** True when the buffers do not already hold this geometry. */
   private _geometryChanged(
     radius: number,
     axisColors: ArrayLike<number>,
-    segments: ReturnType<typeof calculateCrosshairSegments>,
-    off: ArrayLike<number>,
+    segments: ReturnType<typeof crosshairSegmentsForTile>,
   ): boolean {
     const key = this._geometryKey
     let k = 0
@@ -53,9 +46,6 @@ export class CrosshairRenderer extends NVRenderer {
         put(pt[2])
       }
     }
-    put(off[0])
-    put(off[1])
-    put(off[2])
     return changed
   }
 
@@ -127,34 +117,19 @@ export class CrosshairRenderer extends NVRenderer {
   /**
    * Rebuild the six cylinders at `radiusMM`, the world radius that renders
    * `ui.crosshairWidth` canvas pixels thick on the tile about to be drawn
-   * (see `crosshairRadiusMM`), with the arms of a 2D `sliceType` laid on its
-   * slice (see `fitSegmentsToSlice`). Call it immediately before each tile's
+   * (see `crosshairRadiusMM`), with arms placed for a tile of `sliceType`
+   * (see `crosshairSegmentsForTile`). Call it immediately before each tile's
    * draw: unlike the WebGPU renderer this keeps a single buffer set, so the
-   * last upload is what the next draw uses. Uploads are skipped when nothing that
-   * shapes the geometry has moved since the previous call.
+   * last upload is what the next draw uses. Uploads are skipped when the
+   * geometry matches the previous call's.
    */
   update(model: NVModel, radiusMM: number, sliceType: number): void {
     if (!this.gl || !this.isReady) return
     const gl = this.gl
 
-    const { extentsMin, extentsMax, scene, ui } = model
+    const { ui } = model
     const radius = radiusMM
-    const segments = fitSegmentsToSlice(
-      calculateCrosshairSegments(
-        extentsMin,
-        extentsMax,
-        scene.crosshairPos,
-        ui.crosshairGap,
-      ),
-      model.mm2tex,
-      model.scene2mm(scene.crosshairPos),
-      sliceType,
-    )
-
-    // When the active volume is a chunked/exploded plan, shift the crosshair onto
-    // the displaced block it sits in so the marker tracks the explosion. The
-    // block lookup is in volume texture fraction, so convert via mm.
-    const off = crosshairExplodeOffsetForModel(model)
+    const segments = crosshairSegmentsForTile(model, sliceType)
 
     // Cylinders are ordered X-, X+, Y-, Y+, Z-, Z+, so axis = floor(i / 2).
     const axisColors = [0, 1, 2].map((axis) =>
@@ -163,16 +138,15 @@ export class CrosshairRenderer extends NVRenderer {
       ),
     )
 
-    // Tiles that share a radius -- the usual case -- share the geometry, so only
-    // the first of them pays for the rebuild.
-    if (!this._geometryChanged(radius, axisColors, segments, off)) return
+    // Tiles that share a radius and slice plane share the geometry, so only the
+    // first of them pays for the rebuild. Each 2D tile of an oblique volume has
+    // its own plane, so those tiles rebuild in turn.
+    if (!this._geometryChanged(radius, axisColors, segments)) return
 
     // Update each cylinder's vertex buffer
     for (let i = 0; i < 6; i++) {
       const colorPacked = axisColors[Math.floor(i / 2)]
-      const seg = segments[i]
-      const start = applyCrosshairOffset(seg[0], off)
-      const end = applyCrosshairOffset(seg[1], off)
+      const [start, end] = segments[i]
       const vertexData = buildVertexData(start, end, radius, colorPacked)
       gl.bindBuffer(gl.ARRAY_BUFFER, this.cylinders[i].vertexBuffer)
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertexData)

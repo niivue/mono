@@ -1,8 +1,14 @@
-import { type mat4, vec3 } from 'gl-matrix'
+import { vec3 } from 'gl-matrix'
+import * as NVTransforms from '@/math/NVTransforms'
 import * as NVShapes from '@/mesh/NVShapes'
 import { generateNormals } from '@/mesh/normals'
 import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
+import type NVModel from '@/NVModel'
+import {
+  applyCrosshairOffset,
+  crosshairExplodeOffsetForModel,
+} from '@/view/crosshairExplode'
 
 const CYLINDER_SIDES = 20
 const CYLINDER_ENDCAPS = true
@@ -27,15 +33,15 @@ export function getCylinderIndices(): Uint32Array {
 }
 
 /**
- * Distinct crosshair thicknesses a single frame can hold on the GPU.
+ * Distinct crosshair geometries a single frame can hold on the GPU.
  *
- * The crosshair is one set of cylinders reused by every tile, so a per-tile
- * radius needs a per-tile copy of the geometry. WebGPU cannot rewrite one
- * buffer between draws inside a frame (queue writes all land before the
- * submit), so it keeps this many slots in a single buffer and selects one per
- * draw. Ordinary layouts draw the crosshair on at most four tiles; a layout
- * with more than this many 2D tiles reuses the last slot, which is no worse
- * than the single shared radius this replaced.
+ * The crosshair is one set of cylinders reused by every tile, but its radius
+ * depends on the tile's scale and, for an oblique volume, its arms on the
+ * tile's slice plane. WebGPU cannot rewrite one buffer between draws inside a
+ * frame (queue writes all land before the submit), so it keeps this many slots
+ * in a single buffer, gives each distinct geometry its own slot and lets tiles
+ * with identical geometry share one. A frame needing more distinct geometries
+ * than this reuses the last slot.
  */
 export const MAX_CROSSHAIR_TILES = 16
 
@@ -126,33 +132,74 @@ export function calculateCrosshairSegments(
  * there, each arm leaves the slice in depth and the depth test hides part of
  * it. Shifting every endpoint along the viewing axis keeps the arm where it
  * was on screen and puts it in the slice, as for an axis-aligned volume.
- * Arms along the viewing axis, render tiles and models without a volume are
- * returned unchanged.
+ * Arms along the viewing axis are returned unchanged, as are all arms without
+ * a plane or when the plane is untilted or edge-on to the view.
  */
 export function fitSegmentsToSlice(
   segments: [vec3, vec3][],
-  mm2tex: mat4 | null,
-  centerMM: ArrayLike<number>,
+  plane: { normal: ArrayLike<number>; point: ArrayLike<number> } | null,
   sliceType: number,
 ): [vec3, vec3][] {
-  if (!mm2tex || sliceType > NVConstants.SLICE_TYPE.SAGITTAL) return segments
+  if (!plane) return segments
+  const { normal, point } = plane
   const dim = NVConstants.sliceTypeDim(sliceType)
-  // The slice is the plane where texture coordinate `dim` is constant; its
-  // normal in mm is that coordinate's gradient, row `dim` of mm2tex.
-  const normal = [mm2tex[dim], mm2tex[4 + dim], mm2tex[8 + dim]]
-  if (Math.abs(normal[dim]) < 1e-12) return segments
+  // Untilted (the plane already holds the world-axis arms) or edge-on: keep the
+  // arms, bit for bit, so tiles of an axis-aligned volume share one geometry.
+  const isTilted = [0, 1, 2].some(
+    (j) => j !== dim && Math.abs(normal[j]) > 1e-6,
+  )
+  if (!isTilted || Math.abs(normal[dim]) < 1e-6) return segments
   const onSlice = (p: vec3): vec3 => {
     const out = vec3.clone(p)
     let offset = 0
     for (let j = 0; j < 3; j++) {
-      if (j !== dim) offset += normal[j] * (p[j] - centerMM[j])
+      if (j !== dim) offset += normal[j] * (p[j] - point[j])
     }
-    out[dim] = centerMM[dim] - offset / normal[dim]
+    out[dim] = point[dim] - offset / normal[dim]
     return out
   }
   return segments.map((seg, i) =>
     Math.floor(i / 2) === dim ? seg : [onSlice(seg[0]), onSlice(seg[1])],
   )
+}
+
+function isSlice2D(sliceType: number): boolean {
+  return (
+    sliceType === NVConstants.SLICE_TYPE.AXIAL ||
+    sliceType === NVConstants.SLICE_TYPE.CORONAL ||
+    sliceType === NVConstants.SLICE_TYPE.SAGITTAL
+  )
+}
+
+/**
+ * The six arm segments a tile of `sliceType` draws: on the tile's slice plane
+ * for a 2D tile (the plane the slice shader and picking use), and shifted
+ * onto the displaced block of an exploded chunked volume.
+ */
+export function crosshairSegmentsForTile(
+  model: NVModel,
+  sliceType: number,
+): [vec3, vec3][] {
+  const { extentsMin, extentsMax, scene, ui } = model
+  let segments = calculateCrosshairSegments(
+    extentsMin,
+    extentsMax,
+    scene.crosshairPos,
+    ui.crosshairGap,
+  )
+  if (model.tex2mm && isSlice2D(sliceType)) {
+    const plane = NVTransforms.slicePlaneEquation(
+      model.tex2mm,
+      sliceType,
+      model.getSliceTexFrac(NVConstants.sliceTypeDim(sliceType)),
+    )
+    segments = fitSegmentsToSlice(segments, plane, sliceType)
+  }
+  const off = crosshairExplodeOffsetForModel(model)
+  return segments.map(([start, end]) => [
+    applyCrosshairOffset(start, off),
+    applyCrosshairOffset(end, off),
+  ])
 }
 
 export function shouldCullCylinder(cylIdx: number, sliceType: number): boolean {

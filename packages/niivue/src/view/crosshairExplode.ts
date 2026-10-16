@@ -1,6 +1,4 @@
-// Pure explode-offset math for the 3D crosshair. Split out of NVCrosshair.ts so
-// it is testable under the Bun unit runner: NVCrosshair pulls in the mesh module
-// graph, which uses Vite's `import.meta.glob` and cannot be imported by Bun.
+// Pure explode-offset math for the 3D crosshair.
 
 import { type mat4, vec3, vec4 } from 'gl-matrix'
 import type NVModel from '@/NVModel'

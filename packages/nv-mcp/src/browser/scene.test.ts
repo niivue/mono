@@ -647,6 +647,37 @@ describe('set_volume', () => {
     )
   })
 
+  it('reports the vector field where it moved while NiiVue uploaded it, and says so when it was removed', async () => {
+    const vectors = () => [
+      { name: 'mni152.nii.gz', nFrame4D: 1, img: new Float32Array(8) },
+      { name: 'afni_v1', nFrame4D: 3, img: new Float32Array(24) },
+    ]
+    const view = fakeView({
+      volumes: vectors(),
+      loadImgV1: mock(async () => {
+        ;(view.volumes as ShownVolume[]).splice(1, 0, {
+          name: 'inserted.nii.gz',
+        })
+        return true
+      }),
+    })
+    expect(
+      await coreHandlers(host(view)).set_volume({ volume: 1, v1: true }),
+    ).toMatchObject({ volume: { index: 2, name: 'afni_v1' } })
+    const gone = fakeView({
+      volumes: vectors(),
+      loadImgV1: mock(async () => {
+        ;(gone.volumes as ShownVolume[]).splice(1, 1)
+        return true
+      }),
+    })
+    await expect(
+      coreHandlers(host(gone)).set_volume({ volume: 1, v1: true }),
+    ).rejects.toThrow(
+      'afni_v1 was removed while its vectors were drawn as colours',
+    )
+  })
+
   it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {
     const handlers = coreHandlers(host(settableView()))
     await expect(

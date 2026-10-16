@@ -851,8 +851,14 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           )
         if (!(await view.loadImgV1(index, x, y, z)))
           throw new Error(`NiiVue found no vectors in ${volume.name}.`)
+        // The scene could change while NiiVue uploaded, so the volume is found again.
+        const now = view.volumes.indexOf(volume)
         view.drawScene()
-        return { volume: describeVolume(volume, index) }
+        if (now < 0)
+          throw new Error(
+            `${volume.name} was removed while its vectors were drawn as colours.`,
+          )
+        return { volume: describeVolume(volume, now) }
       }
       // Only what was asked for goes to NiiVue: it assigns the update
       // onto the volume as it is, so an undefined field would wipe one.

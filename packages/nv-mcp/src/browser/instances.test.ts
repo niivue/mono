@@ -262,24 +262,45 @@ describe('set_instances', () => {
     )
   })
 
-  it('refuses two volumes loaded from one file drawn side by side', async () => {
+  it('refuses a volume that shares its file with any loaded volume, laid out or not', async () => {
     const { view } = instView([
       { name: 'mni', id: 'v0', url: '/volumes/mni152.nii.gz' },
       { name: 'mni hot', id: 'v1', url: '/volumes/mni152.nii.gz' },
+      { name: 't1', id: 'v2', url: '/volumes/chris_t1.nii.gz' },
     ])
+    const sharing =
+      /Volumes 0 \("mni"\) and 1 \("mni hot"\) were both loaded from one file/
     await expect(
       run(view, { instances: [{ volume: 0 }, { volume: 1 }] }),
-    ).rejects.toThrow(
-      /Volumes 0 \("mni"\) and 1 \("mni hot"\) were both loaded from one file/,
+    ).rejects.toThrow(sharing)
+    // NiiVue's texture cache holds every loaded volume, so laying out only
+    // one copy could still draw the other's texture.
+    await expect(
+      run(view, { instances: [{ volume: 0 }, { volume: 0 }] }),
+    ).rejects.toThrow(sharing)
+    await expect(run(view, { instances: [{ volume: 1 }] })).rejects.toThrow(
+      sharing,
     )
     // The page's addresses stay out of what the agent is told.
-    await expect(
-      run(view, { instances: [{ volume: 0 }, { volume: 1 }] }),
-    ).rejects.not.toThrow(/\/volumes\//)
+    await expect(run(view, { instances: [{ volume: 0 }] })).rejects.not.toThrow(
+      /\/volumes\//,
+    )
     expect(view.setInstances).not.toHaveBeenCalled()
-    // Many copies of one volume share its one texture, which is fine.
-    await run(view, { instances: [{ volume: 0 }, { volume: 0 }] })
+    // A volume with its file to itself is fine, as are many copies of it.
+    await run(view, { instances: [{ volume: 2 }, { volume: 2 }] })
     expect(view.setInstances).toHaveBeenCalled()
+  })
+
+  it('refuses a canvas tile any volume but the base, which NiiVue draws in every tile', async () => {
+    const { view } = instView()
+    await expect(
+      run(view, { instances: [{ volume: 1, bounds: [0, 0, 1, 1] }] }),
+    ).rejects.toThrow(
+      /canvas tile draws the base volume \(volume 0\), not volume 1/,
+    )
+    expect(view.setInstances).not.toHaveBeenCalled()
+    await run(view, { instances: [{ volume: 0, bounds: [0, 0, 1, 1] }] })
+    expect(view.opts?.instances?.[0].volumeId).toBe('mni152.nii.gz')
   })
 
   it('refuses before a volume loads, and on a NiiVue without instances', async () => {

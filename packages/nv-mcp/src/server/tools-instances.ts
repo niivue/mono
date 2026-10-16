@@ -19,7 +19,8 @@ const INSTANCE_ARG = z.strictObject({
     .describe('A name for it, unique in the list. "instance <n>" otherwise.'),
   volume: VOLUME_ARG.optional().describe(
     'Which loaded volume it draws: an index as where_am_i lists them, or a name. The base otherwise. ' +
-      'Copies of one file each need their own name (add_overlay takes one).',
+      'A canvas tile always draws the base. A volume loaded from the same file as another loaded ' +
+      'volume is refused, since NiiVue keeps one texture per file here; close the other copy first.',
   ),
   space: z
     .enum(['global3d', 'canvas'])
@@ -81,9 +82,8 @@ export function registerInstanceTools(
       'volume in one shared 3D scene at a `position`, `scale` and `orientation`, seen by the global ' +
       'camera (`camera` here, or set_camera `global`); scene units are free, and a volume of scale 1 ' +
       'is one unit across, its centre at its position. The camera starts at [0, 0, 32] looking down ' +
-      '-z with y up. A canvas instance is a tile of the canvas drawn as the usual render. Several instances may ' +
-      'draw the same volume, so one load can be shown many times; distinct copies need distinct ' +
-      'names. `clear` goes back to the usual layout. Reports the instances and camera as set.',
+      '-z with y up. A canvas instance is a tile of the canvas drawn as the usual render of the base volume. Several instances may ' +
+      'draw the same volume, so one load can be shown many times. `clear` goes back to the usual layout. Reports the instances and camera as set.',
     inputSchema: INSTANCE_SCHEMAS.set_instances,
     lead: (result) => {
       const n = (result as { instances?: unknown[] })?.instances?.length ?? 0

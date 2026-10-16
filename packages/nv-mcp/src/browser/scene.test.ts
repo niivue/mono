@@ -484,6 +484,19 @@ describe('set_camera', () => {
     })
   })
 
+  it('refuses a global camera NiiVue would not take before turning the render', () => {
+    const view = fakeView({ setGlobalCamera: mock() })
+    const before = view.azimuth
+    expect(() =>
+      coreHandlers(host(view)).set_camera({
+        azimuth: 90,
+        global: { position: [0, 0, 0], near: 1000 },
+      }),
+    ).toThrow('far must be beyond near')
+    expect(view.azimuth).toBe(before)
+    expect(view.setGlobalCamera).not.toHaveBeenCalled()
+  })
+
   it('turns the camera, wrapping the azimuth and clamping the elevation', () => {
     const view = fakeView()
     const result = coreHandlers(host(view)).set_camera({
@@ -593,7 +606,7 @@ describe('set_volume', () => {
     ).toMatchObject({ volume: { index: 2, opacity: 0 } })
   })
 
-  it('draws a vector field as colours before the rest, and refuses a volume that is not one', async () => {
+  it('draws a vector field as colours in a call of its own, and refuses a volume that is not one', async () => {
     const calls: string[] = []
     const view = fakeView({
       volumes: [
@@ -610,9 +623,15 @@ describe('set_volume', () => {
       }),
     })
     const handlers = coreHandlers(host(view))
-    await handlers.set_volume({ volume: 1, v1: true, opacity: 0.5 })
+    await handlers.set_volume({ volume: 1, v1: true })
     expect(view.loadImgV1).toHaveBeenLastCalledWith(1, false, false, false)
-    expect(calls).toEqual(['v1 1', 'set'])
+    expect(calls).toEqual(['v1 1'])
+    // Nothing else alongside: the conversion leaves one frame and resets the
+    // window, so a refused call must not have converted.
+    await expect(
+      handlers.set_volume({ volume: 1, v1: true, frame: 2, opacity: 0.5 }),
+    ).rejects.toThrow('set frame, opacity in another call')
+    expect(calls).toEqual(['v1 1'])
     await handlers.set_volume({ volume: 2, v1: { flip: [true, false, true] } })
     expect(view.loadImgV1).toHaveBeenLastCalledWith(2, true, false, true)
     await expect(handlers.set_volume({ volume: 0, v1: true })).rejects.toThrow(

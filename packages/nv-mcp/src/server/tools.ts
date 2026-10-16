@@ -441,7 +441,7 @@ export const CORE_SCHEMAS = {
       ])
       .optional()
       .describe(
-        "Draw a vector field (three float frames: x, y and z, as AFNI writes a tensor's principal direction) or a tensor file's stored directions as direction colours: red for left-right, green for front-back, blue for up-down. flip turns an axis's component around when the colours come out mirrored. One way: the volume becomes a colour image, so reload it to undo.",
+        "Draw a vector field (three float frames: x, y and z, as AFNI writes a tensor's principal direction) or a tensor file's stored directions as direction colours: red for left-right, green for front-back, blue for up-down. flip turns an axis's component around when the colours come out mirrored. One way: the volume becomes a one-frame colour image, so reload it to undo. Send it in a call of its own, with only volume.",
       ),
   },
   set_labels: {

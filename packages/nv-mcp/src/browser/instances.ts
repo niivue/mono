@@ -11,6 +11,7 @@
 
 import { MAX_INSTANCES } from '../limits'
 import {
+  entries,
   flag,
   number,
   numbers,
@@ -35,18 +36,6 @@ const DEG = Math.PI / 180
 /** Degrees rounded to a readable number, from NiiVue's radians. */
 const degrees = (radians: number): number =>
   Math.round((radians / DEG) * 1e6) / 1e6
-
-/** The entries of a list argument, each an object. */
-function entries(params: Params, key: string): Params[] | undefined {
-  const value = params?.[key]
-  if (value === undefined || value === null) return undefined
-  if (
-    !Array.isArray(value) ||
-    value.some((v) => typeof v !== 'object' || v === null || Array.isArray(v))
-  )
-    throw new Error(`${key} must be a list of objects.`)
-  return value as Params[]
-}
 
 /**
  * A global camera from the tool's words: `position` in scene units, `yaw`
@@ -139,8 +128,12 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
   const volumeIdOf = (index: number): string => {
     const volume = view.volumes[index]
     const id = volume.name || volume.url
-    if (!id || drawnIndex(view.volumes, id) !== index) {
-      const other = drawnIndex(view.volumes, id)
+    if (!id)
+      throw new Error(
+        `Volume ${index} has no name for NiiVue to find it by. Load it with one (add_overlay takes one).`,
+      )
+    const other = drawnIndex(view.volumes, id)
+    if (other !== index) {
       throw new Error(
         `NiiVue finds a volume by its name or address, and volume ${index} ("${volume.name}") ` +
           `shares that with volume ${other}, so it would draw volume ${other}. ` +
@@ -154,7 +147,9 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
   const instanceFrom = (entry: Params, i: number): Instance => {
     const id = text(entry, 'id') ?? `instance ${i}`
     const inst: Instance = { id }
-    if (entry?.volume !== undefined && entry.volume !== null)
+    const given = (key: string) =>
+      entry?.[key] !== undefined && entry?.[key] !== null
+    if (given('volume'))
       inst.volumeId = volumeIdOf(
         pickIndex(view.volumes, entry.volume, 'volume'),
       )
@@ -173,10 +168,13 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
       inst.space = 'global3d'
       inst.position = position ?? [0, 0, 0]
       const scale = entry?.scale
-      if (scale !== undefined && scale !== null) {
+      if (given('scale')) {
+        const one = Array.isArray(scale) ? undefined : number(entry, 'scale')
         const s = Array.isArray(scale)
           ? numbers(entry, 'scale', 3)
-          : [number(entry, 'scale') as number]
+          : one === undefined
+            ? undefined
+            : [one]
         if (!s || s.some((v) => v <= 0))
           throw new Error(
             `instance ${id}: scale must be above 0, one number or three.`,
@@ -187,7 +185,7 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
       if (turn) inst.orientation = [turn[0] * DEG, turn[1] * DEG, turn[2] * DEG]
       return inst
     }
-    if (position || entry?.scale !== undefined || entry?.orientation)
+    if (position || given('scale') || given('orientation'))
       throw new Error(
         `instance ${id}: position, scale and orientation are for a global3d instance; a canvas tile takes bounds.`,
       )
@@ -278,9 +276,7 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
       if (instances) await view.setInstances(instances)
       if (clear) await view.setInstances(null)
       view.drawScene()
-      return clear
-        ? { instances: [] }
-        : { instances: [], ...instancesState(view) }
+      return { instances: [], ...instancesState(view) }
     },
   }
 }

@@ -8,43 +8,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { MAX_INSTANCES } from '../limits'
 
-import { registerSimple, triple, VOLUME_ARG } from './args'
+import { GLOBAL_CAMERA_ARG, registerSimple, triple, VOLUME_ARG } from './args'
 import { TAB_ARG, type ToolContext } from './context'
-
-/** The global camera, as set_camera's `global` and set_instances' `camera` take it. */
-export const GLOBAL_CAMERA_ARG = z.object({
-  position: triple(
-    'Where the camera is, in scene units: the units instance positions are in.',
-  ),
-  yaw: z
-    .number()
-    .optional()
-    .describe(
-      'Degrees the camera turns left (negative) or right (positive) from looking down -z. 0 otherwise.',
-    ),
-  pitch: z
-    .number()
-    .min(-90)
-    .max(90)
-    .optional()
-    .describe('Degrees the camera looks up (positive) or down. 0 otherwise.'),
-  fov: z
-    .number()
-    .gt(0)
-    .lt(180)
-    .optional()
-    .describe('The vertical field of view, degrees. 55 otherwise.'),
-  near: z
-    .number()
-    .positive()
-    .optional()
-    .describe('The nearest distance drawn. 0.1 otherwise.'),
-  far: z
-    .number()
-    .positive()
-    .optional()
-    .describe('The farthest distance drawn. 900 otherwise.'),
-})
 
 const INSTANCE_ARG = z.strictObject({
   id: z

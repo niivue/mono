@@ -11,6 +11,9 @@ import { SLICE_NAMES } from '../views'
 import { registerSimple, rgba, triple } from './args'
 import { TAB_ARG, type ToolContext } from './context'
 
+/** An annotation colour: NiiVue keeps all four of [r, g, b, a], each 0 to 1. */
+const ANNOTATION_COLOR = z.array(z.number().min(0).max(1)).length(4)
+
 const SLICE_ARG = z
   .enum(SLICE_NAMES)
   .optional()
@@ -122,8 +125,8 @@ export const MARK_SCHEMAS = {
       ),
     style: z
       .strictObject({
-        fillColor: z.array(z.number().min(0).max(1)).length(4).optional(),
-        strokeColor: z.array(z.number().min(0).max(1)).length(4).optional(),
+        fillColor: ANNOTATION_COLOR.optional(),
+        strokeColor: ANNOTATION_COLOR.optional(),
         strokeWidth: z.number().min(0).optional(),
       })
       .optional()

@@ -252,6 +252,16 @@ describe('set_instances', () => {
     )
   })
 
+  it('refuses a volume with no name or address to find it by', async () => {
+    const { view } = instView([
+      { name: 'mni', id: 'v0', url: '/volumes/mni152.nii.gz' },
+      { name: '', id: 'v1', url: '' },
+    ])
+    await expect(run(view, { instances: [{ volume: 1 }] })).rejects.toThrow(
+      /Volume 1 has no name/,
+    )
+  })
+
   it('refuses two volumes loaded from one file drawn side by side', async () => {
     const { view } = instView([
       { name: 'mni', id: 'v0', url: '/volumes/mni152.nii.gz' },

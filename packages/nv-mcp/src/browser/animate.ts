@@ -9,6 +9,7 @@ import { namePlane, planeDepthCuts } from '../planes'
 import {
   choice,
   clamp,
+  entries,
   flag,
   integer,
   number,
@@ -21,18 +22,6 @@ import type { AnimationTarget, Handlers, NiiVueHost, View } from './view'
 
 const EASINGS = ['linear', 'easeIn', 'easeOut', 'easeInOut'] as const
 const ANGLES = ['shortest', 'literal'] as const
-
-/** The entries of a list argument, each an object. */
-function entries(params: Params, key: string): Params[] | undefined {
-  const value = params?.[key]
-  if (value === undefined || value === null) return undefined
-  if (
-    !Array.isArray(value) ||
-    value.some((v) => typeof v !== 'object' || v === null || Array.isArray(v))
-  )
-    throw new Error(`${key} must be a list of objects.`)
-  return value as Params[]
-}
 
 /** The handler for the animate tool. */
 export function animateHandlers(host: NiiVueHost): Handlers {

@@ -24,7 +24,7 @@ import {
   SLICE_NAMES,
   type ViewState,
 } from '../views'
-import { strict, triple, VOLUME_ARG } from './args'
+import { GLOBAL_CAMERA_ARG, strict, triple, VOLUME_ARG } from './args'
 import type { Bridge } from './bridge'
 import {
   type Extension,
@@ -39,11 +39,7 @@ import { ANIMATE_SCHEMAS, registerAnimateTools } from './tools-animate'
 import { CONTROL_SCHEMAS, registerControlTools } from './tools-controls'
 import { DATA_SCHEMAS, registerDataTools } from './tools-data'
 import { EXTRA_SCHEMAS, registerExtraTools } from './tools-extras'
-import {
-  GLOBAL_CAMERA_ARG,
-  INSTANCE_SCHEMAS,
-  registerInstanceTools,
-} from './tools-instances'
+import { INSTANCE_SCHEMAS, registerInstanceTools } from './tools-instances'
 import { LAYER_SCHEMAS, registerLayerTools } from './tools-layers'
 import { MARK_SCHEMAS, registerMarkTools } from './tools-marks'
 import { registerSettingTools, SETTING_SCHEMAS } from './tools-settings'

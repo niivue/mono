@@ -19,6 +19,11 @@ export function claimSpread(volume: ShownVolume): number {
   return claim
 }
 
+/** Whether `claim` is still the latest spread write claimed for `volume`. */
+export function isLatestSpread(volume: ShownVolume, claim: number): boolean {
+  return claim === latest.get(volume)
+}
+
 /** Whether the page's NiiVue can spread a volume's bricks; refused otherwise. */
 export function requireSpread(view: View): void {
   if (!view.setVolumeChunkExplode || !view.setVolumeChunkGrid)
@@ -44,7 +49,7 @@ export async function spreadVolume(
   // The volume may have been replaced while it was tiled.
   if (view.volumes[index] !== volume)
     throw new Error(`Volume ${index} changed while it was tiled.`)
-  if (claim !== latest.get(volume)) return false
+  if (!isLatestSpread(volume, claim)) return false
   view.setVolumeChunkExplode?.(
     index,
     spread > 1 && volume.chunkPlan

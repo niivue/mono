@@ -51,7 +51,12 @@ import {
 import { pickIndex } from './pick'
 import { settingHandlers } from './settings'
 import { signalHandlers } from './signals'
-import { claimSpread, requireSpread, spreadVolume } from './spread'
+import {
+  claimSpread,
+  isLatestSpread,
+  requireSpread,
+  spreadVolume,
+} from './spread'
 import type {
   AffineTransform,
   AtlasLike,
@@ -951,14 +956,23 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         }
         await view.applyVolumeTransform(index, moved)
       }
+      let untileKept = false
       if (chunkGrid !== undefined) {
         if (!view.setVolumeChunkGrid)
           throw new Error("This page's NiiVue cannot chunk a volume.")
         const grid = numbers(params, 'chunk_grid')
-        await view.setVolumeChunkGrid(
-          index,
-          grid ? [grid[0], grid[1], grid[2]] : null,
+        // Untiling clears the spread, so a call that also spreads leaves
+        // the tiling alone once a later spread came in while it waited.
+        if (
+          grid ||
+          spreadClaim === undefined ||
+          isLatestSpread(volume, spreadClaim)
         )
+          await view.setVolumeChunkGrid(
+            index,
+            grid ? [grid[0], grid[1], grid[2]] : null,
+          )
+        else untileKept = true
       }
       // Spreading needs bricks: a volume that is one texture is tiled
       // 3 x 3 x 3 first, unless a grid was asked for in the same call.
@@ -980,7 +994,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           ? {}
           : {
               superseded:
-                'A later spread of this volume, from a control or another call, came in while this call waited, so the volume keeps that one.',
+                'A later spread of this volume, from a control or another call, came in while this call waited, so the volume keeps that one' +
+                (untileKept ? ', and its bricks with it.' : '.'),
             }),
       }
     },

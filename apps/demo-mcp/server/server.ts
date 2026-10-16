@@ -39,5 +39,13 @@ startServer({
     'space, where no atlas applies. The page hosts controls: add_control draws a button, slider, ' +
     'toggle, select, field, dialog or other widget on the canvas, in a grid by row and col, and ' +
     'lists it in the Controls panel; bind ties it to what it drives. list_data names sample data a ' +
-    'button bound to data.<id> loads.',
+    'button bound to data.<id> loads. ' +
+    'If the person wants to load a volume from their computer, do not pass its path to ' +
+    'load_volume or add_overlay: the page cannot read their disk, and only they can pick the file. ' +
+    'Instead: (1) call add_control with kind "file", label "Open file" and bind ' +
+    '"action.open_files", leaving accept unset so every file can be picked; (2) tell them to ' +
+    'click "Open file" on the canvas and pick the file; (3) once where_am_i shows it loaded, ' +
+    'carry on. ' +
+    'The file replaces what is shown and the AAL atlas no longer applies to it. Add the control ' +
+    'once and reuse it for later files.',
 })

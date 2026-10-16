@@ -1,8 +1,16 @@
 import { describe, expect, it, mock } from 'bun:test'
+import { CALL_TIMEOUT_MS } from '../protocol'
+import { type AppSocket, Bridge } from '../server/bridge'
 import { baseView, hostOf } from '../testing/fake-view'
-import { bindControls, type PageAction, resolveBinding } from './bindings'
+import {
+  bindControls,
+  type PageAction,
+  resolveBinding,
+  WRITE_WAIT_MS,
+} from './bindings'
 import { controlHandlers, memoryControls } from './controls'
 import { dataPalette } from './data'
+import { coreHandlers } from './scene'
 import { settingHandlers } from './settings'
 import type {
   MeshUpdate,
@@ -254,6 +262,267 @@ describe('bindControls: the view and volumes', () => {
   })
 })
 
+describe('bindControls: spreading a volume', () => {
+  /** The settings view, able to tile a volume into bricks and spread them. */
+  function spreadable() {
+    const parts = setup()
+    const view = parts.view
+    Object.assign(view, {
+      setVolumeChunkGrid: mock(
+        async (index: number, grid: [number, number, number] | null) => {
+          view.volumes[index].chunkPlan = grid ? { gridDims: grid } : undefined
+        },
+      ),
+      setVolumeChunkExplode: mock(
+        (
+          index: number,
+          explode: {
+            enabled?: boolean
+            scale?: [number, number, number]
+          } | null,
+        ) => {
+          view.volumes[index].chunkExplode = explode
+        },
+      ),
+    })
+    return parts
+  }
+
+  it('binds a slider to how far a volume is spread, tiling it first', async () => {
+    const { add_control, memory, view } = spreadable()
+    const got = add_control({
+      id: 'spread',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.0.spread',
+    }) as Reported
+    expect(got.control).toMatchObject({ value: 1, min: 1, max: 4 })
+    memory.simulate({ id: 'spread', type: 'input', value: 2 })
+    await Bun.sleep(0)
+    expect(view.setVolumeChunkGrid).toHaveBeenCalledWith(0, [3, 3, 3])
+    expect(view.volumes[0].chunkExplode).toEqual({
+      enabled: true,
+      scale: [2, 2, 2],
+    })
+    memory.simulate({ id: 'spread', type: 'input', value: 1 })
+    await Bun.sleep(0)
+    expect(view.volumes[0].chunkExplode).toBeNull()
+    expect(view.setVolumeChunkGrid).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts at the spread a volume already has, keeping its bricks', async () => {
+    const { add_control, memory, view } = spreadable()
+    view.volumes[0].chunkPlan = { gridDims: [9, 9, 9] }
+    view.volumes[0].chunkExplode = { enabled: true, scale: [2, 2, 2] }
+    const got = add_control({
+      id: 'spread',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.0.spread',
+    }) as Reported
+    expect(got.control.value).toBe(2)
+    memory.simulate({ id: 'spread', type: 'input', value: 3 })
+    await Bun.sleep(0)
+    expect(view.setVolumeChunkGrid).not.toHaveBeenCalled()
+    expect(view.volumes[0].chunkExplode).toEqual({
+      enabled: true,
+      scale: [3, 3, 3],
+    })
+  })
+
+  it('keeps the latest spread when the slider moves while the bricks upload', async () => {
+    for (const [last, expected] of [
+      [3, { enabled: true, scale: [3, 3, 3] }],
+      [1, null],
+    ] as const) {
+      const { add_control, memory, view } = spreadable()
+      // As NiiVue does: the plan is made at once, the upload finishes later.
+      let uploaded = () => {}
+      view.setVolumeChunkGrid = mock(
+        (index: number, grid: [number, number, number] | null) => {
+          const volume = view.volumes[index]
+          volume.chunkPlan = grid ? { gridDims: grid } : undefined
+          // NiiVue clears the spread with the bricks.
+          if (!grid) volume.chunkExplode = undefined
+          return new Promise<void>((resolve) => {
+            uploaded = resolve
+          })
+        },
+      )
+      add_control({
+        id: 'spread',
+        kind: 'slider',
+        x: 0,
+        y: 0,
+        bind: 'volume.0.spread',
+      })
+      memory.simulate({ id: 'spread', type: 'input', value: 2 })
+      await Bun.sleep(0)
+      memory.simulate({ id: 'spread', type: 'input', value: last })
+      await Bun.sleep(0)
+      expect(view.volumes[0].chunkExplode).toEqual(expected)
+      uploaded()
+      await Bun.sleep(0)
+      expect(view.volumes[0].chunkExplode).toEqual(expected)
+      expect(view.setVolumeChunkGrid).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('keeps the latest spread when two controls of one volume write while the bricks upload', async () => {
+    for (const [last, expected] of [
+      [3, { enabled: true, scale: [3, 3, 3] }],
+      [1, null],
+    ] as const) {
+      const { add_control, memory, view } = spreadable()
+      let uploaded = () => {}
+      view.setVolumeChunkGrid = mock(
+        (index: number, grid: [number, number, number] | null) => {
+          const volume = view.volumes[index]
+          volume.chunkPlan = grid ? { gridDims: grid } : undefined
+          // NiiVue clears the spread with the bricks.
+          if (!grid) volume.chunkExplode = undefined
+          return new Promise<void>((resolve) => {
+            uploaded = resolve
+          })
+        },
+      )
+      add_control({
+        id: 'slider',
+        kind: 'slider',
+        x: 0,
+        y: 0,
+        bind: 'volume.0.spread',
+      })
+      add_control({
+        id: 'field',
+        kind: 'number',
+        x: 0,
+        y: 40,
+        bind: 'volume.0.spread',
+      })
+      memory.simulate({ id: 'slider', type: 'input', value: 2 })
+      await Bun.sleep(0)
+      memory.simulate({ id: 'field', type: 'change', value: last })
+      await Bun.sleep(0)
+      expect(view.volumes[0].chunkExplode).toEqual(expected)
+      // The slider's write resumes after the upload, and must stand down.
+      uploaded()
+      await Bun.sleep(0)
+      expect(view.volumes[0].chunkExplode).toEqual(expected)
+    }
+  })
+
+  describe('keeps the latest spread when a control and set_volume overlap', () => {
+    /** The spreadable view, its first tiling held until `uploaded` runs. */
+    function held() {
+      const parts = spreadable()
+      const { view } = parts
+      const release: Array<() => void> = []
+      view.setVolumeChunkGrid = mock(
+        (index: number, grid: [number, number, number] | null) => {
+          const volume = view.volumes[index]
+          volume.chunkPlan = grid ? { gridDims: grid } : undefined
+          // NiiVue clears the spread with the bricks.
+          if (!grid) volume.chunkExplode = undefined
+          return new Promise<void>((resolve) => {
+            release.push(resolve)
+          })
+        },
+      )
+      parts.add_control({
+        id: 'spread',
+        kind: 'slider',
+        x: 0,
+        y: 0,
+        bind: 'volume.0.spread',
+      })
+      const uploaded = async () => {
+        for (const resolve of release) resolve()
+        await Bun.sleep(0)
+      }
+      return {
+        ...parts,
+        set_volume: coreHandlers(hostOf(view)).set_volume,
+        uploaded,
+      }
+    }
+    const later = [
+      [3, { enabled: true, scale: [3, 3, 3] }],
+      [1, null],
+    ] as const
+
+    for (const [last, expected] of later)
+      it(`a set_volume of ${last} after the slider's pending 2`, async () => {
+        const { memory, view, set_volume, uploaded } = held()
+        memory.simulate({ id: 'spread', type: 'input', value: 2 })
+        await Bun.sleep(0)
+        await set_volume({ volume: 0, spread: last })
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        await uploaded()
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+      })
+
+    for (const [last, expected] of later)
+      it(`a slider of ${last} after set_volume's pending 2, which says it was superseded`, async () => {
+        const { memory, view, set_volume, uploaded } = held()
+        const call = set_volume({ volume: 0, spread: 2 })
+        await Bun.sleep(0)
+        memory.simulate({ id: 'spread', type: 'input', value: last })
+        await Bun.sleep(0)
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        await uploaded()
+        const reply = await call
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        expect(reply).toMatchObject({
+          superseded: expect.stringContaining('later spread'),
+        })
+      })
+
+    for (const [last, expected] of later)
+      it(`a slider of ${last} while set_volume waits to untile and spread 1, which leaves the bricks`, async () => {
+        const { memory, view, set_volume, uploaded } = held()
+        const volume = view.volumes[0]
+        volume.chunkPlan = { gridDims: [3, 3, 3] }
+        volume.chunkExplode = { enabled: true, scale: [2, 2, 2] }
+        let release = () => {}
+        view.setVolume = mock(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve
+            }),
+        )
+        const call = set_volume({
+          volume: 0,
+          opacity: 0.4,
+          chunk_grid: null,
+          spread: 1,
+        })
+        await Bun.sleep(0)
+        memory.simulate({ id: 'spread', type: 'input', value: last })
+        await Bun.sleep(0)
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        release()
+        await Bun.sleep(0)
+        await uploaded()
+        const reply = await call
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        expect(volume.chunkPlan).toEqual({ gridDims: [3, 3, 3] })
+        expect(view.setVolumeChunkGrid).not.toHaveBeenCalled()
+        expect(reply).toMatchObject({
+          superseded: expect.stringContaining('its bricks with it'),
+        })
+      })
+  })
+
+  it('names spread among the volume properties', () => {
+    expect(() => resolveBinding('volume.0.spreads', settingsView())).toThrow(
+      /spread\./,
+    )
+  })
+})
+
 describe('bindControls: both ways', () => {
   it('writes what the person does, and redraws', () => {
     const { add_control, memory, view } = setup()
@@ -438,7 +707,7 @@ describe('bindControls: actions', () => {
 })
 
 /** A view with a surface, a tract and a connectome. */
-function meshView() {
+function meshView(writeWait?: number) {
   const meshes: ShownMesh[] = [
     { name: 'lh.pial', kind: 'mesh', opacity: 1, shaderType: 'phong' },
     {
@@ -481,11 +750,19 @@ function meshView() {
   })
   const memory = memoryControls()
   const onError = mock((_error: Error) => {})
-  const controls = bindControls(memory, { view, onError })
+  const controls = bindControls(memory, { view, onError, writeWait })
   const host = hostOf(view)
   host.controls = controls
-  const { add_control, list_controls } = controlHandlers(host)
-  return { view, meshes, memory, onError, add_control, list_controls }
+  const { add_control, set_control, list_controls } = controlHandlers(host)
+  return {
+    view,
+    meshes,
+    memory,
+    onError,
+    add_control,
+    set_control,
+    list_controls,
+  }
 }
 
 describe('bindControls: meshes', () => {
@@ -580,6 +857,202 @@ describe('bindControls: meshes', () => {
     await Promise.resolve()
     expect(onError).toHaveBeenCalledTimes(1)
     expect(onError.mock.calls[0][0].message).toBe('boom')
+  })
+
+  it('reports a write NiiVue fails later as the error, with no control left', async () => {
+    const { add_control, list_controls, view, onError } = meshView()
+    view.setTractOptions = mock(() => Promise.reject(new Error('boom')))
+    await expect(
+      Promise.resolve(
+        add_control({
+          id: 'r',
+          kind: 'slider',
+          bind: 'mesh.1.tract.fiberRadius',
+          value: 1,
+        }),
+      ),
+    ).rejects.toThrow('boom')
+    expect(list_controls({})).toEqual({ controls: [] })
+    expect(onError).not.toHaveBeenCalled()
+    // The failure frees the controls for the next call.
+    add_control({ id: 'b', kind: 'button' })
+  })
+
+  it('reports a change NiiVue fails later as the error, the control as it was', async () => {
+    const { add_control, set_control, list_controls, view } = meshView()
+    view.setTractOptions = mock(() => Promise.reject(new Error('boom')))
+    add_control({ id: 'r', kind: 'slider', bind: 'mesh.1.tract.fiberRadius' })
+    await expect(
+      Promise.resolve(set_control({ id: 'r', value: 1, label: 'Radius' })),
+    ).rejects.toThrow('boom')
+    const listed = list_controls({}) as {
+      controls: Array<{ value: unknown; label?: string }>
+    }
+    expect(listed.controls[0]).toMatchObject({ value: 0.5 })
+    expect(listed.controls[0].label).toBeUndefined()
+  })
+
+  it('shows what a failed change left on the target, not the change asked for', async () => {
+    const { add_control, set_control, list_controls, view, meshes } = meshView()
+    let fail = (_error: Error) => {}
+    // As NiiVue does: the option is set, then the upload fails.
+    view.setTractOptions = mock(
+      (index: number, update: Record<string, unknown>) => {
+        meshes[index].tractOptions = {
+          ...meshes[index].tractOptions,
+          ...update,
+        }
+        return new Promise<void>((_resolve, reject) => (fail = reject))
+      },
+    )
+    add_control({ id: 'r', kind: 'slider', bind: 'mesh.1.tract.fiberRadius' })
+    const made = Promise.resolve(
+      set_control({ id: 'r', value: 1, label: 'Radius' }),
+    )
+    // A frame while NiiVue works leaves the control to the call.
+    expect(list_controls({})).toMatchObject({ controls: [{ value: 0.5 }] })
+    fail(new Error('boom'))
+    await expect(made).rejects.toThrow('boom')
+    const listed = list_controls({}) as {
+      controls: Array<{ value: unknown; label?: string }>
+    }
+    expect(listed.controls[0]).toMatchObject({ value: 1 })
+    expect(listed.controls[0].label).toBeUndefined()
+  })
+
+  it('shows what the person set during the wait, not the value it waited on', async () => {
+    const { add_control, set_control, list_controls, view, memory, meshes } =
+      meshView()
+    let finish = () => {}
+    const set = (index: number, update: Record<string, unknown>) => {
+      meshes[index].tractOptions = { ...meshes[index].tractOptions, ...update }
+    }
+    view.setTractOptions = mock(
+      (index: number, update: Record<string, unknown>) => {
+        // A pending write of the agent's; the person's write goes straight through.
+        set(index, update)
+        if (update.fiberRadius !== 1) return Promise.resolve()
+        return new Promise<void>((resolve) => (finish = resolve))
+      },
+    )
+    add_control({ id: 'r', kind: 'slider', bind: 'mesh.1.tract.fiberRadius' })
+    const made = Promise.resolve(set_control({ id: 'r', value: 1 }))
+    memory.simulate({ id: 'r', type: 'change', value: 2 })
+    finish()
+    await made
+    expect(list_controls({})).toMatchObject({ controls: [{ value: 2 }] })
+  })
+
+  it('gives up on a write that never finishes, and frees the controls', async () => {
+    const { add_control, list_controls, view } = meshView(5)
+    view.setTractOptions = mock(() => new Promise<void>(() => {}))
+    await expect(
+      Promise.resolve(
+        add_control({
+          id: 'r',
+          kind: 'slider',
+          bind: 'mesh.1.tract.fiberRadius',
+          value: 1,
+        }),
+      ),
+    ).rejects.toThrow('did not finish setting what "r" drives')
+    add_control({ id: 'b', kind: 'button' })
+    expect(list_controls({})).toMatchObject({ controls: [{ id: 'b' }] })
+  })
+
+  it("gives up inside the server's call timeout, so the agent hears why", async () => {
+    expect(WRITE_WAIT_MS).toBeLessThan(CALL_TIMEOUT_MS)
+    /** A bridge to a page that answers set_control from `handlers`. */
+    const agent = (writeWait: number) => {
+      const page = meshView(writeWait)
+      page.view.setTractOptions = mock(() => new Promise<void>(() => {}))
+      page.add_control({
+        id: 'r',
+        kind: 'slider',
+        bind: 'mesh.1.tract.fiberRadius',
+      })
+      const bridge = new Bridge({ timeoutMs: 60 })
+      const app: AppSocket = {
+        send(text: string) {
+          const request = JSON.parse(text) as {
+            id?: number
+            params?: Record<string, unknown>
+          }
+          if (request.id === undefined) return false
+          const id = request.id
+          Promise.resolve()
+            .then(() => page.set_control(request.params ?? {}))
+            .then(
+              (result) => bridge.receive(app, JSON.stringify({ id, result })),
+              (error: Error) =>
+                bridge.receive(
+                  app,
+                  JSON.stringify({ id, error: error.message }),
+                ),
+            )
+          return true
+        },
+      }
+      bridge.attach(app)
+      bridge.receive(
+        app,
+        JSON.stringify({
+          hello: { id: 't', title: 't', url: 'http://x', state: {} },
+        }),
+      )
+      return bridge.call('set_control', { id: 'r', value: 1 })
+    }
+    await expect(agent(20)).rejects.toThrow(
+      'did not finish setting what "r" drives',
+    )
+    // A wait past the call timeout leaves the agent only the timeout.
+    await expect(agent(200)).rejects.toThrow('did not answer')
+  })
+
+  it('holds other control changes off while a write is unfinished', async () => {
+    const { add_control, set_control, list_controls, view, meshes } = meshView()
+    let finish = () => {}
+    const set = (index: number, update: Record<string, unknown>) => {
+      meshes[index].tractOptions = { ...meshes[index].tractOptions, ...update }
+    }
+    view.setTractOptions = mock(
+      (index: number, update: Record<string, unknown>) => {
+        set(index, update)
+        return new Promise<void>((resolve) => (finish = resolve))
+      },
+    )
+    const made = add_control({
+      id: 'r',
+      kind: 'slider',
+      bind: 'mesh.1.tract.fiberRadius',
+      value: 1,
+    })
+    expect(() => add_control({ id: 'r', kind: 'button' })).toThrow(
+      'still setting what "r" drives',
+    )
+    expect(() => set_control({ id: 'r', label: 'R' })).toThrow('still setting')
+    finish()
+    await made
+    set_control({ id: 'r', label: 'R' })
+    expect(list_controls({})).toMatchObject({
+      controls: [{ id: 'r', label: 'R', value: 1 }],
+    })
+  })
+
+  it('reports the control once NiiVue has set what it drives', async () => {
+    const { add_control, list_controls, meshes } = meshView()
+    const made = add_control({
+      id: 'r',
+      kind: 'slider',
+      max: 2,
+      bind: 'mesh.1.tract.fiberRadius',
+      value: 1.5,
+    })
+    expect(made).toBeInstanceOf(Promise)
+    expect(list_controls({})).toEqual({ controls: [] })
+    const got = (await made) as Reported
+    expect(got.control).toMatchObject({ id: 'r', value: 1.5 })
+    expect(meshes[1].tractOptions?.fiberRadius).toBe(1.5)
   })
 
   it('reads no named groups as all of them shown', () => {

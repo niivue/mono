@@ -40,6 +40,7 @@
 import {
   type AgentRequest,
   type AgentResponse,
+  CALL_TIMEOUT_MS,
   type Hello,
   isHello,
   isResponse,
@@ -111,9 +112,6 @@ interface Turn {
   /** Resolves once the caller has given up, with the method the page may still be running. */
   abandoned: Promise<string>
 }
-
-/** How long a call may take before the agent is told the page did not answer. */
-export const CALL_TIMEOUT_MS = 15000
 
 /** How long a call waits for a tab that just went away to come back, as a reload does. */
 export const RETURN_GRACE_MS = 5000

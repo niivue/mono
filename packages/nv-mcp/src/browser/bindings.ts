@@ -27,6 +27,7 @@ import type {
   ControlState,
   ControlValue,
 } from '../controls'
+import { CALL_TIMEOUT_MS } from '../protocol'
 import {
   coerceSetting,
   findSetting,
@@ -40,12 +41,14 @@ import {
   type ControlEvent,
   type ControlSurface,
   coerceValue,
+  type HostedControls,
   patched,
   settled,
   VALUE_KINDS,
 } from './controls'
 import type { DataPalette } from './data'
 import { TRACT_COLOR_MODES, tractData } from './meshes'
+import { claimSpread, requireSpread, spreadVolume } from './spread'
 import type {
   MeshUpdate,
   ShownMesh,
@@ -73,10 +76,26 @@ export interface BindOptions {
   data?: DataPalette
   /** Hears an action or a write that failed after the person used a control. */
   onError?(error: Error, event: ControlEvent): void
+  /**
+   * How long an agent's write may take before its call fails, in ms
+   * (WRITE_WAIT_MS). Keep it under the server's call timeout, or the agent
+   * hears only that the page did not answer.
+   */
+  writeWait?: number
 }
 
-/** A surface whose controls drive what they are bound to. */
-export interface BoundControls extends ControlSurface {
+/**
+ * How long an agent's control write may take before its call fails, in ms:
+ * well inside the server's call timeout, so the agent hears why.
+ */
+export const WRITE_WAIT_MS = CALL_TIMEOUT_MS - 5000
+
+/**
+ * A surface whose controls drive what they are bound to. `add` and
+ * `update` given a value return a promise when NiiVue finishes setting
+ * what the control drives later, and reject when it fails.
+ */
+export interface BoundControls extends HostedControls {
   /** Reads every bound value and shows the ones that changed. */
   sync(): void
   /** Stops listening to the surface it wraps. */
@@ -156,6 +175,44 @@ const VOLUME_PROPS: Record<
     shape: 'number',
     range: () => ({ min: 0 }),
   },
+}
+
+/** Every volume property a control can bind: the fields, and how far its bricks are spread. */
+const VOLUME_NAMES = [...Object.keys(VOLUME_PROPS), 'spread']
+
+/** The most a spread control reaches, as far as set_volume's spread is useful. */
+const MAX_SPREAD = 4
+
+/**
+ * How far a volume's bricks are spread apart in the 3D render, as set_volume's
+ * `spread` sets it: 1 closes them up, and a volume drawn as one texture is
+ * tiled 3 by 3 by 3 before it can spread.
+ */
+function spreadTarget(bind: string, view: View, index: number): Target {
+  requireSpread(view)
+  return {
+    shape: 'number',
+    min: 1,
+    max: MAX_SPREAD,
+    step: 0.05,
+    read: () => {
+      const volume = view.volumes[index]
+      if (!volume) return undefined
+      if (!volume.chunkPlan || !volume.chunkExplode?.enabled) return 1
+      return volume.chunkExplode.scale?.[0] ?? 1.5
+    },
+    write: async (value) => {
+      check(bind, 'number', value)
+      const spread = value as number
+      if (!(spread >= 1))
+        throw new Error(`${bind} is 1 (the bricks touching) or more.`)
+      const volume = view.volumes[index]
+      if (!volume) throw new Error(`Volume ${index} is no longer loaded.`)
+      const claim = claimSpread(volume)
+      if (await spreadVolume(view, index, volume, spread, claim))
+        view.drawScene()
+    },
+  }
 }
 
 /** The mesh properties a control can bind, by the names `set_mesh` takes. */
@@ -261,7 +318,7 @@ const FORMS: BindingVocabulary['forms'] = [
   },
   {
     form: 'volume.<index>.<property>',
-    description: `A property of a loaded volume, the base being 0: ${Object.keys(VOLUME_PROPS).join(', ')}.`,
+    description: `A property of a loaded volume, the base being 0: ${VOLUME_NAMES.join(', ')}. spread pulls its bricks apart in the 3D render, 1 closing them up.`,
   },
   {
     form: 'mesh.<index>.<property>',
@@ -400,16 +457,17 @@ export function resolveBinding(
   if (bind.startsWith('volume.')) {
     const [, which, prop, ...rest] = bind.split('.')
     const index = Number(which)
-    const known = prop !== undefined && Object.hasOwn(VOLUME_PROPS, prop)
+    const known = prop !== undefined && VOLUME_NAMES.includes(prop)
     if (!Number.isInteger(index) || index < 0 || !known || rest.length)
       throw new Error(
-        `"${bind}" is not a volume binding: it takes the form volume.<index>.<property>, the property one of ${Object.keys(VOLUME_PROPS).join(', ')}.`,
+        `"${bind}" is not a volume binding: it takes the form volume.<index>.<property>, the property one of ${VOLUME_NAMES.join(', ')}.`,
       )
     const volume = view.volumes[index]
     if (!volume)
       throw new Error(
         `There is no volume ${index}: ${view.volumes.length} ${view.volumes.length === 1 ? 'is' : 'are'} loaded.`,
       )
+    if (prop === 'spread') return spreadTarget(bind, view, index)
     if (!view.setVolume)
       throw new Error("This page's NiiVue cannot change a volume's properties.")
     const setVolume = view.setVolume.bind(view)
@@ -846,8 +904,23 @@ export function bindControls(
     }
   }
 
+  /**
+   * The control whose agent write NiiVue is still finishing. Until it
+   * reports, other changes to the controls are turned away, so none lands
+   * between the write and its control (a taken id or cell, a remove, a
+   * rebind) to fail the call after what it drives has changed.
+   */
+  let busy: string | undefined
+  const idle = () => {
+    if (busy !== undefined)
+      throw new Error(
+        `NiiVue is still setting what "${busy}" drives. Call again once that call reports.`,
+      )
+  }
   const sync = () => {
     for (const [id, entry] of bound) {
+      // An agent write still in flight decides that control when it reports.
+      if (id === busy) continue
       const now = entry.target.read?.()
       if (now === undefined || same(now, entry.last)) continue
       entry.last = now
@@ -891,8 +964,55 @@ export function bindControls(
     bound.set(id, { bind, target, last: target.read?.() })
   }
 
+  /**
+   * `then` once `done` resolves, holding the other changes off until it
+   * settles. NiiVue sets what a control drives before its upload can fail,
+   * so on a failure the controls are read again to show what it holds.
+   */
+  const waited = (
+    id: string,
+    done: Promise<unknown>,
+    then: () => ControlState,
+  ) => {
+    busy = id
+    const wait = options.writeWait ?? WRITE_WAIT_MS
+    let timer: ReturnType<typeof setTimeout> | undefined
+    // A write that never settles (a stalled GPU) must not hold the controls for good.
+    const late = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `NiiVue did not finish setting what "${id}" drives within ${wait / 1000} s. list_controls shows where it stands.`,
+            ),
+          ),
+        wait,
+      )
+    })
+    return Promise.race([done, late]).then(
+      () => {
+        clearTimeout(timer)
+        busy = undefined
+        return then()
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        busy = undefined
+        sync()
+        throw error
+      },
+    )
+  }
+  /** The target's value as the control shows it, else `value`: the person or a page may have set it during the wait. */
+  const held = (
+    control: ControlSpec,
+    target: Target,
+    value: ControlValue | undefined,
+  ) => shown(control, target.read?.()) ?? value
+
   return {
     add(spec) {
+      idle()
       if (!spec.bind) return surface.add(spec)
       if (find(spec.id))
         throw new Error(
@@ -902,24 +1022,37 @@ export function bindControls(
       const filled = fitted(spec, target, spec.bind)
       // Placed first: a refused cell must leave what it drives untouched.
       settled(filled, surface.list())
+      const bind = spec.bind
       const given = spec.value
-      if (given !== undefined && given !== null) {
+      const writing = given !== undefined && given !== null
+      const place = () => {
+        if (writing) {
+          // The grid may have changed during the wait, and so may the target.
+          settled(filled, surface.list())
+          filled.value = held(filled, target, filled.value)
+        }
+        const control = surface.add(filled)
+        remember(control.id, bind, target)
+        if (writing) view.drawScene()
+        return control
+      }
+      if (writing) {
         // The agent's value is set on what the control drives first, so a
-        // bad one leaves nothing behind.
+        // bad one leaves nothing behind; a write NiiVue finishes later is
+        // waited for, so its failure is the agent's error and no control.
         const value = coerceValue(filled, given)
-        settle(target.write?.(value), { id: spec.id, type: 'change', value })
         filled.value = value
+        const done = target.write?.(value)
+        if (done instanceof Promise) return waited(spec.id, done, place)
       } else {
         const now = shown(filled, target.read?.())
         if (now !== undefined) filled.value = now
       }
-      const control = surface.add(filled)
-      remember(control.id, spec.bind, target)
-      if (given !== undefined && given !== null) view.drawScene()
-      return control
+      return place()
     },
 
     update(id, patch) {
+      idle()
       const was = find(id)
       if (!was) throw new Error(`There is no control with the id "${id}".`)
       let entry = bound.get(id)
@@ -942,35 +1075,42 @@ export function bindControls(
         after,
         surface.list().filter((c) => c.id !== id),
       )
-      if (target?.write && patch.value !== undefined)
-        settle(target.write(after.value), {
-          id,
-          type: 'change',
-          value: after.value,
-        })
-      if (rebinding && target && patch.value === undefined) {
-        const now = shown(after, target.read?.())
-        if (now !== undefined) next.value = now
+      const finish = () => {
+        if (rebinding && target && patch.value === undefined) {
+          const now = shown(after, target.read?.())
+          if (now !== undefined) next.value = now
+        } else if (target && patch.value !== undefined) {
+          next.value = held(after, target, next.value)
+        }
+        const control = surface.update(id, next)
+        if (rebinding) {
+          if (target && patch.bind) remember(id, patch.bind, target)
+          else bound.delete(id)
+          entry = bound.get(id)
+        }
+        if (entry && patch.value !== undefined) {
+          entry.last = entry.target.read?.()
+          view.drawScene()
+        }
+        return control
       }
-      const control = surface.update(id, next)
-      if (rebinding) {
-        if (target && patch.bind) remember(id, patch.bind, target)
-        else bound.delete(id)
-        entry = bound.get(id)
-      }
-      if (entry && patch.value !== undefined) {
-        entry.last = entry.target.read?.()
-        view.drawScene()
-      }
-      return control
+      // As in add: a write NiiVue finishes later is waited for. Its failure
+      // leaves the change unmade, the value showing what the target holds.
+      const done =
+        target?.write && patch.value !== undefined
+          ? target.write(after.value)
+          : undefined
+      return done instanceof Promise ? waited(id, done, finish) : finish()
     },
 
     remove(id) {
+      idle()
       bound.delete(id)
       surface.remove(id)
     },
 
     clear() {
+      idle()
       bound.clear()
       surface.clear()
     },

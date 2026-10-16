@@ -11,7 +11,7 @@
  */
 
 import type { RegionSummary } from '../protocol'
-import type { ControlSurface } from './controls'
+import type { HostedControls } from './controls'
 import type { DataPalette } from './data'
 
 /** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
@@ -721,7 +721,7 @@ export interface NiiVueHost {
   /** How long a screenshot waits, in milliseconds, for bricks to arrive and for the render backend to free up. */
   screenshotWaits?: { settleMs?: number; busyMs?: number }
   /** The controls the page hosts for an agent; a page without one declines the control tools. */
-  controls?: ControlSurface
+  controls?: HostedControls
   /** The data the page can load by id; a page without one declines the data tools. */
   data?: DataPalette
 }

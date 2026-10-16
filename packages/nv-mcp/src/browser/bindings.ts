@@ -192,6 +192,9 @@ function spreadTarget(bind: string, view: View, index: number): Target {
     throw new Error("This page's NiiVue cannot spread a volume's bricks.")
   const explode = view.setVolumeChunkExplode.bind(view)
   const tile = view.setVolumeChunkGrid.bind(view)
+  // Each write's number: a write that waited for the bricks to upload
+  // stands down if a later one came in meanwhile, so the latest wins.
+  let latest = 0
   return {
     shape: 'number',
     min: 1,
@@ -210,10 +213,12 @@ function spreadTarget(bind: string, view: View, index: number): Target {
         throw new Error(`${bind} is 1 (the bricks touching) or more.`)
       const volume = view.volumes[index]
       if (!volume) throw new Error(`Volume ${index} is no longer loaded.`)
+      const mine = ++latest
       if (spread > 1 && !volume.chunkPlan) await tile(index, [3, 3, 3])
       // The volume may have been replaced while it was tiled.
       if (view.volumes[index] !== volume)
         throw new Error(`Volume ${index} changed while it was tiled.`)
+      if (mine !== latest) return
       explode(
         index,
         spread > 1 && volume.chunkPlan

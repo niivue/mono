@@ -50,6 +50,7 @@ import {
   nothingIn,
   number,
   numbers,
+  type Params,
   point,
   pointIfGiven,
   put,
@@ -232,6 +233,48 @@ function cutPlane(
   view.setClipPlane(plane)
 }
 
+/**
+ * The axis flips of a `set_volume` `v1` call, refused unless `v1` is the
+ * call's only change and the volume is a vector field. The conversion is
+ * one way and leaves one frame, so a window, frame or anything else asked
+ * for alongside would land on an image that no longer exists.
+ */
+function flipsFrom(params: Params, volume: ShownVolume): boolean[] {
+  const v1 = params?.v1
+  const flip =
+    v1 === true
+      ? [false, false, false]
+      : typeof v1 === 'object' && v1 !== null && !Array.isArray(v1)
+        ? (v1 as Params)?.flip
+        : undefined
+  if (
+    !Array.isArray(flip) ||
+    flip.length !== 3 ||
+    flip.some((f) => typeof f !== 'boolean')
+  ) {
+    throw new Error(
+      'v1 is true, or { flip: [x, y, z] }: three true or false, each turning that component of the vectors around.',
+    )
+  }
+  const others = Object.keys(params ?? {}).filter(
+    (key) =>
+      !['tab', 'volume', 'v1'].includes(key) && params?.[key] !== undefined,
+  )
+  if (others.length) {
+    throw new Error(
+      `v1 goes in a call of its own: it turns the volume into a one-frame colour image, so set ${others.join(', ')} in another call.`,
+    )
+  }
+  const vectors =
+    volume.v1 !== undefined ||
+    (volume.nFrame4D === 3 && volume.img instanceof Float32Array)
+  if (!vectors) {
+    throw new Error(
+      `${volume.name} is not a vector field: v1 needs three float frames (x, y and z), or a tensor file's stored directions.`,
+    )
+  }
+  return flip as boolean[]
+}
 /** The handlers for the core tools, over this host. */
 export function coreHandlers(host: NiiVueHost): Handlers {
   const { view } = host
@@ -720,6 +763,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     set_camera(params) {
       requireVolume()
       host.beforeAnswer?.()
+      // The global camera is read and checked first, so a camera NiiVue
+      // would refuse leaves the render's own camera as it was.
+      const placed = record(params, 'global')
+      const global = placed ? globalCameraFrom(placed) : undefined
+      if (global && !view.setGlobalCamera)
+        throw new Error("This page's NiiVue has no global camera to place.")
       let changed = false
       const azimuth = number(params, 'azimuth')
       const elevation = number(params, 'elevation')
@@ -765,11 +814,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           )
         changed = true
       }
-      const placed = record(params, 'global')
-      if (placed) {
-        if (!view.setGlobalCamera)
-          throw new Error("This page's NiiVue has no global camera to place.")
-        view.setGlobalCamera(globalCameraFrom(placed))
+      if (global) {
+        view.setGlobalCamera?.(global)
         changed = true
       }
       if (!changed) {
@@ -797,6 +843,17 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       host.beforeAnswer?.()
       const index = volumeIndex(params)
       const volume = view.volumes[index]
+      if (params?.v1 !== undefined && params.v1 !== null) {
+        const [x, y, z] = flipsFrom(params, volume)
+        if (!view.loadImgV1)
+          throw new Error(
+            "This page's NiiVue cannot draw a vector field as colours.",
+          )
+        if (!(await view.loadImgV1(index, x, y, z)))
+          throw new Error(`NiiVue found no vectors in ${volume.name}.`)
+        view.drawScene()
+        return { volume: describeVolume(volume, index) }
+      }
       // Only what was asked for goes to NiiVue: it assigns the update
       // onto the volume as it is, so an undefined field would wipe one.
       const update: VolumeUpdate = {}
@@ -865,30 +922,6 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const transform = record(params, 'transform')
       const chunkGrid = params?.chunk_grid
       const spread = number(params, 'spread')
-      const v1 = params?.v1
-      let flips: boolean[] | undefined
-      if (v1 !== undefined && v1 !== null) {
-        const flip = v1 === true ? [] : record(params, 'v1')?.flip
-        if (
-          (v1 !== true && (typeof v1 !== 'object' || Array.isArray(v1))) ||
-          !Array.isArray(flip) ||
-          (flip.length !== 0 && flip.length !== 3) ||
-          flip.some((f) => typeof f !== 'boolean')
-        ) {
-          throw new Error(
-            'v1 is true, or { flip: [x, y, z] }: three true or false, each turning that component of the vectors around.',
-          )
-        }
-        flips = flip.length ? (flip as boolean[]) : [false, false, false]
-        const vectors =
-          volume.v1 !== undefined ||
-          (volume.nFrame4D === 3 && volume.img instanceof Float32Array)
-        if (!vectors) {
-          throw new Error(
-            `${volume.name} is not a vector field: v1 needs three float frames (x, y and z), or a tensor file's stored directions.`,
-          )
-        }
-      }
       if (chunkGrid !== undefined && chunkGrid !== null) {
         const grid = numbers(params, 'chunk_grid') ?? []
         if (
@@ -915,7 +948,6 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         transform,
         chunkGrid,
         spread,
-        flips,
       ].some((v) => v !== undefined && v !== null)
       // `chunk_grid: null` is an ask too: it makes the volume one texture.
       const untiling = chunkGrid === null
@@ -928,16 +960,6 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // The spread write is claimed before anything waits, so a control
       // that writes the spread meanwhile is the later one and wins.
       const spreadClaim = spread === undefined ? undefined : claimSpread(volume)
-      // First, so a window or opacity asked for alongside lands on the colours.
-      if (flips) {
-        if (!view.loadImgV1)
-          throw new Error(
-            "This page's NiiVue cannot draw a vector field as colours.",
-          )
-        const [x, y, z] = flips
-        if (!(await view.loadImgV1(index, x, y, z)))
-          throw new Error(`NiiVue found no vectors in ${volume.name}.`)
-      }
       if (!nothingIn(update)) {
         if (!view.setVolume)
           throw new Error(

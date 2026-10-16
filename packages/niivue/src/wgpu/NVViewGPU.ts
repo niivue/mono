@@ -1326,7 +1326,7 @@ export default class NVView {
         if (pipeline) {
           crosshairSlot++
           chDrawn = true
-          this.crosshairRenderer.update(md, chRadiusMM, chSlot)
+          this.crosshairRenderer.update(md, chRadiusMM, tile.axCorSag, chSlot)
           this.crosshairRenderer.draw(
             device,
             pass,

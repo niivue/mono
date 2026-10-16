@@ -1,4 +1,4 @@
-import { vec3 } from 'gl-matrix'
+import { type mat4, vec3 } from 'gl-matrix'
 import * as NVShapes from '@/mesh/NVShapes'
 import { generateNormals } from '@/mesh/normals'
 import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
@@ -116,6 +116,43 @@ export function calculateCrosshairSegments(
       vec3.fromValues(center[0], center[1], extentsMax[2]),
     ],
   ]
+}
+
+/**
+ * Move the in-plane arms of a 2D tile onto the slice it displays.
+ *
+ * A 2D slice is drawn on the background volume's own voxel plane, which for an
+ * oblique volume is tilted against the world axes the arms follow. Left
+ * there, each arm leaves the slice in depth and the depth test hides part of
+ * it. Shifting every endpoint along the viewing axis keeps the arm where it
+ * was on screen and puts it in the slice, as for an axis-aligned volume.
+ * Arms along the viewing axis, render tiles and models without a volume are
+ * returned unchanged.
+ */
+export function fitSegmentsToSlice(
+  segments: [vec3, vec3][],
+  mm2tex: mat4 | null,
+  centerMM: ArrayLike<number>,
+  sliceType: number,
+): [vec3, vec3][] {
+  if (!mm2tex || sliceType > NVConstants.SLICE_TYPE.SAGITTAL) return segments
+  const dim = NVConstants.sliceTypeDim(sliceType)
+  // The slice is the plane where texture coordinate `dim` is constant; its
+  // normal in mm is that coordinate's gradient, row `dim` of mm2tex.
+  const normal = [mm2tex[dim], mm2tex[4 + dim], mm2tex[8 + dim]]
+  if (Math.abs(normal[dim]) < 1e-12) return segments
+  const onSlice = (p: vec3): vec3 => {
+    const out = vec3.clone(p)
+    let offset = 0
+    for (let j = 0; j < 3; j++) {
+      if (j !== dim) offset += normal[j] * (p[j] - centerMM[j])
+    }
+    out[dim] = centerMM[dim] - offset / normal[dim]
+    return out
+  }
+  return segments.map((seg, i) =>
+    Math.floor(i / 2) === dim ? seg : [onSlice(seg[0]), onSlice(seg[1])],
+  )
 }
 
 export function shouldCullCylinder(cylIdx: number, sliceType: number): boolean {

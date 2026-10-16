@@ -9,6 +9,7 @@ import {
 import {
   buildVertexData,
   calculateCrosshairSegments,
+  fitSegmentsToSlice,
   getCylinderIndices,
   shouldCullCylinder,
   VERTS_PER_CYLINDER,
@@ -126,22 +127,28 @@ export class CrosshairRenderer extends NVRenderer {
   /**
    * Rebuild the six cylinders at `radiusMM`, the world radius that renders
    * `ui.crosshairWidth` canvas pixels thick on the tile about to be drawn
-   * (see `crosshairRadiusMM`). Call it immediately before each tile's draw:
-   * unlike the WebGPU renderer this keeps a single buffer set, so the last
-   * upload is what the next draw uses. Uploads are skipped when nothing that
+   * (see `crosshairRadiusMM`), with the arms of a 2D `sliceType` laid on its
+   * slice (see `fitSegmentsToSlice`). Call it immediately before each tile's
+   * draw: unlike the WebGPU renderer this keeps a single buffer set, so the
+   * last upload is what the next draw uses. Uploads are skipped when nothing that
    * shapes the geometry has moved since the previous call.
    */
-  update(model: NVModel, radiusMM: number): void {
+  update(model: NVModel, radiusMM: number, sliceType: number): void {
     if (!this.gl || !this.isReady) return
     const gl = this.gl
 
     const { extentsMin, extentsMax, scene, ui } = model
     const radius = radiusMM
-    const segments = calculateCrosshairSegments(
-      extentsMin,
-      extentsMax,
-      scene.crosshairPos,
-      ui.crosshairGap,
+    const segments = fitSegmentsToSlice(
+      calculateCrosshairSegments(
+        extentsMin,
+        extentsMax,
+        scene.crosshairPos,
+        ui.crosshairGap,
+      ),
+      model.mm2tex,
+      model.scene2mm(scene.crosshairPos),
+      sliceType,
     )
 
     // When the active volume is a chunked/exploded plan, shift the crosshair onto

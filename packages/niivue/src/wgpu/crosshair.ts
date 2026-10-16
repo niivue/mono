@@ -8,6 +8,7 @@ import {
 import {
   buildVertexData,
   calculateCrosshairSegments,
+  fitSegmentsToSlice,
   getCylinderIndices,
   MAX_CROSSHAIR_TILES,
   shouldCullCylinder,
@@ -105,21 +106,27 @@ export class CrosshairRenderer extends NVRenderer {
   /**
    * Write the six cylinders at `radiusMM` -- the world radius that renders
    * `ui.crosshairWidth` canvas pixels thick on the tile about to be drawn (see
-   * `crosshairRadiusMM`) -- into vertex slot `slot`. Pass the same `slot` to
+   * `crosshairRadiusMM`), with the arms of a 2D `sliceType` laid on its slice
+   * (see `fitSegmentsToSlice`), into vertex slot `slot`. Pass the same `slot` to
    * `draw`/`drawXRay` for that tile. Slots exist because every write here lands
    * before the frame's submit, so tiles cannot take turns with one region.
    */
-  update(model: NVModel, radiusMM: number, slot = 0): void {
+  update(model: NVModel, radiusMM: number, sliceType: number, slot = 0): void {
     if (!this.device || !this.isReady) return
 
     const { extentsMin, extentsMax, scene, ui } = model
     const radius = radiusMM
     const offset = crosshairSlotOffset(slot)
-    const segments = calculateCrosshairSegments(
-      extentsMin,
-      extentsMax,
-      scene.crosshairPos,
-      ui.crosshairGap,
+    const segments = fitSegmentsToSlice(
+      calculateCrosshairSegments(
+        extentsMin,
+        extentsMax,
+        scene.crosshairPos,
+        ui.crosshairGap,
+      ),
+      model.mm2tex,
+      model.scene2mm(scene.crosshairPos),
+      sliceType,
     )
 
     // When the active volume is a chunked/exploded plan, shift the crosshair onto

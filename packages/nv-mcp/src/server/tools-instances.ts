@@ -63,7 +63,7 @@ const INSTANCE_ARG = z.strictObject({
     .optional()
     .describe(
       'global3d: rendered in one shared 3D scene the global camera looks at. canvas: a tile of the ' +
-        'canvas with its own render camera. global3d otherwise, unless only canvas fields are given.',
+        'canvas, drawn as the usual render. global3d otherwise, unless only bounds are given.',
     ),
   position: triple(
     'global3d: where its centre sits, in scene units. [0, 0, 0] otherwise.',
@@ -84,20 +84,6 @@ const INSTANCE_ARG = z.strictObject({
     .describe(
       'canvas: the tile, [x1, y1, x2, y2] as fractions of the canvas from the lower left. The whole canvas otherwise.',
     ),
-  azimuth: z
-    .number()
-    .optional()
-    .describe('canvas: the render camera azimuth, degrees.'),
-  elevation: z
-    .number()
-    .optional()
-    .describe('canvas: the render camera elevation, degrees.'),
-  pan: z
-    .array(z.number())
-    .length(2)
-    .optional()
-    .describe('canvas: the tile pan, [x, y].'),
-  zoom: z.number().positive().optional().describe('canvas: the tile zoom.'),
 })
 
 export const INSTANCE_SCHEMAS = {
@@ -132,7 +118,7 @@ export function registerInstanceTools(
       'volume in one shared 3D scene at a `position`, `scale` and `orientation`, seen by the global ' +
       'camera (`camera` here, or set_camera `global`); scene units are free, and a volume of scale 1 ' +
       'is one unit across, its centre at its position. The camera starts at [0, 0, 32] looking down ' +
-      '-z with y up. A canvas instance is a tile with its own render camera. Several instances may ' +
+      '-z with y up. A canvas instance is a tile of the canvas drawn as the usual render. Several instances may ' +
       'draw the same volume, so one load can be shown many times; distinct copies need distinct ' +
       'names. `clear` goes back to the usual layout. Reports the instances and camera as set.',
     inputSchema: INSTANCE_SCHEMAS.set_instances,

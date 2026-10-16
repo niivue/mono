@@ -374,6 +374,13 @@ describe('core tool schemas', () => {
     expect(
       await refused('set_instances', { instances: [{ id: 'a', size: 2 }] }),
     ).toMatch(/size/)
+    // NiiVue draws a canvas tile with the scene's render camera, so a
+    // tile's own angles would be taken and never drawn.
+    expect(
+      await refused('set_instances', {
+        instances: [{ bounds: [0, 0, 0.5, 1], azimuth: 30 }],
+      }),
+    ).toMatch(/azimuth/)
     expect(
       await refused('set_instances', {
         instances: Array.from({ length: 101 }, () => ({})),

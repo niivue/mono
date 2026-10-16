@@ -117,15 +117,6 @@ export function reportedInstances(view: View): Record<string, unknown>[] {
         out.orientation = inst.orientation.map((r) => degrees(r))
     } else {
       if (inst.bounds) out.bounds = [...inst.bounds[0], ...inst.bounds[1]]
-      if (inst.rotation) {
-        out.azimuth = inst.rotation[0]
-        out.elevation = inst.rotation[1]
-      }
-      if (inst.viewport)
-        out.viewport = {
-          pan: [...inst.viewport.pan],
-          zoom: inst.viewport.zoom,
-        }
     }
     return out
   })
@@ -171,20 +162,15 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
       )
     const bounds = numbers(entry, 'bounds', 4)
     const position = pointIfGiven(entry, 'position')
-    const canvasLike =
-      bounds !== undefined ||
-      entry?.azimuth !== undefined ||
-      entry?.elevation !== undefined ||
-      entry?.pan !== undefined ||
-      entry?.zoom !== undefined
     const space =
-      text(entry, 'space') ?? (canvasLike && !position ? 'canvas' : 'global3d')
+      text(entry, 'space') ??
+      (bounds !== undefined && !position ? 'canvas' : 'global3d')
     if (space !== 'global3d' && space !== 'canvas')
       throw new Error(`instance ${id}: space must be global3d or canvas.`)
     if (space === 'global3d') {
-      if (canvasLike)
+      if (bounds)
         throw new Error(
-          `instance ${id}: bounds, azimuth, elevation, pan and zoom are for a canvas tile; a global3d instance takes position, scale and orientation.`,
+          `instance ${id}: bounds are for a canvas tile; a global3d instance takes position, scale and orientation.`,
         )
       inst.space = 'global3d'
       inst.position = position ?? [0, 0, 0]
@@ -222,22 +208,13 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
         [bounds[2], bounds[3]],
       ]
     }
-    const azimuth = number(entry, 'azimuth')
-    const elevation = number(entry, 'elevation')
-    if (azimuth !== undefined || elevation !== undefined)
-      inst.rotation = [azimuth ?? 0, elevation ?? 0, 0, 0]
-    const pan = numbers(entry, 'pan', 2)
-    const zoom = number(entry, 'zoom')
-    if (zoom !== undefined && zoom <= 0)
-      throw new Error(`instance ${id}: zoom must be above 0.`)
-    if (pan || zoom !== undefined)
-      inst.viewport = { pan: pan ? [pan[0], pan[1]] : [0, 0], zoom: zoom ?? 1 }
+    // NiiVue draws a canvas tile with the scene's own render camera: it
+    // reads a tile's rotation and viewport only for a tile on a screen.
     return inst
   }
 
   return {
     async set_instances(params: Params) {
-      if (!view.volumes.length) throw new Error('No volume is loaded yet.')
       if (!view.setInstances)
         throw new Error("This page's NiiVue cannot lay out instances.")
       host.beforeAnswer?.()
@@ -256,6 +233,8 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
         )
       if (list && list.length > MAX_INSTANCES)
         throw new Error(`At most ${MAX_INSTANCES} instances at once.`)
+      if (!clear && !view.volumes.length)
+        throw new Error('No volume is loaded yet.')
       // Everything is read and checked before NiiVue is touched, so a
       // refused call leaves the scene as it was.
       const instances = list?.map(instanceFrom)
@@ -276,7 +255,8 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
           const other = byKey.get(key)
           if (other !== undefined && other !== index)
             throw new Error(
-              `Volumes ${other} and ${index} were both loaded from ${key}, and NiiVue keeps ` +
+              `Volumes ${other} ("${view.volumes[other].name}") and ${index} ("${volume.name}") were ` +
+                'both loaded from one file, and NiiVue keeps ' +
                 'one texture per file in this layout, so both instances would draw the same one. ' +
                 'Lay out only one of them; to compare them, clear the instances and show both as overlays.',
             )

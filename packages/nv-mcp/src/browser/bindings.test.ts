@@ -10,6 +10,7 @@ import {
 } from './bindings'
 import { controlHandlers, memoryControls } from './controls'
 import { dataPalette } from './data'
+import { coreHandlers } from './scene'
 import { settingHandlers } from './settings'
 import type {
   MeshUpdate,
@@ -405,6 +406,70 @@ describe('bindControls: spreading a volume', () => {
       await Bun.sleep(0)
       expect(view.volumes[0].chunkExplode).toEqual(expected)
     }
+  })
+
+  describe('keeps the latest spread when a control and set_volume overlap', () => {
+    /** The spreadable view, its first tiling held until `uploaded` runs. */
+    function held() {
+      const parts = spreadable()
+      const { view } = parts
+      const release: Array<() => void> = []
+      view.setVolumeChunkGrid = mock(
+        (index: number, grid: [number, number, number] | null) => {
+          view.volumes[index].chunkPlan = grid ? { gridDims: grid } : undefined
+          return new Promise<void>((resolve) => {
+            release.push(resolve)
+          })
+        },
+      )
+      parts.add_control({
+        id: 'spread',
+        kind: 'slider',
+        x: 0,
+        y: 0,
+        bind: 'volume.0.spread',
+      })
+      const uploaded = async () => {
+        for (const resolve of release) resolve()
+        await Bun.sleep(0)
+      }
+      return {
+        ...parts,
+        set_volume: coreHandlers(hostOf(view)).set_volume,
+        uploaded,
+      }
+    }
+    const later = [
+      [3, { enabled: true, scale: [3, 3, 3] }],
+      [1, null],
+    ] as const
+
+    for (const [last, expected] of later)
+      it(`a set_volume of ${last} after the slider's pending 2`, async () => {
+        const { memory, view, set_volume, uploaded } = held()
+        memory.simulate({ id: 'spread', type: 'input', value: 2 })
+        await Bun.sleep(0)
+        await set_volume({ volume: 0, spread: last })
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        await uploaded()
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+      })
+
+    for (const [last, expected] of later)
+      it(`a slider of ${last} after set_volume's pending 2, which says it was superseded`, async () => {
+        const { memory, view, set_volume, uploaded } = held()
+        const call = set_volume({ volume: 0, spread: 2 })
+        await Bun.sleep(0)
+        memory.simulate({ id: 'spread', type: 'input', value: last })
+        await Bun.sleep(0)
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        await uploaded()
+        const reply = await call
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        expect(reply).toMatchObject({
+          superseded: expect.stringContaining('later spread'),
+        })
+      })
   })
 
   it('names spread among the volume properties', () => {

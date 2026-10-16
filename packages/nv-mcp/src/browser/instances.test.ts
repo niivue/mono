@@ -118,19 +118,10 @@ describe('set_instances', () => {
     expect(calls).toEqual(['instances 1', 'camera'])
   })
 
-  it('lays out canvas tiles from bounds, angles, pan and zoom', async () => {
+  it('lays out canvas tiles from bounds', async () => {
     const { view } = instView()
     const out = await run(view, {
-      instances: [
-        {
-          id: 'tile',
-          bounds: [0, 0, 0.5, 1],
-          azimuth: 30,
-          elevation: 10,
-          pan: [0.1, 0],
-          zoom: 2,
-        },
-      ],
+      instances: [{ id: 'tile', bounds: [0, 0, 0.5, 1] }],
     })
     expect(view.opts?.instances).toEqual([
       {
@@ -140,8 +131,6 @@ describe('set_instances', () => {
           [0, 0],
           [0.5, 1],
         ],
-        rotation: [30, 10, 0, 0],
-        viewport: { pan: [0.1, 0], zoom: 2 },
       },
     ])
     expect(out.instances).toEqual([
@@ -150,9 +139,6 @@ describe('set_instances', () => {
         space: 'canvas',
         volume: { index: 0, name: 'mni152.nii.gz' },
         bounds: [0, 0, 0.5, 1],
-        azimuth: 30,
-        elevation: 10,
-        viewport: { pan: [0.1, 0], zoom: 2 },
       },
     ])
   })
@@ -165,6 +151,12 @@ describe('set_instances', () => {
     expect(view.setInstances).toHaveBeenLastCalledWith(null)
     expect(out).toEqual({ instances: [] })
     expect(instancesState(view)).toEqual({})
+  })
+
+  it('clears once every volume is closed', async () => {
+    const { view } = instView([])
+    await run(view, { clear: true })
+    expect(view.setInstances).toHaveBeenLastCalledWith(null)
   })
 
   describe('refuses, leaving the scene as it was', () => {
@@ -209,7 +201,6 @@ describe('set_instances', () => {
         { instances: [{ bounds: [0.5, 0, 0.2, 1] }] },
         /lower left/,
       ],
-      ['a zero zoom', { instances: [{ zoom: 0 }] }, /zoom must be above 0/],
       ['a zero scale', { instances: [{ scale: 0 }] }, /scale must be above 0/],
       [
         'a negative axis scale',
@@ -268,7 +259,13 @@ describe('set_instances', () => {
     ])
     await expect(
       run(view, { instances: [{ volume: 0 }, { volume: 1 }] }),
-    ).rejects.toThrow(/both loaded from \/volumes\/mni152.nii.gz/)
+    ).rejects.toThrow(
+      /Volumes 0 \("mni"\) and 1 \("mni hot"\) were both loaded from one file/,
+    )
+    // The page's addresses stay out of what the agent is told.
+    await expect(
+      run(view, { instances: [{ volume: 0 }, { volume: 1 }] }),
+    ).rejects.not.toThrow(/\/volumes\//)
     expect(view.setInstances).not.toHaveBeenCalled()
     // Many copies of one volume share its one texture, which is fine.
     await run(view, { instances: [{ volume: 0 }, { volume: 0 }] })

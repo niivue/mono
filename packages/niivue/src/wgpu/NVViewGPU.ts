@@ -934,9 +934,9 @@ export default class NVView {
       this.screenSlices = screenSlices
     }
     // Crosshair geometry is written per tile rather than once per frame: its
-    // radius is a screen weight, so it depends on the tile's mm-per-pixel. Each
-    // tile that draws one claims the next vertex slot.
-    let crosshairSlot = 0
+    // radius depends on the tile's mm-per-pixel and its arms on the tile's
+    // slice. Each distinct geometry claims the next vertex slot.
+    this.crosshairRenderer.beginFrame()
     const ann3DData = md.annotation.isVisibleIn3D
       ? NVAnnotation.buildAnnotation3DRenderData(md)
       : null
@@ -1319,14 +1319,13 @@ export default class NVView {
           : 0
       // A zero radius is either crosshairWidth: 0 or a degenerate tile; both
       // mean there is nothing to draw.
-      const chSlot = crosshairSlot
+      let chSlot = 0
       let chDrawn = false
       if (chRadiusMM > 0 && this.meshPipelines) {
         const pipeline = this.meshPipelines.phong
         if (pipeline) {
-          crosshairSlot++
           chDrawn = true
-          this.crosshairRenderer.update(md, chRadiusMM, chSlot)
+          chSlot = this.crosshairRenderer.update(md, chRadiusMM, tile.axCorSag)
           this.crosshairRenderer.draw(
             device,
             pass,

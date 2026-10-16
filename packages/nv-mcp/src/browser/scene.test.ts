@@ -305,6 +305,21 @@ describe('list_regions', () => {
 })
 
 describe('where_am_i', () => {
+  it('reports the instances and global camera when some are set', async () => {
+    const view = fakeView({
+      opts: {
+        instances: [{ id: 'a', space: 'global3d', position: [1, 0, 0] }],
+        globalCamera: { position: [0, 0, 0], yaw: Math.PI },
+      },
+    })
+    expect(await coreHandlers(host(view)).where_am_i({})).toMatchObject({
+      instances: [{ id: 'a', space: 'global3d', position: [1, 0, 0] }],
+      globalCamera: { position: [0, 0, 0], yaw: 180 },
+    })
+    expect(sceneState(host(view)).instances).toEqual(['a'])
+    expect('instances' in sceneState(host())).toBe(false)
+  })
+
   it('reports the crosshair both ways, the plane, the camera, the description, and extras', async () => {
     const view = fakeView()
     view.crosshairPos[2] = 0.75
@@ -449,6 +464,39 @@ describe('clip plane 0', () => {
 })
 
 describe('set_camera', () => {
+  it('places the global camera in radians and reports it in degrees', () => {
+    const setGlobalCamera = mock()
+    const view = fakeView({
+      setGlobalCamera,
+      opts: {
+        globalCamera: { position: [1, 2, 3], yaw: Math.PI / 4, pitch: 0 },
+      },
+    })
+    const result = coreHandlers(host(view)).set_camera({
+      global: { position: [1, 2, 3], yaw: 45, pitch: 0 },
+    })
+    const [cam] = setGlobalCamera.mock.calls[0]
+    expect(cam.position).toEqual([1, 2, 3])
+    expect(cam.yaw).toBeCloseTo(Math.PI / 4)
+    expect(cam.pitch).toBe(0)
+    expect(result).toMatchObject({
+      globalCamera: { position: [1, 2, 3], yaw: 45, pitch: 0 },
+    })
+  })
+
+  it('refuses a global camera NiiVue would not take before turning the render', () => {
+    const view = fakeView({ setGlobalCamera: mock() })
+    const before = view.azimuth
+    expect(() =>
+      coreHandlers(host(view)).set_camera({
+        azimuth: 90,
+        global: { position: [0, 0, 0], near: 1000 },
+      }),
+    ).toThrow('far must be beyond near')
+    expect(view.azimuth).toBe(before)
+    expect(view.setGlobalCamera).not.toHaveBeenCalled()
+  })
+
   it('turns the camera, wrapping the azimuth and clamping the elevation', () => {
     const view = fakeView()
     const result = coreHandlers(host(view)).set_camera({
@@ -556,6 +604,78 @@ describe('set_volume', () => {
     expect(
       await handlers.set_volume({ volume: '2', opacity: 0 }),
     ).toMatchObject({ volume: { index: 2, opacity: 0 } })
+  })
+
+  it('draws a vector field as colours in a call of its own, and refuses a volume that is not one', async () => {
+    const calls: string[] = []
+    const view = fakeView({
+      volumes: [
+        { name: 'mni152.nii.gz', nFrame4D: 1, img: new Float32Array(8) },
+        { name: 'afni_v1', nFrame4D: 3, img: new Float32Array(24) },
+        { name: 'dti.fib', nFrame4D: 1, v1: new Float32Array(24) },
+      ],
+      loadImgV1: mock(async (index: number) => {
+        calls.push(`v1 ${index}`)
+        return true
+      }),
+      setVolume: mock(async () => {
+        calls.push('set')
+      }),
+    })
+    const handlers = coreHandlers(host(view))
+    await handlers.set_volume({ volume: 1, v1: true })
+    expect(view.loadImgV1).toHaveBeenLastCalledWith(1, false, false, false)
+    expect(calls).toEqual(['v1 1'])
+    // Nothing else alongside: the conversion leaves one frame and resets the
+    // window, so a refused call must not have converted.
+    await expect(
+      handlers.set_volume({ volume: 1, v1: true, frame: 2, opacity: 0.5 }),
+    ).rejects.toThrow('set frame, opacity in another call')
+    expect(calls).toEqual(['v1 1'])
+    await handlers.set_volume({ volume: 2, v1: { flip: [true, false, true] } })
+    expect(view.loadImgV1).toHaveBeenLastCalledWith(2, true, false, true)
+    await expect(handlers.set_volume({ volume: 0, v1: true })).rejects.toThrow(
+      'mni152.nii.gz is not a vector field',
+    )
+    await expect(
+      handlers.set_volume({ volume: 1, v1: { flip: [true] } }),
+    ).rejects.toThrow('v1 is true, or { flip: [x, y, z] }')
+    expect(view.loadImgV1).toHaveBeenCalledTimes(2)
+    view.loadImgV1 = mock(async () => false)
+    await expect(handlers.set_volume({ volume: 1, v1: true })).rejects.toThrow(
+      'NiiVue found no vectors in afni_v1',
+    )
+  })
+
+  it('reports the vector field where it moved while NiiVue uploaded it, and says so when it was removed', async () => {
+    const vectors = () => [
+      { name: 'mni152.nii.gz', nFrame4D: 1, img: new Float32Array(8) },
+      { name: 'afni_v1', nFrame4D: 3, img: new Float32Array(24) },
+    ]
+    const view = fakeView({
+      volumes: vectors(),
+      loadImgV1: mock(async () => {
+        ;(view.volumes as ShownVolume[]).splice(1, 0, {
+          name: 'inserted.nii.gz',
+        })
+        return true
+      }),
+    })
+    expect(
+      await coreHandlers(host(view)).set_volume({ volume: 1, v1: true }),
+    ).toMatchObject({ volume: { index: 2, name: 'afni_v1' } })
+    const gone = fakeView({
+      volumes: vectors(),
+      loadImgV1: mock(async () => {
+        ;(gone.volumes as ShownVolume[]).splice(1, 1)
+        return true
+      }),
+    })
+    await expect(
+      coreHandlers(host(gone)).set_volume({ volume: 1, v1: true }),
+    ).rejects.toThrow(
+      'afni_v1 was removed while its vectors were drawn as colours',
+    )
   })
 
   it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {

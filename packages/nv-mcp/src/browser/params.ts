@@ -129,6 +129,18 @@ export function record(params: Params, key: string): Params | undefined {
   return value as Params
 }
 
+/** A list of objects, when given. */
+export function entries(params: Params, key: string): Params[] | undefined {
+  const value = params?.[key]
+  if (value === undefined || value === null) return undefined
+  if (
+    !Array.isArray(value) ||
+    value.some((v) => typeof v !== 'object' || v === null || Array.isArray(v))
+  )
+    throw new Error(`${key} must be a list of objects.`)
+  return value as Params[]
+}
+
 /** A list of strings, when given. */
 export function strings(params: Params, key: string): string[] | undefined {
   const value = params?.[key]

@@ -110,6 +110,8 @@ export interface ShownVolume {
    * streams it.
    */
   img?: VoxelArray | null
+  /** The principal diffusion directions a tensor reader kept, x then y then z, for `loadImgV1`. */
+  v1?: Float32Array
   /** The brick grid it is rendered through, when it is chunked. */
   chunkPlan?: {
     gridDims: ArrayLike<number>
@@ -285,6 +287,14 @@ export interface MeasurementOptions {
   slicePosition?: number
 }
 
+/** A box NiiVue outlines on the render: corners in mm, colour 0 to 1, edges in pixels. */
+export interface FocusBox {
+  min: [number, number, number]
+  max: [number, number, number]
+  color: number[]
+  thickness: number
+}
+
 /** A vector annotation as NiiVue keeps it: `VectorAnnotation`. Passed through as JSON. */
 export interface Annotation {
   id: string
@@ -346,12 +356,45 @@ export interface AffineTransform {
 
 /** The render camera when it is placed rather than turned: NiiVue's `NVGlobalCamera`. */
 export interface GlobalCamera {
+  /** In scene units, the units instance positions are in. */
   position: [number, number, number]
+  /** Radians, 0 looking down -z. */
   yaw?: number
+  /** Radians. */
   pitch?: number
+  /** Degrees. */
   fov?: number
   near?: number
   far?: number
+}
+
+/**
+ * One thing NiiVue draws when it is given instances: NiiVue's `NVInstance`.
+ * With `space: 'global3d'` (or a `position`), a volume rendered in a 3D
+ * scene the global camera looks at; otherwise a tile of the canvas.
+ */
+export interface Instance {
+  id: string
+  /** Normalized canvas bounds, `[[x1, y1], [x2, y2]]`, y up. */
+  bounds?: [[number, number], [number, number]]
+  space?: 'canvas' | 'global3d'
+  /** Where it sits in the scene, in scene units. */
+  position?: [number, number, number]
+  /** How wide it is in scene units: the volume's longest side spans this. */
+  scale?: number | [number, number, number]
+  /** Its rotation about x, y and z, in radians. */
+  orientation?: [number, number, number]
+  viewport?: Viewport
+  /** For a canvas tile, its render camera: `[azimuth, elevation, ...]`. */
+  rotation?: [number, number, number, number]
+  /** The volume it draws, by name or address; the base when none matches. */
+  volumeId?: string
+}
+
+/** What NiiVue was built with and keeps: the instances and the global camera. */
+export interface InfrastructureOptions {
+  instances?: Instance[]
+  globalCamera?: GlobalCamera
 }
 
 /** The 2D pan and zoom of the canvas: NiiVue's `CanvasViewport`. */
@@ -518,6 +561,13 @@ export interface View {
     drawPenValues?: number[]
   }): Descriptives | null
   recalculateCalMinMax?(volumeIndex: number, frame?: number): Promise<unknown>
+  /** Draw a 3-frame float vector field (or a volume's stored V1) as direction colours; false when it has none. */
+  loadImgV1?(
+    volumeIndex: number,
+    isFlipX?: boolean,
+    isFlipY?: boolean,
+    isFlipZ?: boolean,
+  ): Promise<boolean>
   loadDeferred4DVolumes?(id: string): Promise<unknown>
   setModulationImage?(
     targetId: string,
@@ -611,6 +661,10 @@ export interface View {
     index?: number,
   ): unknown
   setGlobalCamera?(camera: GlobalCamera): unknown
+  /** Replaces the instances it draws; null goes back to the layout, and an empty list draws none. */
+  setInstances?(instances: Instance[] | null): unknown
+  /** The instances and global camera it holds now. */
+  opts?: InfrastructureOptions
   centerRenderOnMM?(mm: [number, number, number]): boolean
   pan2Dxyzmm?: ArrayLike<number>
   renderPan?: ArrayLike<number>
@@ -667,6 +721,12 @@ export interface View {
   getAnnotationsJSON?(): string
   loadAnnotationsJSON?(json: string): unknown
   annotationsToSVG?(sliceType?: number, slicePosition?: number): string | null
+  /** The style an annotation drawn by hand takes: fillColor, strokeColor, strokeWidth. */
+  annotationStyle?: Record<string, unknown>
+
+  // Boxes outlined on the render.
+  focusBox?: FocusBox | null
+  lodBoxes?: FocusBox[] | null
 
   // Measurements.
   getMeasurements?(): readonly Measurement[]

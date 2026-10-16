@@ -202,7 +202,7 @@ The MCP Inspector is a small web app that connects to any server and lets you ca
 bunx @modelcontextprotocol/inspector
 ```
 
-Choose Streamable HTTP as the transport, enter `http://127.0.0.1:4242/mcp`, connect, and the Tools tab lists the 48 core tools plus whatever the app added. Calling `where_am_i` is a good first check: it answers in words even before NiiVue has finished loading.
+Choose Streamable HTTP as the transport, enter `http://127.0.0.1:4242/mcp`, connect, and the Tools tab lists the 62 core tools plus whatever the app added. Calling `where_am_i` is a good first check: it answers in words even before NiiVue has finished loading.
 
 ## When something does not work
 

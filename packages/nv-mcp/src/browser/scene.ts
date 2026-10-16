@@ -32,6 +32,12 @@ import {
 import { animateHandlers } from './animate'
 import { controlHandlers } from './controls'
 import { dataHandlers } from './data'
+import {
+  globalCameraFrom,
+  instanceHandlers,
+  instancesState,
+  reportedCamera,
+} from './instances'
 import { checkFits, fetchValues, oneSource } from './liveData'
 import { markHandlers } from './marks'
 import { meshHandlers } from './meshes'
@@ -44,6 +50,7 @@ import {
   nothingIn,
   number,
   numbers,
+  type Params,
   point,
   pointIfGiven,
   put,
@@ -62,7 +69,6 @@ import {
 import type {
   AffineTransform,
   AtlasLike,
-  GlobalCamera,
   Handlers,
   LabelTable,
   NiiVueHost,
@@ -89,6 +95,9 @@ export function sceneState(host: NiiVueHost): TabState {
       ? { controls: host.controls.list().map((c) => c.id) }
       : {}),
     ...(host.data ? { data: host.data.list().map((e) => e.id) } : {}),
+    ...(view.opts?.instances?.length
+      ? { instances: view.opts.instances.map((i) => i.id) }
+      : {}),
     ...(host.extraState?.() ?? {}),
   }
 }
@@ -224,6 +233,48 @@ function cutPlane(
   view.setClipPlane(plane)
 }
 
+/**
+ * The axis flips of a `set_volume` `v1` call, refused unless `v1` is the
+ * call's only change and the volume is a vector field. The conversion is
+ * one way and leaves one frame, so a window, frame or anything else asked
+ * for alongside would land on an image that no longer exists.
+ */
+function flipsFrom(params: Params, volume: ShownVolume): boolean[] {
+  const v1 = params?.v1
+  const flip =
+    v1 === true
+      ? [false, false, false]
+      : typeof v1 === 'object' && v1 !== null && !Array.isArray(v1)
+        ? (v1 as Params)?.flip
+        : undefined
+  if (
+    !Array.isArray(flip) ||
+    flip.length !== 3 ||
+    flip.some((f) => typeof f !== 'boolean')
+  ) {
+    throw new Error(
+      'v1 is true, or { flip: [x, y, z] }: three true or false, each turning that component of the vectors around.',
+    )
+  }
+  const others = Object.keys(params ?? {}).filter(
+    (key) =>
+      !['tab', 'volume', 'v1'].includes(key) && params?.[key] !== undefined,
+  )
+  if (others.length) {
+    throw new Error(
+      `v1 goes in a call of its own: it turns the volume into a one-frame colour image, so set ${others.join(', ')} in another call.`,
+    )
+  }
+  const vectors =
+    volume.v1 !== undefined ||
+    (volume.nFrame4D === 3 && volume.img instanceof Float32Array)
+  if (!vectors) {
+    throw new Error(
+      `${volume.name} is not a vector field: v1 needs three float frames (x, y and z), or a tensor file's stored directions.`,
+    )
+  }
+  return flip as boolean[]
+}
 /** The handlers for the core tools, over this host. */
 export function coreHandlers(host: NiiVueHost): Handlers {
   const { view } = host
@@ -367,6 +418,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     ...controlHandlers(host),
     ...dataHandlers(host),
     ...animateHandlers(host),
+    ...instanceHandlers(host),
 
     async load_volume(params) {
       const url = text(params, 'url')
@@ -413,6 +465,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         camera: camera(view),
         ...(hasLayout(view) ? { view: viewState(view) } : {}),
         ...counts(view),
+        ...instancesState(view),
         description: await describe(),
         ...(host.extraState?.() ?? {}),
       }
@@ -710,6 +763,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     set_camera(params) {
       requireVolume()
       host.beforeAnswer?.()
+      // The global camera is read and checked first, so a camera NiiVue
+      // would refuse leaves the render's own camera as it was.
+      const placed = record(params, 'global')
+      const global = placed ? globalCameraFrom(placed) : undefined
+      if (global && !view.setGlobalCamera)
+        throw new Error("This page's NiiVue has no global camera to place.")
       let changed = false
       const azimuth = number(params, 'azimuth')
       const elevation = number(params, 'elevation')
@@ -755,18 +814,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           )
         changed = true
       }
-      const placed = record(params, 'global')
-      if (placed) {
-        if (!view.setGlobalCamera)
-          throw new Error("This page's NiiVue has no global camera to place.")
-        const position = point(placed, 'position')
-        const cam: GlobalCamera = { position }
-        put(cam, 'yaw', number(placed, 'yaw'))
-        put(cam, 'pitch', number(placed, 'pitch'))
-        put(cam, 'fov', number(placed, 'fov'))
-        put(cam, 'near', number(placed, 'near'))
-        put(cam, 'far', number(placed, 'far'))
-        view.setGlobalCamera(cam)
+      if (global) {
+        view.setGlobalCamera?.(global)
         changed = true
       }
       if (!changed) {
@@ -783,6 +832,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ...(view.renderPivotMM
           ? { pivot: Array.from(view.renderPivotMM) }
           : {}),
+        ...(view.opts?.globalCamera
+          ? { globalCamera: reportedCamera(view.opts.globalCamera) }
+          : {}),
       }
     },
 
@@ -791,6 +843,23 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       host.beforeAnswer?.()
       const index = volumeIndex(params)
       const volume = view.volumes[index]
+      if (params?.v1 !== undefined && params.v1 !== null) {
+        const [x, y, z] = flipsFrom(params, volume)
+        if (!view.loadImgV1)
+          throw new Error(
+            "This page's NiiVue cannot draw a vector field as colours.",
+          )
+        if (!(await view.loadImgV1(index, x, y, z)))
+          throw new Error(`NiiVue found no vectors in ${volume.name}.`)
+        // The scene could change while NiiVue uploaded, so the volume is found again.
+        const now = view.volumes.indexOf(volume)
+        view.drawScene()
+        if (now < 0)
+          throw new Error(
+            `${volume.name} was removed while its vectors were drawn as colours.`,
+          )
+        return { volume: describeVolume(volume, now) }
+      }
       // Only what was asked for goes to NiiVue: it assigns the update
       // onto the volume as it is, so an undefined field would wipe one.
       const update: VolumeUpdate = {}

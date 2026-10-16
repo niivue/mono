@@ -29,6 +29,7 @@ import {
   SLICE_TYPES,
   type ViewState,
 } from '../views'
+import { animateHandlers } from './animate'
 import { controlHandlers } from './controls'
 import { dataHandlers } from './data'
 import { checkFits, fetchValues, oneSource } from './liveData'
@@ -365,6 +366,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     ...markHandlers(host),
     ...controlHandlers(host),
     ...dataHandlers(host),
+    ...animateHandlers(host),
 
     async load_volume(params) {
       const url = text(params, 'url')

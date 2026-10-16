@@ -6,6 +6,7 @@
  * its name. As with volumes, only what was asked for goes to NiiVue.
  */
 
+import { checkFits, fetchValues, isTyped, oneSource } from './liveData'
 import {
   clamp,
   clearable,
@@ -15,6 +16,7 @@ import {
   nameFromUrl,
   nothingIn,
   number,
+  numbers,
   type Params,
   put,
   record,
@@ -300,6 +302,67 @@ export function meshHandlers(host: NiiVueHost): Handlers {
         ...(mesh.kind === 'tract' && view.getTractGroups
           ? { tractGroups: view.getTractGroups(index) }
           : {}),
+      }
+    },
+
+    async update_mesh_positions(params: Params) {
+      host.beforeAnswer?.()
+      if (!view.updateMeshPositions)
+        throw new Error("This page's NiiVue cannot move a mesh's vertices.")
+      const index = meshIndex(params)
+      const mesh = meshes()[index]
+      const name = mesh.name ?? 'The mesh'
+      // NiiVue only logs and returns for each of these, so they are
+      // refused here, before anything is fetched or written.
+      if (mesh.kind && mesh.kind !== 'mesh')
+        throw new Error(
+          `${name} is a ${mesh.kind}; only a triangulated mesh's vertices can be moved.`,
+        )
+      const positions = mesh.positions
+      if (!positions)
+        throw new Error(`${name} holds no vertex positions to write over.`)
+      const source = oneSource(
+        params,
+        ['values', 'url', 'from_mesh'],
+        'update_mesh_positions',
+      )
+      let data: ArrayLike<number>
+      if (source === 'url') {
+        const like = isTyped(positions) ? positions : new Float32Array(0)
+        data = await fetchValues(params, 'url', like)
+      } else if (source === 'from_mesh') {
+        const from =
+          meshes()[pickIndex(meshes(), params?.from_mesh, 'from_mesh')]
+        if (!from.positions)
+          throw new Error(
+            `${from.name ?? 'That mesh'} holds no vertex positions to copy.`,
+          )
+        data = from.positions
+      } else {
+        data = numbers(params, 'values') ?? []
+      }
+      for (let i = 0; i < data.length; i++) {
+        if (!Number.isFinite(data[i]))
+          throw new Error(`Value ${i} is ${data[i]}, not a finite position.`)
+      }
+      if (isTyped(positions)) checkFits(data, positions, name)
+      if (data.length !== positions.length) {
+        throw new Error(
+          `${name} has ${positions.length / 3} vertices and takes ${positions.length} values, x, y and z for each; got ${data.length}.`,
+        )
+      }
+      // The person may have removed or replaced the mesh during a fetch;
+      // its index could now hold another with as many vertices.
+      const at = meshes().indexOf(mesh)
+      if (at < 0 || mesh.positions !== positions)
+        throw new Error(
+          `${name} was removed or replaced while its values were fetched; nothing was written.`,
+        )
+      view.updateMeshPositions(at, data)
+      view.drawScene()
+      return {
+        vertices: data.length / 3,
+        mesh: describeMesh(meshes()[at], at),
       }
     },
 

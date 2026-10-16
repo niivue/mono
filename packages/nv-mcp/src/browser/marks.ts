@@ -481,7 +481,7 @@ function styleFrom(given: unknown): Record<string, unknown> {
     if (
       !Array.isArray(value) ||
       value.length !== 4 ||
-      value.some((n) => typeof n !== 'number' || !Number.isFinite(n))
+      value.some((n) => typeof n !== 'number' || !(n >= 0 && n <= 1))
     )
       throw new Error(`style.${key} must be [r, g, b, a], each 0 to 1.`)
     return value as [number, number, number, number]
@@ -494,9 +494,15 @@ function styleFrom(given: unknown): Record<string, unknown> {
     strokeColor[3] * 0.3,
   ]
   const strokeWidth = style.strokeWidth ?? 2
-  if (typeof strokeWidth !== 'number' || !(strokeWidth >= 0))
+  if (
+    typeof strokeWidth !== 'number' ||
+    !(strokeWidth >= 0) ||
+    !Number.isFinite(strokeWidth)
+  )
     throw new Error('style.strokeWidth must be a number of pixels, 0 or more.')
-  return { ...style, fillColor, strokeColor, strokeWidth }
+  // Only what NiiVue reads: anything else would ride along into its saved
+  // annotations unchecked.
+  return { fillColor, strokeColor, strokeWidth }
 }
 
 /**

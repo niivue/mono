@@ -244,6 +244,22 @@ describe('edit_annotations', () => {
     expect(() =>
       edit_annotations({ action: 'set_style', style: { strokeColor: [1] } }),
     ).toThrow('strokeColor must be [r, g, b, a]')
+    expect(() =>
+      edit_annotations({
+        action: 'set_style',
+        style: { fillColor: [0, 0, 300, 1] },
+      }),
+    ).toThrow('fillColor must be [r, g, b, a], each 0 to 1')
+    // Only the fields NiiVue reads are kept.
+    edit_annotations({
+      action: 'set_style',
+      style: { strokeWidth: 4, dash: [2, 2] },
+    })
+    expect(Object.keys(view.annotationStyle ?? {}).sort()).toEqual([
+      'fillColor',
+      'strokeColor',
+      'strokeWidth',
+    ])
     expect(() => edit_annotations({ action: 'set_style' })).toThrow(
       'set_style needs style',
     )

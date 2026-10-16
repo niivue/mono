@@ -9,6 +9,7 @@
  * instance's volume is checked to be the one NiiVue will find.
  */
 
+import { MAX_INSTANCES } from '../limits'
 import {
   flag,
   number,
@@ -28,9 +29,6 @@ import type {
   ShownVolume,
   View,
 } from './view'
-
-/** The most instances one call lays out. */
-export const MAX_INSTANCES = 100
 
 const DEG = Math.PI / 180
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test'
-
+import { MAX_INSTANCES } from '../limits'
 import { baseView, hostOf } from '../testing/fake-view'
-import { instanceHandlers, instancesState, MAX_INSTANCES } from './instances'
+import { instanceHandlers, instancesState } from './instances'
 import type { GlobalCamera, Instance, ShownVolume, View } from './view'
 
 const DEG = Math.PI / 180

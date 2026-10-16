@@ -4,6 +4,7 @@
  * planes by the parts that move) into NiiVue's target by index.
  */
 
+import { MAX_ANIMATION_MS } from '../limits'
 import { namePlane, planeDepthCuts } from '../planes'
 import {
   choice,
@@ -18,8 +19,6 @@ import {
 import { pickIndex } from './pick'
 import type { AnimationTarget, Handlers, NiiVueHost, View } from './view'
 
-/** The longest move the page runs, as the server's schema caps it. */
-const MAX_DURATION_MS = 10000
 const EASINGS = ['linear', 'easeIn', 'easeOut', 'easeInOut'] as const
 const ANGLES = ['shortest', 'literal'] as const
 
@@ -191,10 +190,10 @@ export function animateHandlers(host: NiiVueHost): Handlers {
       const duration = number(params, 'duration_ms')
       if (
         duration !== undefined &&
-        (duration < 0 || duration > MAX_DURATION_MS)
+        (duration < 0 || duration > MAX_ANIMATION_MS)
       )
         throw new Error(
-          `duration_ms must be 0 to ${MAX_DURATION_MS}, so the move ends before the call times out.`,
+          `duration_ms must be 0 to ${MAX_ANIMATION_MS}, so the move ends before the call times out.`,
         )
       const easing = choice(params, 'easing', EASINGS)
       const angles = choice(params, 'angles', ANGLES)

@@ -331,6 +331,41 @@ describe('bindControls: spreading a volume', () => {
     })
   })
 
+  it('keeps the latest spread when the slider moves while the bricks upload', async () => {
+    for (const [last, expected] of [
+      [3, { enabled: true, scale: [3, 3, 3] }],
+      [1, null],
+    ] as const) {
+      const { add_control, memory, view } = spreadable()
+      // As NiiVue does: the plan is made at once, the upload finishes later.
+      let uploaded = () => {}
+      view.setVolumeChunkGrid = mock(
+        (index: number, grid: [number, number, number] | null) => {
+          view.volumes[index].chunkPlan = grid ? { gridDims: grid } : undefined
+          return new Promise<void>((resolve) => {
+            uploaded = resolve
+          })
+        },
+      )
+      add_control({
+        id: 'spread',
+        kind: 'slider',
+        x: 0,
+        y: 0,
+        bind: 'volume.0.spread',
+      })
+      memory.simulate({ id: 'spread', type: 'input', value: 2 })
+      await Bun.sleep(0)
+      memory.simulate({ id: 'spread', type: 'input', value: last })
+      await Bun.sleep(0)
+      expect(view.volumes[0].chunkExplode).toEqual(expected)
+      uploaded()
+      await Bun.sleep(0)
+      expect(view.volumes[0].chunkExplode).toEqual(expected)
+      expect(view.setVolumeChunkGrid).toHaveBeenCalledTimes(1)
+    }
+  })
+
   it('names spread among the volume properties', () => {
     expect(() => resolveBinding('volume.0.spreads', settingsView())).toThrow(
       /spread\./,

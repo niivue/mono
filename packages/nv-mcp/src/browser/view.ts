@@ -513,7 +513,7 @@ export interface View {
   moveVolumeToBottom?(index: number): Promise<unknown>
   getDescriptives?(options: {
     volumeIndex?: number
-    masks?: number[]
+    masks?: Array<number | { index: number; values: number[] }>
     isDrawingMask?: boolean
     drawPenValues?: number[]
   }): Descriptives | null

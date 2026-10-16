@@ -434,7 +434,7 @@ export const CORE_SCHEMAS = {
       .min(1)
       .optional()
       .describe(
-        "Spread its bricks apart in the 3D render (an exploded view): each brick's offset from the centre is multiplied by this. 1 closes them up. A volume not yet chunked is tiled 3 by 3 by 3 first.",
+        "Spread its bricks apart in the 3D render (an exploded view): each brick's offset from the centre is multiplied by this. 1 closes them up. A volume not yet chunked is tiled 3 by 3 by 3 first. If a control or another call spreads it while this call waits, the later spread wins and the reply says `superseded`.",
       ),
   },
   set_labels: {

@@ -51,6 +51,7 @@ import {
 import { pickIndex } from './pick'
 import { settingHandlers } from './settings'
 import { signalHandlers } from './signals'
+import { claimSpread, requireSpread, spreadVolume } from './spread'
 import type {
   AffineTransform,
   AtlasLike,
@@ -884,6 +885,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           'set_volume needs something to set: colormap, opacity, cal_min, cal_max, frame, invert, or one of the others its schema lists.',
         )
       }
+      if (spread !== undefined) requireSpread(view)
+      // The spread write is claimed before anything waits, so a control
+      // that writes the spread meanwhile is the later one and wins.
+      const spreadClaim = spread === undefined ? undefined : claimSpread(volume)
       if (!nothingIn(update)) {
         if (!view.setVolume)
           throw new Error(
@@ -955,23 +960,29 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           grid ? [grid[0], grid[1], grid[2]] : null,
         )
       }
-      if (spread !== undefined) {
-        if (!view.setVolumeChunkExplode || !view.setVolumeChunkGrid)
-          throw new Error("This page's NiiVue cannot spread a volume's bricks.")
-        // Spreading needs bricks: a volume that is one texture is tiled
-        // 3 x 3 x 3 first, unless a grid was asked for in the same call.
-        if (spread > 1 && !volume.chunkPlan && chunkGrid === undefined) {
-          await view.setVolumeChunkGrid(index, [3, 3, 3])
-        }
-        view.setVolumeChunkExplode(
-          index,
-          spread > 1 && volume.chunkPlan
-            ? { enabled: true, scale: [spread, spread, spread] }
-            : null,
-        )
-      }
+      // Spreading needs bricks: a volume that is one texture is tiled
+      // 3 x 3 x 3 first, unless a grid was asked for in the same call.
+      const spreadKept =
+        spread === undefined || spreadClaim === undefined
+          ? true
+          : await spreadVolume(
+              view,
+              index,
+              volume,
+              spread,
+              spreadClaim,
+              chunkGrid === undefined,
+            )
       view.drawScene()
-      return { volume: describeVolume(volume, index) }
+      return {
+        volume: describeVolume(volume, index),
+        ...(spreadKept
+          ? {}
+          : {
+              superseded:
+                'A later spread of this volume, from a control or another call, came in while this call waited, so the volume keeps that one.',
+            }),
+      }
     },
 
     async set_labels(params) {

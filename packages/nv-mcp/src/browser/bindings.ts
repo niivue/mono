@@ -183,6 +183,13 @@ const VOLUME_NAMES = [...Object.keys(VOLUME_PROPS), 'spread']
 const MAX_SPREAD = 4
 
 /**
+ * The number of the latest spread write to each volume, shared by every
+ * control bound to it: a write that waited for the bricks to upload stands
+ * down if a later one came in meanwhile, from any control, so the latest wins.
+ */
+const latestSpread = new WeakMap<ShownVolume, number>()
+
+/**
  * How far a volume's bricks are spread apart in the 3D render, as set_volume's
  * `spread` sets it: 1 closes them up, and a volume drawn as one texture is
  * tiled 3 by 3 by 3 before it can spread.
@@ -192,9 +199,6 @@ function spreadTarget(bind: string, view: View, index: number): Target {
     throw new Error("This page's NiiVue cannot spread a volume's bricks.")
   const explode = view.setVolumeChunkExplode.bind(view)
   const tile = view.setVolumeChunkGrid.bind(view)
-  // Each write's number: a write that waited for the bricks to upload
-  // stands down if a later one came in meanwhile, so the latest wins.
-  let latest = 0
   return {
     shape: 'number',
     min: 1,
@@ -213,12 +217,13 @@ function spreadTarget(bind: string, view: View, index: number): Target {
         throw new Error(`${bind} is 1 (the bricks touching) or more.`)
       const volume = view.volumes[index]
       if (!volume) throw new Error(`Volume ${index} is no longer loaded.`)
-      const mine = ++latest
+      const mine = (latestSpread.get(volume) ?? 0) + 1
+      latestSpread.set(volume, mine)
       if (spread > 1 && !volume.chunkPlan) await tile(index, [3, 3, 3])
       // The volume may have been replaced while it was tiled.
       if (view.volumes[index] !== volume)
         throw new Error(`Volume ${index} changed while it was tiled.`)
-      if (mine !== latest) return
+      if (mine !== latestSpread.get(volume)) return
       explode(
         index,
         spread > 1 && volume.chunkPlan

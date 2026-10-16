@@ -342,7 +342,10 @@ describe('bindControls: spreading a volume', () => {
       let uploaded = () => {}
       view.setVolumeChunkGrid = mock(
         (index: number, grid: [number, number, number] | null) => {
-          view.volumes[index].chunkPlan = grid ? { gridDims: grid } : undefined
+          const volume = view.volumes[index]
+          volume.chunkPlan = grid ? { gridDims: grid } : undefined
+          // NiiVue clears the spread with the bricks.
+          if (!grid) volume.chunkExplode = undefined
           return new Promise<void>((resolve) => {
             uploaded = resolve
           })
@@ -376,7 +379,10 @@ describe('bindControls: spreading a volume', () => {
       let uploaded = () => {}
       view.setVolumeChunkGrid = mock(
         (index: number, grid: [number, number, number] | null) => {
-          view.volumes[index].chunkPlan = grid ? { gridDims: grid } : undefined
+          const volume = view.volumes[index]
+          volume.chunkPlan = grid ? { gridDims: grid } : undefined
+          // NiiVue clears the spread with the bricks.
+          if (!grid) volume.chunkExplode = undefined
           return new Promise<void>((resolve) => {
             uploaded = resolve
           })
@@ -416,7 +422,10 @@ describe('bindControls: spreading a volume', () => {
       const release: Array<() => void> = []
       view.setVolumeChunkGrid = mock(
         (index: number, grid: [number, number, number] | null) => {
-          view.volumes[index].chunkPlan = grid ? { gridDims: grid } : undefined
+          const volume = view.volumes[index]
+          volume.chunkPlan = grid ? { gridDims: grid } : undefined
+          // NiiVue clears the spread with the bricks.
+          if (!grid) volume.chunkExplode = undefined
           return new Promise<void>((resolve) => {
             release.push(resolve)
           })
@@ -468,6 +477,41 @@ describe('bindControls: spreading a volume', () => {
         expect(view.volumes[0].chunkExplode).toEqual(expected)
         expect(reply).toMatchObject({
           superseded: expect.stringContaining('later spread'),
+        })
+      })
+
+    for (const [last, expected] of later)
+      it(`a slider of ${last} while set_volume waits to untile and spread 1, which leaves the bricks`, async () => {
+        const { memory, view, set_volume, uploaded } = held()
+        const volume = view.volumes[0]
+        volume.chunkPlan = { gridDims: [3, 3, 3] }
+        volume.chunkExplode = { enabled: true, scale: [2, 2, 2] }
+        let release = () => {}
+        view.setVolume = mock(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve
+            }),
+        )
+        const call = set_volume({
+          volume: 0,
+          opacity: 0.4,
+          chunk_grid: null,
+          spread: 1,
+        })
+        await Bun.sleep(0)
+        memory.simulate({ id: 'spread', type: 'input', value: last })
+        await Bun.sleep(0)
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        release()
+        await Bun.sleep(0)
+        await uploaded()
+        const reply = await call
+        expect(view.volumes[0].chunkExplode).toEqual(expected)
+        expect(volume.chunkPlan).toEqual({ gridDims: [3, 3, 3] })
+        expect(view.setVolumeChunkGrid).not.toHaveBeenCalled()
+        expect(reply).toMatchObject({
+          superseded: expect.stringContaining('its bricks with it'),
         })
       })
   })

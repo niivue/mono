@@ -661,7 +661,7 @@ export interface View {
     index?: number,
   ): unknown
   setGlobalCamera?(camera: GlobalCamera): unknown
-  /** Replaces the instances it draws; null or an empty list goes back to the layout. */
+  /** Replaces the instances it draws; null goes back to the layout, and an empty list draws none. */
   setInstances?(instances: Instance[] | null): unknown
   /** The instances and global camera it holds now. */
   opts?: InfrastructureOptions

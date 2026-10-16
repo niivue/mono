@@ -30,7 +30,9 @@ export function loadImgV1(
   isFlipY = false,
   isFlipZ = false,
 ): boolean {
-  let v1 = nvImage.v1
+  // A copy, so the flips below act on this conversion only: a stored V1
+  // (from a tensor reader) stays as read, and a second call flips afresh.
+  let v1 = nvImage.v1?.slice()
   if (!v1 && nvImage.nFrame4D === 3 && nvImage.img) {
     if (nvImage.img instanceof Float32Array) {
       v1 = nvImage.img.slice()
@@ -62,6 +64,8 @@ export function loadImgV1(
   nvImage.hdr = result.hdr
   nvImage.img = result.img
   nvImage.nFrame4D = 1
+  // One frame now: a frame picked before would read past the RGBA image.
+  nvImage.frame4D = 0
   nvImage.dims = result.hdr.dims.slice(0, 4)
   // RGBA32 data: cal_min/cal_max are nominal (not used for colormap lookup)
   nvImage.cal_min = 0

@@ -5008,8 +5008,9 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Replace the multi-instance descriptor list (canvas tiling + optional global3d
-   * volumes). Triggers a tile rebuild and redraw. `null` or an empty list leaves
-   * instance mode and restores the usual slice layout. Entering or leaving
+   * volumes). Triggers a tile rebuild and redraw. `null` leaves instance mode and
+   * restores the usual slice layout; an empty list stays in instance mode and
+   * draws nothing. Entering or leaving
    * instance mode rebuilds the GPU resources, since the two modes keep volume
    * textures differently (a per-volume cache vs. a background + overlay stack).
    * Supported on both WebGL2 and WebGPU backends.

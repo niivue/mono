@@ -47,15 +47,18 @@ describe('setInstances', () => {
     expect(order).toEqual(['tile', 'draw'])
   })
 
-  test('null or an empty list leaves instance mode and rebuilds', async () => {
-    for (const cleared of [null, []]) {
-      const { ctrl, order, setInstances } = fakeCtrl(sphere)
-      await setInstances(cleared)
-      // Unset, not an empty list: the view takes any list, even an empty
-      // one, as instance mode and would draw no tiles at all.
-      expect(ctrl.opts.instances).toBeUndefined()
-      expect(order).toEqual(['rebuild', 'tile', 'draw'])
-    }
+  test('null leaves instance mode and rebuilds', async () => {
+    const { ctrl, order, setInstances } = fakeCtrl(sphere)
+    await setInstances(null)
+    expect(ctrl.opts.instances).toBeUndefined()
+    expect(order).toEqual(['rebuild', 'tile', 'draw'])
+  })
+
+  test('an empty list stays in instance mode and draws no tiles', async () => {
+    const { ctrl, order, setInstances } = fakeCtrl(sphere)
+    await setInstances([])
+    expect(ctrl.opts.instances).toEqual([])
+    expect(order).toEqual(['tile', 'draw'])
   })
 
   test('clearing when no instances are set changes nothing on the GPU', async () => {

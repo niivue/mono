@@ -149,10 +149,10 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
     const inst: Instance = { id }
     const given = (key: string) =>
       entry?.[key] !== undefined && entry?.[key] !== null
-    if (given('volume'))
-      inst.volumeId = volumeIdOf(
-        pickIndex(view.volumes, entry.volume, 'volume'),
-      )
+    const index = given('volume')
+      ? pickIndex(view.volumes, entry.volume, 'volume')
+      : undefined
+    if (index !== undefined) inst.volumeId = volumeIdOf(index)
     const bounds = numbers(entry, 'bounds', 4)
     const position = pointIfGiven(entry, 'position')
     const space =
@@ -188,6 +188,13 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
     if (position || given('scale') || given('orientation'))
       throw new Error(
         `instance ${id}: position, scale and orientation are for a global3d instance; a canvas tile takes bounds.`,
+      )
+    // NiiVue draws every canvas tile from the base volume, whichever
+    // volume the tile names.
+    if (index !== undefined && index !== 0)
+      throw new Error(
+        `instance ${id}: a canvas tile draws the base volume (volume 0), not volume ${index}. ` +
+          'To show another volume, lay it out as a global3d instance.',
       )
     inst.space = 'canvas'
     if (bounds) {
@@ -242,21 +249,23 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
           ids.add(inst.id)
         }
         // NiiVue keeps one texture per address (by name when there is
-        // none), so two volumes loaded from one file would draw the same.
-        const byKey = new Map<string, number>()
+        // none) for every loaded volume, so a volume that shares its file
+        // with any other may draw the other's texture.
         for (const inst of instances) {
           const index = drawnIndex(view.volumes, inst.volumeId)
           const volume = view.volumes[index]
           const key = volume.url || volume.name
-          const other = byKey.get(key)
-          if (other !== undefined && other !== index)
+          const other = view.volumes.findIndex(
+            (v, i) => i !== index && (v.url || v.name) === key,
+          )
+          if (other >= 0)
             throw new Error(
-              `Volumes ${other} ("${view.volumes[other].name}") and ${index} ("${volume.name}") were ` +
+              `Volumes ${Math.min(index, other)} ("${view.volumes[Math.min(index, other)].name}") and ` +
+                `${Math.max(index, other)} ("${view.volumes[Math.max(index, other)].name}") were ` +
                 'both loaded from one file, and NiiVue keeps ' +
-                'one texture per file in this layout, so both instances would draw the same one. ' +
-                'Lay out only one of them; to compare them, clear the instances and show both as overlays.',
+                'one texture per file in this layout, so an instance of either may draw the other. ' +
+                'Close the copy you are not laying out; to compare them, clear the instances and show both as overlays.',
             )
-          byKey.set(key, index)
         }
       }
       const cam = placed ? globalCameraFrom(placed) : undefined

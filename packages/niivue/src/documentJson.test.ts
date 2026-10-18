@@ -114,6 +114,11 @@ describe('non-finite numbers', () => {
     expect(out.x).toEqual({ $num: 'Banana' })
   })
 
+  test('leaves a $num object with extra keys untouched', () => {
+    const doc = { x: { $num: 'NaN', description: 'keep this data' } }
+    expect(decodeDocumentJSON(encodeDocumentJSON(doc))).toEqual(doc)
+  })
+
   test('a bare null written by an older encoder still decodes as null', () => {
     const out = decodeDocumentJSON('{"volumes":[{"calMinNeg":null}]}') as {
       volumes: { calMinNeg: unknown }[]

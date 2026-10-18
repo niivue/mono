@@ -89,6 +89,7 @@ function isTaggedNonFinite(v: unknown): v is TaggedNonFinite {
   return (
     typeof v === 'object' &&
     v !== null &&
+    Object.keys(v).length === 1 &&
     typeof (v as { $num?: unknown }).$num === 'string' &&
     isNonFiniteName((v as { $num: string }).$num)
   )

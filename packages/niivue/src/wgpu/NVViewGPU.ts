@@ -2766,7 +2766,8 @@ export default class NVView {
     // 3D render. Meshes, if any, still take the GPU path below for 2D tiles.
     if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
       const vol = md.volumes[0]
-      if (vol?.extentsMin && vol?.extentsMax) {
+      // A hidden background is not drawn, so it must not answer a pick.
+      if (vol?.extentsMin && vol?.extentsMax && isVolumeDrawn(vol)) {
         const near = NVTransforms.unprojectScreen(
           hit.normalizedX,
           hit.normalizedY,

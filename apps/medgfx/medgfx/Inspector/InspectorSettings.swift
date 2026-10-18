@@ -85,10 +85,10 @@ enum InspectorSettings {
     )
 
     static let panelArrangement = NiiVueSetting(
-        title: "Panel Arrangement",
+        title: "Arrange",
         help: "Arrange the anatomical planes in the multiplanar view.",
         choices: [
-            SettingChoice("automatic", "Automatic", MultiplanarType.auto),
+            SettingChoice("automatic", "Auto", MultiplanarType.auto),
             SettingChoice("column", "Column", MultiplanarType.column),
             SettingChoice("grid", "Grid", MultiplanarType.grid),
             SettingChoice("row", "Row", MultiplanarType.row),
@@ -100,21 +100,17 @@ enum InspectorSettings {
         title: "3D Panel",
         help: "Control whether a 3D rendering is included with the anatomical planes.",
         choices: [
-            SettingChoice("hidden", "Hidden", ShowRender.never),
-            SettingChoice("shown", "Shown", ShowRender.always),
-            SettingChoice("automatic", "Automatic", ShowRender.auto),
+            SettingChoice("hidden", "Off", ShowRender.never),
+            SettingChoice("shown", "On", ShowRender.always),
+            SettingChoice("automatic", "Auto", ShowRender.auto),
         ],
         binding: { $0.showRenderBinding }
     )
 
-    static let leftRightConvention = NiiVueSetting(
-        title: "Left–Right Convention",
-        help: "Radiological places the patient's left on the right side of the display.",
-        niiVueProperty: \NiiVueModel.isRadiological,
-        choices: [
-            SettingChoice("neurological", "Neurological", false),
-            SettingChoice("radiological", "Radiological", true),
-        ]
+    static let radiological = NiiVueSetting(
+        title: "Radiological",
+        help: "Show the patient's left on the right side of the display.",
+        niiVueProperty: \NiiVueModel.isRadiological
     )
 
     static let multiplanarPresets = NiiVueSetting(
@@ -219,13 +215,13 @@ enum InspectorSettings {
     )
 
     static let directionLabels = NiiVueSetting(
-        title: "Direction Labels",
+        title: "Orientation Labels",
         help: "Show anatomical direction labels such as L, R, A, and P.",
         niiVueProperty: \NiiVueModel.isOrientationTextVisible
     )
 
     static let threeDCursor = NiiVueSetting(
-        title: "3D Crosshairs",
+        title: "3D Crosshair",
         help: "Show the crosshair position in the 3D rendering.",
         niiVueProperty: \NiiVueModel.is3DCrosshairVisible
     )
@@ -290,9 +286,8 @@ enum InspectorSettings {
 
 enum InspectorSectionID: String, CaseIterable, Identifiable {
     case layout
-    case guidesAndLabels
-    case imageAppearance
-    case threeDView
+    case overlays
+    case camera
     case advanced
 
     var id: String { rawValue }
@@ -300,27 +295,16 @@ enum InspectorSectionID: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .layout: return "Layout"
-        case .guidesAndLabels: return "Guides & Labels"
-        case .imageAppearance: return "Appearance"
-        case .threeDView: return "3D View"
+        case .overlays: return "Overlays"
+        case .camera: return "3D Camera"
         case .advanced: return "Advanced"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .layout: return "rectangle.3.group"
-        case .guidesAndLabels: return "scope"
-        case .imageAppearance: return "circle.lefthalf.filled"
-        case .threeDView: return "rotate.3d"
-        case .advanced: return "gearshape.2"
         }
     }
 
     var isExpandedByDefault: Bool {
         switch self {
-        case .layout, .guidesAndLabels: return true
-        case .imageAppearance, .threeDView, .advanced: return false
+        case .layout, .overlays: return true
+        case .camera, .advanced: return false
         }
     }
 }

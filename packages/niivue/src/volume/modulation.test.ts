@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTIHeader, NVImage } from '@/NVTypes'
-import { computeModulationData, computeModulationWeights } from './modulation'
+import { markVolumeDataChanged } from './dataVersion'
+import {
+  computeModulationData,
+  computeModulationWeights,
+  modulationFitsTextureLimit,
+} from './modulation'
 
 function makeHeader(overrides: Partial<NIFTIHeader> = {}): NIFTIHeader {
   return {
@@ -119,6 +124,49 @@ describe('computeModulationData', () => {
     computeModulationData([vol])
     expect(vol._modulationData).toBeNull()
   })
+
+  // Every GPU update recomputes modulation data. The RGBA upload cache keys
+  // on the array's identity, so an unchanged modulator must keep the array,
+  // and only a real change may replace it.
+  function rgbaPair() {
+    const modImg = new Float32Array([0, 1, 2, 3, 4, 5, 6, 7])
+    const modVol = makeVolume({ id: 'mod1', img: modImg, calMin: 0, calMax: 7 })
+    const targetVol = makeVolume({
+      id: 'target',
+      modulationImage: 'mod1',
+      hdr: makeHeader({ datatypeCode: 2304 }),
+    })
+    computeModulationData([targetVol, modVol])
+    return { modImg, modVol, targetVol, first: targetVol._modulationData }
+  }
+
+  test('unchangedModulator_keepsTheArray', () => {
+    const { modVol, targetVol, first } = rgbaPair()
+    computeModulationData([targetVol, modVol])
+    expect(targetVol._modulationData).toBe(first)
+  })
+
+  test('inPlaceModulatorEdit_withDataVersionBump_recomputes', () => {
+    const { modImg, modVol, targetVol, first } = rgbaPair()
+    modImg.set([7, 6, 5, 4, 3, 2, 1, 0])
+    computeModulationData([targetVol, modVol])
+    // Not reported: still the cached array.
+    expect(targetVol._modulationData).toBe(first)
+    markVolumeDataChanged(modVol)
+    computeModulationData([targetVol, modVol])
+    const second = targetVol._modulationData ?? new Float32Array(0)
+    expect(second).not.toBe(first)
+    expect(second[0]).toBeCloseTo(1, 5)
+  })
+
+  test('modulatorWindowChange_recomputes', () => {
+    const { modVol, targetVol, first } = rgbaPair()
+    modVol.calMax = 14
+    computeModulationData([targetVol, modVol])
+    const second = targetVol._modulationData ?? new Float32Array(0)
+    expect(second).not.toBe(first)
+    expect(second[7]).toBeCloseTo(0.5, 5)
+  })
 })
 
 describe('computeModulationWeights', () => {
@@ -204,6 +252,28 @@ describe('computeModulationWeights', () => {
     expect(second[0]).toBeCloseTo(1, 5) // reflects the new data, not stale
   })
 
+  test('inPlaceEdit_withDataVersionBump_recomputes', () => {
+    // updateVolumeData / isDirty edit the modulator's img in place: the buffer
+    // identity, offset and length all stay the same, so only _dataVersion
+    // tells the cache the values changed.
+    const modImg = new Float32Array([0, 1, 2, 3, 4, 5, 6, 7])
+    const modVol = makeVolume({ id: 'mod1', img: modImg, calMin: 0, calMax: 7 })
+    const targetVol = makeVolume({ id: 'target', modulationImage: 'mod1' })
+    computeModulationWeights([targetVol, modVol])
+    const first = targetVol._modulationWeight
+    const firstKey = targetVol._modulationWeightKey
+    expect(first?.[0]).toBeCloseTo(0, 5)
+
+    modImg.set([7, 6, 5, 4, 3, 2, 1, 0])
+    markVolumeDataChanged(modVol)
+    computeModulationWeights([targetVol, modVol])
+    const second = targetVol._modulationWeight ?? new Float32Array(0)
+    expect(second).not.toBe(first)
+    expect(targetVol._modulationWeightKey).not.toBe(firstKey)
+    expect(second[0]).toBeCloseTo(1, 5)
+    expect(second[7]).toBeCloseTo(0, 5)
+  })
+
   test('nanWindow_yieldsFiniteWeights (audit P3 NaN guard)', () => {
     const modVol = makeVolume({
       id: 'mod1',
@@ -284,5 +354,24 @@ describe('computeModulationWeights', () => {
     const scalarTarget = makeVolume({ id: 'target', modulationImage: 'mod1' })
     computeModulationData([scalarTarget, modVol])
     expect(scalarTarget._modulationData).toBeNull()
+  })
+})
+
+describe('modulationFitsTextureLimit', () => {
+  const mod = {
+    weight: new Float32Array(1),
+    dims: [128, 64, 32] as [number, number, number],
+    mtx: new Float32Array(16),
+    mode: 1,
+    key: 'test',
+  }
+
+  test('accepts null and grids at the device limit', () => {
+    expect(modulationFitsTextureLimit(null, 128)).toBe(true)
+    expect(modulationFitsTextureLimit(mod, 128)).toBe(true)
+  })
+
+  test('rejects a grid with an oversized dimension', () => {
+    expect(modulationFitsTextureLimit(mod, 127)).toBe(false)
   })
 })

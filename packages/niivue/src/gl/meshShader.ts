@@ -46,7 +46,7 @@ void main() {
 `
 
 // Fragment shader: Flat shading
-export const meshFragFlat = `#version 300 es
+const meshFragFlat = `#version 300 es
 precision highp float;
 flat in vec4 vClr;
 flat in vec3 vN;
@@ -65,7 +65,7 @@ void main() {
 `
 
 // Fragment shader: Phong shading
-export const meshFragPhong = `#version 300 es
+const meshFragPhong = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -84,7 +84,7 @@ void main() {
 `
 
 // Fragment shader: Silhouette
-export const meshFragSilhouette = `#version 300 es
+const meshFragSilhouette = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -105,7 +105,7 @@ void main() {
 `
 
 // Fragment shader: Rim lighting
-export const meshFragRim = `#version 300 es
+const meshFragRim = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -123,7 +123,7 @@ void main() {
 `
 
 // Fragment shader: Crevice shading
-export const meshFragCrevice = `#version 300 es
+const meshFragCrevice = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -160,7 +160,7 @@ void main() {
 `
 
 // Fragment shader: Matte
-export const meshFragMatte = `#version 300 es
+const meshFragMatte = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -180,7 +180,7 @@ void main() {
 `
 
 // Fragment shader: Toon
-export const meshFragToon = `#version 300 es
+const meshFragToon = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -234,7 +234,7 @@ void main() {
 `
 
 // Fragment shader: Outline
-export const meshFragOutline = `#version 300 es
+const meshFragOutline = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -263,7 +263,7 @@ void main() {
 }
 `
 
-export const meshFragVertexColor = `#version 300 es
+const meshFragVertexColor = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -275,7 +275,7 @@ void main() {
 `
 
 // Fragment shader: Crosscut (crosshair ribbons on mesh surface)
-export const meshFragCrosscut = `#version 300 es
+const meshFragCrosscut = `#version 300 es
 precision highp float;
 uniform vec4 crosscutMM;
 in vec4 vClr;

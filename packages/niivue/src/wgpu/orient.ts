@@ -1,35 +1,86 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { log } from '@/logger'
+import { OVERLAY_ALPHA_BLEND, OVERLAY_COLOR_BLEND } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
-import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import {
+  buildOrientUniforms,
+  prepareRGBAData,
+  rgbaTextureKey,
+} from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
-import { IDENTITY_MTX, type ModulationTextureParams } from '@/volume/modulation'
-import { chunkOverlayMatrix } from '@/volume/orientChunked'
+import {
+  IDENTITY_MTX,
+  type ModulationTextureParams,
+  modulationFitsTextureLimit,
+} from '@/volume/modulation'
+import {
+  chunkModulationParams,
+  chunkOverlayMatrix,
+} from '@/volume/orientChunked'
 import orientWGSL from './orient.wgsl?raw'
 import * as wgpu from './wgpu'
 
 // Uniform buffer: 12 vec4 = matrix(4) + params/negParams/flags(3) + modMtx(4) + modFlags(1)
 const ORIENT_UNIFORM_SIZE = 12 * 16
 
+function supportedModulation(
+  device: GPUDevice,
+  mod: ModulationTextureParams | null,
+): ModulationTextureParams | null {
+  if (modulationFitsTextureLimit(mod, device.limits.maxTextureDimension3D)) {
+    return mod
+  }
+  log.warn(
+    `modulation disabled: grid ${mod?.dims.join('x')} exceeds WebGPU maxTextureDimension3D (${device.limits.maxTextureDimension3D})`,
+  )
+  return null
+}
+
 /** Create an r32float 3D modulation-weight texture, or a 1x1x1 placeholder. */
 export function createModTexture(
   device: GPUDevice,
   mod: ModulationTextureParams | null,
 ): GPUTexture {
-  const dims = mod ? mod.dims : [1, 1, 1]
+  const dims = modTextureDims(mod)
   const tex = device.createTexture({
-    size: dims as [number, number, number],
+    size: dims,
     format: 'r32float',
     dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
+  writeModTexture(device, tex, mod)
+  return tex
+}
+
+function modTextureDims(
+  mod: ModulationTextureParams | null,
+): [number, number, number] {
+  return mod ? [mod.dims[0], mod.dims[1], mod.dims[2]] : [1, 1, 1]
+}
+
+/** Overwrite a texture made by createModTexture(mod) with mod's weights. */
+function writeModTexture(
+  device: GPUDevice,
+  tex: GPUTexture,
+  mod: ModulationTextureParams | null,
+): void {
+  const dims = modTextureDims(mod)
   const data = mod ? mod.weight : new Float32Array([1])
   device.queue.writeTexture(
     { texture: tex },
     data as Float32Array<ArrayBuffer>,
     { bytesPerRow: dims[0] * 4, rowsPerImage: dims[1] },
-    dims as [number, number, number],
+    dims,
   )
-  return tex
+}
+
+/** Whether `tex` (a mod texture) has the grid createModTexture(mod) would. */
+function modTextureFits(
+  tex: GPUTexture,
+  mod: ModulationTextureParams | null,
+): boolean {
+  const [x, y, z] = modTextureDims(mod)
+  return tex.width === x && tex.height === y && tex.depthOrArrayLayers === z
 }
 
 type PipelineCacheEntry = {
@@ -124,16 +175,20 @@ export type OrientTextureCache = {
   frame4D: number
   colormapKey: string
   imageBuffer: ArrayBufferLike
+  /** `nvimage._dataVersion` the source texture was last uploaded from. */
+  dataVersion: number
   pipelineType: string
   hasNegativeColormap: boolean
   modTexture: GPUTexture
   modKey: string
 }
 
-function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
-  const { rgbaData, texDims } = prepareRGBAData(nvimage)
-  const rgbaTexture = device.createTexture({
-    size: texDims,
+function createRGBATexture(
+  device: GPUDevice,
+  texDims: readonly number[],
+): GPUTexture {
+  return device.createTexture({
+    size: [texDims[0], texDims[1], texDims[2]],
     format: 'rgba8unorm',
     dimension: '3d',
     usage:
@@ -141,13 +196,75 @@ function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.COPY_SRC,
   })
+}
+
+/** Write RGBA8 voxels over the whole of an existing 3D texture. */
+function writeRGBATexture(
+  device: GPUDevice,
+  texture: GPUTexture,
+  rgbaData: Uint8Array,
+  texDims: readonly number[],
+): void {
+  // writeTexture reads straight from the view; only a SharedArrayBuffer-backed
+  // one needs copying first.
+  const data =
+    typeof SharedArrayBuffer !== 'undefined' &&
+    rgbaData.buffer instanceof SharedArrayBuffer
+      ? new Uint8Array(rgbaData)
+      : rgbaData
   device.queue.writeTexture(
-    { texture: rgbaTexture },
-    new Uint8Array(rgbaData),
+    { texture },
+    data as Uint8Array<ArrayBuffer>,
     { bytesPerRow: texDims[0] * 4, rowsPerImage: texDims[1] },
-    texDims,
+    [texDims[0], texDims[1], texDims[2]],
   )
+}
+
+function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  const rgbaTexture = createRGBATexture(device, texDims)
+  writeRGBATexture(device, rgbaTexture, rgbaData, texDims)
   return rgbaTexture
+}
+
+/**
+ * An RGB/RGBA volume's RGBA8 texture, kept across updates so new voxels are
+ * written into it instead of a new allocation (see prepareRGBATextureCache).
+ */
+export type RGBATextureCache = {
+  texture: GPUTexture
+  texDims: number[]
+  /** rgbaTextureKey of the voxels last written. */
+  key: string
+}
+
+/**
+ * Upload an RGB/RGBA volume into `existing`'s texture when its dims still
+ * match (queue.writeTexture, no allocation), else into a new texture
+ * (destroying the old one). Returns `existing` untouched while its
+ * rgbaTextureKey still matches. Background masking writes a new texture
+ * (VolumeRenderer.maskOverlayByBackground), so nothing else writes this one.
+ */
+export function prepareRGBATextureCache(
+  device: GPUDevice,
+  nvimage: NVImage,
+  existing: RGBATextureCache | null,
+): RGBATextureCache {
+  const key = rgbaTextureKey(nvimage)
+  if (existing && existing.key === key) return existing
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  let cache = existing
+  if (!cache || !dimensionsMatch(cache.texDims, texDims)) {
+    destroyRGBATextureCache(existing)
+    cache = { texture: createRGBATexture(device, texDims), texDims, key }
+  }
+  writeRGBATexture(device, cache.texture, rgbaData, texDims)
+  cache.key = key
+  return cache
+}
+
+export function destroyRGBATextureCache(cache: RGBATextureCache | null): void {
+  cache?.texture.destroy()
 }
 
 function getTextureFormat(nvimage: NVImage): {
@@ -189,7 +306,7 @@ function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
       ? `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
       : 'label:none'
   }
-  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}:${nvimage.isColormapInverted ? 1 : 0}`
+  return `${NVCmaps.colormapKey(nvimage.colormap)}:${NVCmaps.colormapKey(nvimage.colormapNegative)}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
 function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
@@ -240,6 +357,39 @@ export function destroyOrientTextureCache(
   cache.modTexture.destroy()
 }
 
+/** Upload the current frame of `nvimage.img` into the orient source texture. */
+function writeSourceTexture(
+  device: GPUDevice,
+  sourceTexture: GPUTexture,
+  nvimage: NVImage,
+  dimsIn: number[],
+  bytesPerVoxel: number,
+): void {
+  if (!nvimage.img) throw new Error('overlay2Texture: missing image data')
+  const frame4D = nvimage.frame4D ?? 0
+  const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
+  const frameByteLength = nvimage.nVox3D * bytesPerVoxel
+  const imgView = new Uint8Array(
+    nvimage.img.buffer,
+    nvimage.img.byteOffset + frameByteOffset,
+    frameByteLength,
+  )
+  const imgData =
+    typeof SharedArrayBuffer !== 'undefined' &&
+    imgView.buffer instanceof SharedArrayBuffer
+      ? new Uint8Array(imgView)
+      : imgView
+  device.queue.writeTexture(
+    { texture: sourceTexture },
+    imgData as Uint8Array<ArrayBuffer>,
+    {
+      bytesPerRow: Math.floor(dimsIn[0] * bytesPerVoxel),
+      rowsPerImage: dimsIn[1],
+    },
+    dimsIn,
+  )
+}
+
 export async function prepareOrientTextureCache(
   device: GPUDevice,
   nvimage: NVImage,
@@ -249,6 +399,7 @@ export async function prepareOrientTextureCache(
   existingCache: OrientTextureCache | null = null,
   mod: ModulationTextureParams | null = null,
 ): Promise<OrientTextureCache> {
+  mod = supportedModulation(device, mod)
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS)
     throw new Error('overlay2Texture: missing dimsRAS')
   if (!nvimage.img) throw new Error('overlay2Texture: missing image data')
@@ -272,8 +423,28 @@ export async function prepareOrientTextureCache(
     dimensionsMatch(existingCache.dimsIn, dimsIn) &&
     dimensionsMatch(existingCache.dimsOut, dimsOut) &&
     existingCache.colormapKey === colormapKey &&
-    existingCache.modKey === modKey
+    // A modulator edited in place keeps its grid: its weights are rewritten
+    // below. A new grid needs a new texture and so a new bind group.
+    (existingCache.modKey === modKey ||
+      modTextureFits(existingCache.modTexture, mod))
   if (canReuse) {
+    // Same buffer, but the voxels may have been edited in place
+    // (updateVolumeData): rewrite the source texture without reallocating it.
+    const dataVersion = nvimage._dataVersion ?? 0
+    if (existingCache.dataVersion !== dataVersion) {
+      writeSourceTexture(
+        device,
+        existingCache.sourceTexture,
+        nvimage,
+        dimsIn,
+        bytesPerVoxel,
+      )
+      existingCache.dataVersion = dataVersion
+    }
+    if (existingCache.modKey !== modKey) {
+      writeModTexture(device, existingCache.modTexture, mod)
+      existingCache.modKey = modKey
+    }
     writeOrientUniforms(
       device,
       existingCache.uniformBuffer,
@@ -292,27 +463,12 @@ export async function prepareOrientTextureCache(
     dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
-  const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
-  const frameByteLength = nvimage.nVox3D * bytesPerVoxel
-  const imgView = new Uint8Array(
-    nvimage.img.buffer,
-    nvimage.img.byteOffset + frameByteOffset,
-    frameByteLength,
-  )
-  const imgData =
-    typeof SharedArrayBuffer !== 'undefined' &&
-    imgView.buffer instanceof SharedArrayBuffer
-      ? new Uint8Array(imgView)
-      : imgView
-  device.queue.writeTexture(
-    { texture: sourceTexture },
-    imgData as Uint8Array<ArrayBuffer>,
-    {
-      bytesPerRow: Math.floor(dimsIn[0] * bytesPerVoxel),
-      rowsPerImage: dimsIn[1],
-    },
-    dimsIn,
-  )
+  writeSourceTexture(device, sourceTexture, nvimage, dimsIn, bytesPerVoxel)
+  // Record what was just uploaded NOW: the colormap uploads below await, and an
+  // updateVolumeData landing in that gap bumps the version. Reading it after the
+  // awaits would mark those newer voxels as uploaded when they are not.
+  const uploadedBuffer = nvimage.img.buffer
+  const uploadedVersion = nvimage._dataVersion ?? 0
   const uniformBuffer = device.createBuffer({
     size: ORIENT_UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -393,7 +549,8 @@ export async function prepareOrientTextureCache(
     datatypeCode: nvimage.hdr.datatypeCode,
     frame4D,
     colormapKey,
-    imageBuffer: nvimage.img.buffer,
+    imageBuffer: uploadedBuffer,
+    dataVersion: uploadedVersion,
     pipelineType,
     hasNegativeColormap,
     modTexture,
@@ -434,7 +591,9 @@ export async function volume2Texture(
   overlayOpacity = 1,
   outDimsOverride?: readonly number[],
   mod: ModulationTextureParams | null = null,
+  sharedModTexture: GPUTexture | null = null,
 ): Promise<GPUTexture> {
+  mod = supportedModulation(device, mod)
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS) {
     throw new Error('overlay2Texture: missing dimsRAS')
   }
@@ -519,7 +678,7 @@ export async function volume2Texture(
   })
   writeOrientUniforms(device, uniformBuffer, nvimage, mtx, overlayOpacity, mod)
   const isLabelVol = buildOrientUniforms(nvimage, overlayOpacity).isLabel > 0
-  const modTexture = createModTexture(device, mod)
+  const modTexture = sharedModTexture ?? createModTexture(device, mod)
   // 3) Create RGBA storage texture sized dimsOut
   const rgbaTexture = device.createTexture({
     size: dimsOut,
@@ -606,7 +765,7 @@ export async function volume2Texture(
   await device.queue.onSubmittedWorkDone()
   // Cleanup intermediate resources (keep rgbaTexture for caller)
   scalarTexture.destroy()
-  modTexture.destroy()
+  if (!sharedModTexture) modTexture.destroy()
   colormapTex.destroy()
   if (hasNegColormap) {
     negColormapTex.destroy()
@@ -624,6 +783,10 @@ export async function volume2Texture(
  * lift into the overlay matrix. The per-chunk textures align 1:1 with the
  * volume chunks (shared ChunkPlan), so the renderer's per-chunk uniforms and
  * `chunkTexCoord` sample them seam-free. Returns one texture per `plan.chunks`.
+ *
+ * `mod` is the overlay's full-volume modulation (see `buildModulationParams`);
+ * its matrix is re-targeted per chunk with `chunkModulationParams` so the
+ * modulator is sampled at the same voxels the whole-volume path would use.
  */
 export async function overlay2TextureChunked(
   device: GPUDevice,
@@ -632,27 +795,33 @@ export async function overlay2TextureChunked(
   mtx: Float32Array,
   plan: ChunkPlan,
   overlayOpacity = 1,
+  mod: ModulationTextureParams | null = null,
 ): Promise<GPUTexture[]> {
+  mod = supportedModulation(device, mod)
   const [dx, dy, dz] = plan.volumeDims
   const out: GPUTexture[] = []
-  for (const desc of plan.chunks) {
-    const [ox, oy, oz] = desc.texOrigin
-    const [sx, sy, sz] = desc.texDims
-    const mtxChunk = chunkOverlayMatrix(
-      mtx,
-      [sx / dx, sy / dy, sz / dz],
-      [ox / dx, oy / dy, oz / dz],
-    )
-    out.push(
-      await volume2Texture(
-        device,
-        nvimage,
-        nvimageTarget,
-        mtxChunk,
-        overlayOpacity,
-        desc.texDims,
-      ),
-    )
+  const sharedModTexture = mod ? createModTexture(device, mod) : null
+  try {
+    for (const desc of plan.chunks) {
+      const [ox, oy, oz] = desc.texOrigin
+      const [sx, sy, sz] = desc.texDims
+      const scale = [sx / dx, sy / dy, sz / dz]
+      const offset = [ox / dx, oy / dy, oz / dz]
+      out.push(
+        await volume2Texture(
+          device,
+          nvimage,
+          nvimageTarget,
+          chunkOverlayMatrix(mtx, scale, offset),
+          overlayOpacity,
+          desc.texDims,
+          chunkModulationParams(mod, scale, offset),
+          sharedModTexture,
+        ),
+      )
+    }
+  } finally {
+    sharedModTexture?.destroy()
   }
   return out
 }
@@ -716,7 +885,8 @@ function ensureMaskPipeline(device: GPUDevice): PipelineCacheEntry {
 
 /**
  * Mask overlay texture by background volume: zero out overlay alpha wherever
- * the background volume alpha is zero. Returns a new texture (old overlay is destroyed).
+ * the background volume alpha is zero. Returns a new texture; the input is
+ * left alone, since an orient or RGBA cache may own it and write to it again.
  */
 export async function maskOverlayByBackground(
   device: GPUDevice,
@@ -758,190 +928,7 @@ export async function maskOverlayByBackground(
   pass.end()
   device.queue.submit([encoder.finish()])
   await device.queue.onSubmittedWorkDone()
-  overlayTexture.destroy()
   return outputTexture
-}
-
-// Texture-to-texture geometric resampler. Maps an existing RGBA 3D texture into
-// a new grid via the same target-frac -> source-frac matrix the orient pass uses
-// (NVTransforms.calculateOverlayTransformMatrix), but samples an already-RGBA
-// source with LINEAR filtering and applies no colormap. This is the texture-level
-// analogue of the volume (scalar) orient pass: a coarser-LOD texture can be
-// stretched into a higher-resolution space (placeholder while finer tiles stream)
-// and a higher-LOD texture can be mapped into a coarser space. Out-of-bounds
-// output voxels are written transparent.
-const resampleShaderCode = `
-struct Uniforms {
-  mtxRow0 : vec4<f32>,
-  mtxRow1 : vec4<f32>,
-  mtxRow2 : vec4<f32>,
-  mtxRow3 : vec4<f32>,
-};
-@group(0) @binding(0) var<uniform> u : Uniforms;
-@group(0) @binding(1) var srcTex : texture_3d<f32>;
-@group(0) @binding(2) var dstOut : texture_storage_3d<rgba8unorm, write>;
-@group(0) @binding(3) var samp   : sampler;
-
-@compute @workgroup_size(8, 8, 4)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let dims = textureDimensions(dstOut);
-  if (gid.x >= dims.x || gid.y >= dims.y || gid.z >= dims.z) { return; }
-  let coord = vec3<i32>(gid);
-  // Output voxel center -> normalized [0,1], transform to source frac coords.
-  let outUVW = (vec3<f32>(gid) + vec3<f32>(0.5)) / vec3<f32>(dims);
-  let outPos = vec4<f32>(outUVW, 1.0);
-  let s = vec3<f32>(dot(u.mtxRow0, outPos), dot(u.mtxRow1, outPos), dot(u.mtxRow2, outPos));
-  if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z < 0.0 || s.z > 1.0) {
-    textureStore(dstOut, coord, vec4<f32>(0.0));
-    return;
-  }
-  textureStore(dstOut, coord, textureSampleLevel(srcTex, samp, s, 0.0));
-}
-`
-
-function ensureResamplePipeline(device: GPUDevice): PipelineCacheEntry {
-  let perDevice = _deviceCache.get(device)
-  if (!perDevice) {
-    perDevice = {}
-    _deviceCache.set(device, perDevice)
-  }
-  if (perDevice.resample) {
-    return perDevice.resample
-  }
-  const module = device.createShaderModule({ code: resampleShaderCode })
-  const layout = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: { type: 'uniform' },
-      },
-      {
-        binding: 1,
-        visibility: GPUShaderStage.COMPUTE,
-        texture: { sampleType: 'float', viewDimension: '3d' },
-      },
-      {
-        binding: 2,
-        visibility: GPUShaderStage.COMPUTE,
-        storageTexture: { format: 'rgba8unorm', viewDimension: '3d' },
-      },
-      {
-        binding: 3,
-        visibility: GPUShaderStage.COMPUTE,
-        sampler: { type: 'filtering' },
-      },
-    ],
-  })
-  const pipeline = device.createComputePipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-    compute: { module, entryPoint: 'main' },
-  })
-  perDevice.resample = { pipeline, layout }
-  return perDevice.resample
-}
-
-/**
- * Resample an RGBA 3D texture into a new grid of `dstDims` via a 4x4 row-major
- * `fracMatrix` (target-frac -> source-frac, same convention as the orient pass
- * and NVTransforms.calculateOverlayTransformMatrix). Linear sampling; out-of-
- * bounds outputs are transparent. Returns a new rgba8unorm texture (the caller
- * owns it; the source texture is left intact).
- */
-export async function resampleInto(
-  device: GPUDevice,
-  srcTexture: GPUTexture,
-  fracMatrix: Float32Array,
-  dstDims: readonly number[],
-): Promise<GPUTexture> {
-  const cached = ensureResamplePipeline(device)
-  const uniformBuffer = device.createBuffer({
-    size: 4 * 16,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  })
-  const ab = new ArrayBuffer(4 * 16)
-  const dv = new DataView(ab)
-  for (let i = 0; i < 16; i++) dv.setFloat32(i * 4, fracMatrix[i], true)
-  device.queue.writeBuffer(uniformBuffer, 0, ab)
-  const outputTexture = device.createTexture({
-    size: [dstDims[0], dstDims[1], dstDims[2]],
-    format: 'rgba8unorm',
-    dimension: '3d',
-    usage:
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.STORAGE_BINDING |
-      GPUTextureUsage.COPY_SRC,
-  })
-  const sampler = device.createSampler({
-    magFilter: 'linear',
-    minFilter: 'linear',
-  })
-  const bindGroup = device.createBindGroup({
-    layout: cached.layout,
-    entries: [
-      { binding: 0, resource: { buffer: uniformBuffer } },
-      { binding: 1, resource: srcTexture.createView() },
-      { binding: 2, resource: outputTexture.createView() },
-      { binding: 3, resource: sampler },
-    ],
-  })
-  const encoder = device.createCommandEncoder()
-  const pass = encoder.beginComputePass()
-  pass.setPipeline(cached.pipeline)
-  pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(
-    Math.ceil(dstDims[0] / 8),
-    Math.ceil(dstDims[1] / 8),
-    Math.ceil(dstDims[2] / 4),
-  )
-  pass.end()
-  device.queue.submit([encoder.finish()])
-  await device.queue.onSubmittedWorkDone()
-  uniformBuffer.destroy()
-  return outputTexture
-}
-
-/**
- * Read a 3D RGBA8 texture back to CPU as a Uint8Array.
- * Used for multi-overlay blending where intermediate textures must be combined on CPU.
- */
-export async function readTexture3D(
-  device: GPUDevice,
-  texture: GPUTexture,
-  dims: number[],
-): Promise<Uint8Array> {
-  const [w, h, d] = dims
-  // WebGPU requires bytesPerRow to be a multiple of 256
-  const bytesPerRow = Math.ceil((w * 4) / 256) * 256
-  const bufferSize = bytesPerRow * h * d
-  const stagingBuffer = device.createBuffer({
-    size: bufferSize,
-    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-  })
-  const encoder = device.createCommandEncoder()
-  encoder.copyTextureToBuffer(
-    { texture },
-    { buffer: stagingBuffer, bytesPerRow, rowsPerImage: h },
-    [w, h, d],
-  )
-  device.queue.submit([encoder.finish()])
-  await stagingBuffer.mapAsync(GPUMapMode.READ)
-  const mapped = new Uint8Array(stagingBuffer.getMappedRange())
-  const result = new Uint8Array(w * h * d * 4)
-  if (bytesPerRow === w * 4) {
-    result.set(mapped.subarray(0, result.length))
-  } else {
-    for (let z = 0; z < d; z++) {
-      for (let y = 0; y < h; y++) {
-        const srcOff = (z * h + y) * bytesPerRow
-        const dstOff = (z * h + y) * w * 4
-        result.set(mapped.subarray(srcOff, srcOff + w * 4), dstOff)
-      }
-    }
-  }
-  stagingBuffer.unmap()
-  stagingBuffer.destroy()
-  return result
 }
 
 export function destroy(device: GPUDevice): void {
@@ -953,166 +940,184 @@ export function destroy(device: GPUDevice): void {
 // Multi-overlay GPU blend
 // ---------------------------------------------------------------------------
 
+// Five f32 per voxel of blend accumulator (see blendAccumShaderCode)
+const BLEND_BYTES_PER_VOXEL = 20
+
+function blendBufferBudget(limits: GPUSupportedLimits): number {
+  return Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)
+}
+
+/** Largest w = h whose blend accumulator slice (w * h voxels) fits the device. */
+export function maxBlendSliceDim(limits: GPUSupportedLimits): number {
+  return Math.floor(
+    Math.sqrt(blendBufferBudget(limits) / BLEND_BYTES_PER_VOXEL),
+  )
+}
+
+// Accumulator per voxel: premultiplied colour sum P.rgb, alpha sum S, then max
+// alpha (MAX) or union alpha 1 - prod(1 - a) (OVER). Same math as the CPU
+// blendOverlayData; ALPHA_BLEND / COLOR_BLEND are OVERLAY_*_BLEND values.
 const blendAccumShaderCode = `
-@group(0) @binding(0) var<storage, read_write> accum: array<vec4f>;
+override ALPHA_BLEND: u32 = 0u;
+struct Slab { z0: u32, zCount: u32 }
+@group(0) @binding(0) var<storage, read_write> accum: array<f32>;
+@group(0) @binding(1) var<uniform> slab: Slab;
 @group(1) @binding(0) var overlay: texture_3d<f32>;
 
 @compute @workgroup_size(8, 8, 4)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
     let dims = textureDimensions(overlay);
-    if (gid.x >= dims.x || gid.y >= dims.y || gid.z >= dims.z) { return; }
-    let rgba = textureLoad(overlay, vec3i(gid), 0);
+    if (gid.x >= dims.x || gid.y >= dims.y || gid.z >= slab.zCount) { return; }
+    let rgba = textureLoad(overlay, vec3i(vec3u(gid.xy, gid.z + slab.z0)), 0);
     let a = rgba.a;
     if (a <= 0.0) { return; }
-    let idx = gid.x + gid.y * dims.x + gid.z * dims.x * dims.y;
-    var cur = accum[idx];
-    accum[idx] = vec4f(cur.x + rgba.x * a, cur.y + rgba.y * a, cur.z + rgba.z * a, max(cur.w, a));
+    let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 5u;
+    accum[k] += rgba.r * a;
+    accum[k + 1u] += rgba.g * a;
+    accum[k + 2u] += rgba.b * a;
+    accum[k + 3u] += a;
+    let u = accum[k + 4u];
+    accum[k + 4u] = select(max(u, a), u + a - u * a, ALPHA_BLEND == 2u);
 }
 `
 
 const blendNormShaderCode = `
-@group(0) @binding(0) var<storage, read> accum: array<vec4f>;
+override ALPHA_BLEND: u32 = 0u;
+override COLOR_BLEND: u32 = 0u;
+struct Slab { z0: u32, zCount: u32 }
+@group(0) @binding(0) var<storage, read_write> accum: array<f32>;
+@group(0) @binding(1) var<uniform> slab: Slab;
 @group(1) @binding(0) var output: texture_storage_3d<rgba8unorm, write>;
 
 @compute @workgroup_size(8, 8, 4)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
     let dims = textureDimensions(output);
-    if (gid.x >= dims.x || gid.y >= dims.y || gid.z >= dims.z) { return; }
-    let idx = gid.x + gid.y * dims.x + gid.z * dims.x * dims.y;
-    let acc = accum[idx];
-    let a = acc.w;
-    if (a <= 0.0) {
-        textureStore(output, vec3i(gid), vec4f(0.0));
+    if (gid.x >= dims.x || gid.y >= dims.y || gid.z >= slab.zCount) { return; }
+    let pos = vec3i(vec3u(gid.xy, gid.z + slab.z0));
+    let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 5u;
+    let sum = accum[k + 3u];
+    if (sum <= 0.0) {
+        textureStore(output, pos, vec4f(0.0));
         return;
     }
-    let rgb = clamp(acc.xyz / a, vec3f(0.0), vec3f(1.0));
-    textureStore(output, vec3i(gid), vec4f(rgb, clamp(a, 0.0, 1.0)));
+    let a = select(accum[k + 4u], min(sum, 1.0), ALPHA_BLEND == 1u);
+    let norm = select(a, sum, COLOR_BLEND == 1u);
+    let rgb = clamp(vec3f(accum[k], accum[k + 1u], accum[k + 2u]) / norm, vec3f(0.0), vec3f(1.0));
+    textureStore(output, pos, vec4f(rgb, a));
 }
 `
 
-type BlendPipelineCache = {
-  accumPipeline: GPUComputePipeline
-  normPipeline: GPUComputePipeline
-  layoutAccumBuf: GPUBindGroupLayout
-  layoutNormBuf: GPUBindGroupLayout
+// Per device: shared layouts and shader modules, plus pipelines keyed by
+// alphaBlend * 2 + colorBlend. The norm pass reuses the accum layout.
+type BlendDeviceCache = {
+  layoutAccum: GPUBindGroupLayout
   layoutOverlay: GPUBindGroupLayout
   layoutOutput: GPUBindGroupLayout
+  accumModule: GPUShaderModule
+  normModule: GPUShaderModule
+  pipelines: Map<
+    number,
+    { accumPipeline: GPUComputePipeline; normPipeline: GPUComputePipeline }
+  >
 }
-const _blendCache = new WeakMap<GPUDevice, BlendPipelineCache>()
+const _blendCache = new WeakMap<GPUDevice, BlendDeviceCache>()
 
-function ensureBlendPipelines(device: GPUDevice): BlendPipelineCache {
-  const cached = _blendCache.get(device)
-  if (cached) return cached
-  const layoutAccumBuf = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: { type: 'storage' },
-      },
-    ],
-  })
-  const layoutNormBuf = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: { type: 'read-only-storage' },
-      },
-    ],
-  })
-  const layoutOverlay = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.COMPUTE,
-        texture: { sampleType: 'float', viewDimension: '3d' },
-      },
-    ],
-  })
-  const layoutOutput = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.COMPUTE,
-        storageTexture: { format: 'rgba8unorm', viewDimension: '3d' },
-      },
-    ],
-  })
-  const accumPipeline = device.createComputePipeline({
-    layout: device.createPipelineLayout({
-      bindGroupLayouts: [layoutAccumBuf, layoutOverlay],
-    }),
-    compute: {
-      module: device.createShaderModule({ code: blendAccumShaderCode }),
-      entryPoint: 'main',
-    },
-  })
-  const normPipeline = device.createComputePipeline({
-    layout: device.createPipelineLayout({
-      bindGroupLayouts: [layoutNormBuf, layoutOutput],
-    }),
-    compute: {
-      module: device.createShaderModule({ code: blendNormShaderCode }),
-      entryPoint: 'main',
-    },
-  })
-  const entry: BlendPipelineCache = {
-    accumPipeline,
-    normPipeline,
-    layoutAccumBuf,
-    layoutNormBuf,
-    layoutOverlay,
-    layoutOutput,
+function ensureBlendPipelines(
+  device: GPUDevice,
+  alphaBlend: number,
+  colorBlend: number,
+): BlendDeviceCache & {
+  accumPipeline: GPUComputePipeline
+  normPipeline: GPUComputePipeline
+} {
+  // Unknown values fall back to MAX / ADDITIVE as in the CPU path; this also
+  // keeps override constants valid u32s and the cache bounded to six entries.
+  if (
+    alphaBlend !== OVERLAY_ALPHA_BLEND.ADDITIVE &&
+    alphaBlend !== OVERLAY_ALPHA_BLEND.OVER
+  )
+    alphaBlend = OVERLAY_ALPHA_BLEND.MAX
+  if (colorBlend !== OVERLAY_COLOR_BLEND.MEAN)
+    colorBlend = OVERLAY_COLOR_BLEND.ADDITIVE
+  let dev = _blendCache.get(device)
+  if (!dev) {
+    const visibility = GPUShaderStage.COMPUTE
+    dev = {
+      layoutAccum: device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility, buffer: { type: 'storage' } },
+          { binding: 1, visibility, buffer: { type: 'uniform' } },
+        ],
+      }),
+      layoutOverlay: device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility,
+            texture: { sampleType: 'float', viewDimension: '3d' },
+          },
+        ],
+      }),
+      layoutOutput: device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility,
+            storageTexture: { format: 'rgba8unorm', viewDimension: '3d' },
+          },
+        ],
+      }),
+      accumModule: device.createShaderModule({ code: blendAccumShaderCode }),
+      normModule: device.createShaderModule({ code: blendNormShaderCode }),
+      pipelines: new Map(),
+    }
+    _blendCache.set(device, dev)
   }
-  _blendCache.set(device, entry)
-  return entry
+  const key = alphaBlend * 2 + colorBlend
+  let pipes = dev.pipelines.get(key)
+  if (!pipes) {
+    pipes = {
+      accumPipeline: device.createComputePipeline({
+        layout: device.createPipelineLayout({
+          bindGroupLayouts: [dev.layoutAccum, dev.layoutOverlay],
+        }),
+        compute: {
+          module: dev.accumModule,
+          entryPoint: 'main',
+          constants: { ALPHA_BLEND: alphaBlend },
+        },
+      }),
+      normPipeline: device.createComputePipeline({
+        layout: device.createPipelineLayout({
+          bindGroupLayouts: [dev.layoutAccum, dev.layoutOutput],
+        }),
+        compute: {
+          module: dev.normModule,
+          entryPoint: 'main',
+          constants: { ALPHA_BLEND: alphaBlend, COLOR_BLEND: colorBlend },
+        },
+      }),
+    }
+    dev.pipelines.set(key, pipes)
+  }
+  return { ...dev, ...pipes }
 }
 
 /**
  * Blend multiple pre-colormapped RGBA8 overlay textures into one on the GPU.
- * Uses additive premultiplied color + max-alpha (same formula as CPU blendOverlayData).
- * This formula is commutative, so overlay order does not affect the result.
+ * Same formulas as CPU blendOverlayData (see there); all commutative, so
+ * overlay order does not affect the result.
  * Eliminates the GPU→CPU readback stall of the legacy path.
  */
 export async function blendOverlaysGPU(
   device: GPUDevice,
   overlayTextures: GPUTexture[],
   dimsOut: number[],
+  alphaBlend: number,
+  colorBlend: number,
 ): Promise<GPUTexture> {
   const [w, h, d] = dimsOut
-  const cache = ensureBlendPipelines(device)
-
-  // Float32 RGBA accumulation buffer — zero-initialized by WebGPU spec
-  const accumBuffer = device.createBuffer({
-    size: w * h * d * 16,
-    usage: GPUBufferUsage.STORAGE,
-  })
-  const accumBG = device.createBindGroup({
-    layout: cache.layoutAccumBuf,
-    entries: [{ binding: 0, resource: { buffer: accumBuffer } }],
-  })
-
-  const encoder = device.createCommandEncoder()
-
-  // One compute pass per overlay so inter-pass barriers guarantee read-after-write ordering
-  for (const tex of overlayTextures) {
-    const overlayBG = device.createBindGroup({
-      layout: cache.layoutOverlay,
-      entries: [{ binding: 0, resource: tex.createView() }],
-    })
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(cache.accumPipeline)
-    pass.setBindGroup(0, accumBG)
-    pass.setBindGroup(1, overlayBG)
-    pass.dispatchWorkgroups(
-      Math.ceil(w / 8),
-      Math.ceil(h / 8),
-      Math.ceil(d / 4),
-    )
-    pass.end()
-  }
-
+  const cache = ensureBlendPipelines(device, alphaBlend, colorBlend)
   const outputTex = device.createTexture({
     size: dimsOut,
     format: 'rgba8unorm',
@@ -1122,28 +1127,68 @@ export async function blendOverlaysGPU(
       GPUTextureUsage.STORAGE_BINDING |
       GPUTextureUsage.COPY_SRC,
   })
-  const normBG = device.createBindGroup({
-    layout: cache.layoutNormBuf,
-    entries: [{ binding: 0, resource: { buffer: accumBuffer } }],
-  })
   const outputBG = device.createBindGroup({
     layout: cache.layoutOutput,
     entries: [{ binding: 0, resource: outputTex.createView() }],
   })
-  const normPass = encoder.beginComputePass()
-  normPass.setPipeline(cache.normPipeline)
-  normPass.setBindGroup(0, normBG)
-  normPass.setBindGroup(1, outputBG)
-  normPass.dispatchWorkgroups(
-    Math.ceil(w / 8),
-    Math.ceil(h / 8),
-    Math.ceil(d / 4),
+  const overlayBGs = overlayTextures.map((tex) =>
+    device.createBindGroup({
+      layout: cache.layoutOverlay,
+      entries: [{ binding: 0, resource: tex.createView() }],
+    }),
   )
-  normPass.end()
-
-  device.queue.submit([encoder.finish()])
-  // accumBuffer is only read by GPU commands already submitted above;
-  // destroy is safe after submit since the GPU retains internal references
+  // Blend in z-slabs sized to the device buffer limits; typical volumes and
+  // chunks are one slab. NVViewGPU caps the chunk threshold at
+  // maxBlendSliceDim so one slice fits for plans it builds; caller-supplied
+  // chunk plans are not capped, hence the floor of one slice.
+  const sliceBytes = w * h * BLEND_BYTES_PER_VOXEL
+  const budget = blendBufferBudget(device.limits)
+  const slabDepth = Math.max(1, Math.min(d, Math.floor(budget / sliceBytes)))
+  // Zero-initialized by the WebGPU spec; cleared again before later slabs
+  const accumBuffer = device.createBuffer({
+    size: sliceBytes * slabDepth,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  })
+  const slabBuffer = device.createBuffer({
+    size: 8,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+  const accumBG = device.createBindGroup({
+    layout: cache.layoutAccum,
+    entries: [
+      { binding: 0, resource: { buffer: accumBuffer } },
+      { binding: 1, resource: { buffer: slabBuffer } },
+    ],
+  })
+  const nx = Math.ceil(w / 8)
+  const ny = Math.ceil(h / 8)
+  for (let z0 = 0; z0 < d; z0 += slabDepth) {
+    const zCount = Math.min(slabDepth, d - z0)
+    const nz = Math.ceil(zCount / 4)
+    // One submit per slab: queue order lands this write before its passes
+    device.queue.writeBuffer(slabBuffer, 0, new Uint32Array([z0, zCount]))
+    const encoder = device.createCommandEncoder()
+    if (z0 > 0) encoder.clearBuffer(accumBuffer)
+    // One compute pass per overlay so inter-pass barriers guarantee read-after-write ordering
+    for (const overlayBG of overlayBGs) {
+      const pass = encoder.beginComputePass()
+      pass.setPipeline(cache.accumPipeline)
+      pass.setBindGroup(0, accumBG)
+      pass.setBindGroup(1, overlayBG)
+      pass.dispatchWorkgroups(nx, ny, nz)
+      pass.end()
+    }
+    const normPass = encoder.beginComputePass()
+    normPass.setPipeline(cache.normPipeline)
+    normPass.setBindGroup(0, accumBG)
+    normPass.setBindGroup(1, outputBG)
+    normPass.dispatchWorkgroups(nx, ny, nz)
+    normPass.end()
+    device.queue.submit([encoder.finish()])
+  }
+  // Only read by GPU commands already submitted above; destroy is safe after
+  // submit since the GPU retains internal references
   accumBuffer.destroy()
+  slabBuffer.destroy()
   return outputTex
 }

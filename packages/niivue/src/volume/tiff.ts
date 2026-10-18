@@ -312,7 +312,7 @@ export function tagValue(ifd: TiffIfd, tag: number): number | undefined {
 }
 
 /** All numeric values of a tag, or `undefined` when absent. */
-export function tagValues(ifd: TiffIfd, tag: number): number[] | undefined {
+function tagValues(ifd: TiffIfd, tag: number): number[] | undefined {
   const entry = ifd.tags.get(tag)
   return entry && entry.values.length > 0 ? entry.values : undefined
 }

@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { DRAG_MODE } from '@niivue/niivue'
-import {
-  ohifToolToAnnotationTool,
-  ohifToolToDragMode,
-  UNSUPPORTED_MEASUREMENT_TOOLS,
-} from './toolBridge'
+import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 
 describe('ohifToolToDragMode', () => {
   it.each([
@@ -13,9 +9,6 @@ describe('ohifToolToDragMode', () => {
     ['Zoom', DRAG_MODE.slicer3D],
     ['Angle', DRAG_MODE.angle],
     ['CobbAngle', DRAG_MODE.angle],
-    ['RectangleROI', DRAG_MODE.roiSelection],
-    ['EllipticalROI', DRAG_MODE.roiSelection],
-    ['CircleROI', DRAG_MODE.roiSelection],
     ['Crosshairs', DRAG_MODE.crosshair],
     ['TrackballRotate', DRAG_MODE.crosshair],
   ] as const)('maps %s to the matching NiiVue drag mode', (tool, expected) => {
@@ -27,11 +20,18 @@ describe('ohifToolToDragMode', () => {
     expect(ohifToolToDragMode('ArrowAnnotate')).toBe(DRAG_MODE.crosshair)
   })
 
-  it('does not map annotation-backed tools to a drag mode', () => {
-    // Length and Bidirectional are annotation tools (see ohifToolToAnnotationTool);
-    // the annotation gate handles them, so the drag-mode path never applies.
-    expect(ohifToolToDragMode('Length')).toBe(DRAG_MODE.crosshair)
-    expect(ohifToolToDragMode('Bidirectional')).toBe(DRAG_MODE.crosshair)
+  it.each([
+    'Length',
+    'EllipticalROI',
+    'RectangleROI',
+    'CircleROI',
+    'PlanarFreehandROI',
+    'SplineROI',
+    'LivewireContour',
+    'Bidirectional',
+    'ArrowAnnotate',
+  ])('leaves annotation-backed %s to the annotation gate', (tool) => {
+    expect(ohifToolToDragMode(tool)).toBe(DRAG_MODE.crosshair)
   })
 })
 
@@ -53,10 +53,5 @@ describe('ohifToolToAnnotationTool', () => {
   it('returns null for non-annotation tools', () => {
     expect(ohifToolToAnnotationTool('Pan')).toBeNull()
     expect(ohifToolToAnnotationTool(undefined)).toBeNull()
-  })
-
-  it('has no unsupported measurement tools left (all backed)', () => {
-    expect(UNSUPPORTED_MEASUREMENT_TOOLS.size).toBe(0)
-    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('Bidirectional')).toBe(false)
   })
 })

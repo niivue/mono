@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var isInspectorVisible: Bool = true
     @State private var isLoading = false
     @State private var isFileImporterPresented = false
+    @State private var importAddsOverlays = false
     @State private var isDropTargeted = false
 
     #if os(iOS)
@@ -35,11 +36,13 @@ struct ContentView: View {
         #if os(macOS)
         mainLayout
             .toolbar { toolbarContent }
+            .navigationTitle(model.volumes.first?.title ?? "medgfx")
+            .navigationSubtitle(documentSubtitle)
         #else
         NavigationStack {
             mainLayout
                 .toolbar { toolbarContent }
-                .navigationTitle("medgfx")
+                .navigationTitle(model.volumes.first?.title ?? "medgfx")
                 .navigationBarTitleDisplayMode(.inline)
         }
         #endif
@@ -63,7 +66,7 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 viewer
 
-                if useInlineInspector && isInspectorVisible {
+                if useInlineInspector && isInspectorVisible && hasImage {
                     Divider()
                     InspectorContainer(model: model)
                         .transition(.move(edge: .trailing))
@@ -105,7 +108,10 @@ struct ContentView: View {
         ZStack {
             NiiVueWebView(bridge: bridge)
 
-            if isDropTargeted {
+            // Opaque, so it also covers NiiVue's own "No image loaded" banner.
+            if !hasImage {
+                emptyState
+            } else if isDropTargeted {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(.tint.opacity(0.15))
                     .overlay {
@@ -115,7 +121,7 @@ struct ContentView: View {
                     .padding(12)
                     .allowsHitTesting(false)
 
-                Label("Drop images to load", systemImage: "square.and.arrow.down")
+                Label("Drop to add as overlay", systemImage: "square.3.layers.3d")
                     .font(.headline)
                     .padding()
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -125,18 +131,64 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .dropDestination(for: URL.self) { urls, _ in
             guard !urls.isEmpty, !isLoading else { return false }
-            Task { await loadFiles(urls) }
+            Task { await loadFiles(urls, addingToCurrent: hasImage) }
             return true
         } isTargeted: { isTargeted in
             isDropTargeted = isTargeted
         }
     }
 
+    private var hasImage: Bool { !model.volumes.isEmpty || model.hasNonVolumeContent }
+
+    private var emptyState: some View {
+        ZStack {
+            Color.black
+
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                .foregroundStyle(isDropTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
+                .padding(24)
+
+            VStack(spacing: 0) {
+                Image(systemName: "square.3.layers.3d")
+                    .font(.system(size: 44, weight: .ultraLight))
+                    .foregroundStyle(.secondary)
+                Text("Open an image")
+                    .font(.title2.weight(.semibold))
+                    .padding(.top, 20)
+                Text("Drop a volume or mesh anywhere in this window.\nFiles are read on this device and never uploaded.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 6)
+                HStack(spacing: 10) {
+                    Button("Open…") { isFileImporterPresented = true }
+                        .buttonStyle(.borderedProminent)
+                    Button("Try Sample Brain") { Task { await loadSample() } }
+                }
+                .controlSize(.large)
+                .disabled(isLoading || !model.isReady)
+                .padding(.top, 22)
+            }
+            .padding(40)
+        }
+        .environment(\.colorScheme, .dark)
+    }
+
+    /// "207 × 256 × 215 · 0.74 mm · 2 layers" for the base volume.
+    private var documentSubtitle: String {
+        guard let base = model.volumes.first else { return "" }
+        let dims = base.dims.map(String.init).joined(separator: " × ")
+        let voxel = base.pixDims.map { $0.formatted(.number.precision(.significantDigits(1...3))) }
+        let size = Set(voxel).count == 1 ? "\(voxel[0]) mm" : voxel.joined(separator: " × ") + " mm"
+        let layers = model.volumes.count == 1 ? "1 layer" : "\(model.volumes.count) layers"
+        return [dims, size, layers].joined(separator: " · ")
+    }
+
     /// A binding that only drives the sheet on iPhone — on macOS and iPad
     /// the sheet is never presented (inline sidebar handles it).
     private var sheetBinding: Binding<Bool> {
         Binding(
-            get: { !useInlineInspector && isInspectorVisible },
+            get: { !useInlineInspector && isInspectorVisible && hasImage },
             set: { newValue in
                 if !useInlineInspector { isInspectorVisible = newValue }
             }
@@ -173,19 +225,28 @@ struct ContentView: View {
                     systemImage: "sidebar.trailing"
                 )
             }
+            .disabled(!hasImage)
         }
     }
 
     private var addImageMenu: some View {
         Menu {
-            Button("Load Example") {
-                Task { await loadSample() }
-            }
-
-            Button("Browse Files…") {
+            Button("Open…") {
+                importAddsOverlays = false
                 isFileImporterPresented = true
             }
             .keyboardShortcut("o", modifiers: .command)
+
+            Button("Add Overlay…") {
+                importAddsOverlays = true
+                isFileImporterPresented = true
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+            .disabled(!hasImage)
+
+            Button("Sample Brain") {
+                Task { await loadSample() }
+            }
         } label: {
             Label("Add Image", systemImage: "plus")
         }
@@ -209,27 +270,38 @@ struct ContentView: View {
     // MARK: Footer
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             if isLoading {
                 ProgressView()
-                    .controlSize(.small)
+                    .controlSize(.mini)
             }
 
+            if hasImage, let mm = model.locationMM, mm.count == 3 {
+                Text(mm.map { $0.formatted(.number.precision(.fractionLength(1))) }
+                    .joined(separator: ", ") + " mm")
+                    .foregroundStyle(.primary)
+                ForEach(Array(model.locationValues.enumerated()), id: \.offset) { _, entry in
+                    Text("\(imageTitle(entry.name)) \(entry.value.formatted(.number.precision(.significantDigits(1...4))))")
+                }
+            }
+
+            Spacer(minLength: 12)
+
             Text(model.lastStatus)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            Text(model.locationText)
-                .font(.system(.caption, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
+
+            if let backend = model.currentBackend {
+                Text(backend.label)
+            }
         }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         #if os(macOS)
-        .background(.regularMaterial)
+        .background(.bar)
         #else
         .background(Color(.systemBackground))
         #endif
@@ -241,13 +313,15 @@ struct ContentView: View {
         switch result {
         case .success(let urls):
             guard !urls.isEmpty else { return }
-            Task { await loadFiles(urls) }
+            Task { await loadFiles(urls, addingToCurrent: importAddsOverlays) }
         case .failure(let error):
             model.lastStatus = "Open failed: \(error.localizedDescription)"
         }
     }
 
-    private func loadFiles(_ urls: [URL]) async {
+    /// The first file replaces the scene unless `addingToCurrent`; the rest
+    /// are always added, so a multi-file drop yields base + overlays.
+    private func loadFiles(_ urls: [URL], addingToCurrent: Bool) async {
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
@@ -261,7 +335,7 @@ struct ContentView: View {
 
             do {
                 model.lastStatus = "Loading \(url.lastPathComponent)…"
-                try await model.loadVolume(url: url)
+                try await model.loadVolume(url: url, add: addingToCurrent || loadedCount > 0)
                 loadedCount += 1
             } catch {
                 model.lastStatus = "Could not load \(url.lastPathComponent): \(error.localizedDescription)"

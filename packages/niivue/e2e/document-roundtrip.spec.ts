@@ -105,6 +105,67 @@ test('sparse settings: fill policy — default resets omitted, current keeps, sp
   expect(r.overriddenCrosshair).toEqual([0.1, 0.2, 0.3]) // specified -> wins under fill:current
 })
 
+test('optional containers: a document may omit scene, layout, clipPlanes, volumes and meshes', async ({
+  page,
+}) => {
+  test.setTimeout(90_000) // fetches one volume for the URL-only document
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const mkCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = 64
+      c.height = 64
+      c.style.cssText = 'position:fixed;left:-9999px'
+      document.body.appendChild(c)
+      return c
+    }
+    const asFile = (doc: unknown, name: string) =>
+      new File([JSON.stringify(doc)], name, { type: 'application/json' })
+
+    // (a) The minimal document: version only. Under the default fill policy
+    // every omitted setting resets; azimuth started non-default to prove it.
+    const tReset = new NiiVue({ azimuth: 200 })
+    tReset.setClipPlane([0.25, 30, 15])
+    const clipBefore = [...tReset.model.clipPlanes]
+    await tReset.loadDocument(asFile({ version: 9 }, 'minimal.json'))
+
+    // (b) Same document, fill 'current': every omitted setting is kept.
+    const tKeep = new NiiVue({ azimuth: 200 })
+    await tKeep.loadDocument(asFile({ version: 9 }, 'minimal.json'), {
+      fill: 'current',
+    })
+
+    // (c) volumes without any other container still loads the volume.
+    const tVol = new NiiVue({ backend: 'webgl2' })
+    await tVol.attachToCanvas(mkCanvas())
+    await tVol.loadDocument(
+      asFile(
+        { version: 9, volumes: [{ url: '/volumes/mni152.nii.gz' }] },
+        'volume-only.json',
+      ),
+    )
+
+    return {
+      resetAzimuth: tReset.azimuth,
+      clipUnchanged:
+        JSON.stringify([...tReset.model.clipPlanes]) ===
+        JSON.stringify(clipBefore),
+      resetVolumes: tReset.volumes.length,
+      resetMeshes: tReset.meshes.length,
+      keptAzimuth: tKeep.azimuth,
+      volVoxels: tVol.volumes[0]?.img?.length ?? 0,
+    }
+  })
+
+  expect(r.resetAzimuth).toBe(110) // SCENE_DEFAULTS.azimuth: omitted scene -> reset
+  expect(r.clipUnchanged).toBe(true) // omitted clipPlanes -> untouched
+  expect(r.resetVolumes).toBe(0)
+  expect(r.resetMeshes).toBe(0)
+  expect(r.keptAzimuth).toBe(200) // omitted scene + fill:current -> kept
+  expect(r.volVoxels).toBeGreaterThan(1_000_000) // volumes-only document loads
+})
+
 test('mesh visible: a hidden mesh stays hidden across a document round-trip', async ({
   page,
 }) => {
@@ -203,20 +264,37 @@ test('json format: saves portable JSON that loadDocument reads back (linked + em
     await nvEmbedded.attachToCanvas(mkCanvas())
     await nvEmbedded.loadDocument(new File([jsonEmbedded], 'embed.json'))
 
+    // Non-finite numbers: calMinNeg defaults to NaN on a loaded volume. JSON has
+    // no NaN, so the codec tags it; a reload must yield NaN again, not null.
+    // (Computed here: page.evaluate's own JSON transport would turn NaN into
+    // null on the way back to the test.)
+    const isNaNAfterReload = (v: unknown): boolean =>
+      typeof v === 'number' && Number.isNaN(v)
+
     return {
       startsWithBrace: text.trimStart().startsWith('{'),
       parseable,
+      taggedNaN: text.includes('"$num":"NaN"'),
+      bareNullCalMinNeg: text.includes('"calMinNeg":null'),
       linkedAzimuth: nvLinked.azimuth,
       linkedUrl: nvLinked.volumes[0]?.url,
       linkedVoxels: nvLinked.volumes[0]?.img?.length ?? 0,
+      linkedCalMinNegIsNaN: isNaNAfterReload(nvLinked.volumes[0]?.calMinNeg),
       embeddedVoxels: nvEmbedded.volumes[0]?.img?.length ?? 0,
+      embeddedCalMinNegIsNaN: isNaNAfterReload(
+        nvEmbedded.volumes[0]?.calMinNeg,
+      ),
     }
   })
 
   expect(r.startsWithBrace).toBe(true) // human-readable JSON, not binary
   expect(r.parseable).toBe(true)
+  expect(r.taggedNaN).toBe(true) // NaN survives as a { $num } tag ...
+  expect(r.bareNullCalMinNeg).toBe(false) // ... not as JSON.stringify's null
   expect(r.linkedAzimuth).toBe(175) // scene restored from JSON
   expect(r.linkedUrl).toBe('/volumes/mni152.nii.gz')
   expect(r.linkedVoxels).toBeGreaterThan(1_000_000) // linked -> refetched
+  expect(r.linkedCalMinNegIsNaN).toBe(true) // NaN round-trips on the URL path
   expect(r.embeddedVoxels).toBeGreaterThan(1_000_000) // embedded JSON -> base64 voxels
+  expect(r.embeddedCalMinNegIsNaN).toBe(true) // and on the embedded path
 })

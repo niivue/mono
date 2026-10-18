@@ -457,6 +457,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `MULTIPLANAR_TYPE` | ✅ | |
 | `SHOW_RENDER` | ✅ | |
 | `NiiDataType` | ✅ | |
+| `OVERLAY_ALPHA_BLEND`, `OVERLAY_COLOR_BLEND` | ✅ | New in the rewrite; `volumeOverlayAlphaBlend` / `volumeOverlayColorBlend` (old NiiVue: MAX alpha + additive colour only) |
 | `NiiIntentCode` | ❌ | In NVConstants (not exported from index) |
 
 ## 33. Miscellaneous

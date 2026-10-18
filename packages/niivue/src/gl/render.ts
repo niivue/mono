@@ -6,6 +6,8 @@ import {
   isPaqd,
   lodGammaExponent,
   lodOpacityScale,
+  OVERLAY_ALPHA_BLEND,
+  OVERLAY_COLOR_BLEND,
   SCENE_DEFAULTS,
   VOLUME_DEFAULTS,
   VOLUME_RENDER_MODE,
@@ -13,7 +15,6 @@ import {
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import { applyCORS } from '@/NVLoader'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
-import { blendOverlayData } from '@/view/NVMeshView'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
   GENERIC_RENDER_VARIANT,
@@ -61,12 +62,20 @@ import {
   type DecodedChunkStats,
   decodedTierBudgetBytes,
 } from '@/volume/decodedChunkCache'
-import { buildModulationParams } from '@/volume/modulation'
+import {
+  buildModulationParams,
+  type ModulationTextureParams,
+  modulationFitsTextureLimit,
+} from '@/volume/modulation'
 import {
   chunkedDisplayKey,
+  chunkModulationParams,
   chunkOverlayMatrix,
+  coarseFloorKey,
   extractChunkBytes,
+  wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
+import { blendOverlayData } from '@/volume/overlayBlend'
 import * as depthPickShader from './depthPickShader'
 import * as gradient from './gradient'
 import {
@@ -204,6 +213,12 @@ interface SingleTexEntry {
   dims: Vec3f
   /** Categorical volume: never smooth its baked label colors (see _cubicVolumeSafe). */
   isLabel: boolean
+  /**
+   * wholeVolumeTextureKey the texture was baked with: voxels, window, frame,
+   * colormaps (with their addColormap revision), label LUT and modulation. A
+   * mismatch rebuilds the entry.
+   */
+  textureKey: string
 }
 
 /** Chunked (tiled) volume: one or more axes exceed max3D. */
@@ -222,6 +237,12 @@ interface ChunkedTexEntry {
    * uploader rebuild + full re-stream (see _ensureChunkedVolumeEntry).
    */
   displayKey: string
+  /**
+   * Modulation the uploader bakes into every chunk (resolved against the
+   * volume's own grid), or null. Kept so a plan swap rebuilds the uploader
+   * with the same modulator; `displayKey` covers it for change detection.
+   */
+  modulation: ModulationTextureParams | null
   /** planSupportsCubic(plan), cached: the plan is immutable for the entry's life. */
   cubicSafe: boolean
   /** Tracks how this volume's working set travels across its chunk grid. */
@@ -396,6 +417,10 @@ export class VolumeRenderer extends NVRenderer {
   // mode, where it is what makes a plane a cutout rather than a solid slab; the
   // ray-march samples that alpha directly and needs no flag.
   isAlphaClipDark = false
+  // Multi-overlay blend modes (set from md.volume before updateOverlays).
+  // See OVERLAY_ALPHA_BLEND / OVERLAY_COLOR_BLEND.
+  overlayAlphaBlend = OVERLAY_ALPHA_BLEND.MAX
+  overlayColorBlend = OVERLAY_COLOR_BLEND.ADDITIVE
   // Scene display gamma (set per-frame from md.scene.gamma). Applied to the
   // classified RGB of every volume sample, never to alpha, so brightening does
   // not change how much a ray occludes. 1.0 is a strict no-op.
@@ -499,6 +524,10 @@ export class VolumeRenderer extends NVRenderer {
   private _fadeActive = false
   private overlayOrientCache: orientOverlay.OverlayTextureCache | null = null
   private volumeOrientCache: orientOverlay.OverlayTextureCache | null = null
+  // RGB/RGBA volumes skip the orient pass, so their textures are kept here
+  // instead, and new voxels are written into them in place.
+  private overlayRgbaCache: orientOverlay.RGBATextureCache | null = null
+  private volumeRgbaCache: orientOverlay.RGBATextureCache | null = null
 
   constructor() {
     super()
@@ -704,10 +733,13 @@ export class VolumeRenderer extends NVRenderer {
     const cacheKey = vol.url || vol.name
 
     if (forcedPlan || oversized) {
+      // Same modulation the whole-volume path below resolves; the uploader
+      // bakes it into every brick.
       const chunkedEntry = await this._ensureChunkedVolumeEntry(
         gl,
         vol,
         this._chunkResidencyBytes,
+        buildModulationParams(vol, vol, allVolumes),
       )
       this._activeChunked = chunkedEntry
       this._cubicVolumeSafe = !vol.colormapLabel
@@ -753,6 +785,15 @@ export class VolumeRenderer extends NVRenderer {
       // compiler checks.
       const prior = cacheKey ? this._texCache.get(cacheKey) : undefined
       let entry = prior?.kind === 'single' ? prior : undefined
+      // Anything the texture bakes in changed (voxels, window, frame,
+      // colormap, label LUT, modulation): rebuild the entry.
+      // Computed before the awaits below: an edit landing during them must
+      // leave this entry stale (rebuilt next time), not marked current.
+      const textureKey = wholeVolumeTextureKey(vol, mtx, modParams)
+      if (entry && entry.textureKey !== textureKey) {
+        this._evictTexEntry(gl, cacheKey, entry)
+        entry = undefined
+      }
       if (!entry) {
         const volumeTexture = await orientOverlay.overlay2Texture(
           gl,
@@ -782,6 +823,7 @@ export class VolumeRenderer extends NVRenderer {
           gradDims,
           dims: [rasDims[0], rasDims[1], rasDims[2]],
           isLabel: !!vol.colormapLabel,
+          textureKey,
         }
         if (cacheKey) this._texCache.set(cacheKey, entry)
       }
@@ -793,20 +835,21 @@ export class VolumeRenderer extends NVRenderer {
       // Normal single-volume path: orient-texture cache + modulation. Scalar
       // volumes go through the orient-texture cache so cal_min/max/colormap
       // tweaks only re-run the cheap orient pass.
+      this.deleteNonCachedVolumeTexture(gl)
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
-        this.clearVolume(gl)
-        this.volumeTexture = await orientOverlay.overlay2Texture(
+        // RGB/RGBA volumes bypass the orient pass: their voxels go straight
+        // into a kept texture, and only when they changed.
+        orientOverlay.destroyOverlayTextureCache(gl, this.volumeOrientCache)
+        this.volumeOrientCache = null
+        this.volumeRgbaCache = orientOverlay.prepareRGBATextureCache(
           gl,
           vol,
-          vol,
-          mtx as Float32Array,
-          0,
-          undefined,
-          modParams,
+          this.volumeRgbaCache,
         )
+        this.volumeTexture = this.volumeRgbaCache.texture
       } else {
-        this.deleteNonCachedVolumeTexture(gl)
+        orientOverlay.destroyRGBATextureCache(gl, this.volumeRgbaCache)
+        this.volumeRgbaCache = null
         this.volumeOrientCache = orientOverlay.prepareOverlayTextureCache(
           gl,
           vol,
@@ -860,6 +903,7 @@ export class VolumeRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     vol: NVImage,
     budgetBytes: number,
+    modulation: ModulationTextureParams | null,
   ): Promise<ChunkedTexEntry> {
     const srcDims: Vec3i = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
     const rasDims: Vec3i = vol.dimsRAS
@@ -887,7 +931,7 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
     const cacheKey = vol.url || vol.name
-    const displayKey = chunkedDisplayKey(vol)
+    const displayKey = chunkedDisplayKey(vol, modulation)
     const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
     if (existing && existing.kind === 'chunked') {
       existing.volume = vol
@@ -898,6 +942,7 @@ export class VolumeRenderer extends NVRenderer {
         // new state so the volume stays present while the working set refills —
         // the same drop-and-refill mechanism as _refreshUnlitChunksForLighting.
         existing.displayKey = displayKey
+        existing.modulation = modulation
         // The decoded tier is deliberately kept: it holds SOURCE bytes, and a
         // colormap or window change re-orients the same source. The re-stream
         // below therefore costs uploads, not fetches.
@@ -907,6 +952,7 @@ export class VolumeRenderer extends NVRenderer {
           existing.plan,
           () => this._needsGradient(),
           existing.decoded,
+          modulation,
         )
         existing.uploader.dispose()
         existing.uploader = newUploader
@@ -935,9 +981,11 @@ export class VolumeRenderer extends NVRenderer {
         plan,
         () => this._needsGradient(),
         decoded,
+        modulation,
       ),
       plan,
       displayKey,
+      modulation,
       cubicSafe: planSupportsCubic(plan),
       predictor: new ChunkTravelPredictor(),
       requestedThisFrame: [],
@@ -1005,6 +1053,7 @@ export class VolumeRenderer extends NVRenderer {
       newPlan,
       () => this._needsGradient(),
       entry.decoded,
+      entry.modulation,
     )
     entry.uploader.dispose()
     entry.uploader = newUploader
@@ -1026,7 +1075,7 @@ export class VolumeRenderer extends NVRenderer {
       this.isCubicInterpolation,
     )
     entry.volume = vol
-    entry.displayKey = chunkedDisplayKey(vol)
+    entry.displayKey = chunkedDisplayKey(vol, entry.modulation)
     vol.chunkPlan = newPlan
     if (entry.manager.residentCount === 0) {
       const chunk0 = await entry.uploader.uploadChunk(0)
@@ -1769,7 +1818,10 @@ export class VolumeRenderer extends NVRenderer {
     const independentVols = standardVols.filter((v) => v.chunkOverlayOf)
     const reslicedVols = standardVols.filter((v) => !v.chunkOverlayOf)
     if (independentVols.length > 0) {
-      await this._updateOverlayChunkedIndependent(gl, independentVols[0])
+      await this._updateOverlayChunkedIndependent(gl, independentVols[0], [
+        baseVol,
+        ...overlayVols,
+      ])
       if (independentVols.length > 1) {
         log.warn(
           'only one independently-chunked overlay is supported; ' +
@@ -1792,8 +1844,17 @@ export class VolumeRenderer extends NVRenderer {
       const wholeReslice = reslicedVols.filter(
         (v) => !(v.chunkSource && this._dimsMatchBase(v, baseVol)),
       )
-      await this._updateCombinedOverlayChunked(gl, streamedCombined)
-      this._updateOverlayChunks(gl, baseVol, baseVol.chunkPlan, wholeReslice)
+      await this._updateCombinedOverlayChunked(gl, streamedCombined, [
+        baseVol,
+        ...overlayVols,
+      ])
+      this._updateOverlayChunks(
+        gl,
+        baseVol,
+        baseVol.chunkPlan,
+        wholeReslice,
+        overlayVols,
+      )
       return
     }
     // Non-chunked: drop any per-chunk overlay textures from a prior volume.
@@ -1821,19 +1882,22 @@ export class VolumeRenderer extends NVRenderer {
     } else if (inMem.length === 1) {
       const vol = inMem[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
+      this.deleteNonCachedOverlayTexture(gl)
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
-        this.clearOverlay(gl)
-        this.overlayTexture = orientOverlay.overlay2Texture(
+        // Like the background: rewritten only when its voxels changed, or
+        // after background masking edited it (maskOverlayByBackground).
+        orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
+        this.overlayOrientCache = null
+        this.overlayRgbaCache = orientOverlay.prepareRGBATextureCache(
           gl,
           vol,
-          baseVol,
-          mtx as Float32Array,
-          vol.opacity ?? 1,
+          this.overlayRgbaCache,
         )
-        gl.bindTexture(gl.TEXTURE_3D, null)
+        this.overlayTexture = this.overlayRgbaCache.texture
         return
       }
-      this.deleteNonCachedOverlayTexture(gl)
+      orientOverlay.destroyRGBATextureCache(gl, this.overlayRgbaCache)
+      this.overlayRgbaCache = null
       this.overlayOrientCache = orientOverlay.prepareOverlayTextureCache(
         gl,
         vol,
@@ -1849,6 +1913,8 @@ export class VolumeRenderer extends NVRenderer {
       this.deleteNonCachedOverlayTexture(gl)
       orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
       this.overlayOrientCache = null
+      orientOverlay.destroyRGBATextureCache(gl, this.overlayRgbaCache)
+      this.overlayRgbaCache = null
       const overlayData: Uint8Array[] = []
       for (const vol of inMem) {
         const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
@@ -1865,7 +1931,12 @@ export class VolumeRenderer extends NVRenderer {
         gl.deleteTexture(tex)
         overlayData.push(data)
       }
-      const blended = blendOverlayData(overlayData, dimsOut)
+      const blended = blendOverlayData(
+        overlayData,
+        dimsOut,
+        this.overlayAlphaBlend,
+        this.overlayColorBlend,
+      )
       this.deleteNonCachedOverlayTexture(gl)
       this.overlayTexture = gl.createTexture()
       if (!this.overlayTexture) return
@@ -1919,15 +1990,38 @@ export class VolumeRenderer extends NVRenderer {
     return true
   }
 
+  /**
+   * Clip the overlay to the background's non-transparent voxels
+   * (isBackgroundMasking), in place. A kept RGBA overlay texture then no
+   * longer holds the volume's voxels, so its key is cleared and the next
+   * overlay pass rewrites it.
+   */
+  maskOverlayByBackground(
+    gl: WebGL2RenderingContext,
+    dims: readonly number[],
+  ): void {
+    if (!this.overlayTexture || !this.volumeTexture) return
+    orientOverlay.maskOverlayByBackground(
+      gl,
+      this.volumeTexture,
+      this.overlayTexture,
+      [dims[0], dims[1], dims[2]],
+    )
+    if (this.overlayTexture === this.overlayRgbaCache?.texture) {
+      this.overlayRgbaCache.key = ''
+    }
+  }
+
   private deleteNonCachedVolumeTexture(gl: WebGL2RenderingContext): void {
     if (
       this.volumeTexture &&
-      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture &&
+      this.volumeTexture !== this.volumeRgbaCache?.texture
     ) {
       gl.deleteTexture(this.volumeTexture)
     }
-    // Always drop the reference: either we just deleted the texture, or the
-    // cache still owns it via volumeOrientCache.outputTexture. The caller
+    // Always drop the reference: either we just deleted the texture, or a
+    // cache (volumeOrientCache / volumeRgbaCache) still owns it. The caller
     // reassigns this.volumeTexture immediately after.
     this.volumeTexture = null
   }
@@ -1936,12 +2030,15 @@ export class VolumeRenderer extends NVRenderer {
     this.deleteNonCachedVolumeTexture(gl)
     orientOverlay.destroyOverlayTextureCache(gl, this.volumeOrientCache)
     this.volumeOrientCache = null
+    orientOverlay.destroyRGBATextureCache(gl, this.volumeRgbaCache)
+    this.volumeRgbaCache = null
   }
 
   private deleteNonCachedOverlayTexture(gl: WebGL2RenderingContext): void {
     if (
       this.overlayTexture &&
-      this.overlayTexture !== this.overlayOrientCache?.outputTexture
+      this.overlayTexture !== this.overlayOrientCache?.outputTexture &&
+      this.overlayTexture !== this.overlayRgbaCache?.texture
     ) {
       gl.deleteTexture(this.overlayTexture)
     }
@@ -1952,6 +2049,8 @@ export class VolumeRenderer extends NVRenderer {
     this.deleteNonCachedOverlayTexture(gl)
     orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
     this.overlayOrientCache = null
+    orientOverlay.destroyRGBATextureCache(gl, this.overlayRgbaCache)
+    this.overlayRgbaCache = null
     this._destroyOverlayChunks(gl)
     this.clearOverlayChunked()
     this._clearCombinedOverlayChunked()
@@ -1962,7 +2061,7 @@ export class VolumeRenderer extends NVRenderer {
    * active base. `coarseVol` is a small in-memory pyramid level supplied by the
    * app; it is oriented once into a single RGBA texture (its own colormap /
    * calibration) that the 2D slice path samples behind the resident fine
-   * chunks. Re-orients only when the source/colormap/window changes.
+   * chunks. Re-orients only when {@link coarseFloorKey} changes.
    */
   setCoarseFloor(gl: WebGL2RenderingContext, coarseVol: NVImage | null): void {
     if (!coarseVol) {
@@ -1975,14 +2074,14 @@ export class VolumeRenderer extends NVRenderer {
       this._coarseFloorKey = null
       return
     }
-    const key = `${coarseVol.url || coarseVol.name}|${coarseVol.colormap}|${coarseVol.calMin}|${coarseVol.calMax}`
-    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // Orient the coarse level into its own (small) RGBA grid. It shares the base
     // volume's mm box, so the slice samples it at the base's texture fraction.
     const mtx = NVTransforms.calculateOverlayTransformMatrix(
       coarseVol,
       coarseVol,
     )
+    const key = coarseFloorKey(coarseVol, mtx)
+    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
     // overlayOpacity 0: the floor stands in for the BASE volume, so it must be
     // baked with base semantics (alpha straight from the colormap LUT). Passing
     // 1 selects the overlay path, which makes alpha binary (`step()`); every
@@ -2018,12 +2117,20 @@ export class VolumeRenderer extends NVRenderer {
   private async _updateOverlayChunkedIndependent(
     gl: WebGL2RenderingContext,
     vol: NVImage,
+    volumes: NVImage[],
   ): Promise<void> {
     // Split the single configured residency budget: the overlay gets a share,
     // the base keeps the rest, so base + overlay together stay within the
     // configured cap instead of each filling it.
     const overlayBudget = this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION
-    const entry = await this._ensureChunkedVolumeEntry(gl, vol, overlayBudget)
+    // The overlay streams on its own grid, so its modulation matrix is
+    // resolved against itself, not the base.
+    const entry = await this._ensureChunkedVolumeEntry(
+      gl,
+      vol,
+      overlayBudget,
+      buildModulationParams(vol, vol, volumes),
+    )
     // Apply the split even when the entry was reused from the cache (its
     // manager may have been built with a different budget).
     setChunkBudget(entry, overlayBudget)
@@ -2069,13 +2176,21 @@ export class VolumeRenderer extends NVRenderer {
   private async _updateCombinedOverlayChunked(
     gl: WebGL2RenderingContext,
     vols: NVImage[],
+    volumes: NVImage[],
   ): Promise<void> {
     this._combinedOverlayEntries = []
     if (vols.length === 0) return
     const overlayBudget =
       (this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION) / vols.length
     for (const vol of vols) {
-      const entry = await this._ensureChunkedVolumeEntry(gl, vol, overlayBudget)
+      // Co-registered at the base grid, so resolving against the overlay's
+      // own grid is the base-grid matrix the whole-volume path would use.
+      const entry = await this._ensureChunkedVolumeEntry(
+        gl,
+        vol,
+        overlayBudget,
+        buildModulationParams(vol, vol, volumes),
+      )
       setChunkBudget(entry, overlayBudget)
       this._combinedOverlayEntries.push(entry)
     }
@@ -2202,17 +2317,23 @@ export class VolumeRenderer extends NVRenderer {
    *
    * RGB/RGBA-datatype overlays are skipped on chunked volumes (the chunked
    * orient pass only supports scalar sources, matching the volume chunker).
+   *
+   * `overlayVols` is the full overlay list (not just the chunk-rendered subset)
+   * so a modulator that is itself hidden or streamed can still be resolved.
    */
   private _updateOverlayChunks(
     gl: WebGL2RenderingContext,
     baseVol: NVImage,
     plan: ChunkPlan,
     standardVols: NVImage[],
+    overlayVols: NVImage[],
   ): void {
     // Chunked overlay path: drop the single-texture representation.
     this.deleteNonCachedOverlayTexture(gl)
     orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
     this.overlayOrientCache = null
+    orientOverlay.destroyRGBATextureCache(gl, this.overlayRgbaCache)
+    this.overlayRgbaCache = null
     this._destroyOverlayChunks(gl)
 
     const supported = standardVols.filter(
@@ -2234,6 +2355,10 @@ export class VolumeRenderer extends NVRenderer {
           v,
         ) as Float32Array,
     )
+    // Same modulation the non-chunked path applies; re-targeted per chunk below.
+    const mods = supported.map((v) =>
+      buildModulationParams(v, baseVol, [baseVol, ...overlayVols]),
+    )
 
     if (supported.length === 1) {
       this.overlayChunks = orientOverlay.overlay2TextureChunked(
@@ -2243,39 +2368,66 @@ export class VolumeRenderer extends NVRenderer {
         mtxs[0],
         plan,
         supported[0].opacity ?? 1,
+        mods[0],
       )
       return
     }
 
     // Multiple overlays: orient + read back + blend per chunk.
+    const maxTextureDimension3D = gl.getParameter(
+      gl.MAX_3D_TEXTURE_SIZE,
+    ) as number
+    const safeMods = mods.map((mod) => {
+      if (modulationFitsTextureLimit(mod, maxTextureDimension3D)) return mod
+      log.warn(
+        `modulation disabled: grid ${mod?.dims.join('x')} exceeds WebGL max 3D texture size (${maxTextureDimension3D})`,
+      )
+      return null
+    })
+    const sharedModTextures = safeMods.map((mod) =>
+      mod ? orientOverlay.createModTexture(gl, mod) : null,
+    )
     const [dx, dy, dz] = plan.volumeDims
     const finals: WebGLTexture[] = []
-    for (const desc of plan.chunks) {
-      const dims = desc.texDims
-      const [ox, oy, oz] = desc.texOrigin
-      const scale = [dims[0] / dx, dims[1] / dy, dims[2] / dz]
-      const offset = [ox / dx, oy / dy, oz / dz]
-      const layers: Uint8Array[] = []
-      for (let i = 0; i < supported.length; i++) {
-        const chunkMtx = chunkOverlayMatrix(mtxs[i], scale, offset)
-        const tex = orientOverlay.overlay2Texture(
-          gl,
-          supported[i],
-          baseVol,
-          chunkMtx,
-          supported[i].opacity ?? 1,
-          dims,
+    try {
+      for (const desc of plan.chunks) {
+        const dims = desc.texDims
+        const [ox, oy, oz] = desc.texOrigin
+        const scale = [dims[0] / dx, dims[1] / dy, dims[2] / dz]
+        const offset = [ox / dx, oy / dy, oz / dz]
+        const layers: Uint8Array[] = []
+        for (let i = 0; i < supported.length; i++) {
+          const chunkMtx = chunkOverlayMatrix(mtxs[i], scale, offset)
+          const tex = orientOverlay.overlay2Texture(
+            gl,
+            supported[i],
+            baseVol,
+            chunkMtx,
+            supported[i].opacity ?? 1,
+            dims,
+            chunkModulationParams(safeMods[i], scale, offset),
+            sharedModTextures[i],
+          )
+          layers.push(orientOverlay.readTexture3D(gl, tex, dims))
+          gl.deleteTexture(tex)
+        }
+        finals.push(
+          this._createOverlayChunkTexture(
+            gl,
+            blendOverlayData(
+              layers,
+              dims,
+              this.overlayAlphaBlend,
+              this.overlayColorBlend,
+            ),
+            [dims[0], dims[1], dims[2]],
+          ),
         )
-        layers.push(orientOverlay.readTexture3D(gl, tex, dims))
-        gl.deleteTexture(tex)
       }
-      finals.push(
-        this._createOverlayChunkTexture(gl, blendOverlayData(layers, dims), [
-          dims[0],
-          dims[1],
-          dims[2],
-        ]),
-      )
+    } finally {
+      for (const texture of sharedModTextures) {
+        if (texture) gl.deleteTexture(texture)
+      }
     }
     this.overlayChunks = finals
   }

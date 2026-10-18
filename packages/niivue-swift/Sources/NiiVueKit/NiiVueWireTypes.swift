@@ -15,10 +15,12 @@ import Foundation
 public struct LoadVolumePayload: Encodable {
     public let name: String
     public let bytesBase64: String
+    public let add: Bool
 
-    public init(name: String, bytesBase64: String) {
+    public init(name: String, bytesBase64: String, add: Bool = false) {
         self.name = name
         self.bytesBase64 = bytesBase64
+        self.add = add
     }
 }
 
@@ -40,7 +42,49 @@ public struct SetBackendPayload: Encodable {
     }
 }
 
+/// Display changes for one volume. Nil fields are left as they are.
+public struct SetVolumePayload: Encodable {
+    public let index: Int
+    public var colormap: String?
+    public var calMin: Double?
+    public var calMax: Double?
+    public var opacity: Double?
+
+    public init(index: Int, colormap: String? = nil, calMin: Double? = nil, calMax: Double? = nil, opacity: Double? = nil) {
+        self.index = index
+        self.colormap = colormap
+        self.calMin = calMin
+        self.calMax = calMax
+        self.opacity = opacity
+    }
+}
+
+public struct VolumeIndexPayload: Encodable {
+    public let index: Int
+}
+
 // MARK: - Inbound (JS -> Swift)
+
+/// Display state of one loaded volume (`volumesChange` / `getVolumes`).
+public struct VolumeSummary: Codable, Equatable {
+    public var name: String
+    public var colormap: String
+    /// Colormap control points as [position 0...1, r, g, b].
+    public var colormapStops: [[Double]]
+    public var calMin: Double
+    public var calMax: Double
+    public var globalMin: Double
+    public var globalMax: Double
+    public var opacity: Double
+    /// RAS dimensions and voxel size in mm.
+    public var dims: [Int]
+    public var pixDims: [Double]
+}
+
+public struct LocationValue: Decodable, Equatable {
+    public let name: String
+    public let value: Double
+}
 
 public struct OKReply: Decodable {
     public let ok: Bool
@@ -66,6 +110,7 @@ public struct PropChangeEnvelope: Decodable {
 public struct LocationChangeEnvelope: Decodable {
     public let mm: [Double]?
     public let voxel: [Double]?
+    public let values: [LocationValue]?
     public let string: String
 }
 

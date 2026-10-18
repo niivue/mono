@@ -3,7 +3,11 @@ import NiiVueBase, { type NiiVueOptions } from '@/NVControlBase'
 
 export default class NiiVue extends NiiVueBase {
   constructor(options: NiiVueOptions = {}) {
-    super(options, viewLifecycle, 'webgpu')
+    super(
+      { ...options, backend: options.backend ?? 'webgpu' },
+      viewLifecycle,
+      'webgpu',
+    )
     this.enforceBackendAvailability()
   }
 }

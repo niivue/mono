@@ -1,3 +1,4 @@
+import { BYTES_PER_VERTEX, packColor } from '@/mesh/vertexFormat'
 import type NVModel from '@/NVModel'
 import { getAxisColor } from '@/view/crosshairColor'
 import {
@@ -5,12 +6,10 @@ import {
   crosshairExplodeOffsetForModel,
 } from '@/view/crosshairExplode'
 import {
-  BYTES_PER_VERTEX,
   buildVertexData,
   calculateCrosshairSegments,
   getCylinderIndices,
   MAX_CROSSHAIR_TILES,
-  packColor,
   shouldCullCylinder,
   VERTS_PER_CYLINDER,
 } from '@/view/NVCrosshair'

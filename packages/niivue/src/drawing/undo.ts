@@ -1,4 +1,5 @@
 import { log } from '@/logger'
+import type { NVImage } from '@/NVTypes'
 import { decodeRLE } from './rle'
 
 interface DrawUndoArgs {
@@ -41,4 +42,23 @@ export function drawUndo({
     currentDrawUndoBitmap = len - 1
   }
   return { drawBitmap, currentDrawUndoBitmap }
+}
+
+/**
+ * Install a bitmap as the drawing's contents, writing INTO the existing `img`
+ * when the sizes match rather than replacing the array. Replacing it would
+ * silently detach any view an extension installed with
+ * `acquireSharedBuffer()` (the SharedArrayBuffer a worker previews into), so
+ * the restored drawing would be the last thing that worker could see.
+ */
+export function setDrawingBitmap(
+  drawingVol: NVImage,
+  bitmap: Uint8Array,
+): void {
+  const img = drawingVol.img as Uint8Array | undefined
+  if (img && img.length === bitmap.length && img !== bitmap) {
+    img.set(bitmap)
+  } else {
+    drawingVol.img = bitmap
+  }
 }

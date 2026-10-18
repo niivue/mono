@@ -496,7 +496,8 @@ export class NVChunkedVolume {
     // it was not, fall back to a bounded probe so a streamed volume still opens
     // on a window that shows the data rather than on the 0..1 placeholder.
     if (this.wantsAutoWindow && !this.windowResolved) await this.probeWindow()
-    if (this.windowResolved && !this.disposed) await this.host.updateGLVolume()
+    if (this.windowResolved && !this.disposed)
+      await this.host._updateGLChanged()
   }
 
   /**

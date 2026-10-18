@@ -1,10 +1,12 @@
 // Pure helpers for sparse NVD settings: which settings a saved document
-// includes, and (implicitly) how absent settings resolve on load. A document
-// omits any setting that equals its default, so on load an omitted setting is
-// left at the loading instance's current value rather than reset to default (see
-// NVDocument.applyDocumentToModel). This lets an embedding app persist, say, the
-// crosshair position across scenes by never saving it: any document that omits
-// `scene.crosshairPos` leaves the crosshair where the user last put it.
+// includes, and how absent settings resolve on load. A document omits any
+// setting that equals its default; on load an omitted setting is filled per the
+// caller's SettingsFillPolicy (see NVDocument.applyDocumentToModel): reset to its
+// built-in default unless the policy says 'current', which keeps the loading
+// instance's value instead. The 'current' mode lets an embedding app persist,
+// say, the crosshair position across scenes by never saving it and loading with
+// `{ fill: { 'scene.crosshairPos': 'current' } }`: any document that omits
+// `scene.crosshairPos` then leaves the crosshair where the user last put it.
 
 /** Policy controlling which settings a saved document includes. */
 export interface SettingsSavePolicy {

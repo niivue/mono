@@ -1,0 +1,42 @@
+{
+  "$schema": "https://unpkg.com/knip@6.39.0/schema-jsonc.json",
+  // Run through niivue:knip to select the niivue workspace.
+  "workspaces": {
+    "packages/niivue": {
+      // Public package entries stay protected; tests and standalone tools stay reachable.
+      "entry": [
+        "src/index.ts!",
+        "src/index.webgpu.ts!",
+        "src/index.webgl2.ts!",
+        "src/control/NVCanvasViewportController.ts!",
+        "src/assets/fonts/index.ts!",
+        "src/assets/matcaps/index.ts!",
+        "src/**/*.test.ts",
+        "examples/vox.worker.js",
+        "scripts/fetch-omezarr.ts",
+        "scripts/fetch-dicom-wsi.ts",
+        "scripts/fetch-openslide-dicom.ts",
+        "bench/build-report.ts",
+        "bench/compare-bench.ts",
+        "benchmarks/diff-runs.mjs"
+      ],
+      // The trailing ! marks production patterns; test exclusions apply only there.
+      "project": [
+        "**/*.{js,mjs,ts,tsx}!",
+        "!src/**/*.test.ts!",
+        "!src/volume/tiffBuilders.ts!"
+      ],
+      "vite": {
+        "config": [
+          "vite.config.js",
+          "vite.config.lib.ts",
+          "vite.config.examples.ts"
+        ]
+      },
+      // Playwright loads this Vite browser URL inside page.evaluate.
+      "paths": {
+        "/src/index.ts": ["./src/index.ts"]
+      }
+    }
+  }
+}

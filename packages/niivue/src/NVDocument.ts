@@ -47,7 +47,6 @@ import {
 import type { NVSlideManifest } from '@/slide/NVSlide'
 import type { SlideVectorShape } from '@/slide/slideVector'
 import * as NVVolume from '@/volume/NVVolume'
-import { computeVolumeLabelCentroids } from '@/volume/utils'
 
 // v8 added two independent optional, additive fields: the `signals` array
 // (NVSignal persistence, incl. each signal's optional `annotations`) and the
@@ -226,8 +225,10 @@ export type NVDocumentData = {
   // an omitted setting is filled per the caller's fill policy (default: reset to
   // its built-in default; 'current': keep the instance's value). See
   // applyDocumentToModel. Older (v8-) documents embed every field, so they load
-  // unchanged.
-  scene: {
+  // unchanged. The containers themselves are optional too: an absent settings
+  // group reads as `{}` and an absent list (`clipPlanes`, `volumes`, `meshes`)
+  // as `[]`. `serialize` always writes all of them.
+  scene?: {
     azimuth?: number
     elevation?: number
     scaleMultiplier?: number
@@ -238,19 +239,19 @@ export type NVDocumentData = {
     clipPlaneColor?: number[]
     isClipPlaneCutaway?: boolean
   }
-  layout: Partial<LayoutConfig>
-  ui: Partial<UIConfig>
-  volume: Partial<VolumeRenderConfig>
-  mesh: Partial<MeshRenderConfig>
-  draw: Partial<DrawConfig>
-  interaction: Partial<InteractionConfig>
-  clipPlanes: number[]
+  layout?: Partial<LayoutConfig>
+  ui?: Partial<UIConfig>
+  volume?: Partial<VolumeRenderConfig>
+  mesh?: Partial<MeshRenderConfig>
+  draw?: Partial<DrawConfig>
+  interaction?: Partial<InteractionConfig>
+  clipPlanes?: number[]
   /** RLE-compressed drawing bitmap (if a drawing was active) */
   drawingBitmapRLE?: Uint8Array
   /** Uncompressed length of drawing bitmap */
   drawingBitmapLength?: number
-  volumes: NVDocumentVolume[]
-  meshes: NVDocumentMesh[]
+  volumes?: NVDocumentVolume[]
+  meshes?: NVDocumentMesh[]
   signals?: SerializedSignal[]
   annotations?: VectorAnnotation[]
   annotationConfig?: Partial<AnnotationConfig>
@@ -331,8 +332,9 @@ export interface SerializeOptions {
    * place — embed it (the default) instead. (Display state and the drawing bitmap
    * are serialized separately and survive; only the raw voxels can diverge.)
    *
-   * NOTE: meshes are always embedded (their URL-restore path does not yet reapply
-   * overlay layers / tract options).
+   * NOTE: meshes are always embedded (their URL-restore path reapplies only
+   * URL-referenced overlay layers, not embedded layer data or tract/connectome
+   * options).
    */
   linkData?: boolean
   /**
@@ -477,9 +479,10 @@ export function serialize(
     }
 
     // Meshes are always embedded, even under linkData: the mesh URL-restore path
-    // does not yet reapply scalar-overlay layers or tract/connectome options, so
-    // linking a mesh would silently drop that state. linkData covers volumes
-    // (whose URL-restore is complete); mesh linking is a tracked follow-up.
+    // reapplies only URL-referenced scalar-overlay layers (not embedded layer
+    // data or tract/connectome options), so linking a mesh could silently drop
+    // that state. linkData covers volumes (whose URL-restore is complete); mesh
+    // linking is a tracked follow-up.
     // Always embed mesh data for self-contained documents
     if (m.positions && m.indices && m.colors) {
       mesh.data = {
@@ -679,11 +682,6 @@ export function deserialize(data: Uint8Array): NVDocumentData {
     )
   }
 
-  // Validate required fields
-  if (!doc.scene || !doc.layout) {
-    throw new Error('Invalid NVD file: missing required fields')
-  }
-
   // Migrate v5 → v6: rename drawing bitmap fields
   if (doc.version <= 5) {
     const legacy = doc as Record<string, unknown>
@@ -708,7 +706,9 @@ export function applyDocumentToModel(
   // built-in default; 'current': leave the loading instance's value). A field the
   // document specifies always wins.
   const sd = NVConstants.SCENE_DEFAULTS
-  const s = doc.scene
+  // The containers are optional (a document may omit `scene` entirely and
+  // mean "every scene setting per the fill policy"), so default them here.
+  const s = doc.scene ?? {}
   // scalars
   const scalar = <V>(key: string, docVal: V | undefined, def: V, cur: V): V =>
     docVal !== undefined
@@ -820,13 +820,10 @@ export function applyDocumentToModel(
   )
   // annotation config resolved the same way, after the annotations array below
 
-  // Apply clip planes
-  for (
-    let i = 0;
-    i < doc.clipPlanes.length && i < model.clipPlanes.length;
-    i++
-  ) {
-    model.clipPlanes[i] = doc.clipPlanes[i]
+  // Apply clip planes (an omitted list leaves the instance's planes alone).
+  const clipPlanes = doc.clipPlanes ?? []
+  for (let i = 0; i < clipPlanes.length && i < model.clipPlanes.length; i++) {
+    model.clipPlanes[i] = clipPlanes[i]
   }
 
   // Restore annotations (v7+); clear if not present to avoid stale state
@@ -936,7 +933,6 @@ export async function reconstructVolume(
           max: v.colormapLabel.max,
           labels: v.colormapLabel.labels,
         }
-        vol.colormapLabel.centroids = computeVolumeLabelCentroids(vol)
       }
     }
   } catch (err) {
@@ -1022,8 +1018,6 @@ export async function reconstructMesh(
                 max: docLayer.colormapLabel.max,
                 labels: docLayer.colormapLabel.labels,
               }
-              layer.colormapLabel.centroids =
-                NVMeshLayers.computeMeshLabelCentroids(positions, layer)
             }
             layers.push(layer)
           }

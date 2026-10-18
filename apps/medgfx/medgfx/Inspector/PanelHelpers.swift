@@ -50,9 +50,67 @@ struct SettingToggle: View {
     let model: NiiVueModel
 
     var body: some View {
-        Toggle(setting.title, isOn: setting.binding(in: model))
-            .help(setting.help)
+        Toggle(isOn: setting.binding(in: model)) {
+            Text(setting.title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .toggleStyle(.switch)
+        #if os(macOS)
+        .controlSize(.mini)
+        #endif
+        .help(setting.help)
     }
+}
+
+/// Leading label of a two-column inspector row.
+struct RowLabel: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(minWidth: 64, alignment: .leading)
+    }
+}
+
+/// A volume's colormap as a horizontal gradient chip.
+struct ColormapSwatch: View {
+    let stops: [[Double]]
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 3)
+        shape
+            .fill(LinearGradient(stops: gradientStops, startPoint: .leading, endPoint: .trailing))
+            .overlay(shape.strokeBorder(.separator, lineWidth: 0.5))
+            .accessibilityHidden(true)
+    }
+
+    // Label colormaps carry no stops; show them as neutral gray.
+    private var gradientStops: [Gradient.Stop] {
+        let valid = stops.filter { $0.count == 4 }
+        guard valid.count >= 2 else {
+            return [.init(color: .gray, location: 0), .init(color: .gray, location: 1)]
+        }
+        return valid.map {
+            Gradient.Stop(color: Color(red: $0[1], green: $0[2], blue: $0[3]), location: $0[0])
+        }
+    }
+}
+
+/// File name without its image extension, e.g. "mni152" for "mni152.nii.gz".
+func imageTitle(_ fileName: String) -> String {
+    var name = fileName
+    if name.lowercased().hasSuffix(".gz") { name.removeLast(3) }
+    return (name as NSString).deletingPathExtension
+}
+
+extension VolumeSummary {
+    var title: String { imageTitle(name) }
 }
 
 @MainActor

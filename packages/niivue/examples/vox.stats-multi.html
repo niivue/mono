@@ -64,13 +64,24 @@
         <option>colorbar from 0, translucent subthreshold</option>
       </select>
       &nbsp;
+      <label for="alphaBlend" title="volumeOverlayAlphaBlend: how overlapping maps combine opacity">Blend</label>
+      <select id="alphaBlend">
+        <option selected>max</option>
+        <option>additive</option>
+        <option>over</option>
+      </select>
+      <select id="colorBlend" title="volumeOverlayColorBlend: how overlapping maps combine colour">
+        <option selected>add colors</option>
+        <option>mean color</option>
+      </select>
+      &nbsp;
       <label for="outlineSlide">Outline</label>
       <input type="range" min="0" max="4" value="0" class="slider" id="outlineSlide" />
       &nbsp;
       <input type="color" id="colorBtn" value="#191920" />
       &nbsp;
       <label for="webgpuCheck">WebGPU</label>
-      <input type="checkbox" id="webgpuCheck" checked />
+      <input type="checkbox" id="webgpuCheck"/>
       &nbsp;
       <button type="button" id="aboutBtn">About</button>
     </header>

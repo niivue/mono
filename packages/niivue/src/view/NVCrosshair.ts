@@ -1,13 +1,13 @@
 import { vec3 } from 'gl-matrix'
-import * as NVMeshUtils from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
+import { generateNormals } from '@/mesh/normals'
+import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 
-export const CYLINDER_SIDES = 20
-export const CYLINDER_ENDCAPS = true
+const CYLINDER_SIDES = 20
+const CYLINDER_ENDCAPS = true
 export const VERTS_PER_CYLINDER =
   (CYLINDER_SIDES + 1) * 2 + 2 + (CYLINDER_SIDES + 1) * 2
-export const BYTES_PER_VERTEX = 28 // position(12) + normal(12) + color(4)
 
 // Pre-computed index buffer (same topology for all cylinders)
 let cachedIndices: Uint32Array | null = null
@@ -24,11 +24,6 @@ export function getCylinderIndices(): Uint32Array {
   )
   cachedIndices = new Uint32Array(dummy.indices)
   return cachedIndices
-}
-
-export function packColor(rgba: number[]): number {
-  const [r, g, b, a] = rgba.map((v) => Math.round(v * 255))
-  return (a << 24) | (b << 16) | (g << 8) | r
 }
 
 /**
@@ -59,10 +54,7 @@ export function buildVertexData(
     CYLINDER_ENDCAPS,
   )
   const positions = new Float32Array(cylData.positions)
-  const normals = NVMeshUtils.generateNormals(
-    positions,
-    new Uint32Array(cylData.indices),
-  )
+  const normals = generateNormals(positions, new Uint32Array(cylData.indices))
   const numVerts = positions.length / 3
 
   const vertexData = new ArrayBuffer(numVerts * BYTES_PER_VERTEX)

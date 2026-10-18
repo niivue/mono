@@ -9,10 +9,21 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
-import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import {
+  buildOrientUniforms,
+  prepareRGBAData,
+  rgbaTextureKey,
+} from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
-import { IDENTITY_MTX, type ModulationTextureParams } from '@/volume/modulation'
-import { chunkOverlayMatrix } from '@/volume/orientChunked'
+import {
+  IDENTITY_MTX,
+  type ModulationTextureParams,
+  modulationFitsTextureLimit,
+} from '@/volume/modulation'
+import {
+  chunkModulationParams,
+  chunkOverlayMatrix,
+} from '@/volume/orientChunked'
 
 type ShaderPrograms = {
   uint: WebGLProgram
@@ -36,6 +47,58 @@ function getOrCreatePrograms(gl: WebGL2RenderingContext): ShaderPrograms {
   return cache
 }
 
+/** Allocate an empty, immutable RGBA8 3D texture with linear filtering. */
+function createRGBATexture(
+  gl: WebGL2RenderingContext,
+  texDims: readonly number[],
+): WebGLTexture {
+  const tex = gl.createTexture()
+  if (!tex) {
+    throw new Error('createRGBATexture: failed to create texture')
+  }
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texStorage3D(
+    gl.TEXTURE_3D,
+    1,
+    gl.RGBA8,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  return tex
+}
+
+/** Write RGBA8 voxels over the whole of an existing 3D texture. */
+function writeRGBATexture(
+  gl: WebGL2RenderingContext,
+  tex: WebGLTexture,
+  rgbaData: Uint8Array,
+  texDims: readonly number[],
+): void {
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    rgbaData,
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+}
+
 /**
  * Create a 3D RGBA8 WebGL texture directly from an RGB/RGBA NIfTI image.
  * Mirrors the WebGPU rgba2Texture() behavior.
@@ -45,36 +108,57 @@ function getOrCreatePrograms(gl: WebGL2RenderingContext): ShaderPrograms {
  *                           dims (NIfTI dims array), dimsRAS, img2RASstep
  * @returns {WebGLTexture}
  */
-export function rgba2Texture(
+function rgba2Texture(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
 ): WebGLTexture {
   const { rgbaData, texDims } = prepareRGBAData(nvimage)
-  const tex = gl.createTexture()
-  if (!tex) {
-    throw new Error('rgba2Texture: failed to create texture')
-  }
-  gl.bindTexture(gl.TEXTURE_3D, tex)
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-  gl.texImage3D(
-    gl.TEXTURE_3D,
-    0,
-    gl.RGBA8,
-    texDims[0],
-    texDims[1],
-    texDims[2],
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    rgbaData,
-  )
-  gl.bindTexture(gl.TEXTURE_3D, null)
+  const tex = createRGBATexture(gl, texDims)
+  writeRGBATexture(gl, tex, rgbaData, texDims)
   return tex
+}
+
+/**
+ * An RGB/RGBA volume's RGBA8 texture, kept across updates so new voxels are
+ * written into it instead of a new allocation (see prepareRGBATextureCache).
+ */
+export type RGBATextureCache = {
+  texture: WebGLTexture
+  texDims: number[]
+  /** rgbaTextureKey of the voxels last written. */
+  key: string
+}
+
+/**
+ * Upload an RGB/RGBA volume into `existing`'s texture when its dims still
+ * match (texSubImage3D, no allocation), else into a new texture (freeing the
+ * old one). Returns `existing` untouched while its rgbaTextureKey still
+ * matches; whoever else writes into the texture (background masking) clears
+ * `key` so the next call rewrites it.
+ */
+export function prepareRGBATextureCache(
+  gl: WebGL2RenderingContext,
+  nvimage: NVImage,
+  existing: RGBATextureCache | null,
+): RGBATextureCache {
+  const key = rgbaTextureKey(nvimage)
+  if (existing && existing.key === key) return existing
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  let cache = existing
+  if (!cache || !dimensionsMatch(cache.texDims, texDims)) {
+    destroyRGBATextureCache(gl, existing)
+    cache = { texture: createRGBATexture(gl, texDims), texDims, key }
+  }
+  writeRGBATexture(gl, cache.texture, rgbaData, texDims)
+  cache.key = key
+  return cache
+}
+
+export function destroyRGBATextureCache(
+  gl: WebGL2RenderingContext,
+  cache: RGBATextureCache | null,
+): void {
+  if (cache) gl.deleteTexture(cache.texture)
 }
 
 /**
@@ -391,6 +475,18 @@ function getUniformLocations(
 
 const MODULATION_TEXTURE_UNIT = 4
 
+function supportedModulation(
+  gl: WebGL2RenderingContext,
+  mod: ModulationTextureParams | null,
+): ModulationTextureParams | null {
+  const limit = gl.getParameter(gl.MAX_3D_TEXTURE_SIZE) as number
+  if (modulationFitsTextureLimit(mod, limit)) return mod
+  log.warn(
+    `modulation disabled: grid ${mod?.dims.join('x')} exceeds WebGL max 3D texture size (${limit})`,
+  )
+  return null
+}
+
 // Per-context 1x1x1 R32F placeholder bound when modulation is inactive, so the
 // modVol sampler always has a valid texture (the shader never samples it).
 const _dummyModTexture = new WeakMap<WebGL2RenderingContext, WebGLTexture>()
@@ -426,7 +522,7 @@ function getDummyModTexture(gl: WebGL2RenderingContext): WebGLTexture {
 }
 
 /** Create an R32F 3D texture holding modulation weights in native voxel order. */
-function createModTexture(
+export function createModTexture(
   gl: WebGL2RenderingContext,
   mod: ModulationTextureParams,
 ): WebGLTexture {
@@ -447,6 +543,19 @@ function createModTexture(
     mod.dims[1],
     mod.dims[2],
   )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  writeModTexture(gl, tex, mod)
+  return tex
+}
+
+/** Overwrite a mod texture of `mod.dims` with `mod.weight`, in place. */
+function writeModTexture(
+  gl: WebGL2RenderingContext,
+  tex: WebGLTexture,
+  mod: ModulationTextureParams,
+): void {
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
   gl.texSubImage3D(
     gl.TEXTURE_3D,
     0,
@@ -461,7 +570,34 @@ function createModTexture(
     mod.weight,
   )
   gl.bindTexture(gl.TEXTURE_3D, null)
-  return tex
+}
+
+/**
+ * Bring a cache's mod texture up to date with `mod` without touching the rest
+ * of the cache: a modulator edited in place (new `mod.key`, same grid) is
+ * rewritten into the existing texture; a modulator that appears, goes away or
+ * changes grid gets a new texture (or none).
+ */
+function syncModTexture(
+  gl: WebGL2RenderingContext,
+  cache: OverlayTextureCache,
+  mod: ModulationTextureParams | null,
+): void {
+  const modKey = mod ? mod.key : ''
+  if (cache.modKey === modKey) return
+  if (
+    mod &&
+    cache.modTexture &&
+    cache.modDims &&
+    dimensionsMatch(cache.modDims, mod.dims)
+  ) {
+    writeModTexture(gl, cache.modTexture, mod)
+  } else {
+    if (cache.modTexture) gl.deleteTexture(cache.modTexture)
+    cache.modTexture = mod ? createModTexture(gl, mod) : null
+    cache.modDims = mod ? [...mod.dims] : null
+  }
+  cache.modKey = modKey
 }
 
 /** Bind modulation uniforms + texture for a draw (or disable when absent). */
@@ -626,8 +762,12 @@ export type OverlayTextureCache = {
   frame4D: number
   colormapKey: string
   imageBuffer: ArrayBufferLike
+  /** `nvimage._dataVersion` the input texture was last uploaded from. */
+  dataVersion: number
   shaderType: keyof ShaderPrograms
   modTexture: WebGLTexture | null
+  /** Grid of `modTexture` (WebGL cannot query a texture's size). */
+  modDims: number[] | null
   modKey: string
 }
 
@@ -647,7 +787,7 @@ function overlayColormapKey(nvimage: NVImage): string {
   if (label) {
     return `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
   }
-  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}:${nvimage.isColormapInverted ? 1 : 0}`
+  return `${NVCmaps.colormapKey(nvimage.colormap)}:${NVCmaps.colormapKey(nvimage.colormapNegative)}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
 function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
@@ -702,6 +842,30 @@ function prepareFrameData(
   ) as ArrayBufferView
 }
 
+/** Upload the current frame into the bound TEXTURE_3D (storage already allocated). */
+function uploadInputTexture(
+  gl: WebGL2RenderingContext,
+  nvimage: NVImage,
+  texConfig: TextureConfig,
+  dimsIn: number[],
+): void {
+  const glAny = gl as WebGL2RenderingContext & Record<string, number>
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    dimsIn[0],
+    dimsIn[1],
+    dimsIn[2],
+    glAny[texConfig.format],
+    glAny[texConfig.type],
+    prepareFrameData(nvimage, texConfig),
+  )
+}
+
 export function prepareOverlayTextureCache(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
@@ -711,6 +875,7 @@ export function prepareOverlayTextureCache(
   existingCache: OverlayTextureCache | null = null,
   mod: ModulationTextureParams | null = null,
 ): OverlayTextureCache {
+  mod = supportedModulation(gl, mod)
   if (!nvimageTarget.dimsRAS) {
     throw new Error('overlay2Texture: nvimageTarget.dimsRAS missing')
   }
@@ -737,9 +902,19 @@ export function prepareOverlayTextureCache(
     existingCache.imageBuffer === nvimage.img.buffer &&
     dimensionsMatch(existingCache.dimsIn, dimsIn) &&
     dimensionsMatch(existingCache.dimsOut, dimsOut) &&
-    existingCache.colormapKey === colormapKey &&
-    existingCache.modKey === modKey
+    existingCache.colormapKey === colormapKey
   if (canReuse) {
+    // Same buffer, but the voxels may have been edited in place
+    // (updateVolumeData): rewrite the input texture without reallocating it.
+    const dataVersion = nvimage._dataVersion ?? 0
+    if (existingCache.dataVersion !== dataVersion) {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_3D, existingCache.inputTexture)
+      uploadInputTexture(gl, nvimage, texConfig, dimsIn)
+      existingCache.dataVersion = dataVersion
+    }
+    // Likewise a modulator edited in place only rewrites the weights.
+    syncModTexture(gl, existingCache, mod)
     renderOverlayCache(gl, existingCache, nvimage, mtx, overlayOpacity, mod)
     return existingCache
   }
@@ -770,7 +945,6 @@ export function prepareOverlayTextureCache(
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
   gl.texStorage3D(
     gl.TEXTURE_3D,
     1,
@@ -779,19 +953,7 @@ export function prepareOverlayTextureCache(
     dimsIn[1],
     dimsIn[2],
   )
-  gl.texSubImage3D(
-    gl.TEXTURE_3D,
-    0,
-    0,
-    0,
-    0,
-    dimsIn[0],
-    dimsIn[1],
-    dimsIn[2],
-    glAny[texConfig.format],
-    glAny[texConfig.type],
-    prepareFrameData(nvimage, texConfig),
-  )
+  uploadInputTexture(gl, nvimage, texConfig, dimsIn)
   const isLabelVol =
     nvimage.colormapLabel !== null && nvimage.colormapLabel !== undefined
   gl.activeTexture(gl.TEXTURE1)
@@ -895,15 +1057,17 @@ export function prepareOverlayTextureCache(
     frame4D,
     colormapKey,
     imageBuffer: nvimage.img.buffer,
+    dataVersion: nvimage._dataVersion ?? 0,
     shaderType: texConfig.shaderType,
     modTexture: mod ? createModTexture(gl, mod) : null,
+    modDims: mod ? [...mod.dims] : null,
     modKey,
   }
   renderOverlayCache(gl, cache, nvimage, mtx, overlayOpacity, mod)
   return cache
 }
 
-export function renderOverlayCache(
+function renderOverlayCache(
   gl: WebGL2RenderingContext,
   cache: OverlayTextureCache,
   nvimage: NVImage,
@@ -993,143 +1157,6 @@ export function renderOverlayCache(
   gl.bindVertexArray(savedVAO)
 }
 
-// Texture-to-texture geometric resampler (WebGL2 mirror of wgpu/orient.ts
-// resampleInto). Maps an existing RGBA 3D texture into a new grid via the same
-// orient matrix convention (`vec4(uv, z, 1) * mtx` -> source frac), LINEAR
-// sampling, no colormap; out-of-bounds outputs transparent. The texture-level
-// analogue of the scalar orient pass: stretch a coarser-LOD texture into a
-// higher-resolution space (placeholder while finer tiles stream) or map a
-// higher-LOD texture into a coarser space.
-const resampleFragShader = `#version 300 es
-precision highp float;
-in vec2 TexCoord;
-out vec4 FragColor;
-uniform highp sampler3D srcTex;
-uniform float coordZ;
-uniform mat4 mtx;
-void main(void) {
-  vec4 s = vec4(TexCoord.xy, coordZ, 1.0) * mtx;
-  if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z < 0.0 || s.z > 1.0) {
-    FragColor = vec4(0.0);
-    return;
-  }
-  FragColor = texture(srcTex, s.xyz);
-}`
-
-type ResampleResources = {
-  program: WebGLProgram
-  vao: WebGLVertexArrayObject
-  vbo: WebGLBuffer
-  framebuffer: WebGLFramebuffer
-  uSrc: WebGLUniformLocation | null
-  uCoordZ: WebGLUniformLocation | null
-  uMtx: WebGLUniformLocation | null
-}
-const _resampleCache = new WeakMap<WebGL2RenderingContext, ResampleResources>()
-
-function getOrCreateResample(gl: WebGL2RenderingContext): ResampleResources {
-  const existing = _resampleCache.get(gl)
-  if (existing) return existing
-  const program = createProgram(gl, vertShader, resampleFragShader)
-  const { vao, vbo } = createQuadGeometry(gl, program)
-  const framebuffer = gl.createFramebuffer()
-  if (!framebuffer)
-    throw new Error('resampleInto: failed to create framebuffer')
-  const res: ResampleResources = {
-    program,
-    vao,
-    vbo,
-    framebuffer,
-    uSrc: gl.getUniformLocation(program, 'srcTex'),
-    uCoordZ: gl.getUniformLocation(program, 'coordZ'),
-    uMtx: gl.getUniformLocation(program, 'mtx'),
-  }
-  _resampleCache.set(gl, res)
-  return res
-}
-
-/**
- * Resample an RGBA 3D texture into a new grid of `dstDims` via a 4x4 row-major
- * `fracMatrix` (target-frac -> source-frac; same convention as overlay2Texture
- * and NVTransforms.calculateOverlayTransformMatrix). Linear sampling; out-of-
- * bounds outputs transparent. Returns a new RGBA8 3D texture (caller owns it;
- * the source texture is left intact apart from having its filter set to LINEAR).
- */
-export function resampleInto(
-  gl: WebGL2RenderingContext,
-  srcTexture: WebGLTexture,
-  fracMatrix: Float32Array,
-  dstDims: readonly number[],
-): WebGLTexture {
-  const res = getOrCreateResample(gl)
-  const outputTexture = gl.createTexture()
-  if (!outputTexture) throw new Error('resampleInto: failed to create texture')
-  gl.bindTexture(gl.TEXTURE_3D, outputTexture)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texStorage3D(
-    gl.TEXTURE_3D,
-    1,
-    gl.RGBA8,
-    dstDims[0],
-    dstDims[1],
-    dstDims[2],
-  )
-
-  const savedViewport = gl.getParameter(gl.VIEWPORT) as Int32Array
-  const savedCullFace = gl.isEnabled(gl.CULL_FACE)
-  const savedBlend = gl.isEnabled(gl.BLEND)
-  const savedDepthTest = gl.isEnabled(gl.DEPTH_TEST)
-  const savedActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number
-  const savedVAO = gl.getParameter(
-    gl.VERTEX_ARRAY_BINDING,
-  ) as WebGLVertexArrayObject | null
-
-  gl.useProgram(res.program)
-  gl.activeTexture(gl.TEXTURE0)
-  gl.bindTexture(gl.TEXTURE_3D, srcTexture)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.bindFramebuffer(gl.FRAMEBUFFER, res.framebuffer)
-  gl.viewport(0, 0, dstDims[0], dstDims[1])
-  gl.disable(gl.CULL_FACE)
-  gl.disable(gl.BLEND)
-  gl.disable(gl.DEPTH_TEST)
-  gl.bindVertexArray(res.vao)
-  if (res.uSrc) gl.uniform1i(res.uSrc, 0)
-  if (res.uMtx) gl.uniformMatrix4fv(res.uMtx, false, fracMatrix)
-  for (let z = 0; z < dstDims[2]; z++) {
-    if (res.uCoordZ) gl.uniform1f(res.uCoordZ, (z + 0.5) / dstDims[2])
-    gl.framebufferTextureLayer(
-      gl.FRAMEBUFFER,
-      gl.COLOR_ATTACHMENT0,
-      outputTexture,
-      0,
-      z,
-    )
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-  }
-
-  gl.bindVertexArray(savedVAO)
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-  gl.viewport(
-    savedViewport[0],
-    savedViewport[1],
-    savedViewport[2],
-    savedViewport[3],
-  )
-  if (savedCullFace) gl.enable(gl.CULL_FACE)
-  if (savedBlend) gl.enable(gl.BLEND)
-  if (savedDepthTest) gl.enable(gl.DEPTH_TEST)
-  gl.activeTexture(gl.TEXTURE0)
-  gl.bindTexture(gl.TEXTURE_3D, null)
-  gl.activeTexture(savedActiveTexture)
-  return outputTexture
-}
-
 /**
  * Transform a scalar volume to an RGBA8 3D texture by applying calibration
  * and colormap lookup.
@@ -1149,7 +1176,9 @@ export function overlay2Texture(
   overlayOpacity = 1,
   outDimsOverride?: readonly number[],
   mod: ModulationTextureParams | null = null,
+  sharedModTexture: WebGLTexture | null = null,
 ): WebGLTexture {
+  mod = supportedModulation(gl, mod)
   if (nvimage.hdr.datatypeCode === 128 || nvimage.hdr.datatypeCode === 2304) {
     return rgba2Texture(gl, nvimage)
   }
@@ -1443,7 +1472,8 @@ export function overlay2Texture(
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
   if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
   if (uniforms.atlasOutline) gl.uniform1f(uniforms.atlasOutline, u.atlasOutline)
-  const modTexture = mod ? createModTexture(gl, mod) : null
+  const modTexture =
+    sharedModTexture ?? (mod ? createModTexture(gl, mod) : null)
   bindModulation(gl, uniforms, modTexture, mod)
   // Render each output slice
   for (let z = 0; z < dimsOut[2]; z++) {
@@ -1496,7 +1526,7 @@ export function overlay2Texture(
   gl.deleteTexture(inputTexture)
   gl.deleteTexture(colormapTexture)
   gl.deleteTexture(negColormapTexture)
-  if (modTexture) gl.deleteTexture(modTexture)
+  if (!sharedModTexture && modTexture) gl.deleteTexture(modTexture)
   gl.deleteBuffer(vbo)
   gl.deleteVertexArray(vao)
   gl.deleteFramebuffer(framebuffer)
@@ -1512,6 +1542,10 @@ export function overlay2Texture(
  * full volume's [0,1] coordinates. The per-chunk textures align 1:1 with the
  * volume chunks (shared ChunkPlan), so the renderer's per-chunk uniforms and
  * `chunkTexCoord` sample them seam-free. Returns one texture per `plan.chunks`.
+ *
+ * `mod` is the overlay's full-volume modulation (see `buildModulationParams`);
+ * its matrix is re-targeted per chunk with `chunkModulationParams` so the
+ * modulator is sampled at the same voxels the whole-volume path would use.
  */
 export function overlay2TextureChunked(
   gl: WebGL2RenderingContext,
@@ -1520,27 +1554,33 @@ export function overlay2TextureChunked(
   mtx: Float32Array,
   plan: ChunkPlan,
   overlayOpacity = 1,
+  mod: ModulationTextureParams | null = null,
 ): WebGLTexture[] {
+  mod = supportedModulation(gl, mod)
   const [dx, dy, dz] = plan.volumeDims
   const out: WebGLTexture[] = []
-  for (const desc of plan.chunks) {
-    const [ox, oy, oz] = desc.texOrigin
-    const [sx, sy, sz] = desc.texDims
-    const mtxChunk = chunkOverlayMatrix(
-      mtx,
-      [sx / dx, sy / dy, sz / dz],
-      [ox / dx, oy / dy, oz / dz],
-    )
-    out.push(
-      overlay2Texture(
-        gl,
-        nvimage,
-        nvimageTarget,
-        mtxChunk,
-        overlayOpacity,
-        desc.texDims,
-      ),
-    )
+  const sharedModTexture = mod ? createModTexture(gl, mod) : null
+  try {
+    for (const desc of plan.chunks) {
+      const [ox, oy, oz] = desc.texOrigin
+      const [sx, sy, sz] = desc.texDims
+      const scale = [sx / dx, sy / dy, sz / dz]
+      const offset = [ox / dx, oy / dy, oz / dz]
+      out.push(
+        overlay2Texture(
+          gl,
+          nvimage,
+          nvimageTarget,
+          chunkOverlayMatrix(mtx, scale, offset),
+          overlayOpacity,
+          desc.texDims,
+          chunkModulationParams(mod, scale, offset),
+          sharedModTexture,
+        ),
+      )
+    }
+  } finally {
+    if (sharedModTexture) gl.deleteTexture(sharedModTexture)
   }
   return out
 }
@@ -1566,6 +1606,11 @@ export function orientChunkToTexture(
   datatypeCode: number,
   texDims: readonly [number, number, number],
   nvimage: NVImage,
+  // This chunk's modulation (matrix already lifted to the chunk's grid, see
+  // chunkModulationForDesc) and the shared weight texture it samples. Both
+  // null when the volume has no modulator.
+  mod: ModulationTextureParams | null = null,
+  modTexture: WebGLTexture | null = null,
 ): WebGLTexture {
   const texConfig = getTextureConfig(datatypeCode)
   if (texConfig.convertTo) {
@@ -1752,11 +1797,11 @@ export function orientChunkToTexture(
   // chunk's edge and draw a spurious border. Outlining is therefore off for the
   // chunked path (matching wgpu/orientChunked.ts).
   if (uniforms.atlasOutline) gl.uniform1f(uniforms.atlasOutline, 0)
-  // Modulation is disabled for chunks, but the shader's modVol sampler must
-  // still point at a valid texture unit (else it collides with the intensity
-  // sampler at unit 0 -> "two textures of different types use the same sampler
-  // location"). Bind the placeholder + modulation=0.
-  bindModulation(gl, uniforms, null, null)
+  // The modVol sampler must always point at a valid texture unit (else it
+  // collides with the intensity sampler at unit 0 -> "two textures of
+  // different types use the same sampler location"): the shared modulator
+  // texture when modulated, else the placeholder with modulation=0.
+  bindModulation(gl, uniforms, modTexture, mod)
   for (let z = 0; z < texDims[2]; z++) {
     if (uniforms.coordZ) gl.uniform1f(uniforms.coordZ, (z + 0.5) / texDims[2])
     gl.framebufferTextureLayer(
@@ -1789,6 +1834,8 @@ export function orientChunkToTexture(
   gl.activeTexture(gl.TEXTURE2)
   gl.bindTexture(gl.TEXTURE_2D, null)
   gl.activeTexture(gl.TEXTURE3)
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  gl.activeTexture(gl.TEXTURE0 + MODULATION_TEXTURE_UNIT)
   gl.bindTexture(gl.TEXTURE_3D, null)
   gl.activeTexture(savedActiveTexture)
   gl.bindVertexArray(savedVAO)

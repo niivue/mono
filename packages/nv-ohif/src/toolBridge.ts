@@ -41,14 +41,6 @@ export function ohifToolToAnnotationTool(
   }
 }
 
-/**
- * OHIF measurement tools NiiVue cannot back yet (no core primitive). Activating
- * one shows a brief 'not supported' status and keeps safe crosshair navigation.
- */
-// All of OHIF's MeasurementTools group are now backed by NiiVue.
-export const UNSUPPORTED_MEASUREMENT_TOOLS: ReadonlySet<string> =
-  new Set<string>()
-
 /** Map an OHIF primary tool name to NiiVue's matching left-drag mode. */
 export function ohifToolToDragMode(tool: string | undefined): number {
   switch (tool) {
@@ -58,16 +50,9 @@ export function ohifToolToDragMode(tool: string | undefined): number {
       return DRAG_MODE.pan
     case 'Zoom':
       return DRAG_MODE.slicer3D
-    // Length and Bidirectional are annotation-backed (see
-    // ohifToolToAnnotationTool); the annotation gate handles them, so they never
-    // reach a drag mode here.
     case 'Angle':
     case 'CobbAngle':
       return DRAG_MODE.angle
-    case 'RectangleROI':
-    case 'EllipticalROI':
-    case 'CircleROI':
-      return DRAG_MODE.roiSelection
     default:
       // NiiVue's render tile rotates on primary drag independently of the 2D
       // drag mode. Unknown OHIF tools retain safe crosshair navigation in 2D.

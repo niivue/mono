@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { log } from '@/logger'
-import { invertLut, lutrgba8, makeLabelLut, makeLut } from './NVCmaps'
+import {
+  addColormap,
+  colormapKey,
+  invertLut,
+  lutrgba8,
+  makeLabelLut,
+  makeLut,
+} from './NVCmaps'
 
 type LutJson = {
   R?: unknown
@@ -237,5 +244,45 @@ describe('invertLut', () => {
     expect(Array.from(inverted)).toEqual(Array.from(invertLut(plain)))
     // Gray ramps dark to light, so inverting swaps the ends.
     expect(inverted[0]).toBe(plain[plain.length - 4])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// colormapKey
+// ---------------------------------------------------------------------------
+describe('colormapKey', () => {
+  // The orient caches key their colormap textures on this, so re-registering a
+  // name must change it, or a volume keeps drawing the replaced colors.
+  log.setLogLevel('silent')
+  const red = { R: [0, 255], G: [0, 0], B: [0, 0] }
+  const green = { R: [0, 0], G: [0, 255], B: [0, 0] }
+
+  test('isEmptyForNoColormap', () => {
+    expect(colormapKey(undefined)).toBe('')
+    expect(colormapKey('')).toBe('')
+  })
+
+  test('isStableUntilTheNameIsReRegistered', () => {
+    addColormap('keyTestA', red)
+    const first = colormapKey('keyTestA')
+    expect(colormapKey('keyTestA')).toBe(first)
+    addColormap('keyTestA', green)
+    expect(colormapKey('keyTestA')).not.toBe(first)
+  })
+
+  test('tracksTheCanonicalName', () => {
+    // addColormap upper-cases the first letter, so both spellings resolve to
+    // the same entry and a re-registration under either moves both keys.
+    const lower = colormapKey('keyTestB')
+    const upper = colormapKey('KeyTestB')
+    addColormap('KeyTestB', red)
+    expect(colormapKey('keyTestB')).not.toBe(lower)
+    expect(colormapKey('KeyTestB')).not.toBe(upper)
+  })
+
+  test('leavesOtherNamesAlone', () => {
+    const other = colormapKey('keyTestC')
+    addColormap('keyTestD', red)
+    expect(colormapKey('keyTestC')).toBe(other)
   })
 })

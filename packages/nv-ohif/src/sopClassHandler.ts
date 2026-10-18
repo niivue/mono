@@ -51,6 +51,38 @@ export function getNiivueSopClassHandlerModule(): OhifSopClassHandlerEntry[] {
         const description = String(
           first.SeriesDescription ?? 'Whole-slide image',
         )
+        // Cache per display set, including pending work. A cancelled panel
+        // stops waiting but must not cancel another panel's shared request.
+        let thumbnailPromise: Promise<string | null> | undefined
+        const getThumbnailSrc: NonNullable<
+          OhifDisplaySet['getThumbnailSrc']
+        > = (options) => {
+          const signal = options?.signal
+          if (signal?.aborted) return Promise.resolve(null)
+          thumbnailPromise ??= fetchWsiThumbnailObjectUrl(
+            instances,
+            authHeaders(undefined),
+          ).then(
+            (src) => {
+              if (src === null) thumbnailPromise = undefined
+              return src
+            },
+            () => {
+              thumbnailPromise = undefined
+              return null
+            },
+          )
+          if (!signal) return thumbnailPromise
+          const pending = thumbnailPromise
+          return new Promise<string | null>((resolve) => {
+            const onAbort = () => resolve(null)
+            signal.addEventListener('abort', onAbort, { once: true })
+            void pending.then((src) => {
+              signal.removeEventListener('abort', onAbort)
+              resolve(signal.aborted ? null : src)
+            })
+          })
+        }
         const displaySet: OhifDisplaySet = {
           // Deterministic so repeated derivation reuses one display set rather
           // than registering duplicates; suffixed to stay distinct from any
@@ -70,12 +102,7 @@ export function getNiivueSopClassHandlerModule(): OhifSopClassHandlerEntry[] {
           // OHIF's study browser calls this to fill the series preview tile.
           // Resolve auth lazily (services exist by panel-render time; the
           // handler itself runs with no servicesManager). See wsiThumbnail.ts.
-          getThumbnailSrc: (options) =>
-            fetchWsiThumbnailObjectUrl(
-              instances,
-              authHeaders(undefined),
-              options?.signal,
-            ),
+          getThumbnailSrc,
           label: description,
         }
         return [displaySet]

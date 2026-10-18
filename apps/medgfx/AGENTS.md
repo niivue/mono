@@ -215,7 +215,7 @@ The custom scheme exists specifically because `loadFileURL:` cannot set response
   - Thin footer with status text (`model.lastStatus`) and the most recent `locationChange.string` (`model.locationText`).
 - `NiiVueModel` (from `NiiVueKit`) — `@MainActor @Observable` view-model. Owns every allow-listed NiiVue property as a `NiiVueProp<Value>` cell plus transient state (`isReady`, `currentBackend`, `isSwitchingBackend`, `lastStatus`, `locationText`). Subscribes once to `ready` / `propChange` / `backendChange` / `locationChange` events; fans out inbound updates to the right cell by path via a `[String: any AnyPropCell]` dispatch table.
 - `NiiVueProp<Value>` (from `NiiVueKit`) — single bound property cell. Stores current value, has an injected `pusher` closure that fires on write (the model uses this to call `setProp` over the bridge), and an `applyFromJS(_:)` entry point for inbound updates that bypasses the pusher.
-- `InspectorContainer` — one scrollable display inspector with native disclosure sections. Layout and Guides & Labels start expanded; Image Appearance, 3D View, and implementation-oriented Advanced controls use progressive disclosure. Context-dependent controls stay in place and become disabled when inapplicable. Lives in this app; NiiVueKit does not ship inspector UI.
+- `InspectorContainer` — one scrollable inspector. Layers (loaded volumes plus the selected one's colormap, range and opacity) leads once an image is loaded; Layout and Overlays start expanded; 3D Camera and Advanced (backend, background colour) are collapsed. With no image the viewer shows an empty state and the inspector is hidden. Context-dependent controls stay in place and become disabled when inapplicable. Lives in this app; NiiVueKit does not ship inspector UI.
 - `InspectorSettings` — the single typed registry for clinician-facing titles, help, choices, and bindings. Direct property bindings use `NiiVueModel` cell key paths instead of repeating strings in views. Both the toolbar and inspector consume this registry.
 - `ViewerLayoutContext` — the single source of truth for built-in, mosaic, and custom-layout precedence and 3D applicability. Its `NiiVueModel` extension owns mutually exclusive layout transitions and normalizes empty custom layouts.
 - `NiiVueWebView` (from `NiiVueKit`) — a thin `UIViewRepresentable` (iOS/iPadOS) / `NSViewRepresentable` (macOS) wrapper around `WKWebView`. Handles configuration, script message handler registration, custom scheme handler registration, inspector toggle, and initial URL selection. Exposes no SwiftUI state — all app state flows through the `Bridge`.
@@ -239,21 +239,26 @@ The inspector surfaces differently by form factor:
 2. Put the control in the appropriate focused view in `InspectorSectionViews.swift`. Use `SettingToggle`, `SettingPicker`, or `sliderRow(setting:model:range:format:)` from `PanelHelpers.swift` so titles, help, choices, and bindings come from the registry.
 3. For an enum backed by a raw property cell, use the typed model binding in the registry entry, following `panelArrangement` or `threeDPanel`.
 4. Layout presets that write `mosaicString` or `customLayout` must use the transition methods in `ViewerLayoutContext.swift`, which clear competing layouts and synchronize the toolbar view mode.
-5. Only add a new disclosure group when the setting does not fit Layout, Guides & Labels, Image Appearance, 3D View, or Advanced. Add its `InspectorSectionID` metadata and focused section view separately.
+5. Only add a new disclosure group when the setting does not fit Layout, Overlays, 3D Camera, or Advanced. Per-volume display (colormap, range, opacity) lives in the Layers section, driven by `NiiVueModel.volumes` and `setVolume`, not property cells. Add its `InspectorSectionID` metadata and focused section view separately.
 
 ## Current bridge method surface
 
 | Direction | Kind | Name | Payload | Purpose |
 |---|---|---|---|---|
-| Swift → JS | `call` | `loadVolume` | `{ name: string, bytesBase64: string }` | JS decodes, calls `nv.loadImage(file)` |
+| Swift → JS | `call` | `loadVolume` | `{ name: string, bytesBase64: string, add: bool }` | JS decodes, calls `nv.addImage(file)` when `add` (overlay), else `nv.loadImage(file)` (replace). The app adds on Add Overlay… (⌘⇧O), on a drop onto a loaded image, and for every file after the first in a multi-file load |
 | Swift → JS | `call` | `setProp` | `{ path: string, value: unknown }` | Generic NiiVue property write (allow-listed paths only) |
 | Swift → JS | `call` | `getProps` | `{}` | Returns snapshot of every allow-listed property, used for hydration after `ready` / backend switch |
+| Swift → JS | `call` | `getVolumes` | `{}` | Returns the volume list (same shape as `volumesChange`), used for hydration |
+| Swift → JS | `call` | `setVolume` | `{ index, colormap?, calMin?, calMax?, opacity? }` | Calls `nv.setVolume(index, ...)` |
+| Swift → JS | `call` | `removeVolume` | `{ index }` | Calls `nv.removeVolume(index)` |
+| Swift → JS | `call` | `getColormaps` | `{}` | Returns `nv.colormaps` |
 | Swift → JS | `call` | `setBackend` | `{ backend: 'webgl2'\|'webgpu' }` | Calls `nv.reinitializeView({ backend })`; loaded data is retained and re-rendered, and the reply reports the backend that actually ended up active (NiiVue may downgrade) |
 | JS → Swift | `emit` | `ready` | `{ backend: 'webgpu' \| 'webgl2' }` | Webview finished init; Swift reads `backend` into `NiiVueModel.currentBackend` |
 | JS → Swift | `emit` | `propChange` | `{ path, value }` | Fired from NiiVue's `change` event when an allow-listed property changes |
 | JS → Swift | `emit` | `backendChange` | `{ backend }` | Fired after a successful `setBackend` so Swift state follows |
 | JS → Swift | `emit` | `imageLoaded` | `{ name, kind }` | Fired after NiiVue successfully loads a volume, mesh, or signal, including its built-in canvas drag and drop |
-| JS → Swift | `emit` | `locationChange` | `{ mm, voxel, string }` | NiiVue crosshair moved |
+| JS → Swift | `emit` | `volumesChange` | `[{ name, colormap, colormapStops, calMin, calMax, globalMin, globalMax, opacity, dims, pixDims }]` | Volume list after any load, update, or removal; mirrored in `NiiVueModel.volumes` |
+| JS → Swift | `emit` | `locationChange` | `{ mm, voxel, values: [{ name, value }], string }` | NiiVue crosshair moved |
 
 The bridge itself doesn't hardcode any names — `niivue-controller.ts` is the canonical JS registration site and `NiiVueModel.swift` is the canonical Swift registration site. For property-sync work, prefer the prop-bridge path (one line in `prop-allowlist.ts` + one line in `NiiVueModel.swift`) over a new bespoke method.
 

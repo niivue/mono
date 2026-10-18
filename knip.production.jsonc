@@ -1,0 +1,26 @@
+{
+  "$schema": "https://unpkg.com/knip@6.39.0/schema-jsonc.json",
+  // Run through niivue:knip to select the niivue workspace.
+  "workspaces": {
+    "packages/niivue": {
+      // Library-only audit: omit example/test/tool entries, retaining all public subpaths.
+      "entry": [
+        "src/index.ts!",
+        "src/index.webgpu.ts!",
+        "src/index.webgl2.ts!",
+        "src/control/NVCanvasViewportController.ts!",
+        "src/assets/fonts/index.ts!",
+        "src/assets/matcaps/index.ts!"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}!",
+        "!src/**/*.test.ts!",
+        "!src/volume/tiffBuilders.ts!"
+      ],
+      // Keep Vite glob resolution without adding examples as production entries.
+      "vite": {
+        "config": ["vite.config.lib.ts"]
+      }
+    }
+  }
+}

@@ -1,6 +1,10 @@
 import type { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import type { LogLevel } from '@/logger'
-import type { PEN_SHAPE } from '@/NVConstants'
+import type {
+  OVERLAY_ALPHA_BLEND,
+  OVERLAY_COLOR_BLEND,
+  PEN_SHAPE,
+} from '@/NVConstants'
 import type { FontMetrics } from '@/view/NVFont'
 import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 
@@ -232,6 +236,12 @@ export type NVImage = {
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
   _modulationData?: Float32Array | null
+  /**
+   * @internal Key {@link _modulationData} was computed for (modulator identity,
+   * data version, grid, scaling, window, frame), so an unchanged modulator
+   * keeps the same array and the RGBA upload cache keyed on it stays valid.
+   */
+  _modulationDataKey?: string
   /** Tiling plan for volumes whose dims exceed maxTextureDimension3D. Absent ⇒ legacy single-texture path. */
   chunkPlan?: ChunkPlan
   /** Optional source-backed chunk loader for volumes whose full voxel array is not resident in browser memory. */
@@ -270,6 +280,29 @@ export type NVImage = {
   _modulationWeight?: Float32Array | null
   /** @internal Cache key for {@link _modulationWeight} (modulator id/buffer/window/exponent). */
   _modulationWeightKey?: string
+  /**
+   * Set to true after changing the values in `img`: in place (same array) or
+   * by assigning a new array of the same shape. The next GPU update
+   * (`updateGLVolume`, `setVolume`, `updateVolumeData`, `setFrame4D` when the
+   * frame actually changes, ...) then re-uploads this volume's voxels and
+   * resets the flag to false; volumes without the flag keep their uploaded
+   * textures. Not needed for the volume passed to `updateVolumeData`, which
+   * marks it itself. If that upload fails, the next update that rebuilds this
+   * volume retries it. Values are raw (before `scl_slope`/`scl_inter`), and
+   * calMin/calMax are not recomputed. A volume streamed from a `chunkSource`
+   * reads its bricks from that source, not from `img`, so the flag is ignored
+   * for it: the update clears it (with a one-time warning) and re-uploads
+   * nothing.
+   */
+  isDirty?: boolean
+  /**
+   * @internal Bumped whenever voxel values in `img` change in place: by
+   * `updateVolumeData`, and by the next GPU update for a volume flagged
+   * {@link isDirty} (see `volume/dataVersion.ts`). Caches keyed on the `img`
+   * buffer identity, which an in-place edit keeps, compare this counter to
+   * know when to re-read it. Absent ⇒ 0.
+   */
+  _dataVersion?: number
   /**
    * @internal Original dropped/loaded `File` for this volume, kept so a deferred
    * 4D re-read (`loadDeferred4DVolumes`) can re-open it — a `File` has no URL to
@@ -314,8 +347,6 @@ export type LUT = {
   min?: number
   max?: number
   labels?: string[]
-  /** Label name → center-of-mass in mm (precomputed, not serialized) */
-  centroids?: Record<string, [number, number, number]>
 }
 
 export type ColorbarInfo = {
@@ -566,6 +597,16 @@ export type NVMesh = {
   layers: NVMeshLayer[]
   /** Per-vertex colors from the mesh file (packed ABGR Uint32). Null when mesh uses uniform color. */
   perVertexColors: Uint32Array | null
+  /** @internal Bumped by `updateMeshPositions`, which edits `positions` in place. */
+  _positionsVersion?: number
+  /**
+   * @internal Bumped whenever `colors` or `indices` change in place
+   * (recolouring, layer edits), so GPU rebuilds re-upload only meshes whose
+   * vertex data changed. In-place `positions` edits use `_positionsVersion`
+   * (via `updateMeshPositions`) instead. Replacing an array is detected
+   * without either token.
+   */
+  _dataVersion?: number
   /** @internal Index signature allows createMesh to assign defaults */
   [key: string]: unknown
 }
@@ -575,6 +616,8 @@ export type WebGLMeshGPU = {
   vertexBuffer: WebGLBuffer | null
   indexBuffer: WebGLBuffer | null
   indexCount: number
+  /** Byte size of vertexBuffer (WebGL cannot cheaply query it). */
+  vertexBytes?: number
 }
 
 export type WebGPUMeshGPU = {
@@ -585,12 +628,6 @@ export type WebGPUMeshGPU = {
   bindGroup: GPUBindGroup | null
   alignedMeshSize?: number
 }
-
-export type MeshGPU = WebGLMeshGPU | WebGPUMeshGPU
-
-export type MeshGPUResource = { destroy?: () => void }
-
-export type ClipPlane = [number, number, number, number]
 
 // ============================================================
 // Model Config Groups
@@ -732,6 +769,8 @@ export type VolumeRenderConfig = {
   isColormapAlphaOn2D: boolean
   isNearestInterpolation: boolean
   isV1SliceShader: boolean
+  overlayAlphaBlend: OVERLAY_ALPHA_BLEND
+  overlayColorBlend: OVERLAY_COLOR_BLEND
   matcap: string
   paqdUniforms: [number, number, number, number]
   transmittanceCutoff: number
@@ -1100,6 +1139,7 @@ export type NiiVueOptions = {
   // Infrastructure (set once at construction)
   instances?: NVInstance[]
   globalCamera?: NVGlobalCamera
+  /** Rendering backend. Defaults to 'webgl2' ('webgpu' in the WebGPU-only build). */
   backend?: BackendType
   isAntiAlias?: boolean
   devicePixelRatio?: number
@@ -1215,6 +1255,8 @@ export type NiiVueOptions = {
   volumeIsColormapAlphaOn2D?: boolean
   volumeIsNearestInterpolation?: boolean
   volumeIsV1SliceShader?: boolean
+  volumeOverlayAlphaBlend?: OVERLAY_ALPHA_BLEND
+  volumeOverlayColorBlend?: OVERLAY_COLOR_BLEND
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
   volumeTransmittanceCutoff?: number

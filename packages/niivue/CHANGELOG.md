@@ -1,3 +1,14 @@
+## 1.0.0-rc.23 (2026-10-18)
+
+### Fixes
+
+- **niivue:** only decode a $num tag that has no other keys ([#216](https://github.com/niivue/mono/issues/216))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.22 (2026-10-13)
 
 ### Features

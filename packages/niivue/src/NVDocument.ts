@@ -172,6 +172,9 @@ export type NVDocumentMesh = {
   url?: string
   name?: string
   opacity?: number
+  /** The explicit hide toggle (`setMesh(i, { visible: false })`); written only
+   * when false, so documents without hidden meshes are unchanged. */
+  visible?: boolean
   shaderType?: string
   sliceShaderType?: string
   color?: [number, number, number, number]
@@ -477,6 +480,7 @@ export function serialize(
       isLegendVisible: m.isLegendVisible,
       kind: m.kind,
     }
+    if (m.visible === false) mesh.visible = false
 
     // Meshes are always embedded, even under linkData: the mesh URL-restore path
     // reapplies only URL-referenced scalar-overlay layers (not embedded layer
@@ -1031,6 +1035,7 @@ export async function reconstructMesh(
         url: m.url,
         name: m.name,
         opacity: m.opacity,
+        visible: m.visible,
         shaderType: m.shaderType,
         sliceShaderType: m.sliceShaderType,
         color: m.color,
@@ -1115,6 +1120,7 @@ export async function reconstructMesh(
         url: m.url,
         name: m.name,
         opacity: m.opacity,
+        visible: m.visible,
         shaderType: m.shaderType,
         sliceShaderType: m.sliceShaderType,
         color: m.color,

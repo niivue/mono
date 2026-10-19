@@ -211,3 +211,53 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     }
   }
 }
+
+// A colormap set on the volume but not yet refreshed: the resident bricks
+// still bake the old one. A swap must not carry them into the new plan, or the
+// volume stays drawn in the old colormap until something else re-streams it.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`a plan swap after an unrefreshed colormap change re-streams (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+    const result = await page.evaluate(`(async () => {
+      try {
+        ${mount(backend)}
+        const filled = await fill()
+        vol.colormap = 'hot'
+        await nv.swapVolumeChunkPlan(vol.id, makePlan())
+        const swapped = { resident: nv.chunkStreamStats().resident }
+        const refilled = await fill()
+        return { filled, swapped, refilled, errors }
+      } catch (e) {
+        const m = String(e && e.message ? e.message : e)
+        if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+          return { skip: 'GPU unavailable: ' + m }
+        }
+        throw e
+      }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+    expect(r.filled.resident).toBe(BRICKS)
+    // None of the stale bricks carries over; the swap re-admits brick 0.
+    expect(r.swapped.resident).toBe(1)
+    expect(r.refilled.resident).toBe(BRICKS)
+    expect(r.errors).toEqual([])
+    const px = await Promise.all(
+      [
+        [128, 128],
+        [100, 128],
+        [156, 128],
+        [128, 100],
+        [128, 156],
+      ].map(([x, y]) => probe(page, x, y)),
+    )
+    for (const [red, , blue] of px) expect(red - blue).toBeGreaterThan(40)
+  })
+}

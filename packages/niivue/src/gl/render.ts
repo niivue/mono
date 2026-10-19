@@ -1051,7 +1051,13 @@ export class VolumeRenderer extends NVRenderer {
           `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
       )
     }
+    const displayKey = chunkedDisplayKey(vol, entry.modulation)
     const oldToNew = matchChunksByContent(entry.plan, newPlan)
+    // Resident bricks bake the display state of the uploader that made them.
+    // When that state has changed since (a colormap set but not yet
+    // refreshed), keeping them would show the old state, so none carry over.
+    const keepResident =
+      displayKey === entry.displayKey ? oldToNew : new Map<number, number>()
     const newUploader = createChunkUploaderGL(
       gl,
       vol,
@@ -1062,7 +1068,7 @@ export class VolumeRenderer extends NVRenderer {
     )
     entry.uploader.dispose()
     entry.uploader = newUploader
-    entry.manager.remap(oldToNew, newPlan.chunks.length)
+    entry.manager.remap(keepResident, newPlan.chunks.length)
     // Chunk indices are plan-relative, so the tier is re-keyed by the same
     // content match: a brick the new plan still contains keeps its bytes, and
     // a refocus back to this level finds them.
@@ -1080,7 +1086,7 @@ export class VolumeRenderer extends NVRenderer {
       this.isCubicInterpolation,
     )
     entry.volume = vol
-    entry.displayKey = chunkedDisplayKey(vol, entry.modulation)
+    entry.displayKey = displayKey
     vol.chunkPlan = newPlan
     if (entry.manager.residentCount === 0) {
       const chunk0 = await entry.uploader.uploadChunk(0)

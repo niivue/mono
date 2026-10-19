@@ -20,14 +20,8 @@ import {
   getConnectomeReader,
   isConnectomeExtension,
 } from './connectome'
-import {
-  compositeLayers,
-  computeMeshLabelCentroids,
-  createLayer,
-  layerExtensions,
-  loadLayerFromUrl,
-  loadLayersFromOptions,
-} from './layers'
+import { compositeLayers, createLayer, loadLayersFromOptions } from './layers'
+import { generateNormals } from './normals'
 import { probeVTKContent, readVTKLines } from './readers/vtk'
 import {
   computeAllScalarMeta,
@@ -40,17 +34,6 @@ import {
 import { loadTractScalars } from './tracts/scalars'
 import * as meshWriters from './writers'
 import { writeMesh } from './writers'
-
-export {
-  compositeLayers,
-  connectomeExtensions,
-  createLayer,
-  isConnectomeExtension,
-  isTractExtension,
-  layerExtensions,
-  loadLayerFromUrl,
-  tractExtensions,
-}
 
 type MeshReader = {
   extensions?: string[]
@@ -67,7 +50,7 @@ export function meshWriteExtensions(): string[] {
   return meshWriters.writeExtensions()
 }
 
-export { writeMesh }
+export { generateNormals, writeMesh }
 
 /** All supported mesh-family extensions (triangulated mesh + tract + connectome). */
 export function meshExtensions(): string[] {
@@ -101,42 +84,6 @@ export function registerExternalReader(
     },
   }
   readerByExt.set(fromExt.toUpperCase(), wrappedReader)
-}
-
-export function generateNormals(
-  pts: Float32Array,
-  tris: Uint32Array,
-): Float32Array {
-  const norms = new Float32Array(pts.length)
-  for (let i = 0; i < tris.length; i += 3) {
-    const i1 = tris[i] * 3
-    const i2 = tris[i + 1] * 3
-    const i3 = tris[i + 2] * 3
-    const v1 = [pts[i1], pts[i1 + 1], pts[i1 + 2]]
-    const v2 = [pts[i2], pts[i2 + 1], pts[i2 + 2]]
-    const v3 = [pts[i3], pts[i3 + 1], pts[i3 + 2]]
-    const q = [v2[0] - v1[0], v2[1] - v1[1], v2[2] - v1[2]]
-    const p = [v3[0] - v1[0], v3[1] - v1[1], v3[2] - v1[2]]
-    const n = [
-      p[1] * q[2] - p[2] * q[1],
-      p[2] * q[0] - p[0] * q[2],
-      p[0] * q[1] - p[1] * q[0],
-    ]
-    for (const index of [i1, i2, i3]) {
-      norms[index] += n[0]
-      norms[index + 1] += n[1]
-      norms[index + 2] += n[2]
-    }
-  }
-  for (let i = 0; i < norms.length; i += 3) {
-    const len = Math.sqrt(norms[i] ** 2 + norms[i + 1] ** 2 + norms[i + 2] ** 2)
-    if (len > 0) {
-      norms[i] /= -len
-      norms[i + 1] /= -len
-      norms[i + 2] /= -len
-    }
-  }
-  return norms
 }
 
 export function createMesh(
@@ -294,16 +241,6 @@ export async function loadMesh(mesh: MeshFromUrlOptions): Promise<NVMeshType> {
   if (layerOptions && layerOptions.length > 0) {
     const externalLayers = await loadLayersFromOptions(layerOptions, numVerts)
     layers.push(...externalLayers)
-  }
-
-  // Compute label centroids for layers with label colormaps
-  for (const layer of layers) {
-    if (layer.colormapLabel) {
-      layer.colormapLabel.centroids = computeMeshLabelCentroids(
-        meshData.positions,
-        layer,
-      )
-    }
   }
 
   // Composite layers over base colors

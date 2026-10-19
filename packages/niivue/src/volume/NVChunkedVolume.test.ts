@@ -1456,7 +1456,7 @@ describe('NVChunkedVolume automatic display window', () => {
       addEventListener: () => {},
       removeEventListener: () => {},
       setBaseCoarseFloor: async () => {},
-      updateGLVolume: async () => {
+      _updateGLChanged: async () => {
         updateGL++
       },
       swapVolumeChunkPlan: async () => {},

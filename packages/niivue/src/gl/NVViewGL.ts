@@ -5,6 +5,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
 import { generateNormals } from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
+import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type NVModel from '@/NVModel'
@@ -17,10 +18,16 @@ import type {
 } from '@/NVTypes'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
+import {
+  type MeshRebuild,
+  type MeshUploadStamp,
+  meshUploadStamp,
+  planMeshSync,
+  stampAfterVertexWrite,
+} from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
-import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
@@ -33,7 +40,12 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { drawnOpacity, isVolumeDrawn } from '@/view/NVVolumeVisibility'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
+import {
+  type UpdateBindGroupsOptions,
+  volumeUpdateScope,
+} from '@/view/volumeUpdateScope'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -48,7 +60,6 @@ import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
-import { maskOverlayByBackground } from './orientOverlay'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
@@ -59,6 +70,8 @@ import { ThumbnailRenderer } from './thumbnail'
 type MeshGpuWithShader = WebGLMeshGPU & {
   shaderType?: string
   sliceShaderType?: string
+  /** The vertex data these buffers were built from (see meshGpuSync). */
+  uploadStamp?: MeshUploadStamp
 }
 
 export default class NVGlview {
@@ -398,7 +411,7 @@ export default class NVGlview {
     // Mesh pipelines are statically defined
   }
 
-  async _updateBindings(): Promise<void> {
+  async _updateBindings(opts: UpdateBindGroupsOptions = {}): Promise<void> {
     // try/finally so an early return or a thrown await never leaves isBusy stuck
     // true — the render loop skips while busy, so a stuck flag freezes drawing.
     this.isBusy = true
@@ -408,11 +421,20 @@ export default class NVGlview {
         return
       }
       const vols = this.model.getVolumes()
-      this.colorbarRenderer.buildColorbars(
-        gl,
-        this.model.collectColorbars(),
-        this.model.scene.backgroundColor,
+      const scope = volumeUpdateScope(
+        vols,
+        opts.volumes,
+        this.model.volume.isBackgroundMasking,
       )
+      // A data-only update (opts.volumes) leaves the colorbars as they are:
+      // their range comes from calMin/calMax, which it does not change.
+      if (opts.colorbars ?? !opts.volumes) {
+        this.colorbarRenderer.buildColorbars(
+          gl,
+          this.model.collectColorbars(),
+          this.model.scene.backgroundColor,
+        )
+      }
       if (vols.length > 0) {
         if (this.options.instances) {
           // Multi-instance mode (global3d): upload every volume's GPU texture
@@ -440,7 +462,7 @@ export default class NVGlview {
             if (key) keepKeys.add(key)
           }
           this.volumeRenderer.pruneVolumeCache(keepKeys)
-        } else {
+        } else if (scope.background) {
           try {
             await this.volumeRenderer.updateVolume(
               gl,
@@ -458,36 +480,35 @@ export default class NVGlview {
 
       // Handle overlays (all volumes after the first)
       if (vols.length > 1 && !this.options.instances) {
-        await this.volumeRenderer.updateOverlays(
-          gl,
-          vols[0],
-          vols.slice(1),
-          this.model.volume.paqdUniforms,
-        )
-        if (
-          this.model.volume.isBackgroundMasking &&
-          this.volumeRenderer.overlayTexture &&
-          this.volumeRenderer.volumeTexture &&
-          vols[0].dimsRAS
-        ) {
-          const dims = [
-            vols[0].dimsRAS[1],
-            vols[0].dimsRAS[2],
-            vols[0].dimsRAS[3],
-          ]
-          maskOverlayByBackground(
-            gl,
-            this.volumeRenderer.volumeTexture,
-            this.volumeRenderer.overlayTexture,
-            dims,
-          )
-        }
+        if (scope.overlays) await this._updateOverlayStack(gl, vols)
       } else {
         this.volumeRenderer.clearOverlay(gl)
       }
-      this._rebuildMeshResources()
+      this._rebuildMeshResources(opts.meshes ?? 'all')
     } finally {
       this.isBusy = false
+    }
+  }
+
+  /** Re-run the overlay pass (volumes[1..]) and the optional background mask. */
+  private async _updateOverlayStack(
+    gl: WebGL2RenderingContext,
+    vols: NVImage[],
+  ): Promise<void> {
+    this.volumeRenderer.overlayAlphaBlend = this.model.volume.overlayAlphaBlend
+    this.volumeRenderer.overlayColorBlend = this.model.volume.overlayColorBlend
+    await this.volumeRenderer.updateOverlays(
+      gl,
+      vols[0],
+      vols.slice(1),
+      this.model.volume.paqdUniforms,
+    )
+    if (this.model.volume.isBackgroundMasking && vols[0].dimsRAS) {
+      this.volumeRenderer.maskOverlayByBackground(gl, [
+        vols[0].dimsRAS[1],
+        vols[0].dimsRAS[2],
+        vols[0].dimsRAS[3],
+      ])
     }
   }
 
@@ -513,12 +534,16 @@ export default class NVGlview {
     // only rebuilds the overlay prepass, so it would leave that matrix stale.
     if (vols[0].modulationImage) return false
     const overlay = vols[1]
-    if ((overlay.opacity ?? 1) <= 0) return false
+    if (!isVolumeDrawn(overlay)) return false
     return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)
   }
 
-  updateBindGroups(): Promise<void> {
-    return this._updateBindings()
+  /**
+   * Rebuild GPU resources from the model. See UpdateBindGroupsOptions for the
+   * scoped form updateVolumeData uses.
+   */
+  updateBindGroups(opts: UpdateBindGroupsOptions = {}): Promise<void> {
+    return this._updateBindings(opts)
   }
 
   render(): void {
@@ -1014,8 +1039,8 @@ export default class NVGlview {
             md.volume.paqdUniforms,
             md.volume.transmittanceCutoff,
             // This tile's background volume, which is not always volumes[0]
-            // (a global3d tile binds its own).
-            vol.opacity ?? 1,
+            // (a global3d tile binds its own). 0 when hidden.
+            drawnOpacity(vol),
           )
           // Independent hi-res chunked overlay: stream its own working set and
           // draw it as translucent cubes over the base, in the same pass. Uses
@@ -1733,6 +1758,23 @@ export default class NVGlview {
     return this.meshResources.get(m) ?? null
   }
 
+  /**
+   * Re-upload one mesh's vertices into its existing GPU buffer. Returns false
+   * when the mesh has no GPU resources yet (or its vertex count changed); the
+   * caller then falls back to a full rebuild via updateBindGroups().
+   */
+  updateMeshVertices(m: NVMesh): boolean {
+    const gl = this.gl
+    if (!gl) return false
+    // A lost context/device cannot be written to, and a full rebuild would fail
+    // the same way every frame. Report success; recovery re-uploads every mesh.
+    if (this._contextLost || gl.isContextLost()) return true
+    const gpu = this.meshResources.get(m)
+    if (!gpu || !mesh.writeMeshVertices(gl, m, gpu)) return false
+    gpu.uploadStamp = stampAfterVertexWrite(gpu.uploadStamp, m)
+    return true
+  }
+
   _destroyMeshResources(): void {
     const gl = this.gl
     if (!gl) return
@@ -1742,12 +1784,23 @@ export default class NVGlview {
     this.meshResources.clear()
   }
 
-  _rebuildMeshResources(): void {
+  /**
+   * Bring mesh GPU resources in line with the model. `'changed'` uploads only
+   * new or edited meshes and frees removed ones; every kept mesh still picks
+   * up its current shader choice, which is draw-time state.
+   */
+  _rebuildMeshResources(mode: MeshRebuild = 'all'): void {
     const gl = this.gl
-    if (!gl) return
-    this._destroyMeshResources()
-    const availableShaders = this.getAvailableShaders()
+    if (!gl || mode === 'none') return
     const meshes = this.model.getMeshes() as NVMesh[]
+    const plan = planMeshSync(this.meshResources, meshes, mode)
+    for (const m of plan.free) {
+      const gpu = this.meshResources.get(m)
+      if (gpu) mesh.destroyMeshGpu(gl, gpu)
+      this.meshResources.delete(m)
+    }
+    const upload = new Set(plan.upload)
+    const availableShaders = this.getAvailableShaders()
     for (const m of meshes) {
       let shaderType = m.shaderType || 'phong'
       if (!availableShaders.includes(shaderType)) {
@@ -1764,8 +1817,17 @@ export default class NVGlview {
         )
         sliceShaderType = ''
       }
+      const kept = this.meshResources.get(m)
+      if (kept && !upload.has(m)) {
+        kept.shaderType = shaderType
+        kept.sliceShaderType = sliceShaderType
+        continue
+      }
+      // A mesh listed twice in the model is uploaded once.
+      upload.delete(m)
+      const uploadStamp = meshUploadStamp(m)
       const gpu = mesh.uploadMeshGPU(gl, m, { shaderType, sliceShaderType })
-      this.meshResources.set(m, gpu)
+      this.meshResources.set(m, { ...gpu, uploadStamp })
     }
   }
 
@@ -1906,7 +1968,8 @@ export default class NVGlview {
     // 3D render. Mirrors the WebGPU backend.
     if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
       const vol = md.volumes[0]
-      if (vol?.extentsMin && vol?.extentsMax) {
+      // A hidden background is not drawn, so it must not answer a pick.
+      if (vol?.extentsMin && vol?.extentsMax && isVolumeDrawn(vol)) {
         const near = NVTransforms.unprojectScreen(
           hit.normalizedX,
           hit.normalizedY,
@@ -2051,7 +2114,13 @@ export default class NVGlview {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     // Draw volume with depth-pick shader (raymarches from any viewing angle)
     const volumes = md.getVolumes()
-    if (this.volumeRenderer.hasVolume() && volumes.length > 0) {
+    // A hidden (or fully transparent) background is not drawn, so it must not
+    // answer a pick either; matches the WebGPU gate.
+    if (
+      this.volumeRenderer.hasVolume() &&
+      volumes.length > 0 &&
+      isVolumeDrawn(volumes[0])
+    ) {
       const vol = volumes[0]
       if (vol?.matRAS && vol.volScale) {
         this.volumeRenderer.drawDepthPick(

@@ -201,6 +201,7 @@ interpolateBtn.onclick = async () => {
   const after = newBitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)
 
   // Use context's update method for safe write-back
+  dr.pushUndo() // the interpolation is one undoable edit
   dr.update(newBitmap)
 
   status.textContent = `${axisName} interpolation: ${before}→${after} voxels (${elapsed} ms, worker)`

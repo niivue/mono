@@ -34,3 +34,6 @@ packages/ipyniivue/examples/**/*.nii.gz filter=lfs diff=lfs merge=lfs -text
 packages/ipyniivue/examples/**/*.mz3 filter=lfs diff=lfs merge=lfs -text
 packages/ipyniivue/examples/**/*.trx filter=lfs diff=lfs merge=lfs -text
 packages/ipyniivue/examples/**/*.trk filter=lfs diff=lfs merge=lfs -text
+
+# Model weights
+*.safetensors filter=lfs diff=lfs merge=lfs -text

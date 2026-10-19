@@ -1,7 +1,5 @@
-import * as NVMeshUtils from '@/mesh/NVMesh'
+import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
 import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
-import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
-import { buildCylinderMeshData, buildSphereMeshData } from '@/view/NVMeshView'
 import meshShaderWGSL from './mesh.wgsl?raw'
 
 export const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
@@ -10,81 +8,16 @@ export const alignedMeshSize =
   Math.ceil(MESH_UNIFORM_SIZE / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 export const MAX_TILES = 128
 
-export function loadSphereMesh(
-  device: GPUDevice,
-  origin: number[] = [1, 1, 1],
-  radius = 1,
-  color: number[] = [1, 1, 1, 1],
-  subdivisions = 2,
-): NVMesh {
-  return createMeshBuffers(
-    device,
-    buildSphereMeshData(origin, radius, color, subdivisions),
-  )
-}
-
-export function loadCylinderMesh(
-  device: GPUDevice,
-  start: number[],
-  dest: number[],
-  radius: number,
-  color: number[] = [1, 1, 1, 1],
-  sides = 20,
-  endcaps = true,
-): NVMesh {
-  return createMeshBuffers(
-    device,
-    buildCylinderMeshData(start, dest, radius, color, sides, endcaps),
-  )
-}
-
-export function createMeshBuffers(
-  _device: GPUDevice,
-  meshData: Omit<NVMesh, 'layers' | 'perVertexColors'> &
-    Partial<Pick<NVMesh, 'layers' | 'perVertexColors'>>,
-  options: Record<string, unknown> = {},
-): NVMesh {
-  const { shaderType = 'phong' } = options as { shaderType?: string }
-  const mesh = meshData as NVMesh
-  mesh.opacity ??= 1
-  mesh.shaderType = shaderType
-  mesh.layers ??= []
-  mesh.perVertexColors ??= null
-  // Add any additional options to meshData
-  Object.assign(mesh, options)
-  return mesh
-}
-
 export function uploadMeshGPU(
   device: GPUDevice,
   meshData: NVMesh,
   options: Record<string, unknown> = {},
 ): WebGPUMeshGPU & { shaderType?: string } {
   const { shaderType = 'phong' } = options as { shaderType?: string }
-  const normals = NVMeshUtils.generateNormals(
-    meshData.positions,
-    meshData.indices,
-  )
-  const numVerts = meshData.positions.length / 3
-  const vertexData = new ArrayBuffer(numVerts * BYTES_PER_VERTEX)
-  const f32 = new Float32Array(vertexData)
-  const u32 = new Uint32Array(vertexData)
-  for (let i = 0; i < numVerts; i++) {
-    const offset = (i * 28) / 4
-    f32[offset] = meshData.positions[i * 3]
-    f32[offset + 1] = meshData.positions[i * 3 + 1]
-    f32[offset + 2] = meshData.positions[i * 3 + 2]
-    f32[offset + 3] = normals[i * 3]
-    f32[offset + 4] = normals[i * 3 + 1]
-    f32[offset + 5] = normals[i * 3 + 2]
-    u32[offset + 6] =
-      meshData.colors instanceof Uint32Array
-        ? meshData.colors[i]
-        : meshData.colors
-  }
+  const vertexData = packMeshVertices(meshData)
   const vertexBuffer = device.createBuffer({
     size: vertexData.byteLength,
-    usage: GPUBufferUsage.VERTEX,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     mappedAtCreation: true,
   })
   new Uint8Array(vertexBuffer.getMappedRange()).set(new Uint8Array(vertexData))
@@ -110,6 +43,35 @@ export function uploadMeshGPU(
     alignedMeshSize: alignedMeshSize,
     shaderType,
   }
+}
+
+// Per-mesh staging buffer for live vertex updates, so animating a mesh does
+// not allocate a fresh interleaved buffer every frame. Safe to reuse: the
+// upload copies the data before returning.
+const _staging = new WeakMap<WebGPUMeshGPU, ArrayBuffer>()
+
+function stagingFor(gpu: WebGPUMeshGPU, meshData: NVMesh): ArrayBuffer {
+  const packed = packMeshVertices(meshData, _staging.get(gpu))
+  _staging.set(gpu, packed)
+  return packed
+}
+
+/**
+ * Rewrite an existing mesh's vertex buffer in place from `meshData`. Used for
+ * live vertex updates, which would otherwise rebuild every mesh's GPU
+ * resources. Returns false (nothing written) when the vertex count no longer
+ * matches the buffer, so the caller can fall back to a full rebuild.
+ */
+export function writeMeshVertices(
+  device: GPUDevice,
+  meshData: NVMesh,
+  gpu: WebGPUMeshGPU,
+): boolean {
+  if (!gpu.vertexBuffer) return false
+  const bytes = (meshData.positions.length / 3) * BYTES_PER_VERTEX
+  if (gpu.vertexBuffer.size !== bytes) return false
+  device.queue.writeBuffer(gpu.vertexBuffer, 0, stagingFor(gpu, meshData))
+  return true
 }
 
 export function createMeshPipeline(

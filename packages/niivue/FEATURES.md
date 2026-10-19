@@ -147,6 +147,8 @@ TRX, TT, TSF (scalars), VTK lines.
 | `volumeIsAlphaClipDark` | Prop | |
 | `volumeIsNearestInterpolation` | Prop | Force nearest 2D sampling for all volumes; otherwise per-volume `isNearestInterpolation` (default: nearest for label intent/colormap) |
 | `volumeIsV1SliceShader` | Prop | Treat overlay as fiber direction |
+| `volumeOverlayAlphaBlend` | Prop | `OVERLAY_ALPHA_BLEND`: `MAX` (0, default), `ADDITIVE` (1, opacities sum capped at 1; for fractions summing to 1, e.g. tissue maps), `OVER` (2, 1-prod(1-a)). Only with 2+ overlays |
+| `volumeOverlayColorBlend` | Prop | `OVERLAY_COLOR_BLEND`: `ADDITIVE` (0, default, opacity-weighted sum), `MEAN` (1, opacity-weighted average). Only with 2+ overlays |
 | `volumeMatcap` | Prop | Matcap name |
 | `volumePaqdUniforms` | Prop | PAQD atlas tuning |
 | `loadMatcap(nameOrUrl)` | Method (async) | Register matcap at runtime |

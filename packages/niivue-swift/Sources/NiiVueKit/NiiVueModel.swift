@@ -51,6 +51,15 @@ public final class NiiVueModel {
 
     public var isReady: Bool = false
     public var locationText: String = "—"
+    /// Crosshair position in mm, and each volume's value there.
+    public var locationMM: [Double]? = nil
+    public var locationValues: [LocationValue] = []
+    /// Loaded volumes, background first. Mirrors NiiVue via `volumesChange`.
+    public var volumes: [VolumeSummary] = []
+    /// A mesh or signal has loaded. No UI removes them, so this never resets.
+    public var hasNonVolumeContent = false
+    /// Colormap names NiiVue knows, fetched on `ready`.
+    public var colormaps: [String] = []
     public var lastStatus: String = "Waiting for webview…"
     /// Current rendering backend. Updated from the `ready` event and from
     /// `backendChange` events after a user-initiated switch.
@@ -164,19 +173,39 @@ public final class NiiVueModel {
     // MARK: Actions
 
     /// Convenience: load a volume from raw bytes. Equivalent to a
-    /// `loadVolume` bridge call with base64-encoded payload.
-    public func loadVolume(data: Data, name: String) async throws {
+    /// `loadVolume` bridge call with base64-encoded payload. `add` keeps the
+    /// loaded images and adds this one as an overlay instead of replacing them.
+    public func loadVolume(data: Data, name: String, add: Bool = false) async throws {
         let payload = LoadVolumePayload(
             name: name,
-            bytesBase64: data.base64EncodedString()
+            bytesBase64: data.base64EncodedString(),
+            add: add
         )
         let _: OKReply = try await bridge.call("loadVolume", payload)
     }
 
     /// Convenience: load a volume from a file URL.
-    public func loadVolume(url: URL) async throws {
+    public func loadVolume(url: URL, add: Bool = false) async throws {
         let data = try Data(contentsOf: url)
-        try await loadVolume(data: data, name: url.lastPathComponent)
+        try await loadVolume(data: data, name: url.lastPathComponent, add: add)
+    }
+
+    /// Change one volume's display. The resulting `volumesChange` event
+    /// replaces `volumes`, so callers need not update it themselves.
+    public func setVolume(_ update: SetVolumePayload) async {
+        do {
+            let _: OKReply = try await bridge.call("setVolume", update)
+        } catch {
+            lastStatus = "Could not update volume: \(error.localizedDescription)"
+        }
+    }
+
+    public func removeVolume(at index: Int) async {
+        do {
+            let _: OKReply = try await bridge.call("removeVolume", VolumeIndexPayload(index: index))
+        } catch {
+            lastStatus = "Could not remove volume: \(error.localizedDescription)"
+        }
     }
 
     /// Request the web side to switch backends. NiiVue may downgrade the
@@ -210,6 +239,10 @@ public final class NiiVueModel {
             defer { isApplyingFromJS = false }
             for (path, box) in snapshot {
                 cells[path]?.applyFromJS(box.raw)
+            }
+            volumes = try await bridge.call("getVolumes", EmptyPayload())
+            if colormaps.isEmpty {
+                colormaps = try await bridge.call("getColormaps", EmptyPayload())
             }
         } catch {
             print("[NiiVueModel] hydrate failed: \(error)")
@@ -295,6 +328,17 @@ public final class NiiVueModel {
             }
             Task { @MainActor in
                 self.locationText = payload.string.isEmpty ? "—" : payload.string
+                self.locationMM = payload.mm
+                self.locationValues = payload.values ?? []
+            }
+        }
+        bridge.on("volumesChange") { [weak self] data in
+            guard let self else { return }
+            guard let list = try? JSONDecoder().decode([VolumeSummary].self, from: data) else {
+                return
+            }
+            Task { @MainActor in
+                self.volumes = list
             }
         }
         bridge.on("imageLoaded") { [weak self] data in
@@ -304,6 +348,7 @@ public final class NiiVueModel {
             }
             Task { @MainActor in
                 self.lastStatus = payload.name
+                if payload.kind != "volume" { self.hasNonVolumeContent = true }
             }
         }
     }

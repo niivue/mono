@@ -273,6 +273,8 @@ Fired when `sliceType` is set.
 #### `volumeUpdated`
 Fired after `setVolume()` applies property changes to a volume, or after
 `setColormapLabel()` sets/clears a label colormap (for which `changes` is empty).
+Not fired by `updateVolumeData()`, which edits voxel values (typically every
+frame) without changing any display option.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -290,7 +292,8 @@ nv.addEventListener('volumeUpdated', (e) => {
 #### `meshUpdated`
 Fired after `setMesh()` applies property changes to a mesh, or after a
 scalar-overlay layer change (`addMeshLayer`, `removeMeshLayer`,
-`setMeshLayerProperty`).
+`setMeshLayerProperty`). Not fired by `updateMeshPositions()`, which moves
+vertices (typically every frame) without changing any display option.
 
 | Field | Type | Description |
 |-------|------|-------------|

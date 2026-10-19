@@ -1362,7 +1362,8 @@ PAQD-on-chunked stays deferred to Phase 2d.3.
    directly per chunk. Multiple overlays: each is oriented to a chunk-
    sized texture, then blended per chunk — GL via CPU `blendOverlayData`
    (mirrors the non-chunked GL path), WebGPU via `blendOverlaysGPU`
-   (mirrors the non-chunked WGPU path).
+   (mirrors the non-chunked WGPU path; z-slabbed only if a chunk's f32
+   accumulator exceeds the device storage-buffer limit).
 5. **Sampling.** 3D ray-march already samples the overlay through
    `chunkTexCoord` in `rayMarchPass` (added in 2d.1 as a then-no-op), so
    no 3D shader change was needed. 2D slice sampling swapped from
@@ -1575,7 +1576,7 @@ A debug/testing override and a demo that exercises all four chunked layers
 |------|--------|
 | `src/NVTypes.ts` | New optional `maxTextureDimension3D?: number` on `NiiVueOptions` (documented as a debug/testing override) and on `NVViewOptions`. |
 | `src/gl/NVViewGL.ts` | `_createResources` clamps the value passed to `volumeRenderer.init` to `min(real max3D, override)` when the option is set. |
-| `src/wgpu/NVViewGPU.ts` | Mirror: clamps the limit passed to `volumeRenderer.init`. The override is applied only to the renderer's chunking threshold — `requestDevice`'s `requiredLimits` still requests the real adapter limit, so device texture creation is unaffected. |
+| `src/wgpu/NVViewGPU.ts` | Mirror: clamps the limit passed to `volumeRenderer.init`. The override is applied only to the renderer's chunking threshold — `requestDevice`'s `requiredLimits` still requests the real adapter limit, so device texture creation is unaffected. The threshold is further capped at `maxBlendSliceDim` (`wgpu/orient.ts`: floor(sqrt(min(maxStorageBufferBindingSize, maxBufferSize) / 20 B/voxel))) so one z-slice of the overlay-blend accumulator fits; a no-op on typical adapters (128 MiB -> 2590). |
 | `examples/vox.tiled.html`, `examples/vox.tiled.js`, `examples/index.html` | New demo + listing entry. |
 
 ### How it works

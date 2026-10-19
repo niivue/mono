@@ -28,7 +28,7 @@ export function getTractReader(ext: string): TractReader | undefined {
 }
 
 /** Compute global_min/global_max for a scalar array. */
-export function computeScalarMeta(arr: Float32Array): TractScalarMeta {
+function computeScalarMeta(arr: Float32Array): TractScalarMeta {
   let mn = Infinity,
     mx = -Infinity
   for (let i = 0; i < arr.length; i++) {

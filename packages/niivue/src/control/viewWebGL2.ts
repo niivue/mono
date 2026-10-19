@@ -109,7 +109,7 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   initInteraction(ctrl)
   setupDragAndDrop(ctrl)
   setupResizeHandler(ctrl)
-  await ctrl.view.updateBindGroups()
+  await ctrl._rebuildViewResources()
   ctrl.restoreSlidePlaneView()
   ctrl.view.resize()
   ctrl.drawScene()

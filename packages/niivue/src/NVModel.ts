@@ -315,6 +315,12 @@ export default class NVModel {
       ...(options.volumeIsV1SliceShader !== undefined && {
         isV1SliceShader: options.volumeIsV1SliceShader,
       }),
+      ...(options.volumeOverlayAlphaBlend !== undefined && {
+        overlayAlphaBlend: options.volumeOverlayAlphaBlend,
+      }),
+      ...(options.volumeOverlayColorBlend !== undefined && {
+        overlayColorBlend: options.volumeOverlayColorBlend,
+      }),
       ...(options.volumeMatcap !== undefined && {
         matcap: options.volumeMatcap,
       }),
@@ -692,7 +698,6 @@ export default class NVModel {
     }
     for (const vol of this.volumes) {
       this._releaseGPU(vol)
-      vol.isDirty = true
     }
   }
 
@@ -1056,8 +1061,9 @@ export default class NVModel {
     const cursorX = (vol.frame4D ?? 0) * tr
     // `fullCanvas` depends on the spatial-hidden state, so it is part of the key:
     // toggling SLICE_TYPE.NONE must rebuild the graph (side strip <-> full canvas)
-    // rather than return the stale cached layout.
-    const key = `${vol.id}|${showVol}|${this.isSpatialViewHidden()}|${showVol ? `${cp[0]},${cp[1]},${cp[2]}` : ''}|${nFrames}|${tr}|${attached
+    // rather than return the stale cached layout. `_dataVersion` is part of it
+    // so an in-place voxel edit (updateVolumeData) resamples the time-course.
+    const key = `${vol.id}|${vol._dataVersion ?? 0}|${showVol}|${this.isSpatialViewHidden()}|${showVol ? `${cp[0]},${cp[1]},${cp[2]}` : ''}|${nFrames}|${tr}|${attached
       .map((s) => `${s.id}:${JSON.stringify(s.display)}`)
       .join(';')}`
     if (this._assocCache && this._assocCache.key === key) {
@@ -1425,7 +1431,6 @@ export default class NVModel {
     colormapType: 0,
     isTransparentBelowCalMin: true,
     modulateAlpha: 0,
-    isDirty: true,
     isColorbarVisible: true,
   }
 

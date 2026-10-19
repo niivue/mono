@@ -21,9 +21,6 @@ import {
   toTypedViewOrU8,
 } from './utils'
 
-// Re-export utilities for external use
-export { calculateWorldExtents, calMinMax }
-
 // Writer support
 import * as volumeWriters from './writers'
 import { writeVolume } from './writers'

@@ -955,100 +955,104 @@ export function getImageDataRAS(volume: NVImage): Float32Array | null {
 // Label Centroid Computation
 // ============================================================================
 
+type Vec3 = [number, number, number]
+
+/**
+ * Turn per-LUT-index sums `[sx, sy, sz, weight]` into centroids by label name.
+ * Indices sharing a name pool into one region; unnamed and empty ones are dropped.
+ */
+export function labelCentroidsByName(
+  acc: Float64Array,
+  labels: string[],
+  toMm: (x: number, y: number, z: number) => Vec3 = (x, y, z) => [x, y, z],
+): Record<string, Vec3> {
+  const pooled: Record<string, number[]> = {}
+  for (let k = 0; k < acc.length / 4; k++) {
+    const name = labels[k]
+    if (!name || acc[k * 4 + 3] === 0) continue
+    pooled[name] ??= [0, 0, 0, 0]
+    for (let c = 0; c < 4; c++) pooled[name][c] += acc[k * 4 + c]
+  }
+  const centroids: Record<string, Vec3> = {}
+  for (const [name, [sx, sy, sz, w]] of Object.entries(pooled))
+    centroids[name] = toMm(sx / w, sy / w, sz / w)
+  return centroids
+}
+
 /**
  * Compute center-of-mass (in mm) for each label region in a volume.
  * For standard label volumes: each voxel with a valid label index contributes equally.
  * For PAQD volumes: each voxel contributes to up to two regions, weighted by probability.
- * Uses inline matRAS multiplication (same as vox2mm) for performance.
+ * Sums RAS voxel coordinates per label index and maps each mean through matRAS
+ * once: vox2mm is affine, so the mean commutes with it.
  */
 export function computeVolumeLabelCentroids(
   volume: NVImage,
-): Record<string, [number, number, number]> {
+): Record<string, Vec3> {
   const lut = volume.colormapLabel
-  if (!lut?.labels || !volume.matRAS || !volume.dimsRAS) return {}
+  const img = volume.img
+  const start = volume.img2RASstart
+  const step = volume.img2RASstep
+  const m = volume.matRAS
+  if (!lut?.labels || !m || !volume.dimsRAS || !img || !start || !step)
+    return {}
 
   const labels = lut.labels
   const lutMin = lut.min ?? 0
-  const lutMax = lut.max ?? labels.length - 1 + lutMin
-  const m = volume.matRAS
+  const nLabel = Math.max(
+    0,
+    (lut.max ?? labels.length - 1 + lutMin) - lutMin + 1,
+  )
   const vx = volume.dimsRAS[1],
     vy = volume.dimsRAS[2],
     vz = volume.dimsRAS[3]
-
-  // Accumulators: sum of (mm * weight) and total weight per label
-  const sumX: Record<string, number> = {}
-  const sumY: Record<string, number> = {}
-  const sumZ: Record<string, number> = {}
-  const weight: Record<string, number> = {}
+  const base = start[0] + start[1] + start[2]
+  const acc = new Float64Array(nLabel * 4)
 
   if (isPaqd(volume.hdr)) {
-    // PAQD: weight each region by its probability
+    const raw = new Uint8Array(img.buffer, img.byteOffset, img.byteLength)
     for (let rz = 0; rz < vz; rz++) {
       for (let ry = 0; ry < vy; ry++) {
+        const row = base + ry * step[1] + rz * step[2]
         for (let rx = 0; rx < vx; rx++) {
-          const raw = getVoxelRGBA(volume, rx, ry, rz)
-          const prob1 = raw[2],
-            prob2 = raw[3]
-          if (prob1 === 0 && prob2 === 0) continue
-          // Inline vox2mm: mm = transpose(matRAS) * [rx,ry,rz,1]
-          const mmx = m[0] * rx + m[1] * ry + m[2] * rz + m[3]
-          const mmy = m[4] * rx + m[5] * ry + m[6] * rz + m[7]
-          const mmz = m[8] * rx + m[9] * ry + m[10] * rz + m[11]
-          // Primary region
-          const idx1 = raw[0]
-          if (prob1 > 0 && idx1 >= lutMin && idx1 <= lutMax) {
-            const name = labels[idx1 - lutMin]
-            if (name) {
-              sumX[name] = (sumX[name] ?? 0) + mmx * prob1
-              sumY[name] = (sumY[name] ?? 0) + mmy * prob1
-              sumZ[name] = (sumZ[name] ?? 0) + mmz * prob1
-              weight[name] = (weight[name] ?? 0) + prob1
-            }
-          }
-          // Secondary region
-          const idx2 = raw[1]
-          if (prob2 > 0 && idx2 >= lutMin && idx2 <= lutMax) {
-            const name = labels[idx2 - lutMin]
-            if (name) {
-              sumX[name] = (sumX[name] ?? 0) + mmx * prob2
-              sumY[name] = (sumY[name] ?? 0) + mmy * prob2
-              sumZ[name] = (sumZ[name] ?? 0) + mmz * prob2
-              weight[name] = (weight[name] ?? 0) + prob2
-            }
+          const b = (row + rx * step[0]) * 4
+          // Primary region in bytes 0/2, secondary in 1/3.
+          for (let r = 0; r < 2; r++) {
+            const w = raw[b + 2 + r]
+            const k = raw[b + r] - lutMin
+            if (w === 0 || k < 0 || k >= nLabel) continue
+            acc[k * 4] += rx * w
+            acc[k * 4 + 1] += ry * w
+            acc[k * 4 + 2] += rz * w
+            acc[k * 4 + 3] += w
           }
         }
       }
     }
   } else {
-    // Standard label volume: each voxel contributes equally
+    const slope = volume.hdr.scl_slope
+    const inter = volume.hdr.scl_inter
     for (let rz = 0; rz < vz; rz++) {
       for (let ry = 0; ry < vy; ry++) {
+        const row = base + ry * step[1] + rz * step[2]
         for (let rx = 0; rx < vx; rx++) {
-          const val = getVoxelValue(volume, rx, ry, rz)
-          const labelIdx = Math.round(val)
-          if (labelIdx < lutMin || labelIdx > lutMax) continue
-          const name = labels[labelIdx - lutMin]
-          if (!name) continue
-          const mmx = m[0] * rx + m[1] * ry + m[2] * rz + m[3]
-          const mmy = m[4] * rx + m[5] * ry + m[6] * rz + m[7]
-          const mmz = m[8] * rx + m[9] * ry + m[10] * rz + m[11]
-          sumX[name] = (sumX[name] ?? 0) + mmx
-          sumY[name] = (sumY[name] ?? 0) + mmy
-          sumZ[name] = (sumZ[name] ?? 0) + mmz
-          weight[name] = (weight[name] ?? 0) + 1
+          const k = Math.round(img[row + rx * step[0]] * slope + inter) - lutMin
+          // Negated so a NaN voxel is skipped too.
+          if (!(k >= 0 && k < nLabel)) continue
+          acc[k * 4] += rx
+          acc[k * 4 + 1] += ry
+          acc[k * 4 + 2] += rz
+          acc[k * 4 + 3] += 1
         }
       }
     }
   }
 
-  const centroids: Record<string, [number, number, number]> = {}
-  for (const name of Object.keys(weight)) {
-    const w = weight[name]
-    if (w > 0) {
-      centroids[name] = [sumX[name] / w, sumY[name] / w, sumZ[name] / w]
-    }
-  }
-  return centroids
+  return labelCentroidsByName(acc, labels, (rx, ry, rz) => [
+    m[0] * rx + m[1] * ry + m[2] * rz + m[3],
+    m[4] * rx + m[5] * ry + m[6] * rz + m[7],
+    m[8] * rx + m[9] * ry + m[10] * rz + m[11],
+  ])
 }
 
 /**

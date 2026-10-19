@@ -88,7 +88,7 @@ nv1.drawPenValue = 3
 `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible`, `is3DCrosshairVisible`, `isGraphVisible`, `isRulerVisible`, `isCrossLinesVisible`, `isLegendVisible`, `isPositionInMM`, `isMeasureUnitsVisible`, `isThumbnailVisible`, `thumbnailUrl`, `placeholderText`, `crosshairColor`, `crosshairGap`, `crosshairWidth`, `fontColor`, `fontScale`, `fontMinSize`, `selectionBoxColor`, `measureLineColor`, `measureTextColor`, `rulerWidth`, `graphNormalizeValues`, `graphIsRangeCalMinMax`
 
 **Volume** (prefix `volume` -- delegate to `model.volume`):
-`volumeIllumination`, `volumeRenderMode`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeMatcap`, `volumePaqdUniforms`
+`volumeIllumination`, `volumeRenderMode`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeOverlayAlphaBlend`, `volumeOverlayColorBlend`, `volumeMatcap`, `volumePaqdUniforms`
 
 `volumeRenderMode` takes a `VOLUME_RENDER_MODE` and applies to the 3D render only:
 
@@ -121,7 +121,7 @@ Use **property setters** for:
 
 Use **methods** for:
 - Async operations (loading data): `loadVolumes()`, `loadMeshes()`
-- Actions (not state): `drawUndo()`, `createEmptyDrawing()`, `destroy()`, `annotationUndo()`, `annotationRedo()`
+- Actions (not state): `drawUndo()`, `drawAddUndoBitmap()`, `createEmptyDrawing()`, `destroy()`, `annotationUndo()`, `annotationRedo()`
 - Annotation management: `addAnnotation()`, `removeAnnotation()`, `clearAnnotations()`
 - Multi-target operations (need to specify which item): `setVolume(idx, opts)`, `setFrame4D(id, frame)`
 - Special formats: `setClipPlane([depth, azimuth, elevation])`
@@ -147,6 +147,53 @@ nv1.setVolume(0, {
 ```
 
 Same pattern for meshes, layers, tracts, connectomes.
+
+### Editing Voxel Values
+A volume's GPU textures are cached against its `img` array, so an in-place
+edit (same array, new values) must be reported. Either call
+`updateVolumeData(idx, data?)`, the fast path that re-uploads only that volume,
+or set `isDirty` and let the next GPU update re-upload it:
+```js
+const vol = nv1.volumes[1]
+vol.img.fill(0, 0, vol.nVox3D) // edit in place
+vol.isDirty = true
+await nv1.setVolume(1, { opacity: 0.8 }) // or updateGLVolume(), ...
+```
+Any call that runs a GPU update works; `setFrame4D` does only when the frame
+changes. The update resets `isDirty` to false, and volumes without it keep
+their textures. Set `isDirty` after assigning a new `img` array too, so caches
+keyed only on the data version (such as the signal graph) refresh. Values are
+raw (before `scl_slope`/`scl_inter`), and calMin/calMax are not recomputed.
+
+`updateVolumeData` writes into the volume's existing texture when the volume
+is the background or the only overlay, for scalar and RGB/RGBA data, and a
+volume it modulates only has its modulation weights rewritten. It still
+allocates new textures with two or more overlays (they are re-oriented and
+blended into a new texture), in multi-instance mode (`instances`, the edited
+volume's texture is rebuilt), for WebGPU background masking, and for the
+gradient texture when lighting is on.
+
+Volumes drawn in chunks (those with a `chunkPlan`, including volumes NiiVue
+chunked because they exceed the GPU texture limit) are not supported by
+`updateVolumeData`, which logs a warning and returns. Setting `isDirty` on one
+whose `img` is in memory works, but the next GPU update re-streams every
+chunk, so it is not suited to per-frame updates. A volume streamed from a
+`chunkSource` (`loadChunkedVolume`) keeps no full `img`; its bricks come from
+the source, so `isDirty` is ignored for it (cleared with a one-time warning,
+nothing is re-streamed). A coarse floor level passed to `setBaseCoarseFloor`
+is meant to be a separate volume, not a loaded one: after editing its `img`
+in place, set its `isDirty` and pass it to `setBaseCoarseFloor` again. (A
+loaded volume passed as the floor is updated like any other dirty volume.)
+
+For a 4D RGB/RGBA volume the displayed frame is `frame4D`, as for scalar
+volumes, so the one-frame form of `updateVolumeData` writes the frame on
+screen.
+
+Re-registering a colormap name with `addColormap` replaces its colors in
+volumes that use it on their next GPU update (e.g. `updateGLVolume()`). Mesh
+layers, tracts and connectomes bake their colors when they are built, so they
+pick up the new colors on their next change (`setMeshLayerProperty`,
+`setTractOptions`, `setConnectomeOptions`, ...).
 
 ### Constructor (Flat Options)
 ```js
@@ -192,13 +239,13 @@ Note: `setDragMode(v)` still exists as a method (for string-to-number mapping).
 ### Volume Options
 Used by `loadVolumes()`, `addVolume()`, and `setVolume()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
-- Behavior: `isTransparentBelowCalMin`, `opacity`, `modulateAlpha`, `isNearestInterpolation` (2D sampling; unset = nearest for label data, linear otherwise)
+- Behavior: `isTransparentBelowCalMin`, `opacity`, `visible` (hide without changing `opacity`), `modulateAlpha`, `isNearestInterpolation` (2D sampling; unset = nearest for label data, linear otherwise)
 - UI: `isColorbarVisible`, `isLegendVisible`
 - 4D: `frame4D`, `limitFrames4D`
 
 ### Mesh Options
 Used by `loadMeshes()`, `addMesh()`, and `setMesh()`:
-- Display: `opacity`, `color`, `shaderType`
+- Display: `opacity`, `visible` (hide without changing `opacity`), `color`, `shaderType`
 - UI: `isColorbarVisible`, `isLegendVisible`
 
 ### Layer Options

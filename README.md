@@ -15,6 +15,8 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
   <tbody>
     <tr><td><a href="packages/niivue"><code>@niivue/niivue</code></a></td><td>Core WebGPU/WebGL2 medical image viewer</td><td><a href="https://www.npmjs.com/package/@niivue/niivue"><img src="https://img.shields.io/npm/v/@niivue/niivue/next" alt="npm"></a></td></tr>
     <tr><td><a href="packages/nv-react"><code>@niivue/nvreact</code></a></td><td>React bindings for NiiVue</td><td><a href="https://www.npmjs.com/package/@niivue/nvreact"><img src="https://img.shields.io/npm/v/@niivue/nvreact/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/uikit"><code>@niivue/uikit</code></a></td><td>Rulers, crosshairs, annotations, and an on-canvas control layer (buttons, menus, sliders, text fields, dialogs) for NiiVue</td><td><a href="https://www.npmjs.com/package/@niivue/uikit"><img src="https://img.shields.io/npm/v/@niivue/uikit/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/nv-ohif"><code>@niivue/nv-ohif</code></a></td><td>NiiVue viewport extension for the OHIF Viewer</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ohif"><img src="https://img.shields.io/npm/v/@niivue/nv-ohif/next" alt="npm"></a></td></tr>
     <tr><td><a href="packages/nv-web-component"><code>@niivue/nv-web-component</code></a></td><td>Lit-based Web Components for NiiVue</td><td><a href="https://www.npmjs.com/package/@niivue/nv-web-component"><img src="https://img.shields.io/npm/v/@niivue/nv-web-component/next" alt="npm"></a></td></tr>
     <tr><td><a href="packages/nv-ext-drawing"><code>@niivue/nv-ext-drawing</code></a></td><td>Drawing interpolation and segmentation tools</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-drawing"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-drawing/next" alt="npm"></a></td></tr>
     <tr><td><a href="packages/nv-ext-image-processing"><code>@niivue/nv-ext-image-processing</code></a></td><td>Image processing (Otsu thresholding, haze removal, etc.)</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-image-processing"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-image-processing/next" alt="npm"></a></td></tr>
@@ -78,7 +80,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup, tooling, and developm
 
 ## Releasing and Publishing
 
-Packages are versioned and published using [Nx Release](https://nx.dev/features/manage-releases) and `bun publish`. Ensure you are logged in to npm (`npm login`) and have publish access to the `@niivue` scope.
+Packages are versioned and published using [Nx Release](https://nx.dev/features/manage-releases) via the Release GitHub workflow:
+
+- **Release candidates** are published automatically on every push to `main`. Each merged PR that contains releasable conventional commits produces new `x.y.z-rc.N` versions on the npm `next` dist-tag.
+- **Stable releases** are manual. Run the Release workflow from the Actions tab on `main` with the "release candidate" box unchecked to publish `x.y.z` versions on the npm `latest` dist-tag.
+
+See the Releases section of [CONTRIBUTING.md](CONTRIBUTING.md) for details. To publish by hand instead, ensure you are logged in to npm (`npm login`) and have publish access to the `@niivue` scope:
 
 ```bash
 # 1. Version — bumps package.json and updates workspace deps

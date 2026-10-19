@@ -47,7 +47,7 @@ export function signalExtensions(): string[] {
  * inputs the caller supplies the paired sidecar (drag-drop pairing happens at
  * the controller layer).
  */
-export async function loadSignalRaw(
+async function loadSignalRaw(
   input: string | File,
   sidecar?: SignalSidecar | null,
 ): Promise<NVSignalRaw> {
@@ -81,7 +81,7 @@ export type SignalFromUrlOptions = {
 }
 
 /** Wrap raw signal data into a displayable NVSignal instance. */
-export function createSignal(
+function createSignal(
   raw: NVSignalRaw,
   opts: {
     name: string

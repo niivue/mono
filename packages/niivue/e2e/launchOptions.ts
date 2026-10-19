@@ -19,6 +19,11 @@ export const executablePathOverride: LaunchOptions = process.env
  * Brings up Dawn on SwiftShader, which is enough to run WebGPU in headless
  * Chromium. The config's default is plain WebGL2-on-SwiftShader, so only the
  * specs that need a GPU adapter pay for this.
+ *
+ * `--use-vulkan=swiftshader` is what lets a WebGPU canvas present. Without it
+ * Chromium cannot allocate the canvas's shared image, destroys the device on
+ * the first frame, and every later `onSubmittedWorkDone` rejects with "A valid
+ * external Instance reference no longer exists".
  */
 export const webgpuLaunchOptions: LaunchOptions = {
   args: [
@@ -26,6 +31,7 @@ export const webgpuLaunchOptions: LaunchOptions = {
     '--enable-unsafe-webgpu',
     '--use-angle=swiftshader',
     '--enable-features=Vulkan',
+    '--use-vulkan=swiftshader',
   ],
   ...executablePathOverride,
 }

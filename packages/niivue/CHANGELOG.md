@@ -1,3 +1,14 @@
+## 1.0.0-rc.24 (2026-10-19)
+
+### Fixes
+
+- **niivue:** skip the CPU chunk pick for a hidden background ([#224](https://github.com/niivue/mono/issues/224))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.23 (2026-10-18)
 
 ### Fixes

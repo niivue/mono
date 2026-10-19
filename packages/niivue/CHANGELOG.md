@@ -1,3 +1,14 @@
+## 1.0.0-rc.25 (2026-10-19)
+
+### Fixes
+
+- **niivue:** reorient loaded drawings using the native dims ([56734439](https://github.com/niivue/mono/commit/56734439))
+
+### Thank You
+
+- Claude Fable 5.1
+- Steffen Bollmann
+
 ## 1.0.0-rc.24 (2026-10-19)
 
 ### Fixes

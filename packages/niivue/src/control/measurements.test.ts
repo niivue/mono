@@ -223,7 +223,7 @@ describe('buildMeasurement slice metadata', () => {
 })
 
 describe('removeMeasurement', () => {
-  test('emits measurementRemoved before the mutation, then splices and redraws', () => {
+  test('splices, then emits measurementRemoved with the item and former index, then redraws', () => {
     const { ctrl, emit, drawScene, completedMeasurements } = fakeCtrl()
     addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0])
     addMeasurement(ctrl, [0, -1, 0], [0, 1, 0])
@@ -238,7 +238,7 @@ describe('removeMeasurement', () => {
     })
     removeMeasurement(ctrl, 0)
 
-    expect(lengthAtEmit).toBe(2) // removal events fire before the mutation
+    expect(lengthAtEmit).toBe(1) // removal events fire after the mutation
     expect(emit).toHaveBeenCalledWith('measurementRemoved', {
       measurement: removed,
       index: 0,
@@ -255,8 +255,8 @@ describe('removeMeasurement', () => {
     addMeasurement(ctrl, [-1, -1, 0], [1, 1, 0]) // C
     const [a, b, c] = completedMeasurements
     emit.mockImplementation((type: string, detail?: unknown) => {
-      // Re-entrant: while B is being removed, drop A. The array shifts, so
-      // the outer call's index 1 now names C.
+      // Re-entrant: from B's removal event, drop A. B is already spliced when
+      // the event fires, so the listener sees [A, C] and index 0 is A.
       if (
         type === 'measurementRemoved' &&
         detail &&
@@ -271,7 +271,7 @@ describe('removeMeasurement', () => {
     expect(completedMeasurements).not.toContain(b)
   })
 
-  test('does not splice twice when a listener already removed the measurement', () => {
+  test('a listener re-entering with an index sees the array already updated', () => {
     const { ctrl, emit, completedMeasurements } = fakeCtrl()
     addMeasurement(ctrl, [-1, 0, 0], [1, 0, 0]) // A
     addMeasurement(ctrl, [0, -1, 0], [0, 1, 0]) // B
@@ -280,12 +280,13 @@ describe('removeMeasurement', () => {
     emit.mockImplementation((type: string) => {
       if (type === 'measurementRemoved' && !nested) {
         nested = true
-        removeMeasurement(ctrl, 0) // the same measurement, from inside the event
+        removeMeasurement(ctrl, 0) // index 0 is now B: A is already gone
       }
     })
     removeMeasurement(ctrl, 0)
-    expect(completedMeasurements).toEqual([b])
+    expect(completedMeasurements).toEqual([])
     expect(completedMeasurements).not.toContain(a)
+    expect(completedMeasurements).not.toContain(b)
   })
 
   test('survives a listener replacing the array (clearMeasurements)', () => {

@@ -1,3 +1,14 @@
+## 1.0.0-rc.26 (2026-10-19)
+
+### Fixes
+
+- **niivue:** report annotation.style whole in load change events ([1e7a8d53](https://github.com/niivue/mono/commit/1e7a8d53))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.25 (2026-10-19)
 
 ### Fixes

@@ -148,8 +148,7 @@ export function wireNiiVueToBridge(
     emitVolumes()
   })
   nv.addEventListener('volumeUpdated', emitVolumes)
-  // volumeRemoved fires before the volume leaves the list.
-  nv.addEventListener('volumeRemoved', () => queueMicrotask(emitVolumes))
+  nv.addEventListener('volumeRemoved', emitVolumes)
 
   nv.addEventListener('meshLoaded', (event) => {
     bridge.emit('imageLoaded', {

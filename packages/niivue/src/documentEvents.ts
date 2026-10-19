@@ -45,6 +45,10 @@ const RENAMED: Readonly<Record<string, string>> = {
   'layout.margin': 'tileMargin',
 }
 
+// Nested objects set as a whole (one `change` for the object), unlike ui.graph,
+// whose keys each have a setter.
+const WHOLE_OBJECT_SETTERS: ReadonlySet<string> = new Set(['annotationStyle'])
+
 function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
@@ -107,13 +111,17 @@ function diffKeys(
   for (const key of keys) {
     const b = before[key]
     const a = after[key]
-    if (isPlainObject(b) && isPlainObject(a)) {
+    const name = property(key)
+    if (
+      isPlainObject(b) &&
+      isPlainObject(a) &&
+      !WHOLE_OBJECT_SETTERS.has(name)
+    ) {
       // Nested settings object (ui.graph): its keys have their own setters.
-      const parent = property(key)
-      diffKeys((sub) => `${parent}${capitalise(sub)}`, b, a, out)
+      diffKeys((sub) => `${name}${capitalise(sub)}`, b, a, out)
       continue
     }
-    if (!settingEquals(b, a)) out.push({ property: property(key), value: a })
+    if (!settingEquals(b, a)) out.push({ property: name, value: a })
   }
 }
 

@@ -87,6 +87,19 @@ describe('settingsChangeEvents', () => {
     ])
   })
 
+  test('annotation.style is reported whole, like its setter', () => {
+    const before = empty()
+    const after = empty()
+    before.annotation.style = { fillColor: [1, 0, 0, 1], strokeWidth: 1 }
+    after.annotation.style = { fillColor: [0, 1, 0, 1], strokeWidth: 1 }
+    expect(settingsChangeEvents(before, after)).toEqual([
+      {
+        property: 'annotationStyle',
+        value: { fillColor: [0, 1, 0, 1], strokeWidth: 1 },
+      },
+    ])
+  })
+
   test('a key present on only one side is a change', () => {
     const before = empty()
     const after = empty()

@@ -40,6 +40,7 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { drawnOpacity, isVolumeDrawn } from '@/view/NVVolumeVisibility'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
 import {
   type UpdateBindGroupsOptions,
@@ -533,7 +534,7 @@ export default class NVGlview {
     // only rebuilds the overlay prepass, so it would leave that matrix stale.
     if (vols[0].modulationImage) return false
     const overlay = vols[1]
-    if ((overlay.opacity ?? 1) <= 0) return false
+    if (!isVolumeDrawn(overlay)) return false
     return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)
   }
 
@@ -1038,8 +1039,8 @@ export default class NVGlview {
             md.volume.paqdUniforms,
             md.volume.transmittanceCutoff,
             // This tile's background volume, which is not always volumes[0]
-            // (a global3d tile binds its own).
-            vol.opacity ?? 1,
+            // (a global3d tile binds its own). 0 when hidden.
+            drawnOpacity(vol),
           )
           // Independent hi-res chunked overlay: stream its own working set and
           // draw it as translucent cubes over the base, in the same pass. Uses
@@ -1967,7 +1968,8 @@ export default class NVGlview {
     // 3D render. Mirrors the WebGPU backend.
     if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
       const vol = md.volumes[0]
-      if (vol?.extentsMin && vol?.extentsMax) {
+      // A hidden background is not drawn, so it must not answer a pick.
+      if (vol?.extentsMin && vol?.extentsMax && isVolumeDrawn(vol)) {
         const near = NVTransforms.unprojectScreen(
           hit.normalizedX,
           hit.normalizedY,
@@ -2112,7 +2114,13 @@ export default class NVGlview {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     // Draw volume with depth-pick shader (raymarches from any viewing angle)
     const volumes = md.getVolumes()
-    if (this.volumeRenderer.hasVolume() && volumes.length > 0) {
+    // A hidden (or fully transparent) background is not drawn, so it must not
+    // answer a pick either; matches the WebGPU gate.
+    if (
+      this.volumeRenderer.hasVolume() &&
+      volumes.length > 0 &&
+      isVolumeDrawn(volumes[0])
+    ) {
       const vol = volumes[0]
       if (vol?.matRAS && vol.volScale) {
         this.volumeRenderer.drawDepthPick(

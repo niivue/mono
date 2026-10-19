@@ -3899,14 +3899,39 @@ export default class NiiVue extends EventTarget {
     }
     return new Promise((resolve) => {
       let timer: ReturnType<typeof setTimeout> | null = null
+      let finished = false
+      let sawBusy = false
+      const onProgress = (): void => {
+        sawBusy = true
+      }
       const done = (): void => {
+        if (finished) return
+        finished = true
         this.removeEventListener('chunkStreamIdle', done)
+        this.removeEventListener('chunkStreamProgress', onProgress)
         if (timer !== null) clearTimeout(timer)
         resolve()
       }
       this.addEventListener('chunkStreamIdle', done)
+      this.addEventListener('chunkStreamProgress', onProgress)
       timer = setTimeout(done, timeoutMs)
       this.drawScene()
+      // `chunkStreamIdle` follows only a busy frame. A view that already holds
+      // every brick it draws (a 2D plane through resident bricks only) never
+      // has one, so once the kicked draw has run without queueing anything,
+      // the stream is as settled as it will get.
+      const check = (framesLeft: number): void => {
+        requestAnimationFrame(() => {
+          if (finished || sawBusy) return
+          if (framesLeft > 1) {
+            check(framesLeft - 1)
+            return
+          }
+          const now = this.chunkStreamStats()
+          if (!now || now.pending + now.inFlight === 0) done()
+        })
+      }
+      check(2)
     })
   }
 

@@ -187,6 +187,7 @@ describe('capabilities', () => {
     expect(got.settings).toEqual([])
     expect(got.colormaps).toBeUndefined()
     expect(got.volumeTransforms).toBeUndefined()
+    expect(got.controls).toBeUndefined()
     for (const members of Object.values(
       got.features as Record<string, string[]>,
     ))

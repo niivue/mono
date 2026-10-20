@@ -644,7 +644,12 @@ async function benchRenderFramesWithSplit(
   const tq = nv.view?.gl ? setupGlTimerQuery(nv.view.gl) : null
   setPerfMarksEnabled(true)
   for (let i = 0; i < warmup; i++) {
-    if (beforeFrame) await beforeFrame(i)
+    if (beforeFrame) {
+      await beforeFrame(i)
+      // The update scheduled the controller's own frame. Drop it so only the
+      // render below runs, not a second one while we wait for the GPU.
+      nv.cancelPendingFrame()
+    }
     nv.view.render()
     await _waitGpu(nv)
   }
@@ -658,7 +663,12 @@ async function benchRenderFramesWithSplit(
   for (let i = 0; i < frames; i++) {
     const t0 = performance.now()
     tq?.begin()
-    if (beforeFrame) await beforeFrame(i)
+    if (beforeFrame) {
+      await beforeFrame(i)
+      // The update scheduled the controller's own frame. Drop it so only the
+      // render below runs, not a second one while we wait for the GPU.
+      nv.cancelPendingFrame()
+    }
     nv.view.render()
     tq?.end()
     await _waitGpu(nv)

@@ -6465,16 +6465,27 @@ export default class NiiVue extends EventTarget {
     if (this.opts.instances) this.updateTilesFromInstances()
   }
 
+  /**
+   * Drop the frame that {@link drawScene} has scheduled but not yet drawn.
+   * For callers that render the view themselves, such as a benchmark timing
+   * each frame: a state change (for example {@link updateVolumeData}) also
+   * schedules a frame, which would otherwise draw a second time.
+   * @returns true when a scheduled frame was dropped
+   */
+  cancelPendingFrame(): boolean {
+    if (this._rafId === null) return false
+    cancelAnimationFrame(this._rafId)
+    this._rafId = null
+    this.framePending = false
+    return true
+  }
+
   destroy(): void {
     this._destroyed = true
     this._animation?.stop('destroyed')
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false
-    if (this._rafId !== null) {
-      cancelAnimationFrame(this._rafId)
-      this._rafId = null
-      this.framePending = false
-    }
+    this.cancelPendingFrame()
     removeInteractionListeners(this)
     if (this.resizeObserver) {
       this.resizeObserver.disconnect()

@@ -48,30 +48,30 @@ describe('convertLegacyDocument', () => {
   })
 
   test('maps sceneData to scene (volScaleMultiplier -> scaleMultiplier)', () => {
-    expect(doc.scene.azimuth).toBe(110)
-    expect(doc.scene.crosshairPos).toEqual([0.5, 0.5, 0.6])
-    expect(doc.scene.scaleMultiplier).toBe(1.43)
+    expect(doc.scene?.azimuth).toBe(110)
+    expect(doc.scene?.crosshairPos).toEqual([0.5, 0.5, 0.6])
+    expect(doc.scene?.scaleMultiplier).toBe(1.43)
   })
 
   test('maps opts into the right groups (and colors onto scene)', () => {
-    expect(doc.scene.backgroundColor).toEqual([0, 0, 0, 1])
-    expect(doc.ui.crosshairColor).toEqual([1, 0, 0, 1])
-    expect(doc.ui.isColorbarVisible).toBe(true)
-    expect(doc.layout.isRadiological).toBe(true)
-    expect(doc.volume.isNearestInterpolation).toBe(true)
-    expect(doc.draw.penValue).toBe(3)
-    expect(doc.interaction.primaryDragMode).toBe(2)
+    expect(doc.scene?.backgroundColor).toEqual([0, 0, 0, 1])
+    expect(doc.ui?.crosshairColor).toEqual([1, 0, 0, 1])
+    expect(doc.ui?.isColorbarVisible).toBe(true)
+    expect(doc.layout?.isRadiological).toBe(true)
+    expect(doc.volume?.isNearestInterpolation).toBe(true)
+    expect(doc.draw?.penValue).toBe(3)
+    expect(doc.interaction?.primaryDragMode).toBe(2)
   })
 
   test('links volumes by URL and skips URL-less ones (with a warning)', () => {
-    expect(doc.volumes.length).toBe(1)
-    expect(doc.volumes[0]).toEqual({
+    expect(doc.volumes?.length).toBe(1)
+    expect(doc.volumes?.[0]).toEqual({
       url: '../images/mni152.nii.gz',
       name: 'mni152',
       colormap: 'gray',
       opacity: 1,
     })
-    expect(doc.volumes[0].data).toBeUndefined() // linked, not embedded
+    expect(doc.volumes?.[0].data).toBeUndefined() // linked, not embedded
     expect(warnings.some((w) => w.includes('no-url-vol'))).toBe(true)
   })
 
@@ -84,5 +84,88 @@ describe('convertLegacyDocument', () => {
   test('reports unmapped opts + the clip plane', () => {
     expect(warnings.some((w) => w.includes('someUnknownOpt'))).toBe(true)
     expect(warnings.some((w) => w.includes('clipPlane'))).toBe(true)
+  })
+})
+
+describe('convertLegacyDocument: mesh colour, shader and layers', () => {
+  const convert = (meshes: unknown[]) =>
+    convertLegacyDocument({ meshesString: JSON.stringify(meshes) })
+
+  test('keeps a scalar-overlay layer with its colormap, window and opacity', () => {
+    const { doc, warnings } = convert([
+      {
+        url: 'lh.white',
+        name: 'lh.white',
+        layers: [
+          {
+            url: 'lh.curv',
+            name: 'curv',
+            colormap: 'nih',
+            cal_min: -0.75,
+            cal_max: 0.75,
+            opacity: 0.8,
+            useNegativeCmap: false,
+          },
+        ],
+      },
+    ])
+    expect(doc.meshes?.[0].layers).toEqual([
+      {
+        url: 'lh.curv',
+        name: 'curv',
+        colormap: 'nih',
+        calMin: -0.75,
+        calMax: 0.75,
+        opacity: 0.8,
+      },
+    ])
+    expect(warnings).toEqual([])
+  })
+
+  test('useNegativeCmap becomes a named negative colormap', () => {
+    const { doc } = convert([
+      {
+        url: 'a.mz3',
+        layers: [
+          { url: 'x.curv', useNegativeCmap: true },
+          { url: 'y.curv', useNegativeCmap: true, colormapNegative: 'cool' },
+        ],
+      },
+    ])
+    expect(doc.meshes?.[0].layers?.[0].colormapNegative).toBe('winter')
+    expect(doc.meshes?.[0].layers?.[1].colormapNegative).toBe('cool')
+  })
+
+  test('maps rgba255 to a 0..1 color', () => {
+    const { doc } = convert([{ url: 'a.mz3', rgba255: [255, 255, 0, 255] }])
+    expect(doc.meshes?.[0].color).toEqual([1, 1, 0, 1])
+  })
+
+  test('maps meshShaderIndex to a shader name; unknown indices warn', () => {
+    const { doc, warnings } = convert([
+      { url: 'a.mz3', meshShaderIndex: 14 },
+      { url: 'b.mz3', name: 'b', meshShaderIndex: 3 },
+      { url: 'c.mz3' },
+    ])
+    expect(doc.meshes?.[0].shaderType).toBe('crosscut')
+    expect(doc.meshes?.[1].shaderType).toBe('phong')
+    expect(doc.meshes?.[2].shaderType).toBeUndefined() // absent -> loader default
+    expect(warnings).toEqual([
+      'mesh "b": meshShaderIndex 3 has no equivalent — using \'phong\'',
+    ])
+  })
+
+  test('skips a layer without a URL, with a warning, and keeps the mesh', () => {
+    const { doc, warnings } = convert([
+      {
+        url: 'a.mz3',
+        name: 'a',
+        layers: [{ colormap: 'hot', values: [1, 2, 3] }],
+      },
+    ])
+    expect(doc.meshes?.[0]).toEqual({ url: 'a.mz3', name: 'a' })
+    expect(
+      warnings.some((w) => w.includes('mesh "a": a layer has no URL')),
+    ).toBe(true)
   })
 })

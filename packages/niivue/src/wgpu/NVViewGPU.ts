@@ -40,6 +40,7 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { drawnOpacity, isVolumeDrawn } from '@/view/NVVolumeVisibility'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
 import {
   type UpdateBindGroupsOptions,
@@ -622,7 +623,7 @@ export default class NVView {
     // only rebuilds the overlay prepass, so it would leave that matrix stale.
     if (vols[0].modulationImage) return false
     const overlay = vols[1]
-    if ((overlay.opacity ?? 1) <= 0) return false
+    if (!isVolumeDrawn(overlay)) return false
     const handled = await this.volumeRenderer.updateAffineOverlay(
       device,
       vols[0],
@@ -1272,8 +1273,8 @@ export default class NVView {
             md.volume.paqdUniforms,
             md.volume.transmittanceCutoff,
             // This tile's background volume, which is not always volumes[0]
-            // (a global3d tile binds its own).
-            vol.opacity ?? 1,
+            // (a global3d tile binds its own). 0 when hidden.
+            drawnOpacity(vol),
           )
           // Independent hi-res chunked overlay: stream its own working set and
           // draw it as translucent cubes over the base, in the same pass. Uses
@@ -2765,7 +2766,8 @@ export default class NVView {
     // 3D render. Meshes, if any, still take the GPU path below for 2D tiles.
     if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
       const vol = md.volumes[0]
-      if (vol?.extentsMin && vol?.extentsMax) {
+      // A hidden background is not drawn, so it must not answer a pick.
+      if (vol?.extentsMin && vol?.extentsMax && isVolumeDrawn(vol)) {
         const near = NVTransforms.unprojectScreen(
           hit.normalizedX,
           hit.normalizedY,
@@ -2906,7 +2908,7 @@ export default class NVView {
     const volumes = md.getVolumes()
     const vr = this.volumeRenderer
     let volumeUniformData: Float32Array | null = null
-    if (vr.hasVolume() && volumes.length > 0 && (volumes[0].opacity ?? 1) > 0) {
+    if (vr.hasVolume() && volumes.length > 0 && isVolumeDrawn(volumes[0])) {
       const matRAS = volumes[0].matRAS
       const volScale = volumes[0].volScale
       const volumeTexture = vr.volumeTexture

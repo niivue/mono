@@ -182,6 +182,10 @@ export type NVImage = {
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean
   opacity?: number
+  /** Whether the volume is drawn (default: true). Hidden volumes are neither
+   * drawn nor picked but keep their `opacity`, so a hide/show round trip
+   * restores it. Symmetric with `NVMesh.visible`. */
+  visible?: boolean
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
@@ -244,6 +248,14 @@ export type NVImage = {
   chunkSource?: VolumeChunkSource
   /** Optional draw-time spacing for chunked 3D rendering. Sampling remains in original voxel coordinates. */
   chunkExplode?: VolumeChunkExplode
+  /**
+   * Optional per-brick opacity for chunked 3D rendering, indexed like
+   * `chunkPlan.chunks`; a missing entry means 1. Scales what that brick draws,
+   * colour and coverage together (the same lane as the streaming cross-fade),
+   * so one brick can be kept while the rest are dimmed and show what is behind
+   * them (see `NiiVue.setVolumeBrickOpacity`). Read every frame.
+   */
+  chunkBrickOpacity?: ArrayLike<number>
   /**
    * Optional CPU value lookup in world mm, used by the 3D depth-pick to find the
    * first visible voxel along the view ray for a chunked/streamed volume (which
@@ -1135,6 +1147,7 @@ export type NiiVueOptions = {
   // Infrastructure (set once at construction)
   instances?: NVInstance[]
   globalCamera?: NVGlobalCamera
+  /** Rendering backend. Defaults to 'webgl2' ('webgpu' in the WebGPU-only build). */
   backend?: BackendType
   isAntiAlias?: boolean
   devicePixelRatio?: number
@@ -1451,6 +1464,9 @@ export type ImageFromUrlOptions = {
   limitFrames4D?: number
   /** Volume opacity 0-1 (default: 1) */
   opacity?: number
+  /** Whether the volume is drawn (default: true). Hidden volumes keep their
+   * opacity; `setVolume(i, { visible: false })` is the hide toggle. */
+  visible?: boolean
   /** Minimum intensity for color mapping */
   calMin?: number
   /** Maximum intensity for color mapping */
@@ -1556,6 +1572,97 @@ export type VolumeUpdate = Omit<
  * Same shape as MeshFromUrlOptions minus load-only fields.
  */
 export type MeshUpdate = Omit<MeshFromUrlOptions, 'url'>
+
+// ============================================================
+// Animation Types
+// ============================================================
+
+/** A loaded volume's properties that {@link AnimationTarget} can move. */
+export interface VolumeAnimationTarget {
+  calMin?: number
+  calMax?: number
+  /** Layer opacity, 0 to 1. */
+  opacity?: number
+  /** 4D frame index; moves through the frames in between, in order. */
+  frame4D?: number
+}
+
+/** A loaded mesh's properties that {@link AnimationTarget} can move. */
+export interface MeshAnimationTarget {
+  /** Mesh opacity, 0 to 1. */
+  opacity?: number
+}
+
+/**
+ * The state `animateTo` moves the scene to. Every field is optional and
+ * anything left out stays where it is. Volumes, meshes and clip planes are
+ * keyed by index, so the target is plain JSON.
+ */
+export interface AnimationTarget {
+  /** 3D camera azimuth in degrees. */
+  azimuth?: number
+  /** 3D camera elevation in degrees. */
+  elevation?: number
+  /** 3D zoom. */
+  scaleMultiplier?: number
+  /** 3D render pan. */
+  renderPan?: [number, number]
+  /** 2D pan and zoom: x, y, z in mm and the zoom factor. */
+  pan2Dxyzmm?: [number, number, number, number]
+  /** Crosshair position in world millimetres. */
+  crosshairMM?: [number, number, number]
+  /** Clip planes by index, each as [depth, azimuth, elevation]. */
+  clipPlanes?: Record<number, [number, number, number]>
+  /** Volumes by index. */
+  volumes?: Record<number, VolumeAnimationTarget>
+  /** Meshes by index. */
+  meshes?: Record<number, MeshAnimationTarget>
+}
+
+/** The pace of a transition: cubic ease in, out, both, or none. */
+export type AnimationEasing = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut'
+
+/** How `animateTo` runs a transition. */
+export interface AnimationOptions {
+  /** Length in milliseconds. Default 500; 0 jumps straight to the target. */
+  duration?: number
+  /** Default `'easeInOut'`. A function maps elapsed 0..1 to progress 0..1. */
+  easing?: AnimationEasing | ((t: number) => number)
+  /**
+   * `'shortest'` (default) turns an angle the short way round, so 350 to 10
+   * moves 20 degrees. `'literal'` interpolates the numbers as given, so 0 to
+   * 360 is a full turn.
+   */
+  angles?: 'shortest' | 'literal'
+  /** Stop when the user presses on or scrolls the canvas. Default true. */
+  interruptOnInput?: boolean
+}
+
+/**
+ * Why a transition ended. `'stalled'` means the page stopped drawing frames
+ * (a hidden tab, say), so the scene jumped to the target instead. `'failed'`
+ * means a setter threw or rejected while writing the target, so the scene
+ * may not be on it; `AnimationResult.failed` names what did not land.
+ */
+export type AnimationEndReason =
+  | 'finished'
+  | 'stalled'
+  | 'failed'
+  | 'superseded'
+  | 'input'
+  | 'stopped'
+  | 'destroyed'
+
+/** What `animateTo` resolves with. */
+export interface AnimationResult {
+  /** True when the scene reached the target. */
+  completed: boolean
+  reason: AnimationEndReason
+  /** Milliseconds from the start to the end. */
+  elapsedMs: number
+  /** With `'failed'`: the parts whose target write failed, as `'azimuth'`, `'volumes[1]'`. */
+  failed?: string[]
+}
 
 // ============================================================
 // Location / Callback Types

@@ -893,26 +893,7 @@ export function explodeOffsetMMAtFrac(
 ): Vec3f {
   if (!chunkExplodeEnabled(explode)) return [0, 0, 0]
   const [vx, vy, vz] = plan.volumeDims
-  const voxel = [
-    Math.floor((frac[0] ?? 0.5) * vx),
-    Math.floor((frac[1] ?? 0.5) * vy),
-    Math.floor((frac[2] ?? 0.5) * vz),
-  ]
-  let chunkIndex = -1
-  for (let i = 0; i < plan.chunks.length; i++) {
-    const c = plan.chunks[i]
-    if (
-      voxel[0] >= c.voxelOrigin[0] &&
-      voxel[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
-      voxel[1] >= c.voxelOrigin[1] &&
-      voxel[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
-      voxel[2] >= c.voxelOrigin[2] &&
-      voxel[2] < c.voxelOrigin[2] + c.voxelDims[2]
-    ) {
-      chunkIndex = i
-      break
-    }
-  }
+  const chunkIndex = chunkIndexAtFrac(plan, frac)
   if (chunkIndex < 0) return [0, 0, 0]
   const off = chunkExplodeOffsetFrac(plan, chunkIndex, explode)
   const ox = off[0] * vx
@@ -923,4 +904,69 @@ export function explodeOffsetMMAtFrac(
     ox * matRAS[4] + oy * matRAS[5] + oz * matRAS[6],
     ox * matRAS[8] + oy * matRAS[9] + oz * matRAS[10],
   ]
+}
+
+/**
+ * Index of the chunk whose data extent (halo excluded) contains the voxel at
+ * volume fraction `frac` ([0,1] per axis), or -1 when no chunk does (the point
+ * is outside the volume). Scans the chunks, so non-uniform plans work too.
+ */
+export function chunkIndexAtFrac(
+  plan: ChunkPlan,
+  frac: ArrayLike<number>,
+): number {
+  const [vx, vy, vz] = plan.volumeDims
+  const voxel = [
+    Math.floor((frac[0] ?? 0.5) * vx),
+    Math.floor((frac[1] ?? 0.5) * vy),
+    Math.floor((frac[2] ?? 0.5) * vz),
+  ]
+  for (let i = 0; i < plan.chunks.length; i++) {
+    const c = plan.chunks[i]
+    if (
+      voxel[0] >= c.voxelOrigin[0] &&
+      voxel[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
+      voxel[1] >= c.voxelOrigin[1] &&
+      voxel[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
+      voxel[2] >= c.voxelOrigin[2] &&
+      voxel[2] < c.voxelOrigin[2] + c.voxelDims[2]
+    ) {
+      return i
+    }
+  }
+  return -1
+}
+
+/**
+ * The eight world-mm corners of one chunk's data box (halo excluded), moved by
+ * the explode when one is on. Corner `c` takes the high edge on x when bit 0
+ * of `c` is set, on y for bit 1 and on z for bit 2, so an edge joins corners
+ * whose indices differ in one bit. Unlike `explodedChunkAABB` this keeps the
+ * box's orientation (an oblique `matRAS` gives an oblique box) and also works
+ * with the explode off. Returns null when the chunk is out of range.
+ */
+export function explodedChunkCornersMM(
+  plan: ChunkPlan,
+  matRAS: ArrayLike<number>,
+  explode: ChunkExplodeOptions | null | undefined,
+  chunkIndex: number,
+): Array<[number, number, number]> | null {
+  const desc = plan.chunks[chunkIndex]
+  if (!desc) return null
+  const vox2mm = voxToMMMatrix(
+    chunkExplodedMatRAS(plan, chunkIndex, matRAS as Float32Array, explode),
+  )
+  const ox = desc.voxelOrigin[0]
+  const oy = desc.voxelOrigin[1]
+  const oz = desc.voxelOrigin[2]
+  const ex = ox + desc.voxelDims[0]
+  const ey = oy + desc.voxelDims[1]
+  const ez = oz + desc.voxelDims[2]
+  const corners: Array<[number, number, number]> = []
+  for (let c = 0; c < 8; c++) {
+    corners.push(
+      applyMat(vox2mm, c & 1 ? ex : ox, c & 2 ? ey : oy, c & 4 ? ez : oz),
+    )
+  }
+  return corners
 }

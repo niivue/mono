@@ -1,0 +1,1621 @@
+/**
+ * The core tools, answered from a NiiVue scene.
+ *
+ * `coreHandlers` turns a host, which is a NiiVue instance and a few hooks
+ * the app fills in, into the handlers the client answers requests with.
+ * Nothing here imports NiiVue: `View` names the part of its API the core
+ * touches, so the app passes its own instance and a test passes a fake.
+ * The hooks are where an app adds what NiiVue does not know: its atlas,
+ * whether that atlas applies to the loaded volume, how it describes a
+ * place to a person, and what it does when the crosshair is moved for it.
+ */
+
+import {
+  cameraForPlane,
+  clipNormal,
+  depthThrough,
+  namePlane,
+  PLANE_NONE,
+  planeDepthCuts,
+  resolvePlane,
+} from '../planes'
+import type { PlaneState, RegionSummary, TabState } from '../protocol'
+import { ambiguityMessage, findRegion, regionMentions } from '../regions'
+import { COLORMAP_TYPES } from '../settings'
+import {
+  LAYOUTS,
+  nameFor,
+  SHOW_RENDER,
+  SLICE_TYPES,
+  type ViewState,
+} from '../views'
+import { animateHandlers } from './animate'
+import { controlHandlers } from './controls'
+import { dataHandlers } from './data'
+import {
+  globalCameraFrom,
+  instanceHandlers,
+  instancesState,
+  reportedCamera,
+} from './instances'
+import { checkFits, fetchValues, oneSource } from './liveData'
+import { markHandlers } from './marks'
+import { meshHandlers } from './meshes'
+import {
+  clamp,
+  clearable,
+  flag,
+  integer,
+  nameFromUrl,
+  nothingIn,
+  number,
+  numbers,
+  type Params,
+  point,
+  pointIfGiven,
+  put,
+  record,
+  text,
+} from './params'
+import { pickIndex } from './pick'
+import { settingHandlers } from './settings'
+import { signalHandlers } from './signals'
+import {
+  claimSpread,
+  isLatestSpread,
+  requireSpread,
+  spreadVolume,
+} from './spread'
+import type {
+  AffineTransform,
+  AtlasLike,
+  Handlers,
+  LabelTable,
+  NiiVueHost,
+  PointLabel,
+  ShownVolume,
+  View,
+  VolumeToLoad,
+  VolumeUpdate,
+} from './view'
+import { viewportHandlers } from './viewport'
+
+/** The default width a screenshot is scaled down to. */
+export const SCREENSHOT_WIDTH = 1024
+
+/** Where the scene stands, for a hello or an answer's envelope. */
+export function sceneState(host: NiiVueHost): TabState {
+  const { view } = host
+  const volume = view.volumes[0]?.name ?? null
+  return {
+    volume,
+    crosshair: volume ? { mm: Array.from(view.getCrosshairPos()) } : null,
+    plane: volume ? planeState(host) : null,
+    ...(host.controls
+      ? { controls: host.controls.list().map((c) => c.id) }
+      : {}),
+    ...(host.data ? { data: host.data.list().map((e) => e.id) } : {}),
+    ...(view.opts?.instances?.length
+      ? { instances: view.opts.instances.map((i) => i.id) }
+      : {}),
+    ...(host.extraState?.() ?? {}),
+  }
+}
+
+function planeState(host: NiiVueHost): PlaneState {
+  const [depth, azimuth, elevation] = host.view.getClipPlaneDepthAziElev(0)
+  const name = host.planeName?.() ?? namePlane(depth, azimuth, elevation)
+  return { name, depth, azimuth, elevation }
+}
+
+function camera(view: View): { azimuth: number; elevation: number } {
+  return { azimuth: view.azimuth, elevation: view.elevation }
+}
+
+/** Whether the page's NiiVue exposes its view layout. */
+function hasLayout(view: View): boolean {
+  return view.sliceType !== undefined
+}
+
+/** The view layout by name. */
+export function viewState(view: View): ViewState {
+  return {
+    slice: nameFor(SLICE_TYPES, view.sliceType),
+    layout: nameFor(LAYOUTS, view.multiplanarType),
+    ...(view.mosaicString ? { mosaic: view.mosaicString } : {}),
+    showRender: nameFor(SHOW_RENDER, view.showRender),
+    radiological: view.isRadiological ?? false,
+    colorbar: view.isColorbarVisible ?? false,
+  }
+}
+
+/** Turns the camera to look straight at the face a plane at these angles exposes. */
+function facePlane(view: View, azimuth: number, elevation: number): void {
+  const at = cameraForPlane(azimuth, elevation)
+  view.azimuth = at.azimuth
+  view.elevation = at.elevation
+}
+
+/** Whether a volume's name says it is in MNI space, when nobody said. */
+export function looksMni(name: string): boolean {
+  return /mni/i.test(name)
+}
+
+const summary = ({
+  label,
+  name,
+  centroid,
+  voxels,
+}: RegionSummary): RegionSummary => ({ label, name, centroid, voxels })
+
+/** Label lookup tables the core knows by name; NiiVue 1.0 has each built in. */
+export const LABEL_TABLES = ['freesurfer'] as const
+
+/** Whether `labels` is an address to fetch a table from, rather than a name the core knows. */
+function isAddress(labels: string): boolean {
+  return labels.includes('/')
+}
+
+/**
+ * Fetches a label table from an address the page can reach, and fills in
+ * what NiiVue's own reader would: `I` counting from 0, and `A` opaque with
+ * label 0 clear. Refuses in words when the address cannot be fetched or
+ * what it holds is not a table.
+ */
+export async function fetchLabelTable(address: string): Promise<LabelTable> {
+  let body: unknown
+  try {
+    const response = await fetch(address)
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`.trim())
+    }
+    body = await response.json()
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `The label table at ${address} could not be fetched: ${why}`,
+    )
+  }
+  const numbers = (value: unknown): value is number[] =>
+    Array.isArray(value) && value.every((v) => typeof v === 'number')
+  const strings = (value: unknown): value is string[] =>
+    Array.isArray(value) && value.every((v) => typeof v === 'string')
+  const table =
+    body && typeof body === 'object'
+      ? (body as Partial<Record<keyof LabelTable, unknown>>)
+      : {}
+  const { R, G, B, A, I, labels } = table
+  const unreadable = () =>
+    new Error(
+      `The label table at ${address} is not one NiiVue can read: it needs R, G and B arrays of one length, with I, A and labels optional.`,
+    )
+  if (!numbers(R) || R.length === 0) throw unreadable()
+  const fits = (value: unknown): value is number[] =>
+    numbers(value) && value.length === R.length
+  if (
+    !fits(G) ||
+    !fits(B) ||
+    (A !== undefined && !fits(A)) ||
+    (I !== undefined && !fits(I)) ||
+    (labels !== undefined && !strings(labels))
+  ) {
+    throw unreadable()
+  }
+  const indices = I ?? R.map((_, i) => i)
+  return {
+    R,
+    G,
+    B,
+    A: A ?? indices.map((i) => (i === 0 ? 0 : 255)),
+    I: indices,
+    ...(labels ? { labels } : {}),
+  }
+}
+
+/** Three finite numbers, or a message saying what is wrong. */
+/**
+ * Cuts clip plane `index`. NiiVue's `setClipPlane` writes whichever plane
+ * the person last made active, so plane 0 goes by its index too; only a
+ * NiiVue with no indexed setter, which has the one plane, takes it the
+ * old way.
+ */
+function cutPlane(
+  view: View,
+  plane: [number, number, number],
+  index: number,
+): void {
+  if (view.setClipPlaneDepthAziElev) {
+    view.setClipPlaneDepthAziElev(plane[0], plane[1], plane[2], index)
+    return
+  }
+  if (index !== 0)
+    throw new Error("This page's NiiVue has one clip plane only.")
+  view.setClipPlane(plane)
+}
+
+/**
+ * The axis flips of a `set_volume` `v1` call, refused unless `v1` is the
+ * call's only change and the volume is a vector field. The conversion is
+ * one way and leaves one frame, so a window, frame or anything else asked
+ * for alongside would land on an image that no longer exists.
+ */
+function flipsFrom(params: Params, volume: ShownVolume): boolean[] {
+  const v1 = params?.v1
+  const flip =
+    v1 === true
+      ? [false, false, false]
+      : typeof v1 === 'object' && v1 !== null && !Array.isArray(v1)
+        ? (v1 as Params)?.flip
+        : undefined
+  if (
+    !Array.isArray(flip) ||
+    flip.length !== 3 ||
+    flip.some((f) => typeof f !== 'boolean')
+  ) {
+    throw new Error(
+      'v1 is true, or { flip: [x, y, z] }: three true or false, each turning that component of the vectors around.',
+    )
+  }
+  const others = Object.keys(params ?? {}).filter(
+    (key) =>
+      !['tab', 'volume', 'v1'].includes(key) && params?.[key] !== undefined,
+  )
+  if (others.length) {
+    throw new Error(
+      `v1 goes in a call of its own: it turns the volume into a one-frame colour image, so set ${others.join(', ')} in another call.`,
+    )
+  }
+  const vectors =
+    volume.v1 !== undefined ||
+    (volume.nFrame4D === 3 && volume.img instanceof Float32Array)
+  if (!vectors) {
+    throw new Error(
+      `${volume.name} is not a vector field: v1 needs three float frames (x, y and z), or a tensor file's stored directions.`,
+    )
+  }
+  return flip as boolean[]
+}
+/** The handlers for the core tools, over this host. */
+export function coreHandlers(host: NiiVueHost): Handlers {
+  const { view } = host
+
+  const requireVolume = () => {
+    if (!view.volumes[0])
+      throw new Error('No volume is loaded yet. Call load_volume first.')
+  }
+
+  const requireAtlas = async (): Promise<AtlasLike> => {
+    if (!host.atlas) throw new Error('This page has no atlas.')
+    return host.atlas()
+  }
+
+  // The label table each label-map overlay was drawn with, by the volume
+  // NiiVue keeps; a new base clears the volumes, and the map with them.
+  const labelled = new WeakMap<ShownVolume, string>()
+
+  /** How many bricks a chunked volume has. */
+  const brickCount = (volume: ShownVolume): number => {
+    const plan = volume.chunkPlan
+    if (!plan) return 0
+    if (plan.chunks) return plan.chunks.length
+    let n = 1
+    for (let i = 0; i < plan.gridDims.length; i++) n *= plan.gridDims[i]
+    return n
+  }
+
+  /** How far a volume's bricks are spread: one number when they are spread alike along each axis, else the three. */
+  const spreadOf = (
+    volume: ShownVolume,
+  ): number | [number, number, number] | undefined => {
+    const explode = volume.chunkExplode
+    if (!volume.chunkPlan || !explode?.enabled) return undefined
+    const scale = explode.scale ? Array.from(explode.scale) : [1.5, 1.5, 1.5]
+    return scale[0] === scale[1] && scale[1] === scale[2]
+      ? scale[0]
+      : [scale[0], scale[1], scale[2]]
+  }
+
+  /** A volume as the tools report it: how it is drawn, its window and span, and its frame when it has several. */
+  const describeVolume = (volume: ShownVolume, index: number) => {
+    const labels = labelled.get(volume)
+    // A label map draws each voxel by its table, so its colormap and window
+    // are not in use and would only mislead.
+    const windowed =
+      !labels && volume.calMin !== undefined && volume.calMax !== undefined
+    const spanned =
+      volume.globalMin !== undefined && volume.globalMax !== undefined
+    const frames = volume.nFrame4D ?? 1
+    return {
+      index,
+      name: volume.name,
+      ...(volume.colormap === undefined || labels
+        ? {}
+        : { colormap: volume.colormap }),
+      ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+      ...(labels ? { labels } : {}),
+      ...(windowed ? { calMin: volume.calMin, calMax: volume.calMax } : {}),
+      ...(spanned
+        ? { globalMin: volume.globalMin, globalMax: volume.globalMax }
+        : {}),
+      ...(frames > 1 ? { frame: volume.frame4D ?? 0, frames } : {}),
+      ...(volume.nTotalFrame4D !== undefined && volume.nTotalFrame4D > frames
+        ? { framesInFile: volume.nTotalFrame4D }
+        : {}),
+      ...(volume.isColormapInverted ? { inverted: true } : {}),
+      ...(volume.colormapNegative
+        ? { colormapNegative: volume.colormapNegative }
+        : {}),
+      ...(volume.calMinNeg !== undefined && volume.calMaxNeg !== undefined
+        ? { calMinNeg: volume.calMinNeg, calMaxNeg: volume.calMaxNeg }
+        : {}),
+      ...(volume.colormapType
+        ? { colormapType: nameFor(COLORMAP_TYPES, volume.colormapType) }
+        : {}),
+      ...(volume.isTransparentBelowCalMin
+        ? { transparentBelowCalMin: true }
+        : {}),
+      ...(volume.isColorbarVisible ? { colorbar: true } : {}),
+      ...(volume.isNearestInterpolation ? { nearest: true } : {}),
+      ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
+      ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
+      ...(volume.chunkPlan
+        ? { chunkGrid: Array.from(volume.chunkPlan.gridDims) }
+        : {}),
+      ...(spreadOf(volume) === undefined ? {} : { spread: spreadOf(volume) }),
+    }
+  }
+
+  /** A label table by name or fetched from an address, checked before anything changes. */
+  const knownLabelTable = (labels: string): void => {
+    if (isAddress(labels)) return
+    if (!(LABEL_TABLES as readonly string[]).includes(labels)) {
+      throw new Error(
+        `Unknown label table "${labels}". One of: ${LABEL_TABLES.join(', ')}, or the address of a label table JSON the page can fetch.`,
+      )
+    }
+  }
+  const labelTable = async (labels: string): Promise<string | LabelTable> => {
+    knownLabelTable(labels)
+    return isAddress(labels) ? fetchLabelTable(labels) : labels
+  }
+
+  /** The volumes on show, as `add_overlay` and `where_am_i` report them. */
+  const volumesShown = () => view.volumes.map(describeVolume)
+
+  /** The index of the volume `params.volume` names, by index or by name; the base without it. */
+  const volumeIndex = (params: Record<string, unknown>): number =>
+    pickIndex(view.volumes, params?.volume, 'volume', 0)
+
+  /** Moves the crosshair to `frac`, cuts `plane` through it facing the camera at the cut, and draws. */
+  const moveTo = (
+    frac: [number, number, number],
+    plane: { azimuth: number; elevation: number },
+  ): number => {
+    const normal = clipNormal(plane.azimuth, plane.elevation)
+    const depth = depthThrough(normal, frac)
+    // Face the cut first, so the exposed face with the target on it is
+    // the near side rather than hidden behind the part the cut keeps.
+    facePlane(view, plane.azimuth, plane.elevation)
+    cutPlane(view, [depth, plane.azimuth, plane.elevation], 0)
+    view.crosshairPos = new Float32Array(frac)
+    view.drawScene()
+    host.moved?.(frac)
+    return depth
+  }
+
+  const describe = async (): Promise<string> => {
+    if (host.describe) return await host.describe()
+    const mm = Array.from(view.getCrosshairPos()).map((v) => Math.round(v))
+    return `Crosshair at ${mm.join(', ')} mm.`
+  }
+
+  const handlers: Handlers = {
+    ...settingHandlers(host),
+    ...viewportHandlers(host),
+    ...meshHandlers(host),
+    ...signalHandlers(host),
+    ...markHandlers(host),
+    ...controlHandlers(host),
+    ...dataHandlers(host),
+    ...animateHandlers(host),
+    ...instanceHandlers(host),
+
+    async load_volume(params) {
+      const url = text(params, 'url')
+      if (!url) throw new Error('load_volume needs a url.')
+      const name = text(params, 'name') ?? nameFromUrl(url)
+      const colormap = text(params, 'colormap') ?? 'gray'
+      const mni = flag(params, 'mni') ?? looksMni(name)
+      try {
+        await view.loadVolumes([{ url, name, colormap }])
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        throw new Error(`The volume at ${url} could not be loaded: ${why}`)
+      }
+      host.loaded?.({ url, name, mni })
+      host.beforeAnswer?.()
+      view.drawScene()
+      const min = Array.from(view.model.scene2mm([0, 0, 0]))
+      const max = Array.from(view.model.scene2mm([1, 1, 1]))
+      return {
+        name: view.volumes[0]?.name ?? name,
+        mni,
+        bounds: { mm: { min, max } },
+        crosshair: { mm: Array.from(view.getCrosshairPos()) },
+      }
+    },
+
+    async where_am_i() {
+      host.beforeAnswer?.()
+      const volume = view.volumes[0]?.name ?? null
+      if (!volume) {
+        return {
+          volume: null,
+          description: 'No volume is loaded yet.',
+          ...(host.extraState?.() ?? {}),
+        }
+      }
+      const frac = Array.from(view.crosshairPos)
+      const mm = Array.from(view.getCrosshairPos())
+      return {
+        volume,
+        volumes: volumesShown(),
+        crosshair: { mm, frac },
+        plane: planeState(host),
+        camera: camera(view),
+        ...(hasLayout(view) ? { view: viewState(view) } : {}),
+        ...counts(view),
+        ...instancesState(view),
+        description: await describe(),
+        ...(host.extraState?.() ?? {}),
+      }
+    },
+
+    async list_regions(params) {
+      const loaded = await requireAtlas()
+      const wanted = text(params, 'query')
+      const regions = wanted
+        ? loaded.regions().filter((r) => regionMentions(r, wanted))
+        : loaded.regions()
+      return regions.map(summary)
+    },
+
+    async go_to_region(params) {
+      const query = text(params, 'region')
+      if (!query) throw new Error('go_to_region needs a region name.')
+      requireVolume()
+      host.beforeAnswer?.()
+      const loaded = await requireAtlas()
+      if (host.atlasApplies && !host.atlasApplies()) {
+        throw new Error(
+          'The loaded volume is not in MNI space, so the atlas does not apply to it. Load one that is.',
+        )
+      }
+      const planeName = text(params, 'plane')
+      const plane = resolvePlane(planeName, view.getClipPlaneDepthAziElev(0))
+      if (!plane) throw new Error(`Unknown plane "${planeName}".`)
+      const { region, candidates } = findRegion(loaded.regions(), query)
+      if (!region) {
+        if (candidates.length)
+          throw new Error(ambiguityMessage(query, candidates))
+        throw new Error(
+          `No region matches "${query}". Call list_regions to see the names.`,
+        )
+      }
+
+      // A curved region's mean can lie outside it; land inside rather than
+      // on the neighbour that happens to be there.
+      let target = region.centroid
+      let snapped = false
+      if (loaded.valueAt(target) !== region.value) {
+        const inside = loaded.nearestIn(region.value, target)
+        if (inside) {
+          target = inside
+          snapped = true
+        }
+      }
+
+      const at = view.model.mm2scene([target[0], target[1], target[2]])
+      const frac: [number, number, number] = [at[0], at[1], at[2]]
+      if (frac.some((f) => f < 0 || f > 1)) {
+        throw new Error(`${region.name} lies outside the loaded volume.`)
+      }
+
+      const depth = moveTo(frac, plane)
+
+      const description = await describe()
+      host.announce?.(description)
+      return {
+        region: summary(region),
+        landed: { mm: target, frac },
+        snapped,
+        plane: {
+          name: plane.name,
+          depth,
+          azimuth: plane.azimuth,
+          elevation: plane.elevation,
+        },
+        camera: camera(view),
+        description,
+        ...(host.extraState?.() ?? {}),
+      }
+    },
+
+    async add_overlay(params) {
+      requireVolume()
+      const url = text(params, 'url')
+      if (!url) throw new Error('add_overlay needs a url.')
+      const name = text(params, 'name') ?? nameFromUrl(url)
+      const labels = text(params, 'labels')
+      if (labels) knownLabelTable(labels)
+      if (labels && !view.setColormapLabel)
+        throw new Error("This page's NiiVue cannot draw label maps.")
+      // A table from an address is fetched before anything is added, so a
+      // bad address leaves the scene as it was.
+      const table = labels ? await labelTable(labels) : undefined
+      const opacity = clamp(
+        number(params, 'opacity') ?? (labels ? 0.5 : 0.7),
+        0,
+        1,
+      )
+      const colormap = text(params, 'colormap') ?? (labels ? 'gray' : 'warm')
+      const toLoad: VolumeToLoad = { url, name, colormap, opacity }
+      put(toLoad, 'calMin', number(params, 'cal_min'))
+      put(toLoad, 'calMax', number(params, 'cal_max'))
+      put(toLoad, 'calMinNeg', number(params, 'cal_min_neg'))
+      put(toLoad, 'calMaxNeg', number(params, 'cal_max_neg'))
+      put(toLoad, 'colormapNegative', text(params, 'colormap_negative'))
+      // A label map has no window to show on a colorbar.
+      put(
+        toLoad,
+        'isColorbarVisible',
+        flag(params, 'colorbar') ?? (labels ? false : undefined),
+      )
+      if (
+        labels &&
+        (toLoad.calMin !== undefined || toLoad.calMax !== undefined)
+      )
+        throw new Error(
+          'A label overlay has no display window: leave cal_min and cal_max out.',
+        )
+      // NiiVue keeps the crosshair as a fraction of the scene, and a volume
+      // with a different box changes the scene, so the same fraction would
+      // land somewhere else. It is read in millimetres first and put back.
+      const before = Array.from(view.getCrosshairPos())
+      // Added over what is shown, whoever loaded it: the page's own start-up
+      // volume as much as one from load_volume. A failed add leaves the
+      // scene as it was.
+      try {
+        await view.addVolume(toLoad)
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        throw new Error(`The overlay at ${url} could not be loaded: ${why}`)
+      }
+      const index = view.volumes.length - 1
+      const added = view.volumes[index]
+      if (labels && table && added) {
+        await view.setColormapLabel?.(index, table)
+        labelled.set(added, labels)
+      }
+      view.crosshairPos = new Float32Array(
+        view.model.mm2scene([before[0], before[1], before[2]]),
+      )
+      host.beforeAnswer?.()
+      view.drawScene()
+      return {
+        volumes: volumesShown(),
+        crosshair: { mm: Array.from(view.getCrosshairPos()) },
+      }
+    },
+
+    async go_to_point(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const planeName = text(params, 'plane')
+      const plane = resolvePlane(planeName, view.getClipPlaneDepthAziElev(0))
+      if (!plane) throw new Error(`Unknown plane "${planeName}".`)
+      const vox = pointIfGiven(params, 'vox')
+      let mm = pointIfGiven(params, 'mm')
+      let frac: [number, number, number]
+      if (vox) {
+        if (!view.vox2frac)
+          throw new Error("This page's NiiVue cannot place a voxel.")
+        if (vox.some((v) => !Number.isInteger(v)))
+          throw new Error('vox must be three whole numbers, [i, j, k].')
+        frac = view.vox2frac(vox)
+        const at = view.model.scene2mm(frac)
+        mm = [at[0], at[1], at[2]]
+      } else {
+        if (!mm) throw new Error('go_to_point needs mm or vox.')
+        const at = view.model.mm2scene([mm[0], mm[1], mm[2]])
+        frac = [at[0], at[1], at[2]]
+      }
+      if (frac.some((f) => !Number.isFinite(f) || f < 0 || f > 1)) {
+        throw new Error(
+          `${vox ? `Voxel [${vox.join(', ')}]` : `[${mm.join(', ')}] mm`} lies outside the loaded volume.`,
+        )
+      }
+      const depth = moveTo(frac, plane)
+      const label = text(params, 'label')
+      const place = await describe()
+      const description = label ? `${label}. ${place}` : place
+      host.announce?.(description)
+      return {
+        landed: { mm, frac, ...(vox ? { vox } : {}) },
+        plane: {
+          name: plane.name,
+          depth,
+          azimuth: plane.azimuth,
+          elevation: plane.elevation,
+        },
+        camera: camera(view),
+        description,
+        ...(host.extraState?.() ?? {}),
+      }
+    },
+
+    nudge_crosshair(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (!view.moveCrosshairInVox)
+        throw new Error(
+          "This page's NiiVue cannot step the crosshair by voxels.",
+        )
+      const by = numbers(params, 'vox', 3)
+      if (!by || by.some((v) => !Number.isInteger(v)))
+        throw new Error(
+          'nudge_crosshair needs vox: three whole numbers, [di, dj, dk].',
+        )
+      view.moveCrosshairInVox(by[0], by[1], by[2])
+      view.drawScene()
+      const frac = Array.from(view.crosshairPos)
+      host.moved?.(frac)
+      return {
+        crosshair: { mm: Array.from(view.getCrosshairPos()), frac },
+      }
+    },
+
+    set_clip_plane(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const planes = params?.planes
+      if (planes !== undefined && planes !== null) {
+        if (!view.setClipPlanes)
+          throw new Error("This page's NiiVue cannot set several clip planes.")
+        if (
+          !Array.isArray(planes) ||
+          !planes.length ||
+          planes.length > CLIP_PLANES ||
+          planes.some(
+            (p) =>
+              !Array.isArray(p) ||
+              p.length !== 3 ||
+              p.some((v) => !Number.isFinite(Number(v))),
+          )
+        ) {
+          throw new Error(
+            `planes must be one to ${CLIP_PLANES} triples, [depth, azimuth, elevation] each.`,
+          )
+        }
+        const set = planes.map((p: unknown[]) => p.map(Number))
+        view.setClipPlanes(set)
+        view.drawScene()
+        return {
+          planes: set.map(([depth, azimuth, elevation]) => ({
+            name: namePlane(depth, azimuth, elevation),
+            depth,
+            azimuth,
+            elevation,
+          })),
+          camera: camera(view),
+        }
+      }
+      const index = integer(params, 'index') ?? 0
+      if (index >= CLIP_PLANES)
+        throw new Error(`index must be 0 to ${CLIP_PLANES - 1}.`)
+      const setAt = (plane: [number, number, number]) =>
+        cutPlane(view, plane, index)
+      const reported = (plane: [number, number, number], name?: string) => ({
+        ...(index ? { index } : {}),
+        plane: {
+          name: name ?? namePlane(plane[0], plane[1], plane[2]),
+          depth: plane[0],
+          azimuth: plane[1],
+          elevation: plane[2],
+        },
+        camera: camera(view),
+      })
+      const name = (text(params, 'plane') ?? '').toLowerCase()
+      const azimuth = number(params, 'azimuth')
+      const elevation = number(params, 'elevation')
+      if (name === 'off') {
+        setAt([PLANE_NONE, 0, 0])
+        view.drawScene()
+        host.announce?.('Cut plane: off.')
+        return reported([PLANE_NONE, 0, 0])
+      }
+      let plane: { name: string; azimuth: number; elevation: number }
+      if (azimuth !== undefined || elevation !== undefined) {
+        if (azimuth === undefined || elevation === undefined)
+          throw new Error('A plane by angle needs both azimuth and elevation.')
+        plane = { name: '', azimuth, elevation }
+      } else {
+        if (!name)
+          throw new Error(
+            'set_clip_plane needs a plane name, an azimuth and elevation, or off.',
+          )
+        const named = resolvePlane(name, null)
+        if (!named || name === 'current')
+          throw new Error(`Unknown plane "${name}".`)
+        plane = named
+      }
+      const depth = clamp(number(params, 'depth') ?? 0, -1.5, 1.5)
+      if (!plane.name)
+        plane.name = namePlane(depth, plane.azimuth, plane.elevation)
+      if (flag(params, 'face') ?? true)
+        facePlane(view, plane.azimuth, plane.elevation)
+      setAt([depth, plane.azimuth, plane.elevation])
+      view.drawScene()
+      host.announce?.(`Cut plane: ${plane.name}.`)
+      return reported([depth, plane.azimuth, plane.elevation], plane.name)
+    },
+
+    set_camera(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      // The global camera is read and checked first, so a camera NiiVue
+      // would refuse leaves the render's own camera as it was.
+      const placed = record(params, 'global')
+      const global = placed ? globalCameraFrom(placed) : undefined
+      if (global && !view.setGlobalCamera)
+        throw new Error("This page's NiiVue has no global camera to place.")
+      let changed = false
+      const azimuth = number(params, 'azimuth')
+      const elevation = number(params, 'elevation')
+      if (azimuth !== undefined) {
+        view.azimuth = ((azimuth % 360) + 360) % 360
+        changed = true
+      }
+      if (elevation !== undefined) {
+        view.elevation = clamp(elevation, -90, 90)
+        changed = true
+      }
+      const pan = numbers(params, 'pan_2d', 4)
+      if (pan) {
+        if (view.pan2Dxyzmm === undefined)
+          throw new Error("This page's NiiVue cannot pan its slices.")
+        view.pan2Dxyzmm = new Float32Array(pan)
+        changed = true
+      }
+      const renderPan = numbers(params, 'render_pan', 2)
+      if (renderPan) {
+        if (view.renderPan === undefined)
+          throw new Error("This page's NiiVue cannot pan its render.")
+        view.renderPan = new Float32Array(renderPan)
+        changed = true
+      }
+      const pivot = params?.pivot
+      if (pivot !== undefined) {
+        if (view.renderPivotMM === undefined)
+          throw new Error("This page's NiiVue cannot pivot its render.")
+        view.renderPivotMM =
+          pivot === null ? null : new Float32Array(point(params, 'pivot'))
+        changed = true
+      }
+      const centre = pointIfGiven(params, 'center_on')
+      if (centre) {
+        if (!view.centerRenderOnMM)
+          throw new Error(
+            "This page's NiiVue cannot centre its render on a point.",
+          )
+        if (!view.centerRenderOnMM(centre))
+          throw new Error(
+            `The render could not be centred on [${centre.join(', ')}] mm.`,
+          )
+        changed = true
+      }
+      if (global) {
+        view.setGlobalCamera?.(global)
+        changed = true
+      }
+      if (!changed) {
+        throw new Error(
+          'set_camera needs something to set: azimuth, elevation, pan_2d, render_pan, pivot, center_on or global.',
+        )
+      }
+      view.drawScene()
+      return {
+        camera: camera(view),
+        plane: planeState(host),
+        ...(view.pan2Dxyzmm ? { pan2D: Array.from(view.pan2Dxyzmm) } : {}),
+        ...(view.renderPan ? { renderPan: Array.from(view.renderPan) } : {}),
+        ...(view.renderPivotMM
+          ? { pivot: Array.from(view.renderPivotMM) }
+          : {}),
+        ...(view.opts?.globalCamera
+          ? { globalCamera: reportedCamera(view.opts.globalCamera) }
+          : {}),
+      }
+    },
+
+    async set_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      if (params?.v1 !== undefined && params.v1 !== null) {
+        const [x, y, z] = flipsFrom(params, volume)
+        if (!view.loadImgV1)
+          throw new Error(
+            "This page's NiiVue cannot draw a vector field as colours.",
+          )
+        if (!(await view.loadImgV1(index, x, y, z)))
+          throw new Error(`NiiVue found no vectors in ${volume.name}.`)
+        // The scene could change while NiiVue uploaded, so the volume is found again.
+        const now = view.volumes.indexOf(volume)
+        view.drawScene()
+        if (now < 0)
+          throw new Error(
+            `${volume.name} was removed while its vectors were drawn as colours.`,
+          )
+        return { volume: describeVolume(volume, now) }
+      }
+      // Only what was asked for goes to NiiVue: it assigns the update
+      // onto the volume as it is, so an undefined field would wipe one.
+      const update: VolumeUpdate = {}
+      put(update, 'colormap', text(params, 'colormap'))
+      put(update, 'colormapNegative', clearable(params, 'colormap_negative'))
+      const opacity = number(params, 'opacity')
+      if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
+      const calMin = number(params, 'cal_min')
+      const calMax = number(params, 'cal_max')
+      put(update, 'calMin', calMin)
+      put(update, 'calMax', calMax)
+      const low = calMin ?? volume.calMin
+      const high = calMax ?? volume.calMax
+      if (low !== undefined && high !== undefined && low > high) {
+        throw new Error(
+          `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
+        )
+      }
+      put(update, 'calMinNeg', number(params, 'cal_min_neg'))
+      put(update, 'calMaxNeg', number(params, 'cal_max_neg'))
+      const type = text(params, 'colormap_type')?.toLowerCase()
+      if (type !== undefined) {
+        if (!Object.hasOwn(COLORMAP_TYPES, type)) {
+          throw new Error(
+            `Unknown colormap_type "${type}". One of: ${Object.keys(COLORMAP_TYPES).join(', ')}.`,
+          )
+        }
+        update.colormapType =
+          COLORMAP_TYPES[type as keyof typeof COLORMAP_TYPES]
+      }
+      put(
+        update,
+        'isTransparentBelowCalMin',
+        flag(params, 'transparent_below_cal_min'),
+      )
+      const frame = number(params, 'frame')
+      if (frame !== undefined) {
+        if (!Number.isInteger(frame) || frame < 0)
+          throw new Error('frame must be a whole number, counted from 0.')
+        const frames = volume.nFrame4D ?? 1
+        if (frame >= frames) {
+          throw new Error(
+            frames > 1
+              ? `${volume.name} has ${frames} frames, numbered 0 to ${frames - 1}.`
+              : `${volume.name} has one frame only.`,
+          )
+        }
+        update.frame4D = frame
+      }
+      put(update, 'isColormapInverted', flag(params, 'invert'))
+      put(update, 'isColorbarVisible', flag(params, 'colorbar'))
+      put(update, 'isNearestInterpolation', flag(params, 'nearest'))
+      const outline = number(params, 'atlas_outline')
+      if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
+      const modulateAlpha = number(params, 'modulate_alpha')
+      if (modulateAlpha !== undefined)
+        update.modulateAlpha = clamp(modulateAlpha, 0, 1)
+
+      // What is not a field of the volume: each its own NiiVue call.
+      const labels = text(params, 'labels')
+      const modulate = params?.modulate
+      const autoWindow = flag(params, 'auto_window')
+      const allFrames = flag(params, 'load_all_frames')
+      const affine = params?.affine
+      const resetAffine = flag(params, 'reset_affine')
+      const transform = record(params, 'transform')
+      const chunkGrid = params?.chunk_grid
+      const spread = number(params, 'spread')
+      if (chunkGrid !== undefined && chunkGrid !== null) {
+        const grid = numbers(params, 'chunk_grid') ?? []
+        if (
+          grid.length !== 3 ||
+          grid.some((n) => !Number.isInteger(n) || n < 1)
+        ) {
+          throw new Error(
+            'chunk_grid is three whole numbers, the bricks along x, y and z, each at least 1.',
+          )
+        }
+      }
+      if (spread !== undefined && !(spread >= 1)) {
+        throw new Error(
+          'spread is 1 (the bricks touching) or more: how far each brick moves from the centre.',
+        )
+      }
+      const extras = [
+        labels,
+        modulate,
+        autoWindow,
+        allFrames,
+        affine,
+        resetAffine,
+        transform,
+        chunkGrid,
+        spread,
+      ].some((v) => v !== undefined && v !== null)
+      // `chunk_grid: null` is an ask too: it makes the volume one texture.
+      const untiling = chunkGrid === null
+      if (nothingIn(update) && !extras && !untiling) {
+        throw new Error(
+          'set_volume needs something to set: colormap, opacity, cal_min, cal_max, frame, invert, or one of the others its schema lists.',
+        )
+      }
+      if (spread !== undefined) requireSpread(view)
+      // The spread write is claimed before anything waits, so a control
+      // that writes the spread meanwhile is the later one and wins.
+      const spreadClaim = spread === undefined ? undefined : claimSpread(volume)
+      if (!nothingIn(update)) {
+        if (!view.setVolume)
+          throw new Error(
+            "This page's NiiVue cannot change a volume once loaded.",
+          )
+        await view.setVolume(index, update)
+      }
+      if (labels !== undefined) {
+        if (!view.setColormapLabel)
+          throw new Error("This page's NiiVue cannot draw label maps.")
+        const table = await labelTable(labels)
+        await view.setColormapLabel(index, table)
+        labelled.set(volume, labels)
+      }
+      if (modulate !== undefined && modulate !== null) {
+        if (!view.setModulationImage)
+          throw new Error("This page's NiiVue cannot modulate a volume.")
+        const by = record(params, 'modulate') ?? {}
+        const other = pickIndex(view.volumes, by.volume, 'volume')
+        const target = volume.id
+        const modulator = view.volumes[other].id
+        if (target === undefined || modulator === undefined)
+          throw new Error("This page's NiiVue does not give its volumes ids.")
+        const alpha = clamp(number(by, 'alpha') ?? 0, 0, 1)
+        await view.setModulationImage(target, modulator, alpha)
+      }
+      if (allFrames) {
+        if (!view.loadDeferred4DVolumes)
+          throw new Error(
+            "This page's NiiVue cannot load a volume's remaining frames.",
+          )
+        if (volume.id === undefined)
+          throw new Error("This page's NiiVue does not give its volumes ids.")
+        await view.loadDeferred4DVolumes(volume.id)
+      }
+      if (autoWindow) {
+        if (!view.recalculateCalMinMax)
+          throw new Error(
+            "This page's NiiVue cannot recompute a volume's window.",
+          )
+        await view.recalculateCalMinMax(index, update.frame4D)
+      }
+      if (resetAffine) {
+        if (!view.resetVolumeAffine)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        await view.resetVolumeAffine(index)
+      }
+      if (affine !== undefined && affine !== null) {
+        if (!view.setVolumeAffine)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        await view.setVolumeAffine(index, matrix4(affine, 'affine'))
+      }
+      if (transform) {
+        if (!view.applyVolumeTransform)
+          throw new Error("This page's NiiVue cannot move a volume.")
+        const moved: AffineTransform = {
+          translation: pointIfGiven(transform, 'translation') ?? [0, 0, 0],
+          rotation: pointIfGiven(transform, 'rotation') ?? [0, 0, 0],
+          scale: pointIfGiven(transform, 'scale') ?? [1, 1, 1],
+        }
+        await view.applyVolumeTransform(index, moved)
+      }
+      let untileKept = false
+      if (chunkGrid !== undefined) {
+        if (!view.setVolumeChunkGrid)
+          throw new Error("This page's NiiVue cannot chunk a volume.")
+        const grid = numbers(params, 'chunk_grid')
+        // Untiling clears the spread, so a call that also spreads leaves
+        // the tiling alone once a later spread came in while it waited.
+        if (
+          grid ||
+          spreadClaim === undefined ||
+          isLatestSpread(volume, spreadClaim)
+        )
+          await view.setVolumeChunkGrid(
+            index,
+            grid ? [grid[0], grid[1], grid[2]] : null,
+          )
+        else untileKept = true
+      }
+      // Spreading needs bricks: a volume that is one texture is tiled
+      // 3 x 3 x 3 first, unless a grid was asked for in the same call.
+      const spreadKept =
+        spread === undefined || spreadClaim === undefined
+          ? true
+          : await spreadVolume(
+              view,
+              index,
+              volume,
+              spread,
+              spreadClaim,
+              chunkGrid === undefined,
+            )
+      view.drawScene()
+      return {
+        volume: describeVolume(volume, index),
+        ...(spreadKept
+          ? {}
+          : {
+              superseded:
+                'A later spread of this volume, from a control or another call, came in while this call waited, so the volume keeps that one' +
+                (untileKept ? ', and its bricks with it.' : '.'),
+            }),
+      }
+    },
+
+    async set_labels(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (!host.labels) throw new Error('This page cannot draw labels.')
+      const asked = params?.labels
+      if (asked !== undefined && !Array.isArray(asked)) {
+        throw new Error('labels is a list: each with text, and a region or mm.')
+      }
+      const wanted = (asked ?? []) as unknown[]
+      if (flag(params, 'clear') === undefined && wanted.length === 0) {
+        throw new Error(
+          'set_labels needs labels to draw, or clear to take them down.',
+        )
+      }
+      const dimOthers = number(params, 'dim_others')
+      if (dimOthers !== undefined && (dimOthers < 0 || dimOthers > 1)) {
+        throw new Error('dim_others is an opacity from 0 to 1.')
+      }
+      const base = view.volumes[0]
+      const bricked = Boolean(base?.chunkPlan)
+      if (dimOthers !== undefined && wanted.length > 0) {
+        if (!view.setVolumeBrickOpacity)
+          throw new Error("This page's NiiVue cannot dim a volume's bricks.")
+        if (!bricked) {
+          throw new Error(
+            'dim_others needs a volume tiled into bricks: set_volume with chunk_grid first.',
+          )
+        }
+      }
+      const placed: (PointLabel & { region?: string; brick?: number })[] = []
+      for (const item of wanted) {
+        const label = (item ?? {}) as Record<string, unknown>
+        const region = text(label, 'region')
+        const mm = pointIfGiven(label, 'mm')
+        const given = text(label, 'text')
+        if (region) {
+          const loaded = await requireAtlas()
+          if (host.atlasApplies && !host.atlasApplies()) {
+            throw new Error(
+              'The loaded volume is not in MNI space, so the atlas does not apply to it. Load one that is.',
+            )
+          }
+          const found = findRegion(loaded.regions(), region)
+          if (!found.region) {
+            if (found.candidates.length)
+              throw new Error(ambiguityMessage(region, found.candidates))
+            throw new Error(
+              `No region matches "${region}". Call list_regions to see the names.`,
+            )
+          }
+          placed.push({
+            text: given ?? found.region.name,
+            mm: [...found.region.centroid],
+            region: found.region.label,
+          })
+        } else if (mm) {
+          if (!given) throw new Error('A label at mm needs its text.')
+          placed.push({ text: given, mm })
+        } else {
+          throw new Error('Each label names a region or gives mm.')
+        }
+      }
+      // On a chunked volume each label names its brick and outlines it, and
+      // the bricks holding no label can be dimmed. Every call resets the
+      // dimming, as it does the labels.
+      if (bricked && view.chunkBrickIndexAt) {
+        for (const label of placed) {
+          const brick = view.chunkBrickIndexAt(label.mm)
+          if (brick < 0) continue
+          label.brick = brick
+          label.boxMM = view.chunkBrickCornersAt?.(label.mm) ?? undefined
+        }
+      }
+      if (bricked && view.setVolumeBrickOpacity) {
+        const kept = new Set(placed.map((label) => label.brick))
+        view.setVolumeBrickOpacity(
+          0,
+          dimOthers !== undefined && placed.length > 0
+            ? Array.from({ length: brickCount(base) }, (_, i) =>
+                kept.has(i) ? 1 : dimOthers,
+              )
+            : null,
+        )
+      }
+      host.labels(
+        placed.map(({ text: str, mm, boxMM }) => ({
+          text: str,
+          mm,
+          ...(boxMM ? { boxMM } : {}),
+        })),
+      )
+      view.drawScene()
+      return {
+        labels: placed.map(({ boxMM: _box, ...label }) => label),
+        ...(dimOthers !== undefined && placed.length > 0 ? { dimOthers } : {}),
+      }
+    },
+
+    async transform_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      const name = text(params, 'name')
+      const known = view.volumeTransforms ?? []
+      if (!view.volumeTransform || !known.length)
+        throw new Error("This page's NiiVue has no volume transforms.")
+      if (!name || !Object.hasOwn(view.volumeTransform, name)) {
+        throw new Error(
+          `${name ? `Unknown transform "${name}"` : 'transform_volume needs a name'}. One of: ${known.join(', ')}.`,
+        )
+      }
+      const replace = flag(params, 'replace') ?? false
+      if (replace && !view.removeVolume)
+        throw new Error("This page's NiiVue cannot remove a volume.")
+      const options = record(params, 'options')
+      const made = await view.volumeTransform[name](volume, options)
+      // The source goes only once its replacement is in, so a failed add
+      // leaves the stack as it was.
+      await view.addVolume(made)
+      if (replace) await view.removeVolume?.(index)
+      view.drawScene()
+      const added = view.volumes.length - 1
+      return {
+        transform: name,
+        ...(options ? { options } : {}),
+        volume: describeVolume(view.volumes[added], added),
+        volumes: volumesShown(),
+      }
+    },
+
+    async update_volume_data(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (!view.updateVolumeData)
+        throw new Error("This page's NiiVue cannot write new voxel values.")
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      // NiiVue only logs and returns for each of these, so they are
+      // refused here, before anything is fetched or written.
+      const unbricked = () => {
+        if (volume.chunkPlan)
+          throw new Error(
+            `${volume.name} is drawn in bricks, and NiiVue cannot write new voxel values into a chunked volume. ` +
+              'One tiled with set_volume chunk_grid becomes a single texture again with chunk_grid null.',
+          )
+      }
+      unbricked()
+      const img = volume.img
+      if (!img)
+        throw new Error(`${volume.name} holds no voxel values to write over.`)
+      const autoWindow = flag(params, 'auto_window') ?? false
+      if (autoWindow && !view.recalculateCalMinMax)
+        throw new Error(
+          "This page's NiiVue cannot recompute a volume's window.",
+        )
+      const frames = Math.max(1, volume.nFrame4D ?? 1)
+      const frameLength = img.length / frames
+      const source = oneSource(
+        params,
+        ['values', 'url', 'from_volume'],
+        'update_volume_data',
+      )
+      let data: ArrayLike<number>
+      if (source === 'url') {
+        data = await fetchValues(params, 'url', img)
+      } else if (source === 'from_volume') {
+        const from =
+          view.volumes[
+            pickIndex(view.volumes, params.from_volume, 'from_volume')
+          ]
+        if (!from.img)
+          throw new Error(`${from.name} holds no voxel values to copy.`)
+        data = from.img
+        checkFits(data, img, volume.name)
+      } else {
+        data = numbers(params, 'values') ?? []
+        checkFits(data, img, volume.name)
+      }
+      if (data.length !== img.length && data.length !== frameLength) {
+        const oneFrame =
+          frames > 1
+            ? ` (every frame) or ${frameLength} (the frame shown, ${volume.frame4D ?? 0})`
+            : ''
+        throw new Error(
+          `${volume.name} takes ${img.length} values${oneFrame}, a value per channel for RGB or RGBA; got ${data.length}.`,
+        )
+      }
+      // The person may have removed, replaced or tiled the volume during a
+      // fetch; its index could now hold another dataset of the same size.
+      const at = view.volumes.indexOf(volume)
+      if (at < 0 || volume.img !== img)
+        throw new Error(
+          `${volume.name} was removed or replaced while its values were fetched; nothing was written.`,
+        )
+      unbricked()
+      await view.updateVolumeData(at, data)
+      const wroteFrame = frames > 1 && data.length === frameLength
+      const wrote = {
+        wrote: data.length,
+        ...(wroteFrame ? { frame: volume.frame4D ?? 0 } : {}),
+      }
+      // Each wait lets the scene change, so the volume is found again after it.
+      const gone = (unwindowed: boolean) => {
+        view.drawScene()
+        return {
+          ...wrote,
+          removed: `${volume.name} was removed while its values were written${unwindowed ? ', so it was not windowed' : ''}.`,
+          volumes: volumesShown(),
+        }
+      }
+      if (autoWindow) {
+        const now = view.volumes.indexOf(volume)
+        if (now < 0) return gone(true)
+        await view.recalculateCalMinMax?.(now)
+      }
+      const shown = view.volumes.indexOf(volume)
+      if (shown < 0) return gone(false)
+      view.drawScene()
+      return { ...wrote, volume: describeVolume(volume, shown) }
+    },
+
+    async remove_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (flag(params, 'all')) {
+        if (!view.removeAllVolumes)
+          throw new Error("This page's NiiVue cannot remove its volumes.")
+        await view.removeAllVolumes()
+        view.drawScene()
+        return { volumes: [] }
+      }
+      if (!view.removeVolume)
+        throw new Error("This page's NiiVue cannot remove a volume.")
+      const index = pickIndex(view.volumes, params?.volume, 'volume')
+      const removed = view.volumes[index].name
+      await view.removeVolume(index)
+      view.drawScene()
+      return { removed, volumes: volumesShown() }
+    },
+
+    async reorder_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = pickIndex(view.volumes, params?.volume, 'volume')
+      const move = text(params, 'move')?.toLowerCase()
+      const moves: Record<
+        string,
+        ((index: number) => Promise<unknown>) | undefined
+      > = {
+        up: view.moveVolumeUp?.bind(view),
+        down: view.moveVolumeDown?.bind(view),
+        top: view.moveVolumeToTop?.bind(view),
+        bottom: view.moveVolumeToBottom?.bind(view),
+      }
+      if (!move || !Object.hasOwn(moves, move))
+        throw new Error('reorder_volume needs move: up, down, top or bottom.')
+      const go = moves[move]
+      if (!go) throw new Error("This page's NiiVue cannot reorder its volumes.")
+      const name = view.volumes[index].name
+      await go(index)
+      view.drawScene()
+      return {
+        moved: name,
+        index: view.volumes.findIndex((v) => v.name === name),
+        volumes: volumesShown(),
+      }
+    },
+
+    describe_volume(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      const out: Record<string, unknown> = {
+        volume: describeVolume(volume, index),
+      }
+      if (volume.dims) {
+        const dims = Array.from(volume.dims)
+        out.dims = dims.slice(1, 1 + Math.max(3, Math.min(dims[0] ?? 3, 4)))
+      }
+      if (volume.id !== undefined) out.id = volume.id
+      if (flag(params, 'stats') ?? true) {
+        if (!view.getDescriptives)
+          throw new Error("This page's NiiVue cannot compute voxel statistics.")
+        const labels = numbers(params, 'mask_labels')
+        const mask = params?.mask
+        const options: Parameters<NonNullable<View['getDescriptives']>>[0] = {
+          volumeIndex: index,
+        }
+        if (labels && labels.length === 0)
+          throw new Error(
+            'mask_labels needs at least one label. Leave it out to count every non-zero voxel.',
+          )
+        if (mask !== undefined && mask !== null) {
+          const maskIndex = pickIndex(view.volumes, mask, 'volume')
+          options.masks = [
+            labels ? { index: maskIndex, values: labels } : maskIndex,
+          ]
+        } else if (flag(params, 'drawing')) {
+          options.isDrawingMask = true
+          if (labels) options.drawPenValues = labels
+        }
+        const stats = view.getDescriptives(options)
+        if (stats) out.stats = stats
+      }
+      if (flag(params, 'affine')) {
+        if (!view.getVolumeAffine)
+          throw new Error("This page's NiiVue cannot report a volume's affine.")
+        out.affine = view.getVolumeAffine(index)
+      }
+      return out
+    },
+
+    set_view(params) {
+      host.beforeAnswer?.()
+      if (!hasLayout(view))
+        throw new Error("This page's NiiVue has no view layout to set.")
+      let changed = false
+      const slice = text(params, 'slice')?.toLowerCase()
+      if (slice !== undefined) {
+        const type = Object.hasOwn(SLICE_TYPES, slice)
+          ? SLICE_TYPES[slice as keyof typeof SLICE_TYPES]
+          : undefined
+        if (type === undefined) {
+          throw new Error(
+            `Unknown slice "${slice}". One of: ${Object.keys(SLICE_TYPES).join(', ')}.`,
+          )
+        }
+        view.sliceType = type
+        changed = true
+      }
+      const layout = text(params, 'layout')?.toLowerCase()
+      if (layout !== undefined) {
+        const type = Object.hasOwn(LAYOUTS, layout)
+          ? LAYOUTS[layout as keyof typeof LAYOUTS]
+          : undefined
+        if (type === undefined) {
+          throw new Error(
+            `Unknown layout "${layout}". One of: ${Object.keys(LAYOUTS).join(', ')}.`,
+          )
+        }
+        view.multiplanarType = type
+        changed = true
+      }
+      const showRender = text(params, 'show_render')?.toLowerCase()
+      if (showRender !== undefined) {
+        const when = Object.hasOwn(SHOW_RENDER, showRender)
+          ? SHOW_RENDER[showRender as keyof typeof SHOW_RENDER]
+          : undefined
+        if (when === undefined) {
+          throw new Error(
+            `Unknown show_render "${showRender}". One of: ${Object.keys(SHOW_RENDER).join(', ')}.`,
+          )
+        }
+        view.showRender = when
+        changed = true
+      }
+      // An empty mosaic clears the one drawn, so this one is read raw.
+      const mosaic = params?.mosaic
+      if (mosaic !== undefined && mosaic !== null) {
+        view.mosaicString = String(mosaic).trim()
+        changed = true
+      }
+      const radiological = flag(params, 'radiological')
+      if (radiological !== undefined) {
+        view.isRadiological = radiological
+        changed = true
+      }
+      const colorbar = flag(params, 'colorbar')
+      if (colorbar !== undefined) {
+        view.isColorbarVisible = colorbar
+        changed = true
+      }
+      if (!changed) {
+        throw new Error(
+          'set_view needs something to set: slice, layout, mosaic, show_render, radiological or colorbar.',
+        )
+      }
+      view.drawScene()
+      return { view: viewState(view) }
+    },
+
+    async screenshot(params) {
+      host.beforeAnswer?.()
+      const canvas = view.canvas
+      if (!canvas) throw new Error('NiiVue has no canvas to draw.')
+      if (tabHidden()) {
+        throw new Error(
+          'The tab is in the background, so the browser is not drawing it. Bring it to the front and try again.',
+        )
+      }
+      const maxWidth = Math.max(
+        1,
+        Math.floor(number(params, 'max_width') ?? SCREENSHOT_WIDTH),
+      )
+      // A chunked volume streams its bricks over the frames after the grid
+      // is set, and again after a change that rebuilds them, so the picture
+      // waits for the last of them: a frame drawn before then shows a part
+      // of the volume, or none of it. The wait is bounded well inside the
+      // server's own limit on a call, since NiiVue 1.0 does not settle a
+      // 2D view whose slices never cross every brick.
+      const waits = host.screenshotWaits
+      if (view.whenChunkStreamSettles)
+        await within(
+          view.whenChunkStreamSettles(),
+          waits?.settleMs ?? SETTLE_WAIT_MS,
+        )
+      // The render backend skips frames while it uploads a texture, as
+      // after a 4D frame change, and a frame drawn then is blank.
+      await untilIdle(view, waits?.busyMs ?? BUSY_WAIT_MS)
+      drawNow(view, canvas)
+      const picture =
+        canvas.width > maxWidth ? scaledCopy(canvas, maxWidth) : canvas
+      const dataUrl = picture.toDataURL('image/png')
+      const comma = dataUrl.indexOf(',')
+      return {
+        data: dataUrl.slice(comma + 1),
+        mimeType: dataUrl.slice(5, dataUrl.indexOf(';')) || 'image/png',
+        width: picture.width,
+        height: picture.height,
+        canvas: { width: canvas.width, height: canvas.height },
+      }
+    },
+  }
+  host.data?.connect(handlers)
+  return handlers
+}
+
+/** How long a screenshot waits for a chunked volume's bricks, inside the server's limit on a call. */
+const SETTLE_WAIT_MS = 8_000
+
+/** How long a screenshot waits for the render backend to finish an upload. */
+const BUSY_WAIT_MS = 4_000
+
+/** `promise`, or nothing once `ms` have passed, whichever is first. */
+function within(promise: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    promise.then(
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+    )
+  })
+}
+
+/** Waits a frame at a time, up to `ms`, while the render backend is busy. */
+async function untilIdle(view: View, ms: number): Promise<void> {
+  const until = Date.now() + ms
+  while (view.view?.isBusy && Date.now() < until) await nextFrame()
+}
+
+/** The next animation frame, or a short tick where there are none. */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function')
+      requestAnimationFrame(() => resolve())
+    else setTimeout(resolve, 16)
+  })
+}
+
+/** Whether the browser has stopped drawing the page: a tab behind another gets no frames. */
+function tabHidden(): boolean {
+  return (
+    typeof document !== 'undefined' && document.visibilityState === 'hidden'
+  )
+}
+
+/** The canvas drawn onto a smaller one, `maxWidth` wide, keeping its shape. */
+function scaledCopy(
+  canvas: HTMLCanvasElement,
+  maxWidth: number,
+): HTMLCanvasElement {
+  const copy = document.createElement('canvas')
+  const scale = maxWidth / canvas.width
+  copy.width = maxWidth
+  copy.height = Math.max(1, Math.round(canvas.height * scale))
+  const context = copy.getContext('2d')
+  if (!context)
+    throw new Error('The page cannot scale the picture: no 2d context.')
+  context.drawImage(canvas, 0, 0, copy.width, copy.height)
+  return copy
+}
+
+/** How many clip planes NiiVue keeps. */
+export const CLIP_PLANES = 6
+
+/** How many of each other thing is on show, for `where_am_i`; only what the page's NiiVue keeps. */
+function counts(view: View): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (view.meshes) out.meshes = view.meshes.length
+  if (view.signals) out.signals = view.signals.length
+  if (view.annotations) out.annotations = view.annotations.length
+  if (view.getMeasurements) out.measurements = view.getMeasurements().length
+  return out
+}
+
+/** A 4 by 4 matrix, as four rows of four numbers or sixteen numbers row by row. */
+export function matrix4(value: unknown, key: string): number[][] {
+  const bad = () =>
+    new Error(`${key} must be a 4 by 4 matrix: four rows of four numbers.`)
+  if (!Array.isArray(value)) throw bad()
+  const rows =
+    value.length === 16 && value.every((v) => !Array.isArray(v))
+      ? [0, 4, 8, 12].map((i) => value.slice(i, i + 4))
+      : value
+  if (
+    rows.length !== 4 ||
+    rows.some(
+      (row) =>
+        !Array.isArray(row) ||
+        row.length !== 4 ||
+        row.some((v) => !Number.isFinite(Number(v))),
+    )
+  )
+    throw bad()
+  return rows.map((row: unknown[]) => row.map(Number))
+}
+
+/** Whether a plane by NiiVue's numbers is cut at all. */
+export function planeIsCut(plane: readonly [number, number, number]): boolean {
+  return planeDepthCuts(plane[0])
+}
+
+/**
+ * Draws a frame now, so the read-back that follows in the same task sees
+ * it. NiiVue 1.0's `drawScene` only schedules one, and a WebGL drawing
+ * buffer does not survive to the next task unless it was asked to; its
+ * render backend draws on demand. A canvas whose drawing buffer does not
+ * fit its box yet, as one NiiVue has not sized, is sized first.
+ */
+function drawNow(view: View, canvas: HTMLCanvasElement): void {
+  const box = canvas.getBoundingClientRect?.()
+  if (box && box.width > 0 && view.resize) {
+    const scale = globalThis.devicePixelRatio || 1
+    const wanted = Math.max(1, Math.floor(box.width * scale))
+    if (canvas.width !== wanted) view.resize()
+  }
+  view.drawScene()
+  view.view?.render()
+}

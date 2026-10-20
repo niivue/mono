@@ -244,7 +244,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `clearMeasurements()` | ✅ | |
 | Angle measurements | ✅ | `DRAG_MODE.angle`; completed angles stored on model |
 | `clearAngles()` | ✅ | `clearAngles()` and `clearDistanceMeasurements()` clear one kind each; `clearMeasurements()` still clears both |
-| `getDescriptives()` — ROI statistics | ✅ | `getDescriptives({ volumeIndex, masks, isDrawingMask, drawPenValues })`; calibrated values, non-finite voxels excluded, `null` on a mask/grid mismatch |
+| `getDescriptives()` — ROI statistics | ✅ | `getDescriptives({ volumeIndex, masks, isDrawingMask, drawPenValues })`; a mask is a volume index (non-zero voxels) or `{ index, values }` (only those calibrated label values, e.g. one atlas region); calibrated values, non-finite voxels excluded, `null` on a mask/grid mismatch or an empty label list |
 
 ## 18. Registration / Affine Transforms
 
@@ -349,7 +349,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Voxel-based atlas labels | ✅ | `setColormapLabel` |
 | PAQD probabilistic atlas | ✅ | `volumePaqdUniforms` |
 | Mesh-based atlases | ⚠️ | No annot/GIfTI layer readers found |
-| `addLabel()` | ❌ | |
+| `addLabel()` | ❌ | No 3D labels in the viewer. `@niivue/uikit`'s `UIKitPointLabelOverlay` draws a text label with a leader line to a world-mm point on the render tile via `mmToRenderCanvas()` / `explodedMM()` |
 
 ## 28. Plugin System
 

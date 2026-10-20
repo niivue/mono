@@ -31,6 +31,7 @@ const nv2 = new NiiVue({
 async function main() {
   await nv1.attachToCanvas(gl1)
   await nv2.attachToCanvas(gl1)
+  webgpuCheck.checked = nv1.backend === 'webgpu'
 
   await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
   await nv1.loadMeshes([

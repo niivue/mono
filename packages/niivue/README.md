@@ -87,10 +87,13 @@ Add a `<canvas>` to your page and attach NiiVue to it:
 
 ### Backend-specific distributions
 
-By default, `@niivue/niivue` includes both backends (WebGPU + WebGL2 fallback):
+By default, `@niivue/niivue` includes both backends and renders with WebGL2. Opt in to WebGPU with the `backend` option; if WebGPU is unavailable or fails to initialize, it falls back to WebGL2:
 
 ```js
 import NiiVue from '@niivue/niivue'
+
+const nv = new NiiVue() // WebGL2
+const nvGpu = new NiiVue({ backend: 'webgpu' }) // WebGPU, WebGL2 fallback
 ```
 
 You can also import backend-only builds to reduce package size:

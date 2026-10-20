@@ -1,0 +1,61 @@
+## 1.0.0-rc.1 (2026-10-20)
+
+### Features
+
+- **nv-mcp:** draw a vector field as direction colours with set_volume v1 ([8f8f643b](https://github.com/niivue/mono/commit/8f8f643b))
+- **nv-mcp:** outline boxes on the render with set_boxes ([70fbe7a9](https://github.com/niivue/mono/commit/70fbe7a9))
+- **nv-mcp:** set the style annotations drawn by hand take ([46cb02a9](https://github.com/niivue/mono/commit/46cb02a9))
+- **nv-mcp:** add set_instances so an agent can build a global3d scene ([#342](https://github.com/niivue/mono/issues/342))
+- **nv-mcp:** count labels of a mask volume in describe_volume ([#326](https://github.com/niivue/mono/issues/326))
+- **nv-mcp:** animate the scene to a target state through the tools ([93cf3775](https://github.com/niivue/mono/commit/93cf3775))
+- **nv-mcp:** write voxel values and vertex positions through the tools ([cb04cd12](https://github.com/niivue/mono/commit/cb04cd12))
+- **nv-mcp:** let an agent add, list, change and remove page controls ([2e386df3](https://github.com/niivue/mono/commit/2e386df3))
+- **nv-mcp:** label bricks of an exploded volume from an agent ([80f3ada9](https://github.com/niivue/mono/commit/80f3ada9))
+- **nv-mcp:** add a data palette an agent loads from by id ([a544f6bf](https://github.com/niivue/mono/commit/a544f6bf))
+- **nv-mcp:** bind controls to mesh, tract and connectome options ([60806d48](https://github.com/niivue/mono/commit/60806d48))
+- **nv-mcp:** draw agent controls on the canvas with UIKit ([a922912b](https://github.com/niivue/mono/commit/a922912b))
+- **nv-mcp:** bind controls to settings, the view, volumes, dialogs and actions ([039ac48e](https://github.com/niivue/mono/commit/039ac48e))
+- **demo-mcp:** add a demo app for nv-mcp and a guide to connecting agents ([e05ce384](https://github.com/niivue/mono/commit/e05ce384))
+- **nv-mcp:** add viewport, slide, chunk and document tools ([666873ab](https://github.com/niivue/mono/commit/666873ab))
+- **nv-mcp:** add signal and graph tools ([35006afa](https://github.com/niivue/mono/commit/35006afa))
+- **nv-mcp:** add drawing, annotation and measurement tools ([ce119946](https://github.com/niivue/mono/commit/ce119946))
+- **nv-mcp:** add mesh tools ([6e72d718](https://github.com/niivue/mono/commit/6e72d718))
+- **nv-mcp:** add add_colormap, set_font and set_custom_layout ([4e7b2aa0](https://github.com/niivue/mono/commit/4e7b2aa0))
+- **nv-mcp:** add get_options, set_options and capabilities ([1002a0cc](https://github.com/niivue/mono/commit/1002a0cc))
+- **nv-mcp:** add the settings table ([d42368d6](https://github.com/niivue/mono/commit/d42368d6))
+- **nv-mcp:** add tools to step, transform, remove, reorder and describe volumes ([ed4ece46](https://github.com/niivue/mono/commit/ed4ece46))
+- **nv-mcp:** add overlays and change how a volume is drawn ([ddbb9450](https://github.com/niivue/mono/commit/ddbb9450))
+- **nv-mcp:** find and go to atlas regions ([fffae82b](https://github.com/niivue/mono/commit/fffae82b))
+- **nv-mcp:** move the crosshair to a point and cut the clip plane ([28382068](https://github.com/niivue/mono/commit/28382068))
+- **nv-mcp:** drive the camera and the view, and take a screenshot ([d11caa41](https://github.com/niivue/mono/commit/d11caa41))
+- **nv-mcp:** load a volume and read the scene ([d760f77d](https://github.com/niivue/mono/commit/d760f77d))
+- **nv-mcp:** name planes and view layouts ([fd76049c](https://github.com/niivue/mono/commit/fd76049c))
+- **nv-mcp:** add the browser client and view adapter ([e781be7f](https://github.com/niivue/mono/commit/e781be7f))
+- **nv-mcp:** add the MCP server, HTTP end and tab tools ([0e1fd59d](https://github.com/niivue/mono/commit/0e1fd59d))
+- **nv-mcp:** add the package, wire protocol and tab bridge ([7d9ca08b](https://github.com/niivue/mono/commit/7d9ca08b))
+
+### Fixes
+
+- **nv-mcp:** keep a volume control bound to its volume, not its index ([92a4494c](https://github.com/niivue/mono/commit/92a4494c))
+- **nv-mcp:** refuse instances NiiVue would draw from another volume ([e63f0ab8](https://github.com/niivue/mono/commit/e63f0ab8))
+- **nv-mcp:** keep only the annotation style fields NiiVue reads ([45db52bc](https://github.com/niivue/mono/commit/45db52bc))
+- **nv-mcp:** drop canvas tile angles NiiVue never draws, clear with no volume ([1bfcad8f](https://github.com/niivue/mono/commit/1bfcad8f))
+- **nv-mcp:** check before writing in set_camera and set_volume v1 ([6c451749](https://github.com/niivue/mono/commit/6c451749))
+- **nv-mcp:** keep a later spread when set_volume also untiles ([7cc780af](https://github.com/niivue/mono/commit/7cc780af))
+- **nv-mcp:** keep the latest spread across controls and set_volume ([471e1b5c](https://github.com/niivue/mono/commit/471e1b5c))
+- **nv-mcp:** keep the latest spread across controls bound to one volume ([da16daeb](https://github.com/niivue/mono/commit/da16daeb))
+- **nv-mcp:** keep the latest spread when a slider moves during tiling ([c1400103](https://github.com/niivue/mono/commit/c1400103))
+- **nv-mcp:** let a control bind how far a volume's bricks are spread ([67e59677](https://github.com/niivue/mono/commit/67e59677))
+- **nv-mcp:** show what the target holds after an agent write, and time it out ([#273](https://github.com/niivue/mono/issues/273))
+- **nv-mcp:** report a late NiiVue write failure in the control tool result ([#271](https://github.com/niivue/mono/issues/271))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.27
+- Updated uikit to 1.0.0-rc.15
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- Taylor Hanayik @hanayik

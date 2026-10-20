@@ -3,13 +3,16 @@ import { expect, type Page, test } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
 
 // whenChunkStreamSettles (and setVolumeChunkGrid, which awaits it) must resolve
-// once the stream is idle, not only once every brick is resident.
+// once the stream is idle, not only once every brick is resident, and not
+// before the frame on screen is final.
 //
-// It resolves at once when nothing is pending, nothing is in flight AND every
-// brick is resident; otherwise it waits for `chunkStreamIdle`, which fires only
-// after a busy frame. A 2D slice view needs only the bricks its plane crosses,
-// so the stream goes idle with fewer bricks resident than the plan holds, and
-// no busy frame ever follows. The promise then sits out its 30 s timeout.
+// A 2D slice view needs only the bricks its plane crosses, so the stream goes
+// idle with fewer bricks resident than the plan holds, and no busy frame (the
+// kind `chunkStreamIdle` follows) need ever be drawn. A wait keyed to that
+// event alone sits out its 30 s timeout. A wait keyed to the raw counts
+// instead resolves while a brick is still cross-fading in over the coarse
+// floor, so a screenshot taken then differs from the settled view. The wait
+// resolves on the first frame the view itself calls settled.
 //
 // The volume is a synthetic 64^3 NIfTI built in the page, so the spec needs no
 // Git LFS data and no network. The 3D case is the one the wait exists for: a
@@ -23,6 +26,9 @@ test.beforeEach(async ({ page }) => {
 
 // A third of the 30 s timeout; a SwiftShader WebGPU 3D fill takes 2-4 s.
 const SETTLE_BUDGET_MS = 10_000
+// Long enough that a resolve mid-fade is plain, and longer than the frames a
+// SwiftShader WebGPU view needs before it settles.
+const FADE_MS = 3000
 
 /** The one pixel at (x, y) of the page, decoded from a 1x1 PNG. */
 async function probe(page: Page, x: number, y: number): Promise<number[]> {
@@ -41,7 +47,7 @@ async function probe(page: Page, x: number, y: number): Promise<number[]> {
   return Array.from(raw.subarray(1, 1 + (colorType === 6 ? 4 : 3)))
 }
 
-const mount = (backend: string, sliceType: string): string => `
+const mount = (backend: string, sliceType: string, opts = ''): string => `
   if ('${backend}' === 'webgpu') {
     if (!navigator.gpu) return { skip: 'no navigator.gpu' }
     let adapter = null
@@ -70,7 +76,7 @@ const mount = (backend: string, sliceType: string): string => `
   canvas.width = 256; canvas.height = 256
   canvas.style.cssText = 'position:fixed;top:0;left:0;width:256px;height:256px'
   document.body.appendChild(canvas)
-  const nv = new NiiVue({ backend: '${backend}', sliceType: SLICE_TYPE.${sliceType} })
+  const nv = new NiiVue({ backend: '${backend}', sliceType: SLICE_TYPE.${sliceType}, ${opts} })
   await nv.attachToCanvas(canvas)
   if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
     return { skip: 'WebGPU init fell back to ' + nv.backend }
@@ -195,5 +201,52 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       ].map(([x, y]) => probe(page, x, y)),
     )
     for (const [red] of px) expect(red).toBeGreaterThan(40)
+  })
+
+  test(`setVolumeChunkGrid waits for the first brick to fade in over the coarse floor (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+    const result = await page.evaluate(`(async () => {
+      try {
+        ${mount(backend, 'AXIAL', `chunkFadeMs: ${FADE_MS}`)}
+        // A flat floor, so the brick fading in over it changes the pixel. A
+        // clone of the loaded volume with its own voxels, as an app supplies a
+        // pyramid level (not one of nv.volumes).
+        const v = nv.volumes[0]
+        const floor = Object.assign(Object.create(Object.getPrototypeOf(v)), v, {
+          img: v.img.map((x) => (x > 0 ? 250 : 0)),
+        })
+        await nv.setBaseCoarseFloor(floor)
+        // Brick 0 alone holds this plane: no frame is ever busy, so only the
+        // drawn frame's verdict can say the fade is still running.
+        nv.crosshairPos = [0.5, 0.5, 0.1]
+        const gridMs = await timed(() => nv.setVolumeChunkGrid(0, [1, 1, 4]))
+        return { gridMs, afterGrid: counts() }
+      } catch (e) {
+        const m = String(e && e.message ? e.message : e)
+        if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+          return { skip: 'GPU unavailable: ' + m }
+        }
+        throw e
+      }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+    const atResolve = await probe(page, 128, 128)
+    // Guard: the scenario is the no-new-work one, with bricks left over.
+    expect(r.afterGrid.pending + r.afterGrid.inFlight).toBe(0)
+    expect(r.afterGrid.resident).toBeLessThan(r.afterGrid.total)
+    // What the call resolved on is what stays on screen once the fade is over.
+    await page.waitForTimeout(FADE_MS + 500)
+    expect(atResolve).toEqual(await probe(page, 128, 128))
+    // The fade starts when the brick is admitted, inside the call.
+    expect(r.gridMs).toBeGreaterThan(FADE_MS * 0.9)
+    expect(r.gridMs).toBeLessThan(FADE_MS + SETTLE_BUDGET_MS)
   })
 }

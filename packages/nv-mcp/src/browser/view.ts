@@ -407,6 +407,46 @@ export interface DocumentOptions {
   format?: 'json' | 'cbor'
 }
 
+/** What `View.animateTo` moves to: NiiVue's `AnimationTarget`. */
+export interface AnimationTarget {
+  azimuth?: number
+  elevation?: number
+  scaleMultiplier?: number
+  renderPan?: [number, number]
+  pan2Dxyzmm?: [number, number, number, number]
+  crosshairMM?: [number, number, number]
+  clipPlanes?: Record<number, [number, number, number]>
+  volumes?: Record<
+    number,
+    { calMin?: number; calMax?: number; opacity?: number; frame4D?: number }
+  >
+  meshes?: Record<number, { opacity?: number }>
+}
+
+/** How `View.animateTo` runs: NiiVue's `AnimationOptions`, in part. */
+export interface AnimationOptions {
+  duration?: number
+  easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut'
+  angles?: 'shortest' | 'literal'
+  interruptOnInput?: boolean
+}
+
+/** How a move ended: NiiVue's `AnimationResult`. */
+export interface AnimationResult {
+  completed: boolean
+  reason:
+    | 'finished'
+    | 'stalled'
+    | 'failed'
+    | 'superseded'
+    | 'input'
+    | 'stopped'
+    | 'destroyed'
+  elapsedMs: number
+  /** With `failed`: the parts whose final write failed, as `azimuth`, `volumes[1]`. */
+  failed?: string[]
+}
+
 export interface View {
   canvas: HTMLCanvasElement | null
   /** The volumes on show, the base first. NiiVue keeps how each was loaded on it. */
@@ -575,6 +615,8 @@ export interface View {
   pan2Dxyzmm?: ArrayLike<number>
   renderPan?: ArrayLike<number>
   renderPivotMM?: ArrayLike<number> | null
+  /** The render's zoom. */
+  scaleMultiplier?: number
   getViewport?(): Viewport
   setViewport?(viewport: Viewport): unknown
   setBounds?(bounds: [number, number, number, number]): unknown
@@ -584,6 +626,17 @@ export interface View {
   mmToCanvas?(mm: [number, number, number]): TilePoint | null
   customLayout?: LayoutTile[] | null
   clearCustomLayout?(): unknown
+
+  // Transitions.
+  /** Moves the scene smoothly to `target`; resolves with how the move ended. */
+  animateTo?(
+    target: AnimationTarget,
+    options?: AnimationOptions,
+  ): Promise<AnimationResult>
+  /** Ends the move under way where it is. */
+  stopAnimation?(): void
+  /** Whether a move is under way. */
+  isAnimating?: boolean
 
   // Colormaps and fonts.
   colormaps?: readonly string[]

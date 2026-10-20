@@ -16,9 +16,25 @@ export const VOLUME_ARG = z
     'Which volume: its index as where_am_i lists them (0 is the base), or its name.',
   )
 
+/** Which mesh a tool means: its index as list_meshes lists them, or its name. */
+export const MESH_ARG = z
+  .union([z.number().int().min(0), z.string().min(1)])
+  .describe('Which mesh: its index as list_meshes lists them, or its name.')
+
 /** A point, three numbers. */
 export function triple(description: string) {
   return z.array(z.number()).length(3).describe(description)
+}
+
+/** A colour: red, green and blue 0 to 1, and alpha when given. */
+export function rgba(description: string) {
+  return z
+    .array(z.number().min(0).max(1))
+    .min(3)
+    .max(4)
+    .describe(
+      `${description} [red, green, blue] or [red, green, blue, alpha], each 0 to 1.`,
+    )
 }
 
 /** How a simple tool is registered: its words, its schema, and what its reply leads with. */

@@ -29,6 +29,7 @@ import {
   SLICE_TYPES,
   type ViewState,
 } from '../views'
+import { meshHandlers } from './meshes'
 import {
   clamp,
   clearable,
@@ -309,6 +310,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
 
   return {
     ...settingHandlers(host),
+    ...meshHandlers(host),
 
     async load_volume(params) {
       const url = text(params, 'url')
@@ -354,6 +356,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         plane: planeState(host),
         camera: camera(view),
         ...(hasLayout(view) ? { view: viewState(view) } : {}),
+        ...counts(view),
         description: await describe(),
         ...(host.extraState?.() ?? {}),
       }
@@ -1107,6 +1110,13 @@ function scaledCopy(
 
 /** How many clip planes NiiVue keeps. */
 export const CLIP_PLANES = 6
+
+/** How many of each other thing is on show, for `where_am_i`; only what the page's NiiVue keeps. */
+function counts(view: View): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (view.meshes) out.meshes = view.meshes.length
+  return out
+}
 
 /** A 4 by 4 matrix, as four rows of four numbers or sixteen numbers row by row. */
 export function matrix4(value: unknown, key: string): number[][] {

@@ -185,7 +185,7 @@
         "clipper2-ts": "^2.0.1-13",
         "earcut": "^3.0.2",
         "gl-matrix": "^3.4.4",
-        "nifti-reader-js": "^0.8.0",
+        "nifti-reader-js": "^0.8.1",
         "zarrita": "^0.7.3",
       },
       "devDependencies": {
@@ -1538,7 +1538,7 @@
 
     "negotiator": ["negotiator@0.6.3", "", {}, "sha512-+EUsqGPLsM+j/zdChZjsnX51g4XrHFOIXwfnCVPGlQk/k5giakcKsuxCObBRu6DSm9opw/O6slWbJdghQM4bBg=="],
 
-    "nifti-reader-js": ["nifti-reader-js@0.8.0", "", { "dependencies": { "fflate": "^0.8.2" } }, "sha512-iO1iIhQDfKniy+l/86HfOPte7So+SxBmBiMSiUB2VXU7z4hSewMTlE3h0fCgfzfXvMUa+ilzLTJ2ZHmtFw6EWw=="],
+    "nifti-reader-js": ["nifti-reader-js@0.8.1", "", { "dependencies": { "fflate": "^0.8.2" } }, "sha512-inWrhWVqjn39gtTbK3DadYrevsmOzGK2a2LsgnwkNtvVlPrXbazOS2I2lzhmQa7KEwiegX4htGbi1moB0k/msA=="],
 
     "node-gyp-build-optional-packages": ["node-gyp-build-optional-packages@5.1.1", "", { "dependencies": { "detect-libc": "^2.0.1" }, "bin": { "node-gyp-build-optional-packages": "bin.js", "node-gyp-build-optional-packages-test": "build-test.js", "node-gyp-build-optional-packages-optional": "optional.js" } }, "sha512-+P72GAjVAbTxjjwUmwjVrqrdZROD4nf8KgpBoDxqXXTiYZZt/ud60dE5yvCSr9lRO8e8yv6kgJIC0K0PfZFVQw=="],
 

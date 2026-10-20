@@ -28,11 +28,19 @@ function echoTab(
         method: string
         params: Record<string, unknown>
       }
-      const result = {
-        method: request.method,
-        params: request.params,
-        description: 'somewhere',
-      }
+      const result =
+        request.method === 'screenshot'
+          ? {
+              data: 'iVBORw0KGgo=',
+              mimeType: 'image/png',
+              width: 12,
+              height: 8,
+            }
+          : {
+              method: request.method,
+              params: request.params,
+              description: 'somewhere',
+            }
       queueMicrotask(() =>
         bridge.receive(
           socket,
@@ -111,8 +119,59 @@ describe('core tool schemas', () => {
     }
     expect(required('new_tab')).toEqual([])
     expect(byName.new_tab.annotations?.readOnlyHint).toBe(true)
+    expect(required('set_camera')).toEqual([])
+    expect(properties('set_camera').sort()).toEqual([
+      'azimuth',
+      'center_on',
+      'elevation',
+      'global',
+      'pan_2d',
+      'pivot',
+      'render_pan',
+      'tab',
+    ])
+    expect(required('set_view')).toEqual([])
+    expect(properties('set_view').sort()).toEqual([
+      'colorbar',
+      'layout',
+      'mosaic',
+      'radiological',
+      'show_render',
+      'slice',
+      'tab',
+    ])
     expect(required('where_am_i')).toEqual([])
+    expect(required('screenshot')).toEqual([])
     expect(byName.where_am_i.annotations?.readOnlyHint).toBe(true)
+    expect(byName.set_camera.annotations?.readOnlyHint).toBeUndefined()
+  })
+
+  it('offers the slice types, the layouts and when to show the render by name', async () => {
+    const client = await connect(new Bridge())
+    const { tools } = await client.listTools()
+    const found = tools.find((t) => t.name === 'set_view')
+    if (!found) throw new Error('no tool set_view')
+    const schema = found.inputSchema as {
+      properties: Record<string, { enum?: string[] }>
+    }
+    expect(schema.properties.slice.enum).toEqual([
+      'axial',
+      'coronal',
+      'sagittal',
+      'multiplanar',
+      'render',
+    ])
+    expect(schema.properties.layout.enum).toEqual([
+      'auto',
+      'column',
+      'grid',
+      'row',
+    ])
+    expect(schema.properties.show_render.enum).toEqual([
+      'never',
+      'always',
+      'auto',
+    ])
   })
 
   it('refuses arguments outside the schema as a tool error, before any tab is asked', async () => {
@@ -123,6 +182,11 @@ describe('core tool schemas', () => {
       return text(reply)
     }
     expect(await refused('use_tab', {})).toMatch(/id/)
+    expect(await refused('set_camera', { azimuth: 0, elevation: 120 })).toMatch(
+      /elevation/,
+    )
+    expect(await refused('screenshot', { max_width: 10 })).toMatch(/max_width/)
+    expect(await refused('set_view', { slice: 'oblique' })).toMatch(/slice/)
   })
 })
 
@@ -153,6 +217,37 @@ describe('core tools over the bridge', () => {
     expect(json(load)).toMatchObject({
       params: { url: 'http://x/vol.nii.gz', mni: true },
     })
+    const laid = await client.callTool({
+      name: 'set_view',
+      arguments: { slice: 'multiplanar', layout: 'row', colorbar: true },
+    })
+    expect(json(laid)).toMatchObject({
+      params: { slice: 'multiplanar', layout: 'row', colorbar: true },
+    })
+  })
+
+  it('returns the screenshot as image content beside the text', async () => {
+    const bridge = new Bridge()
+    echoTab(bridge, 't1', 'one')
+    const client = await connect(bridge)
+    const shot = await client.callTool({
+      name: 'screenshot',
+      arguments: { max_width: 640 },
+    })
+    const content = shot.content as Array<{
+      type: string
+      data?: string
+      mimeType?: string
+      text?: string
+    }>
+    expect(content.map((c) => c.type)).toEqual(['text', 'image'])
+    expect(content[1]).toMatchObject({
+      data: 'iVBORw0KGgo=',
+      mimeType: 'image/png',
+    })
+    expect(content[0].text).toMatch(/^12×8 pixels\./)
+    // The picture is not in the text as well.
+    expect(json(shot)).toEqual({ width: 12, height: 8 })
   })
 
   it('lists tabs, lets one be chosen, and refuses an unknown id in words', async () => {
@@ -181,6 +276,59 @@ describe('core tools over the bridge', () => {
     })
     expect(missing.isError).toBe(true)
     expect(text(missing)).toMatch(/No connected tab has the id "t9"/)
+  })
+
+  it('sends a call with `tab` to that tab, without forwarding the argument, and leaves the choice alone', async () => {
+    const bridge = new Bridge()
+    echoTab(bridge, 't1', 'one')
+    echoTab(bridge, 't2', 'two')
+    const client = await connect(bridge)
+    await client.callTool({ name: 'use_tab', arguments: { id: 't1' } })
+    const named = await client.callTool({
+      name: 'set_camera',
+      arguments: { tab: 't2', azimuth: 0, elevation: 0 },
+    })
+    expect(named.isError).toBeUndefined()
+    expect(json(named)).toEqual({
+      method: 'set_camera',
+      params: { azimuth: 0, elevation: 0 },
+      description: 'somewhere',
+    })
+    const where = await client.callTool({
+      name: 'where_am_i',
+      arguments: { tab: 't2' },
+    })
+    expect(json(where)).toMatchObject({ tab: { id: 't2', title: 'two' } })
+    expect(json(where)).not.toHaveProperty('params.tab')
+    const shot = await client.callTool({
+      name: 'screenshot',
+      arguments: { tab: 't2' },
+    })
+    expect(
+      (shot.content as Array<{ type: string }>).map((c) => c.type),
+    ).toEqual(['text', 'image'])
+    // The choice stands: a call without `tab` still goes to t1.
+    expect(
+      json(await client.callTool({ name: 'where_am_i', arguments: {} })),
+    ).toMatchObject({ tab: { id: 't1' } })
+    const listed = json(
+      await client.callTool({ name: 'list_tabs', arguments: {} }),
+    ) as { tabs: Array<{ id: string; bound: boolean }> }
+    expect(listed.tabs.find((t) => t.bound)?.id).toBe('t1')
+    const missing = await client.callTool({
+      name: 'set_camera',
+      arguments: { tab: 't9', azimuth: 0, elevation: 0 },
+    })
+    expect(missing.isError).toBe(true)
+    expect(text(missing)).toMatch(
+      /^No connected tab has the id "t9"\. Connected: /,
+    )
+    const blank = await client.callTool({
+      name: 'set_camera',
+      arguments: { tab: '', azimuth: 0, elevation: 0 },
+    })
+    expect(blank.isError).toBe(true)
+    expect(text(blank)).toMatch(/tab/)
   })
 
   it('makes up a tab id and the address that opens the page as that tab', async () => {

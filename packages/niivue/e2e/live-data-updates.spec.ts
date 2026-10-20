@@ -1290,3 +1290,98 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(res.redAfter).toBeLessThan(res.redBefore * 0.05)
   })
 }
+
+// Both renderers cache volume textures by url or name. A different image under
+// the same url or name (here: new voxels assigned to `img`, at the same data
+// version, the way a reload starts at version 0) used to match every cached
+// key, so the chunked bricks and the multi-instance texture of the old voxels
+// stayed on screen.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`replacing a volume's voxels under the same name rebuilds its cached textures (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+    const r = await runInPage(
+      page,
+      `${setupPage(backend)}
+      const { chunkVolumeGrid } = await import('/src/index.ts')
+      // Chunks stream in over several frames; count until the number settles.
+      const settled = async (counter) => {
+        let last = -1
+        for (let i = 0; i < 30; i++) {
+          const { lit } = await counter()
+          if (lit === last) return lit
+          last = lit
+        }
+        return last
+      }
+
+      await nv.loadVolumes([{ url: '${VOLUME}' }])
+      const vol = nv.volumes[0]
+      const d = vol.dimsRAS
+      vol.chunkPlan = chunkVolumeGrid([d[1], d[2], d[3]], [2, 2, 2], 4096, [
+        3, 3, 3,
+      ])
+      await nv.updateGLVolume()
+      const chunked = !!nv.chunkStreamStats()
+      const chunkedBefore = await settled(count)
+      const version = vol._dataVersion ?? 0
+      vol.img = new vol.img.constructor(vol.img.length)
+      await nv.updateGLVolume()
+      const chunkedAfter = await settled(count)
+
+      // Multi-instance: the per-volume texture cached under the same name.
+      const canvas2 = document.createElement('canvas')
+      canvas2.width = 256
+      canvas2.height = 256
+      document.body.appendChild(canvas2)
+      const nv2 = new NiiVue({
+        backend: '${backend}',
+        backgroundColor: [0, 0, 0, 1],
+        instances: [{ id: 'only', bounds: [[0, 0], [1, 1]] }],
+        isOrientCubeVisible: false,
+        isOrientationTextVisible: false,
+        isColorbarVisible: false,
+      })
+      await nv2.attachToCanvas(canvas2)
+      const count2 = async () => {
+        await nextFrame()
+        if (nv2.view) nv2.view.render()
+        ctx.clearRect(0, 0, readback.width, readback.height)
+        ctx.drawImage(nv2.canvas, 0, 0)
+        const px = ctx.getImageData(0, 0, readback.width, readback.height).data
+        let lit = 0
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] > 30 || px[i + 1] > 30 || px[i + 2] > 30) lit++
+        }
+        return { lit }
+      }
+      await nv2.loadVolumes([{ url: '${VOLUME}' }])
+      // Tiles are built from instances on resize / setInstances.
+      nv2.setInstances([{ id: 'only', bounds: [[0, 0], [1, 1]] }])
+      const vol2 = nv2.volumes[0]
+      const multiBefore = await settled(count2)
+      vol2.img = new vol2.img.constructor(vol2.img.length)
+      await nv2.updateGLVolume()
+      const multiAfter = await settled(count2)
+      return {
+        chunked,
+        sameVersion: (vol._dataVersion ?? 0) === version,
+        chunkedBefore,
+        chunkedAfter,
+        multiBefore,
+        multiAfter,
+      }
+      `,
+    )
+    if (!r) return
+    // biome-ignore lint/suspicious/noExplicitAny: page result
+    const res = r as any
+    expect(res.chunked).toBe(true)
+    expect(res.sameVersion).toBe(true)
+    expect(res.chunkedBefore).toBeGreaterThan(1000)
+    expect(res.chunkedAfter).toBeLessThan(res.chunkedBefore * 0.05)
+    expect(res.multiBefore).toBeGreaterThan(1000)
+    expect(res.multiAfter).toBeLessThan(res.multiBefore * 0.05)
+  })
+}

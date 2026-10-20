@@ -72,6 +72,7 @@ import {
   chunkOverlayMatrix,
   coarseFloorKey,
   extractChunkBytes,
+  volumeSourceKey,
   wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
@@ -241,6 +242,12 @@ interface ChunkedTexEntry {
    * uploader rebuild + full re-stream (see _ensureChunkedVolumeEntry).
    */
   displayKey: string
+  /**
+   * volumeSourceKey of the image the entry streams. A different image or
+   * source under the same url or name builds a new entry, decoded tier
+   * included, rather than reusing chunks read from the old one.
+   */
+  sourceKey: string
   /**
    * Modulation the uploader bakes into every chunk (resolved against the
    * volume's own grid), or null. Kept so a plan swap rebuilds the uploader
@@ -1087,6 +1094,7 @@ export class VolumeRenderer extends NVRenderer {
     }
     const cacheKey = vol.url || vol.name
     const displayKey = chunkedDisplayKey(vol, modulation)
+    const sourceKey = volumeSourceKey(vol)
     let existing = cacheKey ? this._texCache.get(cacheKey) : undefined
     if (
       existing?.kind === 'chunked' &&
@@ -1102,7 +1110,12 @@ export class VolumeRenderer extends NVRenderer {
     // uploader, manager and brick textures are laid out for the old grid.
     // Fall through to the eviction below and rebuild. In-place swaps via
     // swapChunkedVolumePlan keep `existing.plan` in step, so they still hit.
-    if (existing && existing.kind === 'chunked' && existing.plan === plan) {
+    if (
+      existing &&
+      existing.kind === 'chunked' &&
+      existing.plan === plan &&
+      existing.sourceKey === sourceKey
+    ) {
       existing.volume = vol
       if (existing.displayKey !== displayKey) {
         // Colormap/window/frame changed after load. Resident chunk textures
@@ -1160,6 +1173,7 @@ export class VolumeRenderer extends NVRenderer {
       plan,
       bindGroups: plan.chunks.map(() => null),
       displayKey,
+      sourceKey,
       modulation,
       cubicSafe: planSupportsCubic(plan),
       predictor: new ChunkTravelPredictor(),
@@ -1270,6 +1284,7 @@ export class VolumeRenderer extends NVRenderer {
     entry.bindGroups = newPlan.chunks.map(() => null)
     entry.volume = vol
     entry.displayKey = displayKey
+    entry.sourceKey = volumeSourceKey(vol)
     vol.chunkPlan = newPlan
     // Keep at least one chunk resident for the first post-swap frame; the pump
     // streams the rest from the next working set.

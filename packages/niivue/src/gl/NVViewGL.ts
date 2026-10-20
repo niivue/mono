@@ -28,6 +28,7 @@ import {
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
+import { crosshairXRayAlpha } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
@@ -1150,18 +1151,19 @@ export default class NVGlview {
       }
       // Layer 2b-xray: Mesh X-ray pass (depth disabled, reduced opacity)
       const xrayAlpha = md.mesh.xRay
+      // Re-draw crosshairs with xray (skip on all mosaic tiles and global3d)
+      // The geometry still holds this tile's radius from Layer 2a.
+      const chXRayAlpha = crosshairXRayAlpha(xrayAlpha, tile.axCorSag)
+      if (chRadiusMM > 0 && chXRayAlpha > 0) {
+        this.crosshairRenderer.drawXRay(
+          gl,
+          mvpMatrix as Float32Array,
+          normalMatrix as Float32Array,
+          tile.axCorSag,
+          chXRayAlpha,
+        )
+      }
       if (xrayAlpha > 0) {
-        // Re-draw crosshairs with xray (skip on all mosaic tiles and global3d)
-        // The geometry still holds this tile's radius from Layer 2a.
-        if (chRadiusMM > 0) {
-          this.crosshairRenderer.drawXRay(
-            gl,
-            mvpMatrix as Float32Array,
-            normalMatrix as Float32Array,
-            tile.axCorSag,
-            xrayAlpha,
-          )
-        }
         // Re-draw meshes with xray
         if (meshes.length > 0) {
           const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER

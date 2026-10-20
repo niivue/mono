@@ -127,3 +127,19 @@ export function shouldCullCylinder(cylIdx: number, sliceType: number): boolean {
     return true
   return false
 }
+
+/**
+ * A 2D slice of an oblique volume tilts across the crosshair arms and hides the
+ * parts behind it. Those parts are redrawn this faintly, as NiiVue 0.x did, so
+ * each arm stays whole while the solid and faint halves still show the tilt.
+ */
+const HIDDEN_ARM_ALPHA = 0.15
+
+/** Opacity of the crosshair's x-ray pass: at least `HIDDEN_ARM_ALPHA` on 2D tiles. */
+export function crosshairXRayAlpha(
+  meshXRay: number,
+  sliceType: number,
+): number {
+  if (sliceType === NVConstants.SLICE_TYPE.RENDER) return meshXRay
+  return Math.max(meshXRay, HIDDEN_ARM_ALPHA)
+}

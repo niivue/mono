@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Animated Transitions</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <button type="button" id="tourButton">Tour</button>
+      <button type="button" id="spinButton">Spin</button>
+      <button type="button" id="clipButton">Sweep clip plane</button>
+      <button type="button" id="fadeButton">Fade overlay</button>
+      <button type="button" id="resetButton">Reset</button>
+      <button type="button" id="stopButton">Stop</button>
+      &nbsp;
+      <label for="durationSlider">Duration</label>
+      <input type="range" id="durationSlider" min="0" max="4000" step="100" value="1200" />
+      &nbsp;
+      <label for="easingSelect">Easing</label>
+      <select id="easingSelect">
+        <option value="easeInOut" selected>easeInOut</option>
+        <option value="easeIn">easeIn</option>
+        <option value="easeOut">easeOut</option>
+        <option value="linear">linear</option>
+      </select>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck"/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="stats">&nbsp;</footer>
+    <script type="module" src="./animate.js"></script>
+  </body>
+</html>

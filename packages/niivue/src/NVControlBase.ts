@@ -6,6 +6,7 @@ import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
 import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { Animation, planAnimation } from '@/control/animate'
 import { applyPanFollowsCrosshair } from '@/control/cameraEvents'
 import {
   clearCanvasMessage,
@@ -84,6 +85,9 @@ import NVModel from '@/NVModel'
 import type {
   AffineMatrix,
   AffineTransform,
+  AnimationOptions,
+  AnimationResult,
+  AnimationTarget,
   AnnotationPoint,
   AnnotationScreenShape,
   AnnotationStyle,
@@ -589,6 +593,8 @@ export default class NiiVue extends EventTarget {
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
   private _rafId: number | null = null
+  // The transition animateTo is running, if any
+  private _animation: Animation | null = null
   // Render-perf API — see NiiVuePerf docstring
   private _perf: NiiVuePerf | null = null
 
@@ -2848,6 +2854,75 @@ export default class NiiVue extends EventTarget {
     )
     this.emit('clipPlaneChange', { clipPlane: [...dae] })
     this.drawScene()
+  }
+
+  /**
+   * Move the scene to `target` over time instead of in one jump: the camera,
+   * zoom and pan, the crosshair, clip planes, and each volume's window,
+   * opacity and 4D frame or each mesh's opacity. Anything the target leaves
+   * out stays where it is. Every frame writes through the same public
+   * setters, so the usual change events fire along the way.
+   *
+   * Only one transition runs at a time: a new call stops the one running
+   * (it resolves with reason `'superseded'`) and starts from wherever that one
+   * left the scene. By default pressing on or scrolling the canvas stops it
+   * too. The promise resolves, never rejects, once the target is reached or
+   * the transition is stopped. If the page stops drawing frames (a hidden
+   * tab), the scene jumps to the target shortly after the duration and the
+   * reason is `'stalled'`. If a setter throws or rejects while writing the
+   * target, the reason is `'failed'` and `failed` names what did not land.
+   *
+   * A volume's window and opacity go through a GPU rebuild on every write,
+   * so on a large or chunked volume those frames are dropped rather than
+   * queued; camera, crosshair, clip plane and mesh opacity changes only
+   * redraw.
+   *
+   * @example
+   * await nv1.animateTo({ azimuth: 120, elevation: 20 }, { duration: 1000 })
+   * await nv1.animateTo({ volumes: { 1: { opacity: 0 } } })
+   * await nv1.animateTo({ azimuth: 360 }, { angles: 'literal', duration: 4000 })
+   */
+  animateTo(
+    target: AnimationTarget,
+    options: AnimationOptions = {},
+  ): Promise<AnimationResult> {
+    this._animation?.stop('superseded')
+    if (this._destroyed)
+      return Promise.resolve({
+        completed: false,
+        reason: 'destroyed',
+        elapsedMs: 0,
+      })
+    const anim = new Animation(
+      planAnimation(this, target, options.angles),
+      options,
+    )
+    this._animation = anim
+    const canvas = this.canvas
+    const onInput = (): void => anim.stop('input')
+    const listen = canvas !== null && options.interruptOnInput !== false
+    if (listen) {
+      canvas.addEventListener('pointerdown', onInput)
+      canvas.addEventListener('wheel', onInput, { passive: true })
+    }
+    void anim.result.then(() => {
+      if (listen) {
+        canvas.removeEventListener('pointerdown', onInput)
+        canvas.removeEventListener('wheel', onInput)
+      }
+      if (this._animation === anim) this._animation = null
+    })
+    return anim.start()
+  }
+
+  /** Stop the running transition where it is (reason `'stopped'`). */
+  stopAnimation(): void {
+    this._animation?.stop('stopped')
+  }
+
+  /** True while an animateTo transition is running. */
+  get isAnimating(): boolean {
+    return this._animation?.running ?? false
   }
 
   setClipPlanes(depthAziElevs: number[][]): void {
@@ -6439,6 +6514,7 @@ export default class NiiVue extends EventTarget {
 
   destroy(): void {
     this._destroyed = true
+    this._animation?.stop('destroyed')
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false
     if (this._rafId !== null) {

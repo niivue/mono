@@ -1,3 +1,15 @@
+## 1.0.0-rc.30 (2026-10-20)
+
+### Fixes
+
+- **niivue:** stop animated benchmark scenarios rendering an extra frame ([#331](https://github.com/niivue/mono/issues/331))
+- **niivue:** report a failed backend switch in the live data example ([#332](https://github.com/niivue/mono/issues/332))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.29 (2026-10-20)
 
 ### Fixes

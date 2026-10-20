@@ -35,5 +35,7 @@ export { DEFAULT_HOST, DEFAULT_PORT, startServer } from './http'
 export {
   buildServer,
   CORE_SCHEMAS,
+  CUT_NAMES,
+  PLANE_NAMES,
   registerCoreTools,
 } from './tools'

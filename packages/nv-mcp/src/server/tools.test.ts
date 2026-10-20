@@ -119,6 +119,7 @@ describe('core tool schemas', () => {
     }
     expect(required('new_tab')).toEqual([])
     expect(byName.new_tab.annotations?.readOnlyHint).toBe(true)
+    expect(required('set_clip_plane')).toEqual([])
     expect(required('set_camera')).toEqual([])
     expect(properties('set_camera').sort()).toEqual([
       'azimuth',
@@ -143,7 +144,52 @@ describe('core tool schemas', () => {
     expect(required('where_am_i')).toEqual([])
     expect(required('screenshot')).toEqual([])
     expect(byName.where_am_i.annotations?.readOnlyHint).toBe(true)
-    expect(byName.set_camera.annotations?.readOnlyHint).toBeUndefined()
+    expect(byName.go_to_point.annotations?.readOnlyHint).toBeUndefined()
+  })
+
+  it('offers the six sides, the slice names and current or off as plane names', async () => {
+    const client = await connect(new Bridge())
+    const { tools } = await client.listTools()
+    const enumOf = (tool: string, field: string) => {
+      const found = tools.find((t) => t.name === tool)
+      if (!found) throw new Error(`no tool ${tool}`)
+      const schema = found.inputSchema as {
+        properties: Record<string, { enum?: string[] }>
+      }
+      return (schema.properties[field].enum ?? []).sort()
+    }
+    expect(enumOf('go_to_point', 'plane')).toEqual(
+      [
+        'current',
+        'left',
+        'right',
+        'posterior',
+        'anterior',
+        'inferior',
+        'superior',
+        'coronal',
+        'sagittal',
+        'axial',
+        'transverse',
+        'horizontal',
+      ].sort(),
+    )
+    expect(enumOf('set_clip_plane', 'plane')).toEqual(
+      [
+        'off',
+        'left',
+        'right',
+        'posterior',
+        'anterior',
+        'inferior',
+        'superior',
+        'coronal',
+        'sagittal',
+        'axial',
+        'transverse',
+        'horizontal',
+      ].sort(),
+    )
   })
 
   it('offers the slice types, the layouts and when to show the render by name', async () => {
@@ -186,6 +232,9 @@ describe('core tool schemas', () => {
       /elevation/,
     )
     expect(await refused('screenshot', { max_width: 10 })).toMatch(/max_width/)
+    expect(
+      await refused('set_clip_plane', { plane: 'left', depth: 3 }),
+    ).toMatch(/depth/)
     expect(await refused('set_view', { slice: 'oblique' })).toMatch(/slice/)
   })
 })
@@ -210,6 +259,20 @@ describe('core tools over the bridge', () => {
       tab: { id: 't1', title: 'brainsonify' },
       method: 'where_am_i',
     })
+    const go = await client.callTool({
+      name: 'go_to_point',
+      arguments: { mm: [-36, 6, 2], plane: 'left' },
+    })
+    expect(text(go)).toMatch(/^Moved to somewhere\n/)
+    expect(json(go)).toMatchObject({
+      method: 'go_to_point',
+      params: { mm: [-36, 6, 2], plane: 'left' },
+    })
+    const cut = await client.callTool({
+      name: 'set_clip_plane',
+      arguments: { plane: 'right', depth: 0.2 },
+    })
+    expect(json(cut)).toMatchObject({ params: { plane: 'right', depth: 0.2 } })
     const load = await client.callTool({
       name: 'load_volume',
       arguments: { url: 'http://x/vol.nii.gz', mni: true },
@@ -285,13 +348,13 @@ describe('core tools over the bridge', () => {
     const client = await connect(bridge)
     await client.callTool({ name: 'use_tab', arguments: { id: 't1' } })
     const named = await client.callTool({
-      name: 'set_camera',
-      arguments: { tab: 't2', azimuth: 0, elevation: 0 },
+      name: 'go_to_point',
+      arguments: { tab: 't2', mm: [-36, 6, 2] },
     })
     expect(named.isError).toBeUndefined()
     expect(json(named)).toEqual({
-      method: 'set_camera',
-      params: { azimuth: 0, elevation: 0 },
+      method: 'go_to_point',
+      params: { mm: [-36, 6, 2] },
       description: 'somewhere',
     })
     const where = await client.callTool({

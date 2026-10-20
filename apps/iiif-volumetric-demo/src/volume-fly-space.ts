@@ -273,7 +273,7 @@ interface NiiVueLike {
     }[]
   }
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
-  setInstances(instances: NVInstance[]): void
+  setInstances(instances: NVInstance[] | null): Promise<void>
   setGlobalCamera(camera: NVGlobalCamera): void
   updateGLVolume(): Promise<void>
   drawScene(): void
@@ -823,7 +823,10 @@ function applyRenderSlots(
   const camera = cameraPayload()
   state.cameraSignature = cameraSignature(camera)
   nv.opts.globalCamera = camera
-  nv.setInstances(buildGlobalInstances(slots))
+  // Not awaited: the fly loop keeps going, and the next slots replace these.
+  nv.setInstances(buildGlobalInstances(slots)).catch((err) => {
+    console.error(err)
+  })
 }
 
 function buildGlobalInstances(items: RenderSlot[]): NVInstance[] {

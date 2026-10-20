@@ -132,6 +132,13 @@ describe('core tool schemas', () => {
       'render_pan',
       'tab',
     ])
+    expect(required('set_instances')).toEqual([])
+    expect(properties('set_instances').sort()).toEqual([
+      'camera',
+      'clear',
+      'instances',
+      'tab',
+    ])
     expect(required('animate')).toEqual([])
     expect(properties('animate').sort()).toEqual([
       'angles',
@@ -241,6 +248,7 @@ describe('core tool schemas', () => {
       'tab',
       'transform',
       'transparent_below_cal_min',
+      'v1',
       'volume',
     ])
     expect(required('set_labels')).toEqual([])
@@ -349,6 +357,40 @@ describe('core tool schemas', () => {
       return text(reply)
     }
     expect(await refused('use_tab', {})).toMatch(/id/)
+    expect(
+      await refused('set_volume', { v1: { flip: [true, false] } }),
+    ).toMatch(/v1/)
+    expect(
+      await refused('set_boxes', {
+        focus: { min: [0, 0, 0], max: [1, 1, 1], thickness: -1 },
+      }),
+    ).toMatch(/thickness/)
+    expect(
+      await refused('edit_annotations', {
+        action: 'set_style',
+        style: { strokeColor: [1, 0, 0] },
+      }),
+    ).toMatch(/strokeColor/)
+    expect(
+      await refused('set_instances', { instances: [{ id: 'a', size: 2 }] }),
+    ).toMatch(/size/)
+    // NiiVue draws a canvas tile with the scene's render camera, so a
+    // tile's own angles would be taken and never drawn.
+    expect(
+      await refused('set_instances', {
+        instances: [{ bounds: [0, 0, 0.5, 1], azimuth: 30 }],
+      }),
+    ).toMatch(/azimuth/)
+    expect(
+      await refused('set_instances', {
+        instances: Array.from({ length: 101 }, () => ({})),
+      }),
+    ).toMatch(/instances/)
+    expect(
+      await refused('set_camera', {
+        global: { position: [0, 0, 0], pitch: 95 },
+      }),
+    ).toMatch(/pitch/)
     expect(await refused('set_camera', { azimuth: 0, elevation: 120 })).toMatch(
       /elevation/,
     )

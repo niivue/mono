@@ -5,6 +5,7 @@
  * per kind rather than one per verb.
  */
 
+import { MAX_BOXES } from '../limits'
 import { nameFor, SLICE_TYPES } from '../views'
 import {
   choice,
@@ -18,6 +19,7 @@ import {
 } from './params'
 import type {
   Annotation,
+  FocusBox,
   Handlers,
   Measurement,
   MeasurementOptions,
@@ -34,7 +36,41 @@ const ANNOTATION_ACTIONS = [
   'undo',
   'redo',
   'load',
+  'set_style',
 ] as const
+
+/** NiiVue's colour for a picked brick, for a box given none. */
+const BOX_COLOR = [1, 0.83, 0.28, 1]
+
+/** A box from the tool's words: corners in mm, an optional colour and edge width. */
+function boxFrom(given: unknown, what: string): FocusBox {
+  if (!given || typeof given !== 'object' || Array.isArray(given))
+    throw new Error(`${what} must be {min, max, color?, thickness?}.`)
+  const box = given as Params
+  const min = point(box, 'min')
+  const max = point(box, 'max')
+  if (min.some((v, i) => v >= max[i]))
+    throw new Error(`${what}: each of min must be below max.`)
+  let color = BOX_COLOR
+  if (box.color !== undefined) {
+    const c = box.color
+    if (
+      !Array.isArray(c) ||
+      c.length < 3 ||
+      c.length > 4 ||
+      c.some((v) => typeof v !== 'number' || !(v >= 0 && v <= 1))
+    )
+      throw new Error(
+        `${what}: color must be [r, g, b] or [r, g, b, a], each 0 to 1.`,
+      )
+    color = c.length === 3 ? [...c, 1] : [...c]
+  }
+  const thickness = number(box, 'thickness') ?? 2
+  if (!(thickness > 0))
+    throw new Error(`${what}: thickness must be above 0 pixels.`)
+  return { min, max, color, thickness }
+}
+
 const MEASUREMENT_ACTIONS = [
   'add',
   'remove',
@@ -162,6 +198,9 @@ export function markHandlers(host: NiiVueHost): Handlers {
         ...(view.selectedAnnotation === undefined
           ? {}
           : { selected: view.selectedAnnotation }),
+        ...(view.annotationStyle === undefined
+          ? {}
+          : { style: view.annotationStyle }),
       }
       if (flag(params, 'json')) {
         if (!view.getAnnotationsJSON)
@@ -270,16 +309,62 @@ export function markHandlers(host: NiiVueHost): Handlers {
           view.loadAnnotationsJSON(json)
           break
         }
+        case 'set_style': {
+          if (view.annotationStyle === undefined)
+            throw new Error(
+              "This page's NiiVue has no style for the annotations drawn by hand.",
+            )
+          const given = record(params, 'style')
+          if (!given)
+            throw new Error(
+              'set_style needs style: {fillColor, strokeColor, strokeWidth}, any of them.',
+            )
+          // Over the current style, so a field left out keeps its value.
+          view.annotationStyle = styleFrom({
+            ...view.annotationStyle,
+            ...given,
+          })
+          break
+        }
       }
       view.drawScene()
       return {
         action,
+        ...(action === 'set_style' ? { style: view.annotationStyle } : {}),
         ...(id ? { id } : {}),
         count: annotations().length,
         ...(view.selectedAnnotation === undefined
           ? {}
           : { selected: view.selectedAnnotation }),
       }
+    },
+
+    set_boxes(params: Params) {
+      host.beforeAnswer?.()
+      if (view.focusBox === undefined || view.lodBoxes === undefined)
+        throw new Error(
+          "This page's NiiVue cannot outline boxes on the render.",
+        )
+      const focus = params?.focus
+      const list = params?.boxes
+      if (focus === undefined && list === undefined)
+        throw new Error(
+          'set_boxes needs focus, boxes, or both; null takes either down.',
+        )
+      if (list !== undefined && list !== null && !Array.isArray(list))
+        throw new Error('boxes must be a list of boxes.')
+      if (Array.isArray(list) && list.length > MAX_BOXES)
+        throw new Error(`At most ${MAX_BOXES} boxes at once.`)
+      // Every box is read before NiiVue is touched, so a refused call
+      // leaves the render as it was.
+      const one = focus ? boxFrom(focus, 'focus') : null
+      const many = Array.isArray(list)
+        ? list.map((b, i) => boxFrom(b, `boxes[${i}]`))
+        : null
+      if (focus !== undefined) view.focusBox = one
+      if (list !== undefined) view.lodBoxes = many?.length ? many : null
+      view.drawScene()
+      return { focus: view.focusBox, boxes: view.lodBoxes?.length ?? 0 }
     },
 
     list_measurements() {
@@ -395,7 +480,7 @@ function styleFrom(given: unknown): Record<string, unknown> {
     if (
       !Array.isArray(value) ||
       value.length !== 4 ||
-      value.some((n) => typeof n !== 'number' || !Number.isFinite(n))
+      value.some((n) => typeof n !== 'number' || !(n >= 0 && n <= 1))
     )
       throw new Error(`style.${key} must be [r, g, b, a], each 0 to 1.`)
     return value as [number, number, number, number]
@@ -408,9 +493,15 @@ function styleFrom(given: unknown): Record<string, unknown> {
     strokeColor[3] * 0.3,
   ]
   const strokeWidth = style.strokeWidth ?? 2
-  if (typeof strokeWidth !== 'number' || !(strokeWidth >= 0))
+  if (
+    typeof strokeWidth !== 'number' ||
+    !(strokeWidth >= 0) ||
+    !Number.isFinite(strokeWidth)
+  )
     throw new Error('style.strokeWidth must be a number of pixels, 0 or more.')
-  return { ...style, fillColor, strokeColor, strokeWidth }
+  // Only what NiiVue reads: anything else would ride along into its saved
+  // annotations unchecked.
+  return { fillColor, strokeColor, strokeWidth }
 }
 
 /**

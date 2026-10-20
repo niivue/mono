@@ -219,6 +219,59 @@ describe('list_annotations', () => {
 })
 
 describe('edit_annotations', () => {
+  it('sets the style annotations drawn by hand take, keeping fields left out', () => {
+    const view = markView({
+      annotationStyle: {
+        fillColor: [0, 0, 1, 0.3],
+        strokeColor: [0, 0, 1, 1],
+        strokeWidth: 2,
+      },
+    })
+    const { edit_annotations, list_annotations } = markHandlers(hostOf(view))
+    expect(
+      edit_annotations({ action: 'set_style', style: { strokeWidth: 4 } }),
+    ).toMatchObject({
+      action: 'set_style',
+      style: {
+        fillColor: [0, 0, 1, 0.3],
+        strokeColor: [0, 0, 1, 1],
+        strokeWidth: 4,
+      },
+    })
+    expect((list_annotations({}) as { style?: unknown }).style).toEqual(
+      view.annotationStyle,
+    )
+    expect(() =>
+      edit_annotations({ action: 'set_style', style: { strokeColor: [1] } }),
+    ).toThrow('strokeColor must be [r, g, b, a]')
+    expect(() =>
+      edit_annotations({
+        action: 'set_style',
+        style: { fillColor: [0, 0, 300, 1] },
+      }),
+    ).toThrow('fillColor must be [r, g, b, a], each 0 to 1')
+    // Only the fields NiiVue reads are kept.
+    edit_annotations({
+      action: 'set_style',
+      style: { strokeWidth: 4, dash: [2, 2] },
+    })
+    expect(Object.keys(view.annotationStyle ?? {}).sort()).toEqual([
+      'fillColor',
+      'strokeColor',
+      'strokeWidth',
+    ])
+    expect(() => edit_annotations({ action: 'set_style' })).toThrow(
+      'set_style needs style',
+    )
+    expect(view.annotationStyle?.strokeWidth).toBe(4)
+    expect(() =>
+      markHandlers(hostOf(markView())).edit_annotations({
+        action: 'set_style',
+        style: { strokeWidth: 1 },
+      }),
+    ).toThrow('no style')
+  })
+
   it('adds, selects, retitles, removes, clears, undoes, redoes and loads', () => {
     const view = markView()
     const { edit_annotations } = markHandlers(hostOf(view))
@@ -362,7 +415,7 @@ describe('edit_annotations', () => {
   it('refuses a missing or unknown id, a bad annotation, and missing text or json', () => {
     const { edit_annotations } = markHandlers(hostOf(markView()))
     expect(() => edit_annotations({})).toThrow(
-      'edit_annotations needs an action: one of add, remove, clear, select, set_text, undo, redo, load.',
+      'edit_annotations needs an action: one of add, remove, clear, select, set_text, undo, redo, load, set_style.',
     )
     expect(() => edit_annotations({ action: 'remove' })).toThrow(
       "Action remove needs the annotation's id.",
@@ -479,5 +532,69 @@ describe('list_measurements and edit_measurements', () => {
     expect(() => edit_measurements({ action: 'clear_angles' })).toThrow(
       "This page's NiiVue cannot clear angles measurements.",
     )
+  })
+})
+
+describe('set_boxes', () => {
+  /** A view whose box properties keep what they are given, as NiiVue's do. */
+  const boxView = () => baseView({ focusBox: null, lodBoxes: null })
+
+  it('outlines a focus box and a set, with NiiVue defaults filled in', () => {
+    const view = boxView()
+    const { set_boxes } = markHandlers(hostOf(view))
+    expect(
+      set_boxes({
+        focus: { min: [-10, -10, -10], max: [10, 10, 10] },
+        boxes: [
+          { min: [0, 0, 0], max: [1, 1, 1], color: [1, 0, 0], thickness: 1 },
+          { min: [1, 0, 0], max: [2, 1, 1] },
+        ],
+      }),
+    ).toEqual({
+      focus: {
+        min: [-10, -10, -10],
+        max: [10, 10, 10],
+        color: [1, 0.83, 0.28, 1],
+        thickness: 2,
+      },
+      boxes: 2,
+    })
+    expect(view.lodBoxes?.[0].color).toEqual([1, 0, 0, 1])
+    expect(view.drawScene).toHaveBeenCalled()
+  })
+
+  it('takes either down with null, leaving the other', () => {
+    const view = boxView()
+    const { set_boxes } = markHandlers(hostOf(view))
+    const box = { min: [0, 0, 0], max: [1, 1, 1] }
+    set_boxes({ focus: box, boxes: [box] })
+    expect(set_boxes({ focus: null })).toMatchObject({ focus: null, boxes: 1 })
+    expect(set_boxes({ boxes: [] })).toEqual({ focus: null, boxes: 0 })
+    expect(view.lodBoxes).toBeNull()
+  })
+
+  it('refuses a bad box, leaving the render as it was', () => {
+    const view = boxView()
+    const { set_boxes } = markHandlers(hostOf(view))
+    const good = { min: [0, 0, 0], max: [1, 1, 1] }
+    expect(() => set_boxes({})).toThrow('needs focus, boxes, or both')
+    expect(() =>
+      set_boxes({
+        focus: good,
+        boxes: [good, { min: [0, 0, 0], max: [1, 0, 1] }],
+      }),
+    ).toThrow('boxes[1]: each of min must be below max')
+    expect(() => set_boxes({ focus: { ...good, color: [2, 0, 0] } })).toThrow(
+      'color must be',
+    )
+    expect(() => set_boxes({ focus: { ...good, thickness: 0 } })).toThrow(
+      'thickness must be above 0',
+    )
+    expect(() => set_boxes({ boxes: good })).toThrow('list of boxes')
+    expect(view.focusBox).toBeNull()
+    expect(view.lodBoxes).toBeNull()
+    expect(() =>
+      markHandlers(hostOf(baseView())).set_boxes({ focus: good }),
+    ).toThrow('cannot outline boxes')
   })
 })

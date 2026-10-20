@@ -222,6 +222,9 @@ webgpuCheck.onchange = async function () {
   switchingBackend = true
   try {
     await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+  } catch (e) {
+    // The browser drops the promise an event handler returns, so report here.
+    console.error(e)
   } finally {
     // Reflect the backend actually in use (WebGPU can fall back to WebGL2).
     webgpuCheck.checked = nv1.backend === 'webgpu'

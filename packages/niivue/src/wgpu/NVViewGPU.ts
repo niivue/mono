@@ -28,7 +28,7 @@ import {
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
-import { crosshairXRayAlpha } from '@/view/NVCrosshair'
+import { hiddenArmAlpha } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
@@ -1338,6 +1338,33 @@ export default class NVView {
             tile.axCorSag,
             chSlot,
           )
+          // Before the meshes, so only the slice can hide what this reveals.
+          // Takes the mesh x-ray pass's uniform slot, which is idle while
+          // mesh x-ray is off.
+          const hiddenAlpha = hiddenArmAlpha(
+            md.mesh.xRay,
+            tile.axCorSag,
+            md.volumes[0]?.oblique_angle ?? 0,
+          )
+          const hiddenTile = i + screenSlices.length
+          const hiddenPipeline = this.meshXRayPipelines?.phong
+          if (
+            hiddenAlpha > 0 &&
+            hiddenPipeline &&
+            hiddenTile < mesh.MAX_TILES
+          ) {
+            this.crosshairRenderer.drawXRay(
+              device,
+              pass,
+              hiddenPipeline,
+              mvpMatrix as Float32Array,
+              normalMatrix as Float32Array,
+              hiddenTile,
+              tile.axCorSag,
+              hiddenAlpha,
+              chSlot,
+            )
+          }
         }
       }
       // Layer 2b: Meshes (also limited to same tile; skipped on global3d)
@@ -1415,25 +1442,26 @@ export default class NVView {
       // overwrite the normal-pass uniforms before the GPU executes them.
       const xrayAlpha = md.mesh.xRay
       const xrayTile = i + screenSlices.length
-      // Re-draw crosshairs with xray (skip on all mosaic tiles and global3d)
-      // Same vertex slot as Layer 2a: only the uniforms differ. Gated on that
-      // pass having run, since the slot holds this tile's radius only if it did.
-      const chXRayAlpha = crosshairXRayAlpha(xrayAlpha, tile.axCorSag)
-      const chXRayPipeline = this.meshXRayPipelines?.phong
-      if (chDrawn && chXRayAlpha > 0 && chXRayPipeline) {
-        this.crosshairRenderer.drawXRay(
-          device,
-          pass,
-          chXRayPipeline,
-          mvpMatrix as Float32Array,
-          normalMatrix as Float32Array,
-          xrayTile,
-          tile.axCorSag,
-          chXRayAlpha,
-          chSlot,
-        )
-      }
       if (xrayAlpha > 0 && this.meshXRayPipelines) {
+        // Re-draw crosshairs with xray (skip on all mosaic tiles and global3d)
+        // Same vertex slot as Layer 2a: only the uniforms differ. Gated on that
+        // pass having run, since the slot holds this tile's radius only if it did.
+        if (chDrawn) {
+          const xPipeline = this.meshXRayPipelines.phong
+          if (xPipeline) {
+            this.crosshairRenderer.drawXRay(
+              device,
+              pass,
+              xPipeline,
+              mvpMatrix as Float32Array,
+              normalMatrix as Float32Array,
+              xrayTile,
+              tile.axCorSag,
+              xrayAlpha,
+              chSlot,
+            )
+          }
+        }
         // Re-draw meshes with xray
         if (meshes.length > 0) {
           for (let meshIdx = 0; meshIdx < meshes.length; meshIdx++) {

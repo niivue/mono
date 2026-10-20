@@ -1,24 +1,30 @@
 import { describe, expect, test } from 'bun:test'
 import { SLICE_TYPE } from '@/NVConstants'
-import { crosshairXRayAlpha } from '@/view/NVCrosshair'
+import { hiddenArmAlpha } from '@/view/NVCrosshair'
 
-describe('crosshairXRayAlpha', () => {
-  test('2D tiles draw the arms a slice hides, even with mesh x-ray off', () => {
+const OBLIQUE = 6.7
+
+describe('hiddenArmAlpha', () => {
+  test('2D tiles of an oblique volume redraw the arms a slice hides', () => {
     for (const sliceType of [
       SLICE_TYPE.AXIAL,
       SLICE_TYPE.CORONAL,
       SLICE_TYPE.SAGITTAL,
     ]) {
-      expect(crosshairXRayAlpha(0, sliceType)).toBe(0.15)
+      expect(hiddenArmAlpha(0, sliceType, OBLIQUE)).toBe(0.15)
     }
   })
 
-  test('a stronger mesh x-ray wins on 2D tiles', () => {
-    expect(crosshairXRayAlpha(0.5, SLICE_TYPE.AXIAL)).toBe(0.5)
+  test('an axis-aligned volume needs no redraw', () => {
+    expect(hiddenArmAlpha(0, SLICE_TYPE.AXIAL, 0)).toBe(0)
   })
 
-  test('render tiles keep the mesh x-ray setting', () => {
-    expect(crosshairXRayAlpha(0, SLICE_TYPE.RENDER)).toBe(0)
-    expect(crosshairXRayAlpha(0.3, SLICE_TYPE.RENDER)).toBe(0.3)
+  test('mesh x-ray, which already redraws them, turns it off', () => {
+    expect(hiddenArmAlpha(0.05, SLICE_TYPE.AXIAL, OBLIQUE)).toBe(0)
+    expect(hiddenArmAlpha(0.5, SLICE_TYPE.AXIAL, OBLIQUE)).toBe(0)
+  })
+
+  test('render tiles never redraw hidden arms', () => {
+    expect(hiddenArmAlpha(0, SLICE_TYPE.RENDER, OBLIQUE)).toBe(0)
   })
 })

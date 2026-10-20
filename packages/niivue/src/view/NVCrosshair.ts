@@ -135,11 +135,17 @@ export function shouldCullCylinder(cylIdx: number, sliceType: number): boolean {
  */
 const HIDDEN_ARM_ALPHA = 0.15
 
-/** Opacity of the crosshair's x-ray pass: at least `HIDDEN_ARM_ALPHA` on 2D tiles. */
-export function crosshairXRayAlpha(
+/**
+ * Opacity for redrawing the arms a 2D slice hides, or 0 for none. Only an
+ * oblique base volume (`obliqueAngle` > 0) tilts its slices. Mesh x-ray already
+ * redraws hidden arms after the meshes, so this applies only while it is off.
+ */
+export function hiddenArmAlpha(
   meshXRay: number,
   sliceType: number,
+  obliqueAngle: number,
 ): number {
-  if (sliceType === NVConstants.SLICE_TYPE.RENDER) return meshXRay
-  return Math.max(meshXRay, HIDDEN_ARM_ALPHA)
+  if (meshXRay > 0 || obliqueAngle <= 0) return 0
+  if (sliceType === NVConstants.SLICE_TYPE.RENDER) return 0
+  return HIDDEN_ARM_ALPHA
 }

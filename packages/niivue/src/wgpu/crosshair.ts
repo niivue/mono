@@ -2,8 +2,12 @@ import { BYTES_PER_VERTEX, packColor } from '@/mesh/vertexFormat'
 import type NVModel from '@/NVModel'
 import { getAxisColor } from '@/view/crosshairColor'
 import {
+  applyCrosshairOffset,
+  crosshairExplodeOffsetForModel,
+} from '@/view/crosshairExplode'
+import {
   buildVertexData,
-  crosshairSegmentsForTile,
+  calculateCrosshairSegments,
   getCylinderIndices,
   MAX_CROSSHAIR_TILES,
   shouldCullCylinder,
@@ -38,8 +42,6 @@ export class CrosshairRenderer extends NVRenderer {
   private device: GPUDevice | null = null
   private cylinders: CrosshairResources[] = []
   private _uniformScratch = new Float32Array(mesh.MESH_UNIFORM_SIZE / 4)
-  // Geometry key of each vertex slot written this frame, indexed by slot.
-  private _slotKeys: string[] = []
 
   init(device: GPUDevice, bindGroupLayout: GPUBindGroupLayout): void {
     this.device = device
@@ -50,10 +52,9 @@ export class CrosshairRenderer extends NVRenderer {
     // Create 6 cylinders (2 per axis: X-, X+, Y-, Y+, Z-, Z+)
     for (let i = 0; i < 6; i++) {
       // Create vertex buffer with COPY_DST for dynamic updates. One slot per
-      // distinct crosshair geometry the frame can need: queue writes do not
-      // take effect between draws in a submitted pass, so a tile's radius and
-      // arms have to live in their own region rather than overwrite a shared
-      // one.
+      // distinct crosshair thickness the frame can need: queue writes do not
+      // take effect between draws in a submitted pass, so a per-tile radius has
+      // to live in its own region rather than overwrite a shared one.
       const vertexBuffer = device.createBuffer({
         size: CROSSHAIR_SLOT_BYTES * MAX_CROSSHAIR_TILES,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -101,48 +102,44 @@ export class CrosshairRenderer extends NVRenderer {
     this.isReady = true
   }
 
-  /** Forget the previous frame's slots; call once before a frame's tiles. */
-  beginFrame(): void {
-    this._slotKeys.length = 0
-  }
-
   /**
    * Write the six cylinders at `radiusMM` -- the world radius that renders
    * `ui.crosshairWidth` canvas pixels thick on the tile about to be drawn (see
-   * `crosshairRadiusMM`) -- with arms placed for a tile of `sliceType` (see
-   * `crosshairSegmentsForTile`), and return the vertex slot holding them. Pass
-   * that slot to `draw`/`drawXRay` for the tile. Slots exist because every
-   * write here lands before the frame's submit, so tiles cannot take turns with
-   * one region; a tile whose geometry matches an earlier tile's this frame
-   * shares that tile's slot.
+   * `crosshairRadiusMM`) -- into vertex slot `slot`. Pass the same `slot` to
+   * `draw`/`drawXRay` for that tile. Slots exist because every write here lands
+   * before the frame's submit, so tiles cannot take turns with one region.
    */
-  update(model: NVModel, radiusMM: number, sliceType: number): number {
-    if (!this.device || !this.isReady) return 0
+  update(model: NVModel, radiusMM: number, slot = 0): void {
+    if (!this.device || !this.isReady) return
 
-    const { ui } = model
+    const { extentsMin, extentsMax, scene, ui } = model
     const radius = radiusMM
-    const segments = crosshairSegmentsForTile(model, sliceType)
-    // Cylinders are ordered X-, X+, Y-, Y+, Z-, Z+, so axis = floor(i / 2).
-    const axisColors = [0, 1, 2].map((axis) =>
-      packColor(
-        getAxisColor(axis, ui.crosshairColor, ui.crosshairColorPerAxis),
-      ),
+    const offset = crosshairSlotOffset(slot)
+    const segments = calculateCrosshairSegments(
+      extentsMin,
+      extentsMax,
+      scene.crosshairPos,
+      ui.crosshairGap,
     )
 
-    const key = [
-      radius,
-      ...axisColors,
-      ...segments.flatMap(([start, end]) => [...start, ...end]),
-    ].join(',')
-    const existing = this._slotKeys.indexOf(key)
-    if (existing >= 0) return existing
-    const slot = Math.min(this._slotKeys.length, MAX_CROSSHAIR_TILES - 1)
-    this._slotKeys[slot] = key
-    const offset = crosshairSlotOffset(slot)
+    // When the active volume is a chunked/exploded plan, shift the crosshair onto
+    // the displaced block it sits in so the marker tracks the explosion. The
+    // block lookup is in volume texture fraction, so convert via mm.
+    const off = crosshairExplodeOffsetForModel(model)
 
+    // Update each cylinder's vertex buffer. Cylinders are ordered
+    // X-, X+, Y-, Y+, Z-, Z+, so axis = floor(i / 2).
     for (let i = 0; i < 6; i++) {
-      const colorPacked = axisColors[Math.floor(i / 2)]
-      const [start, end] = segments[i]
+      const colorPacked = packColor(
+        getAxisColor(
+          Math.floor(i / 2),
+          ui.crosshairColor,
+          ui.crosshairColorPerAxis,
+        ),
+      )
+      const seg = segments[i]
+      const start = applyCrosshairOffset(seg[0], off)
+      const end = applyCrosshairOffset(seg[1], off)
       const vertexData = buildVertexData(start, end, radius, colorPacked)
       this.device.queue.writeBuffer(
         this.cylinders[i].vertexBuffer,
@@ -150,7 +147,6 @@ export class CrosshairRenderer extends NVRenderer {
         vertexData,
       )
     }
-    return slot
   }
 
   getCylinders(): CrosshairResources[] {

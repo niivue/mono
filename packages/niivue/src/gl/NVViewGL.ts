@@ -1084,7 +1084,7 @@ export default class NVGlview {
       // A zero radius is either crosshairWidth: 0 or a degenerate tile; both
       // mean there is nothing to draw.
       if (chRadiusMM > 0) {
-        this.crosshairRenderer.update(md, chRadiusMM, tile.axCorSag)
+        this.crosshairRenderer.update(md, chRadiusMM)
         this.crosshairRenderer.draw(
           gl,
           mvpMatrix as Float32Array,

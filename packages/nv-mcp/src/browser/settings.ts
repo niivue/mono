@@ -34,6 +34,9 @@ import type {
   View,
 } from './view'
 
+/** The slice types a layout tile can show: every one but `none`. */
+const TILE_SLICES = Object.keys(SLICE_TYPES).filter((name) => name !== 'none')
+
 /** A setting as `get_options` reports it. */
 function describeSetting(setting: Setting): Record<string, unknown> {
   const choices =
@@ -342,10 +345,11 @@ export function settingHandlers(host: NiiVueHost): Handlers {
         throw new Error('set_custom_layout needs tiles, or clear: true.')
       const layout: LayoutTile[] = tiles.map((tile, i) => {
         const t = record({ tile }, 'tile') ?? {}
+        // A tile draws something, so `none` is not a tile.
         const slice = text(t, 'slice')?.toLowerCase()
-        if (!slice || !Object.hasOwn(SLICE_TYPES, slice)) {
+        if (!slice || slice === 'none' || !Object.hasOwn(SLICE_TYPES, slice)) {
           throw new Error(
-            `Tile ${i} needs a slice: one of ${Object.keys(SLICE_TYPES).join(', ')}.`,
+            `Tile ${i} needs a slice: one of ${TILE_SLICES.join(', ')}.`,
           )
         }
         const position = numbers(t, 'position', 4)

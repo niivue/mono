@@ -51,19 +51,23 @@ export {
   sceneState,
   viewState,
 } from './scene'
+export { settingHandlers } from './settings'
 export type {
   AffineTransform,
   AtlasLike,
   AtlasRegion,
+  ColormapToAdd,
   Descriptives,
   GlobalCamera,
   Handler,
   Handlers,
   LabelTable,
+  LayoutTile,
   LoadedVolume,
   NiiVueHost,
   ShownVolume,
   TransformedVolume,
+  TransformInfo,
   Triple,
   View,
   VolumeToLoad,

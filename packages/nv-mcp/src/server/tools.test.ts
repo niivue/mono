@@ -136,7 +136,8 @@ describe('core tool schemas', () => {
     // The tools that must be told what to act on say so in their schemas.
     expect(required('reorder_volume')).toEqual(['volume', 'move'])
     expect(required('transform_volume')).toEqual(['name'])
-    for (const name of ['describe_volume'])
+    expect(required('set_options')).toEqual(['options'])
+    for (const name of ['describe_volume', 'capabilities'])
       expect([name, byName[name].annotations?.readOnlyHint]).toEqual([
         name,
         true,

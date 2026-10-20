@@ -35,6 +35,7 @@ import {
   tabAddress,
   toolContext,
 } from './context'
+import { registerSettingTools, SETTING_SCHEMAS } from './tools-settings'
 import { registerVolumeTools, VOLUME_SCHEMAS } from './tools-volumes'
 
 /** The sides a plane can be named for, the slice names, and `current`. */
@@ -433,6 +434,7 @@ export const CORE_SCHEMAS = {
       ),
   },
   ...VOLUME_SCHEMAS,
+  ...SETTING_SCHEMAS,
 } as const
 
 /** A line that says what the view shows: the slice type, and the mosaic when one is drawn. */
@@ -756,6 +758,7 @@ export function registerCoreTools(
   )
 
   registerVolumeTools(server, context)
+  registerSettingTools(server, context)
 }
 
 /** An MCP server with the core tools and each extension's, over one bridge. */

@@ -30,6 +30,7 @@ import {
   type ViewState,
 } from '../views'
 import { controlHandlers } from './controls'
+import { dataHandlers } from './data'
 import { markHandlers } from './marks'
 import { meshHandlers } from './meshes'
 import {
@@ -50,6 +51,12 @@ import {
 import { pickIndex } from './pick'
 import { settingHandlers } from './settings'
 import { signalHandlers } from './signals'
+import {
+  claimSpread,
+  isLatestSpread,
+  requireSpread,
+  spreadVolume,
+} from './spread'
 import type {
   AffineTransform,
   AtlasLike,
@@ -79,6 +86,7 @@ export function sceneState(host: NiiVueHost): TabState {
     ...(host.controls
       ? { controls: host.controls.list().map((c) => c.id) }
       : {}),
+    ...(host.data ? { data: host.data.list().map((e) => e.id) } : {}),
     ...(host.extraState?.() ?? {}),
   }
 }
@@ -348,13 +356,14 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     return `Crosshair at ${mm.join(', ')} mm.`
   }
 
-  return {
+  const handlers: Handlers = {
     ...settingHandlers(host),
     ...viewportHandlers(host),
     ...meshHandlers(host),
     ...signalHandlers(host),
     ...markHandlers(host),
     ...controlHandlers(host),
+    ...dataHandlers(host),
 
     async load_volume(params) {
       const url = text(params, 'url')
@@ -881,6 +890,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           'set_volume needs something to set: colormap, opacity, cal_min, cal_max, frame, invert, or one of the others its schema lists.',
         )
       }
+      if (spread !== undefined) requireSpread(view)
+      // The spread write is claimed before anything waits, so a control
+      // that writes the spread meanwhile is the later one and wins.
+      const spreadClaim = spread === undefined ? undefined : claimSpread(volume)
       if (!nothingIn(update)) {
         if (!view.setVolume)
           throw new Error(
@@ -943,32 +956,48 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         }
         await view.applyVolumeTransform(index, moved)
       }
+      let untileKept = false
       if (chunkGrid !== undefined) {
         if (!view.setVolumeChunkGrid)
           throw new Error("This page's NiiVue cannot chunk a volume.")
         const grid = numbers(params, 'chunk_grid')
-        await view.setVolumeChunkGrid(
-          index,
-          grid ? [grid[0], grid[1], grid[2]] : null,
+        // Untiling clears the spread, so a call that also spreads leaves
+        // the tiling alone once a later spread came in while it waited.
+        if (
+          grid ||
+          spreadClaim === undefined ||
+          isLatestSpread(volume, spreadClaim)
         )
+          await view.setVolumeChunkGrid(
+            index,
+            grid ? [grid[0], grid[1], grid[2]] : null,
+          )
+        else untileKept = true
       }
-      if (spread !== undefined) {
-        if (!view.setVolumeChunkExplode || !view.setVolumeChunkGrid)
-          throw new Error("This page's NiiVue cannot spread a volume's bricks.")
-        // Spreading needs bricks: a volume that is one texture is tiled
-        // 3 x 3 x 3 first, unless a grid was asked for in the same call.
-        if (spread > 1 && !volume.chunkPlan && chunkGrid === undefined) {
-          await view.setVolumeChunkGrid(index, [3, 3, 3])
-        }
-        view.setVolumeChunkExplode(
-          index,
-          spread > 1 && volume.chunkPlan
-            ? { enabled: true, scale: [spread, spread, spread] }
-            : null,
-        )
-      }
+      // Spreading needs bricks: a volume that is one texture is tiled
+      // 3 x 3 x 3 first, unless a grid was asked for in the same call.
+      const spreadKept =
+        spread === undefined || spreadClaim === undefined
+          ? true
+          : await spreadVolume(
+              view,
+              index,
+              volume,
+              spread,
+              spreadClaim,
+              chunkGrid === undefined,
+            )
       view.drawScene()
-      return { volume: describeVolume(volume, index) }
+      return {
+        volume: describeVolume(volume, index),
+        ...(spreadKept
+          ? {}
+          : {
+              superseded:
+                'A later spread of this volume, from a control or another call, came in while this call waited, so the volume keeps that one' +
+                (untileKept ? ', and its bricks with it.' : '.'),
+            }),
+      }
     },
 
     async set_labels(params) {
@@ -1305,6 +1334,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
     },
   }
+  host.data?.connect(handlers)
+  return handlers
 }
 
 /** How long a screenshot waits for a chunked volume's bricks, inside the server's limit on a call. */

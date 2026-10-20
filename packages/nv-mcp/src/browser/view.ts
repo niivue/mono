@@ -11,7 +11,8 @@
  */
 
 import type { RegionSummary } from '../protocol'
-import type { ControlSurface } from './controls'
+import type { HostedControls } from './controls'
+import type { DataPalette } from './data'
 
 /** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
 export type Triple = { [index: number]: number; readonly length: number }
@@ -139,6 +140,17 @@ export interface ShownMesh {
   layers?: ReadonlyArray<ShownMeshLayer>
   tractOptions?: Record<string, unknown> | null
   connectomeOptions?: Record<string, unknown> | null
+  /** A tract's source data: NiiVue's `NVTractData`, in the part the tools read. */
+  trx?: ShownTractData | null
+}
+
+/** What a tract was loaded with: its groups and its per-vertex and per-streamline scalars, by name. */
+interface ShownTractData {
+  groups?: Readonly<Record<string, unknown>>
+  dpv?: Readonly<Record<string, unknown>>
+  dps?: Readonly<Record<string, unknown>>
+  dpvMeta?: Readonly<Record<string, { globalMin?: number; globalMax?: number }>>
+  dpsMeta?: Readonly<Record<string, { globalMin?: number; globalMax?: number }>>
 }
 
 /** A mesh as `View.addMesh` takes it: NiiVue's `MeshFromUrlOptions`, in part. */
@@ -709,7 +721,9 @@ export interface NiiVueHost {
   /** How long a screenshot waits, in milliseconds, for bricks to arrive and for the render backend to free up. */
   screenshotWaits?: { settleMs?: number; busyMs?: number }
   /** The controls the page hosts for an agent; a page without one declines the control tools. */
-  controls?: ControlSurface
+  controls?: HostedControls
+  /** The data the page can load by id; a page without one declines the data tools. */
+  data?: DataPalette
 }
 
 export type Handler = (params: Record<string, unknown>) => unknown

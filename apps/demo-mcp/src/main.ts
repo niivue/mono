@@ -14,17 +14,28 @@
  *    label overlay, projected onto the render each frame (through the
  *    volume's explode, so a label follows its brick when the volume is
  *    spread apart).
+ * 5. Gives the agent a control surface: UIKit widgets drawn on the canvas,
+ *    bound to NiiVue settings, the view, volume and mesh properties, dialogs,
+ *    the data palette and the page's actions, so an agent can lay out a
+ *    demo's controls and the person can use them.
  */
 import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import {
   AgentClient,
   type AtlasLike,
+  bindControls,
+  type ControlEvent,
+  type ControlState,
   coreHandlers,
+  type DataEntry,
+  dataPalette,
   type Handlers,
   type NiiVueHost,
+  type PageAction,
   type PointLabel,
   sceneState,
 } from '@niivue/nv-mcp/browser'
+import { uikitControls } from '@niivue/nv-mcp/uikit'
 import { loadDefaultFont, UIKitPointLabelOverlay } from '@niivue/uikit'
 import { loadAtlas } from './atlas'
 
@@ -37,6 +48,7 @@ function $<T extends HTMLElement>(id: string): T {
 const agentLine = $('agent')
 const whereLine = $('where')
 const announceLine = $('announce')
+const controlsList = $('controls')
 const status = $('status')
 
 // The hint follows the server's address as vite.config.ts read it.
@@ -98,8 +110,77 @@ function showLabels(labels: PointLabel[]): void {
   nv.drawScene()
 }
 
+/**
+ * The sample data the page offers in its data palette, by id: an agent
+ * binds a button to `data.<id>` to load one, and add_data puts more there.
+ */
+const CATALOG: DataEntry[] = [
+  {
+    id: 'mni152',
+    label: 'MNI152',
+    description: 'The MNI152 T1 template, the base the atlas applies to.',
+    tool: 'load_volume',
+    args: { url: '/volumes/mni152.nii.gz', mni: true },
+  },
+  {
+    id: 'aal',
+    label: 'AAL atlas',
+    description: 'The AAL atlas as labels, over an MNI152 base.',
+    tool: 'add_overlay',
+    args: { url: '/volumes/aal.nii.gz', labels: '/volumes/aal.json' },
+  },
+  {
+    id: 'spm_motor',
+    label: 'Motor map',
+    description: 'An SPM motor task statistical map, over an MNI152 base.',
+    tool: 'add_overlay',
+    args: {
+      url: '/volumes/spmMotor.nii.gz',
+      colormap: 'warm',
+      cal_min: 2,
+      cal_max: 8,
+    },
+  },
+  {
+    id: 'pial_lh',
+    label: 'Left pial',
+    description: 'The left hemisphere pial surface of ICBM152.',
+    tool: 'load_mesh',
+    args: { url: '/meshes/BrainMesh_ICBM152.lh.mz3' },
+  },
+  {
+    id: 'cit168',
+    label: 'CIT168',
+    description: 'The CIT168 subcortical atlas as meshes.',
+    tool: 'load_mesh',
+    args: { url: '/meshes/CIT168.mz3' },
+  },
+  {
+    id: 'yeh2022',
+    label: 'Yeh 2022 tracts',
+    description: 'The Yeh 2022 tractography atlas (TRX), in MNI space.',
+    tool: 'load_mesh',
+    args: { url: '/meshes/yeh2022.trx' },
+  },
+  {
+    id: 'dpsv',
+    label: 'DPSV tracts',
+    description: 'Tracts with per-streamline values (TRX).',
+    tool: 'load_mesh',
+    args: { url: '/meshes/dpsv.trx' },
+  },
+  {
+    id: 'connectome',
+    label: 'Connectome',
+    description: 'A connectome of nodes and edges (JCON).',
+    tool: 'load_mesh',
+    args: { url: '/meshes/connectome.jcon' },
+  },
+]
+
 const host: NiiVueHost = {
   view: nv,
+  data: dataPalette(CATALOG),
   atlas: requireAtlas,
   labels: showLabels,
   atlasApplies: () => isMni,
@@ -112,6 +193,28 @@ const host: NiiVueHost = {
     announceLine.textContent = text
     announceLine.classList.remove('quiet')
   },
+  // The control surface needs the canvas, so it is set once NiiVue is
+  // attached (see the end). Until then every tool says NiiVue is starting.
+}
+
+/** One line per control: its kind, id, label, value and what it drives. */
+function showControls(controls: ControlState[]): void {
+  controlsList.replaceChildren()
+  controlsList.classList.toggle('quiet', controls.length === 0)
+  if (controls.length === 0) {
+    controlsList.textContent =
+      'None yet. An agent can add_control a slider, toggle, menu or field.'
+    return
+  }
+  for (const control of controls) {
+    const li = document.createElement('li')
+    const value =
+      control.value === null ? '' : ` = ${JSON.stringify(control.value)}`
+    const bound = control.bind ? ` -> ${control.bind}` : ''
+    const state = control.enabled ? '' : ' (disabled)'
+    li.textContent = `${control.kind} ${control.id}${control.label ? ` "${control.label}"` : ''}${value}${bound}${state}`
+    controlsList.append(li)
+  }
 }
 
 // --- The client ---
@@ -148,13 +251,52 @@ status.textContent = 'Starting NiiVue'
 await nv.attachTo('gl1')
 nv.sliceType = SLICE_TYPE.RENDER
 status.textContent = 'Loading volume'
-await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+await loadTemplate()
+
+// --- The controls ---
+
+/** Loads the template again, in the atlas's space. */
+async function loadTemplate(): Promise<void> {
+  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+  isMni = true
+  void refreshWhere()
+}
+
+/** What a control bound to `action.<name>` can do on this page. */
+const actions: Record<string, PageAction> = {
+  open_files: {
+    description:
+      'Loads the files picked (bind a file control), replacing what is shown. The atlas no longer applies.',
+    async run(event: ControlEvent) {
+      const files = event.files ?? []
+      if (files.length === 0) return
+      await nv.loadVolumes(files.map((file) => ({ url: file })))
+      isMni = false
+      void refreshWhere()
+    },
+  },
+  load_template: {
+    description: 'Loads the MNI152 template again, replacing what is shown.',
+    run: loadTemplate,
+  },
+}
+
+// One font for the controls and the labels.
+const font = await loadDefaultFont()
+host.controls = bindControls(
+  uikitControls(nv, { font, onChange: showControls }),
+  {
+    view: nv,
+    actions,
+    data: host.data,
+    onError: (error, event) => host.announce?.(`${event.id}: ${error.message}`),
+  },
+)
 status.textContent = 'Ready.'
 ready = true
 
 // The label overlay: each frame it projects the labelled points onto the
 // render tile, moved by the explode when the volume is spread apart.
-const font = await loadDefaultFont()
 pins = new UIKitPointLabelOverlay(font, (mm) =>
   nv.mmToRenderCanvas(nv.explodedMM([mm[0], mm[1], mm[2]])),
 )

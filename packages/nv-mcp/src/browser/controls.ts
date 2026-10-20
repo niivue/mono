@@ -1,9 +1,12 @@
 /**
  * The tools that put controls on the page. The page keeps the widgets
- * behind a `ControlSurface`, which these handlers add to, change, list
+ * behind a `HostedControls` (a `ControlSurface`, or a `BoundControls`
+ * that waits for its writes), which these handlers add to, change, list
  * and clear; a page with no surface declines in words. `memoryControls`
  * is a surface that only remembers: what a page without a widget layer
- * uses, and what the tests drive.
+ * uses, and what the tests drive. `uikitControls` (in the `./uikit`
+ * entry) draws them on the canvas, and `bindControls` (in `./bindings`)
+ * makes a control drive what its `bind` names.
  */
 
 import {
@@ -76,8 +79,18 @@ export interface ControlSurface {
   bindings?(): BindingVocabulary
 }
 
+/**
+ * The controls a page hosts: a `ControlSurface`, or one whose `add` and
+ * `update` wait for what a control drives (as `bindControls` makes), so
+ * that a write failing later is the tool's error.
+ */
+export interface HostedControls extends Omit<ControlSurface, 'add' | 'update'> {
+  add(spec: ControlSpec): ControlState | Promise<ControlState>
+  update(id: string, patch: ControlPatch): ControlState | Promise<ControlState>
+}
+
 /** The kinds whose value is the kind of thing given. */
-const VALUE_KINDS: Record<
+export const VALUE_KINDS: Record<
   ControlKind,
   'boolean' | 'number' | 'string' | 'color' | 'none'
 > = {
@@ -341,7 +354,7 @@ export function memoryControls(
  * A control with a patch applied: a new value coerced to it, or the value
  * it holds coerced again when its options or range changed under it.
  */
-function patched(was: ControlState, patch: ControlPatch): ControlState {
+export function patched(was: ControlState, patch: ControlPatch): ControlState {
   const { value, ...rest } = patch
   const next: ControlState = { ...was, ...rest }
   if (next.bind === '') delete next.bind
@@ -363,7 +376,7 @@ function patched(was: ControlState, patch: ControlPatch): ControlState {
 }
 
 /** Whether a control goes in the grid: one placed at no point that is not a dialog. */
-function inGrid(c: ControlSpec): boolean {
+export function inGrid(c: ControlSpec): boolean {
   return c.kind !== 'dialog' && c.x === undefined && c.y === undefined
 }
 
@@ -372,7 +385,7 @@ function inGrid(c: ControlSpec): boolean {
  * cell in the grid, whose column defaults to 0 and whose row to the one
  * under the last of `others` in that column. A dialog takes no cell.
  */
-function settled<T extends ControlSpec>(
+export function settled<T extends ControlSpec>(
   control: T,
   others: readonly ControlSpec[],
 ): T {
@@ -426,7 +439,13 @@ export function controlHandlers(host: NiiVueHost): Handlers {
       throw new Error('This page hosts no controls: it has no control surface.')
     return host.controls
   }
-  const report = (control: ControlState) => ({ control })
+  const report = (control: ControlState) => {
+    host.view.drawScene()
+    return { control }
+  }
+  /** The control reported, after any write it waits for. */
+  const reported = (made: ControlState | Promise<ControlState>) =>
+    made instanceof Promise ? made.then(report) : report(made)
 
   return {
     add_control(params: Params) {
@@ -441,9 +460,7 @@ export function controlHandlers(host: NiiVueHost): Handlers {
       const spec: ControlSpec = { id, kind, ...fields(params) }
       if (params?.value !== undefined && params.value !== null)
         spec.value = coerceValue(spec, params.value)
-      const control = surface().add(spec)
-      host.view.drawScene()
-      return report(control)
+      return reported(surface().add(spec))
     },
 
     list_controls() {
@@ -460,9 +477,7 @@ export function controlHandlers(host: NiiVueHost): Handlers {
         patch.value = params.value as ControlValue
       if (Object.keys(patch).length === 0)
         throw new Error('set_control was given nothing to change.')
-      const control = surface().update(id, patch)
-      host.view.drawScene()
-      return report(control)
+      return reported(surface().update(id, patch))
     },
 
     remove_control(params: Params) {

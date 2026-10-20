@@ -36,6 +36,7 @@ import {
   toolContext,
 } from './context'
 import { CONTROL_SCHEMAS, registerControlTools } from './tools-controls'
+import { DATA_SCHEMAS, registerDataTools } from './tools-data'
 import { EXTRA_SCHEMAS, registerExtraTools } from './tools-extras'
 import { LAYER_SCHEMAS, registerLayerTools } from './tools-layers'
 import { MARK_SCHEMAS, registerMarkTools } from './tools-marks'
@@ -433,7 +434,7 @@ export const CORE_SCHEMAS = {
       .min(1)
       .optional()
       .describe(
-        "Spread its bricks apart in the 3D render (an exploded view): each brick's offset from the centre is multiplied by this. 1 closes them up. A volume not yet chunked is tiled 3 by 3 by 3 first.",
+        "Spread its bricks apart in the 3D render (an exploded view): each brick's offset from the centre is multiplied by this. 1 closes them up. A volume not yet chunked is tiled 3 by 3 by 3 first. If a control or another call spreads it while this call waits, the later spread wins and the reply says `superseded`; a `chunk_grid` of null asked for with it is then skipped too, since untiling would clear that spread.",
       ),
   },
   set_labels: {
@@ -523,6 +524,7 @@ export const CORE_SCHEMAS = {
   ...LAYER_SCHEMAS,
   ...MARK_SCHEMAS,
   ...CONTROL_SCHEMAS,
+  ...DATA_SCHEMAS,
   ...EXTRA_SCHEMAS,
 } as const
 
@@ -610,7 +612,10 @@ export function registerCoreTools(
       description:
         'Loads a volume into the page from an address it can fetch, replacing what is shown. ' +
         "Reports the volume's name and its extent in millimetres. An atlas only applies when the " +
-        'volume is in MNI space; pass `mni` to say so, or leave it to be guessed from the name.',
+        'volume is in MNI space; pass `mni` to say so, or leave it to be guessed from the name. ' +
+        "It cannot read a file on the person's computer by its path. When they want to load one, " +
+        'look in capabilities controlBindings for an action that opens files, add a file control ' +
+        'bound to it with add_control, and ask them to pick the file there.',
       inputSchema: strict(CORE_SCHEMAS.load_volume),
     },
     async ({ tab, ...params }) =>
@@ -631,7 +636,8 @@ export function registerCoreTools(
         'label ids, named and coloured as FreeSurfer does; any other atlas needs its own table, ' +
         'passed as the address of a label table JSON the page can fetch. The overlay must share ' +
         "the base volume's space. The base may be what the page opened with or one from " +
-        'load_volume; loading a new base clears the overlays.',
+        'load_volume; loading a new base clears the overlays. Like load_volume, it cannot read a ' +
+        "file on the person's computer by its path.",
       inputSchema: strict(CORE_SCHEMAS.add_overlay),
     },
     async ({ tab, ...params }) =>
@@ -881,6 +887,7 @@ export function registerCoreTools(
   registerLayerTools(server, context)
   registerMarkTools(server, context)
   registerControlTools(server, context)
+  registerDataTools(server, context)
   registerExtraTools(server, context)
 }
 

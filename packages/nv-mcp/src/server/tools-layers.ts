@@ -319,7 +319,8 @@ export function registerLayerTools(
     description:
       'Loads a surface, tract or connectome from an address and adds it to the meshes shown, or ' +
       'replaces them with `replace`, with any layers to overlay on it. Reports the mesh and every ' +
-      'mesh shown, as list_meshes does.',
+      'mesh shown, as list_meshes does. Like load_volume, it cannot read a file on the ' +
+      "person's computer by its path.",
     inputSchema: LAYER_SCHEMAS.load_mesh,
     lead: named('mesh', 'Loaded'),
   })
@@ -328,6 +329,7 @@ export function registerLayerTools(
     title: 'List the meshes',
     description:
       'Lists the meshes shown: each with its index, name, kind, how it is drawn, and its layers, ' +
+      "a tract's groups and its scalars (as colorBy names them, with their ranges), " +
       'plus the shaders a mesh can be drawn with.',
     inputSchema: LAYER_SCHEMAS.list_meshes,
     readOnly: true,

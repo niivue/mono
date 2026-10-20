@@ -114,7 +114,8 @@ const FIELDS = {
     .string()
     .optional()
     .describe(
-      'For a file picker: the extensions accepted, like ".nii,.nii.gz".',
+      'For a file picker: the extensions accepted, like ".nii,.mz3". Leave it unset for a file ' +
+        'that ends in two parts, like .nii.gz: the browser chooser on macOS greys those out.',
     ),
   multiple: z
     .boolean()
@@ -137,8 +138,11 @@ const FIELDS = {
         'boolean, a slider or number field for a number, a select or segmented row for one with choices, ' +
         'a color control for a colour); view.slice, view.layout or view.radiological; ' +
         'volume.<index>.<property> (opacity, colormap, cal_min, cal_max, frame, invert, ...); ' +
-        'dialog.<id>, for a button or menu item that opens ' +
-        'that dialog; or action.<name>, one of the actions the page offers, which any kind of control can run. ' +
+        'mesh.<index>.<property> (opacity, shader, visible, colorbar, legend); ' +
+        'mesh.<index>.tract.<option> or mesh.<index>.connectome.<option>, the options set_mesh takes ' +
+        '(fiberRadius, colorBy, nodeScale, ...), and mesh.<index>.tract.group for a select of the groups ' +
+        'list_meshes reports (all, or one shown alone); dialog.<id>, for a button or menu item that opens ' +
+        'that dialog; data.<id>, for a button or menu item that loads that entry of list_data; or action.<name>, one of the actions the page offers, which any kind of control can run. ' +
         'capabilities lists the forms and the actions under controlBindings. A bound control left ' +
         'without a range, options or value takes them from what it drives. An empty string unbinds it.',
     ),
@@ -199,6 +203,8 @@ export function registerControlTools(
       'x and y place it at an exact spot instead. A dialog takes no row or col; it is centred unless given x and y. ' +
       'bind names what it drives: when the person uses the control it sets what it names or runs the ' +
       'action, and a change made anywhere else shows on it. ' +
+      'A value given to a bound control is set on what it drives first; when NiiVue cannot set it, ' +
+      'the call fails and no control is added. ' +
       'Reports the control as made, with the box it was drawn in, in canvas pixels. ' +
       'A page without a control surface declines.',
     inputSchema: CONTROL_SCHEMAS.add_control,
@@ -225,7 +231,8 @@ export function registerControlTools(
     description:
       'Changes a control that is there: its value, label, grid cell or position, options, range, enabled state, binding, or whether a dialog shows. ' +
       'A row or col moves it into the grid; x and y move it out. ' +
-      'Only what is given changes; a value given to a bound control sets what it drives too. ' +
+      'Only what is given changes; a value given to a bound control sets what it drives too, and ' +
+      'when NiiVue cannot set it the call fails and the control is left as it was. ' +
       'Reports the control afterwards.',
     inputSchema: CONTROL_SCHEMAS.set_control,
   })

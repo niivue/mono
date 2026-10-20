@@ -31,6 +31,7 @@ import {
 } from '../views'
 import { controlHandlers } from './controls'
 import { dataHandlers } from './data'
+import { checkFits, fetchValues, oneSource } from './liveData'
 import { markHandlers } from './marks'
 import { meshHandlers } from './meshes'
 import {
@@ -1129,6 +1130,97 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         volume: describeVolume(view.volumes[added], added),
         volumes: volumesShown(),
       }
+    },
+
+    async update_volume_data(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (!view.updateVolumeData)
+        throw new Error("This page's NiiVue cannot write new voxel values.")
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      // NiiVue only logs and returns for each of these, so they are
+      // refused here, before anything is fetched or written.
+      const unbricked = () => {
+        if (volume.chunkPlan)
+          throw new Error(
+            `${volume.name} is drawn in bricks, and NiiVue cannot write new voxel values into a chunked volume. ` +
+              'One tiled with set_volume chunk_grid becomes a single texture again with chunk_grid null.',
+          )
+      }
+      unbricked()
+      const img = volume.img
+      if (!img)
+        throw new Error(`${volume.name} holds no voxel values to write over.`)
+      const autoWindow = flag(params, 'auto_window') ?? false
+      if (autoWindow && !view.recalculateCalMinMax)
+        throw new Error(
+          "This page's NiiVue cannot recompute a volume's window.",
+        )
+      const frames = Math.max(1, volume.nFrame4D ?? 1)
+      const frameLength = img.length / frames
+      const source = oneSource(
+        params,
+        ['values', 'url', 'from_volume'],
+        'update_volume_data',
+      )
+      let data: ArrayLike<number>
+      if (source === 'url') {
+        data = await fetchValues(params, 'url', img)
+      } else if (source === 'from_volume') {
+        const from =
+          view.volumes[
+            pickIndex(view.volumes, params.from_volume, 'from_volume')
+          ]
+        if (!from.img)
+          throw new Error(`${from.name} holds no voxel values to copy.`)
+        data = from.img
+        checkFits(data, img, volume.name)
+      } else {
+        data = numbers(params, 'values') ?? []
+        checkFits(data, img, volume.name)
+      }
+      if (data.length !== img.length && data.length !== frameLength) {
+        const oneFrame =
+          frames > 1
+            ? ` (every frame) or ${frameLength} (the frame shown, ${volume.frame4D ?? 0})`
+            : ''
+        throw new Error(
+          `${volume.name} takes ${img.length} values${oneFrame}, a value per channel for RGB or RGBA; got ${data.length}.`,
+        )
+      }
+      // The person may have removed, replaced or tiled the volume during a
+      // fetch; its index could now hold another dataset of the same size.
+      const at = view.volumes.indexOf(volume)
+      if (at < 0 || volume.img !== img)
+        throw new Error(
+          `${volume.name} was removed or replaced while its values were fetched; nothing was written.`,
+        )
+      unbricked()
+      await view.updateVolumeData(at, data)
+      const wroteFrame = frames > 1 && data.length === frameLength
+      const wrote = {
+        wrote: data.length,
+        ...(wroteFrame ? { frame: volume.frame4D ?? 0 } : {}),
+      }
+      // Each wait lets the scene change, so the volume is found again after it.
+      const gone = (unwindowed: boolean) => {
+        view.drawScene()
+        return {
+          ...wrote,
+          removed: `${volume.name} was removed while its values were written${unwindowed ? ', so it was not windowed' : ''}.`,
+          volumes: volumesShown(),
+        }
+      }
+      if (autoWindow) {
+        const now = view.volumes.indexOf(volume)
+        if (now < 0) return gone(true)
+        await view.recalculateCalMinMax?.(now)
+      }
+      const shown = view.volumes.indexOf(volume)
+      if (shown < 0) return gone(false)
+      view.drawScene()
+      return { ...wrote, volume: describeVolume(volume, shown) }
     },
 
     async remove_volume(params) {

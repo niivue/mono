@@ -177,6 +177,39 @@ const VOLUME_PROPS: Record<
   },
 }
 
+/** The volume a `volume.<index>` bind was made for, and whether it is still at that index. */
+interface BoundVolume {
+  volume: ShownVolume
+  /** The bound volume while it is still at its index, otherwise undefined. */
+  current(): ShownVolume | undefined
+  /** Throws in words unless the bound volume is still at its index. */
+  gone(): void
+}
+
+/**
+ * The bind names an index, so a volume removed, reordered, or loaded again in
+ * its place would take writes meant for this one. NiiVue changes a volume in
+ * place, so the object itself says whether it is still the one bound.
+ */
+function boundVolume(
+  view: View,
+  index: number,
+  volume: ShownVolume,
+): BoundVolume {
+  return {
+    volume,
+    current: () => (view.volumes[index] === volume ? volume : undefined),
+    gone: () => {
+      const now = view.volumes[index]
+      if (!now) throw new Error(`Volume ${index} is no longer loaded.`)
+      if (now !== volume)
+        throw new Error(
+          `Volume ${index} is now ${now.name ?? 'another volume'}, not the one this control was bound to. Bind it again.`,
+        )
+    },
+  }
+}
+
 /** Every volume property a control can bind: the fields, and how far its bricks are spread. */
 const VOLUME_NAMES = [...Object.keys(VOLUME_PROPS), 'spread']
 
@@ -188,7 +221,12 @@ const MAX_SPREAD = 4
  * `spread` sets it: 1 closes them up, and a volume drawn as one texture is
  * tiled 3 by 3 by 3 before it can spread.
  */
-function spreadTarget(bind: string, view: View, index: number): Target {
+function spreadTarget(
+  bind: string,
+  view: View,
+  index: number,
+  bound: BoundVolume,
+): Target {
   requireSpread(view)
   return {
     shape: 'number',
@@ -196,18 +234,18 @@ function spreadTarget(bind: string, view: View, index: number): Target {
     max: MAX_SPREAD,
     step: 0.05,
     read: () => {
-      const volume = view.volumes[index]
+      const volume = bound.current()
       if (!volume) return undefined
       if (!volume.chunkPlan || !volume.chunkExplode?.enabled) return 1
       return volume.chunkExplode.scale?.[0] ?? 1.5
     },
     write: async (value) => {
+      bound.gone()
       check(bind, 'number', value)
       const spread = value as number
       if (!(spread >= 1))
         throw new Error(`${bind} is 1 (the bricks touching) or more.`)
-      const volume = view.volumes[index]
-      if (!volume) throw new Error(`Volume ${index} is no longer loaded.`)
+      const volume = bound.volume
       const claim = claimSpread(volume)
       if (await spreadVolume(view, index, volume, spread, claim))
         view.drawScene()
@@ -467,7 +505,8 @@ export function resolveBinding(
       throw new Error(
         `There is no volume ${index}: ${view.volumes.length} ${view.volumes.length === 1 ? 'is' : 'are'} loaded.`,
       )
-    if (prop === 'spread') return spreadTarget(bind, view, index)
+    const bound = boundVolume(view, index, volume)
+    if (prop === 'spread') return spreadTarget(bind, view, index, bound)
     if (!view.setVolume)
       throw new Error("This page's NiiVue cannot change a volume's properties.")
     const setVolume = view.setVolume.bind(view)
@@ -479,12 +518,12 @@ export function resolveBinding(
       ...(choices ? { choices } : {}),
       ...(range ? range(volume) : {}),
       read: () => {
-        const value = view.volumes[index]?.[field]
+        // A volume gone from under the bind reads as nothing, not as the one there now.
+        const value = bound.current()?.[field]
         return value === undefined ? undefined : (value as ControlValue)
       },
       write: (value) => {
-        if (!view.volumes[index])
-          throw new Error(`Volume ${index} is no longer loaded.`)
+        bound.gone()
         check(bind, shape, value)
         if (choices && !choices.includes(value as string))
           throw new Error(

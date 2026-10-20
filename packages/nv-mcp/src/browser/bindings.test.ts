@@ -56,6 +56,11 @@ function settingsView(): View & Record<string, unknown> {
     Record<string, unknown>
 }
 
+/** A view's volumes, to change as a load, a removal or a reorder would. */
+function loaded(view: View): ShownVolume[] {
+  return view.volumes as ShownVolume[]
+}
+
 function setup(actions: Record<string, PageAction> = {}) {
   const view = settingsView()
   const memory = memoryControls()
@@ -260,6 +265,59 @@ describe('bindControls: the view and volumes', () => {
     memory.simulate({ id: 'cm', type: 'change', value: 'cool' })
     expect(view.volumes[1].colormap).toBe('cool')
   })
+
+  it('stops driving a volume that another has taken the index of', () => {
+    const { add_control, memory, view, onError } = setup()
+    add_control({
+      id: 'o',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.1.opacity',
+    })
+    loaded(view).reverse()
+    memory.simulate({ id: 'o', type: 'change', value: 0.2 })
+    expect(view.setVolume).not.toHaveBeenCalled()
+    expect(view.volumes.map((v) => v.opacity)).toEqual([0.5, 1])
+    expect(onError.mock.calls[0][0].message).toContain(
+      'Volume 1 is now mni152.nii.gz, not the one this control was bound to. Bind it again.',
+    )
+  })
+
+  it('stops driving a volume once it is removed', () => {
+    const { add_control, memory, view, onError } = setup()
+    add_control({
+      id: 'o',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.1.opacity',
+    })
+    loaded(view).pop()
+    memory.simulate({ id: 'o', type: 'change', value: 0.2 })
+    expect(view.setVolume).not.toHaveBeenCalled()
+    expect(onError.mock.calls[0][0].message).toBe(
+      'Volume 1 is no longer loaded.',
+    )
+  })
+
+  it('keeps the last value of a volume property once its volume is replaced', () => {
+    const { add_control, view, host } = setup()
+    add_control({
+      id: 'cm',
+      kind: 'select',
+      x: 0,
+      y: 0,
+      bind: 'volume.1.colormap',
+    })
+    // Loaded again at its index from the same source, drawn another way.
+    loaded(view)[1] = { ...view.volumes[1], colormap: 'cool' }
+    const { list_controls } = controlHandlers(host)
+    const listed = list_controls({}) as {
+      controls: Array<{ id: string; value: unknown }>
+    }
+    expect(listed.controls.find((c) => c.id === 'cm')?.value).toBe('warm')
+  })
 })
 
 describe('bindControls: spreading a volume', () => {
@@ -309,6 +367,22 @@ describe('bindControls: spreading a volume', () => {
     await Bun.sleep(0)
     expect(view.volumes[0].chunkExplode).toBeNull()
     expect(view.setVolumeChunkGrid).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops spreading a volume that another has taken the index of', async () => {
+    const { add_control, memory, view, onError } = spreadable()
+    add_control({
+      id: 's',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.0.spread',
+    })
+    loaded(view).reverse()
+    memory.simulate({ id: 's', type: 'change', value: 2 })
+    await Bun.sleep(0)
+    expect(view.setVolumeChunkGrid).not.toHaveBeenCalled()
+    expect(onError.mock.calls[0][0].message).toContain('Bind it again')
   })
 
   it('starts at the spread a volume already has, keeping its bricks', async () => {

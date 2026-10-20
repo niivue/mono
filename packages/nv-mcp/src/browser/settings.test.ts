@@ -147,6 +147,7 @@ describe('capabilities', () => {
     const features = got.features as Record<string, string[]>
     expect(features.volumes).toEqual(['setVolume'])
     expect(features.meshes).toEqual(['meshes', 'addMesh'])
+    expect(features.signals).toEqual([])
     expect(features.colormaps).toEqual(['colormaps'])
     expect(got.settings).toEqual([
       'backgroundColor',

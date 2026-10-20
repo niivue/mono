@@ -54,6 +54,7 @@ export {
   viewState,
 } from './scene'
 export { settingHandlers } from './settings'
+export { describeSignal, signalHandlers } from './signals'
 export type {
   AffineTransform,
   Annotation,
@@ -62,6 +63,7 @@ export type {
   ColormapToAdd,
   Descriptives,
   GlobalCamera,
+  GraphRange,
   Handler,
   Handlers,
   LabelTable,
@@ -76,7 +78,12 @@ export type {
   NiiVueHost,
   ShownMesh,
   ShownMeshLayer,
+  ShownSignal,
   ShownVolume,
+  SignalAnnotation,
+  SignalDisplay,
+  SignalToLoad,
+  SignalUpdate,
   TransformedVolume,
   TransformInfo,
   Triple,

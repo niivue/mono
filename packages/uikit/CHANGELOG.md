@@ -1,3 +1,18 @@
+## 1.0.0-rc.15 (2026-10-20)
+
+### Features
+
+- **uikit:** add a point label and its overlay ([44440227](https://github.com/niivue/mono/commit/44440227))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.27
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.14 (2026-10-19)
 
 ### Updated Dependencies

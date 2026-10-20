@@ -57,16 +57,15 @@ collection (`nv.volumes` / `nv.meshes`) at the moment the event fires**:
 - **Add / update / reorder** fire *after* the model changes — the item is now
   present or updated (`volumeLoaded`, `meshLoaded`, `volumeUpdated`,
   `meshUpdated`, `volumeOrderChanged`).
-- **Removal** fires *before* the model changes — the item being removed is still
-  present (`volumeRemoved`, `meshRemoved`, and their bulk forms). This lets a
-  listener inspect the departing item via the collection, not just the `detail`.
+- **Removal** also fires *after* the model changes — the item is gone from the
+  collection, and the event `detail` carries it together with its former index
+  (`volumeRemoved`, `meshRemoved`, `signalRemoved`, `measurementRemoved`, and the
+  bulk forms, which emit once per item in reverse index order).
 
-**Consumer corollary:** a listener that rebuilds a list by *re-reading the
-collection* will read a stale list if it does so synchronously inside a removal
-event (the item is still there). Read after the mutation instead — on the next
-render, or a microtask. (Listeners that consume the event `detail` directly are
-unaffected.) New emitting methods should preserve this ordering rather than, for
-example, moving removal to emit-after.
+**Consumer corollary:** a listener may re-read the collection synchronously
+inside any of these events and see the post-mutation state. To inspect a
+departing item, use `detail`. New emitting methods should preserve this
+ordering: emit after the mutation.
 
 ## Event Reference
 
@@ -133,8 +132,8 @@ the measurement is appended, so it is already in `getMeasurements()`.
 | `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
 
 #### `measurementRemoved`
-Fired by `removeMeasurement` before the measurement is removed, so the
-referenced measurement is still in `getMeasurements()` at emit time.
+Fired by `removeMeasurement` after the measurement is removed; `detail`
+carries the removed measurement and its former index.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -181,7 +180,7 @@ Fired after a mesh is successfully added (via `addMesh()` or `loadMeshes()`). Fi
 | `mesh` | `NVMesh` | The newly loaded mesh |
 
 #### `volumeRemoved`
-Fired before a volume is removed — by `removeVolume(index)`, or once per volume in reverse order by `removeAllVolumes()`.
+Fired after a volume is removed — by `removeVolume(index)`, or once per volume in reverse order by `removeAllVolumes()`. The volume is no longer in `nv.volumes`; `detail` carries it and its former index.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -189,7 +188,7 @@ Fired before a volume is removed — by `removeVolume(index)`, or once per volum
 | `index` | `number` | Index in the volumes array |
 
 #### `meshRemoved`
-Fired before a mesh is removed — by `removeMesh(index)`, or once per mesh by `removeAllMeshes()`.
+Fired after a mesh is removed — by `removeMesh(index)`, or once per mesh in reverse order by `removeAllMeshes()`. The mesh is no longer in `nv.meshes`; `detail` carries it and its former index.
 
 | Field | Type | Description |
 |-------|------|-------------|

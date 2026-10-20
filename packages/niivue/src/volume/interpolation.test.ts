@@ -9,6 +9,7 @@ function vol(opts: {
   label?: boolean
   nearest?: boolean
   opacity?: number
+  visible?: boolean
 }): NVImage {
   return {
     hdr: {
@@ -18,6 +19,7 @@ function vol(opts: {
     colormapLabel: opts.label ? { lut: new Uint8ClampedArray(4) } : null,
     isNearestInterpolation: opts.nearest,
     opacity: opts.opacity,
+    visible: opts.visible,
   } as unknown as NVImage
 }
 
@@ -51,10 +53,11 @@ describe('sliceInterpolation', () => {
   })
   test('hidden overlays and PAQD volumes do not count', () => {
     const hidden = vol({ intent: LABEL, opacity: 0 })
+    const toggledOff = vol({ intent: LABEL, opacity: 1, visible: false })
     const paqd = vol({ intent: LABEL, datatype: NiiDataType.DT_RGBA32 })
-    expect(sliceInterpolation([vol({}), hidden, paqd], false).overlay).toBe(
-      false,
-    )
+    expect(
+      sliceInterpolation([vol({}), hidden, toggledOff, paqd], false).overlay,
+    ).toBe(false)
   })
   test('the scene-wide flag forces nearest', () => {
     expect(sliceInterpolation([vol({})], true)).toEqual({

@@ -1,3 +1,73 @@
+## 1.0.0-rc.27 (2026-10-20)
+
+### Features
+
+- **niivue:** restrict a getDescriptives mask volume to chosen labels ([#326](https://github.com/niivue/mono/issues/326))
+- **niivue:** animate between scene states with animateTo ([6cc176ae](https://github.com/niivue/mono/commit/6cc176ae))
+- **niivue:** anchor labels to an exploded chunked volume ([919d7f0d](https://github.com/niivue/mono/commit/919d7f0d))
+- **niivue:** restrict a getDescriptives mask volume to chosen labels ([#326](https://github.com/niivue/mono/issues/326))
+- **niivue:** animate between scene states with animateTo ([66e0aa79](https://github.com/niivue/mono/commit/66e0aa79))
+
+### Fixes
+
+- **niivue:** keep an empty instance list in instance mode, and convert V1 afresh ([ce9baf6c](https://github.com/niivue/mono/commit/ce9baf6c))
+- **niivue:** rebuild volume textures when setInstances changes mode ([7d6fd735](https://github.com/niivue/mono/commit/7d6fd735))
+- **niivue:** report a failed animateTo landing, and stop mid-frame ([8157c6ec](https://github.com/niivue/mono/commit/8157c6ec))
+- **niivue:** drop stale bricks when a WebGL2 plan swap follows a display change ([1ab72555](https://github.com/niivue/mono/commit/1ab72555))
+- **niivue:** settle the chunk stream when the view needs no more bricks ([2cff5dd7](https://github.com/niivue/mono/commit/2cff5dd7))
+- **niivue:** keep the chunked entry when a refresh races a plan swap on WebGPU ([5195521f](https://github.com/niivue/mono/commit/5195521f))
+- **niivue:** report a failed animateTo landing, and stop mid-frame ([863fa72a](https://github.com/niivue/mono/commit/863fa72a))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- Taylor Hanayik @hanayik
+
+## 1.0.0-rc.26 (2026-10-19)
+
+### Fixes
+
+- **niivue:** report annotation.style whole in load change events ([1e7a8d53](https://github.com/niivue/mono/commit/1e7a8d53))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.25 (2026-10-19)
+
+### Fixes
+
+- **niivue:** reorient loaded drawings using the native dims ([56734439](https://github.com/niivue/mono/commit/56734439))
+
+### Thank You
+
+- Claude Fable 5.1
+- Steffen Bollmann
+
+## 1.0.0-rc.24 (2026-10-19)
+
+### Fixes
+
+- **niivue:** skip the CPU chunk pick for a hidden background ([#224](https://github.com/niivue/mono/issues/224))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.23 (2026-10-18)
+
+### Fixes
+
+- **niivue:** only decode a $num tag that has no other keys ([#216](https://github.com/niivue/mono/issues/216))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.22 (2026-10-13)
 
 ### Features

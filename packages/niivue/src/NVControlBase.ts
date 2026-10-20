@@ -6,6 +6,7 @@ import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
 import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { Animation, planAnimation } from '@/control/animate'
 import { applyPanFollowsCrosshair } from '@/control/cameraEvents'
 import {
   clearCanvasMessage,
@@ -14,6 +15,7 @@ import {
   showCanvasMessage,
 } from '@/control/canvasMessage'
 import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
+import { applyInstances } from '@/control/instances'
 import {
   clientToBoundsPixel,
   type ExplodedBlockPick,
@@ -33,14 +35,17 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import {
+  type SettingsSnapshot,
+  settingsChangeEvents,
+  snapshotSettings,
+} from '@/documentEvents'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   addUndoBitmap,
-  calculateLoadDrawingTransform,
   clearAllUndoBitmaps,
   createDrawingVolume,
   getDrawingBitmap,
-  transformBitmap,
   validateDrawingDimensions,
 } from '@/drawing/drawingManager'
 import { drawingSliceToSVG } from '@/drawing/drawingSvg'
@@ -81,6 +86,9 @@ import NVModel from '@/NVModel'
 import type {
   AffineMatrix,
   AffineTransform,
+  AnimationOptions,
+  AnimationResult,
+  AnimationTarget,
   AnnotationPoint,
   AnnotationScreenShape,
   AnnotationStyle,
@@ -117,6 +125,7 @@ import type {
   SyncOpts,
   VectorAnnotation,
   ViewHitTest,
+  VolumeChunkExplode,
   VolumeUpdate,
   WheelZoomAnchor,
 } from '@/NVTypes'
@@ -130,6 +139,7 @@ import { SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
+import { crosshairExplodeOffset } from '@/view/crosshairExplode'
 import { type MeshRebuild, mergeMeshRebuild } from '@/view/meshGpuSync'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
@@ -155,17 +165,21 @@ import type { CanvasTilePoint, SliceTile } from '@/view/NVSliceLayout'
 import {
   cloneSliceTile,
   projectMMToNearestTile,
+  projectMMToRenderTile,
   screenSlicePick,
   validateCustomLayout,
 } from '@/view/NVSliceLayout'
 import type { UpdateBindGroupsOptions } from '@/view/volumeUpdateScope'
 import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
+import { chunkIndexAtFrac, explodedChunkCornersMM } from '@/volume/ChunkExplode'
 import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import {
   type ChunkPlan,
   CUBIC_MIN_HALO,
+  chunkVolumeGrid,
   dimsDownsample,
+  type Vec3i,
 } from '@/volume/chunking'
 import {
   type ChunkTimingSnapshot,
@@ -173,10 +187,7 @@ import {
   resetChunkTiming as clearChunkTiming,
 } from '@/volume/chunkTiming'
 import { commitDirtyVolumes, markVolumeDataChanged } from '@/volume/dataVersion'
-import {
-  computeDescriptiveStats,
-  type DescriptiveStats,
-} from '@/volume/descriptives'
+import type { DescriptiveStats } from '@/volume/descriptives'
 import {
   computeModulationData,
   computeModulationWeights,
@@ -186,6 +197,7 @@ import {
   NVChunkedVolume,
 } from '@/volume/NVChunkedVolume'
 import * as NVVolume from '@/volume/NVVolume'
+import { regionDescriptives } from '@/volume/regionDescriptives'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
 import type {
   TransformInfo,
@@ -196,8 +208,8 @@ import * as NVVolumeTransforms from '@/volume/transforms'
 import {
   calculateWorldExtents,
   calMinMaxFrame,
-  getImageDataRAS,
   reorientDrawingToNative,
+  reorientDrawingToRAS,
   volumeTR,
 } from '@/volume/utils'
 
@@ -579,6 +591,8 @@ export default class NiiVue extends EventTarget {
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
   private _rafId: number | null = null
+  // The transition animateTo is running, if any
+  private _animation: Animation | null = null
   // Render-perf API — see NiiVuePerf docstring
   private _perf: NiiVuePerf | null = null
 
@@ -2840,6 +2854,75 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Move the scene to `target` over time instead of in one jump: the camera,
+   * zoom and pan, the crosshair, clip planes, and each volume's window,
+   * opacity and 4D frame or each mesh's opacity. Anything the target leaves
+   * out stays where it is. Every frame writes through the same public
+   * setters, so the usual change events fire along the way.
+   *
+   * Only one transition runs at a time: a new call stops the one running
+   * (it resolves with reason `'superseded'`) and starts from wherever that one
+   * left the scene. By default pressing on or scrolling the canvas stops it
+   * too. The promise resolves, never rejects, once the target is reached or
+   * the transition is stopped. If the page stops drawing frames (a hidden
+   * tab), the scene jumps to the target shortly after the duration and the
+   * reason is `'stalled'`. If a setter throws or rejects while writing the
+   * target, the reason is `'failed'` and `failed` names what did not land.
+   *
+   * A volume's window and opacity go through a GPU rebuild on every write,
+   * so on a large or chunked volume those frames are dropped rather than
+   * queued; camera, crosshair, clip plane and mesh opacity changes only
+   * redraw.
+   *
+   * @example
+   * await nv1.animateTo({ azimuth: 120, elevation: 20 }, { duration: 1000 })
+   * await nv1.animateTo({ volumes: { 1: { opacity: 0 } } })
+   * await nv1.animateTo({ azimuth: 360 }, { angles: 'literal', duration: 4000 })
+   */
+  animateTo(
+    target: AnimationTarget,
+    options: AnimationOptions = {},
+  ): Promise<AnimationResult> {
+    this._animation?.stop('superseded')
+    if (this._destroyed)
+      return Promise.resolve({
+        completed: false,
+        reason: 'destroyed',
+        elapsedMs: 0,
+      })
+    const anim = new Animation(
+      planAnimation(this, target, options.angles),
+      options,
+    )
+    this._animation = anim
+    const canvas = this.canvas
+    const onInput = (): void => anim.stop('input')
+    const listen = canvas !== null && options.interruptOnInput !== false
+    if (listen) {
+      canvas.addEventListener('pointerdown', onInput)
+      canvas.addEventListener('wheel', onInput, { passive: true })
+    }
+    void anim.result.then(() => {
+      if (listen) {
+        canvas.removeEventListener('pointerdown', onInput)
+        canvas.removeEventListener('wheel', onInput)
+      }
+      if (this._animation === anim) this._animation = null
+    })
+    return anim.start()
+  }
+
+  /** Stop the running transition where it is (reason `'stopped'`). */
+  stopAnimation(): void {
+    this._animation?.stop('stopped')
+  }
+
+  /** True while an animateTo transition is running. */
+  get isAnimating(): boolean {
+    return this._animation?.running ?? false
+  }
+
   setClipPlanes(depthAziElevs: number[][]): void {
     for (let i = 0; i < NUM_CLIP_PLANE; i++) {
       if (i < depthAziElevs.length) {
@@ -3434,17 +3517,22 @@ export default class NiiVue extends EventTarget {
     const meshes = this.model.getMeshes()
     if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const mesh = meshes[meshIndex]
-    this.emit('meshRemoved', { mesh, index: meshIndex })
     this.model.removeMesh(meshIndex)
+    // Emit after the removal, like every other mutation event: the detail
+    // carries the removed mesh and its former index; the collection no longer
+    // holds it.
+    this.emit('meshRemoved', { mesh, index: meshIndex })
     await this._updateGLMeshes()
   }
 
   async removeAllVolumes(): Promise<void> {
-    const vols = this.model.getVolumes()
+    const vols = [...this.model.getVolumes()]
+    await this.model.removeAllVolumes()
+    // One event per volume, after the removal, in reverse index order (so
+    // each detail's index was valid at the time that volume was removed).
     for (let i = vols.length - 1; i >= 0; i--) {
       this.emit('volumeRemoved', { volume: vols[i], index: i })
     }
-    await this.model.removeAllVolumes()
     await this._updateGLChanged()
   }
 
@@ -3458,19 +3546,20 @@ export default class NiiVue extends EventTarget {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
-    // Emit before removal, matching removeAllVolumes/removeAllMeshes: at emit
-    // time the collection still contains the referenced item.
-    this.emit('volumeRemoved', { volume, index: volumeIndex })
     this.model.removeVolume(volumeIndex)
+    // Emit after the removal, like every other mutation event: the detail
+    // carries the removed volume and its former index; the collection no
+    // longer holds it.
+    this.emit('volumeRemoved', { volume, index: volumeIndex })
     await this._updateGLChanged()
   }
 
   async removeAllMeshes(): Promise<void> {
-    const meshes = this.model.getMeshes()
+    const meshes = [...this.model.getMeshes()]
+    this.model.removeAllMeshes()
     for (let i = meshes.length - 1; i >= 0; i--) {
       this.emit('meshRemoved', { mesh: meshes[i], index: i })
     }
-    this.model.removeAllMeshes()
     await this._updateGLMeshes()
   }
 
@@ -3714,84 +3803,38 @@ export default class NiiVue extends EventTarget {
    * on a different grid returns `null` rather than silently wrong numbers.
    *
    * @param options.volumeIndex - which volume to measure (default 0, the background)
-   * @param options.masks - volume indices whose non-zero voxels define the region;
-   *   with several, a voxel counts only where ALL of them are non-zero
+   * @param options.masks - the volumes that define the region. A volume index
+   *   counts that volume's non-zero voxels; `{ index, values }` counts only the
+   *   voxels whose calibrated value is one of `values` (label 0 included), to
+   *   pick regions of an atlas or segmentation. With several masks, a voxel
+   *   counts only where ALL of them keep it
    * @param options.isDrawingMask - also require a non-zero voxel in the drawing bitmap
    * @param options.drawPenValues - when masking by the drawing, restrict to these
    *   pen values (default: any non-zero voxel)
-   * @returns the statistics, or `null` when the volume has no data or a mask
-   *   does not match the target grid
+   * @returns the statistics, or `null` when the volume has no data, a mask
+   *   index is out of bounds, a label list is empty, or a mask does not match
+   *   the target grid
    *
    * @example
    * const roi = nv1.getDescriptives({ volumeIndex: 0, isDrawingMask: true })
    * console.log(roi.mean, roi.stdev, roi.volumeML)
+   * // Statistics of atlas region 17 (the atlas loaded as volume 1)
+   * const region = nv1.getDescriptives({ masks: [{ index: 1, values: [17] }] })
    */
   getDescriptives(
     options: {
       volumeIndex?: number
-      masks?: number[]
+      masks?: Array<number | { index: number; values: number[] }>
       isDrawingMask?: boolean
       drawPenValues?: number[]
     } = {},
   ): DescriptiveStats | null {
-    const volumes = this.model.getVolumes()
-    const volumeIndex = options.volumeIndex ?? 0
-    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return null
-    const vol = volumes[volumeIndex]
-    const raw = getImageDataRAS(vol)
-    if (!raw || !vol.dimsRAS || !vol.pixDimsRAS) {
-      log.warn('getDescriptives: volume has no resolvable RAS data')
-      return null
-    }
-    const nVox = raw.length
-    // getImageDataRAS returns unscaled samples; report calibrated intensities.
-    const slope = vol.hdr?.scl_slope || 1
-    const inter = vol.hdr?.scl_inter || 0
-    let values: Float32Array = raw
-    if (slope !== 1 || inter !== 0) {
-      values = new Float32Array(nVox)
-      for (let i = 0; i < nVox; i++) values[i] = raw[i] * slope + inter
-    }
-    // Intersect every requested mask into one inclusion array.
-    let mask: Uint8Array | null = null
-    const requireMask = (): Uint8Array => {
-      if (!mask) mask = new Uint8Array(nVox).fill(1)
-      return mask
-    }
-    for (const maskIndex of options.masks ?? []) {
-      if (!this._checkBounds(volumes, maskIndex, 'Mask volume')) return null
-      const maskData = getImageDataRAS(volumes[maskIndex])
-      if (!maskData || maskData.length !== nVox) {
-        log.warn(
-          `getDescriptives: mask volume ${maskIndex} does not match the target grid`,
-        )
-        return null
-      }
-      const m = requireMask()
-      for (let i = 0; i < nVox; i++) {
-        if (maskData[i] === 0 || Number.isNaN(maskData[i])) m[i] = 0
-      }
-    }
-    if (options.isDrawingMask) {
-      const drawingVol = this.model.drawingVolume
-      const bitmap = drawingVol ? getDrawingBitmap(drawingVol) : null
-      if (!bitmap || bitmap.length !== nVox) {
-        log.warn(
-          'getDescriptives: no drawing, or the drawing does not match the target grid',
-        )
-        return null
-      }
-      const pens = options.drawPenValues
-      const m = requireMask()
-      for (let i = 0; i < nVox; i++) {
-        const v = bitmap[i]
-        const keep = pens ? pens.includes(v) : v !== 0
-        if (!keep) m[i] = 0
-      }
-    }
-    const voxelVolumeMM3 =
-      vol.pixDimsRAS[1] * vol.pixDimsRAS[2] * vol.pixDimsRAS[3]
-    return computeDescriptiveStats(values, voxelVolumeMM3, mask)
+    const drawingVol = this.model.drawingVolume
+    return regionDescriptives(
+      this.model.getVolumes(),
+      () => (drawingVol ? getDrawingBitmap(drawingVol) : null),
+      options,
+    )
   }
 
   getVolumeAffine(volumeIndex: number): AffineMatrix {
@@ -3833,6 +3876,212 @@ export default class NiiVue extends EventTarget {
     this._setVolumeAffine(volume, originalAffine)
     this._emitVolumeAffineUpdate(volumeIndex, volume)
     await this.updateVolumeAffineOnly()
+  }
+
+  /**
+   * Tile a loaded volume into a `gridDims` grid of bricks and render it through
+   * the chunked path, whatever its size. This is what makes
+   * {@link setVolumeChunkExplode} possible on an ordinary volume. The halo is
+   * the voxel overlap between bricks; the default of 3 satisfies cubic
+   * interpolation. `deviceLimit` caps each brick's edge in texels and defaults
+   * to 4096, which every WebGL2/WebGPU device this renders on accepts. Pass
+   * `null` to return the volume to a single texture; this also clears any
+   * explode. Reloads the volume's GPU textures, so it resolves once the bricks
+   * are resident.
+   */
+  async setVolumeChunkGrid(
+    volumeIndex: number,
+    gridDims: Vec3i | null,
+    options: { halo?: Vec3i; deviceLimit?: number } = {},
+  ): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    if (gridDims === null) {
+      volume.chunkPlan = undefined
+      volume.chunkExplode = undefined
+    } else {
+      if (!volume.dimsRAS) NVTransforms.calculateRAS(volume)
+      const d = volume.dimsRAS
+      if (!d) throw new Error(`Volume ${volume.name} has no RAS dimensions`)
+      volume.chunkPlan = chunkVolumeGrid(
+        [d[1], d[2], d[3]],
+        gridDims,
+        options.deviceLimit ?? 4096,
+        options.halo ?? [3, 3, 3],
+      )
+    }
+    volume.chunkBrickOpacity = undefined
+    await this.updateGLVolume()
+    await this.whenChunkStreamSettles()
+  }
+
+  /**
+   * Resolves once the bricks the view asked for are resident and drawn: the
+   * renderer admits one brick when the plan is set and streams the rest over
+   * the following frames, and a change that rebuilds the bricks' textures
+   * (turning on `volumeIllumination`, say) streams them again, so a
+   * screenshot taken straight after {@link setVolumeChunkGrid} or such a
+   * change would show a partly-tiled volume. Listens for `chunkStreamIdle`
+   * after kicking a draw; resolves at once when nothing is outstanding, or no
+   * volume is chunked, and gives up quietly after `timeoutMs`.
+   */
+  whenChunkStreamSettles(timeoutMs = 30_000): Promise<void> {
+    const stats = this.chunkStreamStats()
+    if (
+      !stats ||
+      (stats.pending === 0 &&
+        stats.inFlight === 0 &&
+        stats.resident >= stats.total)
+    ) {
+      return Promise.resolve()
+    }
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | null = null
+      let finished = false
+      let sawBusy = false
+      const onProgress = (): void => {
+        sawBusy = true
+      }
+      const done = (): void => {
+        if (finished) return
+        finished = true
+        this.removeEventListener('chunkStreamIdle', done)
+        this.removeEventListener('chunkStreamProgress', onProgress)
+        if (timer !== null) clearTimeout(timer)
+        resolve()
+      }
+      this.addEventListener('chunkStreamIdle', done)
+      this.addEventListener('chunkStreamProgress', onProgress)
+      timer = setTimeout(done, timeoutMs)
+      this.drawScene()
+      // `chunkStreamIdle` follows only a busy frame. A view that already holds
+      // every brick it draws (a 2D plane through resident bricks only) never
+      // has one, so once the kicked draw has run without queueing anything,
+      // the stream is as settled as it will get.
+      const check = (framesLeft: number): void => {
+        requestAnimationFrame(() => {
+          if (finished || sawBusy) return
+          if (framesLeft > 1) {
+            check(framesLeft - 1)
+            return
+          }
+          const now = this.chunkStreamStats()
+          if (!now || now.pending + now.inFlight === 0) done()
+        })
+      }
+      check(2)
+    })
+  }
+
+  /**
+   * Index into `chunkPlan.chunks` of the background volume's brick holding the
+   * world-mm point, or -1 when the volume is not chunked or the point lies
+   * outside it. The index is stable across explode changes, so it can key a
+   * per-brick setting such as {@link setVolumeBrickOpacity}.
+   */
+  chunkBrickIndexAt(mm: ArrayLike<number>): number {
+    const volume = this.volumes[0]
+    const mm2tex = this.model.mm2tex
+    if (!volume?.chunkPlan || !mm2tex) return -1
+    const tex = vec4.transformMat4(
+      vec4.create(),
+      vec4.fromValues(mm[0], mm[1], mm[2], 1),
+      mm2tex,
+    )
+    return chunkIndexAtFrac(volume.chunkPlan, [tex[0], tex[1], tex[2]])
+  }
+
+  /**
+   * The eight world-mm corners of the background volume's brick holding the
+   * point, where the render draws them (so moved by the explode when one is
+   * on), or null when the volume is not chunked or the point is outside it.
+   * Corner `c` takes the brick's high edge on x when bit 0 of `c` is set, on
+   * y for bit 1 and on z for bit 2, so an edge joins corners whose indices
+   * differ in one bit. Project them with {@link mmToRenderCanvas} to outline
+   * the brick on the render.
+   */
+  chunkBrickCornersAt(
+    mm: ArrayLike<number>,
+  ): Array<[number, number, number]> | null {
+    const volume = this.volumes[0]
+    const index = this.chunkBrickIndexAt(mm)
+    if (index < 0 || !volume?.chunkPlan || !volume.matRAS) return null
+    return explodedChunkCornersMM(
+      volume.chunkPlan,
+      volume.matRAS,
+      volume.chunkExplode,
+      index,
+    )
+  }
+
+  /**
+   * Give each brick of a chunked volume its own opacity, indexed like
+   * `chunkPlan.chunks` (see {@link chunkBrickIndexAt}); entries missing from
+   * a short array count as 1. Each scales what that brick draws, colour and
+   * coverage together, so the bricks behind a dimmed one show through it and
+   * passing 1 for one brick and a small value for the rest keeps that brick
+   * in focus. Pass `null` to restore every brick. The volume
+   * must be chunked (see {@link setVolumeChunkGrid}); the renderer reads the
+   * setting each frame, so this only redraws.
+   */
+  setVolumeBrickOpacity(
+    volumeIndex: number,
+    opacity: ArrayLike<number> | null,
+  ): void {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    if (opacity && !volume.chunkPlan) {
+      throw new Error(
+        `Volume ${volume.name} is not chunked; call setVolumeChunkGrid first`,
+      )
+    }
+    volume.chunkBrickOpacity = opacity ?? undefined
+    this.drawScene()
+  }
+
+  /**
+   * Spread a chunked volume's bricks apart in the 3D render (an "exploded"
+   * view). `scale` is the per-axis factor applied to each brick's offset from
+   * the volume centre; 1 is unexploded and the default when `enabled` is set
+   * without a scale is 1.5. Pass `null` to remove the explode. The volume must
+   * be chunked first (see {@link setVolumeChunkGrid}); the renderer reads the
+   * setting each frame, so this only redraws.
+   */
+  setVolumeChunkExplode(
+    volumeIndex: number,
+    explode: VolumeChunkExplode | null,
+  ): void {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    if (explode && !volume.chunkPlan) {
+      throw new Error(
+        `Volume ${volume.name} is not chunked; call setVolumeChunkGrid first`,
+      )
+    }
+    volume.chunkExplode = explode ?? undefined
+    this.drawScene()
+  }
+
+  /**
+   * Where a world-mm point of the background volume is drawn once the
+   * volume's explode (see {@link setVolumeChunkExplode}) has moved its brick.
+   * Returns the input unchanged when the volume is not exploded. Overlays that
+   * mark anatomy on an exploded render project this, not the raw point.
+   */
+  explodedMM(mm: [number, number, number]): [number, number, number] {
+    const volume = this.model.volumes[0]
+    if (!volume?.chunkPlan || !volume.chunkExplode) return mm
+    const off = crosshairExplodeOffset(volume, mm, this.model.mm2tex)
+    return [mm[0] + off[0], mm[1] + off[1], mm[2] + off[2]]
+  }
+
+  /**
+   * Project a world-mm point onto the 3D render tile in canvas backing-store
+   * pixels (origin top-left, y down), through the MVP the renderer cached on
+   * its last draw. Returns null before the render tile has been drawn or when
+   * the point is behind the camera. Unlike {@link mmToCanvas}, which serves
+   * the 2D slice tiles, this is the projection an overlay needs to annotate the
+   * 3D render.
+   */
+  mmToRenderCanvas(mm: [number, number, number]): [number, number] | null {
+    return projectMMToRenderTile(this.view?.screenSlices ?? [], mm)
   }
 
   private _getVolumeOrThrow(volumeIndex: number): NVImage {
@@ -4769,15 +5018,15 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Replace the multi-instance descriptor list (canvas tiling + optional global3d
-   * volumes). Triggers a tile rebuild and redraw. Supported on both WebGL2 and
-   * WebGPU backends.
+   * volumes). Triggers a tile rebuild and redraw. `null` leaves instance mode and
+   * restores the usual slice layout; an empty list stays in instance mode and
+   * draws nothing. Entering or leaving
+   * instance mode rebuilds the GPU resources, since the two modes keep volume
+   * textures differently (a per-volume cache vs. a background + overlay stack).
+   * Supported on both WebGL2 and WebGPU backends.
    */
-  setInstances(instances: NVInstance[]): void {
-    this.opts.instances = instances
-    if (this.view) {
-      this.updateTilesFromInstances()
-      this.drawScene()
-    }
+  async setInstances(instances: NVInstance[] | null): Promise<void> {
+    await applyInstances(this, instances)
   }
 
   /**
@@ -4792,7 +5041,8 @@ export default class NiiVue extends EventTarget {
     }
   }
 
-  private updateTilesFromInstances(): void {
+  /** @internal Rebuild the tiles from `opts.instances`; called by {@link applyInstances}. */
+  updateTilesFromInstances(): void {
     if (!this.view || !this.opts.instances || !this.canvas) return
     const cw = this.canvas.width
     const ch = this.canvas.height
@@ -6166,41 +6416,30 @@ export default class NiiVue extends EventTarget {
         )
         return false
       }
-      // Transform from native voxel order to RAS to match background volume
-      const transform = calculateLoadDrawingTransform({
-        permRAS: back.permRAS,
-        dims: back.dimsRAS,
-      })
       const img = nii.img
       const imgData =
         img instanceof ArrayBuffer
           ? new Uint8Array(img)
           : new Uint8Array(img.buffer, img.byteOffset, img.byteLength)
-      // Drawing voxel count must match background, otherwise transformBitmap
-      // will read out-of-bounds or write truncated output.
-      const backVoxels = back.dimsRAS[1] * back.dimsRAS[2] * back.dimsRAS[3]
-      const drawVoxels = nii.hdr.dims[1] * nii.hdr.dims[2] * nii.hdr.dims[3]
-      if (drawVoxels !== backVoxels) {
+      // The drawing's native grid must match the background's: an equal voxel
+      // count with transposed dims would load without error but misplaced.
+      const nd = nii.hdr.dims
+      const bd = back.hdr.dims
+      if (!validateDrawingDimensions(nd, bd)) {
         log.warn(
-          `loadDrawing: drawing dimensions (${nii.hdr.dims[1]}x${nii.hdr.dims[2]}x${nii.hdr.dims[3]} = ${drawVoxels} voxels) do not match background (${back.dimsRAS[1]}x${back.dimsRAS[2]}x${back.dimsRAS[3]} = ${backVoxels} voxels)`,
+          `loadDrawing: drawing dimensions (${nd[1]}x${nd[2]}x${nd[3]}) do not match background (${bd[1]}x${bd[2]}x${bd[3]})`,
         )
         return false
       }
+      const drawVoxels = nd[1] * nd[2] * nd[3]
       if (imgData.length < drawVoxels) {
         log.warn(
           `loadDrawing: image data (${imgData.length} bytes) smaller than expected (${drawVoxels})`,
         )
         return false
       }
-      const transformedBitmap = transformBitmap({
-        inputData: imgData,
-        dims: back.dimsRAS,
-        xlut: transform.xlut,
-        ylut: transform.ylut,
-        zlut: transform.zlut,
-      })
       const dv = createDrawingVolume(back)
-      dv.img = transformedBitmap
+      dv.img = reorientDrawingToRAS(back, imgData)
       this.model.drawingVolume = dv
       // Initialize undo
       const cleared = clearAllUndoBitmaps(
@@ -6228,6 +6467,7 @@ export default class NiiVue extends EventTarget {
 
   destroy(): void {
     this._destroyed = true
+    this._animation?.stop('destroyed')
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false
     if (this._rafId !== null) {
@@ -6515,6 +6755,26 @@ export default class NiiVue extends EventTarget {
     NVDocument.triggerDownload(data, filename)
   }
 
+  // Emit the `change` events (and the specialised events some setters pair
+  // with them) for every setting that differs from `before`.
+  private emitSettingsChanges(before: SettingsSnapshot): void {
+    const changes = settingsChangeEvents(before, snapshotSettings(this.model))
+    for (const change of changes) this.emit('change', change)
+    if (changes.some((c) => c.property === 'sliceType')) {
+      this.emit('sliceTypeChange', { sliceType: this.model.layout.sliceType })
+    }
+    if (
+      changes.some(
+        (c) => c.property === 'azimuth' || c.property === 'elevation',
+      )
+    ) {
+      this.emit('azimuthElevationChange', {
+        azimuth: this.model.scene.azimuth,
+        elevation: this.model.scene.elevation,
+      })
+    }
+  }
+
   async loadDocument(
     source: string | File,
     options?: { fill?: SettingsFillPolicy },
@@ -6534,11 +6794,22 @@ export default class NiiVue extends EventTarget {
 
     // Apply non-data state (scene, config, display settings). Settings the
     // document omits are filled per the fill policy (default: reset to defaults).
+    // applyDocumentToModel writes into the model directly, bypassing the
+    // setters, so emit the `change` events they would have: one per key whose
+    // value differs from before the load (a key the fill policy reset counts).
+    const settingsBefore = snapshotSettings(this.model)
+    // applyDocumentToModel also replaces the signal list on the model; announce
+    // the removals it implies the way removeAllSignals would.
+    const signalsBefore = [...this.model.signals]
     NVDocument.applyDocumentToModel(
       this.model,
       doc,
       options?.fill ?? this._settingsFillPolicy,
     )
+    for (let i = 0; i < signalsBefore.length; i++) {
+      this.emit('signalRemoved', { signal: signalsBefore[i], index: i })
+    }
+    this.emitSettingsChanges(settingsBefore)
 
     // Restore thumbnail if present in document
     if (this.model.ui.thumbnailUrl) {
@@ -6551,13 +6822,29 @@ export default class NiiVue extends EventTarget {
     // addVolume pushes when its async prepare resolves, so a parallel map would
     // let a fast-loading volume land in the wrong slot (volume order defines
     // background vs overlays, and modulator/drawing links depend on it).
-    for (const v of doc.volumes) {
+    // Reconstruction goes through the model (one GPU update for the whole
+    // load, below), so emit the events the controller's addVolume/addMesh/
+    // addSignal would have: each after its item is in the collection.
+    for (const v of doc.volumes ?? []) {
+      const before = this.model.volumes.length
       await NVDocument.reconstructVolume(this.model, v)
+      if (this.model.volumes.length > before) {
+        this.emit('volumeLoaded', {
+          volume: this.model.volumes[this.model.volumes.length - 1],
+        })
+      }
     }
     // Meshes have no background/overlay ordering role; load them in parallel.
+    const meshesBefore = this.model.meshes.length
     await Promise.all(
-      doc.meshes.map((m) => NVDocument.reconstructMesh(this.model, m)),
+      (doc.meshes ?? []).map((m) => NVDocument.reconstructMesh(this.model, m)),
     )
+    for (const mesh of this.model.meshes.slice(meshesBefore)) {
+      this.emit('meshLoaded', { mesh })
+    }
+    for (const signal of this.model.signals) {
+      this.emit('signalLoaded', { signal })
+    }
 
     // Update GPU resources and render
     await this._updateGLChanged()
@@ -6579,6 +6866,7 @@ export default class NiiVue extends EventTarget {
         this.model.draw.isEnabled = true
         this._drawLut = null
         this.refreshDrawing()
+        this.emit('drawingChanged', { action: 'load' })
       }
     }
 

@@ -1119,6 +1119,42 @@ export function projectMMToNearestTile(
   return { tileIndex: best.tileIndex, x, y }
 }
 
+/**
+ * Project a world-mm point onto the 3D render tile, in canvas backing-store
+ * pixels (origin top-left, y down), through the MVP the renderer cached on its
+ * last draw of that tile. The render camera may be perspective, so the clip
+ * position is divided by w, unlike the orthographic slice projection in
+ * `projectMMToCanvas`. Returns null before the render tile has been drawn, when
+ * the layout has no render tile, or when the point is at or behind the camera.
+ * The result may lie outside the tile's rect when the point is panned or
+ * zoomed out of view; overlays clip to `leftTopWidthHeight` themselves.
+ */
+export function projectMMToRenderTile(
+  screenSlices: readonly SliceTile[],
+  mm: [number, number, number],
+): [number, number] | null {
+  const tile = screenSlices.find(
+    (t) =>
+      t.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+      t.mvpMatrix &&
+      t.leftTopWidthHeight,
+  )
+  const mvp = tile?.mvpMatrix
+  const ltwh = tile?.leftTopWidthHeight
+  if (!mvp || !ltwh) return null
+  const clip = vec4.transformMat4(
+    vec4.create(),
+    vec4.fromValues(mm[0], mm[1], mm[2], 1),
+    mvp,
+  )
+  const w = clip[3]
+  if (!(w > 1e-6)) return null
+  return [
+    ltwh[0] + (clip[0] / w + 1) * 0.5 * ltwh[2],
+    ltwh[1] + (1 - clip[1] / w) * 0.5 * ltwh[3],
+  ]
+}
+
 // ---------- Visible window ----------
 
 /**

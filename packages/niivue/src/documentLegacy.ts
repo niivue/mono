@@ -5,15 +5,18 @@
 // Best-effort + dependency-free (so it is unit-testable): volumes/meshes are
 // LINKED by their URL (the classic doc always carries per-volume URLs), so the
 // loader refetches them — the embedded base64 NIfTI blobs are NOT decoded (that
-// needs the GPU-volume reader). Settings are mapped for the well-known fields and
-// emitted sparsely; the loader fills the rest from defaults. Anything not mapped
-// (the drawing blob, unrecognized opts, URL-less volumes) is reported in
-// `warnings`. Used by `scripts/convert-legacy-nvd.ts`.
+// needs the GPU-volume reader). A mesh keeps its colour, shader and URL-linked
+// scalar-overlay layers (colormap, window, opacity, negative colormap). Settings
+// are mapped for the well-known fields and emitted sparsely; the loader fills the
+// rest from defaults. Anything not mapped (the drawing blob, unrecognized opts,
+// URL-less volumes or layers, unknown shader indices) is reported in `warnings`.
+// Used by `scripts/convert-legacy-nvd.ts`.
 
 import * as NVConstants from '@/NVConstants'
 import type {
   NVDocumentData,
   NVDocumentMesh,
+  NVDocumentMeshLayer,
   NVDocumentVolume,
 } from '@/NVDocument'
 
@@ -62,6 +65,109 @@ const OPT_MAP: Record<string, [keyof NVDocumentData, string]> = {
   // interaction — classic DRAG_MODE 0..5 (none/contrast/measurement/pan/slicer3D/
   // callbackOnly) matches ours 1:1.
   dragMode: ['interaction', 'primaryDragMode'],
+}
+
+// classic `meshShaderIndex` -> our `shaderType`, by classic's shader list order
+// (Phong, Matte, Harmonic, Hemispheric, Crevice, Edge, Diffuse, Outline,
+// Specular, Toon, Flat, Matcap, Rim, Silhouette, Crosscut). The six with no
+// counterpart here fall back to 'phong' with a warning.
+const LEGACY_SHADER_NAMES: Record<number, string> = {
+  0: 'phong',
+  1: 'matte',
+  4: 'crevice',
+  7: 'outline',
+  9: 'toon',
+  10: 'flat',
+  12: 'rim',
+  13: 'silhouette',
+  14: 'crosscut',
+}
+const LEGACY_SHADER_FALLBACK = 'phong'
+
+// classic's default negative colormap; `useNegativeCmap` was a boolean flag
+// that enabled it, whereas we name the negative colormap directly.
+const LEGACY_NEGATIVE_COLORMAP = 'winter'
+
+function convertLegacyLayer(
+  l: Record<string, unknown>,
+  meshLabel: string,
+  warnings: string[],
+): NVDocumentMeshLayer | null {
+  const url = typeof l.url === 'string' ? l.url : undefined
+  if (!url) {
+    warnings.push(
+      `mesh "${meshLabel}": a layer has no URL — skipped (embedded layer values are not decoded)`,
+    )
+    return null
+  }
+  const layer: NVDocumentMeshLayer = { url }
+  if (typeof l.name === 'string') layer.name = l.name
+  if (typeof l.colormap === 'string') layer.colormap = l.colormap
+  const calMin = l.cal_min ?? l.calMin
+  const calMax = l.cal_max ?? l.calMax
+  if (typeof calMin === 'number') layer.calMin = calMin
+  if (typeof calMax === 'number') layer.calMax = calMax
+  const calMinNeg = l.cal_minNeg ?? l.calMinNeg
+  const calMaxNeg = l.cal_maxNeg ?? l.calMaxNeg
+  if (typeof calMinNeg === 'number') layer.calMinNeg = calMinNeg
+  if (typeof calMaxNeg === 'number') layer.calMaxNeg = calMaxNeg
+  if (typeof l.opacity === 'number') layer.opacity = l.opacity
+  if (l.useNegativeCmap === true) {
+    layer.colormapNegative =
+      typeof l.colormapNegative === 'string' && l.colormapNegative !== ''
+        ? l.colormapNegative
+        : LEGACY_NEGATIVE_COLORMAP
+  }
+  return layer
+}
+
+function convertLegacyMesh(
+  m: Record<string, unknown>,
+  warnings: string[],
+): NVDocumentMesh | null {
+  const url = typeof m.url === 'string' ? m.url : undefined
+  const label = typeof m.name === 'string' ? m.name : (url ?? '(unnamed)')
+  if (!url) {
+    warnings.push(`mesh "${label}" has no URL — skipped`)
+    return null
+  }
+  const mesh: NVDocumentMesh = { url }
+  if (typeof m.name === 'string') mesh.name = m.name
+  if (typeof m.opacity === 'number') mesh.opacity = m.opacity
+  const rgba = m.rgba255
+  if (
+    Array.isArray(rgba) &&
+    rgba.length === 4 &&
+    rgba.every((c) => typeof c === 'number')
+  ) {
+    const [r, g, b, a] = rgba as number[]
+    mesh.color = [r / 255, g / 255, b / 255, a / 255]
+  }
+  if (typeof m.meshShaderIndex === 'number') {
+    const name = LEGACY_SHADER_NAMES[m.meshShaderIndex]
+    if (name) {
+      mesh.shaderType = name
+    } else {
+      mesh.shaderType = LEGACY_SHADER_FALLBACK
+      warnings.push(
+        `mesh "${label}": meshShaderIndex ${m.meshShaderIndex} has no equivalent — using '${LEGACY_SHADER_FALLBACK}'`,
+      )
+    }
+  }
+  if (Array.isArray(m.layers)) {
+    const layers: NVDocumentMeshLayer[] = []
+    for (const l of m.layers) {
+      if (typeof l !== 'object' || l === null) continue
+      const layer = convertLegacyLayer(
+        l as Record<string, unknown>,
+        label,
+        warnings,
+      )
+      if (layer) layers.push(layer)
+    }
+    if (layers.length > 0) mesh.layers = layers
+  }
+  return mesh
 }
 
 function setGroup(
@@ -141,7 +247,7 @@ export function convertLegacyDocument(
     volumes.push(vol)
   }
 
-  // --- meshesString -> meshes (linked by URL, best-effort) ---
+  // --- meshesString -> meshes (linked by URL, with colour/shader/layers) ---
   const meshes: NVDocumentMesh[] = []
   if (legacy.meshesString && legacy.meshesString.length > 2) {
     try {
@@ -150,15 +256,8 @@ export function convertLegacyDocument(
         unknown
       >[]
       for (const m of Array.isArray(parsed) ? parsed : []) {
-        const url = typeof m.url === 'string' ? m.url : undefined
-        if (!url) {
-          warnings.push('a mesh has no URL — skipped')
-          continue
-        }
-        const mesh: NVDocumentMesh = { url }
-        if (typeof m.name === 'string') mesh.name = m.name
-        if (typeof m.opacity === 'number') mesh.opacity = m.opacity
-        meshes.push(mesh)
+        const mesh = convertLegacyMesh(m, warnings)
+        if (mesh) meshes.push(mesh)
       }
     } catch {
       warnings.push('meshesString could not be parsed — meshes skipped')

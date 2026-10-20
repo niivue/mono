@@ -40,6 +40,12 @@ async function applyColor() {
   }
 }
 
+colorSelect.onchange = function () {
+  const clr = nv1.clipPlaneColor
+  clr[3] = [0.0, 0.4, -0.2][this.selectedIndex]
+  nv1.clipPlaneColor = clr
+}
+
 colorMode.onchange = applyColor
 
 groupSelect.onchange = applyColor
@@ -51,6 +57,7 @@ nv1.setClipPlanes([
   [0.1, 180, 20],
   [0.1, 0, -20],
 ])
+colorSelect.onchange()
 await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 await nv1.loadMeshes([
   { url: '/meshes/yeh2022.trx', rgba255: [0, 142, 200, 255] },

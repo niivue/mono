@@ -1,5 +1,6 @@
 import { isPaqd, NiiIntentCode } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
+import { isVolumeDrawn } from '@/view/NVVolumeVisibility'
 
 /** 2D slice filtering for the background texture and the combined overlay texture. */
 export type SliceInterpolation = { background: boolean; overlay: boolean }
@@ -36,7 +37,7 @@ export function sliceInterpolation(
   return {
     background: !!background && isNearestVolume(background),
     overlay: overlays.some(
-      (v) => (v.opacity ?? 1) > 0 && !isPaqd(v.hdr) && isNearestVolume(v),
+      (v) => isVolumeDrawn(v) && !isPaqd(v.hdr) && isNearestVolume(v),
     ),
   }
 }

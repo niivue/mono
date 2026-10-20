@@ -58,6 +58,50 @@ startServer({
 
 Calls to one tab go one at a time, in the order they were made. The page's handlers all change the one scene, so an agent that fires several tools together gets each answered against the scene the one before left rather than racing them.
 
+### The page
+
+```ts
+import NiiVue from '@niivue/niivue'
+import {
+  AgentClient,
+  coreHandlers,
+  type NiiVueHost,
+  sceneState,
+} from '@niivue/nv-mcp/browser'
+
+const nv = new NiiVue()
+await nv.attachTo('gl1')
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+
+const host: NiiVueHost = { view: nv }
+const client = new AgentClient(coreHandlers(host), {
+  state: () => sceneState(host),
+  onStatus: (connected) => {
+    status.textContent = connected ? `agent connected (tab ${client.id})` : 'no agent server'
+  },
+})
+client.attach()
+```
+
+Only `view` is required. The other hooks are where an app adds what NiiVue does not know:
+
+```ts
+const host: NiiVueHost = {
+  view: nv,
+  atlas: () => loadAtlas(),          // regions, regionAt, valueAt, nearestIn over millimetres
+  atlasApplies: () => isMni,         // false on a scan the atlas does not fit
+  beforeAnswer: () => fitCanvas(),   // anything to do before reading the scene
+  moved: (frac) => sample(frac),     // called after a navigation lands
+  describe: () => whereWeAre(),      // the prose for where_am_i and the announcement
+  announce: (text) => say(text),     // how the page tells the person
+  loaded: ({ mni }) => { isMni = mni },
+  extraState: () => ({ light }),     // state the server should watch across a reload
+  planeName: () => currentCutName(), // the page's own name for the plane
+}
+```
+
+`urls` defaults to `agentUrls()`: `/agent` on the page's own origin, then the server directly on port 4242. The client retries with a backoff that settles at half a minute, so the order the two are started in does not matter. An address that neither opens nor refuses within five seconds is closed and the next one tried, so a proxy that hangs cannot keep the page from the server.
+
 ### Connecting an agent
 
 For Claude Code:
@@ -91,6 +135,8 @@ Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`). Vite's WebSoc
 | `list_tabs` | | The connected tabs: id, title, address, when each connected and which one answers |
 | `use_tab` | `id` | Makes one tab the one that answers every later call |
 | `new_tab` | | Makes up an id for a tab that is not open yet and gives the address that opens the page as that tab, `pageUrl` with `?tab=<id>` on it |
+| `load_volume` | `url`, `name?`, `colormap?`, `mni?` | Loads a volume from an address the page can fetch, replacing what is shown. `mni` says whether the atlas applies; guessed from the name when left out. Reports the name and the volume's bounds in millimetres |
+| `where_am_i` | | The crosshair in millimetres and fractions, the volumes shown and how each is drawn, the plane cut, the camera, the view layout, the page's description of the place, and whatever state the app adds. Says which tab answered |
 
 Every tool below `new_tab` also takes `tab?`, the id of the tab to ask; without it the answering tab is asked, as the Tabs section explains.
 
@@ -140,6 +186,8 @@ const light: Extension = {
 
 startServer({ name: 'my-niivue-app', extensions: [light] })
 ```
+
+`src/server/http.test.ts` drives a server with exactly that extension against `src/testing/fake-page.ts`, a page with no browser at all.
 
 ## Development
 

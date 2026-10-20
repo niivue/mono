@@ -15,12 +15,45 @@ import type { RegionSummary } from '../protocol'
 /** Three numbers by index: a plain array, a typed array, or gl-matrix's vec3. */
 export type Triple = { [index: number]: number; readonly length: number }
 
+/**
+ * A label table as NiiVue reads one: a colour per label, each for the
+ * value in `I` at the same place, and the labels' names. `fetchLabelTable`
+ * fills `I` and `A` in as NiiVue would when a table leaves them out.
+ */
+export interface LabelTable {
+  R: number[]
+  G: number[]
+  B: number[]
+  A: number[]
+  I: number[]
+  labels?: string[]
+}
+
 /** A volume as `View.loadVolumes` and `View.addVolume` take it: NiiVue's `ImageFromUrlOptions`, in part. */
 export interface VolumeToLoad {
   url: string
   name?: string
   colormap?: string
   opacity?: number
+}
+
+/** What `View.setVolume` can change about a volume: NiiVue's `VolumeUpdate`. */
+export interface VolumeUpdate {
+  colormap?: string
+  colormapNegative?: string
+  opacity?: number
+  calMin?: number
+  calMax?: number
+  calMinNeg?: number
+  calMaxNeg?: number
+  colormapType?: number
+  isTransparentBelowCalMin?: boolean
+  frame4D?: number
+  isColormapInverted?: boolean
+  isColorbarVisible?: boolean
+  isNearestInterpolation?: boolean
+  atlasOutline?: number
+  modulateAlpha?: number
 }
 
 /** A volume as NiiVue keeps it once loaded, in the part the tools read. */
@@ -58,6 +91,13 @@ export interface ShownVolume {
   dims?: ArrayLike<number>
 }
 
+/** A translation, rotation and scale to apply to a volume: NiiVue's `AffineTransform`. */
+export interface AffineTransform {
+  translation: [number, number, number]
+  rotation: [number, number, number]
+  scale: [number, number, number]
+}
+
 /** The render camera when it is placed rather than turned: NiiVue's `NVGlobalCamera`. */
 export interface GlobalCamera {
   position: [number, number, number]
@@ -86,6 +126,18 @@ export interface View {
   setClipPlane(plane: number[]): void
   /** Replaces every volume on show with these. */
   loadVolumes(volumes: VolumeToLoad[]): Promise<unknown>
+  /** Adds one volume over those on show, keeping them. */
+  addVolume(volume: VolumeToLoad): Promise<unknown>
+  /** Draws a volume as labels from a lookup table, by name (`freesurfer`) or as a table. */
+  setColormapLabel?(
+    volumeIndex: number,
+    cmap: string | LabelTable,
+  ): Promise<unknown> | unknown
+  /** Changes how a loaded volume is drawn, keeping the rest as it is. */
+  setVolume?(
+    volumeIndex: number,
+    update: VolumeUpdate,
+  ): Promise<unknown> | unknown
   /**
    * The view layout, by NiiVue's numbers (`views.ts` names them). Each is
    * read live and set by assignment, which NiiVue 1.0 turns into its
@@ -109,6 +161,21 @@ export interface View {
     scene2mm(frac: number[]): Triple
   }
 
+  // Volumes beyond the first tools.
+  recalculateCalMinMax?(volumeIndex: number, frame?: number): Promise<unknown>
+  loadDeferred4DVolumes?(id: string): Promise<unknown>
+  setModulationImage?(
+    targetId: string,
+    modulatorId: string,
+    modulateAlpha?: number,
+  ): Promise<unknown>
+  setAtlasOutline?(outline: number, volumeIndex?: number): unknown
+  setVolumeAffine?(index: number, affine: number[][]): Promise<unknown>
+  resetVolumeAffine?(index: number): Promise<unknown>
+  applyVolumeTransform?(
+    index: number,
+    transform: AffineTransform,
+  ): Promise<unknown>
   vox2frac?(vox: [number, number, number]): [number, number, number]
 
   // The clip planes and the camera beyond the first plane.

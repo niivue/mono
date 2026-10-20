@@ -17,6 +17,16 @@ export function text(params: Params, key: string): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
+/**
+ * Like `text`, but an empty string given on purpose comes back as `''`,
+ * for a field where NiiVue takes the empty string as a reset.
+ */
+export function clearable(params: Params, key: string): string | undefined {
+  const value = params?.[key]
+  if (typeof value === 'string' && value.trim() === '') return ''
+  return text(params, key)
+}
+
 export function number(params: Params, key: string): number | undefined {
   const value = params?.[key]
   if (value === undefined || value === null || value === '') return undefined

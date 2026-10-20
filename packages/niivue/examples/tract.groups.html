@@ -30,14 +30,61 @@
       <label for="thresholdSlide" id="thresholdLabel" style="display:none">Threshold</label>
       <input type="range" id="thresholdSlide" min="0" max="6" step="0.5" value="1" style="display:none" />
       &nbsp;
+      <label for="clipSelect">Clip Planes</label>
+      <select id="clipSelect">
+        <option>0</option>
+        <option>1</option>
+        <option selected>2</option>
+        <option>3</option>
+        <option>4</option>
+        <option>5</option>
+        <option>6</option>
+      </select>
+      &nbsp;
+      <label for="checkCutaway">Cutaway</label>
+      <input type="checkbox" id="checkCutaway">
+      &nbsp;
+      <label for="colorSelect">Clip color</label>
+      <select id="colorSelect">
+        <option>transparent</option>
+        <option>translucent</option>
+        <option selected>shading</option>
+      </select>
+      &nbsp;
       <label for="decimationSlide">Decimation</label>
       <input type="range" id="decimationSlide" min="1" max="20" step="1" value="1" />
+      &nbsp;
+      <label for="meshSelect">Mesh</label>
+      <select id="meshSelect">
+        <option selected>none</option>
+        <option>atl-Anatom_space-MNI</option>
+        <option>BrainMesh_ICBM152.lh</option>
+        <option>CIT168</option>
+        <option>cortex_5124</option>
+        <option>inflated</option>
+        <option>scalp</option>
+        <option>scalp+CIT168</option>
+      </select>
+      &nbsp;
+      <label for="shaderSelect">Shader</label>
+      <select id="shaderSelect"></select>
+      &nbsp;
+      <label for="volumeOpacitySlide">Volume opacity</label>
+      <input type="range" id="volumeOpacitySlide" min="0" max="10" step="1" value="10" />
+      &nbsp;
+      <label for="meshOpacitySlide">Mesh opacity</label>
+      <input type="range" id="meshOpacitySlide" min="0" max="10" step="1" value="10" />
+      &nbsp;
+      <label for="crosshairCheck">Crosshair</label>
+      <input type="checkbox" id="crosshairCheck" checked/>
       &nbsp;
       <label for="xrayCheck">XRay</label>
       <input type="checkbox" id="xrayCheck"/>
       &nbsp;
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck"/>
+      &nbsp;
+      <input type="color" id="colorBtn" value="#ffffff">
     </header>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>

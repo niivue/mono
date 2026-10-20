@@ -199,7 +199,7 @@ The `@niivue/niivue` package in this repo is a complete rewrite of the old niivu
 
 ## MCP API parity
 
-Every new or changed public NiiVue API that accepts and returns serializable scene or viewer state must be accessible through `@niivue/nv-mcp`. Add or update the MCP server tool schema, browser-side handler, documentation, and coverage in the same change; verify that the tool drives the real NiiVue API rather than a demo-only substitute. Do not merge a public API change without its MCP surface.
+A new or changed public NiiVue API that accepts or returns serializable scene or viewer state should be accessible through `@niivue/nv-mcp`. When practical, add or update the MCP server tool schema, browser-side handler, documentation, and coverage in the same change, and verify that the tool drives the real NiiVue API rather than a demo-only substitute. Otherwise, open a follow-up issue for the MCP surface and link it from the PR. A missing MCP surface does not block merging a core NiiVue change.
 
 Browser-integration APIs are exempt when they require DOM nodes, canvas attachment, event or callback registration, functions, browser-only objects such as `File`, or other non-serializable values. Document the exemption in the API change when it is not self-evident. Do not use an exemption for serializable scene operations, viewer state, or data-loading operations merely because their implementation runs in the browser.
 

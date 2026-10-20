@@ -86,7 +86,7 @@
     "clipper2-ts": "^2.0.1-13",
     "earcut": "^3.0.2",
     "gl-matrix": "^3.4.4",
-    "nifti-reader-js": "^0.8.0",
+    "nifti-reader-js": "^0.8.1",
     "zarrita": "^0.7.3"
   },
   "devDependencies": {

@@ -349,7 +349,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Voxel-based atlas labels | ✅ | `setColormapLabel` |
 | PAQD probabilistic atlas | ✅ | `volumePaqdUniforms` |
 | Mesh-based atlases | ⚠️ | No annot/GIfTI layer readers found |
-| `addLabel()` | ❌ | |
+| `addLabel()` | ❌ | No 3D labels in the viewer. `@niivue/uikit`'s `UIKitPointLabelOverlay` draws a text label with a leader line to a world-mm point on the render tile via `mmToRenderCanvas()` / `explodedMM()` |
 
 ## 28. Plugin System
 

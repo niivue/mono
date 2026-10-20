@@ -934,7 +934,12 @@ export class VolumeRenderer extends NVRenderer {
     const cacheKey = vol.url || vol.name
     const displayKey = chunkedDisplayKey(vol, modulation)
     const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (existing && existing.kind === 'chunked') {
+    // A cached entry built for a different plan object (the caller set a new
+    // `vol.chunkPlan`, as setVolumeChunkGrid does) cannot be reused: its
+    // uploader, manager and brick textures are laid out for the old grid.
+    // Fall through to the eviction below and rebuild. In-place swaps via
+    // swapChunkedVolumePlan keep `existing.plan` in step, so they still hit.
+    if (existing && existing.kind === 'chunked' && existing.plan === plan) {
       existing.volume = vol
       if (existing.displayKey !== displayKey) {
         // Colormap/window/frame changed after load. Resident chunk textures
@@ -1047,7 +1052,13 @@ export class VolumeRenderer extends NVRenderer {
           `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
       )
     }
+    const displayKey = chunkedDisplayKey(vol, entry.modulation)
     const oldToNew = matchChunksByContent(entry.plan, newPlan)
+    // Resident bricks bake the display state of the uploader that made them.
+    // When that state has changed since (a colormap set but not yet
+    // refreshed), keeping them would show the old state, so none carry over.
+    const keepResident =
+      displayKey === entry.displayKey ? oldToNew : new Map<number, number>()
     const newUploader = createChunkUploaderGL(
       gl,
       vol,
@@ -1058,7 +1069,7 @@ export class VolumeRenderer extends NVRenderer {
     )
     entry.uploader.dispose()
     entry.uploader = newUploader
-    entry.manager.remap(oldToNew, newPlan.chunks.length)
+    entry.manager.remap(keepResident, newPlan.chunks.length)
     // Chunk indices are plan-relative, so the tier is re-keyed by the same
     // content match: a brick the new plan still contains keeps its bytes, and
     // a refocus back to this level finds them.
@@ -1076,7 +1087,7 @@ export class VolumeRenderer extends NVRenderer {
       this.isCubicInterpolation,
     )
     entry.volume = vol
-    entry.displayKey = chunkedDisplayKey(vol, entry.modulation)
+    entry.displayKey = displayKey
     vol.chunkPlan = newPlan
     if (entry.manager.residentCount === 0) {
       const chunk0 = await entry.uploader.uploadChunk(0)
@@ -2728,6 +2739,7 @@ export class VolumeRenderer extends NVRenderer {
         volScale,
         this._activeChunked,
         false,
+        backOpacity,
       )
     } else {
       gl.activeTexture(gl.TEXTURE0)
@@ -2858,6 +2870,7 @@ export class VolumeRenderer extends NVRenderer {
     volScale: Float32Array | number[],
     entry: ChunkedTexEntry | null,
     overlayMode: boolean,
+    backOpacity = 1,
   ): void {
     if (!entry || entry.manager.chunkCount === 0) return
     const chunkCount = entry.manager.chunkCount
@@ -2877,6 +2890,7 @@ export class VolumeRenderer extends NVRenderer {
     const mip = this.renderMode === VOLUME_RENDER_MODE.MAXIMUM
     if (mip) gl.blendEquation(gl.MAX)
     const explode = entry.volume.chunkExplode
+    const brickOpacity = entry.volume.chunkBrickOpacity
     const order = chunksBackToFront(
       entry.plan,
       rayDir,
@@ -2968,8 +2982,11 @@ export class VolumeRenderer extends NVRenderer {
         // resident region. One filter per volume, always.
         cubicSafe: entry.cubicSafe,
       })
+      // The fine cube in front of this one carries the cross-fade weight; the
+      // floor only takes the brick's own opacity (chunkBrickOpacity), so a
+      // dimmed brick's backdrop dims with it.
       if (shader.uniforms.fadeAlpha)
-        gl.uniform1f(shader.uniforms.fadeAlpha, 1.0)
+        gl.uniform1f(shader.uniforms.fadeAlpha, brickOpacity?.[chunkIndex] ?? 1)
       if (shader.uniforms.matRAS) {
         gl.uniformMatrix4fv(
           shader.uniforms.matRAS,
@@ -3041,8 +3058,18 @@ export class VolumeRenderer extends NVRenderer {
         ...chunkUniformsFor(entry.plan, chunkIndex),
         cubicSafe: entry.cubicSafe,
       })
+      // The brick's own opacity (chunkBrickOpacity) rides the fade lane, not
+      // backOpacity: a chunked draw applies backOpacity per sample, where a
+      // ray through solid tissue saturates whatever the value, so dimming
+      // that way barely shows. Scaling the brick's premultiplied result fades
+      // its presence and coverage together, and deeper bricks show through.
       if (shader.uniforms.fadeAlpha)
-        gl.uniform1f(shader.uniforms.fadeAlpha, fade)
+        gl.uniform1f(
+          shader.uniforms.fadeAlpha,
+          fade * (brickOpacity?.[chunkIndex] ?? 1),
+        )
+      if (shader.uniforms.backOpacity)
+        gl.uniform1f(shader.uniforms.backOpacity, backOpacity)
       if (shader.uniforms.matRAS) {
         gl.uniformMatrix4fv(
           shader.uniforms.matRAS,

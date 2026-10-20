@@ -266,6 +266,12 @@ interface ChunkedTexEntry {
   decoded: DecodedChunkCache
   /** Source bytes per voxel, which sets what the decoded tier costs to hold. */
   sourceBytesPerVoxel: number
+  /**
+   * The plan swapChunkedVolumePlan is moving this entry to, while it awaits
+   * the new uploader. A refresh that lands in that window waits for it
+   * instead of evicting the entry as built for a different plan.
+   */
+  pendingSwap?: { plan: ChunkPlan; done: Promise<void> }
 }
 
 /**
@@ -1081,8 +1087,22 @@ export class VolumeRenderer extends NVRenderer {
     }
     const cacheKey = vol.url || vol.name
     const displayKey = chunkedDisplayKey(vol, modulation)
-    const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (existing && existing.kind === 'chunked') {
+    let existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    if (
+      existing?.kind === 'chunked' &&
+      existing.plan !== plan &&
+      existing.pendingSwap?.plan === plan
+    ) {
+      // A swap to this very plan is in flight; let it land, then reuse it.
+      await existing.pendingSwap.done.catch(() => undefined)
+      existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    }
+    // A cached entry built for a different plan object (the caller set a new
+    // `vol.chunkPlan`, as setVolumeChunkGrid does) cannot be reused: its
+    // uploader, manager and brick textures are laid out for the old grid.
+    // Fall through to the eviction below and rebuild. In-place swaps via
+    // swapChunkedVolumePlan keep `existing.plan` in step, so they still hit.
+    if (existing && existing.kind === 'chunked' && existing.plan === plan) {
       existing.volume = vol
       if (existing.displayKey !== displayKey) {
         // Colormap/window/frame changed after load. Resident chunk textures
@@ -1193,7 +1213,32 @@ export class VolumeRenderer extends NVRenderer {
           `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
       )
     }
+    const done = this._swapChunkedEntryPlan(device, vol, entry, newPlan)
+    const pending = { plan: newPlan, done }
+    entry.pendingSwap = pending
+    try {
+      await done
+    } finally {
+      if (entry.pendingSwap === pending) entry.pendingSwap = undefined
+    }
+  }
+
+  private async _swapChunkedEntryPlan(
+    device: GPUDevice,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    newPlan: ChunkPlan,
+  ): Promise<void> {
+    // The uploader bakes the display state as it is now, so record that key,
+    // not the one current after the await: a colormap change landing in
+    // between must still find the entry stale.
+    const displayKey = chunkedDisplayKey(vol, entry.modulation)
     const oldToNew = matchChunksByContent(entry.plan, newPlan)
+    // Resident bricks bake the display state of the uploader that made them.
+    // When that state has changed since (a colormap set but not yet
+    // refreshed), keeping them would show the old state, so none carry over.
+    const keepResident =
+      displayKey === entry.displayKey ? oldToNew : new Map<number, number>()
     // Rebind the uploader to the new plan; dispose the old orient resources.
     const newUploader = await createChunkUploaderGPU(
       device,
@@ -1205,7 +1250,7 @@ export class VolumeRenderer extends NVRenderer {
     )
     entry.uploader.dispose()
     entry.uploader = newUploader
-    entry.manager.remap(oldToNew, newPlan.chunks.length)
+    entry.manager.remap(keepResident, newPlan.chunks.length)
     // Chunk indices are plan-relative, so the tier is re-keyed by the same
     // content match: a brick the new plan still contains keeps its bytes, and
     // a refocus back to this level finds them.
@@ -1224,7 +1269,7 @@ export class VolumeRenderer extends NVRenderer {
     )
     entry.bindGroups = newPlan.chunks.map(() => null)
     entry.volume = vol
-    entry.displayKey = chunkedDisplayKey(vol, entry.modulation)
+    entry.displayKey = displayKey
     vol.chunkPlan = newPlan
     // Keep at least one chunk resident for the first post-swap frame; the pump
     // streams the rest from the next working set.
@@ -3135,6 +3180,7 @@ export class VolumeRenderer extends NVRenderer {
         : null
 
     const explode = entry.volume.chunkExplode
+    const brickOpacity = entry.volume.chunkBrickOpacity
     const order = chunksBackToFront(
       entry.plan,
       rayDir,
@@ -3259,10 +3305,11 @@ export class VolumeRenderer extends NVRenderer {
           cubicSafe: entry.cubicSafe,
         },
         0,
-        // Full strength: the fine cube in front of this one carries the
-        // cross-fade weight. The floor is base-volume data, so it takes the
-        // base's opacity along with it.
-        1,
+        // The fine cube in front of this one carries the cross-fade weight;
+        // the floor only takes the brick's own opacity (chunkBrickOpacity),
+        // so a dimmed brick's backdrop dims with it. The floor is base-volume
+        // data, so it takes the base's opacity along with it.
+        brickOpacity?.[chunkIndex] ?? 1,
         backOpacity,
       )
       pass.setBindGroup(0, this._floorBindGroup, [floorRenderOffset])
@@ -3362,7 +3409,13 @@ export class VolumeRenderer extends NVRenderer {
           cubicSafe: entry.cubicSafe,
         },
         overlayMode ? 1 : 0,
-        fade,
+        // The brick's own opacity (chunkBrickOpacity) rides the fade lane, not
+        // backOpacity: a chunked draw applies backOpacity per sample, where a
+        // ray through solid tissue saturates whatever the value, so dimming
+        // that way barely shows. Scaling the brick's premultiplied result
+        // fades its presence and coverage together, and deeper bricks show
+        // through it.
+        fade * (brickOpacity?.[chunkIndex] ?? 1),
         backOpacity,
       )
 

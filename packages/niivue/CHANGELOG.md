@@ -1,3 +1,14 @@
+## 1.0.0-rc.29 (2026-10-20)
+
+### Fixes
+
+- **niivue:** rebuild cached volume textures when the voxel source changes ([#330](https://github.com/niivue/mono/issues/330))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.28 (2026-10-20)
 
 ### Fixes

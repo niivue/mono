@@ -1,6 +1,12 @@
 import { describe, expect, it, mock } from 'bun:test'
 import { baseView, hostOf } from '../testing/fake-view'
-import { coerceValue, controlHandlers, memoryControls } from './controls'
+import {
+  coerceValue,
+  controlHandlers,
+  memoryControls,
+  optionOf,
+  optionValue,
+} from './controls'
 import { sceneState } from './scene'
 import type { NiiVueHost } from './view'
 
@@ -75,6 +81,30 @@ describe('add_control', () => {
       { id: 'sag', label: 'sag' },
     ])
     expect(got.control.value).toBe('coronal')
+  })
+
+  it('keeps the value an option writes, and refuses one no bind takes', () => {
+    const { add_control } = controlHandlers(hostWithControls())
+    const got = add_control({
+      id: 'alpha',
+      kind: 'select',
+      options: [
+        { id: 'Transparent', value: 0 },
+        { id: 'Opaque', value: 1 },
+      ],
+    }) as { control: { options: unknown; value: unknown } }
+    expect(got.control.options).toEqual([
+      { id: 'Transparent', label: 'Transparent', value: 0 },
+      { id: 'Opaque', label: 'Opaque', value: 1 },
+    ])
+    expect(got.control.value).toBe('Transparent')
+    expect(() =>
+      add_control({
+        id: 'bad',
+        kind: 'select',
+        options: [{ id: 'a', value: [1, 2] }],
+      }),
+    ).toThrow('options[0].value must be a number, a string, or true or false.')
   })
 
   it('refuses what a kind cannot hold, and ids already taken', () => {
@@ -283,5 +313,36 @@ describe('coerceValue', () => {
   it('refuses a value on a kind that holds none', () => {
     expect(() => coerceValue({ kind: 'button' }, 1)).toThrow(/holds no value/)
     expect(coerceValue({ kind: 'button' }, null)).toBeNull()
+  })
+})
+
+describe('option values', () => {
+  const select = {
+    kind: 'select' as const,
+    options: [
+      { id: 'matte', label: 'matte', value: 0 },
+      { id: 'low', label: 'low', value: 0.3 },
+      { id: 'plain', label: 'plain' },
+    ],
+  }
+
+  it('maps an option id to the value it writes, the id when it has none', () => {
+    expect(optionValue(select, 'low')).toBe(0.3)
+    expect(optionValue(select, 'plain')).toBe('plain')
+    expect(optionValue({ kind: 'select', options: [] }, 'x')).toBe('x')
+  })
+
+  it('maps a value back to the option that writes it, or none', () => {
+    expect(optionOf(select, 0.3000001)).toBe('low')
+    expect(optionOf(select, 0.31)).toBeUndefined()
+    expect(optionOf(select, 'plain')).toBe('plain')
+  })
+
+  it('lets a select writing values hold no option, and only that select', () => {
+    expect(coerceValue(select, '')).toBe('')
+    expect(coerceValue(select, 'low')).toBe('low')
+    expect(() =>
+      coerceValue({ kind: 'select', options: [{ id: 'a', label: 'a' }] }, ''),
+    ).toThrow('one of its options')
   })
 })

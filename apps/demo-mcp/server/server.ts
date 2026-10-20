@@ -38,7 +38,9 @@ startServer({
     "left hippocampus in MNI space; and chris_t1.nii.gz, one person's T1 scan in its own " +
     'space, where no atlas applies. The page hosts controls: add_control draws a button, slider, ' +
     'toggle, select, field, dialog or other widget on the canvas, in a grid by row and col, and ' +
-    'lists it in the Controls panel; bind ties it to what it drives. list_data names sample data a ' +
+    'lists it in the Controls panel; bind ties it to what it drives. A select can carry a numeric ' +
+    "value per option, such as {id: 'matte', value: 0}, to drive a number like volumeIllumination. " +
+    'list_data names sample data a ' +
     'button bound to data.<id> loads. ' +
     'If the person wants to load a volume from their computer, do not pass its path to ' +
     'load_volume or add_overlay: the page cannot read their disk, and only they can pick the file. ' +

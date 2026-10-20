@@ -28,6 +28,14 @@ const OPTION = z.union([
         'A menu item in a radio group: one of the group is on at a time.',
       ),
     enabled: z.boolean().optional(),
+    value: z
+      .union([z.number(), z.string(), z.boolean()])
+      .optional()
+      .describe(
+        'For a select or segmented row: what choosing this option writes to the bind, when not ' +
+          'its id. Give every option one to bind a number or true-or-false target, e.g. ' +
+          "{id: 'matte', value: 0} for volumeIllumination. The control still holds the id.",
+      ),
   }),
 ])
 
@@ -80,7 +88,7 @@ const FIELDS = {
     .array(OPTION)
     .optional()
     .describe(
-      'For a select, segmented row or menu: its entries, each an id or {id, label, checked?, group?, enabled?}; for a dialog: its buttons.',
+      'For a select, segmented row or menu: its entries, each an id or {id, label, checked?, group?, enabled?, value?}; for a dialog: its buttons.',
     ),
   message: z
     .string()
@@ -136,6 +144,7 @@ const FIELDS = {
     .describe(
       'What the control drives, both ways: a NiiVue setting as get_options names it (a toggle for a ' +
         'boolean, a slider or number field for a number, a select or segmented row for one with choices, ' +
+        'or for a number or boolean when every option carries a value, ' +
         'a color control for a colour); view.slice, view.layout or view.radiological; ' +
         'volume.<index>.<property> (opacity, colormap, cal_min, cal_max, frame, invert, ...); ' +
         'mesh.<index>.<property> (opacity, shader, visible, colorbar, legend); ' +

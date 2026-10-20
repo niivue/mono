@@ -1,3 +1,14 @@
+## 1.0.0-rc.28 (2026-10-20)
+
+### Fixes
+
+- **niivue:** hide colorbars and legends of hidden meshes; richer mesh examples ([08a8c045](https://github.com/niivue/mono/commit/08a8c045))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.27 (2026-10-20)
 
 ### Features

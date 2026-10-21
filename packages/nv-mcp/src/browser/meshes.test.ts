@@ -163,6 +163,24 @@ describe('load_mesh', () => {
     expect(view.drawScene).toHaveBeenCalledTimes(1)
   })
 
+  it('says a mesh NiiVue could not read was not loaded, naming the formats it reads', async () => {
+    const view = meshView({
+      addMesh: mock(async () => {}),
+      meshExtensions: ['MZ3', 'GII'],
+    })
+    const meshes = view.meshes as ShownMesh[]
+    const before = meshes.length
+    view.removeMesh = mock(async () => {})
+    const { load_mesh } = meshHandlers(hostOf(view))
+    await expect(
+      load_mesh({ url: 'https://x/points.json', replace: true }),
+    ).rejects.toThrow(
+      'The mesh at https://x/points.json could not be loaded: NiiVue could not read it (the browser console says why). NiiVue reads meshes as MZ3, GII.',
+    )
+    expect(view.removeMesh).not.toHaveBeenCalled()
+    expect(meshes).toHaveLength(before)
+  })
+
   it('replaces the meshes when asked, dropping the old ones only once the new one is in', async () => {
     const view = meshView()
     const meshes = view.meshes as ShownMesh[]

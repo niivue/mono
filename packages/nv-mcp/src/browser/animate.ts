@@ -154,6 +154,30 @@ export function animateHandlers(host: NiiVueHost): Handlers {
     return target
   }
 
+  /**
+   * Tells the person where a move that took the crosshair or a cut left
+   * them, as go_to_point and set_clip_plane do. A failure to say so is
+   * not the move's failure.
+   */
+  const announceEnd = async (target: AnimationTarget): Promise<void> => {
+    if (!host.announce) return
+    const said: string[] = []
+    try {
+      if (target.crosshairMM) {
+        const mm = Array.from(view.getCrosshairPos(), (v) => Math.round(v))
+        said.push(
+          host.describe
+            ? await host.describe()
+            : `Crosshair at ${mm.join(', ')} mm.`,
+        )
+      }
+    } catch {
+      // The place could not be put in words; the cut still can.
+    }
+    if (target.clipPlanes) said.push(`Cut plane: ${stateOf(host).plane.name}.`)
+    if (said.length) host.announce(said.join(' '))
+  }
+
   return {
     async animate(params: Params) {
       host.beforeAnswer?.()
@@ -195,7 +219,7 @@ export function animateHandlers(host: NiiVueHost): Handlers {
       })
       if (params?.wait === false || params?.wait === 'false') {
         // Leave the move running; a rejection later has nobody to hear it.
-        done.catch(() => {})
+        done.then(() => announceEnd(target)).catch(() => {})
         return {
           started: true,
           durationMs: duration ?? 500,
@@ -204,6 +228,7 @@ export function animateHandlers(host: NiiVueHost): Handlers {
       }
       const result = await done
       view.drawScene()
+      await announceEnd(target)
       return {
         completed: result.completed,
         reason: result.reason,

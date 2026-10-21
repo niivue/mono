@@ -188,7 +188,6 @@ visible window. Off by default (the window stays put and the crosshair may
 leave it), and explicit pan/zoom gestures are never fought. Enabling also
 applies immediately against the last rendered layout, so an already
 off-window crosshair is brought back."""
-    is_position_in_mm = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_radiological = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_ruler_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_single_view_fill_canvas = traitlets.Bool(None, allow_none=True).tag(sync=True)

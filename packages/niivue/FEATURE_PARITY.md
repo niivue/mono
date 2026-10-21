@@ -163,7 +163,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `moveCrosshairInVox(dx,dy,dz)` | ✅ | |
 | `pan2Dxyzmm` | ✅ | Property |
 | `crosshairPos` | ✅ | Property |
-| `isPositionInMM` | ✅ | Property |
+| World-space 2D slices (`isSliceMM: true`) | ✅ | The only mode in 1.0: slices are resampled in world (mm) space, so voxels of a sheared or oblique image appear rhomboidal |
+| Image-space 2D slices (`isSliceMM: false`, `isPositionInMM`) | ❌ | Not supported by design; 1.0 never shows voxels in image space (where sheared voxels appear rectangular), so the 0.6x `isSliceMM` option and vestigial `isPositionInMM` property were removed. 0.6x demo of both modes: https://niivue.com/demos/features/worldspace.html |
 
 ## 12. 3D Rendering
 

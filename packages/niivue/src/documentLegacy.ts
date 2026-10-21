@@ -50,7 +50,6 @@ const OPT_MAP: Record<string, [keyof NVDocumentData, string]> = {
   crosshairWidth: ['ui', 'crosshairWidth'],
   selectionBoxColor: ['ui', 'selectionBoxColor'],
   rulerWidth: ['ui', 'rulerWidth'],
-  isSliceMM: ['ui', 'isPositionInMM'],
   loadingText: ['ui', 'placeholderText'],
   thumbnail: ['ui', 'thumbnailUrl'],
   // layout

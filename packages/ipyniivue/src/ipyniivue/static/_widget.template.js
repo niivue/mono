@@ -81,7 +81,6 @@ const PROPS_RW = [
   ["isOrientationTextVisible", "is_orientation_text_visible"],
   ["isOrientCubeVisible", "is_orient_cube_visible"],
   ["isPanFollowingCrosshair", "is_pan_following_crosshair"],
-  ["isPositionInMM", "is_position_in_mm"],
   ["isRadiological", "is_radiological"],
   ["isRulerVisible", "is_ruler_visible"],
   ["isSingleViewFillCanvas", "is_single_view_fill_canvas"],

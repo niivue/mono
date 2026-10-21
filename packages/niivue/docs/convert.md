@@ -57,7 +57,7 @@ Complete mapping from old property names/locations to new API.
 | `isRuler` | `ui.isRulerVisible` | `nv1.isRulerVisible` |
 | `isCrossLines` | `ui.isCrossLinesVisible` | `nv1.isCrossLinesVisible` |
 | `isLegend` | `ui.isLegendVisible` | `nv1.isLegendVisible` |
-| `isSliceMM` | `ui.isPositionInMM` | `nv1.isPositionInMM` |
+| `isSliceMM` | none | none: 1.0 always draws slices in world space (equivalent to `isSliceMM: true`); image space is not supported |
 | `showMeasureUnits` | `ui.isMeasureUnitsVisible` | `nv1.isMeasureUnitsVisible` |
 | `crosshairColor` | `ui.crosshairColor` | `nv1.crosshairColor` |
 | `crosshairGap` | `ui.crosshairGap` | `nv1.crosshairGap` |

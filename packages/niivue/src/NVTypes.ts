@@ -709,7 +709,6 @@ export type UIConfig = {
   isRulerVisible: boolean
   isCrossLinesVisible: boolean
   isLegendVisible: boolean
-  isPositionInMM: boolean
   isMeasureUnitsVisible: boolean
   /**
    * Draw the built-in measurement overlay (ruler line, ticks, distance label).
@@ -1224,7 +1223,6 @@ export type NiiVueOptions = {
   isRulerVisible?: boolean
   isCrossLinesVisible?: boolean
   isLegendVisible?: boolean
-  isPositionInMM?: boolean
   isMeasureUnitsVisible?: boolean
   isThumbnailVisible?: boolean
   thumbnailUrl?: string

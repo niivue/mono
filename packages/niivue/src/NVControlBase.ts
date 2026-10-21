@@ -417,8 +417,13 @@ export default class NiiVue extends EventTarget {
     settled: boolean,
     snapshot: () => ChunkStreamDetail,
   ): void => {
+    for (const waiter of this._chunkFrameWaiters) waiter(settled)
     this._chunkStreamEmitter.observe(this, counts, settled, snapshot)
   }
+  /** `whenChunkStreamSettles` waiters, each fed the settled verdict of every
+   *  frame drawn after it registered. Called with `true` on teardown, since
+   *  no frame will follow. */
+  private _chunkFrameWaiters = new Set<(settled: boolean) => void>()
   // Which settings saved documents include (transient; not serialized). Default
   // {} = omit any setting equal to its default. See `settingsSavePolicy`.
   private _settingsSavePolicy: SettingsSavePolicy = {}
@@ -3920,55 +3925,36 @@ export default class NiiVue extends EventTarget {
    * the following frames, and a change that rebuilds the bricks' textures
    * (turning on `volumeIllumination`, say) streams them again, so a
    * screenshot taken straight after {@link setVolumeChunkGrid} or such a
-   * change would show a partly-tiled volume. Listens for `chunkStreamIdle`
-   * after kicking a draw; resolves at once when nothing is outstanding, or no
-   * volume is chunked, and gives up quietly after `timeoutMs`.
+   * change would show a partly-tiled volume. Kicks a draw and resolves on the
+   * first frame drawn after it that the view calls settled: nothing queued or
+   * mid-upload for the working set that frame asked for, no brick still
+   * cross-fading in over the coarse floor, no drag in progress. A 2D plane
+   * through resident bricks only settles on that first frame, or once its
+   * fade ends. Resolves at once when no volume is chunked or the tab is
+   * hidden (it draws no frames, so there is no visible frame to settle), and
+   * gives up quietly after `timeoutMs`.
    */
   whenChunkStreamSettles(timeoutMs = 30_000): Promise<void> {
     const stats = this.chunkStreamStats()
-    if (
-      !stats ||
-      (stats.pending === 0 &&
-        stats.inFlight === 0 &&
-        stats.resident >= stats.total)
-    ) {
+    if (!stats || stats.total === 0 || globalThis.document?.hidden)
       return Promise.resolve()
-    }
+    // Even a fully resident stream waits for a drawn frame: the last verdict
+    // on record may predate the change that brought us here, and the brick
+    // admitted last may still be fading in.
     return new Promise((resolve) => {
       let timer: ReturnType<typeof setTimeout> | null = null
-      let finished = false
-      let sawBusy = false
-      const onProgress = (): void => {
-        sawBusy = true
-      }
       const done = (): void => {
-        if (finished) return
-        finished = true
-        this.removeEventListener('chunkStreamIdle', done)
-        this.removeEventListener('chunkStreamProgress', onProgress)
+        this._chunkFrameWaiters.delete(onFrame)
         if (timer !== null) clearTimeout(timer)
+        timer = null
         resolve()
       }
-      this.addEventListener('chunkStreamIdle', done)
-      this.addEventListener('chunkStreamProgress', onProgress)
+      const onFrame = (settled: boolean): void => {
+        if (settled) done()
+      }
+      this._chunkFrameWaiters.add(onFrame)
       timer = setTimeout(done, timeoutMs)
       this.drawScene()
-      // `chunkStreamIdle` follows only a busy frame. A view that already holds
-      // every brick it draws (a 2D plane through resident bricks only) never
-      // has one, so once the kicked draw has run without queueing anything,
-      // the stream is as settled as it will get.
-      const check = (framesLeft: number): void => {
-        requestAnimationFrame(() => {
-          if (finished || sawBusy) return
-          if (framesLeft > 1) {
-            check(framesLeft - 1)
-            return
-          }
-          const now = this.chunkStreamStats()
-          if (!now || now.pending + now.inFlight === 0) done()
-        })
-      }
-      check(2)
     })
   }
 
@@ -6501,6 +6487,8 @@ export default class NiiVue extends EventTarget {
     if (this.view) this.view.destroy()
     this._chunkStreamEmitter.reset()
     this._chunkStreamWiredView = null
+    // Release any settle waiter now: no frame will follow.
+    for (const waiter of this._chunkFrameWaiters) waiter(true)
     // Clear any "graphics unavailable" overlay left by a failed attach.
     if (this.canvas) clearCanvasMessage(this.canvas)
     this._viewLifecycle.unregister?.(this)

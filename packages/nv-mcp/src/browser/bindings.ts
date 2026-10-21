@@ -50,8 +50,10 @@ import type { DataPalette } from './data'
 import { TRACT_COLOR_MODES, tractData } from './meshes'
 import { claimSpread, requireSpread, spreadVolume } from './spread'
 import type {
+  MeshLayerUpdate,
   MeshUpdate,
   ShownMesh,
+  ShownMeshLayer,
   ShownVolume,
   View,
   VolumeUpdate,
@@ -270,6 +272,7 @@ const MESH_PROPS: Record<
     shape: 'number',
     range: { min: 0, max: 1, step: 0.01 },
   },
+  color: { field: 'color', shape: 'color' },
   shader: { field: 'shaderType', shape: 'string', shaders: true },
   // NiiVue draws a mesh unless visible is false.
   visible: { field: 'visible', shape: 'boolean', unset: true },
@@ -324,7 +327,53 @@ const CONNECTOME_PROPS: Record<string, MeshOption> = {
   edgeScale: { shape: 'number', min: 0, max: 5, step: 0.1 },
 }
 
-function intensityRange(volume: ShownVolume): { min?: number; max?: number } {
+/** A mesh layer's properties a control can bind, by the names `set_mesh_layer` takes. */
+const LAYER_PROPS: Record<
+  string,
+  {
+    field: keyof MeshLayerUpdate & keyof ShownMeshLayer
+    shape: Shape
+    range?: (layer: ShownMeshLayer) => {
+      min?: number
+      max?: number
+      step?: number
+    }
+    colormaps?: true
+  }
+> = {
+  opacity: {
+    field: 'opacity',
+    shape: 'number',
+    range: () => ({ min: 0, max: 1, step: 0.01 }),
+  },
+  colormap: { field: 'colormap', shape: 'string', colormaps: true },
+  colormap_negative: {
+    field: 'colormapNegative',
+    shape: 'string',
+    colormaps: true,
+  },
+  cal_min: { field: 'calMin', shape: 'number', range: intensityRange },
+  cal_max: { field: 'calMax', shape: 'number', range: intensityRange },
+  cal_min_neg: { field: 'calMinNeg', shape: 'number' },
+  cal_max_neg: { field: 'calMaxNeg', shape: 'number' },
+  invert: { field: 'isColormapInverted', shape: 'boolean' },
+  colorbar: { field: 'isColorbarVisible', shape: 'boolean' },
+  transparent_below_cal_min: {
+    field: 'isTransparentBelowCalMin',
+    shape: 'boolean',
+  },
+  additive: { field: 'isAdditiveBlend', shape: 'boolean' },
+  outline_width: {
+    field: 'outlineWidth',
+    shape: 'number',
+    range: () => ({ min: 0, max: 5, step: 0.1 }),
+  },
+}
+
+function intensityRange(volume: ShownVolume | ShownMeshLayer): {
+  min?: number
+  max?: number
+} {
   const { globalMin, globalMax } = volume
   if (
     globalMin === undefined ||
@@ -361,6 +410,10 @@ const FORMS: BindingVocabulary['forms'] = [
   {
     form: 'mesh.<index>.<property>',
     description: `A property of a loaded mesh, the base being 0: ${Object.keys(MESH_PROPS).join(', ')}.`,
+  },
+  {
+    form: 'mesh.<index>.layer.<layer>.<property>',
+    description: `A property of a loaded mesh's layer, both counted from 0, as set_mesh_layer names it: ${Object.keys(LAYER_PROPS).join(', ')}.`,
   },
   {
     form: 'mesh.<index>.tract.<option>',
@@ -610,15 +663,23 @@ function meshTarget(bind: string, view: View): Target {
       : group === 'connectome'
         ? CONNECTOME_PROPS
         : undefined
-  const name = group ? option : part
+  const isLayer = part === 'layer'
+  const layerAt = isLayer ? Number(option) : undefined
+  const name = group ? option : isLayer ? rest[0] : part
   const known =
     name !== undefined &&
     (table
       ? Object.hasOwn(table, name) && rest.length === 0
-      : Object.hasOwn(MESH_PROPS, name) && option === undefined)
+      : isLayer
+        ? Number.isInteger(layerAt) &&
+          (layerAt ?? -1) >= 0 &&
+          Object.hasOwn(LAYER_PROPS, name) &&
+          rest.length === 1
+        : Object.hasOwn(MESH_PROPS, name) && option === undefined)
   if (!Number.isInteger(index) || index < 0 || !known)
     throw new Error(
       `"${bind}" is not a mesh binding: it takes the form mesh.<index>.<property> (${Object.keys(MESH_PROPS).join(', ')}), ` +
+        `mesh.<index>.layer.<layer>.<property> (${Object.keys(LAYER_PROPS).join(', ')}), ` +
         `mesh.<index>.tract.<option> (${Object.keys(TRACT_PROPS).join(', ')}) or ` +
         `mesh.<index>.connectome.<option> (${Object.keys(CONNECTOME_PROPS).join(', ')}).`,
     )
@@ -641,6 +702,9 @@ function meshTarget(bind: string, view: View): Target {
       )
   }
 
+  if (isLayer && layerAt !== undefined)
+    return layerTarget(bind, view, index, layerAt, name, mesh, current, gone)
+
   if (!group || !table) {
     if (!view.setMesh)
       throw new Error("This page's NiiVue cannot change a mesh once loaded.")
@@ -657,7 +721,9 @@ function meshTarget(bind: string, view: View): Target {
         const bound = current()
         if (!bound) return undefined
         const value = bound[field]
-        return value === undefined ? unset : (value as ControlValue)
+        if (value === undefined) return unset
+        if (shape === 'color') return plainColor(value)
+        return value as ControlValue
       },
       write: (value) => {
         gone()
@@ -666,7 +732,13 @@ function meshTarget(bind: string, view: View): Target {
           throw new Error(
             `${bind} takes one of the mesh shaders: ${choices.join(', ')}.`,
           )
-        return setMesh(index, { [field]: value } as MeshUpdate)
+        let given: unknown = value
+        if (shape === 'color' && Array.isArray(value)) {
+          // A colour control without alpha keeps the alpha the mesh has.
+          const alpha = plainColor(current()?.[field])?.[3] ?? 1
+          given = [...value.slice(0, 3), value[3] ?? alpha]
+        }
+        return setMesh(index, { [field]: given } as MeshUpdate)
       },
     }
   }
@@ -715,6 +787,60 @@ function meshTarget(bind: string, view: View): Target {
         given = bytes ? rgba.map((c) => Math.round(c * 255)) : rgba
       }
       return setOptions(index, { [name]: given })
+    },
+  }
+}
+
+/**
+ * A property of one of a mesh's layers. The bind names both by index, so it
+ * holds the layer object too: a layer removed or loaded again in its place
+ * stops taking writes meant for this one.
+ */
+function layerTarget(
+  bind: string,
+  view: View,
+  index: number,
+  layerAt: number,
+  name: string,
+  mesh: ShownMesh,
+  current: () => ShownMesh | undefined,
+  gone: () => void,
+): Target {
+  const layers = mesh.layers ?? []
+  const layer = layers[layerAt]
+  if (!layer)
+    throw new Error(
+      layers.length
+        ? `${mesh.name ?? `Mesh ${index}`} has no layer ${layerAt}: ${layers.length} ${layers.length === 1 ? 'is' : 'are'} loaded.`
+        : `${mesh.name ?? `Mesh ${index}`} has no layers; add_mesh_layer adds one.`,
+    )
+  if (!view.setMeshLayerProperty)
+    throw new Error("This page's NiiVue cannot change a mesh layer.")
+  const setLayer = view.setMeshLayerProperty.bind(view)
+  const bound = () =>
+    current()?.layers?.[layerAt] === layer ? layer : undefined
+  const { field, shape, range, colormaps } = LAYER_PROPS[name]
+  const choices = colormaps && view.colormaps ? [...view.colormaps] : undefined
+  return {
+    shape,
+    ...(choices ? { choices } : {}),
+    ...(range ? range(layer) : {}),
+    read: () => {
+      const value = bound()?.[field]
+      return value === undefined ? undefined : (value as ControlValue)
+    },
+    write: (value) => {
+      gone()
+      if (!bound())
+        throw new Error(
+          `Layer ${layerAt} of mesh ${index} is no longer the one this control was bound to. Bind it again.`,
+        )
+      check(bind, shape, value)
+      if (choices && !choices.includes(value as string))
+        throw new Error(
+          `${bind} takes one of the colormaps: ${choices.join(', ')}.`,
+        )
+      return setLayer(index, layerAt, { [field]: value } as MeshLayerUpdate)
     },
   }
 }

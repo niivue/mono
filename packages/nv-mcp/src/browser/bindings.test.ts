@@ -13,6 +13,7 @@ import { dataPalette } from './data'
 import { coreHandlers } from './scene'
 import { settingHandlers } from './settings'
 import type {
+  MeshLayerUpdate,
   MeshUpdate,
   ShownMesh,
   ShownVolume,
@@ -783,7 +784,24 @@ describe('bindControls: actions', () => {
 /** A view with a surface, a tract and a connectome. */
 function meshView(writeWait?: number) {
   const meshes: ShownMesh[] = [
-    { name: 'lh.pial', kind: 'mesh', opacity: 1, shaderType: 'phong' },
+    {
+      name: 'lh.pial',
+      kind: 'mesh',
+      opacity: 1,
+      shaderType: 'phong',
+      color: [1, 1, 1, 0.5],
+      layers: [
+        {
+          name: 'curv',
+          colormap: 'gray',
+          calMin: 0,
+          calMax: 2,
+          globalMin: -1,
+          globalMax: 4,
+          opacity: 1,
+        },
+      ],
+    },
     {
       name: 'yeh2022.trx',
       kind: 'tract',
@@ -821,6 +839,12 @@ function meshView(writeWait?: number) {
     }),
     setTractOptions: mock(options('tractOptions')),
     setConnectomeOptions: mock(options('connectomeOptions')),
+    setMeshLayerProperty: mock(
+      (index: number, layer: number, update: MeshLayerUpdate) => {
+        Object.assign(meshes[index].layers?.[layer] ?? {}, update)
+        return Promise.resolve()
+      },
+    ),
   })
   const memory = memoryControls()
   const onError = mock((_error: Error) => {})
@@ -1232,6 +1256,89 @@ describe('bindControls: meshes', () => {
       controls: Array<{ value: unknown }>
     }
     expect(controls[0].value).toBe(5)
+  })
+
+  it("drives a mesh layer's threshold within the layer's range", () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 't',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.layer.0.cal_min',
+    }) as Reported
+    expect(got.control.value).toBe(0)
+    expect(got.control.min).toBe(-1)
+    expect(got.control.max).toBe(4)
+    memory.simulate({ id: 't', type: 'change', value: 1.5 })
+    expect(meshes[0].layers?.[0].calMin).toBe(1.5)
+  })
+
+  it("drives a mesh layer's colormap and opacity", () => {
+    const { add_control, memory, meshes } = meshView()
+    add_control({
+      id: 'c',
+      kind: 'select',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.layer.0.colormap',
+    })
+    memory.simulate({ id: 'c', type: 'change', value: 'warm' })
+    expect(meshes[0].layers?.[0].colormap).toBe('warm')
+    add_control({
+      id: 'o',
+      kind: 'slider',
+      x: 0,
+      y: 1,
+      bind: 'mesh.0.layer.0.opacity',
+    })
+    memory.simulate({ id: 'o', type: 'change', value: 0.25 })
+    expect(meshes[0].layers?.[0].opacity).toBe(0.25)
+  })
+
+  it('stops driving a mesh layer loaded again in its place', () => {
+    const { add_control, memory, meshes, view, onError } = meshView()
+    add_control({
+      id: 'o',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.layer.0.opacity',
+    })
+    meshes[0].layers = [{ name: 'thickness', opacity: 1 }]
+    memory.simulate({ id: 'o', type: 'change', value: 0.5 })
+    expect(view.setMeshLayerProperty).not.toHaveBeenCalled()
+    expect(onError.mock.calls[0]?.[0].message).toContain(
+      'no longer the one this control was bound to',
+    )
+  })
+
+  it('declines a layer a mesh does not have', () => {
+    const { add_control } = meshView()
+    const bind = (b: string) => () =>
+      add_control({ id: 'x', kind: 'slider', x: 0, y: 0, bind: b })
+    expect(bind('mesh.0.layer.3.opacity')).toThrow(
+      'lh.pial has no layer 3: 1 is loaded.',
+    )
+    expect(bind('mesh.2.layer.0.opacity')).toThrow(
+      'net.jcon has no layers; add_mesh_layer adds one.',
+    )
+    expect(bind('mesh.0.layer.0.width')).toThrow('not a mesh binding')
+    expect(bind('mesh.0.layer.x.opacity')).toThrow('not a mesh binding')
+  })
+
+  it('holds a mesh colour 0 to 1 and keeps its alpha', () => {
+    const { add_control, memory, meshes } = meshView()
+    const got = add_control({
+      id: 'k',
+      kind: 'color',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.color',
+    }) as Reported
+    expect(got.control.value).toEqual([1, 1, 1])
+    memory.simulate({ id: 'k', type: 'change', value: [0, 1, 0] })
+    expect(meshes[0].color).toEqual([0, 1, 0, 0.5])
   })
 
   it('declines a mesh it cannot reach, saying what a mesh bind may name', () => {

@@ -135,6 +135,9 @@ export interface ShownMeshLayer {
   globalMin?: number
   globalMax?: number
   isColormapInverted?: boolean
+  isTransparentBelowCalMin?: boolean
+  isAdditiveBlend?: boolean
+  outlineWidth?: number
   frame4D?: number
   nFrame4D?: number
   isColorbarVisible?: boolean

@@ -3930,12 +3930,14 @@ export default class NiiVue extends EventTarget {
    * mid-upload for the working set that frame asked for, no brick still
    * cross-fading in over the coarse floor, no drag in progress. A 2D plane
    * through resident bricks only settles on that first frame, or once its
-   * fade ends. Resolves at once when no volume is chunked, and gives up
-   * quietly after `timeoutMs` (a hidden tab draws no frames).
+   * fade ends. Resolves at once when no volume is chunked or the tab is
+   * hidden (it draws no frames, so there is no visible frame to settle), and
+   * gives up quietly after `timeoutMs`.
    */
   whenChunkStreamSettles(timeoutMs = 30_000): Promise<void> {
     const stats = this.chunkStreamStats()
-    if (!stats || stats.total === 0) return Promise.resolve()
+    if (!stats || stats.total === 0 || globalThis.document?.hidden)
+      return Promise.resolve()
     // Even a fully resident stream waits for a drawn frame: the last verdict
     // on record may predate the change that brought us here, and the brick
     // admitted last may still be fading in.

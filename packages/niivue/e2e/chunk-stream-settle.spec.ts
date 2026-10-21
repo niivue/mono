@@ -29,6 +29,9 @@ const SETTLE_BUDGET_MS = 10_000
 // Long enough that a resolve mid-fade is plain, and longer than the frames a
 // SwiftShader WebGPU view needs before it settles.
 const FADE_MS = 3000
+// The wait given in the hidden-tab case: long enough that sitting it out is
+// plainly not resolving at once.
+const HIDDEN_TIMEOUT_MS = 6000
 
 /** The one pixel at (x, y) of the page, decoded from a 1x1 PNG. */
 async function probe(page: Page, x: number, y: number): Promise<number[]> {
@@ -158,6 +161,43 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.afterGrid.pending + r.afterGrid.inFlight).toBe(0)
     expect(r.afterGrid.resident).toBeLessThan(r.afterGrid.total)
     expect(r.gridMs).toBeLessThan(SETTLE_BUDGET_MS)
+  })
+
+  test(`resolves at once in a hidden tab, which draws no frames (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+    const result = await page.evaluate(`(async () => {
+      try {
+        ${mount(backend, 'AXIAL')}
+        await nv.setVolumeChunkGrid(0, [2, 2, 4])
+        // A hidden tab: the page says so and no frame is drawn. Without the
+        // hidden check the wait sits out its whole timeout.
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+        const raf = window.requestAnimationFrame
+        window.requestAnimationFrame = () => 0
+        // Let a frame queued before the stub run out, so none is drawn after.
+        await new Promise((r) => setTimeout(r, 300))
+        const settleMs = await timed(() => nv.whenChunkStreamSettles(${HIDDEN_TIMEOUT_MS}))
+        window.requestAnimationFrame = raf
+        delete document.hidden
+        return { settleMs }
+      } catch (e) {
+        const m = String(e && e.message ? e.message : e)
+        if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+          return { skip: 'GPU unavailable: ' + m }
+        }
+        throw e
+      }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+    expect(r.settleMs).toBeLessThan(HIDDEN_TIMEOUT_MS / 2)
   })
 
   test(`setVolumeChunkGrid resolves with every 3D brick resident (${backend})`, async ({

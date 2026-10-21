@@ -1,3 +1,23 @@
+## 1.0.0-rc.7 (2026-10-21)
+
+### Features
+
+- ⚠️  **niivue:** remove vestigial isPositionInMM ([36546908](https://github.com/niivue/mono/commit/36546908))
+
+### Breaking Changes
+
+- **niivue:** remove vestigial isPositionInMM  ([36546908](https://github.com/niivue/mono/commit/36546908))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.33
+- Updated uikit to 1.0.0-rc.21
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.6 (2026-10-21)
 
 ### Updated Dependencies

@@ -28,6 +28,7 @@ import {
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
+import { hiddenArmAlpha } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
@@ -1092,6 +1093,21 @@ export default class NVGlview {
           normalMatrix as Float32Array,
           tile.axCorSag,
         )
+        // Before the meshes, so only the slice can hide what this reveals.
+        const hiddenAlpha = hiddenArmAlpha(
+          md.mesh.xRay,
+          tile.axCorSag,
+          md.volumes[0]?.oblique_angle ?? 0,
+        )
+        if (hiddenAlpha > 0) {
+          this.crosshairRenderer.drawXRay(
+            gl,
+            mvpMatrix as Float32Array,
+            normalMatrix as Float32Array,
+            tile.axCorSag,
+            hiddenAlpha,
+          )
+        }
       }
       // Layer 2b: Meshes
       const meshes =

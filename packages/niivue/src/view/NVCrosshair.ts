@@ -127,3 +127,25 @@ export function shouldCullCylinder(cylIdx: number, sliceType: number): boolean {
     return true
   return false
 }
+
+/**
+ * A 2D slice of an oblique volume tilts across the crosshair arms and hides the
+ * parts behind it. Those parts are redrawn this faintly, as NiiVue 0.x did, so
+ * each arm stays whole while the solid and faint halves still show the tilt.
+ */
+const HIDDEN_ARM_ALPHA = 0.15
+
+/**
+ * Opacity for redrawing the arms a 2D slice hides, or 0 for none. Only an
+ * oblique base volume (`obliqueAngle` > 0) tilts its slices. Mesh x-ray already
+ * redraws hidden arms after the meshes, so this applies only while it is off.
+ */
+export function hiddenArmAlpha(
+  meshXRay: number,
+  sliceType: number,
+  obliqueAngle: number,
+): number {
+  if (meshXRay > 0 || obliqueAngle <= 0) return 0
+  if (sliceType === NVConstants.SLICE_TYPE.RENDER) return 0
+  return HIDDEN_ARM_ALPHA
+}

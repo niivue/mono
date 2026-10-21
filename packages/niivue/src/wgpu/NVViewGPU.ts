@@ -28,6 +28,7 @@ import {
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
+import { hiddenArmAlpha } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
@@ -1338,6 +1339,33 @@ export default class NVView {
             tile.axCorSag,
             chSlot,
           )
+          // Before the meshes, so only the slice can hide what this reveals.
+          // Takes the mesh x-ray pass's uniform slot, which is idle while
+          // mesh x-ray is off.
+          const hiddenAlpha = hiddenArmAlpha(
+            md.mesh.xRay,
+            tile.axCorSag,
+            md.volumes[0]?.oblique_angle ?? 0,
+          )
+          const hiddenTile = i + screenSlices.length
+          const hiddenPipeline = this.meshXRayPipelines?.phong
+          if (
+            hiddenAlpha > 0 &&
+            hiddenPipeline &&
+            hiddenTile < mesh.MAX_TILES
+          ) {
+            this.crosshairRenderer.drawXRay(
+              device,
+              pass,
+              hiddenPipeline,
+              mvpMatrix as Float32Array,
+              normalMatrix as Float32Array,
+              hiddenTile,
+              tile.axCorSag,
+              hiddenAlpha,
+              chSlot,
+            )
+          }
         }
       }
       // Layer 2b: Meshes (also limited to same tile; skipped on global3d)

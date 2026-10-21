@@ -214,10 +214,6 @@ export const SETTINGS: readonly Setting[] = [
     "Whether a single 2D view fills the canvas instead of keeping the slice's shape.",
   ),
   bool('isPanFollowingCrosshair', 'Whether the 2D pan follows the crosshair.'),
-  bool(
-    'isPositionInMM',
-    'Whether the position readout is in millimetres rather than voxels.',
-  ),
   bool('isSnapToVoxelCenters', 'Whether the crosshair snaps to voxel centres.'),
   bool('isYoked3DTo2DZoom', 'Whether zooming a 2D tile zooms the render too.'),
   bool('isDragDropEnabled', 'Whether files dropped on the canvas are loaded.'),

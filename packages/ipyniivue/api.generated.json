@@ -703,17 +703,6 @@
       "doc": "Opt-in: when the 2D views are zoomed in ({@link pan2Dxyzmm}`[3] > 1`) and\nthe crosshair moves on its own — keyboard step, {@link setCrosshairPos},\nor a linked instance — pan just enough that it stays inside every tile's\nvisible window. Off by default (the window stays put and the crosshair may\nleave it), and explicit pan/zoom gestures are never fought. Enabling also\napplies immediately against the last rendered layout, so an already\noff-window crosshair is brought back."
     },
     {
-      "jsName": "isPositionInMM",
-      "pyName": "is_position_in_mm",
-      "tsType": "boolean",
-      "pyTraitlet": {
-        "kind": "Bool"
-      },
-      "hasGetter": true,
-      "hasSetter": true,
-      "doc": null
-    },
-    {
       "jsName": "isRadiological",
       "pyName": "is_radiological",
       "tsType": "boolean",

@@ -408,7 +408,6 @@ export const UI_DEFAULTS: UIConfig = {
   isRulerVisible: false,
   isCrossLinesVisible: false,
   isLegendVisible: true,
-  isPositionInMM: false,
   isMeasureUnitsVisible: true,
   isMeasurementDrawn: true,
   isAnnotationDrawn: true,

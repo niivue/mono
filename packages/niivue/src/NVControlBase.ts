@@ -1281,15 +1281,6 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
-  get isPositionInMM(): boolean {
-    return this.model.ui.isPositionInMM
-  }
-  set isPositionInMM(v: boolean) {
-    this.model.ui.isPositionInMM = v
-    this.emit('change', { property: 'isPositionInMM', value: v })
-    this.drawScene()
-  }
-
   get isMeasureUnitsVisible(): boolean {
     return this.model.ui.isMeasureUnitsVisible
   }

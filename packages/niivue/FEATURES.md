@@ -85,7 +85,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | Feature | Kind | Async | Notes |
 |---|---|---|---|
 | `azimuth`, `elevation` | Prop | No | 3D camera angles |
-| `crosshairPos` | Prop | No | `vec3` in scene fraction (or mm if `isPositionInMM`) |
+| `crosshairPos` | Prop | No | `vec3` in scene fraction |
 | `pan2Dxyzmm` | Prop | No | 2D pan/zoom state |
 | `scaleMultiplier` | Prop | No | Global zoom |
 | `gamma` | Prop | No | |
@@ -128,7 +128,6 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible` | Prop | Toggles |
 | `is3DCrosshairVisible`, `isCrossLinesVisible` | Prop | |
 | `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | |
-| `isPositionInMM` | Prop | Crosshair coord space |
 | `isMeasureUnitsVisible` | Prop | |
 | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` | Prop | Load-time preview |
 | `crosshairColor`, `crosshairGap`, `crosshairWidth` | Prop | |

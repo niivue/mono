@@ -216,9 +216,6 @@ export default class NVModel {
       ...(options.isLegendVisible !== undefined && {
         isLegendVisible: options.isLegendVisible,
       }),
-      ...(options.isPositionInMM !== undefined && {
-        isPositionInMM: options.isPositionInMM,
-      }),
       ...(options.isMeasureUnitsVisible !== undefined && {
         isMeasureUnitsVisible: options.isMeasureUnitsVisible,
       }),

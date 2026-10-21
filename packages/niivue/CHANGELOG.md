@@ -1,3 +1,15 @@
+## 1.0.0-rc.31 (2026-10-21)
+
+### Fixes
+
+- **niivue:** resolve the chunk settle wait at once in a hidden tab ([70025e29](https://github.com/niivue/mono/commit/70025e29))
+- **niivue:** wait for the cross-fade before the chunk stream counts as settled ([2f006fd6](https://github.com/niivue/mono/commit/2f006fd6))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.30 (2026-10-20)
 
 ### Fixes

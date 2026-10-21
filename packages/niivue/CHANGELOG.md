@@ -1,3 +1,17 @@
+## 1.0.0-rc.32 (2026-10-21)
+
+### Fixes
+
+- **niivue:** reveal only arms the slice hides, and only on oblique volumes ([a60b249e](https://github.com/niivue/mono/commit/a60b249e))
+- **niivue:** draw the crosshair arms a 2D slice hides faintly ([d207e503](https://github.com/niivue/mono/commit/d207e503))
+- **niivue:** fit crosshair arms to each tile's drawn slice plane ([8ddde619](https://github.com/niivue/mono/commit/8ddde619))
+- **niivue:** keep 2D crosshair arms on oblique slices ([e3e9abc8](https://github.com/niivue/mono/commit/e3e9abc8))
+
+### Thank You
+
+- Claude Opus 5.5
+- Steffen Bollmann
+
 ## 1.0.0-rc.31 (2026-10-21)
 
 ### Fixes

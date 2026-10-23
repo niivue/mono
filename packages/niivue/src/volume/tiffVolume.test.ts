@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { NiiDataType } from '@/NVConstants'
-import { channelColormapFor } from './channelColormaps'
+import { channelColormapFor, channelColormapsFor } from './channelColormaps'
 import { parseTiff, TIFF_TAG } from './tiff'
 import { buildMultiIfd, buildTiff } from './tiffBuilders'
 import {
@@ -244,5 +244,54 @@ describe('channelColormapFor', () => {
     expect(channelColormapFor(undefined, 1)).toBe('violet')
     // The palette wraps rather than running out.
     expect(channelColormapFor(null, 6)).toBe('green')
+  })
+
+  test('maps white and near-white to gray', () => {
+    expect(channelColormapFor([255, 255, 255], 0)).toBe('gray')
+    expect(channelColormapFor([200, 200, 210], 2)).toBe('gray')
+  })
+})
+
+describe('channelColormapsFor', () => {
+  test('gives channels that would collide the next closest free ramp', () => {
+    const white = [255, 255, 255]
+    expect(channelColormapsFor([white, white])).toEqual(['gray', 'violet'])
+    // blue2cyan and redyell tie for the second green; palette order decides.
+    expect(
+      channelColormapsFor([
+        [0, 255, 0],
+        [10, 250, 10],
+      ]),
+    ).toEqual(['green', 'blue2cyan'])
+  })
+
+  test('keeps distinct colours and the uncoloured cycle unchanged', () => {
+    expect(
+      channelColormapsFor([
+        [255, 0, 0],
+        [0, 0, 255],
+      ]),
+    ).toEqual(['red', 'blue'])
+    expect(channelColormapsFor([null, undefined, null])).toEqual([
+      'green',
+      'violet',
+      'blue2cyan',
+    ])
+  })
+
+  test('an uncoloured channel skips a hue a coloured one took', () => {
+    // The second channel's cycle entry (violet) is taken: first free is green.
+    expect(channelColormapsFor([[255, 0, 255], null])).toEqual([
+      'violet',
+      'green',
+    ])
+  })
+
+  test('repeats only once every ramp is taken', () => {
+    const names = channelColormapsFor(Array.from({ length: 8 }, () => null))
+    expect(new Set(names.slice(0, 7)).size).toBe(7)
+    expect(names[6]).toBe('gray')
+    // Then the plain cycle resumes: order 7 is the palette's second entry.
+    expect(names[7]).toBe('violet')
   })
 })

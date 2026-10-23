@@ -24,7 +24,7 @@ import {
   findAllenAtlasChannel,
   parseAllenAtlasInfo,
 } from './allenAtlas'
-import { channelColormapFor } from './channelColormaps'
+import { channelColormapFor, channelColormapsFor } from './channelColormaps'
 import { channelVolumeFile } from './channelVolumeFile'
 import { type DecodedImage, decodeImageRGBA } from './imageDecode'
 
@@ -159,6 +159,9 @@ export async function loadAllenAtlasVolumes(
     }
   }
 
+  const colormaps = channelColormapsFor(
+    wanted.map((channel) => info.channelColors[channel]),
+  )
   const volumes: ImageFromUrlOptions[] = new Array(requests.length)
   await Promise.all(
     Array.from(byImage, async ([imageName, group]) => {
@@ -183,11 +186,7 @@ export async function loadAllenAtlasVolumes(
         volumes[request.order] = {
           url: allenAtlasChannelFile(info, img, name),
           name,
-          colormap: allenAtlasChannelColormap(
-            info,
-            request.channel,
-            request.order,
-          ),
+          colormap: colormaps[request.order],
         }
       }
     }),

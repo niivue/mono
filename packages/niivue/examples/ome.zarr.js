@@ -155,7 +155,11 @@ function offer(next, label) {
 
   timepointPair.hidden = source.timepointCount <= 1
   timepointInput.max = String(source.timepointCount - 1)
-  timepointInput.value = '0'
+  // Start at the writer's chosen timepoint (omero rdefs) when it has one.
+  const defaultT = source.info.defaults.t
+  timepointInput.value = String(
+    defaultT !== null && defaultT < source.timepointCount ? defaultT : 0,
+  )
 
   loadButton.disabled = false
   const axes = source.axes.map((a) => a.name).join(' ')
@@ -237,6 +241,24 @@ opacityInput.oninput = () => {
     applyDisplay(lastLoaded)
   }
 }
+/**
+ * Put the crosshair on the writer's chosen plane (omero `rdefs.defaultZ`,
+ * a full-resolution z index) scaled to the loaded level, centred in x and y.
+ */
+function showDefaultPlane(level) {
+  const defaultZ = source.info.defaults.z
+  const full = source.levels[0].dims
+  const dims = source.levels[level].dims
+  if (defaultZ === null || defaultZ >= full[2] || dims[2] <= 1) {
+    return
+  }
+  const z = Math.min(dims[2] - 1, Math.floor((defaultZ * dims[2]) / full[2]))
+  nv1.crosshairPos = nv1.vox2frac([
+    Math.floor(dims[0] / 2),
+    Math.floor(dims[1] / 2),
+    z,
+  ])
+}
 
 viewSelect.onchange = () => {
   nv1.sliceType = Number(viewSelect.value)
@@ -275,6 +297,7 @@ loadButton.onclick = async () => {
     const view = voxels[2] > 1 ? Number(viewSelect.value) : SLICE_TYPE.AXIAL
     nv1.sliceType = view
     viewSelect.value = String(view)
+    showDefaultPlane(level)
     say(
       `Showing ${volumes.map((v) => v.name).join(', ')} - ` +
         `${voxels.join(' x ')} voxels, ` +

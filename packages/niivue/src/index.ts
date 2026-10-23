@@ -305,7 +305,9 @@ export type {
 // OME-TIFF and plain TIFF stacks (multi-channel microscopy)
 export {
   CHANNEL_COLORMAPS,
+  CHANNEL_GRAY_COLORMAP,
   channelColormapFor,
+  channelColormapsFor,
 } from './volume/channelColormaps'
 export type {
   ChunkPlan,
@@ -394,6 +396,7 @@ export {
   omeZarrSpatialOrder,
   omeZarrSpatialScaleUm,
   parseOmeroColor,
+  omeroWindowUsable,
   parseOmeZarrAttrs,
 } from './volume/omeZarr'
 // OME-Zarr chunk-streaming adapter for nv.loadChunkedVolume

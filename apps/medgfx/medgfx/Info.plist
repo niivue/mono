@@ -187,6 +187,23 @@
 				</array>
 			</dict>
 		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.niivue.nvd</string>
+			<key>UTTypeDescription</key>
+			<string>NiiVue Document</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>nvd</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
 	<!-- No encryption beyond what the OS provides, so App Store Connect can skip
 	     the export compliance question on every upload. -->

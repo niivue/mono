@@ -6826,7 +6826,14 @@ export default class NiiVue extends EventTarget {
     if (this.model.ui.thumbnailUrl) {
       this.opts.thumbnail = this.model.ui.thumbnailUrl
       this.model.ui.isThumbnailVisible = true
-      if (this.view) await this.view.loadThumbnail(this.model.ui.thumbnailUrl)
+      // A thumbnail is decoration: one that cannot load (relative path,
+      // offline, blocked) must not cost the document its data.
+      try {
+        if (this.view) await this.view.loadThumbnail(this.model.ui.thumbnailUrl)
+      } catch (err) {
+        log.warn(`loadDocument: thumbnail not loaded: ${err}`)
+        this.model.ui.isThumbnailVisible = false
+      }
     }
 
     // Reconstruct volumes SEQUENTIALLY so document order is preserved —

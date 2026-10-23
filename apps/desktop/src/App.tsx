@@ -5,10 +5,12 @@ import {
   Calculator,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   CircleDot,
   Copy,
   Crosshair,
   Database,
+  Download,
   Eye,
   EyeOff,
   FileJson,
@@ -19,7 +21,7 @@ import {
   LoaderCircle,
   Maximize2,
   Minimize2,
-  Package,
+  MousePointer2,
   PackageOpen,
   PanelLeftClose,
   PanelLeftOpen,
@@ -28,6 +30,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Send,
   Share2,
   SlidersHorizontal,
   SquareTerminal,
@@ -341,6 +344,8 @@ export function App(): JSX.Element {
   const [isSharingBundle, setIsSharingBundle] = useState(false)
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
+  const [isShareMenuOpen, setIsShareMenuOpen] = useState(false)
+  const shareMenuRef = useRef<HTMLDivElement | null>(null)
   const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } =
     useTerminalDock()
   const isTerminalDockOpen = isTerminalAvailable && isTerminalOpen
@@ -382,25 +387,12 @@ export function App(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (!isRecentMenuOpen) return
-
-    function handleMouseDown(event: MouseEvent): void {
-      if (!recentMenuRef.current) return
-      if (recentMenuRef.current.contains(event.target as Node)) return
-      setIsRecentMenuOpen(false)
-    }
-    function handleKey(event: KeyboardEvent): void {
-      if (event.key === 'Escape') setIsRecentMenuOpen(false)
-    }
-
-    window.addEventListener('mousedown', handleMouseDown)
-    window.addEventListener('keydown', handleKey)
-    return () => {
-      window.removeEventListener('mousedown', handleMouseDown)
-      window.removeEventListener('keydown', handleKey)
-    }
-  }, [isRecentMenuOpen])
+  useDismissableMenu(isRecentMenuOpen, recentMenuRef, () =>
+    setIsRecentMenuOpen(false),
+  )
+  useDismissableMenu(isShareMenuOpen, shareMenuRef, () =>
+    setIsShareMenuOpen(false),
+  )
 
   const {
     query,
@@ -1005,6 +997,25 @@ export function App(): JSX.Element {
                     Open dataset directory…
                   </span>
                 </button>
+                <button
+                  aria-label="Open bundle"
+                  className="nv-recent-item nv-recent-open"
+                  disabled={isImportingBundle || isOpeningDataset}
+                  onClick={() => {
+                    setIsRecentMenuOpen(false)
+                    void handleImportBundle()
+                  }}
+                  title="Open a NeuroVue bundle (.nvbundle) — loads its volumes and restores the saved view"
+                  type="button"
+                  role="menuitem"
+                >
+                  {isImportingBundle ? (
+                    <LoaderCircle className="nv-spin" size={14} />
+                  ) : (
+                    <PackageOpen size={14} />
+                  )}
+                  <span className="nv-recent-item-name">Open bundle…</span>
+                </button>
                 {recentDatasets.length > 0 ? (
                   <>
                     <div className="nv-recent-divider" role="separator" />
@@ -1048,87 +1059,110 @@ export function App(): JSX.Element {
             ) : null}
           </div>
 
-          <button
-            aria-label="Reset clip planes"
-            className="nv-icon-button"
-            title="Reset clip planes"
-            type="button"
-            onClick={resetClipPlanes}
-          >
-            <RotateCcw size={16} />
-          </button>
-          <button
-            aria-label="Save correction patch"
-            className="nv-icon-button"
-            title="Save correction patch"
-            type="button"
-            onClick={async () => {
-              try {
-                await savePatch(serverUrl, selected, clipPlanes, backend)
-                setStatus(
-                  `Correction patch saved for ${selected?.label ?? 'volume'}.`,
-                )
-              } catch (error) {
-                setStatus(
-                  error instanceof Error ? error.message : String(error),
-                )
-              }
-            }}
-          >
-            <Save size={16} />
-          </button>
-          <button
-            aria-label="Export bundle"
-            className="nv-icon-button"
-            title={
-              selected
-                ? 'Export dataset bundle (volumes + this view) — the shareable/AirDrop payload'
-                : 'Select a volume to export a bundle'
-            }
-            type="button"
-            disabled={!selected || isExportingBundle}
-            onClick={handleExportBundle}
-          >
-            {isExportingBundle ? (
-              <LoaderCircle className="nv-spin" size={16} />
-            ) : (
-              <Package size={16} />
-            )}
-          </button>
-          <button
-            aria-label="Open bundle"
-            className="nv-icon-button"
-            title="Open a NeuroVue bundle (.nvbundle) — loads its volumes and restores the saved view"
-            type="button"
-            disabled={isImportingBundle || isOpeningDataset}
-            onClick={handleImportBundle}
-          >
-            {isImportingBundle ? (
-              <LoaderCircle className="nv-spin" size={16} />
-            ) : (
-              <PackageOpen size={16} />
-            )}
-          </button>
+          {/* With AirDrop there are two ways to share, so group them under one
+              menu; without it, export is the only one, so skip the menu. */}
           {isAirdropAvailable ? (
+            <div className="nv-open-group" ref={shareMenuRef}>
+              <button
+                className="nv-tool-button"
+                onClick={() => setIsShareMenuOpen((open) => !open)}
+                title="Export this dataset as a bundle, or send it via AirDrop"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={isShareMenuOpen}
+              >
+                {isExportingBundle || isSharingBundle ? (
+                  <LoaderCircle className="nv-spin" size={15} />
+                ) : (
+                  <Share2 size={15} />
+                )}
+                <span>Share</span>
+                <ChevronDown size={14} />
+              </button>
+              {isShareMenuOpen ? (
+                <div className="nv-recent-menu nv-share-menu" role="menu">
+                  <button
+                    aria-label="Export bundle"
+                    className="nv-recent-item nv-recent-open"
+                    disabled={!selected || isExportingBundle}
+                    onClick={() => {
+                      setIsShareMenuOpen(false)
+                      void handleExportBundle()
+                    }}
+                    title={
+                      selected
+                        ? 'Export dataset bundle (volumes + this view) — the shareable/AirDrop payload'
+                        : 'Select a volume to export a bundle'
+                    }
+                    type="button"
+                    role="menuitem"
+                  >
+                    <Download size={14} />
+                    <span className="nv-menu-item-text">
+                      <span className="nv-recent-item-name">
+                        Export bundle…
+                      </span>
+                      <span className="nv-recent-item-path">
+                        {selected
+                          ? 'Volumes plus this view, as a .nvbundle file'
+                          : 'Select a volume first'}
+                      </span>
+                    </span>
+                  </button>
+                  {isAirdropAvailable ? (
+                    <button
+                      aria-label="Share dataset via AirDrop"
+                      className="nv-recent-item nv-recent-open"
+                      disabled={!selected || isSharingBundle}
+                      onClick={() => {
+                        setIsShareMenuOpen(false)
+                        void handleShareBundle()
+                      }}
+                      title={
+                        selected
+                          ? 'AirDrop the whole dataset — recipient can browse and pick any volume'
+                          : 'Open a dataset to share via AirDrop'
+                      }
+                      type="button"
+                      role="menuitem"
+                    >
+                      <Send size={14} />
+                      <span className="nv-menu-item-text">
+                        <span className="nv-recent-item-name">
+                          Send via AirDrop…
+                        </span>
+                        <span className="nv-recent-item-path">
+                          {selected
+                            ? 'The whole dataset; the recipient picks any volume'
+                            : 'Open a dataset first'}
+                        </span>
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : (
             <button
-              aria-label="Share dataset via AirDrop"
-              className="nv-icon-button"
+              aria-label="Export bundle"
+              className="nv-tool-button"
+              disabled={!selected || isExportingBundle}
+              onClick={handleExportBundle}
               title={
                 selected
-                  ? 'AirDrop the whole dataset — recipient can browse and pick any volume'
-                  : 'Open a dataset to share via AirDrop'
+                  ? 'Export dataset bundle (volumes + this view) — the shareable/AirDrop payload'
+                  : 'Select a volume to export a bundle'
               }
               type="button"
-              disabled={!selected || isSharingBundle}
-              onClick={handleShareBundle}
             >
-              {isSharingBundle ? (
-                <LoaderCircle className="nv-spin" size={16} />
+              {isExportingBundle ? (
+                <LoaderCircle className="nv-spin" size={15} />
               ) : (
-                <Share2 size={16} />
+                <Download size={15} />
               )}
+              <span>Export</span>
             </button>
-          ) : null}
+          )}
           {isTerminalAvailable ? (
             <button
               aria-pressed={isTerminalOpen}
@@ -1382,80 +1416,6 @@ export function App(): JSX.Element {
           <div className="nv-sidepanel-content">
             {sidePanelTab === 'inspect' ? (
               <>
-                {viewMode === 'render' ? (
-                  <>
-                    <section className="nv-control-section">
-                      <div className="nv-panel-heading">
-                        <span>
-                          <ZoomIn size={15} />
-                          Zoom
-                        </span>
-                      </div>
-
-                      <button
-                        aria-pressed={renderWheelMode === 'zoom'}
-                        className={`nv-clip-card nv-zoom-card ${renderWheelMode === 'zoom' ? 'is-active' : ''}`}
-                        onClick={() => setRenderWheelMode('zoom')}
-                        type="button"
-                      >
-                        <span className="nv-clip-card-header">
-                          <span className="nv-zoom-card-title">
-                            Zoom render
-                          </span>
-                          {renderWheelMode === 'zoom' ? (
-                            <span className="nv-clip-active-badge">wheel</span>
-                          ) : null}
-                        </span>
-                        <span className="nv-zoom-card-hint">
-                          Scroll the render to zoom in and out.
-                        </span>
-                      </button>
-                    </section>
-
-                    <section className="nv-control-section">
-                      <div className="nv-panel-heading">
-                        <span>
-                          <SlidersHorizontal size={15} />
-                          Clip Planes
-                        </span>
-                        <em>
-                          {renderWheelMode === 'clip-plane'
-                            ? (clipPlanes.find(
-                                (plane) => plane.id === activeClipPlaneId,
-                              )?.label ?? 'none')
-                            : 'none'}
-                        </em>
-                      </div>
-
-                      <div className="nv-clip-list">
-                        {clipPlanes.map((plane) => (
-                          <ClipPlaneEditor
-                            active={
-                              renderWheelMode === 'clip-plane' &&
-                              plane.id === activeClipPlaneId
-                            }
-                            key={plane.id}
-                            plane={plane}
-                            onActivate={() => bindActiveClipPlane(plane.id)}
-                            onChange={updateClipPlane}
-                          />
-                        ))}
-                      </div>
-                    </section>
-
-                    <BlockControls blocks={blocks} onChange={setBlocks} />
-                  </>
-                ) : (
-                  <section className="nv-control-section">
-                    <p className="nv-mode-note">
-                      Zoom and clip planes apply to the 3D render. In 2D modes,
-                      scroll to page through slices and click to move the
-                      crosshair. Switch to <strong>3D</strong> for render
-                      controls.
-                    </p>
-                  </section>
-                )}
-
                 <LayerPanel
                   atlasId={atlasId}
                   isOpeningOverlay={isOpeningOverlay}
@@ -1474,6 +1434,68 @@ export function App(): JSX.Element {
                   onLoadOverlay={loadOverlayVolume}
                   onOverlayToggle={toggleOverlayLayer}
                 />
+
+                {viewMode === 'render' ? (
+                  <>
+                    <WheelModeRow
+                      activePlaneLabel={
+                        renderWheelMode === 'clip-plane'
+                          ? clipPlanes.find(
+                              (plane) => plane.id === activeClipPlaneId,
+                            )?.label
+                          : undefined
+                      }
+                      onZoom={() => setRenderWheelMode('zoom')}
+                    />
+
+                    <ClipPlanesSection
+                      activeClipPlaneId={
+                        renderWheelMode === 'clip-plane'
+                          ? activeClipPlaneId
+                          : null
+                      }
+                      clipPlanes={clipPlanes}
+                      saveDisabledReason={
+                        !selected
+                          ? 'Select a volume to save a clip-plane correction'
+                          : null
+                      }
+                      onActivate={bindActiveClipPlane}
+                      onChange={updateClipPlane}
+                      onReset={resetClipPlanes}
+                      onSave={async () => {
+                        try {
+                          await savePatch(
+                            serverUrl,
+                            selected,
+                            clipPlanes,
+                            backend,
+                          )
+                          setStatus(
+                            `Clip-plane correction saved for ${selected?.label ?? 'volume'}.`,
+                          )
+                        } catch (error) {
+                          setStatus(
+                            error instanceof Error
+                              ? error.message
+                              : String(error),
+                          )
+                        }
+                      }}
+                    />
+
+                    <BlockControls blocks={blocks} onChange={setBlocks} />
+                  </>
+                ) : (
+                  <section className="nv-control-section">
+                    <p className="nv-mode-note">
+                      Zoom and clip planes apply to the 3D render. In 2D modes,
+                      scroll to page through slices and click to move the
+                      crosshair. Switch to <strong>3D</strong> for render
+                      controls.
+                    </p>
+                  </section>
+                )}
 
                 <SelectionPanel
                   item={selected}
@@ -2483,6 +2505,135 @@ function MetadataPanel({
   )
 }
 
+function WheelModeRow({
+  activePlaneLabel,
+  onZoom,
+}: {
+  /** Label of the plane the scroll wheel moves, or undefined when it zooms. */
+  activePlaneLabel: string | undefined
+  onZoom: () => void
+}): JSX.Element {
+  return (
+    <div className="nv-wheel-row">
+      <MousePointer2 size={14} aria-hidden="true" />
+      {activePlaneLabel ? (
+        <>
+          <span
+            title={`Scroll the render to move the ${activePlaneLabel} clip plane`}
+          >
+            Wheel: {activePlaneLabel} plane
+          </span>
+          <button
+            className="nv-wheel-zoom-button"
+            onClick={onZoom}
+            title="Scroll the render to zoom in and out instead"
+            type="button"
+          >
+            Use for zoom
+          </button>
+        </>
+      ) : (
+        <span title="Scroll the render to zoom in and out. Click a clip plane to move it with the wheel instead.">
+          Wheel: zoom
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ClipPlanesSection({
+  activeClipPlaneId,
+  clipPlanes,
+  saveDisabledReason,
+  onActivate,
+  onChange,
+  onReset,
+  onSave,
+}: {
+  /** The plane bound to the scroll wheel, or null when the wheel zooms. */
+  activeClipPlaneId: string | null
+  clipPlanes: ClipPlane[]
+  /** Why saving is unavailable beyond "no plane enabled", or null. */
+  saveDisabledReason: string | null
+  onActivate: (planeId: string) => void
+  onChange: (plane: ClipPlane) => void
+  onReset: () => void
+  onSave: () => void
+}): JSX.Element {
+  const enabledCount = clipPlanes.filter((plane) => plane.enabled).length
+  const anyEnabled = enabledCount > 0
+  // Start open only when a plane is cutting the render, and open again if one
+  // gets enabled elsewhere (the stage chips, an opened bundle). Never close on
+  // its own, so unchecking the last plane doesn't collapse it under the cursor.
+  const [isOpen, setIsOpen] = useState(anyEnabled)
+  const wasEnabledRef = useRef(anyEnabled)
+  useEffect(() => {
+    if (anyEnabled && !wasEnabledRef.current) setIsOpen(true)
+    wasEnabledRef.current = anyEnabled
+  }, [anyEnabled])
+
+  const saveReason = !anyEnabled
+    ? 'Enable a clip plane to save a correction'
+    : saveDisabledReason
+
+  return (
+    <section className="nv-control-section nv-clip-section">
+      <div className="nv-panel-heading">
+        <button
+          aria-controls="nv-clip-plane-list"
+          aria-expanded={isOpen}
+          className="nv-disclosure"
+          onClick={() => setIsOpen((open) => !open)}
+          type="button"
+        >
+          <ChevronRight className="nv-disclosure-chevron" size={14} />
+          <SlidersHorizontal size={15} />
+          Clip planes
+        </button>
+        <span className="nv-sidebar-heading-tools">
+          <em>{anyEnabled ? `${enabledCount} on` : 'off'}</em>
+          <button
+            aria-label="Save clip-plane correction"
+            className="nv-pane-icon-button"
+            disabled={saveReason !== null}
+            onClick={onSave}
+            title={
+              saveReason ??
+              'Save clip-plane correction: records the enabled planes for this volume'
+            }
+            type="button"
+          >
+            <Save size={14} />
+          </button>
+          <button
+            aria-label="Reset clip planes"
+            className="nv-pane-icon-button"
+            onClick={onReset}
+            title="Reset clip planes"
+            type="button"
+          >
+            <RotateCcw size={14} />
+          </button>
+        </span>
+      </div>
+
+      {isOpen ? (
+        <div className="nv-clip-list" id="nv-clip-plane-list">
+          {clipPlanes.map((plane) => (
+            <ClipPlaneEditor
+              active={plane.id === activeClipPlaneId}
+              key={plane.id}
+              plane={plane}
+              onActivate={() => onActivate(plane.id)}
+              onChange={onChange}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function ClipPlaneEditor({
   active,
   onActivate,
@@ -3120,7 +3271,7 @@ async function savePatch(
   backend: Backend,
 ): Promise<void> {
   if (!serverUrl || !item) {
-    throw new Error('Select a volume before saving a correction patch.')
+    throw new Error('Select a volume before saving a clip-plane correction.')
   }
 
   const response = await fetch(`${serverUrl}/session/correction.patch.json`, {
@@ -3140,7 +3291,36 @@ async function savePatch(
   })
   if (!response.ok) {
     throw new Error(
-      `Correction patch save failed with HTTP ${response.status}.`,
+      `Clip-plane correction was not saved (HTTP ${response.status}).`,
     )
   }
+}
+
+/** Close a dropdown menu on an outside mouse-down or Escape. */
+function useDismissableMenu(
+  isOpen: boolean,
+  ref: RefObject<HTMLElement | null>,
+  close: () => void,
+): void {
+  const closeRef = useRef(close)
+  closeRef.current = close
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handleMouseDown(event: MouseEvent): void {
+      if (!ref.current) return
+      if (ref.current.contains(event.target as Node)) return
+      closeRef.current()
+    }
+    function handleKey(event: KeyboardEvent): void {
+      if (event.key === 'Escape') closeRef.current()
+    }
+
+    window.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('keydown', handleKey)
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('keydown', handleKey)
+    }
+  }, [isOpen, ref])
 }

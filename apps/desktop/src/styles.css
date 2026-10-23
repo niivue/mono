@@ -307,6 +307,30 @@ button {
   gap: 8px;
 }
 
+.nv-recent-item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.nv-recent-item:disabled:hover {
+  background: transparent;
+  color: var(--text);
+}
+
+.nv-menu-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The Share menu hangs from the right side of the toolbar. */
+.nv-share-menu {
+  right: 0;
+  left: auto;
+  min-width: 260px;
+}
+
 .nv-recent-divider {
   height: 1px;
   margin: 4px 6px;
@@ -1635,25 +1659,80 @@ button {
   text-transform: uppercase;
 }
 
-.nv-zoom-card {
-  display: block;
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.nv-zoom-card-title {
-  margin-right: auto;
-  font-weight: 600;
-}
-
-.nv-zoom-card-hint {
-  display: block;
-  margin-top: 8px;
+/* One-line stand-in for the old Zoom card: says what the scroll wheel does in
+   the 3D render and offers the way back to zoom when a clip plane has it. */
+.nv-wheel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 2px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.nv-wheel-row > span {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-wheel-zoom-button {
+  flex: none;
+  border: 1px solid var(--line);
+  background: var(--panel-3);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 3px 8px;
+}
+
+.nv-wheel-zoom-button:hover,
+.nv-wheel-zoom-button:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+/* Clip planes header doubles as the disclosure toggle. */
+.nv-clip-section .nv-panel-heading {
+  margin-bottom: 0;
+}
+
+.nv-clip-section .nv-clip-list {
+  margin-top: 10px;
+}
+
+.nv-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  padding: 0;
+}
+
+.nv-disclosure:hover,
+.nv-disclosure:focus-visible {
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-disclosure-chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.nv-disclosure[aria-expanded="true"] .nv-disclosure-chevron {
+  transform: rotate(90deg);
 }
 
 .nv-mode-note {

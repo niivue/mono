@@ -1,4 +1,3 @@
-import { listen } from '@tauri-apps/api/event'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   DatasetOpenResult,
@@ -279,24 +278,6 @@ export function useDatasetManifest({
     },
     [applyDatasetOpenResult, setStatus],
   )
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null
-
-    void listen('neurovue-open-directory', () => {
-      void openLocalDataset()
-    })
-      .then((nextUnlisten) => {
-        unlisten = nextUnlisten
-      })
-      .catch(() => {
-        unlisten = null
-      })
-
-    return () => {
-      unlisten?.()
-    }
-  }, [openLocalDataset])
 
   useEffect(() => {
     if (!serverUrl) return

@@ -12,12 +12,25 @@ use std::path::Path;
 use tauri::Manager;
 // The app menu bar is a desktop-only concept; iOS/Android have no `tauri::menu`.
 #[cfg(desktop)]
-use tauri::menu::{Menu, MenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 #[cfg(desktop)]
 use tauri::Emitter;
 
+// File menu item ids. Each click is forwarded to the frontend as a
+// `neurovue-menu` event whose payload is the id minus its `file-` prefix
+// (see `src/hooks/useNativeMenu.ts`).
 #[cfg(desktop)]
-const OPEN_DIRECTORY_MENU_ID: &str = "neurovue-open-directory";
+const MENU_EVENT: &str = "neurovue-menu";
+#[cfg(desktop)]
+const MENU_OPEN_FILE: &str = "file-open-file";
+#[cfg(desktop)]
+const MENU_OPEN_FOLDER: &str = "file-open-folder";
+#[cfg(desktop)]
+const MENU_OPEN_BUNDLE: &str = "file-open-bundle";
+#[cfg(desktop)]
+const MENU_EXPORT_BUNDLE: &str = "file-export-bundle";
+#[cfg(target_os = "macos")]
+const MENU_SHARE: &str = "file-share";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -294,16 +307,75 @@ fn open_dataset_at_path(
 
 #[cfg(desktop)]
 fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
+    // Start from Tauri's default bar so the app, Edit (copy/paste in text
+    // fields), View and Window menus keep working, then fill in File.
     let menu = Menu::default(handle)?;
-    let open_directory = MenuItem::with_id(
+    let open_file = MenuItem::with_id(
         handle,
-        OPEN_DIRECTORY_MENU_ID,
-        "Open Directory...",
+        MENU_OPEN_FILE,
+        "Open File\u{2026}",
         true,
         Some("CmdOrCtrl+O"),
     )?;
-    let dataset_menu = Submenu::with_items(handle, "Dataset", true, &[&open_directory])?;
-    menu.insert(&dataset_menu, 1)?;
+    let open_folder = MenuItem::with_id(
+        handle,
+        MENU_OPEN_FOLDER,
+        "Open Folder\u{2026}",
+        true,
+        Some("CmdOrCtrl+Shift+O"),
+    )?;
+    let open_bundle = MenuItem::with_id(
+        handle,
+        MENU_OPEN_BUNDLE,
+        "Open Bundle\u{2026}",
+        true,
+        Some("CmdOrCtrl+Alt+O"),
+    )?;
+    let export_bundle = MenuItem::with_id(
+        handle,
+        MENU_EXPORT_BUNDLE,
+        "Export Bundle\u{2026}",
+        true,
+        Some("CmdOrCtrl+E"),
+    )?;
+    // AirDrop exists only on Apple platforms, and of those only macOS has a
+    // menu bar.
+    #[cfg(target_os = "macos")]
+    let share = MenuItem::with_id(
+        handle,
+        MENU_SHARE,
+        "Share via AirDrop\u{2026}",
+        true,
+        None::<&str>,
+    )?;
+    let open_separator = PredefinedMenuItem::separator(handle)?;
+    let close_separator = PredefinedMenuItem::separator(handle)?;
+    let items: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![
+        &open_file,
+        &open_folder,
+        &open_bundle,
+        &open_separator,
+        &export_bundle,
+        #[cfg(target_os = "macos")]
+        &share,
+        // Keeps the default File items (Close Window, Quit off macOS) apart.
+        &close_separator,
+    ];
+
+    // The default bar already has a File menu on macOS and Windows; extend it
+    // so Close Window stays at the bottom. Linux's default has none, so add one.
+    let existing_file = menu.items()?.into_iter().find_map(|item| {
+        item.as_submenu()
+            .filter(|submenu| submenu.text().is_ok_and(|text| text == "File"))
+            .cloned()
+    });
+    match existing_file {
+        Some(file_menu) => file_menu.prepend_items(&items)?,
+        None => {
+            let file_menu = Submenu::with_items(handle, "File", true, &items[..items.len() - 1])?;
+            menu.insert(&file_menu, 0)?;
+        }
+    }
     Ok(menu)
 }
 
@@ -342,12 +414,12 @@ pub fn run() {
             Ok(())
         });
 
-    // The menu bar (and its "Open Directory" item) is desktop-only; on mobile
-    // the frontend opens datasets through an on-screen control instead.
+    // The menu bar (and its File menu) is desktop-only; on mobile the frontend
+    // opens datasets through on-screen controls instead.
     #[cfg(desktop)]
     let builder = builder.menu(neurovue_menu).on_menu_event(|app, event| {
-        if event.id().as_ref() == OPEN_DIRECTORY_MENU_ID {
-            let _ = app.emit("neurovue-open-directory", ());
+        if let Some(action) = event.id().as_ref().strip_prefix("file-") {
+            let _ = app.emit(MENU_EVENT, action);
         }
     });
 

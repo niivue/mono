@@ -116,6 +116,7 @@ import {
 } from './domain/volumeFacets'
 import { useClipPlanes } from './hooks/useClipPlanes'
 import { useDatasetManifest } from './hooks/useDatasetManifest'
+import { useNativeMenu } from './hooks/useNativeMenu'
 import {
   recentDatasetLabel,
   useRecentDatasets,
@@ -803,6 +804,17 @@ export function App(): JSX.Element {
       setIsSharingBundle(false)
     }
   }
+
+  useNativeMenu({
+    'open-file': openLocalVolumeFile,
+    'open-folder': openLocalDataset,
+    'open-bundle': handleImportBundle,
+    'export-bundle': handleExportBundle,
+    share: () =>
+      isAirdropAvailable
+        ? handleShareBundle()
+        : setStatus('AirDrop is not available on this Mac.'),
+  })
 
   // Hold the importing flag across the file dialog too, so the button stays
   // disabled while the picker is open.

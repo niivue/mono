@@ -214,6 +214,9 @@ function isPhoneViewport(): boolean {
   )
 }
 
+// Below this window width the dataset panel folds to its rail (see App).
+const AUTO_COLLAPSE_WIDTH = 1100
+
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
@@ -403,6 +406,25 @@ export function App(): JSX.Element {
       setIsControlsCollapsed(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Narrow desktop windows (down to the 900px minimum) can't fit both side
+  // panels plus Browse and Viewer, so fold the dataset panel to its rail when
+  // the window starts or becomes narrow. Only on that transition: the user can
+  // reopen it and it stays open until the window crosses the line again. The
+  // Inspect panel stays, and Browse still selects volumes. Phones have their
+  // own drawer defaults above.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const narrow = window.matchMedia(
+      `(max-width: ${AUTO_COLLAPSE_WIDTH - 1}px)`,
+    )
+    const collapseIfNarrow = (): void => {
+      if (narrow.matches && !isPhoneViewport()) setIsFileListCollapsed(true)
+    }
+    collapseIfNarrow()
+    narrow.addEventListener('change', collapseIfNarrow)
+    return () => narrow.removeEventListener('change', collapseIfNarrow)
   }, [])
 
   useDismissableMenu(isRecentMenuOpen, recentMenuRef, () =>

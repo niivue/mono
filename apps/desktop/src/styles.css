@@ -931,7 +931,9 @@ button {
   left: 14px;
   z-index: 3;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* The file name gets the room; label and badge never wrap (narrow panes
+     used to break "NiiVue Window" onto two lines and hide the name). */
+  grid-template-columns: auto minmax(40px, 1fr) minmax(0, auto);
   align-items: center;
   gap: 8px;
   max-width: min(560px, calc(100% - 28px));
@@ -943,9 +945,10 @@ button {
   backdrop-filter: blur(8px);
 }
 
-.nv-stage-title span {
+.nv-stage-title > span {
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
@@ -963,11 +966,14 @@ button {
 }
 
 .nv-stage-title em {
-  min-width: 38px;
+  min-width: 0;
+  overflow: hidden;
   color: var(--amber);
   font-size: 11px;
   font-style: normal;
   text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nv-pane-icon-button {
@@ -1167,13 +1173,19 @@ button {
 .nv-osd-section-label {
   position: absolute;
   z-index: 2;
+  /* Title and count share one row: the title ellipsizes before it can run
+     into the count ("SOURCE VOLUM" used to sit under its badge). */
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 14px 22px 0;
   pointer-events: none;
 }
 
 .nv-osd-section-label span,
 .nv-osd-section-label em {
-  position: absolute;
-  top: 14px;
   display: inline-flex;
   align-items: center;
   min-height: 26px;
@@ -1188,11 +1200,16 @@ button {
 }
 
 .nv-osd-section-label span {
-  left: 22px;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 26px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nv-osd-section-label em {
-  right: 22px;
+  flex: 0 0 auto;
   color: var(--green);
   font-style: normal;
 }
@@ -1375,7 +1392,7 @@ button {
   left: 0;
   z-index: 3;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 34%);
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   box-sizing: border-box;
@@ -1420,7 +1437,7 @@ button {
 
 .nv-osd-source-key {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   justify-self: stretch;
   min-width: 0;
@@ -1432,6 +1449,9 @@ button {
 }
 
 .nv-osd-source-key strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--association);
   font-size: 11px;
   font-weight: 700;
@@ -1646,8 +1666,9 @@ button {
   top: 56px;
   right: 14px;
   z-index: 4;
-  display: inline-grid;
-  grid-auto-flow: column;
+  /* Shrink with the pane instead of pushing "Ax" off its left edge. */
+  display: inline-flex;
+  max-width: calc(100% - 28px);
   gap: 1px;
   overflow: hidden;
   border: 1px solid rgba(215, 166, 66, 0.32);
@@ -1656,8 +1677,10 @@ button {
 }
 
 .nv-render-snap-controls button {
-  min-width: 42px;
+  flex: 1 1 42px;
+  min-width: 30px;
   height: 28px;
+  padding: 0 4px;
   border: 0;
   background: rgba(17, 17, 15, 0.82);
   color: var(--muted);
@@ -2701,8 +2724,10 @@ button {
   }
 
   .nv-split-workspace {
+    /* The viewer keeps enough width for its title and the five view
+       buttons; the Browse pane gives way first. */
     grid-template-columns: minmax(132px, var(--split-left)) 12px minmax(
-        132px,
+        220px,
         1fr
       );
   }
@@ -2713,6 +2738,22 @@ button {
 
   .nv-panel-heading {
     font-size: 11px;
+  }
+}
+
+/* Short windows (down to the 640px minimum): trim the facet and metadata
+   panels so the volume list keeps at least one whole card. */
+@media (max-height: 760px) and (min-width: 701px) {
+  .nv-volume-filter {
+    grid-template-rows: auto minmax(84px, 1fr) minmax(96px, auto);
+  }
+
+  .nv-volume-filter-facets {
+    max-height: clamp(120px, 24vh, 178px);
+  }
+
+  .nv-volume-filter-details {
+    max-height: clamp(96px, 20vh, 132px);
   }
 }
 

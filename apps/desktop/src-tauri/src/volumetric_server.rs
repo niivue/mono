@@ -387,9 +387,9 @@ fn build_router(state: AppState, port: u16) -> Router {
         .route("/iiif/desktop", get(desktops))
         .route("/iiif/desktop/:desktop_id/manifest", get(desktop_manifest))
         .route("/iiif/desktop/:desktop_id/version", get(desktop_version))
-        .route("/volumes/:vol_id/metadata", get(volume_metadata))
-        // Byte-serving routes carry `:sig` (volume_url_token) so their
-        // URLs are distinct per dataset and per file version.
+        // Byte-serving and metadata routes carry `:sig` (volume_url_token) so
+        // their URLs are distinct per dataset and per file version.
+        .route("/volumes/:vol_id/:sig/metadata", get(volume_metadata))
         .route("/volumes/:vol_id/:sig/raw", get(raw_volume))
         .route("/volumes/:vol_id/:sig/raw.nii", get(raw_volume))
         .route("/volumes/:vol_id/:sig/raw.nii.gz", get(raw_volume))
@@ -1277,7 +1277,7 @@ async fn api_info(State(state): State<AppState>) -> Json<Value> {
                 "shape": volume.shape,
                 "spacing": volume.spacing,
                 "dtype": volume.dtype,
-                "metadata": format!("{}/volumes/{}/metadata", state.base_url, encoded),
+                "metadata": volume_metadata_url(&state.base_url, &encoded, volume),
                 "raw": raw_volume_url(&state.base_url, &encoded, volume),
             })
         }).collect::<Vec<_>>()
@@ -1399,7 +1399,7 @@ async fn desktop_manifest(
                 "derivedFrom": volume.derived_from.as_deref(),
                 "derivation": volume.derivation.as_ref(),
                 "manifest": format!("{}/iiif/presentation/{}/manifest", state.base_url, encoded),
-                "metadata": format!("{}/volumes/{}/metadata", state.base_url, encoded),
+                "metadata": volume_metadata_url(&state.base_url, &encoded, volume),
                 "preview": {
                     "axis": "axial",
                     "slice": preview_slice,
@@ -1491,11 +1491,23 @@ fn desktop_version_string(state: &AppState) -> String {
     format!("{:016x}", hasher.finish())
 }
 
+/// Sidecar metadata (including atlas label tables) for one volume. Signed like
+/// the byte routes: ids repeat across datasets, and the frontend caches label
+/// maps by this URL.
+fn volume_metadata_url(base_url: &str, encoded_id: &str, volume: &VolumeEntry) -> String {
+    format!(
+        "{}/volumes/{}/{}/metadata",
+        base_url,
+        encoded_id,
+        volume_url_token(volume)
+    )
+}
+
 async fn volume_metadata(
-    Path(vol_id): Path<String>,
+    Path(path): Path<RawPath>,
     State(state): State<AppState>,
 ) -> Result<Json<Value>, StatusCode> {
-    let volume = find_volume(&state, &vol_id).ok_or(StatusCode::NOT_FOUND)?;
+    let volume = find_signed_volume(&state, &path.vol_id, &path.sig)?;
     let sidecars = volume
         .sidecar_paths
         .iter()
@@ -4032,7 +4044,10 @@ mod tests {
     fn manifest_urls(volume: &VolumeEntry) -> Vec<String> {
         let base = "http://127.0.0.1:1234";
         let encoded = url_component(&volume.id);
-        let mut urls = vec![raw_volume_url(base, &encoded, volume)];
+        let mut urls = vec![
+            raw_volume_url(base, &encoded, volume),
+            volume_metadata_url(base, &encoded, volume),
+        ];
         urls.extend(
             volume_levels(base, &encoded, volume)
                 .iter()
@@ -4208,6 +4223,50 @@ mod tests {
             .await
             .unwrap()
             .status()
+    }
+
+    #[test]
+    fn signed_routes_reject_a_stale_token() {
+        use tower::ServiceExt;
+        let root_a = scratch_dir("stale-a");
+        let root_b = scratch_dir("stale-b");
+        let relative = "sub-01/anat/sub-01_dseg.nii.gz";
+        write_nifti(&root_a.join(relative), [8, 8, 8], 1);
+        write_nifti(&root_b.join(relative), [8, 8, 8], 1);
+        let a = discover_volumes_in_root(&root_a, 16).volumes.remove(0);
+        let b = discover_volumes_in_root(&root_b, 16).volumes.remove(0);
+        assert_eq!(a.id, b.id);
+
+        // Dataset B is open; URLs handed out for dataset A must not resolve.
+        let state = test_state();
+        *state.volumes.lock().unwrap() = vec![b.clone()];
+        let base = state.base_url.clone();
+        let encoded = url_component(&b.id);
+        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            async fn status(state: &AppState, url: &str) -> StatusCode {
+                let path = url.strip_prefix(&state.base_url).unwrap();
+                let request = axum::http::Request::builder()
+                    .uri(path)
+                    .header(header::HOST, "127.0.0.1:4242")
+                    .body(axum::body::Body::empty())
+                    .unwrap();
+                build_router(state.clone(), 4242)
+                    .oneshot(request)
+                    .await
+                    .unwrap()
+                    .status()
+            }
+            for (volume, expected) in [(&b, StatusCode::OK), (&a, StatusCode::NOT_FOUND)] {
+                let raw = raw_volume_url(&base, &encoded, volume);
+                let metadata = volume_metadata_url(&base, &encoded, volume);
+                assert_eq!(status(&state, &raw).await, expected, "{raw}");
+                assert_eq!(status(&state, &metadata).await, expected, "{metadata}");
+            }
+        });
+
+        let _ = fs::remove_dir_all(&root_a);
+        let _ = fs::remove_dir_all(&root_b);
     }
 
     #[test]

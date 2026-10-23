@@ -97,7 +97,8 @@ iOS sandbox, registering a phantom volume with `source_path: None` (raw endpoint
 server inside `.setup()`, resolves the resource via
 `app.path().resolve("resources/mni152.nii.gz", Resource)`, and sets
 `NEUROVUE_DEFAULT_VOLUME`, which `discovery_roots()` appends **last** (so desktop
-still prefers a real dev dataset). Verified on the simulator: launches → renders
+still prefers a real dev dataset; since 2026-10-23 the `~/Dev` checkouts are probed
+in debug builds only, so release builds go straight to explicit roots, then MNI152). Verified on the simulator: launches → renders
 an axial MNI152 slice with A/L orientation labels. Note: on iOS the resource lands
 at `.app/assets/resources/mni152.nii.gz` and `BaseDirectory::Resource` resolves it
 correctly. A user-facing **document picker** for opening *arbitrary* datasets is

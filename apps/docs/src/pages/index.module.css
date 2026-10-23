@@ -2,20 +2,20 @@
 .hero {
   position: relative;
   overflow: hidden;
-  color: #e8ecf8;
+  color: #ece9e6;
   background:
     radial-gradient(
       60rem 30rem at 85% 10%,
-      rgb(139 92 246 / 22%),
+      rgb(115 0 10 / 22%),
       transparent 60%
     ),
     radial-gradient(
       50rem 30rem at 0% 100%,
-      rgb(224 36 154 / 18%),
+      rgb(115 0 10 / 18%),
       transparent 60%
     ),
-    linear-gradient(180deg, #070b17 0%, #0a1022 100%);
-  border-bottom: 1px solid #1a2240;
+    linear-gradient(180deg, #0a0908 0%, #120f0e 100%);
+  border-bottom: 1px solid #2a2523;
 }
 
 .heroGrid {
@@ -52,9 +52,9 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #a5f0ff;
-  background: rgb(34 211 238 / 10%);
-  border: 1px solid rgb(34 211 238 / 30%);
+  color: #e8b4bb;
+  background: rgb(200 80 95 / 10%);
+  border: 1px solid rgb(200 80 95 / 30%);
   border-radius: 999px;
 }
 
@@ -62,8 +62,8 @@
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 50%;
-  background: #22d3ee;
-  box-shadow: 0 0 10px #22d3ee;
+  background: #c8505f;
+  box-shadow: 0 0 10px #c8505f;
 }
 
 .title {
@@ -72,13 +72,13 @@
   line-height: 1.05;
   letter-spacing: -0.035em;
   font-weight: 700;
-  color: #f5f7fd;
+  color: #faf9f7;
 }
 
 .lead {
   font-size: 1.15rem;
   line-height: 1.65;
-  color: #aeb7d2;
+  color: #b5aea8;
   margin-bottom: 2rem;
 }
 
@@ -105,19 +105,20 @@
 
 .primary {
   color: #fff;
-  background: linear-gradient(100deg, #e0249a, #8b5cf6 55%, #06b6d4);
-  box-shadow: 0 6px 24px rgb(224 36 154 / 30%);
+  background: #73000a;
+  box-shadow: 0 6px 24px rgb(115 0 10 / 30%);
 }
 
 .primary:hover {
   color: #fff;
   text-decoration: none;
+  background: #8a0a18;
   transform: translateY(-1px);
-  box-shadow: 0 10px 32px rgb(139 92 246 / 40%);
+  box-shadow: 0 10px 28px rgb(115 0 10 / 40%);
 }
 
 .secondary {
-  color: #e8ecf8;
+  color: #ece9e6;
   background: rgb(255 255 255 / 6%);
   border: 1px solid rgb(255 255 255 / 14%);
 }
@@ -125,8 +126,8 @@
 .secondary:hover {
   color: #fff;
   text-decoration: none;
-  border-color: rgb(34 211 238 / 60%);
-  background: rgb(34 211 238 / 8%);
+  border-color: rgb(200 80 95 / 60%);
+  background: rgb(200 80 95 / 8%);
 }
 
 .install {
@@ -145,7 +146,7 @@
 
 .install code {
   padding: 0;
-  color: #e8ecf8;
+  color: #ece9e6;
   background: none;
   border: 0;
   white-space: nowrap;
@@ -154,7 +155,7 @@
 }
 
 .prompt {
-  color: #ff3fb8;
+  color: #c8505f;
 }
 
 .copy {
@@ -162,7 +163,7 @@
   font-size: 0.8rem;
   font-family: var(--ifm-font-family-base);
   font-weight: 600;
-  color: #cfd6ea;
+  color: #d6d1cc;
   background: rgb(255 255 255 / 8%);
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 0.4rem;
@@ -172,7 +173,7 @@
 
 .copy:hover {
   color: #fff;
-  border-color: rgb(34 211 238 / 60%);
+  border-color: rgb(200 80 95 / 60%);
 }
 
 .heroViewer {
@@ -350,7 +351,7 @@
   font-size: 0.875rem;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(transparent, rgb(5 8 18 / 85%));
+  background: linear-gradient(transparent, rgb(8 7 6 / 85%));
 }
 
 .stripCard:hover {
@@ -383,24 +384,24 @@
 .closing {
   padding: 5rem 0;
   text-align: center;
-  color: #e8ecf8;
+  color: #ece9e6;
   background:
     radial-gradient(
       40rem 20rem at 50% 120%,
-      rgb(139 92 246 / 30%),
+      rgb(115 0 10 / 30%),
       transparent 70%
     ),
-    #070b17;
-  border-top: 1px solid #1a2240;
+    #0a0908;
+  border-top: 1px solid #2a2523;
 }
 
 .closing h2 {
   font-size: clamp(1.8rem, 3.2vw, 2.5rem);
-  color: #f5f7fd;
+  color: #faf9f7;
 }
 
 .closing p {
-  color: #aeb7d2;
+  color: #b5aea8;
   font-size: 1.1rem;
   margin-bottom: 2rem;
 }

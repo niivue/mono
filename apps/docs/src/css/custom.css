@@ -1,25 +1,27 @@
 /*
- * Theme. The palette comes from the NiiVue icon: magenta and cyan glow on a
- * deep navy ground. Dark is the default; light keeps the same accents.
+ * Theme. University of South Carolina garnet and black, with warm greys.
+ * Garnet (#73000a) is the light-mode accent; dark mode lifts it to a rose
+ * garnet that reads on black. Dark is the default.
  */
 :root {
-  --nv-magenta: #d6249f;
-  --nv-cyan: #0891b2;
-  --nv-gradient: linear-gradient(100deg, #e0249a 0%, #8b5cf6 50%, #06b6d4 100%);
+  --nv-magenta: #73000a;
+  --nv-cyan: #78716c;
+  /* Only used on the always-dark hero and closing bands. */
+  --nv-gradient: linear-gradient(100deg, #e7e5e4 0%, #c8505f 100%);
   --nv-surface: #ffffff;
-  --nv-surface-2: #f4f6fb;
-  --nv-border: #e3e7f0;
-  --nv-muted: #5b6478;
-  --nv-viewer: #0b1020;
-  --nv-shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 8px 24px rgb(16 24 40 / 8%);
+  --nv-surface-2: #f6f5f3;
+  --nv-border: #e7e4e0;
+  --nv-muted: #5f5955;
+  --nv-viewer: #0a0908;
+  --nv-shadow: 0 1px 2px rgb(20 16 14 / 6%), 0 8px 24px rgb(20 16 14 / 8%);
 
-  --ifm-color-primary: #0e7c9a;
-  --ifm-color-primary-dark: #0d708b;
-  --ifm-color-primary-darker: #0c6a83;
-  --ifm-color-primary-darkest: #0a576c;
-  --ifm-color-primary-light: #0f88a9;
-  --ifm-color-primary-lighter: #108eb1;
-  --ifm-color-primary-lightest: #12a1c8;
+  --ifm-color-primary: #73000a;
+  --ifm-color-primary-dark: #680009;
+  --ifm-color-primary-darker: #620009;
+  --ifm-color-primary-darkest: #510007;
+  --ifm-color-primary-light: #7e000b;
+  --ifm-color-primary-lighter: #84000c;
+  --ifm-color-primary-lightest: #96000d;
 
   --ifm-font-family-base:
     "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -33,42 +35,42 @@
   --ifm-card-border-radius: 0.875rem;
   --ifm-code-border-radius: 0.625rem;
   --ifm-navbar-height: 4rem;
-  --ifm-background-color: #fbfcfe;
-  --ifm-navbar-background-color: rgb(251 252 254 / 80%);
+  --ifm-background-color: #fcfbfa;
+  --ifm-navbar-background-color: rgb(252 251 250 / 80%);
   --ifm-toc-border-color: var(--nv-border);
   --ifm-hr-border-color: var(--nv-border);
-  --ifm-menu-color-background-active: rgb(14 124 154 / 8%);
-  --docusaurus-highlighted-code-line-bg: rgb(14 124 154 / 12%);
+  --ifm-menu-color-background-active: rgb(115 0 10 / 6%);
+  --docusaurus-highlighted-code-line-bg: rgb(115 0 10 / 10%);
 }
 
 html[data-theme="dark"] {
-  --nv-magenta: #ff3fb8;
-  --nv-cyan: #22d3ee;
-  --nv-surface: #0f1526;
-  --nv-surface-2: #141b2f;
-  --nv-border: #222b45;
-  --nv-muted: #9aa4bf;
-  --nv-viewer: #070b17;
+  --nv-magenta: #c8505f;
+  --nv-cyan: #a8a29e;
+  --nv-surface: #161413;
+  --nv-surface-2: #1c1917;
+  --nv-border: #2e2a27;
+  --nv-muted: #a8a29e;
+  --nv-viewer: #0a0908;
   --nv-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%);
 
-  --ifm-color-primary: #3dd6f5;
-  --ifm-color-primary-dark: #20cff2;
-  --ifm-color-primary-darker: #10c9ee;
-  --ifm-color-primary-darkest: #0ca6c5;
-  --ifm-color-primary-light: #5addf7;
-  --ifm-color-primary-lighter: #69e0f8;
-  --ifm-color-primary-lightest: #93e9fa;
+  --ifm-color-primary: #c8505f;
+  --ifm-color-primary-dark: #c13e4f;
+  --ifm-color-primary-darker: #b8394a;
+  --ifm-color-primary-darkest: #982f3d;
+  --ifm-color-primary-light: #cf6472;
+  --ifm-color-primary-lighter: #d3707d;
+  --ifm-color-primary-lightest: #de939d;
 
-  --ifm-background-color: #0a0f1d;
-  --ifm-background-surface-color: #0a0f1d;
-  --ifm-navbar-background-color: rgb(10 15 29 / 75%);
-  --ifm-footer-background-color: #070b16;
-  --ifm-font-color-base: #dfe4f2;
-  --ifm-heading-color: #f3f5fb;
-  --ifm-code-background: #151c31;
-  --ifm-menu-color-background-active: rgb(61 214 245 / 10%);
+  --ifm-background-color: #0c0a09;
+  --ifm-background-surface-color: #0c0a09;
+  --ifm-navbar-background-color: rgb(12 10 9 / 78%);
+  --ifm-footer-background-color: #080706;
+  --ifm-font-color-base: #e7e5e4;
+  --ifm-heading-color: #fafaf9;
+  --ifm-code-background: #1c1917;
+  --ifm-menu-color-background-active: rgb(200 80 95 / 10%);
   --ifm-menu-color-background-hover: rgb(255 255 255 / 4%);
-  --docusaurus-highlighted-code-line-bg: rgb(61 214 245 / 14%);
+  --docusaurus-highlighted-code-line-bg: rgb(200 80 95 / 14%);
 }
 
 /* Type */
@@ -198,7 +200,7 @@ html .menu.thin-scrollbar {
 }
 
 .footer--dark {
-  --ifm-footer-background-color: #070b16;
+  --ifm-footer-background-color: #080706;
 }
 
 .footer__title {
@@ -220,7 +222,7 @@ html .menu.thin-scrollbar {
   align-items: center;
   gap: 0.45rem;
   white-space: nowrap;
-  color: #c7cee0;
+  color: #d0cac4;
   font-size: 0.8125rem;
   font-weight: 500;
 }
@@ -228,9 +230,9 @@ html .menu.thin-scrollbar {
 .demo-control select,
 .demo-control button {
   font: inherit;
-  color: #eef1f8;
-  background: #19213a;
-  border: 1px solid #2c3656;
+  color: #f2f0ee;
+  background: #1c1917;
+  border: 1px solid #3a3431;
   border-radius: 0.4rem;
   padding: 0.2rem 0.55rem;
   cursor: pointer;
@@ -241,20 +243,20 @@ html .menu.thin-scrollbar {
 
 .demo-control select:hover,
 .demo-control button:hover {
-  border-color: #3dd6f5;
+  border-color: #c8505f;
 }
 
 .demo-control button:active {
-  background: #222c4b;
+  background: #29241f;
 }
 
 .demo-control input[type="range"] {
   width: 8rem;
-  accent-color: #3dd6f5;
+  accent-color: #c8505f;
 }
 
 .demo-control input[type="checkbox"] {
-  accent-color: #ff3fb8;
+  accent-color: #c8505f;
   width: 0.95rem;
   height: 0.95rem;
 }
@@ -264,8 +266,8 @@ html .menu.thin-scrollbar {
   padding: 0.45rem 0.9rem;
   font-family: var(--ifm-font-family-monospace);
   font-size: 0.775rem;
-  color: #9fe9f8;
-  background: #0d1325;
-  border-top: 1px solid #1c2440;
+  color: #d6d1cc;
+  background: #110f0e;
+  border-top: 1px solid #262220;
   min-height: 2em;
 }

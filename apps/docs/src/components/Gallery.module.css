@@ -174,7 +174,7 @@
   display: block;
   aspect-ratio: 4 / 3;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 50%, #141c36, var(--nv-viewer) 70%);
+  background: radial-gradient(circle at 50% 50%, #1c1816, var(--nv-viewer) 70%);
   border-bottom: 1px solid var(--nv-border);
 }
 
@@ -247,8 +247,8 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.55rem 0.75rem;
-  background: #0f1526;
-  border-bottom: 1px solid #1c2440;
+  background: #141211;
+  border-bottom: 1px solid #262220;
 }
 
 .lights {
@@ -261,15 +261,15 @@
   width: 0.7rem;
   height: 0.7rem;
   border-radius: 50%;
-  background: #2a3354;
+  background: #3a3431;
 }
 
 .lights i:first-child {
-  background: #ff3fb8;
+  background: #c8505f;
 }
 
 .lights i:last-child {
-  background: #22d3ee;
+  background: #c8505f;
 }
 
 .windowUrl {
@@ -280,7 +280,7 @@
   white-space: nowrap;
   font-family: var(--ifm-font-family-monospace);
   font-size: 0.8rem;
-  color: #8f9abb;
+  color: #9c958f;
 }
 
 .windowButton {
@@ -288,7 +288,7 @@
   padding: 0.25rem 0.7rem;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #dfe4f2;
+  color: #e7e5e4;
   background: rgb(255 255 255 / 6%);
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 0.4rem;
@@ -297,7 +297,7 @@
 .windowButton:hover {
   color: #fff;
   text-decoration: none;
-  border-color: #22d3ee;
+  border-color: #c8505f;
 }
 
 .frame {

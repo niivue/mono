@@ -8,12 +8,14 @@
 
 .glow {
   position: absolute;
-  inset: 10%;
+  inset: 4%;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 35% 40%, rgb(255 63 184 / 45%), transparent 60%),
-    radial-gradient(circle at 65% 60%, rgb(34 211 238 / 40%), transparent 60%);
-  filter: blur(48px);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(190 40 60 / 48%),
+    transparent 68%
+  );
+  filter: blur(56px);
   pointer-events: none;
 }
 

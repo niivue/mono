@@ -5,7 +5,7 @@
 .viewer {
   overflow: hidden;
   margin-bottom: 0.75rem;
-  color: #e8ecf8;
+  color: #ece9e6;
   background: var(--nv-viewer);
   border: 1px solid var(--nv-border);
   border-radius: var(--ifm-card-border-radius);
@@ -18,8 +18,8 @@
   gap: 0.6rem 1.25rem;
   align-items: center;
   padding: 0.6rem 0.9rem;
-  background: #0f1526;
-  border-bottom: 1px solid #1c2440;
+  background: #141211;
+  border-bottom: 1px solid #262220;
 }
 
 .bar:empty {
@@ -29,7 +29,7 @@
 .canvases {
   display: flex;
   gap: 2px;
-  background: #1c2440;
+  background: #262220;
 }
 
 .canvas {

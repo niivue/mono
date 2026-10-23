@@ -1219,6 +1219,7 @@ export function App(): JSX.Element {
           )}
           {isTerminalAvailable ? (
             <button
+              aria-label="Python terminal"
               aria-pressed={isTerminalOpen}
               className={`nv-icon-button ${isTerminalOpen ? 'is-active' : ''}`}
               title={
@@ -1812,7 +1813,7 @@ function DesktopZoomControls({
         className="nv-pane-icon-button"
         disabled={zoom === 1}
         onClick={onFit}
-        title="Fit grid"
+        title="Reset zoom"
         type="button"
       >
         <Maximize2 size={15} />

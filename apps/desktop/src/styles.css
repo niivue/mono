@@ -7,7 +7,7 @@
   text-rendering: optimizeLegibility;
   --ink: #f0eee2;
   --muted: #a6a18f;
-  --faint: #6f6a5b;
+  --faint: #928c79;
   --panel: #181914;
   --panel-2: #202117;
   --panel-3: #12130f;
@@ -500,6 +500,12 @@ button {
   text-transform: uppercase;
 }
 
+.nv-control-section > .nv-panel-heading {
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .nv-panel-heading span,
 .nv-readout h2 {
   display: inline-flex;
@@ -608,7 +614,7 @@ button {
   height: 32px;
   border: 1px solid var(--line);
   background: #12130f;
-  color: var(--muted);
+  color: var(--ink);
   cursor: pointer;
   font-size: 12px;
 }
@@ -632,11 +638,9 @@ button {
   min-width: 0;
   gap: 8px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  text-transform: uppercase;
+  line-height: 1.1;
 }
 
 .nv-filter-panel-title span {
@@ -649,8 +653,6 @@ button {
 .nv-filter-panel-title em {
   color: var(--green);
   font-style: normal;
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .nv-filter-facet-group {
@@ -1192,11 +1194,9 @@ button {
   border: 1px solid rgba(215, 166, 66, 0.28);
   background: rgba(8, 8, 6, 0.76);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
   padding: 0 9px;
-  text-transform: uppercase;
 }
 
 .nv-osd-section-label span {
@@ -1789,7 +1789,7 @@ button {
   border: 1px solid rgba(197, 156, 255, 0.52);
   background: rgba(197, 156, 255, 0.12);
   color: var(--association);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   padding: 2px 6px;
@@ -1998,10 +1998,8 @@ button {
   align-items: center;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .nv-layer-list-header em {
@@ -2145,7 +2143,7 @@ button {
   text-overflow: ellipsis;
 }
 .nv-layer-row-title small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--faint);
   white-space: nowrap;
   overflow: hidden;
@@ -2224,7 +2222,7 @@ button {
   text-overflow: ellipsis;
 }
 .nv-layer-add-option small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--faint);
   white-space: nowrap;
   overflow: hidden;
@@ -2965,4 +2963,21 @@ button {
 
 .nv-terminal-body .xterm-viewport::-webkit-scrollbar-thumb {
   background: #2a2c22;
+}
+
+/* Respect the OS "Reduce motion" setting: stop the spinners (a still ring
+   still reads as busy) and drop decorative transitions. State changes such as
+   opening a drawer still happen, just without the slide. */
+@media (prefers-reduced-motion: reduce) {
+  .nv-spin,
+  .nv-preview-spinner svg,
+  .nv-warm-status .lucide-loader-circle {
+    animation: none;
+  }
+
+  .nv-layer-row-caret,
+  .nv-sidebar,
+  .nv-controls {
+    transition: none;
+  }
 }

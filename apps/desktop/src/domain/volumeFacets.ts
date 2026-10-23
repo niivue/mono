@@ -66,6 +66,63 @@ export function volumeSession(item: DesktopItem): string | null {
   return bidsEntity(item, 'ses')
 }
 
+// Short, scannable name for a volume list row: BIDS entities from the
+// filename ("sub-10159 · T1w", "sub-01 · ses-pre · task-rest · run-02 ·
+// BOLD"), or the bare filename when the name isn't BIDS. Derived volumes are
+// labelled "<source label> / <operation>" by the backend; they keep the
+// operation ("sub-10159 · T1w · smooth"). The full label stays in item.label
+// for tooltips, search and metadata.
+const BIDS_DISPLAY_ENTITIES = [
+  'sub',
+  'ses',
+  'task',
+  'acq',
+  'ce',
+  'rec',
+  'dir',
+  'run',
+  'echo',
+  'desc',
+]
+
+export function volumeDisplayLabel(item: DesktopItem): string {
+  const source = (item.label || item.id).trim()
+  const derivedAt = source.lastIndexOf(' / ')
+  if (derivedAt > 0) {
+    const operation = source.slice(derivedAt + 3).trim()
+    const base = shortVolumeName(source.slice(0, derivedAt))
+    return operation ? `${base} · ${operation}` : base
+  }
+  return shortVolumeName(source)
+}
+
+function shortVolumeName(path: string): string {
+  const decoded = safeDecodeURIComponent(path).split(/[?#]/)[0].trim()
+  const filename = decoded.split(/[\\/]/).pop() || decoded
+  const stem = filename.replace(
+    /\.(nii(\.gz)?|mgz|mgh|nrrd|mha|mhd|img|hdr|json)$/i,
+    '',
+  )
+  const entities = new Map<string, string>()
+  let suffix: string | null = null
+  for (const part of stem.split('_')) {
+    const dash = part.indexOf('-')
+    if (dash > 0) {
+      const key = part.slice(0, dash).toLowerCase()
+      if (!entities.has(key)) entities.set(key, part)
+    } else if (part) {
+      suffix = part
+    }
+  }
+  if (!entities.has('sub')) return stem || path
+  const label = BIDS_DISPLAY_ENTITIES.flatMap((key) => {
+    const value = entities.get(key)
+    return value ? [value] : []
+  })
+  if (suffix) label.push(BIDS_IMAGE_TYPE_LABELS[suffix.toLowerCase()] ?? suffix)
+  return label.join(' · ')
+}
+
 export function volumeFacetValue(value: string | null | undefined): string {
   const normalized = value?.trim()
   return normalized && normalized.length > 0 ? normalized : 'Unknown'

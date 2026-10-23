@@ -2,6 +2,7 @@ import { type JSX, useMemo } from 'react'
 import type { DesktopItem } from '../domain/desktop'
 import {
   formatVoxelSpacing,
+  volumeDisplayLabel,
   volumeFacetCounts,
   volumeFacetValue,
   volumeImageTypeDisplay,
@@ -81,6 +82,7 @@ export function VolumeFilterPanel({
       >
         <div className="nv-filter-search-row">
           <input
+            aria-label="Filter volumes"
             className="nv-search"
             placeholder="Filter volumes"
             value={query}
@@ -117,7 +119,7 @@ export function VolumeFilterPanel({
         <VolumeFacetGroup
           counts={dtypeCounts}
           selected={selectedDtypes}
-          title="Dtype"
+          title="Data type"
           onToggle={onToggleDtype}
         />
       </section>
@@ -138,6 +140,7 @@ export function VolumeFilterPanel({
               key={item.id}
               aria-pressed={selected?.id === item.id}
               onClick={() => onSelect(item)}
+              title={item.label}
               type="button"
             >
               <StablePreviewImage
@@ -145,7 +148,7 @@ export function VolumeFilterPanel({
                 frameClassName="nv-volume-thumb"
               />
               <span>
-                <strong>{item.label}</strong>
+                <strong>{volumeDisplayLabel(item)}</strong>
                 <small>{volumeSummary(item)}</small>
               </span>
             </button>
@@ -182,7 +185,7 @@ function VolumeFacetGroup({
     <div className="nv-filter-facet-group">
       <div className="nv-filter-panel-title">
         <span>{title}</span>
-        <em>{selected.size > 0 ? selected.size : 'all'}</em>
+        <em>{selected.size > 0 ? selected.size : 'Any'}</em>
       </div>
       <div className="nv-filter-facet-options">
         {entries.map(([value, count]) => (
@@ -216,7 +219,7 @@ function VolumeFilterDetails({
     >
       <div className="nv-filter-panel-title">
         <span>Metadata</span>
-        <em>{item ? volumeRoleLabel(item) : 'none'}</em>
+        <em>{item ? volumeRoleLabel(item) : 'None'}</em>
       </div>
 
       {item ? (
@@ -229,7 +232,7 @@ function VolumeFilterDetails({
           <dd>{volumeFacetValue(item.format)}</dd>
           <dt>Image</dt>
           <dd>{volumeImageTypeDisplay(item)}</dd>
-          <dt>Dtype</dt>
+          <dt>Data type</dt>
           <dd>{volumeFacetValue(item.dtype)}</dd>
           <dt>Shape</dt>
           <dd>{item.shape.join(' x ')}</dd>

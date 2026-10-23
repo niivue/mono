@@ -145,7 +145,7 @@ hand-copied `.niivue-pkgs`). Findings:
 5. **DICOM confirmed broken for consumers** (as documented above): the resolved
    `@niivue/dcm2niix@1.2.0` worker still has the bare `const exitCode = mod.callMain(args)`
    (no exit fix), so browser conversion aborts. NIfTI is the consumer-supported path
-   until the dcm2niix `DCM2NIIX_PIN` bump.
+   until the dcm2niix `DCM2NIIX_PIN` bump. (Resolved since: see DICOM shippability.)
 
 Not re-run live: a full in-OHIF render via published deps. It would add no new signal —
 the OHIF demo data source is all DICOM (no NIfTI display set to exercise the working
@@ -181,42 +181,20 @@ the "good experience": one load, NiiVue renders it.
 - Risk: getting the affine / axis orientation exactly right (DICOM LPS ↔ NIfTI RAS,
   row/column/slice direction cosines). Needs careful tests against known series.
 
-### DICOM shippability — BLOCKED on an unpublished dcm2niix release (2026-07-14)
+### DICOM shippability: RESOLVED (dcm2niix fix published, #102)
 
-`DCM2NIIX_PIN` — **DICOM does not work for `npm`-install consumers yet.** The path
-needs the dcm2niix Web-Worker exit fix (wrap `callMain` in try/catch, read
-`err.status`; see the Phase-2 finding below). That fix is in **no published**
-`@niivue/dcm2niix`: latest is `1.2.0` and there is a `1.3.0-dev.0` prerelease, and
-**both still have the bare `const exitCode = mod.callMain(args)`** (verified by
-fetching both tarballs). The monorepo dev rig only works because a locally-built
-patched `1.3.0` is hand-installed into the OHIF app's `.niivue-pkgs`.
+DICOM now works for `npm`-install consumers. The dcm2niix Web-Worker exit fix (wrap
+`callMain` in try/catch, read `err.status`; see the Phase-2 finding below) is merged
+upstream (`rordenlab/dcm2niix` `aae72ac`) and published in `@niivue/dcm2niix
+1.3.20260724`, the calendar-versioned npm `latest`. `packages/nv-ohif/package.json`
+requires `^1.3.20260724` (a34799f5), which excludes `1.2.0` and the `1.3.0-dev.0`
+prerelease that predate the fix; nv-ohif 1.0.0-rc.21 ships with it. See the README
+`## DICOM support`.
 
-Maintainer (Chris) has confirmed he will land the suggested changes upstream.
-**Action when a fixed release publishes:** bump `packages/nv-ohif/package.json`
-`@niivue/dcm2niix` from `^1.2.0` to `>=<fixed version>` (marker `DCM2NIIX_PIN` is on
-that dep + in the README `## DICOM support`), then re-verify the clean-consumer
-`npm pack` path. Until then, NIfTI is the consumer-supported path; DICOM is
-dev-rig-only.
-
-**Interim: use a local patched dcm2niix (decided 2026-07-14).** DICOM stays working
-in the dev rig / demos on a locally-built patched copy until the upstream release:
-- **Patch source of truth:** `~/Dev/dcm2niix-src`, branch `fix/worker-exit-status`,
-  commit `4150f31` ("fix(js): read output when callMain unwinds via exit() in a Web
-  Worker"). The change is pure JS glue (`js/src/worker*.js`) — the WASM is unchanged,
-  so no WASM rebuild is needed; the patched package = the published files with the
-  fixed `worker.jpeg.js`/`worker.js`.
-- **Built patched package:** `~/Dev/ohif-viewers/.niivue-pkgs/dcm2niix` (`1.3.0`, has
-  the fix — `let exitCode = 0;` + `err.status` recovery). Durable (survives npm
-  installs); the OHIF dev app depends on it via
-  `@niivue/dcm2niix: file:../../.niivue-pkgs/dcm2niix` in `platform/app/package.json`.
-- **Scope:** dev-rig override only. `packages/nv-ohif/package.json` intentionally keeps
-  the published range `^1.2.0` (with `DCM2NIIX_PIN`) — a `file:` dep must never be
-  published. The monorepo's own build/tests never load dcm2niix (it is externalized
-  and stubbed in tests), so the local copy matters only where DICOM actually runs.
-- **Monitoring:** a twice-daily cloud routine (`0 13,21 * * *` UTC ≈ 09:00/17:00 ET,
-  id `trig_01SpgkDT1MxP8VasinX5bQdi`, https://claude.ai/code/routines/trig_01SpgkDT1MxP8VasinX5bQdi)
-  checks npm for a published `@niivue/dcm2niix` containing the fix and reports the pin
-  bump when it lands.
+History: from 2026-07-14 until the release, the dev rig ran on a locally built
+patched `1.3.0` (`~/Dev/ohif-viewers/.niivue-pkgs/dcm2niix`, from
+`fix/worker-exit-status` `4150f31`), referenced by a `file:` dependency in the OHIF
+app only. That override can now be replaced by the published package.
 
 ### Phase 2 status — reconstruction bridge DONE + proven end-to-end (2026-07-13)
 
@@ -293,7 +271,8 @@ the only broken path, an UNCOMPRESSED DICOM study skips it. Loaded an uncompress
 NIfTI -> **NiiVue renders it multiplanar + 3D in OHIF**, no errors. Volume verified
 faithful: 512x512x100, INT16, spacing 0.9375x0.9375x3.06mm, RescaleIntercept -1000 (HU).
 So the whole pipeline works end-to-end in OHIF (webpack) for uncompressed DICOM; only
-compressed (CharLS/JPEG-LS) is blocked pending the dcm2niix bundler fix.
+compressed (CharLS/JPEG-LS) was blocked pending the dcm2niix bundler fix (since published
+in `@niivue/dcm2niix 1.3.20260724`; see DICOM shippability).
 
 Follow-up polish: our viewport does not set a window/level (NiiVue's cal_min/max came up
 undefined, so CT renders unwindowed/noisy). Add a sensible default window after load (or

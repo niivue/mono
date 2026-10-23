@@ -1,6 +1,7 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -353,35 +354,7 @@ pub fn spawn_default() -> ServerHandle {
         runtime.block_on(async move {
             let listener =
                 tokio::net::TcpListener::from_std(listener).expect("adopt NeuroVue listener");
-            let app = Router::new()
-                .route("/api", get(api_info))
-                .route("/iiif/desktop", get(desktops))
-                .route("/iiif/desktop/:desktop_id/manifest", get(desktop_manifest))
-                .route("/iiif/desktop/:desktop_id/version", get(desktop_version))
-                .route("/volumes/:vol_id/metadata", get(volume_metadata))
-                // Byte-serving routes carry `:sig` (volume_url_token) so their
-                // URLs are distinct per dataset and per file version.
-                .route("/volumes/:vol_id/:sig/raw", get(raw_volume))
-                .route("/volumes/:vol_id/:sig/raw.nii", get(raw_volume))
-                .route("/volumes/:vol_id/:sig/raw.nii.gz", get(raw_volume))
-                .route(
-                    "/volumes/:vol_id/:sig/levels/:level/raw.nii",
-                    get(raw_level_volume),
-                )
-                .route(
-                    "/iiif/image/:vol_id/:sig/:axis/:slice/info.json",
-                    get(image_info),
-                )
-                .route(
-                    "/iiif/image/:vol_id/:sig/:axis/:slice/:region/:size/:rotation/:quality_format",
-                    get(image_tile),
-                )
-                .route(
-                    "/session/correction.patch.json",
-                    get(read_patch).post(write_patch),
-                )
-                .layer(app_cors_layer())
-                .with_state(state);
+            let app = build_router(state, addr.port());
 
             if let Err(error) = axum::serve(listener, app).await {
                 eprintln!("NeuroVue local server stopped: {error}");
@@ -401,6 +374,71 @@ pub fn spawn_default() -> ServerHandle {
         warm_generation,
         warm_progress,
     }
+}
+
+fn build_router(state: AppState, port: u16) -> Router {
+    Router::new()
+        .route("/api", get(api_info))
+        .route("/iiif/desktop", get(desktops))
+        .route("/iiif/desktop/:desktop_id/manifest", get(desktop_manifest))
+        .route("/iiif/desktop/:desktop_id/version", get(desktop_version))
+        .route("/volumes/:vol_id/metadata", get(volume_metadata))
+        // Byte-serving routes carry `:sig` (volume_url_token) so their
+        // URLs are distinct per dataset and per file version.
+        .route("/volumes/:vol_id/:sig/raw", get(raw_volume))
+        .route("/volumes/:vol_id/:sig/raw.nii", get(raw_volume))
+        .route("/volumes/:vol_id/:sig/raw.nii.gz", get(raw_volume))
+        .route(
+            "/volumes/:vol_id/:sig/levels/:level/raw.nii",
+            get(raw_level_volume),
+        )
+        .route(
+            "/iiif/image/:vol_id/:sig/:axis/:slice/info.json",
+            get(image_info),
+        )
+        .route(
+            "/iiif/image/:vol_id/:sig/:axis/:slice/:region/:size/:rotation/:quality_format",
+            get(image_tile),
+        )
+        .route(
+            "/session/correction.patch.json",
+            get(read_patch).post(write_patch),
+        )
+        .layer(app_cors_layer())
+        // Outermost, so a foreign Host is refused before any route runs.
+        .layer(middleware::from_fn(move |request, next| {
+            require_local_host(port, request, next)
+        }))
+        .with_state(state)
+}
+
+/// DNS-rebinding guard. A page on `attacker.example` that rebinds its name to
+/// 127.0.0.1 is same-origin with this server, so CORS never applies; only the
+/// Host it sends still names the attacker. The webview always addresses the
+/// server as `http://127.0.0.1:<port>` (`base_url`), so accept that and the
+/// `localhost` spelling and refuse everything else, including no Host at all.
+async fn require_local_host(port: u16, request: Request, next: Next) -> Response {
+    // HTTP/2 carries the host as the URI authority instead of a Host header.
+    let host = match request.headers().get(header::HOST) {
+        Some(value) => value.to_str().ok(),
+        None => request
+            .uri()
+            .authority()
+            .map(|authority| authority.as_str()),
+    };
+    if host.is_some_and(|host| is_local_host(host, port)) {
+        next.run(request).await
+    } else {
+        (StatusCode::FORBIDDEN, "forbidden host").into_response()
+    }
+}
+
+fn is_local_host(host: &str, port: u16) -> bool {
+    let Some((name, host_port)) = host.rsplit_once(':') else {
+        return false;
+    };
+    host_port.parse::<u16>().ok() == Some(port)
+        && (name == "127.0.0.1" || name.eq_ignore_ascii_case("localhost"))
 }
 
 /// Lock a mutex, recovering the guard if another thread poisoned it by panicking
@@ -4092,5 +4130,60 @@ mod tests {
             bundle_import_dir_name(FsPath::new("/b/scan.nvbundle"))
         );
         assert!(bundle_import_dir_name(FsPath::new("/a/scan.nvbundle")).starts_with("scan-"));
+    }
+
+    fn test_state() -> AppState {
+        AppState {
+            base_url: "http://127.0.0.1:4242".to_string(),
+            volumes: Arc::new(Mutex::new(Vec::new())),
+            dataset_root: Arc::new(Mutex::new(None)),
+            preview_cache: Arc::new(Mutex::new(PreviewCache::default())),
+            decoded_level_cache: Arc::new(Mutex::new(DecodedLevelCache::default())),
+            pyramid_locks: Arc::new(Mutex::new(HashMap::new())),
+            patch: Arc::new(Mutex::new(None)),
+            render_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        }
+    }
+
+    async fn status_for_host(host: Option<&str>) -> StatusCode {
+        use tower::ServiceExt;
+        let mut request = axum::http::Request::builder().uri("/api");
+        if let Some(host) = host {
+            request = request.header(header::HOST, host);
+        }
+        let request = request.body(axum::body::Body::empty()).unwrap();
+        build_router(test_state(), 4242)
+            .oneshot(request)
+            .await
+            .unwrap()
+            .status()
+    }
+
+    #[test]
+    fn router_rejects_foreign_hosts() {
+        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            assert_eq!(
+                status_for_host(Some("127.0.0.1:4242")).await,
+                StatusCode::OK
+            );
+            assert_eq!(
+                status_for_host(Some("localhost:4242")).await,
+                StatusCode::OK
+            );
+            for host in [
+                Some("attacker.rebind.example:4242"),
+                Some("127.0.0.1:4243"),
+                Some("127.0.0.1"),
+                Some("127.0.0.1.attacker.example:4242"),
+                None,
+            ] {
+                assert_eq!(
+                    status_for_host(host).await,
+                    StatusCode::FORBIDDEN,
+                    "{host:?}"
+                );
+            }
+        });
     }
 }

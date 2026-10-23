@@ -25,6 +25,10 @@ tauri-plugin-dialog = "2.7.1"
 tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "sync"] }
 tower-http = { version = "0.6", features = ["cors"] }
 
+[dev-dependencies]
+# `ServiceExt::oneshot` drives the axum router in tests without binding a port.
+tower = { version = "0.5", features = ["util"] }
+
 # The integrated terminal (PTY/shell) is desktop-only: iOS/Android forbid
 # spawning subprocesses, so its dependency is excluded from mobile builds.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]

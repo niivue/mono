@@ -1148,6 +1148,7 @@ export type NiiVueOptions = {
   globalCamera?: NVGlobalCamera
   /** Rendering backend. Defaults to 'webgl2' ('webgpu' in the WebGPU-only build). */
   backend?: BackendType
+  /** 4x MSAA. Off by default: Safari WebGPU shades every sample, ~4x slower volume rendering (#318). */
   isAntiAlias?: boolean
   devicePixelRatio?: number
   bounds?: NVBounds

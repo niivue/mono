@@ -7,7 +7,7 @@
 // so point it at a local `bun run dev` in packages/niivue to capture
 // unpublished examples. Each thumbnail is the page's largest canvas, scaled
 // down in the browser and saved as WebP.
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Page } from 'playwright'
@@ -16,25 +16,53 @@ import { buildGraph, collectGallery } from '../plugins/gallery'
 const WIDTH = 480
 const SETTLE_MS = Number(process.env.SETTLE_MS ?? 2500)
 const LOAD_TIMEOUT_MS = 30000
-// Examples that draw nothing until the user acts; show their whole page.
-const PAGE_SHOT = new Set(['allen-atlas'])
+type Clip = { x: number; y: number; width: number; height: number }
 // Examples that draw nothing until the user acts; act for them, then wait.
-const PREPARE: Record<string, (page: Page) => Promise<void>> = {
+// A step may return the page region to frame when the drawing is small.
+const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
   font: async (page) => {
     await page.waitForSelector('#fontSelect option:nth-child(2)', {
       state: 'attached',
     })
     await page.selectOption('#fontSelect', 'GaramondBold')
     await page.locator('#fontSlide').fill('20')
+    return { x: 260, y: 0, width: 480, height: 360 }
   },
-  benchmark: (page) => page.click('#runBtn'),
-}
-// Page regions to frame when the drawing is small on a large canvas.
-const CLIP: Record<
-  string,
-  { x: number; y: number; width: number; height: number }
-> = {
-  font: { x: 260, y: 0, width: 480, height: 360 },
+  // The Allen host sends no CORS header, so feed the page's file picker the
+  // copies `fetch-allen` keeps for the volumetric server (gitignored).
+  'allen-atlas': async (page) => {
+    if (!existsSync(allenDir))
+      throw new Error(`no fixtures at ${allenDir}; set ALLEN_FIXTURES`)
+    const files = readdirSync(allenDir)
+      .filter((f) => f.startsWith('COMP_crop_M1-M2_atlas'))
+      .map((f) => path.join(allenDir, f))
+    await page.setInputFiles('#files', files)
+    await page.waitForSelector('#load:not([disabled])')
+    await page.click('#load')
+    await page.waitForFunction(() =>
+      document.getElementById('status')?.textContent?.startsWith('Showing'),
+    )
+    await page.evaluate(() => {
+      for (const [id, value] of [
+        ['opacity', '1'],
+        ['zoom', '1.3'],
+      ]) {
+        const input = document.getElementById(id) as HTMLInputElement
+        input.value = value
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+    // Frame the 3D render, the bottom-right tile of the multiplanar layout.
+    const box = await page.locator('#gl1').boundingBox()
+    if (!box) return undefined
+    const width = box.width / 2
+    const height = Math.min(box.height / 2, (width * 3) / 4)
+    return { x: box.x + width, y: box.y + box.height - height, width, height }
+  },
+  benchmark: async (page) => {
+    await page.click('#runBtn')
+    return undefined
+  },
 }
 // Examples that stream for a while before their first useful frame.
 const SLOW: Record<string, number> = {
@@ -47,6 +75,9 @@ const siteDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = path.resolve(siteDir, '../..')
 const outDir = path.join(siteDir, 'static/img/gallery')
 const base = process.env.DOCS_EXAMPLES_BASE ?? 'https://niivue.github.io/mono/'
+const allenDir =
+  process.env.ALLEN_FIXTURES ??
+  path.join(repoRoot, 'apps/iiif-volumetric-server/fixtures/allen')
 
 const only = new Set(process.argv.slice(2))
 const examples = collectGallery(repoRoot, buildGraph(repoRoot)).filter(
@@ -56,19 +87,17 @@ const examples = collectGallery(repoRoot, buildGraph(repoRoot)).filter(
 async function capture(
   page: Page,
   url: string,
-  whole: boolean,
   settleMs: number,
-  prepare?: (page: Page) => Promise<void>,
-  clip?: { x: number; y: number; width: number; height: number },
+  prepare?: (page: Page) => Promise<Clip | undefined>,
 ): Promise<Buffer> {
   await page.goto(url, { waitUntil: 'load', timeout: LOAD_TIMEOUT_MS })
   // Streaming examples never go idle; take what has drawn by the timeout.
   await page
     .waitForLoadState('networkidle', { timeout: LOAD_TIMEOUT_MS })
     .catch(() => {})
-  if (prepare) await prepare(page)
+  const clip = await prepare?.(page)
   await page.waitForTimeout(settleMs)
-  if (whole || clip) return page.screenshot({ clip })
+  if (clip) return page.screenshot({ clip })
   const canvas = await page.evaluateHandle(() => {
     let best: HTMLCanvasElement | null = null
     let area = 0
@@ -124,10 +153,8 @@ for (const example of examples) {
     const png = await capture(
       page,
       new URL(example.page, base).href,
-      PAGE_SHOT.has(example.slug),
       SLOW[example.slug] ?? SETTLE_MS,
       PREPARE[example.slug],
-      CLIP[example.slug],
     )
     const webp = await toWebp(encoder, png)
     writeFileSync(path.join(outDir, `${example.slug}.webp`), webp)

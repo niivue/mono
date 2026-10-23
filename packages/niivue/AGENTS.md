@@ -869,8 +869,9 @@ max of the premultiplied colours; every mode but `OVER` is commutative.
 `_updateOverlayStack` pass every volume, the base draws at opacity 0) so the
 fused channels land on the canvas background; ignored with one volume, while
 volumes[0] is chunked, and in multi-instance mode. Hidden (or opacity 0) and
-PAQD volumes do not join as channels. Stacked channels keep their colormap's alpha ramp in the orient bake
-(`modFlags.z` in `orient.wgsl`, `keepColormapAlpha` in `gl/orientOverlay.ts`);
+PAQD volumes do not join as channels. Stacked channels keep their colormap's
+alpha ramp in the orient bake (`modFlags.z` in `orient.wgsl`,
+`keepColormapAlpha` in `gl/orientOverlay.ts`);
 other overlays get `step(0.00001, a)`. The overlay ray-march has no step-size
 correction, so 3D density follows each channel's opacity steeply.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set

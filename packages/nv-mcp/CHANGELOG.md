@@ -1,3 +1,20 @@
+## 1.0.0-rc.11 (2026-10-23)
+
+### Features
+
+- **niivue:** fuse volumes[0] with the overlays as a channel stack ([#365](https://github.com/niivue/mono/issues/365))
+- **niivue:** add OVERLAY_COLOR_BLEND.MAX channel fusion ([#363](https://github.com/niivue/mono/issues/363))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.35
+- Updated uikit to 1.0.0-rc.23
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.10 (2026-10-23)
 
 ### Features

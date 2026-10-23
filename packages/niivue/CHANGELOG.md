@@ -1,3 +1,19 @@
+## 1.0.0-rc.35 (2026-10-23)
+
+### Features
+
+- **niivue:** fuse volumes[0] with the overlays as a channel stack ([#365](https://github.com/niivue/mono/issues/365))
+- **niivue:** add OVERLAY_COLOR_BLEND.MAX channel fusion ([#363](https://github.com/niivue/mono/issues/363))
+
+### Fixes
+
+- **niivue:** ignore placeholder omero windows, add gray channel ramp ([#364](https://github.com/niivue/mono/issues/364))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.34 (2026-10-23)
 
 ### Features

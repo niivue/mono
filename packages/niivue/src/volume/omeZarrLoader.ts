@@ -22,7 +22,7 @@
 import * as zarr from 'zarrita'
 import { NiiDataType } from '@/NVConstants'
 import type { ImageFromUrlOptions, TypedVoxelArray } from '@/NVTypes'
-import { channelColormapFor } from './channelColormaps'
+import { channelColormapFor, channelColormapsFor } from './channelColormaps'
 import { channelVolumeFile } from './channelVolumeFile'
 import {
   allocTypedArrayLike,
@@ -30,6 +30,7 @@ import {
   type OmeZarrAxisIndices,
   type OmeZarrInfo,
   type OmeZarrSpatialOrder,
+  omeroWindowUsable,
   omeZarrAxisIndices,
   omeZarrResolveAxes,
   omeZarrSpatialOrder,
@@ -440,6 +441,10 @@ export async function omeZarrVolumesFrom(
 
   const { indices, order } = source
   const array = source.arrays[level]
+  const dtype = source.levels[level].dtype
+  const colormaps = channelColormapsFor(
+    wanted.map((channel) => source.info.channels[channel]?.color),
+  )
   const volumes: ImageFromUrlOptions[] = []
   for (const [orderIndex, channel] of wanted.entries()) {
     // Spatial axes stay whole (null); time and channel pin to one index; any
@@ -464,7 +469,10 @@ export async function omeZarrVolumesFrom(
       order,
     )
     const name = omeZarrChannelName(source, channel)
-    const window = source.info.channels[channel]?.window
+    // A placeholder window is dropped, so the caller falls back to the
+    // data's own range as it does for a channel with no window.
+    const stated = source.info.channels[channel]?.window
+    const window = stated && omeroWindowUsable(stated, dtype) ? stated : null
     volumes.push({
       url: omeZarrChannelFile(
         dims,
@@ -474,7 +482,7 @@ export async function omeZarrVolumesFrom(
         name,
       ),
       name,
-      colormap: omeZarrChannelColormap(source.info, channel, orderIndex),
+      colormap: colormaps[orderIndex],
       ...(window ? { calMin: window.start, calMax: window.end } : {}),
     })
   }

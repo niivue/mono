@@ -82,6 +82,11 @@ export interface OmeZarrInfo {
   datasets: OmeZarrDataset[]
   /** Channel display metadata; empty when the group has no `omero` block. */
   channels: OmeZarrChannel[]
+  /**
+   * The writer's chosen plane and timepoint (`omero.rdefs.defaultZ` and
+   * `defaultT`), each null when the file states none.
+   */
+  defaults: { z: number | null; t: number | null }
 }
 
 type JsonObject = Record<string, unknown>
@@ -236,6 +241,11 @@ export function parseOmeZarrAttrs(attrs: unknown): OmeZarrInfo {
   const channels = Array.isArray(omero?.channels)
     ? omero.channels.map(parseChannel)
     : []
+  const rdefs = asObject(omero?.rdefs)
+  const defaults = {
+    z: asIndex(rdefs?.defaultZ),
+    t: asIndex(rdefs?.defaultT),
+  }
 
   return {
     version:
@@ -248,7 +258,39 @@ export function parseOmeZarrAttrs(attrs: unknown): OmeZarrInfo {
     axes,
     datasets,
     channels,
+    defaults,
   }
+}
+
+/** A non-negative integer, else null. */
+function asIndex(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : null
+}
+
+/**
+ * Whether an omero window can describe data of this dtype.
+ *
+ * Some writers emit a placeholder block (`start` 0, `end` 1, `min` 0, `max`
+ * 1) whatever the data holds. On integer data such a window paints every
+ * voxel at full colour, so it is ignored and the caller falls back to the
+ * data's own range. Float data may legitimately live in 0 to 1, so only an
+ * empty or inverted window is rejected there.
+ */
+export function omeroWindowUsable(
+  window: OmeZarrWindow,
+  dtype: string,
+): boolean {
+  if (!(window.end > window.start)) {
+    return false
+  }
+  if (dtype.startsWith('float')) {
+    return true
+  }
+  return (
+    window.end - window.start > 1 && !(window.max !== null && window.max <= 1)
+  )
 }
 
 /** The 0.1-0.3 fixed dimension order, which files without axes rely on. */

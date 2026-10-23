@@ -17,7 +17,7 @@
 
 import { maybeDecompress } from '@/codecs/NVGz'
 import type { ImageFromUrlOptions } from '@/NVTypes'
-import { channelColormapFor } from './channelColormaps'
+import { channelColormapFor, channelColormapsFor } from './channelColormaps'
 import { channelVolumeFile } from './channelVolumeFile'
 import type { OmeTiffInfo } from './omeTiff'
 import { parseTiff } from './tiff'
@@ -128,6 +128,9 @@ export async function omeTiffVolumesFrom(
     }
   }
 
+  const colormaps = channelColormapsFor(
+    wanted.map((channel) => source.ome?.channels[channel]?.color),
+  )
   const volumes: ImageFromUrlOptions[] = []
   for (const [order, channel] of wanted.entries()) {
     const volume = await readTiffVolume(source, {
@@ -138,7 +141,7 @@ export async function omeTiffVolumesFrom(
     volumes.push({
       url: omeTiffChannelFile(volume, name),
       name,
-      colormap: omeTiffChannelColormap(source.ome, channel, order),
+      colormap: colormaps[order],
     })
   }
   return volumes

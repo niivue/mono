@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  omeroWindowUsable,
   omeZarrAxisIndices,
   omeZarrResolveAxes,
   omeZarrSpatialOrder,
@@ -145,6 +146,64 @@ describe('parseOmeZarrAttrs', () => {
     expect(() =>
       parseOmeZarrAttrs({ multiscales: [{ datasets: [] }] }),
     ).toThrow('no datasets')
+  })
+})
+
+describe('omero rdefs', () => {
+  test('reads defaultZ and defaultT', () => {
+    const info = parseOmeZarrAttrs({
+      ...IDR_STYLE_ATTRS,
+      omero: { ...IDR_STYLE_ATTRS.omero, rdefs: { defaultT: 3, defaultZ: 21 } },
+    })
+    expect(info.defaults).toEqual({ z: 21, t: 3 })
+  })
+
+  test('is null when absent or malformed', () => {
+    expect(parseOmeZarrAttrs(IDR_STYLE_ATTRS).defaults).toEqual({
+      z: null,
+      t: null,
+    })
+    const info = parseOmeZarrAttrs({
+      ...IDR_STYLE_ATTRS,
+      omero: {
+        ...IDR_STYLE_ATTRS.omero,
+        rdefs: { defaultT: -1, defaultZ: 2.5 },
+      },
+    })
+    expect(info.defaults).toEqual({ z: null, t: null })
+  })
+})
+
+describe('omeroWindowUsable', () => {
+  const placeholder = { start: 0, end: 1, min: 0, max: 1 }
+  test('rejects the 0 to 1 placeholder on integer data', () => {
+    expect(omeroWindowUsable(placeholder, 'uint16')).toBe(false)
+    expect(omeroWindowUsable(placeholder, 'uint8')).toBe(false)
+    // A wide window with a placeholder max is still a placeholder block.
+    expect(
+      omeroWindowUsable({ start: 0, end: 500, min: 0, max: 1 }, 'uint16'),
+    ).toBe(false)
+  })
+
+  test('keeps real windows, and 0 to 1 on float data', () => {
+    expect(
+      omeroWindowUsable({ start: 0, end: 1500, min: 0, max: 65535 }, 'uint16'),
+    ).toBe(true)
+    expect(
+      omeroWindowUsable(
+        { start: 100, end: 3000, min: null, max: null },
+        'uint16',
+      ),
+    ).toBe(true)
+    expect(omeroWindowUsable(placeholder, 'float32')).toBe(true)
+  })
+
+  test('rejects an empty or inverted window on any dtype', () => {
+    const empty = { start: 5, end: 5, min: null, max: null }
+    expect(omeroWindowUsable(empty, 'float32')).toBe(false)
+    expect(
+      omeroWindowUsable({ start: 9, end: 2, min: null, max: null }, 'uint16'),
+    ).toBe(false)
   })
 })
 

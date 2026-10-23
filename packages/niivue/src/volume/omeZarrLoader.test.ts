@@ -245,6 +245,23 @@ describe('omeZarrVolumesFrom', () => {
     }
   })
 
+  test('drops a placeholder window and gives white channels distinct ramps', async () => {
+    const source = await openOmeZarr(makeTczyxStore())
+    // The block Allen's nuc-morph stores carry: white, windowed 0 to 1.
+    const placeholder = { start: 0, end: 1, min: 0, max: 1 }
+    source.info.channels = source.info.channels.map((channel) => ({
+      ...channel,
+      color: [255, 255, 255],
+      window: placeholder,
+    }))
+    const volumes = await omeZarrVolumesFrom(source)
+    expect(volumes[0].calMin).toBeUndefined()
+    expect(volumes[0].calMax).toBeUndefined()
+    expect(volumes[1].calMin).toBeUndefined()
+    expect(volumes[0].colormap).toBe('gray')
+    expect(volumes[1].colormap).toBe('violet')
+  })
+
   test('pins the requested channel and timepoint', async () => {
     const source = await openOmeZarr(makeTczyxStore())
     const volumes = await omeZarrVolumesFrom(source, {

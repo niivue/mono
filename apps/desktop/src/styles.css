@@ -112,6 +112,25 @@ button {
   white-space: nowrap;
 }
 
+.nv-status .nv-status-message.is-success svg {
+  color: var(--green);
+}
+
+/* Errors stay put until the next action, so make them read as errors. */
+.nv-status .nv-status-message.is-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.nv-status .nv-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .nv-status .nv-warm-status {
   color: var(--amber);
 }

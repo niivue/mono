@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import { ChevronDown, FolderSearch, RotateCcw, Trash2 } from 'lucide-react'
 import { type JSX, useEffect, useRef, useState } from 'react'
 import '@xterm/xterm/css/xterm.css'
+import type { StatusTone } from '../domain/desktop'
 import {
   discoverPythonInterpreters,
   killTerminal,
@@ -51,7 +52,7 @@ export function TerminalPanel({
   onStatus,
 }: {
   datasetRoot: string
-  onStatus?: (message: string) => void
+  onStatus?: (message: string, tone?: StatusTone) => void
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -147,7 +148,10 @@ export function TerminalPanel({
         if (!cancelled) setInterpreters(found)
       })
       .catch((error) => {
-        onStatus?.(error instanceof Error ? error.message : String(error))
+        onStatus?.(
+          error instanceof Error ? error.message : String(error),
+          'error',
+        )
       })
     return () => {
       cancelled = true
@@ -215,7 +219,10 @@ export function TerminalPanel({
         persistInterpreter(picked.path)
         setSelectedPath(picked.path)
       } catch (error) {
-        onStatus?.(error instanceof Error ? error.message : String(error))
+        onStatus?.(
+          error instanceof Error ? error.message : String(error),
+          'error',
+        )
       }
       return
     }

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   CircleDot,
   Copy,
   Crosshair,
@@ -237,6 +238,7 @@ export function App(): JSX.Element {
     setSelectedId,
     setStatus,
     status,
+    statusTone,
     warmProgress,
   } = useDatasetManifest({ promoteRecent })
   const datasetNotice = useMemo(
@@ -644,17 +646,17 @@ export function App(): JSX.Element {
           next.delete(result.id)
           return next
         })
-        setStatus(`Atlas ${result.label} added with label sidecar.`)
+        setStatus(`Atlas ${result.label} added with label sidecar.`, 'success')
       } else {
         setOverlayIds((current) => {
           const next = new Set(current)
           next.add(result.id)
           return next
         })
-        setStatus(`Overlay ${result.label} added to every volume.`)
+        setStatus(`Overlay ${result.label} added to every volume.`, 'success')
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       setIsOpeningOverlay(false)
     }
@@ -688,7 +690,7 @@ export function App(): JSX.Element {
   async function handleExportBundle(): Promise<void> {
     if (isExportingBundle) return
     if (!selected) {
-      setStatus('Select a volume before exporting a bundle.')
+      setStatus('Select a volume before exporting a bundle.', 'error')
       return
     }
 
@@ -711,9 +713,10 @@ export function App(): JSX.Element {
       setStatus(
         `Exported ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
           `(${formatBundleBytes(result.totalBytes)}) to ${result.bundlePath}.`,
+        'success',
       )
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       setIsExportingBundle(false)
     }
@@ -722,7 +725,7 @@ export function App(): JSX.Element {
   async function handleShareBundle(): Promise<void> {
     if (isSharingBundle) return
     if (!selected || items.length === 0) {
-      setStatus('Open a dataset before sharing.')
+      setStatus('Open a dataset before sharing.', 'error')
       return
     }
 
@@ -750,9 +753,10 @@ export function App(): JSX.Element {
       setStatus(
         `AirDrop sheet opened — ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
           `(${formatBundleBytes(result.totalBytes)}).`,
+        'success',
       )
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       setIsSharingBundle(false)
     }
@@ -774,7 +778,7 @@ export function App(): JSX.Element {
       }
       await runBundleImport(path)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       isImportingBundleRef.current = false
       setIsImportingBundle(false)
@@ -790,7 +794,7 @@ export function App(): JSX.Element {
     try {
       await runBundleImport(path)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       isImportingBundleRef.current = false
       setIsImportingBundle(false)
@@ -802,14 +806,16 @@ export function App(): JSX.Element {
   async function runBundleImport(path: string): Promise<void> {
     const bundle = await readBundle(path)
     if (bundle.manifest?.nvbundle == null) {
-      setStatus('Not a NeuroVue bundle (no manifest.json).')
+      setStatus('Not a NeuroVue bundle (no manifest.json).', 'error')
       return
     }
 
     // Load the bundle's copied volumes as the working dataset (the data/ dir
     // opens like any dataset; each volume's new id is its filename stem), but
     // record the bundle itself in recents — `dataDir` is a temp extraction.
-    await openRecentDataset(bundle.dataDir, { promoteAs: path })
+    // A failed open already put its error in the status line; stop here so the
+    // previous dataset isn't reported as "imported" over it.
+    if (!(await openRecentDataset(bundle.dataDir, { promoteAs: path }))) return
     const nextManifest = await refreshDesktopManifestData()
     const loadedIds = new Set(
       (nextManifest?.items ?? []).map((item) => item.id),
@@ -875,6 +881,7 @@ export function App(): JSX.Element {
         : ''
     setStatus(
       `Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`,
+      failures.length > 0 ? 'error' : 'success',
     )
   }
 
@@ -1473,12 +1480,14 @@ export function App(): JSX.Element {
                           )
                           setStatus(
                             `Clip-plane correction saved for ${selected?.label ?? 'volume'}.`,
+                            'success',
                           )
                         } catch (error) {
                           setStatus(
                             error instanceof Error
                               ? error.message
                               : String(error),
+                            'error',
                           )
                         }
                       }}
@@ -1543,8 +1552,25 @@ export function App(): JSX.Element {
       ) : null}
 
       <footer className="nv-status">
-        <span>
-          <CircleDot size={12} />
+        {/* One stable live region: swapping roles on the fly is announced
+            unreliably, so errors stay "status" and say "Error:" instead. */}
+        <span
+          aria-atomic="true"
+          aria-live="polite"
+          className={`nv-status-message is-${statusTone}`}
+          role="status"
+          title={status}
+        >
+          {statusTone === 'error' ? (
+            <CircleAlert aria-hidden="true" size={12} />
+          ) : statusTone === 'success' ? (
+            <CheckCircle2 aria-hidden="true" size={12} />
+          ) : (
+            <CircleDot aria-hidden="true" size={12} />
+          )}
+          {statusTone === 'error' ? (
+            <span className="nv-visually-hidden">Error: </span>
+          ) : null}
           {status}
         </span>
         {warmStatus ? (

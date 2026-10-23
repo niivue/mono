@@ -2,6 +2,9 @@ import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 
 export type Backend = 'webgl2' | 'webgpu'
+
+/** How the footer status line presents a message. */
+export type StatusTone = 'info' | 'success' | 'error'
 export type Axis = 'axial' | 'coronal' | 'sagittal'
 
 export interface WorldRect {

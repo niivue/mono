@@ -86,10 +86,11 @@ export function useDatasetManifest({
     [],
   )
   // Routine refreshes (the manifest poll, re-reads after an action) must not
-  // wipe an error the user hasn't acted on yet; the next real action clears it.
+  // wipe an error or success the user hasn't acted on yet; the next real
+  // action replaces it.
   const setBackgroundStatus = useCallback((text: string): void => {
     setStatusLine((current) =>
-      current.tone === 'error' ? current : { text, tone: 'info' },
+      current.tone === 'info' ? { text, tone: 'info' } : current,
     )
   }, [])
   const [isOpeningDataset, setIsOpeningDataset] = useState(false)

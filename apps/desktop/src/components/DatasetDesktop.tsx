@@ -698,13 +698,13 @@ function desktopSections(
       items.filter((item) => !isDerivedItem(item)),
       world,
       'sources',
-      'Source Volumes',
+      'Source volumes',
     ),
     desktopSectionForRole(
       items.filter((item) => isDerivedItem(item)),
       world,
       'derived',
-      'Working Derivatives',
+      'Working derivatives',
     ),
   ].filter(
     (

@@ -457,6 +457,12 @@ button {
   text-transform: uppercase;
 }
 
+.nv-control-section > .nv-panel-heading {
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .nv-panel-heading span,
 .nv-readout h2 {
   display: inline-flex;
@@ -565,7 +571,7 @@ button {
   height: 32px;
   border: 1px solid var(--line);
   background: #12130f;
-  color: var(--muted);
+  color: var(--ink);
   cursor: pointer;
   font-size: 12px;
 }
@@ -589,11 +595,9 @@ button {
   min-width: 0;
   gap: 8px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  text-transform: uppercase;
+  line-height: 1.1;
 }
 
 .nv-filter-panel-title span {
@@ -606,8 +610,6 @@ button {
 .nv-filter-panel-title em {
   color: var(--green);
   font-style: normal;
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .nv-filter-facet-group {
@@ -1075,11 +1077,9 @@ button {
   border: 1px solid rgba(215, 166, 66, 0.28);
   background: rgba(8, 8, 6, 0.76);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
   padding: 0 9px;
-  text-transform: uppercase;
 }
 
 .nv-osd-section-label span {
@@ -1777,10 +1777,8 @@ button {
   align-items: center;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .nv-layer-list-header em {

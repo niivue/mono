@@ -256,6 +256,7 @@ struct VolumeDerivation {
 #[derive(Deserialize)]
 struct SlicePath {
     vol_id: String,
+    sig: String,
     axis: String,
     slice: u16,
 }
@@ -263,6 +264,7 @@ struct SlicePath {
 #[derive(Deserialize)]
 struct ImagePath {
     vol_id: String,
+    sig: String,
     axis: String,
     slice: u16,
     region: String,
@@ -288,7 +290,14 @@ struct ImageQuery {
 #[derive(Deserialize)]
 struct LevelPath {
     vol_id: String,
+    sig: String,
     level: u8,
+}
+
+#[derive(Deserialize)]
+struct RawPath {
+    vol_id: String,
+    sig: String,
 }
 
 pub fn spawn_default() -> ServerHandle {
@@ -350,19 +359,21 @@ pub fn spawn_default() -> ServerHandle {
                 .route("/iiif/desktop/:desktop_id/manifest", get(desktop_manifest))
                 .route("/iiif/desktop/:desktop_id/version", get(desktop_version))
                 .route("/volumes/:vol_id/metadata", get(volume_metadata))
-                .route("/volumes/:vol_id/raw", get(raw_volume))
-                .route("/volumes/:vol_id/raw.nii", get(raw_volume))
-                .route("/volumes/:vol_id/raw.nii.gz", get(raw_volume))
+                // Byte-serving routes carry `:sig` (volume_url_token) so their
+                // URLs are distinct per dataset and per file version.
+                .route("/volumes/:vol_id/:sig/raw", get(raw_volume))
+                .route("/volumes/:vol_id/:sig/raw.nii", get(raw_volume))
+                .route("/volumes/:vol_id/:sig/raw.nii.gz", get(raw_volume))
                 .route(
-                    "/volumes/:vol_id/levels/:level/raw.nii",
+                    "/volumes/:vol_id/:sig/levels/:level/raw.nii",
                     get(raw_level_volume),
                 )
                 .route(
-                    "/iiif/image/:vol_id/:axis/:slice/info.json",
+                    "/iiif/image/:vol_id/:sig/:axis/:slice/info.json",
                     get(image_info),
                 )
                 .route(
-                    "/iiif/image/:vol_id/:axis/:slice/:region/:size/:rotation/:quality_format",
+                    "/iiif/image/:vol_id/:sig/:axis/:slice/:region/:size/:rotation/:quality_format",
                     get(image_tile),
                 )
                 .route(
@@ -1257,6 +1268,7 @@ async fn desktop_manifest(
         .enumerate()
         .map(|(index, volume)| {
             let encoded = url_component(&volume.id);
+            let sig = volume_url_token(volume);
             let role_index = if volume.role == VolumeRole::Derived {
                 let next = derived_index;
                 derived_index += 1;
@@ -1275,8 +1287,8 @@ async fn desktop_manifest(
             };
             let preview_slice = volume.shape[2] / 2;
             let preview_service = format!(
-                "{}/iiif/image/{}/axial/{}",
-                state.base_url, encoded, preview_slice
+                "{}/iiif/image/{}/{}/axial/{}",
+                state.base_url, encoded, sig, preview_slice
             );
 
             json!({
@@ -1308,9 +1320,9 @@ async fn desktop_manifest(
                 "levels": volume_levels(&state.base_url, &encoded, volume),
                 "brickTemplate": format!("{}?level={{level}}&bbox={{bbox}}", raw_volume_url(&state.base_url, &encoded, volume)),
                 "sliceServices": {
-                    "axial": format!("{}/iiif/image/{}/axial/{{slice}}", state.base_url, encoded),
-                    "coronal": format!("{}/iiif/image/{}/coronal/{{slice}}", state.base_url, encoded),
-                    "sagittal": format!("{}/iiif/image/{}/sagittal/{{slice}}", state.base_url, encoded)
+                    "axial": format!("{}/iiif/image/{}/{}/axial/{{slice}}", state.base_url, encoded, sig),
+                    "coronal": format!("{}/iiif/image/{}/{}/coronal/{{slice}}", state.base_url, encoded, sig),
+                    "sagittal": format!("{}/iiif/image/{}/{}/sagittal/{{slice}}", state.base_url, encoded, sig)
                 }
             })
         })
@@ -1420,10 +1432,10 @@ async fn volume_metadata(
 }
 
 async fn raw_volume(
-    Path(vol_id): Path<String>,
+    Path(path): Path<RawPath>,
     State(state): State<AppState>,
 ) -> Result<Response, StatusCode> {
-    let volume = find_volume(&state, &vol_id).ok_or(StatusCode::NOT_FOUND)?;
+    let volume = find_signed_volume(&state, &path.vol_id, &path.sig)?;
     let path = volume.source_path.as_ref().ok_or(StatusCode::NOT_FOUND)?;
     let body = tokio::fs::read(path)
         .await
@@ -1441,7 +1453,7 @@ async fn raw_level_volume(
     Path(path): Path<LevelPath>,
     State(state): State<AppState>,
 ) -> Result<Response, StatusCode> {
-    let volume = find_volume(&state, &path.vol_id).ok_or(StatusCode::NOT_FOUND)?;
+    let volume = find_signed_volume(&state, &path.vol_id, &path.sig)?;
     let dataset_root = current_dataset_root(&state);
     let level = clamp_pyramid_level(path.level, volume.shape);
     let path = if level == 0 {
@@ -1471,16 +1483,17 @@ async fn image_info(
     Path(path): Path<SlicePath>,
     State(state): State<AppState>,
 ) -> Result<Json<Value>, StatusCode> {
-    let volume = find_volume(&state, &path.vol_id).ok_or(StatusCode::NOT_FOUND)?;
+    let volume = find_signed_volume(&state, &path.vol_id, &path.sig)?;
     let (width, height) = slice_dims(&volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
     let max_slice = slice_count(&volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
     if path.slice >= max_slice {
         return Err(StatusCode::RANGE_NOT_SATISFIABLE);
     }
     let service_id = format!(
-        "{}/iiif/image/{}/{}/{}",
+        "{}/iiif/image/{}/{}/{}/{}",
         state.base_url,
         url_component(&volume.id),
+        volume_url_token(&volume),
         path.axis,
         path.slice
     );
@@ -1506,7 +1519,7 @@ async fn image_tile(
     Query(query): Query<ImageQuery>,
     State(state): State<AppState>,
 ) -> Result<Response, StatusCode> {
-    let volume = find_volume(&state, &path.vol_id).ok_or(StatusCode::NOT_FOUND)?;
+    let volume = find_signed_volume(&state, &path.vol_id, &path.sig)?;
     let (width, height) = slice_dims(&volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
     let max_slice = slice_count(&volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
     if path.slice >= max_slice {
@@ -1524,9 +1537,13 @@ async fn image_tile(
         HeaderValue::from_static("public, max-age=300"),
     );
 
+    // Keyed on the volume's token, not its id: ids repeat across datasets, and a
+    // render still in flight for the previous dataset must not land under a key
+    // the new dataset would hit.
     let cache_key = format!(
-        "{}:{}:{}:{}:{}:{}:{:?}:{}",
+        "{}:{}:{}:{}:{}:{}:{}:{:?}:{}",
         path.vol_id,
+        volume_url_token(&volume),
         path.axis,
         path.slice,
         path.region,
@@ -2011,11 +2028,65 @@ fn discover_volumes_in_root(root: &FsPath, max_volumes: usize) -> Vec<VolumeEntr
     collect_nifti_paths(root, &mut paths, max_volumes);
     paths.sort();
 
-    paths
+    let mut volumes: Vec<VolumeEntry> = paths
         .iter()
         .filter_map(|path| volume_entry(path, root))
         .take(max_volumes)
-        .collect()
+        .collect();
+    disambiguate_volume_ids(&mut volumes, root);
+    volumes
+}
+
+/// Make discovered ids unique. `volume_id()` maps `x.nii` beside `x.nii.gz`, or
+/// `a__b.nii` beside `a/b.nii`, to the same id. Ids are persisted in
+/// `.nvbundle`s, so only colliding entries change: in relative-path order the
+/// first keeps the plain id and each later one gets `~` plus an FNV-1a hash of
+/// its relative path (with extension). Mirrored by `bundleVolumeIds()` in
+/// src/domain/bundle.ts; keep the two in sync.
+fn disambiguate_volume_ids(volumes: &mut [VolumeEntry], root: &FsPath) {
+    let relative_path = |volume: &VolumeEntry| -> String {
+        let path = volume.source_path.as_deref().unwrap_or(FsPath::new(""));
+        path.strip_prefix(root)
+            .unwrap_or(path)
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    let mut order: Vec<usize> = (0..volumes.len()).collect();
+    order.sort_by_cached_key(|&index| relative_path(&volumes[index]));
+
+    let mut taken: HashSet<String> = volumes.iter().map(|volume| volume.id.clone()).collect();
+    let mut kept = HashSet::new();
+    for index in order {
+        if kept.insert(volumes[index].id.clone()) {
+            continue;
+        }
+        let base = format!(
+            "{}~{:08x}",
+            volumes[index].id,
+            fnv1a_32(relative_path(&volumes[index]).as_bytes())
+        );
+        let mut candidate = base.clone();
+        let mut suffix = 2;
+        while taken.contains(&candidate) {
+            candidate = format!("{base}_{suffix}");
+            suffix += 1;
+        }
+        taken.insert(candidate.clone());
+        kept.insert(candidate.clone());
+        volumes[index].id = candidate;
+    }
+}
+
+/// 32-bit FNV-1a; small enough to mirror exactly in TypeScript.
+fn fnv1a_32(bytes: &[u8]) -> u32 {
+    let mut hash: u32 = 0x811c9dc5;
+    for byte in bytes {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
 }
 
 fn collect_nifti_paths(root: &FsPath, paths: &mut Vec<PathBuf>, max_volumes: usize) {
@@ -2142,7 +2213,10 @@ fn volume_levels(base_url: &str, encoded_id: &str, volume: &VolumeEntry) -> Vec<
             let raw = if level == 0 {
                 raw_volume_url(base_url, encoded_id, volume)
             } else {
-                format!("{base_url}/volumes/{encoded_id}/levels/{level}/raw.nii")
+                format!(
+                    "{base_url}/volumes/{encoded_id}/{}/levels/{level}/raw.nii",
+                    volume_url_token(volume)
+                )
             };
 
             json!({
@@ -2198,9 +2272,10 @@ fn is_nifti_path(path: &FsPath) -> bool {
 
 fn raw_volume_url(base_url: &str, encoded_id: &str, volume: &VolumeEntry) -> String {
     format!(
-        "{}/volumes/{}/raw{}",
+        "{}/volumes/{}/{}/raw{}",
         base_url,
         encoded_id,
+        volume_url_token(volume),
         raw_volume_suffix(volume.source_path.as_deref())
     )
 }
@@ -2549,10 +2624,42 @@ fn read_json_sidecar(path: &FsPath) -> Option<Value> {
 }
 
 fn find_volume(state: &AppState, vol_id: &str) -> Option<VolumeEntry> {
-    lock_recover(&state.volumes)
-        .iter()
-        .find(|volume| volume.id == vol_id)
-        .cloned()
+    volume_by_id(&lock_recover(&state.volumes), vol_id).cloned()
+}
+
+fn volume_by_id<'a>(volumes: &'a [VolumeEntry], vol_id: &str) -> Option<&'a VolumeEntry> {
+    volumes.iter().find(|volume| volume.id == vol_id)
+}
+
+/// Look up a volume for a byte-serving route, rejecting a stale `sig`. Ids
+/// repeat across datasets, so without this a request still in flight for the
+/// previous dataset would be answered with the new dataset's bytes, and the
+/// webview would cache them under the old dataset's URL.
+fn find_signed_volume(
+    state: &AppState,
+    vol_id: &str,
+    sig: &str,
+) -> Result<VolumeEntry, StatusCode> {
+    find_volume(state, vol_id)
+        .filter(|volume| volume_url_token(volume) == sig)
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+/// Short token identifying this exact file version, put in every byte-serving
+/// URL. Derived from the discovery-time `cache_signature` (absolute path, so
+/// the dataset root, plus size, mtime and content hash), which makes the URL
+/// content-addressed: safe to HTTP-cache even though volume ids repeat across
+/// datasets. Not persisted, so `DefaultHasher` is fine here.
+fn volume_url_token(volume: &VolumeEntry) -> String {
+    let mut hasher = DefaultHasher::new();
+    match &volume.cache_signature {
+        Some(signature) => signature.hash(&mut hasher),
+        None => {
+            volume.id.hash(&mut hasher);
+            volume.source_path.hash(&mut hasher);
+        }
+    }
+    format!("{:016x}", hasher.finish())
 }
 
 /// The currently-open dataset root. Every volume in the store belongs to it, so
@@ -3737,4 +3844,179 @@ fn escape_xml(value: &str) -> String {
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::{write::GzEncoder, Compression};
+
+    /// A fresh, empty scratch dir under the system temp dir.
+    fn scratch_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("neurovue-test-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A minimal uint8 NIfTI-1 volume; `fill` makes otherwise-equal files differ.
+    fn nifti_bytes(shape: [i16; 3], fill: u8) -> Vec<u8> {
+        let mut header = [0_u8; 348];
+        header[0..4].copy_from_slice(&348_i32.to_le_bytes());
+        header[40..42].copy_from_slice(&3_i16.to_le_bytes());
+        for (axis, dim) in shape.iter().enumerate() {
+            let offset = 42 + axis * 2;
+            header[offset..offset + 2].copy_from_slice(&dim.to_le_bytes());
+        }
+        header[70..72].copy_from_slice(&2_i16.to_le_bytes());
+        header[72..74].copy_from_slice(&8_i16.to_le_bytes());
+        for offset in [80, 84, 88] {
+            header[offset..offset + 4].copy_from_slice(&1.0_f32.to_le_bytes());
+        }
+        header[108..112].copy_from_slice(&352.0_f32.to_le_bytes());
+        header[112..116].copy_from_slice(&1.0_f32.to_le_bytes());
+        header[344..348].copy_from_slice(b"n+1\0");
+        let mut bytes = header.to_vec();
+        bytes.extend_from_slice(&[0_u8; 4]);
+        let voxels = shape.iter().map(|dim| *dim as usize).product::<usize>();
+        bytes.extend(std::iter::repeat(fill).take(voxels));
+        bytes
+    }
+
+    fn write_nifti(path: &FsPath, shape: [i16; 3], fill: u8) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let bytes = nifti_bytes(shape, fill);
+        if path.to_string_lossy().ends_with(".gz") {
+            let mut encoder = GzEncoder::new(File::create(path).unwrap(), Compression::fast());
+            encoder.write_all(&bytes).unwrap();
+            encoder.finish().unwrap();
+        } else {
+            fs::write(path, bytes).unwrap();
+        }
+    }
+
+    fn manifest_urls(volume: &VolumeEntry) -> Vec<String> {
+        let base = "http://127.0.0.1:1234";
+        let encoded = url_component(&volume.id);
+        let mut urls = vec![raw_volume_url(base, &encoded, volume)];
+        urls.extend(
+            volume_levels(base, &encoded, volume)
+                .iter()
+                .map(|level| level["raw"].as_str().unwrap().to_string()),
+        );
+        urls
+    }
+
+    #[test]
+    fn same_layout_datasets_get_distinct_urls_and_cache_keys() {
+        let root_a = scratch_dir("dataset-a");
+        let root_b = scratch_dir("dataset-b");
+        let relative = "sub-01/anat/sub-01_T1w.nii.gz";
+        write_nifti(&root_a.join(relative), [16, 16, 16], 1);
+        // Same relative path and the same bytes: only the dataset root differs.
+        write_nifti(&root_b.join(relative), [16, 16, 16], 1);
+
+        let a = discover_volumes_in_root(&root_a, 16);
+        let b = discover_volumes_in_root(&root_b, 16);
+        assert_eq!(a.len(), 1);
+        assert_eq!(b.len(), 1);
+        assert_eq!(a[0].id, b[0].id, "ids are dataset-relative by design");
+
+        assert_ne!(volume_url_token(&a[0]), volume_url_token(&b[0]));
+        assert_ne!(source_signature(&a[0]), source_signature(&b[0]));
+        let urls_a = manifest_urls(&a[0]);
+        let urls_b = manifest_urls(&b[0]);
+        assert!(urls_a.len() > 1, "expected pyramid level URLs too");
+        for url in &urls_a {
+            assert!(!urls_b.contains(url), "{url} is shared across datasets");
+            assert!(url.contains(&volume_url_token(&a[0])));
+        }
+
+        // Rewriting the file in place yields a new token on the next discovery.
+        write_nifti(&root_a.join(relative), [16, 16, 16], 2);
+        let a_rewritten = discover_volumes_in_root(&root_a, 16);
+        assert_ne!(volume_url_token(&a[0]), volume_url_token(&a_rewritten[0]));
+
+        let _ = fs::remove_dir_all(&root_a);
+        let _ = fs::remove_dir_all(&root_b);
+    }
+
+    #[test]
+    fn colliding_ids_are_disambiguated_and_resolve_to_their_own_file() {
+        let root = scratch_dir("collisions");
+        write_nifti(&root.join("sub-01/brain.nii"), [20, 20, 20], 1);
+        write_nifti(&root.join("sub-01/brain.nii.gz"), [12, 12, 12], 2);
+        write_nifti(&root.join("sub-01__brain.nii.gz"), [10, 10, 10], 3);
+        write_nifti(&root.join("sub-02/anat/sub-02_T1w.nii.gz"), [8, 8, 8], 4);
+
+        let volumes = discover_volumes_in_root(&root, 16);
+        assert_eq!(volumes.len(), 4);
+        let ids: HashSet<_> = volumes.iter().map(|volume| volume.id.as_str()).collect();
+        assert_eq!(ids.len(), 4, "ids must be unique: {ids:?}");
+
+        let id_for = |relative: &str| -> String {
+            volumes
+                .iter()
+                .find(|volume| volume.source_path.as_deref() == Some(&*root.join(relative)))
+                .unwrap()
+                .id
+                .clone()
+        };
+        // First in relative-path order keeps the old plain id.
+        assert_eq!(id_for("sub-01/brain.nii"), "sub-01__brain");
+        assert_eq!(
+            id_for("sub-01/brain.nii.gz"),
+            format!("sub-01__brain~{:08x}", fnv1a_32(b"sub-01/brain.nii.gz"))
+        );
+        assert_eq!(
+            id_for("sub-01__brain.nii.gz"),
+            format!("sub-01__brain~{:08x}", fnv1a_32(b"sub-01__brain.nii.gz"))
+        );
+
+        // Each id resolves (the find_volume lookup) to its own file and bytes.
+        for (relative, shape) in [
+            ("sub-01/brain.nii", [20, 20, 20]),
+            ("sub-01/brain.nii.gz", [12, 12, 12]),
+            ("sub-01__brain.nii.gz", [10, 10, 10]),
+        ] {
+            let id = id_for(relative);
+            let found = volume_by_id(&volumes, &id).unwrap();
+            assert_eq!(found.source_path.as_deref(), Some(&*root.join(relative)));
+            assert_eq!(found.shape, shape);
+        }
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn non_colliding_ids_match_the_old_scheme() {
+        let root = scratch_dir("plain-ids");
+        write_nifti(&root.join("sub-01/anat/sub-01_T1w.nii.gz"), [8, 8, 8], 1);
+        write_nifti(&root.join("sub-01/func/sub-01_bold.nii"), [8, 8, 8], 2);
+        write_nifti(&root.join("mask.nii.gz"), [8, 8, 8], 3);
+
+        let mut ids: Vec<_> = discover_volumes_in_root(&root, 16)
+            .into_iter()
+            .map(|volume| volume.id)
+            .collect();
+        ids.sort();
+        assert_eq!(
+            ids,
+            vec![
+                "mask".to_string(),
+                "sub-01__anat__sub-01_T1w".to_string(),
+                "sub-01__func__sub-01_bold".to_string(),
+            ]
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn fnv1a_32_matches_reference_vectors() {
+        // Shared with bundleVolumeIds() in bundle.ts.
+        assert_eq!(fnv1a_32(b""), 0x811c9dc5);
+        assert_eq!(fnv1a_32(b"a"), 0xe40c292c);
+        assert_eq!(fnv1a_32(b"foobar"), 0xbf9cf968);
+    }
 }

@@ -76,7 +76,7 @@ import {
   type BundleViewState,
   buildBundleViewState,
   bundleVerifyFailures,
-  bundleVolumeId,
+  bundleVolumeIds,
   exportDatasetBundle,
   formatBundleBytes,
   isBundlePath,
@@ -827,8 +827,11 @@ export function App(): JSX.Element {
 
     // Map each recorded (original-dataset) id → its freshly-registered id.
     const remap = new Map<string, string>()
+    const newIds = bundleVolumeIds(
+      bundle.manifest.volumes.map((volume) => volume.data),
+    )
     for (const volume of bundle.manifest.volumes) {
-      remap.set(volume.id, bundleVolumeId(volume.data))
+      remap.set(volume.id, newIds.get(volume.data) ?? volume.id)
     }
 
     const view = bundle.manifest.view

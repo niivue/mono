@@ -270,13 +270,56 @@ export async function readBundle(path: string): Promise<BundleReadResult> {
 }
 
 /**
- * The server volume id a bundle data file gets once its `data/` dir is opened
- * as a dataset. Mirrors Rust `volume_id()`: the filename stem (relative to the
- * `data/` root, which is flat) minus the `.nii` / `.nii.gz` extension.
+ * The server volume ids a bundle's data files get once its `data/` dir is
+ * opened as a dataset, keyed by data path. Mirrors Rust `volume_id()` +
+ * `disambiguate_volume_ids()`: the filename stem (relative to the `data/` root,
+ * which is flat) minus the `.nii` / `.nii.gz` extension; when stems collide
+ * (`x.nii` beside `x.nii.gz`), the first filename in sort order keeps the plain
+ * stem and each later one gets `~` + the 8-hex FNV-1a hash of its filename.
  */
-export function bundleVolumeId(dataRelPath: string): string {
-  const base = dataRelPath.split('/').pop() ?? dataRelPath
-  return base.replace(/\.nii\.gz$/i, '').replace(/\.nii$/i, '')
+export function bundleVolumeIds(dataRelPaths: string[]): Map<string, string> {
+  const fileNames = new Map(
+    dataRelPaths.map((path) => [path, path.split('/').pop() ?? path]),
+  )
+  const stems = new Map(
+    [...fileNames].map(([path, name]) => [
+      path,
+      name.replace(/\.nii\.gz$/, '').replace(/\.nii$/, ''),
+    ]),
+  )
+  const taken = new Set(stems.values())
+  const kept = new Set<string>()
+  const ids = new Map<string, string>()
+  const ordered = [...fileNames].sort(([, a], [, b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  )
+  for (const [path, name] of ordered) {
+    const stem = stems.get(path) ?? name
+    if (!kept.has(stem)) {
+      kept.add(stem)
+      ids.set(path, stem)
+      continue
+    }
+    const base = `${stem}~${fnv1a32Hex(name)}`
+    let candidate = base
+    for (let suffix = 2; taken.has(candidate); suffix++) {
+      candidate = `${base}_${suffix}`
+    }
+    taken.add(candidate)
+    kept.add(candidate)
+    ids.set(path, candidate)
+  }
+  return ids
+}
+
+/** 32-bit FNV-1a over UTF-8 bytes as 8 hex digits; matches Rust `fnv1a_32`. */
+function fnv1a32Hex(value: string): string {
+  let hash = 0x811c9dc5
+  for (const byte of new TextEncoder().encode(value)) {
+    hash ^= byte
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
 }
 
 /** Count the files in a verification list that failed the integrity check. */

@@ -52,7 +52,7 @@ jobs:
               apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           lfs: true
 
@@ -86,7 +86,7 @@ jobs:
         working-directory: apps/desktop/src-tauri
         run: cargo test
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: neurovue-${{ matrix.name }}
           path: ${{ matrix.bundle }}

@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="NeuroVue app icon">
+  <defs>
+    <linearGradient id="background" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#24261c"/>
+      <stop offset="0.48" stop-color="#12140f"/>
+      <stop offset="1" stop-color="#050604"/>
+    </linearGradient>
+    <radialGradient id="field" cx="50%" cy="40%" r="58%">
+      <stop offset="0" stop-color="#73c69b" stop-opacity="0.18"/>
+      <stop offset="0.44" stop-color="#8ea8ff" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#050604" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="tileTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eff4d6"/>
+      <stop offset="0.34" stop-color="#9fd8ae"/>
+      <stop offset="0.72" stop-color="#52756e"/>
+      <stop offset="1" stop-color="#24342f"/>
+    </linearGradient>
+    <linearGradient id="tileLeft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#73c69b"/>
+      <stop offset="0.52" stop-color="#365851"/>
+      <stop offset="1" stop-color="#0a0d0a"/>
+    </linearGradient>
+    <linearGradient id="tileRight" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0cb65"/>
+      <stop offset="0.46" stop-color="#d7a642"/>
+      <stop offset="1" stop-color="#2b200f"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <path d="M178 64h668c74 0 114 40 114 114v668c0 74-40 114-114 114H178c-74 0-114-40-114-114V178C64 104 104 64 178 64Z"/>
+    </clipPath>
+    <path id="tileTopPath" d="M60 2 116 30 60 58 4 30Z"/>
+    <g id="tileBlock">
+      <use href="#tileTopPath" fill="url(#tileTop)"/>
+      <path d="M4 30 60 58v30L4 60Z" fill="url(#tileLeft)"/>
+      <path d="M116 30 60 58v30l56-28Z" fill="url(#tileRight)"/>
+      <use href="#tileTopPath" fill="none" stroke="#f0eee2" stroke-width="4" stroke-opacity="0.3" stroke-linejoin="round"/>
+      <path d="M4 60 60 88l56-28" fill="none" stroke="#050604" stroke-width="4" stroke-opacity="0.28" stroke-linejoin="round"/>
+    </g>
+    <g id="axialBrainGlyph" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M0-25c-32 0-59 14-59 33 0 22 29 36 59 30 30 6 59-8 59-30 0-19-27-33-59-33Z"
+        fill="#f4f0c6"
+        fill-opacity="0.86"
+        stroke="#050604"
+        stroke-opacity="0.36"
+        stroke-width="6"
+      />
+      <path d="M-45-5c14-9 31-10 45-2M45-5C31-14 14-15 0-7" stroke="#73c69b" stroke-opacity="0.78" stroke-width="6"/>
+      <path d="M-48 13c16-7 33-6 48 3M48 13c-16-7-33-6-48 3" stroke="#24342f" stroke-opacity="0.62" stroke-width="5"/>
+      <path d="M-29 26c10-4 20-4 29 1M29 26c-10-4-20-4-29 1" stroke="#d7a642" stroke-opacity="0.72" stroke-width="4"/>
+    </g>
+    <clipPath id="topImageClip">
+      <use href="#tileTopPath" transform="translate(437 232.5) scale(1.25)"/>
+    </clipPath>
+    <clipPath id="middleImageClip">
+      <use href="#tileTopPath" transform="translate(465.2 388.6) scale(0.78)"/>
+      <use href="#tileTopPath" transform="translate(551.2 431.6) scale(0.78)"/>
+      <use href="#tileTopPath" transform="translate(379.2 431.6) scale(0.78)"/>
+      <use href="#tileTopPath" transform="translate(465.2 474.6) scale(0.78)"/>
+    </clipPath>
+    <clipPath id="bottomImageClip">
+      <use href="#tileTopPath" transform="translate(484.4 559.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(552.4 593.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(416.4 593.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(620.4 627.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(484.4 627.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(348.4 627.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(688.4 661.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(552.4 661.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(416.4 661.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(280.4 661.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(620.4 695.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(484.4 695.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(348.4 695.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(552.4 729.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(416.4 729.2) scale(0.46)"/>
+      <use href="#tileTopPath" transform="translate(484.4 763.2) scale(0.46)"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#background)"/>
+    <rect width="1024" height="1024" fill="url(#field)"/>
+
+    <g opacity="0.15">
+      <path d="M128 270h768M128 392h768M128 514h768M128 636h768M128 758h768" stroke="#f0eee2" stroke-width="3"/>
+      <path d="M262 128v768M384 128v768M506 128v768M628 128v768M750 128v768" stroke="#f0eee2" stroke-width="3"/>
+    </g>
+
+    <g>
+      <g opacity="0.92">
+        <use href="#tileBlock" transform="translate(484.4 559.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(552.4 593.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(416.4 593.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(620.4 627.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(484.4 627.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(348.4 627.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(688.4 661.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(552.4 661.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(416.4 661.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(280.4 661.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(620.4 695.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(484.4 695.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(348.4 695.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(552.4 729.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(416.4 729.2) scale(0.46)"/>
+        <use href="#tileBlock" transform="translate(484.4 763.2) scale(0.46)"/>
+      </g>
+      <g clip-path="url(#bottomImageClip)">
+        <use href="#axialBrainGlyph" transform="translate(512 674) scale(3.15)"/>
+      </g>
+
+      <g opacity="0.96">
+        <use href="#tileBlock" transform="translate(465.2 388.6) scale(0.78)"/>
+        <use href="#tileBlock" transform="translate(551.2 431.6) scale(0.78)"/>
+        <use href="#tileBlock" transform="translate(379.2 431.6) scale(0.78)"/>
+        <use href="#tileBlock" transform="translate(465.2 474.6) scale(0.78)"/>
+      </g>
+      <g clip-path="url(#middleImageClip)">
+        <use href="#axialBrainGlyph" transform="translate(512 455) scale(1.78)"/>
+      </g>
+
+      <use href="#tileBlock" transform="translate(437 232.5) scale(1.25)"/>
+      <g clip-path="url(#topImageClip)">
+        <use href="#axialBrainGlyph" transform="translate(512 272) scale(0.96)"/>
+      </g>
+    </g>
+
+    <path
+      d="M178 64h668c74 0 114 40 114 114v668c0 74-40 114-114 114H178c-74 0-114-40-114-114V178C64 104 104 64 178 64Z"
+      fill="none"
+      stroke="#f0eee2"
+      stroke-opacity="0.08"
+      stroke-width="8"
+    />
+  </g>
+</svg>

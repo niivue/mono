@@ -1,0 +1,376 @@
+// niimath (a native sidecar) and the integrated terminal (a PTY/shell) both
+// spawn subprocesses, which iOS/Android forbid, so both modules are desktop-only.
+#[cfg(desktop)]
+mod niimath;
+#[cfg(desktop)]
+mod terminal;
+mod share;
+mod volumetric_server;
+
+use serde::Serialize;
+use std::path::Path;
+use tauri::Manager;
+// The app menu bar is a desktop-only concept; iOS/Android have no `tauri::menu`.
+#[cfg(desktop)]
+use tauri::menu::{Menu, MenuItem, Submenu};
+#[cfg(desktop)]
+use tauri::Emitter;
+
+#[cfg(desktop)]
+const OPEN_DIRECTORY_MENU_ID: &str = "neurovue-open-directory";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NeuroVueServerInfo {
+    url: String,
+    port: u16,
+    volume_count: usize,
+    dataset_root: Option<String>,
+    cache_root: String,
+    bids_name: Option<String>,
+    bids_version: Option<String>,
+    bids_dataset_doi: Option<String>,
+    warm_progress: volumetric_server::WarmProgressSnapshot,
+}
+
+pub(crate) struct NeuroVueState {
+    pub(crate) server: volumetric_server::ServerHandle,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DatasetOpenResult {
+    url: String,
+    port: u16,
+    volume_count: usize,
+    dataset_root: String,
+    cache_root: String,
+    bids_name: Option<String>,
+    bids_version: Option<String>,
+    bids_dataset_doi: Option<String>,
+    warm_progress: volumetric_server::WarmProgressSnapshot,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlayAddResult {
+    id: String,
+    label: String,
+    volume_count: usize,
+    warm_progress: volumetric_server::WarmProgressSnapshot,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportBundleResult {
+    bundle_path: String,
+    volume_count: usize,
+    total_bytes: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeCapabilities {
+    terminal_available: bool,
+    native_niimath_available: bool,
+    airdrop_available: bool,
+}
+
+#[tauri::command]
+fn neurovue_runtime_capabilities() -> RuntimeCapabilities {
+    RuntimeCapabilities {
+        terminal_available: cfg!(desktop),
+        native_niimath_available: cfg!(desktop),
+        airdrop_available: cfg!(target_os = "macos") || cfg!(target_os = "ios"),
+    }
+}
+
+#[tauri::command]
+fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServerInfo {
+    let bids = volumetric_server::bids_dataset_info(&state.server);
+    NeuroVueServerInfo {
+        url: state.server.url.clone(),
+        port: state.server.port,
+        volume_count: volumetric_server::volume_count(&state.server),
+        dataset_root: volumetric_server::dataset_root(&state.server)
+            .map(|path| path.display().to_string()),
+        cache_root: volumetric_server::cache_root().display().to_string(),
+        bids_name: bids.as_ref().and_then(|info| info.name.clone()),
+        bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
+        bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
+        warm_progress: volumetric_server::warm_progress(&state.server),
+    }
+}
+
+#[tauri::command]
+async fn open_dataset_path(
+    state: tauri::State<'_, NeuroVueState>,
+    path: String,
+) -> Result<DatasetOpenResult, String> {
+    let path = normalize_local_path(&path);
+    let server = state.server.clone();
+    tauri::async_runtime::spawn_blocking(move || open_dataset_at_path(&server, Path::new(&path)))
+        .await
+        .map_err(|error| format!("open_dataset_path: join error: {error}"))?
+}
+
+/// The iOS document picker hands back a `file://` URL (Tauri copies the picked
+/// file into the app's Inbox first), so convert it to a plain, percent-decoded
+/// filesystem path. Desktop paths have no scheme, so this is a no-op there.
+fn normalize_local_path(raw: &str) -> String {
+    let without_scheme = raw.strip_prefix("file://").unwrap_or(raw);
+    percent_decode(without_scheme)
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[tauri::command]
+async fn add_overlay_volume_path(
+    state: tauri::State<'_, NeuroVueState>,
+    path: String,
+) -> Result<OverlayAddResult, String> {
+    let path = normalize_local_path(&path);
+    let server = state.server.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let registered = volumetric_server::register_overlay_volume(&server, Path::new(&path))?;
+        Ok(OverlayAddResult {
+            id: registered.id,
+            label: registered.label,
+            volume_count: volumetric_server::volume_count(&server),
+            warm_progress: volumetric_server::warm_progress(&server),
+        })
+    })
+    .await
+    .map_err(|error| format!("add_overlay_volume_path: join error: {error}"))?
+}
+
+#[tauri::command]
+async fn export_dataset_bundle(
+    state: tauri::State<'_, NeuroVueState>,
+    dest_path: String,
+    volume_ids: Vec<String>,
+    view: serde_json::Value,
+    created_at: String,
+) -> Result<ExportBundleResult, String> {
+    let server = state.server.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = volumetric_server::export_bundle(
+            &server,
+            Path::new(&dest_path),
+            &volume_ids,
+            &view,
+            &created_at,
+        )?;
+        Ok(ExportBundleResult {
+            bundle_path: result.bundle_path,
+            volume_count: result.volume_count,
+            total_bytes: result.total_bytes,
+        })
+    })
+    .await
+    .map_err(|error| format!("export_dataset_bundle: join error: {error}"))?
+}
+
+#[tauri::command]
+async fn share_view_via_airdrop(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, NeuroVueState>,
+    volume_ids: Vec<String>,
+    view: serde_json::Value,
+    created_at: String,
+    name: String,
+) -> Result<ExportBundleResult, String> {
+    let server = state.server.clone();
+    // Stage the bundle under the app cache off the main thread (a share picks no
+    // destination, unlike Save). Reuse an already-staged bundle whose inputs are
+    // unchanged so re-sharing the same dataset is instant instead of re-zipping.
+    let (result, dest) = tauri::async_runtime::spawn_blocking(move || {
+        let shares_dir = volumetric_server::cache_root().join("shares");
+        let name = sanitize_share_name(&name);
+        let dest = shares_dir.join(format!("{name}.nvbundle"));
+        let sig_path = shares_dir.join(format!("{name}.nvbundle.sig"));
+        let key = volumetric_server::share_cache_key(&server, &volume_ids);
+
+        if dest.is_file() && std::fs::read_to_string(&sig_path).is_ok_and(|sig| sig == key) {
+            let total_bytes = std::fs::metadata(&dest).map(|meta| meta.len()).unwrap_or(0);
+            return Ok::<_, String>((
+                volumetric_server::BundleExportResult {
+                    bundle_path: dest.display().to_string(),
+                    volume_count: volume_ids.len(),
+                    total_bytes,
+                },
+                dest,
+            ));
+        }
+
+        volumetric_server::prune_share_cache(&shares_dir, 4);
+        let result =
+            volumetric_server::export_bundle(&server, &dest, &volume_ids, &view, &created_at)?;
+        let _ = std::fs::write(&sig_path, &key); // export_bundle created shares_dir
+        Ok::<_, String>((result, dest))
+    })
+    .await
+    .map_err(|error| format!("share_view_via_airdrop: join error: {error}"))??;
+
+    share::share_via_airdrop(&app, vec![dest.display().to_string()])?;
+
+    Ok(ExportBundleResult {
+        bundle_path: result.bundle_path,
+        volume_count: result.volume_count,
+        total_bytes: result.total_bytes,
+    })
+}
+
+/// Keep a share bundle's directory name to a safe single path segment.
+fn sanitize_share_name(name: &str) -> String {
+    let cleaned: String = name
+        .trim()
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .collect();
+    let trimmed = cleaned.trim_matches('-');
+    if trimmed.is_empty() {
+        "neurovue-bundle".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+#[tauri::command]
+async fn read_bundle_manifest(path: String) -> Result<serde_json::Value, String> {
+    let path = normalize_local_path(&path);
+    tauri::async_runtime::spawn_blocking(move || {
+        volumetric_server::read_bundle(Path::new(&path))
+    })
+    .await
+    .map_err(|error| format!("read_bundle_manifest: join error: {error}"))?
+}
+
+fn open_dataset_at_path(
+    server: &volumetric_server::ServerHandle,
+    root: &Path,
+) -> Result<DatasetOpenResult, String> {
+    let volume_count = volumetric_server::open_dataset_root(server, root)?;
+    let dataset_root = volumetric_server::dataset_root(server)
+        .unwrap_or_else(|| root.to_path_buf())
+        .display()
+        .to_string();
+    let bids = volumetric_server::bids_dataset_info(server);
+
+    Ok(DatasetOpenResult {
+        url: server.url.clone(),
+        port: server.port,
+        volume_count,
+        dataset_root,
+        cache_root: volumetric_server::cache_root().display().to_string(),
+        bids_name: bids.as_ref().and_then(|info| info.name.clone()),
+        bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
+        bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
+        warm_progress: volumetric_server::warm_progress(server),
+    })
+}
+
+#[cfg(desktop)]
+fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let menu = Menu::default(handle)?;
+    let open_directory = MenuItem::with_id(
+        handle,
+        OPEN_DIRECTORY_MENU_ID,
+        "Open Directory...",
+        true,
+        Some("CmdOrCtrl+O"),
+    )?;
+    let dataset_menu = Submenu::with_items(handle, "Dataset", true, &[&open_directory])?;
+    menu.insert(&dataset_menu, 1)?;
+    Ok(menu)
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // Point dataset discovery at the bundled MNI152 so machines without
+            // the dev checkouts — notably iOS, whose sandbox has no `~/Dev` — still
+            // open with a working default volume. Set before the server spawns so
+            // `discovery_roots()` picks it up. Resolving here (not at module load)
+            // is why the server spawns in `setup`: it needs the AppHandle's
+            // resource dir.
+            if let Ok(path) = app
+                .path()
+                .resolve("resources/mni152.nii.gz", tauri::path::BaseDirectory::Resource)
+            {
+                if path.is_file() {
+                    std::env::set_var("NEUROVUE_DEFAULT_VOLUME", path);
+                }
+            }
+            app.manage(NeuroVueState {
+                server: volumetric_server::spawn_default(),
+            });
+            Ok(())
+        });
+
+    // The menu bar (and its "Open Directory" item) is desktop-only; on mobile
+    // the frontend opens datasets through an on-screen control instead.
+    #[cfg(desktop)]
+    let builder = builder.menu(neurovue_menu).on_menu_event(|app, event| {
+        if event.id().as_ref() == OPEN_DIRECTORY_MENU_ID {
+            let _ = app.emit("neurovue-open-directory", ());
+        }
+    });
+
+    // niimath (sidecar) and terminal (PTY) commands are desktop-only; mobile
+    // registers only the portable commands.
+    #[cfg(desktop)]
+    let builder = builder
+        .manage(terminal::TerminalState::default())
+        .invoke_handler(tauri::generate_handler![
+            neurovue_runtime_capabilities,
+            neurovue_server_info,
+            open_dataset_path,
+            add_overlay_volume_path,
+            export_dataset_bundle,
+            read_bundle_manifest,
+            share_view_via_airdrop,
+            niimath::validate_niimath_mask_path,
+            niimath::run_niimath_task,
+            terminal::terminal_start,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_kill,
+            terminal::discover_python_interpreters,
+            terminal::inspect_python_interpreter
+        ]);
+    #[cfg(not(desktop))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        neurovue_runtime_capabilities,
+        neurovue_server_info,
+        open_dataset_path,
+        add_overlay_volume_path,
+        export_dataset_bundle,
+        read_bundle_manifest,
+        share_view_via_airdrop
+    ]);
+
+    builder
+        .run(tauri::generate_context!())
+        .expect("error while running NeuroVue");
+}

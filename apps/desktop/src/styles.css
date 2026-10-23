@@ -1,0 +1,2705 @@
+:root {
+  color: #f0eee2;
+  background: #10110f;
+  font-family:
+    "Avenir Next",
+    "Gill Sans",
+    "Trebuchet MS",
+    system-ui,
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #f0eee2;
+  --muted: #a6a18f;
+  --faint: #6f6a5b;
+  --panel: #181914;
+  --panel-2: #202117;
+  --panel-3: #12130f;
+  --line: #343426;
+  --amber: #d7a642;
+  --green: #73c69b;
+  --blue: #8ea8ff;
+  --association: #c59cff;
+  --danger: #e26d5a;
+  --shadow: rgba(0, 0, 0, 0.42);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 0;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(215, 166, 66, 0.07), transparent 34%),
+    linear-gradient(180deg, #151611, #090a08);
+  color: var(--ink);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+.nv-app {
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  /* Keep the UI clear of the notch / home indicator (viewport-fit=cover lets
+     the webview fill the whole screen). Zero on desktop, so no effect there. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.nv-app.has-terminal {
+  grid-template-rows: 64px minmax(0, 1fr) var(--terminal-height, 280px) 34px;
+}
+
+.nv-topbar,
+.nv-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #1d1e18, #151611);
+  box-shadow: 0 8px 30px var(--shadow);
+  z-index: 4;
+}
+
+.nv-topbar {
+  padding: 0 14px;
+}
+
+.nv-status {
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+  color: var(--muted);
+  font-size: 12px;
+  gap: 14px;
+  justify-content: flex-start;
+  padding: 0 14px;
+  box-shadow: none;
+}
+
+.nv-status > span:first-child {
+  flex: 1 1 28%;
+}
+
+.nv-status > span:last-child {
+  margin-left: auto;
+}
+
+.nv-status span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-status .nv-warm-status {
+  color: var(--amber);
+}
+
+.nv-status .nv-location-status {
+  flex: 1 2 42%;
+  color: var(--green);
+}
+
+.nv-warm-status .lucide-loader-circle {
+  animation: nv-preview-spin 0.9s linear infinite;
+}
+
+.nv-status .nv-disclaimer {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.nv-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.nv-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(215, 166, 66, 0.5);
+  background: #12130f;
+  color: var(--amber);
+}
+
+.nv-mark img {
+  width: 30px;
+  height: 30px;
+  display: block;
+}
+
+.nv-brand h1 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.nv-brand p {
+  max-width: 52vw;
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.nv-tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 74px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nv-tool-button:hover:not(:disabled),
+.nv-tool-button:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-tool-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.nv-icon-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.nv-icon-button:hover,
+.nv-volume-card:hover,
+.nv-osd-tile:hover {
+  border-color: var(--amber);
+}
+
+.nv-open-group {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.nv-recent-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  min-width: 280px;
+  max-width: 480px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: #12130f;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+}
+
+.nv-recent-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-recent-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.nv-recent-item {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 3px;
+  min-width: 0;
+}
+
+.nv-recent-item:hover,
+.nv-recent-item:focus-visible {
+  background: #1c1d18;
+  color: var(--amber);
+}
+
+.nv-recent-item-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.nv-recent-item-path {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.nv-recent-open {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.nv-recent-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.nv-recent-remove {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.nv-recent-remove:hover,
+.nv-recent-remove:focus-visible {
+  background: #1c1d18;
+  color: var(--amber);
+}
+
+.nv-select {
+  display: grid;
+  grid-template-columns: auto minmax(88px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+}
+
+.nv-select select {
+  min-width: 0;
+  border: 0;
+  outline: none;
+  appearance: none;
+  background: transparent;
+  color: var(--ink);
+}
+
+/* The inner <select> suppresses its outline, so surface keyboard focus on the
+   container instead. */
+.nv-select:focus-within {
+  border-color: var(--amber);
+}
+
+.nv-workbench {
+  --file-list-width: clamp(210px, 18vw, 270px);
+  --controls-width: clamp(260px, 24vw, 350px);
+  display: grid;
+  grid-template-columns: var(--file-list-width) minmax(0, 1fr) var(--controls-width);
+  min-height: 0;
+}
+
+.nv-workbench.is-file-list-collapsed {
+  --file-list-width: 52px;
+}
+
+.nv-workbench.is-controls-collapsed {
+  --controls-width: 52px;
+}
+
+.nv-sidebar,
+.nv-controls {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.nv-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 14px clamp(8px, 1vw, 12px);
+}
+
+.nv-sidebar.is-collapsed {
+  align-items: center;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.nv-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  border-right: 0;
+  border-left: 1px solid var(--line);
+  padding: 0 clamp(8px, 1vw, 12px) 12px;
+}
+
+.nv-controls > * {
+  flex: 0 0 auto;
+}
+
+.nv-controls-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 44px;
+}
+
+.nv-controls.is-collapsed {
+  align-items: center;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+/* Collapsed: keep only the toggle toolbar; content stays mounted (state intact). */
+.nv-controls.is-collapsed > *:not(.nv-controls-toolbar) {
+  display: none;
+}
+
+.nv-controls.is-collapsed .nv-controls-toolbar {
+  justify-content: center;
+}
+
+/* When the render is maximized, float the controls over it so clip/zoom stay
+   reachable. The maximized pane reserves --controls-width on its right so the
+   two never overlap (and the pane's own minimize button stays visible). */
+.nv-controls.is-floating {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--controls-width);
+  z-index: 61;
+}
+
+.nv-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  margin-bottom: 10px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nv-panel-heading span,
+.nv-readout h2 {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.nv-panel-heading em {
+  color: var(--green);
+  font-style: normal;
+}
+
+.nv-sidebar-heading-tools {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.nv-sidebar-toggle {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.nv-sidebar-toggle:hover,
+.nv-sidebar-toggle:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-sidebar.is-collapsed .nv-panel-heading {
+  width: 100%;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.nv-sidebar.is-collapsed .nv-panel-heading > span,
+.nv-sidebar.is-collapsed .nv-sidebar-heading-tools {
+  justify-content: center;
+  width: 100%;
+  margin-left: 0;
+}
+
+.nv-sidebar.is-collapsed .nv-sidebar-title,
+.nv-sidebar.is-collapsed .nv-panel-heading em {
+  display: none;
+}
+
+.nv-search {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--line);
+  outline: none;
+  background: #10110d;
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.nv-search:focus {
+  border-color: var(--green);
+}
+
+.nv-volume-filter {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(128px, auto);
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+}
+
+.nv-volume-filter-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: #10110d;
+  padding: 8px;
+}
+
+.nv-volume-filter-facets {
+  display: grid;
+  gap: 8px;
+  max-height: clamp(178px, 30vh, 292px);
+  min-height: 0;
+  overflow: auto;
+}
+
+.nv-filter-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nv-filter-clear {
+  min-width: 48px;
+  height: 32px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.nv-filter-clear:hover:not(:disabled),
+.nv-filter-clear:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-filter-clear:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.nv-filter-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.nv-filter-panel-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-filter-panel-title em {
+  color: var(--green);
+  font-style: normal;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.nv-filter-facet-group {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.nv-filter-facet-options {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nv-filter-facet-option {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 24px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.nv-filter-facet-option:hover {
+  background: #181914;
+  color: var(--ink);
+}
+
+.nv-filter-facet-option input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--green);
+}
+
+.nv-filter-facet-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-filter-facet-option em {
+  color: var(--faint);
+  font-style: normal;
+}
+
+.nv-volume-results-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.nv-volume-results-panel .nv-filter-panel-title {
+  margin-bottom: 8px;
+}
+
+.nv-volume-list,
+.nv-clip-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.nv-volume-list {
+  flex: 1;
+  align-content: start;
+}
+
+.nv-volume-results-panel .nv-volume-list {
+  min-height: 0;
+  overflow: auto;
+}
+
+.nv-volume-filter-details {
+  max-height: clamp(132px, 27vh, 232px);
+  overflow: auto;
+}
+
+.nv-volume-filter-details .nv-filter-panel-title {
+  margin-bottom: 8px;
+}
+
+.nv-volume-filter-details dl {
+  display: grid;
+  grid-template-columns: minmax(58px, auto) minmax(0, 1fr);
+  gap: 6px 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.nv-volume-filter-details dt {
+  color: var(--faint);
+}
+
+.nv-volume-filter-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-filter-empty {
+  border: 1px dashed #464631;
+  color: var(--faint);
+  font-size: 12px;
+  padding: 9px;
+}
+
+.nv-filter-facet-options .nv-filter-empty {
+  border: 0;
+  padding: 2px 4px;
+}
+
+.nv-volume-card {
+  display: grid;
+  grid-template-columns: clamp(44px, 4.6vw, 54px) minmax(0, 1fr);
+  gap: clamp(7px, 0.8vw, 10px);
+  width: 100%;
+  min-height: clamp(58px, 6vw, 70px);
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.nv-volume-thumb {
+  position: relative;
+  display: block;
+  width: clamp(44px, 4.6vw, 54px);
+  height: clamp(44px, 4.6vw, 54px);
+  background: #050604;
+  overflow: hidden;
+}
+
+.nv-volume-card strong,
+.nv-volume-card small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-volume-card small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.nv-volume-card.is-selected {
+  border-color: var(--amber);
+  background: #252112;
+}
+
+.nv-split-workspace {
+  --split-left: 52%;
+  display: grid;
+  grid-template-columns: minmax(160px, var(--split-left)) 12px minmax(160px, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: #080a07;
+}
+
+.nv-dataset-pane,
+.nv-niivue-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.nv-dataset-pane.is-context-active,
+.nv-niivue-pane.is-context-active {
+  box-shadow: inset 0 0 0 1px rgba(115, 198, 155, 0.35);
+}
+
+.nv-niivue-pane.is-maximized {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: var(--controls-width);
+  z-index: 60;
+  background: var(--panel);
+}
+
+.nv-render-maximize {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+}
+
+.nv-inspector-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 0 calc(clamp(8px, 1vw, 12px) * -1);
+  padding: 7px clamp(8px, 1vw, 12px);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.nv-zoom-readout {
+  margin-left: auto;
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.78);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 4px 7px;
+}
+
+.nv-wheel-mode-select {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  width: 100%;
+  margin: 10px 0;
+}
+
+.nv-sidepanel-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 10px 0 0;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.nv-sidepanel-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 34px;
+  border: 0;
+  background: #10110d;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nv-sidepanel-tabs button:hover,
+.nv-sidepanel-tabs button:focus-visible {
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-sidepanel-tabs button.is-active {
+  background: #252112;
+  color: var(--amber);
+}
+
+.nv-sidepanel-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.nv-stage-title {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  max-width: min(560px, calc(100% - 28px));
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.78);
+  color: var(--muted);
+  padding: 6px 8px;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.nv-stage-title span {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nv-stage-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-stage-title em {
+  min-width: 38px;
+  color: var(--amber);
+  font-size: 11px;
+  font-style: normal;
+  text-align: right;
+}
+
+.nv-pane-icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.nv-pane-icon-button:hover:not(:disabled),
+.nv-pane-icon-button:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-pane-icon-button:disabled {
+  cursor: default;
+  opacity: 0.36;
+}
+
+.nv-splitter {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  min-width: 12px;
+  height: 100%;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  background: #10110d;
+  color: var(--faint);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.nv-splitter:hover,
+.nv-splitter:focus-visible {
+  color: var(--amber);
+  background: #1d1e18;
+  outline: none;
+}
+
+.nv-osd-stage {
+  --grid-background: #080a07;
+  --grid-line: rgba(146, 160, 102, 0.22);
+  --osd-chrome-height: 48px;
+  --osd-footer-height: 44px;
+  --tile-padding: clamp(0px, 0.45%, 6px);
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(0deg, var(--grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 55% 42%, rgba(115, 198, 155, 0.08), transparent 42%),
+    var(--grid-background);
+  background-size: 44px 44px, 44px 44px, auto, auto;
+}
+
+.nv-osd-scrollport {
+  position: absolute;
+  inset: var(--osd-chrome-height) 0 var(--osd-footer-height);
+  overflow: auto;
+  /* Reserve the scrollbar's space permanently so clientWidth/Height don't change
+     when a scrollbar toggles. Without this, the world is re-fit to the narrower
+     width, the scrollbar disappears, it re-fits wider, and the grid shivers
+     (most visible at zoom levels sitting right on the scrollbar threshold). */
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.nv-osd-scrollport.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.nv-osd-scrollport:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: -2px;
+}
+
+.nv-osd-title {
+  top: 10px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+}
+
+.nv-osd-world {
+  position: relative;
+  margin: 22px;
+  background: rgba(8, 10, 7, 0.72);
+}
+
+.nv-osd-section {
+  position: absolute;
+  z-index: 0;
+  border: 1px solid rgba(146, 160, 102, 0.2);
+  background:
+    linear-gradient(180deg, rgba(32, 33, 23, 0.68), rgba(8, 10, 7, 0.22));
+  pointer-events: none;
+}
+
+.nv-osd-section-derived {
+  border-color: rgba(115, 198, 155, 0.28);
+  background:
+    linear-gradient(180deg, rgba(18, 35, 24, 0.72), rgba(8, 16, 10, 0.32));
+}
+
+.nv-osd-section-label {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.nv-osd-section-label span,
+.nv-osd-section-label em {
+  position: absolute;
+  top: 14px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border: 1px solid rgba(215, 166, 66, 0.28);
+  background: rgba(8, 8, 6, 0.76);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0 9px;
+  text-transform: uppercase;
+}
+
+.nv-osd-section-label span {
+  left: 22px;
+}
+
+.nv-osd-section-label em {
+  right: 22px;
+  color: var(--green);
+  font-style: normal;
+}
+
+.nv-osd-section-label-derived span,
+.nv-osd-section-label-derived em {
+  border-color: rgba(115, 198, 155, 0.32);
+}
+
+.nv-niivue-pane > .nv-render-stage {
+  width: 100%;
+  height: 100%;
+}
+
+.nv-niivue-title {
+  /* Leave room at the right for the full-screen toggle button. */
+  right: 50px;
+}
+
+.nv-osd-tile {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(146, 160, 102, 0.42);
+  background: #10120d;
+  cursor: inherit;
+  padding: var(--tile-padding);
+  text-align: left;
+}
+
+.nv-osd-image-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #050604;
+}
+
+.nv-preview-image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.92;
+}
+
+.nv-preview-image.is-pending {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nv-preview-spinner {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.nv-preview-spinner svg {
+  animation: nv-preview-spin 0.9s linear infinite;
+}
+
+@keyframes nv-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.nv-spin {
+  animation: nv-preview-spin 0.9s linear infinite;
+}
+
+.nv-osd-tile.is-selected {
+  border-color: var(--amber);
+  box-shadow:
+    inset 0 0 0 1px rgba(215, 166, 66, 0.5),
+    0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.nv-osd-tile.is-derived {
+  border-color: rgba(115, 198, 155, 0.62);
+  background: #0e1711;
+}
+
+.nv-osd-tile.is-derived .nv-osd-index {
+  border-color: rgba(142, 168, 255, 0.46);
+  color: var(--blue);
+}
+
+.nv-osd-tile.is-derived-source {
+  border-color: rgba(197, 156, 255, 0.92);
+  box-shadow:
+    inset 0 0 0 2px rgba(197, 156, 255, 0.54),
+    0 0 0 1px rgba(5, 6, 4, 0.82),
+    0 0 18px rgba(197, 156, 255, 0.2);
+}
+
+.nv-osd-tile.is-derived-source .nv-osd-index {
+  border-color: rgba(197, 156, 255, 0.68);
+  color: var(--association);
+}
+
+.nv-osd-index,
+.nv-osd-label {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(8, 8, 6, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.nv-osd-index {
+  top: 8px;
+  left: 8px;
+  border: 1px solid rgba(115, 198, 155, 0.34);
+  color: var(--green);
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+.nv-osd-label {
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  padding: 6px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-osd-stage.is-overview .nv-osd-index,
+.nv-osd-stage.is-overview .nv-osd-label {
+  display: none;
+}
+
+.nv-empty-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.nv-osd-footer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 34%);
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  height: var(--osd-footer-height);
+  border-top: 1px solid rgba(215, 166, 66, 0.2);
+  background: rgba(12, 13, 10, 0.92);
+  overflow: hidden;
+  padding: 6px 12px;
+  pointer-events: none;
+}
+
+.nv-hud {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.nv-hud span {
+  flex: 0 0 auto;
+  min-width: 68px;
+  box-sizing: border-box;
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.78);
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  overflow: hidden;
+  padding: 4px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-hud span:nth-child(1) {
+  min-width: 82px;
+}
+
+.nv-hud span:nth-child(3) {
+  min-width: 98px;
+}
+
+.nv-hud span:nth-child(5) {
+  min-width: 104px;
+}
+
+.nv-osd-source-key {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  justify-self: stretch;
+  min-width: 0;
+  width: 100%;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.nv-osd-source-key strong {
+  color: var(--association);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.nv-osd-source-key span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-osd-source-key.is-muted {
+  opacity: 0.48;
+}
+
+.nv-osd-source-swatch {
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(197, 156, 255, 0.92);
+  background: rgba(197, 156, 255, 0.18);
+  box-shadow: 0 0 12px rgba(197, 156, 255, 0.18);
+}
+
+.nv-minimap {
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.78);
+  color: var(--muted);
+  font-size: 11px;
+  backdrop-filter: blur(8px);
+}
+
+.nv-minimap {
+  position: absolute;
+  display: block;
+  right: 14px;
+  bottom: calc(var(--osd-footer-height) + 14px);
+  /* Float above the preview tiles (z-index 1) and section labels (z-index 2),
+     which share the stage's stacking context because the scrollport doesn't
+     create its own. Without this the tiles paint over and hide the minimap. */
+  z-index: 6;
+  width: 148px;
+  height: 108px;
+  appearance: none;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.nv-minimap:hover,
+.nv-minimap:focus-visible {
+  border-color: rgba(115, 198, 155, 0.56);
+  outline: none;
+}
+
+.nv-minimap-map {
+  position: absolute;
+  inset: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    rgba(5, 6, 4, 0.58);
+  background-size: 16px 16px;
+  pointer-events: none;
+}
+
+.nv-minimap-source,
+.nv-minimap-selection,
+.nv-minimap-window {
+  position: absolute;
+  pointer-events: none;
+}
+
+.nv-minimap-source {
+  border: 1px solid rgba(197, 156, 255, 0.86);
+  background: rgba(197, 156, 255, 0.2);
+}
+
+.nv-minimap-selection {
+  border: 1px solid rgba(215, 166, 66, 0.7);
+  background: rgba(215, 166, 66, 0.12);
+}
+
+.nv-minimap-window {
+  border: 1px solid var(--green);
+  background: rgba(115, 198, 155, 0.16);
+  box-shadow:
+    inset 0 0 0 1px rgba(5, 6, 4, 0.74),
+    0 0 12px rgba(115, 198, 155, 0.18);
+}
+
+.nv-render-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  contain: size layout paint;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #050604;
+  background-size: 28px 28px;
+}
+
+.nv-render-stage canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* Slice paging slider (2D single-plane modes) — the touch path for through-plane
+   navigation, overlaid at the bottom of the viewer. */
+.nv-slice-slider {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(560px, 82%);
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(12, 13, 10, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.nv-slice-slider input[type='range'] {
+  flex: 1;
+  height: 28px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.nv-slice-slider-value {
+  min-width: 56px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  text-align: right;
+}
+
+/* Clip-plane control (3D render): plane chips + a depth slider, the touch path
+   for moving clip planes (was wheel-only). Overlaid like the slice slider. */
+.nv-clip-slider {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, 88%);
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(12, 13, 10, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.nv-clip-slider-chips {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.nv-clip-slider-chips button {
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.nv-clip-slider-chips button.is-active {
+  border-color: var(--amber);
+  background: rgba(215, 166, 66, 0.18);
+  color: var(--amber);
+}
+
+.nv-clip-slider input[type='range'] {
+  flex: 1;
+  height: 28px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.nv-clip-slider input[type='range']:disabled {
+  opacity: 0.4;
+}
+
+.nv-render-snap-controls {
+  position: absolute;
+  top: 56px;
+  right: 14px;
+  z-index: 4;
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(8, 8, 6, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.nv-render-snap-controls button {
+  min-width: 42px;
+  height: 28px;
+  border: 0;
+  background: rgba(17, 17, 15, 0.82);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.nv-render-snap-controls button:hover:not(:disabled),
+.nv-render-snap-controls button:focus-visible {
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-render-snap-controls button.is-active {
+  background: #252112;
+  color: var(--amber);
+}
+
+.nv-render-snap-controls button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.nv-render-status {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  max-width: min(520px, calc(100% - 28px));
+  overflow: hidden;
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(8, 8, 6, 0.78);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 7px 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-control-section,
+.nv-clip-card,
+.nv-readout {
+  border: 1px solid var(--line);
+  background: var(--panel-3);
+  padding: clamp(9px, 1vw, 12px);
+}
+
+.nv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.nv-toggle input {
+  accent-color: var(--amber);
+}
+
+.nv-clip-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nv-clip-card.is-active {
+  border-color: rgba(197, 156, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(197, 156, 255, 0.24);
+}
+
+.nv-clip-card-header .nv-toggle,
+.nv-clip-flip {
+  margin-bottom: 0;
+}
+
+.nv-clip-card-header .nv-toggle {
+  min-width: 0;
+  margin-right: auto;
+}
+
+.nv-clip-card-header .nv-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-clip-active-badge {
+  border: 1px solid rgba(197, 156, 255, 0.52);
+  background: rgba(197, 156, 255, 0.12);
+  color: var(--association);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+
+.nv-zoom-card {
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nv-zoom-card-title {
+  margin-right: auto;
+  font-weight: 600;
+}
+
+.nv-zoom-card-hint {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-mode-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nv-mode-note strong {
+  color: var(--ink);
+}
+
+.nv-block-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 12px;
+}
+
+.nv-block-grid-option {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.nv-block-grid-option:hover:not(.is-active) {
+  border-color: rgba(215, 166, 66, 0.5);
+}
+
+.nv-block-grid-option.is-active {
+  border-color: var(--amber);
+  background: rgba(215, 166, 66, 0.18);
+  color: var(--amber);
+}
+
+.nv-block-explode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nv-block-explode-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.nv-block-explode-label em {
+  color: var(--muted);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.nv-block-explode input[type='range'] {
+  width: 100%;
+  height: 28px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.nv-block-explode input[type='range']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.nv-block-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nv-layer-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.nv-layer-select {
+  width: 100%;
+}
+
+.nv-layer-load-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid rgba(115, 198, 155, 0.34);
+  background: rgba(15, 25, 18, 0.78);
+  color: var(--green);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nv-layer-load-button:hover:not(:disabled),
+.nv-layer-load-button:focus-visible {
+  border-color: var(--green);
+  background: rgba(24, 42, 30, 0.82);
+  outline: none;
+}
+
+.nv-layer-load-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.nv-layer-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nv-layer-list-header em {
+  color: var(--green);
+  font-style: normal;
+}
+
+.nv-layer-list {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+/* Subject-mismatch warning: banner + per-row marker. */
+.nv-layer-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid rgba(215, 166, 66, 0.5);
+  border-radius: 4px;
+  background: rgba(215, 166, 66, 0.1);
+  color: var(--amber);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.nv-layer-banner > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.nv-layer-row.is-warning {
+  border-left-color: var(--amber);
+}
+.nv-layer-row-warn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--amber);
+}
+
+/* ---- Unified layer list (expandable rows) ---- */
+.nv-layer-rows {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nv-layer-row {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: rgba(16, 17, 13, 0.72);
+  overflow: hidden;
+}
+
+.nv-layer-row.is-base {
+  border-left-color: var(--faint);
+}
+.nv-layer-row.is-overlay {
+  border-left-color: var(--green);
+}
+.nv-layer-row.is-atlas {
+  border-left-color: var(--amber);
+}
+.nv-layer-row.is-expanded {
+  border-color: rgba(115, 198, 155, 0.45);
+}
+.nv-layer-row.is-expanded.is-base {
+  border-left-color: var(--faint);
+}
+.nv-layer-row.is-expanded.is-atlas {
+  border-left-color: var(--amber);
+}
+
+.nv-layer-row-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0 4px 0 2px;
+}
+
+.nv-layer-row-vis,
+.nv-layer-row-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-height: 40px;
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.nv-layer-row-vis:hover,
+.nv-layer-row-remove:hover,
+.nv-layer-row-vis:focus-visible,
+.nv-layer-row-remove:focus-visible {
+  color: var(--ink);
+  background: rgba(146, 160, 102, 0.12);
+}
+.nv-layer-row-remove:hover {
+  color: var(--danger);
+}
+.nv-layer-row.is-hidden .nv-layer-row-vis {
+  color: var(--faint);
+}
+
+.nv-layer-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  padding: 0 2px;
+}
+
+.nv-layer-row-title {
+  display: grid;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.nv-layer-row-title strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nv-layer-row-title small {
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nv-layer-role {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.nv-layer-row.is-hidden .nv-layer-row-title strong {
+  color: var(--muted);
+}
+
+.nv-layer-row-caret {
+  flex: 0 0 auto;
+  color: var(--faint);
+  transition: transform 0.15s ease;
+}
+.nv-layer-row.is-expanded .nv-layer-row-caret {
+  transform: rotate(180deg);
+  color: var(--green);
+}
+
+.nv-layer-row-body {
+  display: grid;
+  gap: 8px;
+  padding: 2px 8px 9px;
+}
+.nv-layer-row-body .nv-slider,
+.nv-layer-row-body .nv-window-control {
+  margin-top: 0;
+  padding: 0;
+}
+
+/* Click-to-add rows in the "Add overlay" pool. */
+.nv-layer-add-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.nv-layer-add-option:hover:not(:disabled),
+.nv-layer-add-option:focus-visible {
+  border-color: rgba(115, 198, 155, 0.3);
+  background: rgba(146, 160, 102, 0.08);
+  color: var(--ink);
+}
+.nv-layer-add-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.nv-layer-add-option > svg {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+.nv-layer-add-option span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.nv-layer-add-option strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nv-layer-add-option small {
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nv-layer-add-option.is-warning {
+  border-color: rgba(215, 166, 66, 0.3);
+}
+/* Overrides the green `> svg` (the Plus) for the trailing subject-mismatch
+   cue; margin-left:auto parks it at the row's right edge. */
+.nv-layer-add-option > svg.nv-layer-add-warn {
+  color: var(--amber);
+  margin-left: auto;
+}
+
+/* ---- Crosshair coordinate widget ---- */
+.nv-crosshair-readout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink);
+}
+.nv-crosshair-readout > span {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-variant-numeric: tabular-nums;
+}
+.nv-crosshair-readout > span.is-empty {
+  color: var(--faint);
+  font-style: italic;
+}
+.nv-crosshair-copy {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.nv-crosshair-copy:hover:not(:disabled),
+.nv-crosshair-copy:focus-visible {
+  border-color: var(--green);
+  color: var(--green);
+  outline: none;
+}
+.nv-crosshair-copy:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.nv-crosshair-goto {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 6px;
+  align-items: end;
+  margin-top: 8px;
+}
+.nv-crosshair-go {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(115, 198, 155, 0.4);
+  border-radius: 4px;
+  background: rgba(115, 198, 155, 0.08);
+  color: var(--green);
+  cursor: pointer;
+  font-size: 12px;
+}
+.nv-crosshair-go:hover:not(:disabled),
+.nv-crosshair-go:focus-visible {
+  border-color: var(--green);
+  outline: none;
+}
+.nv-crosshair-go:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.nv-window-control {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 2px 8px 0;
+}
+
+.nv-window-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.nv-window-heading em {
+  color: var(--muted);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Auto-resolved (not user-set) range — dimmer so it reads as a default, while
+   still showing the effective threshold/range rather than an opaque "auto". */
+.nv-window-heading em.is-auto {
+  color: var(--faint);
+}
+
+.nv-window-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nv-window-row .nv-text-input {
+  padding: 4px 6px;
+  font-size: 11px;
+  height: 28px;
+}
+
+.nv-window-reset {
+  height: 28px;
+  border: 1px solid rgba(146, 160, 102, 0.3);
+  border-radius: 6px;
+  background: rgba(16, 17, 13, 0.72);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 11px;
+  cursor: pointer;
+}
+
+.nv-window-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* "Show all (no threshold)" — a quiet full-width escape hatch under a stat
+   overlay's threshold, so a reader can reveal sub-threshold signal in one tap. */
+.nv-window-showall {
+  margin-top: 6px;
+  width: 100%;
+  border: 1px dashed rgba(146, 160, 102, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.nv-window-showall:hover,
+.nv-window-showall:focus-visible {
+  color: var(--ink);
+  border-color: rgba(115, 198, 155, 0.4);
+}
+
+.nv-layer-colormap-select {
+  grid-template-columns: auto minmax(58px, 1fr) auto;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.nv-layer-colormap-select.is-disabled {
+  opacity: 0.48;
+}
+
+.nv-layer-colormap-select select:disabled {
+  color: var(--faint);
+}
+
+.nv-clip-flip {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-slider {
+  display: grid;
+  grid-template-columns: minmax(54px, 24%) minmax(0, 1fr) minmax(34px, auto);
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-slider input {
+  min-width: 0;
+  accent-color: var(--green);
+}
+
+.nv-slider code {
+  color: var(--amber);
+  text-align: right;
+}
+
+.nv-operation-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.nv-operation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 0.45fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.nv-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-field-wide {
+  grid-column: 1 / -1;
+}
+
+.nv-field-hint {
+  color: var(--green);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.nv-field select,
+.nv-text-input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--line);
+  outline: none;
+  background: #10110d;
+  color: var(--ink);
+  padding: 0 8px;
+}
+
+.nv-field select:focus,
+.nv-text-input:focus {
+  border-color: var(--green);
+}
+
+.nv-path-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nv-path-picker .nv-text-input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nv-path-picker-button {
+  min-height: 30px;
+}
+
+.nv-operation-help {
+  min-height: 34px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.nv-primary-action {
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid rgba(115, 198, 155, 0.42);
+  background: #162018;
+  color: var(--green);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.nv-primary-action:hover:not(:disabled),
+.nv-primary-action:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-primary-action:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.nv-task-status {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  padding-top: 9px;
+}
+
+.nv-task-status strong,
+.nv-task-status span,
+.nv-task-status code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-task-status strong {
+  color: var(--ink);
+}
+
+.nv-task-status code {
+  color: var(--amber);
+}
+
+.nv-command-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.nv-command-field > span:first-child {
+  font-size: 11px;
+}
+
+.nv-command-input {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.nv-command-stderr {
+  font-size: 11px;
+}
+
+.nv-command-stderr summary {
+  cursor: pointer;
+  color: var(--amber);
+}
+
+.nv-command-stderr pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  max-height: 160px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel, rgba(0, 0, 0, 0.3));
+  color: var(--ink);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.nv-readout {
+  color: var(--muted);
+}
+
+.nv-readout h2 {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.nv-readout p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.nv-readout dl {
+  display: grid;
+  grid-template-columns: minmax(62px, 28%) minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.nv-readout dl + dl,
+.nv-readout p + dl {
+  margin-top: 10px;
+}
+
+.nv-readout dt {
+  color: var(--green);
+}
+
+.nv-readout dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-readout dd.nv-path-value {
+  overflow: visible;
+  color: #d8d2bd;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.nv-metadata-panel {
+  min-height: 0;
+}
+
+.nv-sidecar-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.nv-sidecar {
+  border: 1px solid var(--line);
+  background: #0d0e0b;
+}
+
+.nv-sidecar summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 9px;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.nv-sidecar summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.nv-sidecar summary em {
+  color: var(--blue);
+  font-style: normal;
+}
+
+.nv-sidecar pre {
+  max-height: clamp(132px, 22vh, 260px);
+  margin: 0;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  color: #d8d2bd;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.nv-empty-meta {
+  margin-top: 12px;
+  border: 1px dashed #464631;
+  color: var(--faint);
+  font-size: 12px;
+  padding: 10px;
+}
+
+@media (max-width: 1280px) {
+  .nv-workbench {
+    --file-list-width: clamp(200px, 19vw, 250px);
+    --controls-width: clamp(246px, 28vw, 326px);
+  }
+
+  .nv-sidebar {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .nv-topbar {
+    gap: 10px;
+  }
+
+  .nv-brand p {
+    max-width: 28vw;
+  }
+
+  .nv-toolbar {
+    gap: 6px;
+  }
+
+  .nv-select {
+    grid-template-columns: auto minmax(64px, 1fr) auto;
+  }
+
+  .nv-workbench {
+    --file-list-width: minmax(184px, 22vw);
+    --controls-width: minmax(222px, 30vw);
+  }
+
+  .nv-split-workspace {
+    grid-template-columns: minmax(132px, var(--split-left)) 12px minmax(132px, 1fr);
+  }
+
+  .nv-volume-card {
+    padding: 6px;
+  }
+
+  .nv-panel-heading {
+    font-size: 11px;
+  }
+}
+
+/* Mobile-only affordances (drawer toggles + backdrop): hidden on desktop. */
+.nv-mobile-only {
+  display: none;
+}
+
+.nv-mobile-scrim {
+  display: none;
+}
+
+/* Phone layout: collapse the 3-column workbench to a full-screen NiiVue viewer
+   with the dataset + controls panels as slide-in drawers. iPad keeps desktop. */
+@media (max-width: 700px) {
+  .nv-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .nv-workbench.is-file-list-collapsed,
+  .nv-workbench.is-controls-collapsed {
+    --file-list-width: 0;
+    --controls-width: 0;
+  }
+
+  .nv-sidebar,
+  .nv-controls {
+    position: fixed;
+    top: 64px;
+    bottom: 0;
+    width: min(86vw, 340px);
+    z-index: 50;
+    overflow-y: auto;
+    transition: transform 0.22s ease;
+    box-shadow: 0 12px 40px var(--shadow);
+  }
+
+  .nv-sidebar {
+    left: 0;
+    transform: translateX(-100%);
+  }
+  .nv-workbench:not(.is-file-list-collapsed) .nv-sidebar {
+    transform: translateX(0);
+  }
+
+  .nv-controls {
+    right: 0;
+    border-right: 0;
+    border-left: 1px solid var(--line);
+    transform: translateX(100%);
+  }
+  .nv-workbench:not(.is-controls-collapsed) .nv-controls {
+    transform: translateX(0);
+  }
+
+  /* Middle workspace shows only the viewer; the OSD desktop browser + splitter
+     are desktop metaphors — on a phone the dataset drawer handles selection. */
+  .nv-split-workspace {
+    grid-template-columns: 1fr;
+  }
+  .nv-dataset-pane,
+  .nv-splitter {
+    display: none;
+  }
+
+  .nv-mobile-only {
+    display: inline-flex;
+  }
+
+  .nv-mobile-scrim {
+    display: block;
+    position: fixed;
+    inset: 64px 0 0 0;
+    z-index: 40;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  /* Compact the topbar so the essential controls fit one row. */
+  .nv-brand > div:not(.nv-mark) {
+    display: none;
+  }
+  .nv-tool-button span {
+    display: none;
+  }
+  .nv-topbar {
+    gap: 8px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  /* NB: don't set overflow-x here — it forces overflow-y to auto too (CSS
+     spec), which clips the Datasets dropdown that hangs below the toolbar.
+     The brand text + tool-button labels are hidden above, so the icons fit. */
+  .nv-toolbar {
+    gap: 4px;
+  }
+
+  /* Drop the menu as a full-width sheet under the topbar — anchoring it to the
+     toolbar button ran its left edge off a narrow phone. */
+  .nv-recent-menu {
+    position: fixed;
+    top: 66px;
+    right: 10px;
+    left: 10px;
+    min-width: 0;
+    max-width: none;
+    max-height: 60vh;
+  }
+
+  .nv-desktop-only {
+    display: none;
+  }
+}
+
+/* Integrated Python terminal dock */
+.nv-terminal-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  background: #0d0e0a;
+  box-shadow: 0 -8px 30px var(--shadow);
+  z-index: 3;
+}
+
+.nv-hsplitter {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 12px;
+  min-height: 12px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: #10110d;
+  color: var(--faint);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.nv-hsplitter:hover,
+.nv-hsplitter:focus-visible {
+  color: var(--amber);
+  background: #1d1e18;
+  outline: none;
+}
+
+.nv-terminal-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.nv-terminal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #1d1e18, #151611);
+}
+
+.nv-terminal-interpreter {
+  min-width: 0;
+  flex: 1;
+  max-width: 560px;
+}
+
+.nv-terminal-interpreter select {
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.nv-terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nv-terminal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px 4px;
+  overflow: hidden;
+  background: #12130f;
+}
+
+.nv-terminal-body .xterm,
+.nv-terminal-body .xterm-viewport {
+  height: 100%;
+}
+
+.nv-terminal-body .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.nv-terminal-body .xterm-viewport::-webkit-scrollbar-thumb {
+  background: #2a2c22;
+}

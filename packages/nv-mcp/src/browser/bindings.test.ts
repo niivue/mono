@@ -711,6 +711,33 @@ describe('bindControls: selects that write values', () => {
     expect(loaded(view)[0].atlasOutline).toBeUndefined()
   })
 
+  it('refuses a fraction for a whole-number target, and two options writing one value', () => {
+    const { add_control, controls } = setup()
+    expect(() =>
+      add_control({
+        id: 'pen',
+        kind: 'select',
+        bind: 'drawPenSize',
+        options: [
+          { id: 'thin', value: 1 },
+          { id: 'half', value: 1.5 },
+        ],
+      }),
+    ).toThrow('"half" writes 1.5, but drawPenSize takes whole numbers.')
+    expect(() =>
+      add_control({
+        id: 'light',
+        kind: 'select',
+        bind: 'volumeIllumination',
+        options: [
+          { id: 'matte', value: 0 },
+          { id: 'flat', value: 0 },
+        ],
+      }),
+    ).toThrow('"matte" and "flat" both write 0')
+    expect(controls.list()).toHaveLength(0)
+  })
+
   it('refuses new options without values on a select bound to a number', () => {
     const { add_control, set_control, controls } = setup()
     add_control({

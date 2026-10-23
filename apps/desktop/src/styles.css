@@ -173,6 +173,11 @@ button {
   white-space: nowrap;
 }
 
+.nv-brand p.nv-dataset-notice {
+  margin-top: 2px;
+  color: var(--amber);
+}
+
 .nv-toolbar {
   display: flex;
   align-items: center;

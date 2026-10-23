@@ -51,8 +51,9 @@ fn present_share_sheet(paths: &[String]) -> Result<(), String> {
 
     // SAFETY: the AirDrop service name is a framework constant; `performWithItems:`
     // is a standard AppKit call and we are on the main thread with a valid array.
-    let service = NSSharingService::sharingServiceNamed(unsafe { NSSharingServiceNameSendViaAirDrop })
-        .ok_or("share: AirDrop service is unavailable")?;
+    let service =
+        NSSharingService::sharingServiceNamed(unsafe { NSSharingServiceNameSendViaAirDrop })
+            .ok_or("share: AirDrop service is unavailable")?;
     unsafe { service.performWithItems(&array) };
     Ok(())
 }
@@ -78,7 +79,11 @@ fn present_share_sheet(paths: &[String]) -> Result<(), String> {
     // SAFETY: standard UIKit call; `array` holds NSURLs which are valid activity
     // items, and we are on the main thread.
     let sheet = unsafe {
-        UIActivityViewController::initWithActivityItems_applicationActivities(mtm.alloc(), &array, None)
+        UIActivityViewController::initWithActivityItems_applicationActivities(
+            mtm.alloc(),
+            &array,
+            None,
+        )
     };
 
     // On iPad the sheet is a popover and needs a source anchor or it aborts;

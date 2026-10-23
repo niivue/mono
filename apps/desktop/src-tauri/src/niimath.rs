@@ -306,6 +306,9 @@ fn runtime_binary_dirs() -> Result<Vec<PathBuf>, String> {
             }
         }
     }
+    // Working-directory probes are a `cargo run`/dev-server convenience; a
+    // release build only trusts the sidecar shipped beside its executable.
+    #[cfg(debug_assertions)]
     if let Ok(cwd) = std::env::current_dir() {
         dirs.push(cwd.join("binaries"));
         dirs.push(cwd.join("src-tauri").join("binaries"));

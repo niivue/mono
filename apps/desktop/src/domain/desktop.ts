@@ -98,7 +98,35 @@ export interface DesktopManifest {
     rows: number
   }
   itemCount: number
+  /** NIfTI files found in the dataset (excludes overlays and derivatives). */
+  totalDiscovered?: number
+  /** True when the volume cap left some of `totalDiscovered` out of `items`. */
+  truncated?: boolean
   items: DesktopItem[]
+}
+
+/**
+ * Plain-language notice when the dataset has more volumes than NeuroVue shows,
+ * e.g. "Showing 512 of 1,284 volumes". Null when nothing was left out.
+ */
+export function truncationNotice(manifest: DesktopManifest): string | null {
+  if (!manifest.truncated || manifest.totalDiscovered === undefined) return null
+  const shown = manifest.items.filter(
+    (item) => (item.role ?? 'source') === 'source',
+  ).length
+  return `Showing ${shown.toLocaleString()} of ${manifest.totalDiscovered.toLocaleString()} volumes`
+}
+
+/** Status-line text for a freshly loaded manifest. */
+export function manifestLoadedStatus(
+  manifest: DesktopManifest,
+  datasetRoot?: string,
+): string {
+  const from = datasetRoot ? ` from ${datasetRoot}` : ''
+  const notice = truncationNotice(manifest)
+  return notice
+    ? `${notice}${from}. Only the first ones by file path are loaded.`
+    : `${manifest.itemCount} volume item(s) loaded${from}.`
 }
 
 export interface DesktopManifestVersion {

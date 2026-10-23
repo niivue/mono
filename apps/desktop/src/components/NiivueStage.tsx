@@ -1314,9 +1314,10 @@ async function fetchVolumeFile(
   url: string,
   signal: AbortSignal,
 ): Promise<File> {
+  // Default HTTP caching: volume URLs carry a per-dataset, per-file-version
+  // token, so a cached response can never belong to a different file.
   const init: RequestInit & { priority?: 'high' | 'low' | 'auto' } = {
     signal,
-    cache: 'force-cache',
     priority: 'high',
   }
   const response = await fetch(url, init)

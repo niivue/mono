@@ -2,9 +2,9 @@
 // spawn subprocesses, which iOS/Android forbid, so both modules are desktop-only.
 #[cfg(desktop)]
 mod niimath;
+mod share;
 #[cfg(desktop)]
 mod terminal;
-mod share;
 mod volumetric_server;
 
 use serde::Serialize;
@@ -244,7 +244,13 @@ fn sanitize_share_name(name: &str) -> String {
     let cleaned: String = name
         .trim()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let trimmed = cleaned.trim_matches('-');
     if trimmed.is_empty() {
@@ -257,11 +263,9 @@ fn sanitize_share_name(name: &str) -> String {
 #[tauri::command]
 async fn read_bundle_manifest(path: String) -> Result<serde_json::Value, String> {
     let path = normalize_local_path(&path);
-    tauri::async_runtime::spawn_blocking(move || {
-        volumetric_server::read_bundle(Path::new(&path))
-    })
-    .await
-    .map_err(|error| format!("read_bundle_manifest: join error: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || volumetric_server::read_bundle(Path::new(&path)))
+        .await
+        .map_err(|error| format!("read_bundle_manifest: join error: {error}"))?
 }
 
 fn open_dataset_at_path(
@@ -308,19 +312,29 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Point dataset discovery at the bundled MNI152 so machines without
-            // the dev checkouts — notably iOS, whose sandbox has no `~/Dev` — still
-            // open with a working default volume. Set before the server spawns so
+            // Point dataset discovery at the bundled MNI152, the default volume
+            // for release builds (which never probe dev checkouts) and for iOS,
+            // whose sandbox has no `~/Dev` either. Set before the server spawns so
             // `discovery_roots()` picks it up. Resolving here (not at module load)
             // is why the server spawns in `setup`: it needs the AppHandle's
             // resource dir.
-            if let Ok(path) = app
-                .path()
-                .resolve("resources/mni152.nii.gz", tauri::path::BaseDirectory::Resource)
-            {
+            if let Ok(path) = app.path().resolve(
+                "resources/mni152.nii.gz",
+                tauri::path::BaseDirectory::Resource,
+            ) {
                 if path.is_file() {
                     std::env::set_var("NEUROVUE_DEFAULT_VOLUME", path);
                 }
+            }
+            // niimath derivatives and extracted bundles are user work, so they
+            // live in the app's local data dir rather than the OS temp dir,
+            // which macOS purges. Set before the server spawns: discovery
+            // restores working derivatives from there.
+            match app.path().app_local_data_dir() {
+                Ok(dir) => volumetric_server::init_data_root(dir),
+                Err(error) => eprintln!(
+                    "NeuroVue: no app data dir ({error}); keeping user work in the temp cache"
+                ),
             }
             app.manage(NeuroVueState {
                 server: volumetric_server::spawn_default(),

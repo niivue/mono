@@ -76,7 +76,7 @@ import {
   type BundleViewState,
   buildBundleViewState,
   bundleVerifyFailures,
-  bundleVolumeId,
+  bundleVolumeIds,
   exportDatasetBundle,
   formatBundleBytes,
   isBundlePath,
@@ -97,6 +97,7 @@ import {
   fetchVolumeMetadata,
   openOverlayVolume,
   resolveRuntimeCapabilities,
+  truncationNotice,
 } from './domain/desktop'
 import {
   volumeImageTypeLabel,
@@ -235,6 +236,10 @@ export function App(): JSX.Element {
     status,
     warmProgress,
   } = useDatasetManifest({ promoteRecent })
+  const datasetNotice = useMemo(
+    () => (manifest ? truncationNotice(manifest) : null),
+    [manifest],
+  )
   // Drop recents left over from when a bundle import recorded its extracted
   // `data/` dir. Needs the server's real cacheRoot, so it runs once that arrives.
   useEffect(() => {
@@ -827,8 +832,11 @@ export function App(): JSX.Element {
 
     // Map each recorded (original-dataset) id → its freshly-registered id.
     const remap = new Map<string, string>()
+    const newIds = bundleVolumeIds(
+      bundle.manifest.volumes.map((volume) => volume.data),
+    )
     for (const volume of bundle.manifest.volumes) {
-      remap.set(volume.id, bundleVolumeId(volume.data))
+      remap.set(volume.id, newIds.get(volume.data) ?? volume.id)
     }
 
     const view = bundle.manifest.view
@@ -930,6 +938,11 @@ export function App(): JSX.Element {
             >
               {bidsName || datasetRoot || serverUrl || 'Resolving local server'}
             </p>
+            {datasetNotice ? (
+              <p className="nv-dataset-notice" role="status">
+                {datasetNotice}
+              </p>
+            ) : null}
           </div>
         </div>
 

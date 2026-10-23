@@ -9,6 +9,7 @@ import type {
 import {
   fetchDesktopManifest,
   fetchDesktopManifestVersion,
+  manifestLoadedStatus,
   openDatasetByPath,
   openDatasetDirectory,
   openVolumeFile,
@@ -114,7 +115,7 @@ export function useDatasetManifest({
         setManifest(nextManifest)
         setSelectedId(nextManifest.items[0]?.id ?? null)
         setDatasetRevision((revision) => revision + 1)
-        setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
+        setStatus(manifestLoadedStatus(nextManifest))
       } catch (error) {
         if (!cancelled)
           setStatus(error instanceof Error ? error.message : String(error))
@@ -138,7 +139,7 @@ export function useDatasetManifest({
       if (selectId && nextManifest.items.some((item) => item.id === selectId)) {
         setSelectedId(selectId)
       }
-      setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
+      setStatus(manifestLoadedStatus(nextManifest))
       return nextManifest
     },
     [serverUrl],
@@ -152,7 +153,7 @@ export function useDatasetManifest({
   )
 
   // `promoteAs` overrides which path lands in recents. A bundle import opens the
-  // bundle's extracted `data/` dir, but that lives under the OS temp dir and is
+  // bundle's extracted `data/` dir, but that is an app-internal copy that is
   // re-extracted on every import — so recents must remember the `.nvbundle`.
   const applyDatasetOpenResult = useCallback(
     async (result: DatasetOpenResult, promoteAs?: string): Promise<void> => {
@@ -173,9 +174,7 @@ export function useDatasetManifest({
       ).catch(() => null)
       setManifest(nextManifest)
       setSelectedId(nextManifest.items[0]?.id ?? null)
-      setStatus(
-        `${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`,
-      )
+      setStatus(manifestLoadedStatus(nextManifest, result.datasetRoot))
       promoteRecentRef.current(promoteAs ?? result.datasetRoot)
     },
     [],
@@ -288,7 +287,7 @@ export function useDatasetManifest({
         ) {
           setSelectedId(nextManifest.items[0]?.id ?? null)
         }
-        setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
+        setStatus(manifestLoadedStatus(nextManifest))
       } catch {
         try {
           const serverInfo = await resolveServerInfo()

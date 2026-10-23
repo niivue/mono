@@ -254,7 +254,10 @@ fn discover_interpreters(dataset_root: Option<&Path>) -> Vec<PythonInterpreter> 
 
     let mut clt = CltProbe::default();
     for (candidate, source) in candidate_python_paths() {
-        if is_xcrun_shim(&candidate) && !clt.installed() {
+        // Check the resolved path too: e.g. /usr/local/bin/python3 -> /usr/bin/python3.
+        let shim = is_xcrun_shim(&candidate)
+            || std::fs::canonicalize(&candidate).is_ok_and(|path| is_xcrun_shim(&path));
+        if shim && !clt.installed() {
             continue;
         }
         push_interpreter(&candidate, source, &mut seen, &mut interpreters);

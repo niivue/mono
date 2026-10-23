@@ -152,7 +152,7 @@ export function useDatasetManifest({
   )
 
   // `promoteAs` overrides which path lands in recents. A bundle import opens the
-  // bundle's extracted `data/` dir, but that lives under the OS temp dir and is
+  // bundle's extracted `data/` dir, but that is an app-internal copy that is
   // re-extracted on every import — so recents must remember the `.nvbundle`.
   const applyDatasetOpenResult = useCallback(
     async (result: DatasetOpenResult, promoteAs?: string): Promise<void> => {

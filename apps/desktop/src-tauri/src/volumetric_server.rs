@@ -18,7 +18,7 @@ use std::{
     path::{Path as FsPath, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::UNIX_EPOCH,
 };
@@ -450,8 +450,25 @@ fn read_bids_dataset_info(root: &FsPath) -> Option<BidsDatasetInfo> {
     })
 }
 
+/// Purgeable, regenerable state (pyramids, previews, staged shares, terminal
+/// helpers). The OS may clear it at any time.
 pub fn cache_root() -> PathBuf {
     std::env::temp_dir().join("neurovue")
+}
+
+static DATA_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Set once from lib.rs `setup` to Tauri's `app_local_data_dir()`, before the
+/// server spawns.
+pub fn init_data_root(path: PathBuf) {
+    let _ = DATA_ROOT.set(path);
+}
+
+/// User work that must survive OS temp purges: niimath derivatives and
+/// extracted `.nvbundle` imports. Falls back to `cache_root()` only when
+/// `init_data_root` was never called (unit tests).
+pub fn data_root() -> PathBuf {
+    DATA_ROOT.get().cloned().unwrap_or_else(cache_root)
 }
 
 /// Origins allowed to read from the local server: the app's own webview (the
@@ -489,7 +506,7 @@ fn app_cors_layer() -> CorsLayer {
 }
 
 pub fn working_derivatives_dir() -> PathBuf {
-    cache_root().join("working-derivatives")
+    data_root().join("working-derivatives")
 }
 
 pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Result<usize, String> {
@@ -1047,11 +1064,16 @@ fn extract_bundle_zip(zip_path: &FsPath) -> Result<PathBuf, String> {
         )
     })?;
 
-    let stem = zip_path
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or("bundle");
-    let out_root = cache_root().join("imports").join(stem);
+    let imports_dir = data_root().join("imports");
+    let out_root = imports_dir.join(bundle_import_dir_name(zip_path));
+    // The name is a single sanitized segment, so this always holds; check anyway
+    // before a recursive delete.
+    if out_root.parent() != Some(imports_dir.as_path()) {
+        return Err(format!(
+            "read_bundle: refusing to extract to {}",
+            out_root.display()
+        ));
+    }
     let _ = fs::remove_dir_all(&out_root);
     fs::create_dir_all(&out_root)
         .map_err(|error| format!("read_bundle: create {}: {error}", out_root.display()))?;
@@ -1084,6 +1106,30 @@ fn extract_bundle_zip(zip_path: &FsPath) -> Result<PathBuf, String> {
             .map_err(|error| format!("read_bundle: extract {}: {error}", out_path.display()))?;
     }
     Ok(out_root)
+}
+
+/// Extraction dir name for a bundle: its sanitized file stem plus an FNV-1a of
+/// the full (canonical) path, so a stem like `..` (from `...nvbundle`) can't
+/// escape `imports/`, and two same-named bundles from different folders don't
+/// overwrite each other's extraction.
+fn bundle_import_dir_name(zip_path: &FsPath) -> String {
+    let stem: String = zip_path
+        .file_stem()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let stem = stem.trim_matches('-');
+    let stem = if stem.is_empty() { "bundle" } else { stem };
+    let hash = fnv1a_32(zip_path.to_string_lossy().as_bytes());
+    format!("{stem}-{hash:08x}")
 }
 
 /// Read a bundle's `manifest.json` and verify every declared data file against
@@ -4019,5 +4065,32 @@ mod tests {
         assert_eq!(fnv1a_32(b""), 0x811c9dc5);
         assert_eq!(fnv1a_32(b"a"), 0xe40c292c);
         assert_eq!(fnv1a_32(b"foobar"), 0xbf9cf968);
+    }
+
+    #[test]
+    fn bundle_import_dir_stays_inside_imports() {
+        let imports = PathBuf::from("/data/imports");
+        for name in [
+            "...nvbundle",
+            "..nvbundle",
+            ".nvbundle",
+            "a/../..nvbundle",
+            "x.nvbundle",
+        ] {
+            let dir = bundle_import_dir_name(&FsPath::new("/inbox").join(name));
+            let out_root = imports.join(&dir);
+            assert_eq!(
+                out_root.parent(),
+                Some(imports.as_path()),
+                "{name} -> {dir}"
+            );
+            assert!(!dir.starts_with('.'), "{name} -> {dir}");
+        }
+        // Same file name in different folders: distinct extraction dirs.
+        assert_ne!(
+            bundle_import_dir_name(FsPath::new("/a/scan.nvbundle")),
+            bundle_import_dir_name(FsPath::new("/b/scan.nvbundle"))
+        );
+        assert!(bundle_import_dir_name(FsPath::new("/a/scan.nvbundle")).starts_with("scan-"));
     }
 }

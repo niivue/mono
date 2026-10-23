@@ -326,6 +326,16 @@ pub fn run() {
                     std::env::set_var("NEUROVUE_DEFAULT_VOLUME", path);
                 }
             }
+            // niimath derivatives and extracted bundles are user work, so they
+            // live in the app's local data dir rather than the OS temp dir,
+            // which macOS purges. Set before the server spawns: discovery
+            // restores working derivatives from there.
+            match app.path().app_local_data_dir() {
+                Ok(dir) => volumetric_server::init_data_root(dir),
+                Err(error) => eprintln!(
+                    "NeuroVue: no app data dir ({error}); keeping user work in the temp cache"
+                ),
+            }
             app.manage(NeuroVueState {
                 server: volumetric_server::spawn_default(),
             });

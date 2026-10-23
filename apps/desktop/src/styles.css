@@ -2864,7 +2864,8 @@ button {
     max-height: 60vh;
   }
 
-  .nv-desktop-only {
+  .nv-desktop-only,
+  .nv-open-data-actions .nv-desktop-only {
     display: none;
   }
 }

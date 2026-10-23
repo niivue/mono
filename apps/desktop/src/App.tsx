@@ -104,6 +104,7 @@ import {
   openOverlayVolume,
   resolveRuntimeCapabilities,
   truncationNotice,
+  volumeCountLabel,
 } from './domain/desktop'
 import {
   formatVoxelSpacing,
@@ -844,7 +845,7 @@ export function App(): JSX.Element {
   async function runBundleImport(path: string): Promise<void> {
     const bundle = await readBundle(path)
     if (bundle.manifest?.nvbundle == null) {
-      setStatus('Not a NeuroVue bundle (no manifest.json).', 'error')
+      setStatus('This file is not a NeuroVue bundle.', 'error')
       return
     }
 
@@ -918,7 +919,7 @@ export function App(): JSX.Element {
         ? ` ⚠ ${failures.length} file(s) failed the integrity check`
         : ''
     setStatus(
-      `Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`,
+      `Imported ${volumeCountLabel(bundle.manifest.volumes.length)} from bundle.${integrity}`,
       failures.length > 0 ? 'error' : 'success',
     )
   }

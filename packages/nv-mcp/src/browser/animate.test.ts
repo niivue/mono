@@ -211,6 +211,53 @@ describe('animate', () => {
     finish(FINISHED)
   })
 
+  it('tells the person where a move of the crosshair or a cut left them', async () => {
+    const { view } = animView()
+    const announce = mock((_text: string) => {})
+    const host = {
+      ...hostOf(view),
+      announce,
+      describe: async () =>
+        'Crosshair at 48, -14, 56 mm, in the right precentral gyrus.',
+      planeName: () => 'posterior',
+    }
+    await animateHandlers(host).animate({
+      crosshair_mm: [48, -14, 56],
+      clip_planes: [{ depth: 0.2, azimuth: 180, elevation: 0 }],
+    })
+    expect(announce).toHaveBeenCalledTimes(1)
+    expect(announce).toHaveBeenCalledWith(
+      'Crosshair at 48, -14, 56 mm, in the right precentral gyrus. Cut plane: posterior.',
+    )
+    // A camera move is the person's view, not a place: nothing to announce.
+    announce.mockClear()
+    await animateHandlers(host).animate({ azimuth: 30 })
+    expect(announce).not.toHaveBeenCalled()
+  })
+
+  it('announces a move left running once it ends', async () => {
+    let finish = (_r: AnimationResult) => {}
+    const { view } = animView({
+      animateTo: mock(
+        () =>
+          new Promise<AnimationResult>((r) => {
+            finish = r
+          }),
+      ),
+    })
+    const announce = mock((_text: string) => {})
+    const host = { ...hostOf(view), announce }
+    await animateHandlers(host).animate({
+      crosshair_mm: [1, 2, 3],
+      wait: false,
+    })
+    expect(announce).not.toHaveBeenCalled()
+    finish(FINISHED)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(announce).toHaveBeenCalledTimes(1)
+    expect(announce.mock.calls[0][0]).toStartWith('Crosshair at ')
+  })
+
   it('stops a move where it is', async () => {
     const { view } = animView({ isAnimating: true })
     const result = await run(view, { stop: true })

@@ -18,6 +18,11 @@ const SETTLE_MS = Number(process.env.SETTLE_MS ?? 2500)
 const LOAD_TIMEOUT_MS = 30000
 // Examples that draw nothing until the user acts; show their whole page.
 const PAGE_SHOT = new Set(['allen-atlas', 'benchmark', 'font'])
+// Examples that stream for a while before their first useful frame.
+const SLOW: Record<string, number> = {
+  'vox-block-pick': 8000,
+  'vox-block-pick-zarr': 15000,
+}
 
 const siteDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = path.resolve(siteDir, '../..')
@@ -33,13 +38,14 @@ async function capture(
   page: Page,
   url: string,
   whole: boolean,
+  settleMs: number,
 ): Promise<Buffer> {
   await page.goto(url, { waitUntil: 'load', timeout: LOAD_TIMEOUT_MS })
   // Streaming examples never go idle; take what has drawn by the timeout.
   await page
     .waitForLoadState('networkidle', { timeout: LOAD_TIMEOUT_MS })
     .catch(() => {})
-  await page.waitForTimeout(SETTLE_MS)
+  await page.waitForTimeout(settleMs)
   if (whole) return page.screenshot()
   const canvas = await page.evaluateHandle(() => {
     let best: HTMLCanvasElement | null = null
@@ -97,6 +103,7 @@ for (const example of examples) {
       page,
       new URL(example.page, base).href,
       PAGE_SHOT.has(example.slug),
+      SLOW[example.slug] ?? SETTLE_MS,
     )
     const webp = await toWebp(encoder, png)
     writeFileSync(path.join(outDir, `${example.slug}.webp`), webp)

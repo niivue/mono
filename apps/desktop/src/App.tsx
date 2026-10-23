@@ -1,21 +1,11 @@
-import {
-  type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
 import type { NiiVueLocation } from '@niivue/niivue'
 import {
   AlertTriangle,
   Boxes,
-  ChevronDown,
-  CircleDot,
   Calculator,
   CheckCircle2,
+  ChevronDown,
+  CircleDot,
   Copy,
   Crosshair,
   Database,
@@ -27,51 +17,63 @@ import {
   GripVertical,
   Layers,
   LoaderCircle,
-  X,
   Maximize2,
   Minimize2,
-  PanelLeftClose,
-  PanelLeftOpen,
   Package,
   PackageOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
-  Share2,
   PanelRightOpen,
   Plus,
   RotateCcw,
   Save,
+  Share2,
   SlidersHorizontal,
   SquareTerminal,
+  X,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
 } from 'lucide-react'
-import { DatasetDesktop, MAX_DESKTOP_ZOOM, MIN_DESKTOP_ZOOM, zoomBy } from './components/DatasetDesktop'
 import {
-  NiivueStage,
+  type CSSProperties,
+  type JSX,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
+import {
+  DatasetDesktop,
+  MAX_DESKTOP_ZOOM,
+  MIN_DESKTOP_ZOOM,
+  zoomBy,
+} from './components/DatasetDesktop'
+import { NiimathOperationsPanel } from './components/NiimathOperationsPanel'
+import {
   DEFAULT_VIEW_MODE,
   type NiivueRenderLayer,
+  NiivueStage,
   type ResolvedWindow,
-  type ViewModeId
+  type ViewModeId,
 } from './components/NiivueStage'
-import { NiimathOperationsPanel } from './components/NiimathOperationsPanel'
 import { TerminalPanel } from './components/TerminalPanel'
 import { VolumeFilterPanel } from './components/VolumeFilterPanel'
-import type {
-  Backend,
-  ClipPlane,
-  DesktopItem,
-  DesktopManifest,
-  JsonValue,
-  VolumeMetadata,
-  WarmProgress
-} from './domain/desktop'
 import {
-  defaultClipPlanes,
-  fetchVolumeMetadata,
-  openOverlayVolume,
-  resolveRuntimeCapabilities
-} from './domain/desktop'
+  BLOCK_GRID_OPTIONS,
+  type BlockSettings,
+  blockGridLabel,
+  blocksAreTiled,
+  DEFAULT_BLOCK_SETTINGS,
+  MAX_EXPLODE,
+  MIN_EXPLODE,
+} from './domain/blocks'
 import {
+  type BundleViewState,
   buildBundleViewState,
   bundleVerifyFailures,
   bundleVolumeId,
@@ -81,30 +83,35 @@ import {
   pickBundle,
   readBundle,
   shareViewViaAirDrop,
-  type BundleViewState
 } from './domain/bundle'
+import type {
+  Backend,
+  ClipPlane,
+  DesktopItem,
+  JsonValue,
+  VolumeMetadata,
+  WarmProgress,
+} from './domain/desktop'
 import {
-  BLOCK_GRID_OPTIONS,
-  DEFAULT_BLOCK_SETTINGS,
-  MAX_EXPLODE,
-  MIN_EXPLODE,
-  blockGridLabel,
-  blocksAreTiled,
-  type BlockSettings
-} from './domain/blocks'
+  defaultClipPlanes,
+  fetchVolumeMetadata,
+  openOverlayVolume,
+  resolveRuntimeCapabilities,
+} from './domain/desktop'
 import {
   volumeImageTypeLabel,
-  volumeRoleLabel,
   volumeSession,
-  volumeSubject
+  volumeSubject,
 } from './domain/volumeFacets'
 import { useClipPlanes } from './hooks/useClipPlanes'
 import { useDatasetManifest } from './hooks/useDatasetManifest'
-import { recentDatasetLabel, useRecentDatasets } from './hooks/useRecentDatasets'
+import {
+  recentDatasetLabel,
+  useRecentDatasets,
+} from './hooks/useRecentDatasets'
 import { useTerminalDock } from './hooks/useTerminalDock'
 import { useVolumeFilters } from './hooks/useVolumeFilters'
 import { useVolumeMetadata } from './hooks/useVolumeMetadata'
-import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
 
 const MIN_SPLIT = 34
 const MAX_SPLIT = 68
@@ -119,21 +126,25 @@ const COLORMAP_OPTIONS = [
   { value: 'viridis', label: 'Viridis' },
   { value: 'magma', label: 'Magma' },
   { value: 'actc', label: 'ACTC' },
-  { value: 'warm_cool', label: 'Warm/Cool (diverging)' }
+  { value: 'warm_cool', label: 'Warm/Cool (diverging)' },
 ] as const
 // The anatomical base is restricted to grayscale-family maps: pseudocolor
 // (viridis/magma/actc) on a structural volume invites intensity misreading.
 // Stat/label overlays keep the full COLORMAP_OPTIONS set.
 const BASE_COLORMAP_OPTIONS = [
   { value: 'gray', label: 'Gray' },
-  { value: 'bone', label: 'Bone' }
+  { value: 'bone', label: 'Bone' },
 ] as const
 
 // A colormap selection of 'warm_cool' is the NiiVue idiom for signed/stat data:
 // a warm map for positive intensities paired with a cool map for negatives, so
 // the rendering diverges around zero. Everything else is a single sequential map.
-function resolveColormap(name: string): { colormap: string; colormapNegative?: string } {
-  if (name === 'warm_cool') return { colormap: 'warm', colormapNegative: 'cool' }
+function resolveColormap(name: string): {
+  colormap: string
+  colormapNegative?: string
+} {
+  if (name === 'warm_cool')
+    return { colormap: 'warm', colormapNegative: 'cool' }
   return { colormap: name }
 }
 // Prefer WebGPU when the platform exposes it, falling back to WebGL2 otherwise.
@@ -154,10 +165,13 @@ function isAppleMobile(): boolean {
   return ua.includes('Macintosh') && navigator.maxTouchPoints > 1
 }
 
-const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'elevation'>> = {
+const FLIPPED_CLIP_ORIENTATIONS: Record<
+  string,
+  Pick<ClipPlane, 'azimuth' | 'elevation'>
+> = {
   anterior: { azimuth: 0, elevation: 0 },
   inferior: { azimuth: 0, elevation: 90 },
-  right: { azimuth: 270, elevation: 0 }
+  right: { azimuth: 270, elevation: 0 },
 }
 type MouseContext = 'desktop' | 'niivue' | null
 type SidePanelTab = 'inspect' | 'operations'
@@ -185,14 +199,21 @@ interface LayerSettings {
 // with the dataset/inspector panels as slide-in drawers (see the `max-width:
 // 700px` block in styles.css). iPad (~desktop width) keeps the 3-column layout.
 function isPhoneViewport(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches
+  return (
+    typeof window !== 'undefined' &&
+    window.matchMedia('(max-width: 700px)').matches
+  )
 }
 
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
-  const { recentDatasets, promoteRecent, removeRecent, pruneExtractedBundleDirs } =
-    useRecentDatasets()
+  const {
+    recentDatasets,
+    promoteRecent,
+    removeRecent,
+    pruneExtractedBundleDirs,
+  } = useRecentDatasets()
   const {
     bidsDatasetDoi,
     bidsName,
@@ -212,18 +233,22 @@ export function App(): JSX.Element {
     setSelectedId,
     setStatus,
     status,
-    warmProgress
+    warmProgress,
   } = useDatasetManifest({ promoteRecent })
   // Drop recents left over from when a bundle import recorded its extracted
   // `data/` dir. Needs the server's real cacheRoot, so it runs once that arrives.
   useEffect(() => {
     if (cacheRoot) pruneExtractedBundleDirs(cacheRoot)
   }, [cacheRoot, pruneExtractedBundleDirs])
-  const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({})
+  const [layerSettings, setLayerSettings] = useState<
+    Record<string, LayerSettings>
+  >({})
   // Effective intensity window NiiVue applied per layer (incl. auto-seeded
   // thresholds), reported back from NiivueStage so the UI can show the real
   // cutoff instead of a bare "auto".
-  const [resolvedWindows, setResolvedWindows] = useState<Record<string, ResolvedWindow>>({})
+  const [resolvedWindows, setResolvedWindows] = useState<
+    Record<string, ResolvedWindow>
+  >({})
   const handleResolvedWindows = useCallback(
     (next: Record<string, ResolvedWindow>) => {
       setResolvedWindows((prev) => {
@@ -237,30 +262,39 @@ export function App(): JSX.Element {
               prev[id].min === next[id].min &&
               prev[id].max === next[id].max &&
               prev[id].robustMin === next[id].robustMin &&
-              prev[id].robustMax === next[id].robustMax
+              prev[id].robustMax === next[id].robustMax,
           )
         return unchanged ? prev : next
       })
     },
-    []
+    [],
   )
   // Per-layer world-space bounding boxes, reported from NiivueStage after load,
   // used to flag overlays that land in a different space than the base.
-  const [layerExtents, setLayerExtents] = useState<Record<string, LayerExtent>>({})
-  const handleLayerExtents = useCallback((next: Record<string, LayerExtent>) => {
-    setLayerExtents((prev) => (extentsEqual(prev, next) ? prev : next))
-  }, [])
+  const [layerExtents, setLayerExtents] = useState<Record<string, LayerExtent>>(
+    {},
+  )
+  const handleLayerExtents = useCallback(
+    (next: Record<string, LayerExtent>) => {
+      setLayerExtents((prev) => (extentsEqual(prev, next) ? prev : next))
+    },
+    [],
+  )
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   // Phones land on a 2D axial slice (clearer on a small screen than the 3D
   // render); desktop/iPad keep the 3D render default.
   const [viewMode, setViewMode] = useState<ViewModeId>(() =>
-    isPhoneViewport() ? 'axial' : DEFAULT_VIEW_MODE
+    isPhoneViewport() ? 'axial' : DEFAULT_VIEW_MODE,
   )
   const [atlasId, setAtlasId] = useState<string | null>(null)
-  const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(null)
+  const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(
+    null,
+  )
   // One-shot crosshair "go-to" request handed to NiivueStage; a fresh object per
   // request re-fires the move even for a repeated coordinate.
-  const [crosshairTarget, setCrosshairTarget] = useState<{ mm: [number, number, number] } | null>(null)
+  const [crosshairTarget, setCrosshairTarget] = useState<{
+    mm: [number, number, number]
+  } | null>(null)
   // Block (volume-chunk explode) settings, applied across every loaded layer and
   // persisted into the bundle/session.
   const [blocks, setBlocks] = useState<BlockSettings>(DEFAULT_BLOCK_SETTINGS)
@@ -277,15 +311,17 @@ export function App(): JSX.Element {
     updateClipPlane,
     changeClipPlaneDepth,
     resetClipPlanes,
-    applyClipPlanes
+    applyClipPlanes,
   } = useClipPlanes()
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
   // On a phone both side panels start collapsed (off-screen drawers) so the
   // viewer is the landing surface; on desktop/iPad they start open.
-  const [isFileListCollapsed, setIsFileListCollapsed] = useState(isPhoneViewport)
-  const [isControlsCollapsed, setIsControlsCollapsed] = useState(isPhoneViewport)
+  const [isFileListCollapsed, setIsFileListCollapsed] =
+    useState(isPhoneViewport)
+  const [isControlsCollapsed, setIsControlsCollapsed] =
+    useState(isPhoneViewport)
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   const [isOpeningOverlay, setIsOpeningOverlay] = useState(false)
@@ -300,7 +336,8 @@ export function App(): JSX.Element {
   const [isSharingBundle, setIsSharingBundle] = useState(false)
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
-  const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } = useTerminalDock()
+  const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } =
+    useTerminalDock()
   const isTerminalDockOpen = isTerminalAvailable && isTerminalOpen
 
   useEffect(() => {
@@ -374,7 +411,7 @@ export function App(): JSX.Element {
     toggleImageType,
     toggleFormat,
     toggleDtype,
-    clearFilters
+    clearFilters,
   } = useVolumeFilters(items)
 
   useEffect(() => {
@@ -395,38 +432,73 @@ export function App(): JSX.Element {
         isAtlas: atlasId === selected.id,
         ...resolveColormap(
           atlasId === selected.id
-            ? layerColormapForItem(selected, layerSettings, DEFAULT_ATLAS_COLORMAP)
-            : baseColormap(layerColormapForItem(selected, layerSettings, DEFAULT_BASE_COLORMAP))
+            ? layerColormapForItem(
+                selected,
+                layerSettings,
+                DEFAULT_ATLAS_COLORMAP,
+              )
+            : baseColormap(
+                layerColormapForItem(
+                  selected,
+                  layerSettings,
+                  DEFAULT_BASE_COLORMAP,
+                ),
+              ),
         ),
         ...windowForItem(selected.id, layerSettings),
         // The base is always fully opaque (its row has no opacity slider); only
         // its `hidden` flag applies. Reading a stored opacity here would leak a
         // value left over from when this volume was an overlay/atlas.
-        opacity: layerSettings[selected.id]?.hidden ? 0 : 1
-      }
+        opacity: layerSettings[selected.id]?.hidden ? 0 : 1,
+      },
     ]
 
     let overlayIndex = 0
     for (const item of items) {
-      if (!overlayIds.has(item.id) || item.id === selected.id || item.id === atlasId) continue
+      if (
+        !overlayIds.has(item.id) ||
+        item.id === selected.id ||
+        item.id === atlasId
+      )
+        continue
       layers.push({
         item,
         kind: 'overlay',
-        ...resolveColormap(layerColormapForItem(item, layerSettings, overlayColormapForIndex(overlayIndex))),
+        ...resolveColormap(
+          layerColormapForItem(
+            item,
+            layerSettings,
+            overlayColormapForIndex(overlayIndex),
+          ),
+        ),
         ...windowForItem(item.id, layerSettings),
-        opacity: renderOpacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)
+        opacity: renderOpacityForItem(
+          item.id,
+          layerSettings,
+          DEFAULT_OVERLAY_OPACITY,
+        ),
       })
       overlayIndex += 1
     }
 
-    const atlasItem = atlasId ? items.find((item) => item.id === atlasId) ?? null : null
+    const atlasItem = atlasId
+      ? (items.find((item) => item.id === atlasId) ?? null)
+      : null
     if (atlasItem && atlasItem.id !== selected.id) {
       layers.push({
         item: atlasItem,
         kind: 'overlay',
         isAtlas: true,
-        colormap: layerColormapForItem(atlasItem, layerSettings, DEFAULT_ATLAS_COLORMAP),
-        opacity: renderOpacityForItem(atlasItem.id, layerSettings, DEFAULT_ATLAS_OPACITY)
+        colormap: layerColormapForItem(
+          atlasItem,
+          layerSettings,
+          DEFAULT_ATLAS_COLORMAP,
+        ),
+        opacity: renderOpacityForItem(
+          atlasItem.id,
+          layerSettings,
+          DEFAULT_ATLAS_OPACITY,
+        ),
       })
     }
 
@@ -465,15 +537,22 @@ export function App(): JSX.Element {
   function changeLayerColormap(itemId: string, nextColormap: string): void {
     setLayerSettings((current) => {
       if (current[itemId]?.colormap === nextColormap) return current
-      return { ...current, [itemId]: { ...current[itemId], colormap: nextColormap } }
+      return {
+        ...current,
+        [itemId]: { ...current[itemId], colormap: nextColormap },
+      }
     })
   }
 
   function changeLayerWindow(itemId: string, min: number, max: number): void {
     setLayerSettings((current) => {
       const existing = current[itemId]?.window
-      if (existing && existing.min === min && existing.max === max) return current
-      return { ...current, [itemId]: { ...current[itemId], window: { min, max } } }
+      if (existing && existing.min === min && existing.max === max)
+        return current
+      return {
+        ...current,
+        [itemId]: { ...current[itemId], window: { min, max } },
+      }
     })
   }
 
@@ -500,7 +579,10 @@ export function App(): JSX.Element {
       const existing = current[itemId]
       if (existing?.opacity === clamped && !existing?.hidden) return current
       // Adjusting opacity implies the layer should be visible, so clear hidden.
-      return { ...current, [itemId]: { ...existing, opacity: clamped, hidden: false } }
+      return {
+        ...current,
+        [itemId]: { ...existing, opacity: clamped, hidden: false },
+      }
     })
   }
 
@@ -554,8 +636,11 @@ export function App(): JSX.Element {
       }
 
       const nextManifest = await refreshDesktopManifestData()
-      const overlayItem = nextManifest?.items.find((item) => item.id === result.id) ?? null
-      const isAtlas = overlayItem ? await volumeHasAtlasLabelSidecar(overlayItem) : false
+      const overlayItem =
+        nextManifest?.items.find((item) => item.id === result.id) ?? null
+      const isAtlas = overlayItem
+        ? await volumeHasAtlasLabelSidecar(overlayItem)
+        : false
       if (isAtlas) {
         setAtlasId(result.id)
         setLayerHidden(result.id, false)
@@ -584,7 +669,10 @@ export function App(): JSX.Element {
   // Compose the current view + its ordered volume ids for export/share. Order
   // is base → overlays → atlas; the copied volumes derive from the same list so
   // files and view stay in lockstep, and the importer replays it in that order.
-  function composeCurrentBundle(base: DesktopItem): { volumeIds: string[]; view: BundleViewState } {
+  function composeCurrentBundle(base: DesktopItem): {
+    volumeIds: string[]
+    view: BundleViewState
+  } {
     const crosshairMm = locationReadout?.mm
     const view = buildBundleViewState({
       baseId: base.id,
@@ -598,7 +686,7 @@ export function App(): JSX.Element {
         Array.isArray(crosshairMm) && crosshairMm.length >= 3
           ? [crosshairMm[0], crosshairMm[1], crosshairMm[2]]
           : null,
-      blocks
+      blocks,
     })
     return { volumeIds: view.volumes.map((volume) => volume.id), view }
   }
@@ -613,12 +701,14 @@ export function App(): JSX.Element {
     const { volumeIds, view } = composeCurrentBundle(selected)
 
     setIsExportingBundle(true)
-    setStatus(`Exporting bundle (${volumeIds.length} volume${volumeIds.length === 1 ? '' : 's'})…`)
+    setStatus(
+      `Exporting bundle (${volumeIds.length} volume${volumeIds.length === 1 ? '' : 's'})…`,
+    )
     try {
       const result = await exportDatasetBundle({
         defaultName: selected.label ?? 'neurovue-bundle',
         volumeIds,
-        view
+        view,
       })
       if (!result) {
         setStatus('Bundle export cancelled.')
@@ -626,7 +716,7 @@ export function App(): JSX.Element {
       }
       setStatus(
         `Exported ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
-          `(${formatBundleBytes(result.totalBytes)}) to ${result.bundlePath}.`
+          `(${formatBundleBytes(result.totalBytes)}) to ${result.bundlePath}.`,
       )
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
@@ -647,19 +737,25 @@ export function App(): JSX.Element {
     // sensible default; the rest show up in the recipient's dataset list.
     const { view } = composeCurrentBundle(selected)
     const volumeIds = items.map((item) => item.id)
-    const shareName = bidsName || datasetRoot?.split('/').pop() || selected.label || 'neurovue-dataset'
+    const shareName =
+      bidsName ||
+      datasetRoot?.split('/').pop() ||
+      selected.label ||
+      'neurovue-dataset'
 
     setIsSharingBundle(true)
-    setStatus(`Preparing dataset for AirDrop (${volumeIds.length} volume${volumeIds.length === 1 ? '' : 's'})…`)
+    setStatus(
+      `Preparing dataset for AirDrop (${volumeIds.length} volume${volumeIds.length === 1 ? '' : 's'})…`,
+    )
     try {
       const result = await shareViewViaAirDrop({
         name: shareName,
         volumeIds,
-        view
+        view,
       })
       setStatus(
         `AirDrop sheet opened — ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
-          `(${formatBundleBytes(result.totalBytes)}).`
+          `(${formatBundleBytes(result.totalBytes)}).`,
       )
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
@@ -721,7 +817,9 @@ export function App(): JSX.Element {
     // record the bundle itself in recents — `dataDir` is a temp extraction.
     await openRecentDataset(bundle.dataDir, { promoteAs: path })
     const nextManifest = await refreshDesktopManifestData()
-    const loadedIds = new Set((nextManifest?.items ?? []).map((item) => item.id))
+    const loadedIds = new Set(
+      (nextManifest?.items ?? []).map((item) => item.id),
+    )
     if (loadedIds.size === 0) {
       // openRecentDataset already surfaced the failure via setStatus.
       return
@@ -745,8 +843,10 @@ export function App(): JSX.Element {
         if (!loadedIds.has(newId)) continue
 
         const settings: LayerSettings = {}
-        if (docVolume.colormap !== undefined) settings.colormap = docVolume.colormap
-        if (docVolume.opacity !== undefined) settings.opacity = docVolume.opacity
+        if (docVolume.colormap !== undefined)
+          settings.colormap = docVolume.colormap
+        if (docVolume.opacity !== undefined)
+          settings.opacity = docVolume.opacity
         if (docVolume.hidden !== undefined) settings.hidden = docVolume.hidden
         if (docVolume.calMin !== undefined && docVolume.calMax !== undefined) {
           settings.window = { min: docVolume.calMin, max: docVolume.calMax }
@@ -773,10 +873,13 @@ export function App(): JSX.Element {
 
     const failures = bundleVerifyFailures(bundle.verification)
     const integrity =
-      failures.length > 0 ? ` ⚠ ${failures.length} file(s) failed the integrity check` : ''
-    setStatus(`Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`)
+      failures.length > 0
+        ? ` ⚠ ${failures.length} file(s) failed the integrity check`
+        : ''
+    setStatus(
+      `Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`,
+    )
   }
-
 
   useEffect(() => {
     if (!isRenderMaximized) return
@@ -791,16 +894,19 @@ export function App(): JSX.Element {
   // The atlas layer's display name, used to bind the region readout to the named
   // atlas (only atlas/label volumes carry per-voxel region labels).
   const atlasName = useMemo(
-    () => (atlasId ? items.find((item) => item.id === atlasId)?.label ?? null : null),
-    [atlasId, items]
+    () =>
+      atlasId
+        ? (items.find((item) => item.id === atlasId)?.label ?? null)
+        : null,
+    [atlasId, items],
   )
   const locationStatus = useMemo(
     () => locationStatusLabel(locationReadout, atlasName),
-    [locationReadout, atlasName]
+    [locationReadout, atlasName],
   )
   const slicePosition = useMemo(
     () => slicePositionLabel(locationReadout, viewMode),
-    [locationReadout, viewMode]
+    [locationReadout, viewMode],
   )
 
   return (
@@ -815,7 +921,13 @@ export function App(): JSX.Element {
           </div>
           <div>
             <h1>NeuroVue</h1>
-            <p title={[datasetRoot, bidsDatasetDoi && `DOI: ${bidsDatasetDoi}`].filter(Boolean).join(' · ') || undefined}>
+            <p
+              title={
+                [datasetRoot, bidsDatasetDoi && `DOI: ${bidsDatasetDoi}`]
+                  .filter(Boolean)
+                  .join(' · ') || undefined
+              }
+            >
               {bidsName || datasetRoot || serverUrl || 'Resolving local server'}
             </p>
           </div>
@@ -823,7 +935,9 @@ export function App(): JSX.Element {
 
         <div className="nv-toolbar" aria-label="Viewer controls">
           <button
-            aria-label={isFileListCollapsed ? 'Open dataset panel' : 'Close dataset panel'}
+            aria-label={
+              isFileListCollapsed ? 'Open dataset panel' : 'Close dataset panel'
+            }
             aria-expanded={!isFileListCollapsed}
             className={`nv-icon-button nv-mobile-only ${!isFileListCollapsed ? 'is-active' : ''}`}
             onClick={() => {
@@ -840,7 +954,9 @@ export function App(): JSX.Element {
               className="nv-tool-button"
               disabled={isOpeningDataset}
               onClick={() => setIsRecentMenuOpen((open) => !open)}
-              title={cacheRoot ? `Datasets. Temp cache: ${cacheRoot}` : 'Datasets'}
+              title={
+                cacheRoot ? `Datasets. Temp cache: ${cacheRoot}` : 'Datasets'
+              }
               type="button"
               aria-haspopup="menu"
               aria-expanded={isRecentMenuOpen}
@@ -875,7 +991,9 @@ export function App(): JSX.Element {
                   role="menuitem"
                 >
                   <FolderOpen size={14} />
-                  <span className="nv-recent-item-name">Open dataset directory…</span>
+                  <span className="nv-recent-item-name">
+                    Open dataset directory…
+                  </span>
                 </button>
                 {recentDatasets.length > 0 ? (
                   <>
@@ -896,7 +1014,9 @@ export function App(): JSX.Element {
                           type="button"
                           role="menuitem"
                         >
-                          <span className="nv-recent-item-name">{recentDatasetLabel(path)}</span>
+                          <span className="nv-recent-item-name">
+                            {recentDatasetLabel(path)}
+                          </span>
                           <span className="nv-recent-item-path">{path}</span>
                         </button>
                         <button
@@ -935,9 +1055,13 @@ export function App(): JSX.Element {
             onClick={async () => {
               try {
                 await savePatch(serverUrl, selected, clipPlanes, backend)
-                setStatus(`Correction patch saved for ${selected?.label ?? 'volume'}.`)
+                setStatus(
+                  `Correction patch saved for ${selected?.label ?? 'volume'}.`,
+                )
               } catch (error) {
-                setStatus(error instanceof Error ? error.message : String(error))
+                setStatus(
+                  error instanceof Error ? error.message : String(error),
+                )
               }
             }}
           >
@@ -999,7 +1123,9 @@ export function App(): JSX.Element {
             <button
               aria-pressed={isTerminalOpen}
               className={`nv-icon-button ${isTerminalOpen ? 'is-active' : ''}`}
-              title={isTerminalOpen ? 'Hide Python terminal' : 'Show Python terminal'}
+              title={
+                isTerminalOpen ? 'Hide Python terminal' : 'Show Python terminal'
+              }
               onClick={toggleTerminal}
               type="button"
             >
@@ -1007,7 +1133,11 @@ export function App(): JSX.Element {
             </button>
           ) : null}
           <button
-            aria-label={isControlsCollapsed ? 'Open controls panel' : 'Close controls panel'}
+            aria-label={
+              isControlsCollapsed
+                ? 'Open controls panel'
+                : 'Close controls panel'
+            }
             aria-expanded={!isControlsCollapsed}
             className={`nv-icon-button nv-mobile-only ${!isControlsCollapsed ? 'is-active' : ''}`}
             onClick={() => {
@@ -1041,23 +1171,41 @@ export function App(): JSX.Element {
           isControlsCollapsed ? 'is-controls-collapsed' : ''
         }`}
       >
-        <aside className={`nv-sidebar ${isFileListCollapsed ? 'is-collapsed' : ''}`}>
+        <aside
+          className={`nv-sidebar ${isFileListCollapsed ? 'is-collapsed' : ''}`}
+        >
           <div className="nv-panel-heading">
             <span>
               <Database size={15} />
               <span className="nv-sidebar-title">Dataset</span>
             </span>
             <div className="nv-sidebar-heading-tools">
-              <em>{filteredItems.length}/{items.length}</em>
+              <em>
+                {filteredItems.length}/{items.length}
+              </em>
               <button
                 aria-expanded={!isFileListCollapsed}
-                aria-label={isFileListCollapsed ? 'Expand dataset file list' : 'Collapse dataset file list'}
+                aria-label={
+                  isFileListCollapsed
+                    ? 'Expand dataset file list'
+                    : 'Collapse dataset file list'
+                }
                 className="nv-sidebar-toggle"
-                onClick={() => setIsFileListCollapsed((collapsed) => !collapsed)}
-                title={isFileListCollapsed ? 'Expand file list' : 'Collapse file list'}
+                onClick={() =>
+                  setIsFileListCollapsed((collapsed) => !collapsed)
+                }
+                title={
+                  isFileListCollapsed
+                    ? 'Expand file list'
+                    : 'Collapse file list'
+                }
                 type="button"
               >
-                {isFileListCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+                {isFileListCollapsed ? (
+                  <PanelLeftOpen size={15} />
+                ) : (
+                  <PanelLeftClose size={15} />
+                )}
               </button>
             </div>
           </div>
@@ -1113,7 +1261,9 @@ export function App(): JSX.Element {
             aria-valuemin={MIN_SPLIT}
             aria-valuenow={splitPercent}
             className="nv-splitter"
-            onPointerDown={(event) => beginSplitDrag(event, splitRef, setSplitPercent)}
+            onPointerDown={(event) =>
+              beginSplitDrag(event, splitRef, setSplitPercent)
+            }
             role="separator"
             title="Resize panes"
             type="button"
@@ -1139,14 +1289,24 @@ export function App(): JSX.Element {
               </em>
             </div>
             <button
-              aria-label={isRenderMaximized ? 'Exit full screen' : 'View NiiVue full screen'}
+              aria-label={
+                isRenderMaximized
+                  ? 'Exit full screen'
+                  : 'View NiiVue full screen'
+              }
               aria-pressed={isRenderMaximized}
               className="nv-pane-icon-button nv-render-maximize"
               onClick={() => setIsRenderMaximized((value) => !value)}
-              title={isRenderMaximized ? 'Exit full screen (Esc)' : 'Full screen'}
+              title={
+                isRenderMaximized ? 'Exit full screen (Esc)' : 'Full screen'
+              }
               type="button"
             >
-              {isRenderMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              {isRenderMaximized ? (
+                <Minimize2 size={16} />
+              ) : (
+                <Maximize2 size={16} />
+              )}
             </button>
             <NiivueStage
               activeClipPlaneId={activeClipPlaneId}
@@ -1177,13 +1337,23 @@ export function App(): JSX.Element {
           <div className="nv-controls-toolbar">
             <button
               aria-expanded={!isControlsCollapsed}
-              aria-label={isControlsCollapsed ? 'Expand controls panel' : 'Collapse controls panel'}
+              aria-label={
+                isControlsCollapsed
+                  ? 'Expand controls panel'
+                  : 'Collapse controls panel'
+              }
               className="nv-sidebar-toggle"
               onClick={() => setIsControlsCollapsed((collapsed) => !collapsed)}
-              title={isControlsCollapsed ? 'Expand controls' : 'Collapse controls'}
+              title={
+                isControlsCollapsed ? 'Expand controls' : 'Collapse controls'
+              }
               type="button"
             >
-              {isControlsCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
+              {isControlsCollapsed ? (
+                <PanelRightOpen size={15} />
+              ) : (
+                <PanelRightClose size={15} />
+              )}
             </button>
           </div>
 
@@ -1194,7 +1364,9 @@ export function App(): JSX.Element {
               onZoomIn={() => setDesktopZoom((zoom) => zoomBy(zoom, 1.25))}
               onZoomOut={() => setDesktopZoom((zoom) => zoomBy(zoom, 0.8))}
             />
-            <span className="nv-zoom-readout">{Math.round(desktopZoom * 100)}%</span>
+            <span className="nv-zoom-readout">
+              {Math.round(desktopZoom * 100)}%
+            </span>
           </div>
 
           <SidePanelTabs activeTab={sidePanelTab} onChange={setSidePanelTab} />
@@ -1219,10 +1391,16 @@ export function App(): JSX.Element {
                         type="button"
                       >
                         <span className="nv-clip-card-header">
-                          <span className="nv-zoom-card-title">Zoom render</span>
-                          {renderWheelMode === 'zoom' ? <span className="nv-clip-active-badge">wheel</span> : null}
+                          <span className="nv-zoom-card-title">
+                            Zoom render
+                          </span>
+                          {renderWheelMode === 'zoom' ? (
+                            <span className="nv-clip-active-badge">wheel</span>
+                          ) : null}
                         </span>
-                        <span className="nv-zoom-card-hint">Scroll the render to zoom in and out.</span>
+                        <span className="nv-zoom-card-hint">
+                          Scroll the render to zoom in and out.
+                        </span>
                       </button>
                     </section>
 
@@ -1234,7 +1412,9 @@ export function App(): JSX.Element {
                         </span>
                         <em>
                           {renderWheelMode === 'clip-plane'
-                            ? clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'
+                            ? (clipPlanes.find(
+                                (plane) => plane.id === activeClipPlaneId,
+                              )?.label ?? 'none')
                             : 'none'}
                         </em>
                       </div>
@@ -1242,7 +1422,10 @@ export function App(): JSX.Element {
                       <div className="nv-clip-list">
                         {clipPlanes.map((plane) => (
                           <ClipPlaneEditor
-                            active={renderWheelMode === 'clip-plane' && plane.id === activeClipPlaneId}
+                            active={
+                              renderWheelMode === 'clip-plane' &&
+                              plane.id === activeClipPlaneId
+                            }
                             key={plane.id}
                             plane={plane}
                             onActivate={() => bindActiveClipPlane(plane.id)}
@@ -1257,8 +1440,10 @@ export function App(): JSX.Element {
                 ) : (
                   <section className="nv-control-section">
                     <p className="nv-mode-note">
-                      Zoom and clip planes apply to the 3D render. In 2D modes, scroll to page through
-                      slices and click to move the crosshair. Switch to <strong>3D</strong> for render controls.
+                      Zoom and clip planes apply to the 3D render. In 2D modes,
+                      scroll to page through slices and click to move the
+                      crosshair. Switch to <strong>3D</strong> for render
+                      controls.
                     </p>
                   </section>
                 )}
@@ -1282,9 +1467,19 @@ export function App(): JSX.Element {
                   onOverlayToggle={toggleOverlayLayer}
                 />
 
-                <SelectionPanel item={selected} metadataStatus={metadataStatus} />
-                <CrosshairPanel location={locationReadout} onGoTo={goToCoordinate} />
-                <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
+                <SelectionPanel
+                  item={selected}
+                  metadataStatus={metadataStatus}
+                />
+                <CrosshairPanel
+                  location={locationReadout}
+                  onGoTo={goToCoordinate}
+                />
+                <MetadataPanel
+                  item={selected}
+                  metadata={metadata}
+                  status={metadataStatus}
+                />
               </>
             ) : (
               <>
@@ -1305,7 +1500,9 @@ export function App(): JSX.Element {
           <button
             aria-label="Resize terminal"
             className="nv-hsplitter"
-            onPointerDown={(event) => beginVerticalDrag(event, setTerminalHeight)}
+            onPointerDown={(event) =>
+              beginVerticalDrag(event, setTerminalHeight)
+            }
             title="Drag to resize the terminal"
             type="button"
           >
@@ -1322,7 +1519,11 @@ export function App(): JSX.Element {
         </span>
         {warmStatus ? (
           <span className="nv-warm-status">
-            {warmProgress?.active ? <LoaderCircle size={12} /> : <CheckCircle2 size={12} />}
+            {warmProgress?.active ? (
+              <LoaderCircle size={12} />
+            ) : (
+              <CheckCircle2 size={12} />
+            )}
             {warmStatus}
           </span>
         ) : null}
@@ -1351,7 +1552,7 @@ export function App(): JSX.Element {
 // the Explode slider. The slider is disabled while untiled (grid = Off).
 function BlockControls({
   blocks,
-  onChange
+  onChange,
 }: {
   blocks: BlockSettings
   onChange: (blocks: BlockSettings) => void
@@ -1364,7 +1565,11 @@ function BlockControls({
           <Boxes size={15} />
           Blocks
         </span>
-        <em>{tiled ? `${blockGridLabel(blocks.grid)} · ${blocks.explode.toFixed(2)}×` : 'off'}</em>
+        <em>
+          {tiled
+            ? `${blockGridLabel(blocks.grid)} · ${blocks.explode.toFixed(2)}×`
+            : 'off'}
+        </em>
       </div>
 
       <div className="nv-block-grid" role="group" aria-label="Block grid">
@@ -1399,12 +1604,15 @@ function BlockControls({
           step={0.05}
           type="range"
           value={blocks.explode}
-          onChange={(event) => onChange({ ...blocks, explode: Number(event.target.value) })}
+          onChange={(event) =>
+            onChange({ ...blocks, explode: Number(event.target.value) })
+          }
         />
       </label>
 
       <p className="nv-block-hint">
-        Splits every layer into bricks and spreads them apart in the 3D render. Pick a grid, then raise Explode.
+        Splits every layer into bricks and spreads them apart in the 3D render.
+        Pick a grid, then raise Explode.
       </p>
     </section>
   )
@@ -1412,13 +1620,17 @@ function BlockControls({
 
 function SidePanelTabs({
   activeTab,
-  onChange
+  onChange,
 }: {
   activeTab: SidePanelTab
   onChange: (tab: SidePanelTab) => void
 }): JSX.Element {
   return (
-    <div className="nv-sidepanel-tabs" role="tablist" aria-label="Side panel sections">
+    <div
+      className="nv-sidepanel-tabs"
+      role="tablist"
+      aria-label="Side panel sections"
+    >
       <button
         aria-selected={activeTab === 'inspect'}
         className={activeTab === 'inspect' ? 'is-active' : ''}
@@ -1447,7 +1659,7 @@ function DesktopZoomControls({
   zoom,
   onFit,
   onZoomIn,
-  onZoomOut
+  onZoomOut,
 }: {
   zoom: number
   onFit: () => void
@@ -1503,7 +1715,7 @@ function LayerPanel({
   onLayerWindowChange,
   onLayerWindowReset,
   onLoadOverlay,
-  onOverlayToggle
+  onOverlayToggle,
 }: {
   atlasId: string | null
   isOpeningOverlay: boolean
@@ -1522,27 +1734,47 @@ function LayerPanel({
   onLoadOverlay: () => void
   onOverlayToggle: (itemId: string) => void
 }): JSX.Element {
-  const [expandedId, setExpandedId] = useState<string | null | undefined>(undefined)
+  const [expandedId, setExpandedId] = useState<string | null | undefined>(
+    undefined,
+  )
   const atlasCandidates = useMemo(
     () => items.slice().sort(compareAtlasCandidates),
-    [items]
+    [items],
   )
   // Active overlay items in render order, excluding the base and atlas.
   const overlayItems = useMemo(
-    () => items.filter((item) => overlayIds.has(item.id) && item.id !== selected?.id && item.id !== atlasId),
-    [atlasId, items, overlayIds, selected?.id]
+    () =>
+      items.filter(
+        (item) =>
+          overlayIds.has(item.id) &&
+          item.id !== selected?.id &&
+          item.id !== atlasId,
+      ),
+    [atlasId, items, overlayIds, selected?.id],
   )
   // Volumes not yet used by any layer — the "add overlay" pool.
   const addCandidates = useMemo(
-    () => items.filter((item) => item.id !== selected?.id && item.id !== atlasId && !overlayIds.has(item.id)),
-    [atlasId, items, overlayIds, selected?.id]
+    () =>
+      items.filter(
+        (item) =>
+          item.id !== selected?.id &&
+          item.id !== atlasId &&
+          !overlayIds.has(item.id),
+      ),
+    [atlasId, items, overlayIds, selected?.id],
   )
   // The unified layer list, in NiiVue render order: base -> overlays -> atlas.
   const rows = useMemo(() => {
-    const out: Array<{ item: DesktopItem; role: 'base' | 'overlay' | 'atlas' }> = []
+    const out: Array<{
+      item: DesktopItem
+      role: 'base' | 'overlay' | 'atlas'
+    }> = []
     if (selected) out.push({ item: selected, role: 'base' })
     for (const item of overlayItems) out.push({ item, role: 'overlay' })
-    const atlasItem = atlasId && atlasId !== selected?.id ? items.find((item) => item.id === atlasId) : null
+    const atlasItem =
+      atlasId && atlasId !== selected?.id
+        ? items.find((item) => item.id === atlasId)
+        : null
     if (atlasItem) out.push({ item: atlasItem, role: 'atlas' })
     return out
   }, [atlasId, items, overlayItems, selected])
@@ -1555,7 +1787,7 @@ function LayerPanel({
   const rowIds = rows.map((row) => row.item.id)
   const expanded =
     expandedId === undefined
-      ? selected?.id ?? null
+      ? (selected?.id ?? null)
       : expandedId && rowIds.includes(expandedId)
         ? expandedId
         : null
@@ -1589,7 +1821,10 @@ function LayerPanel({
           {rows.map(({ item, role }) => {
             const settings = layerSettings[item.id]
             const isBaseAtlas = role === 'base' && atlasId === selected.id
-            const overlayIndex = role === 'overlay' ? overlayItems.findIndex((o) => o.id === item.id) : 0
+            const overlayIndex =
+              role === 'overlay'
+                ? overlayItems.findIndex((o) => o.id === item.id)
+                : 0
             const rawColormap = layerColormapForItem(
               item,
               layerSettings,
@@ -1597,10 +1832,13 @@ function LayerPanel({
                 ? overlayColormapForIndex(overlayIndex)
                 : isBaseAtlas
                   ? DEFAULT_ATLAS_COLORMAP
-                  : DEFAULT_BASE_COLORMAP
+                  : DEFAULT_BASE_COLORMAP,
             )
             // Keep the base's select in sync with what actually renders (grayscale).
-            const colormapValue = role === 'base' && !isBaseAtlas ? baseColormap(rawColormap) : rawColormap
+            const colormapValue =
+              role === 'base' && !isBaseAtlas
+                ? baseColormap(rawColormap)
+                : rawColormap
             return (
               <LayerRow
                 key={item.id}
@@ -1611,9 +1849,17 @@ function LayerPanel({
                 hidden={!!settings?.hidden}
                 expanded={expanded === item.id}
                 removable={role !== 'base'}
-                onToggleExpand={() => setExpandedId(expanded === item.id ? null : item.id)}
-                onHiddenChange={(hidden) => onLayerHiddenChange(item.id, hidden)}
-                onRemove={role === 'atlas' ? () => onAtlasChange('') : () => onOverlayToggle(item.id)}
+                onToggleExpand={() =>
+                  setExpandedId(expanded === item.id ? null : item.id)
+                }
+                onHiddenChange={(hidden) =>
+                  onLayerHiddenChange(item.id, hidden)
+                }
+                onRemove={
+                  role === 'atlas'
+                    ? () => onAtlasChange('')
+                    : () => onOverlayToggle(item.id)
+                }
               >
                 {role === 'atlas' ? (
                   <Slider
@@ -1621,7 +1867,11 @@ function LayerPanel({
                     min={0}
                     max={1}
                     step={0.05}
-                    value={opacityForItem(item.id, layerSettings, DEFAULT_ATLAS_OPACITY)}
+                    value={opacityForItem(
+                      item.id,
+                      layerSettings,
+                      DEFAULT_ATLAS_OPACITY,
+                    )}
                     onChange={(value) => onLayerOpacityChange(item.id, value)}
                   />
                 ) : (
@@ -1630,7 +1880,11 @@ function LayerPanel({
                       ariaLabel={`Colormap for ${item.label}`}
                       itemId={item.id}
                       value={colormapValue}
-                      options={role === 'base' && !isBaseAtlas ? BASE_COLORMAP_OPTIONS : COLORMAP_OPTIONS}
+                      options={
+                        role === 'base' && !isBaseAtlas
+                          ? BASE_COLORMAP_OPTIONS
+                          : COLORMAP_OPTIONS
+                      }
                       onChange={onLayerColormapChange}
                     />
                     {role === 'overlay' ? (
@@ -1639,8 +1893,14 @@ function LayerPanel({
                         min={0}
                         max={1}
                         step={0.05}
-                        value={opacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)}
-                        onChange={(value) => onLayerOpacityChange(item.id, value)}
+                        value={opacityForItem(
+                          item.id,
+                          layerSettings,
+                          DEFAULT_OVERLAY_OPACITY,
+                        )}
+                        onChange={(value) =>
+                          onLayerOpacityChange(item.id, value)
+                        }
                       />
                     ) : null}
                     {!isBaseAtlas ? (
@@ -1716,7 +1976,11 @@ function LayerPanel({
                 <small>{layerOptionMeta(item)}</small>
               </span>
               {warn ? (
-                <AlertTriangle aria-label="Different subject than base" className="nv-layer-add-warn" size={13} />
+                <AlertTriangle
+                  aria-label="Different subject than base"
+                  className="nv-layer-add-warn"
+                  size={13}
+                />
               ) : null}
             </button>
           )
@@ -1743,7 +2007,7 @@ function LayerRow({
   onToggleExpand,
   onHiddenChange,
   onRemove,
-  children
+  children,
 }: {
   role: 'base' | 'overlay' | 'atlas'
   label: string
@@ -1757,7 +2021,8 @@ function LayerRow({
   onRemove: () => void
   children: JSX.Element
 }): JSX.Element {
-  const roleLabel = role === 'base' ? 'Base' : role === 'atlas' ? 'Atlas' : 'Overlay'
+  const roleLabel =
+    role === 'base' ? 'Base' : role === 'atlas' ? 'Atlas' : 'Overlay'
   return (
     <div
       className={`nv-layer-row is-${role}${expanded ? ' is-expanded' : ''}${hidden ? ' is-hidden' : ''}${warning ? ' is-warning' : ''}`}
@@ -1786,7 +2051,12 @@ function LayerRow({
             </small>
           </span>
           {warning ? (
-            <span aria-label={warning} className="nv-layer-row-warn" role="img" title={warning}>
+            <span
+              aria-label={warning}
+              className="nv-layer-row-warn"
+              role="img"
+              title={warning}
+            >
               <AlertTriangle size={15} />
             </span>
           ) : null}
@@ -1814,7 +2084,7 @@ function LayerColormapSelect({
   itemId,
   value,
   options = COLORMAP_OPTIONS,
-  onChange
+  onChange,
 }: {
   ariaLabel: string
   disabled?: boolean
@@ -1824,7 +2094,9 @@ function LayerColormapSelect({
   onChange: (itemId: string, colormap: string) => void
 }): JSX.Element {
   return (
-    <label className={`nv-select nv-layer-colormap-select ${disabled ? 'is-disabled' : ''}`}>
+    <label
+      className={`nv-select nv-layer-colormap-select ${disabled ? 'is-disabled' : ''}`}
+    >
       <span>Map</span>
       <select
         aria-label={ariaLabel}
@@ -1856,7 +2128,7 @@ function WindowControl({
   resolved,
   variant = 'window',
   onChange,
-  onReset
+  onReset,
 }: {
   itemId: string
   label: string
@@ -1960,7 +2232,11 @@ function WindowControl({
         <button
           className="nv-window-showall"
           onClick={() =>
-            onChange(itemId, resolved.robustMin as number, resolved.robustMax as number)
+            onChange(
+              itemId,
+              resolved.robustMin as number,
+              resolved.robustMax as number,
+            )
           }
           title="Display the full robust range with no threshold"
           type="button"
@@ -1974,7 +2250,7 @@ function WindowControl({
 
 function SelectionPanel({
   item,
-  metadataStatus
+  metadataStatus,
 }: {
   item: DesktopItem | null
   metadataStatus: string
@@ -2022,15 +2298,23 @@ function SelectionPanel({
 // +Z=Superior).
 function CrosshairPanel({
   location,
-  onGoTo
+  onGoTo,
 }: {
   location: NiiVueLocation | null
   onGoTo: (x: number, y: number, z: number) => void
 }): JSX.Element {
   const mm = location?.mm
-  const hasLocation = Boolean(mm) && mm!.slice(0, 3).every((value) => Number.isFinite(value))
-  const anatomical = hasLocation ? formatAnatomicalCoordinates(mm!) : null
-  const rasTriplet = hasLocation ? mm!.slice(0, 3).map((value) => Number(value.toFixed(2))).join(', ') : null
+  const validMm = mm?.slice(0, 3).every((value) => Number.isFinite(value))
+    ? mm
+    : null
+  const hasLocation = validMm !== null
+  const anatomical = validMm ? formatAnatomicalCoordinates(validMm) : null
+  const rasTriplet = validMm
+    ? validMm
+        .slice(0, 3)
+        .map((value) => Number(value.toFixed(2)))
+        .join(', ')
+    : null
 
   // Go-to fields track the current crosshair (tweak-and-go); they follow the
   // crosshair when it moves via click/paging.
@@ -2038,10 +2322,10 @@ function CrosshairPanel({
   const [y, setY] = useState('')
   const [z, setZ] = useState('')
   useEffect(() => {
-    if (!hasLocation) return
-    setX(String(Number(mm![0].toFixed(2))))
-    setY(String(Number(mm![1].toFixed(2))))
-    setZ(String(Number(mm![2].toFixed(2))))
+    if (!validMm) return
+    setX(String(Number(validMm[0].toFixed(2))))
+    setY(String(Number(validMm[1].toFixed(2))))
+    setZ(String(Number(validMm[2].toFixed(2))))
   }, [mm?.[0], mm?.[1], mm?.[2]])
 
   const [copied, setCopied] = useState(false)
@@ -2059,7 +2343,9 @@ function CrosshairPanel({
   const parsed: [number, number, number] | null = (() => {
     if (![x, y, z].every((value) => value.trim().length > 0)) return null
     const values = [x, y, z].map((value) => Number(value))
-    return values.every(Number.isFinite) ? [values[0], values[1], values[2]] : null
+    return values.every(Number.isFinite)
+      ? [values[0], values[1], values[2]]
+      : null
   })()
 
   function handleGo(): void {
@@ -2073,7 +2359,9 @@ function CrosshairPanel({
         Crosshair
       </h2>
       <div className="nv-crosshair-readout">
-        <span className={hasLocation ? '' : 'is-empty'}>{anatomical ?? 'Click or page to place the crosshair'}</span>
+        <span className={hasLocation ? '' : 'is-empty'}>
+          {anatomical ?? 'Click or page to place the crosshair'}
+        </span>
         <button
           type="button"
           className="nv-crosshair-copy"
@@ -2093,7 +2381,9 @@ function CrosshairPanel({
               aria-label={`${axisLabel} millimetres`}
               className="nv-text-input"
               inputMode="decimal"
-              onChange={(event) => [setX, setY, setZ][index](event.target.value)}
+              onChange={(event) =>
+                [setX, setY, setZ][index](event.target.value)
+              }
               onKeyDown={(event) => {
                 if (event.key === 'Enter') handleGo()
               }}
@@ -2119,7 +2409,7 @@ function CrosshairPanel({
 function MetadataPanel({
   item,
   metadata,
-  status
+  status,
 }: {
   item: DesktopItem | null
   metadata: VolumeMetadata | null
@@ -2148,7 +2438,10 @@ function MetadataPanel({
           {sidecars.length > 0 ? (
             <div className="nv-sidecar-list">
               {sidecars.map((sidecar) => (
-                <details className="nv-sidecar" key={sidecar.path ?? sidecar.name}>
+                <details
+                  className="nv-sidecar"
+                  key={sidecar.path ?? sidecar.name}
+                >
                   <summary>
                     <span>{sidecar.name}</span>
                     <em>{sidecar.kind}</em>
@@ -2170,7 +2463,9 @@ function MetadataPanel({
             </div>
           ) : null}
           {sidecars.length === 0 && !embeddedMetadata ? (
-            <div className="nv-empty-meta">No JSON sidecar attached to this volume.</div>
+            <div className="nv-empty-meta">
+              No JSON sidecar attached to this volume.
+            </div>
           ) : null}
         </>
       ) : (
@@ -2184,7 +2479,7 @@ function ClipPlaneEditor({
   active,
   onActivate,
   plane,
-  onChange
+  onChange,
 }: {
   active: boolean
   onActivate: () => void
@@ -2204,7 +2499,9 @@ function ClipPlaneEditor({
         <label className="nv-toggle">
           <input
             checked={plane.enabled}
-            onChange={(event) => onChange({ ...plane, enabled: event.target.checked })}
+            onChange={(event) =>
+              onChange({ ...plane, enabled: event.target.checked })
+            }
             type="checkbox"
           />
           <span>{plane.label}</span>
@@ -2225,43 +2522,75 @@ function ClipPlaneEditor({
       <label className="nv-toggle nv-clip-flip">
         <input
           checked={isFlipped}
-          onChange={(event) => onChange(setClipPlaneFlipped(plane, event.target.checked))}
+          onChange={(event) =>
+            onChange(setClipPlaneFlipped(plane, event.target.checked))
+          }
           type="checkbox"
         />
         <span>Flip</span>
       </label>
 
-      <Slider label="Depth" max={1} min={-1} step={0.01} value={plane.depth} onChange={(depth) => onChange({ ...plane, depth })} />
-      <Slider label="Azimuth" max={360} min={-360} step={1} value={plane.azimuth} onChange={(azimuth) => onChange({ ...plane, azimuth })} />
-      <Slider label="Elevation" max={180} min={-180} step={1} value={plane.elevation} onChange={(elevation) => onChange({ ...plane, elevation })} />
+      <Slider
+        label="Depth"
+        max={1}
+        min={-1}
+        step={0.01}
+        value={plane.depth}
+        onChange={(depth) => onChange({ ...plane, depth })}
+      />
+      <Slider
+        label="Azimuth"
+        max={360}
+        min={-360}
+        step={1}
+        value={plane.azimuth}
+        onChange={(azimuth) => onChange({ ...plane, azimuth })}
+      />
+      <Slider
+        label="Elevation"
+        max={180}
+        min={-180}
+        step={1}
+        value={plane.elevation}
+        onChange={(elevation) => onChange({ ...plane, elevation })}
+      />
     </section>
   )
 }
 
 function defaultClipPlaneFor(plane: ClipPlane): ClipPlane {
-  return defaultClipPlanes().find((candidate) => candidate.id === plane.id) ?? plane
+  return (
+    defaultClipPlanes().find((candidate) => candidate.id === plane.id) ?? plane
+  )
 }
 
 function setClipPlaneFlipped(plane: ClipPlane, flipped: boolean): ClipPlane {
   const defaultPlane = defaultClipPlaneFor(plane)
-  const orientation = flipped ? flippedClipOrientation(defaultPlane) : defaultPlane
+  const orientation = flipped
+    ? flippedClipOrientation(defaultPlane)
+    : defaultPlane
   return {
     ...plane,
     azimuth: orientation.azimuth,
-    elevation: orientation.elevation
+    elevation: orientation.elevation,
   }
 }
 
 function isClipPlaneFlipped(plane: ClipPlane): boolean {
   const flipped = flippedClipOrientation(defaultClipPlaneFor(plane))
-  return degreesEqual(plane.azimuth, flipped.azimuth) && degreesEqual(plane.elevation, flipped.elevation)
+  return (
+    degreesEqual(plane.azimuth, flipped.azimuth) &&
+    degreesEqual(plane.elevation, flipped.elevation)
+  )
 }
 
-function flippedClipOrientation(plane: ClipPlane): Pick<ClipPlane, 'azimuth' | 'elevation'> {
+function flippedClipOrientation(
+  plane: ClipPlane,
+): Pick<ClipPlane, 'azimuth' | 'elevation'> {
   return (
     FLIPPED_CLIP_ORIENTATIONS[plane.id] ?? {
       azimuth: plane.azimuth + 180,
-      elevation: -plane.elevation
+      elevation: -plane.elevation,
     }
   )
 }
@@ -2280,7 +2609,7 @@ function Slider({
   max,
   step,
   value,
-  onChange
+  onChange,
 }: {
   label: string
   min: number
@@ -2300,15 +2629,17 @@ function Slider({
         type="range"
         value={value}
       />
-      <code>{Number.isFinite(value) ? value.toFixed(step < 1 ? 2 : 0) : '–'}</code>
+      <code>
+        {Number.isFinite(value) ? value.toFixed(step < 1 ? 2 : 0) : '–'}
+      </code>
     </label>
   )
 }
 
 function beginSplitDrag(
   event: ReactPointerEvent<HTMLButtonElement>,
-  workspaceRef: RefObject<HTMLElement>,
-  onChange: (value: number) => void
+  workspaceRef: RefObject<HTMLElement | null>,
+  onChange: (value: number) => void,
 ): void {
   const workspace = workspaceRef.current
   if (!workspace) return
@@ -2346,7 +2677,7 @@ function beginSplitDrag(
 
 function beginVerticalDrag(
   event: ReactPointerEvent<HTMLButtonElement>,
-  onChange: (value: number) => void
+  onChange: (value: number) => void,
 ): void {
   event.preventDefault()
   const handle = event.currentTarget
@@ -2386,7 +2717,9 @@ async function volumeHasAtlasLabelSidecar(item: DesktopItem): Promise<boolean> {
 
 function metadataHasAtlasLabelMap(metadata: VolumeMetadata): boolean {
   if (isAtlasLabelMap(metadata as unknown as JsonValue)) return true
-  return (metadata.sidecars ?? []).some((sidecar) => isAtlasLabelMap(sidecar.metadata))
+  return (metadata.sidecars ?? []).some((sidecar) =>
+    isAtlasLabelMap(sidecar.metadata),
+  )
 }
 
 function isAtlasLabelMap(value: JsonValue): boolean {
@@ -2401,13 +2734,17 @@ function isAtlasLabelMap(value: JsonValue): boolean {
 
 function numericList(value: JsonValue | undefined): number[] | null {
   if (!Array.isArray(value)) return null
-  const numbers = value.map((entry) => typeof entry === 'number' ? entry : Number(entry))
+  const numbers = value.map((entry) =>
+    typeof entry === 'number' ? entry : Number(entry),
+  )
   return numbers.length > 0 && numbers.every(Number.isFinite) ? numbers : null
 }
 
 function stringList(value: JsonValue | undefined): string[] | null {
   if (!Array.isArray(value)) return null
-  return value.map((entry) => typeof entry === 'string' ? entry : String(entry))
+  return value.map((entry) =>
+    typeof entry === 'string' ? entry : String(entry),
+  )
 }
 
 function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
@@ -2465,13 +2802,19 @@ function mouseContextLabel(context: MouseContext): string {
 // Through-plane position of the current slice, as an anatomical mm coordinate
 // (RAS+, so it's correct regardless of the volume's raw voxel orientation).
 // Only meaningful for the single-plane 2D modes; multiplanar/render return null.
-const SLICE_THROUGH_PLANE: Record<string, { index: number; positive: string; negative: string }> = {
+const SLICE_THROUGH_PLANE: Record<
+  string,
+  { index: number; positive: string; negative: string }
+> = {
   axial: { index: 2, positive: 'S', negative: 'I' },
   coronal: { index: 1, positive: 'A', negative: 'P' },
-  sagittal: { index: 0, positive: 'R', negative: 'L' }
+  sagittal: { index: 0, positive: 'R', negative: 'L' },
 }
 
-function slicePositionLabel(location: NiiVueLocation | null, viewMode: ViewModeId): string | null {
+function slicePositionLabel(
+  location: NiiVueLocation | null,
+  viewMode: ViewModeId,
+): string | null {
   if (!location) return null
   const axis = SLICE_THROUGH_PLANE[viewMode]
   if (!axis) return null
@@ -2481,7 +2824,10 @@ function slicePositionLabel(location: NiiVueLocation | null, viewMode: ViewModeI
   return `${letter} ${formatCoordinate(Math.abs(value))} mm`
 }
 
-function locationStatusLabel(location: NiiVueLocation | null, atlasName: string | null): string | null {
+function locationStatusLabel(
+  location: NiiVueLocation | null,
+  atlasName: string | null,
+): string | null {
   if (!location) return null
   const mm = formatAnatomicalCoordinates(location.mm)
   const vox = location.vox.map(formatVoxelIndex).join(', ')
@@ -2497,12 +2843,17 @@ function locationStatusLabel(location: NiiVueLocation | null, atlasName: string 
 // +Z=Superior. Render the sign as anatomical letters so laterality is never
 // ambiguous (the unsigned XYZ readout could not distinguish left from right).
 function formatAnatomicalCoordinates(mm: number[]): string {
-  const axes: Array<[string, string]> = [['R', 'L'], ['A', 'P'], ['S', 'I']]
+  const axes: Array<[string, string]> = [
+    ['R', 'L'],
+    ['A', 'P'],
+    ['S', 'I'],
+  ]
   return mm
     .slice(0, 3)
     .map((value, index) => {
       const [positive, negative] = axes[index]
-      const letter = (Number.isFinite(value) ? value : 0) >= 0 ? positive : negative
+      const letter =
+        (Number.isFinite(value) ? value : 0) >= 0 ? positive : negative
       return `${letter} ${formatCoordinate(Math.abs(value))}`
     })
     .join(' / ')
@@ -2533,11 +2884,13 @@ function formatIntensity(value: number): string {
 // which atlas a region came from, and could report the wrong volume).
 function locationRegion(
   location: NiiVueLocation,
-  atlasName: string | null
+  atlasName: string | null,
 ): { region: string; atlas: string } | null {
   if (!atlasName) return null
   const value = location.values.find(
-    (candidate) => volumeBaseName(candidate.name) === atlasName && isRegionLabel(candidate.label)
+    (candidate) =>
+      volumeBaseName(candidate.name) === atlasName &&
+      isRegionLabel(candidate.label),
   )
   const region = value?.label?.trim()
   return region ? { region, atlas: atlasName } : null
@@ -2552,7 +2905,9 @@ function volumeBaseName(name: string): string {
 function isRegionLabel(label: string | undefined): boolean {
   if (!label) return false
   const normalized = label.trim().toLowerCase()
-  return normalized.length > 0 && normalized !== 'air' && normalized !== 'background'
+  return (
+    normalized.length > 0 && normalized !== 'air' && normalized !== 'background'
+  )
 }
 
 function formatCoordinate(value: number): string {
@@ -2565,22 +2920,29 @@ function formatVoxelIndex(value: number): string {
   return String(Math.round(value))
 }
 
-function warmProgressLabel(progress: WarmProgress | null, datasetRoot: string): string | null {
+function warmProgressLabel(
+  progress: WarmProgress | null,
+  datasetRoot: string,
+): string | null {
   if (!progress || progress.total <= 0) return null
   const datasetLabel = datasetRoot ? `${recentDatasetLabel(datasetRoot)}: ` : ''
-  if (!progress.active) return `${datasetLabel}Pyramid cache ready ${progress.completed}/${progress.total}`
+  if (!progress.active)
+    return `${datasetLabel}Pyramid cache ready ${progress.completed}/${progress.total}`
   const percent = Math.round((progress.completed / progress.total) * 100)
   return `${datasetLabel}Warming pyramid ${progress.completed}/${progress.total} (${percent}%)`
 }
 
 function compareAtlasCandidates(left: DesktopItem, right: DesktopItem): number {
-  return atlasCandidateScore(right) - atlasCandidateScore(left) || left.label.localeCompare(right.label)
+  return (
+    atlasCandidateScore(right) - atlasCandidateScore(left) ||
+    left.label.localeCompare(right.label)
+  )
 }
 
 function layerColormapForItem(
   item: DesktopItem,
   layerSettings: Record<string, LayerSettings>,
-  fallback: string
+  fallback: string,
 ): string {
   return layerSettings[item.id]?.colormap ?? fallback
 }
@@ -2588,7 +2950,9 @@ function layerColormapForItem(
 // Clamp the anatomical base to a grayscale-family map. A volume promoted from
 // overlay to base can carry a leaked pseudocolor setting; the base has no way to
 // display or change one (its dropdown is restricted), so force it grayscale.
-const BASE_COLORMAP_VALUES = new Set<string>(BASE_COLORMAP_OPTIONS.map((option) => option.value))
+const BASE_COLORMAP_VALUES = new Set<string>(
+  BASE_COLORMAP_OPTIONS.map((option) => option.value),
+)
 function baseColormap(value: string): string {
   return BASE_COLORMAP_VALUES.has(value) ? value : DEFAULT_BASE_COLORMAP
 }
@@ -2602,17 +2966,19 @@ function overlayColormapForIndex(index: number): string {
 function opacityForItem(
   itemId: string,
   layerSettings: Record<string, LayerSettings>,
-  fallback: number
+  fallback: number,
 ): number {
   const opacity = layerSettings[itemId]?.opacity
-  return typeof opacity === 'number' && Number.isFinite(opacity) ? opacity : fallback
+  return typeof opacity === 'number' && Number.isFinite(opacity)
+    ? opacity
+    : fallback
 }
 
 // The opacity actually sent to NiiVue: 0 when hidden, otherwise the stored value.
 function renderOpacityForItem(
   itemId: string,
   layerSettings: Record<string, LayerSettings>,
-  fallback: number
+  fallback: number,
 ): number {
   if (layerSettings[itemId]?.hidden) return 0
   return opacityForItem(itemId, layerSettings, fallback)
@@ -2620,10 +2986,15 @@ function renderOpacityForItem(
 
 function windowForItem(
   itemId: string,
-  layerSettings: Record<string, LayerSettings>
+  layerSettings: Record<string, LayerSettings>,
 ): { calMin: number; calMax: number } | Record<string, never> {
   const window = layerSettings[itemId]?.window
-  if (!window || !Number.isFinite(window.min) || !Number.isFinite(window.max) || window.min >= window.max) {
+  if (
+    !window ||
+    !Number.isFinite(window.min) ||
+    !Number.isFinite(window.max) ||
+    window.min >= window.max
+  ) {
     return {}
   }
   return { calMin: window.min, calMax: window.max }
@@ -2631,7 +3002,11 @@ function windowForItem(
 
 function atlasCandidateScore(item: DesktopItem): number {
   const text = `${item.id} ${item.label}`
-  if (/(^|[_\-\s.])(atlas|aal|bigbrain|parc|parcel|parcellation|labels?|dseg|aseg|seg|annotation)([_\-\s.]|$)/i.test(text)) {
+  if (
+    /(^|[_\-\s.])(atlas|aal|bigbrain|parc|parcel|parcellation|labels?|dseg|aseg|seg|annotation)([_\-\s.]|$)/i.test(
+      text,
+    )
+  ) {
     return 2
   }
   return 0
@@ -2647,7 +3022,10 @@ function layerOptionMeta(item: DesktopItem): string {
 // subjects differ — the silent study-mix-up case. Returns a reason for the
 // warning, or null. Geometry (shape/spacing) is shown but not warned on: legit
 // co-registered overlays routinely have a different grid than the base.
-function layerSubjectWarning(base: DesktopItem | null, item: DesktopItem): string | null {
+function layerSubjectWarning(
+  base: DesktopItem | null,
+  item: DesktopItem,
+): string | null {
   if (!base || item.id === base.id) return null
   const baseSubject = volumeSubject(base)
   const itemSubject = volumeSubject(item)
@@ -2663,7 +3041,7 @@ function layerSubjectWarning(base: DesktopItem | null, item: DesktopItem): strin
 
 function extentsEqual(
   a: Record<string, LayerExtent>,
-  b: Record<string, LayerExtent>
+  b: Record<string, LayerExtent>,
 ): boolean {
   const aKeys = Object.keys(a)
   if (aKeys.length !== Object.keys(b).length) return false
@@ -2694,7 +3072,7 @@ const SPACE_OVERLAP_MIN = 0.5
 
 function layerSpaceWarning(
   base: LayerExtent | undefined,
-  item: LayerExtent | undefined
+  item: LayerExtent | undefined,
 ): string | null {
   if (!base || !item || base.min.length < 3 || item.min.length < 3) return null
   let intersection = 1
@@ -2718,7 +3096,7 @@ function layerSpaceWarning(
 function layerWarning(
   base: DesktopItem | null,
   item: DesktopItem,
-  layerExtents: Record<string, LayerExtent>
+  layerExtents: Record<string, LayerExtent>,
 ): string | null {
   if (!base || item.id === base.id) return null
   return (
@@ -2731,7 +3109,7 @@ async function savePatch(
   serverUrl: string,
   item: DesktopItem | null,
   clipPlanes: ClipPlane[],
-  backend: Backend
+  backend: Backend,
 ): Promise<void> {
   if (!serverUrl || !item) {
     throw new Error('Select a volume before saving a correction patch.')
@@ -2745,14 +3123,16 @@ async function savePatch(
       asset: {
         id: item.id,
         type: item.type,
-        manifest: item.manifest
+        manifest: item.manifest,
       },
       backend,
       clipPlanes: clipPlanes.filter((plane) => plane.enabled),
-      savedAt: new Date().toISOString()
-    })
+      savedAt: new Date().toISOString(),
+    }),
   })
   if (!response.ok) {
-    throw new Error(`Correction patch save failed with HTTP ${response.status}.`)
+    throw new Error(
+      `Correction patch save failed with HTTP ${response.status}.`,
+    )
   }
 }

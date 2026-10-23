@@ -4,7 +4,7 @@ import {
   volumeFacetValue,
   volumeImageTypeLabel,
   volumeRoleLabel,
-  volumeSearchText
+  volumeSearchText,
 } from '../domain/volumeFacets'
 
 export interface VolumeFilters {
@@ -39,23 +39,53 @@ function toggleValue(set: Set<string>, value: string): Set<string> {
  *  filtered list. */
 export function useVolumeFilters(items: DesktopItem[]): VolumeFilters {
   const [query, setQuery] = useState('')
-  const [selectedRoles, setSelectedRoles] = useState<Set<string>>(() => new Set())
-  const [selectedImageTypes, setSelectedImageTypes] = useState<Set<string>>(() => new Set())
-  const [selectedFormats, setSelectedFormats] = useState<Set<string>>(() => new Set())
-  const [selectedDtypes, setSelectedDtypes] = useState<Set<string>>(() => new Set())
-  const [activeFilterItemId, setActiveFilterItemId] = useState<string | null>(null)
+  const [selectedRoles, setSelectedRoles] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [selectedImageTypes, setSelectedImageTypes] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [selectedFormats, setSelectedFormats] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [selectedDtypes, setSelectedDtypes] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [activeFilterItemId, setActiveFilterItemId] = useState<string | null>(
+    null,
+  )
 
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return items.filter((item) => {
-      if (selectedRoles.size > 0 && !selectedRoles.has(volumeRoleLabel(item))) return false
-      if (selectedImageTypes.size > 0 && !selectedImageTypes.has(volumeImageTypeLabel(item))) return false
-      if (selectedFormats.size > 0 && !selectedFormats.has(volumeFacetValue(item.format))) return false
-      if (selectedDtypes.size > 0 && !selectedDtypes.has(volumeFacetValue(item.dtype))) return false
+      if (selectedRoles.size > 0 && !selectedRoles.has(volumeRoleLabel(item)))
+        return false
+      if (
+        selectedImageTypes.size > 0 &&
+        !selectedImageTypes.has(volumeImageTypeLabel(item))
+      )
+        return false
+      if (
+        selectedFormats.size > 0 &&
+        !selectedFormats.has(volumeFacetValue(item.format))
+      )
+        return false
+      if (
+        selectedDtypes.size > 0 &&
+        !selectedDtypes.has(volumeFacetValue(item.dtype))
+      )
+        return false
       if (!normalized) return true
       return volumeSearchText(item).includes(normalized)
     })
-  }, [items, query, selectedDtypes, selectedFormats, selectedImageTypes, selectedRoles])
+  }, [
+    items,
+    query,
+    selectedDtypes,
+    selectedFormats,
+    selectedImageTypes,
+    selectedRoles,
+  ])
 
   function clearFilters(): void {
     setQuery('')
@@ -75,10 +105,14 @@ export function useVolumeFilters(items: DesktopItem[]): VolumeFilters {
     filteredItems,
     setQuery,
     setActiveFilterItemId,
-    toggleRole: (value) => setSelectedRoles((current) => toggleValue(current, value)),
-    toggleImageType: (value) => setSelectedImageTypes((current) => toggleValue(current, value)),
-    toggleFormat: (value) => setSelectedFormats((current) => toggleValue(current, value)),
-    toggleDtype: (value) => setSelectedDtypes((current) => toggleValue(current, value)),
-    clearFilters
+    toggleRole: (value) =>
+      setSelectedRoles((current) => toggleValue(current, value)),
+    toggleImageType: (value) =>
+      setSelectedImageTypes((current) => toggleValue(current, value)),
+    toggleFormat: (value) =>
+      setSelectedFormats((current) => toggleValue(current, value)),
+    toggleDtype: (value) =>
+      setSelectedDtypes((current) => toggleValue(current, value)),
+    clearFilters,
   }
 }

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import { type DesktopItem, fetchVolumeMetadata, type VolumeMetadata } from '../domain/desktop'
+import {
+  type DesktopItem,
+  fetchVolumeMetadata,
+  type VolumeMetadata,
+} from '../domain/desktop'
 
 export interface VolumeMetadataState {
   metadata: VolumeMetadata | null
@@ -7,7 +11,9 @@ export interface VolumeMetadataState {
 }
 
 /** Fetches the selected volume's metadata (and JSON sidecars) on selection. */
-export function useVolumeMetadata(selected: DesktopItem | null): VolumeMetadataState {
+export function useVolumeMetadata(
+  selected: DesktopItem | null,
+): VolumeMetadataState {
   const [metadata, setMetadata] = useState<VolumeMetadata | null>(null)
   const [metadataStatus, setMetadataStatus] = useState('No metadata loaded.')
 
@@ -25,12 +31,14 @@ export function useVolumeMetadata(selected: DesktopItem | null): VolumeMetadataS
         setMetadataStatus(
           sidecarCount > 0
             ? `${sidecarCount} JSON sidecar${sidecarCount === 1 ? '' : 's'} loaded.`
-            : 'No JSON sidecars discovered.'
+            : 'No JSON sidecars discovered.',
         )
       } catch (error) {
         if (cancelled) return
         setMetadata(null)
-        setMetadataStatus(error instanceof Error ? error.message : String(error))
+        setMetadataStatus(
+          error instanceof Error ? error.message : String(error),
+        )
       }
     }
 

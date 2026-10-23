@@ -1,16 +1,17 @@
 import {
   type CSSProperties,
   type Dispatch,
+  type JSX,
+  type MutableRefObject,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
-  type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   type SetStateAction,
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
 } from 'react'
 import { flushSync } from 'react-dom'
 import type { DesktopItem, DesktopManifest, WorldRect } from '../domain/desktop'
@@ -18,10 +19,10 @@ import { isDerivedItem } from '../domain/volumeFacets'
 import {
   DESKTOP_PREVIEW_TIERS,
   PREVIEW_TIER_SETTLE_MS,
+  previewImageForSize,
+  previewLevelForSize,
   SIDEBAR_PREVIEW_SIZE,
   StablePreviewImage,
-  previewImageForSize,
-  previewLevelForSize
 } from './StablePreviewImage'
 
 export const MIN_DESKTOP_ZOOM = 0.5
@@ -50,7 +51,7 @@ export function DatasetDesktop({
   isActive,
   zoom,
   onZoom,
-  onSelect
+  onSelect,
 }: {
   manifest: DesktopManifest | null
   items: DesktopItem[]
@@ -71,49 +72,55 @@ export function DatasetDesktop({
     left: 0,
     top: 0,
     width: 100,
-    height: 100
+    height: 100,
   })
   const world = manifest?.world ?? {
     width: 1,
     height: 1,
     units: 'desktop-px',
     columns: 0,
-    rows: 0
+    rows: 0,
   }
   const tileSize = manifest?.tileSize ?? 1024
   const gap = manifest?.gap ?? 96
   const desktopLayout = useMemo(
     () => normalizeDesktopLayout(items, world, tileSize, gap),
-    [gap, items, tileSize, world]
+    [gap, items, tileSize, world],
   )
   const layoutItems = desktopLayout.items
   const layoutWorld = desktopLayout.world
   const selectedLayoutItem = selected
-    ? layoutItems.find((item) => item.id === selected.id) ?? selected
+    ? (layoutItems.find((item) => item.id === selected.id) ?? selected)
     : null
-  const selectedStyle = selectedLayoutItem ? worldRectStyle(selectedLayoutItem.bounds, layoutWorld) : undefined
+  const selectedStyle = selectedLayoutItem
+    ? worldRectStyle(selectedLayoutItem.bounds, layoutWorld)
+    : undefined
   const targetPreviewSize = useMemo(
     () => desktopPreviewSize(stageSize, layoutWorld, tileSize, zoom),
-    [layoutWorld, stageSize, tileSize, zoom]
+    [layoutWorld, stageSize, tileSize, zoom],
   )
   const [previewSize, setPreviewSize] = useState<number>(SIDEBAR_PREVIEW_SIZE)
   const previewLevel = previewLevelForSize(previewSize, layoutItems[0])
   const worldSize = useMemo(
     () => fittedWorldSize(stageSize, layoutWorld, zoom),
-    [stageSize, layoutWorld, zoom]
+    [stageSize, layoutWorld, zoom],
   )
   const sections = useMemo(
     () => desktopSections(layoutItems, layoutWorld),
-    [layoutItems, layoutWorld.height, layoutWorld.width]
+    [layoutItems, layoutWorld.height, layoutWorld.width],
   )
-  const derivedSourceId = selectedLayoutItem && isDerivedItem(selectedLayoutItem)
-    ? selectedLayoutItem.derivedFrom
-    : null
+  const derivedSourceId =
+    selectedLayoutItem && isDerivedItem(selectedLayoutItem)
+      ? selectedLayoutItem.derivedFrom
+      : null
   const derivedSource = derivedSourceId
-    ? layoutItems.find((item) => item.id === derivedSourceId) ?? null
+    ? (layoutItems.find((item) => item.id === derivedSourceId) ?? null)
     : null
-  const sourceStyle = derivedSource ? worldRectStyle(derivedSource.bounds, layoutWorld) : undefined
-  const isOverview = renderedDesktopTileSize(worldSize, layoutWorld, tileSize) < 112
+  const sourceStyle = derivedSource
+    ? worldRectStyle(derivedSource.bounds, layoutWorld)
+    : undefined
+  const isOverview =
+    renderedDesktopTileSize(worldSize, layoutWorld, tileSize) < 112
 
   useEffect(() => {
     zoomRef.current = zoom
@@ -134,7 +141,12 @@ export function DatasetDesktop({
     const minimap = minimapRef.current
 
     function onWheel(event: WheelEvent): void {
-      zoomRef.current = zoomDesktopWithWheel(event, stageElement, zoomRef.current, onZoom)
+      zoomRef.current = zoomDesktopWithWheel(
+        event,
+        stageElement,
+        zoomRef.current,
+        onZoom,
+      )
     }
 
     stageElement.addEventListener('wheel', onWheel, { passive: false })
@@ -191,7 +203,9 @@ export function DatasetDesktop({
       <div
         aria-label="Dataset grid. Arrow keys pan; plus and minus zoom; 0 fits."
         className={`nv-osd-scrollport ${isPanning ? 'is-panning' : ''}`}
-        onClickCapture={(event) => suppressDesktopClickAfterDrag(event, suppressClickRef)}
+        onClickCapture={(event) =>
+          suppressDesktopClickAfterDrag(event, suppressClickRef)
+        }
         onKeyDown={handleStageKeyDown}
         onPointerDown={(event) =>
           beginDesktopPan(event, dragRef, suppressClickRef, setIsPanning)
@@ -224,7 +238,9 @@ export function DatasetDesktop({
                 frameClassName="nv-osd-image-frame"
                 draggable={false}
               />
-              <span className="nv-osd-index">{isDerivedItem(item) ? 'D' : 'L0'}</span>
+              <span className="nv-osd-index">
+                {isDerivedItem(item) ? 'D' : 'L0'}
+              </span>
               <span className="nv-osd-label">{item.label}</span>
             </button>
           ))}
@@ -239,7 +255,9 @@ export function DatasetDesktop({
               <em>{section.count}</em>
             </div>
           ))}
-          {layoutItems.length === 0 ? <div className="nv-empty-state">No matching volumes.</div> : null}
+          {layoutItems.length === 0 ? (
+            <div className="nv-empty-state">No matching volumes.</div>
+          ) : null}
         </div>
       </div>
 
@@ -255,7 +273,9 @@ export function DatasetDesktop({
           <span>LOD L{previewLevel}</span>
           <span>{previewSize}px previews</span>
           <span>{layoutItems.length} visible</span>
-          <span>{layoutWorld.width} x {layoutWorld.height}</span>
+          <span>
+            {layoutWorld.width} x {layoutWorld.height}
+          </span>
         </div>
         {derivedSource ? (
           <div className="nv-osd-source-key">
@@ -275,16 +295,25 @@ export function DatasetDesktop({
       <button
         aria-label="Click to center the desktop dataset"
         className="nv-minimap"
-        onClick={(event) => jumpDesktopToMinimapPoint(event, stageRef, setViewport)}
+        onClick={(event) =>
+          jumpDesktopToMinimapPoint(event, stageRef, setViewport)
+        }
         onPointerDown={(event) => event.stopPropagation()}
         ref={minimapRef}
         title="Click to center desktop"
         type="button"
       >
         <span className="nv-minimap-map" aria-hidden="true">
-          {sourceStyle ? <span className="nv-minimap-source" style={sourceStyle} /> : null}
-          {selectedStyle ? <span className="nv-minimap-selection" style={selectedStyle} /> : null}
-          <span className="nv-minimap-window" style={minimapViewportStyle(viewport)} />
+          {sourceStyle ? (
+            <span className="nv-minimap-source" style={sourceStyle} />
+          ) : null}
+          {selectedStyle ? (
+            <span className="nv-minimap-selection" style={selectedStyle} />
+          ) : null}
+          <span
+            className="nv-minimap-window"
+            style={minimapViewportStyle(viewport)}
+          />
         </span>
       </button>
     </div>
@@ -292,19 +321,23 @@ export function DatasetDesktop({
 }
 
 export function zoomBy(zoom: number, factor: number): number {
-  return clamp(Number((zoom * factor).toFixed(2)), MIN_DESKTOP_ZOOM, MAX_DESKTOP_ZOOM)
+  return clamp(
+    Number((zoom * factor).toFixed(2)),
+    MIN_DESKTOP_ZOOM,
+    MAX_DESKTOP_ZOOM,
+  )
 }
 
 function desktopTileClassName(
   item: DesktopItem,
   selected: DesktopItem | null,
-  derivedSourceId: string | null | undefined
+  derivedSourceId: string | null | undefined,
 ): string {
   return [
     'nv-osd-tile',
     selected?.id === item.id ? 'is-selected' : '',
     isDerivedItem(item) ? 'is-derived' : '',
-    derivedSourceId === item.id ? 'is-derived-source' : ''
+    derivedSourceId === item.id ? 'is-derived-source' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -312,9 +345,9 @@ function desktopTileClassName(
 
 function StageResizeObserver({
   stageRef,
-  onResize
+  onResize,
 }: {
-  stageRef: RefObject<HTMLDivElement>
+  stageRef: RefObject<HTMLDivElement | null>
   onResize: (size: { width: number; height: number }) => void
 }): null {
   const lastSizeRef = useRef({ width: 0, height: 0 })
@@ -327,10 +360,14 @@ function StageResizeObserver({
     function update(): void {
       const nextSize = {
         width: stageElement.clientWidth,
-        height: stageElement.clientHeight
+        height: stageElement.clientHeight,
       }
       const lastSize = lastSizeRef.current
-      if (lastSize.width === nextSize.width && lastSize.height === nextSize.height) return
+      if (
+        lastSize.width === nextSize.width &&
+        lastSize.height === nextSize.height
+      )
+        return
       lastSizeRef.current = nextSize
       onResize(nextSize)
     }
@@ -348,7 +385,7 @@ function beginDesktopPan(
   event: ReactPointerEvent<HTMLDivElement>,
   dragRef: MutableRefObject<DesktopDragState | null>,
   suppressClickRef: MutableRefObject<boolean>,
-  setIsPanning: (isPanning: boolean) => void
+  setIsPanning: (isPanning: boolean) => void,
 ): void {
   if (event.button !== 0) return
   const stage = event.currentTarget
@@ -360,7 +397,7 @@ function beginDesktopPan(
     startY: event.clientY,
     scrollLeft: stage.scrollLeft,
     scrollTop: stage.scrollTop,
-    moved: false
+    moved: false,
   }
 
   function onMove(moveEvent: PointerEvent): void {
@@ -401,7 +438,7 @@ function beginDesktopPan(
 
 function suppressDesktopClickAfterDrag(
   event: ReactMouseEvent<HTMLDivElement>,
-  suppressClickRef: MutableRefObject<boolean>
+  suppressClickRef: MutableRefObject<boolean>,
 ): void {
   if (!suppressClickRef.current) return
   suppressClickRef.current = false
@@ -413,7 +450,7 @@ function zoomDesktopWithWheel(
   event: WheelEvent,
   stage: HTMLDivElement,
   zoom: number,
-  onZoom: (zoom: number) => void
+  onZoom: (zoom: number) => void,
 ): number {
   event.preventDefault()
   const nextZoom = zoomBy(zoom, event.deltaY < 0 ? 1.12 : 0.89)
@@ -437,8 +474,8 @@ function zoomDesktopWithWheel(
 
 function jumpDesktopToMinimapPoint(
   event: ReactMouseEvent<HTMLElement>,
-  stageRef: RefObject<HTMLDivElement>,
-  setViewport: Dispatch<SetStateAction<MinimapViewport>>
+  stageRef: RefObject<HTMLDivElement | null>,
+  setViewport: Dispatch<SetStateAction<MinimapViewport>>,
 ): void {
   const stage = stageRef.current
   if (!stage) return
@@ -456,21 +493,35 @@ function jumpDesktopToMinimapPoint(
   updateDesktopViewport(stage, setViewport)
 }
 
-function centerDesktopAtFraction(stage: HTMLDivElement, x: number, y: number): void {
+function centerDesktopAtFraction(
+  stage: HTMLDivElement,
+  x: number,
+  y: number,
+): void {
   const maxScrollLeft = Math.max(stage.scrollWidth - stage.clientWidth, 0)
   const maxScrollTop = Math.max(stage.scrollHeight - stage.clientHeight, 0)
 
-  stage.scrollLeft = clamp(x * stage.scrollWidth - stage.clientWidth / 2, 0, maxScrollLeft)
-  stage.scrollTop = clamp(y * stage.scrollHeight - stage.clientHeight / 2, 0, maxScrollTop)
+  stage.scrollLeft = clamp(
+    x * stage.scrollWidth - stage.clientWidth / 2,
+    0,
+    maxScrollLeft,
+  )
+  stage.scrollTop = clamp(
+    y * stage.scrollHeight - stage.clientHeight / 2,
+    0,
+    maxScrollTop,
+  )
 }
 
 function updateDesktopViewport(
   stage: HTMLDivElement | null,
-  setViewport: Dispatch<SetStateAction<MinimapViewport>>
+  setViewport: Dispatch<SetStateAction<MinimapViewport>>,
 ): void {
   if (!stage) return
   const next = desktopViewportFromStage(stage)
-  setViewport((current) => (sameMinimapViewport(current, next) ? current : next))
+  setViewport((current) =>
+    sameMinimapViewport(current, next) ? current : next,
+  )
 }
 
 function desktopViewportFromStage(stage: HTMLDivElement): MinimapViewport {
@@ -483,11 +534,14 @@ function desktopViewportFromStage(stage: HTMLDivElement): MinimapViewport {
     left: clamp((stage.scrollLeft / scrollWidth) * 100, 0, 100 - width),
     top: clamp((stage.scrollTop / scrollHeight) * 100, 0, 100 - height),
     width,
-    height
+    height,
   }
 }
 
-function sameMinimapViewport(left: MinimapViewport, right: MinimapViewport): boolean {
+function sameMinimapViewport(
+  left: MinimapViewport,
+  right: MinimapViewport,
+): boolean {
   return (
     Math.abs(left.left - right.left) < 0.1 &&
     Math.abs(left.top - right.top) < 0.1 &&
@@ -501,7 +555,7 @@ function minimapViewportStyle(viewport: MinimapViewport): CSSProperties {
     left: `${viewport.left}%`,
     top: `${viewport.top}%`,
     width: `${viewport.width}%`,
-    height: `${viewport.height}%`
+    height: `${viewport.height}%`,
   }
 }
 
@@ -509,7 +563,7 @@ function normalizeDesktopLayout(
   items: DesktopItem[],
   world: DesktopManifest['world'],
   tileSize: number,
-  gap: number
+  gap: number,
 ): { items: DesktopItem[]; world: DesktopManifest['world'] } {
   if (items.length === 0) return { items, world }
   const sources = items.filter((item) => !isDerivedItem(item))
@@ -528,13 +582,14 @@ function normalizeDesktopLayout(
   // instead of letting it cover the first row.
   const sectionLabelSpace = Math.max(
     Math.round(tileSize * 0.25),
-    Math.round(Math.max(sourceHeight, derivedHeight) * 0.1)
+    Math.round(Math.max(sourceHeight, derivedHeight) * 0.1),
   )
   const sectionGap = Math.max(Math.round(tileSize / 2), gap)
   const sourceTop = sectionLabelSpace
-  const derivedTop = derivatives.length > 0
-    ? sourceTop + sourceHeight + sectionGap + sectionLabelSpace
-    : 0
+  const derivedTop =
+    derivatives.length > 0
+      ? sourceTop + sourceHeight + sectionGap + sectionLabelSpace
+      : 0
   const nextBounds = new Map<string, WorldRect>()
 
   function placeGroup(group: DesktopItem[], top: number): void {
@@ -545,7 +600,7 @@ function normalizeDesktopLayout(
         x: col * pitch,
         y: top + row * pitch,
         width: tileSize,
-        height: tileSize
+        height: tileSize,
       })
     })
   }
@@ -558,21 +613,21 @@ function normalizeDesktopLayout(
     derivatives.length > 0
       ? derivedTop + derivedHeight
       : sourceTop + sourceHeight,
-    tileSize
+    tileSize,
   )
 
   return {
     items: items.map((item) => ({
       ...item,
-      bounds: nextBounds.get(item.id) ?? item.bounds
+      bounds: nextBounds.get(item.id) ?? item.bounds,
     })),
     world: {
       ...world,
       width,
       height,
       columns,
-      rows: sourceRows + derivedRows
-    }
+      rows: sourceRows + derivedRows,
+    },
   }
 }
 
@@ -586,23 +641,54 @@ function layoutGridHeight(rows: number, tileSize: number, gap: number): number {
 
 function desktopSections(
   items: DesktopItem[],
-  world: DesktopManifest['world']
-): Array<{ id: 'sources' | 'derived'; label: string; count: number; bounds: WorldRect }> {
+  world: DesktopManifest['world'],
+): Array<{
+  id: 'sources' | 'derived'
+  label: string
+  count: number
+  bounds: WorldRect
+}> {
   return [
-    desktopSectionForRole(items.filter((item) => !isDerivedItem(item)), world, 'sources', 'Source Volumes'),
-    desktopSectionForRole(items.filter((item) => isDerivedItem(item)), world, 'derived', 'Working Derivatives')
-  ].filter((section): section is { id: 'sources' | 'derived'; label: string; count: number; bounds: WorldRect } => Boolean(section))
+    desktopSectionForRole(
+      items.filter((item) => !isDerivedItem(item)),
+      world,
+      'sources',
+      'Source Volumes',
+    ),
+    desktopSectionForRole(
+      items.filter((item) => isDerivedItem(item)),
+      world,
+      'derived',
+      'Working Derivatives',
+    ),
+  ].filter(
+    (
+      section,
+    ): section is {
+      id: 'sources' | 'derived'
+      label: string
+      count: number
+      bounds: WorldRect
+    } => Boolean(section),
+  )
 }
 
 function desktopSectionForRole(
   items: DesktopItem[],
   world: DesktopManifest['world'],
   id: 'sources' | 'derived',
+  label: string,
+): {
+  id: 'sources' | 'derived'
   label: string
-): { id: 'sources' | 'derived'; label: string; count: number; bounds: WorldRect } | null {
+  count: number
+  bounds: WorldRect
+} | null {
   if (items.length === 0) return null
   const minY = Math.min(...items.map((item) => item.bounds.y))
-  const maxY = Math.max(...items.map((item) => item.bounds.y + item.bounds.height))
+  const maxY = Math.max(
+    ...items.map((item) => item.bounds.y + item.bounds.height),
+  )
   const headerSpace = (items[0]?.bounds.height ?? 1024) * 2
   const topPadding = Math.min(headerSpace, minY)
   const bottomPadding = 56
@@ -615,14 +701,14 @@ function desktopSectionForRole(
       x: 0,
       y: Math.max(0, minY - topPadding),
       width: Math.max(world.width, 1),
-      height: Math.max(maxY - minY + topPadding + bottomPadding, 1)
-    }
+      height: Math.max(maxY - minY + topPadding + bottomPadding, 1),
+    },
   }
 }
 
 function worldRectStyle(
   rect: WorldRect,
-  world: DesktopManifest['world']
+  world: DesktopManifest['world'],
 ): CSSProperties {
   const width = Math.max(world.width, 1)
   const height = Math.max(world.height, 1)
@@ -631,31 +717,32 @@ function worldRectStyle(
     left: `${(rect.x / width) * 100}%`,
     top: `${(rect.y / height) * 100}%`,
     width: `${(rect.width / width) * 100}%`,
-    height: `${(rect.height / height) * 100}%`
+    height: `${(rect.height / height) * 100}%`,
   }
 }
 
 function fittedWorldSize(
   stageSize: { width: number; height: number },
   world: DesktopManifest['world'],
-  zoom: number
+  zoom: number,
 ): CSSProperties {
   const dimensions = fittedWorldDimensions(stageSize, world, zoom)
   return {
     width: `${dimensions.width}px`,
-    height: `${dimensions.height}px`
+    height: `${dimensions.height}px`,
   }
 }
 
 function renderedDesktopTileSize(
   worldSize: CSSProperties,
   world: DesktopManifest['world'],
-  tileSize: number
+  tileSize: number,
 ): number {
   const renderedWorldWidth = Number.parseFloat(String(worldSize.width ?? '0'))
   const renderedWorldHeight = Number.parseFloat(String(worldSize.height ?? '0'))
-  const tileWidth = renderedWorldWidth * tileSize / Math.max(world.width, 1)
-  const tileHeight = renderedWorldHeight * tileSize / Math.max(world.height, 1)
+  const tileWidth = (renderedWorldWidth * tileSize) / Math.max(world.width, 1)
+  const tileHeight =
+    (renderedWorldHeight * tileSize) / Math.max(world.height, 1)
 
   return Math.min(tileWidth, tileHeight)
 }
@@ -663,7 +750,7 @@ function renderedDesktopTileSize(
 function fittedWorldDimensions(
   stageSize: { width: number; height: number },
   world: DesktopManifest['world'],
-  zoom: number
+  zoom: number,
 ): { width: number; height: number } {
   const availableWidth = Math.max(stageSize.width - 44, 180)
   const availableHeight = Math.max(stageSize.height - 44, 180)
@@ -678,7 +765,7 @@ function fittedWorldDimensions(
 
   return {
     width: Math.max(160, fitWidth * zoom),
-    height: Math.max(160, fitHeight * zoom)
+    height: Math.max(160, fitHeight * zoom),
   }
 }
 
@@ -686,12 +773,17 @@ function desktopPreviewSize(
   stageSize: { width: number; height: number },
   world: DesktopManifest['world'],
   tileSize: number,
-  zoom: number
+  zoom: number,
 ): number {
   const dimensions = fittedWorldDimensions(stageSize, world, zoom)
-  const renderedTileWidth = dimensions.width * tileSize / Math.max(world.width, 1)
-  const renderedTileHeight = dimensions.height * tileSize / Math.max(world.height, 1)
-  const density = typeof window === 'undefined' ? 1 : Math.max(window.devicePixelRatio || 1, 1)
+  const renderedTileWidth =
+    (dimensions.width * tileSize) / Math.max(world.width, 1)
+  const renderedTileHeight =
+    (dimensions.height * tileSize) / Math.max(world.height, 1)
+  const density =
+    typeof window === 'undefined'
+      ? 1
+      : Math.max(window.devicePixelRatio || 1, 1)
   const targetPixels = Math.max(renderedTileWidth, renderedTileHeight) * density
 
   return (

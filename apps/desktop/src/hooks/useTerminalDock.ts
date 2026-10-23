@@ -56,8 +56,12 @@ export interface TerminalDock {
 
 /** Owns the integrated terminal dock's open state and persisted height. */
 export function useTerminalDock(): TerminalDock {
-  const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(() => loadTerminalOpen())
-  const [terminalHeight, setHeight] = useState<number>(() => loadTerminalHeight())
+  const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(() =>
+    loadTerminalOpen(),
+  )
+  const [terminalHeight, setHeight] = useState<number>(() =>
+    loadTerminalHeight(),
+  )
 
   function toggleTerminal(): void {
     setIsTerminalOpen((open) => {

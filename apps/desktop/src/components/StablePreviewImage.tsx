@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
+import { type JSX, useEffect, useRef, useState } from 'react'
 import type { DesktopItem } from '../domain/desktop'
 import { acquirePreviewSlot } from '../domain/previewLoadQueue'
 
@@ -26,7 +26,7 @@ export function previewLevelForSize(size: number, item?: DesktopItem): number {
 export function StablePreviewImage({
   src,
   frameClassName,
-  draggable
+  draggable,
 }: {
   src: string
   frameClassName: string
@@ -62,7 +62,7 @@ export function StablePreviewImage({
       (entries) => {
         setNearViewport(entries.some((entry) => entry.isIntersecting))
       },
-      { rootMargin: PREVIEW_RETAIN_ROOT_MARGIN }
+      { rootMargin: PREVIEW_RETAIN_ROOT_MARGIN },
     )
     observer.observe(frame)
     return () => observer.disconnect()

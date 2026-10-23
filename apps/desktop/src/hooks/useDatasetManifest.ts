@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   DatasetOpenResult,
   DesktopItem,
   DesktopManifest,
-  WarmProgress
+  WarmProgress,
 } from '../domain/desktop'
 import {
   fetchDesktopManifest,
@@ -13,7 +13,7 @@ import {
   openDatasetDirectory,
   openVolumeFile,
   resolveServerInfo,
-  resolveServerUrl
+  resolveServerUrl,
 } from '../domain/desktop'
 
 const EMPTY_DESKTOP_ITEMS: DesktopItem[] = []
@@ -34,9 +34,14 @@ export interface DatasetManifestState {
   warmProgress: WarmProgress | null
   openLocalDataset: () => Promise<void>
   openLocalVolumeFile: () => Promise<void>
-  openRecentDataset: (path: string, options?: { promoteAs?: string }) => Promise<void>
+  openRecentDataset: (
+    path: string,
+    options?: { promoteAs?: string },
+  ) => Promise<void>
   refreshDesktopManifest: (selectId?: string) => Promise<void>
-  refreshDesktopManifestData: (selectId?: string) => Promise<DesktopManifest | null>
+  refreshDesktopManifestData: (
+    selectId?: string,
+  ) => Promise<DesktopManifest | null>
   setSelectedId: (id: string | null) => void
   setStatus: (status: string) => void
 }
@@ -46,7 +51,7 @@ export interface UseDatasetManifestOptions {
 }
 
 export function useDatasetManifest({
-  promoteRecent
+  promoteRecent,
 }: UseDatasetManifestOptions): DatasetManifestState {
   const manifestRef = useRef<DesktopManifest | null>(null)
   const manifestVersionRef = useRef<string | null>(null)
@@ -77,10 +82,13 @@ export function useDatasetManifest({
     selectedIdRef.current = selectedId
   }, [selectedId])
 
-  const items = useMemo(() => manifest?.items ?? EMPTY_DESKTOP_ITEMS, [manifest])
+  const items = useMemo(
+    () => manifest?.items ?? EMPTY_DESKTOP_ITEMS,
+    [manifest],
+  )
   const selected = useMemo(
     () => items.find((item) => item.id === selectedId) ?? items[0] ?? null,
-    [items, selectedId]
+    [items, selectedId],
   )
 
   useEffect(() => {
@@ -89,7 +97,7 @@ export function useDatasetManifest({
     async function load(): Promise<void> {
       try {
         const serverInfo = await resolveServerInfo()
-        const resolved = serverInfo?.url ?? await resolveServerUrl()
+        const resolved = serverInfo?.url ?? (await resolveServerUrl())
         if (cancelled) return
         setServerUrl(resolved)
         setDatasetRoot(serverInfo?.datasetRoot ?? '')
@@ -98,7 +106,9 @@ export function useDatasetManifest({
         setCacheRoot(serverInfo?.cacheRoot ?? '')
         setWarmProgress(serverInfo?.warmProgress ?? null)
         const nextManifest = await fetchDesktopManifest(resolved)
-        const nextVersion = await fetchDesktopManifestVersion(resolved).catch(() => null)
+        const nextVersion = await fetchDesktopManifestVersion(resolved).catch(
+          () => null,
+        )
         if (cancelled) return
         manifestVersionRef.current = nextVersion
         setManifest(nextManifest)
@@ -106,7 +116,8 @@ export function useDatasetManifest({
         setDatasetRevision((revision) => revision + 1)
         setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
       } catch (error) {
-        if (!cancelled) setStatus(error instanceof Error ? error.message : String(error))
+        if (!cancelled)
+          setStatus(error instanceof Error ? error.message : String(error))
       }
     }
 
@@ -116,47 +127,59 @@ export function useDatasetManifest({
     }
   }, [])
 
-  const refreshDesktopManifestData = useCallback(async (selectId?: string): Promise<DesktopManifest | null> => {
-    if (!serverUrl) return null
-    const nextManifest = await fetchDesktopManifest(serverUrl)
-    manifestVersionRef.current = await fetchDesktopManifestVersion(serverUrl).catch(() => null)
-    setManifest(nextManifest)
-    if (selectId && nextManifest.items.some((item) => item.id === selectId)) {
-      setSelectedId(selectId)
-    }
-    setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
-    return nextManifest
-  }, [serverUrl])
+  const refreshDesktopManifestData = useCallback(
+    async (selectId?: string): Promise<DesktopManifest | null> => {
+      if (!serverUrl) return null
+      const nextManifest = await fetchDesktopManifest(serverUrl)
+      manifestVersionRef.current = await fetchDesktopManifestVersion(
+        serverUrl,
+      ).catch(() => null)
+      setManifest(nextManifest)
+      if (selectId && nextManifest.items.some((item) => item.id === selectId)) {
+        setSelectedId(selectId)
+      }
+      setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
+      return nextManifest
+    },
+    [serverUrl],
+  )
 
-  const refreshDesktopManifest = useCallback(async (selectId?: string): Promise<void> => {
-    await refreshDesktopManifestData(selectId)
-  }, [refreshDesktopManifestData])
+  const refreshDesktopManifest = useCallback(
+    async (selectId?: string): Promise<void> => {
+      await refreshDesktopManifestData(selectId)
+    },
+    [refreshDesktopManifestData],
+  )
 
   // `promoteAs` overrides which path lands in recents. A bundle import opens the
   // bundle's extracted `data/` dir, but that lives under the OS temp dir and is
   // re-extracted on every import — so recents must remember the `.nvbundle`.
-  const applyDatasetOpenResult = useCallback(async (
-    result: DatasetOpenResult,
-    promoteAs?: string
-  ): Promise<void> => {
-    setManifest(null)
-    setSelectedId(null)
-    setServerUrl(result.url)
-    setDatasetRoot(result.datasetRoot)
-    setBidsName(result.bidsName ?? '')
-    setBidsDatasetDoi(result.bidsDatasetDoi ?? '')
-    setCacheRoot(result.cacheRoot)
-    setWarmProgress(result.warmProgress ?? null)
-    setDatasetRevision((revision) => revision + 1)
-    setStatus(`Loading ${result.datasetRoot}.`)
+  const applyDatasetOpenResult = useCallback(
+    async (result: DatasetOpenResult, promoteAs?: string): Promise<void> => {
+      setManifest(null)
+      setSelectedId(null)
+      setServerUrl(result.url)
+      setDatasetRoot(result.datasetRoot)
+      setBidsName(result.bidsName ?? '')
+      setBidsDatasetDoi(result.bidsDatasetDoi ?? '')
+      setCacheRoot(result.cacheRoot)
+      setWarmProgress(result.warmProgress ?? null)
+      setDatasetRevision((revision) => revision + 1)
+      setStatus(`Loading ${result.datasetRoot}.`)
 
-    const nextManifest = await fetchDesktopManifest(result.url)
-    manifestVersionRef.current = await fetchDesktopManifestVersion(result.url).catch(() => null)
-    setManifest(nextManifest)
-    setSelectedId(nextManifest.items[0]?.id ?? null)
-    setStatus(`${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`)
-    promoteRecentRef.current(promoteAs ?? result.datasetRoot)
-  }, [])
+      const nextManifest = await fetchDesktopManifest(result.url)
+      manifestVersionRef.current = await fetchDesktopManifestVersion(
+        result.url,
+      ).catch(() => null)
+      setManifest(nextManifest)
+      setSelectedId(nextManifest.items[0]?.id ?? null)
+      setStatus(
+        `${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`,
+      )
+      promoteRecentRef.current(promoteAs ?? result.datasetRoot)
+    },
+    [],
+  )
 
   const openLocalDataset = useCallback(async (): Promise<void> => {
     if (isOpeningDatasetRef.current) return
@@ -200,36 +223,38 @@ export function useDatasetManifest({
     }
   }, [applyDatasetOpenResult])
 
-  const openRecentDataset = useCallback(async (
-    path: string,
-    options?: { promoteAs?: string }
-  ): Promise<void> => {
-    if (isOpeningDatasetRef.current) return
+  const openRecentDataset = useCallback(
+    async (path: string, options?: { promoteAs?: string }): Promise<void> => {
+      if (isOpeningDatasetRef.current) return
 
-    isOpeningDatasetRef.current = true
-    setIsOpeningDataset(true)
-    setStatus(`Opening ${options?.promoteAs ?? path}.`)
-    try {
-      const result = await openDatasetByPath(path)
-      await applyDatasetOpenResult(result, options?.promoteAs)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
-    } finally {
-      isOpeningDatasetRef.current = false
-      setIsOpeningDataset(false)
-    }
-  }, [applyDatasetOpenResult])
+      isOpeningDatasetRef.current = true
+      setIsOpeningDataset(true)
+      setStatus(`Opening ${options?.promoteAs ?? path}.`)
+      try {
+        const result = await openDatasetByPath(path)
+        await applyDatasetOpenResult(result, options?.promoteAs)
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : String(error))
+      } finally {
+        isOpeningDatasetRef.current = false
+        setIsOpeningDataset(false)
+      }
+    },
+    [applyDatasetOpenResult],
+  )
 
   useEffect(() => {
     let unlisten: (() => void) | null = null
 
     void listen('neurovue-open-directory', () => {
       void openLocalDataset()
-    }).then((nextUnlisten) => {
-      unlisten = nextUnlisten
-    }).catch(() => {
-      unlisten = null
     })
+      .then((nextUnlisten) => {
+        unlisten = nextUnlisten
+      })
+      .catch(() => {
+        unlisten = null
+      })
 
     return () => {
       unlisten?.()
@@ -257,7 +282,10 @@ export function useDatasetManifest({
         manifestVersionRef.current = nextVersion
         setManifest(nextManifest)
         const currentSelectedId = selectedIdRef.current
-        if (!currentSelectedId || !nextManifest.items.some((item) => item.id === currentSelectedId)) {
+        if (
+          !currentSelectedId ||
+          !nextManifest.items.some((item) => item.id === currentSelectedId)
+        ) {
           setSelectedId(nextManifest.items[0]?.id ?? null)
         }
         setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
@@ -343,6 +371,6 @@ export function useDatasetManifest({
     refreshDesktopManifest,
     refreshDesktopManifestData,
     setSelectedId,
-    setStatus
+    setStatus,
   }
 }

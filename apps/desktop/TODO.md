@@ -52,6 +52,16 @@ sequencing in `docs/roadmap.md`; provenance detail in `docs/provenance.md`. The
 
 ## Mobile (iPhone / iPad)
 
+- [ ] **[P1] (S) iOS build phase still calls npm.** Since the move into mono
+  (`apps/desktop`, bun workspace), the Xcode "Build Rust Code" phase in
+  `src-tauri/gen/apple/neurovue.xcodeproj/project.pbxproj` still runs
+  `npm run -- tauri ios xcode-script`. Switch it to the bun equivalent and
+  re-verify the simulator build.
+- [ ] **[P2] (M) Burn down biome warnings.** The mono `biome.json` override for
+  `apps/desktop/**` downgrades `useExhaustiveDependencies` (36) and five a11y
+  rules (12) to `warn`. Fix them case by case (several effects are deliberate
+  one-shots), then drop the override.
+
 The codebase is already Tauri-v2 mobile-capable; these are the remaining blockers
 to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 

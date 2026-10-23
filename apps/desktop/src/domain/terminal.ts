@@ -38,10 +38,12 @@ export async function pickPythonInterpreter(): Promise<PythonInterpreter | null>
   const selected = await open({
     multiple: false,
     directory: false,
-    title: 'Select a Python interpreter'
+    title: 'Select a Python interpreter',
   })
   if (!selected || Array.isArray(selected)) return null
-  return invoke<PythonInterpreter>('inspect_python_interpreter', { path: selected })
+  return invoke<PythonInterpreter>('inspect_python_interpreter', {
+    path: selected,
+  })
 }
 
 export function startTerminal(options: TerminalStartOptions): Promise<string> {
@@ -52,7 +54,11 @@ export function writeTerminal(id: string, data: string): Promise<void> {
   return invoke('terminal_write', { id, data })
 }
 
-export function resizeTerminal(id: string, rows: number, cols: number): Promise<void> {
+export function resizeTerminal(
+  id: string,
+  rows: number,
+  cols: number,
+): Promise<void> {
   return invoke('terminal_resize', { id, rows, cols })
 }
 

@@ -9,13 +9,16 @@ function loadRecentDatasets(): string[] {
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    return parsed.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+    )
   } catch {
     return []
   }
 }
 
-const normalizeSeparators = (path: string): string => path.replace(/\\/g, '/').replace(/\/+$/, '')
+const normalizeSeparators = (path: string): string =>
+  path.replace(/\\/g, '/').replace(/\/+$/, '')
 
 /**
  * Bundle import once recorded the bundle's extracted `<cacheRoot>/imports/<stem>/
@@ -70,24 +73,39 @@ export interface RecentDatasets {
 
 /** Owns the persisted "recent datasets" list. */
 export function useRecentDatasets(): RecentDatasets {
-  const [recentDatasets, setRecentDatasets] = useState<string[]>(() => loadRecentDatasets())
+  const [recentDatasets, setRecentDatasets] = useState<string[]>(() =>
+    loadRecentDatasets(),
+  )
 
   function promoteRecent(path: string): void {
-    setRecentDatasets((previous) => persistRecentDatasets(promoteRecentDataset(previous, path)))
+    setRecentDatasets((previous) =>
+      persistRecentDatasets(promoteRecentDataset(previous, path)),
+    )
   }
 
   function removeRecent(path: string): void {
-    setRecentDatasets((previous) => persistRecentDatasets(previous.filter((entry) => entry !== path)))
+    setRecentDatasets((previous) =>
+      persistRecentDatasets(previous.filter((entry) => entry !== path)),
+    )
   }
 
   // Stable identity, and returns `previous` untouched when there's nothing to
   // drop — otherwise the caller's effect would loop on a fresh array each render.
   const pruneExtractedBundleDirs = useCallback((cacheRoot: string): void => {
     setRecentDatasets((previous) => {
-      const kept = previous.filter((entry) => !isExtractedBundleDir(entry, cacheRoot))
-      return kept.length === previous.length ? previous : persistRecentDatasets(kept)
+      const kept = previous.filter(
+        (entry) => !isExtractedBundleDir(entry, cacheRoot),
+      )
+      return kept.length === previous.length
+        ? previous
+        : persistRecentDatasets(kept)
     })
   }, [])
 
-  return { recentDatasets, promoteRecent, removeRecent, pruneExtractedBundleDirs }
+  return {
+    recentDatasets,
+    promoteRecent,
+    removeRecent,
+    pruneExtractedBundleDirs,
+  }
 }

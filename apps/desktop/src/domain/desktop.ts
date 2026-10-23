@@ -162,7 +162,7 @@ const BROWSER_REFERENCE_SERVER = 'http://127.0.0.1:8087'
 const BROWSER_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
   terminalAvailable: false,
   nativeNiimathAvailable: false,
-  airdropAvailable: false
+  airdropAvailable: false,
 }
 
 export async function resolveRuntimeCapabilities(): Promise<RuntimeCapabilities> {
@@ -178,7 +178,7 @@ export async function resolveServerInfo(): Promise<ServerInfo | null> {
     const info = await invoke<ServerInfo>('neurovue_server_info')
     return {
       ...info,
-      url: trimTrailingSlash(info.url)
+      url: trimTrailingSlash(info.url),
     }
   } catch {
     return null
@@ -192,40 +192,60 @@ export async function resolveServerUrl(): Promise<string> {
   return (await resolveServerInfo())?.url ?? BROWSER_REFERENCE_SERVER
 }
 
-export async function fetchDesktopManifest(serverUrl: string): Promise<DesktopManifest> {
-  const response = await fetch(`${trimTrailingSlash(serverUrl)}/iiif/desktop/neuro/manifest`)
+export async function fetchDesktopManifest(
+  serverUrl: string,
+): Promise<DesktopManifest> {
+  const response = await fetch(
+    `${trimTrailingSlash(serverUrl)}/iiif/desktop/neuro/manifest`,
+  )
   if (!response.ok) {
-    throw new Error(`Desktop manifest request failed with HTTP ${response.status}.`)
+    throw new Error(
+      `Desktop manifest request failed with HTTP ${response.status}.`,
+    )
   }
   return response.json() as Promise<DesktopManifest>
 }
 
-export async function fetchDesktopManifestVersion(serverUrl: string): Promise<string> {
-  const response = await fetch(`${trimTrailingSlash(serverUrl)}/iiif/desktop/neuro/version`)
+export async function fetchDesktopManifestVersion(
+  serverUrl: string,
+): Promise<string> {
+  const response = await fetch(
+    `${trimTrailingSlash(serverUrl)}/iiif/desktop/neuro/version`,
+  )
   if (!response.ok) {
-    throw new Error(`Desktop manifest version request failed with HTTP ${response.status}.`)
+    throw new Error(
+      `Desktop manifest version request failed with HTTP ${response.status}.`,
+    )
   }
-  const payload = await response.json() as DesktopManifestVersion
+  const payload = (await response.json()) as DesktopManifestVersion
   return payload.version
 }
 
-export async function fetchVolumeMetadata(item: DesktopItem): Promise<VolumeMetadata> {
+export async function fetchVolumeMetadata(
+  item: DesktopItem,
+): Promise<VolumeMetadata> {
   const response = await fetch(item.metadata)
   if (!response.ok) {
-    throw new Error(`Volume metadata request failed with HTTP ${response.status}.`)
+    throw new Error(
+      `Volume metadata request failed with HTTP ${response.status}.`,
+    )
   }
   return response.json() as Promise<VolumeMetadata>
 }
 
 export function rawVolumeUrl(item: DesktopItem): string {
-  return item.levels.find((level) => level.level === 0)?.raw ?? item.levels[0]?.raw ?? item.manifest
+  return (
+    item.levels.find((level) => level.level === 0)?.raw ??
+    item.levels[0]?.raw ??
+    item.manifest
+  )
 }
 
 export async function openDatasetDirectory(): Promise<DatasetOpenResult | null> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: 'Open NeuroVue dataset folder'
+    title: 'Open NeuroVue dataset folder',
   })
   if (!selected || Array.isArray(selected)) return null
   return openDatasetByPath(selected)
@@ -239,9 +259,9 @@ export async function openVolumeFile(): Promise<DatasetOpenResult | null> {
     filters: [
       {
         name: 'NIfTI volumes',
-        extensions: ['nii', 'gz']
-      }
-    ]
+        extensions: ['nii', 'gz'],
+      },
+    ],
   })
   if (!selected || Array.isArray(selected)) return null
   // A single file opens as a single-volume dataset (open_dataset_root accepts a
@@ -258,23 +278,27 @@ export async function openOverlayVolume(): Promise<OverlayAddResult | null> {
     filters: [
       {
         name: 'NIfTI volumes',
-        extensions: ['nii', 'gz']
-      }
-    ]
+        extensions: ['nii', 'gz'],
+      },
+    ],
   })
   if (!selected || Array.isArray(selected)) return null
   return addOverlayVolumeByPath(selected)
 }
 
-export async function openDatasetByPath(path: string): Promise<DatasetOpenResult> {
+export async function openDatasetByPath(
+  path: string,
+): Promise<DatasetOpenResult> {
   const result = await invoke<DatasetOpenResult>('open_dataset_path', { path })
   return {
     ...result,
-    url: trimTrailingSlash(result.url)
+    url: trimTrailingSlash(result.url),
   }
 }
 
-export async function addOverlayVolumeByPath(path: string): Promise<OverlayAddResult> {
+export async function addOverlayVolumeByPath(
+  path: string,
+): Promise<OverlayAddResult> {
   return invoke<OverlayAddResult>('add_overlay_volume_path', { path })
 }
 
@@ -286,7 +310,7 @@ export function defaultClipPlanes(): ClipPlane[] {
       enabled: true,
       depth: 0,
       azimuth: 180,
-      elevation: 0
+      elevation: 0,
     },
     {
       id: 'inferior',
@@ -294,7 +318,7 @@ export function defaultClipPlanes(): ClipPlane[] {
       enabled: true,
       depth: 0,
       azimuth: 0,
-      elevation: -90
+      elevation: -90,
     },
     {
       id: 'right',
@@ -302,8 +326,8 @@ export function defaultClipPlanes(): ClipPlane[] {
       enabled: false,
       depth: 0,
       azimuth: 90,
-      elevation: 0
-    }
+      elevation: 0,
+    },
   ]
 }
 

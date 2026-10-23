@@ -1,11 +1,11 @@
-import { useState } from 'react'
 import { Calculator, Copy, FileSearch, Play } from 'lucide-react'
+import { type JSX, useState } from 'react'
 import type { DesktopItem, VolumeMetadata } from '../domain/desktop'
 import {
+  type NiimathOperation,
+  type NiimathTaskResult,
   pickNiimathMaskPath,
   runNiimathTask,
-  type NiimathOperation,
-  type NiimathTaskResult
 } from '../domain/niimath'
 
 const NIIMATH_OPERATIONS: Array<{
@@ -22,7 +22,7 @@ const NIIMATH_OPERATIONS: Array<{
     needsOperand: true,
     needsMask: false,
     operandLabel: 'Sigma (mm)',
-    help: 'Gaussian smoothing (niimath -s). Value is the kernel sigma in mm; FWHM = 2.355 × sigma.'
+    help: 'Gaussian smoothing (niimath -s). Value is the kernel sigma in mm; FWHM = 2.355 × sigma.',
   },
   {
     id: 'threshold',
@@ -30,7 +30,7 @@ const NIIMATH_OPERATIONS: Array<{
     needsOperand: true,
     needsMask: false,
     operandLabel: 'Lower threshold (intensity)',
-    help: 'Keep voxels at or above the lower intensity threshold (in image intensity units).'
+    help: 'Keep voxels at or above the lower intensity threshold (in image intensity units).',
   },
   {
     id: 'upperThreshold',
@@ -38,7 +38,7 @@ const NIIMATH_OPERATIONS: Array<{
     needsOperand: true,
     needsMask: false,
     operandLabel: 'Upper threshold (intensity)',
-    help: 'Keep voxels at or below the upper intensity threshold (in image intensity units).'
+    help: 'Keep voxels at or below the upper intensity threshold (in image intensity units).',
   },
   {
     id: 'binarize',
@@ -46,7 +46,7 @@ const NIIMATH_OPERATIONS: Array<{
     needsOperand: false,
     needsMask: false,
     operandLabel: 'Value',
-    help: 'Convert non-zero voxels to a binary mask.'
+    help: 'Convert non-zero voxels to a binary mask.',
   },
   {
     id: 'mask',
@@ -54,15 +54,15 @@ const NIIMATH_OPERATIONS: Array<{
     needsOperand: false,
     needsMask: true,
     operandLabel: 'Value',
-    help: 'Apply another NIfTI volume as a mask.'
-  }
+    help: 'Apply another NIfTI volume as a mask.',
+  },
 ]
 
 export function NiimathOperationsPanel({
   item,
   metadata,
   onDerivedVolume,
-  onStatus
+  onStatus,
 }: {
   item: DesktopItem | null
   metadata: VolumeMetadata | null
@@ -76,12 +76,18 @@ export function NiimathOperationsPanel({
   const [isPickingMask, setIsPickingMask] = useState(false)
   const [taskStatus, setTaskStatus] = useState('Ready.')
   const [result, setResult] = useState<NiimathTaskResult | null>(null)
-  const selectedOperation = NIIMATH_OPERATIONS.find((candidate) => candidate.id === operation) ?? NIIMATH_OPERATIONS[0]
-  const sourcePath = typeof metadata?.sourcePath === 'string' ? metadata.sourcePath : ''
+  const selectedOperation =
+    NIIMATH_OPERATIONS.find((candidate) => candidate.id === operation) ??
+    NIIMATH_OPERATIONS[0]
+  const sourcePath =
+    typeof metadata?.sourcePath === 'string' ? metadata.sourcePath : ''
   const parsedOperand = Number(operand)
-  const hasOperand = !selectedOperation.needsOperand || Number.isFinite(parsedOperand)
+  const hasOperand =
+    !selectedOperation.needsOperand || Number.isFinite(parsedOperand)
   const hasMask = !selectedOperation.needsMask || maskPath.trim().length > 0
-  const canRun = Boolean(item && sourcePath && hasOperand && hasMask && !isRunning)
+  const canRun = Boolean(
+    item && sourcePath && hasOperand && hasMask && !isRunning,
+  )
 
   async function chooseMask(): Promise<void> {
     if (isRunning || isPickingMask) return
@@ -112,14 +118,16 @@ export function NiimathOperationsPanel({
     setIsRunning(true)
     setResult(null)
     setTaskStatus(`Running ${selectedOperation.label.toLowerCase()}.`)
-    onStatus(`Running niimath ${selectedOperation.label.toLowerCase()} on ${item.label}.`)
+    onStatus(
+      `Running niimath ${selectedOperation.label.toLowerCase()} on ${item.label}.`,
+    )
 
     try {
       const nextResult = await runNiimathTask({
         sourcePath,
         operation,
         operand: selectedOperation.needsOperand ? parsedOperand : undefined,
-        maskPath: selectedOperation.needsMask ? maskPath.trim() : undefined
+        maskPath: selectedOperation.needsMask ? maskPath.trim() : undefined,
       })
       setResult(nextResult)
       setTaskStatus('Done.')
@@ -147,7 +155,12 @@ export function NiimathOperationsPanel({
       <div className="nv-operation-grid">
         <label className="nv-field">
           <span>Task</span>
-          <select value={operation} onChange={(event) => setOperation(event.target.value as NiimathOperation)}>
+          <select
+            value={operation}
+            onChange={(event) =>
+              setOperation(event.target.value as NiimathOperation)
+            }
+          >
             {NIIMATH_OPERATIONS.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
                 {candidate.label}
@@ -167,7 +180,9 @@ export function NiimathOperationsPanel({
               value={operand}
             />
             {operation === 'smooth' && Number.isFinite(parsedOperand) ? (
-              <small className="nv-field-hint">= {(parsedOperand * 2.355).toFixed(2)} mm FWHM</small>
+              <small className="nv-field-hint">
+                = {(parsedOperand * 2.355).toFixed(2)} mm FWHM
+              </small>
             ) : null}
           </label>
         ) : null}
@@ -232,7 +247,9 @@ export function NiimathOperationsPanel({
                 <button
                   aria-label="Copy command"
                   className="nv-icon-button nv-path-picker-button"
-                  onClick={() => void navigator.clipboard?.writeText(result.argv.join(' '))}
+                  onClick={() =>
+                    void navigator.clipboard?.writeText(result.argv.join(' '))
+                  }
                   title="Copy command"
                   type="button"
                 >

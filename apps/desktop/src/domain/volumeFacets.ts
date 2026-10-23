@@ -26,7 +26,7 @@ const BIDS_IMAGE_TYPE_LABELS: Record<string, string> = {
   t2starw: 'T2starw',
   t2w: 'T2w',
   tof: 'TOF',
-  unit1: 'UNIT1'
+  unit1: 'UNIT1',
 }
 
 export function isDerivedItem(item: DesktopItem): boolean {
@@ -83,7 +83,7 @@ export function volumeSearchText(item: DesktopItem): string {
     item.shape.join(' x '),
     item.spacing.join(' x '),
     item.derivedFrom ?? '',
-    item.derivation?.operation ?? ''
+    item.derivation?.operation ?? '',
   ]
     .join(' ')
     .toLowerCase()
@@ -99,7 +99,7 @@ function volumeIdentityCandidates(item: DesktopItem): string[] {
     item.preview.service,
     item.derivedFrom ?? '',
     item.derivation?.sourcePath ?? '',
-    item.derivation?.outputPath ?? ''
+    item.derivation?.outputPath ?? '',
   ].filter((value) => value.length > 0)
 }
 
@@ -128,7 +128,7 @@ function safeDecodeURIComponent(value: string): string {
 
 export function volumeFacetCounts(
   items: DesktopItem[],
-  valueForItem: (item: DesktopItem) => string
+  valueForItem: (item: DesktopItem) => string,
 ): Map<string, number> {
   const counts = new Map<string, number>()
   for (const item of items) {

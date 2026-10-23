@@ -1,8 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
-
-import type { Backend, ClipPlane } from './desktop'
 import type { BlockSettings } from './blocks'
+import type { Backend, ClipPlane } from './desktop'
 
 // A NeuroVue bundle (`.nvbundle`) is a self-describing, transport-agnostic
 // hand-off of one or more volumes plus the view that was set up over them. It
@@ -96,7 +95,10 @@ export function buildBundleViewState(params: {
   crosshairPos: [number, number, number] | null
   blocks?: BlockSettings
 }): BundleViewState {
-  const toVolume = (id: string, role: BundleDocumentVolume['role']): BundleDocumentVolume => {
+  const toVolume = (
+    id: string,
+    role: BundleDocumentVolume['role'],
+  ): BundleDocumentVolume => {
     const settings = params.layerSettings[id]
     const volume: BundleDocumentVolume = { id, role }
     if (settings?.colormap !== undefined) volume.colormap = settings.colormap
@@ -125,12 +127,12 @@ export function buildBundleViewState(params: {
     version: 1,
     scene: {
       crosshairPos: params.crosshairPos,
-      clipPlanes: params.clipPlanes.filter((plane) => plane.enabled)
+      clipPlanes: params.clipPlanes.filter((plane) => plane.enabled),
     },
     volumes,
     viewMode: params.viewMode,
     backend: params.backend,
-    ...(params.blocks ? { blocks: params.blocks } : {})
+    ...(params.blocks ? { blocks: params.blocks } : {}),
   }
 }
 
@@ -151,7 +153,7 @@ export async function exportDatasetBundle(params: {
 }): Promise<ExportBundleResult | null> {
   const destPath = await save({
     title: 'Export NeuroVue bundle',
-    defaultPath: `${sanitizeBundleName(params.defaultName)}.nvbundle`
+    defaultPath: `${sanitizeBundleName(params.defaultName)}.nvbundle`,
   })
   if (!destPath) return null
 
@@ -161,7 +163,7 @@ export async function exportDatasetBundle(params: {
     view: params.view,
     // Timestamp stays on the JS side (matches the savePatch convention and
     // avoids a time-format crate on the Rust side).
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   })
 }
 
@@ -179,7 +181,7 @@ export async function shareViewViaAirDrop(params: {
     volumeIds: params.volumeIds,
     view: params.view,
     createdAt: new Date().toISOString(),
-    name: params.name
+    name: params.name,
   })
 }
 
@@ -193,13 +195,21 @@ export function formatBundleBytes(bytes: number): string {
 }
 
 function sanitizeBundleName(name: string): string {
-  const cleaned = name.trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '')
+  const cleaned = name
+    .trim()
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
   return cleaned || 'neurovue-bundle'
 }
 
 // ── Import / reload ────────────────────────────────────────────────────────
 
-export type BundleVerifyStatus = 'ok' | 'mismatch' | 'missing' | 'unreadable' | 'invalid'
+export type BundleVerifyStatus =
+  | 'ok'
+  | 'mismatch'
+  | 'missing'
+  | 'unreadable'
+  | 'invalid'
 
 export interface BundleVerifyEntry {
   data: string
@@ -219,7 +229,11 @@ export interface BundleManifestVolume {
 
 export interface BundleManifest {
   nvbundle?: string
-  source?: { datasetName?: string | null; datasetDoi?: string | null; datasetRoot?: string | null }
+  source?: {
+    datasetName?: string | null
+    datasetDoi?: string | null
+    datasetRoot?: string | null
+  }
   volumes: BundleManifestVolume[]
   view?: BundleViewState
 }
@@ -245,7 +259,7 @@ export async function pickBundle(): Promise<string | null> {
     directory: false,
     multiple: false,
     title: 'Open NeuroVue bundle',
-    filters: [{ name: 'NeuroVue bundle', extensions: [BUNDLE_EXTENSION] }]
+    filters: [{ name: 'NeuroVue bundle', extensions: [BUNDLE_EXTENSION] }],
   })
   return typeof selected === 'string' ? selected : null
 }
@@ -266,6 +280,8 @@ export function bundleVolumeId(dataRelPath: string): string {
 }
 
 /** Count the files in a verification list that failed the integrity check. */
-export function bundleVerifyFailures(verification: BundleVerifyEntry[]): BundleVerifyEntry[] {
+export function bundleVerifyFailures(
+  verification: BundleVerifyEntry[],
+): BundleVerifyEntry[] {
   return verification.filter((entry) => entry.status !== 'ok')
 }

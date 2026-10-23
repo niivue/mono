@@ -5,51 +5,57 @@ const { spawnSync } = require('child_process')
 
 const root = path.resolve(__dirname, '..')
 const binariesDir = path.join(root, 'src-tauri', 'binaries')
-const force = process.argv.includes('--force') || process.env.NIIMATH_FORCE === '1'
+const force =
+  process.argv.includes('--force') || process.env.NIIMATH_FORCE === '1'
 
 const targets = {
   'darwin-arm64': {
     triple: 'aarch64-apple-darwin',
     zip: 'niimath_macos.zip',
-    exe: 'niimath'
+    exe: 'niimath',
   },
   'darwin-x64': {
     triple: 'x86_64-apple-darwin',
     zip: 'niimath_macos.zip',
-    exe: 'niimath'
+    exe: 'niimath',
   },
   'linux-x64': {
     triple: 'x86_64-unknown-linux-gnu',
     zip: 'niimath_lnx.zip',
-    exe: 'niimath'
+    exe: 'niimath',
   },
   'linux-arm64': {
     triple: 'aarch64-unknown-linux-gnu',
     zip: 'niimath_lnx.zip',
-    exe: 'niimath'
+    exe: 'niimath',
   },
   'win32-x64': {
     triple: 'x86_64-pc-windows-msvc',
     zip: 'niimath_win.zip',
-    exe: 'niimath.exe'
+    exe: 'niimath.exe',
   },
   'win32-arm64': {
     triple: 'aarch64-pc-windows-msvc',
     zip: 'niimath_win.zip',
-    exe: 'niimath.exe'
-  }
+    exe: 'niimath.exe',
+  },
 }
 
 const target = targets[`${process.platform}-${process.arch}`]
 
 if (!target) {
-  console.log(`No niimath binary mapping for ${process.platform}-${process.arch}; skipping.`)
+  console.log(
+    `No niimath binary mapping for ${process.platform}-${process.arch}; skipping.`,
+  )
   process.exit(0)
 }
 
 fs.mkdirSync(binariesDir, { recursive: true })
 
-const executableName = process.platform === 'win32' ? `niimath-${target.triple}.exe` : `niimath-${target.triple}`
+const executableName =
+  process.platform === 'win32'
+    ? `niimath-${target.triple}.exe`
+    : `niimath-${target.triple}`
 const executablePath = path.join(binariesDir, executableName)
 const metadataPath = path.join(binariesDir, `niimath-${target.triple}.json`)
 
@@ -66,28 +72,42 @@ function request(url, headers = {}, redirects = 5) {
       {
         headers: {
           'User-Agent': 'neurovue-ensure-niimath',
-          ...headers
-        }
+          ...headers,
+        },
       },
       (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location
+        ) {
           res.resume()
           if (redirects <= 0) {
             reject(new Error(`Too many redirects while fetching ${url}`))
             return
           }
-          resolve(request(new URL(res.headers.location, requestUrl).toString(), headers, redirects - 1))
+          resolve(
+            request(
+              new URL(res.headers.location, requestUrl).toString(),
+              headers,
+              redirects - 1,
+            ),
+          )
           return
         }
 
         if (res.statusCode !== 200) {
           res.resume()
-          reject(new Error(`Request failed with status ${res.statusCode} for ${url}`))
+          reject(
+            new Error(
+              `Request failed with status ${res.statusCode} for ${url}`,
+            ),
+          )
           return
         }
 
         resolve(res)
-      }
+      },
     )
 
     req.on('error', reject)
@@ -97,15 +117,19 @@ function request(url, headers = {}, redirects = 5) {
 async function getLatestTag() {
   if (process.env.NIIMATH_RELEASE_TAG) return process.env.NIIMATH_RELEASE_TAG
 
-  const res = await request('https://api.github.com/repos/rordenlab/niimath/releases/latest', {
-    Accept: 'application/vnd.github.v3+json'
-  })
+  const res = await request(
+    'https://api.github.com/repos/rordenlab/niimath/releases/latest',
+    {
+      Accept: 'application/vnd.github.v3+json',
+    },
+  )
 
   let body = ''
   for await (const chunk of res) body += chunk
 
   const payload = JSON.parse(body)
-  if (!payload.tag_name) throw new Error('Latest niimath release did not include tag_name.')
+  if (!payload.tag_name)
+    throw new Error('Latest niimath release did not include tag_name.')
   return payload.tag_name
 }
 
@@ -130,16 +154,22 @@ function extractZip(zipPath, extractDir) {
       [
         '-NoProfile',
         '-Command',
-        `Expand-Archive -LiteralPath '${escapePowerShell(zipPath)}' -DestinationPath '${escapePowerShell(extractDir)}' -Force`
+        `Expand-Archive -LiteralPath '${escapePowerShell(zipPath)}' -DestinationPath '${escapePowerShell(extractDir)}' -Force`,
       ],
-      { stdio: 'inherit' }
+      { stdio: 'inherit' },
     )
-    if (result.status !== 0) throw new Error('PowerShell Expand-Archive failed.')
+    if (result.status !== 0)
+      throw new Error('PowerShell Expand-Archive failed.')
     return
   }
 
-  const result = spawnSync('unzip', ['-oq', zipPath, '-d', extractDir], { stdio: 'inherit' })
-  if (result.status !== 0) throw new Error('unzip failed. Install unzip or provide src-tauri/binaries manually.')
+  const result = spawnSync('unzip', ['-oq', zipPath, '-d', extractDir], {
+    stdio: 'inherit',
+  })
+  if (result.status !== 0)
+    throw new Error(
+      'unzip failed. Install unzip or provide src-tauri/binaries manually.',
+    )
 }
 
 function escapePowerShell(value) {
@@ -172,7 +202,8 @@ async function main() {
   extractZip(zipPath, extractDir)
 
   const extractedExecutable = findExecutable(extractDir, target.exe)
-  if (!extractedExecutable) throw new Error(`Could not find ${target.exe} in ${target.zip}.`)
+  if (!extractedExecutable)
+    throw new Error(`Could not find ${target.exe} in ${target.zip}.`)
 
   fs.copyFileSync(extractedExecutable, executablePath)
   if (process.platform !== 'win32') fs.chmodSync(executablePath, 0o755)
@@ -186,11 +217,11 @@ async function main() {
         target: target.triple,
         asset: target.zip,
         source: downloadUrl,
-        stagedAt: new Date().toISOString()
+        stagedAt: new Date().toISOString(),
       },
       null,
-      2
-    )}\n`
+      2,
+    )}\n`,
   )
 
   fs.rmSync(zipPath, { force: true })

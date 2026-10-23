@@ -1,7 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 
-export type NiimathOperation = 'smooth' | 'threshold' | 'upperThreshold' | 'binarize' | 'mask'
+export type NiimathOperation =
+  | 'smooth'
+  | 'threshold'
+  | 'upperThreshold'
+  | 'binarize'
+  | 'mask'
 
 export interface NiimathTaskRequest {
   sourcePath: string
@@ -20,7 +25,9 @@ export interface NiimathTaskResult {
   stderr: string
 }
 
-export function runNiimathTask(request: NiimathTaskRequest): Promise<NiimathTaskResult> {
+export function runNiimathTask(
+  request: NiimathTaskRequest,
+): Promise<NiimathTaskResult> {
   return invoke<NiimathTaskResult>('run_niimath_task', { request })
 }
 
@@ -32,9 +39,9 @@ export async function pickNiimathMaskPath(): Promise<string | null> {
     filters: [
       {
         name: 'NIfTI volumes',
-        extensions: ['nii', 'gz']
-      }
-    ]
+        extensions: ['nii', 'gz'],
+      },
+    ],
   })
   if (!selected || Array.isArray(selected)) return null
   return invoke<string>('validate_niimath_mask_path', { path: selected })

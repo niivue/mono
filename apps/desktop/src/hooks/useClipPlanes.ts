@@ -32,9 +32,11 @@ export function useClipPlanes(): ClipPlanesState {
   // Empty until a clip plane is selected — the wheel starts bound to zoom, so no
   // plane should read as the wheel's target on first load.
   const [activeClipPlaneId, setActiveClipPlaneId] = useState('')
-  const [renderWheelMode, setRenderWheelMode] = useState<RenderWheelMode>('zoom')
+  const [renderWheelMode, setRenderWheelMode] =
+    useState<RenderWheelMode>('zoom')
 
-  const activeClipPlane = clipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? clipPlanes[0]
+  const activeClipPlane =
+    clipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? clipPlanes[0]
 
   function bindActiveClipPlane(planeId: string): void {
     setActiveClipPlaneId(planeId)
@@ -43,14 +45,18 @@ export function useClipPlanes(): ClipPlanesState {
 
   function changeClipPlaneDepth(planeId: string, depth: number): void {
     setClipPlanes((planes) =>
-      planes.map((plane) => (plane.id === planeId ? { ...plane, depth } : plane))
+      planes.map((plane) =>
+        plane.id === planeId ? { ...plane, depth } : plane,
+      ),
     )
   }
 
   function updateClipPlane(plane: ClipPlane): void {
     bindActiveClipPlane(plane.id)
     setClipPlanes((planes) =>
-      planes.map((candidate) => (candidate.id === plane.id ? plane : candidate))
+      planes.map((candidate) =>
+        candidate.id === plane.id ? plane : candidate,
+      ),
     )
   }
 
@@ -73,6 +79,6 @@ export function useClipPlanes(): ClipPlanesState {
     updateClipPlane,
     changeClipPlaneDepth,
     resetClipPlanes,
-    applyClipPlanes
+    applyClipPlanes,
   }
 }

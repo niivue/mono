@@ -1,15 +1,22 @@
+import type { ColorMap, NiiVueLocation } from '@niivue/niivue'
 import {
+  type JSX,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
   useEffect,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent
 } from 'react'
-import type { ColorMap, NiiVueLocation } from '@niivue/niivue'
-import type { Backend, ClipPlane, DesktopItem, JsonValue, VolumeMetadata } from '../domain/desktop'
-import { fetchVolumeMetadata, rawVolumeUrl } from '../domain/desktop'
 import type { BlockSettings } from '../domain/blocks'
 import { blocksAreTiled } from '../domain/blocks'
+import type {
+  Backend,
+  ClipPlane,
+  DesktopItem,
+  JsonValue,
+  VolumeMetadata,
+} from '../domain/desktop'
+import { fetchVolumeMetadata, rawVolumeUrl } from '../domain/desktop'
 
 // The window NiiVue actually applied for a layer, plus the volume's robust
 // range (the "no threshold" target for a show-all reset).
@@ -46,7 +53,9 @@ interface NiivueStageProps {
   onResolvedWindows?: (windows: Record<string, ResolvedWindow>) => void
   // Reports each loaded layer's world-space (mm) bounding box, keyed by item id,
   // so the UI can warn when an overlay doesn't share the base's space.
-  onLayerExtents?: (extents: Record<string, { min: number[]; max: number[] }>) => void
+  onLayerExtents?: (
+    extents: Record<string, { min: number[]; max: number[] }>,
+  ) => void
   onViewModeChange: (mode: ViewModeId) => void
 }
 
@@ -80,7 +89,7 @@ type ChunkVolumeGridFn = (
   volumeDims: [number, number, number],
   gridDims: [number, number, number],
   deviceLimit: number,
-  haloSize?: [number, number, number]
+  haloSize?: [number, number, number],
 ) => ChunkPlan
 
 interface NiiVueLike {
@@ -121,7 +130,7 @@ interface NiiVueLike {
       // cal_min/cal_max are the NIfTI header fields and are ignored here.
       calMin?: number
       calMax?: number
-    }
+    },
   ): Promise<unknown>
   moveCrosshairInVox?(di: number, dj: number, dk: number): void
   // Move the crosshair to an absolute RAS+ world position (mm). Fires
@@ -133,12 +142,12 @@ interface NiiVueLike {
   addEventListener?(
     type: 'locationChange',
     listener: (event: CustomEvent<NiiVueLocation>) => void,
-    options?: boolean | AddEventListenerOptions
+    options?: boolean | AddEventListenerOptions,
   ): void
   removeEventListener?(
     type: 'locationChange',
     listener: (event: CustomEvent<NiiVueLocation>) => void,
-    options?: boolean | EventListenerOptions
+    options?: boolean | EventListenerOptions,
   ): void
   azimuth?: number
   elevation?: number
@@ -201,13 +210,28 @@ const NIVUE_SLICE_TYPE_RENDER = 4
 const NIVUE_SHOW_RENDER_ALWAYS = 1
 
 // NiiVue SLICE_TYPE values for each selectable view mode.
-export type ViewModeId = 'axial' | 'coronal' | 'sagittal' | 'multiplanar' | 'render'
-const VIEW_MODES: Array<{ id: ViewModeId; label: string; shortLabel: string; sliceType: number }> = [
+export type ViewModeId =
+  | 'axial'
+  | 'coronal'
+  | 'sagittal'
+  | 'multiplanar'
+  | 'render'
+const VIEW_MODES: Array<{
+  id: ViewModeId
+  label: string
+  shortLabel: string
+  sliceType: number
+}> = [
   { id: 'axial', label: 'Axial slice', shortLabel: 'Ax', sliceType: 0 },
   { id: 'coronal', label: 'Coronal slice', shortLabel: 'Cor', sliceType: 1 },
   { id: 'sagittal', label: 'Sagittal slice', shortLabel: 'Sag', sliceType: 2 },
   { id: 'multiplanar', label: 'Multiplanar', shortLabel: 'MPR', sliceType: 3 },
-  { id: 'render', label: '3D render', shortLabel: '3D', sliceType: NIVUE_SLICE_TYPE_RENDER }
+  {
+    id: 'render',
+    label: '3D render',
+    shortLabel: '3D',
+    sliceType: NIVUE_SLICE_TYPE_RENDER,
+  },
 ]
 export const DEFAULT_VIEW_MODE: ViewModeId = 'render'
 const CORONAL_SNAP: RenderViewSnap = {
@@ -216,7 +240,7 @@ const CORONAL_SNAP: RenderViewSnap = {
   shortLabel: 'Cor',
   azimuth: 180,
   elevation: 0,
-  shortcut: '1 / Numpad 1'
+  shortcut: '1 / Numpad 1',
 }
 const SAGITTAL_SNAP: RenderViewSnap = {
   id: 'sagittal',
@@ -224,7 +248,7 @@ const SAGITTAL_SNAP: RenderViewSnap = {
   shortLabel: 'Sag',
   azimuth: -90,
   elevation: 0,
-  shortcut: '3 / Numpad 3'
+  shortcut: '3 / Numpad 3',
 }
 const AXIAL_SNAP: RenderViewSnap = {
   id: 'axial',
@@ -232,18 +256,21 @@ const AXIAL_SNAP: RenderViewSnap = {
   shortLabel: 'Ax',
   azimuth: 0,
   elevation: 90,
-  shortcut: '7 / Numpad 7'
+  shortcut: '7 / Numpad 7',
 }
 const atlasColorMapCache = new Map<string, Promise<ColorMap | null>>()
-const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; reverse: RenderViewSnap }> = {
+const BLENDER_RENDER_VIEW_SNAPS: Record<
+  string,
+  { normal: RenderViewSnap; reverse: RenderViewSnap }
+> = {
   Digit1: {
     normal: CORONAL_SNAP,
     reverse: {
       ...CORONAL_SNAP,
       label: 'Posterior coronal',
       azimuth: 0,
-      shortcut: 'Ctrl+1'
-    }
+      shortcut: 'Ctrl+1',
+    },
   },
   Numpad1: {
     normal: CORONAL_SNAP,
@@ -251,8 +278,8 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
       ...CORONAL_SNAP,
       label: 'Posterior coronal',
       azimuth: 0,
-      shortcut: 'Ctrl+Numpad 1'
-    }
+      shortcut: 'Ctrl+Numpad 1',
+    },
   },
   Digit3: {
     normal: SAGITTAL_SNAP,
@@ -260,8 +287,8 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
       ...SAGITTAL_SNAP,
       label: 'Left sagittal',
       azimuth: 90,
-      shortcut: 'Ctrl+3'
-    }
+      shortcut: 'Ctrl+3',
+    },
   },
   Numpad3: {
     normal: SAGITTAL_SNAP,
@@ -269,8 +296,8 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
       ...SAGITTAL_SNAP,
       label: 'Left sagittal',
       azimuth: 90,
-      shortcut: 'Ctrl+Numpad 3'
-    }
+      shortcut: 'Ctrl+Numpad 3',
+    },
   },
   Digit7: {
     normal: AXIAL_SNAP,
@@ -278,8 +305,8 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
       ...AXIAL_SNAP,
       label: 'Inferior axial',
       elevation: -90,
-      shortcut: 'Ctrl+7'
-    }
+      shortcut: 'Ctrl+7',
+    },
   },
   Numpad7: {
     normal: AXIAL_SNAP,
@@ -287,9 +314,9 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
       ...AXIAL_SNAP,
       label: 'Inferior axial',
       elevation: -90,
-      shortcut: 'Ctrl+Numpad 7'
-    }
-  }
+      shortcut: 'Ctrl+Numpad 7',
+    },
+  },
 }
 
 export function NiivueStage({
@@ -308,7 +335,7 @@ export function NiivueStage({
   onLocationChange,
   onResolvedWindows,
   onLayerExtents,
-  onViewModeChange
+  onViewModeChange,
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -338,7 +365,10 @@ export function NiivueStage({
   const [location, setLocation] = useState<NiiVueLocation | null>(null)
   const primaryItem = layers[0]?.item ?? item
   const isRenderMode = viewMode === 'render'
-  const currentViewLabel = (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).label
+  const currentViewLabel = (
+    VIEW_MODES.find((mode) => mode.id === viewMode) ??
+    VIEW_MODES[VIEW_MODES.length - 1]
+  ).label
   const layerLoadKey = layers.map(layerLoadSignature).join('|')
 
   // Fetch the coarse volume the instant it is selected — at high priority, in
@@ -373,7 +403,9 @@ export function NiivueStage({
   useEffect(() => {
     let cancelled = false
     let localNv: NiiVueLike | null = null
-    let locationListener: ((event: CustomEvent<NiiVueLocation>) => void) | null = null
+    let locationListener:
+      | ((event: CustomEvent<NiiVueLocation>) => void)
+      | null = null
 
     async function attach(): Promise<void> {
       const canvas = canvasRef.current
@@ -387,7 +419,9 @@ export function NiivueStage({
 
       setSnapId(null)
       syncCanvasSize(canvas, stage)
-      setStatus(`Loading ${layerStackLabel(layers)} with ${backend.toUpperCase()}.`)
+      setStatus(
+        `Loading ${layerStackLabel(layers)} with ${backend.toUpperCase()}.`,
+      )
       try {
         const loaded = await loadNiiVue(backend)
         if (cancelled) return
@@ -404,8 +438,11 @@ export function NiivueStage({
           isOrientationTextVisible: viewMode !== 'render',
           show3Dcrosshair: false,
           showRender: NIVUE_SHOW_RENDER_ALWAYS,
-          sliceType: (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).sliceType,
-          loadingText: ''
+          sliceType: (
+            VIEW_MODES.find((mode) => mode.id === viewMode) ??
+            VIEW_MODES[VIEW_MODES.length - 1]
+          ).sliceType,
+          loadingText: '',
         })
         localNv = nv
         nvRef.current = nv
@@ -430,7 +467,7 @@ export function NiivueStage({
           stage,
           prefetch: prefetchRef.current,
           isCancelled: () => cancelled,
-          setStatus
+          setStatus,
         })
         applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
         // Record the loaded volume order (== this stack's layer order) so the
@@ -472,31 +509,42 @@ export function NiivueStage({
     const nv = nvRef.current
     if (!nv?.setVolume) return
     const resolved: Record<string, ResolvedWindow> = {}
-    void Promise.all(layers.map((layer) => {
-      // Map the layer to its NiiVue volume by identity, not array position.
-      const index = loadedLayerIdsRef.current.indexOf(layer.item.id)
-      if (index < 0) return Promise.resolve() // not loaded yet (a reload is pending)
-      // An explicit window wins; otherwise restore NiiVue's robust auto range
-      // so clearing the window (the "Auto" button) actually reverts the
-      // render — setVolume merges, so omitting calMin would leave a stale one.
-      const volume = nv.volumes?.[index]
-      const windowOption = windowOptionForLayer(layer, volume)
-      if (windowOption.calMin !== undefined && windowOption.calMax !== undefined) {
-        resolved[layer.item.id] = {
-          min: windowOption.calMin,
-          max: windowOption.calMax,
-          // The robust range is the "no threshold" target for the show-all reset.
-          robustMin: Number.isFinite(volume?.robustMin) ? volume?.robustMin : undefined,
-          robustMax: Number.isFinite(volume?.robustMax) ? volume?.robustMax : undefined
+    void Promise.all(
+      layers.map((layer) => {
+        // Map the layer to its NiiVue volume by identity, not array position.
+        const index = loadedLayerIdsRef.current.indexOf(layer.item.id)
+        if (index < 0) return Promise.resolve() // not loaded yet (a reload is pending)
+        // An explicit window wins; otherwise restore NiiVue's robust auto range
+        // so clearing the window (the "Auto" button) actually reverts the
+        // render — setVolume merges, so omitting calMin would leave a stale one.
+        const volume = nv.volumes?.[index]
+        const windowOption = windowOptionForLayer(layer, volume)
+        if (
+          windowOption.calMin !== undefined &&
+          windowOption.calMax !== undefined
+        ) {
+          resolved[layer.item.id] = {
+            min: windowOption.calMin,
+            max: windowOption.calMax,
+            // The robust range is the "no threshold" target for the show-all reset.
+            robustMin: Number.isFinite(volume?.robustMin)
+              ? volume?.robustMin
+              : undefined,
+            robustMax: Number.isFinite(volume?.robustMax)
+              ? volume?.robustMax
+              : undefined,
+          }
         }
-      }
-      return nv.setVolume?.(index, {
-        colormap: layer.colormap,
-        colormapNegative: layer.colormapNegative ?? '',
-        opacity: layer.opacity,
-        ...windowOption
-      }) ?? Promise.resolve()
-    }))
+        return (
+          nv.setVolume?.(index, {
+            colormap: layer.colormap,
+            colormapNegative: layer.colormapNegative ?? '',
+            opacity: layer.opacity,
+            ...windowOption,
+          }) ?? Promise.resolve()
+        )
+      }),
+    )
       .then(() => {
         // setVolume updates the GPU volume texture but does not repaint the
         // canvas, so display-only changes (intensity window, colormap) would
@@ -525,7 +573,7 @@ export function NiivueStage({
       if (volume?.extentsMin && volume?.extentsMax) {
         extents[layer.item.id] = {
           min: Array.from(volume.extentsMin),
-          max: Array.from(volume.extentsMax)
+          max: Array.from(volume.extentsMax),
         }
       }
     })
@@ -538,7 +586,9 @@ export function NiivueStage({
   useEffect(() => {
     const nv = nvRef.current
     if (!nv) return
-    const mode = VIEW_MODES.find((candidate) => candidate.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]
+    const mode =
+      VIEW_MODES.find((candidate) => candidate.id === viewMode) ??
+      VIEW_MODES[VIEW_MODES.length - 1]
     nv.sliceType = mode.sliceType
     nv.isOrientationTextVisible = viewMode !== 'render'
     nv.drawScene()
@@ -660,7 +710,8 @@ export function NiivueStage({
     }
 
     window.addEventListener('keydown', onKeyDown, { capture: true })
-    return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
+    return () =>
+      window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [isActive, primaryItem, isRenderMode])
 
   function snapRenderView(snap: RenderViewSnap): void {
@@ -707,12 +758,21 @@ export function NiivueStage({
       // source of truth, so re-applying clipPlanes never resets another plane.
       event.preventDefault()
       event.stopPropagation()
-      const activeIndex = applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
+      const activeIndex = applyActiveClipPlane(
+        nv,
+        clipPlanes,
+        activeClipPlaneId,
+      )
       if (activeIndex < 0) return
       const active = clipPlanes.find((plane) => plane.id === activeClipPlaneId)
       if (!active) return
-      const depth = clamp(active.depth + event.deltaY * CLIP_DEPTH_WHEEL_STEP, -1, 1)
-      if (depth !== active.depth) onClipPlaneDepthChange(activeClipPlaneId, depth)
+      const depth = clamp(
+        active.depth + event.deltaY * CLIP_DEPTH_WHEEL_STEP,
+        -1,
+        1,
+      )
+      if (depth !== active.depth)
+        onClipPlaneDepthChange(activeClipPlaneId, depth)
       return
     }
 
@@ -733,13 +793,23 @@ export function NiivueStage({
 
   function handlePinchDown(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.pointerType !== 'touch') return
-    pinchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    pinchPointers.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    })
     if (pinchPointers.current.size === 2) pinchDistance.current = pinchSpan()
   }
 
   function handlePinchMove(event: ReactPointerEvent<HTMLDivElement>): void {
-    if (event.pointerType !== 'touch' || !pinchPointers.current.has(event.pointerId)) return
-    pinchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (
+      event.pointerType !== 'touch' ||
+      !pinchPointers.current.has(event.pointerId)
+    )
+      return
+    pinchPointers.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    })
     if (pinchPointers.current.size !== 2 || !isRenderMode) return
     const span = pinchSpan()
     const previous = pinchDistance.current
@@ -761,14 +831,21 @@ export function NiivueStage({
   // and pinch-zooms, but has no through-plane paging (that was wheel-only), so
   // on a phone this slider is the only way to change slice.
   const sliceAxis = SLICE_AXIS_INDEX[viewMode]
-  const sliceDim = sliceAxis !== undefined && primaryItem ? primaryItem.shape[sliceAxis] ?? 0 : 0
+  const sliceDim =
+    sliceAxis !== undefined && primaryItem
+      ? (primaryItem.shape[sliceAxis] ?? 0)
+      : 0
   const sliceMax = Math.max(0, sliceDim - 1)
-  const currentVox = sliceAxis !== undefined ? location?.vox?.[sliceAxis] : undefined
+  const currentVox =
+    sliceAxis !== undefined ? location?.vox?.[sliceAxis] : undefined
   const sliceValue =
     // Number.isFinite (not typeof === 'number', which is true for NaN) — a
     // non-finite vox from a degenerate volume would otherwise become value={NaN}.
-    Number.isFinite(currentVox) ? clamp(Math.round(currentVox as number), 0, sliceMax) : Math.floor(sliceMax / 2)
-  const showSliceSlider = sliceAxis !== undefined && !!primaryItem && sliceMax > 0
+    Number.isFinite(currentVox)
+      ? clamp(Math.round(currentVox as number), 0, sliceMax)
+      : Math.floor(sliceMax / 2)
+  const showSliceSlider =
+    sliceAxis !== undefined && !!primaryItem && sliceMax > 0
 
   function pageToSlice(target: number): void {
     const nv = nvRef.current
@@ -785,7 +862,8 @@ export function NiivueStage({
   const enabledClipPlanes = clipPlanes.filter((plane) => plane.enabled)
   const clipIsActive = renderWheelMode === 'clip-plane'
   const activeClip = clipIsActive
-    ? enabledClipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? null
+    ? (enabledClipPlanes.find((plane) => plane.id === activeClipPlaneId) ??
+      null)
     : null
   const showClipControl = isRenderMode && enabledClipPlanes.length > 0
 
@@ -810,7 +888,11 @@ export function NiivueStage({
             : 'NiiVue viewer — no volume selected'
         }
       />
-      <div className="nv-render-snap-controls" role="group" aria-label="View mode">
+      <div
+        className="nv-render-snap-controls"
+        role="group"
+        aria-label="View mode"
+      >
         {VIEW_MODES.map((mode) => (
           <button
             aria-label={`Show ${mode.label}`}
@@ -827,7 +909,11 @@ export function NiivueStage({
         ))}
       </div>
       {showSliceSlider ? (
-        <div className="nv-slice-slider" role="group" aria-label="Slice position">
+        <div
+          className="nv-slice-slider"
+          role="group"
+          aria-label="Slice position"
+        >
           <input
             aria-label={`${currentViewLabel} slice`}
             max={sliceMax}
@@ -848,7 +934,11 @@ export function NiivueStage({
             {enabledClipPlanes.map((plane) => (
               <button
                 aria-pressed={clipIsActive && plane.id === activeClipPlaneId}
-                className={clipIsActive && plane.id === activeClipPlaneId ? 'is-active' : ''}
+                className={
+                  clipIsActive && plane.id === activeClipPlaneId
+                    ? 'is-active'
+                    : ''
+                }
                 key={plane.id}
                 onClick={() => onClipPlaneActivate?.(plane.id)}
                 title={`Move the ${plane.label} clip plane`}
@@ -867,12 +957,15 @@ export function NiivueStage({
             type="range"
             value={activeClip?.depth ?? 0}
             onChange={(event) =>
-              activeClip && onClipPlaneDepthChange(activeClip.id, Number(event.target.value))
+              activeClip &&
+              onClipPlaneDepthChange(activeClip.id, Number(event.target.value))
             }
           />
         </div>
       ) : null}
-      <div className="nv-render-status" role="status" aria-live="polite">{status}</div>
+      <div className="nv-render-status" role="status" aria-live="polite">
+        {status}
+      </div>
     </div>
   )
 }
@@ -903,7 +996,7 @@ function toLoadedNiiVue(module: {
 }): LoadedNiiVue {
   return {
     NiiVue: module.default as NiiVueConstructor,
-    chunkVolumeGrid: module.chunkVolumeGrid as unknown as ChunkVolumeGridFn
+    chunkVolumeGrid: module.chunkVolumeGrid as unknown as ChunkVolumeGridFn,
   }
 }
 
@@ -922,7 +1015,7 @@ const BLOCK_DEVICE_LIMIT = 4096
 async function applyBlockTiling(
   nv: NiiVueLike,
   chunkVolumeGrid: ChunkVolumeGridFn,
-  blocks: BlockSettings
+  blocks: BlockSettings,
 ): Promise<void> {
   const volumes = nv.volumes
   if (!volumes || volumes.length === 0) return
@@ -946,10 +1039,15 @@ async function applyBlockTiling(
     const grid: [number, number, number] = [
       Math.min(blocks.grid, dims[0]),
       Math.min(blocks.grid, dims[1]),
-      Math.min(blocks.grid, dims[2])
+      Math.min(blocks.grid, dims[2]),
     ]
     try {
-      volume.chunkPlan = chunkVolumeGrid(dims, grid, BLOCK_DEVICE_LIMIT, BLOCK_HALO)
+      volume.chunkPlan = chunkVolumeGrid(
+        dims,
+        grid,
+        BLOCK_DEVICE_LIMIT,
+        BLOCK_HALO,
+      )
       changed = true
     } catch {
       // Bricks would exceed the device limit — leave this volume untiled rather
@@ -967,7 +1065,9 @@ async function applyBlockTiling(
 function applyBlockExplode(nv: NiiVueLike, blocks: BlockSettings): void {
   const volumes = nv.volumes
   if (!volumes) return
-  const explode = blocksAreTiled(blocks) ? explodeFor(blocks) : { enabled: false }
+  const explode = blocksAreTiled(blocks)
+    ? explodeFor(blocks)
+    : { enabled: false }
   for (const volume of volumes) {
     if (!blocksAreTiled(blocks) && volume.chunkPlan === undefined) continue
     volume.chunkExplode = explode
@@ -986,7 +1086,7 @@ function explodeFor(blocks: BlockSettings): NiiVueChunkExplode {
 // [x, y, z] voxel dims from a volume's RAS dims ([n, x, y, z]); null if absent
 // or degenerate.
 function blockVolumeDims(
-  dimsRAS: number[] | undefined
+  dimsRAS: number[] | undefined,
 ): [number, number, number] | null {
   if (!dimsRAS || dimsRAS.length < 4) return null
   const x = dimsRAS[1]
@@ -1011,7 +1111,7 @@ function blockVolumeDims(
 // Returns no keys when the volume's stats aren't available yet (still loading).
 function windowOptionForLayer(
   layer: NiivueRenderLayer,
-  volume: { robustMin?: number; robustMax?: number } | undefined
+  volume: { robustMin?: number; robustMax?: number } | undefined,
 ): { calMin?: number; calMax?: number } {
   if (layer.calMin !== undefined && layer.calMax !== undefined) {
     return { calMin: layer.calMin, calMax: layer.calMax }
@@ -1064,7 +1164,10 @@ function crosshairStepForEvent(event: KeyboardEvent): VoxelStep | null {
 // one slice. Scroll down advances the through-plane voxel (wheel-down = next);
 // which anatomical direction that is depends on the volume's orientation.
 // Multiplanar/render return null (the wheel keeps its zoom / native behaviour).
-function sliceWheelStep(viewMode: ViewModeId, deltaY: number): VoxelStep | null {
+function sliceWheelStep(
+  viewMode: ViewModeId,
+  deltaY: number,
+): VoxelStep | null {
   if (deltaY === 0) return null
   const direction = deltaY > 0 ? 1 : -1
   switch (viewMode) {
@@ -1084,7 +1187,7 @@ function sliceWheelStep(viewMode: ViewModeId, deltaY: number): VoxelStep | null 
 const SLICE_AXIS_INDEX: Partial<Record<ViewModeId, number>> = {
   axial: 2,
   coronal: 1,
-  sagittal: 0
+  sagittal: 0,
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -1101,7 +1204,7 @@ async function loadRenderVolumeLods({
   stage,
   prefetch,
   isCancelled,
-  setStatus
+  setStatus,
 }: {
   layers: NiivueRenderLayer[]
   nv: NiiVueLike
@@ -1116,7 +1219,7 @@ async function loadRenderVolumeLods({
   if (!primaryLayer) return
   const stackLevels = layers.map((layer) => ({
     layer,
-    levels: renderVolumeLevels(layer.item)
+    levels: renderVolumeLevels(layer.item),
   }))
   const atlasMaps = await resolveAtlasColorMaps(layers)
   if (isCancelled()) return
@@ -1129,34 +1232,38 @@ async function loadRenderVolumeLods({
     if (isCancelled()) return
 
     if (loadedLevel) {
-      setStatus(`${layerStackLabel(layers)} refining to L${level.level} (${renderLevelShape(level)}).`)
+      setStatus(
+        `${layerStackLabel(layers)} refining to L${level.level} (${renderLevelShape(level)}).`,
+      )
       await waitForIdle()
       if (isCancelled()) return
     }
 
-    const volumes = await Promise.all(stackLevels.map(async ({ layer, levels: layerLevels }, layerIndex) => {
-      const layerLevel = layerLevels[Math.min(index, layerLevels.length - 1)]
-      let source: string | File = layerLevel.url
-      if (layerIndex === 0 && prefetch && prefetch.url === layerLevel.url) {
-        try {
-          source = await prefetch.file
-        } catch {
-          // Prefetch failed (e.g. aborted or network error); fall back to the URL
-          // so NiiVue fetches it itself and surfaces any real error below.
-          source = layerLevel.url
+    const volumes = await Promise.all(
+      stackLevels.map(async ({ layer, levels: layerLevels }, layerIndex) => {
+        const layerLevel = layerLevels[Math.min(index, layerLevels.length - 1)]
+        let source: string | File = layerLevel.url
+        if (layerIndex === 0 && prefetch && prefetch.url === layerLevel.url) {
+          try {
+            source = await prefetch.file
+          } catch {
+            // Prefetch failed (e.g. aborted or network error); fall back to the URL
+            // so NiiVue fetches it itself and surfaces any real error below.
+            source = layerLevel.url
+          }
         }
-      }
-      return {
-        url: source,
-        name: `${layer.item.label} L${layerLevel.level}`,
-        colormap: layer.colormap,
-        colormapNegative: layer.colormapNegative ?? '',
-        opacity: layer.opacity,
-        isColorbarVisible: layerIndex === 0,
-        ...(layer.calMin !== undefined ? { calMin: layer.calMin } : {}),
-        ...(layer.calMax !== undefined ? { calMax: layer.calMax } : {})
-      }
-    }))
+        return {
+          url: source,
+          name: `${layer.item.label} L${layerLevel.level}`,
+          colormap: layer.colormap,
+          colormapNegative: layer.colormapNegative ?? '',
+          opacity: layer.opacity,
+          isColorbarVisible: layerIndex === 0,
+          ...(layer.calMin !== undefined ? { calMin: layer.calMin } : {}),
+          ...(layer.calMax !== undefined ? { calMax: layer.calMax } : {}),
+        }
+      }),
+    )
     if (isCancelled()) return
 
     try {
@@ -1167,13 +1274,17 @@ async function loadRenderVolumeLods({
       lastError = error
       if (!loadedLevel) {
         if (!isCancelled()) {
-          setStatus(`${primaryLayer.item.label} L${level.level} failed; trying finer volume.`)
+          setStatus(
+            `${primaryLayer.item.label} L${level.level} failed; trying finer volume.`,
+          )
         }
         continue
       }
 
       if (!isCancelled()) {
-        setStatus(`${primaryLayer.item.label} stayed at L${loadedLevel.level}; L${level.level} refinement failed.`)
+        setStatus(
+          `${primaryLayer.item.label} stayed at L${loadedLevel.level}; L${level.level} refinement failed.`,
+        )
       }
       return
     }
@@ -1184,9 +1295,13 @@ async function loadRenderVolumeLods({
     resizeNiiVue(nv, canvas, stage)
 
     if (index === 0 && levels.length > 1) {
-      setStatus(`${layerStackLabel(layers)} visible at L${level.level} (${renderLevelShape(level)}).`)
+      setStatus(
+        `${layerStackLabel(layers)} visible at L${level.level} (${renderLevelShape(level)}).`,
+      )
     } else if (index === levels.length - 1) {
-      setStatus(`${layerStackLabel(layers)} ready at L${level.level} (${renderLevelShape(level)}).`)
+      setStatus(
+        `${layerStackLabel(layers)} ready at L${level.level} (${renderLevelShape(level)}).`,
+      )
     }
   }
 
@@ -1195,11 +1310,14 @@ async function loadRenderVolumeLods({
   }
 }
 
-async function fetchVolumeFile(url: string, signal: AbortSignal): Promise<File> {
+async function fetchVolumeFile(
+  url: string,
+  signal: AbortSignal,
+): Promise<File> {
   const init: RequestInit & { priority?: 'high' | 'low' | 'auto' } = {
     signal,
     cache: 'force-cache',
-    priority: 'high'
+    priority: 'high',
   }
   const response = await fetch(url, init)
   if (!response.ok) {
@@ -1221,12 +1339,14 @@ function volumeFileName(url: string): string {
   }
 }
 
-async function resolveAtlasColorMaps(layers: NiivueRenderLayer[]): Promise<Array<ColorMap | null>> {
+async function resolveAtlasColorMaps(
+  layers: NiivueRenderLayer[],
+): Promise<Array<ColorMap | null>> {
   return Promise.all(
     layers.map((layer) => {
       if (!layer.isAtlas) return Promise.resolve(null)
       return atlasColorMapForItem(layer.item).catch(() => null)
-    })
+    }),
   )
 }
 
@@ -1259,13 +1379,17 @@ function extractAtlasColorMap(metadata: VolumeMetadata): ColorMap | null {
 // `layers` and therefore go through `loadedLayerIdsRef`.
 async function applyAtlasLabelMaps(
   nv: NiiVueLike,
-  atlasMaps: Array<ColorMap | null>
+  atlasMaps: Array<ColorMap | null>,
 ): Promise<void> {
   if (!nv.setColormapLabel) return
-  await Promise.all(atlasMaps.map((colorMap, volumeIndex) => {
-    if (!colorMap) return Promise.resolve()
-    return (nv.setColormapLabel?.(volumeIndex, colorMap) ?? Promise.resolve()).catch(() => undefined)
-  }))
+  await Promise.all(
+    atlasMaps.map((colorMap, volumeIndex) => {
+      if (!colorMap) return Promise.resolve()
+      return (
+        nv.setColormapLabel?.(volumeIndex, colorMap) ?? Promise.resolve()
+      ).catch(() => undefined)
+    }),
+  )
 }
 
 function normalizeLabelColorMap(value: JsonValue): ColorMap | null {
@@ -1273,7 +1397,14 @@ function normalizeLabelColorMap(value: JsonValue): ColorMap | null {
   const R = numericJsonArray(value.R)
   const G = numericJsonArray(value.G)
   const B = numericJsonArray(value.B)
-  if (!R || !G || !B || R.length === 0 || G.length !== R.length || B.length !== R.length) {
+  if (
+    !R ||
+    !G ||
+    !B ||
+    R.length === 0 ||
+    G.length !== R.length ||
+    B.length !== R.length
+  ) {
     return null
   }
 
@@ -1283,7 +1414,11 @@ function normalizeLabelColorMap(value: JsonValue): ColorMap | null {
   if (I && I.length !== R.length) return null
 
   const labels = stringJsonArray(value.labels)
-  const colorMap: Partial<ColorMap> & Pick<ColorMap, 'R' | 'G' | 'B'> = { R, G, B }
+  const colorMap: Partial<ColorMap> & Pick<ColorMap, 'R' | 'G' | 'B'> = {
+    R,
+    G,
+    B,
+  }
   if (A) colorMap.A = A
   if (I) colorMap.I = I
   if (labels) colorMap.labels = labels
@@ -1292,13 +1427,17 @@ function normalizeLabelColorMap(value: JsonValue): ColorMap | null {
 
 function numericJsonArray(value: JsonValue | undefined): number[] | null {
   if (!Array.isArray(value)) return null
-  const numbers = value.map((entry) => typeof entry === 'number' ? entry : Number(entry))
+  const numbers = value.map((entry) =>
+    typeof entry === 'number' ? entry : Number(entry),
+  )
   return numbers.every(Number.isFinite) ? numbers : null
 }
 
 function stringJsonArray(value: JsonValue | undefined): string[] | null {
   if (!Array.isArray(value)) return null
-  return value.map((entry) => typeof entry === 'string' ? entry : String(entry))
+  return value.map((entry) =>
+    typeof entry === 'string' ? entry : String(entry),
+  )
 }
 
 function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
@@ -1306,14 +1445,18 @@ function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
 }
 
 function layerLoadSignature(layer: NiivueRenderLayer): string {
-  const levels = layer.item.levels.map((level) => `${level.level}:${level.raw ?? ''}`).join(',')
+  const levels = layer.item.levels
+    .map((level) => `${level.level}:${level.raw ?? ''}`)
+    .join(',')
   return `${layer.kind}:${layer.isAtlas ? 'atlas' : 'volume'}:${layer.item.id}:${layer.item.metadata}:${levels}`
 }
 
 function layerStackLabel(layers: NiivueRenderLayer[]): string {
   const primary = layers[0]?.item.label ?? 'volume'
   const extras = Math.max(layers.length - 1, 0)
-  return extras > 0 ? `${primary} + ${extras} layer${extras === 1 ? '' : 's'}` : primary
+  return extras > 0
+    ? `${primary} + ${extras} layer${extras === 1 ? '' : 's'}`
+    : primary
 }
 
 function renderVolumeLevels(item: DesktopItem): RenderVolumeLevel[] {
@@ -1322,7 +1465,7 @@ function renderVolumeLevels(item: DesktopItem): RenderVolumeLevel[] {
     .map((level) => ({
       level: level.level,
       url: level.raw as string,
-      shape: level.shape
+      shape: level.shape,
     }))
     .sort((left, right) => right.level - left.level)
 
@@ -1332,8 +1475,8 @@ function renderVolumeLevels(item: DesktopItem): RenderVolumeLevel[] {
     {
       level: 0,
       url: rawVolumeUrl(item),
-      shape: item.shape
-    }
+      shape: item.shape,
+    },
   ]
 }
 
@@ -1370,7 +1513,7 @@ function applyClipPlanes(nv: NiiVueLike, clipPlanes: ClipPlane[]): void {
 function applyActiveClipPlane(
   nv: NiiVueLike,
   clipPlanes: ClipPlane[],
-  activeClipPlaneId: string
+  activeClipPlaneId: string,
 ): number {
   const activeIndex = clipPlanes
     .filter((plane) => plane.enabled)
@@ -1387,9 +1530,8 @@ function zoomRenderWithWheel(nv: NiiVueLike, deltaY: number): void {
   const scene = nv.model?.scene
   if (!scene) return
 
-  const current = typeof scene.scaleMultiplier === 'number'
-    ? scene.scaleMultiplier
-    : 1
+  const current =
+    typeof scene.scaleMultiplier === 'number' ? scene.scaleMultiplier : 1
   scene.scaleMultiplier = clamp(current + deltaY * 0.001, 0.5, 2)
   nv.drawScene()
 }
@@ -1400,7 +1542,8 @@ function zoomRenderByFactor(nv: NiiVueLike, factor: number): void {
   const scene = nv.model?.scene
   if (!scene || !Number.isFinite(factor) || factor <= 0) return
 
-  const current = typeof scene.scaleMultiplier === 'number' ? scene.scaleMultiplier : 1
+  const current =
+    typeof scene.scaleMultiplier === 'number' ? scene.scaleMultiplier : 1
   scene.scaleMultiplier = clamp(current * factor, 0.5, 2)
   nv.drawScene()
 }
@@ -1412,18 +1555,24 @@ function clamp(value: number, min: number, max: number): number {
 function resizeNiiVue(
   nv: NiiVueLike,
   canvas: HTMLCanvasElement | null,
-  stage: HTMLDivElement | null
+  stage: HTMLDivElement | null,
 ): void {
   if (canvas) syncCanvasSize(canvas, stage)
   nv.resize?.()
   nv.drawScene()
 }
 
-function activeCanvasFor(nv: NiiVueLike, fallback: HTMLCanvasElement): HTMLCanvasElement {
+function activeCanvasFor(
+  nv: NiiVueLike,
+  fallback: HTMLCanvasElement,
+): HTMLCanvasElement {
   return nv.canvas instanceof HTMLCanvasElement ? nv.canvas : fallback
 }
 
-function syncCanvasSize(canvas: HTMLCanvasElement, stage: HTMLDivElement | null): void {
+function syncCanvasSize(
+  canvas: HTMLCanvasElement,
+  stage: HTMLDivElement | null,
+): void {
   const source = stage ?? canvas
   const density = Math.max(window.devicePixelRatio || 1, 1)
   const width = Math.max(1, Math.round(source.clientWidth * density))

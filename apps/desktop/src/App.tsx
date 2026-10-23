@@ -2,6 +2,7 @@ import type { NiiVueLocation } from '@niivue/niivue'
 import {
   AlertTriangle,
   Boxes,
+  Brain,
   Calculator,
   CheckCircle2,
   ChevronDown,
@@ -66,9 +67,9 @@ import {
   type ResolvedWindow,
   type ViewModeId,
 } from './components/NiivueStage'
-import { OpenDataCard } from './components/OpenDataCard'
 import { TerminalPanel } from './components/TerminalPanel'
 import { VolumeFilterPanel } from './components/VolumeFilterPanel'
+import { WelcomeScreen } from './components/WelcomeScreen'
 import {
   BLOCK_GRID_OPTIONS,
   type BlockSettings,
@@ -228,6 +229,8 @@ export function App(): JSX.Element {
     promoteRecent,
     removeRecent,
     pruneExtractedBundleDirs,
+    reopenLast,
+    setReopenLast,
   } = useRecentDatasets()
   const {
     bidsDatasetDoi,
@@ -236,11 +239,14 @@ export function App(): JSX.Element {
     datasetRevision,
     datasetRoot,
     isOpeningDataset,
+    isStartupResolved,
     items,
     manifest,
     openLocalDataset,
     openLocalVolumeFile,
     openRecentDataset,
+    openSampleDataset,
+    samplePath,
     refreshDesktopManifest,
     refreshDesktopManifestData,
     selected,
@@ -365,6 +371,16 @@ export function App(): JSX.Element {
   // over is stale within the same tick, so the button's `disabled` reads state
   // while the handlers guard on the ref.
   const isImportingBundleRef = useRef(false)
+  const reopenAttemptedRef = useRef(false)
+  const [reopeningPath, setReopeningPath] = useState<string | null>(null)
+  // Stays true while one dataset is swapped for another (the manifest is
+  // briefly empty then), so only "nothing open" brings back Welcome.
+  const [isWorkspaceVisible, setIsWorkspaceVisible] = useState(false)
+  const isBusyOpening = isOpeningDataset || isImportingBundle
+  useEffect(() => {
+    if (items.length > 0) setIsWorkspaceVisible(true)
+    else if (!isBusyOpening) setIsWorkspaceVisible(false)
+  }, [items.length, isBusyOpening])
   const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
   const [isAirdropAvailable, setIsAirdropAvailable] = useState(false)
   const [isSharingBundle, setIsSharingBundle] = useState(false)
@@ -809,6 +825,10 @@ export function App(): JSX.Element {
     'open-file': openLocalVolumeFile,
     'open-folder': openLocalDataset,
     'open-bundle': handleImportBundle,
+    'open-sample': async () => {
+      if (samplePath) await openSampleDataset()
+      else setStatus('This build has no sample dataset.')
+    },
     'export-bundle': handleExportBundle,
     share: () =>
       isAirdropAvailable
@@ -838,6 +858,37 @@ export function App(): JSX.Element {
       setIsImportingBundle(false)
     }
   }
+
+  // A bundle must be re-verified and its view replayed, not opened as a plain
+  // directory.
+  /** False when a dataset failed to open; bundle imports report their own errors. */
+  async function openRecentEntry(path: string): Promise<boolean> {
+    if (!isBundlePath(path)) return openRecentDataset(path)
+    await importBundleFromPath(path)
+    return true
+  }
+
+  // Like VS Code reopening its last folder: once startup finds nothing to open
+  // (a dataset named by env or NeuroFlow wins), reopen the most recent one. A
+  // failure (moved, deleted) lands on Welcome with the error in the status line
+  // and keeps the entry, in case the drive is just unmounted.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when startup resolves; later recents/pref changes must not trigger a reopen.
+  useEffect(() => {
+    if (!isStartupResolved || reopenAttemptedRef.current) return
+    reopenAttemptedRef.current = true
+    const last = recentDatasets[0]
+    if (!reopenLast || !last || items.length > 0) return
+    setReopeningPath(last)
+    void openRecentEntry(last)
+      .then((opened) => {
+        if (opened) return
+        setStatus(
+          `Couldn't reopen ${recentDatasetLabel(last)}. It may have been moved, or be on a drive that isn't connected.`,
+          'error',
+        )
+      })
+      .finally(() => setReopeningPath(null))
+  }, [isStartupResolved])
 
   /** Re-open a bundle straight from recents, skipping the file dialog. */
   async function importBundleFromPath(path: string): Promise<void> {
@@ -967,6 +1018,15 @@ export function App(): JSX.Element {
     [locationReadout, viewMode],
   )
 
+  // Starting up or reopening the last dataset shows only what's pending, so a
+  // relaunch that restores a dataset doesn't flash the full Welcome screen.
+  const welcomeOpeningLabel = !isStartupResolved
+    ? 'Starting NeuroVue…'
+    : reopeningPath
+      ? `Reopening ${recentDatasetLabel(reopeningPath)}…`
+      : null
+  const showWelcome = welcomeOpeningLabel !== null || !isWorkspaceVisible
+
   return (
     <main
       className={`nv-app ${isTerminalDockOpen ? 'has-terminal' : ''}`}
@@ -986,14 +1046,16 @@ export function App(): JSX.Element {
                   .join(' · ') || undefined
               }
             >
-              {isSampleDataset
-                ? datasetName
-                : bidsName ||
-                  datasetRoot ||
-                  serverUrl ||
-                  'Resolving local server'}
+              {showWelcome
+                ? 'No dataset open'
+                : isSampleDataset
+                  ? datasetName
+                  : bidsName ||
+                    datasetRoot ||
+                    serverUrl ||
+                    'Resolving local server'}
             </p>
-            {datasetNotice ? (
+            {datasetNotice && !showWelcome ? (
               <p className="nv-dataset-notice" role="status">
                 {datasetNotice}
               </p>
@@ -1002,21 +1064,25 @@ export function App(): JSX.Element {
         </div>
 
         <div className="nv-toolbar" aria-label="Viewer controls">
-          <button
-            aria-label={
-              isFileListCollapsed ? 'Open dataset panel' : 'Close dataset panel'
-            }
-            aria-expanded={!isFileListCollapsed}
-            className={`nv-icon-button nv-mobile-only ${!isFileListCollapsed ? 'is-active' : ''}`}
-            onClick={() => {
-              setIsFileListCollapsed((collapsed) => !collapsed)
-              setIsControlsCollapsed(true)
-            }}
-            title="Dataset panel"
-            type="button"
-          >
-            <Database size={16} />
-          </button>
+          {showWelcome ? null : (
+            <button
+              aria-label={
+                isFileListCollapsed
+                  ? 'Open dataset panel'
+                  : 'Close dataset panel'
+              }
+              aria-expanded={!isFileListCollapsed}
+              className={`nv-icon-button nv-mobile-only ${!isFileListCollapsed ? 'is-active' : ''}`}
+              onClick={() => {
+                setIsFileListCollapsed((collapsed) => !collapsed)
+                setIsControlsCollapsed(true)
+              }}
+              title="Dataset panel"
+              type="button"
+            >
+              <Database size={16} />
+            </button>
+          )}
           <div className="nv-open-group" ref={recentMenuRef}>
             <button
               className="nv-tool-button"
@@ -1082,6 +1148,24 @@ export function App(): JSX.Element {
                   )}
                   <span className="nv-recent-item-name">Open bundle…</span>
                 </button>
+                {samplePath ? (
+                  <button
+                    className="nv-recent-item nv-recent-open"
+                    disabled={isBusyOpening}
+                    onClick={() => {
+                      setIsRecentMenuOpen(false)
+                      void openSampleDataset()
+                    }}
+                    title="Open the MNI152 template that ships with NeuroVue"
+                    type="button"
+                    role="menuitem"
+                  >
+                    <Brain size={14} />
+                    <span className="nv-recent-item-name">
+                      Open sample data
+                    </span>
+                  </button>
+                ) : null}
                 {recentDatasets.length > 0 ? (
                   <>
                     <div className="nv-recent-divider" role="separator" />
@@ -1091,11 +1175,7 @@ export function App(): JSX.Element {
                           className="nv-recent-item"
                           onClick={() => {
                             setIsRecentMenuOpen(false)
-                            // A bundle must be re-verified and its view replayed,
-                            // not opened as a plain directory.
-                            void (isBundlePath(path)
-                              ? importBundleFromPath(path)
-                              : openRecentDataset(path))
+                            void openRecentEntry(path)
                           }}
                           title={path}
                           type="button"
@@ -1127,7 +1207,7 @@ export function App(): JSX.Element {
 
           {/* With AirDrop there are two ways to share, so group them under one
               menu; without it, export is the only one, so skip the menu. */}
-          {isAirdropAvailable ? (
+          {showWelcome ? null : isAirdropAvailable ? (
             <div className="nv-open-group" ref={shareMenuRef}>
               <button
                 className="nv-tool-button"
@@ -1243,376 +1323,396 @@ export function App(): JSX.Element {
               <SquareTerminal size={16} />
             </button>
           ) : null}
-          <button
-            aria-label={
-              isControlsCollapsed
-                ? 'Open controls panel'
-                : 'Close controls panel'
-            }
-            aria-expanded={!isControlsCollapsed}
-            className={`nv-icon-button nv-mobile-only ${!isControlsCollapsed ? 'is-active' : ''}`}
-            onClick={() => {
-              setIsControlsCollapsed((collapsed) => !collapsed)
-              setIsFileListCollapsed(true)
-            }}
-            title="Controls panel"
-            type="button"
-          >
-            <SlidersHorizontal size={16} />
-          </button>
+          {showWelcome ? null : (
+            <button
+              aria-label={
+                isControlsCollapsed
+                  ? 'Open controls panel'
+                  : 'Close controls panel'
+              }
+              aria-expanded={!isControlsCollapsed}
+              className={`nv-icon-button nv-mobile-only ${!isControlsCollapsed ? 'is-active' : ''}`}
+              onClick={() => {
+                setIsControlsCollapsed((collapsed) => !collapsed)
+                setIsFileListCollapsed(true)
+              }}
+              title="Controls panel"
+              type="button"
+            >
+              <SlidersHorizontal size={16} />
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Tap-to-close backdrop for the mobile drawers (CSS hides it on desktop). */}
-      {!isFileListCollapsed || !isControlsCollapsed ? (
-        <button
-          aria-label="Close panel"
-          className="nv-mobile-scrim"
-          tabIndex={-1}
-          type="button"
-          onClick={() => {
-            setIsFileListCollapsed(true)
-            setIsControlsCollapsed(true)
-          }}
+      {showWelcome ? (
+        <WelcomeScreen
+          busy={isBusyOpening}
+          openingLabel={welcomeOpeningLabel}
+          recentDatasets={recentDatasets}
+          reopenLast={reopenLast}
+          onOpenBundle={() => void handleImportBundle()}
+          onOpenFile={() => void openLocalVolumeFile()}
+          onOpenFolder={() => void openLocalDataset()}
+          onOpenRecent={(path) => void openRecentEntry(path)}
+          onOpenSample={samplePath ? () => void openSampleDataset() : null}
+          onRemoveRecent={removeRecent}
+          onReopenLastChange={setReopenLast}
         />
-      ) : null}
-
-      <section
-        className={`nv-workbench ${isFileListCollapsed ? 'is-file-list-collapsed' : ''} ${
-          isControlsCollapsed ? 'is-controls-collapsed' : ''
-        }`}
-      >
-        <aside
-          className={`nv-sidebar ${isFileListCollapsed ? 'is-collapsed' : ''}`}
-        >
-          <div className="nv-panel-heading">
-            <span>
-              <Database size={15} />
-              <span className="nv-sidebar-title">Dataset</span>
-            </span>
-            <div className="nv-sidebar-heading-tools">
-              <em>
-                {filteredItems.length}/{items.length}
-              </em>
-              <button
-                aria-expanded={!isFileListCollapsed}
-                aria-label={
-                  isFileListCollapsed
-                    ? 'Expand dataset file list'
-                    : 'Collapse dataset file list'
-                }
-                className="nv-sidebar-toggle"
-                onClick={() =>
-                  setIsFileListCollapsed((collapsed) => !collapsed)
-                }
-                title={
-                  isFileListCollapsed
-                    ? 'Expand file list'
-                    : 'Collapse file list'
-                }
-                type="button"
-              >
-                {isFileListCollapsed ? (
-                  <PanelLeftOpen size={15} />
-                ) : (
-                  <PanelLeftClose size={15} />
-                )}
-              </button>
-            </div>
-          </div>
-
-          {!isFileListCollapsed ? (
-            <VolumeFilterPanel
-              filteredItems={filteredItems}
-              items={items}
-              query={query}
-              selected={selected}
-              selectedDtypes={selectedDtypes}
-              selectedFormats={selectedFormats}
-              selectedImageTypes={selectedImageTypes}
-              selectedRoles={selectedRoles}
-              onClearFilters={clearFilters}
-              onQueryChange={setQuery}
-              onSelect={(item) => setSelectedId(item.id)}
-              onToggleDtype={toggleDtype}
-              onToggleFormat={toggleFormat}
-              onToggleImageType={toggleImageType}
-              onToggleRole={toggleRole}
+      ) : (
+        <>
+          {/* Tap-to-close backdrop for the mobile drawers (CSS hides it on desktop). */}
+          {!isFileListCollapsed || !isControlsCollapsed ? (
+            <button
+              aria-label="Close panel"
+              className="nv-mobile-scrim"
+              tabIndex={-1}
+              type="button"
+              onClick={() => {
+                setIsFileListCollapsed(true)
+                setIsControlsCollapsed(true)
+              }}
             />
           ) : null}
-        </aside>
-
-        <section
-          className="nv-split-workspace"
-          ref={splitRef}
-          style={{ '--split-left': `${splitPercent}%` } as CSSProperties}
-        >
-          <section
-            className={`nv-dataset-pane ${mouseContext === 'desktop' ? 'is-context-active' : ''}`}
-            aria-label="OSD dataset viewer"
-            onPointerEnter={() => setMouseContext('desktop')}
-            onPointerLeave={() => setMouseContext(null)}
-          >
-            <DatasetDesktop
-              datasetName={datasetName}
-              overlay={
-                isSampleDataset ? (
-                  <OpenDataCard
-                    disabled={isOpeningDataset || isImportingBundle}
-                    onOpenBundle={() => void handleImportBundle()}
-                    onOpenFile={() => void openLocalVolumeFile()}
-                    onOpenFolder={() => void openLocalDataset()}
-                  />
-                ) : null
-              }
-              items={filteredItems}
-              manifest={manifest}
-              selected={selected}
-              zoom={desktopZoom}
-              onZoom={setDesktopZoom}
-              onSelect={(item) => setSelectedId(item.id)}
-            />
-          </section>
-
-          <button
-            aria-label="Resize dataset and NiiVue panes"
-            aria-valuemax={MAX_SPLIT}
-            aria-valuemin={MIN_SPLIT}
-            aria-valuenow={splitPercent}
-            className="nv-splitter"
-            onPointerDown={(event) =>
-              beginSplitDrag(event, splitRef, setSplitPercent)
-            }
-            role="separator"
-            title="Resize panes"
-            type="button"
-          >
-            <GripVertical size={16} />
-          </button>
 
           <section
-            className={`nv-niivue-pane ${mouseContext === 'niivue' ? 'is-context-active' : ''} ${isRenderMaximized ? 'is-maximized' : ''}`}
-            aria-label="NiiVue render window"
-            onPointerEnter={() => setMouseContext('niivue')}
-            onPointerLeave={() => setMouseContext(null)}
+            className={`nv-workbench ${isFileListCollapsed ? 'is-file-list-collapsed' : ''} ${
+              isControlsCollapsed ? 'is-controls-collapsed' : ''
+            }`}
           >
-            <div className="nv-stage-title nv-niivue-title" aria-hidden="true">
-              <span>Viewer</span>
-              <MiddleEllipsis
-                text={selected?.label ?? 'No selection'}
-                title={[
-                  selected?.label,
-                  `${backendLabel(backend)} renderer`,
-                  renderStatus,
-                ]
-                  .filter(Boolean)
-                  .join('\n')}
-              />
-              <em>
-                {viewMode !== 'render'
-                  ? `${viewModeLabel(viewMode)}${slicePosition ? ` · ${slicePosition}` : ''}`
-                  : renderWheelMode === 'clip-plane'
-                    ? `wheel ${activeClipPlane?.label ?? 'clip'}`
-                    : '3D'}
-              </em>
-            </div>
-            <button
-              aria-label={
-                isRenderMaximized
-                  ? 'Exit full screen'
-                  : 'View NiiVue full screen'
-              }
-              aria-pressed={isRenderMaximized}
-              className="nv-pane-icon-button nv-render-maximize"
-              onClick={() => setIsRenderMaximized((value) => !value)}
-              title={
-                isRenderMaximized ? 'Exit full screen (Esc)' : 'Full screen'
-              }
-              type="button"
+            <aside
+              className={`nv-sidebar ${isFileListCollapsed ? 'is-collapsed' : ''}`}
             >
-              {isRenderMaximized ? (
-                <Minimize2 size={16} />
-              ) : (
-                <Maximize2 size={16} />
-              )}
-            </button>
-            <NiivueStage
-              activeClipPlaneId={activeClipPlaneId}
-              backend={backend}
-              blocks={blocks}
-              clipPlanes={clipPlanes}
-              crosshairTarget={crosshairTarget}
-              isActive={mouseContext === 'niivue'}
-              item={selected}
-              layers={renderLayers}
-              onClipPlaneDepthChange={changeClipPlaneDepth}
-              onClipPlaneActivate={bindActiveClipPlane}
-              onLayerExtents={handleLayerExtents}
-              onLocationChange={setLocationReadout}
-              onResolvedWindows={handleResolvedWindows}
-              onViewModeChange={setViewMode}
-              onRenderStatus={setRenderStatus}
-              renderWheelMode={renderWheelMode}
-              viewMode={viewMode}
-            />
-          </section>
-        </section>
+              <div className="nv-panel-heading">
+                <span>
+                  <Database size={15} />
+                  <span className="nv-sidebar-title">Dataset</span>
+                </span>
+                <div className="nv-sidebar-heading-tools">
+                  <em>
+                    {filteredItems.length}/{items.length}
+                  </em>
+                  <button
+                    aria-expanded={!isFileListCollapsed}
+                    aria-label={
+                      isFileListCollapsed
+                        ? 'Expand dataset file list'
+                        : 'Collapse dataset file list'
+                    }
+                    className="nv-sidebar-toggle"
+                    onClick={() =>
+                      setIsFileListCollapsed((collapsed) => !collapsed)
+                    }
+                    title={
+                      isFileListCollapsed
+                        ? 'Expand file list'
+                        : 'Collapse file list'
+                    }
+                    type="button"
+                  >
+                    {isFileListCollapsed ? (
+                      <PanelLeftOpen size={15} />
+                    ) : (
+                      <PanelLeftClose size={15} />
+                    )}
+                  </button>
+                </div>
+              </div>
 
-        <aside
-          className={`nv-controls ${isControlsCollapsed ? 'is-collapsed' : ''} ${
-            isRenderMaximized ? 'is-floating' : ''
-          }`}
-        >
-          <div className="nv-controls-toolbar">
-            <button
-              aria-expanded={!isControlsCollapsed}
-              aria-label={
-                isControlsCollapsed
-                  ? 'Expand controls panel'
-                  : 'Collapse controls panel'
-              }
-              className="nv-sidebar-toggle"
-              onClick={() => setIsControlsCollapsed((collapsed) => !collapsed)}
-              title={
-                isControlsCollapsed ? 'Expand controls' : 'Collapse controls'
-              }
-              type="button"
-            >
-              {isControlsCollapsed ? (
-                <PanelRightOpen size={15} />
-              ) : (
-                <PanelRightClose size={15} />
-              )}
-            </button>
-          </div>
-
-          <div className="nv-inspector-tools" aria-label="Desktop controls">
-            <DesktopZoomControls
-              zoom={desktopZoom}
-              onFit={() => setDesktopZoom(1)}
-              onZoomIn={() => setDesktopZoom((zoom) => zoomBy(zoom, 1.25))}
-              onZoomOut={() => setDesktopZoom((zoom) => zoomBy(zoom, 0.8))}
-            />
-            <span className="nv-zoom-readout">
-              {Math.round(desktopZoom * 100)}%
-            </span>
-          </div>
-
-          <SidePanelTabs activeTab={sidePanelTab} onChange={setSidePanelTab} />
-
-          <div className="nv-sidepanel-content">
-            {sidePanelTab === 'inspect' ? (
-              <>
-                <LayerPanel
-                  atlasId={atlasId}
-                  isOpeningOverlay={isOpeningOverlay}
+              {!isFileListCollapsed ? (
+                <VolumeFilterPanel
+                  filteredItems={filteredItems}
                   items={items}
-                  layerSettings={layerSettings}
-                  layerExtents={layerExtents}
-                  resolvedWindows={resolvedWindows}
-                  overlayIds={overlayIds}
+                  query={query}
                   selected={selected}
-                  onAtlasChange={changeAtlasLayer}
-                  onLayerColormapChange={changeLayerColormap}
-                  onLayerHiddenChange={setLayerHidden}
-                  onLayerOpacityChange={changeLayerOpacity}
-                  onLayerWindowChange={changeLayerWindow}
-                  onLayerWindowReset={resetLayerWindow}
-                  onLoadOverlay={loadOverlayVolume}
-                  onOverlayToggle={toggleOverlayLayer}
+                  selectedDtypes={selectedDtypes}
+                  selectedFormats={selectedFormats}
+                  selectedImageTypes={selectedImageTypes}
+                  selectedRoles={selectedRoles}
+                  onClearFilters={clearFilters}
+                  onQueryChange={setQuery}
+                  onSelect={(item) => setSelectedId(item.id)}
+                  onToggleDtype={toggleDtype}
+                  onToggleFormat={toggleFormat}
+                  onToggleImageType={toggleImageType}
+                  onToggleRole={toggleRole}
                 />
+              ) : null}
+            </aside>
 
-                {viewMode === 'render' ? (
+            <section
+              className="nv-split-workspace"
+              ref={splitRef}
+              style={{ '--split-left': `${splitPercent}%` } as CSSProperties}
+            >
+              <section
+                className={`nv-dataset-pane ${mouseContext === 'desktop' ? 'is-context-active' : ''}`}
+                aria-label="OSD dataset viewer"
+                onPointerEnter={() => setMouseContext('desktop')}
+                onPointerLeave={() => setMouseContext(null)}
+              >
+                <DatasetDesktop
+                  datasetName={datasetName}
+                  items={filteredItems}
+                  manifest={manifest}
+                  selected={selected}
+                  zoom={desktopZoom}
+                  onZoom={setDesktopZoom}
+                  onSelect={(item) => setSelectedId(item.id)}
+                />
+              </section>
+
+              <button
+                aria-label="Resize dataset and NiiVue panes"
+                aria-valuemax={MAX_SPLIT}
+                aria-valuemin={MIN_SPLIT}
+                aria-valuenow={splitPercent}
+                className="nv-splitter"
+                onPointerDown={(event) =>
+                  beginSplitDrag(event, splitRef, setSplitPercent)
+                }
+                role="separator"
+                title="Resize panes"
+                type="button"
+              >
+                <GripVertical size={16} />
+              </button>
+
+              <section
+                className={`nv-niivue-pane ${mouseContext === 'niivue' ? 'is-context-active' : ''} ${isRenderMaximized ? 'is-maximized' : ''}`}
+                aria-label="NiiVue render window"
+                onPointerEnter={() => setMouseContext('niivue')}
+                onPointerLeave={() => setMouseContext(null)}
+              >
+                <div
+                  className="nv-stage-title nv-niivue-title"
+                  aria-hidden="true"
+                >
+                  <span>Viewer</span>
+                  <MiddleEllipsis
+                    text={selected?.label ?? 'No selection'}
+                    title={[
+                      selected?.label,
+                      `${backendLabel(backend)} renderer`,
+                      renderStatus,
+                    ]
+                      .filter(Boolean)
+                      .join('\n')}
+                  />
+                  <em>
+                    {viewMode !== 'render'
+                      ? `${viewModeLabel(viewMode)}${slicePosition ? ` · ${slicePosition}` : ''}`
+                      : renderWheelMode === 'clip-plane'
+                        ? `wheel ${activeClipPlane?.label ?? 'clip'}`
+                        : '3D'}
+                  </em>
+                </div>
+                <button
+                  aria-label={
+                    isRenderMaximized
+                      ? 'Exit full screen'
+                      : 'View NiiVue full screen'
+                  }
+                  aria-pressed={isRenderMaximized}
+                  className="nv-pane-icon-button nv-render-maximize"
+                  onClick={() => setIsRenderMaximized((value) => !value)}
+                  title={
+                    isRenderMaximized ? 'Exit full screen (Esc)' : 'Full screen'
+                  }
+                  type="button"
+                >
+                  {isRenderMaximized ? (
+                    <Minimize2 size={16} />
+                  ) : (
+                    <Maximize2 size={16} />
+                  )}
+                </button>
+                <NiivueStage
+                  activeClipPlaneId={activeClipPlaneId}
+                  backend={backend}
+                  blocks={blocks}
+                  clipPlanes={clipPlanes}
+                  crosshairTarget={crosshairTarget}
+                  isActive={mouseContext === 'niivue'}
+                  item={selected}
+                  layers={renderLayers}
+                  onClipPlaneDepthChange={changeClipPlaneDepth}
+                  onClipPlaneActivate={bindActiveClipPlane}
+                  onLayerExtents={handleLayerExtents}
+                  onLocationChange={setLocationReadout}
+                  onResolvedWindows={handleResolvedWindows}
+                  onViewModeChange={setViewMode}
+                  onRenderStatus={setRenderStatus}
+                  renderWheelMode={renderWheelMode}
+                  viewMode={viewMode}
+                />
+              </section>
+            </section>
+
+            <aside
+              className={`nv-controls ${isControlsCollapsed ? 'is-collapsed' : ''} ${
+                isRenderMaximized ? 'is-floating' : ''
+              }`}
+            >
+              <div className="nv-controls-toolbar">
+                <button
+                  aria-expanded={!isControlsCollapsed}
+                  aria-label={
+                    isControlsCollapsed
+                      ? 'Expand controls panel'
+                      : 'Collapse controls panel'
+                  }
+                  className="nv-sidebar-toggle"
+                  onClick={() =>
+                    setIsControlsCollapsed((collapsed) => !collapsed)
+                  }
+                  title={
+                    isControlsCollapsed
+                      ? 'Expand controls'
+                      : 'Collapse controls'
+                  }
+                  type="button"
+                >
+                  {isControlsCollapsed ? (
+                    <PanelRightOpen size={15} />
+                  ) : (
+                    <PanelRightClose size={15} />
+                  )}
+                </button>
+              </div>
+
+              <div className="nv-inspector-tools" aria-label="Desktop controls">
+                <DesktopZoomControls
+                  zoom={desktopZoom}
+                  onFit={() => setDesktopZoom(1)}
+                  onZoomIn={() => setDesktopZoom((zoom) => zoomBy(zoom, 1.25))}
+                  onZoomOut={() => setDesktopZoom((zoom) => zoomBy(zoom, 0.8))}
+                />
+                <span className="nv-zoom-readout">
+                  {Math.round(desktopZoom * 100)}%
+                </span>
+              </div>
+
+              <SidePanelTabs
+                activeTab={sidePanelTab}
+                onChange={setSidePanelTab}
+              />
+
+              <div className="nv-sidepanel-content">
+                {sidePanelTab === 'inspect' ? (
                   <>
-                    <WheelModeRow
-                      activePlaneLabel={
-                        renderWheelMode === 'clip-plane'
-                          ? clipPlanes.find(
-                              (plane) => plane.id === activeClipPlaneId,
-                            )?.label
-                          : undefined
-                      }
-                      onZoom={() => setRenderWheelMode('zoom')}
+                    <LayerPanel
+                      atlasId={atlasId}
+                      isOpeningOverlay={isOpeningOverlay}
+                      items={items}
+                      layerSettings={layerSettings}
+                      layerExtents={layerExtents}
+                      resolvedWindows={resolvedWindows}
+                      overlayIds={overlayIds}
+                      selected={selected}
+                      onAtlasChange={changeAtlasLayer}
+                      onLayerColormapChange={changeLayerColormap}
+                      onLayerHiddenChange={setLayerHidden}
+                      onLayerOpacityChange={changeLayerOpacity}
+                      onLayerWindowChange={changeLayerWindow}
+                      onLayerWindowReset={resetLayerWindow}
+                      onLoadOverlay={loadOverlayVolume}
+                      onOverlayToggle={toggleOverlayLayer}
                     />
 
-                    <ClipPlanesSection
-                      activeClipPlaneId={
-                        renderWheelMode === 'clip-plane'
-                          ? activeClipPlaneId
-                          : null
-                      }
-                      clipPlanes={clipPlanes}
-                      saveDisabledReason={
-                        !selected
-                          ? 'Select a volume to save a clip-plane correction'
-                          : null
-                      }
-                      onActivate={bindActiveClipPlane}
-                      onChange={updateClipPlane}
-                      onReset={resetClipPlanes}
-                      onSave={async () => {
-                        try {
-                          await savePatch(
-                            serverUrl,
-                            selected,
-                            clipPlanes,
-                            backend,
-                          )
-                          setStatus(
-                            `Clip-plane correction saved for ${selected?.label ?? 'volume'}.`,
-                            'success',
-                          )
-                        } catch (error) {
-                          setStatus(
-                            error instanceof Error
-                              ? error.message
-                              : String(error),
-                            'error',
-                          )
-                        }
-                      }}
-                    />
+                    {viewMode === 'render' ? (
+                      <>
+                        <WheelModeRow
+                          activePlaneLabel={
+                            renderWheelMode === 'clip-plane'
+                              ? clipPlanes.find(
+                                  (plane) => plane.id === activeClipPlaneId,
+                                )?.label
+                              : undefined
+                          }
+                          onZoom={() => setRenderWheelMode('zoom')}
+                        />
 
-                    <BlockControls blocks={blocks} onChange={setBlocks} />
+                        <ClipPlanesSection
+                          activeClipPlaneId={
+                            renderWheelMode === 'clip-plane'
+                              ? activeClipPlaneId
+                              : null
+                          }
+                          clipPlanes={clipPlanes}
+                          saveDisabledReason={
+                            !selected
+                              ? 'Select a volume to save a clip-plane correction'
+                              : null
+                          }
+                          onActivate={bindActiveClipPlane}
+                          onChange={updateClipPlane}
+                          onReset={resetClipPlanes}
+                          onSave={async () => {
+                            try {
+                              await savePatch(
+                                serverUrl,
+                                selected,
+                                clipPlanes,
+                                backend,
+                              )
+                              setStatus(
+                                `Clip-plane correction saved for ${selected?.label ?? 'volume'}.`,
+                                'success',
+                              )
+                            } catch (error) {
+                              setStatus(
+                                error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                                'error',
+                              )
+                            }
+                          }}
+                        />
+
+                        <BlockControls blocks={blocks} onChange={setBlocks} />
+                      </>
+                    ) : (
+                      <section className="nv-control-section">
+                        <p className="nv-mode-note">
+                          Zoom and clip planes apply to the 3D render. In 2D
+                          modes, scroll to page through slices and click to move
+                          the crosshair. Switch to <strong>3D</strong> for
+                          render controls.
+                        </p>
+                      </section>
+                    )}
+
+                    <SelectionPanel
+                      item={selected}
+                      metadataStatus={metadataStatus}
+                    />
+                    <CrosshairPanel
+                      location={locationReadout}
+                      onGoTo={goToCoordinate}
+                    />
+                    <MetadataPanel
+                      item={selected}
+                      metadata={metadata}
+                      status={metadataStatus}
+                    />
                   </>
                 ) : (
-                  <section className="nv-control-section">
-                    <p className="nv-mode-note">
-                      Zoom and clip planes apply to the 3D render. In 2D modes,
-                      scroll to page through slices and click to move the
-                      crosshair. Switch to <strong>3D</strong> for render
-                      controls.
-                    </p>
-                  </section>
+                  <>
+                    <NiimathOperationsPanel
+                      item={selected}
+                      metadata={metadata}
+                      onDerivedVolume={refreshDesktopManifest}
+                      onStatus={setStatus}
+                    />
+                  </>
                 )}
-
-                <SelectionPanel
-                  item={selected}
-                  metadataStatus={metadataStatus}
-                />
-                <CrosshairPanel
-                  location={locationReadout}
-                  onGoTo={goToCoordinate}
-                />
-                <MetadataPanel
-                  item={selected}
-                  metadata={metadata}
-                  status={metadataStatus}
-                />
-              </>
-            ) : (
-              <>
-                <NiimathOperationsPanel
-                  item={selected}
-                  metadata={metadata}
-                  onDerivedVolume={refreshDesktopManifest}
-                  onStatus={setStatus}
-                />
-              </>
-            )}
-          </div>
-        </aside>
-      </section>
+              </div>
+            </aside>
+          </section>
+        </>
+      )}
 
       {isTerminalDockOpen ? (
         <section className="nv-terminal-dock" aria-label="Python terminal">

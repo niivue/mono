@@ -8,7 +8,7 @@ mod terminal;
 mod volumetric_server;
 
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 // The app menu bar is a desktop-only concept; iOS/Android have no `tauri::menu`.
 #[cfg(desktop)]
@@ -28,6 +28,8 @@ const MENU_OPEN_FOLDER: &str = "file-open-folder";
 #[cfg(desktop)]
 const MENU_OPEN_BUNDLE: &str = "file-open-bundle";
 #[cfg(desktop)]
+const MENU_OPEN_SAMPLE: &str = "file-open-sample";
+#[cfg(desktop)]
 const MENU_EXPORT_BUNDLE: &str = "file-export-bundle";
 #[cfg(target_os = "macos")]
 const MENU_SHARE: &str = "file-share";
@@ -44,10 +46,13 @@ struct NeuroVueServerInfo {
     bids_version: Option<String>,
     bids_dataset_doi: Option<String>,
     warm_progress: volumetric_server::WarmProgressSnapshot,
+    /// The bundled MNI152 sample, opened on request from the Welcome screen.
+    sample_path: Option<String>,
 }
 
 pub(crate) struct NeuroVueState {
     pub(crate) server: volumetric_server::ServerHandle,
+    pub(crate) sample_path: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -112,6 +117,10 @@ fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServe
         bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
         bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
         warm_progress: volumetric_server::warm_progress(&state.server),
+        sample_path: state
+            .sample_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
     }
 }
 
@@ -331,6 +340,13 @@ fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Resu
         true,
         Some("CmdOrCtrl+Alt+O"),
     )?;
+    let open_sample = MenuItem::with_id(
+        handle,
+        MENU_OPEN_SAMPLE,
+        "Open Sample Dataset",
+        true,
+        None::<&str>,
+    )?;
     let export_bundle = MenuItem::with_id(
         handle,
         MENU_EXPORT_BUNDLE,
@@ -354,6 +370,7 @@ fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Resu
         &open_file,
         &open_folder,
         &open_bundle,
+        &open_sample,
         &open_separator,
         &export_bundle,
         #[cfg(target_os = "macos")]
@@ -384,20 +401,17 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Point dataset discovery at the bundled MNI152, the default volume
-            // for release builds (which never probe dev checkouts) and for iOS,
-            // whose sandbox has no `~/Dev` either. Set before the server spawns so
-            // `discovery_roots()` picks it up. Resolving here (not at module load)
-            // is why the server spawns in `setup`: it needs the AppHandle's
-            // resource dir.
-            if let Ok(path) = app.path().resolve(
-                "resources/mni152.nii.gz",
-                tauri::path::BaseDirectory::Resource,
-            ) {
-                if path.is_file() {
-                    std::env::set_var("NEUROVUE_DEFAULT_VOLUME", path);
-                }
-            }
+            // The bundled MNI152 is not opened at launch: the app starts on the
+            // Welcome screen (or reopens the last dataset), which offers it as a
+            // sample through `open_dataset_path`.
+            let sample_path = app
+                .path()
+                .resolve(
+                    "resources/mni152.nii.gz",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .ok()
+                .filter(|path| path.is_file());
             // niimath derivatives and extracted bundles are user work, so they
             // live in the app's local data dir rather than the OS temp dir,
             // which macOS purges. Set before the server spawns: discovery
@@ -410,6 +424,7 @@ pub fn run() {
             }
             app.manage(NeuroVueState {
                 server: volumetric_server::spawn_default(),
+                sample_path,
             });
             Ok(())
         });

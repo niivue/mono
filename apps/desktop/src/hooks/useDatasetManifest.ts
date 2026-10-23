@@ -26,6 +26,8 @@ export interface DatasetManifestState {
   datasetRevision: number
   datasetRoot: string
   isOpeningDataset: boolean
+  /** The launch-time server/manifest lookup has finished (even if it failed). */
+  isStartupResolved: boolean
   items: DesktopItem[]
   manifest: DesktopManifest | null
   selected: DesktopItem | null
@@ -36,11 +38,18 @@ export interface DatasetManifestState {
   warmProgress: WarmProgress | null
   openLocalDataset: () => Promise<void>
   openLocalVolumeFile: () => Promise<void>
-  /** Resolves false when the open failed (the error is already in the status). */
+  /**
+   * Resolves false when the open failed (the error is already in the status).
+   * `remember: false` keeps the path out of recents.
+   */
   openRecentDataset: (
     path: string,
-    options?: { promoteAs?: string },
+    options?: { promoteAs?: string; remember?: boolean },
   ) => Promise<boolean>
+  /** Open the bundled MNI152 sample (never recorded in recents). */
+  openSampleDataset: () => Promise<boolean>
+  /** Empty when the build ships no sample (e.g. a plain browser). */
+  samplePath: string
   refreshDesktopManifest: (selectId?: string) => Promise<void>
   refreshDesktopManifestData: (
     selectId?: string,
@@ -70,6 +79,8 @@ export function useDatasetManifest({
   const [bidsName, setBidsName] = useState('')
   const [bidsDatasetDoi, setBidsDatasetDoi] = useState('')
   const [cacheRoot, setCacheRoot] = useState('')
+  const [samplePath, setSamplePath] = useState('')
+  const [isStartupResolved, setIsStartupResolved] = useState(false)
   const [datasetRevision, setDatasetRevision] = useState(0)
   const [warmProgress, setWarmProgress] = useState<WarmProgress | null>(null)
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
@@ -128,6 +139,7 @@ export function useDatasetManifest({
         setBidsName(serverInfo?.bidsName ?? '')
         setBidsDatasetDoi(serverInfo?.bidsDatasetDoi ?? '')
         setCacheRoot(serverInfo?.cacheRoot ?? '')
+        setSamplePath(serverInfo?.samplePath ?? '')
         setWarmProgress(serverInfo?.warmProgress ?? null)
         const nextManifest = await fetchDesktopManifest(resolved)
         const nextVersion = await fetchDesktopManifestVersion(resolved).catch(
@@ -145,6 +157,8 @@ export function useDatasetManifest({
             error instanceof Error ? error.message : String(error),
             'error',
           )
+      } finally {
+        if (!cancelled) setIsStartupResolved(true)
       }
     }
 
@@ -181,8 +195,13 @@ export function useDatasetManifest({
   // `promoteAs` overrides which path lands in recents. A bundle import opens the
   // bundle's extracted `data/` dir, but that is an app-internal copy that is
   // re-extracted on every import — so recents must remember the `.nvbundle`.
+  // `remember: false` skips recents entirely (the bundled sample).
   const applyDatasetOpenResult = useCallback(
-    async (result: DatasetOpenResult, promoteAs?: string): Promise<void> => {
+    async (
+      result: DatasetOpenResult,
+      promoteAs?: string,
+      remember = true,
+    ): Promise<void> => {
       setManifest(null)
       setSelectedId(null)
       setServerUrl(result.url)
@@ -204,7 +223,7 @@ export function useDatasetManifest({
         manifestLoadedStatus(nextManifest, result.datasetRoot),
         'success',
       )
-      promoteRecentRef.current(promoteAs ?? result.datasetRoot)
+      if (remember) promoteRecentRef.current(promoteAs ?? result.datasetRoot)
     },
     [setStatus],
   )
@@ -254,7 +273,7 @@ export function useDatasetManifest({
   const openRecentDataset = useCallback(
     async (
       path: string,
-      options?: { promoteAs?: string },
+      options?: { promoteAs?: string; remember?: boolean },
     ): Promise<boolean> => {
       if (isOpeningDatasetRef.current) return false
 
@@ -263,7 +282,11 @@ export function useDatasetManifest({
       setStatus(`Opening ${options?.promoteAs ?? path}.`)
       try {
         const result = await openDatasetByPath(path)
-        await applyDatasetOpenResult(result, options?.promoteAs)
+        await applyDatasetOpenResult(
+          result,
+          options?.promoteAs,
+          options?.remember,
+        )
         return true
       } catch (error) {
         setStatus(
@@ -278,6 +301,14 @@ export function useDatasetManifest({
     },
     [applyDatasetOpenResult, setStatus],
   )
+
+  const openSampleDataset = useCallback(async (): Promise<boolean> => {
+    if (!samplePath) return false
+    const opened = await openRecentDataset(samplePath, { remember: false })
+    // The default status names the app bundle's Resources folder.
+    if (opened) setStatus('Opened the MNI152 sample template.', 'success')
+    return opened
+  }, [openRecentDataset, samplePath, setStatus])
 
   useEffect(() => {
     if (!serverUrl) return
@@ -376,8 +407,10 @@ export function useDatasetManifest({
     datasetRevision,
     datasetRoot,
     isOpeningDataset,
+    isStartupResolved,
     items,
     manifest,
+    samplePath,
     selected,
     selectedId,
     serverUrl,
@@ -387,6 +420,7 @@ export function useDatasetManifest({
     openLocalDataset,
     openLocalVolumeFile,
     openRecentDataset,
+    openSampleDataset,
     refreshDesktopManifest,
     refreshDesktopManifestData,
     setSelectedId,

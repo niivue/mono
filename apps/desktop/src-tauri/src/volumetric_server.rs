@@ -337,7 +337,7 @@ pub fn spawn_default() -> ServerHandle {
         render_semaphore: Arc::new(tokio::sync::Semaphore::new(render_permits())),
     };
 
-    // Warm pyramid levels for the startup sample in the background.
+    // Warm pyramid levels for the startup dataset (if any) in the background.
     let my_gen = warm_generation.load(Ordering::SeqCst);
     spawn_pyramid_warm(
         warm_volumes,
@@ -1960,21 +1960,16 @@ fn discover_volumes() -> VolumeDiscovery {
         }
     }
 
-    let mut volumes: Vec<VolumeEntry> = fallback_mni152_volume().into_iter().collect();
-    let root = volumes
-        .first()
-        .and_then(|volume| volume.source_path.as_ref())
-        .and_then(|path| path.parent())
-        .map(FsPath::to_path_buf);
-    let stats = DiscoveryStats {
-        total_discovered: volumes.len(),
-        truncated: false,
-    };
-    append_working_derivatives(&mut volumes, root.as_deref());
+    // Nothing to open: start empty and let the Welcome screen offer the bundled
+    // sample. Working derivatives are not restored here, since with no dataset
+    // root every saved derivative would claim to belong.
     VolumeDiscovery {
-        root,
-        volumes,
-        stats,
+        root: None,
+        volumes: Vec::new(),
+        stats: DiscoveryStats {
+            total_discovered: 0,
+            truncated: false,
+        },
     }
 }
 
@@ -2134,13 +2129,6 @@ fn discovery_roots() -> Vec<PathBuf> {
             home.join("Dev/niivue/niivue/packages/niivue/demos/images/mni152.nii.gz"),
             home.join("Dev/niivue-demo-images/mni152.nii.gz"),
         ]);
-    }
-
-    // Bundled default volume (set by lib.rs from the app's resource dir). Appended
-    // last so an explicit dataset above (or a dev checkout in debug builds) still
-    // wins; in a release build with no explicit dataset it is the only root.
-    if let Some(value) = std::env::var_os("NEUROVUE_DEFAULT_VOLUME") {
-        roots.push(PathBuf::from(value));
     }
 
     roots
@@ -2311,45 +2299,6 @@ fn overlay_volume_label(path: &FsPath, root: &FsPath, fallback_id: &str) -> Stri
         .or_else(|| path.file_name().and_then(|name| name.to_str()))
         .unwrap_or(fallback_id);
     format!("Overlay / {label}")
-}
-
-fn fallback_mni152_volume() -> Option<VolumeEntry> {
-    let source_path = discovery_roots().into_iter().find(|path| path.is_file());
-    let header = source_path
-        .as_ref()
-        .and_then(|path| read_nifti_header(path))
-        .unwrap_or(NiftiHeader {
-            shape: [197, 233, 189],
-            spacing: [1.0, 1.0, 1.0],
-            dtype: "uint8".to_string(),
-            little_endian: true,
-            datatype_code: 2,
-            bitpix: 8,
-            vox_offset: 352,
-            scl_slope: 1.0,
-            scl_inter: 0.0,
-        });
-    let cache_signature = source_path
-        .as_deref()
-        .and_then(|path| source_cache_signature("mni152", path, &header));
-
-    Some(VolumeEntry {
-        id: "mni152".to_string(),
-        label: "MNI152 reference".to_string(),
-        role: VolumeRole::Source,
-        format: "nifti".to_string(),
-        shape: header.shape,
-        spacing: header.spacing,
-        dtype: header.dtype,
-        sidecar_paths: source_path
-            .as_ref()
-            .map(|path| find_json_sidecars(path, path.parent().unwrap_or_else(|| FsPath::new(""))))
-            .unwrap_or_default(),
-        source_path,
-        cache_signature,
-        derived_from: None,
-        derivation: None,
-    })
 }
 
 fn volume_levels(base_url: &str, encoded_id: &str, volume: &VolumeEntry) -> Vec<Value> {

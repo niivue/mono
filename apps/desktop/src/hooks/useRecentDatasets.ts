@@ -2,6 +2,16 @@ import { useCallback, useState } from 'react'
 
 const RECENT_DATASETS_KEY = 'neurovue.recentDatasets.v1'
 const MAX_RECENT_DATASETS = 10
+const REOPEN_LAST_KEY = 'neurovue.reopenLastDataset.v1'
+
+// On by default, like VS Code restoring its last folder.
+function loadReopenLast(): boolean {
+  try {
+    return window.localStorage.getItem(REOPEN_LAST_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
 
 function loadRecentDatasets(): string[] {
   try {
@@ -69,6 +79,9 @@ export interface RecentDatasets {
   removeRecent: (path: string) => void
   /** One-time cleanup of pre-fix entries pointing into `<cacheRoot>/imports/`. */
   pruneExtractedBundleDirs: (cacheRoot: string) => void
+  /** Reopen the most recent dataset at launch instead of showing Welcome. */
+  reopenLast: boolean
+  setReopenLast: (reopen: boolean) => void
 }
 
 /** Owns the persisted "recent datasets" list. */
@@ -76,6 +89,16 @@ export function useRecentDatasets(): RecentDatasets {
   const [recentDatasets, setRecentDatasets] = useState<string[]>(() =>
     loadRecentDatasets(),
   )
+  const [reopenLast, setReopenLastState] = useState(loadReopenLast)
+
+  function setReopenLast(reopen: boolean): void {
+    setReopenLastState(reopen)
+    try {
+      window.localStorage.setItem(REOPEN_LAST_KEY, String(reopen))
+    } catch {
+      // localStorage may be disabled — the choice lasts for this session.
+    }
+  }
 
   function promoteRecent(path: string): void {
     setRecentDatasets((previous) =>
@@ -107,5 +130,7 @@ export function useRecentDatasets(): RecentDatasets {
     promoteRecent,
     removeRecent,
     pruneExtractedBundleDirs,
+    reopenLast,
+    setReopenLast,
   }
 }

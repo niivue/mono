@@ -125,7 +125,7 @@ export function truncationNotice(manifest: DesktopManifest): string | null {
  * back to): every source volume is the `mni152` entry and the dataset root is
  * inside an app bundle (`….app/…`, macOS and iOS), is a `resources` dir (the
  * `tauri dev` resource dir), or is unresolved. niimath
- * derivatives of the sample don't count, so they don't hide the hint.
+ * derivatives of the sample don't count, so it keeps its plain label.
  */
 export function isBundledSampleDataset(
   items: readonly DesktopItem[],
@@ -143,6 +143,7 @@ export function manifestLoadedStatus(
   manifest: DesktopManifest,
   datasetRoot?: string,
 ): string {
+  if (manifest.itemCount === 0) return 'No dataset open.'
   const from = datasetRoot ? ` from ${datasetRoot}` : ''
   const notice = truncationNotice(manifest)
   return notice
@@ -176,6 +177,8 @@ export interface ServerInfo {
   bidsVersion?: string | null
   bidsDatasetDoi?: string | null
   warmProgress?: WarmProgress
+  /** The bundled MNI152 sample, offered on the Welcome screen. */
+  samplePath?: string | null
 }
 
 export interface DatasetOpenResult {

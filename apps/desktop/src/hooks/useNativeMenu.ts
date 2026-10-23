@@ -6,6 +6,7 @@ export type NativeMenuAction =
   | 'open-file'
   | 'open-folder'
   | 'open-bundle'
+  | 'open-sample'
   | 'export-bundle'
   | 'share'
 

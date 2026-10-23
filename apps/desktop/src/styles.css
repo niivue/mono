@@ -1083,87 +1083,179 @@ button {
   max-width: calc(100% - 24px);
 }
 
-/* First-run hint while only the bundled sample is loaded. Sits under the
-   Browse title, above the grid, without blocking panning elsewhere. */
-.nv-open-data-card {
-  position: absolute;
-  bottom: 56px;
-  left: 12px;
-  z-index: 3;
+/* Welcome: replaces the workbench while no dataset is open. */
+.nv-welcome {
   display: grid;
-  gap: 6px;
-  width: min(300px, calc(100% - 24px));
-  border: 1px solid rgba(215, 166, 66, 0.32);
-  background: rgba(17, 17, 15, 0.9);
-  padding: 10px 36px 12px 12px;
-  backdrop-filter: blur(8px);
+  place-items: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 32px 16px;
 }
 
-.nv-open-data-dismiss {
+.nv-welcome-inner {
+  display: grid;
+  gap: 28px;
+  width: min(820px, 100%);
+}
+
+.nv-welcome-header h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.nv-welcome-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.nv-welcome-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 32px;
+}
+
+.nv-welcome-columns h3 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nv-welcome-actions,
+.nv-welcome-recents {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nv-welcome-action,
+.nv-welcome-recent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  background: var(--panel-3);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.nv-welcome-action > svg,
+.nv-welcome-recent > svg {
+  flex: none;
+  color: var(--amber);
+}
+
+.nv-welcome-action span,
+.nv-welcome-recent-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nv-welcome-action strong,
+.nv-welcome-recent strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.nv-welcome-action small,
+.nv-welcome-recent small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-welcome-action:hover:not(:disabled),
+.nv-welcome-action:focus-visible,
+.nv-welcome-recent:hover:not(:disabled),
+.nv-welcome-recent:focus-visible {
+  border-color: var(--amber);
+  background: var(--panel-2);
+  outline: none;
+}
+
+.nv-welcome-action:disabled,
+.nv-welcome-recent:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.nv-welcome-recents li {
+  position: relative;
+}
+
+.nv-welcome-recent {
+  padding-right: 40px;
+}
+
+.nv-welcome-recent-remove {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 50%;
+  right: 8px;
   display: inline-grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  transform: translateY(-50%);
 }
 
-.nv-open-data-dismiss:hover,
-.nv-open-data-dismiss:focus-visible {
+.nv-welcome-recent-remove:hover,
+.nv-welcome-recent-remove:focus-visible {
   border-color: var(--amber);
   color: var(--amber);
   outline: none;
 }
 
-.nv-open-data-card h2 {
+.nv-welcome-empty {
   margin: 0;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.nv-open-data-card p {
-  margin: 0;
+  border: 1px dashed var(--line);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
+  padding: 16px 12px;
 }
 
-.nv-open-data-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-.nv-open-data-actions button {
+.nv-welcome-reopen {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  border: 1px solid var(--line);
-  background: #12130f;
-  color: var(--ink);
+  gap: 8px;
+  justify-self: start;
+  color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 0 9px;
+  font-size: 13px;
 }
 
-.nv-open-data-actions button:hover:not(:disabled),
-.nv-open-data-actions button:focus-visible {
-  border-color: var(--amber);
+.nv-welcome-reopen input {
+  accent-color: var(--amber);
+}
+
+.nv-welcome-opening {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.nv-welcome-opening svg {
   color: var(--amber);
-  outline: none;
-}
-
-.nv-open-data-actions button:disabled {
-  cursor: default;
-  opacity: 0.38;
 }
 
 .nv-osd-world {
@@ -2894,8 +2986,13 @@ button {
   }
 
   .nv-desktop-only,
-  .nv-open-data-actions .nv-desktop-only {
+  .nv-welcome-action.nv-desktop-only {
     display: none;
+  }
+
+  .nv-welcome-columns {
+    grid-template-columns: 1fr;
+    gap: 24px;
   }
 }
 

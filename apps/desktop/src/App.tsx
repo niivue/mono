@@ -56,6 +56,7 @@ import {
 import { NiimathOperationsPanel } from './components/NiimathOperationsPanel'
 import {
   DEFAULT_VIEW_MODE,
+  loadRememberedViewMode,
   type NiivueRenderLayer,
   NiivueStage,
   type ResolvedWindow,
@@ -286,10 +287,12 @@ export function App(): JSX.Element {
     [],
   )
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
-  // Phones land on a 2D axial slice (clearer on a small screen than the 3D
-  // render); desktop/iPad keep the 3D render default.
+  // Phones land on a 2D axial slice (clearer on a small screen); desktop/iPad
+  // reopen the view the user last picked, else the multiplanar default.
   const [viewMode, setViewMode] = useState<ViewModeId>(() =>
-    isPhoneViewport() ? 'axial' : DEFAULT_VIEW_MODE,
+    isPhoneViewport()
+      ? 'axial'
+      : (loadRememberedViewMode() ?? DEFAULT_VIEW_MODE),
   )
   const [atlasId, setAtlasId] = useState<string | null>(null)
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(
@@ -2519,7 +2522,7 @@ function ClipPlaneEditor({
         <button
           aria-label={`Reset ${plane.label} clip plane`}
           className="nv-pane-icon-button"
-          onClick={() => onChange(defaultPlane)}
+          onClick={() => onChange({ ...defaultPlane, enabled: plane.enabled })}
           title="Reset clip plane"
           type="button"
         >

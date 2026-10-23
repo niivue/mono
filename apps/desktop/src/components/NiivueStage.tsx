@@ -233,7 +233,31 @@ const VIEW_MODES: Array<{
     sliceType: NIVUE_SLICE_TYPE_RENDER,
   },
 ]
-export const DEFAULT_VIEW_MODE: ViewModeId = 'render'
+// Researchers expect orthogonal slices first; the 3D render is one click away.
+export const DEFAULT_VIEW_MODE: ViewModeId = 'multiplanar'
+const VIEW_MODE_KEY = 'neurovue.viewMode.v1'
+
+function isViewModeId(value: unknown): value is ViewModeId {
+  return VIEW_MODES.some((mode) => mode.id === value)
+}
+
+/** The view mode the user last picked, or null when none is remembered. */
+export function loadRememberedViewMode(): ViewModeId | null {
+  try {
+    const stored = window.localStorage.getItem(VIEW_MODE_KEY)
+    return isViewModeId(stored) ? stored : null
+  } catch {
+    return null
+  }
+}
+
+function rememberViewMode(mode: ViewModeId): void {
+  try {
+    window.localStorage.setItem(VIEW_MODE_KEY, mode)
+  } catch {
+    // localStorage may be disabled — the choice just won't survive a relaunch.
+  }
+}
 const CORONAL_SNAP: RenderViewSnap = {
   id: 'coronal',
   label: 'Coronal',
@@ -729,6 +753,9 @@ export function NiivueStage({
   }
 
   function changeViewMode(next: ViewModeId): void {
+    // Only an explicit pick is remembered — bundle restores and the phone
+    // default set the view without going through here.
+    rememberViewMode(next)
     onViewModeChange(next)
     clearSnapSelection()
   }
@@ -865,6 +892,9 @@ export function NiivueStage({
     ? (enabledClipPlanes.find((plane) => plane.id === activeClipPlaneId) ??
       null)
     : null
+  // The slider drives the active plane, or the first enabled one until a chip
+  // is picked; dragging it makes that plane active (as clicking its chip does).
+  const sliderClip = activeClip ?? enabledClipPlanes[0] ?? null
   const showClipControl = isRenderMode && enabledClipPlanes.length > 0
 
   return (
@@ -949,18 +979,26 @@ export function NiivueStage({
             ))}
           </div>
           <input
-            aria-label="Clip plane depth"
-            disabled={!activeClip}
+            aria-label={
+              sliderClip ? `${sliderClip.label} clip depth` : 'Clip depth'
+            }
+            disabled={!sliderClip}
             max={1}
             min={-1}
             step={0.02}
             type="range"
-            value={activeClip?.depth ?? 0}
-            onChange={(event) =>
-              activeClip &&
-              onClipPlaneDepthChange(activeClip.id, Number(event.target.value))
-            }
+            value={sliderClip?.depth ?? 0}
+            onChange={(event) => {
+              if (!sliderClip) return
+              if (!activeClip) onClipPlaneActivate?.(sliderClip.id)
+              onClipPlaneDepthChange(sliderClip.id, Number(event.target.value))
+            }}
           />
+          {sliderClip ? (
+            <span className="nv-slice-slider-value nv-clip-slider-value">
+              {sliderClip.label} {sliderClip.depth.toFixed(2)}
+            </span>
+          ) : null}
         </div>
       ) : null}
       <div className="nv-render-status" role="status" aria-live="polite">
@@ -1581,4 +1619,34 @@ function syncCanvasSize(
 
   if (canvas.width !== width) canvas.width = width
   if (canvas.height !== height) canvas.height = height
+  if (stage) syncOverlayClearance(stage, width, height, density)
+}
+
+// Keep the bottom overlays (slice slider, clip control) clear of NiiVue's
+// colorbar and orientation cube. Neither is exposed by NiiVue, so this mirrors
+// its layout math: colorbarTotalHeight (packages/niivue/src/view/NVColorbar.ts,
+// one row — only the base layer shows a colorbar — default margin 20 and
+// heightRatio 1.2, font from estimateFontSize in NVUILayout.ts) and
+// orientCubePosition (NVUILayout.ts: size 5% of the tile, centred 1.8 sizes in).
+// Inputs are device pixels; the CSS vars are CSS pixels.
+function syncOverlayClearance(
+  stage: HTMLDivElement,
+  width: number,
+  height: number,
+  density: number,
+): void {
+  const fontSize = 13 * Math.max((width * height) / (800 * 600), 1) ** 0.4
+  const colorbar =
+    20 +
+    Math.ceil(1.2 * fontSize) +
+    Math.ceil(0.7 * fontSize + Math.max(1, 0.1 * fontSize))
+  const cubeEdge = 2.8 * 0.05 * Math.min(width, height - colorbar)
+  stage.style.setProperty(
+    '--nv-colorbar-clearance',
+    `${Math.ceil(colorbar / density)}px`,
+  )
+  stage.style.setProperty(
+    '--nv-cube-clearance',
+    `${Math.ceil(Math.max(0, cubeEdge) / density)}px`,
+  )
 }

@@ -1,3 +1,18 @@
+## 1.0.0-rc.34 (2026-10-23)
+
+### Features
+
+- **niivue:** add ordered source-over colour blend for overlays ([#90](https://github.com/niivue/mono/issues/90))
+
+### Fixes
+
+- **niivue:** address PR #354 audit findings ([#354](https://github.com/niivue/mono/issues/354), [#257](https://github.com/niivue/mono/issues/257))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.33 (2026-10-21)
 
 ### Features

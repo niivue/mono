@@ -1,3 +1,19 @@
+## 1.0.0-rc.8 (2026-10-23)
+
+### Features
+
+- **niivue:** add ordered source-over colour blend for overlays ([#90](https://github.com/niivue/mono/issues/90))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.34
+- Updated uikit to 1.0.0-rc.22
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.7 (2026-10-21)
 
 ### Features

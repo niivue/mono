@@ -5,12 +5,16 @@
   "targets": {
     "dev": {
       "command": "bunx docusaurus start",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["^build"]
     },
     "build": {
       "command": "bunx docusaurus build --out-dir dist",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
@@ -19,14 +23,20 @@
         "!{projectRoot}/.docusaurus/**/*",
         "{workspaceRoot}/packages/niivue/examples/**/*",
         "{workspaceRoot}/nx-tools/repo-graph.ts",
-        { "env": "DOCS_BASE_URL" },
-        { "env": "DOCS_EXAMPLES_BASE" }
+        {
+          "env": "DOCS_BASE_URL"
+        },
+        {
+          "env": "DOCS_EXAMPLES_BASE"
+        }
       ],
       "outputs": ["{projectRoot}/dist"]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["^build"],
       "inputs": ["typescript"]
     },
@@ -37,6 +47,12 @@
     "format": {
       "command": "bunx biome format {projectRoot} --write",
       "inputs": ["lintable"]
+    },
+    "screenshots": {
+      "command": "bun scripts/screenshots.ts",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
     }
   }
 }

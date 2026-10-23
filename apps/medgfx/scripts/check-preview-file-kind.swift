@@ -58,6 +58,10 @@ expect("tck", "/t/tract.tck", "mesh")
 expect("trk", "/t/tract.trk", "mesh")
 expect("trx", "/t/colby.trx", "mesh")
 
+// NiiVue documents take their own loader.
+expect("nvd scene", "/t/scene.nvd", "scene")
+expect("nvd scene, upper case", "/t/SCENE.NVD", "scene")
+
 // The obligation. We are the previewer for every gzip on this machine.
 expect("foreign tarball", "/t/source.tar.gz", nil)
 expect("bare gzip", "/t/notes.txt.gz", nil)

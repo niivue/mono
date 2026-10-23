@@ -11,7 +11,8 @@
  * Voxel and geometry previews. NIfTI, MGH/MGZ, NRRD and MetaImage load through
  * one path — every NiiVue volume reader normalizes into a NIfTI header — into a
  * fixed 2×2 layout. GIFTI, MZ3 and the tract formats take a single fitted 3D
- * render. Both report sanitized metadata in the strip, labelled for VoiceOver.
+ * render. NiiVue documents (`.nvd`) are shown as their author laid them out.
+ * All report sanitized metadata in the strip, labelled for VoiceOver.
  */
 import {
   type CustomLayoutTile,
@@ -23,6 +24,7 @@ import {
 } from '@niivue/niivue'
 import {
   describeMesh,
+  describeScene,
   describeVolume,
   type VolumeSummary,
 } from './preview-metadata'
@@ -50,7 +52,7 @@ export interface PreviewRequest {
   /** Bytes on disk, for the metadata strip. */
   fileSize?: number
   /** Which NiiVue loader the file needs. Classified natively, by extension. */
-  family: 'volume' | 'mesh'
+  family: 'volume' | 'mesh' | 'scene'
   /** Host request generation, echoed back on the terminal message. */
   generation?: number
 }
@@ -339,6 +341,52 @@ async function renderMesh(
   )
 }
 
+/**
+ * A NiiVue document: shown as saved, so no layout of our own is imposed.
+ * `loadDocument` resets every setting the document omits to its default.
+ *
+ * NiiVue logs and skips data it cannot load rather than throwing, so a
+ * document whose data is linked by URL loads as an empty scene. That is
+ * reported as metadata, not as a failure.
+ */
+async function renderScene(
+  instance: NiiVue,
+  request: PreviewRequest,
+): Promise<void> {
+  try {
+    await instance.loadDocument(request.url)
+  } catch (error) {
+    if (settled) return
+    fail('unreadable', error instanceof Error ? error.message : String(error))
+    return
+  }
+  if (settled) return
+  // The scene is the preview; a saved thumbnail would hide it until clicked.
+  instance.isThumbnailVisible = false
+  const summary = describeScene(
+    {
+      volumes: instance.volumes.length,
+      meshes: instance.meshes.length,
+      signals: instance.signals.length,
+    },
+    request.displayName,
+    request.fileSize,
+  )
+  // A volume whose header outruns its data still loads and is drawn, possibly
+  // as a black panel; report it as metadata rather than a success. A flat
+  // volume is fine here: the document chose its own layout.
+  const broken = instance.volumes
+    .map((v) => describeVolume(v, request.displayName, undefined))
+    .find((v) => !v.displayable && v.reason !== 'not three-dimensional')
+  present(
+    request,
+    broken
+      ? { ...summary, displayable: false, reason: broken.reason }
+      : summary,
+    () => {},
+  )
+}
+
 async function render(request: PreviewRequest): Promise<void> {
   if (request.generation !== undefined) generation = request.generation
   if (!nv) {
@@ -347,6 +395,10 @@ async function render(request: PreviewRequest): Promise<void> {
   }
   if (request.family === 'mesh') {
     await renderMesh(nv, request)
+    return
+  }
+  if (request.family === 'scene') {
+    await renderScene(nv, request)
     return
   }
   let volume: NVImage

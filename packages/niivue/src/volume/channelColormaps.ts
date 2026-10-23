@@ -33,14 +33,17 @@ export const CHANNEL_GRAY_COLORMAP = {
 const CHANNEL_CANDIDATES = [...CHANNEL_COLORMAPS, CHANNEL_GRAY_COLORMAP]
 
 /**
- * Largest max-minus-min channel spread still read as gray. Measures hue, not
- * brightness, so a pastel such as (255, 200, 200) keeps its red.
+ * Largest max-minus-min channel spread, as a fraction of the brightest
+ * channel, still read as gray (32 at full brightness). Measures hue, not
+ * brightness, so a pastel such as (255, 200, 200) keeps its red and a dim
+ * colour such as (0, 0, 30) keeps its blue. Black is gray.
  */
-const GRAY_CHROMA = 32
+const GRAY_CHROMA = 32 / 255
 
 function isGrayish(rgb: readonly number[]): boolean {
   const [r, g, b] = rgb
-  return Math.max(r, g, b) - Math.min(r, g, b) <= GRAY_CHROMA
+  const max = Math.max(r, g, b)
+  return max - Math.min(r, g, b) <= GRAY_CHROMA * max
 }
 
 /**

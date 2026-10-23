@@ -257,6 +257,13 @@ describe('channelColormapFor', () => {
     expect(channelColormapFor([200, 255, 200], 0)).toBe('green')
     expect(channelColormapFor([180, 180, 255], 0)).toBe('blue')
   })
+
+  test('keeps the hue of a dim colour, and reads black as gray', () => {
+    expect(channelColormapFor([0, 0, 30], 0)).toBe('blue')
+    expect(channelColormapFor([30, 0, 0], 0)).toBe('red')
+    expect(channelColormapFor([0, 0, 0], 0)).toBe('gray')
+    expect(channelColormapFor([20, 20, 21], 0)).toBe('gray')
+  })
 })
 
 describe('channelColormapsFor', () => {

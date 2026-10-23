@@ -247,8 +247,12 @@ pub fn discover_python_interpreters(
 #[tauri::command]
 pub fn inspect_python_interpreter(path: String) -> Result<PythonInterpreter, String> {
     let candidate = PathBuf::from(&path);
-    let canonical = std::fs::canonicalize(&candidate)
-        .map_err(|error| format!("inspect_python_interpreter: {}: {error}", candidate.display()))?;
+    let canonical = std::fs::canonicalize(&candidate).map_err(|error| {
+        format!(
+            "inspect_python_interpreter: {}: {error}",
+            candidate.display()
+        )
+    })?;
     let version = python_version(&canonical).ok_or_else(|| {
         format!(
             "inspect_python_interpreter: not a runnable Python: {}",

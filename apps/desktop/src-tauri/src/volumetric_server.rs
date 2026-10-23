@@ -7,8 +7,8 @@ use axum::{
 };
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet, VecDeque},
     fs::{self, File},
@@ -496,7 +496,9 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
     }
     // Directory for cache keys / sidecar sweep / derivatives — a file's parent.
     let dataset_root = if is_file_source {
-        root.parent().map(|parent| parent.to_path_buf()).unwrap_or_else(|| root.clone())
+        root.parent()
+            .map(|parent| parent.to_path_buf())
+            .unwrap_or_else(|| root.clone())
     } else {
         root.clone()
     };
@@ -854,7 +856,8 @@ pub fn export_bundle(
             .source_path
             .as_ref()
             .expect("source_path presence checked above");
-        let (rel, bytes, sha) = add_source_to_zip(&mut zip, source, options, &mut used_names, "volume.nii")?;
+        let (rel, bytes, sha) =
+            add_source_to_zip(&mut zip, source, options, &mut used_names, "volume.nii")?;
         total_bytes += bytes;
 
         let mut sidecars: Vec<Value> = Vec::new();
@@ -1026,10 +1029,17 @@ fn copy_within_budget<R: Read, W: Write>(
 fn extract_bundle_zip(zip_path: &FsPath) -> Result<PathBuf, String> {
     let file = File::open(zip_path)
         .map_err(|error| format!("read_bundle: open {}: {error}", zip_path.display()))?;
-    let mut archive = ZipArchive::new(file)
-        .map_err(|error| format!("read_bundle: {} is not a valid bundle: {error}", zip_path.display()))?;
+    let mut archive = ZipArchive::new(file).map_err(|error| {
+        format!(
+            "read_bundle: {} is not a valid bundle: {error}",
+            zip_path.display()
+        )
+    })?;
 
-    let stem = zip_path.file_stem().and_then(|name| name.to_str()).unwrap_or("bundle");
+    let stem = zip_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("bundle");
     let out_root = cache_root().join("imports").join(stem);
     let _ = fs::remove_dir_all(&out_root);
     fs::create_dir_all(&out_root)
@@ -1111,7 +1121,12 @@ pub fn read_bundle(path: &FsPath) -> Result<Value, String> {
 
 /// Hash-check one manifest entry (`{ data, sha256 }`) and push a result record.
 /// Rejects any `data` path that escapes the bundle root (absolute or `..`).
-fn verify_bundle_entry(root: &FsPath, entry: &Value, out: &mut Vec<Value>, all_verified: &mut bool) {
+fn verify_bundle_entry(
+    root: &FsPath,
+    entry: &Value,
+    out: &mut Vec<Value>,
+    all_verified: &mut bool,
+) {
     let Some(rel) = entry.get("data").and_then(Value::as_str) else {
         return;
     };
@@ -3111,7 +3126,11 @@ fn write_f32_header(header: &mut [u8; 348], offset: usize, value: f32) {
     header[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
-fn parse_image_region(region: &str, image_width: usize, image_height: usize) -> Option<ImageRegion> {
+fn parse_image_region(
+    region: &str,
+    image_width: usize,
+    image_height: usize,
+) -> Option<ImageRegion> {
     if image_width == 0 || image_height == 0 {
         return None;
     }

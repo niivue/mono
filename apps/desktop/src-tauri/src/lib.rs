@@ -2,9 +2,9 @@
 // spawn subprocesses, which iOS/Android forbid, so both modules are desktop-only.
 #[cfg(desktop)]
 mod niimath;
+mod share;
 #[cfg(desktop)]
 mod terminal;
-mod share;
 mod volumetric_server;
 
 use serde::Serialize;
@@ -244,7 +244,13 @@ fn sanitize_share_name(name: &str) -> String {
     let cleaned: String = name
         .trim()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let trimmed = cleaned.trim_matches('-');
     if trimmed.is_empty() {
@@ -257,11 +263,9 @@ fn sanitize_share_name(name: &str) -> String {
 #[tauri::command]
 async fn read_bundle_manifest(path: String) -> Result<serde_json::Value, String> {
     let path = normalize_local_path(&path);
-    tauri::async_runtime::spawn_blocking(move || {
-        volumetric_server::read_bundle(Path::new(&path))
-    })
-    .await
-    .map_err(|error| format!("read_bundle_manifest: join error: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || volumetric_server::read_bundle(Path::new(&path)))
+        .await
+        .map_err(|error| format!("read_bundle_manifest: join error: {error}"))?
 }
 
 fn open_dataset_at_path(
@@ -314,10 +318,10 @@ pub fn run() {
             // `discovery_roots()` picks it up. Resolving here (not at module load)
             // is why the server spawns in `setup`: it needs the AppHandle's
             // resource dir.
-            if let Ok(path) = app
-                .path()
-                .resolve("resources/mni152.nii.gz", tauri::path::BaseDirectory::Resource)
-            {
+            if let Ok(path) = app.path().resolve(
+                "resources/mni152.nii.gz",
+                tauri::path::BaseDirectory::Resource,
+            ) {
                 if path.is_file() {
                     std::env::set_var("NEUROVUE_DEFAULT_VOLUME", path);
                 }

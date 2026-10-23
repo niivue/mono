@@ -70,7 +70,7 @@ async function init(data) {
   // The URL comes from the page: the GitHub Pages base-path rewrite runs on page
   // chunks but not on worker bundles.
   await nv.loadVolumes({ url: data.url })
-  self.postMessage({ type: 'ready', colormaps: nv.colormaps })
+  self.postMessage({ type: 'ready', colormaps: nv.colormapNames('continuous') })
 }
 
 self.onmessage = async ({ data }) => {

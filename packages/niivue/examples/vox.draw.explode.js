@@ -43,7 +43,7 @@ function applyExplode() {
   nv1.drawScene()
 }
 
-// Label index -> RGB for the Vector annotation style (mirrors the _draw LUT:
+// Label index -> RGB for the Vector annotation style (mirrors the draw LUT:
 // 1=red, 2=green, 3=blue).
 const COLOR_RGB = { 1: [1, 0, 0], 2: [0, 1, 0], 3: [0, 0, 1] }
 const COLOR_CSS = { 1: '#ff0000', 2: '#00ff00', 3: '#0000ff' }

@@ -6,7 +6,7 @@ const demo: Demo = async (canvas, { ui, asset }) => {
   await nv.attachToCanvas(canvas)
   await nv.loadVolumes([{ url: asset('volumes/mni152.nii.gz') }])
 
-  // A custom colormap (black, blue, white); it joins nv.colormaps as 'Icy'
+  // A custom colormap (black, blue, white); it joins the continuous list as 'Icy'
   nv.addColormap('icy', {
     R: [0, 0, 255],
     G: [0, 128, 255],
@@ -18,9 +18,14 @@ const demo: Demo = async (canvas, { ui, asset }) => {
   const hi = vol.globalMax
   const step = (hi - lo) / 200
 
-  ui.select('Colormap', nv.colormaps, 'Gray', async (name) => {
-    await nv.setVolume(0, { colormap: name })
-  })
+  ui.select(
+    'Colormap',
+    nv.colormapNames('continuous'),
+    'Gray',
+    async (name) => {
+      await nv.setVolume(0, { colormap: name })
+    },
+  )
   ui.slider(
     'Min',
     lo,

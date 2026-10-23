@@ -273,7 +273,7 @@ for (const shader of nv1.meshShaders) {
   option.textContent = shader.charAt(0).toUpperCase() + shader.slice(1)
   shaderSelect.appendChild(option)
 }
-for (const cmap of nv1.colormaps) {
+for (const cmap of nv1.colormapNames('continuous')) {
   const option = document.createElement('option')
   option.value = cmap
   option.textContent = cmap.charAt(0).toUpperCase() + cmap.slice(1)

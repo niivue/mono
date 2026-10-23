@@ -1,4 +1,6 @@
 import { decode, encode } from 'cbor-x'
+import * as NVCmaps from '@/cmap/NVCmaps'
+import { type LegacyLabelLut, upgradeColormaps } from '@/documentColormaps'
 import {
   decodeDocumentJSON,
   encodeDocumentJSON,
@@ -23,6 +25,7 @@ import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
   AnnotationConfig,
+  ColorMap,
   DrawConfig,
   InteractionConfig,
   LayoutConfig,
@@ -65,6 +68,11 @@ import * as NVVolume from '@/volume/NVVolume'
 // rejects a v9 doc rather than corrupting state. v8 docs (all fields present) load
 // unchanged. The numeric value lives in NVConstants (pure, importable by the
 // legacy converter without pulling this Vite module graph).
+//
+// v10 dropped the per-volume compiled label LUT: a volume names its colormap
+// (continuous or label) and `colormaps` embeds every runtime-registered
+// colormap. `upgradeColormaps` converts older label LUTs and renames the
+// `_`-prefixed drawing colormaps.
 const DOCUMENT_VERSION = NVConstants.NVD_DOCUMENT_VERSION
 
 /**
@@ -102,13 +110,8 @@ export type NVDocumentVolume = {
   frame4D?: number
   /** Embedded volume data (when URL is not a valid remote URL) */
   data?: NVDocumentVolumeData
-  /** Label colormap LUT for atlas/parcellation volumes */
-  colormapLabel?: {
-    lut: Uint8Array
-    min: number
-    max: number
-    labels?: string[]
-  }
+  /** v9 and earlier: compiled label LUT, converted on load by upgradeColormaps. */
+  colormapLabel?: LegacyLabelLut
 }
 
 /**
@@ -260,6 +263,8 @@ export type NVDocumentData = {
   annotationConfig?: Partial<AnnotationConfig>
   /** Registered slide plane + its slide-space drawing (v8+). */
   slidePlane?: NVDocumentSlidePlane
+  /** v10: definitions of colormaps registered at runtime, by name. */
+  colormaps?: Record<string, ColorMap>
 }
 
 /**
@@ -403,20 +408,6 @@ export function serialize(
         frame4D: v.frame4D,
       }
       if (v.visible === false) vol.visible = false
-
-      // Serialize label colormap if present
-      if (v.colormapLabel) {
-        vol.colormapLabel = {
-          lut: new Uint8Array(
-            v.colormapLabel.lut.buffer,
-            v.colormapLabel.lut.byteOffset,
-            v.colormapLabel.lut.byteLength,
-          ),
-          min: v.colormapLabel.min ?? 0,
-          max: v.colormapLabel.max ?? 0,
-          labels: v.colormapLabel.labels,
-        }
-      }
 
       // Embed volume data for a self-contained document, UNLESS linkData is set
       // and this volume has a fetchable URL (then the loader refetches it). A
@@ -663,6 +654,8 @@ export function serialize(
     ),
     slidePlane,
   }
+  const colormaps = NVCmaps.customColormaps()
+  if (Object.keys(colormaps).length > 0) doc.colormaps = colormaps
 
   if (options?.format === 'json') {
     return new TextEncoder().encode(encodeDocumentJSON(doc))
@@ -696,6 +689,10 @@ export function deserialize(data: Uint8Array): NVDocumentData {
       delete legacy.drawBitmapLength
     }
   }
+  upgradeColormaps(doc, (name, cm) => {
+    const known = NVCmaps.lookupColorMap(name)
+    return !!known && JSON.stringify(known) !== JSON.stringify(cm)
+  })
 
   return doc
 }
@@ -924,20 +921,6 @@ export async function reconstructVolume(
       // is restored later in this loop.
       if (v.modulationImage !== undefined)
         vol.modulationImage = v.modulationImage
-      // Restore label colormap if present in document
-      if (v.colormapLabel) {
-        const lutData = v.colormapLabel.lut
-        vol.colormapLabel = {
-          lut: new Uint8ClampedArray(
-            lutData.buffer,
-            lutData.byteOffset,
-            lutData.byteLength,
-          ),
-          min: v.colormapLabel.min,
-          max: v.colormapLabel.max,
-          labels: v.colormapLabel.labels,
-        }
-      }
     }
   } catch (err) {
     log.warn(`Failed to load volume ${v.name ?? v.url}:`, err)

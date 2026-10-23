@@ -64,7 +64,9 @@ var volumeList = [
   },
 ]
 await nv1.loadVolumes(volumeList)
-await nv1.setColormapLabelFromUrl(1, '/volumes/aal.json')
+// Registered under its file name; a `labels` array makes it a label map.
+await nv1.addColormapFromUrl('/volumes/aal.json')
+await nv1.setVolume(1, { colormap: 'aal' })
 darkCheck.onclick()
 //nearestCheck.onclick()
 opacitySlider.oninput()

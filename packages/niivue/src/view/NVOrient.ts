@@ -22,6 +22,26 @@ function computeNegRange(nvimage: NVImage): {
   return { mnNeg, mxNeg }
 }
 
+/**
+ * Width of a label LUT texture. The LUT wraps into rows of this many entries,
+ * so an atlas whose IDs span more than the GPU's maximum texture width
+ * (8192 is common under WebGPU) still uploads. Mirrored as a literal in the
+ * orient shaders.
+ */
+export const LABEL_LUT_WIDTH = 256
+
+/** A label LUT padded to whole rows of {@link LABEL_LUT_WIDTH} texels. */
+export function labelLutTexels(lut: Uint8ClampedArray): {
+  data: Uint8Array<ArrayBuffer>
+  width: number
+  height: number
+} {
+  const height = Math.max(1, Math.ceil(lut.length / 4 / LABEL_LUT_WIDTH))
+  const data = new Uint8Array(LABEL_LUT_WIDTH * height * 4)
+  data.set(lut)
+  return { data, width: LABEL_LUT_WIDTH, height }
+}
+
 export type OrientUniforms = {
   slope: number
   intercept: number

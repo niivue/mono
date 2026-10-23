@@ -64,7 +64,8 @@ async function loadLayers(kind) {
       { url: '/volumes/MNI152NLin6AsymC.nii.gz' },
       { url: '/volumes/atl-Anatom.nii.gz' },
     ])
-    await nv1.setColormapLabelFromUrl(1, PAQD_LUT)
+    await nv1.addColormapFromUrl(PAQD_LUT)
+    await nv1.setVolume(1, { colormap: 'atl-Anatom' })
   } else {
     await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
   }

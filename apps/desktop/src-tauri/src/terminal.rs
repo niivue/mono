@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -226,15 +226,40 @@ pub fn terminal_kill(state: tauri::State<'_, TerminalState>, id: String) -> Resu
     Ok(())
 }
 
+/// Async + `spawn_blocking` so probing interpreters (one `--version` subprocess each)
+/// never runs on, and freezes, the main thread.
 #[tauri::command]
-pub fn discover_python_interpreters(
+pub async fn discover_python_interpreters(
     server_state: tauri::State<'_, NeuroVueState>,
-) -> Vec<PythonInterpreter> {
+) -> Result<Vec<PythonInterpreter>, String> {
     let dataset_root = volumetric_server::dataset_root(&server_state.server);
+    tauri::async_runtime::spawn_blocking(move || discover_interpreters(dataset_root.as_deref()))
+        .await
+        .map_err(|error| format!("discover_python_interpreters: join error: {error}"))
+}
+
+fn discover_interpreters(dataset_root: Option<&Path>) -> Vec<PythonInterpreter> {
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut interpreters = Vec::new();
 
-    for (candidate, source) in candidate_python_paths(dataset_root.as_deref()) {
+    // Project venvs first (most relevant). These can live inside an untrusted dataset,
+    // so they are identified from pyvenv.cfg and never executed.
+    for venv in venv_dirs(dataset_root) {
+        if let Some(interpreter) = venv_interpreter(&venv) {
+            if seen.insert(PathBuf::from(&interpreter.path)) {
+                interpreters.push(interpreter);
+            }
+        }
+    }
+
+    let mut clt = CltProbe::default();
+    for (candidate, source) in candidate_python_paths() {
+        // Check the resolved path too: e.g. /usr/local/bin/python3 -> /usr/bin/python3.
+        let shim = is_xcrun_shim(&candidate)
+            || std::fs::canonicalize(&candidate).is_ok_and(|path| is_xcrun_shim(&path));
+        if shim && !clt.installed() {
+            continue;
+        }
         push_interpreter(&candidate, source, &mut seen, &mut interpreters);
     }
 
@@ -245,14 +270,27 @@ pub fn discover_python_interpreters(
 /// dialog) and return its details. Keeping discovery of the path in the frontend
 /// dialog plugin lets the picker work on macOS, Windows, and Linux alike.
 #[tauri::command]
-pub fn inspect_python_interpreter(path: String) -> Result<PythonInterpreter, String> {
-    let candidate = PathBuf::from(&path);
+pub async fn inspect_python_interpreter(path: String) -> Result<PythonInterpreter, String> {
+    tauri::async_runtime::spawn_blocking(move || inspect_interpreter(&path))
+        .await
+        .map_err(|error| format!("inspect_python_interpreter: join error: {error}"))?
+}
+
+fn inspect_interpreter(path: &str) -> Result<PythonInterpreter, String> {
+    let candidate = PathBuf::from(path);
     let canonical = std::fs::canonicalize(&candidate).map_err(|error| {
         format!(
             "inspect_python_interpreter: {}: {error}",
             candidate.display()
         )
     })?;
+    if is_xcrun_shim(&canonical) && !CltProbe::default().installed() {
+        return Err(format!(
+            "inspect_python_interpreter: {} needs the Xcode Command Line Tools \
+             (install with `xcode-select --install`)",
+            canonical.display()
+        ));
+    }
     let version = python_version(&canonical).ok_or_else(|| {
         format!(
             "inspect_python_interpreter: not a runnable Python: {}",
@@ -294,22 +332,77 @@ fn push_interpreter(
     });
 }
 
-/// Ordered candidate list: project venvs first (most relevant), then PATH, then pyenv/conda.
-fn candidate_python_paths(dataset_root: Option<&Path>) -> Vec<(PathBuf, &'static str)> {
-    let mut candidates: Vec<(PathBuf, &'static str)> = Vec::new();
-
-    let mut venv_roots: Vec<PathBuf> = Vec::new();
+/// `.venv` / `venv` directories under the dataset root and the process cwd.
+fn venv_dirs(dataset_root: Option<&Path>) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
     if let Some(root) = dataset_root {
-        venv_roots.push(root.to_path_buf());
+        roots.push(root.to_path_buf());
     }
     if let Ok(cwd) = std::env::current_dir() {
-        venv_roots.push(cwd);
+        roots.push(cwd);
     }
-    for root in venv_roots {
-        for name in [".venv", "venv"] {
-            candidates.push((root.join(name).join("bin").join("python"), "venv"));
+    roots
+        .iter()
+        .flat_map(|root| [root.join(".venv"), root.join("venv")])
+        .collect()
+}
+
+/// Describe a venv from its pyvenv.cfg without running anything inside it. The path is
+/// kept uncanonicalized: resolving the symlink would point at the base interpreter, and
+/// the terminal would then put the base `bin/` (not the venv's) on PATH.
+fn venv_interpreter(venv: &Path) -> Option<PythonInterpreter> {
+    let python = venv.join("bin").join("python");
+    if !python.is_file() {
+        return None;
+    }
+    let mut text = String::new();
+    std::fs::File::open(venv.join("pyvenv.cfg"))
+        .ok()?
+        .take(64 * 1024)
+        .read_to_string(&mut text)
+        .ok()?;
+    let version = pyvenv_version(&text)?;
+    Some(PythonInterpreter {
+        label: interpreter_label(&python, &version, "venv"),
+        path: python.display().to_string(),
+        version,
+        source: "venv".to_string(),
+    })
+}
+
+/// Python version from pyvenv.cfg: `version` (CPython venv) or `version_info`
+/// (uv / virtualenv, e.g. `3.12.1.final.0`, trimmed to its numeric prefix).
+fn pyvenv_version(text: &str) -> Option<String> {
+    let mut version = None;
+    let mut version_info = None;
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        match key.trim() {
+            "version" => version = Some(value.to_string()),
+            "version_info" => {
+                let numeric: Vec<&str> = value
+                    .split('.')
+                    .take_while(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+                    .collect();
+                if !numeric.is_empty() {
+                    version_info = Some(numeric.join("."));
+                }
+            }
+            _ => {}
         }
     }
+    version.or(version_info)
+}
+
+/// Ordered candidate list outside any project: PATH, then pyenv/conda.
+fn candidate_python_paths() -> Vec<(PathBuf, &'static str)> {
+    let mut candidates: Vec<(PathBuf, &'static str)> = Vec::new();
 
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path_var) {
@@ -337,6 +430,31 @@ fn candidate_python_paths(dataset_root: Option<&Path>) -> Vec<(PathBuf, &'static
     }
 
     candidates
+}
+
+/// On macOS, `/usr/bin/python3` is an xcrun shim: running it without the Command Line
+/// Tools pops the "install developer tools" dialog instead of printing a version.
+fn is_xcrun_shim(path: &Path) -> bool {
+    cfg!(target_os = "macos") && path.parent() == Some(Path::new("/usr/bin"))
+}
+
+/// Lazily answers "are the Xcode Command Line Tools (or Xcode) installed?" at most once.
+#[derive(Default)]
+struct CltProbe(Option<bool>);
+
+impl CltProbe {
+    fn installed(&mut self) -> bool {
+        *self.0.get_or_insert_with(|| {
+            // Cheap filesystem check first; `xcode-select -p` covers Xcode.app-only setups
+            // and just exits non-zero (no dialog) when nothing is installed.
+            Path::new("/Library/Developer/CommandLineTools").is_dir()
+                || Command::new("xcode-select")
+                    .arg("-p")
+                    .output()
+                    .map(|output| output.status.success())
+                    .unwrap_or(false)
+        })
+    }
 }
 
 fn python_version(path: &Path) -> Option<String> {
@@ -531,3 +649,80 @@ if _os.environ.get("NEUROVUE_DATASET_ROOT"):
         "Dataset: " + _os.environ["NEUROVUE_DATASET_ROOT"]
     )
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pyvenv_version_reads_cpython_version_key() {
+        let cfg = "home = /usr/local/bin\ninclude-system-site-packages = false\nversion = 3.11.4\n";
+        assert_eq!(pyvenv_version(cfg).as_deref(), Some("3.11.4"));
+    }
+
+    #[test]
+    fn pyvenv_version_trims_version_info() {
+        assert_eq!(
+            pyvenv_version("home=/opt/py/bin\nversion_info=3.12.1.final.0\n").as_deref(),
+            Some("3.12.1")
+        );
+        assert_eq!(
+            pyvenv_version("version_info = 3.12.4\n").as_deref(),
+            Some("3.12.4")
+        );
+    }
+
+    #[test]
+    fn pyvenv_version_prefers_version_over_version_info() {
+        let cfg = "version_info = 3.12.1.final.0\nversion = 3.12.1rc1\n";
+        assert_eq!(pyvenv_version(cfg).as_deref(), Some("3.12.1rc1"));
+    }
+
+    #[test]
+    fn pyvenv_version_none_without_version_keys() {
+        assert_eq!(pyvenv_version("home = /usr/bin\nversion =\n"), None);
+        assert_eq!(pyvenv_version(""), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn venv_interpreter_never_executes_the_venv_python() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "neurovue-venv-test-{}-{}",
+            std::process::id(),
+            SESSION_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let venv = root.join(".venv");
+        let bin = venv.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let marker = root.join("executed");
+        let python = bin.join("python");
+        std::fs::write(
+            &python,
+            format!(
+                "#!/bin/sh\ntouch '{}'\necho Python 9.9.9\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(venv.join("pyvenv.cfg"), "version = 3.10.2\n").unwrap();
+
+        let found = discover_interpreters(Some(&root));
+        let venv_entry = found
+            .iter()
+            .find(|entry| entry.path == python.display().to_string())
+            .expect("dataset venv is listed");
+        assert_eq!(venv_entry.version, "3.10.2");
+        assert_eq!(venv_entry.source, "venv");
+        assert!(!marker.exists(), "discovery must not execute dataset code");
+
+        // No pyvenv.cfg: not treated as a venv at all.
+        std::fs::remove_file(venv.join("pyvenv.cfg")).unwrap();
+        assert!(venv_interpreter(&venv).is_none());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

@@ -6,8 +6,6 @@
 :root {
   --nv-magenta: #73000a;
   --nv-cyan: #78716c;
-  /* Only used on the always-dark hero and closing bands. */
-  --nv-gradient: linear-gradient(100deg, #e7e5e4 0%, #c8505f 100%);
   --nv-surface: #ffffff;
   --nv-surface-2: #f6f5f3;
   --nv-border: #e7e4e0;
@@ -208,12 +206,10 @@ html .menu.thin-scrollbar {
   letter-spacing: 0.02em;
 }
 
-/* Shared gradient text */
-.nv-gradient-text {
-  background: var(--nv-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+/* Garnet accent on the always-dark hero and closing bands: #73000a is too
+   dark to read on black, so this is the rose garnet dark mode uses. */
+.nv-accent-text {
+  color: #c8505f;
 }
 
 /* Controls built by src/demos/ui.ts. The viewer frame is always dark. */

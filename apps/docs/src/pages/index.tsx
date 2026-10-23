@@ -152,8 +152,8 @@ function Hero() {
             WebGPU and WebGL2
           </span>
           <h1 className={styles.title}>
-            Medical images,{' '}
-            <span className="nv-gradient-text">live in the browser.</span>
+            Medical images, live in the{' '}
+            <span className="nv-accent-text">browser.</span>
           </h1>
           <p className={styles.lead}>
             NiiVue renders MRI, CT, microscopy, surfaces and tractography on the
@@ -305,7 +305,7 @@ function Closing() {
     <section className={styles.closing}>
       <div className="container">
         <h2>
-          Open source, <span className="nv-gradient-text">BSD licensed.</span>
+          Open source, <span className="nv-accent-text">BSD licensed.</span>
         </h2>
         <p>Issues, ideas and pull requests are welcome.</p>
         <div className={styles.ctas}>

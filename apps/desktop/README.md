@@ -50,6 +50,15 @@ bun run tauri:build:mac
 Output lands in `src-tauri/target/universal-apple-darwin/release/bundle/`.
 Without notarization, Gatekeeper blocks the app on other Macs.
 
+### Linux and Windows
+
+Tauri doesn't cross-compile installers, so each OS builds on its own runner.
+The `Desktop Build` workflow (`.github/workflows/desktop-build.yml`) builds
+unsigned installers on macOS (universal .dmg), Linux (.deb, .rpm, .AppImage)
+and Windows (.msi, NSIS .exe) and runs the Rust tests. It runs on PRs that touch
+the app and can also be run manually. Download the installers from the run's
+artifacts.
+
 The Tauri host starts a local server and the viewer asks the host for its URL.
 In browser-only Vite development, the app falls back to
 `http://127.0.0.1:8087`, which is the current OSD/IIIF reference server.

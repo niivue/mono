@@ -17,9 +17,28 @@ const WIDTH = 480
 const SETTLE_MS = Number(process.env.SETTLE_MS ?? 2500)
 const LOAD_TIMEOUT_MS = 30000
 // Examples that draw nothing until the user acts; show their whole page.
-const PAGE_SHOT = new Set(['allen-atlas', 'benchmark', 'font'])
+const PAGE_SHOT = new Set(['allen-atlas'])
+// Examples that draw nothing until the user acts; act for them, then wait.
+const PREPARE: Record<string, (page: Page) => Promise<void>> = {
+  font: async (page) => {
+    await page.waitForSelector('#fontSelect option:nth-child(2)', {
+      state: 'attached',
+    })
+    await page.selectOption('#fontSelect', 'GaramondBold')
+    await page.locator('#fontSlide').fill('20')
+  },
+  benchmark: (page) => page.click('#runBtn'),
+}
+// Page regions to frame when the drawing is small on a large canvas.
+const CLIP: Record<
+  string,
+  { x: number; y: number; width: number; height: number }
+> = {
+  font: { x: 260, y: 0, width: 480, height: 360 },
+}
 // Examples that stream for a while before their first useful frame.
 const SLOW: Record<string, number> = {
+  benchmark: 12000,
   'vox-block-pick': 8000,
   'vox-block-pick-zarr': 15000,
 }
@@ -39,14 +58,17 @@ async function capture(
   url: string,
   whole: boolean,
   settleMs: number,
+  prepare?: (page: Page) => Promise<void>,
+  clip?: { x: number; y: number; width: number; height: number },
 ): Promise<Buffer> {
   await page.goto(url, { waitUntil: 'load', timeout: LOAD_TIMEOUT_MS })
   // Streaming examples never go idle; take what has drawn by the timeout.
   await page
     .waitForLoadState('networkidle', { timeout: LOAD_TIMEOUT_MS })
     .catch(() => {})
+  if (prepare) await prepare(page)
   await page.waitForTimeout(settleMs)
-  if (whole) return page.screenshot()
+  if (whole || clip) return page.screenshot({ clip })
   const canvas = await page.evaluateHandle(() => {
     let best: HTMLCanvasElement | null = null
     let area = 0
@@ -104,6 +126,8 @@ for (const example of examples) {
       new URL(example.page, base).href,
       PAGE_SHOT.has(example.slug),
       SLOW[example.slug] ?? SETTLE_MS,
+      PREPARE[example.slug],
+      CLIP[example.slug],
     )
     const webp = await toWebp(encoder, png)
     writeFileSync(path.join(outDir, `${example.slug}.webp`), webp)

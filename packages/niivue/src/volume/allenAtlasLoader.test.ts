@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 
 import { parseAllenAtlasInfo } from './allenAtlas'
 import {
-  allenAtlasChannelColormap,
   allenAtlasChannelFile,
   loadAllenAtlasVolumes,
 } from './allenAtlasLoader'
+import { channelColormapsFor } from './channelColormaps'
 import type { DecodedImage } from './imageDecode'
 
 /** Two atlases of 2x2 tiles in a 2x2 grid, 4 channels, 3 Z slices. */
@@ -162,17 +162,8 @@ describe('loadAllenAtlasVolumes', () => {
   })
 })
 
-describe('allenAtlasChannelColormap', () => {
-  const info = parseAllenAtlasInfo(SIDECAR)
-
-  test('cycles the palette when the sidecar names no colours', () => {
-    const first = allenAtlasChannelColormap(info, 0, 0)
-    expect(allenAtlasChannelColormap(info, 1, 1)).not.toBe(first)
-    // Wrapping is by position, so the 7th channel reuses the first colour.
-    expect(allenAtlasChannelColormap(info, 3, 6)).toBe(first)
-  })
-
-  test('honours a sidecar colour by nearest hue', () => {
+describe('allen atlas channel colours', () => {
+  test('honours sidecar colours by nearest hue', () => {
     const colored = parseAllenAtlasInfo({
       ...SIDECAR,
       channel_colors: [
@@ -180,8 +171,7 @@ describe('allenAtlasChannelColormap', () => {
         [10, 10, 240],
       ],
     })
-    expect(allenAtlasChannelColormap(colored, 0, 0)).toBe('red')
-    expect(allenAtlasChannelColormap(colored, 1, 1)).toBe('blue')
+    expect(channelColormapsFor(colored.channelColors)).toEqual(['red', 'blue'])
   })
 })
 

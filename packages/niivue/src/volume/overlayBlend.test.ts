@@ -32,6 +32,10 @@ describe('blendOverlayData', () => {
     expect(blend(OVERLAY_ALPHA_BLEND.OVER, OVERLAY_COLOR_BLEND.OVER)).toEqual([
       121, 134, 0, 194,
     ])
+    // Colour is independent of the alpha mode
+    expect(blend(OVERLAY_ALPHA_BLEND.MAX, OVERLAY_COLOR_BLEND.OVER)).toEqual([
+      121, 134, 0, 153,
+    ])
     // Reversed order: red now on top
     expect(
       Array.from(

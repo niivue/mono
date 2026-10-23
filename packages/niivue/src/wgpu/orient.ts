@@ -999,12 +999,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let pos = vec3i(vec3u(gid.xy, gid.z + slab.z0));
     let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 6u;
     let sum = accum[k + 3u];
-    let u = accum[k + 5u];
     if (sum <= 0.0) {
         textureStore(output, pos, vec4f(0.0));
         return;
     }
-    let a = select(select(accum[k + 4u], min(sum, 1.0), ALPHA_BLEND == 1u), u, ALPHA_BLEND == 2u);
+    let m = accum[k + 4u];
+    let u = accum[k + 5u];
+    let a = select(select(m, min(sum, 1.0), ALPHA_BLEND == 1u), u, ALPHA_BLEND == 2u);
     let norm = select(select(a, sum, COLOR_BLEND == 1u), u, COLOR_BLEND == 2u);
     let rgb = clamp(vec3f(accum[k], accum[k + 1u], accum[k + 2u]) / norm, vec3f(0.0), vec3f(1.0));
     textureStore(output, pos, vec4f(rgb, a));

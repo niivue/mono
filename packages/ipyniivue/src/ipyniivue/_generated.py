@@ -231,7 +231,7 @@ off-window crosshair is brought back."""
     volume_matcap = traitlets.Unicode(None, allow_none=True).tag(sync=True)
     volume_outline_width = traitlets.Float(None, allow_none=True).tag(sync=True)
     volume_overlay_alpha_blend = traitlets.Enum([0, 1, 2], None, allow_none=True).tag(sync=True)
-    volume_overlay_color_blend = traitlets.Enum([0, 1], None, allow_none=True).tag(sync=True)
+    volume_overlay_color_blend = traitlets.Enum([0, 1, 2], None, allow_none=True).tag(sync=True)
     volume_paqd_uniforms = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=4, maxlen=4, allow_none=True).tag(sync=True)
     volume_render_mode = traitlets.Float(None, allow_none=True).tag(sync=True)
     volume_sample_rate = traitlets.Float(None, allow_none=True).tag(sync=True)

@@ -1381,8 +1381,8 @@ PAQD-on-chunked stays deferred to Phase 2d.3.
   (readback + `blendOverlayData`); WebGPU blends per chunk on the GPU
   (`blendOverlaysGPU`). This is deliberate — each mirrors that backend's
   existing non-chunked multi-overlay path, so cross-backend diffs stay
-  small. The blend *formula* is identical (additive premultiplied +
-  max-alpha, commutative).
+  small. The blend *formula* is identical (all blend modes; only colour
+  `OVER` is order-dependent).
 - **WGPU bind-group cache self-invalidation.** `_chunkBindGroupFor`'s
   cache is keyed by the chunk's volume texture, which is stable across
   overlay rebuilds. Since overlay chunks are fresh GPUTexture objects

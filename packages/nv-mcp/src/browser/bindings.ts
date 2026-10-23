@@ -984,12 +984,13 @@ function fitted(spec: ControlSpec, target: Target, bind: string): ControlSpec {
 
 /**
  * Throws in words unless every option of a select or segmented row bound
- * to a number or true-or-false target carries a value it takes, in range.
+ * to a number or true-or-false target carries a distinct value it takes,
+ * in range, and whole when the target steps by 1.
  */
 function valuesFit(
   spec: ControlSpec,
   shape: 'number' | 'boolean',
-  range: { min?: number; max?: number },
+  range: { min?: number; max?: number; step?: number },
   bind: string,
 ): void {
   const example = shape === 'number' ? 0 : true
@@ -998,6 +999,9 @@ function valuesFit(
     throw new Error(
       `${bind} takes ${article(shape)}; give the ${spec.kind} options that each carry one, e.g. {id: 'low', value: ${example}}.`,
     )
+  // Twins are found the way a read-back finds its option, so two values
+  // within a rounding error of each other count as one.
+  const seen: ControlOption[] = []
   for (const o of given) {
     const ok =
       shape === 'number'
@@ -1022,6 +1026,15 @@ function valuesFit(
               : `${max} or less`
         }.`,
       )
+    // Only whole-number targets: a finer step is a slider hint, not a rule.
+    if (shape === 'number' && range.step === 1 && !Number.isInteger(n))
+      throw new Error(`"${o.id}" writes ${n}, but ${bind} takes whole numbers.`)
+    const twin = optionOf({ options: seen }, o.value as ControlValue)
+    if (twin !== undefined)
+      throw new Error(
+        `"${twin}" and "${o.id}" both write ${JSON.stringify(o.value)}; give each option its own value, so the control can show which one the target holds.`,
+      )
+    seen.push(o)
   }
 }
 

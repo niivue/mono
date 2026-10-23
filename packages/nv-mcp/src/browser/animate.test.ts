@@ -258,6 +258,21 @@ describe('animate', () => {
     expect(announce.mock.calls[0][0]).toStartWith('Crosshair at ')
   })
 
+  it('stays quiet about a move a newer one replaced', async () => {
+    const { view } = animView({
+      animateTo: mock(async () => ({
+        ...FINISHED,
+        completed: false,
+        reason: 'superseded' as const,
+      })),
+    })
+    const announce = mock((_text: string) => {})
+    await animateHandlers({ ...hostOf(view), announce }).animate({
+      crosshair_mm: [1, 2, 3],
+    })
+    expect(announce).not.toHaveBeenCalled()
+  })
+
   it('stops a move where it is', async () => {
     const { view } = animView({ isAnimating: true })
     const result = await run(view, { stop: true })

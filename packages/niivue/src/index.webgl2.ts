@@ -232,7 +232,6 @@ export {
 } from './volume/allenAtlas'
 export {
   type AllenAtlasLoadOptions,
-  allenAtlasChannelColormap,
   allenAtlasChannelFile,
   fetchAllenAtlasInfo,
   loadAllenAtlasVolumes,
@@ -348,7 +347,6 @@ export {
   fetchOmeTiff,
   loadOmeTiffVolumes,
   type OmeTiffLoadOptions,
-  omeTiffChannelColormap,
   omeTiffChannelFile,
   omeTiffVolumesFrom,
 } from './volume/omeTiffLoader'
@@ -365,8 +363,8 @@ export {
   omeZarrResolveAxes,
   omeZarrSpatialOrder,
   omeZarrSpatialScaleUm,
-  parseOmeroColor,
   omeroWindowUsable,
+  parseOmeroColor,
   parseOmeZarrAttrs,
 } from './volume/omeZarr'
 // OME-Zarr chunk-streaming adapter for nv.loadChunkedVolume
@@ -406,7 +404,6 @@ export {
   type OmeZarrSource,
   type OpenOmeZarrOptions,
   omeZarrBlockToDisplay,
-  omeZarrChannelColormap,
   omeZarrChannelCount,
   omeZarrChannelFile,
   omeZarrChannelName,

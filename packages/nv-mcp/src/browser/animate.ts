@@ -157,10 +157,14 @@ export function animateHandlers(host: NiiVueHost): Handlers {
   /**
    * Tells the person where a move that took the crosshair or a cut left
    * them, as go_to_point and set_clip_plane do. A failure to say so is
-   * not the move's failure.
+   * not the move's failure. A move a newer one replaced stays quiet: it
+   * stopped mid-flight, and the newer move announces where it ends.
    */
-  const announceEnd = async (target: AnimationTarget): Promise<void> => {
-    if (!host.announce) return
+  const announceEnd = async (
+    target: AnimationTarget,
+    result: { reason: string },
+  ): Promise<void> => {
+    if (!host.announce || result.reason === 'superseded') return
     const said: string[] = []
     try {
       if (target.crosshairMM) {
@@ -219,7 +223,7 @@ export function animateHandlers(host: NiiVueHost): Handlers {
       })
       if (params?.wait === false || params?.wait === 'false') {
         // Leave the move running; a rejection later has nobody to hear it.
-        done.then(() => announceEnd(target)).catch(() => {})
+        done.then((result) => announceEnd(target, result)).catch(() => {})
         return {
           started: true,
           durationMs: duration ?? 500,
@@ -228,7 +232,7 @@ export function animateHandlers(host: NiiVueHost): Handlers {
       }
       const result = await done
       view.drawScene()
-      await announceEnd(target)
+      await announceEnd(target, result)
       return {
         completed: result.completed,
         reason: result.reason,

@@ -24,22 +24,9 @@ import {
   findAllenAtlasChannel,
   parseAllenAtlasInfo,
 } from './allenAtlas'
-import { channelColormapFor, channelColormapsFor } from './channelColormaps'
+import { channelColormapsFor } from './channelColormaps'
 import { channelVolumeFile } from './channelVolumeFile'
 import { type DecodedImage, decodeImageRGBA } from './imageDecode'
-
-/**
- * Colormap for one channel: the closest hue to the sidecar's `channel_colors`
- * entry when it has one, else the next colour in the shared palette so that
- * channels loaded together do not collide.
- */
-export function allenAtlasChannelColormap(
-  info: AllenAtlasInfo,
-  channel: number,
-  order: number,
-): string {
-  return channelColormapFor(info.channelColors[channel], order)
-}
 
 /**
  * Assemble one deinterleaved channel into a NIfTI `File`, origin-centred like

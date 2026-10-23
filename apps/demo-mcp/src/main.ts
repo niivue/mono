@@ -304,10 +304,24 @@ pins.setLabels(pendingLabels)
 nv.registerOverlayRenderer(pins)
 
 // Warm the atlas so the first `where_am_i` already names the region, and
-// keep the readout current when the person moves the crosshair themselves.
+// keep the readout current however the crosshair moves: a click, a key, a
+// tool call, or an animation, which moves it every frame. One refresh runs
+// at a time; moves made during it are read by one more once it ends.
 void requireAtlas().then(refreshWhere, refreshWhere)
-for (const type of ['pointerup', 'keyup', 'wheel'] as const) {
-  nv.canvas?.addEventListener(type, () => void refreshWhere(), {
-    passive: true,
-  })
+let whereBusy = false
+let whereAgain = false
+function refreshWhereSoon(): void {
+  if (whereBusy) {
+    whereAgain = true
+    return
+  }
+  whereBusy = true
+  whereAgain = false
+  void refreshWhere()
+    .catch(() => undefined)
+    .finally(() => {
+      whereBusy = false
+      if (whereAgain) refreshWhereSoon()
+    })
 }
+nv.addEventListener('locationChange', refreshWhereSoon)

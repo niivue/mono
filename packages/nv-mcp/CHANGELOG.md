@@ -1,3 +1,18 @@
+## 1.0.0-rc.12 (2026-10-23)
+
+### Features
+
+- **nv-mcp:** bind controls to mesh layers and mesh colour ([63c6b07e](https://github.com/niivue/mono/commit/63c6b07e))
+
+### Fixes
+
+- **nv-mcp:** say a mesh could not be read instead of a kind error ([c2d308fd](https://github.com/niivue/mono/commit/c2d308fd))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.11 (2026-10-23)
 
 ### Features

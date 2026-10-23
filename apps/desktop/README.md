@@ -50,6 +50,23 @@ bun run tauri:build:mac
 Output lands in `src-tauri/target/universal-apple-darwin/release/bundle/`.
 Without notarization, Gatekeeper blocks the app on other Macs.
 
+Tauri can't use a `notarytool` keychain profile, so with one you notarize the
+signed `.dmg` after the build instead. Store the profile once (it prompts for an
+app-specific password from account.apple.com and keeps it in your keychain):
+
+```sh
+xcrun notarytool store-credentials <profile> --apple-id <apple-id> --team-id <TEAMID>
+```
+
+Then, for each release:
+
+```sh
+DMG=src-tauri/target/universal-apple-darwin/release/bundle/dmg/NeuroVue_<version>_universal.dmg
+xcrun notarytool submit "$DMG" --keychain-profile <profile> --wait
+xcrun stapler staple "$DMG"
+spctl -a -vv -t open --context context:primary-signature "$DMG"  # "Notarized Developer ID"
+```
+
 ### iOS (TestFlight)
 
 ```sh

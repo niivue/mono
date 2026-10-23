@@ -21,7 +21,7 @@ import {
   LoaderCircle,
   Maximize2,
   Minimize2,
-  MousePointer2,
+  Mouse,
   PackageOpen,
   PanelLeftClose,
   PanelLeftOpen,
@@ -2515,7 +2515,7 @@ function WheelModeRow({
 }): JSX.Element {
   return (
     <div className="nv-wheel-row">
-      <MousePointer2 size={14} aria-hidden="true" />
+      <Mouse size={14} aria-hidden="true" />
       {activePlaneLabel ? (
         <>
           <span
@@ -2580,7 +2580,6 @@ function ClipPlanesSection({
     <section className="nv-control-section nv-clip-section">
       <div className="nv-panel-heading">
         <button
-          aria-controls="nv-clip-plane-list"
           aria-expanded={isOpen}
           className="nv-disclosure"
           onClick={() => setIsOpen((open) => !open)}
@@ -2618,7 +2617,7 @@ function ClipPlanesSection({
       </div>
 
       {isOpen ? (
-        <div className="nv-clip-list" id="nv-clip-plane-list">
+        <div className="nv-clip-list">
           {clipPlanes.map((plane) => (
             <ClipPlaneEditor
               active={plane.id === activeClipPlaneId}

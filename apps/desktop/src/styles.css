@@ -314,7 +314,7 @@ button {
 
 .nv-recent-item:disabled:hover {
   background: transparent;
-  color: var(--text);
+  color: inherit;
 }
 
 .nv-menu-item-text {
@@ -1728,7 +1728,12 @@ button {
 
 .nv-disclosure-chevron {
   flex: none;
-  transition: transform 120ms ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nv-disclosure-chevron {
+    transition: transform 120ms ease;
+  }
 }
 
 .nv-disclosure[aria-expanded="true"] .nv-disclosure-chevron {

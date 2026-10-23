@@ -154,6 +154,15 @@ export function meshHandlers(host: NiiVueHost): Handlers {
     return view.meshes
   }
   const meshesShown = () => meshes().map(describeMesh)
+  /** The error for a mesh NiiVue could not read, naming the formats it reads. */
+  const unread = (url: string) => {
+    const reads = view.meshExtensions?.length
+      ? ` NiiVue reads meshes as ${view.meshExtensions.join(', ')}.`
+      : ''
+    return new Error(
+      `The mesh at ${url} could not be loaded: NiiVue could not read it (the browser console says why).${reads}`,
+    )
+  }
   const meshIndex = (params: Params) =>
     pickIndex(meshes(), params?.mesh, 'mesh', 0)
   const layerIndex = (mesh: ShownMesh, params: Params) => {
@@ -222,6 +231,9 @@ export function meshHandlers(host: NiiVueHost): Handlers {
         const why = error instanceof Error ? error.message : String(error)
         throw new Error(`The mesh at ${url} could not be loaded: ${why}`)
       }
+      // NiiVue logs a mesh it cannot read and adds nothing, rather than
+      // failing the call, so the count says whether it loaded.
+      if (view.meshes.length === prior) throw unread(url)
       if (replace)
         for (let i = prior - 1; i >= 0; i--) await view.removeMesh?.(i)
       view.drawScene()

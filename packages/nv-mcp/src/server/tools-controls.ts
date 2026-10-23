@@ -147,7 +147,8 @@ const FIELDS = {
         'or for a number or boolean when every option carries a value, ' +
         'a color control for a colour); view.slice, view.layout or view.radiological; ' +
         'volume.<index>.<property> (opacity, colormap, cal_min, cal_max, frame, invert, ...); ' +
-        'mesh.<index>.<property> (opacity, shader, visible, colorbar, legend); ' +
+        'mesh.<index>.<property> (opacity, color, shader, visible, colorbar, legend); ' +
+        'mesh.<index>.layer.<layer>.<property>, the properties set_mesh_layer takes (opacity, colormap, cal_min, cal_max, invert, ...); ' +
         'mesh.<index>.tract.<option> or mesh.<index>.connectome.<option>, the options set_mesh takes ' +
         '(fiberRadius, colorBy, nodeScale, ...), and mesh.<index>.tract.group for a select of the groups ' +
         'list_meshes reports (all, or one shown alone); dialog.<id>, for a button or menu item that opens ' +

@@ -1098,6 +1098,17 @@
       "doc": null
     },
     {
+      "jsName": "volumeIsChannelStack",
+      "pyName": "volume_is_channel_stack",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "volumeIsColormapAlphaOn2D",
       "pyName": "volume_is_colormap_alpha_on_2d",
       "tsType": "boolean",

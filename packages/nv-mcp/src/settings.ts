@@ -464,6 +464,10 @@ export const SETTINGS: readonly Setting[] = [
     'Whether overlays are hidden where the base is zero.',
   ),
   bool(
+    'volumeIsChannelStack',
+    'Whether the first volume is blended with the others as an equal channel, as fluorescence viewers do, instead of being drawn as an opaque base. Pair with volumeOverlayColorBlend max.',
+  ),
+  bool(
     'volumeIsColormapAlphaOn2D',
     "Whether the colormap's alpha applies on 2D slices.",
   ),

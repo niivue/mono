@@ -549,6 +549,7 @@ export class SliceRenderer extends NVRenderer {
       isColormapAlphaOn2D?: boolean
       drawRimOpacity?: number
       isV1SliceShader?: boolean
+      isChannelStack?: boolean
     },
     mvpMatrix: Float32Array,
     axCorSag: number,
@@ -625,7 +626,9 @@ export class SliceRenderer extends NVRenderer {
     const uniformData = new Float32Array(SLICE_UNIFORM_SIZE / 4)
     uniformData.set(mvpMatrix, 0) // mat4x4f mvpMtx (16 floats)
     uniformData.set(vol.frac2mm as Float32Array, 16) // mat4x4f frac2mm (16 floats)
-    uniformData[32] = drawnOpacity(vol) // f32 opacity (0 when hidden)
+    // f32 opacity: 0 when hidden, and 0 for a channel stack, whose volumes[0]
+    // is blended into the overlay texture instead.
+    uniformData[32] = md.isChannelStack ? 0 : drawnOpacity(vol)
     uniformData[33] = md.overlayAlphaShader ?? 1.0 // f32 overlayAlphaShader
     uniformData[34] = sliceFrac // f32 slice
     uniformData[35] = overlayOpacity // f32 overlayOpacity

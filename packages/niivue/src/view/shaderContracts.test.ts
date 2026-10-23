@@ -138,3 +138,33 @@ describe('SLICES depth pick', () => {
     expect(wgslRender).toMatch(/if \(dc\.a > 0\.0\)/)
   })
 })
+
+describe('stacked channel alpha', () => {
+  // Overlays are made fully opaque above their threshold by the orient bake;
+  // channels of a channel stack keep their colormap's alpha ramp instead. Both
+  // backends must gate that step on the same flag, or a fused stack would look
+  // different on WebGL2 and WebGPU.
+  const wgslOrient = readFileSync(
+    new URL('../wgpu/orient.wgsl', import.meta.url),
+    'utf8',
+  )
+  const glOrient = readFileSync(
+    new URL('../gl/orientOverlay.ts', import.meta.url),
+    'utf8',
+  )
+
+  test('the WGSL orient pass skips the alpha step when modFlags.z is set', () => {
+    expect(wgslOrient).toMatch(
+      /if \(overlayOpacity > 0\.0 && u\.modFlags\.z < 0\.5\) \{\s*color\.a = step\(0\.00001, color\.a\);/,
+    )
+    expect(count(wgslOrient, /step\(0\.00001, color\.a\)/g)).toBe(1)
+  })
+
+  test('the GLSL orient pass skips the alpha step when keepColormapAlpha is set', () => {
+    expect(glOrient).toMatch(/uniform int keepColormapAlpha;/)
+    expect(glOrient).toMatch(
+      /if \(overlayOpacity > 0\.0 && keepColormapAlpha == 0\)\s*FragColor\.a = step\(0\.00001, FragColor\.a\);/,
+    )
+    expect(count(glOrient, /step\(0\.00001, FragColor\.a\)/g)).toBe(1)
+  })
+})

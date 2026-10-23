@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { drawnOpacity, isVolumeDrawn } from './NVVolumeVisibility'
+import {
+  drawnOpacity,
+  isChannelStackActive,
+  isVolumeDrawn,
+} from './NVVolumeVisibility'
 
 // The overlay bake, the 2D/3D background opacity uniforms and both depth
 // picks go through these: a volume that is not drawn must not be picked
@@ -36,5 +40,30 @@ describe('drawnOpacity', () => {
     const vol = { opacity: 0.5, visible: false }
     expect(drawnOpacity(vol)).toBe(0)
     expect(vol.opacity).toBe(0.5)
+  })
+})
+
+// The channel stack moves volumes[0] into the overlay bake; the chunked
+// overlay path keys on the base and cannot take it, so it stays off there.
+describe('isChannelStackActive', () => {
+  test('on with two or more in-memory volumes', () => {
+    expect(isChannelStackActive(true, [{}, {}])).toBe(true)
+  })
+
+  test('off when the option is off', () => {
+    expect(isChannelStackActive(false, [{}, {}])).toBe(false)
+  })
+
+  test('off for a single volume, which has nothing to blend with', () => {
+    expect(isChannelStackActive(true, [{}])).toBe(false)
+    expect(isChannelStackActive(true, [])).toBe(false)
+  })
+
+  test('off while volumes[0] is chunked', () => {
+    expect(isChannelStackActive(true, [{ chunkPlan: {} }, {}])).toBe(false)
+  })
+
+  test('a chunked overlay does not turn it off', () => {
+    expect(isChannelStackActive(true, [{}, { chunkPlan: {} }])).toBe(true)
   })
 })

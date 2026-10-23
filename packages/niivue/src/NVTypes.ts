@@ -774,6 +774,17 @@ export type VolumeRenderConfig = {
    * their alpha, and the slice shader blends it).
    */
   isColormapAlphaOn2D: boolean
+  /**
+   * Treat every volume as an equal channel, as fluorescence viewers do:
+   * volumes[0] joins the overlay blend instead of being drawn as an opaque
+   * base, and the fused result lands on the canvas background. Pair it with
+   * OVERLAY_COLOR_BLEND.MAX for Vol-E style fusion. volumes[0] still sets the
+   * render grid. Ignored while volumes[0] is chunked (streamed or oversized):
+   * the chunked overlay path keys on the base and cannot blend it into itself.
+   * Stacked channels keep their colormap's alpha ramp; in 3D each channel's
+   * opacity sets how dense it looks.
+   */
+  isChannelStack: boolean
   isNearestInterpolation: boolean
   isV1SliceShader: boolean
   overlayAlphaBlend: OVERLAY_ALPHA_BLEND
@@ -1259,6 +1270,8 @@ export type NiiVueOptions = {
   volumeIsAlphaClipDark?: boolean
   /** Honour the background volume's colormap alpha on 2D slices (default false) */
   volumeIsColormapAlphaOn2D?: boolean
+  /** Blend volumes[0] with the overlays as an equal channel (default false). See VolumeRenderConfig.isChannelStack. */
+  volumeIsChannelStack?: boolean
   volumeIsNearestInterpolation?: boolean
   volumeIsV1SliceShader?: boolean
   volumeOverlayAlphaBlend?: OVERLAY_ALPHA_BLEND

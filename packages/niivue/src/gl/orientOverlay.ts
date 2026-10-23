@@ -239,6 +239,7 @@ uniform float cal_maxNeg;
 uniform int isAlphaThreshold;
 uniform int isColorbarFromZero;
 uniform float overlayOpacity;
+uniform int keepColormapAlpha;
 uniform highp sampler2D colormap;
 uniform highp sampler2D colormapNeg;
 uniform mat4 mtx;
@@ -332,8 +333,9 @@ void main(void) {
         txl = max(txl, 2.0/256.0);
         FragColor = texture(colormapNeg, vec2(clamp(txl, 0.0, 1.0), 0.5));
     }
-    // Overlay: make alpha binary (fully opaque or fully transparent)
-    if (overlayOpacity > 0.0)
+    // Overlay: make alpha binary (fully opaque or fully transparent), unless the
+    // overlay is a stacked channel, which keeps its colormap's alpha ramp
+    if (overlayOpacity > 0.0 && keepColormapAlpha == 0)
         FragColor.a = step(0.00001, FragColor.a);
     // Alpha threshold effects
     if (isAlphaThreshold != 0) {
@@ -459,6 +461,7 @@ function getUniformLocations(
     isAlphaThreshold: gl.getUniformLocation(program, 'isAlphaThreshold'),
     isColorbarFromZero: gl.getUniformLocation(program, 'isColorbarFromZero'),
     overlayOpacity: gl.getUniformLocation(program, 'overlayOpacity'),
+    keepColormapAlpha: gl.getUniformLocation(program, 'keepColormapAlpha'),
     colormap: gl.getUniformLocation(program, 'colormap'),
     colormapNeg: gl.getUniformLocation(program, 'colormapNeg'),
     intensityVol: gl.getUniformLocation(program, 'intensityVol'),
@@ -874,6 +877,7 @@ export function prepareOverlayTextureCache(
   overlayOpacity = 1,
   existingCache: OverlayTextureCache | null = null,
   mod: ModulationTextureParams | null = null,
+  keepColormapAlpha = false,
 ): OverlayTextureCache {
   mod = supportedModulation(gl, mod)
   if (!nvimageTarget.dimsRAS) {
@@ -915,7 +919,15 @@ export function prepareOverlayTextureCache(
     }
     // Likewise a modulator edited in place only rewrites the weights.
     syncModTexture(gl, existingCache, mod)
-    renderOverlayCache(gl, existingCache, nvimage, mtx, overlayOpacity, mod)
+    renderOverlayCache(
+      gl,
+      existingCache,
+      nvimage,
+      mtx,
+      overlayOpacity,
+      mod,
+      keepColormapAlpha,
+    )
     return existingCache
   }
   destroyOverlayTextureCache(gl, existingCache)
@@ -1063,7 +1075,15 @@ export function prepareOverlayTextureCache(
     modDims: mod ? [...mod.dims] : null,
     modKey,
   }
-  renderOverlayCache(gl, cache, nvimage, mtx, overlayOpacity, mod)
+  renderOverlayCache(
+    gl,
+    cache,
+    nvimage,
+    mtx,
+    overlayOpacity,
+    mod,
+    keepColormapAlpha,
+  )
   return cache
 }
 
@@ -1074,6 +1094,7 @@ function renderOverlayCache(
   mtx: Float32Array,
   overlayOpacity = 1,
   mod: ModulationTextureParams | null = null,
+  keepColormapAlpha = false,
 ): void {
   const savedViewport = gl.getParameter(gl.VIEWPORT) as Int32Array
   const savedCullFace = gl.isEnabled(gl.CULL_FACE)
@@ -1113,6 +1134,8 @@ function renderOverlayCache(
     gl.uniform1i(uniforms.isColorbarFromZero, u.isColorbarFromZero)
   if (uniforms.overlayOpacity)
     gl.uniform1f(uniforms.overlayOpacity, u.overlayOpacity)
+  if (uniforms.keepColormapAlpha)
+    gl.uniform1i(uniforms.keepColormapAlpha, keepColormapAlpha ? 1 : 0)
   if (uniforms.mtx) gl.uniformMatrix4fv(uniforms.mtx, false, mtx)
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
@@ -1177,6 +1200,7 @@ export function overlay2Texture(
   outDimsOverride?: readonly number[],
   mod: ModulationTextureParams | null = null,
   sharedModTexture: WebGLTexture | null = null,
+  keepColormapAlpha = false,
 ): WebGLTexture {
   mod = supportedModulation(gl, mod)
   if (nvimage.hdr.datatypeCode === 128 || nvimage.hdr.datatypeCode === 2304) {
@@ -1467,6 +1491,8 @@ export function overlay2Texture(
     gl.uniform1i(uniforms.isColorbarFromZero, u.isColorbarFromZero)
   if (uniforms.overlayOpacity)
     gl.uniform1f(uniforms.overlayOpacity, u.overlayOpacity)
+  if (uniforms.keepColormapAlpha)
+    gl.uniform1i(uniforms.keepColormapAlpha, keepColormapAlpha ? 1 : 0)
   if (uniforms.mtx) gl.uniformMatrix4fv(uniforms.mtx, false, mtx)
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)

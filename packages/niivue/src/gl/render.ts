@@ -429,6 +429,9 @@ export class VolumeRenderer extends NVRenderer {
   // See OVERLAY_ALPHA_BLEND / OVERLAY_COLOR_BLEND.
   overlayAlphaBlend = OVERLAY_ALPHA_BLEND.MAX
   overlayColorBlend = OVERLAY_COLOR_BLEND.ADDITIVE
+  // Stacked channels (isChannelStack) keep their colormap's alpha ramp in the
+  // overlay bake; other overlays are made fully opaque above their threshold.
+  overlayKeepsColormapAlpha = false
   // Scene display gamma (set per-frame from md.scene.gamma). Applied to the
   // classified RGB of every volume sample, never to alpha, so brightening does
   // not change how much a ray occludes. 1.0 is a strict no-op.
@@ -1935,6 +1938,7 @@ export class VolumeRenderer extends NVRenderer {
         vol.opacity ?? 1,
         this.overlayOrientCache,
         buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
+        this.overlayKeepsColormapAlpha,
       )
       this.overlayTexture = this.overlayOrientCache.outputTexture
       gl.bindTexture(gl.TEXTURE_3D, null)
@@ -1955,6 +1959,8 @@ export class VolumeRenderer extends NVRenderer {
           vol.opacity ?? 1,
           undefined,
           buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
+          null,
+          this.overlayKeepsColormapAlpha,
         )
         const data = orientOverlay.readTexture3D(gl, tex, dimsOut)
         gl.deleteTexture(tex)
@@ -2014,6 +2020,7 @@ export class VolumeRenderer extends NVRenderer {
       overlayVol.opacity ?? 1,
       this.overlayOrientCache,
       buildModulationParams(overlayVol, baseVol, [baseVol, overlayVol]),
+      this.overlayKeepsColormapAlpha,
     )
     this.overlayTexture = this.overlayOrientCache.outputTexture
     return true

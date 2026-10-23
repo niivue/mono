@@ -307,6 +307,9 @@ export default class NVModel {
       ...(options.volumeIsColormapAlphaOn2D !== undefined && {
         isColormapAlphaOn2D: options.volumeIsColormapAlphaOn2D,
       }),
+      ...(options.volumeIsChannelStack !== undefined && {
+        isChannelStack: options.volumeIsChannelStack,
+      }),
       ...(options.volumeIsNearestInterpolation !== undefined && {
         isNearestInterpolation: options.volumeIsNearestInterpolation,
       }),

@@ -25,6 +25,8 @@ type SliceModel = {
   isColormapAlphaOn2D?: boolean
   drawRimOpacity?: number
   isV1SliceShader?: boolean
+  /** volumes[0] is blended into the overlay, so the base draws at opacity 0. */
+  isChannelStack?: boolean
 }
 
 export class SliceRenderer extends NVRenderer {
@@ -297,7 +299,10 @@ export class SliceRenderer extends NVRenderer {
     if (this._shader.uniforms.slice)
       gl.uniform1f(this._shader.uniforms.slice, sliceFrac)
     if (this._shader.uniforms.opacity)
-      gl.uniform1f(this._shader.uniforms.opacity, drawnOpacity(vol))
+      gl.uniform1f(
+        this._shader.uniforms.opacity,
+        md.isChannelStack ? 0 : drawnOpacity(vol),
+      )
     if (this._shader.uniforms.overlayAlphaShader)
       gl.uniform1f(
         this._shader.uniforms.overlayAlphaShader,

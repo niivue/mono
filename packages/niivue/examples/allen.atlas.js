@@ -2,6 +2,7 @@ import NiiVue, {
   allenAtlasSpacing,
   fetchAllenAtlasInfo,
   loadAllenAtlasVolumes,
+  OVERLAY_COLOR_BLEND,
   SHOW_RENDER,
   SLICE_TYPE,
 } from '../src/index.ts'
@@ -45,6 +46,25 @@ const nv1 = new NiiVue({
   showRender: SHOW_RENDER.ALWAYS,
   isColorbarVisible: false,
 })
+
+// Fused (the default): every channel counts alike, its brightest colour kept,
+// on black, as fluorescence viewers such as Vol-E show them. Unfused: the
+// first channel is an opaque base and the rest blend translucent on top.
+const fuseCheck = document.getElementById('fuse')
+function applyFusion() {
+  nv1.volumeIsChannelStack = fuseCheck.checked
+  nv1.volumeOverlayColorBlend = fuseCheck.checked
+    ? OVERLAY_COLOR_BLEND.MAX
+    : OVERLAY_COLOR_BLEND.ADDITIVE
+  opacityInput.disabled = fuseCheck.checked
+}
+applyFusion()
+fuseCheck.onchange = () => {
+  applyFusion()
+  if (nv1.volumes.length > 0) {
+    applyDisplay()
+  }
+}
 window.nv1 = nv1
 nv1.addEventListener('locationChange', (e) => {
   footer.textContent = e.detail.string
@@ -115,9 +135,9 @@ function showChannels(info) {
  * floors at 126/82/72 rather than 0), and the whole cell body is above that
  * floor in every channel, so the robust auto-window saturates and each new
  * channel paints over the one below it. Windowing floor-to-peak keeps the
- * structure visible, and the opacity is what lets stacked channels show
- * through: NiiVue alpha-composites overlays rather than accumulating them the
- * way a dedicated multi-channel microscopy viewer would.
+ * structure visible. Fused, every channel is drawn at full opacity and the
+ * brightest colour wins; unfused, the overlay opacity is what lets stacked
+ * channels show through the opaque first one.
  */
 function applyDisplay() {
   const overlayOpacity = Number(opacityInput.value)
@@ -125,7 +145,7 @@ function applyDisplay() {
     nv1.setVolume(index, {
       calMin: volume.globalMin,
       calMax: volume.globalMax,
-      opacity: index === 0 ? 1 : overlayOpacity,
+      opacity: index === 0 || fuseCheck.checked ? 1 : overlayOpacity,
     })
   })
 }

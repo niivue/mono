@@ -1,0 +1,90 @@
+---
+sidebar_position: 13
+title: Animation
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/animation'
+
+# Animation
+
+Setting a property such as `nv.azimuth` jumps straight to the new value.
+`animateTo` moves the scene there over time instead, which helps a viewer
+follow a change of view: a camera turn, a clip plane sweeping through the
+brain, an overlay fading in.
+
+```js
+await nv.animateTo({ azimuth: 120, elevation: 20 }, { duration: 1000 })
+```
+
+## The target
+
+The target is a plain object, and anything you leave out stays where it is:
+
+- `azimuth`, `elevation` and `scaleMultiplier`: the 3D camera and zoom.
+- `renderPan`: the 3D pan.
+- `pan2Dxyzmm`: 2D pan and zoom, as x, y, z in mm plus the zoom factor.
+- `crosshairMM`: the crosshair position in world millimeters.
+- `clipPlanes`: clip planes by index, each as `[depth, azimuth, elevation]`.
+- `volumes`: volumes by index, moving `calMin`, `calMax`, `opacity` and
+  `frame4D` (which steps through the frames in between).
+- `meshes`: meshes by index, moving `opacity`.
+
+Volumes, meshes and clip planes are keyed by index, so a target is plain
+JSON that you can store or send:
+
+```js
+await nv.animateTo({
+  crosshairMM: [-38, -20, 52],
+  clipPlanes: { 0: [0, 270, 0] },
+  volumes: { 1: { opacity: 0.8 } },
+})
+```
+
+## Options
+
+The second argument sets how the move runs:
+
+- `duration` in milliseconds (default 500). Use 0 to jump to the target.
+- `easing`: `'easeInOut'` (the default), `'easeIn'`, `'easeOut'`, `'linear'`,
+  or your own function from elapsed time (0 to 1) to progress (0 to 1).
+- `angles`: by default azimuth and elevation turn the short way round, so
+  350 to 10 moves 20 degrees. With `'literal'` the numbers are interpolated
+  as given, so adding 360 to the azimuth makes one full turn.
+- `interruptOnInput`: pressing on or scrolling the canvas stops the move
+  (default `true`).
+
+Try the buttons, and drag the canvas while a move runs to stop it:
+
+<Demo load={() => import('@site/src/demos/animation')} source={source} />
+
+## How a move ends
+
+Only one move runs at a time. Starting a new one stops the current one where
+it is, and the new move starts from there. `stopAnimation()` stops it
+without starting another, and `isAnimating` tells you whether one is
+running.
+
+The promise `animateTo` returns never rejects. It resolves with `completed`
+(true when the scene reached the target), `elapsedMs`, and a `reason`:
+`'finished'`, `'superseded'`, `'input'`, `'stopped'` or `'destroyed'`. If
+the page stops drawing frames (a hidden tab, for example), the scene jumps
+to the target and the reason is `'stalled'`. If a setter fails while writing
+the target, the reason is `'failed'` and `failed` lists what did not land.
+
+To chain steps, await each one and stop when a step does not complete:
+
+```js
+for (const step of [{ azimuth: 200 }, { elevation: 40 }, { azimuth: 110 }]) {
+  const result = await nv.animateTo(step)
+  if (!result.completed) break
+}
+```
+
+Each frame writes through the usual property setters, so `change` and other
+events fire during the move. Camera, crosshair, clip plane and mesh opacity
+changes only redraw. A volume's window and opacity rebuild GPU state on each
+write, so on a large volume some frames are skipped rather than queued.
+
+See [Animated transitions](/gallery/animate) for a guided tour built from
+chained steps.

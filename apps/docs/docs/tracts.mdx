@@ -1,0 +1,110 @@
+---
+sidebar_position: 8
+title: Tractography and connectomes
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/tracts'
+
+# Tractography and connectomes
+
+Streamlines and connectomes load with `loadMeshes`, like surfaces. NiiVue
+looks at the file type and builds tubes for streamlines, or spheres and
+cylinders for a connectome's nodes and edges. They share the mesh options
+(`opacity`, `visible`, `shaderType`), and each kind adds its own set of
+display options.
+
+## Streamlines
+
+NiiVue reads TCK, TRK, TRX, TT (DSI-Studio) and VTK line files. Each
+streamline becomes a tube; `tractOptions` in the load options sets how:
+
+```js
+await nv.loadMeshes([
+  {
+    url: '/meshes/tract.IFOF_R.trk',
+    tractOptions: { fiberRadius: 0.5, fiberSides: 7 },
+  },
+])
+```
+
+Change them later with `setTractOptions(meshIndex, options)`, which rebuilds
+the tubes:
+
+- `fiberRadius` (mm, default 0.5) and `fiberSides` (default 7) set the tube
+  shape. Fewer sides draw faster.
+- `decimation` shows every Nth streamline (1 shows all), and `minLength`
+  hides streamlines shorter than that many millimeters. Both help with
+  large tractograms.
+- `colorBy` chooses the coloring: `''` (the default) colors each segment by
+  its local direction, `'global'` by the start-to-end direction of the whole
+  streamline, and `'fixed'` uses `fixedColor` (RGBA, 0 to 255; it defaults
+  to the mesh `color`).
+
+## Scalars
+
+Per-vertex and per-streamline values color streamlines through a colormap.
+Load MRtrix TSF files (one value per vertex) and plain text files (one value
+per streamline) as `layers` of the tract. TRX files can carry both kinds
+inside. Each scalar is named after its file without the extension, and you
+select it with `colorBy: 'dpv:<name>'` (per vertex) or `'dps:<name>'` (per
+streamline). `colormap`, `colormapNegative`, `calMin` and `calMax` then map
+the values to colors; when you switch scalars, the range resets to fit the
+new data.
+
+<Demo load={() => import('@site/src/demos/tracts')} source={source} />
+
+## Groups
+
+TRX files can group streamlines, for example by bundle. `getTractGroups(meshIndex)`
+returns the group names, and `groupColors` shows only the listed groups,
+each in its own RGBA color (0 to 255). Set it to `null` to show everything
+again:
+
+```js
+const [first] = nv.getTractGroups(0)
+await nv.setTractOptions(0, { groupColors: { [first]: [230, 25, 75, 255] } })
+await nv.setTractOptions(0, { groupColors: null })
+```
+
+See [Single group](/gallery/tract-group) and
+[Multiple groups](/gallery/tract-groups).
+
+## Connectomes
+
+A connectome is a set of named nodes (positions in mm with a color value and
+a size value) and weighted edges between them. NiiVue reads them from JCON,
+a JSON format; the file can also carry display options. Nodes become spheres
+and edges become cylinders:
+
+```js
+await nv.loadMeshes([{ url: '/meshes/connectome.jcon', isLegendVisible: true }])
+await nv.setConnectomeOptions(0, { nodeScale: 4, edgeMin: 3 })
+```
+
+The options split into nodes and edges:
+
+- Nodes: `nodeColormap`, `nodeColormapNegative`, `nodeMinColor`,
+  `nodeMaxColor` and `nodeScale` (sphere size multiplier, default 3).
+- Edges: `edgeColormap`, `edgeColormapNegative`, `edgeMin` (edges weaker
+  than this are hidden), `edgeMax` and `edgeScale` (cylinder size
+  multiplier, default 1).
+
+The [Connectome](/gallery/connectome) example shows a dense and a sparse
+connectome over a clipped volume.
+
+## Not yet supported
+
+From [FEATURE_PARITY.md](https://github.com/niivue/mono/blob/main/packages/niivue/FEATURE_PARITY.md):
+AFNI `.niml.tract` files and the FreeSurfer connectome loader
+(`loadFreeSurferConnectome`) are not ported.
+
+## Examples
+
+- [Tractography](/gallery/tract): TRK, TCK and TRX files with radius, sides
+  and decimation controls
+- [TrackVis with brain mesh](/gallery/tract-trk): three tracts and a surface
+- [MRtrix statistics](/gallery/tract-tsf): TSF and per-streamline scalars
+- [DSI-Studio TinyTrack](/gallery/tract-dsi)
+
+Surfaces and their layers are covered in [Meshes and layers](./meshes).

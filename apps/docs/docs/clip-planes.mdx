@@ -1,0 +1,100 @@
+---
+sidebar_position: 6
+title: Clip planes and cutaways
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/clip-planes'
+
+# Clip planes and cutaways
+
+Clip planes slice away part of the 3D render so you can see inside a
+volume. A viewer has up to six of them.
+
+<Demo load={() => import('@site/src/demos/clip-planes')} source={source} />
+
+## Describing a plane
+
+Each plane is three numbers, `[depth, azimuth, elevation]`:
+
+- `depth` is the plane's distance from the center of the volume, from -1 to
+  1. A depth of 0 cuts through the middle. A depth of 2, which
+  `setClipPlanes` uses for the slots you leave out, turns the plane off.
+- `azimuth` and `elevation` are the direction the plane faces, in degrees,
+  using the same angles as the render camera. For example `[0, 90, 0]` cuts
+  at the midline from the right, and `[0.1, 0, -90]` trims from below.
+
+## Setting planes
+
+`setClipPlanes` replaces every plane at once. Planes you leave out are turned
+off, so an empty list removes all clipping:
+
+```js
+nv.setClipPlanes([
+  [0.1, 180, 20],
+  [0.1, 0, -20],
+])
+nv.setClipPlanes([]) // no clipping
+```
+
+To change one plane, use `setClipPlaneDepthAziElev(depth, azimuth,
+elevation, index)`, or `setClipPlane([depth, azimuth, elevation])`, which
+sets the active plane (`activeClipPlaneIndex`, 0 by default).
+`getClipPlaneDepthAziElev(index)` reads a plane back.
+
+```js
+nv.setClipPlaneDepthAziElev(0.3, 90, 0, 1) // plane 1
+nv.setClipPlane([0, 270, 0])               // the active plane
+```
+
+`setClipPlane` and `setClipPlaneDepthAziElev` fire a `clipPlaneChange` event
+with the new `[depth, azimuth, elevation]`. `setClipPlanes` does not.
+
+## Cutaways
+
+By default each plane removes everything on its side, so adding planes trims
+the volume further. Set `isClipPlaneCutaway` to `true` to remove only the
+region that lies behind all the planes at once. With two or three planes this
+cuts a notch out of the volume and leaves the rest intact, which is the
+classic anatomical cutaway.
+
+```js
+nv.isClipPlaneCutaway = true
+```
+
+## The cut surface
+
+`clipPlaneColor` is an RGBA color for the surface where a plane cuts the
+volume. Its alpha picks one of three looks:
+
+| Alpha | Result |
+|-------|--------|
+| `0` | the cut is invisible; you see straight into the volume |
+| greater than 0 | the plane is drawn as a translucent sheet of that color |
+| less than 0 | the cut surface of the volume is tinted by the color, with strength `abs(alpha)` |
+
+```js
+nv.clipPlaneColor = [0.7, 0, 0.7, 0.4] // the default
+```
+
+Always assign the property. Editing the array the getter returns changes the
+color but does not redraw the view.
+
+## Keyboard and mouse
+
+With the pointer over the viewer, the `C` key cycles the active plane through
+a few preset directions (posterior, right, left, anterior, inferior,
+superior, then off), and `A` chooses which of the six planes is active.
+Scrolling over the render moves the active plane's depth while it is inside
+the volume, and a right drag turns it. FEATURE_PARITY.md marks full parity with the old package's clip
+plane mouse and keyboard handling as not yet verified.
+
+Clip planes affect the 3D render. Mesh clipping on 2D slices is a separate
+setting, `meshThicknessOn2D`; see [Meshes and layers](./meshes).
+
+## See also
+
+- [Clip planes](/gallery/vox-clip): one to six planes, cutaway and cut
+  surface options.
+- [FreeSurfer clip](/gallery/freesurfer-clip): a clip plane over a
+  FreeSurfer volume and pial surface.

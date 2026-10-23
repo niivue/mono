@@ -1,0 +1,121 @@
+---
+sidebar_position: 17
+title: Developing NiiVue
+---
+
+# Developing NiiVue
+
+NiiVue lives in the [niivue/mono](https://github.com/niivue/mono) monorepo
+with its React bindings, extensions, demo apps and this site. The tools are
+Bun (package manager and runtime), Nx (task runner with caching), Vite and
+Biome (lint and format). Use `bun` and `bunx`, not `npm` or `npx`.
+
+## Setup
+
+The sample images are stored with Git LFS, so pull them after cloning:
+
+```bash
+git clone https://github.com/niivue/mono.git
+cd mono
+git lfs install
+git lfs pull
+bun install
+```
+
+## The example pages
+
+The pages in `packages/niivue/examples` are the main way to work on the
+library. They import `../src/index.ts` directly, so an edit to the source
+reloads the page at once:
+
+```bash
+cd packages/niivue
+bun run dev
+```
+
+This serves the examples at `http://localhost:5273/examples/index.html`,
+with the sample volumes and meshes under `/volumes/` and `/meshes/`. From
+the repository root, `bunx nx dev niivue` starts the same pages through Nx
+(it uses the Vite config's port, so check the URL it prints).
+
+To add an example, write the `.html` page (and a `.js` beside it if the
+script is long), then add a link to it in `examples/index.html`. That link
+is also what puts the page in this site's [Gallery](/gallery).
+
+## Tests and checks
+
+The `niivue` package uses the Bun test runner, with tests next to the
+source as `*.test.ts`:
+
+```bash
+bunx nx test niivue
+cd packages/niivue && bun test   # or run Bun directly
+```
+
+Before you open a pull request, run the checks CI runs. From the root:
+
+```bash
+bunx nx affected -t format
+bunx nx affected -t lint
+bunx nx affected -t typecheck
+bunx nx affected -t test
+bunx nx affected -t build
+bun run check-boundaries
+```
+
+`nx affected` runs only the projects your branch changed. On `main`, name
+the project instead, as in `bunx nx run niivue:lint`. CI also spell-checks
+`packages/niivue` with codespell. The repository's
+[AGENTS.md](https://github.com/niivue/mono/blob/main/AGENTS.md) and
+[CONTRIBUTING.md](https://github.com/niivue/mono/blob/main/CONTRIBUTING.md)
+cover code style, commit messages and the rest of the workflow.
+
+## About this site
+
+The site is a [Docusaurus](https://docusaurus.io/) app in `apps/docs`
+(the Nx project `docs-site`). The guides are MDX files in `apps/docs/docs`.
+
+Each live demo is a small module in `apps/docs/src/demos`. It receives a
+canvas, a helper for the control bar, and an `asset()` function that
+resolves sample file paths, and it returns the viewer it made.
+`src/components/Demo.tsx` loads the module in the browser, runs it, shows
+its source under the canvas, and destroys the viewer when you leave the
+page. A guide embeds one with:
+
+```mdx
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/meshes'
+
+<Demo load={() => import('@site/src/demos/meshes')} source={source} />
+```
+
+The Gallery is generated at build time by `apps/docs/plugins/gallery.ts`.
+It reads the sections and links of `packages/niivue/examples/index.html` for
+the order, grouping and titles. It then builds the repository knowledge
+graph (`bun run graph:build`, described in
+[KNOWLEDGE_GRAPH.md](https://github.com/niivue/mono/blob/main/KNOWLEDGE_GRAPH.md)),
+which records the scripts each HTML page loads, and shows the page's inline
+script plus those files, with the library imports rewritten to
+`@niivue/niivue`. A new example appears in the Gallery once it is linked
+from `examples/index.html`; there is nothing else to register.
+
+## Running the site
+
+```bash
+bunx nx dev docs-site     # dev server with live reload
+bunx nx build docs-site   # static build in apps/docs/dist
+```
+
+Both build the workspace libraries first. Demos and Gallery pages load
+their images and example pages from the published examples site,
+`https://niivue.github.io/mono/`. To try examples or sample files that are
+not published yet, start the example server and point the site at it with
+`DOCS_EXAMPLES_BASE`:
+
+```bash
+cd packages/niivue && bun run dev        # in one terminal
+DOCS_EXAMPLES_BASE=http://localhost:5273/ bunx nx dev docs-site
+```
+
+`DOCS_BASE_URL` sets the path the site is served from (`/` by default). The
+GitHub Pages build sets it to `/mono/docs/`.

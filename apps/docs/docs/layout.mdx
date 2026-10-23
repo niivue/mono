@@ -1,0 +1,132 @@
+---
+sidebar_position: 5
+title: Layouts and slice types
+---
+
+import Demo from '@site/src/components/Demo'
+import layoutSource from '!!raw-loader!@site/src/demos/layout'
+import boundsSource from '!!raw-loader!@site/src/demos/layout-bounds'
+
+# Layouts and slice types
+
+A viewer arranges its canvas into tiles: 2D slices, a 3D render, or both.
+You pick the arrangement with a few layout properties. Like every viewer
+setting, they can go in the constructor or be assigned later, and the view
+redraws.
+
+<Demo load={() => import('@site/src/demos/layout')} source={layoutSource} />
+
+## Slice type
+
+`sliceType` takes a `SLICE_TYPE` value:
+
+| Value | View |
+|-------|------|
+| `SLICE_TYPE.AXIAL` (0) | one axial slice |
+| `SLICE_TYPE.CORONAL` (1) | one coronal slice |
+| `SLICE_TYPE.SAGITTAL` (2) | one sagittal slice |
+| `SLICE_TYPE.MULTIPLANAR` (3, default) | all three slices, plus a render when there is room |
+| `SLICE_TYPE.RENDER` (4) | the 3D render only |
+| `SLICE_TYPE.NONE` (5) | no spatial view; the whole canvas goes to the signal graph |
+
+```js
+import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+
+const nv = new NiiVue({ sliceType: SLICE_TYPE.AXIAL })
+nv.sliceType = SLICE_TYPE.RENDER
+```
+
+A single 2D slice fills the canvas by default. Set `isSingleViewFillCanvas`
+to `false` to letterbox it to the slice's aspect ratio instead.
+
+## Multiplanar options
+
+In multiplanar mode, `multiplanarType` sets how the tiles are arranged:
+`MULTIPLANAR_TYPE.AUTO` (picks a layout that suits the canvas shape),
+`COLUMN`, `GRID` or `ROW`.
+
+`showRender` decides whether the 3D render joins the slices.
+`SHOW_RENDER.ALWAYS` always adds it and `SHOW_RENDER.NEVER` never does. The
+default, `SHOW_RENDER.AUTO`, adds it only when that does not make the slices
+smaller.
+
+A few more properties shape the tiles:
+
+- `heroFraction` (0 to 1) gives one large "hero" tile that share of the
+  canvas, and `heroSliceType` picks which view it shows (the render by
+  default).
+- `isEqualSize` makes every tile the same size, instead of sizing each one
+  to its slice's extent.
+- `tileMargin` adds a gap, in pixels, between tiles.
+- `isRadiological` flips left and right.
+
+```js
+nv.multiplanarType = MULTIPLANAR_TYPE.GRID
+nv.showRender = SHOW_RENDER.ALWAYS
+nv.heroFraction = 0.6
+```
+
+## Mosaics
+
+A mosaic shows many slices at once. Set `mosaicString` to a short list of
+tokens; while it is non-empty it overrides `sliceType`. Set it back to `''`
+to return to the normal layout.
+
+- `A`, `C` and `S` choose axial, coronal or sagittal for the numbers that
+  follow.
+- Each number is a slice position in mm and becomes one tile.
+- `R` makes the next tile a 3D render seen from that orientation. A negative
+  number (or `-0`) views it from the opposite side.
+- `X` draws cross-lines on the next tile, marking where the other slices sit.
+- `L` turns slice labels on and `L-` turns them off.
+- `;` starts a new row.
+
+```js
+nv.mosaicString = 'A -20 0 20 40 ; C -30 0 30 S R X 0'
+```
+
+`isMosaicCentered` (on by default) centers the mosaic on the canvas.
+
+## Custom layouts
+
+For full control, give `customLayout` a list of tiles. Each tile has a
+`sliceType` and a `position` of `[left, top, width, height]`, all as
+fractions of the canvas, measured from the top left. A tile can also fix its
+slice at `sliceMM`, or set `fill: true` to fill its pane instead of keeping
+the slice's aspect ratio.
+
+```js
+nv.customLayout = [
+  { sliceType: SLICE_TYPE.SAGITTAL, position: [0, 0, 0.5, 1] },
+  { sliceType: SLICE_TYPE.CORONAL, position: [0.5, 0, 0.5, 0.5] },
+  { sliceType: SLICE_TYPE.AXIAL, position: [0.5, 0.5, 0.5, 0.5] },
+]
+nv.clearCustomLayout() // back to the built-in layouts
+```
+
+The setter checks the list and throws if a tile is invalid.
+
+## Several viewers in one canvas
+
+Two or more viewers can share a canvas, each drawing into its own region.
+Pass `bounds` to the constructor as `[[x1, y1], [x2, y2]]`, or call
+`setBounds([x1, y1, x2, y2])` later. Coordinates are fractions of the canvas,
+with `y = 0` at the **bottom** (unlike `customLayout`). `clearBounds()` gives
+a viewer the whole canvas again, and `showBoundsBorder`,
+`boundsBorderColor` and `boundsBorderThickness` outline each region.
+
+<Demo load={() => import('@site/src/demos/layout-bounds')} source={boundsSource} />
+
+Each viewer has its own volumes and settings. If you move one viewer's
+region, call `drawScene()` on the others so the shared canvas repaints. To
+make the viewers follow each other, see [Linking viewers](./sync).
+
+Viewers that share a canvas also share its backend, so a shared canvas does
+not fall back from WebGPU to WebGL2: if you ask for `backend: 'webgpu'` and
+the machine has no WebGPU adapter, `attachToCanvas` throws.
+
+## See also
+
+- [Layout](/gallery/layout): every layout property in one page.
+- [Custom layout](/gallery/layout-custom): several predefined `customLayout`s.
+- [Bounds](/gallery/bounds): two linked viewers on one canvas.

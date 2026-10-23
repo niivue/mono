@@ -1,0 +1,18 @@
+{
+  "extends": "@docusaurus/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["@docusaurus/module-type-aliases"]
+  },
+  "include": [
+    "src",
+    "plugins",
+    "scripts",
+    "docusaurus.config.ts",
+    "sidebars.ts"
+  ],
+  "exclude": ["dist", ".docusaurus", "node_modules"]
+}

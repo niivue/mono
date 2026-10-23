@@ -4,6 +4,7 @@ node_modules/
 .pixi/
 dist/
 _site/
+.docusaurus/
 .ipynb_checkpoints/
 __pycache__/
 *.pyc

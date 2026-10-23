@@ -1,0 +1,119 @@
+---
+sidebar_position: 9
+title: Atlases and labels
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/atlases'
+
+# Atlases and labels
+
+A label volume (an atlas) stores an integer region code in each voxel
+instead of an intensity. To display it, you give the volume a label
+colormap: a color and a name for each code. NiiVue then draws each region
+in its own color and reports the region name under the crosshair.
+
+The demo loads the AAL atlas over the MNI152 template. Click anywhere to see
+the region name:
+
+<Demo load={() => import('@site/src/demos/atlases')} source={source} />
+
+## Label colormaps
+
+`setColormapLabelFromUrl` fetches a JSON file with `R`, `G` and `B` arrays
+plus `labels` (and optionally `I`, the code of each entry) and applies it to
+a volume:
+
+```js
+await nv.loadVolumes([
+  { url: '/volumes/mni152.nii.gz', calMin: 30, calMax: 80 },
+  { url: '/volumes/aal.nii.gz', opacity: 0.5 },
+])
+await nv.setColormapLabelFromUrl(1, '/volumes/aal.json')
+```
+
+The URL can also be a `File`. `setColormapLabel` takes the same shape as an
+object, or the name of a built-in colormap such as `'freesurfer'`. Pass
+`null` to remove the label colormap:
+
+```js
+await nv.setColormapLabel(1, 'freesurfer')
+```
+
+Label volumes are sampled with nearest-neighbor interpolation on 2D slices,
+so region borders stay sharp. A volume's `isNearestInterpolation` option
+overrides that choice.
+
+## Reading labels
+
+With a label colormap set, the `locationChange` event includes the region
+name for each volume in `detail.values[i].label`:
+
+```js
+nv.addEventListener('locationChange', (e) => {
+  console.log(e.detail.values[1]?.label)
+})
+```
+
+To measure the background image inside one region, pass that region's code
+as a mask to `getDescriptives`:
+
+```js
+const stats = nv.getDescriptives({ volumeIndex: 0, masks: [{ index: 1, values: [17] }] })
+```
+
+## Outlines and dark voxels
+
+`nv.setAtlasOutline(width, volumeIndex)` outlines the region borders. The
+width is the distance, in the atlas's own voxels, that NiiVue probes for a
+neighboring label, and 0 turns it off. You can also set `atlasOutline` in the load options. Outlines
+are not drawn on streamed (chunked) volumes.
+
+`nv.volumeIsAlphaClipDark = true` makes voxels below `calMin` transparent,
+which hides the dark air around a template.
+
+## Labels on a drawing
+
+You can also show labels in the drawing layer. Register a colormap with
+`labels`, make it the drawing colormap, and load the label image as a
+drawing:
+
+```js
+nv.addColormap('_torso', {
+  R: [0, 0, 185],
+  G: [0, 20, 102],
+  B: [0, 152, 83],
+  A: [0, 255, 255],
+  I: [0, 1, 2],
+  labels: ['background', 'spleen', 'kidneyR'],
+})
+nv.drawColormap = '_torso'
+await nv.loadDrawing('/volumes/torsoLabel.nii.gz')
+```
+
+A name that starts with `_` stays out of `nv.colormaps`. See
+[Drawing and segmentation](./drawing) for editing the drawing.
+
+## Probabilistic and mesh atlases
+
+PAQD files store a probabilistic atlas (several labels and probabilities per
+voxel). `nv.volumePaqdUniforms` tunes how they render; see the
+[PAQD atlas](/gallery/vox-paqd) example.
+
+Meshes can carry atlas labels too. MZ3 atlas meshes load with `loadMeshes`,
+and `setMesh(0, { isLegendVisible: true })` shows their legend. Readers for
+FreeSurfer annot files and GIfTI label layers have not been ported yet, so
+other mesh atlas formats do not load.
+
+NiiVue 0.x had `addLabel()` for text labels in the 3D view. This version
+does not. The `@niivue/uikit` package's `UIKitPointLabelOverlay` draws a text
+label with a leader line to a point instead.
+
+## In the gallery
+
+- [Voxel atlas](/gallery/vox-atlas)
+- [Atlas with a statistical map](/gallery/vox-atlas-stat)
+- [Torso labels](/gallery/vox-torso)
+- [Mesh atlas](/gallery/mesh-atlas)
+- [PAQD atlas](/gallery/vox-paqd)
+- [BigBrain atlas](/gallery/vox-atlas-bigbrain)

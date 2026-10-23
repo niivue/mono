@@ -48,7 +48,11 @@ Edges use these relationships:
 - `imports`: a source-file import. Relative and `@/`-aliased specifiers
   resolve to the target file; workspace package specifiers (`@niivue/...`)
   resolve to the target project. Vite query suffixes (`?raw`,
-  `?worker&inline`) are stripped before resolution.
+  `?worker&inline`) are stripped before resolution. A module worker loaded
+  with `new URL('./worker.js', import.meta.url)` counts as an import. An HTML
+  page imports the scripts it loads with `<script src>` (a leading `/` is the
+  project root, as in Vite) and whatever its inline module scripts import, so
+  an example page links to its `.js` file.
 - `tests`: a test file targeting its corresponding source file
 - `documents`: README/instruction files describing their project or directory
 

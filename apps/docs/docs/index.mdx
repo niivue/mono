@@ -1,0 +1,91 @@
+---
+sidebar_position: 1
+title: Getting started
+slug: /
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/minimal'
+
+# Getting started
+
+NiiVue shows volumes, meshes, tractography and signals in the browser. It
+renders with WebGPU or WebGL2 and needs no server beyond something that can
+serve your files.
+
+## Install
+
+```bash
+npm install @niivue/niivue@next
+```
+
+## A first viewer
+
+Add a `<canvas>`, attach a viewer to it, and load an image:
+
+```html
+<canvas id="gl1"></canvas>
+<script type="module">
+  import NiiVue from '@niivue/niivue'
+
+  const nv = new NiiVue()
+  await nv.attachToCanvas(document.getElementById('gl1'))
+  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+</script>
+```
+
+The viewer fills its canvas, so size the canvas (or its parent) with CSS.
+The same few lines run live here:
+
+<Demo load={() => import('@site/src/demos/minimal')} source={source} />
+
+Every demo on this site is a small module: it receives a canvas and returns
+the viewer, and the code under each one is the code that runs. The
+[Gallery](/gallery) has every example page from the repository with its
+source.
+
+## WebGPU or WebGL2
+
+`@niivue/niivue` includes both renderers and uses WebGL2 by default. Ask for
+WebGPU with the `backend` option; if the browser has no WebGPU, or it fails
+to start, NiiVue falls back to WebGL2:
+
+```js
+const nv = new NiiVue({ backend: 'webgpu' })
+```
+
+Backend-only builds are smaller:
+
+```js
+import NiiVueWebGPU from '@niivue/niivue/webgpu'
+import NiiVueWebGL2 from '@niivue/niivue/webgl2'
+```
+
+In a backend-only build, asking for the missing backend throws.
+
+## Settings are properties
+
+Viewer settings are plain properties. Set them in the constructor or at any
+time later, and the view redraws:
+
+```js
+const nv = new NiiVue({ isColorbarVisible: true, sliceType: 3 })
+nv.backgroundColor = [0.2, 0.2, 0.2, 1]
+nv.sliceType = 4 // render only
+```
+
+Per-volume and per-mesh settings go through `setVolume` and `setMesh`:
+
+```js
+nv.setVolume(0, { colormap: 'hot', calMin: 2, calMax: 6 })
+```
+
+## Coming from NiiVue 0.x
+
+This package is a rewrite. Most features carry over, but the API is
+different: setter methods such as `setSliceType(v)` became properties such
+as `nv.sliceType = v`. The
+[API reference](https://github.com/niivue/mono/blob/main/packages/niivue/docs/api.md)
+lists the renames, and
+[FEATURE_PARITY.md](https://github.com/niivue/mono/blob/main/packages/niivue/FEATURE_PARITY.md)
+tracks what has not been ported yet.

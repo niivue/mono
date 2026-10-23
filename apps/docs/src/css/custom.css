@@ -1,0 +1,269 @@
+/*
+ * Theme. University of South Carolina garnet and black, with warm greys.
+ * Garnet (#73000a) is the light-mode accent; dark mode lifts it to a rose
+ * garnet that reads on black. Dark is the default.
+ */
+:root {
+  --nv-magenta: #73000a;
+  --nv-cyan: #78716c;
+  --nv-surface: #ffffff;
+  --nv-surface-2: #f6f5f3;
+  --nv-border: #e7e4e0;
+  --nv-muted: #5f5955;
+  --nv-viewer: #0a0908;
+  --nv-shadow: 0 1px 2px rgb(20 16 14 / 6%), 0 8px 24px rgb(20 16 14 / 8%);
+
+  --ifm-color-primary: #73000a;
+  --ifm-color-primary-dark: #680009;
+  --ifm-color-primary-darker: #620009;
+  --ifm-color-primary-darkest: #510007;
+  --ifm-color-primary-light: #7e000b;
+  --ifm-color-primary-lighter: #84000c;
+  --ifm-color-primary-lightest: #96000d;
+
+  --ifm-font-family-base:
+    "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ifm-heading-font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --ifm-font-family-monospace:
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --ifm-heading-font-weight: 600;
+  --ifm-line-height-base: 1.7;
+  --ifm-code-font-size: 88%;
+  --ifm-global-radius: 0.5rem;
+  --ifm-card-border-radius: 0.875rem;
+  --ifm-code-border-radius: 0.625rem;
+  --ifm-navbar-height: 4rem;
+  --ifm-background-color: #fcfbfa;
+  --ifm-navbar-background-color: rgb(252 251 250 / 80%);
+  --ifm-toc-border-color: var(--nv-border);
+  --ifm-hr-border-color: var(--nv-border);
+  --ifm-menu-color-background-active: rgb(115 0 10 / 6%);
+  --docusaurus-highlighted-code-line-bg: rgb(115 0 10 / 10%);
+}
+
+html[data-theme="dark"] {
+  --nv-magenta: #c8505f;
+  --nv-cyan: #a8a29e;
+  --nv-surface: #161413;
+  --nv-surface-2: #1c1917;
+  --nv-border: #2e2a27;
+  --nv-muted: #a8a29e;
+  --nv-viewer: #0a0908;
+  --nv-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%);
+
+  --ifm-color-primary: #c8505f;
+  --ifm-color-primary-dark: #c13e4f;
+  --ifm-color-primary-darker: #b8394a;
+  --ifm-color-primary-darkest: #982f3d;
+  --ifm-color-primary-light: #cf6472;
+  --ifm-color-primary-lighter: #d3707d;
+  --ifm-color-primary-lightest: #de939d;
+
+  --ifm-background-color: #0c0a09;
+  --ifm-background-surface-color: #0c0a09;
+  --ifm-navbar-background-color: rgb(12 10 9 / 78%);
+  --ifm-footer-background-color: #080706;
+  --ifm-font-color-base: #e7e5e4;
+  --ifm-heading-color: #fafaf9;
+  --ifm-code-background: #1c1917;
+  --ifm-menu-color-background-active: rgb(200 80 95 / 10%);
+  --ifm-menu-color-background-hover: rgb(255 255 255 / 4%);
+  --docusaurus-highlighted-code-line-bg: rgb(200 80 95 / 14%);
+}
+
+/* Type */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+}
+
+.markdown h1:first-child {
+  font-size: 2.5rem;
+}
+
+.markdown > h2 {
+  margin-top: 2.75rem;
+  padding-top: 0.25rem;
+}
+
+.markdown a:not(.button) {
+  text-underline-offset: 0.2em;
+}
+
+/* Navbar: translucent glass */
+.navbar {
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--nv-border);
+  box-shadow: none;
+}
+
+.navbar__title {
+  font-family: var(--ifm-heading-font-family);
+  font-weight: 700;
+  font-size: 1.2rem;
+  letter-spacing: -0.01em;
+}
+
+.navbar__logo {
+  height: 2rem;
+  margin-right: 0.6rem;
+}
+
+.navbar__link {
+  font-weight: 500;
+}
+
+.header-github-link::before {
+  content: "";
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  background-color: var(--ifm-navbar-link-color);
+  mask:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6 0-3.2 0 0 1-.3 3.4 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8 0 3.2.9.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1 .9 2.2v3.3c0 .3.1.7.8.6A12 12 0 0 0 12 .3'/%3E%3C/svg%3E")
+    no-repeat center / contain;
+}
+
+.header-github-link:hover::before {
+  background-color: var(--ifm-color-primary);
+}
+
+/* Sidebar */
+html .theme-doc-sidebar-container {
+  border-right-color: var(--nv-border);
+}
+
+html .menu.thin-scrollbar {
+  padding: 1rem 0.75rem;
+  font-size: 0.925rem;
+}
+
+.menu__link {
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--ifm-color-primary);
+}
+
+/* Tables */
+.markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--nv-border);
+  border-radius: var(--ifm-code-border-radius);
+  overflow: hidden;
+  font-size: 0.925rem;
+}
+
+.markdown table thead tr {
+  background: var(--nv-surface-2);
+}
+
+.markdown table th,
+.markdown table td {
+  border: 0;
+  border-bottom: 1px solid var(--nv-border);
+}
+
+.markdown table tr:last-child td {
+  border-bottom: 0;
+}
+
+.markdown table tr:nth-child(2n) {
+  background: transparent;
+}
+
+/* Code blocks */
+.theme-code-block {
+  border: 1px solid var(--nv-border);
+  box-shadow: none;
+}
+
+/* Admonitions */
+.alert {
+  border-radius: var(--ifm-code-border-radius);
+  box-shadow: none;
+}
+
+/* Footer */
+.footer {
+  border-top: 1px solid var(--nv-border);
+}
+
+.footer--dark {
+  --ifm-footer-background-color: #080706;
+}
+
+.footer__title {
+  font-family: var(--ifm-heading-font-family);
+  letter-spacing: 0.02em;
+}
+
+/* Garnet accent on the always-dark hero and closing bands: #73000a is too
+   dark to read on black, so this is the rose garnet dark mode uses. */
+.nv-accent-text {
+  color: #c8505f;
+}
+
+/* Controls built by src/demos/ui.ts. The viewer frame is always dark. */
+.demo-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+  color: #d0cac4;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.demo-control select,
+.demo-control button {
+  font: inherit;
+  color: #f2f0ee;
+  background: #1c1917;
+  border: 1px solid #3a3431;
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.demo-control select:hover,
+.demo-control button:hover {
+  border-color: #c8505f;
+}
+
+.demo-control button:active {
+  background: #29241f;
+}
+
+.demo-control input[type="range"] {
+  width: 8rem;
+  accent-color: #c8505f;
+}
+
+.demo-control input[type="checkbox"] {
+  accent-color: #c8505f;
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.demo-status {
+  display: block;
+  padding: 0.45rem 0.9rem;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.775rem;
+  color: #d6d1cc;
+  background: #110f0e;
+  border-top: 1px solid #262220;
+  min-height: 2em;
+}

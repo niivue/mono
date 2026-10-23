@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
 
 import type { Backend, ClipPlane } from './desktop'
+import type { BlockSettings } from './blocks'
 
 // A NeuroVue bundle (`.nvbundle`) is a self-describing, transport-agnostic
 // hand-off of one or more volumes plus the view that was set up over them. It
@@ -71,6 +72,12 @@ export interface BundleViewState {
   volumes: BundleDocumentVolume[]
   viewMode: string
   backend: Backend
+  /**
+   * Block (volume-chunk explode) settings applied across the loaded layers.
+   * Optional and forward-compatible: bundles written before this feature omit
+   * it, and the importer falls back to the untiled default.
+   */
+  blocks?: BlockSettings
 }
 
 /**
@@ -87,6 +94,7 @@ export function buildBundleViewState(params: {
   backend: Backend
   clipPlanes: ClipPlane[]
   crosshairPos: [number, number, number] | null
+  blocks?: BlockSettings
 }): BundleViewState {
   const toVolume = (id: string, role: BundleDocumentVolume['role']): BundleDocumentVolume => {
     const settings = params.layerSettings[id]
@@ -121,7 +129,8 @@ export function buildBundleViewState(params: {
     },
     volumes,
     viewMode: params.viewMode,
-    backend: params.backend
+    backend: params.backend,
+    ...(params.blocks ? { blocks: params.blocks } : {})
   }
 }
 

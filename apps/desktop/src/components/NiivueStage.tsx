@@ -8,6 +8,8 @@ import {
 import type { ColorMap, NiiVueLocation } from '@niivue/niivue'
 import type { Backend, ClipPlane, DesktopItem, JsonValue, VolumeMetadata } from '../domain/desktop'
 import { fetchVolumeMetadata, rawVolumeUrl } from '../domain/desktop'
+import type { BlockSettings } from '../domain/blocks'
+import { blocksAreTiled } from '../domain/blocks'
 
 // The window NiiVue actually applied for a layer, plus the volume's robust
 // range (the "no threshold" target for a show-all reset).
@@ -27,6 +29,9 @@ interface NiivueStageProps {
   isActive: boolean
   renderWheelMode: 'zoom' | 'clip-plane'
   viewMode: ViewModeId
+  // Block (volume-chunk explode) settings, applied to every loaded layer: tile
+  // each volume into a grid of bricks and separate them in the 3D render.
+  blocks: BlockSettings
   // A one-shot request to move the crosshair to an absolute RAS+ mm position.
   // A fresh object identity re-triggers the move (so going to the same
   // coordinate twice still fires).
@@ -58,6 +63,26 @@ export interface NiivueRenderLayer {
   calMax?: number
 }
 
+// Opaque handle returned by NiiVue's `chunkVolumeGrid` and assigned back to a
+// volume's `chunkPlan`. NeuroVue never inspects it, so an opaque alias keeps the
+// structural `NiiVueLike` free of niivue's full chunking type surface.
+type ChunkPlan = unknown
+
+// Draw-time spacing for a tiled volume. Mirrors niivue's `VolumeChunkExplode`.
+interface NiiVueChunkExplode {
+  enabled: boolean
+  scale?: [number, number, number]
+}
+
+// `chunkVolumeGrid(volumeDims, gridDims, deviceLimit, haloSize?)` — pure util,
+// re-exported from every backend entrypoint, that builds a fixed grid tiling.
+type ChunkVolumeGridFn = (
+  volumeDims: [number, number, number],
+  gridDims: [number, number, number],
+  deviceLimit: number,
+  haloSize?: [number, number, number]
+) => ChunkPlan
+
 interface NiiVueLike {
   canvas?: HTMLCanvasElement
   // Loaded volumes, in the same order as the render layers. robustMin/robustMax
@@ -70,7 +95,18 @@ interface NiiVueLike {
     globalMax?: number
     extentsMin?: ArrayLike<number>
     extentsMax?: ArrayLike<number>
+    // Voxel dims in RAS order as [n, x, y, z] (index 0 is the component count).
+    // Used to build a chunk plan sized to this volume.
+    dimsRAS?: number[]
+    // NiiVue's tiling plan (from chunkVolumeGrid). Absent ⇒ single-texture path.
+    // Opaque here — NeuroVue only sets/clears it, never inspects it.
+    chunkPlan?: ChunkPlan | undefined
+    // Draw-time per-brick spacing for the tiled 3D render.
+    chunkExplode?: NiiVueChunkExplode
   }>
+  // Rebuild the GPU volume texture(s) from current volume state (e.g. after a
+  // chunkPlan change). Chunked/exploded rendering needs this to take effect.
+  updateGLVolume?(): Promise<void>
   activeClipPlaneIndex?: number
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: NiiVueVolumeOptions[]): Promise<unknown>
@@ -151,6 +187,13 @@ interface RenderViewSnap {
 
 type RenderSnapId = 'coronal' | 'sagittal' | 'axial'
 type NiiVueConstructor = new (options?: Record<string, unknown>) => NiiVueLike
+// The backend module's constructor plus the pure `chunkVolumeGrid` util, both
+// pulled from the same dynamically-imported entrypoint so the block feature adds
+// nothing to the main bundle (it rides along with the already-lazy backend).
+interface LoadedNiiVue {
+  NiiVue: NiiVueConstructor
+  chunkVolumeGrid: ChunkVolumeGridFn
+}
 type VoxelStep = readonly [di: number, dj: number, dk: number]
 
 const CLIP_DEPTH_WHEEL_STEP = 0.0015
@@ -258,6 +301,7 @@ export function NiivueStage({
   isActive,
   renderWheelMode,
   viewMode,
+  blocks,
   crosshairTarget,
   onClipPlaneDepthChange,
   onClipPlaneActivate,
@@ -269,6 +313,9 @@ export function NiivueStage({
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const nvRef = useRef<NiiVueLike | null>(null)
+  // `chunkVolumeGrid` from the active backend module, captured at attach so the
+  // block effect can (re)tile volumes without a second dynamic import.
+  const chunkVolumeGridRef = useRef<ChunkVolumeGridFn | null>(null)
   const prefetchRef = useRef<VolumePrefetch | null>(null)
   // The layer item ids in the order NiiVue loaded them, so a layer maps to its
   // volume by identity, not by current array position. `loadRenderVolumeLods`
@@ -342,10 +389,11 @@ export function NiivueStage({
       syncCanvasSize(canvas, stage)
       setStatus(`Loading ${layerStackLabel(layers)} with ${backend.toUpperCase()}.`)
       try {
-        const NiiVue = await loadNiiVue(backend)
+        const loaded = await loadNiiVue(backend)
         if (cancelled) return
+        chunkVolumeGridRef.current = loaded.chunkVolumeGrid
 
-        const nv = new NiiVue({
+        const nv = new loaded.NiiVue({
           backend,
           backgroundColor: [0.02, 0.024, 0.018, 1],
           clipPlaneColor: [0.95, 0.2, 0.12, 0.7],
@@ -507,6 +555,36 @@ export function NiivueStage({
     nv.setCrosshairPos(crosshairTarget.mm)
     nv.drawScene()
   }, [crosshairTarget])
+
+  // Block tiling: (re)build or clear each loaded volume's chunk plan. Keyed on
+  // the grid and on loadedVersion — the attach effect rebuilds the instance on a
+  // backend/layer change, dropping any prior plan, so this reapplies it against
+  // the fresh volumes. Rebuilding GPU textures (updateGLVolume) is the expensive
+  // step, so it lives here and NOT on the explode slider below.
+  useEffect(() => {
+    const nv = nvRef.current
+    const chunkVolumeGrid = chunkVolumeGridRef.current
+    if (!nv || !chunkVolumeGrid) return
+    let cancelled = false
+    void applyBlockTiling(nv, chunkVolumeGrid, blocks).then(() => {
+      if (!cancelled) nv.drawScene()
+    })
+    return () => {
+      cancelled = true
+    }
+    // blocks.explode is applied here too (so a fresh tiling shows current
+    // spacing) but is intentionally not a dependency — the slider is handled
+    // by the draw-time-only effect below to avoid a texture rebuild per tick.
+  }, [blocks.grid, loadedVersion])
+
+  // Explode spacing: a draw-time per-brick offset, so a slider drag only needs
+  // to set chunkExplode and repaint — no GPU texture rebuild.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv) return
+    applyBlockExplode(nv, blocks)
+    nv.drawScene()
+  }, [blocks.explode])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -799,24 +877,123 @@ export function NiivueStage({
   )
 }
 
-async function loadNiiVue(backend: Backend): Promise<NiiVueConstructor> {
+async function loadNiiVue(backend: Backend): Promise<LoadedNiiVue> {
   if (backend === 'webgpu') {
     try {
-      const module = await import('@niivue/niivue/webgpu')
-      return module.default as NiiVueConstructor
+      return toLoadedNiiVue(await import('@niivue/niivue/webgpu'))
     } catch {
-      const module = await import('@niivue/niivue')
-      return module.default as NiiVueConstructor
+      return toLoadedNiiVue(await import('@niivue/niivue'))
     }
   }
 
   try {
-    const module = await import('@niivue/niivue/webgl2')
-    return module.default as NiiVueConstructor
+    return toLoadedNiiVue(await import('@niivue/niivue/webgl2'))
   } catch {
-    const module = await import('@niivue/niivue')
-    return module.default as NiiVueConstructor
+    return toLoadedNiiVue(await import('@niivue/niivue'))
   }
+}
+
+// Pull the constructor and the `chunkVolumeGrid` util out of a backend module.
+// `chunkVolumeGrid` is re-exported from every entrypoint; casting through
+// unknown keeps the structural `NiiVueLike`/opaque-plan types decoupled from
+// niivue's concrete signatures.
+function toLoadedNiiVue(module: {
+  default: unknown
+  chunkVolumeGrid?: unknown
+}): LoadedNiiVue {
+  return {
+    NiiVue: module.default as NiiVueConstructor,
+    chunkVolumeGrid: module.chunkVolumeGrid as unknown as ChunkVolumeGridFn
+  }
+}
+
+// Per-brick gradient halo matching the renderer, so exploded faces stay
+// seam-free (see niivue's vox.draw.explode reference).
+const BLOCK_HALO: [number, number, number] = [3, 3, 3]
+// Per-brick texture-size ceiling. NeuroVue renders coarse volumes (preview LODs /
+// downsampled MNI), so a fixed 4096 realizes the requested grid exactly without
+// forcing extra subdivision; a volume whose bricks would exceed it stays untiled.
+const BLOCK_DEVICE_LIMIT = 4096
+
+// (Re)tile or clear every loaded volume, then rebuild GPU textures once.
+// Idempotent: derives each plan from scratch, so a grid of 1 drops the plan and
+// reverts the volume to niivue's single-texture path. Also seeds chunkExplode
+// from the current settings so a freshly tiled volume shows the right spacing.
+async function applyBlockTiling(
+  nv: NiiVueLike,
+  chunkVolumeGrid: ChunkVolumeGridFn,
+  blocks: BlockSettings
+): Promise<void> {
+  const volumes = nv.volumes
+  if (!volumes || volumes.length === 0) return
+
+  const tiled = blocksAreTiled(blocks)
+  let changed = false
+
+  for (const volume of volumes) {
+    if (!tiled) {
+      if (volume.chunkPlan !== undefined) {
+        volume.chunkPlan = undefined
+        changed = true
+      }
+      volume.chunkExplode = { enabled: false }
+      continue
+    }
+
+    const dims = blockVolumeDims(volume.dimsRAS)
+    if (!dims) continue
+    // Never request more bricks than the volume has voxels on an axis.
+    const grid: [number, number, number] = [
+      Math.min(blocks.grid, dims[0]),
+      Math.min(blocks.grid, dims[1]),
+      Math.min(blocks.grid, dims[2])
+    ]
+    try {
+      volume.chunkPlan = chunkVolumeGrid(dims, grid, BLOCK_DEVICE_LIMIT, BLOCK_HALO)
+      changed = true
+    } catch {
+      // Bricks would exceed the device limit — leave this volume untiled rather
+      // than throwing; the rest of the stack still tiles.
+      continue
+    }
+    volume.chunkExplode = explodeFor(blocks)
+  }
+
+  if (changed) await nv.updateGLVolume?.()
+}
+
+// Apply only the draw-time spacing (no texture rebuild). Untiled volumes get an
+// explicit "off" so a stale spacing never lingers.
+function applyBlockExplode(nv: NiiVueLike, blocks: BlockSettings): void {
+  const volumes = nv.volumes
+  if (!volumes) return
+  const explode = blocksAreTiled(blocks) ? explodeFor(blocks) : { enabled: false }
+  for (const volume of volumes) {
+    if (!blocksAreTiled(blocks) && volume.chunkPlan === undefined) continue
+    volume.chunkExplode = explode
+  }
+}
+
+// chunkExplode value for the current settings: on (with uniform scale) only when
+// tiled and spread past the compact 1.0; off otherwise.
+function explodeFor(blocks: BlockSettings): NiiVueChunkExplode {
+  const on = blocksAreTiled(blocks) && blocks.explode > 1.001
+  return on
+    ? { enabled: true, scale: [blocks.explode, blocks.explode, blocks.explode] }
+    : { enabled: false }
+}
+
+// [x, y, z] voxel dims from a volume's RAS dims ([n, x, y, z]); null if absent
+// or degenerate.
+function blockVolumeDims(
+  dimsRAS: number[] | undefined
+): [number, number, number] | null {
+  if (!dimsRAS || dimsRAS.length < 4) return null
+  const x = dimsRAS[1]
+  const y = dimsRAS[2]
+  const z = dimsRAS[3]
+  if (![x, y, z].every((n) => Number.isInteger(n) && n >= 1)) return null
+  return [x, y, z]
 }
 
 // Intensity-window / threshold options for a setVolume call. An explicit

@@ -11,6 +11,7 @@ import {
 import type { NiiVueLocation } from '@niivue/niivue'
 import {
   AlertTriangle,
+  Boxes,
   ChevronDown,
   CircleDot,
   Calculator,
@@ -82,6 +83,15 @@ import {
   shareViewViaAirDrop,
   type BundleViewState
 } from './domain/bundle'
+import {
+  BLOCK_GRID_OPTIONS,
+  DEFAULT_BLOCK_SETTINGS,
+  MAX_EXPLODE,
+  MIN_EXPLODE,
+  blockGridLabel,
+  blocksAreTiled,
+  type BlockSettings
+} from './domain/blocks'
 import {
   volumeImageTypeLabel,
   volumeRoleLabel,
@@ -251,6 +261,9 @@ export function App(): JSX.Element {
   // One-shot crosshair "go-to" request handed to NiivueStage; a fresh object per
   // request re-fires the move even for a repeated coordinate.
   const [crosshairTarget, setCrosshairTarget] = useState<{ mm: [number, number, number] } | null>(null)
+  // Block (volume-chunk explode) settings, applied across every loaded layer and
+  // persisted into the bundle/session.
+  const [blocks, setBlocks] = useState<BlockSettings>(DEFAULT_BLOCK_SETTINGS)
   const goToCoordinate = useCallback((x: number, y: number, z: number) => {
     setCrosshairTarget({ mm: [x, y, z] })
   }, [])
@@ -584,7 +597,8 @@ export function App(): JSX.Element {
       crosshairPos:
         Array.isArray(crosshairMm) && crosshairMm.length >= 3
           ? [crosshairMm[0], crosshairMm[1], crosshairMm[2]]
-          : null
+          : null,
+      blocks
     })
     return { volumeIds: view.volumes.map((volume) => volume.id), view }
   }
@@ -748,6 +762,7 @@ export function App(): JSX.Element {
       setOverlayIds(nextOverlays)
       setAtlasId(nextAtlas)
       if (view.viewMode) setViewMode(view.viewMode as ViewModeId)
+      setBlocks(view.blocks ?? DEFAULT_BLOCK_SETTINGS)
       applyClipPlanes(view.scene?.clipPlanes ?? [])
       if (nextBase) setSelectedId(nextBase)
       const crosshair = view.scene?.crosshairPos
@@ -1136,6 +1151,7 @@ export function App(): JSX.Element {
             <NiivueStage
               activeClipPlaneId={activeClipPlaneId}
               backend={backend}
+              blocks={blocks}
               clipPlanes={clipPlanes}
               crosshairTarget={crosshairTarget}
               isActive={mouseContext === 'niivue'}
@@ -1235,6 +1251,8 @@ export function App(): JSX.Element {
                         ))}
                       </div>
                     </section>
+
+                    <BlockControls blocks={blocks} onChange={setBlocks} />
                   </>
                 ) : (
                   <section className="nv-control-section">
@@ -1325,6 +1343,70 @@ export function App(): JSX.Element {
         </span>
       </footer>
     </main>
+  )
+}
+
+// Block (volume-chunk explode) controls: pick a grid (Off / 2³…6³) that tiles
+// every loaded layer into bricks, then spread them apart in the 3D render with
+// the Explode slider. The slider is disabled while untiled (grid = Off).
+function BlockControls({
+  blocks,
+  onChange
+}: {
+  blocks: BlockSettings
+  onChange: (blocks: BlockSettings) => void
+}): JSX.Element {
+  const tiled = blocksAreTiled(blocks)
+  return (
+    <section className="nv-control-section">
+      <div className="nv-panel-heading">
+        <span>
+          <Boxes size={15} />
+          Blocks
+        </span>
+        <em>{tiled ? `${blockGridLabel(blocks.grid)} · ${blocks.explode.toFixed(2)}×` : 'off'}</em>
+      </div>
+
+      <div className="nv-block-grid" role="group" aria-label="Block grid">
+        {BLOCK_GRID_OPTIONS.map((grid) => (
+          <button
+            aria-pressed={blocks.grid === grid}
+            className={`nv-block-grid-option ${blocks.grid === grid ? 'is-active' : ''}`}
+            key={grid}
+            onClick={() => onChange({ ...blocks, grid })}
+            title={
+              grid <= 1
+                ? 'No blocks — render each layer as a single volume'
+                : `Tile every layer into ${grid}×${grid}×${grid} bricks`
+            }
+            type="button"
+          >
+            {blockGridLabel(grid)}
+          </button>
+        ))}
+      </div>
+
+      <label className="nv-block-explode">
+        <span className="nv-block-explode-label">
+          Explode
+          <em>{tiled ? `${blocks.explode.toFixed(2)}×` : '—'}</em>
+        </span>
+        <input
+          aria-label="Explode spacing"
+          disabled={!tiled}
+          max={MAX_EXPLODE}
+          min={MIN_EXPLODE}
+          step={0.05}
+          type="range"
+          value={blocks.explode}
+          onChange={(event) => onChange({ ...blocks, explode: Number(event.target.value) })}
+        />
+      </label>
+
+      <p className="nv-block-hint">
+        Splits every layer into bricks and spreads them apart in the 3D render. Pick a grid, then raise Explode.
+      </p>
+    </section>
   )
 }
 

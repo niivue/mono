@@ -1,3 +1,14 @@
+## 1.0.0-rc.10 (2026-10-23)
+
+### Features
+
+- **nv-mcp:** let a select control write numeric values to its binding ([8233f630](https://github.com/niivue/mono/commit/8233f630))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.9 (2026-10-23)
 
 ### Fixes

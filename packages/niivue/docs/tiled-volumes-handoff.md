@@ -1576,7 +1576,7 @@ A debug/testing override and a demo that exercises all four chunked layers
 |------|--------|
 | `src/NVTypes.ts` | New optional `maxTextureDimension3D?: number` on `NiiVueOptions` (documented as a debug/testing override) and on `NVViewOptions`. |
 | `src/gl/NVViewGL.ts` | `_createResources` clamps the value passed to `volumeRenderer.init` to `min(real max3D, override)` when the option is set. |
-| `src/wgpu/NVViewGPU.ts` | Mirror: clamps the limit passed to `volumeRenderer.init`. The override is applied only to the renderer's chunking threshold — `requestDevice`'s `requiredLimits` still requests the real adapter limit, so device texture creation is unaffected. The threshold is further capped at `maxBlendSliceDim` (`wgpu/orient.ts`: floor(sqrt(min(maxStorageBufferBindingSize, maxBufferSize) / 20 B/voxel))) so one z-slice of the overlay-blend accumulator fits; a no-op on typical adapters (128 MiB -> 2590). |
+| `src/wgpu/NVViewGPU.ts` | Mirror: clamps the limit passed to `volumeRenderer.init`. The override is applied only to the renderer's chunking threshold — `requestDevice`'s `requiredLimits` still requests the real adapter limit, so device texture creation is unaffected. The threshold is further capped at `maxBlendSliceDim` (`wgpu/orient.ts`: floor(sqrt(min(maxStorageBufferBindingSize, maxBufferSize) / 24 B/voxel))) so one z-slice of the overlay-blend accumulator fits; a no-op on typical adapters (128 MiB -> 2364). |
 | `examples/vox.tiled.html`, `examples/vox.tiled.js`, `examples/index.html` | New demo + listing entry. |
 
 ### How it works

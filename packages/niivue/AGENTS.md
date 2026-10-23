@@ -862,19 +862,20 @@ With 2+ overlays, `volumeOverlayAlphaBlend` (`OVERLAY_ALPHA_BLEND`) and
 `volumeOverlayColorBlend` (`OVERLAY_COLOR_BLEND`) set how they combine before
 compositing over the background. GL blends on the CPU (`volume/overlayBlend.ts`
 `blendOverlayData`); WebGPU in a compute pass (`wgpu/orient.ts`
-`blendOverlaysGPU`, mode via override constants). Setters rebuild via
+`blendOverlaysGPU`, mode via override constants). Colour `OVER` composites
+in volume order (later overlays on top); every other mode is commutative. Setters rebuild via
 `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
 `calMin` 0: the alpha weight is `(f-calMin)/(calMax-calMin)`, so a nonzero
 `calMin` breaks alpha == fraction and ADDITIVE no longer sums to 1.
 Unknown mode values fall back to MAX / ADDITIVE on both backends. The WebGPU
-pass runs in z-slabs sized so the 20 B/voxel f32 accumulator fits
+pass runs in z-slabs sized so the 24 B/voxel f32 accumulator fits
 min(`maxStorageBufferBindingSize`, `maxBufferSize`); typical volumes and chunks
-are one slab. The chunking threshold is capped at floor(sqrt(that min / 20)) so
-one z-slice always fits (2590 at 128 MiB, above the usual 2048 3D limit). Its
-per-device pipeline cache holds at most six mode pairs.
+are one slab. The chunking threshold is capped at floor(sqrt(that min / 24)) so
+one z-slice always fits (2364 at 128 MiB, above the usual 2048 3D limit). Its
+per-device pipeline cache holds at most nine mode pairs.
 - `bun packages/niivue/scripts/check-blend-wgsl.mjs` compiles and runs the blend
   WGSL in system Chrome across modes and two slabs; output must match the CPU
-  test. Passed 2026-10-05, as did a WebGPU visual pass of `vox.tissues.html` /
+  test. Passed 2026-10-05 and, with colour `OVER`, 2026-10-23, as did a WebGPU visual pass of `vox.tissues.html` /
   `vox.stats-multi.html` in all six mode combinations.
 
 

@@ -83,11 +83,15 @@ export enum OVERLAY_ALPHA_BLEND {
 /**
  * How overlapping overlays combine their colours. ADDITIVE sums the
  * opacity-weighted colours (red + green = yellow, may clip); MEAN takes their
- * opacity-weighted average (red + green = dark yellow, never clips).
+ * opacity-weighted average (red + green = dark yellow, never clips); OVER
+ * composites them in volume order, each overlay over the ones before it (an
+ * opaque green over red is green). Pair OVER with OVERLAY_ALPHA_BLEND.OVER for
+ * classic source-over stacking, e.g. segmentations.
  */
 export enum OVERLAY_COLOR_BLEND {
   ADDITIVE = 0,
   MEAN = 1,
+  OVER = 2,
 }
 
 /**

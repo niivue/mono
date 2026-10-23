@@ -1576,7 +1576,8 @@ button {
    navigation, overlaid at the bottom of the viewer. */
 .nv-slice-slider {
   position: absolute;
-  bottom: 16px;
+  /* Docked above NiiVue's colorbar (var set by NiivueStage from its layout). */
+  bottom: calc(var(--nv-colorbar-clearance, 0px) + 8px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 4;
@@ -1611,17 +1612,20 @@ button {
    for moving clip planes (was wheel-only). Overlaid like the slice slider. */
 .nv-clip-slider {
   position: absolute;
-  bottom: 16px;
+  /* Above the colorbar, and narrowed so it never reaches the orientation cube
+     in the bottom-left corner. Wraps onto two rows in a narrow viewer. */
+  bottom: calc(var(--nv-colorbar-clearance, 0px) + 8px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 4;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  width: min(520px, 88%);
+  gap: 6px 8px;
+  width: min(560px, calc(100% - 2 * var(--nv-cube-clearance, 0px) - 24px));
   padding: 6px 12px 6px 6px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 20px;
   background: rgba(12, 13, 10, 0.82);
   backdrop-filter: blur(6px);
 }
@@ -1650,7 +1654,7 @@ button {
 }
 
 .nv-clip-slider input[type="range"] {
-  flex: 1;
+  flex: 1 1 120px;
   height: 28px;
   accent-color: var(--amber);
   cursor: pointer;
@@ -1659,6 +1663,11 @@ button {
 
 .nv-clip-slider input[type="range"]:disabled {
   opacity: 0.4;
+}
+
+.nv-clip-slider-value {
+  min-width: 92px;
+  white-space: nowrap;
 }
 
 .nv-render-snap-controls {

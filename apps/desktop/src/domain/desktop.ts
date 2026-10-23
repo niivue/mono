@@ -356,12 +356,15 @@ export async function addOverlayVolumeByPath(
   return invoke<OverlayAddResult>('add_overlay_volume_path', { path })
 }
 
+// All planes start off: 3D opens as a whole brain, and the user turns on the
+// cut they want. Bundles store only enabled planes and merge onto these, so a
+// saved view restores exactly the planes it had.
 export function defaultClipPlanes(): ClipPlane[] {
   return [
     {
       id: 'anterior',
       label: 'Anterior',
-      enabled: true,
+      enabled: false,
       depth: 0,
       azimuth: 180,
       elevation: 0,
@@ -369,7 +372,7 @@ export function defaultClipPlanes(): ClipPlane[] {
     {
       id: 'inferior',
       label: 'Inferior',
-      enabled: true,
+      enabled: false,
       depth: 0,
       azimuth: 0,
       elevation: -90,

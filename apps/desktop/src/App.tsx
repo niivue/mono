@@ -11,6 +11,7 @@ import {
 import type { NiiVueLocation } from '@niivue/niivue'
 import {
   AlertTriangle,
+  Boxes,
   ChevronDown,
   CircleDot,
   Calculator,
@@ -76,11 +77,21 @@ import {
   bundleVolumeId,
   exportDatasetBundle,
   formatBundleBytes,
+  isBundlePath,
   pickBundle,
   readBundle,
   shareViewViaAirDrop,
   type BundleViewState
 } from './domain/bundle'
+import {
+  BLOCK_GRID_OPTIONS,
+  DEFAULT_BLOCK_SETTINGS,
+  MAX_EXPLODE,
+  MIN_EXPLODE,
+  blockGridLabel,
+  blocksAreTiled,
+  type BlockSettings
+} from './domain/blocks'
 import {
   volumeImageTypeLabel,
   volumeRoleLabel,
@@ -180,7 +191,8 @@ function isPhoneViewport(): boolean {
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
-  const { recentDatasets, promoteRecent, removeRecent } = useRecentDatasets()
+  const { recentDatasets, promoteRecent, removeRecent, pruneExtractedBundleDirs } =
+    useRecentDatasets()
   const {
     bidsDatasetDoi,
     bidsName,
@@ -202,6 +214,11 @@ export function App(): JSX.Element {
     status,
     warmProgress
   } = useDatasetManifest({ promoteRecent })
+  // Drop recents left over from when a bundle import recorded its extracted
+  // `data/` dir. Needs the server's real cacheRoot, so it runs once that arrives.
+  useEffect(() => {
+    if (cacheRoot) pruneExtractedBundleDirs(cacheRoot)
+  }, [cacheRoot, pruneExtractedBundleDirs])
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({})
   // Effective intensity window NiiVue applied per layer (incl. auto-seeded
   // thresholds), reported back from NiivueStage so the UI can show the real
@@ -244,6 +261,9 @@ export function App(): JSX.Element {
   // One-shot crosshair "go-to" request handed to NiivueStage; a fresh object per
   // request re-fires the move even for a repeated coordinate.
   const [crosshairTarget, setCrosshairTarget] = useState<{ mm: [number, number, number] } | null>(null)
+  // Block (volume-chunk explode) settings, applied across every loaded layer and
+  // persisted into the bundle/session.
+  const [blocks, setBlocks] = useState<BlockSettings>(DEFAULT_BLOCK_SETTINGS)
   const goToCoordinate = useCallback((x: number, y: number, z: number) => {
     setCrosshairTarget({ mm: [x, y, z] })
   }, [])
@@ -271,6 +291,10 @@ export function App(): JSX.Element {
   const [isOpeningOverlay, setIsOpeningOverlay] = useState(false)
   const [isExportingBundle, setIsExportingBundle] = useState(false)
   const [isImportingBundle, setIsImportingBundle] = useState(false)
+  // Mirrors `isImportingBundle` for re-entrancy: the state value a handler closes
+  // over is stale within the same tick, so the button's `disabled` reads state
+  // while the handlers guard on the ref.
+  const isImportingBundleRef = useRef(false)
   const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
   const [isAirdropAvailable, setIsAirdropAvailable] = useState(false)
   const [isSharingBundle, setIsSharingBundle] = useState(false)
@@ -573,7 +597,8 @@ export function App(): JSX.Element {
       crosshairPos:
         Array.isArray(crosshairMm) && crosshairMm.length >= 3
           ? [crosshairMm[0], crosshairMm[1], crosshairMm[2]]
-          : null
+          : null,
+      blocks
     })
     return { volumeIds: view.volumes.map((volume) => volume.id), view }
   }
@@ -643,9 +668,12 @@ export function App(): JSX.Element {
     }
   }
 
+  // Hold the importing flag across the file dialog too, so the button stays
+  // disabled while the picker is open.
   async function handleImportBundle(): Promise<void> {
-    if (isImportingBundle || isOpeningDataset) return
+    if (isImportingBundleRef.current || isOpeningDataset) return
 
+    isImportingBundleRef.current = true
     setIsImportingBundle(true)
     setStatus('Choosing bundle to open.')
     try {
@@ -654,75 +682,99 @@ export function App(): JSX.Element {
         setStatus('Bundle open cancelled.')
         return
       }
-
-      const bundle = await readBundle(path)
-      if (bundle.manifest?.nvbundle == null) {
-        setStatus('Not a NeuroVue bundle (no manifest.json).')
-        return
-      }
-
-      // Load the bundle's copied volumes as the working dataset (the data/ dir
-      // opens like any dataset; each volume's new id is its filename stem).
-      await openRecentDataset(bundle.dataDir)
-      const nextManifest = await refreshDesktopManifestData()
-      const loadedIds = new Set((nextManifest?.items ?? []).map((item) => item.id))
-      if (loadedIds.size === 0) {
-        // openRecentDataset already surfaced the failure via setStatus.
-        return
-      }
-
-      // Map each recorded (original-dataset) id → its freshly-registered id.
-      const remap = new Map<string, string>()
-      for (const volume of bundle.manifest.volumes) {
-        remap.set(volume.id, bundleVolumeId(volume.data))
-      }
-
-      const view = bundle.manifest.view
-      if (view) {
-        const nextSettings: Record<string, LayerSettings> = {}
-        const nextOverlays = new Set<string>()
-        let nextAtlas: string | null = null
-        let nextBase: string | null = null
-
-        for (const docVolume of view.volumes) {
-          const newId = remap.get(docVolume.id) ?? docVolume.id
-          if (!loadedIds.has(newId)) continue
-
-          const settings: LayerSettings = {}
-          if (docVolume.colormap !== undefined) settings.colormap = docVolume.colormap
-          if (docVolume.opacity !== undefined) settings.opacity = docVolume.opacity
-          if (docVolume.hidden !== undefined) settings.hidden = docVolume.hidden
-          if (docVolume.calMin !== undefined && docVolume.calMax !== undefined) {
-            settings.window = { min: docVolume.calMin, max: docVolume.calMax }
-          }
-          if (Object.keys(settings).length > 0) nextSettings[newId] = settings
-
-          if (docVolume.role === 'base') nextBase = newId
-          else if (docVolume.role === 'overlay') nextOverlays.add(newId)
-          else if (docVolume.role === 'atlas') nextAtlas = newId
-        }
-
-        setLayerSettings(nextSettings)
-        setOverlayIds(nextOverlays)
-        setAtlasId(nextAtlas)
-        if (view.viewMode) setViewMode(view.viewMode as ViewModeId)
-        applyClipPlanes(view.scene?.clipPlanes ?? [])
-        if (nextBase) setSelectedId(nextBase)
-        const crosshair = view.scene?.crosshairPos
-        if (Array.isArray(crosshair) && crosshair.length >= 3) {
-          setCrosshairTarget({ mm: [crosshair[0], crosshair[1], crosshair[2]] })
-        }
-      }
-
-      const failures = bundleVerifyFailures(bundle.verification)
-      const integrity =
-        failures.length > 0 ? ` ⚠ ${failures.length} file(s) failed the integrity check` : ''
-      setStatus(`Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`)
+      await runBundleImport(path)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
+      isImportingBundleRef.current = false
       setIsImportingBundle(false)
     }
+  }
+
+  /** Re-open a bundle straight from recents, skipping the file dialog. */
+  async function importBundleFromPath(path: string): Promise<void> {
+    if (isImportingBundleRef.current || isOpeningDataset) return
+
+    isImportingBundleRef.current = true
+    setIsImportingBundle(true)
+    try {
+      await runBundleImport(path)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      isImportingBundleRef.current = false
+      setIsImportingBundle(false)
+    }
+  }
+
+  // Verify a `.nvbundle`, open its extracted volumes as the working dataset, and
+  // replay the recorded view. Throws; callers own the importing flag.
+  async function runBundleImport(path: string): Promise<void> {
+    const bundle = await readBundle(path)
+    if (bundle.manifest?.nvbundle == null) {
+      setStatus('Not a NeuroVue bundle (no manifest.json).')
+      return
+    }
+
+    // Load the bundle's copied volumes as the working dataset (the data/ dir
+    // opens like any dataset; each volume's new id is its filename stem), but
+    // record the bundle itself in recents — `dataDir` is a temp extraction.
+    await openRecentDataset(bundle.dataDir, { promoteAs: path })
+    const nextManifest = await refreshDesktopManifestData()
+    const loadedIds = new Set((nextManifest?.items ?? []).map((item) => item.id))
+    if (loadedIds.size === 0) {
+      // openRecentDataset already surfaced the failure via setStatus.
+      return
+    }
+
+    // Map each recorded (original-dataset) id → its freshly-registered id.
+    const remap = new Map<string, string>()
+    for (const volume of bundle.manifest.volumes) {
+      remap.set(volume.id, bundleVolumeId(volume.data))
+    }
+
+    const view = bundle.manifest.view
+    if (view) {
+      const nextSettings: Record<string, LayerSettings> = {}
+      const nextOverlays = new Set<string>()
+      let nextAtlas: string | null = null
+      let nextBase: string | null = null
+
+      for (const docVolume of view.volumes) {
+        const newId = remap.get(docVolume.id) ?? docVolume.id
+        if (!loadedIds.has(newId)) continue
+
+        const settings: LayerSettings = {}
+        if (docVolume.colormap !== undefined) settings.colormap = docVolume.colormap
+        if (docVolume.opacity !== undefined) settings.opacity = docVolume.opacity
+        if (docVolume.hidden !== undefined) settings.hidden = docVolume.hidden
+        if (docVolume.calMin !== undefined && docVolume.calMax !== undefined) {
+          settings.window = { min: docVolume.calMin, max: docVolume.calMax }
+        }
+        if (Object.keys(settings).length > 0) nextSettings[newId] = settings
+
+        if (docVolume.role === 'base') nextBase = newId
+        else if (docVolume.role === 'overlay') nextOverlays.add(newId)
+        else if (docVolume.role === 'atlas') nextAtlas = newId
+      }
+
+      setLayerSettings(nextSettings)
+      setOverlayIds(nextOverlays)
+      setAtlasId(nextAtlas)
+      if (view.viewMode) setViewMode(view.viewMode as ViewModeId)
+      setBlocks(view.blocks ?? DEFAULT_BLOCK_SETTINGS)
+      applyClipPlanes(view.scene?.clipPlanes ?? [])
+      if (nextBase) setSelectedId(nextBase)
+      const crosshair = view.scene?.crosshairPos
+      if (Array.isArray(crosshair) && crosshair.length >= 3) {
+        setCrosshairTarget({ mm: [crosshair[0], crosshair[1], crosshair[2]] })
+      }
+    }
+
+    const failures = bundleVerifyFailures(bundle.verification)
+    const integrity =
+      failures.length > 0 ? ` ⚠ ${failures.length} file(s) failed the integrity check` : ''
+    setStatus(`Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`)
   }
 
 
@@ -834,7 +886,11 @@ export function App(): JSX.Element {
                           className="nv-recent-item"
                           onClick={() => {
                             setIsRecentMenuOpen(false)
-                            void openRecentDataset(path)
+                            // A bundle must be re-verified and its view replayed,
+                            // not opened as a plain directory.
+                            void (isBundlePath(path)
+                              ? importBundleFromPath(path)
+                              : openRecentDataset(path))
                           }}
                           title={path}
                           type="button"
@@ -1095,6 +1151,7 @@ export function App(): JSX.Element {
             <NiivueStage
               activeClipPlaneId={activeClipPlaneId}
               backend={backend}
+              blocks={blocks}
               clipPlanes={clipPlanes}
               crosshairTarget={crosshairTarget}
               isActive={mouseContext === 'niivue'}
@@ -1194,6 +1251,8 @@ export function App(): JSX.Element {
                         ))}
                       </div>
                     </section>
+
+                    <BlockControls blocks={blocks} onChange={setBlocks} />
                   </>
                 ) : (
                   <section className="nv-control-section">
@@ -1284,6 +1343,70 @@ export function App(): JSX.Element {
         </span>
       </footer>
     </main>
+  )
+}
+
+// Block (volume-chunk explode) controls: pick a grid (Off / 2³…6³) that tiles
+// every loaded layer into bricks, then spread them apart in the 3D render with
+// the Explode slider. The slider is disabled while untiled (grid = Off).
+function BlockControls({
+  blocks,
+  onChange
+}: {
+  blocks: BlockSettings
+  onChange: (blocks: BlockSettings) => void
+}): JSX.Element {
+  const tiled = blocksAreTiled(blocks)
+  return (
+    <section className="nv-control-section">
+      <div className="nv-panel-heading">
+        <span>
+          <Boxes size={15} />
+          Blocks
+        </span>
+        <em>{tiled ? `${blockGridLabel(blocks.grid)} · ${blocks.explode.toFixed(2)}×` : 'off'}</em>
+      </div>
+
+      <div className="nv-block-grid" role="group" aria-label="Block grid">
+        {BLOCK_GRID_OPTIONS.map((grid) => (
+          <button
+            aria-pressed={blocks.grid === grid}
+            className={`nv-block-grid-option ${blocks.grid === grid ? 'is-active' : ''}`}
+            key={grid}
+            onClick={() => onChange({ ...blocks, grid })}
+            title={
+              grid <= 1
+                ? 'No blocks — render each layer as a single volume'
+                : `Tile every layer into ${grid}×${grid}×${grid} bricks`
+            }
+            type="button"
+          >
+            {blockGridLabel(grid)}
+          </button>
+        ))}
+      </div>
+
+      <label className="nv-block-explode">
+        <span className="nv-block-explode-label">
+          Explode
+          <em>{tiled ? `${blocks.explode.toFixed(2)}×` : '—'}</em>
+        </span>
+        <input
+          aria-label="Explode spacing"
+          disabled={!tiled}
+          max={MAX_EXPLODE}
+          min={MIN_EXPLODE}
+          step={0.05}
+          type="range"
+          value={blocks.explode}
+          onChange={(event) => onChange({ ...blocks, explode: Number(event.target.value) })}
+        />
+      </label>
+
+      <p className="nv-block-hint">
+        Splits every layer into bricks and spreads them apart in the 3D render. Pick a grid, then raise Explode.
+      </p>
+    </section>
   )
 }
 

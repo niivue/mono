@@ -1,6 +1,6 @@
 import { Calculator, Copy, FileSearch, Play } from 'lucide-react'
 import { type JSX, useState } from 'react'
-import type { DesktopItem, VolumeMetadata } from '../domain/desktop'
+import type { DesktopItem, StatusTone, VolumeMetadata } from '../domain/desktop'
 import {
   type NiimathOperation,
   type NiimathTaskResult,
@@ -67,7 +67,7 @@ export function NiimathOperationsPanel({
   item: DesktopItem | null
   metadata: VolumeMetadata | null
   onDerivedVolume: (volumeId: string) => Promise<void>
-  onStatus: (status: string) => void
+  onStatus: (status: string, tone?: StatusTone) => void
 }): JSX.Element {
   const [operation, setOperation] = useState<NiimathOperation>('smooth')
   const [operand, setOperand] = useState('2')
@@ -106,7 +106,7 @@ export function NiimathOperationsPanel({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setTaskStatus(message)
-      onStatus(message)
+      onStatus(message, 'error')
     } finally {
       setIsPickingMask(false)
     }
@@ -131,12 +131,12 @@ export function NiimathOperationsPanel({
       })
       setResult(nextResult)
       setTaskStatus('Done.')
-      onStatus(`niimath wrote ${nextResult.outputPath}.`)
+      onStatus(`niimath wrote ${nextResult.outputPath}.`, 'success')
       await onDerivedVolume(nextResult.volumeId)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setTaskStatus(message)
-      onStatus(message)
+      onStatus(message, 'error')
     } finally {
       setIsRunning(false)
     }

@@ -1,10 +1,13 @@
 import { type JSX, useMemo } from 'react'
 import type { DesktopItem } from '../domain/desktop'
 import {
+  formatVoxelSpacing,
   volumeFacetCounts,
   volumeFacetValue,
+  volumeImageTypeDisplay,
   volumeImageTypeLabel,
   volumeRoleLabel,
+  volumeSummary,
 } from '../domain/volumeFacets'
 import {
   previewImageForSize,
@@ -143,10 +146,7 @@ export function VolumeFilterPanel({
               />
               <span>
                 <strong>{item.label}</strong>
-                <small>
-                  {volumeImageTypeLabel(item)} / {item.shape.join(' x ')} /{' '}
-                  {item.dtype}
-                </small>
+                <small>{volumeSummary(item)}</small>
               </span>
             </button>
           ))}
@@ -228,13 +228,13 @@ function VolumeFilterDetails({
           <dt>Format</dt>
           <dd>{volumeFacetValue(item.format)}</dd>
           <dt>Image</dt>
-          <dd>{volumeImageTypeLabel(item)}</dd>
+          <dd>{volumeImageTypeDisplay(item)}</dd>
           <dt>Dtype</dt>
           <dd>{volumeFacetValue(item.dtype)}</dd>
           <dt>Shape</dt>
           <dd>{item.shape.join(' x ')}</dd>
           <dt>Spacing</dt>
-          <dd>{item.spacing.join(' x ')}</dd>
+          <dd>{formatVoxelSpacing(item.spacing)}</dd>
           {item.derivedFrom ? (
             <>
               <dt>Source</dt>

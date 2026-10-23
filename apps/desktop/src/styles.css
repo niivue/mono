@@ -112,6 +112,25 @@ button {
   white-space: nowrap;
 }
 
+.nv-status .nv-status-message.is-success svg {
+  color: var(--green);
+}
+
+/* Errors stay put until the next action, so make them read as errors. */
+.nv-status .nv-status-message.is-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.nv-status .nv-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .nv-status .nv-warm-status {
   color: var(--amber);
 }
@@ -305,6 +324,30 @@ button {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+}
+
+.nv-recent-item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.nv-recent-item:disabled:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.nv-menu-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The Share menu hangs from the right side of the toolbar. */
+.nv-share-menu {
+  right: 0;
+  left: auto;
+  min-width: 260px;
 }
 
 .nv-recent-divider {
@@ -888,7 +931,9 @@ button {
   left: 14px;
   z-index: 3;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* The file name gets the room; label and badge never wrap (narrow panes
+     used to break "NiiVue Window" onto two lines and hide the name). */
+  grid-template-columns: auto minmax(40px, 1fr) minmax(0, auto);
   align-items: center;
   gap: 8px;
   max-width: min(560px, calc(100% - 28px));
@@ -900,9 +945,10 @@ button {
   backdrop-filter: blur(8px);
 }
 
-.nv-stage-title span {
+.nv-stage-title > span {
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
@@ -920,11 +966,14 @@ button {
 }
 
 .nv-stage-title em {
-  min-width: 38px;
+  min-width: 0;
+  overflow: hidden;
   color: var(--amber);
   font-size: 11px;
   font-style: normal;
   text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nv-pane-icon-button {
@@ -1032,6 +1081,68 @@ button {
   max-width: calc(100% - 24px);
 }
 
+/* First-run hint while only the bundled sample is loaded. Sits under the
+   Browse title, above the grid, without blocking panning elsewhere. */
+.nv-open-data-card {
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  z-index: 3;
+  display: grid;
+  gap: 6px;
+  width: min(300px, calc(100% - 24px));
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.9);
+  padding: 10px 12px 12px;
+  backdrop-filter: blur(8px);
+}
+
+.nv-open-data-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.nv-open-data-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-open-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.nv-open-data-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 9px;
+}
+
+.nv-open-data-actions button:hover:not(:disabled),
+.nv-open-data-actions button:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-open-data-actions button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
 .nv-osd-world {
   position: relative;
   margin: 22px;
@@ -1062,13 +1173,19 @@ button {
 .nv-osd-section-label {
   position: absolute;
   z-index: 2;
+  /* Title and count share one row: the title ellipsizes before it can run
+     into the count ("SOURCE VOLUM" used to sit under its badge). */
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 14px 22px 0;
   pointer-events: none;
 }
 
 .nv-osd-section-label span,
 .nv-osd-section-label em {
-  position: absolute;
-  top: 14px;
   display: inline-flex;
   align-items: center;
   min-height: 26px;
@@ -1083,11 +1200,16 @@ button {
 }
 
 .nv-osd-section-label span {
-  left: 22px;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 26px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nv-osd-section-label em {
-  right: 22px;
+  flex: 0 0 auto;
   color: var(--green);
   font-style: normal;
 }
@@ -1105,6 +1227,26 @@ button {
 .nv-niivue-title {
   /* Leave room at the right for the full-screen toggle button. */
   right: 50px;
+}
+
+/* File name with the ellipsis in the middle: the head shrinks, the tail
+   (extension and suffix) stays. Takes the pointer back for its tooltip. */
+.nv-stage-title .nv-middle-ellipsis {
+  display: flex;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.nv-middle-ellipsis span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-middle-ellipsis span + span {
+  flex: 0 0 auto;
+  white-space: pre;
 }
 
 .nv-osd-tile {
@@ -1250,7 +1392,7 @@ button {
   left: 0;
   z-index: 3;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 34%);
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   box-sizing: border-box;
@@ -1263,6 +1405,9 @@ button {
 }
 
 .nv-hud {
+  /* The footer ignores the pointer (panning passes through); the HUD takes it
+     back so its diagnostics tooltip can show. */
+  pointer-events: auto;
   display: flex;
   min-width: 0;
   overflow: hidden;
@@ -1290,17 +1435,9 @@ button {
   min-width: 82px;
 }
 
-.nv-hud span:nth-child(3) {
-  min-width: 98px;
-}
-
-.nv-hud span:nth-child(5) {
-  min-width: 104px;
-}
-
 .nv-osd-source-key {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   justify-self: stretch;
   min-width: 0;
@@ -1312,6 +1449,9 @@ button {
 }
 
 .nv-osd-source-key strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--association);
   font-size: 11px;
   font-weight: 700;
@@ -1526,8 +1666,9 @@ button {
   top: 56px;
   right: 14px;
   z-index: 4;
-  display: inline-grid;
-  grid-auto-flow: column;
+  /* Shrink with the pane instead of pushing "Ax" off its left edge. */
+  display: inline-flex;
+  max-width: calc(100% - 28px);
   gap: 1px;
   overflow: hidden;
   border: 1px solid rgba(215, 166, 66, 0.32);
@@ -1536,8 +1677,10 @@ button {
 }
 
 .nv-render-snap-controls button {
-  min-width: 42px;
+  flex: 1 1 42px;
+  min-width: 30px;
   height: 28px;
+  padding: 0 4px;
   border: 0;
   background: rgba(17, 17, 15, 0.82);
   color: var(--muted);
@@ -1565,7 +1708,8 @@ button {
 .nv-render-status {
   position: absolute;
   left: 14px;
-  top: 14px;
+  /* Below the viewer title and view buttons, never behind them. */
+  top: 96px;
   max-width: min(520px, calc(100% - 28px));
   overflow: hidden;
   border: 1px solid rgba(215, 166, 66, 0.32);
@@ -1575,6 +1719,14 @@ button {
   padding: 7px 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nv-render-status.is-error {
+  z-index: 4;
+  max-width: calc(100% - 28px);
+  border-color: var(--danger);
+  color: var(--danger);
+  white-space: normal;
 }
 
 .nv-control-section,
@@ -1635,25 +1787,85 @@ button {
   text-transform: uppercase;
 }
 
-.nv-zoom-card {
-  display: block;
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.nv-zoom-card-title {
-  margin-right: auto;
-  font-weight: 600;
-}
-
-.nv-zoom-card-hint {
-  display: block;
-  margin-top: 8px;
+/* One-line stand-in for the old Zoom card: says what the scroll wheel does in
+   the 3D render and offers the way back to zoom when a clip plane has it. */
+.nv-wheel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 2px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.nv-wheel-row > span {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-wheel-zoom-button {
+  flex: none;
+  border: 1px solid var(--line);
+  background: var(--panel-3);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 3px 8px;
+}
+
+.nv-wheel-zoom-button:hover,
+.nv-wheel-zoom-button:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+/* Clip planes header doubles as the disclosure toggle. */
+.nv-clip-section .nv-panel-heading {
+  margin-bottom: 0;
+}
+
+.nv-clip-section .nv-clip-list {
+  margin-top: 10px;
+}
+
+.nv-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  padding: 0;
+}
+
+.nv-disclosure:hover,
+.nv-disclosure:focus-visible {
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-disclosure-chevron {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nv-disclosure-chevron {
+    transition: transform 120ms ease;
+  }
+}
+
+.nv-disclosure[aria-expanded="true"] .nv-disclosure-chevron {
+  transform: rotate(90deg);
 }
 
 .nv-mode-note {
@@ -2512,8 +2724,10 @@ button {
   }
 
   .nv-split-workspace {
+    /* The viewer keeps enough width for its title and the five view
+       buttons; the Browse pane gives way first. */
     grid-template-columns: minmax(132px, var(--split-left)) 12px minmax(
-        132px,
+        220px,
         1fr
       );
   }
@@ -2524,6 +2738,22 @@ button {
 
   .nv-panel-heading {
     font-size: 11px;
+  }
+}
+
+/* Short windows (down to the 640px minimum): trim the facet and metadata
+   panels so the volume list keeps at least one whole card. */
+@media (max-height: 760px) and (min-width: 701px) {
+  .nv-volume-filter {
+    grid-template-rows: auto minmax(84px, 1fr) minmax(96px, auto);
+  }
+
+  .nv-volume-filter-facets {
+    max-height: clamp(120px, 24vh, 178px);
+  }
+
+  .nv-volume-filter-details {
+    max-height: clamp(96px, 20vh, 132px);
   }
 }
 
@@ -2634,7 +2864,8 @@ button {
     max-height: 60vh;
   }
 
-  .nv-desktop-only {
+  .nv-desktop-only,
+  .nv-open-data-actions .nv-desktop-only {
     display: none;
   }
 }

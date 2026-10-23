@@ -2,6 +2,9 @@ import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 
 export type Backend = 'webgl2' | 'webgpu'
+
+/** How the footer status line presents a message. */
+export type StatusTone = 'info' | 'success' | 'error'
 export type Axis = 'axial' | 'coronal' | 'sagittal'
 
 export interface WorldRect {
@@ -117,6 +120,24 @@ export function truncationNotice(manifest: DesktopManifest): string | null {
   return `Showing ${shown.toLocaleString()} of ${manifest.totalDiscovered.toLocaleString()} volumes`
 }
 
+/**
+ * True while the only dataset is the MNI152 template NeuroVue ships (or falls
+ * back to): every source volume is the `mni152` entry and the dataset root is
+ * inside an app bundle (`….app/…`, macOS and iOS), is a `resources` dir (the
+ * `tauri dev` resource dir), or is unresolved. niimath
+ * derivatives of the sample don't count, so they don't hide the hint.
+ */
+export function isBundledSampleDataset(
+  items: readonly DesktopItem[],
+  datasetRoot: string,
+): boolean {
+  const sources = items.filter((item) => (item.role ?? 'source') === 'source')
+  if (sources.length === 0 || sources.some((item) => item.id !== 'mni152')) {
+    return false
+  }
+  return datasetRoot === '' || /(\.app(\/|$)|\/resources\/?$)/.test(datasetRoot)
+}
+
 /** Status-line text for a freshly loaded manifest. */
 export function manifestLoadedStatus(
   manifest: DesktopManifest,
@@ -126,7 +147,12 @@ export function manifestLoadedStatus(
   const notice = truncationNotice(manifest)
   return notice
     ? `${notice}${from}. Only the first ones by file path are loaded.`
-    : `${manifest.itemCount} volume item(s) loaded${from}.`
+    : `${volumeCountLabel(manifest.itemCount)} loaded${from}.`
+}
+
+/** "1 volume" / "265 volumes". */
+export function volumeCountLabel(count: number): string {
+  return `${count.toLocaleString()} ${count === 1 ? 'volume' : 'volumes'}`
 }
 
 export interface DesktopManifestVersion {

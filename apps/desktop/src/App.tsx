@@ -5,10 +5,13 @@ import {
   Calculator,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
+  CircleAlert,
   CircleDot,
   Copy,
   Crosshair,
   Database,
+  Download,
   Eye,
   EyeOff,
   FileJson,
@@ -19,7 +22,7 @@ import {
   LoaderCircle,
   Maximize2,
   Minimize2,
-  Package,
+  Mouse,
   PackageOpen,
   PanelLeftClose,
   PanelLeftOpen,
@@ -28,6 +31,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Send,
   Share2,
   SlidersHorizontal,
   SquareTerminal,
@@ -61,6 +65,7 @@ import {
   type ResolvedWindow,
   type ViewModeId,
 } from './components/NiivueStage'
+import { OpenDataCard } from './components/OpenDataCard'
 import { TerminalPanel } from './components/TerminalPanel'
 import { VolumeFilterPanel } from './components/VolumeFilterPanel'
 import {
@@ -95,14 +100,18 @@ import type {
 import {
   defaultClipPlanes,
   fetchVolumeMetadata,
+  isBundledSampleDataset,
   openOverlayVolume,
   resolveRuntimeCapabilities,
   truncationNotice,
+  volumeCountLabel,
 } from './domain/desktop'
 import {
-  volumeImageTypeLabel,
+  formatVoxelSpacing,
+  volumeImageTypeDisplay,
   volumeSession,
   volumeSubject,
+  volumeSummary,
 } from './domain/volumeFacets'
 import { useClipPlanes } from './hooks/useClipPlanes'
 import { useDatasetManifest } from './hooks/useDatasetManifest'
@@ -206,6 +215,9 @@ function isPhoneViewport(): boolean {
   )
 }
 
+// Below this window width the dataset panel folds to its rail (see App).
+const AUTO_COLLAPSE_WIDTH = 1100
+
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
@@ -234,8 +246,18 @@ export function App(): JSX.Element {
     setSelectedId,
     setStatus,
     status,
+    statusTone,
     warmProgress,
   } = useDatasetManifest({ promoteRecent })
+  // What researchers call this dataset: its BIDS name, else its folder name.
+  // The bundled sample gets a plain label instead of its path inside the app.
+  const isSampleDataset = useMemo(
+    () => manifest !== null && isBundledSampleDataset(items, datasetRoot),
+    [manifest, items, datasetRoot],
+  )
+  const datasetName = isSampleDataset
+    ? 'Sample: MNI152 template'
+    : bidsName || (datasetRoot ? recentDatasetLabel(datasetRoot) : '')
   const datasetNotice = useMemo(
     () => (manifest ? truncationNotice(manifest) : null),
     [manifest],
@@ -292,6 +314,9 @@ export function App(): JSX.Element {
     isPhoneViewport() ? 'axial' : DEFAULT_VIEW_MODE,
   )
   const [atlasId, setAtlasId] = useState<string | null>(null)
+  // The viewer's load progress (which preview level is showing), kept for the
+  // viewer-title tooltip rather than shown on the stage.
+  const [renderStatus, setRenderStatus] = useState('')
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(
     null,
   )
@@ -341,6 +366,8 @@ export function App(): JSX.Element {
   const [isSharingBundle, setIsSharingBundle] = useState(false)
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
+  const [isShareMenuOpen, setIsShareMenuOpen] = useState(false)
+  const shareMenuRef = useRef<HTMLDivElement | null>(null)
   const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } =
     useTerminalDock()
   const isTerminalDockOpen = isTerminalAvailable && isTerminalOpen
@@ -382,25 +409,31 @@ export function App(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Narrow desktop windows (down to the 900px minimum) can't fit both side
+  // panels plus Browse and Viewer, so fold the dataset panel to its rail when
+  // the window starts or becomes narrow. Only on that transition: the user can
+  // reopen it and it stays open until the window crosses the line again. The
+  // Inspect panel stays, and Browse still selects volumes. Phones have their
+  // own drawer defaults above.
   useEffect(() => {
-    if (!isRecentMenuOpen) return
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const narrow = window.matchMedia(
+      `(max-width: ${AUTO_COLLAPSE_WIDTH - 1}px)`,
+    )
+    const collapseIfNarrow = (): void => {
+      if (narrow.matches && !isPhoneViewport()) setIsFileListCollapsed(true)
+    }
+    collapseIfNarrow()
+    narrow.addEventListener('change', collapseIfNarrow)
+    return () => narrow.removeEventListener('change', collapseIfNarrow)
+  }, [])
 
-    function handleMouseDown(event: MouseEvent): void {
-      if (!recentMenuRef.current) return
-      if (recentMenuRef.current.contains(event.target as Node)) return
-      setIsRecentMenuOpen(false)
-    }
-    function handleKey(event: KeyboardEvent): void {
-      if (event.key === 'Escape') setIsRecentMenuOpen(false)
-    }
-
-    window.addEventListener('mousedown', handleMouseDown)
-    window.addEventListener('keydown', handleKey)
-    return () => {
-      window.removeEventListener('mousedown', handleMouseDown)
-      window.removeEventListener('keydown', handleKey)
-    }
-  }, [isRecentMenuOpen])
+  useDismissableMenu(isRecentMenuOpen, recentMenuRef, () =>
+    setIsRecentMenuOpen(false),
+  )
+  useDismissableMenu(isShareMenuOpen, shareMenuRef, () =>
+    setIsShareMenuOpen(false),
+  )
 
   const {
     query,
@@ -652,17 +685,17 @@ export function App(): JSX.Element {
           next.delete(result.id)
           return next
         })
-        setStatus(`Atlas ${result.label} added with label sidecar.`)
+        setStatus(`Atlas ${result.label} added with label sidecar.`, 'success')
       } else {
         setOverlayIds((current) => {
           const next = new Set(current)
           next.add(result.id)
           return next
         })
-        setStatus(`Overlay ${result.label} added to every volume.`)
+        setStatus(`Overlay ${result.label} added to every volume.`, 'success')
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       setIsOpeningOverlay(false)
     }
@@ -696,7 +729,7 @@ export function App(): JSX.Element {
   async function handleExportBundle(): Promise<void> {
     if (isExportingBundle) return
     if (!selected) {
-      setStatus('Select a volume before exporting a bundle.')
+      setStatus('Select a volume before exporting a bundle.', 'error')
       return
     }
 
@@ -719,9 +752,10 @@ export function App(): JSX.Element {
       setStatus(
         `Exported ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
           `(${formatBundleBytes(result.totalBytes)}) to ${result.bundlePath}.`,
+        'success',
       )
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       setIsExportingBundle(false)
     }
@@ -730,7 +764,7 @@ export function App(): JSX.Element {
   async function handleShareBundle(): Promise<void> {
     if (isSharingBundle) return
     if (!selected || items.length === 0) {
-      setStatus('Open a dataset before sharing.')
+      setStatus('Open a dataset before sharing.', 'error')
       return
     }
 
@@ -758,9 +792,10 @@ export function App(): JSX.Element {
       setStatus(
         `AirDrop sheet opened — ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
           `(${formatBundleBytes(result.totalBytes)}).`,
+        'success',
       )
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       setIsSharingBundle(false)
     }
@@ -782,7 +817,7 @@ export function App(): JSX.Element {
       }
       await runBundleImport(path)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       isImportingBundleRef.current = false
       setIsImportingBundle(false)
@@ -798,7 +833,7 @@ export function App(): JSX.Element {
     try {
       await runBundleImport(path)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       isImportingBundleRef.current = false
       setIsImportingBundle(false)
@@ -810,14 +845,16 @@ export function App(): JSX.Element {
   async function runBundleImport(path: string): Promise<void> {
     const bundle = await readBundle(path)
     if (bundle.manifest?.nvbundle == null) {
-      setStatus('Not a NeuroVue bundle (no manifest.json).')
+      setStatus('This file is not a NeuroVue bundle.', 'error')
       return
     }
 
     // Load the bundle's copied volumes as the working dataset (the data/ dir
     // opens like any dataset; each volume's new id is its filename stem), but
     // record the bundle itself in recents — `dataDir` is a temp extraction.
-    await openRecentDataset(bundle.dataDir, { promoteAs: path })
+    // A failed open already put its error in the status line; stop here so the
+    // previous dataset isn't reported as "imported" over it.
+    if (!(await openRecentDataset(bundle.dataDir, { promoteAs: path }))) return
     const nextManifest = await refreshDesktopManifestData()
     const loadedIds = new Set(
       (nextManifest?.items ?? []).map((item) => item.id),
@@ -882,7 +919,8 @@ export function App(): JSX.Element {
         ? ` ⚠ ${failures.length} file(s) failed the integrity check`
         : ''
     setStatus(
-      `Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`,
+      `Imported ${volumeCountLabel(bundle.manifest.volumes.length)} from bundle.${integrity}`,
+      failures.length > 0 ? 'error' : 'success',
     )
   }
 
@@ -895,7 +933,7 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isRenderMaximized])
 
-  const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
+  const warmStatus = warmProgressLabel(warmProgress)
   // The atlas layer's display name, used to bind the region readout to the named
   // atlas (only atlas/label volumes carry per-voxel region labels).
   const atlasName = useMemo(
@@ -933,7 +971,12 @@ export function App(): JSX.Element {
                   .join(' · ') || undefined
               }
             >
-              {bidsName || datasetRoot || serverUrl || 'Resolving local server'}
+              {isSampleDataset
+                ? datasetName
+                : bidsName ||
+                  datasetRoot ||
+                  serverUrl ||
+                  'Resolving local server'}
             </p>
             {datasetNotice ? (
               <p className="nv-dataset-notice" role="status">
@@ -1005,6 +1048,25 @@ export function App(): JSX.Element {
                     Open dataset directory…
                   </span>
                 </button>
+                <button
+                  aria-label="Open bundle"
+                  className="nv-recent-item nv-recent-open"
+                  disabled={isImportingBundle || isOpeningDataset}
+                  onClick={() => {
+                    setIsRecentMenuOpen(false)
+                    void handleImportBundle()
+                  }}
+                  title="Open a NeuroVue bundle (.nvbundle) — loads its volumes and restores the saved view"
+                  type="button"
+                  role="menuitem"
+                >
+                  {isImportingBundle ? (
+                    <LoaderCircle className="nv-spin" size={14} />
+                  ) : (
+                    <PackageOpen size={14} />
+                  )}
+                  <span className="nv-recent-item-name">Open bundle…</span>
+                </button>
                 {recentDatasets.length > 0 ? (
                   <>
                     <div className="nv-recent-divider" role="separator" />
@@ -1048,87 +1110,110 @@ export function App(): JSX.Element {
             ) : null}
           </div>
 
-          <button
-            aria-label="Reset clip planes"
-            className="nv-icon-button"
-            title="Reset clip planes"
-            type="button"
-            onClick={resetClipPlanes}
-          >
-            <RotateCcw size={16} />
-          </button>
-          <button
-            aria-label="Save correction patch"
-            className="nv-icon-button"
-            title="Save correction patch"
-            type="button"
-            onClick={async () => {
-              try {
-                await savePatch(serverUrl, selected, clipPlanes, backend)
-                setStatus(
-                  `Correction patch saved for ${selected?.label ?? 'volume'}.`,
-                )
-              } catch (error) {
-                setStatus(
-                  error instanceof Error ? error.message : String(error),
-                )
-              }
-            }}
-          >
-            <Save size={16} />
-          </button>
-          <button
-            aria-label="Export bundle"
-            className="nv-icon-button"
-            title={
-              selected
-                ? 'Export dataset bundle (volumes + this view) — the shareable/AirDrop payload'
-                : 'Select a volume to export a bundle'
-            }
-            type="button"
-            disabled={!selected || isExportingBundle}
-            onClick={handleExportBundle}
-          >
-            {isExportingBundle ? (
-              <LoaderCircle className="nv-spin" size={16} />
-            ) : (
-              <Package size={16} />
-            )}
-          </button>
-          <button
-            aria-label="Open bundle"
-            className="nv-icon-button"
-            title="Open a NeuroVue bundle (.nvbundle) — loads its volumes and restores the saved view"
-            type="button"
-            disabled={isImportingBundle || isOpeningDataset}
-            onClick={handleImportBundle}
-          >
-            {isImportingBundle ? (
-              <LoaderCircle className="nv-spin" size={16} />
-            ) : (
-              <PackageOpen size={16} />
-            )}
-          </button>
+          {/* With AirDrop there are two ways to share, so group them under one
+              menu; without it, export is the only one, so skip the menu. */}
           {isAirdropAvailable ? (
+            <div className="nv-open-group" ref={shareMenuRef}>
+              <button
+                className="nv-tool-button"
+                onClick={() => setIsShareMenuOpen((open) => !open)}
+                title="Export this dataset as a bundle, or send it via AirDrop"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={isShareMenuOpen}
+              >
+                {isExportingBundle || isSharingBundle ? (
+                  <LoaderCircle className="nv-spin" size={15} />
+                ) : (
+                  <Share2 size={15} />
+                )}
+                <span>Share</span>
+                <ChevronDown size={14} />
+              </button>
+              {isShareMenuOpen ? (
+                <div className="nv-recent-menu nv-share-menu" role="menu">
+                  <button
+                    aria-label="Export bundle"
+                    className="nv-recent-item nv-recent-open"
+                    disabled={!selected || isExportingBundle}
+                    onClick={() => {
+                      setIsShareMenuOpen(false)
+                      void handleExportBundle()
+                    }}
+                    title={
+                      selected
+                        ? 'Export dataset bundle (volumes + this view) — the shareable/AirDrop payload'
+                        : 'Select a volume to export a bundle'
+                    }
+                    type="button"
+                    role="menuitem"
+                  >
+                    <Download size={14} />
+                    <span className="nv-menu-item-text">
+                      <span className="nv-recent-item-name">
+                        Export bundle…
+                      </span>
+                      <span className="nv-recent-item-path">
+                        {selected
+                          ? 'Volumes plus this view, as a .nvbundle file'
+                          : 'Select a volume first'}
+                      </span>
+                    </span>
+                  </button>
+                  {isAirdropAvailable ? (
+                    <button
+                      aria-label="Share dataset via AirDrop"
+                      className="nv-recent-item nv-recent-open"
+                      disabled={!selected || isSharingBundle}
+                      onClick={() => {
+                        setIsShareMenuOpen(false)
+                        void handleShareBundle()
+                      }}
+                      title={
+                        selected
+                          ? 'AirDrop the whole dataset — recipient can browse and pick any volume'
+                          : 'Open a dataset to share via AirDrop'
+                      }
+                      type="button"
+                      role="menuitem"
+                    >
+                      <Send size={14} />
+                      <span className="nv-menu-item-text">
+                        <span className="nv-recent-item-name">
+                          Send via AirDrop…
+                        </span>
+                        <span className="nv-recent-item-path">
+                          {selected
+                            ? 'The whole dataset; the recipient picks any volume'
+                            : 'Open a dataset first'}
+                        </span>
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : (
             <button
-              aria-label="Share dataset via AirDrop"
-              className="nv-icon-button"
+              aria-label="Export bundle"
+              className="nv-tool-button"
+              disabled={!selected || isExportingBundle}
+              onClick={handleExportBundle}
               title={
                 selected
-                  ? 'AirDrop the whole dataset — recipient can browse and pick any volume'
-                  : 'Open a dataset to share via AirDrop'
+                  ? 'Export dataset bundle (volumes + this view) — the shareable/AirDrop payload'
+                  : 'Select a volume to export a bundle'
               }
               type="button"
-              disabled={!selected || isSharingBundle}
-              onClick={handleShareBundle}
             >
-              {isSharingBundle ? (
-                <LoaderCircle className="nv-spin" size={16} />
+              {isExportingBundle ? (
+                <LoaderCircle className="nv-spin" size={15} />
               ) : (
-                <Share2 size={16} />
+                <Download size={15} />
               )}
+              <span>Export</span>
             </button>
-          ) : null}
+          )}
           {isTerminalAvailable ? (
             <button
               aria-pressed={isTerminalOpen}
@@ -1253,10 +1338,20 @@ export function App(): JSX.Element {
             onPointerLeave={() => setMouseContext(null)}
           >
             <DatasetDesktop
+              datasetName={datasetName}
+              overlay={
+                isSampleDataset ? (
+                  <OpenDataCard
+                    disabled={isOpeningDataset || isImportingBundle}
+                    onOpenBundle={() => void handleImportBundle()}
+                    onOpenFile={() => void openLocalVolumeFile()}
+                    onOpenFolder={() => void openLocalDataset()}
+                  />
+                ) : null
+              }
               items={filteredItems}
               manifest={manifest}
               selected={selected}
-              isActive={mouseContext === 'desktop'}
               zoom={desktopZoom}
               onZoom={setDesktopZoom}
               onSelect={(item) => setSelectedId(item.id)}
@@ -1286,14 +1381,23 @@ export function App(): JSX.Element {
             onPointerLeave={() => setMouseContext(null)}
           >
             <div className="nv-stage-title nv-niivue-title" aria-hidden="true">
-              <span>NiiVue Window</span>
-              <strong>{selected?.label ?? 'No selection'}</strong>
+              <span>Viewer</span>
+              <MiddleEllipsis
+                text={selected?.label ?? 'No selection'}
+                title={[
+                  selected?.label,
+                  `${backendLabel(backend)} renderer`,
+                  renderStatus,
+                ]
+                  .filter(Boolean)
+                  .join('\n')}
+              />
               <em>
                 {viewMode !== 'render'
                   ? `${viewModeLabel(viewMode)}${slicePosition ? ` · ${slicePosition}` : ''}`
                   : renderWheelMode === 'clip-plane'
                     ? `wheel ${activeClipPlane?.label ?? 'clip'}`
-                    : backend.toUpperCase()}
+                    : '3D'}
               </em>
             </div>
             <button
@@ -1331,6 +1435,7 @@ export function App(): JSX.Element {
               onLocationChange={setLocationReadout}
               onResolvedWindows={handleResolvedWindows}
               onViewModeChange={setViewMode}
+              onRenderStatus={setRenderStatus}
               renderWheelMode={renderWheelMode}
               viewMode={viewMode}
             />
@@ -1382,80 +1487,6 @@ export function App(): JSX.Element {
           <div className="nv-sidepanel-content">
             {sidePanelTab === 'inspect' ? (
               <>
-                {viewMode === 'render' ? (
-                  <>
-                    <section className="nv-control-section">
-                      <div className="nv-panel-heading">
-                        <span>
-                          <ZoomIn size={15} />
-                          Zoom
-                        </span>
-                      </div>
-
-                      <button
-                        aria-pressed={renderWheelMode === 'zoom'}
-                        className={`nv-clip-card nv-zoom-card ${renderWheelMode === 'zoom' ? 'is-active' : ''}`}
-                        onClick={() => setRenderWheelMode('zoom')}
-                        type="button"
-                      >
-                        <span className="nv-clip-card-header">
-                          <span className="nv-zoom-card-title">
-                            Zoom render
-                          </span>
-                          {renderWheelMode === 'zoom' ? (
-                            <span className="nv-clip-active-badge">wheel</span>
-                          ) : null}
-                        </span>
-                        <span className="nv-zoom-card-hint">
-                          Scroll the render to zoom in and out.
-                        </span>
-                      </button>
-                    </section>
-
-                    <section className="nv-control-section">
-                      <div className="nv-panel-heading">
-                        <span>
-                          <SlidersHorizontal size={15} />
-                          Clip Planes
-                        </span>
-                        <em>
-                          {renderWheelMode === 'clip-plane'
-                            ? (clipPlanes.find(
-                                (plane) => plane.id === activeClipPlaneId,
-                              )?.label ?? 'none')
-                            : 'none'}
-                        </em>
-                      </div>
-
-                      <div className="nv-clip-list">
-                        {clipPlanes.map((plane) => (
-                          <ClipPlaneEditor
-                            active={
-                              renderWheelMode === 'clip-plane' &&
-                              plane.id === activeClipPlaneId
-                            }
-                            key={plane.id}
-                            plane={plane}
-                            onActivate={() => bindActiveClipPlane(plane.id)}
-                            onChange={updateClipPlane}
-                          />
-                        ))}
-                      </div>
-                    </section>
-
-                    <BlockControls blocks={blocks} onChange={setBlocks} />
-                  </>
-                ) : (
-                  <section className="nv-control-section">
-                    <p className="nv-mode-note">
-                      Zoom and clip planes apply to the 3D render. In 2D modes,
-                      scroll to page through slices and click to move the
-                      crosshair. Switch to <strong>3D</strong> for render
-                      controls.
-                    </p>
-                  </section>
-                )}
-
                 <LayerPanel
                   atlasId={atlasId}
                   isOpeningOverlay={isOpeningOverlay}
@@ -1474,6 +1505,70 @@ export function App(): JSX.Element {
                   onLoadOverlay={loadOverlayVolume}
                   onOverlayToggle={toggleOverlayLayer}
                 />
+
+                {viewMode === 'render' ? (
+                  <>
+                    <WheelModeRow
+                      activePlaneLabel={
+                        renderWheelMode === 'clip-plane'
+                          ? clipPlanes.find(
+                              (plane) => plane.id === activeClipPlaneId,
+                            )?.label
+                          : undefined
+                      }
+                      onZoom={() => setRenderWheelMode('zoom')}
+                    />
+
+                    <ClipPlanesSection
+                      activeClipPlaneId={
+                        renderWheelMode === 'clip-plane'
+                          ? activeClipPlaneId
+                          : null
+                      }
+                      clipPlanes={clipPlanes}
+                      saveDisabledReason={
+                        !selected
+                          ? 'Select a volume to save a clip-plane correction'
+                          : null
+                      }
+                      onActivate={bindActiveClipPlane}
+                      onChange={updateClipPlane}
+                      onReset={resetClipPlanes}
+                      onSave={async () => {
+                        try {
+                          await savePatch(
+                            serverUrl,
+                            selected,
+                            clipPlanes,
+                            backend,
+                          )
+                          setStatus(
+                            `Clip-plane correction saved for ${selected?.label ?? 'volume'}.`,
+                            'success',
+                          )
+                        } catch (error) {
+                          setStatus(
+                            error instanceof Error
+                              ? error.message
+                              : String(error),
+                            'error',
+                          )
+                        }
+                      }}
+                    />
+
+                    <BlockControls blocks={blocks} onChange={setBlocks} />
+                  </>
+                ) : (
+                  <section className="nv-control-section">
+                    <p className="nv-mode-note">
+                      Zoom and clip planes apply to the 3D render. In 2D modes,
+                      scroll to page through slices and click to move the
+                      crosshair. Switch to <strong>3D</strong> for render
+                      controls.
+                    </p>
+                  </section>
+                )}
 
                 <SelectionPanel
                   item={selected}
@@ -1521,8 +1616,25 @@ export function App(): JSX.Element {
       ) : null}
 
       <footer className="nv-status">
-        <span>
-          <CircleDot size={12} />
+        {/* One stable live region: swapping roles on the fly is announced
+            unreliably, so errors stay "status" and say "Error:" instead. */}
+        <span
+          aria-atomic="true"
+          aria-live="polite"
+          className={`nv-status-message is-${statusTone}`}
+          role="status"
+          title={status}
+        >
+          {statusTone === 'error' ? (
+            <CircleAlert aria-hidden="true" size={12} />
+          ) : statusTone === 'success' ? (
+            <CheckCircle2 aria-hidden="true" size={12} />
+          ) : (
+            <CircleDot aria-hidden="true" size={12} />
+          )}
+          {statusTone === 'error' ? (
+            <span className="nv-visually-hidden">Error: </span>
+          ) : null}
           {status}
         </span>
         {warmStatus ? (
@@ -1541,7 +1653,6 @@ export function App(): JSX.Element {
             {locationStatus}
           </span>
         ) : null}
-        <span>{mouseContextLabel(mouseContext)}</span>
         <span
           className="nv-disclaimer"
           role="note"
@@ -2276,7 +2387,7 @@ function SelectionPanel({
           <dt>Format</dt>
           <dd>{item.format}</dd>
           <dt>Image</dt>
-          <dd>{volumeImageTypeLabel(item)}</dd>
+          <dd>{volumeImageTypeDisplay(item)}</dd>
           <dt>Role</dt>
           <dd>{item.role ?? 'source'}</dd>
           {item.derivedFrom ? (
@@ -2288,7 +2399,7 @@ function SelectionPanel({
           <dt>Shape</dt>
           <dd>{item.shape.join(' x ')}</dd>
           <dt>Spacing</dt>
-          <dd>{item.spacing.join(' x ')}</dd>
+          <dd>{formatVoxelSpacing(item.spacing)}</dd>
           <dt>Metadata</dt>
           <dd>{metadataStatus}</dd>
         </dl>
@@ -2479,6 +2590,134 @@ function MetadataPanel({
       ) : (
         <p>Select a volume to inspect sidecar metadata.</p>
       )}
+    </section>
+  )
+}
+
+function WheelModeRow({
+  activePlaneLabel,
+  onZoom,
+}: {
+  /** Label of the plane the scroll wheel moves, or undefined when it zooms. */
+  activePlaneLabel: string | undefined
+  onZoom: () => void
+}): JSX.Element {
+  return (
+    <div className="nv-wheel-row">
+      <Mouse size={14} aria-hidden="true" />
+      {activePlaneLabel ? (
+        <>
+          <span
+            title={`Scroll the render to move the ${activePlaneLabel} clip plane`}
+          >
+            Wheel: {activePlaneLabel} plane
+          </span>
+          <button
+            className="nv-wheel-zoom-button"
+            onClick={onZoom}
+            title="Scroll the render to zoom in and out instead"
+            type="button"
+          >
+            Use for zoom
+          </button>
+        </>
+      ) : (
+        <span title="Scroll the render to zoom in and out. Click a clip plane to move it with the wheel instead.">
+          Wheel: zoom
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ClipPlanesSection({
+  activeClipPlaneId,
+  clipPlanes,
+  saveDisabledReason,
+  onActivate,
+  onChange,
+  onReset,
+  onSave,
+}: {
+  /** The plane bound to the scroll wheel, or null when the wheel zooms. */
+  activeClipPlaneId: string | null
+  clipPlanes: ClipPlane[]
+  /** Why saving is unavailable beyond "no plane enabled", or null. */
+  saveDisabledReason: string | null
+  onActivate: (planeId: string) => void
+  onChange: (plane: ClipPlane) => void
+  onReset: () => void
+  onSave: () => void
+}): JSX.Element {
+  const enabledCount = clipPlanes.filter((plane) => plane.enabled).length
+  const anyEnabled = enabledCount > 0
+  // Start open only when a plane is cutting the render, and open again if one
+  // gets enabled elsewhere (the stage chips, an opened bundle). Never close on
+  // its own, so unchecking the last plane doesn't collapse it under the cursor.
+  const [isOpen, setIsOpen] = useState(anyEnabled)
+  const wasEnabledRef = useRef(anyEnabled)
+  useEffect(() => {
+    if (anyEnabled && !wasEnabledRef.current) setIsOpen(true)
+    wasEnabledRef.current = anyEnabled
+  }, [anyEnabled])
+
+  const saveReason = !anyEnabled
+    ? 'Enable a clip plane to save a correction'
+    : saveDisabledReason
+
+  return (
+    <section className="nv-control-section nv-clip-section">
+      <div className="nv-panel-heading">
+        <button
+          aria-expanded={isOpen}
+          className="nv-disclosure"
+          onClick={() => setIsOpen((open) => !open)}
+          type="button"
+        >
+          <ChevronRight className="nv-disclosure-chevron" size={14} />
+          <SlidersHorizontal size={15} />
+          Clip planes
+        </button>
+        <span className="nv-sidebar-heading-tools">
+          <em>{anyEnabled ? `${enabledCount} on` : 'off'}</em>
+          <button
+            aria-label="Save clip-plane correction"
+            className="nv-pane-icon-button"
+            disabled={saveReason !== null}
+            onClick={onSave}
+            title={
+              saveReason ??
+              'Save clip-plane correction: records the enabled planes for this volume'
+            }
+            type="button"
+          >
+            <Save size={14} />
+          </button>
+          <button
+            aria-label="Reset clip planes"
+            className="nv-pane-icon-button"
+            onClick={onReset}
+            title="Reset clip planes"
+            type="button"
+          >
+            <RotateCcw size={14} />
+          </button>
+        </span>
+      </div>
+
+      {isOpen ? (
+        <div className="nv-clip-list">
+          {clipPlanes.map((plane) => (
+            <ClipPlaneEditor
+              active={plane.id === activeClipPlaneId}
+              key={plane.id}
+              plane={plane}
+              onActivate={() => onActivate(plane.id)}
+              onChange={onChange}
+            />
+          ))}
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -2786,6 +3025,31 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+function backendLabel(backend: Backend): string {
+  return backend === 'webgpu' ? 'WebGPU' : 'WebGL 2'
+}
+
+// A file name that ellipsizes in the middle, so "sub-10159_ses-01_…_T1w.nii.gz"
+// keeps both the subject and the suffix. The head shrinks with an end
+// ellipsis; the tail (last ~12 characters) never shrinks.
+function MiddleEllipsis({
+  text,
+  title,
+}: {
+  text: string
+  title?: string
+}): JSX.Element {
+  const tailLength = text.length > 20 ? 12 : 0
+  const head = tailLength ? text.slice(0, -tailLength) : text
+  const tail = tailLength ? text.slice(-tailLength) : ''
+  return (
+    <strong className="nv-middle-ellipsis" title={title}>
+      <span>{head}</span>
+      {tail ? <span>{tail}</span> : null}
+    </strong>
+  )
+}
+
 function viewModeLabel(mode: ViewModeId): string {
   switch (mode) {
     case 'axial':
@@ -2799,12 +3063,6 @@ function viewModeLabel(mode: ViewModeId): string {
     default:
       return '3D render'
   }
-}
-
-function mouseContextLabel(context: MouseContext): string {
-  if (context === 'desktop') return 'Mouse: desktop grid controls'
-  if (context === 'niivue') return 'Mouse: NiiVue controls'
-  return 'Mouse: no pane'
 }
 
 // Through-plane position of the current slice, as an anatomical mm coordinate
@@ -2928,16 +3186,12 @@ function formatVoxelIndex(value: number): string {
   return String(Math.round(value))
 }
 
-function warmProgressLabel(
-  progress: WarmProgress | null,
-  datasetRoot: string,
-): string | null {
+// Background preview generation, in the user's terms ("previews", not the
+// pyramid cache that backs them).
+function warmProgressLabel(progress: WarmProgress | null): string | null {
   if (!progress || progress.total <= 0) return null
-  const datasetLabel = datasetRoot ? `${recentDatasetLabel(datasetRoot)}: ` : ''
-  if (!progress.active)
-    return `${datasetLabel}Pyramid cache ready ${progress.completed}/${progress.total}`
-  const percent = Math.round((progress.completed / progress.total) * 100)
-  return `${datasetLabel}Warming pyramid ${progress.completed}/${progress.total} (${percent}%)`
+  if (!progress.active) return 'Previews ready'
+  return `Preparing previews ${progress.completed.toLocaleString()}/${progress.total.toLocaleString()}`
 }
 
 function compareAtlasCandidates(left: DesktopItem, right: DesktopItem): number {
@@ -3021,7 +3275,7 @@ function atlasCandidateScore(item: DesktopItem): number {
 }
 
 function layerOptionMeta(item: DesktopItem): string {
-  const base = `${volumeImageTypeLabel(item)} / ${item.shape.join(' x ')} / ${item.dtype}`
+  const base = volumeSummary(item)
   const subject = volumeSubject(item)
   return subject ? `${subject} · ${base}` : base
 }
@@ -3120,7 +3374,7 @@ async function savePatch(
   backend: Backend,
 ): Promise<void> {
   if (!serverUrl || !item) {
-    throw new Error('Select a volume before saving a correction patch.')
+    throw new Error('Select a volume before saving a clip-plane correction.')
   }
 
   const response = await fetch(`${serverUrl}/session/correction.patch.json`, {
@@ -3140,7 +3394,36 @@ async function savePatch(
   })
   if (!response.ok) {
     throw new Error(
-      `Correction patch save failed with HTTP ${response.status}.`,
+      `Clip-plane correction was not saved (HTTP ${response.status}).`,
     )
   }
+}
+
+/** Close a dropdown menu on an outside mouse-down or Escape. */
+function useDismissableMenu(
+  isOpen: boolean,
+  ref: RefObject<HTMLElement | null>,
+  close: () => void,
+): void {
+  const closeRef = useRef(close)
+  closeRef.current = close
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handleMouseDown(event: MouseEvent): void {
+      if (!ref.current) return
+      if (ref.current.contains(event.target as Node)) return
+      closeRef.current()
+    }
+    function handleKey(event: KeyboardEvent): void {
+      if (event.key === 'Escape') closeRef.current()
+    }
+
+    window.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('keydown', handleKey)
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('keydown', handleKey)
+    }
+  }, [isOpen, ref])
 }

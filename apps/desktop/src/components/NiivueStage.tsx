@@ -57,6 +57,10 @@ interface NiivueStageProps {
     extents: Record<string, { min: number[]; max: number[] }>,
   ) => void
   onViewModeChange: (mode: ViewModeId) => void
+  // Reports the loader's progress text ("… ready at L2 (207 x 256 x 215)") so
+  // the host can keep it as a diagnostic tooltip. Only a load failure is shown
+  // on the stage itself.
+  onRenderStatus?: (status: string) => void
 }
 
 export interface NiivueRenderLayer {
@@ -336,6 +340,7 @@ export function NiivueStage({
   onResolvedWindows,
   onLayerExtents,
   onViewModeChange,
+  onRenderStatus,
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -355,6 +360,11 @@ export function NiivueStage({
   const pinchPointers = useRef<Map<number, { x: number; y: number }>>(new Map())
   const pinchDistance = useRef<number | null>(null)
   const [status, setStatus] = useState('Waiting for a dataset selection.')
+  // True only when the volume failed to load; routine progress stays hidden.
+  const [isStatusError, setIsStatusError] = useState(false)
+  useEffect(() => {
+    onRenderStatus?.(status)
+  }, [status, onRenderStatus])
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
   // Bumped after each volume load completes, so the in-place display effect
   // re-runs once NiiVue has computed per-volume stats (robust range / peak) —
@@ -418,10 +428,9 @@ export function NiivueStage({
       }
 
       setSnapId(null)
+      setIsStatusError(false)
       syncCanvasSize(canvas, stage)
-      setStatus(
-        `Loading ${layerStackLabel(layers)} with ${backend.toUpperCase()}.`,
-      )
+      setStatus(`Loading ${layerStackLabel(layers)}.`)
       try {
         const loaded = await loadNiiVue(backend)
         if (cancelled) return
@@ -479,7 +488,12 @@ export function NiivueStage({
       } catch (error) {
         if (!cancelled) {
           nvRef.current = null
-          setStatus(error instanceof Error ? error.message : String(error))
+          setIsStatusError(true)
+          setStatus(
+            `Couldn't display ${primaryItem.label}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          )
         }
       }
     }
@@ -963,9 +977,11 @@ export function NiivueStage({
           />
         </div>
       ) : null}
-      <div className="nv-render-status" role="status" aria-live="polite">
-        {status}
-      </div>
+      {isStatusError ? (
+        <div className="nv-render-status is-error" role="alert">
+          {status}
+        </div>
+      ) : null}
     </div>
   )
 }

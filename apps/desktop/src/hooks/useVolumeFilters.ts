@@ -13,15 +13,13 @@ export interface VolumeFilters {
   selectedImageTypes: Set<string>
   selectedFormats: Set<string>
   selectedDtypes: Set<string>
-  activeFilterItemId: string | null
   filteredItems: DesktopItem[]
   setQuery: (query: string) => void
-  setActiveFilterItemId: (id: string | null) => void
   toggleRole: (value: string) => void
   toggleImageType: (value: string) => void
   toggleFormat: (value: string) => void
   toggleDtype: (value: string) => void
-  /** Clear the query and all facet selections (leaves the active item). */
+  /** Clear the query and all facet selections (leaves the selection). */
   clearFilters: () => void
 }
 
@@ -50,9 +48,6 @@ export function useVolumeFilters(items: DesktopItem[]): VolumeFilters {
   )
   const [selectedDtypes, setSelectedDtypes] = useState<Set<string>>(
     () => new Set(),
-  )
-  const [activeFilterItemId, setActiveFilterItemId] = useState<string | null>(
-    null,
   )
 
   const filteredItems = useMemo(() => {
@@ -101,10 +96,8 @@ export function useVolumeFilters(items: DesktopItem[]): VolumeFilters {
     selectedImageTypes,
     selectedFormats,
     selectedDtypes,
-    activeFilterItemId,
     filteredItems,
     setQuery,
-    setActiveFilterItemId,
     toggleRole: (value) =>
       setSelectedRoles((current) => toggleValue(current, value)),
     toggleImageType: (value) =>

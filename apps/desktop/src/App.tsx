@@ -403,10 +403,8 @@ export function App(): JSX.Element {
     selectedImageTypes,
     selectedFormats,
     selectedDtypes,
-    activeFilterItemId,
     filteredItems,
     setQuery,
-    setActiveFilterItemId,
     toggleRole,
     toggleImageType,
     toggleFormat,
@@ -416,7 +414,6 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     clearFilters()
-    setActiveFilterItemId(null)
     // Reset dataset-scoped filters when the backing dataset changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetRevision])
@@ -1212,7 +1209,6 @@ export function App(): JSX.Element {
 
           {!isFileListCollapsed ? (
             <VolumeFilterPanel
-              activeItemId={activeFilterItemId}
               filteredItems={filteredItems}
               items={items}
               query={query}
@@ -1221,7 +1217,6 @@ export function App(): JSX.Element {
               selectedFormats={selectedFormats}
               selectedImageTypes={selectedImageTypes}
               selectedRoles={selectedRoles}
-              onActiveItem={setActiveFilterItemId}
               onClearFilters={clearFilters}
               onQueryChange={setQuery}
               onSelect={(item) => setSelectedId(item.id)}

@@ -1,41 +1,271 @@
+/*
+ * Theme. The palette comes from the NiiVue icon: magenta and cyan glow on a
+ * deep navy ground. Dark is the default; light keeps the same accents.
+ */
 :root {
-  --ifm-color-primary: #2e6fb5;
-  --ifm-color-primary-dark: #2964a3;
-  --ifm-color-primary-darker: #275e9a;
-  --ifm-color-primary-darkest: #204e7f;
-  --ifm-color-primary-light: #3e7fc6;
-  --ifm-color-primary-lighter: #4785c9;
-  --ifm-color-primary-lightest: #6299d3;
-  --ifm-code-font-size: 95%;
+  --nv-magenta: #d6249f;
+  --nv-cyan: #0891b2;
+  --nv-gradient: linear-gradient(100deg, #e0249a 0%, #8b5cf6 50%, #06b6d4 100%);
+  --nv-surface: #ffffff;
+  --nv-surface-2: #f4f6fb;
+  --nv-border: #e3e7f0;
+  --nv-muted: #5b6478;
+  --nv-viewer: #0b1020;
+  --nv-shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 8px 24px rgb(16 24 40 / 8%);
+
+  --ifm-color-primary: #0e7c9a;
+  --ifm-color-primary-dark: #0d708b;
+  --ifm-color-primary-darker: #0c6a83;
+  --ifm-color-primary-darkest: #0a576c;
+  --ifm-color-primary-light: #0f88a9;
+  --ifm-color-primary-lighter: #108eb1;
+  --ifm-color-primary-lightest: #12a1c8;
+
+  --ifm-font-family-base:
+    "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ifm-heading-font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --ifm-font-family-monospace:
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --ifm-heading-font-weight: 600;
+  --ifm-line-height-base: 1.7;
+  --ifm-code-font-size: 88%;
+  --ifm-global-radius: 0.5rem;
+  --ifm-card-border-radius: 0.875rem;
+  --ifm-code-border-radius: 0.625rem;
+  --ifm-navbar-height: 4rem;
+  --ifm-background-color: #fbfcfe;
+  --ifm-navbar-background-color: rgb(251 252 254 / 80%);
+  --ifm-toc-border-color: var(--nv-border);
+  --ifm-hr-border-color: var(--nv-border);
+  --ifm-menu-color-background-active: rgb(14 124 154 / 8%);
+  --docusaurus-highlighted-code-line-bg: rgb(14 124 154 / 12%);
 }
 
-[data-theme="dark"] {
-  --ifm-color-primary: #6aa8e8;
-  --ifm-color-primary-dark: #4f98e4;
-  --ifm-color-primary-darker: #4190e2;
-  --ifm-color-primary-darkest: #2077d2;
-  --ifm-color-primary-light: #85b8ec;
-  --ifm-color-primary-lighter: #93c0ee;
-  --ifm-color-primary-lightest: #bbd7f5;
+html[data-theme="dark"] {
+  --nv-magenta: #ff3fb8;
+  --nv-cyan: #22d3ee;
+  --nv-surface: #0f1526;
+  --nv-surface-2: #141b2f;
+  --nv-border: #222b45;
+  --nv-muted: #9aa4bf;
+  --nv-viewer: #070b17;
+  --nv-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%);
+
+  --ifm-color-primary: #3dd6f5;
+  --ifm-color-primary-dark: #20cff2;
+  --ifm-color-primary-darker: #10c9ee;
+  --ifm-color-primary-darkest: #0ca6c5;
+  --ifm-color-primary-light: #5addf7;
+  --ifm-color-primary-lighter: #69e0f8;
+  --ifm-color-primary-lightest: #93e9fa;
+
+  --ifm-background-color: #0a0f1d;
+  --ifm-background-surface-color: #0a0f1d;
+  --ifm-navbar-background-color: rgb(10 15 29 / 75%);
+  --ifm-footer-background-color: #070b16;
+  --ifm-font-color-base: #dfe4f2;
+  --ifm-heading-color: #f3f5fb;
+  --ifm-code-background: #151c31;
+  --ifm-menu-color-background-active: rgb(61 214 245 / 10%);
+  --ifm-menu-color-background-hover: rgb(255 255 255 / 4%);
+  --docusaurus-highlighted-code-line-bg: rgb(61 214 245 / 14%);
 }
 
-/* Controls built by src/demos/ui.ts. */
+/* Type */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+}
+
+.markdown h1:first-child {
+  font-size: 2.5rem;
+}
+
+.markdown > h2 {
+  margin-top: 2.75rem;
+  padding-top: 0.25rem;
+}
+
+.markdown a:not(.button) {
+  text-underline-offset: 0.2em;
+}
+
+/* Navbar: translucent glass */
+.navbar {
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--nv-border);
+  box-shadow: none;
+}
+
+.navbar__title {
+  font-family: var(--ifm-heading-font-family);
+  font-weight: 700;
+  font-size: 1.2rem;
+  letter-spacing: -0.01em;
+}
+
+.navbar__logo {
+  height: 2rem;
+  margin-right: 0.6rem;
+}
+
+.navbar__link {
+  font-weight: 500;
+}
+
+.header-github-link::before {
+  content: "";
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  background-color: var(--ifm-navbar-link-color);
+  mask:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6 0-3.2 0 0 1-.3 3.4 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8 0 3.2.9.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1 .9 2.2v3.3c0 .3.1.7.8.6A12 12 0 0 0 12 .3'/%3E%3C/svg%3E")
+    no-repeat center / contain;
+}
+
+.header-github-link:hover::before {
+  background-color: var(--ifm-color-primary);
+}
+
+/* Sidebar */
+html .theme-doc-sidebar-container {
+  border-right-color: var(--nv-border);
+}
+
+html .menu.thin-scrollbar {
+  padding: 1rem 0.75rem;
+  font-size: 0.925rem;
+}
+
+.menu__link {
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--ifm-color-primary);
+}
+
+/* Tables */
+.markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--nv-border);
+  border-radius: var(--ifm-code-border-radius);
+  overflow: hidden;
+  font-size: 0.925rem;
+}
+
+.markdown table thead tr {
+  background: var(--nv-surface-2);
+}
+
+.markdown table th,
+.markdown table td {
+  border: 0;
+  border-bottom: 1px solid var(--nv-border);
+}
+
+.markdown table tr:last-child td {
+  border-bottom: 0;
+}
+
+.markdown table tr:nth-child(2n) {
+  background: transparent;
+}
+
+/* Code blocks */
+.theme-code-block {
+  border: 1px solid var(--nv-border);
+  box-shadow: none;
+}
+
+/* Admonitions */
+.alert {
+  border-radius: var(--ifm-code-border-radius);
+  box-shadow: none;
+}
+
+/* Footer */
+.footer {
+  border-top: 1px solid var(--nv-border);
+}
+
+.footer--dark {
+  --ifm-footer-background-color: #070b16;
+}
+
+.footer__title {
+  font-family: var(--ifm-heading-font-family);
+  letter-spacing: 0.02em;
+}
+
+/* Shared gradient text */
+.nv-gradient-text {
+  background: var(--nv-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Controls built by src/demos/ui.ts. The viewer frame is always dark. */
 .demo-control {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.45rem;
   white-space: nowrap;
+  color: #c7cee0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.demo-control select,
+.demo-control button {
+  font: inherit;
+  color: #eef1f8;
+  background: #19213a;
+  border: 1px solid #2c3656;
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.demo-control select:hover,
+.demo-control button:hover {
+  border-color: #3dd6f5;
+}
+
+.demo-control button:active {
+  background: #222c4b;
 }
 
 .demo-control input[type="range"] {
   width: 8rem;
+  accent-color: #3dd6f5;
+}
+
+.demo-control input[type="checkbox"] {
+  accent-color: #ff3fb8;
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .demo-status {
   display: block;
-  padding: 0.35rem 0.75rem;
+  padding: 0.45rem 0.9rem;
   font-family: var(--ifm-font-family-monospace);
-  font-size: 0.8rem;
-  background: #1f1f1f;
-  min-height: 1.8em;
+  font-size: 0.775rem;
+  color: #9fe9f8;
+  background: #0d1325;
+  border-top: 1px solid #1c2440;
+  min-height: 2em;
 }

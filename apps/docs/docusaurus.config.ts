@@ -29,6 +29,18 @@ const config: Config = {
   },
   i18n: { defaultLocale: 'en', locales: ['en'] },
   customFields: { examplesBase, repoUrl },
+  stylesheets: [
+    {
+      href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap',
+      type: 'text/css',
+    },
+  ],
+  headTags: [
+    {
+      tagName: 'link',
+      attributes: { rel: 'preconnect', href: 'https://fonts.gstatic.com' },
+    },
+  ],
   plugins: [
     './plugins/niivue-webpack-plugin.ts',
     './plugins/gallery-plugin.ts',
@@ -48,7 +60,8 @@ const config: Config = {
     ],
   ],
   themeConfig: {
-    colorMode: { respectPrefersColorScheme: true },
+    colorMode: { defaultMode: 'dark', respectPrefersColorScheme: true },
+    image: 'img/niivue-icon.png',
     navbar: {
       title: 'NiiVue',
       logo: { alt: 'NiiVue', src: 'img/niivue-icon.png' },
@@ -60,7 +73,12 @@ const config: Config = {
           label: 'Documentation',
         },
         { to: '/gallery', label: 'Gallery', position: 'left' },
-        { href: repoUrl, label: 'GitHub', position: 'right' },
+        {
+          href: repoUrl,
+          position: 'right',
+          className: 'header-github-link',
+          'aria-label': 'GitHub repository',
+        },
       ],
     },
     footer: {
@@ -70,7 +88,22 @@ const config: Config = {
           title: 'Docs',
           items: [
             { label: 'Getting started', to: '/guide' },
+            { label: 'Loading images', to: '/guide/loading' },
+            { label: 'React', to: '/guide/react' },
             { label: 'Gallery', to: '/gallery' },
+          ],
+        },
+        {
+          title: 'Packages',
+          items: [
+            {
+              label: '@niivue/niivue',
+              href: 'https://www.npmjs.com/package/@niivue/niivue',
+            },
+            {
+              label: '@niivue/nvreact',
+              href: 'https://www.npmjs.com/package/@niivue/nvreact',
+            },
           ],
         },
         {
@@ -78,6 +111,7 @@ const config: Config = {
           items: [
             { label: 'niivue/mono', href: repoUrl },
             { label: 'Examples', href: examplesBase },
+            { label: 'Issues', href: `${repoUrl}/issues` },
           ],
         },
       ],
@@ -85,7 +119,7 @@ const config: Config = {
     },
     prism: {
       theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
+      darkTheme: prismThemes.nightOwl,
     },
   } satisfies Preset.ThemeConfig,
 }

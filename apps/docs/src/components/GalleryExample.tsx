@@ -21,6 +21,7 @@ export default function GalleryExample({ example }: { example: Example }) {
   const repoUrl = String(siteConfig.customFields?.repoUrl ?? '')
   const live = new URL(example.page, examplesBase).href
   const sourceDir = `${repoUrl}/blob/main/packages/niivue/examples`
+  const source = `${sourceDir}/${example.page.replace(/^examples\//, '')}`
 
   return (
     <Layout
@@ -28,30 +29,49 @@ export default function GalleryExample({ example }: { example: Example }) {
       description={example.summary || `NiiVue example: ${example.title}`}
     >
       <main className="container margin-vert--lg">
-        <p>
-          <Link to="/gallery">Gallery</Link> / {example.section}
-        </p>
-        <h1>{example.title}</h1>
-        {example.summary && <p>{example.summary}</p>}
-        <iframe
-          className={styles.frame}
-          src={live}
-          title={example.title}
-          allow="fullscreen; clipboard-write"
-          loading="lazy"
-        />
-        <p className={styles.links}>
-          <a href={live} target="_blank" rel="noopener noreferrer">
-            Open full page
-          </a>
-          <a
-            href={`${sourceDir}/${example.page.replace(/^examples\//, '')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Source on GitHub
-          </a>
-        </p>
+        <nav className={styles.crumbs} aria-label="Breadcrumb">
+          <Link to="/gallery">Gallery</Link>
+          <span aria-hidden="true">/</span>
+          <span>{example.section}</span>
+        </nav>
+        <h1 className={styles.exampleTitle}>{example.title}</h1>
+        {example.summary && (
+          <p className={styles.exampleSummary}>{example.summary}</p>
+        )}
+        <div className={styles.window}>
+          <div className={styles.windowBar}>
+            <span className={styles.lights} aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className={styles.windowUrl}>{example.page}</span>
+            <a
+              className={styles.windowButton}
+              href={live}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open full page
+            </a>
+            <a
+              className={styles.windowButton}
+              href={source}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Source
+            </a>
+          </div>
+          <iframe
+            className={styles.frame}
+            src={live}
+            title={example.title}
+            allow="fullscreen; clipboard-write"
+            loading="lazy"
+          />
+        </div>
+        <h2 className={styles.codeHeading}>Code</h2>
         {example.files.length === 1 && (
           <CodeBlock language="js" title={example.files[0].name}>
             {example.files[0].code}

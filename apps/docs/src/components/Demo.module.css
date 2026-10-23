@@ -1,24 +1,25 @@
 .demo {
-  margin-bottom: 2rem;
+  margin: 1.5rem 0 2.25rem;
 }
 
 .viewer {
-  border: 1px solid var(--ifm-color-emphasis-300);
-  border-radius: var(--ifm-code-border-radius);
   overflow: hidden;
   margin-bottom: 0.75rem;
-  background: #303030;
-  color: #eee;
+  color: #e8ecf8;
+  background: var(--nv-viewer);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--ifm-card-border-radius);
+  box-shadow: var(--nv-shadow);
 }
 
 .bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: 0.6rem 1.25rem;
   align-items: center;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  background: #1f1f1f;
+  padding: 0.6rem 0.9rem;
+  background: #0f1526;
+  border-bottom: 1px solid #1c2440;
 }
 
 .bar:empty {
@@ -28,6 +29,7 @@
 .canvases {
   display: flex;
   gap: 2px;
+  background: #1c2440;
 }
 
 .canvas {
@@ -36,6 +38,7 @@
   width: 100%;
   height: 100%;
   display: block;
+  background: #000;
 }
 
 .error {

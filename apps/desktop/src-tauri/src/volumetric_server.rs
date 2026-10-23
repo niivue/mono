@@ -2169,7 +2169,7 @@ fn discover_volumes_in_root(root: &FsPath, max_volumes: usize) -> RootDiscovery 
     // Collect every candidate and sort before applying the cap, so which files
     // make the cut depends on their relative paths, not on read_dir order.
     let mut paths = Vec::new();
-    collect_nifti_paths(root, &mut paths);
+    collect_nifti_paths(root, &mut paths, &mut HashSet::new());
     paths.sort();
 
     let mut volumes = Vec::new();
@@ -2243,7 +2243,15 @@ fn fnv1a_32(bytes: &[u8]) -> u32 {
     hash
 }
 
-fn collect_nifti_paths(root: &FsPath, paths: &mut Vec<PathBuf>) {
+/// `visited` holds canonical directories already walked, so a symlinked directory loop
+/// (or two links to the same tree) is walked once instead of recursing until ELOOP.
+fn collect_nifti_paths(root: &FsPath, paths: &mut Vec<PathBuf>, visited: &mut HashSet<PathBuf>) {
+    let Ok(canonical) = fs::canonicalize(root) else {
+        return;
+    };
+    if !visited.insert(canonical) {
+        return;
+    }
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(_) => return,
@@ -2260,7 +2268,7 @@ fn collect_nifti_paths(root: &FsPath, paths: &mut Vec<PathBuf>) {
         }
 
         if path.is_dir() {
-            collect_nifti_paths(&path, paths);
+            collect_nifti_paths(&path, paths, visited);
         } else if is_nifti_path(&path) {
             paths.push(path);
         }
@@ -4003,6 +4011,22 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_loops_are_walked_once() {
+        let root = scratch_dir("symlink-loop");
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(root.join("a/brain.nii"), nifti_bytes([2, 2, 2], 0)).unwrap();
+        // a/loop -> .. and a/self -> . would recurse forever without the visited set.
+        std::os::unix::fs::symlink("..", root.join("a/loop")).unwrap();
+        std::os::unix::fs::symlink(".", root.join("a/self")).unwrap();
+
+        let mut paths = Vec::new();
+        collect_nifti_paths(&root, &mut paths, &mut HashSet::new());
+        assert_eq!(paths, vec![root.join("a/brain.nii")]);
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// A minimal uint8 NIfTI-1 volume; `fill` makes otherwise-equal files differ.

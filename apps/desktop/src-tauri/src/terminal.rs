@@ -355,8 +355,13 @@ fn venv_interpreter(venv: &Path) -> Option<PythonInterpreter> {
     if !python.is_file() {
         return None;
     }
+    // A dataset could ship pyvenv.cfg as a FIFO, which would block the read forever.
+    let cfg = venv.join("pyvenv.cfg");
+    if !cfg.is_file() {
+        return None;
+    }
     let mut text = String::new();
-    std::fs::File::open(venv.join("pyvenv.cfg"))
+    std::fs::File::open(cfg)
         .ok()?
         .take(64 * 1024)
         .read_to_string(&mut text)

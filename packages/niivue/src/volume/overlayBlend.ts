@@ -6,7 +6,9 @@ import { OVERLAY_ALPHA_BLEND, OVERLAY_COLOR_BLEND } from '@/NVConstants'
  * U = 1 - prod(1 - a); `alphaBlend` picks the output alpha A (M, min(1, S) or
  * U) and `colorBlend` the output colour (P / A, the weighted mean P / S, or
  * P / U). For colour OVER, P is composited in order (P = P(1 - a) + c a), so
- * later overlays cover earlier ones; the other modes are commutative. The
+ * later overlays cover earlier ones; for colour MAX, P keeps the per-component
+ * max (P = max(P, c a)), so a faint overlay never dims a bright one, as
+ * vole-core fuses channels. Every mode but OVER is commutative. The
  * result is un-premultiplied so render/slice shaders work unchanged. Each
  * overlay's opacity is already baked into its alpha by the orient shader.
  * Mirrors blendOverlaysGPU in wgpu/orient.ts.
@@ -19,6 +21,7 @@ export function blendOverlayData(
 ): Uint8Array {
   const nVoxels = dims[0] * dims[1] * dims[2]
   const isOrdered = colorBlend === OVERLAY_COLOR_BLEND.OVER
+  const isMax = colorBlend === OVERLAY_COLOR_BLEND.MAX
   const result = new Uint8Array(nVoxels * 4)
   for (let j = 0; j < nVoxels * 4; j += 4) {
     let r = 0
@@ -30,10 +33,16 @@ export function blendOverlayData(
     for (const data of overlays) {
       const a = data[j + 3] / 255
       if (a <= 0) continue
-      const keep = isOrdered ? 1 - a : 1
-      r = r * keep + (data[j] / 255) * a
-      g = g * keep + (data[j + 1] / 255) * a
-      b = b * keep + (data[j + 2] / 255) * a
+      if (isMax) {
+        r = Math.max(r, (data[j] / 255) * a)
+        g = Math.max(g, (data[j + 1] / 255) * a)
+        b = Math.max(b, (data[j + 2] / 255) * a)
+      } else {
+        const keep = isOrdered ? 1 - a : 1
+        r = r * keep + (data[j] / 255) * a
+        g = g * keep + (data[j + 1] / 255) * a
+        b = b * keep + (data[j + 2] / 255) * a
+      }
       sum += a
       max = Math.max(max, a)
       union += a - union * a

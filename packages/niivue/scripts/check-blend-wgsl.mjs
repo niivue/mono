@@ -3,7 +3,7 @@
 // Run: bun packages/niivue/scripts/check-blend-wgsl.mjs
 // Expected, both z, per mode (alphaBlend,colorBlend):
 //   0,0: 255,170,0,153   1,0: 153,102,0,255   2,1: 153,102,0,194
-//   2,2: 121,134,0,194   0,2: 121,134,0,153
+//   2,2: 121,134,0,194   0,2: 121,134,0,153   0,3: 255,170,0,153
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 
@@ -57,6 +57,7 @@ const r = await p.evaluate(
       [2, 1],
       [2, 2],
       [0, 2],
+      [0, 3],
     ]) {
       d.pushErrorScope('validation')
       const ap = d.createComputePipeline({

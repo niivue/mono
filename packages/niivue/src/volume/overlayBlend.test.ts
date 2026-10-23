@@ -62,6 +62,31 @@ describe('blendOverlayData', () => {
       ),
     ).toEqual([0, 255, 0, 255])
   })
+  test('MAX colour keeps the brightest weighted component', () => {
+    // P = (max(0.6, 0), max(0, 0.4), 0) = (0.6, 0.4, 0); alpha max 0.6
+    expect(blend(OVERLAY_ALPHA_BLEND.MAX, OVERLAY_COLOR_BLEND.MAX)).toEqual([
+      255, 170, 0, 153,
+    ])
+    // Fluorescence over brightfield: gray at full alpha, green nuclei at 0.8.
+    // ADDITIVE would clip green to 255; MAX keeps it at 0.8.
+    const gray = new Uint8Array([128, 128, 128, 255])
+    const nuclei = new Uint8Array([0, 255, 0, 204])
+    const fuse = (layers: Uint8Array[]) =>
+      Array.from(
+        blendOverlayData(
+          layers,
+          [1, 1, 1],
+          OVERLAY_ALPHA_BLEND.MAX,
+          OVERLAY_COLOR_BLEND.MAX,
+        ),
+      )
+    expect(fuse([gray, nuclei])).toEqual([128, 204, 128, 255])
+    // Commutative, unlike OVER
+    expect(fuse([nuclei, gray])).toEqual([128, 204, 128, 255])
+    // A faint near-black layer on top never darkens what is underneath
+    const faint = new Uint8Array([13, 13, 13, 230])
+    expect(fuse([gray, faint])).toEqual([128, 128, 128, 255])
+  })
   test('empty voxels stay transparent', () => {
     expect(
       Array.from(blendOverlayData([new Uint8Array(4)], [1, 1, 1])),

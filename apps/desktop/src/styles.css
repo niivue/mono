@@ -1087,7 +1087,7 @@ button {
    Browse title, above the grid, without blocking panning elsewhere. */
 .nv-open-data-card {
   position: absolute;
-  top: 52px;
+  bottom: 56px;
   left: 12px;
   z-index: 3;
   display: grid;
@@ -1095,8 +1095,29 @@ button {
   width: min(300px, calc(100% - 24px));
   border: 1px solid rgba(215, 166, 66, 0.32);
   background: rgba(17, 17, 15, 0.9);
-  padding: 10px 12px 12px;
+  padding: 10px 36px 12px 12px;
   backdrop-filter: blur(8px);
+}
+
+.nv-open-data-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.nv-open-data-dismiss:hover,
+.nv-open-data-dismiss:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
 }
 
 .nv-open-data-card h2 {
@@ -1965,6 +1986,7 @@ button {
 
 .nv-layer-select {
   width: 100%;
+  font-size: 12px;
 }
 
 .nv-layer-load-button {

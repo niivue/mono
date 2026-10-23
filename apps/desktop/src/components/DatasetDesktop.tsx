@@ -79,6 +79,9 @@ export function DatasetDesktop({
 }): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const minimapRef = useRef<HTMLButtonElement | null>(null)
+  // A minimap of a single tile adds nothing, and on narrow panes it would
+  // collide with the first-run Open-your-data card.
+  const showMinimap = items.length > 1
   const zoomRef = useRef(zoom)
   const dragRef = useRef<DesktopDragState | null>(null)
   const suppressClickRef = useRef(false)
@@ -173,6 +176,7 @@ export function DatasetDesktop({
     return () => window.clearTimeout(timeout)
   }, [targetPreviewSize])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: showMinimap mounts/unmounts the minimap, so its wheel listener must be re-attached.
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
@@ -194,7 +198,7 @@ export function DatasetDesktop({
       stageElement.removeEventListener('wheel', onWheel)
       minimap?.removeEventListener('wheel', onWheel)
     }
-  }, [onZoom])
+  }, [onZoom, showMinimap])
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -333,34 +337,36 @@ export function DatasetDesktop({
         )}
       </footer>
 
-      <button
-        aria-label="Click to center the desktop dataset"
-        className="nv-minimap"
-        onClick={(event) =>
-          jumpDesktopToMinimapPoint(event, stageRef, setViewport)
-        }
-        onPointerDown={(event) => event.stopPropagation()}
-        ref={minimapRef}
-        title="Click to center desktop"
-        type="button"
-      >
-        <span
-          className="nv-minimap-map"
-          aria-hidden="true"
-          style={minimapMapStyle}
+      {showMinimap ? (
+        <button
+          aria-label="Click to center the desktop dataset"
+          className="nv-minimap"
+          onClick={(event) =>
+            jumpDesktopToMinimapPoint(event, stageRef, setViewport)
+          }
+          onPointerDown={(event) => event.stopPropagation()}
+          ref={minimapRef}
+          title="Click to center desktop"
+          type="button"
         >
-          {sourceStyle ? (
-            <span className="nv-minimap-source" style={sourceStyle} />
-          ) : null}
-          {selectedStyle ? (
-            <span className="nv-minimap-selection" style={selectedStyle} />
-          ) : null}
           <span
-            className="nv-minimap-window"
-            style={minimapViewportStyle(viewport)}
-          />
-        </span>
-      </button>
+            className="nv-minimap-map"
+            aria-hidden="true"
+            style={minimapMapStyle}
+          >
+            {sourceStyle ? (
+              <span className="nv-minimap-source" style={sourceStyle} />
+            ) : null}
+            {selectedStyle ? (
+              <span className="nv-minimap-selection" style={selectedStyle} />
+            ) : null}
+            <span
+              className="nv-minimap-window"
+              style={minimapViewportStyle(viewport)}
+            />
+          </span>
+        </button>
+      ) : null}
     </div>
   )
 }

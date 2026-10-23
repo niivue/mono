@@ -319,11 +319,19 @@ const actions: Record<string, PageAction> = {
         return
       }
       seriesVolume()
+      let stepping = false
       playing = setInterval(() => {
-        stepFrame(1).catch(() => {
-          clearInterval(playing)
-          playing = undefined
-        })
+        // A frame slower than the tick skips ticks rather than queue uploads.
+        if (stepping) return
+        stepping = true
+        stepFrame(1)
+          .catch(() => {
+            clearInterval(playing)
+            playing = undefined
+          })
+          .finally(() => {
+            stepping = false
+          })
       }, 100)
     },
   },

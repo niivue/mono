@@ -312,9 +312,9 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Point dataset discovery at the bundled MNI152 so machines without
-            // the dev checkouts — notably iOS, whose sandbox has no `~/Dev` — still
-            // open with a working default volume. Set before the server spawns so
+            // Point dataset discovery at the bundled MNI152, the default volume
+            // for release builds (which never probe dev checkouts) and for iOS,
+            // whose sandbox has no `~/Dev` either. Set before the server spawns so
             // `discovery_roots()` picks it up. Resolving here (not at module load)
             // is why the server spawns in `setup`: it needs the AppHandle's
             // resource dir.

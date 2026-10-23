@@ -1974,10 +1974,6 @@ fn strip_nifti_file_suffix(value: &str) -> &str {
 }
 
 fn discovery_roots() -> Vec<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/Users/chrisdrake"));
-
     let mut roots = Vec::new();
     for key in ["NEUROVUE_BIDS_ROOT", "NEUROVUE_DATASET_ROOT"] {
         if let Some(value) = std::env::var_os(key) {
@@ -1987,25 +1983,30 @@ fn discovery_roots() -> Vec<PathBuf> {
 
     // When launched under NeuroFlow, auto-discover the dataset named in the
     // session context (composes with the NEUROVUE_* env vars above, takes
-    // priority over the hardcoded development fallbacks below).
+    // priority over the development fallbacks below).
     roots.extend(neuroflow_dataset_roots());
 
-    roots.extend([
-        home.join("Dev/NiivueRL/data/ds000030_t1w"),
-        home.join("Dev/bids-examples/ds000117"),
-        home.join("Dev/bids-examples/ds007"),
-        home.join("Dev/mono/packages/dev-images/images/volumes/mni152.nii.gz"),
-        home.join("Dev/mono/apps/medgfx/medgfx/mni152.nii.gz"),
-        home.join(
-            "Dev/niivue/niivue/packages/niivue-desktop/resources/images/standard/mni152.nii.gz",
-        ),
-        home.join("Dev/niivue/niivue/packages/niivue/demos/images/mni152.nii.gz"),
-        home.join("Dev/niivue-demo-images/mni152.nii.gz"),
-    ]);
+    // Developer checkouts, probed in debug builds only: a release build must not
+    // silently open whatever happens to sit at these paths on a user's machine.
+    #[cfg(debug_assertions)]
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        roots.extend([
+            home.join("Dev/NiivueRL/data/ds000030_t1w"),
+            home.join("Dev/bids-examples/ds000117"),
+            home.join("Dev/bids-examples/ds007"),
+            home.join("Dev/mono/packages/dev-images/images/volumes/mni152.nii.gz"),
+            home.join("Dev/mono/apps/medgfx/medgfx/mni152.nii.gz"),
+            home.join(
+                "Dev/niivue/niivue/packages/niivue-desktop/resources/images/standard/mni152.nii.gz",
+            ),
+            home.join("Dev/niivue/niivue/packages/niivue/demos/images/mni152.nii.gz"),
+            home.join("Dev/niivue-demo-images/mni152.nii.gz"),
+        ]);
+    }
 
     // Bundled default volume (set by lib.rs from the app's resource dir). Appended
-    // last so a real dev dataset/volume above still wins on desktop; on iOS — where
-    // the dev paths don't exist — this is the only one that resolves.
+    // last so an explicit dataset above (or a dev checkout in debug builds) still
+    // wins; in a release build with no explicit dataset it is the only root.
     if let Some(value) = std::env::var_os("NEUROVUE_DEFAULT_VOLUME") {
         roots.push(PathBuf::from(value));
     }

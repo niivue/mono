@@ -66,11 +66,15 @@ export const SETTING_SCHEMAS = {
     I: z
       .array(z.number())
       .optional()
-      .describe('Where each stop sits, 0 to 255. Spread evenly otherwise.'),
+      .describe(
+        'Where each stop sits: 0 to 255 for a ramp, spread evenly otherwise; the label id of each entry for a label table, 0, 1, 2 and so on otherwise.',
+      ),
     labels: z
       .array(z.string())
       .optional()
-      .describe('A name per stop, making the colormap a label table.'),
+      .describe(
+        'A name per entry, making the colormap a label table; an empty list makes a label table without names.',
+      ),
   },
   set_font: {
     ...TAB_ARG,

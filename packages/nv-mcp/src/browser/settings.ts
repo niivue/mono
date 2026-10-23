@@ -60,7 +60,6 @@ function describeSetting(setting: Setting): Record<string, unknown> {
 const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
   volumes: [
     'setVolume',
-    'setColormapLabel',
     'removeVolume',
     'removeAllVolumes',
     'moveVolumeUp',
@@ -320,7 +319,12 @@ export function settingHandlers(host: NiiVueHost): Handlers {
         ['I', I],
         ['labels', labels],
       ] as const) {
-        if (list && list.length !== R.length)
+        // An empty labels list is allowed: it marks a label map without names.
+        if (
+          list &&
+          list.length !== R.length &&
+          !(key === 'labels' && !list.length)
+        )
           throw new Error(`${key} must be as long as R, G and B (${R.length}).`)
       }
       if (A) colormap.A = A

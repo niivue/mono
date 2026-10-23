@@ -50,6 +50,24 @@ bun run tauri:build:mac
 Output lands in `src-tauri/target/universal-apple-darwin/release/bundle/`.
 Without notarization, Gatekeeper blocks the app on other Macs.
 
+### iOS (TestFlight)
+
+```sh
+rustup target add aarch64-apple-ios
+rustup component add llvm-tools   # needed with Xcode 27, see below
+APPLE_DEVELOPMENT_TEAM=<TEAMID> bunx tauri ios build --export-method app-store-connect
+```
+
+Sign in to your Apple ID in Xcode → Settings → Accounts first: automatic
+signing creates the App Store profile. The build writes
+`src-tauri/gen/apple/build/arm64/NeuroVue.ipa` and an `.xcarchive` beside it.
+Open the archive in Xcode's Organizer and choose Distribute App → TestFlight to
+upload it. Raise `CFBundleVersion` for every upload.
+
+Xcode 27's SwiftPM hides the Swift functions Tauri's Rust code calls. swift-rs
+1.0.9+ makes them public again with rustup's `llvm-objcopy`; without
+`llvm-tools` the link fails with undefined `_register_plugin` and similar.
+
 ### Linux and Windows
 
 Tauri doesn't cross-compile installers, so each OS builds on its own runner.

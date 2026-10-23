@@ -42,6 +42,12 @@ const targets = {
 }
 
 const target = targets[`${process.platform}-${process.arch}`]
+// niimath_macos.zip is a universal binary, so one download also serves the
+// other Mac architecture and `tauri build --target universal-apple-darwin`.
+const extraTriples =
+  process.platform === 'darwin'
+    ? ['aarch64-apple-darwin', 'x86_64-apple-darwin', 'universal-apple-darwin']
+    : []
 
 if (!target) {
   console.log(
@@ -59,7 +65,20 @@ const executableName =
 const executablePath = path.join(binariesDir, executableName)
 const metadataPath = path.join(binariesDir, `niimath-${target.triple}.json`)
 
+const aliasPaths = extraTriples
+  .filter((triple) => triple !== target.triple)
+  .map((triple) => path.join(binariesDir, `niimath-${triple}`))
+
+function stageAliases() {
+  for (const aliasPath of aliasPaths) {
+    if (fs.existsSync(aliasPath)) continue
+    fs.copyFileSync(executablePath, aliasPath)
+    fs.chmodSync(aliasPath, 0o755)
+  }
+}
+
 if (!force && fs.existsSync(executablePath)) {
+  stageAliases()
   console.log(`niimath sidecar already present at ${executablePath}`)
   process.exit(0)
 }
@@ -207,6 +226,8 @@ async function main() {
 
   fs.copyFileSync(extractedExecutable, executablePath)
   if (process.platform !== 'win32') fs.chmodSync(executablePath, 0o755)
+  for (const aliasPath of aliasPaths) fs.rmSync(aliasPath, { force: true })
+  stageAliases()
 
   fs.writeFileSync(
     metadataPath,

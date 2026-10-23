@@ -32,6 +32,24 @@ always picks up a fresh niivue `dist/`.
 bun run ensure-niimath --force
 ```
 
+### macOS release build
+
+`bun run tauri:build:mac` builds a universal (Apple silicon + Intel) app and
+`.dmg`. Run `rustup target add x86_64-apple-darwin` once first. Signing and
+notarization come from the environment, so nothing personal lives in the repo:
+
+```sh
+export APPLE_SIGNING_IDENTITY="Developer ID Application: <Name> (<TEAMID>)"
+# Notarization (optional; skipped with a warning when unset), either:
+export APPLE_ID=... APPLE_PASSWORD=<app-specific password> APPLE_TEAM_ID=<TEAMID>
+# or an App Store Connect API key:
+export APPLE_API_KEY=... APPLE_API_ISSUER=... APPLE_API_KEY_PATH=...
+bun run tauri:build:mac
+```
+
+Output lands in `src-tauri/target/universal-apple-darwin/release/bundle/`.
+Without notarization, Gatekeeper blocks the app on other Macs.
+
 The Tauri host starts a local server and the viewer asks the host for its URL.
 In browser-only Vite development, the app falls back to
 `http://127.0.0.1:8087`, which is the current OSD/IIIF reference server.

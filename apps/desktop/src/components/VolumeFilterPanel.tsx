@@ -13,7 +13,6 @@ import {
 } from './StablePreviewImage'
 
 export interface VolumeFilterPanelProps {
-  activeItemId: string | null
   filteredItems: DesktopItem[]
   items: DesktopItem[]
   query: string
@@ -22,7 +21,6 @@ export interface VolumeFilterPanelProps {
   selectedFormats: Set<string>
   selectedImageTypes: Set<string>
   selectedRoles: Set<string>
-  onActiveItem: (id: string | null) => void
   onClearFilters: () => void
   onQueryChange: (query: string) => void
   onSelect: (item: DesktopItem) => void
@@ -33,7 +31,6 @@ export interface VolumeFilterPanelProps {
 }
 
 export function VolumeFilterPanel({
-  activeItemId,
   filteredItems,
   items,
   query,
@@ -42,7 +39,6 @@ export function VolumeFilterPanel({
   selectedFormats,
   selectedImageTypes,
   selectedRoles,
-  onActiveItem,
   onClearFilters,
   onQueryChange,
   onSelect,
@@ -67,13 +63,6 @@ export function VolumeFilterPanel({
     () => volumeFacetCounts(items, (item) => volumeFacetValue(item.dtype)),
     [items],
   )
-  const activeItem =
-    filteredItems.find((item) => item.id === activeItemId) ??
-    (selected && filteredItems.some((item) => item.id === selected.id)
-      ? selected
-      : null) ??
-    filteredItems[0] ??
-    null
   const hasFilters =
     query.trim().length > 0 ||
     selectedRoles.size > 0 ||
@@ -144,9 +133,8 @@ export function VolumeFilterPanel({
             <button
               className={`nv-volume-card ${selected?.id === item.id ? 'is-selected' : ''}`}
               key={item.id}
+              aria-pressed={selected?.id === item.id}
               onClick={() => onSelect(item)}
-              onFocus={() => onActiveItem(item.id)}
-              onMouseEnter={() => onActiveItem(item.id)}
               type="button"
             >
               <StablePreviewImage
@@ -168,7 +156,9 @@ export function VolumeFilterPanel({
         </div>
       </section>
 
-      <VolumeFilterDetails item={activeItem} />
+      {/* Metadata always describes the selected (loaded) volume, even when a
+          filter hides it; hovering or focusing a row only highlights it. */}
+      <VolumeFilterDetails item={selected} />
     </div>
   )
 }

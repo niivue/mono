@@ -3031,12 +3031,11 @@ export default class NiiVue extends EventTarget {
   }
 
   async addMesh(mesh: MeshFromUrlOptions | NVMeshType): Promise<this> {
-    const prior = this.model.getMeshes().length
-    await this.model.addMesh(mesh)
-    const meshes = this.model.getMeshes()
-    // The model logs a mesh it cannot read and adds nothing.
-    if (meshes.length === prior) return this
-    this.emit('meshLoaded', { mesh: meshes[meshes.length - 1] })
+    const added = await this.model.addMesh(mesh)
+    // The model logs a mesh it cannot read and adds nothing. Counting meshes
+    // instead would misread a removal or another add made during the load.
+    if (!added) return this
+    this.emit('meshLoaded', { mesh: added })
     await this._updateGLMeshes()
     return this
   }

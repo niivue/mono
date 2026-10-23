@@ -145,7 +145,7 @@ hand-copied `.niivue-pkgs`). Findings:
 5. **DICOM confirmed broken for consumers** (as documented above): the resolved
    `@niivue/dcm2niix@1.2.0` worker still has the bare `const exitCode = mod.callMain(args)`
    (no exit fix), so browser conversion aborts. NIfTI is the consumer-supported path
-   until the dcm2niix `DCM2NIIX_PIN` bump. (Resolved since: see DICOM shippability.)
+   until the dcm2niix pin bump. (Resolved since: see DICOM shippability.)
 
 Not re-run live: a full in-OHIF render via published deps. It would add no new signal —
 the OHIF demo data source is all DICOM (no NIfTI display set to exercise the working
@@ -188,11 +188,11 @@ DICOM now works for `npm`-install consumers. The dcm2niix Web-Worker exit fix (w
 upstream (`rordenlab/dcm2niix` `aae72ac`) and published in `@niivue/dcm2niix
 1.3.20260724`, the calendar-versioned npm `latest`. `packages/nv-ohif/package.json`
 requires `^1.3.20260724` (a34799f5), which excludes `1.2.0` and the `1.3.0-dev.0`
-prerelease that predate the fix; nv-ohif 1.0.0-rc.21 ships with it. See the README
+prerelease that predate the fix; every nv-ohif release since 1.0.0-rc.0 ships with it. See the README
 `## DICOM support`.
 
 History: from 2026-07-14 until the release, the dev rig ran on a locally built
-patched `1.3.0` (`~/Dev/ohif-viewers/.niivue-pkgs/dcm2niix`, from
+patched `1.3.0` (copied into the OHIF app's `.niivue-pkgs/dcm2niix`, from
 `fix/worker-exit-status` `4150f31`), referenced by a `file:` dependency in the OHIF
 app only. That override can now be replaced by the published package.
 
@@ -271,8 +271,8 @@ the only broken path, an UNCOMPRESSED DICOM study skips it. Loaded an uncompress
 NIfTI -> **NiiVue renders it multiplanar + 3D in OHIF**, no errors. Volume verified
 faithful: 512x512x100, INT16, spacing 0.9375x0.9375x3.06mm, RescaleIntercept -1000 (HU).
 So the whole pipeline works end-to-end in OHIF (webpack) for uncompressed DICOM; only
-compressed (CharLS/JPEG-LS) was blocked pending the dcm2niix bundler fix (since published
-in `@niivue/dcm2niix 1.3.20260724`; see DICOM shippability).
+compressed (CharLS/JPEG-LS) looked blocked on a bundler issue. It was not: the cause was
+our multipart boundary parsing, fixed in `3dce44f4` (see the resolution above).
 
 Follow-up polish: our viewport does not set a window/level (NiiVue's cal_min/max came up
 undefined, so CT renders unwindowed/noisy). Add a sensible default window after load (or

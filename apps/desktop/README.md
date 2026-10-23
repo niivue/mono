@@ -13,17 +13,23 @@ The intended split is:
 
 ## Development
 
+Lives in the mono workspace at `apps/desktop` (nx project `neurovue`).
+
 ```sh
-npm install
-npm run tauri:dev
+bun install                    # from the monorepo root
+bunx nx tauri-dev neurovue     # desktop app with live reload
+bunx nx tauri-build neurovue   # release .app / .dmg
 ```
 
-`npm run tauri:dev` and `npm run tauri:build` prepare a Tauri sidecar for
+The nx targets build `@niivue/niivue` first (`dependsOn: ["^build"]`), so the app
+always picks up a fresh niivue `dist/`.
+
+`tauri dev` and `tauri build` prepare a Tauri sidecar for
 `niimath` by downloading the latest platform release from
 `rordenlab/niimath`. To refresh an already staged binary, run:
 
 ```sh
-npm run ensure-niimath -- --force
+bun run ensure-niimath --force
 ```
 
 The Tauri host starts a local server and the viewer asks the host for its URL.

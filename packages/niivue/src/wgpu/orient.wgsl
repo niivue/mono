@@ -14,7 +14,7 @@ struct Uniforms {
   modMtxRow1 : vec4<f32>, // modulation matrix row 1
   modMtxRow2 : vec4<f32>, // modulation matrix row 2
   modMtxRow3 : vec4<f32>, // modulation matrix row 3
-  modFlags  : vec4<f32>,  // x = modulation mode (0 none, 1 RGB, 2 alpha), y = atlasOutline
+  modFlags  : vec4<f32>,  // x = modulation mode (0 none, 1 RGB, 2 alpha), y = atlasOutline, z = keep colormap alpha
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -151,9 +151,10 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     color = textureSampleLevel(colorMapNeg, samp, vec2<f32>(clamp(txl, 0.0, 1.0), 0.5), 0.0);
   }
 
-  // Overlay: make alpha binary (fully opaque or fully transparent)
+  // Overlay: make alpha binary (fully opaque or fully transparent), unless the
+  // overlay is a stacked channel, which keeps its colormap's alpha ramp
   let overlayOpacity = u.flags.x;
-  if (overlayOpacity > 0.0) {
+  if (overlayOpacity > 0.0 && u.modFlags.z < 0.5) {
     color.a = step(0.00001, color.a);
   }
 

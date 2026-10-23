@@ -320,6 +320,7 @@ function writeOrientUniforms(
   mtx: Float32Array,
   overlayOpacity: number,
   mod: ModulationTextureParams | null = null,
+  keepColormapAlpha = false,
 ): void {
   const ab = new ArrayBuffer(ORIENT_UNIFORM_SIZE)
   const dv = new DataView(ab)
@@ -342,6 +343,7 @@ function writeOrientUniforms(
   for (let i = 0; i < 16; i++) dv.setFloat32(112 + i * 4, modMtx[i], true)
   dv.setFloat32(176, mod ? mod.mode : 0, true)
   dv.setFloat32(180, u.atlasOutline, true)
+  dv.setFloat32(184, keepColormapAlpha ? 1 : 0, true)
   device.queue.writeBuffer(uniformBuffer, 0, ab)
 }
 
@@ -398,6 +400,7 @@ export async function prepareOrientTextureCache(
   overlayOpacity = 1,
   existingCache: OrientTextureCache | null = null,
   mod: ModulationTextureParams | null = null,
+  keepColormapAlpha = false,
 ): Promise<OrientTextureCache> {
   mod = supportedModulation(device, mod)
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS)
@@ -452,6 +455,7 @@ export async function prepareOrientTextureCache(
       mtx,
       overlayOpacity,
       mod,
+      keepColormapAlpha,
     )
     return existingCache
   }
@@ -473,7 +477,15 @@ export async function prepareOrientTextureCache(
     size: ORIENT_UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
-  writeOrientUniforms(device, uniformBuffer, nvimage, mtx, overlayOpacity, mod)
+  writeOrientUniforms(
+    device,
+    uniformBuffer,
+    nvimage,
+    mtx,
+    overlayOpacity,
+    mod,
+    keepColormapAlpha,
+  )
   const modTexture = createModTexture(device, mod)
   const outputTexture = device.createTexture({
     size: dimsOut,
@@ -592,6 +604,7 @@ export async function volume2Texture(
   outDimsOverride?: readonly number[],
   mod: ModulationTextureParams | null = null,
   sharedModTexture: GPUTexture | null = null,
+  keepColormapAlpha = false,
 ): Promise<GPUTexture> {
   mod = supportedModulation(device, mod)
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS) {
@@ -676,7 +689,15 @@ export async function volume2Texture(
     size: ORIENT_UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
-  writeOrientUniforms(device, uniformBuffer, nvimage, mtx, overlayOpacity, mod)
+  writeOrientUniforms(
+    device,
+    uniformBuffer,
+    nvimage,
+    mtx,
+    overlayOpacity,
+    mod,
+    keepColormapAlpha,
+  )
   const isLabelVol = buildOrientUniforms(nvimage, overlayOpacity).isLabel > 0
   const modTexture = sharedModTexture ?? createModTexture(device, mod)
   // 3) Create RGBA storage texture sized dimsOut

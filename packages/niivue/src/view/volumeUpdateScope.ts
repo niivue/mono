@@ -34,13 +34,14 @@ export type VolumeUpdateScope = {
  * Decide what to rebuild when only the voxel data of `changed` volumes moved.
  * `changed` undefined means a full rebuild. A volume modulated by a changed
  * volume is affected too (its prepass bakes the modulator's weights), followed
- * transitively. Background masking clips the overlay texture by the
- * background, so a changed background also redoes the overlays.
+ * transitively. When `overlaysFollowBackground` (background masking clips the
+ * overlay texture by the background; a channel stack bakes the background
+ * into it), a changed background also redoes the overlays.
  */
 export function volumeUpdateScope(
   volumes: readonly NVImage[],
   changed: readonly NVImage[] | undefined,
-  isBackgroundMasking: boolean,
+  overlaysFollowBackground: boolean,
 ): VolumeUpdateScope {
   if (!changed) return { background: true, overlays: true }
   const affected = new Set<NVImage>(changed)
@@ -59,6 +60,6 @@ export function volumeUpdateScope(
   const background = volumes.length > 0 && affected.has(volumes[0])
   const overlays =
     volumes.slice(1).some((v) => affected.has(v)) ||
-    (background && isBackgroundMasking)
+    (background && overlaysFollowBackground)
   return { background, overlays }
 }

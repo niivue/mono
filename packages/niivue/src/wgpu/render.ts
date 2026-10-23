@@ -484,6 +484,9 @@ export class VolumeRenderer extends NVRenderer {
   // See OVERLAY_ALPHA_BLEND / OVERLAY_COLOR_BLEND.
   overlayAlphaBlend = OVERLAY_ALPHA_BLEND.MAX
   overlayColorBlend = OVERLAY_COLOR_BLEND.ADDITIVE
+  // Stacked channels (isChannelStack) keep their colormap's alpha ramp in the
+  // overlay bake; other overlays are made fully opaque above their threshold.
+  overlayKeepsColormapAlpha = false
   // Which stencil the overlay/drawing passes estimate their own gradient with
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
@@ -2108,6 +2111,7 @@ export class VolumeRenderer extends NVRenderer {
         vol.opacity ?? 1,
         this.overlayOrientCache,
         buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
+        this.overlayKeepsColormapAlpha,
       )
       orient.dispatchOrient(device, this.overlayOrientCache)
       this.overlayTexture = this.overlayOrientCache.outputTexture
@@ -2129,6 +2133,8 @@ export class VolumeRenderer extends NVRenderer {
             vol.opacity ?? 1,
             undefined,
             buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
+            null,
+            this.overlayKeepsColormapAlpha,
           ),
         )
       }
@@ -2183,6 +2189,7 @@ export class VolumeRenderer extends NVRenderer {
       overlayVol.opacity ?? 1,
       this.overlayOrientCache,
       buildModulationParams(overlayVol, baseVol, [baseVol, overlayVol]),
+      this.overlayKeepsColormapAlpha,
     )
     orient.dispatchOrient(device, this.overlayOrientCache)
     this.overlayTexture = this.overlayOrientCache.outputTexture

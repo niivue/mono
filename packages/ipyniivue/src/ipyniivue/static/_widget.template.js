@@ -114,6 +114,7 @@ const PROPS_RW = [
   ["volumeIllumination", "volume_illumination"],
   ["volumeIsAlphaClipDark", "volume_is_alpha_clip_dark"],
   ["volumeIsBackgroundMasking", "volume_is_background_masking"],
+  ["volumeIsChannelStack", "volume_is_channel_stack"],
   ["volumeIsColormapAlphaOn2D", "volume_is_colormap_alpha_on_2d"],
   ["volumeIsCubicInterpolation", "volume_is_cubic_interpolation"],
   ["volumeIsNearestInterpolation", "volume_is_nearest_interpolation"],

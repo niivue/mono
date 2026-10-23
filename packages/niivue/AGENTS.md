@@ -865,6 +865,13 @@ compositing over the background. GL blends on the CPU (`volume/overlayBlend.ts`
 `blendOverlaysGPU`, mode via override constants). Colour `OVER` composites
 in volume order (later overlays on top); colour `MAX` keeps the per-component
 max of the premultiplied colours; every mode but `OVER` is commutative.
+`volumeIsChannelStack` blends volumes[0] in as one more overlay (both views'
+`_updateOverlayStack` pass every volume, the base draws at opacity 0) so the
+fused channels land on the canvas background; ignored while volumes[0] is
+chunked. Stacked channels keep their colormap's alpha ramp in the orient bake
+(`modFlags.z` in `orient.wgsl`, `keepColormapAlpha` in `gl/orientOverlay.ts`);
+other overlays get `step(0.00001, a)`. The overlay ray-march has no step-size
+correction, so 3D density follows each channel's opacity steeply.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
 `calMin` 0: the alpha weight is `(f-calMin)/(calMax-calMin)`, so a nonzero
 `calMin` breaks alpha == fraction and ADDITIVE no longer sums to 1.

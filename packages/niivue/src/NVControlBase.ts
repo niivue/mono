@@ -1912,6 +1912,25 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Blend volumes[0] with the overlays as an equal channel instead of drawing
+   * it as an opaque base; the fused channels land on the canvas background.
+   * Pair with volumeOverlayColorBlend = OVERLAY_COLOR_BLEND.MAX for
+   * fluorescence-style fusion. Stacked channels keep their colormap's alpha
+   * ramp, where an overlay is otherwise fully opaque above calMin; in 3D each
+   * channel's opacity sets how dense it looks. Ignored while volumes[0] is
+   * chunked.
+   */
+  get volumeIsChannelStack(): boolean {
+    return this.model.volume.isChannelStack
+  }
+  set volumeIsChannelStack(v: boolean) {
+    this.model.volume.isChannelStack = v
+    this.emit('change', { property: 'volumeIsChannelStack', value: v })
+    this._updateGLChanged().catch((e) =>
+      log.error('volumeIsChannelStack failed', e),
+    )
+  }
+  /**
    * How overlapping overlays combine colour: `OVERLAY_COLOR_BLEND.ADDITIVE`
    * (default), `MEAN`, `OVER` (later overlays cover earlier ones), or `MAX`
    * (each component's brightest weighted value, as fluorescence viewers fuse

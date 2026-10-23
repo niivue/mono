@@ -27,3 +27,16 @@ export function drawnOpacity(vol: {
 }): number {
   return vol.visible === false ? 0 : (vol.opacity ?? 1.0)
 }
+
+/**
+ * Whether the channel stack (VolumeRenderConfig.isChannelStack) applies to
+ * this volume list: the option is on, there is more than one volume, and
+ * volumes[0] is not chunked. When it applies, volumes[0] joins the overlay
+ * blend and its own draw opacity is 0, so every channel is weighted alike.
+ */
+export function isChannelStackActive(
+  isChannelStack: boolean,
+  volumes: readonly { chunkPlan?: unknown }[],
+): boolean {
+  return isChannelStack && volumes.length > 1 && !volumes[0].chunkPlan
+}

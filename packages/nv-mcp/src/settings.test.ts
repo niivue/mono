@@ -111,6 +111,10 @@ describe('the settings table', () => {
     expect(coerceSetting(colour, 'max')).toBe(3)
     expect(coerceSetting(colour, 'mean')).toBe(OVERLAY_COLOR_BLENDS.mean)
     expect(readSetting(colour, 0)).toBe('additive')
+    // The channel stack is the other half of fluorescence-style fusion.
+    const stack = named('volumeIsChannelStack')
+    expect(stack.kind).toBe('boolean')
+    expect(coerceSetting(stack, 'true')).toBe(true)
   })
 
   it('takes a choice only as one of its words', () => {

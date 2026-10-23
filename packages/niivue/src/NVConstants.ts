@@ -451,6 +451,7 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   isBackgroundMasking: false,
   isAlphaClipDark: false,
   isColormapAlphaOn2D: false,
+  isChannelStack: false,
   isNearestInterpolation: false,
   isV1SliceShader: false,
   overlayAlphaBlend: OVERLAY_ALPHA_BLEND.MAX,

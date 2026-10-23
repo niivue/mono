@@ -151,6 +151,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `volumeIsV1SliceShader` | Prop | Treat overlay as fiber direction |
 | `volumeOverlayAlphaBlend` | Prop | `OVERLAY_ALPHA_BLEND`: `MAX` (0, default), `ADDITIVE` (1, opacities sum capped at 1; for fractions summing to 1, e.g. tissue maps), `OVER` (2, 1-prod(1-a)). Only with 2+ overlays |
 | `volumeOverlayColorBlend` | Prop | `OVERLAY_COLOR_BLEND`: `ADDITIVE` (0, default, opacity-weighted sum), `MEAN` (1, opacity-weighted average), `OVER` (2, composited in volume order, later overlays on top; with alpha `OVER` this is source-over), `MAX` (3, per-component max of the opacity-weighted colours; with alpha `MAX` this is Vol-E's channel fusion). Only with 2+ overlays |
+| `volumeIsChannelStack` | Prop | Blend volumes[0] with the overlays as an equal channel instead of an opaque base (default false); pair with colour `MAX` for fluorescence fusion. Stacked channels keep their colormap alpha ramp; 3D density follows each channel's opacity. Ignored while volumes[0] is chunked |
 | `volumeMatcap` | Prop | Matcap name |
 | `volumePaqdUniforms` | Prop | PAQD atlas tuning |
 | `loadMatcap(nameOrUrl)` | Method (async) | Register matcap at runtime |

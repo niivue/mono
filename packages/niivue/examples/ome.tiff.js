@@ -1,5 +1,6 @@
 import NiiVue, {
   describeTiff,
+  OVERLAY_COLOR_BLEND,
   omeTiffVolumesFrom,
   parseTiff,
   SHOW_RENDER,
@@ -109,6 +110,25 @@ const nv1 = new NiiVue({
   showRender: SHOW_RENDER.ALWAYS,
   isColorbarVisible: false,
 })
+
+// Fused (the default): every channel counts alike, its brightest colour kept,
+// on black, as fluorescence viewers such as Vol-E show them. Unfused: the
+// first channel is an opaque base and the rest blend translucent on top.
+const fuseCheck = document.getElementById('fuse')
+function applyFusion() {
+  nv1.volumeIsChannelStack = fuseCheck.checked
+  nv1.volumeOverlayColorBlend = fuseCheck.checked
+    ? OVERLAY_COLOR_BLEND.MAX
+    : OVERLAY_COLOR_BLEND.ADDITIVE
+  opacityInput.disabled = fuseCheck.checked
+}
+applyFusion()
+fuseCheck.onchange = () => {
+  applyFusion()
+  if (nv1.volumes.length > 0) {
+    applyDisplay()
+  }
+}
 window.nv1 = nv1
 nv1.addEventListener('locationChange', (e) => {
   footer.textContent = e.detail.string
@@ -320,7 +340,8 @@ function selectedChannels() {
 }
 
 /**
- * Show every channel at once: the first opaque, the rest translucent on top.
+ * Show every channel at once: fused at full opacity, or unfused with the
+ * first opaque and the rest translucent on top.
  * Each carries the colormap the loader picked from its OME Color attribute.
  *
  * Windowing is the robust range, not the global one: a fluorescence channel is
@@ -333,7 +354,7 @@ function applyDisplay() {
     nv1.setVolume(index, {
       calMin: volume.robustMin ?? volume.globalMin,
       calMax: volume.robustMax ?? volume.globalMax,
-      opacity: index === 0 ? 1 : overlayOpacity,
+      opacity: index === 0 || fuseCheck.checked ? 1 : overlayOpacity,
     })
   })
 }

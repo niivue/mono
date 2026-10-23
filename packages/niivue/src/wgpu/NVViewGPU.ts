@@ -41,7 +41,11 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
-import { drawnOpacity, isVolumeDrawn } from '@/view/NVVolumeVisibility'
+import {
+  drawnOpacity,
+  isChannelStackActive,
+  isVolumeDrawn,
+} from '@/view/NVVolumeVisibility'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
 import {
   type UpdateBindGroupsOptions,
@@ -662,7 +666,8 @@ export default class NVView {
       const scope = volumeUpdateScope(
         vols,
         opts.volumes,
-        this.model.volume.isBackgroundMasking,
+        // A channel stack bakes volumes[0] into the overlay too.
+        this.model.volume.isBackgroundMasking || this._isChannelStack(vols),
       )
       // A data-only update (opts.volumes) leaves the colorbars as they are:
       // their range comes from calMin/calMax, which it does not change.
@@ -896,6 +901,7 @@ export default class NVView {
     }
     const pass = commandEncoder.beginRenderPass(renderPassDesc)
     const volumes = md.getVolumes()
+    const channelStack = this._isChannelStack(volumes)
     const interpolation = sliceInterpolation(
       volumes,
       md.volume.isNearestInterpolation,
@@ -1133,6 +1139,7 @@ export default class NVView {
             isColormapAlphaOn2D: md.volume.isColormapAlphaOn2D,
             drawRimOpacity: md.draw.rimOpacity,
             isV1SliceShader: md.volume.isV1SliceShader,
+            isChannelStack: channelStack,
           }
           const numSliceVolumes = Math.min(volumes.length, 2)
           const numSlicePaqd =
@@ -1274,8 +1281,9 @@ export default class NVView {
             md.volume.paqdUniforms,
             md.volume.transmittanceCutoff,
             // This tile's background volume, which is not always volumes[0]
-            // (a global3d tile binds its own). 0 when hidden.
-            drawnOpacity(vol),
+            // (a global3d tile binds its own). 0 when hidden, and 0 for a
+            // channel stack, whose volumes[0] is drawn by the overlay pass.
+            channelStack ? 0 : drawnOpacity(vol),
           )
           // Independent hi-res chunked overlay: stream its own working set and
           // draw it as translucent cubes over the base, in the same pass. Uses
@@ -2514,17 +2522,33 @@ export default class NVView {
     return this.volumeRenderer.coarseFloorDims
   }
 
-  /** Re-run the overlay pass (volumes[1..]) and the optional background mask. */
+  /**
+   * Whether volumes[0] is blended as a channel (VolumeRenderConfig.isChannelStack).
+   * Never in multi-instance mode, which draws no overlay.
+   */
+  private _isChannelStack(vols: readonly NVImage[]): boolean {
+    return (
+      !this.options.instances &&
+      isChannelStackActive(this.model.volume.isChannelStack, vols)
+    )
+  }
+
+  /**
+   * Re-run the overlay pass (volumes[1..], or every volume for a channel
+   * stack) and the optional background mask.
+   */
   private async _updateOverlayStack(
     device: GPUDevice,
     vols: NVImage[],
   ): Promise<void> {
     this.volumeRenderer.overlayAlphaBlend = this.model.volume.overlayAlphaBlend
     this.volumeRenderer.overlayColorBlend = this.model.volume.overlayColorBlend
+    const channelStack = this._isChannelStack(vols)
+    this.volumeRenderer.overlayKeepsColormapAlpha = channelStack
     await this.volumeRenderer.updateOverlays(
       device,
       vols[0],
-      vols.slice(1),
+      channelStack ? vols : vols.slice(1),
       this.model.volume.paqdUniforms,
     )
     if (this.model.volume.isBackgroundMasking) {

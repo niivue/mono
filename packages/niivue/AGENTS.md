@@ -863,7 +863,8 @@ With 2+ overlays, `volumeOverlayAlphaBlend` (`OVERLAY_ALPHA_BLEND`) and
 compositing over the background. GL blends on the CPU (`volume/overlayBlend.ts`
 `blendOverlayData`); WebGPU in a compute pass (`wgpu/orient.ts`
 `blendOverlaysGPU`, mode via override constants). Colour `OVER` composites
-in volume order (later overlays on top); every other mode is commutative.
+in volume order (later overlays on top); colour `MAX` keeps the per-component
+max of the premultiplied colours; every mode but `OVER` is commutative.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
 `calMin` 0: the alpha weight is `(f-calMin)/(calMax-calMin)`, so a nonzero
 `calMin` breaks alpha == fraction and ADDITIVE no longer sums to 1.

@@ -955,7 +955,7 @@ export function maxBlendSliceDim(limits: GPUSupportedLimits): number {
 }
 
 // Accumulator per voxel: premultiplied colour P.rgb (composited in order for
-// colour OVER), alpha sum S, max alpha M and union alpha 1 - prod(1 - a). Same
+// colour OVER, a per-component max for colour MAX), alpha sum S, max alpha M and union alpha 1 - prod(1 - a). Same
 // math as the CPU blendOverlayData; ALPHA_BLEND / COLOR_BLEND are
 // OVERLAY_*_BLEND values. One pass per overlay keeps the order.
 const blendAccumShaderCode = `
@@ -973,10 +973,16 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let a = rgba.a;
     if (a <= 0.0) { return; }
     let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 6u;
-    let keep = select(1.0, 1.0 - a, COLOR_BLEND == 2u);
-    accum[k] = accum[k] * keep + rgba.r * a;
-    accum[k + 1u] = accum[k + 1u] * keep + rgba.g * a;
-    accum[k + 2u] = accum[k + 2u] * keep + rgba.b * a;
+    if (COLOR_BLEND == 3u) {
+        accum[k] = max(accum[k], rgba.r * a);
+        accum[k + 1u] = max(accum[k + 1u], rgba.g * a);
+        accum[k + 2u] = max(accum[k + 2u], rgba.b * a);
+    } else {
+        let keep = select(1.0, 1.0 - a, COLOR_BLEND == 2u);
+        accum[k] = accum[k] * keep + rgba.r * a;
+        accum[k + 1u] = accum[k + 1u] * keep + rgba.g * a;
+        accum[k + 2u] = accum[k + 2u] * keep + rgba.b * a;
+    }
     accum[k + 3u] += a;
     accum[k + 4u] = max(accum[k + 4u], a);
     let u = accum[k + 5u];
@@ -1013,7 +1019,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 `
 
 // Per device: shared layouts and shader modules, plus pipelines keyed by
-// alphaBlend * 3 + colorBlend. The norm pass reuses the accum layout.
+// alphaBlend * 4 + colorBlend. The norm pass reuses the accum layout.
 type BlendDeviceCache = {
   layoutAccum: GPUBindGroupLayout
   layoutOverlay: GPUBindGroupLayout
@@ -1036,7 +1042,7 @@ function ensureBlendPipelines(
   normPipeline: GPUComputePipeline
 } {
   // Unknown values fall back to MAX / ADDITIVE as in the CPU path; this also
-  // keeps override constants valid u32s and the cache bounded to nine entries.
+  // keeps override constants valid u32s and the cache bounded to twelve entries.
   if (
     alphaBlend !== OVERLAY_ALPHA_BLEND.ADDITIVE &&
     alphaBlend !== OVERLAY_ALPHA_BLEND.OVER
@@ -1044,7 +1050,8 @@ function ensureBlendPipelines(
     alphaBlend = OVERLAY_ALPHA_BLEND.MAX
   if (
     colorBlend !== OVERLAY_COLOR_BLEND.MEAN &&
-    colorBlend !== OVERLAY_COLOR_BLEND.OVER
+    colorBlend !== OVERLAY_COLOR_BLEND.OVER &&
+    colorBlend !== OVERLAY_COLOR_BLEND.MAX
   )
     colorBlend = OVERLAY_COLOR_BLEND.ADDITIVE
   let dev = _blendCache.get(device)
@@ -1081,7 +1088,7 @@ function ensureBlendPipelines(
     }
     _blendCache.set(device, dev)
   }
-  const key = alphaBlend * 3 + colorBlend
+  const key = alphaBlend * 4 + colorBlend
   let pipes = dev.pipelines.get(key)
   if (!pipes) {
     pipes = {

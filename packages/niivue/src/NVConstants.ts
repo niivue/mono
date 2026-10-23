@@ -86,12 +86,17 @@ export enum OVERLAY_ALPHA_BLEND {
  * opacity-weighted average (red + green = dark yellow, never clips); OVER
  * composites them in volume order, each overlay over the ones before it (an
  * opaque green over red is green). Pair OVER with OVERLAY_ALPHA_BLEND.OVER for
- * classic source-over stacking, e.g. segmentations.
+ * classic source-over stacking, e.g. segmentations. MAX keeps each colour
+ * component's brightest opacity-weighted value (red + green = yellow, never
+ * clips, and a faint overlay never dims a bright one); with
+ * OVERLAY_ALPHA_BLEND.MAX it is the channel fusion of fluorescence viewers
+ * such as Allen's Vol-E.
  */
 export enum OVERLAY_COLOR_BLEND {
   ADDITIVE = 0,
   MEAN = 1,
   OVER = 2,
+  MAX = 3,
 }
 
 /**

@@ -107,7 +107,8 @@ describe('the settings table', () => {
       'volumeOverlayAlphaBlend must be one of max, additive, over.',
     )
     const colour = named('volumeOverlayColorBlend')
-    expect(settingChoices(colour)).toEqual(['additive', 'mean', 'over'])
+    expect(settingChoices(colour)).toEqual(['additive', 'mean', 'over', 'max'])
+    expect(coerceSetting(colour, 'max')).toBe(3)
     expect(coerceSetting(colour, 'mean')).toBe(OVERLAY_COLOR_BLENDS.mean)
     expect(readSetting(colour, 0)).toBe('additive')
   })

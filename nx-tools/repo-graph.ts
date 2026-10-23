@@ -137,17 +137,67 @@ function exportedSymbols(file: string, text: string): GraphNode[] {
 }
 
 function importSpecifiers(file: string, text: string): string[] {
+  if (/\.html$/.test(file)) return htmlScriptSpecifiers(text)
   if (!/\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(file)) return []
   const imports = new Set<string>()
   // `from '...'` covers import/export-from; `import('...')` dynamic imports;
-  // `import '...'` side-effect imports. Vite query suffixes (`?raw`,
+  // `import '...'` side-effect imports; `new URL('...', import.meta.url)` is
+  // how a module worker is loaded. Vite query suffixes (`?raw`,
   // `?worker&inline`) are stripped so the underlying file resolves.
-  const pattern = /(?:from\s+|import\s*\(\s*|^\s*import\s+)(['"])([^'"]+)\1/gm
+  const pattern =
+    /(?:from\s+|import\s*\(\s*|^\s*import\s+|new\s+URL\(\s*)(['"])([^'"]+)\1/gm
   for (const match of text.matchAll(pattern)) {
     const specifier = match[2]?.replace(/\?.*$/, '')
     if (specifier) imports.add(specifier)
   }
   return [...imports]
+}
+
+/**
+ * A page links its script with `<script src>`, or inlines a module script
+ * that imports it. A bare `src` is page-relative, so it gets a `./` prefix;
+ * remote URLs are skipped.
+ */
+function htmlScriptSpecifiers(text: string): string[] {
+  const specifiers = new Set<string>()
+  const pattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi
+  for (const match of text.matchAll(pattern)) {
+    const src = match[1]?.match(/\bsrc\s*=\s*(['"])([^'"]+)\1/i)?.[2]
+    if (src) {
+      if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(src)) continue
+      specifiers.add(/^[./]/.test(src) ? src : `./${src}`)
+      continue
+    }
+    for (const specifier of importSpecifiers('inline.js', match[2] ?? '')) {
+      specifiers.add(specifier)
+    }
+  }
+  return [...specifiers]
+}
+
+function importBase(
+  source: string,
+  specifier: string,
+  projectRoot: string | undefined,
+): string | undefined {
+  // `@/x` is the workspace-wide tsconfig alias for `<projectRoot>/src/x`.
+  if (specifier.startsWith('@/')) {
+    return projectRoot
+      ? normalize(path.posix.join(projectRoot, 'src', specifier.slice(2)))
+      : undefined
+  }
+  // In a page, a leading `/` is the Vite root: the project root.
+  if (specifier.startsWith('/') && source.endsWith('.html')) {
+    return projectRoot
+      ? normalize(path.posix.join(projectRoot, specifier.slice(1)))
+      : undefined
+  }
+  if (!specifier.startsWith('.')) return undefined
+  return normalize(
+    path.posix.normalize(
+      path.posix.join(path.posix.dirname(source), specifier),
+    ),
+  )
 }
 
 function resolveImport(
@@ -156,18 +206,7 @@ function resolveImport(
   tracked: Set<string>,
   projectRoot: string | undefined,
 ): string | undefined {
-  // `@/x` is the workspace-wide tsconfig alias for `<projectRoot>/src/x`.
-  const base = specifier.startsWith('@/')
-    ? projectRoot
-      ? normalize(path.posix.join(projectRoot, 'src', specifier.slice(2)))
-      : undefined
-    : specifier.startsWith('.')
-      ? normalize(
-          path.posix.normalize(
-            path.posix.join(path.posix.dirname(source), specifier),
-          ),
-        )
-      : undefined
+  const base = importBase(source, specifier, projectRoot)
   if (!base) return undefined
   const candidates = [
     base,

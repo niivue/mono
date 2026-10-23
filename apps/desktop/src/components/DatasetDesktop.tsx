@@ -116,9 +116,28 @@ export function DatasetDesktop({
   )
   const [previewSize, setPreviewSize] = useState<number>(SIDEBAR_PREVIEW_SIZE)
   const previewLevel = previewLevelForSize(previewSize, layoutItems[0])
-  const worldSize = useMemo(
-    () => fittedWorldSize(layoutWorld, tileSize, gridFit.tilePx, zoom),
-    [gridFit.tilePx, layoutWorld, tileSize, zoom],
+  const hasLayoutItems = layoutItems.length > 0
+  const worldSize = useMemo<CSSProperties>(
+    () =>
+      hasLayoutItems
+        ? fittedWorldSize(layoutWorld, tileSize, gridFit.tilePx, zoom)
+        : // Nothing to lay out: keep a visible box for the empty-state text.
+          {
+            width: `${Math.max(stageSize.width - GRID_STAGE_PADDING_PX, 180)}px`,
+            height: '160px',
+          },
+    [
+      gridFit.tilePx,
+      hasLayoutItems,
+      layoutWorld,
+      stageSize.width,
+      tileSize,
+      zoom,
+    ],
+  )
+  const minimapMapStyle = useMemo(
+    () => minimapMapBox(layoutWorld),
+    [layoutWorld],
   )
   const sections = useMemo(
     () => desktopSections(layoutItems, layoutWorld),
@@ -319,7 +338,11 @@ export function DatasetDesktop({
         title="Click to center desktop"
         type="button"
       >
-        <span className="nv-minimap-map" aria-hidden="true">
+        <span
+          className="nv-minimap-map"
+          aria-hidden="true"
+          style={minimapMapStyle}
+        >
           {sourceStyle ? (
             <span className="nv-minimap-source" style={sourceStyle} />
           ) : null}
@@ -827,6 +850,30 @@ function desktopPreviewSize(
     DESKTOP_PREVIEW_TIERS.find((tier) => tier >= targetPixels) ??
     DESKTOP_PREVIEW_TIERS[DESKTOP_PREVIEW_TIERS.length - 1]
   )
+}
+
+// Inner area of the fixed 148x108 minimap button (10px inset on each side).
+const MINIMAP_INNER_WIDTH = 128
+const MINIMAP_INNER_HEIGHT = 88
+
+// Size the minimap to the grid's aspect ratio (centred in the button) so the
+// selection and viewport markers aren't squashed when the grid is much taller
+// than wide.
+function minimapMapBox(world: DesktopManifest['world']): CSSProperties {
+  const aspect = Math.max(world.width, 1) / Math.max(world.height, 1)
+  let width = MINIMAP_INNER_WIDTH
+  let height = width / aspect
+  if (height > MINIMAP_INNER_HEIGHT) {
+    height = MINIMAP_INNER_HEIGHT
+    width = Math.max(height * aspect, 8)
+  }
+  return {
+    inset: 'auto',
+    left: `${10 + (MINIMAP_INNER_WIDTH - width) / 2}px`,
+    top: `${10 + (MINIMAP_INNER_HEIGHT - height) / 2}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {

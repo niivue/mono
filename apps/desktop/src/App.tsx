@@ -1699,7 +1699,7 @@ function DesktopZoomControls({
         className="nv-pane-icon-button"
         disabled={zoom === 1}
         onClick={onFit}
-        title="Fit grid"
+        title="Reset zoom"
         type="button"
       >
         <Maximize2 size={15} />

@@ -1,0 +1,97 @@
+---
+sidebar_position: 4
+title: Overlays and thresholds
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/overlays'
+
+# Overlays and thresholds
+
+An overlay is any volume after the first. A common case is a statistical map
+drawn over an anatomical template, showing only the voxels that pass a
+threshold.
+
+The demo loads an SPM motor-task map over the MNI152 template. Positive
+values use `redyell` and negative values use `winter`, each with its own
+threshold:
+
+<Demo load={() => import('@site/src/demos/overlays')} source={source} />
+
+## Positive and negative thresholds
+
+For an overlay, `calMin` is the threshold: voxels below it are transparent.
+`calMax` is where the colormap saturates. A signed map adds a second
+colormap and window for the negative side:
+
+```js
+await nv.loadVolumes([
+  { url: '/volumes/mni152.nii.gz', calMin: 30, calMax: 80, isColorbarVisible: false },
+  { url: '/volumes/spmMotor.nii.gz', colormap: 'redyell', colormapNegative: 'winter' },
+])
+await nv.setVolume(1, { calMin: 3, calMax: 6, calMinNeg: -3, calMaxNeg: -6 })
+```
+
+The two sides do not have to match. `calMinNeg` and `calMaxNeg` default to
+`NaN`, which mirrors the positive window.
+
+## Colormap type
+
+`colormapType` decides how the colorbar relates to the threshold:
+
+| Value | Colors span | Below `calMin` |
+|---|---|---|
+| `0` (default) | `calMin` to `calMax` | transparent |
+| `1` | 0 to `calMax` | transparent |
+| `2` | 0 to `calMax` | fades in (translucent) |
+
+Types 1 and 2 keep the color of a value the same as you move the threshold,
+which makes maps thresholded at different levels easier to compare. Use the
+numbers directly; the `COLORMAP_TYPE` enum is not exported from the package.
+
+## Opacity and outlines
+
+`opacity` fades an overlay (0 to 1), and `visible: false` hides it while
+keeping its opacity:
+
+```js
+await nv.setVolume(1, { opacity: 0.6 })
+```
+
+`nv.volumeOutlineWidth` outlines the suprathreshold clusters on 2D
+slices. The value is the outline width in overlay voxels; it applies to the
+whole viewer, and 0 (the default) turns it off.
+
+## Several overlays
+
+With two or more overlays, two viewer settings decide how overlapping voxels
+combine. `volumeOverlayAlphaBlend` combines their opacities and
+`volumeOverlayColorBlend` combines their colors:
+
+```js
+import { OVERLAY_ALPHA_BLEND, OVERLAY_COLOR_BLEND } from '@niivue/niivue'
+
+nv.volumeOverlayAlphaBlend = OVERLAY_ALPHA_BLEND.OVER
+nv.volumeOverlayColorBlend = OVERLAY_COLOR_BLEND.OVER
+```
+
+| Setting | `0` (default) | `1` | `2` |
+|---|---|---|---|
+| `volumeOverlayAlphaBlend` | `MAX`: the most opaque wins | `ADDITIVE`: opacities add, capped at 1 | `OVER`: `1 - prod(1 - a)` |
+| `volumeOverlayColorBlend` | `ADDITIVE`: opacity-weighted sum | `MEAN`: opacity-weighted average | `OVER`: later overlays on top |
+
+`OVER` for both gives ordinary layered compositing, in volume order.
+`ADDITIVE` alpha suits fractions that sum to 1, such as tissue probability
+maps. NiiVue 0.x had only the `MAX` and `ADDITIVE` defaults.
+
+## In the gallery
+
+- [Statistics](/gallery/vox-stats): this demo plus clip planes and a 3D render
+- [Multiple statistical maps](/gallery/vox-stats-multi): three task maps
+  with shared thresholds and the blend controls
+- [Tissue maps](/gallery/vox-tissues)
+- [Modulation](/gallery/vox-modulate): scale one overlay's brightness by
+  another volume
+
+Label volumes, where each value names a region, work differently; see
+[Atlases and labels](./atlases).

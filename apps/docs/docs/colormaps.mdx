@@ -1,0 +1,108 @@
+---
+sidebar_position: 3
+title: Colormaps and contrast
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/colormaps'
+
+# Colormaps and contrast
+
+Each volume maps its intensities onto a colormap. Two numbers control the
+mapping: `calMin` gets the first color and `calMax` gets the last.
+Changing them is how you set the contrast (the window) of an image.
+
+<Demo load={() => import('@site/src/demos/colormaps')} source={source} />
+
+## Choosing a colormap
+
+`nv.colormaps` lists every public colormap name. Set one per volume, at
+load time or later:
+
+```js
+console.log(nv.colormaps) // [..., 'Gray', 'Hot', ..., 'Viridis', ...]
+await nv.setVolume(0, { colormap: 'hot' })
+```
+
+Stored names start with a capital letter, and a lookup capitalizes the first
+letter for you, so `'hot'` and `'Hot'` name the same map. The default is
+`'Gray'`.
+
+## Window: calMin and calMax
+
+NiiVue picks a robust starting window when an image loads. You can override
+it in the load options or with `setVolume`:
+
+```js
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', calMin: 30, calMax: 80 }])
+await nv.setVolume(0, { calMin: 40, calMax: 90 })
+```
+
+`nv.volumes[i]` exposes the data range as `globalMin` and `globalMax`, which
+the demo uses to size its sliders. To go back to the automatic window, call
+`await nv.recalculateCalMinMax(0)`.
+
+By default, values below `calMin` are transparent on an overlay. Set
+`isTransparentBelowCalMin: false` to clamp them to the first color instead.
+For the background volume, `nv.volumeIsAlphaClipDark = true` makes voxels
+below `calMin` transparent, so dark air no longer hides what is behind it.
+
+Users can set the window by dragging, too. On a 2D slice the right-button
+drag defaults to contrast mode (`secondaryDragMode` is `DRAG_MODE.contrast`). The [Windowing](/gallery/vox-window) example adds Otsu and
+reset buttons.
+
+## Inverting and negative values
+
+`isColormapInverted` reverses a volume's colormap. The 2D slices, the 3D
+render and the colorbar all follow.
+
+Signed data, such as a statistical map, can use a second colormap for values
+below zero. `colormapNegative` names it, and `calMinNeg` / `calMaxNeg` set
+its window. [Overlays and thresholds](./overlays) shows this in practice.
+
+```js
+await nv.setVolume(1, { colormap: 'redyell', colormapNegative: 'winter' })
+```
+
+## Colorbars
+
+`nv.isColorbarVisible` turns the colorbars on for the whole viewer. Each
+volume can opt out with its own `isColorbarVisible: false`, which is the
+usual setting for an anatomical background.
+
+## Custom colormaps
+
+Register your own with `addColormap`. Give it red, green and blue stops
+(0 to 255). `A` (alpha) and `I` (the intensity index of each stop) are
+optional. The call returns the stored name, with its first letter
+capitalized:
+
+```js
+const name = nv.addColormap('icy', {
+  R: [0, 0, 255],
+  G: [0, 128, 255],
+  B: [0, 255, 255],
+})
+await nv.setVolume(0, { colormap: name }) // name is 'Icy'
+```
+
+The demo registers this map, so `Icy` appears in its list.
+`addColormapFromUrl(url)` fetches the same `{ R, G, B, A, I }` shape as
+JSON and names it after the file. `nv.hasColormap(name)` checks whether a
+name is registered.
+
+`lookupColorMap(name)`, a named export of `@niivue/niivue`, returns a
+colormap's stops. Some built-in maps carry a display window of their own;
+`ct_bones`, for example, is meant for 180 to 600 HU. NiiVue 0.x applied that
+window automatically when you picked the map. This version does not, so pass
+it yourself:
+
+```js
+import { lookupColorMap } from '@niivue/niivue'
+
+const cmap = lookupColorMap('ct_bones')
+await nv.setVolume(0, { colormap: 'ct_bones', calMin: cmap?.min, calMax: cmap?.max })
+```
+
+For label volumes, where each integer is a named region, see
+[Atlases and labels](./atlases).

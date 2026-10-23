@@ -1,0 +1,70 @@
+---
+sidebar_position: 12
+title: Linking viewers
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/sync'
+
+# Linking viewers
+
+Several viewers on one page can follow each other: move the crosshair, zoom
+or rotate in one, and the others match. Click, scroll or rotate in either
+viewer below.
+
+<Demo load={() => import('@site/src/demos/sync')} source={source} canvases={2} />
+
+## broadcastTo
+
+`nv1.broadcastTo(targets)` makes `nv1` push its view to one viewer or a list
+of viewers whenever it redraws. The link is one-way, so for two viewers that
+drive each other, link both:
+
+```js
+nv1.broadcastTo([nv2])
+nv2.broadcastTo([nv1])
+```
+
+Each call replaces the viewer's previous targets. Call `broadcastTo()` with
+no arguments to stop broadcasting.
+
+## What is synced
+
+The optional second argument says what to send. It is a `SyncOpts` object,
+and it replaces the default rather than adding to it:
+
+| Key | What it copies |
+|-----|----------------|
+| `'2d'` | the crosshair position and the 2D pan and zoom |
+| `'3d'` | the render's azimuth, elevation and zoom (`scaleMultiplier`) |
+| `clipPlane` | all clip planes |
+| `crosshair` | the crosshair position only |
+| `sliceType` | the slice type |
+| `calMin`, `calMax` | the display range of volume 0 |
+| `viewport` | the canvas-level pan and zoom, between viewers on different canvases |
+
+The default is `{ '2d': true, '3d': true, clipPlane: true }`. To also match
+the slice type, and only that besides the crosshair:
+
+```js
+nv1.broadcastTo([nv2], { crosshair: true, sliceType: true })
+```
+
+The crosshair is passed in millimeters, not voxels, so viewers with
+different images stay on the same anatomical point as long as the images
+share a space (for example, a T1 and a statistical map both in MNI space).
+Everything else, such as the loaded volumes, colormaps and layout, stays
+independent. In the demo the right viewer uses a different colormap.
+
+## Viewers on one canvas
+
+Linked viewers do not need their own canvases. Give each one a region of a
+shared canvas with `bounds` (see
+[Several viewers in one canvas](./layout#several-viewers-in-one-canvas)) and
+link them the same way.
+
+## See also
+
+- [Synchronize](/gallery/sync): two linked viewers with one-way and two-way
+  options.
+- [Bounds](/gallery/bounds): two linked viewers sharing one canvas.

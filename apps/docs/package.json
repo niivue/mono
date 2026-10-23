@@ -1,0 +1,26 @@
+{
+  "name": "@niivue/docs-site",
+  "private": true,
+  "scripts": {
+    "start": "docusaurus start",
+    "build": "docusaurus build --out-dir dist",
+    "serve": "docusaurus serve --dir dist",
+    "clear": "docusaurus clear"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@mdx-js/react": "^3.1.0",
+    "@niivue/niivue": "workspace:*",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "3.10.2",
+    "@docusaurus/tsconfig": "3.10.2",
+    "@docusaurus/types": "3.10.2",
+    "raw-loader": "^4.0.2",
+    "typescript": "^5.9.3"
+  }
+}

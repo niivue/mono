@@ -1,0 +1,25 @@
+.hero {
+  padding: 4rem 0 3rem;
+  text-align: center;
+  background: var(--ifm-color-emphasis-100);
+}
+
+.tagline {
+  font-size: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.topic {
+  display: block;
+  height: 100%;
+  padding: 1.25rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  color: var(--ifm-font-color-base);
+}
+
+.topic:hover {
+  border-color: var(--ifm-color-primary);
+  text-decoration: none;
+  color: var(--ifm-font-color-base);
+}

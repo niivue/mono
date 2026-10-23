@@ -38,7 +38,14 @@ for app in "${APPS[@]}"; do
   VITE_BASE="${BASE_PATH}${app}/" VITE_IMAGES_BASE="$BASE_PATH" bunx nx build "$app"
 done
 
-# 3. Build niivue examples last (overwrites packages/niivue/dist)
+# 3. Build the docs site while the library dist still exists (step 4 deletes it).
+# Its demos fetch volumes and embed example pages from this same deployment.
+echo "==> Building docs site"
+DOCS_BASE_URL="${BASE_PATH}docs/" \
+  DOCS_EXAMPLES_BASE="https://niivue.github.io${BASE_PATH}" \
+  bunx nx build docs-site
+
+# 4. Build niivue examples last (overwrites packages/niivue/dist)
 echo "==> Building niivue examples"
 rm -rf packages/niivue/dist
 (cd packages/niivue \
@@ -50,7 +57,7 @@ rm -rf packages/niivue/dist
     VITE_OMEZARR_ASSET_BASE="https://ome-zarr-scivis.s3.amazonaws.com/v0.5/96x2/" \
     bunx --bun vite build --config vite.config.examples.ts --mode production)
 
-# 4. Assemble site
+# 5. Assemble site
 # GitHub Pages (actions/deploy-pages) maps the artifact root to BASE_PATH,
 # so files go directly into _site/ — no subdirectory nesting needed.
 
@@ -69,6 +76,10 @@ for app in "${APPS[@]}"; do
   mkdir -p "_site/$app"
   cp -r "apps/$app/dist/"* "_site/$app/"
 done
+
+# Documentation site
+mkdir -p _site/docs
+cp -r apps/docs/dist/* _site/docs/
 
 echo "==> Done. Site is in _site/ ($(du -sh _site | cut -f1))"
 

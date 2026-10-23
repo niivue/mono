@@ -1,0 +1,41 @@
+:root {
+  --ifm-color-primary: #2e6fb5;
+  --ifm-color-primary-dark: #2964a3;
+  --ifm-color-primary-darker: #275e9a;
+  --ifm-color-primary-darkest: #204e7f;
+  --ifm-color-primary-light: #3e7fc6;
+  --ifm-color-primary-lighter: #4785c9;
+  --ifm-color-primary-lightest: #6299d3;
+  --ifm-code-font-size: 95%;
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #6aa8e8;
+  --ifm-color-primary-dark: #4f98e4;
+  --ifm-color-primary-darker: #4190e2;
+  --ifm-color-primary-darkest: #2077d2;
+  --ifm-color-primary-light: #85b8ec;
+  --ifm-color-primary-lighter: #93c0ee;
+  --ifm-color-primary-lightest: #bbd7f5;
+}
+
+/* Controls built by src/demos/ui.ts. */
+.demo-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.demo-control input[type="range"] {
+  width: 8rem;
+}
+
+.demo-status {
+  display: block;
+  padding: 0.35rem 0.75rem;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.8rem;
+  background: #1f1f1f;
+  min-height: 1.8em;
+}

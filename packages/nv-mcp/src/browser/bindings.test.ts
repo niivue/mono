@@ -735,6 +735,18 @@ describe('bindControls: selects that write values', () => {
         ],
       }),
     ).toThrow('"matte" and "flat" both write 0')
+    // Values a read-back cannot tell apart are twins too.
+    expect(() =>
+      add_control({
+        id: 'light',
+        kind: 'select',
+        bind: 'volumeIllumination',
+        options: [
+          { id: 'third', value: 1 / 3 },
+          { id: 'rounded', value: 0.3333333 },
+        ],
+      }),
+    ).toThrow('"third" and "rounded" both write 0.3333333')
     expect(controls.list()).toHaveLength(0)
   })
 

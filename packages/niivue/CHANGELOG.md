@@ -1,3 +1,18 @@
+## 1.0.0-rc.36 (2026-10-23)
+
+### Fixes
+
+- ⚠️  **niivue:** default isAntiAlias to false ([#318](https://github.com/niivue/mono/issues/318))
+
+### Breaking Changes
+
+- **niivue:** default isAntiAlias to false  ([#318](https://github.com/niivue/mono/issues/318))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.35 (2026-10-23)
 
 ### Features

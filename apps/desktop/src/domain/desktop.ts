@@ -129,7 +129,12 @@ export function manifestLoadedStatus(
   const notice = truncationNotice(manifest)
   return notice
     ? `${notice}${from}. Only the first ones by file path are loaded.`
-    : `${manifest.itemCount} volume item(s) loaded${from}.`
+    : `${volumeCountLabel(manifest.itemCount)} loaded${from}.`
+}
+
+/** "1 volume" / "265 volumes". */
+export function volumeCountLabel(count: number): string {
+  return `${count.toLocaleString()} ${count === 1 ? 'volume' : 'volumes'}`
 }
 
 export interface DesktopManifestVersion {

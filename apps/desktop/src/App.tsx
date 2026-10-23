@@ -104,9 +104,11 @@ import {
   truncationNotice,
 } from './domain/desktop'
 import {
-  volumeImageTypeLabel,
+  formatVoxelSpacing,
+  volumeImageTypeDisplay,
   volumeSession,
   volumeSubject,
+  volumeSummary,
 } from './domain/volumeFacets'
 import { useClipPlanes } from './hooks/useClipPlanes'
 import { useDatasetManifest } from './hooks/useDatasetManifest'
@@ -241,6 +243,9 @@ export function App(): JSX.Element {
     statusTone,
     warmProgress,
   } = useDatasetManifest({ promoteRecent })
+  // What researchers call this dataset: its BIDS name, else its folder name.
+  const datasetName =
+    bidsName || (datasetRoot ? recentDatasetLabel(datasetRoot) : '')
   const datasetNotice = useMemo(
     () => (manifest ? truncationNotice(manifest) : null),
     [manifest],
@@ -297,6 +302,9 @@ export function App(): JSX.Element {
     isPhoneViewport() ? 'axial' : DEFAULT_VIEW_MODE,
   )
   const [atlasId, setAtlasId] = useState<string | null>(null)
+  // The viewer's load progress (which preview level is showing), kept for the
+  // viewer-title tooltip rather than shown on the stage.
+  const [renderStatus, setRenderStatus] = useState('')
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(
     null,
   )
@@ -894,7 +902,7 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isRenderMaximized])
 
-  const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
+  const warmStatus = warmProgressLabel(warmProgress)
   // The atlas layer's display name, used to bind the region readout to the named
   // atlas (only atlas/label volumes carry per-voxel region labels).
   const atlasName = useMemo(
@@ -1294,10 +1302,10 @@ export function App(): JSX.Element {
             onPointerLeave={() => setMouseContext(null)}
           >
             <DatasetDesktop
+              datasetName={datasetName}
               items={filteredItems}
               manifest={manifest}
               selected={selected}
-              isActive={mouseContext === 'desktop'}
               zoom={desktopZoom}
               onZoom={setDesktopZoom}
               onSelect={(item) => setSelectedId(item.id)}
@@ -1327,14 +1335,23 @@ export function App(): JSX.Element {
             onPointerLeave={() => setMouseContext(null)}
           >
             <div className="nv-stage-title nv-niivue-title" aria-hidden="true">
-              <span>NiiVue Window</span>
-              <strong>{selected?.label ?? 'No selection'}</strong>
+              <span>Viewer</span>
+              <MiddleEllipsis
+                text={selected?.label ?? 'No selection'}
+                title={[
+                  selected?.label,
+                  `${backendLabel(backend)} renderer`,
+                  renderStatus,
+                ]
+                  .filter(Boolean)
+                  .join('\n')}
+              />
               <em>
                 {viewMode !== 'render'
                   ? `${viewModeLabel(viewMode)}${slicePosition ? ` · ${slicePosition}` : ''}`
                   : renderWheelMode === 'clip-plane'
                     ? `wheel ${activeClipPlane?.label ?? 'clip'}`
-                    : backend.toUpperCase()}
+                    : '3D'}
               </em>
             </div>
             <button
@@ -1372,6 +1389,7 @@ export function App(): JSX.Element {
               onLocationChange={setLocationReadout}
               onResolvedWindows={handleResolvedWindows}
               onViewModeChange={setViewMode}
+              onRenderStatus={setRenderStatus}
               renderWheelMode={renderWheelMode}
               viewMode={viewMode}
             />
@@ -1589,7 +1607,6 @@ export function App(): JSX.Element {
             {locationStatus}
           </span>
         ) : null}
-        <span>{mouseContextLabel(mouseContext)}</span>
         <span
           className="nv-disclaimer"
           role="note"
@@ -2324,7 +2341,7 @@ function SelectionPanel({
           <dt>Format</dt>
           <dd>{item.format}</dd>
           <dt>Image</dt>
-          <dd>{volumeImageTypeLabel(item)}</dd>
+          <dd>{volumeImageTypeDisplay(item)}</dd>
           <dt>Role</dt>
           <dd>{item.role ?? 'source'}</dd>
           {item.derivedFrom ? (
@@ -2336,7 +2353,7 @@ function SelectionPanel({
           <dt>Shape</dt>
           <dd>{item.shape.join(' x ')}</dd>
           <dt>Spacing</dt>
-          <dd>{item.spacing.join(' x ')}</dd>
+          <dd>{formatVoxelSpacing(item.spacing)}</dd>
           <dt>Metadata</dt>
           <dd>{metadataStatus}</dd>
         </dl>
@@ -2962,6 +2979,31 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+function backendLabel(backend: Backend): string {
+  return backend === 'webgpu' ? 'WebGPU' : 'WebGL 2'
+}
+
+// A file name that ellipsizes in the middle, so "sub-10159_ses-01_…_T1w.nii.gz"
+// keeps both the subject and the suffix. The head shrinks with an end
+// ellipsis; the tail (last ~12 characters) never shrinks.
+function MiddleEllipsis({
+  text,
+  title,
+}: {
+  text: string
+  title?: string
+}): JSX.Element {
+  const tailLength = text.length > 20 ? 12 : 0
+  const head = tailLength ? text.slice(0, -tailLength) : text
+  const tail = tailLength ? text.slice(-tailLength) : ''
+  return (
+    <strong className="nv-middle-ellipsis" title={title}>
+      <span>{head}</span>
+      {tail ? <span>{tail}</span> : null}
+    </strong>
+  )
+}
+
 function viewModeLabel(mode: ViewModeId): string {
   switch (mode) {
     case 'axial':
@@ -2975,12 +3017,6 @@ function viewModeLabel(mode: ViewModeId): string {
     default:
       return '3D render'
   }
-}
-
-function mouseContextLabel(context: MouseContext): string {
-  if (context === 'desktop') return 'Mouse: desktop grid controls'
-  if (context === 'niivue') return 'Mouse: NiiVue controls'
-  return 'Mouse: no pane'
 }
 
 // Through-plane position of the current slice, as an anatomical mm coordinate
@@ -3104,16 +3140,12 @@ function formatVoxelIndex(value: number): string {
   return String(Math.round(value))
 }
 
-function warmProgressLabel(
-  progress: WarmProgress | null,
-  datasetRoot: string,
-): string | null {
+// Background preview generation, in the user's terms ("previews", not the
+// pyramid cache that backs them).
+function warmProgressLabel(progress: WarmProgress | null): string | null {
   if (!progress || progress.total <= 0) return null
-  const datasetLabel = datasetRoot ? `${recentDatasetLabel(datasetRoot)}: ` : ''
-  if (!progress.active)
-    return `${datasetLabel}Pyramid cache ready ${progress.completed}/${progress.total}`
-  const percent = Math.round((progress.completed / progress.total) * 100)
-  return `${datasetLabel}Warming pyramid ${progress.completed}/${progress.total} (${percent}%)`
+  if (!progress.active) return 'Previews ready'
+  return `Preparing previews ${progress.completed.toLocaleString()}/${progress.total.toLocaleString()}`
 }
 
 function compareAtlasCandidates(left: DesktopItem, right: DesktopItem): number {
@@ -3197,7 +3229,7 @@ function atlasCandidateScore(item: DesktopItem): number {
 }
 
 function layerOptionMeta(item: DesktopItem): string {
-  const base = `${volumeImageTypeLabel(item)} / ${item.shape.join(' x ')} / ${item.dtype}`
+  const base = volumeSummary(item)
   const subject = volumeSubject(item)
   return subject ? `${subject} · ${base}` : base
 }

@@ -1150,6 +1150,26 @@ button {
   right: 50px;
 }
 
+/* File name with the ellipsis in the middle: the head shrinks, the tail
+   (extension and suffix) stays. Takes the pointer back for its tooltip. */
+.nv-stage-title .nv-middle-ellipsis {
+  display: flex;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.nv-middle-ellipsis span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-middle-ellipsis span + span {
+  flex: 0 0 auto;
+  white-space: pre;
+}
+
 .nv-osd-tile {
   position: absolute;
   z-index: 1;
@@ -1306,6 +1326,9 @@ button {
 }
 
 .nv-hud {
+  /* The footer ignores the pointer (panning passes through); the HUD takes it
+     back so its diagnostics tooltip can show. */
+  pointer-events: auto;
   display: flex;
   min-width: 0;
   overflow: hidden;
@@ -1331,14 +1354,6 @@ button {
 
 .nv-hud span:nth-child(1) {
   min-width: 82px;
-}
-
-.nv-hud span:nth-child(3) {
-  min-width: 98px;
-}
-
-.nv-hud span:nth-child(5) {
-  min-width: 104px;
 }
 
 .nv-osd-source-key {
@@ -1608,7 +1623,8 @@ button {
 .nv-render-status {
   position: absolute;
   left: 14px;
-  top: 14px;
+  /* Below the viewer title and view buttons, never behind them. */
+  top: 96px;
   max-width: min(520px, calc(100% - 28px));
   overflow: hidden;
   border: 1px solid rgba(215, 166, 66, 0.32);
@@ -1618,6 +1634,14 @@ button {
   padding: 7px 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nv-render-status.is-error {
+  z-index: 4;
+  max-width: calc(100% - 28px);
+  border-color: var(--danger);
+  color: var(--danger);
+  white-space: normal;
 }
 
 .nv-control-section,

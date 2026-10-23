@@ -71,6 +71,37 @@ export function volumeFacetValue(value: string | null | undefined): string {
   return normalized && normalized.length > 0 ? normalized : 'Unknown'
 }
 
+/** The image type for display: an em dash instead of "Unknown". */
+export function volumeImageTypeDisplay(item: DesktopItem): string {
+  const label = volumeImageTypeLabel(item)
+  return label === 'Unknown' ? '—' : label
+}
+
+/** "T1w / 207 x 256 x 215 / uint8", leaving out an unknown image type. */
+export function volumeSummary(item: DesktopItem): string {
+  const imageType = volumeImageTypeLabel(item)
+  return [
+    imageType === 'Unknown' ? null : imageType,
+    item.shape.join(' x '),
+    item.dtype,
+  ]
+    .filter(Boolean)
+    .join(' / ')
+}
+
+/**
+ * Voxel spacing rounded to 3 significant figures, e.g.
+ * "0.737 × 0.737 × 0.737 mm" (raw headers carry values like 0.9999971985816956).
+ */
+export function formatVoxelSpacing(spacing: readonly number[]): string {
+  if (spacing.length === 0) return '—'
+  return `${spacing
+    .map((value) =>
+      Number.isFinite(value) ? String(Number(value.toPrecision(3))) : '?',
+    )
+    .join(' × ')} mm`
+}
+
 export function volumeSearchText(item: DesktopItem): string {
   return [
     item.label,

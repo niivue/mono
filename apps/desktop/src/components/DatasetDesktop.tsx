@@ -46,17 +46,18 @@ interface MinimapViewport {
 
 export function DatasetDesktop({
   manifest,
+  datasetName,
   items,
   selected,
-  isActive,
   zoom,
   onZoom,
   onSelect,
 }: {
   manifest: DesktopManifest | null
+  /** Plain dataset name for the pane title (BIDS name or folder name). */
+  datasetName?: string
   items: DesktopItem[]
   selected: DesktopItem | null
-  isActive: boolean
   zoom: number
   onZoom: (zoom: number) => void
   onSelect: (item: DesktopItem) => void
@@ -262,20 +263,19 @@ export function DatasetDesktop({
       </div>
 
       <div className="nv-stage-title nv-osd-title" aria-hidden="true">
-        <span>OSD Desktop</span>
-        <strong>{manifest?.label ?? 'VolumeDesktop'}</strong>
-        <em>{isActive ? 'mouse' : `${Math.round(zoom * 100)}%`}</em>
+        <span>Browse</span>
+        <strong>{datasetName || 'Dataset'}</strong>
+        <em>{`${Math.round(zoom * 100)}%`}</em>
       </div>
 
       <footer className="nv-osd-footer" aria-hidden="true">
-        <div className="nv-hud">
+        {/* Preview tier and grid size are diagnostics: tooltip only. */}
+        <div
+          className="nv-hud"
+          title={`Preview level L${previewLevel} · ${previewSize} px thumbnails · grid ${layoutWorld.width} x ${layoutWorld.height}`}
+        >
           <span>zoom {Math.round(zoom * 100)}%</span>
-          <span>LOD L{previewLevel}</span>
-          <span>{previewSize}px previews</span>
-          <span>{layoutItems.length} visible</span>
-          <span>
-            {layoutWorld.width} x {layoutWorld.height}
-          </span>
+          <span>{layoutItems.length} shown</span>
         </div>
         {derivedSource ? (
           <div className="nv-osd-source-key">

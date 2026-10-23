@@ -8,6 +8,11 @@ import path from 'node:path'
 
 export const EXAMPLES_DIR = 'packages/niivue/examples'
 
+// Pages left out of the gallery. allen.atlas.html reads its default dataset
+// from imsc.allencell.org, which sends no CORS header, so it shows nothing on
+// the published site.
+const HIDDEN = new Set(['allen.atlas.html'])
+
 export type GalleryFile = { name: string; code: string }
 
 export type GalleryExample = {
@@ -106,7 +111,7 @@ export function collectGallery(
   for (const { section, page, title } of readSections(
     readFileSync(path.join(dir, 'index.html'), 'utf8'),
   )) {
-    if (seen.has(page)) continue
+    if (seen.has(page) || HIDDEN.has(page)) continue
     seen.add(page)
     const id = `file:${EXAMPLES_DIR}/${page}`
     const node = nodes.get(id)

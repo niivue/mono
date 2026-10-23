@@ -118,6 +118,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@niivue/niivue": "workspace:*",
+        "@niivue/uikit": "workspace:*",
         "@tauri-apps/api": "^2.2.0",
         "@tauri-apps/plugin-dialog": "^2.7.1",
         "@xterm/addon-fit": "^0.11.0",

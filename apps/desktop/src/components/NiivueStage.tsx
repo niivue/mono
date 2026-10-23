@@ -1,4 +1,10 @@
-import type { ColorMap, NiiVueLocation } from '@niivue/niivue'
+import type {
+  AnnotationScreenShape,
+  ColorMap,
+  NiiVueLocation,
+  UIKitOverlayRenderer,
+} from '@niivue/niivue'
+import { Eraser, Ruler } from 'lucide-react'
 import {
   type JSX,
   type PointerEvent as ReactPointerEvent,
@@ -17,6 +23,7 @@ import type {
   VolumeMetadata,
 } from '../domain/desktop'
 import { fetchVolumeMetadata, rawVolumeUrl } from '../domain/desktop'
+import { AnnotationLayer, loadUIKitFont } from '../domain/uikitLayer'
 
 // The window NiiVue actually applied for a layer, plus the volume's robust
 // range (the "no threshold" target for a show-all reset).
@@ -153,6 +160,15 @@ interface NiiVueLike {
     listener: (event: CustomEvent<NiiVueLocation>) => void,
     options?: boolean | EventListenerOptions,
   ): void
+  // Vector annotations (the measure tool). Shapes are drawn by our uikit
+  // overlay from annotationScreenShapes, with isAnnotationDrawn off.
+  annotationIsEnabled?: boolean
+  annotationTool?: string
+  isAnnotationDrawn?: boolean
+  readonly annotationScreenShapes?: readonly AnnotationScreenShape[]
+  clearAnnotations?(): void
+  // Returns the unregister function.
+  registerOverlayRenderer?(renderer: UIKitOverlayRenderer): () => void
   azimuth?: number
   elevation?: number
   model?: {
@@ -397,6 +413,13 @@ export function NiivueStage({
   // Current crosshair location (mirrored from NiiVue) — drives the touch slice
   // slider so it stays in sync with clicks/paging from any source.
   const [location, setLocation] = useState<NiiVueLocation | null>(null)
+  // Measure tool: press-drag-release on a 2D slice places a ruler. Off by
+  // default so a click still moves the crosshair.
+  const [isMeasuring, setIsMeasuring] = useState(false)
+  // Null once the uikit overlay is drawing; otherwise why measuring is off.
+  const [measureUnavailable, setMeasureUnavailable] = useState<string | null>(
+    'Loading measure tool.',
+  )
   const primaryItem = layers[0]?.item ?? item
   const isRenderMode = viewMode === 'render'
   const currentViewLabel = (
@@ -441,6 +464,39 @@ export function NiivueStage({
     let locationListener:
       | ((event: CustomEvent<NiiVueLocation>) => void)
       | null = null
+    let annotationLayer: AnnotationLayer | null = null
+    let unregisterAnnotationLayer: (() => void) | null = null
+
+    // Draw annotations with uikit once its font is in. Core's own annotation
+    // draw stays on until then, and stays as the fallback if the font fails.
+    function attachAnnotationLayer(nv: NiiVueLike): void {
+      const register = nv.registerOverlayRenderer
+      if (!register) {
+        setMeasureUnavailable('This NiiVue build has no overlay hook.')
+        return
+      }
+      loadUIKitFont()
+        .then((font) => {
+          if (cancelled || nvRef.current !== nv) return
+          annotationLayer = new AnnotationLayer(
+            font,
+            () => nv.annotationScreenShapes ?? [],
+          )
+          unregisterAnnotationLayer = register.call(nv, annotationLayer)
+          nv.isAnnotationDrawn = false
+          setMeasureUnavailable(null)
+          nv.drawScene()
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return
+          console.error('[neurovue] uikit font failed to load', error)
+          setMeasureUnavailable(
+            `Measure tool unavailable: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          )
+        })
+    }
 
     async function attach(): Promise<void> {
       const canvas = canvasRef.current
@@ -490,6 +546,7 @@ export function NiivueStage({
           }
           nv.addEventListener('locationChange', locationListener)
         }
+        attachAnnotationLayer(nv)
         const attachedCanvas = activeCanvasFor(nv, canvas)
         canvasRef.current = attachedCanvas
         resizeNiiVue(nv, attachedCanvas, stage)
@@ -526,6 +583,9 @@ export function NiivueStage({
     void attach()
     return () => {
       cancelled = true
+      // Release the overlay's GPU resources before the instance goes.
+      unregisterAnnotationLayer?.()
+      annotationLayer?.destroy()
       if (localNv && nvRef.current === localNv) {
         if (locationListener) {
           localNv.removeEventListener?.('locationChange', locationListener)
@@ -635,6 +695,34 @@ export function NiivueStage({
     // sliceType if the view mode was changed mid-load (nvRef was still null when
     // this effect first ran), so re-apply once the instance/volumes exist.
   }, [viewMode, primaryItem, loadedVersion])
+
+  // Measure mode: hand left-drag to NiiVue's measureLine annotation tool. 2D
+  // only, since there is no slice plane to measure on in the 3D render.
+  const isMeasureActive =
+    isMeasuring && !isRenderMode && measureUnavailable === null
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadedVersion re-applies on a fresh instance.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv) return
+    nv.annotationTool = 'measureLine'
+    nv.annotationIsEnabled = isMeasureActive
+  }, [isMeasureActive, loadedVersion])
+
+  // Escape leaves measure mode, like finishing with any other tool.
+  useEffect(() => {
+    if (!isMeasureActive) return
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key !== 'Escape' || isEditableTarget(event.target)) return
+      setIsMeasuring(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isMeasureActive])
+
+  function clearMeasurements(): void {
+    const nv = nvRef.current
+    nv?.clearAnnotations?.()
+  }
 
   // Go-to: move the crosshair to a requested RAS+ mm position. A fresh
   // crosshairTarget object identity (one per request) re-fires this.
@@ -949,6 +1037,35 @@ export function NiivueStage({
           </button>
         ))}
       </fieldset>
+      {isRenderMode ? null : (
+        <fieldset className="nv-measure-tools" aria-label="Measure">
+          <button
+            aria-label="Measure distance"
+            aria-pressed={isMeasureActive}
+            className={isMeasureActive ? 'is-active' : ''}
+            disabled={!primaryItem || measureUnavailable !== null}
+            onClick={() => setIsMeasuring((current) => !current)}
+            title={
+              measureUnavailable ??
+              (isMeasureActive
+                ? 'Stop measuring (Esc)'
+                : 'Measure distance: drag across a slice')
+            }
+            type="button"
+          >
+            <Ruler aria-hidden="true" size={14} />
+          </button>
+          <button
+            aria-label="Clear measurements"
+            disabled={!primaryItem || measureUnavailable !== null}
+            onClick={clearMeasurements}
+            title="Clear measurements"
+            type="button"
+          >
+            <Eraser aria-hidden="true" size={14} />
+          </button>
+        </fieldset>
+      )}
       {showSliceSlider ? (
         <fieldset className="nv-slice-slider" aria-label="Slice position">
           <input

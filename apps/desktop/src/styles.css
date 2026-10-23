@@ -1075,6 +1075,68 @@ button {
   max-width: calc(100% - 24px);
 }
 
+/* First-run hint while only the bundled sample is loaded. Sits under the
+   Browse title, above the grid, without blocking panning elsewhere. */
+.nv-open-data-card {
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  z-index: 3;
+  display: grid;
+  gap: 6px;
+  width: min(300px, calc(100% - 24px));
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.9);
+  padding: 10px 12px 12px;
+  backdrop-filter: blur(8px);
+}
+
+.nv-open-data-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.nv-open-data-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-open-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.nv-open-data-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 9px;
+}
+
+.nv-open-data-actions button:hover:not(:disabled),
+.nv-open-data-actions button:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-open-data-actions button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
 .nv-osd-world {
   position: relative;
   margin: 22px;

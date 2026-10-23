@@ -5,6 +5,7 @@ import {
   type MutableRefObject,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   type SetStateAction,
@@ -47,6 +48,7 @@ interface MinimapViewport {
 export function DatasetDesktop({
   manifest,
   datasetName,
+  overlay,
   items,
   selected,
   zoom,
@@ -56,6 +58,8 @@ export function DatasetDesktop({
   manifest: DesktopManifest | null
   /** Plain dataset name for the pane title (BIDS name or folder name). */
   datasetName?: string
+  /** Extra content pinned under the pane title (e.g. the open-data card). */
+  overlay?: ReactNode
   items: DesktopItem[]
   selected: DesktopItem | null
   zoom: number
@@ -267,6 +271,8 @@ export function DatasetDesktop({
         <strong>{datasetName || 'Dataset'}</strong>
         <em>{`${Math.round(zoom * 100)}%`}</em>
       </div>
+
+      {overlay}
 
       <footer className="nv-osd-footer" aria-hidden="true">
         {/* Preview tier and grid size are diagnostics: tooltip only. */}

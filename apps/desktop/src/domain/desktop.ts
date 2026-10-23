@@ -120,6 +120,23 @@ export function truncationNotice(manifest: DesktopManifest): string | null {
   return `Showing ${shown.toLocaleString()} of ${manifest.totalDiscovered.toLocaleString()} volumes`
 }
 
+/**
+ * True while the only dataset is the MNI152 template NeuroVue ships (or falls
+ * back to): every source volume is the `mni152` entry and the dataset root is
+ * inside an app bundle (`….app/…`, macOS and iOS) or unresolved. niimath
+ * derivatives of the sample don't count, so they don't hide the hint.
+ */
+export function isBundledSampleDataset(
+  items: readonly DesktopItem[],
+  datasetRoot: string,
+): boolean {
+  const sources = items.filter((item) => (item.role ?? 'source') === 'source')
+  if (sources.length === 0 || sources.some((item) => item.id !== 'mni152')) {
+    return false
+  }
+  return datasetRoot === '' || /\.app(\/|$)/.test(datasetRoot)
+}
+
 /** Status-line text for a freshly loaded manifest. */
 export function manifestLoadedStatus(
   manifest: DesktopManifest,

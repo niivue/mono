@@ -65,6 +65,7 @@ import {
   type ResolvedWindow,
   type ViewModeId,
 } from './components/NiivueStage'
+import { OpenDataCard } from './components/OpenDataCard'
 import { TerminalPanel } from './components/TerminalPanel'
 import { VolumeFilterPanel } from './components/VolumeFilterPanel'
 import {
@@ -99,6 +100,7 @@ import type {
 import {
   defaultClipPlanes,
   fetchVolumeMetadata,
+  isBundledSampleDataset,
   openOverlayVolume,
   resolveRuntimeCapabilities,
   truncationNotice,
@@ -244,8 +246,14 @@ export function App(): JSX.Element {
     warmProgress,
   } = useDatasetManifest({ promoteRecent })
   // What researchers call this dataset: its BIDS name, else its folder name.
-  const datasetName =
-    bidsName || (datasetRoot ? recentDatasetLabel(datasetRoot) : '')
+  // The bundled sample gets a plain label instead of its path inside the app.
+  const isSampleDataset = useMemo(
+    () => manifest !== null && isBundledSampleDataset(items, datasetRoot),
+    [manifest, items, datasetRoot],
+  )
+  const datasetName = isSampleDataset
+    ? 'Sample: MNI152 template'
+    : bidsName || (datasetRoot ? recentDatasetLabel(datasetRoot) : '')
   const datasetNotice = useMemo(
     () => (manifest ? truncationNotice(manifest) : null),
     [manifest],
@@ -940,7 +948,12 @@ export function App(): JSX.Element {
                   .join(' · ') || undefined
               }
             >
-              {bidsName || datasetRoot || serverUrl || 'Resolving local server'}
+              {isSampleDataset
+                ? datasetName
+                : bidsName ||
+                  datasetRoot ||
+                  serverUrl ||
+                  'Resolving local server'}
             </p>
             {datasetNotice ? (
               <p className="nv-dataset-notice" role="status">
@@ -1303,6 +1316,16 @@ export function App(): JSX.Element {
           >
             <DatasetDesktop
               datasetName={datasetName}
+              overlay={
+                isSampleDataset ? (
+                  <OpenDataCard
+                    disabled={isOpeningDataset || isImportingBundle}
+                    onOpenBundle={() => void handleImportBundle()}
+                    onOpenFile={() => void openLocalVolumeFile()}
+                    onOpenFolder={() => void openLocalDataset()}
+                  />
+                ) : null
+              }
               items={filteredItems}
               manifest={manifest}
               selected={selected}

@@ -1,3 +1,14 @@
+## 1.0.0-rc.9 (2026-10-23)
+
+### Fixes
+
+- **nv-mcp:** announce where an animate move of the crosshair or cut ends ([fcd51c7f](https://github.com/niivue/mono/commit/fcd51c7f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.8 (2026-10-23)
 
 ### Features

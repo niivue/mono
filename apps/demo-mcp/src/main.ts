@@ -279,6 +279,102 @@ const actions: Record<string, PageAction> = {
     description: 'Loads the MNI152 template again, replacing what is shown.',
     run: loadTemplate,
   },
+  save_bitmap: {
+    description: 'Saves what the canvas shows as a PNG the person downloads.',
+    run: () => nv.saveBitmap('niivue.png'),
+  },
+  save_document: {
+    description:
+      'Saves the scene (volumes, meshes, settings and drawing) as a NiiVue document the person downloads.',
+    run: () => nv.saveDocument('scene.nvd'),
+  },
+  save_drawing: {
+    description: 'Saves the drawing as a NIfTI file the person downloads.',
+    async run() {
+      if (!nv.drawingVolume) throw new Error('There is no drawing to save.')
+      await nv.saveDrawing('drawing.nii')
+    },
+  },
+  undo_drawing: {
+    description: 'Takes back the last pen stroke or fill of the drawing.',
+    run: () => nv.drawUndo(),
+  },
+  next_frame: {
+    description:
+      'Shows the next frame of the first volume with several (a 4D series), wrapping to the first after the last.',
+    run: () => stepFrame(1),
+  },
+  previous_frame: {
+    description:
+      'Shows the previous frame of the first volume with several (a 4D series), wrapping to the last before the first.',
+    run: () => stepFrame(-1),
+  },
+  play_frames: {
+    description:
+      'Starts or stops stepping through the frames of the first volume with several, one frame every 100 ms, looping.',
+    run: () => {
+      if (playing) {
+        clearInterval(playing)
+        playing = undefined
+        return
+      }
+      seriesVolume()
+      playing = setInterval(() => {
+        stepFrame(1).catch(() => {
+          clearInterval(playing)
+          playing = undefined
+        })
+      }, 100)
+    },
+  },
+  remove_overlays: {
+    description:
+      'Removes every volume but the base, keeping the base as it is.',
+    async run() {
+      for (let i = nv.volumes.length - 1; i > 0; i--) await nv.removeVolume(i)
+    },
+  },
+  reset_view: {
+    description:
+      'Turns the camera, zoom, pan and crosshair back to where they were when the page started.',
+    run: () => {
+      nv.azimuth = start.azimuth
+      nv.elevation = start.elevation
+      nv.scaleMultiplier = start.scaleMultiplier
+      nv.pan2Dxyzmm = [...start.pan2Dxyzmm]
+      nv.crosshairPos = [...start.crosshairPos]
+      nv.drawScene()
+    },
+  },
+}
+
+/** The first loaded volume with more than one frame, or a throw saying there is none. */
+function seriesVolume(): (typeof nv.volumes)[number] {
+  const volume = nv.volumes.find((v) => (v.nFrame4D ?? 1) > 1)
+  if (!volume)
+    throw new Error('No loaded volume has more than one frame to step through.')
+  return volume
+}
+
+/** Moves the series volume `by` frames, wrapping at either end. */
+async function stepFrame(by: number): Promise<void> {
+  const volume = seriesVolume()
+  const frames = volume.nFrame4D ?? 1
+  const frame = ((volume.frame4D ?? 0) + by + frames) % frames
+  if (volume.id === undefined) throw new Error(`${volume.name} has no id.`)
+  await nv.setFrame4D(volume.id, frame)
+}
+
+/** The timer stepping the frames while play_frames runs. */
+let playing: ReturnType<typeof setInterval> | undefined
+
+/** The camera and crosshair as the page started, which reset_view returns to. */
+const start = {
+  azimuth: nv.azimuth,
+  elevation: nv.elevation,
+  scaleMultiplier: nv.scaleMultiplier,
+  pan2Dxyzmm: [...nv.pan2Dxyzmm] as [number, number, number, number],
+  crosshairPos: [...nv.crosshairPos] as [number, number, number],
 }
 
 // One font for the controls and the labels.

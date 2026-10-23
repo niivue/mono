@@ -14,7 +14,7 @@
       "!**/public/tile-range-poc/**",
       "!**/public/range-poc/**",
       "!**/public/omezarr/**",
-      "!apps/desktop/src-tauri/gen/**"
+      "!apps/desktop/src-tauri/gen"
     ]
   },
   "formatter": {
@@ -57,24 +57,5 @@
         "organizeImports": "on"
       }
     }
-  },
-  "overrides": [
-    {
-      "includes": ["apps/desktop/**"],
-      "linter": {
-        "rules": {
-          "correctness": {
-            "useExhaustiveDependencies": "warn"
-          },
-          "a11y": {
-            "useAriaPropsSupportedByRole": "warn",
-            "noNoninteractiveTabindex": "warn",
-            "useFocusableInteractive": "warn",
-            "useSemanticElements": "warn",
-            "useAriaPropsForRole": "warn"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

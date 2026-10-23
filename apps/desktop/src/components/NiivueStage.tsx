@@ -434,6 +434,7 @@ export function NiivueStage({
     }
   }, [primaryItem])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: layerLoadKey is the reload trigger; layer display fields, view mode and clip planes are applied in place by the effects below.
   useEffect(() => {
     let cancelled = false
     let localNv: NiiVueLike | null = null
@@ -535,14 +536,13 @@ export function NiivueStage({
       }
       onLocationChange?.(null)
     }
-    // Layer display fields are applied in place below instead of tearing down
-    // and reloading the whole volume.
   }, [backend, layerLoadKey, primaryItem, onLocationChange])
 
   // Apply display changes in place. Recreating the NiiVue instance (as the
   // attach effect does) just to recolor or hide an atlas would re-import the
   // module, re-attach the canvas, and refetch every LOD — far too heavy for a
   // dropdown or checkbox change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadedVersion re-applies once post-load stats exist (threshold defaults).
   useEffect(() => {
     const nv = nvRef.current
     if (!nv?.setVolume) return
@@ -595,11 +595,11 @@ export function NiivueStage({
         // already loads with current display options, so this is safe to ignore.
       })
     onResolvedWindows?.(resolved)
-    // loadedVersion: re-apply once post-load stats exist (threshold defaults).
   }, [layers, loadedVersion, onResolvedWindows])
 
   // Report each layer's world-space bounding box once loaded, so the panel can
   // flag overlays that don't share the base's space.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadedVersion reports extents once the volumes have loaded.
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !onLayerExtents) return
@@ -621,6 +621,7 @@ export function NiivueStage({
   // Apply the selected view mode (2D slice plane, multiplanar, or 3D render) to
   // the live instance. NiiVue exposes sliceType as a setter, so this never
   // recreates the instance. Orientation letters are only meaningful on 2D panes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: primaryItem and loadedVersion re-apply on a fresh instance.
   useEffect(() => {
     const nv = nvRef.current
     if (!nv) return
@@ -649,6 +650,7 @@ export function NiivueStage({
   // backend/layer change, dropping any prior plan, so this reapplies it against
   // the fresh volumes. Rebuilding GPU textures (updateGLVolume) is the expensive
   // step, so it lives here and NOT on the explode slider below.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on blocks.grid only; blocks.explode is handled by the draw-time effect below to avoid a texture rebuild per slider tick. loadedVersion reapplies on a fresh instance.
   useEffect(() => {
     const nv = nvRef.current
     const chunkVolumeGrid = chunkVolumeGridRef.current
@@ -660,13 +662,11 @@ export function NiivueStage({
     return () => {
       cancelled = true
     }
-    // blocks.explode is applied here too (so a fresh tiling shows current
-    // spacing) but is intentionally not a dependency — the slider is handled
-    // by the draw-time-only effect below to avoid a texture rebuild per tick.
   }, [blocks.grid, loadedVersion])
 
   // Explode spacing: a draw-time per-brick offset, so a slider drag only needs
   // to set chunkExplode and repaint — no GPU texture rebuild.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the explode spacing matters here; a grid change goes through the tiling effect above.
   useEffect(() => {
     const nv = nvRef.current
     if (!nv) return
@@ -717,6 +717,7 @@ export function NiivueStage({
     nv.drawScene()
   }, [activeClipPlaneId, clipPlanes])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: snapRenderView touches only refs and state setters.
   useEffect(() => {
     if (!isActive || !primaryItem) return
 
@@ -932,11 +933,7 @@ export function NiivueStage({
             : 'NiiVue viewer — no volume selected'
         }
       />
-      <div
-        className="nv-render-snap-controls"
-        role="group"
-        aria-label="View mode"
-      >
+      <fieldset className="nv-render-snap-controls" aria-label="View mode">
         {VIEW_MODES.map((mode) => (
           <button
             aria-label={`Show ${mode.label}`}
@@ -951,13 +948,9 @@ export function NiivueStage({
             {mode.shortLabel}
           </button>
         ))}
-      </div>
+      </fieldset>
       {showSliceSlider ? (
-        <div
-          className="nv-slice-slider"
-          role="group"
-          aria-label="Slice position"
-        >
+        <fieldset className="nv-slice-slider" aria-label="Slice position">
           <input
             aria-label={`${currentViewLabel} slice`}
             max={sliceMax}
@@ -970,10 +963,10 @@ export function NiivueStage({
           <span className="nv-slice-slider-value">
             {sliceValue + 1} / {sliceMax + 1}
           </span>
-        </div>
+        </fieldset>
       ) : null}
       {showClipControl ? (
-        <div className="nv-clip-slider" role="group" aria-label="Clip plane">
+        <fieldset className="nv-clip-slider" aria-label="Clip plane">
           <div className="nv-clip-slider-chips">
             {enabledClipPlanes.map((plane) => (
               <button
@@ -1013,7 +1006,7 @@ export function NiivueStage({
               {sliderClip.label} {sliderClip.depth.toFixed(2)}
             </span>
           ) : null}
-        </div>
+        </fieldset>
       ) : null}
       {isStatusError ? (
         <div className="nv-render-status is-error" role="alert">

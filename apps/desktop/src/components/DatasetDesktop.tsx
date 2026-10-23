@@ -145,7 +145,7 @@ export function DatasetDesktop({
   )
   const sections = useMemo(
     () => desktopSections(layoutItems, layoutWorld),
-    [layoutItems, layoutWorld.height, layoutWorld.width],
+    [layoutItems, layoutWorld],
   )
   const derivedSourceId =
     selectedLayoutItem && isDerivedItem(selectedLayoutItem)
@@ -196,6 +196,7 @@ export function DatasetDesktop({
     }
   }, [onZoom, showMinimap])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these are triggers; the visible viewport is re-measured from the DOM after any layout, size or zoom change.
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       updateDesktopViewport(stageRef.current, setViewport)
@@ -239,6 +240,7 @@ export function DatasetDesktop({
 
   return (
     <div className={`nv-osd-stage ${isOverview ? 'is-overview' : ''}`}>
+      {/* biome-ignore lint/a11y/useSemanticElements: a scrollable, keyboard-pannable surface; <fieldset> doesn't fit a scroll container. */}
       <div
         aria-label="Dataset grid. Arrow keys pan; plus and minus zoom; 0 resets zoom."
         className={`nv-osd-scrollport ${isPanning ? 'is-panning' : ''}`}
@@ -252,6 +254,7 @@ export function DatasetDesktop({
         onScroll={() => updateDesktopViewport(stageRef.current, setViewport)}
         ref={stageRef}
         role="group"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: the grid pans with arrow keys, so it must be focusable.
         tabIndex={0}
       >
         <StageResizeObserver stageRef={stageRef} onResize={setStageSize} />

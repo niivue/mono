@@ -1,5 +1,5 @@
 import { LoaderCircle } from 'lucide-react'
-import { type JSX, useEffect, useRef, useState } from 'react'
+import { type JSX, useCallback, useEffect, useRef, useState } from 'react'
 import type { DesktopItem } from '../domain/desktop'
 import { acquirePreviewSlot } from '../domain/previewLoadQueue'
 
@@ -43,10 +43,11 @@ export function StablePreviewImage({
   const frameRef = useRef<HTMLSpanElement>(null)
   const releaseRef = useRef<(() => void) | null>(null)
 
-  function releaseSlot(): void {
+  // Stable (touches only a ref) so effects can depend on it.
+  const releaseSlot = useCallback((): void => {
     releaseRef.current?.()
     releaseRef.current = null
-  }
+  }, [])
 
   // Load previews near the viewport and unload them again once they are far
   // offscreen. The generous margin prevents scroll churn while bounding live
@@ -102,10 +103,16 @@ export function StablePreviewImage({
     return () => {
       cancelled = true
     }
-  }, [nearViewport, currentSrc, src])
+  }, [nearViewport, currentSrc, src, releaseSlot])
 
   // Release the slot if we unmount mid-load so it can never leak.
-  useEffect(() => releaseSlot, [])
+  useEffect(() => releaseSlot, [releaseSlot])
+
+  const abandonPendingSrc = useCallback((): void => {
+    setPendingSrc(null)
+    setLoading(false)
+    releaseSlot()
+  }, [releaseSlot])
 
   // Safety valve: if a pending <img> never fires load or error, abandon it after
   // a timeout so its queue slot is freed instead of held indefinitely.
@@ -113,16 +120,10 @@ export function StablePreviewImage({
     if (!pendingSrc) return
     const timer = window.setTimeout(abandonPendingSrc, PREVIEW_LOAD_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
-  }, [pendingSrc])
+  }, [pendingSrc, abandonPendingSrc])
 
   function commitPendingSrc(): void {
     setCurrentSrc((previous) => (pendingSrc ? pendingSrc : previous))
-    setPendingSrc(null)
-    setLoading(false)
-    releaseSlot()
-  }
-
-  function abandonPendingSrc(): void {
     setPendingSrc(null)
     setLoading(false)
     releaseSlot()

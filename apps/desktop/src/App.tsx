@@ -426,7 +426,6 @@ export function App(): JSX.Element {
       setIsFileListCollapsed(true)
       setIsControlsCollapsed(true)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Narrow desktop windows (down to the 900px minimum) can't fit both side
@@ -470,10 +469,9 @@ export function App(): JSX.Element {
     clearFilters,
   } = useVolumeFilters(items)
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: datasetRevision is the trigger; dataset-scoped filters reset only when the backing dataset changes.
   useEffect(() => {
     clearFilters()
-    // Reset dataset-scoped filters when the backing dataset changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetRevision])
 
   const { metadata, metadataStatus } = useVolumeMetadata(selected)
@@ -648,6 +646,7 @@ export function App(): JSX.Element {
     })
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: renderLayers is the trigger; a new layer stack invalidates the crosshair readout.
   useEffect(() => {
     setLocationReadout(null)
   }, [renderLayers])
@@ -1063,7 +1062,7 @@ export function App(): JSX.Element {
           </div>
         </div>
 
-        <div className="nv-toolbar" aria-label="Viewer controls">
+        <fieldset className="nv-toolbar" aria-label="Viewer controls">
           {showWelcome ? null : (
             <button
               aria-label={
@@ -1168,7 +1167,7 @@ export function App(): JSX.Element {
                 ) : null}
                 {recentDatasets.length > 0 ? (
                   <>
-                    <div className="nv-recent-divider" role="separator" />
+                    <hr className="nv-recent-divider" />
                     {recentDatasets.map((path) => (
                       <div key={path} className="nv-recent-row">
                         <button
@@ -1342,7 +1341,7 @@ export function App(): JSX.Element {
               <SlidersHorizontal size={16} />
             </button>
           )}
-        </div>
+        </fieldset>
       </header>
 
       {showWelcome ? (
@@ -1462,6 +1461,7 @@ export function App(): JSX.Element {
                 />
               </section>
 
+              {/* biome-ignore lint/a11y/useSemanticElements: a focusable, draggable splitter is a separator widget; <hr> cannot take focus or aria-valuenow. */}
               <button
                 aria-label="Resize dataset and NiiVue panes"
                 aria-valuemax={MAX_SPLIT}
@@ -1581,7 +1581,10 @@ export function App(): JSX.Element {
                 </button>
               </div>
 
-              <div className="nv-inspector-tools" aria-label="Desktop controls">
+              <fieldset
+                className="nv-inspector-tools"
+                aria-label="Desktop controls"
+              >
                 <DesktopZoomControls
                   zoom={desktopZoom}
                   onFit={() => setDesktopZoom(1)}
@@ -1591,7 +1594,7 @@ export function App(): JSX.Element {
                 <span className="nv-zoom-readout">
                   {Math.round(desktopZoom * 100)}%
                 </span>
-              </div>
+              </fieldset>
 
               <SidePanelTabs
                 activeTab={sidePanelTab}
@@ -1699,14 +1702,12 @@ export function App(): JSX.Element {
                     />
                   </>
                 ) : (
-                  <>
-                    <NiimathOperationsPanel
-                      item={selected}
-                      metadata={metadata}
-                      onDerivedVolume={refreshDesktopManifest}
-                      onStatus={setStatus}
-                    />
-                  </>
+                  <NiimathOperationsPanel
+                    item={selected}
+                    metadata={metadata}
+                    onDerivedVolume={refreshDesktopManifest}
+                    onStatus={setStatus}
+                  />
                 )}
               </div>
             </aside>
@@ -1807,7 +1808,7 @@ function BlockControls({
         </em>
       </div>
 
-      <div className="nv-block-grid" role="group" aria-label="Block grid">
+      <fieldset className="nv-block-grid" aria-label="Block grid">
         {BLOCK_GRID_OPTIONS.map((grid) => (
           <button
             aria-pressed={blocks.grid === grid}
@@ -1824,7 +1825,7 @@ function BlockControls({
             {blockGridLabel(grid)}
           </button>
         ))}
-      </div>
+      </fieldset>
 
       <label className="nv-block-explode">
         <span className="nv-block-explode-label">
@@ -2392,10 +2393,14 @@ function WindowControl({
   const [minText, setMinText] = useState(window ? String(window.min) : '')
   const [maxText, setMaxText] = useState(window ? String(window.max) : '')
 
+  // Sync on the values, not the window object, so an equal window doesn't
+  // overwrite text being typed.
+  const windowMin = window?.min
+  const windowMax = window?.max
   useEffect(() => {
-    setMinText(window ? String(window.min) : '')
-    setMaxText(window ? String(window.max) : '')
-  }, [window?.min, window?.max])
+    setMinText(windowMin === undefined ? '' : String(windowMin))
+    setMaxText(windowMax === undefined ? '' : String(windowMax))
+  }, [windowMin, windowMax])
 
   // Commit whenever either field changes, reading both current values from
   // state (no stale closure across the two inputs). For the threshold variant a
@@ -2403,6 +2408,7 @@ function WindowControl({
   // rather than discarding the input — setting just a threshold is the common
   // case and must not look like a broken control.
   const resolvedMax = resolved?.max
+  // biome-ignore lint/correctness/useExhaustiveDependencies: onChange/itemId are stable for a given layer; re-running on a new onChange identity would re-commit the same window every render.
   useEffect(() => {
     if (!minText.trim()) return
     const min = Number(minText)
@@ -2415,8 +2421,6 @@ function WindowControl({
     if (Number.isFinite(max) && min < max) {
       onChange(itemId, min, max)
     }
-    // onChange/itemId are stable for a given layer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minText, maxText, resolvedMax, isThreshold])
 
   return (
@@ -2556,12 +2560,16 @@ function CrosshairPanel({
   const [x, setX] = useState('')
   const [y, setY] = useState('')
   const [z, setZ] = useState('')
+  // Keyed on the coordinates, not the array, which is new on every readout.
+  const mmX = validMm?.[0]
+  const mmY = validMm?.[1]
+  const mmZ = validMm?.[2]
   useEffect(() => {
-    if (!validMm) return
-    setX(String(Number(validMm[0].toFixed(2))))
-    setY(String(Number(validMm[1].toFixed(2))))
-    setZ(String(Number(validMm[2].toFixed(2))))
-  }, [mm?.[0], mm?.[1], mm?.[2]])
+    if (mmX === undefined || mmY === undefined || mmZ === undefined) return
+    setX(String(Number(mmX.toFixed(2))))
+    setY(String(Number(mmY.toFixed(2))))
+    setZ(String(Number(mmZ.toFixed(2))))
+  }, [mmX, mmY, mmZ])
 
   const [copied, setCopied] = useState(false)
   function handleCopy(): void {

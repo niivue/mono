@@ -1,7 +1,7 @@
-const fs = require('fs')
-const path = require('path')
-const https = require('https')
-const { spawnSync } = require('child_process')
+const fs = require('node:fs')
+const path = require('node:path')
+const https = require('node:https')
+const { spawnSync } = require('node:child_process')
 
 const root = path.resolve(__dirname, '..')
 const binariesDir = path.join(root, 'src-tauri', 'binaries')

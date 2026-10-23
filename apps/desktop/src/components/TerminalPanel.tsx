@@ -160,6 +160,7 @@ export function TerminalPanel({
 
   // Start (or restart) the shell session whenever the terminal is ready or the
   // selected interpreter changes. Restarting on a fresh dataset keeps cwd correct.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedPath and datasetRoot are restart triggers.
   useEffect(() => {
     if (!isTermReady) return
     const term = termRef.current

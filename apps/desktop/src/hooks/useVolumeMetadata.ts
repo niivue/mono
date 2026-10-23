@@ -17,6 +17,7 @@ export function useVolumeMetadata(
   const [metadata, setMetadata] = useState<VolumeMetadata | null>(null)
   const [metadataStatus, setMetadataStatus] = useState('No metadata loaded.')
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch only when the selection's identity or metadata URL changes, not on every new item object.
   useEffect(() => {
     let cancelled = false
 
@@ -54,7 +55,6 @@ export function useVolumeMetadata(
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, selected?.metadata])
 
   return { metadata, metadataStatus }

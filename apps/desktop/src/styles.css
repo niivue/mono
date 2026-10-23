@@ -47,6 +47,14 @@ select {
   font: inherit;
 }
 
+/* Labelled control groups are <fieldset>s; drop the browser's frame. */
+fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 button {
   color: inherit;
 }
@@ -352,6 +360,7 @@ button {
 
 .nv-recent-divider {
   height: 1px;
+  border: 0;
   margin: 4px 6px;
   background: var(--line);
 }

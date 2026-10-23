@@ -1,6 +1,7 @@
 import { type JSX, useMemo } from 'react'
 import type { DesktopItem } from '../domain/desktop'
 import {
+  volumeDisplayLabel,
   volumeFacetCounts,
   volumeFacetValue,
   volumeImageTypeLabel,
@@ -135,6 +136,7 @@ export function VolumeFilterPanel({
               key={item.id}
               aria-pressed={selected?.id === item.id}
               onClick={() => onSelect(item)}
+              title={item.label}
               type="button"
             >
               <StablePreviewImage
@@ -142,7 +144,7 @@ export function VolumeFilterPanel({
                 frameClassName="nv-volume-thumb"
               />
               <span>
-                <strong>{item.label}</strong>
+                <strong>{volumeDisplayLabel(item)}</strong>
                 <small>
                   {volumeImageTypeLabel(item)} / {item.shape.join(' x ')} /{' '}
                   {item.dtype}

@@ -15,7 +15,7 @@ import {
 } from 'react'
 import { flushSync } from 'react-dom'
 import type { DesktopItem, DesktopManifest, WorldRect } from '../domain/desktop'
-import { isDerivedItem } from '../domain/volumeFacets'
+import { isDerivedItem, volumeDisplayLabel } from '../domain/volumeFacets'
 import {
   DESKTOP_PREVIEW_TIERS,
   PREVIEW_TIER_SETTLE_MS,
@@ -27,6 +27,17 @@ import {
 
 export const MIN_DESKTOP_ZOOM = 0.5
 export const MAX_DESKTOP_ZOOM = 4
+
+// Browse-grid sizing at zoom 100%: fit as many columns as keep tiles at least
+// MIN_GRID_TILE_PX wide (up to MAX_GRID_COLUMNS), then let the rest scroll
+// vertically. Shrinking every tile until the whole dataset fits turned large
+// datasets into unreadable dots.
+const GRID_STAGE_PADDING_PX = 44
+const MIN_GRID_TILE_PX = 56
+const MAX_GRID_TILE_PX = 240
+const MAX_GRID_COLUMNS = 8
+// Rendered room above the first row for the section label chip.
+const GRID_SECTION_LABEL_PX = 52
 
 interface DesktopDragState {
   pointerId: number
@@ -83,9 +94,13 @@ export function DatasetDesktop({
   }
   const tileSize = manifest?.tileSize ?? 1024
   const gap = manifest?.gap ?? 96
+  const gridFit = useMemo(
+    () => desktopGridFit(stageSize.width, items, tileSize, gap),
+    [gap, items, stageSize.width, tileSize],
+  )
   const desktopLayout = useMemo(
-    () => normalizeDesktopLayout(items, world, tileSize, gap),
-    [gap, items, tileSize, world],
+    () => normalizeDesktopLayout(items, world, tileSize, gap, gridFit),
+    [gap, gridFit, items, tileSize, world],
   )
   const layoutItems = desktopLayout.items
   const layoutWorld = desktopLayout.world
@@ -96,14 +111,14 @@ export function DatasetDesktop({
     ? worldRectStyle(selectedLayoutItem.bounds, layoutWorld)
     : undefined
   const targetPreviewSize = useMemo(
-    () => desktopPreviewSize(stageSize, layoutWorld, tileSize, zoom),
-    [layoutWorld, stageSize, tileSize, zoom],
+    () => desktopPreviewSize(layoutWorld, tileSize, gridFit.tilePx, zoom),
+    [gridFit.tilePx, layoutWorld, tileSize, zoom],
   )
   const [previewSize, setPreviewSize] = useState<number>(SIDEBAR_PREVIEW_SIZE)
   const previewLevel = previewLevelForSize(previewSize, layoutItems[0])
   const worldSize = useMemo(
-    () => fittedWorldSize(stageSize, layoutWorld, zoom),
-    [stageSize, layoutWorld, zoom],
+    () => fittedWorldSize(layoutWorld, tileSize, gridFit.tilePx, zoom),
+    [gridFit.tilePx, layoutWorld, tileSize, zoom],
   )
   const sections = useMemo(
     () => desktopSections(layoutItems, layoutWorld),
@@ -201,7 +216,7 @@ export function DatasetDesktop({
   return (
     <div className={`nv-osd-stage ${isOverview ? 'is-overview' : ''}`}>
       <div
-        aria-label="Dataset grid. Arrow keys pan; plus and minus zoom; 0 fits."
+        aria-label="Dataset grid. Arrow keys pan; plus and minus zoom; 0 resets zoom."
         className={`nv-osd-scrollport ${isPanning ? 'is-panning' : ''}`}
         onClickCapture={(event) =>
           suppressDesktopClickAfterDrag(event, suppressClickRef)
@@ -231,6 +246,7 @@ export function DatasetDesktop({
               key={item.id}
               onClick={() => onSelect(item)}
               style={worldRectStyle(item.bounds, layoutWorld)}
+              title={item.label}
               type="button"
             >
               <StablePreviewImage
@@ -241,7 +257,7 @@ export function DatasetDesktop({
               <span className="nv-osd-index">
                 {isDerivedItem(item) ? 'D' : 'L0'}
               </span>
-              <span className="nv-osd-label">{item.label}</span>
+              <span className="nv-osd-label">{volumeDisplayLabel(item)}</span>
             </button>
           ))}
           {sections.map((section) => (
@@ -564,25 +580,21 @@ function normalizeDesktopLayout(
   world: DesktopManifest['world'],
   tileSize: number,
   gap: number,
+  gridFit: DesktopGridFit,
 ): { items: DesktopItem[]; world: DesktopManifest['world'] } {
   if (items.length === 0) return { items, world }
   const sources = items.filter((item) => !isDerivedItem(item))
   const derivatives = items.filter((item) => isDerivedItem(item))
-  const layoutCount = Math.max(sources.length, derivatives.length, 1)
-  const columns = Math.max(1, Math.ceil(Math.sqrt(layoutCount)))
+  const columns = gridFit.columns
   const sourceRows = layoutRows(sources.length, columns)
   const derivedRows = layoutRows(derivatives.length, columns)
   const pitch = tileSize + gap
   const sourceHeight = layoutGridHeight(sourceRows, tileSize, gap)
   const derivedHeight = layoutGridHeight(derivedRows, tileSize, gap)
-  // Headroom for the fixed-size section-label chip. Make it proportional to the
-  // tile stack: once the grid is scaled to fit, the chip's rendered height stays
-  // roughly constant across row counts, so small datasets keep their tiles near
-  // the top while large (scaled-down) grids still leave room for the label
-  // instead of letting it cover the first row.
-  const sectionLabelSpace = Math.max(
-    Math.round(tileSize * 0.25),
-    Math.round(Math.max(sourceHeight, derivedHeight) * 0.1),
+  // Headroom for the fixed-size section-label chip, converted from rendered
+  // pixels to world units at the zoom-100% tile scale.
+  const sectionLabelSpace = Math.round(
+    (GRID_SECTION_LABEL_PX * tileSize) / Math.max(gridFit.tilePx, 1),
   )
   const sectionGap = Math.max(Math.round(tileSize / 2), gap)
   const sourceTop = sectionLabelSpace
@@ -629,6 +641,39 @@ function normalizeDesktopLayout(
       rows: sourceRows + derivedRows,
     },
   }
+}
+
+interface DesktopGridFit {
+  columns: number
+  // Rendered tile width in CSS px at zoom 100%.
+  tilePx: number
+}
+
+function desktopGridFit(
+  stageWidth: number,
+  items: DesktopItem[],
+  tileSize: number,
+  gap: number,
+): DesktopGridFit {
+  const available = Math.max(stageWidth - GRID_STAGE_PADDING_PX, 180)
+  const gapRatio = gap / Math.max(tileSize, 1)
+  const fitColumns = clamp(
+    Math.floor(
+      (available + MIN_GRID_TILE_PX * gapRatio) /
+        (MIN_GRID_TILE_PX * (1 + gapRatio)),
+    ),
+    1,
+    MAX_GRID_COLUMNS,
+  )
+  let sources = 0
+  for (const item of items) if (!isDerivedItem(item)) sources += 1
+  const layoutCount = Math.max(sources, items.length - sources, 1)
+  const columns = Math.min(fitColumns, layoutCount)
+  const tilePx = Math.min(
+    MAX_GRID_TILE_PX,
+    available / (columns + Math.max(columns - 1, 0) * gapRatio),
+  )
+  return { columns, tilePx }
 }
 
 function layoutRows(count: number, columns: number): number {
@@ -722,11 +767,12 @@ function worldRectStyle(
 }
 
 function fittedWorldSize(
-  stageSize: { width: number; height: number },
   world: DesktopManifest['world'],
+  tileSize: number,
+  tilePx: number,
   zoom: number,
 ): CSSProperties {
-  const dimensions = fittedWorldDimensions(stageSize, world, zoom)
+  const dimensions = fittedWorldDimensions(world, tileSize, tilePx, zoom)
   return {
     width: `${dimensions.width}px`,
     height: `${dimensions.height}px`,
@@ -748,34 +794,25 @@ function renderedDesktopTileSize(
 }
 
 function fittedWorldDimensions(
-  stageSize: { width: number; height: number },
   world: DesktopManifest['world'],
+  tileSize: number,
+  tilePx: number,
   zoom: number,
 ): { width: number; height: number } {
-  const availableWidth = Math.max(stageSize.width - 44, 180)
-  const availableHeight = Math.max(stageSize.height - 44, 180)
-  const aspect = Math.max(world.width, 1) / Math.max(world.height, 1)
-  let fitWidth = availableWidth
-  let fitHeight = fitWidth / aspect
-
-  if (fitHeight > availableHeight) {
-    fitHeight = availableHeight
-    fitWidth = fitHeight * aspect
-  }
-
+  const scale = (tilePx / Math.max(tileSize, 1)) * zoom
   return {
-    width: Math.max(160, fitWidth * zoom),
-    height: Math.max(160, fitHeight * zoom),
+    width: Math.max(1, world.width) * scale,
+    height: Math.max(1, world.height) * scale,
   }
 }
 
 function desktopPreviewSize(
-  stageSize: { width: number; height: number },
   world: DesktopManifest['world'],
   tileSize: number,
+  tilePx: number,
   zoom: number,
 ): number {
-  const dimensions = fittedWorldDimensions(stageSize, world, zoom)
+  const dimensions = fittedWorldDimensions(world, tileSize, tilePx, zoom)
   const renderedTileWidth =
     (dimensions.width * tileSize) / Math.max(world.width, 1)
   const renderedTileHeight =

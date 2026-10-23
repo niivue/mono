@@ -40,8 +40,11 @@ import {
   type BindingVocabulary,
   type ControlEvent,
   type ControlSurface,
+  carriesValues,
   coerceValue,
   type HostedControls,
+  optionOf,
+  optionValue,
   patched,
   settled,
   VALUE_KINDS,
@@ -340,7 +343,7 @@ const FORMS: BindingVocabulary['forms'] = [
   {
     form: '<setting>',
     description:
-      'A NiiVue setting as get_options names it: a toggle for a true-or-false one, a slider or number field for a number, a select or segmented row for one with choices, a color control for a colour, a text field for text.',
+      'A NiiVue setting as get_options names it: a toggle for a true-or-false one, a slider or number field for a number, a select or segmented row for one with choices, a color control for a colour, a text field for text. A select or segmented row drives a number or true-or-false target too, any bind but an action, when every option carries the value it writes: {id: "low", value: 0.3}.',
   },
   {
     form: 'view.slice',
@@ -810,6 +813,11 @@ function fitted(spec: ControlSpec, target: Target, bind: string): ControlSpec {
     throw new Error(
       `A ${spec.kind} holds no value, so it can only be bound to an action: action.<name>.`,
     )
+  const choosing = spec.kind === 'select' || spec.kind === 'segmented'
+  if (choosing && (target.shape === 'number' || target.shape === 'boolean')) {
+    valuesFit(spec, target.shape, target, bind)
+    return { ...spec }
+  }
   if (holds !== target.shape)
     throw new Error(
       `${bind} takes ${article(target.shape)}, which a ${spec.kind} does not hold.`,
@@ -821,20 +829,74 @@ function fitted(spec: ControlSpec, target: Target, bind: string): ControlSpec {
     if (out.step === undefined && target.step !== undefined)
       out.step = target.step
   }
-  if (target.choices && (spec.kind === 'select' || spec.kind === 'segmented')) {
+  if (choosing) {
+    const odd = out.options?.find(
+      (o) => o.value !== undefined && typeof o.value !== 'string',
+    )
+    if (odd)
+      throw new Error(
+        `${bind} takes a string, so option "${odd.id}" cannot write ${JSON.stringify(odd.value)}.`,
+      )
+  }
+  if (target.choices && choosing) {
     if (!out.options?.length)
       out.options = target.choices.map(
         (id): ControlOption => ({ id, label: id }),
       )
     else {
-      const stray = out.options.filter((o) => !target.choices?.includes(o.id))
+      const stray = out.options
+        .map((o) => String(o.value ?? o.id))
+        .filter((v) => !target.choices?.includes(v))
       if (stray.length)
         throw new Error(
-          `${bind} takes ${target.choices.join(', ')}; ${stray.map((o) => o.id).join(', ')} ${stray.length === 1 ? 'is' : 'are'} not among them.`,
+          `${bind} takes ${target.choices.join(', ')}; ${stray.join(', ')} ${stray.length === 1 ? 'is' : 'are'} not among them.`,
         )
     }
   }
   return out
+}
+
+/**
+ * Throws in words unless every option of a select or segmented row bound
+ * to a number or true-or-false target carries a value it takes, in range.
+ */
+function valuesFit(
+  spec: ControlSpec,
+  shape: 'number' | 'boolean',
+  range: { min?: number; max?: number },
+  bind: string,
+): void {
+  const example = shape === 'number' ? 0 : true
+  const given = spec.options ?? []
+  if (!given.length)
+    throw new Error(
+      `${bind} takes ${article(shape)}; give the ${spec.kind} options that each carry one, e.g. {id: 'low', value: ${example}}.`,
+    )
+  for (const o of given) {
+    const ok =
+      shape === 'number'
+        ? typeof o.value === 'number' && Number.isFinite(o.value)
+        : typeof o.value === 'boolean'
+    if (!ok)
+      throw new Error(
+        `${bind} takes ${article(shape)}; give every option a value, e.g. {id: '${o.id}', value: ${example}}. "${o.id}" ${o.value === undefined ? 'has none' : `has ${JSON.stringify(o.value)}`}.`,
+      )
+    const n = o.value as number
+    const { min, max } = range
+    if (
+      shape === 'number' &&
+      ((min !== undefined && n < min) || (max !== undefined && n > max))
+    )
+      throw new Error(
+        `"${o.id}" writes ${n}, outside what ${bind} takes: ${
+          min !== undefined && max !== undefined
+            ? `${min} to ${max}`
+            : min !== undefined
+              ? `${min} or more`
+              : `${max} or less`
+        }.`,
+      )
+  }
 }
 
 /** Whether two values are the same, colours channel by channel. */
@@ -855,6 +917,8 @@ function shown(
   value: ControlValue | undefined,
 ): ControlValue | undefined {
   if (value === undefined || value === null) return undefined
+  // A select writing values shows the option that writes this one, or none.
+  if (carriesValues(spec)) return optionOf(spec, value) ?? ''
   try {
     return coerceValue(spec, value)
   } catch {
@@ -988,7 +1052,8 @@ export function bindControls(
     const control = find(event.id)
     if (event.type === 'input' && !(control && LIVE.has(control.kind))) return
     try {
-      settle(target.write(control ? control.value : event.value), event)
+      const value = control ? control.value : event.value
+      settle(target.write(control ? optionValue(control, value) : value), event)
       entry.last = target.read?.()
       view.drawScene()
     } catch (error) {
@@ -1081,7 +1146,7 @@ export function bindControls(
         // waited for, so its failure is the agent's error and no control.
         const value = coerceValue(filled, given)
         filled.value = value
-        const done = target.write?.(value)
+        const done = target.write?.(optionValue(filled, value))
         if (done instanceof Promise) return waited(spec.id, done, place)
       } else {
         const now = shown(filled, target.read?.())
@@ -1108,6 +1173,9 @@ export function bindControls(
         } else {
           target = undefined
         }
+      } else if (entry && patch.options) {
+        // New options must fit what the control already drives.
+        fitted({ ...was, ...patch }, entry.target, entry.bind)
       }
       const after = patched(was, next)
       settled(
@@ -1137,7 +1205,7 @@ export function bindControls(
       // leaves the change unmade, the value showing what the target holds.
       const done =
         target?.write && patch.value !== undefined
-          ? target.write(after.value)
+          ? target.write(optionValue(after, after.value))
           : undefined
       return done instanceof Promise ? waited(id, done, finish) : finish()
     },

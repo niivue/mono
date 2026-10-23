@@ -158,6 +158,8 @@ export function coerceValue(
     case 'string': {
       if (typeof value !== 'string')
         throw new Error(`A ${spec.kind} takes a string.`)
+      // A select writing values shows none chosen when its target holds none of them.
+      if (value === '' && carriesValues(spec)) return value
       if (spec.options?.length && !spec.options.some((o) => o.id === value))
         throw new Error(
           `A ${spec.kind} takes one of its options: ${spec.options.map((o) => o.id).join(', ')}.`,
@@ -170,6 +172,40 @@ export function coerceValue(
       return spec.alpha ? rgba : rgba.slice(0, 3)
     }
   }
+}
+
+/** Whether some option of a select or segmented row writes a value other than its id. */
+export function carriesValues(spec: Pick<ControlSpec, 'kind' | 'options'>) {
+  return (
+    (spec.kind === 'select' || spec.kind === 'segmented') &&
+    (spec.options?.some((o) => o.value !== undefined) ?? false)
+  )
+}
+
+/** What a select or segmented row holding `id` writes to its bind: its option's value, else the id. */
+export function optionValue(
+  spec: Pick<ControlSpec, 'kind' | 'options'>,
+  id: ControlValue,
+): ControlValue {
+  if (!carriesValues(spec)) return id
+  const option = spec.options?.find((o) => o.id === id)
+  return option ? (option.value ?? option.id) : id
+}
+
+/**
+ * The id of the option of `spec` that writes `value`, numbers matching
+ * within a rounding error; undefined when none does.
+ */
+export function optionOf(
+  spec: Pick<ControlSpec, 'options'>,
+  value: ControlValue,
+): string | undefined {
+  return spec.options?.find((o) => {
+    const v = o.value ?? o.id
+    if (typeof v === 'number' && typeof value === 'number')
+      return Math.abs(v - value) <= 1e-6 * Math.max(1, Math.abs(v))
+    return v === value
+  })?.id
 }
 
 function stepped(n: number, min?: number, max?: number, step?: number): number {
@@ -206,6 +242,18 @@ function options(params: Params, key = 'options'): ControlOption[] | undefined {
     if (typeof record.checked === 'boolean') out.checked = record.checked
     if (typeof record.group === 'string') out.group = record.group
     if (typeof record.enabled === 'boolean') out.enabled = record.enabled
+    const value = record.value
+    if (value !== undefined && value !== null) {
+      if (
+        !(typeof value === 'number' && Number.isFinite(value)) &&
+        typeof value !== 'string' &&
+        typeof value !== 'boolean'
+      )
+        throw new Error(
+          `${key}[${i}].value must be a number, a string, or true or false.`,
+        )
+      out.value = value
+    }
     return out
   })
 }

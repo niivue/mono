@@ -42,6 +42,12 @@ export interface ControlOption {
   /** A menu item in a radio group: one of the group is on at a time. */
   group?: string
   enabled?: boolean
+  /**
+   * For a select or segmented row: what choosing this option writes to the
+   * control's `bind`, when that is not the id itself (a number, say). The
+   * control still holds and reports the id.
+   */
+  value?: number | string | boolean
 }
 
 /** A control as an agent asks for it. */

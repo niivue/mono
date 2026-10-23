@@ -50,6 +50,7 @@ function settingsView(): View & Record<string, unknown> {
     crosshairColor: new Float32Array([1, 0, 0, 0.5]),
     primaryDragMode: 1,
     drawPenSize: 1,
+    volumeIllumination: 0,
     volumePaqdUniforms: [0, 0, 0, 0],
   }
   return Object.assign(view, settings) as unknown as View &
@@ -594,6 +595,181 @@ describe('bindControls: spreading a volume', () => {
     expect(() => resolveBinding('volume.0.spreads', settingsView())).toThrow(
       /spread\./,
     )
+  })
+})
+
+/** The lighting levels of NiiVue's old tracts.atlas demo, as select options. */
+const LIGHTING = [
+  { id: 'matte', value: 0 },
+  { id: 'low', value: 0.3 },
+  { id: 'medium', value: 0.6 },
+  { id: 'high', value: 1 },
+]
+
+describe('bindControls: selects that write values', () => {
+  it('binds a number setting, writing the value of the option chosen', () => {
+    const { add_control, memory, view } = setup()
+    const got = add_control({
+      id: 'light',
+      kind: 'select',
+      bind: 'volumeIllumination',
+      options: LIGHTING,
+      value: 'medium',
+    }) as Reported
+    expect(view.volumeIllumination).toBe(0.6)
+    expect(got.control.value).toBe('medium')
+    memory.simulate({ id: 'light', type: 'change', value: 'low' })
+    expect(view.volumeIllumination).toBe(0.3)
+  })
+
+  it('starts at the option whose value the target holds', () => {
+    const { add_control, view } = setup()
+    view.volumeIllumination = 1
+    const got = add_control({
+      id: 'light',
+      kind: 'segmented',
+      bind: 'volumeIllumination',
+      options: LIGHTING,
+    }) as Reported
+    expect(got.control.value).toBe('high')
+  })
+
+  it('shows the matching option after a change elsewhere, and none when no option matches', () => {
+    const { add_control, controls, view } = setup()
+    add_control({
+      id: 'light',
+      kind: 'select',
+      bind: 'volumeIllumination',
+      options: LIGHTING,
+    })
+    // A float32 round trip still matches.
+    view.volumeIllumination = Math.fround(0.3)
+    expect(controls.list()[0].value).toBe('low')
+    view.volumeIllumination = 0.37
+    expect(controls.list()[0].value).toBe('')
+    expect(view.volumeIllumination).toBe(0.37)
+  })
+
+  it('writes the value through set_control', () => {
+    const { add_control, set_control, view } = setup()
+    add_control({
+      id: 'light',
+      kind: 'select',
+      bind: 'volumeIllumination',
+      options: LIGHTING,
+    })
+    const got = set_control({ id: 'light', value: 'high' }) as Reported
+    expect(view.volumeIllumination).toBe(1)
+    expect(got.control.value).toBe('high')
+  })
+
+  it('refuses a number bind unless every option carries a number, naming the option', () => {
+    const { add_control, controls, view } = setup()
+    expect(() =>
+      add_control({
+        id: 'light',
+        kind: 'select',
+        bind: 'volumeIllumination',
+        options: [{ id: 'matte', value: 0 }, 'shiny'],
+      }),
+    ).toThrow(
+      "volumeIllumination takes a number; give every option a value, e.g. {id: 'shiny', value: 0}",
+    )
+    expect(() =>
+      add_control({
+        id: 'light',
+        kind: 'select',
+        bind: 'volumeIllumination',
+        options: [{ id: 'matte', value: 'zero' }],
+      }),
+    ).toThrow('"matte" has "zero"')
+    expect(() =>
+      add_control({ id: 'light', kind: 'select', bind: 'volumeIllumination' }),
+    ).toThrow('options that each carry one')
+    expect(controls.list()).toHaveLength(0)
+    expect(view.volumeIllumination).toBe(0)
+  })
+
+  it('refuses an option whose value is out of the range the target takes', () => {
+    const { add_control, controls, view } = setup()
+    expect(() =>
+      add_control({
+        id: 'outline',
+        kind: 'select',
+        bind: 'volume.0.atlas_outline',
+        options: [
+          { id: 'Off', value: 0 },
+          { id: 'Black', value: -1 },
+        ],
+        value: 'Off',
+      }),
+    ).toThrow(
+      '"Black" writes -1, outside what volume.0.atlas_outline takes: 0 to 1.',
+    )
+    expect(controls.list()).toHaveLength(0)
+    expect(loaded(view)[0].atlasOutline).toBeUndefined()
+  })
+
+  it('refuses new options without values on a select bound to a number', () => {
+    const { add_control, set_control, controls } = setup()
+    add_control({
+      id: 'light',
+      kind: 'select',
+      bind: 'volumeIllumination',
+      options: LIGHTING,
+    })
+    expect(() =>
+      set_control({ id: 'light', options: ['dim', 'bright'] }),
+    ).toThrow("{id: 'dim', value: 0}")
+    expect(controls.list()[0].options).toEqual(
+      LIGHTING.map((o) => ({ ...o, label: o.id })),
+    )
+  })
+
+  it('binds a true-or-false setting through boolean values', () => {
+    const { add_control, memory, view } = setup()
+    add_control({
+      id: 'cube',
+      kind: 'segmented',
+      bind: 'is3DCrosshairVisible',
+      options: [
+        { id: 'Shown', value: true },
+        { id: 'Hidden', value: false },
+      ],
+    })
+    memory.simulate({ id: 'cube', type: 'change', value: 'Hidden' })
+    expect(view.is3DCrosshairVisible).toBe(false)
+  })
+
+  it('maps string values onto the choices a target takes', () => {
+    const { add_control, view } = setup()
+    add_control({
+      id: 'drag',
+      kind: 'select',
+      bind: 'primaryDragMode',
+      options: [
+        { id: 'Window', value: 'contrast' },
+        { id: 'Move', value: 'pan' },
+      ],
+      value: 'Move',
+    })
+    expect(view.primaryDragMode).toBe(3)
+    expect(() =>
+      add_control({
+        id: 'drag2',
+        kind: 'select',
+        bind: 'primaryDragMode',
+        options: [{ id: 'Paint', value: 'scribble' }],
+      }),
+    ).toThrow('scribble is not among them')
+    expect(() =>
+      add_control({
+        id: 'drag3',
+        kind: 'select',
+        bind: 'primaryDragMode',
+        options: [{ id: 'One', value: 1 }],
+      }),
+    ).toThrow('option "One" cannot write 1')
   })
 })
 

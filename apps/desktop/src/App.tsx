@@ -1131,6 +1131,7 @@ export function App(): JSX.Element {
           ) : null}
           {isTerminalAvailable ? (
             <button
+              aria-label="Python terminal"
               aria-pressed={isTerminalOpen}
               className={`nv-icon-button ${isTerminalOpen ? 'is-active' : ''}`}
               title={

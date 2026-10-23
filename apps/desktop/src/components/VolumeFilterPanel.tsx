@@ -79,6 +79,7 @@ export function VolumeFilterPanel({
       >
         <div className="nv-filter-search-row">
           <input
+            aria-label="Filter volumes"
             className="nv-search"
             placeholder="Filter volumes"
             value={query}

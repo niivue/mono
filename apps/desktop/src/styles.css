@@ -2724,3 +2724,20 @@ button {
 .nv-terminal-body .xterm-viewport::-webkit-scrollbar-thumb {
   background: #2a2c22;
 }
+
+/* Respect the OS "Reduce motion" setting: stop the spinners (a still ring
+   still reads as busy) and drop decorative transitions. State changes such as
+   opening a drawer still happen, just without the slide. */
+@media (prefers-reduced-motion: reduce) {
+  .nv-spin,
+  .nv-preview-spinner svg,
+  .nv-warm-status .lucide-loader-circle {
+    animation: none;
+  }
+
+  .nv-layer-row-caret,
+  .nv-sidebar,
+  .nv-controls {
+    transition: none;
+  }
+}

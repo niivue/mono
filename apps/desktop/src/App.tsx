@@ -97,6 +97,7 @@ import {
   fetchVolumeMetadata,
   openOverlayVolume,
   resolveRuntimeCapabilities,
+  truncationNotice,
 } from './domain/desktop'
 import {
   volumeImageTypeLabel,
@@ -235,6 +236,10 @@ export function App(): JSX.Element {
     status,
     warmProgress,
   } = useDatasetManifest({ promoteRecent })
+  const datasetNotice = useMemo(
+    () => (manifest ? truncationNotice(manifest) : null),
+    [manifest],
+  )
   // Drop recents left over from when a bundle import recorded its extracted
   // `data/` dir. Needs the server's real cacheRoot, so it runs once that arrives.
   useEffect(() => {
@@ -933,6 +938,11 @@ export function App(): JSX.Element {
             >
               {bidsName || datasetRoot || serverUrl || 'Resolving local server'}
             </p>
+            {datasetNotice ? (
+              <p className="nv-dataset-notice" role="status">
+                {datasetNotice}
+              </p>
+            ) : null}
           </div>
         </div>
 

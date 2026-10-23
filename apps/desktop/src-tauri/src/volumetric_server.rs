@@ -35,6 +35,7 @@ pub struct ServerHandle {
     pub volume_count: usize,
     volumes: VolumeStore,
     dataset_root: Arc<Mutex<Option<PathBuf>>>,
+    discovery_stats: Arc<Mutex<DiscoveryStats>>,
     preview_cache: Arc<Mutex<PreviewCache>>,
     decoded_level_cache: Arc<Mutex<DecodedLevelCache>>,
     pyramid_locks: PyramidLocks,
@@ -203,6 +204,7 @@ struct AppState {
     base_url: String,
     volumes: VolumeStore,
     dataset_root: Arc<Mutex<Option<PathBuf>>>,
+    discovery_stats: Arc<Mutex<DiscoveryStats>>,
     preview_cache: Arc<Mutex<PreviewCache>>,
     decoded_level_cache: Arc<Mutex<DecodedLevelCache>>,
     pyramid_locks: PyramidLocks,
@@ -317,6 +319,7 @@ pub fn spawn_default() -> ServerHandle {
     let warm_root = discovery.root.clone();
     let volumes = Arc::new(Mutex::new(discovery.volumes));
     let dataset_root = Arc::new(Mutex::new(discovery.root));
+    let discovery_stats = Arc::new(Mutex::new(discovery.stats));
     let preview_cache = Arc::new(Mutex::new(PreviewCache::default()));
     let decoded_level_cache = Arc::new(Mutex::new(DecodedLevelCache::default()));
     let pyramid_locks: PyramidLocks = Arc::new(Mutex::new(HashMap::new()));
@@ -326,6 +329,7 @@ pub fn spawn_default() -> ServerHandle {
         base_url: base_url.clone(),
         volumes: volumes.clone(),
         dataset_root: dataset_root.clone(),
+        discovery_stats: discovery_stats.clone(),
         preview_cache: preview_cache.clone(),
         decoded_level_cache: decoded_level_cache.clone(),
         pyramid_locks: pyramid_locks.clone(),
@@ -368,6 +372,7 @@ pub fn spawn_default() -> ServerHandle {
         volume_count,
         volumes,
         dataset_root,
+        discovery_stats,
         preview_cache,
         decoded_level_cache,
         pyramid_locks,
@@ -569,11 +574,9 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
         root.clone()
     };
 
-    let mut volumes = discover_volumes_in_root(&root, max_volume_count());
+    let RootDiscovery { mut volumes, stats } = discover_volumes_in_root(&root, max_volume_count());
     if volumes.is_empty() {
-        let mut candidates = Vec::new();
-        collect_nifti_paths(&root, &mut candidates, max_volume_count());
-        if candidates.is_empty() {
+        if stats.total_discovered == 0 {
             return Err(format!(
                 "open_dataset_root: no .nii or .nii.gz files found under {}",
                 root.display()
@@ -581,7 +584,7 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
         }
         return Err(format!(
             "open_dataset_root: found {} .nii/.nii.gz file(s) under {} but none have a readable NIfTI header (likely empty stubs or unsupported variants)",
-            candidates.len(),
+            stats.total_discovered,
             root.display()
         ));
     }
@@ -592,6 +595,7 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
 
     *lock_recover(&handle.volumes) = volumes;
     *lock_recover(&handle.dataset_root) = Some(dataset_root);
+    *lock_recover(&handle.discovery_stats) = stats;
     lock_recover(&handle.preview_cache).clear();
     lock_recover(&handle.decoded_level_cache).clear();
 
@@ -1311,6 +1315,7 @@ async fn desktop_manifest(
     State(state): State<AppState>,
 ) -> Json<Value> {
     let volumes = lock_recover(&state.volumes).clone();
+    let discovery_stats = *lock_recover(&state.discovery_stats);
     let tile_size = 1024_u32;
     let gap = 96_u32;
     let pitch = tile_size + gap;
@@ -1427,6 +1432,11 @@ async fn desktop_manifest(
             "rows": rows
         },
         "itemCount": items.len(),
+        // Dataset files only (`itemCount` also counts overlays and derivatives):
+        // when `truncated`, only the first max_volume_count() files in
+        // relative-path order are shown.
+        "totalDiscovered": discovery_stats.total_discovered,
+        "truncated": discovery_stats.truncated,
         "items": items
     }))
 }
@@ -1881,6 +1891,20 @@ const PREVIEW_DISK_CACHE_NAME: &str = "preview-cache-v2";
 struct VolumeDiscovery {
     root: Option<PathBuf>,
     volumes: Vec<VolumeEntry>,
+    stats: DiscoveryStats,
+}
+
+/// How many NIfTI files dataset discovery found, and whether the
+/// max_volume_count() cap left some of them out of `volumes`.
+#[derive(Clone, Copy, Default)]
+struct DiscoveryStats {
+    total_discovered: usize,
+    truncated: bool,
+}
+
+struct RootDiscovery {
+    volumes: Vec<VolumeEntry>,
+    stats: DiscoveryStats,
 }
 
 #[derive(Clone)]
@@ -1907,7 +1931,7 @@ fn max_volume_count() -> usize {
 fn discover_volumes() -> VolumeDiscovery {
     let max_volumes = max_volume_count();
     for root in discovery_roots() {
-        let mut volumes = discover_volumes_in_root(&root, max_volumes);
+        let RootDiscovery { mut volumes, stats } = discover_volumes_in_root(&root, max_volumes);
         if !volumes.is_empty() {
             let root = if root.is_file() {
                 root.parent().map(FsPath::to_path_buf)
@@ -1916,7 +1940,11 @@ fn discover_volumes() -> VolumeDiscovery {
             }
             .map(|path| fs::canonicalize(&path).unwrap_or(path));
             append_working_derivatives(&mut volumes, root.as_deref());
-            return VolumeDiscovery { root, volumes };
+            return VolumeDiscovery {
+                root,
+                volumes,
+                stats,
+            };
         }
     }
 
@@ -1926,8 +1954,16 @@ fn discover_volumes() -> VolumeDiscovery {
         .and_then(|volume| volume.source_path.as_ref())
         .and_then(|path| path.parent())
         .map(FsPath::to_path_buf);
+    let stats = DiscoveryStats {
+        total_discovered: volumes.len(),
+        truncated: false,
+    };
     append_working_derivatives(&mut volumes, root.as_deref());
-    VolumeDiscovery { root, volumes }
+    VolumeDiscovery {
+        root,
+        volumes,
+        stats,
+    }
 }
 
 fn append_working_derivatives(volumes: &mut Vec<VolumeEntry>, dataset_root: Option<&FsPath>) {
@@ -2098,28 +2134,49 @@ fn discovery_roots() -> Vec<PathBuf> {
     roots
 }
 
-fn discover_volumes_in_root(root: &FsPath, max_volumes: usize) -> Vec<VolumeEntry> {
+fn discover_volumes_in_root(root: &FsPath, max_volumes: usize) -> RootDiscovery {
     if root.is_file() && is_nifti_path(root) {
-        return volume_entry(root, root.parent().unwrap_or_else(|| FsPath::new("")))
-            .into_iter()
-            .collect();
+        return RootDiscovery {
+            volumes: volume_entry(root, root.parent().unwrap_or_else(|| FsPath::new("")))
+                .into_iter()
+                .collect(),
+            stats: DiscoveryStats {
+                total_discovered: 1,
+                truncated: false,
+            },
+        };
     }
 
     if !root.is_dir() {
-        return Vec::new();
+        return RootDiscovery {
+            volumes: Vec::new(),
+            stats: DiscoveryStats::default(),
+        };
     }
 
+    // Collect every candidate and sort before applying the cap, so which files
+    // make the cut depends on their relative paths, not on read_dir order.
     let mut paths = Vec::new();
-    collect_nifti_paths(root, &mut paths, max_volumes);
+    collect_nifti_paths(root, &mut paths);
     paths.sort();
 
-    let mut volumes: Vec<VolumeEntry> = paths
-        .iter()
-        .filter_map(|path| volume_entry(path, root))
-        .take(max_volumes)
-        .collect();
+    let mut volumes = Vec::new();
+    let mut examined = 0;
+    for path in &paths {
+        if volumes.len() >= max_volumes {
+            break;
+        }
+        examined += 1;
+        volumes.extend(volume_entry(path, root));
+    }
     disambiguate_volume_ids(&mut volumes, root);
-    volumes
+    RootDiscovery {
+        volumes,
+        stats: DiscoveryStats {
+            total_discovered: paths.len(),
+            truncated: examined < paths.len(),
+        },
+    }
 }
 
 /// Make discovered ids unique. `volume_id()` maps `x.nii` beside `x.nii.gz`, or
@@ -2174,21 +2231,13 @@ fn fnv1a_32(bytes: &[u8]) -> u32 {
     hash
 }
 
-fn collect_nifti_paths(root: &FsPath, paths: &mut Vec<PathBuf>, max_volumes: usize) {
-    if paths.len() >= max_volumes {
-        return;
-    }
-
+fn collect_nifti_paths(root: &FsPath, paths: &mut Vec<PathBuf>) {
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(_) => return,
     };
 
     for entry in entries.flatten() {
-        if paths.len() >= max_volumes {
-            return;
-        }
-
         let path = entry.path();
         if path
             .file_name()
@@ -2199,7 +2248,7 @@ fn collect_nifti_paths(root: &FsPath, paths: &mut Vec<PathBuf>, max_volumes: usi
         }
 
         if path.is_dir() {
-            collect_nifti_paths(&path, paths, max_volumes);
+            collect_nifti_paths(&path, paths);
         } else if is_nifti_path(&path) {
             paths.push(path);
         }
@@ -4001,8 +4050,8 @@ mod tests {
         // Same relative path and the same bytes: only the dataset root differs.
         write_nifti(&root_b.join(relative), [16, 16, 16], 1);
 
-        let a = discover_volumes_in_root(&root_a, 16);
-        let b = discover_volumes_in_root(&root_b, 16);
+        let a = discover_volumes_in_root(&root_a, 16).volumes;
+        let b = discover_volumes_in_root(&root_b, 16).volumes;
         assert_eq!(a.len(), 1);
         assert_eq!(b.len(), 1);
         assert_eq!(a[0].id, b[0].id, "ids are dataset-relative by design");
@@ -4019,7 +4068,7 @@ mod tests {
 
         // Rewriting the file in place yields a new token on the next discovery.
         write_nifti(&root_a.join(relative), [16, 16, 16], 2);
-        let a_rewritten = discover_volumes_in_root(&root_a, 16);
+        let a_rewritten = discover_volumes_in_root(&root_a, 16).volumes;
         assert_ne!(volume_url_token(&a[0]), volume_url_token(&a_rewritten[0]));
 
         let _ = fs::remove_dir_all(&root_a);
@@ -4034,7 +4083,7 @@ mod tests {
         write_nifti(&root.join("sub-01__brain.nii.gz"), [10, 10, 10], 3);
         write_nifti(&root.join("sub-02/anat/sub-02_T1w.nii.gz"), [8, 8, 8], 4);
 
-        let volumes = discover_volumes_in_root(&root, 16);
+        let volumes = discover_volumes_in_root(&root, 16).volumes;
         assert_eq!(volumes.len(), 4);
         let ids: HashSet<_> = volumes.iter().map(|volume| volume.id.as_str()).collect();
         assert_eq!(ids.len(), 4, "ids must be unique: {ids:?}");
@@ -4081,6 +4130,7 @@ mod tests {
         write_nifti(&root.join("mask.nii.gz"), [8, 8, 8], 3);
 
         let mut ids: Vec<_> = discover_volumes_in_root(&root, 16)
+            .volumes
             .into_iter()
             .map(|volume| volume.id)
             .collect();
@@ -4137,6 +4187,7 @@ mod tests {
             base_url: "http://127.0.0.1:4242".to_string(),
             volumes: Arc::new(Mutex::new(Vec::new())),
             dataset_root: Arc::new(Mutex::new(None)),
+            discovery_stats: Arc::new(Mutex::new(DiscoveryStats::default())),
             preview_cache: Arc::new(Mutex::new(PreviewCache::default())),
             decoded_level_cache: Arc::new(Mutex::new(DecodedLevelCache::default())),
             pyramid_locks: Arc::new(Mutex::new(HashMap::new())),
@@ -4185,5 +4236,55 @@ mod tests {
                 );
             }
         });
+    }
+
+    #[test]
+    fn volume_cap_keeps_the_first_files_in_relative_path_order() {
+        let root = scratch_dir("truncation");
+        // Created in reverse so creation order can't line up with sort order.
+        for subject in (1..=20).rev() {
+            let relative = format!("sub-{subject:02}/anat/sub-{subject:02}_T1w.nii.gz");
+            write_nifti(&root.join(relative), [4, 4, 4], subject as u8);
+        }
+        // An unreadable stub sorts first: skipped, it doesn't use up a slot.
+        fs::write(root.join("aaa-stub.nii"), b"not a nifti").unwrap();
+
+        let capped = discover_volumes_in_root(&root, 5);
+        let labels: Vec<_> = capped
+            .volumes
+            .iter()
+            .map(|volume| volume.label.clone())
+            .collect();
+        let expected: Vec<_> = (1..=5)
+            .map(|subject| {
+                FsPath::new(&format!("sub-{subject:02}"))
+                    .join("anat")
+                    .join(format!("sub-{subject:02}_T1w.nii.gz"))
+                    .display()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(labels, expected);
+        assert_eq!(capped.stats.total_discovered, 21);
+        assert!(capped.stats.truncated);
+
+        // Same answer every time.
+        let again = discover_volumes_in_root(&root, 5);
+        let again_ids: Vec<_> = again
+            .volumes
+            .iter()
+            .map(|volume| volume.id.clone())
+            .collect();
+        let capped_ids: Vec<_> = capped
+            .volumes
+            .iter()
+            .map(|volume| volume.id.clone())
+            .collect();
+        assert_eq!(again_ids, capped_ids);
+
+        let all = discover_volumes_in_root(&root, 50);
+        assert_eq!(all.volumes.len(), 20);
+        assert_eq!(all.stats.total_discovered, 21);
+        assert!(!all.stats.truncated);
     }
 }

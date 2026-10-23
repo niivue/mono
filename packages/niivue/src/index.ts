@@ -395,8 +395,8 @@ export {
   omeZarrResolveAxes,
   omeZarrSpatialOrder,
   omeZarrSpatialScaleUm,
-  parseOmeroColor,
   omeroWindowUsable,
+  parseOmeroColor,
   parseOmeZarrAttrs,
 } from './volume/omeZarr'
 // OME-Zarr chunk-streaming adapter for nv.loadChunkedVolume

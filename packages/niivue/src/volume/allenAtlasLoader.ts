@@ -32,6 +32,9 @@ import { type DecodedImage, decodeImageRGBA } from './imageDecode'
  * Colormap for one channel: the closest hue to the sidecar's `channel_colors`
  * entry when it has one, else the next colour in the shared palette so that
  * channels loaded together do not collide.
+ *
+ * @deprecated Picks one channel alone, so channels can repeat a ramp. The
+ * loader uses {@link channelColormapsFor}, which avoids that.
  */
 export function allenAtlasChannelColormap(
   info: AllenAtlasInfo,

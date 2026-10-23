@@ -1917,8 +1917,10 @@ export default class NiiVue extends EventTarget {
    * Pair with volumeOverlayColorBlend = OVERLAY_COLOR_BLEND.MAX for
    * fluorescence-style fusion. Stacked channels keep their colormap's alpha
    * ramp, where an overlay is otherwise fully opaque above calMin; in 3D each
-   * channel's opacity sets how dense it looks. Ignored while volumes[0] is
-   * chunked.
+   * channel's opacity sets how dense it looks. Ignored with a single volume,
+   * while volumes[0] is chunked, and in multi-instance mode. A hidden or
+   * opacity-0 volume drops out of the blend, and a PAQD volume keeps its own
+   * atlas path rather than joining as a channel.
    */
   get volumeIsChannelStack(): boolean {
     return this.model.volume.isChannelStack
@@ -3029,8 +3031,11 @@ export default class NiiVue extends EventTarget {
   }
 
   async addMesh(mesh: MeshFromUrlOptions | NVMeshType): Promise<this> {
+    const prior = this.model.getMeshes().length
     await this.model.addMesh(mesh)
     const meshes = this.model.getMeshes()
+    // The model logs a mesh it cannot read and adds nothing.
+    if (meshes.length === prior) return this
     this.emit('meshLoaded', { mesh: meshes[meshes.length - 1] })
     await this._updateGLMeshes()
     return this

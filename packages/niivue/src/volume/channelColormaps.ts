@@ -22,7 +22,7 @@ export const CHANNEL_COLORMAPS: ReadonlyArray<{
 ]
 
 /**
- * The ramp for a white or near-white channel colour. Not part of the
+ * The ramp for a white, gray or near-gray channel colour. Not part of the
  * fallback cycle: a channel only gets gray when the file asks for it.
  */
 export const CHANNEL_GRAY_COLORMAP = {
@@ -31,6 +31,29 @@ export const CHANNEL_GRAY_COLORMAP = {
 } as const
 
 const CHANNEL_CANDIDATES = [...CHANNEL_COLORMAPS, CHANNEL_GRAY_COLORMAP]
+
+/**
+ * Largest max-minus-min channel spread still read as gray. Measures hue, not
+ * brightness, so a pastel such as (255, 200, 200) keeps its red.
+ */
+const GRAY_CHROMA = 32
+
+function isGrayish(rgb: readonly number[]): boolean {
+  const [r, g, b] = rgb
+  return Math.max(r, g, b) - Math.min(r, g, b) <= GRAY_CHROMA
+}
+
+/**
+ * The colour's hue at full strength: its white part removed and the rest
+ * scaled to 255, so a pastel pink matches red rather than violet.
+ */
+function pureHue(rgb: readonly number[]): number[] {
+  const low = Math.min(rgb[0], rgb[1], rgb[2])
+  const span = Math.max(rgb[0], rgb[1], rgb[2]) - low
+  return span > 0
+    ? rgb.slice(0, 3).map((v) => ((v - low) * 255) / span)
+    : rgb.slice(0, 3)
+}
 
 /** Squared RGB distance from a palette entry to a stated colour. */
 function hueDistance(
@@ -60,10 +83,12 @@ export function channelColormapFor(
   if (!rgb || rgb.length < 3) {
     return CHANNEL_COLORMAPS[order % CHANNEL_COLORMAPS.length].name
   }
-  let best: { name: string } = CHANNEL_CANDIDATES[0]
+  if (isGrayish(rgb)) return CHANNEL_GRAY_COLORMAP.name
+  const hue = pureHue(rgb)
+  let best: { name: string } = CHANNEL_COLORMAPS[0]
   let bestDistance = Number.POSITIVE_INFINITY
-  for (const entry of CHANNEL_CANDIDATES) {
-    const distance = hueDistance(entry, rgb)
+  for (const entry of CHANNEL_COLORMAPS) {
+    const distance = hueDistance(entry, hue)
     if (distance < bestDistance) {
       bestDistance = distance
       best = entry
@@ -74,6 +99,9 @@ export function channelColormapFor(
 
 /**
  * Colormaps for channels loaded together, in load order.
+ *
+ * A file that gives two channels the same colour (two greens, say) gets two
+ * different ramps, so the second does not show the colour it states.
  *
  * Each channel gets {@link channelColormapFor}'s choice unless an earlier
  * channel already took it; then it gets the closest unused entry (to its
@@ -91,8 +119,14 @@ export function channelColormapsFor(
       const free = CHANNEL_CANDIDATES.filter((entry) => !taken.has(entry.name))
       if (free.length > 0) {
         if (rgb && rgb.length >= 3) {
-          free.sort((a, b) => hueDistance(a, rgb) - hueDistance(b, rgb))
-          name = free[0].name
+          // Gray stands in for a hue only when nothing else is free.
+          const hues = isGrayish(rgb)
+            ? free
+            : free.filter((entry) => entry !== CHANNEL_GRAY_COLORMAP)
+          const pool = hues.length > 0 ? hues : free
+          const hue = isGrayish(rgb) ? rgb : pureHue(rgb)
+          pool.sort((a, b) => hueDistance(a, hue) - hueDistance(b, hue))
+          name = pool[0].name
         } else {
           name = (
             free.find((entry) => entry !== CHANNEL_GRAY_COLORMAP) ?? free[0]

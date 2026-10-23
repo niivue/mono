@@ -46,6 +46,9 @@ export interface OmeTiffLoadOptions {
 /**
  * Colormap for one channel: the closest hue to the OME `Color` attribute when
  * the file states one, else the next entry in the shared palette.
+ *
+ * @deprecated Picks one channel alone, so channels can repeat a ramp. The
+ * loader uses {@link channelColormapsFor}, which avoids that.
  */
 export function omeTiffChannelColormap(
   info: OmeTiffInfo | null,

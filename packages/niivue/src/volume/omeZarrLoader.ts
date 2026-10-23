@@ -318,6 +318,9 @@ export function omeZarrChannelName(
 /**
  * Colormap for one channel: the closest hue to the omero colour when the
  * store states one, else the next entry in the shared palette.
+ *
+ * @deprecated Picks one channel alone, so channels can repeat a ramp. The
+ * loader uses {@link channelColormapsFor}, which avoids that.
  */
 export function omeZarrChannelColormap(
   info: OmeZarrInfo,

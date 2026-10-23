@@ -1913,7 +1913,8 @@ export default class NiiVue extends EventTarget {
 
   /**
    * How overlapping overlays combine colour: `OVERLAY_COLOR_BLEND.ADDITIVE`
-   * (default) or `MEAN`. Only matters with two or more overlays.
+   * (default), `MEAN`, or `OVER` (later overlays cover earlier ones). Only
+   * matters with two or more overlays.
    */
   get volumeOverlayColorBlend(): OVERLAY_COLOR_BLEND {
     return this.model.volume.overlayColorBlend

@@ -27,6 +27,41 @@ describe('blendOverlayData', () => {
       153, 102, 0, 194,
     ])
   })
+  test('OVER colour composites later overlays over earlier ones', () => {
+    // P = (0.6, 0, 0) * 0.6 + (0, 0.4, 0) = (0.36, 0.4, 0); rgb = P / 0.76
+    expect(blend(OVERLAY_ALPHA_BLEND.OVER, OVERLAY_COLOR_BLEND.OVER)).toEqual([
+      121, 134, 0, 194,
+    ])
+    // Colour is independent of the alpha mode
+    expect(blend(OVERLAY_ALPHA_BLEND.MAX, OVERLAY_COLOR_BLEND.OVER)).toEqual([
+      121, 134, 0, 153,
+    ])
+    // Reversed order: red now on top
+    expect(
+      Array.from(
+        blendOverlayData(
+          [green, red],
+          [1, 1, 1],
+          OVERLAY_ALPHA_BLEND.OVER,
+          OVERLAY_COLOR_BLEND.OVER,
+        ),
+      ),
+    ).toEqual([201, 54, 0, 194])
+  })
+  test('an opaque top overlay hides the ones below', () => {
+    const opaqueRed = new Uint8Array([255, 0, 0, 255])
+    const opaqueGreen = new Uint8Array([0, 255, 0, 255])
+    expect(
+      Array.from(
+        blendOverlayData(
+          [opaqueRed, opaqueGreen],
+          [1, 1, 1],
+          OVERLAY_ALPHA_BLEND.OVER,
+          OVERLAY_COLOR_BLEND.OVER,
+        ),
+      ),
+    ).toEqual([0, 255, 0, 255])
+  })
   test('empty voxels stay transparent', () => {
     expect(
       Array.from(blendOverlayData([new Uint8Array(4)], [1, 1, 1])),

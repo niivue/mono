@@ -940,8 +940,8 @@ export function destroy(device: GPUDevice): void {
 // Multi-overlay GPU blend
 // ---------------------------------------------------------------------------
 
-// Five f32 per voxel of blend accumulator (see blendAccumShaderCode)
-const BLEND_BYTES_PER_VOXEL = 20
+// Six f32 per voxel of blend accumulator (see blendAccumShaderCode)
+const BLEND_BYTES_PER_VOXEL = 24
 
 function blendBufferBudget(limits: GPUSupportedLimits): number {
   return Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)
@@ -954,11 +954,12 @@ export function maxBlendSliceDim(limits: GPUSupportedLimits): number {
   )
 }
 
-// Accumulator per voxel: premultiplied colour sum P.rgb, alpha sum S, then max
-// alpha (MAX) or union alpha 1 - prod(1 - a) (OVER). Same math as the CPU
-// blendOverlayData; ALPHA_BLEND / COLOR_BLEND are OVERLAY_*_BLEND values.
+// Accumulator per voxel: premultiplied colour P.rgb (composited in order for
+// colour OVER), alpha sum S, max alpha M and union alpha 1 - prod(1 - a). Same
+// math as the CPU blendOverlayData; ALPHA_BLEND / COLOR_BLEND are
+// OVERLAY_*_BLEND values. One pass per overlay keeps the order.
 const blendAccumShaderCode = `
-override ALPHA_BLEND: u32 = 0u;
+override COLOR_BLEND: u32 = 0u;
 struct Slab { z0: u32, zCount: u32 }
 @group(0) @binding(0) var<storage, read_write> accum: array<f32>;
 @group(0) @binding(1) var<uniform> slab: Slab;
@@ -971,13 +972,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let rgba = textureLoad(overlay, vec3i(vec3u(gid.xy, gid.z + slab.z0)), 0);
     let a = rgba.a;
     if (a <= 0.0) { return; }
-    let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 5u;
-    accum[k] += rgba.r * a;
-    accum[k + 1u] += rgba.g * a;
-    accum[k + 2u] += rgba.b * a;
+    let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 6u;
+    let keep = select(1.0, 1.0 - a, COLOR_BLEND == 2u);
+    accum[k] = accum[k] * keep + rgba.r * a;
+    accum[k + 1u] = accum[k + 1u] * keep + rgba.g * a;
+    accum[k + 2u] = accum[k + 2u] * keep + rgba.b * a;
     accum[k + 3u] += a;
-    let u = accum[k + 4u];
-    accum[k + 4u] = select(max(u, a), u + a - u * a, ALPHA_BLEND == 2u);
+    accum[k + 4u] = max(accum[k + 4u], a);
+    let u = accum[k + 5u];
+    accum[k + 5u] = u + a - u * a;
 }
 `
 
@@ -994,21 +997,23 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let dims = textureDimensions(output);
     if (gid.x >= dims.x || gid.y >= dims.y || gid.z >= slab.zCount) { return; }
     let pos = vec3i(vec3u(gid.xy, gid.z + slab.z0));
-    let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 5u;
+    let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 6u;
     let sum = accum[k + 3u];
     if (sum <= 0.0) {
         textureStore(output, pos, vec4f(0.0));
         return;
     }
-    let a = select(accum[k + 4u], min(sum, 1.0), ALPHA_BLEND == 1u);
-    let norm = select(a, sum, COLOR_BLEND == 1u);
+    let m = accum[k + 4u];
+    let u = accum[k + 5u];
+    let a = select(select(m, min(sum, 1.0), ALPHA_BLEND == 1u), u, ALPHA_BLEND == 2u);
+    let norm = select(select(a, sum, COLOR_BLEND == 1u), u, COLOR_BLEND == 2u);
     let rgb = clamp(vec3f(accum[k], accum[k + 1u], accum[k + 2u]) / norm, vec3f(0.0), vec3f(1.0));
     textureStore(output, pos, vec4f(rgb, a));
 }
 `
 
 // Per device: shared layouts and shader modules, plus pipelines keyed by
-// alphaBlend * 2 + colorBlend. The norm pass reuses the accum layout.
+// alphaBlend * 3 + colorBlend. The norm pass reuses the accum layout.
 type BlendDeviceCache = {
   layoutAccum: GPUBindGroupLayout
   layoutOverlay: GPUBindGroupLayout
@@ -1031,13 +1036,16 @@ function ensureBlendPipelines(
   normPipeline: GPUComputePipeline
 } {
   // Unknown values fall back to MAX / ADDITIVE as in the CPU path; this also
-  // keeps override constants valid u32s and the cache bounded to six entries.
+  // keeps override constants valid u32s and the cache bounded to nine entries.
   if (
     alphaBlend !== OVERLAY_ALPHA_BLEND.ADDITIVE &&
     alphaBlend !== OVERLAY_ALPHA_BLEND.OVER
   )
     alphaBlend = OVERLAY_ALPHA_BLEND.MAX
-  if (colorBlend !== OVERLAY_COLOR_BLEND.MEAN)
+  if (
+    colorBlend !== OVERLAY_COLOR_BLEND.MEAN &&
+    colorBlend !== OVERLAY_COLOR_BLEND.OVER
+  )
     colorBlend = OVERLAY_COLOR_BLEND.ADDITIVE
   let dev = _blendCache.get(device)
   if (!dev) {
@@ -1073,7 +1081,7 @@ function ensureBlendPipelines(
     }
     _blendCache.set(device, dev)
   }
-  const key = alphaBlend * 2 + colorBlend
+  const key = alphaBlend * 3 + colorBlend
   let pipes = dev.pipelines.get(key)
   if (!pipes) {
     pipes = {
@@ -1084,7 +1092,7 @@ function ensureBlendPipelines(
         compute: {
           module: dev.accumModule,
           entryPoint: 'main',
-          constants: { ALPHA_BLEND: alphaBlend },
+          constants: { COLOR_BLEND: colorBlend },
         },
       }),
       normPipeline: device.createComputePipeline({
@@ -1105,8 +1113,8 @@ function ensureBlendPipelines(
 
 /**
  * Blend multiple pre-colormapped RGBA8 overlay textures into one on the GPU.
- * Same formulas as CPU blendOverlayData (see there); all commutative, so
- * overlay order does not affect the result.
+ * Same formulas as CPU blendOverlayData (see there); only colour OVER depends
+ * on overlay order.
  * Eliminates the GPU→CPU readback stall of the legacy path.
  */
 export async function blendOverlaysGPU(

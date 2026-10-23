@@ -241,6 +241,7 @@ Managed via Nx Release with conventional commits (config in root `nx.json`):
 ## Gotchas
 
 - **No barrel files.** Biome enforces `noBarrelFile: "error"`. Auto-generated asset index files in `packages/niivue/src/assets/` are the sole exception.
+- **ipyniivue bindings are checked in.** A change to a public NiiVue property (a new enum value, a removed setter) must also update `packages/ipyniivue/api.generated.json` and `src/ipyniivue/_generated.py`. Run `bunx nx codegen ipyniivue` and commit only your own hunks while the rest is stale (#257). CI regenerates before testing, so it won't catch a miss.
 - **`niivue` build requires codegen first.** The Nx target handles this automatically (`npm run codegen:assets && vite build`), but if you run Vite manually, run `node scripts/generate-assets.js` first.
 - **`workspace:*` peer dependencies.** Extensions and `nv-react` declare `@niivue/niivue` as a peer dep — the local copy is used in dev, but consumers must install it themselves.
 - **GitHub Pages deployment.** Pushing to `main` builds all examples and demo apps and deploys to GitHub Pages via `.github/workflows/niivue-ghpages.yml`. The build script is `.github/build-pages.sh` — run it locally with `--serve` to preview. Vite configs read the `VITE_BASE` env var to set the base path and rewrite absolute `/volumes/` and `/meshes/` URLs in bundled JS. The rewrite covers page script only: not HTML attributes (such as an `<option value>`) and not Worker bundles, so keep those URLs in page script (a worker should receive them in a message).

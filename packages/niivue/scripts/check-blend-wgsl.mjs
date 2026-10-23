@@ -3,6 +3,7 @@
 // Run: bun packages/niivue/scripts/check-blend-wgsl.mjs
 // Expected, both z, per mode (alphaBlend,colorBlend):
 //   0,0: 255,170,0,153   1,0: 153,102,0,255   2,1: 153,102,0,194
+//   2,2: 121,134,0,194   0,2: 121,134,0,153
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 
@@ -54,6 +55,8 @@ const r = await p.evaluate(
       [0, 0],
       [1, 0],
       [2, 1],
+      [2, 2],
+      [0, 2],
     ]) {
       d.pushErrorScope('validation')
       const ap = d.createComputePipeline({
@@ -61,7 +64,7 @@ const r = await p.evaluate(
         compute: {
           module: d.createShaderModule({ code: accum }),
           entryPoint: 'main',
-          constants: { ALPHA_BLEND: A },
+          constants: { COLOR_BLEND: C },
         },
       })
       const np = d.createComputePipeline({
@@ -73,7 +76,7 @@ const r = await p.evaluate(
         },
       })
       const buf = d.createBuffer({
-        size: 20,
+        size: 24,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       })
       const outT = d.createTexture({

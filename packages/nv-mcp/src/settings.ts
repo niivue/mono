@@ -72,7 +72,7 @@ export const GRADIENT_MODES = { central: 0, blob: 1, sobel8: 2 } as const
 export const OVERLAY_ALPHA_BLENDS = { max: 0, additive: 1, over: 2 } as const
 
 /** NiiVue's `OVERLAY_COLOR_BLEND`: how overlapping overlays combine their colours. */
-export const OVERLAY_COLOR_BLENDS = { additive: 0, mean: 1 } as const
+export const OVERLAY_COLOR_BLENDS = { additive: 0, mean: 1, over: 2 } as const
 
 /** NiiVue's `COLORMAP_TYPE`: how a volume's window is drawn below its minimum. */
 export const COLORMAP_TYPES = {
@@ -425,7 +425,7 @@ export const SETTINGS: readonly Setting[] = [
   setting(
     'volumeOverlayColorBlend',
     'enum',
-    'How overlapping overlays combine their colours: additive (red and green make yellow, may clip) or mean (their average, never clips).',
+    'How overlapping overlays combine their colours: additive (red and green make yellow, may clip), mean (their average, never clips), or over (in volume order, later overlays cover earlier ones).',
     {
       values: OVERLAY_COLOR_BLENDS,
     },

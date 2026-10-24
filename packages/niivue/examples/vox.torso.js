@@ -76,7 +76,7 @@ sliceType.onchange()
 await nv1.loadVolumes([{ url: '/volumes/torso.nii.gz' }])
 nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 gradSlider.oninput()
-nv1.addColormap('_torso', {
+nv1.addColormap('torso', {
   R: [0, 0, 185, 185, 252, 0, 103, 216, 127, 127, 0, 222],
   G: [0, 20, 102, 102, 0, 255, 76, 132, 0, 127, 255, 154],
   B: [0, 152, 83, 83, 0, 0, 71, 105, 127, 0, 255, 132],
@@ -97,7 +97,7 @@ nv1.addColormap('_torso', {
     '11bladder',
   ],
 })
-nv1.drawColormap = '_torso'
+nv1.drawColormap = 'torso'
 await nv1.loadDrawing('/volumes/torsoLabel.nii.gz')
 nv1.drawIsEnabled = false
 clipSelect.onchange()

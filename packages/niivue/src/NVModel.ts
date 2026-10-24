@@ -1,4 +1,5 @@
 import { mat4, vec2, vec3, vec4 } from 'gl-matrix'
+import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMesh from '@/mesh/NVMesh'
@@ -1436,12 +1437,35 @@ export default class NVModel {
     isColorbarVisible: true,
   }
 
+  /**
+   * Derive `colormapLabel` from `colormap`: a label colormap compiles to the
+   * volume's label LUT, a continuous one clears it. A NIFTI_INTENT_LABEL
+   * volume given no colormap gets the generated `Random` palette, so a
+   * segmentation shows as labels without further setup.
+   */
+  static applyColormap(vol: NVImage, explicitColormap?: string): NVImage {
+    if (
+      explicitColormap === undefined &&
+      vol.hdr.intent_code === NVConstants.NiiIntentCode.NIFTI_INTENT_LABEL
+    ) {
+      vol.colormap = 'Random'
+    }
+    vol.colormapLabel = NVCmaps.labelLutFor(vol.colormap, [
+      vol.globalMin,
+      vol.globalMax,
+    ])
+    return vol
+  }
+
   /** Fetch and prepare an NVImage without adding it to the model. */
   static async prepareVolume(
     volume: ImageFromUrlOptions | NVImage,
   ): Promise<NVImage> {
     if ('hdr' in volume && volume.hdr) {
-      return { ...NVModel.volumeDefaults, ...volume }
+      return NVModel.applyColormap(
+        { ...NVModel.volumeDefaults, ...volume },
+        volume.colormap,
+      )
     }
     const opts = volume as ImageFromUrlOptions
     const { url, urlImageData, limitFrames4D, ...overrides } = opts
@@ -1464,7 +1488,7 @@ export default class NVModel {
       frameLimit,
       name,
     )
-    return {
+    const prepared: NVImage = {
       ...base,
       url: urlString,
       ...NVModel.volumeDefaults,
@@ -1481,6 +1505,7 @@ export default class NVModel {
       // _sourceFile above.
       ...(urlImageData != null ? { _urlImageData: urlImageData } : {}),
     }
+    return NVModel.applyColormap(prepared, overrides.colormap)
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {

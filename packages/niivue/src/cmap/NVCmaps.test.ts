@@ -2,10 +2,17 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { log } from '@/logger'
+import { LABEL_LUT_WIDTH, labelLutTexels } from '@/view/NVOrient'
 import {
   addColormap,
   colormapKey,
+  colormapNames,
+  customColormaps,
+  drawingColormapNames,
   invertLut,
+  isDrawingColormap,
+  isLabelColormap,
+  labelLutFor,
   lutrgba8,
   makeLabelLut,
   makeLut,
@@ -49,7 +56,7 @@ describe('bundled colormaps', () => {
     expect(lutFiles).toContain('jet.json')
     expect(lutFiles).toContain('magma.json')
     expect(lutFiles).toContain('ct_bones.json')
-    expect(lutFiles).toContain('_slicer3d.json')
+    expect(lutFiles).toContain('slicer3d.json')
   })
 
   // lookupColorMap() carries this window so a viewer can apply it with the colormap.
@@ -76,6 +83,7 @@ describe('bundled colormaps', () => {
     const A = lut.A as number[]
     const I = lut.I as number[]
 
+    const isLabel = Array.isArray(lut.labels)
     expect(R.length).toBeGreaterThanOrEqual(2)
     expect(G.length).toBe(R.length)
     expect(B.length).toBe(R.length)
@@ -87,7 +95,8 @@ describe('bundled colormaps', () => {
     expectByteValues(A)
     expectByteValues(I)
     expect(I[0]).toBe(0)
-    if (!file.startsWith('_')) {
+    // A ramp spans the whole 256-entry LUT; a label table lists its own IDs.
+    if (!isLabel) {
       expect(I[I.length - 1]).toBe(255)
     }
 
@@ -95,7 +104,7 @@ describe('bundled colormaps', () => {
       expect(I[index]).toBeGreaterThan(I[index - 1] as number)
     }
 
-    if (file.startsWith('_') || Array.isArray(lut.labels)) {
+    if (isLabel) {
       const labelLut = makeLabelLut({ R, G, B, A, I })
       expect(labelLut.lut.length).toBeGreaterThan(0)
       expect(labelLut.min).toBe(I[0])
@@ -104,9 +113,19 @@ describe('bundled colormaps', () => {
       expect(makeLut(R, G, B, A, I).length).toBe(256 * 4)
     }
 
-    if (Array.isArray(lut.labels)) {
-      expect(lut.labels.length).toBe(R.length)
+    // Names are optional: an empty array still marks a label table.
+    if (isLabel && (lut.labels as unknown[]).length > 0) {
+      expect((lut.labels as unknown[]).length).toBe(R.length)
     }
+  })
+
+  // These were label tables before kind came from the `labels` key.
+  test.each([
+    'freesurfer.json',
+    'itksnap.json',
+    'roi_i256.json',
+  ])('%s is a label table', (file) => {
+    expect(Array.isArray(readLut(file).labels)).toBe(true)
   })
 })
 
@@ -284,5 +303,168 @@ describe('colormapKey', () => {
     const other = colormapKey('keyTestC')
     addColormap('keyTestD', red)
     expect(colormapKey('keyTestC')).toBe(other)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// colormap kinds
+// ---------------------------------------------------------------------------
+describe('colormap kinds', () => {
+  // Bun has no import.meta.glob, so the registry holds only runtime colormaps
+  // and the generated Random palette here.
+  log.setLogLevel('silent')
+  addColormap('kindRamp', { R: [0, 255], G: [0, 255], B: [0, 255] })
+  addColormap('kindAtlas', {
+    R: [0, 255, 0],
+    G: [0, 0, 255],
+    B: [0, 0, 0],
+    labels: ['air', 'left', 'right'],
+  })
+  addColormap('kindWide', {
+    R: [0, 9],
+    G: [0, 9],
+    B: [0, 9],
+    I: [0, 2035],
+    labels: [],
+  })
+
+  test('aLabelsArrayMakesALabelColormap', () => {
+    expect(isLabelColormap('kindAtlas')).toBe(true)
+    expect(isLabelColormap('kindRamp')).toBe(false)
+    expect(isLabelColormap('Random')).toBe(true)
+    expect(isLabelColormap('noSuchMap')).toBe(false)
+  })
+
+  test('namesFilterByKind', () => {
+    expect(colormapNames('label')).toContain('KindAtlas')
+    expect(colormapNames('label')).not.toContain('KindRamp')
+    expect(colormapNames('continuous')).toContain('KindRamp')
+    expect(colormapNames()).toEqual(
+      expect.arrayContaining(['KindAtlas', 'KindRamp']),
+    )
+  })
+
+  test('aLabelTableDefaultsItsIndicesToItsEntries', () => {
+    const lut = labelLutFor('kindAtlas')
+    expect(lut?.min).toBe(0)
+    expect(lut?.max).toBe(2)
+    expect(lut?.labels).toEqual(['air', 'left', 'right'])
+  })
+
+  test('aLabelTableKeepsIdZeroTransparentByDefault', () => {
+    const lut = labelLutFor('kindAtlas')
+    expect(lut?.lut[3]).toBe(0)
+    expect(lut?.lut[7]).toBe(255)
+  })
+
+  test('aLabelTableMayHoldASingleEntry', () => {
+    expect(() =>
+      addColormap('kindOne', { R: [255], G: [0], B: [0], labels: ['mask'] }),
+    ).not.toThrow()
+    expect(() =>
+      addColormap('kindRampOne', { R: [255], G: [0], B: [0] }),
+    ).toThrow()
+  })
+
+  test('drawingsTakeLabelTablesWithIdsUpTo255', () => {
+    expect(isDrawingColormap('kindAtlas')).toBe(true)
+    expect(isDrawingColormap('kindWide')).toBe(false)
+    expect(isDrawingColormap('kindRamp')).toBe(false)
+    expect(drawingColormapNames()).toContain('KindAtlas')
+    expect(drawingColormapNames()).not.toContain('KindWide')
+  })
+
+  test('aLabelTableSpanIsCappedSoAFewEntriesCannotAskForGigabytes', () => {
+    const wide = (hi: number) => () =>
+      addColormap('kindHuge', {
+        R: [0, 0],
+        G: [0, 0],
+        B: [0, 0],
+        I: [0, hi],
+        labels: [],
+      })
+    expect(wide(300_000_000)).toThrow()
+    expect(wide(300_000)).not.toThrow()
+    expect(wide(Number.NaN)).not.toThrow() // span comes from the finite ID
+    const allNaN = () =>
+      addColormap('kindNaN', {
+        R: [0],
+        G: [0],
+        B: [0],
+        I: [Number.NaN],
+        labels: [],
+      })
+    expect(allNaN).toThrow()
+  })
+
+  test('aDenseTableTooLargeToSpreadStillListsDrawingColormaps', () => {
+    const n = 2_000_000 // past Bun's argument limit (V8 throws near 120k)
+    const ids = Array.from({ length: n }, (_, i) => i)
+    addColormap('kindDense', { R: ids, G: ids, B: ids, labels: [] })
+    expect(drawingColormapNames()).not.toContain('KindDense')
+  })
+
+  test('aContinuousColormapHasNoLabelLut', () => {
+    expect(labelLutFor('kindRamp')).toBeNull()
+    expect(labelLutFor(undefined)).toBeNull()
+  })
+
+  test('onlyRuntimeColormapsAreCustom', () => {
+    const custom = customColormaps()
+    expect(Object.keys(custom)).toContain('KindAtlas')
+    expect(Object.keys(custom)).not.toContain('Random')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// generated Random palette
+// ---------------------------------------------------------------------------
+describe('Random palette', () => {
+  test('aNaNRangeDoesNotThrow', () => {
+    expect(labelLutFor('Random', [Number.NaN, Number.NaN])?.max).toBe(0)
+  })
+
+  test('spansTheVolumeRangeSoEveryIdHasAColour', () => {
+    // FreeSurfer aparc+aseg: cortical parcels run past 2000.
+    const lut = labelLutFor('Random', [0, 2035])
+    expect(lut?.min).toBe(0)
+    expect(lut?.max).toBe(2035)
+    const alpha = (id: number) => lut?.lut[4 * id + 3]
+    expect(alpha(0)).toBe(0)
+    expect(alpha(2035)).toBe(255)
+  })
+
+  test('givesAnIdTheSameColourWhateverTheRange', () => {
+    const a = labelLutFor('Random', [0, 50])
+    const b = labelLutFor('Random', [0, 3000])
+    expect(Array.from(a?.lut.slice(4 * 17, 4 * 18) ?? [])).toEqual(
+      Array.from(b?.lut.slice(4 * 17, 4 * 18) ?? []),
+    )
+  })
+
+  test('handlesRangesPastTheSpreadArgumentLimit', () => {
+    const lut = labelLutFor('Random', [0, 500_000])
+    expect(lut?.max).toBe(500_000)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// label LUT texture layout
+// ---------------------------------------------------------------------------
+describe('labelLutTexels', () => {
+  test('wrapsIntoRowsSoWideRangesFitAnyGpu', () => {
+    const n = 16_000
+    const texels = labelLutTexels(new Uint8ClampedArray(n * 4).fill(7))
+    expect(texels.width).toBe(LABEL_LUT_WIDTH)
+    expect(texels.height).toBe(Math.ceil(n / LABEL_LUT_WIDTH))
+    expect(texels.data.length).toBe(texels.width * texels.height * 4)
+    // Entry i sits at column i % width, row i / width.
+    const i = 300
+    expect(texels.data[4 * i]).toBe(7)
+    expect(texels.data[4 * n]).toBe(0)
+  })
+
+  test('aSmallTableIsOneRow', () => {
+    expect(labelLutTexels(new Uint8ClampedArray(8 * 4)).height).toBe(1)
   })
 })

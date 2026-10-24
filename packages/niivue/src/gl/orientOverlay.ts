@@ -11,6 +11,7 @@ import { log } from '@/logger'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
 import {
   buildOrientUniforms,
+  labelLutTexels,
   prepareRGBAData,
   rgbaTextureKey,
 } from '@/view/NVOrient'
@@ -303,8 +304,8 @@ void main(void) {
         }
         int labelIdx = rawLabel - int(labelMin);
         int clampedIdx = clamp(labelIdx, 0, int(labelWidth) - 1);
-        float texCoord = (float(clampedIdx) + 0.5) / labelWidth;
-        FragColor = texture(colormap, vec2(clamp(texCoord, 0.0, 1.0), 0.5));
+        // The LUT wraps into rows of 256 (LABEL_LUT_WIDTH in NVOrient.ts).
+        FragColor = texelFetch(colormap, ivec2(clampedIdx % 256, clampedIdx / 256), 0);
         if (overlayOpacity > 0.0)
             FragColor.a *= overlayOpacity;
         return;
@@ -977,16 +978,17 @@ export function prepareOverlayTextureCache(
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     const labelLut = nvimage.colormapLabel?.lut
     if (!labelLut) throw new Error('Label colormap LUT is undefined')
+    const texels = labelLutTexels(labelLut)
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
       gl.RGBA,
-      labelLut.length / 4,
-      1,
+      texels.width,
+      texels.height,
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      labelLut,
+      texels.data,
     )
   } else {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
@@ -1338,17 +1340,17 @@ export function overlay2Texture(
     if (!labelLut) {
       throw new Error('Label colormap LUT is undefined')
     }
-    const nLabels = labelLut.length / 4
+    const texels = labelLutTexels(labelLut)
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
       gl.RGBA,
-      nLabels,
-      1,
+      texels.width,
+      texels.height,
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      labelLut,
+      texels.data,
     )
   } else {
     // Continuous colormap: 256-wide LUT with linear filtering
@@ -1708,16 +1710,17 @@ export function orientChunkToTexture(
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     const labelLut = nvimage.colormapLabel?.lut
     if (!labelLut) throw new Error('Label colormap LUT is undefined')
+    const texels = labelLutTexels(labelLut)
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
       gl.RGBA,
-      labelLut.length / 4,
-      1,
+      texels.width,
+      texels.height,
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      labelLut,
+      texels.data,
     )
   } else {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)

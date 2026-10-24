@@ -111,7 +111,7 @@ let vecPoints = null
 let penValue = 1
 let drawTool = 'pen' // pen | eraser | bucket | filled | wand
 let wandTolerance = 40
-// The shared "_draw" label colormap, so annotation colors match the 3D demo and
+// The shared "draw" label colormap, so annotation colors match the 3D demo and
 // each pen value paints a distinct label color. Resolved lazily (Vite glob).
 let drawLut = null
 const DRAW_OPACITY = 0.85
@@ -282,12 +282,12 @@ function ensureDrawing() {
   overlayDirty = true
 }
 
-// Repaint the offscreen raster from the label bitmap via the "_draw" LUT, so
+// Repaint the offscreen raster from the label bitmap via the "draw" LUT, so
 // each pen value shows its label color (same palette as the 3D slide demo).
 function rebuildRaster() {
   if (!drawing || !rasterCtx || !rasterImageData) return
   if (!drawLut) {
-    const cm = lookupColorMap('_draw')
+    const cm = lookupColorMap('draw')
     if (cm) drawLut = buildDrawingLut(cm)
   }
   const data = rasterImageData.data
@@ -419,10 +419,10 @@ function eventToSlide(event) {
   )
 }
 
-// CSS hex for the current pen label, from the "_draw" LUT (matches the raster).
+// CSS hex for the current pen label, from the "draw" LUT (matches the raster).
 function penColorCss() {
   if (!drawLut) {
-    const cm = lookupColorMap('_draw')
+    const cm = lookupColorMap('draw')
     if (cm) drawLut = buildDrawingLut(cm)
   }
   const lut = drawLut?.lut

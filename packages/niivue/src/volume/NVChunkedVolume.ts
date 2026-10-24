@@ -1,4 +1,5 @@
 import { mat4, vec3 } from 'gl-matrix'
+import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
@@ -1023,6 +1024,12 @@ export class NVChunkedVolume {
       // The floor IS the whole volume at its coarsest level, so it is the best
       // window sample available and it costs no extra fetch.
       this.applyAutoWindow(floor)
+      // Drawn like the bricks: a label colormap needs a label LUT, built
+      // after the window so Random spans the real range.
+      floor.colormapLabel = NVCmaps.labelLutFor(floor.colormap, [
+        floor.globalMin,
+        floor.globalMax,
+      ])
       return floor
     } catch (err) {
       log.warn('NVChunkedVolume: coarse floor unavailable', err)

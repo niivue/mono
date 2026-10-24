@@ -289,9 +289,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     return host.atlas()
   }
 
-  // The label table each label-map overlay was drawn with, by the volume
-  // NiiVue keeps; a new base clears the volumes, and the map with them.
-  const labelled = new WeakMap<ShownVolume, string>()
+  // The address each fetched label table came from, by the colormap name it
+  // is registered under.
+  const tableAddresses = new Map<string, string>()
 
   /** How many bricks a chunked volume has. */
   const brickCount = (volume: ShownVolume): number => {
@@ -317,9 +317,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
 
   /** A volume as the tools report it: how it is drawn, its window and span, and its frame when it has several. */
   const describeVolume = (volume: ShownVolume, index: number) => {
-    const labels = labelled.get(volume)
-    // A label map draws each voxel by its table, so its colormap and window
-    // are not in use and would only mislead.
+    // A label map draws each voxel by its table, so its window is not in use
+    // and would only mislead. Read from the volume, so a colormap changed by
+    // any caller is reported as it now is.
+    const labels = volume.colormapLabel
+      ? (tableAddresses.get(volume.colormap ?? '') ?? volume.colormap)
+      : undefined
     const windowed =
       !labels && volume.calMin !== undefined && volume.calMax !== undefined
     const spanned =
@@ -374,9 +377,24 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       )
     }
   }
-  const labelTable = async (labels: string): Promise<string | LabelTable> => {
+  /**
+   * The colormap a label table becomes: a built-in name as it is, or a table
+   * fetched from an address and registered under that address, so tables
+   * sharing a file name stay apart. A colormap with a `labels` array is a
+   * label map, so a table without names gets an empty one.
+   */
+  const labelColormap = async (labels: string): Promise<string> => {
     knownLabelTable(labels)
-    return isAddress(labels) ? fetchLabelTable(labels) : labels
+    if (!isAddress(labels)) return labels
+    if (!view.addColormap)
+      throw new Error("This page's NiiVue cannot draw label maps.")
+    const table = await fetchLabelTable(labels)
+    const name = view.addColormap(labels, {
+      ...table,
+      labels: table.labels ?? [],
+    })
+    tableAddresses.set(name, labels)
+    return name
   }
 
   /** The volumes on show, as `add_overlay` and `where_am_i` report them. */
@@ -547,18 +565,15 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (!url) throw new Error('add_overlay needs a url.')
       const name = text(params, 'name') ?? nameFromUrl(url)
       const labels = text(params, 'labels')
-      if (labels) knownLabelTable(labels)
-      if (labels && !view.setColormapLabel)
-        throw new Error("This page's NiiVue cannot draw label maps.")
       // A table from an address is fetched before anything is added, so a
       // bad address leaves the scene as it was.
-      const table = labels ? await labelTable(labels) : undefined
+      const labelMap = labels ? await labelColormap(labels) : undefined
       const opacity = clamp(
         number(params, 'opacity') ?? (labels ? 0.5 : 0.7),
         0,
         1,
       )
-      const colormap = text(params, 'colormap') ?? (labels ? 'gray' : 'warm')
+      const colormap = labelMap ?? text(params, 'colormap') ?? 'warm'
       const toLoad: VolumeToLoad = { url, name, colormap, opacity }
       put(toLoad, 'calMin', number(params, 'cal_min'))
       put(toLoad, 'calMax', number(params, 'cal_max'))
@@ -590,12 +605,6 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error)
         throw new Error(`The overlay at ${url} could not be loaded: ${why}`)
-      }
-      const index = view.volumes.length - 1
-      const added = view.volumes[index]
-      if (labels && table && added) {
-        await view.setColormapLabel?.(index, table)
-        labelled.set(added, labels)
       }
       view.crosshairPos = new Float32Array(
         view.model.mm2scene([before[0], before[1], before[2]]),
@@ -966,19 +975,14 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // The spread write is claimed before anything waits, so a control
       // that writes the spread meanwhile is the later one and wins.
       const spreadClaim = spread === undefined ? undefined : claimSpread(volume)
+      // Fetched before anything changes, so a bad table changes nothing.
+      if (labels !== undefined) update.colormap = await labelColormap(labels)
       if (!nothingIn(update)) {
         if (!view.setVolume)
           throw new Error(
             "This page's NiiVue cannot change a volume once loaded.",
           )
         await view.setVolume(index, update)
-      }
-      if (labels !== undefined) {
-        if (!view.setColormapLabel)
-          throw new Error("This page's NiiVue cannot draw label maps.")
-        const table = await labelTable(labels)
-        await view.setColormapLabel(index, table)
-        labelled.set(volume, labels)
       }
       if (modulate !== undefined && modulate !== null) {
         if (!view.setModulationImage)

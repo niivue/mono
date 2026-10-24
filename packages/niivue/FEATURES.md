@@ -44,7 +44,7 @@ Source of truth: `packages/niivue/src/index.ts` (package exports),
 | `loadDeferred4DVolumes(id)` | Method | Yes | Pull remaining 4D frames on demand | |
 | `removeAllVolumes()` | Method | Yes | | Wrap in Swift "Close all" |
 | `moveVolumeUp / Down / ToTop / ToBottom(index)` | Method | Yes | Re-order layers | Drag-reorder UI |
-| `setVolume(index, VolumeUpdate)` | Method | Yes | Per-layer props: `calMin`, `calMax`, `colormap`, `opacity`, `colormapNegative`, `colormapLabel`, `modulationImage`, … | Slider/picker bindings |
+| `setVolume(index, VolumeUpdate)` | Method | Yes | Per-layer props: `calMin`, `calMax`, `colormap`, `opacity`, `colormapNegative`, `modulationImage`, … | Slider/picker bindings |
 | `setModulationImage(targetId, modulatorId)` | Method | Yes | Modulate overlay brightness by another volume | |
 | `loadImgV1(volumeIndex, flipX?, flipY?, flipZ?)` | Method | Yes | Convert to V1 RGB vector | |
 | `recalculateCalMinMax(volumeIndex)` | Method | Yes | Reset window/level from data | "Auto window" button |
@@ -173,9 +173,9 @@ TRX, TT, TSF (scalars), VTK lines.
 | `drawPenShape` | Prop | No | `PEN_SHAPE.RECTANGLE` (default) or `PEN_SHAPE.CIRCLE` brush footprint |
 | `drawIsFillOverwriting` | Prop | No | |
 | `drawOpacity`, `drawRimOpacity` | Prop | No | |
-| `drawColormap` | Prop | No | |
+| `drawColormap` | Prop | No | Label colormap with IDs 0..255; throws otherwise |
 | `drawingVolume` | Prop (get/set) | No | `NVImage \| null` |
-| `drawingColormaps` | Prop (get) | No | Available palettes |
+| `drawingColormaps` | Prop (get) | No | Label colormaps with IDs 0..255 |
 | `createEmptyDrawing()` | Method | No | |
 | `closeDrawing()` | Method | No | Destroys drawingVolume |
 | `drawUndo()` | Method | No | Circular undo buffer |
@@ -267,8 +267,7 @@ All flat keys; mirrors the prop list above. Grouping (from source):
 | `lookupColorMap(name)` | Method | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, not auto-applied — pass to `setVolume` as `calMin`/`calMax` |
 | `addColormap(name, ColorMap)` | Method | No | `{ R, G, B, A?, I?, labels? }` |
 | `addColormapFromUrl(url, name?)` | Method | Yes | |
-| `setColormapLabel(volIdx, lut)` | Method | Yes | |
-| `setColormapLabelFromUrl(volIdx, url)` | Method | Yes | |
+| `colormapNames(kind?)` | Method | No | `'continuous'` / `'label'` filter |
 | `loadMatcap(nameOrUrl)` | Method | Yes | |
 
 ## 15. Events (`addEventListener` / `removeEventListener`)

@@ -202,7 +202,10 @@ export type NVImage = {
   nTotalFrame4D?: number
   /** Unique identifier for this volume */
   id?: string
-  /** Label colormap for atlas/parcellation volumes (compiled LUT with optional text labels) */
+  /**
+   * Compiled label LUT, derived from {@link colormap} when it names a label
+   * colormap (null for a continuous one). Read-only: set `colormap` instead.
+   */
   colormapLabel?: LUT | null
   /**
    * 2D slice sampling: true = nearest-neighbour, false = linear. Unset (the
@@ -218,7 +221,7 @@ export type NVImage = {
    * carries a different label, so interiors become transparent and the anatomy
    * underneath shows through. Applied in the orient prepass, so it reaches 2D
    * slices and the 3D ray-march on both backends. Ignored unless
-   * {@link colormapLabel} is set. See {@link NiiVue.setAtlasOutline}.
+   * {@link colormap} is a label colormap. See {@link NiiVue.setAtlasOutline}.
    */
   atlasOutline?: number
   /** Whether this volume has imaginary data (complex) */
@@ -1444,7 +1447,12 @@ export type ImageFromUrlOptions = {
   urlImageData?: string | File
   /** Display name for this volume */
   name?: string
-  /** Colormap name (default: 'Gray') */
+  /**
+   * Colormap name. A continuous colormap maps calMin..calMax onto a ramp; a
+   * label colormap (one with a `labels` array) colours each integer ID and
+   * ignores the display window. Default 'Gray', or the generated 'Random'
+   * label palette for a NIFTI_INTENT_LABEL volume.
+   */
   colormap?: string
   /** Colormap for negative intensities */
   colormapNegative?: string

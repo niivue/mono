@@ -91,7 +91,7 @@ for (const shader of nv1.meshShaders) {
   shaderSelect.appendChild(option)
 }
 shaderSelect.value = 'matte'
-for (const cmap of nv1.colormaps) {
+for (const cmap of nv1.colormapNames('continuous')) {
   const option = document.createElement('option')
   option.value = cmap
   option.textContent = cmap.charAt(0).toUpperCase() + cmap.slice(1)

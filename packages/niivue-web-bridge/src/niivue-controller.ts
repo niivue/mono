@@ -133,7 +133,7 @@ export function wireNiiVueToBridge(
     return { ok: true }
   })
 
-  bridge.handle('getColormaps', async () => nv.colormaps)
+  bridge.handle('getColormaps', async () => nv.colormapNames('continuous'))
 
   wirePropBridge(nv, bridge, { allowlist: options.allowlist })
 

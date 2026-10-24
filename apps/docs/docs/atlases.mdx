@@ -13,6 +13,10 @@ instead of an intensity. To display it, you give the volume a label
 colormap: a color and a name for each code. NiiVue then draws each region
 in its own color and reports the region name under the crosshair.
 
+A volume has one colormap. It is a label colormap when its definition has a
+`labels` array, and a continuous ramp otherwise; `setVolume(i, { colormap })`
+selects either kind.
+
 The demo loads the AAL atlas over the MNI152 template. Click anywhere to see
 the region name:
 
@@ -20,25 +24,35 @@ the region name:
 
 ## Label colormaps
 
-`setColormapLabelFromUrl` fetches a JSON file with `R`, `G` and `B` arrays
-plus `labels` (and optionally `I`, the code of each entry) and applies it to
-a volume:
+`addColormapFromUrl` fetches a JSON file with `R`, `G` and `B` arrays plus
+`labels` (and optionally `I`, the code of each entry) and registers it under
+its file name. Select it like any colormap:
 
 ```js
+await nv.addColormapFromUrl('/volumes/aal.json') // registered as 'aal'
 await nv.loadVolumes([
   { url: '/volumes/mni152.nii.gz', calMin: 30, calMax: 80 },
-  { url: '/volumes/aal.nii.gz', opacity: 0.5 },
+  { url: '/volumes/aal.nii.gz', opacity: 0.5, colormap: 'aal' },
 ])
-await nv.setColormapLabelFromUrl(1, '/volumes/aal.json')
 ```
 
-The URL can also be a `File`. `setColormapLabel` takes the same shape as an
-object, or the name of a built-in colormap such as `'freesurfer'`. Pass
-`null` to remove the label colormap:
+The URL can also be a `File`, and `addColormap(name, { R, G, B, labels })`
+registers a table you build in code. `labels` may be empty: it still marks
+the colormap as a label table. Built-in label colormaps include
+`freesurfer`, `itksnap`, `slicer3d` and `Random` (generated per volume);
+`nv.colormapNames('label')` lists them all:
 
 ```js
-await nv.setColormapLabel(1, 'freesurfer')
+await nv.setVolume(1, { colormap: 'freesurfer' })
 ```
+
+Picking a continuous colormap such as `'gray'` turns the labels off again.
+
+A volume whose NIfTI header marks it as labels (`NIFTI_INTENT_LABEL`) and is
+loaded without a colormap is drawn with `Random`, a generated palette that
+gives every region code in the volume its own color. The same code gets the
+same color in every volume, so a segmentation looks right with no setup;
+pick an atlas table for its own colors and names.
 
 Label volumes are sampled with nearest-neighbor interpolation on 2D slices,
 so region borders stay sharp. A volume's `isNearestInterpolation` option
@@ -79,7 +93,7 @@ You can also show labels in the drawing layer. Register a colormap with
 drawing:
 
 ```js
-nv.addColormap('_torso', {
+nv.addColormap('torso', {
   R: [0, 0, 185],
   G: [0, 20, 102],
   B: [0, 152, 83],
@@ -87,11 +101,12 @@ nv.addColormap('_torso', {
   I: [0, 1, 2],
   labels: ['background', 'spleen', 'kidneyR'],
 })
-nv.drawColormap = '_torso'
+nv.drawColormap = 'torso'
 await nv.loadDrawing('/volumes/torsoLabel.nii.gz')
 ```
 
-A name that starts with `_` stays out of `nv.colormaps`. See
+A drawing holds codes 0 to 255, so `drawColormap` accepts any label
+colormap whose codes fit and refuses the rest. See
 [Drawing and segmentation](./drawing) for editing the drawing.
 
 ## Probabilistic and mesh atlases

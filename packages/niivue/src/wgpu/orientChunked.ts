@@ -25,7 +25,7 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
-import { buildOrientUniforms } from '@/view/NVOrient'
+import { buildOrientUniforms, labelLutTexels } from '@/view/NVOrient'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import { recordChunkPhase } from '@/volume/chunkTiming'
 import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
@@ -182,17 +182,17 @@ async function createColormapResources(
     if (!labelLut) {
       throw new Error('orientChunked: label colormap LUT is undefined')
     }
-    const nLabels = labelLut.length / 4
+    const texels = labelLutTexels(labelLut)
     const labelTex = device.createTexture({
-      size: [nLabels, 1, 1],
+      size: [texels.width, texels.height, 1],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
     device.queue.writeTexture(
       { texture: labelTex },
-      Uint8Array.from(labelLut),
-      { bytesPerRow: nLabels * 4, rowsPerImage: 1 },
-      [nLabels, 1],
+      texels.data,
+      { bytesPerRow: texels.width * 4, rowsPerImage: texels.height },
+      [texels.width, texels.height],
     )
     return {
       colormapTexture: labelTex,

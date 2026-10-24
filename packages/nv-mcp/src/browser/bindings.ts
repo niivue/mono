@@ -125,6 +125,12 @@ interface Target {
   action?: PageAction
 }
 
+/** The colormaps a control may offer; label tables only colour a volume. */
+const colormapChoices = (view: View, continuous: boolean) =>
+  continuous && view.colormapNames
+    ? view.colormapNames('continuous')
+    : view.colormaps && [...view.colormaps]
+
 /** The volume properties a control can bind, by the names `set_volume` takes. */
 const VOLUME_PROPS: Record<
   string,
@@ -567,8 +573,10 @@ export function resolveBinding(
       throw new Error("This page's NiiVue cannot change a volume's properties.")
     const setVolume = view.setVolume.bind(view)
     const { field, shape, range, colormaps } = VOLUME_PROPS[prop]
-    const choices =
-      colormaps && view.colormaps ? [...view.colormaps] : undefined
+    // Only a volume's own colormap may be a label table.
+    const choices = colormaps
+      ? colormapChoices(view, field !== 'colormap')
+      : undefined
     return {
       shape,
       ...(choices ? { choices } : {}),
@@ -759,7 +767,7 @@ function meshTarget(bind: string, view: View): Target {
   if (group === 'tract' && (name === 'colorBy' || name === 'group'))
     return tractChoice(bind, name, index, mesh, current, setOptions, gone)
   const { shape, min, max, step, colormaps, bytes } = table[name]
-  const choices = colormaps && view.colormaps ? [...view.colormaps] : undefined
+  const choices = colormaps ? colormapChoices(view, true) : undefined
   return {
     shape,
     ...(choices ? { choices } : {}),
@@ -823,7 +831,7 @@ function layerTarget(
   const bound = () =>
     current()?.layers?.[layerAt] === layer ? layer : undefined
   const { field, shape, range, colormaps } = LAYER_PROPS[name]
-  const choices = colormaps && view.colormaps ? [...view.colormaps] : undefined
+  const choices = colormaps ? colormapChoices(view, true) : undefined
   return {
     shape,
     ...(choices ? { choices } : {}),

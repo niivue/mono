@@ -52,12 +52,12 @@ await nv1.loadVolumes([
 // atlas still renders in its default colors, so report the loss and carry on
 // rather than letting the rejection strand the rest of the setup below.
 try {
-  await nv1.setColormapLabelFromUrl(
-    1,
+  await nv1.addColormapFromUrl(
     'https://niivue.github.io/niivue-demo-images/Cerebellum/atl-Anatom.json',
   )
+  await nv1.setVolume(1, { colormap: 'atl-Anatom' })
 } catch (err) {
-  console.error('setColormapLabelFromUrl failed', err)
+  console.error('loading the atlas labels failed', err)
   document.getElementById('location').textContent =
     `  Could not load the atlas labels: ${err?.message ?? err}`
 }

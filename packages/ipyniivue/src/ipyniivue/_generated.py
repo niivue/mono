@@ -243,6 +243,7 @@ off-window crosshair is brought back."""
     # Read-only properties (synced from JS to Python)
     backend = traitlets.Enum(["webgpu", "webgl2"], None, allow_none=True).tag(sync=True, o2py_readonly=True)
     colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Every registered colormap name, both kinds."""
     drawing_colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     is_anti_alias = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     is_destroyed = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
@@ -275,8 +276,12 @@ and its volumes alive."""
         colors when built, so they pick them up on their next change
         (`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).
 
-        Label colormaps (for atlas volumes with per-index labels) have their
-        own registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`.
+        A `labels` array (empty is fine) registers a label table: volumes using
+        it look up colours by integer ID with nearest sampling and no display
+        window, and `I` defaults to 0..n-1. Re-registering a name rebuilds the
+        label LUT of every volume using it in this viewer; `updateGLVolume()`
+        shows it. Other viewers keep the old colours until their volume is
+        given the colormap again (`setVolume`).
 
         Parameters
         ----------
@@ -293,7 +298,7 @@ and its volumes alive."""
         return await self._request("addColormap", _make_args(name, cmap))
 
     def add_colormap_from_url(self, url: Any, name: Any = _UNSET) -> None:
-        """Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and register it under `name`.
+        """Fetch a colormap JSON (`{ R, G, B, A?, I?, labels? }`) from a URL or `File` and register it under `name`.
 
         When `name` is omitted, it is derived from
         the source filename; callers passing an un-nameable source (e.g.
@@ -583,6 +588,19 @@ and its volumes alive."""
 
     def close_drawing(self) -> None:
         self.send({"cmd": "closeDrawing", "args": []})
+
+    async def colormap_names(self, kind: Any = _UNSET) -> Any:
+        """Registered colormap names, sorted; `kind` narrows to continuous ramps or label tables (a colormap with a `labels` array).
+
+        Parameters
+        ----------
+        kind : ColormapKind | undefined
+
+        Returns
+        -------
+        string[]
+        """
+        return await self._request("colormapNames", _make_args(kind))
 
     def create_empty_drawing(self) -> None:
         self.send({"cmd": "createEmptyDrawing", "args": []})
@@ -1379,38 +1397,6 @@ and its volumes alive."""
 
     def set_clip_planes(self, depth_azi_elevs: Any) -> None:
         self.send({"cmd": "setClipPlanes", "args": _make_args(depth_azi_elevs)})
-
-    def set_colormap_label(self, volume_index: Any, cmap: Any) -> None:
-        """Set a label colormap on a volume (e.g., atlas/parcellation).
-
-        Converts the ColorMap definition to an LUT and attaches it to the volume.
-        When set, the orient shader uses nearest-neighbor label lookup instead of
-        continuous colormap interpolation, and locationChange events include label names.
-
-        Parameters
-        ----------
-        volume_index : number
-            Index of the volume to apply the label colormap to
-        cmap : string | ColorMap | null
-            ColorMap definition with R,G,B arrays and optional labels/I arrays;
-            a built-in colormap name (e.g. 'freesurfer', resolved via
-            lookupColorMap); or null to remove the label colormap
-        """
-        self.send({"cmd": "setColormapLabel", "args": _make_args(volume_index, cmap)})
-
-    def set_colormap_label_from_url(self, volume_index: Any, url: Any) -> None:
-        """Fetch a label colormap JSON from a URL or File and apply it to a volume.
-
-        The JSON should contain R, G, B arrays and optional labels/I arrays.
-
-        Parameters
-        ----------
-        volume_index : number
-            Index of the volume to apply the label colormap to
-        url : string | File
-            URL string or File object pointing to a colormap JSON
-        """
-        self.send({"cmd": "setColormapLabelFromUrl", "args": _make_args(volume_index, url)})
 
     def set_connectome_options(self, mesh_index: Any, options: Any) -> None:
         """Update connectome extrusion/display options and re-extrude.

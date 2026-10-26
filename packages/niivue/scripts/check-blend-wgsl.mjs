@@ -1,9 +1,13 @@
 // Compiles and runs the WebGPU overlay blend shaders from src/wgpu/orient.ts on
 // a 1x1x2 volume blended as two z-slabs, in the system Chrome (needs a real GPU).
 // Run: bun packages/niivue/scripts/check-blend-wgsl.mjs
-// Expected, both z, per mode (alphaBlend,colorBlend):
-//   0,0: 255,170,0,153   1,0: 153,102,0,255   2,1: 153,102,0,194
-//   2,2: 121,134,0,194   0,2: 121,134,0,153   0,3: 255,170,0,153
+// Expected per mode (alphaBlend,colorBlend), matching CPU blendOverlayData:
+//   0,0: z0 255,170,0,153  z1 128,255,128,255
+//   1,0: z0 153,102,0,255  z1 128,255,128,255
+//   2,1: z0 153,102,0,194  z1 71,184,71,255
+//   2,2: z0 121,134,0,194  z1 26,230,26,255
+//   0,2: z0 121,134,0,153  z1 26,230,26,255
+//   0,3: z0 255,170,0,153  z1 128,204,128,255
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 
@@ -47,9 +51,11 @@ const r = await p.evaluate(
       )
       return t
     }
+    // z0: disjoint red and green. z1: gray under green, whose channels
+    // overlap, so colour MAX and ADDITIVE differ there.
     const tex = [
-      mk([255, 0, 0, 153], [255, 0, 0, 153]),
-      mk([0, 255, 0, 102], [0, 255, 0, 102]),
+      mk([255, 0, 0, 153], [128, 128, 128, 255]),
+      mk([0, 255, 0, 102], [0, 255, 0, 204]),
     ]
     for (const [A, C] of [
       [0, 0],

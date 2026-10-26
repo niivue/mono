@@ -867,9 +867,11 @@ in volume order (later overlays on top); colour `MAX` keeps the per-component
 max of the premultiplied colours; every mode but `OVER` is commutative.
 `volumeIsChannelStack` blends volumes[0] in as one more overlay (both views'
 `_updateOverlayStack` pass every volume, the base draws at opacity 0) so the
-fused channels land on the canvas background; ignored while volumes[0] is
-chunked. Stacked channels keep their colormap's alpha ramp in the orient bake
-(`modFlags.z` in `orient.wgsl`, `keepColormapAlpha` in `gl/orientOverlay.ts`);
+fused channels land on the canvas background; ignored with one volume, while
+volumes[0] is chunked, and in multi-instance mode. Hidden (or opacity 0) and
+PAQD volumes do not join as channels. Stacked channels keep their colormap's
+alpha ramp in the orient bake (`modFlags.z` in `orient.wgsl`,
+`keepColormapAlpha` in `gl/orientOverlay.ts`);
 other overlays get `step(0.00001, a)`. The overlay ray-march has no step-size
 correction, so 3D density follows each channel's opacity steeply.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
@@ -880,12 +882,13 @@ pass runs in z-slabs sized so the 24 B/voxel f32 accumulator fits
 min(`maxStorageBufferBindingSize`, `maxBufferSize`); typical volumes and chunks
 are one slab. The chunking threshold is capped at floor(sqrt(that min / 24)) so
 one z-slice always fits (2364 at 128 MiB, above the usual 2048 3D limit). Its
-per-device pipeline cache holds at most nine mode pairs.
+per-device pipeline cache holds at most twelve mode pairs.
 - `bun packages/niivue/scripts/check-blend-wgsl.mjs` compiles and runs the blend
   WGSL in system Chrome across modes and two slabs; output must match the CPU
   test. Passed 2026-10-05 (plus a WebGPU visual pass of `vox.tissues.html` /
-  `vox.stats-multi.html` in all six then-existing mode pairs) and, with colour
-  `OVER`, 2026-10-23.
+  `vox.stats-multi.html` in all six then-existing mode pairs), with colour
+  `OVER` 2026-10-23, and with colour `MAX` on overlapping channels (z1)
+  2026-10-23.
 
 
 ## Three mesh species

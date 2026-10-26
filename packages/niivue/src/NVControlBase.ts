@@ -6827,10 +6827,12 @@ export default class NiiVue extends EventTarget {
       this.emit('signalRemoved', { signal: signalsBefore[i], index: i })
     }
     // A document saves a known matcap by name; apply its URL.
-    this.model.volume.matcap = matcapFromName(
-      this.model.volume.matcap,
-      this.opts.matcaps,
-    )
+    if (doc.volume?.matcap !== undefined) {
+      this.model.volume.matcap = matcapFromName(
+        doc.volume.matcap,
+        this.opts.matcaps,
+      )
+    }
     this.emitSettingsChanges(settingsBefore)
 
     // Restore thumbnail if present in document

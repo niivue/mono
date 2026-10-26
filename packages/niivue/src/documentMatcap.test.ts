@@ -44,13 +44,21 @@ describe('matcapFromName', () => {
     expect(matcapFromName('', matcaps)).toBe('')
   })
 
-  test('replaces a path or name it cannot resolve with the default', () => {
-    expect(matcapFromName('/src/assets/matcaps/Gold.jpg', matcaps)).toBe(
-      matcaps.cortex,
-    )
+  test('preserves unmatched paths for the image loader', () => {
+    for (const path of [
+      '/src/assets/matcaps/Gold.jpg',
+      '../matcaps/Gold.jpg',
+      'Gold.jpg',
+      '/matcaps/gold?variant=2#image',
+      '//cdn.example.org/gold.jpg',
+    ]) {
+      expect(matcapFromName(path, matcaps)).toBe(path)
+      expect(matcapFromName(path, undefined)).toBe(path)
+    }
+  })
+
+  test('replaces an unknown bare name with the default', () => {
     expect(matcapFromName('gold', matcaps)).toBe(matcaps.cortex)
-    // No matcaps: the default is none.
-    expect(matcapFromName('/src/assets/matcaps/Cortex.jpg', undefined)).toBe('')
     expect(matcapFromName('cortex', {})).toBe('')
   })
 

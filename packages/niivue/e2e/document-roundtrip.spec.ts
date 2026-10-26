@@ -639,7 +639,7 @@ test('json format: saves portable JSON that loadDocument reads back (linked + em
   expect(r.embeddedCalMinNegIsNaN).toBe(true) // and on the embedded path
 })
 
-test('matcap: saved by name, loads back as its URL, unknown paths load the default', async ({
+test('matcap: saved by name, loads back as its URL, unregistered paths are preserved', async ({
   page,
 }) => {
   test.setTimeout(60_000) // shares the one-time Vite module-graph transform
@@ -667,11 +667,10 @@ test('matcap: saved by name, loads back as its URL, unknown paths load the defau
     const fromLegacy = new NiiVue()
     await fromLegacy.loadDocument(new File([legacy], 'legacy.json'))
 
-    // A path to a matcap this instance does not have would only 404 here, so
-    // it loads as the instance default.
+    // Shiny exists on this server but is not in the default matcap registry.
     const unknown = json.replace(
       '"matcap":"cortex"',
-      '"matcap":"/src/assets/matcaps/Gold.jpg"',
+      '"matcap":"/src/assets/matcaps/Shiny.jpg"',
     )
     const fromUnknown = new NiiVue()
     fromUnknown.volumeMatcap = ''
@@ -694,5 +693,44 @@ test('matcap: saved by name, loads back as its URL, unknown paths load the defau
   expect(r.legacyReplaced).toBe(true)
   expect(r.fromLegacy).toBe(r.url)
   expect(r.unknownReplaced).toBe(true)
-  expect(r.fromUnknown).toBe(r.url)
+  expect(r.fromUnknown).toBe('/src/assets/matcaps/Shiny.jpg')
+})
+
+for (const fill of ['current', { 'volume.matcap': 'current' }] as const) {
+  test(`matcap: omitted value respects fill ${JSON.stringify(fill)}`, async ({
+    page,
+  }) => {
+    const result = await page.evaluate(async (fill) => {
+      const { default: NiiVue } = await import('/src/index.ts')
+      const nv = new NiiVue({
+        matcaps: { cortex: '/m/Cortex.jpg', gold: '/m/custom-gold.jpg' },
+      })
+      nv.volumeMatcap = '/m/custom-gold.jpg'
+      const changes: string[] = []
+      nv.addEventListener('change', (event) => {
+        changes.push(event.detail.property)
+      })
+      await nv.loadDocument(new File(['{"version":9}'], 'empty.json'), { fill })
+      return { matcap: nv.volumeMatcap, changes }
+    }, fill)
+    expect(result.matcap).toBe('/m/custom-gold.jpg')
+    expect(result.changes).not.toContain('volumeMatcap')
+  })
+}
+
+test('matcap: unregistered local URL survives a document round trip', async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const url = '/src/assets/matcaps/Shiny.jpg'
+    const response = await fetch(url)
+    const nv = new NiiVue()
+    nv.volumeMatcap = url
+    const bytes = nv.serializeDocument({ format: 'json' })
+    await nv.loadDocument(new File([bytes], 'scene.json'))
+    return { exists: response.ok, matcap: nv.volumeMatcap }
+  })
+  expect(result.exists).toBe(true)
+  expect(result.matcap).toBe('/src/assets/matcaps/Shiny.jpg')
 })

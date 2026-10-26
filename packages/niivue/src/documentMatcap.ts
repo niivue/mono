@@ -25,9 +25,8 @@ export function matcapToName(
  * file name (`/src/assets/matcaps/Cortex.jpg` is `cortex`), so those documents
  * load too. Names match case-insensitively.
  *
- * A path that matches nothing is the instance default (its first matcap, or
- * none): a path names a file on whatever server saved the document, so here
- * it would only 404. A web, data or blob URL is kept, as it loads anywhere.
+ * Unmatched paths and URLs are kept for the image loader to resolve. An unknown
+ * bare name uses the instance default (its first matcap, or none).
  */
 export function matcapFromName(
   saved: string,
@@ -48,5 +47,7 @@ export function matcapFromName(
   if (/^(data|blob|https?):/i.test(saved)) return saved
   const file = saved.split(/[?#]/)[0].split('/').pop() ?? ''
   const stem = file.replace(/\.[^.]*$/, '')
-  return (stem && lookup(stem)) || (entries[0]?.[1] ?? '')
+  return (
+    lookup(stem) ?? (/[/.?#:]/.test(saved) ? saved : (entries[0]?.[1] ?? ''))
+  )
 }

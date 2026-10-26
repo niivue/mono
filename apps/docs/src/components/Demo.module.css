@@ -1,0 +1,46 @@
+.demo {
+  margin: 1.5rem 0 2.25rem;
+}
+
+.viewer {
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+  color: #ece9e6;
+  background: var(--nv-viewer);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--ifm-card-border-radius);
+  box-shadow: var(--nv-shadow);
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.25rem;
+  align-items: center;
+  padding: 0.6rem 0.9rem;
+  background: #141211;
+  border-bottom: 1px solid #262220;
+}
+
+.bar:empty {
+  display: none;
+}
+
+.canvases {
+  display: flex;
+  gap: 2px;
+  background: #262220;
+}
+
+.canvas {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000;
+}
+
+.error {
+  color: var(--ifm-color-danger);
+}

@@ -1,0 +1,324 @@
+/* Index */
+.header {
+  padding: 3.5rem 0 2rem;
+  background:
+    radial-gradient(
+      40rem 16rem at 90% 0%,
+      color-mix(in srgb, var(--nv-magenta) 12%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      40rem 16rem at 0% 100%,
+      color-mix(in srgb, var(--nv-cyan) 10%, transparent),
+      transparent 70%
+    );
+  border-bottom: 1px solid var(--nv-border);
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  margin-bottom: 0.5rem;
+}
+
+.header p {
+  max-width: 40rem;
+  color: var(--nv-muted);
+  font-size: 1.05rem;
+}
+
+.kicker {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--nv-magenta);
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.search {
+  width: 100%;
+  max-width: 26rem;
+  padding: 0.65rem 0.9rem 0.65rem 2.4rem;
+  font: inherit;
+  color: var(--ifm-font-color-base);
+  background:
+    var(--nv-surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238892ab' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E")
+    no-repeat 0.8rem center / 1rem;
+  border: 1px solid var(--nv-border);
+  border-radius: 0.6rem;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--ifm-color-primary) 20%, transparent);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.chip {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.3rem 0.85rem;
+  color: var(--nv-muted);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.chip:hover {
+  color: var(--ifm-font-color-base);
+  border-color: var(--ifm-color-primary);
+}
+
+.chip.chipActive,
+.chip.chipActive:hover {
+  color: var(--ifm-background-color);
+  background: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+}
+
+.count {
+  color: var(--nv-muted);
+  font-size: 0.9rem;
+}
+
+.group {
+  margin-bottom: 3rem;
+}
+
+.group h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.4rem;
+  margin-bottom: 1.25rem;
+}
+
+.groupCount {
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.55rem;
+  color: var(--nv-muted);
+  background: var(--nv-surface-2);
+  border: 1px solid var(--nv-border);
+  border-radius: 999px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1.25rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--ifm-font-color-base);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--ifm-card-border-radius);
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.card:hover {
+  color: var(--ifm-font-color-base);
+  text-decoration: none;
+  transform: translateY(-3px);
+  border-color: var(--ifm-color-primary);
+  box-shadow: var(--nv-shadow);
+}
+
+.thumb {
+  display: block;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, #1c1816, var(--nv-viewer) 70%);
+  border-bottom: 1px solid var(--nv-border);
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s ease;
+}
+
+.card:hover .thumb img {
+  transform: scale(1.05);
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.cardBody strong {
+  font-weight: 600;
+}
+
+.summary {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--nv-muted);
+}
+
+.empty {
+  padding: 3rem 0;
+  text-align: center;
+  color: var(--nv-muted);
+}
+
+/* Example page */
+.crumbs {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--nv-muted);
+  margin-bottom: 0.75rem;
+}
+
+.exampleTitle {
+  font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+  margin-bottom: 0.5rem;
+}
+
+.exampleSummary {
+  max-width: 44rem;
+  font-size: 1.05rem;
+  color: var(--nv-muted);
+}
+
+.window {
+  overflow: hidden;
+  margin: 1.5rem 0 2.5rem;
+  background: var(--nv-viewer);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--ifm-card-border-radius);
+  box-shadow: var(--nv-shadow);
+}
+
+.windowBar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  background: #141211;
+  border-bottom: 1px solid #262220;
+}
+
+.lights {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-right: 0.25rem;
+}
+
+.lights i {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #3a3431;
+}
+
+.lights i:first-child {
+  background: #c8505f;
+}
+
+.lights i:last-child {
+  background: #c8505f;
+}
+
+.windowUrl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.8rem;
+  color: #9c958f;
+}
+
+.windowButton {
+  flex-shrink: 0;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e7e5e4;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 0.4rem;
+}
+
+.windowButton:hover {
+  color: #fff;
+  text-decoration: none;
+  border-color: #c8505f;
+}
+
+.frame {
+  display: block;
+  width: 100%;
+  height: min(72vh, 680px);
+  border: 0;
+  background: var(--nv-viewer);
+}
+
+.codeHeading {
+  font-size: 1.4rem;
+}
+
+@media (max-width: 560px) {
+  .windowUrl,
+  .lights {
+    display: none;
+  }
+
+  .windowBar {
+    justify-content: flex-end;
+  }
+}

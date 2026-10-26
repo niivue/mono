@@ -1,5 +1,6 @@
 import { mat4 } from 'gl-matrix'
 import { getCanvasViewport } from '@/control/viewBoth'
+import { defaultMatcap } from '@/documentMatcap'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
@@ -210,7 +211,7 @@ export default class NVGlview {
       vertexColor: true,
     }
     // Render layer instances
-    this.volumeRenderer = new VolumeRenderer()
+    this.volumeRenderer = new VolumeRenderer(defaultMatcap(options.matcaps))
     this.lineRenderer = new LineRenderer()
     this.polygonRenderer = new PolygonRenderer()
     this.polygon3DRenderer = new Polygon3DRenderer()

@@ -1,0 +1,89 @@
+---
+sidebar_position: 14
+title: Fonts and text
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/fonts'
+
+# Fonts and text
+
+NiiVue draws its own text on the canvas: orientation labels, colorbar ticks,
+legends, measurements and the placeholder shown before an image loads. The
+text uses MSDF (multi-channel signed distance field) font atlases, which stay
+sharp at any size. Each font is a pair of files: a PNG atlas of the glyphs
+and a JSON file with their metrics.
+
+## Size and color
+
+Text settings are viewer properties:
+
+- `fontScale` sets the text size relative to the canvas (default 0.4).
+- `fontMinSize` is the smallest size in pixels (default 13), so labels stay
+  readable on a small canvas.
+- `fontColor` is RGBA in the 0 to 1 range.
+- `placeholderText` is shown while the viewer has nothing loaded.
+
+```js
+const nv = new NiiVue({ fontScale: 0.6, fontColor: [1, 1, 0, 1] })
+nv.placeholderText = 'Drop an image here'
+```
+
+The text size is worked out when the view is laid out, so after changing
+`fontScale` or `fontMinSize` on a running viewer, call `nv.resize()` to
+apply it.
+
+Other settings turn text elements on and off: `isOrientationTextVisible`
+for the orientation labels, `isColorbarVisible`, `isLegendVisible` and
+`isMeasureUnitsVisible`.
+
+## Changing the font
+
+The package bundles one font, Ubuntu (ASCII), and uses it by default. Other
+fonts load at runtime with `setFontFromUrl`, which takes the atlas and
+metrics URLs as named fields so the two cannot be swapped by mistake:
+
+```js
+const base = 'https://raw.githubusercontent.com/niivue/fonts/main/fonts/'
+await nv.setFontFromUrl({
+  atlas: `${base}Roboto-Regular.png`,
+  metrics: `${base}Roboto-Regular.json`,
+})
+```
+
+The atlas becomes a GPU texture, so swapping the font rebuilds the view. If
+loading fails, NiiVue restores the previous font and rethrows the error. The
+server must send `Access-Control-Allow-Origin` for both files.
+
+<Demo load={() => import('@site/src/demos/fonts')} source={source} />
+
+The [niivue/fonts](https://github.com/niivue/fonts) repository holds
+community atlases, listed in its `fonts/manifest.json`. One of them, Poem,
+includes CJK glyphs; the [Fonts](/gallery/font) example pairs it with
+Chinese placeholder text.
+
+For a font you already have in memory (one you imported or fetched
+yourself) use `setFont(font)`. The bundled font is exported, so you can
+switch back to it:
+
+```js
+import { ubuntu } from '@niivue/niivue/assets/fonts'
+
+await nv.setFont(ubuntu)
+```
+
+## Making a font
+
+Build a new atlas with
+[msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen), listing the
+glyphs you need in a charset file:
+
+```bash
+msdf-atlas-gen -font NotoSansSC-Regular.ttf -charset charset.txt -pxrange 2 \
+  -dimensions 512 256 -format png -json Poem.json -imageout Poem.png
+```
+
+Host the PNG and JSON on a server with CORS and load them with
+`setFontFromUrl`. The
+[fonts guide](https://github.com/niivue/mono/blob/main/packages/niivue/docs/fonts.md)
+in the repository covers bundling a font into the package instead.

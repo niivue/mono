@@ -1,3 +1,23 @@
+## 1.0.0-rc.38 (2026-10-26)
+
+### Fixes
+
+- **niivue:** keep a document's custom matcap URL ([dad77c2f](https://github.com/niivue/mono/commit/dad77c2f))
+- **niivue:** draw the default matcap when a matcap fails to load ([8819d3fb](https://github.com/niivue/mono/commit/8819d3fb))
+- **niivue:** leave the matcap alone when a document does not set one ([608b6534](https://github.com/niivue/mono/commit/608b6534))
+- **niivue:** load an unresolvable matcap path as the instance default ([9b32a999](https://github.com/niivue/mono/commit/9b32a999))
+- **niivue:** save a document's matcap by name, not by URL ([601bddc3](https://github.com/niivue/mono/commit/601bddc3))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.37 (2026-10-23)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
 ## 1.0.0-rc.36 (2026-10-23)
 
 ### Fixes

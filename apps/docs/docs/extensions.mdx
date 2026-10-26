@@ -1,0 +1,159 @@
+---
+sidebar_position: 15
+title: Extensions, DICOM and image processing
+---
+
+# Extensions, DICOM and image processing
+
+The core `@niivue/niivue` package views images. Heavier jobs, such as
+converting DICOM or running image filters, live in separate extension
+packages so you only ship what you use. Each one lists `@niivue/niivue` as a
+peer dependency, so install it alongside the extension. The packages are in prerelease, published
+under the `next` tag:
+
+```bash
+npm install @niivue/niivue@next
+```
+
+Most extensions run their work in a Web Worker, so the page stays
+responsive while they compute.
+
+## DICOM: nv-ext-dcm2niix
+
+```bash
+npm install @niivue/nv-ext-dcm2niix@next
+```
+
+NiiVue does not read DICOM directly. `@niivue/nv-ext-dcm2niix` runs
+dcm2niix (compiled to WebAssembly) in the browser and returns NIfTI files
+you can load:
+
+```js
+import { runDcm2niix } from '@niivue/nv-ext-dcm2niix'
+
+// <input id="dicomFolder" type="file" webkitdirectory multiple />
+input.addEventListener('change', async () => {
+  const niftiFiles = await runDcm2niix(input.files)
+  await nv.loadVolumes([{ url: niftiFiles[0] }])
+})
+```
+
+For a dropped folder, `traverseDataTransferItems(e.dataTransfer.items)`
+collects the files first. The `Dcm2niix` class is also exported for full
+control over the dcm2niix flags:
+
+```js
+import { Dcm2niix } from '@niivue/nv-ext-dcm2niix'
+
+const dcm2niix = new Dcm2niix()
+await dcm2niix.init()
+const result = await dcm2niix.input(files).compressionLevel(9).bids('n').run()
+```
+
+[Live demo](https://niivue.github.io/mono/demo-ext-dcm2niix/)
+
+## Filters: nv-ext-niimath
+
+```bash
+npm install @niivue/nv-ext-niimath@next
+```
+
+`@niivue/nv-ext-niimath` runs [niimath](https://github.com/rordenlab/niimath)
+(an fslmaths clone) on a NIfTI file. Each step is one niimath operation, and
+the steps run in order:
+
+```js
+import { Niimath, runNiimathPipeline } from '@niivue/nv-ext-niimath'
+
+const niimath = new Niimath() // create one per page; the worker is costly
+await niimath.init()
+
+const result = await runNiimathPipeline(niimath, file, [
+  { method: 's', args: [3] }, // smooth, sigma 3 mm
+  { method: 'thr', args: [0.5] },
+  { method: 'bin', args: [] },
+])
+await nv.loadVolumes([{ url: new File([result], 'processed.nii.gz') }])
+```
+
+[Live demo](https://niivue.github.io/mono/demo-ext-niimath/)
+
+## Segmentation: nv-ext-image-processing
+
+```bash
+npm install @niivue/nv-ext-image-processing@next
+```
+
+`@niivue/nv-ext-image-processing` provides volume transforms: `otsu`
+(threshold into 2 to 4 classes), `removeHaze`, `conform` and
+`connectedLabel`. You register them on an extension context and apply them
+to a loaded volume:
+
+```js
+import { otsu } from '@niivue/nv-ext-image-processing'
+
+const ctx = nv.createExtensionContext()
+ctx.registerVolumeTransform(otsu)
+
+const segmented = await ctx.applyVolumeTransform('otsu', ctx.volumes[0])
+await ctx.addVolume(segmented)
+```
+
+## Drawing tools: nv-ext-drawing
+
+```bash
+npm install @niivue/nv-ext-drawing@next
+```
+
+`@niivue/nv-ext-drawing` works on the drawing layer. It can find the first
+and last drawn slices, fill the slices between them by interpolation, and
+run a 3D magic wand (`magicWand`) from a seed point:
+
+```js
+import { SLICE_TYPE } from '@niivue/niivue'
+import { interpolateMaskSlices } from '@niivue/nv-ext-drawing'
+
+const ctx = nv.createExtensionContext()
+const dr = ctx.drawing
+if (dr) {
+  const filled = await interpolateMaskSlices(
+    dr.bitmap, dr.dims, null, 1, undefined, undefined,
+    { sliceType: SLICE_TYPE.AXIAL },
+  )
+  dr.update(filled)
+}
+```
+
+See [Drawing and segmentation](./drawing) for painting the drawing itself.
+
+## Export: nv-ext-save-html
+
+```bash
+npm install @niivue/nv-ext-save-html@next
+```
+
+`@niivue/nv-ext-save-html` saves the current scene as one self-contained
+HTML file that opens without a server. You supply the NiiVue code to embed,
+as a standalone ES module bundle with all dependencies inlined:
+
+```js
+import { saveHTML } from '@niivue/nv-ext-save-html'
+
+const bundleSource = await fetch('/niivue-standalone.js').then((r) => r.text())
+await saveHTML(nv, 'scene.html', { niivueBundleSource: bundleSource, title: 'My scene' })
+```
+
+`generateHTML(nv, options)` returns the same page as a string instead of
+downloading it.
+
+[Live demo](https://niivue.github.io/mono/demo-ext-save-html/)
+
+## More demos
+
+The image-processing and drawing demo apps are deployed too:
+[image processing](https://niivue.github.io/mono/demo-ext-image-processing/imgproc.html),
+[drawing](https://niivue.github.io/mono/demo-ext-drawing/drawing.html) and
+[magic wand](https://niivue.github.io/mono/demo-ext-drawing/magic-wand.html).
+Their source is in
+[apps/demo-ext-image-processing](https://github.com/niivue/mono/tree/main/apps/demo-ext-image-processing)
+and [apps/demo-ext-drawing](https://github.com/niivue/mono/tree/main/apps/demo-ext-drawing).

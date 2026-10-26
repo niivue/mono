@@ -1,0 +1,105 @@
+---
+sidebar_position: 7
+title: Meshes and layers
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/meshes'
+
+# Meshes and layers
+
+NiiVue draws triangulated surfaces next to (or instead of) volumes. A mesh
+can carry scalar layers, such as cortical curvature or a statistical map,
+that are colored with a colormap and thresholded just like a volume overlay.
+
+## Loading meshes
+
+`loadMeshes` takes a list of mesh options and replaces any meshes already
+loaded. `addMesh` adds one more without removing the others, and
+`removeMesh(index)` takes one away:
+
+```js
+await nv.loadMeshes([
+  { url: '/meshes/BrainMesh_ICBM152.lh.mz3', color: [1, 0.7, 0.7, 1] },
+])
+await nv.addMesh({ url: '/meshes/CIT168.mz3', opacity: 0.5 })
+```
+
+Readers cover GIfTI, FreeSurfer surfaces, MZ3, PLY, STL, OBJ, VTK, OFF,
+GEO/BYU, BrainSuite DFS, ICO/TRI, BrainNet NV, BrainVoyager SRF, X3D, ASC,
+WRL and IWM. The loaded meshes are in `nv.meshes`, and the formats NiiVue
+can read and write are listed by `nv.meshExtensions` and
+`nv.meshWriteExtensions`. `saveMesh(index, 'name.mz3')` downloads a mesh.
+
+Per-mesh options:
+
+- `color`: RGBA in the 0 to 1 range, used where the file has no vertex colors.
+- `opacity` and `visible`.
+- `shaderType`: how the surface is lit (see below).
+- `sliceShaderType`: a different shader for the 2D slice tiles. Leave it
+  empty to use `shaderType` everywhere.
+- `isColorbarVisible` and `isLegendVisible` (the legend lists the labels of
+  an atlas mesh, see [Mesh atlas](/gallery/mesh-atlas)).
+
+## Changing a loaded mesh
+
+`setMesh` takes the same options as loading, minus `url`:
+
+```js
+await nv.setMesh(0, { shaderType: 'toon', opacity: 0.5 })
+```
+
+`nv.meshShaders` lists the built-in shaders: `phong`, `flat`, `matte`,
+`toon`, `outline`, `rim`, `silhouette`, `crevice` and `crosscut`. The
+`crosscut` shader suits slice tiles: it draws the ribbon where the surface
+crosses the slice. See [FreeSurfer crosscut](/gallery/freesurfer-crosscut).
+
+Custom mesh shaders from NiiVue 0.x (`setCustomMeshShader` and friends) are
+not ported yet, and matcap textures (`loadMatcap`) shade volumes, not meshes.
+
+## Layers
+
+Give a mesh scalar layers with `layers` in its load options, or later with
+`addMeshLayer(meshIndex, options)`. Layers composite in order, so put the
+background (curvature, say) first. Layers can come from FreeSurfer curv,
+SMP and STC files, and from MZ3, GIfTI, NIfTI or MGH files that hold
+per-vertex scalars.
+
+Layer options mirror volume overlays: `colormap`, `calMin`, `calMax`,
+`opacity`, `isColorbarVisible`, `isColormapInverted`, `isAdditiveBlend` and
+`outlineWidth`. For signed data set `colormapNegative` along with
+`calMinNeg` and `calMaxNeg`. `colormapType` picks how values below `calMin`
+look: 0 maps the full min-to-max range, 1 (the default) hides values below
+the threshold, and 2 shows them translucent.
+
+Update a layer with `setMeshLayerProperty(meshIndex, layerIndex, options)`
+and remove it with `removeMeshLayer(meshIndex, layerIndex)`. In this demo
+layer 0 is curvature and layer 1 is a motor-task statistical map. The
+threshold slider moves its `calMin`:
+
+<Demo load={() => import('@site/src/demos/meshes')} source={source} />
+
+## Meshes with volumes
+
+When a mesh and a volume share a scene, the volume can hide the surface.
+`meshXRay` (0 to 1) draws meshes a second time through anything in front of
+them at that opacity:
+
+```js
+nv.meshXRay = 0.3
+```
+
+On 2D slices, `meshThicknessOn2D` keeps only the part of a mesh within that
+many millimeters of the slice plane. Set it to `Infinity` to show the whole
+mesh. See [FreeSurfer clip](/gallery/freesurfer-clip).
+
+## Examples
+
+- [Mesh basics](/gallery/mesh-basic) and [Minimal mesh](/gallery/mesh-min)
+- [Mesh layers](/gallery/mesh-layers), with positive and negative thresholds
+- [Mesh atlas](/gallery/mesh-atlas), a labeled surface with a legend
+- [FreeSurfer clip](/gallery/freesurfer-clip) and
+  [FreeSurfer crosscut](/gallery/freesurfer-crosscut)
+
+Tractography and connectomes load through the same `loadMeshes` call; see
+[Tractography and connectomes](./tracts).

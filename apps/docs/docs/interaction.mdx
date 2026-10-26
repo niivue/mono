@@ -1,0 +1,122 @@
+---
+sidebar_position: 11
+title: Mouse, touch and events
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/interaction'
+
+# Mouse, touch and events
+
+A viewer responds to the mouse, touch and keyboard on its own. You choose
+what a drag does, and you listen for events to keep the rest of your page in
+step with the viewer. Pick a drag mode below and drag on a slice; the line
+under the canvas shows the events it fires.
+
+<Demo load={() => import('@site/src/demos/interaction')} source={source} />
+
+## Drag modes
+
+`primaryDragMode` sets what a left-button drag does, and `secondaryDragMode`
+sets the right button. Both take a `DRAG_MODE` value:
+
+| Mode | What a drag does |
+|------|------------------|
+| `crosshair` | moves the crosshair (primary default) |
+| `crosshairPan` | a click moves the crosshair, a drag pans; handy for touch and trackpads |
+| `contrast` | draws a box; on release the display range is set from the intensities inside it (secondary default) |
+| `windowing` | adjusts the window level and width live as you drag |
+| `pan` | pans the 2D view |
+| `measurement` | draws a distance measurement |
+| `angle` | draws two lines and measures the angle between them |
+| `roiSelection` | draws a selection box that stays on screen |
+| `slicer3D` | pans and zooms the slice |
+| `callbackOnly` | draws a box and only fires `dragRelease`, for your own handling |
+| `none` | nothing |
+
+```js
+import NiiVue, { DRAG_MODE } from '@niivue/niivue'
+
+const nv = new NiiVue({
+  primaryDragMode: DRAG_MODE.crosshair,
+  secondaryDragMode: DRAG_MODE.pan,
+})
+nv.primaryDragMode = DRAG_MODE.measurement
+```
+
+`setDragMode('pan')` also accepts a mode by name, but it sets the
+**secondary** mode only. `clearMeasurements()` removes finished measurements
+and angles (`clearDistanceMeasurements()` and `clearAngles()` remove one
+kind).
+
+Drag modes apply to 2D slices. In the 3D render, a left drag rotates the
+view, a right drag turns the active clip plane, and a double-click moves the
+crosshair to the surface under the pointer.
+
+## Wheel and touch
+
+On a 2D slice, the scroll wheel steps through slices. If either drag mode is
+`pan`, the wheel zooms instead, anchored at the crosshair (set
+`wheelZoomAnchor = 'pointer'` to zoom about the pointer). Over the render, the
+wheel moves the active clip plane (see [Clip planes](./clip-planes)). On a
+touch screen, a two-finger pinch zooms.
+
+The old package's `setMouseEventConfig` and `setTouchEventConfig` are not
+ported, so you cannot remap buttons or gestures beyond the two drag modes.
+
+## Keyboard
+
+Keys act on the viewer under the pointer, and are ignored while focus is in a
+text field or select.
+
+| Key | Action |
+|-----|--------|
+| `H` / `L` | move the crosshair left or right (in the render, rotate) |
+| `J` / `K` | move the crosshair posterior or anterior (in the render, tilt) |
+| `Ctrl+U` / `Ctrl+D` | move the crosshair up or down a slice |
+| `V` | cycle the slice type, only when `isViewModeHotKeyEnabled` is true |
+| `C` / `A` | cycle the clip plane direction / choose the active clip plane |
+| `Escape` | cancel a contour or measurement in progress |
+
+`moveCrosshairInVox(dx, dy, dz)` does the same stepping from your own
+buttons.
+
+## Events
+
+A viewer is an `EventTarget`. Use `addEventListener` and
+`removeEventListener` as you would on a DOM element; the data is in
+`e.detail`. In TypeScript the detail type follows from the event name.
+
+```js
+nv.addEventListener('locationChange', (e) => {
+  status.textContent = e.detail.string
+})
+```
+
+The events you will use most:
+
+- `locationChange`: the crosshair moved. `detail` has `mm`, `vox`, the
+  per-volume `values`, and a ready-made `string`.
+- `dragRelease`: a drag ended on a slice, with its start and end points and
+  `mmLength`.
+- `measurementCompleted` and `angleCompleted`: a measurement finished, with
+  its `distance` or `angle`.
+- `pointerUp`: any button release, with canvas `x`, `y` and `button`.
+- `sliceTypeChange`, `azimuthElevationChange`, `clipPlaneChange` and
+  `frameChange`: the view or 4D frame changed.
+- `volumeLoaded`, `meshLoaded`, `volumeRemoved` and `meshRemoved`: the scene
+  contents changed.
+- `drawingChanged`, `drawingEnabled` and `penValueChanged`: see
+  [Drawing](./drawing).
+- `change`: any property setter ran, with `{ property, value }`.
+
+The full list, with every detail field, is in
+[events.md](https://github.com/niivue/mono/blob/main/packages/niivue/docs/events.md).
+Callback options from NiiVue 0.x such as `onLocationChange` are gone; use the
+events instead. There is no separate `intensityChange` event: read the
+values from `locationChange`.
+
+## See also
+
+- [Gestures](/gallery/vox-gestures): both drag modes, measurements and angles.
+- [Events](/gallery/vox-events): a live log of every event a viewer fires.

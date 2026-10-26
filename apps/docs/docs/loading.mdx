@@ -1,0 +1,135 @@
+---
+sidebar_position: 2
+title: Loading images
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/loading'
+import overlaySource from '!!raw-loader!@site/src/demos/loading-overlay'
+
+# Loading images
+
+NiiVue loads volumes with `loadVolumes`. Pass it an array of options
+objects, one per volume. The only required field is `url`.
+
+```js
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+```
+
+`loadVolumes` replaces whatever was loaded before. The old volumes stay on
+screen until the new ones are ready, so switching images does not flash a
+blank canvas. Pick another image below to see it:
+
+<Demo load={() => import('@site/src/demos/loading')} source={source} />
+
+## Volume options
+
+Each entry can set its display options at load time. These are the same keys
+that `setVolume` takes later, so you load and adjust with one vocabulary:
+
+| Option | What it does |
+|---|---|
+| `url` | A URL string or a `File` |
+| `name` | Display name (defaults to the file name) |
+| `colormap` | Colormap name, `'Gray'` by default. See [Colormaps](./colormaps) |
+| `calMin`, `calMax` | The intensity window mapped onto the colormap |
+| `opacity` | 0 to 1 |
+| `visible` | Hide a volume without changing its opacity |
+| `isColorbarVisible` | Whether this volume gets a colorbar |
+| `urlImageData` | The data file for formats with a separate header, such as AFNI `.HEAD`/`.BRIK` |
+| `limitFrames4D` | Load only the first N frames of a 4D series |
+
+## Several volumes
+
+The first volume in the list is the background, and it sets the space the
+scene is drawn in. Every later volume is an overlay: it is resampled onto
+the background grid and drawn on top of it.
+
+<Demo
+  load={() => import('@site/src/demos/loading-overlay')}
+  source={overlaySource}
+/>
+
+To append one volume without replacing the rest, use `addVolume`:
+
+```js
+await nv.addVolume({ url: '/volumes/spmMotor.nii.gz', colormap: 'warm' })
+```
+
+[Overlays and thresholds](./overlays) covers statistical maps in depth.
+
+## Meshes
+
+Meshes load the same way, with `loadMeshes`, and can share the scene with
+volumes:
+
+```js
+await nv.loadMeshes([
+  { url: '/meshes/BrainMesh_ICBM152.lh.mz3', color: [1, 0.8, 0.6, 1] },
+])
+```
+
+Like `loadVolumes`, it replaces the meshes already loaded; `addMesh` appends
+one. See [Meshes and layers](./meshes) for layers and shaders.
+
+## Local files and drag and drop
+
+Any `url` can be a `File` instead of a string. That is how you load from an
+`<input type="file">`:
+
+```js
+input.onchange = async () => {
+  const file = input.files?.[0]
+  if (file) await nv.loadVolumes([{ url: file }])
+}
+```
+
+If you do not know whether a file is a volume, a mesh or a signal, call
+`nv.loadImage(file)`. It picks the loader from the file extension.
+
+Drag and drop is on by default. Drop a file on the canvas and NiiVue loads it with `loadImage`, replacing what was shown.
+A dropped `.nvd` document goes to `loadDocument`, and a `.json` sidecar
+dropped together with its data file is paired with it. To turn it off:
+
+```js
+nv.isDragDropEnabled = false
+```
+
+## Supported formats
+
+Volumes: NIfTI (`.nii`, `.nii.gz`), NRRD, MRtrix MIF, AFNI HEAD/BRIK,
+MGH/MGZ, ITK MHD/MHA, ECAT7, DSI Studio FIB/SRC, BMP, V16, VMR, NPY/NPZ,
+TIFF (including OME-TIFF and ImageJ stacks), the Allen JSON+PNG atlas, and
+OME-Zarr.
+
+Meshes: GIfTI, FreeSurfer, PLY, STL, OBJ, VTK, MZ3, OFF, GEO/BYU, BrainSuite
+DFS, ICO/TRI, BrainNet NV, BrainVoyager SRF, X3D, ASC, WRL and IWM.
+Tractography: TCK, TRK, TRX, TT, TSF and VTK lines.
+
+DICOM is not built in. Convert it in the browser with the
+`@niivue/nv-ext-dcm2niix` extension (see [Extensions](./extensions)). The
+MINC and VOX loader plugins from NiiVue 0.x have not been ported.
+
+## Large data
+
+`limitFrames4D` opens a long 4D series partially: NiiVue reads the header
+and the first frames only. The [Timeseries](/gallery/vox-4d) example uses it.
+
+OME-Zarr stores load one pyramid level at a time. `loadOmeZarrVolumes`
+returns ordinary volume options for `loadVolumes`:
+
+```js
+import { loadOmeZarrVolumes } from '@niivue/niivue'
+
+const volumes = await loadOmeZarrVolumes(storeUrl, { level: 2 })
+await nv.loadVolumes(volumes)
+```
+
+Stores too large to load whole stream brick by brick through
+`nv.loadChunkedVolume`, with finer levels near the crosshair. These gallery
+pages show the streaming paths:
+
+- [OME-Zarr multiscale stores](/gallery/ome-zarr)
+- [Chunk streaming over HTTP range requests](/gallery/range)
+- [Tiled (oversized) volumes](/gallery/vox-tiled)
+- [OME-TIFF and TIFF stacks](/gallery/ome-tiff)

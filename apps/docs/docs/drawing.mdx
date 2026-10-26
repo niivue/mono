@@ -1,0 +1,116 @@
+---
+sidebar_position: 10
+title: Drawing and segmentation
+---
+
+import Demo from '@site/src/components/Demo'
+import source from '!!raw-loader!@site/src/demos/drawing'
+
+# Drawing and segmentation
+
+NiiVue can paint a label volume on top of the background image. The drawing
+has the same grid as the background volume (volume 0), each voxel holds a
+label number, and you can save it as NIfTI. Try drawing on the slice below,
+then switch on **Filled** and draw a closed loop.
+
+<Demo load={() => import('@site/src/demos/drawing')} source={source} />
+
+## Start a drawing
+
+Load a background volume first, then call `createEmptyDrawing()`. It makes a
+blank drawing, clears the undo history and turns drawing on. Toggle the pen
+with `drawIsEnabled`: while it is on, left-dragging on a slice paints instead
+of moving the crosshair.
+
+```js
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+nv.createEmptyDrawing()
+nv.drawIsEnabled = false // look around without painting
+```
+
+`loadDrawing(url or File)` opens an existing label image as the drawing
+instead, and `closeDrawing()` discards the drawing and turns drawing off.
+
+## The pen
+
+- `drawPenValue` is the label to paint. With the default `_draw` colormap, 1
+  is red, 2 is green and 3 is blue. A value of 0 erases.
+- `drawPenSize` is the brush width in voxels, and `drawPenShape` picks
+  `PEN_SHAPE.RECTANGLE` (default) or `PEN_SHAPE.CIRCLE` for wide brushes.
+- `drawPenFilled = true` fills the area enclosed by each stroke. Pair it with
+  `drawPenAutoClose = true` so a stroke that does not quite meet its start is
+  closed for you.
+- `drawIsFillOverwriting` (on by default) lets a fill paint over existing
+  labels. Turn it off to fill only empty voxels.
+
+```js
+nv.drawPenValue = 2
+nv.drawPenSize = 3
+nv.drawPenFilled = true
+nv.drawPenAutoClose = true
+```
+
+## Appearance
+
+`drawOpacity` (0 to 1, default 0.8) sets how strongly the drawing covers the
+image. `drawRimOpacity` gives the edge of each region its own opacity, so a
+low `drawOpacity` with a rim of 1 shows outlined regions; the default of -1
+turns the rim off. `drawColormap` picks the
+label colors, and `nv.drawingColormaps` lists the names you can use.
+
+## Undo
+
+Every stroke, fill and magic-wand click saves an undo step. `drawUndo()` steps
+back one. If you change the drawing yourself (for example from an
+extension), call `drawAddUndoBitmap()` first so that change can be undone
+too.
+
+## Magic wand
+
+Set `drawIsClickToSegment = true` and a click grows a region of similar
+intensity from the clicked voxel, painting it with the current pen value.
+`drawClickToSegmentTolerance` sets how similar the voxels must be, and
+`drawClickToSegmentIs2D` (on by default) keeps the region on the clicked
+slice. A `clickToSegment` event reports the voxel count and volume of each
+fill.
+
+## Saving
+
+`saveDrawing(filename)` writes the drawing as NIfTI and downloads it.
+`getDescriptives({ volumeIndex: 0, isDrawingMask: true })` measures the
+background image inside the drawn region.
+
+```js
+await nv.saveDrawing('lesion.nii.gz')
+```
+
+## Events
+
+The viewer fires `drawingChanged` (with an `action` such as `'stroke'`,
+`'undo'`, `'create'` or `'load'`), `drawingEnabled` when `drawIsEnabled`
+changes, and `penValueChanged` when `drawPenValue` changes. See
+[Mouse, touch and events](./interaction).
+
+## Vector annotations
+
+Separate from the voxel drawing, the annotation layer draws vector shapes
+(freehand, ellipse, rectangle, line, arrow and others) in slice coordinates,
+and `annotationsToSVG()` exports them. Turn it on with `annotationIsEnabled`
+and pick a shape with `annotationTool`. Use one layer at a time: while
+`drawIsEnabled` is on, the voxel pen takes the pointer and annotation editing
+does nothing.
+
+## Beyond the core
+
+The `@niivue/nv-ext-drawing` package adds helpers that run on the drawing,
+such as interpolating a mask between drawn slices; see
+[Extensions](./extensions). Grow-cut segmentation (`drawGrowCut`) and
+`drawingBinaryDilationWithSeed` from the old package are not ported yet.
+
+## See also
+
+- [Drawing](/gallery/vox-draw): pen, fill, erase, undo, save, load and the
+  magic wand.
+- [Drawing on 3D blocks](/gallery/vox-draw-explode): painting directly on the
+  3D render.
+- [Annotations](/gallery/annotations): the vector annotation layer.

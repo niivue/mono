@@ -1,0 +1,163 @@
+---
+sidebar_position: 16
+title: React
+---
+
+# React
+
+`@niivue/nvreact` wraps NiiVue for React 19. It has two entry points: a
+standalone `NvViewer` component for one viewer, and a scene controller with
+hooks for several viewers that share a layout. Both create ordinary NiiVue
+instances, so everything in the other guides still applies once you have
+the instance.
+
+## Install
+
+The bindings for this version of NiiVue are published under the `next` tag,
+alongside the matching NiiVue release:
+
+```bash
+npm install @niivue/nvreact@next @niivue/niivue@next react react-dom
+```
+
+`@niivue/niivue` is a peer dependency, so install it yourself.
+
+## One viewer
+
+`NvViewer` creates a canvas inside a `div`, attaches a viewer to it, and
+resizes it with the container. Pass the volumes you want shown:
+
+```tsx
+import type { NiiVueOptions } from '@niivue/nvreact'
+import { NvViewer, SLICE_TYPE } from '@niivue/nvreact'
+
+const options: Partial<NiiVueOptions> = { backgroundColor: [0, 0, 0, 1] }
+
+export function Brain({ colormap }: { colormap: string }) {
+  return (
+    <NvViewer
+      volumes={[{ url: '/volumes/mni152.nii.gz', colormap }]}
+      options={options}
+      sliceType={SLICE_TYPE.MULTIPLANAR}
+      style={{ height: 500 }}
+      onLocationChange={(data) => console.log(data)}
+      onImageLoaded={(volume) => console.log('loaded', volume.name)}
+      onError={(err) => console.error(err)}
+    />
+  )
+}
+```
+
+The `volumes` prop is declarative. On each change the component compares
+the list by URL: it adds new volumes, removes ones that are gone, and calls
+`setVolume` when `colormap`, `calMin`, `calMax` or `opacity` changes. Other
+volume options are read only when a volume is first added.
+
+`options` holds NiiVue constructor options, merged over the package's
+`defaultViewerOptions`. A new `options` object creates a new viewer, so keep
+it stable: define it outside the component, as above, or wrap it in
+`useMemo`. An inline `options={{ ... }}` rebuilds the viewer on every render.
+
+## Several viewers
+
+For more than one viewer, create a scene with `useScene` and render it with
+`NvScene`. `useScene` returns the `NvSceneController` and a snapshot of its
+state that re-renders your component when it changes:
+
+```tsx
+import { NvScene, useScene } from '@niivue/nvreact'
+
+export function Viewers() {
+  const { scene, snapshot } = useScene()
+  return (
+    <>
+      <button
+        disabled={!scene.canAddViewer()}
+        onClick={() => scene.addViewer()}
+      >
+        Add viewer
+      </button>
+      <button onClick={() => scene.setLayout('2x2')}>2 x 2</button>
+      <p>{snapshot.viewerCount} viewers</p>
+      <NvScene scene={scene} style={{ height: 600 }} />
+    </>
+  )
+}
+```
+
+The snapshot has `currentLayout`, `viewerCount`, `slots`, `isBroadcasting`,
+`isLoading` and `viewerStates` (each with an `id`, a `loading` count and
+`errors`).
+
+The controller manages the viewers:
+
+- `addViewer(options?)`, `removeViewer(index)`, `canAddViewer()` and
+  `clearViewers()`.
+- `setLayout(name)` picks a grid from `defaultLayouts`: `'1x1'`, `'1x2'`,
+  `'2x1'`, `'1x3'`, `'3x1'`, `'2x2'` and `'3x3'`. `canAddViewer()` is false
+  once the layout is full.
+- `setViewerSliceLayout(index, layout)` gives one viewer a custom tile
+  arrangement, for example `defaultSliceLayouts['axial-hero'].layout`. Pass
+  `null` to reset it.
+- `setBroadcasting(true)` links every viewer that has an image loaded, so
+  2D and 3D view changes in one follow in the others. It uses NiiVue's
+  `broadcastTo` (see [Linking viewers](./sync)). A second argument such as
+  `{ '2d': true, '3d': false }` limits what is shared.
+- `loadVolume(index, options)`, `loadVolumes(index, list)` and
+  `removeVolume(index, url)` manage each viewer's images.
+
+## Reaching NiiVue
+
+`useNiivue(scene, index)` returns the NiiVue instance for a viewer, or
+`undefined` until that viewer exists. Use the regular property API on it:
+
+```tsx
+const nv = useNiivue(scene, 0)
+
+useEffect(() => {
+  if (nv) nv.isColorbarVisible = true
+}, [nv])
+```
+
+`useSceneEvent(scene, event, callback)` subscribes to controller events and
+unsubscribes on unmount. The callback can change between renders without
+resubscribing:
+
+```tsx
+useSceneEvent(scene, 'locationChange', (viewerIndex, data) => {
+  console.log(viewerIndex, data)
+})
+```
+
+Events include `viewerCreated`, `viewerRemoved`, `locationChange`,
+`imageLoaded`, `volumeAdded`, `volumeRemoved` and `error`. Outside React,
+`scene.on(event, handler)` returns an unsubscribe function, and
+`scene.off(event, handler)` removes a handler.
+
+## Sharing the scene
+
+`NvSceneProvider` puts a scene in React context, and `useSceneContext()`
+reads it in any child, so toolbars do not need the scene passed down:
+
+```tsx
+import { NvScene, NvSceneProvider, useScene, useSceneContext } from '@niivue/nvreact'
+
+function Toolbar() {
+  const scene = useSceneContext()
+  return <button onClick={() => scene.addViewer()}>Add</button>
+}
+
+export function App() {
+  const { scene } = useScene()
+  return (
+    <NvSceneProvider scene={scene}>
+      <Toolbar />
+      <NvScene scene={scene} style={{ height: 600 }} />
+    </NvSceneProvider>
+  )
+}
+```
+
+The package entry point,
+[src/lib.ts](https://github.com/niivue/mono/blob/main/packages/nv-react/src/lib.ts),
+lists every export.

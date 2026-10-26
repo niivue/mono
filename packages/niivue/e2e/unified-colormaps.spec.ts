@@ -64,6 +64,20 @@ const MOUNT = (backend: string) => `(async () => {
       for (let x = 0; x < nx; x++)
         img[x + nx * (y + ny * z)] = x < nx / 2 ? 3 : 20000
   window.__labelFile = () => new File([buf], 'labels.nii')
+  // Two frames: frame 0 holds only ID 3 (left), frame 1 only ID 20000
+  // (right), so frame 0's range says nothing about frame 1's IDs.
+  const buf4 = new ArrayBuffer(352 + nx * ny * nz * 2 * 2)
+  new Uint8Array(buf4).set(new Uint8Array(buf, 0, 352))
+  const dv4 = new DataView(buf4)
+  dv4.setInt16(40, 4, true)
+  dv4.setInt16(48, 2, true)
+  const img4 = new Int16Array(buf4, 352)
+  for (let i = 0; i < nx * ny * nz; i++) {
+    const left = i % nx < nx / 2
+    img4[i] = left ? 3 : 0
+    img4[i + nx * ny * nz] = left ? 0 : 20000
+  }
+  window.__labelFile4D = () => new File([buf4], 'labels4d.nii')
   window.__nextFrame = () => new Promise((r) =>
     requestAnimationFrame(() => requestAnimationFrame(r)))
   const c = document.createElement('canvas')
@@ -173,6 +187,64 @@ for (const backend of ['webgl2', 'webgpu']) {
       return v.colormapLabel?.max
     })
     expect(dirtyMax).toBe(31000)
+  })
+
+  test(`${backend}: the generated palette covers IDs in later 4D frames`, async ({
+    page,
+  }) => {
+    const up = await page.evaluate(MOUNT(backend))
+    test.skip(
+      !up.ok || up.backend !== backend,
+      `no ${backend}: ${up.why ?? up.backend}`,
+    )
+    const r = await page.evaluate(async () => {
+      const nv = window.__nv
+      await nv.loadVolumes([{ url: window.__labelFile4D() }])
+      const v = nv.volumes[0]
+      await nv.setFrame4D(v.id, 1)
+      await window.__nextFrame()
+      return { frames: v.nFrame4D, max: v.colormapLabel?.max }
+    })
+    expect(r).toEqual({ frames: 2, max: 20000 })
+    expect(
+      close(
+        await lutColor(page, 20000),
+        (await probe(page, RIGHT.x, RIGHT.y)).slice(0, 3),
+      ),
+    ).toBe(true)
+  })
+
+  test(`${backend}: a streamed label volume's generated palette spans its IDs`, async ({
+    page,
+  }) => {
+    const up = await page.evaluate(MOUNT(backend))
+    test.skip(
+      !up.ok || up.backend !== backend,
+      `no ${backend}: ${up.why ?? up.backend}`,
+    )
+    // The volume is added before a voxel is read (range 0..1); the window
+    // derived from the coarse floor has to widen the palette to ID 20000.
+    const max = await page.evaluate(async () => {
+      const N = 32
+      const source = {
+        datatypeCode: 4,
+        levels: [{ level: 0, shape: [N, N, 4], spacing: [1, 1, 1] }],
+        fetchChunk: async ({ texOrigin: o, texDims: d }) => {
+          const out = new Int16Array(d[0] * d[1] * d[2])
+          for (let z = 0; z < d[2]; z++)
+            for (let y = 0; y < d[1]; y++)
+              for (let x = 0; x < d[0]; x++)
+                out[x + d[0] * (y + d[1] * z)] = o[0] + x < N / 2 ? 3 : 20000
+          return new Uint8Array(out.buffer)
+        },
+      }
+      const nv = window.__nv
+      await nv.loadChunkedVolume(source, { colormap: 'Random' })
+      for (let i = 0; i < 100 && nv.volumes[0]?.globalMax !== 20000; i++)
+        await new Promise((r) => setTimeout(r, 50))
+      return nv.volumes[0]?.colormapLabel?.max
+    })
+    expect(max).toBe(20000)
   })
 
   test(`${backend}: setVolume switches between continuous and label colormaps`, async ({
@@ -318,6 +390,48 @@ test('a document embeds a runtime label colormap and restores it by name', async
     savedLut: false,
     colormap: 'DocAtlas',
     right: 'right',
+  })
+})
+
+test('a document keeps the label table a volume shows after another viewer re-registers its name', async ({
+  page,
+}) => {
+  const up = await page.evaluate(MOUNT('webgl2'))
+  expect(up.ok).toBe(true)
+  const r = await page.evaluate(async () => {
+    const nv = window.__nv
+    await nv.loadVolumes([{ url: window.__labelFile() }])
+    const red = {
+      R: [0, 255],
+      G: [0, 0],
+      B: [0, 0],
+      I: [0, 3],
+      labels: ['air', 'left'],
+    }
+    await nv.setVolume(0, { colormap: nv.addColormap('sharedAtlas', red) })
+    // A second viewer on the page re-registers the name in green. The
+    // registry is page-wide, but only that viewer's volumes recompile.
+    const c = document.createElement('canvas')
+    document.body.appendChild(c)
+    const nv2 = new window.__NiiVue({ backend: 'webgl2' })
+    await nv2.attachToCanvas(c)
+    nv2.addColormap('sharedAtlas', { ...red, R: [0, 0], G: [0, 255] })
+    const doc = JSON.parse(
+      new TextDecoder().decode(nv.serializeDocument({ format: 'json' })),
+    )
+    const saved = doc.volumes[0].colormap
+    return {
+      shown: Array.from(nv.volumes[0].colormapLabel?.lut.slice(12, 16) ?? []),
+      saved,
+      savedRed: doc.colormaps?.[saved]?.R,
+      savedGreen: doc.colormaps?.[saved]?.G,
+    }
+  })
+  expect(r).toEqual({
+    shown: [255, 0, 0, 255],
+    saved: 'SharedAtlas 2',
+    savedRed: [0, 0, 0, 255],
+    savedGreen: [0, 0, 0, 0],
   })
 })
 

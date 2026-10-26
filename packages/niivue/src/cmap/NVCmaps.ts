@@ -301,6 +301,24 @@ export function labelLutFor(
 }
 
 /**
+ * The generated palette's `lut` widened to cover `range` (it never shrinks),
+ * or null when it already covers it or `name` is not the generated palette:
+ * a table colormap colours the IDs it defines.
+ */
+export function grownLabelLut(
+  name: string | undefined,
+  lut: LUT | null | undefined,
+  range: [number, number],
+): LUT | null {
+  if (!lut || !isGeneratedLabelColormap(name)) return null
+  const min = lut.min ?? 0
+  const max = lut.max ?? 0
+  const [lo, hi] = range
+  if (!(lo < min || hi > max)) return null
+  return labelLutFor(name, [Math.min(lo, min), Math.max(hi, max)])
+}
+
+/**
  * Definitions of colormaps registered at runtime (`addColormap`), keyed by
  * canonical name. Built-in colormaps are not included: a saved document names
  * those and embeds these.

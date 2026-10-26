@@ -4573,7 +4573,7 @@ export default class NiiVue extends EventTarget {
       vol.robustMax = rebuilt.robustMax
       vol.globalMin = rebuilt.globalMin
       vol.globalMax = rebuilt.globalMax
-      NVModel.growLabelRange(vol, [rebuilt.globalMin, rebuilt.globalMax])
+      NVModel.growLabelRange(vol)
       try {
         await this._updateGLChanged()
       } catch (e) {

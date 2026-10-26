@@ -1454,19 +1454,20 @@ export default class NVModel {
       vol.globalMin,
       vol.globalMax,
     ])
+    // globalMin/globalMax describe frame 0 only; IDs in later frames count too.
+    NVModel.growLabelRange(vol)
     return vol
   }
 
   /**
    * Widen a volume's generated `Random` LUT to cover `range` (calibrated), or
-   * when `range` is omitted, every value now in `img`. The LUT only grows, so
-   * IDs written after load (a live segmentation via `updateVolumeData`, a new
-   * 4D frame) get their own colour instead of the last entry's. A table
-   * colormap is left alone: it colours the IDs it defines.
+   * when `range` is omitted, every value now in `img` (all loaded frames). The
+   * LUT only grows, so IDs that appear after load (a live segmentation via
+   * `updateVolumeData`, another 4D frame) get their own colour instead of the
+   * last entry's. A table colormap is left alone.
    */
   static growLabelRange(vol: NVImage, range?: [number, number]): void {
-    const lut = vol.colormapLabel
-    if (!lut || !NVCmaps.isGeneratedLabelColormap(vol.colormap)) return
+    if (!NVCmaps.isGeneratedLabelColormap(vol.colormap)) return
     let [lo, hi] = range ?? [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]
     if (!range) {
       const img = vol.img
@@ -1481,13 +1482,11 @@ export default class NVModel {
       lo = lo * slope + inter
       hi = hi * slope + inter
     }
-    const min = lut.min ?? 0
-    const max = lut.max ?? 0
-    if (!(lo < min || hi > max)) return
-    vol.colormapLabel = NVCmaps.labelLutFor(vol.colormap, [
-      Math.min(lo, min),
-      Math.max(hi, max),
+    const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, [
+      lo,
+      hi,
     ])
+    if (grown) vol.colormapLabel = grown
   }
 
   /** Fetch and prepare an NVImage without adding it to the model. */

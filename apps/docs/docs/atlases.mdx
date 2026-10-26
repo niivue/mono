@@ -52,7 +52,10 @@ A volume whose NIfTI header marks it as labels (`NIFTI_INTENT_LABEL`) and is
 loaded without a colormap is drawn with `Random`, a generated palette that
 gives every region code in the volume its own color. The same code gets the
 same color in every volume, so a segmentation looks right with no setup;
-pick an atlas table for its own colors and names.
+pick an atlas table for its own colors and names. The palette covers at
+least codes 0 to 255 and grows to every code the volume holds, in all of
+its 4D frames and when `updateVolumeData` or an edit brings higher codes, so
+a live segmentation keeps distinct colors.
 
 Label volumes are sampled with nearest-neighbor interpolation on 2D slices,
 so region borders stay sharp. A volume's `isNearestInterpolation` option

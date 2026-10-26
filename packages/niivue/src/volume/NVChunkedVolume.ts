@@ -1091,6 +1091,12 @@ export class NVChunkedVolume {
       vol.globalMax = globalMax
       vol.hdr.cal_min = lo
       vol.hdr.cal_max = hi
+      // The generated label palette was sized to the placeholder range.
+      const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, [
+        globalMin,
+        globalMax,
+      ])
+      if (grown) vol.colormapLabel = grown
     }
     this.windowResolved = true
     log.debug(

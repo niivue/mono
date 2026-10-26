@@ -211,6 +211,8 @@ export default class NVGlview {
     }
     // Render layer instances
     this.volumeRenderer = new VolumeRenderer()
+    this.volumeRenderer.defaultMatcap =
+      Object.values(options.matcaps ?? {})[0] ?? ''
     this.lineRenderer = new LineRenderer()
     this.polygonRenderer = new PolygonRenderer()
     this.polygon3DRenderer = new Polygon3DRenderer()

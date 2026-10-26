@@ -286,6 +286,8 @@ export default class NVView {
     this.colorbarRenderer = new ColorbarRenderer()
     this.sliceRenderer = new SliceRenderer()
     this.volumeRenderer = new VolumeRenderer()
+    this.volumeRenderer.defaultMatcap =
+      Object.values(options.matcaps ?? {})[0] ?? ''
     this.meshBindGroupLayout = null
     this.meshPipelines = null
     this.meshXRayPipelines = null

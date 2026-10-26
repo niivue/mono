@@ -374,6 +374,8 @@ export class VolumeRenderer extends NVRenderer {
   depthPickShaderProgram: Shader | null
   matcapTexture: WebGLTexture | null
   private _matcapUrl: string | null
+  /** The instance's default matcap, drawn when the requested one fails to load. */
+  defaultMatcap = ''
   volumeTexture: WebGLTexture | null
   volumeGradientTexture: WebGLTexture | null
   overlayTexture: WebGLTexture | null
@@ -705,7 +707,8 @@ export class VolumeRenderer extends NVRenderer {
         gl.bindTexture(gl.TEXTURE_2D, null)
         resolve(texture)
       }
-      image.onerror = reject
+      image.onerror = () =>
+        reject(new Error(`Failed to load image ${imageSrc.slice(0, 80)}`))
       applyCORS(image)
       image.src = imageSrc
     })
@@ -1129,11 +1132,37 @@ export class VolumeRenderer extends NVRenderer {
     // changes so that opts.matcap updates take effect — otherwise the
     // first loaded matcap sticks for the lifetime of the renderer.
     if (this.matcapTexture == null || this._matcapUrl !== matcap) {
-      const newTex = await this._loadTexture2DOrFallback(gl, matcap)
+      const newTex = await this._loadMatcapOrDefault(gl, matcap)
       if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
       this.matcapTexture = newTex
+      // The requested URL, even after a fallback, so a matcap that failed is
+      // not fetched again on every update.
       this._matcapUrl = matcap
     }
+  }
+
+  /**
+   * A matcap that fails to load (a 404, a path from another server) draws as
+   * the instance default, and as plain white if that fails too, rather than
+   * failing the volume upload.
+   */
+  private async _loadMatcapOrDefault(
+    gl: WebGL2RenderingContext,
+    matcap: string,
+  ): Promise<WebGLTexture> {
+    try {
+      return await this._loadTexture2DOrFallback(gl, matcap)
+    } catch (e) {
+      log.warn(`${(e as Error).message}; drawing the default matcap`)
+    }
+    if (this.defaultMatcap && this.defaultMatcap !== matcap) {
+      try {
+        return await this._loadTexture2DOrFallback(gl, this.defaultMatcap)
+      } catch (e) {
+        log.warn((e as Error).message)
+      }
+    }
+    return this._createFallbackTexture2D(gl)
   }
 
   /**

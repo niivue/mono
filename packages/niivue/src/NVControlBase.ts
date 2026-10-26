@@ -3775,8 +3775,12 @@ export default class NiiVue extends EventTarget {
       options.frame4D = Math.max(0, Math.min(options.frame4D, maxFrame))
     }
     Object.assign(volumes[volumeIndex], options)
-    if (options.colormap !== undefined)
+    if (options.colormap !== undefined) {
       NVModel.applyColormap(volumes[volumeIndex], options.colormap)
+      // A streamed volume has no img to scan; its bricks may already be
+      // decoded, so its generated palette takes the range they held.
+      for (const chunked of this._chunkedVolumes) chunked.growLabelsToObserved()
+    }
     this.emit('volumeUpdated', {
       volumeIndex,
       volume: volumes[volumeIndex],

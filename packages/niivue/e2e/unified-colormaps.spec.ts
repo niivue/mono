@@ -303,6 +303,54 @@ for (const backend of ['webgl2', 'webgpu']) {
     })
   }
 
+  test(`${backend}: switching a streamed volume to Random covers IDs already decoded`, async ({
+    page,
+  }) => {
+    const up = await page.evaluate(MOUNT(backend))
+    test.skip(
+      !up.ok || up.backend !== backend,
+      `no ${backend}: ${up.why ?? up.backend}`,
+    )
+    // Shown in gray first, so every brick is decoded (and cached) before the
+    // palette is generated; ID 20000 exists only at the fine level.
+    const max = await page.evaluate(async () => {
+      const N = 32
+      const source = {
+        datatypeCode: 4,
+        levels: [
+          { level: 0, shape: [N, N, 4], spacing: [1, 1, 1] },
+          { level: 1, shape: [N / 2, N / 2, 2], spacing: [2, 2, 2] },
+        ],
+        fetchChunk: async ({ levelIndex, texOrigin: o, texDims: d }) => {
+          const out = new Int16Array(d[0] * d[1] * d[2])
+          for (let z = 0; z < d[2]; z++)
+            for (let y = 0; y < d[1]; y++)
+              for (let x = 0; x < d[0]; x++)
+                out[x + d[0] * (y + d[1] * z)] =
+                  levelIndex === 0 && o[0] + x >= N / 2 ? 20000 : 3
+          return new Uint8Array(out.buffer)
+        },
+      }
+      const nv = window.__nv
+      await nv.loadChunkedVolume(source, {
+        colormap: 'gray',
+        calMin: 0,
+        calMax: 1,
+      })
+      await nv.whenChunkStreamSettles()
+      await nv.setVolume(0, { colormap: 'Random' })
+      for (let i = 0; i < 10; i++) await window.__nextFrame()
+      return nv.volumes[0]?.colormapLabel?.max
+    })
+    expect(max).toBe(20000)
+    const want = await lutColor(page, 20000)
+    await expect
+      .poll(async () =>
+        close(want, (await probe(page, RIGHT.x, RIGHT.y)).slice(0, 3)),
+      )
+      .toBe(true)
+  })
+
   test(`${backend}: setVolume switches between continuous and label colormaps`, async ({
     page,
   }) => {

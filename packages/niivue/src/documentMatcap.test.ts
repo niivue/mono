@@ -24,34 +24,42 @@ describe('matcapFromName', () => {
     expect(matcapFromName('Shiny', matcaps)).toBe('/m/Shiny.jpg')
   })
 
-  test('matches a path saved before names by its file name', () => {
+  test('matches a path to a built-in matcap by its file name', () => {
     expect(matcapFromName('/src/assets/matcaps/Cortex.jpg', matcaps)).toBe(
       matcaps.cortex,
     )
-    expect(matcapFromName('/a/shiny.png?v=2', matcaps)).toBe('/m/Shiny.jpg')
+    expect(
+      matcapFromName('/@fs/x/niivue/src/assets/matcaps/shiny.jpg?v=2', matcaps),
+    ).toBe('/m/Shiny.jpg')
   })
 
-  test('keeps a web, data or blob URL it does not know', () => {
-    expect(matcapFromName('https://x.org/gold.jpg', matcaps)).toBe(
+  test('keeps any other URL, for the renderer to load or replace', () => {
+    for (const url of [
       'https://x.org/gold.jpg',
-    )
-    expect(matcapFromName('data:image/png;base64,BBBB', matcaps)).toBe(
       'data:image/png;base64,BBBB',
-    )
+      '/custom/gold.jpg',
+      './matcaps/gold.jpg',
+      '//cdn.example.org/gold.jpg',
+      // An app's own image that happens to share a built-in's name.
+      '/custom/Cortex.jpg',
+      // A built-in path this instance has no matcap for.
+      '/src/assets/matcaps/Gold.jpg',
+    ]) {
+      expect(matcapFromName(url, matcaps)).toBe(url)
+    }
     expect(matcapFromName('blob:https://x.org/1', undefined)).toBe(
       'blob:https://x.org/1',
     )
     expect(matcapFromName('', matcaps)).toBe('')
   })
 
-  test('replaces a path or name it cannot resolve with the default', () => {
-    expect(matcapFromName('/src/assets/matcaps/Gold.jpg', matcaps)).toBe(
-      matcaps.cortex,
-    )
+  test('replaces a name it does not know with the default', () => {
     expect(matcapFromName('gold', matcaps)).toBe(matcaps.cortex)
     // No matcaps: the default is none.
-    expect(matcapFromName('/src/assets/matcaps/Cortex.jpg', undefined)).toBe('')
     expect(matcapFromName('cortex', {})).toBe('')
+    expect(matcapFromName('/src/assets/matcaps/Cortex.jpg', undefined)).toBe(
+      '/src/assets/matcaps/Cortex.jpg',
+    )
   })
 
   test('round-trips through matcapToName', () => {

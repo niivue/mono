@@ -7,6 +7,13 @@
  * on load.
  */
 
+/** The instance default: its first matcap, or none. */
+export function defaultMatcap(
+  matcaps: Record<string, string> | undefined,
+): string {
+  return Object.values(matcaps ?? {})[0] ?? ''
+}
+
 /** The name to save for `url`: its key in `matcaps`, or `url` unchanged. */
 export function matcapToName(
   url: string,
@@ -21,13 +28,15 @@ export function matcapToName(
 
 /**
  * The URL to apply for a saved matcap: a name's URL in `matcaps`, or `saved`
- * unchanged. A path saved before matcaps were saved by name is matched by its
- * file name (`/src/assets/matcaps/Cortex.jpg` is `cortex`), so those documents
- * load too. Names match case-insensitively.
+ * unchanged. Names match case-insensitively.
  *
- * A path that matches nothing is the instance default (its first matcap, or
- * none): a path names a file on whatever server saved the document, so here
- * it would only 404. A web, data or blob URL is kept, as it loads anywhere.
+ * A document saved before matcaps were saved by name holds the dev server's
+ * path to NiiVue's own asset (`/src/assets/matcaps/Cortex.jpg`), which 404s
+ * anywhere else, so a path into `assets/matcaps/` is matched by its file name.
+ * Any other URL is the app's own image and is kept: if it does not load, the
+ * renderer draws the default matcap. A bare name this instance does not know
+ * cannot be fetched at all, so it is the instance default (its first matcap,
+ * or none).
  */
 export function matcapFromName(
   saved: string,
@@ -44,9 +53,12 @@ export function matcapFromName(
   }
   const byName = lookup(saved)
   if (byName !== undefined) return byName
-  // A data or blob URL is the image itself, and a web URL loads anywhere.
-  if (/^(data|blob|https?):/i.test(saved)) return saved
-  const file = saved.split(/[?#]/)[0].split('/').pop() ?? ''
-  const stem = file.replace(/\.[^.]*$/, '')
-  return (stem && lookup(stem)) || (entries[0]?.[1] ?? '')
+  if (!/[/\\.:?#]/.test(saved)) return defaultMatcap(matcaps)
+  const path = saved.split(/[?#]/)[0].replace(/\\/g, '/')
+  if (/(^|\/)assets\/matcaps\/[^/]+$/.test(path)) {
+    const stem = (path.split('/').pop() ?? '').replace(/\.[^.]*$/, '')
+    const builtIn = stem ? lookup(stem) : undefined
+    if (builtIn !== undefined) return builtIn
+  }
+  return saved
 }

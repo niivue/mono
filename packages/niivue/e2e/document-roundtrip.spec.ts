@@ -639,7 +639,7 @@ test('json format: saves portable JSON that loadDocument reads back (linked + em
   expect(r.embeddedCalMinNegIsNaN).toBe(true) // and on the embedded path
 })
 
-test('matcap: saved by name, loads back as its URL, unknown paths load the default', async ({
+test('matcap: saved by name, loads back as its URL, custom URLs are kept', async ({
   page,
 }) => {
   test.setTimeout(60_000) // shares the one-time Vite module-graph transform
@@ -667,12 +667,18 @@ test('matcap: saved by name, loads back as its URL, unknown paths load the defau
     const fromLegacy = new NiiVue()
     await fromLegacy.loadDocument(new File([legacy], 'legacy.json'))
 
-    // A path to a matcap this instance does not have would only 404 here, so
-    // it loads as the instance default.
-    const unknown = json.replace(
+    // An app's own image is kept, even when its file shares a built-in's
+    // name; the renderer draws the default if it does not load.
+    const custom = json.replace(
       '"matcap":"cortex"',
-      '"matcap":"/src/assets/matcaps/Gold.jpg"',
+      '"matcap":"/custom/Cortex.jpg"',
     )
+    const fromCustom = new NiiVue()
+    await fromCustom.loadDocument(new File([custom], 'custom.json'))
+
+    // A name this instance does not know cannot be fetched, so it loads as the
+    // instance default.
+    const unknown = json.replace('"matcap":"cortex"', '"matcap":"gold"')
     const fromUnknown = new NiiVue()
     fromUnknown.volumeMatcap = ''
     await fromUnknown.loadDocument(new File([unknown], 'unknown.json'))
@@ -683,6 +689,8 @@ test('matcap: saved by name, loads back as its URL, unknown paths load the defau
       reloaded: reloaded.volumeMatcap,
       legacyReplaced: legacy !== json,
       fromLegacy: fromLegacy.volumeMatcap,
+      customReplaced: custom !== json,
+      fromCustom: fromCustom.volumeMatcap,
       unknownReplaced: unknown !== json,
       fromUnknown: fromUnknown.volumeMatcap,
     }
@@ -693,6 +701,8 @@ test('matcap: saved by name, loads back as its URL, unknown paths load the defau
   expect(r.reloaded).toBe(r.url)
   expect(r.legacyReplaced).toBe(true)
   expect(r.fromLegacy).toBe(r.url)
+  expect(r.customReplaced).toBe(true)
+  expect(r.fromCustom).toBe('/custom/Cortex.jpg')
   expect(r.unknownReplaced).toBe(true)
   expect(r.fromUnknown).toBe(r.url)
 })

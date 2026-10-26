@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { labelLutToColormap, upgradeColormaps } from './documentColormaps'
+import {
+  labelLutToColormap,
+  shownLabelColormap,
+  upgradeColormaps,
+} from './documentColormaps'
 
 // A v9 compiled label LUT: IDs 2..4, RGBA per ID, ID 3 unlisted (transparent).
 const legacyLut = {
@@ -82,5 +86,71 @@ describe('upgradeColormaps', () => {
     }
     upgradeColormaps(doc)
     expect(doc.volumes[0].colormap).toBe('_draw')
+  })
+})
+
+describe('shownLabelColormap', () => {
+  const recoloured = { ...legacyLut, lut: legacyLut.lut.map((c) => 255 - c) }
+  const never = () => false
+
+  test('keepsTheNameWhileTheRegistryCompilesTheSameTable', () => {
+    const colormaps = {}
+    const name = shownLabelColormap(
+      'atlas',
+      legacyLut,
+      { ...legacyLut },
+      colormaps,
+      never,
+    )
+    expect(name).toBe('atlas')
+    expect(colormaps).toEqual({})
+  })
+
+  test('embedsTheShownTableOnceTheNameIsReRegistered', () => {
+    const colormaps: Record<string, ReturnType<typeof labelLutToColormap>> = {
+      Atlas: labelLutToColormap(recoloured),
+    }
+    const name = shownLabelColormap(
+      'Atlas',
+      legacyLut,
+      recoloured,
+      colormaps,
+      never,
+    )
+    expect(name).toBe('Atlas 2')
+    expect(colormaps['Atlas 2']).toEqual(labelLutToColormap(legacyLut))
+    expect(colormaps.Atlas.R).toEqual([245, 255, 215])
+  })
+
+  test('reusesANameThatHoldsTheSameTable', () => {
+    const colormaps = {}
+    const a = shownLabelColormap(
+      'Atlas',
+      legacyLut,
+      recoloured,
+      colormaps,
+      never,
+    )
+    const b = shownLabelColormap(
+      'Atlas',
+      legacyLut,
+      recoloured,
+      colormaps,
+      never,
+    )
+    expect(b).toBe(a)
+    expect(Object.keys(colormaps)).toEqual(['Atlas 2'])
+  })
+
+  test('skipsNamesTakenInTheDocumentOrTheRegistry', () => {
+    const colormaps = { 'Atlas 2': labelLutToColormap(recoloured) }
+    const name = shownLabelColormap(
+      'Atlas',
+      legacyLut,
+      null,
+      colormaps,
+      (n) => n === 'Atlas 3',
+    )
+    expect(name).toBe('Atlas 4')
   })
 })

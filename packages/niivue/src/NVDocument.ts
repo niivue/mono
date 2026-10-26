@@ -1,6 +1,10 @@
 import { decode, encode } from 'cbor-x'
 import * as NVCmaps from '@/cmap/NVCmaps'
-import { type LegacyLabelLut, upgradeColormaps } from '@/documentColormaps'
+import {
+  type LegacyLabelLut,
+  shownLabelColormap,
+  upgradeColormaps,
+} from '@/documentColormaps'
 import {
   decodeDocumentJSON,
   encodeDocumentJSON,
@@ -29,6 +33,7 @@ import type {
   DrawConfig,
   InteractionConfig,
   LayoutConfig,
+  LUT,
   MeshKind,
   MeshRenderConfig,
   NIFTI1,
@@ -655,6 +660,29 @@ export function serialize(
     slidePlane,
   }
   const colormaps = NVCmaps.customColormaps()
+  // Each label volume saves the table it shows, which can differ from the
+  // registry's once another viewer re-registers its colormap's name.
+  model.volumes
+    .filter((v) => !isTransientStreamedVolume(v))
+    .forEach((v, i) => {
+      const shown = v.colormapLabel
+      if (!shown || !v.colormap || NVCmaps.isGeneratedLabelColormap(v.colormap))
+        return
+      const legacy = (lut: LUT): LegacyLabelLut => ({
+        lut: new Uint8Array(lut.lut.buffer, lut.lut.byteOffset, lut.lut.length),
+        min: lut.min ?? 0,
+        max: lut.max ?? 0,
+        labels: lut.labels,
+      })
+      const compiled = NVCmaps.labelLutFor(v.colormap)
+      volumes[i].colormap = shownLabelColormap(
+        v.colormap,
+        legacy(shown),
+        compiled && legacy(compiled),
+        colormaps,
+        (name) => NVCmaps.lookupColorMap(name) !== null,
+      )
+    })
   if (Object.keys(colormaps).length > 0) doc.colormaps = colormaps
 
   if (options?.format === 'json') {

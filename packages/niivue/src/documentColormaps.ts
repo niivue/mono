@@ -52,6 +52,46 @@ export function labelLutToColormap(lut: LegacyLabelLut): ColorMap {
   return cm
 }
 
+function sameLut(a: LegacyLabelLut, b: LegacyLabelLut | null): boolean {
+  if (!b || a.min !== b.min || a.max !== b.max) return false
+  if (a.lut.length !== b.lut.length) return false
+  for (let i = 0; i < a.lut.length; i++) if (a.lut[i] !== b.lut[i]) return false
+  return JSON.stringify(a.labels ?? []) === JSON.stringify(b.labels ?? [])
+}
+
+/**
+ * The colormap name a saved label volume should carry. A volume keeps the LUT
+ * compiled when its colormap was applied; once that name is re-registered
+ * with other colours (by another viewer, whose `addColormap` recompiles only
+ * its own volumes), the registry no longer describes what the volume shows.
+ * Then the shown table is added to `colormaps` under a fresh name (`<name> 2`,
+ * ...; one the same table already has is reused) and that name is returned.
+ * `compiled` is what the registry compiles for `name` now; `isTaken` says
+ * whether a name is registered at runtime.
+ */
+export function shownLabelColormap(
+  name: string,
+  shown: LegacyLabelLut,
+  compiled: LegacyLabelLut | null,
+  colormaps: Record<string, ColorMap>,
+  isTaken: (name: string) => boolean,
+): string {
+  if (sameLut(shown, compiled)) return name
+  const cm = labelLutToColormap(shown)
+  const same = JSON.stringify(cm)
+  const base = `${name.charAt(0).toUpperCase()}${name.slice(1)}`
+  for (let k = 2; ; k++) {
+    const candidate = `${base} ${k}`
+    if (candidate in colormaps) {
+      if (JSON.stringify(colormaps[candidate]) === same) return candidate
+      continue
+    }
+    if (isTaken(candidate)) continue
+    colormaps[candidate] = cm
+    return candidate
+  }
+}
+
 /**
  * Bring a v9-or-earlier document to the v10 colormap model in place: each
  * embedded label LUT becomes a document colormap that the volume names, and

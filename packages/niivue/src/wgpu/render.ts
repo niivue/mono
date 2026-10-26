@@ -14,6 +14,7 @@ import {
 } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
+import { loadMatcapOrDefault } from '@/view/matcapFallback'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
   renderVariantConstants,
@@ -533,7 +534,7 @@ export class VolumeRenderer extends NVRenderer {
   }
   private _matcapUrl: string | null = null
   /** The instance's default matcap, drawn when the requested one fails to load. */
-  defaultMatcap = ''
+  private readonly _defaultMatcap: string
   private _bindTexVol: GPUTexture | null = null
   private _bindTexGrad: GPUTexture | null = null
   private _bindTexMatcap: GPUTexture | null = null
@@ -625,8 +626,9 @@ export class VolumeRenderer extends NVRenderer {
   private overlayRgbaCache: orient.RGBATextureCache | null = null
   private volumeRgbaCache: orient.RGBATextureCache | null = null
 
-  constructor() {
+  constructor(defaultMatcap = '') {
     super()
+    this._defaultMatcap = defaultMatcap
     this.pipeline = null
     this.pipelineChunked = null
     this.pipelineChunkedMip = null
@@ -1310,7 +1312,11 @@ export class VolumeRenderer extends NVRenderer {
     matcap: string,
   ): Promise<void> {
     if (this.matcapTexture == null || this._matcapUrl !== matcap) {
-      const newTex = await this._loadMatcapOrDefault(device, matcap)
+      const newTex = await loadMatcapOrDefault(
+        matcap,
+        this._defaultMatcap,
+        (url) => wgpu.bitmap2textureOrFallback(device, url),
+      )
       if (this.matcapTexture) this.matcapTexture.destroy()
       this.matcapTexture = newTex
       // The requested URL, even after a fallback, so a matcap that failed is
@@ -1318,32 +1324,6 @@ export class VolumeRenderer extends NVRenderer {
       this._matcapUrl = matcap
       this._invalidateBindGroupCache()
     }
-  }
-
-  /**
-   * A matcap that fails to load (a 404, a path from another server) draws as
-   * the instance default, and as plain white if that fails too, rather than
-   * failing the volume upload.
-   */
-  private async _loadMatcapOrDefault(
-    device: GPUDevice,
-    matcap: string,
-  ): Promise<GPUTexture> {
-    try {
-      return await wgpu.bitmap2textureOrFallback(device, matcap)
-    } catch {
-      log.warn(
-        `Failed to load image ${matcap.slice(0, 80)}; drawing the default matcap`,
-      )
-    }
-    if (this.defaultMatcap && this.defaultMatcap !== matcap) {
-      try {
-        return await wgpu.bitmap2textureOrFallback(device, this.defaultMatcap)
-      } catch {
-        log.warn(`Failed to load image ${this.defaultMatcap.slice(0, 80)}`)
-      }
-    }
-    return wgpu.bitmap2textureOrFallback(device, '')
   }
 
   /**

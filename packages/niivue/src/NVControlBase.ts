@@ -40,7 +40,7 @@ import {
   settingsChangeEvents,
   snapshotSettings,
 } from '@/documentEvents'
-import { matcapFromName } from '@/documentMatcap'
+import { defaultMatcap, matcapFromName } from '@/documentMatcap'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   addUndoBitmap,
@@ -660,10 +660,8 @@ export default class NiiVue extends EventTarget {
     // Instances
     this.model = new NVModel(options)
     // Auto-apply first matcap URL if matcaps provided
-    if (this.opts.matcaps) {
-      const firstUrl = Object.values(this.opts.matcaps)[0]
-      if (firstUrl) this.model.volume.matcap = firstUrl
-    }
+    const firstUrl = defaultMatcap(this.opts.matcaps)
+    if (firstUrl) this.model.volume.matcap = firstUrl
     this.resizeObserver = null
   }
 

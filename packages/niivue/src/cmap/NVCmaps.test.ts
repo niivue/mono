@@ -9,6 +9,7 @@ import {
   lutrgba8,
   makeLabelLut,
   makeLut,
+  withColormapWindow,
 } from './NVCmaps'
 
 type LutJson = {
@@ -284,5 +285,19 @@ describe('colormapKey', () => {
     const other = colormapKey('keyTestC')
     addColormap('keyTestD', red)
     expect(colormapKey('keyTestC')).toBe(other)
+  })
+})
+
+// The CT window itself comes from bundled LUTs, which load via import.meta.glob
+// (browser only): see e2e/colormap-window.spec.ts.
+describe('withColormapWindow', () => {
+  test('explicit calMin/calMax, unknown colormaps, or no colormap pass through', () => {
+    const explicit = { colormap: 'ct_kidneys', calMin: -1024 }
+    expect(withColormapWindow(explicit)).toBe(explicit)
+    expect(withColormapWindow({ colormap: 'noSuchMap' })).toEqual({
+      colormap: 'noSuchMap',
+    })
+    const none = { calMax: 5 }
+    expect(withColormapWindow(none)).toBe(none)
   })
 })

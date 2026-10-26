@@ -273,6 +273,25 @@ export function lookupColorMap(name: string): ColorMap | null {
 }
 
 /**
+ * CT colormaps are designed for one Hounsfield window (ct_kidneys is 114..302),
+ * stored as min/max in the LUT. Setting such a colormap without calMin/calMax
+ * applies that window; an explicit calMin or calMax always wins.
+ */
+export function withColormapWindow<
+  T extends { colormap?: string; calMin?: number; calMax?: number },
+>(opts: T): T {
+  if (
+    opts.colormap === undefined ||
+    opts.calMin !== undefined ||
+    opts.calMax !== undefined
+  )
+    return opts
+  const lut = lookupColorMap(opts.colormap)
+  if (lut?.min === undefined || lut.max === undefined) return opts
+  return { ...opts, calMin: lut.min, calMax: lut.max }
+}
+
+/**
  * Reverse the colors of a 256-entry RGBA LUT, so the hue that was at the top of
  * the range moves to the bottom. Returns a new array; the input is untouched.
  *

@@ -1,4 +1,5 @@
 import { mat4, vec2, vec3, vec4 } from 'gl-matrix'
+import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMesh from '@/mesh/NVMesh'
@@ -1444,7 +1445,8 @@ export default class NVModel {
       return { ...NVModel.volumeDefaults, ...volume }
     }
     const opts = volume as ImageFromUrlOptions
-    const { url, urlImageData, limitFrames4D, ...overrides } = opts
+    const { url, urlImageData, limitFrames4D, ...overrides } =
+      NVCmaps.withColormapWindow(opts)
     if (!url) {
       throw new Error('prepareVolume requires a url or an NVImage object')
     }

@@ -696,3 +696,25 @@ test('matcap: saved by name, loads back as its URL, unknown paths load the defau
   expect(r.unknownReplaced).toBe(true)
   expect(r.fromUnknown).toBe(r.url)
 })
+
+for (const fill of ['current', { 'volume.matcap': 'current' }] as const) {
+  test(`matcap: omitted value respects fill ${JSON.stringify(fill)}`, async ({
+    page,
+  }) => {
+    const result = await page.evaluate(async (fill) => {
+      const { default: NiiVue } = await import('/src/index.ts')
+      const nv = new NiiVue({
+        matcaps: { cortex: '/m/Cortex.jpg', gold: '/m/custom-gold.jpg' },
+      })
+      nv.volumeMatcap = '/m/custom-gold.jpg'
+      const changes: string[] = []
+      nv.addEventListener('change', (event) => {
+        changes.push(event.detail.property)
+      })
+      await nv.loadDocument(new File(['{"version":9}'], 'empty.json'), { fill })
+      return { matcap: nv.volumeMatcap, changes }
+    }, fill)
+    expect(result.matcap).toBe('/m/custom-gold.jpg')
+    expect(result.changes).not.toContain('volumeMatcap')
+  })
+}

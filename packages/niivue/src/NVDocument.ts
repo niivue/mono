@@ -5,6 +5,7 @@ import {
   looksLikeJSON,
 } from '@/documentJson'
 import { isTransientStreamedVolume, shouldLinkVolume } from '@/documentLinkData'
+import { matcapToName } from '@/documentMatcap'
 import { selectUrlMeshLayers } from '@/documentMeshLayers'
 import {
   fillGroup,
@@ -367,6 +368,8 @@ export function serialize(
   model: NVModel,
   slidePlane?: NVDocumentSlidePlane,
   options?: SerializeOptions,
+  // The instance's named matcaps, so a known one is saved by name.
+  matcaps?: Record<string, string>,
 ): Uint8Array {
   const policy = options?.settings
   const linkData = options?.linkData ?? false
@@ -632,7 +635,7 @@ export function serialize(
     ui: sparsifyGroup('ui', model.ui, NVConstants.UI_DEFAULTS, policy),
     volume: sparsifyGroup(
       'volume',
-      model.volume,
+      { ...model.volume, matcap: matcapToName(model.volume.matcap, matcaps) },
       NVConstants.VOLUME_DEFAULTS,
       policy,
     ),

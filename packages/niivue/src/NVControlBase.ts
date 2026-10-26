@@ -40,6 +40,7 @@ import {
   settingsChangeEvents,
   snapshotSettings,
 } from '@/documentEvents'
+import { matcapFromName } from '@/documentMatcap'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   addUndoBitmap,
@@ -6684,11 +6685,16 @@ export default class NiiVue extends EventTarget {
    * binary) or `'json'` (portable text). `loadDocument` accepts either encoding.
    */
   serializeDocument(options?: NVDocument.SerializeOptions): Uint8Array {
-    return NVDocument.serialize(this.model, this._slidePlaneToDoc(), {
-      settings: options?.settings ?? this._settingsSavePolicy,
-      linkData: options?.linkData,
-      format: options?.format,
-    })
+    return NVDocument.serialize(
+      this.model,
+      this._slidePlaneToDoc(),
+      {
+        settings: options?.settings ?? this._settingsSavePolicy,
+        linkData: options?.linkData,
+        format: options?.format,
+      },
+      this.opts.matcaps,
+    )
   }
 
   // Capture the registered slide plane + its slide-space drawing for the
@@ -6820,6 +6826,11 @@ export default class NiiVue extends EventTarget {
     for (let i = 0; i < signalsBefore.length; i++) {
       this.emit('signalRemoved', { signal: signalsBefore[i], index: i })
     }
+    // A document saves a known matcap by name; apply its URL.
+    this.model.volume.matcap = matcapFromName(
+      this.model.volume.matcap,
+      this.opts.matcaps,
+    )
     this.emitSettingsChanges(settingsBefore)
 
     // Restore thumbnail if present in document

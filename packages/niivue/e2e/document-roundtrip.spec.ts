@@ -634,3 +634,47 @@ test('json format: saves portable JSON that loadDocument reads back (linked + em
   expect(r.embeddedVoxels).toBeGreaterThan(1_000_000) // embedded JSON -> base64 voxels
   expect(r.embeddedCalMinNegIsNaN).toBe(true) // and on the embedded path
 })
+
+test('matcap: a known matcap is saved by name and loads back as its URL', async ({
+  page,
+}) => {
+  test.setTimeout(60_000) // shares the one-time Vite module-graph transform
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+
+    const src = new NiiVue()
+    const url = src.volumeMatcap
+    const json = new TextDecoder().decode(
+      src.serializeDocument({ format: 'json' }),
+    )
+    const saved = JSON.parse(json).volume?.matcap
+
+    const reloaded = new NiiVue()
+    reloaded.volumeMatcap = ''
+    await reloaded.loadDocument(new File([json], 'named.json'))
+
+    // A document saved before names stored the dev server's path, which only
+    // resolves on that server. It loads by file name.
+    const legacy = json.replace(
+      '"matcap":"cortex"',
+      '"matcap":"/src/assets/matcaps/Cortex.jpg"',
+    )
+    const fromLegacy = new NiiVue()
+    await fromLegacy.loadDocument(new File([legacy], 'legacy.json'))
+
+    return {
+      url,
+      saved,
+      reloaded: reloaded.volumeMatcap,
+      legacyReplaced: legacy !== json,
+      fromLegacy: fromLegacy.volumeMatcap,
+    }
+  })
+
+  expect(r.url).not.toBe('')
+  expect(r.saved).toBe('cortex')
+  expect(r.reloaded).toBe(r.url)
+  expect(r.legacyReplaced).toBe(true)
+  expect(r.fromLegacy).toBe(r.url)
+})

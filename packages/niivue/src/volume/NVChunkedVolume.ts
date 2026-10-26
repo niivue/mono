@@ -250,7 +250,12 @@ function positiveIntOption(value: number): number {
  */
 export function createSourceChunkLoader(
   source: ChunkedVolumeSource,
-  opts: { maxConcurrentLoads: number; retryAttempts: number },
+  opts: {
+    maxConcurrentLoads: number
+    retryAttempts: number
+    /** Called once per decoded region, however many requests share it. */
+    onChunk?: (bytes: Uint8Array, bytesPerVoxel: number) => void
+  },
 ): VolumeChunkSource {
   // Clamp at the point the options are consumed; see positiveIntOption.
   const maxConcurrent = positiveIntOption(opts.maxConcurrentLoads)
@@ -320,6 +325,12 @@ export function createSourceChunkLoader(
       if (inflight.get(key) === entry) inflight.delete(key)
     }
     promise.then(cleanup, cleanup)
+    const onChunk = opts.onChunk
+    if (onChunk)
+      promise.then(
+        (bytes) => onChunk(bytes, request.bytesPerVoxel),
+        () => {},
+      )
     return promise
   }
 }
@@ -412,6 +423,9 @@ export class NVChunkedVolume {
    */
   private readonly wantsAutoWindow: boolean
   private windowResolved = false
+  /** Label range seen in decoded bricks, not yet applied to the palette. */
+  private pendingLabelRange: [number, number] | null = null
+  private labelGrowHandle: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     host: NiiVue,
@@ -475,6 +489,8 @@ export class NVChunkedVolume {
     this.volume.chunkSource = createSourceChunkLoader(source, {
       maxConcurrentLoads: options.maxConcurrentLoads ?? 6,
       retryAttempts: options.retryAttempts ?? 3,
+      onChunk: (bytes, bytesPerVoxel) =>
+        this.growLabelsFromChunk(bytes, bytesPerVoxel),
     })
   }
 
@@ -785,6 +801,10 @@ export class NVChunkedVolume {
     if (this.refocusHandle) {
       clearTimeout(this.refocusHandle)
       this.refocusHandle = null
+    }
+    if (this.labelGrowHandle) {
+      clearTimeout(this.labelGrowHandle)
+      this.labelGrowHandle = null
     }
     // A cancelled refocus never applies, so release anyone awaiting it now.
     const pending = this.pendingRefocus
@@ -1102,6 +1122,65 @@ export class NVChunkedVolume {
     log.debug(
       `NVChunkedVolume: auto window ${lo}..${hi} (global ${globalMin}..${globalMax})`,
     )
+  }
+
+  /**
+   * Widen the generated label palette to the IDs in a decoded brick. The
+   * coarse floor (or window probe) only samples the coarsest level, so an ID
+   * present only at finer levels would otherwise take the palette's end
+   * colour. Independent of the display window: it runs with explicit bounds
+   * too. Bricks arriving together are applied once, and the new LUT changes
+   * `chunkedDisplayKey`, so the renderer re-streams the resident bricks with
+   * it; re-streamed bricks are covered and do not grow it again.
+   */
+  private growLabelsFromChunk(bytes: Uint8Array, bytesPerVoxel: number): void {
+    if (this.disposed) return
+    const scene = this.host.volumes?.find((v) => v.id === this.volumeId)
+    const shown = scene ?? this.volume
+    if (!NVCmaps.isGeneratedLabelColormap(shown.colormap)) return
+    const Ctor = getTypedArrayConstructor(this.source.datatypeCode)
+    if (!Ctor || bytesPerVoxel <= 0) return
+    const voxels = Math.floor(bytes.byteLength / bytesPerVoxel)
+    const range = NVCmaps.finiteLabelRange(
+      toVoxelView(bytes, Ctor, bytesPerVoxel, voxels),
+      shown.hdr.scl_slope,
+      shown.hdr.scl_inter,
+    )
+    const lut = shown.colormapLabel
+    if (!range || !lut) return
+    if (range[0] >= (lut.min ?? 0) && range[1] <= (lut.max ?? 0)) return
+    const pending = this.pendingLabelRange
+    this.pendingLabelRange = pending
+      ? [Math.min(pending[0], range[0]), Math.max(pending[1], range[1])]
+      : range
+    if (this.labelGrowHandle) return
+    this.labelGrowHandle = setTimeout(() => this.applyLabelGrowth(), 0)
+  }
+
+  private applyLabelGrowth(): void {
+    this.labelGrowHandle = null
+    const range = this.pendingLabelRange
+    this.pendingLabelRange = null
+    if (!range || this.disposed) return
+    const scene = this.host.volumes?.find((v) => v.id === this.volumeId)
+    const targets = new Set<NVImage>([this.volume])
+    if (scene) targets.add(scene)
+    let grew = false
+    for (const vol of targets) {
+      const grown = NVCmaps.grownLabelLut(
+        vol.colormap,
+        vol.colormapLabel,
+        range,
+      )
+      if (grown) {
+        vol.colormapLabel = grown
+        grew = true
+      }
+    }
+    if (grew)
+      this.host
+        ._updateGLChanged()
+        .catch((err) => log.warn('NVChunkedVolume: label palette growth', err))
   }
 
   /**

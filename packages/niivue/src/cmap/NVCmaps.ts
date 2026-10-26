@@ -305,6 +305,30 @@ export function labelLutFor(
 }
 
 /**
+ * The finite value range of `img` in calibrated units (`slope`/`inter`, a
+ * missing slope meaning 1), or null when it holds no finite voxel. What the
+ * generated label palette grows to.
+ */
+export function finiteLabelRange(
+  img: ArrayLike<number>,
+  slope: number,
+  inter: number,
+): [number, number] | null {
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  for (let i = 0; i < img.length; i++) {
+    const v = img[i]
+    if (!Number.isFinite(v)) continue
+    if (v < lo) lo = v
+    if (v > hi) hi = v
+  }
+  if (lo > hi) return null
+  const m = slope || 1
+  const b = inter || 0
+  return m < 0 ? [hi * m + b, lo * m + b] : [lo * m + b, hi * m + b]
+}
+
+/**
  * The generated palette's `lut` widened to cover `range` (it never shrinks),
  * or null when it already covers it or `name` is not the generated palette:
  * a table colormap colours the IDs it defines.

@@ -247,6 +247,62 @@ for (const backend of ['webgl2', 'webgpu']) {
     expect(max).toBe(20000)
   })
 
+  for (const bounds of ['automatic', 'explicit'] as const) {
+    test(`${backend}: a streamed ID only at the fine level gets its colour (${bounds} bounds)`, async ({
+      page,
+    }) => {
+      const up = await page.evaluate(MOUNT(backend))
+      test.skip(
+        !up.ok || up.backend !== backend,
+        `no ${backend}: ${up.why ?? up.backend}`,
+      )
+      // The coarse level (all the floor and window samples read) holds only
+      // ID 3; ID 20000 exists only in the fine level's right half, so only the
+      // decoded fine bricks can widen the palette to it.
+      const r = await page.evaluate(async (explicit) => {
+        const N = 32
+        const source = {
+          datatypeCode: 4,
+          levels: [
+            { level: 0, shape: [N, N, 4], spacing: [1, 1, 1] },
+            { level: 1, shape: [N / 2, N / 2, 2], spacing: [2, 2, 2] },
+          ],
+          fetchChunk: async ({ levelIndex, texOrigin: o, texDims: d }) => {
+            const out = new Int16Array(d[0] * d[1] * d[2])
+            for (let z = 0; z < d[2]; z++)
+              for (let y = 0; y < d[1]; y++)
+                for (let x = 0; x < d[0]; x++)
+                  out[x + d[0] * (y + d[1] * z)] =
+                    levelIndex === 0 && o[0] + x >= N / 2 ? 20000 : 3
+            return new Uint8Array(out.buffer)
+          },
+        }
+        const nv = window.__nv
+        await nv.loadChunkedVolume(source, {
+          colormap: 'Random',
+          ...(explicit ? { calMin: 0, calMax: 1 } : {}),
+        })
+        for (
+          let i = 0;
+          i < 100 && !(nv.volumes[0]?.colormapLabel?.max >= 20000);
+          i++
+        )
+          await new Promise((r) => setTimeout(r, 50))
+        const lut = nv.volumes[0]?.colormapLabel
+        // Re-streamed bricks are covered, so the palette settles.
+        for (let i = 0; i < 10; i++) await window.__nextFrame()
+        return { max: lut?.max, settled: nv.volumes[0]?.colormapLabel === lut }
+      }, bounds === 'explicit')
+      expect(r).toEqual({ max: 20000, settled: true })
+      const want = await lutColor(page, 20000)
+      await expect
+        .poll(async () =>
+          close(want, (await probe(page, RIGHT.x, RIGHT.y)).slice(0, 3)),
+        )
+        .toBe(true)
+    })
+  }
+
   test(`${backend}: setVolume switches between continuous and label colormaps`, async ({
     page,
   }) => {

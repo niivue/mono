@@ -1468,27 +1468,17 @@ export default class NVModel {
    */
   static growLabelRange(vol: NVImage, range?: [number, number]): void {
     if (!NVCmaps.isGeneratedLabelColormap(vol.colormap)) return
-    let [lo, hi] = range ?? [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]
-    if (!range) {
-      const img = vol.img
-      if (!img) return
-      for (let i = 0; i < img.length; i++) {
-        const v = img[i]
-        if (!Number.isFinite(v)) continue
-        if (v < lo) lo = v
-        if (v > hi) hi = v
-      }
-      if (lo > hi) return
-      const slope = vol.hdr.scl_slope || 1
-      const inter = vol.hdr.scl_inter || 0
-      ;[lo, hi] = slope < 0 ? [hi, lo] : [lo, hi]
-      lo = lo * slope + inter
-      hi = hi * slope + inter
-    }
-    const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, [
-      lo,
-      hi,
-    ])
+    const span =
+      range ??
+      (vol.img
+        ? NVCmaps.finiteLabelRange(
+            vol.img,
+            vol.hdr.scl_slope,
+            vol.hdr.scl_inter,
+          )
+        : null)
+    if (!span) return
+    const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, span)
     if (grown) vol.colormapLabel = grown
   }
 

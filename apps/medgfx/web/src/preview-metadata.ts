@@ -241,17 +241,26 @@ export function describeScene(
   counts: { volumes: number; meshes: number; signals: number },
   fileName: string,
   fileSize: number | undefined,
+  linked = 0,
 ): VolumeSummary {
   const pairs: Record<string, string> = { format: formatName(fileName) }
   // A zero count is noise, as "frames 1" is for a 3D volume.
   for (const [key, n] of Object.entries(counts)) {
     if (n > 0) pairs[key] = String(n)
   }
+  if (linked > 0) pairs.linked = String(linked)
   if (fileSize !== undefined && fileSize >= 0)
     pairs.size = formatBytes(fileSize)
-  // Usually a document that links its data by URL: the preview can read only
-  // the one file Quick Look handed it, so linked data never loads. Corrupt
-  // embedded data and drawing-only documents land here too.
+  // A preview never fetches linked data, so the scene it could draw is not the
+  // document. Say how to see it rather than draw part of it.
+  if (linked > 0) {
+    return {
+      pairs,
+      displayable: false,
+      reason: 'it has linked data; open it to view linked data',
+    }
+  }
+  // Corrupt embedded data, or a drawing-only document.
   if (counts.volumes + counts.meshes + counts.signals === 0) {
     return {
       pairs,

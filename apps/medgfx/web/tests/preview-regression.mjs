@@ -22,6 +22,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { decode } from 'cbor-x'
 import { nifti1, nvd, physioSignal, SPECIMENS } from './preview-fixtures.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -49,6 +50,15 @@ const FIXTURES = {
   'linked.nvd': nvd({ url: 'blob.nii' }),
   // Linked to another origin: only the CSP stands between it and a fetch.
   'remote.nvd': nvd({ url: 'https://niivue.com/volumes/mni152.nii.gz' }),
+  // Linked to a file beside it, which the preview must still not read.
+  'sibling.nvd': nvd({ url: 'basic.nii' }),
+  // One volume embedded, one linked from the web.
+  'mixed.nvd': nvd({
+    volumes: [
+      decode(nvd()).volumes[0],
+      { name: 'web.nii.gz', url: 'https://niivue.com/volumes/mni152.nii.gz' },
+    ],
+  }),
   // Header promises more voxels than the document carries.
   'short.nvd': nvd({ truncated: true }),
   // A thumbnail the preview cannot reach must not cost the embedded volume.
@@ -115,8 +125,12 @@ function documentURL(base, name) {
   return `${base}/document/00000000-0000-4000-8000-000000000000/${encoded}`
 }
 
+/** Every path the page asked for, so a test can prove one was never read. */
+const requested = []
+
 const server = createServer(async (req, res) => {
   const path = normalize(decodeURIComponent(req.url.split('?')[0]))
+  requested.push(path)
   try {
     let body
     if (path.startsWith('/document/')) {
@@ -606,20 +620,55 @@ check(
   meta.displayable,
 )
 check(
-  'it says nothing could be loaded from the file',
-  /nothing in it could be loaded/.test(linkedDetail),
+  'it says to open the file to view linked data',
+  /open it to view linked data/.test(linkedDetail),
   linkedDetail,
 )
+check('it counts the linked data', meta.linked === '1', meta.linked)
 await result.page.close()
 
 result = await preview(documentURL(base, 'remote.nvd'), 'remote.nvd', {
   family: 'scene',
 })
 meta = result.message?.metadata ?? {}
+const remoteDetail = await result.page.locator('#fallback-detail').innerText()
 check(
   'a remotely linked NVD stays offline',
   result.message?.stage === 'loaded' && meta.displayable === 'false',
   `${result.message?.stage} / ${meta.displayable}`,
+)
+check(
+  'it says to open the file to view linked data',
+  /open it to view linked data/.test(remoteDetail),
+  remoteDetail,
+)
+await result.page.close()
+
+const siblingStart = requested.length
+result = await preview(documentURL(base, 'sibling.nvd'), 'sibling.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+check(
+  'an NVD linked to a file beside it says to open it',
+  meta.displayable === 'false' && meta.linked === '1',
+  `${meta.displayable} / ${meta.linked}`,
+)
+check(
+  'and never reads that file',
+  !requested.slice(siblingStart).some((p) => p.endsWith('/basic.nii')),
+  requested.slice(siblingStart).join(', '),
+)
+await result.page.close()
+
+result = await preview(documentURL(base, 'mixed.nvd'), 'mixed.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+check(
+  'an NVD with embedded and linked data says to open it',
+  meta.displayable === 'false' && meta.volumes === '1' && meta.linked === '1',
+  `${meta.displayable} / ${meta.volumes} / ${meta.linked}`,
 )
 await result.page.close()
 

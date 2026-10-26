@@ -346,15 +346,25 @@ async function renderMesh(
  * `loadDocument` resets every setting the document omits to its default.
  *
  * NiiVue logs and skips data it cannot load rather than throwing, so a
- * document whose data is linked by URL loads as an empty scene. That is
+ * document whose embedded data is unreadable loads as an empty scene. That is
  * reported as metadata, not as a failure.
+ *
+ * Linked data is never fetched. Data on the web would tell the file's sender
+ * when it was looked at, and Quick Look grants the previewed file only, not
+ * the files beside it. Each link is skipped and counted, and a document with
+ * any linked data says to open it rather than draw an incomplete scene.
  */
 async function renderScene(
   instance: NiiVue,
   request: PreviewRequest,
 ): Promise<void> {
+  let linked = 0
+  const resolveUrl = (): null => {
+    linked += 1
+    return null
+  }
   try {
-    await instance.loadDocument(request.url)
+    await instance.loadDocument(request.url, { resolveUrl })
   } catch (error) {
     if (settled) return
     fail('unreadable', error instanceof Error ? error.message : String(error))
@@ -371,6 +381,7 @@ async function renderScene(
     },
     request.displayName,
     request.fileSize,
+    linked,
   )
   // A volume whose header outruns its data still loads and is drawn, possibly
   // as a black panel; report it as metadata rather than a success. A flat

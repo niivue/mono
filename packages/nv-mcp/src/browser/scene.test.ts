@@ -1660,6 +1660,50 @@ describe('add_overlay', () => {
     }
   })
 
+  it('keeps an overlay colours when another with its table fails to load', async () => {
+    // The registry is shared: re-registering the address recolours every
+    // volume drawn with it, so it must wait until the new file has loaded.
+    const registry = new Map<string, unknown>()
+    const addColormap = mock((name: string, table: { R: number[] }) => {
+      registry.set(name, table.R)
+      LABEL_COLORMAPS.add(name)
+      return name
+    })
+    const failsToLoad = (volume: { url?: unknown }) => {
+      if (volume.url === 'http://h/bad.nii') throw new Error('not a NIfTI file')
+    }
+    const view = fakeView({
+      addColormap,
+      prepareVolume: mock(async (volume: VolumeToLoad) => {
+        failsToLoad(volume)
+        return { name: volume.name, colormap: volume.colormap }
+      }),
+    })
+    view.addVolume = mock(async (volume: VolumeToLoad) => {
+      failsToLoad(volume)
+      ;(view.volumes as ShownVolume[]).push(shown(volume))
+    })
+    const realFetch = globalThis.fetch
+    let red = 255
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ R: [0, red--], G: [0, 0], B: [0, 0], labels: [] }),
+      )) as unknown as typeof fetch
+    const labels = 'http://h/aal.json'
+    try {
+      const handlers = coreHandlers(host(view))
+      await handlers.add_overlay({ url: 'http://h/good.nii', labels })
+      await expect(
+        handlers.add_overlay({ url: 'http://h/bad.nii', labels }),
+      ).rejects.toThrow('could not be loaded: not a NIfTI file')
+      expect(addColormap).toHaveBeenCalledTimes(1)
+      expect(view.volumes.map((v) => v.colormap)).toEqual([undefined, labels])
+      expect(registry.get(labels)).toEqual([0, 255])
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
   it('keeps tables with one file name apart, and reports what each volume draws now', async () => {
     const addColormap = mock((name: string) => {
       LABEL_COLORMAPS.add(name)

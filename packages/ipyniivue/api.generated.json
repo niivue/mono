@@ -4343,6 +4343,10 @@
         "reason": "return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)"
       },
       {
+        "jsName": "prepareVolume",
+        "reason": "return value is not JSON-serializable (a live NVImage for addVolume to take; use add_volume)"
+      },
+      {
         "jsName": "registerOverlayRenderer",
         "reason": "argument and return value are not JSON-serializable (JS overlay renderer and disposer function)"
       },

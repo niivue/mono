@@ -362,6 +362,40 @@ for (const backend of ['webgl2', 'webgpu']) {
   })
 }
 
+test('prepareVolume loads without adding, and addVolume applies its colormap', async ({
+  page,
+}) => {
+  const up = await page.evaluate(MOUNT('webgl2'))
+  expect(up.ok).toBe(true)
+  const r = await page.evaluate(async () => {
+    const nv = window.__nv
+    const prepared = await nv.prepareVolume({
+      url: window.__labelFile(),
+      colormap: 'gray',
+    })
+    const countBefore = nv.volumes.length
+    prepared.colormap = nv.addColormap('preparedHalves', {
+      R: [0, 0, 255],
+      G: [0, 255, 0],
+      B: [0, 0, 0],
+      I: [0, 3, 20000],
+      labels: ['air', 'left', 'right'],
+    })
+    await nv.addVolume(prepared)
+    await window.__nextFrame()
+    const lut = nv.volumes[0].colormapLabel
+    return {
+      countBefore,
+      count: nv.volumes.length,
+      labels: lut ? [lut.labels?.[3], lut.labels?.[20000]] : null,
+    }
+  })
+  expect(r).toEqual({ countBefore: 0, count: 1, labels: ['left', 'right'] })
+  expect(
+    close((await probe(page, RIGHT.x, RIGHT.y)).slice(0, 3), [255, 0, 0]),
+  ).toBe(true)
+})
+
 test('drawColormap takes label colormaps with IDs up to 255 only', async ({
   page,
 }) => {

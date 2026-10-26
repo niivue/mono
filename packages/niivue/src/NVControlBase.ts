@@ -2992,6 +2992,16 @@ export default class NiiVue extends EventTarget {
     await this._updateGLChanged()
   }
 
+  /**
+   * Fetch and prepare a volume without adding it, so a caller can finish any
+   * step that may still fail before changing the scene, then pass the result
+   * to `addVolume` (which re-applies its `colormap`). Not exposed through
+   * nv-mcp: it returns a live `NVImage`, not serializable state.
+   */
+  async prepareVolume(volume: ImageFromUrlOptions | NVImage): Promise<NVImage> {
+    return NVModel.prepareVolume(volume)
+  }
+
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<this> {
     await this.model.addVolume(volume)
     const vols = this.model.getVolumes()

@@ -74,6 +74,7 @@ import type {
   NiiVueHost,
   PointLabel,
   ShownVolume,
+  TransformedVolume,
   View,
   VolumeToLoad,
   VolumeUpdate,
@@ -608,7 +609,24 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         throw new Error(
           'A label overlay has no display window: leave cal_min and cal_max out.',
         )
-      if (registerLabels) toLoad.colormap = registerLabels()
+      const couldNotLoad = (error: unknown) => {
+        const why = error instanceof Error ? error.message : String(error)
+        return new Error(`The overlay at ${url} could not be loaded: ${why}`)
+      }
+      // The file is fetched and parsed before the table is registered, so a
+      // file that fails to load cannot recolour a volume already using that
+      // table. It is prepared under gray, which every viewer has; addVolume
+      // then applies the registered table.
+      let volume: VolumeToLoad | (TransformedVolume & { colormap?: string }) =
+        toLoad
+      const prepareVolume = view.prepareVolume?.bind(view)
+      if (registerLabels && prepareVolume)
+        volume = await prepareVolume({ ...toLoad, colormap: 'gray' }).catch(
+          (error: unknown) => {
+            throw couldNotLoad(error)
+          },
+        )
+      if (registerLabels) volume.colormap = registerLabels()
       // NiiVue keeps the crosshair as a fraction of the scene, and a volume
       // with a different box changes the scene, so the same fraction would
       // land somewhere else. It is read in millimetres first and put back.
@@ -617,10 +635,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // volume as much as one from load_volume. A failed add leaves the
       // scene as it was.
       try {
-        await view.addVolume(toLoad)
+        await view.addVolume(volume)
       } catch (error) {
-        const why = error instanceof Error ? error.message : String(error)
-        throw new Error(`The overlay at ${url} could not be loaded: ${why}`)
+        throw couldNotLoad(error)
       }
       view.crosshairPos = new Float32Array(
         view.model.mm2scene([before[0], before[1], before[2]]),

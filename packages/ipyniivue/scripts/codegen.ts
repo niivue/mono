@@ -52,6 +52,10 @@ const NON_SERIALIZABLE_METHODS = new Map<string, string>([
     'return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)',
   ],
   [
+    'prepareVolume',
+    'return value is not JSON-serializable (a live NVImage for addVolume to take; use add_volume)',
+  ],
+  [
     'createExtensionContext',
     'return value is not JSON-serializable (JS extension context handle)',
   ],

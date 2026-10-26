@@ -139,6 +139,42 @@ for (const backend of ['webgl2', 'webgpu']) {
     ).toBe(true)
   })
 
+  test(`${backend}: the generated palette grows with IDs written after load`, async ({
+    page,
+  }) => {
+    const up = await page.evaluate(MOUNT(backend))
+    test.skip(
+      !up.ok || up.backend !== backend,
+      `no ${backend}: ${up.why ?? up.backend}`,
+    )
+    // The file holds IDs 3 and 20000; a live edit writes 30000 into the right
+    // half. A LUT fixed at load would clamp it to ID 20000's colour.
+    const max = await page.evaluate(async () => {
+      const nv = window.__nv
+      await nv.loadVolumes([{ url: window.__labelFile() }])
+      const v = nv.volumes[0]
+      const next = Int16Array.from(v.img, (id) => (id === 20000 ? 30000 : id))
+      await nv.updateVolumeData(0, next)
+      await window.__nextFrame()
+      return v.colormapLabel?.max
+    })
+    expect(max).toBe(30000)
+    const shown = (await probe(page, RIGHT.x, RIGHT.y)).slice(0, 3)
+    expect(close(await lutColor(page, 30000), shown)).toBe(true)
+    expect(close(await lutColor(page, 20000), shown)).toBe(false)
+
+    // An in-place edit flagged isDirty grows it the same way.
+    const dirtyMax = await page.evaluate(async () => {
+      const nv = window.__nv
+      const v = nv.volumes[0]
+      v.img[0] = 31000
+      v.isDirty = true
+      await nv.updateGLVolume()
+      return v.colormapLabel?.max
+    })
+    expect(dirtyMax).toBe(31000)
+  })
+
   test(`${backend}: setVolume switches between continuous and label colormaps`, async ({
     page,
   }) => {

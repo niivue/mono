@@ -2583,7 +2583,7 @@ export default class NiiVue extends EventTarget {
     volumes?: readonly NVImage[],
     colorbars = !volumes,
   ): Promise<void> {
-    const dirty = commitDirtyVolumes(this.model.getVolumes())
+    const dirty = this._commitDirtyVolumes()
     const changed = volumes && [
       ...volumes,
       ...dirty.filter((v) => !volumes.includes(v)),
@@ -2676,7 +2676,7 @@ export default class NiiVue extends EventTarget {
     while (this._updating && this._updatingView === this.view) {
       await this._updateIdle
     }
-    commitDirtyVolumes(this.model.getVolumes())
+    this._commitDirtyVolumes()
     const token = this._beginUpdate()
     try {
       // A modulator committed just above must not bake its old weights.
@@ -2687,10 +2687,20 @@ export default class NiiVue extends EventTarget {
     }
   }
 
+  /**
+   * commitDirtyVolumes for this model's volumes, then widen each edited
+   * volume's generated label LUT to the values it now holds.
+   */
+  private _commitDirtyVolumes(): NVImage[] {
+    const dirty = commitDirtyVolumes(this.model.getVolumes())
+    for (const vol of dirty) NVModel.growLabelRange(vol)
+    return dirty
+  }
+
   private async updateVolumeAffineOnly(): Promise<void> {
     // An isDirty volume needs its voxels re-uploaded, which the overlay-only
     // affine fast path below may not do (it can skip the background).
-    const hasDirty = commitDirtyVolumes(this.model.getVolumes()).length > 0
+    const hasDirty = this._commitDirtyVolumes().length > 0
     if (this._updating) {
       this._pendingUpdate = true
       // A moved volume needs every volume resliced, not a data-only scope.
@@ -3731,6 +3741,7 @@ export default class NiiVue extends EventTarget {
       }
     }
     markVolumeDataChanged(vol)
+    NVModel.growLabelRange(vol)
     await this._updateGL('none', [vol])
   }
 
@@ -4452,6 +4463,7 @@ export default class NiiVue extends EventTarget {
     vol.robustMax = pct98
     vol.globalMin = mnScale
     vol.globalMax = mxScale
+    NVModel.growLabelRange(vol, [mnScale, mxScale])
     await this._updateGLChanged()
   }
 
@@ -4561,6 +4573,7 @@ export default class NiiVue extends EventTarget {
       vol.robustMax = rebuilt.robustMax
       vol.globalMin = rebuilt.globalMin
       vol.globalMax = rebuilt.globalMax
+      NVModel.growLabelRange(vol, [rebuilt.globalMin, rebuilt.globalMax])
       try {
         await this._updateGLChanged()
       } catch (e) {

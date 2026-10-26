@@ -1457,6 +1457,39 @@ export default class NVModel {
     return vol
   }
 
+  /**
+   * Widen a volume's generated `Random` LUT to cover `range` (calibrated), or
+   * when `range` is omitted, every value now in `img`. The LUT only grows, so
+   * IDs written after load (a live segmentation via `updateVolumeData`, a new
+   * 4D frame) get their own colour instead of the last entry's. A table
+   * colormap is left alone: it colours the IDs it defines.
+   */
+  static growLabelRange(vol: NVImage, range?: [number, number]): void {
+    const lut = vol.colormapLabel
+    if (!lut || !NVCmaps.isGeneratedLabelColormap(vol.colormap)) return
+    let [lo, hi] = range ?? [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]
+    if (!range) {
+      const img = vol.img
+      if (!img) return
+      for (let i = 0; i < img.length; i++) {
+        const v = img[i]
+        if (v < lo) lo = v
+        if (v > hi) hi = v
+      }
+      const { scl_slope: slope, scl_inter: inter } = vol.hdr
+      ;[lo, hi] = slope < 0 ? [hi, lo] : [lo, hi]
+      lo = lo * slope + inter
+      hi = hi * slope + inter
+    }
+    const min = lut.min ?? 0
+    const max = lut.max ?? 0
+    if (!(lo < min || hi > max)) return
+    vol.colormapLabel = NVCmaps.labelLutFor(vol.colormap, [
+      Math.min(lo, min),
+      Math.max(hi, max),
+    ])
+  }
+
   /** Fetch and prepare an NVImage without adding it to the model. */
   static async prepareVolume(
     volume: ImageFromUrlOptions | NVImage,

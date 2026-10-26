@@ -261,10 +261,21 @@ function randomLabels(lo: number, hi: number): LutDef {
 }
 
 /**
+ * Whether `name` resolves to the generated `Random` palette (not a table a
+ * caller registered under that name), whose LUT is sized to a value range.
+ */
+export function isGeneratedLabelColormap(name?: string): boolean {
+  if (!name) return false
+  const canonical = canonicalName(name)
+  return canonical === 'Random' && !_revisions.has(canonical)
+}
+
+/**
  * The label LUT a volume shows for colormap `name`, or null when `name` is
  * continuous (or unknown). `range` is the volume's value range: the generated
- * `Random` palette spans it, so every ID in the volume gets a colour, while a
- * table colormap is used as defined.
+ * `Random` palette spans it, and at least IDs 0..255, so every ID in the
+ * volume (and any a segmentation adds up to 255) gets a colour, while a table
+ * colormap is used as defined.
  */
 export function labelLutFor(
   name: string | undefined,
@@ -274,10 +285,10 @@ export function labelLutFor(
   const canonical = canonicalName(name)
   const def = buildLutIndex().get(canonical)
   if (!def || kindOf(def) !== 'label') return null
-  if (canonical === 'Random' && !_revisions.has(canonical)) {
+  if (isGeneratedLabelColormap(canonical)) {
     // `|| 0`: a NaN range (an all-NaN frame) must not throw on every update.
     const lo = Math.floor(Math.min(range[0] || 0, 0))
-    let hi = Math.ceil(Math.max(range[1] || 0, 0))
+    let hi = Math.ceil(Math.max(range[1] || 0, 255))
     if (hi - lo + 1 > MAX_GENERATED_LABELS) {
       log.warn(
         `Random: label range ${lo}..${hi} exceeds ${MAX_GENERATED_LABELS} IDs; higher IDs share the last colour.`,
@@ -400,7 +411,7 @@ export function isDrawingColormap(name: string): boolean {
 }
 
 function isDrawingDef(def: LutDef): boolean {
-  return kindOf(def) === 'label' && def.I.every((i) => i <= 255)
+  return kindOf(def) === 'label' && def.I.every((i) => i >= 0 && i <= 255)
 }
 
 /** Label colormaps a drawing can use: its bitmap holds IDs 0..255. */

@@ -11,6 +11,7 @@ import {
   drawingColormapNames,
   invertLut,
   isDrawingColormap,
+  isGeneratedLabelColormap,
   isLabelColormap,
   labelLutFor,
   lutrgba8,
@@ -367,6 +368,14 @@ describe('colormap kinds', () => {
   })
 
   test('drawingsTakeLabelTablesWithIdsUpTo255', () => {
+    addColormap('kindNegative', {
+      R: [0, 255],
+      G: [0, 0],
+      B: [0, 0],
+      I: [-1, 0],
+      labels: ['below', 'air'],
+    })
+    expect(isDrawingColormap('kindNegative')).toBe(false)
     expect(isDrawingColormap('kindAtlas')).toBe(true)
     expect(isDrawingColormap('kindWide')).toBe(false)
     expect(isDrawingColormap('kindRamp')).toBe(false)
@@ -421,7 +430,21 @@ describe('colormap kinds', () => {
 // ---------------------------------------------------------------------------
 describe('Random palette', () => {
   test('aNaNRangeDoesNotThrow', () => {
-    expect(labelLutFor('Random', [Number.NaN, Number.NaN])?.max).toBe(0)
+    expect(labelLutFor('Random', [Number.NaN, Number.NaN])?.max).toBe(255)
+  })
+
+  test('coversIds0To255WhateverTheRange', () => {
+    // A segmentation can add IDs above the ones the file held at load.
+    const lut = labelLutFor('Random', [0, 3])
+    expect(lut?.min).toBe(0)
+    expect(lut?.max).toBe(255)
+    expect(lut?.lut[4 * 200 + 3]).toBe(255)
+  })
+
+  test('isGeneratedLabelColormapNamesOnlyTheRandomPalette', () => {
+    expect(isGeneratedLabelColormap('random')).toBe(true)
+    expect(isGeneratedLabelColormap('gray')).toBe(false)
+    expect(isGeneratedLabelColormap(undefined)).toBe(false)
   })
 
   test('spansTheVolumeRangeSoEveryIdHasAColour', () => {

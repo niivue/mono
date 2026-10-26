@@ -338,7 +338,7 @@ test('load events: loadDocument emits change (and sliceTypeChange) for the setti
         {
           version: 9,
           layout: { sliceType: SLICE_TYPE.AXIAL },
-          volume: { matcap: 'shiny' },
+          volume: { matcap: 'https://example.org/shiny.jpg' },
         },
         'a.json',
       ),
@@ -372,7 +372,11 @@ test('load events: loadDocument emits change (and sliceTypeChange) for the setti
   const changes = r.seen.filter((e) => e.type === 'change')
   expect(changes).toEqual([
     { type: 'change', property: 'sliceType', value: 0 },
-    { type: 'change', property: 'volumeMatcap', value: 'shiny' },
+    {
+      type: 'change',
+      property: 'volumeMatcap',
+      value: 'https://example.org/shiny.jpg',
+    },
   ])
   expect(r.sliceTypeAfter).toBe(0)
   // sliceType changed -> the paired specialised event fires too, then documentLoaded last.
@@ -635,7 +639,7 @@ test('json format: saves portable JSON that loadDocument reads back (linked + em
   expect(r.embeddedCalMinNegIsNaN).toBe(true) // and on the embedded path
 })
 
-test('matcap: a known matcap is saved by name and loads back as its URL', async ({
+test('matcap: saved by name, loads back as its URL, unknown paths load the default', async ({
   page,
 }) => {
   test.setTimeout(60_000) // shares the one-time Vite module-graph transform
@@ -663,12 +667,24 @@ test('matcap: a known matcap is saved by name and loads back as its URL', async 
     const fromLegacy = new NiiVue()
     await fromLegacy.loadDocument(new File([legacy], 'legacy.json'))
 
+    // A path to a matcap this instance does not have would only 404 here, so
+    // it loads as the instance default.
+    const unknown = json.replace(
+      '"matcap":"cortex"',
+      '"matcap":"/src/assets/matcaps/Gold.jpg"',
+    )
+    const fromUnknown = new NiiVue()
+    fromUnknown.volumeMatcap = ''
+    await fromUnknown.loadDocument(new File([unknown], 'unknown.json'))
+
     return {
       url,
       saved,
       reloaded: reloaded.volumeMatcap,
       legacyReplaced: legacy !== json,
       fromLegacy: fromLegacy.volumeMatcap,
+      unknownReplaced: unknown !== json,
+      fromUnknown: fromUnknown.volumeMatcap,
     }
   })
 
@@ -677,4 +693,6 @@ test('matcap: a known matcap is saved by name and loads back as its URL', async 
   expect(r.reloaded).toBe(r.url)
   expect(r.legacyReplaced).toBe(true)
   expect(r.fromLegacy).toBe(r.url)
+  expect(r.unknownReplaced).toBe(true)
+  expect(r.fromUnknown).toBe(r.url)
 })

@@ -31,15 +31,27 @@ describe('matcapFromName', () => {
     expect(matcapFromName('/a/shiny.png?v=2', matcaps)).toBe('/m/Shiny.jpg')
   })
 
-  test('keeps a URL it does not know, and any data URL', () => {
+  test('keeps a web, data or blob URL it does not know', () => {
     expect(matcapFromName('https://x.org/gold.jpg', matcaps)).toBe(
       'https://x.org/gold.jpg',
     )
     expect(matcapFromName('data:image/png;base64,BBBB', matcaps)).toBe(
       'data:image/png;base64,BBBB',
     )
+    expect(matcapFromName('blob:https://x.org/1', undefined)).toBe(
+      'blob:https://x.org/1',
+    )
     expect(matcapFromName('', matcaps)).toBe('')
-    expect(matcapFromName('cortex', undefined)).toBe('cortex')
+  })
+
+  test('replaces a path or name it cannot resolve with the default', () => {
+    expect(matcapFromName('/src/assets/matcaps/Gold.jpg', matcaps)).toBe(
+      matcaps.cortex,
+    )
+    expect(matcapFromName('gold', matcaps)).toBe(matcaps.cortex)
+    // No matcaps: the default is none.
+    expect(matcapFromName('/src/assets/matcaps/Cortex.jpg', undefined)).toBe('')
+    expect(matcapFromName('cortex', {})).toBe('')
   })
 
   test('round-trips through matcapToName', () => {

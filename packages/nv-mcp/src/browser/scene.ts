@@ -383,18 +383,29 @@ export function coreHandlers(host: NiiVueHost): Handlers {
    * sharing a file name stay apart. A colormap with a `labels` array is a
    * label map, so a table without names gets an empty one.
    */
-  const labelColormap = async (labels: string): Promise<string> => {
+  const labelColormap = async (labels: string): Promise<string> =>
+    (await fetchLabelColormap(labels))()
+  /**
+   * labelColormap in two steps: fetch (and check) the table now, register it
+   * when the returned function is called. Registering recolours every volume
+   * already using that address, so a caller that can still reject the call
+   * registers only once nothing else can fail.
+   */
+  const fetchLabelColormap = async (labels: string): Promise<() => string> => {
     knownLabelTable(labels)
-    if (!isAddress(labels)) return labels
-    if (!view.addColormap)
+    if (!isAddress(labels)) return () => labels
+    const addColormap = view.addColormap?.bind(view)
+    if (!addColormap)
       throw new Error("This page's NiiVue cannot draw label maps.")
     const table = await fetchLabelTable(labels)
-    const name = view.addColormap(labels, {
-      ...table,
-      labels: table.labels ?? [],
-    })
-    tableAddresses.set(name, labels)
-    return name
+    return () => {
+      const name = addColormap(labels, {
+        ...table,
+        labels: table.labels ?? [],
+      })
+      tableAddresses.set(name, labels)
+      return name
+    }
   }
 
   /** The volumes on show, as `add_overlay` and `where_am_i` report them. */
@@ -566,14 +577,18 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const name = text(params, 'name') ?? nameFromUrl(url)
       const labels = text(params, 'labels')
       // A table from an address is fetched before anything is added, so a
-      // bad address leaves the scene as it was.
-      const labelMap = labels ? await labelColormap(labels) : undefined
+      // bad address leaves the scene as it was, and registered only once the
+      // call can no longer be rejected, so a rejected call cannot recolour a
+      // volume already using that table.
+      const registerLabels = labels
+        ? await fetchLabelColormap(labels)
+        : undefined
       const opacity = clamp(
         number(params, 'opacity') ?? (labels ? 0.5 : 0.7),
         0,
         1,
       )
-      const colormap = labelMap ?? text(params, 'colormap') ?? 'warm'
+      const colormap = text(params, 'colormap') ?? 'warm'
       const toLoad: VolumeToLoad = { url, name, colormap, opacity }
       put(toLoad, 'calMin', number(params, 'cal_min'))
       put(toLoad, 'calMax', number(params, 'cal_max'))
@@ -593,6 +608,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         throw new Error(
           'A label overlay has no display window: leave cal_min and cal_max out.',
         )
+      if (registerLabels) toLoad.colormap = registerLabels()
       // NiiVue keeps the crosshair as a fraction of the scene, and a volume
       // with a different box changes the scene, so the same fraction would
       // land somewhere else. It is read in millimetres first and put back.

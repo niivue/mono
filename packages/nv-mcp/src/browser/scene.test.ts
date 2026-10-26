@@ -1635,6 +1635,31 @@ describe('add_overlay', () => {
     }
   })
 
+  it('registers a fetched table only once the overlay call is accepted', async () => {
+    // Registering recolours volumes already using the address, so a call
+    // rejected for another reason must not register it.
+    const addColormap = mock(() => 'Aal')
+    const view = fakeView({ addColormap })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ R: [0, 255], G: [0, 0], B: [0, 0], labels: [] }),
+      )) as unknown as typeof fetch
+    try {
+      await expect(
+        coreHandlers(host(view)).add_overlay({
+          url: 'http://h/new.nii.gz',
+          labels: 'http://h/aal.json',
+          cal_min: 1,
+        }),
+      ).rejects.toThrow('no display window')
+      expect(addColormap).not.toHaveBeenCalled()
+      expect(view.addVolume).not.toHaveBeenCalled()
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
   it('keeps tables with one file name apart, and reports what each volume draws now', async () => {
     const addColormap = mock((name: string) => {
       LABEL_COLORMAPS.add(name)

@@ -1,5 +1,6 @@
 import { mat4 } from 'gl-matrix'
 import { getCanvasViewport } from '@/control/viewBoth'
+import { defaultMatcap } from '@/documentMatcap'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
@@ -285,7 +286,7 @@ export default class NVView {
     this.fontRenderer = new FontRenderer()
     this.colorbarRenderer = new ColorbarRenderer()
     this.sliceRenderer = new SliceRenderer()
-    this.volumeRenderer = new VolumeRenderer()
+    this.volumeRenderer = new VolumeRenderer(defaultMatcap(options.matcaps))
     this.meshBindGroupLayout = null
     this.meshPipelines = null
     this.meshXRayPipelines = null

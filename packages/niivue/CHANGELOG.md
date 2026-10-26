@@ -1,3 +1,17 @@
+## 1.0.0-rc.39 (2026-10-26)
+
+### Fixes
+
+- **niivue:** judge a gray channel colour relative to its brightness ([1cc77a9b](https://github.com/niivue/mono/commit/1cc77a9b))
+- **niivue:** emit meshLoaded for the mesh addMesh added ([bf7f42c1](https://github.com/niivue/mono/commit/bf7f42c1))
+- **niivue:** follow-ups from the #362, #368, #369 and #370 reviews ([#362](https://github.com/niivue/mono/issues/362), [#368](https://github.com/niivue/mono/issues/368), [#369](https://github.com/niivue/mono/issues/369), [#370](https://github.com/niivue/mono/issues/370))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.38 (2026-10-26)
 
 ### Fixes

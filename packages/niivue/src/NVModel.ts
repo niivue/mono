@@ -1474,10 +1474,13 @@ export default class NVModel {
       if (!img) return
       for (let i = 0; i < img.length; i++) {
         const v = img[i]
+        if (!Number.isFinite(v)) continue
         if (v < lo) lo = v
         if (v > hi) hi = v
       }
-      const { scl_slope: slope, scl_inter: inter } = vol.hdr
+      if (lo > hi) return
+      const slope = vol.hdr.scl_slope || 1
+      const inter = vol.hdr.scl_inter || 0
       ;[lo, hi] = slope < 0 ? [hi, lo] : [lo, hi]
       lo = lo * slope + inter
       hi = hi * slope + inter

@@ -9,6 +9,7 @@ import {
   colormapNames,
   customColormaps,
   drawingColormapNames,
+  grownLabelLut,
   invertLut,
   isDrawingColormap,
   isGeneratedLabelColormap,
@@ -439,6 +440,26 @@ describe('Random palette', () => {
     expect(lut?.min).toBe(0)
     expect(lut?.max).toBe(255)
     expect(lut?.lut[4 * 200 + 3]).toBe(255)
+  })
+
+  test('aRangeWithAnExtremeOrInfiniteEndStillKeeps0To255', () => {
+    // A float volume with a fill value such as -3.4e38 once looped forever.
+    for (const range of [
+      [-1e7, 10],
+      [-3.4e38, 10],
+      [Number.NEGATIVE_INFINITY, 10],
+      [0, 1e20],
+      [0, Number.POSITIVE_INFINITY],
+    ] as [number, number][]) {
+      const lut = labelLutFor('Random', range)
+      expect(lut?.min).toBeLessThanOrEqual(0)
+      expect(lut?.max).toBeGreaterThanOrEqual(255)
+    }
+  })
+
+  test('aCappedPaletteIsNotRebuiltOnEveryGrowth', () => {
+    const wide = labelLutFor('Random', [-1e7, 10])
+    expect(grownLabelLut('Random', wide, [-1e8, 10])).toBeNull()
   })
 
   test('isGeneratedLabelColormapNamesOnlyTheRandomPalette', () => {

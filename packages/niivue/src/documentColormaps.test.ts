@@ -79,6 +79,17 @@ describe('upgradeColormaps', () => {
     expect(doc).not.toHaveProperty('colormaps')
   })
 
+  test('aNameOnTheObjectPrototypeIsKept', () => {
+    const doc = {
+      version: 9,
+      draw: { colormap: 'toString' },
+      volumes: [{ name: 'seg', colormap: 'constructor' }],
+    }
+    upgradeColormaps(doc)
+    expect(doc.draw.colormap).toBe('toString')
+    expect(doc.volumes[0].colormap).toBe('constructor')
+  })
+
   test('leavesAV10DocumentAlone', () => {
     const doc = {
       version: 10,

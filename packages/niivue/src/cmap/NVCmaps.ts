@@ -286,14 +286,18 @@ export function labelLutFor(
   const def = buildLutIndex().get(canonical)
   if (!def || kindOf(def) !== 'label') return null
   if (isGeneratedLabelColormap(canonical)) {
-    // `|| 0`: a NaN range (an all-NaN frame) must not throw on every update.
-    const lo = Math.floor(Math.min(range[0] || 0, 0))
-    let hi = Math.ceil(Math.max(range[1] || 0, 255))
+    // A non-finite end (an all-NaN frame, an infinite fill value) is ignored.
+    const finite = (v: number) => (Number.isFinite(v) ? v : 0)
+    let lo = Math.floor(Math.min(finite(range[0]), 0))
+    let hi = Math.ceil(Math.max(finite(range[1]), 255))
     if (hi - lo + 1 > MAX_GENERATED_LABELS) {
       log.warn(
-        `Random: label range ${lo}..${hi} exceeds ${MAX_GENERATED_LABELS} IDs; higher IDs share the last colour.`,
+        `Random: label range ${lo}..${hi} exceeds ${MAX_GENERATED_LABELS} IDs; IDs outside the kept span share its end colours.`,
       )
-      hi = lo + MAX_GENERATED_LABELS - 1
+      // Drop the far negative IDs first (often a fill value), then the high
+      // ones, so 0..255 always keeps its colours.
+      lo = Math.max(lo, hi - MAX_GENERATED_LABELS + 1)
+      if (lo > 0) [lo, hi] = [0, MAX_GENERATED_LABELS - 1]
     }
     return makeLabelLut(randomLabels(lo, hi) as unknown as ColorMap)
   }
@@ -313,6 +317,8 @@ export function grownLabelLut(
   if (!lut || !isGeneratedLabelColormap(name)) return null
   const min = lut.min ?? 0
   const max = lut.max ?? 0
+  // A capped palette already spans as many IDs as it can.
+  if (max - min + 1 >= MAX_GENERATED_LABELS) return null
   const [lo, hi] = range
   if (!(lo < min || hi > max)) return null
   return labelLutFor(name, [Math.min(lo, min), Math.max(hi, max)])

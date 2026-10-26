@@ -34,7 +34,9 @@ const RENAMED: Record<string, string> = {
 }
 
 function renamed(name: string | undefined): string | undefined {
-  return name === undefined ? undefined : (RENAMED[name] ?? name)
+  // hasOwn: a name like `constructor` must not resolve through the prototype.
+  if (name === undefined) return undefined
+  return Object.hasOwn(RENAMED, name) ? RENAMED[name] : name
 }
 
 /** Rebuild a label colormap from a compiled LUT, one entry per ID. */

@@ -6786,9 +6786,18 @@ export default class NiiVue extends EventTarget {
     }
   }
 
+  /**
+   * `options.resolveUrl` sees each linked volume's `url` (a volume saved by URL,
+   * see `SerializeOptions.linkData`) before it is fetched, and returns the URL to
+   * fetch instead, or `null` to skip that volume. A caller can resolve links
+   * against where the document lives rather than the page, or refuse some.
+   */
   async loadDocument(
     source: string | File,
-    options?: { fill?: SettingsFillPolicy },
+    options?: {
+      fill?: SettingsFillPolicy
+      resolveUrl?: (url: string) => string | null
+    },
   ): Promise<void> {
     // Fetch the document file
     const buffer = await NVLoader.fetchFile(source)
@@ -6845,7 +6854,13 @@ export default class NiiVue extends EventTarget {
     // addSignal would have: each after its item is in the collection.
     for (const v of doc.volumes ?? []) {
       const before = this.model.volumes.length
-      await NVDocument.reconstructVolume(this.model, v)
+      let entry = v
+      if (!v.data && v.url && options?.resolveUrl) {
+        const url = options.resolveUrl(v.url)
+        if (url === null) continue
+        entry = { ...v, url }
+      }
+      await NVDocument.reconstructVolume(this.model, entry)
       if (this.model.volumes.length > before) {
         this.emit('volumeLoaded', {
           volume: this.model.volumes[this.model.volumes.length - 1],

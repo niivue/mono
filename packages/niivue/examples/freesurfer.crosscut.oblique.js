@@ -2,16 +2,29 @@ import NiiVue from '../src/index.ts'
 
 // Live demo for https://github.com/niivue/mono/issues/92: a T1 acquired
 // ~10 degrees oblique with its left mid-thickness surface in world space.
-// 2D slices follow the volume's voxel plane while the crosscut follows
-// world-aligned planes, so the contour shifts as the slice moves.
+// 2D slices follow the volume's voxel plane. 'crosscut' cuts the mesh with
+// world-aligned planes, so its contour shifts as the slice moves;
+// 'crosscut2' cuts at the displayed voxel plane.
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
 }
+// Line width applies only to the crosscut shaders.
+const updateWidthSlider = () => {
+  const isCrosscut = (s) => s.startsWith('crosscut')
+  widthSlider.disabled = !(
+    isCrosscut(shaderSelect.value) || isCrosscut(sliceShaderSelect.value)
+  )
+}
 shaderSelect.onchange = () => {
   nv1.setMesh(0, { shaderType: shaderSelect.value })
+  updateWidthSlider()
 }
 sliceShaderSelect.onchange = () => {
   nv1.setMesh(0, { sliceShaderType: sliceShaderSelect.value })
+  updateWidthSlider()
+}
+widthSlider.oninput = () => {
+  nv1.meshCrosscutWidth = Number(widthSlider.value)
 }
 webgpuCheck.onchange = async function () {
   await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
@@ -21,8 +34,8 @@ aboutBtn.onclick = () => {
     'The volume has a ~10 degree oblique voxel grid; the surface is in ' +
       'world (scanner RAS) space. A 2D slice samples the voxel plane, but the ' +
       'crosscut ribbon cuts the mesh with world-aligned planes, so the contour ' +
-      'drifts against the anatomy as you move through slices. See niivue/mono ' +
-      'issue #92.',
+      'drifts against the anatomy as you move through slices. crosscut2 cuts ' +
+      'at the displayed voxel plane. See niivue/mono issue #92.',
   )
 }
 const nv1 = new NiiVue({ backgroundColor: [0, 0, 0.1, 1] })
@@ -43,7 +56,8 @@ for (const shader of nv1.meshShaders) {
   addShaderOption(sliceShaderSelect, shader, text)
 }
 shaderSelect.value = 'phong'
-sliceShaderSelect.value = 'crosscut'
+sliceShaderSelect.value = 'crosscut2'
+updateWidthSlider()
 nv1.sliceType = parseInt(sliceType.value, 10)
 await nv1.loadVolumes([{ url: '/volumes/fs/T1_oblique.nii.gz' }])
 await nv1.loadMeshes([
@@ -51,7 +65,7 @@ await nv1.loadMeshes([
     url: '/meshes/fs/T1_oblique.lh.mid.mz3',
     color: [0.3, 0.6, 1.0, 1],
     shaderType: 'phong',
-    sliceShaderType: 'crosscut',
+    sliceShaderType: 'crosscut2',
   },
 ])
 // A scanner-RAS point through the left cortex.

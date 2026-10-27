@@ -1,9 +1,10 @@
+import { log } from '@/logger'
 import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
 import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
 import meshShaderWGSL from './mesh.wgsl?raw'
 
 export const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
-export const MESH_UNIFORM_SIZE = 176
+export const MESH_UNIFORM_SIZE = 240
 export const alignedMeshSize =
   Math.ceil(MESH_UNIFORM_SIZE / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 export const MAX_TILES = 128
@@ -17,14 +18,17 @@ export function uploadMeshGPU(
   const vertexData = packMeshVertices(meshData)
   const vertexBuffer = device.createBuffer({
     size: vertexData.byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    // STORAGE: crosscut2 reads vertices by index from this same buffer.
+    usage:
+      GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
     mappedAtCreation: true,
   })
   new Uint8Array(vertexBuffer.getMappedRange()).set(new Uint8Array(vertexData))
   vertexBuffer.unmap()
   const indexBuffer = device.createBuffer({
     size: meshData.indices.byteLength,
-    usage: GPUBufferUsage.INDEX,
+    // VERTEX: crosscut2 steps through it per instance, one triangle each.
+    usage: GPUBufferUsage.INDEX | GPUBufferUsage.VERTEX,
     mappedAtCreation: true,
   })
   new Uint32Array(indexBuffer.getMappedRange()).set(meshData.indices)
@@ -127,6 +131,81 @@ export function createMeshPipeline(
     },
     multisample: { count: msaaCount },
   })
+}
+
+/**
+ * crosscut2 pipeline (see `vertex_crosscut2`): instanced by triangle, the
+ * index buffer stepping per instance; vertices come from the vertex buffer
+ * bound as storage in group 1. No depth test, no culling, like crosscut.
+ */
+export function createCrosscut2Pipeline(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+  msaaCount: number,
+  pipelineLayout: GPUPipelineLayout,
+  depthFormat: GPUTextureFormat = 'depth24plus',
+): GPURenderPipeline {
+  const shaderModule = device.createShaderModule({ code: meshShaderWGSL })
+  return device.createRenderPipeline({
+    layout: pipelineLayout,
+    vertex: {
+      module: shaderModule,
+      entryPoint: 'vertex_crosscut2',
+      buffers: [
+        {
+          arrayStride: 12,
+          stepMode: 'instance',
+          attributes: [{ format: 'uint32x3', offset: 0, shaderLocation: 0 }],
+        },
+      ],
+    },
+    fragment: {
+      module: shaderModule,
+      entryPoint: 'fragment_crosscut2',
+      targets: [
+        {
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+          },
+        },
+      ],
+    },
+    depthStencil: {
+      depthWriteEnabled: false,
+      depthCompare: 'always',
+      format: depthFormat,
+    },
+    primitive: { topology: 'triangle-list', cullMode: 'none' },
+    multisample: { count: msaaCount },
+  })
+}
+
+const _crosscut2BindGroups = new WeakMap<GPUBuffer, GPUBindGroup>()
+const _tooLarge = new WeakSet<GPUBuffer>()
+
+/** The group-1 bind group exposing a mesh's vertex buffer to crosscut2. */
+export function crosscut2BindGroup(
+  device: GPUDevice,
+  layout: GPUBindGroupLayout,
+  vertexBuffer: GPUBuffer,
+): GPUBindGroup | null {
+  let bg = _crosscut2BindGroups.get(vertexBuffer)
+  if (bg) return bg
+  if (vertexBuffer.size > device.limits.maxStorageBufferBindingSize) {
+    if (!_tooLarge.has(vertexBuffer)) {
+      _tooLarge.add(vertexBuffer)
+      log.warn('crosscut2: mesh exceeds maxStorageBufferBindingSize')
+    }
+    return null
+  }
+  bg = device.createBindGroup({
+    layout,
+    entries: [{ binding: 0, resource: { buffer: vertexBuffer } }],
+  })
+  _crosscut2BindGroups.set(vertexBuffer, bg)
+  return bg
 }
 
 export function destroyMesh(mesh: WebGPUMeshGPU): void {

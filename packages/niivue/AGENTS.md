@@ -1094,6 +1094,28 @@ the array or call `updateMeshPositions`.
 
 **Crosscut shader** (`shaderType: 'crosscut'`): Renders crosshair-aligned ribbons using `fwidth()`-based screen-space line width. Unique render state: **no depth test, no face culling**. `crosscutMM` uniform computed by `view/NVCrosscut.ts`.
 
+**Crosscut2 shader** (`shaderType: 'crosscut2'`): outlines the mesh where it
+meets the DISPLAYED voxel plane (`tile.planeNormal`/`planePoint`, oblique when
+the background volume is), not a world plane, so the contour holds still while
+the crosshair moves within an oblique slice (#92). Built as geometry, not
+fragments, because an edge-on surface (the medial wall on an axial slice)
+rasterizes to nothing: one instance per triangle (the index buffer as a per-
+instance `uvec3`), six vertices per cut plane; the vertex stage intersects the
+triangle with the plane and expands the segment into a screen-space quad
+`mesh.crosscutWidth` device px wide, or collapses it when the triangle misses.
+Planes come from `view/NVCrosscut.crosscutPlanes` as a mat4 uniform (2D tile:
+its plane; render tile: the three voxel planes through the crosshair; no
+volume: world axes). Vertices are read by index as the interleaved
+`BYTES_PER_VERTEX` words: WebGPU binds the vertex buffer as storage (group 1);
+WebGL2 copies it GPU-side into an R32UI texture (`copyVertexWords`, needs
+NEAREST filtering or `texelFetch` reads 0), rebuilt after
+`updateMeshPositions`. It draws with the tile's full MVP (the `thicknessOn2D`
+slab is world-aligned and could clip an oblique cut), no depth test, and is
+skipped in the x-ray pass. Cost is ~6 vertex invocations per triangle per
+plane; misses cost no fragments. `mesh.crosscutWidth` (`meshCrosscutWidth`)
+also sets the old `crosscut` ribbon width (#91). Pinned by
+`e2e/crosscut2.spec.ts`.
+
 **Per-mesh slice shader split** (`sliceShaderType`, default `''`): selects the mesh
 shader for 2D slice tiles independently of the 3D render view. Empty string means
 "inherit `shaderType`" (slices yoked to the render shader); a non-empty name (e.g.

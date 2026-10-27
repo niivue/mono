@@ -90,6 +90,7 @@ const PROPS_RW = [
   ["isYoked3DTo2DZoom", "is_yoked_3d_to_2d_zoom"],
   ["measureLineColor", "measure_line_color"],
   ["measureTextColor", "measure_text_color"],
+  ["meshCrosscutWidth", "mesh_crosscut_width"],
   ["meshThicknessOn2D", "mesh_thickness_on_2d"],
   ["meshXRay", "mesh_x_ray"],
   ["mosaicString", "mosaic_string"],

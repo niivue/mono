@@ -986,6 +986,8 @@ export type LodCompensationReport = {
 export type MeshRenderConfig = {
   xRay: number
   thicknessOn2D: number
+  /** Line width in device pixels of the crosscut and crosscut2 mesh shaders. */
+  crosscutWidth: number
 }
 
 /** Drawing/annotation config */
@@ -1303,6 +1305,7 @@ export type NiiVueOptions = {
   // Mesh (prefixed)
   meshXRay?: number
   meshThicknessOn2D?: number
+  meshCrosscutWidth?: number
 
   // Draw (prefixed)
   drawIsEnabled?: boolean

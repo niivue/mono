@@ -65,6 +65,7 @@ import {
   LOD_OPACITY_RANGE,
   lodGammaExponent,
   lodOpacityScale,
+  MESH_DEFAULTS,
   NUM_CLIP_PLANE,
   normalizeVolumeRenderMode,
   type OVERLAY_ALPHA_BLEND,
@@ -1994,6 +1995,19 @@ export default class NiiVue extends EventTarget {
     const val = v <= 0 ? Infinity : v
     this.model.mesh.thicknessOn2D = val
     this.emit('change', { property: 'meshThicknessOn2D', value: val })
+    this.drawScene()
+  }
+
+  /** Line width, in device pixels, of the `crosscut` and `crosscut2` mesh shaders. */
+  get meshCrosscutWidth(): number {
+    return this.model.mesh.crosscutWidth
+  }
+  set meshCrosscutWidth(v: number) {
+    const val = Number.isFinite(v)
+      ? Math.max(0, v)
+      : MESH_DEFAULTS.crosscutWidth
+    this.model.mesh.crosscutWidth = val
+    this.emit('change', { property: 'meshCrosscutWidth', value: val })
     this.drawScene()
   }
 

@@ -4745,6 +4745,10 @@ export default class NiiVue extends EventTarget {
       url: urlString,
       name: layerOpts.name ?? urlString,
     })
+    // An explicit colormap picks the layer's kind, as for volumes; without
+    // one the layer keeps the label table its file carried.
+    if (layerOpts.colormap !== undefined)
+      NVMeshLayers.applyLayerColormap(newLayer)
     m.layers.push(newLayer)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
     markMeshDataChanged(m)
@@ -4790,6 +4794,9 @@ export default class NiiVue extends EventTarget {
     const m = meshes[meshIndex]
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return
     Object.assign(m.layers[layerIndex], options)
+    // A new colormap re-derives the label LUT unless one is given with it.
+    if (options.colormap !== undefined && options.colormapLabel === undefined)
+      NVMeshLayers.applyLayerColormap(m.layers[layerIndex])
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
     markMeshDataChanged(m)
     // Layer state is structural (not a MeshUpdate option diff); the mesh
@@ -7137,6 +7144,17 @@ export default class NiiVue extends EventTarget {
     for (const vol of this.model.getVolumes()) {
       if (vol.colormap && NVCmaps.lookupColorMap(vol.colormap) === def)
         NVModel.applyColormap(vol, vol.colormap)
+    }
+    // Mesh layers bake their colours when composited, so they show a new label
+    // table on their next change. Only a label table is re-derived here: a
+    // layer named after a continuous colormap may be drawing its file's labels.
+    if (NVCmaps.isLabelColormap(canonical)) {
+      for (const m of this.model.getMeshes()) {
+        for (const layer of m.layers ?? []) {
+          if (NVCmaps.lookupColorMap(layer.colormap) === def)
+            NVMeshLayers.applyLayerColormap(layer)
+        }
+      }
     }
     this.emit('colormapAdded', { name: canonical })
     return canonical

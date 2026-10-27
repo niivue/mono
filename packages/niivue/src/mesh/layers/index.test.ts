@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadLayerFromUrl } from './index'
+import { addColormap, makeLabelLut } from '@/cmap/NVCmaps'
+import { log } from '@/logger'
+import type { LUT, NVMeshLayer } from '@/NVTypes'
+import { applyLayerColormap, loadLayerFromUrl } from './index'
 
 // A non-label FreeSurfer INT32 volume (version 1, not a label file name).
 // Max and sum are its big-endian int32 values (see mgh.test.ts).
@@ -29,5 +32,90 @@ describe('loadLayerFromUrl', () => {
     }
     expect(max).toBe(250)
     expect(sum).toBe(109423756)
+  })
+})
+
+// Test-only colormaps for applyLayerColormap.
+log.setLogLevel('silent')
+addColormap('layerRamp', { R: [0, 255], G: [0, 255], B: [0, 255] })
+// IDs 0..3, with 0 (background) transparent.
+addColormap('layerAtlas', {
+  R: [0, 255, 0, 0],
+  G: [0, 0, 255, 0],
+  B: [0, 0, 0, 255],
+  A: [0, 255, 255, 255],
+  labels: ['bg', 'a', 'b', 'c'],
+})
+
+function layer(
+  colormap: string,
+  values: number[],
+  colormapLabel: LUT | null = null,
+): NVMeshLayer {
+  const v = Float32Array.from(values)
+  return {
+    nFrame4D: 1,
+    frame4D: 0,
+    calMin: 0,
+    calMax: 0,
+    calMinNeg: NaN,
+    calMaxNeg: NaN,
+    opacity: 1,
+    colormap,
+    colormapNegative: '',
+    isColormapInverted: false,
+    colormapType: 1,
+    isTransparentBelowCalMin: true,
+    isAdditiveBlend: false,
+    isColorbarVisible: true,
+    colormapLabel,
+    outlineWidth: 0,
+    values: v,
+    globalMin: Math.min(...values),
+    globalMax: Math.max(...values),
+  } as NVMeshLayer
+}
+
+describe('applyLayerColormap', () => {
+  test('aLabelTableGivesALabelLut', () => {
+    const l = applyLayerColormap(layer('layerAtlas', [0, 1, 2, 3]))
+    expect(l.colormapLabel).not.toBeNull()
+    const lut = l.colormapLabel as LUT
+    expect([lut.min, lut.max]).toEqual([0, 3])
+    // Label 0 is transparent; label 2 is opaque green.
+    expect(lut.lut[3]).toBe(0)
+    expect(Array.from(lut.lut.slice(8, 12))).toEqual([0, 255, 0, 255])
+  })
+
+  test('theGeneratedPaletteSpansEveryLayerValue', () => {
+    // Float IDs past the palette's default 0..255, as in a 360-parcel layer.
+    const l = applyLayerColormap(layer('Random', [0, 17, 359]))
+    const lut = l.colormapLabel as LUT
+    expect(lut.min).toBe(0)
+    expect(lut.max).toBeGreaterThanOrEqual(359)
+    expect(lut.lut[3]).toBe(0)
+  })
+
+  test('aContinuousColormapClearsTheLabelLut', () => {
+    const fileLut = makeLabelLut({
+      R: [0, 255],
+      G: [0, 0],
+      B: [0, 0],
+      A: [0, 255],
+      I: [0, 1],
+    })
+    const l = applyLayerColormap(layer('layerRamp', [0, 1], fileLut))
+    expect(l.colormapLabel).toBeNull()
+  })
+
+  test('anUnknownColormapClearsTheLabelLut', () => {
+    const l = applyLayerColormap(
+      layer(
+        'noSuchMap',
+        [0, 1],
+        makeLabelLut({ R: [0], G: [0], B: [0], A: [0], I: [0] }),
+      ),
+    )
+    expect(l.colormapLabel).toBeNull()
   })
 })

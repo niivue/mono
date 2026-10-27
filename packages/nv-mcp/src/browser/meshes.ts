@@ -70,6 +70,43 @@ export interface TractScalar {
 /** The colour modes every tract takes, as `colorBy` names them; `direction` stands for NiiVue's ''. */
 export const TRACT_COLOR_MODES = ['direction', 'global', 'fixed'] as const
 
+/** A tract's `colorBy` as the tools report it: NiiVue's '' and 'local' are both `direction`. */
+export function reportedColorBy(value: unknown): unknown {
+  return value === '' || value === 'local' ? 'direction' : value
+}
+
+/**
+ * `colorBy` as NiiVue takes it. NiiVue reads a mode it does not know as a
+ * scalar name and draws a scalar it cannot find white, reporting nothing, so
+ * `direction` is translated to '' and a scalar must be one the tract has.
+ */
+function niivueColorBy(value: unknown, mesh: ShownMesh): string {
+  if (value === 'direction') return ''
+  if (
+    value === '' ||
+    value === 'local' ||
+    value === 'global' ||
+    value === 'fixed'
+  )
+    return value
+  // Without the tract's data there is nothing to check a scalar against.
+  const scalars = mesh.trx
+    ? tractData(mesh).scalars.map((s) => s.colorBy)
+    : undefined
+  if (
+    typeof value === 'string' &&
+    /^(dpv|dps):./.test(value) &&
+    (!scalars || scalars.includes(value))
+  )
+    return value
+  const choices = [...TRACT_COLOR_MODES, ...(scalars ?? [])]
+  throw new Error(
+    `${mesh.name ?? 'The tract'} has no colorBy ${JSON.stringify(value)}. One of: ${choices.join(', ')}${
+      scalars?.length === 0 ? ' (it has no scalars)' : ''
+    }.`,
+  )
+}
+
 /** A tract's groups and scalars, read off the data it was loaded with. */
 export function tractData(mesh: ShownMesh): {
   groups: string[]
@@ -107,7 +144,17 @@ export function describeMesh(mesh: ShownMesh, index: number) {
     ...(mesh.isColorbarVisible ? { colorbar: true } : {}),
     ...(mesh.isLegendVisible ? { legend: true } : {}),
     ...(mesh.layers?.length ? { layers: mesh.layers.map(describeLayer) } : {}),
-    ...(mesh.tractOptions ? { tract: mesh.tractOptions } : {}),
+    ...(mesh.tractOptions
+      ? {
+          tract:
+            'colorBy' in mesh.tractOptions
+              ? {
+                  ...mesh.tractOptions,
+                  colorBy: reportedColorBy(mesh.tractOptions.colorBy),
+                }
+              : mesh.tractOptions,
+        }
+      : {}),
     ...(tract?.groups.length ? { groups: tract.groups } : {}),
     ...(tract?.scalars.length ? { scalars: tract.scalars } : {}),
     ...(mesh.connectomeOptions ? { connectome: mesh.connectomeOptions } : {}),
@@ -295,7 +342,12 @@ export function meshHandlers(host: NiiVueHost): Handlers {
           throw new Error(
             `${mesh.name ?? 'The mesh'} is a ${mesh.kind}, not a tract.`,
           )
-        await view.setTractOptions(index, tract)
+        await view.setTractOptions(
+          index,
+          'colorBy' in tract
+            ? { ...tract, colorBy: niivueColorBy(tract.colorBy, mesh) }
+            : tract,
+        )
       }
       if (connectome) {
         if (!view.setConnectomeOptions)

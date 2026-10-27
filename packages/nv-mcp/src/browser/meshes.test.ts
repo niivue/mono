@@ -382,6 +382,57 @@ describe('set_mesh', () => {
     expect(view.setConnectomeOptions).toHaveBeenCalledWith(0, { nodeScale: 2 })
   })
 
+  it('translates colorBy direction for NiiVue and reports it back the same way', async () => {
+    const view = meshView()
+    const { set_mesh } = meshHandlers(hostOf(view))
+    const got = (await set_mesh({
+      mesh: 1,
+      tract: { colorBy: 'direction', decimation: 2 },
+    })) as { mesh: { tract: Record<string, unknown> } }
+    expect(view.setTractOptions).toHaveBeenCalledWith(1, {
+      colorBy: '',
+      decimation: 2,
+    })
+    expect(got.mesh.tract).toEqual({ colorBy: 'direction', decimation: 2 })
+    for (const mode of ['', 'local', 'global', 'fixed']) {
+      await set_mesh({ mesh: 1, tract: { colorBy: mode } })
+      expect(view.setTractOptions).toHaveBeenLastCalledWith(1, {
+        colorBy: mode,
+      })
+    }
+    await set_mesh({ mesh: 1, tract: { colorBy: 'local' } })
+    const tract = view.meshes?.[1]
+    if (!tract) throw new Error('the fixture has a tract at index 1')
+    expect(describeMesh(tract, 1).tract).toEqual({ colorBy: 'direction' })
+  })
+
+  it("takes a scalar colorBy only when the tract has it, and refuses anything else with the tract's choices", async () => {
+    const view = meshView()
+    const tract = view.meshes?.[1]
+    if (!tract) throw new Error('the fixture has a tract at index 1')
+    tract.trx = { dpv: { fa: [] }, dps: { z: [] } }
+    const { set_mesh } = meshHandlers(hostOf(view))
+    await set_mesh({ mesh: 1, tract: { colorBy: 'dps:z' } })
+    expect(view.setTractOptions).toHaveBeenLastCalledWith(1, {
+      colorBy: 'dps:z',
+    })
+    await expect(
+      set_mesh({ mesh: 1, tract: { colorBy: 'dpv:md' } }),
+    ).rejects.toThrow(
+      'tract.trk has no colorBy "dpv:md". One of: direction, global, fixed, dpv:fa, dps:z.',
+    )
+    await expect(
+      set_mesh({ mesh: 1, tract: { colorBy: 'rainbow' } }),
+    ).rejects.toThrow('tract.trk has no colorBy "rainbow".')
+    tract.trx = {}
+    await expect(
+      set_mesh({ mesh: 1, tract: { colorBy: 'dps:z' } }),
+    ).rejects.toThrow(
+      'tract.trk has no colorBy "dps:z". One of: direction, global, fixed (it has no scalars).',
+    )
+    expect(view.setTractOptions).toHaveBeenCalledTimes(1)
+  })
+
   it('refuses nothing to set, an unknown shader, and a page that cannot', async () => {
     const { set_mesh } = meshHandlers(hostOf(meshView()))
     await expect(set_mesh({})).rejects.toThrow(

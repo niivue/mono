@@ -50,7 +50,7 @@ import {
   VALUE_KINDS,
 } from './controls'
 import type { DataPalette } from './data'
-import { TRACT_COLOR_MODES, tractData } from './meshes'
+import { reportedColorBy, TRACT_COLOR_MODES, tractData } from './meshes'
 import { claimSpread, requireSpread, spreadVolume } from './spread'
 import type {
   MeshLayerUpdate,
@@ -881,9 +881,8 @@ function tractChoice(
       shape: 'string',
       choices,
       read: () => {
-        const value = options()?.colorBy
-        if (typeof value !== 'string') return undefined
-        return value === '' ? 'direction' : value
+        const value = reportedColorBy(options()?.colorBy)
+        return typeof value === 'string' ? value : undefined
       },
       write: (value) => {
         gone()

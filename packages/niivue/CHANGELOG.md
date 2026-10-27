@@ -1,3 +1,14 @@
+## 1.0.0-rc.41 (2026-10-27)
+
+### Fixes
+
+- **niivue:** CT colormaps apply their Hounsfield window ([60132867](https://github.com/niivue/mono/commit/60132867))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.40 (2026-10-27)
 
 ### Features

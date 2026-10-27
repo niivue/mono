@@ -197,6 +197,7 @@ off-window crosshair is brought back."""
     is_yoked_3d_to_2d_zoom = traitlets.Bool(None, allow_none=True).tag(sync=True)
     measure_line_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
     measure_text_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
+    mesh_crosscut_width = traitlets.Float(None, allow_none=True).tag(sync=True)
     mesh_thickness_on_2d = traitlets.Float(None, allow_none=True).tag(sync=True)
     mesh_x_ray = traitlets.Float(None, allow_none=True).tag(sync=True)
     mosaic_string = traitlets.Unicode(None, allow_none=True).tag(sync=True)

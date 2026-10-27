@@ -278,13 +278,14 @@ void main() {
 const meshFragCrosscut = `#version 300 es
 precision highp float;
 uniform vec4 crosscutMM;
+uniform mat4 ccPlanes;
 in vec4 vClr;
 in vec3 vN;
 in vec3 vPos;
 out vec4 fragColor;
 
 void main() {
-    const float LINE_WIDTH_PX = 4.0;
+    float LINE_WIDTH_PX = ccPlanes[3].z;
     const float TILT_STRENGTH = 1.0;
     vec3 d = vPos - crosscutMM.xyz;
     vec3 ad = abs(d);
@@ -308,11 +309,115 @@ void main() {
 }
 `
 
+// Crosscut2: the mesh outline where it meets the displayed voxel plane(s).
+// Fragments cannot draw this: a surface seen edge-on (the medial wall on an
+// axial slice) rasterizes to nothing. So each instance is one triangle,
+// whose vertex shader intersects it with the cut plane and expands the
+// segment into a screen-space quad of ccPlanes[3].z pixels (6 vertices per
+// plane). Triangles that miss the plane collapse to a point and cost no
+// fragments. Vertex words (position f32x3, normal f32x3, color unorm8x4,
+// BYTES_PER_VERTEX = 28) are fetched from an R32UI texture copy of the
+// vertex buffer, the same words WebGPU reads from storage.
+export const meshVertCrosscut2 = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp usampler2D;
+uniform mat4 mvpMtx;
+uniform float opacity;
+uniform mat4 ccPlanes;
+uniform usampler2D vertWords;
+// Location 0: drawing with attribute 0 disabled is emulated (slowly) on
+// desktop GL. crosscut2 has its own VAO, so this does not clash with position.
+layout(location = 0) in uvec3 tri;
+out vec4 vClr;
+out float vEdgePx;
+flat out float vHalfPx;
+
+uint word(uint w) {
+    uint texW = uint(textureSize(vertWords, 0).x);
+    return texelFetch(vertWords, ivec2(int(w % texW), int(w / texW)), 0).r;
+}
+
+void vertexAt(uint idx, out vec3 p, out vec4 c) {
+    uint w = idx * 7u;
+    p = uintBitsToFloat(uvec3(word(w), word(w + 1u), word(w + 2u)));
+    // unpackUnorm4x8 is GLSL ES 3.10; WebGL2 is 3.00.
+    c = vec4((uvec4(word(w + 6u)) >> uvec4(0u, 8u, 16u, 24u)) & 0xFFu) / 255.0;
+}
+
+void main() {
+    int plane = gl_VertexID / 6;
+    int corner = gl_VertexID % 6;
+    vec4 pl = ccPlanes[plane];
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    vClr = vec4(0.0);
+    vEdgePx = 0.0;
+    vHalfPx = 0.0;
+    if (float(plane) >= ccPlanes[3].w) return;
+    vec3 p[3];
+    vec4 c[3];
+    vertexAt(tri.x, p[0], c[0]);
+    vertexAt(tri.y, p[1], c[1]);
+    vertexAt(tri.z, p[2], c[2]);
+    vec3 s = vec3(dot(pl.xyz, p[0]), dot(pl.xyz, p[1]), dot(pl.xyz, p[2])) - pl.w;
+    // Half-open side test (s >= 0) yields exactly 0 or 2 crossed edges.
+    vec3 hit[2];
+    vec4 hitClr[2];
+    int n = 0;
+    for (int e = 0; e < 3; e++) {
+        int f = (e + 1) % 3;
+        if ((s[e] >= 0.0) != (s[f] >= 0.0)) {
+            float t = s[e] / (s[e] - s[f]);
+            hit[n] = mix(p[e], p[f], t);
+            hitClr[n] = mix(c[e], c[f], t);
+            n++;
+        }
+    }
+    if (n < 2) return;
+    vec2 halfVp = 0.5 * ccPlanes[3].xy;
+    vec4 a = mvpMtx * vec4(hit[0], 1.0);
+    vec4 b = mvpMtx * vec4(hit[1], 1.0);
+    vec2 sa = a.xy / a.w * halfVp;
+    vec2 sb = b.xy / b.w * halfVp;
+    vec2 d = sb - sa;
+    float len = length(d);
+    vec2 dir = len > 1e-6 ? d / len : vec2(1.0, 0.0);
+    vec2 nrm = vec2(-dir.y, dir.x);
+    // Quad corners as two triangles: (0,1,2) (2,1,3) over A-/A+/B-/B+.
+    int q = corner < 3 ? corner : (corner == 3 ? 2 : (corner == 4 ? 1 : 3));
+    bool atB = q >= 2;
+    float side = (q == 0 || q == 2) ? -1.0 : 1.0;
+    float halfPx = 0.5 * ccPlanes[3].z;
+    float extent = halfPx + 1.0; // one pixel fringe for antialiasing
+    // Square caps (extend by the half width) close the joins between segments.
+    vec2 px = (atB ? sb + dir * halfPx : sa - dir * halfPx) + nrm * side * extent;
+    gl_Position = vec4(px / halfVp, 0.0, 1.0);
+    vClr = vec4((atB ? hitClr[1] : hitClr[0]).rgb, opacity);
+    vEdgePx = side * extent;
+    vHalfPx = halfPx;
+}
+`
+
+const meshFragCrosscut2 = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in float vEdgePx;
+flat in float vHalfPx;
+out vec4 fragColor;
+
+void main() {
+    float alpha = clamp(vHalfPx + 0.5 - abs(vEdgePx), 0.0, 1.0);
+    if (alpha <= 0.0) discard;
+    fragColor = vec4(vClr.rgb, vClr.a * alpha);
+}
+`
+
 // Map shader type names to fragment shaders
 export const fragmentShaders = {
   phong: meshFragPhong,
   crevice: meshFragCrevice,
   crosscut: meshFragCrosscut,
+  crosscut2: meshFragCrosscut2,
   flat: meshFragFlat,
   matte: meshFragMatte,
   outline: meshFragOutline,

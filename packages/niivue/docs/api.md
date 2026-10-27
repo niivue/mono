@@ -72,7 +72,7 @@ nv1.drawPenValue = 3
 |--------|--------|---------|
 | Scene, layout, UI, interaction | None | `nv1.azimuth`, `nv1.sliceType`, `nv1.isColorbarVisible`, `nv1.primaryDragMode` |
 | Volume | `volume` | `nv1.volumeIllumination`, `nv1.volumeIsAlphaClipDark`, `nv1.volumeIsNearestInterpolation` |
-| Mesh | `mesh` | `nv1.meshXRay`, `nv1.meshThicknessOn2D` |
+| Mesh | `mesh` | `nv1.meshXRay`, `nv1.meshThicknessOn2D`, `nv1.meshCrosscutWidth` |
 | Draw | `draw` | `nv1.drawPenValue`, `nv1.drawOpacity`, `nv1.drawIsEnabled` |
 | Annotation | `annotation` | `nv1.annotationIsEnabled`, `nv1.annotationTool`, `nv1.annotationBrushRadius` |
 
@@ -103,7 +103,7 @@ the cheapest 3D view. Overlays, PAQD and the drawing are sampled on the planes
 the way the 2D tiles blend them; clip planes and all lighting are ignored.
 
 **Mesh** (prefix `mesh` -- delegate to `model.mesh`):
-`meshXRay`, `meshThicknessOn2D`
+`meshXRay`, `meshThicknessOn2D`, `meshCrosscutWidth`
 
 **Draw** (prefix `draw` -- delegate to `model.draw`):
 `drawIsEnabled`, `drawPenValue`, `drawPenSize`, `drawIsFillOverwriting`, `drawOpacity`, `drawRimOpacity`, `drawColormap`

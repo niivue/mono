@@ -472,6 +472,7 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
 export const MESH_DEFAULTS: MeshRenderConfig = {
   xRay: 0,
   thicknessOn2D: Infinity,
+  crosscutWidth: 4,
 }
 
 export const DRAW_DEFAULTS: DrawConfig = {

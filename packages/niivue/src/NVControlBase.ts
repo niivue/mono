@@ -40,6 +40,7 @@ import {
   settingsChangeEvents,
   snapshotSettings,
 } from '@/documentEvents'
+import { type DocumentUrlResolver, resolveLinkedEntry } from '@/documentLinks'
 import { defaultMatcap, matcapFromName } from '@/documentMatcap'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
@@ -6791,18 +6792,22 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * `options.resolveUrl` sees each linked volume's `url` (a volume saved by URL,
-   * see `SerializeOptions.linkData`) before it is fetched, and returns the URL to
-   * fetch instead, or `null` to skip that volume. A caller can resolve links
+   * `options.resolveUrl` sees every URL the document would load before it is
+   * fetched: each linked volume and mesh (saved by URL with no embedded data,
+   * see `SerializeOptions.linkData`) and the thumbnail. It returns the URL to
+   * fetch instead, or `null` to skip that item. A caller can resolve links
    * against where the document lives rather than the page, or refuse some.
+   * Skipping the document's first volume also skips its drawing, which belongs
+   * to that volume's grid.
    */
   async loadDocument(
     source: string | File,
     options?: {
       fill?: SettingsFillPolicy
-      resolveUrl?: (url: string) => string | null
+      resolveUrl?: DocumentUrlResolver
     },
   ): Promise<void> {
+    const resolveUrl = options?.resolveUrl
     // Fetch the document file
     const buffer = await NVLoader.fetchFile(source)
     const data = new Uint8Array(buffer)
@@ -6843,17 +6848,26 @@ export default class NiiVue extends EventTarget {
     this.emitSettingsChanges(settingsBefore)
 
     // Restore thumbnail if present in document
-    if (this.model.ui.thumbnailUrl) {
-      this.opts.thumbnail = this.model.ui.thumbnailUrl
+    const thumbnailUrl = this.model.ui.thumbnailUrl
+      ? resolveUrl
+        ? resolveUrl(this.model.ui.thumbnailUrl, 'thumbnail')
+        : this.model.ui.thumbnailUrl
+      : null
+    if (thumbnailUrl) {
+      this.model.ui.thumbnailUrl = thumbnailUrl
+      this.opts.thumbnail = thumbnailUrl
       this.model.ui.isThumbnailVisible = true
       // A thumbnail is decoration: one that cannot load (relative path,
       // offline, blocked) must not cost the document its data.
       try {
-        if (this.view) await this.view.loadThumbnail(this.model.ui.thumbnailUrl)
+        if (this.view) await this.view.loadThumbnail(thumbnailUrl)
       } catch (err) {
         log.warn(`loadDocument: thumbnail not loaded: ${err}`)
         this.model.ui.isThumbnailVisible = false
       }
+    } else if (this.model.ui.thumbnailUrl) {
+      // Refused by resolveUrl: never requested, never shown.
+      this.model.ui.isThumbnailVisible = false
     }
 
     // Reconstruct volumes SEQUENTIALLY so document order is preserved —
@@ -6863,13 +6877,13 @@ export default class NiiVue extends EventTarget {
     // Reconstruction goes through the model (one GPU update for the whole
     // load, below), so emit the events the controller's addVolume/addMesh/
     // addSignal would have: each after its item is in the collection.
-    for (const v of doc.volumes ?? []) {
+    let isBackgroundSkipped = false
+    for (const [i, v] of (doc.volumes ?? []).entries()) {
       const before = this.model.volumes.length
-      let entry = v
-      if (!v.data && v.url && options?.resolveUrl) {
-        const url = options.resolveUrl(v.url)
-        if (url === null) continue
-        entry = { ...v, url }
+      const entry = resolveLinkedEntry(v, 'volume', resolveUrl)
+      if (!entry) {
+        if (i === 0) isBackgroundSkipped = true
+        continue
       }
       await NVDocument.reconstructVolume(this.model, entry)
       if (this.model.volumes.length > before) {
@@ -6881,7 +6895,10 @@ export default class NiiVue extends EventTarget {
     // Meshes have no background/overlay ordering role; load them in parallel.
     const meshesBefore = this.model.meshes.length
     await Promise.all(
-      (doc.meshes ?? []).map((m) => NVDocument.reconstructMesh(this.model, m)),
+      (doc.meshes ?? []).map((m) => {
+        const entry = resolveLinkedEntry(m, 'mesh', resolveUrl)
+        return entry ? NVDocument.reconstructMesh(this.model, entry) : undefined
+      }),
     )
     for (const mesh of this.model.meshes.slice(meshesBefore)) {
       this.emit('meshLoaded', { mesh })
@@ -6893,8 +6910,12 @@ export default class NiiVue extends EventTarget {
     // Update GPU resources and render
     await this._updateGLChanged()
 
-    // Restore drawing from RLE-encoded bitmap in document
-    if (doc.drawingBitmapRLE && doc.drawingBitmapLength) {
+    // Restore drawing from RLE-encoded bitmap in document. It is drawn on the
+    // document's first volume; if resolveUrl skipped that one, volumes[0] is
+    // some other volume and the drawing has nowhere to go.
+    if (isBackgroundSkipped && doc.drawingBitmapRLE) {
+      log.warn('loadDocument: first volume skipped; its drawing is not loaded')
+    } else if (doc.drawingBitmapRLE && doc.drawingBitmapLength) {
       const back = this.model.getVolumes()[0]
       if (back) {
         const dv = createDrawingVolume(back)

@@ -1,3 +1,65 @@
+## 1.0.0-rc.40 (2026-10-27)
+
+### Features
+
+- ⚠️  **niivue:** one colormap per volume, label or continuous ([#69](https://github.com/niivue/mono/issues/69))
+
+### Fixes
+
+- **niivue:** keep streamed label ranges across colormap changes ([546e6bdb](https://github.com/niivue/mono/commit/546e6bdb))
+- **nv-mcp:** register an overlay's label table only once its file loads ([#257](https://github.com/niivue/mono/issues/257))
+- **niivue:** grow the generated label palette as streamed bricks arrive ([8135f668](https://github.com/niivue/mono/commit/8135f668))
+- **niivue:** keep the generated label palette finite and its 0..255 IDs ([e3f295b6](https://github.com/niivue/mono/commit/e3f295b6))
+- **niivue:** grow the generated label palette across 4D frames and streamed volumes ([2977df7c](https://github.com/niivue/mono/commit/2977df7c))
+- **niivue:** save the label table a volume shows, not the registry's ([df945332](https://github.com/niivue/mono/commit/df945332))
+- **niivue:** grow the generated label palette with the data ([5b39e5e5](https://github.com/niivue/mono/commit/5b39e5e5))
+
+### Breaking Changes
+
+- **niivue:** one colormap per volume, label or continuous  ([#69](https://github.com/niivue/mono/issues/69))
+  setColormapLabel/setColormapLabelFromUrl are removed;
+  `_draw`, `_itksnap` and `_slicer3d` are now `draw`, `itksnap` and
+  `slicer3d`; colormapNames() lists both kinds; documents are version 10.
+  Closes #69
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+  Claude-Session: https://claude.ai/code/session_01D77vyvTqs1NMFXhaGsw2ZZ
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.39 (2026-10-26)
+
+### Fixes
+
+- **niivue:** judge a gray channel colour relative to its brightness ([1cc77a9b](https://github.com/niivue/mono/commit/1cc77a9b))
+- **niivue:** emit meshLoaded for the mesh addMesh added ([bf7f42c1](https://github.com/niivue/mono/commit/bf7f42c1))
+- **niivue:** follow-ups from the #362, #368, #369 and #370 reviews ([#362](https://github.com/niivue/mono/issues/362), [#368](https://github.com/niivue/mono/issues/368), [#369](https://github.com/niivue/mono/issues/369), [#370](https://github.com/niivue/mono/issues/370))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.38 (2026-10-26)
+
+### Fixes
+
+- **niivue:** keep a document's custom matcap URL ([dad77c2f](https://github.com/niivue/mono/commit/dad77c2f))
+- **niivue:** draw the default matcap when a matcap fails to load ([8819d3fb](https://github.com/niivue/mono/commit/8819d3fb))
+- **niivue:** leave the matcap alone when a document does not set one ([608b6534](https://github.com/niivue/mono/commit/608b6534))
+- **niivue:** load an unresolvable matcap path as the instance default ([9b32a999](https://github.com/niivue/mono/commit/9b32a999))
+- **niivue:** save a document's matcap by name, not by URL ([601bddc3](https://github.com/niivue/mono/commit/601bddc3))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.37 (2026-10-23)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

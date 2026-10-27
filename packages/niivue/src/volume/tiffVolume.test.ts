@@ -249,6 +249,20 @@ describe('channelColormapFor', () => {
   test('maps white and near-white to gray', () => {
     expect(channelColormapFor([255, 255, 255], 0)).toBe('gray')
     expect(channelColormapFor([200, 200, 210], 2)).toBe('gray')
+    expect(channelColormapFor([128, 128, 128], 0)).toBe('gray')
+  })
+
+  test('keeps the hue of a pastel', () => {
+    expect(channelColormapFor([255, 200, 200], 0)).toBe('red')
+    expect(channelColormapFor([200, 255, 200], 0)).toBe('green')
+    expect(channelColormapFor([180, 180, 255], 0)).toBe('blue')
+  })
+
+  test('keeps the hue of a dim colour, and reads black as gray', () => {
+    expect(channelColormapFor([0, 0, 30], 0)).toBe('blue')
+    expect(channelColormapFor([30, 0, 0], 0)).toBe('red')
+    expect(channelColormapFor([0, 0, 0], 0)).toBe('gray')
+    expect(channelColormapFor([20, 20, 21], 0)).toBe('gray')
   })
 })
 
@@ -256,6 +270,13 @@ describe('channelColormapsFor', () => {
   test('gives channels that would collide the next closest free ramp', () => {
     const white = [255, 255, 255]
     expect(channelColormapsFor([white, white])).toEqual(['gray', 'violet'])
+    // A second pastel red is not handed gray just because gray is free.
+    expect(
+      channelColormapsFor([
+        [255, 0, 0],
+        [255, 200, 200],
+      ]),
+    ).not.toContain('gray')
     // blue2cyan and redyell tie for the second green; palette order decides.
     expect(
       channelColormapsFor([

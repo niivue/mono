@@ -22,7 +22,7 @@
 import * as zarr from 'zarrita'
 import { NiiDataType } from '@/NVConstants'
 import type { ImageFromUrlOptions, TypedVoxelArray } from '@/NVTypes'
-import { channelColormapFor, channelColormapsFor } from './channelColormaps'
+import { channelColormapsFor } from './channelColormaps'
 import { channelVolumeFile } from './channelVolumeFile'
 import {
   allocTypedArrayLike,
@@ -313,18 +313,6 @@ export function omeZarrChannelName(
   channel: number,
 ): string {
   return source.info.channels[channel]?.label ?? `Channel ${channel + 1}`
-}
-
-/**
- * Colormap for one channel: the closest hue to the omero colour when the
- * store states one, else the next entry in the shared palette.
- */
-export function omeZarrChannelColormap(
-  info: OmeZarrInfo,
-  channel: number,
-  order: number,
-): string {
-  return channelColormapFor(info.channels[channel]?.color, order)
 }
 
 /**

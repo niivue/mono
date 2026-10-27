@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { channelColormapsFor } from './channelColormaps'
 import {
   defaultOmeZarrLevel,
   omeZarrBlockToDisplay,
-  omeZarrChannelColormap,
   omeZarrChannelName,
   omeZarrVolumesFrom,
   openOmeZarr,
@@ -168,8 +168,9 @@ describe('openOmeZarr', () => {
     expect(source.levels[1].dims).toEqual([2, 2, 1])
     expect(omeZarrChannelName(source, 0)).toBe('nuclei')
     expect(omeZarrChannelName(source, 1)).toBe('membrane')
-    expect(omeZarrChannelColormap(source.info, 0, 0)).toBe('green')
-    expect(omeZarrChannelColormap(source.info, 1, 1)).toBe('red')
+    expect(
+      channelColormapsFor(source.info.channels.map((c) => c.color)),
+    ).toEqual(['green', 'red'])
   })
 
   test('rejects a store whose root is an array', async () => {

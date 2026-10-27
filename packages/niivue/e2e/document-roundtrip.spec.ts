@@ -338,7 +338,7 @@ test('load events: loadDocument emits change (and sliceTypeChange) for the setti
         {
           version: 9,
           layout: { sliceType: SLICE_TYPE.AXIAL },
-          volume: { matcap: 'shiny' },
+          volume: { matcap: 'https://example.org/shiny.jpg' },
         },
         'a.json',
       ),
@@ -372,7 +372,11 @@ test('load events: loadDocument emits change (and sliceTypeChange) for the setti
   const changes = r.seen.filter((e) => e.type === 'change')
   expect(changes).toEqual([
     { type: 'change', property: 'sliceType', value: 0 },
-    { type: 'change', property: 'volumeMatcap', value: 'shiny' },
+    {
+      type: 'change',
+      property: 'volumeMatcap',
+      value: 'https://example.org/shiny.jpg',
+    },
   ])
   expect(r.sliceTypeAfter).toBe(0)
   // sliceType changed -> the paired specialised event fires too, then documentLoaded last.
@@ -634,3 +638,93 @@ test('json format: saves portable JSON that loadDocument reads back (linked + em
   expect(r.embeddedVoxels).toBeGreaterThan(1_000_000) // embedded JSON -> base64 voxels
   expect(r.embeddedCalMinNegIsNaN).toBe(true) // and on the embedded path
 })
+
+test('matcap: saved by name, loads back as its URL, custom URLs are kept', async ({
+  page,
+}) => {
+  test.setTimeout(60_000) // shares the one-time Vite module-graph transform
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+
+    const src = new NiiVue()
+    const url = src.volumeMatcap
+    const json = new TextDecoder().decode(
+      src.serializeDocument({ format: 'json' }),
+    )
+    const saved = JSON.parse(json).volume?.matcap
+
+    const reloaded = new NiiVue()
+    reloaded.volumeMatcap = ''
+    await reloaded.loadDocument(new File([json], 'named.json'))
+
+    // A document saved before names stored the dev server's path, which only
+    // resolves on that server. It loads by file name.
+    const legacy = json.replace(
+      '"matcap":"cortex"',
+      '"matcap":"/src/assets/matcaps/Cortex.jpg"',
+    )
+    const fromLegacy = new NiiVue()
+    await fromLegacy.loadDocument(new File([legacy], 'legacy.json'))
+
+    // An app's own image is kept, even when its file shares a built-in's
+    // name; the renderer draws the default if it does not load.
+    const custom = json.replace(
+      '"matcap":"cortex"',
+      '"matcap":"/custom/Cortex.jpg"',
+    )
+    const fromCustom = new NiiVue()
+    await fromCustom.loadDocument(new File([custom], 'custom.json'))
+
+    // A name this instance does not know cannot be fetched, so it loads as the
+    // instance default.
+    const unknown = json.replace('"matcap":"cortex"', '"matcap":"gold"')
+    const fromUnknown = new NiiVue()
+    fromUnknown.volumeMatcap = ''
+    await fromUnknown.loadDocument(new File([unknown], 'unknown.json'))
+
+    return {
+      url,
+      saved,
+      reloaded: reloaded.volumeMatcap,
+      legacyReplaced: legacy !== json,
+      fromLegacy: fromLegacy.volumeMatcap,
+      customReplaced: custom !== json,
+      fromCustom: fromCustom.volumeMatcap,
+      unknownReplaced: unknown !== json,
+      fromUnknown: fromUnknown.volumeMatcap,
+    }
+  })
+
+  expect(r.url).not.toBe('')
+  expect(r.saved).toBe('cortex')
+  expect(r.reloaded).toBe(r.url)
+  expect(r.legacyReplaced).toBe(true)
+  expect(r.fromLegacy).toBe(r.url)
+  expect(r.customReplaced).toBe(true)
+  expect(r.fromCustom).toBe('/custom/Cortex.jpg')
+  expect(r.unknownReplaced).toBe(true)
+  expect(r.fromUnknown).toBe(r.url)
+})
+
+for (const fill of ['current', { 'volume.matcap': 'current' }] as const) {
+  test(`matcap: omitted value respects fill ${JSON.stringify(fill)}`, async ({
+    page,
+  }) => {
+    const result = await page.evaluate(async (fill) => {
+      const { default: NiiVue } = await import('/src/index.ts')
+      const nv = new NiiVue({
+        matcaps: { cortex: '/m/Cortex.jpg', gold: '/m/custom-gold.jpg' },
+      })
+      nv.volumeMatcap = '/m/custom-gold.jpg'
+      const changes: string[] = []
+      nv.addEventListener('change', (event) => {
+        changes.push(event.detail.property)
+      })
+      await nv.loadDocument(new File(['{"version":9}'], 'empty.json'), { fill })
+      return { matcap: nv.volumeMatcap, changes }
+    }, fill)
+    expect(result.matcap).toBe('/m/custom-gold.jpg')
+    expect(result.changes).not.toContain('volumeMatcap')
+  })
+}

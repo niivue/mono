@@ -198,7 +198,7 @@ Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (
 - `src/view/NVFont.ts` parses atlases sparsely by Unicode code point, and `buildTextLayout` iterates strings by code point (not UTF-8 bytes), so CJK and other non-Latin glyphs render correctly when present in the atlas. Swap the active font at runtime via `nv1.setFont(nextFont)` for an in-memory atlas, or `nv1.setFontFromUrl({ atlas, metrics })` to fetch a PNG+JSON pair from URLs — both rebuild the view because the atlas texture is GPU-owned.
 - The only bundled font is `ubuntu` (ASCII), re-exported from `src/assets/fonts/index.ts` and used as the default by `NVControlBase`. Community atlases (including CJK-capable fonts like Poem) live at `https://github.com/niivue/fonts` and are fetched on demand via `setFontFromUrl` — see `examples/font.html`. `scripts/generate-assets.js` writes one wrapper per `*.json` + `*.png` pair in `src/assets/fonts/` and regenerates the barrel.
 
-**Remote assets (fonts, colormaps, matcaps):** The controller exposes URL-aware loaders so apps can pull assets from CDNs at runtime: `nv1.setFontFromUrl({ atlas, metrics })` (options-object — atlas/metrics can't transpose silently), `nv1.addColormap(name, cmap)` / `nv1.addColormapFromUrl(url, name?)` (registers a `{ R, G, B, A?, I?, labels? }` LUT visible to volumes, mesh layers, colorbars, connectomes, tracts; name derived from filename if omitted, dispatches `colormapAdded`), and the existing `nv1.loadMatcap(nameOrUrl)`. Cross-origin image loads go through `applyCORS(img)` in `src/NVLoader.ts`, which unconditionally sets `img.crossOrigin = 'anonymous'` before `img.src =` in the four image loaders (WebGPU `bitmap2texture`, WebGL2 matcap/thumbnail/font). This is spec-safe for same-origin, `blob:`, and `data:`, and enables GPU texture uploads from hosts like `raw.githubusercontent.com` — provided the server sends `Access-Control-Allow-Origin`.
+**Remote assets (fonts, colormaps, matcaps):** The controller exposes URL-aware loaders so apps can pull assets from CDNs at runtime: `nv1.setFontFromUrl({ atlas, metrics })` (options-object — atlas/metrics can't transpose silently), `nv1.addColormap(name, cmap)` / `nv1.addColormapFromUrl(url, name?)` (registers a `{ R, G, B, A?, I?, labels? }` LUT visible to volumes, mesh layers, colorbars, connectomes, tracts; name derived from filename if omitted, dispatches `colormapAdded`), and the existing `nv1.loadMatcap(nameOrUrl)`. `model.volume.matcap` holds a URL, but `NVDocument` saves a matcap found in `opts.matcaps` by its name and `loadDocument` looks the name up again (`src/documentMatcap.ts`): a dev server serves a bundled JPG as a page path that 404s elsewhere, and a production build inlines it as a data URL that bloats every document. A matcap image that fails to load draws the instance default (first `opts.matcaps` entry), then white, with a warning. Cross-origin image loads go through `applyCORS(img)` in `src/NVLoader.ts`, which unconditionally sets `img.crossOrigin = 'anonymous'` before `img.src =` in the four image loaders (WebGPU `bitmap2texture`, WebGL2 matcap/thumbnail/font). This is spec-safe for same-origin, `blob:`, and `data:`, and enables GPU texture uploads from hosts like `raw.githubusercontent.com` — provided the server sends `Access-Control-Allow-Origin`.
 
 **Multi-instance isolation:** Shared GPU modules use `WeakMap<GPUDevice|WebGL2RenderingContext, ...>` to cache resources per device/context. Their `destroy(device)` / `destroy(gl)` functions take the device/context parameter to clean up per-instance resources.
 
@@ -867,9 +867,11 @@ in volume order (later overlays on top); colour `MAX` keeps the per-component
 max of the premultiplied colours; every mode but `OVER` is commutative.
 `volumeIsChannelStack` blends volumes[0] in as one more overlay (both views'
 `_updateOverlayStack` pass every volume, the base draws at opacity 0) so the
-fused channels land on the canvas background; ignored while volumes[0] is
-chunked. Stacked channels keep their colormap's alpha ramp in the orient bake
-(`modFlags.z` in `orient.wgsl`, `keepColormapAlpha` in `gl/orientOverlay.ts`);
+fused channels land on the canvas background; ignored with one volume, while
+volumes[0] is chunked, and in multi-instance mode. Hidden (or opacity 0) and
+PAQD volumes do not join as channels. Stacked channels keep their colormap's
+alpha ramp in the orient bake (`modFlags.z` in `orient.wgsl`,
+`keepColormapAlpha` in `gl/orientOverlay.ts`);
 other overlays get `step(0.00001, a)`. The overlay ray-march has no step-size
 correction, so 3D density follows each channel's opacity steeply.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
@@ -880,12 +882,13 @@ pass runs in z-slabs sized so the 24 B/voxel f32 accumulator fits
 min(`maxStorageBufferBindingSize`, `maxBufferSize`); typical volumes and chunks
 are one slab. The chunking threshold is capped at floor(sqrt(that min / 24)) so
 one z-slice always fits (2364 at 128 MiB, above the usual 2048 3D limit). Its
-per-device pipeline cache holds at most nine mode pairs.
+per-device pipeline cache holds at most twelve mode pairs.
 - `bun packages/niivue/scripts/check-blend-wgsl.mjs` compiles and runs the blend
   WGSL in system Chrome across modes and two slabs; output must match the CPU
   test. Passed 2026-10-05 (plus a WebGPU visual pass of `vox.tissues.html` /
-  `vox.stats-multi.html` in all six then-existing mode pairs) and, with colour
-  `OVER`, 2026-10-23.
+  `vox.stats-multi.html` in all six then-existing mode pairs), with colour
+  `OVER` 2026-10-23, and with colour `MAX` on overlapping channels (z1)
+  2026-10-23.
 
 
 ## Three mesh species

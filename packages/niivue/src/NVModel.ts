@@ -1371,24 +1371,29 @@ export default class NVModel {
     this._setupPivot3D()
   }
 
-  async addMesh(mesh: MeshFromUrlOptions | NVMeshType): Promise<void> {
+  /** Adds a mesh, loading it first from a URL. Returns null when it cannot be read. */
+  async addMesh(
+    mesh: MeshFromUrlOptions | NVMeshType,
+  ): Promise<NVMeshType | null> {
     // Check if this is already a fully-formed NVMesh (has positions property)
     if ('positions' in mesh && mesh.positions) {
       this.meshes.push(mesh as NVMeshType)
       this._setupPivot3D()
-      return
+      return mesh as NVMeshType
     }
 
     // Otherwise treat as MeshFromUrlOptions and load from URL
+    let added: NVMeshType | null = null
     try {
-      const msh = await NVMesh.loadMesh(mesh as MeshFromUrlOptions)
-      this.meshes.push(msh)
+      added = await NVMesh.loadMesh(mesh as MeshFromUrlOptions)
+      this.meshes.push(added)
     } catch (e) {
       const opts = mesh as MeshFromUrlOptions
       const urlString = typeof opts.url === 'string' ? opts.url : opts.url.name
       log.error(`Failed to load mesh: ${urlString}`, e)
     }
     this._setupPivot3D()
+    return added
   }
 
   removeVolume(index: number): void {

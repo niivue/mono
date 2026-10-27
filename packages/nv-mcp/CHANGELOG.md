@@ -1,3 +1,50 @@
+## 1.0.0-rc.17 (2026-10-27)
+
+### Features
+
+- **nv-mcp:** draw label tables through the unified colormap API ([48ebfe88](https://github.com/niivue/mono/commit/48ebfe88))
+
+### Fixes
+
+- **nv-mcp:** register an overlay's label table only once its file loads ([#257](https://github.com/niivue/mono/issues/257))
+- **nv-mcp:** register a fetched label table only once add_overlay is accepted ([8958fe00](https://github.com/niivue/mono/commit/8958fe00))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.40
+- Updated uikit to 1.0.0-rc.28
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.16 (2026-10-26)
+
+### Fixes
+
+- **nv-mcp:** refuse options a read-back cannot tell apart ([9b890cdc](https://github.com/niivue/mono/commit/9b890cdc))
+- **nv-mcp:** follow-ups from the #357, #359 and #361 reviews ([#357](https://github.com/niivue/mono/issues/357), [#359](https://github.com/niivue/mono/issues/359), [#361](https://github.com/niivue/mono/issues/361))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.39
+- Updated uikit to 1.0.0-rc.27
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.15 (2026-10-26)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.38
+- Updated uikit to 1.0.0-rc.26
+
 ## 1.0.0-rc.14 (2026-10-23)
 
 ### Updated Dependencies

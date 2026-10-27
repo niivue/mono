@@ -17,9 +17,8 @@
 
 import { maybeDecompress } from '@/codecs/NVGz'
 import type { ImageFromUrlOptions } from '@/NVTypes'
-import { channelColormapFor, channelColormapsFor } from './channelColormaps'
+import { channelColormapsFor } from './channelColormaps'
 import { channelVolumeFile } from './channelVolumeFile'
-import type { OmeTiffInfo } from './omeTiff'
 import { parseTiff } from './tiff'
 import {
   describeTiff,
@@ -41,18 +40,6 @@ export interface OmeTiffLoadOptions {
   timepoint?: number
   /** Override the fetcher, e.g. to add credentials or a cache. */
   fetchImpl?: typeof fetch
-}
-
-/**
- * Colormap for one channel: the closest hue to the OME `Color` attribute when
- * the file states one, else the next entry in the shared palette.
- */
-export function omeTiffChannelColormap(
-  info: OmeTiffInfo | null,
-  channel: number,
-  order: number,
-): string {
-  return channelColormapFor(info?.channels[channel]?.color, order)
 }
 
 /**

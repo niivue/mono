@@ -152,7 +152,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `volumeOverlayAlphaBlend` | Prop | `OVERLAY_ALPHA_BLEND`: `MAX` (0, default), `ADDITIVE` (1, opacities sum capped at 1; for fractions summing to 1, e.g. tissue maps), `OVER` (2, 1-prod(1-a)). Only with 2+ overlays |
 | `volumeOverlayColorBlend` | Prop | `OVERLAY_COLOR_BLEND`: `ADDITIVE` (0, default, opacity-weighted sum), `MEAN` (1, opacity-weighted average), `OVER` (2, composited in volume order, later overlays on top; with alpha `OVER` this is source-over), `MAX` (3, per-component max of the opacity-weighted colours; with alpha `MAX` this is Vol-E's channel fusion). Only with 2+ overlays |
 | `volumeIsChannelStack` | Prop | Blend volumes[0] with the overlays as an equal channel instead of an opaque base (default false); pair with colour `MAX` for fluorescence fusion. Stacked channels keep their colormap alpha ramp; 3D density follows each channel's opacity. Ignored while volumes[0] is chunked |
-| `volumeMatcap` | Prop | Matcap name |
+| `volumeMatcap` | Prop | Matcap image URL (`loadMatcap` resolves an `opts.matcaps` name to it). An image that fails to load draws the instance default (first `matcaps` entry), then plain white, with a console warning |
 | `volumePaqdUniforms` | Prop | PAQD atlas tuning |
 | `loadMatcap(nameOrUrl)` | Method (async) | Register matcap at runtime |
 
@@ -315,8 +315,8 @@ a drag and `azimuth` updates — Swift state needs to follow).
 | `saveBitmap(opts)` | Method | Yes | Screenshot |
 | `saveDrawing(filename?)` | Method | Yes | NIfTI label volume |
 | `serializeDocument()` | Method | No | Returns CBOR `Uint8Array` |
-| `saveDocument(filename?)` | Method | No | Triggers browser download (.nvd) |
-| `loadDocument(urlOrFile)` | Method | Yes | Reverse of save |
+| `saveDocument(filename?)` | Method | No | Triggers browser download (.nvd). A matcap from `opts.matcaps` is saved by its name (`'cortex'`), not its URL |
+| `loadDocument(urlOrFile)` | Method | Yes | Reverse of save. A matcap saved by name is looked up in this instance's `matcaps`; see §7 |
 | `volumeWriteExtensions`, `volumeExtensions` | Prop (get) | No | |
 
 For a native shell, prefer `serializeDocument()` + `saveBitmap()` returning the

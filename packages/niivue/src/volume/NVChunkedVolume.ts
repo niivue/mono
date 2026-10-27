@@ -1,4 +1,5 @@
 import { mat4, vec3 } from 'gl-matrix'
+import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
@@ -249,7 +250,12 @@ function positiveIntOption(value: number): number {
  */
 export function createSourceChunkLoader(
   source: ChunkedVolumeSource,
-  opts: { maxConcurrentLoads: number; retryAttempts: number },
+  opts: {
+    maxConcurrentLoads: number
+    retryAttempts: number
+    /** Called once per decoded region, however many requests share it. */
+    onChunk?: (bytes: Uint8Array, bytesPerVoxel: number) => void
+  },
 ): VolumeChunkSource {
   // Clamp at the point the options are consumed; see positiveIntOption.
   const maxConcurrent = positiveIntOption(opts.maxConcurrentLoads)
@@ -319,6 +325,12 @@ export function createSourceChunkLoader(
       if (inflight.get(key) === entry) inflight.delete(key)
     }
     promise.then(cleanup, cleanup)
+    const onChunk = opts.onChunk
+    if (onChunk)
+      promise.then(
+        (bytes) => onChunk(bytes, request.bytesPerVoxel),
+        () => {},
+      )
     return promise
   }
 }
@@ -411,6 +423,13 @@ export class NVChunkedVolume {
    */
   private readonly wantsAutoWindow: boolean
   private windowResolved = false
+  /**
+   * Finite value range (calibrated) of every brick decoded so far, whatever
+   * the colormap. Kept because the renderer's decoded tier serves bricks
+   * again without a new decode, so a palette generated later has only this.
+   */
+  private observedLabelRange: [number, number] | null = null
+  private labelGrowHandle: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     host: NiiVue,
@@ -474,6 +493,8 @@ export class NVChunkedVolume {
     this.volume.chunkSource = createSourceChunkLoader(source, {
       maxConcurrentLoads: options.maxConcurrentLoads ?? 6,
       retryAttempts: options.retryAttempts ?? 3,
+      onChunk: (bytes, bytesPerVoxel) =>
+        this.growLabelsFromChunk(bytes, bytesPerVoxel),
     })
   }
 
@@ -785,6 +806,10 @@ export class NVChunkedVolume {
       clearTimeout(this.refocusHandle)
       this.refocusHandle = null
     }
+    if (this.labelGrowHandle) {
+      clearTimeout(this.labelGrowHandle)
+      this.labelGrowHandle = null
+    }
     // A cancelled refocus never applies, so release anyone awaiting it now.
     const pending = this.pendingRefocus
     this.pendingRefocus = null
@@ -1023,6 +1048,12 @@ export class NVChunkedVolume {
       // The floor IS the whole volume at its coarsest level, so it is the best
       // window sample available and it costs no extra fetch.
       this.applyAutoWindow(floor)
+      // Drawn like the bricks: a label colormap needs a label LUT, built
+      // after the window so Random spans the real range.
+      floor.colormapLabel = NVCmaps.labelLutFor(floor.colormap, [
+        floor.globalMin,
+        floor.globalMax,
+      ])
       return floor
     } catch (err) {
       log.warn('NVChunkedVolume: coarse floor unavailable', err)
@@ -1084,11 +1115,89 @@ export class NVChunkedVolume {
       vol.globalMax = globalMax
       vol.hdr.cal_min = lo
       vol.hdr.cal_max = hi
+      // The generated label palette was sized to the placeholder range.
+      const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, [
+        globalMin,
+        globalMax,
+      ])
+      if (grown) vol.colormapLabel = grown
     }
     this.windowResolved = true
     log.debug(
       `NVChunkedVolume: auto window ${lo}..${hi} (global ${globalMin}..${globalMax})`,
     )
+  }
+
+  /**
+   * Record a decoded brick's value range and widen the generated label
+   * palette to it. The coarse floor (or window probe) only samples the
+   * coarsest level, so an ID present only at finer levels would otherwise
+   * take the palette's end colour. Independent of the display window: it
+   * runs with explicit bounds too. The range is recorded under any colormap,
+   * so switching to the generated palette later covers bricks already
+   * decoded ({@link growLabelsToObserved}). Bricks arriving together are
+   * applied once, and the new LUT changes `chunkedDisplayKey`, so the
+   * renderer re-streams the resident bricks with it; re-streamed bricks are
+   * covered and do not grow it again.
+   */
+  private growLabelsFromChunk(bytes: Uint8Array, bytesPerVoxel: number): void {
+    if (this.disposed) return
+    const Ctor = getTypedArrayConstructor(this.source.datatypeCode)
+    if (!Ctor || bytesPerVoxel <= 0) return
+    const voxels = Math.floor(bytes.byteLength / bytesPerVoxel)
+    const range = NVCmaps.finiteLabelRange(
+      toVoxelView(bytes, Ctor, bytesPerVoxel, voxels),
+      this.volume.hdr.scl_slope,
+      this.volume.hdr.scl_inter,
+    )
+    if (!range) return
+    const seen = this.observedLabelRange
+    this.observedLabelRange = seen
+      ? [Math.min(seen[0], range[0]), Math.max(seen[1], range[1])]
+      : range
+    const scene = this.host.volumes?.find((v) => v.id === this.volumeId)
+    const shown = scene ?? this.volume
+    if (!NVCmaps.isGeneratedLabelColormap(shown.colormap)) return
+    const lut = shown.colormapLabel
+    if (!lut) return
+    if (range[0] >= (lut.min ?? 0) && range[1] <= (lut.max ?? 0)) return
+    if (this.labelGrowHandle) return
+    this.labelGrowHandle = setTimeout(() => this.applyLabelGrowth(), 0)
+  }
+
+  private applyLabelGrowth(): void {
+    this.labelGrowHandle = null
+    if (this.growLabelsToObserved())
+      this.host
+        ._updateGLChanged()
+        .catch((err) => log.warn('NVChunkedVolume: label palette growth', err))
+  }
+
+  /**
+   * Widen a generated label palette to every value decoded so far. Called
+   * after a colormap change (`setVolume`), since bricks the renderer already
+   * holds are not decoded again. Returns whether a LUT grew; the caller
+   * updates the renderer.
+   */
+  growLabelsToObserved(): boolean {
+    const range = this.observedLabelRange
+    if (!range || this.disposed) return false
+    const scene = this.host.volumes?.find((v) => v.id === this.volumeId)
+    const targets = new Set<NVImage>([this.volume])
+    if (scene) targets.add(scene)
+    let grew = false
+    for (const vol of targets) {
+      const grown = NVCmaps.grownLabelLut(
+        vol.colormap,
+        vol.colormapLabel,
+        range,
+      )
+      if (grown) {
+        vol.colormapLabel = grown
+        grew = true
+      }
+    }
+    return grew
   }
 
   /**

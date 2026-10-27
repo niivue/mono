@@ -7,12 +7,12 @@ const demo: Demo = async (canvas, { ui, asset }) => {
     backgroundColor: [0.3, 0.3, 0.5, 1],
   })
   await nv.attachToCanvas(canvas)
+  // A colormap with a `labels` array turns the integer volume into an atlas
+  await nv.addColormapFromUrl(asset('volumes/aal.json'), 'aal')
   await nv.loadVolumes([
     { url: asset('volumes/mni152.nii.gz'), calMin: 30, calMax: 80 },
-    { url: asset('volumes/aal.nii.gz'), opacity: 0.5 },
+    { url: asset('volumes/aal.nii.gz'), opacity: 0.5, colormap: 'aal' },
   ])
-  // Turn the integer volume into a labeled atlas
-  await nv.setColormapLabelFromUrl(1, asset('volumes/aal.json'))
 
   const show = ui.status('Click a region')
   nv.addEventListener('locationChange', (e) => {

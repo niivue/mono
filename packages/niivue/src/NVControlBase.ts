@@ -2103,6 +2103,11 @@ export default class NiiVue extends EventTarget {
     return this.model.draw.colormap
   }
   set drawColormap(v: string) {
+    if (!NVCmaps.isDrawingColormap(v)) {
+      throw new Error(
+        `drawColormap: '${v}' is not a label colormap with IDs 0..255`,
+      )
+    }
     this.model.draw.colormap = v
     this._drawLut = null
     this.emit('change', { property: 'drawColormap', value: v })
@@ -2578,7 +2583,7 @@ export default class NiiVue extends EventTarget {
     volumes?: readonly NVImage[],
     colorbars = !volumes,
   ): Promise<void> {
-    const dirty = commitDirtyVolumes(this.model.getVolumes())
+    const dirty = this._commitDirtyVolumes()
     const changed = volumes && [
       ...volumes,
       ...dirty.filter((v) => !volumes.includes(v)),
@@ -2671,7 +2676,7 @@ export default class NiiVue extends EventTarget {
     while (this._updating && this._updatingView === this.view) {
       await this._updateIdle
     }
-    commitDirtyVolumes(this.model.getVolumes())
+    this._commitDirtyVolumes()
     const token = this._beginUpdate()
     try {
       // A modulator committed just above must not bake its old weights.
@@ -2682,10 +2687,20 @@ export default class NiiVue extends EventTarget {
     }
   }
 
+  /**
+   * commitDirtyVolumes for this model's volumes, then widen each edited
+   * volume's generated label LUT to the values it now holds.
+   */
+  private _commitDirtyVolumes(): NVImage[] {
+    const dirty = commitDirtyVolumes(this.model.getVolumes())
+    for (const vol of dirty) NVModel.growLabelRange(vol)
+    return dirty
+  }
+
   private async updateVolumeAffineOnly(): Promise<void> {
     // An isDirty volume needs its voxels re-uploaded, which the overlay-only
     // affine fast path below may not do (it can skip the background).
-    const hasDirty = commitDirtyVolumes(this.model.getVolumes()).length > 0
+    const hasDirty = this._commitDirtyVolumes().length > 0
     if (this._updating) {
       this._pendingUpdate = true
       // A moved volume needs every volume resliced, not a data-only scope.
@@ -2975,6 +2990,16 @@ export default class NiiVue extends EventTarget {
     const url = matcaps?.[matcapName] ?? matcapName
     this.model.volume.matcap = url
     await this._updateGLChanged()
+  }
+
+  /**
+   * Fetch and prepare a volume without adding it, so a caller can finish any
+   * step that may still fail before changing the scene, then pass the result
+   * to `addVolume` (which re-applies its `colormap`). Not exposed through
+   * nv-mcp: it returns a live `NVImage`, not serializable state.
+   */
+  async prepareVolume(volume: ImageFromUrlOptions | NVImage): Promise<NVImage> {
+    return NVModel.prepareVolume(volume)
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<this> {
@@ -3639,59 +3664,6 @@ export default class NiiVue extends EventTarget {
     await this._updateGLChanged()
   }
 
-  /**
-   * Set a label colormap on a volume (e.g., atlas/parcellation).
-   * Converts the ColorMap definition to an LUT and attaches it to the volume.
-   * When set, the orient shader uses nearest-neighbor label lookup instead of
-   * continuous colormap interpolation, and locationChange events include label names.
-   *
-   * @param volumeIndex - Index of the volume to apply the label colormap to
-   * @param cmap - ColorMap definition with R,G,B arrays and optional labels/I arrays;
-   *               a built-in colormap name (e.g. 'freesurfer', resolved via
-   *               lookupColorMap); or null to remove the label colormap
-   */
-  async setColormapLabel(
-    volumeIndex: number,
-    cmap: ColorMap | string | null,
-  ): Promise<void> {
-    const volumes = this.model.getVolumes()
-    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
-    if (cmap === null) {
-      volumes[volumeIndex].colormapLabel = null
-    } else {
-      // Accept a built-in colormap name (resolved via lookupColorMap, symmetric
-      // with setVolume({colormap: name})) or a ColorMap object directly.
-      const cm = typeof cmap === 'string' ? NVCmaps.lookupColorMap(cmap) : cmap
-      if (!cm) {
-        throw new Error(`setColormapLabel: unknown colormap '${cmap}'`)
-      }
-      volumes[volumeIndex].colormapLabel = NVCmaps.makeLabelLut(cm)
-    }
-    // Structural change (the label LUT is not a VolumeUpdate option); the volume
-    // reference lets listeners re-read colormapLabel.
-    this.emit('volumeUpdated', {
-      volumeIndex,
-      volume: volumes[volumeIndex],
-      changes: {},
-    })
-    await this._updateGLChanged()
-  }
-
-  /**
-   * Fetch a label colormap JSON from a URL or File and apply it to a volume.
-   * The JSON should contain R, G, B arrays and optional labels/I arrays.
-   *
-   * @param volumeIndex - Index of the volume to apply the label colormap to
-   * @param url - URL string or File object pointing to a colormap JSON
-   */
-  async setColormapLabelFromUrl(
-    volumeIndex: number,
-    url: string | File,
-  ): Promise<void> {
-    const { cmap } = await this._fetchColormapJson(url)
-    await this.setColormapLabel(volumeIndex, cmap)
-  }
-
   getMeshShader(meshIndex: number): string | undefined {
     const meshes = this.model.getMeshes()
     if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
@@ -3779,6 +3751,7 @@ export default class NiiVue extends EventTarget {
       }
     }
     markVolumeDataChanged(vol)
+    NVModel.growLabelRange(vol)
     await this._updateGL('none', [vol])
   }
 
@@ -3803,6 +3776,12 @@ export default class NiiVue extends EventTarget {
       options.frame4D = Math.max(0, Math.min(options.frame4D, maxFrame))
     }
     Object.assign(volumes[volumeIndex], options)
+    if (options.colormap !== undefined) {
+      NVModel.applyColormap(volumes[volumeIndex], options.colormap)
+      // A streamed volume has no img to scan; its bricks may already be
+      // decoded, so its generated palette takes the range they held.
+      for (const chunked of this._chunkedVolumes) chunked.growLabelsToObserved()
+    }
     this.emit('volumeUpdated', {
       volumeIndex,
       volume: volumes[volumeIndex],
@@ -4499,6 +4478,7 @@ export default class NiiVue extends EventTarget {
     vol.robustMax = pct98
     vol.globalMin = mnScale
     vol.globalMax = mxScale
+    NVModel.growLabelRange(vol, [mnScale, mxScale])
     await this._updateGLChanged()
   }
 
@@ -4608,6 +4588,7 @@ export default class NiiVue extends EventTarget {
       vol.robustMax = rebuilt.robustMax
       vol.globalMin = rebuilt.globalMin
       vol.globalMax = rebuilt.globalMax
+      NVModel.growLabelRange(vol)
       try {
         await this._updateGLChanged()
       } catch (e) {
@@ -5377,7 +5358,7 @@ export default class NiiVue extends EventTarget {
     if (this._slideDrawing?.undo()) this._refreshSlideAnnotation()
   }
 
-  // CSS hex for a drawing label from the active "_draw" LUT, or null when the
+  // CSS hex for a drawing label from the active draw colormap, or null when the
   // label is 0 / out of range / fully transparent (so callers can skip it).
   private _drawLabelColor(label: number): string | null {
     // Guard against 0 and a non-finite label (e.g. an out-of-range bitmap read):
@@ -5681,8 +5662,17 @@ export default class NiiVue extends EventTarget {
     }
   }
 
+  /** Every registered colormap name, both kinds. */
   get colormaps(): string[] {
     return NVCmaps.colormapNames()
+  }
+
+  /**
+   * Registered colormap names, sorted; `kind` narrows to continuous ramps or
+   * label tables (a colormap with a `labels` array).
+   */
+  colormapNames(kind?: NVCmaps.ColormapKind): string[] {
+    return NVCmaps.colormapNames(kind)
   }
 
   /**
@@ -6577,8 +6567,12 @@ export default class NiiVue extends EventTarget {
    * colors when built, so they pick them up on their next change
    * (`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).
    *
-   * Label colormaps (for atlas volumes with per-index labels) have their
-   * own registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`.
+   * A `labels` array (empty is fine) registers a label table: volumes using
+   * it look up colours by integer ID with nearest sampling and no display
+   * window, and `I` defaults to 0..n-1. Re-registering a name rebuilds the
+   * label LUT of every volume using it in this viewer; `updateGLVolume()`
+   * shows it. Other viewers keep the old colours until their volume is
+   * given the colormap again (`setVolume`).
    *
    * @returns The canonical name under which the colormap was stored
    *   (first letter upper-cased), which is the form visible in `nv1.colormaps`
@@ -6596,12 +6590,17 @@ export default class NiiVue extends EventTarget {
       Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
   ): string {
     const canonical = NVCmaps.addColormap(name, cmap)
+    const def = NVCmaps.lookupColorMap(canonical)
+    for (const vol of this.model.getVolumes()) {
+      if (vol.colormap && NVCmaps.lookupColorMap(vol.colormap) === def)
+        NVModel.applyColormap(vol, vol.colormap)
+    }
     this.emit('colormapAdded', { name: canonical })
     return canonical
   }
 
   /**
-   * Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and
+   * Fetch a colormap JSON (`{ R, G, B, A?, I?, labels? }`) from a URL or `File` and
    * register it under `name`. When `name` is omitted, it is derived from
    * the source filename; callers passing an un-nameable source (e.g.
    * `?query-only`) should supply `name` explicitly — an empty derived
@@ -6797,6 +6796,9 @@ export default class NiiVue extends EventTarget {
 
     // Parse the document
     const doc = NVDocument.deserialize(data)
+    // Colormaps first: volumes resolve their colormap names while rebuilding.
+    for (const [name, cmap] of Object.entries(doc.colormaps ?? {}))
+      this.addColormap(name, cmap)
 
     // Clear existing data (releases GPU resources)
     this.closeDrawing()

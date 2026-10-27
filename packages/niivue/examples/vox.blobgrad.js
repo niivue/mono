@@ -208,7 +208,8 @@ async function loadOverlay(key) {
         { url: ov.url, ...ov.opts },
       ])
       if (ov.labels) {
-        await nv.setColormapLabelFromUrl(1, ov.labels)
+        await nv.addColormapFromUrl(ov.labels, 'atlas')
+        await nv.setVolume(1, { colormap: 'atlas' })
       }
     }),
   )

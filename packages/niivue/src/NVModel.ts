@@ -1437,12 +1437,60 @@ export default class NVModel {
     isColorbarVisible: true,
   }
 
+  /**
+   * Derive `colormapLabel` from `colormap`: a label colormap compiles to the
+   * volume's label LUT, a continuous one clears it. A NIFTI_INTENT_LABEL
+   * volume given no colormap gets the generated `Random` palette, so a
+   * segmentation shows as labels without further setup.
+   */
+  static applyColormap(vol: NVImage, explicitColormap?: string): NVImage {
+    if (
+      explicitColormap === undefined &&
+      vol.hdr.intent_code === NVConstants.NiiIntentCode.NIFTI_INTENT_LABEL
+    ) {
+      vol.colormap = 'Random'
+    }
+    vol.colormapLabel = NVCmaps.labelLutFor(vol.colormap, [
+      vol.globalMin,
+      vol.globalMax,
+    ])
+    // globalMin/globalMax describe frame 0 only; IDs in later frames count too.
+    NVModel.growLabelRange(vol)
+    return vol
+  }
+
+  /**
+   * Widen a volume's generated `Random` LUT to cover `range` (calibrated), or
+   * when `range` is omitted, every value now in `img` (all loaded frames). The
+   * LUT only grows, so IDs that appear after load (a live segmentation via
+   * `updateVolumeData`, another 4D frame) get their own colour instead of the
+   * last entry's. A table colormap is left alone.
+   */
+  static growLabelRange(vol: NVImage, range?: [number, number]): void {
+    if (!NVCmaps.isGeneratedLabelColormap(vol.colormap)) return
+    const span =
+      range ??
+      (vol.img
+        ? NVCmaps.finiteLabelRange(
+            vol.img,
+            vol.hdr.scl_slope,
+            vol.hdr.scl_inter,
+          )
+        : null)
+    if (!span) return
+    const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, span)
+    if (grown) vol.colormapLabel = grown
+  }
+
   /** Fetch and prepare an NVImage without adding it to the model. */
   static async prepareVolume(
     volume: ImageFromUrlOptions | NVImage,
   ): Promise<NVImage> {
     if ('hdr' in volume && volume.hdr) {
-      return { ...NVModel.volumeDefaults, ...volume }
+      return NVModel.applyColormap(
+        { ...NVModel.volumeDefaults, ...volume },
+        volume.colormap,
+      )
     }
     const opts = volume as ImageFromUrlOptions
     const { url, urlImageData, limitFrames4D, ...overrides } =
@@ -1466,7 +1514,7 @@ export default class NVModel {
       frameLimit,
       name,
     )
-    return {
+    const prepared: NVImage = {
       ...base,
       url: urlString,
       ...NVModel.volumeDefaults,
@@ -1483,6 +1531,7 @@ export default class NVModel {
       // _sourceFile above.
       ...(urlImageData != null ? { _urlImageData: urlImageData } : {}),
     }
+    return NVModel.applyColormap(prepared, overrides.colormap)
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {

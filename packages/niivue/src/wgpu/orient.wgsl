@@ -113,8 +113,8 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     let labelWidth = u.flags.w;
     let labelIdx = rawLabel - i32(labelMin);
     let clampedIdx = clamp(labelIdx, 0, i32(labelWidth) - 1);
-    let texCoord = (f32(clampedIdx) + 0.5) / labelWidth;
-    var labelColor = textureSampleLevel(colorMap, samp, vec2<f32>(clamp(texCoord, 0.0, 1.0), 0.5), 0.0);
+    // The LUT wraps into rows of 256 (LABEL_LUT_WIDTH in NVOrient.ts).
+    var labelColor = textureLoad(colorMap, vec2<i32>(clampedIdx % 256, clampedIdx / 256), 0);
     let overlayOpacityLabel = u.flags.x;
     if (overlayOpacityLabel > 0.0) {
       labelColor.a *= overlayOpacityLabel;

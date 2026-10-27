@@ -4,6 +4,7 @@ import { OVERLAY_ALPHA_BLEND, OVERLAY_COLOR_BLEND } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
 import {
   buildOrientUniforms,
+  labelLutTexels,
   prepareRGBAData,
   rgbaTextureKey,
 } from '@/view/NVOrient'
@@ -503,17 +504,17 @@ export async function prepareOrientTextureCache(
   if (u.isLabel > 0) {
     const labelLut = nvimage.colormapLabel?.lut
     if (!labelLut) throw new Error('Label colormap LUT is undefined')
-    const nLabels = labelLut.length / 4
+    const texels = labelLutTexels(labelLut)
     colormapTexture = device.createTexture({
-      size: [nLabels, 1, 1],
+      size: [texels.width, texels.height, 1],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
     device.queue.writeTexture(
       { texture: colormapTexture },
-      Uint8Array.from(labelLut),
-      { bytesPerRow: nLabels * 4, rowsPerImage: 1 },
-      [nLabels, 1],
+      texels.data,
+      { bytesPerRow: texels.width * 4, rowsPerImage: texels.height },
+      [texels.width, texels.height],
     )
     negativeColormapTexture = colormapTexture
     sampler = device.createSampler({
@@ -721,17 +722,17 @@ export async function volume2Texture(
     if (!labelLut) {
       throw new Error('Label colormap LUT is undefined')
     }
-    const nLabels = labelLut.length / 4
+    const texels = labelLutTexels(labelLut)
     colormapTex = device.createTexture({
-      size: [nLabels, 1, 1],
+      size: [texels.width, texels.height, 1],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
     device.queue.writeTexture(
       { texture: colormapTex },
-      Uint8Array.from(labelLut),
-      { bytesPerRow: nLabels * 4, rowsPerImage: 1 },
-      [nLabels, 1],
+      texels.data,
+      { bytesPerRow: texels.width * 4, rowsPerImage: texels.height },
+      [texels.width, texels.height],
     )
     negColormapTex = colormapTex
     sampler = device.createSampler({

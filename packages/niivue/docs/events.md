@@ -271,8 +271,8 @@ Fired when `sliceType` is set.
 ### Data Updates
 
 #### `volumeUpdated`
-Fired after `setVolume()` applies property changes to a volume, or after
-`setColormapLabel()` sets/clears a label colormap (for which `changes` is empty).
+Fired after `setVolume()` applies property changes to a volume, including a
+`colormap` change between a continuous and a label colormap.
 Not fired by `updateVolumeData()`, which edits voxel values (typically every
 frame) without changing any display option.
 

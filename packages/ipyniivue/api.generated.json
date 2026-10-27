@@ -1344,7 +1344,7 @@
       },
       "hasGetter": true,
       "hasSetter": false,
-      "doc": null
+      "doc": "Every registered colormap name, both kinds."
     },
     {
       "jsName": "drawingColormaps",
@@ -1523,7 +1523,7 @@
         }
       ],
       "returns": "string",
-      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it. Volumes\nthat already use the name show the new colors on their next GPU update\n(e.g. `updateGLVolume()`). Mesh layers, tracts and connectomes bake their\ncolors when built, so they pick them up on their next change\n(`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).\n\nLabel colormaps (for atlas volumes with per-index labels) have their\nown registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`.",
+      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it. Volumes\nthat already use the name show the new colors on their next GPU update\n(e.g. `updateGLVolume()`). Mesh layers, tracts and connectomes bake their\ncolors when built, so they pick them up on their next change\n(`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).\n\nA `labels` array (empty is fine) registers a label table: volumes using\nit look up colours by integer ID with nearest sampling and no display\nwindow, and `I` defaults to 0..n-1. Re-registering a name rebuilds the\nlabel LUT of every volume using it in this viewer; `updateGLVolume()`\nshows it. Other viewers keep the old colours until their volume is\ngiven the colormap again (`setVolume`).",
       "returnsDoc": "The canonical name under which the colormap was stored\n(first letter upper-cased), which is the form visible in `nv1.colormaps`\nand the `colormapAdded` event detail."
     },
     {
@@ -1546,7 +1546,7 @@
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and\nregister it under `name`. When `name` is omitted, it is derived from\nthe source filename; callers passing an un-nameable source (e.g.\n`?query-only`) should supply `name` explicitly — an empty derived\nname throws.",
+      "doc": "Fetch a colormap JSON (`{ R, G, B, A?, I?, labels? }`) from a URL or `File` and\nregister it under `name`. When `name` is omitted, it is derived from\nthe source filename; callers passing an un-nameable source (e.g.\n`?query-only`) should supply `name` explicitly — an empty derived\nname throws.",
       "returnsDoc": null
     },
     {
@@ -1981,6 +1981,23 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "colormapNames",
+      "pyName": "colormap_names",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "kind",
+          "tsType": "ColormapKind | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "string[]",
+      "doc": "Registered colormap names, sorted; `kind` narrows to continuous ramps or\nlabel tables (a colormap with a `labels` array).",
       "returnsDoc": null
     },
     {
@@ -3379,52 +3396,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "setColormapLabel",
-      "pyName": "set_colormap_label",
-      "isAsync": true,
-      "returnsValue": false,
-      "params": [
-        {
-          "name": "volumeIndex",
-          "tsType": "number",
-          "optional": false,
-          "doc": "Index of the volume to apply the label colormap to"
-        },
-        {
-          "name": "cmap",
-          "tsType": "string | ColorMap | null",
-          "optional": false,
-          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays;\n  a built-in colormap name (e.g. 'freesurfer', resolved via\n  lookupColorMap); or null to remove the label colormap"
-        }
-      ],
-      "returns": "Promise<void>",
-      "doc": "Set a label colormap on a volume (e.g., atlas/parcellation).\nConverts the ColorMap definition to an LUT and attaches it to the volume.\nWhen set, the orient shader uses nearest-neighbor label lookup instead of\ncontinuous colormap interpolation, and locationChange events include label names.",
-      "returnsDoc": null
-    },
-    {
-      "jsName": "setColormapLabelFromUrl",
-      "pyName": "set_colormap_label_from_url",
-      "isAsync": true,
-      "returnsValue": false,
-      "params": [
-        {
-          "name": "volumeIndex",
-          "tsType": "number",
-          "optional": false,
-          "doc": "Index of the volume to apply the label colormap to"
-        },
-        {
-          "name": "url",
-          "tsType": "string | File",
-          "optional": false,
-          "doc": "URL string or File object pointing to a colormap JSON"
-        }
-      ],
-      "returns": "Promise<void>",
-      "doc": "Fetch a label colormap JSON from a URL or File and apply it to a volume.\nThe JSON should contain R, G, B arrays and optional labels/I arrays.",
-      "returnsDoc": null
-    },
-    {
       "jsName": "setConnectomeOptions",
       "pyName": "set_connectome_options",
       "isAsync": true,
@@ -4370,6 +4341,10 @@
       {
         "jsName": "getScreenTiles",
         "reason": "return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)"
+      },
+      {
+        "jsName": "prepareVolume",
+        "reason": "return value is not JSON-serializable (a live NVImage for addVolume to take; use add_volume)"
       },
       {
         "jsName": "registerOverlayRenderer",

@@ -93,18 +93,20 @@ JSON and names it after the file.
 `nv.colormapNames('continuous')` lists the ramps and
 `nv.colormapNames('label')` the label tables; `nv.colormaps` lists both.
 
-`lookupColorMap(name)`, a named export of `@niivue/niivue`, returns a
-colormap's stops. Some built-in maps carry a display window of their own;
-`ct_bones`, for example, is meant for 180 to 600 HU. NiiVue 0.x applied that
-window automatically when you picked the map. This version does not, so pass
-it yourself:
+Some built-in maps carry a display window of their own; `ct_bones`, for
+example, is meant for 180 to 600 HU. Picking such a map applies its window,
+whether you set it with `setVolume` or load the volume with it:
 
 ```js
-import { lookupColorMap } from '@niivue/niivue'
-
-const cmap = lookupColorMap('ct_bones')
-await nv.setVolume(0, { colormap: 'ct_bones', calMin: cmap?.min, calMax: cmap?.max })
+await nv.setVolume(0, { colormap: 'ct_bones' }) // window becomes 180..600
+await nv.setVolume(0, { colormap: 'ct_bones', calMin: -1024, calMax: 3071 })
 ```
+
+Pass `calMin` or `calMax` to choose the window yourself. Passing only one of
+them skips the map's window, so the other keeps its current value. A streamed
+volume picks its window from the data instead. `lookupColorMap(name)`, a named
+export of `@niivue/niivue`, returns a colormap's stops along with that window
+as `min` and `max`.
 
 A definition with a `labels` array is a label table instead of a ramp: each
 integer gets its own color and the display window is ignored. For label

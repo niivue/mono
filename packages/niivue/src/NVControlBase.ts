@@ -3772,6 +3772,7 @@ export default class NiiVue extends EventTarget {
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
+    options = NVCmaps.withColormapWindow(options)
     // Clamp frame4D to valid range
     if (options.frame4D !== undefined) {
       const maxFrame = (volumes[volumeIndex].nFrame4D ?? 1) - 1

@@ -1498,7 +1498,8 @@ export default class NVModel {
       )
     }
     const opts = volume as ImageFromUrlOptions
-    const { url, urlImageData, limitFrames4D, ...overrides } = opts
+    const { url, urlImageData, limitFrames4D, ...overrides } =
+      NVCmaps.withColormapWindow(opts)
     if (!url) {
       throw new Error('prepareVolume requires a url or an NVImage object')
     }

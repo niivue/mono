@@ -45,7 +45,7 @@
     </main>
     <footer id="location">NiiVue</footer>
     <script type="module">
-      import NiiVue, { lookupColorMap, SHOW_RENDER } from '../src/index.ts'
+      import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 
       orientCheck.onclick = async function () {
         nv1.isOrientCubeVisible = this.checked
@@ -88,15 +88,16 @@
         showWindow(center - width / 2, center + width / 2)
         updateVolume({ calMin: center - width / 2, calMax: center + width / 2 })
       }
+      const isGray = (c) => c.toLowerCase() === 'gray'
       // The window the scan loaded with; gray falls back to it.
       let loadedRange = [0, 1]
-      // A CT colormap is designed for one Hounsfield window (ct_bones is 180..600),
-      // stored as min/max in its LUT. Selecting it applies that window too.
-      function applyColormap() {
-        const lut = lookupColorMap(colormapSelect.value)
-        const [calMin, calMax] = lut?.min === undefined ? loadedRange : [lut.min, lut.max]
-        showWindow(calMin, calMax)
-        updateVolume({ colormap: colormapSelect.value, calMin, calMax })
+      // A CT colormap carries the Hounsfield window it was designed for (ct_bones
+      // is 180..600), and setVolume applies it. Gray has none, so restore the scan's.
+      async function applyColormap() {
+        const colormap = colormapSelect.value
+        const [calMin, calMax] = loadedRange
+        await updateVolume(isGray(colormap) ? { colormap, calMin, calMax } : { colormap })
+        showWindow(nv1.volumes[0].calMin, nv1.volumes[0].calMax)
       }
       volumeSelect.onchange = async function () {
         try {
@@ -128,7 +129,6 @@
       nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
       await nv1.attachToCanvas(gl1)
       // CT windows are tuned for Hounsfield units, so only they and gray apply.
-      const isGray = (c) => c.toLowerCase() === 'gray'
       const ctMaps = nv1.colormaps.filter((c) => /^ct_/i.test(c))
       for (const cmap of [...nv1.colormaps.filter(isGray), ...ctMaps]) {
         const option = document.createElement('option')

@@ -1669,7 +1669,7 @@ the BSD-3 upstream. The MRS API is exported from all three entry subpaths
 
 ## Colormap conventions
 
-**Colormap display window (`min`/`max`):** Some bundled LUTs (the `ct_*` maps, e.g. `ct_bones` 180..600 HU) declare a suggested `cal_min`/`cal_max` window in their JSON. `lookupColorMap(name)` returns it on the `ColorMap`, but nothing applies it automatically — a caller must pass it to `setVolume` as `calMin`/`calMax`.
+**Colormap display window (`min`/`max`):** Some bundled LUTs (the `ct_*` maps, e.g. `ct_bones` 180..600 HU) declare a suggested `cal_min`/`cal_max` window in their JSON, and `lookupColorMap(name)` returns it on the `ColorMap`. `NVCmaps.withColormapWindow` applies it when a colormap is set without `calMin` or `calMax`: in `setVolume`, and when `NVModel.prepareVolume` loads a volume by URL. Passing either bound skips the window, so the other bound keeps its current value. A volume added as an `NVImage` and a streamed volume (`loadChunkedVolume`, which picks its own window from the data) do not get it.
 
 **Negative colormaps:** Enabled by setting `colormapNegative` to a non-empty string. `calMinNeg`/`calMaxNeg` default to mirroring `calMin`/`calMax`.
 

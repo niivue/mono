@@ -348,13 +348,22 @@ a synchronized group, so anything inside it is compiled into the appex.
   redraws the mesh over itself with depth testing disabled, washing out surfaces
   and desaturating tract colour. Safe to clear there *only* because that branch
   has no 2D tiles — `is3DCrosshairVisible` gates every crosshair, not just 3D.
-- **`.nvd` previews only what the document embeds.** Linked URLs resolve
-  against the page origin, which serves only the previewed file and appex
-  resources; the CSP blocks everything else. NiiVue skips what it cannot load;
-  an empty scene shows as metadata. The document's layout is kept, its
-  thumbnail hidden. An unloadable thumbnail no longer fails `loadDocument`
-  (core `try/catch`). Volumes, meshes and signals all count as content; a
-  volume shorter than its header is refused.
+- **`.nvd` previews only what the document embeds.** `renderScene` passes
+  `loadDocument` a `resolveUrl` that refuses every URL, so a linked volume,
+  linked mesh or thumbnail is never requested: a web link would tell the
+  sender the file was looked at, and Quick Look grants the previewed file
+  only. Linked volumes and meshes are counted, and any count shows the
+  metadata panel with "open it in NiiVue to view linked data" rather than a
+  partial scene; the thumbnail is refused uncounted. The CSP is the second
+  line, not the first. Slide-plane tiles still load from their manifest URLs
+  (no hook yet). The document's layout is kept. NiiVue skips embedded data it
+  cannot read; an empty scene shows as metadata. Volumes, meshes and signals
+  all count as content; a volume shorter than its header is refused.
+
+## Deferred debt
+
+Known, deliberate, and not blocking. Each is a decision, not an oversight.
+
 - **The app's `loadVolume` still sends volume bytes as base64** through a JS
   source string handed to `evaluateJavaScript` — roughly +33% plus several
   copies. `PreviewSchemeHandler`'s document route is the fix and is already in

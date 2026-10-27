@@ -257,7 +257,7 @@ export function describeScene(
     return {
       pairs,
       displayable: false,
-      reason: 'it has linked data; open it to view linked data',
+      reason: 'it has linked data; open it in NiiVue to view linked data',
     }
   }
   // Corrupt embedded data, or a drawing-only document.

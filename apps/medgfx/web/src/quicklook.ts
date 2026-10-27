@@ -16,6 +16,7 @@
  */
 import {
   type CustomLayoutTile,
+  type DocumentLinkKind,
   NiiVue,
   type NVImage,
   type NVMesh,
@@ -351,16 +352,19 @@ async function renderMesh(
  *
  * Linked data is never fetched. Data on the web would tell the file's sender
  * when it was looked at, and Quick Look grants the previewed file only, not
- * the files beside it. Each link is skipped and counted, and a document with
- * any linked data says to open it rather than draw an incomplete scene.
+ * the files beside it. Each linked volume and mesh is skipped and counted, and
+ * a document with any says to open it rather than draw an incomplete scene.
+ * The thumbnail is refused uncounted, so the scene, not a saved picture of
+ * it, is the preview.
  */
 async function renderScene(
   instance: NiiVue,
   request: PreviewRequest,
 ): Promise<void> {
   let linked = 0
-  const resolveUrl = (): null => {
-    linked += 1
+  // The thumbnail is refused too, but it is decoration, not linked data.
+  const resolveUrl = (_url: string, kind: DocumentLinkKind): null => {
+    if (kind !== 'thumbnail') linked += 1
     return null
   }
   try {
@@ -371,8 +375,6 @@ async function renderScene(
     return
   }
   if (settled) return
-  // The scene is the preview; a saved thumbnail would hide it until clicked.
-  instance.isThumbnailVisible = false
   const summary = describeScene(
     {
       volumes: instance.volumes.length,

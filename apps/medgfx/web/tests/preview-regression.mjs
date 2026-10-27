@@ -59,6 +59,11 @@ const FIXTURES = {
       { name: 'web.nii.gz', url: 'https://niivue.com/volumes/mni152.nii.gz' },
     ],
   }),
+  // An embedded volume plus a mesh linked to a file beside it, which the
+  // server would serve: only the preview's refusal keeps it unread.
+  'mesh-linked.nvd': nvd({
+    meshes: [{ name: 'surface.gii', url: 'surface.gii' }],
+  }),
   // Header promises more voxels than the document carries.
   'short.nvd': nvd({ truncated: true }),
   // A thumbnail the preview cannot reach must not cost the embedded volume.
@@ -621,7 +626,7 @@ check(
 )
 check(
   'it says to open the file to view linked data',
-  /open it to view linked data/.test(linkedDetail),
+  /open it in NiiVue to view linked data/.test(linkedDetail),
   linkedDetail,
 )
 check('it counts the linked data', meta.linked === '1', meta.linked)
@@ -639,7 +644,7 @@ check(
 )
 check(
   'it says to open the file to view linked data',
-  /open it to view linked data/.test(remoteDetail),
+  /open it in NiiVue to view linked data/.test(remoteDetail),
   remoteDetail,
 )
 await result.page.close()
@@ -672,6 +677,25 @@ check(
 )
 await result.page.close()
 
+const meshLinkedStart = requested.length
+result = await preview(
+  documentURL(base, 'mesh-linked.nvd'),
+  'mesh-linked.nvd',
+  { family: 'scene' },
+)
+meta = result.message?.metadata ?? {}
+check(
+  'an NVD with a linked mesh says to open it',
+  meta.displayable === 'false' && meta.volumes === '1' && meta.linked === '1',
+  `${meta.displayable} / ${meta.volumes} / ${meta.linked}`,
+)
+check(
+  'and never reads the mesh',
+  !requested.slice(meshLinkedStart).some((p) => p.endsWith('/surface.gii')),
+  requested.slice(meshLinkedStart).join(', '),
+)
+await result.page.close()
+
 result = await preview(documentURL(base, 'short.nvd'), 'short.nvd', {
   family: 'scene',
 })
@@ -683,6 +707,7 @@ check(
 )
 await result.page.close()
 
+const thumbStart = requested.length
 result = await preview(documentURL(base, 'thumb.nvd'), 'thumb.nvd', {
   family: 'scene',
 })
@@ -691,6 +716,13 @@ check(
   'an unreachable thumbnail does not fail the document',
   result.message?.stage === 'loaded' && meta.volumes === '1',
   result.message?.stage ?? result.message?.code,
+)
+check(
+  'the thumbnail is never requested',
+  !requested
+    .slice(thumbStart)
+    .some((p) => p.endsWith('/missing-thumbnail.png')),
+  requested.slice(thumbStart).join(', '),
 )
 check(
   'the volume is drawn, not a blank thumbnail',

@@ -374,7 +374,7 @@ import type {
 // NVD document format version. Lives here (pure, importable everywhere) so the
 // legacy converter can stamp it without importing NVDocument's Vite module graph.
 // See NVDocument for the version history / migration notes.
-export const NVD_DOCUMENT_VERSION = 9
+export const NVD_DOCUMENT_VERSION = 10
 
 // Default scene values. The scene group is built with gl-matrix vec types in
 // NVModel, so this holds the plain-value defaults (used both to construct the
@@ -481,7 +481,7 @@ export const DRAW_DEFAULTS: DrawConfig = {
   isFillOverwriting: true,
   opacity: 0.8,
   rimOpacity: -1,
-  colormap: '_draw',
+  colormap: 'Draw',
   isClickToSegment: false,
   clickToSegmentTolerance: 0.05,
   clickToSegmentIs2D: true,

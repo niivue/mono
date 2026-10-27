@@ -513,11 +513,10 @@ export interface View {
   loadVolumes(volumes: VolumeToLoad[]): Promise<unknown>
   /** Adds one volume over those on show, keeping them: one to fetch, or one a transform made. */
   addVolume(volume: VolumeToLoad | TransformedVolume): Promise<unknown>
-  /** Draws a volume as labels from a lookup table, by name (`freesurfer`) or as a table. */
-  setColormapLabel?(
-    volumeIndex: number,
-    cmap: string | LabelTable,
-  ): Promise<unknown> | unknown
+  /** Fetches a volume without adding it, for `addVolume` to take later. */
+  prepareVolume?(
+    volume: VolumeToLoad,
+  ): Promise<TransformedVolume & { colormap?: string }>
   /** Changes how a loaded volume is drawn, keeping the rest as it is. */
   setVolume?(
     volumeIndex: number,
@@ -697,6 +696,7 @@ export interface View {
 
   // Colormaps and fonts.
   colormaps?: readonly string[]
+  colormapNames?(kind?: 'continuous' | 'label'): string[]
   drawingColormaps?: readonly string[]
   hasColormap?(name: string): boolean
   addColormap?(name: string, colormap: ColormapToAdd): string

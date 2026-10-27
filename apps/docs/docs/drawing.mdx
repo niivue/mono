@@ -33,7 +33,7 @@ instead, and `closeDrawing()` discards the drawing and turns drawing off.
 
 ## The pen
 
-- `drawPenValue` is the label to paint. With the default `_draw` colormap, 1
+- `drawPenValue` is the label to paint. With the default `draw` colormap, 1
   is red, 2 is green and 3 is blue. A value of 0 erases.
 - `drawPenSize` is the brush width in voxels, and `drawPenShape` picks
   `PEN_SHAPE.RECTANGLE` (default) or `PEN_SHAPE.CIRCLE` for wide brushes.
@@ -56,7 +56,8 @@ nv.drawPenAutoClose = true
 image. `drawRimOpacity` gives the edge of each region its own opacity, so a
 low `drawOpacity` with a rim of 1 shows outlined regions; the default of -1
 turns the rim off. `drawColormap` picks the
-label colors, and `nv.drawingColormaps` lists the names you can use.
+label colors: any label colormap whose codes fit in 0 to 255.
+`nv.drawingColormaps` lists the names you can use.
 
 ## Undo
 

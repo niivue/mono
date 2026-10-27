@@ -109,7 +109,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `setColormapNegative` / negative colormap option | ✅ | Via `colormapNegative` in volume, mesh layer, tract, and connectome options; API differs from old setter |
 | `addColormap(name, cmap)` | ✅ | |
 | `addColormapFromUrl()` | ✅ | |
-| `setColormapLabel` / `setColormapLabelFromUrl` | ✅ | |
+| `setColormapLabel` / `setColormapLabelFromUrl` | ✅ | Replaced (issue #69): register a table with `addColormap`/`addColormapFromUrl` (a `labels` array makes it a label map) and select it with `setVolume({ colormap })`. NIFTI_INTENT_LABEL volumes default to the generated `Random` palette, as old NiiVue drew labels without a call |
 | `colormapInvert` | ✅ | Per-volume `isColormapInverted` (also a load/`setVolume` option); reverses the LUT where it is built, so 2D slices, the ray-march, and the colorbar all follow. Mesh layers already had `isColormapInverted` |
 | `setDrawColormap` | ✅ | `drawColormap` property |
 | Custom colormap format `{R,G,B,A,I}` | ✅ | |
@@ -347,7 +347,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Voxel-based atlas labels | ✅ | `setColormapLabel` |
+| Voxel-based atlas labels | ✅ | A label `colormap` |
 | PAQD probabilistic atlas | ✅ | `volumePaqdUniforms` |
 | Mesh-based atlases | ⚠️ | No annot/GIfTI layer readers found |
 | `addLabel()` | ❌ | No 3D labels in the viewer. `@niivue/uikit`'s `UIKitPointLabelOverlay` draws a text label with a leader line to a world-mm point on the render tile via `mmToRenderCanvas()` / `explodedMM()` |
@@ -494,7 +494,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
 | Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache; on-graph pan/zoom buttons with wheel/frame follow (`graphZoom`/`graphPan`), relative line width/opacity (`graphLineWidth`/`graphLineAlpha`), and a missing-data rug for NaN gaps |
 | Annotations (`SignalAnnotation`) | ✅ | Data-space text labels (`{text,x,y,color?}`) that pan/zoom with the window and hide when out of range; `y` of `±Infinity` pins to plot bottom/top; set via load options or `setSignal`, persisted in NVD. Render on the signal graph only (not the volume+physio association view) |
-| Persistence (NVD) | ✅ | Document version 9 (`signal/persistence.ts`) |
+| Persistence (NVD) | ✅ | Document version 10 (`NVConstants.NVD_DOCUMENT_VERSION`); v9 documents are converted on load |
 | Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
 | Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`); per-trace show/hide — BOLD via `graphShowVolumeTimecourse`, physio via `setSignal` `selectedColumns` |
 

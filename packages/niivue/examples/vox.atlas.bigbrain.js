@@ -47,7 +47,9 @@ var volumeList = [
   { url: '/volumes/bigbrain/bigbrain.nii.gz' },
 ]
 await nv1.loadVolumes(volumeList)
-await nv1.setColormapLabelFromUrl(1, '/volumes/bigbrain/bigbrain.json')
+// Registered under its file name; a `labels` array makes it a label map.
+await nv1.addColormapFromUrl('/volumes/bigbrain/bigbrain.json')
+await nv1.setVolume(1, { colormap: 'bigbrain' })
 darkCheck.onclick()
 legendCheck.onclick()
 nearestCheck.onclick()

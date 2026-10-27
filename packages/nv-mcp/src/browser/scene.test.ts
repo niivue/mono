@@ -19,11 +19,17 @@ import type {
   VolumeUpdate,
 } from './view'
 
+// Colormaps the fake NiiVue treats as label tables; a test's addColormap adds to it.
+const LABEL_COLORMAPS = new Set(['freesurfer', 'Aal'])
+const labelLut = (colormap?: string) =>
+  colormap && LABEL_COLORMAPS.has(colormap) ? { colormapLabel: {} } : {}
+
 /** A volume as NiiVue would keep it after loading `volume`. */
 const shown = (volume: VolumeToLoad): ShownVolume => ({
   name: volume.name ?? volume.url,
   url: volume.url,
   ...(volume.colormap === undefined ? {} : { colormap: volume.colormap }),
+  ...labelLut(volume.colormap),
   ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
   ...(volume.calMin === undefined ? {} : { calMin: volume.calMin }),
   ...(volume.calMax === undefined ? {} : { calMax: volume.calMax }),
@@ -1447,9 +1453,8 @@ describe('load_volume', () => {
 
 describe('add_overlay', () => {
   it('adds the overlay over whatever is shown, however it got there, and draws a label map with its table', async () => {
-    const setColormapLabel = mock()
     // The page's own start-up volume, never seen by load_volume.
-    const view = fakeView({ setColormapLabel })
+    const view = fakeView()
     const handlers = coreHandlers(host(view))
     const result = (await handlers.add_overlay({
       url: 'http://h/labels/synthseg.nii.gz',
@@ -1459,11 +1464,11 @@ describe('add_overlay', () => {
     expect(view.addVolume).toHaveBeenCalledWith({
       url: 'http://h/labels/synthseg.nii.gz',
       name: 'synthseg.nii.gz',
-      colormap: 'gray',
+      // A built-in label table is just a colormap name.
+      colormap: 'freesurfer',
       opacity: 0.5,
       isColorbarVisible: false,
     })
-    expect(setColormapLabel).toHaveBeenCalledWith(1, 'freesurfer')
     // A label map draws by its table, so no colormap is reported for it.
     expect(result.volumes).toEqual([
       { index: 0, name: 'mni152.nii.gz' },
@@ -1510,8 +1515,31 @@ describe('add_overlay', () => {
     })
   })
 
+  it('reports a label map loaded without a table by its colormap, with no window', async () => {
+    // A segmentation NiiVue colours by default, or a label colormap set by name.
+    const view = fakeView({
+      volumes: [
+        {
+          name: 'aseg.nii.gz',
+          colormap: 'Random',
+          colormapLabel: {},
+          calMin: 0,
+          calMax: 60,
+        },
+      ],
+    })
+    const result = (await coreHandlers(host(view)).add_overlay({
+      url: 'http://h/zstat.nii.gz',
+    })) as { volumes: Record<string, unknown>[] }
+    expect(result.volumes[0]).toEqual({
+      index: 0,
+      name: 'aseg.nii.gz',
+      labels: 'Random',
+    })
+  })
+
   it('refuses a display window on a label map, which has none', async () => {
-    const view = fakeView({ setColormapLabel: mock() })
+    const view = fakeView()
     const handlers = coreHandlers(host(view))
     await expect(
       handlers.add_overlay({
@@ -1568,8 +1596,8 @@ describe('add_overlay', () => {
   })
 
   it('draws a label map with a table fetched from an address, filled in as NiiVue would', async () => {
-    const setColormapLabel = mock()
-    const view = fakeView({ setColormapLabel })
+    const addColormap = mock(() => 'Aal')
+    const view = fakeView({ addColormap })
     const fetched = mock(
       async (_url: string) =>
         new Response(
@@ -1589,7 +1617,8 @@ describe('add_overlay', () => {
         labels: 'http://h/aal.json',
       })) as { volumes: Array<{ labels?: string }> }
       expect(fetched).toHaveBeenCalledWith('http://h/aal.json')
-      expect(setColormapLabel).toHaveBeenCalledWith(1, {
+      // Registered under its address, then named by the overlay.
+      expect(addColormap).toHaveBeenCalledWith('http://h/aal.json', {
         R: [0, 255],
         G: [0, 0],
         B: [0, 0],
@@ -1597,14 +1626,132 @@ describe('add_overlay', () => {
         I: [0, 1],
         labels: ['Air', 'Hippocampus_L'],
       })
+      expect(view.addVolume).toHaveBeenCalledWith(
+        expect.objectContaining({ colormap: 'Aal' }),
+      )
       expect(result.volumes[1].labels).toBe('http://h/aal.json')
     } finally {
       globalThis.fetch = realFetch
     }
   })
 
+  it('registers a fetched table only once the overlay call is accepted', async () => {
+    // Registering recolours volumes already using the address, so a call
+    // rejected for another reason must not register it.
+    const addColormap = mock(() => 'Aal')
+    const view = fakeView({ addColormap })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ R: [0, 255], G: [0, 0], B: [0, 0], labels: [] }),
+      )) as unknown as typeof fetch
+    try {
+      await expect(
+        coreHandlers(host(view)).add_overlay({
+          url: 'http://h/new.nii.gz',
+          labels: 'http://h/aal.json',
+          cal_min: 1,
+        }),
+      ).rejects.toThrow('no display window')
+      expect(addColormap).not.toHaveBeenCalled()
+      expect(view.addVolume).not.toHaveBeenCalled()
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('keeps an overlay colours when another with its table fails to load', async () => {
+    // The registry is shared: re-registering the address recolours every
+    // volume drawn with it, so it must wait until the new file has loaded.
+    const registry = new Map<string, unknown>()
+    const addColormap = mock((name: string, table: { R: number[] }) => {
+      registry.set(name, table.R)
+      LABEL_COLORMAPS.add(name)
+      return name
+    })
+    const failsToLoad = (volume: { url?: unknown }) => {
+      if (volume.url === 'http://h/bad.nii') throw new Error('not a NIfTI file')
+    }
+    const view = fakeView({
+      addColormap,
+      prepareVolume: mock(async (volume: VolumeToLoad) => {
+        failsToLoad(volume)
+        return { name: volume.name, colormap: volume.colormap }
+      }),
+    })
+    view.addVolume = mock(async (volume: VolumeToLoad) => {
+      failsToLoad(volume)
+      ;(view.volumes as ShownVolume[]).push(shown(volume))
+    })
+    const realFetch = globalThis.fetch
+    let red = 255
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ R: [0, red--], G: [0, 0], B: [0, 0], labels: [] }),
+      )) as unknown as typeof fetch
+    const labels = 'http://h/aal.json'
+    try {
+      const handlers = coreHandlers(host(view))
+      await handlers.add_overlay({ url: 'http://h/good.nii', labels })
+      await expect(
+        handlers.add_overlay({ url: 'http://h/bad.nii', labels }),
+      ).rejects.toThrow('could not be loaded: not a NIfTI file')
+      expect(addColormap).toHaveBeenCalledTimes(1)
+      expect(view.volumes.map((v) => v.colormap)).toEqual([undefined, labels])
+      expect(registry.get(labels)).toEqual([0, 255])
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('keeps tables with one file name apart, and reports what each volume draws now', async () => {
+    const addColormap = mock((name: string) => {
+      LABEL_COLORMAPS.add(name)
+      return name
+    })
+    const view = fakeView({
+      addColormap,
+      setVolume: mock(async (index: number, update: VolumeUpdate) => {
+        const volume = view.volumes[index] as ShownVolume
+        Object.assign(volume, update)
+        volume.colormapLabel = labelLut(volume.colormap).colormapLabel
+      }),
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ R: [0, 9], G: [0, 9], B: [0, 9] }),
+      )) as unknown as typeof fetch
+    try {
+      const handlers = coreHandlers(host(view))
+      await handlers.add_overlay({
+        url: 'http://h/a.nii',
+        labels: 'http://h/a/labels.json',
+      })
+      const result = (await handlers.add_overlay({
+        url: 'http://h/b.nii',
+        labels: 'http://h/b/labels.json',
+      })) as { volumes: Array<{ labels?: string }> }
+      expect(result.volumes.map((v) => v.labels)).toEqual([
+        undefined,
+        'http://h/a/labels.json',
+        'http://h/b/labels.json',
+      ])
+      const switched = (await handlers.set_volume({
+        volume: 1,
+        colormap: 'gray',
+      })) as {
+        volume: { labels?: string; colormap?: string }
+      }
+      expect(switched.volume.labels).toBeUndefined()
+      expect(switched.volume.colormap).toBe('gray')
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
   it('refuses a table it cannot fetch or read, leaving the scene as it was', async () => {
-    const view = fakeView({ setColormapLabel: mock() })
+    const view = fakeView({ addColormap: mock(() => 'x') })
     const handlers = coreHandlers(host(view))
     const realFetch = globalThis.fetch
     globalThis.fetch = (async (url: string) =>
@@ -1641,8 +1788,12 @@ describe('add_overlay', () => {
     await expect(
       handlers.add_overlay({ url: 'http://h/x.nii.gz', labels: 'aal' }),
     ).rejects.toThrow(/Unknown label table/)
+    // A built-in table needs nothing more; one from an address must be registered.
     await expect(
-      handlers.add_overlay({ url: 'http://h/x.nii.gz', labels: 'freesurfer' }),
+      handlers.add_overlay({
+        url: 'http://h/x.nii.gz',
+        labels: 'http://h/a.json',
+      }),
     ).rejects.toThrow(/label maps/)
   })
 
@@ -1669,7 +1820,7 @@ describe('add_overlay', () => {
   })
 
   it('forgets the label tables once a new base replaces the volumes', async () => {
-    const view = fakeView({ setColormapLabel: mock() })
+    const view = fakeView()
     const handlers = coreHandlers(host(view))
     await handlers.add_overlay({
       url: 'http://h/synthseg.nii.gz',

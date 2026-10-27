@@ -88,8 +88,10 @@ await nv.setVolume(0, { colormap: name }) // name is 'Icy'
 
 The demo registers this map, so `Icy` appears in its list.
 `addColormapFromUrl(url)` fetches the same `{ R, G, B, A, I }` shape as
-JSON and names it after the file. `nv.hasColormap(name)` checks whether a
-name is registered.
+JSON and names it after the file.
+`nv.hasColormap(name)` checks whether a name is registered.
+`nv.colormapNames('continuous')` lists the ramps and
+`nv.colormapNames('label')` the label tables; `nv.colormaps` lists both.
 
 `lookupColorMap(name)`, a named export of `@niivue/niivue`, returns a
 colormap's stops. Some built-in maps carry a display window of their own;
@@ -104,5 +106,7 @@ const cmap = lookupColorMap('ct_bones')
 await nv.setVolume(0, { colormap: 'ct_bones', calMin: cmap?.min, calMax: cmap?.max })
 ```
 
-For label volumes, where each integer is a named region, see
+A definition with a `labels` array is a label table instead of a ramp: each
+integer gets its own color and the display window is ignored. For label
+volumes, where each integer is a named region, see
 [Atlases and labels](./atlases).

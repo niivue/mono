@@ -645,13 +645,18 @@ test('matcap: constructor preserves explicit options and defaults when omitted',
   const result = await page.evaluate(async () => {
     const { default: NiiVue } = await import('/src/index.ts')
     const matcaps = { cortex: '/m/Cortex.jpg', gold: '/m/Gold.jpg' }
-    return [undefined, 'https://example.org/custom.jpg', '', 'gold'].map(
-      (volumeMatcap) => new NiiVue({ matcaps, volumeMatcap }).volumeMatcap,
-    )
+    return [
+      undefined,
+      'https://example.org/custom.jpg',
+      'https://example.org/assets/matcaps/Cortex.jpg',
+      '',
+      'gold',
+    ].map((volumeMatcap) => new NiiVue({ matcaps, volumeMatcap }).volumeMatcap)
   })
   expect(result).toEqual([
     '/m/Cortex.jpg',
     'https://example.org/custom.jpg',
+    'https://example.org/assets/matcaps/Cortex.jpg',
     '',
     '/m/Gold.jpg',
   ])

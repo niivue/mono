@@ -44,6 +44,10 @@ describe('matcapFromName', () => {
       '/custom/Cortex.jpg',
       // A built-in path this instance has no matcap for.
       '/src/assets/matcaps/Gold.jpg',
+      // Another host's image under the same path as a built-in.
+      'https://cdn.example.org/assets/matcaps/Cortex.jpg',
+      '//cdn.example.org/src/assets/matcaps/shiny.jpg',
+      'HTTP://x.org/assets/matcaps/Cortex.jpg?v=1',
     ]) {
       expect(matcapFromName(url, matcaps)).toBe(url)
     }

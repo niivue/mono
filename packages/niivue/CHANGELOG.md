@@ -1,3 +1,14 @@
+## 1.0.0-rc.47 (2026-10-28)
+
+### Features
+
+- load the Allen IMSC atlases from niivue-demo-images-lfs ([a9f75d69](https://github.com/niivue/mono/commit/a9f75d69))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.46 (2026-10-28)
 
 ### Fixes

@@ -1,3 +1,14 @@
+## 1.0.0-rc.19 (2026-10-28)
+
+### Fixes
+
+- **nv-mcp:** say why describe_volume has no statistics ([#338](https://github.com/niivue/mono/issues/338))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.18 (2026-10-27)
 
 ### Updated Dependencies

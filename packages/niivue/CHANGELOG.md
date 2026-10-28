@@ -1,3 +1,17 @@
+## 1.0.0-rc.48 (2026-10-28)
+
+### Fixes
+
+- **niivue:** warn on an unknown matcap name and document volumeMatcap ([ff6da670](https://github.com/niivue/mono/commit/ff6da670))
+- **niivue:** keep another host's matcap under an assets/matcaps path ([d812b796](https://github.com/niivue/mono/commit/d812b796))
+- **niivue:** keep an explicit volumeMatcap option at construction ([#225](https://github.com/niivue/mono/issues/225))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.47 (2026-10-28)
 
 ### Features

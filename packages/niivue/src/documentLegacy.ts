@@ -224,6 +224,12 @@ export function convertLegacyDocument(
   if (unmapped.length > 0) {
     warnings.push(`${unmapped.length} opts not mapped: ${unmapped.join(', ')}`)
   }
+  // Classic filled a missing `sagittalNoseLeft` with its default, false (nose
+  // right) whatever the radiological setting. Ours leaves it null, which under
+  // radiological puts the nose left, so pin it to classic's default there.
+  if (opts.isRadiologicalConvention === true && !('sagittalNoseLeft' in opts)) {
+    setGroup(groups, 'layout', 'isSagittalNoseLeft', false)
+  }
 
   // --- imageOptionsArray -> volumes (linked by URL) ---
   const volumes: NVDocumentVolume[] = []

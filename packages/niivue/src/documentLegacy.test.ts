@@ -83,6 +83,21 @@ describe('convertLegacyDocument', () => {
     ])
   })
 
+  test('classic sagittalNoseLeft: an explicit value is kept; missing is classic default (nose right)', () => {
+    const convert = (opts: Record<string, unknown>) =>
+      convertLegacyDocument({ opts }).doc.layout?.isSagittalNoseLeft
+    expect(
+      convert({ isRadiologicalConvention: true, sagittalNoseLeft: true }),
+    ).toBe(true)
+    expect(
+      convert({ isRadiologicalConvention: false, sagittalNoseLeft: true }),
+    ).toBe(true)
+    expect(convert({ isRadiologicalConvention: true })).toBe(false)
+    // neurological + missing: following radiological already gives nose right
+    expect(convert({ isRadiologicalConvention: false })).toBeUndefined()
+    expect(convert({})).toBeUndefined()
+  })
+
   test('reports unmapped opts + the clip plane', () => {
     expect(warnings.some((w) => w.includes('someUnknownOpt'))).toBe(true)
     expect(warnings.some((w) => w.includes('clipPlane'))).toBe(true)

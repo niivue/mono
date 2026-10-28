@@ -1,3 +1,16 @@
+## 1.0.0-rc.20 (2026-10-28)
+
+### Fixes
+
+- **nv-mcp:** refuse set_mesh before changing anything ([34a7fd21](https://github.com/niivue/mono/commit/34a7fd21))
+- **nv-mcp:** translate set_mesh colorBy direction and refuse unknown modes ([#339](https://github.com/niivue/mono/issues/339))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.19 (2026-10-28)
 
 ### Fixes

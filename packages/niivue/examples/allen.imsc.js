@@ -36,7 +36,7 @@ const clipCheck = document.getElementById('clipCheck')
 const clipOverlaysCheck = document.getElementById('clipOverlaysCheck')
 const zoomInput = document.getElementById('zoom')
 const renderModeSelect = document.getElementById('renderMode')
-const fluorControls = document.getElementById('fluorControls')
+const rampControls = document.getElementById('rampControls')
 const densityInput = document.getElementById('density')
 const brightnessInput = document.getElementById('brightness')
 const stagePanel = document.getElementById('stagePanel')
@@ -75,21 +75,37 @@ function say(message) {
 }
 
 /**
- * A black-to-colour ramp per hex colour, registered once. Alpha ramps too:
- * opaque black would hide the 3D render.
+ * A colormap per hex colour, registered once per setting. Composite uses a
+ * baked ramp that draws like Allen's 3D viewer: colour = tint * t^2 *
+ * brightness, opacity = density * luminance(tint) * t^2, so a sample is as
+ * opaque as it is bright. Maximum and Max project use a plain linear ramp.
+ * Alpha always ramps from 0: opaque black would hide the 3D render.
  */
 const tints = new Map()
 function tint(hex) {
-  let name = tints.get(hex)
+  const baked = isBaked()
+  const density = Number(densityInput.value)
+  const brightness = Number(brightnessInput.value)
+  const key = baked ? `${hex}_${density}_${brightness}` : hex
+  let name = tints.get(key)
   if (!name) {
     const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-    name = nv1.addColormap(`imsc${hex.slice(1)}`, {
-      R: [0, rgb[0]],
-      G: [0, rgb[1]],
-      B: [0, rgb[2]],
-      A: [0, 255],
-    })
-    tints.set(hex, name)
+    let cmap = { R: [0, rgb[0]], G: [0, rgb[1]], B: [0, rgb[2]], A: [0, 255] }
+    if (baked) {
+      // Rec. 709 luminance of the tint, 0..1.
+      const luma = (0.2125 * rgb[0] + 0.7154 * rgb[1] + 0.0721 * rgb[2]) / 255
+      cmap = { R: [], G: [], B: [], A: [], I: [] }
+      for (let i = 0; i < 256; i++) {
+        const t2 = (i / 255) ** 2
+        cmap.R.push(Math.min(rgb[0] * t2 * brightness, 255))
+        cmap.G.push(Math.min(rgb[1] * t2 * brightness, 255))
+        cmap.B.push(Math.min(rgb[2] * t2 * brightness, 255))
+        cmap.A.push(Math.min(density * luma * t2, 1) * 255)
+        cmap.I.push(i)
+      }
+    }
+    name = nv1.addColormap(`imsc${hex.slice(1)}_${tints.size}`, cmap)
+    tints.set(key, name)
   }
   return name
 }
@@ -115,41 +131,37 @@ function channelKind() {
   return dataKind === 'seg' ? 'seg' : 'raw'
 }
 
-// 3D render mode. Fluorescence draws as Allen's 3D viewer does: a sample is as
-// opaque as its fused colour is bright, times density, and brightness is a
-// colour gain (Allen uses 1.6). Its densities are 0.06 raw and 0.4 segmented;
-// NiiVue's step scale differs, so the matching values are 0.5 and 3.
-// Fluorescence is offered only when this build of NiiVue has it.
-const hasFluorescence = VOLUME_RENDER_MODE.FLUORESCENCE !== undefined
+// 3D render mode. Composite draws each channel through the baked ramp in
+// tint(); density and brightness reshape that ramp (Allen's viewer uses
+// brightness 1.6). Allen's densities are 0.06 raw and 0.4 segmented; NiiVue's
+// step scale differs, so the matching values are 0.5 and 3.
 const renderModes = [
-  ...(hasFluorescence
-    ? [['Fluorescence', VOLUME_RENDER_MODE.FLUORESCENCE]]
-    : []),
   ['Composite', VOLUME_RENDER_MODE.COMPOSITE],
   ['Maximum', VOLUME_RENDER_MODE.MAXIMUM],
 ]
 for (const [label, value] of renderModes) {
   renderModeSelect.add(new Option(label, String(value)))
 }
+function isBaked() {
+  return (
+    dataKind !== 'mip' &&
+    Number(renderModeSelect.value) === VOLUME_RENDER_MODE.COMPOSITE
+  )
+}
 function applyRender() {
   const projecting = dataKind === 'mip'
-  const fluorescence =
-    !projecting &&
-    hasFluorescence &&
-    Number(renderModeSelect.value) === VOLUME_RENDER_MODE.FLUORESCENCE
   renderModeSelect.disabled = projecting
-  fluorControls.hidden = !fluorescence
+  rampControls.hidden = !isBaked()
   nv1.volumeRenderMode = projecting
     ? VOLUME_RENDER_MODE.MAXIMUM
     : Number(renderModeSelect.value)
-  if (fluorescence) {
-    nv1.volumeDensity = Number(densityInput.value)
-    nv1.volumeBrightness = Number(brightnessInput.value)
-  }
 }
-renderModeSelect.onchange = applyRender
-densityInput.oninput = applyRender
-brightnessInput.oninput = applyRender
+renderModeSelect.onchange = () => {
+  applyRender()
+  showLoaded()
+}
+densityInput.oninput = () => showLoaded()
+brightnessInput.oninput = () => showLoaded()
 applyRender()
 
 // 3D clip plane and zoom, as in allen.atlas.html. Every channel is an overlay,
@@ -551,6 +563,7 @@ for (const button of kindButtons) {
     applyRender()
     // Max project draws the raw channels already loaded.
     if (channelKind() !== previous) loadCurrent()
+    else showLoaded()
   }
 }
 

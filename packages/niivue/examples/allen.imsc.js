@@ -279,8 +279,10 @@ async function load(token, sidecarUrl, layers, description) {
     })
     const commit = commits.then(async () => {
       if (token !== loadToken) return false
-      loaded = layers
+      // loadVolumes keeps the old volumes until the new ones are ready, so
+      // `loaded` follows the swap, not the request.
       await nv1.loadVolumes(volumes)
+      loaded = layers
       // The viewer now holds these layers, so window them even if a newer
       // request has come in meanwhile; only the status waits for that one.
       showLoaded()
@@ -305,6 +307,24 @@ function stageUrl(stage) {
   return manifest.stageAtlasBase + stage.atlas
 }
 
+function swatch(color) {
+  const span = document.createElement('span')
+  span.className = 'swatch'
+  span.style.background = color
+  return span
+}
+
+/** A checkbox, colour swatch and text, as one label. */
+function swatchLabel(text, color, checked, onchange) {
+  const label = document.createElement('label')
+  const box = document.createElement('input')
+  box.type = 'checkbox'
+  box.checked = checked
+  box.onchange = () => onchange(box.checked)
+  label.append(box, ' ', swatch(color), ` ${text}`)
+  return { label, box }
+}
+
 function pressed(container, active) {
   for (const button of container.querySelectorAll('button')) {
     button.setAttribute('aria-pressed', String(button === active))
@@ -319,12 +339,15 @@ const stageButtons = manifest.stages.map((stage) => {
   stagesColumn.append(button)
   return button
 })
-function selectStage(key) {
+function markStage(key) {
   stageKey = key
   const index = manifest.stages.findIndex((s) => s.key === key)
   pressed(stagesColumn, stageButtons[index])
   stageUp.disabled = index === 0
   stageDown.disabled = index === manifest.stages.length - 1
+}
+function selectStage(key) {
+  markStage(key)
   loadStage()
 }
 function stepStage(delta) {
@@ -334,8 +357,7 @@ function stepStage(delta) {
 }
 stageUp.onclick = () => stepStage(-1)
 stageDown.onclick = () => stepStage(1)
-pressed(stagesColumn, stageButtons[0])
-stageUp.disabled = true
+markStage(stageKey)
 
 // DNA and three structures to start; all 16 at once is slow and unreadable.
 const structures = [
@@ -349,19 +371,11 @@ const structures = [
 ]
 const structureBoxes = structures.map((s) => {
   const row = structuresBody.insertRow()
-  const label = document.createElement('label')
-  const box = document.createElement('input')
-  box.type = 'checkbox'
-  box.checked = s.on
-  box.onchange = () => {
-    s.on = box.checked
+  const { label, box } = swatchLabel(s.gene, s.color, s.on, (on) => {
+    s.on = on
     syncAllStructures()
     loadStage()
-  }
-  const swatch = document.createElement('span')
-  swatch.className = 'swatch'
-  swatch.style.background = s.color
-  label.append(box, ' ', swatch, ` ${s.gene}`)
+  })
   row.insertCell().append(label)
   row.insertCell().textContent = s.structure
   return box
@@ -400,13 +414,14 @@ async function loadStage() {
     if (token !== loadToken) return
   }
   // Channels are named DNA_raw, then <GENE>_<cellId>_raw, and _seg likewise.
-  const suffix = `_${channelKind()}`
+  const kind = channelKind()
+  const suffix = `_${kind}`
   const layers = structures
     .filter((s) => s.on)
     .map((s) => ({
       label: s.gene,
       color: s.color,
-      window: channelKind() === 'seg' ? 'mask' : stage.windows[s.gene],
+      window: kind === 'seg' ? 'mask' : stage.windows[s.gene],
       channel: info.channelNames.findIndex((name) =>
         s.gene === 'DNA'
           ? name === `DNA${suffix}`
@@ -427,18 +442,10 @@ let cellChoice = { stage: manifest.stages[0].key, gene: manifest.genes[0].gene }
 // would hide everything inside the cell.
 const cellChannels = manifest.cellChannels.map((c) => ({ ...c, on: true }))
 for (const c of cellChannels) {
-  const label = document.createElement('label')
-  const box = document.createElement('input')
-  box.type = 'checkbox'
-  box.checked = true
-  box.onchange = () => {
-    c.on = box.checked
+  const { label } = swatchLabel(c.name, c.color, true, (on) => {
+    c.on = on
     loadCell()
-  }
-  const swatch = document.createElement('span')
-  swatch.className = 'swatch'
-  swatch.style.background = c.color
-  label.append(box, ' ', swatch, ` ${c.name}`)
+  })
   cellChannelsRow.append(label)
 }
 
@@ -454,10 +461,7 @@ for (const c of cellChannels) {
   for (const g of manifest.genes) {
     const row = body.insertRow()
     const th = document.createElement('th')
-    const swatch = document.createElement('span')
-    swatch.className = 'swatch'
-    swatch.style.background = g.color
-    th.append(swatch, ` ${g.structure} (${g.gene})`)
+    th.append(swatch(g.color), ` ${g.structure} (${g.gene})`)
     row.append(th)
     for (const stage of manifest.stages) {
       const cell = manifest.cells[stage.key][g.gene]
@@ -465,6 +469,10 @@ for (const c of cellChannels) {
       button.type = 'button'
       button.textContent = String(cell.cellId)
       button.title = `${g.gene}, ${stage.label}, cell ${cell.cellId}`
+      button.setAttribute(
+        'aria-label',
+        `${button.title}${cell.note ? ', see note' : ''}`,
+      )
       if (cell.note) button.textContent += ' *'
       button.onclick = () => {
         cellChoice = { stage: stage.key, gene: g.gene }

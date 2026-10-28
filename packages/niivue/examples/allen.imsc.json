@@ -8,46 +8,139 @@
       "name": "Membrane",
       "raw": 0,
       "seg": 7,
-      "color": "#e2cdb3"
+      "color": "#e2cdb3",
+      "ceiling": 0.995
     },
     {
       "name": "Structure",
       "raw": 1,
       "seg": 4,
-      "color": "#6fba11"
+      "color": "#6fba11",
+      "ceiling": 0.999
     },
     {
       "name": "DNA",
       "raw": 2,
       "seg": 6,
-      "color": "#8da3c0"
+      "color": "#8da3c0",
+      "ceiling": 0.999
     }
   ],
   "stages": [
     {
       "key": "Interphase",
       "label": "Interphase",
-      "atlas": "COMP_crop_Interphase_atlas.json"
+      "atlas": "COMP_crop_Interphase_atlas.json",
+      "windows": {
+        "DNA": [0.136, 0.806],
+        "ACTB": [0.155, 0.428],
+        "ACTN1": [0.202, 0.56],
+        "CENT2": [0.07, 0.353],
+        "CTNNB1": [0.107, 0.447],
+        "DSP": [0.089, 0.362],
+        "FBL": [0.287, 0.504],
+        "GJA1": [0.032, 0.07],
+        "LAMP1": [0.174, 0.296],
+        "LMNB1": [0.485, 0.504],
+        "MYH10": [0.117, 0.306],
+        "SEC61B": [0.277, 0.589],
+        "ST6GAL1": [0.089, 0.683],
+        "TJP1": [0.07, 0.409],
+        "TOMM20": [0.117, 0.485],
+        "TUBA1B": [0.419, 0.428]
+      }
     },
     {
       "key": "M1-M2",
       "label": "Prophase",
-      "atlas": "COMP_crop_M1-M2_atlas.json"
+      "atlas": "COMP_crop_M1-M2_atlas.json",
+      "windows": {
+        "DNA": [0.117, 0.645],
+        "ACTB": [0.202, 0.504],
+        "ACTN1": [0.145, 0.381],
+        "CENT2": [0.145, 0.334],
+        "CTNNB1": [0.211, 0.475],
+        "DSP": [0.041, 0.447],
+        "FBL": [0.504, 0.504],
+        "GJA1": [0.06, 0.089],
+        "LAMP1": [0.268, 0.56],
+        "LMNB1": [0.419, 0.532],
+        "MYH10": [0.089, 0.202],
+        "SEC61B": [0.211, 0.636],
+        "ST6GAL1": [0.079, 0.598],
+        "TJP1": [0.155, 0.258],
+        "TOMM20": [0.155, 0.494],
+        "TUBA1B": [0.23, 0.211]
+      }
     },
     {
       "key": "M3",
       "label": "Early prometaphase",
-      "atlas": "COMP_crop_M3_atlas.json"
+      "atlas": "COMP_crop_M3_atlas.json",
+      "windows": {
+        "DNA": [0.079, 0.674],
+        "ACTB": [0.089, 0.353],
+        "ACTN1": [0.06, 0.541],
+        "CENT2": [0.051, 0.268],
+        "CTNNB1": [0.117, 0.419],
+        "DSP": [0.041, 0.24],
+        "FBL": [0.117, 0.523],
+        "GJA1": [0.079, 0.117],
+        "LAMP1": [0.126, 0.447],
+        "LMNB1": [0.164, 0.475],
+        "MYH10": [0.107, 0.287],
+        "SEC61B": [0.117, 0.607],
+        "ST6GAL1": [0.06, 0.721],
+        "TJP1": [0.032, 0.258],
+        "TOMM20": [0.155, 0.636],
+        "TUBA1B": [0.117, 0.277]
+      }
     },
     {
       "key": "M4-M5",
       "label": "Metaphase",
-      "atlas": "COMP_crop_M4-M5_atlas.json"
+      "atlas": "COMP_crop_M4-M5_atlas.json",
+      "windows": {
+        "DNA": [0.145, 0.607],
+        "ACTB": [0.079, 0.523],
+        "ACTN1": [0.079, 0.334],
+        "CENT2": [0.07, 0.296],
+        "CTNNB1": [0.126, 0.494],
+        "DSP": [0.041, 0.296],
+        "FBL": [0.107, 0.692],
+        "GJA1": [0.089, 0.089],
+        "LAMP1": [0.126, 0.306],
+        "LMNB1": [0.145, 0.73],
+        "MYH10": [0.07, 0.428],
+        "SEC61B": [0.107, 0.664],
+        "ST6GAL1": [0.089, 0.872],
+        "TJP1": [0.089, 0.372],
+        "TOMM20": [0.126, 0.607],
+        "TUBA1B": [0.164, 0.372]
+      }
     },
     {
       "key": "M6-M7",
       "label": "Anaphase",
-      "atlas": "COMP_crop_M6-M7_atlas.json"
+      "atlas": "COMP_crop_M6-M7_atlas.json",
+      "windows": {
+        "DNA": [0.07, 0.664],
+        "ACTB": [0.107, 0.485],
+        "ACTN1": [0.079, 0.532],
+        "CENT2": [0.032, 0.372],
+        "CTNNB1": [0.051, 0.447],
+        "DSP": [0.06, 0.315],
+        "FBL": [0.126, 0.598],
+        "GJA1": [0.06, 0.136],
+        "LAMP1": [0.079, 0.494],
+        "LMNB1": [0.174, 0.541],
+        "MYH10": [0.098, 0.4],
+        "SEC61B": [0.117, 0.692],
+        "ST6GAL1": [0.051, 0.815],
+        "TJP1": [0.098, 0.268],
+        "TOMM20": [0.117, 0.655],
+        "TUBA1B": [0.107, 0.39]
+      }
     }
   ],
   "genes": [

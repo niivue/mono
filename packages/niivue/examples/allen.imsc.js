@@ -108,10 +108,13 @@ function percentile(img, fraction) {
 }
 
 /**
- * Window and colour each loaded channel. Raw stage composites sit on a
- * per-channel background floor, so they are windowed floor to peak. Raw cell
- * channels use Allen's own Cell Feature Explorer window, the 50th to 98th
- * percentile. Segmentations are masks, shown over their full range.
+ * Window and colour each loaded channel. A layer's window is one of:
+ * - [window, level]: Allen's own setting for a raw stage structure, as
+ *   fractions of the 0..255 range (the IMSC 3D viewer's table);
+ * - 'percentile': raw cell channels, from the median (the background) to the
+ *   channel's `ceiling` percentile, so that small bright structures such as
+ *   spindle fibres keep their detail;
+ * - 'mask': segmentations, over their full range.
  */
 let loaded = []
 function showLoaded() {
@@ -120,9 +123,13 @@ function showLoaded() {
     if (!layer) return
     let calMin = volume.globalMin
     let calMax = volume.globalMax
-    if (layer.window === 'percentile' && volume.img) {
+    if (Array.isArray(layer.window)) {
+      const [width, level] = layer.window
+      calMin = 255 * (level - width / 2)
+      calMax = 255 * (level + width / 2)
+    } else if (layer.window === 'percentile' && volume.img) {
       calMin = percentile(volume.img, 0.5)
-      calMax = Math.max(calMin + 1, percentile(volume.img, 0.98))
+      calMax = Math.max(calMin + 1, percentile(volume.img, layer.ceiling))
     } else if (layer.window === 'mask') {
       calMin = 0
     }
@@ -235,7 +242,7 @@ async function loadStage() {
     .map((s) => ({
       label: s.label,
       color: s.color,
-      window: kindSelect.value === 'seg' ? 'mask' : 'range',
+      window: kindSelect.value === 'seg' ? 'mask' : stage.windows[s.gene],
       channel: info.channelNames.findIndex((name) =>
         s.gene === 'DNA'
           ? name === `DNA${suffix}`
@@ -320,6 +327,7 @@ function loadCell() {
       label: c.name,
       color: c.color,
       window: kind === 'seg' ? 'mask' : 'percentile',
+      ceiling: c.ceiling,
       channel: c[kind],
     }))
   return load(

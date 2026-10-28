@@ -259,10 +259,15 @@ function showLoaded() {
   })
 }
 
-// A newer request makes an in-flight load stale instead of racing it.
+// A newer request makes an in-flight load stale instead of racing it. A
+// request takes its token before its first await (a stage reads its channel
+// list first), and viewer commits run one at a time, each checking the token
+// just before it replaces the volumes, so a slow, superseded load can neither
+// overwrite newer data nor leave it under the wrong selection.
 let loadToken = 0
-async function load(sidecarUrl, layers, description) {
-  const token = ++loadToken
+let commits = Promise.resolve()
+async function load(token, sidecarUrl, layers, description) {
+  if (token !== loadToken) return
   if (layers.length === 0) {
     say('Select at least one channel')
     return
@@ -272,11 +277,17 @@ async function load(sidecarUrl, layers, description) {
     const volumes = await loadAllenAtlasVolumes(sidecarUrl, {
       channels: layers.map((layer) => layer.channel),
     })
-    if (token !== loadToken) return
-    loaded = layers
-    await nv1.loadVolumes(volumes)
-    if (token !== loadToken) return
-    showLoaded()
+    const commit = commits.then(async () => {
+      if (token !== loadToken) return false
+      loaded = layers
+      await nv1.loadVolumes(volumes)
+      // The viewer now holds these layers, so window them even if a newer
+      // request has come in meanwhile; only the status waits for that one.
+      showLoaded()
+      return true
+    })
+    commits = commit.catch(() => {})
+    if (!(await commit) || token !== loadToken) return
     say(`Showing ${description}: ${layers.map((l) => l.label).join(', ')}`)
   } catch (err) {
     if (token !== loadToken) return
@@ -372,6 +383,7 @@ allStructures.onchange = () => {
 syncAllStructures()
 
 async function loadStage() {
+  const token = ++loadToken
   const stage = manifest.stages.find((s) => s.key === stageKey)
   const url = stageUrl(stage)
   let info = stageInfo.get(url)
@@ -379,10 +391,13 @@ async function loadStage() {
     try {
       info = await fetchAllenAtlasInfo(url)
     } catch (err) {
-      say(`Could not read ${stage.atlas}: ${err?.message ?? err}`)
+      if (token === loadToken) {
+        say(`Could not read ${stage.atlas}: ${err?.message ?? err}`)
+      }
       return
     }
     stageInfo.set(url, info)
+    if (token !== loadToken) return
   }
   // Channels are named DNA_raw, then <GENE>_<cellId>_raw, and _seg likewise.
   const suffix = `_${channelKind()}`
@@ -401,7 +416,7 @@ async function loadStage() {
     .filter((layer) => layer.channel >= 0)
   noteLine.textContent =
     'Each structure comes from a different cell, aligned to a common shape.'
-  await load(url, layers, `${stage.label} (stage composite)`)
+  await load(token, url, layers, `${stage.label} (stage composite)`)
 }
 
 // --- Cell gallery --------------------------------------------------------------
@@ -463,6 +478,7 @@ for (const c of cellChannels) {
 }
 
 function loadCell() {
+  const token = ++loadToken
   const stage = manifest.stages.find((s) => s.key === cellChoice.stage)
   const gene = manifest.genes.find((g) => g.gene === cellChoice.gene)
   const cell = manifest.cells[stage.key][gene.gene]
@@ -480,6 +496,7 @@ function loadCell() {
       channel: c[kind],
     }))
   return load(
+    token,
     manifest.cellAtlasBase + cell.atlas,
     layers,
     `${gene.gene}, ${stage.label}, cell ${cell.cellId}`,

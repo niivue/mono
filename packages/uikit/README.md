@@ -604,7 +604,10 @@ what was chosen ("No file chosen", one name, or "3 files"; a long name keeps
 its tail behind leading dots). Pressing the button, Enter or Space on it, or
 `open(id)` asks the bridge with the spec's `accept`, `multiple` and
 `directory`; the picker then shows the names and fires `onPick`, or
-`onCancel` when the chooser closed empty.
+`onCancel` when the chooser closed empty. The browser bridge adds the last
+part of a multi-part extension to `accept` (`.nii.gz` brings `.gz`), since
+Chrome's chooser on macOS matches only that part and would grey the files
+out; other files ending in it (a `.tar.gz`) are then offered too.
 
 ```ts
 import {

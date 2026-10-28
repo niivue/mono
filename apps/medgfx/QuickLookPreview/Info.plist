@@ -63,6 +63,7 @@
 				<string>org.mrtrix.tck</string>
 				<string>org.trackvis.trk</string>
 				<string>org.trx.trx</string>
+				<string>com.niivue.nvd</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<false/>

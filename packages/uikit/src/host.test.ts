@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   acceptExtensions,
+  browserAccept,
   type ClipboardSource,
   createBrowserClipboard,
   createBrowserDownload,
@@ -99,6 +100,28 @@ function stubWindow() {
   }
 }
 
+describe('browserAccept', () => {
+  it('adds the last part of each multi-part extension after the list as given', () => {
+    expect(browserAccept('.nii,.nii.gz,.mz3,.trx')).toBe(
+      '.nii,.nii.gz,.mz3,.trx,.gz',
+    )
+    expect(browserAccept('.nii.gz, .mgz,.tar.gz,.gz')).toBe(
+      '.nii.gz,.mgz,.tar.gz,.gz',
+    )
+    expect(browserAccept('.ome.tiff,.ome.zarr')).toBe(
+      '.ome.tiff,.ome.zarr,.tiff,.zarr',
+    )
+  })
+
+  it('leaves single extensions, MIME types and wildcards alone', () => {
+    expect(browserAccept('.nii,.mz3')).toBe('.nii,.mz3')
+    expect(browserAccept('image/png,image/*,application/gzip')).toBe(
+      'image/png,image/*,application/gzip',
+    )
+    expect(browserAccept(' , ')).toBe('')
+  })
+})
+
 describe('createBrowserFilePicker', () => {
   it('configures and clicks a hidden input, then resolves with the chosen files', async () => {
     const input = stubInput()
@@ -107,7 +130,7 @@ describe('createBrowserFilePicker', () => {
     const pick = createBrowserFilePicker(doc, win)
     const promise = pick({ accept: '.nii,.nii.gz', multiple: true })
     expect(input.type).toBe('file')
-    expect(input.accept).toBe('.nii,.nii.gz')
+    expect(input.accept).toBe('.nii,.nii.gz,.gz')
     expect(input.multiple).toBe(true)
     expect(input.webkitdirectory).toBe(false)
     expect(input.style.display).toBe('none')

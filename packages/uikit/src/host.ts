@@ -53,13 +53,37 @@ export const FILE_PICKER_CANCEL_GRACE_MS = 1000
 export const DOWNLOAD_REVOKE_DELAY_MS = 40_000
 
 /**
+ * An `accept` list the browser chooser can match. Chrome's chooser on macOS
+ * matches only the last part of a file's extension, so `.nii.gz` alone greys
+ * out every `.nii.gz` file; each multi-part extension also brings its last
+ * part (`.gz`), after the list as given. The chooser then offers other files
+ * with that last part too (a `.tar.gz`), and the caller sees them. MIME types
+ * pass through.
+ */
+export function browserAccept(accept: string): string {
+  const entries = accept
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean)
+  const out = [...entries]
+  for (const entry of entries) {
+    const dot = entry.lastIndexOf('.')
+    if (!entry.startsWith('.') || dot === 0) continue
+    const last = entry.slice(dot)
+    if (last.length > 1 && !out.includes(last)) out.push(last)
+  }
+  return out.join(',')
+}
+
+/**
  * A file picker that drives a hidden `<input type="file">`. The input is
  * attached to the body while the chooser is open (some browsers ignore a
  * detached input) and removed once it settles. Cancelling resolves to an
  * empty array through the input's `cancel` event or, where there is none
  * (Safari before 16.4, Chrome before 113), once the window has had focus
  * back for `FILE_PICKER_CANCEL_GRACE_MS` with no pick. `directory` sets
- * `webkitdirectory`, which every current engine honours.
+ * `webkitdirectory`, which every current engine honours. `accept` goes
+ * through `browserAccept`.
  */
 export function createBrowserFilePicker(
   doc: FilePickerDocument = document,
@@ -69,7 +93,7 @@ export function createBrowserFilePicker(
     new Promise<File[]>((resolve) => {
       const input = doc.createElement('input')
       input.type = 'file'
-      if (options.accept) input.accept = options.accept
+      if (options.accept) input.accept = browserAccept(options.accept)
       input.multiple = options.multiple === true
       if (options.directory) input.webkitdirectory = true
       input.style.display = 'none'

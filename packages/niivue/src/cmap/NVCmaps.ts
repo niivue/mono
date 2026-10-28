@@ -1,5 +1,6 @@
 import { log } from '@/logger'
 import type { ColorMap, LUT } from '@/NVTypes'
+import { lutModules } from './luts/_registry'
 
 export function makeLut(
   Rs: number[],
@@ -112,9 +113,7 @@ export function makeLabelLut(
   return cmap
 }
 
-/* --------------- auto-discover JSON LUTs --------------- */
-/* This uses Vite's import.meta.glob with eager:true.
-   If your environment doesn't transform import.meta.glob, use the manifest approach. */
+/* --------------- JSON LUTs (listed in ./luts/_registry.ts) --------------- */
 type LutDef = {
   R: number[]
   G: number[]
@@ -131,57 +130,47 @@ let _lutIndex: Map<string, LutDef> | null = null
 function buildLutIndex(): Map<string, LutDef> {
   if (_lutIndex) return _lutIndex
   const map = new Map<string, LutDef>()
-  try {
-    // import all json files in ./lut at build/dev time (Vite)
-    const modules = import.meta.glob<Record<string, unknown>>('./luts/*.json', {
-      eager: true,
-    })
-    for (const path in modules) {
-      // module is the parsed JSON object
-      const mod = modules[path]
-      // derive a friendly name from filename: './luts/cividis.json' -> 'Cividis'
-      const base = path.replace(/^.*\/([^/]+)\.json$/i, '$1')
-      const name = base.charAt(0).toUpperCase() + base.slice(1)
-      // Guard: expect R,G,B,A,I arrays of numbers
-      if (
-        mod &&
-        Array.isArray(mod.R) &&
-        Array.isArray(mod.G) &&
-        Array.isArray(mod.B) &&
-        Array.isArray(mod.I)
-      ) {
-        const entry: LutDef = {
-          R: (mod.R as number[]).map(Number),
-          G: (mod.G as number[]).map(Number),
-          B: (mod.B as number[]).map(Number),
-          A: Array.isArray(mod.A)
-            ? (mod.A as number[]).map(Number)
-            : new Array((mod.I as number[]).length).fill(255),
-          I: (mod.I as number[]).map(Number),
-        }
-        if (Array.isArray(mod.labels)) {
-          entry.labels = (mod.labels as string[]).slice()
-        }
-        // Some LUTs carry min = max = 0, which means "no window".
-        if (
-          typeof mod.min === 'number' &&
-          typeof mod.max === 'number' &&
-          mod.min < mod.max
-        ) {
-          entry.min = mod.min
-          entry.max = mod.max
-        }
-        map.set(name, entry)
-      } else {
-        // skip malformed JSON but keep dev-visible warning
-        log.warn(`Skipping LUT ${path}: expected { R,G,B,I } arrays`)
+  const modules: Record<string, Record<string, unknown>> = lutModules
+  for (const path in modules) {
+    // module is the parsed JSON object
+    const mod = modules[path]
+    // derive a friendly name from filename: './cividis.json' -> 'Cividis'
+    const base = path.replace(/^.*\/([^/]+)\.json$/i, '$1')
+    const name = base.charAt(0).toUpperCase() + base.slice(1)
+    // Guard: expect R,G,B,A,I arrays of numbers
+    if (
+      mod &&
+      Array.isArray(mod.R) &&
+      Array.isArray(mod.G) &&
+      Array.isArray(mod.B) &&
+      Array.isArray(mod.I)
+    ) {
+      const entry: LutDef = {
+        R: (mod.R as number[]).map(Number),
+        G: (mod.G as number[]).map(Number),
+        B: (mod.B as number[]).map(Number),
+        A: Array.isArray(mod.A)
+          ? (mod.A as number[]).map(Number)
+          : new Array((mod.I as number[]).length).fill(255),
+        I: (mod.I as number[]).map(Number),
       }
+      if (Array.isArray(mod.labels)) {
+        entry.labels = (mod.labels as string[]).slice()
+      }
+      // Some LUTs carry min = max = 0, which means "no window".
+      if (
+        typeof mod.min === 'number' &&
+        typeof mod.max === 'number' &&
+        mod.min < mod.max
+      ) {
+        entry.min = mod.min
+        entry.max = mod.max
+      }
+      map.set(name, entry)
+    } else {
+      // skip malformed JSON but keep dev-visible warning
+      log.warn(`Skipping LUT ${path}: expected { R,G,B,I } arrays`)
     }
-  } catch (err) {
-    log.warn(
-      'LUT auto-discovery failed (import.meta.glob not available). Use a manifest or build-step to create ./luts/index.js',
-      err,
-    )
   }
 
   // `Random` is generated rather than read from JSON: labelLutFor() extends it

@@ -1,8 +1,8 @@
 /**
  * Volume Transform Registry
  *
- * Auto-discovers transform modules from this directory using import.meta.glob.
- * Each transform module should export:
+ * Built-in transform modules are listed in `_registry.ts`. Each transform
+ * module should export:
  *   - name: string (unique identifier)
  *   - description: string (human-readable description)
  *   - apply: async function(hdr, img, options?) => { hdr, img }
@@ -13,6 +13,7 @@
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 import { NVWorker } from '@/workers/NVWorker'
 import TransformWorker from '@/workers/transform.worker?worker&inline'
+import { transformModules } from './_registry'
 
 /**
  * Base options that can be passed to transform functions.
@@ -76,20 +77,12 @@ export interface TransformInfo {
   resultDefaults?: ResultDefaults
 }
 
-// Auto-discover transform modules (excludes index.ts)
-const modules = import.meta.glob<VolumeTransform>(['./*.ts', '!./*.test.ts'], {
-  eager: true,
-})
-
 // Build registry
 const transformsByName = new Map<string, VolumeTransform>()
-// Track which transforms are built-in (discoverable by the worker via import.meta.glob)
+// Track which transforms are built-in (the worker runs the same registry)
 const builtinNames = new Set<string>()
 
-for (const [path, mod] of Object.entries(modules)) {
-  // Skip index.ts
-  if (path === './index.ts') continue
-
+for (const mod of Object.values(transformModules)) {
   if (mod.name && typeof mod.apply === 'function') {
     transformsByName.set(mod.name, mod)
     builtinNames.add(mod.name)

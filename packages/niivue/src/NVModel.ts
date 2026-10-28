@@ -341,6 +341,9 @@ export default class NVModel {
       ...(options.volumeSampleRate !== undefined && {
         sampleRate: options.volumeSampleRate,
       }),
+      ...(options.volumeIsOverlayOpacityCorrected !== undefined && {
+        isOverlayOpacityCorrected: options.volumeIsOverlayOpacityCorrected,
+      }),
       ...(options.volumeIsCubicInterpolation !== undefined && {
         isCubicInterpolation: options.volumeIsCubicInterpolation,
       }),

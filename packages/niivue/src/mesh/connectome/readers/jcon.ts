@@ -4,8 +4,8 @@ import type {
   NVConnectomeNode,
   NVConnectomeOptions,
 } from '@/NVTypes'
-import type { ConnectomeFileData } from '../index'
-import { convertDenseToSparse, defaultConnectomeOptions } from '../index'
+import type { ConnectomeFileData } from '../fileData'
+import { convertDenseToSparse, defaultConnectomeOptions } from '../fileData'
 
 export const extensions = ['JCON']
 

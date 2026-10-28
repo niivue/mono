@@ -1,3 +1,71 @@
+## 1.0.0-rc.26 (2026-10-28)
+
+### Fixes
+
+- **niivue:** step-size opacity correction for the 3D overlay pass ([#366](https://github.com/niivue/mono/issues/366))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.46
+- Updated uikit to 1.0.0-rc.35
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.25 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.45
+- Updated uikit to 1.0.0-rc.34
+
+## 1.0.0-rc.24 (2026-10-28)
+
+### Fixes
+
+- **niivue:** give each volume its own texture cache entry ([#346](https://github.com/niivue/mono/issues/346))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.44
+- Updated uikit to 1.0.0-rc.33
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.23 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.43
+- Updated uikit to 1.0.0-rc.32
+
+## 1.0.0-rc.22 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.42
+- Updated uikit to 1.0.0-rc.31
+
+## 1.0.0-rc.21 (2026-10-28)
+
+### Fixes
+
+- **uikit:** let the browser file picker offer .nii.gz files on macOS ([#341](https://github.com/niivue/mono/issues/341))
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.30
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.20 (2026-10-28)
 
 ### Fixes

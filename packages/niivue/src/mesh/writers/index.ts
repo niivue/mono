@@ -1,8 +1,7 @@
 /**
  * Mesh Writer Registry
  *
- * Auto-discovers writer modules from this directory using import.meta.glob.
- * Each writer module should export:
+ * Writer modules are listed in `_registry.ts`. Each writer module should export:
  *   - extensions: string[] (supported file extensions)
  *   - write: async function(positions, indices, options?) => ArrayBuffer
  */
@@ -21,11 +20,9 @@ type MeshWriter = {
 }
 
 import { buildExtensionMap } from '@/NVLoader'
+import { meshWriterModules } from './_registry'
 
-const modules = import.meta.glob<MeshWriter>(['./*.ts', '!./*.test.ts'], {
-  eager: true,
-})
-const writerByExt = buildExtensionMap(modules, './index.ts')
+const writerByExt = buildExtensionMap<MeshWriter>(meshWriterModules)
 
 export function writeExtensions(): string[] {
   return Array.from(new Set(Array.from(writerByExt.keys()))).sort()

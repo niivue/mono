@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Allen Integrated Mitotic Stem Cell gallery</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      .row {
+        display: flex;
+        gap: 0.5rem 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .row button[aria-pressed='true'] {
+        outline: 2px solid currentColor;
+        font-weight: 600;
+      }
+      #structures label {
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+      .swatch {
+        display: inline-block;
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 2px;
+        vertical-align: middle;
+      }
+      #grid {
+        border-collapse: collapse;
+        font-size: 0.75rem;
+      }
+      #grid th {
+        font-weight: 600;
+        text-align: left;
+        padding: 0 0.4rem;
+        white-space: nowrap;
+      }
+      #grid td {
+        padding: 1px;
+      }
+      #grid button {
+        font-size: 0.7rem;
+        width: 100%;
+        padding: 0 0.3rem;
+      }
+      #gallery {
+        max-height: 40vh;
+        overflow: auto;
+      }
+      #status,
+      #note {
+        font-size: 0.8rem;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="row">
+        <span class="pair">
+          <input type="radio" name="mode" id="modeStage" value="stage" checked />
+          <label for="modeStage">3D cell viewer (15 aligned cells per stage)</label>
+        </span>
+        <span class="pair">
+          <input type="radio" name="mode" id="modeCell" value="cell" />
+          <label for="modeCell">Cell gallery (one cell per gene and stage)</label>
+        </span>
+        <label for="kind">Data</label>
+        <select id="kind">
+          <option value="raw">Raw</option>
+          <option value="seg">Segmented</option>
+        </select>
+        <span class="pair">
+          <label for="fuse">Fuse channels</label>
+          <input type="checkbox" id="fuse" checked />
+        </span>
+        <label for="webgpuCheck">WebGPU</label>
+        <input type="checkbox" id="webgpuCheck" />
+      </div>
+      <div id="stagePanel">
+        <div class="row" id="stages"></div>
+        <div class="row" id="structures"></div>
+      </div>
+      <div id="cellPanel" hidden>
+        <div class="row" id="cellChannels"></div>
+        <div id="gallery"><table id="grid"></table></div>
+      </div>
+      <div id="note">&nbsp;</div>
+      <div id="status">&nbsp;</div>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">&nbsp;</footer>
+    <script type="module" src="./allen.imsc.js"></script>
+  </body>
+</html>

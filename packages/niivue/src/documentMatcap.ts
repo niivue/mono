@@ -7,6 +7,8 @@
  * on load.
  */
 
+import { log } from '@/logger'
+
 /** The instance default: its first matcap, or none. */
 export function defaultMatcap(
   matcaps: Record<string, string> | undefined,
@@ -38,7 +40,7 @@ export function matcapToName(
  * kept, as is any other URL: if it does not load, the renderer draws the
  * default matcap. A bare name this instance does not know
  * cannot be fetched at all, so it is the instance default (its first matcap,
- * or none).
+ * or none), with a warning naming the known matcaps.
  */
 export function matcapFromName(
   saved: string,
@@ -55,7 +57,12 @@ export function matcapFromName(
   }
   const byName = lookup(saved)
   if (byName !== undefined) return byName
-  if (!/[/\\.:?#]/.test(saved)) return defaultMatcap(matcaps)
+  if (!/[/\\.:?#]/.test(saved)) {
+    log.warn(
+      `Unknown matcap '${saved}', using the default. Known: ${entries.map(([key]) => key).join(', ') || 'none'}`,
+    )
+    return defaultMatcap(matcaps)
+  }
   const path = saved.split(/[?#]/)[0].replace(/\\/g, '/')
   const sameOrigin = !/^([a-z][a-z\d+.-]*:|\/\/)/i.test(path)
   if (sameOrigin && /(^|\/)assets\/matcaps\/[^/]+$/.test(path)) {

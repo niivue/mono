@@ -1,3 +1,14 @@
+## 1.0.0-rc.30 (2026-10-28)
+
+### Fixes
+
+- **uikit:** let the browser file picker offer .nii.gz files on macOS ([#341](https://github.com/niivue/mono/issues/341))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.29 (2026-10-27)
 
 ### Updated Dependencies

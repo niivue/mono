@@ -372,7 +372,7 @@ function joinRead(entry: InflightRead, signal: AbortSignal | undefined): void {
 export class NVChunkedVolume {
   readonly volume: NVImage
 
-  private readonly volumeId: string
+  private volumeId: string
   private readonly host: NiiVue
   private readonly source: ChunkedVolumeSource
   private readonly o: ResolvedOptions
@@ -505,6 +505,7 @@ export class NVChunkedVolume {
    */
   async init(): Promise<void> {
     await this.host.addVolume(this.volume)
+    this.adoptSceneId()
     this.syncCrosshairSubscription()
     this.syncViewSubscription()
     // Self-dispose if the controller is destroyed without the caller disposing
@@ -601,6 +602,21 @@ export class NVChunkedVolume {
       const calMin = vol.calMin ?? 0
       return value > calMin ? value - calMin : 0
     }
+  }
+
+  /**
+   * The scene keeps volume ids unique, so an explicit `options.id` already used
+   * by another volume is stored with a `-2`, `-3`, ... suffix. Follow it, or
+   * every find-by-id here would hit the other volume. The scene holds a shallow
+   * copy of `volume`, recognised by the `chunkSource` it shares.
+   */
+  private adoptSceneId(): void {
+    const scene = this.host.volumes?.find(
+      (v) => v.chunkSource === this.volume.chunkSource,
+    )
+    if (!scene?.id || scene.id === this.volumeId) return
+    this.volumeId = scene.id
+    this.volume.id = scene.id
   }
 
   /** The volume's stable id (used to target plan swaps). */

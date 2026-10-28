@@ -728,3 +728,50 @@ for (const fill of ['current', { 'volume.matcap': 'current' }] as const) {
     expect(result.changes).not.toContain('volumeMatcap')
   })
 }
+
+test('duplicate URLs: distinct volume ids drive modulation and survive a round-trip', async ({
+  page,
+}) => {
+  test.setTimeout(90_000) // fetches one small volume three times, then reloads
+
+  const url = '/volumes/mni152_mask.nii.gz'
+  const r = await page.evaluate(async (url) => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const mkCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = 64
+      c.height = 64
+      c.style.cssText = 'position:fixed;left:-9999px'
+      document.body.appendChild(c)
+      return c
+    }
+    // AFNI's QC viewer: one stats file as the overlay and again, hidden, as the
+    // threshold that modulates it.
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachToCanvas(mkCanvas())
+    await nv.loadVolumes([{ url }, { url }])
+    await nv.addVolume({ url, opacity: 0 })
+    const ids = nv.volumes.map((v) => v.id)
+    const names = nv.volumes.map((v) => v.name)
+    await nv.setModulationImage(nv.volumes[1].id ?? '', nv.volumes[2].id ?? '')
+    const links = nv.volumes.map((v) => v.modulationImage ?? null)
+
+    const bytes = nv.serializeDocument({ linkData: true })
+    const nv2 = new NiiVue({ backend: 'webgl2' })
+    await nv2.attachToCanvas(mkCanvas())
+    await nv2.loadDocument(new File([bytes], 'dup.nvd'))
+    return {
+      ids,
+      names,
+      links,
+      reloadedIds: nv2.volumes.map((v) => v.id),
+      reloadedLinks: nv2.volumes.map((v) => v.modulationImage ?? null),
+    }
+  }, url)
+
+  expect(r.ids).toEqual([url, `${url}-2`, `${url}-3`])
+  expect(r.names).toEqual([url, url, url])
+  expect(r.links).toEqual([null, `${url}-3`, null])
+  expect(r.reloadedIds).toEqual(r.ids)
+  expect(r.reloadedLinks).toEqual(r.links)
+})

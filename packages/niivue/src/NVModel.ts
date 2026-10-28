@@ -36,6 +36,7 @@ import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import { loadVolumePrepared } from '@/volume/loadBridge'
 import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
+import { assignUniqueVolumeIds } from '@/volume/volumeIds'
 
 export default class NVModel {
   // --- Config groups ---
@@ -1539,8 +1540,15 @@ export default class NVModel {
     return NVModel.applyColormap(prepared, overrides.colormap)
   }
 
+  /**
+   * Prepare and append a volume. Its id is made unique within the model
+   * (`<id>-2`, `<id>-3`, ... for a repeat, e.g. the same URL loaded twice);
+   * `name` is left as given. Resolved after the async prepare, so concurrent
+   * adds cannot both claim a free id.
+   */
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {
     const prepared = await NVModel.prepareVolume(volume)
+    assignUniqueVolumeIds([prepared], this.volumes)
     this.volumes.push(prepared)
     this._setupPivot3D()
     this.invalidateGraphCache()

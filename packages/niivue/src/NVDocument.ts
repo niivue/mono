@@ -56,14 +56,15 @@ import {
 import type { NVSlideManifest } from '@/slide/NVSlide'
 import type { SlideVectorShape } from '@/slide/slideVector'
 import * as NVVolume from '@/volume/NVVolume'
+import { uniqueVolumeId } from '@/volume/volumeIds'
 
 // v8 added two independent optional, additive fields: the `signals` array
 // (NVSignal persistence, incl. each signal's optional `annotations`) and the
 // `slidePlane` object (registered NVSlide plane + its slide-space drawing).
 // Both are optional and round-trip as absent on readers/writers that lack them
 // (forward- and backward-compatible), so they share one version. Later additive
-// optional volume fields (e.g. `modulationImage`) likewise did NOT bump the
-// version. Bump only when adding a field that older code would misread.
+// optional volume fields (e.g. `modulationImage`, `id`) likewise did NOT bump
+// the version. Bump only when adding a field that older code would misread.
 //
 // v9 made the settings groups (scene/layout/ui/volume/mesh/draw/interaction/
 // annotation) SPARSE: a document omits any setting equal to its default. On load
@@ -94,6 +95,10 @@ export type NVDocumentVolumeData = {
 export type NVDocumentVolume = {
   url?: string
   name?: string
+  /** The volume's id (unique within the scene). `modulationImage` and a
+   * signal's `attachedToId` refer to it. Absent in older documents, where the
+   * id is re-derived from `name`. */
+  id?: string
   colormap?: string
   colormapNegative?: string
   isColormapInverted?: boolean
@@ -397,6 +402,7 @@ export function serialize(
       const vol: NVDocumentVolume = {
         url: v.url,
         name: v.name,
+        id: v.id,
         colormap: v.colormap,
         colormapNegative: v.colormapNegative,
         isColormapInverted: v.isColormapInverted,
@@ -944,6 +950,14 @@ export async function reconstructVolume(
     // Apply post-load properties to the just-added volume
     const vol = model.volumes[model.volumes.length - 1]
     if (vol) {
+      // Restore the saved id so `modulationImage` / `attachedToId` links keep
+      // pointing at the same volume. addVolume derived one from the name, which
+      // differs when the saved scene held the same URL twice and its volumes
+      // were removed or reordered. Kept unique: a document saved with unique
+      // ids (every serialize) restores them exactly, since the scene is
+      // cleared first and each volume is renamed right after it is added.
+      if (v.id !== undefined && v.id !== vol.id)
+        vol.id = uniqueVolumeId(v.id, model.volumes, vol)
       if (v.isLegendVisible !== undefined)
         vol.isLegendVisible = v.isLegendVisible
       if (v.frame4D !== undefined) vol.frame4D = v.frame4D

@@ -1,4 +1,4 @@
-import NiiVue from '../src/index.ts'
+import NiiVue, { COLORMAP_TYPE } from '../src/index.ts'
 
 const volumeSelect = document.getElementById('volumeSelect')
 
@@ -76,6 +76,6 @@ await nv1.setVolume(1, {
   calMaxNeg: 30 * -0.1 + 30 * -0.1,
   calMin: 30 * 0.1,
   calMax: 30 * 0.1 + 30 * 0.1,
-  colormapType: 0,
+  colormapType: COLORMAP_TYPE.MIN_TO_MAX,
 })
 refreshVolumeList()

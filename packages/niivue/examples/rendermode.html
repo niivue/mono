@@ -55,7 +55,11 @@
     <footer id="location">&nbsp;</footer>
     <script type="module">
       import { shiny } from '../src/assets/matcaps'
-      import NiiVue, { SHOW_RENDER, VOLUME_RENDER_MODE } from '../src/index.ts'
+      import NiiVue, {
+        COLORMAP_TYPE,
+        SHOW_RENDER,
+        VOLUME_RENDER_MODE,
+      } from '../src/index.ts'
 
       // The three volumeRenderMode values side by side. COMPOSITE and MAXIMUM
       // ray-march; SLICES does not — it draws the three crosshair planes inside
@@ -141,7 +145,7 @@
         ...TISSUES.map((t) => ({
           url: `/volumes/${t.file}`,
           colormap: t.id,
-          colormapType: 1,
+          colormapType: COLORMAP_TYPE.ZERO_TO_MAX_TRANSPARENT_BELOW_MIN,
           calMin: 0.05, // below this a voxel is essentially not this tissue
           calMax: 1,
         })),

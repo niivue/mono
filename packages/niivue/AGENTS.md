@@ -1728,7 +1728,7 @@ Configurable drag interactions on 2D slices. `interaction.primaryDragMode` (defa
 
 `crosshairPan` is a single-button touch/trackpad mode: press and release without moving more than `crosshairPanThresholdCssPx` (4 CSS px, scaled to canvas pixels) places the crosshair at the release point like `crosshair`; moving further pans like `pan`, and the gesture then stays a pan. A `pointercancel` never places the crosshair.
 
-Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` (axial/coronal/sagittal/multiplanar/render/none — `none` skips the spatial pass so a signal graph fills the canvas, see "signal mode" above), `MULTIPLANAR_TYPE` (auto/column/grid/row), `SHOW_RENDER`, and `NiiDataType`.
+Public enum exports from the package root (alongside `DRAG_MODE`): `COLORMAP_TYPE` (see "Colormap conventions"), `SLICE_TYPE` (axial/coronal/sagittal/multiplanar/render/none — `none` skips the spatial pass so a signal graph fills the canvas, see "signal mode" above), `MULTIPLANAR_TYPE` (auto/column/grid/row), `SHOW_RENDER`, and `NiiDataType`.
 
 **Overlay rendering:** Selection boxes use GlyphBatch panels (`_dragOverlay.rect`). Measurement/angle lines use line renderer (`_dragOverlay.lines`). Overlay state lives on `model._dragOverlay` (transient, not serialized).
 

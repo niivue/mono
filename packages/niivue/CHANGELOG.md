@@ -1,3 +1,14 @@
+## 1.0.0-rc.45 (2026-10-28)
+
+### Fixes
+
+- **niivue:** cache the WebGPU blend accumulate pipeline by colour mode ([#358](https://github.com/niivue/mono/issues/358))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.44 (2026-10-28)
 
 ### Fixes

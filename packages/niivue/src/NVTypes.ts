@@ -697,6 +697,13 @@ export type LayoutConfig = {
   isMosaicCentered: boolean
   margin: number
   isRadiological: boolean
+  /**
+   * Which way the nose points on sagittal slices: `true` nose left, `false`
+   * nose right. `null` (the default) follows `isRadiological` (radiological
+   * draws the nose left, neurological the nose right), so sagittal tiles keep
+   * their historic orientation until this is set.
+   */
+  isSagittalNoseLeft: boolean | null
   /** Let a single 2D slice tile fill the canvas instead of letterboxing it. */
   isSingleViewFillCanvas: boolean
   customLayout: CustomLayoutTile[] | null
@@ -1226,6 +1233,7 @@ export type NiiVueOptions = {
   isMosaicCentered?: boolean
   tileMargin?: number
   isRadiological?: boolean
+  isSagittalNoseLeft?: boolean | null
   isSingleViewFillCanvas?: boolean
   customLayout?: CustomLayoutTile[] | null
 

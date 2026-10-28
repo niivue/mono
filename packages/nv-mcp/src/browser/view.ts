@@ -533,6 +533,8 @@ export interface View {
   mosaicString?: string
   showRender?: number
   isRadiological?: boolean
+  /** Sagittal nose direction; null follows `isRadiological`. Absent before NiiVue had it. */
+  isSagittalNoseLeft?: boolean | null
   isColorbarVisible?: boolean
   /** Schedules a frame. NiiVue 1.0 draws it on the next animation frame, not now. */
   drawScene(): unknown

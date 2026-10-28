@@ -82,7 +82,7 @@ nv1.drawPenValue = 3
 `azimuth`, `elevation`, `crosshairPos`, `pan2Dxyzmm`, `scaleMultiplier`, `gamma`, `backgroundColor`, `clipPlaneColor`, `isClipPlaneCutaway`
 
 **Layout** (no prefix -- delegate to `model.layout`):
-`sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `isRadiological`, `isSingleViewFillCanvas`
+`sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `isRadiological`, `isSagittalNoseLeft`, `isSingleViewFillCanvas`
 
 **UI** (no prefix -- delegate to `model.ui`):
 `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible`, `is3DCrosshairVisible`, `isGraphVisible`, `isRulerVisible`, `isCrossLinesVisible`, `isLegendVisible`, `isMeasureUnitsVisible`, `isThumbnailVisible`, `thumbnailUrl`, `placeholderText`, `crosshairColor`, `crosshairGap`, `crosshairWidth`, `fontColor`, `fontScale`, `fontMinSize`, `selectionBoxColor`, `measureLineColor`, `measureTextColor`, `rulerWidth`, `graphNormalizeValues`, `graphIsRangeCalMinMax`

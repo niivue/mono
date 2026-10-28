@@ -15,6 +15,7 @@ const LEGACY: LegacyDocument = {
     crosshairColor: [1, 0, 0, 1],
     isColorbar: true,
     isRadiologicalConvention: true,
+    sagittalNoseLeft: false,
     isNearestInterpolation: true,
     penValue: 3,
     dragMode: 2,
@@ -58,6 +59,7 @@ describe('convertLegacyDocument', () => {
     expect(doc.ui?.crosshairColor).toEqual([1, 0, 0, 1])
     expect(doc.ui?.isColorbarVisible).toBe(true)
     expect(doc.layout?.isRadiological).toBe(true)
+    expect(doc.layout?.isSagittalNoseLeft).toBe(false)
     expect(doc.volume?.isNearestInterpolation).toBe(true)
     expect(doc.draw?.penValue).toBe(3)
     expect(doc.interaction?.primaryDragMode).toBe(2)

@@ -183,6 +183,9 @@ export default class NVModel {
       ...(options.isRadiological !== undefined && {
         isRadiological: options.isRadiological,
       }),
+      ...(options.isSagittalNoseLeft !== undefined && {
+        isSagittalNoseLeft: options.isSagittalNoseLeft,
+      }),
       ...(options.isSingleViewFillCanvas !== undefined && {
         isSingleViewFillCanvas: options.isSingleViewFillCanvas,
       }),

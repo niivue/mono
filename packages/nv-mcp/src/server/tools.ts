@@ -20,6 +20,7 @@ import { PLANE_ALIASES, PLANE_ANGLES } from '../planes'
 import { TAB_PARAM } from '../protocol'
 import {
   LAYOUT_NAMES,
+  ORIENTATION_TEXT_NAMES,
   SAGITTAL_NOSE_NAMES,
   SHOW_RENDER_NAMES,
   SLICE_NAMES,
@@ -514,6 +515,12 @@ export const CORE_SCHEMAS = {
       .optional()
       .describe(
         'Which way the nose points on sagittal slices, independent of radiological; auto follows radiological (radiological puts the nose left).',
+      ),
+    orientation_text: z
+      .enum(ORIENTATION_TEXT_NAMES)
+      .optional()
+      .describe(
+        'Where 2D slices draw their orientation letters: edges (a letter mid-left and mid-top) or corner (one label such as RS at the top-left, which keeps the letters off the brain on short, wide tiles).',
       ),
     colorbar: z.boolean().optional().describe('Whether a colorbar is drawn.'),
   },

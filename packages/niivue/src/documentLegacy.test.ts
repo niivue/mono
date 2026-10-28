@@ -98,6 +98,20 @@ describe('convertLegacyDocument', () => {
     expect(convert({})).toBeUndefined()
   })
 
+  test('classic isCornerOrientationText picks the orientation text position', () => {
+    const convert = (opts: Record<string, unknown>) =>
+      convertLegacyDocument({ opts }).doc.ui?.orientationTextPosition
+    expect(convert({ isCornerOrientationText: true })).toBe('corner')
+    expect(convert({ isCornerOrientationText: false })).toBe('edges')
+    expect(convert({})).toBeUndefined()
+    const { warnings } = convertLegacyDocument({
+      opts: { isCornerOrientationText: true },
+    })
+    expect(warnings.some((w) => w.includes('isCornerOrientationText'))).toBe(
+      false,
+    )
+  })
+
   test('reports unmapped opts + the clip plane', () => {
     expect(warnings.some((w) => w.includes('someUnknownOpt'))).toBe(true)
     expect(warnings.some((w) => w.includes('clipPlane'))).toBe(true)

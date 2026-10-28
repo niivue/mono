@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { LAYOUT_DEFAULTS } from '@/NVConstants'
-import type { CustomLayoutTile, LayoutConfig } from '@/NVTypes'
+import { LAYOUT_DEFAULTS, UI_DEFAULTS } from '@/NVConstants'
+import type { CustomLayoutTile, LayoutConfig, UIConfig } from '@/NVTypes'
 import {
   fillGroup,
   fillModeFor,
@@ -279,5 +279,39 @@ describe('layout.isSagittalNoseLeft document round-trip', () => {
       expect(restored.isSagittalNoseLeft).toBe(isSagittalNoseLeft)
       expect(restored.isRadiological).toBe(true)
     }
+  })
+})
+
+describe('ui.orientationTextPosition document round-trip', () => {
+  test("'edges' is the default and is omitted from a sparse document", () => {
+    expect(UI_DEFAULTS.orientationTextPosition).toBe('edges')
+    const sparse = sparsifyGroup('ui', { ...UI_DEFAULTS }, UI_DEFAULTS)
+    expect(sparse).not.toHaveProperty('orientationTextPosition')
+    // A document without the key (every pre-existing NVD) loads as 'edges'.
+    const restored = fillGroup(
+      'ui',
+      { ...UI_DEFAULTS, orientationTextPosition: 'corner' },
+      UI_DEFAULTS,
+      {},
+      undefined,
+    )
+    expect(restored.orientationTextPosition).toBe('edges')
+  })
+
+  test("'corner' survives sparsify then fill", () => {
+    const current: UIConfig = {
+      ...UI_DEFAULTS,
+      orientationTextPosition: 'corner',
+    }
+    const sparse = sparsifyGroup('ui', current, UI_DEFAULTS)
+    expect(sparse).toEqual({ orientationTextPosition: 'corner' })
+    const restored = fillGroup(
+      'ui',
+      { ...UI_DEFAULTS },
+      UI_DEFAULTS,
+      sparse,
+      undefined,
+    )
+    expect(restored.orientationTextPosition).toBe('corner')
   })
 })

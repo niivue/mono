@@ -709,11 +709,25 @@ export type LayoutConfig = {
   customLayout: CustomLayoutTile[] | null
 }
 
+/**
+ * Where a 2D tile's orientation text goes: `'edges'` puts the left letter at
+ * the middle of the left edge and the top letter at the middle of the top edge;
+ * `'corner'` puts one combined label (e.g. `RS`) at the top-left corner.
+ */
+export type OrientationTextPosition = 'edges' | 'corner'
+
 /** UI config: visual chrome (colorbars, orient, fonts, crosshair appearance, measurements) */
 export type UIConfig = {
   isColorbarVisible: boolean
   isOrientCubeVisible: boolean
   isOrientationTextVisible: boolean
+  /**
+   * Where 2D tiles draw their orientation text: `'edges'` (default) a letter at
+   * the middle of the left and top edges, `'corner'` one combined label (left
+   * then top letter, e.g. `RS`) at the tile's top-left corner, which keeps the
+   * letters off the brain on short, wide tiles.
+   */
+  orientationTextPosition: OrientationTextPosition
   is3DCrosshairVisible: boolean
   isGraphVisible: boolean
   isRulerVisible: boolean
@@ -1241,6 +1255,7 @@ export type NiiVueOptions = {
   isColorbarVisible?: boolean
   isOrientCubeVisible?: boolean
   isOrientationTextVisible?: boolean
+  orientationTextPosition?: OrientationTextPosition
   is3DCrosshairVisible?: boolean
   isGraphVisible?: boolean
   isRulerVisible?: boolean

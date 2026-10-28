@@ -249,7 +249,7 @@ Used by `loadMeshes()`, `addMesh()`, and `setMesh()`:
 - UI: `isColorbarVisible`, `isLegendVisible`
 
 ### Layer Options
-Used by `addMeshLayer()` and `setMeshLayer()`:
+Used by `addMeshLayer()` and `setMeshLayerProperty()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
 - Behavior: `isTransparentBelowCalMin`, `isAdditiveBlend`, `isColormapInverted`, `opacity`
 - UI: `isColorbarVisible`, `outlineWidth`

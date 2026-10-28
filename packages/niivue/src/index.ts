@@ -60,6 +60,7 @@ export {
 } from './mrs/MrsScene'
 // Enums
 export {
+  COLORMAP_TYPE,
   DRAG_MODE,
   LAYER_GRADIENT_MODE,
   MULTIPLANAR_TYPE,

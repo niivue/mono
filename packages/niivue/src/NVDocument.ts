@@ -901,6 +901,7 @@ export async function reconstructVolume(
   model: NVModel,
   v: NVDocumentVolume,
 ): Promise<void> {
+  const before = model.volumes.length
   try {
     if (v.data) {
       // Reconstruct volume from embedded data
@@ -947,8 +948,13 @@ export async function reconstructVolume(
       // embedded branch above.
       await model.addVolume(urlVolumeOptions(v))
     }
-    // Apply post-load properties to the just-added volume
-    const vol = model.volumes[model.volumes.length - 1]
+    // Apply post-load properties to the just-added volume. An entry with
+    // neither data nor a URL adds nothing; its id and links must not land on
+    // the previous volume.
+    const vol =
+      model.volumes.length > before
+        ? model.volumes[model.volumes.length - 1]
+        : undefined
     if (vol) {
       // Restore the saved id so `modulationImage` / `attachedToId` links keep
       // pointing at the same volume. addVolume derived one from the name, which

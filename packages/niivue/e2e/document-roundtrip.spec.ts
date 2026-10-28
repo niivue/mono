@@ -933,6 +933,8 @@ test.describe('volume ids are unique within an instance', () => {
         // An older document without saved ids re-derives them in volume order.
         const legacy = JSON.parse(json)
         for (const v of legacy.volumes ?? []) delete v.id
+        // An entry with nothing to load must not rename the volume before it.
+        legacy.volumes.push({ name: 'ghost', id: 'ghost' })
         const nv3 = new NiiVue({ backend: 'webgl2' })
         await nv3.loadDocument(new File([JSON.stringify(legacy)], 'old.json'))
         return {

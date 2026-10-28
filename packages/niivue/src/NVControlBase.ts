@@ -121,6 +121,7 @@ import type {
   NVSignalDisplay,
   NVSignal as NVSignalType,
   NVTractOptions,
+  OrientationTextPosition,
   SaveVolumeOptions,
   SignalAnnotation,
   SignalSidecar,
@@ -1253,6 +1254,27 @@ export default class NiiVue extends EventTarget {
   set isOrientationTextVisible(v: boolean) {
     this.model.ui.isOrientationTextVisible = v
     this.emit('change', { property: 'isOrientationTextVisible', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Where 2D tiles draw their orientation text: `'edges'` puts the left letter
+   * at the middle of the left edge and the top letter at the middle of the top
+   * edge; `'corner'` puts one combined label, left letter then top letter (`RS`
+   * for a radiological coronal tile, `AS` for a nose-left sagittal one), at
+   * the tile's top-left corner. Corner text keeps the letters off the brain on
+   * short, wide tiles. Follows `isRadiological` and `isSagittalNoseLeft`, and
+   * draws only where `isOrientationTextVisible` (or a mosaic `L` tag) allows.
+   * @default 'edges'
+   * @example nv1.orientationTextPosition = 'corner'
+   * @see {@link https://niivue.github.io/mono/examples/layout.html | live demo usage}
+   */
+  get orientationTextPosition(): OrientationTextPosition {
+    return this.model.ui.orientationTextPosition
+  }
+  set orientationTextPosition(v: OrientationTextPosition) {
+    this.model.ui.orientationTextPosition = v
+    this.emit('change', { property: 'orientationTextPosition', value: v })
     this.drawScene()
   }
 

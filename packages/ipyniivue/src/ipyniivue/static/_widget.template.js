@@ -95,6 +95,7 @@ const PROPS_RW = [
   ["meshXRay", "mesh_x_ray"],
   ["mosaicString", "mosaic_string"],
   ["multiplanarType", "multiplanar_type"],
+  ["orientationTextPosition", "orientation_text_position"],
   ["pan2Dxyzmm", "pan_2_dxyzmm"],
   ["placeholderText", "placeholder_text"],
   ["primaryDragMode", "primary_drag_mode"],

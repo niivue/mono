@@ -413,6 +413,7 @@ export const UI_DEFAULTS: UIConfig = {
   isColorbarVisible: false,
   isOrientCubeVisible: true,
   isOrientationTextVisible: true,
+  orientationTextPosition: 'edges',
   is3DCrosshairVisible: true,
   isGraphVisible: false,
   isRulerVisible: false,

@@ -127,6 +127,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | Feature | Kind | Notes |
 |---|---|---|
 | `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible` | Prop | Toggles |
+| `orientationTextPosition` | Prop | `'edges'` (default): a letter mid-left and mid-top of each 2D tile; `'corner'`: one combined label (e.g. `RS`) at the tile's top-left corner |
 | `is3DCrosshairVisible`, `isCrossLinesVisible` | Prop | |
 | `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | |
 | `isMeasureUnitsVisible` | Prop | |

@@ -150,7 +150,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `setBounds()` | ✅ | |
 | `clearBounds()` | ✅ | Equivalent to `setBounds([0, 0, 1, 1])` |
 | Orientation text visible | ✅ | `isOrientationTextVisible` |
-| Corner orientation text | ❌ | No `setCornerOrientationText` |
+| Corner orientation text | ✅ | `orientationTextPosition = 'corner'` (default `'edges'`): one label, left letter then top letter (e.g. `RS`), at each 2D tile's top-left corner, on both backends. Follows `isRadiological` and `isSagittalNoseLeft`; obeys `isOrientationTextVisible` and the mosaic `L` tag like edge labels. Classic NVD `opts.isCornerOrientationText` is mapped. Demo: `examples/layout.html` |
 | Show all orientation markers | ❌ | |
 | Tile margin/padding | ✅ | `tileMargin` |
 | HiDPI/retina support | ✅ | Built-in |

@@ -205,6 +205,9 @@ export default class NVModel {
       ...(options.isOrientationTextVisible !== undefined && {
         isOrientationTextVisible: options.isOrientationTextVisible,
       }),
+      ...(options.orientationTextPosition !== undefined && {
+        orientationTextPosition: options.orientationTextPosition,
+      }),
       ...(options.is3DCrosshairVisible !== undefined && {
         is3DCrosshairVisible: options.is3DCrosshairVisible,
       }),

@@ -214,6 +214,14 @@ export function convertLegacyDocument(
       scene.backgroundColor = v
     } else if (k === 'clipPlaneColor') {
       scene.clipPlaneColor = v
+    } else if (k === 'isCornerOrientationText') {
+      // classic's boolean picks between our two positions
+      setGroup(
+        groups,
+        'ui',
+        'orientationTextPosition',
+        v === true ? 'corner' : 'edges',
+      )
     } else if (OPT_MAP[k]) {
       const [group, key] = OPT_MAP[k]
       setGroup(groups, group as string, key, v)

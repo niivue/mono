@@ -1077,6 +1077,31 @@ describe('set_view', () => {
     )
   })
 
+  it('moves the orientation text between the edges and the corner', () => {
+    const view = laidOut()
+    view.orientationTextPosition = 'edges'
+    const position = () => view.orientationTextPosition
+    const handlers = coreHandlers(host(view))
+    expect(viewState(view).orientationText).toBe('edges')
+    expect(handlers.set_view({ orientation_text: 'Corner' })).toMatchObject({
+      view: { orientationText: 'corner' },
+    })
+    expect(position()).toBe('corner')
+    handlers.set_view({ orientation_text: 'edges' })
+    expect(position()).toBe('edges')
+    expect(() => handlers.set_view({ orientation_text: 'middle' })).toThrow(
+      'Unknown orientation_text "middle". One of: edges, corner.',
+    )
+  })
+
+  it('leaves the orientation text out for a NiiVue without it, and refuses to set it', () => {
+    const view = laidOut()
+    expect(viewState(view)).not.toHaveProperty('orientationText')
+    expect(() =>
+      coreHandlers(host(view)).set_view({ orientation_text: 'corner' }),
+    ).toThrow('cannot move the orientation text')
+  })
+
   it('leaves the sagittal nose out for a NiiVue without it, and refuses to set it', () => {
     const view = laidOut()
     expect(viewState(view)).not.toHaveProperty('sagittalNose')

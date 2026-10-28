@@ -25,6 +25,8 @@ import { COLORMAP_TYPES } from '../settings'
 import {
   LAYOUTS,
   nameFor,
+  ORIENTATION_TEXT_NAMES,
+  type OrientationTextName,
   SAGITTAL_NOSES,
   SHOW_RENDER,
   SLICE_TYPES,
@@ -130,6 +132,9 @@ export function viewState(view: View): ViewState {
     radiological: view.isRadiological ?? false,
     ...(view.isSagittalNoseLeft !== undefined
       ? { sagittalNose: sagittalNoseName(view.isSagittalNoseLeft) }
+      : {}),
+    ...(view.orientationTextPosition !== undefined
+      ? { orientationText: view.orientationTextPosition }
       : {}),
     colorbar: view.isColorbarVisible ?? false,
   }
@@ -1545,6 +1550,25 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           SAGITTAL_NOSES[nose as keyof typeof SAGITTAL_NOSES]
         changed = true
       }
+      const orientationText = text(params, 'orientation_text')?.toLowerCase()
+      if (orientationText !== undefined) {
+        if (
+          !(ORIENTATION_TEXT_NAMES as readonly string[]).includes(
+            orientationText,
+          )
+        ) {
+          throw new Error(
+            `Unknown orientation_text "${orientationText}". One of: ${ORIENTATION_TEXT_NAMES.join(', ')}.`,
+          )
+        }
+        if (view.orientationTextPosition === undefined) {
+          throw new Error(
+            "This page's NiiVue cannot move the orientation text.",
+          )
+        }
+        view.orientationTextPosition = orientationText as OrientationTextName
+        changed = true
+      }
       const colorbar = flag(params, 'colorbar')
       if (colorbar !== undefined) {
         view.isColorbarVisible = colorbar
@@ -1552,7 +1576,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       if (!changed) {
         throw new Error(
-          'set_view needs something to set: slice, layout, mosaic, show_render, radiological, sagittal_nose or colorbar.',
+          'set_view needs something to set: slice, layout, mosaic, show_render, radiological, sagittal_nose, orientation_text or colorbar.',
         )
       }
       view.drawScene()

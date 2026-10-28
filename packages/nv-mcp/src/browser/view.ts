@@ -535,6 +535,8 @@ export interface View {
   isRadiological?: boolean
   /** Sagittal nose direction; null follows `isRadiological`. Absent before NiiVue had it. */
   isSagittalNoseLeft?: boolean | null
+  /** Where 2D tiles draw orientation text. Absent before NiiVue had it. */
+  orientationTextPosition?: 'edges' | 'corner'
   isColorbarVisible?: boolean
   /** Schedules a frame. NiiVue 1.0 draws it on the next animation frame, not now. */
   drawScene(): unknown

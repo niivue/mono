@@ -202,6 +202,7 @@ off-window crosshair is brought back."""
     mesh_x_ray = traitlets.Float(None, allow_none=True).tag(sync=True)
     mosaic_string = traitlets.Unicode(None, allow_none=True).tag(sync=True)
     multiplanar_type = traitlets.Float(None, allow_none=True).tag(sync=True)
+    orientation_text_position = traitlets.Enum(["edges", "corner"], None, allow_none=True).tag(sync=True)
     pan_2_dxyzmm = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=4, maxlen=4, allow_none=True).tag(sync=True)
     placeholder_text = traitlets.Unicode(None, allow_none=True).tag(sync=True)
     primary_drag_mode = traitlets.Float(None, allow_none=True).tag(sync=True)

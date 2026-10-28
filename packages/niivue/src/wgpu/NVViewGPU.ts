@@ -47,7 +47,7 @@ import {
   isChannelStackActive,
   isVolumeDrawn,
 } from '@/view/NVVolumeVisibility'
-import { sliceEdgeLabels } from '@/view/orientationLabels'
+import { orientationTextPlacements } from '@/view/orientationLabels'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
 import {
   type UpdateBindGroupsOptions,
@@ -1612,36 +1612,23 @@ export default class NVView {
         tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER &&
         (tile.showLabels ?? md.ui.isOrientationTextVisible)
       ) {
-        const edges = sliceEdgeLabels(tile.axCorSag, md.layout)
-        const tileLeft = ltwh[0]
-        const tileTop = ltwh[1]
-        const tileWidth = ltwh[2]
-        const tileHeight = ltwh[3]
-        const labelScale = 1.0
-        const labelMargin = 4
-        if (edges) {
-          // Left-center label (anchorX=0 left-aligned, anchorY=0.5 vertically centered)
+        // 'edges': left letter mid-left, top letter mid-top. 'corner': one
+        // combined label (e.g. 'RS') at the tile's top-left corner.
+        for (const t of orientationTextPlacements(
+          tile.axCorSag,
+          md.layout,
+          md.ui.orientationTextPosition,
+          ltwh,
+        )) {
           labels.push(
             this.fontRenderer.buildText(
-              edges.left,
-              tileLeft + labelMargin,
-              tileTop + tileHeight / 2,
-              labelScale,
+              t.text,
+              t.x,
+              t.y,
+              1.0,
               labelColor,
-              0,
-              0.5,
-            ),
-          )
-          // Center-top label (anchorX=0.5 horizontally centered, anchorY=0 text below point)
-          labels.push(
-            this.fontRenderer.buildText(
-              edges.top,
-              tileLeft + tileWidth / 2,
-              tileTop + labelMargin,
-              labelScale,
-              labelColor,
-              0.5,
-              0,
+              t.anchorX,
+              t.anchorY,
             ),
           )
         }

@@ -54,6 +54,7 @@ Complete mapping from old property names/locations to new API.
 | `isColorbar` | `ui.isColorbarVisible` | `nv1.isColorbarVisible` |
 | `isOrientCube` | `ui.isOrientCubeVisible` | `nv1.isOrientCubeVisible` |
 | `isOrientationTextVisible` | `ui.isOrientationTextVisible` | `nv1.isOrientationTextVisible` |
+| `isCornerOrientationText` | `ui.orientationTextPosition` | `nv1.orientationTextPosition` (`true` = `'corner'`, `false` = `'edges'`) |
 | `isGraph` | `ui.isGraphVisible` | `nv1.isGraphVisible` |
 | `isRuler` | `ui.isRulerVisible` | `nv1.isRulerVisible` |
 | `isCrossLines` | `ui.isCrossLinesVisible` | `nv1.isCrossLinesVisible` |
@@ -163,6 +164,7 @@ Complete mapping from old property names/locations to new API.
 | `setVolumeRenderIllumination(v)` | `nv1.volumeIllumination = v` |
 | `setVolumeRenderIllumination(v)` with `v < 0` (the 0.6 "slices" render) | `nv1.volumeRenderMode = VOLUME_RENDER_MODE.SLICES` |
 | `setRadiologicalConvention(v)` | `nv1.isRadiological = v` |
+| `setCornerOrientationText(v)` | `nv1.orientationTextPosition = v ? 'corner' : 'edges'` |
 | `setSliceType(v)` | `nv1.sliceType = v` |
 | `setCrosshairColor(v)` | `nv1.crosshairColor = v` |
 | `setRenderAzimuthElevation(a, e)` | `nv1.azimuth = a; nv1.elevation = e` |

@@ -865,6 +865,21 @@
       "doc": null
     },
     {
+      "jsName": "orientationTextPosition",
+      "pyName": "orientation_text_position",
+      "tsType": "OrientationTextPosition",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          "edges",
+          "corner"
+        ]
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "pan2Dxyzmm",
       "pyName": "pan_2_dxyzmm",
       "tsType": "vec4",

@@ -478,10 +478,11 @@ export default class NVGlview {
             )
           }
         }
-        // Each volume has its own cache entry (volumeCacheKey), so the entries
-        // of volumes no longer loaded are dropped here, in every layout.
-        this.volumeRenderer.pruneVolumeCache(new Set(vols.map(volumeCacheKey)))
       }
+      // Each volume has its own cache entry (volumeCacheKey), so the entries
+      // of volumes no longer loaded are dropped here, in every layout and after
+      // the last volume is removed.
+      this.volumeRenderer.pruneVolumeCache(new Set(vols.map(volumeCacheKey)))
 
       // Handle overlays (all volumes after the first)
       if (vols.length > 1 && !this.options.instances) {

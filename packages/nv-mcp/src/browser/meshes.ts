@@ -326,13 +326,9 @@ export function meshHandlers(host: NiiVueHost): Handlers {
           'set_mesh needs something to set: opacity, color, shader, slice_shader, visible, colorbar, legend, name, tract or connectome.',
         )
       }
-      if (!nothingIn(update)) {
-        if (!view.setMesh)
-          throw new Error(
-            "This page's NiiVue cannot change a mesh once loaded.",
-          )
-        await view.setMesh(index, update)
-      }
+      // Every refusal comes before any change, so a refused call changes nothing.
+      if (!nothingIn(update) && !view.setMesh)
+        throw new Error("This page's NiiVue cannot change a mesh once loaded.")
       if (tract) {
         if (!view.setTractOptions)
           throw new Error(
@@ -342,12 +338,6 @@ export function meshHandlers(host: NiiVueHost): Handlers {
           throw new Error(
             `${mesh.name ?? 'The mesh'} is a ${mesh.kind}, not a tract.`,
           )
-        await view.setTractOptions(
-          index,
-          'colorBy' in tract
-            ? { ...tract, colorBy: niivueColorBy(tract.colorBy, mesh) }
-            : tract,
-        )
       }
       if (connectome) {
         if (!view.setConnectomeOptions)
@@ -358,8 +348,14 @@ export function meshHandlers(host: NiiVueHost): Handlers {
           throw new Error(
             `${mesh.name ?? 'The mesh'} is a ${mesh.kind}, not a connectome.`,
           )
-        await view.setConnectomeOptions(index, connectome)
       }
+      const tractOptions =
+        tract && 'colorBy' in tract
+          ? { ...tract, colorBy: niivueColorBy(tract.colorBy, mesh) }
+          : tract
+      if (!nothingIn(update)) await view.setMesh?.(index, update)
+      if (tractOptions) await view.setTractOptions?.(index, tractOptions)
+      if (connectome) await view.setConnectomeOptions?.(index, connectome)
       view.drawScene()
       return {
         mesh: describeMesh(meshes()[index], index),

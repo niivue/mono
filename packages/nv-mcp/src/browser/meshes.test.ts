@@ -431,6 +431,10 @@ describe('set_mesh', () => {
       'tract.trk has no colorBy "dps:z". One of: direction, global, fixed (it has no scalars).',
     )
     expect(view.setTractOptions).toHaveBeenCalledTimes(1)
+    await expect(
+      set_mesh({ mesh: 1, opacity: 0.5, tract: { colorBy: 'rainbow' } }),
+    ).rejects.toThrow('tract.trk has no colorBy "rainbow".')
+    expect(view.setMesh).not.toHaveBeenCalled()
   })
 
   it('refuses nothing to set, an unknown shader, and a page that cannot', async () => {

@@ -44,6 +44,8 @@ bunx nx lint niivue
 
 Library packaging: `bun run build` emits `dist/niivue.js` (both backends), `dist/niivue.webgpu.js` (WebGPU-only), and `dist/niivue.webgl2.js` (WebGL2-only), exported as `@niivue/niivue`, `@niivue/niivue/webgpu`, and `@niivue/niivue/webgl2`.
 
+It then runs `build:standalone` (`vite.config.standalone.ts`), which writes a self-contained copy of the same entries to `dist/standalone/` with every dependency bundled in, for pages with no bundler (see README "Without a bundler"). `scripts/check-standalone.ts` fails the build if any non-relative import or `import.meta.url` asset reference appears there (for example an `external` added to that config, or an asset emitted as a file instead of inlined). `bun run examples:standalone` serves `examples/standalone/index.html` against it on port 5403.
+
 ## Testing
 
 Unit tests for non-rendering (server-side) logic run on the **Bun test runner**. Tests are co-located with source files as `*.test.ts`.

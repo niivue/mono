@@ -9,11 +9,20 @@ const jsonOut = wantJson
   ? args[jsonIdx + 1] || 'benchmarks/entry-sizes.json'
   : null
 const entries = wantJson ? args.slice(0, jsonIdx) : args
-const defaultEntries = ['niivue.js', 'niivue.webgpu.js', 'niivue.webgl2.js']
+// The standalone/ entries are the self-contained build (vite.config.standalone.ts):
+// their reachable total is what a bundler-free page fetches before any lazy chunk.
+const defaultEntries = [
+  'niivue.js',
+  'niivue.webgpu.js',
+  'niivue.webgl2.js',
+  'standalone/niivue.js',
+  'standalone/niivue.webgpu.js',
+  'standalone/niivue.webgl2.js',
+]
 const targets = entries.length > 0 ? entries : defaultEntries
 const distDir = resolve(process.cwd(), 'dist')
 
-const importRe = /(?:import|export)\s+(?:[^'"`]*?from\s+)?["'](\.[^"']+)["']/g
+const importRe = /(?:import|export)\s*(?:[^'"`]*?from\s*)?["'](\.[^"']+)["']/g
 
 function collectDeps(entryFile) {
   const seen = new Set()
@@ -26,14 +35,13 @@ function collectDeps(entryFile) {
     const code = readFileSync(absPath, 'utf8')
     const baseDir = dirname(absPath)
 
-    let match = importRe.exec(code)
-    while (match !== null) {
-      const rel = match[1]
-      const depAbs = resolve(baseDir, rel)
+    // matchAll, not a shared exec loop: the recursive walk would otherwise
+    // resume the global regex at the parent's lastIndex and skip imports.
+    for (const match of code.matchAll(importRe)) {
+      const depAbs = resolve(baseDir, match[1])
       if (depAbs.startsWith(distDir)) {
         walk(depAbs.slice(distDir.length + 1))
       }
-      match = importRe.exec(code)
     }
   }
 

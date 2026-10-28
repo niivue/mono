@@ -1,3 +1,18 @@
+## 1.0.0-rc.42 (2026-10-28)
+
+### Features
+
+- **niivue:** route linked meshes and the thumbnail through resolveUrl ([d57597ce](https://github.com/niivue/mono/commit/d57597ce))
+- **niivue:** let loadDocument resolve or skip linked volume URLs ([cba38d92](https://github.com/niivue/mono/commit/cba38d92))
+- **medgfx:** preview NiiVue documents (.nvd) in Quick Look ([#107](https://github.com/niivue/mono/issues/107))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.41 (2026-10-27)
 
 ### Fixes

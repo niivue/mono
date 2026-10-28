@@ -22,7 +22,8 @@ import { readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { nifti1, SPECIMENS } from './preview-fixtures.mjs'
+import { decode } from 'cbor-x'
+import { nifti1, nvd, physioSignal, SPECIMENS } from './preview-fixtures.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DIST = join(HERE, '..', 'dist')
@@ -45,6 +46,35 @@ const FIXTURES = {
   // does not contain. It must NOT send us looking for a companion.
   'layer.gii': SPECIMENS.layerOnly(),
   'garbage.mz3': Buffer.from('not a mesh '.repeat(64)),
+  'scene.nvd': nvd(),
+  'linked.nvd': nvd({ url: 'blob.nii' }),
+  // Linked to another origin: only the CSP stands between it and a fetch.
+  'remote.nvd': nvd({ url: 'https://niivue.com/volumes/mni152.nii.gz' }),
+  // Linked to a file beside it, which the preview must still not read.
+  'sibling.nvd': nvd({ url: 'basic.nii' }),
+  // One volume embedded, one linked from the web.
+  'mixed.nvd': nvd({
+    volumes: [
+      decode(nvd()).volumes[0],
+      { name: 'web.nii.gz', url: 'https://niivue.com/volumes/mni152.nii.gz' },
+    ],
+  }),
+  // An embedded volume plus a mesh linked to a file beside it, which the
+  // server would serve: only the preview's refusal keeps it unread.
+  'mesh-linked.nvd': nvd({
+    meshes: [{ name: 'surface.gii', url: 'surface.gii' }],
+  }),
+  // Header promises more voxels than the document carries.
+  'short.nvd': nvd({ truncated: true }),
+  // A thumbnail the preview cannot reach must not cost the embedded volume.
+  'thumb.nvd': nvd({ ui: { thumbnailUrl: 'missing-thumbnail.png' } }),
+  // Signal graph only (SLICE_TYPE.NONE = 5): no volume or mesh, still content.
+  'signal.nvd': nvd({
+    volumes: [],
+    signals: [physioSignal()],
+    layout: { sliceType: 5 },
+  }),
+  'garbage.nvd': Buffer.from('not a document '.repeat(64)),
 }
 
 /**
@@ -100,8 +130,12 @@ function documentURL(base, name) {
   return `${base}/document/00000000-0000-4000-8000-000000000000/${encoded}`
 }
 
+/** Every path the page asked for, so a test can prove one was never read. */
+const requested = []
+
 const server = createServer(async (req, res) => {
   const path = normalize(decodeURIComponent(req.url.split('?')[0]))
+  requested.push(path)
   try {
     let body
     if (path.startsWith('/document/')) {
@@ -120,6 +154,13 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(200, {
       'Content-Type': MIME[extname(path)] ?? 'application/octet-stream',
+      // The extension's policy, copied from `PreviewSchemeHandler.response`,
+      // so offline claims are tested rather than assumed.
+      'Content-Security-Policy':
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+        "connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; " +
+        "worker-src 'self' blob:; object-src 'none'; base-uri 'none'; " +
+        "frame-ancestors 'none'",
     })
     res.end(body)
   } catch {
@@ -226,13 +267,15 @@ async function quadrantPixels(page) {
     'base64',
   )
   return page.evaluate(async (b64) => {
-    const blob = await (await fetch(`data:image/png;base64,${b64}`)).blob()
-    const bitmap = await createImageBitmap(blob)
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    // An <img>, not fetch(): the page's CSP allows data: images only.
+    const img = new Image()
+    img.src = `data:image/png;base64,${b64}`
+    await img.decode()
+    const canvas = new OffscreenCanvas(img.width, img.height)
     const ctx = canvas.getContext('2d')
-    ctx.drawImage(bitmap, 0, 0)
-    const hw = Math.floor(bitmap.width / 2)
-    const hh = Math.floor(bitmap.height / 2)
+    ctx.drawImage(img, 0, 0)
+    const hw = Math.floor(img.width / 2)
+    const hh = Math.floor(img.height / 2)
     return [
       [0, 0],
       [1, 0],
@@ -541,6 +584,177 @@ result = await preview(documentURL(base, 'garbage.mz3'), 'garbage.mz3', {
 check(
   'a malformed mesh fails visibly',
   result.message?.stage === 'failed',
+  result.message?.code,
+)
+check('and shows a panel', await result.page.locator('#fallback').isVisible())
+await result.page.close()
+
+// --- 10b. NiiVue documents ----------------------------------------------
+result = await preview(documentURL(base, 'scene.nvd'), 'scene.nvd', {
+  family: 'scene',
+  fileSize: 1234,
+})
+meta = result.message?.metadata ?? {}
+check(
+  'an embedded NVD scene loads',
+  result.message?.stage === 'loaded',
+  result.message?.stage ?? result.message?.code,
+)
+check('it is displayable', meta.displayable === 'true', meta.displayable)
+check('it counts its volume', meta.volumes === '1', meta.volumes)
+check('it names the format', meta.format === 'NVD', meta.format)
+check(
+  'the scene is drawn',
+  (await quadrantPixels(result.page)).reduce((a, b) => a + b) > 500,
+)
+await result.page.close()
+
+result = await preview(documentURL(base, 'linked.nvd'), 'linked.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+const linkedDetail = await result.page.locator('#fallback-detail').innerText()
+check(
+  'a linked NVD is not an error',
+  result.message?.stage === 'loaded',
+  result.message?.stage ?? result.message?.code,
+)
+check(
+  'it falls back to metadata',
+  meta.displayable === 'false',
+  meta.displayable,
+)
+check(
+  'it says to open the file to view linked data',
+  /open it in NiiVue to view linked data/.test(linkedDetail),
+  linkedDetail,
+)
+check('it counts the linked data', meta.linked === '1', meta.linked)
+await result.page.close()
+
+result = await preview(documentURL(base, 'remote.nvd'), 'remote.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+const remoteDetail = await result.page.locator('#fallback-detail').innerText()
+check(
+  'a remotely linked NVD stays offline',
+  result.message?.stage === 'loaded' && meta.displayable === 'false',
+  `${result.message?.stage} / ${meta.displayable}`,
+)
+check(
+  'it says to open the file to view linked data',
+  /open it in NiiVue to view linked data/.test(remoteDetail),
+  remoteDetail,
+)
+await result.page.close()
+
+const siblingStart = requested.length
+result = await preview(documentURL(base, 'sibling.nvd'), 'sibling.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+check(
+  'an NVD linked to a file beside it says to open it',
+  meta.displayable === 'false' && meta.linked === '1',
+  `${meta.displayable} / ${meta.linked}`,
+)
+check(
+  'and never reads that file',
+  !requested.slice(siblingStart).some((p) => p.endsWith('/basic.nii')),
+  requested.slice(siblingStart).join(', '),
+)
+await result.page.close()
+
+result = await preview(documentURL(base, 'mixed.nvd'), 'mixed.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+check(
+  'an NVD with embedded and linked data says to open it',
+  meta.displayable === 'false' && meta.volumes === '1' && meta.linked === '1',
+  `${meta.displayable} / ${meta.volumes} / ${meta.linked}`,
+)
+await result.page.close()
+
+const meshLinkedStart = requested.length
+result = await preview(
+  documentURL(base, 'mesh-linked.nvd'),
+  'mesh-linked.nvd',
+  { family: 'scene' },
+)
+meta = result.message?.metadata ?? {}
+check(
+  'an NVD with a linked mesh says to open it',
+  meta.displayable === 'false' && meta.volumes === '1' && meta.linked === '1',
+  `${meta.displayable} / ${meta.volumes} / ${meta.linked}`,
+)
+check(
+  'and never reads the mesh',
+  !requested.slice(meshLinkedStart).some((p) => p.endsWith('/surface.gii')),
+  requested.slice(meshLinkedStart).join(', '),
+)
+await result.page.close()
+
+result = await preview(documentURL(base, 'short.nvd'), 'short.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+check(
+  'an NVD volume shorter than its header is not drawn',
+  meta.displayable === 'false',
+  meta.displayable,
+)
+await result.page.close()
+
+const thumbStart = requested.length
+result = await preview(documentURL(base, 'thumb.nvd'), 'thumb.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+check(
+  'an unreachable thumbnail does not fail the document',
+  result.message?.stage === 'loaded' && meta.volumes === '1',
+  result.message?.stage ?? result.message?.code,
+)
+check(
+  'the thumbnail is never requested',
+  !requested
+    .slice(thumbStart)
+    .some((p) => p.endsWith('/missing-thumbnail.png')),
+  requested.slice(thumbStart).join(', '),
+)
+check(
+  'the volume is drawn, not a blank thumbnail',
+  (await quadrantPixels(result.page)).reduce((a, b) => a + b) > 500,
+)
+await result.page.close()
+
+result = await preview(documentURL(base, 'signal.nvd'), 'signal.nvd', {
+  family: 'scene',
+})
+meta = result.message?.metadata ?? {}
+check(
+  'a signal-only NVD is displayable',
+  meta.displayable === 'true' && meta.signals === '1',
+  `${meta.displayable} / ${meta.signals}`,
+)
+check(
+  'and no fallback covers the graph',
+  !(await result.page.locator('#fallback').isVisible()),
+)
+check(
+  'and the graph is drawn',
+  (await quadrantPixels(result.page)).reduce((a, b) => a + b) > 500,
+)
+await result.page.close()
+
+result = await preview(documentURL(base, 'garbage.nvd'), 'garbage.nvd', {
+  family: 'scene',
+})
+check(
+  'a malformed NVD fails visibly',
+  result.message?.code === 'unreadable',
   result.message?.code,
 )
 check('and shows a panel', await result.page.locator('#fallback').isVisible())

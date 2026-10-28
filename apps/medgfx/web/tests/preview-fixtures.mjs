@@ -12,6 +12,8 @@
  * and voxel data at `vox_offset` 352.
  */
 
+import { encode } from 'cbor-x'
+
 const HEADER_BYTES = 348
 const VOX_OFFSET = 352
 
@@ -158,6 +160,69 @@ ${arrays.join('\n')}
 `,
     'utf8',
   )
+}
+
+/**
+ * A CBOR NiiVue document (`.nvd`), the encoding `saveDocument` writes.
+ *
+ * The voxels are embedded, the default for `saveDocument`.
+ * `url` links the volume instead, which the preview cannot resolve.
+ * `truncated` embeds a third of the voxels the header promises. Any other key
+ * is a document field and overrides the default (e.g. `volumes: []`).
+ */
+export function nvd({ url, truncated = false, ...doc } = {}) {
+  const [nx, ny, nz] = [24, 28, 20]
+  const pix = [2, 2, 2.5]
+  const voxels = nifti1({ dims: [nx, ny, nz], pixDims: pix }).subarray(
+    VOX_OFFSET,
+  )
+  // Only the fields `nii2volume` reads; it defaults the scaling and window.
+  const hdr = {
+    dims: [3, nx, ny, nz, 1, 1, 1, 1],
+    pixDims: [1, ...pix, 1, 1, 1, 1],
+    datatypeCode: 2,
+    numBitsPerVoxel: 8,
+    affine: [
+      [pix[0], 0, 0, (-pix[0] * nx) / 2],
+      [0, pix[1], 0, (-pix[1] * ny) / 2],
+      [0, 0, pix[2], (-pix[2] * nz) / 2],
+      [0, 0, 0, 1],
+    ],
+  }
+  const volume = !url
+    ? {
+        name: 'blob.nii',
+        data: {
+          hdr,
+          img: new Uint8Array(
+            truncated ? voxels.subarray(0, voxels.length / 3) : voxels,
+          ),
+          datatypeCode: 2,
+        },
+      }
+    : { name: 'blob.nii', url }
+  return Buffer.from(encode({ version: 9, volumes: [volume], ...doc }))
+}
+
+/** One embedded physio trace, as `serializeSignal` writes it. */
+export function physioSignal() {
+  const samples = Float32Array.from({ length: 200 }, (_, i) => Math.sin(i / 8))
+  return {
+    id: 'resp',
+    name: 'resp.tsv',
+    kind: 'physio',
+    display: {
+      average: true,
+      mode: 'real',
+      ppmRange: null,
+      ppmRef: null,
+      useHz: false,
+      selectedColumns: null,
+    },
+    columns: [new Uint8Array(samples.buffer)],
+    columnLabels: ['respiratory'],
+    samplingFrequency: 10,
+  }
 }
 
 /** The specimens `preview-regression.mjs` asserts on, defined once. */

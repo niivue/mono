@@ -882,10 +882,13 @@ pass runs in z-slabs sized so the 24 B/voxel f32 accumulator fits
 min(`maxStorageBufferBindingSize`, `maxBufferSize`); typical volumes and chunks
 are one slab. The chunking threshold is capped at floor(sqrt(that min / 24)) so
 one z-slice always fits (2364 at 128 MiB, above the usual 2048 3D limit). Its
-per-device pipeline cache holds at most twelve mode pairs.
+per-device pipeline cache holds at most four accumulate pipelines (keyed by
+colour mode, the only override that shader reads) and twelve normalise
+pipelines (alpha x colour).
 - `bun packages/niivue/scripts/check-blend-wgsl.mjs` compiles and runs the blend
-  WGSL in system Chrome across modes and two slabs; output must match the CPU
-  test. Passed 2026-10-05 (plus a WebGPU visual pass of `vox.tissues.html` /
+  WGSL in system Chrome across all 12 modes, two slabs and four overlay orders,
+  compares each result with the CPU `blendOverlayData` (tolerance 1) and exits 1
+  on a mismatch. Passed 2026-10-05 (plus a WebGPU visual pass of `vox.tissues.html` /
   `vox.stats-multi.html` in all six then-existing mode pairs), with colour
   `OVER` 2026-10-23, and with colour `MAX` on overlapping channels (z1)
   2026-10-23.

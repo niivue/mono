@@ -35,6 +35,7 @@ import * as NVLegend from '@/view/NVLegend'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import { loadVolumePrepared } from '@/volume/loadBridge'
+import { resolvePairedImage } from '@/volume/pairedImage'
 import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
 
 export default class NVModel {
@@ -1513,12 +1514,11 @@ export default class NVModel {
         : Math.max(1, Math.floor(limitFrames4D))
     const urlString = typeof url === 'string' ? url : url.name
     const name = overrides.name ?? urlString
-    const base = await loadVolumePrepared(
-      url,
-      urlImageData ?? null,
-      frameLimit,
-      name,
-    )
+    // A `.HEAD` URL with no explicit `urlImageData` is paired with the `.BRIK`
+    // (or `.BRIK.gz`) beside it, as the original NiiVue did. The resolved value
+    // is stashed below exactly like an explicit one.
+    const pairedImage = await resolvePairedImage(url, urlImageData)
+    const base = await loadVolumePrepared(url, pairedImage, frameLimit, name)
     const prepared: NVImage = {
       ...base,
       url: urlString,
@@ -1534,7 +1534,7 @@ export default class NVModel {
       // this stash a deferred 4D reload would re-issue loadVolume with only
       // the header URL/File. Runtime-only, same allowlist contract as
       // _sourceFile above.
-      ...(urlImageData != null ? { _urlImageData: urlImageData } : {}),
+      ...(pairedImage != null ? { _urlImageData: pairedImage } : {}),
     }
     return NVModel.applyColormap(prepared, overrides.colormap)
   }

@@ -1495,6 +1495,8 @@ export type ImageFromUrlOptions = {
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
+  /** Whether to show legend for this volume (default: false) */
+  isLegendVisible?: boolean
   /**
    * 2D slice sampling: true = nearest-neighbour, false = linear. Unset (the
    * default) picks nearest for categorical data (NIFTI_INTENT_LABEL or a label

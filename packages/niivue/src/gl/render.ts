@@ -75,6 +75,7 @@ import {
   chunkOverlayMatrix,
   coarseFloorKey,
   extractChunkBytes,
+  volumeCacheKey,
   volumeSourceKey,
   wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
@@ -241,9 +242,9 @@ interface ChunkedTexEntry {
    */
   displayKey: string
   /**
-   * volumeSourceKey of the image the entry streams. A different image or
-   * source under the same url or name builds a new entry, decoded tier
-   * included, rather than reusing chunks read from the old one.
+   * volumeSourceKey of the image the entry streams. Voxels or a source
+   * replaced on the same volume build a new entry, decoded tier included,
+   * rather than reusing chunks read from the old one.
    */
   sourceKey: string
   /**
@@ -746,7 +747,7 @@ export class VolumeRenderer extends NVRenderer {
     const oversized =
       needsChunking(srcDims, limit) || needsChunking(rasDims, limit)
 
-    const cacheKey = vol.url || vol.name
+    const cacheKey = volumeCacheKey(vol)
 
     if (forcedPlan || oversized) {
       // Same modulation the whole-volume path below resolves; the uploader
@@ -946,7 +947,7 @@ export class VolumeRenderer extends NVRenderer {
           `Use a coarser pyramid level or crop the volume.`,
       )
     }
-    const cacheKey = vol.url || vol.name
+    const cacheKey = volumeCacheKey(vol)
     const displayKey = chunkedDisplayKey(vol, modulation)
     const sourceKey = volumeSourceKey(vol)
     const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
@@ -1065,7 +1066,7 @@ export class VolumeRenderer extends NVRenderer {
     vol: NVImage,
     newPlan: ChunkPlan,
   ): Promise<void> {
-    const cacheKey = vol.url || vol.name
+    const cacheKey = volumeCacheKey(vol)
     const entry = cacheKey ? this._texCache.get(cacheKey) : undefined
     if (!entry || entry.kind !== 'chunked') return
     if (newPlan.chunks.length > MAX_CHUNKS_PER_TILE) {
@@ -1149,7 +1150,7 @@ export class VolumeRenderer extends NVRenderer {
 
   /**
    * Switch the active volume/gradient textures to the cache entry for
-   * `cacheKey` (a volume url or name). Used per-tile by global3d rendering
+   * `cacheKey` (from volumeCacheKey). Used per-tile by global3d rendering
    * to draw distinct volumes without re-uploading their data each frame.
    * Returns true if the cache hit and textures were rebound.
    */

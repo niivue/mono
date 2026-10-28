@@ -28,6 +28,9 @@ import manifest from './allen.imsc.json'
 const modeInputs = [...document.querySelectorAll('input[name="mode"]')]
 const kindSelect = document.getElementById('kind')
 const fuseCheck = document.getElementById('fuse')
+const clipCheck = document.getElementById('clipCheck')
+const clipOverlaysCheck = document.getElementById('clipOverlaysCheck')
+const zoomInput = document.getElementById('zoom')
 const stagePanel = document.getElementById('stagePanel')
 const cellPanel = document.getElementById('cellPanel')
 const stagesRow = document.getElementById('stages')
@@ -93,6 +96,30 @@ fuseCheck.onchange = () => {
   applyFusion()
   showLoaded()
 }
+
+// 3D clip plane and zoom, as in allen.atlas.html. Every channel is an overlay,
+// so without clipPlaneOverlay the clip plane appears to do nothing: the
+// overlays show through a clipped base. Clip overlays cuts the whole stack.
+clipCheck.onchange = () => {
+  nv1.setClipPlane(clipCheck.checked ? [0.1, 270, 0] : [2, 0, 0])
+}
+clipOverlaysCheck.onchange = () => {
+  nv1.clipPlaneOverlay = clipOverlaysCheck.checked
+}
+
+// While a clip plane is active the wheel moves the plane, not the camera, so
+// the slider is the way to zoom a clipped render. Wheel zoom emits 'change',
+// which keeps the slider in step (setting .value fires no 'input', no loop).
+zoomInput.oninput = () => {
+  nv1.scaleMultiplier = Number(zoomInput.value)
+}
+nv1.addEventListener('change', (e) => {
+  if (e.detail?.property !== 'scaleMultiplier') return
+  const value = Number(e.detail.value)
+  if (Number.isFinite(value) && Number(zoomInput.value) !== value) {
+    zoomInput.value = String(value)
+  }
+})
 
 /** The value below which `fraction` of a volume's voxels fall. */
 function percentile(img, fraction) {

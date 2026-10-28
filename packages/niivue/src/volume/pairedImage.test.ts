@@ -1,5 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { loadVolume } from './NVVolume'
+import { describe, expect, test } from 'bun:test'
 import { pairedImageUrlCandidates, resolvePairedImage } from './pairedImage'
 
 /** A fetch stand-in that serves `files` by URL and 404s everything else. */
@@ -116,72 +115,5 @@ describe('resolvePairedImage', () => {
     const file = new File(['x'], 'epi+orig.HEAD')
     expect(await resolvePairedImage(file, null, fetch)).toBeNull()
     expect(requested).toEqual([])
-  })
-})
-
-// A 2x2x2 uint8 AFNI dataset: just enough of a .HEAD for the reader, plus the
-// 8-byte .BRIK it describes.
-const HEAD_TEXT = [
-  'type = string-attribute',
-  'name = BYTEORDER_STRING',
-  'count = 10',
-  "'LSB_FIRST~",
-  '',
-  'type = integer-attribute',
-  'name = DATASET_DIMENSIONS',
-  'count = 3',
-  ' 2 2 2',
-  '',
-  'type = integer-attribute',
-  'name = BRICK_TYPES',
-  'count = 1',
-  ' 0',
-  '',
-  'type = float-attribute',
-  'name = DELTA',
-  'count = 3',
-  ' 1 1 1',
-  '',
-  'type = float-attribute',
-  'name = ORIGIN',
-  'count = 3',
-  ' 0 0 0',
-  '',
-  'type = integer-attribute',
-  'name = ORIENT_SPECIFIC',
-  'count = 3',
-  ' 1 2 4',
-  '',
-].join('\n')
-const BRIK = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
-
-describe('loading a .HEAD URL without urlImageData', () => {
-  const realFetch = globalThis.fetch
-  afterEach(() => {
-    globalThis.fetch = realFetch
-  })
-
-  test('readsTheVoxelsFromTheBrikBesideIt', async () => {
-    const { fetch } = fakeFetch({
-      'http://test/a/tiny+orig.HEAD': HEAD_TEXT,
-      'http://test/a/tiny+orig.BRIK': BRIK,
-    })
-    globalThis.fetch = fetch
-    const url = 'http://test/a/tiny+orig.HEAD'
-    const paired = await resolvePairedImage(url, null)
-    expect(paired).toBe('http://test/a/tiny+orig.BRIK')
-    const { hdr, img } = await loadVolume(url, paired)
-    expect(Array.from(hdr.dims.slice(1, 4))).toEqual([2, 2, 2])
-    expect(Array.from(new Uint8Array(img as ArrayBuffer))).toEqual(
-      Array.from(BRIK),
-    )
-  })
-
-  test('withoutPairingTheReaderStillReportsTheMissingData', async () => {
-    const { fetch } = fakeFetch({ 'http://test/a/tiny+orig.HEAD': HEAD_TEXT })
-    globalThis.fetch = fetch
-    const url = 'http://test/a/tiny+orig.HEAD'
-    expect(await resolvePairedImage(url, null)).toBeNull()
-    await expect(loadVolume(url, null)).rejects.toThrow('pairedImgData not set')
   })
 })

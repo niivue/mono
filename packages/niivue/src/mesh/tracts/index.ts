@@ -1,19 +1,14 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import * as NVLoader from '@/NVLoader'
 import type { NVTractData, NVTractOptions, TractScalarMeta } from '@/NVTypes'
+import { tractReaderModules } from './readers/_registry'
 
 type TractReader = {
   extensions?: string[]
   read: (buffer: ArrayBufferLike) => Promise<NVTractData>
 }
 
-const modules = import.meta.glob<TractReader>(
-  ['./readers/*.ts', '!./readers/*.test.ts'],
-  {
-    eager: true,
-  },
-)
-const readerByExt = NVLoader.buildExtensionMap(modules)
+const readerByExt = NVLoader.buildExtensionMap<TractReader>(tractReaderModules)
 
 export function tractExtensions(): string[] {
   return Array.from(readerByExt.keys()).sort()

@@ -178,7 +178,8 @@ export function registerVolumeTools(
     description:
       'Reports one volume in full: how it is drawn, its dimensions, its label table when it has ' +
       'one, its voxel statistics (over the whole volume, or within a mask volume, its labels, or ' +
-      'the drawing), and its affine when asked.',
+      'the drawing), and its affine when asked. When NiiVue cannot compute the statistics (a mask on ' +
+      'another voxel grid, no drawing, a streamed volume), statsError says why.',
     inputSchema: VOLUME_SCHEMAS.describe_volume,
     readOnly: true,
     lead: named('volume', 'Described'),

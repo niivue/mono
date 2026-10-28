@@ -1,3 +1,16 @@
+## 1.0.0-rc.44 (2026-10-28)
+
+### Fixes
+
+- **niivue:** free cached textures when the last volume is removed ([c2199e14](https://github.com/niivue/mono/commit/c2199e14))
+- **niivue:** give each volume its own texture cache entry ([#346](https://github.com/niivue/mono/issues/346))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.43 (2026-10-28)
 
 ### Fixes

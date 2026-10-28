@@ -1,3 +1,19 @@
+## 1.0.0-rc.24 (2026-10-28)
+
+### Fixes
+
+- **niivue:** give each volume its own texture cache entry ([#346](https://github.com/niivue/mono/issues/346))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.44
+- Updated uikit to 1.0.0-rc.33
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.23 (2026-10-28)
 
 ### Updated Dependencies

@@ -1,3 +1,14 @@
+## 1.0.0-rc.46 (2026-10-28)
+
+### Fixes
+
+- **niivue:** step-size opacity correction for the 3D overlay pass ([#366](https://github.com/niivue/mono/issues/366))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.45 (2026-10-28)
 
 ### Fixes

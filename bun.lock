@@ -175,6 +175,7 @@
         "@niivue/web-bridge": "workspace:*",
       },
       "devDependencies": {
+        "cbor-x": "^1.6.0",
         "playwright": "^1.59.1",
         "vite": "^6.3.2",
       },

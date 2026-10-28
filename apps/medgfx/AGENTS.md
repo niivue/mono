@@ -348,6 +348,17 @@ a synchronized group, so anything inside it is compiled into the appex.
   redraws the mesh over itself with depth testing disabled, washing out surfaces
   and desaturating tract colour. Safe to clear there *only* because that branch
   has no 2D tiles — `is3DCrosshairVisible` gates every crosshair, not just 3D.
+- **`.nvd` previews only what the document embeds.** `renderScene` passes
+  `loadDocument` a `resolveUrl` that refuses every URL, so a linked volume,
+  linked mesh or thumbnail is never requested: a web link would tell the
+  sender the file was looked at, and Quick Look grants the previewed file
+  only. Linked volumes and meshes are counted, and any count shows the
+  metadata panel with "open it in NiiVue to view linked data" rather than a
+  partial scene; the thumbnail is refused uncounted. The CSP is the second
+  line, not the first. Slide-plane tiles still load from their manifest URLs
+  (no hook yet). The document's layout is kept. NiiVue skips embedded data it
+  cannot read; an empty scene shows as metadata. Volumes, meshes and signals
+  all count as content; a volume shorter than its header is refused.
 
 ## Deferred debt
 
@@ -365,6 +376,17 @@ Known, deliberate, and not blocking. Each is a decision, not an oversight.
   `encoding: gz` data section, GIFTI `GZipBase64Binary` DataArrays, and every
   entry of a `.trx` ZIP. A bomb nested inside one of those is not bounded.
   Fixing it means bounding inside NiiVue, not here.
+- **A hostile `.nvd` can still allocate past the budgets inside NiiVue.**
+  Finder parses any selected `.nvd` unprompted. Core fixes, own branch; a
+  content process dying on them shows "ran out of resources":
+  CBOR shared references (tags 28/29) let one embedded array be listed many
+  times, each reconstructed as a full copy (fix: reject when the embedded
+  arrays' summed `byteLength` exceeds the document's); `drawingBitmapLength`
+  and slide `drawingWidth`×`drawingHeight` size a `decodeRLE` allocation before
+  any check against the volume (fix: compare with `nVox3D` first); a small
+  `data:` PNG in `ui.thumbnailUrl` or a matcap can decode to ~1 GiB RGBA;
+  JSON/CBOR number arrays grow ~8× in the JS heap; `volume.sampleRate` skips
+  the setter's 1-4 clamp (not shown exploitable).
 - **The bound must never be waived on a PREDICTION about the browser.** An
   attempt to skip it when a NIfTI header looked like it would be partial-loaded
   was withdrawn: NiiVue does not partial-load from `loadVolumes` at all (the

@@ -37,6 +37,8 @@ import Foundation
 enum PreviewFileKind {
     case volume
     case mesh
+    /// A NiiVue document: settings plus the volumes and meshes it embeds.
+    case scene
 
     /// Compound suffixes, matched before the plain extension so `.mgh.gz` is
     /// not mistaken for a bare `.gz`. Order matters within the array only in
@@ -74,6 +76,7 @@ enum PreviewFileKind {
         "tck": .mesh,
         "trk": .mesh,
         "trx": .mesh,
+        "nvd": .scene,
     ]
 
     /// Nil when the file is not ours, which is the caller's cue to decline.
@@ -96,6 +99,7 @@ enum PreviewFileKind {
         switch self {
         case .volume: return "volume"
         case .mesh: return "mesh"
+        case .scene: return "scene"
         }
     }
 }

@@ -790,6 +790,8 @@ export default class NVView {
     // Stencil for the overlay/drawing passes' own gradient (the background's is
     // precomputed into a texture and unaffected).
     this.volumeRenderer.layerGradientMode = md.volume.layerGradientMode
+    this.volumeRenderer.isOverlayOpacityCorrected =
+      md.volume.isOverlayOpacityCorrected
     // Background-only alpha modulation from that precomputed gradient: suppress
     // homogeneous interior (gradientOpacity) and fade view-aligned material into
     // a rim (silhouette). Set before chunk work, like gradientAmount, because a

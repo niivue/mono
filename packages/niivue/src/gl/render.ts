@@ -458,6 +458,8 @@ export class VolumeRenderer extends NVRenderer {
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
   layerGradientMode = VOLUME_DEFAULTS.layerGradientMode
+  // Step-size opacity correction for the overlay pass.
+  isOverlayOpacityCorrected = VOLUME_DEFAULTS.isOverlayOpacityCorrected
   // Background-volume gradient opacity and silhouette (Fresnel rim), set by the
   // view each frame from md.volume. Both read the precomputed gradient
   // texture's magnitude/direction, so a non-zero value also means the gradient
@@ -2853,6 +2855,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.gradientOpacity, this.gradientOpacity)
     if (shader.uniforms.silhouettePower)
       gl.uniform1f(shader.uniforms.silhouettePower, this.silhouette)
+    if (shader.uniforms.overlayOpacityCorrection)
+      gl.uniform1f(
+        shader.uniforms.overlayOpacityCorrection,
+        this.isOverlayOpacityCorrected ? 1 : 0,
+      )
     const cubic =
       this.isCubicInterpolation &&
       this._cubicVolumeSafe &&

@@ -297,7 +297,7 @@ function setChunkBudget(entry: ChunkedTexEntry, bytes: number): void {
 
 type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 
-// 500 bytes of data = 125 floats:
+// 512 bytes of data = 128 floats:
 //   16 mvp + 16 norm + 16 matRAS + 4 volScale + 4 rayDir + 4 (gradient/numVol/cutaway/pad)
 //   + 4 clipPlaneColor + 24 clipPlanes + 4 paqd + 8 scalars (earlyTermination,
 //     clipPlaneOverlay, fadeAlpha, renderMode, cubicFilter, invGamma,
@@ -306,7 +306,8 @@ type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 //     volumeTexDimsFull, so the group is 8 lanes before and after.
 //   + 4 volumeTexDimsFull + 4 chunkSubOrigin + 4 chunkSubSize
 //   + 4 dataOriginTexFrac + 4 dataSizeTexFrac + 4 rayStepTexVox
-//   + 3 trailing f32 (layerGradMode, gradientOpacity, silhouettePower)
+//   + 4 trailing f32 (layerGradMode, gradientOpacity, silhouettePower,
+//     overlayOpacityCorrection)
 // The constant below is the size the BIND GROUP declares, which must be the
 // size WGSL gives the struct, not the byte count we write into it: a trailing
 // f32 leaves the struct 16-byte-aligned at 512, and declaring 508 makes every
@@ -493,6 +494,8 @@ export class VolumeRenderer extends NVRenderer {
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
   layerGradientMode = VOLUME_DEFAULTS.layerGradientMode
+  // Step-size opacity correction for the overlay pass.
+  isOverlayOpacityCorrected = VOLUME_DEFAULTS.isOverlayOpacityCorrected
   // Background-volume gradient opacity and silhouette (Fresnel rim), set by the
   // view each frame from md.volume. Both read the precomputed gradient
   // texture's magnitude/direction, so a non-zero value also means the gradient
@@ -3574,6 +3577,8 @@ export class VolumeRenderer extends NVRenderer {
         // alpha modulation from the precomputed gradient. 0 is a no-op for both.
         this.gradientOpacity,
         this.silhouette,
+        // overlayOpacityCorrection (508).
+        this.isOverlayOpacityCorrected ? 1 : 0,
       ]),
     )
   }

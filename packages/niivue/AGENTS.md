@@ -71,7 +71,11 @@ bunx nx e2e niivue       # via Nx
 ```
 
 `playwright.config.ts` starts a no-`--open` dev server (`bun run e2e:serve`) and
-reuses an already-running one locally (`reuseExistingServer` off in CI). These are
+reuses an already-running one locally (`reuseExistingServer` off in CI). The
+port (5273) is fixed, so a dev server from ANOTHER checkout on that port is
+silently reused and the tests run its code; check `lsof -iTCP:5273` first. A
+machine without Playwright's pinned browser can set `PLAYWRIGHT_CHROMIUM_PATH`
+to any installed `chrome-headless-shell`. These are
 kept OUT of the hermetic unit `test` target and the PR gate (they need a browser).
 Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
@@ -881,8 +885,11 @@ volumes[0] is chunked, and in multi-instance mode. Hidden (or opacity 0) and
 PAQD volumes do not join as channels. Stacked channels keep their colormap's
 alpha ramp in the orient bake (`modFlags.z` in `orient.wgsl`,
 `keepColormapAlpha` in `gl/orientOverlay.ts`);
-other overlays get `step(0.00001, a)`. The overlay ray-march has no step-size
-correction, so 3D density follows each channel's opacity steeply.
+other overlays get `step(0.00001, a)`. The overlay ray-march takes the
+background's step-size correction (`volumeIsOverlayOpacityCorrected`, default
+on), so 3D density is independent of `sampleRate`; the drawing and PAQD passes
+are not corrected, and a `chunkOverlayOf` overlay (marched by the background
+pass) is always corrected. `e2e/overlay-opacity-correction.spec.ts` pins it.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
 `calMin` 0: the alpha weight is `(f-calMin)/(calMax-calMin)`, so a nonzero
 `calMin` breaks alpha == fraction and ADDITIVE no longer sums to 1.

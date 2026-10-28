@@ -59,6 +59,7 @@ import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
 import type { WriteOptions } from '@/mesh/writers'
 import {
+  clampSampleRate,
   DRAG_MODE,
   GAMMA_RANGE,
   LOD_BRIGHTNESS_RANGE,
@@ -1613,7 +1614,7 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.sampleRate
   }
   set volumeSampleRate(v: number) {
-    this.model.volume.sampleRate = Math.min(4, Math.max(1, v))
+    this.model.volume.sampleRate = clampSampleRate(v)
     this.emit('change', {
       property: 'volumeSampleRate',
       value: this.model.volume.sampleRate,

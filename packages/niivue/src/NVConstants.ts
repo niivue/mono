@@ -469,6 +469,13 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   silhouette: 0,
 }
 
+/** Ray-march samples per voxel, clamped to [1, 4]; non-finite gives the default. */
+export function clampSampleRate(v: number): number {
+  return Number.isFinite(v)
+    ? Math.min(4, Math.max(1, v))
+    : VOLUME_DEFAULTS.sampleRate
+}
+
 export const MESH_DEFAULTS: MeshRenderConfig = {
   xRay: 0,
   thicknessOn2D: Infinity,

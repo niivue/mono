@@ -832,6 +832,9 @@ export function applyDocumentToModel(
     model.volume,
     fillGroup('volume', model.volume, C.VOLUME_DEFAULTS, doc.volume, fill),
   )
+  // A document bypasses the setters, so apply their clamps here.
+  model.volume.sampleRate = C.clampSampleRate(model.volume.sampleRate)
+  model.volume.renderMode = C.normalizeVolumeRenderMode(model.volume.renderMode)
   Object.assign(
     model.mesh,
     fillGroup('mesh', model.mesh, C.MESH_DEFAULTS, doc.mesh, fill),

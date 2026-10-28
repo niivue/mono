@@ -486,7 +486,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Signal data class (`NVModel.signals`) | ✅ | `physio` (BIDS TSV) and `spectroscopy` (NIfTI-MRS complex FID) |
-| Readers (`tsv`, `nii`) | ✅ | Auto-discovered via `import.meta.glob`; gz-aware; NaN gaps; `scl_slope`/`scl_inter` applied for real NIfTI |
+| Readers (`tsv`, `nii`) | ✅ | Listed in `signal/readers/_registry.ts`; gz-aware; NaN gaps; `scl_slope`/`scl_inter` applied for real NIfTI |
 | BIDS/MRS sidecar | ✅ | Sibling `.json` fetched by URL or paired on drag-drop; `SpectrometerFrequency`/`ResonantNucleus` |
 | NIfTI signal-vs-volume routing | ✅ | `detect.ts`: dims-only (non-spatial: dim1-3==1 & dim4>1); MRS fields do NOT route here; `asSignal` override |
 | Processing (FFT/avg/ppm) | ✅ | Radix-2 FFT; non-pow2 zero-filled to next pow2; transient averaging; ppm/Hz axis; windowed y |

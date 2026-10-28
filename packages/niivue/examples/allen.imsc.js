@@ -120,7 +120,7 @@ function applyFusion() {
 applyFusion()
 fuseCheck.onchange = () => {
   applyFusion()
-  showLoaded()
+  refresh()
 }
 
 // Raw, Max project or Segmented, as in Allen's toolbar. Max project is the raw
@@ -157,10 +157,10 @@ function applyRender() {
 }
 renderModeSelect.onchange = () => {
   applyRender()
-  showLoaded()
+  refresh()
 }
-densityInput.oninput = () => showLoaded()
-brightnessInput.oninput = () => showLoaded()
+densityInput.oninput = () => refresh()
+brightnessInput.oninput = () => refresh()
 applyRender()
 
 // 3D clip plane and zoom, as in allen.atlas.html. Every channel is an overlay,
@@ -245,10 +245,10 @@ function percentile(img, fraction) {
  * - 'mask': segmentations, over their full range.
  */
 let loaded = []
-function showLoaded() {
-  nv1.volumes.forEach((volume, index) => {
+async function showLoaded() {
+  for (const [index, volume] of nv1.volumes.entries()) {
     const layer = loaded[index]
-    if (!layer) return
+    if (!layer) continue
     let calMin = volume.globalMin
     let calMax = volume.globalMax
     if (Array.isArray(layer.window)) {
@@ -261,34 +261,61 @@ function showLoaded() {
     } else if (layer.window === 'mask') {
       calMin = 0
     }
-    nv1.setVolume(index, {
+    await nv1.setVolume(index, {
       colormap: tint(layer.color),
       calMin,
       calMax,
       opacity: index === 0 || fuseCheck.checked ? 1 : 0.5,
     })
-  })
+  }
+}
+
+// Every change to the viewer's volumes runs here, one at a time and to
+// completion, so a load never swaps volumes under a setVolume still running.
+let commits = Promise.resolve()
+function commit(step) {
+  const done = commits.then(step)
+  commits = done.catch(() => {})
+  return done
+}
+
+// Re-window the loaded layers after a control changes. A drag queues one
+// pass at a time; that pass reads the controls when it runs.
+let refreshQueued = false
+function refresh() {
+  if (refreshQueued) return
+  refreshQueued = true
+  commit(() => {
+    refreshQueued = false
+    return showLoaded()
+  }).catch((err) => console.error(err))
 }
 
 // A newer request makes an in-flight load stale instead of racing it. A
 // request takes its token before its first await (a stage reads its channel
-// list first), and viewer commits run one at a time, each checking the token
-// just before it replaces the volumes, so a slow, superseded load can neither
-// overwrite newer data nor leave it under the wrong selection.
+// list first), and each commit checks the token just before it replaces the
+// volumes, so a slow, superseded load can neither overwrite newer data nor
+// leave it under the wrong selection.
 let loadToken = 0
-let commits = Promise.resolve()
 async function load(token, sidecarUrl, layers, description) {
   if (token !== loadToken) return
-  if (layers.length === 0) {
-    say('Select at least one channel')
-    return
-  }
-  say(`Loading ${description}...`)
   try {
+    if (layers.length === 0) {
+      // Clear the viewer too, so it never shows data that is not selected.
+      const cleared = await commit(async () => {
+        if (token !== loadToken) return false
+        await nv1.removeAllVolumes()
+        loaded = []
+        return true
+      })
+      if (cleared && token === loadToken) say('Select at least one channel')
+      return
+    }
+    say(`Loading ${description}...`)
     const volumes = await loadAllenAtlasVolumes(sidecarUrl, {
       channels: layers.map((layer) => layer.channel),
     })
-    const commit = commits.then(async () => {
+    const shown = await commit(async () => {
       if (token !== loadToken) return false
       // loadVolumes keeps the old volumes until the new ones are ready, so
       // `loaded` follows the swap, not the request.
@@ -296,11 +323,10 @@ async function load(token, sidecarUrl, layers, description) {
       loaded = layers
       // The viewer now holds these layers, so window them even if a newer
       // request has come in meanwhile; only the status waits for that one.
-      showLoaded()
+      await showLoaded()
       return true
     })
-    commits = commit.catch(() => {})
-    if (!(await commit) || token !== loadToken) return
+    if (!shown || token !== loadToken) return
     say(`Showing ${description}: ${layers.map((l) => l.label).join(', ')}`)
   } catch (err) {
     if (token !== loadToken) return
@@ -562,7 +588,7 @@ for (const button of kindButtons) {
     applyRender()
     // Max project draws the raw channels already loaded.
     if (channelKind() !== previous) loadCurrent()
-    else showLoaded()
+    else refresh()
   }
 }
 

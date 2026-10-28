@@ -1,11 +1,14 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
+import { meshReaderModules } from '@/mesh/readers/_registry'
 import { COLORMAP_TYPE } from '@/NVConstants'
 import * as NVLoader from '@/NVLoader'
 import type { LUT, MeshLayerFromUrlOptions, NVMeshLayer } from '@/NVTypes'
 import { resolveNegativeRange } from '@/view/NVUILayout'
+import { volumeReaderModules } from '@/volume/readers/_registry'
+import { layerReaderModules } from './readers/_registry'
 
-// --- Layer reader auto-discovery ---
+// --- Layer readers ---
 
 type LayerReadResult = {
   values: Float32Array
@@ -24,12 +27,7 @@ type LayerReader = {
   isCurv?: (buffer: ArrayBuffer) => boolean
 }
 
-const layerModules = import.meta.glob<LayerReader>(
-  ['./readers/*.ts', '!./readers/*.test.ts'],
-  {
-    eager: true,
-  },
-)
+const layerModules: Record<string, LayerReader> = layerReaderModules
 const layerReaderByExt = NVLoader.buildExtensionMap(layerModules)
 let curvReader: LayerReader | null = null
 for (const mod of Object.values(layerModules)) {
@@ -40,7 +38,7 @@ for (const mod of Object.values(layerModules)) {
 }
 
 // Mesh readers that support scalar-only mode (n_vert > 0)
-// Imported directly to avoid circular dependency with NVMesh.ts
+// Read from the readers' registry to avoid a circular dependency with NVMesh.ts
 type MeshReader = {
   extensions?: string[]
   read: (
@@ -48,13 +46,11 @@ type MeshReader = {
     n_vert?: number,
   ) => Promise<{ scalars?: Float32Array; colormapLabel?: unknown }>
 }
-const meshReaderModules = import.meta.glob<MeshReader>(
-  ['../readers/*.ts', '!../readers/*.test.ts'],
-  {
-    eager: true,
-  },
+// The readers' signatures don't all match this type; the cast keeps the
+// unchecked assertion import.meta.glob<T> made.
+const meshReaderByExt = NVLoader.buildExtensionMap(
+  meshReaderModules as unknown as Record<string, MeshReader>,
 )
-const meshReaderByExt = NVLoader.buildExtensionMap(meshReaderModules)
 
 // Volume readers for NII/MGH as vertex scalars
 type VolumeReader = {
@@ -72,11 +68,11 @@ type VolumeReader = {
     img: ArrayBuffer | Float32Array
   }>
 }
-const volumeReaderModules = import.meta.glob<VolumeReader>(
-  ['../../volume/readers/*.ts', '!../../volume/readers/*.test.ts'],
-  { eager: true },
+// The readers' signatures don't all match this type; the cast keeps the
+// unchecked assertion import.meta.glob<T> made.
+const volumeReaderByExt = NVLoader.buildExtensionMap(
+  volumeReaderModules as unknown as Record<string, VolumeReader>,
 )
-const volumeReaderByExt = NVLoader.buildExtensionMap(volumeReaderModules)
 
 /** Extensions supported for layer loading (scalar-only + mesh scalar + volume) */
 export function layerExtensions(): string[] {

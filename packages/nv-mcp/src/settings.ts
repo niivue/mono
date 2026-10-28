@@ -476,6 +476,10 @@ export const SETTINGS: readonly Setting[] = [
     'Whether the render samples with a cubic filter.',
   ),
   bool(
+    'volumeIsOverlayOpacityCorrected',
+    "Whether the 3D overlay pass takes the background's step-size opacity correction.",
+  ),
+  bool(
     'volumeIsNearestInterpolation',
     'Whether slices sample nearest-neighbour rather than linear.',
   ),

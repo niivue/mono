@@ -15,13 +15,14 @@ import type {
 } from '@/NVTypes'
 import {
   connectomeExtensions,
-  defaultConnectomeOptions,
   extrude,
   getConnectomeReader,
   isConnectomeExtension,
 } from './connectome'
+import { defaultConnectomeOptions } from './connectome/fileData'
 import { compositeLayers, createLayer, loadLayersFromOptions } from './layers'
 import { generateNormals } from './normals'
+import { meshReaderModules } from './readers/_registry'
 import { probeVTKContent, readVTKLines } from './readers/vtk'
 import {
   computeAllScalarMeta,
@@ -40,11 +41,11 @@ type MeshReader = {
   read: (buffer: ArrayBufferLike) => Promise<MZ3>
 }
 
-const modules = import.meta.glob<MeshReader>(
-  ['./readers/*.ts', '!./readers/*.test.ts'],
-  { eager: true },
+// The readers' signatures don't all match this type; the cast keeps the
+// unchecked assertion import.meta.glob<T> made.
+const readerByExt = NVLoader.buildExtensionMap(
+  meshReaderModules as unknown as Record<string, MeshReader>,
 )
-const readerByExt = NVLoader.buildExtensionMap(modules)
 
 export function meshWriteExtensions(): string[] {
   return meshWriters.writeExtensions()

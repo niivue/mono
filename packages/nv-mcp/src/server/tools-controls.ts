@@ -122,8 +122,8 @@ const FIELDS = {
     .string()
     .optional()
     .describe(
-      'For a file picker: the extensions accepted, like ".nii,.mz3". Leave it unset for a file ' +
-        'that ends in two parts, like .nii.gz: the browser chooser on macOS greys those out.',
+      'For a file picker: the extensions accepted, like ".nii,.nii.gz,.mz3". Every file is ' +
+        'offered when it is unset.',
     ),
   multiple: z
     .boolean()

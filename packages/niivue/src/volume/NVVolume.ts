@@ -12,6 +12,7 @@ import type {
   TypedVoxelArray,
 } from '@/NVTypes'
 import { isMrsiVolume, prepareMrsiVolume } from './mrsi'
+import { volumeReaderModules } from './readers/_registry'
 import {
   calculateWorldExtents,
   calMinMax,
@@ -38,13 +39,11 @@ type VolumeReader = {
   ) => Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }>
 }
 
-const modules = import.meta.glob<VolumeReader>(
-  ['./readers/*.ts', '!./readers/*.test.ts'],
-  {
-    eager: true,
-  },
+// The readers' signatures don't all match this type; the cast keeps the
+// unchecked assertion import.meta.glob<T> made.
+const readerByExt = NVLoader.buildExtensionMap(
+  volumeReaderModules as unknown as Record<string, VolumeReader>,
 )
-const readerByExt = NVLoader.buildExtensionMap(modules)
 export const builtinReaderExts = new Set(readerByExt.keys())
 export function hasReader(ext: string): boolean {
   return readerByExt.has(ext)

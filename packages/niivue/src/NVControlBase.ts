@@ -1604,6 +1604,19 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /** See VolumeRenderConfig.isOverlayOpacityCorrected. */
+  get volumeIsOverlayOpacityCorrected(): boolean {
+    return this.model.volume.isOverlayOpacityCorrected
+  }
+  set volumeIsOverlayOpacityCorrected(v: boolean) {
+    this.model.volume.isOverlayOpacityCorrected = v
+    this.emit('change', {
+      property: 'volumeIsOverlayOpacityCorrected',
+      value: v,
+    })
+    this.drawScene()
+  }
+
   /**
    * Samples per voxel along the ray in the 3D render. Higher values converge the
    * ray integral at a proportional fragment cost. Clamped to [1, 4]. This does

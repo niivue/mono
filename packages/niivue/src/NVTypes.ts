@@ -829,6 +829,14 @@ export type VolumeRenderConfig = {
    */
   isCubicInterpolation: boolean
   /**
+   * Apply the background's step-size opacity correction to the overlay pass
+   * of the 3D render, so overlay density no longer depends on `sampleRate`.
+   * Default true; false restores the uncorrected, sample-rate-dependent look.
+   * An independent hi-res overlay (`chunkOverlayOf`) marches through the
+   * background pass, so it is always corrected and ignores this flag.
+   */
+  isOverlayOpacityCorrected: boolean
+  /**
    * Coefficient for the per-level brightness compensation applied to bricks
    * fetched from a coarse pyramid level of a multi-LOD chunked volume. 0
    * disables it; clamped to [0, 1] (useful magnitudes are small -- the default
@@ -1291,6 +1299,8 @@ export type NiiVueOptions = {
   volumeSampleRate?: number
   /** Tricubic B-spline reconstruction in the 3D ray-march. See VolumeRenderConfig.isCubicInterpolation. */
   volumeIsCubicInterpolation?: boolean
+  /** Step-size opacity correction for the 3D overlay pass. See VolumeRenderConfig.isOverlayOpacityCorrected. */
+  volumeIsOverlayOpacityCorrected?: boolean
   /** Per-level brightness compensation for coarse multi-LOD bricks, [0, 0.2]; 0 disables. See VolumeRenderConfig.lodBrightnessCompensation. */
   volumeLodBrightnessCompensation?: number
   /** Per-level opacity compensation for coarse multi-LOD bricks in the 3D ray-march, [0, 1]; 0 disables (default). See VolumeRenderConfig.lodOpacityCompensation. */

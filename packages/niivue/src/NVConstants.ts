@@ -463,6 +463,7 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   layerGradientMode: LAYER_GRADIENT_MODE.CENTRAL,
   sampleRate: 2,
   isCubicInterpolation: false,
+  isOverlayOpacityCorrected: true,
   lodBrightnessCompensation: 0.08,
   lodOpacityCompensation: 0,
   gradientOpacity: 0,

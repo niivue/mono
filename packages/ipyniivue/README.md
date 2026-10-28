@@ -4,6 +4,10 @@ Jupyter widget wrapper for NiiVue. The Python package uses anywidget and
 a generated, self-contained JavaScript bundle built from the local
 `@niivue/niivue` package.
 
+Version 3.x is built on the NiiVue 1.0 API in this monorepo. Version 2.x
+([niivue/ipyniivue](https://github.com/niivue/ipyniivue)) is built on
+NiiVue 0.6x; pin `ipyniivue<3` to keep it.
+
 ## Install for local development
 
 The bundled widget JavaScript (`src/ipyniivue/static/widget.js`,

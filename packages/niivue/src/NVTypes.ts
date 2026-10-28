@@ -1288,6 +1288,7 @@ export type NiiVueOptions = {
   volumeIsV1SliceShader?: boolean
   volumeOverlayAlphaBlend?: OVERLAY_ALPHA_BLEND
   volumeOverlayColorBlend?: OVERLAY_COLOR_BLEND
+  /** Matcap image for the 3D render: a URL, or a name from `matcaps` (case-insensitive). An unknown name falls back to the first matcap with a warning. */
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
   volumeTransmittanceCutoff?: number

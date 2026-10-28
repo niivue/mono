@@ -659,9 +659,11 @@ export default class NiiVue extends EventTarget {
     this._distributionBackend = distributionBackend
     // Instances
     this.model = new NVModel(options)
-    // Auto-apply first matcap URL if matcaps provided
-    const firstUrl = defaultMatcap(this.opts.matcaps)
-    if (firstUrl) this.model.volume.matcap = firstUrl
+    // An explicit volumeMatcap (a name or URL) wins over the first matcap.
+    this.model.volume.matcap =
+      options.volumeMatcap === undefined
+        ? defaultMatcap(this.opts.matcaps)
+        : matcapFromName(options.volumeMatcap, this.opts.matcaps)
     this.resizeObserver = null
   }
 

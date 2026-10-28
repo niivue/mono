@@ -1,3 +1,14 @@
+## 1.0.0-rc.43 (2026-10-28)
+
+### Fixes
+
+- **niivue:** keep document copy demo controls in step with the scene ([1953c209](https://github.com/niivue/mono/commit/1953c209))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.42 (2026-10-28)
 
 ### Features

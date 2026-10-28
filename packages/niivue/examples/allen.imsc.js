@@ -27,7 +27,10 @@ import manifest from './allen.imsc.json'
 // citation.
 
 const modeInputs = [...document.querySelectorAll('input[name="mode"]')]
-const kindSelect = document.getElementById('kind')
+const kindButtons = [...document.querySelectorAll('#dataKind button')]
+const turntableButton = document.getElementById('turntable')
+const resetButton = document.getElementById('reset')
+const lede = document.getElementById('lede')
 const fuseCheck = document.getElementById('fuse')
 const clipCheck = document.getElementById('clipCheck')
 const clipOverlaysCheck = document.getElementById('clipOverlaysCheck')
@@ -38,8 +41,11 @@ const densityInput = document.getElementById('density')
 const brightnessInput = document.getElementById('brightness')
 const stagePanel = document.getElementById('stagePanel')
 const cellPanel = document.getElementById('cellPanel')
-const stagesRow = document.getElementById('stages')
-const structuresRow = document.getElementById('structures')
+const stagesColumn = document.getElementById('stages')
+const stageUp = document.getElementById('stageUp')
+const stageDown = document.getElementById('stageDown')
+const structuresBody = document.querySelector('#structures tbody')
+const allStructures = document.getElementById('allStructures')
 const cellChannelsRow = document.getElementById('cellChannels')
 const grid = document.getElementById('grid')
 const noteLine = document.getElementById('note')
@@ -50,7 +56,7 @@ const footer = document.getElementById('location')
 const nv1 = new NiiVue({
   backend: webgpuCheck.checked ? 'webgpu' : 'webgl2',
   backgroundColor: [0, 0, 0, 1],
-  sliceType: SLICE_TYPE.MULTIPLANAR,
+  sliceType: SLICE_TYPE.RENDER,
   showRender: SHOW_RENDER.ALWAYS,
   isColorbarVisible: false,
 })
@@ -102,6 +108,13 @@ fuseCheck.onchange = () => {
   showLoaded()
 }
 
+// Raw, Max project or Segmented, as in Allen's toolbar. Max project is the raw
+// data drawn as a maximum intensity projection.
+let dataKind = 'raw'
+function channelKind() {
+  return dataKind === 'seg' ? 'seg' : 'raw'
+}
+
 // 3D render mode. Fluorescence draws as Allen's 3D viewer does: a sample is as
 // opaque as its fused colour is bright, times density, and brightness is a
 // colour gain (Allen uses 1.6). Its densities are 0.06 raw and 0.4 segmented;
@@ -119,11 +132,16 @@ for (const [label, value] of renderModes) {
   renderModeSelect.add(new Option(label, String(value)))
 }
 function applyRender() {
+  const projecting = dataKind === 'mip'
   const fluorescence =
+    !projecting &&
     hasFluorescence &&
     Number(renderModeSelect.value) === VOLUME_RENDER_MODE.FLUORESCENCE
+  renderModeSelect.disabled = projecting
   fluorControls.hidden = !fluorescence
-  nv1.volumeRenderMode = Number(renderModeSelect.value)
+  nv1.volumeRenderMode = projecting
+    ? VOLUME_RENDER_MODE.MAXIMUM
+    : Number(renderModeSelect.value)
   if (fluorescence) {
     nv1.volumeDensity = Number(densityInput.value)
     nv1.volumeBrightness = Number(brightnessInput.value)
@@ -157,6 +175,41 @@ nv1.addEventListener('change', (e) => {
     zoomInput.value = String(value)
   }
 })
+
+// Turntable and Reset, through animateTo. The camera starts looking down on
+// the cell, as Allen's viewer does. Pressing on or scrolling the canvas stops
+// a transition, which also turns the turntable off.
+const home = { azimuth: 0, elevation: 90, scaleMultiplier: 1 }
+nv1.azimuth = home.azimuth
+nv1.elevation = home.elevation
+let spinning = false
+function setSpinning(on) {
+  spinning = on
+  turntableButton.setAttribute('aria-pressed', String(on))
+}
+async function spin() {
+  while (spinning) {
+    const result = await nv1.animateTo(
+      { azimuth: nv1.azimuth + 360 },
+      { angles: 'literal', easing: 'linear', duration: 12000 },
+    )
+    // 'stalled' is a hidden tab: keep going, it resumes when shown.
+    if (result.reason !== 'finished' && result.reason !== 'stalled') {
+      setSpinning(false)
+    }
+  }
+}
+turntableButton.onclick = () => {
+  setSpinning(!spinning)
+  if (spinning) spin()
+  else nv1.stopAnimation()
+}
+resetButton.onclick = () => {
+  setSpinning(false)
+  clipCheck.checked = false
+  clipCheck.onchange()
+  nv1.animateTo(home, { duration: 600 })
+}
 
 /** The value below which `fraction` of a volume's voxels fall. */
 function percentile(img, fraction) {
@@ -241,50 +294,82 @@ function stageUrl(stage) {
   return manifest.stageAtlasBase + stage.atlas
 }
 
-function pressed(row, active) {
-  for (const button of row.querySelectorAll('button')) {
+function pressed(container, active) {
+  for (const button of container.querySelectorAll('button')) {
     button.setAttribute('aria-pressed', String(button === active))
   }
 }
 
-for (const stage of manifest.stages) {
+const stageButtons = manifest.stages.map((stage) => {
   const button = document.createElement('button')
   button.type = 'button'
   button.textContent = stage.label
-  button.onclick = () => {
-    stageKey = stage.key
-    pressed(stagesRow, button)
-    loadStage()
-  }
-  stagesRow.append(button)
+  button.onclick = () => selectStage(stage.key)
+  stagesColumn.append(button)
+  return button
+})
+function selectStage(key) {
+  stageKey = key
+  const index = manifest.stages.findIndex((s) => s.key === key)
+  pressed(stagesColumn, stageButtons[index])
+  stageUp.disabled = index === 0
+  stageDown.disabled = index === manifest.stages.length - 1
+  loadStage()
 }
-pressed(stagesRow, stagesRow.querySelector('button'))
+function stepStage(delta) {
+  const index = manifest.stages.findIndex((s) => s.key === stageKey)
+  const next = manifest.stages[index + delta]
+  if (next) selectStage(next.key)
+}
+stageUp.onclick = () => stepStage(-1)
+stageDown.onclick = () => stepStage(1)
+pressed(stagesColumn, stageButtons[0])
+stageUp.disabled = true
 
 // DNA and three structures to start; all 16 at once is slow and unreadable.
 const structures = [
-  { gene: 'DNA', label: 'DNA', color: manifest.dnaColor, on: true },
+  { gene: 'DNA', structure: 'DNA', color: manifest.dnaColor, on: true },
   ...manifest.genes.map((g) => ({
     gene: g.gene,
-    label: `${g.structure} (${g.gene})`,
+    structure: g.structure,
     color: g.color,
     on: ['LMNB1', 'TUBA1B', 'TOMM20'].includes(g.gene),
   })),
 ]
-for (const s of structures) {
+const structureBoxes = structures.map((s) => {
+  const row = structuresBody.insertRow()
   const label = document.createElement('label')
   const box = document.createElement('input')
   box.type = 'checkbox'
   box.checked = s.on
   box.onchange = () => {
     s.on = box.checked
+    syncAllStructures()
     loadStage()
   }
   const swatch = document.createElement('span')
   swatch.className = 'swatch'
   swatch.style.background = s.color
-  label.append(box, ' ', swatch, ` ${s.label}`)
-  structuresRow.append(label)
+  label.append(box, ' ', swatch, ` ${s.gene}`)
+  row.insertCell().append(label)
+  row.insertCell().textContent = s.structure
+  return box
+})
+// The header box is All / None; part of the set shows as indeterminate.
+function syncAllStructures() {
+  const on = structures.filter((s) => s.on).length
+  allStructures.checked = on === structures.length
+  allStructures.indeterminate = on > 0 && on < structures.length
 }
+allStructures.onchange = () => {
+  structures.forEach((s, i) => {
+    s.on = allStructures.checked
+    structureBoxes[i].checked = s.on
+  })
+  syncAllStructures()
+  loadStage()
+}
+syncAllStructures()
 
 async function loadStage() {
   const stage = manifest.stages.find((s) => s.key === stageKey)
@@ -300,13 +385,13 @@ async function loadStage() {
     stageInfo.set(url, info)
   }
   // Channels are named DNA_raw, then <GENE>_<cellId>_raw, and _seg likewise.
-  const suffix = `_${kindSelect.value}`
+  const suffix = `_${channelKind()}`
   const layers = structures
     .filter((s) => s.on)
     .map((s) => ({
-      label: s.label,
+      label: s.gene,
       color: s.color,
-      window: kindSelect.value === 'seg' ? 'mask' : stage.windows[s.gene],
+      window: channelKind() === 'seg' ? 'mask' : stage.windows[s.gene],
       channel: info.channelNames.findIndex((name) =>
         s.gene === 'DNA'
           ? name === `DNA${suffix}`
@@ -384,7 +469,7 @@ function loadCell() {
   noteLine.textContent =
     [cell.note, gene.note].filter(Boolean).join(' ') ||
     `Cell ${cell.cellId}, from Allen's Cell Feature Explorer.`
-  const kind = kindSelect.value
+  const kind = channelKind()
   const layers = cellChannels
     .filter((c) => c.on)
     .map((c) => ({
@@ -411,18 +496,37 @@ function loadCurrent() {
   return mode() === 'stage' ? loadStage() : loadCell()
 }
 
+// The stage composites are shown as one large render, as on Allen's page; a
+// single cell also gets the slice views, like the essay's z-stack viewer.
+function applyMode() {
+  const stageMode = mode() === 'stage'
+  stagePanel.hidden = !stageMode
+  cellPanel.hidden = stageMode
+  nv1.sliceType = stageMode ? SLICE_TYPE.RENDER : SLICE_TYPE.MULTIPLANAR
+  nv1.is3DCrosshairVisible = !stageMode
+  lede.textContent = stageMode
+    ? `Study relationships among ${structures.length} cell structures superimposed in space and time using this 3D viewer.`
+    : `Explore ${manifest.genes.length * manifest.stages.length} single cells, one per tagged gene and stage, at full resolution.`
+}
 for (const input of modeInputs) {
   input.onchange = () => {
-    stagePanel.hidden = mode() !== 'stage'
-    cellPanel.hidden = mode() !== 'cell'
+    applyMode()
     loadCurrent()
   }
 }
-kindSelect.onchange = () => {
-  // Masks are hard-edged and sparse, so they need a higher density.
-  densityInput.value = kindSelect.value === 'seg' ? '3' : '0.5'
-  applyRender()
-  loadCurrent()
+applyMode()
+
+for (const button of kindButtons) {
+  button.onclick = () => {
+    const previous = channelKind()
+    dataKind = button.dataset.kind
+    pressed(button.parentElement, button)
+    // Masks are hard-edged and sparse, so they need a higher density.
+    densityInput.value = dataKind === 'seg' ? '3' : '0.5'
+    applyRender()
+    // Max project draws the raw channels already loaded.
+    if (channelKind() !== previous) loadCurrent()
+  }
 }
 
 await loadCurrent()

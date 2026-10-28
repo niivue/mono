@@ -8,19 +8,199 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/niivue.css" />
     <style>
-      .row {
-        display: flex;
-        gap: 0.5rem 0.75rem;
-        align-items: center;
-        flex-wrap: wrap;
+      /* Laid out like the 3D Cell Viewer on imsc.allencell.org: stages and
+         structures down the left, a toolbar over one large render. */
+      body {
+        height: 100vh;
+        background: #1d1d1d;
+        color: #e8e8e8;
       }
-      .row button[aria-pressed='true'] {
-        outline: 2px solid currentColor;
-        font-weight: 600;
+      body div {
+        display: block;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+      }
+      .topbar {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0.5rem 2rem;
+        padding: 0.8rem 1.2rem 0;
+      }
+      .topbar h1 {
+        font-size: 1.6rem;
+        font-weight: 400;
+        margin: 0;
+      }
+      .tabs {
+        display: flex;
+        gap: 1.5rem;
+      }
+      .tabs label {
+        cursor: pointer;
+        padding-bottom: 0.3rem;
+        border-bottom: 2px solid #555;
+        color: #bbb;
+      }
+      .tabs input {
+        position: absolute;
+        opacity: 0;
+      }
+      .tabs input:checked + label {
+        border-color: #fff;
+        color: #fff;
+      }
+      .tabs input:focus-visible + label {
+        outline: 2px solid #fff;
+      }
+      .lede {
+        text-align: center;
+        font-size: 1.15rem;
+        margin: 0.6rem 1.2rem;
+        color: #ccc;
+      }
+      .viewer {
+        display: flex;
+        gap: 1.2rem;
+        padding: 0 1.2rem 0.8rem;
+        flex: 1;
+        min-height: 0;
+      }
+      .side {
+        display: flex;
+        gap: 1.2rem;
+        flex: none;
+        overflow: auto;
+      }
+      .side h2 {
+        font-size: 1rem;
+        font-weight: 400;
+        margin: 0 0 0.5rem;
+      }
+      .stagesCol {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .arrows {
+        display: flex;
+        gap: 0.4rem;
+      }
+      .arrows button {
+        width: 2.2rem;
+        height: 1.6rem;
+        background: #333;
+        border: 1px solid #444;
+        color: #ddd;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      #stages {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      #stages button {
+        width: 6.4rem;
+        height: 4.2rem;
+        background: #262626;
+        color: #ccc;
+        border: 1px solid #262626;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        line-height: 1.15;
+      }
+      #stages button[aria-pressed='true'] {
+        border-color: #aaa;
+        background: #333;
+        color: #fff;
+      }
+      #structures {
+        border-collapse: collapse;
+        align-self: flex-start;
+      }
+      #structures th {
+        font-weight: 400;
+        text-align: left;
+        padding: 0 0.8rem 0.5rem 0;
+        white-space: nowrap;
+      }
+      #structures td {
+        padding: 0.2rem 0.8rem 0.2rem 0;
+        white-space: nowrap;
+      }
+      #structures td:last-child {
+        color: #bbb;
       }
       #structures label {
-        font-size: 0.8rem;
-        white-space: nowrap;
+        cursor: pointer;
+      }
+      .main {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        flex: 1;
+        min-width: 0;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 0.9rem;
+        align-items: center;
+      }
+      .toolbar button,
+      .toolbar select,
+      .toolbar input[type='number'] {
+        background: #262626;
+        color: #e8e8e8;
+        border: 1px solid #3a3a3a;
+        border-radius: 3px;
+        padding: 0.25rem 0.7rem;
+      }
+      .toolbar input[type='number'] {
+        width: 3.5rem;
+        padding: 0.2rem 0.3rem;
+      }
+      .toolbar button {
+        cursor: pointer;
+      }
+      .toolbar button[aria-pressed='true'] {
+        background: #444;
+        border-color: #888;
+        color: #fff;
+      }
+      .segmented {
+        display: inline-flex;
+      }
+      .segmented button {
+        border-radius: 0;
+      }
+      .segmented button:first-child {
+        border-radius: 3px 0 0 3px;
+      }
+      .segmented button:last-child {
+        border-radius: 0 3px 3px 0;
+      }
+      .toolbar .push {
+        margin-left: auto;
+      }
+      .toolbar.minor {
+        font-size: 0.85rem;
+        color: #bbb;
+      }
+      .group {
+        display: inline-flex;
+        gap: 0.35rem;
+        align-items: center;
+      }
+      #canvas-container {
+        flex: 1;
+        min-height: 360px;
       }
       .swatch {
         display: inline-block;
@@ -29,12 +209,18 @@
         border-radius: 2px;
         vertical-align: middle;
       }
+      #cellChannels {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+        margin-bottom: 0.8rem;
+      }
       #grid {
         border-collapse: collapse;
         font-size: 0.75rem;
       }
       #grid th {
-        font-weight: 600;
+        font-weight: 400;
         text-align: left;
         padding: 0 0.4rem;
         white-space: nowrap;
@@ -46,14 +232,21 @@
         font-size: 0.7rem;
         width: 100%;
         padding: 0 0.3rem;
+        background: #262626;
+        color: #ccc;
+        border: 1px solid #3a3a3a;
+        cursor: pointer;
       }
-      #gallery {
-        max-height: 40vh;
-        overflow: auto;
+      #grid button[aria-pressed='true'] {
+        border-color: #aaa;
+        color: #fff;
       }
       #status,
-      #note {
+      #note,
+      #location {
         font-size: 0.8rem;
+        color: #aaa;
+        min-height: 1em;
       }
       [hidden] {
         display: none !important;
@@ -61,57 +254,98 @@
     </style>
   </head>
   <body>
-    <header>
-      <div class="row">
-        <span class="pair">
+    <div class="topbar">
+      <h1>Integrated Mitotic Stem Cell</h1>
+      <div class="tabs" role="radiogroup" aria-label="Viewer">
+        <span>
           <input type="radio" name="mode" id="modeStage" value="stage" checked />
-          <label for="modeStage">3D cell viewer (15 aligned cells per stage)</label>
+          <label for="modeStage">3D Cell Viewer</label>
         </span>
-        <span class="pair">
+        <span>
           <input type="radio" name="mode" id="modeCell" value="cell" />
-          <label for="modeCell">Cell gallery (one cell per gene and stage)</label>
+          <label for="modeCell">Cell gallery</label>
         </span>
-        <label for="kind">Data</label>
-        <select id="kind">
-          <option value="raw">Raw</option>
-          <option value="seg">Segmented</option>
-        </select>
-        <span class="pair">
-          <label for="fuse">Fuse channels</label>
-          <input type="checkbox" id="fuse" checked />
-        </span>
-        <label for="clipCheck">Clip</label>
-        <input type="checkbox" id="clipCheck" />
-        <label for="clipOverlaysCheck">Clip overlays</label>
-        <input type="checkbox" id="clipOverlaysCheck" />
-        <label for="zoom">3D zoom</label>
-        <input id="zoom" type="range" min="0.5" max="4" step="0.05" value="1" />
-        <label for="renderMode">3D</label>
-        <select id="renderMode"></select>
-        <span class="pair" id="fluorControls">
-          <label for="density">Density</label>
-          <input type="number" id="density" min="0" step="0.1" value="0.5" style="width:4rem" />
-          <label for="brightness">Brightness</label>
-          <input type="number" id="brightness" min="0" step="0.1" value="1.6" style="width:4rem" />
-        </span>
-        <label for="webgpuCheck">WebGPU</label>
-        <input type="checkbox" id="webgpuCheck" />
       </div>
-      <div id="stagePanel">
-        <div class="row" id="stages"></div>
-        <div class="row" id="structures"></div>
+    </div>
+    <p class="lede" id="lede">&nbsp;</p>
+    <div class="viewer">
+      <div class="side" id="stagePanel">
+        <div class="stagesCol">
+          <h2>Stages</h2>
+          <div class="arrows">
+            <button type="button" id="stageUp" aria-label="Previous stage">&#8963;</button>
+            <button type="button" id="stageDown" aria-label="Next stage">&#8964;</button>
+          </div>
+          <div id="stages"></div>
+        </div>
+        <table id="structures">
+          <thead>
+            <tr>
+              <th>
+                <label><input type="checkbox" id="allStructures" /> Tagged gene</label>
+              </th>
+              <th>Labeled structure</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <div id="cellPanel" hidden>
-        <div class="row" id="cellChannels"></div>
-        <div id="gallery"><table id="grid"></table></div>
+      <div class="side" id="cellPanel" hidden>
+        <div>
+          <h2>Channels</h2>
+          <div id="cellChannels"></div>
+          <h2>Cells (one per gene and stage)</h2>
+          <table id="grid"></table>
+        </div>
       </div>
-      <div id="note">&nbsp;</div>
-      <div id="status">&nbsp;</div>
-    </header>
-    <main id="canvas-container">
-      <canvas id="gl1"></canvas>
-    </main>
-    <footer id="location">&nbsp;</footer>
+      <div class="main">
+        <div class="toolbar">
+          <span class="segmented" id="dataKind" role="group" aria-label="Data">
+            <button type="button" data-kind="raw" aria-pressed="true">Raw</button>
+            <button type="button" data-kind="mip" aria-pressed="false">Max project</button>
+            <button type="button" data-kind="seg" aria-pressed="false">Segmented</button>
+          </span>
+          <button type="button" id="turntable" class="push" aria-pressed="false">Turntable</button>
+          <button type="button" id="reset">Reset</button>
+        </div>
+        <div class="toolbar minor">
+          <span class="group">
+            <label for="renderMode">Render</label>
+            <select id="renderMode"></select>
+          </span>
+          <span class="group" id="fluorControls">
+            <label for="density">Density</label>
+            <input type="number" id="density" min="0" step="0.1" value="0.5" />
+            <label for="brightness">Brightness</label>
+            <input type="number" id="brightness" min="0" step="0.1" value="1.6" />
+          </span>
+          <span class="group">
+            <input type="checkbox" id="clipCheck" />
+            <label for="clipCheck">Clip</label>
+            <input type="checkbox" id="clipOverlaysCheck" />
+            <label for="clipOverlaysCheck">Clip overlays</label>
+          </span>
+          <span class="group">
+            <label for="zoom">Zoom</label>
+            <input id="zoom" type="range" min="0.5" max="4" step="0.05" value="1" />
+          </span>
+          <span class="group">
+            <input type="checkbox" id="fuse" checked />
+            <label for="fuse">Fuse channels</label>
+          </span>
+          <span class="group">
+            <input type="checkbox" id="webgpuCheck" />
+            <label for="webgpuCheck">WebGPU</label>
+          </span>
+        </div>
+        <main id="canvas-container">
+          <canvas id="gl1"></canvas>
+        </main>
+        <div id="note">&nbsp;</div>
+        <div id="status">&nbsp;</div>
+        <div id="location">&nbsp;</div>
+      </div>
+    </div>
     <script type="module" src="./allen.imsc.js"></script>
   </body>
 </html>

@@ -248,25 +248,6 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
             throw new Error(`Two instances share the id "${inst.id}".`)
           ids.add(inst.id)
         }
-        // NiiVue keeps one texture per address (by name when there is
-        // none) for every loaded volume, so a volume that shares its file
-        // with any other may draw the other's texture.
-        for (const inst of instances) {
-          const index = drawnIndex(view.volumes, inst.volumeId)
-          const volume = view.volumes[index]
-          const key = volume.url || volume.name
-          const other = view.volumes.findIndex(
-            (v, i) => i !== index && (v.url || v.name) === key,
-          )
-          if (other >= 0)
-            throw new Error(
-              `Volumes ${Math.min(index, other)} ("${view.volumes[Math.min(index, other)].name}") and ` +
-                `${Math.max(index, other)} ("${view.volumes[Math.max(index, other)].name}") were ` +
-                'both loaded from one file, and NiiVue keeps ' +
-                'one texture per file in this layout, so an instance of either may draw the other. ' +
-                'Close the copy you are not laying out; to compare them, clear the instances and show both as overlays.',
-            )
-        }
       }
       const cam = placed ? globalCameraFrom(placed) : undefined
       if (cam) {

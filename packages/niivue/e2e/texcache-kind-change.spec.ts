@@ -136,3 +136,76 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.singleResident).toBe(0)
   })
 }
+
+// Pruning used to run only while a volume was loaded, so removing the last one
+// kept its cache entry, bricks included, until the next load.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`removing the last volume empties the texture cache (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+
+    const result = await page.evaluate(`(async () => {
+     try {
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        let adapter = null
+        try {
+          adapter = await navigator.gpu.requestAdapter()
+        } catch (e) {
+          return { skip: 'requestAdapter threw: ' + e }
+        }
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const { default: NiiVue, SLICE_TYPE, chunkVolumeGrid } =
+        await import('/src/index.ts')
+      const nextFrame = () => new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r)))
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      document.body.appendChild(canvas)
+      const nv = new NiiVue({
+        backend: '${backend}',
+        sliceType: SLICE_TYPE.RENDER,
+      })
+      await nv.attachToCanvas(canvas)
+      if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
+        return { skip: 'WebGPU init fell back to ' + nv.backend }
+      }
+      await nv.loadVolumes([{ url: '${VOLUME}' }])
+      const vol = nv.volumes[0]
+      const d = vol.dimsRAS
+      vol.chunkPlan = chunkVolumeGrid(
+        [d[1], d[2], d[3]],
+        [${GRID}, ${GRID}, ${GRID}],
+        4096,
+        [3, 3, 3],
+      )
+      await nv.updateGLVolume()
+      await nextFrame()
+      const cache = nv.view.volumeRenderer._texCache
+      const loaded = cache.size
+      await nv.removeAllVolumes()
+      await nextFrame()
+      return { loaded, removed: cache.size }
+     } catch (e) {
+      const m = String(e && e.message ? e.message : e)
+      if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+        return { skip: 'GPU unavailable: ' + m }
+      }
+      throw e
+     }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+
+    expect(r.loaded).toBe(1)
+    expect(r.removed).toBe(0)
+  })
+}

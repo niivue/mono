@@ -105,7 +105,8 @@ const mount = (backend: string): string => `
   }
   // The renderer's cache of per-volume textures: read-only inspection.
   const cache = nv.view.volumeRenderer._texCache
-  const key = vol.url || vol.name
+  const { volumeCacheKey } = await import('/src/volume/orientChunked.ts')
+  const key = volumeCacheKey(vol)
 `
 
 // The refresh is issued either before the swap (it reaches the cache lookup

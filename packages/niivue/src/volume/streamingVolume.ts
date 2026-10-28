@@ -24,11 +24,8 @@ export interface StreamingVolumeSpec {
    */
   id?: string
   /**
-   * Optional source URL. Both renderers key their per-volume chunk texture
-   * cache on `url || name`, so when omitted this defaults to a unique
-   * `streamed://<id>` (never fetched for a chunked volume — the URL is a cache
-   * key only, all bytes arrive via `chunkSource`) so two default-created
-   * streamed volumes never collide on the shared `'streamed volume'` name.
+   * Optional source URL. Defaults to a unique `streamed://<id>`, never
+   * fetched: all bytes arrive via `chunkSource`.
    */
   url?: string
   /** Colormap name (default `'gray'`). */
@@ -80,10 +77,8 @@ export function createStreamingNVImage(spec: StreamingVolumeSpec): NVImage {
   // swap resolves a volume by id-or-name find-first, so two default-name volumes
   // sharing the id 'streamed volume' would route one handle's swap onto the other.
   const id = spec.id ?? nextStreamId()
-  // The renderers key their chunk texture cache on `url || name`. `name` stays
-  // the shared human-readable 'streamed volume', so default the URL to a unique
-  // value derived from the (unique) id — otherwise two default streamed volumes
-  // collide on the name key and the second reuses the first's chunk manager.
+  // A unique placeholder, never fetched. The texture cache keys on the volume
+  // object (volumeCacheKey), not on this url.
   const url = spec.url ?? `streamed://${id}`
   // Axis-aligned RAS affine: diag(spacing) with the origin at voxel [0,0,0].
   const affine = [

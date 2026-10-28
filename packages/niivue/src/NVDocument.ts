@@ -386,7 +386,7 @@ export function serialize(
   // Extract volumes with embedded data. Skip streamed/chunked volumes whose
   // voxels live only in a runtime chunkSource closure (img=null + chunkPlan/
   // chunkSource): they have no bytes to embed and their `streamed://<id>` url is
-  // a renderer texture-cache key, not a fetchable resource, so serializing them
+  // a placeholder, not a fetchable resource, so serializing them
   // would drive a broken fetch on reload. Dropping them keeps the remaining
   // (restorable) volumes' relative order intact; the modulationImage link is by
   // volume id and resolves by find-by-id at render time, so a reference to a

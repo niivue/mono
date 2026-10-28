@@ -60,6 +60,7 @@ import {
   identityChunkSampleTransform,
 } from '@/volume/chunking'
 import { sliceInterpolation } from '@/volume/interpolation'
+import { volumeCacheKey } from '@/volume/orientChunked'
 import { WGPUBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -700,12 +701,6 @@ export default class NVView {
               )
             }
           }
-          const keepKeys = new Set<string>()
-          for (const vol of vols) {
-            const key = vol.url || vol.name
-            if (key) keepKeys.add(key)
-          }
-          this.volumeRenderer.pruneVolumeCache(keepKeys)
         } else if (scope.background) {
           try {
             await this.volumeRenderer.updateVolume(
@@ -721,6 +716,10 @@ export default class NVView {
           }
         }
       }
+      // Each volume has its own cache entry (volumeCacheKey), so the entries
+      // of volumes no longer loaded are dropped here, in every layout and after
+      // the last volume is removed.
+      this.volumeRenderer.pruneVolumeCache(new Set(vols.map(volumeCacheKey)))
       if (vols.length > 1 && !this.options.instances) {
         if (scope.overlays) await this._updateOverlayStack(device, vols)
       } else {
@@ -1115,11 +1114,9 @@ export default class NVView {
         const vol = tile.space === 'global3d' && tileVol ? tileVol : volumes[0]
         if (!vol) continue
         if (tile.space === 'global3d') {
-          this.volumeRenderer.bindCachedVolume(vol.url || vol.name)
+          this.volumeRenderer.bindCachedVolume(volumeCacheKey(vol))
         } else if (volumes[0]) {
-          this.volumeRenderer.bindCachedVolume(
-            volumes[0].url || volumes[0].name,
-          )
+          this.volumeRenderer.bindCachedVolume(volumeCacheKey(volumes[0]))
         }
         this.volumeRenderer.updateBindGroup(device)
         const matRAS = vol.matRAS

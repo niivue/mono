@@ -48,6 +48,8 @@ interface PickerEntry {
   names: string[]
   /** True while the host chooser is open for this picker. */
   busy: boolean
+  /** Bumped per press, so a late settle from an earlier chooser is ignored. */
+  pickSeq: number
 }
 
 export class UIKitFilePickerOverlay
@@ -103,7 +105,7 @@ export class UIKitFilePickerOverlay
       existing.layout = null
       entry = existing
     } else {
-      entry = { spec, style, layout: null, names: [], busy: false }
+      entry = { spec, style, layout: null, names: [], busy: false, pickSeq: 0 }
       this.entries.set(spec.id, entry)
     }
     this.placeButton(entry)
@@ -285,12 +287,15 @@ export class UIKitFilePickerOverlay
 
   /** Ask the host for files and report the outcome to the picker's callbacks. */
   private pick(entry: PickerEntry): void {
-    if (entry.busy) return
+    // Not gated on busy: a chooser whose browser never reports cancel would
+    // otherwise leave the button dead. The newest press wins.
     const spec = entry.spec
     this.pickFiles ??= createBrowserFilePicker()
     const bridge = this.pickFiles
+    const seq = ++entry.pickSeq
     entry.busy = true
     const settle = (files: File[]) => {
+      if (seq !== entry.pickSeq) return
       entry.busy = false
       if (this.entries.get(spec.id) !== entry) return
       if (files.length === 0) {

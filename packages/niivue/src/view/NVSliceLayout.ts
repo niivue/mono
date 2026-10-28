@@ -83,17 +83,63 @@ export type SliceLayoutConfig = {
 
 // ---------- Helpers ----------
 
-const rotations = (sliceType: number, isRadiological = false) => {
+/**
+ * Camera azimuth/elevation that puts a 2D slice orientation face-on.
+ *
+ * The camera side is fixed per orientation (axial from above, coronal from
+ * behind, sagittal from the right) whatever the display convention. Left/right
+ * mirroring (radiological) is done in the projection by
+ * {@link NVTransforms.calculateMvpMatrix2D}, never by moving the camera: the
+ * slice hides the mesh geometry behind it, so moving the camera would change
+ * which half of the `meshThicknessOn2D` slab is drawn instead of mirroring it.
+ */
+export const sliceRotation = (sliceType: number) => {
   if (sliceType === NVConstants.SLICE_TYPE.SAGITTAL)
-    return { azimuth: isRadiological ? 90 : -90, elevation: 0 }
+    return { azimuth: -90, elevation: 0 }
   if (sliceType === NVConstants.SLICE_TYPE.CORONAL)
-    return { azimuth: isRadiological ? 180 : 0, elevation: 0 }
+    return { azimuth: 0, elevation: 0 }
   if (sliceType === NVConstants.SLICE_TYPE.AXIAL)
-    return {
-      azimuth: isRadiological ? 180 : 0,
-      elevation: isRadiological ? -90 : 90,
-    }
+    return { azimuth: 0, elevation: 90 }
   return { azimuth: 0, elevation: 0 }
+}
+
+/**
+ * Camera for a mosaic render ("R") tile. Unlike a slice tile, a render tile is
+ * not mirrored in the projection: radiological convention turns its camera to
+ * the opposite side instead.
+ */
+const renderTileRotation = (sliceType: number, isRadiological: boolean) => {
+  if (!isRadiological) return sliceRotation(sliceType)
+  if (sliceType === NVConstants.SLICE_TYPE.SAGITTAL)
+    return { azimuth: 90, elevation: 0 }
+  if (sliceType === NVConstants.SLICE_TYPE.CORONAL)
+    return { azimuth: 180, elevation: 0 }
+  if (sliceType === NVConstants.SLICE_TYPE.AXIAL)
+    return { azimuth: 180, elevation: -90 }
+  return { azimuth: 0, elevation: 0 }
+}
+
+/**
+ * Whether a tile is a 2D slice drawn mirrored, i.e. with
+ * {@link NVTransforms.calculateMvpMatrix2D}'s projection flipping screen X.
+ *
+ * A mirror reverses the screen-space winding of every triangle, so a backend
+ * drawing culled geometry (meshes, crosshair cylinders, depth-pick proxies)
+ * into such a tile must treat clockwise as front-facing, or it culls the faces
+ * it should keep.
+ *
+ * @param tile - the tile being drawn
+ * @param isMirrored - the mirror flag passed to calculateMvpMatrix2D for it
+ */
+export function isMirroredSliceTile(
+  tile: SliceTile,
+  isMirrored: boolean,
+): boolean {
+  return (
+    isMirrored &&
+    tile.space !== 'global3d' &&
+    tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+  )
 }
 
 // idxMap maps each orientation to [inPlaneU, inPlaneV, depth] indices into XYZ
@@ -149,11 +195,7 @@ export function crosshairRadiusMM(model: NVModel, tile: SliceTile): number {
   return (widthPx * mmPerPixel) / 2
 }
 
-const buildScreens = (
-  extentsMin: vec3,
-  extentsMax: vec3,
-  isRadiological: boolean,
-): SliceTile[] => {
+const buildScreens = (extentsMin: vec3, extentsMax: vec3): SliceTile[] => {
   const range = vec3.create()
   vec3.sub(range, extentsMax, extentsMin)
   return IDX_MAP.map((map, i) => {
@@ -172,7 +214,7 @@ const buildScreens = (
     return {
       axCorSag,
       screen: { mnMM: mn, mxMM: mx, fovMM: fov },
-      ...rotations(axCorSag, isRadiological),
+      ...sliceRotation(axCorSag),
     }
   })
 }
@@ -180,7 +222,6 @@ const buildScreens = (
 const buildEqualScreens = (
   extentsMin: vec3,
   extentsMax: vec3,
-  isRadiological: boolean,
   maxDim: number,
 ): SliceTile[] => {
   return IDX_MAP.map((map, i) => {
@@ -206,7 +247,7 @@ const buildEqualScreens = (
     return {
       axCorSag,
       screen: { mnMM: mn, mxMM: mx, fovMM: fov },
-      ...rotations(axCorSag, isRadiological),
+      ...sliceRotation(axCorSag),
     }
   })
 }
@@ -308,8 +349,8 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
   const maxDim = Math.max(range[0], range[1], range[2])
 
   const screens = isEqual
-    ? buildEqualScreens(extentsMin, extentsMax, isRad, maxDim)
-    : buildScreens(extentsMin, extentsMax, isRad)
+    ? buildEqualScreens(extentsMin, extentsMax, maxDim)
+    : buildScreens(extentsMin, extentsMax)
 
   const tokens = str
     .replace(/;/g, ' ; ')
@@ -454,7 +495,9 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
       const h = desc.h * zoom
       const yOff = (rowHeights[r] * zoom - h) / 2
 
-      const rot = rotations(desc.orient, isRad)
+      const rot = desc.isRender
+        ? renderTileRotation(desc.orient, isRad)
+        : sliceRotation(desc.orient)
       let azimuth = rot.azimuth
       if (desc.isRender && (desc.sliceMM < 0 || Object.is(desc.sliceMM, -0))) {
         azimuth += 180
@@ -497,7 +540,6 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
 
 function heroLayout(config: SliceLayoutConfig): SliceTile[] {
   const { canvasWH, extentsMin, extentsMax } = config
-  const isRad = config.isRadiologicalConvention ?? false
   const tileMargin = config.tileMargin ?? 0
   const heroFraction = config.heroImageFraction ?? 0
   const heroType = config.heroSliceType ?? NVConstants.SLICE_TYPE.RENDER
@@ -508,8 +550,8 @@ function heroLayout(config: SliceLayoutConfig): SliceTile[] {
   const maxDim = Math.max(range[0], range[1], range[2])
 
   const screens = isEqual
-    ? buildEqualScreens(extentsMin, extentsMax, isRad, maxDim)
-    : buildScreens(extentsMin, extentsMax, isRad)
+    ? buildEqualScreens(extentsMin, extentsMax, maxDim)
+    : buildScreens(extentsMin, extentsMax)
 
   const heroW = canvasWH[0] * heroFraction
   const remainW = canvasWH[0] - heroW - tileMargin
@@ -564,7 +606,6 @@ type Candidate = { type: number; hasRender: boolean; zoom: number }
 
 function layoutMultiplanar(config: SliceLayoutConfig): SliceTile[] {
   const { canvasWH, extentsMin, extentsMax } = config
-  const isRad = config.isRadiologicalConvention ?? false
   const tileMargin = config.tileMargin ?? 0
   const multiplanarLayout =
     config.multiplanarLayout ?? NVConstants.MULTIPLANAR_TYPE.AUTO
@@ -577,8 +618,8 @@ function layoutMultiplanar(config: SliceLayoutConfig): SliceTile[] {
   const maxDim = Math.max(range[0], range[1], range[2])
 
   const screens = isEqual
-    ? buildEqualScreens(extentsMin, extentsMax, isRad, maxDim)
-    : buildScreens(extentsMin, extentsMax, isRad)
+    ? buildEqualScreens(extentsMin, extentsMax, maxDim)
+    : buildScreens(extentsMin, extentsMax)
 
   // Tile dimensions in mm
   const wAx = isEqual ? maxDim : range[0]
@@ -771,7 +812,6 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
   const { canvasWH, extentsMin, extentsMax, customLayout } = config
   if (!customLayout || customLayout.length === 0) return []
 
-  const isRad = config.isRadiologicalConvention ?? false
   const isEqual = config.isMultiplanarEqualSize ?? false
 
   const range = vec3.create()
@@ -779,8 +819,8 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
   const maxDim = Math.max(range[0], range[1], range[2])
 
   const screens = isEqual
-    ? buildEqualScreens(extentsMin, extentsMax, isRad, maxDim)
-    : buildScreens(extentsMin, extentsMax, isRad)
+    ? buildEqualScreens(extentsMin, extentsMax, maxDim)
+    : buildScreens(extentsMin, extentsMax)
 
   const tiles: SliceTile[] = []
   for (const spec of customLayout) {
@@ -812,7 +852,7 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
       const letterbox = fit && !fill
       const fw = letterbox ? fov[0] * zoom : pw
       const fh = letterbox ? fov[1] * zoom : ph
-      const rot = rotations(idx, isRad)
+      const rot = sliceRotation(idx)
       const tile: SliceTile = {
         leftTopWidthHeight: [px + (pw - fw) / 2, py + (ph - fh) / 2, fw, fh],
         axCorSag: idx,
@@ -931,7 +971,6 @@ export function fitSlicesFromModel(
 export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
   const { canvasWH, extentsMin, extentsMax } = config
   const sliceType = config.sliceType
-  const isRad = config.isRadiologicalConvention ?? false
   const isEqual = config.isMultiplanarEqualSize ?? false
   const mosaic = config.sliceMosaicString ?? ''
   const heroFraction = config.heroImageFraction ?? 0
@@ -961,8 +1000,8 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
   const maxDim = Math.max(range[0], range[1], range[2])
 
   const screens = isEqual
-    ? buildEqualScreens(extentsMin, extentsMax, isRad, maxDim)
-    : buildScreens(extentsMin, extentsMax, isRad)
+    ? buildEqualScreens(extentsMin, extentsMax, maxDim)
+    : buildScreens(extentsMin, extentsMax)
 
   // Single slice
   if (sliceType !== NVConstants.SLICE_TYPE.MULTIPLANAR) {

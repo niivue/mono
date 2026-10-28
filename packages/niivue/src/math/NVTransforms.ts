@@ -435,8 +435,14 @@ export function calculateMvpMatrix2D(
     bottom = mn[1]
     top = mx[1]
     if (isRadiological) {
-      left = -mx[0]
-      right = -mn[0]
+      // Mirror in the projection only: swapped bounds send world +U to the
+      // left edge. The camera (azimuth/elevation) stays on the side it has in
+      // neurological convention, so depth order -- which half of the
+      // meshThicknessOn2D slab the slice hides -- does not depend on the
+      // mirror. The mirror reverses triangle winding, so callers must swap
+      // the front face when drawing culled geometry (see isMirroredSliceTile).
+      left = mx[0]
+      right = mn[0]
     }
   }
   // Apply 2D zoom and pan (pan = [panU, panV, zoom?])
@@ -453,11 +459,10 @@ export function calculateMvpMatrix2D(
       bottom = cv - hh
       top = cv + hh
     }
-    // Pan: shift ortho bounds by world-mm offset
-    // Radiological flips the U axis — negate panU to match
-    const panU = isRadiological ? -pan[0] : pan[0]
-    left -= panU
-    right -= panU
+    // Pan: shift ortho bounds by world-mm offset (bounds are in world U for
+    // both conventions, so pan needs no mirroring of its own)
+    left -= pan[0]
+    right -= pan[0]
     bottom -= pan[1]
     top -= pan[1]
   }

@@ -760,6 +760,12 @@ export default class NVGlview {
       if (tile.axCorSag === undefined) {
         continue
       }
+      // A mirrored (radiological) slice projection reverses triangle winding.
+      gl.frontFace(
+        NVSliceLayout.isMirroredSliceTile(tile, md.layout.isRadiological)
+          ? gl.CW
+          : gl.CCW,
+      )
       if (
         tile.space !== 'global3d' &&
         tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
@@ -1394,6 +1400,7 @@ export default class NVGlview {
         }
       }
     }
+    gl.frontFace(gl.CCW)
     // Reset viewport to bounds region for colormaps/overlays
     gl.viewport(bx, glBoundsY, canvasWidth, canvasHeight)
     // Layer 3: Colormap bars
@@ -2152,6 +2159,13 @@ export default class NVGlview {
     gl.scissor(scissorX, scissorY, 1, 1)
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+    // Same winding rule as the render loop: a mirrored slice projection
+    // reverses it, and the volume proxy and meshes below are back-face culled.
+    gl.frontFace(
+      NVSliceLayout.isMirroredSliceTile(tile, md.layout.isRadiological)
+        ? gl.CW
+        : gl.CCW,
+    )
     // Draw volume with depth-pick shader (raymarches from any viewing angle)
     const volumes = md.getVolumes()
     // A hidden (or fully transparent) background is not drawn, so it must not
@@ -2186,6 +2200,7 @@ export default class NVGlview {
     // Read back 1 pixel
     const pixel = new Uint8Array(4)
     gl.readPixels(scissorX, scissorY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
+    gl.frontFace(gl.CCW)
     gl.disable(gl.SCISSOR_TEST)
     const bgc = md.scene.backgroundColor
     gl.clearColor(bgc[0], bgc[1], bgc[2], bgc[3])

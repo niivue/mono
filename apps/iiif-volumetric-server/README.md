@@ -81,8 +81,10 @@ are real binaries instead of pointer files.
 - `bunx nx run iiif-volumetric-server:fetch-omezarr` downloads the
   default FIB-SEM OME-Zarr sample into `fixtures/omezarr/`.
 - `bunx nx run iiif-volumetric-server:fetch-allen` downloads an Allen
-  JSON + PNG atlas dataset (32-channel microscopy, ~800 KB) into
-  `fixtures/allen/`.
+  JSON + PNG atlas dataset (32-channel microscopy, ~2.5 MB) into
+  `fixtures/allen/`, by default from the copy in
+  [niivue-demo-images-lfs](https://github.com/niivue/niivue-demo-images-lfs/tree/main/Allen/IMSC)
+  (Allen Institute noncommercial terms, see the LICENSE there).
 
 To customise the NIfTI dataset, OME-Zarr level, or atlas URL, run the
 scripts from `apps/iiif-volumetric-server`:

@@ -4,6 +4,7 @@ import NiiVue, {
   OVERLAY_COLOR_BLEND,
   SHOW_RENDER,
   SLICE_TYPE,
+  VOLUME_RENDER_MODE,
 } from '../src/index.ts'
 import manifest from './allen.imsc.json'
 
@@ -31,6 +32,10 @@ const fuseCheck = document.getElementById('fuse')
 const clipCheck = document.getElementById('clipCheck')
 const clipOverlaysCheck = document.getElementById('clipOverlaysCheck')
 const zoomInput = document.getElementById('zoom')
+const renderModeSelect = document.getElementById('renderMode')
+const fluorControls = document.getElementById('fluorControls')
+const densityInput = document.getElementById('density')
+const brightnessInput = document.getElementById('brightness')
 const stagePanel = document.getElementById('stagePanel')
 const cellPanel = document.getElementById('cellPanel')
 const stagesRow = document.getElementById('stages')
@@ -96,6 +101,38 @@ fuseCheck.onchange = () => {
   applyFusion()
   showLoaded()
 }
+
+// 3D render mode. Fluorescence draws as Allen's 3D viewer does: a sample is as
+// opaque as its fused colour is bright, times density, and brightness is a
+// colour gain (Allen uses 1.6). Its densities are 0.06 raw and 0.4 segmented;
+// NiiVue's step scale differs, so the matching values are 0.5 and 3.
+// Fluorescence is offered only when this build of NiiVue has it.
+const hasFluorescence = VOLUME_RENDER_MODE.FLUORESCENCE !== undefined
+const renderModes = [
+  ...(hasFluorescence
+    ? [['Fluorescence', VOLUME_RENDER_MODE.FLUORESCENCE]]
+    : []),
+  ['Composite', VOLUME_RENDER_MODE.COMPOSITE],
+  ['Maximum', VOLUME_RENDER_MODE.MAXIMUM],
+]
+for (const [label, value] of renderModes) {
+  renderModeSelect.add(new Option(label, String(value)))
+}
+function applyRender() {
+  const fluorescence =
+    hasFluorescence &&
+    Number(renderModeSelect.value) === VOLUME_RENDER_MODE.FLUORESCENCE
+  fluorControls.hidden = !fluorescence
+  nv1.volumeRenderMode = Number(renderModeSelect.value)
+  if (fluorescence) {
+    nv1.volumeDensity = Number(densityInput.value)
+    nv1.volumeBrightness = Number(brightnessInput.value)
+  }
+}
+renderModeSelect.onchange = applyRender
+densityInput.oninput = applyRender
+brightnessInput.oninput = applyRender
+applyRender()
 
 // 3D clip plane and zoom, as in allen.atlas.html. Every channel is an overlay,
 // so without clipPlaneOverlay the clip plane appears to do nothing: the
@@ -381,6 +418,11 @@ for (const input of modeInputs) {
     loadCurrent()
   }
 }
-kindSelect.onchange = loadCurrent
+kindSelect.onchange = () => {
+  // Masks are hard-edged and sparse, so they need a higher density.
+  densityInput.value = kindSelect.value === 'seg' ? '3' : '0.5'
+  applyRender()
+  loadCurrent()
+}
 
 await loadCurrent()

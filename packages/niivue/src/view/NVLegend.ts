@@ -45,8 +45,8 @@ export function collectLegendEntries(
 
   // Collect from volumes with label colormaps
   for (const volume of volumes) {
-    // Skip if showLegend is explicitly false
-    if (volume.showLegend === false) continue
+    // Unset counts as visible: an NVImage built by hand may omit the flag.
+    if (volume.isLegendVisible === false) continue
     if (!volume.colormapLabel) continue
 
     const lut = volume.colormapLabel
@@ -76,8 +76,7 @@ export function collectLegendEntries(
 
   // Collect from mesh layers with label colormaps
   for (const mesh of meshes) {
-    // Skip if showLegend is explicitly false
-    if (mesh.showLegend === false || !isMeshDrawn(mesh)) continue
+    if (mesh.isLegendVisible === false || !isMeshDrawn(mesh)) continue
     if (!mesh.layers) continue
 
     for (const layer of mesh.layers) {
@@ -111,7 +110,7 @@ export function collectLegendEntries(
 
   // Collect from connectome meshes (named nodes)
   for (const mesh of meshes) {
-    if (mesh.showLegend === false || !isMeshDrawn(mesh)) continue
+    if (mesh.isLegendVisible === false || !isMeshDrawn(mesh)) continue
     if (mesh.kind !== 'connectome' || !mesh.jcon || !mesh.connectomeOptions)
       continue
 

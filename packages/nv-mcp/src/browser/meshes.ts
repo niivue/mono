@@ -142,7 +142,7 @@ export function describeMesh(mesh: ShownMesh, index: number) {
     ...(mesh.sliceShaderType ? { sliceShader: mesh.sliceShaderType } : {}),
     ...(mesh.visible === undefined ? {} : { visible: mesh.visible }),
     ...(mesh.isColorbarVisible ? { colorbar: true } : {}),
-    ...(mesh.isLegendVisible ? { legend: true } : {}),
+    ...(mesh.isLegendVisible === false ? { legend: false } : {}),
     ...(mesh.layers?.length ? { layers: mesh.layers.map(describeLayer) } : {}),
     ...(mesh.tractOptions
       ? {

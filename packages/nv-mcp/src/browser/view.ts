@@ -50,6 +50,7 @@ export interface VolumeToLoad {
   calMinNeg?: number
   calMaxNeg?: number
   isColorbarVisible?: boolean
+  isLegendVisible?: boolean
 }
 
 /** What `View.setVolume` can change about a volume: NiiVue's `VolumeUpdate`. */
@@ -66,6 +67,7 @@ export interface VolumeUpdate {
   frame4D?: number
   isColormapInverted?: boolean
   isColorbarVisible?: boolean
+  isLegendVisible?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
   modulateAlpha?: number
@@ -97,6 +99,7 @@ export interface ShownVolume {
   colormapType?: number
   isTransparentBelowCalMin?: boolean
   isColorbarVisible?: boolean
+  isLegendVisible?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
   modulateAlpha?: number
@@ -224,7 +227,7 @@ export interface SignalDisplay {
   phase0?: number
   phase1Ms?: number
   selectedColumns?: number[] | null
-  showLegend?: boolean
+  isLegendVisible?: boolean
 }
 
 /** A note on a signal's graph: NiiVue's `SignalAnnotation`. */

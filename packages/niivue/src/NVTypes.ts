@@ -189,7 +189,7 @@ export type NVImage = {
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
-  /** Whether to show legend for label colormaps (default: false) */
+  /** Whether this volume's labels join the legend (default: true; `nv.isLegendVisible` hides the combined volume/mesh legend) */
   isLegendVisible?: boolean
   v1?: Float32Array
   gpu?: Record<string, unknown>
@@ -585,7 +585,7 @@ export type NVMesh = {
   color: [number, number, number, number]
   /** Whether to show colorbar (default: true) */
   isColorbarVisible: boolean
-  /** Whether to show legend for label layers (default: false) */
+  /** Whether this mesh's labels join the legend (default: true; `nv.isLegendVisible` hides the combined volume/mesh legend) */
   isLegendVisible?: boolean
   /** Source URL or filename */
   url?: string
@@ -1495,6 +1495,8 @@ export type ImageFromUrlOptions = {
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
+  /** Whether this volume's labels join the legend (default: true) */
+  isLegendVisible?: boolean
   /**
    * 2D slice sampling: true = nearest-neighbour, false = linear. Unset (the
    * default) picks nearest for categorical data (NIFTI_INTENT_LABEL or a label
@@ -1556,7 +1558,7 @@ export type MeshFromUrlOptions = {
   rgba255?: [number, number, number, number]
   /** Whether to show colorbar (default: true) */
   isColorbarVisible?: boolean
-  /** Whether to show legend (default: false) */
+  /** Whether this mesh's labels join the legend (default: true) */
   isLegendVisible?: boolean
   /** Shader type (default: 'phong'). Used for the 3D render view and, unless
    * `sliceShaderType` is set, for 2D slice views too. */
@@ -2012,5 +2014,6 @@ export type NVSignalDisplay = {
   /** indices of columns to show; null shows all */
   selectedColumns: number[] | null
   // shared
-  showLegend: boolean
+  /** Whether the graph draws its series legend */
+  isLegendVisible: boolean
 }

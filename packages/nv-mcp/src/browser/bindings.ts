@@ -171,6 +171,7 @@ const VOLUME_PROPS: Record<
   },
   invert: { field: 'isColormapInverted', shape: 'boolean' },
   colorbar: { field: 'isColorbarVisible', shape: 'boolean' },
+  legend: { field: 'isLegendVisible', shape: 'boolean' },
   nearest: { field: 'isNearestInterpolation', shape: 'boolean' },
   transparent_below_cal_min: {
     field: 'isTransparentBelowCalMin',

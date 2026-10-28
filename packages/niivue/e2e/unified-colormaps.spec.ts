@@ -523,7 +523,7 @@ test('a document embeds a runtime label colormap and restores it by name', async
     }
   })
   expect(r).toEqual({
-    version: 10,
+    version: 11,
     embedded: expect.arrayContaining(['DocAtlas']),
     savedLut: false,
     colormap: 'DocAtlas',

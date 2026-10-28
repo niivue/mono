@@ -607,6 +607,10 @@ describe('set_volume', () => {
     expect(view.setVolume).toHaveBeenLastCalledWith(1, {
       isColormapInverted: false,
     })
+    await handlers.set_volume({ volume: 1, legend: false })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      isLegendVisible: false,
+    })
     expect(
       await handlers.set_volume({ volume: '2', opacity: 0 }),
     ).toMatchObject({ volume: { index: 2, opacity: 0 } })
@@ -1494,6 +1498,7 @@ describe('add_overlay', () => {
       cal_min_neg: -6,
       cal_max_neg: -2.3,
       colorbar: true,
+      legend: false,
     })) as { volumes: Record<string, unknown>[] }
     expect(view.addVolume).toHaveBeenCalledWith({
       url: 'http://h/stats/zstat1.nii.gz',
@@ -1506,6 +1511,7 @@ describe('add_overlay', () => {
       calMaxNeg: -2.3,
       colormapNegative: 'cool',
       isColorbarVisible: true,
+      isLegendVisible: false,
     })
     expect(result.volumes[1]).toMatchObject({
       name: 'zstat1.nii.gz',

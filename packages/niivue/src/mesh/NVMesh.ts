@@ -100,7 +100,7 @@ export function createMesh(
     opacity: 1.0,
     color: [1, 1, 1, 1] as [number, number, number, number],
     isColorbarVisible: false,
-    isLegendVisible: false,
+    isLegendVisible: true,
     layers: [] as NVMeshLayer[],
     perVertexColors: null as Uint32Array | null,
     mz3: kind === 'mesh' ? { positions, indices } : null,
@@ -368,7 +368,7 @@ async function loadConnectome(
     sliceShaderType: mesh.sliceShaderType ?? '',
     color: mesh.color ?? [1, 1, 1, 1],
     isColorbarVisible: mesh.isColorbarVisible ?? true,
-    isLegendVisible: mesh.isLegendVisible ?? false,
+    isLegendVisible: mesh.isLegendVisible ?? true,
     url: urlString,
     name: mesh.name ?? urlString,
   })

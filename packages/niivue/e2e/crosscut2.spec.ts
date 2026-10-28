@@ -111,7 +111,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       }])
       nv.setCrosshairPos([0, 0, 0])
       const crosscut = (await greenPixels()).length
-      nv.setMesh(0, { shaderType: 'crosscut2' })
+      await nv.setMesh(0, { shaderType: 'crosscut2' })
       const crosscut2 = (await greenPixels()).length
       return { crosscut, crosscut2 }
     })()`)
@@ -120,5 +120,82 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     const { crosscut, crosscut2 } = r as { crosscut: number; crosscut2: number }
     expect(crosscut).toBe(0)
     expect(crosscut2).toBeGreaterThan(100)
+  })
+
+  test(`crosscut2 follows indices edited in place before updateGLVolume (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    // Culling bounds are cached per mesh; the documented full rebuild must
+    // refresh them after an untracked in-place index edit.
+    const r = await page.evaluate(`(async () => {
+      ${setup(backend)}
+      // Two walls in x = 0: z in [-40, -10] (drawn) and z in [10, 40] (spare).
+      const obj = [
+        'v 0 -40 -40', 'v 0 40 -40', 'v 0 40 -10', 'v 0 -40 -10',
+        'v 0 -40 10', 'v 0 40 10', 'v 0 40 40', 'v 0 -40 40',
+        'f 1 2 3', 'f 1 3 4',
+      ].join('\\n')
+      await nv.loadMeshes([{
+        url: new File([obj], 'walls.obj'),
+        color: [0, 1, 0, 1],
+        shaderType: 'crosscut2',
+      }])
+      nv.setCrosshairPos([0, 0, 25])
+      const before = (await greenPixels()).length
+      nv.meshes[0].indices.set([4, 5, 6, 4, 6, 7])
+      await nv.updateGLVolume()
+      const after = (await greenPixels()).length
+      return { before, after }
+    })()`)
+    if ((r as { skip?: string }).skip)
+      test.skip(true, (r as { skip: string }).skip)
+    const { before, after } = r as { before: number; after: number }
+    expect(before).toBe(0)
+    expect(after).toBeGreaterThan(100)
+  })
+
+  test(`crosscut2 leaves a translucent 3D view unchanged (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    // Triangle order matters to translucent blending, so crosscut2's cluster
+    // order must stay in its own copy of the indices. Compares the view before
+    // and after crosscut2 was the slice shader.
+    const r = await page.evaluate(`(async () => {
+      ${setup(backend)}
+      // 2D tiles draw crosscut2 (building its cluster order); the render
+      // tile keeps drawing the translucent mesh with phong.
+      nv.sliceType = SLICE_TYPE.MULTIPLANAR
+      nv.showRender = 1
+      await nv.loadMeshes([{
+        url: '/meshes/BrainMesh_ICBM152.lh.mz3',
+        opacity: 0.5,
+      }])
+      const snapshot = async () => {
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+        nv.view.render()
+        ctx.clearRect(0, 0, readback.width, readback.height)
+        ctx.drawImage(canvas, 0, 0)
+        return Array.from(ctx.getImageData(0, 0, readback.width, readback.height).data)
+      }
+      const before = await snapshot()
+      await nv.setMesh(0, { sliceShaderType: 'crosscut2' })
+      await snapshot()
+      await nv.setMesh(0, { sliceShaderType: '' })
+      const after = await snapshot()
+      let lit = 0
+      let changed = 0
+      for (let i = 0; i < before.length; i += 4) {
+        if (before[i] + before[i + 1] + before[i + 2] > 30) lit++
+        if (before[i] !== after[i] || before[i + 1] !== after[i + 1] || before[i + 2] !== after[i + 2]) changed++
+      }
+      return { lit, changed }
+    })()`)
+    if ((r as { skip?: string }).skip)
+      test.skip(true, (r as { skip: string }).skip)
+    const { lit, changed } = r as { lit: number; changed: number }
+    expect(lit).toBeGreaterThan(1000)
+    expect(changed).toBe(0)
   })
 }

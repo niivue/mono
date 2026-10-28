@@ -1,4 +1,12 @@
 import { log } from '@/logger'
+import {
+  CLUSTER_SIZE,
+  clustersCrossingPlanes,
+  meshClusters,
+  PLANE_SHIFT,
+  sortedIndices,
+  type TriangleClusters,
+} from '@/mesh/triangleClusters'
 import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
 import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
 import meshShaderWGSL from './mesh.wgsl?raw'
@@ -27,8 +35,7 @@ export function uploadMeshGPU(
   vertexBuffer.unmap()
   const indexBuffer = device.createBuffer({
     size: meshData.indices.byteLength,
-    // VERTEX: crosscut2 steps through it per instance, one triangle each.
-    usage: GPUBufferUsage.INDEX | GPUBufferUsage.VERTEX,
+    usage: GPUBufferUsage.INDEX,
     mappedAtCreation: true,
   })
   new Uint32Array(indexBuffer.getMappedRange()).set(meshData.indices)
@@ -134,9 +141,9 @@ export function createMeshPipeline(
 }
 
 /**
- * crosscut2 pipeline (see `vertex_crosscut2`): instanced by triangle, the
- * index buffer stepping per instance; vertices come from the vertex buffer
- * bound as storage in group 1. No depth test, no culling, like crosscut.
+ * crosscut2 pipeline (see `vertex_crosscut2`): no vertex buffers; vertices,
+ * cluster-ordered triangle indices and the tile's cluster list come from
+ * group 1. No depth test, no culling, like crosscut.
  */
 export function createCrosscut2Pipeline(
   device: GPUDevice,
@@ -151,13 +158,7 @@ export function createCrosscut2Pipeline(
     vertex: {
       module: shaderModule,
       entryPoint: 'vertex_crosscut2',
-      buffers: [
-        {
-          arrayStride: 12,
-          stepMode: 'instance',
-          attributes: [{ format: 'uint32x3', offset: 0, shaderLocation: 0 }],
-        },
-      ],
+      constants: { clusterSize: CLUSTER_SIZE, planeShift: PLANE_SHIFT },
     },
     fragment: {
       module: shaderModule,
@@ -182,33 +183,113 @@ export function createCrosscut2Pipeline(
   })
 }
 
-const _crosscut2BindGroups = new WeakMap<GPUBuffer, GPUBindGroup>()
-const _tooLarge = new WeakSet<GPUBuffer>()
+type Crosscut2Gpu = {
+  clusters: TriangleClusters
+  /** Triangle indices in cluster order. A copy: the mesh's own index buffer
+   *  keeps the file's order, which translucent 3D blending depends on. */
+  triBuffer: GPUBuffer
+  /** One region per tile slot, so per-tile writes within a pass do not collide. */
+  listBuffer: GPUBuffer
+  regionBytes: number
+  regions: number
+  bindGroup: GPUBindGroup
+}
+const _crosscut2 = new WeakMap<WebGPUMeshGPU, Crosscut2Gpu>()
+const _tooLarge = new WeakSet<WebGPUMeshGPU>()
 
-/** The group-1 bind group exposing a mesh's vertex buffer to crosscut2. */
-export function crosscut2BindGroup(
+// Build or resize `gpu`'s crosscut2 resources. Within a frame the clusters
+// and tile count are fixed, so only a mesh's first draw of a frame can
+// replace the buffers, before any draw of this pass references them.
+function crosscut2Gpu(
   device: GPUDevice,
   layout: GPUBindGroupLayout,
-  vertexBuffer: GPUBuffer,
-): GPUBindGroup | null {
-  let bg = _crosscut2BindGroups.get(vertexBuffer)
-  if (bg) return bg
-  if (vertexBuffer.size > device.limits.maxStorageBufferBindingSize) {
-    if (!_tooLarge.has(vertexBuffer)) {
-      _tooLarge.add(vertexBuffer)
-      log.warn('crosscut2: mesh exceeds maxStorageBufferBindingSize')
-    }
+  meshData: NVMesh,
+  gpu: WebGPUMeshGPU,
+  tileCount: number,
+): Crosscut2Gpu | null {
+  const vertexBuffer = gpu.vertexBuffer
+  if (!vertexBuffer || _tooLarge.has(gpu)) return null
+  const clusters = meshClusters(meshData)
+  if (clusters.clusterCount === 0) return null
+  // The bound index copy is padded to whole clusters (12 B per triangle).
+  const maxBind = device.limits.maxStorageBufferBindingSize
+  const triBytes = clusters.clusterCount * CLUSTER_SIZE * 12
+  if (vertexBuffer.size > maxBind || triBytes > maxBind) {
+    _tooLarge.add(gpu)
+    log.warn('crosscut2: mesh exceeds maxStorageBufferBindingSize')
     return null
   }
-  bg = device.createBindGroup({
-    layout,
-    entries: [{ binding: 0, resource: { buffer: vertexBuffer } }],
+  let cc = _crosscut2.get(gpu)
+  if (cc && cc.clusters === clusters && cc.regions >= tileCount) return cc
+  let triBuffer = cc?.triBuffer
+  if (!triBuffer || cc?.clusters !== clusters) {
+    triBuffer?.destroy()
+    const sorted = sortedIndices(meshData.indices, clusters.order)
+    triBuffer = device.createBuffer({
+      size: sorted.byteLength,
+      usage: GPUBufferUsage.STORAGE,
+      mappedAtCreation: true,
+    })
+    new Uint32Array(triBuffer.getMappedRange()).set(sorted)
+    triBuffer.unmap()
+  }
+  cc?.listBuffer.destroy()
+  const align = device.limits.minStorageBufferOffsetAlignment
+  const regionBytes = Math.ceil(clusters.entries.byteLength / align) * align
+  // At least four regions (A+C+S+R), so common layouts never regrow.
+  const regions = Math.max(tileCount, 4)
+  const listBuffer = device.createBuffer({
+    size: regionBytes * regions,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   })
-  _crosscut2BindGroups.set(vertexBuffer, bg)
-  return bg
+  const bindGroup = device.createBindGroup({
+    layout,
+    entries: [
+      { binding: 0, resource: { buffer: vertexBuffer } },
+      { binding: 1, resource: { buffer: triBuffer } },
+      { binding: 2, resource: { buffer: listBuffer, size: regionBytes } },
+    ],
+  })
+  cc = { clusters, triBuffer, listBuffer, regionBytes, regions, bindGroup }
+  _crosscut2.set(gpu, cc)
+  return cc
+}
+
+/**
+ * Record one tile's crosscut2 draw: upload the clusters its planes cross into
+ * the tile's region and draw one instance per triangle of those clusters,
+ * six vertices each. The caller has set the pipeline and group 0.
+ */
+export function drawCrosscut2(
+  device: GPUDevice,
+  pass: GPURenderPassEncoder,
+  layout: GPUBindGroupLayout,
+  meshData: NVMesh,
+  gpu: WebGPUMeshGPU,
+  ccPlanes: Float32Array,
+  tileSlot: number,
+  tileCount: number,
+): void {
+  if (ccPlanes[14] <= 0) return // zero width: draw nothing, like crosscut
+  const cc = crosscut2Gpu(device, layout, meshData, gpu, tileCount)
+  if (!cc) return
+  const entries = clustersCrossingPlanes(cc.clusters, ccPlanes)
+  if (entries.length === 0) return
+  const offset = tileSlot * cc.regionBytes
+  device.queue.writeBuffer(cc.listBuffer, offset, entries)
+  pass.setBindGroup(1, cc.bindGroup, [offset])
+  pass.draw(6, entries.length * CLUSTER_SIZE)
+}
+
+function destroyCrosscut2(gpu: WebGPUMeshGPU): void {
+  const cc = _crosscut2.get(gpu)
+  cc?.triBuffer.destroy()
+  cc?.listBuffer.destroy()
+  _crosscut2.delete(gpu)
 }
 
 export function destroyMesh(mesh: WebGPUMeshGPU): void {
+  destroyCrosscut2(mesh)
   if (mesh.vertexBuffer) {
     mesh.vertexBuffer.destroy()
     mesh.vertexBuffer = null

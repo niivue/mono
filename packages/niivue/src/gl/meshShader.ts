@@ -1,3 +1,7 @@
+import { CLUSTER_SIZE, PLANE_SHIFT } from '@/mesh/triangleClusters'
+
+const CLUSTER_MASK = (1 << PLANE_SHIFT) - 1
+
 export const meshVertShader = `#version 300 es
 precision highp float;
 uniform mat4 mvpMtx;
@@ -286,6 +290,7 @@ out vec4 fragColor;
 
 void main() {
     float LINE_WIDTH_PX = ccPlanes[3].z;
+    if (LINE_WIDTH_PX <= 0.0) discard; // smoothstep(0, 0, x) is undefined
     const float TILT_STRENGTH = 1.0;
     vec3 d = vPos - crosscutMM.xyz;
     vec3 ad = abs(d);
@@ -313,11 +318,14 @@ void main() {
 // Fragments cannot draw this: a surface seen edge-on (the medial wall on an
 // axial slice) rasterizes to nothing. So each instance is one triangle,
 // whose vertex shader intersects it with the cut plane and expands the
-// segment into a screen-space quad of ccPlanes[3].z pixels (6 vertices per
-// plane). Triangles that miss the plane collapse to a point and cost no
-// fragments. Vertex words (position f32x3, normal f32x3, color unorm8x4,
-// BYTES_PER_VERTEX = 28) are fetched from an R32UI texture copy of the
-// vertex buffer, the same words WebGPU reads from storage.
+// segment into a screen-space quad of ccPlanes[3].z pixels (6 vertices).
+// Triangles that miss collapse to a point and cost no fragments. Only
+// clusters of CLUSTER_SIZE nearby triangles whose bounds cross a plane are
+// drawn (mesh/triangleClusters.ts): each list entry, advancing once per
+// cluster of instances, packs the cluster and the plane. Vertex words (position f32x3,
+// normal f32x3, color unorm8x4; 7 per vertex) and the cluster-ordered
+// triangle indices are read from R32UI textures, the same words WebGPU
+// reads from storage.
 export const meshVertCrosscut2 = `#version 300 es
 precision highp float;
 precision highp int;
@@ -326,39 +334,40 @@ uniform mat4 mvpMtx;
 uniform float opacity;
 uniform mat4 ccPlanes;
 uniform usampler2D vertWords;
+uniform usampler2D triWords;
 // Location 0: drawing with attribute 0 disabled is emulated (slowly) on
 // desktop GL. crosscut2 has its own VAO, so this does not clash with position.
-layout(location = 0) in uvec3 tri;
+layout(location = 0) in uint entry;
 out vec4 vClr;
 out float vEdgePx;
 flat out float vHalfPx;
 
-uint word(uint w) {
-    uint texW = uint(textureSize(vertWords, 0).x);
-    return texelFetch(vertWords, ivec2(int(w % texW), int(w / texW)), 0).r;
+uint word(usampler2D tex, uint w) {
+    uint texW = uint(textureSize(tex, 0).x);
+    return texelFetch(tex, ivec2(int(w % texW), int(w / texW)), 0).r;
 }
 
 void vertexAt(uint idx, out vec3 p, out vec4 c) {
     uint w = idx * 7u;
-    p = uintBitsToFloat(uvec3(word(w), word(w + 1u), word(w + 2u)));
+    p = uintBitsToFloat(uvec3(word(vertWords, w), word(vertWords, w + 1u), word(vertWords, w + 2u)));
     // unpackUnorm4x8 is GLSL ES 3.10; WebGL2 is 3.00.
-    c = vec4((uvec4(word(w + 6u)) >> uvec4(0u, 8u, 16u, 24u)) & 0xFFu) / 255.0;
+    c = vec4((uvec4(word(vertWords, w + 6u)) >> uvec4(0u, 8u, 16u, 24u)) & 0xFFu) / 255.0;
 }
 
 void main() {
-    int plane = gl_VertexID / 6;
-    int corner = gl_VertexID % 6;
-    vec4 pl = ccPlanes[plane];
+    int corner = gl_VertexID;
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     vClr = vec4(0.0);
     vEdgePx = 0.0;
     vHalfPx = 0.0;
-    if (float(plane) >= ccPlanes[3].w) return;
+    // Indices are padded to whole clusters, so every tri is in range.
+    uint tri = (entry & ${CLUSTER_MASK}u) * ${CLUSTER_SIZE}u + uint(gl_InstanceID % ${CLUSTER_SIZE});
+    vec4 pl = ccPlanes[int(entry >> ${PLANE_SHIFT}u)];
     vec3 p[3];
     vec4 c[3];
-    vertexAt(tri.x, p[0], c[0]);
-    vertexAt(tri.y, p[1], c[1]);
-    vertexAt(tri.z, p[2], c[2]);
+    vertexAt(word(triWords, tri * 3u), p[0], c[0]);
+    vertexAt(word(triWords, tri * 3u + 1u), p[1], c[1]);
+    vertexAt(word(triWords, tri * 3u + 2u), p[2], c[2]);
     vec3 s = vec3(dot(pl.xyz, p[0]), dot(pl.xyz, p[1]), dot(pl.xyz, p[2])) - pl.w;
     // Half-open side test (s >= 0) yields exactly 0 or 2 crossed edges.
     vec3 hit[2];
@@ -384,7 +393,8 @@ void main() {
     vec2 dir = len > 1e-6 ? d / len : vec2(1.0, 0.0);
     vec2 nrm = vec2(-dir.y, dir.x);
     // Quad corners as two triangles: (0,1,2) (2,1,3) over A-/A+/B-/B+.
-    int q = corner < 3 ? corner : (corner == 3 ? 2 : (corner == 4 ? 1 : 3));
+    const int QUAD[6] = int[6](0, 1, 2, 2, 1, 3);
+    int q = QUAD[corner];
     bool atB = q >= 2;
     float side = (q == 0 || q == 2) ? -1.0 : 1.0;
     float halfPx = 0.5 * ccPlanes[3].z;

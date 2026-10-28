@@ -1,4 +1,11 @@
 import { log } from '@/logger'
+import {
+  CLUSTER_SIZE,
+  clustersCrossingPlanes,
+  meshClusters,
+  sortedIndices,
+  type TriangleClusters,
+} from '@/mesh/triangleClusters'
 import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
 import {
@@ -171,27 +178,35 @@ export function writeMeshVertices(
 // Built on first use, so meshes never drawn with crosscut2 pay nothing.
 type Crosscut2Gpu = {
   vertWords: WebGLTexture
-  triBuffer: WebGLBuffer
+  /** Triangle indices in cluster order, read by triangle number. */
+  triWords: WebGLTexture
+  /** Per-draw cluster list: one uint per CLUSTER_SIZE instances. */
+  listBuffer: WebGLBuffer
   vao: WebGLVertexArrayObject
   isStale: boolean
+  /** The cluster build `triWords` holds. */
+  clusters: TriangleClusters | null
 }
 const _crosscut2 = new WeakMap<WebGLMeshGPU, Crosscut2Gpu>()
+// Meshes too large for the textures: warned once, then skipped.
+const _tooLarge = new WeakSet<WebGLMeshGPU>()
 
-// Copy the vertex buffer into an R32UI texture on the GPU (no CPU readback).
-// Full rows go in one upload; the partial last row is uploaded separately so
-// the copy never reads past the end of the buffer.
-function copyVertexWords(
+// Fill an R32UI texture (up to MAX_TEXTURE_SIZE wide) with `count` words from
+// a GL buffer (copied on the GPU, no CPU readback) or an array. Full rows go
+// in one upload and the partial last row in another, so neither source is
+// read past its end.
+function uploadWordTexture(
   gl: WebGL2RenderingContext,
-  gpu: WebGLMeshGPU,
   tex: WebGLTexture,
+  count: number,
+  src: WebGLBuffer | Uint32Array,
 ): boolean {
-  const words = (gpu.vertexBytes ?? 0) / 4
   const maxW = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
-  const width = Math.min(words, maxW)
-  const rows = Math.ceil(words / width)
+  const width = Math.max(1, Math.min(count, maxW))
+  const rows = Math.ceil(count / width)
   if (rows > maxW) return false
-  const fullRows = Math.floor(words / width)
-  const rest = words - fullRows * width
+  const fullRows = Math.floor(count / width)
+  const rest = count - fullRows * width
   gl.bindTexture(gl.TEXTURE_2D, tex)
   gl.texImage2D(
     gl.TEXTURE_2D,
@@ -207,33 +222,40 @@ function copyVertexWords(
   // Integer textures are incomplete (texelFetch reads 0) unless unfiltered.
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-  gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, gpu.vertexBuffer)
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
-  gl.texSubImage2D(
-    gl.TEXTURE_2D,
-    0,
-    0,
-    0,
-    width,
-    fullRows,
-    gl.RED_INTEGER,
-    gl.UNSIGNED_INT,
-    0,
-  )
-  if (rest > 0) {
-    gl.texSubImage2D(
-      gl.TEXTURE_2D,
-      0,
-      0,
-      fullRows,
-      rest,
-      1,
-      gl.RED_INTEGER,
-      gl.UNSIGNED_INT,
-      fullRows * width * 4,
-    )
+  const fromArray = src instanceof Uint32Array
+  if (!fromArray) gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, src)
+  const upload = (y: number, w: number, h: number, word: number) => {
+    if (fromArray) {
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        y,
+        w,
+        h,
+        gl.RED_INTEGER,
+        gl.UNSIGNED_INT,
+        src,
+        word,
+      )
+    } else {
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        y,
+        w,
+        h,
+        gl.RED_INTEGER,
+        gl.UNSIGNED_INT,
+        word * 4,
+      )
+    }
   }
-  gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null)
+  if (fullRows > 0) upload(0, width, fullRows, 0)
+  if (rest > 0) upload(fullRows, rest, 1, fullRows * width)
+  if (!fromArray) gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null)
   return true
 }
 
@@ -242,31 +264,50 @@ function crosscut2Gpu(
   meshData: NVMesh,
   gpu: WebGLMeshGPU,
 ): Crosscut2Gpu | null {
+  if (_tooLarge.has(gpu)) return null
   let cc = _crosscut2.get(gpu)
   if (!cc) {
     const vertWords = gl.createTexture()
-    const triBuffer = gl.createBuffer()
+    const triWords = gl.createTexture()
+    const listBuffer = gl.createBuffer()
     const vao = gl.createVertexArray()
-    if (!vertWords || !triBuffer || !vao) return null
+    if (!vertWords || !triWords || !listBuffer || !vao) return null
     gl.bindVertexArray(vao)
-    gl.bindBuffer(gl.ARRAY_BUFFER, triBuffer)
-    // A buffer bound as ELEMENT_ARRAY_BUFFER cannot be an attribute source in
-    // WebGL2, so the indices are uploaded again as per-instance uvec3.
-    gl.bufferData(gl.ARRAY_BUFFER, meshData.indices, gl.STATIC_DRAW)
+    gl.bindBuffer(gl.ARRAY_BUFFER, listBuffer)
+    // Location 0: drawing with attribute 0 disabled is emulated (slowly) on
+    // desktop GL. Divisor CLUSTER_SIZE: one list entry per cluster of
+    // instances, so instance k draws triangle k % CLUSTER_SIZE of its cluster.
     gl.enableVertexAttribArray(0)
-    gl.vertexAttribIPointer(0, 3, gl.UNSIGNED_INT, 12, 0)
-    gl.vertexAttribDivisor(0, 1)
+    gl.vertexAttribIPointer(0, 1, gl.UNSIGNED_INT, 4, 0)
+    gl.vertexAttribDivisor(0, CLUSTER_SIZE)
     gl.bindVertexArray(null)
     gl.bindBuffer(gl.ARRAY_BUFFER, null)
-    cc = { vertWords, triBuffer, vao, isStale: true }
+    cc = { vertWords, triWords, listBuffer, vao, isStale: true, clusters: null }
     _crosscut2.set(gpu, cc)
   }
   if (cc.isStale) {
-    if (!copyVertexWords(gl, gpu, cc.vertWords)) {
+    const words = (gpu.vertexBytes ?? 0) / 4
+    if (
+      !gpu.vertexBuffer ||
+      !uploadWordTexture(gl, cc.vertWords, words, gpu.vertexBuffer)
+    ) {
       log.warn('crosscut2: mesh too large for a vertex texture')
+      _tooLarge.add(gpu)
       return null
     }
     cc.isStale = false
+  }
+  const clusters = meshClusters(meshData)
+  if (cc.clusters !== clusters) {
+    // The main index buffer keeps the file's order: crosscut2 reads its
+    // triangles from this texture, so other shaders are left untouched.
+    const sorted = sortedIndices(meshData.indices, clusters.order)
+    if (!uploadWordTexture(gl, cc.triWords, sorted.length, sorted)) {
+      log.warn('crosscut2: mesh too large for an index texture')
+      _tooLarge.add(gpu)
+      return null
+    }
+    cc.clusters = clusters
   }
   return cc
 }
@@ -275,14 +316,16 @@ function destroyCrosscut2(gl: WebGL2RenderingContext, gpu: WebGLMeshGPU): void {
   const cc = _crosscut2.get(gpu)
   if (!cc) return
   gl.deleteTexture(cc.vertWords)
-  gl.deleteBuffer(cc.triBuffer)
+  gl.deleteTexture(cc.triWords)
+  gl.deleteBuffer(cc.listBuffer)
   gl.deleteVertexArray(cc.vao)
   _crosscut2.delete(gpu)
 }
 
 /**
  * Draw the mesh's outline where it meets the cut planes in `ccPlanes` (see
- * `crosscutPlanes`): one instance per triangle, six vertices per plane.
+ * `crosscutPlanes`). Only clusters whose bounds cross a plane are drawn: one
+ * instance per triangle of those clusters, six vertices each.
  */
 function drawCrosscut2(
   gl: WebGL2RenderingContext,
@@ -293,16 +336,25 @@ function drawCrosscut2(
 ): void {
   if (ccPlanes[14] <= 0) return // zero width: draw nothing, like crosscut
   const cc = crosscut2Gpu(gl, meshData, gpu)
-  if (!cc) return
+  if (!cc?.clusters) return
+  const entries = clustersCrossingPlanes(cc.clusters, ccPlanes)
+  if (entries.length === 0) return
+  gl.bindBuffer(gl.ARRAY_BUFFER, cc.listBuffer)
+  gl.bufferData(gl.ARRAY_BUFFER, entries, gl.STREAM_DRAW)
+  gl.bindBuffer(gl.ARRAY_BUFFER, null)
   gl.activeTexture(gl.TEXTURE0)
   gl.bindTexture(gl.TEXTURE_2D, cc.vertWords)
+  gl.activeTexture(gl.TEXTURE1)
+  gl.bindTexture(gl.TEXTURE_2D, cc.triWords)
+  gl.activeTexture(gl.TEXTURE0)
   if (shader.uniforms.vertWords) gl.uniform1i(shader.uniforms.vertWords, 0)
+  if (shader.uniforms.triWords) gl.uniform1i(shader.uniforms.triWords, 1)
   gl.disable(gl.DEPTH_TEST)
   gl.disable(gl.CULL_FACE)
   gl.enable(gl.BLEND)
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
   gl.bindVertexArray(cc.vao)
-  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6 * ccPlanes[15], gpu.indexCount / 3)
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, entries.length * CLUSTER_SIZE)
   gl.bindVertexArray(null)
   gl.enable(gl.DEPTH_TEST)
   gl.enable(gl.CULL_FACE)

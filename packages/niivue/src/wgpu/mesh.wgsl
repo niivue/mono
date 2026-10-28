@@ -16,9 +16,16 @@ struct Params {
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
-// crosscut2 only: the interleaved vertex buffer read as words
-// (position f32x3, normal f32x3, color unorm8x4; 7 words per vertex).
+// crosscut2 only: the interleaved vertex buffer read as words (position
+// f32x3, normal f32x3, color unorm8x4; 7 words per vertex), the index buffer
+// in cluster order, and this tile's list of clusters crossing a plane.
 @group(1) @binding(0) var<storage, read> vertWords: array<u32>;
+@group(1) @binding(1) var<storage, read> triIdx: array<u32>;
+@group(1) @binding(2) var<storage, read> clusterList: array<u32>;
+// Set from CLUSTER_SIZE / PLANE_SHIFT in mesh/triangleClusters.ts when the
+// pipeline is built.
+override clusterSize: u32 = 64u;
+override planeShift: u32 = 30u;
 
 struct VertexInput {
   @location(0) position: vec3f,
@@ -263,6 +270,9 @@ fn fragment_outline(in: FragmentInput) -> @location(0) vec4f {
 @fragment
 fn fragment_crosscut(in: CrosscutFragmentInput) -> @location(0) vec4f {
   let LINE_WIDTH_PX = params.ccPlanes[3].z;
+  if (LINE_WIDTH_PX <= 0.0) {
+    discard; // smoothstep(0, 0, x) is undefined
+  }
   let TILT_STRENGTH = 1.0;
   let d = in.vP - params.crosscutMM.xyz;
   let ad = abs(d);
@@ -291,11 +301,12 @@ fn fragment_crosscut(in: CrosscutFragmentInput) -> @location(0) vec4f {
 }
 
 // Crosscut2: the mesh outline where it meets the displayed voxel plane(s).
-// Mirrors meshVertCrosscut2 in gl/meshShader.ts: one instance per triangle,
-// six vertices per plane; the vertex stage intersects the triangle with the
-// plane and expands the segment into a screen-space quad, or collapses it
-// when the triangle misses. Edge-on surfaces (no fragments of their own)
-// still get an outline.
+// Mirrors meshVertCrosscut2 in gl/meshShader.ts: one instance per triangle
+// of each cluster that crosses a plane (mesh/triangleClusters.ts), six
+// vertices each; the vertex stage intersects the triangle with the plane and
+// expands the segment into a screen-space quad, or collapses it when the
+// triangle misses. Edge-on surfaces (no fragments of their own) still get an
+// outline.
 struct Crosscut2Output {
   @builtin(position) position: vec4f,
   @location(0) vClr: vec4f,
@@ -314,22 +325,23 @@ fn crosscut2Color(idx: u32) -> vec4f {
 
 @vertex
 fn vertex_crosscut2(
-  @builtin(vertex_index) vid: u32,
-  @location(0) tri: vec3u,
+  @builtin(vertex_index) corner: u32,
+  @builtin(instance_index) inst: u32,
 ) -> Crosscut2Output {
   var out: Crosscut2Output;
   out.position = vec4f(2.0, 2.0, 2.0, 1.0);
   out.vClr = vec4f(0.0);
   out.vEdgePx = 0.0;
   out.vHalfPx = 0.0;
-  let plane = vid / 6u;
-  let corner = vid % 6u;
-  if (f32(plane) >= params.ccPlanes[3].w) {
-    return out;
-  }
-  let pl = params.ccPlanes[plane];
-  var p = array<vec3f, 3>(crosscut2Vertex(tri.x), crosscut2Vertex(tri.y), crosscut2Vertex(tri.z));
-  var c = array<vec4f, 3>(crosscut2Color(tri.x), crosscut2Color(tri.y), crosscut2Color(tri.z));
+  let entry = clusterList[inst / clusterSize];
+  // Indices are padded to whole clusters, so every tri is in range.
+  let tri = (entry & ((1u << planeShift) - 1u)) * clusterSize + inst % clusterSize;
+  let pl = params.ccPlanes[entry >> planeShift];
+  let i0 = triIdx[tri * 3u];
+  let i1 = triIdx[tri * 3u + 1u];
+  let i2 = triIdx[tri * 3u + 2u];
+  var p = array<vec3f, 3>(crosscut2Vertex(i0), crosscut2Vertex(i1), crosscut2Vertex(i2));
+  var c = array<vec4f, 3>(crosscut2Color(i0), crosscut2Color(i1), crosscut2Color(i2));
   let s = vec3f(dot(pl.xyz, p[0]), dot(pl.xyz, p[1]), dot(pl.xyz, p[2])) - pl.w;
   // Half-open side test (s >= 0) yields exactly 0 or 2 crossed edges.
   var hit: array<vec3f, 2>;
@@ -377,6 +389,7 @@ fn vertex_crosscut2(
     clr = hitClr[1];
   }
   px += nrm * side * extent;
+  // Mid-depth; depth is not tested (WebGL2 uses 0.0, its [-1, 1] middle).
   out.position = vec4f(px / halfVp, 0.5, 1.0);
   out.vClr = vec4f(clr.rgb, params.opacity);
   out.vEdgePx = side * extent;

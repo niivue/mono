@@ -57,6 +57,7 @@ import { type LogLevel, log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
+import { clearMeshClusters } from '@/mesh/triangleClusters'
 import type { WriteOptions } from '@/mesh/writers'
 import {
   DRAG_MODE,
@@ -2562,6 +2563,7 @@ export default class NiiVue extends EventTarget {
    * other stale on screen.
    */
   async updateGLVolume() {
+    for (const mesh of this.model.getMeshes()) clearMeshClusters(mesh)
     await this._updateGL('all')
   }
 

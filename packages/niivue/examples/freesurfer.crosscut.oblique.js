@@ -28,6 +28,7 @@ widthSlider.oninput = () => {
 }
 webgpuCheck.onchange = async function () {
   await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+  webgpuCheck.checked = nv1.backend === 'webgpu'
 }
 aboutBtn.onclick = () => {
   window.alert(
@@ -43,6 +44,7 @@ nv1.addEventListener('locationChange', (e) => {
   document.getElementById('location').textContent = e.detail.string
 })
 await nv1.attachToCanvas(gl1)
+webgpuCheck.checked = nv1.backend === 'webgpu'
 const addShaderOption = (select, value, text) => {
   const option = document.createElement('option')
   option.value = value

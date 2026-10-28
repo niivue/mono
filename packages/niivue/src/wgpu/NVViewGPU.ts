@@ -338,6 +338,16 @@ export default class NVView {
           visibility: GPUShaderStage.VERTEX,
           buffer: { type: 'read-only-storage' },
         },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage', hasDynamicOffset: true },
+        },
       ],
     })
     const crosscut2PipelineLayout = device.createPipelineLayout({
@@ -1463,17 +1473,19 @@ export default class NVView {
           device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
           const pipeline = this.meshPipelines[shaderType]
           if (pipeline && isCrosscut2) {
-            if (ccPlanes[14] <= 0) continue // zero width, like crosscut
-            const layout2 = this.crosscut2BindGroupLayout
-            const bg2 =
-              layout2 &&
-              mesh.crosscut2BindGroup(device, layout2, mGpu.vertexBuffer)
-            if (bg2) {
+            if (this.crosscut2BindGroupLayout) {
               pass.setPipeline(pipeline)
               pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
-              pass.setBindGroup(1, bg2)
-              pass.setVertexBuffer(0, mGpu.indexBuffer)
-              pass.draw(6 * ccPlanes[15], mGpu.indexCount / 3)
+              mesh.drawCrosscut2(
+                device,
+                pass,
+                this.crosscut2BindGroupLayout,
+                m,
+                mGpu,
+                ccPlanes,
+                i,
+                screenSlices.length,
+              )
             }
           } else if (pipeline) {
             pass.setPipeline(pipeline)

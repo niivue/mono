@@ -57,7 +57,7 @@ for (const shader of nv1.meshShaders) {
   addShaderOption(shaderSelect, shader, text)
   addShaderOption(sliceShaderSelect, shader, text)
 }
-shaderSelect.value = 'phong'
+shaderSelect.value = 'crosscut2'
 sliceShaderSelect.value = 'crosscut2'
 updateWidthSlider()
 nv1.sliceType = parseInt(sliceType.value, 10)
@@ -66,7 +66,7 @@ await nv1.loadMeshes([
   {
     url: '/meshes/fs/T1_oblique.lh.mid.mz3',
     color: [0.3, 0.6, 1.0, 1],
-    shaderType: 'phong',
+    shaderType: 'crosscut2',
     sliceShaderType: 'crosscut2',
   },
 ])

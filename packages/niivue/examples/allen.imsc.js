@@ -75,39 +75,38 @@ function say(message) {
 }
 
 /**
- * A colormap per hex colour, registered once per setting. Composite uses a
- * baked ramp that draws like Allen's 3D viewer: colour = tint * t^2 *
- * brightness, opacity = density * luminance(tint) * t^2, so a sample is as
- * opaque as it is bright. Maximum and Max project use a plain linear ramp.
- * Alpha always ramps from 0: opaque black would hide the 3D render.
+ * A colormap per hex colour. Composite uses a baked ramp that draws like
+ * Allen's 3D viewer: colour = tint * t^2 * brightness, opacity = density *
+ * luminance(tint) * t^2, so a sample is as opaque as it is bright. Maximum and
+ * Max project use a plain linear ramp. Alpha always ramps from 0: opaque black
+ * would hide the 3D render. Each colour keeps one name per ramp; a new density
+ * or brightness re-registers that name, which NiiVue's colormap caches follow.
  */
 const tints = new Map()
 function tint(hex) {
   const baked = isBaked()
   const density = Number(densityInput.value)
   const brightness = Number(brightnessInput.value)
-  const key = baked ? `${hex}_${density}_${brightness}` : hex
-  let name = tints.get(key)
-  if (!name) {
-    const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-    let cmap = { R: [0, rgb[0]], G: [0, rgb[1]], B: [0, rgb[2]], A: [0, 255] }
-    if (baked) {
-      // Rec. 709 luminance of the tint, 0..1.
-      const luma = (0.2125 * rgb[0] + 0.7154 * rgb[1] + 0.0721 * rgb[2]) / 255
-      cmap = { R: [], G: [], B: [], A: [], I: [] }
-      for (let i = 0; i < 256; i++) {
-        const t2 = (i / 255) ** 2
-        cmap.R.push(Math.min(rgb[0] * t2 * brightness, 255))
-        cmap.G.push(Math.min(rgb[1] * t2 * brightness, 255))
-        cmap.B.push(Math.min(rgb[2] * t2 * brightness, 255))
-        cmap.A.push(Math.min(density * luma * t2, 1) * 255)
-        cmap.I.push(i)
-      }
+  const name = `imsc${baked ? 'b' : ''}${hex.slice(1)}`
+  const setting = baked ? `${density}_${brightness}` : ''
+  if (tints.get(name) === setting) return name
+  const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  let cmap = { R: [0, rgb[0]], G: [0, rgb[1]], B: [0, rgb[2]], A: [0, 255] }
+  if (baked) {
+    // Rec. 709 luminance of the tint, 0..1.
+    const luma = (0.2125 * rgb[0] + 0.7154 * rgb[1] + 0.0721 * rgb[2]) / 255
+    cmap = { R: [], G: [], B: [], A: [], I: [] }
+    for (let i = 0; i < 256; i++) {
+      const t2 = (i / 255) ** 2
+      cmap.R.push(Math.min(rgb[0] * t2 * brightness, 255))
+      cmap.G.push(Math.min(rgb[1] * t2 * brightness, 255))
+      cmap.B.push(Math.min(rgb[2] * t2 * brightness, 255))
+      cmap.A.push(Math.min(density * luma * t2, 1) * 255)
+      cmap.I.push(i)
     }
-    name = nv1.addColormap(`imsc${hex.slice(1)}_${tints.size}`, cmap)
-    tints.set(key, name)
   }
-  return name
+  tints.set(name, setting)
+  return nv1.addColormap(name, cmap)
 }
 
 // Fused (the default): each channel keeps its brightest colour, on black, as

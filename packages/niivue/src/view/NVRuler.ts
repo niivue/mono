@@ -64,11 +64,11 @@ function chooseRulerSize(
     }
   }
   // Fall back to um for sub-mm fields of view. One pass of the nice-value
-  // ladder only spans a decade, so walk it across the sub-mm decades: a slide
+  // ladder only spans a factor of ten, so walk it across sub-mm powers of ten: a slide
   // zoomed to a few hundred microns gets a 100 um bar, not a 10 um sliver.
-  for (const decade of [100, 10, 1]) {
+  for (const scale of [100, 10, 1]) {
     for (const v of NICE_VALUES) {
-      const um = v * decade
+      const um = v * scale
       const mm = um / 1000 // um -> mm
       if (mm <= maxMM) {
         return { lengthMM: mm, label: `${um} um` }

@@ -35,7 +35,7 @@ package-private (see "Conventions for contributors").
 | --- | --- | --- |
 | `buildRuler` | `UIKitRulerOverlay` | A measuring ruler with graduated ticks and a distance label |
 | `buildCrosshair` | `UIKitCrosshairOverlay` | A screen-space cross marking a point, optionally graduated and numbered |
-| `buildAnnotationGeometry` | `UIKitAnnotationOverlay` | Free-form annotation lines |
+| `buildAnnotationGeometry` | none (nv-ohif's `VolumeAnnotationOverlay` draws it) | Free-form annotation lines |
 | `buildRect` | `UIKitRectOverlay` | Filled rounded rectangles with an optional border ring (the first filled primitive) |
 | `buildButton` | `UIKitButtonOverlay` | Clickable, stylable push buttons with a text label and a press animation |
 | `buildToggle` | `UIKitToggleOverlay` | Check boxes with a label: pointer or Space/Enter flips them |

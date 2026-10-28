@@ -12,10 +12,7 @@
 
 // biome-ignore-all lint/performance/noBarrelFile: package entry point
 export type { AnnotationGeometryOptions } from './annotationOverlay'
-export {
-  buildAnnotationGeometry,
-  UIKitAnnotationOverlay,
-} from './annotationOverlay'
+export { buildAnnotationGeometry } from './annotationOverlay'
 export type {
   ButtonLayout,
   ButtonSpec,

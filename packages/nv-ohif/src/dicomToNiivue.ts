@@ -76,44 +76,37 @@ export async function convertDisplaySetToNifti(
   if (files.length === 0) return null
 
   options.onProgress?.('converting', 0, 1)
-  const { Dcm2niix } = await import('@niivue/dcm2niix')
-  const dcm2niix = new Dcm2niix()
-  try {
-    await dcm2niix.init()
-    // The Dcm2niix wrapper rejects with only the worker's error message (often
-    // empty for an Emscripten exit-unwind in a Worker). Log the full detail the
-    // worker also posts so failures are diagnosable.
-    dcm2niix.worker?.addEventListener('message', (e: MessageEvent) => {
-      const data = e.data as { type?: string; message?: string; error?: string }
-      if (data?.type === 'error') {
-        console.error(
-          '[nv-ohif] dcm2niix worker error',
-          data.message,
-          data.error,
-        )
-      }
-    })
-    const result = await dcm2niix.input(files).run()
-    const nifti = result
-      .filter((f) => /\.nii(\.gz)?$/i.test(f.name))
-      .sort((a, b) => b.size - a.size)
-    // dcm2niix legitimately splits some series into several NIfTI outputs
-    // (multi-echo, multiple orientations, scout + acquisition). We show only the
-    // largest as the primary volume; surface the rest so a wrong/partial pick is
-    // diagnosable instead of silently discarded. (Loading/selecting among the
-    // split volumes is a follow-up.)
-    if (nifti.length > 1) {
-      console.warn(
-        `[nv-ohif] dcm2niix produced ${nifti.length} NIfTI volumes for this series; ` +
-          `showing the largest ("${nifti[0]?.name}"). Others not shown: ` +
-          nifti
-            .slice(1)
-            .map((f) => f.name)
-            .join(', '),
-      )
-    }
-    return nifti[0] ?? null
-  } finally {
-    dcm2niix.worker?.terminate()
+  const { convert, exitCodes } = await import('@niivue/dcm2niix')
+  // convert() owns the worker (terminated afterwards) and resolves for any exit
+  // code; keep the previous contract of rejecting unless dcm2niix succeeds.
+  const {
+    files: outputs,
+    exitCode,
+    log,
+  } = await convert(files, {
+    signal: options.signal,
+  })
+  if (exitCode !== exitCodes.ok)
+    throw new Error(
+      `dcm2niix exit code ${exitCode}: ${log.slice(-3).join(' | ')}`,
+    )
+  const nifti = outputs
+    .filter((f) => /\.nii(\.gz)?$/i.test(f.name))
+    .sort((a, b) => b.size - a.size)
+  // dcm2niix legitimately splits some series into several NIfTI outputs
+  // (multi-echo, multiple orientations, scout + acquisition). We show only the
+  // largest as the primary volume; surface the rest so a wrong/partial pick is
+  // diagnosable instead of silently discarded. (Loading/selecting among the
+  // split volumes is a follow-up.)
+  if (nifti.length > 1) {
+    console.warn(
+      `[nv-ohif] dcm2niix produced ${nifti.length} NIfTI volumes for this series; ` +
+        `showing the largest ("${nifti[0]?.name}"). Others not shown: ` +
+        nifti
+          .slice(1)
+          .map((f) => f.name)
+          .join(', '),
+    )
   }
+  return nifti[0] ?? null
 }

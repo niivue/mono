@@ -1,3 +1,26 @@
+## 1.0.0-rc.54 (2026-10-29)
+
+### Features
+
+- **niivue:** draw IMSC channels with baked fluorescence colormaps ([#431](https://github.com/niivue/mono/issues/431))
+- **niivue:** lay out the IMSC example like Allen's 3D Cell Viewer ([45c0322f](https://github.com/niivue/mono/commit/45c0322f))
+- **niivue:** 3D render mode controls in the IMSC example ([0b4614f7](https://github.com/niivue/mono/commit/0b4614f7))
+- **niivue:** clip, clip-overlays and 3D zoom controls in the IMSC example ([e7b9b0a0](https://github.com/niivue/mono/commit/e7b9b0a0))
+- add an Allen Integrated Mitotic Stem Cell gallery example ([d7ff8119](https://github.com/niivue/mono/commit/d7ff8119))
+
+### Fixes
+
+- serialize IMSC backend switches with volume updates ([bbbf0bff](https://github.com/niivue/mono/commit/bbbf0bff))
+- **niivue:** serialize IMSC channel updates and clear an empty selection ([b6bb44bc](https://github.com/niivue/mono/commit/b6bb44bc))
+- **niivue:** keep stale IMSC loads from replacing newer ones ([859ef8b5](https://github.com/niivue/mono/commit/859ef8b5))
+- **examples:** use Allen's IMSC windows in the IMSC gallery ([ed21fdf8](https://github.com/niivue/mono/commit/ed21fdf8))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.53 (2026-10-29)
 
 ### Features

@@ -155,6 +155,48 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(after).toBeGreaterThan(100)
   })
 
+  test(`crosscut2 follows updateMeshPositions (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    // A live vertex update refreshes the culling bounds and the WebGL2 vertex
+    // texture, which is rewritten in place when its size is unchanged. Each
+    // move is drawn, so the second must replace what the first wrote.
+    const r = await page.evaluate(`(async () => {
+      ${setup(backend)}
+      // A wall in x = 0, z in [-40, -10], and four unused vertices that
+      // extend the bounds to z = 40: the axial cut at z = 25 misses the wall.
+      const obj = [
+        'v 0 -40 -40', 'v 0 40 -40', 'v 0 40 -10', 'v 0 -40 -10',
+        'v 0 -40 10', 'v 0 40 10', 'v 0 40 40', 'v 0 -40 40',
+        'f 1 2 3', 'f 1 3 4',
+      ].join('\\n')
+      await nv.loadMeshes([{
+        url: new File([obj], 'wall.obj'),
+        color: [0, 1, 0, 1],
+        shaderType: 'crosscut2',
+      }])
+      nv.setCrosshairPos([0, 0, 25])
+      const counts = [(await greenPixels()).length]
+      const p = nv.meshes[0].positions
+      const original = Float32Array.from(p)
+      // Move the wall's four vertices onto z in [10, 40].
+      const moved = Float32Array.from(p)
+      for (let v = 0; v < 4; v++) moved[v * 3 + 2] += 50
+      nv.updateMeshPositions(0, moved)
+      counts.push((await greenPixels()).length)
+      nv.updateMeshPositions(0, original)
+      counts.push((await greenPixels()).length)
+      return { counts }
+    })()`)
+    if ((r as { skip?: string }).skip)
+      test.skip(true, (r as { skip: string }).skip)
+    const { counts } = r as { counts: number[] }
+    expect(counts[0]).toBe(0)
+    expect(counts[1]).toBeGreaterThan(100)
+    expect(counts[2]).toBe(0)
+  })
+
   test(`crosscut2 leaves a translucent 3D view unchanged (${backend})`, async ({
     page,
   }) => {

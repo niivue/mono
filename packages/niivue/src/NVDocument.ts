@@ -1059,7 +1059,8 @@ export async function reconstructMesh(
         sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
-        isLegendVisible: m.isLegendVisible,
+        // Unset after upgradeLegendFlags; keep createMesh's default.
+        isLegendVisible: m.isLegendVisible ?? true,
         perVertexColors,
         layers,
       }
@@ -1144,7 +1145,7 @@ export async function reconstructMesh(
         sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
-        isLegendVisible: m.isLegendVisible,
+        isLegendVisible: m.isLegendVisible ?? true,
         layers,
       })
     }

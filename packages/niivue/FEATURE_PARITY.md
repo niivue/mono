@@ -349,7 +349,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | Voxel-based atlas labels | ✅ | A label `colormap` |
 | PAQD probabilistic atlas | ✅ | `volumePaqdUniforms` |
-| Mesh-based atlases | ⚠️ | No annot/GIfTI layer readers found |
+| Mesh-based atlases | ⚠️ | GIfTI and MZ3 label tables load as layers (`colormapLabel`); FreeSurfer `.annot` has no reader |
 | `addLabel()` | ❌ | No 3D labels in the viewer. `@niivue/uikit`'s `UIKitPointLabelOverlay` draws a text label with a leader line to a world-mm point on the render tile via `mmToRenderCanvas()` / `explodedMM()` |
 
 ## 28. Plugin System
@@ -435,9 +435,9 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | FreeSurfer CURV | ✅ |
 | SMP | ✅ |
 | STC | ✅ |
-| GIfTI overlay | ❌ |
+| GIfTI overlay | ✅ |
 | CIfTI-2 | ❌ |
-| MZ3 overlay | ❌ |
+| MZ3 overlay | ✅ |
 | FreeSurfer ANNOT | ❌ |
 
 ### Tractography
@@ -553,7 +553,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 ## Summary of Key Missing Features
 
 ### High Priority (Core Functionality)
-1. **Mesh overlay formats**: GIfTI, CIfTI-2, MZ3, FreeSurfer ANNOT layer readers
+1. **Mesh overlay formats**: CIfTI-2 and FreeSurfer ANNOT layer readers
 
 ### Medium Priority
 2. **3D rendering**: `setGradientOpacity`, custom gradient textures (MIP is now covered by `volumeRenderMode`)

@@ -1475,7 +1475,7 @@ export type ImageFromUrlOptions = {
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */
   calMaxNeg?: number
-  /** Colormap type: 0=min-to-max, 1=zero-to-max (transparent below), 2=zero-to-max (translucent below) */
+  /** Colormap type (`COLORMAP_TYPE`): 0=min-to-max, 1=zero-to-max (transparent below), 2=zero-to-max (translucent below). Default: 0. */
   colormapType?: number
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean

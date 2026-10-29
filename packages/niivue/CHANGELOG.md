@@ -1,3 +1,28 @@
+## 1.0.0-rc.53 (2026-10-29)
+
+### Features
+
+- **niivue:** crosscut2 mesh shader and meshCrosscutWidth ([#92](https://github.com/niivue/mono/issues/92), [#91](https://github.com/niivue/mono/issues/91))
+- **niivue:** add oblique crosscut demo for issue #92 ([#92](https://github.com/niivue/mono/issues/92))
+
+### Fixes
+
+- **niivue:** refresh crosscut2 cluster bounds on a data version bump ([ca38b252](https://github.com/niivue/mono/commit/ca38b252))
+- **niivue:** clamp crosscut width on every entry point; guard crosscut2 list buffer size ([70baf55c](https://github.com/niivue/mono/commit/70baf55c))
+
+### Performance
+
+- **niivue:** hash positions on a crosscut2 bounds refresh ([dc2f4a76](https://github.com/niivue/mono/commit/dc2f4a76))
+- **niivue:** reuse the crosscut2 word texture when its size is unchanged ([ddb01515](https://github.com/niivue/mono/commit/ddb01515))
+- **niivue:** refresh crosscut2 bounds on a data bump only when positions changed ([e6b96db5](https://github.com/niivue/mono/commit/e6b96db5))
+- **niivue:** cull crosscut2 triangles by spatial cluster ([15f2a29d](https://github.com/niivue/mono/commit/15f2a29d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.52 (2026-10-29)
 
 ### Features

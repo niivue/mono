@@ -1,3 +1,19 @@
+## 1.0.0-rc.35 (2026-10-29)
+
+### Features
+
+- **niivue:** crosscut2 mesh shader and meshCrosscutWidth ([#92](https://github.com/niivue/mono/issues/92), [#91](https://github.com/niivue/mono/issues/91))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.53
+- Updated uikit to 1.0.0-rc.44
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.34 (2026-10-29)
 
 ### Updated Dependencies

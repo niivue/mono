@@ -771,7 +771,11 @@ export function applyDocumentToModel(
     sd.scaleMultiplier,
     model.scene.scaleMultiplier,
   )
-  model.scene.gamma = scalar('gamma', s.gamma, sd.gamma, model.scene.gamma)
+  model.scene.gamma = NVConstants.clampFinite(
+    scalar('gamma', s.gamma, sd.gamma, model.scene.gamma),
+    NVConstants.GAMMA_RANGE,
+    sd.gamma,
+  )
   model.scene.isClipPlaneCutaway = scalar(
     'isClipPlaneCutaway',
     s.isClipPlaneCutaway,
@@ -837,10 +841,35 @@ export function applyDocumentToModel(
     model.volume,
     fillGroup('volume', model.volume, C.VOLUME_DEFAULTS, doc.volume, fill),
   )
+  // A document bypasses the setters, so apply their clamps here.
+  model.volume.sampleRate = C.clampSampleRate(model.volume.sampleRate)
+  model.volume.renderMode = C.normalizeVolumeRenderMode(model.volume.renderMode)
+  const v = model.volume
+  v.lodBrightnessCompensation = C.clampFinite(
+    v.lodBrightnessCompensation,
+    C.LOD_BRIGHTNESS_RANGE,
+    C.VOLUME_DEFAULTS.lodBrightnessCompensation,
+  )
+  v.lodOpacityCompensation = C.clampFinite(
+    v.lodOpacityCompensation,
+    C.LOD_OPACITY_RANGE,
+    C.VOLUME_DEFAULTS.lodOpacityCompensation,
+  )
+  v.gradientOpacity = C.clampFinite(
+    v.gradientOpacity,
+    [0, 1],
+    C.VOLUME_DEFAULTS.gradientOpacity,
+  )
+  v.silhouette = C.clampFinite(
+    v.silhouette,
+    [0, 1],
+    C.VOLUME_DEFAULTS.silhouette,
+  )
   Object.assign(
     model.mesh,
     fillGroup('mesh', model.mesh, C.MESH_DEFAULTS, doc.mesh, fill),
   )
+  model.mesh.xRay = C.clampFinite(model.mesh.xRay, [0, 1], C.MESH_DEFAULTS.xRay)
   Object.assign(
     model.draw,
     fillGroup('draw', model.draw, C.DRAW_DEFAULTS, doc.draw, fill),

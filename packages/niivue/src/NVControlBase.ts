@@ -60,12 +60,15 @@ import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
 import type { WriteOptions } from '@/mesh/writers'
 import {
+  clampFinite,
+  clampSampleRate,
   DRAG_MODE,
   GAMMA_RANGE,
   LOD_BRIGHTNESS_RANGE,
   LOD_OPACITY_RANGE,
   lodGammaExponent,
   lodOpacityScale,
+  MESH_DEFAULTS,
   NUM_CLIP_PLANE,
   normalizeVolumeRenderMode,
   type OVERLAY_ALPHA_BLEND,
@@ -1009,9 +1012,7 @@ export default class NiiVue extends EventTarget {
     return this.model.scene.gamma
   }
   set gamma(v: number) {
-    this.model.scene.gamma = Number.isFinite(v)
-      ? Math.min(Math.max(v, GAMMA_RANGE[0]), GAMMA_RANGE[1])
-      : 1
+    this.model.scene.gamma = clampFinite(v, GAMMA_RANGE, 1)
     this.emit('change', { property: 'gamma', value: this.model.scene.gamma })
     this.drawScene()
   }
@@ -1629,7 +1630,7 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.sampleRate
   }
   set volumeSampleRate(v: number) {
-    this.model.volume.sampleRate = Math.min(4, Math.max(1, v))
+    this.model.volume.sampleRate = clampSampleRate(v)
     this.emit('change', {
       property: 'volumeSampleRate',
       value: this.model.volume.sampleRate,
@@ -1706,9 +1707,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.lodBrightnessCompensation
   }
   set volumeLodBrightnessCompensation(v: number) {
-    this.model.volume.lodBrightnessCompensation = Number.isFinite(v)
-      ? Math.min(Math.max(v, LOD_BRIGHTNESS_RANGE[0]), LOD_BRIGHTNESS_RANGE[1])
-      : VOLUME_DEFAULTS.lodBrightnessCompensation
+    this.model.volume.lodBrightnessCompensation = clampFinite(
+      v,
+      LOD_BRIGHTNESS_RANGE,
+      VOLUME_DEFAULTS.lodBrightnessCompensation,
+    )
     this._warnIfLodCompensationInert(
       'volumeLodBrightnessCompensation',
       this.model.volume.lodBrightnessCompensation,
@@ -1745,9 +1748,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.lodOpacityCompensation
   }
   set volumeLodOpacityCompensation(v: number) {
-    this.model.volume.lodOpacityCompensation = Number.isFinite(v)
-      ? Math.min(Math.max(v, LOD_OPACITY_RANGE[0]), LOD_OPACITY_RANGE[1])
-      : VOLUME_DEFAULTS.lodOpacityCompensation
+    this.model.volume.lodOpacityCompensation = clampFinite(
+      v,
+      LOD_OPACITY_RANGE,
+      VOLUME_DEFAULTS.lodOpacityCompensation,
+    )
     this._warnIfLodCompensationInert(
       'volumeLodOpacityCompensation',
       this.model.volume.lodOpacityCompensation,
@@ -1777,9 +1782,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.gradientOpacity
   }
   set volumeGradientOpacity(v: number) {
-    this.model.volume.gradientOpacity = Number.isFinite(v)
-      ? Math.min(Math.max(v, 0), 1)
-      : VOLUME_DEFAULTS.gradientOpacity
+    this.model.volume.gradientOpacity = clampFinite(
+      v,
+      [0, 1],
+      VOLUME_DEFAULTS.gradientOpacity,
+    )
     this.emit('change', {
       property: 'volumeGradientOpacity',
       value: this.model.volume.gradientOpacity,
@@ -1801,9 +1808,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.silhouette
   }
   set volumeSilhouette(v: number) {
-    this.model.volume.silhouette = Number.isFinite(v)
-      ? Math.min(Math.max(v, 0), 1)
-      : VOLUME_DEFAULTS.silhouette
+    this.model.volume.silhouette = clampFinite(
+      v,
+      [0, 1],
+      VOLUME_DEFAULTS.silhouette,
+    )
     this.emit('change', {
       property: 'volumeSilhouette',
       value: this.model.volume.silhouette,
@@ -1997,7 +2006,7 @@ export default class NiiVue extends EventTarget {
     return this.model.mesh.xRay
   }
   set meshXRay(v: number) {
-    const clamped = Math.max(0, Math.min(1, v))
+    const clamped = clampFinite(v, [0, 1], MESH_DEFAULTS.xRay)
     this.model.mesh.xRay = clamped
     this.emit('change', { property: 'meshXRay', value: clamped })
     this.drawScene()

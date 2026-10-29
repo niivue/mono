@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  clampFinite,
   clampSampleRate,
   GAMMA_RANGE,
   invGamma,
@@ -274,5 +275,15 @@ describe('clampSampleRate', () => {
     expect(clampSampleRate(1e9)).toBe(4)
     expect(clampSampleRate(Number.NaN)).toBe(2)
     expect(clampSampleRate(Number.POSITIVE_INFINITY)).toBe(2)
+  })
+})
+
+describe('clampFinite', () => {
+  test('clamps to the range and maps non-finite to the fallback', () => {
+    expect(clampFinite(0.5, [0, 1], 0.25)).toBe(0.5)
+    expect(clampFinite(-3, [0, 1], 0.25)).toBe(0)
+    expect(clampFinite(1e9, [0, 1], 0.25)).toBe(1)
+    expect(clampFinite(Number.NaN, [0, 1], 0.25)).toBe(0.25)
+    expect(clampFinite(Number.NEGATIVE_INFINITY, [0, 1], 0.25)).toBe(0.25)
   })
 })

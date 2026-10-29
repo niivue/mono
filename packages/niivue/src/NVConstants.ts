@@ -469,6 +469,17 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   silhouette: 0,
 }
 
+/** `v` clamped to `range`; non-finite gives `fallback`. */
+export function clampFinite(
+  v: number,
+  range: readonly [number, number],
+  fallback: number,
+): number {
+  return Number.isFinite(v)
+    ? Math.min(Math.max(v, range[0]), range[1])
+    : fallback
+}
+
 /** Ray-march samples per voxel, clamped to [1, 4]; non-finite gives the default. */
 export function clampSampleRate(v: number): number {
   return Number.isFinite(v)

@@ -186,6 +186,8 @@ function hashIndices(indices: ArrayLike<number>): number {
  * arrays, or indices edited in place (`_dataVersion` with different
  * contents), rebuild them as a new object so GPU copies know to rewrite; an
  * in-place position edit (`_positionsVersion`) only refreshes the bounds.
+ * Any other `_dataVersion` bump (a setMesh that re-uploads the vertices)
+ * refreshes the bounds too, since it also uploads edited positions.
  */
 export function meshClusters(mesh: NVMesh): TriangleClusters {
   const positionsVersion = mesh._positionsVersion ?? 0
@@ -193,12 +195,14 @@ export function meshClusters(mesh: NVMesh): TriangleClusters {
   const hit = _cache.get(mesh)
   if (hit && hit.indices === mesh.indices && hit.positions === mesh.positions) {
     let isCurrent = true
+    let isMoved = hit.positionsVersion !== positionsVersion
     if (hit.dataVersion !== dataVersion) {
       hit.dataVersion = dataVersion
       isCurrent = hashIndices(mesh.indices) === hit.indicesHash
+      isMoved = true
     }
     if (isCurrent) {
-      if (hit.positionsVersion !== positionsVersion) {
+      if (isMoved) {
         updateClusterBounds(
           mesh.positions,
           mesh.indices,

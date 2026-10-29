@@ -131,4 +131,15 @@ describe('meshClusters', () => {
     expect(meshClusters(mesh)).toBe(c)
     expect(clustersCrossingPlanes(c, planeX(10.5)).length).toBe(1)
   })
+
+  test('a data version bump refreshes bounds after an untracked move', () => {
+    const mesh = makeMesh()
+    const c = meshClusters(mesh)
+    // Positions edited in place with no version bump, then a setMesh
+    // (say a recolour) bumps only the data version.
+    mesh.positions.set([10, 0, 0, 11, 0, 0, 10, 1, 0])
+    mesh._dataVersion = 1
+    expect(meshClusters(mesh)).toBe(c)
+    expect(clustersCrossingPlanes(c, planeX(10.5)).length).toBe(1)
+  })
 })

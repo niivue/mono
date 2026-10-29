@@ -1,3 +1,14 @@
+## 1.0.0-rc.43 (2026-10-29)
+
+### Fixes
+
+- **uikit:** let a file picker reopen while a chooser is pending ([#267](https://github.com/niivue/mono/issues/267))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.42 (2026-10-29)
 
 ### Updated Dependencies

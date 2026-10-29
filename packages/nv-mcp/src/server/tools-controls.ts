@@ -122,8 +122,8 @@ const FIELDS = {
     .string()
     .optional()
     .describe(
-      'For a file picker: the extensions accepted, like ".nii,.mz3". Leave it unset for a file ' +
-        'that ends in two parts, like .nii.gz: the browser chooser on macOS greys those out.',
+      'For a file picker: the extensions accepted, like ".nii,.nii.gz,.mz3". Every file is ' +
+        'offered when it is unset.',
     ),
   multiple: z
     .boolean()
@@ -146,7 +146,7 @@ const FIELDS = {
         'boolean, a slider or number field for a number, a select or segmented row for one with choices, ' +
         'or for a number or boolean when every option carries a value, ' +
         'a color control for a colour); view.slice, view.layout or view.radiological; ' +
-        'volume.<index>.<property> (opacity, colormap, cal_min, cal_max, frame, invert, ...); ' +
+        'volume.<index>.<property> (opacity, colormap, cal_min, cal_max, frame, invert, legend, ...); ' +
         'mesh.<index>.<property> (opacity, color, shader, visible, colorbar, legend); ' +
         'mesh.<index>.layer.<layer>.<property>, the properties set_mesh_layer takes (opacity, colormap, cal_min, cal_max, invert, ...); ' +
         'mesh.<index>.tract.<option> or mesh.<index>.connectome.<option>, the options set_mesh takes ' +

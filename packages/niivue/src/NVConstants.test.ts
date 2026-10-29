@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   clampCrosscutWidth,
+  clampFinite,
+  clampSampleRate,
   GAMMA_RANGE,
   invGamma,
   isPaqd,
@@ -277,5 +279,26 @@ describe('clampCrosscutWidth', () => {
   test('maps non-finite to the default', () => {
     expect(clampCrosscutWidth(Number.NaN)).toBe(4)
     expect(clampCrosscutWidth(Number.POSITIVE_INFINITY)).toBe(4)
+  })
+})
+
+describe('clampSampleRate', () => {
+  test('clamps to [1, 4] and maps non-finite to the default', () => {
+    expect(clampSampleRate(2.5)).toBe(2.5)
+    expect(clampSampleRate(0)).toBe(1)
+    expect(clampSampleRate(-3)).toBe(1)
+    expect(clampSampleRate(1e9)).toBe(4)
+    expect(clampSampleRate(Number.NaN)).toBe(2)
+    expect(clampSampleRate(Number.POSITIVE_INFINITY)).toBe(2)
+  })
+})
+
+describe('clampFinite', () => {
+  test('clamps to the range and maps non-finite to the fallback', () => {
+    expect(clampFinite(0.5, [0, 1], 0.25)).toBe(0.5)
+    expect(clampFinite(-3, [0, 1], 0.25)).toBe(0)
+    expect(clampFinite(1e9, [0, 1], 0.25)).toBe(1)
+    expect(clampFinite(Number.NaN, [0, 1], 0.25)).toBe(0.25)
+    expect(clampFinite(Number.NEGATIVE_INFINITY, [0, 1], 0.25)).toBe(0.25)
   })
 })

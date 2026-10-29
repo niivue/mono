@@ -65,7 +65,7 @@ export function defaultSignalDisplay(): NVSignalDisplay {
     phase0: 0,
     phase1Ms: 0,
     selectedColumns: null,
-    showLegend: true,
+    isLegendVisible: true,
   }
 }
 

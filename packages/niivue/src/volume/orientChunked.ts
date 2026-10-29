@@ -76,13 +76,20 @@ export function chunkedDisplayKey(
 }
 
 /**
+ * Key of a volume's entry in the renderers' texture cache. It follows the
+ * NVImage object, so two volumes loaded from one file, or sharing a name, get
+ * separate textures. The views prune the entries of volumes no longer loaded.
+ */
+export function volumeCacheKey(nvimage: NVImage): string {
+  return `vol${objectId(nvimage)}`
+}
+
+/**
  * Identity of the voxels a volume's textures are built from: its `img` view
  * (buffer identity, offset and length) and its `chunkSource`. The renderers
- * cache textures by url or name, so a different image under the same url or
- * name (a reload, or a replacement with the same name) must not reuse them,
- * even when its display state and data version (0 for a fresh image) match the
- * cached ones. A new image always brings its own voxels or source, so this
- * tells it apart without keying on the NVImage object itself.
+ * cache textures by {@link volumeCacheKey}, which follows the NVImage object,
+ * but a volume can have its voxels replaced in place (a new `img` array at the
+ * same data version), and that must not reuse the cached textures either.
  */
 export function volumeSourceKey(nvimage: NVImage): string {
   const img = nvimage.img

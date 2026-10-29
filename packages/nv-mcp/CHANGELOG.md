@@ -1,3 +1,167 @@
+## 1.0.0-rc.34 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.43
+
+## 1.0.0-rc.33 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.52
+- Updated uikit to 1.0.0-rc.42
+
+## 1.0.0-rc.32 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.51
+- Updated uikit to 1.0.0-rc.41
+
+## 1.0.0-rc.31 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.50
+- Updated uikit to 1.0.0-rc.40
+
+## 1.0.0-rc.30 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.39
+
+## 1.0.0-rc.29 (2026-10-29)
+
+### Features
+
+- ⚠️  **niivue:** make per-item isLegendVisible work; one legend flag name ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+
+### Breaking Changes
+
+- **niivue:** make per-item isLegendVisible work; one legend flag name  ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+  signal display option `showLegend` is renamed
+  `isLegendVisible` (loadSignals, addSignal, setSignal).
+  Closes #350.
+  Closes #376.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.49
+- Updated uikit to 1.0.0-rc.38
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.28 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.48
+- Updated uikit to 1.0.0-rc.37
+
+## 1.0.0-rc.27 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.47
+- Updated uikit to 1.0.0-rc.36
+
+## 1.0.0-rc.26 (2026-10-28)
+
+### Fixes
+
+- **niivue:** step-size opacity correction for the 3D overlay pass ([#366](https://github.com/niivue/mono/issues/366))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.46
+- Updated uikit to 1.0.0-rc.35
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.25 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.45
+- Updated uikit to 1.0.0-rc.34
+
+## 1.0.0-rc.24 (2026-10-28)
+
+### Fixes
+
+- **niivue:** give each volume its own texture cache entry ([#346](https://github.com/niivue/mono/issues/346))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.44
+- Updated uikit to 1.0.0-rc.33
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.23 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.43
+- Updated uikit to 1.0.0-rc.32
+
+## 1.0.0-rc.22 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.42
+- Updated uikit to 1.0.0-rc.31
+
+## 1.0.0-rc.21 (2026-10-28)
+
+### Fixes
+
+- **uikit:** let the browser file picker offer .nii.gz files on macOS ([#341](https://github.com/niivue/mono/issues/341))
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.30
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.20 (2026-10-28)
+
+### Fixes
+
+- **nv-mcp:** refuse set_mesh before changing anything ([34a7fd21](https://github.com/niivue/mono/commit/34a7fd21))
+- **nv-mcp:** translate set_mesh colorBy direction and refuse unknown modes ([#339](https://github.com/niivue/mono/issues/339))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.19 (2026-10-28)
+
+### Fixes
+
+- **nv-mcp:** say why describe_volume has no statistics ([#338](https://github.com/niivue/mono/issues/338))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.18 (2026-10-27)
 
 ### Updated Dependencies

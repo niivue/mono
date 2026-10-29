@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { matcapFromName, matcapToName } from '@/documentMatcap'
+import { log } from '@/logger'
 
 const matcaps = { cortex: 'data:image/jpeg;base64,AAAA', shiny: '/m/Shiny.jpg' }
 
@@ -44,6 +45,10 @@ describe('matcapFromName', () => {
       '/custom/Cortex.jpg',
       // A built-in path this instance has no matcap for.
       '/src/assets/matcaps/Gold.jpg',
+      // Another host's image under the same path as a built-in.
+      'https://cdn.example.org/assets/matcaps/Cortex.jpg',
+      '//cdn.example.org/src/assets/matcaps/shiny.jpg',
+      'HTTP://x.org/assets/matcaps/Cortex.jpg?v=1',
     ]) {
       expect(matcapFromName(url, matcaps)).toBe(url)
     }
@@ -54,12 +59,17 @@ describe('matcapFromName', () => {
   })
 
   test('replaces a name it does not know with the default', () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
     expect(matcapFromName('gold', matcaps)).toBe(matcaps.cortex)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain("'gold'")
+    expect(String(warn.mock.calls[0][0])).toContain('cortex, shiny')
     // No matcaps: the default is none.
     expect(matcapFromName('cortex', {})).toBe('')
     expect(matcapFromName('/src/assets/matcaps/Cortex.jpg', undefined)).toBe(
       '/src/assets/matcaps/Cortex.jpg',
     )
+    warn.mockRestore()
   })
 
   test('round-trips through matcapToName', () => {

@@ -63,8 +63,8 @@ export async function attachToCanvas(
       ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
       await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
     }
-    initInteraction(ctrl)
-    setupDragAndDrop(ctrl)
+    if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
+    if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
     setupResizeHandler(ctrl)
     view.resize()
     return ctrl
@@ -109,8 +109,8 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
     await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
   }
-  initInteraction(ctrl)
-  setupDragAndDrop(ctrl)
+  if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
+  if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
   setupResizeHandler(ctrl)
   await ctrl._rebuildViewResources()
   ctrl.restoreSlidePlaneView()

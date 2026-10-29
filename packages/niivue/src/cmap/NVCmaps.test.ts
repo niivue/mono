@@ -255,10 +255,8 @@ describe('invertLut', () => {
   })
 
   test('lutrgba8AppliesTheInversionOnRequest', () => {
-    // The LUT registry needs `import.meta.glob`, which Bun does not provide, so
-    // every name resolves to the built-in gray fallback here. That is enough to
-    // check the `invert` argument is threaded through: the fallback is a real
-    // 256-entry ramp.
+    // Gray is a real 256-entry ramp, which is enough to check the `invert`
+    // argument is threaded through.
     log.setLogLevel('silent')
     const plain = lutrgba8('gray')
     const inverted = lutrgba8('gray', true)
@@ -313,8 +311,7 @@ describe('colormapKey', () => {
 // colormap kinds
 // ---------------------------------------------------------------------------
 describe('colormap kinds', () => {
-  // Bun has no import.meta.glob, so the registry holds only runtime colormaps
-  // and the generated Random palette here.
+  // The registry also holds the bundled LUTs; these tests register their own.
   log.setLogLevel('silent')
   addColormap('kindRamp', { R: [0, 255], G: [0, 255], B: [0, 255] })
   addColormap('kindAtlas', {
@@ -514,9 +511,18 @@ describe('labelLutTexels', () => {
   })
 })
 
-// The CT window itself comes from bundled LUTs, which load via import.meta.glob
-// (browser only): see e2e/colormap-window.spec.ts.
 describe('withColormapWindow', () => {
+  test('a CT colormap without calMin/calMax gets its bundled window', () => {
+    const opts: { colormap: string; calMin?: number; calMax?: number } = {
+      colormap: 'ct_kidneys',
+    }
+    expect(withColormapWindow(opts)).toEqual({
+      colormap: 'ct_kidneys',
+      calMin: 114,
+      calMax: 302,
+    })
+  })
+
   test('explicit calMin/calMax, unknown colormaps, or no colormap pass through', () => {
     const explicit = { colormap: 'ct_kidneys', calMin: -1024 }
     expect(withColormapWindow(explicit)).toBe(explicit)

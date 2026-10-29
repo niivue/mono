@@ -189,7 +189,7 @@ export type NVImage = {
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
-  /** Whether to show legend for label colormaps (default: false) */
+  /** Whether this volume's labels join the legend (default: true; `nv.isLegendVisible` hides the combined volume/mesh legend) */
   isLegendVisible?: boolean
   v1?: Float32Array
   gpu?: Record<string, unknown>
@@ -585,7 +585,7 @@ export type NVMesh = {
   color: [number, number, number, number]
   /** Whether to show colorbar (default: true) */
   isColorbarVisible: boolean
-  /** Whether to show legend for label layers (default: false) */
+  /** Whether this mesh's labels join the legend (default: true; `nv.isLegendVisible` hides the combined volume/mesh legend) */
   isLegendVisible?: boolean
   /** Source URL or filename */
   url?: string
@@ -828,6 +828,14 @@ export type VolumeRenderConfig = {
    * defaults to a halo of 1; pass `halo: [2, 2, 2]` (or wider) when enabling this.
    */
   isCubicInterpolation: boolean
+  /**
+   * Apply the background's step-size opacity correction to the overlay pass
+   * of the 3D render, so overlay density no longer depends on `sampleRate`.
+   * Default true; false restores the uncorrected, sample-rate-dependent look.
+   * An independent hi-res overlay (`chunkOverlayOf`) marches through the
+   * background pass, so it is always corrected and ignores this flag.
+   */
+  isOverlayOpacityCorrected: boolean
   /**
    * Coefficient for the per-level brightness compensation applied to bricks
    * fetched from a coarse pyramid level of a multi-LOD chunked volume. 0
@@ -1282,6 +1290,7 @@ export type NiiVueOptions = {
   volumeIsV1SliceShader?: boolean
   volumeOverlayAlphaBlend?: OVERLAY_ALPHA_BLEND
   volumeOverlayColorBlend?: OVERLAY_COLOR_BLEND
+  /** Matcap image for the 3D render: a URL, or a name from `matcaps` (case-insensitive). An unknown name falls back to the first matcap with a warning. */
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
   volumeTransmittanceCutoff?: number
@@ -1293,6 +1302,8 @@ export type NiiVueOptions = {
   volumeSampleRate?: number
   /** Tricubic B-spline reconstruction in the 3D ray-march. See VolumeRenderConfig.isCubicInterpolation. */
   volumeIsCubicInterpolation?: boolean
+  /** Step-size opacity correction for the 3D overlay pass. See VolumeRenderConfig.isOverlayOpacityCorrected. */
+  volumeIsOverlayOpacityCorrected?: boolean
   /** Per-level brightness compensation for coarse multi-LOD bricks, [0, 0.2]; 0 disables. See VolumeRenderConfig.lodBrightnessCompensation. */
   volumeLodBrightnessCompensation?: number
   /** Per-level opacity compensation for coarse multi-LOD bricks in the 3D ray-march, [0, 1]; 0 disables (default). See VolumeRenderConfig.lodOpacityCompensation. */
@@ -1467,7 +1478,7 @@ export type ImageFromUrlOptions = {
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */
   calMaxNeg?: number
-  /** Colormap type: 0=min-to-max, 1=zero-to-max (transparent below), 2=zero-to-max (translucent below) */
+  /** Colormap type (`COLORMAP_TYPE`): 0=min-to-max, 1=zero-to-max (transparent below), 2=zero-to-max (translucent below). Default: 0. */
   colormapType?: number
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean
@@ -1498,6 +1509,8 @@ export type ImageFromUrlOptions = {
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
+  /** Whether this volume's labels join the legend (default: true) */
+  isLegendVisible?: boolean
   /**
    * 2D slice sampling: true = nearest-neighbour, false = linear. Unset (the
    * default) picks nearest for categorical data (NIFTI_INTENT_LABEL or a label
@@ -1559,7 +1572,7 @@ export type MeshFromUrlOptions = {
   rgba255?: [number, number, number, number]
   /** Whether to show colorbar (default: true) */
   isColorbarVisible?: boolean
-  /** Whether to show legend (default: false) */
+  /** Whether this mesh's labels join the legend (default: true) */
   isLegendVisible?: boolean
   /** Shader type (default: 'phong'). Used for the 3D render view and, unless
    * `sliceShaderType` is set, for 2D slice views too. */
@@ -2015,5 +2028,6 @@ export type NVSignalDisplay = {
   /** indices of columns to show; null shows all */
   selectedColumns: number[] | null
   // shared
-  showLegend: boolean
+  /** Whether the graph draws its series legend */
+  isLegendVisible: boolean
 }

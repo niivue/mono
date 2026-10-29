@@ -25,7 +25,8 @@ proven, core's overlays cut over onto it and the duplicate in core is removed.
 
 Each widget is a pure geometry builder (spec in, plain line + text draw data out,
 unit-testable without a GPU) paired with an overlay that owns the GPU resources
-and draws that data through the lifecycle hook. The overlays are the API. Of
+and draws that data through the lifecycle hook (`buildAnnotationGeometry` is
+the exception: it has no overlay of its own). The overlays are the API. Of
 the builders, only the measuring widgets' and the primitives' (`buildRuler`,
 `buildCrosshair`, `buildAnnotationGeometry`, `buildRect`, `buildLine`,
 `buildTerminatedLine`) are exported; the control widgets' models are
@@ -35,7 +36,7 @@ package-private (see "Conventions for contributors").
 | --- | --- | --- |
 | `buildRuler` | `UIKitRulerOverlay` | A measuring ruler with graduated ticks and a distance label |
 | `buildCrosshair` | `UIKitCrosshairOverlay` | A screen-space cross marking a point, optionally graduated and numbered |
-| `buildAnnotationGeometry` | `UIKitAnnotationOverlay` | Free-form annotation lines |
+| `buildAnnotationGeometry` | none (draw it with `UIKitLineOverlay` + `UIKitTextOverlay`) | Annotation ROI outlines, arrows, rulers and stats labels |
 | `buildRect` | `UIKitRectOverlay` | Filled rounded rectangles with an optional border ring (the first filled primitive) |
 | `buildButton` | `UIKitButtonOverlay` | Clickable, stylable push buttons with a text label and a press animation |
 | `buildToggle` | `UIKitToggleOverlay` | Check boxes with a label: pointer or Space/Enter flips them |
@@ -604,7 +605,10 @@ what was chosen ("No file chosen", one name, or "3 files"; a long name keeps
 its tail behind leading dots). Pressing the button, Enter or Space on it, or
 `open(id)` asks the bridge with the spec's `accept`, `multiple` and
 `directory`; the picker then shows the names and fires `onPick`, or
-`onCancel` when the chooser closed empty.
+`onCancel` when the chooser closed empty. The browser bridge adds the last
+part of a multi-part extension to `accept` (`.nii.gz` brings `.gz`), since
+Chrome's chooser on macOS matches only that part and would grey the files
+out; other files ending in it (a `.tar.gz`) are then offered too.
 
 ```ts
 import {

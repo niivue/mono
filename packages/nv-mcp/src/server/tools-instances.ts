@@ -19,8 +19,7 @@ const INSTANCE_ARG = z.strictObject({
     .describe('A name for it, unique in the list. "instance <n>" otherwise.'),
   volume: VOLUME_ARG.optional().describe(
     'Which loaded volume it draws: an index as where_am_i lists them, or a name. The base otherwise. ' +
-      'A canvas tile always draws the base. A volume loaded from the same file as another loaded ' +
-      'volume is refused, since NiiVue keeps one texture per file here; close the other copy first.',
+      'A canvas tile always draws the base.',
   ),
   space: z
     .enum(['global3d', 'canvas'])

@@ -374,7 +374,7 @@ import type {
 // NVD document format version. Lives here (pure, importable everywhere) so the
 // legacy converter can stamp it without importing NVDocument's Vite module graph.
 // See NVDocument for the version history / migration notes.
-export const NVD_DOCUMENT_VERSION = 10
+export const NVD_DOCUMENT_VERSION = 11
 
 // Default scene values. The scene group is built with gl-matrix vec types in
 // NVModel, so this holds the plain-value defaults (used both to construct the
@@ -463,10 +463,29 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   layerGradientMode: LAYER_GRADIENT_MODE.CENTRAL,
   sampleRate: 2,
   isCubicInterpolation: false,
+  isOverlayOpacityCorrected: true,
   lodBrightnessCompensation: 0.08,
   lodOpacityCompensation: 0,
   gradientOpacity: 0,
   silhouette: 0,
+}
+
+/** `v` clamped to `range`; non-finite gives `fallback`. */
+export function clampFinite(
+  v: number,
+  range: readonly [number, number],
+  fallback: number,
+): number {
+  return Number.isFinite(v)
+    ? Math.min(Math.max(v, range[0]), range[1])
+    : fallback
+}
+
+/** Ray-march samples per voxel, clamped to [1, 4]; non-finite gives the default. */
+export function clampSampleRate(v: number): number {
+  return Number.isFinite(v)
+    ? Math.min(4, Math.max(1, v))
+    : VOLUME_DEFAULTS.sampleRate
 }
 
 export const MESH_DEFAULTS: MeshRenderConfig = {

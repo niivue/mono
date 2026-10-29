@@ -61,8 +61,8 @@ Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, ou
 
 Browser-based e2e tests live in `e2e/*.spec.ts` and run in real headless Chromium
 against the Vite dev server. They exist because some code can't be reached by the
-Bun unit runner: NiiVue's module graph uses Vite's `import.meta.glob` (so the full
-`NVDocument`/controller can't be imported under Bun) and rendering / document
+Bun unit runner: the controller (`NVControlBase`) imports Vite `?worker&inline`
+and `?raw` modules, so it can't be imported under Bun, and rendering / document
 round-trips need a GPU context. Use these for anything needing a real instance.
 
 ```bash
@@ -71,7 +71,11 @@ bunx nx e2e niivue       # via Nx
 ```
 
 `playwright.config.ts` starts a no-`--open` dev server (`bun run e2e:serve`) and
-reuses an already-running one locally (`reuseExistingServer` off in CI). These are
+reuses an already-running one locally (`reuseExistingServer` off in CI). The
+port (5273) is fixed, so a dev server from ANOTHER checkout on that port is
+silently reused and the tests run its code; check `lsof -iTCP:5273` first. A
+machine without Playwright's pinned browser can set `PLAYWRIGHT_CHROMIUM_PATH`
+to any installed `chrome-headless-shell`. These are
 kept OUT of the hermetic unit `test` target and the PR gate (they need a browser).
 Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
@@ -164,7 +168,7 @@ unit-tested under the Bun harness.)
 | `NVModel.ts` | Data model — 8 config groups, volumes, meshes, clip planes |
 | `NVTypes.ts` | TypeScript interfaces (`NVImage`, `NVMesh`, config group types, `NiiVueOptions`) |
 | `NVConstants.ts` | Runtime constants/enums + group defaults (`LAYOUT_DEFAULTS`, `UI_DEFAULTS`, etc.) |
-| `NVDocument.ts` | Document save/load (NVD format v7, CBOR-encoded) |
+| `NVDocument.ts` | Document save/load (NVD format, `NVD_DOCUMENT_VERSION`, CBOR-encoded) |
 | `control/view.ts` | View lifecycle (attach, recreate, reinitialize) |
 | `control/interactions.ts` | Event handling (mouse, keyboard, drag-drop, resize) |
 | `control/dragModes.ts` | Drag mode handlers — contrast, measurement, angle, pan, windowing |
@@ -569,10 +573,18 @@ directions. Pinned by `bothEndsOfTheRangeAreReachable` in `NVTransforms.test.ts`
 
 ## Format extensibility
 
-All format readers use Vite's `import.meta.glob` for automatic discovery. To add a new reader:
+Each format directory lists its modules in a hand-maintained `_registry.ts` (plain
+imports, so the registries load under Bun as well as Vite). To add a new reader:
 1. Create a module in the appropriate `readers/` directory
 2. Export `extensions` array and `read` function
-3. Auto-registered at build time — no manual wiring needed
+3. Add it to that directory's `_registry.ts`. `src/registry.test.ts` fails when a
+   module file is missing from its registry, or a registry lists a missing file.
+
+A reader must not import the module that registers it (e.g. a connectome reader
+importing `connectome/index.ts`): that module builds its extension map from the
+registry at load time, so the cycle leaves the registry uninitialized when the
+registry is imported first. Put shared helpers in a leaf module
+(`connectome/fileData.ts`).
 
 Shared utilities: `NVLoader.buildExtensionMap()` (extension→module maps), `NVGz.maybeDecompress()` (transparent gzip).
 
@@ -582,7 +594,7 @@ the caller receives the whole underlying allocation instead of the slice (and, f
 a small pooled Buffer, at a non-zero `byteOffset`). Browser loads never hit this —
 fetch yields offset-0 buffers — so `mgh.test.ts` passes a `Buffer` explicitly.
 
-Same pattern for: mesh readers (`mesh/readers/`), volume readers (`volume/readers/`), tract readers (`mesh/tracts/readers/`), connectome readers (`mesh/connectome/readers/`), layer readers (`mesh/layers/readers/`), volume transforms (`volume/transforms/`).
+Same pattern for: mesh readers (`mesh/readers/`), volume readers (`volume/readers/`), tract readers (`mesh/tracts/readers/`), connectome readers (`mesh/connectome/readers/`), layer readers (`mesh/layers/readers/`), signal readers (`signal/readers/`), volume and mesh writers (`volume/writers/`, `mesh/writers/`), volume transforms (`volume/transforms/`, shared by the main thread and the transform worker) and colormap LUTs (`cmap/luts/`).
 
 ### Partial 4D loading (`limitFrames4D`)
 
@@ -685,7 +697,8 @@ only the loaded frames, so the restored volume correctly presents as complete-at
 with no deferred affordance. This is gated strictly on `_sourceFile`, so a partial
 volume from a real URL (e.g. `mpld_asl` with `limitFrames4D`) keeps its full dims and
 still deferred-reloads on restore. (A full NVD round-trip isn't Bun-testable —
-`nii2volume` pulls `import.meta.glob` — so this is browser-verified.)
+it needs the controller, whose `?worker&inline` imports Bun can't load — so this
+is browser-verified.)
 
 **Known limitations / follow-ups** (from the 2026-06-16 audit; not yet addressed —
 all are edge cases or pre-existing, the common paths are verified working):
@@ -872,8 +885,11 @@ volumes[0] is chunked, and in multi-instance mode. Hidden (or opacity 0) and
 PAQD volumes do not join as channels. Stacked channels keep their colormap's
 alpha ramp in the orient bake (`modFlags.z` in `orient.wgsl`,
 `keepColormapAlpha` in `gl/orientOverlay.ts`);
-other overlays get `step(0.00001, a)`. The overlay ray-march has no step-size
-correction, so 3D density follows each channel's opacity steeply.
+other overlays get `step(0.00001, a)`. The overlay ray-march takes the
+background's step-size correction (`volumeIsOverlayOpacityCorrected`, default
+on), so 3D density is independent of `sampleRate`; the drawing and PAQD passes
+are not corrected, and a `chunkOverlayOf` overlay (marched by the background
+pass) is always corrected. `e2e/overlay-opacity-correction.spec.ts` pins it.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
 `calMin` 0: the alpha weight is `(f-calMin)/(calMax-calMin)`, so a nonzero
 `calMin` breaks alpha == fraction and ADDITIVE no longer sums to 1.
@@ -882,10 +898,13 @@ pass runs in z-slabs sized so the 24 B/voxel f32 accumulator fits
 min(`maxStorageBufferBindingSize`, `maxBufferSize`); typical volumes and chunks
 are one slab. The chunking threshold is capped at floor(sqrt(that min / 24)) so
 one z-slice always fits (2364 at 128 MiB, above the usual 2048 3D limit). Its
-per-device pipeline cache holds at most twelve mode pairs.
+per-device pipeline cache holds at most four accumulate pipelines (keyed by
+colour mode, the only override that shader reads) and twelve normalise
+pipelines (alpha x colour).
 - `bun packages/niivue/scripts/check-blend-wgsl.mjs` compiles and runs the blend
-  WGSL in system Chrome across modes and two slabs; output must match the CPU
-  test. Passed 2026-10-05 (plus a WebGPU visual pass of `vox.tissues.html` /
+  WGSL in system Chrome across all 12 modes, two slabs and four overlay orders,
+  compares each result with the CPU `blendOverlayData` (tolerance 1) and exits 1
+  on a mismatch. Passed 2026-10-05 (plus a WebGPU visual pass of `vox.tissues.html` /
   `vox.stats-multi.html` in all six then-existing mode pairs), with colour
   `OVER` 2026-10-23, and with colour `MAX` on overlapping channels (z1)
   2026-10-23.
@@ -1194,7 +1213,7 @@ program (slice override, x-ray, depth pick) by construction.
 
 A third, **non-spatial** data class alongside volumes and meshes, rendered as 2-D
 line plots instead of slices. Source lives in `src/signal/`, with format readers
-in `src/signal/readers/` auto-discovered via `import.meta.glob` (same pattern as
+in `src/signal/readers/` listed in its `_registry.ts` (same pattern as
 volume/mesh readers — export `extensions` + `read`). Two kinds, discriminated by
 `kind: SignalKind`:
 
@@ -1346,7 +1365,9 @@ Second audit round (all landed):
 - Derived plots are memoized per signal by display state
   (`NVModel.derivePlotCached`, WeakMap); dense series render a per-pixel-column
   min/max envelope (`drawDecimatedSeries`) so the line buffer is bounded by plot
-  width; the legend is capped (`LEGEND_MAX_ROWS`, overflow -> "+N more").
+  width; the legend is capped (`LEGEND_MAX_ROWS`, overflow -> "+N more") and
+  toggled by `display.isLegendVisible` (was `showLegend` before NVD v11), not
+  by `nv.isLegendVisible`.
 - `collectSignalGraphData` only merges signals whose axis (label + reversed)
   matches the first, so ppm and time-axis signals never share one axis.
 - Signal types exported from the `webgpu`/`webgl2` subpath entries too.
@@ -1625,7 +1646,7 @@ Ninth audit round (second external review; see `audit_response.md`):
 - **No bare annotation guides**: annotations skip entirely when `fontSize <= 6`
   (guide was previously drawn even when the label was suppressed).
 - Won't-fix (documented): full-`NVDocument` signal round-trip test is not runnable
-  under the Bun harness (`import.meta.glob`); the signal path is covered by
+  under the Bun harness (the controller's `?worker&inline` imports); the signal path is covered by
   `persistence.test.ts` (serialize/reconstruct + real CBOR, incl. `-Infinity` y).
 
 Deferred (low priority, documented): two-pass/streaming TSV parser;
@@ -1760,7 +1781,9 @@ the BSD-3 upstream. The MRS API is exported from all three entry subpaths
 
 Volumes apply in GPU shader. Mesh layers apply during CPU compositing (`mesh/layers/index.ts`).
 
-**Label colormaps (one colormap per volume, issue #69):** A colormap is a label table iff its definition has a `labels` array (an empty one counts); there is no other classifier (`_` name prefixes are gone: `draw`, `itksnap`, `slicer3d`). `setVolume(i, { colormap })` and the load options are the only entry point for both kinds; `NVModel.applyColormap` derives `NVImage.colormapLabel` from `colormap` at load and on every `colormap` change (null for a continuous map), so treat `colormapLabel` as read-only. A NIFTI_INTENT_LABEL volume loaded without a colormap gets `Random`, which is generated, not read from JSON: `labelLutFor('Random', [globalMin, globalMax])` hashes each ID to a colour over the volume's whole range and always at least IDs 0..255 (ID 0 transparent; capped at 256x8192 IDs, dropping far negative IDs first so 0..255 stays; non-finite range ends and voxels are ignored), so the same ID matches across volumes. `NVModel.growLabelRange` widens (never shrinks) a generated LUT to the values the volume now holds, scanning every frame of `img` (`globalMin`/`globalMax` describe frame 0 only); `applyColormap`, `updateVolumeData`, `isDirty` commits (`_commitDirtyVolumes`), `recalculateCalMinMax` and `loadDeferred4DVolumes` call it, `NVChunkedVolume.applyAutoWindow` grows a streamed volume's LUT to its sampled range via `NVCmaps.grownLabelLut`, and a table colormap is left as defined. A streamed volume also grows per decoded brick, independent of the display window: the source loader's `onChunk` hook hands each decoded region to `NVChunkedVolume.growLabelsFromChunk`, which records its finite range (`NVCmaps.finiteLabelRange`) under any colormap, coalesces bricks that arrive together, and only when an ID falls outside a generated LUT assigns the grown LUT and calls `_updateGLChanged()` (the new LUT changes `chunkedDisplayKey`, so resident bricks re-stream with the new colours). The renderer's decoded tier re-serves held bricks without decoding them again, so `setVolume({ colormap })` calls `growLabelsToObserved()` on each chunked volume to cover IDs decoded under an earlier colormap. Label LUTs are dense over min..max and **wrap into rows of 256** (`LABEL_LUT_WIDTH`, `labelLutTexels` in `view/NVOrient.ts`; the shaders `texelFetch`/`textureLoad` at `(i % 256, i / 256)`), so ranges past the GPU's max texture width (8192 under SwiftShader) still upload. Orient shader uses nearest LUT lookup; `calMin`/`calMax`/`colormapType`/`colormapNegative` are ignored for label volumes. `addColormap` with `labels` defaults `I` to 0..n-1 and allows one entry; re-registering a name rebuilds the label LUT of volumes using it. `colormapNames(kind?)` filters by kind; `drawColormap` accepts only label maps whose IDs all lie in 0..255, none negative (`isDrawingColormap`, throws otherwise), and `drawingColormaps` lists them. Documents (v10) save the colormap by name and embed runtime-registered definitions (`colormaps`); the registry is page-wide but a volume keeps the LUT compiled when its colormap was applied, so when another viewer has since re-registered that name, `serialize` embeds the table the volume shows under `<Name> 2`, `3`, ... (`documentColormaps.shownLabelColormap`); `documentColormaps.upgradeColormaps` turns a v9 compiled `colormapLabel` into a document colormap named `<volume> labels` and maps `_draw`/`_itksnap`/`_slicer3d`. When a label colormap has names (e.g. the built-in `draw` colormap), the drawing volume surfaces the human-readable label (e.g. `"11bladder"`) in the `locationChange` event's `string` field instead of a numeric fallback like `"draw:11"`. Mesh layers keep their reader-set `colormapLabel` and are out of this model.
+**Label colormaps (one colormap per volume, issue #69):** A colormap is a label table iff its definition has a `labels` array (an empty one counts); there is no other classifier (`_` name prefixes are gone: `draw`, `itksnap`, `slicer3d`). `setVolume(i, { colormap })` and the load options are the only entry point for both kinds; `NVModel.applyColormap` derives `NVImage.colormapLabel` from `colormap` at load and on every `colormap` change (null for a continuous map), so treat `colormapLabel` as read-only. A NIFTI_INTENT_LABEL volume loaded without a colormap gets `Random`, which is generated, not read from JSON: `labelLutFor('Random', [globalMin, globalMax])` hashes each ID to a colour over the volume's whole range and always at least IDs 0..255 (ID 0 transparent; capped at 256x8192 IDs, dropping far negative IDs first so 0..255 stays; non-finite range ends and voxels are ignored), so the same ID matches across volumes. `NVModel.growLabelRange` widens (never shrinks) a generated LUT to the values the volume now holds, scanning every frame of `img` (`globalMin`/`globalMax` describe frame 0 only); `applyColormap`, `updateVolumeData`, `isDirty` commits (`_commitDirtyVolumes`), `recalculateCalMinMax` and `loadDeferred4DVolumes` call it, `NVChunkedVolume.applyAutoWindow` grows a streamed volume's LUT to its sampled range via `NVCmaps.grownLabelLut`, and a table colormap is left as defined. A streamed volume also grows per decoded brick, independent of the display window: the source loader's `onChunk` hook hands each decoded region to `NVChunkedVolume.growLabelsFromChunk`, which records its finite range (`NVCmaps.finiteLabelRange`) under any colormap, coalesces bricks that arrive together, and only when an ID falls outside a generated LUT assigns the grown LUT and calls `_updateGLChanged()` (the new LUT changes `chunkedDisplayKey`, so resident bricks re-stream with the new colours). The renderer's decoded tier re-serves held bricks without decoding them again, so `setVolume({ colormap })` calls `growLabelsToObserved()` on each chunked volume to cover IDs decoded under an earlier colormap. Label LUTs are dense over min..max and **wrap into rows of 256** (`LABEL_LUT_WIDTH`, `labelLutTexels` in `view/NVOrient.ts`; the shaders `texelFetch`/`textureLoad` at `(i % 256, i / 256)`), so ranges past the GPU's max texture width (8192 under SwiftShader) still upload. Orient shader uses nearest LUT lookup; `calMin`/`calMax`/`colormapType`/`colormapNegative` are ignored for label volumes. `addColormap` with `labels` defaults `I` to 0..n-1 and allows one entry; re-registering a name rebuilds the label LUT of volumes using it. `colormapNames(kind?)` filters by kind; `drawColormap` accepts only label maps whose IDs all lie in 0..255, none negative (`isDrawingColormap`, throws otherwise), and `drawingColormaps` lists them. Documents (v10+) save the colormap by name and embed runtime-registered definitions (`colormaps`); the registry is page-wide but a volume keeps the LUT compiled when its colormap was applied, so when another viewer has since re-registered that name, `serialize` embeds the table the volume shows under `<Name> 2`, `3`, ... (`documentColormaps.shownLabelColormap`); `documentColormaps.upgradeColormaps` turns a v9 compiled `colormapLabel` into a document colormap named `<volume> labels` and maps `_draw`/`_itksnap`/`_slicer3d`. When a label colormap has names (e.g. the built-in `draw` colormap), the drawing volume surfaces the human-readable label (e.g. `"11bladder"`) in the `locationChange` event's `string` field instead of a numeric fallback like `"draw:11"`. Mesh layers keep their reader-set `colormapLabel` and are out of this model.
+
+**Legend visibility (issue #350):** a volume or mesh lists its labels when `nv.isLegendVisible && item.isLegendVisible !== false` (`NVModel.collectLegendEntries`, `view/NVLegend.ts`); the per-item flag defaults to true. Volume and mesh entries share one flat legend, volumes first, no heading. Until v11 the legend read a `showLegend` nothing set, which compiled because `NVImage` and `NVMesh` carry a `[key: string]: unknown` index signature (follow-up issue); `documentLegend.upgradeLegendFlags` drops the per-item flag from v10 and older documents and renames signal `display.showLegend`. Known limit: the legend shrinks its font to fit every entry (`view/NVLegend.ts`), so a large atlas (AAL, 116 labels) becomes unreadable; see `examples/legend.html`.
 
 **Legend centroids are lazy.** Nothing computes label centroids at load (a label `colormap`, document load, mesh layer load); `LegendEntry.centroid` is a function that `view/legendCentroids.ts` evaluates on the first legend click and memoizes in a `WeakMap` keyed on the data array: `volume.img` for volumes, with `[colormapLabel, matRAS, _dataVersion]` as dependencies, and `layer.values` for mesh layers, with `[mesh.positions, layer.colormapLabel, mesh._positionsVersion]` as dependencies. A dependency is compared by identity, so replace these objects, never mutate them in place (the version counters cover the in-place edits `updateVolumeData` / `updateMeshPositions` make); `applyVolumeTransform` and `resetVolumeAffine` assign a new `volume.matRAS` without touching `img` or the LUT, which is why `matRAS` is a dependency. Volume centroids are means of RAS voxel coordinates mapped through `matRAS` once; mesh centroids are means of vertex positions, already in mm. `LUT.centroids` no longer exists. A 256³ scan is ~60 ms (Chrome), down from 515-850 ms when it ran eagerly on every label load.
 

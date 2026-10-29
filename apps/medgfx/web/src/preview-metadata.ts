@@ -77,6 +77,7 @@ const formatNames: Record<string, string> = {
   tck: 'TCK',
   trk: 'TRK',
   trx: 'TRX',
+  nvd: 'NVD',
 }
 
 /** The extension that identifies the format, looking past a `.gz` wrapper. */
@@ -158,10 +159,6 @@ export function describeVolume(
   if (dims.some((d) => !Number.isFinite(d) || d < 1)) {
     return { pairs, displayable: false, reason: 'zero-dimension' }
   }
-  // A single-voxel-thick volume has no ordinary three-plane view.
-  if (dims.filter((d) => d > 1).length < 3) {
-    return { pairs, displayable: false, reason: 'not three-dimensional' }
-  }
   if (complexTypes.has(hdr.datatypeCode) || volume.isImaginary) {
     return { pairs, displayable: false, reason: 'complex data' }
   }
@@ -175,6 +172,12 @@ export function describeVolume(
     volume.nVox3D * loadedFrames * (componentsPerVoxel[hdr.datatypeCode] ?? 1)
   if (Number.isFinite(expected) && volume.img.length < expected) {
     return { pairs, displayable: false, reason: 'the file is incomplete' }
+  }
+  // A single-voxel-thick volume has no ordinary three-plane view. Checked
+  // after the data checks so a scene, which tolerates flat volumes, still
+  // learns that one is incomplete.
+  if (dims.filter((d) => d > 1).length < 3) {
+    return { pairs, displayable: false, reason: 'not three-dimensional' }
   }
   return { pairs, displayable: true }
 }
@@ -225,6 +228,44 @@ export function describeMesh(
         mesh.layers.length > 0
           ? 'it holds per-vertex data but no surface'
           : 'it holds no geometry',
+    }
+  }
+  return { pairs, displayable: true }
+}
+
+/**
+ * A NiiVue document is counted, not described: its volumes, meshes and signals
+ * each have their own header, and the strip has room for one line.
+ */
+export function describeScene(
+  counts: { volumes: number; meshes: number; signals: number },
+  fileName: string,
+  fileSize: number | undefined,
+  linked = 0,
+): VolumeSummary {
+  const pairs: Record<string, string> = { format: formatName(fileName) }
+  // A zero count is noise, as "frames 1" is for a 3D volume.
+  for (const [key, n] of Object.entries(counts)) {
+    if (n > 0) pairs[key] = String(n)
+  }
+  if (linked > 0) pairs.linked = String(linked)
+  if (fileSize !== undefined && fileSize >= 0)
+    pairs.size = formatBytes(fileSize)
+  // A preview never fetches linked data, so the scene it could draw is not the
+  // document. Say how to see it rather than draw part of it.
+  if (linked > 0) {
+    return {
+      pairs,
+      displayable: false,
+      reason: 'it has linked data; open it in NiiVue to view linked data',
+    }
+  }
+  // Corrupt embedded data, or a drawing-only document.
+  if (counts.volumes + counts.meshes + counts.signals === 0) {
+    return {
+      pairs,
+      displayable: false,
+      reason: 'nothing in it could be loaded from this file',
     }
   }
   return { pairs, displayable: true }

@@ -1,7 +1,8 @@
 // @niivue/uikit public entry. UIKit is a collection of controls/widgets that
 // integrate into NiiVue's rendering lifecycle. Each widget is a pure geometry
 // builder plus an overlay that owns the GPU resources and draws it (see
-// docs/ruler-port.md in @niivue/niivue for the design).
+// docs/ruler-port.md in @niivue/niivue for the design); the annotation builder
+// has no overlay of its own and draws through the line + text overlays.
 //
 // The surface is the overlays, the control layer, the spec/style/option types,
 // the default styles, the host bridges, the measuring-widget and primitive
@@ -12,10 +13,7 @@
 
 // biome-ignore-all lint/performance/noBarrelFile: package entry point
 export type { AnnotationGeometryOptions } from './annotationOverlay'
-export {
-  buildAnnotationGeometry,
-  UIKitAnnotationOverlay,
-} from './annotationOverlay'
+export { buildAnnotationGeometry } from './annotationOverlay'
 export type {
   ButtonLayout,
   ButtonSpec,

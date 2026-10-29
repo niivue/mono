@@ -1,3 +1,149 @@
+## 1.0.0-rc.52 (2026-10-29)
+
+### Features
+
+- **niivue:** export COLORMAP_TYPE from all entry points ([#375](https://github.com/niivue/mono/issues/375))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.51 (2026-10-29)
+
+### Fixes
+
+- **niivue:** honour isInteractionEnabled in the single-backend builds ([#317](https://github.com/niivue/mono/issues/317))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.50 (2026-10-29)
+
+### Fixes
+
+- **niivue:** clamp the other range-checked settings from a document ([#387](https://github.com/niivue/mono/issues/387))
+- **niivue:** clamp volume sampleRate and renderMode from a document ([#387](https://github.com/niivue/mono/issues/387))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.49 (2026-10-29)
+
+### Features
+
+- ⚠️  **niivue:** make per-item isLegendVisible work; one legend flag name ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+
+### Fixes
+
+- **niivue:** default a restored mesh's isLegendVisible to true ([ffa19c7a](https://github.com/niivue/mono/commit/ffa19c7a))
+
+### Breaking Changes
+
+- **niivue:** make per-item isLegendVisible work; one legend flag name  ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+  signal display option `showLegend` is renamed
+  `isLegendVisible` (loadSignals, addSignal, setSignal).
+  Closes #350.
+  Closes #376.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.48 (2026-10-28)
+
+### Fixes
+
+- **niivue:** warn on an unknown matcap name and document volumeMatcap ([ff6da670](https://github.com/niivue/mono/commit/ff6da670))
+- **niivue:** keep another host's matcap under an assets/matcaps path ([d812b796](https://github.com/niivue/mono/commit/d812b796))
+- **niivue:** keep an explicit volumeMatcap option at construction ([#225](https://github.com/niivue/mono/issues/225))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.47 (2026-10-28)
+
+### Features
+
+- load the Allen IMSC atlases from niivue-demo-images-lfs ([a9f75d69](https://github.com/niivue/mono/commit/a9f75d69))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.46 (2026-10-28)
+
+### Fixes
+
+- **niivue:** step-size opacity correction for the 3D overlay pass ([#366](https://github.com/niivue/mono/issues/366))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.45 (2026-10-28)
+
+### Fixes
+
+- **niivue:** cache the WebGPU blend accumulate pipeline by colour mode ([#358](https://github.com/niivue/mono/issues/358))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.44 (2026-10-28)
+
+### Fixes
+
+- **niivue:** free cached textures when the last volume is removed ([c2199e14](https://github.com/niivue/mono/commit/c2199e14))
+- **niivue:** give each volume its own texture cache entry ([#346](https://github.com/niivue/mono/issues/346))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.43 (2026-10-28)
+
+### Fixes
+
+- **niivue:** keep document copy demo controls in step with the scene ([1953c209](https://github.com/niivue/mono/commit/1953c209))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.42 (2026-10-28)
+
+### Features
+
+- **niivue:** route linked meshes and the thumbnail through resolveUrl ([d57597ce](https://github.com/niivue/mono/commit/d57597ce))
+- **niivue:** let loadDocument resolve or skip linked volume URLs ([cba38d92](https://github.com/niivue/mono/commit/cba38d92))
+- **medgfx:** preview NiiVue documents (.nvd) in Quick Look ([#107](https://github.com/niivue/mono/issues/107))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.41 (2026-10-27)
 
 ### Fixes

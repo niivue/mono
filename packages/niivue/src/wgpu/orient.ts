@@ -1040,18 +1040,18 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `
 
-// Per device: shared layouts and shader modules, plus pipelines keyed by
-// alphaBlend * 4 + colorBlend. The norm pass reuses the accum layout.
+// Per device: shared layouts and shader modules, plus the accum pipelines
+// keyed by colorBlend (the only override the accum shader reads) and the norm
+// pipelines by alphaBlend * 4 + colorBlend. The norm pass reuses the accum
+// layout.
 type BlendDeviceCache = {
   layoutAccum: GPUBindGroupLayout
   layoutOverlay: GPUBindGroupLayout
   layoutOutput: GPUBindGroupLayout
   accumModule: GPUShaderModule
   normModule: GPUShaderModule
-  pipelines: Map<
-    number,
-    { accumPipeline: GPUComputePipeline; normPipeline: GPUComputePipeline }
-  >
+  accumPipelines: Map<number, GPUComputePipeline>
+  normPipelines: Map<number, GPUComputePipeline>
 }
 const _blendCache = new WeakMap<GPUDevice, BlendDeviceCache>()
 
@@ -1064,7 +1064,8 @@ function ensureBlendPipelines(
   normPipeline: GPUComputePipeline
 } {
   // Unknown values fall back to MAX / ADDITIVE as in the CPU path; this also
-  // keeps override constants valid u32s and the cache bounded to twelve entries.
+  // keeps override constants valid u32s and the cache bounded to four accum and
+  // twelve norm pipelines.
   if (
     alphaBlend !== OVERLAY_ALPHA_BLEND.ADDITIVE &&
     alphaBlend !== OVERLAY_ALPHA_BLEND.OVER
@@ -1106,38 +1107,41 @@ function ensureBlendPipelines(
       }),
       accumModule: device.createShaderModule({ code: blendAccumShaderCode }),
       normModule: device.createShaderModule({ code: blendNormShaderCode }),
-      pipelines: new Map(),
+      accumPipelines: new Map(),
+      normPipelines: new Map(),
     }
     _blendCache.set(device, dev)
   }
-  const key = alphaBlend * 4 + colorBlend
-  let pipes = dev.pipelines.get(key)
-  if (!pipes) {
-    pipes = {
-      accumPipeline: device.createComputePipeline({
-        layout: device.createPipelineLayout({
-          bindGroupLayouts: [dev.layoutAccum, dev.layoutOverlay],
-        }),
-        compute: {
-          module: dev.accumModule,
-          entryPoint: 'main',
-          constants: { COLOR_BLEND: colorBlend },
-        },
+  let accumPipeline = dev.accumPipelines.get(colorBlend)
+  if (!accumPipeline) {
+    accumPipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [dev.layoutAccum, dev.layoutOverlay],
       }),
-      normPipeline: device.createComputePipeline({
-        layout: device.createPipelineLayout({
-          bindGroupLayouts: [dev.layoutAccum, dev.layoutOutput],
-        }),
-        compute: {
-          module: dev.normModule,
-          entryPoint: 'main',
-          constants: { ALPHA_BLEND: alphaBlend, COLOR_BLEND: colorBlend },
-        },
-      }),
-    }
-    dev.pipelines.set(key, pipes)
+      compute: {
+        module: dev.accumModule,
+        entryPoint: 'main',
+        constants: { COLOR_BLEND: colorBlend },
+      },
+    })
+    dev.accumPipelines.set(colorBlend, accumPipeline)
   }
-  return { ...dev, ...pipes }
+  const normKey = alphaBlend * 4 + colorBlend
+  let normPipeline = dev.normPipelines.get(normKey)
+  if (!normPipeline) {
+    normPipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [dev.layoutAccum, dev.layoutOutput],
+      }),
+      compute: {
+        module: dev.normModule,
+        entryPoint: 'main',
+        constants: { ALPHA_BLEND: alphaBlend, COLOR_BLEND: colorBlend },
+      },
+    })
+    dev.normPipelines.set(normKey, normPipeline)
+  }
+  return { ...dev, accumPipeline, normPipeline }
 }
 
 /**

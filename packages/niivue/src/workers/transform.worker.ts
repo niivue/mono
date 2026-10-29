@@ -1,8 +1,8 @@
 /**
  * Web Worker entry point for volume transforms.
  *
- * Discovers transform plugins via import.meta.glob (same pattern as the
- * main-thread registry) and executes them off the main thread.
+ * Runs the built-in transforms listed in `volume/transforms/_registry.ts` (the
+ * same registry the main thread uses) off the main thread.
  *
  * Protocol (NVWorker bridge):
  *   Request:  { _wbId, name, hdr, img, options }
@@ -19,6 +19,7 @@ const post = (
 
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 import type { TransformOptions } from '@/volume/transforms'
+import { transformModules } from '@/volume/transforms/_registry'
 
 interface VolumeTransformModule {
   name: string
@@ -29,15 +30,8 @@ interface VolumeTransformModule {
   ) => Promise<{ hdr: NIFTI1 | NIFTI2; img: TypedVoxelArray }>
 }
 
-// Auto-discover transform modules (mirrors the pattern in transforms/index.ts)
-const modules = import.meta.glob<VolumeTransformModule>(
-  ['../volume/transforms/*.ts', '!../volume/transforms/*.test.ts'],
-  { eager: true },
-)
-
 const transforms = new Map<string, VolumeTransformModule>()
-for (const [path, mod] of Object.entries(modules)) {
-  if (path.endsWith('/index.ts')) continue
+for (const mod of Object.values(transformModules)) {
   if (mod.name && typeof mod.apply === 'function') {
     transforms.set(mod.name, mod)
   }

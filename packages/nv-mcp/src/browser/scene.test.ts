@@ -607,6 +607,10 @@ describe('set_volume', () => {
     expect(view.setVolume).toHaveBeenLastCalledWith(1, {
       isColormapInverted: false,
     })
+    await handlers.set_volume({ volume: 1, legend: false })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      isLegendVisible: false,
+    })
     expect(
       await handlers.set_volume({ volume: '2', opacity: 0 }),
     ).toMatchObject({ volume: { index: 2, opacity: 0 } })
@@ -1494,6 +1498,7 @@ describe('add_overlay', () => {
       cal_min_neg: -6,
       cal_max_neg: -2.3,
       colorbar: true,
+      legend: false,
     })) as { volumes: Record<string, unknown>[] }
     expect(view.addVolume).toHaveBeenCalledWith({
       url: 'http://h/stats/zstat1.nii.gz',
@@ -1506,6 +1511,7 @@ describe('add_overlay', () => {
       calMaxNeg: -2.3,
       colormapNegative: 'cool',
       isColorbarVisible: true,
+      isLegendVisible: false,
     })
     expect(result.volumes[1]).toMatchObject({
       name: 'zstat1.nii.gz',
@@ -1924,6 +1930,71 @@ describe('describe_volume', () => {
       handlers.describe_volume({ mask: 1, mask_labels: [] }),
     ).toThrow('mask_labels needs at least one label')
     expect(getDescriptives).not.toHaveBeenCalled()
+  })
+
+  it('says why there are no statistics instead of dropping them', () => {
+    const getDescriptives = mock(() => null)
+    const view = fakeView({
+      volumes: [
+        { name: 'spmMotor.nii.gz', dims: [3, 79, 95, 79] },
+        { name: 'aal.nii.gz', dims: [3, 181, 217, 181] },
+        { name: 'motor2.nii.gz', dims: [3, 79, 95, 79] },
+      ],
+      getDescriptives,
+    } as unknown as Partial<View>)
+    const handlers = coreHandlers(host(view))
+    const masked = handlers.describe_volume({
+      mask: 1,
+      mask_labels: [1],
+    }) as Record<string, unknown>
+    expect(masked.stats).toBeUndefined()
+    expect(masked.statsError).toBe(
+      'spmMotor.nii.gz is 79×95×79 voxels and the mask aal.nii.gz is 181×217×181: a mask must be on the same voxel grid as the volume it restricts.',
+    )
+    // The description is still there.
+    expect(masked.dims).toEqual([79, 95, 79])
+    expect(
+      (handlers.describe_volume({ drawing: true }) as Record<string, unknown>)
+        .statsError,
+    ).toBe(
+      'There is no drawing to count within. Create or load one with edit_drawing first.',
+    )
+    expect(
+      (
+        handlers.describe_volume({ volume: 1, drawing: true }) as Record<
+          string,
+          unknown
+        >
+      ).statsError,
+    ).toBe(
+      "The drawing lies over the base volume spmMotor.nii.gz (79×95×79 voxels) and aal.nii.gz is 181×217×181: ask for the base volume's statistics within the drawing, or use a mask volume on aal.nii.gz's grid.",
+    )
+    expect(
+      (handlers.describe_volume({ mask: 2 }) as Record<string, unknown>)
+        .statsError,
+    ).toBe(
+      'NiiVue could not compute statistics for spmMotor.nii.gz with that mask.',
+    )
+  })
+
+  it('says a streamed volume has no voxels to count', () => {
+    const view = fakeView({
+      volumes: [
+        {
+          name: 'heart.zarr',
+          dims: [3, 512, 512, 512],
+          chunkPlan: { gridDims: [4, 4, 4] },
+        },
+      ],
+      getDescriptives: mock(() => null),
+    } as unknown as Partial<View>)
+    const out = coreHandlers(host(view)).describe_volume({}) as Record<
+      string,
+      unknown
+    >
+    expect(out.statsError).toBe(
+      'heart.zarr is streamed in bricks, so there are no whole-volume voxels to count.',
+    )
   })
 })
 

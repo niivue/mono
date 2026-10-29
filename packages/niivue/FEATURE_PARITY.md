@@ -349,7 +349,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | Voxel-based atlas labels | ✅ | A label `colormap` |
 | PAQD probabilistic atlas | ✅ | `volumePaqdUniforms` |
-| Mesh-based atlases | ⚠️ | No annot/GIfTI layer readers found |
+| Mesh-based atlases | ⚠️ | GIfTI and MZ3 label tables load as layers (`colormapLabel`); FreeSurfer `.annot` has no reader |
 | `addLabel()` | ❌ | No 3D labels in the viewer. `@niivue/uikit`'s `UIKitPointLabelOverlay` draws a text label with a leader line to a world-mm point on the render tile via `mmToRenderCanvas()` / `explodedMM()` |
 
 ## 28. Plugin System
@@ -435,9 +435,9 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | FreeSurfer CURV | ✅ |
 | SMP | ✅ |
 | STC | ✅ |
-| GIfTI overlay | ❌ |
+| GIfTI overlay | ✅ |
 | CIfTI-2 | ❌ |
-| MZ3 overlay | ❌ |
+| MZ3 overlay | ✅ |
 | FreeSurfer ANNOT | ❌ |
 
 ### Tractography
@@ -486,7 +486,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Signal data class (`NVModel.signals`) | ✅ | `physio` (BIDS TSV) and `spectroscopy` (NIfTI-MRS complex FID) |
-| Readers (`tsv`, `nii`) | ✅ | Auto-discovered via `import.meta.glob`; gz-aware; NaN gaps; `scl_slope`/`scl_inter` applied for real NIfTI |
+| Readers (`tsv`, `nii`) | ✅ | Listed in `signal/readers/_registry.ts`; gz-aware; NaN gaps; `scl_slope`/`scl_inter` applied for real NIfTI |
 | BIDS/MRS sidecar | ✅ | Sibling `.json` fetched by URL or paired on drag-drop; `SpectrometerFrequency`/`ResonantNucleus` |
 | NIfTI signal-vs-volume routing | ✅ | `detect.ts`: dims-only (non-spatial: dim1-3==1 & dim4>1); MRS fields do NOT route here; `asSignal` override |
 | Processing (FFT/avg/ppm) | ✅ | Radix-2 FFT; non-pow2 zero-filled to next pow2; transient averaging; ppm/Hz axis; windowed y |
@@ -494,7 +494,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
 | Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache; on-graph pan/zoom buttons with wheel/frame follow (`graphZoom`/`graphPan`), relative line width/opacity (`graphLineWidth`/`graphLineAlpha`), and a missing-data rug for NaN gaps |
 | Annotations (`SignalAnnotation`) | ✅ | Data-space text labels (`{text,x,y,color?}`) that pan/zoom with the window and hide when out of range; `y` of `±Infinity` pins to plot bottom/top; set via load options or `setSignal`, persisted in NVD. Render on the signal graph only (not the volume+physio association view) |
-| Persistence (NVD) | ✅ | Document version 10 (`NVConstants.NVD_DOCUMENT_VERSION`); v9 documents are converted on load |
+| Persistence (NVD) | ✅ | Document version 11 (`NVConstants.NVD_DOCUMENT_VERSION`); v10 and older documents are converted on load |
 | Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
 | Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`); per-trace show/hide — BOLD via `graphShowVolumeTimecourse`, physio via `setSignal` `selectedColumns` |
 
@@ -553,7 +553,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 ## Summary of Key Missing Features
 
 ### High Priority (Core Functionality)
-1. **Mesh overlay formats**: GIfTI, CIfTI-2, MZ3, FreeSurfer ANNOT layer readers
+1. **Mesh overlay formats**: CIfTI-2 and FreeSurfer ANNOT layer readers
 
 ### Medium Priority
 2. **3D rendering**: `setGradientOpacity`, custom gradient textures (MIP is now covered by `volumeRenderMode`)

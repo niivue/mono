@@ -1,31 +1,18 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { createCylinder, createSphere } from '@/mesh/NVShapes'
 import * as NVLoader from '@/NVLoader'
-import type {
-  NVConnectomeData,
-  NVConnectomeEdge,
-  NVConnectomeNode,
-  NVConnectomeOptions,
-} from '@/NVTypes'
+import type { NVConnectomeData, NVConnectomeOptions } from '@/NVTypes'
+import type { ConnectomeFileData } from './fileData'
+import { connectomeReaderModules } from './readers/_registry'
 
 type ConnectomeReader = {
   extensions?: string[]
   read: (buffer: ArrayBufferLike) => Promise<ConnectomeFileData>
 }
 
-/** Raw parsed connectome file — includes both data and default display options from the file. */
-export type ConnectomeFileData = {
-  data: NVConnectomeData
-  options: Partial<NVConnectomeOptions>
-}
-
-const modules = import.meta.glob<ConnectomeReader>(
-  ['./readers/*.ts', '!./readers/*.test.ts'],
-  {
-    eager: true,
-  },
+const readerByExt = NVLoader.buildExtensionMap<ConnectomeReader>(
+  connectomeReaderModules,
 )
-const readerByExt = NVLoader.buildExtensionMap(modules)
 
 export function connectomeExtensions(): string[] {
   return Array.from(readerByExt.keys()).sort()
@@ -37,19 +24,6 @@ export function isConnectomeExtension(ext: string): boolean {
 
 export function getConnectomeReader(ext: string): ConnectomeReader | undefined {
   return readerByExt.get(ext.toUpperCase())
-}
-
-export const defaultConnectomeOptions: NVConnectomeOptions = {
-  nodeColormap: 'warm',
-  nodeColormapNegative: '',
-  nodeMinColor: 0,
-  nodeMaxColor: 0,
-  nodeScale: 3,
-  edgeColormap: 'warm',
-  edgeColormapNegative: '',
-  edgeMin: 0,
-  edgeMax: 0,
-  edgeScale: 1,
 }
 
 export type ExtrusionResult = {
@@ -194,43 +168,4 @@ export function colormapLookup(
     activeLut[idx + 2] / 255,
     activeLut[idx + 3] / 255,
   ]
-}
-
-/**
- * Convert a dense (legacy) connectome format to sparse NVConnectomeData.
- * Dense format stores edges as a flattened NxN upper-triangular matrix.
- */
-export function convertDenseToSparse(
-  nodesObj: {
-    names: string[]
-    X: number[]
-    Y: number[]
-    Z: number[]
-    Color: number[]
-    Size: number[]
-  },
-  edgesFlat: number[],
-): { data: NVConnectomeData } {
-  const n = nodesObj.names.length
-  const nodes: NVConnectomeNode[] = []
-  for (let i = 0; i < n; i++) {
-    nodes.push({
-      name: nodesObj.names[i],
-      x: nodesObj.X[i],
-      y: nodesObj.Y[i],
-      z: nodesObj.Z[i],
-      colorValue: nodesObj.Color[i],
-      sizeValue: nodesObj.Size[i],
-    })
-  }
-  const edges: NVConnectomeEdge[] = []
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const val = edgesFlat[i * n + j]
-      if (val !== 0) {
-        edges.push({ first: i, second: j, colorValue: val })
-      }
-    }
-  }
-  return { data: { nodes, edges } }
 }

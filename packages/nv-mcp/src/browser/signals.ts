@@ -73,7 +73,7 @@ function displayFields(params: Params): SignalDisplay {
       if (list) display.selectedColumns = list
     }
   }
-  put(display, 'showLegend', flag(params, 'legend'))
+  put(display, 'isLegendVisible', flag(params, 'legend'))
   return display
 }
 

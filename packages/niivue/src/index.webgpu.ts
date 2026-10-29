@@ -20,6 +20,11 @@ export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewpo
 export type { AddMeasurementOptions } from './control/measurements'
 // Options accepted by reinitializeView (backend switch, anti-alias, DPR)
 export type { ReinitializeOptions } from './control/viewLifecycle'
+// loadDocument's resolveUrl: what a document URL refers to, and the hook
+export type {
+  DocumentLinkKind,
+  DocumentUrlResolver,
+} from './documentLinks'
 // Sparse-document settings policies: which settings saveDocument includes, and
 // how loadDocument fills settings a sparse document omits
 export type {
@@ -60,6 +65,7 @@ export {
 } from './mrs/MrsScene'
 // Enums
 export {
+  COLORMAP_TYPE,
   DRAG_MODE,
   LAYER_GRADIENT_MODE,
   MULTIPLANAR_TYPE,

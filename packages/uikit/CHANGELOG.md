@@ -1,3 +1,110 @@
+## 1.0.0-rc.43 (2026-10-29)
+
+### Fixes
+
+- **uikit:** let a file picker reopen while a chooser is pending ([#267](https://github.com/niivue/mono/issues/267))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.42 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.52
+
+## 1.0.0-rc.41 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.51
+
+## 1.0.0-rc.40 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.50
+
+## 1.0.0-rc.39 (2026-10-29)
+
+### Features
+
+- ⚠️  **uikit:** drop UIKitAnnotationOverlay from the public API ([9fb0c004](https://github.com/niivue/mono/commit/9fb0c004))
+
+### Breaking Changes
+
+- **uikit:** drop UIKitAnnotationOverlay from the public API  ([9fb0c004](https://github.com/niivue/mono/commit/9fb0c004))
+  UIKitAnnotationOverlay is no longer exported from
+  @niivue/uikit. Draw buildAnnotationGeometry's output with UIKitLineOverlay
+  and UIKitTextOverlay instead.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.38 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.49
+
+## 1.0.0-rc.37 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.48
+
+## 1.0.0-rc.36 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.47
+
+## 1.0.0-rc.35 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.46
+
+## 1.0.0-rc.34 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.45
+
+## 1.0.0-rc.33 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.44
+
+## 1.0.0-rc.32 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.43
+
+## 1.0.0-rc.31 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.42
+
+## 1.0.0-rc.30 (2026-10-28)
+
+### Fixes
+
+- **uikit:** let the browser file picker offer .nii.gz files on macOS ([#341](https://github.com/niivue/mono/issues/341))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.29 (2026-10-27)
 
 ### Updated Dependencies

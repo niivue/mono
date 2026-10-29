@@ -75,6 +75,7 @@ import {
   chunkOverlayMatrix,
   coarseFloorKey,
   extractChunkBytes,
+  volumeCacheKey,
   volumeSourceKey,
   wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
@@ -241,9 +242,9 @@ interface ChunkedTexEntry {
    */
   displayKey: string
   /**
-   * volumeSourceKey of the image the entry streams. A different image or
-   * source under the same url or name builds a new entry, decoded tier
-   * included, rather than reusing chunks read from the old one.
+   * volumeSourceKey of the image the entry streams. Voxels or a source
+   * replaced on the same volume build a new entry, decoded tier included,
+   * rather than reusing chunks read from the old one.
    */
   sourceKey: string
   /**
@@ -457,6 +458,8 @@ export class VolumeRenderer extends NVRenderer {
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
   layerGradientMode = VOLUME_DEFAULTS.layerGradientMode
+  // Step-size opacity correction for the overlay pass.
+  isOverlayOpacityCorrected = VOLUME_DEFAULTS.isOverlayOpacityCorrected
   // Background-volume gradient opacity and silhouette (Fresnel rim), set by the
   // view each frame from md.volume. Both read the precomputed gradient
   // texture's magnitude/direction, so a non-zero value also means the gradient
@@ -746,7 +749,7 @@ export class VolumeRenderer extends NVRenderer {
     const oversized =
       needsChunking(srcDims, limit) || needsChunking(rasDims, limit)
 
-    const cacheKey = vol.url || vol.name
+    const cacheKey = volumeCacheKey(vol)
 
     if (forcedPlan || oversized) {
       // Same modulation the whole-volume path below resolves; the uploader
@@ -946,7 +949,7 @@ export class VolumeRenderer extends NVRenderer {
           `Use a coarser pyramid level or crop the volume.`,
       )
     }
-    const cacheKey = vol.url || vol.name
+    const cacheKey = volumeCacheKey(vol)
     const displayKey = chunkedDisplayKey(vol, modulation)
     const sourceKey = volumeSourceKey(vol)
     const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
@@ -1065,7 +1068,7 @@ export class VolumeRenderer extends NVRenderer {
     vol: NVImage,
     newPlan: ChunkPlan,
   ): Promise<void> {
-    const cacheKey = vol.url || vol.name
+    const cacheKey = volumeCacheKey(vol)
     const entry = cacheKey ? this._texCache.get(cacheKey) : undefined
     if (!entry || entry.kind !== 'chunked') return
     if (newPlan.chunks.length > MAX_CHUNKS_PER_TILE) {
@@ -1149,7 +1152,7 @@ export class VolumeRenderer extends NVRenderer {
 
   /**
    * Switch the active volume/gradient textures to the cache entry for
-   * `cacheKey` (a volume url or name). Used per-tile by global3d rendering
+   * `cacheKey` (from volumeCacheKey). Used per-tile by global3d rendering
    * to draw distinct volumes without re-uploading their data each frame.
    * Returns true if the cache hit and textures were rebound.
    */
@@ -2852,6 +2855,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.gradientOpacity, this.gradientOpacity)
     if (shader.uniforms.silhouettePower)
       gl.uniform1f(shader.uniforms.silhouettePower, this.silhouette)
+    if (shader.uniforms.overlayOpacityCorrection)
+      gl.uniform1f(
+        shader.uniforms.overlayOpacityCorrection,
+        this.isOverlayOpacityCorrected ? 1 : 0,
+      )
     const cubic =
       this.isCubicInterpolation &&
       this._cubicVolumeSafe &&

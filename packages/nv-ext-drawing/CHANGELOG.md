@@ -1,3 +1,69 @@
+## 1.0.0-rc.52 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.52
+
+## 1.0.0-rc.51 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.51
+
+## 1.0.0-rc.50 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.50
+
+## 1.0.0-rc.49 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.49
+
+## 1.0.0-rc.48 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.48
+
+## 1.0.0-rc.47 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.47
+
+## 1.0.0-rc.46 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.46
+
+## 1.0.0-rc.45 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.45
+
+## 1.0.0-rc.44 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.44
+
+## 1.0.0-rc.43 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.43
+
+## 1.0.0-rc.42 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.42
+
 ## 1.0.0-rc.41 (2026-10-27)
 
 ### Updated Dependencies

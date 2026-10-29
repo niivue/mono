@@ -40,6 +40,7 @@ import {
   settingsChangeEvents,
   snapshotSettings,
 } from '@/documentEvents'
+import { type DocumentUrlResolver, resolveLinkedEntry } from '@/documentLinks'
 import { defaultMatcap, matcapFromName } from '@/documentMatcap'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
@@ -61,12 +62,15 @@ import { clearMeshClusters } from '@/mesh/triangleClusters'
 import type { WriteOptions } from '@/mesh/writers'
 import {
   clampCrosscutWidth,
+  clampFinite,
+  clampSampleRate,
   DRAG_MODE,
   GAMMA_RANGE,
   LOD_BRIGHTNESS_RANGE,
   LOD_OPACITY_RANGE,
   lodGammaExponent,
   lodOpacityScale,
+  MESH_DEFAULTS,
   NUM_CLIP_PLANE,
   normalizeVolumeRenderMode,
   type OVERLAY_ALPHA_BLEND,
@@ -661,9 +665,11 @@ export default class NiiVue extends EventTarget {
     this._distributionBackend = distributionBackend
     // Instances
     this.model = new NVModel(options)
-    // Auto-apply first matcap URL if matcaps provided
-    const firstUrl = defaultMatcap(this.opts.matcaps)
-    if (firstUrl) this.model.volume.matcap = firstUrl
+    // An explicit volumeMatcap (a name or URL) wins over the first matcap.
+    this.model.volume.matcap =
+      options.volumeMatcap === undefined
+        ? defaultMatcap(this.opts.matcaps)
+        : matcapFromName(options.volumeMatcap, this.opts.matcaps)
     this.resizeObserver = null
   }
 
@@ -1008,9 +1014,7 @@ export default class NiiVue extends EventTarget {
     return this.model.scene.gamma
   }
   set gamma(v: number) {
-    this.model.scene.gamma = Number.isFinite(v)
-      ? Math.min(Math.max(v, GAMMA_RANGE[0]), GAMMA_RANGE[1])
-      : 1
+    this.model.scene.gamma = clampFinite(v, GAMMA_RANGE, 1)
     this.emit('change', { property: 'gamma', value: this.model.scene.gamma })
     this.drawScene()
   }
@@ -1605,6 +1609,19 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /** See VolumeRenderConfig.isOverlayOpacityCorrected. */
+  get volumeIsOverlayOpacityCorrected(): boolean {
+    return this.model.volume.isOverlayOpacityCorrected
+  }
+  set volumeIsOverlayOpacityCorrected(v: boolean) {
+    this.model.volume.isOverlayOpacityCorrected = v
+    this.emit('change', {
+      property: 'volumeIsOverlayOpacityCorrected',
+      value: v,
+    })
+    this.drawScene()
+  }
+
   /**
    * Samples per voxel along the ray in the 3D render. Higher values converge the
    * ray integral at a proportional fragment cost. Clamped to [1, 4]. This does
@@ -1615,7 +1632,7 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.sampleRate
   }
   set volumeSampleRate(v: number) {
-    this.model.volume.sampleRate = Math.min(4, Math.max(1, v))
+    this.model.volume.sampleRate = clampSampleRate(v)
     this.emit('change', {
       property: 'volumeSampleRate',
       value: this.model.volume.sampleRate,
@@ -1692,9 +1709,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.lodBrightnessCompensation
   }
   set volumeLodBrightnessCompensation(v: number) {
-    this.model.volume.lodBrightnessCompensation = Number.isFinite(v)
-      ? Math.min(Math.max(v, LOD_BRIGHTNESS_RANGE[0]), LOD_BRIGHTNESS_RANGE[1])
-      : VOLUME_DEFAULTS.lodBrightnessCompensation
+    this.model.volume.lodBrightnessCompensation = clampFinite(
+      v,
+      LOD_BRIGHTNESS_RANGE,
+      VOLUME_DEFAULTS.lodBrightnessCompensation,
+    )
     this._warnIfLodCompensationInert(
       'volumeLodBrightnessCompensation',
       this.model.volume.lodBrightnessCompensation,
@@ -1731,9 +1750,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.lodOpacityCompensation
   }
   set volumeLodOpacityCompensation(v: number) {
-    this.model.volume.lodOpacityCompensation = Number.isFinite(v)
-      ? Math.min(Math.max(v, LOD_OPACITY_RANGE[0]), LOD_OPACITY_RANGE[1])
-      : VOLUME_DEFAULTS.lodOpacityCompensation
+    this.model.volume.lodOpacityCompensation = clampFinite(
+      v,
+      LOD_OPACITY_RANGE,
+      VOLUME_DEFAULTS.lodOpacityCompensation,
+    )
     this._warnIfLodCompensationInert(
       'volumeLodOpacityCompensation',
       this.model.volume.lodOpacityCompensation,
@@ -1763,9 +1784,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.gradientOpacity
   }
   set volumeGradientOpacity(v: number) {
-    this.model.volume.gradientOpacity = Number.isFinite(v)
-      ? Math.min(Math.max(v, 0), 1)
-      : VOLUME_DEFAULTS.gradientOpacity
+    this.model.volume.gradientOpacity = clampFinite(
+      v,
+      [0, 1],
+      VOLUME_DEFAULTS.gradientOpacity,
+    )
     this.emit('change', {
       property: 'volumeGradientOpacity',
       value: this.model.volume.gradientOpacity,
@@ -1787,9 +1810,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.silhouette
   }
   set volumeSilhouette(v: number) {
-    this.model.volume.silhouette = Number.isFinite(v)
-      ? Math.min(Math.max(v, 0), 1)
-      : VOLUME_DEFAULTS.silhouette
+    this.model.volume.silhouette = clampFinite(
+      v,
+      [0, 1],
+      VOLUME_DEFAULTS.silhouette,
+    )
     this.emit('change', {
       property: 'volumeSilhouette',
       value: this.model.volume.silhouette,
@@ -1983,7 +2008,7 @@ export default class NiiVue extends EventTarget {
     return this.model.mesh.xRay
   }
   set meshXRay(v: number) {
-    const clamped = Math.max(0, Math.min(1, v))
+    const clamped = clampFinite(v, [0, 1], MESH_DEFAULTS.xRay)
     this.model.mesh.xRay = clamped
     this.emit('change', { property: 'meshXRay', value: clamped })
     this.drawScene()
@@ -4264,7 +4289,7 @@ export default class NiiVue extends EventTarget {
    * Add a scalar overlay layer to a mesh.
    *
    * @example
-   * await nv1.addMeshLayer(0, { url: 'brain.curv', colormap: 'gray', cal_min: 0.3, cal_max: 0.5 })
+   * await nv1.addMeshLayer(0, { url: 'brain.curv', colormap: 'gray', calMin: 0.3, calMax: 0.5 })
    */
   async addMeshLayer(
     meshIndex: number,
@@ -4326,7 +4351,7 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).
+   * Update properties of a mesh layer (colormap, calMin, calMax, opacity, etc.).
    * Triggers recompositing and GPU update.
    *
    * @example
@@ -6808,10 +6833,23 @@ export default class NiiVue extends EventTarget {
     }
   }
 
+  /**
+   * `options.resolveUrl` sees every URL the document would load before it is
+   * fetched: each linked volume and mesh (saved by URL with no embedded data,
+   * see `SerializeOptions.linkData`) and the thumbnail. It returns the URL to
+   * fetch instead, or `null` to skip that item. A caller can resolve links
+   * against where the document lives rather than the page, or refuse some.
+   * Skipping the document's first volume also skips its drawing, which belongs
+   * to that volume's grid.
+   */
   async loadDocument(
     source: string | File,
-    options?: { fill?: SettingsFillPolicy },
+    options?: {
+      fill?: SettingsFillPolicy
+      resolveUrl?: DocumentUrlResolver
+    },
   ): Promise<void> {
+    const resolveUrl = options?.resolveUrl
     // Fetch the document file
     const buffer = await NVLoader.fetchFile(source)
     const data = new Uint8Array(buffer)
@@ -6855,10 +6893,26 @@ export default class NiiVue extends EventTarget {
     this.emitSettingsChanges(settingsBefore)
 
     // Restore thumbnail if present in document
-    if (this.model.ui.thumbnailUrl) {
-      this.opts.thumbnail = this.model.ui.thumbnailUrl
+    const thumbnailUrl = this.model.ui.thumbnailUrl
+      ? resolveUrl
+        ? resolveUrl(this.model.ui.thumbnailUrl, 'thumbnail')
+        : this.model.ui.thumbnailUrl
+      : null
+    if (thumbnailUrl) {
+      this.model.ui.thumbnailUrl = thumbnailUrl
+      this.opts.thumbnail = thumbnailUrl
       this.model.ui.isThumbnailVisible = true
-      if (this.view) await this.view.loadThumbnail(this.model.ui.thumbnailUrl)
+      // A thumbnail is decoration: one that cannot load (relative path,
+      // offline, blocked) must not cost the document its data.
+      try {
+        if (this.view) await this.view.loadThumbnail(thumbnailUrl)
+      } catch (err) {
+        log.warn(`loadDocument: thumbnail not loaded: ${err}`)
+        this.model.ui.isThumbnailVisible = false
+      }
+    } else if (this.model.ui.thumbnailUrl) {
+      // Refused by resolveUrl: never requested, never shown.
+      this.model.ui.isThumbnailVisible = false
     }
 
     // Reconstruct volumes SEQUENTIALLY so document order is preserved —
@@ -6868,9 +6922,15 @@ export default class NiiVue extends EventTarget {
     // Reconstruction goes through the model (one GPU update for the whole
     // load, below), so emit the events the controller's addVolume/addMesh/
     // addSignal would have: each after its item is in the collection.
-    for (const v of doc.volumes ?? []) {
+    let isBackgroundSkipped = false
+    for (const [i, v] of (doc.volumes ?? []).entries()) {
       const before = this.model.volumes.length
-      await NVDocument.reconstructVolume(this.model, v)
+      const entry = resolveLinkedEntry(v, 'volume', resolveUrl)
+      if (!entry) {
+        if (i === 0) isBackgroundSkipped = true
+        continue
+      }
+      await NVDocument.reconstructVolume(this.model, entry)
       if (this.model.volumes.length > before) {
         this.emit('volumeLoaded', {
           volume: this.model.volumes[this.model.volumes.length - 1],
@@ -6880,7 +6940,10 @@ export default class NiiVue extends EventTarget {
     // Meshes have no background/overlay ordering role; load them in parallel.
     const meshesBefore = this.model.meshes.length
     await Promise.all(
-      (doc.meshes ?? []).map((m) => NVDocument.reconstructMesh(this.model, m)),
+      (doc.meshes ?? []).map((m) => {
+        const entry = resolveLinkedEntry(m, 'mesh', resolveUrl)
+        return entry ? NVDocument.reconstructMesh(this.model, entry) : undefined
+      }),
     )
     for (const mesh of this.model.meshes.slice(meshesBefore)) {
       this.emit('meshLoaded', { mesh })
@@ -6892,8 +6955,12 @@ export default class NiiVue extends EventTarget {
     // Update GPU resources and render
     await this._updateGLChanged()
 
-    // Restore drawing from RLE-encoded bitmap in document
-    if (doc.drawingBitmapRLE && doc.drawingBitmapLength) {
+    // Restore drawing from RLE-encoded bitmap in document. It is drawn on the
+    // document's first volume; if resolveUrl skipped that one, volumes[0] is
+    // some other volume and the drawing has nowhere to go.
+    if (isBackgroundSkipped && doc.drawingBitmapRLE) {
+      log.warn('loadDocument: first volume skipped; its drawing is not loaded')
+    } else if (doc.drawingBitmapRLE && doc.drawingBitmapLength) {
       const back = this.model.getVolumes()[0]
       if (back) {
         const dv = createDrawingVolume(back)

@@ -1,6 +1,6 @@
 [project]
 name = "ipyniivue"
-version = "0.0.0"
+version = "3.0.0-rc.1"
 description = "Jupyter widget for NiiVue medical-image visualization (anywidget-based)."
 requires-python = ">=3.10"
 license = { text = "BSD-2-Clause" }

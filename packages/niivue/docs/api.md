@@ -240,16 +240,16 @@ Note: `setDragMode(v)` still exists as a method (for string-to-number mapping).
 Used by `loadVolumes()`, `addVolume()`, and `setVolume()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
 - Behavior: `isTransparentBelowCalMin`, `opacity`, `visible` (hide without changing `opacity`), `modulateAlpha`, `isNearestInterpolation` (2D sampling; unset = nearest for label data, linear otherwise)
-- UI: `isColorbarVisible`, `isLegendVisible`
+- UI: `isColorbarVisible`, `isLegendVisible` (default true; `nv.isLegendVisible` gates the combined legend)
 - 4D: `frame4D`, `limitFrames4D`
 
 ### Mesh Options
 Used by `loadMeshes()`, `addMesh()`, and `setMesh()`:
 - Display: `opacity`, `visible` (hide without changing `opacity`), `color`, `shaderType`
-- UI: `isColorbarVisible`, `isLegendVisible`
+- UI: `isColorbarVisible`, `isLegendVisible` (default true; `nv.isLegendVisible` gates the combined legend)
 
 ### Layer Options
-Used by `addMeshLayer()` and `setMeshLayer()`:
+Used by `addMeshLayer()` and `setMeshLayerProperty()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
 - Behavior: `isTransparentBelowCalMin`, `isAdditiveBlend`, `isColormapInverted`, `opacity`
 - UI: `isColorbarVisible`, `outlineWidth`

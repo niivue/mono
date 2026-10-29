@@ -631,7 +631,7 @@ describe('signal-mode performance bounds', () => {
     for (let j = 0; j < 30; j++) {
       series.push({ label: `S${j}`, x: null, y: [1, 2, 3] })
     }
-    const data = signalData(series, { showLegend: true })
+    const data = signalData(series, { isLegendVisible: true })
     const layout = computeGraphLayout(data, W, H, 0, 1)
     if (!layout) throw new Error('no layout')
     const { texts, buildText, buildLine } = makeStubs()

@@ -51,7 +51,7 @@ export function getFileExt(
   return upperCase ? ext : ext.toLowerCase()
 }
 
-/** Build an extension → module map from import.meta.glob results. */
+/** Build an extension → module map from a module registry (`_registry.ts`). */
 export function buildExtensionMap<T extends { extensions?: string[] }>(
   modules: Record<string, T>,
   skipSelf?: string,

@@ -10,6 +10,7 @@ import {
   encodeDocumentJSON,
   looksLikeJSON,
 } from '@/documentJson'
+import { upgradeLegendFlags } from '@/documentLegend'
 import { isTransientStreamedVolume, shouldLinkVolume } from '@/documentLinkData'
 import { matcapToName } from '@/documentMatcap'
 import { selectUrlMeshLayers } from '@/documentMeshLayers'
@@ -79,6 +80,9 @@ import * as NVVolume from '@/volume/NVVolume'
 // (continuous or label) and `colormaps` embeds every runtime-registered
 // colormap. `upgradeColormaps` converts older label LUTs and renames the
 // `_`-prefixed drawing colormaps.
+//
+// v11: per-item `isLegendVisible` now works and defaults to true; signal
+// `display.showLegend` is `isLegendVisible`. See `upgradeLegendFlags`.
 const DOCUMENT_VERSION = NVConstants.NVD_DOCUMENT_VERSION
 
 /**
@@ -386,7 +390,7 @@ export function serialize(
   // Extract volumes with embedded data. Skip streamed/chunked volumes whose
   // voxels live only in a runtime chunkSource closure (img=null + chunkPlan/
   // chunkSource): they have no bytes to embed and their `streamed://<id>` url is
-  // a renderer texture-cache key, not a fetchable resource, so serializing them
+  // a placeholder, not a fetchable resource, so serializing them
   // would drive a broken fetch on reload. Dropping them keeps the remaining
   // (restorable) volumes' relative order intact; the modulationImage link is by
   // volume id and resolves by find-by-id at render time, so a reference to a
@@ -724,6 +728,7 @@ export function deserialize(data: Uint8Array): NVDocumentData {
     const known = NVCmaps.lookupColorMap(name)
     return !!known && JSON.stringify(known) !== JSON.stringify(cm)
   })
+  upgradeLegendFlags(doc)
 
   return doc
 }
@@ -766,7 +771,11 @@ export function applyDocumentToModel(
     sd.scaleMultiplier,
     model.scene.scaleMultiplier,
   )
-  model.scene.gamma = scalar('gamma', s.gamma, sd.gamma, model.scene.gamma)
+  model.scene.gamma = NVConstants.clampFinite(
+    scalar('gamma', s.gamma, sd.gamma, model.scene.gamma),
+    NVConstants.GAMMA_RANGE,
+    sd.gamma,
+  )
   model.scene.isClipPlaneCutaway = scalar(
     'isClipPlaneCutaway',
     s.isClipPlaneCutaway,
@@ -832,11 +841,36 @@ export function applyDocumentToModel(
     model.volume,
     fillGroup('volume', model.volume, C.VOLUME_DEFAULTS, doc.volume, fill),
   )
+  // A document bypasses the setters, so apply their clamps here.
+  model.volume.sampleRate = C.clampSampleRate(model.volume.sampleRate)
+  model.volume.renderMode = C.normalizeVolumeRenderMode(model.volume.renderMode)
+  const v = model.volume
+  v.lodBrightnessCompensation = C.clampFinite(
+    v.lodBrightnessCompensation,
+    C.LOD_BRIGHTNESS_RANGE,
+    C.VOLUME_DEFAULTS.lodBrightnessCompensation,
+  )
+  v.lodOpacityCompensation = C.clampFinite(
+    v.lodOpacityCompensation,
+    C.LOD_OPACITY_RANGE,
+    C.VOLUME_DEFAULTS.lodOpacityCompensation,
+  )
+  v.gradientOpacity = C.clampFinite(
+    v.gradientOpacity,
+    [0, 1],
+    C.VOLUME_DEFAULTS.gradientOpacity,
+  )
+  v.silhouette = C.clampFinite(
+    v.silhouette,
+    [0, 1],
+    C.VOLUME_DEFAULTS.silhouette,
+  )
   Object.assign(
     model.mesh,
     fillGroup('mesh', model.mesh, C.MESH_DEFAULTS, doc.mesh, fill),
   )
   // A document bypasses the setters, so apply their clamp here.
+  model.mesh.xRay = C.clampFinite(model.mesh.xRay, [0, 1], C.MESH_DEFAULTS.xRay)
   model.mesh.crosscutWidth = C.clampCrosscutWidth(model.mesh.crosscutWidth)
   Object.assign(
     model.draw,
@@ -1056,7 +1090,8 @@ export async function reconstructMesh(
         sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
-        isLegendVisible: m.isLegendVisible,
+        // Unset after upgradeLegendFlags; keep createMesh's default.
+        isLegendVisible: m.isLegendVisible ?? true,
         perVertexColors,
         layers,
       }
@@ -1141,7 +1176,7 @@ export async function reconstructMesh(
         sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
-        isLegendVisible: m.isLegendVisible,
+        isLegendVisible: m.isLegendVisible ?? true,
         layers,
       })
     }

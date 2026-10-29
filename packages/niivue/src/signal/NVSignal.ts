@@ -7,6 +7,7 @@ import type {
   SignalSidecar,
 } from '@/NVTypes'
 import { defaultSignalDisplay } from './processing'
+import { signalReaderModules } from './readers/_registry'
 import { fetchSidecar } from './sidecar'
 
 /**
@@ -31,11 +32,8 @@ type SignalReader = {
   ) => Promise<NVSignalRaw>
 }
 
-const modules = import.meta.glob<SignalReader>(
-  ['./readers/*.ts', '!./readers/*.test.ts'],
-  { eager: true },
-)
-const readerByExt = NVLoader.buildExtensionMap(modules)
+const readerByExt =
+  NVLoader.buildExtensionMap<SignalReader>(signalReaderModules)
 
 export function signalExtensions(): string[] {
   return Array.from(readerByExt.keys()).sort()

@@ -15,13 +15,14 @@ import type {
 } from '@/NVTypes'
 import {
   connectomeExtensions,
-  defaultConnectomeOptions,
   extrude,
   getConnectomeReader,
   isConnectomeExtension,
 } from './connectome'
+import { defaultConnectomeOptions } from './connectome/fileData'
 import { compositeLayers, createLayer, loadLayersFromOptions } from './layers'
 import { generateNormals } from './normals'
+import { meshReaderModules } from './readers/_registry'
 import { probeVTKContent, readVTKLines } from './readers/vtk'
 import {
   computeAllScalarMeta,
@@ -40,11 +41,11 @@ type MeshReader = {
   read: (buffer: ArrayBufferLike) => Promise<MZ3>
 }
 
-const modules = import.meta.glob<MeshReader>(
-  ['./readers/*.ts', '!./readers/*.test.ts'],
-  { eager: true },
+// The readers' signatures don't all match this type; the cast keeps the
+// unchecked assertion import.meta.glob<T> made.
+const readerByExt = NVLoader.buildExtensionMap(
+  meshReaderModules as unknown as Record<string, MeshReader>,
 )
-const readerByExt = NVLoader.buildExtensionMap(modules)
 
 export function meshWriteExtensions(): string[] {
   return meshWriters.writeExtensions()
@@ -100,7 +101,7 @@ export function createMesh(
     opacity: 1.0,
     color: [1, 1, 1, 1] as [number, number, number, number],
     isColorbarVisible: false,
-    isLegendVisible: false,
+    isLegendVisible: true,
     layers: [] as NVMeshLayer[],
     perVertexColors: null as Uint32Array | null,
     mz3: kind === 'mesh' ? { positions, indices } : null,
@@ -368,7 +369,7 @@ async function loadConnectome(
     sliceShaderType: mesh.sliceShaderType ?? '',
     color: mesh.color ?? [1, 1, 1, 1],
     isColorbarVisible: mesh.isColorbarVisible ?? true,
-    isLegendVisible: mesh.isLegendVisible ?? false,
+    isLegendVisible: mesh.isLegendVisible ?? true,
     url: urlString,
     name: mesh.name ?? urlString,
   })

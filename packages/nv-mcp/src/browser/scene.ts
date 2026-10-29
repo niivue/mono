@@ -276,6 +276,49 @@ function flipsFrom(params: Params, volume: ShownVolume): boolean[] {
   }
   return flip as boolean[]
 }
+/** A volume's voxel grid as `nx×ny×nz`, or undefined when it reports none. */
+function gridOf(volume: ShownVolume): string | undefined {
+  const dims = volume.dims
+  if (!dims || dims.length < 4) return undefined
+  return [dims[1], dims[2], dims[3]].join('×')
+}
+
+/**
+ * Why NiiVue computed no statistics for `index` with these options. NiiVue
+ * gives its reason only to the browser console, so the common causes are
+ * worked out again here from the volumes and the drawing's base.
+ */
+function noStatsReason(
+  volumes: readonly ShownVolume[],
+  index: number,
+  options: {
+    masks?: Array<number | { index: number }>
+    isDrawingMask?: boolean
+  },
+): string {
+  const volume = volumes[index]
+  const streamed = (v: ShownVolume) => !v.img && Boolean(v.chunkPlan)
+  if (streamed(volume))
+    return `${volume.name} is streamed in bricks, so there are no whole-volume voxels to count.`
+  const grid = gridOf(volume)
+  for (const entry of options.masks ?? []) {
+    const mask = volumes[typeof entry === 'number' ? entry : entry.index]
+    if (streamed(mask))
+      return `The mask ${mask.name} is streamed in bricks, so there are no whole-volume voxels to mask with.`
+    const maskGrid = gridOf(mask)
+    if (grid && maskGrid && grid !== maskGrid)
+      return `${volume.name} is ${grid} voxels and the mask ${mask.name} is ${maskGrid}: a mask must be on the same voxel grid as the volume it restricts.`
+  }
+  if (options.isDrawingMask) {
+    const base = volumes[0]
+    const baseGrid = gridOf(base)
+    if (index !== 0 && grid && baseGrid && grid !== baseGrid)
+      return `The drawing lies over the base volume ${base.name} (${baseGrid} voxels) and ${volume.name} is ${grid}: ask for the base volume's statistics within the drawing, or use a mask volume on ${volume.name}'s grid.`
+    return 'There is no drawing to count within. Create or load one with edit_drawing first.'
+  }
+  return `NiiVue could not compute statistics for ${volume.name}${options.masks?.length ? ' with that mask' : ''}.`
+}
+
 /** The handlers for the core tools, over this host. */
 export function coreHandlers(host: NiiVueHost): Handlers {
   const { view } = host
@@ -359,6 +402,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ? { transparentBelowCalMin: true }
         : {}),
       ...(volume.isColorbarVisible ? { colorbar: true } : {}),
+      ...(volume.isLegendVisible === false ? { legend: false } : {}),
       ...(volume.isNearestInterpolation ? { nearest: true } : {}),
       ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
       ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
@@ -602,6 +646,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         'isColorbarVisible',
         flag(params, 'colorbar') ?? (labels ? false : undefined),
       )
+      put(toLoad, 'isLegendVisible', flag(params, 'legend'))
       if (
         labels &&
         (toLoad.calMin !== undefined || toLoad.calMax !== undefined)
@@ -953,6 +998,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       put(update, 'isColormapInverted', flag(params, 'invert'))
       put(update, 'isColorbarVisible', flag(params, 'colorbar'))
+      put(update, 'isLegendVisible', flag(params, 'legend'))
       put(update, 'isNearestInterpolation', flag(params, 'nearest'))
       const outline = number(params, 'atlas_outline')
       if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
@@ -1412,8 +1458,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           options.isDrawingMask = true
           if (labels) options.drawPenValues = labels
         }
+        // Kept beside the description rather than thrown, so a volume that
+        // has no countable voxels can still be described.
         const stats = view.getDescriptives(options)
         if (stats) out.stats = stats
+        else out.statsError = noStatsReason(view.volumes, index, options)
       }
       if (flag(params, 'affine')) {
         if (!view.getVolumeAffine)

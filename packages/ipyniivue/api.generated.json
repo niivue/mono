@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.22",
+  "niivueVersion": "1.0.0-rc.44",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVue",
   "properties": [
@@ -1153,6 +1153,17 @@
       "doc": null
     },
     {
+      "jsName": "volumeIsOverlayOpacityCorrected",
+      "pyName": "volume_is_overlay_opacity_corrected",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "volumeIsV1SliceShader",
       "pyName": "volume_is_v1_slice_shader",
       "tsType": "boolean",
@@ -1371,6 +1382,17 @@
       "hasGetter": true,
       "hasSetter": false,
       "doc": null
+    },
+    {
+      "jsName": "isAnimating",
+      "pyName": "is_animating",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "True while an animateTo transition is running."
     },
     {
       "jsName": "isAntiAlias",
@@ -1710,6 +1732,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "animateTo",
+      "pyName": "animate_to",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "target",
+          "tsType": "AnimationTarget",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "AnimationOptions",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<AnimationResult>",
+      "doc": "Move the scene to `target` over time instead of in one jump: the camera,\nzoom and pan, the crosshair, clip planes, and each volume's window,\nopacity and 4D frame or each mesh's opacity. Anything the target leaves\nout stays where it is. Every frame writes through the same public\nsetters, so the usual change events fire along the way.\n\nOnly one transition runs at a time: a new call stops the one running\n(it resolves with reason `'superseded'`) and starts from wherever that one\nleft the scene. By default pressing on or scrolling the canvas stops it\ntoo. The promise resolves, never rejects, once the target is reached or\nthe transition is stopped. If the page stops drawing frames (a hidden\ntab), the scene jumps to the target shortly after the duration and the\nreason is `'stalled'`. If a setter throws or rejects while writing the\ntarget, the reason is `'failed'` and `failed` names what did not land.\n\nA volume's window and opacity go through a GPU rebuild on every write,\nso on a large or chunked volume those frames are dropped rather than\nqueued; camera, crosshair, clip plane and mesh opacity changes only\nredraw.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "annotationRedo",
       "pyName": "annotation_redo",
       "isAsync": false,
@@ -1822,6 +1867,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "cancelPendingFrame",
+      "pyName": "cancel_pending_frame",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "boolean",
+      "doc": "Drop the frame that {@link drawScene} has scheduled but not yet drawn.\nFor callers that render the view themselves, such as a benchmark timing\neach frame: a state change (for example {@link updateVolumeData}) also\nschedules a frame, which would otherwise draw a second time.",
+      "returnsDoc": "true when a scheduled frame was dropped"
+    },
+    {
       "jsName": "canvasToMM",
       "pyName": "canvas_to_mm",
       "isAsync": false,
@@ -1859,6 +1914,40 @@
       ],
       "returns": "boolean",
       "doc": "Pan the 3D render so a given world-mm point sits at the centre of the render\ntile, by adjusting `renderPan` (a clip-space translation; no change to the\ncamera, rotation, or zoom). Useful to keep a zoomed/focused region framed.\nReturns false (no-op) if the render tile hasn't been drawn yet. Because the\ncached MVP already includes the current renderPan, this converges in one\ncall: newPan = currentPan - ndc(point).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "chunkBrickCornersAt",
+      "pyName": "chunk_brick_corners_at",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "mm",
+          "tsType": "ArrayLike<number>",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number, number][] | null",
+      "doc": "The eight world-mm corners of the background volume's brick holding the\npoint, where the render draws them (so moved by the explode when one is\non), or null when the volume is not chunked or the point is outside it.\nCorner `c` takes the brick's high edge on x when bit 0 of `c` is set, on\ny for bit 1 and on z for bit 2, so an edge joins corners whose indices\ndiffer in one bit. Project them with {@link mmToRenderCanvas} to outline\nthe brick on the render.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "chunkBrickIndexAt",
+      "pyName": "chunk_brick_index_at",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "mm",
+          "tsType": "ArrayLike<number>",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "number",
+      "doc": "Index into `chunkPlan.chunks` of the background volume's brick holding the\nworld-mm point, or -1 when the volume is not chunked or the point lies\noutside it. The index is stable across explode changes, so it can key a\nper-brick setting such as {@link setVolumeBrickOpacity}.",
       "returnsDoc": null
     },
     {
@@ -2146,6 +2235,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "explodedMM",
+      "pyName": "exploded_mm",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "mm",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number, number]",
+      "doc": "Where a world-mm point of the background volume is drawn once the\nvolume's explode (see {@link setVolumeChunkExplode}) has moved its brick.\nReturns the input unchanged when the volume is not exploded. Overlays that\nmark anatomy on an exploded render project this, not the raw point.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "getAnnotationsJSON",
       "pyName": "get_annotations_json",
       "isAsync": false,
@@ -2190,14 +2296,14 @@
       "params": [
         {
           "name": "options",
-          "tsType": "{ volumeIndex?: number | undefined; masks?: number[] | undefined; isDrawingMask?: boolean | undefined; drawPenValues?: number[] | undefined; }",
+          "tsType": "{ volumeIndex?: number | undefined; masks?: (number | { index: number; values: number[]; })[] | undefined; isDrawingMask?: boolean | undefined; drawPenValues?: number[] | undefined; }",
           "optional": true,
           "doc": null
         }
       ],
       "returns": "DescriptiveStats | null",
       "doc": "Region-of-interest statistics for a loaded volume.\n\nValues are calibrated (`scl_slope`/`scl_inter` applied) and non-finite\nvoxels are excluded. Every mask must sit on the same RAS grid as the\ntarget volume — overlays are resliced to the background grid, so masks\ndrawn from the loaded volume list satisfy that by construction, but a mask\non a different grid returns `null` rather than silently wrong numbers.",
-      "returnsDoc": "the statistics, or `null` when the volume has no data or a mask\ndoes not match the target grid"
+      "returnsDoc": "the statistics, or `null` when the volume has no data, a mask\nindex is out of bounds, a label list is empty, or a mask does not match\nthe target grid"
     },
     {
       "jsName": "getFrame4D",
@@ -2469,13 +2575,13 @@
         },
         {
           "name": "options",
-          "tsType": "{ fill?: SettingsFillPolicy | undefined; } | undefined",
+          "tsType": "{ fill?: SettingsFillPolicy | undefined; resolveUrl?: DocumentUrlResolver | undefined; } | undefined",
           "optional": true,
           "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": null,
+      "doc": "`options.resolveUrl` sees every URL the document would load before it is\nfetched: each linked volume and mesh (saved by URL with no embedded data,\nsee `SerializeOptions.linkData`) and the thumbnail. It returns the URL to\nfetch instead, or `null` to skip that item. A caller can resolve links\nagainst where the document lives rather than the page, or refuse some.\nSkipping the document's first volume also skips its drawing, which belongs\nto that volume's grid.",
       "returnsDoc": null
     },
     {
@@ -2698,6 +2804,23 @@
       ],
       "returns": "CanvasTilePoint | null",
       "doc": "Project a world-mm point to canvas pixels on the best-matching 2D slice\ntile, using the MVP each tile cached on its last draw (so the result\nreflects the current pan/zoom exactly). Intended for positioning external\noverlays (SVG/HTML crosshairs, labels) over slices.\n\nTile selection: the 2D slice tile whose slice plane passes nearest the\npoint (perpendicular distance in mm); ties — e.g. the crosshair, which\nlies on every plane of a multiplanar layout — resolve to the lowest tile\nindex. 3D render tiles are never selected (use {@link mm2renderNDC} for\nthose).\n\nThe returned x/y are canvas backing-store pixels (see {@link hitTest});\ndivide by the effective devicePixelRatio to position CSS-pixel-sized\noverlay elements. The point may project outside the winning tile's rect\nwhen panned/zoomed out of view — clip against the tile's\n`leftTopWidthHeight` if needed. Returns null before the first render or\nwhen the layout has no 2D slice tiles.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "mmToRenderCanvas",
+      "pyName": "mm_to_render_canvas",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "mm",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number] | null",
+      "doc": "Project a world-mm point onto the 3D render tile in canvas backing-store\npixels (origin top-left, y down), through the MVP the renderer cached on\nits last draw. Returns null before the render tile has been drawn or when\nthe point is behind the camera. Unlike {@link mmToCanvas}, which serves\nthe 2D slice tiles, this is the projection an overlay needs to annotate the\n3D render.",
       "returnsDoc": null
     },
     {
@@ -3557,18 +3680,18 @@
     {
       "jsName": "setInstances",
       "pyName": "set_instances",
-      "isAsync": false,
+      "isAsync": true,
       "returnsValue": false,
       "params": [
         {
           "name": "instances",
-          "tsType": "NVInstance[]",
+          "tsType": "NVInstance[] | null",
           "optional": false,
           "doc": null
         }
       ],
-      "returns": "void",
-      "doc": "Replace the multi-instance descriptor list (canvas tiling + optional global3d\nvolumes). Triggers a tile rebuild and redraw. Supported on both WebGL2 and\nWebGPU backends.",
+      "returns": "Promise<void>",
+      "doc": "Replace the multi-instance descriptor list (canvas tiling + optional global3d\nvolumes). Triggers a tile rebuild and redraw. `null` leaves instance mode and\nrestores the usual slice layout; an empty list stays in instance mode and\ndraws nothing. Entering or leaving\ninstance mode rebuilds the GPU resources, since the two modes keep volume\ntextures differently (a per-volume cache vs. a background + overlay stack).\nSupported on both WebGL2 and WebGPU backends.",
       "returnsDoc": null
     },
     {
@@ -3649,7 +3772,7 @@
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).\nTriggers recompositing and GPU update.",
+      "doc": "Update properties of a mesh layer (colormap, calMin, calMax, opacity, etc.).\nTriggers recompositing and GPU update.",
       "returnsDoc": null
     },
     {
@@ -3848,6 +3971,81 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setVolumeBrickOpacity",
+      "pyName": "set_volume_brick_opacity",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "opacity",
+          "tsType": "ArrayLike<number> | null",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Give each brick of a chunked volume its own opacity, indexed like\n`chunkPlan.chunks` (see {@link chunkBrickIndexAt}); entries missing from\na short array count as 1. Each scales what that brick draws, colour and\ncoverage together, so the bricks behind a dimmed one show through it and\npassing 1 for one brick and a small value for the rest keeps that brick\nin focus. Pass `null` to restore every brick. The volume\nmust be chunked (see {@link setVolumeChunkGrid}); the renderer reads the\nsetting each frame, so this only redraws.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setVolumeChunkExplode",
+      "pyName": "set_volume_chunk_explode",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "explode",
+          "tsType": "VolumeChunkExplode | null",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Spread a chunked volume's bricks apart in the 3D render (an \"exploded\"\nview). `scale` is the per-axis factor applied to each brick's offset from\nthe volume centre; 1 is unexploded and the default when `enabled` is set\nwithout a scale is 1.5. Pass `null` to remove the explode. The volume must\nbe chunked first (see {@link setVolumeChunkGrid}); the renderer reads the\nsetting each frame, so this only redraws.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setVolumeChunkGrid",
+      "pyName": "set_volume_chunk_grid",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "gridDims",
+          "tsType": "Vec3i | null",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "{ halo?: Vec3i | undefined; deviceLimit?: number | undefined; }",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Tile a loaded volume into a `gridDims` grid of bricks and render it through\nthe chunked path, whatever its size. This is what makes\n{@link setVolumeChunkExplode} possible on an ordinary volume. The halo is\nthe voxel overlap between bricks; the default of 3 satisfies cubic\ninterpolation. `deviceLimit` caps each brick's edge in texels and defaults\nto 4096, which every WebGL2/WebGPU device this renders on accepts. Pass\n`null` to return the volume to a single texture; this also clears any\nexplode. Reloads the volume's GPU textures, so it resolves once the bricks\nare resident.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "slideDrawAt",
       "pyName": "slide_draw_at",
       "isAsync": false,
@@ -3937,6 +4135,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "stopAnimation",
+      "pyName": "stop_animation",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Stop the running transition where it is (reason `'stopped'`).",
+      "returnsDoc": null
+    },
+    {
       "jsName": "swapVolumeChunkPlan",
       "pyName": "swap_volume_chunk_plan",
       "isAsync": true,
@@ -3993,6 +4201,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "updateTilesFromInstances",
+      "pyName": "update_tiles_from_instances",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
       "jsName": "updateVolumeData",
       "pyName": "update_volume_data",
       "isAsync": true,
@@ -4030,6 +4248,23 @@
       ],
       "returns": "[number, number, number]",
       "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "whenChunkStreamSettles",
+      "pyName": "when_chunk_stream_settles",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "timeoutMs",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Resolves once the bricks the view asked for are resident and drawn: the\nrenderer admits one brick when the plan is set and streams the rest over\nthe following frames, and a change that rebuilds the bricks' textures\n(turning on `volumeIllumination`, say) streams them again, so a\nscreenshot taken straight after {@link setVolumeChunkGrid} or such a\nchange would show a partly-tiled volume. Kicks a draw and resolves on the\nfirst frame drawn after it that the view calls settled: nothing queued or\nmid-upload for the working set that frame asked for, no brick still\ncross-fading in over the coarse floor, no drag in progress. A 2D plane\nthrough resident bricks only settles on that first frame, or once its\nfade ends. Resolves at once when no volume is chunked or the tab is\nhidden (it draws no frames, so there is no visible frame to settle), and\ngives up quietly after `timeoutMs`.",
       "returnsDoc": null
     }
   ],

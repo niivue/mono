@@ -1,3 +1,18 @@
+## 1.0.0-rc.46 (2026-10-29)
+
+### Features
+
+- **nv-ext-dcm2niix:** re-export @niivue/dcm2niix 1.4; nv-ohif uses convert() ([44da2e9a](https://github.com/niivue/mono/commit/44da2e9a))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.55
+- Updated uikit to 1.0.0-rc.46
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.45 (2026-10-29)
 
 ### Updated Dependencies

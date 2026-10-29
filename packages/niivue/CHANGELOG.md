@@ -1,3 +1,7 @@
+## 1.0.0-rc.55 (2026-10-29)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
 ## 1.0.0-rc.54 (2026-10-29)
 
 ### Features

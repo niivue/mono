@@ -1,3 +1,22 @@
+## 1.0.0-rc.39 (2026-10-29)
+
+### Features
+
+- ⚠️  **uikit:** drop UIKitAnnotationOverlay from the public API ([9fb0c004](https://github.com/niivue/mono/commit/9fb0c004))
+
+### Breaking Changes
+
+- **uikit:** drop UIKitAnnotationOverlay from the public API  ([9fb0c004](https://github.com/niivue/mono/commit/9fb0c004))
+  UIKitAnnotationOverlay is no longer exported from
+  @niivue/uikit. Draw buildAnnotationGeometry's output with UIKitLineOverlay
+  and UIKitTextOverlay instead.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.38 (2026-10-29)
 
 ### Updated Dependencies

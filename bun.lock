@@ -316,7 +316,7 @@
     },
     "packages/nv-mcp": {
       "name": "@niivue/nv-mcp",
-      "version": "1.0.0-rc.29",
+      "version": "1.0.0-rc.30",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.30.0",
         "zod": "^4.6.5",
@@ -340,7 +340,7 @@
     },
     "packages/nv-ohif": {
       "name": "@niivue/nv-ohif",
-      "version": "1.0.0-rc.38",
+      "version": "1.0.0-rc.39",
       "dependencies": {
         "@niivue/dcm2niix": "^1.3.20260724",
         "@niivue/uikit": "workspace:*",
@@ -405,7 +405,7 @@
     },
     "packages/uikit": {
       "name": "@niivue/uikit",
-      "version": "1.0.0-rc.38",
+      "version": "1.0.0-rc.39",
       "devDependencies": {
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",

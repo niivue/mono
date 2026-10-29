@@ -99,17 +99,20 @@ function updateClusterBounds(
     let mxY = -Infinity
     let mxZ = -Infinity
     const end = Math.min(nTri, (c + 1) * CLUSTER_SIZE)
-    for (let k = c * CLUSTER_SIZE * 3; k < end * 3; k++) {
-      const v = indices[order[(k / 3) | 0] * 3 + (k % 3)] * 3
-      const x = positions[v]
-      const y = positions[v + 1]
-      const z = positions[v + 2]
-      if (x < mnX) mnX = x
-      if (y < mnY) mnY = y
-      if (z < mnZ) mnZ = z
-      if (x > mxX) mxX = x
-      if (y > mxY) mxY = y
-      if (z > mxZ) mxZ = z
+    for (let t = c * CLUSTER_SIZE; t < end; t++) {
+      const i = order[t] * 3
+      for (let j = i; j < i + 3; j++) {
+        const v = indices[j] * 3
+        const x = positions[v]
+        const y = positions[v + 1]
+        const z = positions[v + 2]
+        if (x < mnX) mnX = x
+        if (y < mnY) mnY = y
+        if (z < mnZ) mnZ = z
+        if (x > mxX) mxX = x
+        if (y > mxY) mxY = y
+        if (z > mxZ) mxZ = z
+      }
     }
     const b = c * 6
     bounds[b] = mnX
@@ -168,6 +171,8 @@ type CacheEntry = {
   positionsVersion: number
   dataVersion: number
   indicesHash: number
+  /** Hash of the positions the bounds were built from; null when unknown. */
+  positionsHash: number | null
 }
 const _cache = new WeakMap<NVMesh, CacheEntry>()
 
@@ -181,13 +186,25 @@ function hashIndices(indices: ArrayLike<number>): number {
   return h >>> 0
 }
 
+// The same hash over the float bits of the positions: tells a recolour apart
+// from positions edited in place without a `_positionsVersion` bump, so only
+// the latter pays for a bounds refresh.
+function hashPositions(positions: ArrayLike<number>): number {
+  const f =
+    positions instanceof Float32Array ? positions : Float32Array.from(positions)
+  return hashIndices(new Uint32Array(f.buffer, f.byteOffset, f.length))
+}
+
 /**
  * The mesh's clusters, built on first use. New `indices` or `positions`
  * arrays, or indices edited in place (`_dataVersion` with different
  * contents), rebuild them as a new object so GPU copies know to rewrite; an
  * in-place position edit (`_positionsVersion`) only refreshes the bounds.
  * Any other `_dataVersion` bump (a setMesh that re-uploads the vertices)
- * refreshes the bounds too, since it also uploads edited positions.
+ * refreshes the bounds when the positions hash differs, since it also uploads
+ * positions edited in place without a version bump. The positions path never
+ * hashes (it runs per frame during live updates); it only forgets the hash,
+ * so the next data bump rehashes and refreshes once.
  */
 export function meshClusters(mesh: NVMesh): TriangleClusters {
   const positionsVersion = mesh._positionsVersion ?? 0
@@ -196,10 +213,14 @@ export function meshClusters(mesh: NVMesh): TriangleClusters {
   if (hit && hit.indices === mesh.indices && hit.positions === mesh.positions) {
     let isCurrent = true
     let isMoved = hit.positionsVersion !== positionsVersion
+    let positionsHash: number | null = null
     if (hit.dataVersion !== dataVersion) {
       hit.dataVersion = dataVersion
       isCurrent = hashIndices(mesh.indices) === hit.indicesHash
-      isMoved = true
+      if (isCurrent) {
+        positionsHash = hashPositions(mesh.positions)
+        if (positionsHash !== hit.positionsHash) isMoved = true
+      }
     }
     if (isCurrent) {
       if (isMoved) {
@@ -211,6 +232,8 @@ export function meshClusters(mesh: NVMesh): TriangleClusters {
         )
         hit.positionsVersion = positionsVersion
       }
+      // A positions-only refresh does not hash, so the stored hash is stale.
+      if (positionsHash !== null || isMoved) hit.positionsHash = positionsHash
       return hit.clusters
     }
   }
@@ -222,6 +245,7 @@ export function meshClusters(mesh: NVMesh): TriangleClusters {
     positionsVersion,
     dataVersion,
     indicesHash: hashIndices(mesh.indices),
+    positionsHash: hashPositions(mesh.positions),
   })
   return clusters
 }

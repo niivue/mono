@@ -142,4 +142,17 @@ describe('meshClusters', () => {
     expect(meshClusters(mesh)).toBe(c)
     expect(clustersCrossingPlanes(c, planeX(10.5)).length).toBe(1)
   })
+  test('a recolour after a tracked move refreshes the bounds once', () => {
+    const mesh = makeMesh()
+    const c = meshClusters(mesh)
+    mesh.positions.set([10, 0, 0, 11, 0, 0, 10, 1, 0])
+    mesh._positionsVersion = 1
+    meshClusters(mesh)
+    // Then an untracked move back, and a recolour: the hash is unknown after
+    // the tracked move, so this data bump must not trust it.
+    mesh.positions.set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    mesh._dataVersion = 1
+    expect(meshClusters(mesh)).toBe(c)
+    expect(clustersCrossingPlanes(c, planeX(10.5)).length).toBe(0)
+  })
 })

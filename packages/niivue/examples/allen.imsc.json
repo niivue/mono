@@ -1,0 +1,554 @@
+{
+  "source": "Allen Institute for Cell Science, Integrated Mitotic Stem Cell (imsc.allencell.org) and Cell Feature Explorer per-cell atlases (cfe.allencell.org). Allen Institute terms of use: noncommercial, with citation.",
+  "stageAtlasBase": "https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/Allen/IMSC/",
+  "cellAtlasBase": "https://s3.us-west-2.amazonaws.com/bisque.allencell.org/v1.4.0/Cell-Viewer_Thumbnails/",
+  "dnaColor": "#aeaeae",
+  "cellChannels": [
+    {
+      "name": "Membrane",
+      "raw": 0,
+      "seg": 7,
+      "color": "#e2cdb3",
+      "ceiling": 0.995
+    },
+    {
+      "name": "Structure",
+      "raw": 1,
+      "seg": 4,
+      "color": "#6fba11",
+      "ceiling": 0.999
+    },
+    {
+      "name": "DNA",
+      "raw": 2,
+      "seg": 6,
+      "color": "#8da3c0",
+      "ceiling": 0.999
+    }
+  ],
+  "stages": [
+    {
+      "key": "Interphase",
+      "label": "Interphase",
+      "atlas": "COMP_crop_Interphase_atlas.json",
+      "windows": {
+        "DNA": [0.136, 0.806],
+        "ACTB": [0.155, 0.428],
+        "ACTN1": [0.202, 0.56],
+        "CENT2": [0.07, 0.353],
+        "CTNNB1": [0.107, 0.447],
+        "DSP": [0.089, 0.362],
+        "FBL": [0.287, 0.504],
+        "GJA1": [0.032, 0.07],
+        "LAMP1": [0.174, 0.296],
+        "LMNB1": [0.485, 0.504],
+        "MYH10": [0.117, 0.306],
+        "SEC61B": [0.277, 0.589],
+        "ST6GAL1": [0.089, 0.683],
+        "TJP1": [0.07, 0.409],
+        "TOMM20": [0.117, 0.485],
+        "TUBA1B": [0.419, 0.428]
+      }
+    },
+    {
+      "key": "M1-M2",
+      "label": "Prophase",
+      "atlas": "COMP_crop_M1-M2_atlas.json",
+      "windows": {
+        "DNA": [0.117, 0.645],
+        "ACTB": [0.202, 0.504],
+        "ACTN1": [0.145, 0.381],
+        "CENT2": [0.145, 0.334],
+        "CTNNB1": [0.211, 0.475],
+        "DSP": [0.041, 0.447],
+        "FBL": [0.504, 0.504],
+        "GJA1": [0.06, 0.089],
+        "LAMP1": [0.268, 0.56],
+        "LMNB1": [0.419, 0.532],
+        "MYH10": [0.089, 0.202],
+        "SEC61B": [0.211, 0.636],
+        "ST6GAL1": [0.079, 0.598],
+        "TJP1": [0.155, 0.258],
+        "TOMM20": [0.155, 0.494],
+        "TUBA1B": [0.23, 0.211]
+      }
+    },
+    {
+      "key": "M3",
+      "label": "Early prometaphase",
+      "atlas": "COMP_crop_M3_atlas.json",
+      "windows": {
+        "DNA": [0.079, 0.674],
+        "ACTB": [0.089, 0.353],
+        "ACTN1": [0.06, 0.541],
+        "CENT2": [0.051, 0.268],
+        "CTNNB1": [0.117, 0.419],
+        "DSP": [0.041, 0.24],
+        "FBL": [0.117, 0.523],
+        "GJA1": [0.079, 0.117],
+        "LAMP1": [0.126, 0.447],
+        "LMNB1": [0.164, 0.475],
+        "MYH10": [0.107, 0.287],
+        "SEC61B": [0.117, 0.607],
+        "ST6GAL1": [0.06, 0.721],
+        "TJP1": [0.032, 0.258],
+        "TOMM20": [0.155, 0.636],
+        "TUBA1B": [0.117, 0.277]
+      }
+    },
+    {
+      "key": "M4-M5",
+      "label": "Metaphase",
+      "atlas": "COMP_crop_M4-M5_atlas.json",
+      "windows": {
+        "DNA": [0.145, 0.607],
+        "ACTB": [0.079, 0.523],
+        "ACTN1": [0.079, 0.334],
+        "CENT2": [0.07, 0.296],
+        "CTNNB1": [0.126, 0.494],
+        "DSP": [0.041, 0.296],
+        "FBL": [0.107, 0.692],
+        "GJA1": [0.089, 0.089],
+        "LAMP1": [0.126, 0.306],
+        "LMNB1": [0.145, 0.73],
+        "MYH10": [0.07, 0.428],
+        "SEC61B": [0.107, 0.664],
+        "ST6GAL1": [0.089, 0.872],
+        "TJP1": [0.089, 0.372],
+        "TOMM20": [0.126, 0.607],
+        "TUBA1B": [0.164, 0.372]
+      }
+    },
+    {
+      "key": "M6-M7",
+      "label": "Anaphase",
+      "atlas": "COMP_crop_M6-M7_atlas.json",
+      "windows": {
+        "DNA": [0.07, 0.664],
+        "ACTB": [0.107, 0.485],
+        "ACTN1": [0.079, 0.532],
+        "CENT2": [0.032, 0.372],
+        "CTNNB1": [0.051, 0.447],
+        "DSP": [0.06, 0.315],
+        "FBL": [0.126, 0.598],
+        "GJA1": [0.06, 0.136],
+        "LAMP1": [0.079, 0.494],
+        "LMNB1": [0.174, 0.541],
+        "MYH10": [0.098, 0.4],
+        "SEC61B": [0.117, 0.692],
+        "ST6GAL1": [0.051, 0.815],
+        "TJP1": [0.098, 0.268],
+        "TOMM20": [0.117, 0.655],
+        "TUBA1B": [0.107, 0.39]
+      }
+    }
+  ],
+  "genes": [
+    {
+      "gene": "FBL",
+      "protein": "fibrillarin",
+      "structure": "Nucleolus (DF)",
+      "color": "#0099ff"
+    },
+    {
+      "gene": "LMNB1",
+      "protein": "lamin B1",
+      "structure": "Nuclear envelope",
+      "color": "#33ffff"
+    },
+    {
+      "gene": "SEC61B",
+      "protein": "sec61-beta",
+      "structure": "Endoplasmic reticulum",
+      "color": "#537eff"
+    },
+    {
+      "gene": "ST6GAL1",
+      "protein": "sialyltransferase 1",
+      "structure": "Golgi",
+      "color": "#61d900"
+    },
+    {
+      "gene": "CENT2",
+      "protein": "centrin-2",
+      "structure": "Centrosome",
+      "note": "IMSC calls this line CENT2; the gene, and the Cell Feature Explorer records, are CETN2.",
+      "color": "#f07c4c"
+    },
+    {
+      "gene": "LAMP1",
+      "protein": "LAMP-1",
+      "structure": "Lysosome",
+      "color": "#ffc35c"
+    },
+    {
+      "gene": "TUBA1B",
+      "protein": "alpha tubulin",
+      "structure": "Microtubules",
+      "color": "#ff9900"
+    },
+    {
+      "gene": "TOMM20",
+      "protein": "TOM20",
+      "structure": "Mitochondria",
+      "color": "#ff4d4d"
+    },
+    {
+      "gene": "ACTB",
+      "protein": "beta-actin",
+      "structure": "Actin filaments",
+      "color": "#ffee1e"
+    },
+    {
+      "gene": "ACTN1",
+      "protein": "alpha-actinin-1",
+      "structure": "Actin bundles",
+      "color": "#bbcd22"
+    },
+    {
+      "gene": "MYH10",
+      "protein": "myosin heavy chain IIB",
+      "structure": "Actomyosin bundles",
+      "color": "#ff6633"
+    },
+    {
+      "gene": "CTNNB1",
+      "protein": "beta-catenin",
+      "structure": "Adherens junctions",
+      "color": "#fd92b6"
+    },
+    {
+      "gene": "DSP",
+      "protein": "desmoplakin",
+      "structure": "Desmosomes",
+      "color": "#f0486e"
+    },
+    {
+      "gene": "GJA1",
+      "protein": "connexin-43",
+      "structure": "Gap junction",
+      "color": "#c26cff"
+    },
+    {
+      "gene": "TJP1",
+      "protein": "tight junction protein ZO1",
+      "structure": "Tight junctions",
+      "color": "#ff8ae8"
+    }
+  ],
+  "cells": {
+    "Interphase": {
+      "FBL": {
+        "cellId": 56186,
+        "atlas": "AICS-14/AICS-14_9172_56186_atlas.json"
+      },
+      "LMNB1": {
+        "cellId": 78027,
+        "atlas": "AICS-13/AICS-13_1721_78027_atlas.json"
+      },
+      "SEC61B": {
+        "cellId": 34690,
+        "atlas": "AICS-10/AICS-10_4611_34690_atlas.json"
+      },
+      "ST6GAL1": {
+        "cellId": 40381,
+        "atlas": "AICS-25/AICS-25_5620_40381_atlas.json"
+      },
+      "CENT2": {
+        "cellId": 68018,
+        "atlas": "AICS-32/AICS-32_9599_68018_atlas.json"
+      },
+      "LAMP1": {
+        "cellId": 8761,
+        "atlas": "AICS-22/AICS-22_8793_8761_atlas.json"
+      },
+      "TUBA1B": {
+        "cellId": 71126,
+        "atlas": "AICS-12/AICS-12_51_71126_atlas.json"
+      },
+      "TOMM20": {
+        "cellId": 16877,
+        "atlas": "AICS-11/AICS-11_3557_16877_atlas.json"
+      },
+      "ACTB": {
+        "cellId": 36972,
+        "atlas": "AICS-16/AICS-16_5734_36972_atlas.json"
+      },
+      "ACTN1": {
+        "cellId": 92320,
+        "atlas": "AICS-7/AICS-7_11543_92320_atlas.json"
+      },
+      "MYH10": {
+        "cellId": 47479,
+        "atlas": "AICS-24/AICS-24_6715_47479_atlas.json"
+      },
+      "CTNNB1": {
+        "cellId": 112818,
+        "atlas": "AICS-58/AICS-58_13398_112818_atlas.json"
+      },
+      "DSP": {
+        "cellId": 26096,
+        "atlas": "AICS-17/AICS-17_3967_26096_atlas.json"
+      },
+      "GJA1": {
+        "cellId": 84867,
+        "atlas": "AICS-53/AICS-53_10135_84867_atlas.json"
+      },
+      "TJP1": {
+        "cellId": 52374,
+        "atlas": "AICS-23/AICS-23_6548_52374_atlas.json"
+      }
+    },
+    "M1-M2": {
+      "FBL": {
+        "cellId": 57673,
+        "atlas": "AICS-14/AICS-14_7969_57673_atlas.json"
+      },
+      "LMNB1": {
+        "cellId": 81600,
+        "atlas": "AICS-13/AICS-13_1570_81600_atlas.json"
+      },
+      "SEC61B": {
+        "cellId": 31703,
+        "atlas": "AICS-10/AICS-10_4865_31703_atlas.json"
+      },
+      "ST6GAL1": {
+        "cellId": 40899,
+        "atlas": "AICS-25/AICS-25_5811_40899_atlas.json"
+      },
+      "CENT2": {
+        "cellId": 66089,
+        "atlas": "AICS-32/AICS-32_9665_66089_atlas.json"
+      },
+      "LAMP1": {
+        "cellId": 4948,
+        "atlas": "AICS-22/AICS-22_7985_4948_atlas.json"
+      },
+      "TUBA1B": {
+        "cellId": 71535,
+        "atlas": "AICS-12/AICS-12_73_71535_atlas.json"
+      },
+      "TOMM20": {
+        "cellId": 15838,
+        "atlas": "AICS-11/AICS-11_3404_15838_atlas.json"
+      },
+      "ACTB": {
+        "cellId": 36152,
+        "atlas": "AICS-16/AICS-16_15585_36152_atlas.json"
+      },
+      "ACTN1": {
+        "cellId": 93340,
+        "atlas": "AICS-7/AICS-7_14637_93340_atlas.json"
+      },
+      "MYH10": {
+        "cellId": 44648,
+        "atlas": "AICS-24/AICS-24_6625_44648_atlas.json",
+        "note": "Cell Feature Explorer annotates this cell as interphase (M0), not M1-M2."
+      },
+      "CTNNB1": {
+        "cellId": 112512,
+        "atlas": "AICS-58/AICS-58_13333_112512_atlas.json"
+      },
+      "DSP": {
+        "cellId": 22234,
+        "atlas": "AICS-17/AICS-17_4520_22234_atlas.json"
+      },
+      "GJA1": {
+        "cellId": 84547,
+        "atlas": "AICS-53/AICS-53_10104_84547_atlas.json"
+      },
+      "TJP1": {
+        "cellId": 50874,
+        "atlas": "AICS-23/AICS-23_6459_50874_atlas.json"
+      }
+    },
+    "M3": {
+      "FBL": {
+        "cellId": 52860,
+        "atlas": "AICS-14/AICS-14_8221_52860_atlas.json"
+      },
+      "LMNB1": {
+        "cellId": 81623,
+        "atlas": "AICS-13/AICS-13_1596_81623_atlas.json"
+      },
+      "SEC61B": {
+        "cellId": 31957,
+        "atlas": "AICS-10/AICS-10_4866_31957_atlas.json"
+      },
+      "ST6GAL1": {
+        "cellId": 40988,
+        "atlas": "AICS-25/AICS-25_5866_40988_atlas.json"
+      },
+      "CENT2": {
+        "cellId": 67753,
+        "atlas": "AICS-32/AICS-32_9772_67753_atlas.json"
+      },
+      "LAMP1": {
+        "cellId": 8830,
+        "atlas": "AICS-22/AICS-22_8067_8830_atlas.json"
+      },
+      "TUBA1B": {
+        "cellId": 70407,
+        "atlas": "AICS-12/AICS-12_289_70407_atlas.json"
+      },
+      "TOMM20": {
+        "cellId": 10456,
+        "atlas": "AICS-11/AICS-11_2947_10456_atlas.json"
+      },
+      "ACTB": {
+        "cellId": 109970,
+        "atlas": "AICS-7/AICS-7_12089_109970_atlas.json",
+        "dataGene": "ACTN1",
+        "note": "IMSC labels this cell ACTB; its Cell Feature Explorer record says ACTN1 (alpha-actinin-1)."
+      },
+      "ACTN1": {
+        "cellId": 88806,
+        "atlas": "AICS-7/AICS-7_11048_88806_atlas.json"
+      },
+      "MYH10": {
+        "cellId": 44125,
+        "atlas": "AICS-24/AICS-24_6572_44125_atlas.json"
+      },
+      "CTNNB1": {
+        "cellId": 114159,
+        "atlas": "AICS-58/AICS-58_13526_114159_atlas.json"
+      },
+      "DSP": {
+        "cellId": 25417,
+        "atlas": "AICS-17/AICS-17_4473_25417_atlas.json"
+      },
+      "GJA1": {
+        "cellId": 105732,
+        "atlas": "AICS-53/AICS-53_10408_105732_atlas.json"
+      },
+      "TJP1": {
+        "cellId": 52391,
+        "atlas": "AICS-23/AICS-23_6518_52391_atlas.json"
+      }
+    },
+    "M4-M5": {
+      "FBL": {
+        "cellId": 58088,
+        "atlas": "AICS-14/AICS-14_7942_58088_atlas.json"
+      },
+      "LMNB1": {
+        "cellId": 82718,
+        "atlas": "AICS-13/AICS-13_2204_82718_atlas.json"
+      },
+      "SEC61B": {
+        "cellId": 33239,
+        "atlas": "AICS-10/AICS-10_4677_33239_atlas.json"
+      },
+      "ST6GAL1": {
+        "cellId": 41204,
+        "atlas": "AICS-25/AICS-25_5837_41204_atlas.json"
+      },
+      "CENT2": {
+        "cellId": 64987,
+        "atlas": "AICS-32/AICS-32_9674_64987_atlas.json"
+      },
+      "LAMP1": {
+        "cellId": 6077,
+        "atlas": "AICS-22/AICS-22_8401_6077_atlas.json"
+      },
+      "TUBA1B": {
+        "cellId": 71092,
+        "atlas": "AICS-12/AICS-12_1070_71092_atlas.json"
+      },
+      "TOMM20": {
+        "cellId": 12975,
+        "atlas": "AICS-11/AICS-11_3096_12975_atlas.json"
+      },
+      "ACTB": {
+        "cellId": 35865,
+        "atlas": "AICS-16/AICS-16_16519_35865_atlas.json"
+      },
+      "ACTN1": {
+        "cellId": 109986,
+        "atlas": "AICS-7/AICS-7_12081_109986_atlas.json"
+      },
+      "MYH10": {
+        "cellId": 47581,
+        "atlas": "AICS-24/AICS-24_6653_47581_atlas.json"
+      },
+      "CTNNB1": {
+        "cellId": 115111,
+        "atlas": "AICS-58/AICS-58_14737_115111_atlas.json"
+      },
+      "DSP": {
+        "cellId": 26057,
+        "atlas": "AICS-17/AICS-17_3971_26057_atlas.json"
+      },
+      "GJA1": {
+        "cellId": 85638,
+        "atlas": "AICS-53/AICS-53_10198_85638_atlas.json"
+      },
+      "TJP1": {
+        "cellId": 48868,
+        "atlas": "AICS-23/AICS-23_6735_48868_atlas.json"
+      }
+    },
+    "M6-M7": {
+      "FBL": {
+        "cellId": 150778,
+        "atlas": "AICS-14/AICS-14_16115_150778_atlas.json"
+      },
+      "LMNB1": {
+        "cellId": 149910,
+        "atlas": "AICS-13/AICS-13_2135_149910_atlas.json"
+      },
+      "SEC61B": {
+        "cellId": 150403,
+        "atlas": "AICS-10/AICS-10_5443_150403_atlas.json"
+      },
+      "ST6GAL1": {
+        "cellId": 150506,
+        "atlas": "AICS-25/AICS-25_5864_150506_atlas.json"
+      },
+      "CENT2": {
+        "cellId": 68799,
+        "atlas": "AICS-32/AICS-32_9795_68799_atlas.json"
+      },
+      "LAMP1": {
+        "cellId": 150859,
+        "atlas": "AICS-22/AICS-22_8432_150859_atlas.json"
+      },
+      "TUBA1B": {
+        "cellId": 149843,
+        "atlas": "AICS-12/AICS-12_766_149843_atlas.json"
+      },
+      "TOMM20": {
+        "cellId": 150139,
+        "atlas": "AICS-11/AICS-11_3794_150139_atlas.json"
+      },
+      "ACTB": {
+        "cellId": 150386,
+        "atlas": "AICS-16/AICS-16_5290_150386_atlas.json"
+      },
+      "ACTN1": {
+        "cellId": 89338,
+        "atlas": "AICS-7/AICS-7_11092_89338_atlas.json"
+      },
+      "MYH10": {
+        "cellId": 150568,
+        "atlas": "AICS-24/AICS-24_6617_150568_atlas.json"
+      },
+      "CTNNB1": {
+        "cellId": 151687,
+        "atlas": "AICS-58/AICS-58_13410_151687_atlas.json"
+      },
+      "DSP": {
+        "cellId": 150279,
+        "atlas": "AICS-17/AICS-17_4501_150279_atlas.json"
+      },
+      "GJA1": {
+        "cellId": 105434,
+        "atlas": "AICS-53/AICS-53_10340_105434_atlas.json"
+      },
+      "TJP1": {
+        "cellId": 49161,
+        "atlas": "AICS-23/AICS-23_6798_49161_atlas.json"
+      }
+    }
+  }
+}

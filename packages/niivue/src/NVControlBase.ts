@@ -1846,7 +1846,10 @@ export default class NiiVue extends EventTarget {
   set volumeIsBackgroundMasking(v: boolean) {
     this.model.volume.isBackgroundMasking = v
     this.emit('change', { property: 'volumeIsBackgroundMasking', value: v })
-    this.drawScene()
+    // The mask is applied while the overlays are baked, so rebuild them.
+    this._updateGLChanged().catch((e) =>
+      log.error('volumeIsBackgroundMasking failed', e),
+    )
   }
 
   get volumeIsAlphaClipDark(): boolean {

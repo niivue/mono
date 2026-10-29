@@ -133,7 +133,7 @@ describe('load_signal', () => {
         useHz: false,
         apodizeHz: 2,
         selectedColumns: [0, 2],
-        showLegend: true,
+        isLegendVisible: true,
       },
       attachToId: 'v0',
       annotations: [{ text: 'NAA', x: 2, y: 0.5, color: [1, 0, 0, 1] }],

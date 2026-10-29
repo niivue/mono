@@ -133,6 +133,7 @@ describe('describeMesh', () => {
       kind: 'mesh',
       color: [1, 0, 0, 1],
       colorbar: true,
+      legend: false,
       layers: [{ index: 0, frame: 0, frames: 2, inverted: true }],
     })
   })

@@ -402,6 +402,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ? { transparentBelowCalMin: true }
         : {}),
       ...(volume.isColorbarVisible ? { colorbar: true } : {}),
+      ...(volume.isLegendVisible === false ? { legend: false } : {}),
       ...(volume.isNearestInterpolation ? { nearest: true } : {}),
       ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
       ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
@@ -645,6 +646,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         'isColorbarVisible',
         flag(params, 'colorbar') ?? (labels ? false : undefined),
       )
+      put(toLoad, 'isLegendVisible', flag(params, 'legend'))
       if (
         labels &&
         (toLoad.calMin !== undefined || toLoad.calMax !== undefined)
@@ -996,6 +998,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       put(update, 'isColormapInverted', flag(params, 'invert'))
       put(update, 'isColorbarVisible', flag(params, 'colorbar'))
+      put(update, 'isLegendVisible', flag(params, 'legend'))
       put(update, 'isNearestInterpolation', flag(params, 'nearest'))
       const outline = number(params, 'atlas_outline')
       if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)

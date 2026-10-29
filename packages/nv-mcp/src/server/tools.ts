@@ -149,6 +149,12 @@ export const CORE_SCHEMAS = {
       .describe(
         'Whether this overlay gets a colorbar when the view shows them; off for a label overlay otherwise.',
       ),
+    legend: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether a label overlay lists its labels in the legend (default true).',
+      ),
   },
   where_am_i: { ...TAB_ARG },
   list_regions: {
@@ -342,6 +348,10 @@ export const CORE_SCHEMAS = {
       .boolean()
       .optional()
       .describe('Whether a colorbar is drawn for it.'),
+    legend: z
+      .boolean()
+      .optional()
+      .describe('Whether its labels are listed in the legend.'),
     nearest: z
       .boolean()
       .optional()

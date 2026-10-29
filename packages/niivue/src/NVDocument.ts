@@ -10,6 +10,7 @@ import {
   encodeDocumentJSON,
   looksLikeJSON,
 } from '@/documentJson'
+import { upgradeLegendFlags } from '@/documentLegend'
 import { isTransientStreamedVolume, shouldLinkVolume } from '@/documentLinkData'
 import { matcapToName } from '@/documentMatcap'
 import { selectUrlMeshLayers } from '@/documentMeshLayers'
@@ -79,6 +80,9 @@ import * as NVVolume from '@/volume/NVVolume'
 // (continuous or label) and `colormaps` embeds every runtime-registered
 // colormap. `upgradeColormaps` converts older label LUTs and renames the
 // `_`-prefixed drawing colormaps.
+//
+// v11: per-item `isLegendVisible` now works and defaults to true; signal
+// `display.showLegend` is `isLegendVisible`. See `upgradeLegendFlags`.
 const DOCUMENT_VERSION = NVConstants.NVD_DOCUMENT_VERSION
 
 /**
@@ -724,6 +728,7 @@ export function deserialize(data: Uint8Array): NVDocumentData {
     const known = NVCmaps.lookupColorMap(name)
     return !!known && JSON.stringify(known) !== JSON.stringify(cm)
   })
+  upgradeLegendFlags(doc)
 
   return doc
 }
@@ -1054,7 +1059,8 @@ export async function reconstructMesh(
         sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
-        isLegendVisible: m.isLegendVisible,
+        // Unset after upgradeLegendFlags; keep createMesh's default.
+        isLegendVisible: m.isLegendVisible ?? true,
         perVertexColors,
         layers,
       }
@@ -1139,7 +1145,7 @@ export async function reconstructMesh(
         sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
-        isLegendVisible: m.isLegendVisible,
+        isLegendVisible: m.isLegendVisible ?? true,
         layers,
       })
     }

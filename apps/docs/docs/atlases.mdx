@@ -119,7 +119,9 @@ voxel). `nv.volumePaqdUniforms` tunes how they render; see the
 [PAQD atlas](/gallery/vox-paqd) example.
 
 Meshes can carry atlas labels too. MZ3 atlas meshes load with `loadMeshes`,
-and `setMesh(0, { isLegendVisible: true })` shows their legend. Readers for
+and list their labels in the legend, as a label volume does;
+`setMesh(0, { isLegendVisible: false })` or `setVolume(i, { isLegendVisible: false })`
+takes one out, and `nv.isLegendVisible = false` hides the legend. Readers for
 FreeSurfer annot files and GIfTI label layers have not been ported yet, so
 other mesh atlas formats do not load.
 

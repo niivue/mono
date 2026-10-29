@@ -374,7 +374,7 @@ import type {
 // NVD document format version. Lives here (pure, importable everywhere) so the
 // legacy converter can stamp it without importing NVDocument's Vite module graph.
 // See NVDocument for the version history / migration notes.
-export const NVD_DOCUMENT_VERSION = 10
+export const NVD_DOCUMENT_VERSION = 11
 
 // Default scene values. The scene group is built with gl-matrix vec types in
 // NVModel, so this holds the plain-value defaults (used both to construct the

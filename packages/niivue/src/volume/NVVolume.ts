@@ -607,7 +607,7 @@ export function nii2volume(
     frame4D: 0,
     nFrame4D: nFrame4D,
     nTotalFrame4D: nTotalFrame4D,
-    isLegendVisible: false,
+    isLegendVisible: true,
   }
   const v1 = (hdr as unknown as { v1?: Float32Array }).v1
   if (v1) {

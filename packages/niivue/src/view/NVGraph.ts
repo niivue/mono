@@ -64,7 +64,7 @@ export type GraphData = {
   series?: GraphSeries[]
   xAxis?: GraphAxis
   /** legend toggle for signal mode (default true when more than one series) */
-  showLegend?: boolean
+  isLegendVisible?: boolean
   /**
    * Signal mode only: when true (no spatial data in the scene), the graph
    * expands to fill the whole instance area instead of the right-hand strip.
@@ -1105,8 +1105,8 @@ function buildSignalGraphElements(
   // 6) Legend (top-right inside plot). Capped so a high-cardinality series set
   // (e.g. non-averaged spectroscopy with many transients) cannot overflow the
   // plot; the overflow is summarized as a final "+N more" row.
-  const showLegend = data.showLegend ?? series.length > 1
-  if (showLegend && fontSize > 6) {
+  const isLegendVisible = data.isLegendVisible ?? series.length > 1
+  if (isLegendVisible && fontSize > 6) {
     const swatch = fontSize * 1.2
     const rowH = fontSize * 1.3
     const maxRows = Math.max(1, Math.floor((pH - fontSize) / rowH))

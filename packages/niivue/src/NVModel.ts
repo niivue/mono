@@ -965,7 +965,7 @@ export default class NVModel {
       graphConfig: this.ui.graph,
       series,
       xAxis: axis,
-      showLegend: lead.sig.display.showLegend,
+      isLegendVisible: lead.sig.display.isLegendVisible,
       // No spatial view (signal-only scene, or SLICE_TYPE.NONE) -> the plot fills
       // the whole instance area; otherwise it's a side strip beside the slices.
       fullCanvas: this.isSpatialViewHidden(),
@@ -1133,7 +1133,7 @@ export default class NVModel {
       graphConfig: this.ui.graph,
       series,
       xAxis: { label: 'Time (s)', reversed: false, min: 0, max: tMax },
-      showLegend: true,
+      isLegendVisible: true,
       // Side strip beside the slices by default; full canvas when the user hides
       // the spatial view with SLICE_TYPE.NONE (the volume stays loaded for the
       // time-course).

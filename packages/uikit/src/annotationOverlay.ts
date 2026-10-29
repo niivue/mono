@@ -1,27 +1,17 @@
-// A UIKit overlay that draws NiiVue vector annotations (ellipse / rectangle /
-// circle / line / arrow) + their stats labels through the niivue overlay hook,
-// from the screen-projected geometry NiiVue exposes as `annotationScreenShapes`
-// (paired with `isAnnotationDrawn = false` so core does not also draw them).
-//
-// Like the ruler, UIKit carries its own rendering during the bake-in phase: it
-// composes a line overlay (shape outlines + arrowheads) and a text overlay (the
-// stats labels). Geometry is in canvas/device pixels, matching the seam.
+// Line and label geometry for NiiVue vector annotations (ellipse / rectangle /
+// circle / line / arrow) + their stats labels, from the screen-projected shapes
+// NiiVue exposes as `annotationScreenShapes`. Geometry is in canvas/device
+// pixels, matching the overlay seam; draw it with UIKitLineOverlay + UIKitTextOverlay.
 
-import type {
-  AnnotationScreenShape,
-  UIKitOverlayFrame,
-  UIKitOverlayRenderer,
-} from '@niivue/niivue'
+import type { AnnotationScreenShape } from '@niivue/niivue'
 import {
   buildLine,
   buildTerminatedLine,
   type LineData,
   LineTerminator,
 } from './line'
-import { UIKitLineOverlay } from './lineOverlay'
 import { buildRuler } from './ruler'
-import type { UIKitFont } from './text/font'
-import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
+import type { UIKitTextItem } from './textOverlay'
 
 // A measured line draws as a graduated ruler (end caps, mm ticks, rotated
 // length label). The label runs larger than a shape's stats label so the reading
@@ -180,45 +170,4 @@ export function buildAnnotationGeometry(
   }
 
   return { lines, text }
-}
-
-export class UIKitAnnotationOverlay implements UIKitOverlayRenderer {
-  private readonly lines = new UIKitLineOverlay()
-  private readonly labels: UIKitTextOverlay
-  private shapes: readonly AnnotationScreenShape[] = []
-  private options: AnnotationGeometryOptions = {}
-
-  constructor(font: UIKitFont, options?: AnnotationGeometryOptions) {
-    this.labels = new UIKitTextOverlay(font)
-    if (options) this.options = options
-  }
-
-  /** Set the shapes to draw next frame. Trigger a redraw via the controller. */
-  setShapes(
-    shapes: readonly AnnotationScreenShape[],
-    options?: AnnotationGeometryOptions,
-  ): void {
-    this.shapes = shapes
-    if (options) this.options = options
-    const geo = buildAnnotationGeometry(shapes, this.options)
-    this.lines.setLines(geo.lines)
-    this.labels.setItems(geo.text)
-  }
-
-  clear(): void {
-    this.shapes = []
-    this.lines.setLines([])
-    this.labels.setItems([])
-  }
-
-  drawOverlay(frame: UIKitOverlayFrame): void {
-    if (this.shapes.length === 0) return
-    this.lines.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
-  }
-
-  destroy(): void {
-    this.lines.destroy()
-    this.labels.destroy()
-  }
 }

@@ -4250,7 +4250,7 @@ export default class NiiVue extends EventTarget {
    * Add a scalar overlay layer to a mesh.
    *
    * @example
-   * await nv1.addMeshLayer(0, { url: 'brain.curv', colormap: 'gray', cal_min: 0.3, cal_max: 0.5 })
+   * await nv1.addMeshLayer(0, { url: 'brain.curv', colormap: 'gray', calMin: 0.3, calMax: 0.5 })
    */
   async addMeshLayer(
     meshIndex: number,
@@ -4312,7 +4312,7 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).
+   * Update properties of a mesh layer (colormap, calMin, calMax, opacity, etc.).
    * Triggers recompositing and GPU update.
    *
    * @example

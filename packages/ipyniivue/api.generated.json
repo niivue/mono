@@ -3638,7 +3638,7 @@
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).\nTriggers recompositing and GPU update.",
+      "doc": "Update properties of a mesh layer (colormap, calMin, calMax, opacity, etc.).\nTriggers recompositing and GPU update.",
       "returnsDoc": null
     },
     {

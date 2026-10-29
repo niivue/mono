@@ -1529,7 +1529,7 @@ and its volumes alive."""
         self.send({"cmd": "setMeshLayerFrame4D", "args": _make_args(mesh_index, layer_index, frame)})
 
     def set_mesh_layer_property(self, mesh_index: Any, layer_index: Any, options: Any) -> None:
-        """Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).
+        """Update properties of a mesh layer (colormap, calMin, calMax, opacity, etc.).
 
         Triggers recompositing and GPU update.
 

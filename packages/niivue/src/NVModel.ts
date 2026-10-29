@@ -367,6 +367,11 @@ export default class NVModel {
       ...(options.meshThicknessOn2D !== undefined && {
         thicknessOn2D: options.meshThicknessOn2D,
       }),
+      ...(options.meshCrosscutWidth !== undefined && {
+        crosscutWidth: NVConstants.clampCrosscutWidth(
+          options.meshCrosscutWidth,
+        ),
+      }),
     }
     // Draw — flat options mapped to draw group
     this.draw = {

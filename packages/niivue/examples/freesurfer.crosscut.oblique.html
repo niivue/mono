@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Oblique Crosscut</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+
+      <label for="sliceShaderSelect">Slice shader</label>
+      <select id="sliceShaderSelect"></select>
+
+      <label for="widthSlider">Line width</label>
+      <input type="range" id="widthSlider" min="1" max="16" value="4" />
+
+      <label for="shaderSelect">Render shader</label>
+      <select id="shaderSelect"></select>
+
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck"/>
+      <button type="button" id="aboutBtn">About</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module" src="freesurfer.crosscut.oblique.js"></script>
+  </body>
+</html>

@@ -239,6 +239,13 @@ export const SETTINGS: readonly Setting[] = [
     },
   ),
   num(
+    'meshCrosscutWidth',
+    'Line width, in device pixels, of the crosscut and crosscut2 mesh shaders.',
+    {
+      min: 0,
+    },
+  ),
+  num(
     'heroFraction',
     'The share of the canvas the hero tile takes in a hero layout, 0 to 1.',
     {

@@ -10,9 +10,22 @@ struct Params {
   _pad2: f32,
   _pad3: f32,
   crosscutMM: vec4f,
+  // crosscut2 planes (see crosscutPlanes): columns 0-2 = [n, d],
+  // column 3 = [tileWidthPx, tileHeightPx, lineWidthPx, planeCount].
+  ccPlanes: mat4x4f,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
+// crosscut2 only: the interleaved vertex buffer read as words (position
+// f32x3, normal f32x3, color unorm8x4; 7 words per vertex), the index buffer
+// in cluster order, and this tile's list of clusters crossing a plane.
+@group(1) @binding(0) var<storage, read> vertWords: array<u32>;
+@group(1) @binding(1) var<storage, read> triIdx: array<u32>;
+@group(1) @binding(2) var<storage, read> clusterList: array<u32>;
+// Set from CLUSTER_SIZE / PLANE_SHIFT in mesh/triangleClusters.ts when the
+// pipeline is built.
+override clusterSize: u32 = 64u;
+override planeShift: u32 = 30u;
 
 struct VertexInput {
   @location(0) position: vec3f,
@@ -256,7 +269,10 @@ fn fragment_outline(in: FragmentInput) -> @location(0) vec4f {
 
 @fragment
 fn fragment_crosscut(in: CrosscutFragmentInput) -> @location(0) vec4f {
-  let LINE_WIDTH_PX = 4.0;
+  let LINE_WIDTH_PX = params.ccPlanes[3].z;
+  if (LINE_WIDTH_PX <= 0.0) {
+    discard; // smoothstep(0, 0, x) is undefined
+  }
   let TILT_STRENGTH = 1.0;
   let d = in.vP - params.crosscutMM.xyz;
   let ad = abs(d);
@@ -282,4 +298,110 @@ fn fragment_crosscut(in: CrosscutFragmentInput) -> @location(0) vec4f {
     discard;
   }
   return vec4f(in.vClr.rgb, in.vClr.a * edgeAlpha);
+}
+
+// Crosscut2: the mesh outline where it meets the displayed voxel plane(s).
+// Mirrors meshVertCrosscut2 in gl/meshShader.ts: one instance per triangle
+// of each cluster that crosses a plane (mesh/triangleClusters.ts), six
+// vertices each; the vertex stage intersects the triangle with the plane and
+// expands the segment into a screen-space quad, or collapses it when the
+// triangle misses. Edge-on surfaces (no fragments of their own) still get an
+// outline.
+struct Crosscut2Output {
+  @builtin(position) position: vec4f,
+  @location(0) vClr: vec4f,
+  @location(1) vEdgePx: f32,
+  @location(2) @interpolate(flat) vHalfPx: f32,
+};
+
+fn crosscut2Vertex(idx: u32) -> vec3f {
+  let w = idx * 7u;
+  return bitcast<vec3f>(vec3u(vertWords[w], vertWords[w + 1u], vertWords[w + 2u]));
+}
+
+fn crosscut2Color(idx: u32) -> vec4f {
+  return unpack4x8unorm(vertWords[idx * 7u + 6u]);
+}
+
+@vertex
+fn vertex_crosscut2(
+  @builtin(vertex_index) corner: u32,
+  @builtin(instance_index) inst: u32,
+) -> Crosscut2Output {
+  var out: Crosscut2Output;
+  out.position = vec4f(2.0, 2.0, 2.0, 1.0);
+  out.vClr = vec4f(0.0);
+  out.vEdgePx = 0.0;
+  out.vHalfPx = 0.0;
+  let entry = clusterList[inst / clusterSize];
+  // Indices are padded to whole clusters, so every tri is in range.
+  let tri = (entry & ((1u << planeShift) - 1u)) * clusterSize + inst % clusterSize;
+  let pl = params.ccPlanes[entry >> planeShift];
+  let i0 = triIdx[tri * 3u];
+  let i1 = triIdx[tri * 3u + 1u];
+  let i2 = triIdx[tri * 3u + 2u];
+  var p = array<vec3f, 3>(crosscut2Vertex(i0), crosscut2Vertex(i1), crosscut2Vertex(i2));
+  var c = array<vec4f, 3>(crosscut2Color(i0), crosscut2Color(i1), crosscut2Color(i2));
+  let s = vec3f(dot(pl.xyz, p[0]), dot(pl.xyz, p[1]), dot(pl.xyz, p[2])) - pl.w;
+  // Half-open side test (s >= 0) yields exactly 0 or 2 crossed edges.
+  var hit: array<vec3f, 2>;
+  var hitClr: array<vec4f, 2>;
+  var n = 0u;
+  for (var e = 0u; e < 3u; e++) {
+    let f = (e + 1u) % 3u;
+    if ((s[e] >= 0.0) != (s[f] >= 0.0)) {
+      let t = s[e] / (s[e] - s[f]);
+      hit[n] = mix(p[e], p[f], t);
+      hitClr[n] = mix(c[e], c[f], t);
+      n++;
+    }
+  }
+  if (n < 2u) {
+    return out;
+  }
+  let halfVp = 0.5 * params.ccPlanes[3].xy;
+  let a = params.mvpMtx * vec4f(hit[0], 1.0);
+  let b = params.mvpMtx * vec4f(hit[1], 1.0);
+  let sa = a.xy / a.w * halfVp;
+  let sb = b.xy / b.w * halfVp;
+  let d = sb - sa;
+  let len = length(d);
+  var dir = vec2f(1.0, 0.0);
+  if (len > 1e-6) {
+    dir = d / len;
+  }
+  let nrm = vec2f(-dir.y, dir.x);
+  // Quad corners as two triangles: (0,1,2) (2,1,3) over A-/A+/B-/B+.
+  var quad = array<u32, 6>(0u, 1u, 2u, 2u, 1u, 3u);
+  let q = quad[corner];
+  let atB = q >= 2u;
+  var side = 1.0;
+  if (q == 0u || q == 2u) {
+    side = -1.0;
+  }
+  let halfPx = 0.5 * params.ccPlanes[3].z;
+  let extent = halfPx + 1.0; // one pixel fringe for antialiasing
+  // Square caps (extend by the half width) close the joins between segments.
+  var px = sa - dir * halfPx;
+  var clr = hitClr[0];
+  if (atB) {
+    px = sb + dir * halfPx;
+    clr = hitClr[1];
+  }
+  px += nrm * side * extent;
+  // Mid-depth; depth is not tested (WebGL2 uses 0.0, its [-1, 1] middle).
+  out.position = vec4f(px / halfVp, 0.5, 1.0);
+  out.vClr = vec4f(clr.rgb, params.opacity);
+  out.vEdgePx = side * extent;
+  out.vHalfPx = halfPx;
+  return out;
+}
+
+@fragment
+fn fragment_crosscut2(in: Crosscut2Output) -> @location(0) vec4f {
+  let alpha = clamp(in.vHalfPx + 0.5 - abs(in.vEdgePx), 0.0, 1.0);
+  if (alpha <= 0.0) {
+    discard;
+  }
+  return vec4f(in.vClr.rgb, in.vClr.a * alpha);
 }

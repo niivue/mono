@@ -28,7 +28,7 @@ import {
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
-import { crosscutMM } from '@/view/NVCrosscut'
+import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
@@ -206,6 +206,7 @@ export default class NVGlview {
       rim: true,
       crevice: true,
       crosscut: true,
+      crosscut2: true,
       matte: true,
       toon: true,
       outline: true,
@@ -1139,6 +1140,7 @@ export default class NVGlview {
           ? []
           : (md.getMeshes() as NVMesh[]).filter(isMeshDrawn)
       const ccMM = crosscutMM(md, tile.axCorSag)
+      const ccPlanes = crosscutPlanes(md, tile, md.mesh.crosscutWidth)
       // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
       let meshMvp = mvpMatrix
       let meshNorm = normalMatrix
@@ -1177,15 +1179,18 @@ export default class NVGlview {
             isSlice && mGpu.sliceShaderType
               ? mGpu.sliceShaderType
               : mGpu.shaderType
+          // crosscut2 cuts at the voxel plane, which an oblique volume tilts
+          // out of the world-aligned thicknessOn2D slab: use the full MVP.
           mesh.drawWithGpu(
             gl,
             m,
             mGpu,
-            meshMvp as Float32Array,
+            (shaderType === 'crosscut2' ? mvpMatrix : meshMvp) as Float32Array,
             meshNorm as Float32Array,
             opacity,
             shaderType,
             ccMM,
+            ccPlanes,
           )
         }
       }
@@ -1223,6 +1228,7 @@ export default class NVGlview {
               opacity,
               shaderType,
               ccMM,
+              ccPlanes,
             )
           }
         }

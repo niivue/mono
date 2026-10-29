@@ -58,8 +58,10 @@ import { type LogLevel, log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
+import { clearMeshClusters } from '@/mesh/triangleClusters'
 import type { WriteOptions } from '@/mesh/writers'
 import {
+  clampCrosscutWidth,
   clampFinite,
   clampSampleRate,
   DRAG_MODE,
@@ -2022,6 +2024,17 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /** Line width, in device pixels, of the `crosscut` and `crosscut2` mesh shaders. */
+  get meshCrosscutWidth(): number {
+    return this.model.mesh.crosscutWidth
+  }
+  set meshCrosscutWidth(v: number) {
+    const val = clampCrosscutWidth(v)
+    this.model.mesh.crosscutWidth = val
+    this.emit('change', { property: 'meshCrosscutWidth', value: val })
+    this.drawScene()
+  }
+
   // --- Draw Properties ---
 
   get drawIsEnabled(): boolean {
@@ -2573,6 +2586,7 @@ export default class NiiVue extends EventTarget {
    * other stale on screen.
    */
   async updateGLVolume() {
+    for (const mesh of this.model.getMeshes()) clearMeshClusters(mesh)
     await this._updateGL('all')
   }
 

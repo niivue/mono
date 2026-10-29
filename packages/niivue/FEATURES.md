@@ -71,7 +71,7 @@ NPY/NPZ. DICOM/Zarr/MINC/TIFF require external plugins.
 | `setTractOptions(meshIndex, NVTractOptions)` | Method | Yes | Radius, sides, decimation, scalars |
 | `getTractGroups(meshIndex)` | Method | No | `string[]` |
 | `setConnectomeOptions(meshIndex, NVConnectomeOptions)` | Method | Yes | Node/edge scale, thresholds |
-| `getMeshShader(meshIndex)` | Method | No | `'phong' \| 'flat' \| 'matte' \| 'toon' \| 'outline' \| 'rim' \| 'silhouette' \| 'crevice' \| 'vertexColor' \| 'crosscut'` |
+| `getMeshShader(meshIndex)` | Method | No | `'phong' \| 'flat' \| 'matte' \| 'toon' \| 'outline' \| 'rim' \| 'silhouette' \| 'crevice' \| 'vertexColor' \| 'crosscut' \| 'crosscut2'` |
 | `meshes` | Prop (get) | No | `readonly NVMesh[]` |
 | `meshShaders` | Prop (get) | No | Available shader names |
 | `meshExtensions` / `meshWriteExtensions` | Prop (get) | No | Supported file formats |
@@ -162,6 +162,7 @@ TRX, TT, TSF (scalars), VTK lines.
 |---|---|---|
 | `meshXRay` | Prop | 0–1 opacity in 3D |
 | `meshThicknessOn2D` | Prop | Clip to ±N mm of slice plane |
+| `meshCrosscutWidth` | Prop | Line width (device px) of crosscut/crosscut2 |
 
 ## 9. Drawing / Segmentation
 

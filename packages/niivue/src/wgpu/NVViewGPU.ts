@@ -28,7 +28,7 @@ import {
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
-import { crosscutMM } from '@/view/NVCrosscut'
+import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
@@ -166,6 +166,7 @@ export default class NVView {
   sliceRenderer: SliceRenderer
   volumeRenderer: VolumeRenderer
   meshBindGroupLayout: GPUBindGroupLayout | null
+  crosscut2BindGroupLayout: GPUBindGroupLayout | null = null
   meshPipelines: Record<string, GPURenderPipeline> | null
   meshXRayPipelines: Record<string, GPURenderPipeline> | null
   lineBindGroup: GPUBindGroup | null
@@ -331,6 +332,28 @@ export default class NVView {
     const meshPipelineLayout = device.createPipelineLayout({
       bindGroupLayouts: [layoutBGL],
     })
+    this.crosscut2BindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage', hasDynamicOffset: true },
+        },
+      ],
+    })
+    const crosscut2PipelineLayout = device.createPipelineLayout({
+      bindGroupLayouts: [layoutBGL, this.crosscut2BindGroupLayout],
+    })
     this.meshPipelines = {
       phong: mesh.createMeshPipeline(
         device,
@@ -357,6 +380,12 @@ export default class NVView {
         'always',
         false,
         'none',
+      ),
+      crosscut2: mesh.createCrosscut2Pipeline(
+        device,
+        format,
+        msaa,
+        crosscut2PipelineLayout,
       ),
       flat: mesh.createMeshPipeline(
         device,
@@ -1383,6 +1412,7 @@ export default class NVView {
           : (md.getMeshes() as NVMesh[]).filter(isMeshDrawn)
       // Compute crosscut uniform for this tile (crosshair mm with axis masking for 2D)
       const ccMM = crosscutMM(md, tile.axCorSag)
+      const ccPlanes = crosscutPlanes(md, tile, md.mesh.crosscutWidth)
       // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
       let meshMvp = mvpMatrix
       let meshNorm = normalMatrix
@@ -1425,24 +1455,41 @@ export default class NVView {
           if (!Number.isFinite(dynamicOffset)) {
             continue
           }
+          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+          const shaderType =
+            (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
+          const isCrosscut2 = shaderType === 'crosscut2'
           const s = this._uniformScratch
-          s.set(meshMvp as ArrayLike<number>, 0)
+          // crosscut2 cuts at the voxel plane, which an oblique volume tilts
+          // out of the world-aligned thicknessOn2D slab: use the full MVP.
+          s.set((isCrosscut2 ? mvpMatrix : meshMvp) as ArrayLike<number>, 0)
           s.set(meshNorm as ArrayLike<number>, 16)
           s.set(m.clipPlane as ArrayLike<number>, 32)
           s[36] = m.opacity ?? 1.0
           // s[37-39] = 0 (pad, zero-initialized at allocation, never written non-zero)
           s.set(ccMM as ArrayLike<number>, 40)
+          s.set(ccPlanes, 44)
           device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
-          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
-          const shaderType =
-            (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
           const pipeline = this.meshPipelines[shaderType]
           if (pipeline) {
             pass.setPipeline(pipeline)
             pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
-            pass.setVertexBuffer(0, mGpu.vertexBuffer)
-            pass.setIndexBuffer(mGpu.indexBuffer, 'uint32')
-            pass.drawIndexed(mGpu.indexCount)
+            if (!isCrosscut2) {
+              pass.setVertexBuffer(0, mGpu.vertexBuffer)
+              pass.setIndexBuffer(mGpu.indexBuffer, 'uint32')
+              pass.drawIndexed(mGpu.indexCount)
+            } else if (this.crosscut2BindGroupLayout) {
+              mesh.drawCrosscut2(
+                device,
+                pass,
+                this.crosscut2BindGroupLayout,
+                m,
+                mGpu,
+                ccPlanes,
+                i,
+                screenSlices.length,
+              )
+            }
           }
         }
       }
@@ -1488,6 +1535,7 @@ export default class NVView {
             s.set(m.clipPlane as ArrayLike<number>, 32)
             s[36] = (m.opacity ?? 1.0) * xrayAlpha
             s.set(ccMM as ArrayLike<number>, 40)
+            s.set(ccPlanes, 44)
             device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
             const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
             const shaderType =

@@ -810,6 +810,17 @@
       "doc": null
     },
     {
+      "jsName": "meshCrosscutWidth",
+      "pyName": "mesh_crosscut_width",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "meshThicknessOn2D",
       "pyName": "mesh_thickness_on_2d",
       "tsType": "number",

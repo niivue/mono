@@ -38,14 +38,11 @@ import { writeMesh } from './writers'
 
 type MeshReader = {
   extensions?: string[]
-  read: (buffer: ArrayBufferLike) => Promise<MZ3>
+  read: (buffer: ArrayBuffer) => Promise<MZ3>
 }
 
-// The readers' signatures don't all match this type; the cast keeps the
-// unchecked assertion import.meta.glob<T> made.
-const readerByExt = NVLoader.buildExtensionMap(
-  meshReaderModules as unknown as Record<string, MeshReader>,
-)
+const readerModules: Record<string, MeshReader> = meshReaderModules
+const readerByExt = NVLoader.buildExtensionMap(readerModules)
 
 export function meshWriteExtensions(): string[] {
   return meshWriters.writeExtensions()

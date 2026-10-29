@@ -41,7 +41,7 @@ function swapBytesInPlace(bytes: Uint8Array, elemSize: number): void {
 
 export async function read(
   buffer: ArrayBuffer | Uint8Array,
-  filename: string,
+  filename = '',
   _pairedImgData: ArrayBuffer | null = null,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
   // Ensure we have a Uint8Array view for easy byte checks and slicing

@@ -1,3 +1,16 @@
+## 1.0.0-rc.50 (2026-10-29)
+
+### Fixes
+
+- **niivue:** clamp the other range-checked settings from a document ([#387](https://github.com/niivue/mono/issues/387))
+- **niivue:** clamp volume sampleRate and renderMode from a document ([#387](https://github.com/niivue/mono/issues/387))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.49 (2026-10-29)
 
 ### Features

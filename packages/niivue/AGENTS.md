@@ -1107,6 +1107,8 @@ Planes come from `view/NVCrosscut.crosscutPlanes` as a mat4 uniform (columns
 three voxel planes through the crosshair; no volume: world axes). Width is
 `mesh.crosscutWidth` (`meshCrosscutWidth`) device px, which also sets the old
 `crosscut` ribbon width (#91); width <= 0 draws nothing on both shaders.
+`clampCrosscutWidth` clamps it in the setter, the constructor and document
+load.
 
 Culling (`mesh/triangleClusters.ts`): triangles are sorted along a Morton curve
 of their centroids and grouped `CLUSTER_SIZE` (64) at a time, one bounding box
@@ -1124,7 +1126,8 @@ translucent 3D view unchanged'). The copy is padded to whole clusters with
 degenerate triangles, so shaders need no bounds check. `meshClusters` cache:
 new `indices`/`positions` arrays rebuild; a `_dataVersion` change rebuilds only
 if an FNV-1a hash of the indices changed (color/layer edits bump it too);
-`_positionsVersion` refreshes bounds only. `updateGLVolume()` drops every
+`_positionsVersion` refreshes bounds only; any other in-place `positions`
+edit is unsupported (call `updateMeshPositions` or `updateGLVolume`). `updateGLVolume()` drops every
 mesh's clusters (`clearMeshClusters`), since its callers edit in place without
 bumping either token (a second audit caught stale bounds there).
 
@@ -1143,7 +1146,10 @@ enabled or desktop GL emulates it and Firefox warns). GLSL ES 3.00 lacks
 MVP (the `thicknessOn2D` slab is world-aligned and could clip an oblique cut),
 no depth test, skipped in the x-ray pass.
 
-Limits: a mesh too large warns once and draws nothing. WebGPU is bounded by
+Limits: a mesh too large warns once and draws nothing. On WebGPU the cluster
+list (one region per tile) must also fit `maxBufferSize`; a mesh that does not
+fit this many tiles warns once ('crosscut2: mesh is too large for this many
+tiles') and skips its outline until the tile count drops. WebGPU is bounded by
 `maxStorageBufferBindingSize` (default 128 MiB, ~4.8M vertices), WebGL2 by
 MAX_TEXTURE_SIZE^2 words (~38M vertices at 16384, ~2.4M at 4096), so the
 backends can differ on huge meshes.
@@ -1154,7 +1160,9 @@ crosscut 4.7). Memory, only for meshes drawn with crosscut2: WebGPU +12 B/tri
 index copy; WebGL2 vertex copy 28 B/vertex + index copy 12 B/tri.
 
 Tests: `e2e/crosscut2.spec.ts` (oblique stability, edge-on surface,
-in-place index edit + `updateGLVolume`, translucent 3D unchanged), `src/mesh/triangleClusters.test.ts`.
+in-place index edit + `updateGLVolume`, translucent 3D unchanged, width clamp
+in constructor and document), `src/mesh/triangleClusters.test.ts`,
+`src/NVConstants.test.ts` (`clampCrosscutWidth`).
 
 Known follow-ups:
 - WebGPU per-tile mesh uniform offset `i * 256` has no `MAX_TILES` (128)
@@ -1163,8 +1171,6 @@ Known follow-ups:
 - `e2e/live-data-updates.spec.ts` "isDirty edits of a chunked volume re-stream
   its bricks (webgpu)" flakes under parallel Playwright workers (~2/6 on main
   too; passes serially). Needs an issue.
-- The `meshCrosscutWidth` constructor option is not clamped like the setter
-  (NaN/Infinity), same as other flat options.
 - Optional: bundle `drawWithGpu`'s per-tile crosscut args into one object next
   time a parameter is added.
 

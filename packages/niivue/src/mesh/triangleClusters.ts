@@ -83,7 +83,7 @@ function sortByKey(keys: Uint32Array): Uint32Array {
 }
 
 /** Recompute cluster bounds for the triangles of `indices` taken in `order`. */
-export function updateClusterBounds(
+function updateClusterBounds(
   positions: ArrayLike<number>,
   indices: ArrayLike<number>,
   order: Uint32Array,

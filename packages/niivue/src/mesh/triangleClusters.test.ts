@@ -122,4 +122,13 @@ describe('meshClusters', () => {
     mesh._dataVersion = 1
     expect(meshClusters(mesh)).toBe(before)
   })
+
+  test('a positions version bump refreshes the bounds', () => {
+    const mesh = makeMesh()
+    const c = meshClusters(mesh)
+    mesh.positions.set([10, 0, 0, 11, 0, 0, 10, 1, 0])
+    mesh._positionsVersion = 1
+    expect(meshClusters(mesh)).toBe(c)
+    expect(clustersCrossingPlanes(c, planeX(10.5)).length).toBe(1)
+  })
 })

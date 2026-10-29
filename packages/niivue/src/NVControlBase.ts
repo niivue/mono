@@ -60,13 +60,13 @@ import * as NVMesh from '@/mesh/NVMesh'
 import { clearMeshClusters } from '@/mesh/triangleClusters'
 import type { WriteOptions } from '@/mesh/writers'
 import {
+  clampCrosscutWidth,
   DRAG_MODE,
   GAMMA_RANGE,
   LOD_BRIGHTNESS_RANGE,
   LOD_OPACITY_RANGE,
   lodGammaExponent,
   lodOpacityScale,
-  MESH_DEFAULTS,
   NUM_CLIP_PLANE,
   normalizeVolumeRenderMode,
   type OVERLAY_ALPHA_BLEND,
@@ -2004,9 +2004,7 @@ export default class NiiVue extends EventTarget {
     return this.model.mesh.crosscutWidth
   }
   set meshCrosscutWidth(v: number) {
-    const val = Number.isFinite(v)
-      ? Math.max(0, v)
-      : MESH_DEFAULTS.crosscutWidth
+    const val = clampCrosscutWidth(v)
     this.model.mesh.crosscutWidth = val
     this.emit('change', { property: 'meshCrosscutWidth', value: val })
     this.drawScene()

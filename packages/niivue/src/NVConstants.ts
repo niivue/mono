@@ -475,6 +475,11 @@ export const MESH_DEFAULTS: MeshRenderConfig = {
   crosscutWidth: 4,
 }
 
+/** Crosscut line width, at least 0; non-finite gives the default. */
+export function clampCrosscutWidth(v: number): number {
+  return Number.isFinite(v) ? Math.max(0, v) : MESH_DEFAULTS.crosscutWidth
+}
+
 export const DRAW_DEFAULTS: DrawConfig = {
   isEnabled: false,
   penValue: 1,

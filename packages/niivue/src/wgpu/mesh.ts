@@ -196,6 +196,7 @@ type Crosscut2Gpu = {
 }
 const _crosscut2 = new WeakMap<WebGPUMeshGPU, Crosscut2Gpu>()
 const _tooLarge = new WeakSet<WebGPUMeshGPU>()
+const _tooManyTiles = new WeakSet<WebGPUMeshGPU>()
 
 // Build or resize `gpu`'s crosscut2 resources. Within a frame the clusters
 // and tile count are fixed, so only a mesh's first draw of a frame can
@@ -221,6 +222,19 @@ function crosscut2Gpu(
   }
   let cc = _crosscut2.get(gpu)
   if (cc && cc.clusters === clusters && cc.regions >= tileCount) return cc
+  const align = device.limits.minStorageBufferOffsetAlignment
+  const regionBytes = Math.ceil(clusters.entries.byteLength / align) * align
+  // At least four regions (A+C+S+R), so common layouts never regrow.
+  const regions = Math.max(tileCount, 4)
+  // An oversized buffer is invalid and fails the whole frame's submit. Not
+  // added to _tooLarge: fewer tiles later can still draw.
+  if (regionBytes * regions > device.limits.maxBufferSize) {
+    if (!_tooManyTiles.has(gpu)) {
+      _tooManyTiles.add(gpu)
+      log.warn('crosscut2: mesh is too large for this many tiles')
+    }
+    return null
+  }
   let triBuffer = cc?.triBuffer
   if (!triBuffer || cc?.clusters !== clusters) {
     triBuffer?.destroy()
@@ -234,10 +248,6 @@ function crosscut2Gpu(
     triBuffer.unmap()
   }
   cc?.listBuffer.destroy()
-  const align = device.limits.minStorageBufferOffsetAlignment
-  const regionBytes = Math.ceil(clusters.entries.byteLength / align) * align
-  // At least four regions (A+C+S+R), so common layouts never regrow.
-  const regions = Math.max(tileCount, 4)
   const listBuffer = device.createBuffer({
     size: regionBytes * regions,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  clampCrosscutWidth,
   GAMMA_RANGE,
   invGamma,
   isPaqd,
@@ -262,5 +263,19 @@ describe('normalizeVolumeRenderMode', () => {
     ]) {
       expect(normalizeVolumeRenderMode(v)).toBe(VOLUME_RENDER_MODE.COMPOSITE)
     }
+  })
+})
+
+describe('clampCrosscutWidth', () => {
+  test('keeps a valid width', () => {
+    expect(clampCrosscutWidth(2.5)).toBe(2.5)
+    expect(clampCrosscutWidth(0)).toBe(0)
+  })
+  test('raises a negative width to 0', () => {
+    expect(clampCrosscutWidth(-3)).toBe(0)
+  })
+  test('maps non-finite to the default', () => {
+    expect(clampCrosscutWidth(Number.NaN)).toBe(4)
+    expect(clampCrosscutWidth(Number.POSITIVE_INFINITY)).toBe(4)
   })
 })

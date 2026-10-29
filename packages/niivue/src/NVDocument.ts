@@ -836,6 +836,8 @@ export function applyDocumentToModel(
     model.mesh,
     fillGroup('mesh', model.mesh, C.MESH_DEFAULTS, doc.mesh, fill),
   )
+  // A document bypasses the setters, so apply their clamp here.
+  model.mesh.crosscutWidth = C.clampCrosscutWidth(model.mesh.crosscutWidth)
   Object.assign(
     model.draw,
     fillGroup('draw', model.draw, C.DRAW_DEFAULTS, doc.draw, fill),

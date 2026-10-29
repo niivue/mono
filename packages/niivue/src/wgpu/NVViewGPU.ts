@@ -1472,10 +1472,14 @@ export default class NVView {
           s.set(ccPlanes, 44)
           device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
           const pipeline = this.meshPipelines[shaderType]
-          if (pipeline && isCrosscut2) {
-            if (this.crosscut2BindGroupLayout) {
-              pass.setPipeline(pipeline)
-              pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
+          if (pipeline) {
+            pass.setPipeline(pipeline)
+            pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
+            if (!isCrosscut2) {
+              pass.setVertexBuffer(0, mGpu.vertexBuffer)
+              pass.setIndexBuffer(mGpu.indexBuffer, 'uint32')
+              pass.drawIndexed(mGpu.indexCount)
+            } else if (this.crosscut2BindGroupLayout) {
               mesh.drawCrosscut2(
                 device,
                 pass,
@@ -1487,12 +1491,6 @@ export default class NVView {
                 screenSlices.length,
               )
             }
-          } else if (pipeline) {
-            pass.setPipeline(pipeline)
-            pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
-            pass.setVertexBuffer(0, mGpu.vertexBuffer)
-            pass.setIndexBuffer(mGpu.indexBuffer, 'uint32')
-            pass.drawIndexed(mGpu.indexCount)
           }
         }
       }

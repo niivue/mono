@@ -199,3 +199,29 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(changed).toBe(0)
   })
 }
+
+// The constructor and loadDocument bypass the meshCrosscutWidth setter, so
+// they must apply its clamp themselves.
+test('meshCrosscutWidth is clamped by the constructor and a document', async ({
+  page,
+}) => {
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const out: number[][] = []
+    for (const bad of [Number.NaN, -3, 2.5]) {
+      const nv = new NiiVue({ backend: 'webgl2', meshCrosscutWidth: bad })
+      const fromCtor = nv.meshCrosscutWidth
+      // Bypass the setter to write a document holding the bad value.
+      nv.model.mesh.crosscutWidth = bad
+      const doc = nv.serializeDocument()
+      await nv.loadDocument(new File([doc], 'bad.nvd'))
+      out.push([fromCtor, nv.meshCrosscutWidth])
+    }
+    return out
+  })
+  expect(r).toEqual([
+    [4, 4],
+    [0, 0],
+    [2.5, 2.5],
+  ])
+})

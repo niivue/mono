@@ -1,3 +1,14 @@
+## 1.0.0-rc.52 (2026-10-29)
+
+### Features
+
+- **niivue:** export COLORMAP_TYPE from all entry points ([#375](https://github.com/niivue/mono/issues/375))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.51 (2026-10-29)
 
 ### Fixes

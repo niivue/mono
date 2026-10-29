@@ -1,7 +1,7 @@
 // Line and label geometry for NiiVue vector annotations (ellipse / rectangle /
 // circle / line / arrow) + their stats labels, from the screen-projected shapes
 // NiiVue exposes as `annotationScreenShapes`. Geometry is in canvas/device
-// pixels, matching the overlay seam; nv-ohif's VolumeAnnotationOverlay draws it.
+// pixels, matching the overlay seam; draw it with UIKitLineOverlay + UIKitTextOverlay.
 
 import type { AnnotationScreenShape } from '@niivue/niivue'
 import {

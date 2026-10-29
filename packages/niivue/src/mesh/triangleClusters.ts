@@ -171,8 +171,8 @@ type CacheEntry = {
   positionsVersion: number
   dataVersion: number
   indicesHash: number
-  /** Hash of the positions the bounds were built from; null when unknown. */
-  positionsHash: number | null
+  /** Hash of the positions the bounds were built from. */
+  positionsHash: number
 }
 const _cache = new WeakMap<NVMesh, CacheEntry>()
 
@@ -202,9 +202,8 @@ function hashPositions(positions: ArrayLike<number>): number {
  * in-place position edit (`_positionsVersion`) only refreshes the bounds.
  * Any other `_dataVersion` bump (a setMesh that re-uploads the vertices)
  * refreshes the bounds when the positions hash differs, since it also uploads
- * positions edited in place without a version bump. The positions path never
- * hashes (it runs per frame during live updates); it only forgets the hash,
- * so the next data bump rehashes and refreshes once.
+ * positions edited in place without a version bump. Each bounds refresh
+ * stores the hash of the positions it read.
  */
 export function meshClusters(mesh: NVMesh): TriangleClusters {
   const positionsVersion = mesh._positionsVersion ?? 0
@@ -231,9 +230,10 @@ export function meshClusters(mesh: NVMesh): TriangleClusters {
           hit.clusters.bounds,
         )
         hit.positionsVersion = positionsVersion
+        // Hash what the bounds now hold, so a later data bump that finds the
+        // positions unchanged does not refresh them again.
+        hit.positionsHash = positionsHash ?? hashPositions(mesh.positions)
       }
-      // A positions-only refresh does not hash, so the stored hash is stale.
-      if (positionsHash !== null || isMoved) hit.positionsHash = positionsHash
       return hit.clusters
     }
   }

@@ -1,3 +1,28 @@
+## 1.0.0-rc.29 (2026-10-29)
+
+### Features
+
+- ⚠️  **niivue:** make per-item isLegendVisible work; one legend flag name ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+
+### Breaking Changes
+
+- **niivue:** make per-item isLegendVisible work; one legend flag name  ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+  signal display option `showLegend` is renamed
+  `isLegendVisible` (loadSignals, addSignal, setSignal).
+  Closes #350.
+  Closes #376.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.49
+- Updated uikit to 1.0.0-rc.38
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.28 (2026-10-28)
 
 ### Updated Dependencies

@@ -553,7 +553,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 ## Summary of Key Missing Features
 
 ### High Priority (Core Functionality)
-1. **Mesh overlay formats**: GIfTI, CIfTI-2, MZ3, FreeSurfer ANNOT layer readers
+1. **Mesh overlay formats**: CIfTI-2 and FreeSurfer ANNOT layer readers
 
 ### Medium Priority
 2. **3D rendering**: `setGradientOpacity`, custom gradient textures (MIP is now covered by `volumeRenderMode`)

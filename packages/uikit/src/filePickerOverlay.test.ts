@@ -96,18 +96,31 @@ describe('UIKitFilePickerOverlay', () => {
     expect(overlay.getFiles('f')).toEqual(['old.nii'])
   })
 
-  it('treats a rejected bridge as a cancel and opens once while pending', async () => {
-    let calls = 0
-    const { overlay, log, asked, press, settle } = make(() => {
-      calls++
-      return Promise.reject(new Error('no chooser'))
-    })
+  it('treats a rejected bridge as a cancel', async () => {
+    const { overlay, log, press, settle } = make(() =>
+      Promise.reject(new Error('no chooser')),
+    )
     press(BUTTON.x, BUTTON.y)
-    press(BUTTON.x, BUTTON.y)
-    expect(asked).toHaveLength(1)
     await settle()
-    expect(calls).toBe(1)
     expect(log).toEqual(['f:cancel'])
+    expect(overlay.isPending('f')).toBe(false)
+  })
+
+  it('reopens while pending and ignores the earlier chooser', async () => {
+    const resolvers: ((files: File[]) => void)[] = []
+    const { overlay, log, asked, press, settle } = make(
+      () => new Promise<File[]>((r) => resolvers.push(r)),
+    )
+    press(BUTTON.x, BUTTON.y)
+    press(BUTTON.x, BUTTON.y)
+    expect(asked).toHaveLength(2)
+    resolvers[0]([new File(['a'], 'stale.nii')])
+    await settle()
+    expect(log).toEqual([])
+    expect(overlay.isPending('f')).toBe(true)
+    resolvers[1]([new File(['b'], 'b.nii')])
+    await settle()
+    expect(log).toEqual(['f:pick:b.nii'])
     expect(overlay.isPending('f')).toBe(false)
   })
 

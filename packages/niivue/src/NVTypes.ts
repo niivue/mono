@@ -178,6 +178,7 @@ export type NVImage = {
   isColormapInverted?: boolean
   calMinNeg?: number
   calMaxNeg?: number
+  /** Colormap type, a `COLORMAP_TYPE` value (0 = MIN_TO_MAX, 1 = ZERO_TO_MAX_TRANSPARENT_BELOW_MIN, 2 = ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN). */
   colormapType?: number
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean
@@ -416,6 +417,7 @@ export type NVMeshLayer = {
   isColormapInverted: boolean
   /**
    * Colormap type controlling intensity-to-color mapping range and below-threshold alpha.
+   * A `COLORMAP_TYPE` value:
    * 0 = MIN_TO_MAX: lookup [calMin, calMax], values below calMin transparent (unless isTransparentBelowCalMin is false).
    * 1 = ZERO_TO_MAX_TRANSPARENT_BELOW_MIN: lookup [0, calMax], below calMin fully transparent.
    * 2 = ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN: lookup [0, calMax], below calMin alpha = pow(f/calMin, 2).
@@ -1475,7 +1477,10 @@ export type ImageFromUrlOptions = {
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */
   calMaxNeg?: number
-  /** Colormap type: 0=min-to-max, 1=zero-to-max (transparent below), 2=zero-to-max (translucent below) */
+  /**
+   * Colormap type, a `COLORMAP_TYPE` value: 0 = MIN_TO_MAX, 1 =
+   * ZERO_TO_MAX_TRANSPARENT_BELOW_MIN, 2 = ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN.
+   */
   colormapType?: number
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean
@@ -1541,7 +1546,11 @@ export type MeshLayerFromUrlOptions = {
   isColorbarVisible?: boolean
   /** Whether colormap lookup should be inverted */
   isColormapInverted?: boolean
-  /** Colormap type: 0=min-to-max, 1=zero-to-max (transparent below), 2=zero-to-max (translucent below). Default: 1. */
+  /**
+   * Colormap type, a `COLORMAP_TYPE` value: 0 = MIN_TO_MAX, 1 =
+   * ZERO_TO_MAX_TRANSPARENT_BELOW_MIN, 2 = ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN.
+   * Default: 1.
+   */
   colormapType?: number
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean

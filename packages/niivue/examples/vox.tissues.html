@@ -67,7 +67,11 @@
     <footer id="location">&nbsp;</footer>
     <script type="module">
       import { shiny } from '../src/assets/matcaps'
-      import NiiVue, { OVERLAY_ALPHA_BLEND, SHOW_RENDER } from '../src/index.ts'
+      import NiiVue, {
+        COLORMAP_TYPE,
+        OVERLAY_ALPHA_BLEND,
+        SHOW_RENDER,
+      } from '../src/index.ts'
 
       // Three partial-volume tissue maps (grey matter, white matter, CSF) over
       // the T1 they were segmented from, each with its own opacity slider.
@@ -129,7 +133,7 @@
         ...TISSUES.map((t) => ({
           url: `/volumes/${t.file}`,
           colormap: t.id,
-          colormapType: 1,
+          colormapType: COLORMAP_TYPE.ZERO_TO_MAX_TRANSPARENT_BELOW_MIN,
           // The window also scales the modulation weight, (f - calMin) / (calMax -
           // calMin), so 0..1 makes alpha the tissue fraction itself and the three
           // fractions sum to full opacity.

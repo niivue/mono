@@ -238,7 +238,7 @@ Note: `setDragMode(v)` still exists as a method (for string-to-number mapping).
 
 ### Volume Options
 Used by `loadVolumes()`, `addVolume()`, and `setVolume()`:
-- Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
+- Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType` (a `COLORMAP_TYPE` value)
 - Behavior: `isTransparentBelowCalMin`, `opacity`, `visible` (hide without changing `opacity`), `modulateAlpha`, `isNearestInterpolation` (2D sampling; unset = nearest for label data, linear otherwise)
 - UI: `isColorbarVisible`, `isLegendVisible`
 - 4D: `frame4D`, `limitFrames4D`
@@ -250,7 +250,7 @@ Used by `loadMeshes()`, `addMesh()`, and `setMesh()`:
 
 ### Layer Options
 Used by `addMeshLayer()` and `setMeshLayer()`:
-- Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
+- Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType` (a `COLORMAP_TYPE` value)
 - Behavior: `isTransparentBelowCalMin`, `isAdditiveBlend`, `isColormapInverted`, `opacity`
 - UI: `isColorbarVisible`, `outlineWidth`
 

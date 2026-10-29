@@ -85,4 +85,27 @@ describe('entry points', () => {
     // an event's detail has to be able to name the type too.
     expect(declared.filter((n) => !root.has(n))).toEqual([])
   })
+
+  // colormapType is a public option on ImageFromUrlOptions, NVMeshLayer and
+  // setVolume, so callers need the enum to avoid hard-coding 0/1/2. A missing
+  // runtime export fails at module link time, not at typecheck. The entries
+  // pull in Vite `?worker` imports, so they cannot be imported under bun test;
+  // check the value re-export (not `export type`) in each entry's source.
+  test('every entry re-exports the COLORMAP_TYPE enum as a value', async () => {
+    const { COLORMAP_TYPE } = await import('./NVConstants')
+    expect(COLORMAP_TYPE.MIN_TO_MAX).toBe(0)
+    expect(COLORMAP_TYPE.ZERO_TO_MAX_TRANSPARENT_BELOW_MIN).toBe(1)
+    expect(COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN).toBe(2)
+    for (const file of Object.values(ENTRY)) {
+      const source = await read(file)
+      const constants = [
+        ...source.matchAll(
+          /export[ \t]+\{([^}]*)\}[ \t]*from[ \t]+'\.\/NVConstants'/g,
+        ),
+      ]
+      expect(constants.length).toBe(1)
+      const names = constants[0][1].split(',').map((s) => s.trim())
+      expect(names).toContain('COLORMAP_TYPE')
+    }
+  })
 })

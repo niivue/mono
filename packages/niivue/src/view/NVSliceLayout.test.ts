@@ -10,6 +10,7 @@ import {
   crosshairRadiusMM,
   everyTileWindowMM,
   fitSlicesAndGraph,
+  isMirroredSliceTile,
   projectMMToNearestTile,
   projectMMToRenderTile,
   type SliceLayoutConfig,
@@ -298,8 +299,8 @@ describe('visibleWindowMM', () => {
   })
 
   test('radiologicalMirrorsTheScreenButNotTheWorldWindow', () => {
-    // The convention negates the ortho bounds AND panU, so what is on screen
-    // swaps sides while the mm interval it covers is identical. A helper that
+    // The convention swaps the ortho U bounds, so what is on screen swaps
+    // sides while the mm interval it covers is identical. A helper that
     // "handled" radiological would be wrong here.
     const pan = [7, -3, 11, 2]
     const neuro = visibleWindowMM(screenSlicesLayout(mpr()), pan)
@@ -812,5 +813,218 @@ describe('cloneSliceTile', () => {
     expect(tile.crossLines?.axialMM).toEqual([1, 2])
     expect(tile.pan).toEqual([7, 8])
     expect(tile.globalCamera?.position[0]).toBe(1)
+  })
+})
+
+// Radiological convention used to move the 2D camera to the other side of the
+// slice (axial seen from below, coronal from the front). The slice occludes
+// mesh geometry behind it, so that changed WHICH half of the meshThicknessOn2D
+// slab was drawn, not just its handedness. The camera now stays put and the
+// projection alone mirrors screen X.
+describe('radiological convention mirrors 2D slices in the projection only', () => {
+  const IDX = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 2, 0],
+  ]
+  const layouts: Record<string, Partial<SliceLayoutConfig>> = {
+    multiplanar: {},
+    hero: { heroImageFraction: 0.4, heroSliceType: 0 },
+    mosaic: { sliceMosaicString: 'A -10 10 C 0 S 0 ; A R 0 C R -0' },
+    axial: { sliceType: NVConstants.SLICE_TYPE.AXIAL },
+    coronal: { sliceType: NVConstants.SLICE_TYPE.CORONAL },
+    sagittal: { sliceType: NVConstants.SLICE_TYPE.SAGITTAL },
+  }
+  const isSlice = (t: SliceTile) =>
+    t.axCorSag !== NVConstants.SLICE_TYPE.RENDER && t.screen !== undefined
+  const pairs = (over: Partial<SliceLayoutConfig>) => {
+    const neuro = screenSlicesLayout(mpr(over))
+    const radio = screenSlicesLayout(
+      mpr({ ...over, isRadiologicalConvention: true }),
+    )
+    expect(radio.length).toBe(neuro.length)
+    return neuro.map((n, i) => [n, radio[i]] as const)
+  }
+  const ndc = (mvp: mat4, world: number[]) => {
+    const c = vec4.create()
+    vec4.transformMat4(c, vec4.fromValues(world[0], world[1], world[2], 1), mvp)
+    return [c[0] / c[3], c[1] / c[3], c[2] / c[3]]
+  }
+  const mvpFor = (
+    tile: SliceTile,
+    isRadiological: boolean,
+    pan: number[],
+    clipTolerance: number,
+    clipCenter: number[] | undefined,
+    zeroToOne: boolean,
+  ) =>
+    NVTransforms.calculateMvpMatrix2D(
+      tile.leftTopWidthHeight as number[],
+      Array.from((tile.screen as { mnMM: vec3 }).mnMM),
+      Array.from((tile.screen as { mxMM: vec3 }).mxMM),
+      clipTolerance,
+      clipCenter,
+      tile.azimuth as number,
+      tile.elevation as number,
+      isRadiological,
+      undefined,
+      undefined,
+      slicePanUV(pan, tile.axCorSag),
+      zeroToOne,
+    )
+
+  test('everySliceTileKeepsItsCameraSide', () => {
+    let checked = 0
+    for (const over of Object.values(layouts)) {
+      for (const [n, r] of pairs(over)) {
+        if (!isSlice(n)) continue
+        expect(r.azimuth).toBe(n.azimuth as number)
+        expect(r.elevation).toBe(n.elevation as number)
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(10)
+  })
+
+  test('mirroredProjectionNegatesNdcXAndKeepsYAndDepth', () => {
+    const centre = [
+      (EXTENTS_MIN[0] + EXTENTS_MAX[0]) / 2,
+      (EXTENTS_MIN[1] + EXTENTS_MAX[1]) / 2,
+      (EXTENTS_MIN[2] + EXTENTS_MAX[2]) / 2,
+    ]
+    // On the slice and up to 4 mm either side of it: both halves of the slab.
+    const points = [
+      [centre[0], centre[1], centre[2]],
+      [centre[0] + 13, centre[1] - 4, centre[2] + 4],
+      [centre[0] - 9, centre[1] + 3, centre[2] - 4],
+      [EXTENTS_MIN[0], EXTENTS_MAX[1], centre[2] + 2],
+    ]
+    let checked = 0
+    for (const over of Object.values(layouts)) {
+      for (const [n, r] of pairs(over)) {
+        if (!isSlice(n)) continue
+        for (const pan of [
+          [0, 0, 0, 1],
+          [7, -3, 11, 2.5],
+        ]) {
+          for (const [tol, clip] of [
+            [Infinity, undefined],
+            [5, centre],
+          ] as const) {
+            for (const zeroToOne of [false, true]) {
+              const a = mvpFor(n, false, pan, tol, clip, zeroToOne)
+              const b = mvpFor(r, true, pan, tol, clip, zeroToOne)
+              // Same camera: identical model (and normal) matrices, which is
+              // also what keeps mesh lighting the same in both conventions.
+              for (let k = 0; k < 16; k++) {
+                expect(b[1][k]).toBeCloseTo(a[1][k], 9)
+              }
+              for (const p of points) {
+                const pn = ndc(a[0], p)
+                const pr = ndc(b[0], p)
+                expect(pr[0]).toBeCloseTo(-pn[0], 9)
+                expect(pr[1]).toBeCloseTo(pn[1], 9)
+                expect(pr[2]).toBeCloseTo(pn[2], 9)
+                checked++
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(100)
+  })
+
+  test('theSameHalfOfTheSlabIsInFrontOfTheSliceInBothConventions', () => {
+    // Axial is seen from above, coronal from behind, sagittal from the right:
+    // that is the half of the slab the slice does not hide.
+    const towardCamera = [
+      [0, 0, 1],
+      [0, -1, 0],
+      [1, 0, 0],
+    ]
+    const centre = [20, 10, -15]
+    for (const isRadiological of [false, true]) {
+      const tiles = screenSlicesLayout(
+        mpr({ isRadiologicalConvention: isRadiological }),
+      ).filter(isSlice)
+      expect(tiles.length).toBe(3)
+      for (const tile of tiles) {
+        const [mvp] = mvpFor(
+          tile,
+          isRadiological,
+          [0, 0, 0, 1],
+          5,
+          centre,
+          true,
+        )
+        const dir = towardCamera[tile.axCorSag]
+        const near = centre.map((c, k) => c + 3 * dir[k])
+        const far = centre.map((c, k) => c - 3 * dir[k])
+        const zSlice = ndc(mvp, centre)[2]
+        expect(ndc(mvp, near)[2]).toBeLessThan(zSlice)
+        expect(ndc(mvp, far)[2]).toBeGreaterThan(zSlice)
+      }
+    }
+  })
+
+  test('mirrorReversesWindingAndOnlySliceTilesAreFlagged', () => {
+    // Signed screen area of an in-plane triangle: the mirror flips its sign,
+    // which is why culled geometry needs the opposite front face there.
+    const area = (mvp: mat4, tri: number[][]) => {
+      const [a, b, c] = tri.map((p) => ndc(mvp, p))
+      return (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])
+    }
+    const pan = [0, 0, 0, 1]
+    for (const over of Object.values(layouts)) {
+      for (const [n, r] of pairs(over)) {
+        if (!isSlice(n)) {
+          expect(isMirroredSliceTile(r, true)).toBe(false)
+          continue
+        }
+        expect(isMirroredSliceTile(n, false)).toBe(false)
+        expect(isMirroredSliceTile(r, true)).toBe(true)
+        const map = IDX[n.axCorSag]
+        const tri = [
+          [0, 0],
+          [10, 0],
+          [0, 10],
+        ].map(([u, v]) => {
+          const w = [0, 0, 0]
+          w[map[0]] = u
+          w[map[1]] = v
+          return w
+        })
+        const an = area(
+          mvpFor(n, false, pan, Infinity, undefined, true)[0],
+          tri,
+        )
+        const ar = area(mvpFor(r, true, pan, Infinity, undefined, true)[0], tri)
+        expect(an).not.toBe(0)
+        expect(Math.sign(ar)).toBe(-Math.sign(an))
+      }
+    }
+    expect(isMirroredSliceTile({ axCorSag: 0, space: 'global3d' }, true)).toBe(
+      false,
+    )
+  })
+
+  test('mosaicRenderTilesStillTurnTheirCamera', () => {
+    // Render ("R") tiles are not mirrored in the projection: radiological
+    // still turns their camera to the other side, as before.
+    const renders = pairs(layouts.mosaic).filter(
+      ([n]) => n.axCorSag === NVConstants.SLICE_TYPE.RENDER,
+    )
+    expect(renders.length).toBe(2)
+    for (const [n, r] of renders) {
+      if (n.renderOrientation === NVConstants.SLICE_TYPE.AXIAL) {
+        expect([n.azimuth, n.elevation]).toEqual([0, 90])
+        expect([r.azimuth, r.elevation]).toEqual([180, -90])
+      } else {
+        expect(r.elevation).toBe(n.elevation as number)
+        const turn = ((r.azimuth as number) - (n.azimuth as number) + 360) % 360
+        expect(turn).toBe(180)
+      }
+    }
   })
 })

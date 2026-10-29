@@ -1,6 +1,7 @@
 import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
 import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
 import meshShaderWGSL from './mesh.wgsl?raw'
+import { createMirrorablePipeline } from './mirrorPipeline'
 
 export const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
 export const MESH_UNIFORM_SIZE = 176
@@ -87,7 +88,7 @@ export function createMeshPipeline(
   cullMode: GPUCullMode = 'back',
 ): GPURenderPipeline {
   const shaderModule = device.createShaderModule({ code: meshShaderWGSL })
-  return device.createRenderPipeline({
+  return createMirrorablePipeline(device, {
     layout: pipelineLayout,
     vertex: {
       module: shaderModule,

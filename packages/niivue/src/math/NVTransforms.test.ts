@@ -793,17 +793,18 @@ function projectThroughSlice(
   axCorSag = 0,
   isRadiological = false,
 ): [number, number] {
-  // IDX_MAP and rotations(), mirrored from NVSliceLayout so this test pins the
-  // transform rather than the layout engine's current wiring to it.
+  // IDX_MAP and sliceRotation(), mirrored from NVSliceLayout so this test pins
+  // the transform rather than the layout engine's current wiring to it. The
+  // camera does not depend on the convention; the projection mirrors.
   const map = [
     [0, 1, 2],
     [0, 2, 1],
     [1, 2, 0],
   ][axCorSag]
   const rot = [
-    { azimuth: isRadiological ? 180 : 0, elevation: isRadiological ? -90 : 90 },
-    { azimuth: isRadiological ? 180 : 0, elevation: 0 },
-    { azimuth: isRadiological ? 90 : -90, elevation: 0 },
+    { azimuth: 0, elevation: 90 },
+    { azimuth: 0, elevation: 0 },
+    { azimuth: -90, elevation: 0 },
   ][axCorSag]
   const mn = [extentsMin[map[0]], extentsMin[map[1]], extentsMin[map[2]]]
   const mx = [extentsMax[map[0]], extentsMax[map[1]], extentsMax[map[2]]]

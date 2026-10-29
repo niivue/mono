@@ -4,6 +4,7 @@
 
 import { mat4 } from 'gl-matrix'
 import { log } from '@/logger'
+import { createMirrorablePipeline, mirroredPipeline } from './mirrorPipeline'
 import { volumeShaderPreamble } from './volumeShaderLib'
 
 // --- Volume depth-pick WGSL ---
@@ -332,7 +333,7 @@ export function init(
     const shaderModule = device.createShaderModule({
       code: volumeShaderPreamble + volumeDepthPickFragment,
     })
-    volumePipeline = device.createRenderPipeline({
+    volumePipeline = createMirrorablePipeline(device, {
       layout: device.createPipelineLayout({
         bindGroupLayouts: [volumeBindLayout],
       }),
@@ -375,7 +376,7 @@ export function init(
   let meshPipeline: GPURenderPipeline | null = null
   if (meshBindLayout) {
     const shaderModule = device.createShaderModule({ code: meshDepthPickWGSL })
-    meshPipeline = device.createRenderPipeline({
+    meshPipeline = createMirrorablePipeline(device, {
       layout: device.createPipelineLayout({
         bindGroupLayouts: [meshBindLayout],
       }),
@@ -434,6 +435,8 @@ export function init(
 
 export interface DepthPickDrawParams {
   device: GPUDevice
+  /** The picked tile is a mirrored 2D slice (see isMirroredSliceTile). */
+  isMirrored?: boolean
   // Volume
   volumeBindGroup: GPUBindGroup | null
   volumeVertexBuffer: GPUBuffer | null
@@ -506,7 +509,9 @@ export async function pick(
       0,
       params.volumeUniformData as Float32Array<ArrayBuffer>,
     )
-    pass.setPipeline(volumePipeline)
+    pass.setPipeline(
+      mirroredPipeline(device, volumePipeline, params.isMirrored ?? false),
+    )
     pass.setBindGroup(0, params.volumeBindGroup, [0])
     pass.setVertexBuffer(0, params.volumeVertexBuffer)
     pass.setIndexBuffer(params.volumeIndexBuffer, 'uint16')
@@ -523,7 +528,9 @@ export async function pick(
         0,
         m.uniformData as Float32Array<ArrayBuffer>,
       )
-      pass.setPipeline(meshPipeline)
+      pass.setPipeline(
+        mirroredPipeline(device, meshPipeline, params.isMirrored ?? false),
+      )
       pass.setBindGroup(0, m.bindGroup, [0])
       pass.setVertexBuffer(0, m.vertexBuffer)
       pass.setIndexBuffer(m.indexBuffer, 'uint32')

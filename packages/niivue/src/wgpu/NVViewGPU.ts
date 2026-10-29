@@ -68,6 +68,7 @@ import * as depthPick from './depthPick'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
+import { mirroredPipeline } from './mirrorPipeline'
 import { maxBlendSliceDim } from './orient'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
@@ -958,6 +959,14 @@ export default class NVView {
         volumes.find(
           (v) => v.name === tile.volumeId || v.url === tile.volumeId,
         ) ?? volumes[0]
+      // A mirrored (radiological) slice projection reverses triangle winding,
+      // so culled mesh/crosshair pipelines draw with their front-face twin.
+      const isMirrored = NVSliceLayout.isMirroredSliceTile(
+        tile,
+        md.layout.isRadiological,
+      )
+      const tilePipeline = (p: GPURenderPipeline | undefined) =>
+        p && mirroredPipeline(device, p, isMirrored)
       let [mvpMatrix, , normalMatrix, rayDir] = NVTransforms.calculateMvpMatrix(
         ltwh,
         md.scene.azimuth,
@@ -1332,7 +1341,7 @@ export default class NVView {
       const chSlot = crosshairSlot
       let chDrawn = false
       if (chRadiusMM > 0 && this.meshPipelines) {
-        const pipeline = this.meshPipelines.phong
+        const pipeline = tilePipeline(this.meshPipelines.phong)
         if (pipeline) {
           crosshairSlot++
           chDrawn = true
@@ -1356,7 +1365,7 @@ export default class NVView {
             md.volumes[0]?.oblique_angle ?? 0,
           )
           const hiddenTile = i + screenSlices.length
-          const hiddenPipeline = this.meshXRayPipelines?.phong
+          const hiddenPipeline = tilePipeline(this.meshXRayPipelines?.phong)
           if (
             hiddenAlpha > 0 &&
             hiddenPipeline &&
@@ -1436,7 +1445,7 @@ export default class NVView {
           const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
           const shaderType =
             (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
-          const pipeline = this.meshPipelines[shaderType]
+          const pipeline = tilePipeline(this.meshPipelines[shaderType])
           if (pipeline) {
             pass.setPipeline(pipeline)
             pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
@@ -1456,7 +1465,7 @@ export default class NVView {
         // Same vertex slot as Layer 2a: only the uniforms differ. Gated on that
         // pass having run, since the slot holds this tile's radius only if it did.
         if (chDrawn) {
-          const xPipeline = this.meshXRayPipelines.phong
+          const xPipeline = tilePipeline(this.meshXRayPipelines.phong)
           if (xPipeline) {
             this.crosshairRenderer.drawXRay(
               device,
@@ -1492,7 +1501,7 @@ export default class NVView {
             const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
             const shaderType =
               (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
-            const xPipeline = this.meshXRayPipelines[shaderType]
+            const xPipeline = tilePipeline(this.meshXRayPipelines[shaderType])
             if (xPipeline) {
               pass.setPipeline(xPipeline)
               pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
@@ -3073,6 +3082,10 @@ export default class NVView {
     // Run the depth-pick render + readback
     const result = await depthPick.pick({
       device,
+      isMirrored: NVSliceLayout.isMirroredSliceTile(
+        tile,
+        md.layout.isRadiological,
+      ),
       volumeBindGroup: vr.bindGroup,
       volumeVertexBuffer: vr.vertexBuffer,
       volumeIndexBuffer: vr.indexBuffer,

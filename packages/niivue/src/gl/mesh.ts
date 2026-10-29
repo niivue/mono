@@ -191,6 +191,10 @@ const _crosscut2 = new WeakMap<WebGLMeshGPU, Crosscut2Gpu>()
 // Meshes too large for the textures: warned once, then skipped.
 const _tooLarge = new WeakSet<WebGLMeshGPU>()
 
+// The size each word texture was allocated with, so a refill of the same
+// size (a live vertex update) writes into it instead of reallocating.
+const _wordTextureSize = new WeakMap<WebGLTexture, [number, number]>()
+
 // Fill an R32UI texture (up to MAX_TEXTURE_SIZE wide) with `count` words from
 // a GL buffer (copied on the GPU, no CPU readback) or an array. Full rows go
 // in one upload and the partial last row in another, so neither source is
@@ -208,20 +212,24 @@ function uploadWordTexture(
   const fullRows = Math.floor(count / width)
   const rest = count - fullRows * width
   gl.bindTexture(gl.TEXTURE_2D, tex)
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.R32UI,
-    width,
-    rows,
-    0,
-    gl.RED_INTEGER,
-    gl.UNSIGNED_INT,
-    null,
-  )
-  // Integer textures are incomplete (texelFetch reads 0) unless unfiltered.
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  const size = _wordTextureSize.get(tex)
+  if (!size || size[0] !== width || size[1] !== rows) {
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R32UI,
+      width,
+      rows,
+      0,
+      gl.RED_INTEGER,
+      gl.UNSIGNED_INT,
+      null,
+    )
+    // Integer textures are incomplete (texelFetch reads 0) unless unfiltered.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    _wordTextureSize.set(tex, [width, rows])
+  }
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
   const fromArray = src instanceof Uint32Array
   if (!fromArray) gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, src)

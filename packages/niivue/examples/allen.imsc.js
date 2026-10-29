@@ -60,9 +60,6 @@ const nv1 = new NiiVue({
   showRender: SHOW_RENDER.ALWAYS,
   isColorbarVisible: false,
 })
-webgpuCheck.onchange = async function () {
-  await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
-}
 window.nv1 = nv1
 nv1.addEventListener('locationChange', (e) => {
   footer.textContent = e.detail.string
@@ -277,6 +274,11 @@ function commit(step) {
   const done = commits.then(step)
   commits = done.catch(() => {})
   return done
+}
+
+webgpuCheck.onchange = async function () {
+  const backend = this.checked ? 'webgpu' : 'webgl2'
+  await commit(() => nv1.reinitializeView({ backend }))
 }
 
 // Re-window the loaded layers after a control changes. A drag queues one

@@ -2298,14 +2298,7 @@ export default class NiiVue extends EventTarget {
     this.model.annotation.isEnabled = v
     // Leaving annotation mode abandons any half-drawn multi-click contour so its
     // preview does not linger.
-    if (!v) {
-      this._annotationPolyPoints = null
-      this._bidirectionalLong = null
-      this.model._annotationPreview = null
-      this._livewireSlice = null
-      this._livewireField = null
-      this._livewireSeed = null
-    }
+    if (!v) this._abandonAnnotationInProgress()
     this.emit('change', { property: 'annotationIsEnabled', value: v })
     this.drawScene()
   }
@@ -2373,19 +2366,26 @@ export default class NiiVue extends EventTarget {
     return this.model.annotation.tool
   }
   set annotationTool(v: AnnotationTool) {
+    // Re-selecting the current tool (e.g. an app mirroring its toolbar) must
+    // not wipe a half-drawn contour (#112).
+    if (v === this.model.annotation.tool) return
     this.model.annotation.tool = v
     this.model._annotationSelection = null
     // Switching tools abandons any half-drawn multi-click / bidirectional shape.
-    if (this._annotationPolyPoints || this._bidirectionalLong) {
-      this._annotationPolyPoints = null
-      this._bidirectionalLong = null
-      this.model._annotationPreview = null
-      this._livewireSlice = null
-      this._livewireField = null
-      this._livewireSeed = null
-    }
+    if (this._annotationPolyPoints || this._bidirectionalLong)
+      this._abandonAnnotationInProgress()
     this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()
+  }
+
+  /** Drop a half-drawn multi-click contour or bidirectional measurement. */
+  _abandonAnnotationInProgress(): void {
+    this._annotationPolyPoints = null
+    this._bidirectionalLong = null
+    this.model._annotationPreview = null
+    this._livewireSlice = null
+    this._livewireField = null
+    this._livewireSeed = null
   }
 
   get selectedAnnotation(): string | null {
@@ -6899,6 +6899,11 @@ export default class NiiVue extends EventTarget {
     // Loads deferred behind an earlier thumbnail would replace the document.
     this._deferredVolumes = null
     this._deferredMeshes = null
+    // A half-drawn shape, the selection and annotation undo belong to the old
+    // scene (#113).
+    this._abandonAnnotationInProgress()
+    this.model._annotationSelection = null
+    this._annotationUndoStack.clear()
 
     // Apply non-data state (scene, config, display settings). Settings the
     // document omits are filled per the fill policy (default: reset to defaults).

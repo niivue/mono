@@ -1,4 +1,3 @@
-import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 /**
  * NiiVue Extension Context — implementation.
  *
@@ -393,7 +392,7 @@ export function computeSlicePointerEvent(
   if (!vol?.matRAS || !vol.dimsRAS) return null
 
   const rect = nv.canvas.getBoundingClientRect()
-  const dpr = effectiveDevicePixelRatio(nv.opts?.forceDevicePixelRatio)
+  const dpr = nv.effectiveDevicePixelRatio
   const canvasX = (evt.clientX - rect.left) * dpr
   const canvasY = (evt.clientY - rect.top) * dpr
 

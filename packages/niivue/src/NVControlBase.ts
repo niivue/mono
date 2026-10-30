@@ -6500,7 +6500,11 @@ export default class NiiVue extends EventTarget {
   resize(): void {
     if (!this.view) return
     this.view.resize()
-    if (this.opts.instances) this.updateTilesFromInstances()
+    if (this.opts.instances) {
+      // view.resize() drew with the old tiles; draw again with the new ones.
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
   }
 
   /**

@@ -428,7 +428,7 @@ export async function reinitializeView(
     } else {
       // Only pixelRatio changed — resize without recreating
       if (ctrl.view) ctrl.view.forceDevicePixelRatio = newPixelRatio
-      ctrl.view?.resize()
+      ctrl.resize()
     }
     return true
   } catch (err) {

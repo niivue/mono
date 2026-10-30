@@ -153,7 +153,7 @@ export async function reinitializeView(
       await recreateView(ctrl)
     } else {
       if (ctrl.view) ctrl.view.forceDevicePixelRatio = newPixelRatio
-      ctrl.view?.resize()
+      ctrl.resize()
     }
     return true
   } catch (err) {

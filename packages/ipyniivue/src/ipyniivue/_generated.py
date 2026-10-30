@@ -959,8 +959,8 @@ and its volumes alive."""
         the top-left, y down. These are NOT CSS pixels, and for an instance
         sharing one canvas via `bounds` they are bounds-local (the instance's own
         pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
-        event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
-        the bounds offset exactly as the built-in pointer handlers do.
+        event; it applies {@link effectiveDevicePixelRatio} and the bounds
+        offset exactly as the built-in pointer handlers do.
 
         Returns the tile index, its slice type, whether it is a 3D render tile,
         and the position normalized to the tile rect (half-open [0,1), y down);
@@ -1160,7 +1160,7 @@ and its volumes alive."""
         those).
 
         The returned x/y are canvas backing-store pixels (see {@link hitTest});
-        divide by the effective devicePixelRatio to position CSS-pixel-sized
+        divide by {@link effectiveDevicePixelRatio} to position CSS-pixel-sized
         overlay elements. The point may project outside the winning tile's rect
         when panned/zoomed out of view — clip against the tile's
         `leftTopWidthHeight` if needed. Returns null before the first render or

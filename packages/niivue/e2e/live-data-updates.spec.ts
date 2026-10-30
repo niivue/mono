@@ -551,9 +551,9 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       readback.height = canvas.height
       const ctx = readback.getContext('2d', { willReadFrequently: true })
       if (!ctx) return { skip: 'no 2D readback context' }
-      // The masking setter rebuilds the overlays without being awaited, and a
-      // call that arrives mid-rebuild only queues a follow-up, so wait for the
-      // update lock to clear before the next step (remove with #447).
+      // The masking setter rebuilds the overlays without being awaited. An
+      // awaited update queued behind it waits for its own rebuild (#447), but
+      // a pixel read straight after the setter must wait for the lock.
       const settle = async () => {
         while (nv._updating) await nv._updateIdle
       }
@@ -692,7 +692,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
 
       // ---- background masking: it must not free the kept overlay texture ----
       nv.volumeIsBackgroundMasking = true
-      await settle()
       await nv.updateVolumeData(1, zeros)
       const maskZeroed = await litPixels()
       await nv.updateVolumeData(1, original)
@@ -729,7 +728,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       await nv.updateVolumeData(1, scalarOriginal)
       const scalarRestored = await redPixels()
       nv.volumeIsBackgroundMasking = false
-      await settle()
 
       // ---- a modulator edited in place keeps its target's orient cache ----
       const bg = nv.volumes[0]

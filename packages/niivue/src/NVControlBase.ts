@@ -462,6 +462,11 @@ export default class NiiVue extends EventTarget {
   private _updateIdle: Promise<void> = Promise.resolve()
   private _resolveUpdateIdle: (() => void) | null = null
   private _pendingUpdate = false
+  /** Callers queued behind `_updating`, settled by the follow-up carrying their change. */
+  private _pendingWaiters: {
+    resolve: () => void
+    reject: (err: unknown) => void
+  }[] = []
   /** A full (not affine-only) update is queued behind `_updating`. */
   private _pendingFull = false
   /** The mesh rebuild covering every update queued behind `_updating`. */
@@ -2638,7 +2643,7 @@ export default class NiiVue extends EventTarget {
       this._pendingColorbars ||= colorbars
       if (changed) for (const v of changed) this._pendingVolumes.add(v)
       else this._pendingAllVolumes = true
-      return
+      return this._queueBehindUpdate()
     }
     const token = this._beginUpdate()
     try {
@@ -2700,7 +2705,31 @@ export default class NiiVue extends EventTarget {
     this._pendingAllVolumes = false
     this._pendingVolumes.clear()
     this._pendingColorbars = false
-    await this._updateGL(pendingMeshes, pendingVolumes, pendingColorbars)
+    await this._runFollowUp(() =>
+      this._updateGL(pendingMeshes, pendingVolumes, pendingColorbars),
+    )
+  }
+
+  /** A promise for a caller queued behind `_updating`: it settles with the follow-up. */
+  private _queueBehindUpdate(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this._pendingWaiters.push({ resolve, reject })
+    })
+  }
+
+  /**
+   * Run a follow-up and settle the callers queued for it with its outcome. Its
+   * failure goes to them, not to the update whose `finally` started it.
+   */
+  private async _runFollowUp(run: () => Promise<void>): Promise<void> {
+    const waiters = this._pendingWaiters
+    this._pendingWaiters = []
+    try {
+      await run()
+      for (const w of waiters) w.resolve()
+    } catch (err) {
+      for (const w of waiters) w.reject(err)
+    }
   }
 
   /**
@@ -2749,7 +2778,7 @@ export default class NiiVue extends EventTarget {
       // A moved volume needs every volume resliced, not a data-only scope.
       this._pendingAllVolumes = true
       if (hasDirty) this._pendingFull = true
-      return
+      return this._queueBehindUpdate()
     }
     const token = this._beginUpdate()
     try {
@@ -2773,7 +2802,7 @@ export default class NiiVue extends EventTarget {
         } else if (this._pendingUpdate) {
           this._pendingUpdate = false
           this._pendingAllVolumes = false
-          await this.updateVolumeAffineOnly()
+          await this._runFollowUp(() => this.updateVolumeAffineOnly())
         }
       }
     }

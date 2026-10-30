@@ -144,7 +144,8 @@ export function registerSettingTools(
       'A choice is given by its word (a drag mode, a pen shape, a render mode), a colour as ' +
       '[red, green, blue, alpha] 0 to 1, an object setting (volumeCinematic) as any of its fields, ' +
       'the rest kept. Every value is checked before any is set, so a bad one ' +
-      'changes nothing. Reports the settings as they are afterwards.',
+      'changes nothing. Answers once any GPU rebuild the change started has finished, so a ' +
+      'screenshot taken next shows it, and reports the settings as they are afterwards.',
     inputSchema: SETTING_SCHEMAS.set_options,
   })
 

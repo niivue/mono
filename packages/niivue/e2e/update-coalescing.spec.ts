@@ -56,3 +56,33 @@ test('a queued update settles with the follow-up that carries it', async ({
     'first ok',
   ])
 })
+
+test('whenUpdatesSettle waits for a rebuild a setter started', async ({
+  page,
+}) => {
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const canvas = document.createElement('canvas')
+    canvas.style.cssText = 'width:200px;height:200px'
+    document.body.appendChild(canvas)
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachToCanvas(canvas)
+    await nv.loadVolumes([{ url: '/volumes/sphere.nii.gz' }])
+    const view = nv.view as unknown as {
+      updateBindGroups: (o?: unknown) => Promise<void>
+    }
+    const rebuild = view.updateBindGroups.bind(view)
+    const log: string[] = []
+    view.updateBindGroups = async (o) => {
+      await rebuild(o)
+      log.push('rebuild')
+    }
+    // The second setter queues a follow-up behind the first rebuild.
+    nv.volumeIsBackgroundMasking = true
+    nv.volumeIsBackgroundMasking = false
+    await nv.whenUpdatesSettle()
+    log.push('settled')
+    return log
+  })
+  expect(r).toEqual(['rebuild', 'rebuild', 'settled'])
+})

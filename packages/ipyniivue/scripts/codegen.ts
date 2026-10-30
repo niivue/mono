@@ -48,6 +48,10 @@ const NON_SERIALIZABLE_METHODS = new Map<string, string>([
     'arguments are not JSON-serializable (DOM handle or JS object)',
   ],
   [
+    'loadFiles',
+    'argument is not JSON-serializable (browser File objects; use add_volume / add_mesh with a URL or bytes)',
+  ],
+  [
     'getScreenTiles',
     'return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)',
   ],

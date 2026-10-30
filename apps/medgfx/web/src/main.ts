@@ -1,6 +1,9 @@
 import NiiVue from '@niivue/niivue'
 import { createBridge } from '@niivue/web-bridge/bridge'
-import { wireNiiVueToBridge } from '@niivue/web-bridge/niivue-controller'
+import {
+  loadDroppedFiles,
+  wireNiiVueToBridge,
+} from '@niivue/web-bridge/niivue-controller'
 
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id)
@@ -26,6 +29,23 @@ const nv = new NiiVue({
   // panel's checkbox restores, and it must match `NiiVueModel.meshXRayOnValue`
   // so the cell hydrates to `true` on ready instead of flipping the box off.
   meshXRay: 0.05,
+  // NiiVue's own drop replaces per file and ignores modifiers; see the drop
+  // listener below.
+  isDragDropEnabled: false,
+})
+
+// A drop replaces the scene; holding Cmd or Ctrl adds to it, matching the
+// native drop target. Drops run one at a time so a second cannot replace the
+// scene halfway through the first. NiiVue still calls preventDefault on the
+// canvas, so WebKit never navigates to the file.
+let drops = Promise.resolve()
+document.addEventListener('drop', (event) => {
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length === 0) return
+  const add = event.metaKey || event.ctrlKey
+  drops = drops
+    .then(() => loadDroppedFiles(nv, files, add))
+    .catch((err) => console.error('drop failed', err))
 })
 
 // Bridge handler name + JS global default to 'niivue' / '__niivueBridge';

@@ -12,10 +12,11 @@ const setup = (
   sliceType: string,
   tool: string,
   volume = '/volumes/mni152.nii.gz',
+  width = 400,
 ) => `
   const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
   const c = document.createElement('canvas')
-  c.style.cssText = 'position:fixed;left:0;top:0;width:400px;height:400px'
+  c.style.cssText = 'position:fixed;left:0;top:0;width:${width}px;height:400px'
   document.body.appendChild(c)
   const nv = new NiiVue({
     backend: 'webgl2',
@@ -30,11 +31,23 @@ const setup = (
   c.setPointerCapture = () => {}
   c.releasePointerCapture = () => {}
   const r = c.getBoundingClientRect()
-  const ev = (type, x, y, button, Ctor = PointerEvent) => c.dispatchEvent(new Ctor(type, {
+  const ev = (type, x, y, button, Ctor = PointerEvent, buttons = 1) => c.dispatchEvent(new Ctor(type, {
     pointerId: 1, bubbles: true, cancelable: true,
     clientX: r.left + x, clientY: r.top + y,
-    button, buttons: 1, pointerType: 'mouse',
+    button, buttons, pointerType: 'mouse',
   }))
+  // Centre of the bounding box of the canvas points whose tile matches.
+  const tileCentre = (match) => {
+    const pts = []
+    for (let y = 5; y < 400; y += 5) {
+      for (let x = 5; x < ${width}; x += 5) {
+        const t = nv.view.hitTest(x, y)
+        if (t && match(t)) pts.push([x, y])
+      }
+    }
+    return [0, 1].map((i) =>
+      (Math.min(...pts.map((p) => p[i])) + Math.max(...pts.map((p) => p[i]))) / 2)
+  }
   const drag = (a, b) => {
     ev('pointerdown', a[0], a[1], 0)
     ev('pointermove', b[0], b[1], -1)
@@ -153,23 +166,10 @@ test('a double-click on the 3D render tile does not close a contour (#114)', asy
   test.setTimeout(90_000)
   const r = await page.evaluate(`(async () => {
     ${setup('MULTIPLANAR', 'spline')}
-    // Find a point in the axial tile and the centre of the render tile, where
-    // a depth pick hits the brain and would move the crosshair.
-    let axial = null
-    const renderPts = []
-    for (let y = 5; y < 400; y += 10) {
-      for (let x = 5; x < 400; x += 10) {
-        const t = nv.view.hitTest(x, y)
-        if (!t) continue
-        if (t.isRender) renderPts.push([x, y])
-        else if (t.sliceType === SLICE_TYPE.AXIAL) axial ??= [x, y]
-      }
-    }
-    const mid = (i) =>
-      (Math.min(...renderPts.map((p) => p[i])) +
-        Math.max(...renderPts.map((p) => p[i]))) / 2
-    const render = [mid(0), mid(1)]
-    const [ax, ay] = axial
+    // The centre of the render tile is on the brain, where a depth pick would
+    // move the crosshair.
+    const render = tileCentre((t) => t.isRender)
+    const [ax, ay] = tileCentre((t) => !t.isRender && t.sliceType === SLICE_TYPE.AXIAL)
     click([ax, ay])
     click([ax + 6, ay])
     click([ax + 3, ay + 6])
@@ -191,6 +191,34 @@ test('a double-click on the 3D render tile does not close a contour (#114)', asy
   expect(r.count).toBe(1)
 })
 
+test('a double-click on graph zoom-out still resets the graph mid-contour', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'spline', undefined, 1600)}
+    // Wide enough for the graph's pan/zoom buttons.
+    await nv.loadSignals([{ url: '/signals/svs_se_30.nii.gz' }])
+    nv.isGraphVisible = true
+    nv.graphZoom(2).graphZoom(2)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const zoomed = nv.model.signalViewWindow !== null
+    const [ax, ay] = tileCentre((t) => !t.isRender)
+    click([ax, ay])
+    click([ax + 6, ay])
+    click([ax + 3, ay + 6])
+    const b = nv.view.graphLayout.controls.find((k) => k.id === 'zoomOut')
+    ev('dblclick', b.x + b.w / 2, b.y + b.h / 2, 0, MouseEvent)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    return {
+      zoomed,
+      reset: nv.model.signalViewWindow === null,
+      points: nv._annotationPolyPoints?.length ?? 0,
+    }
+  })()`)
+  expect(r).toEqual({ zoomed: true, reset: true, points: 3 })
+})
+
 // The 2D slice check reads texture depth, which chunking and the 3D explode
 // leave alone; the exploded-block 3D stroke is axis-aligned volumes only.
 for (const [volume, oblique] of [
@@ -201,7 +229,7 @@ for (const [volume, oblique] of [
     page,
   }) => {
     test.setTimeout(90_000)
-    const added = await page.evaluate(`(async () => {
+    const kinds = await page.evaluate(`(async () => {
       ${setup('MULTIPLANAR', 'bidirectional', volume)}
       await nv.setVolumeChunkGrid(0, [2, 2, 2])
       await nv.setVolumeChunkExplode(0, { enabled: true, scale: [1.5, 1.5, 1.5] })
@@ -210,18 +238,7 @@ for (const [volume, oblique] of [
       const added = []
       nv.addEventListener('annotationAdded', (e) =>
         added.push(e.detail.annotation.shape?.type ?? 'freehand'))
-      const axial = []
-      const render = []
-      for (let y = 5; y < 400; y += 5) {
-        for (let x = 5; x < 400; x += 5) {
-          const t = nv.view.hitTest(x, y)
-          if (t?.isRender) render.push([x, y])
-          else if (t?.sliceType === SLICE_TYPE.AXIAL) axial.push([x, y])
-        }
-      }
-      const centre = (pts) => [0, 1].map((i) =>
-        (Math.min(...pts.map((p) => p[i])) + Math.max(...pts.map((p) => p[i]))) / 2)
-      const [ax, ay] = centre(axial)
+      const [ax, ay] = tileCentre((t) => !t.isRender && t.sliceType === SLICE_TYPE.AXIAL)
       drag([ax - 20, ay], [ax + 20, ay])
       drag([ax, ay - 10], [ax, ay + 10])
       nv.annotationTool = 'spline'
@@ -232,21 +249,16 @@ for (const [volume, oblique] of [
       await new Promise((resolve) => setTimeout(resolve, 100))
       // A right-drag on a block in the 3D render draws a vector stroke.
       nv.annotationTool = 'freehand'
-      const [rx, ry] = centre(render)
-      const rev = (type, x, y, button, buttons) => c.dispatchEvent(new PointerEvent(type, {
-        pointerId: 1, bubbles: true, cancelable: true,
-        clientX: r.left + x, clientY: r.top + y,
-        button, buttons, pointerType: 'mouse',
-      }))
-      rev('pointerdown', rx - 6, ry - 6, 2, 2)
-      rev('pointermove', rx + 6, ry - 6, -1, 2)
-      rev('pointermove', rx + 6, ry + 6, -1, 2)
-      rev('pointermove', rx - 6, ry + 6, -1, 2)
-      rev('pointerup', rx - 6, ry + 6, 2, 0)
+      const [rx, ry] = tileCentre((t) => t.isRender)
+      ev('pointerdown', rx - 6, ry - 6, 2, PointerEvent, 2)
+      ev('pointermove', rx + 6, ry - 6, -1, PointerEvent, 2)
+      ev('pointermove', rx + 6, ry + 6, -1, PointerEvent, 2)
+      ev('pointermove', rx - 6, ry + 6, -1, PointerEvent, 2)
+      ev('pointerup', rx - 6, ry + 6, 2, PointerEvent, 0)
       return added
     })()`)
     // Oblique: the spline is #469 and the 3D stroke skips oblique volumes.
-    expect(added).toEqual(
+    expect(kinds).toEqual(
       oblique ? ['bidirectional'] : ['bidirectional', 'spline', 'freehand'],
     )
   })

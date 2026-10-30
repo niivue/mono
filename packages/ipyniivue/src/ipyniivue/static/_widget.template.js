@@ -141,6 +141,7 @@ const PROPS_RO = [
   ["backend", "backend"],
   ["colormaps", "colormaps"],
   ["drawingColormaps", "drawing_colormaps"],
+  ["effectiveDevicePixelRatio", "effective_device_pixel_ratio"],
   ["isAnimating", "is_animating"],
   ["isAntiAlias", "is_anti_alias"],
   ["isDestroyed", "is_destroyed"],

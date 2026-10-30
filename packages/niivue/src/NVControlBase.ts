@@ -907,8 +907,9 @@ export default class NiiVue extends EventTarget {
    * {@link getScreenTiles} use. This is the exact conversion the built-in
    * pointer handlers apply, so a caller never has to reproduce it:
    * `(client - canvas rect origin) * dpr`, where `dpr` is
-   * {@link effectiveDevicePixelRatio}; then, for an instance sharing a canvas via `bounds`, minus the origin of
-   * this instance's post-viewport pixel rect.
+   * {@link effectiveDevicePixelRatio}; then, for an instance sharing a
+   * canvas via `bounds`, minus the origin of this instance's post-viewport
+   * pixel rect.
    *
    * Returns null when the instance has no canvas or, for a `bounds` instance,
    * when the point is outside this instance's rect (a sibling's area) or the

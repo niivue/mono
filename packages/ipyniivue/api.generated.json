@@ -1384,6 +1384,17 @@
       "doc": null
     },
     {
+      "jsName": "effectiveDevicePixelRatio",
+      "pyName": "effective_device_pixel_ratio",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "The device pixel ratio the canvas renders at: the `devicePixelRatio`\noption when it is above 0, else `window.devicePixelRatio`. Client (CSS)\npixels times this are canvas pixels."
+    },
+    {
       "jsName": "isAnimating",
       "pyName": "is_animating",
       "tsType": "boolean",
@@ -2070,7 +2081,7 @@
         }
       ],
       "returns": "[number, number] | null",
-      "doc": "Convert a pointer event's client position to the canvas pixel space that\n{@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and\n{@link getScreenTiles} use. This is the exact conversion the built-in\npointer handlers apply, so a caller never has to reproduce it:\n`(client - canvas rect origin) * dpr`, where `dpr` is\n`window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;\nthen, for an instance sharing a canvas via `bounds`, minus the origin of\nthis instance's post-viewport pixel rect.\n\nReturns null when the instance has no canvas or, for a `bounds` instance,\nwhen the point is outside this instance's rect (a sibling's area) or the\nrect is offscreen.",
+      "doc": "Convert a pointer event's client position to the canvas pixel space that\n{@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and\n{@link getScreenTiles} use. This is the exact conversion the built-in\npointer handlers apply, so a caller never has to reproduce it:\n`(client - canvas rect origin) * dpr`, where `dpr` is\n{@link effectiveDevicePixelRatio}; then, for an instance sharing a\ncanvas via `bounds`, minus the origin of this instance's post-viewport\npixel rect.\n\nReturns null when the instance has no canvas or, for a `bounds` instance,\nwhen the point is outside this instance's rect (a sibling's area) or the\nrect is offscreen.",
       "returnsDoc": null
     },
     {

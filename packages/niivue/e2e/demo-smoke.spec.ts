@@ -54,6 +54,9 @@ test.describe('demo pages load cleanly', () => {
         problems.push(`console: ${text}`)
       })
       page.on('requestfailed', (req) => {
+        // A partial 4D load (limitFrames4D) cancels its fetch once it has the
+        // frames; a missing asset shows up as an HTTP status below instead.
+        if (req.failure()?.errorText === 'net::ERR_ABORTED') return
         const line = `request failed: ${req.url()}`
         if (isLocal(req.url())) problems.push(line)
         else remote.push(line)

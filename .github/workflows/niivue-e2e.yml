@@ -105,6 +105,9 @@ jobs:
         working-directory: packages/niivue
         run: bunx playwright install chromium
 
+      # e2e/uikit-overlay-hook.spec.ts imports the built bundle.
+      - run: bunx nx build uikit
+
       - name: Full e2e suite
         working-directory: packages/niivue
         # The excluded specs fail on real Metal only (issue #453).

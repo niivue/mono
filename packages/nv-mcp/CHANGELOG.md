@@ -1,3 +1,19 @@
+## 1.0.0-rc.42 (2026-10-30)
+
+### Features
+
+- **niivue:** expose nv.version and report it in nv-mcp capabilities ([#257](https://github.com/niivue/mono/issues/257))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.60
+- Updated uikit to 1.0.0-rc.51
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.41 (2026-10-30)
 
 ### Updated Dependencies

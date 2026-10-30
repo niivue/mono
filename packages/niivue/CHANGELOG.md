@@ -1,3 +1,20 @@
+## 1.0.0-rc.60 (2026-10-30)
+
+### Features
+
+- **niivue:** expose nv.version and report it in nv-mcp capabilities ([#257](https://github.com/niivue/mono/issues/257))
+
+### Fixes
+
+- **niivue:** keep declaration output rooted at src ([483090b8](https://github.com/niivue/mono/commit/483090b8))
+- **niivue:** 'v' hotkey logs package version instead of hardcoded string ([d76ab7fd](https://github.com/niivue/mono/commit/d76ab7fd))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.59 (2026-10-30)
 
 ### Fixes

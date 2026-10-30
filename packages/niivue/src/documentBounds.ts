@@ -43,6 +43,30 @@ export function assertDocumentFitsInput(
   visit(doc)
   while (stack.length > 0) {
     const v = stack.pop() as object
-    for (const item of Array.isArray(v) ? v : Object.values(v)) visit(item)
+    // cbor-x decodes Sets and Maps, whose entries Object.values does not list.
+    const items =
+      v instanceof Map
+        ? [...v.keys(), ...v.values()]
+        : v instanceof Set || Array.isArray(v)
+          ? v
+          : Object.values(v)
+    for (const item of items) visit(item)
   }
+}
+
+/**
+ * Whether an embedded image has at least one byte per voxel its header claims.
+ * The header sizes later buffers (a drawing allocates one byte per voxel), and
+ * only the image bytes are charged against the file. One byte, not the
+ * header's bit depth, since the saved image may be stored narrower.
+ */
+export function isEmbeddedImageComplete(
+  dims: number[],
+  imgByteLength: number,
+): boolean {
+  const [, x, y, z] = dims
+  return (
+    [x, y, z].every((n) => Number.isSafeInteger(n) && n > 0) &&
+    x * y * z <= imgByteLength
+  )
 }

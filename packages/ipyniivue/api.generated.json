@@ -2141,7 +2141,7 @@
         }
       ],
       "returns": "void",
-      "doc": "Create a drawing surface in *slide* space for the registered slide plane.\nThe annotation is a label raster covering the whole slide (sized to the\nslide aspect, long edge capped at `maxRaster`, default 4096) and is painted\nwith the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,\ndrawLine and the RLE undo stack), so it stays in slide coordinates and is\ncompatible with the volume drawing functions. Requires {@link setSlidePlane}.",
+      "doc": "Create a drawing surface in *slide* space for the registered slide plane.\nThe annotation is a label raster covering the whole slide (sized to the\nslide aspect, long edge capped at `maxRaster`, default 4096, and at most\n4096 x 4096 pixels in total so a saved drawing always loads) and is painted\nwith the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,\ndrawLine and the RLE undo stack), so it stays in slide coordinates and is\ncompatible with the volume drawing functions. Requires {@link setSlidePlane}.",
       "returnsDoc": null
     },
     {

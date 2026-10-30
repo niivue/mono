@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { decode, Encoder, encode } from 'cbor-x'
-import { assertDocumentFitsInput } from './documentBounds'
+import {
+  assertDocumentFitsInput,
+  isEmbeddedImageComplete,
+} from './documentBounds'
 import { decodeDocumentJSON, encodeDocumentJSON } from './documentJson'
 
 // The encoder `saveDocument` never uses, but a hostile file can: it writes
@@ -62,5 +65,37 @@ describe('assertDocumentFitsInput', () => {
     expect(() => assertDocumentFitsInput(decode(bytes), bytes.length)).toThrow(
       /expand beyond/,
     )
+  })
+
+  test('refuses shared arrays inside a Set or a Map', () => {
+    const fid = new Uint8Array(100_000)
+    const signals = new Set(
+      Array.from({ length: 50 }, (_, i) => ({ id: i, fid })),
+    )
+    const map = new Map(Array.from({ length: 50 }, (_, i) => [i, fid]))
+    for (const doc of [
+      { version: 9, signals },
+      { version: 9, map },
+    ]) {
+      const bytes = sharing.encode(doc)
+      expect(() =>
+        assertDocumentFitsInput(decode(bytes), bytes.length),
+      ).toThrow(/expand beyond/)
+    }
+  })
+})
+
+describe('isEmbeddedImageComplete', () => {
+  test('accepts an image with a byte per voxel or more', () => {
+    expect(isEmbeddedImageComplete([3, 4, 4, 4], 64)).toBe(true)
+    expect(isEmbeddedImageComplete([4, 4, 4, 4, 2], 512)).toBe(true)
+  })
+
+  test('refuses a header that claims more voxels than the image holds', () => {
+    expect(isEmbeddedImageComplete([3, 100_000, 100_000, 1], 3)).toBe(false)
+    expect(isEmbeddedImageComplete([3, 4, 4, 4], 63)).toBe(false)
+    expect(isEmbeddedImageComplete([3, 0, 4, 4], 64)).toBe(false)
+    expect(isEmbeddedImageComplete([3, -4, -4, 4], 64)).toBe(false)
+    expect(isEmbeddedImageComplete([3, 4.5, 4, 4], 64)).toBe(false)
   })
 })

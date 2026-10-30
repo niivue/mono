@@ -72,6 +72,43 @@ test('an oversized drawing length is skipped before it is decoded', async ({
     .toBe(true)
 })
 
+test('an embedded volume whose header claims more voxels than its image is refused', async ({
+  page,
+}) => {
+  const warnings: string[] = []
+  page.on('console', (m) => {
+    if (m.type() === 'warning') warnings.push(m.text())
+  })
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.loadVolumes([{ url: '/volumes/sphere.nii.gz' }])
+    nv.createEmptyDrawing()
+    const doc = JSON.parse(
+      new TextDecoder().decode(nv.serializeDocument({ format: 'json' })),
+    )
+    // Three image bytes under a 100000 x 100000 header: the drawing would
+    // allocate a byte per claimed voxel.
+    const data = doc.volumes[0].data
+    data.img = { $ta: 'Uint8Array', b64: 'AAAA' }
+    data.hdr.dims = [3, 100_000, 100_000, 1, 1, 1, 1, 1]
+    data.hdr.datatypeCode = 2
+    data.hdr.numBitsPerVoxel = 8
+    doc.drawingBitmapLength = 1
+    const file = new File([JSON.stringify(doc)], 'big-header.nvd')
+    const error = await nv.loadDocument(file).then(
+      () => '',
+      (e: Error) => e.message,
+    )
+    return { error, volumes: nv.volumes.length }
+  })
+  expect(r.error).toBe('')
+  expect(r.volumes).toBe(0)
+  await expect
+    .poll(() => warnings.some((w) => /claims more voxels/.test(w)))
+    .toBe(true)
+})
+
 test('an oversized slide drawing is skipped before it is allocated', async ({
   page,
 }) => {

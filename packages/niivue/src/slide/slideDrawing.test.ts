@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 
 import { PEN_SHAPE } from '@/NVConstants'
-import { isSlideDrawingSizeValid, SlideDrawing } from './slideDrawing'
+import {
+  isSlideDrawingSizeValid,
+  SlideDrawing,
+  slideDrawingSize,
+} from './slideDrawing'
 
 const at = (d: SlideDrawing, x: number, y: number): number =>
   d.img[y * d.width + x]
@@ -162,6 +166,8 @@ describe('isSlideDrawingSizeValid', () => {
   test('refuses sizes a document could use to force a huge allocation', () => {
     for (const [w, h] of [
       [100_000, 100_000],
+      [16384, 16384],
+      [16384, 1025],
       [0, 10],
       [-5, 10],
       [10.5, 10],
@@ -170,5 +176,25 @@ describe('isSlideDrawingSizeValid', () => {
     ]) {
       expect(isSlideDrawingSizeValid(w, h)).toBe(false)
     }
+  })
+})
+
+describe('slideDrawingSize', () => {
+  test('keeps the slide aspect, long edge at maxRaster', () => {
+    expect(slideDrawingSize(8000, 6000, 4096)).toEqual([4096, 3072])
+    expect(slideDrawingSize(100, 50, 4096)).toEqual([100, 50])
+  })
+
+  test('always makes a size that loads again', () => {
+    for (const [sw, sh, cap] of [
+      [100_000, 100_000, 100_000],
+      [100_000, 30_001, 16384],
+      [50_000, 77, 1e9],
+      [9999, 9997, 8192],
+    ]) {
+      const [w, h] = slideDrawingSize(sw, sh, cap)
+      expect(isSlideDrawingSizeValid(w, h)).toBe(true)
+    }
+    expect(slideDrawingSize(100_000, 100_000, 100_000)).toEqual([4096, 4096])
   })
 })

@@ -24,15 +24,49 @@ const MAX_UNDO = 10
 // shortcut: a fixed side cap (a common max 2D texture size), not the view's
 // own limit; use the backend limit if a device below 16384 needs it.
 const MAX_SIDE = 16384
+// The default createSlideDrawing raster for a square slide. Bounds memory, not
+// just texture size: each pixel costs a label byte plus 4 RGBA bytes, more than
+// once while the annotation is rebuilt.
+const MAX_PIXELS = 4096 * 4096
 
 /** Whether a slide drawing of `width` x `height` (e.g. from a document) is safe to allocate. */
 export function isSlideDrawingSizeValid(
   width: number,
   height: number,
 ): boolean {
-  return [width, height].every(
-    (n) => Number.isSafeInteger(n) && n > 0 && n <= MAX_SIDE,
+  return (
+    [width, height].every(
+      (n) => Number.isSafeInteger(n) && n > 0 && n <= MAX_SIDE,
+    ) && width * height <= MAX_PIXELS
   )
+}
+
+/**
+ * The raster size createSlideDrawing uses for a `slideWidth` x `slideHeight`
+ * slide: the slide aspect, long edge at most `maxRaster`, never larger than
+ * the slide, and always {@link isSlideDrawingSizeValid} so a saved drawing loads.
+ */
+export function slideDrawingSize(
+  slideWidth: number,
+  slideHeight: number,
+  maxRaster: number,
+): [number, number] {
+  const sw = Math.max(1, slideWidth)
+  const sh = Math.max(1, slideHeight)
+  const cap = Math.min(maxRaster, MAX_SIDE)
+  const scale = Math.min(
+    1,
+    cap / Math.max(sw, sh),
+    Math.sqrt(MAX_PIXELS / (sw * sh)),
+  )
+  let w = Math.max(1, Math.round(sw * scale))
+  let h = Math.max(1, Math.round(sh * scale))
+  // Rounding up can overshoot the pixel cap by a row or column.
+  while (w * h > MAX_PIXELS) {
+    if (w >= h) w--
+    else h--
+  }
+  return [w, h]
 }
 
 export class SlideDrawing {

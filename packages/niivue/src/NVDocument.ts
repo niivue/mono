@@ -1,6 +1,9 @@
 import { decode, encode } from 'cbor-x'
 import * as NVCmaps from '@/cmap/NVCmaps'
-import { assertDocumentFitsInput } from '@/documentBounds'
+import {
+  assertDocumentFitsInput,
+  isEmbeddedImageComplete,
+} from '@/documentBounds'
 import {
   type LegacyLabelLut,
   shownLabelColormap,
@@ -935,6 +938,9 @@ export async function reconstructVolume(
 ): Promise<void> {
   try {
     if (v.data) {
+      if (!isEmbeddedImageComplete(v.data.hdr.dims, v.data.img.byteLength)) {
+        throw new Error('its header claims more voxels than its image holds')
+      }
       // Reconstruct volume from embedded data
       // Convert to proper ArrayBuffer (Uint8Array.buffer could be SharedArrayBuffer)
       const imgBuffer = v.data.img.buffer.slice(

@@ -190,3 +190,64 @@ test('a double-click on the 3D render tile does not close a contour (#114)', asy
   expect(r.afterRender).toEqual({ count: 0, points: 3, crosshairMoved: false })
   expect(r.count).toBe(1)
 })
+
+// The 2D slice check reads texture depth, which chunking and the 3D explode
+// leave alone; the exploded-block 3D stroke is axis-aligned volumes only.
+for (const [volume, oblique] of [
+  ['/volumes/mni152.nii.gz', false],
+  ['/volumes/fs/T1_oblique.nii.gz', true],
+] as const) {
+  test(`annotations still draw on exploded blocks (${volume})`, async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const added = await page.evaluate(`(async () => {
+      ${setup('MULTIPLANAR', 'bidirectional', volume)}
+      await nv.setVolumeChunkGrid(0, [2, 2, 2])
+      await nv.setVolumeChunkExplode(0, { enabled: true, scale: [1.5, 1.5, 1.5] })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      // Overlapping shapes merge, so count additions rather than annotations.
+      const added = []
+      nv.addEventListener('annotationAdded', (e) =>
+        added.push(e.detail.annotation.shape?.type ?? 'freehand'))
+      const axial = []
+      const render = []
+      for (let y = 5; y < 400; y += 5) {
+        for (let x = 5; x < 400; x += 5) {
+          const t = nv.view.hitTest(x, y)
+          if (t?.isRender) render.push([x, y])
+          else if (t?.sliceType === SLICE_TYPE.AXIAL) axial.push([x, y])
+        }
+      }
+      const centre = (pts) => [0, 1].map((i) =>
+        (Math.min(...pts.map((p) => p[i])) + Math.max(...pts.map((p) => p[i]))) / 2)
+      const [ax, ay] = centre(axial)
+      drag([ax - 20, ay], [ax + 20, ay])
+      drag([ax, ay - 10], [ax, ay + 10])
+      nv.annotationTool = 'spline'
+      click([ax - 10, ay - 10])
+      click([ax + 10, ay - 10])
+      click([ax, ay + 10])
+      ev('dblclick', ax, ay + 10, 0, MouseEvent)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      // A right-drag on a block in the 3D render draws a vector stroke.
+      nv.annotationTool = 'freehand'
+      const [rx, ry] = centre(render)
+      const rev = (type, x, y, button, buttons) => c.dispatchEvent(new PointerEvent(type, {
+        pointerId: 1, bubbles: true, cancelable: true,
+        clientX: r.left + x, clientY: r.top + y,
+        button, buttons, pointerType: 'mouse',
+      }))
+      rev('pointerdown', rx - 6, ry - 6, 2, 2)
+      rev('pointermove', rx + 6, ry - 6, -1, 2)
+      rev('pointermove', rx + 6, ry + 6, -1, 2)
+      rev('pointermove', rx - 6, ry + 6, -1, 2)
+      rev('pointerup', rx - 6, ry + 6, 2, 0)
+      return added
+    })()`)
+    // Oblique: the spline is #469 and the 3D stroke skips oblique volumes.
+    expect(added).toEqual(
+      oblique ? ['bidirectional'] : ['bidirectional', 'spline', 'freehand'],
+    )
+  })
+}

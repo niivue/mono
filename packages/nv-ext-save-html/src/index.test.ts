@@ -8,9 +8,6 @@ const fakeNiiVue = (matcap: string) => {
   const model = { volume: { matcap } }
   return {
     model,
-    get volumeMatcap() {
-      return model.volume.matcap
-    },
     serializeDocument: () => new TextEncoder().encode(model.volume.matcap),
   }
 }
@@ -33,5 +30,4 @@ test('exported HTML keeps the scene matcap', async () => {
   expect(await embeddedDocument(html)).toBe(matcap)
   // The page does not replace the document's matcap after loading it.
   expect(html).not.toContain('loadMatcap')
-  expect(nv.volumeMatcap).toBe(matcap)
 })

@@ -1,0 +1,156 @@
+import { expect, test } from '@playwright/test'
+
+// A half-drawn annotation (bidirectional long axis, multi-click contour) must
+// stay on its own slice and scene: #111 (slice change), #112 (re-selecting the
+// same tool), #113 (loadDocument), #114 (double-click on the 3D render tile).
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/examples/index.html', { waitUntil: 'load' })
+})
+
+const setup = (sliceType: string, tool: string) => `
+  const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+  const c = document.createElement('canvas')
+  c.style.cssText = 'position:fixed;left:0;top:0;width:400px;height:400px'
+  document.body.appendChild(c)
+  const nv = new NiiVue({
+    backend: 'webgl2',
+    devicePixelRatio: 1,
+    sliceType: SLICE_TYPE.${sliceType},
+  })
+  await nv.attachToCanvas(c)
+  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+  nv.annotationIsEnabled = true
+  nv.annotationTool = '${tool}'
+
+  c.setPointerCapture = () => {}
+  c.releasePointerCapture = () => {}
+  const r = c.getBoundingClientRect()
+  const ev = (type, x, y, button, Ctor = PointerEvent) => c.dispatchEvent(new Ctor(type, {
+    pointerId: 1, bubbles: true, cancelable: true,
+    clientX: r.left + x, clientY: r.top + y,
+    button, buttons: 1, pointerType: 'mouse',
+  }))
+  const drag = (a, b) => {
+    ev('pointerdown', a[0], a[1], 0)
+    ev('pointermove', b[0], b[1], -1)
+    ev('pointerup', b[0], b[1], 0)
+  }
+  const click = (p) => {
+    ev('pointerdown', p[0], p[1], 0)
+    ev('pointerup', p[0], p[1], 0)
+  }
+`
+
+test('a bidirectional short axis on another slice starts the measurement over (#111)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    drag([150, 200], [250, 200])
+    const longAfterFirst = nv._bidirectionalLong !== null
+    nv.moveCrosshairInVox(0, 0, 10)
+    drag([200, 170], [200, 230])
+    return {
+      longAfterFirst,
+      count: nv.annotations.length,
+      // The second drag is now the long axis of a fresh measurement.
+      restarted: nv._bidirectionalLong !== null,
+    }
+  })()`)
+  expect(r.longAfterFirst).toBe(true)
+  expect(r.count).toBe(0)
+  expect(r.restarted).toBe(true)
+})
+
+test('a bidirectional measurement on one slice still commits', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const count = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    drag([150, 200], [250, 200])
+    drag([200, 170], [200, 230])
+    return nv.annotations.length
+  })()`)
+  expect(count).toBe(1)
+})
+
+test('re-selecting the current tool keeps a half-drawn contour (#112)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'spline')}
+    const changes = []
+    nv.addEventListener('change', (e) => changes.push(e.detail.property))
+    click([150, 150])
+    click([250, 150])
+    nv.annotationTool = 'spline'
+    return {
+      points: nv._annotationPolyPoints?.length ?? 0,
+      toolChanges: changes.filter((p) => p === 'annotationTool').length,
+    }
+  })()`)
+  expect(r.points).toBe(2)
+  expect(r.toolChanges).toBe(0)
+})
+
+test('loadDocument drops a half-drawn bidirectional measurement (#113)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    const doc = nv.serializeDocument({ format: 'json' })
+    drag([150, 200], [250, 200])
+    const before = nv._bidirectionalLong !== null
+    await nv.loadDocument(new File([doc], 'scene.nvd'))
+    return {
+      before,
+      long: nv._bidirectionalLong,
+      preview: nv.model._annotationPreview,
+    }
+  })()`)
+  expect(r.before).toBe(true)
+  expect(r.long).toBeNull()
+  expect(r.preview).toBeNull()
+})
+
+test('a double-click on the 3D render tile does not close a contour (#114)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('MULTIPLANAR', 'spline')}
+    // Find a point in the axial tile and one in the render tile.
+    let axial = null
+    let render = null
+    for (let y = 5; y < 400; y += 10) {
+      for (let x = 5; x < 400; x += 10) {
+        const t = nv.view.hitTest(x, y)
+        if (!t) continue
+        if (t.isRender) render ??= [x, y]
+        else if (t.sliceType === SLICE_TYPE.AXIAL) axial ??= [x, y]
+      }
+    }
+    const [ax, ay] = axial
+    click([ax, ay])
+    click([ax + 6, ay])
+    click([ax + 3, ay + 6])
+    ev('dblclick', render[0], render[1], 0, MouseEvent)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const afterRender = {
+      count: nv.annotations.length,
+      points: nv._annotationPolyPoints?.length ?? 0,
+    }
+    // The same double-click on the axial tile closes it.
+    click([ax + 3, ay + 3])
+    ev('dblclick', ax + 3, ay + 3, 0, MouseEvent)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    return { afterRender, count: nv.annotations.length }
+  })()`)
+  expect(r.afterRender).toEqual({ count: 0, points: 3 })
+  expect(r.count).toBe(1)
+})

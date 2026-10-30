@@ -1459,6 +1459,21 @@ export function initInteraction(ctrl: NiiVue): void {
           mm as [number, number, number],
           sliceType,
         )
+        // A bidirectional long axis belongs to the slice it was drawn on; a
+        // press on another slice starts the measurement over (#111).
+        if (
+          ctrl._bidirectionalLong &&
+          shouldStartFreshMultiClickContour(
+            true,
+            ctrl._annotationSliceType,
+            ctrl._annotationSlicePosition,
+            sliceType,
+            slicePosition,
+          )
+        ) {
+          ctrl._bidirectionalLong = null
+          ctrl.model._annotationPreview = null
+        }
         ctrl._annotationSliceType = sliceType
         ctrl._annotationSlicePosition = slicePosition
         ctrl._annotationAnchorMM = mm as [number, number, number]
@@ -2560,10 +2575,16 @@ export function initInteraction(ctrl: NiiVue): void {
     setNextActionTag('dblclick')
     // Close an in-progress multi-click contour (spline / livewire) instead of
     // depth-picking. The two clicks of the double-click already added their
-    // points via the pointerdown handler; commit the accumulated contour.
+    // points via the pointerdown handler; commit the accumulated contour. Only
+    // a double-click on a slice of the contour's orientation closes it; one on
+    // the 3D render or another tile falls through (#114).
+    const dblTile = ctrl.view?.hitTest(dblHit[0], dblHit[1])
     if (
       ctrl._annotationPolyPoints &&
-      isMultiClickTool(ctrl.model.annotation.tool)
+      isMultiClickTool(ctrl.model.annotation.tool) &&
+      dblTile &&
+      !dblTile.isRender &&
+      dblTile.sliceType === ctrl._annotationPolySliceType
     ) {
       commitMultiClickContour(ctrl)
       ctrl._annotationPolyPoints = null

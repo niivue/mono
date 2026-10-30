@@ -13,6 +13,7 @@ import * as DragModes from '@/control/dragModes'
 import { type Pinch, pinchCamera } from '@/control/pinchZoom'
 import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
+import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import {
   drawLine,
@@ -332,11 +333,7 @@ function clientToCanvasPixel(
   if (!rect) {
     return [0, 0]
   }
-  let dpr = window.devicePixelRatio || 1
-  const forcedDpr = ctrl.opts.forceDevicePixelRatio ?? -1
-  if (forcedDpr > 0) {
-    dpr = forcedDpr
-  }
+  const dpr = effectiveDevicePixelRatio(ctrl.opts.forceDevicePixelRatio)
   const x = (clientX - rect.left) * dpr
   const y = (clientY - rect.top) * dpr
   return [x, y]

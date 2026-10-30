@@ -35,6 +35,7 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import {
   type SettingsSnapshot,
   settingsChangeEvents,
@@ -906,8 +907,7 @@ export default class NiiVue extends EventTarget {
    * {@link getScreenTiles} use. This is the exact conversion the built-in
    * pointer handlers apply, so a caller never has to reproduce it:
    * `(client - canvas rect origin) * dpr`, where `dpr` is
-   * `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
-   * then, for an instance sharing a canvas via `bounds`, minus the origin of
+   * {@link effectiveDevicePixelRatio}; then, for an instance sharing a canvas via `bounds`, minus the origin of
    * this instance's post-viewport pixel rect.
    *
    * Returns null when the instance has no canvas or, for a `bounds` instance,
@@ -2885,11 +2885,21 @@ export default class NiiVue extends EventTarget {
     return this.devicePixelRatio
   }
 
+  /**
+   * The device pixel ratio the canvas renders at: the `devicePixelRatio`
+   * option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
+   * pixels times this are canvas pixels.
+   */
+  get effectiveDevicePixelRatio(): number {
+    return effectiveDevicePixelRatio(this.opts.forceDevicePixelRatio)
+  }
+
   set devicePixelRatio(dpr: number) {
     this.opts.forceDevicePixelRatio = dpr
     if (!this.view) return
     this.view.forceDevicePixelRatio = dpr
-    this.view.resize()
+    // resize() also rebuilds instance tiles for the new canvas pixel size.
+    this.resize()
   }
 
   /** @deprecated Use devicePixelRatio */
@@ -5267,14 +5277,7 @@ export default class NiiVue extends EventTarget {
   /** Map a canvas CSS pixel to slide base-pixel coords, or null off-plane. */
   slidePlanePick(cssX: number, cssY: number): { x: number; y: number } | null {
     if (!this._slidePlane) return null
-    // forceDevicePixelRatio is -1 ("auto") unless explicitly pinned.
-    const forced = this.view?.forceDevicePixelRatio ?? -1
-    const dpr =
-      forced > 0
-        ? forced
-        : typeof window !== 'undefined'
-          ? window.devicePixelRatio || 1
-          : 1
+    const dpr = this.effectiveDevicePixelRatio
     return pickSlidePixel(this._slidePlane, cssX * dpr, cssY * dpr)
   }
 

@@ -39,7 +39,7 @@ test('setter and loadMatcap resolve mixed-case matcap names to their URL', async
   expect(r.fromOption).toBe('/src/assets/matcaps/Shiny.jpg')
   expect(r.fromSetter).toBe(r.fromOption)
   expect(r.fromLoad).toBe(r.fromOption)
-  expect(r.changes[0]).toBe(r.fromOption)
+  expect(r.changes).toEqual([r.fromOption, '/src/assets/matcaps/Cortex.jpg'])
 })
 
 test('the setter changes the rendered matcap of a loaded volume', async ({

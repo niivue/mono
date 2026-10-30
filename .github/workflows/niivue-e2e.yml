@@ -41,10 +41,11 @@ on:
 permissions:
   contents: read
 
-# A new push to a PR cancels its stale run; the macOS job takes ~20 min.
+# A new push to a PR cancels its stale run (the macOS job takes ~20 min);
+# main keeps every run so each merge gets a Metal result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   browser-contracts:

@@ -228,7 +228,14 @@ export function settingHandlers(host: NiiVueHost): Handlers {
       }
       for (const [setting, value] of checked) bag[setting.name] = value
       view.drawScene()
-      return { options: readAll(checked.map(([setting]) => setting)) }
+      const answer = () => ({
+        options: readAll(checked.map(([setting]) => setting)),
+      })
+      // Some setters start a GPU rebuild without returning it (#447): wait, so
+      // a screenshot taken next shows the change.
+      return view.whenUpdatesSettle
+        ? view.whenUpdatesSettle().then(answer)
+        : answer()
     },
 
     capabilities() {

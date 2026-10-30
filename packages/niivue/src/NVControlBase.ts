@@ -2599,6 +2599,17 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Resolves once no GPU update is running or queued. Setters that rebuild
+   * GPU resources (such as `volumeIsBackgroundMasking`) start the rebuild
+   * without returning it, so a screenshot taken straight after one can show
+   * the old scene. A failed update is not reported here.
+   */
+  async whenUpdatesSettle(): Promise<void> {
+    // A queued follow-up takes the lock again before the waiters wake.
+    while (this._updating) await this._updateIdle
+  }
+
+  /**
    * @internal Rebuild GPU resources after a setter changed volumes or scene
    * state: every volume and the colorbars, but only the meshes that are new,
    * removed or whose vertex data changed (see `NVMesh._dataVersion`).

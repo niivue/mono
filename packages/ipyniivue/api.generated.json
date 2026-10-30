@@ -4266,6 +4266,16 @@
       "returns": "Promise<void>",
       "doc": "Resolves once the bricks the view asked for are resident and drawn: the\nrenderer admits one brick when the plan is set and streams the rest over\nthe following frames, and a change that rebuilds the bricks' textures\n(turning on `volumeIllumination`, say) streams them again, so a\nscreenshot taken straight after {@link setVolumeChunkGrid} or such a\nchange would show a partly-tiled volume. Kicks a draw and resolves on the\nfirst frame drawn after it that the view calls settled: nothing queued or\nmid-upload for the working set that frame asked for, no brick still\ncross-fading in over the coarse floor, no drag in progress. A 2D plane\nthrough resident bricks only settles on that first frame, or once its\nfade ends. Resolves at once when no volume is chunked or the tab is\nhidden (it draws no frames, so there is no visible frame to settle), and\ngives up quietly after `timeoutMs`.",
       "returnsDoc": null
+    },
+    {
+      "jsName": "whenUpdatesSettle",
+      "pyName": "when_updates_settle",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [],
+      "returns": "Promise<void>",
+      "doc": "Resolves once no GPU update is running or queued. Setters that rebuild\nGPU resources (such as `volumeIsBackgroundMasking`) start the rebuild\nwithout returning it, so a screenshot taken straight after one can show\nthe old scene. A failed update is not reported here.",
+      "returnsDoc": null
     }
   ],
   "events": [

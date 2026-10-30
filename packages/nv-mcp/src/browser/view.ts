@@ -790,6 +790,8 @@ export interface View {
     index: number,
     opacity: ArrayLike<number> | null,
   ): unknown
+  /** Resolves once no GPU rebuild is running or queued; NiiVue 1.0 has it. */
+  whenUpdatesSettle?(): Promise<unknown>
   /** Resolves once every brick the render asked for is resident and drawn. */
   whenChunkStreamSettles?(): Promise<unknown>
   // Each report is NiiVue's own snapshot object, passed through as it is.

@@ -471,7 +471,7 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   }
   if (key === 'V') {
     if (!ctrl.model.interaction.isViewModeHotKeyEnabled) {
-      log.info(`NIIVUE VERSION: 0.1.20260122`)
+      log.info(`NIIVUE VERSION: ${ctrl.version}`)
     } else if (
       !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat)
     ) {

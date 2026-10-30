@@ -246,6 +246,7 @@ export function settingHandlers(host: NiiVueHost): Handlers {
       })
       return {
         ...(view.backend ? { backend: view.backend } : {}),
+        ...(view.version ? { niivueVersion: view.version } : {}),
         features,
         settings: SETTINGS.filter((s) => s.name in bag).map((s) => s.name),
         ...(view.colormaps ? { colormaps: view.colormaps } : {}),

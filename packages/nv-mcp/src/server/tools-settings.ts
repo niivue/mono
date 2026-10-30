@@ -149,7 +149,7 @@ export function registerSettingTools(
   registerSimple(server, context, 'capabilities', {
     title: "What the page's NiiVue can do",
     description:
-      "Reports what this page's NiiVue offers: its backend, which tool features it supports " +
+      "Reports what this page's NiiVue offers: its version (niivueVersion) and backend, which tool features it supports " +
       '(by group), which settings it has, the colormaps and drawing colormaps it knows, its mesh ' +
       'shaders, the volume transforms it can run with their options, the file types it ' +
       'reads and writes, the control kinds it hosts, and what a control may be bound to ' +

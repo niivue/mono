@@ -1484,6 +1484,17 @@
       "doc": null
     },
     {
+      "jsName": "version",
+      "pyName": "version",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`."
+    },
+    {
       "jsName": "volumeExtensions",
       "pyName": "volume_extensions",
       "tsType": "string[]",

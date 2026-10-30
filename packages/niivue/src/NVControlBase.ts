@@ -220,6 +220,7 @@ import {
   reorientDrawingToRAS,
   volumeTR,
 } from '@/volume/utils'
+import { version } from '../package.json'
 
 /** MeshUpdate options read only while drawing: setMesh just redraws. */
 const MESH_REDRAW_OPTIONS = new Set(['name', 'opacity', 'visible'])
@@ -2863,6 +2864,11 @@ export default class NiiVue extends EventTarget {
 
   get backend(): BackendType | undefined {
     return this.opts.backend
+  }
+
+  /** The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`. */
+  get version(): string {
+    return version
   }
 
   get isAntiAlias(): boolean {

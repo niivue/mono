@@ -75,7 +75,8 @@ reuses an already-running one locally (`reuseExistingServer` off in CI). The
 port (5273) is fixed, so a dev server from ANOTHER checkout on that port is
 silently reused and the tests run its code; check `lsof -iTCP:5273` first. A
 machine without Playwright's pinned browser can set `PLAYWRIGHT_CHROMIUM_PATH`
-to any installed `chrome-headless-shell`. These are
+to any installed `chrome-headless-shell`. `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` runs full
+Chromium on the real GPU instead of SwiftShader (the macos-15 CI job does). These are
 kept OUT of the hermetic unit `test` target and the PR gate (they need a browser).
 Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen

@@ -16,9 +16,9 @@ name: niivue browser contracts
 #                       This one loads mni152, so the checkout pulls that
 #                       single LFS object.
 #
-# Narrow on purpose. The rest of the e2e suite needs a GPU adapter that headless
-# runners do not have, so running it here would be flaky noise rather than
-# signal. These three are deterministic without one: the first two never touch
+# Narrow on purpose. The rest of the e2e suite needs a GPU adapter that the
+# Ubuntu runners do not have; it runs in full-suite-metal below instead.
+# These three are deterministic without one: the first two never touch
 # the GPU, and texcache-kind-change forces `--use-angle=swiftshader` for its
 # WebGL2 case, which is the case that was proven to fail on main. Its WebGPU
 # case skips here. `requestAdapter()` does succeed on the runner, but the GPU
@@ -69,3 +69,34 @@ jobs:
             e2e/texcache-kind-change.spec.ts \
             --workers=1 \
             --reporter=line
+
+  # The full suite on real Metal (issue #199). Free macOS runners expose a
+  # paravirtual GPU, but only full Chromium reaches it; the headless shell stays
+  # on SwiftShader. PLAYWRIGHT_CHROMIUM_CHANNEL switches e2e/launchOptions.ts to
+  # that mode. The VM is small (3 cores, 7 GB): a correctness gate, not timing.
+  full-suite-metal:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      PLAYWRIGHT_CHROMIUM_CHANNEL: chromium
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        working-directory: packages/niivue
+        run: bunx playwright install chromium
+
+      - name: Full e2e suite
+        working-directory: packages/niivue
+        # The excluded specs fail on real Metal only (issue #453).
+        run: |
+          bunx playwright test --workers=2 --reporter=line \
+            --grep-invert "keeps its modulation|no plane seams"

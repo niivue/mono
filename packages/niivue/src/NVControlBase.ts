@@ -143,7 +143,11 @@ import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar } from '@/signal/sidecar'
 import { NVSlide } from '@/slide/NVSlide'
-import { SlideDrawing } from '@/slide/slideDrawing'
+import {
+  isSlideDrawingSizeValid,
+  SlideDrawing,
+  slideDrawingSize,
+} from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
@@ -5240,7 +5244,8 @@ export default class NiiVue extends EventTarget {
   /**
    * Create a drawing surface in *slide* space for the registered slide plane.
    * The annotation is a label raster covering the whole slide (sized to the
-   * slide aspect, long edge capped at `maxRaster`, default 4096) and is painted
+   * slide aspect, long edge capped at `maxRaster`, default 4096, and at most
+   * 4096 x 4096 pixels in total so a saved drawing always loads) and is painted
    * with the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,
    * drawLine and the RLE undo stack), so it stays in slide coordinates and is
    * compatible with the volume drawing functions. Requires {@link setSlidePlane}.
@@ -5251,16 +5256,12 @@ export default class NiiVue extends EventTarget {
       log.warn('createSlideDrawing: no slide plane registered')
       return
     }
-    const sw = sp.slide.manifest.width
-    const sh = sp.slide.manifest.height
-    const cap = opts?.maxRaster ?? 4096
-    const scale = Math.min(1, cap / Math.max(1, sw, sh))
-    this._attachSlideDrawing(
-      new SlideDrawing(
-        Math.max(1, Math.round(sw * scale)),
-        Math.max(1, Math.round(sh * scale)),
-      ),
+    const [w, h] = slideDrawingSize(
+      sp.slide.manifest.width,
+      sp.slide.manifest.height,
+      opts?.maxRaster ?? 4096,
     )
+    this._attachSlideDrawing(new SlideDrawing(w, h))
   }
 
   // Wire a SlideDrawing into the active plane: build its annotation overlay
@@ -6799,7 +6800,16 @@ export default class NiiVue extends EventTarget {
       pixelToWorld: sp.pixelToWorld,
       levelIndex: sp.levelIndex,
     })
-    if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
+    if (
+      sp.drawingRLE &&
+      sp.drawingWidth &&
+      sp.drawingHeight &&
+      !isSlideDrawingSizeValid(sp.drawingWidth, sp.drawingHeight)
+    ) {
+      log.warn(
+        `loadDocument: slide drawing size ${sp.drawingWidth}x${sp.drawingHeight} is not valid; drawing not loaded`,
+      )
+    } else if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
       const drawing = new SlideDrawing(sp.drawingWidth, sp.drawingHeight)
       const decoded = decodeRLE(
         sp.drawingRLE,
@@ -6988,13 +6998,13 @@ export default class NiiVue extends EventTarget {
       const back = this.model.getVolumes()[0]
       if (back) {
         const dv = createDrawingVolume(back)
-        const decoded = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
-        if (decoded.length !== dv.nVox3D) {
+        // Check the claimed length before decodeRLE allocates it.
+        if (doc.drawingBitmapLength !== dv.nVox3D) {
           log.warn(
-            `loadDocument: decoded drawing length ${decoded.length} does not match volume ${dv.nVox3D}`,
+            `loadDocument: drawing length ${doc.drawingBitmapLength} does not match volume ${dv.nVox3D}`,
           )
         } else {
-          dv.img = decoded
+          dv.img = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
         }
         this.model.drawingVolume = dv
         this.model.draw.isEnabled = true

@@ -378,14 +378,12 @@ Known, deliberate, and not blocking. Each is a decision, not an oversight.
   Fixing it means bounding inside NiiVue, not here.
 - **A hostile `.nvd` can still allocate past the budgets inside NiiVue.**
   Finder parses any selected `.nvd` unprompted. Core fixes, own branch; a
-  content process dying on them shows "ran out of resources":
-  CBOR shared references (tags 28/29) let one embedded array be listed many
-  times, each reconstructed as a full copy (fix: reject when the embedded
-  arrays' summed `byteLength` exceeds the document's); `drawingBitmapLength`
-  and slide `drawingWidth`×`drawingHeight` size a `decodeRLE` allocation before
-  any check against the volume (fix: compare with `nVox3D` first); a small
-  `data:` PNG in `ui.thumbnailUrl` or a matcap can decode to ~1 GiB RGBA;
-  JSON/CBOR number arrays grow ~8× in the JS heap; `volume.sampleRate` skips
+  content process dying on them shows "ran out of resources". Fixed in core
+  (#463): CBOR shared references and cycles (a decoded document may not
+  expand past its input bytes) and drawing sizes (checked before `decodeRLE`).
+  Still open: a small `data:` PNG in `ui.thumbnailUrl` or a matcap can decode
+  to ~1 GiB RGBA (#385); JSON/CBOR number arrays grow ~8× in the JS heap inside
+  `decode`/`JSON.parse`, before any check can run (#386); `volume.sampleRate` skips
   the setter's 1-4 clamp (not shown exploitable).
 - **The bound must never be waived on a PREDICTION about the browser.** An
   attempt to skip it when a NIfTI header looked like it would be partial-loaded

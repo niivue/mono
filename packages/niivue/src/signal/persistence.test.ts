@@ -11,6 +11,18 @@ function roundTrip(sig: NVSignal): NVSignal {
 }
 
 describe('signal persistence round-trip', () => {
+  test('ignores trailing bytes that do not form a complete float', () => {
+    const out = reconstructSignal({
+      id: 'partial',
+      name: 'partial',
+      kind: 'physio',
+      columns: [new Uint8Array([0, 0, 128, 63, 255])],
+      display: defaultSignalDisplay(),
+    })
+    if (out.raw.kind !== 'physio') throw new Error('kind')
+    expect(Array.from(out.raw.columns[0])).toEqual([1])
+  })
+
   test('physioPreservesColumnsAndTiming', () => {
     const sig: NVSignal = {
       id: 'cardiac',

@@ -702,7 +702,8 @@ and its volumes alive."""
         """Create a drawing surface in *slide* space for the registered slide plane.
 
         The annotation is a label raster covering the whole slide (sized to the
-        slide aspect, long edge capped at `maxRaster`, default 4096) and is painted
+        slide aspect, long edge capped at `maxRaster`, default 4096, and at most
+        4096 x 4096 pixels in total so a saved drawing always loads) and is painted
         with the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,
         drawLine and the RLE undo stack), so it stays in slide coordinates and is
         compatible with the volume drawing functions. Requires {@link setSlidePlane}.

@@ -1,3 +1,14 @@
+## 1.0.0-rc.56 (2026-10-30)
+
+### Fixes
+
+- **niivue:** rebuild overlays when volumeIsBackgroundMasking changes ([#367](https://github.com/niivue/mono/issues/367))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.55 (2026-10-29)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

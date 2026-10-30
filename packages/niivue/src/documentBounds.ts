@@ -55,18 +55,17 @@ export function assertDocumentFitsInput(
 }
 
 /**
- * Whether an embedded image has at least one byte per voxel its header claims.
- * The header sizes later buffers (a drawing allocates one byte per voxel), and
- * only the image bytes are charged against the file. One byte, not the
- * header's bit depth, since the saved image may be stored narrower.
+ * Whether an embedded image is a typed array with at least one byte per voxel
+ * its header claims. The header sizes later buffers (a drawing allocates one
+ * byte per voxel), and only typed-array bytes are charged against the file: a
+ * plain object (JSON) could claim any `byteLength`. One byte, not the header's
+ * bit depth, since the saved image may be stored narrower.
  */
-export function isEmbeddedImageComplete(
-  dims: number[],
-  imgByteLength: number,
-): boolean {
+export function isEmbeddedImageComplete(dims: number[], img: unknown): boolean {
   const [, x, y, z] = dims
   return (
+    ArrayBuffer.isView(img) &&
     [x, y, z].every((n) => Number.isSafeInteger(n) && n > 0) &&
-    x * y * z <= imgByteLength
+    x * y * z <= img.byteLength
   )
 }

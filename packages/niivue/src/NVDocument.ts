@@ -938,7 +938,7 @@ export async function reconstructVolume(
 ): Promise<void> {
   try {
     if (v.data) {
-      if (!isEmbeddedImageComplete(v.data.hdr.dims, v.data.img.byteLength)) {
+      if (!isEmbeddedImageComplete(v.data.hdr.dims, v.data.img)) {
         throw new Error('its header claims more voxels than its image holds')
       }
       // Reconstruct volume from embedded data

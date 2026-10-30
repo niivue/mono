@@ -87,15 +87,39 @@ describe('assertDocumentFitsInput', () => {
 
 describe('isEmbeddedImageComplete', () => {
   test('accepts an image with a byte per voxel or more', () => {
-    expect(isEmbeddedImageComplete([3, 4, 4, 4], 64)).toBe(true)
-    expect(isEmbeddedImageComplete([4, 4, 4, 4, 2], 512)).toBe(true)
+    expect(isEmbeddedImageComplete([3, 4, 4, 4], new Uint8Array(64))).toBe(true)
+    expect(isEmbeddedImageComplete([4, 4, 4, 4, 2], new Uint8Array(512))).toBe(
+      true,
+    )
   })
 
   test('refuses a header that claims more voxels than the image holds', () => {
-    expect(isEmbeddedImageComplete([3, 100_000, 100_000, 1], 3)).toBe(false)
-    expect(isEmbeddedImageComplete([3, 4, 4, 4], 63)).toBe(false)
-    expect(isEmbeddedImageComplete([3, 0, 4, 4], 64)).toBe(false)
-    expect(isEmbeddedImageComplete([3, -4, -4, 4], 64)).toBe(false)
-    expect(isEmbeddedImageComplete([3, 4.5, 4, 4], 64)).toBe(false)
+    expect(
+      isEmbeddedImageComplete([3, 100_000, 100_000, 1], new Uint8Array(3)),
+    ).toBe(false)
+    expect(isEmbeddedImageComplete([3, 4, 4, 4], new Uint8Array(63))).toBe(
+      false,
+    )
+    expect(isEmbeddedImageComplete([3, 0, 4, 4], new Uint8Array(64))).toBe(
+      false,
+    )
+    expect(isEmbeddedImageComplete([3, -4, -4, 4], new Uint8Array(64))).toBe(
+      false,
+    )
+    expect(isEmbeddedImageComplete([3, 4.5, 4, 4], new Uint8Array(64))).toBe(
+      false,
+    )
+  })
+
+  test('refuses an image that only claims a byteLength', () => {
+    // JSON can rebuild a plain object, and only typed arrays are charged.
+    const forged = {
+      byteLength: 1e10,
+      byteOffset: 0,
+      buffer: new Uint8Array(3),
+    }
+    expect(isEmbeddedImageComplete([3, 100_000, 100_000, 1], forged)).toBe(
+      false,
+    )
   })
 })

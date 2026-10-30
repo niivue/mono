@@ -1,3 +1,14 @@
+## 1.0.0-rc.58 (2026-10-30)
+
+### Fixes
+
+- **niivue:** loadDocument clears volumes and meshes deferred behind a thumbnail ([#388](https://github.com/niivue/mono/issues/388))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.57 (2026-10-30)
 
 ### Fixes

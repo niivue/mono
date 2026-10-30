@@ -6889,8 +6889,11 @@ export default class NiiVue extends EventTarget {
     // Loads deferred behind an earlier thumbnail would replace the document.
     this._deferredVolumes = null
     this._deferredMeshes = null
-    // A half-drawn shape belongs to the old scene (#113).
+    // A half-drawn shape, the selection and annotation undo belong to the old
+    // scene (#113).
     this._abandonAnnotationInProgress()
+    this.model._annotationSelection = null
+    this._annotationUndoStack.clear()
 
     // Apply non-data state (scene, config, display settings). Settings the
     // document omits are filled per the fill policy (default: reset to defaults).

@@ -8,7 +8,11 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/examples/index.html', { waitUntil: 'load' })
 })
 
-const setup = (sliceType: string, tool: string) => `
+const setup = (
+  sliceType: string,
+  tool: string,
+  volume = '/volumes/mni152.nii.gz',
+) => `
   const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
   const c = document.createElement('canvas')
   c.style.cssText = 'position:fixed;left:0;top:0;width:400px;height:400px'
@@ -19,7 +23,7 @@ const setup = (sliceType: string, tool: string) => `
     sliceType: SLICE_TYPE.${sliceType},
   })
   await nv.attachToCanvas(c)
-  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+  await nv.loadVolumes([{ url: '${volume}' }])
   nv.annotationIsEnabled = true
   nv.annotationTool = '${tool}'
 
@@ -77,6 +81,20 @@ test('a bidirectional measurement on one slice still commits', async ({
   expect(count).toBe(1)
 })
 
+test('a bidirectional measurement on one oblique slice still commits', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const count = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional', '/volumes/fs/T1_oblique.nii.gz')}
+    // The axial plane is tilted in mm, so the two drags differ in mm z.
+    drag([150, 200], [250, 200])
+    drag([200, 120], [200, 280])
+    return nv.annotations.length
+  })()`)
+  expect(count).toBe(1)
+})
+
 test('re-selecting the current tool keeps a half-drawn contour (#112)', async ({
   page,
 }) => {
@@ -97,25 +115,36 @@ test('re-selecting the current tool keeps a half-drawn contour (#112)', async ({
   expect(r.toolChanges).toBe(0)
 })
 
-test('loadDocument drops a half-drawn bidirectional measurement (#113)', async ({
+test('loadDocument drops a half-drawn measurement and the old undo history (#113)', async ({
   page,
 }) => {
   test.setTimeout(90_000)
   const r = await page.evaluate(`(async () => {
     ${setup('AXIAL', 'bidirectional')}
     const doc = nv.serializeDocument({ format: 'json' })
+    // Two committed measurements (undo would bring the first back) and a
+    // half-drawn third.
     drag([150, 200], [250, 200])
-    const before = nv._bidirectionalLong !== null
+    drag([200, 170], [200, 230])
+    drag([150, 300], [250, 300])
+    drag([200, 270], [200, 330])
+    drag([150, 250], [250, 250])
+    const before = {
+      count: nv.annotations.length,
+      long: nv._bidirectionalLong !== null,
+    }
     await nv.loadDocument(new File([doc], 'scene.nvd'))
-    return {
-      before,
+    const after = {
       long: nv._bidirectionalLong,
       preview: nv.model._annotationPreview,
     }
+    // Undo must not bring the old scene's measurement into the new one.
+    nv.annotationUndo()
+    return { before, after, count: nv.annotations.length }
   })()`)
-  expect(r.before).toBe(true)
-  expect(r.long).toBeNull()
-  expect(r.preview).toBeNull()
+  expect(r.before).toEqual({ count: 2, long: true })
+  expect(r.after).toEqual({ long: null, preview: null })
+  expect(r.count).toBe(0)
 })
 
 test('a double-click on the 3D render tile does not close a contour (#114)', async ({
@@ -124,26 +153,33 @@ test('a double-click on the 3D render tile does not close a contour (#114)', asy
   test.setTimeout(90_000)
   const r = await page.evaluate(`(async () => {
     ${setup('MULTIPLANAR', 'spline')}
-    // Find a point in the axial tile and one in the render tile.
+    // Find a point in the axial tile and the centre of the render tile, where
+    // a depth pick hits the brain and would move the crosshair.
     let axial = null
-    let render = null
+    const renderPts = []
     for (let y = 5; y < 400; y += 10) {
       for (let x = 5; x < 400; x += 10) {
         const t = nv.view.hitTest(x, y)
         if (!t) continue
-        if (t.isRender) render ??= [x, y]
+        if (t.isRender) renderPts.push([x, y])
         else if (t.sliceType === SLICE_TYPE.AXIAL) axial ??= [x, y]
       }
     }
+    const mid = (i) =>
+      (Math.min(...renderPts.map((p) => p[i])) +
+        Math.max(...renderPts.map((p) => p[i]))) / 2
+    const render = [mid(0), mid(1)]
     const [ax, ay] = axial
     click([ax, ay])
     click([ax + 6, ay])
     click([ax + 3, ay + 6])
+    const crosshair = [...nv.crosshairPos]
     ev('dblclick', render[0], render[1], 0, MouseEvent)
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await new Promise((resolve) => setTimeout(resolve, 300))
     const afterRender = {
       count: nv.annotations.length,
       points: nv._annotationPolyPoints?.length ?? 0,
+      crosshairMoved: nv.crosshairPos.some((v, i) => v !== crosshair[i]),
     }
     // The same double-click on the axial tile closes it.
     click([ax + 3, ay + 3])
@@ -151,6 +187,6 @@ test('a double-click on the 3D render tile does not close a contour (#114)', asy
     await new Promise((resolve) => setTimeout(resolve, 100))
     return { afterRender, count: nv.annotations.length }
   })()`)
-  expect(r.afterRender).toEqual({ count: 0, points: 3 })
+  expect(r.afterRender).toEqual({ count: 0, points: 3, crosshairMoved: false })
   expect(r.count).toBe(1)
 })

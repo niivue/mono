@@ -1433,8 +1433,8 @@ consumes the dblclick so it does not fall through to depth-pick (nothing to pick
 on the 2-D plot). This is the one-click way back from a deep zoom; zooming out
 past the full extent still auto-resets too. A double-click on a spatial slice is
 unaffected (still depth-picks), except that while a spline/livewire contour is
-in progress a double-click on a 2D slice tile closes the contour instead; one on
-the 3D render tile still depth-picks (#114).
+in progress a double-click on a 2D slice tile closes the contour instead, and
+one off the slices (the 3D render tile, a graph) is ignored (#114).
 
 Marker vs window: explicit zoom/pan may leave the cursor marker off-window (zoom
 only re-centres on the marker when it is already visible; the pan buttons can

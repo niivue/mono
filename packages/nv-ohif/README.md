@@ -132,7 +132,7 @@ not reflected into OHIF, whose measurement schema exposes only one polyline.
 
 **Gestures.** Drag tools press-drag-release on a 2D slice. The multi-click tools
 (SplineROI, LivewireContour) click to place each vertex, double-click on a 2D slice
-to close the contour (a double-click on the 3D render does not close it), and
+to close the contour (a double-click on the 3D render is ignored), and
 Escape to cancel an in-progress contour. Bidirectional takes two drags on the
 same slice: the long axis first, then the perpendicular short axis. A second drag
 on a different slice starts the measurement over. Loading a document drops any

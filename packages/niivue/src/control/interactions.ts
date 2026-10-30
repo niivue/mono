@@ -58,6 +58,10 @@ import {
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
 import { getImageDataRAS } from '@/volume/utils'
 
+/** Texture-space coordinate `d` of a world-mm point: its slice along `d`. */
+const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
+  m[d] * p[0] + m[4 + d] * p[1] + m[8 + d] * p[2] + m[12 + d]
+
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
   ctrl.activeButton = evt.button
@@ -1449,19 +1453,26 @@ export function initInteraction(ctrl: NiiVue): void {
           sliceType,
         )
         // A bidirectional long axis belongs to the slice it was drawn on; a
-        // press on another slice starts the measurement over (#111).
-        if (
-          ctrl._bidirectionalLong &&
-          shouldStartFreshMultiClickContour(
-            true,
-            ctrl._annotationSliceType,
-            ctrl._annotationSlicePosition,
-            sliceType,
-            slicePosition,
-          )
-        ) {
-          ctrl._bidirectionalLong = null
-          ctrl.model._annotationPreview = null
+        // press on another slice starts the measurement over (#111). Compare
+        // texture depths: on an oblique volume the mm depth varies across one
+        // slice.
+        if (ctrl._bidirectionalLong) {
+          const mm2tex = ctrl.model.mm2tex
+          const dims = ctrl.volumes[0]?.dimsRAS
+          const onSlice =
+            ctrl._annotationSliceType === sliceType &&
+            (mm2tex && dims
+              ? Math.abs(
+                  texDepth(ctrl._annotationAnchorMM, depthDim, mm2tex) -
+                    texDepth(mm, depthDim, mm2tex),
+                ) <=
+                0.5 / dims[depthDim + 1]
+              : Math.abs(ctrl._annotationSlicePosition - slicePosition) <=
+                computeTolerance(ctrl.model))
+          if (!onSlice) {
+            ctrl._bidirectionalLong = null
+            ctrl.model._annotationPreview = null
+          }
         }
         ctrl._annotationSliceType = sliceType
         ctrl._annotationSlicePosition = slicePosition
@@ -2565,15 +2576,14 @@ export function initInteraction(ctrl: NiiVue): void {
     // Close an in-progress multi-click contour (spline / livewire) instead of
     // depth-picking. The two clicks of the double-click already added their
     // points via the pointerdown handler; commit the accumulated contour. A
-    // double-click on the 3D render falls through to depth-pick (#114).
-    const dblTile = ctrl.view?.hitTest(dblHit[0], dblHit[1])
+    // double-click off the slices (the 3D render, a graph) is ignored: it must
+    // neither close the contour nor depth-pick it off its slice (#114).
     if (
       ctrl._annotationPolyPoints &&
-      isMultiClickTool(ctrl.model.annotation.tool) &&
-      dblTile &&
-      !dblTile.isRender &&
-      dblTile.sliceType === ctrl._annotationPolySliceType
+      isMultiClickTool(ctrl.model.annotation.tool)
     ) {
+      const dblTile = ctrl.view?.hitTest(dblHit[0], dblHit[1])
+      if (!dblTile || dblTile.isRender) return
       commitMultiClickContour(ctrl)
       ctrl._abandonAnnotationInProgress()
       ctrl.drawScene()

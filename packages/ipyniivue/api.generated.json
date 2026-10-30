@@ -4274,7 +4274,7 @@
       "returnsValue": false,
       "params": [],
       "returns": "Promise<void>",
-      "doc": "Resolves once no GPU update is running or queued. Setters that rebuild\nGPU resources (such as `volumeIsBackgroundMasking`) start the rebuild\nwithout returning it, so a screenshot taken straight after one can show\nthe old scene. A failed update is not reported here.",
+      "doc": "Resolves once no GPU update is running or queued. Setters that rebuild\nGPU resources (such as `volumeIsBackgroundMasking`) start the rebuild\nwithout returning it, so a screenshot taken straight after one can show\nthe old scene. A failed update is not reported here. Updates that keep\narriving (a drag, live data) keep it waiting.",
       "returnsDoc": null
     }
   ],

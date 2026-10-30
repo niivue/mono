@@ -34,6 +34,10 @@ import type {
   NiiVueHost,
   View,
 } from './view'
+import { within } from './wait'
+
+/** How long `set_options` waits for the GPU rebuild a setter started, inside the server's limit on a call. */
+const UPDATE_WAIT_MS = 8_000
 
 /** The slice types a layout tile can show: every one but `none`. */
 const TILE_SLICES = Object.keys(SLICE_TYPES).filter((name) => name !== 'none')
@@ -232,9 +236,9 @@ export function settingHandlers(host: NiiVueHost): Handlers {
         options: readAll(checked.map(([setting]) => setting)),
       })
       // Some setters start a GPU rebuild without returning it (#447): wait, so
-      // a screenshot taken next shows the change.
+      // a screenshot taken next shows the change, but not past the call's limit.
       return view.whenUpdatesSettle
-        ? view.whenUpdatesSettle().then(answer)
+        ? within(view.whenUpdatesSettle(), UPDATE_WAIT_MS).then(answer)
         : answer()
     },
 

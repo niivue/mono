@@ -3,6 +3,7 @@ import {
   emitPan2DChange,
   emitScaleMultiplierChange,
 } from '@/control/cameraEvents'
+import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
@@ -428,7 +429,9 @@ export function handleDragRelease(ctrl: NiiVue): void {
             volume: vol,
             changes: { calMin: range.calMin, calMax: range.calMax },
           })
-          ctrl._updateGLChanged()
+          ctrl
+            ._updateGLChanged()
+            .catch((e) => log.error('contrast drag failed', e))
         }
       }
     }
@@ -557,7 +560,7 @@ export function dragForWindowing(
     volume: vol,
     changes: { calMin: vol.calMin, calMax: vol.calMax },
   })
-  ctrl._updateGLChanged()
+  ctrl._updateGLChanged().catch((e) => log.error('contrast drag failed', e))
 }
 
 /** Helper: pick mm coordinates at a canvas pixel position using cached slice tiles. */

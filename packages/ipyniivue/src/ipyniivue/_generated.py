@@ -2077,7 +2077,8 @@ and its volumes alive."""
         Setters that rebuild
         GPU resources (such as `volumeIsBackgroundMasking`) start the rebuild
         without returning it, so a screenshot taken straight after one can show
-        the old scene. A failed update is not reported here.
+        the old scene. A failed update is not reported here. Updates that keep
+        arriving (a drag, live data) keep it waiting.
         """
         self.send({"cmd": "whenUpdatesSettle", "args": []})
 

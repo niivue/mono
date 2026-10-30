@@ -376,6 +376,9 @@ function sameRange(
   return a[0] === b[0] && a[1] === b[1]
 }
 
+/** A caller queued behind the GPU update lock. */
+type UpdateWaiter = { resolve: () => void; reject: (err: unknown) => void }
+
 export default class NiiVue extends EventTarget {
   activeClipPlaneIndex: number
   currentClipPlaneIndex: number
@@ -463,10 +466,9 @@ export default class NiiVue extends EventTarget {
   private _resolveUpdateIdle: (() => void) | null = null
   private _pendingUpdate = false
   /** Callers queued behind `_updating`, settled by the follow-up carrying their change. */
-  private _pendingWaiters: {
-    resolve: () => void
-    reject: (err: unknown) => void
-  }[] = []
+  private _pendingWaiters: UpdateWaiter[] = []
+  /** Callers whose follow-up is running (see `_rebuildViewResources`). */
+  private _servingWaiters = new Set<UpdateWaiter>()
   /** A full (not affine-only) update is queued behind `_updating`. */
   private _pendingFull = false
   /** The mesh rebuild covering every update queued behind `_updating`. */
@@ -2602,11 +2604,12 @@ export default class NiiVue extends EventTarget {
    * Resolves once no GPU update is running or queued. Setters that rebuild
    * GPU resources (such as `volumeIsBackgroundMasking`) start the rebuild
    * without returning it, so a screenshot taken straight after one can show
-   * the old scene. A failed update is not reported here.
+   * the old scene. A failed update is not reported here. Updates that keep
+   * arriving (a drag, live data) keep it waiting.
    */
   async whenUpdatesSettle(): Promise<void> {
     // A queued follow-up takes the lock again before the waiters wake.
-    while (this._updating) await this._updateIdle
+    while (this._updating && !this._destroyed) await this._updateIdle
   }
 
   /**
@@ -2735,11 +2738,14 @@ export default class NiiVue extends EventTarget {
   private async _runFollowUp(run: () => Promise<void>): Promise<void> {
     const waiters = this._pendingWaiters
     this._pendingWaiters = []
+    for (const w of waiters) this._servingWaiters.add(w)
     try {
       await run()
       for (const w of waiters) w.resolve()
     } catch (err) {
       for (const w of waiters) w.reject(err)
+    } finally {
+      for (const w of waiters) this._servingWaiters.delete(w)
     }
   }
 
@@ -2759,12 +2765,19 @@ export default class NiiVue extends EventTarget {
     while (this._updating && this._updatingView === this.view) {
       await this._updateIdle
     }
+    // Callers of a follow-up still running on a replaced view settle with this
+    // rebuild, which redoes their change (settling one twice is a no-op).
+    const adopted = [...this._servingWaiters]
     this._commitDirtyVolumes()
     const token = this._beginUpdate()
     try {
       // A modulator committed just above must not bake its old weights.
       this._computeModulationData()
       if (this.view) await this.view.updateBindGroups()
+      for (const w of adopted) w.resolve()
+    } catch (err) {
+      for (const w of adopted) w.reject(err)
+      throw err
     } finally {
       if (this._endUpdate(token)) await this._runPendingUpdate()
     }
@@ -6269,14 +6282,14 @@ export default class NiiVue extends EventTarget {
       if (opts.calMin && this.volumes.length > 0 && target.volumes.length > 0) {
         if (this.volumes[0].calMin !== target.volumes[0].calMin) {
           target.volumes[0].calMin = this.volumes[0].calMin
-          target._updateGLChanged()
+          target._updateGLChanged().catch((e) => log.error('sync failed', e))
           changed = true
         }
       }
       if (opts.calMax && this.volumes.length > 0 && target.volumes.length > 0) {
         if (this.volumes[0].calMax !== target.volumes[0].calMax) {
           target.volumes[0].calMax = this.volumes[0].calMax
-          target._updateGLChanged()
+          target._updateGLChanged().catch((e) => log.error('sync failed', e))
           changed = true
         }
       }
@@ -6577,6 +6590,13 @@ export default class NiiVue extends EventTarget {
     this._chunkStreamWiredView = null
     // Release any settle waiter now: no frame will follow.
     for (const waiter of this._chunkFrameWaiters) waiter(true)
+    // Nor will a queued GPU update run.
+    this._pendingUpdate = false
+    for (const w of [...this._pendingWaiters, ...this._servingWaiters])
+      w.resolve()
+    this._pendingWaiters = []
+    this._servingWaiters.clear()
+    this._resolveUpdateIdle?.()
     // Clear any "graphics unavailable" overlay left by a failed attach.
     if (this.canvas) clearCanvasMessage(this.canvas)
     this._viewLifecycle.unregister?.(this)

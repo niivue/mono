@@ -1034,8 +1034,8 @@ a rebuild.
   `_ensureChunkedVolumeEntry` on its first render, so it is rejected from then
   on; a call before that first render is not refreshed. Neither method emits an
   event (`volumeUpdated`/`meshUpdated` are for display-option changes, and these
-  run per frame). A coalesced `updateVolumeData` resolves when queued, before
-  its follow-up upload runs.
+  run per frame). A coalesced `updateVolumeData` settles when its follow-up
+  upload finishes (#447).
 - **`isDirty` reports an in-place edit to the ordinary path.** A caller that
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
@@ -1090,6 +1090,12 @@ a rebuild.
   one, sets; without it the follow-up rebuilds only `_pendingVolumes`, which
   is empty when only mesh setters queued). `_pendingFull` makes an
   affine-only rerun yield to a queued full update.
+  A caller queued behind the lock gets a promise from `_queueBehindUpdate`
+  that `_runFollowUp` settles with the follow-up's outcome, so its failure
+  reaches the queued callers, not the update that started it. Setters that
+  do not return their rebuild (e.g. `volumeIsBackgroundMasking`) are waited
+  for with the public `whenUpdatesSettle()`, which resolves once nothing is
+  running or queued and does not report a failure.
 
 ## Mesh layers (scalar overlays)
 

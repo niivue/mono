@@ -86,3 +86,44 @@ test('whenUpdatesSettle waits for a rebuild a setter started', async ({
   })
   expect(r).toEqual(['rebuild', 'rebuild', 'settled'])
 })
+
+for (const end of ['view recreation', 'destroy'] as const) {
+  test(`a follow-up stuck on its view still settles its callers on ${end}`, async ({
+    page,
+  }) => {
+    const r = await page.evaluate(async (end) => {
+      const { default: NiiVue } = await import('/src/index.ts')
+      const canvas = document.createElement('canvas')
+      canvas.style.cssText = 'width:200px;height:200px'
+      document.body.appendChild(canvas)
+      const nv = new NiiVue({ backend: 'webgl2' })
+      await nv.attachToCanvas(canvas)
+      await nv.loadVolumes([{ url: '/volumes/sphere.nii.gz' }])
+      const view = nv.view as unknown as {
+        updateBindGroups: (o?: unknown) => Promise<void>
+      }
+      const rebuild = view.updateBindGroups.bind(view)
+      let calls = 0
+      // The follow-up's rebuild never settles, as on a lost device.
+      view.updateBindGroups = (o) =>
+        ++calls === 2 ? new Promise(() => {}) : rebuild(o)
+      nv.volumeIsBackgroundMasking = true
+      const queued = nv.updateGLVolume().then(
+        () => 'ok',
+        (e: Error) => e.message,
+      )
+      while (calls < 2) await new Promise((r) => setTimeout(r, 10))
+      if (end === 'destroy') nv.destroy()
+      else await nv.reinitializeView({ forceRestart: true })
+      const late = () => new Promise((r) => setTimeout(() => r('stuck'), 3000))
+      return {
+        queued: await Promise.race([queued, late()]),
+        settled: await Promise.race([
+          nv.whenUpdatesSettle().then(() => 'ok'),
+          late(),
+        ]),
+      }
+    }, end)
+    expect(r).toEqual({ queued: 'ok', settled: 'ok' })
+  })
+}

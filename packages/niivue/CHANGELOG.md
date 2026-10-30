@@ -1,3 +1,14 @@
+## 1.0.0-rc.57 (2026-10-30)
+
+### Fixes
+
+- **niivue:** type-check reader registries and fix MGH mesh layers ([#427](https://github.com/niivue/mono/issues/427))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.56 (2026-10-30)
 
 ### Fixes

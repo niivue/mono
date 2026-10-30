@@ -725,6 +725,17 @@
       "doc": null
     },
     {
+      "jsName": "isSagittalNoseLeft",
+      "pyName": "is_sagittal_nose_left",
+      "tsType": "boolean | null",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isSingleViewFillCanvas",
       "pyName": "is_single_view_fill_canvas",
       "tsType": "boolean",

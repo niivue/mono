@@ -20,6 +20,7 @@ import { PLANE_ALIASES, PLANE_ANGLES } from '../planes'
 import { TAB_PARAM } from '../protocol'
 import {
   LAYOUT_NAMES,
+  SAGITTAL_NOSE_NAMES,
   SHOW_RENDER_NAMES,
   SLICE_NAMES,
   type ViewState,
@@ -517,6 +518,12 @@ export const CORE_SCHEMAS = {
       .optional()
       .describe(
         "Radiological convention: the subject's left on the right of the picture.",
+      ),
+    sagittal_nose: z
+      .enum(SAGITTAL_NOSE_NAMES)
+      .optional()
+      .describe(
+        'Which way the nose points on sagittal slices, independent of radiological; auto follows radiological (radiological puts the nose left).',
       ),
     colorbar: z.boolean().optional().describe('Whether a colorbar is drawn.'),
   },

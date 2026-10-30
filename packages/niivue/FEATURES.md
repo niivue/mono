@@ -117,6 +117,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isMosaicCentered` | Prop | No | |
 | `tileMargin` | Prop | No | |
 | `isRadiological` | Prop | No | Flip left/right |
+| `isSagittalNoseLeft` | Prop | No | Sagittal nose direction: `true` left, `false` right, `null` (default) follows `isRadiological` |
 | `customLayout` | Prop | No | `CustomLayoutTile[]` — explicit tile list. Per tile: `sliceType`, normalized `position`, optional `sliceMM`, optional `fill` (fill the pane instead of letterboxing to the slice aspect; default false) |
 | `clearCustomLayout()` | Method | No | |
 | `setBounds([x1,y1,x2,y2])` | Method | No | Shared-canvas bounds |
@@ -249,7 +250,7 @@ All flat keys; mirrors the prop list above. Grouping (from source):
   `isClipPlaneCutaway`.
 - **Layout**: `sliceType`, `mosaicString`, `showRender`, `multiplanarType`,
   `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`,
-  `tileMargin`, `isRadiological`, `customLayout`.
+  `tileMargin`, `isRadiological`, `isSagittalNoseLeft`, `customLayout`.
 - **UI**: all §6 props.
 - **Volume**: all §7 props.
 - **Mesh**: all §8 props.

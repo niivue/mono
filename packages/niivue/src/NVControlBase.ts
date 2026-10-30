@@ -1155,6 +1155,26 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Which way the nose points on sagittal slices, independent of
+   * `isRadiological`: `true` draws the nose (anterior) on the left, `false` on
+   * the right. `null` follows `isRadiological` (radiological puts the nose
+   * left, neurological right), which is how sagittal tiles have always been
+   * drawn. Axial and coronal tiles are unaffected.
+   * @default `null` (follow `isRadiological`)
+   * @example nv1.isSagittalNoseLeft = true
+   * @see {@link https://niivue.github.io/mono/examples/layout.html | live demo usage}
+   */
+  get isSagittalNoseLeft(): boolean | null {
+    return this.model.layout.isSagittalNoseLeft
+  }
+  set isSagittalNoseLeft(v: boolean | null) {
+    const value = v ?? null
+    this.model.layout.isSagittalNoseLeft = value
+    this.emit('change', { property: 'isSagittalNoseLeft', value })
+    this.drawScene()
+  }
+
+  /**
    * Let a single 2D slice (axial, coronal or sagittal alone) use the whole
    * canvas rather than a tile letterboxed to the slice's aspect ratio. The
    * slice draws at the same scale and position either way; filling only means a

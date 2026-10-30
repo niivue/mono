@@ -83,6 +83,7 @@ const PROPS_RW = [
   ["isPanFollowingCrosshair", "is_pan_following_crosshair"],
   ["isRadiological", "is_radiological"],
   ["isRulerVisible", "is_ruler_visible"],
+  ["isSagittalNoseLeft", "is_sagittal_nose_left"],
   ["isSingleViewFillCanvas", "is_single_view_fill_canvas"],
   ["isSnapToVoxelCenters", "is_snap_to_voxel_centers"],
   ["isThumbnailVisible", "is_thumbnail_visible"],

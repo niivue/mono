@@ -1,5 +1,6 @@
 import { decode, encode } from 'cbor-x'
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { assertDocumentFitsInput } from '@/documentBounds'
 import {
   type LegacyLabelLut,
   shownLabelColormap,
@@ -703,6 +704,7 @@ export function deserialize(data: Uint8Array): NVDocumentData {
   const doc = looksLikeJSON(data)
     ? (decodeDocumentJSON(new TextDecoder().decode(data)) as NVDocumentData)
     : (decode(data) as NVDocumentData)
+  assertDocumentFitsInput(doc, data.byteLength)
 
   // Version check
   if (typeof doc.version !== 'number') {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { PEN_SHAPE } from '@/NVConstants'
-import { SlideDrawing } from './slideDrawing'
+import { isSlideDrawingSizeValid, SlideDrawing } from './slideDrawing'
 
 const at = (d: SlideDrawing, x: number, y: number): number =>
   d.img[y * d.width + x]
@@ -150,5 +150,25 @@ describe('SlideDrawing', () => {
     expect(tight.magicWand(ref, 0, 0, 5, 3, true)).toBe(1) // only the seed
     const loose = new SlideDrawing(w, h)
     expect(loose.magicWand(ref, 0, 0, 50, 3, true)).toBe(2) // both bridge
+  })
+})
+
+describe('isSlideDrawingSizeValid', () => {
+  test('accepts the sizes createSlideDrawing makes', () => {
+    expect(isSlideDrawingSizeValid(4096, 3072)).toBe(true)
+    expect(isSlideDrawingSizeValid(1, 1)).toBe(true)
+  })
+
+  test('refuses sizes a document could use to force a huge allocation', () => {
+    for (const [w, h] of [
+      [100_000, 100_000],
+      [0, 10],
+      [-5, 10],
+      [10.5, 10],
+      [Number.NaN, 10],
+      [Number.POSITIVE_INFINITY, 10],
+    ]) {
+      expect(isSlideDrawingSizeValid(w, h)).toBe(false)
+    }
   })
 })

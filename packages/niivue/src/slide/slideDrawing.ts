@@ -21,6 +21,20 @@ import { PEN_SHAPE } from '@/NVConstants'
 
 const MAX_UNDO = 10
 
+// shortcut: a fixed side cap (a common max 2D texture size), not the view's
+// own limit; use the backend limit if a device below 16384 needs it.
+const MAX_SIDE = 16384
+
+/** Whether a slide drawing of `width` x `height` (e.g. from a document) is safe to allocate. */
+export function isSlideDrawingSizeValid(
+  width: number,
+  height: number,
+): boolean {
+  return [width, height].every(
+    (n) => Number.isSafeInteger(n) && n > 0 && n <= MAX_SIDE,
+  )
+}
+
 export class SlideDrawing {
   readonly width: number
   readonly height: number

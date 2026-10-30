@@ -142,7 +142,7 @@ import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar } from '@/signal/sidecar'
 import { NVSlide } from '@/slide/NVSlide'
-import { SlideDrawing } from '@/slide/slideDrawing'
+import { isSlideDrawingSizeValid, SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
@@ -6781,7 +6781,16 @@ export default class NiiVue extends EventTarget {
       pixelToWorld: sp.pixelToWorld,
       levelIndex: sp.levelIndex,
     })
-    if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
+    if (
+      sp.drawingRLE &&
+      sp.drawingWidth &&
+      sp.drawingHeight &&
+      !isSlideDrawingSizeValid(sp.drawingWidth, sp.drawingHeight)
+    ) {
+      log.warn(
+        `loadDocument: slide drawing size ${sp.drawingWidth}x${sp.drawingHeight} is not valid; drawing not loaded`,
+      )
+    } else if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
       const drawing = new SlideDrawing(sp.drawingWidth, sp.drawingHeight)
       const decoded = decodeRLE(
         sp.drawingRLE,
@@ -6970,13 +6979,13 @@ export default class NiiVue extends EventTarget {
       const back = this.model.getVolumes()[0]
       if (back) {
         const dv = createDrawingVolume(back)
-        const decoded = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
-        if (decoded.length !== dv.nVox3D) {
+        // Check the claimed length before decodeRLE allocates it.
+        if (doc.drawingBitmapLength !== dv.nVox3D) {
           log.warn(
-            `loadDocument: decoded drawing length ${decoded.length} does not match volume ${dv.nVox3D}`,
+            `loadDocument: drawing length ${doc.drawingBitmapLength} does not match volume ${dv.nVox3D}`,
           )
         } else {
-          dv.img = decoded
+          dv.img = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
         }
         this.model.drawingVolume = dv
         this.model.draw.isEnabled = true

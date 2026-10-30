@@ -131,9 +131,12 @@ holes. Multi-part or holed freehand annotations remain visible in NiiVue but are
 not reflected into OHIF, whose measurement schema exposes only one polyline.
 
 **Gestures.** Drag tools press-drag-release on a 2D slice. The multi-click tools
-(SplineROI, LivewireContour) click to place each vertex, double-click to close the
-contour, and Escape to cancel an in-progress contour. Bidirectional takes two
-drags: the long axis first, then the perpendicular short axis.
+(SplineROI, LivewireContour) click to place each vertex, double-click on a 2D slice
+to close the contour (a double-click on the 3D render does not close it), and
+Escape to cancel an in-progress contour. Bidirectional takes two drags on the
+same slice: the long axis first, then the perpendicular short axis. A second drag
+on a different slice starts the measurement over. Loading a document drops any
+half-drawn contour or bidirectional axis.
 
 **Intensity stats** are sampled from the base volume in the series' modality unit
 (HU for CT, SUV for PT, unitless otherwise); area is in mm2 and voxel-spacing

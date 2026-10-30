@@ -223,15 +223,6 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   return true
 }
 
-// Abandon the in-progress contour (Escape, or a tool/slice change).
-function cancelMultiClickContour(ctrl: NiiVue): void {
-  if (!ctrl._annotationPolyPoints) return
-  ctrl._annotationPolyPoints = null
-  ctrl.model._annotationPreview = null
-  resetLivewire(ctrl)
-  ctrl.drawScene()
-}
-
 // --- Bidirectional (two perpendicular measured axes) ------------------------
 
 type Axis = { start: AnnotationPoint; end: AnnotationPoint }
@@ -461,10 +452,8 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   if (key === 'ESCAPE') {
     // Abandon an in-progress multi-click contour (spline / livewire) or a
     // half-placed bidirectional measurement.
-    if (ctrl._annotationPolyPoints) cancelMultiClickContour(ctrl)
-    if (ctrl._bidirectionalLong) {
-      ctrl._bidirectionalLong = null
-      ctrl.model._annotationPreview = null
+    if (ctrl._annotationPolyPoints || ctrl._bidirectionalLong) {
+      ctrl._abandonAnnotationInProgress()
       ctrl.drawScene()
     }
     return
@@ -2575,9 +2564,8 @@ export function initInteraction(ctrl: NiiVue): void {
     setNextActionTag('dblclick')
     // Close an in-progress multi-click contour (spline / livewire) instead of
     // depth-picking. The two clicks of the double-click already added their
-    // points via the pointerdown handler; commit the accumulated contour. Only
-    // a double-click on a slice of the contour's orientation closes it; one on
-    // the 3D render or another tile falls through (#114).
+    // points via the pointerdown handler; commit the accumulated contour. A
+    // double-click on the 3D render falls through to depth-pick (#114).
     const dblTile = ctrl.view?.hitTest(dblHit[0], dblHit[1])
     if (
       ctrl._annotationPolyPoints &&
@@ -2587,9 +2575,7 @@ export function initInteraction(ctrl: NiiVue): void {
       dblTile.sliceType === ctrl._annotationPolySliceType
     ) {
       commitMultiClickContour(ctrl)
-      ctrl._annotationPolyPoints = null
-      ctrl.model._annotationPreview = null
-      resetLivewire(ctrl)
+      ctrl._abandonAnnotationInProgress()
       ctrl.drawScene()
       return
     }

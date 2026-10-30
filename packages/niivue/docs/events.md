@@ -452,7 +452,7 @@ nv.addEventListener('change', (e) => {
 })
 ```
 
-Properties that emit `change` include all controller setters: `azimuth`, `elevation`, `crosshairPos`, `sliceType`, `backgroundColor`, `isColorbarVisible`, `volumeIllumination`, `meshXRay`, `drawPenValue`, `primaryDragMode`, and all others. Some setters also emit a more specific event (e.g. `azimuthElevationChange`, `sliceTypeChange`).
+Properties that emit `change` include all controller setters: `azimuth`, `elevation`, `crosshairPos`, `sliceType`, `backgroundColor`, `isColorbarVisible`, `volumeIllumination`, `meshXRay`, `drawPenValue`, `primaryDragMode`, and all others. Some setters also emit a more specific event (e.g. `azimuthElevationChange`, `sliceTypeChange`). Setting `annotationTool` to its current value is a no-op: it emits no `change` and keeps the selection and any half-drawn shape.
 
 ---
 

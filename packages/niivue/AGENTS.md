@@ -77,7 +77,8 @@ silently reused and the tests run its code; check `lsof -iTCP:5273` first. A
 machine without Playwright's pinned browser can set `PLAYWRIGHT_CHROMIUM_PATH`
 to any installed `chrome-headless-shell`. `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` runs full
 Chromium on the real GPU instead of SwiftShader (the macos-15 CI job does). These are
-kept OUT of the hermetic unit `test` target and the PR gate (they need a browser).
+kept OUT of the hermetic unit `test` target and `pr_gate.yml` (they need a browser);
+`niivue-e2e.yml` runs them instead.
 Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
 canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.

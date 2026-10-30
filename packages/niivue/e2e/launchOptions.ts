@@ -21,6 +21,8 @@ const executablePathOverride: LaunchOptions = process.env
  * SwiftShader, even on a physical Mac; full Chromium reaches Metal on the
  * macos runners (issue #199). The SwiftShader flags are dropped in this mode
  * because `--use-angle=swiftshader` would force software rendering anyway.
+ * `PLAYWRIGHT_CHROMIUM_PATH` is ignored here: `channel` and `executablePath`
+ * conflict.
  */
 const channel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL
 const hardwareGpuLaunchOptions: LaunchOptions = {

@@ -38,6 +38,14 @@ on:
       - 'packages/niivue/**'
       - '.github/workflows/niivue-e2e.yml'
 
+permissions:
+  contents: read
+
+# A new push to a PR cancels its stale run; the macOS job takes ~20 min.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   browser-contracts:
     runs-on: ubuntu-latest
@@ -80,6 +88,8 @@ jobs:
     env:
       PLAYWRIGHT_CHROMIUM_CHANNEL: chromium
     steps:
+      # All of dev-images, unlike the job above: the full suite reads ~17
+      # assets and an include list would rot as specs are added.
       - uses: actions/checkout@v4
         with:
           lfs: true
@@ -100,3 +110,10 @@ jobs:
         run: |
           bunx playwright test --workers=2 --reporter=line \
             --grep-invert "keeps its modulation|no plane seams"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-metal
+          path: packages/niivue/playwright-report/
+          retention-days: 7

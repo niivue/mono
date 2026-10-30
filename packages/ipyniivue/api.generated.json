@@ -4589,6 +4589,10 @@
         "reason": "return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)"
       },
       {
+        "jsName": "loadFiles",
+        "reason": "argument is not JSON-serializable (browser File objects; use add_volume / add_mesh with a URL or bytes)"
+      },
+      {
         "jsName": "prepareVolume",
         "reason": "return value is not JSON-serializable (a live NVImage for addVolume to take; use add_volume)"
       },

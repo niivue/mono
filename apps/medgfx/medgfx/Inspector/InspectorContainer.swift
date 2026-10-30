@@ -30,7 +30,7 @@ struct InspectorContainer: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if !model.volumes.isEmpty {
+                if !model.volumes.isEmpty || !model.meshes.isEmpty {
                     LayersInspectorSection(model: model, selection: $selectedLayer)
                         .padding(.bottom, 14)
                     Divider()

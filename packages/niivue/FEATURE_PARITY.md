@@ -30,7 +30,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `loadVolumes(list)` | ✅ | |
 | `addVolume(volume)` | ✅ | |
-| `loadImages()` (mixed volumes+meshes) | ✅ | `loadImage` / `addImage` |
+| `loadImages()` (mixed volumes+meshes) | ✅ | `loadImage` / `addImage`; `loadFiles(files, { add })` for local `File`s as a drop loads them |
 | `loadFromUrl/File/ArrayBuffer` generic loaders | ✅ | Via `useLoader` plugin system |
 | DICOM loading | ✅ | Provided by `@niivue/nv-ext-dcm2niix` extension (browser-side dcm2niix/WASM conversion) |
 | `loadDeferred4DVolumes()` | ✅ | |

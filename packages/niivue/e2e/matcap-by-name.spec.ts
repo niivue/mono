@@ -41,3 +41,46 @@ test('setter and loadMatcap resolve mixed-case matcap names to their URL', async
   expect(r.fromLoad).toBe(r.fromOption)
   expect(r.changes[0]).toBe(r.fromOption)
 })
+
+test('the setter changes the rendered matcap of a loaded volume', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const shot = () => page.locator('#matcap-canvas').screenshot()
+  const settle = () => page.waitForTimeout(1000)
+  await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const canvas = document.createElement('canvas')
+    canvas.id = 'matcap-canvas'
+    canvas.width = 256
+    canvas.height = 256
+    document.body.prepend(canvas)
+    const nv = new NiiVue({
+      backend: 'webgl2',
+      matcaps: {
+        cortex: '/src/assets/matcaps/Cortex.jpg',
+        shiny: '/src/assets/matcaps/Shiny.jpg',
+      },
+    })
+    await nv.attachToCanvas(canvas)
+    nv.sliceType = 4 // render: the only view that samples the matcap
+    nv.volumeIllumination = 0.5 // unlit volumes never sample the matcap
+    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    ;(window as unknown as { nv: typeof nv }).nv = nv
+  })
+  await settle()
+  const cortex = await shot()
+  await page.evaluate(() => {
+    ;(window as unknown as { nv: { volumeMatcap: string } }).nv.volumeMatcap =
+      'SHINY'
+  })
+  await settle()
+  const shiny = await shot()
+  await page.evaluate(() => {
+    ;(window as unknown as { nv: { volumeMatcap: string } }).nv.volumeMatcap =
+      'Cortex'
+  })
+  await settle()
+  expect(shiny.equals(cortex)).toBe(false)
+  expect((await shot()).equals(cortex)).toBe(true)
+})

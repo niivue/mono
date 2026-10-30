@@ -1995,7 +1995,8 @@ export default class NiiVue extends EventTarget {
     const url = matcapFromName(v, this.opts.matcaps)
     this.model.volume.matcap = url
     this.emit('change', { property: 'volumeMatcap', value: url })
-    this.drawScene()
+    // The renderer loads the matcap texture in a GPU update, not on draw.
+    this._updateGLChanged().catch((e) => log.error('volumeMatcap failed', e))
   }
 
   get volumePaqdUniforms(): [number, number, number, number] {

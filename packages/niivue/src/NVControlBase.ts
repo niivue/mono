@@ -770,6 +770,19 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Crosshair position as a **scene fraction**, not millimetres: each
+   * component is in [0,1] across the scene bounding box (the union of all
+   * loaded volume and mesh extents, in RAS world space), so `[0.5, 0.5, 0.5]`
+   * is the scene centre. Setting it moves the crosshair as given: no voxel
+   * snapping and no clamping. It still emits `change` and `locationChange` and
+   * redraws. The getter returns the live vector; assign a new value rather than
+   * mutating it.
+   *
+   * To work in world millimetres use {@link setCrosshairPos} /
+   * {@link getCrosshairPos}; for voxel indices use {@link vox2frac}.
+   * @example nv1.crosshairPos = [0.5, 0.5, 0.5] // scene centre
+   */
   get crosshairPos(): vec3 {
     return this.model.scene.crosshairPos
   }
@@ -4650,6 +4663,10 @@ export default class NiiVue extends EventTarget {
   /**
    * Convert RAS voxel coordinates to scene fraction [0,1].
    * Uses the background volume's matRAS for the vox→mm conversion.
+   * The result is in the units of the {@link crosshairPos} property, so it can
+   * be assigned there directly. Returns the scene centre when no volume (or no
+   * matRAS) is loaded.
+   * @example nv1.crosshairPos = nv1.vox2frac([64, 64, 32])
    */
   vox2frac(vox: [number, number, number]): [number, number, number] {
     if (this.volumes.length === 0) return [0.5, 0.5, 0.5]
@@ -4660,11 +4677,30 @@ export default class NiiVue extends EventTarget {
     return [frac[0], frac[1], frac[2]]
   }
 
+  /**
+   * Crosshair position in **RAS world millimetres** (x = right, y = anterior,
+   * z = superior), converted from the scene-fraction {@link crosshairPos}.
+   * Pairs with {@link setCrosshairPos}, which takes the same units.
+   * @example const [x, y, z] = nv1.getCrosshairPos() // mm
+   */
   getCrosshairPos(): [number, number, number] {
     const pos = this.model.scene2mm(this.model.scene.crosshairPos)
     return [pos[0], pos[1], pos[2]]
   }
 
+  /**
+   * Move the crosshair to a point given in **RAS world millimetres**
+   * (x = right, y = anterior, z = superior), not a scene fraction. The point
+   * is converted to the scene-fraction {@link crosshairPos} and clamped to the
+   * scene bounding box. When `isSnapToVoxelCenters` is true and a volume is
+   * loaded, it is first snapped to the nearest voxel centre of the background
+   * volume (`volumes[0]`). Emits `locationChange` and redraws.
+   *
+   * Replaces the 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)`: pass the mm
+   * directly. To set a fraction instead, assign {@link crosshairPos}.
+   * @param pos - [x, y, z] in world mm
+   * @example nv1.setCrosshairPos([0, -18, 12]) // mm
+   */
   setCrosshairPos(pos: [number, number, number]): void {
     let mm: [number, number, number] = pos
     // Snap to voxel centers if enabled and volumes are loaded

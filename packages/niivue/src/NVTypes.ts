@@ -1214,6 +1214,13 @@ export type NiiVueOptions = {
   // Scene
   azimuth?: number
   elevation?: number
+  /**
+   * Initial crosshair position as a scene fraction in [0,1] per axis across the
+   * scene bounding box (default `[0.5, 0.5, 0.5]`, the centre), not millimetres.
+   * Same units as the `crosshairPos` property; to place the crosshair at a
+   * world-mm point after loading, call `setCrosshairPos(mm)`.
+   * @example new NiiVue({ crosshairPos: [0.5, 0.5, 0.5] })
+   */
   crosshairPos?: [number, number, number]
   pan2Dxyzmm?: [number, number, number, number]
   scaleMultiplier?: number

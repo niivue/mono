@@ -24,11 +24,14 @@ for (const backend of ['webgl2', 'webgpu']) {
       const before = px()
       nv.fontScale = nv.fontScale * 3
       const scaled = px()
-      nv.fontMinSize = scaled * 2
+      nv.fontMinSize = nv.fontMinSize * 2
       const minSized = px()
+      const actual = nv.backend
       nv.destroy()
-      return { before, scaled, minSized }
+      return { backend: actual, before, scaled, minSized }
     })()`)
+    // Headless Chromium may lack a WebGPU adapter and fall back to WebGL2.
+    test.skip(r.backend !== backend, `${backend} unavailable`)
     expect(r.scaled).toBeGreaterThan(r.before)
     expect(r.minSized).toBeGreaterThan(r.scaled)
   })

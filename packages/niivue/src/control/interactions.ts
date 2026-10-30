@@ -57,7 +57,6 @@ import {
 } from '@/volume/ChunkExplode'
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
 import { getImageDataRAS } from '@/volume/utils'
-import { version } from '../../package.json'
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -476,7 +475,7 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   }
   if (key === 'V') {
     if (!ctrl.model.interaction.isViewModeHotKeyEnabled) {
-      log.info(`NIIVUE VERSION: ${version}`)
+      log.info(`NIIVUE VERSION: ${ctrl.version}`)
     } else if (
       !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat)
     ) {

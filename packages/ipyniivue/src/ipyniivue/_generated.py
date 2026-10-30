@@ -260,6 +260,8 @@ and its volumes alive."""
     mesh_shaders = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     mesh_write_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     selected_annotation = traitlets.Unicode(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    version = traitlets.Unicode(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`."""
     volume_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     volume_transforms = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Get list of available volume transform names."""

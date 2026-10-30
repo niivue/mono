@@ -143,7 +143,8 @@ export function registerSettingTools(
       'A choice is given by its word (a drag mode, a pen shape, a render mode), a colour as ' +
       '[red, green, blue, alpha] 0 to 1. Every value is checked before any is set, so a bad one ' +
       'changes nothing. Answers once any GPU rebuild the change started has finished, so a ' +
-      'screenshot taken next shows it, and reports the settings as they are afterwards.',
+      'screenshot taken next shows it, and reports the settings as they are afterwards. ' +
+      'Reports a timeout after 8 seconds if the rebuild has not settled; the settings may still apply later.',
     inputSchema: SETTING_SCHEMAS.set_options,
   })
 

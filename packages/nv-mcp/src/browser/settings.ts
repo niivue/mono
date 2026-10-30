@@ -238,7 +238,13 @@ export function settingHandlers(host: NiiVueHost): Handlers {
       // Some setters start a GPU rebuild without returning it (#447): wait, so
       // a screenshot taken next shows the change, but not past the call's limit.
       return view.whenUpdatesSettle
-        ? within(view.whenUpdatesSettle(), UPDATE_WAIT_MS).then(answer)
+        ? within(view.whenUpdatesSettle(), UPDATE_WAIT_MS).then((settled) => {
+            if (!settled)
+              throw new Error(
+                `GPU rebuild did not settle within ${UPDATE_WAIT_MS} ms; settings may still apply.`,
+              )
+            return answer()
+          })
         : answer()
     },
 

@@ -1,15 +1,18 @@
-/** `promise`, or nothing once `ms` have passed, whichever is first. */
-export function within(promise: Promise<unknown>, ms: number): Promise<void> {
+/** Whether `promise` settled (resolved or rejected) before the timeout. */
+export function within(
+  promise: Promise<unknown>,
+  ms: number,
+): Promise<boolean> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
+    const timer = setTimeout(() => resolve(false), ms)
     promise.then(
       () => {
         clearTimeout(timer)
-        resolve()
+        resolve(true)
       },
       () => {
         clearTimeout(timer)
-        resolve()
+        resolve(true)
       },
     )
   })

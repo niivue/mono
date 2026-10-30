@@ -468,7 +468,7 @@ export default class NiiVue extends EventTarget {
   /** Callers queued behind `_updating`, settled by the follow-up carrying their change. */
   private _pendingWaiters: UpdateWaiter[] = []
   /** Callers whose follow-up is running (see `_rebuildViewResources`). */
-  private _servingWaiters = new Set<UpdateWaiter>()
+  private _servingWaiters = new Map<UpdateWaiter, object>()
   /** A full (not affine-only) update is queued behind `_updating`. */
   private _pendingFull = false
   /** The mesh rebuild covering every update queued behind `_updating`. */
@@ -2738,14 +2738,19 @@ export default class NiiVue extends EventTarget {
   private async _runFollowUp(run: () => Promise<void>): Promise<void> {
     const waiters = this._pendingWaiters
     this._pendingWaiters = []
-    for (const w of waiters) this._servingWaiters.add(w)
+    const owner = {}
+    for (const w of waiters) this._servingWaiters.set(w, owner)
     try {
       await run()
-      for (const w of waiters) w.resolve()
+      for (const w of waiters)
+        if (this._servingWaiters.get(w) === owner) w.resolve()
     } catch (err) {
-      for (const w of waiters) w.reject(err)
+      for (const w of waiters)
+        if (this._servingWaiters.get(w) === owner) w.reject(err)
     } finally {
-      for (const w of waiters) this._servingWaiters.delete(w)
+      for (const w of waiters)
+        if (this._servingWaiters.get(w) === owner)
+          this._servingWaiters.delete(w)
     }
   }
 
@@ -2766,19 +2771,25 @@ export default class NiiVue extends EventTarget {
       await this._updateIdle
     }
     // Callers of a follow-up still running on a replaced view settle with this
-    // rebuild, which redoes their change (settling one twice is a no-op).
-    const adopted = [...this._servingWaiters]
+    // rebuild, which takes ownership so the old view cannot settle them.
+    const adopted = [...this._servingWaiters.keys()]
     this._commitDirtyVolumes()
     const token = this._beginUpdate()
+    for (const w of adopted) this._servingWaiters.set(w, token)
     try {
       // A modulator committed just above must not bake its old weights.
       this._computeModulationData()
       if (this.view) await this.view.updateBindGroups()
-      for (const w of adopted) w.resolve()
+      for (const w of adopted)
+        if (this._servingWaiters.get(w) === token) w.resolve()
     } catch (err) {
-      for (const w of adopted) w.reject(err)
+      for (const w of adopted)
+        if (this._servingWaiters.get(w) === token) w.reject(err)
       throw err
     } finally {
+      for (const w of adopted)
+        if (this._servingWaiters.get(w) === token)
+          this._servingWaiters.delete(w)
       if (this._endUpdate(token)) await this._runPendingUpdate()
     }
   }
@@ -6592,7 +6603,7 @@ export default class NiiVue extends EventTarget {
     for (const waiter of this._chunkFrameWaiters) waiter(true)
     // Nor will a queued GPU update run.
     this._pendingUpdate = false
-    for (const w of [...this._pendingWaiters, ...this._servingWaiters])
+    for (const w of [...this._pendingWaiters, ...this._servingWaiters.keys()])
       w.resolve()
     this._pendingWaiters = []
     this._servingWaiters.clear()

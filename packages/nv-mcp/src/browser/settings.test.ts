@@ -132,6 +132,15 @@ describe('get_options and set_options', () => {
   })
 })
 
+it('reports a timeout when a settings rebuild does not settle', async () => {
+  const view = settingsView({ whenUpdatesSettle: () => new Promise(() => {}) })
+  const { set_options } = settingHandlers(hostOf(view))
+  await expect(
+    Promise.resolve(set_options({ options: { crosshairWidth: 2 } })),
+  ).rejects.toThrow('GPU rebuild did not settle within 8000 ms')
+  expect(view.crosshairWidth).toBe(2)
+}, 10000)
+
 describe('capabilities', () => {
   it('says which optional members, settings, colormaps and transforms the page has', () => {
     const view = settingsView({

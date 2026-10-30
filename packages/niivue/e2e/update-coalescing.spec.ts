@@ -127,3 +127,57 @@ for (const end of ['view recreation', 'destroy'] as const) {
     expect(r).toEqual({ queued: 'ok', settled: 'ok' })
   })
 }
+
+for (const oldResult of ['resolve', 'reject']) {
+  for (const newResult of ['resolve', 'reject']) {
+    test(`replacement owns its caller when old=${oldResult}, new=${newResult}`, async ({
+      page,
+    }) => {
+      const r = await page.evaluate(`(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const canvas = document.createElement('canvas')
+    document.body.appendChild(canvas)
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachToCanvas(canvas)
+    const original = nv.view.updateBindGroups.bind(nv.view)
+    let resolveOld, rejectOld, releaseNew, calls = 0, newStarted = false
+    const oldGate = new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject })
+    const newGate = new Promise(resolve => { releaseNew = resolve })
+    nv.view.updateBindGroups = o => ++calls === 2 ? oldGate : original(o)
+    const first = nv.updateGLVolume()
+    let outcome = 'pending'
+    const queued = nv.updateGLVolume().then(() => { outcome = 'ok' }, e => { outcome = e.message })
+    while (calls < 2) await new Promise(r => setTimeout(r, 0))
+    const takeover = nv._rebuildViewResources.bind(nv)
+    nv._rebuildViewResources = async () => {
+      const update = nv.view.updateBindGroups.bind(nv.view)
+      nv.view.updateBindGroups = async o => {
+        newStarted = true
+        await newGate
+        if ('${newResult}' === 'reject') throw new Error('replacement failed')
+        return update(o)
+      }
+      return takeover()
+    }
+    const recreated = nv.reinitializeView({ forceRestart: true })
+    while (!newStarted) await new Promise(r => setTimeout(r, 0))
+    if ('${oldResult}' === 'reject') rejectOld(new Error('old device lost'))
+    else resolveOld()
+    await new Promise(r => setTimeout(r, 10))
+    const beforeReplacement = outcome
+    releaseNew()
+    await recreated
+    await queued
+    await first
+    const retained = nv._servingWaiters.size
+    nv.destroy()
+    return { beforeReplacement, outcome, retained }
+  })()`)
+      expect(r.beforeReplacement).toBe('pending')
+      expect(r.outcome).toBe(
+        newResult === 'resolve' ? 'ok' : 'replacement failed',
+      )
+      expect(r.retained).toBe(0)
+    })
+  }
+}

@@ -671,7 +671,12 @@ async function initialize({ model }) {
       const v = model.get(pyName)
       try {
         const nv = state.nv
-        if (nv && nv[jsName] !== v) nv[jsName] = v
+        if (nv && nv[jsName] !== v) {
+          nv[jsName] = v
+          // A setter can change derived read-only properties (device_pixel_ratio
+          // -> effective_device_pixel_ratio).
+          syncReadOnlyProperties()
+        }
       } catch (err) {
         console.warn("ipyniivue: failed to set " + jsName + ":", err)
       }

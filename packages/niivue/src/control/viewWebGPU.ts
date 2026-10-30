@@ -159,8 +159,8 @@ export async function reinitializeView(
     if (forceRestart || antiAliasChanged) {
       await recreateView(ctrl)
     } else {
-      if (ctrl.view) ctrl.view.forceDevicePixelRatio = newPixelRatio
-      ctrl.view?.resize()
+      // The setter also updates controllers sharing this canvas.
+      ctrl.devicePixelRatio = newPixelRatio
     }
     return true
   } catch (err) {

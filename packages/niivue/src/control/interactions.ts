@@ -332,11 +332,7 @@ function clientToCanvasPixel(
   if (!rect) {
     return [0, 0]
   }
-  let dpr = window.devicePixelRatio || 1
-  const forcedDpr = ctrl.opts.forceDevicePixelRatio ?? -1
-  if (forcedDpr > 0) {
-    dpr = forcedDpr
-  }
+  const dpr = ctrl.effectiveDevicePixelRatio
   const x = (clientX - rect.left) * dpr
   const y = (clientY - rect.top) * dpr
   return [x, y]
@@ -2747,7 +2743,7 @@ export function setupResizeHandler(ctrl: NiiVue): void {
   }
   const onResize = () => {
     setNextActionTag('resize')
-    ctrl.view?.resize()
+    ctrl.resize()
     if (ctrl.canvas) {
       ctrl.emit('canvasResize', {
         width: ctrl.canvas.clientWidth,

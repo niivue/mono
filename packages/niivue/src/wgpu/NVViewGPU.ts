@@ -1,5 +1,6 @@
 import { mat4 } from 'gl-matrix'
 import { getCanvasViewport } from '@/control/viewBoth'
+import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import { defaultMatcap } from '@/documentMatcap'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
@@ -1807,10 +1808,7 @@ export default class NVView {
       }
       // Graph labels and lines for 4D frame intensity
       if (graphData && graphWidth > 0) {
-        const graphDpr =
-          this.forceDevicePixelRatio > 0
-            ? this.forceDevicePixelRatio
-            : window.devicePixelRatio || 1
+        const graphDpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
         this.graphLayout = NVGraph.computeGraphLayout(
           graphData,
           canvasWidth,
@@ -2236,8 +2234,7 @@ export default class NVView {
     if (!this.device) return
     const msaaCount = this.isAntiAlias ? 4 : 1
     // Initialize render layer modules
-    let dpr = window.devicePixelRatio || 1
-    if (this.forceDevicePixelRatio > 0) dpr = this.forceDevicePixelRatio
+    const dpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
     await this.lineRenderer.init(
       this.device,
       this.preferredCanvasFormat,
@@ -2357,8 +2354,7 @@ export default class NVView {
   resize(): void {
     if (!this.device || !this.context) return
     if (!this.canvas.parentNode) return
-    let dpr = window.devicePixelRatio || 1
-    if (this.forceDevicePixelRatio > 0) dpr = this.forceDevicePixelRatio
+    const dpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
     const rect = this.canvas.getBoundingClientRect()
     const newW = Math.max(1, Math.floor(rect.width * dpr))
     const newH = Math.max(1, Math.floor(rect.height * dpr))

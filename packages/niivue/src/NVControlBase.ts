@@ -35,6 +35,7 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import {
   type SettingsSnapshot,
   settingsChangeEvents,
@@ -906,9 +907,9 @@ export default class NiiVue extends EventTarget {
    * {@link getScreenTiles} use. This is the exact conversion the built-in
    * pointer handlers apply, so a caller never has to reproduce it:
    * `(client - canvas rect origin) * dpr`, where `dpr` is
-   * `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
-   * then, for an instance sharing a canvas via `bounds`, minus the origin of
-   * this instance's post-viewport pixel rect.
+   * {@link effectiveDevicePixelRatio}; then, for an instance sharing a
+   * canvas via `bounds`, minus the origin of this instance's post-viewport
+   * pixel rect.
    *
    * Returns null when the instance has no canvas or, for a `bounds` instance,
    * when the point is outside this instance's rect (a sibling's area) or the
@@ -928,8 +929,8 @@ export default class NiiVue extends EventTarget {
    * the top-left, y down. These are NOT CSS pixels, and for an instance
    * sharing one canvas via `bounds` they are bounds-local (the instance's own
    * pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
-   * event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
-   * the bounds offset exactly as the built-in pointer handlers do.
+   * event; it applies {@link effectiveDevicePixelRatio} and the bounds
+   * offset exactly as the built-in pointer handlers do.
    *
    * Returns the tile index, its slice type, whether it is a 3D render tile,
    * and the position normalized to the tile rect (half-open [0,1), y down);
@@ -975,7 +976,7 @@ export default class NiiVue extends EventTarget {
    * those).
    *
    * The returned x/y are canvas backing-store pixels (see {@link hitTest});
-   * divide by the effective devicePixelRatio to position CSS-pixel-sized
+   * divide by {@link effectiveDevicePixelRatio} to position CSS-pixel-sized
    * overlay elements. The point may project outside the winning tile's rect
    * when panned/zoomed out of view — clip against the tile's
    * `leftTopWidthHeight` if needed. Returns null before the first render or
@@ -2885,11 +2886,25 @@ export default class NiiVue extends EventTarget {
     return this.devicePixelRatio
   }
 
+  /**
+   * The device pixel ratio the canvas renders at: the `devicePixelRatio`
+   * option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
+   * pixels times this are canvas pixels.
+   */
+  get effectiveDevicePixelRatio(): number {
+    return effectiveDevicePixelRatio(this.opts.forceDevicePixelRatio)
+  }
+
   set devicePixelRatio(dpr: number) {
-    this.opts.forceDevicePixelRatio = dpr
-    if (!this.view) return
-    this.view.forceDevicePixelRatio = dpr
-    this.view.resize()
+    // Controllers sharing a canvas render it at one ratio, so all follow.
+    const ctrls = new Set([this, ...(getCanvasInstances(this.canvas) ?? [])])
+    for (const ctrl of ctrls) {
+      ctrl.opts.forceDevicePixelRatio = dpr
+      if (!ctrl.view) continue
+      ctrl.view.forceDevicePixelRatio = dpr
+      // resize() also rebuilds instance tiles for the new canvas pixel size.
+      ctrl.resize()
+    }
   }
 
   /** @deprecated Use devicePixelRatio */
@@ -5267,14 +5282,7 @@ export default class NiiVue extends EventTarget {
   /** Map a canvas CSS pixel to slide base-pixel coords, or null off-plane. */
   slidePlanePick(cssX: number, cssY: number): { x: number; y: number } | null {
     if (!this._slidePlane) return null
-    // forceDevicePixelRatio is -1 ("auto") unless explicitly pinned.
-    const forced = this.view?.forceDevicePixelRatio ?? -1
-    const dpr =
-      forced > 0
-        ? forced
-        : typeof window !== 'undefined'
-          ? window.devicePixelRatio || 1
-          : 1
+    const dpr = this.effectiveDevicePixelRatio
     return pickSlidePixel(this._slidePlane, cssX * dpr, cssY * dpr)
   }
 
@@ -6496,7 +6504,11 @@ export default class NiiVue extends EventTarget {
   resize(): void {
     if (!this.view) return
     this.view.resize()
-    if (this.opts.instances) this.updateTilesFromInstances()
+    if (this.opts.instances) {
+      // view.resize() drew with the old tiles; draw again with the new ones.
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
   }
 
   /**

@@ -80,6 +80,7 @@ import type {
   VolumeUpdate,
 } from './view'
 import { viewportHandlers } from './viewport'
+import { within } from './wait'
 
 /** The default width a screenshot is scaled down to. */
 export const SCREENSHOT_WIDTH = 1024
@@ -1592,23 +1593,6 @@ const SETTLE_WAIT_MS = 8_000
 
 /** How long a screenshot waits for the render backend to finish an upload. */
 const BUSY_WAIT_MS = 4_000
-
-/** `promise`, or nothing once `ms` have passed, whichever is first. */
-function within(promise: Promise<unknown>, ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    promise.then(
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-    )
-  })
-}
 
 /** Waits a frame at a time, up to `ms`, while the render backend is busy. */
 async function untilIdle(view: View, ms: number): Promise<void> {

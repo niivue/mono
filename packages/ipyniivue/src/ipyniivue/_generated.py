@@ -2071,4 +2071,15 @@ and its volumes alive."""
         """
         self.send({"cmd": "whenChunkStreamSettles", "args": _make_args(timeout_ms)})
 
+    def when_updates_settle(self) -> None:
+        """Resolves once no GPU update is running or queued.
+
+        Setters that rebuild
+        GPU resources (such as `volumeIsBackgroundMasking`) start the rebuild
+        without returning it, so a screenshot taken straight after one can show
+        the old scene. A failed update is not reported here. Updates that keep
+        arriving (a drag, live data) keep it waiting.
+        """
+        self.send({"cmd": "whenUpdatesSettle", "args": []})
+
 

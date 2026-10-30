@@ -69,3 +69,14 @@ export function isEmbeddedImageComplete(dims: number[], img: unknown): boolean {
     x * y * z <= img.byteLength
   )
 }
+
+/** Copy serialized bytes only after verifying that their size is real. */
+export function copyDocumentBytes(bytes: Uint8Array): ArrayBuffer {
+  if (!(bytes instanceof Uint8Array)) {
+    throw new Error('Invalid NVD file: expected a byte array')
+  }
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer
+}

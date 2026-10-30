@@ -2,6 +2,7 @@ import { decode, encode } from 'cbor-x'
 import * as NVCmaps from '@/cmap/NVCmaps'
 import {
   assertDocumentFitsInput,
+  copyDocumentBytes,
   isEmbeddedImageComplete,
 } from '@/documentBounds'
 import {
@@ -1013,28 +1014,16 @@ export async function reconstructMesh(
     if (m.data) {
       // Reconstruct mesh from embedded data
       // Create copies to ensure proper alignment (CBOR may give unaligned views)
-      const posBuffer = m.data.positions.buffer.slice(
-        m.data.positions.byteOffset,
-        m.data.positions.byteOffset + m.data.positions.byteLength,
-      )
-      const idxBuffer = m.data.indices.buffer.slice(
-        m.data.indices.byteOffset,
-        m.data.indices.byteOffset + m.data.indices.byteLength,
-      )
-      const colBuffer = m.data.colors.buffer.slice(
-        m.data.colors.byteOffset,
-        m.data.colors.byteOffset + m.data.colors.byteLength,
-      )
+      const posBuffer = copyDocumentBytes(m.data.positions)
+      const idxBuffer = copyDocumentBytes(m.data.indices)
+      const colBuffer = copyDocumentBytes(m.data.colors)
       const positions = new Float32Array(posBuffer)
       const indices = new Uint32Array(idxBuffer)
       const colors = new Uint32Array(colBuffer)
       // Restore perVertexColors if present (only for meshes with file colors)
       let perVertexColors: Uint32Array | null = null
       if (m.data.perVertexColors) {
-        const pvcBuffer = m.data.perVertexColors.buffer.slice(
-          m.data.perVertexColors.byteOffset,
-          m.data.perVertexColors.byteOffset + m.data.perVertexColors.byteLength,
-        ) as ArrayBuffer
+        const pvcBuffer = copyDocumentBytes(m.data.perVertexColors)
         perVertexColors = new Uint32Array(pvcBuffer)
       }
       // Restore layers from embedded data
@@ -1043,10 +1032,7 @@ export async function reconstructMesh(
         const nVert = positions.length / 3
         for (const docLayer of m.layers) {
           if (docLayer.data) {
-            const valBuffer = docLayer.data.buffer.slice(
-              docLayer.data.byteOffset,
-              docLayer.data.byteOffset + docLayer.data.byteLength,
-            )
+            const valBuffer = copyDocumentBytes(docLayer.data)
             const values = new Float32Array(valBuffer)
             const layer = NVMeshLayers.createLayer(values, nVert, {
               url: docLayer.url,
@@ -1071,11 +1057,7 @@ export async function reconstructMesh(
             if (docLayer.colormapLabel) {
               const lutData = docLayer.colormapLabel.lut
               layer.colormapLabel = {
-                lut: new Uint8ClampedArray(
-                  lutData.buffer,
-                  lutData.byteOffset,
-                  lutData.byteLength,
-                ),
+                lut: new Uint8ClampedArray(copyDocumentBytes(lutData)),
                 min: docLayer.colormapLabel.min,
                 max: docLayer.colormapLabel.max,
                 labels: docLayer.colormapLabel.labels,
@@ -1108,40 +1090,24 @@ export async function reconstructMesh(
       if (kind === 'tract' && m.tractData) {
         const td = m.tractData
         const trx: NVTractData = {
-          vertices: new Float32Array(
-            td.vertices.buffer.slice(
-              td.vertices.byteOffset,
-              td.vertices.byteOffset + td.vertices.byteLength,
-            ),
-          ),
-          offsets: new Uint32Array(
-            td.offsets.buffer.slice(
-              td.offsets.byteOffset,
-              td.offsets.byteOffset + td.offsets.byteLength,
-            ),
-          ),
+          vertices: new Float32Array(copyDocumentBytes(td.vertices)),
+          offsets: new Uint32Array(copyDocumentBytes(td.offsets)),
           dpv: Object.fromEntries(
             Object.entries(td.dpv).map(([k, v]) => [
               k,
-              new Float32Array(
-                v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength),
-              ),
+              new Float32Array(copyDocumentBytes(v)),
             ]),
           ),
           dps: Object.fromEntries(
             Object.entries(td.dps).map(([k, v]) => [
               k,
-              new Float32Array(
-                v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength),
-              ),
+              new Float32Array(copyDocumentBytes(v)),
             ]),
           ),
           groups: Object.fromEntries(
             Object.entries(td.groups).map(([k, v]) => [
               k,
-              new Uint32Array(
-                v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength),
-              ),
+              new Uint32Array(copyDocumentBytes(v)),
             ]),
           ),
           dpvMeta: Object.fromEntries(

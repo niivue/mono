@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { decode, Encoder, encode } from 'cbor-x'
 import {
   assertDocumentFitsInput,
+  copyDocumentBytes,
   isEmbeddedImageComplete,
 } from './documentBounds'
 import { decodeDocumentJSON, encodeDocumentJSON } from './documentJson'
@@ -21,6 +22,30 @@ const honestDoc = () => ({
   ],
   meshes: [{ data: { positions: new Uint8Array(1200) } }],
   scene: { azimuth: 110, elevation: 10 },
+})
+
+describe('copyDocumentBytes', () => {
+  test('copies only the view bytes into independent storage', () => {
+    const bytes = new Uint8Array([1, 2, 3, 4])
+    const copy = new Uint8Array(copyDocumentBytes(bytes.subarray(1, 3)))
+    bytes[1] = 9
+    expect([...copy]).toEqual([2, 3])
+  })
+
+  test('rejects forged byte views before trusting their size', () => {
+    for (const forged of [
+      { byteLength: Number.MAX_SAFE_INTEGER },
+      {
+        buffer: String(Number.MAX_SAFE_INTEGER),
+        byteOffset: 0,
+        byteLength: 16,
+      },
+    ]) {
+      expect(() => copyDocumentBytes(forged as unknown as Uint8Array)).toThrow(
+        'expected a byte array',
+      )
+    }
+  })
 })
 
 describe('assertDocumentFitsInput', () => {

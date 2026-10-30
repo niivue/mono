@@ -177,3 +177,59 @@ test('an oversized slide drawing is skipped before it is allocated', async ({
     .poll(() => warnings.some((w) => /slide drawing size .* not valid/.test(w)))
     .toBe(true)
 })
+
+for (const kind of ['mesh', 'signal'] as const) {
+  test(`a forged ${kind} byte view is rejected before copying`, async ({
+    page,
+  }) => {
+    const warnings: string[] = []
+    page.on('console', (m) => {
+      if (m.type() === 'warning') warnings.push(m.text())
+    })
+    const error = await page.evaluate(async (kind) => {
+      const { default: NiiVue } = await import('/src/index.ts')
+      const nv = new NiiVue()
+      const doc = JSON.parse(
+        new TextDecoder().decode(nv.serializeDocument({ format: 'json' })),
+      )
+      // Impossible allocation sizes keep this regression safe on unfixed code.
+      if (kind === 'mesh') {
+        doc.meshes = [
+          {
+            name: 'forged',
+            data: {
+              positions: {
+                buffer: String(Number.MAX_SAFE_INTEGER),
+                byteOffset: 0,
+                byteLength: 16,
+              },
+              indices: { $ta: 'Uint8Array', b64: 'AAAAAA==' },
+              colors: { $ta: 'Uint8Array', b64: 'AAAAAA==' },
+            },
+          },
+        ]
+      } else {
+        doc.signals = [
+          {
+            kind: 'spectroscopy',
+            fid: { byteLength: Number.MAX_SAFE_INTEGER },
+          },
+        ]
+      }
+      return nv
+        .loadDocument(new File([JSON.stringify(doc)], 'forged.nvd'))
+        .then(
+          () => '',
+          (e: Error) => e.message,
+        )
+    }, kind)
+    if (kind === 'mesh') {
+      expect(error).toBe('')
+      await expect
+        .poll(() => warnings.some((w) => w.includes('expected a byte array')))
+        .toBe(true)
+    } else {
+      expect(error).toContain('expected a byte array')
+    }
+  })
+}

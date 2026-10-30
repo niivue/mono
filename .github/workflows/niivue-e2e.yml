@@ -108,7 +108,7 @@ jobs:
         working-directory: packages/niivue
         # The excluded specs fail on real Metal only (issue #453).
         run: |
-          bunx playwright test --workers=2 --reporter=line \
+          bunx playwright test --workers=2 \
             --grep-invert "keeps its modulation|no plane seams"
 
       - uses: actions/upload-artifact@v4

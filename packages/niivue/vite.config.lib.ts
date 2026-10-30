@@ -49,6 +49,8 @@ export default defineConfig({
     inlineImageAssets(),
     dts({
       tsconfigPath: './tsconfig.json',
+      // Keep dist/index.d.ts flat when src imports ../package.json (version).
+      entryRoot: 'src',
       exclude: ['**/*.test.ts'],
       pathsToAliases: true,
       beforeWriteFile(filePath, content) {

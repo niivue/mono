@@ -168,12 +168,6 @@ ${base64Document}
     const nv = new NiiVue();
     await nv.attachTo("${canvasId}");
     await nv.loadDocument(file);
-    // The serialized document has an empty matcap to avoid baking in
-    // environment-specific URLs. Restore the default matcap from this bundle.
-    if (nv.opts?.matcaps) {
-      const defaultMatcap = Object.values(nv.opts.matcaps)[0];
-      if (defaultMatcap) await nv.loadMatcap(defaultMatcap);
-    }
   </script>
 </body>
 </html>`
@@ -211,17 +205,9 @@ export async function generateHTML(
     )
   }
 
-  // Clear environment-specific matcap URL before serialization.
-  // The serialized document should not contain localhost dev-server paths;
-  // the standalone bundle's NiiVue instance provides its own default matcap.
-  const savedMatcap = nv.volumeMatcap
-  nv.model.volume.matcap = ''
-
-  // Serialize the scene to CBOR binary (NVD format)
+  // Serialize the scene to CBOR binary (NVD format). A known matcap is saved
+  // by name, so the document carries no environment-specific matcap URL.
   const nvdBytes = nv.serializeDocument()
-
-  // Restore the original matcap on the live instance
-  nv.model.volume.matcap = savedMatcap
 
   // Gzip-compress then base-64-encode for embedding
   const compressed = await gzipCompress(nvdBytes)

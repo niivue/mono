@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { webgpuLaunchOptions } from './launchOptions'
 
 // Issue #377: the font size is applied in the view's resize relayout, so
 // setting fontScale or fontMinSize must relayout, not only redraw.
+
+test.use({ launchOptions: webgpuLaunchOptions })
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/examples/index.html', { waitUntil: 'load' })
@@ -30,8 +33,7 @@ for (const backend of ['webgl2', 'webgpu']) {
       nv.destroy()
       return { backend: actual, before, scaled, minSized }
     })()`)
-    // Headless Chromium may lack a WebGPU adapter and fall back to WebGL2.
-    test.skip(r.backend !== backend, `${backend} unavailable`)
+    expect(r.backend).toBe(backend)
     expect(r.scaled).toBeGreaterThan(r.before)
     expect(r.minSized).toBeGreaterThan(r.scaled)
   })

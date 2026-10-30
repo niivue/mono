@@ -6868,6 +6868,9 @@ export default class NiiVue extends EventTarget {
     this.clearSlidePlane()
     await this.removeAllVolumes()
     await this.removeAllMeshes()
+    // Loads deferred behind an earlier thumbnail would replace the document.
+    this._deferredVolumes = null
+    this._deferredMeshes = null
 
     // Apply non-data state (scene, config, display settings). Settings the
     // document omits are filled per the fill policy (default: reset to defaults).

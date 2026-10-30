@@ -1,3 +1,19 @@
+## 1.0.0-rc.61 (2026-10-30)
+
+### Fixes
+
+- **niivue:** validate document byte arrays before copying ([e95be24b](https://github.com/niivue/mono/commit/e95be24b))
+- **niivue:** require a typed array before trusting an embedded image size ([a846faad](https://github.com/niivue/mono/commit/a846faad))
+- **niivue:** bound embedded volume headers, slide drawing pixels, and Set/Map contents ([#463](https://github.com/niivue/mono/issues/463))
+- **niivue:** walk documents without pushing plain values, and update the medgfx debt note ([#463](https://github.com/niivue/mono/issues/463), [#385](https://github.com/niivue/mono/issues/385), [#386](https://github.com/niivue/mono/issues/386))
+- **niivue:** bound document size and drawing allocations in loadDocument ([#383](https://github.com/niivue/mono/issues/383), [#384](https://github.com/niivue/mono/issues/384))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.60 (2026-10-30)
 
 ### Features

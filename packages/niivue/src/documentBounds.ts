@@ -27,22 +27,22 @@ export function assertDocumentFitsInput(
       )
     }
   }
-  // Explicit stack: a deep (or cyclic) document must not overflow the call stack.
-  const stack: unknown[] = [doc]
-  while (stack.length > 0) {
-    const v = stack.pop()
-    if (ArrayBuffer.isView(v)) {
+  // Explicit stack: a deep (or cyclic) document must not overflow the call
+  // stack. Only containers are pushed, so a long number array costs no stack.
+  const stack: object[] = []
+  const visit = (v: unknown): void => {
+    if (ArrayBuffer.isView(v) || v instanceof ArrayBuffer) {
       spend(v.byteLength)
-    } else if (v instanceof ArrayBuffer) {
-      spend(v.byteLength)
-    } else if (Array.isArray(v)) {
-      spend(1)
-      for (const item of v) stack.push(item)
     } else if (typeof v === 'object' && v !== null) {
       spend(1)
-      for (const item of Object.values(v)) stack.push(item)
+      stack.push(v)
     } else {
       spend(1)
     }
+  }
+  visit(doc)
+  while (stack.length > 0) {
+    const v = stack.pop() as object
+    for (const item of Array.isArray(v) ? v : Object.values(v)) visit(item)
   }
 }

@@ -65,9 +65,11 @@ test('an oversized drawing length is skipped before it is decoded', async ({
   })
   expect(r.error).toBe('')
   expect(r.volumes).toBe(1)
-  expect(warnings.some((w) => /drawing length .* does not match/.test(w))).toBe(
-    true,
-  )
+  await expect
+    .poll(() =>
+      warnings.some((w) => /drawing length .* does not match/.test(w)),
+    )
+    .toBe(true)
 })
 
 test('an oversized slide drawing is skipped before it is allocated', async ({
@@ -121,7 +123,7 @@ test('an oversized slide drawing is skipped before it is allocated', async ({
     return { error }
   })
   expect(r.error).toBe('')
-  expect(warnings.some((w) => /slide drawing size .* not valid/.test(w))).toBe(
-    true,
-  )
+  await expect
+    .poll(() => warnings.some((w) => /slide drawing size .* not valid/.test(w)))
+    .toBe(true)
 })

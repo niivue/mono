@@ -1,5 +1,5 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
-import { applyCORS } from '@/NVLoader'
+import { loadImageElement } from '@/NVLoader'
 import {
   GRAD_EPS,
   GRAD_SCALE,
@@ -166,10 +166,7 @@ export async function bitmap2texture(
   device: GPUDevice,
   imageSrc: string,
 ): Promise<GPUTexture> {
-  const image = new Image()
-  applyCORS(image)
-  image.src = imageSrc
-  await image.decode()
+  const image = await loadImageElement(imageSrc)
   const bitmap = await createImageBitmap(image)
   const texture = device.createTexture({
     size: [bitmap.width, bitmap.height, 1],

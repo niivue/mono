@@ -845,10 +845,21 @@ anatomy outside the mask becomes transparent and the canvas colour shows through
 (2D + 3D), WebGPU+WebGL2 parity. The MRSI mask can now use `setModulationImage`
 instead of the bake workaround (see the MRSI invariant below).
 
+**Volume ids are unique per instance.** A volume's `id` defaults to its `name`
+(the URL), but `NVModel.addVolume` and `loadVolumes` suffix a repeat `-2`, `-3`,
+... (`volume/volumeIds.ts`), so the same file loaded twice (AFNI's QC viewer
+loads a stats dataset as the overlay and again, hidden, as its threshold) gets
+two ids and `setModulationImage(vols[1].id, vols[2].id)` cannot modulate a
+volume by itself. `name` stays the display label. A chunked volume whose explicit
+id was suffixed adopts the scene's id after `init()`.
+
 **NVD persistence:** both `modulateAlpha` and `modulationImage` (the modulator
 volume-id link) are serialized and restored — the link is reapplied in the
 post-load pass (find-by-id at render time), so it survives even if the modulator
-volume is restored later in the document. The `_modulationData`/`_modulationWeight`
+volume is restored later in the document. Each volume's `id` is saved too and
+restored after its volume is added, so links (including a signal's
+`attachedToId`) keep their target when the saved scene held one URL twice; a
+document without ids re-derives them from names in volume order. The `_modulationData`/`_modulationWeight`
 arrays are derived (never serialized).
 
 **Edge cases / invariants (keep these true):**

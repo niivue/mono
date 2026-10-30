@@ -751,3 +751,229 @@ for (const fill of ['current', { 'volume.matcap': 'current' }] as const) {
     expect(result.changes).not.toContain('volumeMatcap')
   })
 }
+
+test('duplicate URLs: distinct volume ids drive modulation and survive a round-trip', async ({
+  page,
+}) => {
+  test.setTimeout(90_000) // fetches one small volume three times, then reloads
+
+  const url = '/volumes/mni152_mask.nii.gz'
+  const r = await page.evaluate(async (url) => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const mkCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = 64
+      c.height = 64
+      c.style.cssText = 'position:fixed;left:-9999px'
+      document.body.appendChild(c)
+      return c
+    }
+    // AFNI's QC viewer: one stats file as the overlay and again, hidden, as the
+    // threshold that modulates it.
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachToCanvas(mkCanvas())
+    await nv.loadVolumes([{ url }, { url }])
+    await nv.addVolume({ url, opacity: 0 })
+    const ids = nv.volumes.map((v) => v.id)
+    const names = nv.volumes.map((v) => v.name)
+    await nv.setModulationImage(nv.volumes[1].id ?? '', nv.volumes[2].id ?? '')
+    const links = nv.volumes.map((v) => v.modulationImage ?? null)
+
+    const bytes = nv.serializeDocument({ linkData: true })
+    const nv2 = new NiiVue({ backend: 'webgl2' })
+    await nv2.attachToCanvas(mkCanvas())
+    await nv2.loadDocument(new File([bytes], 'dup.nvd'))
+    return {
+      ids,
+      names,
+      links,
+      reloadedIds: nv2.volumes.map((v) => v.id),
+      reloadedLinks: nv2.volumes.map((v) => v.modulationImage ?? null),
+    }
+  }, url)
+
+  expect(r.ids).toEqual([url, `${url}-2`, `${url}-3`])
+  expect(r.names).toEqual([url, url, url])
+  expect(r.links).toEqual([null, `${url}-3`, null])
+  expect(r.reloadedIds).toEqual(r.ids)
+  expect(r.reloadedLinks).toEqual(r.links)
+})
+
+// Volume ids within one instance, through the real controller. NVModel and
+// NVDocument import the volume-load worker, so under Bun they need a
+// process-wide module mock that leaks between test files; they are covered here.
+test.describe('volume ids are unique within an instance', () => {
+  const ANAT = '/volumes/mni152_mask.nii.gz'
+  const STATS = '/volumes/spmMotor.nii.gz'
+
+  test('the same URL loaded twice gets distinct ids, and modulation uses the threshold copy', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const r = await page.evaluate(
+      async ({ ANAT, STATS }) => {
+        const { default: NiiVue } = await import('/src/index.ts')
+        const c = document.createElement('canvas')
+        c.width = 64
+        c.height = 64
+        c.style.cssText = 'position:fixed;left:-9999px'
+        document.body.appendChild(c)
+        const nv = new NiiVue({ backend: 'webgl2' })
+        await nv.attachToCanvas(c)
+        // AFNI's QC pair: one stats file as the overlay and again, hidden, as
+        // its threshold.
+        await nv.loadVolumes([{ url: ANAT }, { url: STATS }])
+        await nv.addVolume({ url: STATS, opacity: 0 })
+        const ids = nv.volumes.map((v) => v.id)
+        const names = nv.volumes.map((v) => v.name)
+        await nv.setModulationImage(
+          nv.volumes[1].id ?? '',
+          nv.volumes[2].id ?? '',
+        )
+        const sum = () =>
+          Array.from(nv.volumes[1]._modulationWeight ?? []).reduce(
+            (a, b) => a + b,
+            0,
+          )
+        const before = sum()
+        // Re-window ONLY the threshold copy: the overlay's weights follow it
+        // (an overlay modulating itself would not change).
+        const calMax = nv.volumes[2].calMax ?? 1
+        await nv.setVolume(2, { calMax: calMax * 4 })
+        const after = sum()
+        return {
+          ids,
+          names,
+          before,
+          after,
+          thresholdWeight: nv.volumes[2]._modulationWeight ?? null,
+        }
+      },
+      { ANAT, STATS },
+    )
+    expect(r.ids).toEqual([ANAT, STATS, `${STATS}-2`])
+    expect(r.names).toEqual([ANAT, STATS, STATS])
+    expect(r.before).toBeGreaterThan(0)
+    expect(r.after).toBeLessThan(r.before)
+    expect(r.thresholdWeight).toBeNull()
+  })
+
+  test('a taken id is suffixed, a freed id is reused, and links keep their target', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const r = await page.evaluate(
+      async ({ ANAT, STATS }) => {
+        const { default: NiiVue } = await import('/src/index.ts')
+        const nv = new NiiVue({ backend: 'webgl2' })
+        const ids = () => nv.volumes.map((v) => v.id)
+        await nv.loadVolumes([{ url: ANAT }, { url: STATS }])
+        await nv.addVolume({ url: STATS })
+        // An NVImage passed in with an id already in use: the scene's copy is
+        // suffixed, the caller's object is left alone.
+        const copy = { ...nv.volumes[1], id: STATS }
+        await nv.addVolume(copy)
+        const withCopy = ids()
+        const callerId = copy.id
+        await nv.removeVolume(3)
+        // Remove and re-add: the lowest free suffix is reused.
+        await nv.removeVolume(2)
+        await nv.addVolume({ url: STATS })
+        const reused = ids()
+        // Remove the first copy: the survivor keeps "-2" (and a link to it),
+        // the re-added copy takes the freed plain id.
+        const survivor = nv.volumes[2]
+        await nv.setModulationImage(ANAT, `${STATS}-2`)
+        await nv.removeVolume(1)
+        await nv.addVolume({ url: STATS })
+        const swapped = ids()
+        const linkTarget = nv.volumes.find(
+          (v) => v.id === nv.volumes[0].modulationImage,
+        )
+        await nv.removeAllVolumes()
+        await nv.addVolume({ url: STATS })
+        return {
+          withCopy,
+          callerId,
+          reused,
+          swapped,
+          survivorLinked: linkTarget === survivor,
+          afterClear: ids(),
+        }
+      },
+      { ANAT, STATS },
+    )
+    expect(r.withCopy).toEqual([ANAT, STATS, `${STATS}-2`, `${STATS}-3`])
+    expect(r.callerId).toBe(STATS)
+    expect(r.reused).toEqual([ANAT, STATS, `${STATS}-2`])
+    expect(r.swapped).toEqual([ANAT, `${STATS}-2`, STATS])
+    expect(r.survivorLinked).toBe(true)
+    expect(r.afterClear).toEqual([STATS])
+  })
+
+  test('a round-trip restores ids out of load order, with modulation and signal links', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const r = await page.evaluate(
+      async ({ STATS }) => {
+        const { default: NiiVue } = await import('/src/index.ts')
+        const { defaultSignalDisplay } = await import(
+          '/src/signal/processing.ts'
+        )
+        const nv = new NiiVue({ backend: 'webgl2' })
+        // Build [stats-2, stats]: re-deriving ids from load order would swap
+        // them and point both links at the wrong copy.
+        await nv.loadVolumes([{ url: STATS }, { url: STATS }])
+        await nv.removeVolume(0)
+        await nv.addVolume({ url: STATS })
+        const ids0 = nv.volumes.map((v) => v.id)
+        await nv.setModulationImage(STATS, `${STATS}-2`)
+        await nv.addSignal({
+          id: 'physio',
+          name: 'physio',
+          kind: 'physio',
+          raw: {
+            kind: 'physio',
+            columns: [new Float32Array([0, 1])],
+            columnLabels: ['cardiac'],
+            samplingFrequency: 1,
+            startTime: 0,
+          },
+          display: defaultSignalDisplay(),
+          attachedToId: `${STATS}-2`,
+        })
+        const json = new TextDecoder().decode(
+          nv.serializeDocument({ linkData: true, format: 'json' }),
+        )
+
+        const nv2 = new NiiVue({ backend: 'webgl2' })
+        await nv2.loadDocument(new File([json], 'ids.json'))
+        const attached = nv2.volumes.find(
+          (v) => v.id === nv2.signals[0]?.attachedToId,
+        )
+
+        // An older document without saved ids re-derives them in volume order.
+        const legacy = JSON.parse(json)
+        for (const v of legacy.volumes ?? []) delete v.id
+        // An entry with nothing to load must not rename the volume before it.
+        legacy.volumes.push({ name: 'ghost', id: 'ghost' })
+        const nv3 = new NiiVue({ backend: 'webgl2' })
+        await nv3.loadDocument(new File([JSON.stringify(legacy)], 'old.json'))
+        return {
+          ids0,
+          ids: nv2.volumes.map((v) => v.id),
+          links: nv2.volumes.map((v) => v.modulationImage ?? null),
+          attachedIndex: attached ? nv2.volumes.indexOf(attached) : -1,
+          legacyIds: nv3.volumes.map((v) => v.id),
+        }
+      },
+      { STATS },
+    )
+    expect(r.ids0).toEqual([`${STATS}-2`, STATS])
+    expect(r.ids).toEqual(r.ids0)
+    expect(r.links).toEqual([null, `${STATS}-2`])
+    expect(r.attachedIndex).toBe(0)
+    expect(r.legacyIds).toEqual([STATS, `${STATS}-2`])
+  })
+})

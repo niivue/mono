@@ -21,6 +21,7 @@ import {
   NVChunkedVolume,
   planForFocus,
 } from './NVChunkedVolume'
+import { assignUniqueVolumeIds } from './volumeIds'
 
 function req(
   sourceLevel: number,
@@ -573,6 +574,36 @@ describe('NVChunkedVolume id + plan-swap routing', () => {
     const vols: NVImage[] = [a.volume, b.volume]
     expect(vols.find((v) => v.id === b.id || v.name === b.id)).toBe(b.volume)
     expect(vols.find((v) => v.id === a.id || v.name === a.id)).toBe(a.volume)
+  })
+
+  test('an explicit id the scene already uses follows the suffixed scene id', async () => {
+    // The scene keeps ids unique (NVModel.addVolume) and stores a shallow copy.
+    const volumes: NVImage[] = [{ name: 'other', id: 'shared' } as NVImage]
+    const host = makeHost(async () => {}, {
+      volumes,
+      addVolume: async (vol: NVImage) => {
+        const copy = { ...vol }
+        assignUniqueVolumeIds([copy], volumes)
+        volumes.push(copy)
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      setBaseCoarseFloor: async () => {},
+      _updateGLChanged: async () => {},
+      isDestroyed: false,
+    })
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      id: 'shared',
+      calMin: 0,
+      calMax: 1,
+      coarseFloor: false,
+    })
+    await mgr.init()
+    expect(volumes[1].id).toBe('shared-2')
+    expect(mgr.id).toBe('shared-2')
+    expect(mgr.volume.id).toBe('shared-2')
+    mgr.dispose()
   })
 })
 

@@ -219,6 +219,7 @@ import {
   reorientDrawingToRAS,
   volumeTR,
 } from '@/volume/utils'
+import { assignUniqueVolumeIds } from '@/volume/volumeIds'
 
 /** MeshUpdate options read only while drawing: setMesh just redraws. */
 const MESH_REDRAW_OPTIONS = new Set(['name', 'opacity', 'visible'])
@@ -3069,6 +3070,9 @@ export default class NiiVue extends EventTarget {
     const loaded = await Promise.all(
       volumes.map((v) => NVModel.prepareVolume(v)),
     )
+    // The new set replaces the old one, so ids only need to be unique within it
+    // (the same URL listed twice gets `<id>` and `<id>-2`).
+    assignUniqueVolumeIds(loaded)
     // Atomic swap: keep refs to the old volumes so we can release their GPU
     // resources AFTER the new bind groups are live. Replace the model's
     // volume array in place — the view's bind groups still point at the old

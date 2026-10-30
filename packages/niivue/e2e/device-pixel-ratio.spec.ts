@@ -58,6 +58,41 @@ test('instance tiles follow the canvas pixel size', async ({ page }) => {
   expect(r.cssResize).toEqual([150, 150])
 })
 
+test('controllers sharing a canvas follow one ratio', async ({ page }) => {
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const canvas = document.createElement('canvas')
+    canvas.style.cssText = 'width:200px;height:100px'
+    document.body.appendChild(canvas)
+    const half = (x0: number, x1: number) =>
+      new NiiVue({
+        backend: 'webgl2',
+        devicePixelRatio: 1,
+        bounds: [
+          [x0, 0],
+          [x1, 1],
+        ],
+      })
+    const left = half(0, 0.5)
+    const right = half(0.5, 1)
+    await left.attachToCanvas(canvas)
+    await right.attachToCanvas(canvas)
+    left.devicePixelRatio = 2
+    const box = canvas.getBoundingClientRect()
+    // The center of the right half, in client pixels.
+    const at = right.clientToCanvas(box.left + 150, box.top + 50)
+    return {
+      ratios: [left.effectiveDevicePixelRatio, right.effectiveDevicePixelRatio],
+      canvasWidth: canvas.width,
+      at,
+    }
+  })
+  expect(r.canvasWidth).toBe(400)
+  expect(r.ratios).toEqual([2, 2])
+  // 50 CSS px into a 100 CSS px half, at 2x.
+  expect(r.at).toEqual([100, 100])
+})
+
 test.describe('on a 2x screen', () => {
   // At 1x a helper that always returned 1 would pass the auto checks.
   test.use({ deviceScaleFactor: 2 })

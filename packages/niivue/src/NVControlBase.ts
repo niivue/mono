@@ -2896,11 +2896,15 @@ export default class NiiVue extends EventTarget {
   }
 
   set devicePixelRatio(dpr: number) {
-    this.opts.forceDevicePixelRatio = dpr
-    if (!this.view) return
-    this.view.forceDevicePixelRatio = dpr
-    // resize() also rebuilds instance tiles for the new canvas pixel size.
-    this.resize()
+    // Controllers sharing a canvas render it at one ratio, so all follow.
+    const ctrls = new Set([this, ...(getCanvasInstances(this.canvas) ?? [])])
+    for (const ctrl of ctrls) {
+      ctrl.opts.forceDevicePixelRatio = dpr
+      if (!ctrl.view) continue
+      ctrl.view.forceDevicePixelRatio = dpr
+      // resize() also rebuilds instance tiles for the new canvas pixel size.
+      ctrl.resize()
+    }
   }
 
   /** @deprecated Use devicePixelRatio */

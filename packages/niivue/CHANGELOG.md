@@ -1,3 +1,16 @@
+## 1.0.0-rc.59 (2026-10-30)
+
+### Fixes
+
+- **niivue:** apply a forced device pixel ratio to every controller on a canvas ([ad3866a0](https://github.com/niivue/mono/commit/ad3866a0))
+- **niivue:** every resize path rebuilds instance tiles and redraws ([#465](https://github.com/niivue/mono/issues/465))
+- **niivue:** one device pixel ratio rule, and rebuild instance tiles on change ([#200](https://github.com/niivue/mono/issues/200), [#461](https://github.com/niivue/mono/issues/461))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.58 (2026-10-30)
 
 ### Fixes

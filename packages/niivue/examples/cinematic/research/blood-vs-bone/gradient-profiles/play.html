@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Boundary classification experiment</title>
+<style>body{margin:0;background:#151515;color:#eee;font:14px system-ui}header{padding:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}select,input,button{font:inherit}label{display:flex;gap:5px;align-items:center}#view{position:relative;height:calc(100vh - 140px);min-height:300px}canvas{position:absolute;width:100%;height:100%;inset:0}#cine{pointer-events:none}footer{padding:10px;color:#bbb}#status{margin-left:auto}</style>
+<header>
+<label>Scan <select id="scan"><option value="Philips">CT_Philips</option><option value="Abdo">CT_Abdo</option></select></label>
+<label>Profile <select id="profile"><option value="off">Off</option><option value="positive">Positive curvature (conservative)</option><option value="absolute">Absolute curvature (strong)</option><option value="endpoint">High endpoint</option></select></label>
+<label>Scale (mm) <select id="scale"><option>0.5</option><option>1</option><option>1.5</option><option selected>2</option><option>3</option><option>4</option><option>6</option></select></label>
+<label>Strength <input id="strength" type="range" min="0" max="1" step="0.05" value="1"><output id="amount">1</output></label>
+<button type="button" id="toggle">Compare with off</button><span id="status">Loading…</span>
+</header><div id="view"><canvas id="cine"></canvas><canvas id="gl"></canvas></div>
+<footer>Experimental angio-only opacity classification. Drag to rotate; scroll to zoom. Profile changes rebuild the texture once. Vessel surfaces can also be suppressed. This does not change the normal demo.</footer>
+<script type="module" src="./play.mjs"></script></html>

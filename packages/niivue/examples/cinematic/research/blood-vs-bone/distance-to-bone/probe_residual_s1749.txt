@@ -1,0 +1,13 @@
+s1749 residual bone_int after T600 d<8: 93251 of 264647
+  sacrum                 kept   15146 of   26575 (0.57)  median HU of structure 259
+  hip_right              kept    6720 of   34701 (0.19)  median HU of structure 382
+  femur_right            kept    5998 of   17527 (0.34)  median HU of structure 339
+  hip_left               kept    5386 of   32310 (0.17)  median HU of structure 398
+  sternum                kept    5078 of    6393 (0.79)  median HU of structure 263
+  femur_left             kept    4602 of   16287 (0.28)  median HU of structure 360
+  humerus_right          kept    4231 of    9905 (0.43)  median HU of structure 333
+  vertebrae_L3           kept    3839 of    6386 (0.60)  median HU of structure 333
+  humerus_left           kept    3656 of   10417 (0.35)  median HU of structure 349
+  vertebrae_L5           kept    3459 of    6176 (0.56)  median HU of structure 343
+  vertebrae_T12          kept    3311 of    4598 (0.72)  median HU of structure 320
+  vertebrae_L2           kept    3130 of    5629 (0.56)  median HU of structure 330

@@ -1,0 +1,8 @@
+s1212 T=600 ramp 2.0-8.0 mm closing R=20.0: vessel: mean w 0.990, suppressed 0.009  heart: mean w 0.902, suppressed 0.095  bone_int: mean w 0.117, suppressed 0.886  bone_bnd: mean w 0.253, suppressed 0.760  other: mean w 0.965, suppressed 0.037
+s1212 T=600 ramp 2.0-8.0 mm closing R=0: vessel: mean w 0.990, suppressed 0.009  heart: mean w 0.915, suppressed 0.083  bone_int: mean w 0.321, suppressed 0.725  bone_bnd: mean w 0.307, suppressed 0.717  other: mean w 0.967, suppressed 0.035
+CT_Philips T=600 ramp 2.0-8.0 mm closing R=20.0: band: mean w 0.072, suppressed 0.932
+CT_Philips T=600 ramp 2.0-8.0 mm closing R=0: band: mean w 0.126, suppressed 0.890
+CT_Abdo T=600 ramp 2.0-8.0 mm closing R=20.0: band: mean w 0.346, suppressed 0.662  heart_roi: mean w 0.855, suppressed 0.144
+CT_Abdo T=600 ramp 2.0-8.0 mm closing R=0: band: mean w 0.379, suppressed 0.640  heart_roi: mean w 0.901, suppressed 0.101
+s1749 T=600 ramp 2.0-8.0 mm closing R=20.0: vessel: mean w 0.995, suppressed 0.004  heart: mean w 0.999, suppressed 0.001  bone_int: mean w 0.423, suppressed 0.579  bone_bnd: mean w 0.353, suppressed 0.662  other: mean w 0.756, suppressed 0.248
+s1749 T=600 ramp 2.0-8.0 mm closing R=0: vessel: mean w 0.996, suppressed 0.003  heart: mean w 0.999, suppressed 0.001  bone_int: mean w 0.587, suppressed 0.433  bone_bnd: mean w 0.390, suppressed 0.636  other: mean w 0.783, suppressed 0.226

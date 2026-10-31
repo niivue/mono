@@ -1,0 +1,8 @@
+train s1212 -> test s1749: weights {'dist_T600': np.float64(0.06), 'close_T600_R12': np.float64(-4.69), 'gmag': np.float64(1.67), 'resid_std_r3': np.float64(-3.77), 'bandfrac_R5': np.float64(-0.19), 'hess_l1_s3': np.float64(-0.15), 'b': np.float64(-9.36)}
+   train AUC/removed@90%: (np.float64(0.9830607298779532), {'int': 0.973, 'bnd': 0.939, 'heart': 0.333, 'other': 0.468})
+   test  AUC/removed@90%: (np.float64(0.9256263760026032), {'int': 0.845, 'bnd': 0.874, 'heart': 0.015, 'other': 0.43})
+   dist only test AUC: 0.953
+train s1749 -> test s1212: weights {'dist_T600': np.float64(3.33), 'close_T600_R12': np.float64(-0.14), 'gmag': np.float64(-4.54), 'resid_std_r3': np.float64(-2.1), 'bandfrac_R5': np.float64(-1.38), 'hess_l1_s3': np.float64(-0.08), 'b': np.float64(-7.67)}
+   train AUC/removed@90%: (np.float64(0.9723907504727579), {'int': 0.898, 'bnd': 0.957, 'heart': 0.012, 'other': 0.428})
+   test  AUC/removed@90%: (np.float64(0.9166390284706601), {'int': 0.78, 'bnd': 0.828, 'heart': 0.159, 'other': 0.153})
+   dist only test AUC: 0.958

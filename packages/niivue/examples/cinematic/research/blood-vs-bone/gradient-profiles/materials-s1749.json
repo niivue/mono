@@ -1,0 +1,89 @@
+{
+  "bone_boundary": {
+    "count": 165506,
+    "profiles": {
+      "0-1-50-150": {
+        "meanAttenuation": 0.2047649770975113,
+        "fractionOverHalf": 0.18633161335540704
+      },
+      "0-2-25-75": {
+        "meanAttenuation": 0.19776099920272827,
+        "fractionOverHalf": 0.17744371805251774
+      },
+      "2-2-25-75": {
+        "meanAttenuation": 0.07531391829252243,
+        "fractionOverHalf": 0.06352639783451959
+      },
+      "1-4-450-650": {
+        "meanAttenuation": 0.10443086177110672,
+        "fractionOverHalf": 0.09490894589924233
+      },
+      "2-1-10-50": {
+        "meanAttenuation": 0.22585977613925934,
+        "fractionOverHalf": 0.21560547653861492
+      },
+      "2-2-5-25": {
+        "meanAttenuation": 0.23103590309619904,
+        "fractionOverHalf": 0.2208741677038899
+      }
+    }
+  },
+  "vessel_interior": {
+    "count": 28470,
+    "profiles": {
+      "0-1-50-150": {
+        "meanAttenuation": 0.024944482371211052,
+        "fractionOverHalf": 0.016649104320337196
+      },
+      "0-2-25-75": {
+        "meanAttenuation": 0.03366205841302872,
+        "fractionOverHalf": 0.023076923076923078
+      },
+      "2-2-25-75": {
+        "meanAttenuation": 1.18183697850327e-6,
+        "fractionOverHalf": 0.0
+      },
+      "1-4-450-650": {
+        "meanAttenuation": 2.329910330445273e-6,
+        "fractionOverHalf": 0.0
+      },
+      "2-1-10-50": {
+        "meanAttenuation": 0.013413271866738796,
+        "fractionOverHalf": 0.00642781875658588
+      },
+      "2-2-5-25": {
+        "meanAttenuation": 0.005934734363108873,
+        "fractionOverHalf": 0.0023533544081489285
+      }
+    }
+  },
+  "vessel_surface": {
+    "count": 15667,
+    "profiles": {
+      "0-1-50-150": {
+        "meanAttenuation": 0.0873083621263504,
+        "fractionOverHalf": 0.06970064466713474
+      },
+      "0-2-25-75": {
+        "meanAttenuation": 0.06871549785137177,
+        "fractionOverHalf": 0.05093508648752154
+      },
+      "2-2-25-75": {
+        "meanAttenuation": 0.0014379345811903477,
+        "fractionOverHalf": 0.00019148528754707347
+      },
+      "1-4-450-650": {
+        "meanAttenuation": 2.019696512434166e-5,
+        "fractionOverHalf": 0.0
+      },
+      "2-1-10-50": {
+        "meanAttenuation": 0.036821912974119186,
+        "fractionOverHalf": 0.027127082402502074
+      },
+      "2-2-5-25": {
+        "meanAttenuation": 0.03511428460478783,
+        "fractionOverHalf": 0.02610582753558435
+      }
+    }
+  }
+}

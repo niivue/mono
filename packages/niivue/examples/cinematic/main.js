@@ -179,6 +179,44 @@ function applySuggestedSettings(settings = {}) {
   }
 }
 
+// Scans with no negative voxels cannot be CT (air is -1000 HU): magnitude MR
+// and the like get a greyscale preset fitted to their own robust range, built
+// per volume because their intensity scale is arbitrary.
+const isNotCT = (vol) => vol.globalMin >= 0
+function defaultPreset(vol) {
+  const lo = vol.robustMin
+  const hi = Math.max(vol.robustMax, lo + 1e-6)
+  const range = hi - lo
+  // Window fractions: background and noise (< 10%) stay clear, then tissue
+  // ramps to near-white and fairly opaque, edges more so than interiors.
+  const stops = [
+    [0, 0, 0, 0, 0],
+    [0.1, 90, 0, 0, 0],
+    [0.3, 150, 25, 140, 40],
+    [0.65, 205, 70, 210, 80],
+    [1, 245, 150, 255, 100],
+  ]
+  return {
+    min: lo,
+    max: hi,
+    I: stops.map(([f]) => Math.round(f * 255)),
+    R: stops.map((s) => s[1]),
+    G: stops.map((s) => s[1]),
+    B: stops.map((s) => s[1]),
+    A: stops.map((s) => s[2]),
+    E: stops.map((s) => s[3]),
+    S: stops.map((s) => s[4]),
+    // Gradients are in intensity/mm, so scale the ramp with the window.
+    gradient: { lo: 0.05 * range, hi: 0.3 * range },
+    gMax: range,
+    shininess: 30,
+  }
+}
+function registerDefaultPreset(vol) {
+  PRESETS.cr_default = defaultPreset(vol)
+  nv1.addColormap('cr_default', PRESETS.cr_default)
+}
+
 // Cinematic mode bakes volume 0's colormap across its calMin..calMax. A
 // label-calibrated sample (MRI) is calibrated to the table's units, where the
 // preset's own window applies; its classic view keeps NiiVue's grey window.
@@ -188,6 +226,7 @@ function applyColormap() {
   const isCalibrated = !!selectedSample().labels?.table.normalize
   const isCinematic = modeSelect.value === 'cinematic'
   if (!isCalibrated) {
+    if (tfSelect.value === 'cr_default') registerDefaultPreset(vol)
     const cmap = PRESETS[tfSelect.value]
     nv1.setVolume(0, {
       colormap: tfSelect.value,
@@ -220,6 +259,9 @@ async function loadVolume() {
   }
   labelSelect.hidden = !labels
   if (labels) applySuggestedSettings(labels.table.settings)
+  // A scan that is clearly not CT gets the greyscale default unless ?tf= chose.
+  if (!labels && isNotCT(nv1.volumes[0]) && !params.has('tf'))
+    tfSelect.value = 'cr_default'
   applyColormap()
 }
 
@@ -323,8 +365,10 @@ async function loadSelectedVolume() {
 nv1.addEventListener('volumeLoaded', () => {
   const vol = nv1.volumes[0]
   if (isOwnLoad || !vol) return
-  // Label-calibrated or label-modulated presets need labels a drop lacks.
-  if (PRESETS[tfSelect.value].labelBlend || tfSelect.value === 'cr_t1')
+  // Label-calibrated or label-modulated presets need labels a drop lacks;
+  // a scan that is clearly not CT gets the greyscale default.
+  if (isNotCT(vol)) tfSelect.value = 'cr_default'
+  else if (PRESETS[tfSelect.value].labelBlend || tfSelect.value === 'cr_t1')
     tfSelect.value = 'cr_skin_bone'
   SAMPLES.push({
     id: 'dropped',

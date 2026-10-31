@@ -1229,7 +1229,9 @@ export function initInteraction(ctrl: NiiVue): void {
       ) {
         const value = entry.labelValue
         const hidden = ctrl.volumes[entry.volumeIndex]?.hiddenLabels ?? []
-        const hiddenLabels = entry.isHidden
+        // Decide from the live list: the legend's isHidden lags a frame, so
+        // a quick double-click would otherwise add the value twice.
+        const hiddenLabels = hidden.includes(value)
           ? hidden.filter((v) => v !== value)
           : [...hidden, value]
         ctrl

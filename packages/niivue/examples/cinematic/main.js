@@ -75,19 +75,13 @@ const SAMPLES = [
   {
     id: 'ct-abdopelvis-labels',
     name: 'CT_AbdoPelvis + labels (smaller, 20 MB)',
-    url: `${LFS_BASE}CT_AbdoPelvis.nii.gz?v=1`,
+    url: `${LFS_BASE}CT_AbdoPelvis.nii.gz?v=2`,
     tf: 'cr_skin_bone',
     labels: {
-      url: `${LFS_BASE}CT_AbdoPelvis_labels.nii.gz?v=1`,
+      url: `${LFS_BASE}CT_AbdoPelvis_labels.nii.gz?v=2`,
       colormap: 'ts_abdopelvis',
       table: tsAbdoPelvis,
     },
-  },
-  {
-    id: 'ct-pancreas',
-    name: 'CT_Pancreas (contrast, 66 MB)',
-    url: `${LFS_BASE}CT_Pancreas.nii.gz`,
-    tf: 'cr_angio',
   },
   {
     id: 'mr-siam',

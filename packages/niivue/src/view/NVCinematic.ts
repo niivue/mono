@@ -5,6 +5,7 @@
  */
 import { mat4 } from 'gl-matrix'
 import { colormapKey, lookupColorMap } from '@/cmap/NVCmaps'
+import { isPaqd } from '@/NVConstants'
 import type { CinematicOptions, ColorMap, NVImage } from '@/NVTypes'
 import { getImageDataRAS } from '@/volume/utils'
 import { drawnOpacity } from './NVVolumeVisibility'
@@ -17,7 +18,7 @@ export const HIDDEN_LABEL = 255
 /** Material table width in RGBA32F texels: two per label id. */
 export const MATERIAL_TEXELS = 512
 /** March uniform size in floats (see packMarchParams and cinematic.wgsl Params). */
-export const MARCH_PARAM_FLOATS = 128
+export const MARCH_PARAM_FLOATS = 132
 /** Display uniform size in floats (see packDisplayParams). */
 export const DISPLAY_PARAM_FLOATS = 16
 /** Empty-space skip reads this extinction mip (4 extinction voxels per texel). */
@@ -327,6 +328,7 @@ export function packMarchParams(p: {
   tf: BakedTransferFunction
   clip: Float32Array
   labelInfo: readonly number[]
+  overlayInfo: readonly number[]
 }): Float32Array {
   const s = p.options
   const { geometry: geo, tf } = p
@@ -358,6 +360,7 @@ export function packMarchParams(p: {
   )
   out.set(p.clip, 72)
   out.set(p.labelInfo, 124)
+  out.set(p.overlayInfo, 128)
   return out
 }
 
@@ -412,6 +415,17 @@ export function findLabelVolume(volumes: readonly NVImage[]): NVImage | null {
     if (sameDims && sameMM) return v
   }
   return null
+}
+
+/** The standard overlay texture may be borrowed only without label, PAQD or streamed layers (PAQD lives in its own texture). */
+export function canUseCinematicOverlays(volumes: readonly NVImage[]): boolean {
+  return volumes
+    .slice(1)
+    .every(
+      (v) =>
+        drawnOpacity(v) <= 0 ||
+        (!v.colormapLabel && !isPaqd(v.hdr) && !v.chunkPlan && !v.chunkSource),
+    )
 }
 
 const sameKey = (a: readonly unknown[], b: readonly unknown[]): boolean =>

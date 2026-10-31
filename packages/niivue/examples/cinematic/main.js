@@ -87,9 +87,20 @@ const SAMPLES = [
   {
     // Bundled with the dev images; the greyscale default suits non-CT scans.
     id: 'mr-mni152',
-    name: 'MNI152 T1 brain (default preset)',
+    name: 'MNI152 T1 brain + motor statistics',
     url: '/volumes/mni152.nii.gz',
     tf: 'cr_default',
+    overlays: [
+      {
+        url: '/volumes/spmMotor.nii.gz',
+        colormap: 'redyell',
+        colormapNegative: 'winter',
+        calMin: 3,
+        calMax: 6,
+        calMinNeg: -3,
+        calMaxNeg: -6,
+      },
+    ],
   },
   {
     id: 'mr-siam',
@@ -258,13 +269,15 @@ async function loadVolume() {
   isOwnLoad = true
   try {
     await nv1.loadVolumes([
-      { url: sample.url },
+      { url: sample.url, isColorbarVisible: false },
       ...(labels ? [{ url: labels.url, colormap: labels.colormap }] : []),
+      ...(sample.overlays ?? []),
     ])
   } finally {
     isOwnLoad = false
   }
   labelSelect.hidden = !labels
+  nv1.isColorbarVisible = !!sample.overlays
   if (labels) applySuggestedSettings(labels.table.settings)
   // A scan that is clearly not CT gets the greyscale default unless ?tf= chose.
   if (!labels && isNotCT(nv1.volumes[0]) && !params.has('tf'))

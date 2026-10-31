@@ -2027,7 +2027,7 @@ entries or leave it internal, but the doc should not promise it.
 ## Cinematic render mode
 
 `volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC` (3): progressive path
-tracing of volumes[0] plus an optional label volume, in the render tiles of both
+tracing of volumes[0] plus either one label volume or standard overlays, in the render tiles of both
 view tile loops. Settings: `model.volume.cinematic` (`CinematicOptions`,
 defaults in `VOLUME_DEFAULTS.cinematic`), controller `volumeCinematic` (setter
 merges a partial object), constructor `volumeCinematic`, saved in NVD with the
@@ -2093,8 +2093,23 @@ drawn only by cinematic; 2D tiles are unchanged. Calibration (`normalize`) maps
 label medians piecewise linearly on the CPU; a calibrated volume's TF window is
 the colormap's own `min`/`max` (else the calibrated calMin..calMax).
 
-**Limits:** overlays other than the label volume are not drawn and chunked
-(streamed) volumes draw COMPOSITE, each with one `log.warn`. Memory per
+**Standard overlays:** without a visible label volume, both cinematic
+renderers borrow `volumeRenderer.overlayTexture`, whose prep path owns
+registration, colormaps, asymmetric thresholds, opacity, visibility and stack
+blending. A separate unlit march (no anatomical shadows/extinction) is mixed
+with the anatomy by depth, as in the classic shader; clip planes apply only with
+`clipPlaneOverlay`; gamma applies; opacity correction is per overlay voxel
+crossed (`overlayStep * length(df * overlayDims)`), so anisotropic overlays
+match classic. A hidden background (opacity 0 or `visible: false`) still draws
+the overlays: the view passes `isBackgroundVisible` and the shader skips the
+anatomy march (`labelInfo.w`). The view bumps `_cinematicOverlayVersion` after
+stack/affine updates so an in-place texture rewrite restarts accumulation; the
+cinematic renderer never frees the borrowed texture.
+
+**Limits:** not drawn, with one `log.warn`: standard overlays mixed with a
+visible label volume (the label volume draws alone), and any visible streamed
+overlay (all overlays omitted). Channel stacks draw no overlays. Chunked
+(streamed) backgrounds draw COMPOSITE (one `log.warn`). Memory per
 cinematic volume: a duplicate r16float intensity texture, an rgba16float
 gradient (8 B/voxel), a half-res rgba16float extinction mip chain, and an r8uint
 label id texture; freed when no tile is cinematic. Depth picking uses the
@@ -2139,7 +2154,8 @@ voxels near bone median 159 HU/mm vs 38 away). Label tables `ts_wholebody.json`
 (same numbering, alpha 0 for absent structures, which also drops them from the
 legend), `siam_t1.json` (MR, BSD-2: `normalize` CSF 0, GM 100, WM 200; cortex
 ramp 30-70; structures without reliable T1 contrast use an always-on ramp, `lo`
--1000 `hi` -999). A table's `settings` key (slider values) is demo-only. For
+-1000 `hi` -999). The MNI152 sample loads `spmMotor.nii.gz` statistics
+(`redyell` / `winter`, +3..+6 / -3..-6, as in `vox.stats.html`). A table's `settings` key (slider values) is demo-only. For
 label-calibrated MR the classic view keeps the grey window. Samples by id
 (`?sample=`: `ct-abdo`, `ct-philips`, `ct-electrodes`, `ct-wholebody`,
 `ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-siam`); `index.html` links

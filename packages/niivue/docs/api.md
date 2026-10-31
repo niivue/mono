@@ -97,7 +97,7 @@ nv1.drawPenValue = 3
 | `COMPOSITE` (0, default) | emission-absorption OVER | a solid, depth-ordered object |
 | `MAXIMUM` (1) | maximum-intensity projection | the brightest sample per ray, through everything in front of it |
 | `SLICES` (2) | orthogonal slices | the three crosshair planes, composited front to back |
-| `CINEMATIC` (3) | progressive path tracing | the background volume (and a label volume) with soft shadows and ambient occlusion |
+| `CINEMATIC` (3) | progressive path tracing | anatomy with soft shadows and ambient occlusion, plus statistical overlays or a label volume |
 
 `SLICES` does not ray-march: it takes at most three samples per ray, so it is
 the cheapest 3D view. Overlays, PAQD and the drawing are sampled on the planes
@@ -111,8 +111,17 @@ make it 2D (intensity x gradient), and `addColormap` keeps them. The first drawn
 label volume on volume 0's grid supplies per-label materials (`S`, `lo`/`hi`
 surface ramp, `surface`, and `normalize` to calibrate uncalibrated intensities;
 calibrated volumes use the colormap's own `min`/`max`), and its `hiddenLabels`
-hide structures. Meshes and the crosshair composite by depth. Other overlays are
-not drawn and a chunked volume draws `COMPOSITE` (each with one warning). Memory:
+hide structures. Without visible label volumes, standard overlays use the same
+registration, colormaps, positive/negative thresholds, opacity and visibility
+as the other render modes (`loadVolumes` / `setVolume`). They are unlit volumes,
+mixed by depth; `clipPlaneOverlay` clips them with the anatomy when enabled;
+`gamma` and `isOverlayOpacityCorrected` (per overlay voxel, so anisotropic
+voxels match `COMPOSITE`) apply. They reuse the existing overlay texture and do
+not cast anatomical shadows. A hidden background (`opacity: 0` or
+`visible: false`) still shows the overlays. Not drawn: statistics mixed with a
+visible label volume (the labels draw, one warning), streamed overlays (one
+warning) and channel stacks. Meshes and the crosshair composite by depth. A
+chunked background draws `COMPOSITE` (one warning). Memory:
 a duplicate r16float intensity texture, an rgba16float gradient and a half-res
 extinction texture. Both backends; WebGL2 needs `EXT_color_buffer_float` (else
 `COMPOSITE`, one warning). Demo: `examples/cinematic.html`.

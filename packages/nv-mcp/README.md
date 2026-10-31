@@ -196,6 +196,11 @@ Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`). Vite's WebSoc
 | `set_view` | `slice?`, `layout?`, `mosaic?`, `show_render?`, `radiological?`, `colorbar?` | Sets what the canvas shows: one slice orientation, all three with the render (`multiplanar`), the render alone, or `none`, which draws no slice and gives the whole canvas to the signal graph; how the multiplanar tiles are arranged and whether the render tile joins them; a NiiVue mosaic string; radiological convention; the colorbar. Only what is given changes. Reports the whole layout |
 | `screenshot` | `max_width?` | Draws the scene now and returns the canvas as a PNG, scaled down to fit. On a volume tiled into bricks it waits for the bricks to arrive first, up to 8 seconds, so the picture is never a part of the volume; and it waits, up to 4 seconds, for the render backend to finish an upload such as a 4D frame change, which would otherwise leave the frame blank. Refuses while the tab is in the background, where the browser draws nothing |
 
+Cinematic rendering uses the same `add_overlay` and `set_volume` controls for
+statistical maps, including positive/negative colormaps, thresholds and opacity,
+and still shows them when the background is hidden. Not drawn: statistics mixed
+with a visible label volume (the labels draw), streamed overlays, channel stacks.
+
 Every tool below `new_tab` also takes `tab?`, the id of the tab to ask; without it the answering tab is asked, as the Tabs section explains.
 
 Every reply is a line of prose for the agent to read, then the JSON the page returned. Failures are tool errors with the page's own message.

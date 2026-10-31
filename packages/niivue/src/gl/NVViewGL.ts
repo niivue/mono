@@ -28,7 +28,7 @@ import {
   stampAfterVertexWrite,
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
-import { findLabelVolume } from '@/view/NVCinematic'
+import { canUseCinematicOverlays, findLabelVolume } from '@/view/NVCinematic'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
@@ -98,6 +98,7 @@ export default class NVGlview {
   // self-scheduled refinement frame pending.
   private _cinematicWarned = new Set<string>()
   private _cinematicScheduled = false
+  private _cinematicOverlayVersion = 0
   // The drawing RGBA the drawing texture(s) were uploaded from, for the chunked
   // volume's CPU plane pick (view/planeVisibility.ts). Null without a drawing.
   private _drawingPickGrid: RgbaGrid | null = null
@@ -548,6 +549,7 @@ export default class NVGlview {
         vols[0].dimsRAS[3],
       ])
     }
+    this._cinematicOverlayVersion++
   }
 
   async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
@@ -573,7 +575,13 @@ export default class NVGlview {
     if (vols[0].modulationImage) return false
     const overlay = vols[1]
     if (!isVolumeDrawn(overlay)) return false
-    return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)
+    const handled = this.volumeRenderer.updateAffineOverlay(
+      gl,
+      vols[0],
+      overlay,
+    )
+    if (handled) this._cinematicOverlayVersion++
+    return handled
   }
 
   /**
@@ -700,6 +708,8 @@ export default class NVGlview {
     const volumes = md.getVolumes()
     let cinematicLabels: NVImage | null = null
     let isCinematic = false
+    // Statistics stay visible when the anatomy is hidden, as in COMPOSITE.
+    let hasCinematicOverlay = false
     this.cinematicRenderer.beginFrame()
     const base = volumes[0]
     if (isCinematicMode && base) {
@@ -713,19 +723,29 @@ export default class NVGlview {
         )
       } else {
         cinematicLabels = findLabelVolume(volumes)
+        const useOverlays =
+          !this._isChannelStack(volumes) && canUseCinematicOverlays(volumes)
+        const overlay = useOverlays ? this.volumeRenderer.overlayTexture : null
+        hasCinematicOverlay =
+          !!overlay && volumes.slice(1).some((v) => drawnOpacity(v) > 0)
         isCinematic = this.cinematicRenderer.prepare(
           base,
           cinematicLabels,
           md.volume.cinematic,
+          overlay,
+          this._cinematicOverlayVersion,
         )
         if (this.cinematicRenderer.labelProblem) {
           this._warnCinematic(
             `labels ignored: ${this.cinematicRenderer.labelProblem}`,
           )
         }
-        if (volumes.length > (cinematicLabels ? 2 : 1)) {
+        if (
+          !useOverlays &&
+          volumes.filter(isVolumeDrawn).length > (cinematicLabels ? 2 : 1)
+        ) {
           this._warnCinematic(
-            'overlays other than one label volume on the same grid are not drawn',
+            'use either standard overlays or one label volume on the same grid; mixed and streamed overlays are not drawn',
           )
         }
       }
@@ -1093,9 +1113,8 @@ export default class NVGlview {
             )
           }
         } else if (isCinematic && tile.space !== 'global3d') {
-          // Cinematic draws the background and its label volume; the classic
-          // overlay pass is skipped, so the labels are not drawn twice.
-          if (drawnOpacity(vol) > 0)
+          // Cinematic draws its own label or standard-overlay pass.
+          if (drawnOpacity(vol) > 0 || hasCinematicOverlay)
             this.cinematicRenderer.draw({
               index: i,
               viewport: [
@@ -1108,6 +1127,10 @@ export default class NVGlview {
               model: modelMatrix as Float32Array,
               clipPlanes: md.clipPlanes,
               isClipCutaway: md.scene.isClipPlaneCutaway,
+              clipPlaneOverlay: md.scene.clipPlaneOverlay,
+              isBackgroundVisible: drawnOpacity(vol) > 0,
+              gamma: md.scene.gamma,
+              isOverlayOpacityCorrected: md.volume.isOverlayOpacityCorrected,
               background: md.scene.backgroundColor,
             })
         } else {

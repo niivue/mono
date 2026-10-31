@@ -159,6 +159,7 @@ layout(std140) uniform Params {
   vec4 clipN[6];
   vec4 clipInfo;
   vec4 labelInfo;
+  vec4 overlayInfo;
 } P;
 uniform sampler3D huTex;
 uniform sampler3D gradTex;
@@ -166,6 +167,7 @@ uniform sampler2D tfColor;
 uniform sampler2D tfMat;
 uniform sampler2D tfMaxA;
 uniform sampler3D extTex;
+uniform sampler3D overlayTex;
 uniform usampler3D matTex;
 layout(location = 0) out vec4 accumOut;
 layout(location = 1) out float depthOut;
@@ -275,6 +277,8 @@ void main() {
   vec3 tb = (vec3(1.0) - ro) * inv;
   float tNear = max(max(min(ta.x, tb.x), min(ta.y, tb.y)), max(min(ta.z, tb.z), 0.0));
   float tFar = min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z));
+  float rayNear = tNear;
+  float rayFar = tFar;
 
   float clipLo = -1e30;
   float clipHi = 1e30;
@@ -311,10 +315,13 @@ void main() {
   float shininess = P.ao.w;
   float volTerm = P.view.z;
 
+  // A hidden background marches no anatomy; overlays below still draw.
+  if (P.labelInfo.w < 0.5) { tFar = tNear; }
   vec4 acc = vec4(0.0);
   float prevMag = 0.0;
   vec3 prevN = vec3(0.0);
-  float t = tNear + stepMM * rand();
+  float rayJitter = rand();
+  float t = tNear + stepMM * rayJitter;
   for (int i = 0; i < 8192; i++) {
     if (isCutaway && t >= clipLo && t < clipHi) {
       t += ceil((clipHi - t) / stepMM) * stepMM;
@@ -388,6 +395,49 @@ void main() {
     if (onCut) { lit = albedo * occl * 0.6; }
     acc += vec4(lit * weight, weight);
     if (acc.a > 0.995) { break; }
+  }
+  // Standard overlay texture and depth-aware mix; mirrors cinematic.wgsl.
+  if (P.overlayInfo.x > 0.5) {
+    float overlayStep = max(stepMM, P.tf.w);
+    float overlayVoxels = overlayStep * length(df * vec3(textureSize(overlayTex, 0)));
+    float start = rayNear + overlayStep * rayJitter;
+    float overlayT = start;
+    float fastStep = 1.9 * overlayStep;
+    for (int i = 0; i < 8192 && overlayT < rayFar; i++) {
+      vec3 p = ro + df * overlayT;
+      if ((P.overlayInfo.y < 0.5 || isVisible(p)) && textureLod(overlayTex, p, 0.0).a >= 0.01) { break; }
+      overlayT += fastStep;
+    }
+    overlayT = start + max(0.0, floor((overlayT - fastStep - start) / overlayStep)) * overlayStep;
+    vec4 overlay = vec4(0.0);
+    float first = 1e30;
+    float farthest = 0.0;
+    for (int i = 0; i < 8192 && overlayT < rayFar; i++) {
+      vec3 p = ro + df * overlayT;
+      if (P.overlayInfo.y < 0.5 || isVisible(p)) {
+        vec4 c = textureLod(overlayTex, p, 0.0);
+        if (c.a >= 0.01) {
+          first = min(first, overlayT);
+          farthest = overlayT;
+          // Correct per overlay voxel crossed along the ray, like the classic
+          // renderer; the anatomy's refStep (smallest voxel edge) would
+          // over-darken thick-slice axes.
+          float a = P.overlayInfo.w > 0.5 ? 1.0 - pow(1.0 - min(c.a, 0.9999), overlayVoxels) : c.a;
+          vec3 rgb = srgbToLinear(pow(c.rgb, vec3(P.overlayInfo.z)));
+          overlay += (1.0 - overlay.a) * vec4(rgb * a, a);
+          if (overlay.a > 0.995) { break; }
+        }
+      }
+      overlayT += overlayStep;
+    }
+    if (overlay.a > 0.001) {
+      float amount = overlay.a;
+      float behind = max(0.0, farthest - depth / depthPerMM) * length(df);
+      if (acc.a <= 0.0) { amount = 1.0; }
+      else { amount *= 1.0 - acc.a * pow(min(behind / 0.5, 1.0), 0.3); }
+      acc = vec4(mix(acc.rgb, overlay.rgb, amount), max(acc.a, overlay.a));
+      depth = min(depth, first * depthPerMM);
+    }
   }
   accumOut = acc;
   depthOut = depth;

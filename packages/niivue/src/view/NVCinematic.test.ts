@@ -7,6 +7,7 @@ import {
   bakeTransferFunction,
   CinematicCpuCache,
   calibrationMap,
+  canUseCinematicOverlays,
   cinematicGeometry,
   clipParams,
   dilateLabels,
@@ -183,11 +184,13 @@ describe('geometry, light and uniforms', () => {
       tf: bakeTransferFunction(ramp, -1, 1),
       clip: new Float32Array(52),
       labelInfo: [1, 0, 0.5, 0],
+      overlayInfo: [1, 0, 1, 1],
     })
-    expect(out.length).toBe(128)
+    expect(out.length).toBe(132)
     expect(Array.from(out.subarray(48, 50))).toEqual([64, 32])
     expect(out[61]).toBe(5)
-    expect(Array.from(out.subarray(124))).toEqual([1, 0, 0.5, 0])
+    expect(Array.from(out.subarray(124, 128))).toEqual([1, 0, 0.5, 0])
+    expect(Array.from(out.subarray(128))).toEqual([1, 0, 1, 1])
   })
 })
 
@@ -221,6 +224,21 @@ describe('findLabelVolume', () => {
     expect(findLabelVolume([base, hidden, other, labels])).toBe(labels)
     expect(findLabelVolume([base, other])).toBeNull()
   })
+})
+
+test('standardOverlaysExcludeVisibleLabelsAndStreamedVolumes', () => {
+  const base = volume(new Float32Array(8), 2)
+  const stats = volume(new Float32Array(27), 3)
+  const labels = volume(new Float32Array(8), 2, {
+    colormapLabel: { lut: new Uint8ClampedArray(4) },
+  })
+  expect(canUseCinematicOverlays([base, stats])).toBe(true)
+  expect(canUseCinematicOverlays([base, stats, labels])).toBe(false)
+  labels.visible = false
+  expect(canUseCinematicOverlays([base, stats, labels])).toBe(true)
+  expect(
+    canUseCinematicOverlays([base, { ...stats, chunkSource: {} } as NVImage]),
+  ).toBe(false)
 })
 
 describe('CinematicCpuCache', () => {

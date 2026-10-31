@@ -20,7 +20,8 @@ struct Params {
   clip: array<vec4f, 6>,
   clipN: array<vec4f, 6>, // unit plane normals in mm space
   clipInfo: vec4f, // active plane count, cutaway (0/1), -, -
-  labelInfo: vec4f, // labels on (0/1), unlabeled tissue scale, label colour blend (0 = label materials), -
+  labelInfo: vec4f, // labels on (0/1), unlabeled tissue scale, label colour blend (0 = label materials), background visible (0/1)
+  overlayInfo: vec4f, // standard overlays on, clip with anatomy, inverse gamma, correct step opacity
 }
 
 @group(0) @binding(0) var huTex: texture_3d<f32>;
@@ -35,6 +36,7 @@ struct Params {
 @group(0) @binding(9) var matTex: texture_3d<u32>;
 @group(0) @binding(10) var matTable: texture_2d<f32>;
 @group(0) @binding(11) var<storage, read_write> depthOut: array<f32>; // NDC depth of the first hit, frame 0
+@group(0) @binding(12) var overlayTex: texture_3d<f32>;
 
 var<private> rng: u32;
 
@@ -150,6 +152,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let tb = (vec3f(1.0) - ro) * inv;
   var tNear = max(max(min(ta.x, tb.x), min(ta.y, tb.y)), max(min(ta.z, tb.z), 0.0));
   var tFar = min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z));
+  let rayNear = tNear;
+  let rayFar = tFar;
 
   // Clip planes as a ray interval [clipLo, clipHi] (t in mm): a solid clip
   // marches only inside it, a cutaway jumps over it. Either way the ray gets
@@ -190,10 +194,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let shininess = P.ao.w;
   let volTerm = P.view.z;
 
+  // A hidden background marches no anatomy; overlays below still draw.
+  if (P.labelInfo.w < 0.5) { tFar = tNear; }
   var acc = vec4f(0.0);
   var prevMag = 0.0;
   var prevN = vec3f(0.0);
-  var t = tNear + stepMM * rand();
+  let rayJitter = rand();
+  var t = tNear + stepMM * rayJitter;
   for (var i = 0; i < 8192; i++) {
     if (isCutaway && t >= clipLo && t < clipHi) {
       // Keep the jittered lattice so the cut face is sampled like any surface.
@@ -294,6 +301,53 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (onCut) { lit = albedo * occl * 0.6; }
     acc += vec4f(lit * weight, weight);
     if (acc.a > 0.995) { break; } // early termination: the rest is hidden
+  }
+
+  // Reuse the standard renderer's classified, registered overlay texture.
+  // A separate march preserves activations in transparent/removed anatomy;
+  // clipPlaneOverlay opts into clipping them with the background.
+  if (P.overlayInfo.x > 0.5) {
+    let overlayStep = max(stepMM, P.tf.w);
+    let overlayVoxels = overlayStep * length(df * vec3f(textureDimensions(overlayTex)));
+    let start = rayNear + overlayStep * rayJitter;
+    var overlayT = start;
+    let fastStep = 1.9 * overlayStep;
+    for (var i = 0; i < 8192 && overlayT < rayFar; i++) {
+      let p = ro + df * overlayT;
+      if ((P.overlayInfo.y < 0.5 || isVisible(p)) && textureSampleLevel(overlayTex, samp, p, 0.0).a >= 0.01) { break; }
+      overlayT += fastStep;
+    }
+    overlayT = start + max(0.0, floor((overlayT - fastStep - start) / overlayStep)) * overlayStep;
+    var overlay = vec4f(0.0);
+    var first = 1e30;
+    var farthest = 0.0;
+    for (var i = 0; i < 8192 && overlayT < rayFar; i++) {
+      let p = ro + df * overlayT;
+      if (P.overlayInfo.y < 0.5 || isVisible(p)) {
+        let c = textureSampleLevel(overlayTex, samp, p, 0.0);
+        if (c.a >= 0.01) {
+          first = min(first, overlayT);
+          farthest = overlayT;
+          // Correct per overlay voxel crossed along the ray, like the classic
+          // renderer; the anatomy's refStep (smallest voxel edge) would
+          // over-darken thick-slice axes.
+          let a = select(c.a, 1.0 - pow(1.0 - min(c.a, 0.9999), overlayVoxels), P.overlayInfo.w > 0.5);
+          let rgb = srgbToLinear(pow(c.rgb, vec3f(P.overlayInfo.z)));
+          overlay += (1.0 - overlay.a) * vec4f(rgb * a, a);
+          if (overlay.a > 0.995) { break; }
+        }
+      }
+      overlayT += overlayStep;
+    }
+    // Match the classic renderer's depth-aware overlay mix, in texture units.
+    if (overlay.a > 0.001) {
+      var amount = overlay.a;
+      let behind = max(0.0, farthest - depth / depthPerMM) * length(df);
+      if (acc.a <= 0.0) { amount = 1.0; }
+      else { amount *= 1.0 - acc.a * pow(min(behind / 0.5, 1.0), 0.3); }
+      acc = vec4f(mix(acc.rgb, overlay.rgb, amount), max(acc.a, overlay.a));
+      depth = min(depth, first * depthPerMM);
+    }
   }
 
   let idx = gid.y * res.x + gid.x;

@@ -1580,7 +1580,8 @@ export default class NiiVue extends EventTarget {
    * projection), `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
    * crosshair planes, composited front to back, with overlays sampled on them
    * as the 2D tiles do), or `VOLUME_RENDER_MODE.CINEMATIC` (progressive path
-   * tracing of the background volume and a label volume, see
+   * tracing of the background volume with either one label volume or standard
+   * overlays, see
    * {@link volumeCinematic}). 2D slices draw a single plane and are unaffected.
    *
    * Only those four values are stored: a fractional value rounds to the

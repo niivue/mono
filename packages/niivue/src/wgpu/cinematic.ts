@@ -10,6 +10,7 @@
  * depth (so `draw` takes both the compute encoder and the render pass). gl/cinematic.ts mirrors this method for method.
  */
 import { mat4 } from 'gl-matrix'
+import { invGamma } from '@/NVConstants'
 import type { CinematicOptions, NVImage } from '@/NVTypes'
 import {
   type BakedTransferFunction,
@@ -60,13 +61,16 @@ export type CinematicTileInput = {
   model: ArrayLike<number>
   clipPlanes: ArrayLike<number>
   isClipCutaway: boolean
+  clipPlaneOverlay: boolean
+  /** False when the background is hidden: only overlays are marched. */
+  isBackgroundVisible: boolean
+  gamma: number
+  isOverlayOpacityCorrected: boolean
   background: ArrayLike<number>
 }
 
 export class CinematicRenderer extends NVRenderer {
   private device: GPUDevice | null = null
-  private sampleCount = 1
-  private colorFormat: GPUTextureFormat = 'bgra8unorm'
   private cpu = new CinematicCpuCache()
   private sampler: GPUSampler | null = null
   private marchPipeline: GPUComputePipeline | null = null
@@ -89,8 +93,12 @@ export class CinematicRenderer extends NVRenderer {
   private needsGradient = false
   private needsExtinction = false
   private tiles = new Map<number, TileState>()
+  private preparedThisFrame = false
   private options: CinematicOptions | null = null
   private optionsKey = ''
+  // Borrowed from the standard renderer; it owns the texture and its updates.
+  private overlayTex: GPUTexture | null = null
+  private overlayVersion = -1
 
   /** Label problem reported by the CPU cache (e.g. values above 254). */
   get labelProblem(): string {
@@ -103,8 +111,6 @@ export class CinematicRenderer extends NVRenderer {
     colorFormat: GPUTextureFormat,
   ): void {
     this.device = device
-    this.sampleCount = sampleCount
-    this.colorFormat = colorFormat
     this.sampler = device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
@@ -151,11 +157,6 @@ export class CinematicRenderer extends NVRenderer {
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
     this.isReady = true
-  }
-
-  /** Whether the pipelines were built for this sample count and format. */
-  matches(sampleCount: number, colorFormat: GPUTextureFormat): boolean {
-    return this.sampleCount === sampleCount && this.colorFormat === colorFormat
   }
 
   private _texture3D(
@@ -231,9 +232,23 @@ export class CinematicRenderer extends NVRenderer {
     vol: NVImage,
     labelVol: NVImage | null,
     options: CinematicOptions,
+    overlayTex: GPUTexture | null,
+    overlayVersion: number,
   ): boolean {
+    this.preparedThisFrame = true
     const device = this.device
     if (!device || !this.isReady) return false
+    if (
+      overlayTex !== this.overlayTex ||
+      (overlayTex && overlayVersion !== this.overlayVersion)
+    ) {
+      this.overlayTex = overlayTex
+      this.overlayVersion = overlayVersion
+      for (const tile of this.tiles.values()) {
+        tile.key = ''
+        tile.marchBindGroup = null
+      }
+    }
     const update = this.cpu.update(vol, labelVol, options)
     if (!update) return false
     if (update.intensity) {
@@ -475,6 +490,7 @@ export class CinematicRenderer extends NVRenderer {
         { binding: 9, resource: this.matIdTex.createView() },
         { binding: 10, resource: this.matTable.createView() },
         { binding: 11, resource: { buffer: tile.depth } },
+        { binding: 12, resource: (this.overlayTex ?? this.huTex).createView() },
       ],
     })
     return tile.marchBindGroup
@@ -504,6 +520,10 @@ export class CinematicRenderer extends NVRenderer {
       Array.from(t.mvp).join(),
       Array.from(t.clipPlanes).join(),
       t.isClipCutaway,
+      t.clipPlaneOverlay,
+      t.isBackgroundVisible,
+      t.gamma,
+      t.isOverlayOpacityCorrected,
       Array.from(t.background).join(),
     ].join('|')
     if (key !== tile.key) {
@@ -524,7 +544,16 @@ export class CinematicRenderer extends NVRenderer {
         options,
         tf: this.tf,
         clip: clipParams(t.clipPlanes, t.isClipCutaway, this.geometry.mm2frac),
-        labelInfo: this.labelInfo,
+        labelInfo: [
+          ...this.labelInfo.slice(0, 3),
+          t.isBackgroundVisible ? 1 : 0,
+        ],
+        overlayInfo: [
+          this.overlayTex ? 1 : 0,
+          t.clipPlaneOverlay ? 1 : 0,
+          invGamma(t.gamma),
+          t.isOverlayOpacityCorrected ? 1 : 0,
+        ],
       })
       device.queue.writeBuffer(
         tile.params,
@@ -556,6 +585,7 @@ export class CinematicRenderer extends NVRenderer {
 
   /** Before the tile loop. */
   beginFrame(): void {
+    this.preparedThisFrame = false
     for (const tile of this.tiles.values()) tile.usedThisFrame = false
   }
 
@@ -574,7 +604,11 @@ export class CinematicRenderer extends NVRenderer {
         refining = true
       }
     }
-    if (this.tiles.size === 0 && this.huTex) this._freeVolume()
+    // Keep the scene's textures while cinematic stays active even with no 3D
+    // tile on screen (2D-only layout, hidden background); free them when the
+    // view stops calling prepare.
+    if (this.tiles.size === 0 && !this.preparedThisFrame && this.huTex)
+      this._freeVolume()
     return refining
   }
 
@@ -592,6 +626,8 @@ export class CinematicRenderer extends NVRenderer {
     this.huTex = this.gradTex = this.extTex = null
     this.tfColor = this.tfMat = this.tfMaxA = null
     this.geometry = null
+    this.overlayTex = null
+    this.overlayVersion = -1
     this.tf = null
     this.cpu = new CinematicCpuCache()
   }

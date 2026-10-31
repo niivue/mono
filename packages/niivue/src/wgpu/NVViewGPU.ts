@@ -28,6 +28,7 @@ import {
   stampAfterVertexWrite,
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
+import { findLabelVolume } from '@/view/NVCinematic'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
@@ -63,6 +64,7 @@ import {
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
 import { WGPUBench } from './bench'
+import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import * as depthPick from './depthPick'
@@ -178,6 +180,11 @@ export default class NVView {
   orientCubeGpu: WebGPUMeshGPU | null
   thumbnailRenderer: ThumbnailRenderer
   slidePlaneRenderer: SlidePlaneRendererGPU
+  cinematicRenderer = new CinematicRenderer()
+  // VOLUME_RENDER_MODE.CINEMATIC: one warning per cause, and at most one
+  // self-scheduled refinement frame in flight.
+  private _cinematicWarned = new Set<string>()
+  private _cinematicScheduled = false
   /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
   slidePlane: SlidePlaneState | null = null
   // Bounds: pixel rect for sub-canvas rendering
@@ -307,7 +314,20 @@ export default class NVView {
     await this._initWebGPU()
     await this._createResources()
     await this._createPipelines()
+    if (this.device) {
+      this.cinematicRenderer.init(
+        this.device,
+        this.isAntiAlias ? 4 : 1,
+        this.preferredCanvasFormat,
+      )
+    }
     await this.updateBindGroups()
+  }
+
+  private _warnCinematic(message: string): void {
+    if (this._cinematicWarned.has(message)) return
+    this._cinematicWarned.add(message)
+    log.warn(`cinematic: ${message}`)
   }
 
   async _createPipelines(): Promise<void> {
@@ -804,8 +824,13 @@ export default class NVView {
     this.volumeRenderer.gradientAmount = md.volume.illumination
     // Composite (OVER) vs maximum-intensity projection vs orthogonal slices, for
     // every volume pass this frame (base, overlay, PAQD, drawing, and the
-    // independent hi-res overlay cube).
-    this.volumeRenderer.renderMode = md.volume.renderMode
+    // independent hi-res overlay cube). CINEMATIC tiles skip the classic
+    // march; where it falls back (chunked volume) it draws COMPOSITE.
+    const isCinematicMode =
+      md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.CINEMATIC
+    this.volumeRenderer.renderMode = isCinematicMode
+      ? NVConstants.VOLUME_RENDER_MODE.COMPOSITE
+      : md.volume.renderMode
     // The crosshair planes SLICES draws, in the base volume's texture fraction —
     // the same conversion the 2D tiles use, so sheared and oblique volumes line
     // up with them.
@@ -933,6 +958,39 @@ export default class NVView {
     }
     const pass = commandEncoder.beginRenderPass(renderPassDesc)
     const volumes = md.getVolumes()
+    // Cinematic compute (prep passes, one march per tile) is recorded into its
+    // own encoder during the tile loop and submitted before the main pass.
+    let cinematicEncoder: GPUCommandEncoder | null = null
+    let cinematicLabels: NVImage | null = null
+    let isCinematic = false
+    this.cinematicRenderer.beginFrame()
+    const base = volumes[0]
+    if (isCinematicMode && base && this.cinematicRenderer.isReady) {
+      if (base.chunkPlan || base.chunkSource) {
+        this._warnCinematic(
+          'chunked (streamed) volumes are not supported; drawing COMPOSITE',
+        )
+      } else {
+        cinematicLabels = findLabelVolume(volumes)
+        cinematicEncoder = device.createCommandEncoder()
+        isCinematic = this.cinematicRenderer.prepare(
+          cinematicEncoder,
+          base,
+          cinematicLabels,
+          md.volume.cinematic,
+        )
+        if (this.cinematicRenderer.labelProblem) {
+          this._warnCinematic(
+            `labels ignored: ${this.cinematicRenderer.labelProblem}`,
+          )
+        }
+        if (volumes.length > (cinematicLabels ? 2 : 1)) {
+          this._warnCinematic(
+            'overlays other than one label volume on the same grid are not drawn',
+          )
+        }
+      }
+    }
     const channelStack = this._isChannelStack(volumes)
     const interpolation = sliceInterpolation(
       volumes,
@@ -988,16 +1046,17 @@ export default class NVView {
         volumes.find(
           (v) => v.name === tile.volumeId || v.url === tile.volumeId,
         ) ?? volumes[0]
-      let [mvpMatrix, , normalMatrix, rayDir] = NVTransforms.calculateMvpMatrix(
-        ltwh,
-        md.scene.azimuth,
-        md.scene.elevation,
-        md._renderPivotMM ?? md.pivot3D,
-        md.furthestFromPivot,
-        md.scene.scaleMultiplier,
-        md.volumes[0]?.obliqueRAS,
-        md.scene.renderPan,
-      )
+      let [mvpMatrix, modelMatrix, normalMatrix, rayDir] =
+        NVTransforms.calculateMvpMatrix(
+          ltwh,
+          md.scene.azimuth,
+          md.scene.elevation,
+          md._renderPivotMM ?? md.pivot3D,
+          md.furthestFromPivot,
+          md.scene.scaleMultiplier,
+          md.volumes[0]?.obliqueRAS,
+          md.scene.renderPan,
+        )
       if (tile.space === 'global3d' && tileVol) {
         const mvp3d = NVTransforms.calculateGlobalVolumeMvp(
           ltwh,
@@ -1071,6 +1130,7 @@ export default class NVView {
           md.pivot3D,
         )
         mvpMatrix = mvp2d[0]
+        modelMatrix = mvp2d[1]
         normalMatrix = mvp2d[2]
         rayDir = mvp2d[3]
         // Cross-lines on mosaic render tiles
@@ -1284,6 +1344,23 @@ export default class NVView {
               md.volume.isV1SliceShader,
             )
           }
+        } else if (
+          cinematicEncoder &&
+          isCinematic &&
+          tile.space !== 'global3d'
+        ) {
+          // Cinematic draws the background and its label volume; the classic
+          // overlay pass is skipped, so the labels are not drawn twice.
+          if (drawnOpacity(vol) > 0)
+            this.cinematicRenderer.draw(cinematicEncoder, pass, {
+              index: i,
+              ltwh,
+              mvp: mvpMatrix as Float32Array,
+              model: modelMatrix as Float32Array,
+              clipPlanes: md.clipPlanes,
+              isClipCutaway: md.scene.isClipPlaneCutaway,
+              background: md.scene.backgroundColor,
+            })
         } else {
           // Phase 3c: frustum-cull this 3D render tile to drive streamed
           // upload — no-op unless the active volume is chunked.
@@ -2016,8 +2093,32 @@ export default class NVView {
       this._copyBoundsToCanvas(commandEncoder, canvasTexture)
     }
     markSubmitStart()
-    device.queue.submit([commandEncoder.finish()])
+    device.queue.submit(
+      cinematicEncoder
+        ? [cinematicEncoder.finish(), commandEncoder.finish()]
+        : [commandEncoder.finish()],
+    )
     markEnd()
+    // Progressive cinematic refinement drives itself, one frame in flight.
+    // While dragging, each camera change draws one (restarted) frame instead.
+    if (
+      this.cinematicRenderer.endFrame() &&
+      !this.model._isDragging &&
+      !this._cinematicScheduled
+    ) {
+      this._cinematicScheduled = true
+      device.queue
+        .onSubmittedWorkDone()
+        .then(() => {
+          requestAnimationFrame(() => {
+            this._cinematicScheduled = false
+            if (!this._destroyed) this.render()
+          })
+        })
+        .catch(() => {
+          this._cinematicScheduled = false
+        })
+    }
     // Chunk-streaming observer: one observation per drawn frame, after this
     // frame's draw has been submitted, carrying the verdict on whether the
     // frame is complete. Idle can then only fire for a frame that shows every
@@ -3222,6 +3323,7 @@ export default class NVView {
     this.fontRenderer.destroy()
     this.colorbarRenderer.destroy()
     this.thumbnailRenderer.destroy()
+    this.cinematicRenderer.destroy()
     this.sliceRenderer.destroy()
     this.volumeRenderer.destroy()
     if (this.device) {

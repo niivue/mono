@@ -74,9 +74,9 @@ const SLIDERS = [
   ['specular', 0, 3, 0.05],
 ]
 
-const BACKGROUND = [0, 0, 0, 1]
+let background = [0, 0, 0, 1]
 const nv1 = new NiiVue({
-  backgroundColor: BACKGROUND,
+  backgroundColor: background,
   // Occluded crosshair arms show faintly, as in vox.clip.html with XRay on.
   meshXRay: 0.1,
   sliceType: SLICE_TYPE.RENDER,
@@ -166,7 +166,7 @@ function syncCamera() {
     md.volumes[0]?.obliqueRAS,
     md.scene.renderPan,
   )
-  cr.background = BACKGROUND
+  cr.background = background
   cr.setCamera(mvp, model)
   cr.setClip(md.clipPlanes, md.scene.isClipPlaneCutaway)
 }
@@ -223,9 +223,8 @@ const DEPTH_ONLY_OPACITY = 1.01 / 255
 function applyMode() {
   const isCinematic = modeSelect.value === 'cinematic'
   cine.style.visibility = isCinematic ? 'visible' : 'hidden'
-  nv1.backgroundColor = isCinematic
-    ? [...BACKGROUND.slice(0, 3), 0]
-    : BACKGROUND
+  // Premultiplied canvas: transparent must be all zero, or its colour adds on top.
+  nv1.backgroundColor = isCinematic ? [0, 0, 0, 0] : background
   if (nv1.volumes.length) {
     nv1.setVolume(0, { opacity: isCinematic ? DEPTH_ONLY_OPACITY : 1 })
   }
@@ -239,6 +238,12 @@ function applyMode() {
 modeSelect.onchange = applyMode
 // NiiVue's backend (classic view, cube, mouse). The cinematic renderer is
 // WebGPU-only for now; a WebGL2 port comes when it moves into src/.
+colorBtn.oninput = () => {
+  const hex = colorBtn.value
+  background = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  background.push(1)
+  applyMode() // re-applies the per-mode background and restarts refinement
+}
 aaCheck.onchange = async () => {
   await nv1.reinitializeView({ isAntiAlias: aaCheck.checked })
   applyMode()

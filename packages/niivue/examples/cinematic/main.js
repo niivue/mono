@@ -293,7 +293,7 @@ function applyMode() {
   const backend = nv1.opts.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
   modeText.textContent = `${isCinematic ? 'Cinematic' : 'Classic'} (${backend})`
   for (const el of [controls, restartBtn, saveBtn]) el.hidden = !isCinematic
-  timeText.textContent = ''
+  timeText.textContent = loadError
   cameraKey = ''
 }
 
@@ -319,11 +319,18 @@ webgpuCheck.onchange = async () => {
 }
 // One load at a time: loadVolumes commits whichever fetch finishes last, so an
 // overlapping selection could show a different scan than the one selected.
+let loadError = ''
 async function loadSelectedVolume() {
   volumeSelect.disabled = true
   try {
+    loadError = ''
     await loadVolume()
     applyMode() // a new volume loads opaque
+  } catch (err) {
+    // e.g. a sample not yet on the demo-images main branch (404)
+    loadError = `Load failed: ${err.message}`
+    timeText.textContent = loadError
+    console.error(err)
   } finally {
     volumeSelect.disabled = false
   }
@@ -348,7 +355,7 @@ function tick() {
     syncCamera()
     cr.render()
     const ms = cr.averageMs
-    const text = ms === null ? '' : `${ms.toFixed(0)} ms/frame`
+    const text = loadError || (ms === null ? '' : `${ms.toFixed(0)} ms/frame`)
     if (timeText.textContent !== text) timeText.textContent = text
   }
   requestAnimationFrame(tick)

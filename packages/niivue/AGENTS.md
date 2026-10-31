@@ -1432,7 +1432,10 @@ overridden by a reset, and a plot double-click just scrubs. Any graph hit still
 consumes the dblclick so it does not fall through to depth-pick (nothing to pick
 on the 2-D plot). This is the one-click way back from a deep zoom; zooming out
 past the full extent still auto-resets too. A double-click on a spatial slice is
-unaffected (still depth-picks).
+unaffected (still depth-picks), except that while a spline/livewire contour is
+in progress a double-click on a 2D slice tile closes the contour instead, and
+one on the 3D render tile is ignored (#114). The graph check runs first, so a
+graph double-click keeps its action mid-contour.
 
 Marker vs window: explicit zoom/pan may leave the cursor marker off-window (zoom
 only re-centres on the marker when it is already visible; the pan buttons can

@@ -229,11 +229,9 @@ function applyMode() {
     nv1.setVolume(0, { opacity: isCinematic ? DEPTH_ONLY_OPACITY : 1 })
   }
   const backend = nv1.opts.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
-  helpText.textContent = isCinematic
-    ? `Cinematic (WebGPU) refines while the camera is still; NiiVue (${backend}) draws the crosshair and cube. Drag to rotate, scroll to zoom, right-drag moves the clip plane.`
-    : `Classic NiiVue (${backend}). Drag to rotate, scroll to zoom, right-drag moves the clip plane.`
+  modeText.textContent = `${isCinematic ? 'Cinematic' : 'Classic'} (${backend})`
   for (const el of [controls, restartBtn, saveBtn]) el.hidden = !isCinematic
-  statusText.textContent = ''
+  timeText.textContent = ''
   cameraKey = ''
 }
 
@@ -279,7 +277,7 @@ function tick() {
     cr.render()
     const ms = cr.averageMs
     const text = ms === null ? '' : `${ms.toFixed(0)} ms/frame`
-    if (statusText.textContent !== text) statusText.textContent = text
+    if (timeText.textContent !== text) timeText.textContent = text
   }
   requestAnimationFrame(tick)
 }

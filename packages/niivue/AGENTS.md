@@ -2038,7 +2038,7 @@ WebGPU-only example, not yet in `src/`: `examples/cinematic.html` + `examples/ci
 - Secondary rays start 1.5 extinction voxels off the surface (along the normal); starting at the surface gives wood-grain self-shadow rings.
 - Clip planes follow NiiVue (`model.clipPlanes`, `scene.isClipPlaneCutaway`, polled with the camera): JS rescales each plane so its equation is mm distance; the march clips each ray to an interval (solid: march inside, cutaway: jump over), so clipping shortens rays. Cone traces skip clipped material (no shadows from removed tissue). Samples within 1.5 voxels of the cut use the plane normal as a surface. Demo has vox.clip.html's presets (`Clip` 0-6, `Cutaway`, `?clip=`/`?cutaway=1`); right-drag on the render moves plane 0. `clipPlaneColor` is not used.
 - Display pass: ACES tone map.
-- One frame in flight (no GPU queue backlog). Status bar (lower right) shows the march pass's GPU time (timestamp queries, `onSubmittedWorkDone` fallback) averaged over the first 10 frames after a scene change; frames that wait on upload/extinction builds are excluded.
+- One frame in flight (no GPU queue backlog). Status bar: lower right shows mode and NiiVue backend, e.g. "Cinematic (WebGL2)"; lower left shows the march pass's GPU time (timestamp queries, `onSubmittedWorkDone` fallback) averaged over the first 10 frames after a scene change; frames that wait on upload/extinction builds are excluded.
 
 **TF format** (documented in `tf.js` header): a plain cmap works unchanged. Optional extensions:
 - `E`: alpha at high gradient (edges); `A` becomes interior (shallow-gradient) alpha.

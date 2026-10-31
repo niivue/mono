@@ -48,10 +48,18 @@ function describeSetting(setting: Setting): Record<string, unknown> {
     ...(setting.min === undefined ? {} : { min: setting.min }),
     ...(setting.max === undefined ? {} : { max: setting.max }),
   }
+  const fields = setting.fields
+    ? {
+        fields: Object.fromEntries(
+          setting.fields.map((f) => [f.name, describeSetting(f)]),
+        ),
+      }
+    : {}
   return {
     kind: setting.kind,
     ...choices,
     ...bounds,
+    ...fields,
     description: setting.description,
   }
 }

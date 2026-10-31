@@ -114,8 +114,8 @@ calibrated volumes use the colormap's own `min`/`max`), and its `hiddenLabels`
 hide structures. Meshes and the crosshair composite by depth. Other overlays are
 not drawn and a chunked volume draws `COMPOSITE` (each with one warning). Memory:
 a duplicate r16float intensity texture, an rgba16float gradient and a half-res
-extinction texture. Demo: `examples/cinematic.html`. WebGL2 draws `COMPOSITE`
-until its port lands.
+extinction texture. Both backends; WebGL2 needs `EXT_color_buffer_float` (else
+`COMPOSITE`, one warning). Demo: `examples/cinematic.html`.
 
 ```js
 nv.volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC

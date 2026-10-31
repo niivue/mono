@@ -2040,8 +2040,8 @@ materials, dilation, calibration, clip rescale, light, uniform packing, and
 `colormapKey`, calMin/calMax, label volume identity + `hiddenLabels`, label
 mode). `wgpu/cinematic.ts` + `cinematic*.wgsl` (`cinematicCommon` is prepended
 to the march and extinction so primary and shadow rays classify identically).
-`gl/cinematic.ts` mirrors it method for method (until it lands, WebGL2 draws
-COMPOSITE with one warning; see FEATURE_PARITY.md).
+`gl/cinematic.ts` + `gl/cinematicShader.ts` mirror them method for method and
+statement for statement.
 
 **Frame structure (WebGPU):** `beginFrame`; on the first cinematic tile
 `prepare` (CPU cache update, uploads, gradient and extinction prep passes when
@@ -2061,6 +2061,23 @@ MVP, clip planes, cutaway or background. First-hit depth is set on frame 0
 (first sample with table alpha >= 0.01, as the classic march), not
 min-accumulated. The light comes from each tile's own model matrix (mosaic
 tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
+
+**Frame structure (WebGL2):** same calls and tile keys; `init` leaves the
+renderer not ready without `EXT_color_buffer_float` (the view then draws
+COMPOSITE with one warning). Compute becomes fragment passes drawing a
+fullscreen triangle: prep passes one per 3D layer (`framebufferTextureLayer`),
+extinction mips by rendering each level while `TEXTURE_BASE/MAX_LEVEL` pin
+sampling to the previous one (no feedback loop), `LINEAR_MIPMAP_NEAREST` to
+match WebGPU's default nearest mip filter. Uniforms are std140 blocks fed the
+same `pack*Params` arrays. The march blends a running MEAN into a per-tile
+RGBA16F target (`CONSTANT_ALPHA`, alpha 1/(n+1); an fp16 sum bands and RGBA32F
+blending needs `EXT_float_blend`), so the display gets frames = 1. Frame 0
+draws unblended into accum + an R32F depth target; later frames bind an
+accum-only framebuffer. The march unprojects GL NDC z -1..1, so its depth is
+window depth for both `orthoZO` (render tile) and `ortho` (mosaic tile) MVPs.
+Integer and float32 textures are `NEAREST` (else incomplete: `texelFetch`
+reads 0). Every pass saves and restores framebuffer, viewport, program, VAO,
+blend, depth, scissor and cull state. Refinement reschedules with plain rAF.
 
 **Inputs:** transfer function = volumes[0]'s colormap mapped across its
 calMin..calMax (scaled units: HU for CT). Optional colormap keys, kept by

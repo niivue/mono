@@ -144,7 +144,24 @@ const nv1 = new NiiVue({
   isOrientCubeVisible: true,
 })
 await nv1.attachToCanvas(gl1)
-const cr = await CinematicRenderer.create(cine)
+// Without WebGPU the page still offers the classic view: a no-op stand-in
+// keeps every renderer call valid while cinematic mode stays disabled.
+const noop = () => {}
+let unavailable = ''
+const cr = await CinematicRenderer.create(cine).catch((err) => {
+  unavailable = `Cinematic needs WebGPU: ${err.message}`
+  modeSelect.value = 'classic'
+  modeSelect.disabled = true
+  return new Proxy(
+    { settings: {}, averageMs: null },
+    {
+      // 'then' must stay undefined, or await would treat the stand-in as a
+      // promise that never settles.
+      get: (target, key) =>
+        key in target ? target[key] : key === 'then' ? undefined : noop,
+    },
+  )
+})
 
 const sliders = {}
 for (const [key, min, max, step] of SLIDERS) {
@@ -282,8 +299,15 @@ labelSelect.onchange = applyLabelMode
 let cameraKey = ''
 function syncCamera() {
   const md = nv1.model
-  const w = gl1.clientWidth
-  const h = gl1.clientHeight
+  // NiiVue's render tile, not the whole canvas: the legend (and colorbar or
+  // graph) take part of it, which would shift and stretch the cinematic view.
+  const tile = nv1.view?.screenSlices?.find(
+    (t) => t.axCorSag === SLICE_TYPE.RENDER,
+  )
+  const cssPerPx = gl1.clientWidth / gl1.width
+  const [left, top, w, h] = (
+    tile?.leftTopWidthHeight ?? [0, 0, gl1.width, gl1.height]
+  ).map((v) => v * cssPerPx)
   const pivot = md._renderPivotMM ?? md.pivot3D
   const key = [
     md.scene.azimuth,
@@ -292,6 +316,8 @@ function syncCamera() {
     ...md.scene.renderPan,
     ...pivot,
     md.furthestFromPivot,
+    left,
+    top,
     w,
     h,
     ...md.clipPlanes,
@@ -299,6 +325,12 @@ function syncCamera() {
   ].join()
   if (key === cameraKey) return
   cameraKey = key
+  Object.assign(cine.style, {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${w}px`,
+    height: `${h}px`,
+  })
   const [mvp, model] = calculateMvpMatrix(
     [0, 0, w, h],
     md.scene.azimuth,
@@ -367,6 +399,10 @@ function applyMode() {
   const isCinematic = modeSelect.value === 'cinematic'
   cine.style.visibility = isCinematic ? 'visible' : 'hidden'
   // Premultiplied canvas: transparent must be all zero, or its colour adds on top.
+  view.style.background = `rgb(${background
+    .slice(0, 3)
+    .map((c) => Math.round(c * 255))
+    .join()})`
   nv1.backgroundColor = isCinematic ? [0, 0, 0, 0] : background
   if (nv1.volumes.length) {
     nv1.setVolume(0, { opacity: isCinematic ? DEPTH_ONLY_OPACITY : 1 })
@@ -376,7 +412,7 @@ function applyMode() {
   const backend = nv1.opts.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
   modeText.textContent = `${isCinematic ? 'Cinematic' : 'Classic'} (${backend})`
   for (const el of [controls, restartBtn, saveBtn]) el.hidden = !isCinematic
-  timeText.textContent = loadError
+  timeText.textContent = loadError || unavailable
   cameraKey = ''
 }
 

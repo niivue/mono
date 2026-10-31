@@ -10,7 +10,8 @@
       #view { flex: 1; min-height: 0; position: relative; }
       #view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
       /* The cinematic image sits under NiiVue's (transparent) canvas. */
-      #cine { pointer-events: none; }
+      /* Sized to NiiVue's render tile by main.js. */
+      #cine { pointer-events: none; right: auto; bottom: auto; }
       footer { display: flex; justify-content: space-between; gap: 12px; }
       #controls { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 4px; font-size: 12px; }
       #controls label { display: inline-flex; align-items: center; gap: 4px; }

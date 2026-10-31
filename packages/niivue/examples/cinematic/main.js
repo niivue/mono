@@ -22,7 +22,7 @@ const PRESETS = {
   cr_t1_mod: t1Mod,
 }
 
-// ?url=... adds a volume; ?tf=... picks a preset; ?mode=classic|cinematic;
+// ?sample=<id> picks a sample; ?url=... adds a volume; ?tf=... picks a preset; ?mode=classic|cinematic;
 // ?clip=0..6 picks a clip preset, ?cutaway=1.
 const params = new URLSearchParams(location.search)
 // Calibrated (int16 Hounsfield) CT samples, each with a suggested preset.
@@ -36,26 +36,31 @@ const LFS_BASE =
 // colormap plus per-label S and lo/hi HU ramp) registered as a colormap.
 const SAMPLES = [
   {
+    id: 'ct-abdo',
     name: 'CT_Abdo (cardiac CTA)',
     url: `${DEMO_BASE}CT_Abdo.nii.gz`,
     tf: 'cr_angio',
   },
   {
+    id: 'ct-philips',
     name: 'CT_Philips (head)',
     url: `${DEMO_BASE}CT_Philips.nii.gz`,
     tf: 'cr_bone',
   },
   {
+    id: 'ct-electrodes',
     name: 'CT_Electrodes (head)',
     url: `${DEMO_BASE}CT_Electrodes.nii.gz`,
     tf: 'cr_skin_bone',
   },
   {
+    id: 'ct-wholebody',
     name: 'CT_WholeBody (1.5 mm, 59 MB)',
     url: `${LFS_BASE}CT_WholeBody.nii.gz`,
     tf: 'cr_skin_bone',
   },
   {
+    id: 'ct-wholebody-labels',
     name: 'CT_WholeBody + TotalSegmentator labels',
     url: `${LFS_BASE}CT_WholeBody.nii.gz`,
     tf: 'cr_skin_bone',
@@ -68,6 +73,7 @@ const SAMPLES = [
     },
   },
   {
+    id: 'ct-abdopelvis-labels',
     name: 'CT_AbdoPelvis + labels (smaller, 20 MB)',
     url: `${LFS_BASE}CT_AbdoPelvis.nii.gz?v=1`,
     tf: 'cr_skin_bone',
@@ -78,11 +84,13 @@ const SAMPLES = [
     },
   },
   {
+    id: 'ct-pancreas',
     name: 'CT_Pancreas (contrast, 66 MB)',
     url: `${LFS_BASE}CT_Pancreas.nii.gz`,
     tf: 'cr_angio',
   },
   {
+    id: 'mr-siam',
     name: 'MR T1 brain + SIAM labels',
     url: `${LFS_BASE}MR_T1_brain.nii.gz?v=1`,
     tf: 'cr_t1_mod',
@@ -100,7 +108,11 @@ for (const [i, sample] of SAMPLES.entries()) {
   volumeSelect.add(new Option(sample.name, String(i)))
 }
 const selectedSample = () => SAMPLES[Number(volumeSelect.value)]
-if (params.has('sample')) volumeSelect.value = params.get('sample')
+// ?sample= takes a sample id (e.g. mr-siam) or its list index.
+const sampleParam = params.get('sample')
+const sampleIndex = SAMPLES.findIndex((sample) => sample.id === sampleParam)
+if (sampleIndex >= 0) volumeSelect.value = String(sampleIndex)
+else if (sampleParam in SAMPLES) volumeSelect.value = sampleParam
 // An unknown ?tf= falls back to the sample's preset rather than an empty selection.
 const tfParam = params.get('tf')
 tfSelect.value = tfParam in PRESETS ? tfParam : selectedSample().tf

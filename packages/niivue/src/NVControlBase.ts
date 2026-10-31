@@ -1413,7 +1413,8 @@ export default class NiiVue extends EventTarget {
   set fontScale(v: number) {
     this.model.ui.fontScale = v
     this.emit('change', { property: 'fontScale', value: v })
-    this.drawScene()
+    // The font size is applied in the resize relayout, not per draw.
+    this.resize()
   }
 
   get fontMinSize(): number {
@@ -1422,7 +1423,7 @@ export default class NiiVue extends EventTarget {
   set fontMinSize(v: number) {
     this.model.ui.fontMinSize = v
     this.emit('change', { property: 'fontMinSize', value: v })
-    this.drawScene()
+    this.resize()
   }
 
   get selectionBoxColor(): number[] {
@@ -6993,6 +6994,8 @@ export default class NiiVue extends EventTarget {
 
     // Update GPU resources and render
     await this._updateGLChanged()
+    // Font settings from the document take effect in the resize relayout.
+    this.resize()
 
     // Restore drawing from RLE-encoded bitmap in document. It is drawn on the
     // document's first volume; if resolveUrl skipped that one, volumes[0] is

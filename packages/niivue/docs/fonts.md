@@ -20,6 +20,11 @@ rebuild the view because the atlas texture is GPU-owned. Remote atlases go
 through `applyCORS()` in `src/NVLoader.ts`, so the host must send
 `Access-Control-Allow-Origin`.
 
+Setting `fontScale` or `fontMinSize` relayouts the view, so no `resize()` call
+is needed. On canvases smaller than 800x600 points `fontScale` has no visible
+effect: `calculateFontSizePx` (`src/view/NVFont.ts`) clamps the area factor
+to 1.
+
 ## Regenerating an atlas
 
 New atlases can be built with [msdfgen](https://github.com/chlumsky/msdfgen).

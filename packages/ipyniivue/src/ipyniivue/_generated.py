@@ -294,10 +294,16 @@ and its volumes alive."""
         shows it. Other viewers keep the old colours until their volume is
         given the colormap again (`setVolume`).
 
+        `min`/`max` (with `min < max`) give a suggested display window, applied
+        when a volume is given this colormap without calMin/calMax. The optional
+        cinematic keys (`E`, `S`, `gradient`, `gMax`, `shininess`, `labelBlend`;
+        label tables: `S`, `lo`, `hi`, `surface`, `normalize`) are kept for
+        `VOLUME_RENDER_MODE.CINEMATIC`; see {@link ColorMap}.
+
         Parameters
         ----------
         name : string
-        cmap : Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Pick<ColorMap, \"A\" | \"I\" | \"labels\">>
+        cmap : Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Omit<ColorMap, \"R\" | \"G\" | \"B\">>
 
         Returns
         -------

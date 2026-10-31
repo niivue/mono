@@ -54,7 +54,9 @@ const SAMPLES = [
     url: `${LFS_BASE}CT_WholeBody.nii.gz`,
     tf: 'cr_skin_bone',
     labels: {
-      url: `${LFS_BASE}CT_WholeBody_labels.nii.gz`,
+      // ?v= versions the URL: bump it when the file changes (GitHub's CDN
+      // caches a 404 from before a file existed).
+      url: `${LFS_BASE}CT_WholeBody_labels.nii.gz?v=1`,
       colormap: 'ts_wholebody',
       table: tsWholeBody,
     },

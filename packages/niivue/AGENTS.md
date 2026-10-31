@@ -2020,6 +2020,48 @@ entries or leave it internal, but the doc should not promise it.
 
 **Serialization:** Strip non-cloneable properties (class instances) via `JSON.parse(JSON.stringify())` before `postMessage`.
 
+## Cinematic CT prototype
+
+WebGPU-only example, not yet in `src/`: `examples/cinematic.html` + `examples/cinematic/`.
+
+**Files:** `main.js` (UI, samples, camera sync), `renderer.js` (passes, textures), `tf.js` (cmap baking), `cr_*.json` (presets), WGSL: `gradient`, `extinction`, `downsample`, `cinematic`, `display`, and `tfcommon` (TF lookup + extinction, prepended to `cinematic` and `extinction` so primary and shadow rays classify identically).
+
+**Architecture:**
+- One NiiVue instance; Classic/Cinematic dropdown. The cinematic image draws on an overlay canvas using NiiVue's camera: `main.js` imports internal `calculateMvpMatrix` (`src/math/NVTransforms.ts`) and reads `nv1.model`.
+- Progressive: one jittered sample per pixel per frame, accumulated; camera polled each rAF, change resets accumulation.
+- Volume uploaded as raw HU (`r16float`). Gradient: 3D Sobel of raw HU (`rgba16float`, dHU/dvoxel), converted to HU/mm in shader.
+- 2D TF lookup: HU x sqrt-spaced gradient magnitude.
+- Shading blends volumetric (normal-free) and surface Blinn-Phong by "surfaceness" (gradient ramp). Bannerman normal reuse.
+- Shadows and AO cone-trace a half-resolution extinction (per mm) mip chain, built once per volume/TF change.
+- Empty-space skipping via a coarse mip (half-texel skip). Light 20 deg above camera.
+- Mip downsample reads 3 texels along odd-sized axes; with 2, the last texel is dropped and coarse data drifts, so skipping jumps over tissue.
+- Secondary rays start 1.5 extinction voxels off the surface (along the normal); starting at the surface gives wood-grain self-shadow rings.
+- Clip planes follow NiiVue (`model.clipPlanes`, `scene.isClipPlaneCutaway`, polled with the camera): JS rescales each plane so its equation is mm distance; the march clips each ray to an interval (solid: march inside, cutaway: jump over), so clipping shortens rays. Cone traces skip clipped material (no shadows from removed tissue). Samples within 1.5 voxels of the cut use the plane normal as a surface. Demo has vox.clip.html's presets (`Clip` 0-6, `Cutaway`, `?clip=`/`?cutaway=1`); right-drag on the render moves plane 0. `clipPlaneColor` is not used.
+- Display pass: ACES tone map.
+- One frame in flight (no GPU queue backlog). Status bar (lower right) shows the march pass's GPU time (timestamp queries, `onSubmittedWorkDone` fallback) averaged over the first 10 frames after a scene change; frames that wait on upload/extinction builds are excluded.
+
+**TF format** (documented in `tf.js` header): a plain cmap works unchanged. Optional extensions:
+- `E`: alpha at high gradient (edges); `A` becomes interior (shallow-gradient) alpha.
+- `S`: specular at surfaces.
+- `gradient: {lo, hi}`: HU/mm interior-to-surface ramp; `gMax`; `shininess`.
+
+Presets: `cr_skin_bone`, `cr_bone`, `cr_angio`, `cr_angio_1d` (angio without gradient, for comparison). In `cr_angio` the gradient suppresses bone-edge partial volume in the vessel HU band (CT_Abdo: vessel-band voxels near bone median 159 HU/mm vs 38 away).
+
+**Data:** [niivue-demo-images-lfs](https://github.com/niivue/niivue-demo-images-lfs). CT_Abdo, CT_Philips, CT_Electrodes via `raw.githubusercontent.com`. CT_WholeBody (TotalSegmentator s1749, CC BY 4.0) and CT_Pancreas (TCIA Pancreas-CT, CC BY 3.0) are LFS objects: load via `media.githubusercontent.com` (raw returns pointers). CT_AVM and CT_pitch are uint8, not HU: excluded.
+
+**Performance** (march pass GPU time per frame, timestamp queries, ~1400x605 canvas, M4 Pro, view azimuth 150 / elevation 15): CT_Philips bone 6 ms, CT_WholeBody skin+bone 37 ms, CT_Pancreas angio 24 ms, CT_Abdo angio 15 ms. Cone tracing replaced per-sample shadow rays (1 voxel step, up to 1024 steps, 4 fetches each); earlier wall-clock figures (e.g. 3228 -> 192 ms for CT_WholeBody) included GPU queue backlog and a GPU shared with other work, so only the ratio (~10-17x on translucent scenes) is meaningful. Light scenes can read ~3x slower in some sessions (GPU clock scaling).
+
+**Limits:**
+- WebGPU only. Backend parity rule applies once it moves into `src/` (needs WebGL2 port).
+- Gradient thresholds (HU/mm) tuned on ~1.5 mm data; not resolution invariant. Fix: smooth with a fixed-mm kernel before Sobel.
+- Gradient texture costs 8 B/voxel.
+- Overlay hides NiiVue's orientation cube.
+- Depends on internal `calculateMvpMatrix`.
+- Extinction classifies HU at voxel centres while the march samples interpolated HU, so a narrow band-pass TF can be skipped where an edge crosses the band between voxels (e.g. air-to-bone with no soft-tissue voxel). Fix if seen: per-block HU min/max tested against the TF.
+- Requires `Float16Array` (all WebGPU browsers since 2025).
+
+**Next:** label-driven materials from segmentation (TotalSegmentator), including a body mask to remove the scanner table (new segmentation in progress); reduced quality while dragging.
+
 ## Demo conventions
 
 Demos import `import NiiVue from '../dist/niivue.js'` — Vite dev plugin redirects to source. Simple demos inline in HTML; complex ones use separate `.js` files. Assets relative to `demos/` (e.g., `../meshes/brain.mz3` from `features/`).

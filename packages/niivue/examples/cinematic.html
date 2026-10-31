@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Cinematic CT (prototype)</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      #view { flex: 1; min-height: 0; position: relative; }
+      #view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      /* The cinematic image overlays NiiVue's canvas; NiiVue keeps the mouse. */
+      #cine { pointer-events: none; }
+      footer { display: flex; justify-content: space-between; gap: 12px; }
+      #controls { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 4px; font-size: 12px; }
+      #controls label { display: inline-flex; align-items: center; gap: 4px; }
+      #controls input[type='range'] { width: 90px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <select id="modeSelect">
+        <option value="classic">Classic</option>
+        <option value="cinematic" selected>Cinematic</option>
+      </select>
+      <select id="volumeSelect"></select>
+      <select id="tfSelect">
+        <option value="cr_skin_bone">skin + bone</option>
+        <option value="cr_bone">bone</option>
+        <option value="cr_angio">angio</option>
+        <option value="cr_angio_1d">angio (1D, no gradient)</option>
+      </select>
+      <label for="clipSelect">Clip</label>
+      <select id="clipSelect">
+        <option>0</option>
+        <option>1</option>
+        <option>2</option>
+        <option>3</option>
+        <option>4</option>
+        <option>5</option>
+        <option>6</option>
+      </select>
+      <label for="cutawayCheck">Cutaway</label>
+      <input type="checkbox" id="cutawayCheck" />
+      <button type="button" id="restartBtn">Restart</button>
+      <button type="button" id="saveBtn">Save PNG</button>
+    </header>
+    <div id="controls"></div>
+    <main id="view">
+      <canvas id="gl1"></canvas>
+      <canvas id="cine"></canvas>
+    </main>
+    <footer id="location">
+      <span>Drag to rotate, scroll to zoom. Cinematic refines progressively while the camera is still (WebGPU).</span>
+      <span id="statusText"></span>
+    </footer>
+    <script type="module" src="./cinematic/main.js"></script>
+  </body>
+</html>

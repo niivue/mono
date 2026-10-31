@@ -366,6 +366,12 @@ export const CORE_SCHEMAS = {
       .describe(
         'For a label map: how strongly region outlines are drawn, 0 for none.',
       ),
+    hidden_labels: z
+      .array(z.number().int())
+      .optional()
+      .describe(
+        'For a label map: the label values to hide, replacing the current list; [] shows every label.',
+      ),
     modulate_alpha: z
       .number()
       .min(0)

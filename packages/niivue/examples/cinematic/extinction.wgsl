@@ -5,6 +5,7 @@
 struct ExtParams {
   gradToMM: mat4x4f,
   tf: vec4f, // huMin, huMax, gMax, refStep
+  labelInfo: vec4f, // as Params.labelInfo in cinematic.wgsl
 }
 
 @group(0) @binding(0) var huTex: texture_3d<f32>;
@@ -13,6 +14,8 @@ struct ExtParams {
 @group(0) @binding(3) var samp: sampler;
 @group(0) @binding(4) var<uniform> E: ExtParams;
 @group(0) @binding(5) var outTex: texture_storage_3d<rgba16float, write>;
+@group(0) @binding(6) var matTex: texture_3d<u32>;
+@group(0) @binding(7) var<storage, read> materials: array<vec4f>;
 
 @compute @workgroup_size(4, 4, 4)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -25,7 +28,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let p = clamp(2 * q + vec3i(i & 1, (i >> 1) & 1, i >> 2), vec3i(0), dims - 1);
     let hu = textureLoad(huTex, p, 0).r;
     let g = length(toMM * textureLoad(gradTex, p, 0).xyz);
-    let a = textureSampleLevel(tfColor, samp, tfUV(hu, g, E.tf), 0.0).a;
+    var a = textureSampleLevel(tfColor, samp, tfUV(hu, g, E.tf), 0.0).a;
+    if (E.labelInfo.x > 0.5) {
+      let id = textureLoad(matTex, p, 0).r;
+      a = select(labelAlpha(id, hu), a * E.labelInfo.y, id == 0u);
+    }
     sigma += extinction(a, E.tf.w);
   }
   textureStore(outTex, q, vec4f(sigma * 0.125, 0.0, 0.0, 0.0));

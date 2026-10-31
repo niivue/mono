@@ -7,6 +7,7 @@ import bone from './cr_bone.json'
 import skinBone from './cr_skin_bone.json'
 import { CinematicRenderer, DEFAULT_SETTINGS } from './renderer.js'
 import { bakeTransferFunction } from './tf.js'
+import tsWholeBody from './ts_wholebody.json'
 
 const PRESETS = {
   cr_skin_bone: skinBone,
@@ -25,35 +26,56 @@ const DEMO_BASE =
 // Larger scans are Git LFS objects: raw URLs return pointers, so use the media endpoint.
 const LFS_BASE =
   'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/'
+// labels: a label image on the same grid, with a material table (label
+// colormap plus per-label S and lo/hi HU ramp) registered as a colormap.
 const SAMPLES = [
-  ['CT_Abdo (cardiac CTA)', `${DEMO_BASE}CT_Abdo.nii.gz`, 'cr_angio'],
-  ['CT_Philips (head)', `${DEMO_BASE}CT_Philips.nii.gz`, 'cr_bone'],
-  ['CT_Electrodes (head)', `${DEMO_BASE}CT_Electrodes.nii.gz`, 'cr_skin_bone'],
-  [
-    'CT_WholeBody (1.5 mm, 59 MB)',
-    `${LFS_BASE}CT_WholeBody.nii.gz`,
-    'cr_skin_bone',
-  ],
-  [
-    'CT_Pancreas (contrast, 66 MB)',
-    `${LFS_BASE}CT_Pancreas.nii.gz`,
-    'cr_angio',
-  ],
+  {
+    name: 'CT_Abdo (cardiac CTA)',
+    url: `${DEMO_BASE}CT_Abdo.nii.gz`,
+    tf: 'cr_angio',
+  },
+  {
+    name: 'CT_Philips (head)',
+    url: `${DEMO_BASE}CT_Philips.nii.gz`,
+    tf: 'cr_bone',
+  },
+  {
+    name: 'CT_Electrodes (head)',
+    url: `${DEMO_BASE}CT_Electrodes.nii.gz`,
+    tf: 'cr_skin_bone',
+  },
+  {
+    name: 'CT_WholeBody (1.5 mm, 59 MB)',
+    url: `${LFS_BASE}CT_WholeBody.nii.gz`,
+    tf: 'cr_skin_bone',
+  },
+  {
+    name: 'CT_WholeBody + TotalSegmentator labels',
+    url: `${LFS_BASE}CT_WholeBody.nii.gz`,
+    tf: 'cr_skin_bone',
+    labels: {
+      url: `${LFS_BASE}CT_WholeBody_labels.nii.gz`,
+      colormap: 'ts_wholebody',
+      table: tsWholeBody,
+    },
+  },
+  {
+    name: 'CT_Pancreas (contrast, 66 MB)',
+    url: `${LFS_BASE}CT_Pancreas.nii.gz`,
+    tf: 'cr_angio',
+  },
 ]
-const suggestedTF = new Map()
-for (const [name, url, tf] of SAMPLES) {
-  volumeSelect.add(new Option(name, url))
-  suggestedTF.set(url, tf)
-}
 for (const url of params.getAll('url')) {
-  volumeSelect.add(new Option(url.split('/').pop(), url), 0)
+  SAMPLES.unshift({ name: url.split('/').pop(), url, tf: 'cr_skin_bone' })
 }
-volumeSelect.selectedIndex = 0
+for (const [i, sample] of SAMPLES.entries()) {
+  volumeSelect.add(new Option(sample.name, String(i)))
+}
+const selectedSample = () => SAMPLES[Number(volumeSelect.value)]
+if (params.has('sample')) volumeSelect.value = params.get('sample')
 // An unknown ?tf= falls back to the sample's preset rather than an empty selection.
 const tfParam = params.get('tf')
-tfSelect.value =
-  (tfParam in PRESETS ? tfParam : suggestedTF.get(volumeSelect.value)) ??
-  tfSelect.value
+tfSelect.value = tfParam in PRESETS ? tfParam : selectedSample().tf
 if (params.get('mode')) modeSelect.value = params.get('mode')
 
 const SLIDERS = [
@@ -120,7 +142,13 @@ function applyTransferFunction() {
 }
 
 async function loadVolume() {
-  await nv1.loadVolumes([{ url: volumeSelect.value }])
+  const sample = selectedSample()
+  const labels = sample.labels
+  if (labels) nv1.addColormap(labels.colormap, labels.table)
+  await nv1.loadVolumes([
+    { url: sample.url },
+    ...(labels ? [{ url: labels.url, colormap: labels.colormap }] : []),
+  ])
   const vol = nv1.volumes[0]
   const raw = getImageDataRAS(vol)
   if (!raw) throw new Error(`${vol.name}: no voxel data`)
@@ -133,7 +161,27 @@ async function loadVolume() {
   for (let i = 0; i < raw.length; i++) hu[i] = raw[i] * slope + inter
   cr.setVolume(hu, vol.dimsRAS.slice(1, 4), vol.frac2mm)
   applyTransferFunction()
+  labelSelect.hidden = !labels
+  if (labels) {
+    const lab = nv1.volumes[1]
+    const same = lab.dimsRAS.every((d, i) => d === vol.dimsRAS[i])
+    if (!same) throw new Error(`${lab.name}: labels must share the CT's grid`)
+    cr.setLabels(Uint8Array.from(getImageDataRAS(lab) ?? []))
+    applyLabelMode()
+  }
 }
+
+// Unlabeled tissue (label 0) uses the base transfer function, scaled by this.
+const LABEL_MODES = { only: 0, unlabeled: 1 }
+function applyLabelMode() {
+  const labels = selectedSample().labels
+  const scale = LABEL_MODES[labelSelect.value]
+  cr.setLabelMaterials(
+    labels && scale !== undefined ? labels.table : null,
+    scale ?? 1,
+  )
+}
+labelSelect.onchange = applyLabelMode
 
 // Poll NiiVue's camera each frame: rotation, zoom, pan and resize all move it.
 let cameraKey = ''
@@ -228,6 +276,8 @@ function applyMode() {
   if (nv1.volumes.length) {
     nv1.setVolume(0, { opacity: isCinematic ? DEPTH_ONLY_OPACITY : 1 })
   }
+  // The label overlay is for the classic view; cinematic draws labels itself.
+  if (nv1.volumes.length > 1) nv1.setVolume(1, { opacity: isCinematic ? 0 : 1 })
   const backend = nv1.opts.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
   modeText.textContent = `${isCinematic ? 'Cinematic' : 'Classic'} (${backend})`
   for (const el of [controls, restartBtn, saveBtn]) el.hidden = !isCinematic
@@ -267,7 +317,7 @@ async function loadSelectedVolume() {
   }
 }
 volumeSelect.onchange = () => {
-  tfSelect.value = suggestedTF.get(volumeSelect.value) ?? tfSelect.value
+  tfSelect.value = selectedSample().tf
   loadSelectedVolume()
 }
 tfSelect.onchange = applyTransferFunction

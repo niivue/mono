@@ -18,6 +18,7 @@ struct Params {
   clip: array<vec4f, 6>,
   clipN: array<vec4f, 6>, // unit plane normals in mm space
   clipInfo: vec4f, // active plane count, cutaway (0/1), -, -
+  labelInfo: vec4f, // labels on (0/1), unlabeled tissue scale, -, -
 }
 
 @group(0) @binding(0) var huTex: texture_3d<f32>;
@@ -29,6 +30,8 @@ struct Params {
 @group(0) @binding(6) var<uniform> P: Params;
 @group(0) @binding(7) var<storage, read_write> accum: array<vec4f>;
 @group(0) @binding(8) var extTex: texture_3d<f32>; // extinction per mm, half res + mips
+@group(0) @binding(9) var matTex: texture_3d<u32>;
+@group(0) @binding(10) var<storage, read> materials: array<vec4f>;
 
 var<private> rng: u32;
 
@@ -90,6 +93,15 @@ fn coneTransmittance(pf: vec3f, dirMM: vec3f, tanHalf: f32, maxMM: f32) -> f32 {
     t += dt;
   }
   return exp(-tau);
+}
+
+// Nearest label at a point jittered by up to half a voxel: across frames the
+// pick follows trilinear weights, so label boundaries average out smoothly.
+fn materialId(pf: vec3f) -> u32 {
+  let dims = vec3i(textureDimensions(matTex));
+  let jitter = vec3f(rand(), rand(), rand()) - 0.5;
+  let v = clamp(vec3i(floor(pf * vec3f(dims) + jitter)), vec3i(0), dims - 1);
+  return textureLoad(matTex, v, 0).r;
 }
 
 fn orthoBasis(n: vec3f) -> mat3x3f {
@@ -185,9 +197,17 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     t += stepMM;
     let hu = textureSampleLevel(huTex, samp, pf, 0.0).r;
     let x = tfUV(hu, 0.0, P.tf).x;
-    // tfMaxA is the most opaque this HU gets at any gradient: skip the
-    // gradient fetch where the table is empty.
-    if (textureSampleLevel(tfMaxA, samp, vec2f(x, 0.5), 0.0).r < 0.001) {
+    let isLabelOn = P.labelInfo.x > 0.5;
+    var id = 0u;
+    if (isLabelOn) { id = materialId(pf); }
+    // Skip the gradient fetch where nothing can show: tfMaxA is the most
+    // opaque this HU gets at any gradient in the base table (label 0).
+    var isEmpty = labelAlpha(id, hu) < 0.001;
+    if (id == 0u) {
+      let unlabeled = select(1.0, P.labelInfo.y, isLabelOn);
+      isEmpty = textureSampleLevel(tfMaxA, samp, vec2f(x, 0.5), 0.0).r * unlabeled < 0.001;
+    }
+    if (isEmpty) {
       prevMag = 0.0;
       // Empty-space skip: zero extinction at a coarse mip means the block
       // around this point is empty, so jump half a coarse texel.
@@ -197,7 +217,16 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let g = gradMM(pf);
     let mag = length(g);
     let uv = tfUV(hu, mag, P.tf);
-    let c = textureSampleLevel(tfColor, samp, uv, 0.0);
+    // m.g is surfaceness from the gradient ramp; labelled tissue uses it too.
+    let m = textureSampleLevel(tfMat, samp, uv, 0.0);
+    var c = textureSampleLevel(tfColor, samp, uv, 0.0);
+    var specular = m.r;
+    if (id == 0u) {
+      c.a *= select(1.0, P.labelInfo.y, isLabelOn);
+    } else {
+      c = vec4f(materials[2u * id].rgb, labelAlpha(id, hu));
+      specular = materials[2u * id + 1u].z * m.g;
+    }
     let a = stepAlpha(c.a, stepMM);
     if (a < 0.0005) { // below 8-bit visibility even when many steps sum
       prevMag = 0.0;
@@ -214,8 +243,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     prevN = n;
     if (dot(n, dir) > 0.0) { n = -n; }
 
-    let m = textureSampleLevel(tfMat, samp, uv, 0.0);
-    let spec = m.r * P.view.w;
+    let spec = specular * P.view.w;
     let surf = select(m.g, 1.0, onCut);
     let weight = (1.0 - acc.a) * a;
     let L = P.light.xyz;

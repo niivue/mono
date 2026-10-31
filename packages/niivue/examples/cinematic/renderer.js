@@ -7,7 +7,9 @@ import gradientWGSL from './gradient.wgsl?raw'
 import { TF_H, TF_W } from './tf.js'
 import tfCommonWGSL from './tfcommon.wgsl?raw'
 
-const PARAM_BYTES = 3 * 64 + 6 * 16 + 13 * 16
+const PARAM_BYTES = 3 * 64 + 6 * 16 + 14 * 16
+// Label 255 marks a hidden structure, so at most 254 labels.
+const HIDDEN_LABEL = 255
 // Empty-space skip reads this extinction mip (4 extinction voxels per texel).
 const SKIP_LOD = 2
 
@@ -63,6 +65,8 @@ export class CinematicRenderer {
     this._inFlight = false
     this.clipPlanes = []
     this.isClipCutaway = false
+    this.labels = null
+    this.unlabeledScale = 1
     this.sampler = device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
@@ -73,7 +77,13 @@ export class CinematicRenderer {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       })
     this.paramBuffer = uniform(PARAM_BYTES)
-    this.extParamBuffer = uniform(80)
+    this.extParamBuffer = uniform(96)
+    // Two vec4 per label: rgb + opacity, then HU ramp lo/hi, specular, -.
+    this.materialBuffer = device.createBuffer({
+      size: 256 * 32,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    })
+    this._uploadMaterialIds(new Uint8Array(1), [1, 1, 1])
     this.displayBuffer = uniform(32)
     if (device.features.has('timestamp-query')) {
       this.querySet = device.createQuerySet({ type: 'timestamp', count: 2 })
@@ -176,9 +186,9 @@ export class CinematicRenderer {
       ),
     )
     this.extVoxelMM = 2 * this.voxelMM
-    this._extDirty = true
-    this._bindGroup = null
-    this.reset()
+    // Labels belong to the previous grid.
+    this.labels = null
+    this._applyMaterials()
   }
 
   // Half-resolution extinction (per mm) with a full mip chain; rebuilt when
@@ -196,9 +206,10 @@ export class CinematicRenderer {
     })
     const level = (l) =>
       this.extTex.createView({ baseMipLevel: l, mipLevelCount: 1 })
-    const ep = new Float32Array(20)
+    const ep = new Float32Array(24)
     ep.set(this.gradToMM, 0)
     ep.set([this.tf.huMin, this.tf.huMax, this.tf.gMax, this.voxelMM], 16)
+    ep.set(this._labelInfo(), 20)
     this.device.queue.writeBuffer(this.extParamBuffer, 0, ep)
     const passes = [
       [
@@ -210,6 +221,8 @@ export class CinematicRenderer {
           { binding: 3, resource: this.sampler },
           { binding: 4, resource: { buffer: this.extParamBuffer } },
           { binding: 5, resource: level(0) },
+          { binding: 6, resource: this.matTex.createView() },
+          { binding: 7, resource: { buffer: this.materialBuffer } },
         ],
         size,
       ],
@@ -260,6 +273,104 @@ export class CinematicRenderer {
     this.invMVP = mat4.invert(mat4.create(), mvp)
     this.model = mat4.clone(model)
     this.reset()
+  }
+
+  /** labels: Uint8Array in RAS voxel order on the volume's grid, or null. */
+  setLabels(labels) {
+    this.labels = labels
+    this._applyMaterials()
+  }
+
+  /**
+   * table: label colormap extended with per-label S (specular) and lo/hi (HU
+   * ramp of the surface), all indexed like `labels`. unlabeledScale scales
+   * the base transfer function for label 0 (0 hides unlabeled tissue).
+   */
+  setLabelMaterials(table, unlabeledScale) {
+    this.labelTable = table
+    this.unlabeledScale = unlabeledScale
+    this._applyMaterials()
+  }
+
+  _applyMaterials() {
+    const t = this.labelTable
+    const isOn = !!(this.labels && t)
+    const m = new Float32Array(256 * 8)
+    const isVisible = new Uint8Array(256)
+    if (isOn) {
+      for (let i = 1; i < t.labels.length && i < HIDDEN_LABEL; i++) {
+        const k = t.I?.[i] ?? i
+        m.set([t.R[i] / 255, t.G[i] / 255, t.B[i] / 255, t.A[i] / 255], k * 8)
+        m.set([t.lo[i], t.hi[i], (t.S?.[i] ?? 0) / 255, 0], k * 8 + 4)
+        isVisible[k] = t.A[i] > 0 ? 1 : 0
+      }
+    }
+    this.device.queue.writeBuffer(this.materialBuffer, 0, m)
+    if (isOn) this._uploadMaterialIds(this._dilate(isVisible), this.dims)
+    else this._uploadMaterialIds(new Uint8Array(1), [1, 1, 1])
+    this.isLabelOn = isOn
+    this._extDirty = true
+    this._bindGroup = null
+    this.reset()
+  }
+
+  // Material id per voxel: a visible label spreads one voxel (6-neighbours)
+  // into unlabeled or hidden neighbours, so a structure's surface comes from
+  // the intensity ramp across its partial-volume voxels rather than stopping
+  // at the categorical label boundary. Hidden labels left over become 255.
+  _dilate(isVisible) {
+    const src = this.labels
+    const [nx, ny, nz] = this.dims
+    const out = new Uint8Array(src.length)
+    const steps = [1, -1, nx, -nx, nx * ny, -nx * ny]
+    for (let z = 0, i = 0; z < nz; z++) {
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++, i++) {
+          const l = src[i]
+          if (isVisible[l]) {
+            out[i] = l
+            continue
+          }
+          out[i] = l === 0 ? 0 : HIDDEN_LABEL
+          const inside = [
+            x < nx - 1,
+            x > 0,
+            y < ny - 1,
+            y > 0,
+            z < nz - 1,
+            z > 0,
+          ]
+          for (let k = 0; k < 6; k++) {
+            if (inside[k] && isVisible[src[i + steps[k]]]) {
+              out[i] = src[i + steps[k]]
+              break
+            }
+          }
+        }
+      }
+    }
+    return out
+  }
+
+  _uploadMaterialIds(ids, dims) {
+    this.matTex?.destroy()
+    this.matTex = this.device.createTexture({
+      size: dims,
+      dimension: '3d',
+      format: 'r8uint',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    })
+    this.device.queue.writeTexture(
+      { texture: this.matTex },
+      ids,
+      { bytesPerRow: dims[0], rowsPerImage: dims[1] },
+      dims,
+    )
+  }
+
+  // (labels on, unlabeled scale, -, -)
+  _labelInfo() {
+    return [this.isLabelOn ? 1 : 0, this.unlabeledScale, 0, 0]
   }
 
   /** planes: NiiVue model.clipPlanes (flat [nx, ny, nz, depth] x 6, |depth| > 1 = off). */
@@ -372,6 +483,7 @@ export class CinematicRenderer {
       68,
     )
     p.set(this._clipParams(), 72)
+    p.set(this._labelInfo(), 124)
     this.device.queue.writeBuffer(this.paramBuffer, 0, p)
     this.device.queue.writeBuffer(
       this.displayBuffer,
@@ -429,6 +541,8 @@ export class CinematicRenderer {
         { binding: 6, resource: { buffer: this.paramBuffer } },
         { binding: 7, resource: { buffer: this.accum } },
         { binding: 8, resource: this.extTex.createView() },
+        { binding: 9, resource: this.matTex.createView() },
+        { binding: 10, resource: { buffer: this.materialBuffer } },
       ],
     })
     this._displayBindGroup ??= d.createBindGroup({

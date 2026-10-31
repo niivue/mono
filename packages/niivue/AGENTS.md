@@ -2115,11 +2115,13 @@ skip jumps over tissue). Secondary rays start 1.5 extinction voxels off the
 surface (from the surface they show wood-grain self-shadow rings). Clip planes
 are rescaled to mm and clip each ray to an interval (solid: march inside,
 cutaway: jump over); cone traces skip clipped material. Samples within 1.5
-voxels past a cut face use the plane normal AND the TF's maximum-gradient row
-(edge alpha, specular, surfaceness 1), so a cut through translucent,
-low-gradient tissue (white matter, CSF) reads as a solid lit face instead of
-wrinkled interior noise; in air `E` is 0, so a cut through empty space only
-starts the ray. A label sample is the nearest voxel at a point jittered up to
+voxels past a cut face use the TF's maximum-gradient row for opacity (edge
+alpha), so a cut through translucent, low-gradient tissue (white matter, CSF)
+reads as a solid face instead of wrinkled interior noise, and are unlit like
+the classic clip surface: albedo x AO x 0.6, no direct light, shadow or
+specular (lit, the plane normal often faced the light and tone-mapped grey and
+white matter to near white; 0.6 keeps albedos off the ACES shoulder); in air
+`E` is 0, so a cut through empty space only starts the ray. A label sample is the nearest voxel at a point jittered up to
 half a voxel per frame, so boundaries average like trilinear weights. Each
 visible label spreads one voxel (6-neighbours) into unlabeled/hidden voxels, so
 the intensity ramp, not the categorical boundary, ends a surface; hidden labels

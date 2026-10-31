@@ -273,7 +273,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     // footprint of the surface's own extinction voxel.
     let lift = pf + (P.mm2frac * vec4f(n * (1.5 * P.ext.x), 0.0)).xyz;
     var shadow = 1.0;
-    if (worth && shadowStrength > 0.0) {
+    if (worth && shadowStrength > 0.0 && !onCut) {
       shadow = mix(1.0, coneTransmittance(lift, L, P.light.w, 1e5), shadowStrength);
     }
     var occl = 1.0;
@@ -286,7 +286,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let diffuse = mix(volTerm, ndl, surf);
     let h = normalize(L - dir);
     let sp = spec * pow(max(dot(n, h), 0.0), shininess) * step(0.0, dot(n, L));
-    let lit = albedo * (ambient * occl + lightI * shadow * diffuse) + vec3f(lightI * shadow * sp);
+    var lit = albedo * (ambient * occl + lightI * shadow * diffuse) + vec3f(lightI * shadow * sp);
+    // A lit cut face washes out (its plane normal often faces the light), so
+    // like the classic renderer's clip surface it shows the plain colour, AO
+    // only. 0.6 keeps tissue albedos (grey ~0.6, white matter ~0.9) on the
+    // linear part of the ACES curve rather than its shoulder.
+    if (onCut) { lit = albedo * occl * 0.6; }
     acc += vec4f(lit * weight, weight);
     if (acc.a > 0.995) { break; } // early termination: the rest is hidden
   }

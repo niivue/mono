@@ -371,7 +371,7 @@ void main() {
     bool worth = weight > 0.002;
     vec3 lift = pf + (P.mm2frac * vec4(n * (1.5 * P.ext.x), 0.0)).xyz;
     float shadow = 1.0;
-    if (worth && shadowStrength > 0.0) {
+    if (worth && shadowStrength > 0.0 && !onCut) {
       shadow = mix(1.0, coneTransmittance(lift, L, P.light.w, 1e5), shadowStrength);
     }
     float occl = 1.0;
@@ -385,6 +385,7 @@ void main() {
     vec3 h = normalize(L - dir);
     float sp = spec * pow(max(dot(n, h), 0.0), shininess) * step(0.0, dot(n, L));
     vec3 lit = albedo * (ambient * occl + lightI * shadow * diffuse) + vec3(lightI * shadow * sp);
+    if (onCut) { lit = albedo * occl * 0.6; }
     acc += vec4(lit * weight, weight);
     if (acc.a > 0.995) { break; }
   }

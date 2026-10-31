@@ -37,6 +37,7 @@ export function preparePaqdOverlayData(
   }
   const ovDims = [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
   const paqdData = paqdResampleRaw(raw, dimsOut, ovDims, mtx as Float32Array)
+  // `??` only narrows the type: colormapLabel is set on this path.
   const label = shownLabelLut(vol) ?? vol.colormapLabel
   return {
     paqdData,

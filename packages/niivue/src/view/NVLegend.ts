@@ -11,7 +11,7 @@ export type LegendEntry = {
   color: [number, number, number, number] // RGBA 0-255
   /** Center-of-mass in mm, for crosshair navigation on click */
   centroid?: () => [number, number, number] | undefined
-  /** Source volume index and label value, set for volume entries only (the toggleable ones) */
+  /** Set on volume label entries; used by the legend toggle */
   volumeIndex?: number
   labelValue?: number
   /** The label is in its volume's `hiddenLabels`: drawn as an outlined box */

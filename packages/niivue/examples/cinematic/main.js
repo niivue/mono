@@ -5,7 +5,9 @@ import angio from './cr_angio.json'
 import angio1d from './cr_angio_1d.json'
 import bone from './cr_bone.json'
 import skinBone from './cr_skin_bone.json'
+import t1 from './cr_t1.json'
 import { CinematicRenderer, DEFAULT_SETTINGS } from './renderer.js'
+import siamT1 from './siam_t1.json'
 import { bakeTransferFunction } from './tf.js'
 import tsWholeBody from './ts_wholebody.json'
 
@@ -14,6 +16,7 @@ const PRESETS = {
   cr_bone: bone,
   cr_angio: angio,
   cr_angio_1d: angio1d,
+  cr_t1: t1,
 }
 
 // ?url=... adds a volume; ?tf=... picks a preset; ?mode=classic|cinematic;
@@ -65,6 +68,16 @@ const SAMPLES = [
     name: 'CT_Pancreas (contrast, 66 MB)',
     url: `${LFS_BASE}CT_Pancreas.nii.gz`,
     tf: 'cr_angio',
+  },
+  {
+    name: 'MR T1 brain + SIAM labels',
+    url: `${LFS_BASE}MR_T1_brain.nii.gz?v=1`,
+    tf: 'cr_t1',
+    labels: {
+      url: `${LFS_BASE}MR_T1_brain_siam.nii.gz?v=1`,
+      colormap: 'siam_t1',
+      table: siamT1,
+    },
   },
 ]
 for (const url of params.getAll('url')) {
@@ -146,6 +159,9 @@ function applyTransferFunction() {
   cr.setTransferFunction(bakeTransferFunction(cmap))
   // The extended table is still a plain NiiVue colormap: E/S/gradient are ignored there.
   nv1.addColormap(tfSelect.value, cmap)
+  // A calibrated (MRI) preset is in label-median units, not the file's: the
+  // classic view keeps its own grey window.
+  if (selectedSample().labels?.table.normalize) return
   if (nv1.volumes.length)
     nv1.setVolume(0, {
       colormap: tfSelect.value,
@@ -172,17 +188,48 @@ async function loadVolume() {
   const inter = Number.isFinite(vol.hdr.scl_inter) ? vol.hdr.scl_inter : 0
   const hu = new Float32Array(raw.length)
   for (let i = 0; i < raw.length; i++) hu[i] = raw[i] * slope + inter
+  let labelIds = null
+  if (labels) {
+    const lab = nv1.volumes[1]
+    const same = lab.dimsRAS.every((d, i) => d === vol.dimsRAS[i])
+    if (!same)
+      throw new Error(`${lab.name}: labels must share the image's grid`)
+    labelIds = Uint8Array.from(getImageDataRAS(lab) ?? [])
+    if (labels.table.normalize) calibrate(hu, labelIds, labels.table.normalize)
+  }
   cr.setVolume(hu, vol.dimsRAS.slice(1, 4), vol.frac2mm)
   applyTransferFunction()
   labelSelect.hidden = !labels
   if (labels) {
-    const lab = nv1.volumes[1]
-    const same = lab.dimsRAS.every((d, i) => d === vol.dimsRAS[i])
-    if (!same) throw new Error(`${lab.name}: labels must share the CT's grid`)
-    cr.setLabels(Uint8Array.from(getImageDataRAS(lab) ?? []))
+    cr.setLabels(labelIds)
     applySuggestedSettings(labels.table.settings)
     applyLabelMode()
   }
+}
+
+// Uncalibrated intensities (MRI): map the median intensity inside each
+// listed label set to its target, piecewise linearly, extrapolating the end
+// segments. e.g. [[[CSF], 0], [[GM], 100], [[WM], 200]] makes per-label
+// ramps and transfer functions portable across scanners.
+function calibrate(img, labelIds, pairs) {
+  const points = pairs
+    .map(([ids, target]) => {
+      const values = []
+      // Every 7th voxel is plenty for a median.
+      for (let i = 0; i < img.length; i += 7) {
+        if (ids.includes(labelIds[i])) values.push(img[i])
+      }
+      values.sort((a, b) => a - b)
+      return [values[values.length >> 1], target]
+    })
+    .sort((a, b) => a[0] - b[0])
+  const map = (v) => {
+    let k = 0
+    while (k < points.length - 2 && v > points[k + 1][0]) k++
+    const [[x0, y0], [x1, y1]] = [points[k], points[k + 1]]
+    return y0 + ((v - x0) * (y1 - y0)) / (x1 - x0)
+  }
+  for (let i = 0; i < img.length; i++) img[i] = map(img[i])
 }
 
 // Unlabeled tissue (label 0) uses the base transfer function, scaled by this.

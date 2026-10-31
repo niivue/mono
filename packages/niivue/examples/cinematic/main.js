@@ -4,6 +4,7 @@ import { calculateMvpMatrix } from '../../src/math/NVTransforms.ts'
 import angio from './cr_angio.json'
 import angio1d from './cr_angio_1d.json'
 import bone from './cr_bone.json'
+import ctMod from './cr_ct_mod.json'
 import skinBone from './cr_skin_bone.json'
 import t1 from './cr_t1.json'
 import t1Mod from './cr_t1_mod.json'
@@ -18,6 +19,7 @@ const PRESETS = {
   cr_bone: bone,
   cr_angio: angio,
   cr_angio_1d: angio1d,
+  cr_ct_mod: ctMod,
   cr_t1: t1,
   cr_t1_mod: t1Mod,
 }
@@ -63,7 +65,7 @@ const SAMPLES = [
     id: 'ct-wholebody-labels',
     name: 'CT_WholeBody + TotalSegmentator labels',
     url: `${LFS_BASE}CT_WholeBody.nii.gz`,
-    tf: 'cr_skin_bone',
+    tf: 'cr_ct_mod',
     labels: {
       // ?v= versions the URL: bump it when the file changes (GitHub's CDN
       // caches a 404 from before a file existed).
@@ -76,7 +78,7 @@ const SAMPLES = [
     id: 'ct-abdopelvis-labels',
     name: 'CT_AbdoPelvis + labels (smaller, 20 MB)',
     url: `${LFS_BASE}CT_AbdoPelvis.nii.gz?v=2`,
-    tf: 'cr_skin_bone',
+    tf: 'cr_ct_mod',
     labels: {
       url: `${LFS_BASE}CT_AbdoPelvis_labels.nii.gz?v=2`,
       colormap: 'ts_abdopelvis',

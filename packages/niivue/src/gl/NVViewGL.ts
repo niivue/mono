@@ -91,6 +91,7 @@ export default class NVGlview {
   gl: WebGL2RenderingContext | null
   /** Set when the WebGL2 context is lost (e.g. GPU OOM); halts the render loop. */
   private _contextLost = false
+  private _cinematicWarned = false
   // The drawing RGBA the drawing texture(s) were uploaded from, for the chunked
   // volume's CPU plane pick (view/planeVisibility.ts). Null without a drawing.
   private _drawingPickGrid: RgbaGrid | null = null
@@ -589,6 +590,14 @@ export default class NVGlview {
     // every volume pass this frame (base, overlay, PAQD, drawing, and the
     // independent hi-res overlay cube).
     this.volumeRenderer.renderMode = md.volume.renderMode
+    // TEMPORARY until gl/cinematic.ts lands: CINEMATIC draws COMPOSITE here.
+    if (md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.CINEMATIC) {
+      this.volumeRenderer.renderMode = NVConstants.VOLUME_RENDER_MODE.COMPOSITE
+      if (!this._cinematicWarned) {
+        this._cinematicWarned = true
+        log.warn('cinematic: not yet available on WebGL2; drawing COMPOSITE')
+      }
+    }
     // The crosshair planes SLICES draws, in the base volume's texture fraction —
     // the same conversion the 2D tiles use, so sheared and oblique volumes line
     // up with them.

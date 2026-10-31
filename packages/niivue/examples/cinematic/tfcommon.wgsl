@@ -10,7 +10,7 @@ fn tfUV(hu: f32, g: f32, tf: vec4f) -> vec2f {
 }
 
 // Labels pick the material; the intensity still shapes it. `materials` (two
-// vec4 per label: rgb + opacity, then HU ramp lo/hi, specular, -) and
+// vec4 per label: rgb + opacity, then HU ramp lo/hi, specular, surfaceness floor) and
 // `matTex` (material id per voxel, 255 = hidden) are declared by each pass.
 const HIDDEN_LABEL: u32 = 255u;
 

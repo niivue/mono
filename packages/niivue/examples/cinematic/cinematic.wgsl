@@ -221,11 +221,16 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let m = textureSampleLevel(tfMat, samp, uv, 0.0);
     var c = textureSampleLevel(tfColor, samp, uv, 0.0);
     var specular = m.r;
+    var surfBase = m.g;
     if (id == 0u) {
       c.a *= select(1.0, P.labelInfo.y, isLabelOn);
     } else {
       c = vec4f(materials[2u * id].rgb, labelAlpha(id, hu));
-      specular = materials[2u * id + 1u].z * m.g;
+      // A label boundary is a surface even where the HU step is modest
+      // (organ against fat): the label's surfaceness floor keeps it glossy.
+      let mat = materials[2u * id + 1u];
+      surfBase = max(m.g, mat.w);
+      specular = mat.z * surfBase;
     }
     let a = stepAlpha(c.a, stepMM);
     if (a < 0.0005) { // below 8-bit visibility even when many steps sum
@@ -244,7 +249,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (dot(n, dir) > 0.0) { n = -n; }
 
     let spec = specular * P.view.w;
-    let surf = select(m.g, 1.0, onCut);
+    let surf = select(surfBase, 1.0, onCut);
     let weight = (1.0 - acc.a) * a;
     let L = P.light.xyz;
     // Only samples that visibly contribute (> ~0.5/255) pay for secondary rays.

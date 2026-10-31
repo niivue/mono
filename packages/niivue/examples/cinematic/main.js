@@ -108,6 +108,7 @@ const nv1 = new NiiVue({
 await nv1.attachToCanvas(gl1)
 const cr = await CinematicRenderer.create(cine)
 
+const sliders = {}
 for (const [key, min, max, step] of SLIDERS) {
   const label = document.createElement('label')
   const input = Object.assign(document.createElement('input'), {
@@ -126,6 +127,16 @@ for (const [key, min, max, step] of SLIDERS) {
   label.append(key, input, out)
   controls.append(label)
   cr.settings[key] = Number(input.value)
+  sliders[key] = input
+}
+
+// Render settings a material table suggests (e.g. stronger AO), shown on the sliders.
+function applySuggestedSettings(settings = {}) {
+  for (const [key, value] of Object.entries(settings)) {
+    if (!sliders[key]) continue
+    sliders[key].value = value
+    sliders[key].oninput()
+  }
 }
 
 function applyTransferFunction() {
@@ -167,6 +178,7 @@ async function loadVolume() {
     const same = lab.dimsRAS.every((d, i) => d === vol.dimsRAS[i])
     if (!same) throw new Error(`${lab.name}: labels must share the CT's grid`)
     cr.setLabels(Uint8Array.from(getImageDataRAS(lab) ?? []))
+    applySuggestedSettings(labels.table.settings)
     applyLabelMode()
   }
 }

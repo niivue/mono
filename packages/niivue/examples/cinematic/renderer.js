@@ -78,7 +78,7 @@ export class CinematicRenderer {
       })
     this.paramBuffer = uniform(PARAM_BYTES)
     this.extParamBuffer = uniform(96)
-    // Two vec4 per label: rgb + opacity, then HU ramp lo/hi, specular, -.
+    // Two vec4 per label: rgb + opacity, then HU ramp lo/hi, specular, surfaceness floor.
     this.materialBuffer = device.createBuffer({
       size: 256 * 32,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -283,7 +283,8 @@ export class CinematicRenderer {
 
   /**
    * table: label colormap extended with per-label S (specular) and lo/hi (HU
-   * ramp of the surface), all indexed like `labels`. unlabeledScale scales
+   * ramp of the surface) and surface (surfaceness floor, 0-255), all indexed
+   * like `labels`. unlabeledScale scales
    * the base transfer function for label 0 (0 hides unlabeled tissue).
    */
   setLabelMaterials(table, unlabeledScale) {
@@ -301,7 +302,8 @@ export class CinematicRenderer {
       for (let i = 1; i < t.labels.length && i < HIDDEN_LABEL; i++) {
         const k = t.I?.[i] ?? i
         m.set([t.R[i] / 255, t.G[i] / 255, t.B[i] / 255, t.A[i] / 255], k * 8)
-        m.set([t.lo[i], t.hi[i], (t.S?.[i] ?? 0) / 255, 0], k * 8 + 4)
+        const surface = (t.surface?.[i] ?? 0) / 255
+        m.set([t.lo[i], t.hi[i], (t.S?.[i] ?? 0) / 255, surface], k * 8 + 4)
         isVisible[k] = t.A[i] > 0 ? 1 : 0
       }
     }

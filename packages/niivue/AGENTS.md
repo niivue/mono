@@ -1909,7 +1909,9 @@ Render modes: `renderMode` is one field holding a `VOLUME_RENDER_MODE`, so
 always test it for EQUALITY (`isRenderMode()` in the shader preambles,
 `=== VOLUME_RENDER_MODE.X` on the CPU). A `> 0.5` test reads `SLICES` as
 `MAXIMUM` — which picks the MIP shader variant and, on a chunked volume, the MAX
-blend equation.
+blend equation. `CINEMATIC` never reaches the classic shaders: both views hand
+the volume renderer COMPOSITE in that mode (used by its fallbacks), see
+"Cinematic render mode".
 
 `SLICES` does not march at all. It intersects the ray with the three crosshair
 planes, samples the whole layer stack at each hit with `sampleSlice()` (the
@@ -2022,49 +2024,120 @@ entries or leave it internal, but the doc should not promise it.
 
 **Serialization:** Strip non-cloneable properties (class instances) via `JSON.parse(JSON.stringify())` before `postMessage`.
 
-## Cinematic CT prototype
+## Cinematic render mode
 
-WebGPU-only example, not yet in `src/`: `examples/cinematic.html` + `examples/cinematic/`.
+`volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC` (3): progressive path
+tracing of volumes[0] plus an optional label volume, in the render tiles of both
+view tile loops. Settings: `model.volume.cinematic` (`CinematicOptions`,
+defaults in `VOLUME_DEFAULTS.cinematic`), controller `volumeCinematic` (setter
+merges a partial object), constructor `volumeCinematic`, saved in NVD with the
+volume group (`loadDocument` merges it over the defaults). nv-mcp exposes it as
+an object setting; ipyniivue's generator skips it (no object types).
 
-**Files:** `main.js` (UI, samples, camera sync), `renderer.js` (passes, textures), `tf.js` (cmap baking), `cr_*.json` (presets), WGSL: `gradient`, `extinction`, `downsample`, `cinematic`, `display`, and `tfcommon` (TF lookup + extinction, prepended to `cinematic` and `extinction` so primary and shadow rays classify identically).
+**Files:** `view/NVCinematic.ts` (shared CPU side, unit-tested: TF bake, label
+materials, dilation, calibration, clip rescale, light, uniform packing, and
+`CinematicCpuCache`, which rebuilds only on version tokens: `_dataVersion`,
+`colormapKey`, calMin/calMax, label volume identity + `hiddenLabels`, label
+mode). `wgpu/cinematic.ts` + `cinematic*.wgsl` (`cinematicCommon` is prepended
+to the march and extinction so primary and shadow rays classify identically).
+`gl/cinematic.ts` mirrors it method for method (until it lands, WebGL2 draws
+COMPOSITE with one warning; see FEATURE_PARITY.md).
 
-**Architecture:**
-- One NiiVue instance; Classic/Cinematic dropdown; WebGPU checkbox switches NiiVue's backend (cinematic is always WebGPU). In cinematic mode the cinematic canvas sits under NiiVue's, which gets a transparent background and volume opacity 1.01/255, so NiiVue keeps the mouse and draws only the orientation cube and crosshair. That opacity is the lowest NiiVue still marches (below 1/255 it skips the volume, and with it the depth that hides crosshair arms behind it); the colour tints by at most one 8-bit level. NiiVue's depth comes from the plain-cmap alpha (`A`), so it can differ slightly from cinematic surfaces where `E` > `A`. `meshXRay: 0.1` (as vox.clip.html) shows occluded arms faintly. Classic 3D renders get no faint hidden arms unless `meshXRay` > 0: PR #344's default (`hiddenArmAlpha`, 0.15) covers 2D oblique slices only. The cinematic canvas is sized to NiiVue's render tile (`view.screenSlices`, RENDER tile `leftTopWidthHeight`), not the whole canvas: the legend, colorbar or graph narrow that tile, and a full-canvas image sat off-centre on labelled samples. A volume dropped on the canvas replaces NiiVue's; the demo adopts it on `volumeLoaded` (ignoring its own loads, during which the volume menu is disabled) as an unlabelled "(dropped)" entry, switching label-dependent presets to `cr_skin_bone`; the entry is removed when another sample is chosen, since NiiVue no longer holds it. Without WebGPU a no-op stand-in keeps Classic working (it must not be thenable, or `await` hangs). The cinematic image uses NiiVue's camera: `main.js` imports internal `calculateMvpMatrix` (`src/math/NVTransforms.ts`) and reads `nv1.model`.
-- Progressive: one jittered sample per pixel per frame, accumulated; camera polled each rAF, change resets accumulation.
-- Volume uploaded as raw HU (`r16float`). Gradient: 3D Sobel of raw HU (`rgba16float`, dHU/dvoxel), converted to HU/mm in shader.
-- 2D TF lookup: HU x sqrt-spaced gradient magnitude.
-- Shading blends volumetric (normal-free) and surface Blinn-Phong by "surfaceness" (gradient ramp). Bannerman normal reuse.
-- Shadows and AO cone-trace a half-resolution extinction (per mm) mip chain, built once per volume/TF change.
-- Empty-space skipping via a coarse mip (half-texel skip). Light 20 deg above camera.
-- Mip downsample reads 3 texels along odd-sized axes; with 2, the last texel is dropped and coarse data drifts, so skipping jumps over tissue.
-- Secondary rays start 1.5 extinction voxels off the surface (along the normal); starting at the surface gives wood-grain self-shadow rings.
-- Clip planes follow NiiVue (`model.clipPlanes`, `scene.isClipPlaneCutaway`, polled with the camera): JS rescales each plane so its equation is mm distance; the march clips each ray to an interval (solid: march inside, cutaway: jump over), so clipping shortens rays. Cone traces skip clipped material (no shadows from removed tissue). Samples within 1.5 voxels of the cut use the plane normal as a surface. Demo has vox.clip.html's presets (`Clip` 0-6, `Cutaway`, `?clip=`/`?cutaway=1`); right-drag on the render moves plane 0. `clipPlaneColor` is not used.
-- Display pass: ACES tone map.
-- One frame in flight (no GPU queue backlog). Status bar: lower right shows mode and NiiVue backend, e.g. "Cinematic (WebGL2)"; lower left shows the march pass's GPU time (timestamp queries, `onSubmittedWorkDone` fallback) averaged over the first 10 frames after a scene change; frames that wait on upload/extinction builds are excluded.
+**Frame structure (WebGPU):** `beginFrame`; on the first cinematic tile
+`prepare` (CPU cache update, uploads, gradient and extinction prep passes when
+dirty) records into a SEPARATE command encoder; each RENDER tile calls `draw`,
+which records one march dispatch (unless converged) into that encoder and draws
+a triangle in the tile viewport of the main pass that resolves the mean colour
+and writes `frag_depth` (pipeline: view sample count, `depth24plus`,
+`depthCompare: 'always'`), so meshes and the crosshair drawn after it
+depth-test against the volume. `queue.submit([cinematic, main])`. `endFrame`
+frees tiles not drawn (and every volume resource when no tile was, e.g. after
+leaving CINEMATIC) and reports whether a tile still refines; the view then
+schedules one `render()` after `onSubmittedWorkDone` (one frame in flight), not
+while `_isDragging` (each camera change draws one restarted frame). Each tile
+(keyed by tile index, sized to it in device px; multiplanar and mosaic render
+tiles each get one) restarts on any change of options, cache version, viewport,
+MVP, clip planes, cutaway or background. First-hit depth is set on frame 0
+(first sample with table alpha >= 0.01, as the classic march), not
+min-accumulated. The light comes from each tile's own model matrix (mosaic
+tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
 
-**TF format** (documented in `tf.js` header): a plain cmap works unchanged. Optional extensions:
-- `E`: alpha at high gradient (edges); `A` becomes interior (shallow-gradient) alpha.
-- `S`: specular at surfaces.
-- `gradient: {lo, hi}`: HU/mm interior-to-surface ramp; `gMax`; `shininess`; `labelBlend` (see Labels).
+**Inputs:** transfer function = volumes[0]'s colormap mapped across its
+calMin..calMax (scaled units: HU for CT). Optional colormap keys, kept by
+`addColormap` (as are `min`/`max`): `E` (alpha at high gradient; `A` becomes
+interior alpha), `S` (specular), `gradient {lo, hi}` (HU/mm interior-to-surface
+ramp), `gMax`, `shininess`, `labelBlend`. Label volume: the first volume after
+volumes[0] with a label colormap that is drawn and shares volumes[0]'s grid
+(dims, frac2mm within 1e-3); values must be 0-254 (warned otherwise). Its label
+colormap is the material table (`R G B A I labels` plus per-label `S`,
+`surface`, `lo`/`hi`, `normalize`); `hiddenLabels` (legend toggle) hide labels.
+In cinematic tiles the classic volume draw is skipped, so the label volume is
+drawn only by cinematic; 2D tiles are unchanged. Calibration (`normalize`) maps
+label medians piecewise linearly on the CPU; a calibrated volume's TF window is
+the colormap's own `min`/`max` (else the calibrated calMin..calMax).
 
-Presets: `cr_skin_bone`, `cr_bone`, `cr_angio`, `cr_angio_1d` (angio without gradient, for comparison), `cr_t1`, and label-modulated `cr_ct_mod`/`cr_t1_mod` (defaults for labelled samples; see Labels). In `cr_angio` the gradient suppresses bone-edge partial volume in the vessel HU band (CT_Abdo: vessel-band voxels near bone median 159 HU/mm vs 38 away).
+**Limits:** overlays other than the label volume are not drawn and chunked
+(streamed) volumes draw COMPOSITE, each with one `log.warn`. Memory per
+cinematic volume: a duplicate r16float intensity texture, an rgba16float
+gradient (8 B/voxel), a half-res rgba16float extinction mip chain, and an r8uint
+label id texture; freed when no tile is cinematic. Depth picking uses the
+classic march. Gradient thresholds (HU/mm) were tuned on ~1.5 mm data and are
+not resolution invariant (fix: fixed-mm smoothing before Sobel). Extinction
+classifies at voxel centres while the march interpolates, so a narrow band-pass
+TF can be skipped where an edge crosses the band between voxels (fix if seen:
+per-block min/max). Angio presets on non-contrast CT colour low-density bone
+red (cancellous bone and contrast blood share 150-400 HU; a gradient probe was
+tried and reverted 2026-10-31; research on branch `cinematic-blood-vs-bone`).
 
-**Labels (segmentation):** the label picks colour and surface properties; the intensity still shapes the tissue (opacity, surface position and normals come from HU, keeping partial-volume precision). A sample's label is the nearest voxel at a point jittered up to half a voxel each frame, so boundaries average like trilinear weights across frames. Material table = label colormap (`R G B A labels I`) plus per-label `S` (specular), `surface` (surfaceness floor: label boundaries such as organ/fat have modest HU gradients and would otherwise shade flat), optional top-level `settings` (slider values applied when the sample loads, e.g. stronger AO), and `lo`/`hi` (HU ramp where that structure's surface sits; one ramp per tissue class because bone, contrast vessels and soft organs need different thresholds). On the CPU each visible label spreads one voxel (6-neighbours) into unlabeled/hidden neighbours, so the HU ramp, not the categorical boundary, ends a surface; hidden labels become id 255. Label 0 (unlabeled) uses the base TF scaled by the Labels menu ("labels only" = 0, "labels + unlabeled" = 1). Extinction uses the same classification. Example: `ts_wholebody.json` for `CT_WholeBody_labels` (merged TotalSegmentator, CC BY 4.0; LFS PR #3). TotalSegmentator v1 has no forearm/hand bones, so they vanish in "labels only". Labels must share the CT's grid. Add a sample to the demo only after its LFS PR merges: requesting a media URL before the file exists makes GitHub's CDN cache the 404 for that exact URL (query string included), and only a new `?v=` escapes it. MRI (`siam_t1.json`, `MR_T1_brain` + `MR_T1_brain_siam`, BSD-2): T1 has no fixed scale, so the table's `normalize` (`[[labelIds, target], ...]`) maps label medians piecewise linearly (CSF 0, GM 100, WM 200) before upload; gradients and ramps are then in those units (`cr_t1` base TF too) and portable across scanners. The cortex surface is the GM/CSF partial-volume ramp (30-70); structures without reliable T1 contrast (deep nuclei, ventricles, vessels) use an always-on ramp (`lo` -1000, `hi` -999), i.e. label-shaped. The classic view keeps NiiVue's grey window for calibrated presets. A transfer function with `labelBlend` > 0 (`cr_t1_mod` for MRI, `cr_ct_mod` for CT; the defaults for all labelled samples) switches labelled tissue to blend mode: the intensity table shapes it (softer ramp, gradient surfaceness, no floor) and the label only tints it by that fraction and gates it (opacity 0 hides); "label-calibrated" `cr_t1` uses the label material ramps instead, which look harder and more mesh-like. Legend: the demo sets `isLegendToggleEnabled` (from `feat/legend-label-visibility`, merged into this branch) and mirrors the label volume's `hiddenLabels` into the renderer each frame (hidden labels get opacity 0 and do not spread). `CT_AbdoPelvis` (TotalSegmentator s1212, LFS PR #6) reuses the WholeBody numbering; `ts_abdopelvis.json` is `ts_wholebody.json` with alpha 0 for absent structures, which also drops them from the legend (the legend lists every label with non-zero alpha).
+**Rendering details worth keeping:** 2D TF lookup is HU x sqrt-spaced gradient
+magnitude. Shading blends volumetric (normal-free) and Blinn-Phong surface
+terms by surfaceness; Bannerman normal reuse. Shadows and AO cone-trace the
+extinction mips; empty-space skip reads mip `SKIP_LOD`. Mip downsample reads 3
+texels along odd axes (2 drops the last texel and coarse data drifts, so the
+skip jumps over tissue). Secondary rays start 1.5 extinction voxels off the
+surface (from the surface they show wood-grain self-shadow rings). Clip planes
+are rescaled to mm and clip each ray to an interval (solid: march inside,
+cutaway: jump over); cone traces skip clipped material. Samples within 1.5
+voxels past a cut face use the plane normal AND the TF's maximum-gradient row
+(edge alpha, specular, surfaceness 1), so a cut through translucent,
+low-gradient tissue (white matter, CSF) reads as a solid lit face instead of
+wrinkled interior noise; in air `E` is 0, so a cut through empty space only
+starts the ray. A label sample is the nearest voxel at a point jittered up to
+half a voxel per frame, so boundaries average like trilinear weights. Each
+visible label spreads one voxel (6-neighbours) into unlabeled/hidden voxels, so
+the intensity ramp, not the categorical boundary, ends a surface; hidden labels
+become id 255. Label 0 uses the base TF scaled by the label mode ('only' 0,
+'unlabeled' 1). With `labelBlend` > 0 the intensity TF shapes labelled tissue
+and the label tints it by that fraction and gates it; otherwise label material
+ramps shape it (harder, mesh-like). ACES tone map in the display pass.
 
-**Data:** [niivue-demo-images-lfs](https://github.com/niivue/niivue-demo-images-lfs). Samples are selected by id (`?sample=`: `ct-abdo`, `ct-philips`, `ct-electrodes`, `ct-wholebody`, `ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-siam`); `index.html` links "Cinematic CT" and "Cinematic Labeled MR". CT_Abdo, CT_Philips, CT_Electrodes via `raw.githubusercontent.com`. CT_WholeBody (TotalSegmentator s1749, CC BY 4.0), CT_AbdoPelvis and MR_T1_brain (+ labels) are LFS objects: load via `media.githubusercontent.com` (raw returns pointers), URLs versioned with `?v=` (bump when a file changes or after a cached 404). CT_Pancreas was dropped from the demo. LFS PR #7 (cleaned MR segmentation) is pending: after it merges, move the demo's MR URLs to `?v=2`; never request `?v=2` before the merge (the CDN would cache the 404). CT_AVM and CT_pitch are uint8, not HU: excluded.
+**Demo** (`examples/cinematic.html`, public API only): presets `cr_skin_bone`,
+`cr_bone`, `cr_angio`, `cr_angio_1d`, `cr_t1`, label-modulated `cr_ct_mod`/
+`cr_t1_mod` (defaults for labelled samples); in `cr_angio` the gradient
+suppresses bone-edge partial volume in the vessel band (CT_Abdo: vessel-band
+voxels near bone median 159 HU/mm vs 38 away). Label tables `ts_wholebody.json`
+(TotalSegmentator, CC BY 4.0; v1 has no forearm/hand bones), `ts_abdopelvis.json`
+(same numbering, alpha 0 for absent structures, which also drops them from the
+legend), `siam_t1.json` (MR, BSD-2: `normalize` CSF 0, GM 100, WM 200; cortex
+ramp 30-70; structures without reliable T1 contrast use an always-on ramp, `lo`
+-1000 `hi` -999). A table's `settings` key (slider values) is demo-only. For
+label-calibrated MR the classic view keeps the grey window. Samples by id
+(`?sample=`: `ct-abdo`, `ct-philips`, `ct-electrodes`, `ct-wholebody`,
+`ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-siam`); `index.html` links
+"Cinematic CT" and "Cinematic Labeled MR". Data: niivue-demo-images-lfs; LFS
+objects load via `media.githubusercontent.com` with `?v=` (raw returns
+pointers). Add a sample only after its LFS PR merges: requesting a media URL
+before the file exists makes GitHub's CDN cache the 404 for that exact URL
+(query included), and only a new `?v=` escapes it. LFS PR #7 (cleaned MR
+segmentation) is pending: after it merges, move the MR URLs to `?v=2`, never
+before. CT_AVM and CT_pitch are uint8, not HU: excluded. `window.nv1` is exposed
+for scripted checks.
 
-**Performance** (march pass GPU time per frame, timestamp queries, ~1400x605 canvas, M4 Pro, view azimuth 150 / elevation 15): CT_Philips bone 6 ms, CT_WholeBody skin+bone 37 ms, CT_Pancreas angio 24 ms (no longer in demo), CT_Abdo angio 15 ms. Cone tracing replaced per-sample shadow rays (1 voxel step, up to 1024 steps, 4 fetches each); earlier wall-clock figures (e.g. 3228 -> 192 ms for CT_WholeBody) included GPU queue backlog and a GPU shared with other work, so only the ratio (~10-17x on translucent scenes) is meaningful. Light scenes can read ~3x slower in some sessions (GPU clock scaling).
-
-**Limits:**
-- WebGPU only. Backend parity rule applies once it moves into `src/` (needs WebGL2 port).
-- Gradient thresholds (HU/mm) tuned on ~1.5 mm data; not resolution invariant. Fix: smooth with a fixed-mm kernel before Sobel.
-- Gradient texture costs 8 B/voxel.
-- Depends on internal `calculateMvpMatrix`.
-- Extinction classifies HU at voxel centres while the march samples interpolated HU, so a narrow band-pass TF can be skipped where an edge crosses the band between voxels (e.g. air-to-bone with no soft-tissue voxel). Fix if seen: per-block HU min/max tested against the TF.
-- Requires `Float16Array` (all WebGPU browsers since 2025).
-- Angio preset on non-contrast CT (e.g. CT_Philips): orbits, hyoid and vertebrae render red. Tried and reverted (2026-10-31): an LH-style probe (one HU fetch ~2 mm up the gradient; brighter neighbour > threshold -> edge alpha). Two thirds of the red voxels are low-density bone (median 234 HU, modest gradient) with no voxel > 650 HU within 2 voxels, so the probe removed ~0.3% (650 HU) to 3.5% (450 HU) of red pixels while altering true vessels on CT_Abdo. Cancellous bone and contrast blood share 150-400 HU; fix with labels (bone mask) or a non-contrast preset. Blood-vs-bone research lives on branch `cinematic-blood-vs-bone` (not here); it recommends a prep pass computing distance to dense bone.
-
-**Next:** body mask to remove the scanner table; reduced quality while dragging.
+**Performance** (prototype, march GPU time per frame, ~1400x605, M4 Pro,
+azimuth 150 / elevation 15): CT_Philips bone 6 ms, CT_WholeBody skin+bone 37
+ms, CT_Abdo angio 15 ms. Cone tracing replaced per-sample shadow rays (~10-17x
+on translucent scenes). Light scenes can read ~3x slower in some sessions (GPU
+clock scaling).
 
 ## Demo conventions
 

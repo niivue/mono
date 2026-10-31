@@ -88,7 +88,7 @@ nv1.drawPenValue = 3
 `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible`, `is3DCrosshairVisible`, `isGraphVisible`, `isRulerVisible`, `isCrossLinesVisible`, `isLegendVisible`, `isMeasureUnitsVisible`, `isThumbnailVisible`, `thumbnailUrl`, `placeholderText`, `crosshairColor`, `crosshairGap`, `crosshairWidth`, `fontColor`, `fontScale`, `fontMinSize`, `selectionBoxColor`, `measureLineColor`, `measureTextColor`, `rulerWidth`, `graphNormalizeValues`, `graphIsRangeCalMinMax`
 
 **Volume** (prefix `volume` -- delegate to `model.volume`):
-`volumeIllumination`, `volumeRenderMode`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeOverlayAlphaBlend`, `volumeOverlayColorBlend`, `volumeMatcap`, `volumePaqdUniforms`
+`volumeIllumination`, `volumeRenderMode`, `volumeCinematic`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeOverlayAlphaBlend`, `volumeOverlayColorBlend`, `volumeMatcap`, `volumePaqdUniforms`
 
 `volumeRenderMode` takes a `VOLUME_RENDER_MODE` and applies to the 3D render only:
 
@@ -97,10 +97,30 @@ nv1.drawPenValue = 3
 | `COMPOSITE` (0, default) | emission-absorption OVER | a solid, depth-ordered object |
 | `MAXIMUM` (1) | maximum-intensity projection | the brightest sample per ray, through everything in front of it |
 | `SLICES` (2) | orthogonal slices | the three crosshair planes, composited front to back |
+| `CINEMATIC` (3) | progressive path tracing | the background volume (and a label volume) with soft shadows and ambient occlusion |
 
 `SLICES` does not ray-march: it takes at most three samples per ray, so it is
 the cheapest 3D view. Overlays, PAQD and the drawing are sampled on the planes
 the way the 2D tiles blend them; clip planes and all lighting are ignored.
+
+`CINEMATIC` refines over `volumeCinematic.maxFrames` frames, redrawing itself
+until done. Its transfer function is volume 0's colormap mapped across its
+calMin..calMax; the optional colormap keys `E` (edge alpha), `S` (specular),
+`gradient` `{lo, hi}`, `gMax`, `shininess` and `labelBlend` (see `ColorMap`)
+make it 2D (intensity x gradient), and `addColormap` keeps them. The first drawn
+label volume on volume 0's grid supplies per-label materials (`S`, `lo`/`hi`
+surface ramp, `surface`, and `normalize` to calibrate uncalibrated intensities;
+calibrated volumes use the colormap's own `min`/`max`), and its `hiddenLabels`
+hide structures. Meshes and the crosshair composite by depth. Other overlays are
+not drawn and a chunked volume draws `COMPOSITE` (each with one warning). Memory:
+a duplicate r16float intensity texture, an rgba16float gradient and a half-res
+extinction texture. Demo: `examples/cinematic.html`. WebGL2 draws `COMPOSITE`
+until its port lands.
+
+```js
+nv.volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC
+nv.volumeCinematic = { shadow: 0.8, ao: 0.6, labelMode: 'only' } // merged
+```
 
 **Mesh** (prefix `mesh` -- delegate to `model.mesh`):
 `meshXRay`, `meshThicknessOn2D`, `meshCrosscutWidth`

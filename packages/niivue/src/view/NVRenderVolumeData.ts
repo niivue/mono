@@ -1,3 +1,4 @@
+import { shownLabelLut } from '@/cmap/NVCmaps'
 import * as NVTransforms from '@/math/NVTransforms'
 import type { NVImage } from '@/NVTypes'
 import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from '@/volume/utils'
@@ -36,6 +37,9 @@ export function preparePaqdOverlayData(
   }
   const ovDims = [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
   const paqdData = paqdResampleRaw(raw, dimsOut, ovDims, mtx as Float32Array)
-  const lutMin = vol.colormapLabel.min ?? 0
-  return { paqdData, lut256: buildPaqdLut256(vol.colormapLabel.lut, lutMin) }
+  const label = shownLabelLut(vol) ?? vol.colormapLabel
+  return {
+    paqdData,
+    lut256: buildPaqdLut256(label.lut, label.min ?? 0),
+  }
 }

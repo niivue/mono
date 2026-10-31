@@ -18,6 +18,7 @@ import {
   lutrgba8,
   makeLabelLut,
   makeLut,
+  shownLabelLut,
   withColormapWindow,
 } from './NVCmaps'
 
@@ -531,5 +532,33 @@ describe('withColormapWindow', () => {
     })
     const none = { calMax: 5 }
     expect(withColormapWindow(none)).toBe(none)
+  })
+})
+
+describe('shownLabelLut', () => {
+  const lut = { lut: new Uint8ClampedArray(4 * 4).fill(200), min: 10, max: 13 }
+
+  test('hidesLabelValuesByAlphaOnly', () => {
+    const vol = { colormapLabel: lut, hiddenLabels: [11, 13, 99, 10.5] }
+    const shown = shownLabelLut(vol)
+    expect(Array.from(shown?.lut ?? [])).toEqual([
+      200, 200, 200, 200, 200, 200, 200, 0, 200, 200, 200, 200, 200, 200, 200,
+      0,
+    ])
+    expect(lut.lut[7]).toBe(200) // source untouched
+  })
+
+  test('returnsSourceWhenNothingHidden', () => {
+    expect(shownLabelLut({ colormapLabel: lut })).toBe(lut)
+    expect(shownLabelLut({ colormapLabel: lut, hiddenLabels: [] })).toBe(lut)
+    expect(shownLabelLut({ colormapLabel: null, hiddenLabels: [1] })).toBeNull()
+  })
+
+  test('newObjectOnlyWhenHiddenSetChanges', () => {
+    const vol = { colormapLabel: lut, hiddenLabels: [12] }
+    const a = shownLabelLut(vol)
+    expect(shownLabelLut(vol)).toBe(a)
+    vol.hiddenLabels = [12, 11]
+    expect(shownLabelLut(vol)).not.toBe(a)
   })
 })

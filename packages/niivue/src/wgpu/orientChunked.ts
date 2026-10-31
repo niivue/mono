@@ -178,7 +178,7 @@ async function createColormapResources(
 }> {
   const u = buildOrientUniforms(nvimage, 0)
   if (u.isLabel > 0) {
-    const labelLut = nvimage.colormapLabel?.lut
+    const labelLut = NVCmaps.shownLabelLut(nvimage)?.lut
     if (!labelLut) {
       throw new Error('orientChunked: label colormap LUT is undefined')
     }

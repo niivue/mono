@@ -473,7 +473,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `niftiArray2NVImage()` | ❌ | |
 | `decimateHierarchicalMesh()` on Niivue | ❌ | |
 | Thumbnail / placeholder | ✅ | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` |
-| Legend visibility | ✅ | `isLegendVisible` |
+| Legend visibility | ✅ | `isLegendVisible`; per-label hide/show via volume `hiddenLabels` and the opt-in `isLegendToggleEnabled` legend click (volume entries only) |
 | Annotation system (vector) | ✅ | New feature not in old package |
 
 ---

@@ -74,6 +74,7 @@ const PROPS_RW = [
   ["isDragging", "is_dragging"],
   ["isEqualSize", "is_equal_size"],
   ["isGraphVisible", "is_graph_visible"],
+  ["isLegendToggleEnabled", "is_legend_toggle_enabled"],
   ["isLegendVisible", "is_legend_visible"],
   ["isMeasurementDrawn", "is_measurement_drawn"],
   ["isMeasureUnitsVisible", "is_measure_units_visible"],

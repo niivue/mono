@@ -40,7 +40,7 @@ import type {
 import { parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
-import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
+import { legendHitTest } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import {
@@ -408,36 +408,6 @@ function handleGraphHitTest(ctrl: NiiVue, x: number, y: number): boolean {
   }
   // Inside graph but not on a specific element — consume to prevent tile hit
   return hit.type === 'frame'
-}
-
-function legendHitTest(
-  x: number,
-  y: number,
-  layout: LegendLayout | null,
-): LegendEntry | null {
-  if (!layout || layout.entries.length === 0) return null
-
-  // Check if click is within legend horizontal bounds
-  if (x < layout.x || x > layout.x + layout.width) return null
-
-  // Check if click is within legend vertical bounds
-  const entryHeight = layout.boxSize * 1.2 // LINE_HEIGHT_RATIO
-  const totalHeight =
-    layout.entries.length * entryHeight +
-    (layout.entries.length - 1) * layout.gap
-
-  if (y < layout.y || y > layout.y + totalHeight) return null
-
-  // Determine which entry was clicked based on Y coordinate
-  let yPos = layout.y
-  for (const entry of layout.entries) {
-    if (y >= yPos && y < yPos + entryHeight) {
-      return entry
-    }
-    yPos += entryHeight + layout.gap
-  }
-
-  return null
 }
 
 function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
@@ -1247,10 +1217,27 @@ export function initInteraction(ctrl: NiiVue): void {
     warnIfBothEditModes(ctrl)
 
     // Check for legend click first
-    const legendEntry = legendHitTest(px, py, ctrl.view?.legendLayout ?? null)
-    if (legendEntry) {
-      log.info(`Legend clicked: ${legendEntry.label}`)
-      const centroid = legendEntry.centroid?.()
+    const legendHit = legendHitTest(px, py, ctrl.view?.legendLayout ?? null)
+    if (legendHit) {
+      const { entry, isOnBox } = legendHit
+      log.info(`Legend clicked: ${entry.label}`)
+      if (
+        isOnBox &&
+        ctrl.model.interaction.isLegendToggleEnabled &&
+        entry.volumeIndex !== undefined &&
+        entry.labelValue !== undefined
+      ) {
+        const value = entry.labelValue
+        const hidden = ctrl.volumes[entry.volumeIndex]?.hiddenLabels ?? []
+        const hiddenLabels = entry.isHidden
+          ? hidden.filter((v) => v !== value)
+          : [...hidden, value]
+        ctrl
+          .setVolume(entry.volumeIndex, { hiddenLabels })
+          .catch((e) => log.error('legend label toggle failed', e))
+        return
+      }
+      const centroid = entry.centroid?.()
       if (centroid) ctrl.setCrosshairPos(centroid)
       return // Don't process tile interactions if legend was clicked
     }

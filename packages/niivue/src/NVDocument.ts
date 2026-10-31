@@ -108,6 +108,9 @@ export type NVDocumentVolume = {
   isColormapInverted?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  /** Hidden label values; written only when non-empty. Additive, no version
+   * bump: an older reader just shows every label. */
+  hiddenLabels?: number[]
   opacity?: number
   /** The explicit hide toggle (`setVolume(i, { visible: false })`); written
    * only when false, so documents without hidden volumes are unchanged. */
@@ -425,6 +428,7 @@ export function serialize(
         frame4D: v.frame4D,
       }
       if (v.visible === false) vol.visible = false
+      if (v.hiddenLabels?.length) vol.hiddenLabels = [...v.hiddenLabels]
 
       // Embed volume data for a self-contained document, UNLESS linkData is set
       // and this volume has a fetchable URL (then the loader refetches it). A
@@ -963,6 +967,7 @@ export async function reconstructVolume(
       if (v.isNearestInterpolation !== undefined)
         base.isNearestInterpolation = v.isNearestInterpolation
       if (v.atlasOutline !== undefined) base.atlasOutline = v.atlasOutline
+      if (v.hiddenLabels !== undefined) base.hiddenLabels = v.hiddenLabels
       if (v.opacity !== undefined) base.opacity = v.opacity
       if (v.visible !== undefined) base.visible = v.visible
       if (v.calMin !== undefined) base.calMin = v.calMin

@@ -11,6 +11,11 @@ export type LegendEntry = {
   color: [number, number, number, number] // RGBA 0-255
   /** Center-of-mass in mm, for crosshair navigation on click */
   centroid?: () => [number, number, number] | undefined
+  /** Source volume index and label value, set for volume entries only (the toggleable ones) */
+  volumeIndex?: number
+  labelValue?: number
+  /** The label is in its volume's `hiddenLabels`: drawn as an outlined box */
+  isHidden?: boolean
 }
 
 export type LegendLayout = {
@@ -44,13 +49,14 @@ export function collectLegendEntries(
   const entries: LegendEntry[] = []
 
   // Collect from volumes with label colormaps
-  for (const volume of volumes) {
+  for (const [volumeIndex, volume] of volumes.entries()) {
     // Unset counts as visible: an NVImage built by hand may omit the flag.
     if (volume.isLegendVisible === false) continue
     if (!volume.colormapLabel) continue
 
     const lut = volume.colormapLabel
     const labels = lut.labels ?? []
+    const hidden = new Set(volume.hiddenLabels)
 
     // Extract each label with its color from the LUT
     for (let i = 0; i < labels.length; i++) {
@@ -61,6 +67,7 @@ export function collectLegendEntries(
       if (alpha === 0) continue
 
       const label = labels[i]
+      const labelValue = (lut.min ?? 0) + i
       entries.push({
         label,
         color: [
@@ -70,6 +77,9 @@ export function collectLegendEntries(
           lut.lut[lutOffset + 3],
         ],
         centroid: () => volumeLabelCentroid(volume, label),
+        volumeIndex,
+        labelValue,
+        isHidden: hidden.has(labelValue),
       })
     }
   }
@@ -350,6 +360,22 @@ export function buildLegendLabels(
       backRadius: 0, // Sharp corners for color box
     }
     batches.push(colorBoxBatch)
+    if (entry.isHidden) {
+      // Hidden label: punch out the box centre so only an outline remains.
+      const inset = Math.max(1, layout.boxSize * 0.2)
+      batches.push({
+        data: new Float32Array(0),
+        count: 0,
+        backColor: [...canvasBackColor, 1],
+        backRect: [
+          boxX + inset,
+          boxY + inset,
+          layout.boxSize - 2 * inset,
+          layout.boxSize - 2 * inset,
+        ],
+        backRadius: 0,
+      })
+    }
 
     // Create text label next to the color box (no backing)
     const textX = boxX + layout.boxSize + layout.textPadding
@@ -378,4 +404,29 @@ export function buildLegendLabels(
   }
 
   return batches
+}
+
+/**
+ * The legend entry under canvas pixel (x, y), and whether the point is on its
+ * colour box (`layout.x + margin`, `boxSize` square) rather than its name.
+ */
+export function legendHitTest(
+  x: number,
+  y: number,
+  layout: LegendLayout | null,
+): { entry: LegendEntry; isOnBox: boolean } | null {
+  if (!layout || layout.entries.length === 0) return null
+  if (x < layout.x || x > layout.x + layout.width) return null
+  const entryHeight = layout.boxSize * LINE_HEIGHT_RATIO
+  const boxX = layout.x + layout.margin
+  let yPos = layout.y
+  for (const entry of layout.entries) {
+    if (y >= yPos && y < yPos + entryHeight) {
+      const isOnBox =
+        x >= boxX && x <= boxX + layout.boxSize && y <= yPos + layout.boxSize
+      return { entry, isOnBox }
+    }
+    yPos += entryHeight + layout.gap
+  }
+  return null
 }

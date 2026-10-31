@@ -522,6 +522,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   wheelZoomAnchor: 'crosshair',
   isViewModeHotKeyEnabled: false,
   isPanFollowingCrosshair: false,
+  isLegendToggleEnabled: false,
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

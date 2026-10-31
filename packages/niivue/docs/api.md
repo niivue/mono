@@ -109,7 +109,7 @@ the way the 2D tiles blend them; clip planes and all lighting are ignored.
 `drawIsEnabled`, `drawPenValue`, `drawPenSize`, `drawIsFillOverwriting`, `drawOpacity`, `drawRimOpacity`, `drawColormap`
 
 **Interaction** (no prefix -- delegate to `model.interaction`):
-`primaryDragMode`, `secondaryDragMode`, `isSnapToVoxelCenters`, `isYoked3DTo2DZoom`, `isViewModeHotKeyEnabled`, `isDragDropEnabled`, `wheelZoomAnchor`, `isPanFollowingCrosshair`
+`primaryDragMode`, `secondaryDragMode`, `isSnapToVoxelCenters`, `isYoked3DTo2DZoom`, `isViewModeHotKeyEnabled`, `isLegendToggleEnabled`, `isDragDropEnabled`, `wheelZoomAnchor`, `isPanFollowingCrosshair`
 
 **Annotation** (prefix `annotation` -- delegate to `model.annotation`):
 `annotationIsEnabled`, `annotationActiveLabel`, `annotationActiveGroup`, `annotationBrushRadius`, `annotationIsErasing`, `annotationIsVisibleIn3D`, `annotationStyle`, `annotationTool`
@@ -241,6 +241,7 @@ Used by `loadVolumes()`, `addVolume()`, and `setVolume()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
 - Behavior: `isTransparentBelowCalMin`, `opacity`, `visible` (hide without changing `opacity`), `modulateAlpha`, `isNearestInterpolation` (2D sampling; unset = nearest for label data, linear otherwise)
 - UI: `isColorbarVisible`, `isLegendVisible` (default true; `nv.isLegendVisible` gates the combined legend)
+- Labels: `atlasOutline`, `hiddenLabels` (label values drawn transparent; `nv.isLegendToggleEnabled` lets a legend colour-box click toggle them)
 - 4D: `frame4D`, `limitFrames4D`
 
 ### Mesh Options

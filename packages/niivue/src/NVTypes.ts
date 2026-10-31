@@ -224,6 +224,12 @@ export type NVImage = {
    * {@link colormap} is a label colormap. See {@link NiiVue.setAtlasOutline}.
    */
   atlasOutline?: number
+  /**
+   * Label values (calibrated IDs, not LUT rows) drawn transparent in 2D and 3D
+   * on both backends. They stay listed in the legend, drawn as an outlined box.
+   * Ignored unless {@link colormap} is a label colormap.
+   */
+  hiddenLabels?: number[]
   /** Whether this volume has imaginary data (complex) */
   isImaginary?: boolean
   /**
@@ -1038,6 +1044,9 @@ export type InteractionConfig = {
   wheelZoomAnchor: WheelZoomAnchor
   // V key cycles sliceType (NiiVue 0.6 had this always on; opt-in here).
   isViewModeHotKeyEnabled: boolean
+  // Clicking a volume legend entry's colour box hides/shows that label
+  // (`hiddenLabels`); clicking its name still moves the crosshair.
+  isLegendToggleEnabled: boolean
   // Opt-in: when the 2D views are zoomed in (pan2Dxyzmm[3] > 1) and the
   // crosshair moves on its own (keyboard, API, linked instance), pan just
   // enough to keep it inside every tile's visible window. Off by default: the
@@ -1336,6 +1345,7 @@ export type NiiVueOptions = {
   wheelZoomAnchor?: WheelZoomAnchor
   isViewModeHotKeyEnabled?: boolean
   isPanFollowingCrosshair?: boolean
+  isLegendToggleEnabled?: boolean
 
   // Annotation (prefixed)
   annotationIsEnabled?: boolean
@@ -1474,6 +1484,8 @@ export type ImageFromUrlOptions = {
   isColormapInverted?: boolean
   /** Outline width for a label/atlas volume, in its own voxels (default 0 = filled) */
   atlasOutline?: number
+  /** Label values of a label/atlas volume to hide (default: none) */
+  hiddenLabels?: number[]
   /** Minimum intensity for negative color mapping (default: NaN = symmetric) */
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */

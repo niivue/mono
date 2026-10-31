@@ -70,6 +70,7 @@ export interface VolumeUpdate {
   isLegendVisible?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  hiddenLabels?: number[]
   modulateAlpha?: number
 }
 
@@ -102,6 +103,7 @@ export interface ShownVolume {
   isLegendVisible?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  hiddenLabels?: number[]
   modulateAlpha?: number
   /** The label table it is drawn with, when it is a label map. */
   colormapLabel?: unknown

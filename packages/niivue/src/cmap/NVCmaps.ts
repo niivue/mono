@@ -184,6 +184,40 @@ function buildLutIndex(): Map<string, LutDef> {
 /** A colormap is a label table when it carries a `labels` array (even empty). */
 export type ColormapKind = 'continuous' | 'label'
 
+type HiddenLabelSource = {
+  colormapLabel?: LUT | null
+  hiddenLabels?: number[]
+}
+
+const _shownLabelLuts = new WeakMap<
+  HiddenLabelSource,
+  { source: LUT; key: string; shown: LUT }
+>()
+
+/**
+ * The label LUT the GPU draws: `colormapLabel` with each `hiddenLabels` value
+ * made transparent (alpha 0, RGB kept). Memoized per volume, so the result is
+ * a new object only when the LUT or the hidden set changes: the orient caches
+ * and `chunkedDisplayKey` key on its identity and re-upload exactly then.
+ */
+export function shownLabelLut(vol: HiddenLabelSource): LUT | null {
+  const source = vol.colormapLabel ?? null
+  const hidden = vol.hiddenLabels
+  if (!source || !hidden?.length) return source
+  const key = hidden.join(',')
+  const hit = _shownLabelLuts.get(vol)
+  if (hit?.source === source && hit.key === key) return hit.shown
+  const lut = source.lut.slice()
+  const min = source.min ?? 0
+  for (const value of hidden) {
+    const i = value - min
+    if (Number.isInteger(i) && i >= 0 && i * 4 < lut.length) lut[i * 4 + 3] = 0
+  }
+  const shown = { ...source, lut }
+  _shownLabelLuts.set(vol, { source, key, shown })
+  return shown
+}
+
 /**
  * Registered colormap names, sorted. Both kinds unless `kind` narrows the list.
  */

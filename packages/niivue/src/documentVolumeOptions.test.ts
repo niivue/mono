@@ -38,8 +38,10 @@ describe('urlVolumeOptions', () => {
       colormapType: 1,
       isTransparentBelowCalMin: false,
       modulateAlpha: 1,
+      hiddenLabels: [3, 7],
     }
     const opts = urlVolumeOptions(v)
+    expect(opts.hiddenLabels).toEqual([3, 7])
     expect(opts.calMin).toBe(30)
     expect(opts.calMax).toBe(80)
     expect(opts.calMinNeg).toBe(-80)

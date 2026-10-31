@@ -223,6 +223,10 @@ export const SETTINGS: readonly Setting[] = [
   bool('isYoked3DTo2DZoom', 'Whether zooming a 2D tile zooms the render too.'),
   bool('isDragDropEnabled', 'Whether files dropped on the canvas are loaded.'),
   bool('isViewModeHotKeyEnabled', 'Whether the V key cycles the view mode.'),
+  bool(
+    'isLegendToggleEnabled',
+    'Whether clicking a legend colour box hides or shows that label.',
+  ),
   num(
     'meshXRay',
     'How see-through meshes are drawn in the render, 0 (solid) to 1.',

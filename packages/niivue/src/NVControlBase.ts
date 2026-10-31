@@ -2264,6 +2264,20 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'isViewModeHotKeyEnabled', value: v })
   }
 
+  /**
+   * Opt-in: clicking a volume legend entry's colour box hides or shows that
+   * label (the volume's `hiddenLabels`); clicking its name still moves the
+   * crosshair to the label. Default false: every click moves the crosshair.
+   * Mesh and connectome legend entries do not toggle.
+   */
+  get isLegendToggleEnabled(): boolean {
+    return this.model.interaction.isLegendToggleEnabled
+  }
+  set isLegendToggleEnabled(v: boolean) {
+    this.model.interaction.isLegendToggleEnabled = v
+    this.emit('change', { property: 'isLegendToggleEnabled', value: v })
+  }
+
   get isPanFollowingCrosshair(): boolean {
     return this.model.interaction.isPanFollowingCrosshair
   }

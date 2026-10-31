@@ -626,6 +626,17 @@
       "doc": null
     },
     {
+      "jsName": "isLegendToggleEnabled",
+      "pyName": "is_legend_toggle_enabled",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isLegendVisible",
       "pyName": "is_legend_visible",
       "tsType": "boolean",

@@ -416,6 +416,9 @@ export default class NVModel {
       ...(options.isViewModeHotKeyEnabled !== undefined && {
         isViewModeHotKeyEnabled: options.isViewModeHotKeyEnabled,
       }),
+      ...(options.isLegendToggleEnabled !== undefined && {
+        isLegendToggleEnabled: options.isLegendToggleEnabled,
+      }),
       ...(options.isDragDropEnabled !== undefined && {
         isDragDropEnabled: options.isDragDropEnabled,
       }),

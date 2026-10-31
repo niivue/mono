@@ -174,6 +174,7 @@ first such interaction warns). Turn one off before turning the other on.
     is_dragging = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_equal_size = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_graph_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_legend_toggle_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_legend_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_measurement_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_measure_units_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)

@@ -77,6 +77,8 @@ const SLIDERS = [
 const BACKGROUND = [0, 0, 0, 1]
 const nv1 = new NiiVue({
   backgroundColor: BACKGROUND,
+  // Occluded crosshair arms show faintly, as in vox.clip.html with XRay on.
+  meshXRay: 0.1,
   sliceType: SLICE_TYPE.RENDER,
   isOrientCubeVisible: true,
 })
@@ -211,16 +213,25 @@ cutawayCheck.onchange = () => {
   nv1.isClipPlaneCutaway = cutawayCheck.checked
 }
 
-// Cinematic draws beneath NiiVue's canvas. NiiVue keeps the mouse and its
-// orientation cube, with a transparent background and a hidden volume (which
-// also spares the GPU the classic render).
+// Cinematic draws beneath NiiVue's canvas. NiiVue keeps the mouse, the
+// orientation cube and the crosshair, over a transparent background.
+// NiiVue skips its volume draw below opacity 1/255, and with it the depth
+// that hides crosshair arms behind the volume. Just above that it still writes
+// depth at the first hit while tinting the image by at most one 8-bit level.
+const DEPTH_ONLY_OPACITY = 1.01 / 255
 function applyMode() {
   const isCinematic = modeSelect.value === 'cinematic'
   cine.style.visibility = isCinematic ? 'visible' : 'hidden'
   nv1.backgroundColor = isCinematic
     ? [...BACKGROUND.slice(0, 3), 0]
     : BACKGROUND
-  if (nv1.volumes.length) nv1.setVolume(0, { opacity: isCinematic ? 0 : 1 })
+  if (nv1.volumes.length) {
+    nv1.setVolume(0, { opacity: isCinematic ? DEPTH_ONLY_OPACITY : 1 })
+  }
+  const backend = nv1.opts.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
+  helpText.textContent = isCinematic
+    ? `Cinematic (WebGPU) refines while the camera is still; NiiVue (${backend}) draws the crosshair and cube. Drag to rotate, scroll to zoom, right-drag moves the clip plane.`
+    : `Classic NiiVue (${backend}). Drag to rotate, scroll to zoom, right-drag moves the clip plane.`
   for (const el of [controls, restartBtn, saveBtn]) el.hidden = !isCinematic
   statusText.textContent = ''
   cameraKey = ''

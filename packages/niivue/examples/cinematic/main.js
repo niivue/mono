@@ -85,7 +85,7 @@ const SAMPLES = [
   {
     name: 'MR T1 brain + SIAM labels',
     url: `${LFS_BASE}MR_T1_brain.nii.gz?v=1`,
-    tf: 'cr_t1',
+    tf: 'cr_t1_mod',
     labels: {
       url: `${LFS_BASE}MR_T1_brain_siam.nii.gz?v=1`,
       colormap: 'siam_t1',
@@ -131,6 +131,8 @@ const nv1 = new NiiVue({
   meshXRay: 0.1,
   sliceType: SLICE_TYPE.RENDER,
   isAntiAlias: true,
+  // Click a legend colour box to hide/show that region; the name moves the crosshair.
+  isLegendToggleEnabled: true,
   isOrientCubeVisible: true,
 })
 await nv1.attachToCanvas(gl1)
@@ -214,6 +216,9 @@ async function loadVolume() {
   applyTransferFunction()
   labelSelect.hidden = !labels
   if (labels) {
+    const hidden = nv1.volumes[1].hiddenLabels ?? []
+    cr.hiddenLabels = new Set(hidden)
+    hiddenKey = hidden.join()
     cr.setLabels(labelIds)
     applySuggestedSettings(labels.table.settings)
     applyLabelMode()
@@ -412,9 +417,20 @@ saveBtn.onclick = () => {
   a.click()
 }
 
+// The legend toggles NiiVue's per-volume hiddenLabels; mirror them here.
+let hiddenKey = ''
+function syncHiddenLabels() {
+  const hidden = nv1.volumes[1]?.hiddenLabels ?? []
+  const key = hidden.join()
+  if (key === hiddenKey) return
+  hiddenKey = key
+  cr.setHiddenLabels(hidden)
+}
+
 function tick() {
   if (modeSelect.value === 'cinematic' && nv1.volumes.length) {
     syncCamera()
+    syncHiddenLabels()
     cr.render()
     const ms = cr.averageMs
     const text = loadError || (ms === null ? '' : `${ms.toFixed(0)} ms/frame`)

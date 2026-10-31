@@ -67,6 +67,7 @@ export class CinematicRenderer {
     this.isClipCutaway = false
     this.labels = null
     this.unlabeledScale = 1
+    this.hiddenLabels = new Set()
     this.sampler = device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
@@ -293,6 +294,12 @@ export class CinematicRenderer {
     this._applyMaterials()
   }
 
+  /** Label values hidden from view, e.g. NiiVue's volume.hiddenLabels from the legend. */
+  setHiddenLabels(values) {
+    this.hiddenLabels = new Set(values)
+    this._applyMaterials()
+  }
+
   _applyMaterials() {
     const t = this.labelTable
     const isOn = !!(this.labels && t)
@@ -301,10 +308,11 @@ export class CinematicRenderer {
     if (isOn) {
       for (let i = 1; i < t.labels.length && i < HIDDEN_LABEL; i++) {
         const k = t.I?.[i] ?? i
-        m.set([t.R[i] / 255, t.G[i] / 255, t.B[i] / 255, t.A[i] / 255], k * 8)
+        const opacity = this.hiddenLabels.has(k) ? 0 : t.A[i] / 255
+        m.set([t.R[i] / 255, t.G[i] / 255, t.B[i] / 255, opacity], k * 8)
         const surface = (t.surface?.[i] ?? 0) / 255
         m.set([t.lo[i], t.hi[i], (t.S?.[i] ?? 0) / 255, surface], k * 8 + 4)
-        isVisible[k] = t.A[i] > 0 ? 1 : 0
+        isVisible[k] = opacity > 0 ? 1 : 0
       }
     }
     this.device.queue.writeBuffer(this.materialBuffer, 0, m)

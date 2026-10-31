@@ -124,7 +124,23 @@ type LutDef = {
   // Suggested display window, e.g. the Hounsfield range a CT colormap targets.
   min?: number
   max?: number
-}
+} & Pick<ColorMap, (typeof CINEMATIC_KEYS)[number]>
+
+// Optional cinematic transfer-function and label-material keys that
+// addColormap keeps (see ColorMap). Deep-copied so later edits to the
+// caller's object do not reach the registry.
+const CINEMATIC_KEYS = [
+  'E',
+  'S',
+  'gradient',
+  'gMax',
+  'shininess',
+  'labelBlend',
+  'lo',
+  'hi',
+  'surface',
+  'normalize',
+] as const
 let _lutIndex: Map<string, LutDef> | null = null
 
 function buildLutIndex(): Map<string, LutDef> {
@@ -394,7 +410,8 @@ export function customColormaps(): Record<string, ColorMap> {
  * LUT fills the full range instead of collapsing to the first N slots).
  *
  * A `labels` array (empty is fine) makes it a label table: `I` then defaults
- * to 0..n-1 and a single entry is allowed.
+ * to 0..n-1 and a single entry is allowed. `min`/`max` (min < max) and the
+ * cinematic keys (CINEMATIC_KEYS) are kept.
  *
  * @returns The canonical name under which the colormap was stored, so
  *   callers can emit events or round-trip the value without re-applying
@@ -405,7 +422,7 @@ export function customColormaps(): Record<string, ColorMap> {
 export function addColormap(
   name: string,
   cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
-    Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
+    Partial<Omit<ColorMap, 'R' | 'G' | 'B'>>,
 ): string {
   const R = cmap.R.map(Number)
   const G = cmap.G.map(Number)
@@ -455,6 +472,20 @@ export function addColormap(
   const map = buildLutIndex()
   const entry: LutDef = { R, G, B, A, I }
   if (Array.isArray(cmap.labels)) entry.labels = cmap.labels.slice()
+  // Same rule as bundled LUTs: min = max means "no window".
+  if (
+    typeof cmap.min === 'number' &&
+    typeof cmap.max === 'number' &&
+    cmap.min < cmap.max
+  ) {
+    entry.min = cmap.min
+    entry.max = cmap.max
+  }
+  for (const key of CINEMATIC_KEYS) {
+    if (cmap[key] !== undefined) {
+      Object.assign(entry, { [key]: structuredClone(cmap[key]) })
+    }
+  }
   map.set(canonical, entry)
   _revisions.set(canonical, (_revisions.get(canonical) ?? 0) + 1)
   return canonical

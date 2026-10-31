@@ -103,6 +103,7 @@ import type {
   AnnotationTool,
   BackendType,
   CanvasViewport,
+  CinematicOptions,
   ColorMap,
   CompletedMeasurement,
   CustomLayoutTile,
@@ -1576,11 +1577,13 @@ export default class NiiVue extends EventTarget {
   /**
    * What the 3D render tile draws: `VOLUME_RENDER_MODE.COMPOSITE` (default, the
    * OVER ray-march), `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity
-   * projection), or `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
+   * projection), `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
    * crosshair planes, composited front to back, with overlays sampled on them
-   * as the 2D tiles do). 2D slices draw a single plane and are unaffected.
+   * as the 2D tiles do), or `VOLUME_RENDER_MODE.CINEMATIC` (progressive path
+   * tracing of the background volume and a label volume, see
+   * {@link volumeCinematic}). 2D slices draw a single plane and are unaffected.
    *
-   * Only those three values are stored: a fractional value rounds to the
+   * Only those four values are stored: a fractional value rounds to the
    * nearest mode and anything else falls back to COMPOSITE (see
    * {@link normalizeVolumeRenderMode}), because the shaders test the mode by
    * proximity while the CPU tests it exactly, and a value in between would have
@@ -1824,6 +1827,24 @@ export default class NiiVue extends EventTarget {
     this.emit('change', {
       property: 'volumeSilhouette',
       value: this.model.volume.silhouette,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Settings of `VOLUME_RENDER_MODE.CINEMATIC` (light, shadows, ambient
+   * occlusion, exposure, step, frame count, label mode). The setter merges a
+   * partial object over the current settings and restarts refinement.
+   */
+  get volumeCinematic(): CinematicOptions {
+    return this.model.volume.cinematic
+  }
+  set volumeCinematic(v: Partial<CinematicOptions>) {
+    // Replace, never mutate: the initial object may be shared with a document.
+    this.model.volume.cinematic = { ...this.model.volume.cinematic, ...v }
+    this.emit('change', {
+      property: 'volumeCinematic',
+      value: this.model.volume.cinematic,
     })
     this.drawScene()
   }
@@ -6652,6 +6673,12 @@ export default class NiiVue extends EventTarget {
    * shows it. Other viewers keep the old colours until their volume is
    * given the colormap again (`setVolume`).
    *
+   * `min`/`max` (with `min < max`) give a suggested display window, applied
+   * when a volume is given this colormap without calMin/calMax. The optional
+   * cinematic keys (`E`, `S`, `gradient`, `gMax`, `shininess`, `labelBlend`;
+   * label tables: `S`, `lo`, `hi`, `surface`, `normalize`) are kept for
+   * `VOLUME_RENDER_MODE.CINEMATIC`; see {@link ColorMap}.
+   *
    * @returns The canonical name under which the colormap was stored
    *   (first letter upper-cased), which is the form visible in `nv1.colormaps`
    *   and the `colormapAdded` event detail.
@@ -6665,7 +6692,7 @@ export default class NiiVue extends EventTarget {
   addColormap(
     name: string,
     cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
-      Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
+      Partial<Omit<ColorMap, 'R' | 'G' | 'B'>>,
   ): string {
     const canonical = NVCmaps.addColormap(name, cmap)
     const def = NVCmaps.lookupColorMap(canonical)

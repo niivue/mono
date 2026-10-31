@@ -875,6 +875,8 @@ export function applyDocumentToModel(
     [0, 1],
     C.VOLUME_DEFAULTS.silhouette,
   )
+  // A document from another release may lack newer keys.
+  v.cinematic = { ...C.VOLUME_DEFAULTS.cinematic, ...v.cinematic }
   Object.assign(
     model.mesh,
     fillGroup('mesh', model.mesh, C.MESH_DEFAULTS, doc.mesh, fill),

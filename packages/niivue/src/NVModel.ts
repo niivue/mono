@@ -359,6 +359,11 @@ export default class NVModel {
       ...(options.volumeSilhouette !== undefined && {
         silhouette: options.volumeSilhouette,
       }),
+      // A copy: setters replace it, but never alias the defaults constant.
+      cinematic: {
+        ...NVConstants.VOLUME_DEFAULTS.cinematic,
+        ...options.volumeCinematic,
+      },
     }
     // Mesh — flat options mapped to mesh group
     this.mesh = {

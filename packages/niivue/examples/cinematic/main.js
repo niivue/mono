@@ -85,6 +85,13 @@ const SAMPLES = [
     },
   },
   {
+    // Bundled with the dev images; the greyscale default suits non-CT scans.
+    id: 'mr-mni152',
+    name: 'MNI152 T1 brain (default preset)',
+    url: '/volumes/mni152.nii.gz',
+    tf: 'cr_default',
+  },
+  {
     id: 'mr-siam',
     name: 'MR T1 brain + SIAM labels',
     url: `${LFS_BASE}MR_T1_brain.nii.gz?v=1`,

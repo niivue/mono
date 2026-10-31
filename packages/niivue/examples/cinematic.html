@@ -9,7 +9,7 @@
     <style>
       #view { flex: 1; min-height: 0; position: relative; }
       #view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-      /* The cinematic image overlays NiiVue's canvas; NiiVue keeps the mouse. */
+      /* The cinematic image sits under NiiVue's (transparent) canvas. */
       #cine { pointer-events: none; }
       footer { display: flex; justify-content: space-between; gap: 12px; }
       #controls { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 4px; font-size: 12px; }
@@ -42,13 +42,15 @@
       </select>
       <label for="cutawayCheck">Cutaway</label>
       <input type="checkbox" id="cutawayCheck" />
+      <label for="webgpuCheck" title="NiiVue backend for the classic view and orientation cube; cinematic always uses WebGPU">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" />
       <button type="button" id="restartBtn">Restart</button>
       <button type="button" id="saveBtn">Save PNG</button>
     </header>
     <div id="controls"></div>
     <main id="view">
-      <canvas id="gl1"></canvas>
       <canvas id="cine"></canvas>
+      <canvas id="gl1"></canvas>
     </main>
     <footer id="location">
       <span>Drag to rotate, scroll to zoom. Cinematic refines progressively while the camera is still (WebGPU).</span>

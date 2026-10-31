@@ -2027,7 +2027,7 @@ WebGPU-only example, not yet in `src/`: `examples/cinematic.html` + `examples/ci
 **Files:** `main.js` (UI, samples, camera sync), `renderer.js` (passes, textures), `tf.js` (cmap baking), `cr_*.json` (presets), WGSL: `gradient`, `extinction`, `downsample`, `cinematic`, `display`, and `tfcommon` (TF lookup + extinction, prepended to `cinematic` and `extinction` so primary and shadow rays classify identically).
 
 **Architecture:**
-- One NiiVue instance; Classic/Cinematic dropdown. The cinematic image draws on an overlay canvas using NiiVue's camera: `main.js` imports internal `calculateMvpMatrix` (`src/math/NVTransforms.ts`) and reads `nv1.model`.
+- One NiiVue instance; Classic/Cinematic dropdown; WebGPU checkbox switches NiiVue's backend (cinematic is always WebGPU). In cinematic mode the cinematic canvas sits under NiiVue's, which gets a transparent background and volume opacity 0, so NiiVue keeps the mouse and draws only the orientation cube and crosshair (and skips the classic render). The cinematic image uses NiiVue's camera: `main.js` imports internal `calculateMvpMatrix` (`src/math/NVTransforms.ts`) and reads `nv1.model`.
 - Progressive: one jittered sample per pixel per frame, accumulated; camera polled each rAF, change resets accumulation.
 - Volume uploaded as raw HU (`r16float`). Gradient: 3D Sobel of raw HU (`rgba16float`, dHU/dvoxel), converted to HU/mm in shader.
 - 2D TF lookup: HU x sqrt-spaced gradient magnitude.
@@ -2055,7 +2055,6 @@ Presets: `cr_skin_bone`, `cr_bone`, `cr_angio`, `cr_angio_1d` (angio without gra
 - WebGPU only. Backend parity rule applies once it moves into `src/` (needs WebGL2 port).
 - Gradient thresholds (HU/mm) tuned on ~1.5 mm data; not resolution invariant. Fix: smooth with a fixed-mm kernel before Sobel.
 - Gradient texture costs 8 B/voxel.
-- Overlay hides NiiVue's orientation cube.
 - Depends on internal `calculateMvpMatrix`.
 - Extinction classifies HU at voxel centres while the march samples interpolated HU, so a narrow band-pass TF can be skipped where an edge crosses the band between voxels (e.g. air-to-bone with no soft-tissue voxel). Fix if seen: per-block HU min/max tested against the TF.
 - Requires `Float16Array` (all WebGPU browsers since 2025).

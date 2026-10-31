@@ -74,8 +74,9 @@ const SLIDERS = [
   ['specular', 0, 3, 0.05],
 ]
 
+const BACKGROUND = [0, 0, 0, 1]
 const nv1 = new NiiVue({
-  backgroundColor: [0, 0, 0, 1],
+  backgroundColor: BACKGROUND,
   sliceType: SLICE_TYPE.RENDER,
   isOrientCubeVisible: true,
 })
@@ -162,7 +163,7 @@ function syncCamera() {
     md.volumes[0]?.obliqueRAS,
     md.scene.renderPan,
   )
-  cr.background = [...nv1.backgroundColor]
+  cr.background = BACKGROUND
   cr.setCamera(mvp, model)
   cr.setClip(md.clipPlanes, md.scene.isClipPlaneCutaway)
 }
@@ -210,21 +211,38 @@ cutawayCheck.onchange = () => {
   nv1.isClipPlaneCutaway = cutawayCheck.checked
 }
 
+// Cinematic draws beneath NiiVue's canvas. NiiVue keeps the mouse and its
+// orientation cube, with a transparent background and a hidden volume (which
+// also spares the GPU the classic render).
 function applyMode() {
   const isCinematic = modeSelect.value === 'cinematic'
   cine.style.visibility = isCinematic ? 'visible' : 'hidden'
+  nv1.backgroundColor = isCinematic
+    ? [...BACKGROUND.slice(0, 3), 0]
+    : BACKGROUND
+  if (nv1.volumes.length) nv1.setVolume(0, { opacity: isCinematic ? 0 : 1 })
   for (const el of [controls, restartBtn, saveBtn]) el.hidden = !isCinematic
   statusText.textContent = ''
   cameraKey = ''
 }
 
 modeSelect.onchange = applyMode
+// NiiVue's backend (classic view, cube, mouse). The cinematic renderer is
+// WebGPU-only for now; a WebGL2 port comes when it moves into src/.
+webgpuCheck.checked = nv1.opts.backend === 'webgpu'
+webgpuCheck.onchange = async () => {
+  await nv1.reinitializeView({
+    backend: webgpuCheck.checked ? 'webgpu' : 'webgl2',
+  })
+  applyMode()
+}
 // One load at a time: loadVolumes commits whichever fetch finishes last, so an
 // overlapping selection could show a different scan than the one selected.
 async function loadSelectedVolume() {
   volumeSelect.disabled = true
   try {
     await loadVolume()
+    applyMode() // a new volume loads opaque
   } finally {
     volumeSelect.disabled = false
   }

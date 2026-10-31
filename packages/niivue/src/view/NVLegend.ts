@@ -347,34 +347,33 @@ export function buildLegendLabels(
     batches.push(marginBatch)
 
     // Create color box as a GlyphBatch with no glyphs, just a colored backing
-    const colorBoxBatch: GlyphBatch = {
+    const color: [number, number, number, number] = [
+      entry.color[0] / 255,
+      entry.color[1] / 255,
+      entry.color[2] / 255,
+      entry.color[3] / 255,
+    ]
+    const box = (x: number, y: number, w: number, h: number): GlyphBatch => ({
       data: new Float32Array(0),
       count: 0,
-      backColor: [
-        entry.color[0] / 255,
-        entry.color[1] / 255,
-        entry.color[2] / 255,
-        entry.color[3] / 255,
-      ],
-      backRect: [boxX, boxY, layout.boxSize, layout.boxSize],
+      backColor: color,
+      backRect: [x, y, w, h],
       backRadius: 0, // Sharp corners for color box
-    }
-    batches.push(colorBoxBatch)
+    })
+    const size = layout.boxSize
     if (entry.isHidden) {
-      // Hidden label: punch out the box centre so only an outline remains.
-      const inset = Math.max(1, layout.boxSize * 0.2)
-      batches.push({
-        data: new Float32Array(0),
-        count: 0,
-        backColor: [...canvasBackColor, 1],
-        backRect: [
-          boxX + inset,
-          boxY + inset,
-          layout.boxSize - 2 * inset,
-          layout.boxSize - 2 * inset,
-        ],
-        backRadius: 0,
-      })
+      // Hidden label: an outline in the label colour. Four bars rather than a
+      // punched-out centre, which would need an opaque colour matching the
+      // backing and vanishes on a transparent canvas.
+      const t = Math.max(1, Math.round(size * 0.2))
+      batches.push(
+        box(boxX, boxY, size, t),
+        box(boxX, boxY + size - t, size, t),
+        box(boxX, boxY + t, t, size - 2 * t),
+        box(boxX + size - t, boxY + t, t, size - 2 * t),
+      )
+    } else {
+      batches.push(box(boxX, boxY, size, size))
     }
 
     // Create text label next to the color box (no backing)

@@ -1044,8 +1044,7 @@ export type InteractionConfig = {
   wheelZoomAnchor: WheelZoomAnchor
   // V key cycles sliceType (NiiVue 0.6 had this always on; opt-in here).
   isViewModeHotKeyEnabled: boolean
-  // Clicking a volume legend entry's colour box hides/shows that label
-  // (`hiddenLabels`); clicking its name still moves the crosshair.
+  // See NiiVue.isLegendToggleEnabled.
   isLegendToggleEnabled: boolean
   // Opt-in: when the 2D views are zoomed in (pan2Dxyzmm[3] > 1) and the
   // crosshair moves on its own (keyboard, API, linked instance), pan just

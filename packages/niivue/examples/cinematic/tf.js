@@ -8,6 +8,9 @@
 //   gradient: { lo, hi }  HU/mm ramp from interior to surface (default 20, 200)
 //   gMax      HU/mm at the top table row (default 1000)
 //   shininess Blinn-Phong exponent (default 40)
+//   labelBlend 0-1: with a segmentation, this table shapes labelled tissue
+//      too and the label colour is mixed in by this fraction (0 = the label
+//      material table shapes it)
 // The gradient axis is sqrt-spaced (row y holds g = (y/63)^2 * gMax), matching tfY().
 
 export const TF_W = 256
@@ -64,5 +67,6 @@ export function bakeTransferFunction(cmap) {
     huMax: cmap.max,
     gMax,
     shininess: cmap.shininess ?? 40,
+    labelBlend: cmap.labelBlend ?? 0,
   }
 }

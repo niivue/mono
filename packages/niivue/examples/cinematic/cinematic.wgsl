@@ -18,7 +18,7 @@ struct Params {
   clip: array<vec4f, 6>,
   clipN: array<vec4f, 6>, // unit plane normals in mm space
   clipInfo: vec4f, // active plane count, cutaway (0/1), -, -
-  labelInfo: vec4f, // labels on (0/1), unlabeled tissue scale, -, -
+  labelInfo: vec4f, // labels on (0/1), unlabeled tissue scale, label colour blend (0 = label materials), -
 }
 
 @group(0) @binding(0) var huTex: texture_3d<f32>;
@@ -202,10 +202,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (isLabelOn) { id = materialId(pf); }
     // Skip the gradient fetch where nothing can show: tfMaxA is the most
     // opaque this HU gets at any gradient in the base table (label 0).
+    // Blend mode: the intensity table shapes every sample and the label only
+    // tints and gates it, for a softer, volumetric look.
+    let isBlend = P.labelInfo.z > 0.0;
     var isEmpty = labelAlpha(id, hu) < 0.001;
-    if (id == 0u) {
-      let unlabeled = select(1.0, P.labelInfo.y, isLabelOn);
-      isEmpty = textureSampleLevel(tfMaxA, samp, vec2f(x, 0.5), 0.0).r * unlabeled < 0.001;
+    if (id == 0u || isBlend) {
+      let gate = select(materials[2u * id].a, select(1.0, P.labelInfo.y, isLabelOn), id == 0u);
+      isEmpty = textureSampleLevel(tfMaxA, samp, vec2f(x, 0.5), 0.0).r * gate < 0.001;
     }
     if (isEmpty) {
       prevMag = 0.0;
@@ -224,6 +227,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     var surfBase = m.g;
     if (id == 0u) {
       c.a *= select(1.0, P.labelInfo.y, isLabelOn);
+    } else if (isBlend) {
+      let mat0 = materials[2u * id];
+      c = vec4f(mix(c.rgb, mat0.rgb, P.labelInfo.z), c.a * mat0.a);
     } else {
       c = vec4f(materials[2u * id].rgb, labelAlpha(id, hu));
       // A label boundary is a surface even where the HU step is modest

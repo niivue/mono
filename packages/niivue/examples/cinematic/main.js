@@ -6,9 +6,11 @@ import angio1d from './cr_angio_1d.json'
 import bone from './cr_bone.json'
 import skinBone from './cr_skin_bone.json'
 import t1 from './cr_t1.json'
+import t1Mod from './cr_t1_mod.json'
 import { CinematicRenderer, DEFAULT_SETTINGS } from './renderer.js'
 import siamT1 from './siam_t1.json'
 import { bakeTransferFunction } from './tf.js'
+import tsAbdoPelvis from './ts_abdopelvis.json'
 import tsWholeBody from './ts_wholebody.json'
 
 const PRESETS = {
@@ -17,6 +19,7 @@ const PRESETS = {
   cr_angio: angio,
   cr_angio_1d: angio1d,
   cr_t1: t1,
+  cr_t1_mod: t1Mod,
 }
 
 // ?url=... adds a volume; ?tf=... picks a preset; ?mode=classic|cinematic;
@@ -62,6 +65,16 @@ const SAMPLES = [
       url: `${LFS_BASE}CT_WholeBody_labels.nii.gz?v=1`,
       colormap: 'ts_wholebody',
       table: tsWholeBody,
+    },
+  },
+  {
+    name: 'CT_AbdoPelvis + labels (smaller, 20 MB)',
+    url: `${LFS_BASE}CT_AbdoPelvis.nii.gz?v=1`,
+    tf: 'cr_skin_bone',
+    labels: {
+      url: `${LFS_BASE}CT_AbdoPelvis_labels.nii.gz?v=1`,
+      colormap: 'ts_abdopelvis',
+      table: tsAbdoPelvis,
     },
   },
   {

@@ -31,7 +31,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     var a = textureSampleLevel(tfColor, samp, tfUV(hu, g, E.tf), 0.0).a;
     if (E.labelInfo.x > 0.5) {
       let id = textureLoad(matTex, p, 0).r;
-      a = select(labelAlpha(id, hu), a * E.labelInfo.y, id == 0u);
+      if (id == 0u) {
+        a *= E.labelInfo.y;
+      } else if (E.labelInfo.z > 0.0) {
+        a *= materials[2u * id].a; // blend mode: intensity shapes, label gates
+      } else {
+        a = labelAlpha(id, hu);
+      }
     }
     sigma += extinction(a, E.tf.w);
   }

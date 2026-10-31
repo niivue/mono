@@ -370,9 +370,15 @@ export class CinematicRenderer {
     )
   }
 
-  // (labels on, unlabeled scale, -, -)
+  // (labels on, unlabeled scale, label colour blend, -). A transfer function
+  // with labelBlend > 0 shapes labelled tissue itself; labels only tint it.
   _labelInfo() {
-    return [this.isLabelOn ? 1 : 0, this.unlabeledScale, 0, 0]
+    return [
+      this.isLabelOn ? 1 : 0,
+      this.unlabeledScale,
+      this.tf?.labelBlend ?? 0,
+      0,
+    ]
   }
 
   /** planes: NiiVue model.clipPlanes (flat [nx, ny, nz, depth] x 6, |depth| > 1 = off). */

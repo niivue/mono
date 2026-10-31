@@ -2058,6 +2058,7 @@ Presets: `cr_skin_bone`, `cr_bone`, `cr_angio`, `cr_angio_1d` (angio without gra
 - Depends on internal `calculateMvpMatrix`.
 - Extinction classifies HU at voxel centres while the march samples interpolated HU, so a narrow band-pass TF can be skipped where an edge crosses the band between voxels (e.g. air-to-bone with no soft-tissue voxel). Fix if seen: per-block HU min/max tested against the TF.
 - Requires `Float16Array` (all WebGPU browsers since 2025).
+- Angio preset on non-contrast CT (e.g. CT_Philips): orbits, hyoid and vertebrae render red. Tried and reverted (2026-10-31): an LH-style probe (one HU fetch ~2 mm up the gradient; brighter neighbour > threshold -> edge alpha). Two thirds of the red voxels are low-density bone (median 234 HU, modest gradient) with no voxel > 650 HU within 2 voxels, so the probe removed ~0.3% (650 HU) to 3.5% (450 HU) of red pixels while altering true vessels on CT_Abdo. Cancellous bone and contrast blood share 150-400 HU; fix with labels (bone mask) or a non-contrast preset.
 
 **Next:** label-driven materials from segmentation (TotalSegmentator), including a body mask to remove the scanner table (new segmentation in progress); reduced quality while dragging.
 

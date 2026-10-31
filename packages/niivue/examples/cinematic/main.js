@@ -1,6 +1,4 @@
-import NiiVue, { getImageDataRAS, SLICE_TYPE } from '../../src/index.ts'
-// Internal: the cinematic overlay must use exactly NiiVue's render camera.
-import { calculateMvpMatrix } from '../../src/math/NVTransforms.ts'
+import NiiVue, { SLICE_TYPE, VOLUME_RENDER_MODE } from '../../src/index.ts'
 import angio from './cr_angio.json'
 import angio1d from './cr_angio_1d.json'
 import bone from './cr_bone.json'
@@ -8,12 +6,12 @@ import ctMod from './cr_ct_mod.json'
 import skinBone from './cr_skin_bone.json'
 import t1 from './cr_t1.json'
 import t1Mod from './cr_t1_mod.json'
-import { CinematicRenderer, DEFAULT_SETTINGS } from './renderer.js'
 import siamT1 from './siam_t1.json'
-import { bakeTransferFunction } from './tf.js'
 import tsAbdoPelvis from './ts_abdopelvis.json'
 import tsWholeBody from './ts_wholebody.json'
 
+// Transfer functions: NiiVue colormaps with the optional cinematic keys
+// (E, S, gradient, gMax, shininess, labelBlend; see ColorMap).
 const PRESETS = {
   cr_skin_bone: skinBone,
   cr_bone: bone,
@@ -24,8 +22,9 @@ const PRESETS = {
   cr_t1_mod: t1Mod,
 }
 
-// ?sample=<id> picks a sample; ?url=... adds a volume; ?tf=... picks a preset; ?mode=classic|cinematic;
-// ?clip=0..6 picks a clip preset, ?cutaway=1.
+// ?sample=<id> picks a sample; ?url=... adds a volume; ?tf=... picks a preset;
+// ?mode=classic|cinematic; ?clip=0..6 picks a clip preset, ?cutaway=1;
+// ?backend=webgl2|webgpu; ?azimuth=, ?elevation=; ?<setting>= sets a slider.
 const params = new URLSearchParams(location.search)
 // Calibrated (int16 Hounsfield) CT samples, each with a suggested preset.
 // CT_AVM and CT_pitch in the same repository are uint8, so HU presets do not apply.
@@ -35,7 +34,7 @@ const DEMO_BASE =
 const LFS_BASE =
   'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/'
 // labels: a label image on the same grid, with a material table (label
-// colormap plus per-label S and lo/hi HU ramp) registered as a colormap.
+// colormap plus per-label S, lo/hi intensity ramp, surface, normalize).
 const SAMPLES = [
   {
     id: 'ct-abdo',
@@ -128,12 +127,12 @@ const SLIDERS = [
   ['exposure', 0.2, 4, 0.05],
   ['stepVoxels', 0.25, 2, 0.05],
   ['maxFrames', 1, 1024, 1],
-  ['scale', 0.25, 1, 0.05],
   ['specular', 0, 3, 0.05],
 ]
 
 let background = [0, 0, 0, 1]
 const nv1 = new NiiVue({
+  backend: params.get('backend') === 'webgl2' ? 'webgl2' : 'webgpu',
   backgroundColor: background,
   // Occluded crosshair arms show faintly, as in vox.clip.html with XRay on.
   meshXRay: 0.1,
@@ -144,24 +143,9 @@ const nv1 = new NiiVue({
   isOrientCubeVisible: true,
 })
 await nv1.attachToCanvas(gl1)
-// Without WebGPU the page still offers the classic view: a no-op stand-in
-// keeps every renderer call valid while cinematic mode stays disabled.
-const noop = () => {}
-let unavailable = ''
-const cr = await CinematicRenderer.create(cine).catch((err) => {
-  unavailable = `Cinematic needs WebGPU: ${err.message}`
-  modeSelect.value = 'classic'
-  modeSelect.disabled = true
-  return new Proxy(
-    { settings: {}, averageMs: null },
-    {
-      // 'then' must stay undefined, or await would treat the stand-in as a
-      // promise that never settles.
-      get: (target, key) =>
-        key in target ? target[key] : key === 'then' ? undefined : noop,
-    },
-  )
-})
+// For scripted checks (e.g. headless screenshots).
+window.nv1 = nv1
+for (const [name, cmap] of Object.entries(PRESETS)) nv1.addColormap(name, cmap)
 
 const sliders = {}
 for (const [key, min, max, step] of SLIDERS) {
@@ -171,21 +155,22 @@ for (const [key, min, max, step] of SLIDERS) {
     min,
     max,
     step,
-    value: params.get(key) ?? DEFAULT_SETTINGS[key],
+    value: params.get(key) ?? nv1.volumeCinematic[key],
   })
   const out = document.createElement('output')
   out.textContent = input.value
   input.oninput = () => {
     out.textContent = input.value
-    cr.setSettings({ [key]: Number(input.value) })
+    nv1.volumeCinematic = { [key]: Number(input.value) }
   }
   label.append(key, input, out)
   controls.append(label)
-  cr.settings[key] = Number(input.value)
   sliders[key] = input
+  if (params.has(key)) input.oninput()
 }
 
-// Render settings a material table suggests (e.g. stronger AO), shown on the sliders.
+// Render settings a material table suggests (e.g. stronger AO), shown on the
+// sliders. The table's `settings` key is demo-only.
 function applySuggestedSettings(settings = {}) {
   for (const [key, value] of Object.entries(settings)) {
     if (!sliders[key]) continue
@@ -194,165 +179,55 @@ function applySuggestedSettings(settings = {}) {
   }
 }
 
-function applyTransferFunction() {
-  const cmap = PRESETS[tfSelect.value]
-  cr.setTransferFunction(bakeTransferFunction(cmap))
-  // The extended table is still a plain NiiVue colormap: E/S/gradient are ignored there.
-  nv1.addColormap(tfSelect.value, cmap)
-  // A calibrated (MRI) preset is in label-median units, not the file's: the
-  // classic view keeps its own grey window.
-  if (selectedSample().labels?.table.normalize) return
-  if (nv1.volumes.length)
+// Cinematic mode bakes volume 0's colormap across its calMin..calMax. A
+// label-calibrated sample (MRI) is calibrated to the table's units, where the
+// preset's own window applies; its classic view keeps NiiVue's grey window.
+function applyColormap() {
+  const vol = nv1.volumes[0]
+  if (!vol) return
+  const isCalibrated = !!selectedSample().labels?.table.normalize
+  const isCinematic = modeSelect.value === 'cinematic'
+  if (!isCalibrated) {
+    const cmap = PRESETS[tfSelect.value]
     nv1.setVolume(0, {
       colormap: tfSelect.value,
       calMin: cmap.min,
       calMax: cmap.max,
     })
+    return
+  }
+  // Passing the current window keeps it (a preset's own window would replace it).
+  nv1.setVolume(0, {
+    colormap: isCinematic ? tfSelect.value : 'gray',
+    calMin: vol.calMin,
+    calMax: vol.calMax,
+  })
 }
 
+let isOwnLoad = false
 async function loadVolume() {
   const sample = selectedSample()
   const labels = sample.labels
   if (labels) nv1.addColormap(labels.colormap, labels.table)
-  await nv1.loadVolumes([
-    { url: sample.url },
-    ...(labels ? [{ url: labels.url, colormap: labels.colormap }] : []),
-  ])
-  adoptVolumes(labels)
-}
-
-// Build the cinematic textures from what NiiVue now holds: volume 0, plus
-// volume 1 as its label image when the sample has labels.
-let adopted = null
-function adoptVolumes(labels) {
-  const vol = nv1.volumes[0]
-  adopted = vol
-  const raw = getImageDataRAS(vol)
-  if (!raw) throw new Error(`${vol.name}: no voxel data`)
-  const slope =
-    Number.isFinite(vol.hdr.scl_slope) && vol.hdr.scl_slope !== 0
-      ? vol.hdr.scl_slope
-      : 1
-  const inter = Number.isFinite(vol.hdr.scl_inter) ? vol.hdr.scl_inter : 0
-  const hu = new Float32Array(raw.length)
-  for (let i = 0; i < raw.length; i++) hu[i] = raw[i] * slope + inter
-  let labelIds = null
-  if (labels) {
-    const lab = nv1.volumes[1]
-    const sameGrid =
-      lab.dimsRAS.every((d, i) => d === vol.dimsRAS[i]) &&
-      lab.frac2mm.every((v, i) => Math.abs(v - vol.frac2mm[i]) < 1e-3)
-    if (!sameGrid)
-      throw new Error(`${lab.name}: labels must share the image's grid`)
-    const raw = getImageDataRAS(lab) ?? []
-    // 255 marks hidden labels in the renderer; larger values would wrap.
-    if (raw.some((v) => v > 254))
-      throw new Error(`${lab.name}: label values must be 0-254`)
-    labelIds = Uint8Array.from(raw)
-    if (labels.table.normalize) calibrate(hu, labelIds, labels.table.normalize)
+  isOwnLoad = true
+  try {
+    await nv1.loadVolumes([
+      { url: sample.url },
+      ...(labels ? [{ url: labels.url, colormap: labels.colormap }] : []),
+    ])
+  } finally {
+    isOwnLoad = false
   }
-  cr.setVolume(hu, vol.dimsRAS.slice(1, 4), vol.frac2mm)
-  applyTransferFunction()
   labelSelect.hidden = !labels
-  if (labels) {
-    const hidden = nv1.volumes[1].hiddenLabels ?? []
-    hiddenKey = hidden.join()
-    cr.setLabels(labelIds, hidden) // built once, by applyLabelMode below
-    applySuggestedSettings(labels.table.settings)
-    applyLabelMode()
-  }
+  if (labels) applySuggestedSettings(labels.table.settings)
+  applyColormap()
 }
 
-// Uncalibrated intensities (MRI): map the median intensity inside each
-// listed label set to its target, piecewise linearly, extrapolating the end
-// segments. e.g. [[[CSF], 0], [[GM], 100], [[WM], 200]] makes per-label
-// ramps and transfer functions portable across scanners.
-function calibrate(img, labelIds, pairs) {
-  const points = pairs
-    .map(([ids, target]) => {
-      const values = []
-      // Every 7th voxel is plenty for a median.
-      for (let i = 0; i < img.length; i += 7) {
-        if (ids.includes(labelIds[i])) values.push(img[i])
-      }
-      values.sort((a, b) => a - b)
-      return [values[values.length >> 1], target]
-    })
-    // An empty label set has no median.
-    .filter(([median]) => Number.isFinite(median))
-    .sort((a, b) => a[0] - b[0])
-  if (points.length < 2)
-    throw new Error('calibration needs two labelled tissues')
-  const map = (v) => {
-    let k = 0
-    while (k < points.length - 2 && v > points[k + 1][0]) k++
-    const [[x0, y0], [x1, y1]] = [points[k], points[k + 1]]
-    // Equal medians give no slope: hold the lower target.
-    return x1 === x0 ? y0 : y0 + ((v - x0) * (y1 - y0)) / (x1 - x0)
-  }
-  for (let i = 0; i < img.length; i++) img[i] = map(img[i])
+// The menu's first entry ("labels only") is the demo's default.
+labelSelect.onchange = () => {
+  nv1.volumeCinematic = { labelMode: labelSelect.value }
 }
-
-// Unlabeled tissue (label 0) uses the base transfer function: hidden for
-// "labels only", shown for "labels + unlabeled"; "no labels" drops the table.
-function applyLabelMode() {
-  const mode = labelSelect.value
-  const table =
-    mode === 'none' ? null : (selectedSample().labels?.table ?? null)
-  cr.setLabelMaterials(table, mode === 'only' ? 0 : 1)
-}
-labelSelect.onchange = applyLabelMode
-
-// Poll NiiVue's camera each frame: rotation, zoom, pan and resize all move it.
-let cameraKey = ''
-function syncCamera() {
-  const md = nv1.model
-  // NiiVue's render tile, not the whole canvas: the legend (and colorbar or
-  // graph) take part of it, which would shift and stretch the cinematic view.
-  const tile = nv1.view?.screenSlices?.find(
-    (t) => t.axCorSag === SLICE_TYPE.RENDER,
-  )
-  const cssPerPx = gl1.clientWidth / gl1.width
-  const [left, top, w, h] = (
-    tile?.leftTopWidthHeight ?? [0, 0, gl1.width, gl1.height]
-  ).map((v) => v * cssPerPx)
-  const pivot = md._renderPivotMM ?? md.pivot3D
-  const key = [
-    md.scene.azimuth,
-    md.scene.elevation,
-    md.scene.scaleMultiplier,
-    ...md.scene.renderPan,
-    ...pivot,
-    md.furthestFromPivot,
-    left,
-    top,
-    w,
-    h,
-    ...md.clipPlanes,
-    md.scene.isClipPlaneCutaway,
-  ].join()
-  if (key === cameraKey) return
-  cameraKey = key
-  Object.assign(cine.style, {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${w}px`,
-    height: `${h}px`,
-  })
-  const [mvp, model] = calculateMvpMatrix(
-    [0, 0, w, h],
-    md.scene.azimuth,
-    md.scene.elevation,
-    pivot,
-    md.furthestFromPivot,
-    md.scene.scaleMultiplier,
-    md.volumes[0]?.obliqueRAS,
-    md.scene.renderPan,
-  )
-  cr.background = background
-  cr.setCamera(mvp, model)
-  cr.setClip(md.clipPlanes, md.scene.isClipPlaneCutaway)
-}
+labelSelect.onchange()
 
 // Clip presets from vox.clip.html: [depth, azimuth, elevation] per plane.
 // Depth > 1 disables a plane. Right-drag on the render also moves plane 0.
@@ -397,45 +272,28 @@ cutawayCheck.onchange = () => {
   nv1.isClipPlaneCutaway = cutawayCheck.checked
 }
 
-// Cinematic draws beneath NiiVue's canvas. NiiVue keeps the mouse, the
-// orientation cube and the crosshair, over a transparent background.
-// NiiVue skips its volume draw below opacity 1/255, and with it the depth
-// that hides crosshair arms behind the volume. Just above that it still writes
-// depth at the first hit while tinting the image by at most one 8-bit level.
-const DEPTH_ONLY_OPACITY = 1.01 / 255
+let loadError = ''
 function applyMode() {
   const isCinematic = modeSelect.value === 'cinematic'
-  cine.style.visibility = isCinematic ? 'visible' : 'hidden'
-  // Premultiplied canvas: transparent must be all zero, or its colour adds on top.
-  view.style.background = `rgb(${background
-    .slice(0, 3)
-    .map((c) => Math.round(c * 255))
-    .join()})`
-  nv1.backgroundColor = isCinematic ? [0, 0, 0, 0] : background
-  if (nv1.volumes.length) {
-    nv1.setVolume(0, { opacity: isCinematic ? DEPTH_ONLY_OPACITY : 1 })
-  }
-  // The label overlay is for the classic view; cinematic draws labels itself.
-  if (nv1.volumes.length > 1) nv1.setVolume(1, { opacity: isCinematic ? 0 : 1 })
+  nv1.volumeRenderMode = isCinematic
+    ? VOLUME_RENDER_MODE.CINEMATIC
+    : VOLUME_RENDER_MODE.COMPOSITE
+  applyColormap()
   const backend = nv1.opts.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
   modeText.textContent = `${isCinematic ? 'Cinematic' : 'Classic'} (${backend})`
-  for (const el of [controls, restartBtn, saveBtn]) el.hidden = !isCinematic
-  timeText.textContent = loadError || unavailable
-  cameraKey = ''
+  controls.hidden = !isCinematic
+  timeText.textContent = loadError
 }
-
 modeSelect.onchange = applyMode
-// NiiVue's backend (classic view, cube, mouse). The cinematic renderer is
-// WebGPU-only for now; a WebGL2 port comes when it moves into src/.
+
 colorBtn.oninput = () => {
   const hex = colorBtn.value
   background = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
   background.push(1)
-  applyMode() // re-applies the per-mode background and restarts refinement
+  nv1.backgroundColor = background
 }
 aaCheck.onchange = async () => {
   await nv1.reinitializeView({ isAntiAlias: aaCheck.checked })
-  applyMode()
 }
 webgpuCheck.checked = nv1.opts.backend === 'webgpu'
 webgpuCheck.onchange = async () => {
@@ -446,30 +304,27 @@ webgpuCheck.onchange = async () => {
 }
 // One load at a time: loadVolumes commits whichever fetch finishes last, so an
 // overlapping selection could show a different scan than the one selected.
-let loadError = ''
 async function loadSelectedVolume() {
   volumeSelect.disabled = true
   try {
     loadError = ''
     await loadVolume()
-    applyMode() // a new volume loads opaque
   } catch (err) {
     // e.g. a sample not yet on the demo-images main branch (404)
     loadError = `Load failed: ${err.message}`
-    timeText.textContent = loadError
     console.error(err)
   } finally {
     volumeSelect.disabled = false
+    timeText.textContent = loadError
   }
 }
-// A volume dropped on the canvas replaces NiiVue's; adopt it as a new,
-// unlabelled sample with the current preset. Our own loads disable the menu.
+// A volume dropped on the canvas replaces NiiVue's; show it with the current
+// preset as an unlabelled "(dropped)" sample.
 nv1.addEventListener('volumeLoaded', () => {
   const vol = nv1.volumes[0]
-  if (volumeSelect.disabled || !vol || vol === adopted) return
+  if (isOwnLoad || !vol) return
   // Label-calibrated or label-modulated presets need labels a drop lacks.
-  const preset = PRESETS[tfSelect.value]
-  if (preset.labelBlend || tfSelect.value === 'cr_t1')
+  if (PRESETS[tfSelect.value].labelBlend || tfSelect.value === 'cr_t1')
     tfSelect.value = 'cr_skin_bone'
   SAMPLES.push({
     id: 'dropped',
@@ -479,13 +334,8 @@ nv1.addEventListener('volumeLoaded', () => {
   })
   volumeSelect.add(new Option(SAMPLES.at(-1).name, String(SAMPLES.length - 1)))
   volumeSelect.value = String(SAMPLES.length - 1)
-  try {
-    loadError = ''
-    adoptVolumes(null)
-  } catch (err) {
-    loadError = `Load failed: ${err.message}`
-  }
-  applyMode() // the dropped volume arrives opaque
+  labelSelect.hidden = true
+  applyColormap()
 })
 volumeSelect.onchange = () => {
   // A dropped volume is gone once replaced, so its entry cannot be reloaded.
@@ -497,38 +347,8 @@ volumeSelect.onchange = () => {
   tfSelect.value = selectedSample().tf
   loadSelectedVolume()
 }
-tfSelect.onchange = applyTransferFunction
-restartBtn.onclick = () => cr.reset()
-saveBtn.onclick = () => {
-  cr.redisplay() // a WebGPU canvas is only readable in the task that drew it
-  const a = Object.assign(document.createElement('a'), {
-    href: cine.toDataURL('image/png'),
-    download: 'cinematic.png',
-  })
-  a.click()
-}
-
-// The legend toggles NiiVue's per-volume hiddenLabels; mirror them here.
-let hiddenKey = ''
-function syncHiddenLabels() {
-  const hidden = nv1.volumes[1]?.hiddenLabels ?? []
-  const key = hidden.join()
-  if (key === hiddenKey) return
-  hiddenKey = key
-  cr.setHiddenLabels(hidden)
-}
-
-function tick() {
-  if (modeSelect.value === 'cinematic' && nv1.volumes.length) {
-    syncCamera()
-    syncHiddenLabels()
-    cr.render()
-    const ms = cr.averageMs
-    const text = loadError || (ms === null ? '' : `${ms.toFixed(0)} ms/frame`)
-    if (timeText.textContent !== text) timeText.textContent = text
-  }
-  requestAnimationFrame(tick)
-}
+tfSelect.onchange = applyColormap
+saveBtn.onclick = () => nv1.saveBitmap('cinematic.png')
 
 await loadSelectedVolume()
 if (params.has('azimuth')) nv1.azimuth = Number(params.get('azimuth'))
@@ -538,4 +358,3 @@ cutawayCheck.checked = params.get('cutaway') === '1'
 clipSelect.onchange()
 cutawayCheck.onchange()
 applyMode()
-requestAnimationFrame(tick)

@@ -3,15 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-    <title>NiiVue - Cinematic CT (prototype)</title>
+    <title>NiiVue - Cinematic rendering</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/niivue.css" />
     <style>
       #view { flex: 1; min-height: 0; position: relative; }
       #view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-      /* The cinematic image sits under NiiVue's (transparent) canvas. */
-      /* Sized to NiiVue's render tile by main.js. */
-      #cine { pointer-events: none; right: auto; bottom: auto; }
       footer { display: flex; justify-content: space-between; gap: 12px; }
       #controls { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 4px; font-size: 12px; }
       #controls label { display: inline-flex; align-items: center; gap: 4px; }
@@ -52,16 +49,14 @@
       <label for="cutawayCheck">Cutaway</label>
       <input type="checkbox" id="cutawayCheck" />
       <input type="color" id="colorBtn" value="#000000" title="Background color" />
-      <label for="aaCheck" title="Antialiasing smooths jagged edges at some cost in speed (NiiVue's view; the cinematic image smooths itself as it refines)">AA</label>
-      <input type="checkbox" id="aaCheck" checked title="Antialiasing smooths jagged edges at some cost in speed (NiiVue's view; the cinematic image smooths itself as it refines)" />
-      <label for="webgpuCheck" title="NiiVue backend for the classic view and orientation cube; cinematic always uses WebGPU">WebGPU</label>
+      <label for="aaCheck" title="Antialiasing smooths jagged edges of meshes and the crosshair at some cost in speed (the cinematic image smooths itself as it refines)">AA</label>
+      <input type="checkbox" id="aaCheck" checked title="Antialiasing smooths jagged edges of meshes and the crosshair at some cost in speed (the cinematic image smooths itself as it refines)" />
+      <label for="webgpuCheck" title="NiiVue backend (cinematic on WebGL2 is not available yet and draws the classic render)">WebGPU</label>
       <input type="checkbox" id="webgpuCheck" />
-      <button type="button" id="restartBtn">Restart</button>
       <button type="button" id="saveBtn">Save PNG</button>
     </header>
     <div id="controls"></div>
     <main id="view">
-      <canvas id="cine"></canvas>
       <canvas id="gl1"></canvas>
     </main>
     <footer id="location">

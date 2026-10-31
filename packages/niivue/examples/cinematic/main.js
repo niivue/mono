@@ -218,7 +218,15 @@ async function loadVolume() {
     { url: sample.url },
     ...(labels ? [{ url: labels.url, colormap: labels.colormap }] : []),
   ])
+  adoptVolumes(labels)
+}
+
+// Build the cinematic textures from what NiiVue now holds: volume 0, plus
+// volume 1 as its label image when the sample has labels.
+let adopted = null
+function adoptVolumes(labels) {
   const vol = nv1.volumes[0]
+  adopted = vol
   const raw = getImageDataRAS(vol)
   if (!raw) throw new Error(`${vol.name}: no voxel data`)
   const slope =
@@ -454,7 +462,38 @@ async function loadSelectedVolume() {
     volumeSelect.disabled = false
   }
 }
+// A volume dropped on the canvas replaces NiiVue's; adopt it as a new,
+// unlabelled sample with the current preset. Our own loads disable the menu.
+nv1.addEventListener('volumeLoaded', () => {
+  const vol = nv1.volumes[0]
+  if (volumeSelect.disabled || !vol || vol === adopted) return
+  // Label-calibrated or label-modulated presets need labels a drop lacks.
+  const preset = PRESETS[tfSelect.value]
+  if (preset.labelBlend || tfSelect.value === 'cr_t1')
+    tfSelect.value = 'cr_skin_bone'
+  SAMPLES.push({
+    id: 'dropped',
+    name: `${vol.name} (dropped)`,
+    url: '',
+    tf: tfSelect.value,
+  })
+  volumeSelect.add(new Option(SAMPLES.at(-1).name, String(SAMPLES.length - 1)))
+  volumeSelect.value = String(SAMPLES.length - 1)
+  try {
+    loadError = ''
+    adoptVolumes(null)
+  } catch (err) {
+    loadError = `Load failed: ${err.message}`
+  }
+  applyMode() // the dropped volume arrives opaque
+})
 volumeSelect.onchange = () => {
+  // A dropped volume is gone once replaced, so its entry cannot be reloaded.
+  for (const option of [...volumeSelect.options]) {
+    if (!option.selected && SAMPLES[Number(option.value)].id === 'dropped') {
+      option.remove()
+    }
+  }
   tfSelect.value = selectedSample().tf
   loadSelectedVolume()
 }

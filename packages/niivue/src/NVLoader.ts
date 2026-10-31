@@ -19,6 +19,42 @@ export function applyCORS(img: HTMLImageElement): void {
   img.crossOrigin = 'anonymous'
 }
 
+/**
+ * Largest width or height accepted for an image NiiVue decodes for display
+ * (thumbnail, matcap): a few-kilobyte PNG can declare a size that decodes to
+ * gigabytes (#385).
+ */
+export const MAX_IMAGE_SIDE = 8192
+
+/**
+ * Load `src` into a CORS-clean image element, refusing it when a side exceeds
+ * `MAX_IMAGE_SIDE`. Browsers decode lazily: `load` fires once the size is
+ * known, and the pixels are decoded only when drawn or uploaded, so the check
+ * runs before the large allocation.
+ */
+export function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const { naturalWidth: w, naturalHeight: h } = img
+      if (w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE) {
+        img.src = ''
+        reject(
+          new Error(
+            `Image ${src.slice(0, 80)} is ${w}x${h}, larger than ${MAX_IMAGE_SIDE} on a side`,
+          ),
+        )
+        return
+      }
+      resolve(img)
+    }
+    img.onerror = () =>
+      reject(new Error(`Failed to load image ${src.slice(0, 80)}`))
+    applyCORS(img)
+    img.src = src
+  })
+}
+
 export function getFileExt(
   pathOrFile: string | { name?: string } | null | undefined,
   upperCase = true,

@@ -13,9 +13,9 @@ export async function loadMatcapOrDefault<T>(
 ): Promise<T> {
   try {
     return await load(matcap)
-  } catch {
+  } catch (err) {
     log.warn(
-      `Failed to load matcap ${matcap.slice(0, 80)}; drawing the default matcap`,
+      `Failed to load matcap ${matcap.slice(0, 80)} (${err}); drawing the default matcap`,
     )
   }
   if (defaultMatcap && defaultMatcap !== matcap) {

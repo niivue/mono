@@ -80,6 +80,7 @@ const nv1 = new NiiVue({
   // Occluded crosshair arms show faintly, as in vox.clip.html with XRay on.
   meshXRay: 0.1,
   sliceType: SLICE_TYPE.RENDER,
+  isAntiAlias: true,
   isOrientCubeVisible: true,
 })
 await nv1.attachToCanvas(gl1)
@@ -238,6 +239,10 @@ function applyMode() {
 modeSelect.onchange = applyMode
 // NiiVue's backend (classic view, cube, mouse). The cinematic renderer is
 // WebGPU-only for now; a WebGL2 port comes when it moves into src/.
+aaCheck.onchange = async () => {
+  await nv1.reinitializeView({ isAntiAlias: aaCheck.checked })
+  applyMode()
+}
 webgpuCheck.checked = nv1.opts.backend === 'webgpu'
 webgpuCheck.onchange = async () => {
   await nv1.reinitializeView({

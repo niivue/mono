@@ -276,10 +276,14 @@ export class CinematicRenderer {
     this.reset()
   }
 
-  /** labels: Uint8Array in RAS voxel order on the volume's grid, or null. */
-  setLabels(labels) {
+  /**
+   * labels: Uint8Array in RAS voxel order on the volume's grid; hidden: label
+   * values to hide. Stored only: the next setLabelMaterials builds them, so a
+   * sample switch dilates once.
+   */
+  setLabels(labels, hidden = []) {
     this.labels = labels
-    this._applyMaterials()
+    this.hiddenLabels = new Set(hidden)
   }
 
   /**
@@ -306,8 +310,9 @@ export class CinematicRenderer {
     const m = new Float32Array(256 * 8)
     const isVisible = new Uint8Array(256)
     if (isOn) {
-      for (let i = 1; i < t.labels.length && i < HIDDEN_LABEL; i++) {
+      for (let i = 1; i < t.labels.length; i++) {
         const k = t.I?.[i] ?? i
+        if (k < 1 || k >= HIDDEN_LABEL) continue
         const opacity = this.hiddenLabels.has(k) ? 0 : t.A[i] / 255
         m.set([t.R[i] / 255, t.G[i] / 255, t.B[i] / 255, opacity], k * 8)
         const surface = (t.surface?.[i] ?? 0) / 255
@@ -331,8 +336,18 @@ export class CinematicRenderer {
   _dilate(isVisible) {
     const src = this.labels
     const [nx, ny, nz] = this.dims
+    const sz = nx * ny
     const out = new Uint8Array(src.length)
-    const steps = [1, -1, nx, -nx, nx * ny, -nx * ny]
+    // First visible 6-neighbour wins; each test skips the face the voxel is on.
+    const spread = (i, x, y, z) => {
+      if (x < nx - 1 && isVisible[src[i + 1]]) return src[i + 1]
+      if (x > 0 && isVisible[src[i - 1]]) return src[i - 1]
+      if (y < ny - 1 && isVisible[src[i + nx]]) return src[i + nx]
+      if (y > 0 && isVisible[src[i - nx]]) return src[i - nx]
+      if (z < nz - 1 && isVisible[src[i + sz]]) return src[i + sz]
+      if (z > 0 && isVisible[src[i - sz]]) return src[i - sz]
+      return 0
+    }
     for (let z = 0, i = 0; z < nz; z++) {
       for (let y = 0; y < ny; y++) {
         for (let x = 0; x < nx; x++, i++) {
@@ -341,21 +356,7 @@ export class CinematicRenderer {
             out[i] = l
             continue
           }
-          out[i] = l === 0 ? 0 : HIDDEN_LABEL
-          const inside = [
-            x < nx - 1,
-            x > 0,
-            y < ny - 1,
-            y > 0,
-            z < nz - 1,
-            z > 0,
-          ]
-          for (let k = 0; k < 6; k++) {
-            if (inside[k] && isVisible[src[i + steps[k]]]) {
-              out[i] = src[i + steps[k]]
-              break
-            }
-          }
+          out[i] = spread(i, x, y, z) || (l === 0 ? 0 : HIDDEN_LABEL)
         }
       }
     }

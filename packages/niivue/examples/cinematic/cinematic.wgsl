@@ -162,7 +162,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (fd > 0.0 && tc > clipLo) { clipLo = tc; loN = P.clipN[i].xyz; }
     if (fd < 0.0 && tc < clipHi) { clipHi = tc; hiN = P.clipN[i].xyz; }
   }
-  let isCutaway = P.clipInfo.y > 0.5;
+  // With no active plane there is nothing to cut away.
+  let isCutaway = P.clipInfo.y > 0.5 && P.clipInfo.x > 0.5;
   var faceT = -1e30; // samples within a voxel past faceT lie on the cut face
   var faceN = vec3f(0.0);
   if (!isCutaway) {
@@ -201,16 +202,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     var id = 0u;
     if (isLabelOn) { id = materialId(pf); }
     // Skip the gradient fetch where nothing can show: tfMaxA is the most
-    // opaque this HU gets at any gradient in the base table (label 0).
-    // Blend mode: the intensity table shapes every sample and the label only
-    // tints and gates it, for a softer, volumetric look.
-    let isBlend = P.labelInfo.z > 0.0;
-    var isEmpty = labelAlpha(id, hu) < 0.001;
-    if (id == 0u || isBlend) {
-      let gate = select(materials[2u * id].a, select(1.0, P.labelInfo.y, isLabelOn), id == 0u);
-      isEmpty = textureSampleLevel(tfMaxA, samp, vec2f(x, 0.5), 0.0).r * gate < 0.001;
-    }
-    if (isEmpty) {
+    // opaque this HU gets at any gradient in the base table.
+    let maxA = textureSampleLevel(tfMaxA, samp, vec2f(x, 0.5), 0.0).r;
+    if (classifyAlpha(id, maxA, hu, P.labelInfo) < 0.001) {
       prevMag = 0.0;
       // Empty-space skip: zero extinction at a coarse mip means the block
       // around this point is empty, so jump half a coarse texel.
@@ -225,13 +219,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     var c = textureSampleLevel(tfColor, samp, uv, 0.0);
     var specular = m.r;
     var surfBase = m.g;
-    if (id == 0u) {
-      c.a *= select(1.0, P.labelInfo.y, isLabelOn);
-    } else if (isBlend) {
-      let mat0 = materials[2u * id];
-      c = vec4f(mix(c.rgb, mat0.rgb, P.labelInfo.z), c.a * mat0.a);
-    } else {
-      c = vec4f(materials[2u * id].rgb, labelAlpha(id, hu));
+    c.a = classifyAlpha(id, c.a, hu, P.labelInfo);
+    if (id != 0u && P.labelInfo.z > 0.0) {
+      // Blend: the label only tints, for a softer, volumetric look.
+      c = vec4f(mix(c.rgb, materials[2u * id].rgb, P.labelInfo.z), c.a);
+    } else if (id != 0u) {
+      c = vec4f(materials[2u * id].rgb, c.a);
       // A label boundary is a surface even where the HU step is modest
       // (organ against fat): the label's surfaceness floor keeps it glossy.
       let mat = materials[2u * id + 1u];
@@ -248,7 +241,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     var n = -g / max(mag, 1e-6);
     if (mag < prevMag) { n = prevN; }
     // A cut face is a surface whatever the tissue gradient says.
-    let onCut = tSample - faceT < 1.5 * P.tf.w;
+    // Only samples just past the face, not the tissue in front of it.
+    let onCut = tSample >= faceT && tSample - faceT < 1.5 * P.tf.w;
     if (onCut) { n = faceN; }
     prevMag = mag;
     prevN = n;

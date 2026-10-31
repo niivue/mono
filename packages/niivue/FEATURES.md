@@ -226,7 +226,7 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `isSnapToVoxelCenters` | Prop | |
 | `isYoked3DTo2DZoom` | Prop | |
 | `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |
-| `isLegendToggleEnabled` | Prop | Legend colour-box click hides/shows a volume label (`hiddenLabels`); name click still moves the crosshair; off by default |
+| `isLegendToggleEnabled` | Prop | Legend colour-box click hides/shows a volume label (`hiddenLabels`); hidden labels show as a colour outline; name click still moves the crosshair; off by default |
 | `moveCrosshairInVox(di, dj, dk)` | Method | Keyboard/button navigation |
 | `getCrosshairPos()` / `setCrosshairPos([x,y,z])` | Method | |
 | `vox2frac([i,j,k])` | Method | |

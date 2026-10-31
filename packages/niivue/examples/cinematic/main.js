@@ -104,11 +104,11 @@ for (const [i, sample] of SAMPLES.entries()) {
   volumeSelect.add(new Option(sample.name, String(i)))
 }
 const selectedSample = () => SAMPLES[Number(volumeSelect.value)]
-// ?sample= takes a sample id (e.g. mr-siam) or its list index.
-const sampleParam = params.get('sample')
-const sampleIndex = SAMPLES.findIndex((sample) => sample.id === sampleParam)
+// ?sample= takes a sample id (e.g. mr-siam); ids survive reordering and ?url=.
+const sampleIndex = SAMPLES.findIndex(
+  (sample) => sample.id === params.get('sample'),
+)
 if (sampleIndex >= 0) volumeSelect.value = String(sampleIndex)
-else if (sampleParam in SAMPLES) volumeSelect.value = sampleParam
 // An unknown ?tf= falls back to the sample's preset rather than an empty selection.
 const tfParam = params.get('tf')
 tfSelect.value = tfParam in PRESETS ? tfParam : selectedSample().tf
@@ -214,10 +214,16 @@ async function loadVolume() {
   let labelIds = null
   if (labels) {
     const lab = nv1.volumes[1]
-    const same = lab.dimsRAS.every((d, i) => d === vol.dimsRAS[i])
-    if (!same)
+    const sameGrid =
+      lab.dimsRAS.every((d, i) => d === vol.dimsRAS[i]) &&
+      lab.frac2mm.every((v, i) => Math.abs(v - vol.frac2mm[i]) < 1e-3)
+    if (!sameGrid)
       throw new Error(`${lab.name}: labels must share the image's grid`)
-    labelIds = Uint8Array.from(getImageDataRAS(lab) ?? [])
+    const raw = getImageDataRAS(lab) ?? []
+    // 255 marks hidden labels in the renderer; larger values would wrap.
+    if (raw.some((v) => v > 254))
+      throw new Error(`${lab.name}: label values must be 0-254`)
+    labelIds = Uint8Array.from(raw)
     if (labels.table.normalize) calibrate(hu, labelIds, labels.table.normalize)
   }
   cr.setVolume(hu, vol.dimsRAS.slice(1, 4), vol.frac2mm)
@@ -225,9 +231,8 @@ async function loadVolume() {
   labelSelect.hidden = !labels
   if (labels) {
     const hidden = nv1.volumes[1].hiddenLabels ?? []
-    cr.hiddenLabels = new Set(hidden)
     hiddenKey = hidden.join()
-    cr.setLabels(labelIds)
+    cr.setLabels(labelIds, hidden) // built once, by applyLabelMode below
     applySuggestedSettings(labels.table.settings)
     applyLabelMode()
   }
@@ -248,25 +253,28 @@ function calibrate(img, labelIds, pairs) {
       values.sort((a, b) => a - b)
       return [values[values.length >> 1], target]
     })
+    // An empty label set has no median.
+    .filter(([median]) => Number.isFinite(median))
     .sort((a, b) => a[0] - b[0])
+  if (points.length < 2)
+    throw new Error('calibration needs two labelled tissues')
   const map = (v) => {
     let k = 0
     while (k < points.length - 2 && v > points[k + 1][0]) k++
     const [[x0, y0], [x1, y1]] = [points[k], points[k + 1]]
-    return y0 + ((v - x0) * (y1 - y0)) / (x1 - x0)
+    // Equal medians give no slope: hold the lower target.
+    return x1 === x0 ? y0 : y0 + ((v - x0) * (y1 - y0)) / (x1 - x0)
   }
   for (let i = 0; i < img.length; i++) img[i] = map(img[i])
 }
 
-// Unlabeled tissue (label 0) uses the base transfer function, scaled by this.
-const LABEL_MODES = { only: 0, unlabeled: 1 }
+// Unlabeled tissue (label 0) uses the base transfer function: hidden for
+// "labels only", shown for "labels + unlabeled"; "no labels" drops the table.
 function applyLabelMode() {
-  const labels = selectedSample().labels
-  const scale = LABEL_MODES[labelSelect.value]
-  cr.setLabelMaterials(
-    labels && scale !== undefined ? labels.table : null,
-    scale ?? 1,
-  )
+  const mode = labelSelect.value
+  const table =
+    mode === 'none' ? null : (selectedSample().labels?.table ?? null)
+  cr.setLabelMaterials(table, mode === 'only' ? 0 : 1)
 }
 labelSelect.onchange = applyLabelMode
 

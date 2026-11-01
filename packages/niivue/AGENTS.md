@@ -2121,7 +2121,10 @@ with the anatomy by depth, as in the classic shader; clip planes apply only with
 crossed (`overlayStep * length(df * overlayDims)`), so anisotropic overlays
 match classic. A hidden background (opacity 0 or `visible: false`) still draws
 the overlays: the view passes `isBackgroundVisible` and the shader skips the
-anatomy march (`labelInfo.w`). The view bumps `_cinematicOverlayVersion` after
+anatomy march (`labelInfo.w`). A visible label volume over a hidden background
+draws as labelMode 'only' (`cinematicOptionsForFrame`): it needs the anatomy
+march, since intensities shape its surfaces, but no unlabeled tissue shows or
+casts shadows. The view bumps `_cinematicOverlayVersion` after
 stack/affine updates so an in-place texture rewrite restarts accumulation; the
 cinematic renderer never frees the borrowed texture.
 

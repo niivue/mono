@@ -10,6 +10,7 @@ import {
   calibrationMap,
   canUseCinematicOverlays,
   cinematicGeometry,
+  cinematicOptionsForFrame,
   clipParams,
   dilateLabels,
   findLabelVolume,
@@ -549,6 +550,30 @@ describe('half-float range', () => {
     const zero = halfFloatBits(new Float32Array([0]))[0]
     expect(out?.intensity?.values[1]).toBe(zero)
     expect(out?.intensity?.values.every(isFiniteHalf)).toBe(true)
+  })
+})
+
+describe('hidden background', () => {
+  const opts = VOLUME_DEFAULTS.cinematic
+  const labels = volume(new Float32Array(8), 2, {
+    colormapLabel: { lut: new Uint8ClampedArray(4) },
+  })
+  const hidden = volume(new Float32Array(8), 2, { visible: false })
+  const clear = volume(new Float32Array(8), 2, { opacity: 0 })
+  const shown = volume(new Float32Array(8), 2)
+
+  test('aVisibleLabelVolumeDrawsAloneOverAHiddenBackground', () => {
+    expect(cinematicOptionsForFrame(hidden, labels, opts).labelMode).toBe(
+      'only',
+    )
+    expect(cinematicOptionsForFrame(clear, labels, opts).labelMode).toBe('only')
+  })
+
+  test('otherwiseTheOptionsAreUntouched', () => {
+    expect(cinematicOptionsForFrame(shown, labels, opts)).toBe(opts)
+    expect(cinematicOptionsForFrame(hidden, null, opts)).toBe(opts)
+    const none = { ...opts, labelMode: 'none' as const }
+    expect(cinematicOptionsForFrame(hidden, labels, none)).toBe(none)
   })
 })
 

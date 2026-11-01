@@ -605,6 +605,23 @@ export function hasScalarIntensity(vol: NVImage): boolean {
   return dt !== NiiDataType.DT_RGB24 && dt !== NiiDataType.DT_RGBA32
 }
 
+/**
+ * A hidden background with a visible label volume draws the labels alone, as
+ * labelMode 'only' does: they still need the march (their surfaces come from
+ * the intensities), and its zero unlabeled scale keeps the hidden anatomy out,
+ * shadows included. The view marches a hidden background only when labels end
+ * up on (`hasLabels`).
+ */
+export function cinematicOptionsForFrame(
+  base: NVImage,
+  labelVol: NVImage | null,
+  options: CinematicOptions,
+): CinematicOptions {
+  return drawnOpacity(base) > 0 || !labelVol || options.labelMode === 'none'
+    ? options
+    : { ...options, labelMode: 'only' }
+}
+
 /** The standard overlay texture may be borrowed only without label, PAQD or streamed layers (PAQD lives in its own texture). */
 export function canUseCinematicOverlays(volumes: readonly NVImage[]): boolean {
   return volumes

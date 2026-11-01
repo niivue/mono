@@ -30,6 +30,7 @@ import {
 import * as NVAnnotation from '@/view/NVAnnotation'
 import {
   canUseCinematicOverlays,
+  cinematicOptionsForFrame,
   findLabelVolume,
   hasScalarIntensity,
 } from '@/view/NVCinematic'
@@ -714,6 +715,8 @@ export default class NVGlview {
     let isCinematic = false
     // Statistics stay visible when the anatomy is hidden, as in COMPOSITE.
     let hasCinematicOverlay = false
+    // False when the background is hidden and no label volume keeps it marched.
+    let isCinematicBackgroundVisible = false
     this.cinematicRenderer.beginFrame()
     const base = volumes[0]
     if (isCinematicMode && base) {
@@ -739,10 +742,12 @@ export default class NVGlview {
         isCinematic = this.cinematicRenderer.prepare(
           base,
           cinematicLabels,
-          md.volume.cinematic,
+          cinematicOptionsForFrame(base, cinematicLabels, md.volume.cinematic),
           overlay,
           this._cinematicOverlayVersion,
         )
+        isCinematicBackgroundVisible =
+          drawnOpacity(base) > 0 || this.cinematicRenderer.hasLabels
         if (this.cinematicRenderer.labelProblem) {
           this._warnCinematic(
             `labels ignored: ${this.cinematicRenderer.labelProblem}`,
@@ -750,7 +755,8 @@ export default class NVGlview {
         }
         if (
           !useOverlays &&
-          volumes.filter(isVolumeDrawn).length > (cinematicLabels ? 2 : 1)
+          volumes.slice(1).filter(isVolumeDrawn).length >
+            (cinematicLabels ? 1 : 0)
         ) {
           this._warnCinematic(
             'overlays not drawn: cinematic draws standard overlays or one same-grid label volume, not a mix, PAQD, streamed overlays or a channel stack',
@@ -1122,7 +1128,7 @@ export default class NVGlview {
           }
         } else if (isCinematic && tile.space !== 'global3d') {
           // Cinematic draws its own label or standard-overlay pass.
-          if (drawnOpacity(vol) > 0 || hasCinematicOverlay)
+          if (isCinematicBackgroundVisible || hasCinematicOverlay)
             this.cinematicRenderer.draw({
               index: i,
               rect: [
@@ -1136,7 +1142,7 @@ export default class NVGlview {
               clipPlanes: md.clipPlanes,
               isClipCutaway: md.scene.isClipPlaneCutaway,
               clipPlaneOverlay: md.scene.clipPlaneOverlay,
-              isBackgroundVisible: drawnOpacity(vol) > 0,
+              isBackgroundVisible: isCinematicBackgroundVisible,
               gamma: md.scene.gamma,
               isOverlayOpacityCorrected: md.volume.isOverlayOpacityCorrected,
               background: md.scene.backgroundColor,

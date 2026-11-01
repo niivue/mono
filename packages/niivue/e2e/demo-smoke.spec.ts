@@ -20,6 +20,17 @@ const HEADLESS_WEBGPU = /WebGPU adapter|Failed to initialize webgpu view/
 
 const isLocal = (url: string) => url.includes('localhost:5273')
 
+// vox.4d.html loads this volume with limitFrames4D, a partial 4D load that
+// cancels its fetch once it has the frames. Any other abort is a real failure.
+const isExpectedAbort = (
+  demo: string,
+  url: string,
+  errorText: string | undefined,
+) =>
+  demo === 'vox.4d.html' &&
+  new URL(url).pathname === '/volumes/mpld_asl.nii.gz' &&
+  errorText === 'net::ERR_ABORTED'
+
 test.describe('demo pages load cleanly', () => {
   for (const name of pages) {
     test(name, async ({ page }) => {
@@ -54,6 +65,7 @@ test.describe('demo pages load cleanly', () => {
         problems.push(`console: ${text}`)
       })
       page.on('requestfailed', (req) => {
+        if (isExpectedAbort(name, req.url(), req.failure()?.errorText)) return
         const line = `request failed: ${req.url()}`
         if (isLocal(req.url())) problems.push(line)
         else remote.push(line)

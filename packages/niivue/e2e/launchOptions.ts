@@ -10,10 +10,30 @@ import type { LaunchOptions } from '@playwright/test'
  * Playwright's exact pinned revision (a 92 MB download). Unset in CI, so the
  * pinned browser is still what gates a PR.
  */
-export const executablePathOverride: LaunchOptions = process.env
+const executablePathOverride: LaunchOptions = process.env
   .PLAYWRIGHT_CHROMIUM_PATH
   ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
   : {}
+
+/**
+ * `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` launches full Chromium (new headless)
+ * on the machine's real GPU. The default headless shell only ever gets
+ * SwiftShader, even on a physical Mac; full Chromium reaches Metal on the
+ * macos runners (issue #199). The SwiftShader flags are dropped in this mode
+ * because `--use-angle=swiftshader` would force software rendering anyway.
+ * `PLAYWRIGHT_CHROMIUM_PATH` is ignored here: `channel` and `executablePath`
+ * conflict.
+ */
+const channel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL
+const hardwareGpuLaunchOptions: LaunchOptions = {
+  channel,
+  args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'],
+}
+
+/** WebGL2 on SwiftShader; recent Chrome gates that software path behind this flag. */
+export const defaultLaunchOptions: LaunchOptions = channel
+  ? hardwareGpuLaunchOptions
+  : { args: ['--enable-unsafe-swiftshader'], ...executablePathOverride }
 
 /**
  * Brings up Dawn on SwiftShader, which is enough to run WebGPU in headless
@@ -25,13 +45,15 @@ export const executablePathOverride: LaunchOptions = process.env
  * the first frame, and every later `onSubmittedWorkDone` rejects with "A valid
  * external Instance reference no longer exists".
  */
-export const webgpuLaunchOptions: LaunchOptions = {
-  args: [
-    '--enable-unsafe-swiftshader',
-    '--enable-unsafe-webgpu',
-    '--use-angle=swiftshader',
-    '--enable-features=Vulkan',
-    '--use-vulkan=swiftshader',
-  ],
-  ...executablePathOverride,
-}
+export const webgpuLaunchOptions: LaunchOptions = channel
+  ? hardwareGpuLaunchOptions
+  : {
+      args: [
+        '--enable-unsafe-swiftshader',
+        '--enable-unsafe-webgpu',
+        '--use-angle=swiftshader',
+        '--enable-features=Vulkan',
+        '--use-vulkan=swiftshader',
+      ],
+      ...executablePathOverride,
+    }

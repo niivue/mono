@@ -81,6 +81,29 @@ nv1.drawPenValue = 3
 **Scene** (no prefix -- delegate to `model.scene`):
 `azimuth`, `elevation`, `crosshairPos`, `pan2Dxyzmm`, `scaleMultiplier`, `gamma`, `backgroundColor`, `clipPlaneColor`, `isClipPlaneCutaway`
 
+#### Crosshair units
+
+The crosshair has two APIs in different units:
+
+| API | Units | Snapping / clamping |
+|-----|-------|---------------------|
+| `crosshairPos` property, `NiiVueOptions.crosshairPos` | scene fraction, [0,1] per axis across the scene bounding box (union of all volume and mesh extents); `[0.5, 0.5, 0.5]` is the centre | none: the value is stored as given |
+| `setCrosshairPos(mm)` / `getCrosshairPos()` | RAS world millimetres (x = right, y = anterior, z = superior) | `setCrosshairPos` snaps to the nearest background-volume voxel centre when `isSnapToVoxelCenters` is true, then clamps to the scene bounding box |
+
+`vox2frac(vox)` converts RAS voxel indices to the fraction `crosshairPos`
+takes. `AnimationTarget.crosshairMM` (used by `animate`) is in world mm, like
+`setCrosshairPos`.
+
+Porting from 0.6x: `nv.scene.crosshairPos = nv.mm2frac(mm)` becomes
+`nv.setCrosshairPos(mm)`, and `nv.frac2mm(nv.scene.crosshairPos)` becomes
+`nv.getCrosshairPos()`.
+
+```ts
+nv1.setCrosshairPos([0, -18, 12]) // world mm
+const mm = nv1.getCrosshairPos() // world mm
+nv1.crosshairPos = [0.5, 0.5, 0.5] // scene fraction: centre of the scene
+```
+
 **Layout** (no prefix -- delegate to `model.layout`):
 `sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `isRadiological`, `isSingleViewFillCanvas`
 

@@ -162,7 +162,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `moveCrosshairInVox(dx,dy,dz)` | ✅ | |
 | `pan2Dxyzmm` | ✅ | Property |
-| `crosshairPos` | ✅ | Property |
+| `crosshairPos` | ✅ | Property. Scene fraction, [0,1] per axis across the scene bounding box (not mm); stored as given, no snapping or clamping. Same units as `NiiVueOptions.crosshairPos` and `vox2frac()` |
+| `setCrosshairPos(mm)` / `getCrosshairPos()` | ✅ | RAS world millimetres. `setCrosshairPos` snaps to the nearest background-volume voxel centre when `isSnapToVoxelCenters` is true, then clamps to the scene bounding box. 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)` -> `nv.setCrosshairPos(mm)`; 0.6x `nv.frac2mm(nv.scene.crosshairPos)` -> `nv.getCrosshairPos()`. `AnimationTarget.crosshairMM` is also in mm. See `docs/api.md` (Crosshair units) |
 | World-space 2D slices (`isSliceMM: true`) | ✅ | The only mode in 1.0: slices are resampled in world (mm) space, so voxels of a sheared or oblique image appear rhomboidal |
 | Image-space 2D slices (`isSliceMM: false`, `isPositionInMM`) | ❌ | Not supported by design; 1.0 never shows voxels in image space (where sheared voxels appear rectangular), so the 0.6x `isSliceMM` option and vestigial `isPositionInMM` property were removed. 0.6x demo of both modes: https://niivue.com/demos/features/worldspace.html |
 

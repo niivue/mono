@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVImage } from '@/NVTypes'
 import {
+  buildLegendLabels,
   collectLegendEntries,
+  computeLegendLayout,
+  isInLegend,
   type LegendLayout,
   legendHitTest,
+  legendScrollHit,
 } from './NVLegend'
 
 describe('legendHitTest', () => {
@@ -20,6 +24,13 @@ describe('legendHitTest', () => {
     fontScale: 1,
     textPadding: 8,
     margin: 20,
+    columns: 1,
+    columnWidth: 160,
+    rows: 2,
+    visibleRows: 2,
+    scrollRow: 0,
+    rowHeight: 12,
+    pitch: 20,
   }
 
   test('distinguishesColourBoxFromName', () => {
@@ -56,5 +67,99 @@ describe('collectLegendEntries', () => {
       ['x', 1, 6, false],
       ['y', 1, 7, true],
     ])
+  })
+})
+
+const visibleH = (l: LegendLayout) => l.visibleRows * l.pitch - l.gap
+
+describe('large atlases', () => {
+  const entries = Array.from({ length: 117 }, (_, i) => ({
+    label: `structure_${i}`,
+    color: [1, 2, 3, 255] as [number, number, number, number],
+  }))
+
+  test('wrapsIntoColumnsAtAFixedFontSize', () => {
+    const few = computeLegendLayout(entries.slice(0, 3), 1600, 1000, 0)
+    const many = computeLegendLayout(entries, 1600, 1000, 0)
+    // The old layout shrank text to fit every entry.
+    expect(many?.boxSize).toBe(few?.boxSize)
+    expect(many?.columns).toBeGreaterThan(1)
+    expect(many?.width).toBeLessThanOrEqual(1600 * 0.4)
+  })
+
+  test('scrollsWhenColumnsRunOut', () => {
+    const layout = computeLegendLayout(entries, 800, 400, 0, 1e9)
+    if (!layout) throw new Error('no layout')
+    expect(layout.rows).toBeGreaterThan(layout.visibleRows)
+    // Clamped to the last page.
+    expect(layout.scrollRow).toBe(layout.rows - layout.visibleRows)
+    // The top visible row of column 0 is the entry at scrollRow.
+    const top = legendHitTest(
+      layout.x + layout.margin + 1,
+      layout.y + 1,
+      layout,
+    )
+    expect(top?.entry).toBe(entries[layout.scrollRow])
+    // The scrollbar pages up from below the top; elsewhere it is no hit.
+    const barX = layout.x + layout.width - layout.margin / 2
+    expect(legendScrollHit(barX, layout.y + 1, layout)).toBe(-1)
+    expect(
+      legendScrollHit(layout.x + layout.margin, layout.y + 1, layout),
+    ).toBeNull()
+    // On the thumb: consumed (0), so a drag there never reaches the camera.
+    const thumbY =
+      layout.y + (visibleH(layout) * layout.scrollRow) / layout.rows + 1
+    expect(legendScrollHit(barX, thumbY, layout)).toBe(0)
+    expect(isInLegend(barX, layout.y + 1, layout)).toBe(true)
+    expect(isInLegend(layout.x - 5, layout.y + 1, layout)).toBe(false)
+  })
+
+  test('noScrollbarWhenEverythingFits', () => {
+    const layout = computeLegendLayout(entries.slice(0, 3), 1600, 1000, 0, 5)
+    expect(layout?.scrollRow).toBe(0)
+    expect(legendScrollHit(0, 0, layout)).toBeNull()
+  })
+})
+
+describe('scrolled and multi-column hits', () => {
+  const entries = Array.from({ length: 100 }, (_, i) => ({
+    label: `s${i}`,
+    color: [1, 2, 3, 255] as [number, number, number, number],
+  }))
+  const noText = () => ({
+    data: new Float32Array(0),
+    count: 0,
+    backColor: [0, 0, 0, 0],
+    backRect: [],
+    backRadius: 0,
+  })
+
+  test('noEmptyCappedColumn', () => {
+    // Short canvas: the column cap binds; every reserved column holds entries.
+    const l = computeLegendLayout(entries, 1600, 120, 0)
+    if (!l) throw new Error('no layout')
+    expect((l.columns - 1) * l.rows).toBeLessThan(entries.length)
+  })
+
+  test('hitsLaterColumnsAndPagesDown', () => {
+    const l = computeLegendLayout(entries, 1000, 200, 0, 2)
+    if (!l) throw new Error('no layout')
+    expect(l.columns).toBeGreaterThan(1)
+    expect(l.scrollRow).toBe(2)
+    const x = l.x + l.margin + l.columnWidth + 1
+    expect(legendHitTest(x, l.y + 1, l)?.entry).toBe(entries[l.rows + 2])
+    // Below the thumb pages down.
+    const barX = l.x + l.width - l.margin / 2
+    expect(legendScrollHit(barX, l.y + visibleH(l) - 1, l)).toBe(1)
+  })
+
+  test('drawsOnlyVisibleEntries', () => {
+    const l = computeLegendLayout(entries, 1000, 200, 0)
+    if (!l) throw new Error('no layout')
+    expect(l.rows).toBeGreaterThan(l.visibleRows) // scrolls: track and thumb
+    const batches = buildLegendLabels(l, noText, [0, 0, 0, 1])
+    // Backing, track and thumb, then box margin, box and text per entry.
+    const shown = Math.min(entries.length, l.columns * l.visibleRows)
+    expect(batches.length).toBe(3 + 3 * shown)
   })
 })

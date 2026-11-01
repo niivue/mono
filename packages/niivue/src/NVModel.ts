@@ -87,6 +87,8 @@ export default class NVModel {
    * Controller-owned, not serialized.
    */
   _isDragging = false
+  /** Legend scroll position in rows (transient; the layout clamps it). */
+  _legendScrollRow = 0
   /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
   _focusBox: FocusBox | null = null
   /**

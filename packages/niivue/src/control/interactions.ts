@@ -40,7 +40,13 @@ import type {
 import { parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
-import { legendHitTest } from '@/view/NVLegend'
+import {
+  isInLegend,
+  isLegendScrollable,
+  type LegendLayout,
+  legendHitTest,
+  legendScrollHit,
+} from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import {
@@ -1217,7 +1223,20 @@ export function initInteraction(ctrl: NiiVue): void {
     warnIfBothEditModes(ctrl)
 
     // Check for legend click first
-    const legendHit = legendHitTest(px, py, ctrl.view?.legendLayout ?? null)
+    const legendLayout = ctrl.view?.legendLayout ?? null
+    const page = legendScrollHit(px, py, legendLayout)
+    if (page !== null && legendLayout) {
+      // Clicking the track pages (the only scroll on touch screens); the
+      // thumb is consumed too, so a drag on it never moves the camera.
+      if (page !== 0)
+        scrollLegend(
+          ctrl,
+          legendLayout,
+          page * Math.max(1, legendLayout.visibleRows - 1),
+        )
+      return
+    }
+    const legendHit = legendHitTest(px, py, legendLayout)
     if (legendHit) {
       const { entry, isOnBox } = legendHit
       log.info(`Legend clicked: ${entry.label}`)
@@ -2452,6 +2471,24 @@ export function initInteraction(ctrl: NiiVue): void {
     setNextActionTag('wheel')
     evt.preventDefault()
     const [px, py] = wheelHit
+    const legendLayout = ctrl.view?.legendLayout ?? null
+    if (
+      legendLayout &&
+      isLegendScrollable(legendLayout) &&
+      isInLegend(px, py, legendLayout)
+    ) {
+      // The position keeps fractional rows (the layout shows whole ones), so
+      // small trackpad deltas add up instead of being lost. Pixel deltas are
+      // CSS px; line and page deltas (Firefox, some mice) are not.
+      const rows =
+        evt.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? evt.deltaY
+          : evt.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? evt.deltaY * legendLayout.visibleRows
+            : (evt.deltaY * ctrl.effectiveDevicePixelRatio) / legendLayout.pitch
+      scrollLegend(ctrl, legendLayout, rows)
+      return
+    }
     // Wheel over the 4D timeline graph: step to previous/next frame
     const graphLayout = ctrl.view?.graphLayout as GraphLayout | null
     if (graphLayout && graphHitTest(px, py, graphLayout)) {
@@ -2873,4 +2910,13 @@ export function pickExplodedBlock(
     }
   }
   return null
+}
+
+function scrollLegend(ctrl: NiiVue, layout: LegendLayout, rows: number): void {
+  // Start from the shown position: a value left over from a longer legend
+  // would otherwise swallow the first scroll back.
+  const max = layout.rows - layout.visibleRows
+  const from = Math.min(ctrl.model._legendScrollRow, max)
+  ctrl.model._legendScrollRow = Math.max(0, Math.min(max, from + rows))
+  ctrl.drawScene()
 }

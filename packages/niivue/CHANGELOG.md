@@ -1,3 +1,13 @@
+## 1.0.0-rc.63 (2026-11-01)
+
+### Features
+
+- **medgfx:** remove meshes and replace or add on drop ([#109](https://github.com/niivue/mono/issues/109))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.62 (2026-10-31)
 
 ### Fixes

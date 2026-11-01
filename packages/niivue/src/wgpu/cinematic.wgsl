@@ -51,7 +51,9 @@ fn pcg(v: u32) -> u32 {
 
 fn rand() -> f32 {
   rng = pcg(rng);
-  return f32(rng) * (1.0 / 4294967296.0);
+  // 24 bits, exact in f32, so the result stays below 1: a 32-bit value can
+  // round up to 1.0, and a reservoir pick needs rand() * sum < share.
+  return f32(rng >> 8u) * (1.0 / 16777216.0);
 }
 
 fn gradMM(pf: vec3f) -> vec3f {

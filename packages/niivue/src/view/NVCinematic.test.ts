@@ -177,7 +177,7 @@ describe('geometry, light and uniforms', () => {
 
   test('packsTheParamsLayout', () => {
     const geo = cinematicGeometry(mat4.create(), [4, 4, 4])
-    const out = packMarchParams({
+    const args = {
       geometry: geo,
       invMVP: mat4.create(),
       model: mat4.create(),
@@ -189,7 +189,8 @@ describe('geometry, light and uniforms', () => {
       clip: new Float32Array(52),
       labelInfo: [1, 0, 0.5, 0],
       overlayInfo: [1, 0, 1, 1],
-    })
+    }
+    const out = packMarchParams(args)
     expect(out.length).toBe(136)
     expect(Array.from(out.subarray(48, 50))).toEqual([64, 32])
     expect(out[61]).toBe(5)
@@ -197,17 +198,8 @@ describe('geometry, light and uniforms', () => {
     expect(Array.from(out.subarray(128, 132))).toEqual([1, 0, 1, 1])
     expect(out[132]).toBe(0) // stochastic lighting off by default
     const on = packMarchParams({
-      geometry: geo,
-      invMVP: mat4.create(),
-      model: mat4.create(),
-      width: 1,
-      height: 1,
-      frame: 0,
+      ...args,
       options: { ...VOLUME_DEFAULTS.cinematic, isStochasticLighting: true },
-      tf: bakeTransferFunction(ramp, -1, 1),
-      clip: new Float32Array(52),
-      labelInfo: [0, 0, 0, 0],
-      overlayInfo: [0, 0, 0, 0],
     })
     expect(on[132]).toBe(1)
   })

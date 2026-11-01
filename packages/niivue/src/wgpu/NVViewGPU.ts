@@ -1033,10 +1033,22 @@ export default class NVView {
       : 0
     // Reserve horizontal space for legend and graph on the right side
     const legendEntries = md.collectLegendEntries()
-    const legendWidth =
+    const legendLayout =
       md.ui.isLegendVisible && legendEntries.length > 0
-        ? NVLegend.legendTotalWidth(legendEntries, canvasWidth, canvasHeight)
-        : 0
+        ? NVLegend.computeLegendLayout(
+            legendEntries,
+            canvasWidth,
+            canvasHeight,
+            cbHeight,
+            md.legendScrollRow(),
+            {
+              fontPx: this.fontRenderer.fontPx,
+              measure: (label, scale) =>
+                this.fontRenderer.measureText(label, scale),
+            },
+          )
+        : null
+    const legendWidth = legendLayout?.width ?? 0
     const graphData = md.collectGraphData()
     const baseGraphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
@@ -1899,25 +1911,17 @@ export default class NVView {
         labels.push(...colorbarLabels)
       }
       // Legend labels for label colormaps
-      if (md.ui.isLegendVisible && legendEntries.length > 0) {
-        this.legendLayout = NVLegend.computeLegendLayout(
-          legendEntries,
-          canvasWidth,
-          canvasHeight,
-          cbHeight,
-          canvasWidth - legendWidth - graphWidth,
+      this.legendLayout = legendLayout
+      if (legendLayout) {
+        // Placed once the graph's width is known.
+        legendLayout.x = canvasWidth - legendWidth - graphWidth
+        const legendLabels = NVLegend.buildLegendLabels(
+          legendLayout,
+          (s, x, y, sc, c, ax, ay, bc) =>
+            this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
+          md.scene.backgroundColor,
         )
-        if (this.legendLayout) {
-          const legendLabels = NVLegend.buildLegendLabels(
-            this.legendLayout,
-            (s, x, y, sc, c, ax, ay, bc) =>
-              this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-            md.scene.backgroundColor,
-          )
-          labels.push(...legendLabels)
-        }
-      } else {
-        this.legendLayout = null
+        labels.push(...legendLabels)
       }
       // Graph labels and lines for 4D frame intensity
       if (graphData && graphWidth > 0) {

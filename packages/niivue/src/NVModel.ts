@@ -87,6 +87,9 @@ export default class NVModel {
    * Controller-owned, not serialized.
    */
   _isDragging = false
+  /** Legend scroll position in rows (transient; the layout clamps it). */
+  _legendScrollRow = 0
+  private _legendSources: unknown[] = []
   /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
   _focusBox: FocusBox | null = null
   /**
@@ -818,6 +821,16 @@ export default class NVModel {
       }
     }
     return bars
+  }
+
+  /** The scroll position, back at the top once the legend lists something else. */
+  legendScrollRow(): number {
+    const sources = NVLegend.legendSources(this.meshes, this.volumes)
+    if (!NVLegend.isSameLegendSource(sources, this._legendSources)) {
+      this._legendSources = sources
+      this._legendScrollRow = 0
+    }
+    return this._legendScrollRow
   }
 
   collectLegendEntries(): NVLegend.LegendEntry[] {

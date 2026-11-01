@@ -22,7 +22,7 @@ struct Params {
   clipInfo: vec4f, // active plane count, cutaway (0/1), -, -
   labelInfo: vec4f, // labels on (0/1), unlabeled tissue scale, label colour blend (0 = label materials), background visible (0/1)
   overlayInfo: vec4f, // standard overlays on, clip with anatomy, inverse gamma, correct step opacity
-  lighting: vec4f, // one secondary-ray sample per ray (0/1), -, -, -
+  lighting: vec4f, // stochastic lighting: one shadow/AO sample per ray (0/1), -, -, -
 }
 
 const LUMA = vec3f(0.2126, 0.7152, 0.0722);
@@ -128,6 +128,21 @@ fn srgbToLinear(c: vec3f) -> vec3f {
   return pow(c, vec3f(2.2));
 }
 
+// Light lost to shadow and occlusion at one sample, where lit = A * AO +
+// B * shadow. B is 0 on a cut face, which takes AO only.
+fn secondaryLoss(lift: vec3f, n: vec3f, A: vec3f, B: vec3f) -> vec3f {
+  var shadow = 1.0;
+  if (P.march.z > 0.0 && any(B > vec3f(0.0))) {
+    shadow = mix(1.0, coneTransmittance(lift, P.light.xyz, P.light.w, 1e5), P.march.z);
+  }
+  var occl = 1.0;
+  if (P.ao.x > 0.0) {
+    let aoDir = sampleCosineHemisphere(n);
+    occl = mix(1.0, coneTransmittance(lift, aoDir, P.ext.w, P.ao.y), P.ao.x);
+  }
+  return A * (1.0 - occl) + B * (1.0 - shadow);
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let res = vec2u(P.view.xy);
@@ -190,9 +205,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
 
   let stepMM = P.march.x;
-  let shadowStrength = P.march.z;
   let ambient = P.march.w;
-  let aoStrength = P.ao.x;
   let lightI = P.ao.z;
   let shininess = P.ao.w;
   let volTerm = P.view.z;
@@ -203,13 +216,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var prevMag = 0.0;
   var prevN = vec3f(0.0);
   let L = P.light.xyz;
-  // One secondary sample per ray: lit = A * occlusion + B * shadow; the march
-  // sums A + B, and one sample, picked in proportion to its share, pays for
-  // the shadow and AO cones that correct the whole ray (unbiased across
-  // frames; cones nested in the march dominated its cost).
-  let isOneSecondary = P.lighting.x > 0.5;
+  // Stochastic lighting: the march sums unshadowed light, and one sample,
+  // picked in proportion to weight x luminance, pays for the shadow and AO
+  // cones that correct the whole ray (unbiased across frames; cones nested in
+  // the march dominated its cost).
+  let isStochastic = P.lighting.x > 0.5;
   var pickSum = 0.0;
-  var pickShare = 1.0;
+  var pickLum = 0.0;
   var pickLift = vec3f(0.0);
   var pickN = vec3f(0.0);
   var pickA = vec3f(0.0);
@@ -306,45 +319,25 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     // grid, which shows as wood-grain rings. 1.5 voxels clears the trilinear
     // footprint of the surface's own extinction voxel.
     let lift = pf + (P.mm2frac * vec4f(n * (1.5 * P.ext.x), 0.0)).xyz;
-    if (isOneSecondary) {
-      let share = weight * (dot(A + B, LUMA) + 1e-6);
-      pickSum += share;
-      if (rand() * pickSum < share) {
-        pickShare = share / weight;
+    acc += vec4f((A + B) * weight, weight);
+    if (isStochastic) {
+      let lum = dot(A + B, LUMA) + 1e-6;
+      pickSum += weight * lum;
+      if (rand() * pickSum < weight * lum) {
+        pickLum = lum;
         pickLift = lift;
         pickN = n;
         pickA = A;
         pickB = B;
       }
-      acc += vec4f((A + B) * weight, weight);
-    } else {
+    } else if (weight > 0.002) {
       // Only samples that visibly contribute (> ~0.5/255) pay for secondary rays.
-      let worth = weight > 0.002;
-      var shadow = 1.0;
-      if (worth && shadowStrength > 0.0 && !onCut) {
-        shadow = mix(1.0, coneTransmittance(lift, L, P.light.w, 1e5), shadowStrength);
-      }
-      var occl = 1.0;
-      if (worth && aoStrength > 0.0) {
-        let aoDir = sampleCosineHemisphere(n);
-        occl = mix(1.0, coneTransmittance(lift, aoDir, P.ext.w, P.ao.y), aoStrength);
-      }
-      acc += vec4f((A * occl + B * shadow) * weight, weight);
+      acc = vec4f(acc.rgb - weight * secondaryLoss(lift, n, A, B), acc.a);
     }
     if (acc.a > 0.995) { break; } // early termination: the rest is hidden
   }
   if (pickSum > 0.0) {
-    var shadow = 1.0;
-    if (shadowStrength > 0.0 && any(pickB > vec3f(0.0))) {
-      shadow = mix(1.0, coneTransmittance(pickLift, L, P.light.w, 1e5), shadowStrength);
-    }
-    var occl = 1.0;
-    if (aoStrength > 0.0) {
-      let aoDir = sampleCosineHemisphere(pickN);
-      occl = mix(1.0, coneTransmittance(pickLift, aoDir, P.ext.w, P.ao.y), aoStrength);
-    }
-    let loss = pickA * (1.0 - occl) + pickB * (1.0 - shadow);
-    acc = vec4f(acc.rgb - (pickSum / pickShare) * loss, acc.a);
+    acc = vec4f(acc.rgb - (pickSum / pickLum) * secondaryLoss(pickLift, pickN, pickA, pickB), acc.a);
   }
 
   // Reuse the standard renderer's classified, registered overlay texture.

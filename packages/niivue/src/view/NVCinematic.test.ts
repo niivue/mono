@@ -196,6 +196,20 @@ describe('geometry, light and uniforms', () => {
     expect(Array.from(out.subarray(124, 128))).toEqual([1, 0, 0.5, 0])
     expect(Array.from(out.subarray(128, 132))).toEqual([1, 0, 1, 1])
     expect(out[132]).toBe(0) // stochastic lighting off by default
+    const on = packMarchParams({
+      geometry: geo,
+      invMVP: mat4.create(),
+      model: mat4.create(),
+      width: 1,
+      height: 1,
+      frame: 0,
+      options: { ...VOLUME_DEFAULTS.cinematic, isStochasticLighting: true },
+      tf: bakeTransferFunction(ramp, -1, 1),
+      clip: new Float32Array(52),
+      labelInfo: [0, 0, 0, 0],
+      overlayInfo: [0, 0, 0, 0],
+    })
+    expect(on[132]).toBe(1)
   })
 
   test('tileInputsDriveKeyAndParams', () => {

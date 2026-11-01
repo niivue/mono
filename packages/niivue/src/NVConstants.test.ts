@@ -320,5 +320,15 @@ describe('clampCinematicOptions', () => {
     expect(o.exposure).toBe(0)
     expect(o.lightElevation).toBe(-30)
     expect(o.labelMode).toBe(VOLUME_DEFAULTS.cinematic.labelMode)
+    // Only a real boolean turns stochastic lighting on.
+    expect(
+      clampCinematicOptions({ isStochasticLighting: true })
+        .isStochasticLighting,
+    ).toBe(true)
+    expect(
+      clampCinematicOptions({
+        isStochasticLighting: 'true' as unknown as boolean,
+      }).isStochasticLighting,
+    ).toBe(false)
   })
 })

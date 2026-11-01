@@ -442,7 +442,7 @@ export const SETTINGS: readonly Setting[] = [
         ),
         bool(
           'isStochasticLighting',
-          'Trace shadow and ambient occlusion from one sample per ray per frame: about 2x faster per frame, noisier per frame, same converged image.',
+          'Trace shadow and ambient occlusion from one sample per ray per frame: about 2.5x faster per frame, noisier per frame, same converged image.',
         ),
       ],
     },

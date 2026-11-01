@@ -2147,7 +2147,9 @@ with probability proportional to weight x luminance(A + B), traces both cones
 after the loop and subtracts its loss scaled by sum/share (unbiased). Cones
 nested in the march were 60-75% of a frame and WebGL2 ran them ~2x slower than
 WebGPU; CT_Abdo 900 px: WebGPU 16.8 -> 6.5, WebGL2 24.6 -> 9.4 ms/frame;
-converged images match (mean |d| 0.3/255). Early frames speckle where the
+converged images match (mean |d| 0.3/255; the classic path skips samples
+below weight 0.002 for secondary rays, the stochastic one does not, so a very
+hazy table can converge slightly darker). Early frames speckle where the
 picked sample's colour differs from the pixel's (white bone behind red tissue
 tints a frame grey-green). Mip downsample reads 3
 texels along odd axes (2 drops the last texel and coarse data drifts, so the
@@ -2180,10 +2182,10 @@ voxels near bone median 159 HU/mm vs 38 away). Label tables `ts_wholebody.json`
 legend), `siam_t1.json` (MR, BSD-2: `normalize` CSF 0, GM 100, WM 200; cortex
 ramp 30-70; structures without reliable T1 contrast use an always-on ramp, `lo`
 -1000 `hi` -999). The MNI152 sample loads `spmMotor.nii.gz` statistics
-(`redyell` / `winter`, +3..+6 / -3..-6, as in `vox.stats.html`). A table's `settings` key (slider values) is demo-only. For
+(`redyell` / `winter`, +3..+6 / -3..-6, as in `vox.stats.html`). `mr-mni152-tract` adds `TR_S_R.tt.gz` streamlines (`fiberRadius` 0.5) with clip plane 1 and `meshXRay` 0.05 (samples may set `meshes`, `clip`, `meshXRay`; `?clip=` wins). "Fast light" (`?fastlight=1`) sets `isStochasticLighting`. A table's `settings` key (slider values) is demo-only. For
 label-calibrated MR the classic view keeps the grey window. Samples by id
 (`?sample=`: `ct-abdo`, `ct-philips`, `ct-electrodes`, `ct-wholebody`,
-`ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-siam`); `index.html` links
+`ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-mni152`, `mr-mni152-tract`, `mr-siam`); `index.html` links
 "Cinematic CT" and "Cinematic Labeled MR". Data: niivue-demo-images-lfs; LFS
 objects load via `media.githubusercontent.com` with `?v=` (raw returns
 pointers). Add a sample only after its LFS PR merges: requesting a media URL

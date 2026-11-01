@@ -124,7 +124,10 @@ visible label volume (the labels draw, one warning), PAQD and streamed overlays
 chunked background draws `COMPOSITE` (one warning). Memory:
 a duplicate r16float intensity texture, an rgba16float gradient and a half-res
 extinction texture. Both backends; WebGL2 needs `EXT_color_buffer_float` (else
-`COMPOSITE`, one warning). `nv.cinematicFrameMs` reads the mean GPU ms per
+`COMPOSITE`, one warning). `volumeCinematic.isStochasticLighting` (default
+false) traces shadow and AO from one sample per ray per frame: about 2.5x
+faster per frame, noisier early frames, nearly the same converged image.
+`nv.cinematicFrameMs` reads the mean GPU ms per
 refinement frame (first 10 frames after a change; null without GPU timers).
 Demo: `examples/cinematic.html`.
 

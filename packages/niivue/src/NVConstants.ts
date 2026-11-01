@@ -498,13 +498,15 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   },
 }
 
-/** `v` clamped to `range`; non-finite gives `fallback`. */
 type CinematicNumberKey = {
   [K in keyof CinematicOptions]: CinematicOptions[K] extends number ? K : never
 }[keyof CinematicOptions]
 
-// Lower bounds; angles are unbounded. A zero step never advances the ray.
-const CINEMATIC_MIN: Partial<Record<CinematicNumberKey, number>> = {
+// Lower bound of every numeric setting; angles are unbounded. A zero step
+// never advances the ray.
+const CINEMATIC_MIN: Record<CinematicNumberKey, number> = {
+  lightElevation: -Infinity,
+  lightAzimuth: -Infinity,
   lightConeDeg: 0,
   lightIntensity: 0,
   ambient: 0,
@@ -526,12 +528,9 @@ export function clampCinematicOptions(
   const d = VOLUME_DEFAULTS.cinematic
   const out = { ...d, ...o }
   out.isStochasticLighting = out.isStochasticLighting === true
-  for (const k of Object.keys(d) as CinematicNumberKey[]) {
-    if (typeof d[k] !== 'number') continue
+  for (const k of Object.keys(CINEMATIC_MIN) as CinematicNumberKey[]) {
     const v = Number(out[k])
-    out[k] = Number.isFinite(v)
-      ? Math.max(v, CINEMATIC_MIN[k] ?? -Infinity)
-      : d[k]
+    out[k] = Number.isFinite(v) ? Math.max(v, CINEMATIC_MIN[k]) : d[k]
   }
   out.maxFrames = Math.round(out.maxFrames)
   if (!['only', 'unlabeled', 'none'].includes(out.labelMode))
@@ -539,6 +538,7 @@ export function clampCinematicOptions(
   return out
 }
 
+/** `v` clamped to `range`; non-finite gives `fallback`. */
 export function clampFinite(
   v: number,
   range: readonly [number, number],

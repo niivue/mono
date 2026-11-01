@@ -1,3 +1,63 @@
+## 1.0.0-rc.64 (2026-11-01)
+
+### Features
+
+- **niivue:** multi-column scrolling legend for large atlases ([36c75924](https://github.com/niivue/mono/commit/36c75924))
+- **niivue:** cinematic isStochasticLighting, one shadow/AO sample per ray ([8ed98530](https://github.com/niivue/mono/commit/8ed98530))
+- **niivue:** cinematic demo sample with streamlines; document mesh and legend limits ([7ebbbef7](https://github.com/niivue/mono/commit/7ebbbef7))
+- **niivue:** cinematicFrameMs GPU timing; cinematic audit fixes ([f99f2a42](https://github.com/niivue/mono/commit/f99f2a42))
+- **niivue:** standard overlays in cinematic mode ([8ad132f5](https://github.com/niivue/mono/commit/8ad132f5))
+- **niivue:** WebGL2 cinematic renderer in the render tile loop ([f2b9131e](https://github.com/niivue/mono/commit/f2b9131e))
+- **niivue:** MNI152 sample in the cinematic demo (default preset) ([091fc389](https://github.com/niivue/mono/commit/091fc389))
+- **niivue:** cinematic demo 'default' preset for scans that are not CT ([3be54ac3](https://github.com/niivue/mono/commit/3be54ac3))
+- **niivue:** cinematic demo on the public API ([6496f7ff](https://github.com/niivue/mono/commit/6496f7ff))
+- **niivue:** WebGL2 draws CINEMATIC as COMPOSITE until its port lands ([f9baa411](https://github.com/niivue/mono/commit/f9baa411))
+- **niivue:** WebGPU cinematic renderer in the render tile loop ([62b25e37](https://github.com/niivue/mono/commit/62b25e37))
+- **niivue:** shared cinematic CPU module ([1c7ebf6f](https://github.com/niivue/mono/commit/1c7ebf6f))
+- **niivue:** VOLUME_RENDER_MODE.CINEMATIC and volumeCinematic settings ([87e4902b](https://github.com/niivue/mono/commit/87e4902b))
+- **niivue:** CT label-modulated preset, default for labelled CTs ([a9ae6205](https://github.com/niivue/mono/commit/a9ae6205))
+- **niivue:** index links for Cinematic CT and Cinematic Labeled MR ([95687a41](https://github.com/niivue/mono/commit/95687a41))
+- **niivue:** legend hides labels in cinematic mode; label-modulated T1 by default ([855c08be](https://github.com/niivue/mono/commit/855c08be))
+- **niivue:** T1 label-modulated preset and CT_AbdoPelvis sample ([16f86c3e](https://github.com/niivue/mono/commit/16f86c3e))
+- **niivue:** MRI (SIAM T1) label rendering with label-median calibration ([c40dcae5](https://github.com/niivue/mono/commit/c40dcae5))
+- **niivue:** per-label visibility toggled from the legend colour box ([307bfa3f](https://github.com/niivue/mono/commit/307bfa3f))
+- **niivue:** darker label albedo, surfaceness floor and stronger AO for labels ([db959e50](https://github.com/niivue/mono/commit/db959e50))
+- **niivue:** label-driven materials in the cinematic demo ([560e4df2](https://github.com/niivue/mono/commit/560e4df2))
+- **niivue:** background color picker in the cinematic demo ([6ec16b14](https://github.com/niivue/mono/commit/6ec16b14))
+- **niivue:** AA checkbox in the cinematic demo (on by default) ([ac6058a8](https://github.com/niivue/mono/commit/ac6058a8))
+- **niivue:** cinematic demo status shows mode (backend) at lower right ([845d4c75](https://github.com/niivue/mono/commit/845d4c75))
+- **niivue:** cinematic demo keeps NiiVue's orientation cube; backend checkbox ([f8780813](https://github.com/niivue/mono/commit/f8780813))
+- **niivue:** cinematic CT rendering prototype (WebGPU example) ([7fedb896](https://github.com/niivue/mono/commit/7fedb896))
+
+### Fixes
+
+- **niivue:** legend scrollbar sits inside its backing ([00ccd4d4](https://github.com/niivue/mono/commit/00ccd4d4))
+- **niivue:** legend layout uses the font it draws with ([144c2b53](https://github.com/niivue/mono/commit/144c2b53))
+- **niivue:** legend scroll resets when its source changes ([2cfab3a9](https://github.com/niivue/mono/commit/2cfab3a9))
+- **niivue:** WebGL2 cinematic detaches its prep framebuffer ([c1dfe1d0](https://github.com/niivue/mono/commit/c1dfe1d0))
+- **niivue:** warn that cinematic render tiles omit the drawing layer ([7838814d](https://github.com/niivue/mono/commit/7838814d))
+- **niivue:** cinematic draws labels over a hidden background ([98770e20](https://github.com/niivue/mono/commit/98770e20))
+- **niivue:** cinematic keeps out-of-range and NaN intensities correct ([f2a4f86c](https://github.com/niivue/mono/commit/f2a4f86c))
+- **niivue:** RGB and RGBA backgrounds draw COMPOSITE in cinematic ([6afe5a80](https://github.com/niivue/mono/commit/6afe5a80))
+- **niivue:** cinematic geometry follows the volume affine ([08737b2e](https://github.com/niivue/mono/commit/08737b2e))
+- **niivue:** cinematic rand() stays below 1 ([9e7861d0](https://github.com/niivue/mono/commit/9e7861d0))
+- **niivue:** cinematic cut faces unlit, like the classic renderer ([a409060e](https://github.com/niivue/mono/commit/a409060e))
+- **niivue:** cinematic demo adopts a volume dropped on the canvas ([eb63dfc8](https://github.com/niivue/mono/commit/eb63dfc8))
+- **niivue:** cinematic view fits NiiVue's render tile; classic fallback without WebGPU ([cc2bc9fb](https://github.com/niivue/mono/commit/cc2bc9fb))
+- **niivue:** legend toggle decides from the live hiddenLabels list ([aea72474](https://github.com/niivue/mono/commit/aea72474))
+- **niivue:** cinematic cutaway with no planes; cut-face lighting only past the face ([c7d8b9d8](https://github.com/niivue/mono/commit/c7d8b9d8))
+- **niivue:** cinematic demo drops CT_Pancreas; AbdoPelvis URLs past a cached 404 ([45359cf9](https://github.com/niivue/mono/commit/45359cf9))
+- **niivue:** draw a hidden legend label as an outline that survives transparent canvases ([a56cf886](https://github.com/niivue/mono/commit/a56cf886))
+- **niivue:** version the WholeBody label URL past a CDN-cached 404 ([f515a569](https://github.com/niivue/mono/commit/f515a569))
+- **niivue:** cinematic demo reports load failures in the status bar ([483bc8ae](https://github.com/niivue/mono/commit/483bc8ae))
+- **niivue:** cinematic demo depth-tests the crosshair; backend-aware status text ([7e25b34f](https://github.com/niivue/mono/commit/7e25b34f))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.63 (2026-11-01)
 
 ### Features

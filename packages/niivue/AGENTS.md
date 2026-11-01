@@ -2040,7 +2040,13 @@ restarts (`CinematicFrameTimer`): WebGPU timestamp queries ('timestamp-query'
 requested when the adapter has it), WebGL2 `EXT_disjoint_timer_query_webgl2`;
 null without either. volumes[0] (and the label volume) are read at their
 `frame4D`. Intensities upload as half-float bits (`halfFloatBits`, hand-rounded
-where `Float16Array` is missing).
+where `Float16Array` is missing). Half floats stop at 65504, so `CinematicCpuCache`
+first replaces non-finite voxels (`sanitizeIntensities`: NaN becomes the lower
+of 0 and the finite minimum, Inf the finite extreme), then multiplies by a power
+of two when needed (`halfFloatScale`). The TF window, `gMax` and label `lo`/`hi`
+carry the same factor (no shader change), so gradient thresholds stay in data
+units and the image matches a float pipeline. Precision is half float's:
+about 1/1024 of the value, so a narrow window on top of a large offset bands.
 
 **Files:** `view/NVCinematic.ts` (shared CPU side, unit-tested: TF bake, label
 materials, dilation, calibration, clip rescale, light, uniform packing, and

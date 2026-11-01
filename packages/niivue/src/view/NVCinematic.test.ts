@@ -15,10 +15,12 @@ import {
   findLabelVolume,
   HIDDEN_LABEL,
   halfFloatBits,
+  halfFloatScale,
   hasScalarIntensity,
   labelMaterials,
   lightVector,
   packMarchParams,
+  sanitizeIntensities,
   TF_H,
   TF_W,
   tileKey,
@@ -411,6 +413,143 @@ test('onlyScalarVolumesHaveAnIntensityToTrace', () => {
   expect(hasScalarIntensity(of(NiiDataType.DT_RGBA32))).toBe(false)
   expect(hasScalarIntensity(of(NiiDataType.DT_FLOAT32))).toBe(true)
   expect(hasScalarIntensity(of(NiiDataType.DT_UINT8))).toBe(true)
+})
+
+describe('half-float range', () => {
+  const opts = VOLUME_DEFAULTS.cinematic
+  const INF_BITS = 0x7c00
+  const isFiniteHalf = (bits: number) => (bits & INF_BITS) !== INF_BITS
+
+  test('sanitizeReplacesNaNWithBackgroundAndClampsInf', () => {
+    const img = new Float32Array([
+      Number.NaN,
+      -50,
+      70,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ])
+    sanitizeIntensities(img)
+    expect(Array.from(img)).toEqual([-50, -50, 70, 70, -50])
+    // All above zero: a NaN must not become tissue.
+    const positive = new Float32Array([Number.NaN, 100])
+    sanitizeIntensities(positive)
+    expect(Array.from(positive)).toEqual([0, 100])
+    const empty = new Float32Array([Number.NaN, Number.POSITIVE_INFINITY])
+    sanitizeIntensities(empty)
+    expect(Array.from(empty)).toEqual([0, 0])
+  })
+
+  test('scaleIsAPowerOfTwoAndOnlyWhenNeeded', () => {
+    expect(halfFloatScale(new Float32Array([0, 65504]))).toBe(1)
+    expect(halfFloatScale(new Float32Array([0, 100000]))).toBe(0.5)
+    expect(halfFloatScale(new Float32Array([-100000, 1]))).toBe(0.5)
+    const s = halfFloatScale(new Float32Array([1e30]))
+    expect(Number.isInteger(Math.log2(s))).toBe(true)
+    expect(1e30 * s).toBeLessThanOrEqual(65504)
+    expect(1e30 * s).toBeGreaterThan(65504 / 2)
+  })
+
+  test('outOfRangeDataUploadsFiniteAndCarriesTheScale', () => {
+    const img = new Float32Array(8)
+    img[7] = 100000
+    const vol = volume(img, 2, { calMin: 20000, calMax: 100000 })
+    const out = new CinematicCpuCache().update(vol, null, opts)
+    expect(out?.intensity?.values.every(isFiniteHalf)).toBe(true)
+    expect(out?.intensity?.values[7]).toBe(
+      halfFloatBits(new Float32Array([50000]))[0],
+    )
+    expect(out?.tf?.huMin).toBe(10000)
+    expect(out?.tf?.huMax).toBe(50000)
+    expect(out?.tf?.gMax).toBe(500)
+  })
+
+  test('aLargeVolumeClassifiesAsTheSameDataAtASmallerScale', () => {
+    addColormap('cinematicTestRamp', {
+      ...ramp,
+      gradient: { lo: 20, hi: 200 },
+      gMax: 1000,
+    })
+    const of = (k: number) => {
+      const img = new Float32Array(8).map((_, i) => i * 10 * k)
+      const vol = volume(img, 2, {
+        colormap: 'cinematicTestRamp',
+        calMin: 10 * k,
+        calMax: 60 * k,
+      })
+      return new CinematicCpuCache().update(vol, null, opts)
+    }
+    // k = 1024 needs a scale of 1/2. In uniforms and tables everything is the
+    // k = 512 scene, whose gradient thresholds sit at the same place in data.
+    const big = of(1024)
+    const same = of(512)
+    expect(big?.tf?.huMin).toBe(same?.tf?.huMin as number)
+    expect(big?.tf?.huMax).toBe(same?.tf?.huMax as number)
+    expect(Array.from(big?.tf?.color ?? [])).toEqual(
+      Array.from(same?.tf?.color ?? []),
+    )
+    expect(big?.intensity?.values).toEqual(
+      same?.intensity?.values as Uint16Array,
+    )
+    expect(big?.tf?.gMax).toBe((same?.tf?.gMax as number) / 2)
+  })
+
+  test('labelRampsFollowTheScaleButAlwaysOnStays', () => {
+    const table = {
+      R: [0, 255],
+      G: [0, 255],
+      B: [0, 255],
+      A: [255, 255],
+      I: [0, 1],
+    }
+    const scaled = labelMaterials(
+      { ...table, lo: [0, 1000], hi: [0, 2000] },
+      [],
+      0.5,
+    ).materials
+    // Label 1's second texel starts at float 12.
+    expect(Array.from(scaled.subarray(12, 14))).toEqual([500, 1000])
+    const plain = labelMaterials(table, [], 0.5).materials
+    expect(Array.from(plain.subarray(12, 14))).toEqual(
+      Array.from(labelMaterials(table).materials.subarray(12, 14)),
+    )
+  })
+
+  test('calibratedIntensitiesAreScaledAfterCalibration', () => {
+    addColormap('cinematicTestCalib', {
+      R: [0, 255],
+      G: [0, 0],
+      B: [0, 0],
+      labels: ['', 'a', 'b'],
+      normalize: [
+        [[1], 0],
+        [[2], 200000],
+      ],
+    })
+    const img = new Float32Array(64).fill(10)
+    const ids = new Float32Array(64).fill(1)
+    for (let i = 0; i < 32; i++) {
+      img[i] = 20
+      ids[i] = 2
+    }
+    const vol = volume(img, 4, { calMin: 10, calMax: 20 })
+    const labels = volume(ids, 4, {
+      colormap: 'cinematicTestCalib',
+      colormapLabel: { lut: new Uint8ClampedArray(12) },
+    })
+    const out = new CinematicCpuCache().update(vol, labels, opts)
+    expect(out?.intensity?.values.every(isFiniteHalf)).toBe(true)
+    // Calibrated window 0..200000, scaled by 1/4 to fit.
+    expect(out?.tf?.huMax).toBe(50000)
+  })
+
+  test('nanVoxelsNeverReachTheTexture', () => {
+    const img = new Float32Array(8).fill(Number.NaN)
+    img[0] = 100
+    const out = new CinematicCpuCache().update(volume(img, 2), null, opts)
+    const zero = halfFloatBits(new Float32Array([0]))[0]
+    expect(out?.intensity?.values[1]).toBe(zero)
+    expect(out?.intensity?.values.every(isFiniteHalf)).toBe(true)
+  })
 })
 
 test('frameTimerAveragesTheFirstFramesAfterARestart', () => {

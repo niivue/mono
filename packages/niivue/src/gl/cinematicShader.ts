@@ -184,7 +184,8 @@ uint pcg(uint v) {
 
 float rand() {
   rng = pcg(rng);
-  return float(rng) * (1.0 / 4294967296.0);
+  // 24 bits, exact in float, so the result stays below 1 (see cinematic.wgsl).
+  return float(rng >> 8u) * (1.0 / 16777216.0);
 }
 
 vec3 gradMM(vec3 pf) {
@@ -253,6 +254,8 @@ vec3 srgbToLinear(vec3 c) {
   return pow(c, vec3(2.2));
 }
 
+// Light lost to shadow and occlusion at one sample, where lit = A * AO +
+// B * shadow. B is 0 on a cut face, which takes AO only.
 vec3 secondaryLoss(vec3 lift, vec3 n, vec3 A, vec3 B) {
   float shadow = 1.0;
   if (P.march.z > 0.0 && any(greaterThan(B, vec3(0.0)))) {
@@ -334,6 +337,8 @@ void main() {
   float prevMag = 0.0;
   vec3 prevN = vec3(0.0);
   vec3 L = P.light.xyz;
+  // Stochastic lighting: one sample per ray, picked by weight x luminance,
+  // pays for the shadow and AO cones that correct the whole ray.
   bool isStochastic = P.lighting.x > 0.5;
   float pickSum = 0.0;
   float pickLum = 0.0;
@@ -419,6 +424,7 @@ void main() {
         pickB = B;
       }
     } else if (weight > 0.002) {
+      // Only samples that visibly contribute (> ~0.5/255) pay for secondary rays.
       acc = vec4(acc.rgb - weight * secondaryLoss(lift, n, A, B), acc.a);
     }
     if (acc.a > 0.995) { break; }

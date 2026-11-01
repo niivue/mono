@@ -45,7 +45,7 @@ on:
 permissions:
   contents: read
 
-# A new push to a PR cancels its stale run (the macOS job takes ~7 min). Every
+# A new push to a PR cancels its stale run (the macOS job takes ~10 min). Every
 # main push gets its own group, because a shared group holds only one pending
 # run and replaces it even with cancel-in-progress off, which would drop the
 # Metal result for a merge that landed while another was queued.

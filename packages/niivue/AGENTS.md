@@ -2080,7 +2080,8 @@ tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
 **Frame structure (WebGL2):** same calls and tile keys; `init` leaves the
 renderer not ready without `EXT_color_buffer_float` or when its shaders fail
 to compile (the view then draws COMPOSITE with one warning). Compute becomes fragment passes drawing a
-fullscreen triangle: prep passes one per 3D layer (`framebufferTextureLayer`),
+fullscreen triangle: prep passes one per 3D layer (`framebufferTextureLayer`,
+detached afterwards: a framebuffer that is not bound keeps a deleted texture alive),
 extinction mips by rendering each level while `TEXTURE_BASE/MAX_LEVEL` pin
 sampling to the previous one (no feedback loop), `LINEAR_MIPMAP_NEAREST` to
 match WebGPU's default nearest mip filter. Uniforms are std140 blocks fed the

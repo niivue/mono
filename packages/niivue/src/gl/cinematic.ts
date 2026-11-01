@@ -472,6 +472,16 @@ export class CinematicRenderer extends NVRenderer {
       this._offscreen()
       if (this.needsGradient) this._encodeGradient()
       if (this.needsExtinction) this._encodeExtinction()
+      // A framebuffer that is not bound keeps a deleted attachment alive, which
+      // would pin the last extinction texture after _freeVolume.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.prepFbo)
+      gl.framebufferTextureLayer(
+        gl.FRAMEBUFFER,
+        gl.COLOR_ATTACHMENT0,
+        null,
+        0,
+        0,
+      )
       this._restoreState(state)
     }
     return true

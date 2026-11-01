@@ -103,6 +103,20 @@ const SAMPLES = [
     ],
   },
   {
+    // Streamlines (as in tract.dsi.html) draw as meshes, depth-composited
+    // with the cinematic volume; a clip plane opens the brain to show them.
+    id: 'mr-mni152-tract',
+    name: 'MNI152 T1 brain + streamlines',
+    url: '/volumes/mni152.nii.gz',
+    tf: 'cr_default',
+    meshes: [
+      { url: '/meshes/TR_S_R.tt.gz', tractOptions: { fiberRadius: 0.5 } },
+    ],
+    clip: 1,
+    // Fainter than the crosshair's default: hidden fibres crowd the brain.
+    meshXRay: 0.05,
+  },
+  {
     id: 'mr-siam',
     name: 'MR T1 brain + SIAM labels',
     url: `${LFS_BASE}MR_T1_brain.nii.gz?v=1`,
@@ -149,11 +163,12 @@ const SLIDERS = [
 ]
 
 let background = [0, 0, 0, 1]
+const MESH_XRAY = 0.1
 const nv1 = new NiiVue({
   backend: params.get('backend') === 'webgl2' ? 'webgl2' : 'webgpu',
   backgroundColor: background,
   // Occluded crosshair arms show faintly, as in vox.clip.html with XRay on.
-  meshXRay: 0.1,
+  meshXRay: MESH_XRAY,
   sliceType: SLICE_TYPE.RENDER,
   isAntiAlias: true,
   // Click a legend colour box to hide/show that region; the name moves the crosshair.
@@ -273,8 +288,14 @@ async function loadVolume() {
       ...(labels ? [{ url: labels.url, colormap: labels.colormap }] : []),
       ...(sample.overlays ?? []),
     ])
+    await nv1.loadMeshes(sample.meshes ?? [])
+    nv1.meshXRay = sample.meshXRay ?? MESH_XRAY
   } finally {
     isOwnLoad = false
+  }
+  if (sample.clip !== undefined && !params.has('clip')) {
+    clipSelect.selectedIndex = sample.clip
+    clipSelect.onchange?.()
   }
   labelSelect.hidden = !labels
   nv1.isColorbarVisible = !!sample.overlays

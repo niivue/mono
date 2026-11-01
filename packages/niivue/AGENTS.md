@@ -2126,7 +2126,10 @@ Channel stacks draw no overlays. Chunked
 cinematic volume: a duplicate r16float intensity texture, an rgba16float
 gradient (8 B/voxel), a half-res rgba16float extinction mip chain, and an r8uint
 label id texture; all freed when no tile is cinematic. Depth picking uses the
-classic march. Gradient thresholds (HU/mm) were tuned on ~1.5 mm data and are
+classic march. The legend lists every label, so the TotalSegmentator tables
+(66-113 labels) shrink it to unreadable (see Legend visibility; grouping or
+scrolling deferred). Meshes (streamlines too) keep their own shaders and only depth-composite:
+they get no cinematic shadow or AO and cast none on the volume (deferred). Gradient thresholds (HU/mm) were tuned on ~1.5 mm data and are
 not resolution invariant (fix: fixed-mm smoothing before Sobel). Extinction
 classifies at voxel centres while the march interpolates, so a narrow band-pass
 TF can be skipped where an edge crosses the band between voxels (fix if seen:

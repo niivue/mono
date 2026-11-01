@@ -268,3 +268,48 @@ describe('layout uses the font it draws with', () => {
     expect(l?.columnWidth).toBeCloseTo(18 * 0.8 + 8 + 10 + 20)
   })
 })
+
+describe('scrollbar sits inside the backing', () => {
+  const entries = Array.from({ length: 100 }, (_, i) => ({
+    label: `s${i}`,
+    color: [1, 2, 3, 255] as [number, number, number, number],
+  }))
+  const barRect = (l: LegendLayout): number[] => {
+    const noText = () => ({
+      data: new Float32Array(0),
+      count: 0,
+      backColor: [0, 0, 0, 0],
+      backRect: [],
+      backRadius: 0,
+    })
+    // Backing, then track.
+    return buildLegendLabels(l, noText, [0, 0, 0, 1])[1].backRect
+  }
+
+  for (const fontPx of [undefined, 13, 80]) {
+    test(`wheelWorksOverAllOfIt (font ${fontPx ?? 'estimate'})`, () => {
+      const font = fontPx
+        ? { fontPx, measure: (s: string) => s.length * fontPx * 0.4 }
+        : undefined
+      const l = computeLegendLayout(entries, 1000, 200, 0, 0, font)
+      if (!l) throw new Error('no layout')
+      const [x, y, w, h] = barRect(l)
+      for (const [px, py] of [
+        [x, y],
+        [x + w, y],
+        [x, y + h],
+        [x + w, y + h],
+      ]) {
+        expect(isInLegend(px, py, l)).toBe(true)
+      }
+    })
+  }
+
+  test('pastTheBackingIsNoScrollbarHit', () => {
+    const l = computeLegendLayout(entries, 1000, 200, 0)
+    if (!l) throw new Error('no layout')
+    const edge = l.x + l.width - l.margin / 2
+    expect(legendScrollHit(edge, l.y + 1, l)).not.toBeNull()
+    expect(legendScrollHit(edge + 1, l.y + 1, l)).toBeNull()
+  })
+})

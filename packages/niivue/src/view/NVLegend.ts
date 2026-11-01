@@ -155,7 +155,8 @@ function backingRect(layout: LegendLayout): number[] {
   ]
 }
 
-// The scrollbar in the right margin: track [x, y, w, h] and the thumb's span.
+// The scrollbar, inside the backing's right edge (the wheel scrolls over all of
+// it): track [x, y, w, h] and the thumb's span.
 function scrollTrack(layout: LegendLayout): {
   x: number
   y: number
@@ -164,10 +165,12 @@ function scrollTrack(layout: LegendLayout): {
   thumbY: number
   thumbH: number
 } {
-  const w = Math.max(3, layout.boxSize * 0.3)
+  // Backing strip right of the columns; a big font must not widen the bar past it.
+  const strip = layout.margin * 0.5
+  const w = Math.min(strip - 2, Math.max(3, layout.boxSize * 0.3))
   const h = visibleHeight(layout)
   return {
-    x: layout.x + layout.width - layout.margin + (layout.margin - w) / 2,
+    x: layout.x + layout.width - layout.margin + (strip - w) / 2,
     y: layout.y,
     w,
     h,
@@ -564,10 +567,10 @@ export function legendScrollHit(
 ): number | null {
   if (!layout || !isLegendScrollable(layout)) return null
   const bar = scrollTrack(layout)
-  // A thin bar is hard to hit: accept a band three bars wide, within the
-  // legend (on large canvases it would reach past the right edge).
-  const right = Math.min(bar.x + 2 * bar.w, layout.x + layout.width)
-  if (x < bar.x - bar.w || x > right) return null
+  // A thin bar is hard to hit: accept a bar's width to its left and the rest of
+  // the backing to its right.
+  const [bx, , bw] = backingRect(layout)
+  if (x < bar.x - bar.w || x > bx + bw) return null
   if (y < bar.y || y > bar.y + bar.h) return null
   return y < bar.thumbY ? -1 : y > bar.thumbY + bar.thumbH ? 1 : 0
 }

@@ -109,4 +109,59 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     await page.mouse.up()
     expect(await camera()).toEqual(before)
   })
+
+  test(`legend scroll resets when its source changes, not otherwise (${backend})`, async ({
+    page,
+  }) => {
+    const ready = await page.evaluate(mount(backend))
+    test.skip(!ready.ok, `backend unavailable: ${ready.why}`)
+    const steps = await page.evaluate(`(async () => {
+      const nv = window.__nv
+      const row = () => nv.view.legendLayout?.scrollRow ?? -1
+      // A slow renderer may not have drawn yet: wait for the expected reset.
+      const until0 = async () => {
+        for (let i = 0; i < 120 && row() !== 0; i++) await window.__frame()
+        return row()
+      }
+      const settle = async () => {
+        for (let i = 0; i < 10; i++) await window.__frame()
+        return row()
+      }
+      const scroll = async () => {
+        nv.model._legendScrollRow = 5
+        nv.drawScene()
+        await settle()
+      }
+      const out = {}
+      await scroll()
+      out.scrolled = row()
+      nv.azimuth = nv.azimuth + 30
+      out.afterRedraw = await settle()
+      await nv.setVolume(1, { hiddenLabels: [3] })
+      out.afterToggle = await settle()
+      await nv.addColormapFromUrl('/volumes/aal.json', 'aal2')
+      await nv.setVolume(1, { colormap: 'aal2' })
+      out.afterColormap = await until0()
+      await scroll()
+      await nv.addVolume({ url: '/volumes/aal.nii.gz', colormap: 'aal', name: 'aal_b.nii.gz' })
+      out.afterLoad = await until0()
+      await scroll()
+      await nv.removeVolume(2)
+      out.afterRemove = await until0()
+      await scroll()
+      const doc = nv.serializeDocument()
+      await nv.loadDocument(new File([doc], 'd.nvd'))
+      out.afterDocument = await until0()
+      return out
+    })()`)
+    expect(steps).toEqual({
+      scrolled: 5,
+      afterRedraw: 5,
+      afterToggle: 5,
+      afterColormap: 0,
+      afterLoad: 0,
+      afterRemove: 0,
+      afterDocument: 0,
+    })
+  })
 }

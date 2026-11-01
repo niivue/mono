@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import type { NVImage } from '@/NVTypes'
+import type { NVImage, NVMesh } from '@/NVTypes'
 import {
   buildLegendLabels,
   collectLegendEntries,
   computeLegendLayout,
   isInLegend,
+  isSameLegendSource,
   type LegendLayout,
   legendHitTest,
   legendScrollHit,
+  legendSources,
 } from './NVLegend'
 
 describe('legendHitTest', () => {
@@ -161,5 +163,62 @@ describe('scrolled and multi-column hits', () => {
     // Backing, track and thumb, then box margin, box and text per entry.
     const shown = Math.min(entries.length, l.columns * l.visibleRows)
     expect(batches.length).toBe(3 + 3 * shown)
+  })
+})
+
+describe('legend source, which resets the scroll position', () => {
+  const atlas = (colormap: string): NVImage =>
+    ({
+      colormap,
+      colormapLabel: {
+        lut: new Uint8ClampedArray([9, 9, 9, 255]),
+        labels: ['x'],
+      },
+    }) as unknown as NVImage
+  const of = (...volumes: NVImage[]) => legendSources([], volumes)
+
+  test('unchangedByARedrawOrALabelToggle', () => {
+    const vol = atlas('a')
+    const before = of(vol)
+    expect(isSameLegendSource(before, of(vol))).toBe(true)
+    vol.hiddenLabels = [0]
+    expect(isSameLegendSource(before, of(vol))).toBe(true)
+  })
+
+  test('unchangedByAStreamedLabelTableGrowing', () => {
+    const vol = atlas('a')
+    const before = of(vol)
+    vol.colormapLabel = {
+      lut: new Uint8ClampedArray(8),
+      labels: ['x', 'y'],
+    } as NVImage['colormapLabel']
+    expect(isSameLegendSource(before, of(vol))).toBe(true)
+  })
+
+  test('changedWhenAVolumeLoadsOrGoes', () => {
+    const [a, b] = [atlas('a'), atlas('b')]
+    expect(isSameLegendSource(of(a), of(a, b))).toBe(false)
+    expect(isSameLegendSource(of(a, b), of(a))).toBe(false)
+    expect(isSameLegendSource(of(a, b), of(b, a))).toBe(false)
+    // A document or reload brings a new volume with an identical table.
+    expect(isSameLegendSource(of(a), of(atlas('a')))).toBe(false)
+  })
+
+  test('changedWhenTheColormapChanges', () => {
+    const vol = atlas('a')
+    const before = of(vol)
+    vol.colormap = 'b'
+    expect(isSameLegendSource(before, of(vol))).toBe(false)
+  })
+
+  test('skipsWhatTheLegendSkips', () => {
+    const shown = atlas('a')
+    const plain = { colormap: 'gray' } as NVImage
+    const off = { ...atlas('b'), isLegendVisible: false } as NVImage
+    expect(of(shown, plain, off)).toEqual([shown, 'a#0'])
+    const lut = { lut: new Uint8ClampedArray(4), labels: ['m'] }
+    const layer = { colormapLabel: lut }
+    const mesh = { layers: [layer, {}] } as unknown as NVMesh
+    expect(legendSources([mesh], [])).toEqual([mesh, layer, lut])
   })
 })

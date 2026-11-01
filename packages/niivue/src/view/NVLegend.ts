@@ -286,6 +286,37 @@ export function collectLegendEntries(
 }
 
 /**
+ * What the legend lists, compared by identity to tell when its source changed:
+ * volume and mesh objects, their colormaps, and the same skips as
+ * collectLegendEntries. Not `hiddenLabels`, so toggling a label keeps the scroll
+ * position, nor a volume's `colormapLabel`, which grows as streamed bricks
+ * decode (the colormap name stays).
+ */
+export function legendSources(meshes: NVMesh[], volumes: NVImage[]): unknown[] {
+  const sources: unknown[] = []
+  for (const volume of volumes) {
+    if (volume.isLegendVisible === false || !volume.colormapLabel) continue
+    sources.push(volume, NVCmaps.colormapKey(volume.colormap))
+  }
+  for (const mesh of meshes) {
+    if (mesh.isLegendVisible === false || !isMeshDrawn(mesh)) continue
+    for (const layer of mesh.layers ?? []) {
+      if (layer.colormapLabel) sources.push(mesh, layer, layer.colormapLabel)
+    }
+    if (mesh.kind === 'connectome') sources.push(mesh)
+  }
+  return sources
+}
+
+/** Whether two `legendSources` results are the same source. */
+export function isSameLegendSource(
+  a: readonly unknown[],
+  b: readonly unknown[],
+): boolean {
+  return a.length === b.length && a.every((source, i) => source === b[i])
+}
+
+/**
  * Legend layout: columns at a fixed font size, scrolled to `scrollRow`
  * (clamped). The caller reserves `width` and then sets `x`. Returns null if
  * no entries.

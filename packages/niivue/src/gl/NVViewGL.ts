@@ -785,7 +785,7 @@ export default class NVGlview {
             canvasWidth,
             canvasHeight,
             cbHeight,
-            md._legendScrollRow,
+            md.legendScrollRow(),
           )
         : null
     const legendWidth = legendLayout?.width ?? 0

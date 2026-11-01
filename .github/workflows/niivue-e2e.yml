@@ -115,6 +115,12 @@ jobs:
           bunx playwright test --workers=2 \
             --grep-invert "keeps its modulation|no plane seams"
 
+      # GPU specs skip rather than fail when an adapter or backend is missing,
+      # so a green run with skips may have tested very little. Tests excluded
+      # by --grep-invert are not run and so are not counted here.
+      - name: Fail on skipped tests
+        run: bun .github/scripts/check-no-skipped-tests.ts packages/niivue/test-results/results.json
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

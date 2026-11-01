@@ -357,6 +357,50 @@ test('cinematicReadsTheDisplayed4DFrame', () => {
   )
 })
 
+describe('affine changes', () => {
+  const opts = VOLUME_DEFAULTS.cinematic
+  const moved = (vol: NVImage): mat4 =>
+    mat4.translate(mat4.create(), vol.frac2mm as mat4, [1, 2, 3])
+
+  test('geometryFollowsFrac2mmWithoutReuploadingIntensities', () => {
+    const vol = volume(new Float32Array(8).fill(50), 2)
+    const cache = new CinematicCpuCache()
+    const first = cache.update(vol, null, opts)
+    vol.frac2mm = moved(vol)
+    const out = cache.update(vol, null, opts)
+    expect(out?.intensity).toBeNull()
+    expect(Array.from(out?.geometry?.mm2frac ?? [])).toEqual(
+      Array.from(mat4.invert(mat4.create(), vol.frac2mm as mat4) as mat4),
+    )
+    // Accumulation restarts on the version.
+    expect(out?.version).toBeGreaterThan(first?.version ?? 0)
+    const again = cache.update(vol, null, opts)
+    expect(again?.geometry).toBeNull()
+    expect(again?.version).toBe(out?.version)
+  })
+
+  test('aReorderedVolumeReuploadsItsIntensities', () => {
+    const img = new Float32Array(8)
+    img[1] = 100
+    const vol = volume(img, 2)
+    const cache = new CinematicCpuCache()
+    cache.update(vol, null, opts)
+    // calculateRAS assigns new arrays; equal values are no new voxel order.
+    vol.img2RASstep = [1, 2, 4]
+    vol.frac2mm = moved(vol)
+    expect(cache.update(vol, null, opts)?.intensity).toBeNull()
+    vol.img2RASstep = [2, 1, 4]
+    vol.frac2mm = moved(vol)
+    const out = cache.update(vol, null, opts)
+    expect(out?.intensity?.values[2]).toBe(
+      halfFloatBits(new Float32Array([100]))[0],
+    )
+    expect(out?.intensity?.geometry.mm2frac).toEqual(
+      mat4.invert(mat4.create(), vol.frac2mm as mat4) as mat4,
+    )
+  })
+})
+
 test('frameTimerAveragesTheFirstFramesAfterARestart', () => {
   const timer = new CinematicFrameTimer()
   timer.restart()

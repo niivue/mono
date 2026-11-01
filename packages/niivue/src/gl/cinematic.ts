@@ -427,6 +427,11 @@ export class CinematicRenderer extends NVRenderer {
       this.needsGradient = true
       this.needsExtinction = true
     }
+    if (update.geometry) {
+      // Extinction is per mm; the gradient texture is per voxel, so it stays.
+      this.geometry = update.geometry
+      this.needsExtinction = true
+    }
     if (update.tf) {
       this._uploadTF(update.tf)
       this.needsExtinction = true

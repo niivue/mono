@@ -2046,7 +2046,8 @@ where `Float16Array` is missing).
 materials, dilation, calibration, clip rescale, light, uniform packing, and
 `CinematicCpuCache`, which rebuilds only on version tokens: `_dataVersion`,
 `colormapKey`, calMin/calMax, label volume identity + `hiddenLabels`, label
-mode). `wgpu/cinematic.ts` + `cinematic*.wgsl` (`cinematicCommon` is prepended
+mode, `frac2mm` identity; `calculateRAS` clones it per affine, and only a changed
+voxel order re-uploads intensities). `wgpu/cinematic.ts` + `cinematic*.wgsl` (`cinematicCommon` is prepended
 to the march and extinction so primary and shadow rays classify identically).
 `gl/cinematic.ts` + `gl/cinematicShader.ts` mirror them method for method and
 statement for statement.
@@ -2065,7 +2066,7 @@ schedules one `render()` after `onSubmittedWorkDone` (one frame in flight), not
 while `_isDragging` (each camera change draws one restarted frame). Each tile
 (keyed by tile index, sized to it in device px; multiplanar and mosaic render
 tiles each get one) restarts on any change of options, cache version, viewport,
-MVP, clip planes, cutaway or background. First-hit depth is set on frame 0
+MVP, clip planes, cutaway, background or affine. First-hit depth is set on frame 0
 (first sample with table alpha >= 0.01, as the classic march), not
 min-accumulated. The light comes from each tile's own model matrix (mosaic
 tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.

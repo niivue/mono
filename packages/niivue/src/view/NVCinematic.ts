@@ -557,6 +557,10 @@ export function canUseCinematicOverlays(volumes: readonly NVImage[]): boolean {
 const sameKey = (a: readonly unknown[], b: readonly unknown[]): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i])
 
+/** The voxel order getImageDataRAS reads; an affine change can reorder it. */
+const rasOrderKey = (vol: NVImage | null): string =>
+  [vol?.dimsRAS, vol?.img2RASstep, vol?.img2RASstart].join('|')
+
 /** Intensity volume to upload: scaled (and calibrated) values in RAS order. */
 export type CinematicIntensity = {
   /** IEEE half-float bits (r16float / HALF_FLOAT). */
@@ -576,6 +580,8 @@ export type CinematicLabels = {
 /** What changed since the last update; null fields are unchanged. */
 export type CinematicUpdate = {
   intensity: CinematicIntensity | null
+  /** New placement of unchanged intensities: an affine change. */
+  geometry: CinematicGeometry | null
   tf: BakedTransferFunction | null
   labels: CinematicLabels | null
   /** Bumps on any change, so a tile restarts its accumulation. */
@@ -584,8 +590,9 @@ export type CinematicUpdate = {
 
 /**
  * Derived CPU data of the cinematic scene, rebuilt only when its inputs'
- * version tokens change: volume `_dataVersion`, `colormapKey`, calMin/calMax,
- * label volume identity, `_dataVersion` and `hiddenLabels`, label mode.
+ * version tokens change: volume `_dataVersion`, `frac2mm` identity (calculateRAS
+ * clones a new matrix per affine), `colormapKey`, calMin/calMax, label volume
+ * identity, `_dataVersion` and `hiddenLabels`, label mode.
  * One per view (both backends); `update` returns what to upload.
  */
 export class CinematicCpuCache {
@@ -598,12 +605,18 @@ export class CinematicCpuCache {
   private _rawLabelKey: unknown[] = []
   private _rawLabels: Uint8Array | null = null
   private _geometry: CinematicGeometry | null = null
+  private _geometryFrac2mm: mat4 | null = null
   private _calibration: ((v: number) => number) | null = null
   private _labelBlend = 0
 
   /** Label ids of `labelVol` in RAS order, or null when not 0..254. */
   private _labelIds(labelVol: NVImage | null): Uint8Array | null {
-    const key = [labelVol, labelVol?._dataVersion ?? 0, labelVol?.frame4D]
+    const key = [
+      labelVol,
+      labelVol?._dataVersion ?? 0,
+      labelVol?.frame4D,
+      rasOrderKey(labelVol),
+    ]
     if (sameKey(key, this._rawLabelKey)) return this._rawLabels
     this._rawLabelKey = key
     this._rawLabels = null
@@ -641,6 +654,7 @@ export class CinematicCpuCache {
       : null
     const out: CinematicUpdate = {
       intensity: null,
+      geometry: null,
       tf: null,
       labels: null,
       version: this.version,
@@ -649,9 +663,11 @@ export class CinematicCpuCache {
       vol,
       vol._dataVersion ?? 0,
       vol.frame4D,
+      rasOrderKey(vol),
       labelVol,
       labelVol?._dataVersion ?? 0,
       labelVol?.frame4D,
+      rasOrderKey(labelVol),
       labelCmap?.normalize,
     ]
     if (!sameKey(intensityKey, this._intensityKey)) {
@@ -676,6 +692,7 @@ export class CinematicCpuCache {
       const map = this._calibration
       if (map) for (let i = 0; i < img.length; i++) img[i] = map(img[i])
       this._geometry = cinematicGeometry(vol.frac2mm, dims)
+      this._geometryFrac2mm = vol.frac2mm
       out.intensity = {
         values: halfFloatBits(img),
         geometry: this._geometry,
@@ -683,6 +700,10 @@ export class CinematicCpuCache {
       // Window (calibration) and label ids (grid) follow the intensities.
       this._tfKey = []
       this._labelKey = []
+    } else if (this._geometry && vol.frac2mm !== this._geometryFrac2mm) {
+      this._geometry = cinematicGeometry(vol.frac2mm, this._geometry.dims)
+      this._geometryFrac2mm = vol.frac2mm
+      out.geometry = this._geometry
     }
     const cmap =
       lookupColorMap(vol.colormap ?? 'gray') ?? lookupColorMap('gray')
@@ -733,7 +754,9 @@ export class CinematicCpuCache {
         }
       }
     }
-    if (out.intensity || out.tf || out.labels) out.version = ++this.version
+    if (out.intensity || out.geometry || out.tf || out.labels) {
+      out.version = ++this.version
+    }
     return out
   }
 }

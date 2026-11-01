@@ -1127,6 +1127,11 @@ export default class NVGlview {
             )
           }
         } else if (isCinematic && tile.space !== 'global3d') {
+          if (md.drawingVolume) {
+            this._warnCinematic(
+              'the drawing layer is not drawn in cinematic render tiles (2D tiles still show it)',
+            )
+          }
           // Cinematic draws its own label or standard-overlay pass.
           if (isCinematicBackgroundVisible || hasCinematicOverlay)
             this.cinematicRenderer.draw({

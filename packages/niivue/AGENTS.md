@@ -2133,7 +2133,9 @@ visible label volume (the same-grid label volume draws alone), and any visible
 PAQD, streamed or off-grid label overlay (all standard overlays omitted).
 Channel stacks draw no overlays. Chunked
 (streamed) and RGB/RGBA backgrounds (no scalar intensity for the TF,
-`hasScalarIntensity`) draw COMPOSITE (one `log.warn` each). Memory per
+`hasScalarIntensity`) draw COMPOSITE (one `log.warn` each). The drawing layer is
+not drawn in cinematic render tiles (one `log.warn`; 2D tiles still show it, and
+no drawing pass exists yet). Memory per
 cinematic volume: a duplicate r16float intensity texture, an rgba16float
 gradient (8 B/voxel), a half-res rgba16float extinction mip chain, and an r8uint
 label id texture; all freed when no tile is cinematic. Depth picking uses the

@@ -18,7 +18,7 @@ export const HIDDEN_LABEL = 255
 /** Material table width in RGBA32F texels: two per label id. */
 export const MATERIAL_TEXELS = 512
 /** March uniform size in floats (see packMarchParams and cinematic.wgsl Params). */
-export const MARCH_PARAM_FLOATS = 132
+export const MARCH_PARAM_FLOATS = 136
 /** Display uniform size in floats (see packDisplayParams). */
 export const DISPLAY_PARAM_FLOATS = 16
 export const EXT_PARAM_FLOATS = 24
@@ -362,6 +362,7 @@ export function packMarchParams(p: {
   out.set(p.clip, 72)
   out.set(p.labelInfo, 124)
   out.set(p.overlayInfo, 128)
+  out.set([s.isStochasticLighting ? 1 : 0, 0, 0, 0], 132)
   return out
 }
 

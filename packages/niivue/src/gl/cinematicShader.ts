@@ -160,7 +160,9 @@ layout(std140) uniform Params {
   vec4 clipInfo;
   vec4 labelInfo;
   vec4 overlayInfo;
+  vec4 lighting;
 } P;
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 uniform sampler3D huTex;
 uniform sampler3D gradTex;
 uniform sampler2D tfColor;
@@ -320,6 +322,14 @@ void main() {
   vec4 acc = vec4(0.0);
   float prevMag = 0.0;
   vec3 prevN = vec3(0.0);
+  vec3 L = P.light.xyz;
+  bool isOneSecondary = P.lighting.x > 0.5;
+  float pickSum = 0.0;
+  float pickShare = 1.0;
+  vec3 pickLift = vec3(0.0);
+  vec3 pickN = vec3(0.0);
+  vec3 pickA = vec3(0.0);
+  vec3 pickB = vec3(0.0);
   float rayJitter = rand();
   float t = tNear + stepMM * rayJitter;
   for (int i = 0; i < 8192; i++) {
@@ -374,27 +384,56 @@ void main() {
     float spec = specular * P.view.w;
     float surf = onCut ? 1.0 : surfBase;
     float weight = (1.0 - acc.a) * a;
-    vec3 L = P.light.xyz;
-    bool worth = weight > 0.002;
-    vec3 lift = pf + (P.mm2frac * vec4(n * (1.5 * P.ext.x), 0.0)).xyz;
-    float shadow = 1.0;
-    if (worth && shadowStrength > 0.0 && !onCut) {
-      shadow = mix(1.0, coneTransmittance(lift, L, P.light.w, 1e5), shadowStrength);
-    }
-    float occl = 1.0;
-    if (worth && aoStrength > 0.0) {
-      vec3 aoDir = sampleCosineHemisphere(n);
-      occl = mix(1.0, coneTransmittance(lift, aoDir, P.ext.w, P.ao.y), aoStrength);
-    }
     vec3 albedo = srgbToLinear(c.rgb);
     float ndl = max(dot(n, L), 0.0);
     float diffuse = mix(volTerm, ndl, surf);
     vec3 h = normalize(L - dir);
     float sp = spec * pow(max(dot(n, h), 0.0), shininess) * step(0.0, dot(n, L));
-    vec3 lit = albedo * (ambient * occl + lightI * shadow * diffuse) + vec3(lightI * shadow * sp);
-    if (onCut) { lit = albedo * occl * 0.6; }
-    acc += vec4(lit * weight, weight);
+    vec3 A = albedo * ambient;
+    vec3 B = albedo * (lightI * diffuse) + vec3(lightI * sp);
+    if (onCut) {
+      A = albedo * 0.6;
+      B = vec3(0.0);
+    }
+    vec3 lift = pf + (P.mm2frac * vec4(n * (1.5 * P.ext.x), 0.0)).xyz;
+    if (isOneSecondary) {
+      float share = weight * (dot(A + B, LUMA) + 1e-6);
+      pickSum += share;
+      if (rand() * pickSum < share) {
+        pickShare = share / weight;
+        pickLift = lift;
+        pickN = n;
+        pickA = A;
+        pickB = B;
+      }
+      acc += vec4((A + B) * weight, weight);
+    } else {
+      bool worth = weight > 0.002;
+      float shadow = 1.0;
+      if (worth && shadowStrength > 0.0 && !onCut) {
+        shadow = mix(1.0, coneTransmittance(lift, L, P.light.w, 1e5), shadowStrength);
+      }
+      float occl = 1.0;
+      if (worth && aoStrength > 0.0) {
+        vec3 aoDir = sampleCosineHemisphere(n);
+        occl = mix(1.0, coneTransmittance(lift, aoDir, P.ext.w, P.ao.y), aoStrength);
+      }
+      acc += vec4((A * occl + B * shadow) * weight, weight);
+    }
     if (acc.a > 0.995) { break; }
+  }
+  if (pickSum > 0.0) {
+    float shadow = 1.0;
+    if (shadowStrength > 0.0 && any(greaterThan(pickB, vec3(0.0)))) {
+      shadow = mix(1.0, coneTransmittance(pickLift, L, P.light.w, 1e5), shadowStrength);
+    }
+    float occl = 1.0;
+    if (aoStrength > 0.0) {
+      vec3 aoDir = sampleCosineHemisphere(pickN);
+      occl = mix(1.0, coneTransmittance(pickLift, aoDir, P.ext.w, P.ao.y), aoStrength);
+    }
+    vec3 loss = pickA * (1.0 - occl) + pickB * (1.0 - shadow);
+    acc = vec4(acc.rgb - (pickSum / pickShare) * loss, acc.a);
   }
   // Standard overlay texture and depth-aware mix; mirrors cinematic.wgsl.
   if (P.overlayInfo.x > 0.5) {

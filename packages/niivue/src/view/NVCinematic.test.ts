@@ -190,11 +190,12 @@ describe('geometry, light and uniforms', () => {
       labelInfo: [1, 0, 0.5, 0],
       overlayInfo: [1, 0, 1, 1],
     })
-    expect(out.length).toBe(132)
+    expect(out.length).toBe(136)
     expect(Array.from(out.subarray(48, 50))).toEqual([64, 32])
     expect(out[61]).toBe(5)
     expect(Array.from(out.subarray(124, 128))).toEqual([1, 0, 0.5, 0])
-    expect(Array.from(out.subarray(128))).toEqual([1, 0, 1, 1])
+    expect(Array.from(out.subarray(128, 132))).toEqual([1, 0, 1, 1])
+    expect(out[132]).toBe(0) // stochastic lighting off by default
   })
 
   test('tileInputsDriveKeyAndParams', () => {
@@ -225,7 +226,7 @@ describe('geometry, light and uniforms', () => {
     expect(out[61]).toBe(3)
     // Background visibility replaces labelInfo.w.
     expect(Array.from(out.subarray(124, 128))).toEqual([1, 0, 0.5, 0])
-    expect(Array.from(out.subarray(128))).toEqual([0, 1, 1, 1])
+    expect(Array.from(out.subarray(128, 132))).toEqual([0, 1, 1, 1])
   })
 })
 

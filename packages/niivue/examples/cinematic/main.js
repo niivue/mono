@@ -375,6 +375,11 @@ colorBtn.oninput = () => {
   background.push(1)
   nv1.backgroundColor = background
 }
+stochasticCheck.checked = params.get('fastlight') === '1'
+stochasticCheck.onchange = () => {
+  nv1.volumeCinematic = { isStochasticLighting: stochasticCheck.checked }
+}
+stochasticCheck.onchange()
 aaCheck.onchange = async () => {
   await nv1.reinitializeView({ isAntiAlias: aaCheck.checked })
 }

@@ -2140,7 +2140,16 @@ tried and reverted 2026-10-31; research on branch `cinematic-blood-vs-bone`).
 **Rendering details worth keeping:** 2D TF lookup is HU x sqrt-spaced gradient
 magnitude. Shading blends volumetric (normal-free) and Blinn-Phong surface
 terms by surfaceness; Bannerman normal reuse. Shadows and AO cone-trace the
-extinction mips; empty-space skip reads mip `SKIP_LOD`. Mip downsample reads 3
+extinction mips; empty-space skip reads mip `SKIP_LOD`. `isStochasticLighting` (default off,
+demo "Fast light") moves the cones out of the march loop: lit = A x AO +
+B x shadow per sample, the march sums A + B, and one sample per ray, picked
+with probability proportional to weight x luminance(A + B), traces both cones
+after the loop and subtracts its loss scaled by sum/share (unbiased). Cones
+nested in the march were 60-75% of a frame and WebGL2 ran them ~2x slower than
+WebGPU; CT_Abdo 900 px: WebGPU 16.8 -> 6.5, WebGL2 24.6 -> 9.4 ms/frame;
+converged images match (mean |d| 0.3/255). Early frames speckle where the
+picked sample's colour differs from the pixel's (white bone behind red tissue
+tints a frame grey-green). Mip downsample reads 3
 texels along odd axes (2 drops the last texel and coarse data drifts, so the
 skip jumps over tissue). Secondary rays start 1.5 extinction voxels off the
 surface (from the surface they show wood-grain self-shadow rings). Clip planes

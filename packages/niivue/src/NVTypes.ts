@@ -994,6 +994,12 @@ export type CinematicOptions = {
    * the labels.
    */
   labelMode: 'only' | 'unlabeled' | 'none'
+  /**
+   * Trace shadow and ambient occlusion from one sample per ray per frame,
+   * picked by its contribution, instead of from every visible sample: about
+   * 2x faster per frame, noisier per frame, same converged image.
+   */
+  isStochasticLighting: boolean
 }
 
 /**

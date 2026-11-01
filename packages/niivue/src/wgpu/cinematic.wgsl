@@ -22,7 +22,10 @@ struct Params {
   clipInfo: vec4f, // active plane count, cutaway (0/1), -, -
   labelInfo: vec4f, // labels on (0/1), unlabeled tissue scale, label colour blend (0 = label materials), background visible (0/1)
   overlayInfo: vec4f, // standard overlays on, clip with anatomy, inverse gamma, correct step opacity
+  lighting: vec4f, // one secondary-ray sample per ray (0/1), -, -, -
 }
+
+const LUMA = vec3f(0.2126, 0.7152, 0.0722);
 
 @group(0) @binding(0) var huTex: texture_3d<f32>;
 @group(0) @binding(1) var gradTex: texture_3d<f32>;
@@ -199,6 +202,18 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var acc = vec4f(0.0);
   var prevMag = 0.0;
   var prevN = vec3f(0.0);
+  let L = P.light.xyz;
+  // One secondary sample per ray: lit = A * occlusion + B * shadow; the march
+  // sums A + B, and one sample, picked in proportion to its share, pays for
+  // the shadow and AO cones that correct the whole ray (unbiased across
+  // frames; cones nested in the march dominated its cost).
+  let isOneSecondary = P.lighting.x > 0.5;
+  var pickSum = 0.0;
+  var pickShare = 1.0;
+  var pickLift = vec3f(0.0);
+  var pickN = vec3f(0.0);
+  var pickA = vec3f(0.0);
+  var pickB = vec3f(0.0);
   let rayJitter = rand();
   var t = tNear + stepMM * rayJitter;
   for (var i = 0; i < 8192; i++) {
@@ -271,36 +286,65 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let spec = specular * P.view.w;
     let surf = select(surfBase, 1.0, onCut);
     let weight = (1.0 - acc.a) * a;
-    let L = P.light.xyz;
-    // Only samples that visibly contribute (> ~0.5/255) pay for secondary rays.
-    let worth = weight > 0.002;
-    // Secondary rays leave from a point lifted off the surface: otherwise the
-    // coarse extinction voxels shadow the surface by its phase against the
-    // grid, which shows as wood-grain rings. 1.5 voxels clears the trilinear
-    // footprint of the surface's own extinction voxel.
-    let lift = pf + (P.mm2frac * vec4f(n * (1.5 * P.ext.x), 0.0)).xyz;
-    var shadow = 1.0;
-    if (worth && shadowStrength > 0.0 && !onCut) {
-      shadow = mix(1.0, coneTransmittance(lift, L, P.light.w, 1e5), shadowStrength);
-    }
-    var occl = 1.0;
-    if (worth && aoStrength > 0.0) {
-      let aoDir = sampleCosineHemisphere(n);
-      occl = mix(1.0, coneTransmittance(lift, aoDir, P.ext.w, P.ao.y), aoStrength);
-    }
     let albedo = srgbToLinear(c.rgb);
     let ndl = max(dot(n, L), 0.0);
     let diffuse = mix(volTerm, ndl, surf);
     let h = normalize(L - dir);
     let sp = spec * pow(max(dot(n, h), 0.0), shininess) * step(0.0, dot(n, L));
-    var lit = albedo * (ambient * occl + lightI * shadow * diffuse) + vec3f(lightI * shadow * sp);
+    var A = albedo * ambient;
+    var B = albedo * (lightI * diffuse) + vec3f(lightI * sp);
     // A lit cut face washes out (its plane normal often faces the light), so
     // like the classic renderer's clip surface it shows the plain colour, AO
     // only. 0.6 keeps tissue albedos (grey ~0.6, white matter ~0.9) on the
     // linear part of the ACES curve rather than its shoulder.
-    if (onCut) { lit = albedo * occl * 0.6; }
-    acc += vec4f(lit * weight, weight);
+    if (onCut) {
+      A = albedo * 0.6;
+      B = vec3f(0.0);
+    }
+    // Secondary rays leave from a point lifted off the surface: otherwise the
+    // coarse extinction voxels shadow the surface by its phase against the
+    // grid, which shows as wood-grain rings. 1.5 voxels clears the trilinear
+    // footprint of the surface's own extinction voxel.
+    let lift = pf + (P.mm2frac * vec4f(n * (1.5 * P.ext.x), 0.0)).xyz;
+    if (isOneSecondary) {
+      let share = weight * (dot(A + B, LUMA) + 1e-6);
+      pickSum += share;
+      if (rand() * pickSum < share) {
+        pickShare = share / weight;
+        pickLift = lift;
+        pickN = n;
+        pickA = A;
+        pickB = B;
+      }
+      acc += vec4f((A + B) * weight, weight);
+    } else {
+      // Only samples that visibly contribute (> ~0.5/255) pay for secondary rays.
+      let worth = weight > 0.002;
+      var shadow = 1.0;
+      if (worth && shadowStrength > 0.0 && !onCut) {
+        shadow = mix(1.0, coneTransmittance(lift, L, P.light.w, 1e5), shadowStrength);
+      }
+      var occl = 1.0;
+      if (worth && aoStrength > 0.0) {
+        let aoDir = sampleCosineHemisphere(n);
+        occl = mix(1.0, coneTransmittance(lift, aoDir, P.ext.w, P.ao.y), aoStrength);
+      }
+      acc += vec4f((A * occl + B * shadow) * weight, weight);
+    }
     if (acc.a > 0.995) { break; } // early termination: the rest is hidden
+  }
+  if (pickSum > 0.0) {
+    var shadow = 1.0;
+    if (shadowStrength > 0.0 && any(pickB > vec3f(0.0))) {
+      shadow = mix(1.0, coneTransmittance(pickLift, L, P.light.w, 1e5), shadowStrength);
+    }
+    var occl = 1.0;
+    if (aoStrength > 0.0) {
+      let aoDir = sampleCosineHemisphere(pickN);
+      occl = mix(1.0, coneTransmittance(pickLift, aoDir, P.ext.w, P.ao.y), aoStrength);
+    }
+    let loss = pickA * (1.0 - occl) + pickB * (1.0 - shadow);
+    acc = vec4f(acc.rgb - (pickSum / pickShare) * loss, acc.a);
   }
 
   // Reuse the standard renderer's classified, registered overlay texture.

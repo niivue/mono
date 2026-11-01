@@ -440,6 +440,10 @@ export const SETTINGS: readonly Setting[] = [
           'How a label volume colours the render: only (unlabeled tissue hidden), unlabeled (drawn too, with the base colormap), or none (labels ignored).',
           { values: CINEMATIC_LABEL_MODES },
         ),
+        bool(
+          'isStochasticLighting',
+          'Trace shadow and ambient occlusion from one sample per ray per frame: about 2x faster per frame, noisier per frame, same converged image.',
+        ),
       ],
     },
   ),

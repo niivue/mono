@@ -51,6 +51,14 @@ const LEGEND_FONT_SCALE = 0.8 // Legend uses slightly smaller font than default
 // Extra columns may take this much of the canvas; past it the legend scrolls.
 const MAX_WIDTH_FRACTION = 0.4
 
+/** The font the legend draws with, so layout and text agree. */
+export type LegendFont = {
+  /** Font renderer's size in device px (fontMinSize, fontScale and DPR included). */
+  fontPx: number
+  /** Width of a label in px at the given font scale. */
+  measure: (label: string, scale: number) => number
+}
+
 type LegendGrid = Pick<
   LegendLayout,
   | 'width'
@@ -67,24 +75,28 @@ type LegendGrid = Pick<
 /**
  * Columns, rows and width at the legend's fixed font size. Text never shrinks
  * to fit (a large atlas became unreadable): entries wrap into columns, then
- * scroll.
+ * scroll. Without `font` (no renderer yet) sizes come from an estimate.
  */
 function legendGrid(
   entries: LegendEntry[],
   canvasWidth: number,
   canvasHeight: number,
   colorbarHeight: number,
+  font?: LegendFont,
 ): LegendGrid {
   const fontScale = LEGEND_FONT_SCALE
-  const boxSize = estimateFontSize(canvasWidth, canvasHeight) * fontScale
+  const boxSize =
+    (font?.fontPx ?? estimateFontSize(canvasWidth, canvasHeight)) * fontScale
   const rowHeight = boxSize * LINE_HEIGHT_RATIO
   const pitch = rowHeight + LEGEND_GAP
-  const maxLabelChars = Math.max(...entries.map((e) => e.label.length))
+  const labelWidth = (label: string): number =>
+    font ? font.measure(label, fontScale) : label.length * boxSize * FONT_XADV
+  const maxLabelWidth = entries.reduce(
+    (max, e) => Math.max(max, labelWidth(e.label)),
+    0,
+  )
   const columnWidth =
-    boxSize +
-    LEGEND_TEXT_PADDING +
-    maxLabelChars * boxSize * FONT_XADV +
-    LEGEND_MARGIN
+    boxSize + LEGEND_TEXT_PADDING + maxLabelWidth + LEGEND_MARGIN
   const available = canvasHeight - colorbarHeight - LEGEND_MARGIN * 2
   const fitRows = Math.max(1, Math.floor((available + LEGEND_GAP) / pitch))
   const maxColumns = Math.max(
@@ -327,9 +339,16 @@ export function computeLegendLayout(
   canvasHeight: number,
   colorbarHeight: number,
   scrollRow = 0,
+  font?: LegendFont,
 ): LegendLayout | null {
   if (entries.length === 0) return null
-  const grid = legendGrid(entries, canvasWidth, canvasHeight, colorbarHeight)
+  const grid = legendGrid(
+    entries,
+    canvasWidth,
+    canvasHeight,
+    colorbarHeight,
+    font,
+  )
   const layout: LegendLayout = {
     ...grid,
     entries,

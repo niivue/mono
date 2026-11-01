@@ -222,3 +222,49 @@ describe('legend source, which resets the scroll position', () => {
     expect(legendSources([mesh], [])).toEqual([mesh, layer, lut])
   })
 })
+
+describe('layout uses the font it draws with', () => {
+  const entries = Array.from({ length: 116 }, (_, i) => ({
+    label: i === 40 ? 'a longer structure' : `s${i}`,
+    color: [1, 2, 3, 255] as [number, number, number, number],
+  }))
+  // An estimate of 13 * (1400 * 800 / 480000)^0.4 = 18 px; drawn much larger.
+  const fontPx = 40
+  const measure = (label: string, scale: number) =>
+    label.length * fontPx * scale * 0.5
+  const font = { fontPx, measure }
+
+  test('boxesAndRowsFollowTheRealFontSize', () => {
+    const l = computeLegendLayout(entries, 1400, 800, 0, 0, font)
+    expect(l?.boxSize).toBe(fontPx * 0.8)
+    expect(l?.rowHeight).toBeCloseTo(fontPx * 0.8 * 1.2)
+    expect(l?.fontScale).toBe(0.8)
+  })
+
+  test('aColumnHoldsItsWidestLabel', () => {
+    const narrow = {
+      fontPx: 22,
+      measure: (label: string, scale: number) =>
+        label.length * 22 * scale * 0.5,
+    }
+    const l = computeLegendLayout(entries, 1400, 800, 0, 0, narrow)
+    if (!l) throw new Error('no layout')
+    expect(l.columns).toBeGreaterThan(1)
+    const widest = narrow.measure('a longer structure', 0.8)
+    expect(l.columnWidth).toBeGreaterThanOrEqual(
+      l.boxSize + l.textPadding + widest,
+    )
+    // Hit testing reads the same grid: a point past the widest label is the
+    // next column's colour box.
+    const secondBox = l.margin + l.columnWidth + 1
+    const hit = legendHitTest(secondBox, l.y + 1, l)
+    expect(hit?.entry).toBe(entries[l.rows])
+    expect(hit?.isOnBox).toBe(true)
+  })
+
+  test('columnWidthIsMeasuredNotEstimatedFromCharacters', () => {
+    const tiny = { fontPx: 18, measure: () => 10 }
+    const l = computeLegendLayout(entries, 1400, 800, 0, 0, tiny)
+    expect(l?.columnWidth).toBeCloseTo(18 * 0.8 + 8 + 10 + 20)
+  })
+})

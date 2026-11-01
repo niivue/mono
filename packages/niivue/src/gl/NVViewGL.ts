@@ -786,6 +786,11 @@ export default class NVGlview {
             canvasHeight,
             cbHeight,
             md.legendScrollRow(),
+            {
+              fontPx: this.fontRenderer.fontPx,
+              measure: (label, scale) =>
+                this.fontRenderer.measureText(label, scale),
+            },
           )
         : null
     const legendWidth = legendLayout?.width ?? 0

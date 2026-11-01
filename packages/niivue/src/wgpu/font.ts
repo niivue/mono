@@ -7,6 +7,7 @@ import {
   FLOATS_PER_PANEL,
   type FontMetrics,
   type GlyphBatch,
+  measureTextWidth,
 } from '@/view/NVFont'
 import { NVRenderer } from '@/view/NVRenderer'
 import fontShaderCode from './font.wgsl?raw'
@@ -201,6 +202,12 @@ export class FontRenderer extends NVRenderer {
       fontSizeScaling,
       fontMinPx,
     )
+  }
+
+  /** Width of `str` in px at `scale`, as buildText draws it; 0 before init. */
+  measureText(str: string, scale: number): number {
+    if (!this.fontMets) return 0
+    return measureTextWidth(str, this.fontPx, scale, this.fontMets)
   }
 
   buildText(

@@ -341,7 +341,7 @@ function applyMode() {
     ? VOLUME_RENDER_MODE.CINEMATIC
     : VOLUME_RENDER_MODE.COMPOSITE
   applyColormap()
-  const backend = nv1.opts.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
+  const backend = nv1.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
   modeText.textContent = `${isCinematic ? 'Cinematic' : 'Classic'} (${backend})`
   controls.hidden = !isCinematic
   timeText.textContent = loadError
@@ -357,7 +357,7 @@ colorBtn.oninput = () => {
 aaCheck.onchange = async () => {
   await nv1.reinitializeView({ isAntiAlias: aaCheck.checked })
 }
-webgpuCheck.checked = nv1.opts.backend === 'webgpu'
+webgpuCheck.checked = nv1.backend === 'webgpu'
 webgpuCheck.onchange = async () => {
   await nv1.reinitializeView({
     backend: webgpuCheck.checked ? 'webgpu' : 'webgl2',
@@ -422,3 +422,10 @@ cutawayCheck.checked = params.get('cutaway') === '1'
 clipSelect.onchange()
 cutawayCheck.onchange()
 applyMode()
+
+// GPU ms per refinement frame, averaged by NiiVue over 10 frames after a change.
+setInterval(() => {
+  const ms = nv1.cinematicFrameMs
+  const text = loadError || (ms === null ? '' : `${ms.toFixed(1)} ms/frame`)
+  if (timeText.textContent !== text) timeText.textContent = text
+}, 250)

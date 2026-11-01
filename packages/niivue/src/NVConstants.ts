@@ -52,9 +52,9 @@ export enum DRAG_MODE {
  * CINEMATIC is a progressive path tracer for the background volume: a 2D
  * (intensity x gradient) transfer function baked from the volume's colormap,
  * soft shadows and ambient occlusion, refined over `cinematic.maxFrames`
- * frames. A label volume on the same grid supplies per-label materials.
- * Other overlays and chunked volumes are not drawn by it (a chunked volume
- * falls back to COMPOSITE). See `VolumeRenderConfig.cinematic`.
+ * frames. A label volume on the same grid supplies per-label materials;
+ * without one, standard overlays draw unlit. A chunked background falls back
+ * to COMPOSITE. See `VolumeRenderConfig.cinematic`.
  *
  * Applies to the 3D render only; a 2D slice draws one plane, where the modes
  * are identical.
@@ -372,6 +372,7 @@ export function nextSliceType(sliceType: number): number {
 
 import type {
   AnnotationConfig,
+  CinematicOptions,
   DrawConfig,
   InteractionConfig,
   LayoutConfig,
@@ -497,6 +498,41 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
 }
 
 /** `v` clamped to `range`; non-finite gives `fallback`. */
+// Lower bounds; angles are unbounded. A zero step never advances the ray.
+const CINEMATIC_MIN: Partial<Record<keyof CinematicOptions, number>> = {
+  lightConeDeg: 0,
+  lightIntensity: 0,
+  ambient: 0,
+  shadow: 0,
+  ao: 0,
+  aoRadiusMM: 0,
+  aoConeDeg: 0,
+  volumetricDiffuse: 0,
+  exposure: 0,
+  stepVoxels: 0.05,
+  maxFrames: 1,
+  specular: 0,
+}
+
+/** Cinematic settings with bad values replaced by their defaults or bounds. */
+export function clampCinematicOptions(
+  o: Partial<CinematicOptions>,
+): CinematicOptions {
+  const d = VOLUME_DEFAULTS.cinematic
+  const out = { ...d, ...o }
+  for (const k of Object.keys(d) as (keyof CinematicOptions)[]) {
+    if (k === 'labelMode') continue
+    const v = Number(out[k])
+    out[k] = Number.isFinite(v)
+      ? Math.max(v, CINEMATIC_MIN[k] ?? -Infinity)
+      : d[k]
+  }
+  out.maxFrames = Math.round(out.maxFrames)
+  if (!['only', 'unlabeled', 'none'].includes(out.labelMode))
+    out.labelMode = d.labelMode
+  return out
+}
+
 export function clampFinite(
   v: number,
   range: readonly [number, number],

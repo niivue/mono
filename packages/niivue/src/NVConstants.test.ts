@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  clampCinematicOptions,
   clampCrosscutWidth,
   clampFinite,
   clampSampleRate,
@@ -302,5 +303,22 @@ describe('clampFinite', () => {
     expect(clampFinite(1e9, [0, 1], 0.25)).toBe(1)
     expect(clampFinite(Number.NaN, [0, 1], 0.25)).toBe(0.25)
     expect(clampFinite(Number.NEGATIVE_INFINITY, [0, 1], 0.25)).toBe(0.25)
+  })
+})
+
+describe('clampCinematicOptions', () => {
+  test('replacesBadValuesAndBoundsTheStep', () => {
+    const o = clampCinematicOptions({
+      stepVoxels: 0,
+      maxFrames: Number.NaN,
+      exposure: -1,
+      lightElevation: -30,
+      labelMode: 'bogus' as 'none',
+    })
+    expect(o.stepVoxels).toBe(0.05)
+    expect(o.maxFrames).toBe(VOLUME_DEFAULTS.cinematic.maxFrames)
+    expect(o.exposure).toBe(0)
+    expect(o.lightElevation).toBe(-30)
+    expect(o.labelMode).toBe(VOLUME_DEFAULTS.cinematic.labelMode)
   })
 })

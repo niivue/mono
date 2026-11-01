@@ -199,7 +199,8 @@ Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`). Vite's WebSoc
 Cinematic rendering uses the same `add_overlay` and `set_volume` controls for
 statistical maps, including positive/negative colormaps, thresholds and opacity,
 and still shows them when the background is hidden. Not drawn: statistics mixed
-with a visible label volume (the labels draw), streamed overlays, channel stacks.
+with a visible label volume (the labels draw), PAQD and streamed overlays,
+channel stacks.
 
 Every tool below `new_tab` also takes `tab?`, the id of the tab to ask; without it the answering tab is asked, as the Tabs section explains.
 

@@ -1000,7 +1000,7 @@ export default class NVView {
           volumes.filter(isVolumeDrawn).length > (cinematicLabels ? 2 : 1)
         ) {
           this._warnCinematic(
-            'use either standard overlays or one label volume on the same grid; mixed and streamed overlays are not drawn',
+            'overlays not drawn: cinematic draws standard overlays or one same-grid label volume, not a mix, PAQD, streamed overlays or a channel stack',
           )
         }
       }
@@ -1367,7 +1367,7 @@ export default class NVView {
           if (drawnOpacity(vol) > 0 || hasCinematicOverlay)
             this.cinematicRenderer.draw(cinematicEncoder, pass, {
               index: i,
-              ltwh,
+              rect: ltwh,
               mvp: mvpMatrix as Float32Array,
               model: modelMatrix as Float32Array,
               clipPlanes: md.clipPlanes,
@@ -2300,6 +2300,10 @@ export default class NVView {
       `WebGPU via ${arch} maxTexture 2D:${this.maxTextureDimension2D} 3D:${this.maxTextureDimension3D} maxBuffer:${maxBufferSize} antiAlias:${this.isAntiAlias}`,
     )
     this.device = await adapter.requestDevice({
+      // Cinematic frame timing (cinematicFrameMs); optional.
+      requiredFeatures: adapter.features.has('timestamp-query')
+        ? ['timestamp-query']
+        : [],
       requiredLimits: {
         maxBufferSize,
         maxStorageBufferBindingSize,

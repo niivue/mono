@@ -1365,6 +1365,17 @@
       "doc": null
     },
     {
+      "jsName": "cinematicFrameMs",
+      "pyName": "cinematic_frame_ms",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Mean GPU time (ms) of a cinematic refinement frame, over the first 10\nframes after the last restart. Null until measured, outside CINEMATIC, or\nwhen the GPU offers no timer (WebGPU 'timestamp-query',\nEXT_disjoint_timer_query_webgl2)."
+    },
+    {
       "jsName": "colormaps",
       "pyName": "colormaps",
       "tsType": "string[]",

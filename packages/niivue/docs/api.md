@@ -111,7 +111,7 @@ make it 2D (intensity x gradient), and `addColormap` keeps them. The first drawn
 label volume on volume 0's grid supplies per-label materials (`S`, `lo`/`hi`
 surface ramp, `surface`, and `normalize` to calibrate uncalibrated intensities;
 calibrated volumes use the colormap's own `min`/`max`), and its `hiddenLabels`
-hide structures. Without visible label volumes, standard overlays use the same
+hide structures. Without visible label, PAQD or streamed overlays, standard overlays use the same
 registration, colormaps, positive/negative thresholds, opacity and visibility
 as the other render modes (`loadVolumes` / `setVolume`). They are unlit volumes,
 mixed by depth; `clipPlaneOverlay` clips them with the anatomy when enabled;
@@ -119,12 +119,14 @@ mixed by depth; `clipPlaneOverlay` clips them with the anatomy when enabled;
 voxels match `COMPOSITE`) apply. They reuse the existing overlay texture and do
 not cast anatomical shadows. A hidden background (`opacity: 0` or
 `visible: false`) still shows the overlays. Not drawn: statistics mixed with a
-visible label volume (the labels draw, one warning), streamed overlays (one
-warning) and channel stacks. Meshes and the crosshair composite by depth. A
+visible label volume (the labels draw, one warning), PAQD and streamed overlays
+(one warning) and channel stacks. Meshes and the crosshair composite by depth. A
 chunked background draws `COMPOSITE` (one warning). Memory:
 a duplicate r16float intensity texture, an rgba16float gradient and a half-res
 extinction texture. Both backends; WebGL2 needs `EXT_color_buffer_float` (else
-`COMPOSITE`, one warning). Demo: `examples/cinematic.html`.
+`COMPOSITE`, one warning). `nv.cinematicFrameMs` reads the mean GPU ms per
+refinement frame (first 10 frames after a change; null without GPU timers).
+Demo: `examples/cinematic.html`.
 
 ```js
 nv.volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC

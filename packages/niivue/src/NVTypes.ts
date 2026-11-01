@@ -961,7 +961,8 @@ export type VolumeRenderConfig = {
  * Angles in degrees, distances in mm. The transfer function is the background
  * volume's colormap (with the optional cinematic keys `E`, `S`, `gradient`,
  * `gMax`, `shininess`, `labelBlend`) mapped across its calMin..calMax; a label
- * volume on the same grid supplies per-label materials.
+ * volume on the same grid supplies per-label materials (label-table keys `S`,
+ * `surface`, `lo`, `hi`, `normalize`).
  */
 export type CinematicOptions = {
   /** Light elevation above the view direction. */

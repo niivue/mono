@@ -2031,8 +2031,16 @@ tracing of volumes[0] plus either one label volume or standard overlays, in the 
 view tile loops. Settings: `model.volume.cinematic` (`CinematicOptions`,
 defaults in `VOLUME_DEFAULTS.cinematic`), controller `volumeCinematic` (setter
 merges a partial object), constructor `volumeCinematic`, saved in NVD with the
-volume group (`loadDocument` merges it over the defaults). nv-mcp exposes it as
-an object setting; ipyniivue's generator skips it (no object types).
+volume group; setter, constructor and `loadDocument` pass it through
+`clampCinematicOptions` (a zero `stepVoxels` never advances the ray, so its
+floor is 0.05). nv-mcp exposes it as an object setting; ipyniivue's generator
+skips it (no object types). `cinematicFrameMs` (read-only) is the mean GPU time
+of the march, summed over tiles, for the first 10 frames after any tile
+restarts (`CinematicFrameTimer`): WebGPU timestamp queries ('timestamp-query'
+requested when the adapter has it), WebGL2 `EXT_disjoint_timer_query_webgl2`;
+null without either. volumes[0] (and the label volume) are read at their
+`frame4D`. Intensities upload as half-float bits (`halfFloatBits`, hand-rounded
+where `Float16Array` is missing).
 
 **Files:** `view/NVCinematic.ts` (shared CPU side, unit-tested: TF bake, label
 materials, dilation, calibration, clip rescale, light, uniform packing, and
@@ -2063,8 +2071,8 @@ min-accumulated. The light comes from each tile's own model matrix (mosaic
 tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
 
 **Frame structure (WebGL2):** same calls and tile keys; `init` leaves the
-renderer not ready without `EXT_color_buffer_float` (the view then draws
-COMPOSITE with one warning). Compute becomes fragment passes drawing a
+renderer not ready without `EXT_color_buffer_float` or when its shaders fail
+to compile (the view then draws COMPOSITE with one warning). Compute becomes fragment passes drawing a
 fullscreen triangle: prep passes one per 3D layer (`framebufferTextureLayer`),
 extinction mips by rendering each level while `TEXTURE_BASE/MAX_LEVEL` pin
 sampling to the previous one (no feedback loop), `LINEAR_MIPMAP_NEAREST` to
@@ -2077,7 +2085,10 @@ accum-only framebuffer. The march unprojects GL NDC z -1..1, so its depth is
 window depth for both `orthoZO` (render tile) and `ortho` (mosaic tile) MVPs.
 Integer and float32 textures are `NEAREST` (else incomplete: `texelFetch`
 reads 0). Every pass saves and restores framebuffer, viewport, program, VAO,
-blend, depth, scissor and cull state. Refinement reschedules with plain rAF.
+blend, depth, scissor and cull state. Refinement waits on a fence
+(`fenceSync`, polled each rAF) before the next frame, like WebGPU's
+`onSubmittedWorkDone`: queued behind a 20-60 ms march, plain rAF blocked the
+main thread (26 long tasks up to 99 ms in 8 s) and tripled the timed cost.
 
 **Inputs:** transfer function = volumes[0]'s colormap mapped across its
 calMin..calMax (scaled units: HU for CT). Optional colormap keys, kept by
@@ -2093,7 +2104,8 @@ drawn only by cinematic; 2D tiles are unchanged. Calibration (`normalize`) maps
 label medians piecewise linearly on the CPU; a calibrated volume's TF window is
 the colormap's own `min`/`max` (else the calibrated calMin..calMax).
 
-**Standard overlays:** without a visible label volume, both cinematic
+**Standard overlays:** without a visible label, PAQD or streamed overlay
+(`canUseCinematicOverlays`), both cinematic
 renderers borrow `volumeRenderer.overlayTexture`, whose prep path owns
 registration, colormaps, asymmetric thresholds, opacity, visibility and stack
 blending. A separate unlit march (no anatomical shadows/extinction) is mixed
@@ -2107,12 +2119,13 @@ stack/affine updates so an in-place texture rewrite restarts accumulation; the
 cinematic renderer never frees the borrowed texture.
 
 **Limits:** not drawn, with one `log.warn`: standard overlays mixed with a
-visible label volume (the label volume draws alone), and any visible streamed
-overlay (all overlays omitted). Channel stacks draw no overlays. Chunked
+visible label volume (the same-grid label volume draws alone), and any visible
+PAQD, streamed or off-grid label overlay (all standard overlays omitted).
+Channel stacks draw no overlays. Chunked
 (streamed) backgrounds draw COMPOSITE (one `log.warn`). Memory per
 cinematic volume: a duplicate r16float intensity texture, an rgba16float
 gradient (8 B/voxel), a half-res rgba16float extinction mip chain, and an r8uint
-label id texture; freed when no tile is cinematic. Depth picking uses the
+label id texture; all freed when no tile is cinematic. Depth picking uses the
 classic march. Gradient thresholds (HU/mm) were tuned on ~1.5 mm data and are
 not resolution invariant (fix: fixed-mm smoothing before Sobel). Extinction
 classifies at voxel centres while the march interpolates, so a narrow band-pass
@@ -2168,7 +2181,7 @@ segmentation) is pending: after it merges, move the MR URLs to `?v=2`, never
 before. CT_AVM and CT_pitch are uint8, not HU: excluded. `window.nv1` is exposed
 for scripted checks.
 
-**Performance** (prototype, march GPU time per frame, ~1400x605, M4 Pro,
+**Performance** (measured on the removed example prototype, march GPU time per frame, ~1400x605, M4 Pro,
 azimuth 150 / elevation 15): CT_Philips bone 6 ms, CT_WholeBody skin+bone 37
 ms, CT_Abdo angio 15 ms. Cone tracing replaced per-sample shadow rays (~10-17x
 on translucent scenes). Light scenes can read ~3x slower in some sessions (GPU

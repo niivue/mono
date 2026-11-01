@@ -6,6 +6,7 @@ import type { ColorMap, NVImage } from '@/NVTypes'
 import {
   bakeTransferFunction,
   CinematicCpuCache,
+  CinematicFrameTimer,
   calibrationMap,
   canUseCinematicOverlays,
   cinematicGeometry,
@@ -13,11 +14,14 @@ import {
   dilateLabels,
   findLabelVolume,
   HIDDEN_LABEL,
+  halfFloatBits,
   labelMaterials,
   lightVector,
   packMarchParams,
   TF_H,
   TF_W,
+  tileKey,
+  tileMarchParams,
 } from './NVCinematic'
 
 const ramp: ColorMap = {
@@ -192,6 +196,37 @@ describe('geometry, light and uniforms', () => {
     expect(Array.from(out.subarray(124, 128))).toEqual([1, 0, 0.5, 0])
     expect(Array.from(out.subarray(128))).toEqual([1, 0, 1, 1])
   })
+
+  test('tileInputsDriveKeyAndParams', () => {
+    const t = {
+      index: 0,
+      rect: [0, 0, 64.4, 32],
+      mvp: mat4.create(),
+      model: mat4.create(),
+      clipPlanes: new Float32Array(24),
+      isClipCutaway: false,
+      clipPlaneOverlay: true,
+      isBackgroundVisible: false,
+      gamma: 1,
+      isOverlayOpacityCorrected: true,
+      background: [0, 0, 0, 1],
+    }
+    expect(tileKey('k', t)).not.toBe(tileKey('k', { ...t, gamma: 2 }))
+    const out = tileMarchParams(
+      t,
+      3,
+      cinematicGeometry(mat4.create(), [4, 4, 4]),
+      bakeTransferFunction(ramp, -1, 1),
+      VOLUME_DEFAULTS.cinematic,
+      [1, 0, 0.5, 9],
+      false,
+    )
+    expect(Array.from(out.subarray(48, 50))).toEqual([64, 32])
+    expect(out[61]).toBe(3)
+    // Background visibility replaces labelInfo.w.
+    expect(Array.from(out.subarray(124, 128))).toEqual([1, 0, 0.5, 0])
+    expect(Array.from(out.subarray(128))).toEqual([0, 1, 1, 1])
+  })
 })
 
 /** A RAS-ordered float volume on an n^3 unit grid. */
@@ -297,4 +332,33 @@ describe('CinematicCpuCache', () => {
     expect(out?.labels?.ids).toBeNull()
     expect(cache.labelProblem).not.toBe('')
   })
+})
+
+test('cinematicReadsTheDisplayed4DFrame', () => {
+  const img = new Float32Array(16)
+  img.fill(10, 0, 8)
+  img.fill(30, 8)
+  const vol = volume(img, 2, { nVox3D: 8, frame4D: 0 })
+  const cache = new CinematicCpuCache()
+  const opts = VOLUME_DEFAULTS.cinematic
+  expect(cache.update(vol, null, opts)?.intensity?.values[0]).toBe(
+    halfFloatBits(new Float32Array([10]))[0],
+  )
+  vol.frame4D = 1
+  expect(cache.update(vol, null, opts)?.intensity?.values[0]).toBe(
+    halfFloatBits(new Float32Array([30]))[0],
+  )
+})
+
+test('frameTimerAveragesTheFirstFramesAfterARestart', () => {
+  const timer = new CinematicFrameTimer()
+  timer.restart()
+  const stale = timer.generation - 1
+  timer.add(100, stale) // measured before the restart: dropped
+  for (let i = 0; i < 9; i++) timer.add(2, timer.generation)
+  expect(timer.meanMs(true)).toBeNull()
+  expect(timer.meanMs(false)).toBe(2) // converged early
+  timer.add(12, timer.generation)
+  timer.add(1000, timer.generation) // past the window
+  expect(timer.meanMs(true)).toBe(3)
 })

@@ -62,6 +62,7 @@ import * as NVMesh from '@/mesh/NVMesh'
 import { clearMeshClusters } from '@/mesh/triangleClusters'
 import type { WriteOptions } from '@/mesh/writers'
 import {
+  clampCinematicOptions,
   clampCrosscutWidth,
   clampFinite,
   clampSampleRate,
@@ -80,6 +81,7 @@ import {
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
+  VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
@@ -281,6 +283,7 @@ type ViewBackend = {
    * `plan.chunks`), surfaced so `lodCompensation()` can report it.
    */
   coarseFloorDims: () => [number, number, number] | null
+  cinematicRenderer: { frameMs: number | null }
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
   onContextLost: (() => void) | null
   onChunkStream:
@@ -1842,12 +1845,27 @@ export default class NiiVue extends EventTarget {
   }
   set volumeCinematic(v: Partial<CinematicOptions>) {
     // Replace, never mutate: the initial object may be shared with a document.
-    this.model.volume.cinematic = { ...this.model.volume.cinematic, ...v }
+    this.model.volume.cinematic = clampCinematicOptions({
+      ...this.model.volume.cinematic,
+      ...v,
+    })
     this.emit('change', {
       property: 'volumeCinematic',
       value: this.model.volume.cinematic,
     })
     this.drawScene()
+  }
+
+  /**
+   * Mean GPU time (ms) of a cinematic refinement frame, over the first 10
+   * frames after the last restart. Null until measured, outside CINEMATIC, or
+   * when the GPU offers no timer (WebGPU 'timestamp-query',
+   * EXT_disjoint_timer_query_webgl2).
+   */
+  get cinematicFrameMs(): number | null {
+    if (this.model.volume.renderMode !== VOLUME_RENDER_MODE.CINEMATIC)
+      return null
+    return this.view?.cinematicRenderer.frameMs ?? null
   }
 
   get volumeOutlineWidth(): number {

@@ -1,32 +1,21 @@
-/**
- * WebGL2 renderer of VOLUME_RENDER_MODE.CINEMATIC, owned by NVViewGL; mirrors
- * wgpu/cinematic.ts method for method.
- *
- * Per frame the view calls `beginFrame`, then (when a tile is cinematic)
- * `prepare` once (CPU cache update, uploads, prep passes) and `draw` for every
- * cinematic render tile, then `endFrame`. Where WebGPU dispatches compute,
- * this renders fullscreen triangles into offscreen float targets: the prep
- * passes one per 3D layer (per mip), the march one per tile frame, blended
- * into a running MEAN in RGBA16F (constant alpha 1 / (n + 1): an fp16 sum
- * would band, and blending RGBA32F needs EXT_float_blend). `draw` then
- * resolves the tile into the current framebuffer and writes its first-hit
- * depth. Every call restores the GL state it changes.
- */
-import { mat4 } from 'gl-matrix'
-import { invGamma } from '@/NVConstants'
+import { log } from '@/logger'
 import type { CinematicOptions, NVImage } from '@/NVTypes'
 import {
   type BakedTransferFunction,
   CinematicCpuCache,
+  CinematicFrameTimer,
   type CinematicGeometry,
-  clipParams,
+  type CinematicTileInput,
+  DISPLAY_PARAM_FLOATS,
+  EXT_PARAM_FLOATS,
   MARCH_PARAM_FLOATS,
   MATERIAL_TEXELS,
   packDisplayParams,
   packExtinctionParams,
-  packMarchParams,
   TF_H,
   TF_W,
+  tileKey,
+  tileMarchParams,
 } from '@/view/NVCinematic'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
@@ -59,24 +48,6 @@ type TileState = {
   usedThisFrame: boolean
 }
 
-/** Per-tile inputs from the view's tile loop. */
-export type CinematicTileInput = {
-  index: number
-  /** Tile viewport in GL window px, bottom-left origin: [x, y, w, h]. */
-  viewport: readonly number[]
-  mvp: ArrayLike<number>
-  /** Model (rotation) matrix of the same camera, for the light. */
-  model: ArrayLike<number>
-  clipPlanes: ArrayLike<number>
-  isClipCutaway: boolean
-  clipPlaneOverlay: boolean
-  /** False when the background is hidden: only overlays are marched. */
-  isBackgroundVisible: boolean
-  gamma: number
-  isOverlayOpacityCorrected: boolean
-  background: ArrayLike<number>
-}
-
 // Uniform block binding points.
 const MARCH_BLOCK = 0
 const EXT_BLOCK = 1
@@ -95,6 +66,10 @@ type GLState = {
   depthMask: boolean
   depthFunc: number
 }
+
+type TimerQueryExt = { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number }
+// Frames whose timings may await readback; later frames go untimed.
+const MAX_PENDING_TIMINGS = 4
 
 export class CinematicRenderer extends NVRenderer {
   private gl: WebGL2RenderingContext | null = null
@@ -129,16 +104,32 @@ export class CinematicRenderer extends NVRenderer {
   // Borrowed from the standard renderer; it owns the texture and its updates.
   private overlayTex: WebGLTexture | null = null
   private overlayVersion = -1
+  private timer = new CinematicFrameTimer()
+  private isRefining = false
+  // EXT_disjoint_timer_query_webgl2 (often absent): one TIME_ELAPSED query per
+  // marched tile, read back a few frames later.
+  private timerExt: TimerQueryExt | null = null
+  private frameQueries: WebGLQuery[] = []
+  private pendingTimings: { queries: WebGLQuery[]; generation: number }[] = []
 
   /** Label problem reported by the CPU cache (e.g. values above 254). */
   get labelProblem(): string {
     return this.cpu.labelProblem
   }
 
-  /** Stays not ready without EXT_color_buffer_float (float render targets). */
+  /** Mean GPU ms per refinement frame, or null (see CinematicFrameTimer). */
+  get frameMs(): number | null {
+    return this.timer.meanMs(this.isRefining)
+  }
+
+  /**
+   * Stays not ready without EXT_color_buffer_float (float render targets) or
+   * when its shaders fail to compile.
+   */
   init(gl: WebGL2RenderingContext): void {
     if (!gl.getExtension('EXT_color_buffer_float')) return
     this.gl = gl
+    this.timerExt = gl.getExtension('EXT_disjoint_timer_query_webgl2')
     const shader = (fs: string, blocks: [string, number][]): Shader => {
       const s = new Shader(gl, cinematicVertexShader, fs)
       for (const [name, binding] of blocks) {
@@ -150,15 +141,22 @@ export class CinematicRenderer extends NVRenderer {
       }
       return s
     }
-    this.marchShader = shader(cinematicMarchShader, [['Params', MARCH_BLOCK]])
-    this.extinctionShader = shader(cinematicExtinctionShader, [
-      ['ExtParams', EXT_BLOCK],
-    ])
-    this.downsampleShader = shader(cinematicDownsampleShader, [])
-    this.gradientShader = shader(cinematicGradientShader, [])
-    this.displayShader = shader(cinematicDisplayShader, [
-      ['Display', DISPLAY_BLOCK],
-    ])
+    // A driver that rejects these shaders leaves cinematic unavailable (the
+    // view draws COMPOSITE), not the whole view.
+    try {
+      this.marchShader = shader(cinematicMarchShader, [['Params', MARCH_BLOCK]])
+      this.extinctionShader = shader(cinematicExtinctionShader, [
+        ['ExtParams', EXT_BLOCK],
+      ])
+      this.downsampleShader = shader(cinematicDownsampleShader, [])
+      this.gradientShader = shader(cinematicGradientShader, [])
+      this.displayShader = shader(cinematicDisplayShader, [
+        ['Display', DISPLAY_BLOCK],
+      ])
+    } catch (err) {
+      log.warn(`cinematic shaders failed: ${err}`)
+      return
+    }
     this.vao = gl.createVertexArray()
     this.prepFbo = gl.createFramebuffer()
     const ubo = (floats: number): WebGLBuffer | null => {
@@ -169,8 +167,8 @@ export class CinematicRenderer extends NVRenderer {
       return b
     }
     this.marchParams = ubo(MARCH_PARAM_FLOATS)
-    this.extParams = ubo(24)
-    this.displayParams = ubo(16)
+    this.extParams = ubo(EXT_PARAM_FLOATS)
+    this.displayParams = ubo(DISPLAY_PARAM_FLOATS)
     this.matIdTex = this._uploadMaterialIds(new Uint8Array(1), [1, 1, 1])
     this.matTable = this._texture2D(
       gl.RGBA32F,
@@ -423,13 +421,7 @@ export class CinematicRenderer extends NVRenderer {
       gl.deleteTexture(this.huTex)
       gl.deleteTexture(this.gradTex)
       this.huTex = this._texture3D(dims, gl.R16F, gl.LINEAR)
-      this._upload3D(
-        this.huTex,
-        dims,
-        gl.RED,
-        gl.HALF_FLOAT,
-        new Uint16Array(values.buffer, values.byteOffset, values.length),
-      )
+      this._upload3D(this.huTex, dims, gl.RED, gl.HALF_FLOAT, values)
       this.gradTex = this._texture3D(dims, gl.RGBA16F, gl.LINEAR)
       this.geometry = geometry
       this.needsGradient = true
@@ -616,22 +608,11 @@ export class CinematicRenderer extends NVRenderer {
     const options = this.options
     if (!gl || !options || !this.geometry || !this.tf) return
     if (!this.marchShader || !this.displayShader || !this.extTex) return
-    const width = Math.max(1, Math.round(t.viewport[2]))
-    const height = Math.max(1, Math.round(t.viewport[3]))
+    const width = Math.max(1, Math.round(t.rect[2]))
+    const height = Math.max(1, Math.round(t.rect[3]))
     const tile = this._tile(t.index, width, height)
     tile.usedThisFrame = true
-    const key = [
-      this.optionsKey,
-      Array.from(t.viewport).join(),
-      Array.from(t.mvp).join(),
-      Array.from(t.clipPlanes).join(),
-      t.isClipCutaway,
-      t.clipPlaneOverlay,
-      t.isBackgroundVisible,
-      t.gamma,
-      t.isOverlayOpacityCorrected,
-      Array.from(t.background).join(),
-    ].join('|')
+    const key = tileKey(this.optionsKey, t)
     if (key !== tile.key) {
       tile.key = key
       tile.frame = 0
@@ -639,28 +620,15 @@ export class CinematicRenderer extends NVRenderer {
     tile.maxFrames = Math.max(1, Math.round(options.maxFrames))
     const state = this._saveState()
     if (tile.frame < tile.maxFrames) {
-      const invMVP = mat4.invert(mat4.create(), t.mvp as mat4) ?? mat4.create()
-      const params = packMarchParams({
-        geometry: this.geometry,
-        invMVP,
-        model: t.model,
-        width,
-        height,
-        frame: tile.frame,
+      const params = tileMarchParams(
+        t,
+        tile.frame,
+        this.geometry,
+        this.tf,
         options,
-        tf: this.tf,
-        clip: clipParams(t.clipPlanes, t.isClipCutaway, this.geometry.mm2frac),
-        labelInfo: [
-          ...this.labelInfo.slice(0, 3),
-          t.isBackgroundVisible ? 1 : 0,
-        ],
-        overlayInfo: [
-          this.overlayTex ? 1 : 0,
-          t.clipPlaneOverlay ? 1 : 0,
-          invGamma(t.gamma),
-          t.isOverlayOpacityCorrected ? 1 : 0,
-        ],
-      })
+        this.labelInfo,
+        !!this.overlayTex,
+      )
       gl.bindBuffer(gl.UNIFORM_BUFFER, this.marchParams)
       gl.bufferSubData(gl.UNIFORM_BUFFER, 0, params)
       gl.bindBufferBase(gl.UNIFORM_BUFFER, MARCH_BLOCK, this.marchParams)
@@ -686,7 +654,16 @@ export class CinematicRenderer extends NVRenderer {
         gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA)
       }
       gl.viewport(0, 0, width, height)
+      if (tile.frame === 0) this.timer.restart()
+      const ext =
+        this.pendingTimings.length < MAX_PENDING_TIMINGS ? this.timerExt : null
+      const query = ext ? gl.createQuery() : null
+      if (ext && query) gl.beginQuery(ext.TIME_ELAPSED_EXT, query)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
+      if (ext && query) {
+        gl.endQuery(ext.TIME_ELAPSED_EXT)
+        this.frameQueries.push(query)
+      }
       tile.frame++
     }
     if (tile.frame > 0) {
@@ -696,7 +673,7 @@ export class CinematicRenderer extends NVRenderer {
         gl.UNIFORM_BUFFER,
         0,
         packDisplayParams(
-          [t.viewport[0], t.viewport[1], width, height],
+          [t.rect[0], t.rect[1], width, height],
           1,
           options.exposure,
           t.background,
@@ -722,6 +699,7 @@ export class CinematicRenderer extends NVRenderer {
 
   /** Before the tile loop. */
   beginFrame(): void {
+    this._readTimings()
     this.preparedThisFrame = false
     for (const tile of this.tiles.values()) tile.usedThisFrame = false
   }
@@ -746,7 +724,35 @@ export class CinematicRenderer extends NVRenderer {
     // view stops calling prepare.
     if (this.tiles.size === 0 && !this.preparedThisFrame && this.huTex)
       this._freeVolume()
+    this.isRefining = refining
+    if (this.frameQueries.length > 0) {
+      this.pendingTimings.push({
+        queries: this.frameQueries,
+        generation: this.timer.generation,
+      })
+      this.frameQueries = []
+    }
     return refining
+  }
+
+  // Oldest first; a disjoint (timer reset) frame is dropped.
+  private _readTimings(): void {
+    const gl = this.gl
+    const ext = this.timerExt
+    if (!gl || !ext) return
+    while (this.pendingTimings.length > 0) {
+      const { queries, generation } = this.pendingTimings[0]
+      const last = queries[queries.length - 1]
+      if (!gl.getQueryParameter(last, gl.QUERY_RESULT_AVAILABLE)) return
+      this.pendingTimings.shift()
+      const isDisjoint = gl.getParameter(ext.GPU_DISJOINT_EXT)
+      let ns = 0
+      for (const q of queries) {
+        ns += gl.getQueryParameter(q, gl.QUERY_RESULT)
+        gl.deleteQuery(q)
+      }
+      if (!isDisjoint) this.timer.add(ns / 1e6, generation)
+    }
   }
 
   // The scene's GPU copies (intensity, gradient, extinction, labels, TF).
@@ -769,6 +775,10 @@ export class CinematicRenderer extends NVRenderer {
     this.overlayVersion = -1
     this.tf = null
     this.cpu = new CinematicCpuCache()
+    // Full-volume size; the fresh cache re-emits labels on re-entry.
+    gl.deleteTexture(this.matIdTex)
+    this.matIdTex = this._uploadMaterialIds(new Uint8Array(1), [1, 1, 1])
+    this.labelInfo = [0, 1, 0, 0]
   }
 
   destroy(): void {
@@ -777,6 +787,13 @@ export class CinematicRenderer extends NVRenderer {
     for (const tile of this.tiles.values()) this._freeTile(tile)
     this.tiles.clear()
     this._freeVolume()
+    for (const q of [
+      ...this.frameQueries,
+      ...this.pendingTimings.flatMap((p) => p.queries),
+    ])
+      gl.deleteQuery(q)
+    this.frameQueries = []
+    this.pendingTimings = []
     gl.deleteTexture(this.matIdTex)
     gl.deleteTexture(this.matTable)
     for (const b of [this.marchParams, this.extParams, this.displayParams])

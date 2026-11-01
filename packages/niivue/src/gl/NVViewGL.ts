@@ -745,7 +745,7 @@ export default class NVGlview {
           volumes.filter(isVolumeDrawn).length > (cinematicLabels ? 2 : 1)
         ) {
           this._warnCinematic(
-            'use either standard overlays or one label volume on the same grid; mixed and streamed overlays are not drawn',
+            'overlays not drawn: cinematic draws standard overlays or one same-grid label volume, not a mix, PAQD, streamed overlays or a channel stack',
           )
         }
       }
@@ -1117,7 +1117,7 @@ export default class NVGlview {
           if (drawnOpacity(vol) > 0 || hasCinematicOverlay)
             this.cinematicRenderer.draw({
               index: i,
-              viewport: [
+              rect: [
                 bx + ltwh[0],
                 fullCanvasH - by - ltwh[1] - ltwh[3],
                 ltwh[2],
@@ -1740,10 +1740,26 @@ export default class NVGlview {
       !this._cinematicScheduled
     ) {
       this._cinematicScheduled = true
-      requestAnimationFrame(() => {
+      // Wait for the GPU, as WebGPU's onSubmittedWorkDone does: a frame
+      // queued behind a slow march blocks the main thread instead.
+      const gl = this.gl
+      const fence = gl?.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0) ?? null
+      gl?.flush()
+      const poll = (): void => {
+        const ctx = this.gl
+        if (
+          ctx &&
+          fence &&
+          ctx.getSyncParameter(fence, ctx.SYNC_STATUS) !== ctx.SIGNALED
+        ) {
+          requestAnimationFrame(poll)
+          return
+        }
+        if (ctx && fence) ctx.deleteSync(fence)
         this._cinematicScheduled = false
         this.render()
-      })
+      }
+      requestAnimationFrame(poll)
     }
     // Chunk-streaming observer: one observation per drawn frame, after this
     // frame's draw has been submitted, carrying the verdict on whether the

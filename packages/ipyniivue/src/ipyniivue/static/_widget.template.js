@@ -140,6 +140,7 @@ const PROPS_RW = [
 // [jsName, pyName] for read-only properties (JS-to-Python only).
 const PROPS_RO = [
   ["backend", "backend"],
+  ["cinematicFrameMs", "cinematic_frame_ms"],
   ["colormaps", "colormaps"],
   ["drawingColormaps", "drawing_colormaps"],
   ["effectiveDevicePixelRatio", "effective_device_pixel_ratio"],

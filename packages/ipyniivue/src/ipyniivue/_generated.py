@@ -245,6 +245,11 @@ off-window crosshair is brought back."""
 
     # Read-only properties (synced from JS to Python)
     backend = traitlets.Enum(["webgpu", "webgl2"], None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    cinematic_frame_ms = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Mean GPU time (ms) of a cinematic refinement frame, over the first 10
+frames after the last restart. Null until measured, outside CINEMATIC, or
+when the GPU offers no timer (WebGPU 'timestamp-query',
+EXT_disjoint_timer_query_webgl2)."""
     colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Every registered colormap name, both kinds."""
     drawing_colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)

@@ -1,29 +1,20 @@
-/**
- * WebGPU renderer of VOLUME_RENDER_MODE.CINEMATIC, owned by NVViewGPU.
- *
- * Per frame the view calls `beginFrame`, then (when a tile is cinematic)
- * `prepare` once (CPU cache update, uploads, prep passes) and `draw` for every
- * cinematic render tile, then `endFrame`. Compute work (prep passes, one march dispatch per tile) goes
- * into a separate command encoder that the view submits before its main
- * render pass; inside that pass `drawTile` draws a triangle in the tile's
- * viewport that resolves the tile's mean colour and writes its first-hit
- * depth (so `draw` takes both the compute encoder and the render pass). gl/cinematic.ts mirrors this method for method.
- */
-import { mat4 } from 'gl-matrix'
-import { invGamma } from '@/NVConstants'
 import type { CinematicOptions, NVImage } from '@/NVTypes'
 import {
   type BakedTransferFunction,
   CinematicCpuCache,
+  CinematicFrameTimer,
   type CinematicGeometry,
-  clipParams,
+  type CinematicTileInput,
+  DISPLAY_PARAM_FLOATS,
+  EXT_PARAM_FLOATS,
   MARCH_PARAM_FLOATS,
   MATERIAL_TEXELS,
   packDisplayParams,
   packExtinctionParams,
-  packMarchParams,
   TF_H,
   TF_W,
+  tileKey,
+  tileMarchParams,
 } from '@/view/NVCinematic'
 import { NVRenderer } from '@/view/NVRenderer'
 import marchWGSL from './cinematic.wgsl?raw'
@@ -51,23 +42,8 @@ type TileState = {
   usedThisFrame: boolean
 }
 
-/** Per-tile inputs from the view's tile loop. */
-export type CinematicTileInput = {
-  index: number
-  /** Tile viewport in device px (`tile.leftTopWidthHeight`). */
-  ltwh: readonly number[]
-  mvp: ArrayLike<number>
-  /** Model (rotation) matrix of the same camera, for the light. */
-  model: ArrayLike<number>
-  clipPlanes: ArrayLike<number>
-  isClipCutaway: boolean
-  clipPlaneOverlay: boolean
-  /** False when the background is hidden: only overlays are marched. */
-  isBackgroundVisible: boolean
-  gamma: number
-  isOverlayOpacityCorrected: boolean
-  background: ArrayLike<number>
-}
+// Tiles timed per frame; more render tiles (mosaics) go untimed.
+const TIMED_TILES = 8
 
 export class CinematicRenderer extends NVRenderer {
   private device: GPUDevice | null = null
@@ -99,10 +75,24 @@ export class CinematicRenderer extends NVRenderer {
   // Borrowed from the standard renderer; it owns the texture and its updates.
   private overlayTex: GPUTexture | null = null
   private overlayVersion = -1
+  private timer = new CinematicFrameTimer()
+  private isRefining = false
+  // Timestamp queries (when the device has 'timestamp-query'): one pair per
+  // timed tile; the read buffer is reused once its last map settles.
+  private querySet: GPUQuerySet | null = null
+  private queryResolve: GPUBuffer | null = null
+  private queryRead: GPUBuffer | null = null
+  private timedTiles = 0
+  private isQueryMapped = false
 
   /** Label problem reported by the CPU cache (e.g. values above 254). */
   get labelProblem(): string {
     return this.cpu.labelProblem
+  }
+
+  /** Mean GPU ms per refinement frame, or null (see CinematicFrameTimer). */
+  get frameMs(): number | null {
+    return this.timer.meanMs(this.isRefining)
   }
 
   init(
@@ -147,10 +137,25 @@ export class CinematicRenderer extends NVRenderer {
       multisample: { count: sampleCount },
     })
     this.extParams = device.createBuffer({
-      size: 96,
+      size: EXT_PARAM_FLOATS * 4,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
     this.matIdTex = this._uploadMaterialIds(new Uint8Array(1), [1, 1, 1])
+    if (device.features.has('timestamp-query')) {
+      this.querySet = device.createQuerySet({
+        type: 'timestamp',
+        count: 2 * TIMED_TILES,
+      })
+      // resolveQuerySet destinations must be 256-byte aligned.
+      this.queryResolve = device.createBuffer({
+        size: 256 * TIMED_TILES,
+        usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+      })
+      this.queryRead = device.createBuffer({
+        size: 16 * TIMED_TILES,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+      })
+    }
     this.matTable = device.createTexture({
       size: [MATERIAL_TEXELS, 1],
       format: 'rgba32float',
@@ -263,7 +268,7 @@ export class CinematicRenderer extends NVRenderer {
       )
       device.queue.writeTexture(
         { texture: this.huTex },
-        values as Float16Array<ArrayBuffer>,
+        values as Uint16Array<ArrayBuffer>,
         { bytesPerRow: dims[0] * 2, rowsPerImage: dims[1] },
         [dims[0], dims[1], dims[2]],
       )
@@ -297,9 +302,6 @@ export class CinematicRenderer extends NVRenderer {
       }
       this.labelInfo = info
       this.needsExtinction = true
-    }
-    if (update.intensity || update.tf || update.labels) {
-      for (const tile of this.tiles.values()) tile.marchBindGroup = null
     }
     if (!this.huTex || !this.gradTex || !this.tf || !this.geometry) return false
     this.options = options
@@ -434,7 +436,7 @@ export class CinematicRenderer extends NVRenderer {
       })
     const accum = storage(16)
     const depth = storage(4)
-    const display = uniform(64)
+    const display = uniform(DISPLAY_PARAM_FLOATS * 4)
     const tile: TileState = {
       width,
       height,
@@ -510,22 +512,11 @@ export class CinematicRenderer extends NVRenderer {
     const options = this.options
     if (!device || !options || !this.geometry || !this.tf) return
     if (!this.marchPipeline || !this.displayPipeline) return
-    const width = Math.max(1, Math.round(t.ltwh[2]))
-    const height = Math.max(1, Math.round(t.ltwh[3]))
+    const width = Math.max(1, Math.round(t.rect[2]))
+    const height = Math.max(1, Math.round(t.rect[3]))
     const tile = this._tile(t.index, width, height)
     tile.usedThisFrame = true
-    const key = [
-      this.optionsKey,
-      Array.from(t.ltwh).join(),
-      Array.from(t.mvp).join(),
-      Array.from(t.clipPlanes).join(),
-      t.isClipCutaway,
-      t.clipPlaneOverlay,
-      t.isBackgroundVisible,
-      t.gamma,
-      t.isOverlayOpacityCorrected,
-      Array.from(t.background).join(),
-    ].join('|')
+    const key = tileKey(this.optionsKey, t)
     if (key !== tile.key) {
       tile.key = key
       tile.frame = 0
@@ -533,38 +524,56 @@ export class CinematicRenderer extends NVRenderer {
     tile.maxFrames = Math.max(1, Math.round(options.maxFrames))
     const bindGroup = this._marchBindGroup(tile)
     if (tile.frame < tile.maxFrames && bindGroup) {
-      const invMVP = mat4.invert(mat4.create(), t.mvp as mat4) ?? mat4.create()
-      const params = packMarchParams({
-        geometry: this.geometry,
-        invMVP,
-        model: t.model,
-        width,
-        height,
-        frame: tile.frame,
+      const params = tileMarchParams(
+        t,
+        tile.frame,
+        this.geometry,
+        this.tf,
         options,
-        tf: this.tf,
-        clip: clipParams(t.clipPlanes, t.isClipCutaway, this.geometry.mm2frac),
-        labelInfo: [
-          ...this.labelInfo.slice(0, 3),
-          t.isBackgroundVisible ? 1 : 0,
-        ],
-        overlayInfo: [
-          this.overlayTex ? 1 : 0,
-          t.clipPlaneOverlay ? 1 : 0,
-          invGamma(t.gamma),
-          t.isOverlayOpacityCorrected ? 1 : 0,
-        ],
-      })
+        this.labelInfo,
+        !!this.overlayTex,
+      )
       device.queue.writeBuffer(
         tile.params,
         0,
         params as Float32Array<ArrayBuffer>,
       )
-      const cp = encoder.beginComputePass()
+      if (tile.frame === 0) this.timer.restart()
+      const slot =
+        this.querySet && !this.isQueryMapped && this.timedTiles < TIMED_TILES
+          ? this.timedTiles++
+          : -1
+      const cp = encoder.beginComputePass(
+        this.querySet && slot >= 0
+          ? {
+              timestampWrites: {
+                querySet: this.querySet,
+                beginningOfPassWriteIndex: 2 * slot,
+                endOfPassWriteIndex: 2 * slot + 1,
+              },
+            }
+          : undefined,
+      )
       cp.setPipeline(this.marchPipeline)
       cp.setBindGroup(0, bindGroup)
       cp.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8))
       cp.end()
+      if (this.querySet && this.queryResolve && this.queryRead && slot >= 0) {
+        encoder.resolveQuerySet(
+          this.querySet,
+          2 * slot,
+          2,
+          this.queryResolve,
+          256 * slot,
+        )
+        encoder.copyBufferToBuffer(
+          this.queryResolve,
+          256 * slot,
+          this.queryRead,
+          16 * slot,
+          16,
+        )
+      }
       tile.frame++
     }
     if (tile.frame === 0) return // nothing accumulated yet
@@ -572,7 +581,7 @@ export class CinematicRenderer extends NVRenderer {
       tile.display,
       0,
       packDisplayParams(
-        [Math.floor(t.ltwh[0]), Math.floor(t.ltwh[1]), width, height],
+        [Math.floor(t.rect[0]), Math.floor(t.rect[1]), width, height],
         tile.frame,
         options.exposure,
         t.background,
@@ -609,7 +618,32 @@ export class CinematicRenderer extends NVRenderer {
     // view stops calling prepare.
     if (this.tiles.size === 0 && !this.preparedThisFrame && this.huTex)
       this._freeVolume()
+    this.isRefining = refining
+    this._readTimestamps()
     return refining
+  }
+
+  // Called after submit: maps the pairs this frame's marches wrote.
+  private _readTimestamps(): void {
+    const read = this.queryRead
+    const n = this.timedTiles
+    if (!read || n === 0) return
+    this.timedTiles = 0
+    this.isQueryMapped = true
+    const generation = this.timer.generation
+    read
+      .mapAsync(GPUMapMode.READ, 0, 16 * n)
+      .then(() => {
+        const t = new BigUint64Array(read.getMappedRange(0, 16 * n))
+        let ns = 0n
+        for (let i = 0; i < n; i++) ns += t[2 * i + 1] - t[2 * i]
+        read.unmap()
+        this.timer.add(Number(ns) / 1e6, generation)
+      })
+      .catch(() => {}) // destroyed while mapping
+      .finally(() => {
+        this.isQueryMapped = false
+      })
   }
 
   // The scene's GPU copies (intensity, gradient, extinction, labels, TF).
@@ -630,6 +664,10 @@ export class CinematicRenderer extends NVRenderer {
     this.overlayVersion = -1
     this.tf = null
     this.cpu = new CinematicCpuCache()
+    // Full-volume size; the fresh cache re-emits labels on re-entry.
+    this.matIdTex?.destroy()
+    this.matIdTex = this._uploadMaterialIds(new Uint8Array(1), [1, 1, 1])
+    this.labelInfo = [0, 1, 0, 0]
   }
 
   destroy(): void {
@@ -639,6 +677,10 @@ export class CinematicRenderer extends NVRenderer {
     this.matIdTex?.destroy()
     this.matTable?.destroy()
     this.extParams?.destroy()
+    this.querySet?.destroy()
+    this.queryResolve?.destroy()
+    this.queryRead?.destroy()
+    this.querySet = this.queryResolve = this.queryRead = null
     this.matIdTex = this.matTable = null
     this.extParams = null
     this.device = null

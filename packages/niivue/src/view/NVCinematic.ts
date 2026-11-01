@@ -5,7 +5,7 @@
  */
 import { mat4 } from 'gl-matrix'
 import { colormapKey, lookupColorMap } from '@/cmap/NVCmaps'
-import { isPaqd } from '@/NVConstants'
+import { invGamma, isPaqd } from '@/NVConstants'
 import type { CinematicOptions, ColorMap, NVImage } from '@/NVTypes'
 import { getImageDataRAS } from '@/volume/utils'
 import { drawnOpacity } from './NVVolumeVisibility'
@@ -21,8 +21,9 @@ export const MATERIAL_TEXELS = 512
 export const MARCH_PARAM_FLOATS = 132
 /** Display uniform size in floats (see packDisplayParams). */
 export const DISPLAY_PARAM_FLOATS = 16
+export const EXT_PARAM_FLOATS = 24
 /** Empty-space skip reads this extinction mip (4 extinction voxels per texel). */
-export const SKIP_LOD = 2
+const SKIP_LOD = 2
 // A plain label table has no surface ramp: always on, i.e. label-shaped.
 // f32-exact so lo < hi survives upload.
 const ALWAYS_ON_RAMP = [-1e6, -1e6 + 1]
@@ -212,7 +213,7 @@ export function calibrationMap(
 }
 
 /** Scaled intensities (scl_slope/scl_inter applied); NIfTI slope 0 means 1. */
-export function scaledIntensities(
+function scaledIntensities(
   raw: ArrayLike<number>,
   slope: number,
   inter: number,
@@ -370,7 +371,7 @@ export function packExtinctionParams(
   tf: BakedTransferFunction,
   labelInfo: readonly number[],
 ): Float32Array {
-  const out = new Float32Array(24)
+  const out = new Float32Array(EXT_PARAM_FLOATS)
   out.set(geometry.gradToMM, 0)
   out.set([tf.huMin, tf.huMax, tf.gMax, geometry.voxelMM], 16)
   out.set(labelInfo, 20)
@@ -392,6 +393,130 @@ export function packDisplayParams(
   out.set([background[0], background[1], background[2], background[3]], 4)
   out.set([ltwh[0], ltwh[1], 0, 0], 8)
   return out
+}
+
+const TIMED_FRAMES = 10
+
+/**
+ * GPU time of the march, summed over tiles: the mean of the first
+ * `TIMED_FRAMES` frames after any tile restarts. Results arrive frames late,
+ * so each carries the generation it was measured in.
+ */
+export class CinematicFrameTimer {
+  private samples: number[] = []
+  generation = 0
+
+  restart(): void {
+    this.samples = []
+    this.generation++
+  }
+
+  add(ms: number, generation: number): void {
+    if (generation === this.generation && this.samples.length < TIMED_FRAMES)
+      this.samples.push(ms)
+  }
+
+  /** Null until `TIMED_FRAMES` samples, or until convergence cut them short. */
+  meanMs(isRefining: boolean): number | null {
+    const n = this.samples.length
+    if (n === 0 || (n < TIMED_FRAMES && isRefining)) return null
+    return this.samples.reduce((a, b) => a + b, 0) / n
+  }
+}
+
+/** `vol` viewed at its displayed 4D frame (getImageDataRAS reads frame 0). */
+function frameOf(vol: NVImage): NVImage {
+  const n = vol.nVox3D
+  if (!vol.frame4D || !n || !vol.img) return vol
+  const start = vol.frame4D * n
+  return { ...vol, img: vol.img.subarray(start, start + n) } as NVImage
+}
+
+/** Half-float bits; hand-rounded where Float16Array is missing (pre-2025). */
+export function halfFloatBits(f: Float32Array): Uint16Array {
+  if (typeof Float16Array !== 'undefined')
+    return new Uint16Array(new Float16Array(f).buffer)
+  const out = new Uint16Array(f.length)
+  const u = new Uint32Array(f.buffer, f.byteOffset, f.length)
+  for (let i = 0; i < f.length; i++) {
+    const x = u[i]
+    const sign = (x >>> 16) & 0x8000
+    const e = ((x >>> 23) & 0xff) - 112
+    const m = x & 0x7fffff
+    if (e >= 31) out[i] = sign | (e === 143 && m ? 0x7e00 : 0x7c00)
+    else if (e > 0) {
+      // Round to nearest; a mantissa carry correctly bumps the exponent.
+      out[i] = sign | ((e << 10) + (m >> 13) + ((m >> 12) & 1))
+    } else if (e > -11) {
+      const mm = m | 0x800000
+      const shift = 14 - e
+      out[i] = sign | ((mm >> shift) + ((mm >> (shift - 1)) & 1))
+    } else out[i] = sign
+  }
+  return out
+}
+
+/** Per-tile inputs from a view's tile loop. */
+export type CinematicTileInput = {
+  index: number
+  /** Tile rect in device px: [x, y, w, h], origin as the backend's viewport. */
+  rect: readonly number[]
+  mvp: ArrayLike<number>
+  /** Model (rotation) matrix of the same camera, for the light. */
+  model: ArrayLike<number>
+  clipPlanes: ArrayLike<number>
+  isClipCutaway: boolean
+  clipPlaneOverlay: boolean
+  /** False when the background is hidden: only overlays are marched. */
+  isBackgroundVisible: boolean
+  gamma: number
+  isOverlayOpacityCorrected: boolean
+  background: ArrayLike<number>
+}
+
+/** Accumulation restarts when this key changes. */
+export function tileKey(optionsKey: string, t: CinematicTileInput): string {
+  return [
+    optionsKey,
+    Array.from(t.rect).join(),
+    Array.from(t.mvp).join(),
+    Array.from(t.clipPlanes).join(),
+    t.isClipCutaway,
+    t.clipPlaneOverlay,
+    t.isBackgroundVisible,
+    t.gamma,
+    t.isOverlayOpacityCorrected,
+    Array.from(t.background).join(),
+  ].join('|')
+}
+
+export function tileMarchParams(
+  t: CinematicTileInput,
+  frame: number,
+  geometry: CinematicGeometry,
+  tf: BakedTransferFunction,
+  options: CinematicOptions,
+  labelInfo: readonly number[],
+  hasOverlay: boolean,
+): Float32Array {
+  return packMarchParams({
+    geometry,
+    invMVP: mat4.invert(mat4.create(), t.mvp as mat4) ?? mat4.create(),
+    model: t.model,
+    width: Math.max(1, Math.round(t.rect[2])),
+    height: Math.max(1, Math.round(t.rect[3])),
+    frame,
+    options,
+    tf,
+    clip: clipParams(t.clipPlanes, t.isClipCutaway, geometry.mm2frac),
+    labelInfo: [...labelInfo.slice(0, 3), t.isBackgroundVisible ? 1 : 0],
+    overlayInfo: [
+      hasOverlay ? 1 : 0,
+      t.clipPlaneOverlay ? 1 : 0,
+      invGamma(t.gamma),
+      t.isOverlayOpacityCorrected ? 1 : 0,
+    ],
+  })
 }
 
 /**
@@ -433,7 +558,8 @@ const sameKey = (a: readonly unknown[], b: readonly unknown[]): boolean =>
 
 /** Intensity volume to upload: scaled (and calibrated) values in RAS order. */
 export type CinematicIntensity = {
-  values: Float16Array
+  /** IEEE half-float bits (r16float / HALF_FLOAT). */
+  values: Uint16Array
   geometry: CinematicGeometry
 }
 
@@ -474,19 +600,15 @@ export class CinematicCpuCache {
   private _calibration: ((v: number) => number) | null = null
   private _labelBlend = 0
 
-  get geometry(): CinematicGeometry | null {
-    return this._geometry
-  }
-
   /** Label ids of `labelVol` in RAS order, or null when not 0..254. */
   private _labelIds(labelVol: NVImage | null): Uint8Array | null {
-    const key = [labelVol, labelVol?._dataVersion ?? 0]
+    const key = [labelVol, labelVol?._dataVersion ?? 0, labelVol?.frame4D]
     if (sameKey(key, this._rawLabelKey)) return this._rawLabels
     this._rawLabelKey = key
     this._rawLabels = null
     this.labelProblem = ''
     if (!labelVol) return null
-    const raw = getImageDataRAS(labelVol)
+    const raw = getImageDataRAS(frameOf(labelVol))
     if (!raw) return null
     const scaled = scaledIntensities(
       raw,
@@ -525,12 +647,14 @@ export class CinematicCpuCache {
     const intensityKey = [
       vol,
       vol._dataVersion ?? 0,
+      vol.frame4D,
       labelVol,
       labelVol?._dataVersion ?? 0,
+      labelVol?.frame4D,
       labelCmap?.normalize,
     ]
     if (!sameKey(intensityKey, this._intensityKey)) {
-      const raw = getImageDataRAS(vol)
+      const raw = getImageDataRAS(frameOf(vol))
       if (!raw) return null
       this._intensityKey = intensityKey
       const dims: [number, number, number] = [
@@ -552,7 +676,7 @@ export class CinematicCpuCache {
       if (map) for (let i = 0; i < img.length; i++) img[i] = map(img[i])
       this._geometry = cinematicGeometry(vol.frac2mm, dims)
       out.intensity = {
-        values: new Float16Array(img),
+        values: halfFloatBits(img),
         geometry: this._geometry,
       }
       // Window (calibration) and label ids (grid) follow the intensities.
@@ -582,6 +706,7 @@ export class CinematicCpuCache {
       options.labelMode,
       labelVol,
       labelVol?._dataVersion ?? 0,
+      labelVol?.frame4D,
       labelVol ? colormapKey(labelVol.colormap) : '',
       labelVol?.hiddenLabels?.join(),
     ]

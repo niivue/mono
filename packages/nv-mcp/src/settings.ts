@@ -428,7 +428,7 @@ export const SETTINGS: readonly Setting[] = [
         ),
         num('exposure', 'Exposure of the tone-mapped image.', { min: 0 }),
         num('stepVoxels', 'Ray step, in voxels; smaller is finer and slower.', {
-          min: 0,
+          min: 0.05,
         }),
         int('maxFrames', 'Frames accumulated before the image is final.', {
           min: 1,

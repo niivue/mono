@@ -37,7 +37,6 @@ import type {
   VectorAnnotation,
   ViewHitTest,
 } from '@/NVTypes'
-import { parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
@@ -2713,38 +2712,7 @@ export function setupDragAndDrop(ctrl: NiiVue): void {
     if (!ctrl.opts.isDragDropEnabled) return
     const files = evt.dataTransfer?.files
     if (!files || files.length === 0) return
-    const fileList = Array.from(files)
-    // Pair BIDS/MRS JSON sidecars with their data file by basename, so a
-    // dropped data+json pair loads with the sidecar applied (sandbox-safe:
-    // the browser cannot fetch a sibling .json we were not given).
-    // Keyed by lowercased sidecar filename so pairing is case-insensitive.
-    const sidecars = new Map<string, ReturnType<typeof parseSidecar>>()
-    for (const f of fileList) {
-      if (f.name.toLowerCase().endsWith('.json')) {
-        try {
-          sidecars.set(
-            f.name.toLowerCase(),
-            parseSidecar(JSON.parse(await f.text())),
-          )
-        } catch (err) {
-          log.error('Failed to parse sidecar:', f.name, err)
-        }
-      }
-    }
-    for (const file of fileList) {
-      const lower = file.name.toLowerCase()
-      if (lower.endsWith('.json')) continue
-      try {
-        if (lower.endsWith('.nvd')) {
-          await ctrl.loadDocument(file)
-          continue
-        }
-        const sidecar = sidecars.get(siblingJsonUrl(lower))
-        await ctrl.loadImage(file, sidecar ? { sidecar } : {})
-      } catch (err) {
-        log.error('Failed to load dropped file:', err)
-      }
-    }
+    await ctrl.loadFiles(Array.from(files))
   }
 
   ctrl.canvas?.addEventListener('dragover', ctrl._eventListeners.dragover)

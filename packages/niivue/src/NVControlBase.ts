@@ -141,7 +141,7 @@ import { niftiBufferIsSignal } from '@/signal/detect'
 import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
-import { fetchSidecar } from '@/signal/sidecar'
+import { fetchSidecar, parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import { NVSlide } from '@/slide/NVSlide'
 import {
   isSlideDrawingSizeValid,
@@ -3537,6 +3537,53 @@ export default class NiiVue extends EventTarget {
     options: Record<string, unknown> = {},
   ): Promise<void> {
     await this._dispatchImage(pathOrFile, options, true)
+  }
+
+  /**
+   * Load local files as a drag and drop does: an `.nvd` opens as a document,
+   * and a `.json` is not loaded itself but applied as the sidecar of the data
+   * file sharing its basename. Each other file is loaded with
+   * {@link addImage} when `add`, else {@link loadImage}. A file that fails is
+   * logged and the rest still load.
+   * @example
+   * await nv1.loadFiles(Array.from(event.dataTransfer.files), { add: true })
+   */
+  async loadFiles(
+    files: readonly File[],
+    { add = false }: { add?: boolean } = {},
+  ): Promise<void> {
+    // Keyed by lowercased name so pairing is case-insensitive; the browser
+    // cannot fetch a sibling .json it was not given.
+    const sidecars = new Map<string, ReturnType<typeof parseSidecar>>()
+    for (const f of files) {
+      if (f.name.toLowerCase().endsWith('.json')) {
+        try {
+          sidecars.set(
+            f.name.toLowerCase(),
+            parseSidecar(JSON.parse(await f.text())),
+          )
+        } catch (err) {
+          log.error('Failed to parse sidecar:', f.name, err)
+        }
+      }
+    }
+    for (const file of files) {
+      const lower = file.name.toLowerCase()
+      if (lower.endsWith('.json')) continue
+      try {
+        if (lower.endsWith('.nvd')) {
+          await this.loadDocument(file)
+          continue
+        }
+        const sidecar = sidecars.get(siblingJsonUrl(lower))
+        const options = sidecar ? { sidecar } : {}
+        await (add
+          ? this.addImage(file, options)
+          : this.loadImage(file, options))
+      } catch (err) {
+        log.error('Failed to load file:', file.name, err)
+      }
+    }
   }
 
   /**

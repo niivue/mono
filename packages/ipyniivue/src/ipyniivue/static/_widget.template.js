@@ -74,6 +74,7 @@ const PROPS_RW = [
   ["isDragging", "is_dragging"],
   ["isEqualSize", "is_equal_size"],
   ["isGraphVisible", "is_graph_visible"],
+  ["isLegendToggleEnabled", "is_legend_toggle_enabled"],
   ["isLegendVisible", "is_legend_visible"],
   ["isMeasurementDrawn", "is_measurement_drawn"],
   ["isMeasureUnitsVisible", "is_measure_units_visible"],
@@ -139,6 +140,7 @@ const PROPS_RW = [
 // [jsName, pyName] for read-only properties (JS-to-Python only).
 const PROPS_RO = [
   ["backend", "backend"],
+  ["cinematicFrameMs", "cinematic_frame_ms"],
   ["colormaps", "colormaps"],
   ["drawingColormaps", "drawing_colormaps"],
   ["effectiveDevicePixelRatio", "effective_device_pixel_ratio"],

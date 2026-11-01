@@ -405,6 +405,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       ...(volume.isLegendVisible === false ? { legend: false } : {}),
       ...(volume.isNearestInterpolation ? { nearest: true } : {}),
       ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
+      ...(volume.hiddenLabels?.length
+        ? { hiddenLabels: [...volume.hiddenLabels] }
+        : {}),
       ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
       ...(volume.chunkPlan
         ? { chunkGrid: Array.from(volume.chunkPlan.gridDims) }
@@ -1002,6 +1005,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(update, 'isNearestInterpolation', flag(params, 'nearest'))
       const outline = number(params, 'atlas_outline')
       if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
+      const hiddenLabels = numbers(params, 'hidden_labels')
+      if (hiddenLabels !== undefined) update.hiddenLabels = hiddenLabels
       const modulateAlpha = number(params, 'modulate_alpha')
       if (modulateAlpha !== undefined)
         update.modulateAlpha = clamp(modulateAlpha, 0, 1)

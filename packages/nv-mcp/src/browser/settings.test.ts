@@ -111,6 +111,53 @@ describe('get_options and set_options', () => {
   })
 })
 
+describe('volumeCinematic', () => {
+  it('sets a partial object through NiiVue merging setter and reads back the whole', () => {
+    const view = settingsView()
+    // As NiiVue keeps it: the setter merges a partial object over the current one.
+    let cinematic: Record<string, unknown> = {
+      exposure: 1,
+      shadow: 1,
+      labelMode: 'unlabeled',
+    }
+    const set = mock((v: Record<string, unknown>) => {
+      cinematic = { ...cinematic, ...v }
+    })
+    Object.defineProperty(view, 'volumeCinematic', {
+      get: () => cinematic,
+      set,
+    })
+    const { get_options, set_options } = settingHandlers(hostOf(view))
+    expect(
+      set_options({ options: { volumeCinematic: { exposure: '2' } } }),
+    ).toEqual({
+      options: {
+        volumeCinematic: { exposure: 2, shadow: 1, labelMode: 'unlabeled' },
+      },
+    })
+    expect(set).toHaveBeenCalledWith({ exposure: 2 })
+    expect(() =>
+      set_options({ options: { volumeCinematic: { labelMode: 'all' } } }),
+    ).toThrow('volumeCinematic.labelMode must be one of')
+    expect(set).toHaveBeenCalledTimes(1)
+    const described = get_options({
+      names: ['volumeCinematic'],
+      describe: true,
+    }) as {
+      options: Record<
+        string,
+        { fields: Record<string, Record<string, unknown>> }
+      >
+    }
+    expect(described.options.volumeCinematic.fields.labelMode).toEqual({
+      kind: 'choice',
+      choices: ['only', 'unlabeled', 'none'],
+      description: expect.any(String),
+    })
+    expect(described.options.volumeCinematic.fields.maxFrames.min).toBe(1)
+  })
+})
+
 describe('capabilities', () => {
   it('says which optional members, settings, colormaps and transforms the page has', () => {
     const view = settingsView({

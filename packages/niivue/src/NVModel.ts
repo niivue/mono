@@ -359,6 +359,10 @@ export default class NVModel {
       ...(options.volumeSilhouette !== undefined && {
         silhouette: options.volumeSilhouette,
       }),
+      // A copy: setters replace it, but never alias the defaults constant.
+      cinematic: NVConstants.clampCinematicOptions(
+        options.volumeCinematic ?? {},
+      ),
     }
     // Mesh — flat options mapped to mesh group
     this.mesh = {
@@ -415,6 +419,9 @@ export default class NVModel {
       }),
       ...(options.isViewModeHotKeyEnabled !== undefined && {
         isViewModeHotKeyEnabled: options.isViewModeHotKeyEnabled,
+      }),
+      ...(options.isLegendToggleEnabled !== undefined && {
+        isLegendToggleEnabled: options.isLegendToggleEnabled,
       }),
       ...(options.isDragDropEnabled !== undefined && {
         isDragDropEnabled: options.isDragDropEnabled,

@@ -28,6 +28,12 @@ import {
   stampAfterVertexWrite,
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
+import {
+  canUseCinematicOverlays,
+  cinematicOptionsForFrame,
+  findLabelVolume,
+  hasScalarIntensity,
+} from '@/view/NVCinematic'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
@@ -63,6 +69,7 @@ import {
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
 import { GLBench } from './bench'
+import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
@@ -91,6 +98,12 @@ export default class NVGlview {
   gl: WebGL2RenderingContext | null
   /** Set when the WebGL2 context is lost (e.g. GPU OOM); halts the render loop. */
   private _contextLost = false
+  cinematicRenderer = new CinematicRenderer()
+  // VOLUME_RENDER_MODE.CINEMATIC: one warning per cause, and at most one
+  // self-scheduled refinement frame pending.
+  private _cinematicWarned = new Set<string>()
+  private _cinematicScheduled = false
+  private _cinematicOverlayVersion = 0
   // The drawing RGBA the drawing texture(s) were uploaded from, for the chunked
   // volume's CPU plane pick (view/planeVisibility.ts). Null without a drawing.
   private _drawingPickGrid: RgbaGrid | null = null
@@ -231,7 +244,14 @@ export default class NVGlview {
     await this._initWebGL2()
     await this._createResources()
     await this._createPipelines()
+    if (this.gl) this.cinematicRenderer.init(this.gl)
     await this._updateBindings()
+  }
+
+  private _warnCinematic(message: string): void {
+    if (this._cinematicWarned.has(message)) return
+    this._cinematicWarned.add(message)
+    log.warn(`cinematic: ${message}`)
   }
 
   _initGL(
@@ -534,6 +554,7 @@ export default class NVGlview {
         vols[0].dimsRAS[3],
       ])
     }
+    this._cinematicOverlayVersion++
   }
 
   async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
@@ -559,7 +580,13 @@ export default class NVGlview {
     if (vols[0].modulationImage) return false
     const overlay = vols[1]
     if (!isVolumeDrawn(overlay)) return false
-    return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)
+    const handled = this.volumeRenderer.updateAffineOverlay(
+      gl,
+      vols[0],
+      overlay,
+    )
+    if (handled) this._cinematicOverlayVersion++
+    return handled
   }
 
   /**
@@ -587,8 +614,13 @@ export default class NVGlview {
     this.volumeRenderer.gradientAmount = md.volume.illumination
     // Composite (OVER) vs maximum-intensity projection vs orthogonal slices, for
     // every volume pass this frame (base, overlay, PAQD, drawing, and the
-    // independent hi-res overlay cube).
-    this.volumeRenderer.renderMode = md.volume.renderMode
+    // independent hi-res overlay cube). CINEMATIC tiles skip the classic
+    // march; where it falls back (chunked volume) it draws COMPOSITE.
+    const isCinematicMode =
+      md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.CINEMATIC
+    this.volumeRenderer.renderMode = isCinematicMode
+      ? NVConstants.VOLUME_RENDER_MODE.COMPOSITE
+      : md.volume.renderMode
     // The crosshair planes SLICES draws, in the base volume's texture fraction —
     // the same conversion the 2D tiles use, so sheared and oblique volumes line
     // up with them.
@@ -679,6 +711,59 @@ export default class NVGlview {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     // Get volumes
     const volumes = md.getVolumes()
+    let cinematicLabels: NVImage | null = null
+    let isCinematic = false
+    // Statistics stay visible when the anatomy is hidden, as in COMPOSITE.
+    let hasCinematicOverlay = false
+    // False when the background is hidden and no label volume keeps it marched.
+    let isCinematicBackgroundVisible = false
+    this.cinematicRenderer.beginFrame()
+    const base = volumes[0]
+    if (isCinematicMode && base) {
+      if (!this.cinematicRenderer.isReady) {
+        this._warnCinematic(
+          'WebGL2 lacks EXT_color_buffer_float; drawing COMPOSITE',
+        )
+      } else if (base.chunkPlan || base.chunkSource) {
+        this._warnCinematic(
+          'chunked (streamed) volumes are not supported; drawing COMPOSITE',
+        )
+      } else if (!hasScalarIntensity(base)) {
+        this._warnCinematic(
+          'RGB/RGBA volumes have no scalar intensity; drawing COMPOSITE',
+        )
+      } else {
+        cinematicLabels = findLabelVolume(volumes)
+        const useOverlays =
+          !this._isChannelStack(volumes) && canUseCinematicOverlays(volumes)
+        const overlay = useOverlays ? this.volumeRenderer.overlayTexture : null
+        hasCinematicOverlay =
+          !!overlay && volumes.slice(1).some((v) => drawnOpacity(v) > 0)
+        isCinematic = this.cinematicRenderer.prepare(
+          base,
+          cinematicLabels,
+          cinematicOptionsForFrame(base, cinematicLabels, md.volume.cinematic),
+          overlay,
+          this._cinematicOverlayVersion,
+        )
+        isCinematicBackgroundVisible =
+          drawnOpacity(base) > 0 || this.cinematicRenderer.hasLabels
+        if (this.cinematicRenderer.labelProblem) {
+          this._warnCinematic(
+            `labels ignored: ${this.cinematicRenderer.labelProblem}`,
+          )
+        }
+        if (
+          !useOverlays &&
+          volumes.slice(1).filter(isVolumeDrawn).length >
+            (cinematicLabels ? 1 : 0)
+        ) {
+          this._warnCinematic(
+            'overlays not drawn: cinematic draws standard overlays or one same-grid label volume, not a mix, PAQD, streamed overlays or a channel stack',
+          )
+        }
+      }
+    }
     const channelStack = this._isChannelStack(volumes)
     const interpolation = sliceInterpolation(
       volumes,
@@ -735,16 +820,17 @@ export default class NVGlview {
           (v) => v.name === tile.volumeId || v.url === tile.volumeId,
         ) ?? volumes[0]
       // Calculate MVP matrix
-      let [mvpMatrix, , normalMatrix, rayDir] = NVTransforms.calculateMvpMatrix(
-        ltwh,
-        md.scene.azimuth,
-        md.scene.elevation,
-        md._renderPivotMM ?? md.pivot3D,
-        md.furthestFromPivot,
-        md.scene.scaleMultiplier,
-        md.volumes[0]?.obliqueRAS,
-        md.scene.renderPan,
-      )
+      let [mvpMatrix, modelMatrix, normalMatrix, rayDir] =
+        NVTransforms.calculateMvpMatrix(
+          ltwh,
+          md.scene.azimuth,
+          md.scene.elevation,
+          md._renderPivotMM ?? md.pivot3D,
+          md.furthestFromPivot,
+          md.scene.scaleMultiplier,
+          md.volumes[0]?.obliqueRAS,
+          md.scene.renderPan,
+        )
       if (tile.space === 'global3d' && tileVol) {
         ;[mvpMatrix, , normalMatrix, rayDir] =
           NVTransforms.calculateGlobalVolumeMvp(
@@ -804,7 +890,7 @@ export default class NVGlview {
       } else if (tile.screen) {
         // Mosaic render tile: use screen bounds with origin centering for rotation stability
         const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
-        ;[mvpMatrix, , normalMatrix, rayDir] =
+        ;[mvpMatrix, modelMatrix, normalMatrix, rayDir] =
           NVTransforms.calculateMvpMatrix2D(
             ltwh,
             screen.mnMM,
@@ -1040,6 +1126,32 @@ export default class NVGlview {
               md.volume.isV1SliceShader,
             )
           }
+        } else if (isCinematic && tile.space !== 'global3d') {
+          if (md.drawingVolume) {
+            this._warnCinematic(
+              'the drawing layer is not drawn in cinematic render tiles (2D tiles still show it)',
+            )
+          }
+          // Cinematic draws its own label or standard-overlay pass.
+          if (isCinematicBackgroundVisible || hasCinematicOverlay)
+            this.cinematicRenderer.draw({
+              index: i,
+              rect: [
+                bx + ltwh[0],
+                fullCanvasH - by - ltwh[1] - ltwh[3],
+                ltwh[2],
+                ltwh[3],
+              ],
+              mvp: mvpMatrix as Float32Array,
+              model: modelMatrix as Float32Array,
+              clipPlanes: md.clipPlanes,
+              isClipCutaway: md.scene.isClipPlaneCutaway,
+              clipPlaneOverlay: md.scene.clipPlaneOverlay,
+              isBackgroundVisible: isCinematicBackgroundVisible,
+              gamma: md.scene.gamma,
+              isOverlayOpacityCorrected: md.volume.isOverlayOpacityCorrected,
+              background: md.scene.backgroundColor,
+            })
         } else {
           // Phase 3c: frustum-cull this 3D render tile to drive streamed
           // upload — no-op unless the active volume is chunked.
@@ -1639,6 +1751,35 @@ export default class NVGlview {
     }
     markSubmitStart()
     markEnd()
+    // Progressive cinematic refinement drives itself, one frame pending.
+    // While dragging, each camera change draws one (restarted) frame instead.
+    if (
+      this.cinematicRenderer.endFrame() &&
+      !md._isDragging &&
+      !this._cinematicScheduled
+    ) {
+      this._cinematicScheduled = true
+      // Wait for the GPU, as WebGPU's onSubmittedWorkDone does: a frame
+      // queued behind a slow march blocks the main thread instead.
+      const gl = this.gl
+      const fence = gl?.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0) ?? null
+      gl?.flush()
+      const poll = (): void => {
+        const ctx = this.gl
+        if (
+          ctx &&
+          fence &&
+          ctx.getSyncParameter(fence, ctx.SYNC_STATUS) !== ctx.SIGNALED
+        ) {
+          requestAnimationFrame(poll)
+          return
+        }
+        if (ctx && fence) ctx.deleteSync(fence)
+        this._cinematicScheduled = false
+        this.render()
+      }
+      requestAnimationFrame(poll)
+    }
     // Chunk-streaming observer: one observation per drawn frame, after this
     // frame's draw has been submitted, carrying the verdict on whether the
     // frame is complete. Idle can then only fire for a frame that shows every
@@ -2293,6 +2434,7 @@ export default class NVGlview {
     this.fontRenderer.destroy()
     this.colorbarRenderer.destroy()
     this.thumbnailRenderer.destroy()
+    this.cinematicRenderer.destroy()
     this.sliceRenderer.destroy()
     mesh.destroy(gl)
 

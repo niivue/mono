@@ -49,6 +49,13 @@ export enum DRAG_MODE {
  * lighting (illumination, gradient opacity, silhouette) are ignored: a plane
  * has no surface to shade.
  *
+ * CINEMATIC is a progressive path tracer for the background volume: a 2D
+ * (intensity x gradient) transfer function baked from the volume's colormap,
+ * soft shadows and ambient occlusion, refined over `cinematic.maxFrames`
+ * frames. A label volume on the same grid supplies per-label materials;
+ * without one, standard overlays draw unlit. A chunked background falls back
+ * to COMPOSITE. See `VolumeRenderConfig.cinematic`.
+ *
  * Applies to the 3D render only; a 2D slice draws one plane, where the modes
  * are identical.
  *
@@ -65,6 +72,7 @@ export enum VOLUME_RENDER_MODE {
   COMPOSITE = 0,
   MAXIMUM = 1,
   SLICES = 2,
+  CINEMATIC = 3,
 }
 
 /**
@@ -114,7 +122,8 @@ export function normalizeVolumeRenderMode(v: number): VOLUME_RENDER_MODE {
   if (!Number.isFinite(v)) return VOLUME_RENDER_MODE.COMPOSITE
   const mode = Math.round(v)
   return mode === VOLUME_RENDER_MODE.MAXIMUM ||
-    mode === VOLUME_RENDER_MODE.SLICES
+    mode === VOLUME_RENDER_MODE.SLICES ||
+    mode === VOLUME_RENDER_MODE.CINEMATIC
     ? mode
     : VOLUME_RENDER_MODE.COMPOSITE
 }
@@ -363,6 +372,7 @@ export function nextSliceType(sliceType: number): number {
 
 import type {
   AnnotationConfig,
+  CinematicOptions,
   DrawConfig,
   InteractionConfig,
   LayoutConfig,
@@ -468,6 +478,64 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   lodOpacityCompensation: 0,
   gradientOpacity: 0,
   silhouette: 0,
+  cinematic: {
+    lightElevation: 20,
+    lightAzimuth: 0,
+    lightConeDeg: 4,
+    lightIntensity: 1.2,
+    ambient: 0.3,
+    shadow: 1,
+    ao: 0.6,
+    aoRadiusMM: 12,
+    aoConeDeg: 30,
+    volumetricDiffuse: 0.5,
+    exposure: 1,
+    stepVoxels: 0.5,
+    maxFrames: 256,
+    specular: 1,
+    labelMode: 'unlabeled',
+    isStochasticLighting: false,
+  },
+}
+
+type CinematicNumberKey = {
+  [K in keyof CinematicOptions]: CinematicOptions[K] extends number ? K : never
+}[keyof CinematicOptions]
+
+// Lower bound of every numeric setting; angles are unbounded. A zero step
+// never advances the ray.
+const CINEMATIC_MIN: Record<CinematicNumberKey, number> = {
+  lightElevation: -Infinity,
+  lightAzimuth: -Infinity,
+  lightConeDeg: 0,
+  lightIntensity: 0,
+  ambient: 0,
+  shadow: 0,
+  ao: 0,
+  aoRadiusMM: 0,
+  aoConeDeg: 0,
+  volumetricDiffuse: 0,
+  exposure: 0,
+  stepVoxels: 0.05,
+  maxFrames: 1,
+  specular: 0,
+}
+
+/** Cinematic settings with bad values replaced by their defaults or bounds. */
+export function clampCinematicOptions(
+  o: Partial<CinematicOptions>,
+): CinematicOptions {
+  const d = VOLUME_DEFAULTS.cinematic
+  const out = { ...d, ...o }
+  out.isStochasticLighting = out.isStochasticLighting === true
+  for (const k of Object.keys(CINEMATIC_MIN) as CinematicNumberKey[]) {
+    const v = Number(out[k])
+    out[k] = Number.isFinite(v) ? Math.max(v, CINEMATIC_MIN[k]) : d[k]
+  }
+  out.maxFrames = Math.round(out.maxFrames)
+  if (!['only', 'unlabeled', 'none'].includes(out.labelMode))
+    out.labelMode = d.labelMode
+  return out
 }
 
 /** `v` clamped to `range`; non-finite gives `fallback`. */
@@ -522,6 +590,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   wheelZoomAnchor: 'crosshair',
   isViewModeHotKeyEnabled: false,
   isPanFollowingCrosshair: false,
+  isLegendToggleEnabled: false,
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

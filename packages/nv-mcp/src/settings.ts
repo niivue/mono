@@ -32,6 +32,8 @@ export type SettingKind =
   | 'enum'
   /** One of a few strings NiiVue takes as they are. */
   | 'choice'
+  /** An object of named fields, each a setting of its own; a partial one is merged over the current one. */
+  | 'object'
 
 export interface Setting {
   name: string
@@ -41,6 +43,8 @@ export interface Setting {
   /** Bounds a number is clamped to, when NiiVue has them. */
   min?: number
   max?: number
+  /** For an object, its fields. */
+  fields?: readonly Setting[]
   description: string
 }
 
@@ -63,7 +67,15 @@ export const DRAG_MODES = {
 export const PEN_SHAPES = { rectangle: 0, circle: 1 } as const
 
 /** NiiVue's `VOLUME_RENDER_MODE`. */
-export const RENDER_MODES = { composite: 0, maximum: 1, slices: 2 } as const
+export const RENDER_MODES = {
+  composite: 0,
+  maximum: 1,
+  slices: 2,
+  cinematic: 3,
+} as const
+
+/** The labelMode words of NiiVue's `CinematicOptions`. */
+export const CINEMATIC_LABEL_MODES = ['only', 'unlabeled', 'none'] as const
 
 /** NiiVue's `LAYER_GRADIENT_MODE`. */
 export const GRADIENT_MODES = { central: 0, blob: 1, sobel8: 2 } as const
@@ -223,6 +235,10 @@ export const SETTINGS: readonly Setting[] = [
   bool('isYoked3DTo2DZoom', 'Whether zooming a 2D tile zooms the render too.'),
   bool('isDragDropEnabled', 'Whether files dropped on the canvas are loaded.'),
   bool('isViewModeHotKeyEnabled', 'Whether the V key cycles the view mode.'),
+  bool(
+    'isLegendToggleEnabled',
+    'Whether clicking a legend colour box hides or shows that label.',
+  ),
   num(
     'meshXRay',
     'How see-through meshes are drawn in the render, 0 (solid) to 1.',
@@ -371,9 +387,64 @@ export const SETTINGS: readonly Setting[] = [
   setting(
     'volumeRenderMode',
     'enum',
-    'How the render composes the volume: front to back, maximum intensity, or slices.',
+    'How the render composes the volume: front to back, maximum intensity, slices, or cinematic (a progressive path tracer of the background volume, set by volumeCinematic).',
     {
       values: RENDER_MODES,
+    },
+  ),
+  setting(
+    'volumeCinematic',
+    'object',
+    'The cinematic render mode: light, shadows, ambient occlusion, exposure, ray step, frames and labels. Give any of its fields; the rest keep their values.',
+    {
+      fields: [
+        num(
+          'lightElevation',
+          'Light elevation above the view direction, in degrees.',
+        ),
+        num(
+          'lightAzimuth',
+          'Light azimuth about the view direction, in degrees.',
+        ),
+        num(
+          'lightConeDeg',
+          'Half angle of the light cone (soft shadow penumbra), in degrees.',
+          { min: 0 },
+        ),
+        num('lightIntensity', 'Light intensity.', { min: 0 }),
+        num('ambient', 'Ambient light, 0 to 1.', { min: 0, max: 1 }),
+        num('shadow', 'Shadow strength, 0 to 1.', { min: 0, max: 1 }),
+        num('ao', 'Ambient occlusion strength, 0 to 1.', { min: 0, max: 1 }),
+        num('aoRadiusMM', 'Ambient occlusion reach, in millimetres.', {
+          min: 0,
+        }),
+        num('aoConeDeg', 'Ambient occlusion cone half angle, in degrees.', {
+          min: 0,
+        }),
+        num(
+          'volumetricDiffuse',
+          'Diffuse light on samples without a surface, 0 to 1.',
+          { min: 0, max: 1 },
+        ),
+        num('exposure', 'Exposure of the tone-mapped image.', { min: 0 }),
+        num('stepVoxels', 'Ray step, in voxels; smaller is finer and slower.', {
+          min: 0.05,
+        }),
+        int('maxFrames', 'Frames accumulated before the image is final.', {
+          min: 1,
+        }),
+        num('specular', 'Specular scale.', { min: 0 }),
+        setting(
+          'labelMode',
+          'choice',
+          'How a label volume colours the render: only (unlabeled tissue hidden), unlabeled (drawn too, with the base colormap), or none (labels ignored).',
+          { values: CINEMATIC_LABEL_MODES },
+        ),
+        bool(
+          'isStochasticLighting',
+          'Trace shadow and ambient occlusion from one sample per ray per frame: about 2.5x faster per frame, noisier per frame, same converged image.',
+        ),
+      ],
     },
   ),
   num(
@@ -569,6 +640,25 @@ export function coerceSetting(setting: Setting, value: unknown): unknown {
       if (typeof value === 'string' && choices.includes(value)) return value
       throw fail(setting, `one of ${choices.join(', ')}`)
     }
+    case 'object': {
+      const fields = setting.fields ?? []
+      const names = fields.map((f) => f.name).join(', ')
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw fail(setting, `an object of any of ${names}`)
+      const out: Record<string, unknown> = {}
+      for (const [key, v] of Object.entries(value)) {
+        const field = fields.find((f) => f.name === key)
+        if (!field)
+          throw new Error(
+            `${setting.name} has no field ${key}: it has ${names}.`,
+          )
+        out[key] = coerceSetting(
+          { ...field, name: `${setting.name}.${key}` },
+          v,
+        )
+      }
+      return out
+    }
   }
 }
 
@@ -595,6 +685,9 @@ export function readSetting(setting: Setting, value: unknown): unknown {
     for (const [name, n] of Object.entries(table)) if (n === value) return name
     return value
   }
+  // A copy, so an answer never holds NiiVue's own object.
+  if (setting.kind === 'object' && value && typeof value === 'object')
+    return { ...value }
   if (ArrayBuffer.isView(value)) return plainArray(value)
   if (Array.isArray(value))
     return value.map((v) => (ArrayBuffer.isView(v) ? plainArray(v) : v))

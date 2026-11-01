@@ -62,6 +62,7 @@ import * as NVMesh from '@/mesh/NVMesh'
 import { clearMeshClusters } from '@/mesh/triangleClusters'
 import type { WriteOptions } from '@/mesh/writers'
 import {
+  clampCinematicOptions,
   clampCrosscutWidth,
   clampFinite,
   clampSampleRate,
@@ -80,6 +81,7 @@ import {
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
+  VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
@@ -103,6 +105,7 @@ import type {
   AnnotationTool,
   BackendType,
   CanvasViewport,
+  CinematicOptions,
   ColorMap,
   CompletedMeasurement,
   CustomLayoutTile,
@@ -280,6 +283,7 @@ type ViewBackend = {
    * `plan.chunks`), surfaced so `lodCompensation()` can report it.
    */
   coarseFloorDims: () => [number, number, number] | null
+  cinematicRenderer: { frameMs: number | null }
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
   onContextLost: (() => void) | null
   onChunkStream:
@@ -1576,11 +1580,14 @@ export default class NiiVue extends EventTarget {
   /**
    * What the 3D render tile draws: `VOLUME_RENDER_MODE.COMPOSITE` (default, the
    * OVER ray-march), `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity
-   * projection), or `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
+   * projection), `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
    * crosshair planes, composited front to back, with overlays sampled on them
-   * as the 2D tiles do). 2D slices draw a single plane and are unaffected.
+   * as the 2D tiles do), or `VOLUME_RENDER_MODE.CINEMATIC` (progressive path
+   * tracing of the background volume with either one label volume or standard
+   * overlays, see
+   * {@link volumeCinematic}). 2D slices draw a single plane and are unaffected.
    *
-   * Only those three values are stored: a fractional value rounds to the
+   * Only those four values are stored: a fractional value rounds to the
    * nearest mode and anything else falls back to COMPOSITE (see
    * {@link normalizeVolumeRenderMode}), because the shaders test the mode by
    * proximity while the CPU tests it exactly, and a value in between would have
@@ -1826,6 +1833,39 @@ export default class NiiVue extends EventTarget {
       value: this.model.volume.silhouette,
     })
     this.drawScene()
+  }
+
+  /**
+   * Settings of `VOLUME_RENDER_MODE.CINEMATIC` (light, shadows, ambient
+   * occlusion, exposure, step, frame count, label mode). The setter merges a
+   * partial object over the current settings and restarts refinement.
+   */
+  get volumeCinematic(): CinematicOptions {
+    return this.model.volume.cinematic
+  }
+  set volumeCinematic(v: Partial<CinematicOptions>) {
+    // Replace, never mutate: the initial object may be shared with a document.
+    this.model.volume.cinematic = clampCinematicOptions({
+      ...this.model.volume.cinematic,
+      ...v,
+    })
+    this.emit('change', {
+      property: 'volumeCinematic',
+      value: this.model.volume.cinematic,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Mean GPU time (ms) of a cinematic refinement frame, over the first 10
+   * frames after the last restart. Null until measured, outside CINEMATIC, or
+   * when the GPU offers no timer (WebGPU 'timestamp-query',
+   * EXT_disjoint_timer_query_webgl2).
+   */
+  get cinematicFrameMs(): number | null {
+    if (this.model.volume.renderMode !== VOLUME_RENDER_MODE.CINEMATIC)
+      return null
+    return this.view?.cinematicRenderer.frameMs ?? null
   }
 
   get volumeOutlineWidth(): number {
@@ -2262,6 +2302,20 @@ export default class NiiVue extends EventTarget {
   set isViewModeHotKeyEnabled(v: boolean) {
     this.model.interaction.isViewModeHotKeyEnabled = v
     this.emit('change', { property: 'isViewModeHotKeyEnabled', value: v })
+  }
+
+  /**
+   * Opt-in: clicking a volume legend entry's colour box hides or shows that
+   * label (the volume's `hiddenLabels`); clicking its name still moves the
+   * crosshair to the label. Default false: every click moves the crosshair.
+   * Mesh and connectome legend entries do not toggle.
+   */
+  get isLegendToggleEnabled(): boolean {
+    return this.model.interaction.isLegendToggleEnabled
+  }
+  set isLegendToggleEnabled(v: boolean) {
+    this.model.interaction.isLegendToggleEnabled = v
+    this.emit('change', { property: 'isLegendToggleEnabled', value: v })
   }
 
   get isPanFollowingCrosshair(): boolean {
@@ -6685,6 +6739,12 @@ export default class NiiVue extends EventTarget {
    * shows it. Other viewers keep the old colours until their volume is
    * given the colormap again (`setVolume`).
    *
+   * `min`/`max` (with `min < max`) give a suggested display window, applied
+   * when a volume is given this colormap without calMin/calMax. The optional
+   * cinematic keys (`E`, `S`, `gradient`, `gMax`, `shininess`, `labelBlend`;
+   * label tables: `S`, `lo`, `hi`, `surface`, `normalize`) are kept for
+   * `VOLUME_RENDER_MODE.CINEMATIC`; see {@link ColorMap}.
+   *
    * @returns The canonical name under which the colormap was stored
    *   (first letter upper-cased), which is the form visible in `nv1.colormaps`
    *   and the `colormapAdded` event detail.
@@ -6698,7 +6758,7 @@ export default class NiiVue extends EventTarget {
   addColormap(
     name: string,
     cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
-      Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
+      Partial<Omit<ColorMap, 'R' | 'G' | 'B'>>,
   ): string {
     const canonical = NVCmaps.addColormap(name, cmap)
     const def = NVCmaps.lookupColorMap(canonical)

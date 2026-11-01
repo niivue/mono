@@ -626,6 +626,17 @@
       "doc": null
     },
     {
+      "jsName": "isLegendToggleEnabled",
+      "pyName": "is_legend_toggle_enabled",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isLegendVisible",
       "pyName": "is_legend_visible",
       "tsType": "boolean",
@@ -1354,6 +1365,17 @@
       "doc": null
     },
     {
+      "jsName": "cinematicFrameMs",
+      "pyName": "cinematic_frame_ms",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Mean GPU time (ms) of a cinematic refinement frame, over the first 10\nframes after the last restart. Null until measured, outside CINEMATIC, or\nwhen the GPU offers no timer (WebGPU 'timestamp-query',\nEXT_disjoint_timer_query_webgl2)."
+    },
+    {
       "jsName": "colormaps",
       "pyName": "colormaps",
       "tsType": "string[]",
@@ -1572,13 +1594,13 @@
         },
         {
           "name": "cmap",
-          "tsType": "Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Pick<ColorMap, \"A\" | \"I\" | \"labels\">>",
+          "tsType": "Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Omit<ColorMap, \"R\" | \"G\" | \"B\">>",
           "optional": false,
           "doc": null
         }
       ],
       "returns": "string",
-      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it. Volumes\nthat already use the name show the new colors on their next GPU update\n(e.g. `updateGLVolume()`). Mesh layers, tracts and connectomes bake their\ncolors when built, so they pick them up on their next change\n(`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).\n\nA `labels` array (empty is fine) registers a label table: volumes using\nit look up colours by integer ID with nearest sampling and no display\nwindow, and `I` defaults to 0..n-1. Re-registering a name rebuilds the\nlabel LUT of every volume using it in this viewer; `updateGLVolume()`\nshows it. Other viewers keep the old colours until their volume is\ngiven the colormap again (`setVolume`).",
+      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it. Volumes\nthat already use the name show the new colors on their next GPU update\n(e.g. `updateGLVolume()`). Mesh layers, tracts and connectomes bake their\ncolors when built, so they pick them up on their next change\n(`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).\n\nA `labels` array (empty is fine) registers a label table: volumes using\nit look up colours by integer ID with nearest sampling and no display\nwindow, and `I` defaults to 0..n-1. Re-registering a name rebuilds the\nlabel LUT of every volume using it in this viewer; `updateGLVolume()`\nshows it. Other viewers keep the old colours until their volume is\ngiven the colormap again (`setVolume`).\n\n`min`/`max` (with `min < max`) give a suggested display window, applied\nwhen a volume is given this colormap without calMin/calMax. The optional\ncinematic keys (`E`, `S`, `gradient`, `gMax`, `shininess`, `labelBlend`;\nlabel tables: `S`, `lo`, `hi`, `surface`, `normalize`) are kept for\n`VOLUME_RENDER_MODE.CINEMATIC`; see {@link ColorMap}.",
       "returnsDoc": "The canonical name under which the colormap was stored\n(first letter upper-cased), which is the form visible in `nv1.colormaps`\nand the `colormapAdded` event detail."
     },
     {
@@ -4585,6 +4607,11 @@
         "jsName": "slideVector",
         "tsType": "SlideVectorLayer",
         "reason": "non-serializable nominal type: SlideVectorLayer"
+      },
+      {
+        "jsName": "volumeCinematic",
+        "tsType": "Partial<CinematicOptions>",
+        "reason": "non-serializable nominal type: Partial<CinematicOptions>"
       },
       {
         "jsName": "volumes",

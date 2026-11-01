@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  clampCinematicOptions,
   clampCrosscutWidth,
   clampFinite,
   clampSampleRate,
@@ -239,6 +240,7 @@ describe('normalizeVolumeRenderMode', () => {
       VOLUME_RENDER_MODE.COMPOSITE,
       VOLUME_RENDER_MODE.MAXIMUM,
       VOLUME_RENDER_MODE.SLICES,
+      VOLUME_RENDER_MODE.CINEMATIC,
     ]) {
       expect(normalizeVolumeRenderMode(mode)).toBe(mode)
     }
@@ -251,6 +253,7 @@ describe('normalizeVolumeRenderMode', () => {
     expect(normalizeVolumeRenderMode(2.25)).toBe(VOLUME_RENDER_MODE.SLICES)
     expect(normalizeVolumeRenderMode(1.4)).toBe(VOLUME_RENDER_MODE.MAXIMUM)
     expect(normalizeVolumeRenderMode(0.3)).toBe(VOLUME_RENDER_MODE.COMPOSITE)
+    expect(normalizeVolumeRenderMode(2.6)).toBe(VOLUME_RENDER_MODE.CINEMATIC)
   })
 
   test('falls back to COMPOSITE for non-finite and out-of-range values', () => {
@@ -259,8 +262,8 @@ describe('normalizeVolumeRenderMode', () => {
       Number.POSITIVE_INFINITY,
       Number.NEGATIVE_INFINITY,
       -1,
-      3,
-      2.6,
+      4,
+      3.6,
       42,
     ]) {
       expect(normalizeVolumeRenderMode(v)).toBe(VOLUME_RENDER_MODE.COMPOSITE)
@@ -300,5 +303,32 @@ describe('clampFinite', () => {
     expect(clampFinite(1e9, [0, 1], 0.25)).toBe(1)
     expect(clampFinite(Number.NaN, [0, 1], 0.25)).toBe(0.25)
     expect(clampFinite(Number.NEGATIVE_INFINITY, [0, 1], 0.25)).toBe(0.25)
+  })
+})
+
+describe('clampCinematicOptions', () => {
+  test('replacesBadValuesAndBoundsTheStep', () => {
+    const o = clampCinematicOptions({
+      stepVoxels: 0,
+      maxFrames: Number.NaN,
+      exposure: -1,
+      lightElevation: -30,
+      labelMode: 'bogus' as 'none',
+    })
+    expect(o.stepVoxels).toBe(0.05)
+    expect(o.maxFrames).toBe(VOLUME_DEFAULTS.cinematic.maxFrames)
+    expect(o.exposure).toBe(0)
+    expect(o.lightElevation).toBe(-30)
+    expect(o.labelMode).toBe(VOLUME_DEFAULTS.cinematic.labelMode)
+    // Only a real boolean turns stochastic lighting on.
+    expect(
+      clampCinematicOptions({ isStochasticLighting: true })
+        .isStochasticLighting,
+    ).toBe(true)
+    expect(
+      clampCinematicOptions({
+        isStochasticLighting: 'true' as unknown as boolean,
+      }).isStochasticLighting,
+    ).toBe(false)
   })
 })

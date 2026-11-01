@@ -174,6 +174,7 @@ first such interaction warns). Turn one off before turning the other on.
     is_dragging = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_equal_size = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_graph_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_legend_toggle_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_legend_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_measurement_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_measure_units_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
@@ -244,6 +245,11 @@ off-window crosshair is brought back."""
 
     # Read-only properties (synced from JS to Python)
     backend = traitlets.Enum(["webgpu", "webgl2"], None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    cinematic_frame_ms = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Mean GPU time (ms) of a cinematic refinement frame, over the first 10
+frames after the last restart. Null until measured, outside CINEMATIC, or
+when the GPU offers no timer (WebGPU 'timestamp-query',
+EXT_disjoint_timer_query_webgl2)."""
     colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Every registered colormap name, both kinds."""
     drawing_colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
@@ -293,10 +299,16 @@ and its volumes alive."""
         shows it. Other viewers keep the old colours until their volume is
         given the colormap again (`setVolume`).
 
+        `min`/`max` (with `min < max`) give a suggested display window, applied
+        when a volume is given this colormap without calMin/calMax. The optional
+        cinematic keys (`E`, `S`, `gradient`, `gMax`, `shininess`, `labelBlend`;
+        label tables: `S`, `lo`, `hi`, `surface`, `normalize`) are kept for
+        `VOLUME_RENDER_MODE.CINEMATIC`; see {@link ColorMap}.
+
         Parameters
         ----------
         name : string
-        cmap : Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Pick<ColorMap, \"A\" | \"I\" | \"labels\">>
+        cmap : Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Omit<ColorMap, \"R\" | \"G\" | \"B\">>
 
         Returns
         -------

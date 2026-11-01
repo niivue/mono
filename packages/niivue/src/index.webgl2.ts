@@ -106,6 +106,7 @@ export type {
   AnnotationTool,
   BackendType,
   CanvasViewport,
+  CinematicOptions,
   ColorMap,
   CompletedAngle,
   CompletedMeasurement,

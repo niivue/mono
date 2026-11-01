@@ -15,9 +15,11 @@ import {
   isGeneratedLabelColormap,
   isLabelColormap,
   labelLutFor,
+  lookupColorMap,
   lutrgba8,
   makeLabelLut,
   makeLut,
+  shownLabelLut,
   withColormapWindow,
 } from './NVCmaps'
 
@@ -531,5 +533,76 @@ describe('withColormapWindow', () => {
     })
     const none = { calMax: 5 }
     expect(withColormapWindow(none)).toBe(none)
+  })
+})
+
+describe('shownLabelLut', () => {
+  const lut = { lut: new Uint8ClampedArray(4 * 4).fill(200), min: 10, max: 13 }
+
+  test('hidesLabelValuesByAlphaOnly', () => {
+    const vol = { colormapLabel: lut, hiddenLabels: [11, 13, 99, 10.5] }
+    const shown = shownLabelLut(vol)
+    expect(Array.from(shown?.lut ?? [])).toEqual([
+      200, 200, 200, 200, 200, 200, 200, 0, 200, 200, 200, 200, 200, 200, 200,
+      0,
+    ])
+    expect(lut.lut[7]).toBe(200) // source untouched
+  })
+
+  test('returnsSourceWhenNothingHidden', () => {
+    expect(shownLabelLut({ colormapLabel: lut })).toBe(lut)
+    expect(shownLabelLut({ colormapLabel: lut, hiddenLabels: [] })).toBe(lut)
+    expect(shownLabelLut({ colormapLabel: null, hiddenLabels: [1] })).toBeNull()
+  })
+
+  test('newObjectOnlyWhenHiddenSetChanges', () => {
+    const vol = { colormapLabel: lut, hiddenLabels: [12] }
+    const a = shownLabelLut(vol)
+    expect(shownLabelLut(vol)).toBe(a)
+    vol.hiddenLabels = [12, 11]
+    expect(shownLabelLut(vol)).not.toBe(a)
+  })
+})
+
+describe('addColormap keeps cinematic keys', () => {
+  test('keepsWindowAndTransferFunctionKeysAsCopies', () => {
+    const cmap = {
+      R: [0, 255],
+      G: [0, 255],
+      B: [0, 255],
+      min: -1000,
+      max: 1500,
+      E: [0, 255],
+      gradient: { lo: 20, hi: 200 },
+      labelBlend: 0.5,
+    }
+    addColormap('cinematicKeysA', cmap)
+    cmap.gradient.lo = 99
+    const def = lookupColorMap('cinematicKeysA')
+    expect(def?.min).toBe(-1000)
+    expect(def?.max).toBe(1500)
+    expect(def?.E).toEqual([0, 255])
+    expect(def?.gradient).toEqual({ lo: 20, hi: 200 })
+    expect(def?.labelBlend).toBe(0.5)
+  })
+
+  test('keepsLabelMaterialKeysAndDropsAnEmptyWindow', () => {
+    addColormap('cinematicKeysB', {
+      R: [0, 200],
+      G: [0, 100],
+      B: [0, 50],
+      labels: ['', 'a'],
+      lo: [0, 30],
+      hi: [0, 70],
+      surface: [0, 190],
+      normalize: [[[1], 100]],
+      min: 0,
+      max: 0,
+    })
+    const def = lookupColorMap('cinematicKeysB')
+    expect(def?.lo).toEqual([0, 30])
+    expect(def?.surface).toEqual([0, 190])
+    expect(def?.normalize).toEqual([[[1], 100]])
+    expect(def?.min).toBeUndefined()
   })
 })

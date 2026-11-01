@@ -59,6 +59,7 @@ export {
 export type { Setting, SettingKind } from './settings'
 export {
   ANNOTATION_TOOLS,
+  CINEMATIC_LABEL_MODES,
   COLORMAP_TYPES,
   coerceSetting,
   DRAG_MODES,

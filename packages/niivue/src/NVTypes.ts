@@ -224,6 +224,12 @@ export type NVImage = {
    * {@link colormap} is a label colormap. See {@link NiiVue.setAtlasOutline}.
    */
   atlasOutline?: number
+  /**
+   * Label values (calibrated IDs, not LUT rows) drawn transparent in 2D and 3D
+   * on both backends. They stay listed in the legend, drawn as an outlined box.
+   * Ignored unless {@link colormap} is a label colormap.
+   */
+  hiddenLabels?: number[]
   /** Whether this volume has imaginary data (complex) */
   isImaginary?: boolean
   /**
@@ -351,6 +357,27 @@ export type ColorMap = {
   min?: number
   max?: number
   labels?: string[]
+  // Optional cinematic keys (VOLUME_RENDER_MODE.CINEMATIC); arrays share `I`.
+  /** Alpha at high gradient (surfaces), 0-255; `A` is then the interior alpha. */
+  E?: number[]
+  /** Specular strength at surfaces, 0-255. A label table: per-label specular. */
+  S?: number[]
+  /** Gradient ramp (intensity units per mm) from interior to surface. */
+  gradient?: { lo: number; hi: number }
+  /** Gradient magnitude at the top transfer-function row. */
+  gMax?: number
+  /** Blinn-Phong exponent. */
+  shininess?: number
+  /** 0-1: labelled tissue keeps this table, tinted by the label colour by this fraction. */
+  labelBlend?: number
+  /** Label table: intensity where each structure's surface ramp starts. */
+  lo?: number[]
+  /** Label table: intensity where each structure's surface ramp ends. */
+  hi?: number[]
+  /** Label table: surfaceness floor per label, 0-255. */
+  surface?: number[]
+  /** Label table: `[[labelIds, target], ...]` maps each label set's median intensity to a target, piecewise linearly. */
+  normalize?: [number[], number][]
 }
 
 export type LUT = {
@@ -795,7 +822,7 @@ export type VolumeRenderConfig = {
   matcap: string
   paqdUniforms: [number, number, number, number]
   transmittanceCutoff: number
-  /** How the 3D ray-march combines samples. VOLUME_RENDER_MODE.COMPOSITE | MAXIMUM */
+  /** How the 3D render draws the volume. VOLUME_RENDER_MODE.COMPOSITE | MAXIMUM | SLICES | CINEMATIC */
   renderMode: number
   /**
    * Which stencil estimates the in-shader LAYER gradient in the overlay and
@@ -925,6 +952,54 @@ export type VolumeRenderConfig = {
    * background volume and does nothing to overlays or 2D slices).
    */
   silhouette: number
+  /** Settings of `VOLUME_RENDER_MODE.CINEMATIC`. See {@link CinematicOptions}. */
+  cinematic: CinematicOptions
+}
+
+/**
+ * Settings of the cinematic render mode (`VOLUME_RENDER_MODE.CINEMATIC`).
+ * Angles in degrees, distances in mm. The transfer function is the background
+ * volume's colormap (with the optional cinematic keys `E`, `S`, `gradient`,
+ * `gMax`, `shininess`, `labelBlend`) mapped across its calMin..calMax; a label
+ * volume on the same grid supplies per-label materials (label-table keys `S`,
+ * `surface`, `lo`, `hi`, `normalize`).
+ */
+export type CinematicOptions = {
+  /** Light elevation above the view direction. */
+  lightElevation: number
+  /** Light azimuth about the view direction. */
+  lightAzimuth: number
+  /** Light cone (soft shadow penumbra) half angle. */
+  lightConeDeg: number
+  lightIntensity: number
+  ambient: number
+  /** Shadow strength, 0-1. */
+  shadow: number
+  /** Ambient occlusion strength, 0-1. */
+  ao: number
+  aoRadiusMM: number
+  aoConeDeg: number
+  /** Diffuse term of normal-free (volumetric) samples, 0-1. */
+  volumetricDiffuse: number
+  exposure: number
+  /** Ray step in voxels. */
+  stepVoxels: number
+  /** Frames accumulated before the image is final. */
+  maxFrames: number
+  /** Specular scale. */
+  specular: number
+  /**
+   * How a label volume colours the render: 'only' hides unlabeled tissue,
+   * 'unlabeled' also draws it with the base transfer function, 'none' ignores
+   * the labels.
+   */
+  labelMode: 'only' | 'unlabeled' | 'none'
+  /**
+   * Trace shadow and ambient occlusion from one sample per ray per frame,
+   * picked by its contribution, instead of from every visible sample: about
+   * 2.5x faster per frame, noisier per frame, same converged image.
+   */
+  isStochasticLighting: boolean
 }
 
 /**
@@ -1038,6 +1113,8 @@ export type InteractionConfig = {
   wheelZoomAnchor: WheelZoomAnchor
   // V key cycles sliceType (NiiVue 0.6 had this always on; opt-in here).
   isViewModeHotKeyEnabled: boolean
+  // See NiiVue.isLegendToggleEnabled.
+  isLegendToggleEnabled: boolean
   // Opt-in: when the 2D views are zoomed in (pan2Dxyzmm[3] > 1) and the
   // crosshair moves on its own (keyboard, API, linked instance), pan just
   // enough to keep it inside every tile's visible window. Off by default: the
@@ -1294,7 +1371,7 @@ export type NiiVueOptions = {
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
   volumeTransmittanceCutoff?: number
-  /** VOLUME_RENDER_MODE.COMPOSITE (default) | MAXIMUM */
+  /** VOLUME_RENDER_MODE.COMPOSITE (default) | MAXIMUM | SLICES | CINEMATIC */
   volumeRenderMode?: number
   /** Layer-gradient stencil for the overlay/drawing passes. LAYER_GRADIENT_MODE.CENTRAL (default) | BLOB | SOBEL8. See VolumeRenderConfig.layerGradientMode. */
   volumeLayerGradientMode?: number
@@ -1312,6 +1389,8 @@ export type NiiVueOptions = {
   volumeGradientOpacity?: number
   /** Silhouette (Fresnel rim) enhancement for the background 3D ray-march, [0, 1]; 0 disables (default). See VolumeRenderConfig.silhouette. */
   volumeSilhouette?: number
+  /** Cinematic render settings, merged over the defaults. See CinematicOptions. */
+  volumeCinematic?: Partial<CinematicOptions>
 
   // Mesh (prefixed)
   meshXRay?: number
@@ -1336,6 +1415,7 @@ export type NiiVueOptions = {
   wheelZoomAnchor?: WheelZoomAnchor
   isViewModeHotKeyEnabled?: boolean
   isPanFollowingCrosshair?: boolean
+  isLegendToggleEnabled?: boolean
 
   // Annotation (prefixed)
   annotationIsEnabled?: boolean
@@ -1474,6 +1554,8 @@ export type ImageFromUrlOptions = {
   isColormapInverted?: boolean
   /** Outline width for a label/atlas volume, in its own voxels (default 0 = filled) */
   atlasOutline?: number
+  /** Label values of a label/atlas volume to hide (default: none) */
+  hiddenLabels?: number[]
   /** Minimum intensity for negative color mapping (default: NaN = symmetric) */
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */

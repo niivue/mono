@@ -5,7 +5,7 @@
  */
 import { mat4 } from 'gl-matrix'
 import { colormapKey, lookupColorMap } from '@/cmap/NVCmaps'
-import { invGamma, isPaqd } from '@/NVConstants'
+import { invGamma, isPaqd, NiiDataType } from '@/NVConstants'
 import type { CinematicOptions, ColorMap, NVImage } from '@/NVTypes'
 import { getImageDataRAS } from '@/volume/utils'
 import { drawnOpacity } from './NVVolumeVisibility'
@@ -27,6 +27,8 @@ const SKIP_LOD = 2
 // A plain label table has no surface ramp: always on, i.e. label-shaped.
 // f32-exact so lo < hi survives upload.
 const ALWAYS_ON_RAMP = [-1e6, -1e6 + 1]
+/** Largest finite half float exactly stored; from 65520 up rounds to Inf. */
+const HALF_FLOAT_MAX = 65504
 
 export type BakedTransferFunction = {
   /** RGBA8, TF_W x TF_H. */
@@ -69,11 +71,14 @@ function smoothstep(e0: number, e1: number, x: number): number {
  * `gMax`, `shininess`, `labelBlend`; see ColorMap), into 2D tables mapped
  * across [huMin, huMax]. A plain colormap works unchanged: `A` is the alpha.
  * Row y holds gradient magnitude (y / (TF_H - 1))^2 * gMax, matching tfUV().
+ * `scale` is the factor the uploaded intensities were multiplied by (see
+ * halfFloatScale): the table stays in data units and the uniforms follow it.
  */
 export function bakeTransferFunction(
   cmap: ColorMap,
   huMin: number,
   huMax: number,
+  scale = 1,
 ): BakedTransferFunction {
   const I =
     cmap.I ?? cmap.R.map((_, i) => Math.round((i * 255) / (cmap.R.length - 1)))
@@ -102,9 +107,9 @@ export function bakeTransferFunction(
     color,
     material,
     maxAlpha,
-    huMin,
-    huMax,
-    gMax,
+    huMin: huMin * scale,
+    huMax: huMax * scale,
+    gMax: gMax * scale,
     shininess: cmap.shininess ?? 40,
     labelBlend: cmap.labelBlend ?? 0,
   }
@@ -113,11 +118,13 @@ export function bakeTransferFunction(
 /**
  * Material table from a label colormap: per label id, two RGBA texels (rgb +
  * opacity; surface ramp lo/hi, specular, surfaceness floor). Hidden labels get
- * opacity 0. `isVisible[id]` is 1 for labels drawn at all.
+ * opacity 0. `isVisible[id]` is 1 for labels drawn at all. `scale` as in
+ * bakeTransferFunction; the always-on ramp is not in data units, so it stays.
  */
 export function labelMaterials(
   table: ColorMap,
   hidden: readonly number[] = [],
+  scale = 1,
 ): { materials: Float32Array; isVisible: Uint8Array } {
   const materials = new Float32Array(MATERIAL_TEXELS * 4)
   const isVisible = new Uint8Array(256)
@@ -130,8 +137,10 @@ export function labelMaterials(
       [table.R[i] / 255, table.G[i] / 255, table.B[i] / 255, opacity],
       k * 8,
     )
-    const lo = table.lo?.[i] ?? ALWAYS_ON_RAMP[0]
-    const hi = table.hi?.[i] ?? ALWAYS_ON_RAMP[1]
+    const rampLo = table.lo?.[i]
+    const rampHi = table.hi?.[i]
+    const lo = rampLo === undefined ? ALWAYS_ON_RAMP[0] : rampLo * scale
+    const hi = rampHi === undefined ? ALWAYS_ON_RAMP[1] : rampHi * scale
     const specular = (table.S?.[i] ?? 0) / 255
     const surface = (table.surface?.[i] ?? 0) / 255
     materials.set([lo, hi, specular, surface], k * 8 + 4)
@@ -223,6 +232,53 @@ function scaledIntensities(
   const out = new Float32Array(raw.length)
   for (let i = 0; i < raw.length; i++) out[i] = raw[i] * s + b
   return out
+}
+
+/**
+ * Replace non-finite voxels in place: a NaN or Inf in the half-float texture
+ * makes the Sobel gradient of every neighbour non-finite. NaN (no data) becomes
+ * the lower of 0 and the finite minimum, so it reads as background; +/-Inf
+ * clamp to the finite extremes.
+ */
+export function sanitizeIntensities(img: Float32Array): void {
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  let isClean = true
+  for (let i = 0; i < img.length; i++) {
+    const v = img[i]
+    if (!Number.isFinite(v)) isClean = false
+    else {
+      if (v < lo) lo = v
+      if (v > hi) hi = v
+    }
+  }
+  if (isClean) return
+  const hasFinite = lo <= hi
+  const nanValue = hasFinite ? Math.min(0, lo) : 0
+  for (let i = 0; i < img.length; i++) {
+    const v = img[i]
+    if (Number.isFinite(v)) continue
+    if (Number.isNaN(v) || !hasFinite) img[i] = nanValue
+    else img[i] = v > 0 ? hi : lo
+  }
+}
+
+/**
+ * Power of two that brings finite `img` into half-float range, 1 when it fits.
+ * Half floats keep the same relative precision at any exponent, so the image
+ * matches a float pipeline as long as every intensity-unit input (window,
+ * gradient thresholds, label ramps) is multiplied by it too. The largest
+ * |gradient| the Sobel can store is the largest |value|, so it fits as well.
+ */
+export function halfFloatScale(img: Float32Array): number {
+  let max = 0
+  for (let i = 0; i < img.length; i++) {
+    const v = Math.abs(img[i])
+    if (v > max) max = v
+  }
+  return max > HALF_FLOAT_MAX
+    ? 2 ** -Math.ceil(Math.log2(max / HALF_FLOAT_MAX))
+    : 1
 }
 
 export type CinematicGeometry = {
@@ -543,6 +599,29 @@ export function findLabelVolume(volumes: readonly NVImage[]): NVImage | null {
   return null
 }
 
+/** RGB/RGBA voxels hold no scalar intensity for the transfer function. */
+export function hasScalarIntensity(vol: NVImage): boolean {
+  const dt = vol.hdr?.datatypeCode
+  return dt !== NiiDataType.DT_RGB24 && dt !== NiiDataType.DT_RGBA32
+}
+
+/**
+ * A hidden background with a visible label volume draws the labels alone, as
+ * labelMode 'only' does: they still need the march (their surfaces come from
+ * the intensities), and its zero unlabeled scale keeps the hidden anatomy out,
+ * shadows included. The view marches a hidden background only when labels end
+ * up on (`hasLabels`).
+ */
+export function cinematicOptionsForFrame(
+  base: NVImage,
+  labelVol: NVImage | null,
+  options: CinematicOptions,
+): CinematicOptions {
+  return drawnOpacity(base) > 0 || !labelVol || options.labelMode === 'none'
+    ? options
+    : { ...options, labelMode: 'only' }
+}
+
 /** The standard overlay texture may be borrowed only without label, PAQD or streamed layers (PAQD lives in its own texture). */
 export function canUseCinematicOverlays(volumes: readonly NVImage[]): boolean {
   return volumes
@@ -556,6 +635,10 @@ export function canUseCinematicOverlays(volumes: readonly NVImage[]): boolean {
 
 const sameKey = (a: readonly unknown[], b: readonly unknown[]): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i])
+
+/** The voxel order getImageDataRAS reads; an affine change can reorder it. */
+const rasOrderKey = (vol: NVImage | null): string =>
+  [vol?.dimsRAS, vol?.img2RASstep, vol?.img2RASstart].join('|')
 
 /** Intensity volume to upload: scaled (and calibrated) values in RAS order. */
 export type CinematicIntensity = {
@@ -576,6 +659,8 @@ export type CinematicLabels = {
 /** What changed since the last update; null fields are unchanged. */
 export type CinematicUpdate = {
   intensity: CinematicIntensity | null
+  /** New placement of unchanged intensities: an affine change. */
+  geometry: CinematicGeometry | null
   tf: BakedTransferFunction | null
   labels: CinematicLabels | null
   /** Bumps on any change, so a tile restarts its accumulation. */
@@ -584,8 +669,9 @@ export type CinematicUpdate = {
 
 /**
  * Derived CPU data of the cinematic scene, rebuilt only when its inputs'
- * version tokens change: volume `_dataVersion`, `colormapKey`, calMin/calMax,
- * label volume identity, `_dataVersion` and `hiddenLabels`, label mode.
+ * version tokens change: volume `_dataVersion`, `frac2mm` identity (calculateRAS
+ * clones a new matrix per affine), `colormapKey`, calMin/calMax, label volume
+ * identity, `_dataVersion` and `hiddenLabels`, label mode.
  * One per view (both backends); `update` returns what to upload.
  */
 export class CinematicCpuCache {
@@ -598,12 +684,20 @@ export class CinematicCpuCache {
   private _rawLabelKey: unknown[] = []
   private _rawLabels: Uint8Array | null = null
   private _geometry: CinematicGeometry | null = null
+  private _geometryFrac2mm: mat4 | null = null
+  /** Factor the uploaded intensities carry (see halfFloatScale). */
+  private _scale = 1
   private _calibration: ((v: number) => number) | null = null
   private _labelBlend = 0
 
   /** Label ids of `labelVol` in RAS order, or null when not 0..254. */
   private _labelIds(labelVol: NVImage | null): Uint8Array | null {
-    const key = [labelVol, labelVol?._dataVersion ?? 0, labelVol?.frame4D]
+    const key = [
+      labelVol,
+      labelVol?._dataVersion ?? 0,
+      labelVol?.frame4D,
+      rasOrderKey(labelVol),
+    ]
     if (sameKey(key, this._rawLabelKey)) return this._rawLabels
     this._rawLabelKey = key
     this._rawLabels = null
@@ -641,6 +735,7 @@ export class CinematicCpuCache {
       : null
     const out: CinematicUpdate = {
       intensity: null,
+      geometry: null,
       tf: null,
       labels: null,
       version: this.version,
@@ -649,9 +744,11 @@ export class CinematicCpuCache {
       vol,
       vol._dataVersion ?? 0,
       vol.frame4D,
+      rasOrderKey(vol),
       labelVol,
       labelVol?._dataVersion ?? 0,
       labelVol?.frame4D,
+      rasOrderKey(labelVol),
       labelCmap?.normalize,
     ]
     if (!sameKey(intensityKey, this._intensityKey)) {
@@ -668,6 +765,7 @@ export class CinematicCpuCache {
         vol.hdr?.scl_slope ?? 1,
         vol.hdr?.scl_inter ?? 0,
       )
+      sanitizeIntensities(img)
       const ids = this._labelIds(labelVol)
       this._calibration =
         ids && labelCmap?.normalize
@@ -675,7 +773,12 @@ export class CinematicCpuCache {
           : null
       const map = this._calibration
       if (map) for (let i = 0; i < img.length; i++) img[i] = map(img[i])
+      this._scale = halfFloatScale(img)
+      if (this._scale !== 1) {
+        for (let i = 0; i < img.length; i++) img[i] *= this._scale
+      }
       this._geometry = cinematicGeometry(vol.frac2mm, dims)
+      this._geometryFrac2mm = vol.frac2mm
       out.intensity = {
         values: halfFloatBits(img),
         geometry: this._geometry,
@@ -683,6 +786,10 @@ export class CinematicCpuCache {
       // Window (calibration) and label ids (grid) follow the intensities.
       this._tfKey = []
       this._labelKey = []
+    } else if (this._geometry && vol.frac2mm !== this._geometryFrac2mm) {
+      this._geometry = cinematicGeometry(vol.frac2mm, this._geometry.dims)
+      this._geometryFrac2mm = vol.frac2mm
+      out.geometry = this._geometry
     }
     const cmap =
       lookupColorMap(vol.colormap ?? 'gray') ?? lookupColorMap('gray')
@@ -697,7 +804,7 @@ export class CinematicCpuCache {
           ? [cmap.min, cmap.max]
           : [map(vol.calMin), map(vol.calMax)]
         : [vol.calMin, vol.calMax]
-      out.tf = bakeTransferFunction(cmap, lo, hi)
+      out.tf = bakeTransferFunction(cmap, lo, hi, this._scale)
       if (out.tf.labelBlend !== this._labelBlend) this._labelKey = []
       this._labelBlend = out.tf.labelBlend
     }
@@ -719,6 +826,7 @@ export class CinematicCpuCache {
         const { materials, isVisible } = labelMaterials(
           labelCmap,
           labelVol?.hiddenLabels,
+          this._scale,
         )
         out.labels = {
           ids: dilateLabels(ids, this._geometry.dims, isVisible),
@@ -733,7 +841,9 @@ export class CinematicCpuCache {
         }
       }
     }
-    if (out.intensity || out.tf || out.labels) out.version = ++this.version
+    if (out.intensity || out.geometry || out.tf || out.labels) {
+      out.version = ++this.version
+    }
     return out
   }
 }

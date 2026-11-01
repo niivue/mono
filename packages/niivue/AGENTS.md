@@ -2040,13 +2040,20 @@ restarts (`CinematicFrameTimer`): WebGPU timestamp queries ('timestamp-query'
 requested when the adapter has it), WebGL2 `EXT_disjoint_timer_query_webgl2`;
 null without either. volumes[0] (and the label volume) are read at their
 `frame4D`. Intensities upload as half-float bits (`halfFloatBits`, hand-rounded
-where `Float16Array` is missing).
+where `Float16Array` is missing). Half floats stop at 65504, so `CinematicCpuCache`
+first replaces non-finite voxels (`sanitizeIntensities`: NaN becomes the lower
+of 0 and the finite minimum, Inf the finite extreme), then multiplies by a power
+of two when needed (`halfFloatScale`). The TF window, `gMax` and label `lo`/`hi`
+carry the same factor (no shader change), so gradient thresholds stay in data
+units and the image matches a float pipeline. Precision is half float's:
+about 1/1024 of the value, so a narrow window on top of a large offset bands.
 
 **Files:** `view/NVCinematic.ts` (shared CPU side, unit-tested: TF bake, label
 materials, dilation, calibration, clip rescale, light, uniform packing, and
 `CinematicCpuCache`, which rebuilds only on version tokens: `_dataVersion`,
 `colormapKey`, calMin/calMax, label volume identity + `hiddenLabels`, label
-mode). `wgpu/cinematic.ts` + `cinematic*.wgsl` (`cinematicCommon` is prepended
+mode, `frac2mm` identity; `calculateRAS` clones it per affine, and only a changed
+voxel order re-uploads intensities). `wgpu/cinematic.ts` + `cinematic*.wgsl` (`cinematicCommon` is prepended
 to the march and extinction so primary and shadow rays classify identically).
 `gl/cinematic.ts` + `gl/cinematicShader.ts` mirror them method for method and
 statement for statement.
@@ -2065,7 +2072,7 @@ schedules one `render()` after `onSubmittedWorkDone` (one frame in flight), not
 while `_isDragging` (each camera change draws one restarted frame). Each tile
 (keyed by tile index, sized to it in device px; multiplanar and mosaic render
 tiles each get one) restarts on any change of options, cache version, viewport,
-MVP, clip planes, cutaway or background. First-hit depth is set on frame 0
+MVP, clip planes, cutaway, background or affine. First-hit depth is set on frame 0
 (first sample with table alpha >= 0.01, as the classic march), not
 min-accumulated. The light comes from each tile's own model matrix (mosaic
 tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
@@ -2073,7 +2080,8 @@ tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
 **Frame structure (WebGL2):** same calls and tile keys; `init` leaves the
 renderer not ready without `EXT_color_buffer_float` or when its shaders fail
 to compile (the view then draws COMPOSITE with one warning). Compute becomes fragment passes drawing a
-fullscreen triangle: prep passes one per 3D layer (`framebufferTextureLayer`),
+fullscreen triangle: prep passes one per 3D layer (`framebufferTextureLayer`,
+detached afterwards: a framebuffer that is not bound keeps a deleted texture alive),
 extinction mips by rendering each level while `TEXTURE_BASE/MAX_LEVEL` pin
 sampling to the previous one (no feedback loop), `LINEAR_MIPMAP_NEAREST` to
 match WebGPU's default nearest mip filter. Uniforms are std140 blocks fed the
@@ -2114,7 +2122,10 @@ with the anatomy by depth, as in the classic shader; clip planes apply only with
 crossed (`overlayStep * length(df * overlayDims)`), so anisotropic overlays
 match classic. A hidden background (opacity 0 or `visible: false`) still draws
 the overlays: the view passes `isBackgroundVisible` and the shader skips the
-anatomy march (`labelInfo.w`). The view bumps `_cinematicOverlayVersion` after
+anatomy march (`labelInfo.w`). A visible label volume over a hidden background
+draws as labelMode 'only' (`cinematicOptionsForFrame`): it needs the anatomy
+march, since intensities shape its surfaces, but no unlabeled tissue shows or
+casts shadows. The view bumps `_cinematicOverlayVersion` after
 stack/affine updates so an in-place texture rewrite restarts accumulation; the
 cinematic renderer never frees the borrowed texture.
 
@@ -2122,7 +2133,10 @@ cinematic renderer never frees the borrowed texture.
 visible label volume (the same-grid label volume draws alone), and any visible
 PAQD, streamed or off-grid label overlay (all standard overlays omitted).
 Channel stacks draw no overlays. Chunked
-(streamed) backgrounds draw COMPOSITE (one `log.warn`). Memory per
+(streamed) and RGB/RGBA backgrounds (no scalar intensity for the TF,
+`hasScalarIntensity`) draw COMPOSITE (one `log.warn` each). The drawing layer is
+not drawn in cinematic render tiles (one `log.warn`; 2D tiles still show it, and
+no drawing pass exists yet). Memory per
 cinematic volume: a duplicate r16float intensity texture, an rgba16float
 gradient (8 B/voxel), a half-res rgba16float extinction mip chain, and an r8uint
 label id texture; all freed when no tile is cinematic. Depth picking uses the

@@ -90,6 +90,11 @@ export class CinematicRenderer extends NVRenderer {
     return this.cpu.labelProblem
   }
 
+  /** Whether the last prepare left a label volume on. */
+  get hasLabels(): boolean {
+    return this.labelInfo[0] > 0.5
+  }
+
   /** Mean GPU ms per refinement frame, or null (see CinematicFrameTimer). */
   get frameMs(): number | null {
     return this.timer.meanMs(this.isRefining)
@@ -279,6 +284,11 @@ export class CinematicRenderer extends NVRenderer {
       )
       this.geometry = geometry
       this.needsGradient = true
+      this.needsExtinction = true
+    }
+    if (update.geometry) {
+      // Extinction is per mm; the gradient texture is per voxel, so it stays.
+      this.geometry = update.geometry
       this.needsExtinction = true
     }
     if (update.tf) {

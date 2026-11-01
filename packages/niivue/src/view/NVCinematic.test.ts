@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import { addColormap } from '@/cmap/NVCmaps'
-import { VOLUME_DEFAULTS } from '@/NVConstants'
+import { NiiDataType, VOLUME_DEFAULTS } from '@/NVConstants'
 import type { ColorMap, NVImage } from '@/NVTypes'
 import {
   bakeTransferFunction,
@@ -10,14 +10,18 @@ import {
   calibrationMap,
   canUseCinematicOverlays,
   cinematicGeometry,
+  cinematicOptionsForFrame,
   clipParams,
   dilateLabels,
   findLabelVolume,
   HIDDEN_LABEL,
   halfFloatBits,
+  halfFloatScale,
+  hasScalarIntensity,
   labelMaterials,
   lightVector,
   packMarchParams,
+  sanitizeIntensities,
   TF_H,
   TF_W,
   tileKey,
@@ -355,6 +359,222 @@ test('cinematicReadsTheDisplayed4DFrame', () => {
   expect(cache.update(vol, null, opts)?.intensity?.values[0]).toBe(
     halfFloatBits(new Float32Array([30]))[0],
   )
+})
+
+describe('affine changes', () => {
+  const opts = VOLUME_DEFAULTS.cinematic
+  const moved = (vol: NVImage): mat4 =>
+    mat4.translate(mat4.create(), vol.frac2mm as mat4, [1, 2, 3])
+
+  test('geometryFollowsFrac2mmWithoutReuploadingIntensities', () => {
+    const vol = volume(new Float32Array(8).fill(50), 2)
+    const cache = new CinematicCpuCache()
+    const first = cache.update(vol, null, opts)
+    vol.frac2mm = moved(vol)
+    const out = cache.update(vol, null, opts)
+    expect(out?.intensity).toBeNull()
+    expect(Array.from(out?.geometry?.mm2frac ?? [])).toEqual(
+      Array.from(mat4.invert(mat4.create(), vol.frac2mm as mat4) as mat4),
+    )
+    // Accumulation restarts on the version.
+    expect(out?.version).toBeGreaterThan(first?.version ?? 0)
+    const again = cache.update(vol, null, opts)
+    expect(again?.geometry).toBeNull()
+    expect(again?.version).toBe(out?.version)
+  })
+
+  test('aReorderedVolumeReuploadsItsIntensities', () => {
+    const img = new Float32Array(8)
+    img[1] = 100
+    const vol = volume(img, 2)
+    const cache = new CinematicCpuCache()
+    cache.update(vol, null, opts)
+    // calculateRAS assigns new arrays; equal values are no new voxel order.
+    vol.img2RASstep = [1, 2, 4]
+    vol.frac2mm = moved(vol)
+    expect(cache.update(vol, null, opts)?.intensity).toBeNull()
+    vol.img2RASstep = [2, 1, 4]
+    vol.frac2mm = moved(vol)
+    const out = cache.update(vol, null, opts)
+    expect(out?.intensity?.values[2]).toBe(
+      halfFloatBits(new Float32Array([100]))[0],
+    )
+    expect(out?.intensity?.geometry.mm2frac).toEqual(
+      mat4.invert(mat4.create(), vol.frac2mm as mat4) as mat4,
+    )
+  })
+})
+
+test('onlyScalarVolumesHaveAnIntensityToTrace', () => {
+  const of = (datatypeCode: number) =>
+    volume(new Float32Array(8), 2, {
+      hdr: { datatypeCode } as NVImage['hdr'],
+    })
+  expect(hasScalarIntensity(of(NiiDataType.DT_RGB24))).toBe(false)
+  expect(hasScalarIntensity(of(NiiDataType.DT_RGBA32))).toBe(false)
+  expect(hasScalarIntensity(of(NiiDataType.DT_FLOAT32))).toBe(true)
+  expect(hasScalarIntensity(of(NiiDataType.DT_UINT8))).toBe(true)
+})
+
+describe('half-float range', () => {
+  const opts = VOLUME_DEFAULTS.cinematic
+  const INF_BITS = 0x7c00
+  const isFiniteHalf = (bits: number) => (bits & INF_BITS) !== INF_BITS
+
+  test('sanitizeReplacesNaNWithBackgroundAndClampsInf', () => {
+    const img = new Float32Array([
+      Number.NaN,
+      -50,
+      70,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ])
+    sanitizeIntensities(img)
+    expect(Array.from(img)).toEqual([-50, -50, 70, 70, -50])
+    // All above zero: a NaN must not become tissue.
+    const positive = new Float32Array([Number.NaN, 100])
+    sanitizeIntensities(positive)
+    expect(Array.from(positive)).toEqual([0, 100])
+    const empty = new Float32Array([Number.NaN, Number.POSITIVE_INFINITY])
+    sanitizeIntensities(empty)
+    expect(Array.from(empty)).toEqual([0, 0])
+  })
+
+  test('scaleIsAPowerOfTwoAndOnlyWhenNeeded', () => {
+    expect(halfFloatScale(new Float32Array([0, 65504]))).toBe(1)
+    expect(halfFloatScale(new Float32Array([0, 100000]))).toBe(0.5)
+    expect(halfFloatScale(new Float32Array([-100000, 1]))).toBe(0.5)
+    const s = halfFloatScale(new Float32Array([1e30]))
+    expect(Number.isInteger(Math.log2(s))).toBe(true)
+    expect(1e30 * s).toBeLessThanOrEqual(65504)
+    expect(1e30 * s).toBeGreaterThan(65504 / 2)
+  })
+
+  test('outOfRangeDataUploadsFiniteAndCarriesTheScale', () => {
+    const img = new Float32Array(8)
+    img[7] = 100000
+    const vol = volume(img, 2, { calMin: 20000, calMax: 100000 })
+    const out = new CinematicCpuCache().update(vol, null, opts)
+    expect(out?.intensity?.values.every(isFiniteHalf)).toBe(true)
+    expect(out?.intensity?.values[7]).toBe(
+      halfFloatBits(new Float32Array([50000]))[0],
+    )
+    expect(out?.tf?.huMin).toBe(10000)
+    expect(out?.tf?.huMax).toBe(50000)
+    expect(out?.tf?.gMax).toBe(500)
+  })
+
+  test('aLargeVolumeClassifiesAsTheSameDataAtASmallerScale', () => {
+    addColormap('cinematicTestRamp', {
+      ...ramp,
+      gradient: { lo: 20, hi: 200 },
+      gMax: 1000,
+    })
+    const of = (k: number) => {
+      const img = new Float32Array(8).map((_, i) => i * 10 * k)
+      const vol = volume(img, 2, {
+        colormap: 'cinematicTestRamp',
+        calMin: 10 * k,
+        calMax: 60 * k,
+      })
+      return new CinematicCpuCache().update(vol, null, opts)
+    }
+    // k = 1024 needs a scale of 1/2. In uniforms and tables everything is the
+    // k = 512 scene, whose gradient thresholds sit at the same place in data.
+    const big = of(1024)
+    const same = of(512)
+    expect(big?.tf?.huMin).toBe(same?.tf?.huMin as number)
+    expect(big?.tf?.huMax).toBe(same?.tf?.huMax as number)
+    expect(Array.from(big?.tf?.color ?? [])).toEqual(
+      Array.from(same?.tf?.color ?? []),
+    )
+    expect(big?.intensity?.values).toEqual(
+      same?.intensity?.values as Uint16Array,
+    )
+    expect(big?.tf?.gMax).toBe((same?.tf?.gMax as number) / 2)
+  })
+
+  test('labelRampsFollowTheScaleButAlwaysOnStays', () => {
+    const table = {
+      R: [0, 255],
+      G: [0, 255],
+      B: [0, 255],
+      A: [255, 255],
+      I: [0, 1],
+    }
+    const scaled = labelMaterials(
+      { ...table, lo: [0, 1000], hi: [0, 2000] },
+      [],
+      0.5,
+    ).materials
+    // Label 1's second texel starts at float 12.
+    expect(Array.from(scaled.subarray(12, 14))).toEqual([500, 1000])
+    const plain = labelMaterials(table, [], 0.5).materials
+    expect(Array.from(plain.subarray(12, 14))).toEqual(
+      Array.from(labelMaterials(table).materials.subarray(12, 14)),
+    )
+  })
+
+  test('calibratedIntensitiesAreScaledAfterCalibration', () => {
+    addColormap('cinematicTestCalib', {
+      R: [0, 255],
+      G: [0, 0],
+      B: [0, 0],
+      labels: ['', 'a', 'b'],
+      normalize: [
+        [[1], 0],
+        [[2], 200000],
+      ],
+    })
+    const img = new Float32Array(64).fill(10)
+    const ids = new Float32Array(64).fill(1)
+    for (let i = 0; i < 32; i++) {
+      img[i] = 20
+      ids[i] = 2
+    }
+    const vol = volume(img, 4, { calMin: 10, calMax: 20 })
+    const labels = volume(ids, 4, {
+      colormap: 'cinematicTestCalib',
+      colormapLabel: { lut: new Uint8ClampedArray(12) },
+    })
+    const out = new CinematicCpuCache().update(vol, labels, opts)
+    expect(out?.intensity?.values.every(isFiniteHalf)).toBe(true)
+    // Calibrated window 0..200000, scaled by 1/4 to fit.
+    expect(out?.tf?.huMax).toBe(50000)
+  })
+
+  test('nanVoxelsNeverReachTheTexture', () => {
+    const img = new Float32Array(8).fill(Number.NaN)
+    img[0] = 100
+    const out = new CinematicCpuCache().update(volume(img, 2), null, opts)
+    const zero = halfFloatBits(new Float32Array([0]))[0]
+    expect(out?.intensity?.values[1]).toBe(zero)
+    expect(out?.intensity?.values.every(isFiniteHalf)).toBe(true)
+  })
+})
+
+describe('hidden background', () => {
+  const opts = VOLUME_DEFAULTS.cinematic
+  const labels = volume(new Float32Array(8), 2, {
+    colormapLabel: { lut: new Uint8ClampedArray(4) },
+  })
+  const hidden = volume(new Float32Array(8), 2, { visible: false })
+  const clear = volume(new Float32Array(8), 2, { opacity: 0 })
+  const shown = volume(new Float32Array(8), 2)
+
+  test('aVisibleLabelVolumeDrawsAloneOverAHiddenBackground', () => {
+    expect(cinematicOptionsForFrame(hidden, labels, opts).labelMode).toBe(
+      'only',
+    )
+    expect(cinematicOptionsForFrame(clear, labels, opts).labelMode).toBe('only')
+  })
+
+  test('otherwiseTheOptionsAreUntouched', () => {
+    expect(cinematicOptionsForFrame(shown, labels, opts)).toBe(opts)
+    expect(cinematicOptionsForFrame(hidden, null, opts)).toBe(opts)
+    const none = { ...opts, labelMode: 'none' as const }
+    expect(cinematicOptionsForFrame(hidden, labels, none)).toBe(none)
+  })
 })
 
 test('frameTimerAveragesTheFirstFramesAfterARestart', () => {

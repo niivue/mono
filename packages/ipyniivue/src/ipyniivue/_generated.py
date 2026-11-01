@@ -247,6 +247,10 @@ off-window crosshair is brought back."""
     colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Every registered colormap name, both kinds."""
     drawing_colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    effective_device_pixel_ratio = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """The device pixel ratio the canvas renders at: the `devicePixelRatio`
+option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
+pixels times this are canvas pixels."""
     is_animating = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True while an animateTo transition is running."""
     is_anti_alias = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
@@ -260,6 +264,8 @@ and its volumes alive."""
     mesh_shaders = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     mesh_write_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     selected_annotation = traitlets.Unicode(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    version = traitlets.Unicode(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`."""
     volume_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     volume_transforms = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Get list of available volume transform names."""
@@ -651,9 +657,9 @@ and its volumes alive."""
         This is the exact conversion the built-in
         pointer handlers apply, so a caller never has to reproduce it:
         `(client - canvas rect origin) * dpr`, where `dpr` is
-        `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
-        then, for an instance sharing a canvas via `bounds`, minus the origin of
-        this instance's post-viewport pixel rect.
+        {@link effectiveDevicePixelRatio}; then, for an instance sharing a
+        canvas via `bounds`, minus the origin of this instance's post-viewport
+        pixel rect.
 
         Returns null when the instance has no canvas or, for a `bounds` instance,
         when the point is outside this instance's rect (a sibling's area) or the
@@ -696,7 +702,8 @@ and its volumes alive."""
         """Create a drawing surface in *slide* space for the registered slide plane.
 
         The annotation is a label raster covering the whole slide (sized to the
-        slide aspect, long edge capped at `maxRaster`, default 4096) and is painted
+        slide aspect, long edge capped at `maxRaster`, default 4096, and at most
+        4096 x 4096 pixels in total so a saved drawing always loads) and is painted
         with the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,
         drawLine and the RLE undo stack), so it stays in slide coordinates and is
         compatible with the volume drawing functions. Requires {@link setSlidePlane}.
@@ -955,8 +962,8 @@ and its volumes alive."""
         the top-left, y down. These are NOT CSS pixels, and for an instance
         sharing one canvas via `bounds` they are bounds-local (the instance's own
         pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
-        event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
-        the bounds offset exactly as the built-in pointer handlers do.
+        event; it applies {@link effectiveDevicePixelRatio} and the bounds
+        offset exactly as the built-in pointer handlers do.
 
         Returns the tile index, its slice type, whether it is a 3D render tile,
         and the position normalized to the tile rect (half-open [0,1), y down);
@@ -1156,7 +1163,7 @@ and its volumes alive."""
         those).
 
         The returned x/y are canvas backing-store pixels (see {@link hitTest});
-        divide by the effective devicePixelRatio to position CSS-pixel-sized
+        divide by {@link effectiveDevicePixelRatio} to position CSS-pixel-sized
         overlay elements. The point may project outside the winning tile's rect
         when panned/zoomed out of view — clip against the tile's
         `leftTopWidthHeight` if needed. Returns null before the first render or

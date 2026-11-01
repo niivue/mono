@@ -1862,7 +1862,14 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      const v = model.get(pyName)')
   lines.push('      try {')
   lines.push('        const nv = state.nv')
-  lines.push('        if (nv && nv[jsName] !== v) nv[jsName] = v')
+  lines.push('        if (nv && nv[jsName] !== v) {')
+  lines.push('          nv[jsName] = v')
+  lines.push(
+    '          // A setter can change derived read-only properties (device_pixel_ratio',
+  )
+  lines.push('          // -> effective_device_pixel_ratio).')
+  lines.push('          syncReadOnlyProperties()')
+  lines.push('        }')
   lines.push('      } catch (err) {')
   lines.push(
     '        console.warn("ipyniivue: failed to set " + jsName + ":", err)',

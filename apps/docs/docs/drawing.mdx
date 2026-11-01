@@ -99,7 +99,15 @@ Separate from the voxel drawing, the annotation layer draws vector shapes
 and `annotationsToSVG()` exports them. Turn it on with `annotationIsEnabled`
 and pick a shape with `annotationTool`. Use one layer at a time: while
 `drawIsEnabled` is on, the voxel pen takes the pointer and annotation editing
-does nothing.
+does nothing. Spline and livewire contours are placed one click at a time and
+closed with a double-click on a 2D slice. While a contour is open, a
+double-click on the 3D render is ignored and one on a graph keeps its graph
+action. A bidirectional measurement
+takes two drags on the same slice; a second drag on another slice starts it
+over. Switching to a different tool or turning annotations off drops a
+half-drawn shape; setting `annotationTool` to the tool already selected keeps
+it. `loadDocument` drops a half-drawn shape and also clears the annotation
+selection and the `annotationUndo()` history, which belong to the old scene.
 
 ## Beyond the core
 

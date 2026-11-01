@@ -196,7 +196,7 @@ Fired after a mesh is removed — by `removeMesh(index)`, or once per mesh in re
 | `index` | `number` | Index in the meshes array |
 
 #### `documentLoaded`
-Fired after `loadDocument()` completes. No detail payload — the loaded state is reflected in the model.
+Fired after `loadDocument()` completes. No detail payload — the loaded state is reflected in the model. By then any half-drawn annotation, the annotation selection, and the `annotationUndo()` history from the previous scene have been cleared.
 
 ```js
 nv.addEventListener('documentLoaded', () => {
@@ -452,7 +452,7 @@ nv.addEventListener('change', (e) => {
 })
 ```
 
-Properties that emit `change` include all controller setters: `azimuth`, `elevation`, `crosshairPos`, `sliceType`, `backgroundColor`, `isColorbarVisible`, `volumeIllumination`, `meshXRay`, `drawPenValue`, `primaryDragMode`, and all others. Some setters also emit a more specific event (e.g. `azimuthElevationChange`, `sliceTypeChange`).
+Properties that emit `change` include all controller setters: `azimuth`, `elevation`, `crosshairPos`, `sliceType`, `backgroundColor`, `isColorbarVisible`, `volumeIllumination`, `meshXRay`, `drawPenValue`, `primaryDragMode`, and all others. Some setters also emit a more specific event (e.g. `azimuthElevationChange`, `sliceTypeChange`). Setting `annotationTool` to its current value is a no-op: it emits no `change` and keeps the selection and any half-drawn shape.
 
 ---
 

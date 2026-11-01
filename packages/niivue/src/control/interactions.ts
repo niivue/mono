@@ -58,6 +58,10 @@ import {
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
 import { getImageDataRAS } from '@/volume/utils'
 
+/** Texture-space coordinate `d` of a world-mm point: its slice along `d`. */
+const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
+  m[d] * p[0] + m[4 + d] * p[1] + m[8 + d] * p[2] + m[12 + d]
+
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
   ctrl.activeButton = evt.button
@@ -223,15 +227,6 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   return true
 }
 
-// Abandon the in-progress contour (Escape, or a tool/slice change).
-function cancelMultiClickContour(ctrl: NiiVue): void {
-  if (!ctrl._annotationPolyPoints) return
-  ctrl._annotationPolyPoints = null
-  ctrl.model._annotationPreview = null
-  resetLivewire(ctrl)
-  ctrl.drawScene()
-}
-
 // --- Bidirectional (two perpendicular measured axes) ------------------------
 
 type Axis = { start: AnnotationPoint; end: AnnotationPoint }
@@ -332,11 +327,7 @@ function clientToCanvasPixel(
   if (!rect) {
     return [0, 0]
   }
-  let dpr = window.devicePixelRatio || 1
-  const forcedDpr = ctrl.opts.forceDevicePixelRatio ?? -1
-  if (forcedDpr > 0) {
-    dpr = forcedDpr
-  }
+  const dpr = ctrl.effectiveDevicePixelRatio
   const x = (clientX - rect.left) * dpr
   const y = (clientY - rect.top) * dpr
   return [x, y]
@@ -465,17 +456,15 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   if (key === 'ESCAPE') {
     // Abandon an in-progress multi-click contour (spline / livewire) or a
     // half-placed bidirectional measurement.
-    if (ctrl._annotationPolyPoints) cancelMultiClickContour(ctrl)
-    if (ctrl._bidirectionalLong) {
-      ctrl._bidirectionalLong = null
-      ctrl.model._annotationPreview = null
+    if (ctrl._annotationPolyPoints || ctrl._bidirectionalLong) {
+      ctrl._abandonAnnotationInProgress()
       ctrl.drawScene()
     }
     return
   }
   if (key === 'V') {
     if (!ctrl.model.interaction.isViewModeHotKeyEnabled) {
-      log.info(`NIIVUE VERSION: 0.1.20260122`)
+      log.info(`NIIVUE VERSION: ${ctrl.version}`)
     } else if (
       !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat)
     ) {
@@ -1463,6 +1452,25 @@ export function initInteraction(ctrl: NiiVue): void {
           mm as [number, number, number],
           sliceType,
         )
+        // A bidirectional long axis belongs to the slice it was drawn on; a
+        // press on another slice starts the measurement over (#111). Compare
+        // texture depths: on an oblique volume the mm depth varies across one
+        // slice.
+        const mm2tex = ctrl.model.mm2tex
+        const dims = ctrl.volumes[0]?.dimsRAS
+        if (
+          ctrl._bidirectionalLong &&
+          (ctrl._annotationSliceType !== sliceType ||
+            (mm2tex &&
+              dims &&
+              Math.abs(
+                texDepth(ctrl._annotationAnchorMM, depthDim, mm2tex) -
+                  texDepth(mm, depthDim, mm2tex),
+              ) >
+                0.5 / dims[depthDim + 1]))
+        ) {
+          ctrl._abandonAnnotationInProgress()
+        }
         ctrl._annotationSliceType = sliceType
         ctrl._annotationSlicePosition = slicePosition
         ctrl._annotationAnchorMM = mm as [number, number, number]
@@ -2562,20 +2570,6 @@ export function initInteraction(ctrl: NiiVue): void {
     const dblHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
-    // Close an in-progress multi-click contour (spline / livewire) instead of
-    // depth-picking. The two clicks of the double-click already added their
-    // points via the pointerdown handler; commit the accumulated contour.
-    if (
-      ctrl._annotationPolyPoints &&
-      isMultiClickTool(ctrl.model.annotation.tool)
-    ) {
-      commitMultiClickContour(ctrl)
-      ctrl._annotationPolyPoints = null
-      ctrl.model._annotationPreview = null
-      resetLivewire(ctrl)
-      ctrl.drawScene()
-      return
-    }
     const [px, py] = dblHit
     // Double-clicking the zoom-out ("-") button jumps straight to the full view
     // (the one-click way back from a deep zoom). The reset is restricted to that
@@ -2589,6 +2583,22 @@ export function initInteraction(ctrl: NiiVue): void {
       if (graphHit.type === 'graphControl' && graphHit.id === 'zoomOut') {
         ctrl.graphResetView()
       }
+      return
+    }
+    // Close an in-progress multi-click contour (spline / livewire) instead of
+    // depth-picking. The two clicks of the double-click already added their
+    // points via the pointerdown handler; commit the accumulated contour. A
+    // double-click off the slices (the 3D render) is ignored: it must neither
+    // close the contour nor depth-pick it off its slice (#114).
+    if (
+      ctrl._annotationPolyPoints &&
+      isMultiClickTool(ctrl.model.annotation.tool)
+    ) {
+      const dblTile = ctrl.view?.hitTest(px, py)
+      if (!dblTile || dblTile.isRender) return
+      commitMultiClickContour(ctrl)
+      ctrl._abandonAnnotationInProgress()
+      ctrl.drawScene()
       return
     }
     const mm = (await ctrl.view?.depthPick(px, py)) ?? null
@@ -2747,7 +2757,7 @@ export function setupResizeHandler(ctrl: NiiVue): void {
   }
   const onResize = () => {
     setNextActionTag('resize')
-    ctrl.view?.resize()
+    ctrl.resize()
     if (ctrl.canvas) {
       ctrl.emit('canvasResize', {
         width: ctrl.canvas.clientWidth,

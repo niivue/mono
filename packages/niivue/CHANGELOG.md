@@ -1,3 +1,73 @@
+## 1.0.0-rc.62 (2026-10-31)
+
+### Fixes
+
+- **niivue:** graph double-click keeps its action mid-contour; audit cleanups ([#114](https://github.com/niivue/mono/issues/114), [#111](https://github.com/niivue/mono/issues/111))
+- **niivue:** oblique-safe bidirectional slice test, ignore off-slice dblclick mid-contour, loadDocument clears annotation undo ([#111](https://github.com/niivue/mono/issues/111), [#114](https://github.com/niivue/mono/issues/114), [#113](https://github.com/niivue/mono/issues/113))
+- **niivue:** keep half-drawn annotations on their own slice and scene ([#111](https://github.com/niivue/mono/issues/111), [#112](https://github.com/niivue/mono/issues/112), [#113](https://github.com/niivue/mono/issues/113), [#114](https://github.com/niivue/mono/issues/114))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.61 (2026-10-30)
+
+### Fixes
+
+- **niivue:** validate document byte arrays before copying ([e95be24b](https://github.com/niivue/mono/commit/e95be24b))
+- **niivue:** require a typed array before trusting an embedded image size ([a846faad](https://github.com/niivue/mono/commit/a846faad))
+- **niivue:** bound embedded volume headers, slide drawing pixels, and Set/Map contents ([#463](https://github.com/niivue/mono/issues/463))
+- **niivue:** walk documents without pushing plain values, and update the medgfx debt note ([#463](https://github.com/niivue/mono/issues/463), [#385](https://github.com/niivue/mono/issues/385), [#386](https://github.com/niivue/mono/issues/386))
+- **niivue:** bound document size and drawing allocations in loadDocument ([#383](https://github.com/niivue/mono/issues/383), [#384](https://github.com/niivue/mono/issues/384))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.60 (2026-10-30)
+
+### Features
+
+- **niivue:** expose nv.version and report it in nv-mcp capabilities ([#257](https://github.com/niivue/mono/issues/257))
+
+### Fixes
+
+- **niivue:** keep declaration output rooted at src ([483090b8](https://github.com/niivue/mono/commit/483090b8))
+- **niivue:** 'v' hotkey logs package version instead of hardcoded string ([d76ab7fd](https://github.com/niivue/mono/commit/d76ab7fd))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.59 (2026-10-30)
+
+### Fixes
+
+- **niivue:** apply a forced device pixel ratio to every controller on a canvas ([ad3866a0](https://github.com/niivue/mono/commit/ad3866a0))
+- **niivue:** every resize path rebuilds instance tiles and redraws ([#465](https://github.com/niivue/mono/issues/465))
+- **niivue:** one device pixel ratio rule, and rebuild instance tiles on change ([#200](https://github.com/niivue/mono/issues/200), [#461](https://github.com/niivue/mono/issues/461))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.58 (2026-10-30)
+
+### Fixes
+
+- **niivue:** loadDocument clears volumes and meshes deferred behind a thumbnail ([#388](https://github.com/niivue/mono/issues/388))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.57 (2026-10-30)
 
 ### Fixes

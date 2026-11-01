@@ -115,6 +115,7 @@ describe('capabilities', () => {
   it('says which optional members, settings, colormaps and transforms the page has', () => {
     const view = settingsView({
       backend: 'webgpu',
+      version: '1.2.3',
       setVolume: mock(),
       meshes: [],
       addMesh: mock(async () => {}),
@@ -144,6 +145,7 @@ describe('capabilities', () => {
     const { capabilities } = settingHandlers(hostOf(view))
     const got = capabilities({}) as Record<string, unknown>
     expect(got.backend).toBe('webgpu')
+    expect(got.niivueVersion).toBe('1.2.3')
     const features = got.features as Record<string, string[]>
     expect(features.volumes).toEqual(['setVolume'])
     expect(features.meshes).toEqual(['meshes', 'addMesh'])

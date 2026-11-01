@@ -1,3 +1,33 @@
+## 1.0.0-rc.53 (2026-10-31)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.62
+
+## 1.0.0-rc.52 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.61
+
+## 1.0.0-rc.51 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.60
+
+## 1.0.0-rc.50 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.59
+
+## 1.0.0-rc.49 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.58
+
 ## 1.0.0-rc.48 (2026-10-30)
 
 ### Updated Dependencies

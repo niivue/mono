@@ -801,6 +801,7 @@ export interface View {
 
   // What the page's NiiVue is.
   backend?: string
+  version?: string
   volumeExtensions?: readonly string[]
   meshExtensions?: readonly string[]
   volumeWriteExtensions?: readonly string[]

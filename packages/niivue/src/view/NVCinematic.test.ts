@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import { addColormap } from '@/cmap/NVCmaps'
-import { VOLUME_DEFAULTS } from '@/NVConstants'
+import { NiiDataType, VOLUME_DEFAULTS } from '@/NVConstants'
 import type { ColorMap, NVImage } from '@/NVTypes'
 import {
   bakeTransferFunction,
@@ -15,6 +15,7 @@ import {
   findLabelVolume,
   HIDDEN_LABEL,
   halfFloatBits,
+  hasScalarIntensity,
   labelMaterials,
   lightVector,
   packMarchParams,
@@ -399,6 +400,17 @@ describe('affine changes', () => {
       mat4.invert(mat4.create(), vol.frac2mm as mat4) as mat4,
     )
   })
+})
+
+test('onlyScalarVolumesHaveAnIntensityToTrace', () => {
+  const of = (datatypeCode: number) =>
+    volume(new Float32Array(8), 2, {
+      hdr: { datatypeCode } as NVImage['hdr'],
+    })
+  expect(hasScalarIntensity(of(NiiDataType.DT_RGB24))).toBe(false)
+  expect(hasScalarIntensity(of(NiiDataType.DT_RGBA32))).toBe(false)
+  expect(hasScalarIntensity(of(NiiDataType.DT_FLOAT32))).toBe(true)
+  expect(hasScalarIntensity(of(NiiDataType.DT_UINT8))).toBe(true)
 })
 
 test('frameTimerAveragesTheFirstFramesAfterARestart', () => {

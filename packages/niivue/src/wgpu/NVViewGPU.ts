@@ -28,7 +28,11 @@ import {
   stampAfterVertexWrite,
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
-import { canUseCinematicOverlays, findLabelVolume } from '@/view/NVCinematic'
+import {
+  canUseCinematicOverlays,
+  findLabelVolume,
+  hasScalarIntensity,
+} from '@/view/NVCinematic'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
@@ -973,6 +977,10 @@ export default class NVView {
       if (base.chunkPlan || base.chunkSource) {
         this._warnCinematic(
           'chunked (streamed) volumes are not supported; drawing COMPOSITE',
+        )
+      } else if (!hasScalarIntensity(base)) {
+        this._warnCinematic(
+          'RGB/RGBA volumes have no scalar intensity; drawing COMPOSITE',
         )
       } else {
         cinematicLabels = findLabelVolume(volumes)

@@ -5,7 +5,7 @@
  */
 import { mat4 } from 'gl-matrix'
 import { colormapKey, lookupColorMap } from '@/cmap/NVCmaps'
-import { invGamma, isPaqd } from '@/NVConstants'
+import { invGamma, isPaqd, NiiDataType } from '@/NVConstants'
 import type { CinematicOptions, ColorMap, NVImage } from '@/NVTypes'
 import { getImageDataRAS } from '@/volume/utils'
 import { drawnOpacity } from './NVVolumeVisibility'
@@ -541,6 +541,12 @@ export function findLabelVolume(volumes: readonly NVImage[]): NVImage | null {
     if (sameDims && sameMM) return v
   }
   return null
+}
+
+/** RGB/RGBA voxels hold no scalar intensity for the transfer function. */
+export function hasScalarIntensity(vol: NVImage): boolean {
+  const dt = vol.hdr?.datatypeCode
+  return dt !== NiiDataType.DT_RGB24 && dt !== NiiDataType.DT_RGBA32
 }
 
 /** The standard overlay texture may be borrowed only without label, PAQD or streamed layers (PAQD lives in its own texture). */

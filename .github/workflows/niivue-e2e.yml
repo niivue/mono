@@ -32,10 +32,14 @@ on:
     branches: [main]
     paths:
       - 'packages/niivue/**'
+      - 'packages/uikit/**'
+      - 'packages/dev-images/**'
       - '.github/workflows/niivue-e2e.yml'
   pull_request:
     paths:
       - 'packages/niivue/**'
+      - 'packages/uikit/**'
+      - 'packages/dev-images/**'
       - '.github/workflows/niivue-e2e.yml'
 
 permissions:

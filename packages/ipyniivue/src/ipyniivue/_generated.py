@@ -190,6 +190,7 @@ applies immediately against the last rendered layout, so an already
 off-window crosshair is brought back."""
     is_radiological = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_ruler_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_sagittal_nose_left = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_single_view_fill_canvas = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_snap_to_voxel_centers = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_thumbnail_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)

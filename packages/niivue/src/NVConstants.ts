@@ -404,6 +404,7 @@ export const LAYOUT_DEFAULTS: LayoutConfig = {
   isMosaicCentered: true,
   margin: 0,
   isRadiological: false,
+  isSagittalNoseLeft: null,
   isSingleViewFillCanvas: true,
   customLayout: null,
 }

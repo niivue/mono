@@ -10,17 +10,21 @@ import {
   crosshairRadiusMM,
   everyTileWindowMM,
   fitSlicesAndGraph,
+  isSliceMirrored,
   projectMMToNearestTile,
   projectMMToRenderTile,
   type SliceLayoutConfig,
   type SliceTile,
+  sagittalNoseLeft,
   screenSlicePick,
   screenSlicesLayout,
   slicePanUV,
+  sliceRotation,
   tileVisibleWindowMM,
   type VisibleWindowMM,
   visibleWindowMM,
 } from './NVSliceLayout'
+import { projectMMToCanvas } from './sliceUtils'
 
 // Wide pane (2000x400) with a cube volume: a single-orientation slice is ~square
 // (~400 wide), leaving large horizontal slack the graph should reclaim.
@@ -812,5 +816,160 @@ describe('cloneSliceTile', () => {
     expect(tile.crossLines?.axialMM).toEqual([1, 2])
     expect(tile.pan).toEqual([7, 8])
     expect(tile.globalCamera?.position[0]).toBe(1)
+  })
+})
+
+// ---------- isSagittalNoseLeft ----------
+
+// The four combinations AFNI can ask for, plus the unset default that must keep
+// following isRadiological so existing scenes render identically.
+const NOSE_CASES: {
+  isRadiological: boolean
+  isSagittalNoseLeft: boolean | null
+  noseLeft: boolean
+}[] = [
+  { isRadiological: false, isSagittalNoseLeft: null, noseLeft: false },
+  { isRadiological: true, isSagittalNoseLeft: null, noseLeft: true },
+  { isRadiological: false, isSagittalNoseLeft: false, noseLeft: false },
+  { isRadiological: false, isSagittalNoseLeft: true, noseLeft: true },
+  { isRadiological: true, isSagittalNoseLeft: false, noseLeft: false },
+  { isRadiological: true, isSagittalNoseLeft: true, noseLeft: true },
+]
+
+const SAG = NVConstants.SLICE_TYPE.SAGITTAL
+
+describe('isSagittalNoseLeft', () => {
+  test('unsetFollowsIsRadiological', () => {
+    expect(sagittalNoseLeft({ isRadiological: false })).toBe(false)
+    expect(sagittalNoseLeft({ isRadiological: true })).toBe(true)
+    expect(
+      sagittalNoseLeft({ isRadiological: true, isSagittalNoseLeft: null }),
+    ).toBe(true)
+  })
+
+  test('sagittalRotationAndMirrorFollowTheNoseOnly', () => {
+    for (const c of NOSE_CASES) {
+      expect(sagittalNoseLeft(c)).toBe(c.noseLeft)
+      expect(sliceRotation(SAG, c)).toEqual({
+        azimuth: c.noseLeft ? 90 : -90,
+        elevation: 0,
+      })
+      expect(isSliceMirrored(SAG, c)).toBe(c.noseLeft)
+    }
+  })
+
+  test('axialAndCoronalIgnoreTheNose', () => {
+    for (const c of NOSE_CASES) {
+      const plain = { isRadiological: c.isRadiological }
+      for (const t of [
+        NVConstants.SLICE_TYPE.AXIAL,
+        NVConstants.SLICE_TYPE.CORONAL,
+      ]) {
+        expect(sliceRotation(t, c)).toEqual(sliceRotation(t, plain))
+        expect(isSliceMirrored(t, c)).toBe(c.isRadiological)
+      }
+    }
+  })
+
+  test('everyLayoutPathOrientsSagittalTilesByTheNose', () => {
+    const paths: Partial<SliceLayoutConfig>[] = [
+      {}, // multiplanar
+      { sliceType: SAG }, // single view
+      { heroImageFraction: 0.5, heroSliceType: SAG }, // hero
+      { isMultiplanarEqualSize: true },
+      { sliceMosaicString: 'S 0 10' },
+      { customLayout: [{ sliceType: SAG, position: [0, 0, 1, 1] }] },
+    ]
+    for (const path of paths) {
+      for (const c of NOSE_CASES) {
+        const tiles = screenSlicesLayout(
+          mpr({
+            ...path,
+            isRadiologicalConvention: c.isRadiological,
+            isSagittalNoseLeft: c.isSagittalNoseLeft,
+          }),
+        ).filter((t) => t.axCorSag === SAG)
+        expect(tiles.length).toBeGreaterThan(0)
+        for (const t of tiles) {
+          expect(t.azimuth).toBe(c.noseLeft ? 90 : -90)
+        }
+      }
+    }
+  })
+
+  test('unsetIsByteIdenticalToTheRadiologicalOnlyLayout', () => {
+    for (const isRadiologicalConvention of [false, true]) {
+      const before = screenSlicesLayout(mpr({ isRadiologicalConvention }))
+      const after = screenSlicesLayout(
+        mpr({ isRadiologicalConvention, isSagittalNoseLeft: null }),
+      )
+      expect(after).toEqual(before)
+    }
+  })
+
+  test('noseIsDrawnWhereItSaysAndPickingLandsWhereYouClick', () => {
+    // The tile azimuth and the mirror flag are two halves of one decision:
+    // the tile window must project onto the clip border (nothing drawn
+    // off-screen), anterior must land on the side the setting names, and the
+    // pick fallback (no cached MVP) must invert the same projection.
+    for (const c of NOSE_CASES) {
+      const layout = {
+        isRadiological: c.isRadiological,
+        isSagittalNoseLeft: c.isSagittalNoseLeft,
+      }
+      const [tile] = screenSlicesLayout(
+        mpr({
+          sliceType: SAG,
+          isSingleViewFillCanvas: false,
+          isRadiologicalConvention: c.isRadiological,
+          isSagittalNoseLeft: c.isSagittalNoseLeft,
+        }),
+      )
+      const ltwh = tile.leftTopWidthHeight as number[]
+      const screen = tile.screen as { mnMM: vec3; mxMM: vec3 }
+      const [mvp] = NVTransforms.calculateMvpMatrix2D(
+        ltwh,
+        Array.from(screen.mnMM),
+        Array.from(screen.mxMM),
+        Infinity,
+        undefined,
+        tile.azimuth as number,
+        tile.elevation as number,
+        isSliceMirrored(SAG, layout),
+      )
+      const clipX = (y: number): number => {
+        const out = vec4.create()
+        vec4.transformMat4(out, vec4.fromValues(0, y, 0, 1), mvp)
+        return out[0] / out[3]
+      }
+      // The anterior edge (+Y max) sits at -1 (left) when the nose is left.
+      expect(clipX(EXTENTS_MAX[1])).toBeCloseTo(c.noseLeft ? -1 : 1, 6)
+      expect(clipX(EXTENTS_MIN[1])).toBeCloseTo(c.noseLeft ? 1 : -1, 6)
+
+      const model = {
+        volumes: [{}],
+        tex2mm: mat4.create(),
+        layout,
+        scene: { pan2Dxyzmm: [0, 0, 0, 1] },
+        getSliceTexFrac: () => 0,
+      } as unknown as NVModel
+      const clickX = ltwh[0] + 0.25 * ltwh[2]
+      const clickY = ltwh[1] + 0.5 * ltwh[3]
+      const mm = screenSlicePick([tile], model, clickX, clickY, {
+        tileIndex: 0,
+        isRender: false,
+        sliceType: SAG,
+        normalizedX: 0,
+        normalizedY: 0,
+      })
+      expect(mm).not.toBeNull()
+      if (!mm) return
+      const midY = (EXTENTS_MIN[1] + EXTENTS_MAX[1]) / 2
+      // A click left of centre is anterior exactly when the nose is left.
+      expect(mm[1] > midY).toBe(c.noseLeft)
+      const [px, py] = projectMMToCanvas(mm, mvp, ltwh)
+      expect(px).toBeCloseTo(clickX, 4)
+      expect(py).toBeCloseTo(clickY, 4)
+    }
   })
 })

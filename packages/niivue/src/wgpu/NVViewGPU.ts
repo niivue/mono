@@ -48,6 +48,7 @@ import {
   isChannelStackActive,
   isVolumeDrawn,
 } from '@/view/NVVolumeVisibility'
+import { sliceEdgeLabels } from '@/view/orientationLabels'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
 import {
   type UpdateBindGroupsOptions,
@@ -1029,7 +1030,7 @@ export default class NVView {
           undefined,
           tile.azimuth as number,
           tile.elevation as number,
-          md.layout.isRadiological,
+          NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
           md.volumes[0]?.obliqueRAS,
           undefined,
           pan,
@@ -1066,7 +1067,7 @@ export default class NVView {
           undefined,
           tile.azimuth as number,
           tile.elevation as number,
-          md.layout.isRadiological,
+          NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
           md.volumes[0]?.obliqueRAS,
           md.pivot3D,
         )
@@ -1435,7 +1436,7 @@ export default class NVView {
           clipMM,
           tile.azimuth as number,
           tile.elevation as number,
-          md.layout.isRadiological,
+          NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
           md.volumes[0]?.obliqueRAS,
           undefined,
           pan,
@@ -1662,22 +1663,18 @@ export default class NVView {
         tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER &&
         (tile.showLabels ?? md.ui.isOrientationTextVisible)
       ) {
-        const isRadio = md.layout.isRadiological
+        const edges = sliceEdgeLabels(tile.axCorSag, md.layout)
         const tileLeft = ltwh[0]
         const tileTop = ltwh[1]
         const tileWidth = ltwh[2]
         const tileHeight = ltwh[3]
         const labelScale = 1.0
         const labelMargin = 4
-        // Left-center label (anchorX=0 left-aligned, anchorY=0.5 vertically centered)
-        if (
-          tile.axCorSag === NVConstants.SLICE_TYPE.AXIAL ||
-          tile.axCorSag === NVConstants.SLICE_TYPE.CORONAL
-        ) {
-          const leftLabel = isRadio ? 'R' : 'L'
+        if (edges) {
+          // Left-center label (anchorX=0 left-aligned, anchorY=0.5 vertically centered)
           labels.push(
             this.fontRenderer.buildText(
-              leftLabel,
+              edges.left,
               tileLeft + labelMargin,
               tileTop + tileHeight / 2,
               labelScale,
@@ -1686,40 +1683,10 @@ export default class NVView {
               0.5,
             ),
           )
-        } else if (tile.axCorSag === NVConstants.SLICE_TYPE.SAGITTAL) {
-          const leftLabel = isRadio ? 'A' : 'P'
+          // Center-top label (anchorX=0.5 horizontally centered, anchorY=0 text below point)
           labels.push(
             this.fontRenderer.buildText(
-              leftLabel,
-              tileLeft + labelMargin,
-              tileTop + tileHeight / 2,
-              labelScale,
-              labelColor,
-              0,
-              0.5,
-            ),
-          )
-        }
-        // Center-top label (anchorX=0.5 horizontally centered, anchorY=0 text below point)
-        if (tile.axCorSag === NVConstants.SLICE_TYPE.AXIAL) {
-          labels.push(
-            this.fontRenderer.buildText(
-              'A',
-              tileLeft + tileWidth / 2,
-              tileTop + labelMargin,
-              labelScale,
-              labelColor,
-              0.5,
-              0,
-            ),
-          )
-        } else if (
-          tile.axCorSag === NVConstants.SLICE_TYPE.CORONAL ||
-          tile.axCorSag === NVConstants.SLICE_TYPE.SAGITTAL
-        ) {
-          labels.push(
-            this.fontRenderer.buildText(
-              'S',
+              edges.top,
               tileLeft + tileWidth / 2,
               tileTop + labelMargin,
               labelScale,
@@ -2813,7 +2780,7 @@ export default class NVView {
         undefined,
         tile.azimuth as number,
         tile.elevation as number,
-        md.layout.isRadiological,
+        NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
         md.volumes[0]?.obliqueRAS,
         md.pivot3D,
       )
@@ -2846,7 +2813,7 @@ export default class NVView {
         undefined,
         tile.azimuth as number,
         tile.elevation as number,
-        md.layout.isRadiological,
+        NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
         md.volumes[0]?.obliqueRAS,
         undefined,
         pan,

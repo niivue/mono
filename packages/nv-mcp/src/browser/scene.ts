@@ -25,8 +25,10 @@ import { COLORMAP_TYPES } from '../settings'
 import {
   LAYOUTS,
   nameFor,
+  SAGITTAL_NOSES,
   SHOW_RENDER,
   SLICE_TYPES,
+  sagittalNoseName,
   type ViewState,
 } from '../views'
 import { animateHandlers } from './animate'
@@ -126,6 +128,9 @@ export function viewState(view: View): ViewState {
     ...(view.mosaicString ? { mosaic: view.mosaicString } : {}),
     showRender: nameFor(SHOW_RENDER, view.showRender),
     radiological: view.isRadiological ?? false,
+    ...(view.isSagittalNoseLeft !== undefined
+      ? { sagittalNose: sagittalNoseName(view.isSagittalNoseLeft) }
+      : {}),
     colorbar: view.isColorbarVisible ?? false,
   }
 }
@@ -1527,6 +1532,22 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         view.isRadiological = radiological
         changed = true
       }
+      const nose = text(params, 'sagittal_nose')?.toLowerCase()
+      if (nose !== undefined) {
+        if (!Object.hasOwn(SAGITTAL_NOSES, nose)) {
+          throw new Error(
+            `Unknown sagittal_nose "${nose}". One of: ${Object.keys(SAGITTAL_NOSES).join(', ')}.`,
+          )
+        }
+        if (view.isSagittalNoseLeft === undefined) {
+          throw new Error(
+            "This page's NiiVue cannot set which way the sagittal nose points.",
+          )
+        }
+        view.isSagittalNoseLeft =
+          SAGITTAL_NOSES[nose as keyof typeof SAGITTAL_NOSES]
+        changed = true
+      }
       const colorbar = flag(params, 'colorbar')
       if (colorbar !== undefined) {
         view.isColorbarVisible = colorbar
@@ -1534,7 +1555,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       if (!changed) {
         throw new Error(
-          'set_view needs something to set: slice, layout, mosaic, show_render, radiological or colorbar.',
+          'set_view needs something to set: slice, layout, mosaic, show_render, radiological, sagittal_nose or colorbar.',
         )
       }
       view.drawScene()

@@ -1060,6 +1060,34 @@ describe('set_view', () => {
       coreHandlers(host(fakeView())).set_view({ slice: 'axial' }),
     ).toThrow('no view layout')
   })
+
+  it('sets the sagittal nose apart from radiological, and auto hands it back', () => {
+    const view = laidOut()
+    view.isSagittalNoseLeft = null
+    // Read through a function so the assignment above does not narrow it.
+    const nose = (): boolean | null | undefined => view.isSagittalNoseLeft
+    const handlers = coreHandlers(host(view))
+    expect(viewState(view).sagittalNose).toBe('auto')
+    expect(
+      handlers.set_view({ radiological: true, sagittal_nose: 'right' }),
+    ).toMatchObject({ view: { radiological: true, sagittalNose: 'right' } })
+    expect(nose()).toBe(false)
+    handlers.set_view({ sagittal_nose: 'Left' })
+    expect(nose()).toBe(true)
+    handlers.set_view({ sagittal_nose: 'auto' })
+    expect(nose()).toBeNull()
+    expect(() => handlers.set_view({ sagittal_nose: 'up' })).toThrow(
+      'Unknown sagittal_nose "up". One of: left, right, auto.',
+    )
+  })
+
+  it('leaves the sagittal nose out for a NiiVue without it, and refuses to set it', () => {
+    const view = laidOut()
+    expect(viewState(view)).not.toHaveProperty('sagittalNose')
+    expect(() =>
+      coreHandlers(host(view)).set_view({ sagittal_nose: 'left' }),
+    ).toThrow('cannot set which way the sagittal nose points')
+  })
 })
 
 describe('screenshot', () => {

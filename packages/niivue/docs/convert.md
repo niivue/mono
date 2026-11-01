@@ -50,6 +50,7 @@ Complete mapping from old property names/locations to new API.
 | `isCenterMosaic` | `layout.isMosaicCentered` | `nv1.isMosaicCentered` |
 | `tileMargin` | `layout.margin` | `nv1.tileMargin` |
 | `isRadiologicalConvention` | `layout.isRadiological` | `nv1.isRadiological` |
+| `sagittalNoseLeft` | `layout.isSagittalNoseLeft` | `nv1.isSagittalNoseLeft` (`null` = follow `isRadiological`) |
 | `isColorbar` | `ui.isColorbarVisible` | `nv1.isColorbarVisible` |
 | `isOrientCube` | `ui.isOrientCubeVisible` | `nv1.isOrientCubeVisible` |
 | `isOrientationTextVisible` | `ui.isOrientationTextVisible` | `nv1.isOrientationTextVisible` |

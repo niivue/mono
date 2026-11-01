@@ -784,7 +784,7 @@ transport). A healthy worker that fails on the payload tags the error
 file paid for its whole fetch + inflate + parse twice, the second time on the UI
 thread.
 
-**Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL.
+**Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL. For an AFNI `.HEAD` URL with no `urlImageData`, `NVModel.prepareVolume` probes for the `.BRIK`, then `.BRIK.gz`, beside it (`volume/pairedImage.ts`; GET with the body cancelled once the status is known, an HTML 200 counts as missing) and stashes the result in `_urlImageData` exactly like an explicit one. An explicit `urlImageData` is never probed. File loads are not paired.
 
 ### V1 RGB vector volumes
 

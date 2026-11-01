@@ -1,3 +1,26 @@
+## 1.0.0-rc.54 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.63
+- Updated uikit to 1.0.0-rc.54
+
+## 1.0.0-rc.53 (2026-10-31)
+
+### Fixes
+
+- **niivue:** oblique-safe bidirectional slice test, ignore off-slice dblclick mid-contour, loadDocument clears annotation undo ([#111](https://github.com/niivue/mono/issues/111), [#114](https://github.com/niivue/mono/issues/114), [#113](https://github.com/niivue/mono/issues/113))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.62
+- Updated uikit to 1.0.0-rc.53
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.52 (2026-10-30)
 
 ### Updated Dependencies

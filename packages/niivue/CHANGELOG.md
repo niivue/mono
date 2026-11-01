@@ -1,3 +1,26 @@
+## 1.0.0-rc.63 (2026-11-01)
+
+### Features
+
+- **medgfx:** remove meshes and replace or add on drop ([#109](https://github.com/niivue/mono/issues/109))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.62 (2026-10-31)
+
+### Fixes
+
+- **niivue:** graph double-click keeps its action mid-contour; audit cleanups ([#114](https://github.com/niivue/mono/issues/114), [#111](https://github.com/niivue/mono/issues/111))
+- **niivue:** oblique-safe bidirectional slice test, ignore off-slice dblclick mid-contour, loadDocument clears annotation undo ([#111](https://github.com/niivue/mono/issues/111), [#114](https://github.com/niivue/mono/issues/114), [#113](https://github.com/niivue/mono/issues/113))
+- **niivue:** keep half-drawn annotations on their own slice and scene ([#111](https://github.com/niivue/mono/issues/111), [#112](https://github.com/niivue/mono/issues/112), [#113](https://github.com/niivue/mono/issues/113), [#114](https://github.com/niivue/mono/issues/114))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.61 (2026-10-30)
 
 ### Fixes

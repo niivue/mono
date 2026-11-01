@@ -30,6 +30,7 @@
         "config": [
           "vite.config.js",
           "vite.config.lib.ts",
+          "vite.config.standalone.ts",
           "vite.config.examples.ts"
         ]
       },

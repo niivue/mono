@@ -18,7 +18,7 @@ import dts from 'vite-plugin-dts'
  * below), so inlining them does not bloat the main bundle — only code that
  * actually imports them pays the base64 overhead.
  */
-function inlineImageAssets(): Plugin {
+export function inlineImageAssets(): Plugin {
   const MIME: Record<string, string> = {
     '.png': 'image/png',
     '.jpg': 'image/jpeg',

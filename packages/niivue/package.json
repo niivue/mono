@@ -30,7 +30,12 @@
     "./assets/matcaps": {
       "types": "./dist/assets/matcaps/index.d.ts",
       "import": "./dist/assets/matcaps/index.js"
-    }
+    },
+    "./standalone": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/standalone/niivue.js"
+    },
+    "./standalone/*": "./dist/standalone/*"
   },
   "files": [
     "dist",
@@ -44,7 +49,8 @@
     "ensure-samples": "bun scripts/ensure-samples.ts",
     "dev": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite --port 5273 --strictPort --open /examples/index.html",
     "dev:perf": "bun run codegen:assets && bunx --bun vite --port 5273 --strictPort --open /examples/benchmark.html",
-    "build": "bun run codegen:assets && bunx --bun vite build --config vite.config.lib.ts",
+    "build": "bun run codegen:assets && bunx --bun vite build --config vite.config.lib.ts && bun run build:standalone",
+    "build:standalone": "bunx --bun vite build --config vite.config.standalone.ts && bun run scripts/check-standalone.ts",
     "build:examples": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite build --config vite.config.examples.ts",
     "deploy": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite build --config vite.config.examples.ts --mode production",
     "demo": "bun run build:examples && bunx http-server dist/ --cors -o",
@@ -55,6 +61,7 @@
     "lint": "bunx biome check src",
     "lint:fix": "bunx biome check src --fix",
     "typecheck": "tsc --noEmit",
+    "examples:standalone": "bun run scripts/serve-standalone-example.ts",
     "size:entries": "node scripts/report-entry-sizes.js",
     "size:check": "node scripts/check-entry-sizes.js",
     "bench": "bun run bench/run-bench.ts",

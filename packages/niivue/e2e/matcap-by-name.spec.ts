@@ -84,12 +84,60 @@ test('the setter changes the rendered matcap of a loaded volume', async ({
       return same
     }, settled)
     .toBe(true)
+  // Mean absolute RGBA difference, decoded in the page (no PNG library).
+  const distance = (a: Buffer, b: Buffer) =>
+    page.evaluate(
+      async ([a64, b64]) => {
+        const rgba = async (src: string) => {
+          const img = new Image()
+          img.src = `data:image/png;base64,${src}`
+          await img.decode()
+          const c = document.createElement('canvas')
+          c.width = img.width
+          c.height = img.height
+          const ctx = c.getContext('2d') as CanvasRenderingContext2D
+          ctx.drawImage(img, 0, 0)
+          return ctx.getImageData(0, 0, c.width, c.height).data
+        }
+        const [x, y] = await Promise.all([rgba(a64), rgba(b64)])
+        let sum = 0
+        for (let i = 0; i < x.length; i++) sum += Math.abs(x[i] - y[i])
+        return sum / x.length
+      },
+      [a.toString('base64'), b.toString('base64')],
+    )
   await setMatcap('SHINY')
   await expect
     .poll(async () => (await shot()).equals(cortex), settled)
     .toBe(false)
+  const shiny = await shot()
+  const away = await distance(shiny, cortex)
+  expect(away).toBeGreaterThan(1)
   await setMatcap('Cortex')
+  // The CI Metal runner does not redraw the restored matcap byte for byte, so
+  // the restored frame must be much closer to Cortex than Shiny was.
+  let back = Number.POSITIVE_INFINITY
+  let restored = shiny
   await expect
-    .poll(async () => (await shot()).equals(cortex), settled)
+    .poll(async () => {
+      restored = await shot()
+      back = await distance(restored, cortex)
+      return back < away / 10
+    }, settled)
     .toBe(true)
+    .catch(async (e) => {
+      const info = test.info()
+      await info.attach('cortex', { body: cortex, contentType: 'image/png' })
+      await info.attach('shiny', { body: shiny, contentType: 'image/png' })
+      await info.attach('restored', {
+        body: restored,
+        contentType: 'image/png',
+      })
+      throw new Error(
+        `restored-to-cortex ${back}, shiny-to-cortex ${away}: ${e}`,
+      )
+    })
+  console.log(
+    `matcap distances: shiny ${away.toFixed(2)}, restored ${back.toFixed(3)}`,
+  )
 })

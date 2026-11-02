@@ -8,6 +8,8 @@ export type GlyphBatch = {
   backColor: number[]
   backRect: number[]
   backRadius: number
+  /** Draw only a ring this many px wide inside backRect; 0 or absent fills it. */
+  backBorder?: number
 }
 
 export type BuildTextFn = (

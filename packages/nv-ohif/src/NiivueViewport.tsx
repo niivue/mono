@@ -154,19 +154,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
       updateNiivueViewport(viewportId, {
-        setStatus: (message) =>
-          setStatus(
-            message === null
-              ? { kind: 'idle' }
-              : {
-                  kind: /failed/i.test(message)
-                    ? 'error'
-                    : /\.\.\./.test(message)
-                      ? 'loading'
-                      : 'note',
-                  message,
-                },
-          ),
+        setStatus: (message, kind = 'note') =>
+          setStatus(message === null ? { kind: 'idle' } : { kind, message }),
       })
       refreshToolbar(servicesManagerRef.current, viewportId)
       setReady(true)

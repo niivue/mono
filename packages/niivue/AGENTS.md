@@ -1838,6 +1838,20 @@ Pure-data layout engine in `view/NVSliceLayout.ts`. Computes `SliceTile[]` from 
 
 Priority: mosaic string > render-only > single slice > hero layout > multiplanar.
 
+**Layout inset** (`layoutInset`, model `layout.inset`, [left, top, right,
+bottom] CSS px, default zeros): tiles, colorbar, legend, graph and the header
+label lay out inside the canvas minus the inset, so an in-canvas control panel
+(the uikit controls demo's "Own panel") owns that strip. Both views compute
+the rect once per frame with `NVSliceLayout.insetRect` (times `_dpr`; a bad
+side counts as 0), pass its size where the canvas size went, and shift the
+results: `fitSlicesFromModel(..., origin)` moves the tiles, `legendLayout.y` /
+`.x` take the offset, `translateGraphLayout` moves the graph, and the colorbar
+renderers' `setContentRect` sets `ColorbarLayout.originX/Y` (they keep the full
+size for NDC). In `instances` mode a tile without `bounds` takes the inset
+rect too; an instance's own `bounds` are left alone (the caller placed it). Overlay renderers still get the whole view, and picking needs
+nothing (it reads tile rects). Not `bounds`: a bounded view clips its overlay
+and drops pointer events outside, and on WebGPU renders to an offscreen copy.
+
 The scale ruler (`view/NVRuler.ts`) takes px-per-mm from `mmPerPixel2D` so it
 tracks the 2D zoom (`pan2Dxyzmm` is threaded in by both renderers), and reads
 `screen.fovMM` as tile-local `[u, v, depth]`. Pinned by `view/NVRuler.test.ts`.

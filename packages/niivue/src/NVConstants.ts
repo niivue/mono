@@ -413,6 +413,7 @@ export const LAYOUT_DEFAULTS: LayoutConfig = {
   isEqualSize: false,
   isMosaicCentered: true,
   margin: 0,
+  inset: [0, 0, 0, 0],
   isRadiological: false,
   isSingleViewFillCanvas: true,
   customLayout: null,

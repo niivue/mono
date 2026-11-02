@@ -27,6 +27,7 @@ Never use bare adjectives or nouns for booleans:
   - NOT `isVolumeAlphaClipDark`, `isDrawEnabled`
 - The `graph` sub-object is flattened: `graphNormalizeValues`, `graphIsRangeCalMinMax`
 - `tileMargin` (flat) maps to `layout.margin` (internal model)
+- `layoutInset` (flat) maps to `layout.inset` (internal model)
 
 ### Method Names
 - camelCase: `loadVolumes`, `setVolume`, `drawUndo`
@@ -82,7 +83,7 @@ nv1.drawPenValue = 3
 `azimuth`, `elevation`, `crosshairPos`, `pan2Dxyzmm`, `scaleMultiplier`, `gamma`, `backgroundColor`, `clipPlaneColor`, `isClipPlaneCutaway`
 
 **Layout** (no prefix -- delegate to `model.layout`):
-`sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `isRadiological`, `isSingleViewFillCanvas`
+`sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `layoutInset`, `isRadiological`, `isSingleViewFillCanvas`
 
 **UI** (no prefix -- delegate to `model.ui`):
 `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible`, `is3DCrosshairVisible`, `isGraphVisible`, `isRulerVisible`, `isCrossLinesVisible`, `isLegendVisible`, `isMeasureUnitsVisible`, `isThumbnailVisible`, `thumbnailUrl`, `placeholderText`, `crosshairColor`, `crosshairGap`, `crosshairWidth`, `fontColor`, `fontScale`, `fontMinSize`, `selectionBoxColor`, `measureLineColor`, `measureTextColor`, `rulerWidth`, `graphNormalizeValues`, `graphIsRangeCalMinMax`

@@ -723,6 +723,12 @@ export type LayoutConfig = {
   isEqualSize: boolean
   isMosaicCentered: boolean
   margin: number
+  /**
+   * Canvas kept clear of tiles, colorbar, legend and graph: [left, top, right,
+   * bottom] in CSS px. Overlay renderers still get the whole canvas, so an
+   * in-canvas control panel can sit in the reserved strip.
+   */
+  inset: [number, number, number, number]
   isRadiological: boolean
   /** Let a single 2D slice tile fill the canvas instead of letterboxing it. */
   isSingleViewFillCanvas: boolean
@@ -1313,6 +1319,7 @@ export type NiiVueOptions = {
   isEqualSize?: boolean
   isMosaicCentered?: boolean
   tileMargin?: number
+  layoutInset?: [number, number, number, number]
   isRadiological?: boolean
   isSingleViewFillCanvas?: boolean
   customLayout?: CustomLayoutTile[] | null

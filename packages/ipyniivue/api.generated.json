@@ -790,6 +790,21 @@
       "doc": null
     },
     {
+      "jsName": "layoutInset",
+      "pyName": "layout_inset",
+      "tsType": "[number, number, number, number]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 4
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "measureLineColor",
       "pyName": "measure_line_color",
       "tsType": "number[]",

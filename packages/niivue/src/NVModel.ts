@@ -160,6 +160,8 @@ export default class NVModel {
     // Layout — flat options mapped to layout group
     this.layout = {
       ...NVConstants.LAYOUT_DEFAULTS,
+      // Its own array: the defaults are shared by every instance.
+      inset: [...NVConstants.LAYOUT_DEFAULTS.inset],
       ...(options.sliceType !== undefined && { sliceType: options.sliceType }),
       ...(options.mosaicString !== undefined && {
         mosaicString: options.mosaicString,
@@ -183,6 +185,9 @@ export default class NVModel {
         isMosaicCentered: options.isMosaicCentered,
       }),
       ...(options.tileMargin !== undefined && { margin: options.tileMargin }),
+      ...(options.layoutInset !== undefined && {
+        inset: [...options.layoutInset] as [number, number, number, number],
+      }),
       ...(options.isRadiological !== undefined && {
         isRadiological: options.isRadiological,
       }),

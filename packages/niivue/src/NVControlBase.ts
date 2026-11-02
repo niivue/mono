@@ -179,6 +179,7 @@ import {
 import type { CanvasTilePoint, SliceTile } from '@/view/NVSliceLayout'
 import {
   cloneSliceTile,
+  insetRect,
   projectMMToNearestTile,
   projectMMToRenderTile,
   screenSlicePick,
@@ -1146,6 +1147,25 @@ export default class NiiVue extends EventTarget {
   set tileMargin(v: number) {
     this.model.layout.margin = v
     this.emit('change', { property: 'tileMargin', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Canvas kept clear of tiles, colorbar, legend and graph: [left, top, right,
+   * bottom] in CSS px. Overlay renderers (e.g. @niivue/uikit controls) still
+   * draw on the whole canvas, so they can own the reserved strip.
+   * @default `[0, 0, 0, 0]`
+   * @example nv1.layoutInset = [340, 0, 0, 0] // a 340 px panel on the left
+   */
+  get layoutInset(): [number, number, number, number] {
+    // A copy: an edit in place would change the layout with no redraw.
+    const [l, t, r, b] = this.model.layout.inset
+    return [l, t, r, b]
+  }
+  set layoutInset(v: [number, number, number, number]) {
+    this.model.layout.inset = [v[0], v[1], v[2], v[3]]
+    this.emit('change', { property: 'layoutInset', value: this.layoutInset })
+    if (this.opts.instances) this.updateTilesFromInstances()
     this.drawScene()
   }
 
@@ -5211,14 +5231,20 @@ export default class NiiVue extends EventTarget {
   /** @internal Rebuild the tiles from `opts.instances`; called by {@link applyInstances}. */
   updateTilesFromInstances(): void {
     if (!this.view || !this.opts.instances || !this.canvas) return
-    const cw = this.canvas.width
-    const ch = this.canvas.height
     const canvas = this.canvas
+    // A tile without bounds takes the canvas minus layoutInset, as the
+    // colorbar and legend do; bounds are the caller's own placement.
+    const full = insetRect(
+      canvas.width,
+      canvas.height,
+      this.model.layout.inset,
+      this.effectiveDevicePixelRatio,
+    )
 
     const tiles: SliceTile[] = this.opts.instances.map((inst) => {
       if (inst.space === 'global3d' || inst.position) {
         return {
-          leftTopWidthHeight: [0, 0, cw, ch],
+          leftTopWidthHeight: [...full],
           axCorSag: 4,
           volumeId: inst.volumeId,
           space: 'global3d',
@@ -5231,7 +5257,7 @@ export default class NiiVue extends EventTarget {
       const b = inst.bounds
       if (!b) {
         return {
-          leftTopWidthHeight: [0, 0, cw, ch],
+          leftTopWidthHeight: [...full],
           axCorSag: 4,
           volumeId: inst.volumeId,
         }

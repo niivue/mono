@@ -937,11 +937,12 @@ export function fitSlicesFromModel(
   model: NVModel,
   paneWH: [number, number],
   baseGraphWidth: number,
+  origin: [number, number] = [0, 0],
 ): { screenSlices: SliceTile[]; graphWidth: number } {
   if (model.isSpatialViewHidden()) {
     return { screenSlices: [], graphWidth: baseGraphWidth }
   }
-  return fitSlicesAndGraph(
+  const fit = fitSlicesAndGraph(
     {
       canvasWH: paneWH,
       sliceType: model.layout.sliceType,
@@ -962,6 +963,41 @@ export function fitSlicesFromModel(
     },
     baseGraphWidth,
   )
+  if (origin[0] !== 0 || origin[1] !== 0) {
+    for (const tile of fit.screenSlices) {
+      const ltwh = tile.leftTopWidthHeight
+      if (ltwh) {
+        ltwh[0] += origin[0]
+        ltwh[1] += origin[1]
+      }
+    }
+  }
+  return fit
+}
+
+/**
+ * The part of a `width` x `height` view left by `layout.inset` ([left, top,
+ * right, bottom] CSS px, times `dpr`): [x, y, width, height] in device px.
+ * A non-finite or negative side counts as 0, and at least 1 px is left.
+ */
+export function insetRect(
+  width: number,
+  height: number,
+  inset: ArrayLike<number>,
+  dpr: number,
+): [number, number, number, number] {
+  const side = (i: number) => {
+    const v = inset[i] * dpr
+    return Number.isFinite(v) && v > 0 ? Math.round(v) : 0
+  }
+  const x = Math.min(side(0), width - 1)
+  const y = Math.min(side(1), height - 1)
+  return [
+    x,
+    y,
+    Math.max(1, width - x - side(2)),
+    Math.max(1, height - y - side(3)),
+  ]
 }
 
 export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {

@@ -194,6 +194,11 @@ export const SETTINGS: readonly Setting[] = [
   num('tileMargin', 'The gap between multiplanar tiles, in pixels.', {
     min: 0,
   }),
+  setting(
+    'layoutInset',
+    'vec4',
+    'Canvas kept clear of the views, colorbar, legend and graph: left, top, right and bottom, in CSS pixels; for a control panel drawn in the canvas.',
+  ),
   num('rulerWidth', 'The width of the ruler line, in pixels.', { min: 0 }),
 
   // Switches for what is drawn

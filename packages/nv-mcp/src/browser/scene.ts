@@ -1724,7 +1724,10 @@ export function planeIsCut(plane: readonly [number, number, number]): boolean {
 function drawNow(view: View, canvas: HTMLCanvasElement): void {
   const box = canvas.getBoundingClientRect?.()
   if (box && box.width > 0 && view.resize) {
-    const scale = globalThis.devicePixelRatio || 1
+    // NiiVue's own ratio: with forceDevicePixelRatio the window's would never
+    // match, and every read-back would resize again (#464).
+    const scale =
+      view.effectiveDevicePixelRatio ?? (globalThis.devicePixelRatio || 1)
     const wanted = Math.max(1, Math.floor(box.width * scale))
     if (canvas.width !== wanted) view.resize()
   }

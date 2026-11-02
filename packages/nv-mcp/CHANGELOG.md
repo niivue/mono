@@ -1,3 +1,16 @@
+## 1.0.0-rc.58 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** review fixes for non-finite states ([c21a45b5](https://github.com/niivue/mono/commit/c21a45b5))
+- **nv-mcp:** carry NiiVue's non-finite states over JSON ([#493](https://github.com/niivue/mono/issues/493))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.57 (2026-11-02)
 
 ### Updated Dependencies

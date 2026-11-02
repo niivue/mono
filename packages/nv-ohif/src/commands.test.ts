@@ -1943,14 +1943,10 @@ describe('flashStatus', () => {
 
   function statusEntry() {
     const writes: Array<string | null> = []
-    const kinds: Array<string | undefined> = []
     const entry = {
-      setStatus: (message: string | null, kind?: string) => {
-        writes.push(message)
-        kinds.push(kind)
-      },
+      setStatus: (message: string | null) => writes.push(message),
     } as unknown as Parameters<typeof flashStatus>[0]
-    return { entry, writes, kinds }
+    return { entry, writes }
   }
 
   it('clears its own message after the flash duration', async () => {

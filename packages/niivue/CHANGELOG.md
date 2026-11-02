@@ -1,3 +1,14 @@
+## 1.0.0-rc.69 (2026-11-02)
+
+### Features
+
+- **niivue:** cinematic demo extracted-T1 preset, clip colour menu ([e983405e](https://github.com/niivue/mono/commit/e983405e))
+- **niivue:** cinematic cut face takes a negative clipPlaneColor tint ([#482](https://github.com/niivue/mono/issues/482))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.68 (2026-11-02)
 
 ### Fixes

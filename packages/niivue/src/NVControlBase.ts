@@ -1,4 +1,5 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
+import * as Annotation from '@/annotation'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
 import { getAnnotationSelection } from '@/annotation/selection'
@@ -2473,7 +2474,9 @@ export default class NiiVue extends EventTarget {
     this._annotation3DActive = false
     this._annotation3DMMPath = []
     this._annotation3DFace = null
-    // A control-point resize drag would write into the old annotation.
+    // A control-point resize drag would write into the old annotation; put
+    // the shape back, since pointer-up's stats recompute will not run.
+    this._revertResize()
     this._resizingControlPoint = -1
     this._resizingAnnotation = null
     this._resizeOriginalShape = null
@@ -2483,6 +2486,22 @@ export default class NiiVue extends EventTarget {
     this._livewireSlice = null
     this._livewireField = null
     this._livewireSeed = null
+  }
+  private _revertResize(): void {
+    const shape = this._resizingAnnotation?.shape
+    const original = this._resizeOriginalShape
+    if (!shape || !original || !this._resizingAnnotation) return
+    shape.start = original.start
+    shape.end = original.end
+    shape.width = original.width
+    this._resizingAnnotation.polygons = Annotation.generateShape(
+      shape.type,
+      shape.start,
+      shape.end,
+      shape.width ?? this.model.annotation.style.strokeWidth,
+    )
+    const sel = this.model._annotationSelection
+    if (sel) sel.controlPoints = Annotation.getControlPoints(shape)
   }
   /**
    * A change that replaces the scene's geometry drops the annotation in

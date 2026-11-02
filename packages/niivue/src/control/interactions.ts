@@ -1561,6 +1561,7 @@ export function initInteraction(ctrl: NiiVue): void {
                   start: { ...ann.shape.start },
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
+                  polygons: ann.polygons,
                 }
                 ctrl._resizingAnnotation = ann
                 startAnnotationDrag(ctrl, evt)

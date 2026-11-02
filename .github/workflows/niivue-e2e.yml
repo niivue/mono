@@ -36,6 +36,9 @@ on:
       - 'packages/dev-images/**'
       - '.github/workflows/niivue-e2e.yml'
   pull_request:
+    # labeled/unlabeled let the skip-metal label cancel or restore the Metal job.
+    # Adding or removing any label restarts the run (cancel-in-progress below).
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - 'packages/niivue/**'
       - 'packages/uikit/**'
@@ -89,7 +92,37 @@ jobs:
   # paravirtual GPU, but only full Chromium reaches it; the headless shell stays
   # on SwiftShader. PLAYWRIGHT_CHROMIUM_CHANNEL switches e2e/launchOptions.ts to
   # that mode. The VM is small (3 cores, 7 GB): a correctness gate, not timing.
+  #
+  # A PR skips it when labeled skip-metal AND its head commit has a passing
+  # local-metal status from bun .github/scripts/local-metal.ts <pr>. The status
+  # is per commit, so a later push runs Metal again. Pushes to main always run it.
+  metal-gate:
+    # Only labelled PRs; skipped elsewhere, its empty output runs Metal.
+    if: contains(github.event.pull_request.labels.*.name, 'skip-metal')
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: read
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          # An API error reads as no local pass, so Metal runs.
+          state=$(gh api "repos/$REPO/commits/$SHA/status" \
+            -q '.statuses[] | select(.context == "local-metal") | .state' || true)
+          skip=false
+          [ "$state" = success ] && skip=true
+          echo "local-metal=${state:-none} skip=$skip"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
   full-suite-metal:
+    needs: metal-gate
+    # !cancelled(): a skipped or failed gate must not skip Metal.
+    if: ${{ !cancelled() && needs.metal-gate.outputs.skip != 'true' }}
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -116,14 +149,12 @@ jobs:
 
       - name: Full e2e suite
         working-directory: packages/niivue
-        # The excluded specs fail on real Metal only (issue #453).
-        run: |
-          bunx playwright test --workers=2 \
-            --grep-invert "keeps its modulation|no plane seams"
+        # test:e2e:metal excludes specs that fail on real Metal only (issue #453).
+        run: bun run test:e2e:metal --workers=2
 
       # GPU specs skip rather than fail when an adapter or backend is missing,
       # so a green run with skips may have tested very little. Tests excluded
-      # by --grep-invert are not run and so are not counted here.
+      # by test:e2e:metal are not run and so are not counted here.
       - name: Fail on skipped tests
         run: bun .github/scripts/check-no-skipped-tests.ts packages/niivue/test-results/results.json
 

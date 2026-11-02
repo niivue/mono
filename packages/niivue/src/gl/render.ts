@@ -13,7 +13,7 @@ import {
   VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
-import { applyCORS } from '@/NVLoader'
+import { loadImageElement } from '@/NVLoader'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { loadMatcapOrDefault } from '@/view/matcapFallback'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -688,35 +688,17 @@ export class VolumeRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     imageSrc: string,
   ): Promise<WebGLTexture> {
-    return new Promise((resolve, reject) => {
-      const image = new Image()
-      image.onload = () => {
-        const texture = gl.createTexture()
-        if (!texture) {
-          reject(new Error('Failed to create texture'))
-          return
-        }
-        gl.bindTexture(gl.TEXTURE_2D, texture)
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGBA,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
-          image,
-        )
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-        gl.bindTexture(gl.TEXTURE_2D, null)
-        resolve(texture)
-      }
-      image.onerror = () =>
-        reject(new Error(`Failed to load image ${imageSrc.slice(0, 80)}`))
-      applyCORS(image)
-      image.src = imageSrc
-    })
+    const image = await loadImageElement(imageSrc)
+    const texture = gl.createTexture()
+    if (!texture) throw new Error('Failed to create texture')
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.bindTexture(gl.TEXTURE_2D, null)
+    return texture
   }
 
   private async _loadTexture2DOrFallback(

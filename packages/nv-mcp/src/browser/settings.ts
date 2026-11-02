@@ -47,6 +47,7 @@ function describeSetting(setting: Setting): Record<string, unknown> {
   const bounds = {
     ...(setting.min === undefined ? {} : { min: setting.min }),
     ...(setting.max === undefined ? {} : { max: setting.max }),
+    ...(setting.nullAs === undefined ? {} : { nullable: true }),
   }
   const fields = setting.fields
     ? {

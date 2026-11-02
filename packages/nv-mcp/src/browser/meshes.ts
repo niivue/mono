@@ -21,6 +21,7 @@ import {
   put,
   record,
   text,
+  windowBound,
 } from './params'
 import { pickIndex } from './pick'
 import type {
@@ -168,8 +169,8 @@ function layerFields(params: Params): MeshLayerUpdate {
   put(update, 'colormapNegative', clearable(params, 'colormap_negative'))
   put(update, 'calMin', number(params, 'cal_min'))
   put(update, 'calMax', number(params, 'cal_max'))
-  put(update, 'calMinNeg', number(params, 'cal_min_neg'))
-  put(update, 'calMaxNeg', number(params, 'cal_max_neg'))
+  put(update, 'calMinNeg', windowBound(params, 'cal_min_neg'))
+  put(update, 'calMaxNeg', windowBound(params, 'cal_max_neg'))
   const opacity = number(params, 'opacity')
   if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
   put(update, 'isColorbarVisible', flag(params, 'colorbar'))

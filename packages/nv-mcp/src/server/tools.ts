@@ -140,11 +140,12 @@ export const CORE_SCHEMAS = {
       ),
     cal_min_neg: z
       .number()
+      .nullable()
       .optional()
       .describe(
-        'With colormap_negative: the window for the negative values, mirrored from cal_min and cal_max otherwise.',
+        'With colormap_negative: the window for the negative values, mirrored from cal_min and cal_max otherwise or when null.',
       ),
-    cal_max_neg: z.number().optional(),
+    cal_max_neg: z.number().nullable().optional(),
     colorbar: z
       .boolean()
       .optional()
@@ -320,12 +321,18 @@ export const CORE_SCHEMAS = {
       ),
     cal_min_neg: z
       .number()
+      .nullable()
       .optional()
-      .describe('The low end of the negative window.'),
+      .describe(
+        'The low end of the negative window; null on either bound mirrors the positive window.',
+      ),
     cal_max_neg: z
       .number()
+      .nullable()
       .optional()
-      .describe('The high end of the negative window.'),
+      .describe(
+        'The high end of the negative window; null on either bound mirrors the positive window.',
+      ),
     colormap_type: z
       .enum([
         'min_to_max',

@@ -41,6 +41,15 @@ describe('the settings table', () => {
     )
   })
 
+  it('takes null as the number JSON cannot carry, where a setting has one (#493)', () => {
+    expect(coerceSetting(named('meshThicknessOn2D'), null)).toBe(
+      Number.POSITIVE_INFINITY,
+    )
+    expect(() => coerceSetting(named('crosshairWidth'), null)).toThrow(
+      'crosshairWidth must be a number.',
+    )
+  })
+
   it('keeps a number within its bounds and an integer whole', () => {
     const width = named('crosshairWidth')
     expect(coerceSetting(width, '2.5')).toBe(2.5)

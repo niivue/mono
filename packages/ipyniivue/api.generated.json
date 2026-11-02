@@ -1,5 +1,4 @@
 {
-  "niivueVersion": "1.0.0-rc.44",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVue",
   "properties": [

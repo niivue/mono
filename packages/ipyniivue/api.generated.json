@@ -3303,16 +3303,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "restoreSlidePlaneView",
-      "pyName": "restore_slide_plane_view",
-      "isAsync": false,
-      "returnsValue": false,
-      "params": [],
-      "returns": "void",
-      "doc": "Re-push the registered slide plane (and its annotation) to a freshly\n(re)created view — called from the view-lifecycle recreate paths so a\nbackend switch / reinitialize doesn't drop the slide. Internal.",
-      "returnsDoc": null
-    },
-    {
       "jsName": "saveBitmap",
       "pyName": "save_bitmap",
       "isAsync": true,
@@ -4276,16 +4266,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "updateTilesFromInstances",
-      "pyName": "update_tiles_from_instances",
-      "isAsync": false,
-      "returnsValue": false,
-      "params": [],
-      "returns": "void",
-      "doc": null,
-      "returnsDoc": null
-    },
-    {
       "jsName": "updateVolumeData",
       "pyName": "update_volume_data",
       "isAsync": true,
@@ -4685,8 +4665,16 @@
         "reason": "argument is not JSON-serializable (volume transform with JS function hooks)"
       },
       {
+        "jsName": "restoreSlidePlaneView",
+        "reason": "@internal"
+      },
+      {
         "jsName": "unregisterOverlayRenderer",
         "reason": "argument is not JSON-serializable (JS overlay renderer)"
+      },
+      {
+        "jsName": "updateTilesFromInstances",
+        "reason": "@internal"
       },
       {
         "jsName": "useLoader",

@@ -382,6 +382,8 @@ const getters = new Map<string, GetAccessorDeclaration>()
 const setters = new Map<string, SetAccessorDeclaration>()
 const methods: MethodDeclaration[] = []
 const skippedMethods: SkippedItem[] = []
+const skippedProperties: SkippedItem[] = []
+const INTERNAL = '@internal'
 
 for (const member of cls.getMembers()) {
   switch (member.getKind()) {
@@ -389,6 +391,10 @@ for (const member of cls.getMembers()) {
       const g = member as GetAccessorDeclaration
       if (g.getScope() === 'private') continue
       if (g.getName().startsWith('_')) continue
+      if (isInternal(g)) {
+        skippedProperties.push({ jsName: g.getName(), reason: INTERNAL })
+        continue
+      }
       getters.set(g.getName(), g)
       break
     }
@@ -396,6 +402,10 @@ for (const member of cls.getMembers()) {
       const s = member as SetAccessorDeclaration
       if (s.getScope() === 'private') continue
       if (s.getName().startsWith('_')) continue
+      if (isInternal(s)) {
+        skippedProperties.push({ jsName: s.getName(), reason: INTERNAL })
+        continue
+      }
       setters.set(s.getName(), s)
       break
     }
@@ -404,6 +414,10 @@ for (const member of cls.getMembers()) {
       if (m.getScope() === 'private') continue
       if (m.getName().startsWith('_')) continue
       if (EVENTTARGET_ALLOWLIST.has(m.getName())) continue
+      if (isInternal(m)) {
+        skippedMethods.push({ jsName: m.getName(), reason: INTERNAL })
+        continue
+      }
       const nonSerializableReason = NON_SERIALIZABLE_METHODS.get(m.getName())
       if (nonSerializableReason) {
         skippedMethods.push({
@@ -420,7 +434,6 @@ for (const member of cls.getMembers()) {
 
 const properties: PropertyDescriptor[] = []
 const readonlyProperties: PropertyDescriptor[] = []
-const skippedProperties: SkippedItem[] = []
 
 // Reactive (paired) and read-only properties
 for (const [name, getter] of getters) {
@@ -738,6 +751,12 @@ function snakeCase(s: string): string {
       .replace(/([a-z])([A-Z])/g, '$1_$2')
       .toLowerCase()
   )
+}
+
+function isInternal(node: JSDocableNode): boolean {
+  return node
+    .getJsDocs()
+    .some((d) => d.getTags().some((t) => t.getTagName() === 'internal'))
 }
 
 function extractDoc(node: JSDocableNode): string | null {

@@ -1425,13 +1425,6 @@ and its volumes alive."""
     def resize(self) -> None:
         self.send({"cmd": "resize", "args": []})
 
-    def restore_slide_plane_view(self) -> None:
-        """Re-push the registered slide plane (and its annotation) to a freshly (re)created view — called from the view-lifecycle recreate paths so a backend switch / reinitialize doesn't drop the slide.
-
-        Internal.
-        """
-        self.send({"cmd": "restoreSlidePlaneView", "args": []})
-
     async def save_bitmap(self, filename: Any = _UNSET, quality: Any = _UNSET) -> Any:
         return await self._request("saveBitmap", _make_args(filename, quality))
 
@@ -2019,9 +2012,6 @@ and its volumes alive."""
         positions : ArrayLike<number> | undefined
         """
         self.send({"cmd": "updateMeshPositions", "args": _make_args(mesh_index, positions)})
-
-    def update_tiles_from_instances(self) -> None:
-        self.send({"cmd": "updateTilesFromInstances", "args": []})
 
     def update_volume_data(self, volume_index: Any, data: Any = _UNSET) -> None:
         """Replace a loaded volume's voxel values and re-upload them to the GPU — the fast path for animating or live-editing volume data.

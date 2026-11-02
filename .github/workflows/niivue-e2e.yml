@@ -112,8 +112,9 @@ jobs:
         run: |
           skip=false
           if [ "$LABELED" = true ]; then
+            # An API error reads as no local pass, so Metal runs.
             state=$(gh api "repos/$REPO/commits/$SHA/status" \
-              -q '.statuses[] | select(.context == "local-metal") | .state')
+              -q '.statuses[] | select(.context == "local-metal") | .state' || true)
             [ "$state" = success ] && skip=true
           fi
           echo "local-metal=${state:-none} skip=$skip"
@@ -121,7 +122,8 @@ jobs:
 
   full-suite-metal:
     needs: metal-gate
-    if: needs.metal-gate.outputs.skip != 'true'
+    # !cancelled(): a failed gate must not skip Metal.
+    if: ${{ !cancelled() && needs.metal-gate.outputs.skip != 'true' }}
     runs-on: macos-15
     timeout-minutes: 45
     env:

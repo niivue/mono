@@ -9,9 +9,11 @@
 // present, so a later push (a new head without the status) runs Metal again.
 //
 // Needs write access to niivue/mono (statuses and labels). It runs the PR's
-// code (install scripts, tests) with your environment, so read a fork PR first.
+// code (install scripts, tests) on your machine, with GitHub and npm tokens
+// removed from its environment. It refuses a fork PR until you have read the
+// diff and pass --reviewed.
 //
-// Usage: bun .github/scripts/local-metal.ts <pr-number> [--no-label]
+// Usage: bun .github/scripts/local-metal.ts <pr-number> [--no-label] [--reviewed]
 
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -24,9 +26,10 @@ const LABEL = 'skip-metal'
 
 const pr = process.argv[2]
 const addLabel = !process.argv.includes('--no-label')
+const reviewed = process.argv.includes('--reviewed')
 if (!pr || !/^\d+$/.test(pr)) {
   console.error(
-    'usage: bun .github/scripts/local-metal.ts <pr-number> [--no-label]',
+    'usage: bun .github/scripts/local-metal.ts <pr-number> [--no-label] [--reviewed]',
   )
   process.exit(2)
 }
@@ -58,9 +61,26 @@ function out(cmd: string[]): string {
 
 const pull = ['gh', 'pr', 'view', pr, '-R', REPO, '--json']
 const sha = out([...pull, 'headRefOid', '-q', '.headRefOid'])
-const host = out(['hostname', '-s'])
+if (
+  out([...pull, 'isCrossRepository', '-q', '.isCrossRepository']) === 'true' &&
+  !reviewed
+) {
+  console.error(
+    `local-metal: #${pr} is from a fork and its code runs on this machine; read the diff, then pass --reviewed`,
+  )
+  process.exit(2)
+}
+// shortcut: assumes the dev server port from playwright.config.ts; a busy port
+// would fail the suite and post a misleading public failure.
+if (Bun.spawnSync(['lsof', '-ti', 'tcp:5273']).exitCode === 0) {
+  console.error('local-metal: port 5273 is in use; stop the dev server first')
+  process.exit(2)
+}
 
-function status(state: 'pending' | 'success' | 'failure', description: string) {
+function status(
+  state: 'pending' | 'success' | 'failure' | 'error',
+  description: string,
+) {
   out([
     'gh',
     'api',
@@ -70,14 +90,22 @@ function status(state: 'pending' | 'success' | 'failure', description: string) {
     '-f',
     'context=local-metal',
     '-f',
-    `description=${description} (${host})`.slice(0, 140),
+    `description=${description}`.slice(0, 140),
   ])
 }
 
 const dir = mkdtempSync(join(tmpdir(), `niivue-metal-${pr}-`))
 const niivue = join(dir, 'packages/niivue')
 // Same settings as CI: JSON report, one retry, no reuse of a dev server.
-const env = { ...process.env, CI: '1', PLAYWRIGHT_CHROMIUM_CHANNEL: 'chromium' }
+const env: Record<string, string | undefined> = {
+  ...process.env,
+  CI: '1',
+  PLAYWRIGHT_CHROMIUM_CHANNEL: 'chromium',
+}
+// The PR's install scripts and tests never see your tokens.
+for (const k of ['GH_TOKEN', 'GITHUB_TOKEN', 'NPM_TOKEN', 'NODE_AUTH_TOKEN'])
+  delete env[k]
+const results = join(niivue, 'test-results/results.json')
 
 // The PR's own test:e2e:metal, so a PR that changes the exclusions is run with them.
 // shortcut: a head older than that script gets the exclusions as of its
@@ -96,6 +124,8 @@ function e2eCommand(): string[] {
 }
 
 let ok = false
+let posted = false // no public status until the run itself starts
+let crashed = false
 const started = Date.now()
 try {
   const ref = `refs/remotes/local-metal/${pr}`
@@ -111,21 +141,17 @@ try {
   if (!run(['git', 'worktree', 'add', '--detach', dir, sha]))
     throw new Error('worktree failed')
   status('pending', `running at ${sha.slice(0, 8)}`)
+  posted = true
   ok =
     run(['git', 'lfs', 'pull'], dir) &&
-    run(['bun', 'install', '--frozen-lockfile'], dir) &&
-    run(['bunx', 'playwright', 'install', 'chromium'], niivue) &&
+    run(['bun', 'install', '--frozen-lockfile'], dir, env) &&
+    run(['bunx', 'playwright', 'install', 'chromium'], niivue, env) &&
     run(['bunx', 'nx', 'build', 'uikit'], dir, env) &&
     run(e2eCommand(), niivue, env) &&
-    run(
-      [
-        'bun',
-        '.github/scripts/check-no-skipped-tests.ts',
-        'packages/niivue/test-results/results.json',
-      ],
-      dir,
-    )
+    // From this checkout, not the PR's, so the PR cannot weaken the check.
+    run(['bun', join(import.meta.dir, 'check-no-skipped-tests.ts'), results])
 } catch (e) {
+  crashed = true
   console.error(`local-metal: ${(e as Error).message}`)
 } finally {
   // git worktree remove deletes the folder too.
@@ -134,17 +160,31 @@ try {
 }
 
 const minutes = ((Date.now() - started) / 60_000).toFixed(1)
-status(
-  ok ? 'success' : 'failure',
-  `full suite ${ok ? 'passed' : 'failed'} in ${minutes} min`,
-)
+if (posted) {
+  try {
+    status(
+      ok ? 'success' : crashed ? 'error' : 'failure',
+      `full suite ${ok ? 'passed' : crashed ? 'did not finish' : 'failed'} in ${minutes} min`,
+    )
+  } catch (e) {
+    ok = false
+    console.error(
+      `local-metal: could not post the status: ${(e as Error).message}`,
+    )
+  }
+}
 if (ok && addLabel) {
   // Re-adding a label that is already there fires no event, so take it off
   // first: the labeled event then re-runs the gate against this status.
   const labels = out([...pull, 'labels', '-q', '.labels[].name']).split('\n')
   if (labels.includes(LABEL))
     run(['gh', 'pr', 'edit', pr, '-R', REPO, '--remove-label', LABEL])
-  run(['gh', 'pr', 'edit', pr, '-R', REPO, '--add-label', LABEL])
+  if (!run(['gh', 'pr', 'edit', pr, '-R', REPO, '--add-label', LABEL])) {
+    console.error(
+      `local-metal: passed, but adding ${LABEL} failed, so CI will still run Metal; add it by hand`,
+    )
+    ok = false
+  }
 }
 console.log(
   `local-metal: PR #${pr} at ${sha.slice(0, 8)} ${ok ? 'PASSED' : 'FAILED'}`,

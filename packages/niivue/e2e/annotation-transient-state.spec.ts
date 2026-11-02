@@ -416,6 +416,38 @@ test('a completed resize keeps the erased part of a shape erased (#470)', async 
   expect(r).toEqual({ split: true, fitsBounds: true, remeasured: true })
 })
 
+test('collapsing an erased shape and expanding it again keeps the erasure (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'measureRect')}
+    drag([120, 120], [200, 200])
+    nv.annotationIsErasing = true
+    nv.annotationBrushRadius = 3
+    ev('pointerdown', 160, 100, 0)
+    ev('pointermove', 160, 160, -1)
+    ev('pointermove', 160, 220, -1)
+    ev('pointerup', 160, 220, 0)
+    nv.annotationIsErasing = false
+    click([140, 160]) // select the left half
+    // Right side handle onto the left edge: the collapse is refused, so the
+    // shape keeps its last valid width (here, half as wide).
+    ev('pointerdown', 200, 160, 0)
+    ev('pointermove', 160, 160, -1)
+    ev('pointermove', 120, 160, -1)
+    ev('pointerup', 120, 160, 0)
+    const shape = nv.annotations[0].shape
+    const kept = Math.abs(shape.end.x - shape.start.x) > 0
+    // And back out to the full width.
+    ev('pointerdown', 160, 160, 0)
+    ev('pointermove', 200, 160, -1)
+    ev('pointerup', 200, 160, 0)
+    return { kept, split: nv.annotations[0].polygons.length === 2 }
+  })()`)
+  expect(r).toEqual({ kept: true, split: true })
+})
+
 test('loadVolumes ends a control-point resize drag (#470)', async ({
   page,
 }) => {

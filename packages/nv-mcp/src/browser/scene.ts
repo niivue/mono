@@ -653,10 +653,13 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(toLoad, 'isLegendVisible', flag(params, 'legend'))
       if (
         labels &&
-        (toLoad.calMin !== undefined || toLoad.calMax !== undefined)
+        (toLoad.calMin !== undefined ||
+          toLoad.calMax !== undefined ||
+          toLoad.calMinNeg !== undefined ||
+          toLoad.calMaxNeg !== undefined)
       )
         throw new Error(
-          'A label overlay has no display window: leave cal_min and cal_max out.',
+          'A label overlay has no display window: leave cal_min, cal_max, cal_min_neg and cal_max_neg out.',
         )
       const couldNotLoad = (error: unknown) => {
         const why = error instanceof Error ? error.message : String(error)

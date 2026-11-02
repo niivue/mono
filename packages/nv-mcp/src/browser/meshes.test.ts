@@ -529,6 +529,16 @@ describe('the mesh layers', () => {
     })
   })
 
+  it('loads a layer with a null negative bound as NaN (#493)', async () => {
+    const view = meshView()
+    const { add_mesh_layer } = meshHandlers(hostOf(view))
+    await add_mesh_layer({ url: 'https://x/t.gii', cal_min_neg: null })
+    expect(view.addMeshLayer).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({ calMinNeg: Number.NaN }),
+    )
+  })
+
   it('changes a layer and its frame, on the only layer by default', async () => {
     const view = meshView()
     const { set_mesh_layer } = meshHandlers(hostOf(view))

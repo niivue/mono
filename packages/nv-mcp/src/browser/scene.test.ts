@@ -1646,6 +1646,33 @@ describe('add_overlay', () => {
     })
   })
 
+  it('passes a null negative bound as NaN, mirroring the positive window (#493)', async () => {
+    const view = fakeView()
+    await coreHandlers(host(view)).add_overlay({
+      url: 'http://h/stats/zstat1.nii.gz',
+      cal_min_neg: null,
+      cal_max_neg: null,
+    })
+    expect(view.addVolume).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calMinNeg: Number.NaN,
+        calMaxNeg: Number.NaN,
+      }),
+    )
+  })
+
+  it('refuses a negative window on a label map too', async () => {
+    const view = fakeView()
+    await expect(
+      coreHandlers(host(view)).add_overlay({
+        url: 'http://h/labels/synthseg.nii.gz',
+        labels: 'freesurfer',
+        cal_min_neg: null,
+      }),
+    ).rejects.toThrow('A label overlay has no display window')
+    expect(view.addVolume).not.toHaveBeenCalled()
+  })
+
   it('refuses a display window on a label map, which has none', async () => {
     const view = fakeView()
     const handlers = coreHandlers(host(view))
@@ -1656,7 +1683,7 @@ describe('add_overlay', () => {
         cal_min: 1,
       }),
     ).rejects.toThrow(
-      'A label overlay has no display window: leave cal_min and cal_max out.',
+      'A label overlay has no display window: leave cal_min, cal_max, cal_min_neg and cal_max_neg out.',
     )
     expect(view.addVolume).not.toHaveBeenCalled()
   })

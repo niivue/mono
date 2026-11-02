@@ -356,3 +356,26 @@ test('a freehand stroke held across loadVolumes does not commit (#470)', async (
   })()`)
   expect(count).toEqual({ count: 0, turned: false, dragging: false })
 })
+
+test('loadVolumes ends a control-point resize drag (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'rectangle')}
+    drag([120, 120], [200, 200])
+    click([160, 160]) // select it, so its corners are control points
+    ev('pointerdown', 200, 200, 0)
+    ev('pointermove', 220, 220, -1)
+    const resizing = nv._resizingControlPoint >= 0
+    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    const ended = nv._resizingControlPoint === -1 && !nv.isDragging
+    // A move after the load must not keep resizing the shape.
+    const shape = JSON.stringify(nv.annotations[0].shape)
+    ev('pointermove', 250, 250, -1)
+    const unchanged = JSON.stringify(nv.annotations[0].shape) === shape
+    ev('pointerup', 250, 250, 0)
+    return { resizing, ended, unchanged }
+  })()`)
+  expect(r).toEqual({ resizing: true, ended: true, unchanged: true })
+})

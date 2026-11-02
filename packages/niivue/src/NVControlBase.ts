@@ -2473,6 +2473,10 @@ export default class NiiVue extends EventTarget {
     this._annotation3DActive = false
     this._annotation3DMMPath = []
     this._annotation3DFace = null
+    // A control-point resize drag would write into the old annotation.
+    this._resizingControlPoint = -1
+    this._resizingAnnotation = null
+    this._resizeOriginalShape = null
     this._annotationPolyPoints = null
     this._bidirectionalLong = null
     this.model._annotationPreview = null
@@ -2490,7 +2494,8 @@ export default class NiiVue extends EventTarget {
     const isAnnotationDrag =
       this._annotationShapeStart !== null ||
       this._annotationBrushPath.length > 0 ||
-      this._annotation3DActive
+      this._annotation3DActive ||
+      this._resizingControlPoint >= 0
     this._abandonAnnotationInProgress()
     if (isAnnotationDrag && this.isDragging) resetDragState(this)
   }

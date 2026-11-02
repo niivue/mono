@@ -22,8 +22,16 @@ const PRESETS = {
   cr_t1_mod: t1Mod,
 }
 
+// Presets fitted to each volume's own intensities, rebuilt on every apply.
+const VOLUME_PRESETS = {
+  cr_default: defaultPreset,
+  cr_t1_extracted: extractedT1Preset,
+}
+const isPreset = (name) => name in PRESETS || name in VOLUME_PRESETS
+
 // ?sample=<id> picks a sample; ?url=... adds a volume; ?tf=... picks a preset;
-// ?mode=classic|cinematic; ?clip=0..6 picks a clip preset, ?cutaway=1;
+// ?mode=classic|cinematic; ?clip=0..6 picks a clip preset, ?cutaway=1,
+// ?clipcolor=transparent|translucent|shading;
 // ?backend=webgl2|webgpu; ?azimuth=, ?elevation=; ?<setting>= sets a slider.
 const params = new URLSearchParams(location.search)
 // Calibrated (int16 Hounsfield) CT samples, each with a suggested preset.
@@ -85,11 +93,12 @@ const SAMPLES = [
     },
   },
   {
-    // Bundled with the dev images; the greyscale default suits non-CT scans.
+    // Bundled with the dev images. Brain extracted, so its grey and white
+    // matter can be told apart from the histogram alone.
     id: 'mr-mni152',
     name: 'MNI152 T1 brain + motor statistics',
     url: '/volumes/mni152.nii.gz',
-    tf: 'cr_default',
+    tf: 'cr_t1_extracted',
     overlays: [
       {
         url: '/volumes/spmMotor.nii.gz',
@@ -108,13 +117,21 @@ const SAMPLES = [
     id: 'mr-mni152-tract',
     name: 'MNI152 T1 brain + streamlines',
     url: '/volumes/mni152.nii.gz',
-    tf: 'cr_default',
+    tf: 'cr_t1_extracted',
     meshes: [
       { url: '/meshes/TR_S_R.tt.gz', tractOptions: { fiberRadius: 0.5 } },
     ],
     clip: 1,
     // Fainter than the crosshair's default: hidden fibres crowd the brain.
     meshXRay: 0.05,
+  },
+  {
+    // Scalp and skull are not grey or white matter, so the histogram split
+    // of 'extracted T1' does not apply: start with the greyscale default.
+    id: 'mr-t1-scalp',
+    name: 'T1 with scalp (not brain extracted)',
+    url: '/volumes/chris_t1.nii.gz',
+    tf: 'cr_default',
   },
   {
     id: 'mr-siam',
@@ -142,7 +159,7 @@ const sampleIndex = SAMPLES.findIndex(
 if (sampleIndex >= 0) volumeSelect.value = String(sampleIndex)
 // An unknown ?tf= falls back to the sample's preset rather than an empty selection.
 const tfParam = params.get('tf')
-tfSelect.value = tfParam in PRESETS ? tfParam : selectedSample().tf
+tfSelect.value = isPreset(tfParam) ? tfParam : selectedSample().tf
 if (params.get('mode')) modeSelect.value = params.get('mode')
 
 const SLIDERS = [
@@ -245,9 +262,105 @@ function defaultPreset(vol) {
     shininess: 30,
   }
 }
-function registerDefaultPreset(vol) {
-  PRESETS.cr_default = defaultPreset(vol)
-  nv1.addColormap('cr_default', PRESETS.cr_default)
+
+// Three-class Otsu on a histogram: the two bin indices that split it into
+// classes with the largest between-class variance.
+function otsu3(hist) {
+  const n = hist.length
+  const w = new Float64Array(n + 1)
+  const m = new Float64Array(n + 1)
+  for (let i = 0; i < n; i++) {
+    w[i + 1] = w[i] + hist[i]
+    m[i + 1] = m[i] + i * hist[i]
+  }
+  const score = (a, b) => {
+    const wc = w[b] - w[a]
+    if (wc <= 0) return 0
+    const mc = m[b] - m[a]
+    return (mc * mc) / wc
+  }
+  let best = -1
+  let split = [1, 2]
+  for (let t1 = 1; t1 < n - 1; t1++) {
+    for (let t2 = t1 + 1; t2 < n; t2++) {
+      const s = score(0, t1) + score(t1, t2) + score(t2, n)
+      if (s > best) {
+        best = s
+        split = [t1, t2]
+      }
+    }
+  }
+  return split
+}
+
+// A brain-extracted T1 has no calibrated scale, but white matter is brighter
+// than grey and the rest of the head is gone. The voxels above the background
+// fall into three classes (CSF, grey, white matter): a three-class Otsu split
+// of their histogram places flesh-toned grey and white matter on the scan's
+// own intensities. Without brain extraction, scalp and skull join the classes.
+function extractedT1Preset(vol) {
+  const slope = vol.hdr.scl_slope || 1
+  const inter = vol.hdr.scl_inter
+  const lo = vol.globalMin
+  const BINS = 256
+  // Bin to the robust top, so a few bright voxels do not squeeze the classes.
+  const top = Math.max(vol.robustMax, lo + 1e-6)
+  const scale = (BINS - 1) / (top - lo)
+  const hist = new Float64Array(BINS)
+  const n = vol.nVox3D
+  for (let i = 0; i < n; i++) {
+    const v = vol.img[i] * slope + inter
+    if (!(v > lo)) continue // background (and NaN)
+    hist[Math.min(BINS - 1, Math.floor((v - lo) * scale))]++
+  }
+  const [b1, b2] = otsu3(hist)
+  const value = (bin) => lo + bin / scale
+  const mean = (a, b) => {
+    let wsum = 0
+    let msum = 0
+    for (let i = a; i < b; i++) {
+      wsum += hist[i]
+      msum += i * hist[i]
+    }
+    return value(wsum > 0 ? msum / wsum : (a + b) / 2)
+  }
+  const csfGm = value(b1)
+  const gmWm = value(b2)
+  const gm = mean(b1, b2)
+  const wm = mean(b2, BINS)
+  // Intensity, RGB, interior alpha A, edge alpha E, specular S.
+  // Partial-volume voxels lining a sulcus (part CSF, part grey) stay clear or
+  // dark, so the folds read as deep grooves rather than filled in.
+  const GM = [135, 80, 56]
+  const WM = [185, 156, 128]
+  const stops = [
+    [csfGm, [0, 0, 0], 0, 0, 0],
+    // Edges (E) stay below opaque so a surface builds up over a few march
+    // steps; one opaque step shows the step pattern as wood grain.
+    [0.5 * (csfGm + gm), [70, 40, 28], 80, 50, 5],
+    // Grey matter keeps its colour up to the grey/white split, so a surface
+    // reached a little deep still reads as cortex.
+    [gm, GM, 255, 190, 10],
+    [gmWm, GM, 255, 220, 10],
+    [wm, WM, 255, 255, 15],
+  ]
+  const min = stops[0][0]
+  const max = stops.at(-1)[0]
+  const range = max - min
+  return {
+    min,
+    max,
+    I: stops.map(([v]) => Math.round(((v - min) / range) * 255)),
+    R: stops.map((s) => s[1][0]),
+    G: stops.map((s) => s[1][1]),
+    B: stops.map((s) => s[1][2]),
+    A: stops.map((s) => s[2]),
+    E: stops.map((s) => s[3]),
+    S: stops.map((s) => s[4]),
+    gradient: { lo: 0.05 * range, hi: 0.3 * range },
+    gMax: range,
+    shininess: 30,
+  }
 }
 
 // Cinematic mode bakes volume 0's colormap across its calMin..calMax. A
@@ -259,7 +372,11 @@ function applyColormap() {
   const isCalibrated = !!selectedSample().labels?.table.normalize
   const isCinematic = modeSelect.value === 'cinematic'
   if (!isCalibrated) {
-    if (tfSelect.value === 'cr_default') registerDefaultPreset(vol)
+    const build = VOLUME_PRESETS[tfSelect.value]
+    if (build) {
+      PRESETS[tfSelect.value] = build(vol)
+      nv1.addColormap(tfSelect.value, PRESETS[tfSelect.value])
+    }
     const cmap = PRESETS[tfSelect.value]
     nv1.setVolume(0, {
       colormap: tfSelect.value,
@@ -274,6 +391,17 @@ function applyColormap() {
     calMin: vol.calMin,
     calMax: vol.calMax,
   })
+}
+
+// A label-calibrated sample is drawn in its table's units, which a preset
+// fitted to the scan's raw intensities cannot match: offer only the others.
+function syncPresetOptions() {
+  const sample = selectedSample()
+  const isCalibrated = !!sample.labels?.table.normalize
+  for (const option of tfSelect.options)
+    if (option.value in VOLUME_PRESETS) option.disabled = isCalibrated
+  if (isCalibrated && tfSelect.value in VOLUME_PRESETS)
+    tfSelect.value = sample.tf
 }
 
 let isOwnLoad = false
@@ -300,8 +428,15 @@ async function loadVolume() {
   labelSelect.hidden = !labels
   nv1.isColorbarVisible = !!sample.overlays
   if (labels) applySuggestedSettings(labels.table.settings)
-  // A scan that is clearly not CT gets the greyscale default unless ?tf= chose.
-  if (!labels && isNotCT(nv1.volumes[0]) && !params.has('tf'))
+  syncPresetOptions()
+  // A scan that is clearly not CT gets the greyscale default unless ?tf= or
+  // the sample chose a preset for scans that are not CT.
+  if (
+    !labels &&
+    isNotCT(nv1.volumes[0]) &&
+    !params.has('tf') &&
+    !(tfSelect.value in VOLUME_PRESETS)
+  )
     tfSelect.value = 'cr_default'
   applyColormap()
 }
@@ -354,6 +489,18 @@ clipSelect.onchange = () => {
 cutawayCheck.onchange = () => {
   nv1.isClipPlaneCutaway = cutawayCheck.checked
 }
+// As in vox.clip.html: alpha 0 draws nothing, > 0 a translucent sheet where
+// the cut reveals no tissue, < 0 tints the cut face. ?clipcolor= picks one.
+const CLIP_ALPHA = { transparent: 0, translucent: 0.3, shading: -0.2 }
+clipColorSelect.value =
+  params.get('clipcolor') in CLIP_ALPHA
+    ? params.get('clipcolor')
+    : 'transparent'
+clipColorSelect.onchange = () => {
+  const [r, g, b] = nv1.clipPlaneColor
+  nv1.clipPlaneColor = [r, g, b, CLIP_ALPHA[clipColorSelect.value]]
+}
+clipColorSelect.onchange()
 
 let loadError = ''
 function applyMode() {
@@ -425,6 +572,7 @@ nv1.addEventListener('volumeLoaded', () => {
   volumeSelect.add(new Option(SAMPLES.at(-1).name, String(SAMPLES.length - 1)))
   volumeSelect.value = String(SAMPLES.length - 1)
   labelSelect.hidden = true
+  syncPresetOptions()
   applyColormap()
 })
 volumeSelect.onchange = () => {

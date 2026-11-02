@@ -12,6 +12,7 @@ import {
   cinematicGeometry,
   cinematicOptionsForFrame,
   clipParams,
+  clipTint,
   dilateLabels,
   findLabelVolume,
   HIDDEN_LABEL,
@@ -195,7 +196,7 @@ describe('geometry, light and uniforms', () => {
       overlayInfo: [1, 0, 1, 1],
     }
     const out = packMarchParams(args)
-    expect(out.length).toBe(136)
+    expect(out.length).toBe(140)
     expect(Array.from(out.subarray(48, 50))).toEqual([64, 32])
     expect(out[61]).toBe(5)
     expect(Array.from(out.subarray(124, 128))).toEqual([1, 0, 0.5, 0])
@@ -215,6 +216,7 @@ describe('geometry, light and uniforms', () => {
       mvp: mat4.create(),
       model: mat4.create(),
       clipPlanes: new Float32Array(24),
+      clipPlaneColor: [0.7, 0, 0.7, -0.2],
       isClipCutaway: false,
       clipPlaneOverlay: true,
       isBackgroundVisible: false,
@@ -223,6 +225,9 @@ describe('geometry, light and uniforms', () => {
       background: [0, 0, 0, 1],
     }
     expect(tileKey('k', t)).not.toBe(tileKey('k', { ...t, gamma: 2 }))
+    expect(tileKey('k', t)).not.toBe(
+      tileKey('k', { ...t, clipPlaneColor: [0.7, 0, 0.7, 0] }),
+    )
     const out = tileMarchParams(
       t,
       3,
@@ -237,6 +242,20 @@ describe('geometry, light and uniforms', () => {
     // Background visibility replaces labelInfo.w.
     expect(Array.from(out.subarray(124, 128))).toEqual([1, 0, 0.5, 0])
     expect(Array.from(out.subarray(128, 132))).toEqual([0, 1, 1, 1])
+    // A negative clip alpha tints the cut face by its magnitude.
+    expect(Array.from(out.subarray(136, 140))).toEqual([
+      Math.fround(0.7),
+      0,
+      Math.fround(0.7),
+      Math.fround(0.2),
+    ])
+  })
+
+  test('clipTintOnlyForNegativeAlpha', () => {
+    expect(clipTint([1, 0.5, 0, -0.3])).toEqual([1, 0.5, 0, 0.3])
+    // Translucent (positive) and transparent (zero) draw no tint.
+    expect(clipTint([1, 0.5, 0, 0.4])[3]).toBe(0)
+    expect(clipTint([1, 0.5, 0, 0])[3]).toBe(0)
   })
 })
 

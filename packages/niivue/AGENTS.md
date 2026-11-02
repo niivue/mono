@@ -2074,7 +2074,7 @@ schedules one `render()` after `onSubmittedWorkDone` (one frame in flight), not
 while `_isDragging` (each camera change draws one restarted frame). Each tile
 (keyed by tile index, sized to it in device px; multiplanar and mosaic render
 tiles each get one) restarts on any change of options, cache version, viewport,
-MVP, clip planes, cutaway, background or affine. First-hit depth is set on frame 0
+MVP, clip planes, clip colour, cutaway, background or affine. First-hit depth is set on frame 0
 (first sample with table alpha >= 0.01, as the classic march), not
 min-accumulated. The light comes from each tile's own model matrix (mosaic
 tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
@@ -2177,7 +2177,11 @@ alpha), so a cut through translucent, low-gradient tissue (white matter, CSF)
 reads as a solid face instead of wrinkled interior noise, and are unlit like
 the classic clip surface: albedo x AO x 0.6, no direct light, shadow or
 specular (lit, the plane normal often faced the light and tone-mapped grey and
-white matter to near white; 0.6 keeps albedos off the ACES shoulder); in air
+white matter to near white; 0.6 keeps albedos off the ACES shoulder). A
+negative `clipPlaneColor` alpha tints that albedo toward the clip colour by
+|alpha| (`clipTint`, uniform `clipColor`), as the classic `shading` mode does;
+a positive alpha draws nothing, since the classic translucent sheet over
+empty space would be an unlit plane in a path-traced scene; in air
 `E` is 0, so a cut through empty space only starts the ray. A label sample is the nearest voxel at a point jittered up to
 half a voxel per frame, so boundaries average like trilinear weights. Each
 visible label spreads one voxel (6-neighbours) into unlabeled/hidden voxels, so
@@ -2189,7 +2193,13 @@ ramps shape it (harder, mesh-like). ACES tone map in the display pass.
 
 **Demo** (`examples/cinematic.html`, public API only): presets `cr_skin_bone`,
 `cr_bone`, `cr_angio`, `cr_angio_1d`, `cr_t1`, label-modulated `cr_ct_mod`/
-`cr_t1_mod` (defaults for labelled samples); in `cr_angio` the gradient
+`cr_t1_mod` (defaults for labelled samples), and two built per volume
+(`VOLUME_PRESETS`): `cr_default` (greyscale over the robust range, for any
+non-CT scan) and `cr_t1_extracted` ("extracted T1", the MNI152 samples'
+default: a three-class Otsu split of the above-background histogram places
+flesh-toned grey and white matter; brain-extracted T1 only, since scalp and
+skull join the classes otherwise; both are disabled on label-calibrated samples,
+whose table units a raw-intensity fit cannot match); in `cr_angio` the gradient
 suppresses bone-edge partial volume in the vessel band (CT_Abdo: vessel-band
 voxels near bone median 159 HU/mm vs 38 away). Label tables `ts_wholebody.json`
 (TotalSegmentator, CC BY 4.0; v1 has no forearm/hand bones), `ts_abdopelvis.json`
@@ -2197,11 +2207,11 @@ voxels near bone median 159 HU/mm vs 38 away). Label tables `ts_wholebody.json`
 legend), `siam_t1.json` (MR, BSD-2: `normalize` CSF 0, GM 100, WM 200; cortex
 ramp 30-70; structures without reliable T1 contrast use an always-on ramp, `lo`
 -1000 `hi` -999). The MNI152 sample loads `spmMotor.nii.gz` statistics
-(`redyell` / `winter`, +3..+6 / -3..-6, as in `vox.stats.html`). `mr-mni152-tract` adds `TR_S_R.tt.gz` streamlines (`fiberRadius` 0.5) with clip plane 1 and `meshXRay` 0.05 (samples may set `meshes`, `clip`, `meshXRay`; `?clip=` wins). "Fast light" (`?fastlight=1`) sets `isStochasticLighting`. A table's `settings` key (slider values) is demo-only. For
+(`redyell` / `winter`, +3..+6 / -3..-6, as in `vox.stats.html`). `mr-mni152-tract` adds `TR_S_R.tt.gz` streamlines (`fiberRadius` 0.5) with clip plane 1 and `meshXRay` 0.05 (samples may set `meshes`, `clip`, `meshXRay`; `?clip=` wins). "Fast light" (`?fastlight=1`) sets `isStochasticLighting`. "Clip color" (`?clipcolor=`, default `transparent`) sets the alpha of `clipPlaneColor` as `vox.clip.html` does. A table's `settings` key (slider values) is demo-only. For
 label-calibrated MR the classic view keeps the grey window. Samples by id
 (`?sample=`: `ct-abdo`, `ct-philips`, `ct-electrodes`, `ct-wholebody`,
-`ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-mni152`, `mr-mni152-tract`, `mr-siam`); `index.html` links
-"Cinematic CT" and "Cinematic Labeled MR". Data: niivue-demo-images-lfs; LFS
+`ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-mni152`, `mr-mni152-tract`, `mr-t1-scalp` (`chris_t1.nii.gz`, not brain extracted, on `cr_default`), `mr-siam`); `index.html` links
+"Cinematic CT" and "Cinematic Labeled MR", and under Tract Scenes "Cinematic streamlines" (`mr-mni152-tract`). Data: niivue-demo-images-lfs; LFS
 objects load via `media.githubusercontent.com` with `?v=` (raw returns
 pointers). Add a sample only after its LFS PR merges: requesting a media URL
 before the file exists makes GitHub's CDN cache the 404 for that exact URL

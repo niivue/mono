@@ -23,6 +23,7 @@ struct Params {
   labelInfo: vec4f, // labels on (0/1), unlabeled tissue scale, label colour blend (0 = label materials), background visible (0/1)
   overlayInfo: vec4f, // standard overlays on, clip with anatomy, inverse gamma, correct step opacity
   lighting: vec4f, // stochastic lighting: one shadow/AO sample per ray (0/1), -, -, -
+  clipColor: vec4f, // cut-face tint: rgb (sRGB), strength (0 = none)
 }
 
 const LUMA = vec3f(0.2126, 0.7152, 0.0722);
@@ -301,7 +302,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let spec = specular * P.view.w;
     let surf = select(surfBase, 1.0, onCut);
     let weight = (1.0 - acc.a) * a;
-    let albedo = srgbToLinear(c.rgb);
+    // A cut face takes the clip colour's tint, as the classic renderer's does.
+    let tint = select(0.0, P.clipColor.w, onCut);
+    let albedo = mix(srgbToLinear(c.rgb), srgbToLinear(P.clipColor.rgb), tint);
     let ndl = max(dot(n, L), 0.0);
     let diffuse = mix(volTerm, ndl, surf);
     let h = normalize(L - dir);

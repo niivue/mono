@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
 
 // CINEMATIC behaviour that lives in the view tile loops, on both backends: an
@@ -102,5 +102,84 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r?.tilesWithNothingVisible).toBe(0)
     expect(warnings.some((w) => w.includes('RGB/RGBA'))).toBe(true)
     expect(warnings.some((w) => w.includes('drawing layer'))).toBe(true)
+  })
+}
+
+// Mean green minus red over a screenshot of the canvas, decoded in the page.
+async function greenness(page: Page): Promise<number> {
+  const png = await page.screenshot({
+    clip: { x: 0, y: 0, width: 128, height: 128 },
+  })
+  return page.evaluate(async (b64) => {
+    const img = new Image()
+    img.src = `data:image/png;base64,${b64}`
+    await img.decode()
+    const ctx = document
+      .createElement('canvas')
+      .getContext('2d') as CanvasRenderingContext2D
+    ctx.canvas.width = img.width
+    ctx.canvas.height = img.height
+    ctx.drawImage(img, 0, 0)
+    const d = ctx.getImageData(0, 0, img.width, img.height).data
+    let sum = 0
+    for (let i = 0; i < d.length; i += 4) sum += d[i + 1] - d[i]
+    return sum / (d.length / 4)
+  }, png.toString('base64'))
+}
+
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`a negative clip alpha tints the cinematic cut face (${backend})`, async ({
+    page,
+  }) => {
+    await page.goto('/examples/index.html', { waitUntil: 'load' })
+    const ready = await page.evaluate(async (backend) => {
+      if (backend === 'webgpu' && !(await navigator.gpu?.requestAdapter()))
+        return false
+      const {
+        default: NiiVue,
+        SLICE_TYPE,
+        VOLUME_RENDER_MODE,
+      } = await import('/src/index.ts')
+      const next = () =>
+        new Promise((res) => requestAnimationFrame(() => setTimeout(res, 50)))
+      document.body.innerHTML = ''
+      const c = document.createElement('canvas')
+      c.width = c.height = 128
+      c.style.cssText = 'position:fixed;left:0;top:0;width:128px;height:128px'
+      document.body.appendChild(c)
+      const nv = new NiiVue({
+        backend,
+        sliceType: SLICE_TYPE.RENDER,
+        volumeRenderMode: VOLUME_RENDER_MODE.CINEMATIC,
+        volumeCinematic: { maxFrames: 2 },
+        isLegendVisible: false,
+        isOrientCubeVisible: false,
+        crosshairWidth: 0,
+        forceDevicePixelRatio: 1,
+      })
+      await nv.attachToCanvas(c)
+      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+      // Cut through the middle, facing the camera.
+      nv.azimuth = 180
+      nv.elevation = 0
+      nv.setClipPlanes([[0, 180, 0]])
+      window.__tint = async (alpha: number) => {
+        nv.clipPlaneColor = [0, 1, 0, alpha]
+        const cine = nv.view.cinematicRenderer
+        for (let i = 0; i < 100; i++) {
+          await next()
+          const frames = [...cine.tiles.values()].map((t) => t.frame)
+          if (frames.length && frames.every((f) => f === 2)) break
+        }
+        await next()
+      }
+      return true
+    }, backend)
+    test.skip(!ready, 'no WebGPU adapter')
+    await page.evaluate('window.__tint(0)')
+    const plain = await greenness(page)
+    await page.evaluate('window.__tint(-1)')
+    const tinted = await greenness(page)
+    expect(tinted).toBeGreaterThan(plain + 10)
   })
 }

@@ -161,6 +161,7 @@ layout(std140) uniform Params {
   vec4 labelInfo;
   vec4 overlayInfo;
   vec4 lighting;
+  vec4 clipColor;
 } P;
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 uniform sampler3D huTex;
@@ -400,7 +401,9 @@ void main() {
     float spec = specular * P.view.w;
     float surf = onCut ? 1.0 : surfBase;
     float weight = (1.0 - acc.a) * a;
-    vec3 albedo = srgbToLinear(c.rgb);
+    // A cut face takes the clip colour's tint, as the classic renderer's does.
+    float tint = onCut ? P.clipColor.w : 0.0;
+    vec3 albedo = mix(srgbToLinear(c.rgb), srgbToLinear(P.clipColor.rgb), tint);
     float ndl = max(dot(n, L), 0.0);
     float diffuse = mix(volTerm, ndl, surf);
     vec3 h = normalize(L - dir);

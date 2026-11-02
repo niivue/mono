@@ -18,7 +18,7 @@ export const HIDDEN_LABEL = 255
 /** Material table width in RGBA32F texels: two per label id. */
 export const MATERIAL_TEXELS = 512
 /** March uniform size in floats (see packMarchParams and cinematic.wgsl Params). */
-export const MARCH_PARAM_FLOATS = 136
+export const MARCH_PARAM_FLOATS = 140
 /** Display uniform size in floats (see packDisplayParams). */
 export const DISPLAY_PARAM_FLOATS = 16
 export const EXT_PARAM_FLOATS = 24
@@ -386,6 +386,7 @@ export function packMarchParams(p: {
   clip: Float32Array
   labelInfo: readonly number[]
   overlayInfo: readonly number[]
+  clipColor?: readonly number[]
 }): Float32Array {
   const s = p.options
   const { geometry: geo, tf } = p
@@ -419,6 +420,7 @@ export function packMarchParams(p: {
   out.set(p.labelInfo, 124)
   out.set(p.overlayInfo, 128)
   out.set([s.isStochasticLighting ? 1 : 0, 0, 0, 0], 132)
+  out.set(p.clipColor ?? [0, 0, 0, 0], 136)
   return out
 }
 
@@ -522,6 +524,8 @@ export type CinematicTileInput = {
   /** Model (rotation) matrix of the same camera, for the light. */
   model: ArrayLike<number>
   clipPlanes: ArrayLike<number>
+  /** `scene.clipPlaneColor`; a negative alpha tints the cut face. */
+  clipPlaneColor: ArrayLike<number>
   isClipCutaway: boolean
   clipPlaneOverlay: boolean
   /** False when the background is hidden: only overlays are marched. */
@@ -538,6 +542,7 @@ export function tileKey(optionsKey: string, t: CinematicTileInput): string {
     Array.from(t.rect).join(),
     Array.from(t.mvp).join(),
     Array.from(t.clipPlanes).join(),
+    Array.from(t.clipPlaneColor).join(),
     t.isClipCutaway,
     t.clipPlaneOverlay,
     t.isBackgroundVisible,
@@ -573,7 +578,18 @@ export function tileMarchParams(
       invGamma(t.gamma),
       t.isOverlayOpacityCorrected ? 1 : 0,
     ],
+    clipColor: clipTint(t.clipPlaneColor),
   })
+}
+
+/**
+ * The cut-face tint from `scene.clipPlaneColor`: rgb and strength. As in the
+ * classic renderer, a negative alpha tints the cut face by |alpha|. A positive
+ * alpha (a translucent sheet where the cut shows no tissue) draws nothing
+ * here: an unlit sheet has no place in a path-traced scene.
+ */
+export function clipTint(color: ArrayLike<number>): number[] {
+  return [color[0], color[1], color[2], Math.max(0, -color[3])]
 }
 
 /**

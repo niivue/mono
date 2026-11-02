@@ -72,7 +72,7 @@ if (
 }
 // shortcut: assumes the dev server port from playwright.config.ts; a busy port
 // would fail the suite and post a misleading public failure.
-if (Bun.spawnSync(['lsof', '-ti', 'tcp:5273']).exitCode === 0) {
+if (Bun.spawnSync(['lsof', '-ti', 'tcp:5273', '-sTCP:LISTEN']).exitCode === 0) {
   console.error('local-metal: port 5273 is in use; stop the dev server first')
   process.exit(2)
 }

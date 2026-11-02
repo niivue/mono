@@ -1539,7 +1539,10 @@ export function getNiivueCommandsModule({
       // A zero-width window (PT/SUV) is a level-only clamp: show 0..level.
       const [calMin, calMax] =
         window === 0 ? [0, level] : [level - window / 2, level + window / 2]
-      nv.setVolume(0, { calMin, calMax })
+      // A queued GPU update can reject; log it rather than leave it unhandled (#467).
+      nv.setVolume(0, { calMin, calMax }).catch((err: unknown) =>
+        console.error('[nv-ohif] window/level update failed', err),
+      )
       recordWindowLevel(getActiveNiivueEntry(servicesManager), calMin, calMax)
     },
 
@@ -1564,7 +1567,11 @@ export function getNiivueCommandsModule({
         presetIndex,
       )
       if (!range) return
-      entry.nv.setVolume(0, { calMin: range[0], calMax: range[1] })
+      entry.nv
+        .setVolume(0, { calMin: range[0], calMax: range[1] })
+        .catch((err: unknown) =>
+          console.error('[nv-ohif] window/level preset failed', err),
+        )
       recordWindowLevel(entry, range[0], range[1])
     },
 
@@ -1572,17 +1579,24 @@ export function getNiivueCommandsModule({
     niivueAutoWindowLevel: () => {
       const entry = getActiveNiivueEntry(servicesManager)
       if (!entry || entry.nv.volumes.length === 0) return
-      entry.nv.recalculateCalMinMax(0).then(() => {
-        const wl = readBaseWindowLevel(entry.nv)
-        if (wl) entry.windowLevel = wl
-      })
+      entry.nv
+        .recalculateCalMinMax(0)
+        .then(() => {
+          const wl = readBaseWindowLevel(entry.nv)
+          if (wl) entry.windowLevel = wl
+        })
+        .catch((err: unknown) =>
+          console.error('[nv-ohif] auto window/level failed', err),
+        )
     },
 
     /** Set the base volume's colormap (e.g. gray / hot / viridis). */
     niivueSetColormap: ({ colormap }: { colormap?: string } = {}) => {
       const nv = getActiveNiivue(servicesManager)
       if (!nv || nv.volumes.length === 0 || !colormap) return
-      nv.setVolume(0, { colormap })
+      nv.setVolume(0, { colormap }).catch((err: unknown) =>
+        console.error('[nv-ohif] colormap update failed', err),
+      )
     },
 
     /** Toggle the colormap legend (colorbar) on the viewport. */

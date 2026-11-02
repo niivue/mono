@@ -1,3 +1,13 @@
+## 1.0.0-rc.70 (2026-11-02)
+
+### Features
+
+- **niivue:** layoutInset; demo toolbars, uikit pages and local site fixes ([#488](https://github.com/niivue/mono/issues/488))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.69 (2026-11-02)
 
 ### Features

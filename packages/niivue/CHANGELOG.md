@@ -1,3 +1,13 @@
+## 1.0.0-rc.65 (2026-11-02)
+
+### Fixes
+
+- **niivue:** annotation screen shapes and stats cover every polygon ([#115](https://github.com/niivue/mono/issues/115))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.64 (2026-11-01)
 
 ### Features

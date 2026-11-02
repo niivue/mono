@@ -182,3 +182,32 @@ test('erasing a measured ROI in two re-measures both pieces and projects both (#
   expect(r.after).toBeLessThan(r.before)
   expect(r.after).toBeGreaterThan(r.before * 0.6)
 })
+
+test('an erase keeps annotations the brush did not reach (#486)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'measureRect'
+    drag([[60, 60], [100, 100], [140, 140]])
+    drag([[260, 260], [300, 300], [340, 340]])
+    const [erased, untouched] = nv.annotations
+    const untouchedStats = untouched.stats
+    nv.annotationIsErasing = true
+    nv.annotationBrushRadius = 3
+    drag([[100, 40], [100, 100], [100, 160]])
+    return {
+      count: nv.annotations.length,
+      keptObject: nv.annotations.includes(untouched),
+      keptStats: untouched.stats === untouchedStats,
+      replacedErased: !nv.annotations.includes(erased),
+    }
+  })()`)
+
+  expect(r.count).toBe(2)
+  expect(r.keptObject).toBe(true)
+  expect(r.keptStats).toBe(true)
+  expect(r.replacedErased).toBe(true)
+})

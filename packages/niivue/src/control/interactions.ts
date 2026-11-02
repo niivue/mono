@@ -2314,6 +2314,21 @@ export function initInteraction(ctrl: NiiVue): void {
                   ctrl.activeTileHit?.tileIndex
                 ]
                 const eraseTolerance = computeTolerance(ctrl.model)
+                // The brush reaches its path's bounds plus its radius. A
+                // polygon beyond that is not clipped, and an annotation with
+                // none clipped keeps its identity, so the commit does not
+                // re-measure it (#486).
+                const reach = pointsBounds(ctrl._annotationBrushPath)
+                const r = cfg.brushRadius
+                const isOutOfReach = (ring: readonly AnnotationPoint[]) => {
+                  const b = pointsBounds(ring)
+                  return (
+                    b.start.x > reach.end.x + r ||
+                    b.end.x < reach.start.x - r ||
+                    b.start.y > reach.end.y + r ||
+                    b.end.y < reach.start.y - r
+                  )
+                }
                 for (const ann of ctrl.model.annotations) {
                   const anchor = ann.anchorMM
                   const onSlice =
@@ -2332,7 +2347,13 @@ export function initInteraction(ctrl: NiiVue): void {
                     continue
                   }
                   const newPolys = []
+                  let isClipped = false
                   for (const poly of ann.polygons) {
+                    if (isOutOfReach(poly.outer)) {
+                      newPolys.push(poly)
+                      continue
+                    }
+                    isClipped = true
                     newPolys.push(
                       ...Annotation.clipperSubtractBrush(
                         poly,
@@ -2340,6 +2361,10 @@ export function initInteraction(ctrl: NiiVue): void {
                         cfg.brushRadius,
                       ),
                     )
+                  }
+                  if (!isClipped) {
+                    erasePreview.push(ann)
+                    continue
                   }
                   if (newPolys.length > 0) {
                     erasePreview.push({ ...ann, polygons: newPolys })

@@ -1100,7 +1100,11 @@ a rebuild.
   reaches the queued callers, not the update that started it. Setters that
   do not return their rebuild (e.g. `volumeIsBackgroundMasking`) are waited
   for with the public `whenUpdatesSettle()`, which resolves once nothing is
-  running or queued and does not report a failure.
+  running or queued and does not report a failure. A view takeover
+  (`_rebuildViewResources`) adopts callers whose follow-up is still running
+  on the old view and settles them with its own rebuild; `destroy()`
+  resolves every queued or running caller, and later callers at once, since
+  no update will follow.
 
 ## Mesh layers (scalar overlays)
 

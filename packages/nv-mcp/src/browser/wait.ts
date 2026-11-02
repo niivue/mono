@@ -5,15 +5,10 @@ export function within(
 ): Promise<boolean> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), ms)
-    promise.then(
-      () => {
-        clearTimeout(timer)
-        resolve(true)
-      },
-      () => {
-        clearTimeout(timer)
-        resolve(true)
-      },
-    )
+    const settled = () => {
+      clearTimeout(timer)
+      resolve(true)
+    }
+    promise.then(settled, settled)
   })
 }

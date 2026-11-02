@@ -2891,6 +2891,8 @@ export default class NiiVue extends EventTarget {
 
   /** A promise for a caller queued behind `_updating`: it settles with the follow-up. */
   private _queueBehindUpdate(): Promise<void> {
+    // After destroy no follow-up runs, so a queued caller would never settle.
+    if (this._destroyed) return Promise.resolve()
     return new Promise((resolve, reject) => {
       this._pendingWaiters.push({ resolve, reject })
     })

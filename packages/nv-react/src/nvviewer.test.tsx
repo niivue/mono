@@ -181,6 +181,35 @@ describe('NvViewer', () => {
       )
     })
 
+    test('a rejected setVolume reaches onError (#467)', async () => {
+      const onError = mock((_err: unknown) => {})
+      const volumes1 = [{ url: 'brain.nii', calMin: 0, calMax: 255 }]
+      const { rerender } = render(
+        <NvViewer volumes={volumes1} onError={onError} />,
+      )
+      const nv = mockInstances[0]!
+      nv.volumes = [
+        {
+          url: 'brain.nii',
+          name: 'brain.nii',
+          colormap: 'gray',
+          calMin: 0,
+          calMax: 255,
+          opacity: 1.0,
+        },
+      ]
+      const failure = new Error('device lost')
+      nv.setVolume.mockImplementation(() => Promise.reject(failure))
+      rerender(
+        <NvViewer
+          volumes={[{ url: 'brain.nii', calMin: 50, calMax: 200 }]}
+          onError={onError}
+        />,
+      )
+      await new Promise((r) => setTimeout(r, 0))
+      expect(onError).toHaveBeenCalledWith(failure)
+    })
+
     test('changing opacity calls setVolume with new opacity', () => {
       const volumes1 = [{ url: 'brain.nii', opacity: 1.0 }]
       const { rerender } = render(<NvViewer volumes={volumes1} />)

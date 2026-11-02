@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import {
@@ -1608,6 +1608,29 @@ describe('niivueSetWindowLevel', () => {
     nv.volumes.push({ name: 'base' })
     definitions.niivueSetWindowLevel()
     expect(nv.volumeUpdates).toEqual([])
+  })
+})
+
+describe('a rejected volume update (#467)', () => {
+  it('is logged, not left unhandled', async () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    nv.setVolume = async () => {
+      throw new Error('device lost')
+    }
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    const logged = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      definitions.niivueSetWindowLevel({ window: 80, level: 40 })
+      definitions.niivueSetColormap({ colormap: 'hot' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(logged).toHaveBeenCalledTimes(2)
+    } finally {
+      logged.mockRestore()
+    }
   })
 })
 

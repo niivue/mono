@@ -174,7 +174,10 @@ export const NvViewer = ({
         }
 
         if (Object.keys(updates).length > 0) {
-          nv.setVolume(volIdx, updates)
+          // A queued GPU update can reject (#467).
+          nv.setVolume(volIdx, updates).catch((err: unknown) => {
+            onErrorRef.current?.(err)
+          })
         }
 
         currentVolumes.set(urlKey, next)

@@ -29,6 +29,7 @@
       </select>
       <select id="tfSelect">
         <option value="cr_default" title="Greyscale over the scan's own intensity range, for scans that are not CT">default</option>
+        <option value="cr_t1_extracted" title="Flesh tones for a brain-extracted T1: grey and white matter found from the scan's own histogram">extracted T1</option>
         <option value="cr_skin_bone">skin + bone</option>
         <option value="cr_bone">bone</option>
         <option value="cr_angio">angio</option>
@@ -49,6 +50,12 @@
       </select>
       <label for="cutawayCheck">Cutaway</label>
       <input type="checkbox" id="cutawayCheck" />
+      <label for="clipColorSelect">Clip color</label>
+      <select id="clipColorSelect" title="How the clip plane shows: nothing, a translucent sheet over empty space (classic mode only), or a tint on the cut face">
+        <option>transparent</option>
+        <option>translucent</option>
+        <option>shading</option>
+      </select>
       <input type="color" id="colorBtn" value="#000000" title="Background color" />
       <label for="aaCheck" title="Antialiasing smooths jagged edges of meshes and the crosshair at some cost in speed (the cinematic image smooths itself as it refines)">AA</label>
       <input type="checkbox" id="aaCheck" checked title="Antialiasing smooths jagged edges of meshes and the crosshair at some cost in speed (the cinematic image smooths itself as it refines)" />

@@ -37,7 +37,7 @@ on:
       - '.github/workflows/niivue-e2e.yml'
   pull_request:
     # labeled/unlabeled let the skip-metal label cancel or restore the Metal job.
-    # Adding any label restarts the run (cancel-in-progress below).
+    # Adding or removing any label restarts the run (cancel-in-progress below).
     types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - 'packages/niivue/**'
@@ -153,7 +153,7 @@ jobs:
 
       # GPU specs skip rather than fail when an adapter or backend is missing,
       # so a green run with skips may have tested very little. Tests excluded
-      # by --grep-invert are not run and so are not counted here.
+      # by test:e2e:metal are not run and so are not counted here.
       - name: Fail on skipped tests
         run: bun .github/scripts/check-no-skipped-tests.ts packages/niivue/test-results/results.json
 

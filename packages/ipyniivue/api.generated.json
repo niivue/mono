@@ -4302,7 +4302,24 @@
         }
       ],
       "returns": "[number, number, number]",
-      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "vox2mm",
+      "pyName": "vox2mm",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "vox",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number, number] | null",
+      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.\nA RAS voxel of the base volume in world mm (null without a volume).",
       "returnsDoc": null
     },
     {
@@ -4598,6 +4615,11 @@
         "jsName": "perf",
         "tsType": "NiiVuePerf",
         "reason": "non-serializable nominal type: NiiVuePerf"
+      },
+      {
+        "jsName": "planeOutlines",
+        "tsType": "PlaneOutline",
+        "reason": "non-serializable nominal type: PlaneOutline"
       },
       {
         "jsName": "settingsFillPolicy",

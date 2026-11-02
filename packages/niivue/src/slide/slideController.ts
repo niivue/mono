@@ -37,6 +37,11 @@ export interface NVSlideControllerOptions {
    * on release. As NiiVue's windowing: x widens the window, y lowers its centre.
    */
   onWindow?: (dx: number, dy: number, done: boolean) => void
+  /**
+   * A contrast drag released over this box (slide base pixels). As NiiVue's
+   * contrast mode, the app sets the window to the intensity range inside it.
+   */
+  onContrast?: (box: { start: NVSlidePoint; end: NVSlidePoint }) => void
   /** A ruler completed (also kept in {@link NVSlideController.measurements}). */
   onMeasure?: (measurement: NVSlideMeasurement) => void
   /** Something to redraw: a ruler grew, or the measurements changed. */
@@ -59,8 +64,9 @@ type Gesture = {
 /**
  * Pointer and wheel gestures for an NVSlide on its own canvas, with a primary
  * (left) and secondary (right) drag mode as NiiVue has: `pan`, `crosshair`,
- * `crosshairPan`, `windowing` (and `contrast`, which drags the window the same
- * way), `measurement` or `none`. The wheel always zooms about the pointer.
+ * `crosshairPan`, `windowing`, `contrast` (a box), `measurement` or `none`.
+ * The wheel always zooms about the pointer. `slideOverlayContent` draws the
+ * rulers and the contrast box.
  */
 export class NVSlideController {
   primaryDragMode: DRAG_MODE
@@ -69,6 +75,8 @@ export class NVSlideController {
   readonly measurements: NVSlideMeasurement[] = []
   /** The ruler being dragged, or null. */
   activeMeasurement: NVSlideMeasurement | null = null
+  /** The box a contrast drag is selecting, or null. */
+  selection: { start: NVSlidePoint; end: NVSlidePoint } | null = null
 
   private readonly _canvas: HTMLCanvasElement
   private readonly _options: NVSlideControllerOptions
@@ -144,9 +152,12 @@ export class NVSlideController {
     }
     this._canvas.setPointerCapture?.(event.pointerId)
     if (mode === DRAG_MODE.crosshair) this._crosshairAt(x, y)
-    if (mode === DRAG_MODE.measurement) {
+    if (mode === DRAG_MODE.measurement || mode === DRAG_MODE.contrast) {
       const start = this._slidePoint(x, y)
-      if (start) this.activeMeasurement = { start, end: { ...start } }
+      if (start && mode === DRAG_MODE.measurement)
+        this.activeMeasurement = { start, end: { ...start } }
+      if (start && mode === DRAG_MODE.contrast)
+        this.selection = { start, end: { ...start } }
     }
   }
 
@@ -174,9 +185,16 @@ export class NVSlideController {
         this._crosshairAt(x, y)
         break
       case DRAG_MODE.windowing:
-      case DRAG_MODE.contrast:
         this._options.onWindow?.(dx, dy, false)
         break
+      case DRAG_MODE.contrast: {
+        const end = this._slidePoint(x, y)
+        if (this.selection && end) {
+          this.selection.end = end
+          this._options.onChange?.()
+        }
+        break
+      }
       case DRAG_MODE.measurement: {
         const end = this._slidePoint(x, y)
         if (this.activeMeasurement && end) {
@@ -205,8 +223,13 @@ export class NVSlideController {
     this._canvas.releasePointerCapture?.(g.pointerId)
     if (committed && g.mode === DRAG_MODE.crosshairPan && !g.isDrag)
       this._crosshairAt(g.startX, g.startY)
-    if (g.mode === DRAG_MODE.windowing || g.mode === DRAG_MODE.contrast)
-      this._options.onWindow?.(0, 0, true)
+    if (g.mode === DRAG_MODE.windowing) this._options.onWindow?.(0, 0, true)
+    if (g.mode === DRAG_MODE.contrast) {
+      const box = this.selection
+      this.selection = null
+      if (committed && box && g.isDrag) this._options.onContrast?.(box)
+      this._options.onChange?.()
+    }
     if (g.mode === DRAG_MODE.measurement) {
       const ruler = this.activeMeasurement
       this.activeMeasurement = null

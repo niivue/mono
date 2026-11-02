@@ -1476,6 +1476,21 @@ export type DragOverlay = {
   }>
 }
 
+/**
+ * A rectangle outlined in world space, e.g. the field of view of an NVSlide
+ * pane on the volume it was cut from. Drawn as a frame in the 3D render and
+ * projected onto every 2D slice: a rectangle on a parallel slice, a line on an
+ * orthogonal one.
+ */
+export type PlaneOutline = {
+  /** The four corners in world mm, in order around the rectangle. */
+  cornersMM: [number, number, number][]
+  /** RGBA 0..1. Default: the crosshair colour. */
+  color?: number[]
+  /** Line width in canvas pixels on 2D slices. Default 2. */
+  width?: number
+}
+
 export type CompletedMeasurement = {
   startMM: [number, number, number]
   endMM: [number, number, number]

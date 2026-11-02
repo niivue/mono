@@ -132,6 +132,7 @@ import type {
   NVSignalDisplay,
   NVSignal as NVSignalType,
   NVTractOptions,
+  PlaneOutline,
   SaveVolumeOptions,
   SignalAnnotation,
   SignalSidecar,
@@ -1391,6 +1392,27 @@ export default class NiiVue extends EventTarget {
   set crosshairColor(v: number[]) {
     this.model.ui.crosshairColor = v
     this.emit('change', { property: 'crosshairColor', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Rectangles outlined in world mm, e.g. an NVSlide pane's field of view:
+   * a frame in the 3D render, projected onto every 2D slice. An outline needs
+   * four finite corners; one without is dropped.
+   */
+  get planeOutlines(): PlaneOutline[] {
+    return this.model.planeOutlines
+  }
+  set planeOutlines(v: PlaneOutline[]) {
+    this.model.planeOutlines = v.filter(
+      (o) =>
+        o.cornersMM.length === 4 &&
+        o.cornersMM.every((c) => c.length === 3 && c.every(Number.isFinite)),
+    )
+    this.emit('change', {
+      property: 'planeOutlines',
+      value: this.model.planeOutlines,
+    })
     this.drawScene()
   }
 
@@ -4860,6 +4882,14 @@ export default class NiiVue extends EventTarget {
    * Convert RAS voxel coordinates to scene fraction [0,1].
    * Uses the background volume's matRAS for the vox→mm conversion.
    */
+  /** A RAS voxel of the base volume in world mm (null without a volume). */
+  vox2mm(vox: [number, number, number]): [number, number, number] | null {
+    const vol = this.volumes[0]
+    if (!vol?.matRAS) return null
+    const mm = NVTransforms.vox2mm(null, vox, vol.matRAS)
+    return [mm[0], mm[1], mm[2]]
+  }
+
   vox2frac(vox: [number, number, number]): [number, number, number] {
     if (this.volumes.length === 0) return [0.5, 0.5, 0.5]
     const vol = this.volumes[0]

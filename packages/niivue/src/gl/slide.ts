@@ -1,3 +1,4 @@
+import { ubuntu } from '@/assets/fonts'
 import type {
   NVSlide,
   NVSlideColor,
@@ -5,13 +6,17 @@ import type {
   NVSlideScreenRect,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
+import type { SlideOverlayContent } from '@/slide/slideOverlay'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
+import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { NVRenderer } from '@/view/NVRenderer'
 import { timeChunkPhase } from '@/volume/chunkTiming'
+import { FontRenderer } from './font'
+import { LineRenderer } from './line'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
 
@@ -39,11 +44,21 @@ export class SlideRenderer extends NVRenderer {
    * space. Mirrors the NiiVue view hook. See view/NVOverlayHook.ts.
    */
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
+  /**
+   * Rulers and selection drawn over the tiles with NiiVue's own line and font
+   * renderers, before `overlayDraw` (see `slideOverlayContent`).
+   */
+  overlay: SlideOverlayContent | null = null
+  private readonly _lines = new LineRenderer()
+  private readonly _font = new FontRenderer()
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
 
     this._gl = gl
+    this._lines.init(gl)
+    // The atlas loads asynchronously; labels draw from the frame after.
+    void this._font.init(gl, ubuntu)
     this._shader = new Shader(gl, slideVertShader, slideFragShader)
     this._vao = gl.createVertexArray()
     if (!this._vao) throw new Error('Failed to create slide VAO')
@@ -201,6 +216,8 @@ export class SlideRenderer extends NVRenderer {
       }
     }
 
+    this._drawOverlay(gl, width, height, screen.devicePixelRatio ?? 1)
+
     // UIKit overlay hook: last screen-space draw of the frame, with blend on and
     // depth/cull off (the widget sets and restores its own state as needed).
     if (this.overlayDraw) {
@@ -230,6 +247,8 @@ export class SlideRenderer extends NVRenderer {
 
   destroy(): void {
     this._textures.clear()
+    this._lines.destroy()
+    this._font.destroy()
     const gl = this._gl
     if (gl) {
       if (this._placeholderTexture) gl.deleteTexture(this._placeholderTexture)
@@ -242,6 +261,41 @@ export class SlideRenderer extends NVRenderer {
     this._shader = null
     this._gl = null
     this.isReady = false
+  }
+
+  private _drawOverlay(
+    gl: WebGL2RenderingContext,
+    width: number,
+    height: number,
+    dpr: number,
+  ): void {
+    const content = this.overlay
+    if (!content) return
+    if (content.lines.length > 0) {
+      this._lines.resize(gl, width, height)
+      const lines = content.lines.map((l) =>
+        buildLine(l.x0, l.y0, l.x1, l.y1, l.thickness, l.color),
+      )
+      this._lines.draw(gl, null, null, null, lines, lines.length)
+    }
+    if (content.labels.length > 0 && this._font.isReady) {
+      this._font.resize(gl, width, height, dpr)
+      const text = content.labels.map((t) =>
+        this._font.buildText(
+          t.str,
+          t.x,
+          t.y,
+          t.scale,
+          t.color,
+          t.anchorX,
+          t.anchorY,
+          t.backColor,
+        ),
+      )
+      this._font.draw(gl, null, null, null, text, 4096)
+    }
+    // The line and font passes re-enable depth; the overlay hook expects it off.
+    gl.disable(gl.DEPTH_TEST)
   }
 
   private textureForBitmap(

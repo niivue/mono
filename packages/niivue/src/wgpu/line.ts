@@ -14,10 +14,12 @@ export class LineRenderer extends NVRenderer {
     this.paramsBuffer = null
   }
 
+  /** `depthFormat` null: for a pass with no depth attachment (the slide pane). */
   async init(
     device: GPUDevice,
     format: GPUTextureFormat,
     msaaCount: number,
+    depthFormat: GPUTextureFormat | null = 'depth24plus',
   ): Promise<void> {
     if (this.isReady) return
     // Uniforms for canvas
@@ -63,11 +65,13 @@ export class LineRenderer extends NVRenderer {
           },
         ],
       },
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
-      },
+      ...(depthFormat && {
+        depthStencil: {
+          depthWriteEnabled: false,
+          depthCompare: 'always',
+          format: depthFormat,
+        },
+      }),
       primitive: { topology: 'triangle-strip' },
     })
     this.isReady = true

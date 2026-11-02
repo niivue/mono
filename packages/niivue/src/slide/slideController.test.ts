@@ -20,6 +20,7 @@ function rig(options: { primary?: DRAG_MODE; secondary?: DRAG_MODE } = {}) {
   } as unknown as NVSlide
   const crosshairs: number[][] = []
   const windows: Array<[number, number, boolean]> = []
+  const boxes: unknown[] = []
   const ctl = new NVSlideController(canvas, {
     slide: () => slide,
     screen: () => ({ widthCss: 100, heightCss: 100 }),
@@ -27,6 +28,7 @@ function rig(options: { primary?: DRAG_MODE; secondary?: DRAG_MODE } = {}) {
     secondaryDragMode: options.secondary,
     onCrosshair: (p) => crosshairs.push([p.x, p.y]),
     onWindow: (dx, dy, done) => windows.push([dx, dy, done]),
+    onContrast: (box) => boxes.push(box),
   })
   const fire = (type: string, x: number, y: number, button = 0) =>
     canvas.dispatchEvent(
@@ -38,7 +40,7 @@ function rig(options: { primary?: DRAG_MODE; secondary?: DRAG_MODE } = {}) {
         deltaY: -100,
       }),
     )
-  return { ctl, fire, pans, zooms, crosshairs, windows }
+  return { ctl, fire, pans, zooms, crosshairs, windows, boxes }
 }
 
 describe('NVSlideController', () => {
@@ -102,6 +104,19 @@ describe('NVSlideController', () => {
       { start: { x: 5, y: 5 }, end: { x: 40, y: 5 } },
     ])
     expect(r.ctl.activeMeasurement).toBeNull()
+  })
+
+  test('contrast selects a box and reports it on release', () => {
+    const r = rig({ primary: DRAG_MODE.contrast })
+    r.fire('pointerdown', 2, 3)
+    r.fire('pointermove', 20, 30)
+    expect(r.ctl.selection).toEqual({
+      start: { x: 2, y: 3 },
+      end: { x: 20, y: 30 },
+    })
+    r.fire('pointerup', 20, 30)
+    expect(r.boxes).toEqual([{ start: { x: 2, y: 3 }, end: { x: 20, y: 30 } }])
+    expect(r.ctl.selection).toBeNull()
   })
 
   test('the wheel zooms', () => {

@@ -45,6 +45,11 @@ import * as NVMeasurement from '@/view/NVMeasurement'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
+import {
+  buildPlaneOutline3DRenderData,
+  buildPlaneOutlineLines,
+  mergeRenderData,
+} from '@/view/NVPlaneOutline'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
@@ -1089,9 +1094,12 @@ export default class NVView {
     // radius is a screen weight, so it depends on the tile's mm-per-pixel. Each
     // tile that draws one claims the next vertex slot.
     let crosshairSlot = 0
-    const ann3DData = md.annotation.isVisibleIn3D
-      ? NVAnnotation.buildAnnotation3DRenderData(md)
-      : null
+    const ann3DData = mergeRenderData(
+      md.annotation.isVisibleIn3D
+        ? NVAnnotation.buildAnnotation3DRenderData(md)
+        : null,
+      buildPlaneOutline3DRenderData(md.planeOutlines, md.ui.crosshairColor),
+    )
     const crossLinesList: ReturnType<typeof buildLine>[] = []
     for (let i = 0; i < screenSlices.length; i++) {
       const tile = screenSlices[i]
@@ -2051,6 +2059,14 @@ export default class NVView {
         )
       }
     }
+    allLines.push(
+      ...buildPlaneOutlineLines(
+        md.planeOutlines,
+        screenSlices,
+        buildLine,
+        md.ui.crosshairColor,
+      ),
+    )
     // Bounds border
     if (this._isSubCanvasBounds && this.options.showBoundsBorder) {
       const bc = (this.options.boundsBorderColor as number[]) ?? [1, 1, 1, 1]

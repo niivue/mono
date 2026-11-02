@@ -30,6 +30,7 @@ import NiiVue, {
   SLICE_TYPE,
   SlideRenderer,
   SlideRendererGPU,
+  slideOverlayContent,
   VolumeSliceSource,
 } from '@niivue/niivue'
 // The crosshair marker is a UIKit widget: the slide renderers expose the same
@@ -42,7 +43,11 @@ const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
 
 // DANDI serves every zarr asset from one public, CORS-enabled bucket, keyed by
 // the asset's zarr id -- no API call and no credentials needed to stream one.
-const DANDI_ZARR = 'https://dandiarchive.s3.amazonaws.com/zarr'
+// ?local reads a copy synced into public/zarr/<zarrId> instead (development):
+//   aws s3 sync --no-sign-request s3://dandiarchive/zarr/<zarrId> public/zarr/<zarrId>
+const DANDI_ZARR = params.has('local')
+  ? new URL('zarr', location.href).href.replace(/\/$/, '')
+  : 'https://dandiarchive.s3.amazonaws.com/zarr'
 
 // Verified live (shape / chunks / dtype read from each level's .zarray). Both
 // dandisets are CC-BY-4.0; the credit line is rendered in the page footer.
@@ -227,6 +232,8 @@ let planeTimer = 0
 // back off the volume instead of paying for a probe fetch of its own.
 let windowRange = null
 let slideInput = null
+// The plane source behind `slide`, for the contrast box's intensity read.
+let sliceSource = null
 let crosshair = null
 // The volume pane's crosshair, in RAS voxels, mirrored into the slide pane. Held
 // in voxels rather than screen pixels: a level swap must not move it.
@@ -458,6 +465,7 @@ function rebuildSlide({ keepViewport = true } = {}) {
     // um), so convert here rather than mislabel the plane's physical size.
     pixelSpacingMM: [spacing[u] / 1000, spacing[v] / 1000],
   })
+  sliceSource = source
   slide = NVSlide.fromSource(source, {
     maxCacheBytes: SLIDE_CACHE_BYTES,
     targetScreenPixelsPerTilePixel: 0.75,
@@ -520,6 +528,19 @@ function renderSlide() {
     }
     slide.clampViewport(screen)
     updateCrosshair(screen)
+    updateFieldOfView(screen)
+    // Rulers and the contrast box, drawn by core in NiiVue's own style.
+    slideView.renderer.overlay = slideOverlayContent(
+      slide,
+      screen,
+      slideInput,
+      {
+        measureLineColor: nv.measureLineColor,
+        measureTextColor: nv.measureTextColor,
+        rulerWidth: nv.rulerWidth,
+        selectionBoxColor: nv.selectionBoxColor,
+      },
+    )
     if (slideView.kind === 'gpu') {
       slideView.renderer.render([slide], screen)
     } else {
@@ -1041,22 +1062,82 @@ function applyColormap() {
   rebuildSlide()
 }
 
+// The slide pane's field of view, outlined on the volume pane: the pane's four
+// corners (clipped to the plane) as voxels on the slide's plane, then mm.
+let fovKey = ''
+function updateFieldOfView(screen) {
+  if (!nv || !slide || !chunkSource) return
+  const [u, v] = PLANE_AXES[els.axis.value]
+  const dims = shape()
+  const clip = (value, n) => Math.max(0, Math.min(n, value))
+  const corners = [
+    [0, 0],
+    [screen.widthCss, 0],
+    [screen.widthCss, screen.heightCss],
+    [0, screen.heightCss],
+  ].map(([x, y]) => {
+    const p = slide.screenToSlide(x, y, screen)
+    const vox = [0, 0, 0]
+    vox[AXIS_INDEX[els.axis.value]] = planeIndex
+    vox[u] = clip(p.x, dims[u]) - 0.5
+    vox[v] = clip(p.y, dims[v]) - 0.5
+    return nv.vox2mm(vox)
+  })
+  if (corners.some((c) => !c)) return
+  // Only a real change reaches NiiVue, which redraws on every set.
+  const key = corners
+    .flat()
+    .map((n) => n.toFixed(3))
+    .join()
+  if (key === fovKey) return
+  fovKey = key
+  nv.planeOutlines = els.follow.checked
+    ? [{ cornersMM: corners, color: [0.2, 0.9, 1, 1], width: 2 }]
+    : []
+}
+
 // ---------------------------------------------------------------- slide input
 
 // A windowing drag on the slide steps the window as NiiVue's does (0.5% of the
-// window's span per CSS pixel: x widens, y lowers the centre) and applies it on
-// release, since every rebuild drops the slide's in-flight tiles.
+// span the drag started from per CSS pixel: x widens, y lowers the centre). The
+// volume pane follows live; the slide rebuilds on release, since every rebuild
+// drops its in-flight tiles.
 let windowDrag = null
 function onSlideWindow(dx, dy, done) {
   if (!windowRange) return
-  windowDrag ??= [...windowRange]
-  const step = (windowRange[1] - windowRange[0]) * 0.005
-  const width = Math.max(step, windowDrag[1] - windowDrag[0] + dx * step)
-  const centre = (windowDrag[0] + windowDrag[1]) / 2 - dy * step
-  windowDrag = [centre - width / 2, centre + width / 2]
-  els.window.value = `${formatValue(windowDrag[0])},${formatValue(windowDrag[1])}`
+  windowDrag ??= { start: [...windowRange], now: [...windowRange] }
+  const step = (windowDrag.start[1] - windowDrag.start[0]) * 0.005
+  const [lo, hi] = windowDrag.now
+  const width = Math.max(step, hi - lo + dx * step)
+  const centre = (lo + hi) / 2 - dy * step
+  windowDrag.now = [centre - width / 2, centre + width / 2]
+  setWindowText(windowDrag.now)
+  previewVolumeWindow(windowDrag.now)
   if (!done) return
   windowDrag = null
+  applyWindow()
+}
+
+function setWindowText([lo, hi]) {
+  els.window.value = `${formatValue(lo)},${formatValue(hi)}`
+}
+
+function previewVolumeWindow([lo, hi]) {
+  const index = activeCv ? volumeIndexById(activeCv.volume.id) : -1
+  if (index >= 0) nv.setVolume(index, { calMin: lo, calMax: hi })
+}
+
+// A contrast box sets the window to the intensity range inside it, as NiiVue's
+// contrast drag does, read at the level the slide is showing.
+async function onSlideContrast(box) {
+  if (!slide || !sliceSource) return
+  const level = slide.selectLevel()?.index ?? 0
+  const range = await sliceSource.intensityRange(
+    { x0: box.start.x, y0: box.start.y, x1: box.end.x, y1: box.end.y },
+    level,
+  )
+  if (!range) return
+  setWindowText(range)
   applyWindow()
 }
 
@@ -1067,6 +1148,9 @@ slideInput = new NVSlideController(els.slideCanvas, {
   secondaryDragMode: Number(els.slideSecondary.value),
   onCrosshair: slideCrosshair,
   onWindow: onSlideWindow,
+  onContrast: (box) => {
+    void onSlideContrast(box)
+  },
   onChange: requestSlideRender,
 })
 els.volumePrimary.addEventListener('change', () => {
@@ -1129,6 +1213,8 @@ async function main() {
     sliceType: VIEWS[els.view.value] ?? SLICE_TYPE.RENDER,
     maxTextureDimension3D: 256,
     maxChunkResidencyBytes: DEFAULT_RESIDENCY_BYTES,
+    // Faint crosshair arms through the volume, as mesh x-ray draws them.
+    meshXRay: 0.1,
     primaryDragMode: Number(els.volumePrimary.value),
     secondaryDragMode: Number(els.volumeSecondary.value),
   })

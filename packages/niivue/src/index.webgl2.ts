@@ -229,6 +229,14 @@ export type {
   NVSlidePoint,
 } from './slide/slideController'
 export { NVSlideController, SLIDE_DRAG_MODES } from './slide/slideController'
+export type {
+  SlideOverlayContent,
+  SlideOverlayLabel,
+  SlideOverlayLine,
+  SlideOverlaySource,
+  SlideOverlayStyle,
+} from './slide/slideOverlay'
+export { slideOverlayContent } from './slide/slideOverlay'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export type {

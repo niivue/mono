@@ -1,15 +1,24 @@
+import { ubuntu } from '@/assets/fonts'
 import type {
   NVSlide,
   NVSlideColor,
   NVSlideScreen,
   NVSlideScreenRect,
 } from '@/slide/NVSlide'
+import type { SlideOverlayContent } from '@/slide/slideOverlay'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
+import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { timeChunkPhase } from '@/volume/chunkTiming'
+import { FontRenderer } from './font'
+import { LineRenderer } from './line'
+
+// Storage sizes for the overlay, as NVViewGPU's: 48 B a line, 64 B a glyph.
+const MAX_OVERLAY_LINES = 1024
+const MAX_OVERLAY_GLYPHS = 2048
 
 const shaderCode = /* wgsl */ `
 struct SlideUniforms {
@@ -125,6 +134,17 @@ export class SlideRendererGPU {
    * and reports sampleCount 1. See view/NVOverlayHook.ts.
    */
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
+  /**
+   * Rulers and selection drawn over the tiles with NiiVue's own line and font
+   * renderers, before `overlayDraw` (see `slideOverlayContent`).
+   */
+  overlay: SlideOverlayContent | null = null
+  private readonly _lines = new LineRenderer()
+  private readonly _font = new FontRenderer()
+  private _lineStorage: GPUBuffer | null = null
+  private _glyphStorage: GPUBuffer | null = null
+  private _lineBindGroup: GPUBindGroup | null = null
+  private _fontBindGroup: GPUBindGroup | null = null
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -219,7 +239,7 @@ export class SlideRendererGPU {
       [1, 1],
     )
 
-    return new SlideRendererGPU(
+    const renderer = new SlideRendererGPU(
       canvas,
       device,
       context,
@@ -229,6 +249,77 @@ export class SlideRendererGPU {
       placeholderTexture,
       format,
     )
+    await renderer._initOverlay()
+    return renderer
+  }
+
+  // The slide pass has no depth attachment and no MSAA.
+  private async _initOverlay(): Promise<void> {
+    const device = this._device
+    await this._lines.init(device, this._format, 1, null)
+    await this._font.init(device, this._format, 1, ubuntu, null)
+    this._lineStorage = device.createBuffer({
+      size: MAX_OVERLAY_LINES * 48,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    })
+    this._glyphStorage = device.createBuffer({
+      size: MAX_OVERLAY_GLYPHS * 64,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    })
+    this._lineBindGroup = this._lines.createBindGroup(device, this._lineStorage)
+    this._fontBindGroup = this._font.createBindGroup(
+      device,
+      this._glyphStorage,
+      this._sampler,
+    )
+  }
+
+  private _drawOverlay(
+    pass: GPURenderPassEncoder,
+    width: number,
+    height: number,
+    dpr: number,
+  ): void {
+    const content = this.overlay
+    if (!content) return
+    const device = this._device
+    if (content.lines.length > 0 && this._lineStorage) {
+      this._lines.resize(device, width, height)
+      const lines = content.lines.map((l) =>
+        buildLine(l.x0, l.y0, l.x1, l.y1, l.thickness, l.color),
+      )
+      this._lines.draw(
+        device,
+        pass,
+        this._lineBindGroup,
+        this._lineStorage,
+        lines,
+        MAX_OVERLAY_LINES,
+      )
+    }
+    if (content.labels.length > 0 && this._glyphStorage) {
+      this._font.resize(device, width, height, dpr)
+      const text = content.labels.map((t) =>
+        this._font.buildText(
+          t.str,
+          t.x,
+          t.y,
+          t.scale,
+          t.color,
+          t.anchorX,
+          t.anchorY,
+          t.backColor,
+        ),
+      )
+      this._font.draw(
+        device,
+        pass,
+        this._fontBindGroup,
+        this._glyphStorage,
+        text,
+        MAX_OVERLAY_GLYPHS,
+      )
+    }
   }
 
   render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
@@ -332,6 +423,8 @@ export class SlideRendererGPU {
       }
     }
 
+    this._drawOverlay(pass, width, height, dpr)
+
     // UIKit overlay hook: append the widget's draws to the open pass. The slide
     // pass has no depth attachment (depthFormat omitted) and no MSAA.
     if (this.overlayDraw) {
@@ -363,6 +456,8 @@ export class SlideRendererGPU {
 
   destroy(): void {
     this._textures.clear()
+    this._lineStorage?.destroy()
+    this._glyphStorage?.destroy()
     for (const buffer of this._uniformPool) {
       buffer.destroy()
     }

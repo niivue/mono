@@ -2063,9 +2063,13 @@ and its volumes alive."""
         self.send({"cmd": "updateVolumeData", "args": _make_args(volume_index, data)})
 
     async def vox2frac(self, vox: Any) -> Any:
+        return await self._request("vox2frac", _make_args(vox))
+
+    async def vox2mm(self, vox: Any) -> Any:
         """Convert RAS voxel coordinates to scene fraction [0,1].
 
         Uses the background volume's matRAS for the vox→mm conversion.
+        A RAS voxel of the base volume in world mm (null without a volume).
 
         Parameters
         ----------
@@ -2073,9 +2077,9 @@ and its volumes alive."""
 
         Returns
         -------
-        [number, number, number]
+        [number, number, number] | null
         """
-        return await self._request("vox2frac", _make_args(vox))
+        return await self._request("vox2mm", _make_args(vox))
 
     def when_chunk_stream_settles(self, timeout_ms: Any = _UNSET) -> None:
         """Resolves once the bricks the view asked for are resident and drawn: the renderer admits one brick when the plan is set and streams the rest over the following frames, and a change that rebuilds the bricks' textures (turning on `volumeIllumination`, say) streams them again, so a screenshot taken straight after {@link setVolumeChunkGrid} or such a change would show a partly-tiled volume.

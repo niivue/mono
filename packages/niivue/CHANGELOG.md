@@ -1,3 +1,14 @@
+## 1.0.0-rc.73 (2026-11-02)
+
+### Fixes
+
+- **niivue:** refuse oversized thumbnail and matcap images before decoding ([#385](https://github.com/niivue/mono/issues/385))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.72 (2026-11-02)
 
 ### Fixes

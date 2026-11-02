@@ -1,4 +1,5 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
+import * as Annotation from '@/annotation'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
 import { getAnnotationSelection } from '@/annotation/selection'
@@ -21,6 +22,7 @@ import {
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
+  resetDragState,
 } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
 import type { AddMeasurementOptions } from '@/control/measurements'
@@ -607,6 +609,9 @@ export default class NiiVue extends EventTarget {
     start: AnnotationPoint
     end: AnnotationPoint
     width?: number
+    // Kept as drawn: an erased shape's polygons differ from its bounds.
+    polygons: VectorAnnotation['polygons']
+    isErased: boolean
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   // Sync/broadcast state
@@ -2466,12 +2471,50 @@ export default class NiiVue extends EventTarget {
     // A drag in progress too: pointer-up would otherwise commit it, e.g. a
     // half-dragged bidirectional short axis as a new long axis (#471).
     this._annotationShapeStart = null
+    // A freehand or 3D stroke held mid-drag would commit on pointer-up (#470).
+    this._annotationBrushPath = []
+    this._frozenLoopPoints = null
+    this._annotation3DActive = false
+    this._annotation3DMMPath = []
+    this._annotation3DFace = null
+    // A control-point resize drag would write into the old annotation; put
+    // the shape back, since pointer-up's stats recompute will not run.
+    this._revertResize()
+    this._resizingControlPoint = -1
+    this._resizingAnnotation = null
+    this._resizeOriginalShape = null
     this._annotationPolyPoints = null
     this._bidirectionalLong = null
     this.model._annotationPreview = null
     this._livewireSlice = null
     this._livewireField = null
     this._livewireSeed = null
+  }
+  private _revertResize(): void {
+    const shape = this._resizingAnnotation?.shape
+    const original = this._resizeOriginalShape
+    if (!shape || !original || !this._resizingAnnotation) return
+    shape.start = original.start
+    shape.end = original.end
+    shape.width = original.width
+    this._resizingAnnotation.polygons = original.polygons
+    const sel = this.model._annotationSelection
+    if (sel) sel.controlPoints = Annotation.getControlPoints(shape)
+  }
+  /**
+   * A change that replaces the scene's geometry drops the annotation in
+   * progress and, when it was being dragged, ends that drag too, so moves
+   * before the release do not fall through to the camera orbit (#470). Other
+   * drags (crosshair, contrast) are left alone.
+   */
+  private _abandonForNewScene(): void {
+    const isAnnotationDrag =
+      this._annotationShapeStart !== null ||
+      this._annotationBrushPath.length > 0 ||
+      this._annotation3DActive ||
+      this._resizingControlPoint >= 0
+    this._abandonAnnotationInProgress()
+    if (isAnnotationDrag && this.isDragging) resetDragState(this)
   }
 
   get selectedAnnotation(): string | null {
@@ -2584,6 +2627,9 @@ export default class NiiVue extends EventTarget {
 
   loadAnnotationsJSON(json: string): void {
     this.model.annotations = JSON.parse(json) as VectorAnnotation[]
+    // A half-drawn shape and the selection belong to the replaced set (#470).
+    this._abandonForNewScene()
+    this.model._annotationSelection = null
     this._annotationUndoStack.clear()
     this.drawScene()
   }
@@ -3188,6 +3234,8 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: previous[i], index: i })
     }
     this.model.volumes = loaded
+    // A half-drawn shape's points belong to the old background (#470).
+    this._abandonForNewScene()
     this.model._setupPivot3D()
     // The volume set changed: drop the associated-graph memo so a same-named 4D
     // reload doesn't reuse the previous volume's sampled BOLD time-course (the
@@ -3771,6 +3819,7 @@ export default class NiiVue extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = [...this.model.getVolumes()]
     await this.model.removeAllVolumes()
+    this._abandonForNewScene()
     // One event per volume, after the removal, in reverse index order (so
     // each detail's index was valid at the time that volume was removed).
     for (let i = vols.length - 1; i >= 0; i--) {
@@ -3790,6 +3839,8 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
     this.model.removeVolume(volumeIndex)
+    // Removing the background changes the geometry a half-drawn shape used.
+    if (volumeIndex === 0) this._abandonForNewScene()
     // Emit after the removal, like every other mutation event: the detail
     // carries the removed volume and its former index; the collection no
     // longer holds it.
@@ -3813,11 +3864,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeUp(0) // move the background image up one position
    */
   async moveVolumeUp(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, volumeIndex + 1)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, volumeIndex + 1)
   }
 
   /**
@@ -3827,11 +3874,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeDown(1) // move the second image down to the background position
    */
   async moveVolumeDown(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, volumeIndex - 1)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, volumeIndex - 1)
   }
 
   /**
@@ -3841,12 +3884,15 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeToTop(0) // move the background image to the top layer
    */
   async moveVolumeToTop(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(
-      volumeIndex,
-      this.model.volumes.length - 1,
-    )
-    if (!changed) return
+    await this._moveVolume(volumeIndex, this.model.volumes.length - 1)
+  }
+
+  private async _moveVolume(from: number, to: number): Promise<void> {
+    if (!this._checkBounds(this.model.volumes, from, 'Volume')) return
+    const background = this.model.volumes[0]
+    if (!this.model.moveVolume(from, to)) return
+    // A new background changes the geometry a half-drawn shape used (#470).
+    if (this.model.volumes[0] !== background) this._abandonForNewScene()
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
     await this._updateGLChanged()
   }
@@ -3858,11 +3904,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeToBottom(3) // move the 4th volume to the background position
    */
   async moveVolumeToBottom(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, 0)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, 0)
   }
 
   getMeshShader(meshIndex: number): string | undefined {

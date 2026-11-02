@@ -297,3 +297,184 @@ test('Escape mid-drag cancels a bidirectional short axis (#471)', async ({
     turned: false,
   })
 })
+
+for (const [name, call] of [
+  ['loadVolumes', `await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])`],
+  ['removeAllVolumes', 'await nv.removeAllVolumes()'],
+  ['removeVolume(0)', 'await nv.removeVolume(0)'],
+  ['loadAnnotationsJSON', `nv.loadAnnotationsJSON('[]')`],
+] as const) {
+  test(`${name} drops a half-drawn measurement (#470)`, async ({ page }) => {
+    test.setTimeout(90_000)
+    const r = await page.evaluate(`(async () => {
+      ${setup('AXIAL', 'bidirectional')}
+      drag([150, 200], [250, 200])
+      const before = nv._bidirectionalLong !== null
+      ${call}
+      return { before, after: nv._bidirectionalLong }
+    })()`)
+    expect(r).toEqual({ before: true, after: null })
+  })
+}
+
+test('a volume move that changes the background drops a half-drawn measurement (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    await nv.loadVolumes([
+      { url: '/volumes/mni152.nii.gz' },
+      { url: '/volumes/fs/T1_oblique.nii.gz' },
+    ])
+    drag([150, 200], [250, 200])
+    const before = nv._bidirectionalLong !== null
+    await nv.moveVolumeToBottom(1)
+    return { before, after: nv._bidirectionalLong }
+  })()`)
+  expect(r).toEqual({ before: true, after: null })
+})
+
+test('a freehand stroke held across loadVolumes does not commit (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const count = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'freehand')}
+    nv.annotationBrushRadius = 3
+    ev('pointerdown', 150, 150, 0)
+    ev('pointermove', 200, 160, -1)
+    ev('pointermove', 250, 200, -1)
+    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    // The drag ended with it: a move before release does not turn the camera.
+    const view = [nv.azimuth, nv.elevation]
+    ev('pointermove', 260, 220, -1)
+    const turned = nv.azimuth !== view[0] || nv.elevation !== view[1]
+    const dragging = nv.isDragging
+    ev('pointerup', 260, 220, 0)
+    return { count: nv.annotations.length, turned, dragging }
+  })()`)
+  expect(count).toEqual({ count: 0, turned: false, dragging: false })
+})
+
+test('an abandoned resize keeps the erased part of a shape erased (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'measureRect')}
+    drag([120, 120], [200, 200])
+    // Erase a vertical stripe, splitting the rectangle in two.
+    nv.annotationIsErasing = true
+    nv.annotationBrushRadius = 3
+    ev('pointerdown', 160, 100, 0)
+    ev('pointermove', 160, 160, -1)
+    ev('pointermove', 160, 220, -1)
+    ev('pointerup', 160, 220, 0)
+    nv.annotationIsErasing = false
+    const ann = nv.annotations[0]
+    const erased = JSON.stringify(ann.polygons)
+    const split = ann.polygons.length === 2
+    click([140, 160]) // select the left half
+    ev('pointerdown', 200, 200, 0) // the shape's bottom-right corner
+    const resizing = nv._resizingControlPoint >= 0
+    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    ev('pointerup', 200, 200, 0)
+    return { split, resizing, kept: JSON.stringify(nv.annotations[0].polygons) === erased }
+  })()`)
+  expect(r).toEqual({ split: true, resizing: true, kept: true })
+})
+
+test('a completed resize keeps the erased part of a shape erased (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'measureRect')}
+    drag([120, 120], [200, 200])
+    nv.annotationIsErasing = true
+    nv.annotationBrushRadius = 3
+    ev('pointerdown', 160, 100, 0)
+    ev('pointermove', 160, 160, -1)
+    ev('pointermove', 160, 220, -1)
+    ev('pointerup', 160, 220, 0)
+    nv.annotationIsErasing = false
+    const stats = JSON.stringify(nv.annotations[0].stats)
+    click([140, 160]) // select the left half
+    ev('pointerdown', 200, 200, 0)
+    ev('pointermove', 240, 240, -1)
+    ev('pointerup', 240, 240, 0)
+    const ann = nv.annotations[0]
+    const xs = ann.polygons.flatMap((p) => p.outer.map((q) => q.x))
+    const maxX = Math.max(ann.shape.start.x, ann.shape.end.x)
+    return {
+      split: ann.polygons.length === 2,
+      fitsBounds: Math.abs(Math.max(...xs) - maxX) < 1e-6,
+      remeasured: JSON.stringify(ann.stats) !== stats,
+    }
+  })()`)
+  expect(r).toEqual({ split: true, fitsBounds: true, remeasured: true })
+})
+
+test('collapsing an erased shape and expanding it again keeps the erasure (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'measureRect')}
+    drag([120, 120], [200, 200])
+    nv.annotationIsErasing = true
+    nv.annotationBrushRadius = 3
+    ev('pointerdown', 160, 100, 0)
+    ev('pointermove', 160, 160, -1)
+    ev('pointermove', 160, 220, -1)
+    ev('pointerup', 160, 220, 0)
+    nv.annotationIsErasing = false
+    click([140, 160]) // select the left half
+    // Right side handle onto the left edge: the collapse is refused, so the
+    // shape keeps its last valid width (here, half as wide).
+    ev('pointerdown', 200, 160, 0)
+    ev('pointermove', 160, 160, -1)
+    ev('pointermove', 120, 160, -1)
+    ev('pointerup', 120, 160, 0)
+    const shape = nv.annotations[0].shape
+    const kept = Math.abs(shape.end.x - shape.start.x) > 0
+    // And back out to the full width.
+    ev('pointerdown', 160, 160, 0)
+    ev('pointermove', 200, 160, -1)
+    ev('pointerup', 200, 160, 0)
+    return { kept, split: nv.annotations[0].polygons.length === 2 }
+  })()`)
+  expect(r).toEqual({ kept: true, split: true })
+})
+
+test('loadVolumes ends a control-point resize drag (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'rectangle')}
+    drag([120, 120], [200, 200])
+    click([160, 160]) // select it, so its corners are control points
+    const geometry = () => JSON.stringify([nv.annotations[0].shape, nv.annotations[0].polygons])
+    const original = geometry()
+    ev('pointerdown', 200, 200, 0)
+    ev('pointermove', 220, 220, -1)
+    const resizing = nv._resizingControlPoint >= 0 && geometry() !== original
+    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    const ended = nv._resizingControlPoint === -1 && !nv.isDragging
+    // The half-done resize is undone, so the shape matches its stats.
+    const reverted = geometry() === original
+    // A move after the load must not keep resizing the shape.
+    ev('pointermove', 250, 250, -1)
+    ev('pointerup', 250, 250, 0)
+    const unchanged = geometry() === original
+    return { resizing, ended, reverted, unchanged }
+  })()`)
+  expect(r).toEqual({
+    resizing: true,
+    ended: true,
+    reverted: true,
+    unchanged: true,
+  })
+})

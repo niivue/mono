@@ -4,6 +4,7 @@ import {
   shouldAppendMultiClickPoint,
   shouldStartFreshMultiClickContour,
 } from '@/annotation/multiClick'
+import type { ShapeBoundsUpdate } from '@/annotation/selection'
 import {
   emitOrientationChange,
   emitPan2DChange,
@@ -1082,7 +1083,29 @@ function pinchPointer(
   return true
 }
 
-function resetDragState(ctrl: NiiVue): void {
+/**
+ * A resized shape's polygons at `box`: an erased shape carries what is left
+ * of it there; an intact one is drawn afresh. Empty when `box` is degenerate.
+ */
+function resizedPolygons(
+  ctrl: NiiVue,
+  type: AnnotationTool,
+  box: ShapeBoundsUpdate,
+): PolygonWithHoles[] {
+  const original = ctrl._resizeOriginalShape
+  if (original?.isErased)
+    return (
+      Annotation.resizePolygons(type, original, box, original.polygons) ?? []
+    )
+  return Annotation.generateShape(
+    type,
+    box.start,
+    box.end,
+    box.width ?? ctrl.model.annotation.style.strokeWidth,
+  )
+}
+
+export function resetDragState(ctrl: NiiVue): void {
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
@@ -1557,10 +1580,19 @@ export function initInteraction(ctrl: NiiVue): void {
               if (ann?.shape) {
                 ctrl._annotationUndoStack.push(ctrl.model.annotations)
                 ctrl._resizingControlPoint = cpIdx
+                const intact = Annotation.generateShape(
+                  ann.shape.type,
+                  ann.shape.start,
+                  ann.shape.end,
+                  ann.shape.width ?? ctrl.model.annotation.style.strokeWidth,
+                )
                 ctrl._resizeOriginalShape = {
                   start: { ...ann.shape.start },
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
+                  polygons: ann.polygons,
+                  isErased:
+                    JSON.stringify(intact) !== JSON.stringify(ann.polygons),
                 }
                 ctrl._resizingAnnotation = ann
                 startAnnotationDrag(ctrl, evt)
@@ -1713,18 +1745,7 @@ export function initInteraction(ctrl: NiiVue): void {
         if (sel) {
           const ann = ctrl._resizingAnnotation
           if (ann?.shape) {
-            const cfg = ctrl.model.annotation
-            const shapeWidth = ann.shape.width ?? cfg.style.strokeWidth
-            const polygons = Annotation.generateShape(
-              ann.shape.type,
-              ann.shape.start,
-              ann.shape.end,
-              shapeWidth,
-            )
-            if (polygons.length > 0) {
-              ann.polygons = polygons
-              sel.controlPoints = Annotation.getControlPoints(ann.shape)
-            }
+            // The last move already set the polygons and control points.
             if (Annotation.isMeasureTool(ann.shape.type)) {
               const vol = ctrl.model.getVolumes()[0]
               if (vol)
@@ -2178,18 +2199,12 @@ export function initInteraction(ctrl: NiiVue): void {
             ctrl._resizingControlPoint,
             pt2d,
           )
-          ann.shape.start = newBox.start
-          ann.shape.end = newBox.end
-          if (newBox.width !== undefined) ann.shape.width = newBox.width
-          const shapeWidth =
-            ann.shape.width ?? ctrl.model.annotation.style.strokeWidth
-          const polygons = Annotation.generateShape(
-            ann.shape.type,
-            newBox.start,
-            newBox.end,
-            shapeWidth,
-          )
+          const polygons = resizedPolygons(ctrl, ann.shape.type, newBox)
+          // A degenerate box keeps the last valid bounds and polygons.
           if (polygons.length > 0) {
+            ann.shape.start = newBox.start
+            ann.shape.end = newBox.end
+            if (newBox.width !== undefined) ann.shape.width = newBox.width
             ann.polygons = polygons
             ctrl.model._annotationSelection.controlPoints =
               Annotation.getControlPoints(ann.shape)

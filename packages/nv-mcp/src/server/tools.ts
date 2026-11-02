@@ -323,12 +323,16 @@ export const CORE_SCHEMAS = {
       .number()
       .nullable()
       .optional()
-      .describe('The low end of the negative window; null mirrors cal_min.'),
+      .describe(
+        'The low end of the negative window; null on either bound mirrors the positive window.',
+      ),
     cal_max_neg: z
       .number()
       .nullable()
       .optional()
-      .describe('The high end of the negative window; null mirrors cal_max.'),
+      .describe(
+        'The high end of the negative window; null on either bound mirrors the positive window.',
+      ),
     colormap_type: z
       .enum([
         'min_to_max',

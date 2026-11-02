@@ -210,6 +210,20 @@ describe('NvViewer', () => {
       expect(onError).toHaveBeenCalledWith(failure)
     })
 
+    test('a rejected removeVolume reaches onError (#467)', async () => {
+      const onError = mock((_err: unknown) => {})
+      const { rerender } = render(
+        <NvViewer volumes={[{ url: 'brain.nii' }]} onError={onError} />,
+      )
+      const nv = mockInstances[0]!
+      nv.volumes = [{ url: 'brain.nii', name: 'brain.nii' }]
+      const failure = new Error('device lost')
+      nv.removeVolume.mockImplementation(() => Promise.reject(failure))
+      rerender(<NvViewer volumes={[]} onError={onError} />)
+      await new Promise((r) => setTimeout(r, 0))
+      expect(onError).toHaveBeenCalledWith(failure)
+    })
+
     test('changing opacity calls setVolume with new opacity', () => {
       const volumes1 = [{ url: 'brain.nii', opacity: 1.0 }]
       const { rerender } = render(<NvViewer volumes={volumes1} />)

@@ -35,6 +35,14 @@ export function number(params: Params, key: string): number | undefined {
   return n
 }
 
+/**
+ * A display-window bound: null asks NiiVue for the image's own default, which
+ * NiiVue takes as NaN (JSON has no NaN).
+ */
+export function windowBound(params: Params, key: string): number | undefined {
+  return params?.[key] === null ? Number.NaN : number(params, key)
+}
+
 /** A whole number, `min` at least. */
 export function integer(
   params: Params,

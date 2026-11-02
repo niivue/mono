@@ -1510,7 +1510,7 @@ describe('NVChunkedVolume automatic display window', () => {
     expect(updateGLCalls()).toBe(0)
   })
 
-  test('supplying only one bound still counts as caller-owned', async () => {
+  test('a single given bound is kept while the other is sampled', async () => {
     const { host } = makeWindowHost()
     const mgr = new NVChunkedVolume(host, rampSource(), {
       radius: 16,
@@ -1518,6 +1518,27 @@ describe('NVChunkedVolume automatic display window', () => {
     })
     await mgr.init()
     expect(mgr.volume.calMax).toBe(90)
+    // calMin came from the sample, not the 0 placeholder (the ramp's 2% is > 0).
+    expect(mgr.volume.calMin).toBe(mgr.volume.robustMin)
+    expect(mgr.volume.calMin).toBeGreaterThan(0)
+  })
+
+  test('a CT colormap sets the window but the data range is still sampled', async () => {
+    const { host, sceneVolume } = makeWindowHost()
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      radius: 16,
+      colormap: 'ct_kidneys',
+    })
+    await mgr.init()
+    // The display window is the colormap's Hounsfield window...
+    expect(mgr.volume.calMin).toBe(114)
+    expect(mgr.volume.calMax).toBe(302)
+    // ...but a NaN reset and contrast drag need the data's own range, not the
+    // window seeded into robust/global at construction.
+    expect(mgr.volume.robustMax).toBeLessThan(255)
+    expect(mgr.volume.robustMax).not.toBe(302)
+    expect(mgr.volume.globalMax).toBe(255)
+    expect(sceneVolume()?.robustMax).toBe(mgr.volume.robustMax)
   })
 
   test('falls back to a bounded probe when there is no coarse floor', async () => {

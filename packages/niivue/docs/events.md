@@ -280,7 +280,7 @@ frame) without changing any display option.
 |-------|------|-------------|
 | `volumeIndex` | `number` | Index of the updated volume |
 | `volume` | `NVImage` | The volume (after update) |
-| `changes` | `VolumeUpdate` | The options that were applied |
+| `changes` | `VolumeUpdate` | The options that were applied; `calMin`/`calMax`, when present, are the resolved window (a NaN request reports the image default, a CT map's fill its window) |
 
 ```js
 nv.addEventListener('volumeUpdated', (e) => {

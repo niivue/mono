@@ -1583,9 +1583,15 @@ export type ImageFromUrlOptions = {
   /** Whether the volume is drawn (default: true). Hidden volumes keep their
    * opacity; `setVolume(i, { visible: false })` is the hide toggle. */
   visible?: boolean
-  /** Minimum intensity for color mapping */
+  /**
+   * Minimum intensity for color mapping. Unset: a CT colormap's window, else
+   * the image's default. NaN (or null) asks for the image's default.
+   */
   calMin?: number
-  /** Maximum intensity for color mapping */
+  /**
+   * Maximum intensity for color mapping. Unset: a CT colormap's window, else
+   * the image's default. NaN (or null) asks for the image's default.
+   */
   calMax?: number
   /** Alpha modulation amount */
   modulateAlpha?: number

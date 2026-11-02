@@ -702,6 +702,22 @@ and its volumes alive."""
         """
         return await self._request("colormapNames", _make_args(kind))
 
+    async def colormap_window(self, name: Any) -> Any:
+        """The display window a colormap brings with it (the `ct_*` maps, e.g.
+
+        `ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`
+        when the colormap changes, fill a bound left out from it.
+
+        Parameters
+        ----------
+        name : string
+
+        Returns
+        -------
+        [number, number] | null
+        """
+        return await self._request("colormapWindow", _make_args(name))
+
     def create_empty_drawing(self) -> None:
         self.send({"cmd": "createEmptyDrawing", "args": []})
 

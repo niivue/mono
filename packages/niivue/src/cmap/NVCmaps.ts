@@ -533,21 +533,45 @@ export function lookupColorMap(name: string): ColorMap | null {
 
 /**
  * CT colormaps are designed for one Hounsfield window (ct_kidneys is 114..302),
- * stored as min/max in the LUT. Setting such a colormap without calMin/calMax
- * applies that window; an explicit calMin or calMax always wins.
+ * stored as min/max in the LUT. Setting such a colormap fills whichever of
+ * calMin/calMax is not given from that window; a given bound always wins, and
+ * a non-finite one (NaN, or null from JSON) stays, meaning the image's own
+ * default (`resolveDefaultWindow`).
  */
 export function withColormapWindow<
   T extends { colormap?: string; calMin?: number; calMax?: number },
 >(opts: T): T {
   if (
     opts.colormap === undefined ||
-    opts.calMin !== undefined ||
-    opts.calMax !== undefined
+    (opts.calMin !== undefined && opts.calMax !== undefined)
   )
     return opts
-  const lut = lookupColorMap(opts.colormap)
-  if (lut?.min === undefined || lut.max === undefined) return opts
-  return { ...opts, calMin: lut.min, calMax: lut.max }
+  const window = colormapWindow(opts.colormap)
+  if (!window) return opts
+  return {
+    ...opts,
+    calMin: opts.calMin === undefined ? window[0] : opts.calMin,
+    calMax: opts.calMax === undefined ? window[1] : opts.calMax,
+  }
+}
+
+/** The display window a colormap brings (the `ct_*` maps), or null. */
+export function colormapWindow(name: string): [number, number] | null {
+  const lut = lookupColorMap(name)
+  return lut?.min === undefined || lut.max === undefined
+    ? null
+    : [lut.min, lut.max]
+}
+
+/** A non-finite (or null) calMin/calMax means the image's default (robust) window. */
+export function resolveDefaultWindow(vol: {
+  calMin: number
+  calMax: number
+  robustMin: number
+  robustMax: number
+}): void {
+  if (!Number.isFinite(vol.calMin)) vol.calMin = vol.robustMin
+  if (!Number.isFinite(vol.calMax)) vol.calMax = vol.robustMax
 }
 
 /**

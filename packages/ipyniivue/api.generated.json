@@ -2144,6 +2144,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "colormapWindow",
+      "pyName": "colormap_window",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "name",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number] | null",
+      "doc": "The display window a colormap brings with it (the `ct_*` maps, e.g.\n`ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`\nwhen the colormap changes, fill a bound left out from it.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "createEmptyDrawing",
       "pyName": "create_empty_drawing",
       "isAsync": false,

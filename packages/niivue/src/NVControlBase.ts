@@ -3940,23 +3940,34 @@ export default class NiiVue extends EventTarget {
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
-    options = NVCmaps.withColormapWindow(options)
+    // Only a colormap change applies its window: callers that re-send the
+    // current colormap with every update keep the user's window (#395).
+    if (options.colormap !== volumes[volumeIndex].colormap)
+      options = NVCmaps.withColormapWindow(options)
     // Clamp frame4D to valid range
     if (options.frame4D !== undefined) {
       const maxFrame = (volumes[volumeIndex].nFrame4D ?? 1) - 1
       options.frame4D = Math.max(0, Math.min(options.frame4D, maxFrame))
     }
     Object.assign(volumes[volumeIndex], options)
+    NVCmaps.resolveDefaultWindow(volumes[volumeIndex])
     if (options.colormap !== undefined) {
       NVModel.applyColormap(volumes[volumeIndex], options.colormap)
       // A streamed volume has no img to scan; its bricks may already be
       // decoded, so its generated palette takes the range they held.
       for (const chunked of this._chunkedVolumes) chunked.growLabelsToObserved()
     }
+    // Report the window as resolved (a NaN/null request as the default it
+    // took, a colormap's fill included), not as requested.
+    const changes = { ...options }
+    if (changes.calMin !== undefined)
+      changes.calMin = volumes[volumeIndex].calMin
+    if (changes.calMax !== undefined)
+      changes.calMax = volumes[volumeIndex].calMax
     this.emit('volumeUpdated', {
       volumeIndex,
       volume: volumes[volumeIndex],
-      changes: options,
+      changes,
     })
     await this._updateGLChanged()
   }
@@ -5848,6 +5859,15 @@ export default class NiiVue extends EventTarget {
     if (!name) return false
     const canonical = name.charAt(0).toUpperCase() + name.slice(1)
     return NVCmaps.lookupColorMap(canonical) !== null
+  }
+
+  /**
+   * The display window a colormap brings with it (the `ct_*` maps, e.g.
+   * `ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`
+   * when the colormap changes, fill a bound left out from it.
+   */
+  colormapWindow(name: string): [number, number] | null {
+    return NVCmaps.colormapWindow(name)
   }
 
   get meshExtensions(): string[] {

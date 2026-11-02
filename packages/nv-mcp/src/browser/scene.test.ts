@@ -688,6 +688,75 @@ describe('set_volume', () => {
     )
   })
 
+  it("passes a null bound as NaN, NiiVue's request for the image's default", async () => {
+    const view = settableView()
+    await coreHandlers(host(view)).set_volume({ volume: 1, cal_max: null })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, { calMax: Number.NaN })
+  })
+
+  it('checks the window a CT colormap fills in, before anything changes', async () => {
+    const view = settableView()
+    view.colormapWindow = (name: string) =>
+      name === 'ct_kidneys' ? [114, 302] : null
+    view.volumes[0].colormap = 'gray'
+    const handlers = coreHandlers(host(view))
+    // bold is warm 10..90: cal_min 95 is above the old high but under 302.
+    await handlers.set_volume({
+      volume: 1,
+      colormap: 'ct_kidneys',
+      cal_min: 95,
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      colormap: 'ct_kidneys',
+      calMin: 95,
+    })
+    // mni152 is 0..100: cal_min 500 is above the map's 302. The whole
+    // request is refused before NiiVue sees it, opacity included.
+    ;(view.setVolume as ReturnType<typeof mock>).mockClear()
+    await expect(
+      handlers.set_volume({
+        volume: 0,
+        colormap: 'ct_kidneys',
+        cal_min: 500,
+        opacity: 0,
+      }),
+    ).rejects.toThrow('cal_min (500) must not be above cal_max (302)')
+    expect(view.setVolume).not.toHaveBeenCalled()
+    // The same map re-sent fills nothing: a fill (114) would refuse cal_max 100.
+    await handlers.set_volume({
+      volume: 1,
+      colormap: 'ct_kidneys',
+      cal_max: 100,
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      colormap: 'ct_kidneys',
+      calMax: 100,
+    })
+    // A label table replaces the colormap, so ct_bones' 180..600 is not
+    // filled: bold keeps cal_max 100, and cal_min 150 would empty it.
+    view.colormapWindow = (name: string) =>
+      name === 'ct_bones' ? [180, 600] : null
+    await expect(
+      handlers.set_volume({
+        volume: 1,
+        colormap: 'ct_bones',
+        labels: 'freesurfer',
+        cal_min: 150,
+      }),
+    ).rejects.toThrow('cal_min (150) must not be above cal_max (100)')
+  })
+
+  it('checks a NaN bound against the image default it stands for', async () => {
+    const view = settableView()
+    Object.assign(view.volumes[1], { robustMin: 0, robustMax: 60 })
+    const handlers = coreHandlers(host(view))
+    // bold is 10..90; a null cal_max means robustMax 60, under cal_min 70.
+    await expect(
+      handlers.set_volume({ volume: 1, cal_min: 70, cal_max: null }),
+    ).rejects.toThrow('cal_min (70) must not be above cal_max (60)')
+    expect(view.setVolume).not.toHaveBeenCalled()
+  })
+
   it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {
     const handlers = coreHandlers(host(settableView()))
     await expect(

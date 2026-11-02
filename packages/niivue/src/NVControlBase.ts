@@ -21,6 +21,7 @@ import {
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
+  resetDragState,
 } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
 import type { AddMeasurementOptions } from '@/control/measurements'
@@ -2479,6 +2480,20 @@ export default class NiiVue extends EventTarget {
     this._livewireField = null
     this._livewireSeed = null
   }
+  /**
+   * A change that replaces the scene's geometry drops the annotation in
+   * progress and, when it was being dragged, ends that drag too, so moves
+   * before the release do not fall through to the camera orbit (#470). Other
+   * drags (crosshair, contrast) are left alone.
+   */
+  private _abandonForNewScene(): void {
+    const isAnnotationDrag =
+      this._annotationShapeStart !== null ||
+      this._annotationBrushPath.length > 0 ||
+      this._annotation3DActive
+    this._abandonAnnotationInProgress()
+    if (isAnnotationDrag && this.isDragging) resetDragState(this)
+  }
 
   get selectedAnnotation(): string | null {
     return this.model._annotationSelection?.annotationId ?? null
@@ -2591,7 +2606,7 @@ export default class NiiVue extends EventTarget {
   loadAnnotationsJSON(json: string): void {
     this.model.annotations = JSON.parse(json) as VectorAnnotation[]
     // A half-drawn shape and the selection belong to the replaced set (#470).
-    this._abandonAnnotationInProgress()
+    this._abandonForNewScene()
     this.model._annotationSelection = null
     this._annotationUndoStack.clear()
     this.drawScene()
@@ -3198,7 +3213,7 @@ export default class NiiVue extends EventTarget {
     }
     this.model.volumes = loaded
     // A half-drawn shape's points belong to the old background (#470).
-    this._abandonAnnotationInProgress()
+    this._abandonForNewScene()
     this.model._setupPivot3D()
     // The volume set changed: drop the associated-graph memo so a same-named 4D
     // reload doesn't reuse the previous volume's sampled BOLD time-course (the
@@ -3782,7 +3797,7 @@ export default class NiiVue extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = [...this.model.getVolumes()]
     await this.model.removeAllVolumes()
-    this._abandonAnnotationInProgress()
+    this._abandonForNewScene()
     // One event per volume, after the removal, in reverse index order (so
     // each detail's index was valid at the time that volume was removed).
     for (let i = vols.length - 1; i >= 0; i--) {
@@ -3803,7 +3818,7 @@ export default class NiiVue extends EventTarget {
     const volume = volumes[volumeIndex]
     this.model.removeVolume(volumeIndex)
     // Removing the background changes the geometry a half-drawn shape used.
-    if (volumeIndex === 0) this._abandonAnnotationInProgress()
+    if (volumeIndex === 0) this._abandonForNewScene()
     // Emit after the removal, like every other mutation event: the detail
     // carries the removed volume and its former index; the collection no
     // longer holds it.
@@ -3855,8 +3870,7 @@ export default class NiiVue extends EventTarget {
     const background = this.model.volumes[0]
     if (!this.model.moveVolume(from, to)) return
     // A new background changes the geometry a half-drawn shape used (#470).
-    if (this.model.volumes[0] !== background)
-      this._abandonAnnotationInProgress()
+    if (this.model.volumes[0] !== background) this._abandonForNewScene()
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
     await this._updateGLChanged()
   }

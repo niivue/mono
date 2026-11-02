@@ -149,3 +149,36 @@ test('selection survives pointerup and a control-point drag resizes the shape', 
   expect(r.resizeCleared).toBe(-1)
   expect(r.resizingAnnotation).toBeNull()
 })
+
+test('erasing a measured ROI in two re-measures both pieces and projects both (#115)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'measureRect'
+    drag([[100, 150], [200, 200], [300, 250]])
+    const before = nv.annotations[0].stats.area
+    nv.annotationIsErasing = true
+    nv.annotationBrushRadius = 3
+    drag([[200, 120], [200, 200], [200, 280]])
+    nv.isAnnotationDrawn = false
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const ann = nv.annotations[0]
+    return {
+      count: nv.annotations.length,
+      pieces: ann.polygons.length,
+      before,
+      after: ann.stats.area,
+      screenPieces: nv.annotationScreenShapes[0]?.polygons.length,
+    }
+  })()`)
+
+  expect(r.count).toBe(1)
+  expect(r.pieces).toBe(2)
+  expect(r.screenPieces).toBe(2)
+  // Both pieces are measured: less than before, more than either half.
+  expect(r.after).toBeLessThan(r.before)
+  expect(r.after).toBeGreaterThan(r.before * 0.6)
+})

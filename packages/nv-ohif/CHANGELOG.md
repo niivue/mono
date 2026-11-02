@@ -1,3 +1,97 @@
+## 1.0.0-rc.59 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.68
+- Updated uikit to 1.0.0-rc.59
+
+## 1.0.0-rc.58 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.67
+- Updated uikit to 1.0.0-rc.58
+
+## 1.0.0-rc.57 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.66
+- Updated uikit to 1.0.0-rc.57
+
+## 1.0.0-rc.56 (2026-11-02)
+
+### Fixes
+
+- **niivue:** annotation screen shapes and stats cover every polygon ([#115](https://github.com/niivue/mono/issues/115))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.65
+- Updated uikit to 1.0.0-rc.56
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.55 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.64
+- Updated uikit to 1.0.0-rc.55
+
+## 1.0.0-rc.54 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.63
+- Updated uikit to 1.0.0-rc.54
+
+## 1.0.0-rc.53 (2026-10-31)
+
+### Fixes
+
+- **niivue:** oblique-safe bidirectional slice test, ignore off-slice dblclick mid-contour, loadDocument clears annotation undo ([#111](https://github.com/niivue/mono/issues/111), [#114](https://github.com/niivue/mono/issues/114), [#113](https://github.com/niivue/mono/issues/113))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.62
+- Updated uikit to 1.0.0-rc.53
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.52 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.61
+- Updated uikit to 1.0.0-rc.52
+
+## 1.0.0-rc.51 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.60
+- Updated uikit to 1.0.0-rc.51
+
+## 1.0.0-rc.50 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.59
+- Updated uikit to 1.0.0-rc.50
+
+## 1.0.0-rc.49 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.58
+- Updated uikit to 1.0.0-rc.49
+
 ## 1.0.0-rc.48 (2026-10-30)
 
 ### Updated Dependencies

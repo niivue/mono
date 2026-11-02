@@ -48,10 +48,18 @@ function describeSetting(setting: Setting): Record<string, unknown> {
     ...(setting.min === undefined ? {} : { min: setting.min }),
     ...(setting.max === undefined ? {} : { max: setting.max }),
   }
+  const fields = setting.fields
+    ? {
+        fields: Object.fromEntries(
+          setting.fields.map((f) => [f.name, describeSetting(f)]),
+        ),
+      }
+    : {}
   return {
     kind: setting.kind,
     ...choices,
     ...bounds,
+    ...fields,
     description: setting.description,
   }
 }
@@ -246,6 +254,7 @@ export function settingHandlers(host: NiiVueHost): Handlers {
       })
       return {
         ...(view.backend ? { backend: view.backend } : {}),
+        ...(view.version ? { niivueVersion: view.version } : {}),
         features,
         settings: SETTINGS.filter((s) => s.name in bag).map((s) => s.name),
         ...(view.colormaps ? { colormaps: view.colormaps } : {}),

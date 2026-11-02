@@ -609,16 +609,21 @@ export function projectAnnotationScreenShapes(
         if (ann.sliceType !== tile.axCorSag || seen.has(ann.id)) continue
         const anchor = anchors[i]
         if (!anchor || !isOnSlice(anchor, pn, pp, tolerance)) continue
-        const poly = ann.polygons[0]
-        if (!poly) continue
-        const tool = ann.shape?.type ?? 'freehand'
-        const shape: AnnotationScreenShape = {
-          id: ann.id,
-          tool,
+        const polygons = ann.polygons.map((poly) => ({
           outer: poly.outer.map((pt) => project(pt, ann.sliceType)),
           holes: poly.holes.map((h) =>
             h.map((pt) => project(pt, ann.sliceType)),
           ),
+        }))
+        const first = polygons[0]
+        if (!first) continue
+        const tool = ann.shape?.type ?? 'freehand'
+        const shape: AnnotationScreenShape = {
+          id: ann.id,
+          tool,
+          outer: first.outer,
+          holes: first.holes,
+          polygons,
           isClosed: !OPEN_ANNOTATION_TOOLS.has(tool),
           style: ann.style,
         }

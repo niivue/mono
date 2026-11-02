@@ -8,6 +8,7 @@ import {
   FLOATS_PER_PANEL,
   type FontMetrics,
   type GlyphBatch,
+  measureTextWidth,
 } from '@/view/NVFont'
 import { NVRenderer } from '@/view/NVRenderer'
 import { fontFragShader, fontVertShader } from './fontShader'
@@ -131,9 +132,9 @@ export class FontRenderer extends NVRenderer {
         this._panelShader.program,
         'panelColor',
       )
-      const pRadius = gl.getAttribLocation(
+      const pShape = gl.getAttribLocation(
         this._panelShader.program,
-        'panelRadius',
+        'panelShape',
       )
       gl.enableVertexAttribArray(pRect)
       gl.vertexAttribPointer(pRect, 4, gl.FLOAT, false, BYTES_PER_PANEL, 0)
@@ -141,9 +142,9 @@ export class FontRenderer extends NVRenderer {
       gl.enableVertexAttribArray(pColor)
       gl.vertexAttribPointer(pColor, 4, gl.FLOAT, false, BYTES_PER_PANEL, 16)
       gl.vertexAttribDivisor(pColor, 1)
-      gl.enableVertexAttribArray(pRadius)
-      gl.vertexAttribPointer(pRadius, 1, gl.FLOAT, false, BYTES_PER_PANEL, 32)
-      gl.vertexAttribDivisor(pRadius, 1)
+      gl.enableVertexAttribArray(pShape)
+      gl.vertexAttribPointer(pShape, 2, gl.FLOAT, false, BYTES_PER_PANEL, 32)
+      gl.vertexAttribDivisor(pShape, 1)
       gl.bindVertexArray(null)
       this.isReady = true
     } catch (err) {
@@ -169,6 +170,12 @@ export class FontRenderer extends NVRenderer {
       fontSizeScaling,
       fontMinPx,
     )
+  }
+
+  /** Width of `str` in px at `scale`, as buildText draws it; 0 before init. */
+  measureText(str: string, scale: number): number {
+    if (!this._fontMets) return 0
+    return measureTextWidth(str, this._fontPx, scale, this._fontMets)
   }
 
   buildText(
@@ -236,6 +243,7 @@ export class FontRenderer extends NVRenderer {
           panelData.set(item.backRect, off)
           panelData.set(item.backColor, off + 4)
           panelData[off + 8] = item.backRadius
+          panelData[off + 9] = item.backBorder ?? 0
           idx++
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, this._panelBuffer)

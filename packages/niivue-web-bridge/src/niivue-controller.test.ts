@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { NVImage } from '@niivue/niivue'
-import { volumeSummaries } from './niivue-controller'
+import type NiiVue from '@niivue/niivue'
+import type { NVImage, NVMesh } from '@niivue/niivue'
+import { loadFile, meshSummaries, volumeSummaries } from './niivue-controller'
 
 describe('volumeSummaries', () => {
   test('reports RAS geometry and fills display defaults', () => {
@@ -31,5 +32,55 @@ describe('volumeSummaries', () => {
         pixDims: [0.74, 0.74, 0.74],
       },
     ])
+  })
+})
+
+describe('meshSummaries', () => {
+  test('reports each mesh name in load order', () => {
+    const meshes = [{ name: 'lh.pial' }, { name: 'rh.pial' }] as NVMesh[]
+    expect(meshSummaries(meshes)).toEqual([
+      { name: 'lh.pial' },
+      { name: 'rh.pial' },
+    ])
+  })
+})
+
+describe('loadFile', () => {
+  // Minimal scene: addImage appends unless the file is named 'bad', which
+  // mimics NiiVue logging a mesh failure instead of throwing.
+  const scene = (names: string[]) => {
+    const meshes = names.map((name) => ({ name }))
+    const nv = {
+      volumes: [],
+      signals: [],
+      meshes,
+      addImage: async (f: File) => {
+        if (f.name !== 'bad') meshes.push({ name: f.name })
+      },
+      removeMesh: async (i: number) => {
+        meshes.splice(i, 1)
+      },
+    } as unknown as InstanceType<typeof NiiVue>
+    return { nv, names: () => meshes.map((m) => m.name) }
+  }
+
+  test('replace removes the old scene after the new file loads', async () => {
+    const s = scene(['lh.pial', 'rh.pial'])
+    await loadFile(s.nv, new File([], 'brain.mz3'), false)
+    expect(s.names()).toEqual(['brain.mz3'])
+  })
+
+  test('add keeps the scene', async () => {
+    const s = scene(['lh.pial'])
+    await loadFile(s.nv, new File([], 'rh.pial'), true)
+    expect(s.names()).toEqual(['lh.pial', 'rh.pial'])
+  })
+
+  test('a load that adds nothing throws and keeps the scene', async () => {
+    const s = scene(['lh.pial'])
+    await expect(loadFile(s.nv, new File([], 'bad'), false)).rejects.toThrow(
+      'could not load bad',
+    )
+    expect(s.names()).toEqual(['lh.pial'])
   })
 })

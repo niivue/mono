@@ -1,3 +1,4 @@
+import { copyDocumentBytes } from '@/documentBounds'
 import type {
   NVSignal,
   NVSignalDisplay,
@@ -40,10 +41,8 @@ function f32ToBytes(arr: Float32Array): Uint8Array {
  * number of float32s so a corrupt/foreign document whose byte length isn't a
  * multiple of 4 yields a short array instead of throwing. */
 function bytesToF32(u8: Uint8Array): Float32Array {
-  const usable = u8.byteLength - (u8.byteLength % 4)
-  const copy = new Uint8Array(usable)
-  copy.set(u8.subarray(0, usable))
-  return new Float32Array(copy.buffer)
+  const buffer = copyDocumentBytes(u8)
+  return new Float32Array(buffer, 0, Math.floor(buffer.byteLength / 4))
 }
 
 /** Convert an NVSignal into its serialized document entry. */

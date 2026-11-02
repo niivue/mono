@@ -621,7 +621,7 @@ export function resolveBinding(
   const shape = settingShape(setting)
   if (!shape)
     throw new Error(
-      `${setting.name} takes ${setting.kind === 'colors' ? 'a list of colours' : 'several numbers'}, which no control holds.`,
+      `${setting.name} takes ${setting.kind === 'colors' ? 'a list of colours' : setting.kind === 'object' ? 'an object of fields' : 'several numbers'}, which no control holds.`,
     )
   const name = setting.name
   const choices =

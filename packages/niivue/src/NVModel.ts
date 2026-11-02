@@ -87,6 +87,9 @@ export default class NVModel {
    * Controller-owned, not serialized.
    */
   _isDragging = false
+  /** Legend scroll position in rows (transient; the layout clamps it). */
+  _legendScrollRow = 0
+  private _legendSources: unknown[] = []
   /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
   _focusBox: FocusBox | null = null
   /**
@@ -359,6 +362,10 @@ export default class NVModel {
       ...(options.volumeSilhouette !== undefined && {
         silhouette: options.volumeSilhouette,
       }),
+      // A copy: setters replace it, but never alias the defaults constant.
+      cinematic: NVConstants.clampCinematicOptions(
+        options.volumeCinematic ?? {},
+      ),
     }
     // Mesh — flat options mapped to mesh group
     this.mesh = {
@@ -415,6 +422,9 @@ export default class NVModel {
       }),
       ...(options.isViewModeHotKeyEnabled !== undefined && {
         isViewModeHotKeyEnabled: options.isViewModeHotKeyEnabled,
+      }),
+      ...(options.isLegendToggleEnabled !== undefined && {
+        isLegendToggleEnabled: options.isLegendToggleEnabled,
       }),
       ...(options.isDragDropEnabled !== undefined && {
         isDragDropEnabled: options.isDragDropEnabled,
@@ -811,6 +821,16 @@ export default class NVModel {
       }
     }
     return bars
+  }
+
+  /** The scroll position, back at the top once the legend lists something else. */
+  legendScrollRow(): number {
+    const sources = NVLegend.legendSources(this.meshes, this.volumes)
+    if (!NVLegend.isSameLegendSource(sources, this._legendSources)) {
+      this._legendSources = sources
+      this._legendScrollRow = 0
+    }
+    return this._legendScrollRow
   }
 
   collectLegendEntries(): NVLegend.LegendEntry[] {
@@ -1499,11 +1519,12 @@ export default class NVModel {
   static async prepareVolume(
     volume: ImageFromUrlOptions | NVImage,
   ): Promise<NVImage> {
+    // An NVImage keeps its own window, CT colormap or not: it always carries
+    // calMin/calMax, so there is no unset bound for the map to fill (#395).
     if ('hdr' in volume && volume.hdr) {
-      return NVModel.applyColormap(
-        { ...NVModel.volumeDefaults, ...volume },
-        volume.colormap,
-      )
+      const image = { ...NVModel.volumeDefaults, ...volume }
+      NVCmaps.resolveDefaultWindow(image)
+      return NVModel.applyColormap(image, volume.colormap)
     }
     const opts = volume as ImageFromUrlOptions
     const { url, urlImageData, limitFrames4D, ...overrides } =
@@ -1544,6 +1565,7 @@ export default class NVModel {
       // _sourceFile above.
       ...(urlImageData != null ? { _urlImageData: urlImageData } : {}),
     }
+    NVCmaps.resolveDefaultWindow(prepared)
     return NVModel.applyColormap(prepared, overrides.colormap)
   }
 

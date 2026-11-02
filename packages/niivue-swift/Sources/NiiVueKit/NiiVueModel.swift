@@ -56,8 +56,10 @@ public final class NiiVueModel {
     public var locationValues: [LocationValue] = []
     /// Loaded volumes, background first. Mirrors NiiVue via `volumesChange`.
     public var volumes: [VolumeSummary] = []
-    /// A mesh or signal has loaded. No UI removes them, so this never resets.
-    public var hasNonVolumeContent = false
+    /// Loaded meshes in load order. Mirrors NiiVue via `meshesChange`.
+    public var meshes: [MeshSummary] = []
+    /// A signal is loaded. Mirrors NiiVue via `signalsChange`.
+    public var hasSignal = false
     /// Colormap names NiiVue knows, fetched on `ready`.
     public var colormaps: [String] = []
     public var lastStatus: String = "Waiting for webview…"
@@ -172,9 +174,9 @@ public final class NiiVueModel {
 
     // MARK: Actions
 
-    /// Convenience: load a volume from raw bytes. Equivalent to a
-    /// `loadVolume` bridge call with base64-encoded payload. `add` keeps the
-    /// loaded images and adds this one as an overlay instead of replacing them.
+    /// Convenience: load a volume, mesh or signal from raw bytes. Equivalent
+    /// to a `loadVolume` bridge call with base64-encoded payload. `add` keeps
+    /// the loaded images; otherwise every volume, mesh and signal is replaced.
     public func loadVolume(data: Data, name: String, add: Bool = false) async throws {
         let payload = LoadVolumePayload(
             name: name,
@@ -202,9 +204,17 @@ public final class NiiVueModel {
 
     public func removeVolume(at index: Int) async {
         do {
-            let _: OKReply = try await bridge.call("removeVolume", VolumeIndexPayload(index: index))
+            let _: OKReply = try await bridge.call("removeVolume", IndexPayload(index: index))
         } catch {
             lastStatus = "Could not remove volume: \(error.localizedDescription)"
+        }
+    }
+
+    public func removeMesh(at index: Int) async {
+        do {
+            let _: OKReply = try await bridge.call("removeMesh", IndexPayload(index: index))
+        } catch {
+            lastStatus = "Could not remove mesh: \(error.localizedDescription)"
         }
     }
 
@@ -241,6 +251,9 @@ public final class NiiVueModel {
                 cells[path]?.applyFromJS(box.raw)
             }
             volumes = try await bridge.call("getVolumes", EmptyPayload())
+            meshes = try await bridge.call("getMeshes", EmptyPayload())
+            let signals: SignalsChangePayload = try await bridge.call("getSignalCount", EmptyPayload())
+            hasSignal = signals.count > 0
             if colormaps.isEmpty {
                 colormaps = try await bridge.call("getColormaps", EmptyPayload())
             }
@@ -341,6 +354,24 @@ public final class NiiVueModel {
                 self.volumes = list
             }
         }
+        bridge.on("meshesChange") { [weak self] data in
+            guard let self else { return }
+            guard let list = try? JSONDecoder().decode([MeshSummary].self, from: data) else {
+                return
+            }
+            Task { @MainActor in
+                self.meshes = list
+            }
+        }
+        bridge.on("signalsChange") { [weak self] data in
+            guard let self else { return }
+            guard let payload = try? JSONDecoder().decode(SignalsChangePayload.self, from: data) else {
+                return
+            }
+            Task { @MainActor in
+                self.hasSignal = payload.count > 0
+            }
+        }
         bridge.on("imageLoaded") { [weak self] data in
             guard let self else { return }
             guard let payload = try? JSONDecoder().decode(ImageLoadedEnvelope.self, from: data) else {
@@ -348,7 +379,6 @@ public final class NiiVueModel {
             }
             Task { @MainActor in
                 self.lastStatus = payload.name
-                if payload.kind != "volume" { self.hasNonVolumeContent = true }
             }
         }
     }

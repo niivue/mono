@@ -56,6 +56,7 @@ import {
   put,
   record,
   text,
+  windowBound,
 } from './params'
 import { pickIndex } from './pick'
 import { settingHandlers } from './settings'
@@ -405,6 +406,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       ...(volume.isLegendVisible === false ? { legend: false } : {}),
       ...(volume.isNearestInterpolation ? { nearest: true } : {}),
       ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
+      ...(volume.hiddenLabels?.length
+        ? { hiddenLabels: [...volume.hiddenLabels] }
+        : {}),
       ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
       ...(volume.chunkPlan
         ? { chunkGrid: Array.from(volume.chunkPlan.gridDims) }
@@ -635,8 +639,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       )
       const colormap = text(params, 'colormap') ?? 'warm'
       const toLoad: VolumeToLoad = { url, name, colormap, opacity }
-      put(toLoad, 'calMin', number(params, 'cal_min'))
-      put(toLoad, 'calMax', number(params, 'cal_max'))
+      put(toLoad, 'calMin', windowBound(params, 'cal_min'))
+      put(toLoad, 'calMax', windowBound(params, 'cal_max'))
       put(toLoad, 'calMinNeg', number(params, 'cal_min_neg'))
       put(toLoad, 'calMaxNeg', number(params, 'cal_max_neg'))
       put(toLoad, 'colormapNegative', text(params, 'colormap_negative'))
@@ -954,12 +958,32 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(update, 'colormapNegative', clearable(params, 'colormap_negative'))
       const opacity = number(params, 'opacity')
       if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
-      const calMin = number(params, 'cal_min')
-      const calMax = number(params, 'cal_max')
+      const calMin = windowBound(params, 'cal_min')
+      const calMax = windowBound(params, 'cal_max')
       put(update, 'calMin', calMin)
       put(update, 'calMax', calMax)
-      const low = calMin ?? volume.calMin
-      const high = calMax ?? volume.calMax
+      // The window NiiVue will apply, checked before anything changes: a
+      // NaN bound takes the image's default, and a new colormap fills a bound
+      // left out from its own window (the CT maps).
+      // A label table replaces the colormap later, and carries no window.
+      const ctWindow =
+        text(params, 'labels') === undefined &&
+        update.colormap !== undefined &&
+        update.colormap !== volume.colormap
+          ? view.colormapWindow?.(update.colormap)
+          : null
+      const low = effectiveBound(
+        calMin,
+        ctWindow?.[0],
+        volume.calMin,
+        volume.robustMin,
+      )
+      const high = effectiveBound(
+        calMax,
+        ctWindow?.[1],
+        volume.calMax,
+        volume.robustMax,
+      )
       if (low !== undefined && high !== undefined && low > high) {
         throw new Error(
           `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
@@ -1002,6 +1026,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(update, 'isNearestInterpolation', flag(params, 'nearest'))
       const outline = number(params, 'atlas_outline')
       if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
+      const hiddenLabels = numbers(params, 'hidden_labels')
+      if (hiddenLabels !== undefined) update.hiddenLabels = hiddenLabels
       const modulateAlpha = number(params, 'modulate_alpha')
       if (modulateAlpha !== undefined)
         update.modulateAlpha = clamp(modulateAlpha, 0, 1)
@@ -1704,4 +1730,15 @@ function drawNow(view: View, canvas: HTMLCanvasElement): void {
   }
   view.drawScene()
   view.view?.render()
+}
+
+/** A bound as NiiVue resolves it: given, filled by the colormap, kept, or NaN for the default. */
+function effectiveBound(
+  given: number | undefined,
+  filled: number | undefined,
+  now: number | undefined,
+  robust: number | undefined,
+): number | undefined {
+  if (given === undefined) return filled ?? now
+  return Number.isFinite(given) ? given : robust
 }

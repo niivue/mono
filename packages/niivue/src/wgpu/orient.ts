@@ -302,7 +302,7 @@ function labelColormapId(colormapLabel: object): number {
 
 function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
   if (isLabelVol) {
-    const label = nvimage.colormapLabel
+    const label = NVCmaps.shownLabelLut(nvimage)
     return label
       ? `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
       : 'label:none'
@@ -502,7 +502,7 @@ export async function prepareOrientTextureCache(
   let hasNegativeColormap = false
   let sampler: GPUSampler
   if (u.isLabel > 0) {
-    const labelLut = nvimage.colormapLabel?.lut
+    const labelLut = NVCmaps.shownLabelLut(nvimage)?.lut
     if (!labelLut) throw new Error('Label colormap LUT is undefined')
     const texels = labelLutTexels(labelLut)
     colormapTexture = device.createTexture({
@@ -718,7 +718,7 @@ export async function volume2Texture(
   let sampler: GPUSampler
   if (isLabelVol) {
     // Label colormap: variable-width LUT with nearest filtering
-    const labelLut = nvimage.colormapLabel?.lut
+    const labelLut = NVCmaps.shownLabelLut(nvimage)?.lut
     if (!labelLut) {
       throw new Error('Label colormap LUT is undefined')
     }

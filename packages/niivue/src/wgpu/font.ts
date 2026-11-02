@@ -7,6 +7,7 @@ import {
   FLOATS_PER_PANEL,
   type FontMetrics,
   type GlyphBatch,
+  measureTextWidth,
 } from '@/view/NVFont'
 import { NVRenderer } from '@/view/NVRenderer'
 import fontShaderCode from './font.wgsl?raw'
@@ -203,6 +204,12 @@ export class FontRenderer extends NVRenderer {
     )
   }
 
+  /** Width of `str` in px at `scale`, as buildText draws it; 0 before init. */
+  measureText(str: string, scale: number): number {
+    if (!this.fontMets) return 0
+    return measureTextWidth(str, this.fontPx, scale, this.fontMets)
+  }
+
   buildText(
     str: string,
     x: number,
@@ -254,6 +261,7 @@ export class FontRenderer extends NVRenderer {
           panelData.set(item.backRect, off)
           panelData.set(item.backColor, off + 4)
           panelData[off + 8] = item.backRadius
+          panelData[off + 9] = item.backBorder ?? 0
           idx++
         }
         device.queue.writeBuffer(this.panelBuffer, 0, panelData)

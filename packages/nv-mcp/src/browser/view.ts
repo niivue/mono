@@ -70,6 +70,7 @@ export interface VolumeUpdate {
   isLegendVisible?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  hiddenLabels?: number[]
   modulateAlpha?: number
 }
 
@@ -88,6 +89,9 @@ export interface ShownVolume {
   calMax?: number
   calMinNeg?: number
   calMaxNeg?: number
+  /** The image's default window, which a NaN bound asks for. */
+  robustMin?: number
+  robustMax?: number
   /** The intensities the volume actually spans. */
   globalMin?: number
   globalMax?: number
@@ -102,6 +106,7 @@ export interface ShownVolume {
   isLegendVisible?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  hiddenLabels?: number[]
   modulateAlpha?: number
   /** The label table it is drawn with, when it is a label map. */
   colormapLabel?: unknown
@@ -702,6 +707,8 @@ export interface View {
   colormapNames?(kind?: 'continuous' | 'label'): string[]
   drawingColormaps?: readonly string[]
   hasColormap?(name: string): boolean
+  /** The window a colormap brings (the CT maps), which `setVolume` fills a left-out bound from. */
+  colormapWindow?(name: string): [number, number] | null
   addColormap?(name: string, colormap: ColormapToAdd): string
   addColormapFromUrl?(url: string, name?: string): Promise<unknown>
   setFontFromUrl?(urls: { atlas: string; metrics: string }): Promise<boolean>
@@ -801,6 +808,7 @@ export interface View {
 
   // What the page's NiiVue is.
   backend?: string
+  version?: string
   volumeExtensions?: readonly string[]
   meshExtensions?: readonly string[]
   volumeWriteExtensions?: readonly string[]

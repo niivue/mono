@@ -1,3 +1,77 @@
+## 1.0.0-rc.59 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.68
+
+## 1.0.0-rc.58 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.67
+
+## 1.0.0-rc.57 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.66
+
+## 1.0.0-rc.56 (2026-11-02)
+
+### Fixes
+
+- **niivue:** annotation screen shapes and stats cover every polygon ([#115](https://github.com/niivue/mono/issues/115))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.65
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.55 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.64
+
+## 1.0.0-rc.54 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.63
+
+## 1.0.0-rc.53 (2026-10-31)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.62
+
+## 1.0.0-rc.52 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.61
+
+## 1.0.0-rc.51 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.60
+
+## 1.0.0-rc.50 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.59
+
+## 1.0.0-rc.49 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.58
+
 ## 1.0.0-rc.48 (2026-10-30)
 
 ### Updated Dependencies

@@ -36,7 +36,8 @@ export const SETTING_SCHEMAS = {
       .record(z.string(), z.unknown())
       .describe(
         'The settings to change, each by its NiiVue name (get_options lists them): a number, a ' +
-          'switch, a colour as [red, green, blue, alpha] 0 to 1, or a choice by its word.',
+          'switch, a colour as [red, green, blue, alpha] 0 to 1, a choice by its word, or, for an ' +
+          'object setting such as volumeCinematic, any of its fields, merged over the current ones.',
       ),
   },
   capabilities: { ...TAB_ARG },
@@ -141,7 +142,8 @@ export function registerSettingTools(
     description:
       'Changes any of the settings get_options lists, several at once, each by its NiiVue name. ' +
       'A choice is given by its word (a drag mode, a pen shape, a render mode), a colour as ' +
-      '[red, green, blue, alpha] 0 to 1. Every value is checked before any is set, so a bad one ' +
+      '[red, green, blue, alpha] 0 to 1, an object setting (volumeCinematic) as any of its fields, ' +
+      'the rest kept. Every value is checked before any is set, so a bad one ' +
       'changes nothing. Reports the settings as they are afterwards.',
     inputSchema: SETTING_SCHEMAS.set_options,
   })
@@ -149,7 +151,7 @@ export function registerSettingTools(
   registerSimple(server, context, 'capabilities', {
     title: "What the page's NiiVue can do",
     description:
-      "Reports what this page's NiiVue offers: its backend, which tool features it supports " +
+      "Reports what this page's NiiVue offers: its version (niivueVersion) and backend, which tool features it supports " +
       '(by group), which settings it has, the colormaps and drawing colormaps it knows, its mesh ' +
       'shaders, the volume transforms it can run with their options, the file types it ' +
       'reads and writes, the control kinds it hosts, and what a control may be bound to ' +

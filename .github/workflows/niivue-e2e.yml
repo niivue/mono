@@ -16,9 +16,9 @@ name: niivue browser contracts
 #                       This one loads mni152, so the checkout pulls that
 #                       single LFS object.
 #
-# Narrow on purpose. The rest of the e2e suite needs a GPU adapter that headless
-# runners do not have, so running it here would be flaky noise rather than
-# signal. These three are deterministic without one: the first two never touch
+# Narrow on purpose. The rest of the e2e suite needs a GPU adapter that the
+# Ubuntu runners do not have; it runs in full-suite-metal below instead.
+# These three are deterministic without one: the first two never touch
 # the GPU, and texcache-kind-change forces `--use-angle=swiftshader` for its
 # WebGL2 case, which is the case that was proven to fail on main. Its WebGPU
 # case skips here. `requestAdapter()` does succeed on the runner, but the GPU
@@ -32,11 +32,26 @@ on:
     branches: [main]
     paths:
       - 'packages/niivue/**'
+      - 'packages/uikit/**'
+      - 'packages/dev-images/**'
       - '.github/workflows/niivue-e2e.yml'
   pull_request:
     paths:
       - 'packages/niivue/**'
+      - 'packages/uikit/**'
+      - 'packages/dev-images/**'
       - '.github/workflows/niivue-e2e.yml'
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels its stale run (the macOS job takes ~10 min). Every
+# main push gets its own group, because a shared group holds only one pending
+# run and replaces it even with cancel-in-progress off, which would drop the
+# Metal result for a merge that landed while another was queued.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   browser-contracts:
@@ -69,3 +84,52 @@ jobs:
             e2e/texcache-kind-change.spec.ts \
             --workers=1 \
             --reporter=line
+
+  # The full suite on real Metal (issue #199). Free macOS runners expose a
+  # paravirtual GPU, but only full Chromium reaches it; the headless shell stays
+  # on SwiftShader. PLAYWRIGHT_CHROMIUM_CHANNEL switches e2e/launchOptions.ts to
+  # that mode. The VM is small (3 cores, 7 GB): a correctness gate, not timing.
+  full-suite-metal:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      PLAYWRIGHT_CHROMIUM_CHANNEL: chromium
+    steps:
+      # All of dev-images, unlike the job above: the full suite reads ~17
+      # assets and an include list would rot as specs are added.
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        working-directory: packages/niivue
+        run: bunx playwright install chromium
+
+      # e2e/uikit-overlay-hook.spec.ts imports the built bundle.
+      - run: bunx nx build uikit
+
+      - name: Full e2e suite
+        working-directory: packages/niivue
+        # The excluded specs fail on real Metal only (issue #453).
+        run: |
+          bunx playwright test --workers=2 \
+            --grep-invert "keeps its modulation|no plane seams"
+
+      # GPU specs skip rather than fail when an adapter or backend is missing,
+      # so a green run with skips may have tested very little. Tests excluded
+      # by --grep-invert are not run and so are not counted here.
+      - name: Fail on skipped tests
+        run: bun .github/scripts/check-no-skipped-tests.ts packages/niivue/test-results/results.json
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-metal
+          path: packages/niivue/playwright-report/
+          retention-days: 7

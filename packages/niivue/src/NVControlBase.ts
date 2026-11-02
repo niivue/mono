@@ -35,6 +35,7 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import {
   type SettingsSnapshot,
   settingsChangeEvents,
@@ -61,6 +62,7 @@ import * as NVMesh from '@/mesh/NVMesh'
 import { clearMeshClusters } from '@/mesh/triangleClusters'
 import type { WriteOptions } from '@/mesh/writers'
 import {
+  clampCinematicOptions,
   clampCrosscutWidth,
   clampFinite,
   clampSampleRate,
@@ -79,6 +81,7 @@ import {
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
+  VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
@@ -102,6 +105,7 @@ import type {
   AnnotationTool,
   BackendType,
   CanvasViewport,
+  CinematicOptions,
   ColorMap,
   CompletedMeasurement,
   CustomLayoutTile,
@@ -140,9 +144,13 @@ import { niftiBufferIsSignal } from '@/signal/detect'
 import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
-import { fetchSidecar } from '@/signal/sidecar'
+import { fetchSidecar, parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import { NVSlide } from '@/slide/NVSlide'
-import { SlideDrawing } from '@/slide/slideDrawing'
+import {
+  isSlideDrawingSizeValid,
+  SlideDrawing,
+  slideDrawingSize,
+} from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
@@ -219,6 +227,7 @@ import {
   reorientDrawingToRAS,
   volumeTR,
 } from '@/volume/utils'
+import { version } from '../package.json'
 
 /** MeshUpdate options read only while drawing: setMesh just redraws. */
 const MESH_REDRAW_OPTIONS = new Set(['name', 'opacity', 'visible'])
@@ -274,6 +283,7 @@ type ViewBackend = {
    * `plan.chunks`), surfaced so `lodCompensation()` can report it.
    */
   coarseFloorDims: () => [number, number, number] | null
+  cinematicRenderer: { frameMs: number | null }
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
   onContextLost: (() => void) | null
   onChunkStream:
@@ -906,9 +916,9 @@ export default class NiiVue extends EventTarget {
    * {@link getScreenTiles} use. This is the exact conversion the built-in
    * pointer handlers apply, so a caller never has to reproduce it:
    * `(client - canvas rect origin) * dpr`, where `dpr` is
-   * `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
-   * then, for an instance sharing a canvas via `bounds`, minus the origin of
-   * this instance's post-viewport pixel rect.
+   * {@link effectiveDevicePixelRatio}; then, for an instance sharing a
+   * canvas via `bounds`, minus the origin of this instance's post-viewport
+   * pixel rect.
    *
    * Returns null when the instance has no canvas or, for a `bounds` instance,
    * when the point is outside this instance's rect (a sibling's area) or the
@@ -928,8 +938,8 @@ export default class NiiVue extends EventTarget {
    * the top-left, y down. These are NOT CSS pixels, and for an instance
    * sharing one canvas via `bounds` they are bounds-local (the instance's own
    * pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
-   * event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
-   * the bounds offset exactly as the built-in pointer handlers do.
+   * event; it applies {@link effectiveDevicePixelRatio} and the bounds
+   * offset exactly as the built-in pointer handlers do.
    *
    * Returns the tile index, its slice type, whether it is a 3D render tile,
    * and the position normalized to the tile rect (half-open [0,1), y down);
@@ -975,7 +985,7 @@ export default class NiiVue extends EventTarget {
    * those).
    *
    * The returned x/y are canvas backing-store pixels (see {@link hitTest});
-   * divide by the effective devicePixelRatio to position CSS-pixel-sized
+   * divide by {@link effectiveDevicePixelRatio} to position CSS-pixel-sized
    * overlay elements. The point may project outside the winning tile's rect
    * when panned/zoomed out of view — clip against the tile's
    * `leftTopWidthHeight` if needed. Returns null before the first render or
@@ -1570,11 +1580,14 @@ export default class NiiVue extends EventTarget {
   /**
    * What the 3D render tile draws: `VOLUME_RENDER_MODE.COMPOSITE` (default, the
    * OVER ray-march), `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity
-   * projection), or `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
+   * projection), `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
    * crosshair planes, composited front to back, with overlays sampled on them
-   * as the 2D tiles do). 2D slices draw a single plane and are unaffected.
+   * as the 2D tiles do), or `VOLUME_RENDER_MODE.CINEMATIC` (progressive path
+   * tracing of the background volume with either one label volume or standard
+   * overlays, see
+   * {@link volumeCinematic}). 2D slices draw a single plane and are unaffected.
    *
-   * Only those three values are stored: a fractional value rounds to the
+   * Only those four values are stored: a fractional value rounds to the
    * nearest mode and anything else falls back to COMPOSITE (see
    * {@link normalizeVolumeRenderMode}), because the shaders test the mode by
    * proximity while the CPU tests it exactly, and a value in between would have
@@ -1822,6 +1835,39 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Settings of `VOLUME_RENDER_MODE.CINEMATIC` (light, shadows, ambient
+   * occlusion, exposure, step, frame count, label mode). The setter merges a
+   * partial object over the current settings and restarts refinement.
+   */
+  get volumeCinematic(): CinematicOptions {
+    return this.model.volume.cinematic
+  }
+  set volumeCinematic(v: Partial<CinematicOptions>) {
+    // Replace, never mutate: the initial object may be shared with a document.
+    this.model.volume.cinematic = clampCinematicOptions({
+      ...this.model.volume.cinematic,
+      ...v,
+    })
+    this.emit('change', {
+      property: 'volumeCinematic',
+      value: this.model.volume.cinematic,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Mean GPU time (ms) of a cinematic refinement frame, over the first 10
+   * frames after the last restart. Null until measured, outside CINEMATIC, or
+   * when the GPU offers no timer (WebGPU 'timestamp-query',
+   * EXT_disjoint_timer_query_webgl2).
+   */
+  get cinematicFrameMs(): number | null {
+    if (this.model.volume.renderMode !== VOLUME_RENDER_MODE.CINEMATIC)
+      return null
+    return this.view?.cinematicRenderer.frameMs ?? null
+  }
+
   get volumeOutlineWidth(): number {
     return this.model.volume.outlineWidth
   }
@@ -2020,6 +2066,11 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * On 2D slices, draw only mesh within this distance (mm, either side) of the displayed
+   * voxel plane, over the slice. 0 or Infinity (the default) draws all mesh
+   * in front of the slice.
+   */
   get meshThicknessOn2D(): number {
     return this.model.mesh.thicknessOn2D
   }
@@ -2261,6 +2312,20 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'isViewModeHotKeyEnabled', value: v })
   }
 
+  /**
+   * Opt-in: clicking a volume legend entry's colour box hides or shows that
+   * label (the volume's `hiddenLabels`); clicking its name still moves the
+   * crosshair to the label. Default false: every click moves the crosshair.
+   * Mesh and connectome legend entries do not toggle.
+   */
+  get isLegendToggleEnabled(): boolean {
+    return this.model.interaction.isLegendToggleEnabled
+  }
+  set isLegendToggleEnabled(v: boolean) {
+    this.model.interaction.isLegendToggleEnabled = v
+    this.emit('change', { property: 'isLegendToggleEnabled', value: v })
+  }
+
   get isPanFollowingCrosshair(): boolean {
     return this.model.interaction.isPanFollowingCrosshair
   }
@@ -2295,14 +2360,7 @@ export default class NiiVue extends EventTarget {
     this.model.annotation.isEnabled = v
     // Leaving annotation mode abandons any half-drawn multi-click contour so its
     // preview does not linger.
-    if (!v) {
-      this._annotationPolyPoints = null
-      this._bidirectionalLong = null
-      this.model._annotationPreview = null
-      this._livewireSlice = null
-      this._livewireField = null
-      this._livewireSeed = null
-    }
+    if (!v) this._abandonAnnotationInProgress()
     this.emit('change', { property: 'annotationIsEnabled', value: v })
     this.drawScene()
   }
@@ -2370,19 +2428,26 @@ export default class NiiVue extends EventTarget {
     return this.model.annotation.tool
   }
   set annotationTool(v: AnnotationTool) {
+    // Re-selecting the current tool (e.g. an app mirroring its toolbar) must
+    // not wipe a half-drawn contour (#112).
+    if (v === this.model.annotation.tool) return
     this.model.annotation.tool = v
     this.model._annotationSelection = null
     // Switching tools abandons any half-drawn multi-click / bidirectional shape.
-    if (this._annotationPolyPoints || this._bidirectionalLong) {
-      this._annotationPolyPoints = null
-      this._bidirectionalLong = null
-      this.model._annotationPreview = null
-      this._livewireSlice = null
-      this._livewireField = null
-      this._livewireSeed = null
-    }
+    if (this._annotationPolyPoints || this._bidirectionalLong)
+      this._abandonAnnotationInProgress()
     this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()
+  }
+
+  /** Drop a half-drawn multi-click contour or bidirectional measurement. */
+  _abandonAnnotationInProgress(): void {
+    this._annotationPolyPoints = null
+    this._bidirectionalLong = null
+    this.model._annotationPreview = null
+    this._livewireSlice = null
+    this._livewireField = null
+    this._livewireSeed = null
   }
 
   get selectedAnnotation(): string | null {
@@ -2867,6 +2932,11 @@ export default class NiiVue extends EventTarget {
     return this.opts.backend
   }
 
+  /** The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`. */
+  get version(): string {
+    return version
+  }
+
   get isAntiAlias(): boolean {
     return this.opts.isAntiAlias ?? false
   }
@@ -2888,11 +2958,25 @@ export default class NiiVue extends EventTarget {
     return this.devicePixelRatio
   }
 
+  /**
+   * The device pixel ratio the canvas renders at: the `devicePixelRatio`
+   * option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
+   * pixels times this are canvas pixels.
+   */
+  get effectiveDevicePixelRatio(): number {
+    return effectiveDevicePixelRatio(this.opts.forceDevicePixelRatio)
+  }
+
   set devicePixelRatio(dpr: number) {
-    this.opts.forceDevicePixelRatio = dpr
-    if (!this.view) return
-    this.view.forceDevicePixelRatio = dpr
-    this.view.resize()
+    // Controllers sharing a canvas render it at one ratio, so all follow.
+    const ctrls = new Set([this, ...(getCanvasInstances(this.canvas) ?? [])])
+    for (const ctrl of ctrls) {
+      ctrl.opts.forceDevicePixelRatio = dpr
+      if (!ctrl.view) continue
+      ctrl.view.forceDevicePixelRatio = dpr
+      // resize() also rebuilds instance tiles for the new canvas pixel size.
+      ctrl.resize()
+    }
   }
 
   /** @deprecated Use devicePixelRatio */
@@ -3516,6 +3600,53 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Load local files as a drag and drop does: an `.nvd` opens as a document,
+   * and a `.json` is not loaded itself but applied as the sidecar of the data
+   * file sharing its basename. Each other file is loaded with
+   * {@link addImage} when `add`, else {@link loadImage}. A file that fails is
+   * logged and the rest still load.
+   * @example
+   * await nv1.loadFiles(Array.from(event.dataTransfer.files), { add: true })
+   */
+  async loadFiles(
+    files: readonly File[],
+    { add = false }: { add?: boolean } = {},
+  ): Promise<void> {
+    // Keyed by lowercased name so pairing is case-insensitive; the browser
+    // cannot fetch a sibling .json it was not given.
+    const sidecars = new Map<string, ReturnType<typeof parseSidecar>>()
+    for (const f of files) {
+      if (f.name.toLowerCase().endsWith('.json')) {
+        try {
+          sidecars.set(
+            f.name.toLowerCase(),
+            parseSidecar(JSON.parse(await f.text())),
+          )
+        } catch (err) {
+          log.error('Failed to parse sidecar:', f.name, err)
+        }
+      }
+    }
+    for (const file of files) {
+      const lower = file.name.toLowerCase()
+      if (lower.endsWith('.json')) continue
+      try {
+        if (lower.endsWith('.nvd')) {
+          await this.loadDocument(file)
+          continue
+        }
+        const sidecar = sidecars.get(siblingJsonUrl(lower))
+        const options = sidecar ? { sidecar } : {}
+        await (add
+          ? this.addImage(file, options)
+          : this.loadImage(file, options))
+      } catch (err) {
+        log.error('Failed to load file:', file.name, err)
+      }
+    }
+  }
+
+  /**
    * Route a file/URL to the signal, mesh, or volume loader.
    *
    * - Signal-only extensions (e.g. TSV) and `asSignal: true` go to signals.
@@ -3815,23 +3946,34 @@ export default class NiiVue extends EventTarget {
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
-    options = NVCmaps.withColormapWindow(options)
+    // Only a colormap change applies its window: callers that re-send the
+    // current colormap with every update keep the user's window (#395).
+    if (options.colormap !== volumes[volumeIndex].colormap)
+      options = NVCmaps.withColormapWindow(options)
     // Clamp frame4D to valid range
     if (options.frame4D !== undefined) {
       const maxFrame = (volumes[volumeIndex].nFrame4D ?? 1) - 1
       options.frame4D = Math.max(0, Math.min(options.frame4D, maxFrame))
     }
     Object.assign(volumes[volumeIndex], options)
+    NVCmaps.resolveDefaultWindow(volumes[volumeIndex])
     if (options.colormap !== undefined) {
       NVModel.applyColormap(volumes[volumeIndex], options.colormap)
       // A streamed volume has no img to scan; its bricks may already be
       // decoded, so its generated palette takes the range they held.
       for (const chunked of this._chunkedVolumes) chunked.growLabelsToObserved()
     }
+    // Report the window as resolved (a NaN/null request as the default it
+    // took, a colormap's fill included), not as requested.
+    const changes = { ...options }
+    if (changes.calMin !== undefined)
+      changes.calMin = volumes[volumeIndex].calMin
+    if (changes.calMax !== undefined)
+      changes.calMax = volumes[volumeIndex].calMax
     this.emit('volumeUpdated', {
       volumeIndex,
       volume: volumes[volumeIndex],
-      changes: options,
+      changes,
     })
     await this._updateGLChanged()
   }
@@ -5220,7 +5362,8 @@ export default class NiiVue extends EventTarget {
   /**
    * Create a drawing surface in *slide* space for the registered slide plane.
    * The annotation is a label raster covering the whole slide (sized to the
-   * slide aspect, long edge capped at `maxRaster`, default 4096) and is painted
+   * slide aspect, long edge capped at `maxRaster`, default 4096, and at most
+   * 4096 x 4096 pixels in total so a saved drawing always loads) and is painted
    * with the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,
    * drawLine and the RLE undo stack), so it stays in slide coordinates and is
    * compatible with the volume drawing functions. Requires {@link setSlidePlane}.
@@ -5231,16 +5374,12 @@ export default class NiiVue extends EventTarget {
       log.warn('createSlideDrawing: no slide plane registered')
       return
     }
-    const sw = sp.slide.manifest.width
-    const sh = sp.slide.manifest.height
-    const cap = opts?.maxRaster ?? 4096
-    const scale = Math.min(1, cap / Math.max(1, sw, sh))
-    this._attachSlideDrawing(
-      new SlideDrawing(
-        Math.max(1, Math.round(sw * scale)),
-        Math.max(1, Math.round(sh * scale)),
-      ),
+    const [w, h] = slideDrawingSize(
+      sp.slide.manifest.width,
+      sp.slide.manifest.height,
+      opts?.maxRaster ?? 4096,
     )
+    this._attachSlideDrawing(new SlideDrawing(w, h))
   }
 
   // Wire a SlideDrawing into the active plane: build its annotation overlay
@@ -5268,14 +5407,7 @@ export default class NiiVue extends EventTarget {
   /** Map a canvas CSS pixel to slide base-pixel coords, or null off-plane. */
   slidePlanePick(cssX: number, cssY: number): { x: number; y: number } | null {
     if (!this._slidePlane) return null
-    // forceDevicePixelRatio is -1 ("auto") unless explicitly pinned.
-    const forced = this.view?.forceDevicePixelRatio ?? -1
-    const dpr =
-      forced > 0
-        ? forced
-        : typeof window !== 'undefined'
-          ? window.devicePixelRatio || 1
-          : 1
+    const dpr = this.effectiveDevicePixelRatio
     return pickSlidePixel(this._slidePlane, cssX * dpr, cssY * dpr)
   }
 
@@ -5733,6 +5865,15 @@ export default class NiiVue extends EventTarget {
     if (!name) return false
     const canonical = name.charAt(0).toUpperCase() + name.slice(1)
     return NVCmaps.lookupColorMap(canonical) !== null
+  }
+
+  /**
+   * The display window a colormap brings with it (the `ct_*` maps, e.g.
+   * `ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`
+   * when the colormap changes, fill a bound left out from it.
+   */
+  colormapWindow(name: string): [number, number] | null {
+    return NVCmaps.colormapWindow(name)
   }
 
   get meshExtensions(): string[] {
@@ -6497,7 +6638,11 @@ export default class NiiVue extends EventTarget {
   resize(): void {
     if (!this.view) return
     this.view.resize()
-    if (this.opts.instances) this.updateTilesFromInstances()
+    if (this.opts.instances) {
+      // view.resize() drew with the old tiles; draw again with the new ones.
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
   }
 
   /**
@@ -6620,6 +6765,12 @@ export default class NiiVue extends EventTarget {
    * shows it. Other viewers keep the old colours until their volume is
    * given the colormap again (`setVolume`).
    *
+   * `min`/`max` (with `min < max`) give a suggested display window, applied
+   * when a volume is given this colormap without calMin/calMax. The optional
+   * cinematic keys (`E`, `S`, `gradient`, `gMax`, `shininess`, `labelBlend`;
+   * label tables: `S`, `lo`, `hi`, `surface`, `normalize`) are kept for
+   * `VOLUME_RENDER_MODE.CINEMATIC`; see {@link ColorMap}.
+   *
    * @returns The canonical name under which the colormap was stored
    *   (first letter upper-cased), which is the form visible in `nv1.colormaps`
    *   and the `colormapAdded` event detail.
@@ -6633,7 +6784,7 @@ export default class NiiVue extends EventTarget {
   addColormap(
     name: string,
     cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
-      Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
+      Partial<Omit<ColorMap, 'R' | 'G' | 'B'>>,
   ): string {
     const canonical = NVCmaps.addColormap(name, cmap)
     const def = NVCmaps.lookupColorMap(canonical)
@@ -6782,7 +6933,16 @@ export default class NiiVue extends EventTarget {
       pixelToWorld: sp.pixelToWorld,
       levelIndex: sp.levelIndex,
     })
-    if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
+    if (
+      sp.drawingRLE &&
+      sp.drawingWidth &&
+      sp.drawingHeight &&
+      !isSlideDrawingSizeValid(sp.drawingWidth, sp.drawingHeight)
+    ) {
+      log.warn(
+        `loadDocument: slide drawing size ${sp.drawingWidth}x${sp.drawingHeight} is not valid; drawing not loaded`,
+      )
+    } else if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
       const drawing = new SlideDrawing(sp.drawingWidth, sp.drawingHeight)
       const decoded = decodeRLE(
         sp.drawingRLE,
@@ -6869,6 +7029,14 @@ export default class NiiVue extends EventTarget {
     this.clearSlidePlane()
     await this.removeAllVolumes()
     await this.removeAllMeshes()
+    // Loads deferred behind an earlier thumbnail would replace the document.
+    this._deferredVolumes = null
+    this._deferredMeshes = null
+    // A half-drawn shape, the selection and annotation undo belong to the old
+    // scene (#113).
+    this._abandonAnnotationInProgress()
+    this.model._annotationSelection = null
+    this._annotationUndoStack.clear()
 
     // Apply non-data state (scene, config, display settings). Settings the
     // document omits are filled per the fill policy (default: reset to defaults).
@@ -6968,13 +7136,13 @@ export default class NiiVue extends EventTarget {
       const back = this.model.getVolumes()[0]
       if (back) {
         const dv = createDrawingVolume(back)
-        const decoded = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
-        if (decoded.length !== dv.nVox3D) {
+        // Check the claimed length before decodeRLE allocates it.
+        if (doc.drawingBitmapLength !== dv.nVox3D) {
           log.warn(
-            `loadDocument: decoded drawing length ${decoded.length} does not match volume ${dv.nVox3D}`,
+            `loadDocument: drawing length ${doc.drawingBitmapLength} does not match volume ${dv.nVox3D}`,
           )
         } else {
-          dv.img = decoded
+          dv.img = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
         }
         this.model.drawingVolume = dv
         this.model.draw.isEnabled = true

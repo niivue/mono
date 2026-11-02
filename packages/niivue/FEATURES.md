@@ -226,6 +226,7 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `isSnapToVoxelCenters` | Prop | |
 | `isYoked3DTo2DZoom` | Prop | |
 | `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |
+| `isLegendToggleEnabled` | Prop | Legend colour-box click hides/shows a volume label (`hiddenLabels`); hidden labels show as a colour outline; name click still moves the crosshair; off by default |
 | `moveCrosshairInVox(di, dj, dk)` | Method | Keyboard/button navigation |
 | `getCrosshairPos()` / `setCrosshairPos([x,y,z])` | Method | |
 | `vox2frac([i,j,k])` | Method | |
@@ -265,7 +266,8 @@ All flat keys; mirrors the prop list above. Grouping (from source):
 | `setFontFromUrl({ atlas, metrics })` | Method | Yes | Remote atlas + JSON metrics |
 | `colormaps` | Prop (get) | No | Registered names (`string[]`) |
 | `hasColormap(name)` | Method | No | |
-| `lookupColorMap(name)` | Method | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, not auto-applied — pass to `setVolume` as `calMin`/`calMax` |
+| `colormapWindow(name)` | Method | No | `[min, max]` display window a map brings (e.g. `ct_bones` 180..600), else `null` |
+| `lookupColorMap(name)` | Export | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, applied on load and when `setVolume` changes the colormap |
 | `addColormap(name, ColorMap)` | Method | No | `{ R, G, B, A?, I?, labels? }` |
 | `addColormapFromUrl(url, name?)` | Method | Yes | |
 | `colormapNames(kind?)` | Method | No | `'continuous'` / `'label'` filter |

@@ -1,5 +1,4 @@
 {
-  "niivueVersion": "1.0.0-rc.44",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVue",
   "properties": [
@@ -617,6 +616,17 @@
     {
       "jsName": "isGraphVisible",
       "pyName": "is_graph_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isLegendToggleEnabled",
+      "pyName": "is_legend_toggle_enabled",
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
@@ -1354,6 +1364,17 @@
       "doc": null
     },
     {
+      "jsName": "cinematicFrameMs",
+      "pyName": "cinematic_frame_ms",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Mean GPU time (ms) of a cinematic refinement frame, over the first 10\nframes after the last restart. Null until measured, outside CINEMATIC, or\nwhen the GPU offers no timer (WebGPU 'timestamp-query',\nEXT_disjoint_timer_query_webgl2)."
+    },
+    {
       "jsName": "colormaps",
       "pyName": "colormaps",
       "tsType": "string[]",
@@ -1382,6 +1403,17 @@
       "hasGetter": true,
       "hasSetter": false,
       "doc": null
+    },
+    {
+      "jsName": "effectiveDevicePixelRatio",
+      "pyName": "effective_device_pixel_ratio",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "The device pixel ratio the canvas renders at: the `devicePixelRatio`\noption when it is above 0, else `window.devicePixelRatio`. Client (CSS)\npixels times this are canvas pixels."
     },
     {
       "jsName": "isAnimating",
@@ -1473,6 +1505,17 @@
       "doc": null
     },
     {
+      "jsName": "version",
+      "pyName": "version",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`."
+    },
+    {
       "jsName": "volumeExtensions",
       "pyName": "volume_extensions",
       "tsType": "string[]",
@@ -1550,13 +1593,13 @@
         },
         {
           "name": "cmap",
-          "tsType": "Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Pick<ColorMap, \"A\" | \"I\" | \"labels\">>",
+          "tsType": "Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Omit<ColorMap, \"R\" | \"G\" | \"B\">>",
           "optional": false,
           "doc": null
         }
       ],
       "returns": "string",
-      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it. Volumes\nthat already use the name show the new colors on their next GPU update\n(e.g. `updateGLVolume()`). Mesh layers, tracts and connectomes bake their\ncolors when built, so they pick them up on their next change\n(`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).\n\nA `labels` array (empty is fine) registers a label table: volumes using\nit look up colours by integer ID with nearest sampling and no display\nwindow, and `I` defaults to 0..n-1. Re-registering a name rebuilds the\nlabel LUT of every volume using it in this viewer; `updateGLVolume()`\nshows it. Other viewers keep the old colours until their volume is\ngiven the colormap again (`setVolume`).",
+      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it. Volumes\nthat already use the name show the new colors on their next GPU update\n(e.g. `updateGLVolume()`). Mesh layers, tracts and connectomes bake their\ncolors when built, so they pick them up on their next change\n(`setMeshLayerProperty`, `setTractOptions`, `setConnectomeOptions`, ...).\n\nA `labels` array (empty is fine) registers a label table: volumes using\nit look up colours by integer ID with nearest sampling and no display\nwindow, and `I` defaults to 0..n-1. Re-registering a name rebuilds the\nlabel LUT of every volume using it in this viewer; `updateGLVolume()`\nshows it. Other viewers keep the old colours until their volume is\ngiven the colormap again (`setVolume`).\n\n`min`/`max` (with `min < max`) give a suggested display window, applied\nwhen a volume is given this colormap without calMin/calMax. The optional\ncinematic keys (`E`, `S`, `gradient`, `gMax`, `shininess`, `labelBlend`;\nlabel tables: `S`, `lo`, `hi`, `surface`, `normalize`) are kept for\n`VOLUME_RENDER_MODE.CINEMATIC`; see {@link ColorMap}.",
       "returnsDoc": "The canonical name under which the colormap was stored\n(first letter upper-cased), which is the form visible in `nv1.colormaps`\nand the `colormapAdded` event detail."
     },
     {
@@ -2070,7 +2113,7 @@
         }
       ],
       "returns": "[number, number] | null",
-      "doc": "Convert a pointer event's client position to the canvas pixel space that\n{@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and\n{@link getScreenTiles} use. This is the exact conversion the built-in\npointer handlers apply, so a caller never has to reproduce it:\n`(client - canvas rect origin) * dpr`, where `dpr` is\n`window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;\nthen, for an instance sharing a canvas via `bounds`, minus the origin of\nthis instance's post-viewport pixel rect.\n\nReturns null when the instance has no canvas or, for a `bounds` instance,\nwhen the point is outside this instance's rect (a sibling's area) or the\nrect is offscreen.",
+      "doc": "Convert a pointer event's client position to the canvas pixel space that\n{@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and\n{@link getScreenTiles} use. This is the exact conversion the built-in\npointer handlers apply, so a caller never has to reproduce it:\n`(client - canvas rect origin) * dpr`, where `dpr` is\n{@link effectiveDevicePixelRatio}; then, for an instance sharing a\ncanvas via `bounds`, minus the origin of this instance's post-viewport\npixel rect.\n\nReturns null when the instance has no canvas or, for a `bounds` instance,\nwhen the point is outside this instance's rect (a sibling's area) or the\nrect is offscreen.",
       "returnsDoc": null
     },
     {
@@ -2098,6 +2141,23 @@
       ],
       "returns": "string[]",
       "doc": "Registered colormap names, sorted; `kind` narrows to continuous ramps or\nlabel tables (a colormap with a `labels` array).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "colormapWindow",
+      "pyName": "colormap_window",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "name",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number] | null",
+      "doc": "The display window a colormap brings with it (the `ct_*` maps, e.g.\n`ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`\nwhen the colormap changes, fill a bound left out from it.",
       "returnsDoc": null
     },
     {
@@ -2141,7 +2201,7 @@
         }
       ],
       "returns": "void",
-      "doc": "Create a drawing surface in *slide* space for the registered slide plane.\nThe annotation is a label raster covering the whole slide (sized to the\nslide aspect, long edge capped at `maxRaster`, default 4096) and is painted\nwith the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,\ndrawLine and the RLE undo stack), so it stays in slide coordinates and is\ncompatible with the volume drawing functions. Requires {@link setSlidePlane}.",
+      "doc": "Create a drawing surface in *slide* space for the registered slide plane.\nThe annotation is a label raster covering the whole slide (sized to the\nslide aspect, long edge capped at `maxRaster`, default 4096, and at most\n4096 x 4096 pixels in total so a saved drawing always loads) and is painted\nwith the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,\ndrawLine and the RLE undo stack), so it stays in slide coordinates and is\ncompatible with the volume drawing functions. Requires {@link setSlidePlane}.",
       "returnsDoc": null
     },
     {
@@ -2501,7 +2561,7 @@
         }
       ],
       "returns": "ViewHitTest | null",
-      "doc": "Hit-test a canvas position against the current frame's tiles.\n\nCoordinate convention (shared by {@link canvasToMM}, {@link mmToCanvas}\nand {@link getScreenTiles}): canvas BACKING-STORE pixels — the\n`canvas.width`/`canvas.height` space the renderer draws into — origin at\nthe top-left, y down. These are NOT CSS pixels, and for an instance\nsharing one canvas via `bounds` they are bounds-local (the instance's own\npixel rect subtracted). Use {@link clientToCanvas} to convert a pointer\nevent; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and\nthe bounds offset exactly as the built-in pointer handlers do.\n\nReturns the tile index, its slice type, whether it is a 3D render tile,\nand the position normalized to the tile rect (half-open [0,1), y down);\nnull when no\ntile contains the point or the view is not initialized.",
+      "doc": "Hit-test a canvas position against the current frame's tiles.\n\nCoordinate convention (shared by {@link canvasToMM}, {@link mmToCanvas}\nand {@link getScreenTiles}): canvas BACKING-STORE pixels — the\n`canvas.width`/`canvas.height` space the renderer draws into — origin at\nthe top-left, y down. These are NOT CSS pixels, and for an instance\nsharing one canvas via `bounds` they are bounds-local (the instance's own\npixel rect subtracted). Use {@link clientToCanvas} to convert a pointer\nevent; it applies {@link effectiveDevicePixelRatio} and the bounds\noffset exactly as the built-in pointer handlers do.\n\nReturns the tile index, its slice type, whether it is a 3D render tile,\nand the position normalized to the tile rect (half-open [0,1), y down);\nnull when no\ntile contains the point or the view is not initialized.",
       "returnsDoc": null
     },
     {
@@ -2803,7 +2863,7 @@
         }
       ],
       "returns": "CanvasTilePoint | null",
-      "doc": "Project a world-mm point to canvas pixels on the best-matching 2D slice\ntile, using the MVP each tile cached on its last draw (so the result\nreflects the current pan/zoom exactly). Intended for positioning external\noverlays (SVG/HTML crosshairs, labels) over slices.\n\nTile selection: the 2D slice tile whose slice plane passes nearest the\npoint (perpendicular distance in mm); ties — e.g. the crosshair, which\nlies on every plane of a multiplanar layout — resolve to the lowest tile\nindex. 3D render tiles are never selected (use {@link mm2renderNDC} for\nthose).\n\nThe returned x/y are canvas backing-store pixels (see {@link hitTest});\ndivide by the effective devicePixelRatio to position CSS-pixel-sized\noverlay elements. The point may project outside the winning tile's rect\nwhen panned/zoomed out of view — clip against the tile's\n`leftTopWidthHeight` if needed. Returns null before the first render or\nwhen the layout has no 2D slice tiles.",
+      "doc": "Project a world-mm point to canvas pixels on the best-matching 2D slice\ntile, using the MVP each tile cached on its last draw (so the result\nreflects the current pan/zoom exactly). Intended for positioning external\noverlays (SVG/HTML crosshairs, labels) over slices.\n\nTile selection: the 2D slice tile whose slice plane passes nearest the\npoint (perpendicular distance in mm); ties — e.g. the crosshair, which\nlies on every plane of a multiplanar layout — resolve to the lowest tile\nindex. 3D render tiles are never selected (use {@link mm2renderNDC} for\nthose).\n\nThe returned x/y are canvas backing-store pixels (see {@link hitTest});\ndivide by {@link effectiveDevicePixelRatio} to position CSS-pixel-sized\noverlay elements. The point may project outside the winning tile's rect\nwhen panned/zoomed out of view — clip against the tile's\n`leftTopWidthHeight` if needed. Returns null before the first render or\nwhen the layout has no 2D slice tiles.",
       "returnsDoc": null
     },
     {
@@ -4565,6 +4625,11 @@
         "reason": "non-serializable nominal type: SlideVectorLayer"
       },
       {
+        "jsName": "volumeCinematic",
+        "tsType": "Partial<CinematicOptions>",
+        "reason": "non-serializable nominal type: Partial<CinematicOptions>"
+      },
+      {
         "jsName": "volumes",
         "tsType": "NVImage",
         "reason": "non-serializable nominal type: NVImage"
@@ -4587,6 +4652,10 @@
       {
         "jsName": "getScreenTiles",
         "reason": "return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)"
+      },
+      {
+        "jsName": "loadFiles",
+        "reason": "argument is not JSON-serializable (browser File objects; use add_volume / add_mesh with a URL or bytes)"
       },
       {
         "jsName": "prepareVolume",

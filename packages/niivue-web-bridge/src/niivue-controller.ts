@@ -1,5 +1,10 @@
 import type NiiVue from '@niivue/niivue'
-import { lookupColorMap, type NVImage, type VolumeUpdate } from '@niivue/niivue'
+import {
+  lookupColorMap,
+  type NVImage,
+  type NVMesh,
+  type VolumeUpdate,
+} from '@niivue/niivue'
 import type { Bridge } from './bridge'
 import type { PropAllowlist } from './prop-allowlist'
 import { wirePropBridge } from './prop-bridge'
@@ -35,6 +40,15 @@ export type VolumeSummary = {
   /** RAS dimensions [x, y, z] and voxel size in mm. */
   dims: number[]
   pixDims: number[]
+}
+
+/** One loaded mesh, as sent to the native host. */
+export type MeshSummary = {
+  name: string
+}
+
+export function meshSummaries(meshes: readonly NVMesh[]): MeshSummary[] {
+  return meshes.map((m) => ({ name: m.name ?? 'Mesh' }))
 }
 
 function colormapStops(name: string): number[][] {
@@ -80,16 +94,83 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
 }
 
 /**
+ * Runs `load`, which adds to the scene. When `replace`, whatever was loaded
+ * before is then removed, so a load that throws or adds nothing (NiiVue logs
+ * some failures instead of throwing) keeps the old scene. Returns whether
+ * anything new appeared.
+ */
+async function loadInto(
+  nv: InstanceType<typeof NiiVue>,
+  load: () => Promise<void>,
+  replace: boolean,
+): Promise<boolean> {
+  const volumes = [...nv.volumes]
+  const meshes = [...nv.meshes]
+  const signals = [...nv.signals]
+  await load()
+  const hasNew = <T>(now: readonly T[], old: readonly T[]) =>
+    now.some((item) => !old.includes(item))
+  if (
+    !hasNew(nv.volumes, volumes) &&
+    !hasNew(nv.meshes, meshes) &&
+    !hasNew(nv.signals, signals)
+  ) {
+    return false
+  }
+  if (!replace) return true
+  // Highest index first, so earlier indices stay valid.
+  for (let i = nv.volumes.length - 1; i >= 0; i--) {
+    if (volumes.includes(nv.volumes[i])) await nv.removeVolume(i)
+  }
+  for (let i = nv.meshes.length - 1; i >= 0; i--) {
+    if (meshes.includes(nv.meshes[i])) await nv.removeMesh(i)
+  }
+  for (let i = nv.signals.length - 1; i >= 0; i--) {
+    if (signals.includes(nv.signals[i])) nv.removeSignal(i)
+  }
+  return true
+}
+
+/**
+ * Loads one file. Without `add` it replaces every volume, mesh and signal,
+ * not only its own kind. Throws when nothing loads.
+ */
+export async function loadFile(
+  nv: InstanceType<typeof NiiVue>,
+  file: File,
+  add: boolean,
+): Promise<void> {
+  if (!(await loadInto(nv, () => nv.addImage(file), !add))) {
+    throw new Error(`could not load ${file.name}`)
+  }
+}
+
+/**
+ * Loads dropped files with `nv.loadFiles` (documents, sidecar pairing). Every
+ * file is added, and without `add` the previous scene is removed afterwards,
+ * so a multi-file drop gives a base plus overlays. Failures are logged.
+ */
+export async function loadDroppedFiles(
+  nv: InstanceType<typeof NiiVue>,
+  files: readonly File[],
+  add: boolean,
+): Promise<void> {
+  await loadInto(nv, () => nv.loadFiles(files, { add: true }), !add)
+}
+
+/**
  * Registers bridge handlers that drive the given NiiVue instance and
  * forwards niivue events back to the native host.
  *
  * Adds:
- *   - `loadVolume(name, bytesBase64)` -> `nv.loadImage(File)`
+ *   - `loadVolume(name, bytesBase64, add)` -> `loadFile(File, add)`
  *   - `setBackend(backend)` -> `nv.reinitializeView({ backend })` (+ emits `backendChange`)
  *   - generic prop-bridge (setProp / getProps / propChange)
  *   - forwards successful image loads as `imageLoaded`
  *   - `getVolumes()`, `setVolume(index, ...)`, `removeVolume(index)`, `getColormaps()`
  *   - emits `volumesChange` with the volume list whenever it changes
+ *   - `getMeshes()`, `removeMesh(index)`; emits `meshesChange` likewise
+ *   - emits `signalsChange` with the signal count on each load or removal
  *   - forwards `locationChange` as an event with `{ mm, voxel, values, string }`
  */
 export function wireNiiVueToBridge(
@@ -101,7 +182,7 @@ export function wireNiiVueToBridge(
     const { name, bytesBase64, add } = raw as LoadVolumePayload
     const buffer = base64ToArrayBuffer(bytesBase64)
     const file = new File([buffer], name, { type: 'application/octet-stream' })
-    await (add ? nv.addImage(file) : nv.loadImage(file))
+    await loadFile(nv, file, add ?? false)
     return { ok: true }
   })
 
@@ -133,6 +214,15 @@ export function wireNiiVueToBridge(
     return { ok: true }
   })
 
+  bridge.handle('getMeshes', async () => meshSummaries(nv.meshes))
+
+  bridge.handle('removeMesh', async (raw) => {
+    await nv.removeMesh((raw as { index: number }).index)
+    return { ok: true }
+  })
+
+  bridge.handle('getSignalCount', async () => ({ count: nv.signals.length }))
+
   bridge.handle('getColormaps', async () => nv.colormapNames('continuous'))
 
   wirePropBridge(nv, bridge, { allowlist: options.allowlist })
@@ -150,19 +240,28 @@ export function wireNiiVueToBridge(
   nv.addEventListener('volumeUpdated', emitVolumes)
   nv.addEventListener('volumeRemoved', emitVolumes)
 
+  const emitMeshes = () => bridge.emit('meshesChange', meshSummaries(nv.meshes))
+
   nv.addEventListener('meshLoaded', (event) => {
     bridge.emit('imageLoaded', {
       name: event.detail.mesh.name,
       kind: 'mesh',
     })
+    emitMeshes()
   })
+  nv.addEventListener('meshRemoved', emitMeshes)
+
+  const emitSignals = () =>
+    bridge.emit('signalsChange', { count: nv.signals.length })
 
   nv.addEventListener('signalLoaded', (event) => {
     bridge.emit('imageLoaded', {
       name: event.detail.signal.name,
       kind: 'signal',
     })
+    emitSignals()
   })
+  nv.addEventListener('signalRemoved', emitSignals)
 
   nv.addEventListener('locationChange', (e) => {
     const detail = (e as CustomEvent).detail

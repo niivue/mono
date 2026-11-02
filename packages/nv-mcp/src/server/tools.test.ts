@@ -236,6 +236,7 @@ describe('core tool schemas', () => {
       'colormap_negative',
       'colormap_type',
       'frame',
+      'hidden_labels',
       'invert',
       'labels',
       'legend',

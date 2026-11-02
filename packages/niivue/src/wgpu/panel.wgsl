@@ -6,7 +6,7 @@ struct Panel {
 	rect: vec4f,
 	color: vec4f,
 	radius: f32,
-	_pad0: f32,
+	border: f32,
 	_pad1: f32,
 	_pad2: f32,
 };
@@ -19,7 +19,7 @@ struct VertexOutput {
 	@location(0) color: vec4f,
 	@location(1) localPos: vec2f,
 	@location(2) size: vec2f,
-	@location(3) radius: f32,
+	@location(3) shape: vec2f, // radius, border
 };
 
 @vertex
@@ -39,7 +39,7 @@ fn vertex_main(
 	out.color = panel.color;
 	out.localPos = pos * panel.rect.zw;
 	out.size = panel.rect.zw;
-	out.radius = panel.radius;
+	out.shape = vec2f(panel.radius, panel.border);
 	return out;
 }
 
@@ -52,9 +52,11 @@ fn roundedRectDistance(localPos: vec2f, size: vec2f, radius: f32) -> f32 {
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
-	let dist = roundedRectDistance(in.localPos, in.size, in.radius);
+	let dist = roundedRectDistance(in.localPos, in.size, in.shape.x);
 	let aa = fwidth(dist);
-	let alpha = 1.0 - smoothstep(-aa, aa, dist);
+	var alpha = 1.0 - smoothstep(-aa, aa, dist);
+	// A border keeps one antialiased ring, so its corners blend once (#478).
+	if (in.shape.y > 0.0) { alpha *= smoothstep(-aa, aa, dist + in.shape.y); }
 	if (alpha <= 0.0) { discard; }
 	return vec4f(in.color.rgb, in.color.a * alpha);
 }

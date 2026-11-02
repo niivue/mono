@@ -1157,6 +1157,7 @@ export default class NVGlview {
               mvp: mvpMatrix as Float32Array,
               model: modelMatrix as Float32Array,
               clipPlanes: md.clipPlanes,
+              clipPlaneColor: md.scene.clipPlaneColor,
               isClipCutaway: md.scene.isClipPlaneCutaway,
               clipPlaneOverlay: md.scene.clipPlaneOverlay,
               isBackgroundVisible: isCinematicBackgroundVisible,

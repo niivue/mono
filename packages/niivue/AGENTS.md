@@ -2074,7 +2074,7 @@ schedules one `render()` after `onSubmittedWorkDone` (one frame in flight), not
 while `_isDragging` (each camera change draws one restarted frame). Each tile
 (keyed by tile index, sized to it in device px; multiplanar and mosaic render
 tiles each get one) restarts on any change of options, cache version, viewport,
-MVP, clip planes, cutaway, background or affine. First-hit depth is set on frame 0
+MVP, clip planes, clip colour, cutaway, background or affine. First-hit depth is set on frame 0
 (first sample with table alpha >= 0.01, as the classic march), not
 min-accumulated. The light comes from each tile's own model matrix (mosaic
 tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
@@ -2177,7 +2177,11 @@ alpha), so a cut through translucent, low-gradient tissue (white matter, CSF)
 reads as a solid face instead of wrinkled interior noise, and are unlit like
 the classic clip surface: albedo x AO x 0.6, no direct light, shadow or
 specular (lit, the plane normal often faced the light and tone-mapped grey and
-white matter to near white; 0.6 keeps albedos off the ACES shoulder); in air
+white matter to near white; 0.6 keeps albedos off the ACES shoulder). A
+negative `clipPlaneColor` alpha tints that albedo toward the clip colour by
+|alpha| (`clipTint`, uniform `clipColor`), as the classic `shading` mode does;
+a positive alpha draws nothing, since the classic translucent sheet over
+empty space would be an unlit plane in a path-traced scene; in air
 `E` is 0, so a cut through empty space only starts the ray. A label sample is the nearest voxel at a point jittered up to
 half a voxel per frame, so boundaries average like trilinear weights. Each
 visible label spreads one voxel (6-neighbours) into unlabeled/hidden voxels, so

@@ -41,10 +41,8 @@ import {
   UIKitRulerOverlay,
 } from '@niivue/uikit'
 
-const backend =
-  new URLSearchParams(location.search).get('backend') === 'webgpu'
-    ? 'webgpu'
-    : 'webgl2'
+const params = new URLSearchParams(location.search)
+const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
 
 // DANDI serves every zarr asset from one public, CORS-enabled bucket, keyed by
 // the asset's zarr id -- no API call and no credentials needed to stream one.
@@ -582,13 +580,24 @@ function onLocationChange(event) {
   if (!els.follow.checked || !chunkSource) return
   const vox = event.detail?.vox
   if (!vox) return
+  const depthAxis = AXIS_INDEX[els.axis.value]
+  // A 3D render pick lands on the first visible voxel along the ray, usually
+  // the dim outer edge of the slab. Keep the slide's plane: take the pick
+  // in-plane only and move the volume crosshair onto that plane, which comes
+  // back here as a plain (non-render) location.
+  if (event.detail.axCorSag === SLICE_TYPE.RENDER) {
+    const onPlane = [vox[0], vox[1], vox[2]]
+    onPlane[depthAxis] = planeIndex
+    nv.crosshairPos = nv.vox2frac(onPlane)
+    return
+  }
   // Recorded before the plane changes: the marker is what tells you WHERE a 3D
   // depth-pick landed in-plane, and on a slab whose short axis spans ~10 screen
   // pixels that is the only feedback distinguishing "the pick missed" from "the
   // pick landed on an empty edge plane".
   crosshairVox = [vox[0], vox[1], vox[2]]
   requestSlideRender()
-  setPlane(vox[AXIS_INDEX[els.axis.value]], { fromCrosshair: true })
+  setPlane(vox[depthAxis], { fromCrosshair: true })
 }
 
 // Slide click -> crosshair. `screenToSlide` returns base-level pixels in the
@@ -876,7 +885,6 @@ function updateRuler(screen) {
 // drawn into the same slide frame as the ruler. Without it the slide pane gives
 // no feedback at all about a link from the volume pane: a 3D depth-pick that
 // lands on an empty edge plane looks identical to one that did not register.
-const CROSSHAIR_COLOR = [0.2, 1, 0.9, 0.9]
 const CROSSHAIR_LABEL_PX = 15
 // Device pixels a minor graduation aims for. Ticks much tighter than this stop
 // resolving on screen; much wider and the arms carry too few to read as a scale.
@@ -934,7 +942,8 @@ function updateCrosshair(screen) {
   const graduation = mode === 'plain' ? null : crosshairGraduation(screen)
   crosshair.setCrosshair({
     at: slideToDevice(point, screen),
-    color: CROSSHAIR_COLOR,
+    // The volume pane's own crosshair colour, so the two markers read as one.
+    color: nv.crosshairColor,
     thickness: 2 * dpr,
     gapPx: 10 * dpr,
     showTicks: graduation !== null,
@@ -1105,7 +1114,9 @@ function syncZoomControl(value) {
 }
 
 function onNiivueChange(event) {
-  if (event.detail?.property !== 'scaleMultiplier') return
+  const property = event.detail?.property
+  if (property === 'crosshairColor') requestSlideRender()
+  if (property !== 'scaleMultiplier') return
   syncZoomControl(Number(event.detail.value))
 }
 
@@ -1211,6 +1222,11 @@ els.axis.addEventListener('change', () => {
 })
 els.plane.addEventListener('input', () => {
   setPlane(Number(els.plane.value))
+  // Carry the volume crosshair to the new plane, so both panes agree on depth.
+  if (!els.follow.checked || !nv || !crosshairVox) return
+  const onPlane = [...crosshairVox]
+  onPlane[AXIS_INDEX[els.axis.value]] = planeIndex
+  nv.crosshairPos = nv.vox2frac(onPlane)
 })
 els.view.addEventListener('change', () => {
   if (nv) nv.sliceType = VIEWS[els.view.value] ?? SLICE_TYPE.RENDER
@@ -1235,6 +1251,9 @@ els.fit.addEventListener('click', () => {
 window.addEventListener('resize', requestSlideRender)
 
 async function main() {
+  // ?dataset=<key> opens on that Dandiset (e.g. ?dataset=spim).
+  const wanted = params.get('dataset')
+  if (wanted && Object.hasOwn(DATASETS, wanted)) els.dataset.value = wanted
   nv = new NiiVue({
     backend,
     backgroundColor: [0.02, 0.03, 0.03, 1],

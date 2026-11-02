@@ -4875,6 +4875,15 @@ export default class NiiVue extends EventTarget {
   }
 
   setCrosshairPos(pos: [number, number, number]): void {
+    this._setCrosshairPos(pos)
+  }
+
+  /**
+   * `setCrosshairPos`, reporting the view that placed it as the
+   * `locationChange` `axCorSag` (a 3D render depth pick passes
+   * `SLICE_TYPE.RENDER`, so a listener can tell it from a slice click).
+   */
+  _setCrosshairPos(pos: [number, number, number], axCorSag = NaN): void {
     let mm: [number, number, number] = pos
     // Snap to voxel centers if enabled and volumes are loaded
     if (
@@ -4898,7 +4907,7 @@ export default class NiiVue extends EventTarget {
     }
     this.model.scene.crosshairPos = frac
     applyPanFollowsCrosshair(this)
-    this.createOnLocationChange()
+    this.createOnLocationChange(axCorSag)
     this.drawScene()
   }
 

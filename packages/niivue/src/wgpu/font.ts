@@ -261,6 +261,7 @@ export class FontRenderer extends NVRenderer {
           panelData.set(item.backRect, off)
           panelData.set(item.backColor, off + 4)
           panelData[off + 8] = item.backRadius
+          panelData[off + 9] = item.backBorder ?? 0
           idx++
         }
         device.queue.writeBuffer(this.panelBuffer, 0, panelData)

@@ -167,3 +167,74 @@ test('legend box click toggles a label, name click moves the crosshair, document
   await page.mouse.click(at.box[0], at.box[1])
   expect(await hidden()).toEqual([])
 })
+
+const BIG = 800
+
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  for (const alpha of [255, 128]) {
+    test(`a hidden label's outline has no seams (${backend}, alpha ${alpha})`, async ({
+      page,
+    }) => {
+      const ready = await page.evaluate(mount(backend))
+      test.skip(!ready.ok, `backend unavailable: ${ready.why}`)
+      // A big font gives a box with a few pixels of bar to sample (#478).
+      const box = await page.evaluate(`(async () => {
+      const nv = window.__nv
+      nv.isLegendVisible = true
+      const c = nv.canvas
+      // Nothing behind the canvas may show through a translucent swatch.
+      for (const el of [...document.body.children]) if (el !== c) el.remove()
+      c.width = c.height = ${BIG}
+      c.style.width = c.style.height = '${BIG}px'
+      nv.fontMinSize = 30
+      nv.resize()
+      await nv.setVolume(1, { hiddenLabels: [nv.model.collectLegendEntries()[0].labelValue] })
+      // The legend reads the LUT each frame; a translucent colour must not
+      // blend twice where an outline's sides meet.
+      const cm = nv.volumes[1].colormapLabel
+      const first = nv.model.collectLegendEntries()[0].labelValue
+      cm.lut[(first - (cm.min ?? 0)) * 4 + 3] = ${alpha}
+      await window.__frame()
+      const l = nv.view.legendLayout
+      return { x: l.x + l.margin, y: l.y, size: l.boxSize }
+    })()`)
+      const png = await page.screenshot({
+        clip: { x: 0, y: 0, width: BIG, height: BIG },
+      })
+      // Distance of each row of the left bar's middle column from the bar's
+      // middle row: a seam is a row fading toward the backing.
+      const worst = await page.evaluate(
+        async ([b64, b]) => {
+          const blob = await (
+            await fetch(`data:image/png;base64,${b64}`)
+          ).blob()
+          const bmp = await createImageBitmap(blob)
+          const c = new OffscreenCanvas(bmp.width, bmp.height)
+          const ctx = c.getContext('2d') as OffscreenCanvasRenderingContext2D
+          ctx.drawImage(bmp, 0, 0)
+          const { data, width } = ctx.getImageData(0, 0, bmp.width, bmp.height)
+          const t = Math.max(1, Math.round(b.size * 0.2))
+          const x = Math.floor(b.x + t / 2)
+          const px = (y: number) => {
+            const o = (y * width + x) * 4
+            return [data[o], data[o + 1], data[o + 2]]
+          }
+          const ref = px(Math.floor(b.y + b.size / 2))
+          let max = 0
+          for (
+            let y = Math.ceil(b.y) + 1;
+            y < Math.floor(b.y + b.size) - 1;
+            y++
+          ) {
+            const p = px(y)
+            max = Math.max(max, ...p.map((v, i) => Math.abs(v - (ref[i] ?? 0))))
+          }
+          return max
+        },
+        [png.toString('base64'), box] as const,
+      )
+      expect(box.size).toBeGreaterThan(20)
+      expect(worst).toBeLessThan(8)
+    })
+  }
+}

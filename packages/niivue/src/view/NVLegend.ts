@@ -474,28 +474,17 @@ export function buildLegendLabels(
       entry.color[2] / 255,
       entry.color[3] / 255,
     ]
-    const box = (x: number, y: number, w: number, h: number): GlyphBatch => ({
+    const size = layout.boxSize
+    // Hidden label: an outline in the label colour, drawn as one bordered
+    // panel. Separate bars left seams where their antialiased edges met (#478).
+    batches.push({
       data: new Float32Array(0),
       count: 0,
       backColor: color,
-      backRect: [x, y, w, h],
+      backRect: [boxX, boxY, size, size],
       backRadius: 0, // Sharp corners for color box
+      backBorder: entry.isHidden ? Math.max(1, Math.round(size * 0.2)) : 0,
     })
-    const size = layout.boxSize
-    if (entry.isHidden) {
-      // Hidden label: an outline in the label colour. Four bars rather than a
-      // punched-out centre, which would need an opaque colour matching the
-      // backing and vanishes on a transparent canvas.
-      const t = Math.max(1, Math.round(size * 0.2))
-      batches.push(
-        box(boxX, boxY, size, t),
-        box(boxX, boxY + size - t, size, t),
-        box(boxX, boxY + t, t, size - 2 * t),
-        box(boxX + size - t, boxY + t, t, size - 2 * t),
-      )
-    } else {
-      batches.push(box(boxX, boxY, size, size))
-    }
 
     // Create text label next to the color box (no backing)
     const textX = boxX + layout.boxSize + layout.textPadding

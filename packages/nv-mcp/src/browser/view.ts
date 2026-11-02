@@ -89,6 +89,9 @@ export interface ShownVolume {
   calMax?: number
   calMinNeg?: number
   calMaxNeg?: number
+  /** The image's default window, which a NaN bound asks for. */
+  robustMin?: number
+  robustMax?: number
   /** The intensities the volume actually spans. */
   globalMin?: number
   globalMax?: number
@@ -704,6 +707,8 @@ export interface View {
   colormapNames?(kind?: 'continuous' | 'label'): string[]
   drawingColormaps?: readonly string[]
   hasColormap?(name: string): boolean
+  /** The window a colormap brings (the CT maps), which `setVolume` fills a left-out bound from. */
+  colormapWindow?(name: string): [number, number] | null
   addColormap?(name: string, colormap: ColormapToAdd): string
   addColormapFromUrl?(url: string, name?: string): Promise<unknown>
   setFontFromUrl?(urls: { atlas: string; metrics: string }): Promise<boolean>

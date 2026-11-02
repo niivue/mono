@@ -694,16 +694,11 @@ describe('set_volume', () => {
     expect(view.setVolume).toHaveBeenLastCalledWith(1, { calMax: Number.NaN })
   })
 
-  it('checks the window a CT colormap fills in, not the one it replaces', async () => {
-    // Mimics NiiVue: a new CT map fills each bound left out from its window.
+  it('checks the window a CT colormap fills in, before anything changes', async () => {
     const view = settableView()
-    view.setVolume = mock(async (index: number, update: VolumeUpdate) => {
-      const vol = view.volumes[index]
-      const fill =
-        update.colormap === 'ct_kidneys' && vol.colormap !== 'ct_kidneys'
-      Object.assign(vol, fill ? { calMin: 114, calMax: 302 } : {}, update)
-    })
-    view.volumes[0].colormap = 'gray' // NiiVue always names one
+    view.colormapWindow = (name: string) =>
+      name === 'ct_kidneys' ? [114, 302] : null
+    view.volumes[0].colormap = 'gray'
     const handlers = coreHandlers(host(view))
     // bold is warm 10..90: cal_min 95 is above the old high but under 302.
     await handlers.set_volume({
@@ -711,21 +706,40 @@ describe('set_volume', () => {
       colormap: 'ct_kidneys',
       cal_min: 95,
     })
-    expect(view.volumes[1]).toMatchObject({
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
       colormap: 'ct_kidneys',
       calMin: 95,
-      calMax: 302,
     })
-    // mni152 is 0..100: cal_min 500 is above the map's 302, so it is
-    // refused after NiiVue fills the window, and the volume is put back.
+    // mni152 is 0..100: cal_min 500 is above the map's 302. The whole
+    // request is refused before NiiVue sees it, opacity included.
+    ;(view.setVolume as ReturnType<typeof mock>).mockClear()
     await expect(
-      handlers.set_volume({ volume: 0, colormap: 'ct_kidneys', cal_min: 500 }),
+      handlers.set_volume({
+        volume: 0,
+        colormap: 'ct_kidneys',
+        cal_min: 500,
+        opacity: 0,
+      }),
     ).rejects.toThrow('cal_min (500) must not be above cal_max (302)')
-    expect(view.volumes[0]).toMatchObject({
-      colormap: 'gray',
-      calMin: 0,
-      calMax: 100,
+    expect(view.setVolume).not.toHaveBeenCalled()
+    // The same map re-sent fills nothing: the current window is compared.
+    await handlers.set_volume({
+      volume: 1,
+      colormap: 'ct_kidneys',
+      cal_max: 100,
     })
+    expect(view.volumes[1]).toMatchObject({ calMin: 95, calMax: 100 })
+  })
+
+  it('checks a NaN bound against the image default it stands for', async () => {
+    const view = settableView()
+    Object.assign(view.volumes[1], { robustMin: 0, robustMax: 60 })
+    const handlers = coreHandlers(host(view))
+    // bold is 10..90; a null cal_max means robustMax 60, under cal_min 70.
+    await expect(
+      handlers.set_volume({ volume: 1, cal_min: 70, cal_max: null }),
+    ).rejects.toThrow('cal_min (70) must not be above cal_max (60)')
+    expect(view.setVolume).not.toHaveBeenCalled()
   })
 
   it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {

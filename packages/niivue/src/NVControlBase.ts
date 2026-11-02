@@ -5860,6 +5860,18 @@ export default class NiiVue extends EventTarget {
     return NVCmaps.lookupColorMap(canonical) !== null
   }
 
+  /**
+   * The display window a colormap brings with it (the `ct_*` maps, e.g.
+   * `ct_bones` 180..600), or null. `setVolume` fills a bound left out from it
+   * when the colormap changes.
+   */
+  colormapWindow(name: string): [number, number] | null {
+    const lut = NVCmaps.lookupColorMap(name)
+    return lut?.min === undefined || lut.max === undefined
+      ? null
+      : [lut.min, lut.max]
+  }
+
   get meshExtensions(): string[] {
     return NVMesh.meshExtensions()
   }

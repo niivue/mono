@@ -962,20 +962,30 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const calMax = windowBound(params, 'cal_max')
       put(update, 'calMin', calMin)
       put(update, 'calMax', calMax)
-      // A bound left out keeps its value unless the colormap changes, when
-      // NiiVue may fill it from the map's window (CT). A NaN bound is the
-      // image's default. Either is only known once NiiVue has applied it.
-      const newMap =
+      // The window NiiVue will apply, checked before anything changes: a
+      // NaN bound takes the image's default, and a new colormap fills a bound
+      // left out from its own window (the CT maps).
+      const fills =
         update.colormap !== undefined && update.colormap !== volume.colormap
-      const known = (bound: number | undefined, now: number | undefined) =>
-        bound === undefined ? (newMap ? undefined : now) : bound
-      const low = known(calMin, volume.calMin)
-      const high = known(calMax, volume.calMax)
-      const checkAfter =
-        (calMin !== undefined || calMax !== undefined || newMap) &&
-        !(Number.isFinite(low) && Number.isFinite(high))
-      if (low !== undefined && high !== undefined && low > high)
-        throw emptyWindow(low, high)
+          ? view.colormapWindow?.(update.colormap)
+          : null
+      const low = effectiveBound(
+        calMin,
+        volume.robustMin,
+        fills?.[0],
+        volume.calMin,
+      )
+      const high = effectiveBound(
+        calMax,
+        volume.robustMax,
+        fills?.[1],
+        volume.calMax,
+      )
+      if (low !== undefined && high !== undefined && low > high) {
+        throw new Error(
+          `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
+        )
+      }
       put(update, 'calMinNeg', number(params, 'cal_min_neg'))
       put(update, 'calMaxNeg', number(params, 'cal_max_neg'))
       const type = text(params, 'colormap_type')?.toLowerCase()
@@ -1074,21 +1084,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           throw new Error(
             "This page's NiiVue cannot change a volume once loaded.",
           )
-        const before: VolumeUpdate = {}
-        put(before, 'colormap', volume.colormap)
-        put(before, 'calMin', volume.calMin)
-        put(before, 'calMax', volume.calMax)
         await view.setVolume(index, update)
-        if (
-          checkAfter &&
-          volume.calMin !== undefined &&
-          volume.calMax !== undefined &&
-          volume.calMin > volume.calMax
-        ) {
-          const [shownLow, shownHigh] = [volume.calMin, volume.calMax]
-          await view.setVolume(index, before)
-          throw emptyWindow(shownLow, shownHigh)
-        }
       }
       if (modulate !== undefined && modulate !== null) {
         if (!view.setModulationImage)
@@ -1733,8 +1729,13 @@ function drawNow(view: View, canvas: HTMLCanvasElement): void {
   view.view?.render()
 }
 
-function emptyWindow(low: number, high: number): Error {
-  return new Error(
-    `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
-  )
+/** A bound as NiiVue resolves it: given, NaN for the default, filled by the colormap, or kept. */
+function effectiveBound(
+  given: number | undefined,
+  robust: number | undefined,
+  filled: number | undefined,
+  now: number | undefined,
+): number | undefined {
+  if (given === undefined) return filled ?? now
+  return Number.isFinite(given) ? given : robust
 }

@@ -1,3 +1,14 @@
+## 1.0.0-rc.75 (2026-11-02)
+
+### Fixes
+
+- **niivue:** refit the scene after tract/connectome retessellation ([95b54ed5](https://github.com/niivue/mono/commit/95b54ed5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.74 (2026-11-02)
 
 ### Fixes

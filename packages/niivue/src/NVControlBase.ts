@@ -611,6 +611,7 @@ export default class NiiVue extends EventTarget {
     width?: number
     // Kept as drawn: an erased shape's polygons differ from its bounds.
     polygons: VectorAnnotation['polygons']
+    isErased: boolean
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   // Sync/broadcast state

@@ -1,3 +1,18 @@
+## 1.0.0-rc.50 (2026-11-02)
+
+### Fixes
+
+- **niivue:** mesh slab follows the displayed voxel plane ([#451](https://github.com/niivue/mono/issues/451))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.68
+- Updated uikit to 1.0.0-rc.59
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.49 (2026-11-02)
 
 ### Fixes

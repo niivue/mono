@@ -258,7 +258,8 @@ function _updateLineArrow(
 /**
  * Carries a shape's drawn polygons from its original bounds to new ones, so a
  * resize keeps an erased part erased. Box shapes scale per axis; a line or
- * arrow maps along and across its axis. null when either frame is degenerate.
+ * arrow maps along and across its axis. null when either frame is degenerate,
+ * so the caller keeps the last valid bounds.
  */
 export function resizePolygons(
   shapeType: AnnotationTool,
@@ -291,6 +292,8 @@ function boxMap(o: ShapeBoundsUpdate, n: ShapeBoundsUpdate): PointMap | null {
   const ny = Math.min(n.start.y, n.end.y)
   const sx = Math.abs(n.end.x - n.start.x) / ow
   const sy = Math.abs(n.end.y - n.start.y) / oh
+  // A collapsed box could not be expanded again.
+  if (sx === 0 || sy === 0) return null
   return (p) => ({ x: nx + (p.x - ox) * sx, y: ny + (p.y - oy) * sy })
 }
 

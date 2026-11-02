@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import type { VectorAnnotation } from '@/NVTypes'
+import type { PolygonWithHoles, VectorAnnotation } from '@/NVTypes'
 import {
   getAnnotationSelection,
   getControlPoints,
   hitTestControlPoint,
+  resizePolygons,
   updateShapeBounds,
 } from './selection'
+import { generateShape } from './shapes'
 
 // ---------------------------------------------------------------------------
 // getAnnotationSelection
@@ -202,5 +204,73 @@ describe('updateShapeBounds', () => {
     const result = updateShapeBounds('line', original, 0, { x: -5, y: 3 })
     expect(result.start).toEqual({ x: -5, y: 3 })
     expect(result.end).toEqual({ x: 10, y: 0 })
+  })
+})
+
+describe('resizePolygons', () => {
+  const round = (polys: PolygonWithHoles[]) =>
+    JSON.stringify(polys, (_k, v) =>
+      typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v,
+    )
+  const box = (x0: number, y0: number, x1: number, y1: number) => ({
+    start: { x: x0, y: y0 },
+    end: { x: x1, y: y1 },
+  })
+
+  test('carries an intact shape onto the shape drawn at the new bounds', () => {
+    for (const type of ['measureRect', 'ellipse', 'circle'] as const) {
+      const o = box(0, 0, 10, 10)
+      const n = box(0, 0, 20, 20)
+      const moved = resizePolygons(
+        type,
+        o,
+        n,
+        generateShape(type, o.start, o.end, 2),
+      )
+      expect(round(moved ?? [])).toBe(
+        round(generateShape(type, n.start, n.end, 2)),
+      )
+    }
+    for (const type of ['line', 'measureLine'] as const) {
+      const o = { ...box(0, 0, 10, 0), width: 2 }
+      const n = { ...box(5, 5, 5, 25), width: 4 }
+      const moved = resizePolygons(
+        type,
+        o,
+        n,
+        generateShape(type, o.start, o.end, 2),
+      )
+      expect(round(moved ?? [])).toBe(
+        round(generateShape(type, n.start, n.end, 4)),
+      )
+    }
+  })
+
+  test('keeps the erased gap of a split rectangle, scaled with it', () => {
+    const half = (x0: number, x1: number): PolygonWithHoles => ({
+      outer: [
+        { x: x0, y: 0 },
+        { x: x1, y: 0 },
+        { x: x1, y: 10 },
+        { x: x0, y: 10 },
+      ],
+      holes: [],
+    })
+    const moved = resizePolygons(
+      'measureRect',
+      box(0, 0, 10, 10),
+      box(0, 0, 20, 10),
+      [half(0, 4), half(6, 10)],
+    )
+    expect(moved).toEqual([half(0, 8), half(12, 20)])
+  })
+
+  test('declines a degenerate original', () => {
+    expect(
+      resizePolygons('rectangle', box(0, 0, 0, 10), box(0, 0, 5, 5), []),
+    ).toBeNull()
+    expect(
+      resizePolygons('line', box(1, 1, 1, 1), box(0, 0, 5, 5), []),
+    ).toBeNull()
   })
 })

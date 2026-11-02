@@ -1082,6 +1082,29 @@ function pinchPointer(
   return true
 }
 
+/**
+ * A resized shape's polygons: an erased shape carries what is left of it to
+ * the new bounds; an intact one is drawn afresh.
+ */
+function resizedPolygons(
+  ctrl: NiiVue,
+  shape: NonNullable<VectorAnnotation['shape']>,
+): PolygonWithHoles[] {
+  const original = ctrl._resizeOriginalShape
+  const carried = original?.isErased
+    ? Annotation.resizePolygons(shape.type, original, shape, original.polygons)
+    : null
+  return (
+    carried ??
+    Annotation.generateShape(
+      shape.type,
+      shape.start,
+      shape.end,
+      shape.width ?? ctrl.model.annotation.style.strokeWidth,
+    )
+  )
+}
+
 export function resetDragState(ctrl: NiiVue): void {
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
@@ -1557,11 +1580,19 @@ export function initInteraction(ctrl: NiiVue): void {
               if (ann?.shape) {
                 ctrl._annotationUndoStack.push(ctrl.model.annotations)
                 ctrl._resizingControlPoint = cpIdx
+                const intact = Annotation.generateShape(
+                  ann.shape.type,
+                  ann.shape.start,
+                  ann.shape.end,
+                  ann.shape.width ?? ctrl.model.annotation.style.strokeWidth,
+                )
                 ctrl._resizeOriginalShape = {
                   start: { ...ann.shape.start },
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
                   polygons: ann.polygons,
+                  isErased:
+                    JSON.stringify(intact) !== JSON.stringify(ann.polygons),
                 }
                 ctrl._resizingAnnotation = ann
                 startAnnotationDrag(ctrl, evt)
@@ -1714,14 +1745,7 @@ export function initInteraction(ctrl: NiiVue): void {
         if (sel) {
           const ann = ctrl._resizingAnnotation
           if (ann?.shape) {
-            const cfg = ctrl.model.annotation
-            const shapeWidth = ann.shape.width ?? cfg.style.strokeWidth
-            const polygons = Annotation.generateShape(
-              ann.shape.type,
-              ann.shape.start,
-              ann.shape.end,
-              shapeWidth,
-            )
+            const polygons = resizedPolygons(ctrl, ann.shape)
             if (polygons.length > 0) {
               ann.polygons = polygons
               sel.controlPoints = Annotation.getControlPoints(ann.shape)
@@ -2182,14 +2206,7 @@ export function initInteraction(ctrl: NiiVue): void {
           ann.shape.start = newBox.start
           ann.shape.end = newBox.end
           if (newBox.width !== undefined) ann.shape.width = newBox.width
-          const shapeWidth =
-            ann.shape.width ?? ctrl.model.annotation.style.strokeWidth
-          const polygons = Annotation.generateShape(
-            ann.shape.type,
-            newBox.start,
-            newBox.end,
-            shapeWidth,
-          )
+          const polygons = resizedPolygons(ctrl, ann.shape)
           if (polygons.length > 0) {
             ann.polygons = polygons
             ctrl.model._annotationSelection.controlPoints =

@@ -265,12 +265,16 @@ describe('resizePolygons', () => {
     expect(moved).toEqual([half(0, 8), half(12, 20)])
   })
 
-  test('declines a degenerate original', () => {
+  test('declines a degenerate original or destination', () => {
     expect(
       resizePolygons('rectangle', box(0, 0, 0, 10), box(0, 0, 5, 5), []),
     ).toBeNull()
     expect(
       resizePolygons('line', box(1, 1, 1, 1), box(0, 0, 5, 5), []),
+    ).toBeNull()
+    // A collapsed destination too: it could not be expanded again.
+    expect(
+      resizePolygons('rectangle', box(0, 0, 10, 10), box(0, 0, 0, 10), []),
     ).toBeNull()
   })
 })

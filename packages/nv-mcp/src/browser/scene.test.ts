@@ -1159,6 +1159,26 @@ describe('screenshot', () => {
     )
   })
 
+  it("sizes the canvas by NiiVue's own pixel ratio, so a forced ratio does not resize every time (#464)", async () => {
+    // A box 320 CSS px wide drawn at a forced ratio of 2 is 640 px: sized.
+    const canvas = {
+      width: 640,
+      height: 480,
+      getBoundingClientRect: () => ({ width: 320, height: 240 }),
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    } as unknown as HTMLCanvasElement
+    const resize = mock(() => {})
+    const previous = globalThis.devicePixelRatio
+    globalThis.devicePixelRatio = 1
+    try {
+      const view = fakeView({ canvas, resize, effectiveDevicePixelRatio: 2 })
+      await coreHandlers(host(view)).screenshot({})
+    } finally {
+      globalThis.devicePixelRatio = previous
+    }
+    expect(resize).not.toHaveBeenCalled()
+  })
+
   it('waits for the bricks of a chunked volume to arrive before drawing', async () => {
     const calls: string[] = []
     const canvas = {

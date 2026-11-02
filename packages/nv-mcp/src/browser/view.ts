@@ -546,6 +546,8 @@ export interface View {
   drawScene(): unknown
   /** Fits the canvas's drawing buffer to its box; NiiVue 1.0 has it. */
   resize?(): void
+  /** The pixel ratio NiiVue sizes the canvas by, honouring forceDevicePixelRatio. */
+  effectiveDevicePixelRatio?: number
   /**
    * NiiVue 1.0's render backend, whose `render()` draws a frame now, and
    * which skips frames while `isBusy`: during an async texture upload, as

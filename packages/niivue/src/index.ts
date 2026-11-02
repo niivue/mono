@@ -255,6 +255,12 @@ export type {
   Vec3 as SlideVec3,
 } from './slide/slidePlane'
 export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
+export type {
+  NVSlideControllerOptions,
+  NVSlideMeasurement,
+  NVSlidePoint,
+} from './slide/slideController'
+export { NVSlideController, SLIDE_DRAG_MODES } from './slide/slideController'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export type {

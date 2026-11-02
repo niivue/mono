@@ -353,11 +353,60 @@
         </label>
       </span>
       <span class="control">
-        <label for="measure"
-          title="Click two points on the deep-zoom pane to measure them with the UIKit ruler">
-          <input id="measure" type="checkbox" />
-          measure
+        <label for="volumePrimary"
+          title="What a left drag does on the volume pane (NiiVue primaryDragMode)">
+          Volume left drag
         </label>
+        <select id="volumePrimary">
+          <option value="8" selected>crosshair</option>
+          <option value="10">crosshairPan</option>
+          <option value="1">contrast</option>
+          <option value="2">measurement</option>
+          <option value="7">angle</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="volumeSecondary"
+          title="What a right drag does on the volume pane (NiiVue secondaryDragMode)">
+          Volume right drag
+        </label>
+        <select id="volumeSecondary">
+          <option value="1">contrast</option>
+          <option value="2">measurement</option>
+          <option value="3" selected>pan</option>
+          <option value="4">slicer3D</option>
+          <option value="6">roiSelection</option>
+          <option value="7">angle</option>
+          <option value="9">windowing</option>
+          <option value="10">crosshairPan</option>
+          <option value="0">none</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="slidePrimary"
+          title="What a left drag does on the deep-zoom pane (as NiiVue's primary drag mode)">
+          Slide left drag
+        </label>
+        <select id="slidePrimary">
+          <option value="10" selected>crosshairPan</option>
+          <option value="8">crosshair</option>
+          <option value="3">pan</option>
+          <option value="9">windowing</option>
+          <option value="0">none</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="slideSecondary"
+          title="What a right drag does on the deep-zoom pane (as NiiVue's secondary drag mode)">
+          Slide right drag
+        </label>
+        <select id="slideSecondary">
+          <option value="10">crosshairPan</option>
+          <option value="8">crosshair</option>
+          <option value="3" selected>pan</option>
+          <option value="9">windowing</option>
+          <option value="0">none</option>
+        </select>
       </span>
       <span class="control">
         <label for="crosshair"

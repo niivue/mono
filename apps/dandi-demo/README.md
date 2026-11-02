@@ -26,9 +26,14 @@ is the default).
 - **Views.** The volumetric pane opens on the 3D render, which is where a
   streamed brick set is legible as a whole; the `View` dropdown switches it to
   multiplanar or to a single axial, coronal, or sagittal slice.
-- **The UIKit ruler.** Tick `measure`, then click two points on the deep-zoom
-  pane. Endpoints are held in slide base pixels, so a measurement stays pinned
-  to the tissue through pan, zoom and a level swap.
+- **Gestures per pane.** `Volume left/right drag` set NiiVue's primary and
+  secondary drag modes; `Slide left/right drag` set those of the deep-zoom pane,
+  through core's `NVSlideController` (`crosshairPan`, `crosshair`, `pan`,
+  `windowing` or `none`; the wheel zooms). A windowing drag on the slide applies
+  on release.
+- **Linked depth.** A click on the 3D render keeps the slide's plane and moves
+  the crosshair onto it; the plane slider moves the volume crosshair too.
+  `?dataset=spim` (or any key) opens that Dandiset.
 
 ## Why this is an app, not a niivue example
 

@@ -1,4 +1,4 @@
-import { applyCORS } from '@/NVLoader'
+import { loadImageElement } from '@/NVLoader'
 import { NVRenderer } from '@/view/NVRenderer'
 import { Shader } from './shader'
 
@@ -70,10 +70,7 @@ export class ThumbnailRenderer extends NVRenderer {
       gl.deleteTexture(this._texture)
       this._texture = null
     }
-    const image = new Image()
-    applyCORS(image)
-    image.src = url
-    await image.decode()
+    const image = await loadImageElement(url)
     this._texWidth = image.width
     this._texHeight = image.height
     this._texture = gl.createTexture()

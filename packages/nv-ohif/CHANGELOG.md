@@ -1,3 +1,33 @@
+## 1.0.0-rc.66 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.75
+- Updated uikit to 1.0.0-rc.66
+
+## 1.0.0-rc.65 (2026-11-02)
+
+### Fixes
+
+- **nv-ohif:** pass the status kind instead of matching the message ([#130](https://github.com/niivue/mono/issues/130))
+- **nv-ohif, nv-react:** handle a rejected setVolume ([#467](https://github.com/niivue/mono/issues/467))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.74
+- Updated uikit to 1.0.0-rc.65
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.64 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.73
+- Updated uikit to 1.0.0-rc.64
+
 ## 1.0.0-rc.63 (2026-11-02)
 
 ### Updated Dependencies

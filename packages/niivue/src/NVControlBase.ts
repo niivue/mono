@@ -4628,6 +4628,8 @@ export default class NiiVue extends EventTarget {
       m.isColorbarVisible = cb.startsWith('dpv:') || cb.startsWith('dps:')
     }
     NVMesh.retessellateTract(m)
+    // new geometry changes the mesh bounds, so refit the scene to them
+    this.model._setupPivot3D()
     markMeshDataChanged(m)
     await this._updateGLMeshes()
   }
@@ -4663,6 +4665,8 @@ export default class NiiVue extends EventTarget {
     }
     Object.assign(m.connectomeOptions, options)
     NVMesh.reextrudeConnectome(m)
+    // new geometry changes the mesh bounds, so refit the scene to them
+    this.model._setupPivot3D()
     markMeshDataChanged(m)
     await this._updateGLMeshes()
   }

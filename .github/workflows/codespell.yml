@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   codespell:
-    name: Check for spelling errors
+    # A skipped title/body-edit run gets its own check name, so it never
+    # replaces this check's real result on the PR.
+    name: ${{ (github.event.action == 'edited' && !github.event.changes.base) && 'Check for spelling errors (edit, skipped)' || 'Check for spelling errors' }}
     # An `edited` event counts only when the base branch changed (a retarget).
     if: github.event.action != 'edited' || github.event.changes.base
     runs-on: ubuntu-latest

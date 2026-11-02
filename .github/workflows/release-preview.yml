@@ -2,7 +2,7 @@ name: Release Preview
 
 on:
   # Main-based PRs only: the preview is computed against main. `edited` runs it
-  # when a stacked PR is retargeted to main after its base merges (#487).
+  # when a stacked PR is retargeted to main by hand (#487).
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, edited]

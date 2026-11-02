@@ -21,6 +21,7 @@ import {
   ohifServices,
   refreshToolbar,
   registerNiivue,
+  type StatusKind,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
@@ -44,11 +45,7 @@ const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   annotationMergesOverlaps: false,
 }
 
-type Status =
-  | { kind: 'idle' }
-  | { kind: 'loading'; message: string }
-  | { kind: 'note'; message: string }
-  | { kind: 'error'; message: string }
+type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
 
 // OHIF's toolbar tools operate on cornerstone viewports; our NiiVue viewport isn't in
 // a cornerstone tool group. Instead we mirror OHIF's active primary mouse tool onto

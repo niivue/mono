@@ -1,3 +1,17 @@
+## 1.0.0-rc.67 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** check set_volume's window before changing anything ([e14a4749](https://github.com/niivue/mono/commit/e14a4749))
+- audit fixes for the colormap window paths ([#481](https://github.com/niivue/mono/pull/481))
+- **niivue:** CT colormap window for streamed volumes, one bound and re-sent maps ([#395](https://github.com/niivue/mono/issues/395))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.66 (2026-11-02)
 
 ### Fixes

@@ -108,26 +108,11 @@ export function createMesh(
     connectomeOptions: null,
   }
   const opts = { ...defaults, ...options }
-  const numVerts = positions.length / 3
-  const mn = vec3.fromValues(Infinity, Infinity, Infinity)
-  const mx = vec3.fromValues(-Infinity, -Infinity, -Infinity)
-  for (let i = 0; i < numVerts; i++) {
-    const x = positions[i * 3]
-    const y = positions[i * 3 + 1]
-    const z = positions[i * 3 + 2]
-    mn[0] = Math.min(mn[0], x)
-    mn[1] = Math.min(mn[1], y)
-    mn[2] = Math.min(mn[2], z)
-    mx[0] = Math.max(mx[0], x)
-    mx[1] = Math.max(mx[1], y)
-    mx[2] = Math.max(mx[2], z)
-  }
   return {
     positions,
     indices,
     colors,
-    extentsMin: mn,
-    extentsMax: mx,
+    ...meshExtents(positions),
     clipPlane: new Float32Array([0.0, 0.0, 0.0, 0.0]),
     ...opts,
   } as NVMeshType
@@ -373,6 +358,36 @@ async function loadConnectome(
 }
 
 /**
+ * Axis-aligned bounds of x,y,z triples (Infinity/-Infinity when empty).
+ * A trailing partial triple is ignored rather than read as undefined (NaN).
+ */
+export function meshExtents(positions: Float32Array): {
+  extentsMin: vec3
+  extentsMax: vec3
+} {
+  let minX = Infinity
+  let minY = Infinity
+  let minZ = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  let maxZ = -Infinity
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    const x = positions[i]
+    const y = positions[i + 1]
+    const z = positions[i + 2]
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+    if (z < minZ) minZ = z
+    if (z > maxZ) maxZ = z
+  }
+  const extentsMin = vec3.fromValues(minX, minY, minZ)
+  const extentsMax = vec3.fromValues(maxX, maxY, maxZ)
+  return { extentsMin, extentsMax }
+}
+
+/**
  * Re-tessellate a tract mesh with updated options.
  * Mutates the mesh's derived GPU-ready arrays in place.
  */
@@ -382,20 +397,9 @@ export function retessellateTract(mesh: NVMeshType): void {
   mesh.positions = result.positions
   mesh.indices = result.indices
   mesh.colors = result.colors
-  // Update extents
-  const mn = vec3.fromValues(Infinity, Infinity, Infinity)
-  const mx = vec3.fromValues(-Infinity, -Infinity, -Infinity)
-  const nv = result.positions.length / 3
-  for (let i = 0; i < nv; i++) {
-    mn[0] = Math.min(mn[0], result.positions[i * 3])
-    mn[1] = Math.min(mn[1], result.positions[i * 3 + 1])
-    mn[2] = Math.min(mn[2], result.positions[i * 3 + 2])
-    mx[0] = Math.max(mx[0], result.positions[i * 3])
-    mx[1] = Math.max(mx[1], result.positions[i * 3 + 1])
-    mx[2] = Math.max(mx[2], result.positions[i * 3 + 2])
-  }
-  mesh.extentsMin = mn
-  mesh.extentsMax = mx
+  const { extentsMin, extentsMax } = meshExtents(result.positions)
+  mesh.extentsMin = extentsMin
+  mesh.extentsMax = extentsMax
 }
 
 /**
@@ -409,18 +413,7 @@ export function reextrudeConnectome(mesh: NVMeshType): void {
   mesh.positions = result.positions
   mesh.indices = result.indices
   mesh.colors = result.colors
-  // Update extents
-  const mn = vec3.fromValues(Infinity, Infinity, Infinity)
-  const mx = vec3.fromValues(-Infinity, -Infinity, -Infinity)
-  const nv = result.positions.length / 3
-  for (let i = 0; i < nv; i++) {
-    mn[0] = Math.min(mn[0], result.positions[i * 3])
-    mn[1] = Math.min(mn[1], result.positions[i * 3 + 1])
-    mn[2] = Math.min(mn[2], result.positions[i * 3 + 2])
-    mx[0] = Math.max(mx[0], result.positions[i * 3])
-    mx[1] = Math.max(mx[1], result.positions[i * 3 + 1])
-    mx[2] = Math.max(mx[2], result.positions[i * 3 + 2])
-  }
-  mesh.extentsMin = mn
-  mesh.extentsMax = mx
+  const { extentsMin, extentsMax } = meshExtents(result.positions)
+  mesh.extentsMin = extentsMin
+  mesh.extentsMax = extentsMax
 }

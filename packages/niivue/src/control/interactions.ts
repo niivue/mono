@@ -433,6 +433,9 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
     // half-placed bidirectional measurement.
     if (ctrl._annotationPolyPoints || ctrl._bidirectionalLong) {
       ctrl._abandonAnnotationInProgress()
+      // End a drag in progress too, or the moves before release fall through
+      // to the camera orbit (#471).
+      if (ctrl.isDragging) resetDragState(ctrl)
       ctrl.drawScene()
     }
     return

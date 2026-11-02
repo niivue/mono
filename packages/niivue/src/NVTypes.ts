@@ -1914,6 +1914,12 @@ export type VectorAnnotation = {
  */
 export type AnnotationScreenShape = {
   id: string
+  /**
+   * The tile this copy is drawn in (an index into the view's screen tiles). An
+   * annotation shown in several tiles (mosaic, hero) has one shape per tile,
+   * each with the annotation's `id`.
+   */
+  tileIndex?: number
   tool: AnnotationTool
   /** Outer boundary of the first polygon, projected to canvas px. */
   outer: AnnotationPoint[]

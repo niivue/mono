@@ -609,6 +609,8 @@ export default class NiiVue extends EventTarget {
     start: AnnotationPoint
     end: AnnotationPoint
     width?: number
+    // Kept as drawn: an erased shape's polygons differ from its bounds.
+    polygons: VectorAnnotation['polygons']
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   // Sync/broadcast state
@@ -2494,12 +2496,7 @@ export default class NiiVue extends EventTarget {
     shape.start = original.start
     shape.end = original.end
     shape.width = original.width
-    this._resizingAnnotation.polygons = Annotation.generateShape(
-      shape.type,
-      shape.start,
-      shape.end,
-      shape.width ?? this.model.annotation.style.strokeWidth,
-    )
+    this._resizingAnnotation.polygons = original.polygons
     const sel = this.model._annotationSelection
     if (sel) sel.controlPoints = Annotation.getControlPoints(shape)
   }

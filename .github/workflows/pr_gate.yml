@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   # Every PR, including one stacked on another PR's branch; `edited` re-runs
-  # the gate when a PR is retargeted, e.g. to main after its base merges (#487).
+  # the gate when a PR is retargeted by hand, e.g. to main before its base
+  # merges (#487). GitHub's automatic retarget does not send `edited`.
   pull_request:
     types: [opened, synchronize, reopened, edited]
 

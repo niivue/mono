@@ -1,3 +1,18 @@
+## 1.0.0-rc.56 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** drawNow sizes the canvas by NiiVue's pixel ratio ([#464](https://github.com/niivue/mono/issues/464))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.74
+- Updated uikit to 1.0.0-rc.65
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.55 (2026-11-02)
 
 ### Updated Dependencies

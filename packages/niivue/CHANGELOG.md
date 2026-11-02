@@ -1,3 +1,25 @@
+## 1.0.0-rc.74 (2026-11-02)
+
+### Fixes
+
+- **niivue:** a resize never collapses a shape to no area ([#504](https://github.com/niivue/mono/issues/504))
+- **niivue:** a resize keeps an erased shape's erasure ([#504](https://github.com/niivue/mono/issues/504))
+- **niivue:** an abandoned resize restores the polygons as drawn ([#504](https://github.com/niivue/mono/issues/504))
+- **niivue:** revert an abandoned control-point resize ([10df76a9](https://github.com/niivue/mono/commit/10df76a9))
+- **ipyniivue:** skip @internal members in codegen ([#476](https://github.com/niivue/mono/issues/476))
+- **niivue:** a scene change also ends a control-point resize drag ([e988b98a](https://github.com/niivue/mono/commit/e988b98a))
+- **niivue:** a scene change ends the annotation drag it abandons ([30764a8b](https://github.com/niivue/mono/commit/30764a8b))
+- **niivue:** volume moves and held strokes drop the half-drawn annotation ([a9f423ce](https://github.com/niivue/mono/commit/a9f423ce))
+- **niivue:** Escape also ends the drag it interrupts ([40feb84f](https://github.com/niivue/mono/commit/40feb84f))
+- **niivue:** drop a half-drawn annotation when the scene is replaced ([#470](https://github.com/niivue/mono/issues/470))
+- **niivue:** annotation screen shapes for every tile that shows them ([#116](https://github.com/niivue/mono/issues/116))
+- **niivue:** Escape mid-drag cancels the annotation drag too ([#471](https://github.com/niivue/mono/issues/471))
+- **niivue:** an erase keeps annotations its brush did not reach ([#486](https://github.com/niivue/mono/issues/486))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.73 (2026-11-02)
 
 ### Fixes

@@ -1,3 +1,13 @@
+## 1.0.0-rc.71 (2026-11-02)
+
+### Fixes
+
+- **niivue:** fontScale and fontMinSize resize the text at once ([#377](https://github.com/niivue/mono/issues/377))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.70 (2026-11-02)
 
 ### Features

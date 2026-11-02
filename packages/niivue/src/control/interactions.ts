@@ -1082,7 +1082,7 @@ function pinchPointer(
   return true
 }
 
-function resetDragState(ctrl: NiiVue): void {
+export function resetDragState(ctrl: NiiVue): void {
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []

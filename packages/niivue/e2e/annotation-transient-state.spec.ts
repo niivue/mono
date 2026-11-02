@@ -346,9 +346,13 @@ test('a freehand stroke held across loadVolumes does not commit (#470)', async (
     ev('pointermove', 200, 160, -1)
     ev('pointermove', 250, 200, -1)
     await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    // The drag ended with it: a move before release does not turn the camera.
+    const view = [nv.azimuth, nv.elevation]
     ev('pointermove', 260, 220, -1)
+    const turned = nv.azimuth !== view[0] || nv.elevation !== view[1]
+    const dragging = nv.isDragging
     ev('pointerup', 260, 220, 0)
-    return nv.annotations.length
+    return { count: nv.annotations.length, turned, dragging }
   })()`)
-  expect(count).toBe(0)
+  expect(count).toEqual({ count: 0, turned: false, dragging: false })
 })

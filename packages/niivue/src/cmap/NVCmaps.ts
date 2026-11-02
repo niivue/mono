@@ -546,21 +546,21 @@ export function withColormapWindow<
     (opts.calMin !== undefined && opts.calMax !== undefined)
   )
     return opts
-  const lut = lookupColorMap(opts.colormap)
-  if (lut?.min === undefined || lut.max === undefined) return opts
+  const window = colormapWindow(opts.colormap)
+  if (!window) return opts
   return {
     ...opts,
-    calMin: opts.calMin === undefined ? lut.min : opts.calMin,
-    calMax: opts.calMax === undefined ? lut.max : opts.calMax,
+    calMin: opts.calMin === undefined ? window[0] : opts.calMin,
+    calMax: opts.calMax === undefined ? window[1] : opts.calMax,
   }
 }
 
-/** `v` when it is a finite number, else `fallback` (unset, NaN or null). */
-export function windowOr(
-  v: number | null | undefined,
-  fallback: number,
-): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+/** The display window a colormap brings (the `ct_*` maps), or null. */
+export function colormapWindow(name: string): [number, number] | null {
+  const lut = lookupColorMap(name)
+  return lut?.min === undefined || lut.max === undefined
+    ? null
+    : [lut.min, lut.max]
 }
 
 /** A non-finite (or null) calMin/calMax means the image's default (robust) window. */

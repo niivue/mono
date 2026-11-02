@@ -2157,7 +2157,7 @@
         }
       ],
       "returns": "[number, number] | null",
-      "doc": "The display window a colormap brings with it (the `ct_*` maps, e.g.\n`ct_bones` 180..600), or null. `setVolume` fills a bound left out from it\nwhen the colormap changes.",
+      "doc": "The display window a colormap brings with it (the `ct_*` maps, e.g.\n`ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`\nwhen the colormap changes, fill a bound left out from it.",
       "returnsDoc": null
     },
     {

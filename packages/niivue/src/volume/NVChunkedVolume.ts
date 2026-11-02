@@ -35,6 +35,11 @@ import {
  * {@link BudgetPlanOptions} (`budgetPlan` plus the individual knobs it layers
  * under); everything here is display state for the streamed volume itself.
  */
+/** `v` when it is a finite number, else `fallback` (unset, NaN or null). */
+function windowOr(v: number | null | undefined, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+
 function sameRadius(a: number | Vec3f, b: number | Vec3f): boolean {
   if (typeof a === 'number' || typeof b === 'number') return a === b
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
@@ -42,13 +47,13 @@ function sameRadius(a: number | Vec3f, b: number | Vec3f): boolean {
 
 export interface ChunkedVolumeOptions extends BudgetPlanOptions {
   /**
-   * Display window minimum. Unset or NaN: a CT colormap's window, else the
-   * sampled data's robust minimum.
+   * Display window minimum. Unset: a CT colormap's window, else the sampled
+   * data's robust minimum. NaN (or null): the sampled robust minimum.
    */
   calMin?: number
   /**
-   * Display window maximum. Unset or NaN: a CT colormap's window, else the
-   * sampled data's robust maximum.
+   * Display window maximum. Unset: a CT colormap's window, else the sampled
+   * data's robust maximum. NaN (or null): the sampled robust maximum.
    */
   calMax?: number
   /** Colormap name (default 'gray'). */
@@ -423,9 +428,9 @@ export class NVChunkedVolume {
   private floorVolume: NVImage | null = null
   private floorBuilt = false
   /**
-   * True unless the caller passed both `calMin` and `calMax` as finite numbers.
-   * Then the robust and global range is sampled from the data, and each bound
-   * that was not given (and not filled by a CT colormap) is taken from it too.
+   * False only when the caller passed both `calMin` and `calMax` as finite
+   * numbers; otherwise the data is sampled for robust/global and for any bound
+   * neither given nor filled by a CT colormap.
    */
   private readonly wantsAutoWindow: boolean
   private windowResolved = false
@@ -447,9 +452,8 @@ export class NVChunkedVolume {
     }
     this.host = host
     this.source = source
-    // Sample the data unless the caller gave both bounds. Decided before the
-    // colormap fills them: a CT window sets the display, not the robust and
-    // global range a reset or a contrast drag needs.
+    // Decided before the colormap fills the bounds: a CT window sets the
+    // display, not the robust/global range a reset or a contrast drag needs.
     this.wantsAutoWindow =
       !Number.isFinite(options.calMin) || !Number.isFinite(options.calMax)
     // A CT colormap brings its window, as for a URL load (#395).
@@ -483,8 +487,8 @@ export class NVChunkedVolume {
       shape: finest.shape,
       spacing: finest.spacing,
       datatypeCode: source.datatypeCode,
-      calMin: NVCmaps.windowOr(options.calMin, 0),
-      calMax: NVCmaps.windowOr(options.calMax, 1),
+      calMin: windowOr(options.calMin, 0),
+      calMax: windowOr(options.calMax, 1),
       colormap: options.colormap,
       opacity: options.opacity,
       isTransparentBelowCalMin: options.isTransparentBelowCalMin,
@@ -1118,8 +1122,8 @@ export class NVChunkedVolume {
     const targets = new Set<NVImage>([this.volume, sample])
     if (scene) targets.add(scene)
     const { calMin, calMax } = this.loadOptions
-    const windowLo = NVCmaps.windowOr(calMin, lo)
-    const windowHi = NVCmaps.windowOr(calMax, hi)
+    const windowLo = windowOr(calMin, lo)
+    const windowHi = windowOr(calMax, hi)
     for (const vol of targets) {
       vol.calMin = windowLo
       vol.calMax = windowHi

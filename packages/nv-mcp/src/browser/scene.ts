@@ -965,21 +965,24 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // The window NiiVue will apply, checked before anything changes: a
       // NaN bound takes the image's default, and a new colormap fills a bound
       // left out from its own window (the CT maps).
-      const fills =
-        update.colormap !== undefined && update.colormap !== volume.colormap
+      // A label table replaces the colormap later, and carries no window.
+      const ctWindow =
+        text(params, 'labels') === undefined &&
+        update.colormap !== undefined &&
+        update.colormap !== volume.colormap
           ? view.colormapWindow?.(update.colormap)
           : null
       const low = effectiveBound(
         calMin,
-        volume.robustMin,
-        fills?.[0],
+        ctWindow?.[0],
         volume.calMin,
+        volume.robustMin,
       )
       const high = effectiveBound(
         calMax,
-        volume.robustMax,
-        fills?.[1],
+        ctWindow?.[1],
         volume.calMax,
+        volume.robustMax,
       )
       if (low !== undefined && high !== undefined && low > high) {
         throw new Error(
@@ -1729,12 +1732,12 @@ function drawNow(view: View, canvas: HTMLCanvasElement): void {
   view.view?.render()
 }
 
-/** A bound as NiiVue resolves it: given, NaN for the default, filled by the colormap, or kept. */
+/** A bound as NiiVue resolves it: given, filled by the colormap, kept, or NaN for the default. */
 function effectiveBound(
   given: number | undefined,
-  robust: number | undefined,
   filled: number | undefined,
   now: number | undefined,
+  robust: number | undefined,
 ): number | undefined {
   if (given === undefined) return filled ?? now
   return Number.isFinite(given) ? given : robust

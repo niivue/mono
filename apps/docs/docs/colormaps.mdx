@@ -105,13 +105,16 @@ await nv.setVolume(0, { colormap: 'ct_bones', calMin: -1024 }) // -1024..600
 await nv.setVolume(0, { colormap: 'ct_bones', calMax: NaN }) // 180..image default
 ```
 
-A bound you pass wins, and the map fills the other. `NaN` (or `null`, or any non-finite
-value) asks for the image's own default for that bound: the window in its header,
-or else the 2% to 98% range of its data. `setVolume` applies the map's window only when the colormap changes, so
-sending the same colormap again keeps a window the user has adjusted. A volume
-added as an `NVImage` keeps its own window. `lookupColorMap(name)`, a named
-export of `@niivue/niivue`, returns a colormap's stops along with that window
-as `min` and `max`.
+A bound you pass wins, and the map fills the other. `NaN` (or `null`, or any
+non-finite value) asks for the image's own default for that bound: the window
+in its header, or else the 2% to 98% range of its data (a volume streamed with
+`loadChunkedVolume` always uses the data range). `setVolume` applies the map's
+window only when the colormap changes, so sending the same colormap again keeps
+a window the user has adjusted. A volume added as an `NVImage` keeps its own
+window. `nv.colormapWindow(name)` returns a map's window as `[min, max]`, or
+`null` for a map without one. `lookupColorMap(name)`, a named export of
+`@niivue/niivue`, returns a colormap's stops along with that window as `min`
+and `max`.
 
 A definition with a `labels` array is a label table instead of a ramp: each
 integer gets its own color and the display window is ignored. For label

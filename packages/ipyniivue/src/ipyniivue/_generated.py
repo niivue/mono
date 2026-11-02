@@ -705,8 +705,8 @@ and its volumes alive."""
     async def colormap_window(self, name: Any) -> Any:
         """The display window a colormap brings with it (the `ct_*` maps, e.g.
 
-        `ct_bones` 180..600), or null. `setVolume` fills a bound left out from it
-        when the colormap changes.
+        `ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`
+        when the colormap changes, fill a bound left out from it.
 
         Parameters
         ----------

@@ -3957,7 +3957,8 @@ export default class NiiVue extends EventTarget {
       // decoded, so its generated palette takes the range they held.
       for (const chunked of this._chunkedVolumes) chunked.growLabelsToObserved()
     }
-    // Report the window as resolved, not a NaN/null request for the default.
+    // Report the window as resolved (a NaN/null request as the default it
+    // took, a colormap's fill included), not as requested.
     const changes = { ...options }
     if (changes.calMin !== undefined)
       changes.calMin = volumes[volumeIndex].calMin
@@ -5862,14 +5863,11 @@ export default class NiiVue extends EventTarget {
 
   /**
    * The display window a colormap brings with it (the `ct_*` maps, e.g.
-   * `ct_bones` 180..600), or null. `setVolume` fills a bound left out from it
-   * when the colormap changes.
+   * `ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`
+   * when the colormap changes, fill a bound left out from it.
    */
   colormapWindow(name: string): [number, number] | null {
-    const lut = NVCmaps.lookupColorMap(name)
-    return lut?.min === undefined || lut.max === undefined
-      ? null
-      : [lut.min, lut.max]
+    return NVCmaps.colormapWindow(name)
   }
 
   get meshExtensions(): string[] {

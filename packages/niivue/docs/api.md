@@ -161,7 +161,7 @@ Use **methods** for:
 - Special formats: `setClipPlane([depth, azimuth, elevation])`
 - String-to-number mapping: `setDragMode('contrast')`
 - IO: `saveDocument()`, `loadDocument()`, `saveBitmap()`, `loadFiles(files, { add })` (what a canvas drop does: `.nvd` via `loadDocument`, `.json` sidecars paired by basename, else `addImage` / `loadImage`; per-file failures are logged)
-- Remote assets: `setFont(font)` / `setFontFromUrl({ atlas, metrics })`, `addColormap(name, cmap)` / `addColormapFromUrl(url, name?)` / `hasColormap(name)` / `colormapNames(kind?)`, `loadMatcap(nameOrUrl)`. `addColormapFromUrl` derives `name` from the filename (stripping `.json.gz`/`.gz`/`.json`) if omitted, and dispatches `colormapAdded` after registration. A colormap with a `labels` array (even empty) is a label table; `setVolume(i, { colormap })` selects either kind, so atlases need no separate call.
+- Remote assets: `setFont(font)` / `setFontFromUrl({ atlas, metrics })`, `addColormap(name, cmap)` / `addColormapFromUrl(url, name?)` / `hasColormap(name)` / `colormapWindow(name)` / `colormapNames(kind?)`, `loadMatcap(nameOrUrl)`. `addColormapFromUrl` derives `name` from the filename (stripping `.json.gz`/`.gz`/`.json`) if omitted, and dispatches `colormapAdded` after registration. A colormap with a `labels` array (even empty) is a label table; `setVolume(i, { colormap })` selects either kind, so atlases need no separate call.
 
 ### Batch Updates for Per-Item Config
 Use the same option type for loading and updating:

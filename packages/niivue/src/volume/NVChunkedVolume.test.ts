@@ -1518,6 +1518,9 @@ describe('NVChunkedVolume automatic display window', () => {
     })
     await mgr.init()
     expect(mgr.volume.calMax).toBe(90)
+    // calMin came from the sample, not the 0 placeholder (the ramp's 2% is > 0).
+    expect(mgr.volume.calMin).toBe(mgr.volume.robustMin)
+    expect(mgr.volume.calMin).toBeGreaterThan(0)
   })
 
   test('a CT colormap sets the window but the data range is still sampled', async () => {

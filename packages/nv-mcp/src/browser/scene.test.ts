@@ -722,13 +722,28 @@ describe('set_volume', () => {
       }),
     ).rejects.toThrow('cal_min (500) must not be above cal_max (302)')
     expect(view.setVolume).not.toHaveBeenCalled()
-    // The same map re-sent fills nothing: the current window is compared.
+    // The same map re-sent fills nothing: a fill (114) would refuse cal_max 100.
     await handlers.set_volume({
       volume: 1,
       colormap: 'ct_kidneys',
       cal_max: 100,
     })
-    expect(view.volumes[1]).toMatchObject({ calMin: 95, calMax: 100 })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      colormap: 'ct_kidneys',
+      calMax: 100,
+    })
+    // A label table replaces the colormap, so ct_bones' 180..600 is not
+    // filled: bold keeps cal_max 100, and cal_min 150 would empty it.
+    view.colormapWindow = (name: string) =>
+      name === 'ct_bones' ? [180, 600] : null
+    await expect(
+      handlers.set_volume({
+        volume: 1,
+        colormap: 'ct_bones',
+        labels: 'freesurfer',
+        cal_min: 150,
+      }),
+    ).rejects.toThrow('cal_min (150) must not be above cal_max (100)')
   })
 
   it('checks a NaN bound against the image default it stands for', async () => {

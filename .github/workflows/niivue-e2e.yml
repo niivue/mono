@@ -97,6 +97,8 @@ jobs:
   # local-metal status from bun .github/scripts/local-metal.ts <pr>. The status
   # is per commit, so a later push runs Metal again. Pushes to main always run it.
   metal-gate:
+    # Only labelled PRs; skipped elsewhere, its empty output runs Metal.
+    if: contains(github.event.pull_request.labels.*.name, 'skip-metal')
     runs-on: ubuntu-latest
     permissions:
       statuses: read
@@ -106,23 +108,20 @@ jobs:
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          LABELED: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-metal') }}
           SHA: ${{ github.event.pull_request.head.sha }}
           REPO: ${{ github.repository }}
         run: |
+          # An API error reads as no local pass, so Metal runs.
+          state=$(gh api "repos/$REPO/commits/$SHA/status" \
+            -q '.statuses[] | select(.context == "local-metal") | .state' || true)
           skip=false
-          if [ "$LABELED" = true ]; then
-            # An API error reads as no local pass, so Metal runs.
-            state=$(gh api "repos/$REPO/commits/$SHA/status" \
-              -q '.statuses[] | select(.context == "local-metal") | .state' || true)
-            [ "$state" = success ] && skip=true
-          fi
+          [ "$state" = success ] && skip=true
           echo "local-metal=${state:-none} skip=$skip"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
   full-suite-metal:
     needs: metal-gate
-    # !cancelled(): a failed gate must not skip Metal.
+    # !cancelled(): a skipped or failed gate must not skip Metal.
     if: ${{ !cancelled() && needs.metal-gate.outputs.skip != 'true' }}
     runs-on: macos-15
     timeout-minutes: 45

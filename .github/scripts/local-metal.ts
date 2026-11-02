@@ -9,11 +9,12 @@
 // present, so a later push (a new head without the status) runs Metal again.
 //
 // Needs write access to niivue/mono (statuses and labels). It runs the PR's
-// code (install scripts, tests) on your machine, with GitHub and npm tokens
-// removed from its environment. It refuses a fork PR until you have read the
-// diff and pass --reviewed.
+// code (install scripts, tests) as you, so it can read ~/.npmrc, your keychain
+// and anything else you can; stripping tokens from its environment only stops
+// the casual leak. The real control is reading the diff: a fork PR is refused
+// unless --reviewed=<sha> names the head commit you read.
 //
-// Usage: bun .github/scripts/local-metal.ts <pr-number> [--no-label] [--reviewed]
+// Usage: bun .github/scripts/local-metal.ts <pr-number> [--no-label] [--reviewed=<sha>]
 
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -26,10 +27,11 @@ const LABEL = 'skip-metal'
 
 const pr = process.argv[2]
 const addLabel = !process.argv.includes('--no-label')
-const reviewed = process.argv.includes('--reviewed')
+const reviewed =
+  process.argv.find((a) => a.startsWith('--reviewed='))?.slice(11) ?? ''
 if (!pr || !/^\d+$/.test(pr)) {
   console.error(
-    'usage: bun .github/scripts/local-metal.ts <pr-number> [--no-label] [--reviewed]',
+    'usage: bun .github/scripts/local-metal.ts <pr-number> [--no-label] [--reviewed=<sha>]',
   )
   process.exit(2)
 }
@@ -60,13 +62,15 @@ function out(cmd: string[]): string {
 }
 
 const pull = ['gh', 'pr', 'view', pr, '-R', REPO, '--json']
-const sha = out([...pull, 'headRefOid', '-q', '.headRefOid'])
+const view = JSON.parse(out([...pull, 'headRefOid,isCrossRepository']))
+const sha: string = view.headRefOid
+// Tied to a commit, so a push after your review is not run unread.
 if (
-  out([...pull, 'isCrossRepository', '-q', '.isCrossRepository']) === 'true' &&
-  !reviewed
+  view.isCrossRepository &&
+  !(reviewed.length >= 7 && sha.startsWith(reviewed))
 ) {
   console.error(
-    `local-metal: #${pr} is from a fork and its code runs on this machine; read the diff, then pass --reviewed`,
+    `local-metal: #${pr} is from a fork and its code runs on this machine; read the diff at ${sha.slice(0, 8)}, then pass --reviewed=${sha.slice(0, 8)}`,
   )
   process.exit(2)
 }
@@ -90,7 +94,7 @@ function status(
     '-f',
     'context=local-metal',
     '-f',
-    `description=${description}`.slice(0, 140),
+    `description=${description}`,
   ])
 }
 
@@ -102,7 +106,7 @@ const env: Record<string, string | undefined> = {
   CI: '1',
   PLAYWRIGHT_CHROMIUM_CHANNEL: 'chromium',
 }
-// The PR's install scripts and tests never see your tokens.
+// Keeps tokens out of the PR's environment (see the header for the limits).
 for (const k of ['GH_TOKEN', 'GITHUB_TOKEN', 'NPM_TOKEN', 'NODE_AUTH_TOKEN'])
   delete env[k]
 const results = join(niivue, 'test-results/results.json')
@@ -123,9 +127,8 @@ function e2eCommand(): string[] {
       ]
 }
 
-let ok = false
-let posted = false // no public status until the run itself starts
-let crashed = false
+type Final = 'success' | 'failure' | 'error'
+let final: Final | undefined // unset: no public status yet
 const started = Date.now()
 try {
   const ref = `refs/remotes/local-metal/${pr}`
@@ -141,31 +144,35 @@ try {
   if (!run(['git', 'worktree', 'add', '--detach', dir, sha]))
     throw new Error('worktree failed')
   status('pending', `running at ${sha.slice(0, 8)}`)
-  posted = true
-  ok =
+  final = 'error' // a setup step or a crash: the suite did not run to the end
+  if (
     run(['git', 'lfs', 'pull'], dir) &&
     run(['bun', 'install', '--frozen-lockfile'], dir, env) &&
     run(['bunx', 'playwright', 'install', 'chromium'], niivue, env) &&
-    run(['bunx', 'nx', 'build', 'uikit'], dir, env) &&
-    run(e2eCommand(), niivue, env) &&
-    // From this checkout, not the PR's, so the PR cannot weaken the check.
-    run(['bun', join(import.meta.dir, 'check-no-skipped-tests.ts'), results])
+    run(['bunx', 'nx', 'build', 'uikit'], dir, env)
+  )
+    final =
+      run(e2eCommand(), niivue, env) &&
+      // From this checkout, not the PR's, so the PR cannot weaken the check.
+      run(['bun', join(import.meta.dir, 'check-no-skipped-tests.ts'), results])
+        ? 'success'
+        : 'failure'
 } catch (e) {
-  crashed = true
   console.error(`local-metal: ${(e as Error).message}`)
-} finally {
-  // git worktree remove deletes the folder too.
-  if (ok) run(['git', 'worktree', 'remove', '--force', dir])
-  else console.error(`local-metal: worktree kept for the report at ${dir}`)
 }
+let ok = final === 'success'
+if (ok) run(['git', 'worktree', 'remove', '--force', dir])
+else console.error(`local-metal: worktree kept for the report at ${dir}`)
 
 const minutes = ((Date.now() - started) / 60_000).toFixed(1)
-if (posted) {
+const said: Record<Final, string> = {
+  success: 'passed',
+  failure: 'failed',
+  error: 'did not finish',
+}
+if (final) {
   try {
-    status(
-      ok ? 'success' : crashed ? 'error' : 'failure',
-      `full suite ${ok ? 'passed' : crashed ? 'did not finish' : 'failed'} in ${minutes} min`,
-    )
+    status(final, `full suite ${said[final]} in ${minutes} min`)
   } catch (e) {
     ok = false
     console.error(
@@ -177,11 +184,14 @@ if (ok && addLabel) {
   // Re-adding a label that is already there fires no event, so take it off
   // first: the labeled event then re-runs the gate against this status.
   const labels = out([...pull, 'labels', '-q', '.labels[].name']).split('\n')
-  if (labels.includes(LABEL))
-    run(['gh', 'pr', 'edit', pr, '-R', REPO, '--remove-label', LABEL])
-  if (!run(['gh', 'pr', 'edit', pr, '-R', REPO, '--add-label', LABEL])) {
+  const edit = (flag: string) =>
+    run(['gh', 'pr', 'edit', pr, '-R', REPO, flag, LABEL])
+  if (
+    (labels.includes(LABEL) && !edit('--remove-label')) ||
+    !edit('--add-label')
+  ) {
     console.error(
-      `local-metal: passed, but adding ${LABEL} failed, so CI will still run Metal; add it by hand`,
+      `local-metal: passed, but re-adding ${LABEL} failed, so CI will still run Metal; remove and add it by hand`,
     )
     ok = false
   }

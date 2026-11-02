@@ -694,6 +694,19 @@ describe('set_volume', () => {
     expect(view.setVolume).toHaveBeenLastCalledWith(1, { calMax: Number.NaN })
   })
 
+  it('passes a null negative bound as NaN, mirroring the positive window (#493)', async () => {
+    const view = settableView()
+    await coreHandlers(host(view)).set_volume({
+      volume: 1,
+      cal_min_neg: null,
+      cal_max_neg: null,
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+    })
+  })
+
   it('checks the window a CT colormap fills in, before anything changes', async () => {
     const view = settableView()
     view.colormapWindow = (name: string) =>

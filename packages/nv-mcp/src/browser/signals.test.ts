@@ -99,6 +99,40 @@ describe('describeSignal', () => {
   })
 })
 
+describe('signal notes pinned to an edge (#493)', () => {
+  it('reads top and bottom as ±Infinity and reports them back by name', () => {
+    const view = signalView()
+    const { set_signal } = signalHandlers(hostOf(view))
+    set_signal({
+      annotations: [
+        { text: 'hi', x: 1, y: 'top' },
+        { text: 'lo', x: 2, y: 'bottom' },
+      ],
+    })
+    expect(view.setSignal).toHaveBeenCalledWith(0, {
+      annotations: [
+        { text: 'hi', x: 1, y: Number.POSITIVE_INFINITY },
+        { text: 'lo', x: 2, y: Number.NEGATIVE_INFINITY },
+      ],
+    })
+    const shown = describeSignal(
+      {
+        annotations: [
+          { text: 'hi', x: 1, y: Number.POSITIVE_INFINITY },
+          { text: 'lo', x: 2, y: Number.NEGATIVE_INFINITY },
+          { text: 'at', x: 3, y: 0.5 },
+        ],
+      },
+      0,
+    )
+    expect(shown.annotations).toEqual([
+      { text: 'hi', x: 1, y: 'top' },
+      { text: 'lo', x: 2, y: 'bottom' },
+      { text: 'at', x: 3, y: 0.5 },
+    ])
+  })
+})
+
 describe('load_signal', () => {
   it('adds a signal with its display, attachment and notes, named from the url', async () => {
     const view = signalView()

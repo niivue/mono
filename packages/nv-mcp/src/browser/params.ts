@@ -36,7 +36,8 @@ export function number(params: Params, key: string): number | undefined {
 }
 
 /**
- * A display-window bound: null asks NiiVue for the image's own default, which
+ * A display-window bound: null asks for NiiVue's default (the image's own
+ * window for cal_min/cal_max, a mirror of it for the negative window), which
  * NiiVue takes as NaN (JSON has no NaN).
  */
 export function windowBound(params: Params, key: string): number | undefined {

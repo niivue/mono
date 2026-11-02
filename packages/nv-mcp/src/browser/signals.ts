@@ -40,8 +40,16 @@ export function describeSignal(signal: ShownSignal, index: number) {
     ...(signal.display ? { display: signal.display } : {}),
     ...(signal.attachedToId ? { attachedTo: signal.attachedToId } : {}),
     ...(signal.followsCrosshair ? { followsCrosshair: true } : {}),
-    ...(signal.annotations?.length ? { annotations: signal.annotations } : {}),
+    ...(signal.annotations?.length
+      ? { annotations: signal.annotations.map(reportNote) }
+      : {}),
   }
+}
+
+// A note pinned to an edge has y = ±Infinity, which JSON writes as null.
+function reportNote(note: SignalAnnotation) {
+  if (Number.isFinite(note.y)) return note
+  return { ...note, y: note.y > 0 ? 'top' : 'bottom' }
 }
 
 /** How a signal is drawn, read off a `display` object. */
@@ -86,7 +94,12 @@ function annotationList(params: Params): SignalAnnotation[] | undefined {
     const fields = record({ note }, 'note') ?? {}
     const label = text(fields, 'text')
     const x = number(fields, 'x')
-    const y = number(fields, 'y')
+    const y =
+      fields.y === 'top'
+        ? Number.POSITIVE_INFINITY
+        : fields.y === 'bottom'
+          ? Number.NEGATIVE_INFINITY
+          : number(fields, 'y')
     if (!label || x === undefined || y === undefined)
       throw new Error(`Annotation ${i} needs text, x and y.`)
     const made: SignalAnnotation = { text: label, x, y }

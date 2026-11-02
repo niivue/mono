@@ -31,12 +31,14 @@ const LAYER_FIELDS = {
     .describe('The high end of the display window.'),
   cal_min_neg: z
     .number()
+    .nullable()
     .optional()
-    .describe('The low end of the negative window.'),
+    .describe('The low end of the negative window; null mirrors cal_min.'),
   cal_max_neg: z
     .number()
+    .nullable()
     .optional()
-    .describe('The high end of the negative window.'),
+    .describe('The high end of the negative window; null mirrors cal_max.'),
   opacity: z
     .number()
     .min(0)
@@ -124,7 +126,11 @@ const NOTES = z
     z.object({
       text: z.string().min(1),
       x: z.number().describe('Along the axis, in its units.'),
-      y: z.number().describe('The value the note sits at.'),
+      y: z
+        .union([z.number(), z.enum(['top', 'bottom'])])
+        .describe(
+          'The value the note sits at, or top / bottom to pin it to that edge of the graph.',
+        ),
       color: rgba('The colour of the note:').optional(),
     }),
   )

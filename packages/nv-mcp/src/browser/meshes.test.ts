@@ -519,6 +519,16 @@ describe('the mesh layers', () => {
     ).rejects.toThrow("This page's NiiVue cannot add a layer to a mesh.")
   })
 
+  it('passes a null negative bound as NaN, mirroring the positive window (#493)', async () => {
+    const view = meshView()
+    const { set_mesh_layer } = meshHandlers(hostOf(view))
+    await set_mesh_layer({ cal_min_neg: null, cal_max_neg: null })
+    expect(view.setMeshLayerProperty).toHaveBeenCalledWith(0, 0, {
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+    })
+  })
+
   it('changes a layer and its frame, on the only layer by default', async () => {
     const view = meshView()
     const { set_mesh_layer } = meshHandlers(hostOf(view))

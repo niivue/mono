@@ -45,6 +45,8 @@ export interface Setting {
   max?: number
   /** For an object, its fields. */
   fields?: readonly Setting[]
+  /** What null stands for, for a number JSON cannot carry (e.g. Infinity). */
+  nullAs?: number
   description: string
 }
 
@@ -254,9 +256,10 @@ export const SETTINGS: readonly Setting[] = [
   ),
   num(
     'meshThicknessOn2D',
-    'On 2D slices, draw only mesh within this many millimetres of the slice, over it; 0 draws all mesh in front of the slice.',
+    'On 2D slices, draw only mesh within this many millimetres of the slice, over it; 0 or null draws all mesh in front of the slice, and null in a report means that.',
     {
       min: 0,
+      nullAs: Number.POSITIVE_INFINITY,
     },
   ),
   num(
@@ -600,6 +603,7 @@ export function coerceSetting(setting: Setting, value: unknown): unknown {
       throw fail(setting, 'true or false')
     case 'number':
     case 'integer': {
+      if (value === null && setting.nullAs !== undefined) return setting.nullAs
       const n = Number(value)
       if (value === '' || value === null || !Number.isFinite(n))
         throw fail(setting, 'a number')

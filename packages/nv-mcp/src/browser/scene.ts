@@ -641,8 +641,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const toLoad: VolumeToLoad = { url, name, colormap, opacity }
       put(toLoad, 'calMin', windowBound(params, 'cal_min'))
       put(toLoad, 'calMax', windowBound(params, 'cal_max'))
-      put(toLoad, 'calMinNeg', number(params, 'cal_min_neg'))
-      put(toLoad, 'calMaxNeg', number(params, 'cal_max_neg'))
+      put(toLoad, 'calMinNeg', windowBound(params, 'cal_min_neg'))
+      put(toLoad, 'calMaxNeg', windowBound(params, 'cal_max_neg'))
       put(toLoad, 'colormapNegative', text(params, 'colormap_negative'))
       // A label map has no window to show on a colorbar.
       put(
@@ -989,8 +989,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
         )
       }
-      put(update, 'calMinNeg', number(params, 'cal_min_neg'))
-      put(update, 'calMaxNeg', number(params, 'cal_max_neg'))
+      put(update, 'calMinNeg', windowBound(params, 'cal_min_neg'))
+      put(update, 'calMaxNeg', windowBound(params, 'cal_max_neg'))
       const type = text(params, 'colormap_type')?.toLowerCase()
       if (type !== undefined) {
         if (!Object.hasOwn(COLORMAP_TYPES, type)) {

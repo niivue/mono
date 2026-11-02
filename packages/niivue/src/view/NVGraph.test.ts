@@ -12,6 +12,7 @@ import {
   signalFracAtXValue,
   signalValuesAt,
   signalXValueAtFrac,
+  translateGraphLayout,
 } from './NVGraph'
 import type { LineData } from './NVLine'
 
@@ -836,5 +837,39 @@ describe('clipSegmentX (edge interpolation)', () => {
   })
   test('verticalInRange_kept', () => {
     expect(clipSegmentX(5, 0, 5, 9, 0, 10)).toEqual([5, 0, 5, 9])
+  })
+})
+
+describe('translateGraphLayout', () => {
+  test('movesTheAreaPlotAndControls', () => {
+    const layout = {
+      x: 10,
+      y: 0,
+      width: 100,
+      height: 50,
+      plotLTWH: [20, 5, 80, 40],
+      nFrames: 2,
+      hasDeferred: false,
+      isSignal: true,
+      fontScale: 1,
+      fontSize: 12,
+      dpr: 1,
+      controls: [
+        {
+          id: 'zoomIn' as const,
+          label: '+',
+          x: 30,
+          y: 45,
+          w: 8,
+          h: 8,
+          disabled: false,
+        },
+      ],
+    }
+    const moved = translateGraphLayout(layout, 200, 30)
+    expect([moved.x, moved.y]).toEqual([210, 30])
+    expect(moved.plotLTWH).toEqual([220, 35, 80, 40])
+    expect([moved.controls?.[0]?.x, moved.controls?.[0]?.y]).toEqual([230, 75])
+    expect(translateGraphLayout(layout, 0, 0)).toBe(layout)
   })
 })

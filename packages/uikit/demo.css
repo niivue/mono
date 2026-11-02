@@ -1,0 +1,47 @@
+/* Shared by the demo pages: the nav, the backend menu and the status bar. */
+nav a {
+  color: #9cf;
+  margin-right: 10px;
+}
+nav a[aria-current] {
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+header .backend {
+  margin-left: auto;
+}
+footer {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 4px 12px;
+  background: #1b1b1b;
+  border-top: 1px solid #333;
+  font-size: 13px;
+}
+footer #help {
+  color: #aaa;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+footer #status {
+  white-space: nowrap;
+}
+#status[data-state="wait"] {
+  color: #ffd500;
+}
+#status[data-state="ok"] {
+  color: #5d5;
+}
+#status[data-state="error"] {
+  color: #f66;
+}
+kbd {
+  background: #333;
+  border-radius: 3px;
+  padding: 1px 5px;
+}

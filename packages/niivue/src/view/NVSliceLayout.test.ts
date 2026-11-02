@@ -10,6 +10,8 @@ import {
   crosshairRadiusMM,
   everyTileWindowMM,
   fitSlicesAndGraph,
+  fitSlicesFromModel,
+  insetRect,
   projectMMToNearestTile,
   projectMMToRenderTile,
   type SliceLayoutConfig,
@@ -812,5 +814,40 @@ describe('cloneSliceTile', () => {
     expect(tile.crossLines?.axialMM).toEqual([1, 2])
     expect(tile.pan).toEqual([7, 8])
     expect(tile.globalCamera?.position[0]).toBe(1)
+  })
+})
+
+describe('layout inset', () => {
+  test('insetRectScalesByDprAndClamps', () => {
+    expect(insetRect(800, 600, [100, 10, 0, 20], 2)).toEqual([
+      200, 20, 600, 540,
+    ])
+    // Bad sides count as 0; a too-large inset leaves at least 1 px.
+    expect(insetRect(800, 600, [Number.NaN, -5, 0, 0], 1)).toEqual([
+      0, 0, 800, 600,
+    ])
+    expect(insetRect(100, 100, [500, 0, 500, 0], 1)).toEqual([99, 0, 1, 100])
+  })
+
+  test('fitSlicesFromModelShiftsTilesToTheOrigin', () => {
+    const model = {
+      isSpatialViewHidden: () => false,
+      layout: {
+        ...NVConstants.LAYOUT_DEFAULTS,
+        sliceType: NVConstants.SLICE_TYPE.AXIAL,
+      },
+      ui: { isCrossLinesVisible: false },
+      extentsMin: [-10, -10, -10],
+      extentsMax: [10, 10, 10],
+    } as unknown as NVModel
+    const plain = fitSlicesFromModel(model, [400, 300], 0).screenSlices
+    const moved = fitSlicesFromModel(
+      model,
+      [400, 300],
+      0,
+      [150, 20],
+    ).screenSlices
+    const [l, t, w, h] = plain[0]?.leftTopWidthHeight ?? []
+    expect(moved[0]?.leftTopWidthHeight).toEqual([l + 150, t + 20, w, h])
   })
 })

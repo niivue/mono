@@ -647,6 +647,23 @@ function computeSignalGraphLayout(
   }
 }
 
+/** Move a graph layout by (dx, dy) canvas px, e.g. into a `layout.inset` area. */
+export function translateGraphLayout(
+  layout: GraphLayout,
+  dx: number,
+  dy: number,
+): GraphLayout {
+  if (dx === 0 && dy === 0) return layout
+  const [l, t, w, h] = layout.plotLTWH
+  return {
+    ...layout,
+    x: layout.x + dx,
+    y: layout.y + dy,
+    plotLTWH: [l + dx, t + dy, w, h],
+    controls: layout.controls?.map((c) => ({ ...c, x: c.x + dx, y: c.y + dy })),
+  }
+}
+
 /**
  * Compute graph layout including the plot area. `totalWidthOverride` lets the
  * caller widen the graph beyond its base width (e.g. when a single narrow slice

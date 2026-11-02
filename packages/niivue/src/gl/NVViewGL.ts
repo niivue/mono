@@ -698,6 +698,17 @@ export default class NVGlview {
     // Use bounds dimensions as effective canvas size
     const canvasWidth = bw
     const canvasHeight = bh
+    // Tiles, colorbar, legend and graph lay out inside layout.inset; the
+    // overlay hook still gets the whole view.
+    const [ix, iy, iw, ih] = NVSliceLayout.insetRect(
+      canvasWidth,
+      canvasHeight,
+      md.layout.inset,
+      this._dpr,
+    )
+    this.colorbarRenderer.setContentRect(
+      iw === canvasWidth && ih === canvasHeight ? null : [ix, iy, iw, ih],
+    )
     // Enable scissor to constrain clearing and rendering to bounds region
     if (this._isSubCanvasBounds) {
       gl.enable(gl.SCISSOR_TEST)
@@ -782,8 +793,8 @@ export default class NVGlview {
       md.ui.isLegendVisible && legendEntries.length > 0
         ? NVLegend.computeLegendLayout(
             legendEntries,
-            canvasWidth,
-            canvasHeight,
+            iw,
+            ih,
             cbHeight,
             md.legendScrollRow(),
             {
@@ -793,10 +804,11 @@ export default class NVGlview {
             },
           )
         : null
+    if (legendLayout) legendLayout.y += iy
     const legendWidth = legendLayout?.width ?? 0
     const graphData = md.collectGraphData()
     const baseGraphWidth = graphData
-      ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
+      ? NVGraph.graphTotalWidth(graphData, iw, ih)
       : 0
     let graphWidth: number
     let screenSlices: NVSliceLayout.SliceTile[]
@@ -809,8 +821,9 @@ export default class NVGlview {
     } else {
       const fit = NVSliceLayout.fitSlicesFromModel(
         md,
-        [canvasWidth - legendWidth - baseGraphWidth, canvasHeight - cbHeight],
+        [iw - legendWidth - baseGraphWidth, ih - cbHeight],
         baseGraphWidth,
+        [ix, iy],
       )
       graphWidth = fit.graphWidth
       screenSlices = fit.screenSlices
@@ -1557,8 +1570,8 @@ export default class NVGlview {
         labels.push(
           this.fontRenderer.buildText(
             headerStr,
-            canvasWidth * 0.5,
-            0,
+            ix + iw * 0.5,
+            iy,
             1.5,
             [0, 0, 0, 1],
             0.5,
@@ -1581,7 +1594,7 @@ export default class NVGlview {
       this.legendLayout = legendLayout
       if (legendLayout) {
         // Placed once the graph's width is known.
-        legendLayout.x = canvasWidth - legendWidth - graphWidth
+        legendLayout.x = ix + iw - legendWidth - graphWidth
         const legendLabels = NVLegend.buildLegendLabels(
           legendLayout,
           (s, x, y, sc, c, ax, ay, bc) =>
@@ -1593,14 +1606,16 @@ export default class NVGlview {
       // Graph labels and lines for 4D frame intensity
       if (graphData && graphWidth > 0) {
         const graphDpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
-        this.graphLayout = NVGraph.computeGraphLayout(
+        const graphLayout = NVGraph.computeGraphLayout(
           graphData,
-          canvasWidth,
-          canvasHeight,
+          iw,
+          ih,
           cbHeight,
           graphDpr,
           graphWidth,
         )
+        this.graphLayout =
+          graphLayout && NVGraph.translateGraphLayout(graphLayout, ix, iy)
         if (this.graphLayout) {
           const graphElements = NVGraph.buildGraphElements(
             graphData,

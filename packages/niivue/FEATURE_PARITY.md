@@ -152,6 +152,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Corner orientation text | ❌ | No `setCornerOrientationText` |
 | Show all orientation markers | ❌ | |
 | Tile margin/padding | ✅ | `tileMargin` |
+| Reserved canvas strip for in-canvas controls | ✅ | New, no old-package equivalent: `layoutInset` ([left, top, right, bottom] CSS px); overlays keep the whole canvas |
 | HiDPI/retina support | ✅ | Built-in |
 | Multi-instance scenes (`opts.instances`, `setInstances`) | ✅ | Per-tile `volumeId` / `bounds` / `viewport`. Supported on both WebGL2 and WebGPU backends. |
 | Shared-camera 3D space (`tile.space === 'global3d'`, `globalCamera`, `setGlobalCamera`) | ✅ | One camera spans every tile so adjacent volumes line up in world space. Supported on both backends; WebGPU uses a per-volume texture cache to keep multi-volume draws cheap. |

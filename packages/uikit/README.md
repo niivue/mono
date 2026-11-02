@@ -706,16 +706,20 @@ overrides of the button style.
 
 `bunx nx dev uikit` serves the package's own demo pages with Vite; the dev
 server also mounts `@niivue/dev-images`, so the pages can load real volumes
-from `/volumes/...`. Each page's nav links to the others.
+from `/volumes/...`. Each page's nav links to the others and marks the current
+one; a backend menu reloads it on WebGL2 or WebGPU, and a status bar at the
+bottom shows help on the left and the page's state on the right (yellow while
+it waits, green for a result, red for an error). `demo.css`, `statusBar.js`
+and `urlParamSelect.js` are shared by the pages.
 
 | Page | Shows |
 | --- | --- |
-| `index.html` | The ruler on a blank pane |
+| `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
+| `ruler.html` | The ruler on a blank pane |
 | `volume.html` | The ruler over a NiiVue volume, measuring in millimetres from the slice pick |
 | `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile, measuring in screen pixels |
 | `slide-wsi.html` | The ruler on the standalone WSI viewer with a DICOM whole-slide image |
 | `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |
-| `controls.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog |
 
 ## Conventions for contributors
 
@@ -756,4 +760,4 @@ from `/volumes/...`. Each page's nav links to the others.
   default style from `src/index.ts`** (the one permitted barrel). The pure
   model (layout, build, hit-test and state helpers) stays package-private:
   it is exercised by the widget's own tests and is not an API. Add the widget
-  to the table at the top of this file and to `controls.html`.
+  to the table at the top of this file and to the controls demo (`index.html`).

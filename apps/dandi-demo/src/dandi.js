@@ -176,6 +176,7 @@ function el(id) {
 }
 
 const els = {
+  backendSelect: document.getElementById('backendSelect'),
   dataset: el('dataset'),
   axis: el('axis'),
   plane: el('plane'),
@@ -200,6 +201,16 @@ const els = {
   slideHud: el('slideHud'),
   fallback: el('fallback'),
   provenance: el('provenance'),
+}
+
+// The backend menu reloads with ?backend=, since the page builds its
+// renderers once (#488). Wired before anything loads, so it works even if
+// loading fails.
+els.backendSelect.value = backend
+els.backendSelect.onchange = () => {
+  const url = new URL(location.href)
+  url.searchParams.set('backend', els.backendSelect.value)
+  location.href = url.href
 }
 
 let nv = null
@@ -1233,6 +1244,8 @@ async function main() {
     maxChunkResidencyBytes: DEFAULT_RESIDENCY_BYTES,
   })
   await nv.attachToCanvas(els.canvas)
+  // Show the backend running, after any fallback.
+  els.backendSelect.value = nv.backend
   nv.addEventListener('locationChange', onLocationChange)
   nv.addEventListener('change', onNiivueChange)
   nv.scaleMultiplier = DEFAULT_3D_ZOOM

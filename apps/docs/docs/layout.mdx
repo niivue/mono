@@ -58,6 +58,9 @@ A few more properties shape the tiles:
 - `isEqualSize` makes every tile the same size, instead of sizing each one
   to its slice's extent.
 - `tileMargin` adds a gap, in pixels, between tiles.
+- `layoutInset` keeps a strip of the canvas clear of tiles, colorbar,
+  legend and graph: `[left, top, right, bottom]` in CSS pixels. Overlays
+  still draw on the whole canvas, so in-canvas controls can sit there.
 - `isRadiological` flips left and right.
 
 ```js

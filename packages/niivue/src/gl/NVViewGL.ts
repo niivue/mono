@@ -871,8 +871,6 @@ export default class NVGlview {
             ltwh,
             screen.mnMM,
             screen.mxMM,
-            Infinity,
-            undefined,
             tile.azimuth as number,
             tile.elevation as number,
             md.layout.isRadiological,
@@ -907,8 +905,6 @@ export default class NVGlview {
             ltwh,
             screen.mnMM,
             screen.mxMM,
-            Infinity,
-            undefined,
             tile.azimuth as number,
             tile.elevation as number,
             md.layout.isRadiological,
@@ -1266,34 +1262,11 @@ export default class NVGlview {
           : (md.getMeshes() as NVMesh[]).filter(isMeshDrawn)
       const ccMM = crosscutMM(md, tile.axCorSag)
       const ccPlanes = crosscutPlanes(md, tile, md.mesh.crosscutWidth)
-      // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
-      let meshMvp = mvpMatrix
-      let meshNorm = normalMatrix
-      if (
-        tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER &&
-        md.mesh.thicknessOn2D !== Infinity
-      ) {
-        const clipMM = md.scene2mm(md.scene.crosshairPos)
-        if (tile.sliceMM !== undefined) {
-          clipMM[NVConstants.sliceTypeDim(tile.axCorSag)] = tile.sliceMM
-        }
-        const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
-        const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
-        ;[meshMvp, , meshNorm] = NVTransforms.calculateMvpMatrix2D(
-          ltwh,
-          screen.mnMM,
-          screen.mxMM,
-          md.mesh.thicknessOn2D,
-          clipMM,
-          tile.azimuth as number,
-          tile.elevation as number,
-          md.layout.isRadiological,
-          md.volumes[0]?.obliqueRAS,
-          undefined,
-          pan,
-          false,
-        )
-      }
+      // A finite meshThicknessOn2D slab follows the displayed voxel plane and
+      // is drawn over the slice (SLAB_DEPTH_MAX), not depth-tested against it.
+      const slabMvp = NVSliceLayout.meshSlabMvp(md, tile, mvpMatrix, false)
+      const meshMvp = slabMvp ?? mvpMatrix
+      if (slabMvp) gl.depthRange(0, NVTransforms.SLAB_DEPTH_MAX)
       if (meshes.length > 0) {
         const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
         for (const m of meshes) {
@@ -1304,14 +1277,13 @@ export default class NVGlview {
             isSlice && mGpu.sliceShaderType
               ? mGpu.sliceShaderType
               : mGpu.shaderType
-          // crosscut2 cuts at the voxel plane, which an oblique volume tilts
-          // out of the world-aligned thicknessOn2D slab: use the full MVP.
+          // crosscut2 outlines the voxel plane itself: a slab would only clip it.
           mesh.drawWithGpu(
             gl,
             m,
             mGpu,
             (shaderType === 'crosscut2' ? mvpMatrix : meshMvp) as Float32Array,
-            meshNorm as Float32Array,
+            normalMatrix as Float32Array,
             opacity,
             shaderType,
             ccMM,
@@ -1319,6 +1291,7 @@ export default class NVGlview {
           )
         }
       }
+      if (slabMvp) gl.depthRange(0, 1)
       // Layer 2b-xray: Mesh X-ray pass (depth disabled, reduced opacity)
       const xrayAlpha = md.mesh.xRay
       if (xrayAlpha > 0) {
@@ -1333,8 +1306,9 @@ export default class NVGlview {
             xrayAlpha,
           )
         }
-        // Re-draw meshes with xray
+        // Re-draw meshes with xray (in the slab's depth range, if any)
         if (meshes.length > 0) {
+          if (slabMvp) gl.depthRange(0, NVTransforms.SLAB_DEPTH_MAX)
           const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
           for (const m of meshes) {
             const mGpu = this._getMeshGpu(m)
@@ -1349,13 +1323,14 @@ export default class NVGlview {
               m,
               mGpu,
               meshMvp as Float32Array,
-              meshNorm as Float32Array,
+              normalMatrix as Float32Array,
               opacity,
               shaderType,
               ccMM,
               ccPlanes,
             )
           }
+          if (slabMvp) gl.depthRange(0, 1)
         }
       }
       // Layer 2b-ann: 3D annotations (RENDER tiles only)
@@ -2104,8 +2079,6 @@ export default class NVGlview {
         ltwh,
         screen.mnMM,
         screen.mxMM,
-        Infinity,
-        undefined,
         tile.azimuth as number,
         tile.elevation as number,
         md.layout.isRadiological,
@@ -2136,8 +2109,6 @@ export default class NVGlview {
         ltwh,
         screen.mnMM,
         screen.mxMM,
-        Infinity,
-        undefined,
         tile.azimuth as number,
         tile.elevation as number,
         md.layout.isRadiological,

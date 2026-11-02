@@ -249,7 +249,7 @@ export const SETTINGS: readonly Setting[] = [
   ),
   num(
     'meshThicknessOn2D',
-    'How thick a mesh slab is drawn on a 2D slice, in millimetres.',
+    'On 2D slices, draw only mesh within this many millimetres of the slice, over it; 0 draws all mesh in front of the slice.',
     {
       min: 0,
     },

@@ -2063,6 +2063,11 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * On 2D slices, draw only mesh within this distance (mm, either side) of the displayed
+   * voxel plane, over the slice. 0 or Infinity (the default) draws all mesh
+   * in front of the slice.
+   */
   get meshThicknessOn2D(): number {
     return this.model.mesh.thicknessOn2D
   }

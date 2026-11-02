@@ -409,8 +409,6 @@ export function calculateMvpMatrix2D(
   _leftTopWidthHeight: number[],
   mn: number[],
   mx: number[],
-  clipTolerance = Infinity,
-  clipCenter?: ArrayLike<number>,
   azimuth = 0,
   elevation = 0,
   isRadiological = false,
@@ -476,21 +474,9 @@ export function calculateMvpMatrix2D(
       -origin[2],
     ])
   }
-  // Compute near/far clip planes
-  let near = scale * 0.01
-  let far = scale * 8.0
-  if (clipTolerance !== Infinity && clipCenter) {
-    // Transform clip center through model matrix to get camera-space Z
-    const clipCam = vec4.create()
-    vec4.transformMat4(
-      clipCam,
-      vec4.fromValues(clipCenter[0], clipCenter[1], clipCenter[2], 1),
-      modelMatrix,
-    )
-    const centerDepth = -clipCam[2]
-    near = centerDepth - clipTolerance
-    far = centerDepth + clipTolerance
-  }
+  // SLAB_DEPTH_MAX relies on these and the 1.8 camera distance above.
+  const near = scale * 0.01
+  const far = scale * 8.0
   const projectionMatrix = mat4.create()
   if (clipSpaceZeroToOne) {
     mat4.orthoZO(projectionMatrix, left, right, bottom, top, near, far)
@@ -505,6 +491,39 @@ export function calculateMvpMatrix2D(
   mat4.multiply(mvpMatrix, projectionMatrix, modelMatrix)
   const rayDir = calculateRayDirection(modelMatrix, obliqueRAS)
   return [mvpMatrix, modelMatrix, normalMatrix, rayDir]
+}
+
+/**
+ * Depth range a 2D mesh slab is drawn into. A slice tile's own geometry sits
+ * at depth >= 0.16 (camera 1.8 depth-scales back, near 0.01, far 8, geometry
+ * within half a scale of the pivot), so a slab drawn into [0, 0.1] lands over
+ * the slice while meshes still occlude each other.
+ */
+export const SLAB_DEPTH_MAX = 0.1
+
+/**
+ * `mvp` with its depth row replaced by signed distance from a plane, so the
+ * near and far clip planes lie `halfThickness` mm either side of it (oblique
+ * to the view when the plane is). Orthographic `mvp` only: w stays 1.
+ */
+export function slabMvp(
+  mvp: mat4,
+  normal: ArrayLike<number>,
+  point: ArrayLike<number>,
+  halfThickness: number,
+  clipSpaceZeroToOne: boolean,
+): mat4 {
+  const out = mat4.clone(mvp)
+  // Orient the normal along increasing depth (away from the viewer).
+  const sign =
+    normal[0] * mvp[2] + normal[1] * mvp[6] + normal[2] * mvp[10] < 0 ? -1 : 1
+  const k = sign / (clipSpaceZeroToOne ? 2 * halfThickness : halfThickness)
+  const d = normal[0] * point[0] + normal[1] * point[1] + normal[2] * point[2]
+  out[2] = k * normal[0]
+  out[6] = k * normal[1]
+  out[10] = k * normal[2]
+  out[14] = -k * d + (clipSpaceZeroToOne ? 0.5 : 0)
+  return out
 }
 
 export function calculateMvpMatrix(

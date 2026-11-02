@@ -113,6 +113,42 @@ export function slicePanUV(
 }
 
 /**
+ * The mesh MVP for a 2D tile when `meshThicknessOn2D` is finite and positive:
+ * a slab about the displayed voxel plane (oblique when the volume is), or a
+ * world plane through the crosshair when no volume is loaded. Null otherwise:
+ * meshes then use the tile MVP, and the slice hides what lies behind it.
+ */
+export function meshSlabMvp(
+  model: NVModel,
+  tile: SliceTile,
+  mvp: mat4,
+  clipSpaceZeroToOne: boolean,
+): mat4 | null {
+  const thickness = model.mesh.thicknessOn2D
+  if (
+    tile.axCorSag === NVConstants.SLICE_TYPE.RENDER ||
+    !(thickness > 0 && Number.isFinite(thickness))
+  ) {
+    return null
+  }
+  if (tile.planeNormal && tile.planePoint) {
+    return NVTransforms.slabMvp(
+      mvp,
+      tile.planeNormal,
+      tile.planePoint,
+      thickness,
+      clipSpaceZeroToOne,
+    )
+  }
+  const dim = NVConstants.sliceTypeDim(tile.axCorSag)
+  const axis = [0, 0, 0]
+  axis[dim] = 1
+  const point = model.scene2mm(model.scene.crosshairPos)
+  if (tile.sliceMM !== undefined) point[dim] = tile.sliceMM
+  return NVTransforms.slabMvp(mvp, axis, point, thickness, clipSpaceZeroToOne)
+}
+
+/**
  * World-mm cylinder radius that makes the crosshair `ui.crosshairWidth` canvas
  * pixels thick on this tile.
  *
@@ -1043,8 +1079,6 @@ export function screenSlicePick(
     ltwh,
     screen.mnMM,
     screen.mxMM,
-    Infinity,
-    undefined,
     tile.azimuth as number,
     tile.elevation as number,
     model.layout.isRadiological,

@@ -162,14 +162,15 @@ One branch resolves one issue. Work on a branch regularly turns up something
 else: a pre-existing bug on a neighbouring code path, stale generated output,
 an API sharp edge, a test gap. Do not fix it on that branch.
 
-- Open a GitHub issue for it with a repro and what the fix involves, so the
-  context is not lost when the branch merges.
-- If it affects how the current PR should be reviewed or merged, link the
-  issue from the PR description and say so.
+- Do not open a GitHub issue for it. Agents never create issues in this repo
+  unless the user asks for one in the current conversation.
+- Tell the user what you found, with a repro and what the fix involves.
+- If you open a PR, list it under an "Out of scope" heading in the PR
+  description, so the context is not lost when the branch merges.
 - Resolve it later on its own branch, as its own PR.
 - Before committing, revert incidental changes that a build or codegen step
   made to files the issue does not touch (for example regenerated bindings).
-  If the regenerated output is stale on `main`, that is an issue of its own.
+  If the regenerated output is stale on `main`, report that as above.
 
 Two exceptions, both to be called out in the PR: a change the issue cannot be
 fixed without, and a trivial correction on a line the branch already edits.
@@ -217,7 +218,7 @@ The `@niivue/niivue` package in this repo is a complete rewrite of the old niivu
 
 ## MCP API parity
 
-A new or changed public NiiVue API that accepts or returns serializable scene or viewer state should be accessible through `@niivue/nv-mcp`. When practical, add or update the MCP server tool schema, browser-side handler, documentation, and coverage in the same change, and verify that the tool drives the real NiiVue API rather than a demo-only substitute. Otherwise, open a follow-up issue for the MCP surface and link it from the PR. A missing MCP surface does not block merging a core NiiVue change.
+A new or changed public NiiVue API that accepts or returns serializable scene or viewer state should be accessible through `@niivue/nv-mcp`. When practical, add or update the MCP server tool schema, browser-side handler, documentation, and coverage in the same change, and verify that the tool drives the real NiiVue API rather than a demo-only substitute. Otherwise, say in the PR description that the MCP surface is still missing. A missing MCP surface does not block merging a core NiiVue change.
 
 Browser-integration APIs are exempt when they require DOM nodes, canvas attachment, event or callback registration, functions, browser-only objects such as `File`, or other non-serializable values. Document the exemption in the API change when it is not self-evident. Do not use an exemption for serializable scene operations, viewer state, or data-loading operations merely because their implementation runs in the browser.
 

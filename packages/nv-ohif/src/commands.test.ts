@@ -1903,6 +1903,29 @@ describe('niivueToggleOverlay', () => {
     expect(entry.overlayUIDs).toEqual([])
   })
 
+  it('reports a failed load as an error status (#130)', async () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    nv.addVolume = async () => {
+      throw new Error('boom')
+    }
+    register('vp-1', nv)
+    const statuses: Array<[string | null, string | undefined]> = []
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-base' }],
+      setStatus: (message, kind) => statuses.push([message, kind]),
+    })
+    const sm = services('vp-1', [
+      { displaySetInstanceUID: 'ds-base' },
+      { displaySetInstanceUID: 'ds-2', url: 'https://x/perf.nii.gz' },
+    ])
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
+    await definitions.niivueToggleOverlay()
+    errorSpy.mockRestore()
+    expect(statuses).toEqual([['Overlay load failed: boom', 'error']])
+  })
+
   it('does nothing without a loaded base volume', async () => {
     const nv = stubNiivue()
     register('vp-1', nv)
@@ -1928,7 +1951,7 @@ describe('flashStatus', () => {
 
   it('clears its own message after the flash duration', async () => {
     const { entry, writes } = statusEntry()
-    flashStatus(entry, 'No other loadable series in this study.', 10)
+    flashStatus(entry, 'No other loadable series in this study.', 'note', 10)
     expect(writes).toEqual(['No other loadable series in this study.'])
     await sleep(30)
     expect(writes).toEqual(['No other loadable series in this study.', null])
@@ -1936,9 +1959,9 @@ describe('flashStatus', () => {
 
   it('does not blank a newer status when its timer fires late', async () => {
     const { entry, writes } = statusEntry()
-    flashStatus(entry, 'Overlay load failed: boom', 10)
+    flashStatus(entry, 'Overlay load failed: boom', 'error', 10)
     // A retried load writes fresh progress before the failure flash expires.
-    flashStatus(entry, 'Fetching overlay: PERFUSION... 3/10', 1000)
+    flashStatus(entry, 'Fetching overlay: PERFUSION... 3/10', 'loading', 1000)
     await sleep(30)
     // The stale timer must not clear the live progress readout.
     expect(writes).toEqual([

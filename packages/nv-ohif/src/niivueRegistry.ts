@@ -29,8 +29,11 @@ export interface NiivueViewportEntry {
   /** Visible NVSlide view when this viewport is showing a whole-slide series. */
   slideView?: WsiSlideView
   /** Viewport-provided sink so commands can surface progress text (null = clear). */
-  setStatus?: (message: string | null) => void
+  setStatus?: (message: string | null, kind?: StatusKind) => void
 }
+
+/** How the viewport styles a status message. */
+export type StatusKind = 'loading' | 'note' | 'error'
 
 const instances = new Map<string, NiivueViewportEntry>()
 

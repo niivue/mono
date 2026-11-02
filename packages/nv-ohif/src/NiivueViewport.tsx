@@ -21,6 +21,7 @@ import {
   ohifServices,
   refreshToolbar,
   registerNiivue,
+  type StatusKind,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
@@ -44,11 +45,7 @@ const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   annotationMergesOverlaps: false,
 }
 
-type Status =
-  | { kind: 'idle' }
-  | { kind: 'loading'; message: string }
-  | { kind: 'note'; message: string }
-  | { kind: 'error'; message: string }
+type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
 
 // OHIF's toolbar tools operate on cornerstone viewports; our NiiVue viewport isn't in
 // a cornerstone tool group. Instead we mirror OHIF's active primary mouse tool onto
@@ -154,19 +151,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
       updateNiivueViewport(viewportId, {
-        setStatus: (message) =>
-          setStatus(
-            message === null
-              ? { kind: 'idle' }
-              : {
-                  kind: /failed/i.test(message)
-                    ? 'error'
-                    : /\.\.\./.test(message)
-                      ? 'loading'
-                      : 'note',
-                  message,
-                },
-          ),
+        setStatus: (message, kind = 'note') =>
+          setStatus(message === null ? { kind: 'idle' } : { kind, message }),
       })
       refreshToolbar(servicesManagerRef.current, viewportId)
       setReady(true)

@@ -18,6 +18,7 @@ import {
   ohifCommandsManager,
   ohifServices,
   refreshToolbar,
+  type StatusKind,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
 
@@ -140,9 +141,13 @@ const statusTokens = new WeakMap<NiivueViewportEntry, number>()
 // Write a status message (or null to clear) through the viewport's sink,
 // invalidating any pending flash clear (no-op if the viewport did not register
 // a status sink).
-function writeStatus(entry: NiivueViewportEntry, message: string | null): void {
+function writeStatus(
+  entry: NiivueViewportEntry,
+  message: string | null,
+  kind?: StatusKind,
+): void {
   statusTokens.set(entry, (statusTokens.get(entry) ?? 0) + 1)
-  entry.setStatus?.(message)
+  entry.setStatus?.(message, kind)
 }
 
 // Show a transient message in the viewport. The deferred clear is dropped when
@@ -151,9 +156,10 @@ function writeStatus(entry: NiivueViewportEntry, message: string | null): void {
 export function flashStatus(
   entry: NiivueViewportEntry,
   message: string,
+  kind: StatusKind = 'note',
   ms = 4000,
 ): void {
-  writeStatus(entry, message)
+  writeStatus(entry, message, kind)
   const token = statusTokens.get(entry)
   setTimeout(() => {
     if (statusTokens.get(entry) === token) writeStatus(entry, null)
@@ -1477,7 +1483,7 @@ export function getNiivueCommandsModule({
             opacity: OVERLAY_OPACITY,
           })
         } else {
-          writeStatus(entry, `Fetching overlay: ${label}...`)
+          writeStatus(entry, `Fetching overlay: ${label}...`, 'loading')
           const niftiFile = await convertDisplaySetToNifti(candidate, {
             headers: authHeaders(servicesManager),
             onProgress: (phase, loaded, total) => {
@@ -1486,6 +1492,7 @@ export function getNiivueCommandsModule({
                 phase === 'fetching'
                   ? `Fetching overlay: ${label}... ${loaded}/${total}`
                   : `Converting overlay: ${label} (dcm2niix)...`,
+                'loading',
               )
             },
           })
@@ -1504,7 +1511,11 @@ export function getNiivueCommandsModule({
       } catch (err) {
         console.error('[nv-ohif] overlay load failed', err)
         const message = err instanceof Error ? err.message : String(err)
-        flashStatus(entry, `Overlay load failed: ${message || 'unknown error'}`)
+        flashStatus(
+          entry,
+          `Overlay load failed: ${message || 'unknown error'}`,
+          'error',
+        )
       } finally {
         // Only clear the loading flag if this load still owns the entry: a swap
         // may have started a NEWER overlay load on the reused entry, whose

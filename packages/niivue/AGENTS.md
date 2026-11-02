@@ -88,7 +88,7 @@ canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 - **Drawing tools** (`src/drawing/`) — RLE codec, pen/line/flood-fill, undo stack
 - **Annotations** (`src/annotation/`, `src/view/NVAnnotation.ts`) — undo/redo, point-in-polygon, slice projection, shape selection and control points, stats and screen shapes over split ROIs
 - **GPU rebuild planning** (`src/view/volumeUpdateScope.ts`, `src/view/meshGpuSync.ts`) — which volumes and meshes a rebuild redoes
-- **Math/transforms** (`src/math/`) — vox↔mm, spherical coordinates, slice plane equations, screen unprojection
+- **Math/transforms** (`src/math/`) — vox↔mm, spherical coordinates, slice plane equations, screen unprojection, mesh slab MVP
 - **Volume utilities** (`src/volume/`) — intensity range, NIfTI header creation, voxel lookup, reorientation, modulation
 - **Colormaps** (`src/cmap/`) — LUT generation, label colormap construction
 - **Constants** (`src/NVConstants.ts`) — PAQD detection, slice type dimension mapping
@@ -1164,7 +1164,7 @@ helper, `uploadWordTexture`; NEAREST required or `texelFetch` reads 0); the
 cluster list is attribute 0 with divisor `CLUSTER_SIZE` (attribute 0 must be
 enabled or desktop GL emulates it and Firefox warns). GLSL ES 3.00 lacks
 `unpackUnorm4x8`, so colors are unpacked by hand. Drawn with the tile's full
-MVP (the `thicknessOn2D` slab is world-aligned and could clip an oblique cut),
+MVP (it outlines the voxel plane itself, so a slab would only clip it),
 no depth test, skipped in the x-ray pass.
 
 Limits: a mesh too large warns once and draws nothing. On WebGPU the cluster
@@ -1209,7 +1209,7 @@ is checked against `getAvailableShaders()`), the view layer falls back to
 `gl/meshShader.ts`) so the single per-mesh VAO is safe to draw with any mesh
 program (slice override, x-ray, depth pick) by construction.
 
-**Mesh clipping on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): Constrains near/far clip planes to show only mesh geometry within `±thicknessOn2D` mm of the slice plane. Uses `clipSpaceZeroToOne` parameter on `calculateMvpMatrix2D()`: `orthoZO` for WebGPU ([0,1] NDC), `ortho` for WebGL2 ([-1,1] NDC). `sliceTypeDim()` in `NVConstants.ts` maps AXIAL→2, CORONAL→1, SAGITTAL→0.
+**Mesh slab on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): a finite positive value draws only mesh within that many mm of the DISPLAYED voxel plane (`tile.planeNormal`/`planePoint`, oblique when the volume is; a world plane through the crosshair without a volume), over the slice. 0 or Infinity draws the tile MVP: everything in front of the slice, the slice hiding the rest. `NVSliceLayout.meshSlabMvp` builds it: `NVTransforms.slabMvp` keeps the tile MVP's x/y rows and replaces its depth row with signed distance from the plane, so near/far clip at ±T along the plane normal (one affine matrix, no shader change). Both views draw it into the depth range [0, `SLAB_DEPTH_MAX`] (`gl.depthRange` / `setViewport`): clipping precedes that mapping, and the slice's own depth is >= 0.16, so the slab lands over it while meshes still occlude each other; the mesh x-ray pass draws in the same range. Issue #451. Demo `examples/tract.shear.html`; tests `e2e/mesh-slab.spec.ts`, `src/math/NVTransforms.test.ts` (`slabMvp`).
 
 ## Signal data class
 

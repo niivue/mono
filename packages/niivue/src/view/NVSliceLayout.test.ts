@@ -333,8 +333,6 @@ describe('visibleWindowMM', () => {
           tile.leftTopWidthHeight as number[],
           Array.from((tile.screen as { mnMM: vec3 }).mnMM),
           Array.from((tile.screen as { mxMM: vec3 }).mxMM),
-          Infinity,
-          undefined,
           tile.azimuth as number,
           tile.elevation as number,
           isRadiological,

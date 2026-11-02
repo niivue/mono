@@ -1124,8 +1124,6 @@ export default class NVView {
           ltwh,
           screen.mnMM,
           screen.mxMM,
-          Infinity,
-          undefined,
           tile.azimuth as number,
           tile.elevation as number,
           md.layout.isRadiological,
@@ -1161,8 +1159,6 @@ export default class NVView {
           ltwh,
           screen.mnMM,
           screen.mxMM,
-          Infinity,
-          undefined,
           tile.azimuth as number,
           tile.elevation as number,
           md.layout.isRadiological,
@@ -1539,35 +1535,13 @@ export default class NVView {
       // Compute crosscut uniform for this tile (crosshair mm with axis masking for 2D)
       const ccMM = crosscutMM(md, tile.axCorSag)
       const ccPlanes = crosscutPlanes(md, tile, md.mesh.crosscutWidth)
-      // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
-      let meshMvp = mvpMatrix
-      let meshNorm = normalMatrix
-      if (
-        tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER &&
-        md.mesh.thicknessOn2D !== Infinity
-      ) {
-        const clipMM = md.scene2mm(md.scene.crosshairPos)
-        if (tile.sliceMM !== undefined) {
-          clipMM[NVConstants.sliceTypeDim(tile.axCorSag)] = tile.sliceMM
-        }
-        const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
-        const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
-        const meshMvp2d = NVTransforms.calculateMvpMatrix2D(
-          ltwh,
-          screen.mnMM,
-          screen.mxMM,
-          md.mesh.thicknessOn2D,
-          clipMM,
-          tile.azimuth as number,
-          tile.elevation as number,
-          md.layout.isRadiological,
-          md.volumes[0]?.obliqueRAS,
-          undefined,
-          pan,
-        )
-        meshMvp = meshMvp2d[0]
-        meshNorm = meshMvp2d[2]
-      }
+      // A finite meshThicknessOn2D slab follows the displayed voxel plane and
+      // is drawn over the slice (SLAB_DEPTH_MAX), not depth-tested against it.
+      const slabMvp = NVSliceLayout.meshSlabMvp(md, tile, mvpMatrix, true)
+      const meshMvp = slabMvp ?? mvpMatrix
+      const setDepthMax = (z: number) =>
+        pass.setViewport(ltwh[0], ltwh[1], ltwh[2], ltwh[3], 0, z)
+      if (slabMvp) setDepthMax(NVTransforms.SLAB_DEPTH_MAX)
       if (meshes.length > 0 && this.meshPipelines) {
         for (let meshIdx = 0; meshIdx < meshes.length; meshIdx++) {
           const m = meshes[meshIdx]
@@ -1586,10 +1560,9 @@ export default class NVView {
             (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
           const isCrosscut2 = shaderType === 'crosscut2'
           const s = this._uniformScratch
-          // crosscut2 cuts at the voxel plane, which an oblique volume tilts
-          // out of the world-aligned thicknessOn2D slab: use the full MVP.
+          // crosscut2 outlines the voxel plane itself: a slab would only clip it.
           s.set((isCrosscut2 ? mvpMatrix : meshMvp) as ArrayLike<number>, 0)
-          s.set(meshNorm as ArrayLike<number>, 16)
+          s.set(normalMatrix as ArrayLike<number>, 16)
           s.set(m.clipPlane as ArrayLike<number>, 32)
           s[36] = m.opacity ?? 1.0
           // s[37-39] = 0 (pad, zero-initialized at allocation, never written non-zero)
@@ -1619,6 +1592,7 @@ export default class NVView {
           }
         }
       }
+      if (slabMvp) setDepthMax(1)
       // Layer 2b-xray: Mesh X-ray pass (depth greater, reduced opacity)
       // Use offset tile slots (i + screenSlices.length) so writeBuffer doesn't
       // overwrite the normal-pass uniforms before the GPU executes them.
@@ -1644,8 +1618,9 @@ export default class NVView {
             )
           }
         }
-        // Re-draw meshes with xray
+        // Re-draw meshes with xray (in the slab's depth range, if any)
         if (meshes.length > 0) {
+          if (slabMvp) setDepthMax(NVTransforms.SLAB_DEPTH_MAX)
           for (let meshIdx = 0; meshIdx < meshes.length; meshIdx++) {
             const m = meshes[meshIdx]
             const mGpu = this._getMeshGpu(m)
@@ -1657,7 +1632,7 @@ export default class NVView {
             if (!Number.isFinite(dynamicOffset)) continue
             const s = this._uniformScratch
             s.set(meshMvp as ArrayLike<number>, 0)
-            s.set(meshNorm as ArrayLike<number>, 16)
+            s.set(normalMatrix as ArrayLike<number>, 16)
             s.set(m.clipPlane as ArrayLike<number>, 32)
             s[36] = (m.opacity ?? 1.0) * xrayAlpha
             s.set(ccMM as ArrayLike<number>, 40)
@@ -1675,6 +1650,7 @@ export default class NVView {
               pass.drawIndexed(mGpu.indexCount)
             }
           }
+          if (slabMvp) setDepthMax(1)
         }
       }
       // Layer 2b-ann: 3D annotations (RENDER tiles only, skipped on global3d)
@@ -2955,8 +2931,6 @@ export default class NVView {
         ltwh,
         screen.mnMM,
         screen.mxMM,
-        Infinity,
-        undefined,
         tile.azimuth as number,
         tile.elevation as number,
         md.layout.isRadiological,
@@ -2988,8 +2962,6 @@ export default class NVView {
         ltwh,
         screen.mnMM,
         screen.mxMM,
-        Infinity,
-        undefined,
         tile.azimuth as number,
         tile.elevation as number,
         md.layout.isRadiological,

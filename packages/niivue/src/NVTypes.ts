@@ -1068,6 +1068,7 @@ export type LodCompensationReport = {
 /** Mesh rendering config: global settings for mesh display */
 export type MeshRenderConfig = {
   xRay: number
+  /** 2D slices: draw only mesh within this many mm of the displayed plane. 0 or Infinity: no slab. */
   thicknessOn2D: number
   /** Line width in device pixels of the crosscut and crosscut2 mesh shaders. */
   crosscutWidth: number

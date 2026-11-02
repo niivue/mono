@@ -284,3 +284,22 @@ test('Escape mid-drag cancels a bidirectional short axis (#471)', async ({
   })()`)
   expect(r).toEqual({ count: 0, long: null, shapeStart: null })
 })
+
+for (const [name, call] of [
+  ['loadVolumes', `await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])`],
+  ['removeAllVolumes', 'await nv.removeAllVolumes()'],
+  ['removeVolume(0)', 'await nv.removeVolume(0)'],
+  ['loadAnnotationsJSON', `nv.loadAnnotationsJSON('[]')`],
+] as const) {
+  test(`${name} drops a half-drawn measurement (#470)`, async ({ page }) => {
+    test.setTimeout(90_000)
+    const r = await page.evaluate(`(async () => {
+      ${setup('AXIAL', 'bidirectional')}
+      drag([150, 200], [250, 200])
+      const before = nv._bidirectionalLong !== null
+      ${call}
+      return { before, after: nv._bidirectionalLong }
+    })()`)
+    expect(r).toEqual({ before: true, after: null })
+  })
+}

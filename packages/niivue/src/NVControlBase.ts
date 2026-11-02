@@ -2584,6 +2584,9 @@ export default class NiiVue extends EventTarget {
 
   loadAnnotationsJSON(json: string): void {
     this.model.annotations = JSON.parse(json) as VectorAnnotation[]
+    // A half-drawn shape and the selection belong to the replaced set (#470).
+    this._abandonAnnotationInProgress()
+    this.model._annotationSelection = null
     this._annotationUndoStack.clear()
     this.drawScene()
   }
@@ -3188,6 +3191,8 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: previous[i], index: i })
     }
     this.model.volumes = loaded
+    // A half-drawn shape's points belong to the old background (#470).
+    this._abandonAnnotationInProgress()
     this.model._setupPivot3D()
     // The volume set changed: drop the associated-graph memo so a same-named 4D
     // reload doesn't reuse the previous volume's sampled BOLD time-course (the
@@ -3771,6 +3776,7 @@ export default class NiiVue extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = [...this.model.getVolumes()]
     await this.model.removeAllVolumes()
+    this._abandonAnnotationInProgress()
     // One event per volume, after the removal, in reverse index order (so
     // each detail's index was valid at the time that volume was removed).
     for (let i = vols.length - 1; i >= 0; i--) {
@@ -3790,6 +3796,8 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
     this.model.removeVolume(volumeIndex)
+    // Removing the background changes the geometry a half-drawn shape used.
+    if (volumeIndex === 0) this._abandonAnnotationInProgress()
     // Emit after the removal, like every other mutation event: the detail
     // carries the removed volume and its former index; the collection no
     // longer holds it.

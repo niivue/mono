@@ -263,3 +263,24 @@ for (const [volume, oblique] of [
     )
   })
 }
+
+test('Escape mid-drag cancels a bidirectional short axis (#471)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    drag([150, 200], [250, 200])
+    // Start the short axis, press Escape before releasing, then release.
+    ev('pointerdown', 200, 170, 0)
+    ev('pointermove', 200, 230, -1)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    ev('pointerup', 200, 230, 0)
+    return {
+      count: nv.annotations.length,
+      long: nv._bidirectionalLong,
+      shapeStart: nv._annotationShapeStart,
+    }
+  })()`)
+  expect(r).toEqual({ count: 0, long: null, shapeStart: null })
+})

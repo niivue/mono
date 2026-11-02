@@ -2463,6 +2463,9 @@ export default class NiiVue extends EventTarget {
 
   /** Drop a half-drawn multi-click contour or bidirectional measurement. */
   _abandonAnnotationInProgress(): void {
+    // A drag in progress too: pointer-up would otherwise commit it, e.g. a
+    // half-dragged bidirectional short axis as a new long axis (#471).
+    this._annotationShapeStart = null
     this._annotationPolyPoints = null
     this._bidirectionalLong = null
     this.model._annotationPreview = null

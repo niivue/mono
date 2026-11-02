@@ -582,8 +582,9 @@ export function projectAnnotationScreenShapes(
   if (annotations.length > 0) {
     const tolerance = computeTolerance(model)
     const anchors = annotations.map(getAnchorMM)
-    const seen = new Set<string>()
-    for (const tile of screenSlices) {
+    // One shape per tile that shows the annotation: a mosaic or hero layout
+    // can show it in several (#116).
+    for (const [tileIndex, tile] of screenSlices.entries()) {
       if (tile.axCorSag === SLICE_TYPE.RENDER) continue
       if (
         !tile.mvpMatrix ||
@@ -606,7 +607,7 @@ export function projectAnnotationScreenShapes(
       }
       for (let i = 0; i < annotations.length; i++) {
         const ann = annotations[i] as VectorAnnotation
-        if (ann.sliceType !== tile.axCorSag || seen.has(ann.id)) continue
+        if (ann.sliceType !== tile.axCorSag) continue
         const anchor = anchors[i]
         if (!anchor || !isOnSlice(anchor, pn, pp, tolerance)) continue
         const polygons = ann.polygons.map((poly) => ({
@@ -620,6 +621,7 @@ export function projectAnnotationScreenShapes(
         const tool = ann.shape?.type ?? 'freehand'
         const shape: AnnotationScreenShape = {
           id: ann.id,
+          tileIndex,
           tool,
           outer: first.outer,
           holes: first.holes,
@@ -691,7 +693,6 @@ export function projectAnnotationScreenShapes(
           }
         }
         shapes.push(shape)
-        seen.add(ann.id)
       }
     }
   }

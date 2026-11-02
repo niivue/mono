@@ -47,7 +47,13 @@ test('the setter changes the rendered matcap of a loaded volume', async ({
 }) => {
   test.setTimeout(90_000)
   const shot = () => page.locator('#matcap-canvas').screenshot()
-  const settle = () => page.waitForTimeout(1000)
+  // A fixed sleep was too short on the CI runner: wait for the image to change.
+  const settled = { timeout: 30_000, intervals: [250] }
+  const setMatcap = (name: string) =>
+    page.evaluate((n) => {
+      ;(window as unknown as { nv: { volumeMatcap: string } }).nv.volumeMatcap =
+        n
+    }, name)
   await page.evaluate(async () => {
     const { default: NiiVue } = await import('/src/index.ts')
     const canvas = document.createElement('canvas')
@@ -68,19 +74,22 @@ test('the setter changes the rendered matcap of a loaded volume', async ({
     await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
     ;(window as unknown as { nv: typeof nv }).nv = nv
   })
-  await settle()
-  const cortex = await shot()
-  await page.evaluate(() => {
-    ;(window as unknown as { nv: { volumeMatcap: string } }).nv.volumeMatcap =
-      'SHINY'
-  })
-  await settle()
-  const shiny = await shot()
-  await page.evaluate(() => {
-    ;(window as unknown as { nv: { volumeMatcap: string } }).nv.volumeMatcap =
-      'Cortex'
-  })
-  await settle()
-  expect(shiny.equals(cortex)).toBe(false)
-  expect((await shot()).equals(cortex)).toBe(true)
+  // The reference is taken once two shots in a row agree (the scene is idle).
+  let cortex = await shot()
+  await expect
+    .poll(async () => {
+      const next = await shot()
+      const same = next.equals(cortex)
+      cortex = next
+      return same
+    }, settled)
+    .toBe(true)
+  await setMatcap('SHINY')
+  await expect
+    .poll(async () => (await shot()).equals(cortex), settled)
+    .toBe(false)
+  await setMatcap('Cortex')
+  await expect
+    .poll(async () => (await shot()).equals(cortex), settled)
+    .toBe(true)
 })

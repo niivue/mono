@@ -385,6 +385,37 @@ test('an abandoned resize keeps the erased part of a shape erased (#470)', async
   expect(r).toEqual({ split: true, resizing: true, kept: true })
 })
 
+test('a completed resize keeps the erased part of a shape erased (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'measureRect')}
+    drag([120, 120], [200, 200])
+    nv.annotationIsErasing = true
+    nv.annotationBrushRadius = 3
+    ev('pointerdown', 160, 100, 0)
+    ev('pointermove', 160, 160, -1)
+    ev('pointermove', 160, 220, -1)
+    ev('pointerup', 160, 220, 0)
+    nv.annotationIsErasing = false
+    const stats = JSON.stringify(nv.annotations[0].stats)
+    click([140, 160]) // select the left half
+    ev('pointerdown', 200, 200, 0)
+    ev('pointermove', 240, 240, -1)
+    ev('pointerup', 240, 240, 0)
+    const ann = nv.annotations[0]
+    const xs = ann.polygons.flatMap((p) => p.outer.map((q) => q.x))
+    const maxX = Math.max(ann.shape.start.x, ann.shape.end.x)
+    return {
+      split: ann.polygons.length === 2,
+      fitsBounds: Math.abs(Math.max(...xs) - maxX) < 1e-6,
+      remeasured: JSON.stringify(ann.stats) !== stats,
+    }
+  })()`)
+  expect(r).toEqual({ split: true, fitsBounds: true, remeasured: true })
+})
+
 test('loadVolumes ends a control-point resize drag (#470)', async ({
   page,
 }) => {

@@ -4,6 +4,7 @@ import {
   shouldAppendMultiClickPoint,
   shouldStartFreshMultiClickContour,
 } from '@/annotation/multiClick'
+import type { ShapeBoundsUpdate } from '@/annotation/selection'
 import {
   emitOrientationChange,
   emitPan2DChange,
@@ -1083,25 +1084,24 @@ function pinchPointer(
 }
 
 /**
- * A resized shape's polygons: an erased shape carries what is left of it to
- * the new bounds; an intact one is drawn afresh.
+ * A resized shape's polygons at `box`: an erased shape carries what is left
+ * of it there; an intact one is drawn afresh. Empty when `box` is degenerate.
  */
 function resizedPolygons(
   ctrl: NiiVue,
-  shape: NonNullable<VectorAnnotation['shape']>,
+  type: AnnotationTool,
+  box: ShapeBoundsUpdate,
 ): PolygonWithHoles[] {
   const original = ctrl._resizeOriginalShape
-  const carried = original?.isErased
-    ? Annotation.resizePolygons(shape.type, original, shape, original.polygons)
-    : null
-  return (
-    carried ??
-    Annotation.generateShape(
-      shape.type,
-      shape.start,
-      shape.end,
-      shape.width ?? ctrl.model.annotation.style.strokeWidth,
+  if (original?.isErased)
+    return (
+      Annotation.resizePolygons(type, original, box, original.polygons) ?? []
     )
+  return Annotation.generateShape(
+    type,
+    box.start,
+    box.end,
+    box.width ?? ctrl.model.annotation.style.strokeWidth,
   )
 }
 
@@ -1745,11 +1745,7 @@ export function initInteraction(ctrl: NiiVue): void {
         if (sel) {
           const ann = ctrl._resizingAnnotation
           if (ann?.shape) {
-            const polygons = resizedPolygons(ctrl, ann.shape)
-            if (polygons.length > 0) {
-              ann.polygons = polygons
-              sel.controlPoints = Annotation.getControlPoints(ann.shape)
-            }
+            // The last move already set the polygons and control points.
             if (Annotation.isMeasureTool(ann.shape.type)) {
               const vol = ctrl.model.getVolumes()[0]
               if (vol)
@@ -2203,11 +2199,12 @@ export function initInteraction(ctrl: NiiVue): void {
             ctrl._resizingControlPoint,
             pt2d,
           )
-          ann.shape.start = newBox.start
-          ann.shape.end = newBox.end
-          if (newBox.width !== undefined) ann.shape.width = newBox.width
-          const polygons = resizedPolygons(ctrl, ann.shape)
+          const polygons = resizedPolygons(ctrl, ann.shape.type, newBox)
+          // A degenerate box keeps the last valid bounds and polygons.
           if (polygons.length > 0) {
+            ann.shape.start = newBox.start
+            ann.shape.end = newBox.end
+            if (newBox.width !== undefined) ann.shape.width = newBox.width
             ann.polygons = polygons
             ctrl.model._annotationSelection.controlPoints =
               Annotation.getControlPoints(ann.shape)

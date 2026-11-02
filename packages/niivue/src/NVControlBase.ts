@@ -5406,9 +5406,9 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Re-push the registered slide plane (and its annotation) to a freshly
-   * (re)created view — called from the view-lifecycle recreate paths so a
-   * backend switch / reinitialize doesn't drop the slide. Internal.
+   * @internal Re-push the registered slide plane (and its annotation) to a
+   * freshly (re)created view — called from the view-lifecycle recreate paths
+   * so a backend switch / reinitialize doesn't drop the slide.
    */
   restoreSlidePlaneView(): void {
     if (this.view) this.view.slidePlane = this._slidePlane

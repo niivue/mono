@@ -86,7 +86,7 @@ canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 ### What's tested
 
 - **Drawing tools** (`src/drawing/`) — RLE codec, pen/line/flood-fill, undo stack
-- **Annotations** (`src/annotation/`) — undo/redo, point-in-polygon, slice projection, shape selection and control points
+- **Annotations** (`src/annotation/`, `src/view/NVAnnotation.ts`) — undo/redo, point-in-polygon, slice projection, shape selection and control points, stats and screen shapes over split ROIs
 - **GPU rebuild planning** (`src/view/volumeUpdateScope.ts`, `src/view/meshGpuSync.ts`) — which volumes and meshes a rebuild redoes
 - **Math/transforms** (`src/math/`) — vox↔mm, spherical coordinates, slice plane equations, screen unprojection
 - **Volume utilities** (`src/volume/`) — intensity range, NIfTI header creation, voxel lookup, reorientation, modulation

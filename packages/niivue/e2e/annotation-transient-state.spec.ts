@@ -316,3 +316,39 @@ for (const [name, call] of [
     expect(r).toEqual({ before: true, after: null })
   })
 }
+
+test('a volume move that changes the background drops a half-drawn measurement (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    await nv.loadVolumes([
+      { url: '/volumes/mni152.nii.gz' },
+      { url: '/volumes/fs/T1_oblique.nii.gz' },
+    ])
+    drag([150, 200], [250, 200])
+    const before = nv._bidirectionalLong !== null
+    await nv.moveVolumeToBottom(1)
+    return { before, after: nv._bidirectionalLong }
+  })()`)
+  expect(r).toEqual({ before: true, after: null })
+})
+
+test('a freehand stroke held across loadVolumes does not commit (#470)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const count = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'freehand')}
+    nv.annotationBrushRadius = 3
+    ev('pointerdown', 150, 150, 0)
+    ev('pointermove', 200, 160, -1)
+    ev('pointermove', 250, 200, -1)
+    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    ev('pointermove', 260, 220, -1)
+    ev('pointerup', 260, 220, 0)
+    return nv.annotations.length
+  })()`)
+  expect(count).toBe(0)
+})

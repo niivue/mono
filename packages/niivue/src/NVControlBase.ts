@@ -2466,6 +2466,12 @@ export default class NiiVue extends EventTarget {
     // A drag in progress too: pointer-up would otherwise commit it, e.g. a
     // half-dragged bidirectional short axis as a new long axis (#471).
     this._annotationShapeStart = null
+    // A freehand or 3D stroke held mid-drag would commit on pointer-up (#470).
+    this._annotationBrushPath = []
+    this._frozenLoopPoints = null
+    this._annotation3DActive = false
+    this._annotation3DMMPath = []
+    this._annotation3DFace = null
     this._annotationPolyPoints = null
     this._bidirectionalLong = null
     this.model._annotationPreview = null
@@ -3821,11 +3827,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeUp(0) // move the background image up one position
    */
   async moveVolumeUp(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, volumeIndex + 1)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, volumeIndex + 1)
   }
 
   /**
@@ -3835,11 +3837,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeDown(1) // move the second image down to the background position
    */
   async moveVolumeDown(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, volumeIndex - 1)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, volumeIndex - 1)
   }
 
   /**
@@ -3849,12 +3847,16 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeToTop(0) // move the background image to the top layer
    */
   async moveVolumeToTop(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(
-      volumeIndex,
-      this.model.volumes.length - 1,
-    )
-    if (!changed) return
+    await this._moveVolume(volumeIndex, this.model.volumes.length - 1)
+  }
+
+  private async _moveVolume(from: number, to: number): Promise<void> {
+    if (!this._checkBounds(this.model.volumes, from, 'Volume')) return
+    const background = this.model.volumes[0]
+    if (!this.model.moveVolume(from, to)) return
+    // A new background changes the geometry a half-drawn shape used (#470).
+    if (this.model.volumes[0] !== background)
+      this._abandonAnnotationInProgress()
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
     await this._updateGLChanged()
   }
@@ -3866,11 +3868,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeToBottom(3) // move the 4th volume to the background position
    */
   async moveVolumeToBottom(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, 0)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, 0)
   }
 
   getMeshShader(meshIndex: number): string | undefined {

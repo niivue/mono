@@ -357,20 +357,33 @@ async function loadConnectome(
   })
 }
 
-/** Axis-aligned bounds of x,y,z triples (Infinity/-Infinity when empty). */
+/**
+ * Axis-aligned bounds of x,y,z triples (Infinity/-Infinity when empty).
+ * A trailing partial triple is ignored rather than read as undefined (NaN).
+ */
 export function meshExtents(positions: Float32Array): {
   extentsMin: vec3
   extentsMax: vec3
 } {
-  const extentsMin = vec3.fromValues(Infinity, Infinity, Infinity)
-  const extentsMax = vec3.fromValues(-Infinity, -Infinity, -Infinity)
-  for (let i = 0; i < positions.length; i += 3) {
-    for (let axis = 0; axis < 3; axis++) {
-      const v = positions[i + axis]
-      extentsMin[axis] = Math.min(extentsMin[axis], v)
-      extentsMax[axis] = Math.max(extentsMax[axis], v)
-    }
+  let minX = Infinity
+  let minY = Infinity
+  let minZ = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  let maxZ = -Infinity
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    const x = positions[i]
+    const y = positions[i + 1]
+    const z = positions[i + 2]
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+    if (z < minZ) minZ = z
+    if (z > maxZ) maxZ = z
   }
+  const extentsMin = vec3.fromValues(minX, minY, minZ)
+  const extentsMax = vec3.fromValues(maxX, maxY, maxZ)
   return { extentsMin, extentsMax }
 }
 
@@ -384,7 +397,9 @@ export function retessellateTract(mesh: NVMeshType): void {
   mesh.positions = result.positions
   mesh.indices = result.indices
   mesh.colors = result.colors
-  Object.assign(mesh, meshExtents(result.positions))
+  const { extentsMin, extentsMax } = meshExtents(result.positions)
+  mesh.extentsMin = extentsMin
+  mesh.extentsMax = extentsMax
 }
 
 /**
@@ -398,5 +413,7 @@ export function reextrudeConnectome(mesh: NVMeshType): void {
   mesh.positions = result.positions
   mesh.indices = result.indices
   mesh.colors = result.colors
-  Object.assign(mesh, meshExtents(result.positions))
+  const { extentsMin, extentsMax } = meshExtents(result.positions)
+  mesh.extentsMin = extentsMin
+  mesh.extentsMax = extentsMax
 }

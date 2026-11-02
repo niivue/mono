@@ -1901,10 +1901,15 @@ export type VectorAnnotation = {
 export type AnnotationScreenShape = {
   id: string
   tool: AnnotationTool
-  /** Outer boundary projected to canvas px (the outline for closed shapes). */
+  /** Outer boundary of the first polygon, projected to canvas px. */
   outer: AnnotationPoint[]
-  /** Hole boundaries projected to canvas px (freehand with holes). */
+  /** Hole boundaries of the first polygon, projected to canvas px. */
   holes: AnnotationPoint[][]
+  /**
+   * Every polygon projected to canvas px; more than one after the eraser
+   * splits an ROI. `polygons[0]` holds the same rings as `outer`/`holes`.
+   */
+  polygons: PolygonWithHoles[]
   /** Shape endpoints projected to canvas px (line/arrow path, ellipse bbox). */
   start?: AnnotationPoint
   end?: AnnotationPoint

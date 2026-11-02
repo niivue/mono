@@ -1839,8 +1839,25 @@ export function initInteraction(ctrl: NiiVue): void {
           const cfg = ctrl.model.annotation
           if (cfg.isErasing) {
             // Commit the erase preview (already computed during pointermove)
-            if (ctrl.model._annotationErasePreview) {
-              ctrl.model.annotations = ctrl.model._annotationErasePreview
+            const preview = ctrl.model._annotationErasePreview
+            if (preview) {
+              // An erased measurement re-measures what is left (#115); the
+              // preview keeps untouched annotations by identity.
+              const vol = ctrl.model.getVolumes()[0]
+              const before = new Set(ctrl.model.annotations)
+              ctrl.model.annotations = preview.map((ann) =>
+                vol &&
+                !before.has(ann) &&
+                ann.shape &&
+                Annotation.isMeasureTool(ann.shape.type)
+                  ? {
+                      ...ann,
+                      stats:
+                        Annotation.computeAnnotationStats(ann, vol) ??
+                        undefined,
+                    }
+                  : ann,
+              )
             }
             ctrl.emit('annotationChanged', { action: 'erase' })
           } else {

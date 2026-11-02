@@ -65,9 +65,11 @@ export function buildAnnotationGeometry(
     const thickness = Math.max(1, shape.style.strokeWidth * dpr)
 
     if (shape.isClosed) {
-      outlineLoop(shape.outer, thickness, stroke, lines)
-      for (const hole of shape.holes)
-        outlineLoop(hole, thickness, stroke, lines)
+      for (const poly of shape.polygons) {
+        outlineLoop(poly.outer, thickness, stroke, lines)
+        for (const hole of poly.holes)
+          outlineLoop(hole, thickness, stroke, lines)
+      }
     } else if (shape.start && shape.end) {
       const { start, end } = shape
       if (shape.tool === 'measureLine' && shape.length !== undefined) {
@@ -130,10 +132,12 @@ export function buildAnnotationGeometry(
         let minX = Number.POSITIVE_INFINITY
         let maxX = Number.NEGATIVE_INFINITY
         let maxY = Number.NEGATIVE_INFINITY
-        for (const p of shape.outer) {
-          if (p.x < minX) minX = p.x
-          if (p.x > maxX) maxX = p.x
-          if (p.y > maxY) maxY = p.y
+        for (const poly of shape.polygons) {
+          for (const p of poly.outer) {
+            if (p.x < minX) minX = p.x
+            if (p.x > maxX) maxX = p.x
+            if (p.y > maxY) maxY = p.y
+          }
         }
         const cx = (minX + maxX) / 2
         const lineHeight = labelPx * 1.3

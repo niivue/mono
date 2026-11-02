@@ -1,6 +1,7 @@
 import { mat4, vec4 } from 'gl-matrix'
 import { sliceTypeDim } from '@/NVConstants'
 import type {
+  AnnotationPoint,
   AnnotationStats,
   AnnotationTool,
   NVImage,
@@ -46,8 +47,8 @@ export function computeAnnotationStats(
     }
   }
 
-  const outerRing = annotation.polygons[0]?.outer
-  if (!outerRing || outerRing.length < 3) return null
+  const firstPt = annotation.polygons[0]?.outer[0]
+  if (!firstPt) return null
 
   const sliceType = annotation.sliceType
   const depthDim = sliceTypeDim(sliceType)
@@ -71,31 +72,45 @@ export function computeAnnotationStats(
     return [Math.round(tmpVec[0]), Math.round(tmpVec[1]), Math.round(tmpVec[2])]
   }
 
-  // Convert polygon from mm-space to voxel-space once (avoids per-voxel transforms)
-  const outerRingVox = outerRing.map((pt) => {
-    const mm = slice2DToMM(pt, annotation.slicePosition, sliceType)
-    const vox = mmToVoxCached(mm)
-    return { x: vox[ax0], y: vox[ax1] }
-  })
+  // Convert rings from mm-space to voxel-space once (avoids per-voxel transforms)
+  const ringToVox = (ring: AnnotationPoint[]) =>
+    ring.map((pt) => {
+      const vox = mmToVoxCached(
+        slice2DToMM(pt, annotation.slicePosition, sliceType),
+      )
+      return { x: vox[ax0], y: vox[ax1] }
+    })
+  // Every piece of an eraser-split ROI counts; its holes do not (#115).
+  const polygonsVox = annotation.polygons
+    .filter((poly) => poly.outer.length >= 3)
+    .map((poly) => ({
+      outer: ringToVox(poly.outer),
+      holes: poly.holes.map(ringToVox),
+    }))
+  if (polygonsVox.length === 0) return null
+  const isInside = (pt: AnnotationPoint) =>
+    polygonsVox.some(
+      (poly) =>
+        pointInRing(pt, poly.outer) &&
+        !poly.holes.some((hole) => pointInRing(pt, hole)),
+    )
 
   // Compute bounding box in voxel space
   let minV0 = Infinity,
     minV1 = Infinity,
     maxV0 = -Infinity,
     maxV1 = -Infinity
-  for (const pt of outerRingVox) {
-    if (pt.x < minV0) minV0 = pt.x
-    if (pt.y < minV1) minV1 = pt.y
-    if (pt.x > maxV0) maxV0 = pt.x
-    if (pt.y > maxV1) maxV1 = pt.y
+  for (const poly of polygonsVox) {
+    for (const pt of poly.outer) {
+      if (pt.x < minV0) minV0 = pt.x
+      if (pt.y < minV1) minV1 = pt.y
+      if (pt.x > maxV0) maxV0 = pt.x
+      if (pt.y > maxV1) maxV1 = pt.y
+    }
   }
 
   // Get depth voxel from annotation's slice position
-  const mmCenter = slice2DToMM(
-    { x: outerRing[0]?.x, y: outerRing[0]?.y },
-    annotation.slicePosition,
-    sliceType,
-  )
+  const mmCenter = slice2DToMM(firstPt, annotation.slicePosition, sliceType)
   const voxCenter = mmToVoxCached(mmCenter)
   const depthVox = voxCenter[depthDim]
 
@@ -114,8 +129,7 @@ export function computeAnnotationStats(
 
   for (let i0 = r0min; i0 <= r0max; i0++) {
     for (let i1 = r1min; i1 <= r1max; i1++) {
-      // Point-in-polygon test in voxel space (no per-voxel transforms)
-      if (!pointInRing({ x: i0, y: i1 }, outerRingVox)) continue
+      if (!isInside({ x: i0, y: i1 })) continue
 
       const ras: [number, number, number] = [0, 0, 0]
       ras[ax0] = i0

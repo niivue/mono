@@ -555,6 +555,14 @@ export function withColormapWindow<
   }
 }
 
+/** `v` when it is a finite number, else `fallback` (unset, NaN or null). */
+export function windowOr(
+  v: number | null | undefined,
+  fallback: number,
+): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+
 /** A non-finite (or null) calMin/calMax means the image's default (robust) window. */
 export function resolveDefaultWindow(vol: {
   calMin: number

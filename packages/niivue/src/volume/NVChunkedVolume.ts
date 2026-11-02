@@ -41,9 +41,15 @@ function sameRadius(a: number | Vec3f, b: number | Vec3f): boolean {
 }
 
 export interface ChunkedVolumeOptions extends BudgetPlanOptions {
-  /** Display window minimum (default 0). */
+  /**
+   * Display window minimum. Unset or NaN: a CT colormap's window, else the
+   * sampled data's robust minimum.
+   */
   calMin?: number
-  /** Display window maximum (default 1). */
+  /**
+   * Display window maximum. Unset or NaN: a CT colormap's window, else the
+   * sampled data's robust maximum.
+   */
   calMax?: number
   /** Colormap name (default 'gray'). */
   colormap?: string
@@ -417,9 +423,9 @@ export class NVChunkedVolume {
   private floorVolume: NVImage | null = null
   private floorBuilt = false
   /**
-   * True when the caller passed NEITHER `calMin` nor `calMax`, so the window is
-   * ours to derive from the data. Passing either one is taken as "I know this
-   * store", and nothing is derived.
+   * True unless the caller passed both `calMin` and `calMax` as finite numbers.
+   * Then the robust and global range is sampled from the data, and each bound
+   * that was not given (and not filled by a CT colormap) is taken from it too.
    */
   private readonly wantsAutoWindow: boolean
   private windowResolved = false
@@ -441,6 +447,11 @@ export class NVChunkedVolume {
     }
     this.host = host
     this.source = source
+    // Sample the data unless the caller gave both bounds. Decided before the
+    // colormap fills them: a CT window sets the display, not the robust and
+    // global range a reset or a contrast drag needs.
+    this.wantsAutoWindow =
+      !Number.isFinite(options.calMin) || !Number.isFinite(options.calMax)
     // A CT colormap brings its window, as for a URL load (#395).
     options = NVCmaps.withColormapWindow(options)
     this.loadOptions = options
@@ -449,9 +460,6 @@ export class NVChunkedVolume {
     // precedence rule (knobs win). Passing no plan reproduces the pre-plan
     // defaults exactly.
     this.o = resolveBudgetPlan(options, this.planContext())
-    // An unset or non-finite bound comes from the sampled data.
-    this.wantsAutoWindow =
-      !Number.isFinite(options.calMin) || !Number.isFinite(options.calMax)
     this.followCrosshair = this.o.focus === 'crosshair'
     this.focusFrac = Array.isArray(this.o.focus)
       ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
@@ -475,8 +483,8 @@ export class NVChunkedVolume {
       shape: finest.shape,
       spacing: finest.spacing,
       datatypeCode: source.datatypeCode,
-      calMin: Number.isFinite(options.calMin) ? (options.calMin as number) : 0,
-      calMax: Number.isFinite(options.calMax) ? (options.calMax as number) : 1,
+      calMin: NVCmaps.windowOr(options.calMin, 0),
+      calMax: NVCmaps.windowOr(options.calMax, 1),
       colormap: options.colormap,
       opacity: options.opacity,
       isTransparentBelowCalMin: options.isTransparentBelowCalMin,
@@ -1110,8 +1118,8 @@ export class NVChunkedVolume {
     const targets = new Set<NVImage>([this.volume, sample])
     if (scene) targets.add(scene)
     const { calMin, calMax } = this.loadOptions
-    const windowLo = Number.isFinite(calMin) ? (calMin as number) : lo
-    const windowHi = Number.isFinite(calMax) ? (calMax as number) : hi
+    const windowLo = NVCmaps.windowOr(calMin, lo)
+    const windowHi = NVCmaps.windowOr(calMax, hi)
     for (const vol of targets) {
       vol.calMin = windowLo
       vol.calMax = windowHi

@@ -266,7 +266,7 @@ All flat keys; mirrors the prop list above. Grouping (from source):
 | `setFontFromUrl({ atlas, metrics })` | Method | Yes | Remote atlas + JSON metrics |
 | `colormaps` | Prop (get) | No | Registered names (`string[]`) |
 | `hasColormap(name)` | Method | No | |
-| `lookupColorMap(name)` | Method | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, not auto-applied — pass to `setVolume` as `calMin`/`calMax` |
+| `lookupColorMap(name)` | Method | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, applied on load and when `setVolume` changes the colormap |
 | `addColormap(name, ColorMap)` | Method | No | `{ R, G, B, A?, I?, labels? }` |
 | `addColormapFromUrl(url, name?)` | Method | Yes | |
 | `colormapNames(kind?)` | Method | No | `'continuous'` / `'label'` filter |

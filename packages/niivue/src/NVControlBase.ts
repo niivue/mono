@@ -3957,10 +3957,16 @@ export default class NiiVue extends EventTarget {
       // decoded, so its generated palette takes the range they held.
       for (const chunked of this._chunkedVolumes) chunked.growLabelsToObserved()
     }
+    // Report the window as resolved, not a NaN/null request for the default.
+    const changes = { ...options }
+    if (changes.calMin !== undefined)
+      changes.calMin = volumes[volumeIndex].calMin
+    if (changes.calMax !== undefined)
+      changes.calMax = volumes[volumeIndex].calMax
     this.emit('volumeUpdated', {
       volumeIndex,
       volume: volumes[volumeIndex],
-      changes: options,
+      changes,
     })
     await this._updateGLChanged()
   }

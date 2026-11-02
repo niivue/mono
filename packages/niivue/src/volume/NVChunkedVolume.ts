@@ -441,14 +441,17 @@ export class NVChunkedVolume {
     }
     this.host = host
     this.source = source
+    // A CT colormap brings its window, as for a URL load (#395).
+    options = NVCmaps.withColormapWindow(options)
     this.loadOptions = options
     // The plan-shaping options are folded by resolveBudgetPlan, so a preset, an
     // explicit plan, and the individual knobs all land in one place with one
     // precedence rule (knobs win). Passing no plan reproduces the pre-plan
     // defaults exactly.
     this.o = resolveBudgetPlan(options, this.planContext())
+    // An unset or non-finite bound comes from the sampled data.
     this.wantsAutoWindow =
-      options.calMin === undefined && options.calMax === undefined
+      !Number.isFinite(options.calMin) || !Number.isFinite(options.calMax)
     this.followCrosshair = this.o.focus === 'crosshair'
     this.focusFrac = Array.isArray(this.o.focus)
       ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
@@ -472,8 +475,8 @@ export class NVChunkedVolume {
       shape: finest.shape,
       spacing: finest.spacing,
       datatypeCode: source.datatypeCode,
-      calMin: options.calMin ?? 0,
-      calMax: options.calMax ?? 1,
+      calMin: Number.isFinite(options.calMin) ? (options.calMin as number) : 0,
+      calMax: Number.isFinite(options.calMax) ? (options.calMax as number) : 1,
       colormap: options.colormap,
       opacity: options.opacity,
       isTransparentBelowCalMin: options.isTransparentBelowCalMin,
@@ -1106,15 +1109,18 @@ export class NVChunkedVolume {
     const scene = this.host.volumes?.find((v) => v.id === this.volumeId)
     const targets = new Set<NVImage>([this.volume, sample])
     if (scene) targets.add(scene)
+    const { calMin, calMax } = this.loadOptions
+    const windowLo = Number.isFinite(calMin) ? (calMin as number) : lo
+    const windowHi = Number.isFinite(calMax) ? (calMax as number) : hi
     for (const vol of targets) {
-      vol.calMin = lo
-      vol.calMax = hi
+      vol.calMin = windowLo
+      vol.calMax = windowHi
       vol.robustMin = lo
       vol.robustMax = hi
       vol.globalMin = globalMin
       vol.globalMax = globalMax
-      vol.hdr.cal_min = lo
-      vol.hdr.cal_max = hi
+      vol.hdr.cal_min = windowLo
+      vol.hdr.cal_max = windowHi
       // The generated label palette was sized to the placeholder range.
       const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, [
         globalMin,

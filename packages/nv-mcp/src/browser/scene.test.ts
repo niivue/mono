@@ -688,6 +688,12 @@ describe('set_volume', () => {
     )
   })
 
+  it("passes a null bound as NaN, NiiVue's request for the image's default", async () => {
+    const view = settableView()
+    await coreHandlers(host(view)).set_volume({ volume: 1, cal_max: null })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, { calMax: Number.NaN })
+  })
+
   it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {
     const handlers = coreHandlers(host(settableView()))
     await expect(

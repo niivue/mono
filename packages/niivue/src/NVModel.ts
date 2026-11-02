@@ -1519,11 +1519,12 @@ export default class NVModel {
   static async prepareVolume(
     volume: ImageFromUrlOptions | NVImage,
   ): Promise<NVImage> {
+    // An NVImage keeps its own window, CT colormap or not: it always carries
+    // calMin/calMax, so there is no unset bound for the map to fill (#395).
     if ('hdr' in volume && volume.hdr) {
-      return NVModel.applyColormap(
-        { ...NVModel.volumeDefaults, ...volume },
-        volume.colormap,
-      )
+      const image = { ...NVModel.volumeDefaults, ...volume }
+      NVCmaps.resolveDefaultWindow(image)
+      return NVModel.applyColormap(image, volume.colormap)
     }
     const opts = volume as ImageFromUrlOptions
     const { url, urlImageData, limitFrames4D, ...overrides } =
@@ -1564,6 +1565,7 @@ export default class NVModel {
       // _sourceFile above.
       ...(urlImageData != null ? { _urlImageData: urlImageData } : {}),
     }
+    NVCmaps.resolveDefaultWindow(prepared)
     return NVModel.applyColormap(prepared, overrides.colormap)
   }
 

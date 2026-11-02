@@ -56,6 +56,7 @@ import {
   put,
   record,
   text,
+  windowBound,
 } from './params'
 import { pickIndex } from './pick'
 import { settingHandlers } from './settings'
@@ -638,8 +639,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       )
       const colormap = text(params, 'colormap') ?? 'warm'
       const toLoad: VolumeToLoad = { url, name, colormap, opacity }
-      put(toLoad, 'calMin', number(params, 'cal_min'))
-      put(toLoad, 'calMax', number(params, 'cal_max'))
+      put(toLoad, 'calMin', windowBound(params, 'cal_min'))
+      put(toLoad, 'calMax', windowBound(params, 'cal_max'))
       put(toLoad, 'calMinNeg', number(params, 'cal_min_neg'))
       put(toLoad, 'calMaxNeg', number(params, 'cal_max_neg'))
       put(toLoad, 'colormapNegative', text(params, 'colormap_negative'))
@@ -957,8 +958,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(update, 'colormapNegative', clearable(params, 'colormap_negative'))
       const opacity = number(params, 'opacity')
       if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
-      const calMin = number(params, 'cal_min')
-      const calMax = number(params, 'cal_max')
+      const calMin = windowBound(params, 'cal_min')
+      const calMax = windowBound(params, 'cal_max')
       put(update, 'calMin', calMin)
       put(update, 'calMax', calMax)
       const low = calMin ?? volume.calMin

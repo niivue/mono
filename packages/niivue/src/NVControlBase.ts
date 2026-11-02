@@ -3940,13 +3940,17 @@ export default class NiiVue extends EventTarget {
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
-    options = NVCmaps.withColormapWindow(options)
+    // Only a colormap change applies its window: callers that re-send the
+    // current colormap with every update keep the user's window (#395).
+    if (options.colormap !== volumes[volumeIndex].colormap)
+      options = NVCmaps.withColormapWindow(options)
     // Clamp frame4D to valid range
     if (options.frame4D !== undefined) {
       const maxFrame = (volumes[volumeIndex].nFrame4D ?? 1) - 1
       options.frame4D = Math.max(0, Math.min(options.frame4D, maxFrame))
     }
     Object.assign(volumes[volumeIndex], options)
+    NVCmaps.resolveDefaultWindow(volumes[volumeIndex])
     if (options.colormap !== undefined) {
       NVModel.applyColormap(volumes[volumeIndex], options.colormap)
       // A streamed volume has no img to scan; its bricks may already be

@@ -19,6 +19,7 @@ import {
   lutrgba8,
   makeLabelLut,
   makeLut,
+  resolveDefaultWindow,
   shownLabelLut,
   withColormapWindow,
 } from './NVCmaps'
@@ -525,14 +526,41 @@ describe('withColormapWindow', () => {
     })
   })
 
-  test('explicit calMin/calMax, unknown colormaps, or no colormap pass through', () => {
-    const explicit = { colormap: 'ct_kidneys', calMin: -1024 }
-    expect(withColormapWindow(explicit)).toBe(explicit)
+  test('a given bound wins and the map fills the other; NaN stays', () => {
+    const win = (o: { colormap: string; calMin?: number; calMax?: number }) =>
+      withColormapWindow(o)
+    expect(win({ colormap: 'ct_kidneys', calMin: -1024 })).toEqual({
+      colormap: 'ct_kidneys',
+      calMin: -1024,
+      calMax: 302,
+    })
+    const nan = win({ colormap: 'ct_kidneys', calMax: Number.NaN })
+    expect(nan.calMin).toBe(114)
+    expect(nan.calMax).toBeNaN()
+    // JSON callers send null for the same request.
+    const fromJson = JSON.parse('{"colormap":"ct_kidneys","calMin":null}')
+    expect(win(fromJson).calMin).toBeNull()
+  })
+
+  test('both bounds, unknown colormaps, or no colormap pass through', () => {
+    const both = { colormap: 'ct_kidneys', calMin: 1, calMax: 2 }
+    expect(withColormapWindow(both)).toBe(both)
     expect(withColormapWindow({ colormap: 'noSuchMap' })).toEqual({
       colormap: 'noSuchMap',
     })
     const none = { calMax: 5 }
     expect(withColormapWindow(none)).toBe(none)
+  })
+})
+
+describe('resolveDefaultWindow', () => {
+  test('a non-finite bound becomes the robust window', () => {
+    const vol = { calMin: Number.NaN, calMax: 7, robustMin: 1, robustMax: 9 }
+    resolveDefaultWindow(vol)
+    expect([vol.calMin, vol.calMax]).toEqual([1, 7])
+    vol.calMax = Number.POSITIVE_INFINITY
+    resolveDefaultWindow(vol)
+    expect([vol.calMin, vol.calMax]).toEqual([1, 9])
   })
 })
 

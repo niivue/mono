@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "packages/niivue/**"
-  # Every PR, including stacked ones; `edited` re-runs it on a retarget (#487).
+  # Every PR, including stacked ones; `edited` re-runs it on a manual retarget (#487).
   pull_request:
     types: [opened, synchronize, reopened, edited]
     paths:

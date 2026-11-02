@@ -1,3 +1,15 @@
+## 1.0.0-rc.72 (2026-11-02)
+
+### Fixes
+
+- **niivue:** volumeMatcap setter reloads the rendered matcap texture ([#458](https://github.com/niivue/mono/issues/458))
+- **niivue:** resolve matcap names in the volumeMatcap setter and loadMatcap ([#442](https://github.com/niivue/mono/issues/442), [#443](https://github.com/niivue/mono/issues/443))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.71 (2026-11-02)
 
 ### Fixes

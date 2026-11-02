@@ -365,17 +365,25 @@ test('loadVolumes ends a control-point resize drag (#470)', async ({
     ${setup('AXIAL', 'rectangle')}
     drag([120, 120], [200, 200])
     click([160, 160]) // select it, so its corners are control points
+    const geometry = () => JSON.stringify([nv.annotations[0].shape, nv.annotations[0].polygons])
+    const original = geometry()
     ev('pointerdown', 200, 200, 0)
     ev('pointermove', 220, 220, -1)
-    const resizing = nv._resizingControlPoint >= 0
+    const resizing = nv._resizingControlPoint >= 0 && geometry() !== original
     await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
     const ended = nv._resizingControlPoint === -1 && !nv.isDragging
+    // The half-done resize is undone, so the shape matches its stats.
+    const reverted = geometry() === original
     // A move after the load must not keep resizing the shape.
-    const shape = JSON.stringify(nv.annotations[0].shape)
     ev('pointermove', 250, 250, -1)
-    const unchanged = JSON.stringify(nv.annotations[0].shape) === shape
     ev('pointerup', 250, 250, 0)
-    return { resizing, ended, unchanged }
+    const unchanged = geometry() === original
+    return { resizing, ended, reverted, unchanged }
   })()`)
-  expect(r).toEqual({ resizing: true, ended: true, unchanged: true })
+  expect(r).toEqual({
+    resizing: true,
+    ended: true,
+    reverted: true,
+    unchanged: true,
+  })
 })

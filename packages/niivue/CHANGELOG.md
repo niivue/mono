@@ -1,3 +1,13 @@
+## 1.0.0-rc.66 (2026-11-02)
+
+### Fixes
+
+- **niivue:** draw a hidden legend swatch as one bordered panel ([#478](https://github.com/niivue/mono/issues/478))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.65 (2026-11-02)
 
 ### Fixes

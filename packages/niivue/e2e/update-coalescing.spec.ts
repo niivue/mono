@@ -51,9 +51,10 @@ test('a queued update settles with the follow-up that carries it', async ({
     'rebuild 2',
     'queued ok',
     'rebuild 3',
+    // The caller that took the lock settles with its own pass, not the chain.
+    'first ok',
     'rebuild 4',
     'second fourth rebuild failed',
-    'first ok',
   ])
 })
 

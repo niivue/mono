@@ -2112,7 +2112,7 @@ and its volumes alive."""
         self.send({"cmd": "whenChunkStreamSettles", "args": _make_args(timeout_ms)})
 
     def when_updates_settle(self) -> None:
-        """Resolves once no GPU update is running or queued.
+        """Resolves once the GPU updates running or queued at the call have finished.
 
         Setters that rebuild
         GPU resources (such as `volumeIsBackgroundMasking`) start the rebuild

@@ -1099,7 +1099,12 @@ a rebuild.
   that `_runFollowUp` settles with the follow-up's outcome, so its failure
   reaches the queued callers, not the update that started it. The pass calls
   its `settle` callback in its own `finally`, before chaining the next
-  follow-up, so a caller is not held by updates that arrived after it. Setters
+  follow-up, so no caller, queued or the one that took the lock, is held by
+  follow-ups chained after its own pass (updates that coalesce into its queued
+  follow-up before it starts do ride along). A new path that takes the lock
+  must accept a `settle` callback and call it in its `finally` before chaining.
+  A takeover wakes a `whenUpdatesSettle()` waiter on the running pass before
+  the rebuild finishes (a known shortcut). Setters
   that do not return their rebuild (e.g. `volumeIsBackgroundMasking`) are
   waited for with the public `whenUpdatesSettle()`, which joins the next
   follow-up when one is queued, else waits for the running pass, and does not

@@ -66,7 +66,8 @@ test('a queued caller settles with its own pass, not the follow-ups after it', a
   gates[1].open() // B's pass finishes; C's starts
   await tick()
   expect(log).toContain('B ok')
-  expect(log).not.toContain('end 3')
+  // The caller that took the lock is not held by the chain after its pass.
+  expect(log).toContain('A ok')
   gates[2].open()
   await tick()
   expect(log).toContain('C ok')
@@ -132,6 +133,8 @@ test('whenUpdatesSettle is not held by updates that arrive after it', async () =
   nv.updateGLVolume()
   nv.updateGLVolume() // queued: whenUpdatesSettle joins its follow-up
   track('settle', nv.whenUpdatesSettle())
+  await tick()
+  expect(log).not.toContain('settle ok')
   for (let n = 0; n < 5; n++) {
     nv.updateGLVolume()
     await tick()
@@ -140,4 +143,20 @@ test('whenUpdatesSettle is not held by updates that arrive after it', async () =
   }
   expect(log).toContain('settle ok')
   for (const g of gates) g.open()
+})
+
+test('a rebuild waiting on a pass stops at destroy instead of spinning', async () => {
+  const { nv, internals, gates, log, track } = rig()
+  track('A', nv.updateGLVolume())
+  await tick()
+  track('rebuild', internals._rebuildViewResources())
+  await tick()
+  internals._viewLifecycle = {}
+  ;(internals.view as { destroy?: () => void }).destroy = () => {}
+  nv.destroy()
+  await tick()
+  expect(log).toContain('rebuild ok')
+  gates[0].open()
+  await tick()
+  expect(log).not.toContain('start 2')
 })

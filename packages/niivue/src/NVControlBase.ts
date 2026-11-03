@@ -2768,7 +2768,8 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Resolves once no GPU update is running or queued. Setters that rebuild
+   * Resolves once the GPU updates running or queued at the call have
+   * finished. Setters that rebuild
    * GPU resources (such as `volumeIsBackgroundMasking`) start the rebuild
    * without returning it, so a screenshot taken straight after one can show
    * the old scene. It waits for the updates running or queued at the call,
@@ -2850,7 +2851,8 @@ export default class NiiVue extends EventTarget {
     } finally {
       // This pass's callers settle now, not after the follow-ups chained below.
       settle?.(failed, error)
-      if (this._endUpdate(token)) await this._runPendingUpdate()
+      // Not awaited: the caller is not held by follow-ups (they never throw).
+      if (this._endUpdate(token)) void this._runPendingUpdate()
     }
   }
 
@@ -2960,9 +2962,15 @@ export default class NiiVue extends EventTarget {
    * for. Updates arriving during the rebuild queue behind it.
    */
   async _rebuildViewResources(): Promise<void> {
-    while (this._updating && this._updatingView === this.view) {
+    // destroy() resolves _updateIdle but leaves _updating set: stop, or spin.
+    while (
+      this._updating &&
+      this._updatingView === this.view &&
+      !this._destroyed
+    ) {
       await this._updateIdle
     }
+    if (this._destroyed) return
     // Callers of a follow-up still running on a replaced view settle with this
     // rebuild, which takes ownership so the old view cannot settle them. With
     // the lock free, any left are settled by their own finished pass.
@@ -2984,7 +2992,7 @@ export default class NiiVue extends EventTarget {
       for (const w of adopted)
         if (this._servingWaiters.get(w) === token)
           this._servingWaiters.delete(w)
-      if (this._endUpdate(token)) await this._runPendingUpdate()
+      if (this._endUpdate(token)) void this._runPendingUpdate()
     }
   }
 
@@ -3034,11 +3042,11 @@ export default class NiiVue extends EventTarget {
         if (this._pendingFull) {
           // A full update queued behind this one is a superset of the
           // affine-only rerun; an affine rerun alone would drop it.
-          await this._runPendingUpdate()
+          void this._runPendingUpdate()
         } else if (this._pendingUpdate) {
           this._pendingUpdate = false
           this._pendingAllVolumes = false
-          await this._runFollowUp((next) => this.updateVolumeAffineOnly(next))
+          void this._runFollowUp((next) => this.updateVolumeAffineOnly(next))
         }
       }
     }

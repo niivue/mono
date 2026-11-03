@@ -283,6 +283,28 @@ describe('soft-break caret affinity', () => {
     expect(press(10, key('ArrowRight'), true)?.upstream).toBe(false)
   })
 
+  it('keeps it through a rejected key, so the next vertical move is right', () => {
+    const digitsOnly = (ch: string) => ch >= '0' && ch <= '9'
+    const rejected = textAreaKey(
+      textEditState(WORD, 10),
+      key('x'),
+      rows,
+      advances,
+      35,
+      true,
+      2,
+      digitsOnly,
+    )
+    expect(rejected?.state.text).toBe(WORD)
+    expect(rejected?.upstream).toBe(true)
+    expect(rejected?.goalX).toBe(35)
+    // Still on row two's end: ArrowUp lands on row one's end, not its start.
+    const up = press(10, key('ArrowUp'), rejected?.upstream, rejected?.goalX)
+    expect(up?.state.caret).toBe(5)
+    expect(up?.goalX).toBe(35)
+    expect(up?.upstream).toBe(true)
+  })
+
   it('keeps End before a trailing space and leaves hard newlines alone', () => {
     const t = wrapRows(TEXT, SEVENS(TEXT.length), 40)
     const end = textAreaKey(

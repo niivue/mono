@@ -600,7 +600,10 @@ export function textAreaKey(
       break
   }
   const next = editKey(s, e, accept)
-  return next === null ? null : { state: next, goalX: null, upstream: false }
+  if (next === null) return null
+  // A rejected key leaves the edit, and so the caret's row, as it was.
+  if (next === s) return { state: s, goalX, upstream }
+  return { state: next, goalX: null, upstream: false }
 }
 
 /**

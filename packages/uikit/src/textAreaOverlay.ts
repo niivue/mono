@@ -533,17 +533,18 @@ export class UIKitTextAreaOverlay
     if (this.focusedId === null) return false
     const entry = this.entries.get(this.focusedId)
     if (!entry || entry.spec.enabled === false || !entry.edit) return false
-    entry.goalX = null
-    entry.upstream = false
-    this.applyEdit(
-      entry,
-      pasteText(
-        entry.edit,
-        text.replace(/\r\n?/g, '\n'),
-        entry.spec.accept,
-        entry.spec.maxLength,
-      ),
+    const next = pasteText(
+      entry.edit,
+      text.replace(/\r\n?/g, '\n'),
+      entry.spec.accept,
+      entry.spec.maxLength,
     )
+    // A paste that changes nothing keeps the caret's row and goal x.
+    if (next !== entry.edit) {
+      entry.goalX = null
+      entry.upstream = false
+    }
+    this.applyEdit(entry, next)
     return true
   }
 

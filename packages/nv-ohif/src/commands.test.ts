@@ -766,6 +766,16 @@ describe('reflectNiivueAnnotation', () => {
       t.warn.mockRestore()
     })
 
+    it('clearing a viewport with no rows still clears its failures', () => {
+      const t = throwingAdd('vp-cap-clear')
+      t.nv.annotations = [ellipse('cl')]
+      for (let i = 0; i < 3; i++) t.reconcile()
+      clearNiivueAnnotations('vp-cap-clear', t.svc.servicesManager)
+      t.reconcile()
+      expect(t.state.attempts).toBe(4)
+      t.warn.mockRestore()
+    })
+
     it('caps a throwing row removal and drops its bookkeeping', () => {
       const nv = stubNiivue()
       register('vp-cap-remove', nv)

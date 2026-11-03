@@ -677,7 +677,8 @@ function recordMappingFailure(
     mappingFailures.set(viewportId, byView)
   }
   const prev = byView.get(annotationId)
-  if (!prev)
+  // Warn once per failing change (hash), so a later remove failure is still logged.
+  if (prev?.hash !== hash)
     console.warn(
       `[nv-ohif] measurement ${action} failed for annotation ${annotationId} (retrying up to ${MAX_MAPPING_ATTEMPTS} attempts)`,
       err,
@@ -1238,6 +1239,8 @@ export function clearNiivueAnnotations(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
 ): void {
+  // A viewport whose every add failed has no rows but may still hold failures.
+  mappingFailures.delete(viewportId)
   const byView = reflectedAnnotations.get(viewportId)
   if (!byView) return
   const measurementService = ohifServices(servicesManager)
@@ -1261,7 +1264,6 @@ export function clearNiivueAnnotations(
   }
   reflectedAnnotations.delete(viewportId)
   hiddenAnnotations.delete(viewportId)
-  mappingFailures.delete(viewportId)
 }
 
 /**

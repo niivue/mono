@@ -60,6 +60,15 @@ function defaultFor(key: string, construction: OptionValues): unknown {
   return structuredClone(reference.values[key])
 }
 
+// Setters keep the array they are given and NiiVue mutates some in place
+// (pan2Dxyzmm), so hand over a copy rather than the caller's prop.
+function copy(value: unknown): unknown {
+  if (Array.isArray(value)) return [...value]
+  if (ArrayBuffer.isView(value) && 'slice' in value)
+    return (value as unknown as { slice(): unknown }).slice()
+  return value
+}
+
 /**
  * Set live options that differ from `prev`; reset keys dropped since `prev`
  * to their defaults. Keys never supplied are left alone.
@@ -87,7 +96,8 @@ export function applyLiveOptions(
     }
   }
   for (const key of Object.keys(next)) {
-    if (signature(next[key]) !== signature(prev[key])) set(key, () => next[key])
+    if (signature(next[key]) !== signature(prev[key]))
+      set(key, () => copy(next[key]))
   }
   for (const key of Object.keys(prev)) {
     if (!(key in next)) set(key, () => defaultFor(key, construction))

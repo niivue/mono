@@ -81,6 +81,27 @@ describe('applyLiveOptions', () => {
       crosshairGap: 5,
     })
   })
+  test('hands the viewer a copy, never the caller array', () => {
+    // NiiVue mutates pan2Dxyzmm in place; that must not reach the prop.
+    const pan = [0, 0, 0, 1]
+    const color = new Float32Array([1, 0, 0, 1])
+    const nv = {} as unknown as NiiVue
+    applyLiveOptions(
+      nv,
+      {},
+      { pan2Dxyzmm: pan, backgroundColor: color },
+      () => {},
+    )
+    const live = nv as unknown as {
+      pan2Dxyzmm: number[]
+      backgroundColor: Float32Array
+    }
+    expect(live.pan2Dxyzmm).toEqual(pan)
+    expect(live.pan2Dxyzmm).not.toBe(pan)
+    expect(live.backgroundColor).toEqual(color)
+    expect(live.backgroundColor).not.toBe(color)
+  })
+
   test('a dropped key resets to a default built with the construction options', () => {
     // Some defaults depend on construction-only options (volumeMatcap on
     // matcaps); the mock's defaults merge its constructor options the same way.

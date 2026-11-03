@@ -1,3 +1,22 @@
+## 1.0.0-rc.75 (2026-11-03)
+
+### Fixes
+
+- **uikit:** keep caret affinity across a position-only text-area patch ([ca47e206](https://github.com/niivue/mono/commit/ca47e206))
+- **uikit:** a rejected key or empty paste keeps caret affinity ([#522](https://github.com/niivue/mono/issues/522))
+- **uikit:** keep the text area caret on a soft row end ([#266](https://github.com/niivue/mono/issues/266))
+- **uikit:** edit text by grapheme cluster ([#268](https://github.com/niivue/mono/issues/268))
+
+### Performance
+
+- **uikit:** segment once per wrap, not once per row ([#521](https://github.com/niivue/mono/issues/521))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.74 (2026-11-03)
 
 ### Updated Dependencies

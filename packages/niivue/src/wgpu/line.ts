@@ -118,7 +118,7 @@ export class LineRenderer extends NVRenderer {
     device.queue.writeBuffer(lineStorageBuffer, 0, allLineData)
     pass.setPipeline(this.pipeline)
     pass.setBindGroup(0, bindGroup)
-    pass.draw(4, lines.length)
+    pass.draw(4, Math.min(lines.length, maxLines))
   }
 
   destroy(): void {

@@ -132,13 +132,83 @@ export function rulerTickLabels(
 }
 
 /** Format distance with smart decimals. */
-function formatDistance(dist: number, showUnits: boolean): string {
+export function formatDistance(dist: number, showUnits: boolean): string {
   let decimals = 2
   if (dist > 9) decimals = 1
   if (dist > 99) decimals = 0
   let label = dist.toFixed(decimals)
   if (showUnits) label += ' mm'
   return label
+}
+
+/** Translucent backing that keeps measurement text readable on any image. */
+export function measureTextBack(textColor: number[]): number[] {
+  return textColor[0] + textColor[1] + textColor[2] > 0.8
+    ? [0, 0, 0, 0.5]
+    : [1, 1, 1, 0.5]
+}
+
+/** A ruler between two canvas points, `distance` long in its units. */
+export type ScreenRuler = {
+  sx: number
+  sy: number
+  ex: number
+  ey: number
+  distance: number
+}
+
+/**
+ * Graduated rulers as NiiVue draws them: baseline, end caps, per-unit ticks
+ * (majors every fifth), graduation numbers and the length at the midpoint.
+ */
+export function buildRulers(
+  rulers: readonly ScreenRuler[],
+  style: Pick<
+    NVModel['ui'],
+    | 'measureLineColor'
+    | 'measureTextColor'
+    | 'rulerWidth'
+    | 'isMeasureUnitsVisible'
+  >,
+  buildText: BuildTextFn,
+  buildLine: BuildLineFn,
+  numberPx = 12,
+): MeasurementResult {
+  const lineColor = style.measureLineColor
+  const lineWidth = style.rulerWidth
+  const textColor = style.measureTextColor
+  const textBack = measureTextBack(textColor)
+  const lines: LineData[] = []
+  const labels: GlyphBatch[] = []
+  for (const { sx, sy, ex, ey, distance } of rulers) {
+    for (const [x0, y0, x1, y1] of rulerSegments(
+      sx,
+      sy,
+      ex,
+      ey,
+      distance,
+      lineWidth,
+    )) {
+      lines.push(buildLine(x0, y0, x1, y1, lineWidth, lineColor))
+    }
+    for (const t of rulerTickLabels(sx, sy, ex, ey, distance, 6, numberPx)) {
+      const b = buildText(t.str, t.x, t.y, 0.5, textColor, 0.5, 0.5)
+      if (b.count > 0) labels.push(b)
+    }
+    const label = formatDistance(distance, style.isMeasureUnitsVisible)
+    const batch = buildText(
+      label,
+      (sx + ex) * 0.5,
+      (sy + ey) * 0.5,
+      0.8,
+      textColor,
+      0.5,
+      1,
+      textBack,
+    )
+    if (batch.count > 0) labels.push(batch)
+  }
+  return { lines, labels }
 }
 
 /**
@@ -253,51 +323,20 @@ export function buildPersistedMeasurements(
   const lineColor = ui.measureLineColor
   const lineWidth = ui.rulerWidth
   const textColor = ui.measureTextColor
-  const textBack =
-    textColor[0] + textColor[1] + textColor[2] > 0.8
-      ? [0, 0, 0, 0.5]
-      : [1, 1, 1, 0.5]
+  const textBack = measureTextBack(textColor)
   const tolerance = computeTolerance(model)
-
-  const lines: LineData[] = []
-  const labels: GlyphBatch[] = []
 
   // Persisted measurements: drawn from the pre-projected screen lines. Skipped
   // when an external overlay is drawing the ruler instead of the built-in.
-  if (ui.isMeasurementDrawn) {
-    for (const {
-      sx,
-      sy,
-      ex,
-      ey,
-      distance,
-    } of model._persistedMeasurementScreenLines) {
-      // Plain baseline + end caps + per-mm ticks (majors every fifth).
-      for (const [x0, y0, x1, y1] of rulerSegments(
-        sx,
-        sy,
-        ex,
-        ey,
-        distance,
-        lineWidth,
-      )) {
-        lines.push(buildLine(x0, y0, x1, y1, lineWidth, lineColor))
-      }
-
-      // Graduation numbers at each major tick, along the ruler edge.
-      for (const t of rulerTickLabels(sx, sy, ex, ey, distance, 6, numberPx)) {
-        const b = buildText(t.str, t.x, t.y, 0.5, textColor, 0.5, 0.5)
-        if (b.count > 0) labels.push(b)
-      }
-
-      // Distance text
-      const label = formatDistance(distance, ui.isMeasureUnitsVisible)
-      const mx = (sx + ex) * 0.5
-      const my = (sy + ey) * 0.5
-      const batch = buildText(label, mx, my, 0.8, textColor, 0.5, 1, textBack)
-      if (batch.count > 0) labels.push(batch)
-    }
-  }
+  const { lines, labels } = ui.isMeasurementDrawn
+    ? buildRulers(
+        model._persistedMeasurementScreenLines,
+        ui,
+        buildText,
+        buildLine,
+        numberPx,
+      )
+    : { lines: [] as LineData[], labels: [] as GlyphBatch[] }
 
   // Persisted angles: projected per tile (not exposed to external overlays).
   for (const tile of screenSlices) {

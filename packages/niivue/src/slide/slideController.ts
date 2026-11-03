@@ -1,3 +1,4 @@
+import { crosshairPanThresholdCssPx } from '@/control/dragModes'
 import { DRAG_MODE } from '@/NVConstants'
 import type { NVSlide, NVSlideScreen } from './NVSlide'
 
@@ -10,8 +11,8 @@ export interface NVSlideMeasurement {
   end: NVSlidePoint
 }
 
-/** The drag modes an NVSlide pane honours; any other value acts as `none`. */
-export const SLIDE_DRAG_MODES: readonly DRAG_MODE[] = [
+// The drag modes an NVSlide pane honours; any other value acts as `none`.
+const SLIDE_DRAG_MODES: readonly DRAG_MODE[] = [
   DRAG_MODE.none,
   DRAG_MODE.pan,
   DRAG_MODE.crosshair,
@@ -41,15 +42,10 @@ export interface NVSlideControllerOptions {
    * A contrast drag released over this box (slide base pixels). As NiiVue's
    * contrast mode, the app sets the window to the intensity range inside it.
    */
-  onContrast?: (box: { start: NVSlidePoint; end: NVSlidePoint }) => void
-  /** A ruler completed (also kept in {@link NVSlideController.measurements}). */
-  onMeasure?: (measurement: NVSlideMeasurement) => void
+  onContrast?: (box: NVSlideMeasurement) => void
   /** Something to redraw: a ruler grew, or the measurements changed. */
   onChange?: () => void
 }
-
-// The same click-or-drag threshold as NiiVue's crosshairPan.
-const DRAG_THRESHOLD_CSS = 4
 
 type Gesture = {
   pointerId: number
@@ -76,7 +72,7 @@ export class NVSlideController {
   /** The ruler being dragged, or null. */
   activeMeasurement: NVSlideMeasurement | null = null
   /** The box a contrast drag is selecting, or null. */
-  selection: { start: NVSlidePoint; end: NVSlidePoint } | null = null
+  selection: NVSlideMeasurement | null = null
 
   private readonly _canvas: HTMLCanvasElement
   private readonly _options: NVSlideControllerOptions
@@ -103,6 +99,7 @@ export class NVSlideController {
   }
 
   dispose(): void {
+    if (this._gesture) this._end(this._gesture, false)
     const c = this._canvas
     c.removeEventListener('pointerdown', this._onDown)
     c.removeEventListener('pointermove', this._onMove)
@@ -138,8 +135,11 @@ export class NVSlideController {
   }
 
   private _onDown = (event: PointerEvent): void => {
+    // One gesture at a time: a second finger or pen is ignored.
+    if (this._gesture) return
     const mode = this._modeFor(event.button)
-    if (mode === DRAG_MODE.none || !this._options.slide()) return
+    const slide = this._options.slide()
+    if (mode === DRAG_MODE.none || !slide) return
     const [x, y] = this._local(event)
     this._gesture = {
       pointerId: event.pointerId,
@@ -152,13 +152,11 @@ export class NVSlideController {
     }
     this._canvas.setPointerCapture?.(event.pointerId)
     if (mode === DRAG_MODE.crosshair) this._crosshairAt(x, y)
-    if (mode === DRAG_MODE.measurement || mode === DRAG_MODE.contrast) {
-      const start = this._slidePoint(x, y)
-      if (start && mode === DRAG_MODE.measurement)
-        this.activeMeasurement = { start, end: { ...start } }
-      if (start && mode === DRAG_MODE.contrast)
-        this.selection = { start, end: { ...start } }
-    }
+    const start = slide.screenToSlide(x, y, this._options.screen())
+    if (mode === DRAG_MODE.measurement)
+      this.activeMeasurement = { start, end: { ...start } }
+    if (mode === DRAG_MODE.contrast)
+      this.selection = { start, end: { ...start } }
   }
 
   private _onMove = (event: PointerEvent): void => {
@@ -167,7 +165,7 @@ export class NVSlideController {
     const [x, y] = this._local(event)
     if (
       !g.isDrag &&
-      Math.hypot(x - g.startX, y - g.startY) < DRAG_THRESHOLD_CSS
+      Math.hypot(x - g.startX, y - g.startY) < crosshairPanThresholdCssPx
     )
       return
     g.isDrag = true
@@ -235,7 +233,6 @@ export class NVSlideController {
       this.activeMeasurement = null
       if (committed && ruler && g.isDrag) {
         this.measurements.push(ruler)
-        this._options.onMeasure?.(ruler)
       }
       this._options.onChange?.()
     }

@@ -98,6 +98,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `setClipPlaneDepthAziElev(i, d, a, e)` | Method | No | |
 | `activeClipPlaneIndex`, `currentClipPlaneIndex` | Prop | No | |
 | `focusBox` | Prop (get/set) | No | `FocusBox \| null`; world-mm AABB outlined as 12 edges on the 3D render tile(s). Assigning redraws; `null` clears. Not serialized |
+| `planeOutlines` | Prop (get/set) | No | `PlaneOutline[]`: world-mm rectangles (e.g. an NVSlide pane's field of view), a frame in 3D and projected onto each 2D slice. Entries without four finite corners are dropped. Not serialized |
 | `lodBoxes` | Prop (get/set) | No | `FocusBox[] \| null`; the same outline for a set of boxes, e.g. one per streamed LOD brick coloured by level |
 | `animateTo(target, options)` | Method | Yes | Tweens camera, pan/zoom, crosshair, clip planes, volume window/opacity/4D frame and mesh opacity to an `AnimationTarget`. Resolves an `AnimationResult` (`finished`, `stalled`, `failed`, `superseded`, `input`, `stopped`, `destroyed`); the target lands on a finish or stall, and a setter that throws or rejects while writing it ends the run as `failed` with the parts named in `failed`. Azimuth turns the short way unless `angles: 'literal'`. Volume window/opacity steps rebuild GPU state each frame, so they are paced rather than queued |
 | `stopAnimation()` | Method | No | Stops the running animation where it is |
@@ -230,6 +231,7 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `moveCrosshairInVox(di, dj, dk)` | Method | Keyboard/button navigation |
 | `getCrosshairPos()` / `setCrosshairPos([x,y,z])` | Method | |
 | `vox2frac([i,j,k])` | Method | |
+| `vox2mm([i,j,k])` | Method | Base-volume RAS voxel to world mm; `null` without a volume |
 | `createOnLocationChange(axCorSag?)` | Method | Emit location event |
 
 **Note for touch devices:** There is currently no public

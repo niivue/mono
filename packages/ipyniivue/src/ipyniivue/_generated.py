@@ -2063,13 +2063,22 @@ and its volumes alive."""
         self.send({"cmd": "updateVolumeData", "args": _make_args(volume_index, data)})
 
     async def vox2frac(self, vox: Any) -> Any:
-        return await self._request("vox2frac", _make_args(vox))
-
-    async def vox2mm(self, vox: Any) -> Any:
         """Convert RAS voxel coordinates to scene fraction [0,1].
 
         Uses the background volume's matRAS for the vox→mm conversion.
-        A RAS voxel of the base volume in world mm (null without a volume).
+
+        Parameters
+        ----------
+        vox : [number, number, number]
+
+        Returns
+        -------
+        [number, number, number]
+        """
+        return await self._request("vox2frac", _make_args(vox))
+
+    async def vox2mm(self, vox: Any) -> Any:
+        """A RAS voxel of the base volume in world mm (null without a volume).
 
         Parameters
         ----------

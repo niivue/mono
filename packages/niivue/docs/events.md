@@ -80,7 +80,7 @@ Fired when the crosshair position changes (user click, keyboard navigation, or p
 | `vox` | `[number, number, number]` | Rounded voxel indices |
 | `frac` | `[number, number, number]` | Scene fraction [0..1] |
 | `xy` | `[number, number]` | Mouse position on canvas |
-| `axCorSag` | `number` | Slice orientation (0=sagittal, 1=coronal, 2=axial) |
+| `axCorSag` | `number` | Slice orientation (0=sagittal, 1=coronal, 2=axial); `SLICE_TYPE.RENDER` for a 3D render depth pick |
 | `values` | `NiiVueLocationValue[]` | Per-volume data (name, value, label) |
 | `string` | `string` | Human-readable location with values |
 

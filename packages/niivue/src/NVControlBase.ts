@@ -4878,10 +4878,6 @@ export default class NiiVue extends EventTarget {
     }
   }
 
-  /**
-   * Convert RAS voxel coordinates to scene fraction [0,1].
-   * Uses the background volume's matRAS for the vox→mm conversion.
-   */
   /** A RAS voxel of the base volume in world mm (null without a volume). */
   vox2mm(vox: [number, number, number]): [number, number, number] | null {
     const vol = this.volumes[0]
@@ -4890,6 +4886,10 @@ export default class NiiVue extends EventTarget {
     return [mm[0], mm[1], mm[2]]
   }
 
+  /**
+   * Convert RAS voxel coordinates to scene fraction [0,1].
+   * Uses the background volume's matRAS for the vox→mm conversion.
+   */
   vox2frac(vox: [number, number, number]): [number, number, number] {
     if (this.volumes.length === 0) return [0.5, 0.5, 0.5]
     const vol = this.volumes[0]

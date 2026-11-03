@@ -273,7 +273,7 @@ export class VolumeSliceSource implements SlideTileSource {
     const u1 = clampTo(Math.max(box.x0, box.x1) * sx + 1, level.width)
     const v0 = clampTo(Math.min(box.y0, box.y1) * sy, level.height)
     const v1 = clampTo(Math.max(box.y0, box.y1) * sy + 1, level.height)
-    if (u1 <= u0 || v1 <= v0) return null
+    if (!(u1 > u0 && v1 > v0)) return null
     const [uAxis, vAxis] = this.planeAxes
     const texOrigin: Vec3i = [0, 0, 0]
     const texDims: Vec3i = [1, 1, 1]

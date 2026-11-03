@@ -6,7 +6,12 @@ import type {
   NVSlideScreenRect,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
-import type { SlideOverlayContent } from '@/slide/slideOverlay'
+import {
+  buildSlideOverlay,
+  SLIDE_OVERLAY_MAX_GLYPHS,
+  SLIDE_OVERLAY_MAX_LINES,
+  type SlideOverlayContent,
+} from '@/slide/slideOverlay'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -269,33 +274,21 @@ export class SlideRenderer extends NVRenderer {
     height: number,
     dpr: number,
   ): void {
-    const content = this.overlay
-    if (!content) return
-    if (content.lines.length > 0) {
-      this._lines.resize(gl, width, height)
-      const lines = content.lines.map((l) =>
-        buildLine(l.x0, l.y0, l.x1, l.y1, l.thickness, l.color),
-      )
-      this._lines.draw(gl, null, null, null, lines, lines.length)
-    }
-    if (content.labels.length > 0 && this._font.isReady) {
-      this._font.resize(gl, width, height, dpr)
-      const text = content.labels.map((t) =>
-        this._font.buildText(
-          t.str,
-          t.x,
-          t.y,
-          t.scale,
-          t.color,
-          t.anchorX,
-          t.anchorY,
-          t.backColor,
-        ),
-      )
-      this._font.draw(gl, null, null, null, text, 4096)
-    }
-    // The line and font passes re-enable depth; the overlay hook expects it off.
+    if (!this.overlay || !this._font.isReady) return
+    this._lines.resize(gl, width, height)
+    this._font.resize(gl, width, height, dpr)
+    const { lines, labels } = buildSlideOverlay(
+      this.overlay,
+      (...a) => this._font.buildText(...a),
+      buildLine,
+      this._font.fontPx * 0.5,
+    )
+    this._lines.draw(gl, null, null, null, lines, SLIDE_OVERLAY_MAX_LINES)
+    this._font.draw(gl, null, null, null, labels, SLIDE_OVERLAY_MAX_GLYPHS)
+    // The line and font passes re-enable depth and culling; the overlay hook
+    // expects both off.
     gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
   }
 
   private textureForBitmap(

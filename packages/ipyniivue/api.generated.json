@@ -4302,7 +4302,7 @@
         }
       ],
       "returns": "[number, number, number]",
-      "doc": null,
+      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.",
       "returnsDoc": null
     },
     {
@@ -4319,7 +4319,7 @@
         }
       ],
       "returns": "[number, number, number] | null",
-      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.\nA RAS voxel of the base volume in world mm (null without a volume).",
+      "doc": "A RAS voxel of the base volume in world mm (null without a volume).",
       "returnsDoc": null
     },
     {

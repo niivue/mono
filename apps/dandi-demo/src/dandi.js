@@ -1085,10 +1085,10 @@ function updateFieldOfView(screen) {
   })
   if (corners.some((c) => !c)) return
   // Only a real change reaches NiiVue, which redraws on every set.
-  const key = corners
+  const key = `${els.follow.checked}:${corners
     .flat()
     .map((n) => n.toFixed(3))
-    .join()
+    .join()}`
   if (key === fovKey) return
   fovKey = key
   nv.planeOutlines = els.follow.checked
@@ -1130,13 +1130,15 @@ function previewVolumeWindow([lo, hi]) {
 // A contrast box sets the window to the intensity range inside it, as NiiVue's
 // contrast drag does, read at the level the slide is showing.
 async function onSlideContrast(box) {
-  if (!slide || !sliceSource) return
+  const source = sliceSource
+  if (!slide || !source) return
   const level = slide.selectLevel()?.index ?? 0
-  const range = await sliceSource.intensityRange(
+  const range = await source.intensityRange(
     { x0: box.start.x, y0: box.start.y, x1: box.end.x, y1: box.end.y },
     level,
   )
-  if (!range) return
+  // A dataset, axis or plane change while reading makes this range stale.
+  if (!range || source !== sliceSource) return
   setWindowText(range)
   applyWindow()
 }
@@ -1184,6 +1186,7 @@ els.plane.addEventListener('input', () => {
   onPlane[AXIS_INDEX[els.axis.value]] = planeIndex
   nv.crosshairPos = nv.vox2frac(onPlane)
 })
+els.follow.addEventListener('change', requestSlideRender)
 els.view.addEventListener('change', () => {
   if (nv) nv.sliceType = VIEWS[els.view.value] ?? SLICE_TYPE.RENDER
 })

@@ -5,7 +5,12 @@ import type {
   NVSlideScreen,
   NVSlideScreenRect,
 } from '@/slide/NVSlide'
-import type { SlideOverlayContent } from '@/slide/slideOverlay'
+import {
+  buildSlideOverlay,
+  SLIDE_OVERLAY_MAX_GLYPHS,
+  SLIDE_OVERLAY_MAX_LINES,
+  type SlideOverlayContent,
+} from '@/slide/slideOverlay'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -17,8 +22,6 @@ import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 
 // Storage sizes for the overlay, as NVViewGPU's: 48 B a line, 64 B a glyph.
-const MAX_OVERLAY_LINES = 1024
-const MAX_OVERLAY_GLYPHS = 2048
 
 const shaderCode = /* wgsl */ `
 struct SlideUniforms {
@@ -259,11 +262,11 @@ export class SlideRendererGPU {
     await this._lines.init(device, this._format, 1, null)
     await this._font.init(device, this._format, 1, ubuntu, null)
     this._lineStorage = device.createBuffer({
-      size: MAX_OVERLAY_LINES * 48,
+      size: SLIDE_OVERLAY_MAX_LINES * 48,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
     this._glyphStorage = device.createBuffer({
-      size: MAX_OVERLAY_GLYPHS * 64,
+      size: SLIDE_OVERLAY_MAX_GLYPHS * 64,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
     this._lineBindGroup = this._lines.createBindGroup(device, this._lineStorage)
@@ -280,46 +283,32 @@ export class SlideRendererGPU {
     height: number,
     dpr: number,
   ): void {
-    const content = this.overlay
-    if (!content) return
+    if (!this.overlay || !this._lineStorage || !this._glyphStorage) return
     const device = this._device
-    if (content.lines.length > 0 && this._lineStorage) {
-      this._lines.resize(device, width, height)
-      const lines = content.lines.map((l) =>
-        buildLine(l.x0, l.y0, l.x1, l.y1, l.thickness, l.color),
-      )
-      this._lines.draw(
-        device,
-        pass,
-        this._lineBindGroup,
-        this._lineStorage,
-        lines,
-        MAX_OVERLAY_LINES,
-      )
-    }
-    if (content.labels.length > 0 && this._glyphStorage) {
-      this._font.resize(device, width, height, dpr)
-      const text = content.labels.map((t) =>
-        this._font.buildText(
-          t.str,
-          t.x,
-          t.y,
-          t.scale,
-          t.color,
-          t.anchorX,
-          t.anchorY,
-          t.backColor,
-        ),
-      )
-      this._font.draw(
-        device,
-        pass,
-        this._fontBindGroup,
-        this._glyphStorage,
-        text,
-        MAX_OVERLAY_GLYPHS,
-      )
-    }
+    this._lines.resize(device, width, height)
+    this._font.resize(device, width, height, dpr)
+    const { lines, labels } = buildSlideOverlay(
+      this.overlay,
+      (...a) => this._font.buildText(...a),
+      buildLine,
+      this._font.fontPx * 0.5,
+    )
+    this._lines.draw(
+      device,
+      pass,
+      this._lineBindGroup,
+      this._lineStorage,
+      lines,
+      SLIDE_OVERLAY_MAX_LINES,
+    )
+    this._font.draw(
+      device,
+      pass,
+      this._fontBindGroup,
+      this._glyphStorage,
+      labels,
+      SLIDE_OVERLAY_MAX_GLYPHS,
+    )
   }
 
   render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
@@ -456,6 +445,8 @@ export class SlideRendererGPU {
 
   destroy(): void {
     this._textures.clear()
+    this._lines.destroy()
+    this._font.destroy()
     this._lineStorage?.destroy()
     this._glyphStorage?.destroy()
     for (const buffer of this._uniformPool) {

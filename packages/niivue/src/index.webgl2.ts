@@ -113,6 +113,7 @@ export type {
   CustomLayoutTile,
   DragReleaseInfo,
   FocusBox,
+  PlaneOutline,
   ImageFromUrlOptions,
   LodCompensationLevel,
   LodCompensationReport,
@@ -228,11 +229,9 @@ export type {
   NVSlideMeasurement,
   NVSlidePoint,
 } from './slide/slideController'
-export { NVSlideController, SLIDE_DRAG_MODES } from './slide/slideController'
+export { NVSlideController } from './slide/slideController'
 export type {
   SlideOverlayContent,
-  SlideOverlayLabel,
-  SlideOverlayLine,
   SlideOverlaySource,
   SlideOverlayStyle,
 } from './slide/slideOverlay'

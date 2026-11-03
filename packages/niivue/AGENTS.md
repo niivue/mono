@@ -1103,8 +1103,9 @@ a rebuild.
   follow-ups chained after its own pass (updates that coalesce into its queued
   follow-up before it starts do ride along). A new path that takes the lock
   must accept a `settle` callback and call it in its `finally` before chaining.
-  A takeover wakes a `whenUpdatesSettle()` waiter on the running pass before
-  the rebuild finishes (a known shortcut). Setters
+  A takeover wakes `_updateIdle` before its rebuild finishes, so
+  `whenUpdatesSettle()` follows `_takenOverBy` from the pass it waited on to
+  the rebuild that replaced it, and stops at a pass that ends normally. Setters
   that do not return their rebuild (e.g. `volumeIsBackgroundMasking`) are
   waited for with the public `whenUpdatesSettle()`, which joins the next
   follow-up when one is queued, else waits for the running pass, and does not

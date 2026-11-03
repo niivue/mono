@@ -160,3 +160,22 @@ test('a rebuild waiting on a pass stops at destroy instead of spinning', async (
   await tick()
   expect(log).not.toContain('start 2')
 })
+
+test('whenUpdatesSettle follows a takeover to the rebuild that replaced the pass', async () => {
+  const { nv, internals, gates, log, track } = rig()
+  track('A', nv.updateGLVolume())
+  await tick()
+  track('settle', nv.whenUpdatesSettle())
+  // A recreated view: same gated rebuild, new identity, so the rebuild takes over.
+  const old = internals.view as { updateBindGroups: () => Promise<void> }
+  internals.view = { updateBindGroups: old.updateBindGroups }
+  track('rebuild', internals._rebuildViewResources())
+  await tick()
+  await tick()
+  expect(log).not.toContain('settle ok')
+  gates[1].open() // the rebuild finishes; the replaced pass never does
+  await tick()
+  await tick()
+  expect(log).toContain('settle ok')
+  gates[0].open()
+})

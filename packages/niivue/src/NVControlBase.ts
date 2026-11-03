@@ -484,6 +484,8 @@ export default class NiiVue extends EventTarget {
   /** Resolves when the update holding `_updating` releases it. */
   private _updateIdle: Promise<void> = Promise.resolve()
   private _resolveUpdateIdle: (() => void) | null = null
+  /** A taken-over lock token mapped to the token of the rebuild that took it. */
+  private _takenOverBy = new WeakMap<object, object>()
   private _pendingUpdate = false
   /** Callers queued behind `_updating`, settled by the follow-up carrying their change. */
   private _pendingWaiters: UpdateWaiter[] = []
@@ -2783,9 +2785,13 @@ export default class NiiVue extends EventTarget {
       return new Promise((resolve) => {
         this._pendingWaiters.push({ resolve, reject: () => resolve() })
       })
-    // shortcut: a takeover (_rebuildViewResources) also wakes this, before the
-    // rebuild finishes; acceptable since the rebuild re-uploads everything.
-    await this._updateIdle
+    // A takeover wakes _updateIdle before its rebuild finishes: follow it to
+    // the rebuild that replaced the pass, but not to later follow-ups.
+    let token = this._updateToken
+    while (token && !this._destroyed) {
+      if (this._updateToken === token) await this._updateIdle
+      token = this._takenOverBy.get(token) ?? null
+    }
   }
 
   /**
@@ -2865,6 +2871,7 @@ export default class NiiVue extends EventTarget {
     // Wake any waiter on the previous holder (only non-null on a takeover).
     this._resolveUpdateIdle?.()
     const token = {}
+    if (this._updateToken) this._takenOverBy.set(this._updateToken, token)
     this._updateToken = token
     this._updatingView = this.view
     this._updating = true

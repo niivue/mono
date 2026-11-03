@@ -1,7 +1,7 @@
-import * as nifti from 'nifti-reader-js'
 import { log } from '@/logger'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import { nifti1Header } from '@/volume/utils'
 
 export const extensions = ['v']
 export const type = 'nii'
@@ -11,9 +11,7 @@ export function read(
   _name?: string,
   _pairedImgData: ArrayBuffer | null = null,
 ): { hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray } {
-  const hdr = new nifti.NIFTI1() as NIFTI1
-  hdr.dims = [3, 1, 1, 1, 0, 0, 0, 0]
-  hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
+  const hdr = nifti1Header([3, 1, 1, 1, 0, 0, 0, 0])
   const reader = new DataView(buffer)
 
   const signature = reader.getInt32(0, false)

@@ -110,12 +110,18 @@ type QuadOptions = {
 }
 
 export class SlideRendererGPU {
+  /**
+   * Sample tiles with nearest-neighbour filtering instead of linear, so each
+   * source pixel shows as a crisp square when zoomed in.
+   */
+  isNearestInterpolation = false
   private readonly _canvas: HTMLCanvasElement
   private readonly _device: GPUDevice
   private readonly _context: GPUCanvasContext
   private readonly _pipeline: GPURenderPipeline
   private readonly _bindLayout: GPUBindGroupLayout
   private readonly _sampler: GPUSampler
+  private readonly _nearestSampler: GPUSampler
   private _placeholderTexture: GPUTexture | null
   private readonly _format: GPUTextureFormat
   // Byte-budgeted: tile textures for scrolled-away regions are evicted each
@@ -163,6 +169,12 @@ export class SlideRendererGPU {
     this._pipeline = pipeline
     this._bindLayout = bindLayout
     this._sampler = sampler
+    this._nearestSampler = device.createSampler({
+      magFilter: 'nearest',
+      minFilter: 'nearest',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+    })
     this._placeholderTexture = placeholderTexture
     this._format = format
   }
@@ -582,7 +594,12 @@ export class SlideRendererGPU {
       entries: [
         { binding: 0, resource: { buffer } },
         { binding: 1, resource: texture.createView() },
-        { binding: 2, resource: this._sampler },
+        {
+          binding: 2,
+          resource: this.isNearestInterpolation
+            ? this._nearestSampler
+            : this._sampler,
+        },
       ],
     })
     pass.setBindGroup(0, bindGroup)

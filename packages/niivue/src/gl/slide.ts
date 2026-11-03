@@ -54,6 +54,13 @@ export class SlideRenderer extends NVRenderer {
    * renderers, before `overlayDraw` (see `slideOverlayContent`).
    */
   overlay: SlideOverlayContent | null = null
+  /**
+   * Sample tiles with nearest-neighbour filtering instead of linear, so each
+   * source pixel shows as a crisp square when zoomed in.
+   */
+  isNearestInterpolation = false
+  // Overrides the tiles' linear filtering while isNearestInterpolation is on.
+  private _nearestSampler: WebGLSampler | null = null
   private readonly _lines = new LineRenderer()
   private readonly _font = new FontRenderer()
 
@@ -61,6 +68,11 @@ export class SlideRenderer extends NVRenderer {
     if (this.isReady) return
 
     this._gl = gl
+    this._nearestSampler = gl.createSampler()
+    for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER])
+      gl.samplerParameteri(this._nearestSampler, p, gl.NEAREST)
+    for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T])
+      gl.samplerParameteri(this._nearestSampler, p, gl.CLAMP_TO_EDGE)
     this._lines.init(gl)
     // The atlas loads asynchronously; labels draw from the frame after.
     void this._font.init(gl, ubuntu)
@@ -143,6 +155,7 @@ export class SlideRenderer extends NVRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
     gl.activeTexture(gl.TEXTURE0)
     gl.uniform1i(this._shader.uniforms.slideTexture, 0)
+    gl.bindSampler(0, this.isNearestInterpolation ? this._nearestSampler : null)
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
     gl.enable(gl.BLEND)
@@ -221,6 +234,8 @@ export class SlideRenderer extends NVRenderer {
       }
     }
 
+    // The overlay's font atlas keeps its own (linear) filtering.
+    gl.bindSampler(0, null)
     this._drawOverlay(gl, width, height, screen.devicePixelRatio ?? 1)
 
     // UIKit overlay hook: last screen-space draw of the frame, with blend on and
@@ -259,7 +274,9 @@ export class SlideRenderer extends NVRenderer {
       if (this._placeholderTexture) gl.deleteTexture(this._placeholderTexture)
       if (this._vertexBuffer) gl.deleteBuffer(this._vertexBuffer)
       if (this._vao) gl.deleteVertexArray(this._vao)
+      gl.deleteSampler(this._nearestSampler)
     }
+    this._nearestSampler = null
     this._placeholderTexture = null
     this._vertexBuffer = null
     this._vao = null

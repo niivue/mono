@@ -227,9 +227,13 @@ export class UIKitTextAreaOverlay
     // A patch that leaves the value alone (a host re-laying out on resize)
     // must not throw away what the user is typing.
     const edit = patch.value === undefined ? entry.edit : null
+    const upstream = entry.upstream
     this.addTextArea({ ...entry.spec, ...patch, id, value })
-    if (edit && entry.edit)
+    if (edit && entry.edit) {
       entry.edit = truncateEdit(edit, entry.spec.maxLength)
+      // The retained caret keeps its row: affinity only counts at a soft-row end.
+      if (entry.edit.caret === edit.caret) entry.upstream = upstream
+    }
     if (entry.spec.enabled === false) {
       if (this.pressId === id) this.pressId = null
       if (this.focusedId === id) {

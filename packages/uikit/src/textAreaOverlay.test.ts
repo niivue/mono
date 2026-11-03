@@ -206,6 +206,17 @@ describe('UIKitTextAreaOverlay', () => {
     expect(changes).toEqual([])
   })
 
+  it('keeps a soft-wrap caret on its row across a position-only patch', () => {
+    const { overlay } = make({ t: 0 }, 'abcdefghijabcdefghij')
+    // Past the end of row 2: the caret sits at 10, the end of that soft row.
+    overlay.pointerDown(140, 95)
+    overlay.pointerUp(140, 95)
+    overlay.updateTextArea('a', { x: 110 })
+    overlay.keyDown(key('End'))
+    type(overlay, 'x')
+    expect(overlay.getText('a')).toBe('abcdefghijxabcdefghij')
+  })
+
   it('drops a paste that arrives after a blur and refocus', async () => {
     const { clipboard } = fakeClipboard('late')
     const { overlay, inputs } = make({ t: 0 }, 'abc', clipboard)

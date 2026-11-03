@@ -110,11 +110,11 @@ describe('the settings table', () => {
 
   it('names the overlay blend modes as NiiVue numbers them', () => {
     const alpha = named('volumeOverlayAlphaBlend')
-    expect(settingChoices(alpha)).toEqual(['max', 'additive', 'over'])
+    expect(settingChoices(alpha)).toEqual(['max', 'additive', 'union'])
     expect(coerceSetting(alpha, 'additive')).toBe(OVERLAY_ALPHA_BLENDS.additive)
-    expect(readSetting(alpha, 2)).toBe('over')
+    expect(readSetting(alpha, 2)).toBe('union')
     expect(() => coerceSetting(alpha, 'screen')).toThrow(
-      'volumeOverlayAlphaBlend must be one of max, additive, over.',
+      'volumeOverlayAlphaBlend must be one of max, additive, union.',
     )
     const colour = named('volumeOverlayColorBlend')
     expect(settingChoices(colour)).toEqual(['additive', 'mean', 'over', 'max'])

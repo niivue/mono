@@ -1023,6 +1023,9 @@ async function loadDataset() {
       cacheBytes: ZARR_CACHE_BYTES,
       persist: { maxBytes: ZARR_PERSIST_BYTES },
       ignoreMissingLevels: true,
+      // Every store listed is Zarr v2; saying so skips the zarr.json probe
+      // (a 404 in the console on each load).
+      zarrVersion: 2,
     })
     // A switch that landed while this one was opening owns the panes now; this
     // store has no reader, so let go of its workers instead of orphaning them.

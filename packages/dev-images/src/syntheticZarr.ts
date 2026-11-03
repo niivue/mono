@@ -180,6 +180,8 @@ export function syntheticZarrFile(path: string): Uint8Array | null {
   const level = parts[0] === '' ? undefined : store.levels[Number(parts[0])]
   if (!level) return null
   if (parts.length === 2 && parts[1] === '.zarray') return zarray(level.shape)
+  // Levels carry no attributes, but zarr readers ask (DANDI serves '{}' too).
+  if (parts.length === 2 && parts[1] === '.zattrs') return json({})
   if (parts.length !== 4) return null
   const chunk = parts.slice(1).map(Number)
   const inside = chunk.every(

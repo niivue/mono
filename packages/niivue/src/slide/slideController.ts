@@ -11,17 +11,6 @@ export interface NVSlideMeasurement {
   end: NVSlidePoint
 }
 
-// The drag modes an NVSlide pane honours; any other value acts as `none`.
-const SLIDE_DRAG_MODES: readonly DRAG_MODE[] = [
-  DRAG_MODE.none,
-  DRAG_MODE.pan,
-  DRAG_MODE.crosshair,
-  DRAG_MODE.crosshairPan,
-  DRAG_MODE.windowing,
-  DRAG_MODE.contrast,
-  DRAG_MODE.measurement,
-]
-
 export interface NVSlideControllerOptions {
   /** The slide on show; read on every event, so an app may rebuild it. */
   slide: () => NVSlide | null
@@ -85,8 +74,8 @@ export class NVSlideController {
     this.secondaryDragMode = options.secondaryDragMode ?? DRAG_MODE.pan
     canvas.addEventListener('pointerdown', this._onDown)
     canvas.addEventListener('pointermove', this._onMove)
-    canvas.addEventListener('pointerup', this._onUp)
-    canvas.addEventListener('pointercancel', this._onCancel)
+    canvas.addEventListener('pointerup', this._onEnd)
+    canvas.addEventListener('pointercancel', this._onEnd)
     canvas.addEventListener('wheel', this._onWheel, { passive: false })
     canvas.addEventListener('contextmenu', this._onContextMenu)
   }
@@ -103,20 +92,15 @@ export class NVSlideController {
     const c = this._canvas
     c.removeEventListener('pointerdown', this._onDown)
     c.removeEventListener('pointermove', this._onMove)
-    c.removeEventListener('pointerup', this._onUp)
-    c.removeEventListener('pointercancel', this._onCancel)
+    c.removeEventListener('pointerup', this._onEnd)
+    c.removeEventListener('pointercancel', this._onEnd)
     c.removeEventListener('wheel', this._onWheel)
     c.removeEventListener('contextmenu', this._onContextMenu)
   }
 
   private _modeFor(button: number): DRAG_MODE {
-    const mode =
-      button === 0
-        ? this.primaryDragMode
-        : button === 2
-          ? this.secondaryDragMode
-          : DRAG_MODE.none
-    return SLIDE_DRAG_MODES.includes(mode) ? mode : DRAG_MODE.none
+    if (button === 0) return this.primaryDragMode
+    return button === 2 ? this.secondaryDragMode : DRAG_MODE.none
   }
 
   private _local(event: PointerEvent | WheelEvent): [number, number] {
@@ -150,7 +134,7 @@ export class NVSlideController {
       lastY: y,
       isDrag: false,
     }
-    this._canvas.setPointerCapture?.(event.pointerId)
+    this._canvas.setPointerCapture(event.pointerId)
     if (mode === DRAG_MODE.crosshair) this._crosshairAt(x, y)
     const start = slide.screenToSlide(x, y, this._options.screen())
     if (mode === DRAG_MODE.measurement)
@@ -185,18 +169,12 @@ export class NVSlideController {
       case DRAG_MODE.windowing:
         this._options.onWindow?.(dx, dy, false)
         break
-      case DRAG_MODE.contrast: {
-        const end = this._slidePoint(x, y)
-        if (this.selection && end) {
-          this.selection.end = end
-          this._options.onChange?.()
-        }
-        break
-      }
+      case DRAG_MODE.contrast:
       case DRAG_MODE.measurement: {
+        const box = this._boxFor(g.mode)
         const end = this._slidePoint(x, y)
-        if (this.activeMeasurement && end) {
-          this.activeMeasurement.end = end
+        if (box && end) {
+          box.end = end
           this._options.onChange?.()
         }
         break
@@ -204,38 +182,33 @@ export class NVSlideController {
     }
   }
 
-  private _onUp = (event: PointerEvent): void => {
+  private _onEnd = (event: PointerEvent): void => {
     const g = this._gesture
     if (!g || g.pointerId !== event.pointerId) return
-    this._end(g, true)
+    this._end(g, event.type === 'pointerup')
   }
 
-  private _onCancel = (event: PointerEvent): void => {
-    const g = this._gesture
-    if (!g || g.pointerId !== event.pointerId) return
-    this._end(g, false)
+  /** The box a contrast or measurement drag is shaping. */
+  private _boxFor(mode: DRAG_MODE): NVSlideMeasurement | null {
+    if (mode === DRAG_MODE.contrast) return this.selection
+    return mode === DRAG_MODE.measurement ? this.activeMeasurement : null
   }
 
   private _end(g: Gesture, committed: boolean): void {
     this._gesture = null
-    this._canvas.releasePointerCapture?.(g.pointerId)
+    this._canvas.releasePointerCapture(g.pointerId)
     if (committed && g.mode === DRAG_MODE.crosshairPan && !g.isDrag)
       this._crosshairAt(g.startX, g.startY)
     if (g.mode === DRAG_MODE.windowing) this._options.onWindow?.(0, 0, true)
-    if (g.mode === DRAG_MODE.contrast) {
-      const box = this.selection
-      this.selection = null
-      if (committed && box && g.isDrag) this._options.onContrast?.(box)
-      this._options.onChange?.()
+    const box = this._boxFor(g.mode)
+    if (!box) return
+    this.selection = null
+    this.activeMeasurement = null
+    if (committed && g.isDrag) {
+      if (g.mode === DRAG_MODE.contrast) this._options.onContrast?.(box)
+      else this.measurements.push(box)
     }
-    if (g.mode === DRAG_MODE.measurement) {
-      const ruler = this.activeMeasurement
-      this.activeMeasurement = null
-      if (committed && ruler && g.isDrag) {
-        this.measurements.push(ruler)
-      }
-      this._options.onChange?.()
-    }
+    this._options.onChange?.()
   }
 
   private _onWheel = (event: WheelEvent): void => {

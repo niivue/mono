@@ -39,9 +39,8 @@ URL options:
   multiplanar or to a single axial, coronal, or sagittal slice.
 - **Gestures per pane.** `Volume left/right drag` set NiiVue's primary and
   secondary drag modes; `Slide left/right drag` set those of the deep-zoom pane
-  through core's `NVSlideController` (`SLIDE_DRAG_MODES`: `crosshairPan`,
-  `crosshair`, `pan`, `windowing`, `contrast`, `measurement`, `none`; the wheel
-  zooms). Slide windowing updates the volume live and the slide on release; a
+  through core's `NVSlideController` (`crosshairPan`, `crosshair`, `pan`,
+  `windowing`, `contrast`, `measurement`, `none`; the wheel zooms). Slide windowing updates the volume live and the slide on release; a
   contrast box sets the window from `VolumeSliceSource.intensityRange`. Rulers
   are held in slide base pixels, so they stay on the tissue through pan and
   zoom; `slideOverlayContent` draws them and the contrast box in NiiVue's style.

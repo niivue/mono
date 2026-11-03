@@ -39,8 +39,8 @@ export interface SlideOverlayContent {
 
 /**
  * Rulers and the contrast selection box, placed for the slide's current view.
- * Lengths use the slide's `pixelSpacingMM`; without it a ruler counts base
- * pixels and shows no units.
+ * Lengths use the slide's `pixelSpacingMM`; without it a ruler has no ticks
+ * and reads in base pixels.
  */
 export function slideOverlayContent(
   slide: NVSlide,
@@ -57,15 +57,21 @@ export function slideOverlayContent(
   const all = source.activeMeasurement
     ? [...source.measurements, source.activeMeasurement]
     : source.measurements
-  const rulers = all.map(({ start, end }) => {
+  const rulers = all.map(({ start, end }): ScreenRuler => {
     const [sx, sy] = toDevice(start)
     const [ex, ey] = toDevice(end)
     const dx = end.x - start.x
     const dy = end.y - start.y
-    const distance = spacing
-      ? Math.hypot(dx * spacing[0], dy * spacing[1])
-      : Math.hypot(dx, dy)
-    return { sx, sy, ex, ey, distance }
+    if (spacing)
+      return {
+        sx,
+        sy,
+        ex,
+        ey,
+        distance: Math.hypot(dx * spacing[0], dy * spacing[1]),
+      }
+    const label = `${Math.round(Math.hypot(dx, dy))} px`
+    return { sx, sy, ex, ey, distance: 0, label }
   })
   let box: SlideOverlayContent['box'] = null
   if (source.selection) {
@@ -73,20 +79,7 @@ export function slideOverlayContent(
     const [x1, y1] = toDevice(source.selection.end)
     box = { x0, y0, x1, y1 }
   }
-  return {
-    rulers,
-    box,
-    style: {
-      measureLineColor: style.measureLineColor ?? UI_DEFAULTS.measureLineColor,
-      measureTextColor: style.measureTextColor ?? UI_DEFAULTS.measureTextColor,
-      rulerWidth: style.rulerWidth ?? UI_DEFAULTS.rulerWidth,
-      isMeasureUnitsVisible: spacing
-        ? (style.isMeasureUnitsVisible ?? UI_DEFAULTS.isMeasureUnitsVisible)
-        : false,
-      selectionBoxColor:
-        style.selectionBoxColor ?? UI_DEFAULTS.selectionBoxColor,
-    },
-  }
+  return { rulers, box, style: { ...UI_DEFAULTS, ...style } }
 }
 
 /** The overlay as line and glyph batches, for either backend's renderers. */

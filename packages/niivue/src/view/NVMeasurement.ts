@@ -132,7 +132,7 @@ export function rulerTickLabels(
 }
 
 /** Format distance with smart decimals. */
-export function formatDistance(dist: number, showUnits: boolean): string {
+function formatDistance(dist: number, showUnits: boolean): string {
   let decimals = 2
   if (dist > 9) decimals = 1
   if (dist > 99) decimals = 0
@@ -148,13 +148,15 @@ export function measureTextBack(textColor: number[]): number[] {
     : [1, 1, 1, 0.5]
 }
 
-/** A ruler between two canvas points, `distance` long in its units. */
+/** A ruler between two canvas points, `distance` mm long (0: no ticks). */
 export type ScreenRuler = {
   sx: number
   sy: number
   ex: number
   ey: number
   distance: number
+  /** Replaces the formatted distance. */
+  label?: string
 }
 
 /**
@@ -180,7 +182,7 @@ export function buildRulers(
   const textBack = measureTextBack(textColor)
   const lines: LineData[] = []
   const labels: GlyphBatch[] = []
-  for (const { sx, sy, ex, ey, distance } of rulers) {
+  for (const { sx, sy, ex, ey, distance, label: text } of rulers) {
     for (const [x0, y0, x1, y1] of rulerSegments(
       sx,
       sy,
@@ -195,7 +197,7 @@ export function buildRulers(
       const b = buildText(t.str, t.x, t.y, 0.5, textColor, 0.5, 0.5)
       if (b.count > 0) labels.push(b)
     }
-    const label = formatDistance(distance, style.isMeasureUnitsVisible)
+    const label = text ?? formatDistance(distance, style.isMeasureUnitsVisible)
     const batch = buildText(
       label,
       (sx + ex) * 0.5,

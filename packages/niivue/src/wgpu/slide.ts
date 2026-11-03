@@ -21,8 +21,6 @@ import { timeChunkPhase } from '@/volume/chunkTiming'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 
-// Storage sizes for the overlay, as NVViewGPU's: 48 B a line, 64 B a glyph.
-
 const shaderCode = /* wgsl */ `
 struct SlideUniforms {
   // Four NDC corners packed as (x, y) pairs in triangle-strip order.
@@ -262,6 +260,7 @@ export class SlideRendererGPU {
     await this._lines.init(device, this._format, 1, null)
     await this._font.init(device, this._format, 1, ubuntu, null)
     this._lineStorage = device.createBuffer({
+      // 48 B a line and 64 B a glyph, as NVViewGPU's.
       size: SLIDE_OVERLAY_MAX_LINES * 48,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })

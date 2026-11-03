@@ -22,7 +22,6 @@ export function buildPlaneOutlineLines(
   defaultColor: number[],
 ): LineData[] {
   const lines: LineData[] = []
-  if (outlines.length === 0) return lines
   for (const tile of screenSlices) {
     const mvp = tile.mvpMatrix
     const ltwh = tile.leftTopWidthHeight
@@ -53,7 +52,6 @@ export function buildPlaneOutline3DRenderData(
   const indices: number[] = []
   for (const o of outlines) {
     const c = o.cornersMM
-    if (c.length !== 4) continue
     const [r, g, b, a] = o.color ?? defaultColor
     const centre = [0, 1, 2].map(
       (k) => (c[0][k] + c[1][k] + c[2][k] + c[3][k]) / 4,

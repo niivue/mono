@@ -70,6 +70,23 @@ const SPEC: TextAreaSpec = {
 const TEXT = 'abc def ghij'
 
 describe('wrapRows', () => {
+  it('never breaks inside a cluster', () => {
+    const t = 'a\u{1F1EF}\u{1F1F5}e\u0301' // a, flag, e plus acute
+    const adv = [7, 7, 0, 0, 0, 7, 0]
+    expect(wrapRows(t, adv, 7)).toEqual([
+      { start: 0, end: 1, hard: false },
+      { start: 1, end: 5, hard: false },
+      { start: 5, end: 7, hard: true },
+    ])
+    // A forced break of a too-wide cluster keeps it whole.
+    expect(wrapRows(t, [7, 9, 0, 0, 0, 7, 0], 8)[1]).toEqual({
+      start: 1,
+      end: 5,
+      hard: false,
+    })
+    expect(caretInRow(t, adv, { start: 5, end: 7, hard: true }, 5)).toBe(7)
+  })
+
   it('breaks after the last space that fits and keeps the final row hard', () => {
     expect(wrapRows(TEXT, SEVENS(TEXT.length), 40)).toEqual([
       { start: 0, end: 4, hard: false },

@@ -28,6 +28,7 @@ import {
   insertText,
   selectionOf,
   setCaret,
+  snapToBoundary,
   type TextEditState,
 } from './textEdit'
 import type { UIKitTextItem } from './textOverlay'
@@ -323,7 +324,7 @@ export function textAreaWrapWidth(
  * Break `text` into rows no wider than `maxWidth`: at every newline, else
  * after the last space that fits (the space may overhang the edge), else
  * before the first glyph that does not fit. Every row holds at least one
- * code unit unless its paragraph is empty, and the newline that ends a
+ * cluster unless its paragraph is empty, and the newline that ends a
  * paragraph belongs to no row (it sits at the hard row's `end`).
  */
 export function wrapRows(
@@ -359,7 +360,7 @@ export function wrapRows(
           }
         }
       }
-      const end = k > i ? k : Math.max(j, i + 1)
+      const end = snapToBoundary(text, k > i ? k : Math.max(j, i + 1), true)
       rows.push({ start: i, end, hard: end === q })
       i = end
     }
@@ -403,7 +404,7 @@ export function caretInRow(
 ): number {
   let x = 0
   for (let i = row.start; i < row.end; i++) {
-    if (px < x + advances[i] / 2) return i
+    if (px < x + advances[i] / 2) return snapToBoundary(text, i, true)
     x += advances[i]
   }
   if (!row.hard && row.end > row.start && text[row.end - 1] === ' ') {

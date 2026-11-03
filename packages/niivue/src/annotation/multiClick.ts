@@ -21,18 +21,22 @@ export function shouldAppendMultiClickPoint(
 
 /**
  * Whether a multi-click contour must abandon its prior points and start again.
- * A contour belongs to one exact slice, not merely one slice orientation.
+ * A contour belongs to one exact slice, not merely one slice orientation:
+ * depths within `tolerance` are the same slice. The caller passes texture
+ * depths and half a slice when it has a volume, since on an oblique volume the
+ * mm depth varies across one slice.
  */
 export function shouldStartFreshMultiClickContour(
   hasPoints: boolean,
   previousSliceType: number,
-  previousSlicePosition: number,
+  previousDepth: number,
   sliceType: number,
-  slicePosition: number,
+  depth: number,
+  tolerance = 1e-3,
 ): boolean {
   return (
     !hasPoints ||
     previousSliceType !== sliceType ||
-    Math.abs(previousSlicePosition - slicePosition) > 1e-3
+    Math.abs(previousDepth - depth) > tolerance
   )
 }

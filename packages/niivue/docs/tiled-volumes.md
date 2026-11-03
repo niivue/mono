@@ -230,6 +230,8 @@ budget (what stays GPU-resident) both measure `texDimsÂ·8` and **must agree** â€
 otherwise the manager evicts bricks the plan included and blocks stop rendering.
 A consumer sets `maxChunkResidencyBytes` to the same value it passes as the plan's
 `budgetBytes`.
+Retiring bricks held by a `keepUntilCovered` swap count against the same budget
+and are evicted first (see `budget-plans.md`).
 
 ### Focus indicators
 

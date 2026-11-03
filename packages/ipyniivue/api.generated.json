@@ -4226,10 +4226,16 @@
           "tsType": "ChunkPlan",
           "optional": false,
           "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "{ keepUntilCovered?: boolean | undefined; }",
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Swap a loaded chunked/streamed volume's tiling plan in place (e.g. a\nmulti-LOD refocus). Unchanged bricks keep their resident GPU textures; only\nchanged/new bricks stream. Far cheaper than reloading the volume, and it\ndoesn't reset the camera/crosshair. The volume must already be loaded with a\n`chunkSource`; otherwise this is a no-op.",
+      "doc": "Swap a loaded chunked/streamed volume's tiling plan in place (e.g. a\nmulti-LOD refocus). Unchanged bricks keep their resident GPU textures; only\nchanged/new bricks stream. Far cheaper than reloading the volume, and it\ndoesn't reset the camera/crosshair. The volume must already be loaded with a\n`chunkSource`; otherwise this is a no-op. With `keepUntilCovered`, replaced\nbricks keep drawing until the bricks covering them are resident (see\n`swapPolicy` on {@link loadChunkedVolume}'s options).",
       "returnsDoc": null
     },
     {

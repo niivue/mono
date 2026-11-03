@@ -1954,21 +1954,24 @@ and its volumes alive."""
         """
         self.send({"cmd": "stopAnimation", "args": []})
 
-    def swap_volume_chunk_plan(self, volume_id: Any, plan: Any) -> None:
+    def swap_volume_chunk_plan(self, volume_id: Any, plan: Any, options: Any = _UNSET) -> None:
         """Swap a loaded chunked/streamed volume's tiling plan in place (e.g.
 
         a
         multi-LOD refocus). Unchanged bricks keep their resident GPU textures; only
         changed/new bricks stream. Far cheaper than reloading the volume, and it
         doesn't reset the camera/crosshair. The volume must already be loaded with a
-        `chunkSource`; otherwise this is a no-op.
+        `chunkSource`; otherwise this is a no-op. With `keepUntilCovered`, replaced
+        bricks keep drawing until the bricks covering them are resident (see
+        `swapPolicy` on {@link loadChunkedVolume}'s options).
 
         Parameters
         ----------
         volume_id : string
         plan : ChunkPlan
+        options : { keepUntilCovered?: boolean | undefined; }
         """
-        self.send({"cmd": "swapVolumeChunkPlan", "args": _make_args(volume_id, plan)})
+        self.send({"cmd": "swapVolumeChunkPlan", "args": _make_args(volume_id, plan, options)})
 
     def update_gl_volume(self) -> None:
         """Rebuild every GPU resource from the model, re-uploading every mesh.

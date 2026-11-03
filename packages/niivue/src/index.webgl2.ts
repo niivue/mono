@@ -340,6 +340,7 @@ export {
   type BudgetPlanName,
   type BudgetPlanOptions,
   type BudgetPlanSpec,
+  type SwapPolicy,
   BUDGET_PLANS,
   resolveBudgetPlan,
   type ResolvedOptions as ResolvedBudgetOptions,

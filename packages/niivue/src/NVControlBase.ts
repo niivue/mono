@@ -261,7 +261,11 @@ type ViewBackend = {
   updateMeshVertices: (mesh: NVMeshType) => boolean
   updateAffineOverlays?: () => Promise<boolean>
   setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
-  swapChunkedVolumePlan?: (vol: NVImage, plan: ChunkPlan) => Promise<void>
+  swapChunkedVolumePlan?: (
+    vol: NVImage,
+    plan: ChunkPlan,
+    keepUntilCovered?: boolean,
+  ) => Promise<void>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -5207,15 +5211,25 @@ export default class NiiVue extends EventTarget {
    * multi-LOD refocus). Unchanged bricks keep their resident GPU textures; only
    * changed/new bricks stream. Far cheaper than reloading the volume, and it
    * doesn't reset the camera/crosshair. The volume must already be loaded with a
-   * `chunkSource`; otherwise this is a no-op.
+   * `chunkSource`; otherwise this is a no-op. With `keepUntilCovered`, replaced
+   * bricks keep drawing until the bricks covering them are resident (see
+   * `swapPolicy` on {@link loadChunkedVolume}'s options).
    */
-  async swapVolumeChunkPlan(volumeId: string, plan: ChunkPlan): Promise<void> {
+  async swapVolumeChunkPlan(
+    volumeId: string,
+    plan: ChunkPlan,
+    options: { keepUntilCovered?: boolean } = {},
+  ): Promise<void> {
     const vol = this.model.volumes.find(
       (v) => v.id === volumeId || v.name === volumeId,
     )
     if (!vol) return
     vol.chunkPlan = plan
-    await this.view?.swapChunkedVolumePlan?.(vol, plan)
+    await this.view?.swapChunkedVolumePlan?.(
+      vol,
+      plan,
+      options.keepUntilCovered ?? false,
+    )
     this.drawScene()
   }
 

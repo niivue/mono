@@ -675,10 +675,19 @@ export default class NVView {
     await this.volumeRenderer.setCoarseFloor(device, coarseVol)
   }
 
-  async swapChunkedVolumePlan(vol: NVImage, plan: ChunkPlan): Promise<void> {
+  async swapChunkedVolumePlan(
+    vol: NVImage,
+    plan: ChunkPlan,
+    keepUntilCovered = false,
+  ): Promise<void> {
     const device = this.device
     if (!device) return
-    await this.volumeRenderer.swapChunkedVolumePlan(device, vol, plan)
+    await this.volumeRenderer.swapChunkedVolumePlan(
+      device,
+      vol,
+      plan,
+      keepUntilCovered,
+    )
   }
 
   async updateAffineOverlays(): Promise<boolean> {

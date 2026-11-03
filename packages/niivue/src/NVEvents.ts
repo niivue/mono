@@ -140,6 +140,9 @@ export type ChunkStreamDetail = {
   total: number
   staleDropped: number
   predicted: number
+  /** Replaced bricks still drawn by a `keepUntilCovered` swap, and their GPU bytes. */
+  retiring: number
+  retiringBytes: number
   decoded: DecodedChunkStats
 }
 

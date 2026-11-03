@@ -568,10 +568,19 @@ export default class NVGlview {
     this.volumeRenderer.setCoarseFloor(gl, coarseVol)
   }
 
-  async swapChunkedVolumePlan(vol: NVImage, plan: ChunkPlan): Promise<void> {
+  async swapChunkedVolumePlan(
+    vol: NVImage,
+    plan: ChunkPlan,
+    keepUntilCovered = false,
+  ): Promise<void> {
     const gl = this.gl
     if (!gl) return
-    await this.volumeRenderer.swapChunkedVolumePlan(gl, vol, plan)
+    await this.volumeRenderer.swapChunkedVolumePlan(
+      gl,
+      vol,
+      plan,
+      keepUntilCovered,
+    )
   }
 
   async updateAffineOverlays(): Promise<boolean> {

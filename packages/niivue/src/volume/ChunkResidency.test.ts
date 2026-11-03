@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { ChunkResidencyManager } from './ChunkResidency'
+import type { ChunkPlan } from './chunking'
 
 interface FakeChunk {
   id: string
@@ -578,5 +579,110 @@ describe('ChunkResidencyManager stale-request drop', () => {
     m.admit(2, fakeChunk('c2', 100))
     expect(m.pendingUploadCount).toBe(0)
     expect(m.staleDropCount).toBe(0)
+  })
+})
+
+describe('ChunkResidencyManager make-before-break remap', () => {
+  // One brick split into two halves along x, as a refocus refines it.
+  const whole = { origin: [0, 0, 0], dims: [2, 1, 1] }
+  const left = { origin: [0, 0, 0], dims: [1, 1, 1] }
+  const right = { origin: [1, 0, 0], dims: [1, 1, 1] }
+  const plan = (regions: (typeof whole)[]) =>
+    ({
+      chunks: regions.map((r) => ({
+        voxelOrigin: r.origin,
+        voxelDims: r.dims,
+      })),
+    }) as unknown as ChunkPlan
+  const retain = (
+    oldRegions: (typeof whole)[],
+    newRegions: (typeof whole)[],
+  ) => ({ oldPlan: plan(oldRegions), newPlan: plan(newRegions) })
+
+  test('a replaced brick draws until every brick over it is resident', () => {
+    const m = manager(1)
+    const old = fakeChunk('whole', 100)
+    m.admit(0, old)
+    m.remap(new Map(), 2, retain([whole], [left, right]))
+    expect(old.destroyed).toBe(false)
+    expect(m.retiringChunks.map((t) => [t.index, t.covers])).toEqual([
+      [0, [0, 1]],
+    ])
+    expect(m.isCoveredByRetiring(0)).toBe(true)
+    expect(m.retiringBytes).toBe(100)
+    m.admit(0, fakeChunk('left', 50))
+    expect(old.destroyed).toBe(false)
+    expect(m.isCoveredByRetiring(0)).toBe(true)
+    m.admit(1, fakeChunk('right', 50))
+    expect(old.destroyed).toBe(true)
+    // Revealed bricks do not fade in over the floor.
+    expect(m.fadeFraction(0, performance.now(), 1000)).toBe(1)
+    expect(m.fadeFraction(1, performance.now(), 1000)).toBe(1)
+    expect(m.retiringChunks).toHaveLength(0)
+    expect(m.isCoveredByRetiring(0)).toBe(false)
+    expect(m.retiringBytes).toBe(0)
+  })
+
+  test('an interrupted swap never keeps two retirees over one region', () => {
+    const m = manager(1)
+    const a = fakeChunk('whole', 100)
+    m.admit(0, a)
+    m.remap(new Map(), 2, retain([whole], [left, right]))
+    const bLeft = fakeChunk('left', 50)
+    m.admit(0, bLeft)
+    // Back to one whole brick before the right half arrives.
+    m.remap(new Map(), 1, retain([left, right], [whole]))
+    expect(m.retiringChunks.map((t) => t.chunk.id)).toEqual(['whole'])
+    expect(bLeft.destroyed).toBe(true)
+    expect(m.isCoveredByRetiring(0)).toBe(true)
+  })
+
+  test('a cover the working set never asks for does not keep a retiree', () => {
+    const m = manager(1)
+    const old = fakeChunk('whole', 100)
+    m.admit(0, old)
+    m.remap(new Map(), 2, retain([whole], [left, right]))
+    // The first frame after the swap has asked for nothing yet.
+    m.beginFrame()
+    expect(old.destroyed).toBe(false)
+    // Only the left half is in view; it streams in.
+    m.requestUpload(0)
+    m.takePendingUploads(1)
+    m.admit(0, fakeChunk('left', 50))
+    m.beginFrame()
+    expect(old.destroyed).toBe(true)
+    expect(m.isCoveredByRetiring(0)).toBe(false)
+  })
+
+  test('without retain, a remap frees replaced and retiring bricks', () => {
+    const m = manager(1)
+    const old = fakeChunk('whole', 100)
+    m.admit(0, old)
+    m.remap(new Map(), 2, retain([whole], [left, right]))
+    m.remap(new Map(), 2)
+    expect(old.destroyed).toBe(true)
+    expect(m.retiringChunks).toHaveLength(0)
+  })
+
+  test('retiring bricks give way first when the budget is short', () => {
+    const m = manager(1, 120)
+    const old = fakeChunk('whole', 100)
+    m.admit(0, old)
+    m.remap(new Map(), 2, retain([whole], [left, right]))
+    m.beginFrame()
+    const half = fakeChunk('left', 50)
+    m.admit(0, half)
+    expect(old.destroyed).toBe(true)
+    expect(half.destroyed).toBe(false)
+    expect(m.isCoveredByRetiring(1)).toBe(false)
+  })
+
+  test('destroy frees retiring bricks', () => {
+    const m = manager(1)
+    const old = fakeChunk('whole', 100)
+    m.admit(0, old)
+    m.remap(new Map(), 2, retain([whole], [left, right]))
+    m.destroy()
+    expect(old.destroyed).toBe(true)
   })
 })

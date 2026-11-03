@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  chunkDrawOrder,
   chunksBackToFront,
   chunksInFrustum,
   chunksNotClippedOut,
@@ -379,5 +380,36 @@ describe('independent overlay working set (shared MVP, own plan/matRAS)', () => 
     expect([...centered].sort((a, b) => a - b)).toEqual(all)
     const order = chunksBackToFront(overlay, [0, 0, 1])
     expect([...order].sort((a, b) => a - b)).toEqual(all)
+  })
+})
+
+describe('chunkDrawOrder', () => {
+  // The left half of an 8-voxel row was one brick; the new plan splits it.
+  const oldPlan = chunkVolume([8, 1, 1], 4, [0, 0, 0])
+  const newPlan = fourChunkPlan()
+  const retiring = [{ plan: oldPlan, index: 0 }]
+  const covered = (i: number) => i < 2
+
+  test('without retiring bricks it is chunksBackToFront', () => {
+    const ray = [1, 0.1, 0.2]
+    expect(
+      chunkDrawOrder(newPlan, [], () => false, ray).map((it) => it.index),
+    ).toEqual(chunksBackToFront(newPlan, ray))
+  })
+
+  test('a retiring brick replaces the bricks it covers, in depth order', () => {
+    for (const ray of [
+      [1, 0, 0],
+      [-1, 0, 0],
+    ]) {
+      const order = chunkDrawOrder(newPlan, retiring, covered, ray)
+      const labels = order.map((it) => (it.retiring ? 'old' : it.index))
+      const base = chunksBackToFront(newPlan, ray)
+      // Same sequence as the plain order with 0 and 1 collapsed into 'old'.
+      const expected = base
+        .map((i) => (i < 2 ? 'old' : i))
+        .filter((v, k, a) => v !== 'old' || a.indexOf('old') === k)
+      expect(labels).toEqual(expected)
+    }
   })
 })

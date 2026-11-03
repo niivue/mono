@@ -332,6 +332,8 @@ carry a `ChunkStreamDetail` — the same shape as the non-null return of
 | `total` | `number` | Bricks in the plan |
 | `staleDropped` | `number` | Cumulative queued uploads retired because the view moved on |
 | `predicted` | `number` | Cumulative speculative source reads |
+| `retiring` | `number` | Replaced bricks a `keepUntilCovered` swap still draws |
+| `retiringBytes` | `number` | GPU bytes those bricks hold |
 | `decoded` | `DecodedChunkStats` | Decoded-chunk (CPU byte) tier counters |
 
 #### `chunkStreamProgress`

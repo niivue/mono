@@ -1,3 +1,31 @@
+## 1.0.0-rc.79 (2026-11-03)
+
+### Features
+
+- ⚠️  **niivue:** rename alpha blend OVER to UNION ([#358](https://github.com/niivue/mono/issues/358))
+
+### Fixes
+
+- validate layoutInset in setter, options and documents ([#494](https://github.com/niivue/mono/issues/494))
+- emit change from loadMatcap and report matcap by name in nv-mcp ([#460](https://github.com/niivue/mono/issues/460), [#462](https://github.com/niivue/mono/issues/462))
+
+### Performance
+
+- **niivue:** skip multi-LOD candidates that cannot fit the budget ([#201](https://github.com/niivue/mono/issues/201))
+
+### Breaking Changes
+
+- **niivue:** rename alpha blend OVER to UNION  ([#358](https://github.com/niivue/mono/issues/358))
+  OVERLAY_ALPHA_BLEND.OVER is now OVERLAY_ALPHA_BLEND.UNION,
+  and the nv-mcp volumeOverlayAlphaBlend choice 'over' is now 'union'.
+  Numeric value 2 still works.
+  Claude-Session: https://claude.ai/code/session_01F6ttnQfdKTLt8jfvVRr7i4
+
+### Thank You
+
+- Claude
+- neurolabusc
+
 ## 1.0.0-rc.78 (2026-11-03)
 
 ### Fixes

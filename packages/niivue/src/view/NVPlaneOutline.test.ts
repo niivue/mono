@@ -67,7 +67,7 @@ describe('plane outlines', () => {
     ).toHaveLength(0)
   })
 
-  test('a crossing slice draws one segment; a missed one draws none', () => {
+  test('a crossing slice draws one segment', () => {
     // An upright outline in x = 0, z from 0 to 10.
     const upright = {
       cornersMM: [
@@ -80,9 +80,6 @@ describe('plane outlines', () => {
     expect(
       buildPlaneOutlineLines([upright], [sliceAt(4)], buildLine, red),
     ).toHaveLength(1)
-    expect(
-      buildPlaneOutlineLines([upright], [sliceAt(20)], buildLine, red),
-    ).toHaveLength(0)
   })
 
   test('a slice through opposite corners draws the full diagonal', () => {

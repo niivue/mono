@@ -1401,8 +1401,9 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Rectangles outlined in world mm, e.g. an NVSlide pane's field of view:
-   * a frame in the 3D render, projected onto every 2D slice. An outline needs
-   * four finite corners; one without is dropped.
+   * a frame in the 3D render; on a 2D slice, the whole rectangle where it lies
+   * in the slice, the crossing segment where the slice cuts it, nothing where
+   * it misses. An outline needs four finite corners; one without is dropped.
    */
   get planeOutlines(): PlaneOutline[] {
     return this.model.planeOutlines

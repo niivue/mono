@@ -700,6 +700,31 @@ describe('ChunkResidencyManager make-before-break remap', () => {
     expect(m.retiringChunks).toHaveLength(0)
   })
 
+  test('a retiree bridging two others joins one group with both', () => {
+    // Old A=[0,2) B=[4,6) C=[2,4), admitted in that order, over new
+    // [0,1) [1,3) [3,5) [5,6): A covers {0,1}, B {2,3}, C {1,2}.
+    const box = (x: number, w: number) => ({
+      origin: [x, 0, 0],
+      dims: [w, 1, 1],
+    })
+    const m = manager(3)
+    const old = ['A', 'B', 'C'].map((id) => fakeChunk(id, 10))
+    for (const [i, c] of old.entries()) m.admit(i, c)
+    m.remap(
+      new Map(),
+      4,
+      retain(
+        [box(0, 2), box(4, 2), box(2, 2)],
+        [box(0, 1), box(1, 2), box(3, 2), box(5, 1)],
+      ),
+    )
+    m.admit(2, fakeChunk('n2', 10))
+    m.admit(3, fakeChunk('n3', 10))
+    // C still hides new 2, so B must stay or [4,5) would draw nothing.
+    expect(m.isCoveredByRetiring(2)).toBe(true)
+    expect(old[1].destroyed).toBe(false)
+  })
+
   test('a short budget drops only as many retirees as it must', () => {
     const regions = [0, 1].map((x) => ({ origin: [x, 0, 0], dims: [1, 1, 1] }))
     const fine = [0, 1, 2, 3].map((x) => ({

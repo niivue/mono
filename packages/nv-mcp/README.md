@@ -261,7 +261,7 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `list_measurements` | | The distance measurements drawn on the slices, each with its ends in millimetres and its length |
 | `edit_measurements` | `action`, `start_mm?`, `end_mm?`, `slice?`, `slice_index?`, `slice_position?`, `index?` | `add` a distance between two points, `remove` one by index, or `clear` them all, the angles (`clear_angles`) or the distances (`clear_distances`) |
 | `set_boxes` | `focus?`, `boxes?` | Outlines boxes on the 3D render (not the slices), each `{min, max, color?, thickness?}` with its corners in millimetres, a colour `[r, g, b]` or `[r, g, b, a]` 0 to 1 (a yellow otherwise) and its edges in pixels (2 otherwise): one `focus` box, a set of up to 1000 `boxes`, or both; `null` takes either down. NiiVue's `focusBox` and `lodBoxes`; not saved with the document |
-| `set_plane_outlines` | `outlines` | Outlines up to 100 rectangles, each `{corners, color?, width?}` with four corners in millimetres, on every 2D slice (projected edges) and on the 3D render (a thin frame); the crosshair colour and 2 pixels (on the slices) otherwise. Replaces the set; `null` takes it down. NiiVue's `planeOutlines`; not saved with the document |
+| `set_plane_outlines` | `outlines` | Outlines up to 100 rectangles, each `{corners, color?, width?}` with four corners in millimetres, on a 2D slice the rectangle lies in (whole), on one that cuts it (the crossing segment; none on a slice it misses) and on the 3D render (a thin frame); the crosshair colour and 2 pixels (on the slices) otherwise. Replaces the set; `null` takes it down. NiiVue's `planeOutlines`; not saved with the document |
 
 ### Controls
 

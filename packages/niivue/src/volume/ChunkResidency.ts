@@ -171,7 +171,7 @@ export class ChunkResidencyManager<TChunk> {
     retain?: { oldPlan: ChunkPlan; newPlan: ChunkPlan },
   ): void {
     const next = new Map<number, ResidentChunk<TChunk>>()
-    if (!retain) this._dropRetiring(this._retiring)
+    if (!retain) this._dropRetiring(this._retiring, false)
     // A brick still hidden under an earlier retiree never showed; retiring it
     // too would draw that region twice.
     const hidden = this._covered
@@ -255,42 +255,47 @@ export class ChunkResidencyManager<TChunk> {
     const done = this._retiringGroups()
       .filter((g) => g.every((t) => t.covers.every(settled)))
       .flat()
-    // The bricks a retiring one hid replace it outright: a fade-in from here
-    // would be over the coarse floor, which is the drop this policy avoids.
-    for (const t of done) {
-      for (const i of t.covers) {
-        const r = this._resident.get(i)
-        if (r) r.admittedAt = Number.NEGATIVE_INFINITY
-      }
-    }
     if (done.length > 0) this._dropRetiring(done)
     else this._covered = new Set(this._retiring.flatMap((t) => t.covers))
   }
 
   /** Retiring chunks partitioned into groups linked by a shared cover. */
   private _retiringGroups(): RetiringChunk<TChunk>[][] {
-    const groupOf = new Map<number, RetiringChunk<TChunk>[]>()
-    const groups = new Set<RetiringChunk<TChunk>[]>()
-    for (const t of this._retiring) {
-      let g: RetiringChunk<TChunk>[] = [t]
-      for (const i of t.covers) {
-        const other = groupOf.get(i)
-        if (other && other !== g) {
-          groups.delete(g)
-          other.push(...g)
-          for (const u of g) for (const j of u.covers) groupOf.set(j, other)
-          g = other
-        }
-        groupOf.set(i, g)
-      }
-      groups.add(g)
+    const parent = this._retiring.map((_, k) => k)
+    const find = (k: number): number => {
+      while (parent[k] !== k) k = parent[k]
+      return k
     }
-    return [...groups]
+    const owner = new Map<number, number>()
+    for (const [k, t] of this._retiring.entries()) {
+      for (const i of t.covers) {
+        const o = owner.get(i)
+        if (o === undefined) owner.set(i, k)
+        else parent[find(o)] = find(k)
+      }
+    }
+    const groups = new Map<number, RetiringChunk<TChunk>[]>()
+    for (const [k, t] of this._retiring.entries()) {
+      const root = find(k)
+      const g = groups.get(root)
+      if (g) g.push(t)
+      else groups.set(root, [t])
+    }
+    return [...groups.values()]
   }
 
-  private _dropRetiring(list: readonly RetiringChunk<TChunk>[]): void {
+  private _dropRetiring(
+    list: readonly RetiringChunk<TChunk>[],
+    reveal = true,
+  ): void {
     const gone = new Set(list)
     for (const t of gone) {
+      // The bricks a retiring one hid replace it outright: a fade-in from here
+      // would be over the coarse floor, which is the drop this policy avoids.
+      for (const i of reveal ? t.covers : []) {
+        const r = this._resident.get(i)
+        if (r) r.admittedAt = Number.NEGATIVE_INFINITY
+      }
       this._hooks.destroy(t.chunk)
       this._retiringBytes -= t.bytes
     }
@@ -631,7 +636,7 @@ export class ChunkResidencyManager<TChunk> {
 
   /** Destroy every resident chunk's GPU resources and reset all state. */
   destroy(): void {
-    this._dropRetiring(this._retiring)
+    this._dropRetiring(this._retiring, false)
     for (const r of this._resident.values()) this._hooks.destroy(r.chunk)
     this._resident.clear()
     this._residentBytes = 0

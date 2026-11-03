@@ -1478,9 +1478,10 @@ export type DragOverlay = {
 
 /**
  * A rectangle outlined in world space, e.g. the field of view of an NVSlide
- * pane on the volume it was cut from. Drawn as a frame in the 3D render and
- * projected onto every 2D slice: a rectangle on a parallel slice, a line on an
- * orthogonal one.
+ * pane on the volume it was cut from. Drawn as a frame in the 3D render. On a
+ * 2D slice it lies in (within half the largest voxel size) it draws as the
+ * whole rectangle, on a slice that cuts it as the crossing segment, and on a
+ * slice it misses not at all; clipped to the tile.
  */
 export type PlaneOutline = {
   /** The four corners in world mm, in order around the rectangle. */

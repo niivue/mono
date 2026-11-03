@@ -260,8 +260,9 @@ export function registerMarkTools(
   registerSimple(server, context, 'set_plane_outlines', {
     title: 'Outline rectangles in the scene',
     description:
-      'Outlines rectangles given by four corners in millimetres: on each 2D slice as their ' +
-      'projected edges, and on the 3D render as a thin frame. They are not saved with the ' +
+      'Outlines rectangles given by four corners in millimetres: on a 2D slice a rectangle ' +
+      'lies in as the whole rectangle, on one that cuts it as the crossing segment, on one ' +
+      'it misses not at all; on the 3D render as a thin frame. They are not saved with the ' +
       'document. Reports how many are shown.',
     inputSchema: MARK_SCHEMAS.set_plane_outlines,
   })

@@ -39,8 +39,9 @@ export interface SlideOverlayContent {
 
 /**
  * Rulers and the contrast selection box, placed for the slide's current view.
- * Lengths use the slide's `pixelSpacingMM`; without it a ruler has no ticks
- * and reads in base pixels.
+ * Lengths use the slide's `pixelSpacingMM` (a sub-millimetre span reads in
+ * micrometres, "180.0 um"); without it a ruler has no ticks and reads in base
+ * pixels.
  */
 export function slideOverlayContent(
   slide: NVSlide,
@@ -65,15 +66,8 @@ export function slideOverlayContent(
     if (spacing) {
       const mm = Math.hypot(dx * spacing[0], dy * spacing[1])
       // Sub-millimetre spans read in micrometres, the scale most slides live at.
-      if (mm >= 1) return { sx, sy, ex, ey, distance: mm }
-      return {
-        sx,
-        sy,
-        ex,
-        ey,
-        distance: mm,
-        label: `${(mm * 1000).toFixed(1)} um`,
-      }
+      const label = mm < 1 ? `${(mm * 1000).toFixed(1)} um` : undefined
+      return { sx, sy, ex, ey, distance: mm, label }
     }
     const label = `${Math.round(Math.hypot(dx, dy))} px`
     return { sx, sy, ex, ey, distance: 0, label }

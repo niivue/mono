@@ -24,7 +24,8 @@ export interface NVSlideControllerOptions {
   onCrosshair?: (point: NVSlidePoint) => void
   /**
    * A windowing drag moved by (dx, dy) CSS pixels since the last call; `done`
-   * on release. As NiiVue's windowing: x widens the window, y lowers its centre.
+   * on release (a click without a drag reports nothing). As NiiVue's windowing:
+   * x widens the window, y lowers its centre.
    */
   onWindow?: (dx: number, dy: number, done: boolean) => void
   /**

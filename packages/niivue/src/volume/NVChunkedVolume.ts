@@ -1146,15 +1146,21 @@ export class NVChunkedVolume {
     const { calMin, calMax } = this.loadOptions
     const windowLo = windowOr(calMin, lo)
     const windowHi = windowOr(calMax, hi)
+    const placeholderLo = windowOr(calMin, 0)
+    const placeholderHi = windowOr(calMax, 1)
     for (const vol of targets) {
-      vol.calMin = windowLo
-      vol.calMax = windowHi
+      // A window that left the placeholder was set while the sample was in
+      // flight (setVolume, UIKit, nv-mcp); keep it (#489).
+      if (vol.calMin === placeholderLo && vol.calMax === placeholderHi) {
+        vol.calMin = windowLo
+        vol.calMax = windowHi
+        vol.hdr.cal_min = windowLo
+        vol.hdr.cal_max = windowHi
+      }
       vol.robustMin = lo
       vol.robustMax = hi
       vol.globalMin = globalMin
       vol.globalMax = globalMax
-      vol.hdr.cal_min = windowLo
-      vol.hdr.cal_max = windowHi
       // The generated label palette was sized to the placeholder range.
       const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, [
         globalMin,

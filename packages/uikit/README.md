@@ -404,6 +404,11 @@ buttons and the wheel over a focused field. A committed value is clamped to
 `[min, max]` (either end optional) and snapped to `step` (counted from `min`,
 or 0), and `onChange` fires once per committed change. The field shows only
 the glyphs that fit, scrolled by whole glyphs to keep the caret in view.
+Meta or Ctrl plus C, X and V copy, cut and paste as in a text input (the
+`clipboard` option names the bridge); a paste, or `paste(text)` from a host
+that handles the DOM paste event, is trimmed and maps a Unicode minus to `-`;
+anything still holding a character other than digits, sign, decimal point and
+exponent (`1,5`, `12 px`), or an empty clipboard, leaves the field unchanged.
 
 ```ts
 const numbers = new UIKitNumberInputOverlay(font, units)
@@ -595,9 +600,9 @@ and `createBrowserClipboard()` are the browser implementations (a hidden
 `navigator.clipboard`); each takes the browser object as a parameter so a
 test or another host can supply its own. Browsers only open a chooser or
 grant the clipboard inside a user activation, so call a bridge synchronously
-from a click, menu or key handler, as the widgets do. The text input and
-text area create the browser clipboard on first use unless their `clipboard`
-option names another bridge.
+from a click, menu or key handler, as the widgets do. The number input,
+text input and text area create the browser clipboard on first use unless
+their `clipboard` option names another bridge.
 
 `UIKitFilePickerOverlay` is the canvas half of `<input type="file">`: a push
 button ("Choose file...") composed from a button overlay beside a readout of

@@ -1,3 +1,13 @@
+## 1.0.0-rc.80 (2026-11-03)
+
+### Fixes
+
+- **niivue:** multi-click contours on oblique volumes stay on their slice ([#469](https://github.com/niivue/mono/issues/469))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.79 (2026-11-03)
 
 ### Features

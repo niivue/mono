@@ -368,6 +368,11 @@ describe('core tool schemas', () => {
       }),
     ).toMatch(/thickness/)
     expect(
+      await refused('set_plane_outlines', {
+        outlines: [{ corners: [[0, 0, 0]] }],
+      }),
+    ).toMatch(/corners/)
+    expect(
       await refused('edit_annotations', {
         action: 'set_style',
         style: { strokeColor: [1, 0, 0] },

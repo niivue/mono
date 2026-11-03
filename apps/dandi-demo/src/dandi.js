@@ -14,7 +14,8 @@
 // opens as fast as a 100 MB one, because only the visible bricks and tiles are
 // fetched.
 //
-// Add `?backend=webgpu` to the URL to run both panes on WebGPU.
+// Both panes run on WebGPU; add `?backend=webgl2` for WebGL2, `?aa=on` for
+// anti-aliasing.
 //
 // Caveat worth knowing (and shown in the HUD): a volumetric pyramid is chunked
 // CUBICALLY, so reading one plane at the finest level decodes a whole slab of
@@ -39,7 +40,8 @@ import NiiVue, {
 import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
 
 const params = new URLSearchParams(location.search)
-const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
+const backend = params.get('backend') === 'webgl2' ? 'webgl2' : 'webgpu'
+const isAntiAlias = params.get('aa') === 'on'
 
 // DANDI serves every zarr asset from one public, CORS-enabled bucket, keyed by
 // the asset's zarr id -- no API call and no credentials needed to stream one.
@@ -176,6 +178,7 @@ function el(id) {
 
 const els = {
   backendSelect: document.getElementById('backendSelect'),
+  aaSelect: document.getElementById('aaSelect'),
   dataset: el('dataset'),
   axis: el('axis'),
   plane: el('plane'),
@@ -208,12 +211,18 @@ const els = {
 // The backend menu reloads with ?backend=, since the page builds its
 // renderers once (#488). Wired before anything loads, so it works even if
 // loading fails.
-els.backendSelect.value = backend
-els.backendSelect.onchange = () => {
+// Anti-aliasing is a context attribute, fixed when the view is created, so it
+// reloads the same way.
+function reloadWith(key, value) {
   const url = new URL(location.href)
-  url.searchParams.set('backend', els.backendSelect.value)
+  url.searchParams.set(key, value)
   location.href = url.href
 }
+els.backendSelect.value = backend
+els.backendSelect.onchange = () =>
+  reloadWith('backend', els.backendSelect.value)
+els.aaSelect.value = isAntiAlias ? 'on' : 'off'
+els.aaSelect.onchange = () => reloadWith('aa', els.aaSelect.value)
 
 let nv = null
 let slideView = null
@@ -1220,6 +1229,7 @@ async function main() {
   if (wanted && Object.hasOwn(DATASETS, wanted)) els.dataset.value = wanted
   nv = new NiiVue({
     backend,
+    isAntiAlias,
     backgroundColor: [0.02, 0.03, 0.03, 1],
     isColorbarVisible: true,
     sliceType: VIEWS[els.view.value] ?? SLICE_TYPE.RENDER,

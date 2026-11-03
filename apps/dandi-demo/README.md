@@ -11,7 +11,8 @@ bunx nx build dandi-demo
 
 URL options:
 
-- `?backend=webgpu` runs both panes on WebGPU (`webgl2` is the default).
+- `?backend=webgl2` runs both panes on WebGL2 (WebGPU is the default).
+- `?aa=on` turns on anti-aliasing for the volume pane (off by default).
 - `?dataset=<key>` opens that Dandiset: `oct-small` (default, the 106 MB human
   brain OCT), `oct`, `neun`, `hipct` or `spim`.
 - `?local` reads `public/zarr/<zarrId>` instead of S3 (gitignored). Fetch

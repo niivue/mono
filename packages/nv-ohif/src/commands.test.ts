@@ -684,6 +684,120 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.removed).toHaveLength(1)
   })
 
+  describe('thrown mapping errors (#118)', () => {
+    function throwingAdd(viewportId: string) {
+      const nv = stubNiivue()
+      register(viewportId, nv)
+      updateNiivueViewport(viewportId, {
+        displaySets: backing as unknown as Parameters<
+          typeof updateNiivueViewport
+        >[1]['displaySets'],
+      })
+      const svc = measurementServices(viewportId, backing)
+      const ms = (
+        svc.servicesManager as NonNullable<
+          OhifExtensionParams['servicesManager']
+        >
+      ).services.measurementService as {
+        addRawMeasurement: (...args: unknown[]) => unknown
+      }
+      const realAdd = ms.addRawMeasurement
+      const state = { attempts: 0, fail: true }
+      ms.addRawMeasurement = (...args) => {
+        state.attempts += 1
+        if (state.fail) throw new Error('mapping failed')
+        return realAdd(...args)
+      }
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      const reconcile = () =>
+        reconcileNiivueAnnotations(viewportId, svc.servicesManager)
+      return { nv, svc, state, warn, reconcile }
+    }
+
+    it('logs the first failure once and stops after the cap', () => {
+      const t = throwingAdd('vp-cap')
+      t.nv.annotations = [ellipse('cap')]
+      for (let i = 0; i < 5; i++) t.reconcile()
+      expect(t.state.attempts).toBe(3)
+      expect(t.warn).toHaveBeenCalledTimes(1)
+      t.warn.mockRestore()
+    })
+
+    it('retries an edited annotation (new revision)', () => {
+      const t = throwingAdd('vp-cap-edit')
+      t.nv.annotations = [ellipse('e')]
+      for (let i = 0; i < 4; i++) t.reconcile()
+      expect(t.state.attempts).toBe(3)
+      t.nv.annotations = [{ ...ellipse('e'), text: 'edited' }]
+      t.state.fail = false
+      t.reconcile()
+      expect(t.state.attempts).toBe(4)
+      expect(t.svc.added).toHaveLength(1)
+      t.warn.mockRestore()
+    })
+
+    it('a success clears the failure state', () => {
+      const t = throwingAdd('vp-cap-ok')
+      t.nv.annotations = [ellipse('ok')]
+      t.reconcile()
+      t.state.fail = false
+      t.reconcile()
+      expect(t.svc.added).toHaveLength(1)
+      // Fail again on a fresh revision: the uid logs anew and gets 3 attempts.
+      t.state.fail = true
+      t.nv.annotations = [{ ...ellipse('ok'), text: 'v2' }]
+      for (let i = 0; i < 5; i++) t.reconcile()
+      expect(t.state.attempts).toBe(2 + 3)
+      expect(t.warn).toHaveBeenCalledTimes(2)
+      t.warn.mockRestore()
+    })
+
+    it('removal clears the failure state', () => {
+      const t = throwingAdd('vp-cap-rm')
+      t.nv.annotations = [ellipse('rm')]
+      for (let i = 0; i < 3; i++) t.reconcile()
+      t.nv.annotations = []
+      t.reconcile()
+      // Same id and content again: a fresh uid with no cap carried over.
+      t.nv.annotations = [ellipse('rm')]
+      t.reconcile()
+      expect(t.state.attempts).toBe(4)
+      expect(t.warn).toHaveBeenCalledTimes(2)
+      t.warn.mockRestore()
+    })
+
+    it('caps a throwing row removal and drops its bookkeeping', () => {
+      const nv = stubNiivue()
+      register('vp-cap-remove', nv)
+      updateNiivueViewport('vp-cap-remove', {
+        displaySets: backing as unknown as Parameters<
+          typeof updateNiivueViewport
+        >[1]['displaySets'],
+      })
+      const svc = measurementServices('vp-cap-remove', backing)
+      let attempts = 0
+      const ms = (
+        svc.servicesManager as NonNullable<
+          OhifExtensionParams['servicesManager']
+        >
+      ).services.measurementService as { remove: (uid: string) => void }
+      ms.remove = () => {
+        attempts += 1
+        throw new Error('remove failed')
+      }
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      const annotation = ellipse('gone')
+      nv.annotations = [annotation]
+      reflectNiivueAnnotation('vp-cap-remove', svc.servicesManager, annotation)
+      nv.annotations = []
+      for (let i = 0; i < 5; i++)
+        reconcileNiivueAnnotations('vp-cap-remove', svc.servicesManager)
+      expect(attempts).toBe(3)
+      expect(warn).toHaveBeenCalledTimes(1)
+      warn.mockRestore()
+    })
+  })
+
   it('clearNiivueAnnotations removes every reflected row for the viewport', () => {
     const svc = setup('vp-a4')
     reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c1'))

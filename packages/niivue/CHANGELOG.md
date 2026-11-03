@@ -1,3 +1,30 @@
+## 1.0.0-rc.76 (2026-11-03)
+
+### Features
+
+- **niivue:** zarrVersion option skips the OME-Zarr format probe ([e0bb3066](https://github.com/niivue/mono/commit/e0bb3066))
+- **niivue:** slide renderers take isNearestInterpolation ([d2cea204](https://github.com/niivue/mono/commit/d2cea204))
+- **niivue:** keepUntilCovered swap policy for streamed volumes ([03a309f3](https://github.com/niivue/mono/commit/03a309f3))
+- **niivue:** slide rulers and contrast box, planeOutlines for a field of view ([180396f3](https://github.com/niivue/mono/commit/180396f3))
+- **niivue:** NVSlideController, primary and secondary gestures for NVSlide ([d5c27040](https://github.com/niivue/mono/commit/d5c27040))
+- **dandi-demo:** link the panes' crosshair depth and colour ([e29833b7](https://github.com/niivue/mono/commit/e29833b7))
+
+### Fixes
+
+- union retiree groups as a disjoint set; audit tidy-ups ([9ee5fead](https://github.com/niivue/mono/commit/9ee5fead))
+- draw the full segment when a slice crosses outline corners ([948d595a](https://github.com/niivue/mono/commit/948d595a))
+- address review findings on slide gestures and streaming ([af729fe9](https://github.com/niivue/mono/commit/af729fe9))
+- **niivue:** dev server app files: 404 for folders and paths outside the app ([e1f12462](https://github.com/niivue/mono/commit/e1f12462))
+- **niivue:** dev server runs NiiVue from source and generates fixtures ([1394c3da](https://github.com/niivue/mono/commit/1394c3da))
+- **niivue:** dev server sends demo app data files as bytes, 404s missing ones ([da0febf6](https://github.com/niivue/mono/commit/da0febf6))
+- final audit nits for plane outlines; demo README names the default ([9dfaf579](https://github.com/niivue/mono/commit/9dfaf579))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.75 (2026-11-02)
 
 ### Fixes

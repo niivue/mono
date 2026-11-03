@@ -1,3 +1,25 @@
+## 1.0.0-rc.59 (2026-11-03)
+
+### Features
+
+- **nv-mcp:** set_plane_outlines drives nv.planeOutlines ([b487c135](https://github.com/niivue/mono/commit/b487c135))
+
+### Fixes
+
+- union retiree groups as a disjoint set; audit tidy-ups ([9ee5fead](https://github.com/niivue/mono/commit/9ee5fead))
+- final audit nits for plane outlines; demo README names the default ([9dfaf579](https://github.com/niivue/mono/commit/9dfaf579))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.76
+- Updated uikit to 1.0.0-rc.67
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.58 (2026-11-02)
 
 ### Fixes

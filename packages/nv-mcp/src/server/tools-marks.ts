@@ -39,7 +39,7 @@ const OUTLINE_ARG = z.strictObject({
     .number()
     .positive()
     .optional()
-    .describe('The edge width in pixels. 2 otherwise.'),
+    .describe('The edge width in pixels on 2D slices. 2 otherwise.'),
 })
 
 export const MARK_SCHEMAS = {

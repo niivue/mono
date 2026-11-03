@@ -12,10 +12,10 @@ bunx nx build dandi-demo
 URL options:
 
 - `?backend=webgpu` runs both panes on WebGPU (`webgl2` is the default).
-- `?dataset=<key>` opens that Dandiset (`oct`, `oct-small`, `neun`, `hipct`,
-  `spim`).
-- `?local` reads `public/zarr/<zarrId>` instead of S3 (gitignored). Fetch the
-  106 MB `oct-small` store with:
+- `?dataset=<key>` opens that Dandiset: `oct-small` (default, the 106 MB human
+  brain OCT), `oct`, `neun`, `hipct` or `spim`.
+- `?local` reads `public/zarr/<zarrId>` instead of S3 (gitignored). Fetch
+  `oct-small` with:
 
   ```bash
   aws s3 sync --no-sign-request \
@@ -40,10 +40,11 @@ URL options:
 - **Gestures per pane.** `Volume left/right drag` set NiiVue's primary and
   secondary drag modes; `Slide left/right drag` set those of the deep-zoom pane
   through core's `NVSlideController` (`crosshairPan`, `crosshair`, `pan`,
-  `windowing`, `contrast`, `measurement`, `none`; the wheel zooms). Slide windowing updates the volume live and the slide on release; a
-  contrast box sets the window from `VolumeSliceSource.intensityRange`. Rulers
-  are held in slide base pixels, so they stay on the tissue through pan and
-  zoom; `slideOverlayContent` draws them and the contrast box in NiiVue's style.
+  `windowing`, `contrast`, `measurement`, `none`; the wheel zooms). Slide
+  windowing updates the volume live and the slide on release; a contrast box
+  sets the window from `VolumeSliceSource.intensityRange`. Rulers are held in
+  slide base pixels, so they stay on the tissue through pan and zoom;
+  `slideOverlayContent` draws them and the contrast box in NiiVue's style.
 - **Linked views.** With `link views` on, the slide pane's field of view is
   outlined on the volume (`nv.planeOutlines`, 2D and 3D). A click on the 3D
   render (`locationChange` `axCorSag` is `SLICE_TYPE.RENDER`) keeps the slide's

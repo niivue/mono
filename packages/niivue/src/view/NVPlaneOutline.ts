@@ -52,7 +52,7 @@ export function buildPlaneOutline3DRenderData(
   const indices: number[] = []
   for (const o of outlines) {
     const c = o.cornersMM
-    const [r, g, b, a] = o.color ?? defaultColor
+    const [r, g, b, a = 1] = o.color ?? defaultColor
     const centre = [0, 1, 2].map(
       (k) => (c[0][k] + c[1][k] + c[2][k] + c[3][k]) / 4,
     ) as Vec3

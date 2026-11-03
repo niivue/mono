@@ -6,6 +6,7 @@ import { defineConfig } from 'vite'
 
 const root = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(root, '../..')
+const src = (path) => resolve(root, 'src', path)
 
 // The demo apps .github/build-pages.sh publishes beside the examples.
 const SITE_APPS = [
@@ -112,9 +113,29 @@ function pagesSiteDevPlugin() {
 export default defineConfig({
   plugins: [devImagesPlugin(), pagesSiteDevPlugin()],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+    // The demo apps and the packages they use import @niivue/niivue by name;
+    // send them to the source, as the examples are, so dev never runs a stale
+    // dist build.
+    alias: [
+      { find: '@', replacement: src('') },
+      { find: /^@niivue\/niivue$/, replacement: src('index.ts') },
+      {
+        find: /^@niivue\/niivue\/webgpu$/,
+        replacement: src('index.webgpu.ts'),
+      },
+      {
+        find: /^@niivue\/niivue\/webgl2$/,
+        replacement: src('index.webgl2.ts'),
+      },
+      {
+        find: /^@niivue\/niivue\/viewport$/,
+        replacement: src('control/NVCanvasViewportController.ts'),
+      },
+      {
+        find: /^@niivue\/niivue\/assets\/(fonts|matcaps)$/,
+        replacement: src('assets/$1/index.ts'),
+      },
+    ],
   },
   // As the niimath and dcm2niix demo apps do: their WASM workers break when
   // prebundled.

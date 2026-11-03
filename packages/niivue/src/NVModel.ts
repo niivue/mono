@@ -188,7 +188,7 @@ export default class NVModel {
       }),
       ...(options.tileMargin !== undefined && { margin: options.tileMargin }),
       ...(options.layoutInset !== undefined && {
-        inset: [...options.layoutInset] as [number, number, number, number],
+        inset: NVConstants.normalizeInset(options.layoutInset),
       }),
       ...(options.isRadiological !== undefined && {
         isRadiological: options.isRadiological,

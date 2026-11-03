@@ -76,6 +76,7 @@ import {
   lodOpacityScale,
   MESH_DEFAULTS,
   NUM_CLIP_PLANE,
+  normalizeInset,
   normalizeVolumeRenderMode,
   type OVERLAY_ALPHA_BLEND,
   type OVERLAY_COLOR_BLEND,
@@ -1170,7 +1171,8 @@ export default class NiiVue extends EventTarget {
   /**
    * Canvas kept clear of tiles, colorbar, legend and graph: [left, top, right,
    * bottom] in CSS px. Overlay renderers (e.g. @niivue/uikit controls) still
-   * draw on the whole canvas, so they can own the reserved strip.
+   * draw on the whole canvas, so they can own the reserved strip. A missing,
+   * non-finite or negative side is stored as 0.
    * @default `[0, 0, 0, 0]`
    * @example nv1.layoutInset = [340, 0, 0, 0] // a 340 px panel on the left
    */
@@ -1180,7 +1182,7 @@ export default class NiiVue extends EventTarget {
     return [l, t, r, b]
   }
   set layoutInset(v: [number, number, number, number]) {
-    this.model.layout.inset = [v[0], v[1], v[2], v[3]]
+    this.model.layout.inset = normalizeInset(v)
     this.emit('change', { property: 'layoutInset', value: this.layoutInset })
     if (this.opts.instances) this.updateTilesFromInstances()
     this.drawScene()

@@ -825,6 +825,16 @@ describe('layout inset', () => {
       0, 0, 800, 600,
     ])
     expect(insetRect(100, 100, [500, 0, 500, 0], 1)).toEqual([99, 0, 1, 100])
+    // A 0 px canvas leaves nothing, and x/y stay inside it.
+    expect(insetRect(0, 0, [10, 10, 0, 0], 1)).toEqual([0, 0, 0, 0])
+  })
+
+  test('normalizeInsetKeepsFourFiniteNonNegativeSides', () => {
+    expect(NVConstants.normalizeInset([1, 2, 3, 4])).toEqual([1, 2, 3, 4])
+    expect(NVConstants.normalizeInset(null)).toEqual([0, 0, 0, 0])
+    expect(NVConstants.normalizeInset([Number.NaN, -1, 5])).toEqual([
+      0, 0, 5, 0,
+    ])
   })
 
   test('fitSlicesFromModelShiftsTilesToTheOrigin', () => {

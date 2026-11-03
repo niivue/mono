@@ -81,3 +81,24 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(lit).toBe(0)
   })
 }
+
+test('a bad layoutInset is stored as zero sides (#494)', async ({ page }) => {
+  await page.goto('/examples/index.html', { waitUntil: 'load' })
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const nv = new NiiVue({ backend: 'webgl2' })
+    nv.layoutInset = null as never
+    const fromNull = nv.layoutInset
+    nv.layoutInset = [Number.NaN, -5, 10, 0]
+    const fromBad = nv.layoutInset
+    // A document bypasses the setter, so it must be normalized on load.
+    nv.model.layout.inset = null as never
+    const doc = nv.serializeDocument()
+    nv.layoutInset = [1, 1, 1, 1]
+    await nv.loadDocument(new File([doc], 'inset.nvd'))
+    return { fromNull, fromBad, fromDoc: nv.layoutInset }
+  })
+  expect(r.fromNull).toEqual([0, 0, 0, 0])
+  expect(r.fromBad).toEqual([0, 0, 10, 0])
+  expect(r.fromDoc).toEqual([0, 0, 0, 0])
+})

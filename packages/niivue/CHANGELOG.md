@@ -1,3 +1,16 @@
+## 1.0.0-rc.81 (2026-11-03)
+
+### Fixes
+
+- **niivue:** map the drawing mask from its own grid ([8789a29d](https://github.com/niivue/mono/commit/8789a29d))
+- **niivue:** getDescriptives masks and drawing on another voxel grid ([#337](https://github.com/niivue/mono/issues/337))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.80 (2026-11-03)
 
 ### Fixes

@@ -1,3 +1,18 @@
+## 1.0.0-rc.66 (2026-11-03)
+
+### Fixes
+
+- **niivue:** getDescriptives masks and drawing on another voxel grid ([#337](https://github.com/niivue/mono/issues/337))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.81
+- Updated uikit to 1.0.0-rc.74
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.65 (2026-11-03)
 
 ### Updated Dependencies

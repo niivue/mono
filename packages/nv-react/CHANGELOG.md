@@ -1,3 +1,20 @@
+## 1.0.0-rc.82 (2026-11-03)
+
+### Fixes
+
+- **nv-react:** copy array options before a live set ([ff897d38](https://github.com/niivue/mono/commit/ff897d38))
+- **nv-react:** apply option changes live instead of recreating the viewer ([#378](https://github.com/niivue/mono/issues/378))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.81
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.81 (2026-11-03)
 
 ### Updated Dependencies

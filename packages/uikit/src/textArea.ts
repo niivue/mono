@@ -22,6 +22,7 @@ import type { UIKitFontMetrics } from './text/font'
 import { capHeight, type RGBA } from './text/layout'
 import {
   advanceBetween,
+  clusterBoundaries,
   editKey,
   glyphAdvances,
   hasSelection,
@@ -335,6 +336,8 @@ export function wrapRows(
   maxWidth: number,
 ): TextRow[] {
   const rows: TextRow[] = []
+  // Segment once per wrap, not once per row.
+  const bounds = clusterBoundaries(text)
   let p = 0
   for (;;) {
     const nl = text.indexOf('\n', p)
@@ -362,7 +365,8 @@ export function wrapRows(
           }
         }
       }
-      const end = snapToBoundary(text, k > i ? k : Math.max(j, i + 1), true)
+      let end = k > i ? k : Math.max(j, i + 1)
+      while (bounds && end < q && !bounds[end]) end++
       rows.push({ start: i, end, hard: end === q })
       i = end
     }

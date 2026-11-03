@@ -124,6 +124,22 @@ describe('wrapRows', () => {
   })
 })
 
+describe('wrapRows on long text', () => {
+  it('segments once per wrap: a long emoji text wraps quickly, never inside a cluster', () => {
+    // Segmenting per row made this quadratic (seconds at this size).
+    const text = 'wo\u{1F600} '.repeat(4000)
+    const t0 = performance.now()
+    const rows = wrapRows(text, Array(text.length).fill(7), 280)
+    expect(performance.now() - t0).toBeLessThan(500)
+    expect(rows.length).toBeGreaterThan(100)
+    for (const r of rows) {
+      // A row never starts on the low surrogate of the emoji.
+      const c = text.charCodeAt(r.start)
+      expect(c >= 0xdc00 && c <= 0xdfff).toBe(false)
+    }
+  })
+})
+
 describe('rows and carets', () => {
   const rows = wrapRows(TEXT, SEVENS(TEXT.length), 40)
   const advances = SEVENS(TEXT.length)

@@ -24,6 +24,29 @@ function clusters(text: string): Iterable<string> {
     : text
 }
 
+/**
+ * Which offsets 0..text.length are cluster boundaries, from one segmentation
+ * pass, for callers that snap many indices of one text (null: all are, as in
+ * ASCII text without a CR, so no segmentation is needed).
+ */
+export function clusterBoundaries(text: string): Uint8Array | null {
+  let simple = true
+  for (let k = 0; k < text.length && simple; k++) {
+    const c = text.charCodeAt(k)
+    // CR is excluded: CR LF is one cluster.
+    simple = c < 0x80 && c !== 13
+  }
+  if (simple) return null
+  const out = new Uint8Array(text.length + 1)
+  let i = 0
+  out[0] = 1
+  for (const c of clusters(text)) {
+    i += c.length
+    out[i] = 1
+  }
+  return out
+}
+
 /** [start, end) of the cluster holding code unit `i` (0 <= i < text.length). */
 // ponytail: linear scan per lookup, fine for field-sized text. Not
 // Segments.containing(): Bun's returns a merged segment for a fresh Segments.

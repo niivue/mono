@@ -156,23 +156,33 @@ bunx nx test <project>               # Run a project's tests via Nx
 cd packages/niivue && bun test       # Run niivue tests directly with coverage
 ```
 
+## GitHub issues
+
+Agents do not create GitHub issues in this repo unless the user asks for one
+in the current conversation. Something found along the way is either fixed in
+the PR or reported, as "Branch scope" describes.
+
 ## Branch scope
 
-One branch resolves one issue. Work on a branch regularly turns up something
-else: a pre-existing bug on a neighbouring code path, stale generated output,
-an API sharp edge, a test gap. Do not fix it on that branch.
+A branch does one job: the change it was opened for. Work on a branch
+regularly turns up something else: a pre-existing bug on a neighbouring code
+path, stale generated output, an API sharp edge, a test gap.
 
-- Open a GitHub issue for it with a repro and what the fix involves, so the
-  context is not lost when the branch merges.
-- If it affects how the current PR should be reviewed or merged, link the
-  issue from the PR description and say so.
-- Resolve it later on its own branch, as its own PR.
+- **Found in a review pass on a PR** (including an AI-assisted one): fix it in
+  that PR, even when it is a pre-existing bug in a caller of the changed code.
+  Say in the PR description what each such fix is.
+- **Found anywhere else:** if the fix is trivial, or the branch's change
+  cannot be made without it, make it here and call it out in the PR.
+  Otherwise do not fix it on the branch: tell the user what you found, with a
+  repro and what the fix involves, and list it under an "Out of scope"
+  heading in the PR description so the context is not lost when the branch
+  merges. It is fixed later on its own branch, as its own PR.
+- If it affects how the current PR should be reviewed or merged, say so in
+  the PR description, whichever way it is handled.
 - Before committing, revert incidental changes that a build or codegen step
-  made to files the issue does not touch (for example regenerated bindings).
-  If the regenerated output is stale on `main`, that is an issue of its own.
-
-Two exceptions, both to be called out in the PR: a change the issue cannot be
-fixed without, and a trivial correction on a line the branch already edits.
+  made to files the branch's change does not touch (for example regenerated
+  bindings). If the regenerated output is stale on `main`, tell the user and
+  list it under "Out of scope".
 
 ## Before finishing a task
 
@@ -230,7 +240,7 @@ The `@niivue/niivue` package in this repo is a complete rewrite of the old niivu
 
 ## MCP API parity
 
-A new or changed public NiiVue API that accepts or returns serializable scene or viewer state should be accessible through `@niivue/nv-mcp`. When practical, add or update the MCP server tool schema, browser-side handler, documentation, and coverage in the same change, and verify that the tool drives the real NiiVue API rather than a demo-only substitute. Otherwise, open a follow-up issue for the MCP surface and link it from the PR. A missing MCP surface does not block merging a core NiiVue change.
+A new or changed public NiiVue API that accepts or returns serializable scene or viewer state should be accessible through `@niivue/nv-mcp`. When practical, add or update the MCP server tool schema, browser-side handler, documentation, and coverage in the same change, and verify that the tool drives the real NiiVue API rather than a demo-only substitute. Otherwise, list the missing MCP surface under "Out of scope" in the PR description. A missing MCP surface does not block merging a core NiiVue change.
 
 Browser-integration APIs are exempt when they require DOM nodes, canvas attachment, event or callback registration, functions, browser-only objects such as `File`, or other non-serializable values. Document the exemption in the API change when it is not self-evident. Do not use an exemption for serializable scene operations, viewer state, or data-loading operations merely because their implementation runs in the browser.
 

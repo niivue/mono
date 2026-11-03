@@ -1,3 +1,19 @@
+## 1.0.0-rc.70 (2026-11-03)
+
+### Features
+
+- **uikit:** clipboard copy, cut and paste in number inputs ([#264](https://github.com/niivue/mono/issues/264))
+
+### Fixes
+
+- **uikit:** ignore a non-number or empty paste instead of filtering it ([7ac117d5](https://github.com/niivue/mono/commit/7ac117d5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.69 (2026-11-03)
 
 ### Fixes

@@ -217,6 +217,8 @@ Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (
 
 **Future opportunity — WebGPU `clip-distances`:** a commented-out block in `src/wgpu/NVViewGPU.ts` (just above `requestDevice`) sketches a hardware-accelerated mesh clip plane path gated on the `clip-distances` feature. Adapter support is still patchy (notably Safari), so the code is parked. Activation guidance lives next to the block.
 
+**Known issue — Safari WebGPU with MSAA:** WebKit's WebGPU (Safari, every iOS browser) runs the fragment shader once per MSAA sample, so `isAntiAlias: true` makes the volume ray-march about 4x slower (#381). It is still present in Safari Technology Preview 255 (November 2026). We work around it rather than splitting the volume into a single-sample pass: `isAntiAlias` defaults to `false`, most live demos default to the WebGL2 backend, and `apps/dandi-demo/src/dandi.js` turns anti-aliasing off on WebKit. Retest every couple of months, comparing `isAntiAlias: true` against `false` on the WebGPU backend; once Safari is fixed, remove the dandi-demo check.
+
 ## API conventions
 
 See `docs/api.md` for full style guide and `docs/convert.md` for old→new property mapping.

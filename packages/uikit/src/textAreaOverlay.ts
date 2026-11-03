@@ -94,6 +94,8 @@ interface TextAreaEntry {
   firstRow: number
   /** The x a run of vertical caret moves aims for, else null. */
   goalX: number | null
+  /** The caret at a soft break shows at the end of the upper row. */
+  upstream: boolean
   hover: boolean
   wheelCarry: WheelAccumulator | null
   /** A wheel or thumb drag intentionally moved the viewport away from the caret. */
@@ -186,6 +188,7 @@ export class UIKitTextAreaOverlay
         session: 0,
         firstRow: 0,
         goalX: null,
+        upstream: false,
         hover: false,
         wheelCarry: null,
         manualScroll: false,
@@ -224,9 +227,13 @@ export class UIKitTextAreaOverlay
     // A patch that leaves the value alone (a host re-laying out on resize)
     // must not throw away what the user is typing.
     const edit = patch.value === undefined ? entry.edit : null
+    const upstream = entry.upstream
     this.addTextArea({ ...entry.spec, ...patch, id, value })
-    if (edit && entry.edit)
+    if (edit && entry.edit) {
       entry.edit = truncateEdit(edit, entry.spec.maxLength)
+      // The retained caret keeps its row: affinity only counts at a soft-row end.
+      if (entry.edit.caret === edit.caret) entry.upstream = upstream
+    }
     if (entry.spec.enabled === false) {
       if (this.pressId === id) this.pressId = null
       if (this.focusedId === id) {
@@ -359,10 +366,12 @@ export class UIKitTextAreaOverlay
     entry.firstRow = firstRow
     if (entry.edit) {
       entry.manualScroll = false
+      const hit = this.caretAt(entry, x, y)
       entry.edit = twice
         ? selectAll(entry.edit)
-        : setCaret(entry.edit, this.caretAt(entry, x, y))
+        : setCaret(entry.edit, hit.caret)
       entry.goalX = null
+      entry.upstream = !twice && hit.upstream
     }
     this.invalidate()
     return true
@@ -377,10 +386,15 @@ export class UIKitTextAreaOverlay
     if (this.pressId !== null) {
       const entry = this.entries.get(this.pressId)
       if (entry?.edit) {
-        const next = setCaret(entry.edit, this.caretAt(entry, x, y), true)
-        if (next.caret !== entry.edit.caret) {
+        const hit = this.caretAt(entry, x, y)
+        const next = setCaret(entry.edit, hit.caret, true)
+        if (
+          next.caret !== entry.edit.caret ||
+          hit.upstream !== entry.upstream
+        ) {
           entry.edit = next
           entry.goalX = null
+          entry.upstream = hit.upstream
           this.invalidate()
         }
       }
@@ -500,6 +514,7 @@ export class UIKitTextAreaOverlay
       this.rowsOf(entry),
       advances,
       entry.goalX,
+      entry.upstream,
       layout.rows,
       entry.spec.accept,
     )
@@ -508,6 +523,7 @@ export class UIKitTextAreaOverlay
     const max = maxLengthOf(entry.spec.maxLength)
     if (max !== undefined && next.text.length > max) return true
     entry.goalX = result.goalX
+    entry.upstream = result.upstream
     this.applyEdit(entry, next)
     return true
   }
@@ -521,16 +537,18 @@ export class UIKitTextAreaOverlay
     if (this.focusedId === null) return false
     const entry = this.entries.get(this.focusedId)
     if (!entry || entry.spec.enabled === false || !entry.edit) return false
-    entry.goalX = null
-    this.applyEdit(
-      entry,
-      pasteText(
-        entry.edit,
-        text.replace(/\r\n?/g, '\n'),
-        entry.spec.accept,
-        entry.spec.maxLength,
-      ),
+    const next = pasteText(
+      entry.edit,
+      text.replace(/\r\n?/g, '\n'),
+      entry.spec.accept,
+      entry.spec.maxLength,
     )
+    // A paste that changes nothing keeps the caret's row and goal x.
+    if (next !== entry.edit) {
+      entry.goalX = null
+      entry.upstream = false
+    }
+    this.applyEdit(entry, next)
     return true
   }
 
@@ -602,6 +620,7 @@ export class UIKitTextAreaOverlay
     clipboard.write(selectedText(edit))
     if (action === 'cut') {
       entry.goalX = null
+      entry.upstream = false
       this.applyEdit(entry, insertText(edit, ''))
     }
   }
@@ -621,6 +640,7 @@ export class UIKitTextAreaOverlay
   private freshEdit(entry: TextAreaEntry): TextEditState {
     entry.firstRow = 0
     entry.goalX = null
+    entry.upstream = false
     entry.manualScroll = false
     entry.session++
     return selectAll(textEditState(entry.value))
@@ -654,7 +674,11 @@ export class UIKitTextAreaOverlay
     )
   }
 
-  private caretAt(entry: TextAreaEntry, x: number, y: number): number {
+  private caretAt(
+    entry: TextAreaEntry,
+    x: number,
+    y: number,
+  ): { caret: number; upstream: boolean } {
     const { style } = this.scaled(entry)
     return textAreaCaretAt(
       this.layoutOf(entry),
@@ -677,6 +701,7 @@ export class UIKitTextAreaOverlay
       rows,
       entry.firstRow,
       entry.edit && !entry.manualScroll ? entry.edit.caret : null,
+      entry.upstream,
     )
     return textAreaScrollbar(layout, style, shown, rows.length)
   }
@@ -755,11 +780,13 @@ export class UIKitTextAreaOverlay
         this.rowsOf(entry),
         entry.firstRow,
         entry.edit && !entry.manualScroll ? entry.edit.caret : null,
+        entry.upstream,
       ).first
       const visual: TextAreaVisual = {
         text: this.shownText(entry),
         edit: entry.edit,
         firstRow: entry.firstRow,
+        upstream: entry.upstream,
         revealCaret: !entry.manualScroll,
         hover: entry.hover,
         enabled: entry.spec.enabled !== false,

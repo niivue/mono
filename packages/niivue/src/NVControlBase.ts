@@ -132,6 +132,7 @@ import type {
   NVSignalDisplay,
   NVSignal as NVSignalType,
   NVTractOptions,
+  PlaneOutline,
   SaveVolumeOptions,
   SignalAnnotation,
   SignalSidecar,
@@ -260,7 +261,11 @@ type ViewBackend = {
   updateMeshVertices: (mesh: NVMeshType) => boolean
   updateAffineOverlays?: () => Promise<boolean>
   setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
-  swapChunkedVolumePlan?: (vol: NVImage, plan: ChunkPlan) => Promise<void>
+  swapChunkedVolumePlan?: (
+    vol: NVImage,
+    plan: ChunkPlan,
+    keepUntilCovered?: boolean,
+  ) => Promise<void>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -1391,6 +1396,28 @@ export default class NiiVue extends EventTarget {
   set crosshairColor(v: number[]) {
     this.model.ui.crosshairColor = v
     this.emit('change', { property: 'crosshairColor', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Rectangles outlined in world mm, e.g. an NVSlide pane's field of view:
+   * a frame in the 3D render; on a 2D slice, the whole rectangle where it lies
+   * in the slice, the crossing segment where the slice cuts it, nothing where
+   * it misses. An outline needs four finite corners; one without is dropped.
+   */
+  get planeOutlines(): PlaneOutline[] {
+    return this.model.planeOutlines
+  }
+  set planeOutlines(v: PlaneOutline[]) {
+    this.model.planeOutlines = v.filter(
+      (o) =>
+        o.cornersMM.length === 4 &&
+        o.cornersMM.every((c) => c.length === 3 && c.every(Number.isFinite)),
+    )
+    this.emit('change', {
+      property: 'planeOutlines',
+      value: this.model.planeOutlines,
+    })
     this.drawScene()
   }
 
@@ -4860,6 +4887,14 @@ export default class NiiVue extends EventTarget {
     }
   }
 
+  /** A RAS voxel of the base volume in world mm (null without a volume). */
+  vox2mm(vox: [number, number, number]): [number, number, number] | null {
+    const vol = this.volumes[0]
+    if (!vol?.matRAS) return null
+    const mm = NVTransforms.vox2mm(null, vox, vol.matRAS)
+    return [mm[0], mm[1], mm[2]]
+  }
+
   /**
    * Convert RAS voxel coordinates to scene fraction [0,1].
    * Uses the background volume's matRAS for the vox→mm conversion.
@@ -4879,6 +4914,15 @@ export default class NiiVue extends EventTarget {
   }
 
   setCrosshairPos(pos: [number, number, number]): void {
+    this._setCrosshairPos(pos)
+  }
+
+  /**
+   * `setCrosshairPos`, reporting the view that placed it as the
+   * `locationChange` `axCorSag` (a 3D render depth pick passes
+   * `SLICE_TYPE.RENDER`, so a listener can tell it from a slice click).
+   */
+  _setCrosshairPos(pos: [number, number, number], axCorSag = NaN): void {
     let mm: [number, number, number] = pos
     // Snap to voxel centers if enabled and volumes are loaded
     if (
@@ -4902,7 +4946,7 @@ export default class NiiVue extends EventTarget {
     }
     this.model.scene.crosshairPos = frac
     applyPanFollowsCrosshair(this)
-    this.createOnLocationChange()
+    this.createOnLocationChange(axCorSag)
     this.drawScene()
   }
 
@@ -5168,15 +5212,25 @@ export default class NiiVue extends EventTarget {
    * multi-LOD refocus). Unchanged bricks keep their resident GPU textures; only
    * changed/new bricks stream. Far cheaper than reloading the volume, and it
    * doesn't reset the camera/crosshair. The volume must already be loaded with a
-   * `chunkSource`; otherwise this is a no-op.
+   * `chunkSource`; otherwise this is a no-op. With `keepUntilCovered`, replaced
+   * bricks keep drawing until the bricks covering them are resident (see
+   * `swapPolicy` on {@link loadChunkedVolume}'s options).
    */
-  async swapVolumeChunkPlan(volumeId: string, plan: ChunkPlan): Promise<void> {
+  async swapVolumeChunkPlan(
+    volumeId: string,
+    plan: ChunkPlan,
+    options: { keepUntilCovered?: boolean } = {},
+  ): Promise<void> {
     const vol = this.model.volumes.find(
       (v) => v.id === volumeId || v.name === volumeId,
     )
     if (!vol) return
     vol.chunkPlan = plan
-    await this.view?.swapChunkedVolumePlan?.(vol, plan)
+    await this.view?.swapChunkedVolumePlan?.(
+      vol,
+      plan,
+      options.keepUntilCovered ?? false,
+    )
     this.drawScene()
   }
 

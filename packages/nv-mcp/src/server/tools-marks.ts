@@ -5,8 +5,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { MAX_BOXES } from '../limits'
-
+import { MAX_BOXES, MAX_PLANE_OUTLINES } from '../limits'
 import { SLICE_NAMES } from '../views'
 import { registerSimple, rgba, triple } from './args'
 import { TAB_ARG, type ToolContext } from './context'
@@ -28,6 +27,19 @@ const BOX_ARG = z.strictObject({
     .positive()
     .optional()
     .describe('The edge width in pixels. 2 otherwise.'),
+})
+
+const OUTLINE_ARG = z.strictObject({
+  corners: z
+    .array(triple('A corner, in millimetres.'))
+    .length(4)
+    .describe('The four corners in order around the rectangle.'),
+  color: rgba('The edge colour. The crosshair colour otherwise.').optional(),
+  width: z
+    .number()
+    .positive()
+    .optional()
+    .describe('The edge width in pixels on 2D slices. 2 otherwise.'),
 })
 
 export const MARK_SCHEMAS = {
@@ -176,6 +188,17 @@ export const MARK_SCHEMAS = {
           'set; null or an empty list takes it down.',
       ),
   },
+  set_plane_outlines: {
+    ...TAB_ARG,
+    outlines: z
+      .array(OUTLINE_ARG)
+      .max(MAX_PLANE_OUTLINES)
+      .nullable()
+      .describe(
+        'Rectangles to outline, such as the field of view of a linked slide viewer. Replaces ' +
+          'the set; null or an empty list takes it down.',
+      ),
+  },
 } as const
 
 export function registerMarkTools(
@@ -232,5 +255,15 @@ export function registerMarkTools(
       'millimetres: one focus box, a set of boxes, or both. They are not saved with the ' +
       'document. Reports the focus box and how many boxes the set has.',
     inputSchema: MARK_SCHEMAS.set_boxes,
+  })
+
+  registerSimple(server, context, 'set_plane_outlines', {
+    title: 'Outline rectangles in the scene',
+    description:
+      'Outlines rectangles given by four corners in millimetres: on a 2D slice a rectangle ' +
+      'lies in as the whole rectangle, on one that cuts it as the crossing segment, on one ' +
+      'it misses not at all; on the 3D render as a thin frame. They are not saved with the ' +
+      'document. Reports how many are shown.',
+    inputSchema: MARK_SCHEMAS.set_plane_outlines,
   })
 }

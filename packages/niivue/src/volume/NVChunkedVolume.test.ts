@@ -546,7 +546,11 @@ const mgrSource: ChunkedVolumeSource = {
  * exercise the view-derived `'auto'` radius.
  */
 function makeHost(
-  swap: (id: string, plan: ChunkPlan) => Promise<void>,
+  swap: (
+    id: string,
+    plan: ChunkPlan,
+    options?: { keepUntilCovered?: boolean },
+  ) => Promise<void>,
   extra: Record<string, unknown> = {},
 ): NiiVue {
   return {
@@ -573,6 +577,25 @@ describe('NVChunkedVolume id + plan-swap routing', () => {
     const vols: NVImage[] = [a.volume, b.volume]
     expect(vols.find((v) => v.id === b.id || v.name === b.id)).toBe(b.volume)
     expect(vols.find((v) => v.id === a.id || v.name === a.id)).toBe(a.volume)
+  })
+  test('the swap policy rides every plan swap', async () => {
+    const seen: unknown[] = []
+    const host = makeHost(async (_id, _plan, options) => {
+      seen.push(options)
+    })
+    const cv = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      focus: 'none',
+      swapPolicy: 'keepUntilCovered',
+    })
+    await (cv as unknown as Refocusable).doRefocus()
+    cv.setSwapPolicy('replace')
+    expect(cv.swapPolicy).toBe('replace')
+    await (cv as unknown as Refocusable).doRefocus()
+    expect(seen).toEqual([
+      { keepUntilCovered: true },
+      { keepUntilCovered: false },
+    ])
   })
 })
 

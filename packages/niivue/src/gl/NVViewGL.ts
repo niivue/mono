@@ -45,6 +45,11 @@ import * as NVMeasurement from '@/view/NVMeasurement'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
+import {
+  buildPlaneOutline3DRenderData,
+  buildPlaneOutlineLines,
+  mergeRenderData,
+} from '@/view/NVPlaneOutline'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
@@ -563,10 +568,19 @@ export default class NVGlview {
     this.volumeRenderer.setCoarseFloor(gl, coarseVol)
   }
 
-  async swapChunkedVolumePlan(vol: NVImage, plan: ChunkPlan): Promise<void> {
+  async swapChunkedVolumePlan(
+    vol: NVImage,
+    plan: ChunkPlan,
+    keepUntilCovered = false,
+  ): Promise<void> {
     const gl = this.gl
     if (!gl) return
-    await this.volumeRenderer.swapChunkedVolumePlan(gl, vol, plan)
+    await this.volumeRenderer.swapChunkedVolumePlan(
+      gl,
+      vol,
+      plan,
+      keepUntilCovered,
+    )
   }
 
   async updateAffineOverlays(): Promise<boolean> {
@@ -831,9 +845,12 @@ export default class NVGlview {
     }
     // Crosshair geometry is rebuilt per tile rather than once per frame: its
     // radius is a screen weight, so it depends on the tile's mm-per-pixel.
-    const ann3DData = md.annotation.isVisibleIn3D
-      ? NVAnnotation.buildAnnotation3DRenderData(md)
-      : null
+    const ann3DData = mergeRenderData(
+      md.annotation.isVisibleIn3D
+        ? NVAnnotation.buildAnnotation3DRenderData(md)
+        : null,
+      buildPlaneOutline3DRenderData(md.planeOutlines, md.ui.crosshairColor),
+    )
     const crossLinesList: ReturnType<typeof buildLine>[] = []
     // Render each tile
     for (let i = 0; i < screenSlices.length; i++) {
@@ -1696,6 +1713,15 @@ export default class NVGlview {
         )
       }
     }
+    allLines.push(
+      ...buildPlaneOutlineLines(
+        md.planeOutlines,
+        screenSlices,
+        buildLine,
+        md.ui.crosshairColor,
+        NVAnnotation.computeTolerance(md),
+      ),
+    )
     // Bounds border
     if (this._isSubCanvasBounds && this.options.showBoundsBorder) {
       const bc = (this.options.boundsBorderColor as number[]) ?? [1, 1, 1, 1]

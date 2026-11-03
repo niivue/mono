@@ -306,6 +306,13 @@ export interface FocusBox {
   thickness: number
 }
 
+/** A rectangle NiiVue outlines: four corners in mm, colour 0 to 1, edges in pixels. */
+export interface PlaneOutline {
+  cornersMM: [number, number, number][]
+  color?: number[]
+  width?: number
+}
+
 /** A vector annotation as NiiVue keeps it: `VectorAnnotation`. Passed through as JSON. */
 export interface Annotation {
   id: string
@@ -742,6 +749,7 @@ export interface View {
   // Boxes outlined on the render.
   focusBox?: FocusBox | null
   lodBoxes?: FocusBox[] | null
+  planeOutlines?: PlaneOutline[]
 
   // Measurements.
   getMeasurements?(): readonly Measurement[]

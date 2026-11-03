@@ -80,7 +80,7 @@ Fired when the crosshair position changes (user click, keyboard navigation, or p
 | `vox` | `[number, number, number]` | Rounded voxel indices |
 | `frac` | `[number, number, number]` | Scene fraction [0..1] |
 | `xy` | `[number, number]` | Mouse position on canvas |
-| `axCorSag` | `number` | Slice orientation (0=sagittal, 1=coronal, 2=axial) |
+| `axCorSag` | `number` | Slice orientation (0=sagittal, 1=coronal, 2=axial); `SLICE_TYPE.RENDER` for a 3D render depth pick |
 | `values` | `NiiVueLocationValue[]` | Per-volume data (name, value, label) |
 | `string` | `string` | Human-readable location with values |
 
@@ -332,6 +332,8 @@ carry a `ChunkStreamDetail` — the same shape as the non-null return of
 | `total` | `number` | Bricks in the plan |
 | `staleDropped` | `number` | Cumulative queued uploads retired because the view moved on |
 | `predicted` | `number` | Cumulative speculative source reads |
+| `retiring` | `number` | Replaced bricks a `keepUntilCovered` swap still draws |
+| `retiringBytes` | `number` | GPU bytes those bricks hold |
 | `decoded` | `DecodedChunkStats` | Decoded-chunk (CPU byte) tier counters |
 
 #### `chunkStreamProgress`

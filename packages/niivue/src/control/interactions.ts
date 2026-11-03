@@ -2688,7 +2688,7 @@ export function initInteraction(ctrl: NiiVue): void {
     }
     const mm = (await ctrl.view?.depthPick(px, py)) ?? null
     if (mm) {
-      ctrl.setCrosshairPos(mm)
+      ctrl._setCrosshairPos(mm, NVConstants.SLICE_TYPE.RENDER)
     } else {
       // Redraw to fix any pixel artifacts from the depth-pick shader
       ctrl.drawScene()

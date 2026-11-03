@@ -24,6 +24,7 @@ import type {
   NVImage,
   NVMesh as NVMeshType,
   NVSignal,
+  PlaneOutline,
   SceneConfig,
   UIConfig,
   VectorAnnotation,
@@ -126,6 +127,7 @@ export default class NVModel {
     | import('@/annotation/selection').AnnotationSelection
     | null = null
   completedMeasurements: CompletedMeasurement[] = []
+  planeOutlines: PlaneOutline[] = []
   completedAngles: CompletedAngle[] = []
   // Measurements projected to the current frame's canvas pixels, for an external
   // overlay renderer (see NVControlBase.measurementScreenLines). Persisted lines

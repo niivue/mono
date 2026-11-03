@@ -1954,21 +1954,24 @@ and its volumes alive."""
         """
         self.send({"cmd": "stopAnimation", "args": []})
 
-    def swap_volume_chunk_plan(self, volume_id: Any, plan: Any) -> None:
+    def swap_volume_chunk_plan(self, volume_id: Any, plan: Any, options: Any = _UNSET) -> None:
         """Swap a loaded chunked/streamed volume's tiling plan in place (e.g.
 
         a
         multi-LOD refocus). Unchanged bricks keep their resident GPU textures; only
         changed/new bricks stream. Far cheaper than reloading the volume, and it
         doesn't reset the camera/crosshair. The volume must already be loaded with a
-        `chunkSource`; otherwise this is a no-op.
+        `chunkSource`; otherwise this is a no-op. With `keepUntilCovered`, replaced
+        bricks keep drawing until the bricks covering them are resident (see
+        `swapPolicy` on {@link loadChunkedVolume}'s options).
 
         Parameters
         ----------
         volume_id : string
         plan : ChunkPlan
+        options : { keepUntilCovered?: boolean | undefined; }
         """
-        self.send({"cmd": "swapVolumeChunkPlan", "args": _make_args(volume_id, plan)})
+        self.send({"cmd": "swapVolumeChunkPlan", "args": _make_args(volume_id, plan, options)})
 
     def update_gl_volume(self) -> None:
         """Rebuild every GPU resource from the model, re-uploading every mesh.
@@ -2076,6 +2079,19 @@ and its volumes alive."""
         [number, number, number]
         """
         return await self._request("vox2frac", _make_args(vox))
+
+    async def vox2mm(self, vox: Any) -> Any:
+        """A RAS voxel of the base volume in world mm (null without a volume).
+
+        Parameters
+        ----------
+        vox : [number, number, number]
+
+        Returns
+        -------
+        [number, number, number] | null
+        """
+        return await self._request("vox2mm", _make_args(vox))
 
     def when_chunk_stream_settles(self, timeout_ms: Any = _UNSET) -> None:
         """Resolves once the bricks the view asked for are resident and drawn: the renderer admits one brick when the plan is set and streams the rest over the following frames, and a change that rebuilds the bricks' textures (turning on `volumeIllumination`, say) streams them again, so a screenshot taken straight after {@link setVolumeChunkGrid} or such a change would show a partly-tiled volume.

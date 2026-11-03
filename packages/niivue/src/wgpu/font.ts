@@ -42,11 +42,13 @@ export class FontRenderer extends NVRenderer {
     this.fontPx = 16
   }
 
+  /** `depthFormat` null: for a pass with no depth attachment (the slide pane). */
   async init(
     device: GPUDevice,
     format: GPUTextureFormat,
     msaaCount: number,
     fontData?: NVFontData,
+    depthFormat: GPUTextureFormat | null = 'depth24plus',
   ): Promise<void> {
     if (this.isReady) return
     if (!fontData) return
@@ -77,11 +79,13 @@ export class FontRenderer extends NVRenderer {
         color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
         alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
       }
-      const depthStencil: GPUDepthStencilState = {
-        depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
-      }
+      const depthStencil: GPUDepthStencilState | undefined = depthFormat
+        ? {
+            depthWriteEnabled: false,
+            depthCompare: 'always',
+            format: depthFormat,
+          }
+        : undefined
       this.pipeline = device.createRenderPipeline({
         layout: device.createPipelineLayout({
           bindGroupLayouts: [this.bindLayout],

@@ -105,6 +105,7 @@ export class OmeZarrChunkWorkerPool {
       timepoint: options.timepoint,
       levels: options.levels,
       ignoreMissingLevels: options.ignoreMissingLevels,
+      zarrVersion: options.zarrVersion,
       cacheBytes: pool.cacheBytesPerWorker,
       persist: pool.persistPerWorker
         ? { ...pool.persistPerWorker, scope, scopes }

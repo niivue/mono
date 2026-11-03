@@ -4226,10 +4226,16 @@
           "tsType": "ChunkPlan",
           "optional": false,
           "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "{ keepUntilCovered?: boolean | undefined; }",
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Swap a loaded chunked/streamed volume's tiling plan in place (e.g. a\nmulti-LOD refocus). Unchanged bricks keep their resident GPU textures; only\nchanged/new bricks stream. Far cheaper than reloading the volume, and it\ndoesn't reset the camera/crosshair. The volume must already be loaded with a\n`chunkSource`; otherwise this is a no-op.",
+      "doc": "Swap a loaded chunked/streamed volume's tiling plan in place (e.g. a\nmulti-LOD refocus). Unchanged bricks keep their resident GPU textures; only\nchanged/new bricks stream. Far cheaper than reloading the volume, and it\ndoesn't reset the camera/crosshair. The volume must already be loaded with a\n`chunkSource`; otherwise this is a no-op. With `keepUntilCovered`, replaced\nbricks keep drawing until the bricks covering them are resident (see\n`swapPolicy` on {@link loadChunkedVolume}'s options).",
       "returnsDoc": null
     },
     {
@@ -4303,6 +4309,23 @@
       ],
       "returns": "[number, number, number]",
       "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "vox2mm",
+      "pyName": "vox2mm",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "vox",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number, number] | null",
+      "doc": "A RAS voxel of the base volume in world mm (null without a volume).",
       "returnsDoc": null
     },
     {
@@ -4598,6 +4621,11 @@
         "jsName": "perf",
         "tsType": "NiiVuePerf",
         "reason": "non-serializable nominal type: NiiVuePerf"
+      },
+      {
+        "jsName": "planeOutlines",
+        "tsType": "PlaneOutline",
+        "reason": "non-serializable nominal type: PlaneOutline"
       },
       {
         "jsName": "settingsFillPolicy",

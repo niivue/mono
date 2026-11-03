@@ -12,6 +12,7 @@ import type {
   BudgetPlanSpec,
   PlanShapeOptions,
   ResolvedOptions,
+  SwapPolicy,
 } from './budgetPlans'
 import { resolveBudgetPlan } from './budgetPlans'
 import type { ChunkedVolumeSource } from './ChunkedVolumeSource'
@@ -702,7 +703,12 @@ export class NVChunkedVolume {
   setBudgetPlan(plan: BudgetPlanSpec): Promise<void> {
     if (this.disposed) return Promise.resolve()
     const next = resolveBudgetPlan(
-      { ...this.loadOptions, budgetPlan: plan, minLevel: this.o.minLevel },
+      {
+        ...this.loadOptions,
+        budgetPlan: plan,
+        minLevel: this.o.minLevel,
+        swapPolicy: this.o.swapPolicy,
+      },
       this.planContext(),
     )
     // The halo is raise-only (see raiseHaloTo): a plan switch must not undercut
@@ -721,6 +727,20 @@ export class NVChunkedVolume {
     // so switching back to a crosshair plan does not plan around a stale focus.
     if (this.followCrosshair) this.handleLocationChange()
     return this.refocus()
+  }
+
+  /** What a refocus does with replaced bricks; see {@link setSwapPolicy}. */
+  get swapPolicy(): SwapPolicy {
+    return this.o.swapPolicy
+  }
+
+  /**
+   * Choose what the next refocus does with bricks the new plan replaces (see
+   * {@link BudgetPlanOptions.swapPolicy}). Takes effect at the next swap; no
+   * re-plan.
+   */
+  setSwapPolicy(policy: SwapPolicy): void {
+    this.o.swapPolicy = policy
   }
 
   /** The halo the current plan is being built with. */
@@ -985,7 +1005,9 @@ export class NVChunkedVolume {
       this.plan = plan
       this.volume.chunkPlan = plan
       try {
-        await this.host.swapVolumeChunkPlan(this.id, plan)
+        await this.host.swapVolumeChunkPlan(this.id, plan, {
+          keepUntilCovered: this.o.swapPolicy === 'keepUntilCovered',
+        })
       } catch (err) {
         log.warn('NVChunkedVolume: refocus swap failed', err)
       }

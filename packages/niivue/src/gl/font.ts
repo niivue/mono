@@ -58,6 +58,9 @@ export class FontRenderer extends NVRenderer {
   private _panelShader: Shader | null = null
   private _panelVao: WebGLVertexArrayObject | null = null
   private _panelBuffer: WebGLBuffer | null = null
+  // Bumped by every init and destroy, so an atlas that loads after either
+  // frees itself instead of allocating for a disposed renderer.
+  private _initToken = 0
 
   /** Current rasterized font size in device pixels (post-resize). */
   get fontPx(): number {
@@ -68,9 +71,14 @@ export class FontRenderer extends NVRenderer {
     if (this.isReady) return
     if (!fontData) return
     this._gl = gl
+    const token = ++this._initToken
     try {
       // Load font assets from pre-parsed data
       const fontResult = await loadFontTexture(gl, fontData.atlasUrl)
+      if (token !== this._initToken) {
+        gl.deleteTexture(fontResult.texture)
+        return
+      }
       this._fontTexture = fontResult.texture
       this._texWidth = fontResult.width
       this._texHeight = fontResult.height
@@ -314,6 +322,7 @@ export class FontRenderer extends NVRenderer {
   }
 
   destroy(): void {
+    this._initToken++
     const gl = this._gl
     if (!gl) return
     if (this._vao) gl.deleteVertexArray(this._vao)

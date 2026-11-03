@@ -42,6 +42,8 @@ bunx nx lint niivue
 
 `bun run dev` serves `examples/` from source (the pages `import '../src/index.ts'`), so dev and the examples build run the same files.
 
+`bunx nx dev niivue` (same steps as `bun run dev`, including `gen-fixtures`, but on `vite.config.js`'s port 8080) also serves the `SITE_APPS` demo apps under `/<app>/`, with `@niivue/niivue` and its subpath entries aliased to `src/`, so an app never runs a stale `dist`. A missing app file is a 404, not the SPA fallback, and an extensionless one (zarr metadata, chunks) is sent as bytes.
+
 Library packaging: `bun run build` emits `dist/niivue.js` (both backends), `dist/niivue.webgpu.js` (WebGPU-only), and `dist/niivue.webgl2.js` (WebGL2-only), exported as `@niivue/niivue`, `@niivue/niivue/webgpu`, and `@niivue/niivue/webgl2`.
 
 ## Testing

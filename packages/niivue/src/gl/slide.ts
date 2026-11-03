@@ -1,3 +1,4 @@
+import { ubuntu } from '@/assets/fonts'
 import type {
   NVSlide,
   NVSlideColor,
@@ -6,12 +7,21 @@ import type {
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
+  buildSlideOverlay,
+  SLIDE_OVERLAY_MAX_GLYPHS,
+  SLIDE_OVERLAY_MAX_LINES,
+  type SlideOverlayContent,
+} from '@/slide/slideOverlay'
+import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
+import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { NVRenderer } from '@/view/NVRenderer'
 import { timeChunkPhase } from '@/volume/chunkTiming'
+import { FontRenderer } from './font'
+import { LineRenderer } from './line'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
 
@@ -39,11 +49,33 @@ export class SlideRenderer extends NVRenderer {
    * space. Mirrors the NiiVue view hook. See view/NVOverlayHook.ts.
    */
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
+  /**
+   * Rulers and selection drawn over the tiles with NiiVue's own line and font
+   * renderers, before `overlayDraw` (see `slideOverlayContent`).
+   */
+  overlay: SlideOverlayContent | null = null
+  /**
+   * Sample tiles with nearest-neighbour filtering instead of linear, so each
+   * source pixel shows as a crisp square when zoomed in.
+   */
+  isNearestInterpolation = false
+  // Overrides the tiles' linear filtering while isNearestInterpolation is on.
+  private _nearestSampler: WebGLSampler | null = null
+  private readonly _lines = new LineRenderer()
+  private readonly _font = new FontRenderer()
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
 
     this._gl = gl
+    this._nearestSampler = gl.createSampler()
+    for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER])
+      gl.samplerParameteri(this._nearestSampler, p, gl.NEAREST)
+    for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T])
+      gl.samplerParameteri(this._nearestSampler, p, gl.CLAMP_TO_EDGE)
+    this._lines.init(gl)
+    // The atlas loads asynchronously; labels draw from the frame after.
+    void this._font.init(gl, ubuntu)
     this._shader = new Shader(gl, slideVertShader, slideFragShader)
     this._vao = gl.createVertexArray()
     if (!this._vao) throw new Error('Failed to create slide VAO')
@@ -123,6 +155,7 @@ export class SlideRenderer extends NVRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
     gl.activeTexture(gl.TEXTURE0)
     gl.uniform1i(this._shader.uniforms.slideTexture, 0)
+    gl.bindSampler(0, this.isNearestInterpolation ? this._nearestSampler : null)
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
     gl.enable(gl.BLEND)
@@ -201,6 +234,10 @@ export class SlideRenderer extends NVRenderer {
       }
     }
 
+    // The overlay's font atlas keeps its own (linear) filtering.
+    gl.bindSampler(0, null)
+    this._drawOverlay(gl, width, height, screen.devicePixelRatio ?? 1)
+
     // UIKit overlay hook: last screen-space draw of the frame, with blend on and
     // depth/cull off (the widget sets and restores its own state as needed).
     if (this.overlayDraw) {
@@ -230,18 +267,45 @@ export class SlideRenderer extends NVRenderer {
 
   destroy(): void {
     this._textures.clear()
+    this._lines.destroy()
+    this._font.destroy()
     const gl = this._gl
     if (gl) {
       if (this._placeholderTexture) gl.deleteTexture(this._placeholderTexture)
       if (this._vertexBuffer) gl.deleteBuffer(this._vertexBuffer)
       if (this._vao) gl.deleteVertexArray(this._vao)
+      gl.deleteSampler(this._nearestSampler)
     }
+    this._nearestSampler = null
     this._placeholderTexture = null
     this._vertexBuffer = null
     this._vao = null
     this._shader = null
     this._gl = null
     this.isReady = false
+  }
+
+  private _drawOverlay(
+    gl: WebGL2RenderingContext,
+    width: number,
+    height: number,
+    dpr: number,
+  ): void {
+    if (!this.overlay || !this._font.isReady) return
+    this._lines.resize(gl, width, height)
+    this._font.resize(gl, width, height, dpr)
+    const { lines, labels } = buildSlideOverlay(
+      this.overlay,
+      (...a) => this._font.buildText(...a),
+      buildLine,
+      this._font.fontPx * 0.5,
+    )
+    this._lines.draw(gl, null, null, null, lines, SLIDE_OVERLAY_MAX_LINES)
+    this._font.draw(gl, null, null, null, labels, SLIDE_OVERLAY_MAX_GLYPHS)
+    // The line and font passes re-enable depth and culling; the overlay hook
+    // expects both off.
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
   }
 
   private textureForBitmap(

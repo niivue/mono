@@ -108,6 +108,41 @@ test('a bidirectional measurement on one oblique slice still commits', async ({
   expect(count).toBe(1)
 })
 
+// The axial plane of an oblique volume is tilted in mm, so clicks on one slice
+// differ in mm z; the contour must still belong to that one slice (#469).
+for (const tool of ['spline', 'livewire']) {
+  test(`a ${tool} contour on one oblique slice keeps its points (#469)`, async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const r = await page.evaluate(`(async () => {
+      ${setup('AXIAL', tool, '/volumes/fs/T1_oblique.nii.gz')}
+      // A fresh contour resets its anchor (the first click); livewire's
+      // points are its traced path, so the anchor is what tells.
+      const anchor = () => JSON.stringify(nv._annotationPolyAnchorMM)
+      click([150, 140])
+      const first = anchor()
+      click([260, 160])
+      click([200, 280])
+      const kept = anchor() === first && nv._annotationPolyPoints.length >= 3
+      ev('dblclick', 200, 280, 0, MouseEvent)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const committed = nv.annotations.length
+      // A click on another slice still starts over.
+      click([150, 140])
+      const second = anchor()
+      nv.moveCrosshairInVox(0, 0, 8)
+      // Hit testing reads the drawn slice, so let it redraw.
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      click([260, 160])
+      return { kept, committed, restarted: anchor() !== second }
+    })()`)
+    expect(r.kept).toBe(true)
+    expect(r.committed).toBe(1)
+    expect(r.restarted).toBe(true)
+  })
+}
+
 test('re-selecting the current tool keeps a half-drawn contour (#112)', async ({
   page,
 }) => {
@@ -257,9 +292,11 @@ for (const [volume, oblique] of [
       ev('pointerup', rx - 6, ry + 6, 2, PointerEvent, 0)
       return added
     })()`)
-    // Oblique: the spline is #469 and the 3D stroke skips oblique volumes.
+    // Oblique: the 3D stroke skips oblique volumes.
     expect(kinds).toEqual(
-      oblique ? ['bidirectional'] : ['bidirectional', 'spline', 'freehand'],
+      oblique
+        ? ['bidirectional', 'spline']
+        : ['bidirectional', 'spline', 'freehand'],
     )
   })
 }

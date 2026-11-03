@@ -1515,12 +1515,23 @@ export function initInteraction(ctrl: NiiVue): void {
         // control point; the contour is closed on double-click (see the dblclick
         // handler) or cancelled with Escape. Do NOT start a drag.
         if (isMultiClickTool(tool) && !cfg.isErasing) {
+          // The same slice test as the bidirectional axis above, measured from
+          // the contour's first click (mm without a volume).
+          const sliceTest: [number, number, number] =
+            mm2tex && dims
+              ? [
+                  texDepth(ctrl._annotationPolyAnchorMM, depthDim, mm2tex),
+                  texDepth(mm, depthDim, mm2tex),
+                  0.5 / dims[depthDim + 1],
+                ]
+              : [ctrl._annotationPolySlicePosition, slicePosition, 1e-3]
           const fresh = shouldStartFreshMultiClickContour(
             Boolean(ctrl._annotationPolyPoints),
             ctrl._annotationPolySliceType,
-            ctrl._annotationPolySlicePosition,
+            sliceTest[0],
             sliceType,
-            slicePosition,
+            sliceTest[1],
+            sliceTest[2],
           )
           if (fresh) {
             // Start a fresh contour (first point, or the user moved to a new

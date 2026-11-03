@@ -186,6 +186,8 @@ const els = {
   follow: el('follow'),
   view: el('view'),
   detail: el('detail'),
+  plan: el('plan'),
+  swap: el('swap'),
   colormap: el('colormap'),
   window: el('window'),
   zoom: el('zoom'),
@@ -400,10 +402,11 @@ async function loadVolumetric(def, token) {
     // taken as "I know this store" and suppresses that.
     ...(windowRange ? { calMin: windowRange[0], calMax: windowRange[1] } : {}),
     colormap: els.colormap.value,
-    // 'focus' spends the byte budget around the crosshair, which is exactly the
-    // policy that pairs with a linked deep-zoom pane: what you are inspecting in
-    // one view is the region the other view has streamed at full detail.
-    budgetPlan: 'focus',
+    // The Plan and Swap menus pick the streaming strategy, so their trade-offs
+    // can be compared on one store; 'focus' (the default) refines around the
+    // crosshair the slide pane moves.
+    budgetPlan: els.plan.value,
+    swapPolicy: els.swap.value,
     budgetBytes: MULTILOD_BUDGET_BYTES,
     minLevel: Number(els.detail.value) || 0,
     coarseFloor: true,
@@ -800,6 +803,9 @@ function updateVolumeHud() {
     }</span></div>
     <div class="row"><span class="key">prefetch</span><span>${
       stats ? `${stats.predicted} predicted ahead` : '-'
+    }</span></div>
+    <div class="row"><span class="key">retiring</span><span>${
+      stats ? `${stats.retiring} (${formatBytes(stats.retiringBytes)})` : '-'
     }</span></div>
     <div class="row"><span class="key">decoded tier</span><span>${decodedTierCost(
       stats,
@@ -1210,6 +1216,12 @@ els.view.addEventListener('change', () => {
 })
 els.detail.addEventListener('change', () => {
   activeCv?.setMaxDetail(Number(els.detail.value) || 0)
+})
+els.plan.addEventListener('change', () => {
+  void activeCv?.setBudgetPlan(els.plan.value)
+})
+els.swap.addEventListener('change', () => {
+  activeCv?.setSwapPolicy(els.swap.value)
 })
 els.zoom.addEventListener('input', () => {
   if (nv) nv.scaleMultiplier = Number(els.zoom.value)

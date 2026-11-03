@@ -443,6 +443,23 @@
         </select>
       </span>
       <span class="control">
+        <label for="plan">Plan</label>
+        <select id="plan" autocomplete="off"
+          title="Budget plan: where the volume's finest bricks go. focus = around the crosshair (refines what you inspect, re-plans when it moves); uniform = the finest level that fits the whole volume, ignores the crosshair (stable, may be coarser); interactive = focus with fewer bricks (smoother rotation, coarser)">
+          <option value="focus" selected>focus</option>
+          <option value="uniform">uniform</option>
+          <option value="interactive">interactive</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="swap">Swap</label>
+        <select id="swap" autocomplete="off"
+          title="What a re-plan does with replaced bricks. replace = free them at once (least memory; regions blur to the coarse floor until new bricks stream). keep = draw them until their replacements arrive (no blur; holds extra memory during the swap)">
+          <option value="keepUntilCovered" selected>keep until covered</option>
+          <option value="replace">replace</option>
+        </select>
+      </span>
+      <span class="control">
         <label for="zoom">3D zoom <span id="zoomVal">0.80x</span></label>
         <input id="zoom" type="range" min="0.5" max="2" step="0.01" value="0.8"
           title="Volumetric zoom (scaleMultiplier); the wheel over the 3D tile moves the same slider" />

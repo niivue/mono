@@ -46,6 +46,12 @@ URL options:
   sets the window from `VolumeSliceSource.intensityRange`. Rulers are held in
   slide base pixels, so they stay on the tissue through pan and zoom;
   `slideOverlayContent` draws them and the contrast box in NiiVue's style.
+- **Streaming strategy.** `Plan` picks the budget plan (`focus` refines
+  around the crosshair, `uniform` holds the finest level that fits the whole
+  volume, `interactive` uses fewer bricks) and `Swap` what a re-plan does with
+  the bricks it replaces (`keep until covered`, the default, draws them until
+  their replacements arrive, 3D render only; `replace` frees them). The HUD's
+  `retiring` row shows what the first costs in memory.
 - **Linked views.** With `link views` on, the slide pane's field of view is
   outlined on the volume (`nv.planeOutlines`, 2D and 3D). A click on the 3D
   render (`locationChange` `axCorSag` is `SLICE_TYPE.RENDER`) keeps the slide's

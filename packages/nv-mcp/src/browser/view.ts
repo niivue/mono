@@ -413,6 +413,8 @@ export interface Instance {
 export interface InfrastructureOptions {
   instances?: Instance[]
   globalCamera?: GlobalCamera
+  /** Matcap name to URL, so a matcap is reported by name. */
+  matcaps?: Record<string, string>
 }
 
 /** The 2D pan and zoom of the canvas: NiiVue's `CanvasViewport`. */

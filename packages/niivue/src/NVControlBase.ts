@@ -3279,7 +3279,9 @@ export default class NiiVue extends EventTarget {
   }
 
   async loadMatcap(matcapName: string): Promise<void> {
-    this.model.volume.matcap = matcapFromName(matcapName, this.opts.matcaps)
+    const url = matcapFromName(matcapName, this.opts.matcaps)
+    this.model.volume.matcap = url
+    this.emit('change', { property: 'volumeMatcap', value: url })
     await this._updateGLChanged()
   }
 

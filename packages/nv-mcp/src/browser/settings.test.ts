@@ -113,6 +113,22 @@ describe('get_options and set_options', () => {
     expect(view.drawScene).not.toHaveBeenCalled()
   })
 
+  it('reports a known matcap by name, any other by its address', () => {
+    const shiny = 'data:image/jpeg;base64,AAAA'
+    const view = settingsView({ opts: { matcaps: { shiny } } })
+    view.volumeMatcap = shiny
+    const { get_options } = settingHandlers(hostOf(view))
+    const read = () =>
+      (
+        get_options({ names: ['volumeMatcap'], describe: false }) as {
+          options: Record<string, unknown>
+        }
+      ).options.volumeMatcap
+    expect(read()).toBe('shiny')
+    view.volumeMatcap = 'https://x.org/a.jpg'
+    expect(read()).toBe('https://x.org/a.jpg')
+  })
+
   it('answers once the GPU rebuild a setter started has settled', async () => {
     let settle = () => {}
     const view = settingsView({

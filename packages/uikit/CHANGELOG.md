@@ -1,3 +1,19 @@
+## 1.0.0-rc.69 (2026-11-03)
+
+### Fixes
+
+- **uikit:** zero each line slot before writing a short record ([1a203e84](https://github.com/niivue/mono/commit/1a203e84))
+
+### Performance
+
+- **uikit:** reuse staging arrays in the WebGPU line and text renderers ([#123](https://github.com/niivue/mono/issues/123))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.68 (2026-11-03)
 
 ### Updated Dependencies

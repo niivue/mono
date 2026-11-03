@@ -1,3 +1,21 @@
+## 1.0.0-rc.70 (2026-11-03)
+
+### Fixes
+
+- **nv-ohif:** clear failures on a row-less viewport; warn per failing change ([a81429a2](https://github.com/niivue/mono/commit/a81429a2))
+- **nv-ohif:** drive the W/L reverse bridge from volumeUpdated ([#119](https://github.com/niivue/mono/issues/119))
+- **nv-ohif:** log and cap thrown measurement add/remove retries ([#118](https://github.com/niivue/mono/issues/118))
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.69
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.69 (2026-11-03)
 
 ### Updated Dependencies

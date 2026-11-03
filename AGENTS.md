@@ -184,6 +184,18 @@ path, stale generated output, an API sharp edge, a test gap.
   bindings). If the regenerated output is stale on `main`, tell the user and
   list it under "Out of scope".
 
+## PR size
+
+Keep a PR small enough to review well. This is guidance, not a gate:
+
+- Aim for at most about 250 changed lines (additions plus deletions) in
+  existing TypeScript/JavaScript files.
+- New files, test files (`*.test.*`, `*.spec.*`, `e2e/`) and generated files
+  do not count, so a fix is not penalised for its tests.
+- When a change will run larger, split it into PRs that each make one
+  meaningful change (stacked if they depend on each other), or say in the PR
+  description why it cannot be split.
+
 ## Before finishing a task
 
 Run this sequence from the repo root. All commands must exit 0.

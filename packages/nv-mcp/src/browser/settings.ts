@@ -197,6 +197,13 @@ export function settingHandlers(
       if (!(setting.name in bag)) continue
       out[setting.name] = readSetting(setting, bag[setting.name])
     }
+    // A bundled matcap's URL is a data URL of many KB: report its name (#462).
+    if (typeof out.volumeMatcap === 'string') {
+      const named = Object.entries(view.opts?.matcaps ?? {}).find(
+        ([, url]) => url === out.volumeMatcap,
+      )
+      if (named) out.volumeMatcap = named[0]
+    }
     return out
   }
 

@@ -551,12 +551,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       readback.height = canvas.height
       const ctx = readback.getContext('2d', { willReadFrequently: true })
       if (!ctx) return { skip: 'no 2D readback context' }
-      // The masking setter rebuilds the overlays without being awaited, and a
-      // call that arrives mid-rebuild only queues a follow-up, so wait for the
-      // update lock to clear before the next step (remove with #447).
-      const settle = async () => {
-        while (nv._updating) await nv._updateIdle
-      }
       const litPixels = async () => {
         await nextFrame()
         if (nv.view) nv.view.render()
@@ -692,7 +686,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
 
       // ---- background masking: it must not free the kept overlay texture ----
       nv.volumeIsBackgroundMasking = true
-      await settle()
       await nv.updateVolumeData(1, zeros)
       const maskZeroed = await litPixels()
       await nv.updateVolumeData(1, original)
@@ -706,7 +699,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       // Masking off again: the overlay's own voxels come back, so a texture
       // masking edited in place (WebGL2) is not mistaken for current.
       nv.volumeIsBackgroundMasking = false
-      await settle()
+      // The masking setter rebuilds without being awaited.
+      await nv.whenUpdatesSettle()
       // The setter alone rebuilds the overlay (issue #367).
       const ovUnmaskedBySetter = await litPixels()
       await nv.setVolume(1, { opacity: 1 })
@@ -715,7 +709,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       // ---- scalar overlay under masking ----
       // The WebGPU mask pass also freed the scalar orient cache's output.
       nv.volumeIsBackgroundMasking = true
-      await settle()
+      // The masking setter rebuilds without being awaited.
+      await nv.whenUpdatesSettle()
       // The background is still black, so the setter alone masks it out.
       const ovMaskedBySetter = await litPixels()
       await nv.loadVolumes([
@@ -729,7 +724,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       await nv.updateVolumeData(1, scalarOriginal)
       const scalarRestored = await redPixels()
       nv.volumeIsBackgroundMasking = false
-      await settle()
 
       // ---- a modulator edited in place keeps its target's orient cache ----
       const bg = nv.volumes[0]

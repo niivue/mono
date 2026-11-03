@@ -112,6 +112,27 @@ describe('get_options and set_options', () => {
     )
     expect(view.drawScene).not.toHaveBeenCalled()
   })
+
+  it('answers once the GPU rebuild a setter started has settled', async () => {
+    let settle = () => {}
+    const view = settingsView({
+      whenUpdatesSettle: mock(
+        () => new Promise<void>((resolve) => (settle = resolve)),
+      ),
+    })
+    const { set_options } = settingHandlers(hostOf(view))
+    let answered = false
+    const answer = Promise.resolve(
+      set_options({ options: { crosshairWidth: 2 } }),
+    ).then((r) => {
+      answered = true
+      return r
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(answered).toBe(false)
+    settle()
+    expect(await answer).toEqual({ options: { crosshairWidth: 2 } })
+  })
 })
 
 describe('volumeCinematic', () => {
@@ -160,6 +181,15 @@ describe('volumeCinematic', () => {
     expect(described.options.volumeCinematic.fields.maxFrames.min).toBe(1)
   })
 })
+
+it('reports a timeout when a settings rebuild does not settle', async () => {
+  const view = settingsView({ whenUpdatesSettle: () => new Promise(() => {}) })
+  const { set_options } = settingHandlers(hostOf(view))
+  await expect(
+    Promise.resolve(set_options({ options: { crosshairWidth: 2 } })),
+  ).rejects.toThrow('GPU rebuild did not settle within 8000 ms')
+  expect(view.crosshairWidth).toBe(2)
+}, 10000)
 
 describe('capabilities', () => {
   it('says which optional members, settings, colormaps and transforms the page has', () => {

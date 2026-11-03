@@ -26,8 +26,10 @@ const isLocal = (url: string) => url.includes('localhost:5273')
 // pass before a later stage starts. Accepted gap: work with no request open is
 // not counted, so an error raised after the window is missed. That covers a
 // timer and, more often, a volume decode in the volumeLoad worker after its
-// download: a decode longer than QUIET_MS and two frames can fail unseen. The
-// old fixed wait caught both. MAX_WAIT_MS caps slow pages.
+// download: a decode longer than QUIET_MS and two frames can fail unseen. So
+// can a demo whose init (attachToCanvas, no requests) outlasts the window
+// before its first fetch. The old fixed wait caught all three. MAX_WAIT_MS caps
+// slow pages.
 const QUIET_MS = 250
 const MAX_WAIT_MS = 6000
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { decodeImageRGBA } from './imageDecode'
+import { decodeImageRGBA, imageSize } from './imageDecode'
 
 /**
  * The decoder's two paths are driven entirely by globals (`createImageBitmap`,
@@ -155,7 +155,22 @@ function installDomPath(options: {
   )
 }
 
-const BUFFER = new Uint8Array([1, 2, 3]).buffer
+/** Header bytes only: the size is all imageSize reads. */
+function header(bytes: number[], size: number): ArrayBuffer {
+  const b = new Uint8Array(size)
+  b.set(bytes)
+  return b.buffer
+}
+
+function pngHeader(width: number, height: number): ArrayBuffer {
+  const buffer = header([0x89, 0x50, 0x4e, 0x47], 24)
+  const v = new DataView(buffer)
+  v.setUint32(16, width)
+  v.setUint32(20, height)
+  return buffer
+}
+
+const BUFFER = pngHeader(2, 1)
 
 describe('decodeImageRGBA', () => {
   test('decodes via createImageBitmap + OffscreenCanvas and closes the bitmap', async () => {
@@ -210,7 +225,7 @@ describe('decodeImageRGBA', () => {
     installDomPath({ fate: 'error' })
     const urls = trackObjectUrls()
     await expect(decodeImageRGBA(BUFFER)).rejects.toThrow(
-      'Failed to decode image',
+      'Failed to load image',
     )
     expect(urls.revoked).toEqual(urls.created)
   })
@@ -248,4 +263,70 @@ describe('decodeImageRGBA', () => {
       'No image decoding path available',
     )
   })
+})
+
+describe('imageSize', () => {
+  test('reads PNG IHDR', () => {
+    expect(imageSize(pngHeader(2048, 1024))).toEqual({
+      width: 2048,
+      height: 1024,
+    })
+  })
+
+  test('reads the GIF logical screen', () => {
+    const buffer = header([0x47, 0x49, 0x46, 0x38, 0x39, 0x61], 10)
+    const v = new DataView(buffer)
+    v.setUint16(6, 300, true)
+    v.setUint16(8, 200, true)
+    expect(imageSize(buffer)).toEqual({ width: 300, height: 200 })
+  })
+
+  test('reads a BMP info header, top-down height made positive', () => {
+    const buffer = header([0x42, 0x4d], 26)
+    const v = new DataView(buffer)
+    v.setUint32(14, 40, true)
+    v.setInt32(18, 640, true)
+    v.setInt32(22, -480, true)
+    expect(imageSize(buffer)).toEqual({ width: 640, height: 480 })
+  })
+
+  test('reads a BMP core header', () => {
+    const buffer = header([0x42, 0x4d], 26)
+    const v = new DataView(buffer)
+    v.setUint32(14, 12, true)
+    v.setUint16(18, 64, true)
+    v.setUint16(20, 32, true)
+    expect(imageSize(buffer)).toEqual({ width: 64, height: 32 })
+  })
+
+  test('skips JPEG segments to the SOF', () => {
+    // SOI, APP0 (length 4), SOF2: length, precision, height 600, width 800
+    const buffer = header(
+      [
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc2, 0x00, 0x11,
+        0x08, 0x02, 0x58, 0x03, 0x20,
+      ],
+      20,
+    )
+    expect(imageSize(buffer)).toEqual({ width: 800, height: 600 })
+  })
+
+  test('throws for an unrecognized or truncated header', () => {
+    expect(() => imageSize(new Uint8Array([1, 2, 3]).buffer)).toThrow(
+      'Unrecognized',
+    )
+    expect(() =>
+      imageSize(header([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04], 8)),
+    ).toThrow('Unrecognized')
+  })
+})
+
+test('decodeImageRGBA refuses an oversized image before decoding', async () => {
+  patch(globalRef, 'createImageBitmap', async () => {
+    throw new Error('must not decode')
+  })
+  patch(globalRef, 'OffscreenCanvas', class {})
+  await expect(decodeImageRGBA(pngHeader(20000, 20000))).rejects.toThrow(
+    '20000x20000, larger than 8192',
+  )
 })

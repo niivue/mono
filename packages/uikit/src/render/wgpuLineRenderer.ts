@@ -19,6 +19,9 @@ export class WgpuLineRenderer {
   private bindGroup: GPUBindGroup | null = null
   private capacity = 0
   private key = ''
+  // CPU staging reused across frames (grown on demand), as in the rect renderer.
+  private scratch = new Float32Array(0)
+  private readonly params = new Float32Array(4)
 
   private ensurePipeline(
     device: GPUDevice,
@@ -123,17 +126,23 @@ export class WgpuLineRenderer {
     this.ensurePipeline(device, colorFormat, sampleCount, depthFormat)
     this.ensureCapacity(device, lines.length)
     if (!this.pipeline || !this.bindGroup || !this.storageBuffer) return
-    device.queue.writeBuffer(
-      this.paramsBuffer as GPUBuffer,
-      0,
-      new Float32Array([width, height]),
-    )
-    const data = new Float32Array(lines.length * FLOATS_PER_LINE)
+    this.params[0] = width
+    this.params[1] = height
+    device.queue.writeBuffer(this.paramsBuffer as GPUBuffer, 0, this.params)
+    const need = lines.length * FLOATS_PER_LINE
+    if (this.scratch.length < need) {
+      this.scratch = new Float32Array(Math.max(need, this.scratch.length * 2))
+    }
+    const data = this.scratch
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
-      if (line) data.set(line.data, i * FLOATS_PER_LINE)
+      const off = i * FLOATS_PER_LINE
+      // Zero a hole: the reused scratch may hold a prior frame's line there. A
+      // zeroed instance is a zero-thickness (invisible) line, like a fresh alloc.
+      if (line) data.set(line.data, off)
+      else data.fill(0, off, off + FLOATS_PER_LINE)
     }
-    device.queue.writeBuffer(this.storageBuffer, 0, data)
+    device.queue.writeBuffer(this.storageBuffer, 0, data, 0, need)
     pass.setPipeline(this.pipeline)
     pass.setBindGroup(0, this.bindGroup)
     pass.draw(4, lines.length)

@@ -1,3 +1,16 @@
+## 1.0.0-rc.78 (2026-11-03)
+
+### Fixes
+
+- **niivue:** whenUpdatesSettle follows a takeover to the rebuild that replaced its pass ([218bafef](https://github.com/niivue/mono/commit/218bafef))
+- **niivue:** stop a waiting rebuild at destroy; settle the lock holder with its own pass ([9b370f96](https://github.com/niivue/mono/commit/9b370f96))
+- **niivue:** settle each coalesced caller with its own pass ([#466](https://github.com/niivue/mono/issues/466))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.77 (2026-11-03)
 
 ### Fixes

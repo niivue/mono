@@ -1,3 +1,20 @@
+## 1.0.0-rc.63 (2026-11-03)
+
+### Fixes
+
+- **niivue:** stop a waiting rebuild at destroy; settle the lock holder with its own pass ([9b370f96](https://github.com/niivue/mono/commit/9b370f96))
+- **niivue:** settle each coalesced caller with its own pass ([#466](https://github.com/niivue/mono/issues/466))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.78
+- Updated uikit to 1.0.0-rc.71
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.62 (2026-11-03)
 
 ### Updated Dependencies

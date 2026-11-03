@@ -186,10 +186,10 @@ async function openStoreRoot(
   let node: zarr.Group<zarr.Readable> | zarr.Array<zarr.DataType, zarr.Readable>
   let version: 2 | 3 = known ?? 3
   // A known version also skips the array probe: an OME-Zarr root is a group.
-  if (known === 2) {
-    node = await zarr.open.v2(root, { kind: 'group' })
-  } else if (known === 3) {
-    node = await zarr.open.v3(root, { kind: 'group' })
+  if (known) {
+    node = await (known === 2 ? zarr.open.v2 : zarr.open.v3)(root, {
+      kind: 'group',
+    })
   } else {
     try {
       node = await zarr.open.v3(root)

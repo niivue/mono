@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, readFileSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { extname, resolve } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { devImagesPlugin } from '@niivue/dev-images/vite-plugin'
@@ -90,8 +90,10 @@ function pagesSiteDevPlugin() {
           ? fromPublic
           : resolve(appDir, file)
         // A missing file is a 404, not the SPA fallback: zarr readers probe
-        // for metadata files a store may not have.
-        if (!existsSync(target)) {
+        // for metadata files a store may not have. So is a folder, or a path
+        // that climbs out of the app ("/<app>/../x").
+        const isFile = statSync(target, { throwIfNoEntry: false })?.isFile()
+        if (!isFile || !target.startsWith(`${appDir}/`)) {
           res.statusCode = 404
           res.end()
           return

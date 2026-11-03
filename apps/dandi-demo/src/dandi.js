@@ -14,8 +14,8 @@
 // opens as fast as a 100 MB one, because only the visible bricks and tiles are
 // fetched.
 //
-// Both panes run on WebGPU; add `?backend=webgl2` for WebGL2, `?aa=on` for
-// anti-aliasing.
+// Both panes run on WebGPU; add `?backend=webgl2` for WebGL2, `?aa=on|off` to
+// override the anti-aliasing default.
 //
 // Caveat worth knowing (and shown in the HUD): a volumetric pyramid is chunked
 // CUBICALLY, so reading one plane at the finest level decodes a whole slab of
@@ -41,7 +41,12 @@ import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
 
 const params = new URLSearchParams(location.search)
 const backend = params.get('backend') === 'webgl2' ? 'webgl2' : 'webgpu'
-const isAntiAlias = params.get('aa') === 'on'
+// WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
+// on, so it defaults off there and on elsewhere.
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg/.test(navigator.userAgent)
+const isAntiAlias = params.has('aa') ? params.get('aa') === 'on' : !isWebKit
 
 // DANDI serves every zarr asset from one public, CORS-enabled bucket, keyed by
 // the asset's zarr id -- no API call and no credentials needed to stream one.

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { createReadStream, existsSync, readFileSync } from 'node:fs'
+import { extname, resolve } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { devImagesPlugin } from '@niivue/dev-images/vite-plugin'
 import { defineConfig } from 'vite'
@@ -88,6 +88,20 @@ function pagesSiteDevPlugin() {
         const target = existsSync(fromPublic)
           ? fromPublic
           : resolve(appDir, file)
+        // A missing file is a 404, not the SPA fallback: zarr readers probe
+        // for metadata files a store may not have.
+        if (!existsSync(target)) {
+          res.statusCode = 404
+          res.end()
+          return
+        }
+        // Vite would transform an extensionless file (zarr metadata, chunks)
+        // as a JS module; send its bytes.
+        if (!extname(target)) {
+          res.setHeader('Content-Type', 'application/octet-stream')
+          createReadStream(target).pipe(res)
+          return
+        }
         req.url = `/@fs${target}${query ? `?${query}` : ''}`
         next()
       })

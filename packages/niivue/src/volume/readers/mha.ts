@@ -33,7 +33,7 @@ export async function read(
   hdr.littleEndian = true
   let isGz = false
   let isDetached = false
-  const mat33 = mat3.fromValues(NaN, 0, 0, 0, 1, 0, 0, 0, 1)
+  const mat33 = mat3.fromValues(1, 0, 0, 0, 1, 0, 0, 0, 1)
   const offset = vec3.fromValues(0, 0, 0)
 
   while (line !== '') {

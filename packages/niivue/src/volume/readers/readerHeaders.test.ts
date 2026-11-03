@@ -175,22 +175,25 @@ const fixtures: Record<string, () => Promise<ReadResult>> = {
       concat(enc.encode(text), bytesOf(new Int16Array(ramp(24)))),
     )
   },
-  mha: async () => {
-    const text = [
-      'ObjectType = Image',
-      'NDims = 3',
-      'DimSize = 4 3 2',
-      'ElementType = MET_SHORT',
-      'TransformMatrix = 1 0 0 0 1 0 0 0 1',
-      'Offset = 10 20 30',
-      'ElementSpacing = 1 2 3',
-      'ElementDataFile = LOCAL',
-      '',
-    ].join('\n')
-    return await mha.read(
-      concat(enc.encode(text), bytesOf(new Int16Array(ramp(24)))),
-    )
-  },
+  mha: () => readMha(true),
+}
+
+// TransformMatrix is optional in MetaImage; omitted means axis-aligned.
+async function readMha(withMatrix: boolean): Promise<ReadResult> {
+  const text = [
+    'ObjectType = Image',
+    'NDims = 3',
+    'DimSize = 4 3 2',
+    'ElementType = MET_SHORT',
+    ...(withMatrix ? ['TransformMatrix = 1 0 0 0 1 0 0 0 1'] : []),
+    'Offset = 10 20 30',
+    'ElementSpacing = 1 2 3',
+    'ElementDataFile = LOCAL',
+    '',
+  ].join('\n')
+  return await mha.read(
+    concat(enc.encode(text), bytesOf(new Int16Array(ramp(24)))),
+  )
 }
 
 const expected: Record<string, Record<string, unknown>> = {
@@ -200,7 +203,7 @@ const expected: Record<string, Record<string, unknown>> = {
     affine: [
       [1, 0, 0, -1.5],
       [0, -2, 0, 2],
-      [0, 0, 2, -1.5],
+      [0, 0, 3, -1.5],
       [0, 0, 0, 1],
     ],
     datatypeCode: 16,
@@ -217,7 +220,7 @@ const expected: Record<string, Record<string, unknown>> = {
     affine: [
       [1, 0, 0, -1.5],
       [0, -2, 0, 2],
-      [0, 0, 2, -1.5],
+      [0, 0, 3, -1.5],
       [0, 0, 0, 1],
     ],
     datatypeCode: 512,
@@ -355,4 +358,8 @@ describe('volume reader headers', () => {
       expect(summary(await load())).toEqual(expected[name])
     })
   }
+  test('mha without TransformMatrix is axis-aligned', async () => {
+    const { hdr } = await readMha(false)
+    expect(hdr.affine).toEqual((await readMha(true)).hdr.affine)
+  })
 })

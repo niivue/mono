@@ -28,7 +28,7 @@ export function dsiStudioHeader(
   hdr.affine = [
     [hdr.pixDims[1], 0, 0, -xmm],
     [0, -hdr.pixDims[2], 0, ymm],
-    [0, 0, hdr.pixDims[2], -zmm],
+    [0, 0, hdr.pixDims[3], -zmm],
     [0, 0, 0, 1],
   ]
   hdr.littleEndian = true

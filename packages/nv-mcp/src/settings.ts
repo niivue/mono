@@ -200,6 +200,7 @@ export const SETTINGS: readonly Setting[] = [
     'layoutInset',
     'vec4',
     'Canvas kept clear of the views, colorbar, legend and graph: left, top, right and bottom, in CSS pixels; for a control panel drawn in the canvas.',
+    { min: 0 },
   ),
   num('rulerWidth', 'The width of the ruler line, in pixels.', { min: 0 }),
 
@@ -629,6 +630,9 @@ export function coerceSetting(setting: Setting, value: unknown): unknown {
       const length = Number(setting.kind.slice(3))
       if (!numbers(value) || value.length !== length)
         throw fail(setting, `${length} numbers`)
+      const { min } = setting
+      if (min !== undefined && value.some((v) => Number(v) < min))
+        throw fail(setting, `${length} numbers, each at least ${min}`)
       return value.map(Number)
     }
     case 'mm-or-null':

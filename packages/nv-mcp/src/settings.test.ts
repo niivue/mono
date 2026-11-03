@@ -41,6 +41,12 @@ describe('the settings table', () => {
     )
   })
 
+  it('refuses a negative layout inset (#494)', () => {
+    const setting = named('layoutInset')
+    expect(coerceSetting(setting, [10, 0, 0, 0])).toEqual([10, 0, 0, 0])
+    expect(() => coerceSetting(setting, [-1, 0, 0, 0])).toThrow('at least 0')
+  })
+
   it('takes null as the number JSON cannot carry, where a setting has one (#493)', () => {
     expect(coerceSetting(named('meshThicknessOn2D'), null)).toBe(
       Number.POSITIVE_INFINITY,

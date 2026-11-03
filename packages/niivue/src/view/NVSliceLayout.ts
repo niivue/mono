@@ -978,7 +978,8 @@ export function fitSlicesFromModel(
 /**
  * The part of a `width` x `height` view left by `layout.inset` ([left, top,
  * right, bottom] CSS px, times `dpr`): [x, y, width, height] in device px.
- * A non-finite or negative side counts as 0, and at least 1 px is left.
+ * A non-finite or negative side counts as 0, and at least 1 px is left
+ * (none on a 0 px canvas).
  */
 export function insetRect(
   width: number,
@@ -990,13 +991,13 @@ export function insetRect(
     const v = inset[i] * dpr
     return Number.isFinite(v) && v > 0 ? Math.round(v) : 0
   }
-  const x = Math.min(side(0), width - 1)
-  const y = Math.min(side(1), height - 1)
+  const x = Math.max(0, Math.min(side(0), width - 1))
+  const y = Math.max(0, Math.min(side(1), height - 1))
   return [
     x,
     y,
-    Math.max(1, width - x - side(2)),
-    Math.max(1, height - y - side(3)),
+    Math.max(Math.min(1, width), width - x - side(2)),
+    Math.max(Math.min(1, height), height - y - side(3)),
   ]
 }
 

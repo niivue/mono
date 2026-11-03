@@ -551,6 +551,14 @@ export function clampFinite(
     : fallback
 }
 
+/** A layout inset as four finite, non-negative CSS px; anything else side becomes 0. */
+export function normalizeInset(v: unknown): [number, number, number, number] {
+  const a = Array.isArray(v) ? v : []
+  const side = (i: number) =>
+    Number.isFinite(a[i]) && a[i] > 0 ? (a[i] as number) : 0
+  return [side(0), side(1), side(2), side(3)]
+}
+
 /** Ray-march samples per voxel, clamped to [1, 4]; non-finite gives the default. */
 export function clampSampleRate(v: number): number {
   return Number.isFinite(v)

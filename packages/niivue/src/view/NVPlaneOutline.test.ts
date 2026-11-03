@@ -85,6 +85,34 @@ describe('plane outlines', () => {
     ).toHaveLength(0)
   })
 
+  test('a slice through opposite corners draws the full diagonal', () => {
+    const ends: number[][] = []
+    const record = (x0: number, y0: number, x1: number, y1: number) => {
+      ends.push([x0, y0, x1, y1])
+      return buildLine(0, 0, 0, 0, 1, red)
+    }
+    const r = Math.SQRT1_2
+    const diagonal = {
+      ...sliceAt(0),
+      planeNormal: [r, -r, 0],
+    } as unknown as SliceTile
+    buildPlaneOutlineLines([flat(0)], [diagonal], record, red)
+    expect(ends).toHaveLength(1)
+    const [x0, y0, x1, y1] = ends[0]
+    expect(Math.hypot(x1 - x0, y1 - y0)).toBeCloseTo(Math.hypot(50, 50), 3)
+  })
+
+  test('a slice touching one corner draws nothing', () => {
+    const touch = {
+      ...sliceAt(0),
+      planeNormal: [Math.SQRT1_2, Math.SQRT1_2, 0],
+      planePoint: [0.5, 0.5, 0],
+    } as unknown as SliceTile
+    expect(
+      buildPlaneOutlineLines([flat(0)], [touch], buildLine, red),
+    ).toHaveLength(0)
+  })
+
   test('segments are clipped to their tile', () => {
     const wide = {
       cornersMM: [

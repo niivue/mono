@@ -68,7 +68,12 @@ function outlineOnSlice(
     const t = d0 / (d0 - d1)
     hits.push([0, 1, 2].map((k) => p0[k] + (p1[k] - p0[k]) * t) as Vec3)
   })
-  return hits.length >= 2 ? [[hits[0], hits[hits.length - 1]]] : []
+  // A corner on the plane is a hit for both its edges: take the farthest pair.
+  const far = hits.reduce(
+    (best, h) => (dist(h, hits[0]) > dist(best, hits[0]) ? h : best),
+    hits[0],
+  )
+  return far && dist(far, hits[0]) > 0 ? [[hits[0], far]] : []
 }
 
 /** Liang-Barsky clip of a canvas segment to a tile's [left, top, w, h]. */

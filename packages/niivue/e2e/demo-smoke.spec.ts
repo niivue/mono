@@ -20,6 +20,19 @@ const HEADLESS_WEBGPU = /WebGPU adapter|Failed to initialize webgpu view/
 
 const isLocal = (url: string) => url.includes('localhost:5273')
 
+// A page is settled after QUIET_MS with no request open and two frames drawn.
+// Playwright's networkidle is a fixed 500 ms. Loads come in stages (modules,
+// then the demo's fetches, then decode and draw), so a much shorter window can
+// pass before a later stage starts. Accepted gap: work with no request open is
+// not counted, so an error raised after the window is missed. That covers a
+// timer and, more often, a volume decode in the volumeLoad worker after its
+// download: a decode longer than QUIET_MS and two frames can fail unseen. So
+// can a demo whose init (attachToCanvas, no requests) outlasts the window
+// before its first fetch. The old fixed wait caught all three. MAX_WAIT_MS caps
+// slow pages.
+const QUIET_MS = 250
+const MAX_WAIT_MS = 6000
+
 // vox.4d.html loads this volume with limitFrames4D, a partial 4D load that
 // cancels its fetch once it has the frames. Any other abort is a real failure.
 const isExpectedAbort = (
@@ -36,6 +49,18 @@ test.describe('demo pages load cleanly', () => {
     test(name, async ({ page }) => {
       const problems: string[] = []
       const remote: string[] = []
+      let inFlight = 0
+      let lastActivity = Date.now()
+      page.on('request', () => {
+        inFlight++
+        lastActivity = Date.now()
+      })
+      const settle = () => {
+        inFlight--
+        lastActivity = Date.now()
+      }
+      page.on('requestfinished', settle)
+      page.on('requestfailed', settle)
       page.on('pageerror', (err) => {
         if (HEADLESS_WEBGPU.test(err.message)) return
         // A demo that fetches its data from a third-party host surfaces the
@@ -78,8 +103,30 @@ test.describe('demo pages load cleanly', () => {
       })
 
       await page.goto(`/examples/${name}`)
-      // Give the volume/mesh loads a chance to finish and the first frames to draw.
-      await page.waitForTimeout(6000)
+      // Wait for the loads to finish and the first frames to draw, or the
+      // first problem. Frames can start more requests, so recheck after them.
+      const deadline = Date.now() + MAX_WAIT_MS
+      while (Date.now() < deadline && problems.length === 0) {
+        if (inFlight > 0 || Date.now() - lastActivity < QUIET_MS) {
+          await page.waitForTimeout(50)
+          continue
+        }
+        const before = lastActivity
+        // A busy page (cinematic accumulating frames) can hold frames for
+        // seconds, so the frame wait shares the deadline too.
+        await Promise.race([
+          page
+            .evaluate(
+              () =>
+                new Promise((done) =>
+                  requestAnimationFrame(() => requestAnimationFrame(done)),
+                ),
+            )
+            .catch(() => {}),
+          page.waitForTimeout(Math.max(0, deadline - Date.now())),
+        ])
+        if (inFlight === 0 && lastActivity === before) break
+      }
 
       const hasCanvas = await page.evaluate(
         () => document.querySelectorAll('canvas').length > 0,

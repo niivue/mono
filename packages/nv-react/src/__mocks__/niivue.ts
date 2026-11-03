@@ -52,15 +52,42 @@ export interface MockNiiVue {
   primaryDragMode: number
   secondaryDragMode: number
   canvas: HTMLCanvasElement | null
+  readonly backend: string
+  /** Options passed to the constructor */
+  constructorOptions: Record<string, unknown>
+  /** Option setter calls, in order: [key, value] */
+  optionSets: [string, unknown][]
+  backgroundColor: number[]
+  crosshairGap: number
   /** Internal handler registry (event name → callbacks) */
   _handlers: Map<string, Set<(evt: unknown) => void>>
 }
 
+/**
+ * Options exposed as prototype accessors, as on the real NiiVue, so nv-react
+ * can tell live options (setters) from construction-only ones. Values are the
+ * mock's defaults.
+ */
+export const MOCK_OPTION_DEFAULTS = {
+  sliceType: SLICE_TYPE.AXIAL as number,
+  showRender: SHOW_RENDER.AUTO as number,
+  primaryDragMode: DRAG_MODE.crosshair as number,
+  secondaryDragMode: DRAG_MODE.pan as number,
+  customLayout: null as unknown[] | null,
+  backgroundColor: [0, 0, 0, 1],
+  crosshairGap: 0,
+}
+type OptionKey = keyof typeof MOCK_OPTION_DEFAULTS
+type MockFields = Omit<
+  MockNiiVue,
+  OptionKey | 'backend' | 'constructorOptions' | 'optionSets'
+>
+
 /** Create a fresh MockNiiVue instance with all methods stubbed */
-export function createMockNiiVue(): MockNiiVue {
+export function createMockNiiVue(): MockFields {
   const handlers = new Map<string, Set<(evt: unknown) => void>>()
 
-  const instance: MockNiiVue = {
+  const instance: MockFields = {
     _handlers: handlers,
     attachToCanvas: mock(() => Promise.resolve()),
     addVolume: null as unknown as ReturnType<typeof mock>,
@@ -88,11 +115,6 @@ export function createMockNiiVue(): MockNiiVue {
     model: {
       removeVolume: mock(() => {}),
     },
-    customLayout: null,
-    sliceType: SLICE_TYPE.AXIAL,
-    showRender: SHOW_RENDER.AUTO,
-    primaryDragMode: DRAG_MODE.crosshair,
-    secondaryDragMode: DRAG_MODE.pan,
     canvas: null,
   }
 
@@ -128,11 +150,30 @@ export function clearMockInstances(): void {
 export class NiiVue {
   [key: string]: unknown
 
-  constructor(_opts?: unknown) {
-    const instance = createMockNiiVue()
-    Object.assign(this, instance)
+  constructor(opts: Record<string, unknown> = {}) {
+    Object.assign(this, createMockNiiVue())
+    this.constructorOptions = opts
+    this.optionSets = []
+    this._optionValues = structuredClone({ ...MOCK_OPTION_DEFAULTS, ...opts })
     mockInstances.push(this as unknown as MockNiiVue)
   }
+
+  /** Construction-only: getter without a setter */
+  get backend(): string {
+    return 'webgl2'
+  }
+}
+
+for (const key of Object.keys(MOCK_OPTION_DEFAULTS)) {
+  Object.defineProperty(NiiVue.prototype, key, {
+    get(this: NiiVue) {
+      return (this._optionValues as Record<string, unknown>)[key]
+    },
+    set(this: NiiVue, value: unknown) {
+      ;(this.optionSets as [string, unknown][]).push([key, value])
+      ;(this._optionValues as Record<string, unknown>)[key] = value
+    },
+  })
 }
 
 // Default export to match `import NiiVue from "@niivue/niivue"`

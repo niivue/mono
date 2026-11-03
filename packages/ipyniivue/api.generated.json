@@ -2377,8 +2377,8 @@
         }
       ],
       "returns": "DescriptiveStats | null",
-      "doc": "Region-of-interest statistics for a loaded volume.\n\nValues are calibrated (`scl_slope`/`scl_inter` applied) and non-finite\nvoxels are excluded. Every mask must sit on the same RAS grid as the\ntarget volume — overlays are resliced to the background grid, so masks\ndrawn from the loaded volume list satisfy that by construction, but a mask\non a different grid returns `null` rather than silently wrong numbers.",
-      "returnsDoc": "the statistics, or `null` when the volume has no data, a mask\nindex is out of bounds, a label list is empty, or a mask does not match\nthe target grid"
+      "doc": "Region-of-interest statistics for a loaded volume.\n\nValues are calibrated (`scl_slope`/`scl_inter` applied) and non-finite\nvoxels are excluded. Statistics use the target volume's own samples on its\nown grid, never the resliced display copy. A mask (or the drawing) on\nanother grid is looked up at each target voxel centre through both\naffines (nearest neighbour, so labels stay exact); target voxels outside\nit are excluded.",
+      "returnsDoc": "the statistics, or `null` when the volume has no data, a mask\nindex is out of bounds, a label list is empty, or a mask on another grid\nhas no affine"
     },
     {
       "jsName": "getFrame4D",

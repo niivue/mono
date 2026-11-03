@@ -1,3 +1,4 @@
+import { mat4 } from 'gl-matrix'
 import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
 import {
@@ -28,13 +29,59 @@ function inBounds(length: number, index: number, name: string): boolean {
 }
 
 /**
- * Region-of-interest statistics; see NiiVue.getDescriptives. `drawing` reads
- * the drawing bitmap (null when there is none); it is called only for a
- * drawing mask, after the volumes and masks are checked.
+ * `data` (on `grid`'s RAS voxels) as seen at each of `target`'s RAS voxel
+ * centres: the nearest grid voxel, or NaN outside the grid. Nearest
+ * neighbour keeps label values exact. Unchanged when the grids match; null
+ * when they differ and an affine is missing.
+ */
+function onTargetGrid(
+  data: ArrayLike<number>,
+  grid: NVImage,
+  target: NVImage,
+): ArrayLike<number> | null {
+  const t = target.dimsRAS
+  const g = grid.dimsRAS
+  if (!t || !g || data.length !== g[1] * g[2] * g[3]) return null
+  const sameDims = t[1] === g[1] && t[2] === g[2] && t[3] === g[3]
+  const tm = target.matRAS
+  const gm = grid.matRAS
+  if (sameDims && (tm === gm || (tm && gm && mat4.equals(tm, gm)))) return data
+  if (!tm || !gm) return null
+  // matRAS is row-major voxel-to-mm (voxel centres at integer indices);
+  // compose target voxel -> mm -> grid voxel.
+  const toGrid = mat4.transpose(mat4.create(), gm)
+  if (!mat4.invert(toGrid, toGrid)) return null
+  const m = mat4.multiply(toGrid, toGrid, mat4.transpose(mat4.create(), tm))
+  const [gx, gy, gz] = [g[1], g[2], g[3]]
+  const out = new Float32Array(t[1] * t[2] * t[3])
+  let i = 0
+  for (let z = 0; z < t[3]; z++) {
+    for (let y = 0; y < t[2]; y++) {
+      for (let x = 0; x < t[1]; x++) {
+        const ix = Math.round(m[0] * x + m[4] * y + m[8] * z + m[12])
+        const iy = Math.round(m[1] * x + m[5] * y + m[9] * z + m[13])
+        const iz = Math.round(m[2] * x + m[6] * y + m[10] * z + m[14])
+        const inside =
+          ix >= 0 && iy >= 0 && iz >= 0 && ix < gx && iy < gy && iz < gz
+        out[i++] = inside ? data[ix + gx * (iy + gy * iz)] : Number.NaN
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Region-of-interest statistics; see NiiVue.getDescriptives. The target's own
+ * (un-resliced) samples are measured on its own grid; a mask or the drawing on
+ * another grid is looked up at each target voxel centre (nearest neighbour),
+ * and target voxels outside it are excluded. `drawing` reads the drawing
+ * bitmap (RAS order) and the volume whose grid it is on (null when there is
+ * none); it is called only for a drawing mask, after the volumes and masks
+ * are checked.
  */
 export function regionDescriptives(
   volumes: NVImage[],
-  drawing: () => Uint8Array | null,
+  drawing: () => { bitmap: ArrayLike<number>; grid: NVImage } | null,
   options: DescriptivesOptions = {},
 ): DescriptiveStats | null {
   const volumeIndex = options.volumeIndex ?? 0
@@ -71,10 +118,11 @@ export function regionDescriptives(
       return null
     }
     const maskVol = volumes[maskIndex]
-    const maskData = getImageDataRAS(maskVol)
+    const native = getImageDataRAS(maskVol)
+    const maskData = native && onTargetGrid(native, maskVol, vol)
     if (!maskData || maskData.length !== nVox) {
       log.warn(
-        `getDescriptives: mask volume ${maskIndex} does not match the target grid`,
+        `getDescriptives: mask volume ${maskIndex} cannot be mapped to the target grid (no affine, or data that does not fit its dims)`,
       )
       return null
     }
@@ -85,6 +133,7 @@ export function regionDescriptives(
       const maskSlope = maskVol.hdr?.scl_slope || 1
       const maskInter = maskVol.hdr?.scl_inter || 0
       for (let i = 0; i < nVox; i++) {
+        // NaN (outside the mask) matches no label.
         if (!keep.has(maskData[i] * maskSlope + maskInter)) m[i] = 0
       }
     } else {
@@ -94,10 +143,13 @@ export function regionDescriptives(
     }
   }
   if (options.isDrawingMask) {
-    const bitmap = drawing()
+    // The drawing keeps the grid it was created on, even after the volumes
+    // are reordered, so it is mapped from its own grid, not volumes[0]'s.
+    const d = drawing()
+    const bitmap = d && onTargetGrid(d.bitmap, d.grid, vol)
     if (!bitmap || bitmap.length !== nVox) {
       log.warn(
-        'getDescriptives: no drawing, or the drawing does not match the target grid',
+        'getDescriptives: no drawing, or the drawing cannot be mapped to the target grid',
       )
       return null
     }
@@ -105,7 +157,8 @@ export function regionDescriptives(
     const m = requireMask()
     for (let i = 0; i < nVox; i++) {
       const v = bitmap[i]
-      const keep = pens ? pens.includes(v) : v !== 0
+      // NaN: outside the drawing's grid.
+      const keep = pens ? pens.includes(v) : v !== 0 && !Number.isNaN(v)
       if (!keep) m[i] = 0
     }
   }

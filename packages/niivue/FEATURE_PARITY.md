@@ -247,7 +247,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `clearMeasurements()` | ✅ | |
 | Angle measurements | ✅ | `DRAG_MODE.angle`; completed angles stored on model |
 | `clearAngles()` | ✅ | `clearAngles()` and `clearDistanceMeasurements()` clear one kind each; `clearMeasurements()` still clears both |
-| `getDescriptives()` — ROI statistics | ✅ | `getDescriptives({ volumeIndex, masks, isDrawingMask, drawPenValues })`; a mask is a volume index (non-zero voxels) or `{ index, values }` (only those calibrated label values, e.g. one atlas region); calibrated values, non-finite voxels excluded, `null` on a mask/grid mismatch or an empty label list |
+| `getDescriptives()` — ROI statistics | ✅ | `getDescriptives({ volumeIndex, masks, isDrawingMask, drawPenValues })`; a mask is a volume index (non-zero voxels) or `{ index, values }` (only those calibrated label values, e.g. one atlas region); calibrated values, non-finite voxels excluded; masks and the drawing may be on another voxel grid (looked up at each target voxel, nearest neighbour); `null` on an empty label list |
 
 ## 18. Registration / Affine Transforms
 

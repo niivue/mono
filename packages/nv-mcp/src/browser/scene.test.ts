@@ -2077,8 +2077,9 @@ describe('describe_volume', () => {
       mask_labels: [1],
     }) as Record<string, unknown>
     expect(masked.stats).toBeUndefined()
+    // A mask on another grid is no reason by itself (NiiVue looks it up).
     expect(masked.statsError).toBe(
-      'spmMotor.nii.gz is 79×95×79 voxels and the mask aal.nii.gz is 181×217×181: a mask must be on the same voxel grid as the volume it restricts.',
+      'NiiVue could not compute statistics for spmMotor.nii.gz with that mask.',
     )
     // The description is still there.
     expect(masked.dims).toEqual([79, 95, 79])
@@ -2096,7 +2097,7 @@ describe('describe_volume', () => {
         >
       ).statsError,
     ).toBe(
-      "The drawing lies over the base volume spmMotor.nii.gz (79×95×79 voxels) and aal.nii.gz is 181×217×181: ask for the base volume's statistics within the drawing, or use a mask volume on aal.nii.gz's grid.",
+      'There is no drawing to count within. Create or load one with edit_drawing first.',
     )
     expect(
       (handlers.describe_volume({ mask: 2 }) as Record<string, unknown>)

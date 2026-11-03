@@ -92,11 +92,16 @@ describe('regionDescriptives mask labels', () => {
 
   test('intersects a labelled mask with the drawing pen values', () => {
     const drawing = new Uint8Array([0, 2, 1, 2])
-    const stats = regionDescriptives([intensities, labels], () => drawing, {
-      masks: [{ index: 1, values: [2, 3] }],
-      isDrawingMask: true,
-      drawPenValues: [2],
-    })
+    const grid = intensities
+    const stats = regionDescriptives(
+      [intensities, labels],
+      () => ({ bitmap: drawing, grid }),
+      {
+        masks: [{ index: 1, values: [2, 3] }],
+        isDrawingMask: true,
+        drawPenValues: [2],
+      },
+    )
     expect(stats?.nVox).toBe(1)
     expect(stats?.mean).toBe(100)
   })
@@ -181,14 +186,37 @@ describe('regionDescriptives masks on another grid (#337)', () => {
   })
 
   test('maps the drawing from the base grid onto a coarser target', () => {
-    // The drawing lives on the base volume (index 0, the 1 mm atlas).
+    // The drawing was made on the 1 mm atlas.
     const drawing = new Uint8Array([0, 0, 0, 0, 1, 1])
-    const stats = regionDescriptives([atlas1mm, map2mm], () => drawing, {
-      volumeIndex: 1,
-      isDrawingMask: true,
-    })
+    const stats = regionDescriptives(
+      [atlas1mm, map2mm],
+      () => ({ bitmap: drawing, grid: atlas1mm }),
+      { volumeIndex: 1, isDrawingMask: true },
+    )
     expect(stats?.nVox).toBe(1)
     expect(stats?.mean).toBe(30)
+  })
+
+  test('reads the drawing on its own grid after the volumes are reordered', () => {
+    // Drawn on the 1 mm atlas, which is no longer volumes[0].
+    const drawing = new Uint8Array([0, 0, 0, 0, 1, 0])
+    const stats = regionDescriptives(
+      [map2mm, atlas1mm],
+      () => ({ bitmap: drawing, grid: atlas1mm }),
+      { volumeIndex: 1, isDrawingMask: true },
+    )
+    expect(stats?.nVox).toBe(1)
+    expect(stats?.mean).toBe(3)
+  })
+
+  test('refuses a drawing whose bitmap does not fit its grid', () => {
+    expect(
+      regionDescriptives(
+        [map2mm, atlas1mm],
+        () => ({ bitmap: new Uint8Array(4), grid: atlas1mm }),
+        { volumeIndex: 1, isDrawingMask: true },
+      ),
+    ).toBeNull()
   })
 
   test('refuses grids that differ when an affine is missing', () => {

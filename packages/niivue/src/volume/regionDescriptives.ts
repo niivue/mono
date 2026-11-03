@@ -41,7 +41,7 @@ function onTargetGrid(
 ): ArrayLike<number> | null {
   const t = target.dimsRAS
   const g = grid.dimsRAS
-  if (!t || !g) return null
+  if (!t || !g || data.length !== g[1] * g[2] * g[3]) return null
   const sameDims = t[1] === g[1] && t[2] === g[2] && t[3] === g[3]
   const tm = target.matRAS
   const gm = grid.matRAS
@@ -74,13 +74,14 @@ function onTargetGrid(
  * Region-of-interest statistics; see NiiVue.getDescriptives. The target's own
  * (un-resliced) samples are measured on its own grid; a mask or the drawing on
  * another grid is looked up at each target voxel centre (nearest neighbour),
- * and target voxels outside it are excluded. `drawing` reads
- * the drawing bitmap (null when there is none); it is called only for a
- * drawing mask, after the volumes and masks are checked.
+ * and target voxels outside it are excluded. `drawing` reads the drawing
+ * bitmap (RAS order) and the volume whose grid it is on (null when there is
+ * none); it is called only for a drawing mask, after the volumes and masks
+ * are checked.
  */
 export function regionDescriptives(
   volumes: NVImage[],
-  drawing: () => Uint8Array | null,
+  drawing: () => { bitmap: ArrayLike<number>; grid: NVImage } | null,
   options: DescriptivesOptions = {},
 ): DescriptiveStats | null {
   const volumeIndex = options.volumeIndex ?? 0
@@ -142,9 +143,10 @@ export function regionDescriptives(
     }
   }
   if (options.isDrawingMask) {
-    // The drawing lives on the base volume's grid.
-    const native = drawing()
-    const bitmap = native && onTargetGrid(native, volumes[0], vol)
+    // The drawing keeps the grid it was created on, even after the volumes
+    // are reordered, so it is mapped from its own grid, not volumes[0]'s.
+    const d = drawing()
+    const bitmap = d && onTargetGrid(d.bitmap, d.grid, vol)
     if (!bitmap || bitmap.length !== nVox) {
       log.warn(
         'getDescriptives: no drawing, or the drawing does not match the target grid',

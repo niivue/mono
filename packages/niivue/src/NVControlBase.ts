@@ -4084,7 +4084,10 @@ export default class NiiVue extends EventTarget {
     const drawingVol = this.model.drawingVolume
     return regionDescriptives(
       this.model.getVolumes(),
-      () => (drawingVol ? getDrawingBitmap(drawingVol) : null),
+      () =>
+        drawingVol
+          ? { bitmap: getDrawingBitmap(drawingVol), grid: drawingVol }
+          : null,
       options,
     )
   }

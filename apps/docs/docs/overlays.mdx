@@ -78,16 +78,18 @@ combine. `volumeOverlayAlphaBlend` combines their opacities and
 ```js
 import { OVERLAY_ALPHA_BLEND, OVERLAY_COLOR_BLEND } from '@niivue/niivue'
 
-nv.volumeOverlayAlphaBlend = OVERLAY_ALPHA_BLEND.OVER
+nv.volumeOverlayAlphaBlend = OVERLAY_ALPHA_BLEND.UNION
 nv.volumeOverlayColorBlend = OVERLAY_COLOR_BLEND.OVER
 ```
 
 | Setting | `0` (default) | `1` | `2` |
 |---|---|---|---|
-| `volumeOverlayAlphaBlend` | `MAX`: the most opaque wins | `ADDITIVE`: opacities add, capped at 1 | `OVER`: `1 - prod(1 - a)` |
+| `volumeOverlayAlphaBlend` | `MAX`: the most opaque wins | `ADDITIVE`: opacities add, capped at 1 | `UNION`: `1 - prod(1 - a)` |
 | `volumeOverlayColorBlend` | `ADDITIVE`: opacity-weighted sum | `MEAN`: opacity-weighted average | `OVER`: later overlays on top |
 
-`OVER` for both gives ordinary layered compositing, in volume order.
+Alpha `UNION` with colour `OVER` gives ordinary layered compositing, in
+volume order. Colour `OVER` with another alpha mode changes only the opacity.
+`UNION` was named `OVER` before 1.0.
 `ADDITIVE` alpha suits fractions that sum to 1, such as tissue probability
 maps. NiiVue 0.x had only the `MAX` and `ADDITIVE` defaults.
 

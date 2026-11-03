@@ -2037,7 +2037,8 @@ export default class NiiVue extends EventTarget {
   /**
    * How overlapping overlays combine opacity: `OVERLAY_ALPHA_BLEND.MAX`
    * (default), `ADDITIVE` (for maps whose values sum to 1, e.g. tissue
-   * fractions), or `OVER`. Only matters with two or more overlays.
+   * fractions), or `UNION` (1 - prod(1 - a)). Only matters with two or more
+   * overlays.
    */
   get volumeOverlayAlphaBlend(): OVERLAY_ALPHA_BLEND {
     return this.model.volume.overlayAlphaBlend
@@ -2075,7 +2076,8 @@ export default class NiiVue extends EventTarget {
    * How overlapping overlays combine colour: `OVERLAY_COLOR_BLEND.ADDITIVE`
    * (default), `MEAN`, `OVER` (later overlays cover earlier ones), or `MAX`
    * (each component's brightest weighted value, as fluorescence viewers fuse
-   * channels). Only matters with two or more overlays.
+   * channels). Only matters with two or more overlays. `OVER` sets the colour
+   * only: pair it with alpha `UNION` for source-over opacity.
    */
   get volumeOverlayColorBlend(): OVERLAY_COLOR_BLEND {
     return this.model.volume.overlayColorBlend

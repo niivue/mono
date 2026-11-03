@@ -79,13 +79,13 @@ export enum VOLUME_RENDER_MODE {
  * How overlapping overlays combine their opacities before being drawn over the
  * background. MAX suits independent thresholded maps (overlap is no more
  * opaque than its parts); ADDITIVE suits fractions that sum to 1 (tissue or
- * probability maps), so a voxel split between two maps is fully opaque; OVER
- * stacks them like transparencies, 1 - (1-a1)(1-a2)...
+ * probability maps), so a voxel split between two maps is fully opaque; UNION
+ * stacks them like transparencies, 1 - (1-a1)(1-a2)..., in any order.
  */
 export enum OVERLAY_ALPHA_BLEND {
   MAX = 0,
   ADDITIVE = 1,
-  OVER = 2,
+  UNION = 2,
 }
 
 /**
@@ -93,8 +93,9 @@ export enum OVERLAY_ALPHA_BLEND {
  * opacity-weighted colours (red + green = yellow, may clip); MEAN takes their
  * opacity-weighted average (red + green = dark yellow, never clips); OVER
  * composites them in volume order, each overlay over the ones before it (an
- * opaque green over red is green). Pair OVER with OVERLAY_ALPHA_BLEND.OVER for
- * classic source-over stacking, e.g. segmentations. MAX keeps each colour
+ * opaque green over red is green). Pair OVER with OVERLAY_ALPHA_BLEND.UNION for
+ * classic source-over stacking, e.g. segmentations; other alpha modes change
+ * only the opacity. MAX keeps each colour
  * component's brightest opacity-weighted value (red + green = yellow, never
  * clips, and a faint overlay never dims a bright one); with
  * OVERLAY_ALPHA_BLEND.MAX it is the channel fusion of fluorescence viewers

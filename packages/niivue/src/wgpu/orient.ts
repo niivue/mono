@@ -1068,7 +1068,7 @@ function ensureBlendPipelines(
   // twelve norm pipelines.
   if (
     alphaBlend !== OVERLAY_ALPHA_BLEND.ADDITIVE &&
-    alphaBlend !== OVERLAY_ALPHA_BLEND.OVER
+    alphaBlend !== OVERLAY_ALPHA_BLEND.UNION
   )
     alphaBlend = OVERLAY_ALPHA_BLEND.MAX
   if (

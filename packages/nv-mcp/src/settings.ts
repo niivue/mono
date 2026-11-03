@@ -83,7 +83,7 @@ export const CINEMATIC_LABEL_MODES = ['only', 'unlabeled', 'none'] as const
 export const GRADIENT_MODES = { central: 0, blob: 1, sobel8: 2 } as const
 
 /** NiiVue's `OVERLAY_ALPHA_BLEND`: how overlapping overlays combine their opacities. */
-export const OVERLAY_ALPHA_BLENDS = { max: 0, additive: 1, over: 2 } as const
+export const OVERLAY_ALPHA_BLENDS = { max: 0, additive: 1, union: 2 } as const
 
 /** NiiVue's `OVERLAY_COLOR_BLEND`: how overlapping overlays combine their colours. */
 export const OVERLAY_COLOR_BLENDS = {
@@ -508,7 +508,7 @@ export const SETTINGS: readonly Setting[] = [
   setting(
     'volumeOverlayAlphaBlend',
     'enum',
-    'How overlapping overlays combine their opacities: max (no more opaque than either), additive (fractions that sum to 1, as tissue maps do), or over (stacked like transparencies).',
+    'How overlapping overlays combine their opacities: max (no more opaque than either), additive (fractions that sum to 1, as tissue maps do), or union (stacked like transparencies, 1 - (1-a1)(1-a2)...).',
     {
       values: OVERLAY_ALPHA_BLENDS,
     },
@@ -516,7 +516,7 @@ export const SETTINGS: readonly Setting[] = [
   setting(
     'volumeOverlayColorBlend',
     'enum',
-    'How overlapping overlays combine their colours: additive (red and green make yellow, may clip), mean (their average, never clips), over (in volume order, later overlays cover earlier ones), or max (the brightest value of each colour, as fluorescence viewers fuse channels; a faint channel never dims a bright one).',
+    'How overlapping overlays combine their colours: additive (red and green make yellow, may clip), mean (their average, never clips), over (in volume order, later overlays cover earlier ones; pair with alpha union), or max (the brightest value of each colour, as fluorescence viewers fuse channels; a faint channel never dims a bright one).',
     {
       values: OVERLAY_COLOR_BLENDS,
     },

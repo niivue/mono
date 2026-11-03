@@ -406,8 +406,9 @@ or 0), and `onChange` fires once per committed change. The field shows only
 the glyphs that fit, scrolled by whole glyphs to keep the caret in view.
 Meta or Ctrl plus C, X and V copy, cut and paste as in a text input (the
 `clipboard` option names the bridge); a paste, or `paste(text)` from a host
-that handles the DOM paste event, keeps only digits, sign, decimal point and
-exponent.
+that handles the DOM paste event, is trimmed and maps a Unicode minus to `-`;
+anything still holding a character other than digits, sign, decimal point and
+exponent (`1,5`, `12 px`), or an empty clipboard, leaves the field unchanged.
 
 ```ts
 const numbers = new UIKitNumberInputOverlay(font, units)

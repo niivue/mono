@@ -353,8 +353,8 @@ describe('UIKitNumberInputOverlay', () => {
     expect(written).toHaveLength(2)
   })
 
-  it('pastes only the characters a number can hold', async () => {
-    const { clipboard } = fakeClipboard(' 8\n px')
+  it('pastes a trimmed number', async () => {
+    const { clipboard } = fakeClipboard(' 8\n')
     const { overlay, inputs, changes } = make(clipboard)
     overlay.focus('n')
     expect(overlay.keyDown(cmd('v'))).toBe(true)
@@ -365,6 +365,35 @@ describe('UIKitNumberInputOverlay', () => {
     expect(changes).toEqual([8])
     expect(overlay.paste('-1e0')).toBe(true)
     expect(overlay.getText('n')).toBe('-1e0')
+  })
+
+  it('ignores a paste that is not a number instead of filtering it', () => {
+    const { overlay, inputs } = make()
+    overlay.focus('n')
+    for (const text of ['', '   ', '1,5', '12.5 meters', 'abc']) {
+      expect(overlay.paste(text)).toBe(true)
+      expect(overlay.getText('n')).toBe('5')
+    }
+    expect(inputs).toEqual([])
+    // A Unicode minus (U+2212) is a minus sign.
+    overlay.paste('\u22123')
+    expect(overlay.getText('n')).toBe('-3')
+    expect(inputs).toHaveLength(1) // reported clamped to this field's min
+  })
+
+  it('keeps the field when the clipboard read is refused or rejects', async () => {
+    const { clipboard } = fakeClipboard('')
+    const { overlay, inputs } = make(clipboard)
+    overlay.focus('n')
+    expect(overlay.keyDown({ ...key('v'), ctrlKey: true })).toBe(true)
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('5')
+    clipboard.read = () => Promise.reject(new Error('denied'))
+    overlay.keyDown(cmd('v'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('5')
+    expect(inputs).toEqual([])
   })
 
   it('drops a paste that arrives after the field lost focus or was refocused', async () => {

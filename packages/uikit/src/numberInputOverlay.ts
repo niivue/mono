@@ -385,16 +385,16 @@ export class UIKitNumberInputOverlay
     this.invalidate()
   }
 
-  /**
-   * Editing keys change the text; Enter commits; Escape reverts; ArrowUp and
-   * ArrowDown step (Shift: ten steps), as do PageUp and PageDown; Meta or
-   * Ctrl plus C, X and V go through the clipboard.
-   */
   /** Enter commits the field and, in a dialog, submits it. */
   submitsForm(e: UIKitKeyEvent): boolean {
     return e.key === 'Enter'
   }
 
+  /**
+   * Editing keys change the text; Enter commits; Escape reverts; ArrowUp and
+   * ArrowDown step (Shift: ten steps), as do PageUp and PageDown; Meta or
+   * Ctrl plus C, X and V go through the clipboard.
+   */
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.focusedId === null) return false
     const entry = this.entries.get(this.focusedId)
@@ -435,14 +435,18 @@ export class UIKitNumberInputOverlay
 
   /**
    * Paste text into the focused input from code, as a host that catches the
-   * DOM paste event itself would. Only digits, sign, decimal point and
-   * exponent are kept.
+   * DOM paste event itself would. Surrounding whitespace is trimmed and a
+   * Unicode minus becomes `-`; text that is empty or holds any other
+   * non-number character (`1,5`, `12 px`) is ignored, leaving the field as it
+   * was, rather than filtered into a different number.
    */
   paste(text: string): boolean {
     if (this.focusedId === null) return false
     const entry = this.entries.get(this.focusedId)
     if (!entry || entry.spec.enabled === false || !entry.edit) return false
-    this.applyEdit(entry, pasteText(entry.edit, text, acceptNumberChar))
+    const clean = text.trim().replace(/\u2212/g, '-')
+    if (clean === '' || ![...clean].every(acceptNumberChar)) return true
+    this.applyEdit(entry, pasteText(entry.edit, clean, acceptNumberChar))
     return true
   }
 
@@ -524,12 +528,15 @@ export class UIKitNumberInputOverlay
     if (!edit) return
     if (action === 'paste') {
       const session = entry.session
-      void clipboard.read().then((text) => {
-        if (this.entries.get(entry.spec.id) !== entry) return
-        if (this.focusedId !== entry.spec.id || entry.session !== session)
-          return
-        this.paste(text)
-      })
+      void clipboard
+        .read()
+        .then((text) => {
+          if (this.entries.get(entry.spec.id) !== entry) return
+          if (this.focusedId !== entry.spec.id || entry.session !== session)
+            return
+          this.paste(text)
+        })
+        .catch(() => {}) // a bridge that rejects is treated as an empty clipboard
       return
     }
     if (!hasSelection(edit)) return

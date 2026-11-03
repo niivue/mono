@@ -7,8 +7,11 @@
 // and losing focus commits. ArrowUp/Down (Shift: ten steps), PageUp/PageDown,
 // the spinner buttons and the wheel over a focused field step the value and
 // commit at once. `onInput` fires as the typed number changes, `onChange` once
-// per committed change. Add it to a `UIKitControls` layer with the other
-// widgets, or feed the pointer and keyboard entry points from any host.
+// per committed change. Meta or Ctrl plus C, X and V copy, cut and paste
+// through a clipboard bridge (the browser's async clipboard unless the host
+// supplies one; a paste keeps only the characters a number can hold). Add it
+// to a `UIKitControls` layer with the other widgets, or feed the pointer and
+// keyboard entry points from any host.
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import type {
@@ -16,6 +19,7 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
+import { type ClipboardBridge, createBrowserClipboard } from './host'
 import type { LineData } from './line'
 import { UIKitLineOverlay } from './lineOverlay'
 import {
@@ -42,8 +46,13 @@ import { UIKitRectOverlay } from './rectOverlay'
 import { WheelAccumulator } from './scroll'
 import type { UIKitFont } from './text/font'
 import {
+  clipboardKey,
   editKey,
+  hasSelection,
+  insertText,
+  pasteText,
   selectAll,
+  selectedText,
   setCaret,
   type TextEditState,
   textEditState,
@@ -62,6 +71,8 @@ export interface UIKitNumberInputOverlayOptions {
   cssUnits?: boolean
   /** Wheel pixels per step over a focused field. Default 40. */
   wheelStepPx?: number
+  /** Where copy, cut and paste go. Default: the browser's async clipboard. */
+  clipboard?: ClipboardBridge
 }
 
 interface NumberInputEntry {
@@ -72,6 +83,8 @@ interface NumberInputEntry {
   value: number
   /** The edit in progress while focused, else null. */
   edit: TextEditState | null
+  /** Bumped whenever an edit starts, so a slow paste read knows its session is over. */
+  session: number
   /** The last value `onInput` reported (or the committed one). */
   lastInput: number
   firstGlyph: number
@@ -92,6 +105,7 @@ export class UIKitNumberInputOverlay
   private readonly wheelCarry: WheelAccumulator
   private requestRedraw: (() => void) | null
   private layer: UIKitRedrawSource | null = null
+  private clipboard: ClipboardBridge | null
   private scale = 1
   private geometryDirty = true
   private hoverId: string | null = null
@@ -111,6 +125,7 @@ export class UIKitNumberInputOverlay
     this.cssUnits = options.cssUnits ?? false
     this.requestRedraw = options.requestRedraw ?? null
     this.wheelCarry = new WheelAccumulator(options.wheelStepPx ?? 40)
+    this.clipboard = options.clipboard ?? null
   }
 
   /** CSS cursor for the hovered part: a text beam over the field, a pointer over the spinner. */
@@ -152,6 +167,7 @@ export class UIKitNumberInputOverlay
         layout: null,
         value,
         edit: null,
+        session: 0,
         lastInput: value,
         firstGlyph: 0,
         hover: false,
@@ -371,7 +387,8 @@ export class UIKitNumberInputOverlay
 
   /**
    * Editing keys change the text; Enter commits; Escape reverts; ArrowUp and
-   * ArrowDown step (Shift: ten steps), as do PageUp and PageDown.
+   * ArrowDown step (Shift: ten steps), as do PageUp and PageDown; Meta or
+   * Ctrl plus C, X and V go through the clipboard.
    */
   /** Enter commits the field and, in a dialog, submits it. */
   submitsForm(e: UIKitKeyEvent): boolean {
@@ -405,15 +422,27 @@ export class UIKitNumberInputOverlay
       default:
         break
     }
+    const clip = clipboardKey(e)
+    if (clip !== null) {
+      this.clipboardAction(entry, clip)
+      return true
+    }
     const next = editKey(entry.edit, e, acceptNumberChar)
     if (next === null) return false
-    if (next !== entry.edit) {
-      const textChanged = next.text !== entry.edit.text
-      entry.edit = next
-      this.firstShown(entry)
-      this.invalidate()
-      if (textChanged) this.reportInput(entry)
-    }
+    this.applyEdit(entry, next)
+    return true
+  }
+
+  /**
+   * Paste text into the focused input from code, as a host that catches the
+   * DOM paste event itself would. Only digits, sign, decimal point and
+   * exponent are kept.
+   */
+  paste(text: string): boolean {
+    if (this.focusedId === null) return false
+    const entry = this.entries.get(this.focusedId)
+    if (!entry || entry.spec.enabled === false || !entry.edit) return false
+    this.applyEdit(entry, pasteText(entry.edit, text, acceptNumberChar))
     return true
   }
 
@@ -454,6 +483,8 @@ export class UIKitNumberInputOverlay
 
   /** Release GPU resources on both backends. */
   destroy(): void {
+    // A clipboard read still in flight must not edit a destroyed overlay.
+    this.focusedId = null
     this.rects.destroy()
     this.lines.destroy()
     this.labels.destroy()
@@ -468,9 +499,48 @@ export class UIKitNumberInputOverlay
     return formatNumberInput(entry.spec, entry.value)
   }
 
+  /** Take a new edit state, redrawing and reporting the typed number when the text changed. */
+  private applyEdit(entry: NumberInputEntry, next: TextEditState): void {
+    if (!entry.edit || next === entry.edit) return
+    const textChanged = next.text !== entry.edit.text
+    entry.edit = next
+    this.firstShown(entry)
+    this.invalidate()
+    if (textChanged) this.reportInput(entry)
+  }
+
+  /**
+   * Copy or cut the selection to the clipboard, or start a paste: the read
+   * is asynchronous, and its text lands only if the same edit is still in
+   * progress when it arrives.
+   */
+  private clipboardAction(
+    entry: NumberInputEntry,
+    action: 'copy' | 'cut' | 'paste',
+  ): void {
+    this.clipboard ??= createBrowserClipboard()
+    const clipboard = this.clipboard
+    const edit = entry.edit
+    if (!edit) return
+    if (action === 'paste') {
+      const session = entry.session
+      void clipboard.read().then((text) => {
+        if (this.entries.get(entry.spec.id) !== entry) return
+        if (this.focusedId !== entry.spec.id || entry.session !== session)
+          return
+        this.paste(text)
+      })
+      return
+    }
+    if (!hasSelection(edit)) return
+    clipboard.write(selectedText(edit))
+    if (action === 'cut') this.applyEdit(entry, insertText(edit, ''))
+  }
+
   /** The edit state for a freshly focused (or reverted) input: all selected. */
   private freshEdit(entry: NumberInputEntry): TextEditState {
     entry.firstGlyph = 0
+    entry.session++
     return selectAll(textEditState(this.display(entry)))
   }
 

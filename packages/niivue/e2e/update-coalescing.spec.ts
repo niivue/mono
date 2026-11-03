@@ -51,9 +51,10 @@ test('a queued update settles with the follow-up that carries it', async ({
     'rebuild 2',
     'queued ok',
     'rebuild 3',
+    // The caller that took the lock settles with its own pass, not the chain.
+    'first ok',
     'rebuild 4',
     'second fourth rebuild failed',
-    'first ok',
   ])
 })
 
@@ -127,6 +128,68 @@ for (const end of ['view recreation', 'destroy'] as const) {
     expect(r).toEqual({ queued: 'ok', settled: 'ok' })
   })
 }
+
+test('whenUpdatesSettle waits for the rebuild that took over its pass', async ({
+  page,
+}) => {
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const canvas = document.createElement('canvas')
+    canvas.style.cssText = 'width:200px;height:200px'
+    document.body.appendChild(canvas)
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachToCanvas(canvas)
+    type View = { updateBindGroups: (o?: unknown) => Promise<void> }
+    const internals = nv as unknown as {
+      view: View
+      _rebuildViewResources: () => Promise<void>
+    }
+    let releaseOld = () => {}
+    let releaseNew = () => {}
+    const oldGate = new Promise<void>((r) => {
+      releaseOld = r
+    })
+    const newGate = new Promise<void>((r) => {
+      releaseNew = r
+    })
+    internals.view.updateBindGroups = () => oldGate
+    const old = nv.updateGLVolume()
+    let settled = false
+    const wait = nv.whenUpdatesSettle().then(() => {
+      settled = true
+    })
+    // Gate the recreated view's resource rebuild, which takes over the lock.
+    let newStarted = false
+    let newFinished = false
+    const takeover = internals._rebuildViewResources.bind(nv)
+    internals._rebuildViewResources = async () => {
+      const update = internals.view.updateBindGroups.bind(internals.view)
+      internals.view.updateBindGroups = async (o) => {
+        newStarted = true
+        await newGate
+        await update(o)
+        newFinished = true
+      }
+      return takeover()
+    }
+    const replaced = nv.reinitializeView({ forceRestart: true })
+    while (!newStarted) await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 10))
+    const early = { settled, newFinished }
+    releaseNew()
+    await replaced
+    await wait
+    const after = { settled, newFinished }
+    releaseOld()
+    await old
+    nv.destroy()
+    return { early, after }
+  })
+  expect(r).toEqual({
+    early: { settled: false, newFinished: false },
+    after: { settled: true, newFinished: true },
+  })
+})
 
 for (const oldResult of ['resolve', 'reject']) {
   for (const newResult of ['resolve', 'reject']) {

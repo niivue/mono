@@ -182,14 +182,17 @@ describe('volumeCinematic', () => {
   })
 })
 
-it('reports a timeout when a settings rebuild does not settle', async () => {
+it('answers with a note when a settings rebuild does not settle', async () => {
   const view = settingsView({ whenUpdatesSettle: () => new Promise(() => {}) })
-  const { set_options } = settingHandlers(hostOf(view))
-  await expect(
-    Promise.resolve(set_options({ options: { crosshairWidth: 2 } })),
-  ).rejects.toThrow('GPU rebuild did not settle within 8000 ms')
+  const { set_options } = settingHandlers(hostOf(view), 5)
+  expect(
+    await Promise.resolve(set_options({ options: { crosshairWidth: 2 } })),
+  ).toEqual({
+    options: { crosshairWidth: 2 },
+    note: expect.stringContaining('had not finished after 5 ms'),
+  })
   expect(view.crosshairWidth).toBe(2)
-}, 10000)
+})
 
 describe('capabilities', () => {
   it('says which optional members, settings, colormaps and transforms the page has', () => {

@@ -69,8 +69,9 @@ nv1.drawPenValue = 3
 
 A few setters (such as `volumeIsBackgroundMasking`) also start a GPU rebuild
 they cannot return. Before reading pixels or calling `saveBitmap()`, wait for it
-with `await nv1.whenUpdatesSettle()`, which resolves once no GPU update is
-running or queued (it does not report a failed one).
+with `await nv1.whenUpdatesSettle()`, which resolves once the GPU updates
+running or queued at the call have finished, not later ones, so a stream of
+updates does not hold it (it does not report a failed one).
 
 ### Prefix Rules
 

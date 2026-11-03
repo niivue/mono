@@ -4048,10 +4048,11 @@ export default class NiiVue extends EventTarget {
    * Region-of-interest statistics for a loaded volume.
    *
    * Values are calibrated (`scl_slope`/`scl_inter` applied) and non-finite
-   * voxels are excluded. Every mask must sit on the same RAS grid as the
-   * target volume — overlays are resliced to the background grid, so masks
-   * drawn from the loaded volume list satisfy that by construction, but a mask
-   * on a different grid returns `null` rather than silently wrong numbers.
+   * voxels are excluded. Statistics use the target volume's own samples on its
+   * own grid, never the resliced display copy. A mask (or the drawing) on
+   * another grid is looked up at each target voxel centre through both
+   * affines (nearest neighbour, so labels stay exact); target voxels outside
+   * it are excluded.
    *
    * @param options.volumeIndex - which volume to measure (default 0, the background)
    * @param options.masks - the volumes that define the region. A volume index
@@ -4063,8 +4064,8 @@ export default class NiiVue extends EventTarget {
    * @param options.drawPenValues - when masking by the drawing, restrict to these
    *   pen values (default: any non-zero voxel)
    * @returns the statistics, or `null` when the volume has no data, a mask
-   *   index is out of bounds, a label list is empty, or a mask does not match
-   *   the target grid
+   *   index is out of bounds, a label list is empty, or a mask on another grid
+   *   has no affine
    *
    * @example
    * const roi = nv1.getDescriptives({ volumeIndex: 0, isDrawingMask: true })

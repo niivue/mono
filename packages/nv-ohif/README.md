@@ -127,9 +127,10 @@ row in OHIF's **Measurements** panel with its stats.
 | Bidirectional | `measureBidirectional` | two drags | long + short diameter (mm) |
 | ArrowAnnotate | `arrow` | drag | label only |
 
-PlanarFreehandROI panel reflection currently requires exactly one contour without
-holes. Multi-part or holed freehand annotations remain visible in NiiVue but are
-not reflected into OHIF, whose measurement schema exposes only one polyline.
+PlanarFreehandROI, SplineROI and LivewireContour panel reflection requires exactly
+one contour without holes. Multi-part (eraser-split) or holed contours remain
+visible and measured in NiiVue but are not reflected into OHIF, whose measurement
+schema exposes only one polyline.
 
 **Gestures.** Drag tools press-drag-release on a 2D slice. The multi-click tools
 (SplineROI, LivewireContour) click to place each vertex, double-click on a 2D slice

@@ -470,6 +470,40 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(0)
   })
 
+  it('does not reflect an eraser-split or holed spline/livewire ROI (#484)', () => {
+    const ring = (o: number) => [
+      { x: o, y: o },
+      { x: o + 2, y: o },
+      { x: o + 1, y: o + 2 },
+    ]
+    for (const type of ['measureSpline', 'measureLivewire'] as const) {
+      const viewportId = `vp-split-${type}`
+      const svc = setup(viewportId)
+      const annotation = ellipse(type)
+      annotation.shape = { type, start: { x: 0, y: 0 }, end: { x: 7, y: 7 } }
+      annotation.polygons = [{ outer: ring(0), holes: [] }]
+      expect(
+        reflectNiivueAnnotation(viewportId, svc.servicesManager, annotation),
+      ).toBe(true)
+      expect(
+        (svc.added[0]?.data.schema as { points: number[][] }).points,
+      ).toHaveLength(3)
+
+      annotation.polygons = [
+        { outer: ring(0), holes: [] },
+        { outer: ring(4), holes: [] },
+      ]
+      expect(
+        reflectNiivueAnnotation(viewportId, svc.servicesManager, annotation),
+      ).toBe(false)
+      annotation.polygons = [{ outer: ring(0), holes: [ring(0.5)] }]
+      expect(
+        reflectNiivueAnnotation(viewportId, svc.servicesManager, annotation),
+      ).toBe(false)
+      expect(svc.added).toHaveLength(1)
+    }
+  })
+
   it('reflects arrow endpoints tip-first (arrowhead at points[0])', () => {
     const svc = setup('vp-arrow')
     const annotation = ellipse('arrow')

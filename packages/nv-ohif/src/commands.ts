@@ -508,6 +508,13 @@ function niivueMeasurementSource(
   return source
 }
 
+// OHIF tools whose points come from annotation.polygons, not shape endpoints.
+const CONTOUR_TOOLS = new Set([
+  'PlanarFreehandROI',
+  'SplineROI',
+  'LivewireContour',
+])
+
 let niivueMeasurementCounter = 0
 
 /**
@@ -604,11 +611,10 @@ function annotationPointsLps(
       break
     case 'measureSpline':
     case 'measureLivewire':
-    case 'freehand': {
-      const outer = annotation.polygons[0]?.outer
-      points = outer && outer.length >= 2 ? outer : [start, end]
+    case 'freehand':
+      // Exactly one ring, enforced by the CONTOUR_TOOLS guard.
+      points = annotation.polygons[0]?.outer ?? []
       break
-    }
     case 'measureLine':
       points = [start, end]
       break
@@ -843,11 +849,11 @@ function reflectNiivueAnnotationResult(
   const toolType = annotationToolType(annotation)
   const mapping = toolType ? ANNOTATION_TO_OHIF[toolType] : undefined
   if (!mapping) return { status: 'permanentlyUnsupported' }
-  // OHIF's PlanarFreehandROI measurement schema carries one polyline and has no
-  // representation for disconnected components or holes. Do not silently export
-  // only the first outer ring while reporting stats for different geometry.
+  // OHIF's contour measurements carry one polyline and cannot represent an
+  // eraser-split ROI or holes. Do not export only the first ring while the
+  // stats cover every piece (#484).
   if (
-    toolType === 'freehand' &&
+    CONTOUR_TOOLS.has(mapping.toolName) &&
     (annotation.polygons.length !== 1 ||
       (annotation.polygons[0]?.holes.length ?? 0) > 0)
   )

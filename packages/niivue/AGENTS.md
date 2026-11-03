@@ -1097,14 +1097,16 @@ a rebuild.
   affine-only rerun yield to a queued full update.
   A caller queued behind the lock gets a promise from `_queueBehindUpdate`
   that `_runFollowUp` settles with the follow-up's outcome, so its failure
-  reaches the queued callers, not the update that started it. Setters that
-  do not return their rebuild (e.g. `volumeIsBackgroundMasking`) are waited
-  for with the public `whenUpdatesSettle()`, which resolves once nothing is
-  running or queued and does not report a failure. A view takeover
-  (`_rebuildViewResources`) adopts callers whose follow-up is still running
-  on the old view and settles them with its own rebuild; `destroy()`
-  resolves every queued or running caller, and later callers at once, since
-  no update will follow.
+  reaches the queued callers, not the update that started it. The pass calls
+  its `settle` callback in its own `finally`, before chaining the next
+  follow-up, so a caller is not held by updates that arrived after it. Setters
+  that do not return their rebuild (e.g. `volumeIsBackgroundMasking`) are
+  waited for with the public `whenUpdatesSettle()`, which joins the next
+  follow-up when one is queued, else waits for the running pass, and does not
+  report a failure. A view takeover (`_rebuildViewResources`) adopts callers
+  only while a follow-up still holds the lock on the old view, and settles
+  them with its own rebuild; `destroy()` resolves every queued or running
+  caller, and later callers at once, and no follow-up runs after it.
 
 ## Mesh layers (scalar overlays)
 

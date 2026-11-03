@@ -396,6 +396,8 @@ function sameRange(
 
 /** A caller queued behind the GPU update lock. */
 type UpdateWaiter = { resolve: () => void; reject: (err: unknown) => void }
+/** Settles a follow-up's callers once its own pass is done (see `_runFollowUp`). */
+type SettlePass = (failed: boolean, err?: unknown) => void
 
 export default class NiiVue extends EventTarget {
   activeClipPlaneIndex: number
@@ -2769,12 +2771,20 @@ export default class NiiVue extends EventTarget {
    * Resolves once no GPU update is running or queued. Setters that rebuild
    * GPU resources (such as `volumeIsBackgroundMasking`) start the rebuild
    * without returning it, so a screenshot taken straight after one can show
-   * the old scene. A failed update is not reported here. Updates that keep
-   * arriving (a drag, live data) keep it waiting.
+   * the old scene. It waits for the updates running or queued at the call,
+   * not for later ones, so updates that keep arriving (a drag, live data) do
+   * not hold it. A failed update is not reported here.
    */
   async whenUpdatesSettle(): Promise<void> {
-    // A queued follow-up takes the lock again before the waiters wake.
-    while (this._updating && !this._destroyed) await this._updateIdle
+    if (!this._updating || this._destroyed) return
+    // Queued changes ride the next follow-up: settle with that pass.
+    if (this._pendingUpdate)
+      return new Promise((resolve) => {
+        this._pendingWaiters.push({ resolve, reject: () => resolve() })
+      })
+    // shortcut: a takeover (_rebuildViewResources) also wakes this, before the
+    // rebuild finishes; acceptable since the rebuild re-uploads everything.
+    await this._updateIdle
   }
 
   /**
@@ -2809,6 +2819,7 @@ export default class NiiVue extends EventTarget {
     meshes: MeshRebuild,
     volumes?: readonly NVImage[],
     colorbars = !volumes,
+    settle?: SettlePass,
   ): Promise<void> {
     const dirty = this._commitDirtyVolumes()
     const changed = volumes && [
@@ -2825,12 +2836,20 @@ export default class NiiVue extends EventTarget {
       return this._queueBehindUpdate()
     }
     const token = this._beginUpdate()
+    let failed = false
+    let error: unknown
     try {
       this._computeModulationData()
       if (!this.view) return
       await this.view.updateBindGroups({ meshes, volumes: changed, colorbars })
       this.drawScene()
+    } catch (err) {
+      failed = true
+      error = err
+      throw err
     } finally {
+      // This pass's callers settle now, not after the follow-ups chained below.
+      settle?.(failed, error)
       if (this._endUpdate(token)) await this._runPendingUpdate()
     }
   }
@@ -2870,7 +2889,8 @@ export default class NiiVue extends EventTarget {
 
   /** Run the single follow-up for updates coalesced while the lock was held. */
   private async _runPendingUpdate(): Promise<void> {
-    if (!this._pendingUpdate) return
+    // After destroy the view is gone; destroy() already released the waiters.
+    if (!this._pendingUpdate || this._destroyed) return
     const pendingMeshes = this._pendingMeshes
     // Only scoped updates were queued: rebuild just the volumes whose data
     // changed (none for mesh-only updates).
@@ -2884,8 +2904,8 @@ export default class NiiVue extends EventTarget {
     this._pendingAllVolumes = false
     this._pendingVolumes.clear()
     this._pendingColorbars = false
-    await this._runFollowUp(() =>
-      this._updateGL(pendingMeshes, pendingVolumes, pendingColorbars),
+    await this._runFollowUp((settle) =>
+      this._updateGL(pendingMeshes, pendingVolumes, pendingColorbars, settle),
     )
   }
 
@@ -2900,24 +2920,30 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Run a follow-up and settle the callers queued for it with its outcome. Its
-   * failure goes to them, not to the update whose `finally` started it.
+   * failure goes to them, not to the update whose `finally` started it. `run`
+   * calls `settle` once its own pass is done, before the follow-ups it chains,
+   * so a caller is not held while later updates keep arriving.
    */
-  private async _runFollowUp(run: () => Promise<void>): Promise<void> {
+  private async _runFollowUp(
+    run: (settle: SettlePass) => Promise<void>,
+  ): Promise<void> {
     const waiters = this._pendingWaiters
     this._pendingWaiters = []
     const owner = {}
     for (const w of waiters) this._servingWaiters.set(w, owner)
+    const settle: SettlePass = (failed, err) => {
+      for (const w of waiters) {
+        if (this._servingWaiters.get(w) !== owner) continue
+        this._servingWaiters.delete(w)
+        if (failed) w.reject(err)
+        else w.resolve()
+      }
+    }
     try {
-      await run()
-      for (const w of waiters)
-        if (this._servingWaiters.get(w) === owner) w.resolve()
+      await run(settle)
+      settle(false)
     } catch (err) {
-      for (const w of waiters)
-        if (this._servingWaiters.get(w) === owner) w.reject(err)
-    } finally {
-      for (const w of waiters)
-        if (this._servingWaiters.get(w) === owner)
-          this._servingWaiters.delete(w)
+      settle(true, err)
     }
   }
 
@@ -2938,8 +2964,9 @@ export default class NiiVue extends EventTarget {
       await this._updateIdle
     }
     // Callers of a follow-up still running on a replaced view settle with this
-    // rebuild, which takes ownership so the old view cannot settle them.
-    const adopted = [...this._servingWaiters.keys()]
+    // rebuild, which takes ownership so the old view cannot settle them. With
+    // the lock free, any left are settled by their own finished pass.
+    const adopted = this._updating ? [...this._servingWaiters.keys()] : []
     this._commitDirtyVolumes()
     const token = this._beginUpdate()
     for (const w of adopted) this._servingWaiters.set(w, token)
@@ -2971,7 +2998,7 @@ export default class NiiVue extends EventTarget {
     return dirty
   }
 
-  private async updateVolumeAffineOnly(): Promise<void> {
+  private async updateVolumeAffineOnly(settle?: SettlePass): Promise<void> {
     // An isDirty volume needs its voxels re-uploaded, which the overlay-only
     // affine fast path below may not do (it can skip the background).
     const hasDirty = this._commitDirtyVolumes().length > 0
@@ -2983,6 +3010,8 @@ export default class NiiVue extends EventTarget {
       return this._queueBehindUpdate()
     }
     const token = this._beginUpdate()
+    let failed = false
+    let error: unknown
     try {
       if (!this.view) return
       const handled = !hasDirty && (await this.view.updateAffineOverlays?.())
@@ -2994,9 +3023,14 @@ export default class NiiVue extends EventTarget {
       // A moved volume leaves mesh buffers valid; only pick up mesh changes.
       await this.view.updateBindGroups({ meshes: 'changed' })
       this.drawScene()
+    } catch (err) {
+      failed = true
+      error = err
+      throw err
     } finally {
+      settle?.(failed, error)
       // A takeover (false) leaves the follow-up to the new holder.
-      if (this._endUpdate(token)) {
+      if (this._endUpdate(token) && !this._destroyed) {
         if (this._pendingFull) {
           // A full update queued behind this one is a superset of the
           // affine-only rerun; an affine rerun alone would drop it.
@@ -3004,7 +3038,7 @@ export default class NiiVue extends EventTarget {
         } else if (this._pendingUpdate) {
           this._pendingUpdate = false
           this._pendingAllVolumes = false
-          await this._runFollowUp(() => this.updateVolumeAffineOnly())
+          await this._runFollowUp((next) => this.updateVolumeAffineOnly(next))
         }
       }
     }

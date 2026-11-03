@@ -182,7 +182,10 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
 }
 
 /** The handlers for the settings, capability, colormap, font and layout tools. */
-export function settingHandlers(host: NiiVueHost): Handlers {
+export function settingHandlers(
+  host: NiiVueHost,
+  updateWaitMs = UPDATE_WAIT_MS,
+): Handlers {
   const { view } = host
   // The settings are plain properties of the instance; the table says
   // which names are settings, so nothing else on it can be reached.
@@ -246,14 +249,16 @@ export function settingHandlers(host: NiiVueHost): Handlers {
       })
       // Some setters start a GPU rebuild without returning it (#447): wait, so
       // a screenshot taken next shows the change, but not past the call's limit.
+      // The values are already set, so a slow rebuild is a note, not an error.
       return view.whenUpdatesSettle
-        ? within(view.whenUpdatesSettle(), UPDATE_WAIT_MS).then((settled) => {
-            if (!settled)
-              throw new Error(
-                `GPU rebuild did not settle within ${UPDATE_WAIT_MS} ms; settings may still apply.`,
-              )
-            return answer()
-          })
+        ? within(view.whenUpdatesSettle(), updateWaitMs).then((settled) =>
+            settled
+              ? answer()
+              : {
+                  ...answer(),
+                  note: `The GPU rebuild had not finished after ${updateWaitMs} ms; the scene may still be applying these settings.`,
+                },
+          )
         : answer()
     },
 

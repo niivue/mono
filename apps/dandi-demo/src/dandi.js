@@ -895,6 +895,17 @@ function updateCrosshair(screen) {
   })
 }
 
+// The crosshair voxel as x y z, the plane's own axis fixed at the plane, so a
+// report names the exact point clicked.
+function crosshairLabel() {
+  const vox = crosshairVox ?? [Number.NaN, Number.NaN, Number.NaN]
+  const depth = AXIS_INDEX[els.axis.value]
+  return AXIS_NAME.map((name, i) => {
+    const value = i === depth ? planeIndex : vox[i]
+    return `${name} ${Number.isFinite(value) ? Math.round(value) : '-'}`
+  }).join(', ')
+}
+
 function updateSlideHud(screen) {
   if (!slide) return
   const level = slide.selectLevel()
@@ -920,9 +931,7 @@ function updateSlideHud(screen) {
   const umPerTexel = baseUm === null ? null : baseUm * level.downsample
   const [u, v] = PLANE_AXES[els.axis.value]
   els.slideHud.innerHTML = `
-    <div class="title">${AXIS_NAME[u]}${AXIS_NAME[v]} plane, ${
-      els.axis.value
-    } = ${planeIndex}</div>
+    <div class="title">${AXIS_NAME[u]}${AXIS_NAME[v]} plane, ${crosshairLabel()}</div>
     <div class="row"><span class="key">plane</span><span>${
       slide.manifest.width
     } x ${slide.manifest.height} px</span></div>

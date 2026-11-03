@@ -122,7 +122,7 @@ export function regionDescriptives(
     const maskData = native && onTargetGrid(native, maskVol, vol)
     if (!maskData || maskData.length !== nVox) {
       log.warn(
-        `getDescriptives: mask volume ${maskIndex} does not match the target grid`,
+        `getDescriptives: mask volume ${maskIndex} cannot be mapped to the target grid (no affine, or data that does not fit its dims)`,
       )
       return null
     }
@@ -149,7 +149,7 @@ export function regionDescriptives(
     const bitmap = d && onTargetGrid(d.bitmap, d.grid, vol)
     if (!bitmap || bitmap.length !== nVox) {
       log.warn(
-        'getDescriptives: no drawing, or the drawing does not match the target grid',
+        'getDescriptives: no drawing, or the drawing cannot be mapped to the target grid',
       )
       return null
     }

@@ -280,7 +280,7 @@ function flipsFrom(params: Params, volume: ShownVolume): boolean[] {
 /**
  * Why NiiVue computed no statistics for `index` with these options. NiiVue
  * gives its reason only to the browser console, so the common causes are
- * worked out again here from the volumes and the drawing's base.
+ * worked out again here from the volumes.
  */
 function noStatsReason(
   volumes: readonly ShownVolume[],

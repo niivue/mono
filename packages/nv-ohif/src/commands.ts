@@ -238,19 +238,6 @@ export function readBaseWindowLevel(
   return { window: calMax - calMin, level: (calMin + calMax) / 2 }
 }
 
-/** Record a calMin/calMax pair as the entry's window/level (width + center). */
-function recordWindowLevel(
-  entry: NiivueViewportEntry | undefined,
-  calMin: number,
-  calMax: number,
-): void {
-  if (entry)
-    entry.windowLevel = {
-      window: calMax - calMin,
-      level: (calMin + calMax) / 2,
-    }
-}
-
 // Two window/level pairs are the same if within this fraction of the width — a
 // contrast drag moves them well beyond this, crosshair navigation not at all.
 function sameWindowLevel(
@@ -325,7 +312,7 @@ function syncWindowLevelToSiblings(
 }
 
 /**
- * Reverse W/L bridge: after a manual contrast drag, record the base volume's new
+ * Reverse W/L bridge: on a base-volume volumeUpdated, record the new
  * window/level on the entry and reflect it onto any other OHIF viewport showing
  * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
  * window/level when it changed (for a viewport readout), else undefined.
@@ -1554,7 +1541,6 @@ export function getNiivueCommandsModule({
       nv.setVolume(0, { calMin, calMax }).catch((err: unknown) =>
         console.error('[nv-ohif] window/level update failed', err),
       )
-      recordWindowLevel(getActiveNiivueEntry(servicesManager), calMin, calMax)
     },
 
     /**
@@ -1583,7 +1569,6 @@ export function getNiivueCommandsModule({
         .catch((err: unknown) =>
           console.error('[nv-ohif] window/level preset failed', err),
         )
-      recordWindowLevel(entry, range[0], range[1])
     },
 
     /** Recompute the base volume's robust (2-98%) auto window. */

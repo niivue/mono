@@ -56,7 +56,7 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   canvas: **JPEG, TILED_FULL** slides are supported; **JPEG 2000** and **TILED_SPARSE**
   are declined with an explanatory note (see [Whole-slide imaging](#whole-slide-imaging)).
 - Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
-  and reflects a manual NiiVue window/level drag onto any sibling OHIF viewport
+  and reflects any NiiVue window/level change (drag or API) onto any sibling OHIF viewport
   showing the same series (`setViewportWindowLevel`).
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
   sagittal / multiplanar / 3D render), a **clip-plane** dropdown (off / anterior /

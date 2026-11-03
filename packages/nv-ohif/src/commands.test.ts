@@ -1754,6 +1754,36 @@ describe('syncNiivueWindowLevelToOhif', () => {
     expect(ran).toHaveLength(1)
   })
 
+  it('does not echo a window OHIF pushes back through niivueSetWindowLevel', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ calMin: 0, calMax: 100 })
+    register('vp-1', nv)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1' }],
+    })
+    const ran: string[] = []
+    const cm = { runCommand: (name: string) => ran.push(name) }
+    const grid = gridServices().services.viewportGridService
+    const sm = {
+      services: {
+        viewportGridService: { ...grid, getActiveViewportId: () => 'vp-1' },
+      },
+    }
+    // Like core: setVolume applies the window and emits volumeUpdated, which
+    // the viewport routes to syncNiivueWindowLevelToOhif.
+    nv.setVolume = async (_index: number, opts: Record<string, unknown>) => {
+      Object.assign(nv.volumes[0] as object, opts)
+      syncNiivueWindowLevelToOhif('vp-1', sm, cm)
+    }
+    syncNiivueWindowLevelToOhif('vp-1', sm, cm) // seed
+    nv.volumes[0] = { calMin: 200, calMax: 600 }
+    syncNiivueWindowLevelToOhif('vp-1', sm, cm)
+    expect(ran).toEqual(['setViewportWindowLevel'])
+    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
+    definitions.niivueSetWindowLevel({ window: 400, level: 400 })
+    expect(ran).toHaveLength(1)
+  })
+
   it('does not throw without services or a commands manager', () => {
     const nv = stubNiivue()
     nv.volumes.push({ calMin: 0, calMax: 10 })

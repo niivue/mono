@@ -62,14 +62,19 @@ export function slideOverlayContent(
     const [ex, ey] = toDevice(end)
     const dx = end.x - start.x
     const dy = end.y - start.y
-    if (spacing)
+    if (spacing) {
+      const mm = Math.hypot(dx * spacing[0], dy * spacing[1])
+      // Sub-millimetre spans read in micrometres, the scale most slides live at.
+      if (mm >= 1) return { sx, sy, ex, ey, distance: mm }
       return {
         sx,
         sy,
         ex,
         ey,
-        distance: Math.hypot(dx * spacing[0], dy * spacing[1]),
+        distance: mm,
+        label: `${(mm * 1000).toFixed(1)} um`,
       }
+    }
     const label = `${Math.round(Math.hypot(dx, dy))} px`
     return { sx, sy, ex, ey, distance: 0, label }
   })

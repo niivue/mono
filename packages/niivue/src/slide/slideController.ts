@@ -76,6 +76,8 @@ export class NVSlideController {
     canvas.addEventListener('pointermove', this._onMove)
     canvas.addEventListener('pointerup', this._onEnd)
     canvas.addEventListener('pointercancel', this._onEnd)
+    // Capture taken elsewhere ends the gesture, or later presses are ignored.
+    canvas.addEventListener('lostpointercapture', this._onEnd)
     canvas.addEventListener('wheel', this._onWheel, { passive: false })
     canvas.addEventListener('contextmenu', this._onContextMenu)
   }
@@ -94,6 +96,7 @@ export class NVSlideController {
     c.removeEventListener('pointermove', this._onMove)
     c.removeEventListener('pointerup', this._onEnd)
     c.removeEventListener('pointercancel', this._onEnd)
+    c.removeEventListener('lostpointercapture', this._onEnd)
     c.removeEventListener('wheel', this._onWheel)
     c.removeEventListener('contextmenu', this._onContextMenu)
   }
@@ -196,10 +199,12 @@ export class NVSlideController {
 
   private _end(g: Gesture, committed: boolean): void {
     this._gesture = null
-    this._canvas.releasePointerCapture(g.pointerId)
+    if (this._canvas.hasPointerCapture(g.pointerId))
+      this._canvas.releasePointerCapture(g.pointerId)
     if (committed && g.mode === DRAG_MODE.crosshairPan && !g.isDrag)
       this._crosshairAt(g.startX, g.startY)
-    if (g.mode === DRAG_MODE.windowing) this._options.onWindow?.(0, 0, true)
+    if (g.mode === DRAG_MODE.windowing && g.isDrag)
+      this._options.onWindow?.(0, 0, true)
     const box = this._boxFor(g.mode)
     if (!box) return
     this.selection = null
@@ -216,7 +221,15 @@ export class NVSlideController {
     const slide = this._options.slide()
     if (!slide) return
     const [x, y] = this._local(event)
-    slide.zoomBy(Math.exp(-event.deltaY * 0.0013), x, y, this._options.screen())
+    const screen = this._options.screen()
+    // Line (1) and page (2) deltas (Firefox, some mice) are not CSS px.
+    const px =
+      event.deltaMode === 1
+        ? event.deltaY * 16
+        : event.deltaMode === 2
+          ? event.deltaY * screen.heightCss
+          : event.deltaY
+    slide.zoomBy(Math.exp(-px * 0.0013), x, y, screen)
   }
 
   // The secondary button drags; the browser menu would interrupt it.

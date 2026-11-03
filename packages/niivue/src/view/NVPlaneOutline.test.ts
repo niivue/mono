@@ -27,13 +27,96 @@ describe('plane outlines', () => {
         mvpMatrix: mat4.create(),
         leftTopWidthHeight: [0, 0, 100, 100],
       }) as unknown as SliceTile
+    // Within the identity MVP's -1..1 so clipping keeps every edge.
+    const inTile = {
+      cornersMM: square.cornersMM.map(([x, y, z]) => [x / 20, y / 20, z]),
+    } as typeof square
     const lines = buildPlaneOutlineLines(
-      [square],
+      [inTile],
       [tile(SLICE_TYPE.AXIAL), tile(SLICE_TYPE.RENDER)],
       buildLine,
       red,
     )
     expect(lines).toHaveLength(4)
+  })
+
+  // Identity MVP into a 100 px tile: mm (-1..1) maps across the tile.
+  const sliceAt = (z: number, ltwh = [0, 0, 100, 100]) =>
+    ({
+      axCorSag: SLICE_TYPE.AXIAL,
+      mvpMatrix: mat4.create(),
+      leftTopWidthHeight: ltwh,
+      planeNormal: [0, 0, 1],
+      planePoint: [0, 0, z],
+    }) as unknown as SliceTile
+  const flat = (z: number) => ({
+    cornersMM: [
+      [-0.5, -0.5, z],
+      [0.5, -0.5, z],
+      [0.5, 0.5, z],
+      [-0.5, 0.5, z],
+    ] as [number, number, number][],
+  })
+
+  test('only the slice an outline lies in draws its rectangle', () => {
+    expect(
+      buildPlaneOutlineLines([flat(5)], [sliceAt(5.2)], buildLine, red),
+    ).toHaveLength(4)
+    expect(
+      buildPlaneOutlineLines([flat(5)], [sliceAt(9)], buildLine, red),
+    ).toHaveLength(0)
+  })
+
+  test('a crossing slice draws one segment; a missed one draws none', () => {
+    // An upright outline in x = 0, z from 0 to 10.
+    const upright = {
+      cornersMM: [
+        [0, -0.5, 0],
+        [0, 0.5, 0],
+        [0, 0.5, 10],
+        [0, -0.5, 10],
+      ] as [number, number, number][],
+    }
+    expect(
+      buildPlaneOutlineLines([upright], [sliceAt(4)], buildLine, red),
+    ).toHaveLength(1)
+    expect(
+      buildPlaneOutlineLines([upright], [sliceAt(20)], buildLine, red),
+    ).toHaveLength(0)
+  })
+
+  test('segments are clipped to their tile', () => {
+    const wide = {
+      cornersMM: [
+        [-5, -0.5, 0],
+        [5, -0.5, 0],
+        [5, 0.5, 0],
+        [-5, 0.5, 0],
+      ] as [number, number, number][],
+    }
+    const xs: number[] = []
+    const record = (x0: number, _y0: number, x1: number) => {
+      xs.push(x0, x1)
+      return buildLine(0, 0, 0, 0, 1, red)
+    }
+    buildPlaneOutlineLines([wide], [sliceAt(0)], record, red)
+    expect(xs.length).toBeGreaterThan(0)
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(0)
+    expect(Math.max(...xs)).toBeLessThanOrEqual(100)
+  })
+
+  test('the 3D frame is equally wide on every edge of a thin rectangle', () => {
+    const thin = {
+      cornersMM: [
+        [0, 0, 0],
+        [100, 0, 0],
+        [100, 2, 0],
+        [0, 2, 0],
+      ] as [number, number, number][],
+    }
+    const v = buildPlaneOutline3DRenderData([thin], red)?.vertices
+    // Inner corner 0 (vertex 4) sits the same distance from both edges.
+    expect(v?.[4 * 7]).toBeCloseTo(v?.[4 * 7 + 1] ?? -1, 6)
   })
 
   test('a 3D frame of eight triangles in the outline colour', () => {

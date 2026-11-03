@@ -1155,8 +1155,9 @@ function updateFieldOfView(screen) {
 
 // A windowing drag on the slide steps the window as NiiVue's does (0.5% of the
 // span the drag started from per CSS pixel: x widens, y lowers the centre). The
-// volume pane follows live; the slide rebuilds on release, since every rebuild
-// drops its in-flight tiles.
+// text follows live; both panes apply on release, since a slide rebuild drops
+// its in-flight tiles and a chunked volume's window change re-streams every
+// brick.
 let windowDrag = null
 function onSlideWindow(dx, dy, done) {
   if (!windowRange) return
@@ -1167,7 +1168,6 @@ function onSlideWindow(dx, dy, done) {
   const centre = (lo + hi) / 2 - dy * step
   windowDrag.now = [centre - width / 2, centre + width / 2]
   setWindowText(windowDrag.now)
-  previewVolumeWindow(windowDrag.now)
   if (!done) return
   windowDrag = null
   applyWindow()
@@ -1175,11 +1175,6 @@ function onSlideWindow(dx, dy, done) {
 
 function setWindowText([lo, hi]) {
   els.window.value = `${formatValue(lo)},${formatValue(hi)}`
-}
-
-function previewVolumeWindow([lo, hi]) {
-  const index = activeCv ? volumeIndexById(activeCv.volume.id) : -1
-  if (index >= 0) nv.setVolume(index, { calMin: lo, calMax: hi })
 }
 
 // A contrast box sets the window to the intensity range inside it, as NiiVue's

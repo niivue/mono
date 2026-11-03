@@ -677,6 +677,48 @@ describe('ChunkResidencyManager make-before-break remap', () => {
     expect(m.isCoveredByRetiring(1)).toBe(false)
   })
 
+  test('retirees sharing a straddling brick retire together', () => {
+    // Old thirds [0,1) [1,2) [2,3); new [0,2) [1,3) do not nest in them.
+    const thirds = [0, 1, 2].map((x) => ({
+      origin: [x, 0, 0],
+      dims: [1, 1, 1],
+    }))
+    const a = { origin: [0, 0, 0], dims: [2, 1, 1] }
+    const b = { origin: [1, 0, 0], dims: [2, 1, 1] }
+    const m = manager(3)
+    const old = thirds.map((_, i) => fakeChunk(`old${i}`, 10))
+    for (const [i, c] of old.entries()) m.admit(i, c)
+    // New 0 covers old 0 and 1; new 1 covers old 1 and 2.
+    m.remap(new Map(), 2, retain(thirds, [a, b]))
+    m.admit(0, fakeChunk('a', 20))
+    // Old 0's covers are all resident, but old 1 still hides new 0 (it waits
+    // on new 1), so old 0 must stay or [0,1) would draw nothing.
+    expect(old[0].destroyed).toBe(false)
+    expect(m.isCoveredByRetiring(0)).toBe(true)
+    m.admit(1, fakeChunk('b', 20))
+    expect(old.every((c) => c.destroyed)).toBe(true)
+    expect(m.retiringChunks).toHaveLength(0)
+  })
+
+  test('a short budget drops only as many retirees as it must', () => {
+    const regions = [0, 1].map((x) => ({ origin: [x, 0, 0], dims: [1, 1, 1] }))
+    const fine = [0, 1, 2, 3].map((x) => ({
+      origin: [x / 2, 0, 0],
+      dims: [0.5, 1, 1],
+    }))
+    const m = manager(2, 110)
+    const old = [fakeChunk('old0', 50), fakeChunk('old1', 50)]
+    for (const [i, c] of old.entries()) m.admit(i, c)
+    m.remap(new Map(), 4, retain(regions, fine))
+    m.beginFrame()
+    // 25 resident + 100 retiring > 110: one retiree must go, not both, and
+    // the one nearer done (old0, one cover left to stream) goes first.
+    m.admit(0, fakeChunk('f0', 25))
+    expect(old[0].destroyed).toBe(true)
+    expect(old[1].destroyed).toBe(false)
+    expect(m.isCoveredByRetiring(2)).toBe(true)
+  })
+
   test('destroy frees retiring bricks', () => {
     const m = manager(1)
     const old = fakeChunk('whole', 100)

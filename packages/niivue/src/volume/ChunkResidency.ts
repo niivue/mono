@@ -249,7 +249,12 @@ export class ChunkResidencyManager<TChunk> {
     const settled = (i: number): boolean =>
       this._resident.has(i) ||
       (unwanted && !this._uploadQueue.has(i) && !this._inFlightUploads.has(i))
-    const done = this._retiring.filter((t) => t.covers.every(settled))
+    // Retire overlap-connected groups together: with non-nested grids a new
+    // brick can straddle two retirees, and dropping one while the other still
+    // hides that brick would leave the first one's region undrawn.
+    const done = this._retiringGroups()
+      .filter((g) => g.every((t) => t.covers.every(settled)))
+      .flat()
     // The bricks a retiring one hid replace it outright: a fade-in from here
     // would be over the coarse floor, which is the drop this policy avoids.
     for (const t of done) {
@@ -260,6 +265,27 @@ export class ChunkResidencyManager<TChunk> {
     }
     if (done.length > 0) this._dropRetiring(done)
     else this._covered = new Set(this._retiring.flatMap((t) => t.covers))
+  }
+
+  /** Retiring chunks partitioned into groups linked by a shared cover. */
+  private _retiringGroups(): RetiringChunk<TChunk>[][] {
+    const groupOf = new Map<number, RetiringChunk<TChunk>[]>()
+    const groups = new Set<RetiringChunk<TChunk>[]>()
+    for (const t of this._retiring) {
+      let g: RetiringChunk<TChunk>[] = [t]
+      for (const i of t.covers) {
+        const other = groupOf.get(i)
+        if (other && other !== g) {
+          groups.delete(g)
+          other.push(...g)
+          for (const u of g) for (const j of u.covers) groupOf.set(j, other)
+          g = other
+        }
+        groupOf.set(i, g)
+      }
+      groups.add(g)
+    }
+    return [...groups]
   }
 
   private _dropRetiring(list: readonly RetiringChunk<TChunk>[]): void {
@@ -571,10 +597,22 @@ export class ChunkResidencyManager<TChunk> {
    * exceeds the budget, and rendering over budget beats punching a hole.
    */
   private _evictToFit(keepIndex: number): void {
-    // Retiring chunks are a transition luxury: past the budget they all go,
-    // which degrades make-before-break to plain replace.
+    // Retiring chunks are a transition luxury: past the budget they go, a
+    // whole overlap group at a time, nearest-done first, only until it fits.
     if (this._residentBytes + this._retiringBytes > this._budgetBytes) {
-      this._dropRetiring(this._retiring)
+      const missing = (g: RetiringChunk<TChunk>[]): number =>
+        g.reduce(
+          (n, t) => n + t.covers.filter((i) => !this._resident.has(i)).length,
+          0,
+        )
+      const groups = this._retiringGroups().sort(
+        (a, b) => missing(a) - missing(b),
+      )
+      for (const g of groups) {
+        if (this._residentBytes + this._retiringBytes <= this._budgetBytes)
+          break
+        this._dropRetiring(g)
+      }
     }
     if (this._residentBytes <= this._budgetBytes) return
     const candidates = [...this._resident.entries()]

@@ -23,6 +23,15 @@ describe('slideOverlayContent', () => {
     expect(r.label).toBeUndefined()
   })
 
+  test('a sub-millimetre ruler reads in micrometres', () => {
+    const [r] = slideOverlayContent(
+      slide([0.0036, 0.0036]),
+      screen,
+      source,
+    ).rulers
+    expect(r.label).toBe('180.0 um')
+  })
+
   test('without spacing a ruler reads in px and has no ticks', () => {
     const [r] = slideOverlayContent(slide(), screen, source).rulers
     expect(r.distance).toBe(0)

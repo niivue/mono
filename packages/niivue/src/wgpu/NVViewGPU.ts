@@ -2074,6 +2074,7 @@ export default class NVView {
         screenSlices,
         buildLine,
         md.ui.crosshairColor,
+        NVAnnotation.computeTolerance(md),
       ),
     )
     // Bounds border

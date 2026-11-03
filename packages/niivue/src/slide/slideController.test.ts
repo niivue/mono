@@ -10,6 +10,7 @@ function rig(options: { primary?: DRAG_MODE; secondary?: DRAG_MODE } = {}) {
     getBoundingClientRect: () => ({ left: 0, top: 0 }),
     setPointerCapture: () => {},
     releasePointerCapture: () => {},
+    hasPointerCapture: () => true,
   }) as unknown as HTMLCanvasElement
   const pans: number[][] = []
   const zooms: number[] = []
@@ -30,14 +31,20 @@ function rig(options: { primary?: DRAG_MODE; secondary?: DRAG_MODE } = {}) {
     onWindow: (dx, dy, done) => windows.push([dx, dy, done]),
     onContrast: (box) => boxes.push(box),
   })
-  const fire = (type: string, x: number, y: number, button = 0) =>
+  const fire = (
+    type: string,
+    x: number,
+    y: number,
+    button = 0,
+    wheel = { deltaY: -100, deltaMode: 0 },
+  ) =>
     canvas.dispatchEvent(
       Object.assign(new Event(type), {
         clientX: x,
         clientY: y,
         button,
         pointerId: 1,
-        deltaY: -100,
+        ...wheel,
       }),
     )
   return { ctl, fire, pans, zooms, crosshairs, windows, boxes }
@@ -123,5 +130,28 @@ describe('NVSlideController', () => {
     const r = rig()
     r.fire('wheel', 0, 0)
     expect(r.zooms[0]).toBeGreaterThan(1)
+  })
+
+  test('a line-mode wheel notch zooms as far as its pixel equivalent', () => {
+    const r = rig()
+    r.fire('wheel', 0, 0, 0, { deltaY: -3, deltaMode: 1 })
+    r.fire('wheel', 0, 0, 0, { deltaY: -48, deltaMode: 0 })
+    expect(r.zooms[0]).toBeCloseTo(r.zooms[1], 10)
+  })
+
+  test('a windowing click reports no window change', () => {
+    const r = rig({ primary: DRAG_MODE.windowing })
+    r.fire('pointerdown', 5, 5)
+    r.fire('pointerup', 5, 5)
+    expect(r.windows).toEqual([])
+  })
+
+  test('losing pointer capture ends the gesture', () => {
+    const r = rig()
+    r.fire('pointerdown', 10, 10)
+    r.fire('lostpointercapture', 10, 10)
+    r.fire('pointerdown', 30, 30)
+    r.fire('pointerup', 30, 30)
+    expect(r.crosshairs).toEqual([[30, 30]])
   })
 })

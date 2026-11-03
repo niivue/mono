@@ -1719,6 +1719,7 @@ export default class NVGlview {
         screenSlices,
         buildLine,
         md.ui.crosshairColor,
+        NVAnnotation.computeTolerance(md),
       ),
     )
     // Bounds border

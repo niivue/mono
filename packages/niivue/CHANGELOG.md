@@ -1,3 +1,13 @@
+## 1.0.0-rc.82 (2026-11-03)
+
+### Fixes
+
+- **niivue:** FIB/SRC z spacing and MHA without TransformMatrix ([#536](https://github.com/niivue/mono/issues/536))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.81 (2026-11-03)
 
 ### Fixes

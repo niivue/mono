@@ -1,3 +1,18 @@
+## 1.0.0-rc.77 (2026-11-03)
+
+### Fixes
+
+- **nv-ohif:** do not export a split spline or livewire ROI as its first piece ([#484](https://github.com/niivue/mono/issues/484))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.82
+- Updated uikit to 1.0.0-rc.76
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.76 (2026-11-03)
 
 ### Updated Dependencies

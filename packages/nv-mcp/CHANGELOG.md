@@ -1,3 +1,10 @@
+## 1.0.0-rc.68 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.82
+- Updated uikit to 1.0.0-rc.76
+
 ## 1.0.0-rc.67 (2026-11-03)
 
 ### Updated Dependencies

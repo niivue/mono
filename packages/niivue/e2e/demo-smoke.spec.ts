@@ -23,9 +23,11 @@ const isLocal = (url: string) => url.includes('localhost:5273')
 // A page is settled after QUIET_MS with no request open and two frames drawn.
 // Playwright's networkidle is a fixed 500 ms. Loads come in stages (modules,
 // then the demo's fetches, then decode and draw), so a much shorter window can
-// pass before a later stage starts. An error raised later with no request
-// open (a timer, say) is missed; the old fixed wait caught it. MAX_WAIT_MS caps
-// slow pages.
+// pass before a later stage starts. Accepted gap: work with no request open is
+// not counted, so an error raised after the window is missed. That covers a
+// timer and, more often, a volume decode in the volumeLoad worker after its
+// download: a decode longer than QUIET_MS and two frames can fail unseen. The
+// old fixed wait caught both. MAX_WAIT_MS caps slow pages.
 const QUIET_MS = 250
 const MAX_WAIT_MS = 6000
 

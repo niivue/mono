@@ -174,6 +174,8 @@ export interface TextAreaVisual {
    * drawn rows match the viewport its hit tests use.
    */
   revealCaret?: boolean
+  /** The caret sits at the end of the row a soft break ends, not the start of the next. */
+  upstream?: boolean
   hover: boolean
   enabled: boolean
 }
@@ -372,14 +374,24 @@ export function wrapRows(
 
 /**
  * The row that shows the caret at `caret`: the row containing it, or a hard
- * row ending exactly there. A caret at a soft break sits on the next row.
+ * row ending exactly there. A caret at a soft break sits on the next row,
+ * or on the row the break ends when `upstream`.
  */
-export function rowOfCaret(rows: readonly TextRow[], caret: number): number {
+export function rowOfCaret(
+  rows: readonly TextRow[],
+  caret: number,
+  upstream = false,
+): number {
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]
-    if (caret < r.end || (r.hard && caret === r.end)) return i
+    if (caret < r.end || ((r.hard || upstream) && caret === r.end)) return i
   }
   return Math.max(0, rows.length - 1)
+}
+
+/** True when `caret` is the end of soft row `row`, so it must stay upstream to show there. */
+function endsSoftRow(row: TextRow, caret: number): boolean {
+  return !row.hard && caret === row.end
 }
 
 /** The x offset of `caret` from the left edge of its row. */
@@ -422,12 +434,18 @@ export function textAreaWindow(
   rows: readonly TextRow[],
   firstRow: number,
   caret: number | null,
+  upstream = false,
 ): ScrollWindow {
   const heights = rows.map(() => layout.rowHeight)
   const viewport = layout.textArea.height
   const w = scrollWindow(heights, viewport, firstRow)
   if (caret === null) return w
-  const first = revealRow(heights, viewport, w, rowOfCaret(rows, caret))
+  const first = revealRow(
+    heights,
+    viewport,
+    w,
+    rowOfCaret(rows, caret, upstream),
+  )
   return first === w.first ? w : scrollWindow(heights, viewport, first)
 }
 
@@ -444,7 +462,8 @@ export function textAreaRows(
 
 /**
  * The caret index for a canvas point over text shown from `firstRow`: the
- * row under `py` (clamped to the rows shown) and the nearest glyph edge on it.
+ * row under `py` (clamped to the rows shown) and the nearest glyph edge on
+ * it, upstream when that edge is the end of a soft row.
  */
 export function textAreaCaretAt(
   layout: TextAreaLayout,
@@ -454,7 +473,7 @@ export function textAreaCaretAt(
   firstRow: number,
   px: number,
   py: number,
-): number {
+): { caret: number; upstream: boolean } {
   const advances = glyphAdvances(metrics, text, style.textSizePx)
   const rows = wrapRows(text, advances, textAreaWrapWidth(layout, style))
   const shown = textAreaWindow(layout, rows, firstRow, null)
@@ -464,14 +483,19 @@ export function textAreaCaretAt(
     shown.first,
     Math.min(shown.end - 1, shown.first + offset),
   )
-  if (index < 0 || index >= rows.length) return text.length
-  return caretInRow(text, advances, rows[index], px - area.x)
+  if (index < 0 || index >= rows.length) {
+    return { caret: text.length, upstream: false }
+  }
+  const row = rows[index]
+  const caret = caretInRow(text, advances, row, px - area.x)
+  return { caret, upstream: endsSoftRow(row, caret) }
 }
 
 /**
  * Move the caret `delta` rows, keeping `goalX` (the x the caret had before a
  * run of vertical moves, or its current x when null) as far as the target
  * row allows. Past the first or last row the caret goes to the text's ends.
+ * `upstream` places a caret at a soft break on the row the break ends.
  */
 export function moveCaretRows(
   s: TextEditState,
@@ -480,16 +504,26 @@ export function moveCaretRows(
   delta: number,
   goalX: number | null,
   extend: boolean,
-): { state: TextEditState; goalX: number } {
-  const from = rowOfCaret(rows, s.caret)
+  upstream = false,
+): { state: TextEditState; goalX: number; upstream: boolean } {
+  const from = rowOfCaret(rows, s.caret, upstream)
   const x = goalX ?? caretXInRow(advances, rows[from], s.caret)
   const to = from + delta
-  if (to < 0) return { state: setCaret(s, 0, extend), goalX: x }
+  if (to < 0)
+    return { state: setCaret(s, 0, extend), goalX: x, upstream: false }
   if (to >= rows.length) {
-    return { state: setCaret(s, s.text.length, extend), goalX: x }
+    return {
+      state: setCaret(s, s.text.length, extend),
+      goalX: x,
+      upstream: false,
+    }
   }
   const caret = caretInRow(s.text, advances, rows[to], x)
-  return { state: setCaret(s, caret, extend), goalX: x }
+  return {
+    state: setCaret(s, caret, extend),
+    goalX: x,
+    upstream: endsSoftRow(rows[to], caret),
+  }
 }
 
 /**
@@ -498,7 +532,9 @@ export function moveCaretRows(
  * Meta or Ctrl to the text's ends), Home and End move within the row (Meta
  * or Ctrl to the text's ends), and every other key goes to the single-line
  * model. `goalX` carries the x a run of vertical moves aims for; it comes
- * back as null after any other key. Returns null for keys that are not edits.
+ * back as null after any other key. `upstream` keeps a caret at a soft break
+ * on the row the break ends: End and vertical moves landing there set it,
+ * every other key clears it. Returns null for keys that are not edits.
  */
 export function textAreaKey(
   s: TextEditState,
@@ -506,13 +542,16 @@ export function textAreaKey(
   rows: readonly TextRow[],
   advances: readonly number[],
   goalX: number | null,
+  upstream: boolean,
   pageRows: number,
   accept: (ch: string) => boolean = () => true,
-): { state: TextEditState; goalX: number | null } | null {
+): { state: TextEditState; goalX: number | null; upstream: boolean } | null {
   const jump = e.metaKey || e.ctrlKey
   switch (e.key) {
     case 'Enter':
-      return jump ? null : { state: insertText(s, '\n'), goalX: null }
+      return jump
+        ? null
+        : { state: insertText(s, '\n'), goalX: null, upstream: false }
     case 'ArrowUp':
     case 'ArrowDown':
     case 'PageUp':
@@ -522,6 +561,7 @@ export function textAreaKey(
         return {
           state: setCaret(s, up ? 0 : s.text.length, e.shiftKey),
           goalX: null,
+          upstream: false,
         }
       }
       const step = e.key.startsWith('Page') ? Math.max(1, pageRows) : 1
@@ -532,23 +572,31 @@ export function textAreaKey(
         up ? -step : step,
         goalX,
         e.shiftKey,
+        upstream,
       )
     }
     case 'Home':
     case 'End': {
-      if (jump) return { state: editKey(s, e) ?? s, goalX: null }
-      const row = rows[rowOfCaret(rows, s.caret)]
+      if (jump) {
+        return { state: editKey(s, e) ?? s, goalX: null, upstream: false }
+      }
+      const row = rows[rowOfCaret(rows, s.caret, upstream)]
       let index = e.key === 'Home' ? row.start : row.end
+      // A trailing space may overhang the field edge, so End stops before it.
       if (e.key === 'End' && !row.hard && s.text[row.end - 1] === ' ') {
         index = row.end - 1
       }
-      return { state: setCaret(s, index, e.shiftKey), goalX: null }
+      return {
+        state: setCaret(s, index, e.shiftKey),
+        goalX: null,
+        upstream: endsSoftRow(row, index),
+      }
     }
     default:
       break
   }
   const next = editKey(s, e, accept)
-  return next === null ? null : { state: next, goalX: null }
+  return next === null ? null : { state: next, goalX: null, upstream: false }
 }
 
 /**
@@ -616,7 +664,13 @@ export function buildTextArea(
   const rows = wrapRows(visual.text, advances, wrapWidth)
   const caret =
     visual.edit && visual.revealCaret !== false ? visual.edit.caret : null
-  const shown = textAreaWindow(layout, rows, visual.firstRow, caret)
+  const shown = textAreaWindow(
+    layout,
+    rows,
+    visual.firstRow,
+    caret,
+    visual.upstream,
+  )
   const selected =
     visual.edit && hasSelection(visual.edit) ? selectionOf(visual.edit) : null
   for (let i = shown.first; i < shown.end; i++) {
@@ -653,7 +707,7 @@ export function buildTextArea(
   }
 
   if (visual.edit && visual.enabled && caret !== null && !selected) {
-    const row = rowOfCaret(rows, caret)
+    const row = rowOfCaret(rows, caret, visual.upstream)
     if (row >= shown.first && row < shown.end) {
       rects.push(
         buildRect({

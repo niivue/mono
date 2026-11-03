@@ -95,6 +95,11 @@ export function imageSize(buffer: ArrayBuffer): {
   if (b.length >= 4 && v.getUint16(0) === 0xffd8) {
     let i = 2
     while (i + 9 <= b.length && b[i] === 0xff) {
+      // Any marker may be preceded by 0xff fill bytes.
+      if (b[i + 1] === 0xff) {
+        i++
+        continue
+      }
       const marker = b[i + 1]
       // SOF0-SOF15, less DHT (C4), JPG (C8) and DAC (CC).
       if (

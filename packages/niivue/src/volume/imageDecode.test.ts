@@ -311,6 +311,18 @@ describe('imageSize', () => {
     expect(imageSize(buffer)).toEqual({ width: 800, height: 600 })
   })
 
+  test('skips 0xff fill bytes before a JPEG marker', () => {
+    // SOI, fill, APP0 (length 4), fill x2, SOF0: height 600, width 800
+    const buffer = header(
+      [
+        0xff, 0xd8, 0xff, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xff, 0xff,
+        0xc0, 0x00, 0x11, 0x08, 0x02, 0x58, 0x03, 0x20,
+      ],
+      24,
+    )
+    expect(imageSize(buffer)).toEqual({ width: 800, height: 600 })
+  })
+
   test('throws for an unrecognized or truncated header', () => {
     expect(() => imageSize(new Uint8Array([1, 2, 3]).buffer)).toThrow(
       'Unrecognized',

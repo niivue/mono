@@ -315,6 +315,8 @@
       <span class="control">
         <label for="dataset">Dandiset</label>
         <select id="dataset" autocomplete="off">
+          <option value="synthetic">Synthetic (dev server), 106 MB (float32)</option>
+          <option value="synthetic-oct">Synthetic (dev server), 4.5 GB (float32)</option>
           <option value="oct-small" selected>
             000722 human brain OCT, 106 MB (float32)
           </option>
@@ -488,6 +490,11 @@
         <select id="aaSelect" title="Multisample anti-aliasing for the volume pane (reloads the page)">
           <option value="off">off</option>
           <option value="on">on</option>
+        </select>
+        <label for="slideFilter">Slide</label>
+        <select id="slideFilter" autocomplete="off" title="Deep-zoom tile sampling: linear blends neighbouring pixels; nearest shows each source pixel as a square">
+          <option value="linear" selected>linear</option>
+          <option value="nearest">nearest</option>
         </select>
       </span>
     </header>

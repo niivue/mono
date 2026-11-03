@@ -30,8 +30,13 @@ function clusters(text: string): Iterable<string> {
  * ASCII text without a CR, so no segmentation is needed).
  */
 export function clusterBoundaries(text: string): Uint8Array | null {
-  // \r is excluded: CR LF is one cluster.
-  if (/^[\x00-\x0c\x0e-\x7f]*$/.test(text)) return null
+  let simple = true
+  for (let k = 0; k < text.length && simple; k++) {
+    const c = text.charCodeAt(k)
+    // CR is excluded: CR LF is one cluster.
+    simple = c < 0x80 && c !== 13
+  }
+  if (simple) return null
   const out = new Uint8Array(text.length + 1)
   let i = 0
   out[0] = 1

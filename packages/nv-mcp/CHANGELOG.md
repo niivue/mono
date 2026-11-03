@@ -1,3 +1,45 @@
+## 1.0.0-rc.58 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** review fixes for non-finite states ([c21a45b5](https://github.com/niivue/mono/commit/c21a45b5))
+- **nv-mcp:** carry NiiVue's non-finite states over JSON ([#493](https://github.com/niivue/mono/issues/493))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.57 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.75
+- Updated uikit to 1.0.0-rc.66
+
+## 1.0.0-rc.56 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** drawNow sizes the canvas by NiiVue's pixel ratio ([#464](https://github.com/niivue/mono/issues/464))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.74
+- Updated uikit to 1.0.0-rc.65
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.55 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.73
+- Updated uikit to 1.0.0-rc.64
+
 ## 1.0.0-rc.54 (2026-11-02)
 
 ### Updated Dependencies

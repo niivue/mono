@@ -133,6 +133,34 @@ describe('signal notes pinned to an edge (#493)', () => {
   })
 })
 
+describe('signal note edge words', () => {
+  it('reads the words in any case and names them in a bad-word error', () => {
+    const view = signalView()
+    const { set_signal } = signalHandlers(hostOf(view))
+    set_signal({ annotations: [{ text: 'a', x: 1, y: ' Top ' }] })
+    expect(view.setSignal).toHaveBeenCalledWith(0, {
+      annotations: [{ text: 'a', x: 1, y: Number.POSITIVE_INFINITY }],
+    })
+    set_signal({ annotations: [{ text: 'b', x: 1, y: '2' }] })
+    expect(view.setSignal).toHaveBeenLastCalledWith(0, {
+      annotations: [{ text: 'b', x: 1, y: 2 }],
+    })
+    expect(() =>
+      set_signal({ annotations: [{ text: 'c', x: 1, y: 'middle' }] }),
+    ).toThrow(
+      "Annotation 0 y must be a number, or top or bottom (got 'middle').",
+    )
+  })
+
+  it('does not report a NaN y as an edge', () => {
+    const shown = describeSignal(
+      { annotations: [{ text: 'n', x: 1, y: Number.NaN }] },
+      0,
+    )
+    expect(shown.annotations).toEqual([{ text: 'n', x: 1, y: Number.NaN }])
+  })
+})
+
 describe('load_signal', () => {
   it('adds a signal with its display, attachment and notes, named from the url', async () => {
     const view = signalView()

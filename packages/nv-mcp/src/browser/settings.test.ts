@@ -37,6 +37,9 @@ describe('get_options and set_options', () => {
     // A setting the page lacks is described without a value.
     expect(options.gamma.value).toBeUndefined()
     expect(options.gamma.kind).toBe('number')
+    // A number JSON cannot carry travels as null, and the description says so.
+    expect(options.meshThicknessOn2D.nullable).toBe(true)
+    expect(options.crosshairWidth.nullable).toBeUndefined()
   })
 
   it('reads named settings as plain values, described when asked', () => {

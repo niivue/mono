@@ -1,3 +1,30 @@
+## 1.0.0-rc.76 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.75
+
+## 1.0.0-rc.75 (2026-11-02)
+
+### Fixes
+
+- **nv-react:** handle a rejected removeVolume too ([7f818fd3](https://github.com/niivue/mono/commit/7f818fd3))
+- **nv-ohif, nv-react:** handle a rejected setVolume ([#467](https://github.com/niivue/mono/issues/467))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.74
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.74 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.73
+
 ## 1.0.0-rc.73 (2026-11-02)
 
 ### Updated Dependencies

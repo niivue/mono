@@ -1,3 +1,20 @@
+## 1.0.0-rc.77 (2026-11-03)
+
+### Fixes
+
+- settle post-destroy update callers and document unreported rebuild failures ([1225f424](https://github.com/niivue/mono/commit/1225f424))
+- preserve update waiter ownership and report settings timeouts ([8ea97e22](https://github.com/niivue/mono/commit/8ea97e22))
+- **niivue:** settle queued GPU-update callers on view takeover and destroy ([#466](https://github.com/niivue/mono/issues/466))
+- **nv-mcp:** answer set_options once the GPU rebuild it started settles ([#447](https://github.com/niivue/mono/issues/447))
+- **niivue:** settle a coalesced GPU update with the follow-up that carries it ([#447](https://github.com/niivue/mono/issues/447), [#273](https://github.com/niivue/mono/issues/273))
+
+### Thank You
+
+- Chris Drake
+- Claude
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.76 (2026-11-03)
 
 ### Features

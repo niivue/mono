@@ -1,3 +1,24 @@
+## 1.0.0-rc.60 (2026-11-03)
+
+### Fixes
+
+- settle post-destroy update callers and document unreported rebuild failures ([1225f424](https://github.com/niivue/mono/commit/1225f424))
+- preserve update waiter ownership and report settings timeouts ([8ea97e22](https://github.com/niivue/mono/commit/8ea97e22))
+- **niivue:** settle queued GPU-update callers on view takeover and destroy ([#466](https://github.com/niivue/mono/issues/466))
+- **nv-mcp:** answer set_options once the GPU rebuild it started settles ([#447](https://github.com/niivue/mono/issues/447))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.77
+- Updated uikit to 1.0.0-rc.68
+
+### Thank You
+
+- Chris Drake
+- Claude
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.59 (2026-11-03)
 
 ### Features

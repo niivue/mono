@@ -137,10 +137,10 @@ export class WgpuLineRenderer {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       const off = i * FLOATS_PER_LINE
-      // Zero a hole: the reused scratch may hold a prior frame's line there. A
-      // zeroed instance is a zero-thickness (invisible) line, like a fresh alloc.
+      // Zero the slot first: the reused scratch may hold a prior frame's line, and
+      // a hole or a short record (3-value color) must read as zeros like a fresh alloc.
+      data.fill(0, off, off + FLOATS_PER_LINE)
       if (line) data.set(line.data, off)
-      else data.fill(0, off, off + FLOATS_PER_LINE)
     }
     device.queue.writeBuffer(this.storageBuffer, 0, data, 0, need)
     pass.setPipeline(this.pipeline)

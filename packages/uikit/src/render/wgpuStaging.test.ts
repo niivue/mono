@@ -128,6 +128,19 @@ describe('WgpuLineRenderer staging', () => {
     expect(gpu.calls).toHaveLength(0)
   })
 
+  it('zeroes the tail of a short record instead of keeping the prior frame', () => {
+    const gpu = fakeGpu()
+    const r = new WgpuLineRenderer()
+    draw(r, gpu, [line(1)])
+    gpu.reset()
+    // An 11-float record (3-value color, no alpha) must leave the last float 0.
+    draw(r, gpu, [{ data: new Float32Array(FLOATS_PER_LINE - 1).fill(2) }])
+    expect(gpu.writes[1].data).toEqual([
+      ...Array(FLOATS_PER_LINE - 1).fill(2),
+      0,
+    ])
+  })
+
   it('grows past the initial storage capacity', () => {
     const gpu = fakeGpu()
     const r = new WgpuLineRenderer()

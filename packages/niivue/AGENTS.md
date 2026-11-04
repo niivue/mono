@@ -150,7 +150,8 @@ pre-init `enforceBackendAvailability` check isn't enough). The failed attempt ma
 the canvas's context type, so the fallback swaps in a fresh canvas via
 `replaceCanvasElement` (now `oldCanvas.cloneNode(false)`, preserving width/height/
 data-*/aria/tabindex; external listeners on the original canvas are NOT preserved).
-The fallback is declined for a SHARED canvas (`canvasInstances` size > 1) — replacing
+A detached canvas (no `parentNode`) is kept, since nothing could swap a clone in.
+The fallback is declined for a SHARED canvas (`getCanvasInstances` size > 1) — replacing
 it would desync sibling controllers — surfacing the overlay instead. Only `init()` is
 fallback-eligible; post-init failures (thumbnail, etc.) rethrow. On all-backends-fail,
 `attachToCanvas` `unregister`s the controller and restores the originally requested
@@ -213,7 +214,7 @@ Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (
 
 **Scene synchronization:** `broadcastTo(targets?, opts?)` syncs scene state between controller instances. `SyncOpts` controls granularity: `'3d'`, `'2d'`, `clipPlane`, `sliceType`, `calMin`, `calMax`. Uses `_syncDirty` flag to prevent bidirectional race conditions.
 
-**Shared canvas (bounds):** Multiple instances can share a `<canvas>` via normalized `[[x1,y1],[x2,y2]]` bounds (`NVBounds` type, y=0 bottom, y=1 top). WebGL2 uses scissor-based clipping with `preserveDrawingBuffer: true`. WebGPU renders to intermediate textures then copies to canvas at bounds offset, with `SharedGPUContext` sharing device across instances. `canvasInstances` WeakMap in `viewBoth.ts` tracks siblings. `clientToBoundsPixel()` transforms full-canvas coords to bounds-local for hit testing.
+**Shared canvas (bounds):** Multiple instances can share a `<canvas>` via normalized `[[x1,y1],[x2,y2]]` bounds (`NVBounds` type, y=0 bottom, y=1 top). WebGL2 uses scissor-based clipping with `preserveDrawingBuffer: true`. WebGPU renders to intermediate textures then copies to canvas at bounds offset, with `SharedGPUContext` sharing device across instances. `control/canvasRegistry.ts` tracks siblings and the per-canvas viewport, shared by every lifecycle. `clientToBoundsPixel()` transforms full-canvas coords to bounds-local for hit testing.
 
 **Future opportunity — WebGPU `clip-distances`:** a commented-out block in `src/wgpu/NVViewGPU.ts` (just above `requestDevice`) sketches a hardware-accelerated mesh clip plane path gated on the `clip-distances` feature. Adapter support is still patchy (notably Safari), so the code is parked. Activation guidance lives next to the block.
 
@@ -491,22 +492,6 @@ finding that they had no consumers. Every one of the five had a consumer:
 `nv-ohif`, `nii2volume` in an e2e spec and a demo bundle, and the two drawing
 helpers in `examples/slides.js`. The search that missed them used a
 hand-remembered package list and a niivue-scoped gate.
-
-### The single-backend distributions are not backend-isolated
-
-Separate from the export policy, and worth knowing before reasoning about what a
-subpath "costs": `dist/niivue.webgl2.js` and `dist/niivue.webgpu.js` currently
-share three of their five chunks, including the 1.83 MB one that holds both
-backends. The path is `NVControlBase.ts` -> `control/viewBoth.ts` -> both
-`gl/NVViewGL.ts` and `wgpu/NVViewGPU.ts` (`control/interactions.ts`,
-`control/viewWebGL2.ts` and `control/viewWebGPU.ts` reach it the same way), a
-static import that no entry point can tree-shake away. So the subpaths today
-select a default export, not a smaller bundle. The slide renderers *are* split
-per backend, because the entry point should not be the thing that cements the
-leak.
-
-Tracked as https://github.com/niivue/mono/issues/175, with the cause and the fix
-written up there. Delete this section when it lands.
 
 ## Code style and conventions
 

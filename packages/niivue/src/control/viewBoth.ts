@@ -148,12 +148,11 @@ export async function attachToCanvas(
 
 /** Replace the canvas DOM element and update all registered siblings' references */
 function replaceCanvasElement(ctrl: NiiVue): void {
+  const canvas = ctrl.canvas as HTMLCanvasElement
   // If canvas was freshly created by a sibling for the same backend, skip (no context conflict)
-  if (
-    freshCanvasBackend.get(ctrl.canvas as HTMLCanvasElement) ===
-    ctrl.opts.backend
-  )
-    return
+  if (freshCanvasBackend.get(canvas) === ctrl.opts.backend) return
+  // A detached canvas stays put: the caller holds it and nothing can swap it in.
+  if (!canvas.parentNode) return
   freshCanvasBackend.set(replaceCanvas(ctrl), ctrl.opts.backend ?? 'webgl2')
 }
 

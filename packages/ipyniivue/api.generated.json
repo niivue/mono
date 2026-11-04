@@ -2360,7 +2360,7 @@
       "returnsValue": true,
       "params": [],
       "returns": "[number, number, number]",
-      "doc": null,
+      "doc": "Crosshair position in **RAS world millimetres** (x = right, y = anterior,\nz = superior), converted from the scene-fraction {@link crosshairPos}.\nPairs with {@link setCrosshairPos}, which takes the same units.",
       "returnsDoc": null
     },
     {
@@ -3627,11 +3627,11 @@
           "name": "pos",
           "tsType": "[number, number, number]",
           "optional": false,
-          "doc": null
+          "doc": "[x, y, z] in world mm"
         }
       ],
       "returns": "void",
-      "doc": null,
+      "doc": "Move the crosshair to a point given in **RAS world millimetres**\n(x = right, y = anterior, z = superior), not a scene fraction. The point\nis converted to the scene-fraction {@link crosshairPos} and clamped to the\nscene bounding box. When `isSnapToVoxelCenters` is true and a volume is\nloaded, it is first snapped to the nearest voxel centre of the background\nvolume (`volumes[0]`). Emits `locationChange` and redraws.\n\nReplaces the 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)`: pass the mm\ndirectly. To set a fraction instead, assign {@link crosshairPos}.",
       "returnsDoc": null
     },
     {
@@ -4308,7 +4308,7 @@
         }
       ],
       "returns": "[number, number, number]",
-      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.",
+      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.\nThe result is in the units of the {@link crosshairPos} property, so it can\nbe assigned there directly. Returns the scene centre when no volume (or no\nmatRAS) is loaded.",
       "returnsDoc": null
     },
     {

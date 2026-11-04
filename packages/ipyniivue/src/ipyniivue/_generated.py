@@ -815,6 +815,14 @@ and its volumes alive."""
         return await self._request("getClipPlaneDepthAziElev", _make_args(clip_plane_index))
 
     async def get_crosshair_pos(self) -> Any:
+        """Crosshair position in **RAS world millimetres** (x = right, y = anterior, z = superior), converted from the scene-fraction {@link crosshairPos}.
+
+        Pairs with {@link setCrosshairPos}, which takes the same units.
+
+        Returns
+        -------
+        [number, number, number]
+        """
         return await self._request("getCrosshairPos", [])
 
     async def get_descriptives(self, options: Any = _UNSET) -> Any:
@@ -1569,6 +1577,22 @@ and its volumes alive."""
         self.send({"cmd": "setConnectomeOptions", "args": _make_args(mesh_index, options)})
 
     def set_crosshair_pos(self, pos: Any) -> None:
+        """Move the crosshair to a point given in **RAS world millimetres** (x = right, y = anterior, z = superior), not a scene fraction.
+
+        The point
+        is converted to the scene-fraction {@link crosshairPos} and clamped to the
+        scene bounding box. When `isSnapToVoxelCenters` is true and a volume is
+        loaded, it is first snapped to the nearest voxel centre of the background
+        volume (`volumes[0]`). Emits `locationChange` and redraws.
+
+        Replaces the 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)`: pass the mm
+        directly. To set a fraction instead, assign {@link crosshairPos}.
+
+        Parameters
+        ----------
+        pos : [number, number, number]
+            [x, y, z] in world mm
+        """
         self.send({"cmd": "setCrosshairPos", "args": _make_args(pos)})
 
     def set_drag_mode(self, mode: Any) -> None:
@@ -2070,6 +2094,9 @@ and its volumes alive."""
         """Convert RAS voxel coordinates to scene fraction [0,1].
 
         Uses the background volume's matRAS for the vox→mm conversion.
+        The result is in the units of the {@link crosshairPos} property, so it can
+        be assigned there directly. Returns the scene centre when no volume (or no
+        matRAS) is loaded.
 
         Parameters
         ----------

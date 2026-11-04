@@ -1,7 +1,7 @@
 import NVViewGL from '@/gl/NVViewGL'
 import { log } from '@/logger'
 import type NiiVue from '@/NVControlBase'
-import type { BackendType, CanvasViewport, NVBounds } from '@/NVTypes'
+import type { BackendType } from '@/NVTypes'
 import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
   clearCanvasMessage,
@@ -9,112 +9,24 @@ import {
   showCanvasMessage,
 } from './canvasMessage'
 import {
+  getCanvasInstances,
+  moveCanvasRegistration,
+  registerCanvasInstance,
+  unregister,
+} from './canvasRegistry'
+import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
 
-/** Registry of controllers sharing each canvas, for coordinating canvas replacement */
-const canvasInstances = new WeakMap<HTMLCanvasElement, Set<NiiVue>>()
+// Part of the ViewLifecycle this module is (NVControl imports it whole).
+export { unregister }
+
 /** Tracks which backend a freshly-created canvas was made for, to prevent double-replacement
  *  within a batch while still allowing replacement on a future different-backend switch */
 const freshCanvasBackend = new WeakMap<HTMLCanvasElement, BackendType>()
-
-/** Identity viewport: no pan, no zoom — reproduces pre-viewport behavior */
-const IDENTITY_VIEWPORT: Readonly<CanvasViewport> = Object.freeze({
-  pan: [0, 0] as [number, number],
-  zoom: 1,
-})
-
-/** Per-canvas virtual camera: pans/zooms all sibling instances together */
-const canvasViewports = new WeakMap<HTMLCanvasElement, CanvasViewport>()
-
-/** Read the canvas viewport, or the identity transform if none is set */
-export function getCanvasViewport(
-  canvas: HTMLCanvasElement | null | undefined,
-): CanvasViewport {
-  if (!canvas) return { pan: [0, 0], zoom: 1 }
-  const v = canvasViewports.get(canvas)
-  if (!v) return { pan: [0, 0], zoom: 1 }
-  return { pan: [v.pan[0], v.pan[1]], zoom: v.zoom }
-}
-
-/** True when the viewport is the identity transform (fast path skip) */
-export function isIdentityViewport(v: CanvasViewport): boolean {
-  return v.pan[0] === 0 && v.pan[1] === 0 && v.zoom === 1
-}
-
-/** Set the canvas viewport. Returns true if value changed. */
-export function setCanvasViewport(
-  canvas: HTMLCanvasElement | null | undefined,
-  viewport: CanvasViewport,
-): boolean {
-  if (!canvas) return false
-  const cur = canvasViewports.get(canvas)
-  const px = viewport.pan[0]
-  const py = viewport.pan[1]
-  const z = viewport.zoom
-  if (cur && cur.pan[0] === px && cur.pan[1] === py && cur.zoom === z)
-    return false
-  if (isIdentityViewport({ pan: [px, py], zoom: z })) {
-    canvasViewports.delete(canvas)
-  } else {
-    canvasViewports.set(canvas, { pan: [px, py], zoom: z })
-  }
-  return true
-}
-
-/** Iterate all controllers sharing a canvas (for fanning out viewport changes) */
-export function getCanvasInstances(
-  canvas: HTMLCanvasElement | null | undefined,
-): Set<NiiVue> | null {
-  if (!canvas) return null
-  return canvasInstances.get(canvas) ?? null
-}
-
-/** Bounds-pixel rect after viewport transform. Mirrors the math in NVViewGPU/NVViewGL `_computeBoundsPixels`. */
-export type BoundsPixelRect = {
-  left: number
-  top: number
-  width: number
-  height: number
-  isOffscreen: boolean
-}
-
-/** Project normalized world bounds through the canvas viewport into pixel space. */
-export function computeBoundsPixelRect(
-  canvas: HTMLCanvasElement,
-  bounds: NVBounds | null | undefined,
-): BoundsPixelRect {
-  const cw = canvas.width
-  const ch = canvas.height
-  const vp = getCanvasViewport(canvas)
-  const worldX1 = bounds ? bounds[0][0] : 0
-  const worldY1 = bounds ? bounds[0][1] : 0
-  const worldX2 = bounds ? bounds[1][0] : 1
-  const worldY2 = bounds ? bounds[1][1] : 1
-  const z = vp.zoom
-  const px = vp.pan[0]
-  const py = vp.pan[1]
-  const sx1 = (worldX1 - 0.5) * z + 0.5 + px
-  const sx2 = (worldX2 - 0.5) * z + 0.5 + px
-  const sy1 = (worldY1 - 0.5) * z + 0.5 + py
-  const sy2 = (worldY2 - 0.5) * z + 0.5 + py
-  const left = Math.round(sx1 * cw)
-  const right = Math.round(sx2 * cw)
-  const top = Math.round((1 - sy2) * ch)
-  const bottom = Math.round((1 - sy1) * ch)
-  return {
-    left,
-    top,
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top),
-    isOffscreen: right <= 0 || left >= cw || bottom <= 0 || top >= ch,
-  }
-}
-
-export { IDENTITY_VIEWPORT }
 
 export async function attachTo(
   ctrl: NiiVue,
@@ -167,7 +79,7 @@ export async function attachToCanvas(
       // the context type). Replacing a SHARED canvas would desync sibling controllers
       // (their view + listeners stay on the old canvas), so decline the fallback in
       // that case and let the overlay surface instead.
-      if ((canvasInstances.get(canvas)?.size ?? 0) > 1) {
+      if ((getCanvasInstances(canvas)?.size ?? 0) > 1) {
         log.warn('Cannot fall back to webgl2 on a shared canvas; aborting')
         break
       }
@@ -233,34 +145,6 @@ export async function attachToCanvas(
   return ctrl
 }
 
-/** Add a controller to the canvas instance registry. Used by single-backend
- *  lifecycle modules (`viewWebGL2`, `viewWebGPU`) so that `setViewport` fan-out
- *  via `getCanvasInstances` reaches every sibling sharing the canvas. */
-export function registerCanvasInstance(
-  ctrl: NiiVue,
-  canvas: HTMLCanvasElement,
-): void {
-  let instances = canvasInstances.get(canvas)
-  if (!instances) {
-    instances = new Set()
-    canvasInstances.set(canvas, instances)
-  }
-  instances.add(ctrl)
-}
-
-/** Remove a controller from the canvas instance registry (called on destroy) */
-export function unregister(ctrl: NiiVue): void {
-  if (!ctrl.canvas) return
-  const instances = canvasInstances.get(ctrl.canvas)
-  if (instances) {
-    instances.delete(ctrl)
-    if (instances.size === 0) {
-      canvasInstances.delete(ctrl.canvas)
-      canvasViewports.delete(ctrl.canvas)
-    }
-  }
-}
-
 /** Check if this controller is in sub-canvas bounds mode (sharing a canvas) */
 function isSharedCanvas(ctrl: NiiVue): boolean {
   const bounds = ctrl.opts.bounds
@@ -292,23 +176,11 @@ function replaceCanvasElement(ctrl: NiiVue): void {
   // Update this controller
   ctrl.canvas = newCanvas
   // Update all siblings sharing the old canvas
-  const siblings = canvasInstances.get(oldCanvas)
-  if (siblings) {
-    for (const sib of siblings) {
-      if (sib !== ctrl) {
-        sib.canvas = newCanvas
-      }
-    }
-    // Move registry to new canvas
-    canvasInstances.delete(oldCanvas)
-    canvasInstances.set(newCanvas, siblings)
+  for (const sib of getCanvasInstances(oldCanvas) ?? []) {
+    if (sib !== ctrl) sib.canvas = newCanvas
   }
-  // Carry the canvas viewport to the new canvas so backend swaps preserve pan/zoom
-  const oldViewport = canvasViewports.get(oldCanvas)
-  if (oldViewport) {
-    canvasViewports.delete(oldCanvas)
-    canvasViewports.set(newCanvas, oldViewport)
-  }
+  // Move the registry and the viewport, so backend swaps preserve pan/zoom
+  moveCanvasRegistration(oldCanvas, newCanvas)
 }
 
 export async function recreateView(

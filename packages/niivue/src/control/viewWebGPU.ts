@@ -7,13 +7,13 @@ import {
   GRAPHICS_UNAVAILABLE_MESSAGE,
   showCanvasMessage,
 } from './canvasMessage'
+import { registerCanvasInstance, unregister } from './canvasRegistry'
 import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
-import { registerCanvasInstance } from './viewBoth'
 
 export async function attachTo(
   ctrl: NiiVue,
@@ -168,3 +168,6 @@ export async function reinitializeView(
     return false
   }
 }
+
+// ViewLifecycle.unregister: drop a destroyed controller from the canvas registry.
+export { unregister }

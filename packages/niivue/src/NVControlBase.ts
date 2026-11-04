@@ -15,6 +15,12 @@ import {
   GRAPHICS_RECOVERING_MESSAGE,
   showCanvasMessage,
 } from '@/control/canvasMessage'
+import {
+  computeBoundsPixelRect,
+  getCanvasInstances,
+  getCanvasViewport,
+  setCanvasViewport,
+} from '@/control/canvasRegistry'
 import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
 import { applyInstances } from '@/control/instances'
 import {
@@ -27,12 +33,6 @@ import {
 import { buildLocationMessage } from '@/control/locationTracking'
 import type { AddMeasurementOptions } from '@/control/measurements'
 import * as measurementApi from '@/control/measurements'
-import {
-  computeBoundsPixelRect,
-  getCanvasInstances,
-  getCanvasViewport,
-  setCanvasViewport,
-} from '@/control/viewBoth'
 import type {
   ReinitializeOptions,
   ViewLifecycle,

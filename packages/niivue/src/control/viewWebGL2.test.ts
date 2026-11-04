@@ -1,0 +1,83 @@
+import { expect, mock, test } from 'bun:test'
+import type NiiVue from '@/NVControlBase'
+import {
+  getCanvasInstances,
+  getCanvasViewport,
+  registerCanvasInstance,
+  setCanvasViewport,
+} from './canvasRegistry'
+
+mock.module('@/gl/NVViewGL', () => ({
+  default: class {
+    async init() {}
+    resize() {}
+    destroy() {}
+  },
+}))
+const { recreateView } = await import('./viewWebGL2')
+
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+
+function fakeCanvas(attached = true): HTMLCanvasElement {
+  const parent = { replaceChild() {} }
+  const canvas = {
+    parentNode: attached ? parent : null,
+    style: {},
+    cloneNode: () => fakeCanvas(),
+    addEventListener() {},
+    removeEventListener() {},
+  }
+  return canvas as unknown as HTMLCanvasElement
+}
+
+function fakeCtrl(canvas: HTMLCanvasElement, bounds?: number[][]): NiiVue {
+  return {
+    canvas,
+    view: null,
+    opts: { isInteractionEnabled: false, bounds },
+    model: { clearAllGPUResources() {}, ui: {} },
+    _eventListeners: {},
+    _wireViewHooks() {},
+    async _rebuildViewResources() {},
+    restoreSlidePlaneView() {},
+    drawScene() {},
+  } as unknown as NiiVue
+}
+
+test('recreateView keeps the canvas viewport and registry', async () => {
+  const viewport = { pan: [0.25, 0.1] as [number, number], zoom: 2 }
+  const shared = fakeCanvas()
+  const left = fakeCtrl(shared, [
+    [0, 0],
+    [0.5, 1],
+  ])
+  const right = fakeCtrl(shared, [
+    [0.5, 0],
+    [1, 1],
+  ])
+  registerCanvasInstance(left, shared)
+  registerCanvasInstance(right, shared)
+  setCanvasViewport(shared, viewport)
+  await recreateView(left)
+  expect(left.canvas).toBe(shared)
+  expect(getCanvasInstances(shared)).toEqual(new Set([left, right]))
+
+  const old = fakeCanvas()
+  const ctrl = fakeCtrl(old)
+  registerCanvasInstance(ctrl, old)
+  setCanvasViewport(old, viewport)
+  await recreateView(ctrl)
+  expect(ctrl.canvas).not.toBe(old)
+  expect(getCanvasViewport(ctrl.canvas)).toEqual(viewport)
+  expect(getCanvasInstances(ctrl.canvas)).toEqual(new Set([ctrl]))
+  expect(getCanvasInstances(old)).toBeNull()
+
+  // A detached canvas is cloned too, so a new antialias setting takes effect.
+  const detached = fakeCanvas(false)
+  const lone = fakeCtrl(detached)
+  await recreateView(lone)
+  expect(lone.canvas).not.toBe(detached)
+})

@@ -148,3 +148,33 @@ export function moveCanvasRegistration(
     canvasViewports.set(newCanvas, viewport)
   }
 }
+
+/** True when the controller draws into sub-canvas bounds (shares its canvas) */
+export function isSharedCanvas(ctrl: NiiVue): boolean {
+  const bounds = ctrl.opts.bounds
+  return (
+    !!bounds &&
+    !(
+      bounds[0][0] === 0 &&
+      bounds[0][1] === 0 &&
+      bounds[1][0] === 1 &&
+      bounds[1][1] === 1
+    )
+  )
+}
+
+/** Swap the controller's canvas for a context-free clone, repointing its
+ *  siblings, registry and viewport. A detached canvas is cloned too, since a
+ *  context option such as antialias is fixed at creation. */
+export function replaceCanvas(ctrl: NiiVue): HTMLCanvasElement {
+  const oldCanvas = ctrl.canvas as HTMLCanvasElement
+  // cloneNode(false) copies all attributes (id, class, style, width/height,
+  // data-*, aria-*, tabindex) but not the locked rendering context. External
+  // listeners on the original canvas are lost.
+  const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
+  oldCanvas.parentNode?.replaceChild(newCanvas, oldCanvas)
+  for (const sib of getCanvasInstances(oldCanvas) ?? []) sib.canvas = newCanvas
+  ctrl.canvas = newCanvas
+  moveCanvasRegistration(oldCanvas, newCanvas)
+  return newCanvas
+}

@@ -7,7 +7,12 @@ import {
   GRAPHICS_UNAVAILABLE_MESSAGE,
   showCanvasMessage,
 } from './canvasMessage'
-import { registerCanvasInstance, unregister } from './canvasRegistry'
+import {
+  isSharedCanvas,
+  registerCanvasInstance,
+  replaceCanvas,
+  unregister,
+} from './canvasRegistry'
 import {
   initInteraction,
   removeInteractionListeners,
@@ -90,14 +95,15 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   if (ctrl.resizeObserver) {
     ctrl.resizeObserver.disconnect()
   }
-  const oldCanvas = ctrl.canvas as HTMLCanvasElement
-  const parent = oldCanvas.parentNode
-  // cloneNode(false) preserves all attributes (width/height/data-*/aria/tabindex);
-  // it carries no rendering context, so the clone can getContext a fresh backend.
-  const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
-  parent?.replaceChild(newCanvas, oldCanvas)
-  ctrl.canvas = newCanvas
-  const view = new NVViewGL(ctrl.canvas, ctrl.model, ctrl.opts)
+  // Same backend, so a canvas shared through bounds keeps its context (as in
+  // viewBoth); an unshared one is cloned, since antialias is fixed at context
+  // creation.
+  if (!isSharedCanvas(ctrl)) replaceCanvas(ctrl)
+  const view = new NVViewGL(
+    ctrl.canvas as HTMLCanvasElement,
+    ctrl.model,
+    ctrl.opts,
+  )
   await view.init()
   ctrl.view = view
   // Hooks go on before the resize() below draws the first frame: a preloaded

@@ -10,8 +10,9 @@ import {
 } from './canvasMessage'
 import {
   getCanvasInstances,
-  moveCanvasRegistration,
+  isSharedCanvas,
   registerCanvasInstance,
+  replaceCanvas,
   unregister,
 } from './canvasRegistry'
 import {
@@ -145,42 +146,15 @@ export async function attachToCanvas(
   return ctrl
 }
 
-/** Check if this controller is in sub-canvas bounds mode (sharing a canvas) */
-function isSharedCanvas(ctrl: NiiVue): boolean {
-  const bounds = ctrl.opts.bounds
-  return (
-    !!bounds &&
-    !(
-      bounds[0][0] === 0 &&
-      bounds[0][1] === 0 &&
-      bounds[1][0] === 1 &&
-      bounds[1][1] === 1
-    )
-  )
-}
-
 /** Replace the canvas DOM element and update all registered siblings' references */
 function replaceCanvasElement(ctrl: NiiVue): void {
-  const oldCanvas = ctrl.canvas as HTMLCanvasElement
   // If canvas was freshly created by a sibling for the same backend, skip (no context conflict)
-  if (freshCanvasBackend.get(oldCanvas) === ctrl.opts.backend) return
-  const parent = oldCanvas.parentNode
-  if (!parent) return
-  // cloneNode(false) copies ALL attributes (id, class, style, width/height, data-*,
-  // aria-*, tabindex, ...) but NOT event listeners or the (locked) rendering context
-  // — which is exactly what we need: a clean canvas with the caller's element
-  // contract preserved. NOTE: external listeners on the original canvas are lost.
-  const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
-  parent.replaceChild(newCanvas, oldCanvas)
-  freshCanvasBackend.set(newCanvas, ctrl.opts.backend ?? 'webgl2')
-  // Update this controller
-  ctrl.canvas = newCanvas
-  // Update all siblings sharing the old canvas
-  for (const sib of getCanvasInstances(oldCanvas) ?? []) {
-    if (sib !== ctrl) sib.canvas = newCanvas
-  }
-  // Move the registry and the viewport, so backend swaps preserve pan/zoom
-  moveCanvasRegistration(oldCanvas, newCanvas)
+  if (
+    freshCanvasBackend.get(ctrl.canvas as HTMLCanvasElement) ===
+    ctrl.opts.backend
+  )
+    return
+  freshCanvasBackend.set(replaceCanvas(ctrl), ctrl.opts.backend ?? 'webgl2')
 }
 
 export async function recreateView(

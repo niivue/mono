@@ -63,6 +63,18 @@ export async function fetchDicomInstanceFiles(
   })
 }
 
+// Rejects with the signal's reason on abort (Processor.run takes no signal).
+function untilAborted<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return p
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    if (signal.aborted) return onAbort()
+    signal.addEventListener('abort', onAbort, { once: true })
+    const done = () => signal.removeEventListener('abort', onAbort)
+    p.finally(done).then(resolve, reject)
+  })
+}
+
 /**
  * Convert a DICOMweb display set to a single NIfTI File via dcm2niix. Returns the
  * primary NIfTI output (largest `.nii`/`.nii.gz`), or null if nothing converted.
@@ -72,24 +84,35 @@ export async function convertDisplaySetToNifti(
   ds: OhifDisplaySet,
   options: DicomConvertOptions = {},
 ): Promise<File | null> {
-  const files = await fetchDicomInstanceFiles(ds, options)
-  if (files.length === 0) return null
-
-  options.onProgress?.('converting', 0, 1)
-  const { convert, exitCodes } = await import('@niivue/dcm2niix')
-  // convert() owns the worker (terminated afterwards) and resolves for any exit
-  // code; keep the previous contract of rejecting unless dcm2niix succeeds.
-  const {
-    files: outputs,
-    exitCode,
-    log,
-  } = await convert(files, {
-    signal: options.signal,
+  if (instanceFramesUrls(ds).length === 0) return null
+  const { signal } = options
+  // Boot the dcm2niix worker (WASM fetch + compile) while instances download.
+  // convert() cannot adopt a pre-booted worker, so drive Dcm2niix directly.
+  let dcm2niix: import('@niivue/dcm2niix').Dcm2niix | undefined
+  const ready = import('@niivue/dcm2niix').then(async ({ Dcm2niix }) => {
+    // Assigned in the same tick init() creates the worker, so the finally
+    // below never sees an instance without its worker.
+    dcm2niix = new Dcm2niix()
+    await dcm2niix.init()
+    return dcm2niix
   })
-  if (exitCode !== exitCodes.ok)
-    throw new Error(
-      `dcm2niix exit code ${exitCode}: ${log.slice(-3).join(' | ')}`,
+  ready.catch(() => {}) // surfaced below, unless the fetch rejects first
+  let outputs: File[]
+  try {
+    const files = await fetchDicomInstanceFiles(ds, options)
+    if (files.length === 0) return null
+    options.onProgress?.('converting', 0, 1)
+    // run() rejects unless dcm2niix exits 0, with the log tail.
+    outputs = await untilAborted(
+      ready.then((d) => d.input(files).run()),
+      signal,
     )
+  } finally {
+    // Stop the worker now, or once it exists if fetching ended first.
+    const stop = () => dcm2niix?.worker?.terminate()
+    if (dcm2niix) stop()
+    else ready.then(stop, stop)
+  }
   const nifti = outputs
     .filter((f) => /\.nii(\.gz)?$/i.test(f.name))
     .sort((a, b) => b.size - a.size)

@@ -21,6 +21,7 @@ import {
   type StatusKind,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
+import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
 
 // Toolbar-facing slice type names -> NiiVue SLICE_TYPE values. String keys keep
 // the toolbar button definitions plain JSON (commandOptions survive OHIF's
@@ -211,7 +212,12 @@ export function resolveWindowLevel(
   const width = Number(preset.window)
   const center = Number(preset.level)
   if (!Number.isFinite(width) || !Number.isFinite(center)) return undefined
-  // A zero-width preset (PT/SUV) is a level-only clamp: show 0..level.
+  return windowToRange(width, center)
+}
+
+/** OHIF window/level -> NiiVue [calMin, calMax]. */
+function windowToRange(width: number, center: number): [number, number] {
+  // A zero-width window (PT/SUV) is a level-only clamp: show 0..level.
   if (width === 0) return [0, center]
   return [center - width / 2, center + width / 2]
 }
@@ -311,40 +317,15 @@ function syncWindowLevelToSiblings(
   }
 }
 
-/**
- * Reverse W/L bridge: on a base-volume volumeUpdated, record the new
- * window/level on the entry and reflect it onto any other OHIF viewport showing
- * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
- * window/level when it changed (for a viewport readout), else undefined.
- */
-// OHIF's polyline value type (a 2-point Length). Literal, so we don't depend on
-// measurementService.VALUE_TYPES being present at runtime.
-const POLYLINE_VALUE_TYPE = 'value_type::polyline'
-
 // The NiiVue annotation tool for an annotation (shape.type, or freehand inferred
 // from a polygon when there is no shape).
 function annotationToolType(a: VectorAnnotation): string | undefined {
   return a.shape?.type ?? (a.polygons[0]?.outer.length ? 'freehand' : undefined)
 }
 
-// Short, tool-appropriate noun for a default label. An arrow is not an ROI, and a
-// Length/Bidirectional is a line, not a region — so the generic "ROI" is wrong
-// for them (round-3 R3-3).
-const DEFAULT_LABEL_PREFIX: Record<string, string> = {
-  measureLine: 'Length',
-  arrow: 'Arrow',
-  measureBidirectional: 'Bidirectional',
-  measureEllipse: 'ROI',
-  measureRect: 'ROI',
-  measureCircle: 'ROI',
-  measureSpline: 'ROI',
-  measureLivewire: 'ROI',
-  freehand: 'ROI',
-}
-
 function defaultLabelPrefix(a: VectorAnnotation): string {
   const type = annotationToolType(a)
-  return (type && DEFAULT_LABEL_PREFIX[type]) || 'ROI'
+  return (type && ANNOTATION_TO_OHIF[type]?.labelPrefix) || 'ROI'
 }
 
 /**
@@ -418,71 +399,6 @@ interface MeasurementServiceLike {
     }) => void,
   ) => { unsubscribe?: () => void }
 }
-// OHIF value types for the ROI / point tools (literals, so we do not depend on
-// measurementService.VALUE_TYPES at runtime).
-const ELLIPSE_VALUE_TYPE = 'value_type::ellipse'
-const CIRCLE_VALUE_TYPE = 'value_type::circle'
-const POINT_VALUE_TYPE = 'value_type::point'
-const BIDIRECTIONAL_VALUE_TYPE = 'value_type::bidirectional'
-
-// NiiVue annotation tool -> OHIF measurement tool + value type. Only the tools
-// nv-ohif activates (see toolBridge) are mapped; measureLine doubles as Length.
-const ANNOTATION_TO_OHIF: Record<
-  string,
-  { toolName: string; valueType: string; minPoints?: number; points?: number }
-> = {
-  measureEllipse: {
-    toolName: 'EllipticalROI',
-    valueType: ELLIPSE_VALUE_TYPE,
-    minPoints: 4,
-  },
-  // OHIF's Rectangle mapping uses the polyline value type.
-  measureRect: {
-    toolName: 'RectangleROI',
-    valueType: POLYLINE_VALUE_TYPE,
-    minPoints: 4,
-  },
-  measureCircle: {
-    toolName: 'CircleROI',
-    valueType: CIRCLE_VALUE_TYPE,
-    minPoints: 2,
-  },
-  measureLine: {
-    toolName: 'Length',
-    valueType: POLYLINE_VALUE_TYPE,
-    minPoints: 2,
-    points: 2,
-  },
-  measureSpline: {
-    toolName: 'SplineROI',
-    valueType: POLYLINE_VALUE_TYPE,
-    minPoints: 2,
-  },
-  measureLivewire: {
-    toolName: 'LivewireContour',
-    valueType: POLYLINE_VALUE_TYPE,
-    minPoints: 2,
-  },
-  measureBidirectional: {
-    toolName: 'Bidirectional',
-    valueType: BIDIRECTIONAL_VALUE_TYPE,
-    minPoints: 4,
-  },
-  freehand: {
-    toolName: 'PlanarFreehandROI',
-    valueType: POLYLINE_VALUE_TYPE,
-    minPoints: 2,
-  },
-  arrow: {
-    toolName: 'ArrowAnnotate',
-    valueType: POINT_VALUE_TYPE,
-    minPoints: 2,
-    // ArrowAnnotate carries two handles (arrowhead + text tail); the registered
-    // count must match the 2-point payload annotationPointsLps emits.
-    points: 2,
-  },
-}
-
 // One 'NiiVue' source per MeasurementService, with a mapping per tool. Every
 // tool (Length + the ROI/arrow shapes) is an annotation in ANNOTATION_TO_OHIF.
 // createSource is idempotent, but addMapping stacks, so register the set once.
@@ -507,13 +423,6 @@ function niivueMeasurementSource(
   measurementSources.set(measurementService as object, source)
   return source
 }
-
-// OHIF tools whose points come from annotation.polygons, not shape endpoints.
-const CONTOUR_TOOLS = new Set([
-  'PlanarFreehandROI',
-  'SplineROI',
-  'LivewireContour',
-])
 
 let niivueMeasurementCounter = 0
 
@@ -612,7 +521,7 @@ function annotationPointsLps(
     case 'measureSpline':
     case 'measureLivewire':
     case 'freehand':
-      // Exactly one ring, enforced by the CONTOUR_TOOLS guard.
+      // Exactly one ring, enforced by the contour guard.
       points = annotation.polygons[0]?.outer ?? []
       break
     case 'measureLine':
@@ -765,16 +674,16 @@ function modalityUnit(entry: NiivueViewportEntry): string {
 // The panel row content + cachedStats for a reflected annotation. Measure tools
 // (ellipse/rect/circle) carry area (mm^2) + intensity stats; arrows carry none.
 function buildAnnotationDisplay(
-  toolName: string,
+  { toolName, readout }: AnnotationToolDescriptor,
   stats: AnnotationStats | undefined,
   unit: string,
 ): { primary: string[]; data: Record<string, unknown>; label: string } {
   const label = `NiiVue ${toolName}`
-  if (toolName === 'ArrowAnnotate' || !stats) {
+  if (readout === 'none' || !stats) {
     return { primary: [label], data: {}, label }
   }
   // Length is a single measured line: in-plane distance in mm, no area/intensity.
-  if (toolName === 'Length' && stats.length !== undefined) {
+  if (readout === 'length' && stats.length !== undefined) {
     return {
       primary: [`${stats.length.toFixed(1)} mm`],
       data: { length: stats.length, unit: 'mm' },
@@ -782,7 +691,7 @@ function buildAnnotationDisplay(
     }
   }
   // Bidirectional carries long + short diameters (mm), not area/intensity.
-  if (toolName === 'Bidirectional' && stats.length !== undefined) {
+  if (readout === 'bidirectional' && stats.length !== undefined) {
     const short = stats.shortLength ?? 0
     return {
       primary: [
@@ -853,7 +762,7 @@ function reflectNiivueAnnotationResult(
   // eraser-split ROI or holes. Do not export only the first ring while the
   // stats cover every piece (#484).
   if (
-    CONTOUR_TOOLS.has(mapping.toolName) &&
+    mapping.contour &&
     (annotation.polygons.length !== 1 ||
       (annotation.polygons[0]?.holes.length ?? 0) > 0)
   )
@@ -874,7 +783,7 @@ function reflectNiivueAnnotationResult(
     return { status: 'permanentlyUnsupported' }
   const unit = modalityUnit(entry)
   const { primary, data } = buildAnnotationDisplay(
-    mapping.toolName,
+    mapping,
     annotation.stats,
     unit,
   )
@@ -1355,6 +1264,12 @@ export function reconcileNiivueAnnotations(
   }
 }
 
+/**
+ * Reverse W/L bridge: on a base-volume volumeUpdated, record the new
+ * window/level on the entry and reflect it onto any other OHIF viewport showing
+ * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
+ * window/level when it changed (for a viewport readout), else undefined.
+ */
 export function syncNiivueWindowLevelToOhif(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
@@ -1609,9 +1524,7 @@ export function getNiivueCommandsModule({
         !Number.isFinite(level)
       )
         return
-      // A zero-width window (PT/SUV) is a level-only clamp: show 0..level.
-      const [calMin, calMax] =
-        window === 0 ? [0, level] : [level - window / 2, level + window / 2]
+      const [calMin, calMax] = windowToRange(window, level)
       // A queued GPU update can reject; log it rather than leave it unhandled (#467).
       nv.setVolume(0, { calMin, calMax }).catch((err: unknown) =>
         console.error('[nv-ohif] window/level update failed', err),
@@ -1704,23 +1617,15 @@ export function getNiivueCommandsModule({
     },
   }
 
+  // OHIF command definitions wrap each action, so a new action cannot be left
+  // unregistered.
+  const definitions = Object.fromEntries(
+    Object.entries(actions).map(([name, commandFn]) => [name, { commandFn }]),
+  )
+
   return {
     actions,
-    definitions: {
-      niivueSetSliceType: actions.niivueSetSliceType,
-      niivueSetMeasurementMode: actions.niivueSetMeasurementMode,
-      niivueResetView: actions.niivueResetView,
-      niivueSaveBitmap: actions.niivueSaveBitmap,
-      niivueSetClipPlane: actions.niivueSetClipPlane,
-      niivueToggleOverlay: actions.niivueToggleOverlay,
-      niivueSetWindowLevel: actions.niivueSetWindowLevel,
-      niivueSetWindowLevelPreset: actions.niivueSetWindowLevelPreset,
-      niivueAutoWindowLevel: actions.niivueAutoWindowLevel,
-      niivueSetColormap: actions.niivueSetColormap,
-      niivueToggleColorbar: actions.niivueToggleColorbar,
-      niivueToggleInterpolation: actions.niivueToggleInterpolation,
-      niivueToggleCrosshair: actions.niivueToggleCrosshair,
-    },
+    definitions,
     defaultContext: 'NIIVUE',
   }
 }

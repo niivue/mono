@@ -150,6 +150,9 @@ describe('WgpuLineRenderer staging', () => {
     draw(r, gpu, many)
     expect(gpu.writes[1].data).toHaveLength(100 * FLOATS_PER_LINE)
     expect(gpu.writes[1].data.at(-1)).toBe(99)
+    expect(gpu.buffers.at(-1)?.size).toBeGreaterThanOrEqual(
+      100 * FLOATS_PER_LINE * 4,
+    )
   })
 })
 
@@ -204,6 +207,9 @@ describe('WgpuRectRenderer staging', () => {
     )
     expect(gpu.writes[1].data).toHaveLength(100 * FLOATS_PER_RECT)
     expect(gpu.writes[1].data.at(-1)).toBe(99)
+    expect(gpu.buffers.at(-1)?.size).toBeGreaterThanOrEqual(
+      100 * FLOATS_PER_RECT * 4,
+    )
   })
 })
 

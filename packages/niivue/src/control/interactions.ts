@@ -223,13 +223,7 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
     if (vol)
       newAnn.stats = Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
   }
-  ctrl.model.annotations = Annotation.storeAnnotation(
-    ctrl.model.annotations,
-    newAnn,
-    cfg.mergesOverlaps,
-  )
-  ctrl.emit('annotationAdded', { annotation: newAnn })
-  ctrl.emit('annotationChanged', { action: 'draw' })
+  commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
   return true
 }
 
@@ -310,18 +304,27 @@ function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
     : null
 }
 
+// Store a finished annotation and announce it.
+function commitAnnotation(
+  ctrl: NiiVue,
+  ann: VectorAnnotation,
+  mergesOverlaps: boolean,
+): void {
+  ctrl.model.annotations = Annotation.storeAnnotation(
+    ctrl.model.annotations,
+    ann,
+    mergesOverlaps,
+  )
+  ctrl.emit('annotationAdded', { annotation: ann })
+  ctrl.emit('annotationChanged', { action: 'draw' })
+}
+
 // Commit the finished bidirectional measurement.
 function commitBidirectional(ctrl: NiiVue, long: Axis, short: Axis): void {
   const ann = bidirectionalAnnotation(ctrl, long, short)
   if (!ann) return
   ctrl._annotationUndoStack.push(ctrl.model.annotations)
-  ctrl.model.annotations = Annotation.storeAnnotation(
-    ctrl.model.annotations,
-    ann,
-    ctrl.model.annotation.mergesOverlaps,
-  )
-  ctrl.emit('annotationAdded', { annotation: ann })
-  ctrl.emit('annotationChanged', { action: 'draw' })
+  commitAnnotation(ctrl, ann, ctrl.model.annotation.mergesOverlaps)
 }
 
 function clientToCanvasPixel(
@@ -1206,13 +1209,7 @@ function finish3DAnnotationStroke(ctrl: NiiVue): void {
     cfg.style,
     anchorMM,
   )
-  ctrl.model.annotations = Annotation.storeAnnotation(
-    ctrl.model.annotations,
-    newAnn,
-    cfg.mergesOverlaps,
-  )
-  ctrl.emit('annotationAdded', { annotation: newAnn })
-  ctrl.emit('annotationChanged', { action: 'draw' })
+  commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
   ctrl.drawScene()
 }
 
@@ -1845,13 +1842,7 @@ export function initInteraction(ctrl: NiiVue): void {
                       Annotation.computeAnnotationStats(newAnn, vol) ??
                       undefined
                 }
-                ctrl.model.annotations = Annotation.storeAnnotation(
-                  ctrl.model.annotations,
-                  newAnn,
-                  cfg.mergesOverlaps,
-                )
-                ctrl.emit('annotationAdded', { annotation: newAnn })
-                ctrl.emit('annotationChanged', { action: 'draw' })
+                commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
               }
             }
           }
@@ -1921,13 +1912,7 @@ export function initInteraction(ctrl: NiiVue): void {
                 cfg.style,
                 ctrl._annotationAnchorMM,
               )
-              ctrl.model.annotations = Annotation.storeAnnotation(
-                ctrl.model.annotations,
-                newAnn,
-                cfg.mergesOverlaps,
-              )
-              ctrl.emit('annotationAdded', { annotation: newAnn })
-              ctrl.emit('annotationChanged', { action: 'draw' })
+              commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
             }
           }
           ctrl.drawScene()

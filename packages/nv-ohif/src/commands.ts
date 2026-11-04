@@ -2,6 +2,7 @@ import {
   type AnnotationPoint,
   type AnnotationScreenShape,
   type AnnotationStats,
+  generateShape,
   isAnnotationErased,
   SLICE_TYPE,
   slice2DToMM,
@@ -815,8 +816,21 @@ function buildAnnotationDisplay(
   }
 }
 
-// Tools exported from their shape bounds rather than their polygons.
-const BOUNDS_TOOLS = new Set(['measureRect', 'measureEllipse', 'measureCircle'])
+// True when the eraser cut a shape OHIF draws from its bounds or endpoints. NiiVue's
+// isAnnotationErased cannot rebuild a bidirectional (two line axes), so do it here.
+function isErasedForOhif(annotation: VectorAnnotation): boolean {
+  const s = annotation.shape
+  if (s?.type !== 'measureBidirectional' && s?.type !== 'bidirectional')
+    return isAnnotationErased(annotation)
+  const w = s.width ?? annotation.style.strokeWidth
+  const intact = [
+    ...generateShape('measureLine', s.start, s.end, w),
+    ...(s.start2 && s.end2
+      ? generateShape('measureLine', s.start2, s.end2, w)
+      : []),
+  ]
+  return JSON.stringify(intact) !== JSON.stringify(annotation.polygons)
+}
 
 type ReflectionResult =
   | { status: 'success' }
@@ -876,10 +890,9 @@ function reflectNiivueAnnotationResult(
   const points = annotationPointsLps(annotation)
   if (points.length < (mapping.minPoints ?? 0))
     return { status: 'permanentlyUnsupported' }
-  // An eraser cut leaves the bounds intact, so OHIF would draw the whole shape
-  // beside stats for what is left. Drop the row instead.
-  if (BOUNDS_TOOLS.has(toolType ?? '') && isAnnotationErased(annotation))
-    return { status: 'permanentlyUnsupported' }
+  // An eraser cut leaves the bounds and endpoints intact, so OHIF would draw the
+  // whole shape beside stats for what is left. Drop the row instead.
+  if (isErasedForOhif(annotation)) return { status: 'permanentlyUnsupported' }
   const unit = modalityUnit(entry)
   const { primary, data } = buildAnnotationDisplay(
     mapping.toolName,

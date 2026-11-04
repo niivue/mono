@@ -1,33 +1,94 @@
 import { maybeDecompress } from '@/codecs/NVGz'
 import { log } from '@/logger'
+import { LineReader } from '@/NVLoader'
 import type { MZ3, NVTractData } from '@/NVTypes'
 
 export const extensions = ['VTK']
 export const type = 'mz3'
 
-function readTxtVTK(buffer: ArrayBuffer): MZ3 {
-  const txt = new TextDecoder('utf-8').decode(buffer)
-  const lines = txt.split(/\r?\n/)
+/** Line iterator over an ASCII file; null at EOF. */
+function textLineReader(
+  buffer: ArrayBuffer,
+): (skipBlank?: boolean) => string | null {
+  const lines = new TextDecoder('utf-8').decode(buffer).split(/\r?\n/)
   let lineIdx = 0
-  function readLine(skipBlank = true): string | null {
+  return (skipBlank = true) => {
     while (lineIdx < lines.length) {
       const line = lines[lineIdx++]
-      if (skipBlank && line.trim() === '') {
-        continue
-      }
+      if (skipBlank && line.trim() === '') continue
       return line
     }
     return null
   }
+}
+
+/** Encoding line after the signature. Per spec a title precedes it; some tools omit it. */
+function readEncoding<T extends string | null>(readLine: () => T): T {
+  const line = readLine()
+  return line && !line.startsWith('ASCII') && !line.startsWith('BINARY')
+    ? readLine()
+    : line
+}
+
+/** Fill `out` from whitespace-separated ASCII values; returns the count read before EOF. */
+function readTxtFloats(
+  readLine: () => string | null,
+  out: Float32Array,
+): number {
+  let v = 0
+  while (v < out.length) {
+    const line = readLine()
+    if (!line) break
+    const vals = line.trim().split(/\s+/)
+    for (let i = 0; i < vals.length && v < out.length; i++) {
+      out[v++] = parseFloat(vals[i])
+    }
+  }
+  return v
+}
+
+/** Big-endian binary POINTS after `pointsLine` ("POINTS 10261 float"); advances `lines.pos`. */
+function readBinaryPoints(
+  lines: LineReader,
+  reader: DataView,
+  pointsLine: string,
+): Float32Array {
+  const isFloat64 = pointsLine.includes('double')
+  const nvert3 = parseInt(pointsLine.trim().split(/\s+/)[1], 10) * 3
+  const positions = new Float32Array(nvert3)
+  if (isFloat64) {
+    for (let i = 0; i < nvert3; i++) {
+      positions[i] = reader.getFloat64(lines.pos, false)
+      lines.pos += 8
+    }
+  } else {
+    for (let i = 0; i < nvert3; i++) {
+      positions[i] = reader.getFloat32(lines.pos, false)
+      lines.pos += 4
+    }
+  }
+  return positions
+}
+
+function tractData(vertices: Float32Array, offsets: Uint32Array): NVTractData {
+  return {
+    vertices,
+    offsets,
+    dpv: {},
+    dps: {},
+    groups: {},
+    dpvMeta: {},
+    dpsMeta: {},
+  }
+}
+
+function readTxtVTK(buffer: ArrayBuffer): MZ3 {
+  const readLine = textLineReader(buffer)
   let line = readLine(true)
   if (!line?.startsWith('# vtk DataFile')) {
     throw new Error('Invalid VTK mesh')
   }
-  // Per spec, the next line is the title; some tools omit it.
-  line = readLine(true)
-  if (line && !line.startsWith('ASCII') && !line.startsWith('BINARY')) {
-    line = readLine(true) // previous was the title; this is the encoding
-  }
+  line = readEncoding(readLine)
   if (!line?.startsWith('ASCII')) {
     throw new Error('Invalid VTK mesh, expected ASCII')
   }
@@ -45,16 +106,8 @@ function readTxtVTK(buffer: ArrayBuffer): MZ3 {
     throw new Error('Invalid VTK mesh')
   }
   const positions = new Float32Array(nvert * 3)
-  let v = 0
-  while (v < positions.length) {
-    line = readLine(true)
-    if (!line) {
-      throw new Error('Invalid VTK mesh')
-    }
-    const vals = line.trim().split(/\s+/)
-    for (let i = 0; i < vals.length && v < positions.length; i++) {
-      positions[v++] = parseFloat(vals[i])
-    }
+  if (readTxtFloats(readLine, positions) < positions.length) {
+    throw new Error('Invalid VTK mesh')
   }
   line = readLine(true)
   if (!line) {
@@ -124,33 +177,13 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   if (len < 20) {
     throw new Error(`File too small to be VTK: bytes = ${buffer.byteLength}`)
   }
-  const bytes = new Uint8Array(buffer)
-  let pos = 0
-  function readStr(isSkipBlank = true): string {
-    if (isSkipBlank) {
-      while (pos < len && bytes[pos] === 10) {
-        pos++
-      }
-    } // skip blank lines
-    const startPos = pos
-    while (pos < len && bytes[pos] !== 10) {
-      pos++
-    }
-    pos++ // skip EOLN
-    if (pos - startPos < 1) {
-      return ''
-    }
-    return new TextDecoder().decode(buffer.slice(startPos, pos - 1))
-  }
+  const lines = new LineReader(buffer)
+  const readStr = () => lines.readLine()
   let line = readStr() // 1st line: signature
   if (!line.startsWith('# vtk DataFile')) {
     throw new Error('Invalid VTK mesh')
   }
-  // Per spec, the next line is the title; some tools omit it.
-  line = readStr(true)
-  if (line && !line.startsWith('ASCII') && !line.startsWith('BINARY')) {
-    line = readStr(true) // previous was the title; this is the encoding
-  }
+  line = readEncoding(readStr)
   if (line.startsWith('ASCII')) {
     return readTxtVTK(buffer)
   } else if (!line.startsWith('BINARY')) {
@@ -167,51 +200,36 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   ) {
     log.warn(`Only able to read VTK float or double POINTS${line}`)
   }
-  const isFloat64 = line.includes('double')
-  let items = line.trim().split(/\s+/)
-  const nvert = parseInt(items[1], 10) // POINTS 10261 float
-  const nvert3 = nvert * 3
-  const positions = new Float32Array(nvert3)
   const reader = new DataView(buffer)
-  if (isFloat64) {
-    for (let i = 0; i < nvert3; i++) {
-      positions[i] = reader.getFloat64(pos, false)
-      pos += 8
-    }
-  } else {
-    for (let i = 0; i < nvert3; i++) {
-      positions[i] = reader.getFloat32(pos, false)
-      pos += 4
-    }
-  }
+  const positions = readBinaryPoints(lines, reader, line)
   line = readStr() // Type, "LINES 11885 "
-  items = line.trim().split(/\s+/)
+  const items = line.trim().split(/\s+/)
   const tris: number[] = []
   if (items[0].includes('LINES')) {
     throw new Error('VTK LINES not supported for mesh importer')
   } else if (items[0].includes('TRIANGLE_STRIPS')) {
     const nstrip = parseInt(items[1], 10)
     for (let i = 0; i < nstrip; i++) {
-      const ntri = reader.getInt32(pos, false) - 2 // -2 as triangle strip is creates pts - 2 faces
-      pos += 4
+      const ntri = reader.getInt32(lines.pos, false) - 2 // -2 as triangle strip is creates pts - 2 faces
+      lines.pos += 4
       for (let t = 0; t < ntri; t++) {
         if (t % 2) {
           // preserve winding order
-          tris.push(reader.getInt32(pos + 8, false))
-          tris.push(reader.getInt32(pos + 4, false))
-          tris.push(reader.getInt32(pos, false))
+          tris.push(reader.getInt32(lines.pos + 8, false))
+          tris.push(reader.getInt32(lines.pos + 4, false))
+          tris.push(reader.getInt32(lines.pos, false))
         } else {
-          tris.push(reader.getInt32(pos, false))
-          tris.push(reader.getInt32(pos + 4, false))
-          tris.push(reader.getInt32(pos + 8, false))
+          tris.push(reader.getInt32(lines.pos, false))
+          tris.push(reader.getInt32(lines.pos + 4, false))
+          tris.push(reader.getInt32(lines.pos + 8, false))
         }
-        pos += 4
+        lines.pos += 4
       } // for each triangle
-      pos += 8
+      lines.pos += 8
     } // for each strip
   } else if (items[0].includes('POLYGONS')) {
     const npoly = parseInt(items[1], 10)
-    const byteOffsetAfterPoly = pos
+    const byteOffsetAfterPoly = lines.pos
     const maybeOffsetsLine = readStr()
     if (maybeOffsetsLine.startsWith('OFFSETS')) {
       let isInt64 = maybeOffsetsLine.includes('int64')
@@ -219,13 +237,13 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
       let is32bitOverflow = false
       for (let i = 0; i < npoly; i++) {
         if (isInt64) {
-          if (reader.getInt32(pos, false) !== 0) {
+          if (reader.getInt32(lines.pos, false) !== 0) {
             is32bitOverflow = true
           }
-          pos += 4
+          lines.pos += 4
         } // skip high 32 bits
-        offset[i] = reader.getInt32(pos, false)
-        pos += 4
+        offset[i] = reader.getInt32(lines.pos, false)
+        lines.pos += 4
       }
       if (
         !Number.isSafeInteger(npoly) ||
@@ -243,10 +261,10 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
       const connectivity = new Uint32Array(numIndices)
       for (let i = 0; i < numIndices; i++) {
         if (isInt64) {
-          pos += 4
+          lines.pos += 4
         }
-        connectivity[i] = reader.getInt32(pos, false)
-        pos += 4
+        connectivity[i] = reader.getInt32(lines.pos, false)
+        lines.pos += 4
       }
       for (let i = 0; i < npoly; i++) {
         const start = i === 0 ? 0 : offset[i - 1]
@@ -259,22 +277,22 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
       }
     } else {
       // Classic binary VTK format: rewind and parse as before
-      pos = byteOffsetAfterPoly
+      lines.pos = byteOffsetAfterPoly
       for (let i = 0; i < npoly; i++) {
-        const ntri = reader.getInt32(pos, false) - 2
+        const ntri = reader.getInt32(lines.pos, false) - 2
         if (i === 0 && ntri > 65535) {
           throw new Error(
             'Invalid VTK binary polygons using little-endian data (MRtrix)',
           )
         }
-        pos += 4
-        const fx = reader.getInt32(pos, false)
-        pos += 4
-        let fy = reader.getInt32(pos, false)
-        pos += 4
+        lines.pos += 4
+        const fx = reader.getInt32(lines.pos, false)
+        lines.pos += 4
+        let fy = reader.getInt32(lines.pos, false)
+        lines.pos += 4
         for (let t = 0; t < ntri; t++) {
-          const fz = reader.getInt32(pos, false)
-          pos += 4
+          const fz = reader.getInt32(lines.pos, false)
+          lines.pos += 4
           tris.push(fx, fy, fz)
           fy = fz
         }
@@ -297,26 +315,11 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
 export function probeVTKContent(buffer: ArrayBuffer): 'mesh' | 'tract' {
   const len = buffer.byteLength
   if (len < 20) return 'mesh'
-  const bytes = new Uint8Array(buffer)
-  let pos = 0
-  function nextLine(skipBlank = true): string {
-    if (skipBlank) {
-      while (pos < len && bytes[pos] === 10) pos++
-    }
-    const start = pos
-    while (pos < len && bytes[pos] !== 10) pos++
-    pos++
-    return start < pos
-      ? new TextDecoder().decode(buffer.slice(start, pos - 1))
-      : ''
-  }
+  const lines = new LineReader(buffer)
+  const nextLine = (skipBlank = true) => lines.readLine(skipBlank)
   let line = nextLine()
   if (!line.startsWith('# vtk DataFile')) return 'mesh'
-  // Per spec, the next line is the title; some tools omit it.
-  line = nextLine(true)
-  if (line && !line.startsWith('ASCII') && !line.startsWith('BINARY')) {
-    line = nextLine(true) // previous was the title; this is the encoding
-  }
+  line = readEncoding(nextLine)
   const isAscii = line.startsWith('ASCII')
   if (!isAscii && !line.startsWith('BINARY')) return 'mesh'
   nextLine() // DATASET POLYDATA
@@ -327,7 +330,7 @@ export function probeVTKContent(buffer: ArrayBuffer): 'mesh' | 'tract' {
   if (isAscii) {
     // Skip past ASCII point coordinates
     let v = 0
-    while (v < nvert * 3 && pos < len) {
+    while (v < nvert * 3 && lines.pos < len) {
       const l = nextLine(true)
       if (!l) break
       v += l.trim().split(/\s+/).length
@@ -335,7 +338,7 @@ export function probeVTKContent(buffer: ArrayBuffer): 'mesh' | 'tract' {
     // Skip METADATA if present
     line = nextLine(true)
     if (line.startsWith('METADATA')) {
-      while (pos < len) {
+      while (lines.pos < len) {
         line = nextLine(false)
         if (!line || line.trim() === '') break
       }
@@ -344,7 +347,7 @@ export function probeVTKContent(buffer: ArrayBuffer): 'mesh' | 'tract' {
   } else {
     // Skip past binary point data
     const bytesPerVal = line.includes('double') ? 8 : 4
-    pos += nvert * 3 * bytesPerVal
+    lines.pos += nvert * 3 * bytesPerVal
     line = nextLine()
   }
   return line.includes('LINES') ? 'tract' : 'mesh'
@@ -352,27 +355,9 @@ export function probeVTKContent(buffer: ArrayBuffer): 'mesh' | 'tract' {
 
 /** Parse ASCII VTK LINES into NVTractData. */
 function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
-  const txt = new TextDecoder('utf-8').decode(buffer)
-  const lines = txt.split(/\r?\n/)
-  let lineIdx = 0
-  function readLine(skipBlank = true): string | null {
-    while (lineIdx < lines.length) {
-      const line = lines[lineIdx++]
-      if (skipBlank && line.trim() === '') continue
-      return line
-    }
-    return null
-  }
+  const readLine = textLineReader(buffer)
   readLine(true) // # vtk DataFile
-  // Per spec, the next line is the title; some tools omit it.
-  const titleOrEncoding = readLine(true)
-  if (
-    titleOrEncoding &&
-    !titleOrEncoding.startsWith('ASCII') &&
-    !titleOrEncoding.startsWith('BINARY')
-  ) {
-    readLine(true) // previous was the title; consume the encoding line
-  }
+  readEncoding(readLine)
   readLine(true) // DATASET POLYDATA
   const pointsLine = readLine(true)
   if (!pointsLine?.includes('POINTS')) {
@@ -381,22 +366,13 @@ function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
   const pItems = pointsLine.trim().split(/\s+/)
   const nvert = parseInt(pItems[1], 10)
   const positions = new Float32Array(nvert * 3)
-  let v = 0
-  while (v < positions.length) {
-    const line = readLine(true)
-    if (!line) break
-    const vals = line.trim().split(/\s+/)
-    for (let i = 0; i < vals.length && v < positions.length; i++) {
-      positions[v++] = parseFloat(vals[i])
-    }
-  }
+  readTxtFloats(readLine, positions)
   // Skip METADATA if present
   let line = readLine(true)
   if (line?.startsWith('METADATA')) {
-    while (lineIdx < lines.length) {
+    do {
       line = readLine(false)
-      if (!line || line.trim() === '') break
-    }
+    } while (line?.trim())
     line = readLine(true)
   }
   if (!line?.includes('LINES')) {
@@ -423,15 +399,7 @@ function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
       }
     }
     offsets[nCount] = nvert // fence-post: total vertex count
-    return {
-      vertices: positions,
-      offsets,
-      dpv: {},
-      dps: {},
-      groups: {},
-      dpvMeta: {},
-      dpsMeta: {},
-    }
+    return tractData(positions, offsets)
   }
 
   // Classic style: dataLine is the first data line with numPoints + indices
@@ -464,15 +432,7 @@ function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
       pts.push(positions[idx], positions[idx + 1], positions[idx + 2])
     }
   }
-  return {
-    vertices: Float32Array.from(pts),
-    offsets: Uint32Array.from(offsetArr),
-    dpv: {},
-    dps: {},
-    groups: {},
-    dpvMeta: {},
-    dpsMeta: {},
-  }
+  return tractData(Float32Array.from(pts), Uint32Array.from(offsetArr))
 }
 
 /**
@@ -480,132 +440,61 @@ function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
  * Expects a decompressed buffer.
  */
 export function readVTKLines(buffer: ArrayBuffer): NVTractData {
-  // Determine ASCII vs binary from header
-  const bytes = new Uint8Array(buffer)
-  const len = buffer.byteLength
-  let pos = 0
-  // Skip line 1 (signature)
-  while (pos < len && bytes[pos] !== 10) pos++
-  pos++
-  // Per spec, the next line is the title; some tools omit it.
-  while (pos < len && bytes[pos] === 10) pos++
-  let lineStart = pos
-  while (pos < len && bytes[pos] !== 10) pos++
-  let encoding = new TextDecoder().decode(buffer.slice(lineStart, pos))
-  if (!encoding.startsWith('ASCII') && !encoding.startsWith('BINARY')) {
-    // previous was the title; advance and read the encoding line
-    pos++
-    while (pos < len && bytes[pos] === 10) pos++
-    lineStart = pos
-    while (pos < len && bytes[pos] !== 10) pos++
-    encoding = new TextDecoder().decode(buffer.slice(lineStart, pos))
-  }
-  if (encoding.startsWith('ASCII')) {
-    return readTxtVTKLines(buffer)
-  }
-
-  // Binary VTK LINES parsing
-  pos = 0
-  function readStr(isSkipBlank = true): string {
-    if (isSkipBlank) {
-      while (pos < len && bytes[pos] === 10) pos++
-    }
-    const startPos = pos
-    while (pos < len && bytes[pos] !== 10) pos++
-    pos++
-    return startPos < pos
-      ? new TextDecoder().decode(buffer.slice(startPos, pos - 1))
-      : ''
-  }
+  const lines = new LineReader(buffer)
+  const readStr = () => lines.readLine()
   readStr() // signature
-  // Per spec, the next line is the title; some tools omit it.
-  const titleOrEncoding = readStr(true)
-  if (
-    titleOrEncoding &&
-    !titleOrEncoding.startsWith('ASCII') &&
-    !titleOrEncoding.startsWith('BINARY')
-  ) {
-    readStr() // previous was the title; consume the encoding line
+  if (readEncoding(readStr).startsWith('ASCII')) {
+    return readTxtVTKLines(buffer)
   }
   readStr() // DATASET POLYDATA
   let line = readStr() // POINTS nvert type
-  const isFloat64 = line.includes('double')
-  const items = line.trim().split(/\s+/)
-  const nvert = parseInt(items[1], 10)
-  const nvert3 = nvert * 3
-  const positions = new Float32Array(nvert3)
   const reader = new DataView(buffer)
-  if (isFloat64) {
-    for (let i = 0; i < nvert3; i++) {
-      positions[i] = reader.getFloat64(pos, false)
-      pos += 8
-    }
-  } else {
-    for (let i = 0; i < nvert3; i++) {
-      positions[i] = reader.getFloat32(pos, false)
-      pos += 4
-    }
-  }
+  const positions = readBinaryPoints(lines, reader, line)
+  const nvert = positions.length / 3
   line = readStr() // LINES n_count ...
   const headerItems = line.trim().split(/\s+/)
   const nCount = parseInt(headerItems[1], 10)
 
   // Check for OFFSETS style (DiPy)
-  const posOK = pos
+  const posOK = lines.pos
   line = readStr()
   if (line.startsWith('OFFSETS')) {
     const isInt64 = line.includes('int64')
     const offsets = new Uint32Array(nCount + 1)
     if (isInt64) {
       for (let c = 0; c < nCount; c++) {
-        const hi = reader.getInt32(pos, false)
+        const hi = reader.getInt32(lines.pos, false)
         if (hi !== 0)
           log.warn('int32 overflow: JavaScript does not support int64')
-        pos += 4
-        offsets[c] = reader.getInt32(pos, false)
-        pos += 4
+        lines.pos += 4
+        offsets[c] = reader.getInt32(lines.pos, false)
+        lines.pos += 4
       }
     } else {
       for (let c = 0; c < nCount; c++) {
-        offsets[c] = reader.getInt32(pos, false)
-        pos += 4
+        offsets[c] = reader.getInt32(lines.pos, false)
+        lines.pos += 4
       }
     }
     offsets[nCount] = nvert // fence-post
-    return {
-      vertices: positions,
-      offsets,
-      dpv: {},
-      dps: {},
-      groups: {},
-      dpvMeta: {},
-      dpsMeta: {},
-    }
+    return tractData(positions, offsets)
   }
 
   // Classic binary style
-  pos = posOK
+  lines.pos = posOK
   let npt = 0
   const offsetArr: number[] = [0]
   const pts: number[] = []
   for (let c = 0; c < nCount; c++) {
-    const numPoints = reader.getInt32(pos, false)
-    pos += 4
+    const numPoints = reader.getInt32(lines.pos, false)
+    lines.pos += 4
     npt += numPoints
     offsetArr.push(npt)
     for (let i = 0; i < numPoints; i++) {
-      const idx = reader.getInt32(pos, false) * 3
-      pos += 4
+      const idx = reader.getInt32(lines.pos, false) * 3
+      lines.pos += 4
       pts.push(positions[idx], positions[idx + 1], positions[idx + 2])
     }
   }
-  return {
-    vertices: Float32Array.from(pts),
-    offsets: Uint32Array.from(offsetArr),
-    dpv: {},
-    dps: {},
-    groups: {},
-    dpvMeta: {},
-    dpsMeta: {},
-  }
+  return tractData(Float32Array.from(pts), Uint32Array.from(offsetArr))
 }

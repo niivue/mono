@@ -1,7 +1,6 @@
 import { maybeDecompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
 import type { MZ3 } from '@/NVTypes'
-
-declare const log: { warn: (...args: unknown[]) => void }
 
 export const extensions = ['OBJ']
 export const type = 'mz3'
@@ -42,13 +41,7 @@ function readOBJMNI(buffer: ArrayBuffer): MZ3 {
   return { positions, indices }
 }
 
-async function readOBJWavefront(buffer: ArrayBuffer): Promise<MZ3> {
-  buffer = await maybeDecompress(buffer)
-  const enc = new TextDecoder('utf-8')
-  const txt = enc.decode(buffer)
-  if (txt[0] === 'P') {
-    return readOBJMNI(buffer)
-  }
+function readOBJWavefront(txt: string): MZ3 {
   const lines = txt.split('\n')
   const pts: number[] = []
   const tris: number[] = []
@@ -97,8 +90,5 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   buffer = await maybeDecompress(buffer)
   const enc = new TextDecoder('utf-8')
   const txt = enc.decode(buffer)
-  if (txt[0] === 'P') {
-    return readOBJMNI(buffer)
-  }
-  return readOBJWavefront(buffer)
+  return txt[0] === 'P' ? readOBJMNI(buffer) : readOBJWavefront(txt)
 }

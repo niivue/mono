@@ -227,6 +227,15 @@ export async function loadLayerFromUrl(
   return readLayerFile(buffer, ext, nVert, NVLoader.getName(url))
 }
 
+/** RGBA offset into a 256-entry LUT for `frac` (clamped to 0..1). */
+function scalarLutOffset(frac: number, isInverted: boolean): number {
+  const idx = Math.max(
+    0,
+    Math.min(255, Math.round(Math.max(0, Math.min(1, frac)) * 255)),
+  )
+  return (isInverted ? 255 - idx : idx) * 4
+}
+
 /**
  * Composite layers over base colors.
  * Writes the result into the target Uint32Array (typically mesh.colors).
@@ -299,6 +308,11 @@ export function compositeLayers(
     const frameOffset = layer.frame4D * nVert
 
     const opacity = layer.opacity
+    // Below-threshold values: translucent fades alpha, MIN_TO_MAX without
+    // isTransparentBelowCalMin clamps to the min LUT color; others are transparent.
+    const isDrawnBelowMin =
+      ct === COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN ||
+      (ct === COLORMAP_TYPE.MIN_TO_MAX && !layer.isTransparentBelowCalMin)
 
     for (let i = 0; i < nVert; i++) {
       const scalar = layer.values[frameOffset + i]
@@ -323,28 +337,14 @@ export function compositeLayers(
         // Negative colormap: use absolute magnitudes
         const absScalar = Math.abs(scalar)
         if (negRange <= 0) continue
-        // Below-threshold behavior for negative values
-        if (absScalar < negThresh) {
-          if (ct === COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN) {
-            // proceed — alpha will be modulated below
-          } else if (
-            ct === COLORMAP_TYPE.MIN_TO_MAX &&
-            !layer.isTransparentBelowCalMin
-          ) {
-            // proceed — will clamp to min LUT color below
-          } else {
-            continue // transparent for MIN_TO_MAX (default), ZERO_TO_MAX_TRANSPARENT
-          }
-        }
-        const frac = (absScalar - negMn) / negRange
-        const idx = Math.max(
-          0,
-          Math.min(255, Math.round(Math.max(0, Math.min(1, frac)) * 255)),
+        if (absScalar < negThresh && !isDrawnBelowMin) continue
+        const k = scalarLutOffset(
+          (absScalar - negMn) / negRange,
+          layer.isColormapInverted,
         )
-        const lutIdx = layer.isColormapInverted ? 255 - idx : idx
-        lr = lutNeg[lutIdx * 4]
-        lg = lutNeg[lutIdx * 4 + 1]
-        lb = lutNeg[lutIdx * 4 + 2]
+        lr = lutNeg[k]
+        lg = lutNeg[k + 1]
+        lb = lutNeg[k + 2]
         la = opacity
         // Alpha modulation for translucent mode
         if (
@@ -357,28 +357,14 @@ export function compositeLayers(
       } else {
         // Positive colormap
         if (posRange <= 0) continue
-        // Below-threshold behavior for positive values
-        if (scalar >= 0 && scalar < calMin) {
-          if (ct === COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN) {
-            // proceed — alpha will be modulated below
-          } else if (
-            ct === COLORMAP_TYPE.MIN_TO_MAX &&
-            !layer.isTransparentBelowCalMin
-          ) {
-            // proceed — will clamp to min LUT color below
-          } else {
-            continue // transparent for MIN_TO_MAX (default), ZERO_TO_MAX_TRANSPARENT
-          }
-        }
-        const frac = (scalar - posMn) / posRange
-        const idx = Math.max(
-          0,
-          Math.min(255, Math.round(Math.max(0, Math.min(1, frac)) * 255)),
+        if (scalar >= 0 && scalar < calMin && !isDrawnBelowMin) continue
+        const k = scalarLutOffset(
+          (scalar - posMn) / posRange,
+          layer.isColormapInverted,
         )
-        const lutIdx = layer.isColormapInverted ? 255 - idx : idx
-        lr = lut[lutIdx * 4]
-        lg = lut[lutIdx * 4 + 1]
-        lb = lut[lutIdx * 4 + 2]
+        lr = lut[k]
+        lg = lut[k + 1]
+        lb = lut[k + 2]
         la = opacity
         // Alpha modulation for translucent mode. Must include scalar === 0:
         // la is the layer opacity (the LUT's own alpha is not used here), so a

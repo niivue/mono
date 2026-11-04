@@ -66,22 +66,13 @@ export function registerExternalReader(
     buffer: ArrayBuffer,
   ) => ArrayBuffer | Uint8Array | Promise<ArrayBuffer | Uint8Array>,
 ): void {
-  const targetReader = readerByExt.get(toExt.toUpperCase())
-  if (!targetReader) {
-    throw new Error(`No built-in mesh reader for target format "${toExt}"`)
-  }
-  const wrappedReader: MeshReader = {
-    extensions: [fromExt.toUpperCase()],
-    read: async (buffer) => {
-      const converted = await converter(buffer as ArrayBuffer)
-      const ab =
-        converted instanceof ArrayBuffer
-          ? converted
-          : (new Uint8Array(converted).buffer as ArrayBuffer)
-      return targetReader.read(ab)
-    },
-  }
-  readerByExt.set(fromExt.toUpperCase(), wrappedReader)
+  NVLoader.registerConvertedReader(
+    readerByExt,
+    'mesh',
+    fromExt,
+    toExt,
+    converter,
+  )
 }
 
 export function createMesh(
@@ -244,6 +235,19 @@ export async function loadMesh(mesh: MeshFromUrlOptions): Promise<NVMeshType> {
   return createMesh(meshData.positions, meshData.indices, packedColors, opts)
 }
 
+/** createMesh options shared by tract and connectome meshes. */
+function displayOptions(mesh: MeshFromUrlOptions) {
+  const url = typeof mesh.url === 'string' ? mesh.url : mesh.url.name
+  return {
+    opacity: mesh.opacity ?? 1.0,
+    shaderType: mesh.shaderType ?? 'phong',
+    sliceShaderType: mesh.sliceShaderType ?? '',
+    color: mesh.color ?? [1, 1, 1, 1],
+    url,
+    name: mesh.name ?? url,
+  }
+}
+
 /**
  * Build a tract mesh from pre-parsed NVTractData and mesh options.
  * Shared by loadTract() (format-specific readers) and VTK LINES dispatch.
@@ -286,7 +290,6 @@ async function buildTractMesh(
   }
 
   const { positions, indices, colors } = tessellate(tractData, tractOptions)
-  const urlString = typeof mesh.url === 'string' ? mesh.url : mesh.url.name
   // Show colorbar automatically when using scalar coloring, unless explicitly overridden
   const hasScalarColor =
     tractOptions.colorBy.startsWith('dpv:') ||
@@ -295,13 +298,8 @@ async function buildTractMesh(
     kind: 'tract' as MeshKind,
     trx: tractData,
     tractOptions,
-    opacity: mesh.opacity ?? 1.0,
-    shaderType: mesh.shaderType ?? 'phong',
-    sliceShaderType: mesh.sliceShaderType ?? '',
-    color: mesh.color ?? [1, 1, 1, 1],
+    ...displayOptions(mesh),
     isColorbarVisible: mesh.isColorbarVisible ?? hasScalarColor,
-    url: urlString,
-    name: mesh.name ?? urlString,
   })
 }
 
@@ -341,19 +339,13 @@ async function loadConnectome(
     fileData.data,
     connectomeOptions,
   )
-  const urlString = typeof mesh.url === 'string' ? mesh.url : mesh.url.name
   return createMesh(positions, indices, colors, {
     kind: 'connectome' as MeshKind,
     jcon: fileData.data,
     connectomeOptions,
-    opacity: mesh.opacity ?? 1.0,
-    shaderType: mesh.shaderType ?? 'phong',
-    sliceShaderType: mesh.sliceShaderType ?? '',
-    color: mesh.color ?? [1, 1, 1, 1],
+    ...displayOptions(mesh),
     isColorbarVisible: mesh.isColorbarVisible ?? true,
     isLegendVisible: mesh.isLegendVisible ?? true,
-    url: urlString,
-    name: mesh.name ?? urlString,
   })
 }
 

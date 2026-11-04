@@ -62,22 +62,13 @@ export function registerExternalReader(
     buffer: ArrayBuffer,
   ) => ArrayBuffer | Uint8Array | Promise<ArrayBuffer | Uint8Array>,
 ): void {
-  const targetReader = readerByExt.get(toExt.toUpperCase())
-  if (!targetReader) {
-    throw new Error(`No built-in volume reader for target format "${toExt}"`)
-  }
-  const wrappedReader: VolumeReader = {
-    extensions: [fromExt.toUpperCase()],
-    read: async (buffer, name, pairedImgData) => {
-      const converted = await converter(buffer)
-      const ab =
-        converted instanceof ArrayBuffer
-          ? converted
-          : (new Uint8Array(converted).buffer as ArrayBuffer)
-      return targetReader.read(ab, name, pairedImgData)
-    },
-  }
-  readerByExt.set(fromExt.toUpperCase(), wrappedReader)
+  NVLoader.registerConvertedReader(
+    readerByExt,
+    'volume',
+    fromExt,
+    toExt,
+    converter,
+  )
 }
 
 /**

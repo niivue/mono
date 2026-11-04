@@ -1,9 +1,6 @@
+import { log } from '@/logger'
+import { LineReader } from '@/NVLoader'
 import type { MZ3 } from '@/NVTypes'
-
-declare const log: {
-  warn: (...args: unknown[]) => void
-  error: (...args: unknown[]) => void
-}
 
 export const extensions = ['PLY']
 export const type = 'mz3'
@@ -11,27 +8,12 @@ export const type = 'mz3'
 // https://en.wikipedia.org/wiki/PLY_(file_format)
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   const len = buffer.byteLength
-  const bytes = new Uint8Array(buffer)
-  let pos = 0
-  function readStr(): string {
-    while (pos < len && bytes[pos] === 10) {
-      pos++
-    } // skip blank lines
-    const startPos = pos
-    while (pos < len && bytes[pos] !== 10) {
-      pos++
-    }
-    pos++ // skip EOLN
-    if (pos - startPos < 1) {
-      return ''
-    }
-    return new TextDecoder().decode(buffer.slice(startPos, pos - 1))
-  }
-  let line = readStr() // 1st line: magic 'ply'
+  const lines = new LineReader(buffer)
+  let line = lines.readLine() // 1st line: magic 'ply'
   if (!line.startsWith('ply')) {
     throw new Error('Not a valid PLY file')
   }
-  line = readStr() // 2nd line: format 'format binary_little_endian 1.0'
+  line = lines.readLine() // 2nd line: format 'format binary_little_endian 1.0'
   const isAscii = line.includes('ascii')
   function dataTypeBytes(str: string): number {
     if (
@@ -81,8 +63,8 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   let greenOffset = -1
   let blueOffset = -1
   let hasColors = false
-  while (pos < len && !line.startsWith('end_header')) {
-    line = readStr()
+  while (lines.pos < len && !line.startsWith('end_header')) {
+    line = lines.readLine()
     if (line.startsWith('comment')) {
       continue
     }
@@ -91,7 +73,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     if (line.startsWith('element vertex')) {
       nvert = parseInt(items[items.length - 1], 10)
       // read vertex properties:
-      line = readStr()
+      line = lines.readLine()
       items = line.split(/\s/)
       currVertPropOffset = 0
       vertexProps.length = 0
@@ -119,14 +101,14 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
         const bytes = dataTypeBytes(datatype)
         vertStride += bytes
         currVertPropOffset += bytes
-        line = readStr()
+        line = lines.readLine()
         items = line.split(/\s/)
       }
     }
     if (line.startsWith('element face')) {
       nface = parseInt(items[items.length - 1], 10)
       // read face properties:
-      line = readStr()
+      line = lines.readLine()
       items = line.split(/\s/)
       while (line.startsWith('property')) {
         if (items[1] === 'list') {
@@ -142,7 +124,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
             nIndexPadding++
           }
         }
-        line = readStr()
+        line = lines.readLine()
         items = line.split(/\s/)
       }
     }
@@ -166,7 +148,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     }
     let v = 0
     for (let i = 0; i < nvert; i++) {
-      line = readStr()
+      line = lines.readLine()
       const items = line.split(/\s/)
       // read xyz using property indices (fallback to 0,1,2 if not found)
       const tx = idxX >= 0 ? parseFloat(items[idxX]) : parseFloat(items[0])
@@ -189,7 +171,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     let indices = new Uint32Array(nface * 3)
     let f = 0
     for (let i = 0; i < nface; i++) {
-      line = readStr()
+      line = lines.readLine()
       const items = line.split(/\s/)
       const nTri = parseInt(items[nIndexPadding], 10) - 2
       if (nTri < 1) {
@@ -230,6 +212,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     )
   }
   const reader = new DataView(buffer)
+  let pos = lines.pos
   let positions: Float32Array
   let colors: Float32Array | undefined
   if (hasColors) {

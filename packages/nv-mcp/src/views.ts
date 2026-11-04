@@ -68,6 +68,15 @@ export function sagittalNoseName(value: boolean | null): SagittalNoseName {
   return 'auto'
 }
 
+/**
+ * Where 2D tiles draw their orientation text, by NiiVue's
+ * `orientationTextPosition`: `edges` a letter mid-left and mid-top of each
+ * tile, `corner` one combined label (e.g. `RS`) at its top-left corner.
+ */
+export const ORIENTATION_TEXT_NAMES = ['edges', 'corner'] as const
+
+export type OrientationTextName = (typeof ORIENTATION_TEXT_NAMES)[number]
+
 /** The name for one of NiiVue's numbers, or `other` for one the table does not have. */
 export function nameFor<T extends Record<string, number>>(
   table: T,
@@ -87,5 +96,7 @@ export interface ViewState {
   radiological: boolean
   /** Which way the sagittal nose points, when the page's NiiVue can say. */
   sagittalNose?: SagittalNoseName
+  /** Where the orientation text goes, when the page's NiiVue can say. */
+  orientationText?: OrientationTextName
   colorbar: boolean
 }

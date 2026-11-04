@@ -90,6 +90,11 @@ radioCheck.onclick = function () {
 sagNose.onchange = function () {
   nv1.isSagittalNoseLeft = this.value === 'auto' ? null : this.value === 'left'
 }
+// 'corner' draws one label (e.g. RS) at each 2D tile's top-left corner, which
+// keeps the letters off the brain on short, wide multiplanar canvases.
+orientText.onchange = function () {
+  nv1.orientationTextPosition = this.value
+}
 rulerCheck.onclick = function () {
   nv1.isRulerVisible = this.checked
 }

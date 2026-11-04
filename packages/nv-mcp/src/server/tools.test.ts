@@ -265,6 +265,7 @@ describe('core tool schemas', () => {
       'colorbar',
       'layout',
       'mosaic',
+      'orientation_text',
       'radiological',
       'sagittal_nose',
       'show_render',

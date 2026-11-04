@@ -13,16 +13,15 @@ nv1.addEventListener('locationChange', (e) => {
 await nv1.attachTo('gl1')
 // V1 lines benefit from nearest neighbor interpolation
 nv1.volumeIsNearestInterpolation = true
-// AFNI detached images: header (.HEAD) and image data (.BRIK.gz) are separate files
+// AFNI detached images: header (.HEAD) and image data (.BRIK.gz) are separate
+// files. Given only the .HEAD URL, NiiVue finds the .BRIK (or .BRIK.gz) beside it.
 await nv1.loadVolumes([
   {
     url: '/volumes/afni/DT_FA+orig.HEAD',
-    urlImageData: '/volumes/afni/DT_FA+orig.BRIK.gz',
     opacity: 1,
   },
   {
     url: '/volumes/afni/DT_V1+orig.HEAD',
-    urlImageData: '/volumes/afni/DT_V1+orig.BRIK.gz',
     opacity: 1,
   },
 ])

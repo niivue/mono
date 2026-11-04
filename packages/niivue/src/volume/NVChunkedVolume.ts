@@ -1146,17 +1146,21 @@ export class NVChunkedVolume {
     const { calMin, calMax } = this.loadOptions
     const windowLo = windowOr(calMin, lo)
     const windowHi = windowOr(calMax, hi)
-    const placeholderLo = windowOr(calMin, 0)
-    const placeholderHi = windowOr(calMax, 1)
+    // A scene window that left the placeholder was set while the sample was
+    // in flight (setVolume, UIKit, nv-mcp); keep it (#489), and give it to the
+    // floor and the handle too, or the floor bakes the auto window into its
+    // texture and the shared hdr saves it.
+    const userSet =
+      scene &&
+      (scene.calMin !== windowOr(calMin, 0) ||
+        scene.calMax !== windowOr(calMax, 1))
+    const keepLo = userSet ? windowOr(scene.calMin, windowLo) : windowLo
+    const keepHi = userSet ? windowOr(scene.calMax, windowHi) : windowHi
     for (const vol of targets) {
-      // A window that left the placeholder was set while the sample was in
-      // flight (setVolume, UIKit, nv-mcp); keep it (#489).
-      if (vol.calMin === placeholderLo && vol.calMax === placeholderHi) {
-        vol.calMin = windowLo
-        vol.calMax = windowHi
-        vol.hdr.cal_min = windowLo
-        vol.hdr.cal_max = windowHi
-      }
+      vol.calMin = keepLo
+      vol.calMax = keepHi
+      vol.hdr.cal_min = keepLo
+      vol.hdr.cal_max = keepHi
       vol.robustMin = lo
       vol.robustMax = hi
       vol.globalMin = globalMin

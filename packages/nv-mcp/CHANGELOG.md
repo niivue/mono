@@ -1,3 +1,19 @@
+## 1.0.0-rc.73 (2026-11-04)
+
+### Features
+
+- **niivue:** corner orientation text option ([3370054c](https://github.com/niivue/mono/commit/3370054c))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.87
+- Updated uikit to 1.0.0-rc.81
+
+### Thank You
+
+- Claude Opus 5.5
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.72 (2026-11-04)
 
 ### Updated Dependencies

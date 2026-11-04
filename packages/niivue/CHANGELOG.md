@@ -1,3 +1,14 @@
+## 1.0.0-rc.87 (2026-11-04)
+
+### Features
+
+- **niivue:** corner orientation text option ([3370054c](https://github.com/niivue/mono/commit/3370054c))
+
+### Thank You
+
+- Claude Opus 5.5
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.86 (2026-11-04)
 
 ### Fixes

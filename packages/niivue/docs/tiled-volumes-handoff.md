@@ -2132,8 +2132,8 @@ review, mirroring the 3a (skeleton) and 3c-math splits.
    means the *visible* working set itself exceeds the budget; rendering over
    budget beats evicting a visible chunk and punching a hole. The working-set
    cap (`chunkIndicesForAllBudgets`) applies the same rule per tile: a tile
-   sharing no chunk with earlier tiles keeps its first chunk, so a frame can
-   overrun by one chunk per such tile.
+   whose first (most central) chunk earlier tiles did not request keeps it, so
+   a frame can overrun by one chunk per such tile.
 
 ### Frame-ordering contract (consumed in sub-step 2)
 

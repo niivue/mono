@@ -2226,7 +2226,11 @@ export class VolumeRenderer extends NVRenderer {
     // Mirrors share the base grid and are asked for the base's indices, so
     // the base's view is capped by the smallest mirror: split evenly.
     const overlayBudget = this._chunkResidencyBytes / (vols.length + 1)
+    // Mirrors are asked for the base's chunk indices and priced by its plan,
+    // so each must use the base's grid, not one set on the overlay itself.
+    const basePlan = volumes[0]?.chunkPlan
     for (const vol of vols) {
+      if (basePlan) vol.chunkPlan = basePlan
       // Co-registered at the base grid, so resolving against the overlay's
       // own grid is the base-grid matrix the whole-volume path would use.
       const entry = await this._ensureChunkedVolumeEntry(

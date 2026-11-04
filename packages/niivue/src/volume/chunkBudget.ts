@@ -179,7 +179,7 @@ export interface ResidentBudgetView {
  * `alreadyRequested` is what earlier tiles of this frame asked for. Those
  * chunks are protected from eviction too, so a multiplanar frame must fit the
  * union: they are charged first, and only the new indices are returned. A
- * tile that shares no chunk with them still gets its first chunk.
+ * tile whose first (most central) chunk is not among them still gets it.
  */
 export function chunkIndicesForAllBudgets(
   plan: ChunkPlan,
@@ -203,15 +203,14 @@ export function chunkIndicesForAllBudgets(
     )
   }
   const added = capped.filter((ci) => !prior.has(ci))
-  if (added.length > 0 || orderedChunkIndices.some((ci) => prior.has(ci)))
-    return added
-  // A tile left with nothing would render empty (only an NVChunkedVolume has a
-  // coarse floor under it), so it keeps its first chunk. The bound is budget +
-  // one chunk per tile sharing no chunk with earlier tiles: an N-tile mosaic of
-  // disjoint tiles can sit N chunks over a mirror's budget, which beats N empty
+  // A tile whose most central chunk nobody requested would render a hole where
+  // it matters most (only an NVChunkedVolume has a coarse floor under it), so
+  // it keeps that chunk. The bound is budget + one chunk per such tile: an
+  // N-tile mosaic can sit N chunks over a mirror's budget, which beats N holed
   // tiles (docs/tiled-volumes-handoff.md, "Over-budget is allowed").
   const first = orderedChunkIndices.find((ci) => plan.chunks[ci])
-  return first === undefined ? [] : [first]
+  if (added.length > 0 || first === undefined || prior.has(first)) return added
+  return [first]
 }
 
 export function formatBytes(n: number): string {

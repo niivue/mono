@@ -358,9 +358,9 @@ describe('chunkIndicesForAllBudgets (#188)', () => {
     ).toEqual([3])
   })
 
-  test('disjoint mosaic tiles overrun by exactly one chunk each, no more', () => {
-    // The documented bound, not a violation: budget + one chunk per tile that
-    // shares nothing with earlier tiles.
+  test('mosaic tiles overrun by at most their own central chunk each', () => {
+    // The documented bound, not a violation: budget + one chunk per tile whose
+    // first (most central) chunk earlier tiles did not request.
     const base = residency(8, 8 * unlitChunk)
     const mirror = residency(8, unlitChunk)
     const requested: number[] = []
@@ -373,11 +373,17 @@ describe('chunkIndicesForAllBudgets (#188)', () => {
         false,
         requested,
       )
-      expect(capped).toEqual(t === 0 ? [0] : t === 7 ? [] : [t])
+      expect(capped).toEqual([t])
       requested.push(...capped)
     }
-    // Tile 7 reaches chunk 0 (already requested), so it adds nothing.
-    expect(requested).toEqual([0, 1, 2, 3, 4, 5, 6])
+    expect(requested).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  })
+
+  test('a tile sharing only an edge chunk still gets its central one', () => {
+    const base = residency(8, unlitChunk)
+    expect(chunkIndicesForAllBudgets(plan, [1, 0], [base], false, [0])).toEqual(
+      [1],
+    )
   })
 
   test('each manager prices its own lit-resident chunks', () => {

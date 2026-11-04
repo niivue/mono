@@ -43,8 +43,9 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test"
   },
+  "comment:niivue-peer": "A range, not workspace:* (which bun publish pins to the exact rc); see the same note in nv-ohif.",
   "peerDependencies": {
-    "@niivue/niivue": "workspace:*"
+    "@niivue/niivue": ">=1.0.0-rc.87 <2"
   },
   "devDependencies": {
     "@niivue/dev-images": "workspace:*",

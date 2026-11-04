@@ -815,14 +815,6 @@ function buildAnnotationDisplay(
   }
 }
 
-/**
- * Reflect a completed NiiVue vector annotation (ellipse/rect/circle/arrow) into
- * OHIF's MeasurementService so it renders as a first-class panel row with its
- * stats. Returns true when a row was added. Needs a backing DICOM series with
- * instances (same constraint as the ruler; a NIfTI-URL display set is skipped).
- * Intensity stats are the NiiVue volume's sampled values in the base modality's
- * unit; area is in mm^2 (voxel-spacing aware, from NiiVue's annotation stats).
- */
 // Tools exported from their shape bounds rather than their polygons.
 const BOUNDS_TOOLS = new Set(['measureRect', 'measureEllipse', 'measureCircle'])
 
@@ -831,6 +823,14 @@ type ReflectionResult =
   | { status: 'permanentlyUnsupported' }
   | { status: 'retryableFailure' }
 
+/**
+ * Reflect a completed NiiVue vector annotation (ellipse/rect/circle/arrow) into
+ * OHIF's MeasurementService so it renders as a first-class panel row with its
+ * stats, and say whether the row was added. Needs a backing DICOM series with
+ * instances (same constraint as the ruler; a NIfTI-URL display set is skipped).
+ * Intensity stats are the NiiVue volume's sampled values in the base modality's
+ * unit; area is in mm^2 (voxel-spacing aware, from NiiVue's annotation stats).
+ */
 function reflectNiivueAnnotationResult(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],

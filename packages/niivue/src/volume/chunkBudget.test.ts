@@ -358,6 +358,28 @@ describe('chunkIndicesForAllBudgets (#188)', () => {
     ).toEqual([3])
   })
 
+  test('disjoint mosaic tiles overrun by exactly one chunk each, no more', () => {
+    // The documented bound, not a violation: budget + one chunk per tile that
+    // shares nothing with earlier tiles.
+    const base = residency(8, 8 * unlitChunk)
+    const mirror = residency(8, unlitChunk)
+    const requested: number[] = []
+    for (let t = 0; t < 8; t++) {
+      // Each tile sees its own chunk first, then a neighbour's.
+      const capped = chunkIndicesForAllBudgets(
+        plan,
+        [t, (t + 1) % 8],
+        [base, mirror],
+        false,
+        requested,
+      )
+      expect(capped).toEqual(t === 0 ? [0] : t === 7 ? [] : [t])
+      requested.push(...capped)
+    }
+    // Tile 7 reaches chunk 0 (already requested), so it adds nothing.
+    expect(requested).toEqual([0, 1, 2, 3, 4, 5, 6])
+  })
+
   test('each manager prices its own lit-resident chunks', () => {
     const base = residency(8, 8 * unlitChunk)
     const mirror = residency(8, 4 * unlitChunk)

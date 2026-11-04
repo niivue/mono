@@ -206,8 +206,10 @@ export function chunkIndicesForAllBudgets(
   if (added.length > 0 || orderedChunkIndices.some((ci) => prior.has(ci)))
     return added
   // A tile left with nothing would render empty (only an NVChunkedVolume has a
-  // coarse floor under it), so it keeps its first chunk: at most one chunk of
-  // overrun per tile, as the per-tile cap allowed before.
+  // coarse floor under it), so it keeps its first chunk. The bound is budget +
+  // one chunk per tile sharing no chunk with earlier tiles: an N-tile mosaic of
+  // disjoint tiles can sit N chunks over a mirror's budget, which beats N empty
+  // tiles (docs/tiled-volumes-handoff.md, "Over-budget is allowed").
   const first = orderedChunkIndices.find((ci) => plan.chunks[ci])
   return first === undefined ? [] : [first]
 }

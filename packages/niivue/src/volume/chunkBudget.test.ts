@@ -343,8 +343,19 @@ describe('chunkIndicesForAllBudgets (#188)', () => {
     expect(tile([0])).toEqual([0])
     // The shared chunk 0 is charged once.
     expect(tile([0, 1])).toEqual([1])
-    expect(tile([2, 3])).toEqual([])
+    // A tile sharing a chunk with earlier tiles adds nothing past the budget.
+    expect(tile([1, 2])).toEqual([])
     expect(mirror.residentBytes).toBeLessThanOrEqual(mirror.budgetBytes)
+  })
+
+  test('a later tile with no chunk in the union still gets its first', () => {
+    // No coarse floor under a plain chunked volume: an empty tile renders
+    // nothing, so one chunk of overrun beats starving it.
+    const base = residency(8, 2 * unlitChunk)
+    const requested = [0, 1]
+    expect(
+      chunkIndicesForAllBudgets(plan, [3, 2], [base], false, requested),
+    ).toEqual([3])
   })
 
   test('each manager prices its own lit-resident chunks', () => {

@@ -178,7 +178,8 @@ export interface ResidentBudgetView {
  *
  * `alreadyRequested` is what earlier tiles of this frame asked for. Those
  * chunks are protected from eviction too, so a multiplanar frame must fit the
- * union: they are charged first, and only the new indices are returned.
+ * union: they are charged first, and only the new indices are returned. A
+ * tile that shares no chunk with them still gets its first chunk.
  */
 export function chunkIndicesForAllBudgets(
   plan: ChunkPlan,
@@ -201,7 +202,14 @@ export function chunkIndicesForAllBudgets(
       (ci) => m.getChunk(ci)?.hasGradient,
     )
   }
-  return capped.filter((ci) => !prior.has(ci))
+  const added = capped.filter((ci) => !prior.has(ci))
+  if (added.length > 0 || orderedChunkIndices.some((ci) => prior.has(ci)))
+    return added
+  // A tile left with nothing would render empty (only an NVChunkedVolume has a
+  // coarse floor under it), so it keeps its first chunk: at most one chunk of
+  // overrun per tile, as the per-tile cap allowed before.
+  const first = orderedChunkIndices.find((ci) => plan.chunks[ci])
+  return first === undefined ? [] : [first]
 }
 
 export function formatBytes(n: number): string {

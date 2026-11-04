@@ -2351,8 +2351,9 @@ export class VolumeRenderer extends NVRenderer {
     if (vols.length === 0) return
     // Split the configured budget: overlays share OVERLAY_RESIDENCY_FRACTION
     // between them, the base keeps the rest.
-    const overlayBudget =
-      (this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION) / vols.length
+    // Mirrors share the base grid and are asked for the base's indices, so
+    // the base's view is capped by the smallest mirror: split evenly.
+    const overlayBudget = this._chunkResidencyBytes / (vols.length + 1)
     for (const vol of vols) {
       // Co-registered at the base grid, so resolving against the overlay's
       // own grid is the base-grid matrix the whole-volume path would use.
@@ -2370,10 +2371,7 @@ export class VolumeRenderer extends NVRenderer {
       this._combinedOverlayEntries.push(entry)
     }
     if (this._activeChunked) {
-      setChunkBudget(
-        this._activeChunked,
-        this._chunkResidencyBytes * (1 - OVERLAY_RESIDENCY_FRACTION),
-      )
+      setChunkBudget(this._activeChunked, overlayBudget)
     }
     this._invalidateBindGroupCache()
   }

@@ -149,7 +149,7 @@ jobs:
 
       - name: Full e2e suite
         working-directory: packages/niivue
-        # test:e2e:metal excludes specs that fail on real Metal only (issue #453).
+        # test:e2e:metal is where Metal-only exclusions go (none at present).
         run: bun run test:e2e:metal --workers=2
 
       # GPU specs skip rather than fail when an adapter or backend is missing,

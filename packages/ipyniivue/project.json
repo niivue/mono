@@ -53,6 +53,7 @@
       "inputs": [
         "python",
         "{projectRoot}/scripts/**/*",
+        "{projectRoot}/tests/**/*.ts",
         "{projectRoot}/pyproject.toml",
         "{workspaceRoot}/biome.json"
       ]
@@ -62,7 +63,7 @@
       "options": {
         "cwd": "{projectRoot}",
         "commands": [
-          "bunx biome format --write scripts",
+          "bunx biome format --write scripts tests",
           "bun scripts/pixi-or-skip.ts ruff format src scripts examples",
           "bun scripts/pixi-or-skip.ts ruff check --fix src scripts examples"
         ],
@@ -71,6 +72,7 @@
       "inputs": [
         "python",
         "{projectRoot}/scripts/**/*",
+        "{projectRoot}/tests/**/*.ts",
         "{projectRoot}/pyproject.toml",
         "{workspaceRoot}/biome.json"
       ]

@@ -18,7 +18,7 @@
       "outputs": ["{projectRoot}/dist"]
     },
     "dev": {
-      "command": "bun run codegen:assets && bunx --bun vite --open /examples/index.html",
+      "command": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite --open /examples/index.html",
       "options": { "cwd": "{projectRoot}" }
     },
     "typecheck": {

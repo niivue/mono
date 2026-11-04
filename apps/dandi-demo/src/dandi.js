@@ -14,7 +14,8 @@
 // opens as fast as a 100 MB one, because only the visible bricks and tiles are
 // fetched.
 //
-// Add `?backend=webgpu` to the URL to run both panes on WebGPU.
+// Both panes run on WebGPU; add `?backend=webgl2` for WebGL2, `?aa=on|off` to
+// override the anti-aliasing default.
 //
 // Caveat worth knowing (and shown in the HUD): a volumetric pyramid is chunked
 // CUBICALLY, so reading one plane at the finest level decodes a whole slab of
@@ -26,33 +27,54 @@ import NiiVue, {
   fetchOmeZarrChunkedSource,
   lookupColorMap,
   NVSlide,
+  NVSlideController,
   SLICE_TYPE,
   SlideRenderer,
   SlideRendererGPU,
+  slideOverlayContent,
   VolumeSliceSource,
 } from '@niivue/niivue'
-// The measuring ruler is a UIKit widget, not demo code: @niivue/uikit owns
-// everything that draws in the overlay. The slide renderers expose the same
-// `overlayDraw` hook the controller does, so the widget composes onto the
-// standalone deep-zoom pane exactly as it does onto a NiiVue canvas.
-import {
-  loadDefaultFont,
-  UIKitCrosshairOverlay,
-  UIKitRulerOverlay,
-} from '@niivue/uikit'
+// The crosshair marker is a UIKit widget: the slide renderers expose the same
+// `overlayDraw` hook a NiiVue canvas does, so it composes onto the standalone
+// deep-zoom pane exactly as it does there.
+import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
 
-const backend =
-  new URLSearchParams(location.search).get('backend') === 'webgpu'
-    ? 'webgpu'
-    : 'webgl2'
+const params = new URLSearchParams(location.search)
+const backend = params.get('backend') === 'webgl2' ? 'webgl2' : 'webgpu'
+// WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
+// on, so it defaults off there and on elsewhere.
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg/.test(navigator.userAgent)
+const isAntiAlias = params.has('aa') ? params.get('aa') === 'on' : !isWebKit
 
 // DANDI serves every zarr asset from one public, CORS-enabled bucket, keyed by
 // the asset's zarr id -- no API call and no credentials needed to stream one.
-const DANDI_ZARR = 'https://dandiarchive.s3.amazonaws.com/zarr'
+// ?local reads a copy synced into public/zarr/<zarrId> instead (development):
+//   aws s3 sync --no-sign-request s3://dandiarchive/zarr/<zarrId> public/zarr/<zarrId>
+const DANDI_ZARR = params.has('local')
+  ? new URL('zarr', location.href).href.replace(/\/$/, '')
+  : 'https://dandiarchive.s3.amazonaws.com/zarr'
 
 // Verified live (shape / chunks / dtype read from each level's .zarray). Both
 // dandisets are CC-BY-4.0; the credit line is rendered in the page footer.
 const DATASETS = {
+  // Served by the dev-images Vite plugin (dev server only): the OCT stores'
+  // geometry, generated on localhost, for iterating without waiting on S3.
+  synthetic: {
+    label: 'Synthetic gyroid, 301^3 float32',
+    zarrId: 'synthetic-v1',
+    url: '/tiles/synthetic-v1.ome.zarr/',
+    size: '106 MB, generated locally',
+    axis: 'z',
+  },
+  'synthetic-oct': {
+    label: 'Synthetic gyroid, 1716 x 1470 x 561 float32',
+    zarrId: 'synthetic-oct-v1',
+    url: '/tiles/synthetic-oct-v1.ome.zarr/',
+    size: '4.5 GB, generated locally',
+    axis: 'z',
+  },
   oct: {
     label: '000722 human brain OCT',
     zarrId: 'acffe53b-4849-4cc2-a01d-06e424896745',
@@ -176,6 +198,9 @@ function el(id) {
 }
 
 const els = {
+  backendSelect: document.getElementById('backendSelect'),
+  aaSelect: document.getElementById('aaSelect'),
+  slideFilter: el('slideFilter'),
   dataset: el('dataset'),
   axis: el('axis'),
   plane: el('plane'),
@@ -183,12 +208,17 @@ const els = {
   follow: el('follow'),
   view: el('view'),
   detail: el('detail'),
+  plan: el('plan'),
+  swap: el('swap'),
   colormap: el('colormap'),
   window: el('window'),
   zoom: el('zoom'),
   zoomVal: el('zoomVal'),
   fit: el('fit'),
-  measure: el('measure'),
+  volumePrimary: el('volumePrimary'),
+  volumeSecondary: el('volumeSecondary'),
+  slidePrimary: el('slidePrimary'),
+  slideSecondary: el('slideSecondary'),
   crosshair: el('crosshair'),
   canvas: el('nv-canvas'),
   slideCanvas: el('slide-canvas'),
@@ -201,6 +231,22 @@ const els = {
   fallback: el('fallback'),
   provenance: el('provenance'),
 }
+
+// The backend menu reloads with ?backend=, since the page builds its
+// renderers once (#488). Wired before anything loads, so it works even if
+// loading fails.
+// Anti-aliasing is a context attribute, fixed when the view is created, so it
+// reloads the same way.
+function reloadWith(key, value) {
+  const url = new URL(location.href)
+  url.searchParams.set(key, value)
+  location.href = url.href
+}
+els.backendSelect.value = backend
+els.backendSelect.onchange = () =>
+  reloadWith('backend', els.backendSelect.value)
+els.aaSelect.value = isAntiAlias ? 'on' : 'off'
+els.aaSelect.onchange = () => reloadWith('aa', els.aaSelect.value)
 
 let nv = null
 let slideView = null
@@ -218,19 +264,12 @@ let planeTimer = 0
 // window from the coarse floor it builds anyway, so the demo reads the window
 // back off the volume instead of paying for a probe fetch of its own.
 let windowRange = null
-let drag = null
-let dragMoved = false
-let ruler = null
-// Ruler endpoints are held in SLIDE base-pixel coordinates, not screen pixels,
-// so a measurement stays pinned to the tissue through pan, zoom and a level
-// swap. `hoverCss` previews the second leg while it is still being placed.
-let ruleA = null
-let ruleB = null
-let hoverCss = null
+let slideInput = null
+// The plane source behind `slide`, for the contrast box's intensity read.
+let sliceSource = null
 let crosshair = null
 // The volume pane's crosshair, in RAS voxels, mirrored into the slide pane. Held
-// in voxels rather than slide pixels for the same reason the ruler is held in
-// base pixels: a level swap must not move it.
+// in voxels rather than screen pixels: a level swap must not move it.
 let crosshairVox = null
 
 // ---------------------------------------------------------------- utilities
@@ -357,6 +396,8 @@ const TYPED_ARRAYS = {
 }
 
 function datasetUrl(def) {
+  // zarrita (and the chunk workers) need an absolute URL.
+  if (def.url) return new URL(def.url, location.href).href
   return `${DANDI_ZARR}/${def.zarrId}/`
 }
 
@@ -385,10 +426,11 @@ async function loadVolumetric(def, token) {
     // taken as "I know this store" and suppresses that.
     ...(windowRange ? { calMin: windowRange[0], calMax: windowRange[1] } : {}),
     colormap: els.colormap.value,
-    // 'focus' spends the byte budget around the crosshair, which is exactly the
-    // policy that pairs with a linked deep-zoom pane: what you are inspecting in
-    // one view is the region the other view has streamed at full detail.
-    budgetPlan: 'focus',
+    // The Plan and Swap menus pick the streaming strategy, so their trade-offs
+    // can be compared on one store; 'focus' (the default) refines around the
+    // crosshair the slide pane moves.
+    budgetPlan: els.plan.value,
+    swapPolicy: els.swap.value,
     budgetBytes: MULTILOD_BUDGET_BYTES,
     minLevel: Number(els.detail.value) || 0,
     coarseFloor: true,
@@ -443,7 +485,7 @@ function rebuildSlide({ keepViewport = true } = {}) {
   slideView?.renderer?.clearTextures?.()
   // Slide coordinates only mean something within one plane orientation, so a
   // measurement survives a plane step (same axes) but not an axis swap.
-  if (!keepViewport) clearRuler()
+  if (!keepViewport) slideInput?.clearMeasurements()
   const [u, v] = PLANE_AXES[axis]
   const spacing = chunkSource.levels[0].spacing
   const source = new VolumeSliceSource(chunkSource, {
@@ -459,6 +501,7 @@ function rebuildSlide({ keepViewport = true } = {}) {
     // um), so convert here rather than mislabel the plane's physical size.
     pixelSpacingMM: [spacing[u] / 1000, spacing[v] / 1000],
   })
+  sliceSource = source
   slide = NVSlide.fromSource(source, {
     maxCacheBytes: SLIDE_CACHE_BYTES,
     targetScreenPixelsPerTilePixel: 0.75,
@@ -520,8 +563,20 @@ function renderSlide() {
       slideFitted = true
     }
     slide.clampViewport(screen)
-    updateRuler(screen)
     updateCrosshair(screen)
+    updateFieldOfView(screen)
+    // Rulers and the contrast box, drawn by core in NiiVue's own style.
+    slideView.renderer.overlay = slideOverlayContent(
+      slide,
+      screen,
+      slideInput,
+      {
+        measureLineColor: nv.measureLineColor,
+        measureTextColor: nv.measureTextColor,
+        rulerWidth: nv.rulerWidth,
+        selectionBoxColor: nv.selectionBoxColor,
+      },
+    )
     if (slideView.kind === 'gpu') {
       slideView.renderer.render([slide], screen)
     } else {
@@ -571,27 +626,31 @@ function onLocationChange(event) {
   if (!els.follow.checked || !chunkSource) return
   const vox = event.detail?.vox
   if (!vox) return
+  const depthAxis = AXIS_INDEX[els.axis.value]
+  // A 3D render pick lands on the first visible voxel along the ray, usually
+  // the dim outer edge of the slab. Keep the slide's plane: take the pick
+  // in-plane only and move the volume crosshair onto that plane, which comes
+  // back here as a plain (non-render) location.
+  if (event.detail.axCorSag === SLICE_TYPE.RENDER) {
+    const onPlane = [vox[0], vox[1], vox[2]]
+    onPlane[depthAxis] = planeIndex
+    nv.crosshairPos = nv.vox2frac(onPlane)
+    return
+  }
   // Recorded before the plane changes: the marker is what tells you WHERE a 3D
   // depth-pick landed in-plane, and on a slab whose short axis spans ~10 screen
   // pixels that is the only feedback distinguishing "the pick missed" from "the
   // pick landed on an empty edge plane".
   crosshairVox = [vox[0], vox[1], vox[2]]
   requestSlideRender()
-  setPlane(vox[AXIS_INDEX[els.axis.value]], { fromCrosshair: true })
+  setPlane(vox[depthAxis], { fromCrosshair: true })
 }
 
-// Slide click -> crosshair. `screenToSlide` returns base-level pixels in the
-// plane's own (u, v) display axes; with displayYAxis 'up' the slide y IS the
-// data v coordinate, so the two in-plane axes drop straight into the voxel.
-function slideClickToCrosshair(event) {
+// Slide point -> crosshair. Slide points are base-level pixels in the plane's
+// own (u, v) display axes; with displayYAxis 'up' the slide y IS the data v
+// coordinate, so the two in-plane axes drop straight into the voxel.
+function slideCrosshair(point) {
   if (!els.follow.checked || !slide || !nv || !activeCv) return
-  const rect = els.slideCanvas.getBoundingClientRect()
-  const point = slide.screenToSlide(
-    event.clientX - rect.left,
-    event.clientY - rect.top,
-    slideScreen(),
-  )
-  if (!point) return
   const dims = shape()
   const [u, v] = PLANE_AXES[els.axis.value]
   const vox = [0, 0, 0]
@@ -769,6 +828,9 @@ function updateVolumeHud() {
     <div class="row"><span class="key">prefetch</span><span>${
       stats ? `${stats.predicted} predicted ahead` : '-'
     }</span></div>
+    <div class="row"><span class="key">retiring</span><span>${
+      stats ? `${stats.retiring} (${formatBytes(stats.retiringBytes)})` : '-'
+    }</span></div>
     <div class="row"><span class="key">decoded tier</span><span>${decodedTierCost(
       stats,
     )}</span></div>
@@ -785,15 +847,6 @@ function updateVolumeHud() {
   `
 }
 
-// The ruler is the UIKit measurement widget (`UIKitRulerOverlay`), drawn into the
-// slide pane's OWN frame through the renderer's `overlayDraw` hook -- the same
-// seam `nv.registerOverlayRenderer` uses on a NiiVue canvas, so the widget is
-// unchanged between the two. These panes span a 15 um synchrotron voxel up to a
-// 142 mm block in a few wheel turns, and a graduated bar held against a vessel
-// says more at every one of those zooms than "18.28 um/px" does.
-const RULER_COLOR = [1, 0.85, 0, 1]
-const RULER_LABEL_PX = 22
-
 function formatLength(um) {
   if (um >= 1000) return `${um / 1000} mm`
   if (um >= 1) return `${Number(um.toPrecision(3))} um`
@@ -807,65 +860,10 @@ function slideToDevice(point, screen) {
   return [xCss * dpr, yCss * dpr]
 }
 
-// `pixelSpacingMM` is per axis, so each leg is scaled on its own axis before the
-// hypotenuse: these planes can be anisotropic (the NeuN slab never downsamples
-// z), and a single mean spacing would read long on one axis and short on the
-// other. Sub-millimetre spans report in micrometres, the scale most of these
-// stores actually live at.
-function measureSpan(a, b) {
-  const spacing = slide.manifest.pixelSpacingMM
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  if (!spacing) {
-    return {
-      length: Math.hypot(dx, dy),
-      units: 'px',
-      decimals: 0,
-      ticks: false,
-    }
-  }
-  const mm = Math.hypot(dx * spacing[0], dy * spacing[1])
-  return mm < 1
-    ? { length: mm * 1000, units: 'um', decimals: 1, ticks: false }
-    : { length: mm, units: 'mm', decimals: 2, ticks: true }
-}
-
-// Set BEFORE the slide draws: the overlay renders inside that same frame, so
-// geometry written afterwards would trail the tiles by one frame during a pan.
-function updateRuler(screen) {
-  if (!ruler) return
-  if (!slide || !ruleA) {
-    ruler.clear()
-    return
-  }
-  const b =
-    ruleB ??
-    (hoverCss ? slide.screenToSlide(hoverCss[0], hoverCss[1], screen) : null)
-  if (!b) {
-    ruler.clear()
-    return
-  }
-  const span = measureSpan(ruleA, b)
-  ruler.setRuler({
-    a: slideToDevice(ruleA, screen),
-    b: slideToDevice(b, screen),
-    length: span.length,
-    units: span.units,
-    decimals: span.decimals,
-    sizePx: RULER_LABEL_PX * (screen.devicePixelRatio ?? 1),
-    thickness: 3,
-    showTicks: span.ticks,
-    showTickNumbers: span.ticks,
-    lineColor: RULER_COLOR,
-    textColor: RULER_COLOR,
-  })
-}
-
 // The crosshair marker is the UIKit crosshair widget (`UIKitCrosshairOverlay`),
-// drawn into the same slide frame as the ruler. Without it the slide pane gives
+// drawn into the slide frame. Without it the slide pane gives
 // no feedback at all about a link from the volume pane: a 3D depth-pick that
 // lands on an empty edge plane looks identical to one that did not register.
-const CROSSHAIR_COLOR = [0.2, 1, 0.9, 0.9]
 const CROSSHAIR_LABEL_PX = 15
 // Device pixels a minor graduation aims for. Ticks much tighter than this stop
 // resolving on screen; much wider and the arms carry too few to read as a scale.
@@ -906,7 +904,8 @@ function crosshairGraduation(screen) {
     : { units: 'um', pxPerUnit: perUm, unitsPerTick: wantUm }
 }
 
-// Set BEFORE the slide draws, for the same reason updateRuler is.
+// Set BEFORE the slide draws: the overlay renders inside that same frame, so
+// geometry written afterwards would trail the tiles by one frame during a pan.
 function updateCrosshair(screen) {
   if (!crosshair) return
   // Unlinked panes navigate independently, so a marker carried over from the
@@ -923,7 +922,8 @@ function updateCrosshair(screen) {
   const graduation = mode === 'plain' ? null : crosshairGraduation(screen)
   crosshair.setCrosshair({
     at: slideToDevice(point, screen),
-    color: CROSSHAIR_COLOR,
+    // The volume pane's own crosshair colour, so the two markers read as one.
+    color: nv.crosshairColor,
     thickness: 2 * dpr,
     gapPx: 10 * dpr,
     showTicks: graduation !== null,
@@ -934,11 +934,15 @@ function updateCrosshair(screen) {
   })
 }
 
-function clearRuler() {
-  ruleA = null
-  ruleB = null
-  hoverCss = null
-  ruler?.clear()
+// The crosshair voxel as x y z, the plane's own axis fixed at the plane, so a
+// report names the exact point clicked.
+function crosshairLabel() {
+  const vox = crosshairVox ?? [Number.NaN, Number.NaN, Number.NaN]
+  const depth = AXIS_INDEX[els.axis.value]
+  return AXIS_NAME.map((name, i) => {
+    const value = i === depth ? planeIndex : vox[i]
+    return `${name} ${Number.isFinite(value) ? Math.round(value) : '-'}`
+  }).join(', ')
 }
 
 function updateSlideHud(screen) {
@@ -966,9 +970,7 @@ function updateSlideHud(screen) {
   const umPerTexel = baseUm === null ? null : baseUm * level.downsample
   const [u, v] = PLANE_AXES[els.axis.value]
   els.slideHud.innerHTML = `
-    <div class="title">${AXIS_NAME[u]}${AXIS_NAME[v]} plane, ${
-      els.axis.value
-    } = ${planeIndex}</div>
+    <div class="title">${AXIS_NAME[u]}${AXIS_NAME[v]} plane, ${crosshairLabel()}</div>
     <div class="row"><span class="key">plane</span><span>${
       slide.manifest.width
     } x ${slide.manifest.height} px</span></div>
@@ -1004,7 +1006,7 @@ async function loadDataset() {
   slide?.dispose?.()
   slide = null
   slideView?.renderer?.clearTextures?.()
-  clearRuler()
+  slideInput?.clearMeasurements()
   // A voxel index from the outgoing store means nothing in the incoming one.
   crosshairVox = null
   // Per-brick phase timings are process-wide totals, so a dataset switch starts
@@ -1021,6 +1023,9 @@ async function loadDataset() {
       cacheBytes: ZARR_CACHE_BYTES,
       persist: { maxBytes: ZARR_PERSIST_BYTES },
       ignoreMissingLevels: true,
+      // Every store listed is Zarr v2; saying so skips the zarr.json probe
+      // (a 404 in the console on each load).
+      zarrVersion: 2,
     })
     // A switch that landed while this one was opening owns the panes now; this
     // store has no reader, so let go of its workers instead of orphaning them.
@@ -1058,6 +1063,10 @@ async function loadDataset() {
 
 function updateProvenance(def) {
   els.provenance.replaceChildren()
+  if (!def.dandiset) {
+    els.provenance.textContent = `Generated by the dev server (${def.size}).`
+    return
+  }
   const lead = document.createElement('span')
   lead.textContent = 'Streamed from the DANDI Archive: '
   const link = document.createElement('a')
@@ -1094,7 +1103,9 @@ function syncZoomControl(value) {
 }
 
 function onNiivueChange(event) {
-  if (event.detail?.property !== 'scaleMultiplier') return
+  const property = event.detail?.property
+  if (property === 'crosshairColor') requestSlideRender()
+  if (property !== 'scaleMultiplier') return
   syncZoomControl(Number(event.detail.value))
 }
 
@@ -1106,89 +1117,125 @@ function applyColormap() {
   rebuildSlide()
 }
 
+// The slide pane's field of view, outlined on the volume pane: the pane's four
+// corners (clipped to the plane) as voxels on the slide's plane, then mm.
+let fovKey = ''
+function updateFieldOfView(screen) {
+  if (!nv || !slide || !chunkSource) return
+  const [u, v] = PLANE_AXES[els.axis.value]
+  const dims = shape()
+  const clip = (value, n) => Math.max(0, Math.min(n, value))
+  const corners = [
+    [0, 0],
+    [screen.widthCss, 0],
+    [screen.widthCss, screen.heightCss],
+    [0, screen.heightCss],
+  ].map(([x, y]) => {
+    const p = slide.screenToSlide(x, y, screen)
+    const vox = [0, 0, 0]
+    vox[AXIS_INDEX[els.axis.value]] = planeIndex
+    vox[u] = clip(p.x, dims[u]) - 0.5
+    vox[v] = clip(p.y, dims[v]) - 0.5
+    return nv.vox2mm(vox)
+  })
+  if (corners.some((c) => !c)) return
+  // Only a real change reaches NiiVue, which redraws on every set.
+  const key = `${els.follow.checked}:${corners
+    .flat()
+    .map((n) => n.toFixed(3))
+    .join()}`
+  if (key === fovKey) return
+  fovKey = key
+  nv.planeOutlines = els.follow.checked
+    ? [{ cornersMM: corners, color: [0.2, 0.9, 1, 1], width: 2 }]
+    : []
+}
+
 // ---------------------------------------------------------------- slide input
 
-function slideCssPos(event) {
-  const rect = els.slideCanvas.getBoundingClientRect()
-  return [event.clientX - rect.left, event.clientY - rect.top]
+// A windowing drag on the slide steps the window as NiiVue's does (0.5% of the
+// span the drag started from per CSS pixel: x widens, y lowers the centre). The
+// text follows live; both panes apply on release, since a slide rebuild drops
+// its in-flight tiles and a chunked volume's window change re-streams every
+// brick.
+let windowDrag = null
+function onSlideWindow(dx, dy, done) {
+  if (!windowRange) return
+  windowDrag ??= { start: [...windowRange], now: [...windowRange] }
+  const step = (windowDrag.start[1] - windowDrag.start[0]) * 0.005
+  const [lo, hi] = windowDrag.now
+  const width = Math.max(step, hi - lo + dx * step)
+  const centre = (lo + hi) / 2 - dy * step
+  windowDrag.now = [centre - width / 2, centre + width / 2]
+  setWindowText(windowDrag.now)
+  if (!done) return
+  windowDrag = null
+  applyWindow()
 }
 
-// Two clicks make a measurement: the first anchors, the second fixes it, a third
-// starts over. Only a click that did not pan places a point.
-function slideClickToRuler(event) {
-  if (!slide) return
-  const [x, y] = slideCssPos(event)
-  const point = slide.screenToSlide(x, y, slideScreen())
-  if (!ruleA || ruleB) {
-    ruleA = point
-    ruleB = null
-    hoverCss = null
-  } else {
-    ruleB = point
-  }
-  requestSlideRender()
+function setWindowText([lo, hi]) {
+  els.window.value = `${formatValue(lo)},${formatValue(hi)}`
 }
 
-els.slideCanvas.addEventListener('pointerdown', (event) => {
-  drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
-  dragMoved = false
-})
-
-els.slideCanvas.addEventListener('pointermove', (event) => {
-  if (!slide) return
-  if (!drag || drag.pointerId !== event.pointerId) {
-    if (!els.measure.checked || !ruleA || ruleB) return
-    hoverCss = slideCssPos(event)
-    requestSlideRender()
-    return
-  }
-  const dx = event.clientX - drag.x
-  const dy = event.clientY - drag.y
-  if (!dragMoved && Math.abs(dx) + Math.abs(dy) < 3) return
-  if (!dragMoved) {
-    dragMoved = true
-    els.slideCanvas.setPointerCapture(event.pointerId)
-  }
-  drag.x = event.clientX
-  drag.y = event.clientY
-  slide.panByScreenDelta(dx, dy, slideScreen())
-  requestSlideRender()
-})
-
-function endDrag(event) {
-  if (!drag || drag.pointerId !== event.pointerId) return
-  if (dragMoved) {
-    els.slideCanvas.releasePointerCapture?.(event.pointerId)
-  } else if (els.measure.checked) {
-    slideClickToRuler(event)
-  } else {
-    slideClickToCrosshair(event)
-  }
-  drag = null
-  dragMoved = false
+// A contrast box sets the window to the intensity range inside it, as NiiVue's
+// contrast drag does, read at the level the slide is showing.
+async function onSlideContrast(box) {
+  const source = sliceSource
+  if (!slide || !source) return
+  const level = slide.selectLevel()?.index ?? 0
+  const range = await source.intensityRange(
+    { x0: box.start.x, y0: box.start.y, x1: box.end.x, y1: box.end.y },
+    level,
+  )
+  // A dataset, axis or plane change while reading makes this range stale.
+  if (!range || source !== sliceSource) return
+  setWindowText(range)
+  applyWindow()
 }
 
-els.slideCanvas.addEventListener('pointerup', endDrag)
-els.slideCanvas.addEventListener('pointercancel', endDrag)
-
-els.slideCanvas.addEventListener(
-  'wheel',
-  (event) => {
-    event.preventDefault()
-    if (!slide) return
-    const rect = els.slideCanvas.getBoundingClientRect()
-    slide.zoomBy(
-      Math.exp(-event.deltaY * 0.0013),
-      event.clientX - rect.left,
-      event.clientY - rect.top,
-      slideScreen(),
-    )
-    requestSlideRender()
+slideInput = new NVSlideController(els.slideCanvas, {
+  slide: () => slide,
+  screen: slideScreen,
+  primaryDragMode: Number(els.slidePrimary.value),
+  secondaryDragMode: Number(els.slideSecondary.value),
+  onCrosshair: slideCrosshair,
+  onWindow: onSlideWindow,
+  onContrast: (box) => {
+    void onSlideContrast(box)
   },
-  { passive: false },
-)
+  onChange: requestSlideRender,
+})
+els.volumePrimary.addEventListener('change', () => {
+  if (nv) nv.primaryDragMode = Number(els.volumePrimary.value)
+})
+els.volumeSecondary.addEventListener('change', () => {
+  if (nv) nv.secondaryDragMode = Number(els.volumeSecondary.value)
+})
+els.slidePrimary.addEventListener('change', () => {
+  slideInput.primaryDragMode = Number(els.slidePrimary.value)
+})
+els.slideSecondary.addEventListener('change', () => {
+  slideInput.secondaryDragMode = Number(els.slideSecondary.value)
+})
 
 // -------------------------------------------------------------- control wiring
+
+// The synthetic stores exist only on the dev server, where the 4.5 GB one is the
+// default; the published demo opens on the OCT.
+if (import.meta.env.DEV) els.dataset.value = 'synthetic-oct'
+else {
+  for (const option of els.dataset.querySelectorAll(
+    'option[value^="synthetic"]',
+  ))
+    option.remove()
+}
+
+els.slideFilter.addEventListener('change', () => {
+  if (!slideView) return
+  slideView.renderer.isNearestInterpolation =
+    els.slideFilter.value === 'nearest'
+  requestSlideRender()
+})
 
 els.dataset.addEventListener('change', () => {
   void loadDataset()
@@ -1200,19 +1247,27 @@ els.axis.addEventListener('change', () => {
 })
 els.plane.addEventListener('input', () => {
   setPlane(Number(els.plane.value))
+  // Carry the volume crosshair to the new plane, so both panes agree on depth.
+  if (!els.follow.checked || !nv || !crosshairVox) return
+  const onPlane = [...crosshairVox]
+  onPlane[AXIS_INDEX[els.axis.value]] = planeIndex
+  nv.crosshairPos = nv.vox2frac(onPlane)
 })
+els.follow.addEventListener('change', requestSlideRender)
 els.view.addEventListener('change', () => {
   if (nv) nv.sliceType = VIEWS[els.view.value] ?? SLICE_TYPE.RENDER
 })
 els.detail.addEventListener('change', () => {
   activeCv?.setMaxDetail(Number(els.detail.value) || 0)
 })
+els.plan.addEventListener('change', () => {
+  void activeCv?.setBudgetPlan(els.plan.value)
+})
+els.swap.addEventListener('change', () => {
+  activeCv?.setSwapPolicy(els.swap.value)
+})
 els.zoom.addEventListener('input', () => {
   if (nv) nv.scaleMultiplier = Number(els.zoom.value)
-})
-els.measure.addEventListener('change', () => {
-  if (!els.measure.checked) clearRuler()
-  requestSlideRender()
 })
 els.crosshair.addEventListener('change', requestSlideRender)
 els.colormap.addEventListener('change', applyColormap)
@@ -1224,15 +1279,27 @@ els.fit.addEventListener('click', () => {
 window.addEventListener('resize', requestSlideRender)
 
 async function main() {
+  // ?dataset=<key> opens on that Dandiset (e.g. ?dataset=spim), when the menu
+  // offers it (the synthetic stores are dev-server only).
+  const wanted = params.get('dataset')
+  if ([...els.dataset.options].some((o) => o.value === wanted))
+    els.dataset.value = wanted
   nv = new NiiVue({
     backend,
+    isAntiAlias,
     backgroundColor: [0.02, 0.03, 0.03, 1],
     isColorbarVisible: true,
     sliceType: VIEWS[els.view.value] ?? SLICE_TYPE.RENDER,
     maxTextureDimension3D: 256,
     maxChunkResidencyBytes: DEFAULT_RESIDENCY_BYTES,
+    // Faint crosshair arms through the volume, as mesh x-ray draws them.
+    meshXRay: 0.25,
+    primaryDragMode: Number(els.volumePrimary.value),
+    secondaryDragMode: Number(els.volumeSecondary.value),
   })
   await nv.attachToCanvas(els.canvas)
+  // Show the backend running, after any fallback.
+  els.backendSelect.value = nv.backend
   nv.addEventListener('locationChange', onLocationChange)
   nv.addEventListener('change', onNiivueChange)
   nv.scaleMultiplier = DEFAULT_3D_ZOOM
@@ -1241,14 +1308,10 @@ async function main() {
   // One font fetch for the pane, shared by both widgets (each still owns its own
   // GPU resources on whichever backend the slide renderer came up on).
   const font = await loadDefaultFont()
-  ruler = new UIKitRulerOverlay(font)
   crosshair = new UIKitCrosshairOverlay(font)
-  // One hook, two widgets: the renderer exposes a single overlayDraw slot, so the
-  // pane composes them here. Crosshair last, so the marker reads over the ruler.
-  slideView.renderer.overlayDraw = (frame) => {
-    ruler.drawOverlay(frame)
-    crosshair.drawOverlay(frame)
-  }
+  slideView.renderer.overlayDraw = (frame) => crosshair.drawOverlay(frame)
+  slideView.renderer.isNearestInterpolation =
+    els.slideFilter.value === 'nearest'
   await loadDataset()
   // Both panes stream asynchronously with no completion event, so the HUDs poll.
   // Cheap: two innerHTML writes a few times a second.

@@ -25,13 +25,15 @@
         display: none;
       }
 
-      header .links {
-        margin-left: auto;
+      header .back {
+        color: #9cf;
+        text-decoration: none;
+        padding-right: 14px;
+        border-right: 1px solid #555;
       }
 
-      header .links a {
-        color: #9cf;
-        margin-left: 12px;
+      header .backend {
+        margin-left: auto;
       }
 
       /* The A/B overlay sits above the live canvas and takes NO pointer events,
@@ -73,6 +75,7 @@
   </head>
   <body>
     <header>
+      <a class="back" href="./index.html">&lsaquo; Examples</a>
       <span class="control">
         <label for="volume">Volume</label>
         <select id="volume">
@@ -118,10 +121,12 @@
         title="Render both filters for a fixed number of frames on the current camera and report ms/frame">measure</button>
       <button id="savePng" type="button"
         title="Download exactly what is on screen -- the live render, or the A/B split composite">save PNG</button>
-      <span class="links">
-        <a href="./index.html">Examples</a>
-        <a href="?backend=webgpu">WebGPU</a>
-        <a href="?backend=webgl2">WebGL2</a>
+      <span class="control backend">
+        <label for="backendSelect">Backend</label>
+        <select id="backendSelect">
+          <option value="webgl2">WebGL2</option>
+          <option value="webgpu">WebGPU</option>
+        </select>
       </span>
     </header>
     <main id="canvas-container">

@@ -33,6 +33,7 @@ export function urlVolumeOptions(v: NVDocumentVolume): ImageFromUrlOptions {
   if (v.isNearestInterpolation !== undefined)
     opts.isNearestInterpolation = v.isNearestInterpolation
   if (v.atlasOutline !== undefined) opts.atlasOutline = v.atlasOutline
+  if (v.hiddenLabels !== undefined) opts.hiddenLabels = v.hiddenLabels
   if (v.opacity !== undefined) opts.opacity = v.opacity
   if (v.visible !== undefined) opts.visible = v.visible
   if (v.calMin !== undefined) opts.calMin = v.calMin

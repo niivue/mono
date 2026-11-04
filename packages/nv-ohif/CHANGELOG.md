@@ -1,3 +1,363 @@
+## 1.0.0-rc.78 (2026-11-04)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.83
+- Updated uikit to 1.0.0-rc.77
+
+## 1.0.0-rc.77 (2026-11-03)
+
+### Fixes
+
+- **nv-ohif:** do not export a split spline or livewire ROI as its first piece ([#484](https://github.com/niivue/mono/issues/484))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.82
+- Updated uikit to 1.0.0-rc.76
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.76 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.75
+
+## 1.0.0-rc.75 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.81
+- Updated uikit to 1.0.0-rc.74
+
+## 1.0.0-rc.74 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.80
+- Updated uikit to 1.0.0-rc.73
+
+## 1.0.0-rc.73 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.79
+- Updated uikit to 1.0.0-rc.72
+
+## 1.0.0-rc.72 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.78
+- Updated uikit to 1.0.0-rc.71
+
+## 1.0.0-rc.71 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.70
+
+## 1.0.0-rc.70 (2026-11-03)
+
+### Fixes
+
+- **nv-ohif:** clear failures on a row-less viewport; warn per failing change ([a81429a2](https://github.com/niivue/mono/commit/a81429a2))
+- **nv-ohif:** drive the W/L reverse bridge from volumeUpdated ([#119](https://github.com/niivue/mono/issues/119))
+- **nv-ohif:** log and cap thrown measurement add/remove retries ([#118](https://github.com/niivue/mono/issues/118))
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.69
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.69 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.77
+- Updated uikit to 1.0.0-rc.68
+
+## 1.0.0-rc.68 (2026-11-03)
+
+### Performance
+
+- **nv-ohif:** memoize NVSlide ruler updates ([#122](https://github.com/niivue/mono/issues/122))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.67 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.76
+- Updated uikit to 1.0.0-rc.67
+
+## 1.0.0-rc.66 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.75
+- Updated uikit to 1.0.0-rc.66
+
+## 1.0.0-rc.65 (2026-11-02)
+
+### Fixes
+
+- **nv-ohif:** pass the status kind instead of matching the message ([#130](https://github.com/niivue/mono/issues/130))
+- **nv-ohif, nv-react:** handle a rejected setVolume ([#467](https://github.com/niivue/mono/issues/467))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.74
+- Updated uikit to 1.0.0-rc.65
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.64 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.73
+- Updated uikit to 1.0.0-rc.64
+
+## 1.0.0-rc.63 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.72
+- Updated uikit to 1.0.0-rc.63
+
+## 1.0.0-rc.62 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.71
+- Updated uikit to 1.0.0-rc.62
+
+## 1.0.0-rc.61 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.70
+- Updated uikit to 1.0.0-rc.61
+
+## 1.0.0-rc.60 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.69
+- Updated uikit to 1.0.0-rc.60
+
+## 1.0.0-rc.59 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.68
+- Updated uikit to 1.0.0-rc.59
+
+## 1.0.0-rc.58 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.67
+- Updated uikit to 1.0.0-rc.58
+
+## 1.0.0-rc.57 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.66
+- Updated uikit to 1.0.0-rc.57
+
+## 1.0.0-rc.56 (2026-11-02)
+
+### Fixes
+
+- **niivue:** annotation screen shapes and stats cover every polygon ([#115](https://github.com/niivue/mono/issues/115))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.65
+- Updated uikit to 1.0.0-rc.56
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.55 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.64
+- Updated uikit to 1.0.0-rc.55
+
+## 1.0.0-rc.54 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.63
+- Updated uikit to 1.0.0-rc.54
+
+## 1.0.0-rc.53 (2026-10-31)
+
+### Fixes
+
+- **niivue:** oblique-safe bidirectional slice test, ignore off-slice dblclick mid-contour, loadDocument clears annotation undo ([#111](https://github.com/niivue/mono/issues/111), [#114](https://github.com/niivue/mono/issues/114), [#113](https://github.com/niivue/mono/issues/113))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.62
+- Updated uikit to 1.0.0-rc.53
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.52 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.61
+- Updated uikit to 1.0.0-rc.52
+
+## 1.0.0-rc.51 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.60
+- Updated uikit to 1.0.0-rc.51
+
+## 1.0.0-rc.50 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.59
+- Updated uikit to 1.0.0-rc.50
+
+## 1.0.0-rc.49 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.58
+- Updated uikit to 1.0.0-rc.49
+
+## 1.0.0-rc.48 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.57
+- Updated uikit to 1.0.0-rc.48
+
+## 1.0.0-rc.47 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.56
+- Updated uikit to 1.0.0-rc.47
+
+## 1.0.0-rc.46 (2026-10-29)
+
+### Features
+
+- **nv-ext-dcm2niix:** re-export @niivue/dcm2niix 1.4; nv-ohif uses convert() ([44da2e9a](https://github.com/niivue/mono/commit/44da2e9a))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.55
+- Updated uikit to 1.0.0-rc.46
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.45 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.54
+- Updated uikit to 1.0.0-rc.45
+
+## 1.0.0-rc.44 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.53
+- Updated uikit to 1.0.0-rc.44
+
+## 1.0.0-rc.43 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.43
+
+## 1.0.0-rc.42 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.52
+- Updated uikit to 1.0.0-rc.42
+
+## 1.0.0-rc.41 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.51
+- Updated uikit to 1.0.0-rc.41
+
+## 1.0.0-rc.40 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.50
+- Updated uikit to 1.0.0-rc.40
+
+## 1.0.0-rc.39 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.39
+
+## 1.0.0-rc.38 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.49
+- Updated uikit to 1.0.0-rc.38
+
+## 1.0.0-rc.37 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.48
+- Updated uikit to 1.0.0-rc.37
+
+## 1.0.0-rc.36 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.47
+- Updated uikit to 1.0.0-rc.36
+
+## 1.0.0-rc.35 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.46
+- Updated uikit to 1.0.0-rc.35
+
 ## 1.0.0-rc.34 (2026-10-28)
 
 ### Updated Dependencies

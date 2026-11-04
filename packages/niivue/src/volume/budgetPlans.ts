@@ -186,7 +186,22 @@ export interface BudgetPlanOptions {
    * one texture, or carries a datatype with no per-voxel intensity.
    */
   coarseFloor?: boolean
+  /**
+   * What a refocus does with bricks the new plan replaces (default
+   * `'replace'`). `'replace'` frees them at once: least memory, but their
+   * regions draw from the coarse floor until the new bricks stream in.
+   * `'keepUntilCovered'` keeps drawing each one until every new brick over its
+   * region is resident, so a refocus never shows a region coarser than before;
+   * it holds that extra memory only during the swap and falls back to
+   * `'replace'` when the budget cannot cover it. 3D render only: 2D slices
+   * keep the floor fallback. Like the floor, a retiring brick draws without
+   * overlay, drawing or PAQD layers.
+   */
+  swapPolicy?: SwapPolicy
 }
+
+/** See {@link BudgetPlanOptions.swapPolicy}. */
+export type SwapPolicy = 'replace' | 'keepUntilCovered'
 
 /** Every option resolved to a concrete value; what the manager actually runs on. */
 export interface ResolvedOptions {
@@ -204,6 +219,7 @@ export interface ResolvedOptions {
   renderCentering: 'pivot' | 'none'
   debounceMs: number
   coarseFloor: boolean
+  swapPolicy: SwapPolicy
 }
 
 /** The subset of {@link ResolvedOptions} that shapes the octree itself. */
@@ -283,5 +299,6 @@ export function resolveBudgetPlan(
     renderCentering: options.renderCentering ?? 'none',
     debounceMs: options.debounceMs ?? plan.debounceMs,
     coarseFloor: options.coarseFloor ?? true,
+    swapPolicy: options.swapPolicy ?? 'replace',
   }
 }

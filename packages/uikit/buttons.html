@@ -11,34 +11,36 @@
       header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
         display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
       header b { color: #ffd500; }
-      nav a { color: #9cf; margin-right: 10px; }
       #canvasHolder { flex: 1; position: relative; }
       canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
       a { color: #ffd500; }
-      #status { color: #ffd500; }
-      kbd { background: #333; border-radius: 3px; padding: 1px 5px; }
     </style>
+    <link rel="stylesheet" href="/demo.css" />
   </head>
   <body>
     <div id="wrap">
       <header>
-        <b>UIKit buttons</b>
-        <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
-        <span>Buttons drawn in the scene as an overlay. Clicks on them never reach the
-          viewer; the canvas still drags and scrolls elsewhere. <kbd>1</kbd>-<kbd>5</kbd> click the view buttons from the keyboard.
-          <a href="?backend=webgl2">webgl2</a> | <a href="?backend=webgpu">webgpu</a></span>
-        <span id="status">loading...</span>
+        <b>UIKit</b>
+        <nav><a href="/index.html">controls</a><a href="/ruler.html">ruler</a><a href="/volume.html">volume</a><a href="/slide.html">slide (3D)</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html" aria-current="page">buttons</a></nav>
+        <label class="backend">backend <select id="backendSelect">
+          <option value="webgl2">webgl2</option>
+          <option value="webgpu">webgpu</option>
+        </select></label>
       </header>
       <div id="canvasHolder"><canvas id="gl"></canvas></div>
+      <footer><span id="help">Buttons drawn in the scene; clicks on them never reach the viewer. Keys <kbd>1</kbd>-<kbd>5</kbd> click the view buttons.</span><span id="status" data-state="wait">Loading...</span></footer>
     </div>
 
     <script type="module">
       import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
       import { loadDefaultFont, UIKitButtonOverlay } from './src/index.ts'
+      import { setStatus } from './statusBar.js'
+      import { urlParamSelect } from './urlParamSelect.js'
 
       const params = new URLSearchParams(location.search)
       const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
-      const status = document.getElementById('status')
+      // Wired before anything loads, so the menu works even if loading fails.
+      urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
       const canvas = document.getElementById('gl')
 
       const nv = new NiiVue({
@@ -48,6 +50,7 @@
         isColorbarVisible: false,
       })
       await nv.attachToCanvas(canvas)
+      document.getElementById('backendSelect').value = nv.backend
       await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
 
       const font = await loadDefaultFont()
@@ -57,7 +60,7 @@
       nv.registerOverlayRenderer(buttons)
       const detach = buttons.attach(nv)
 
-      const say = (msg) => { status.textContent = msg }
+      const say = (msg) => setStatus(msg)
 
       // A row of view buttons along the top-left: auto-sized to their labels.
       const views = [
@@ -117,7 +120,7 @@
         if (views[i]) buttons.click(views[i][0])
       })
 
-      say('ready')
+      setStatus('Ready', 'ok')
       addEventListener('beforeunload', detach)
     </script>
   </body>

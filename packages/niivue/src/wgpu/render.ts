@@ -31,9 +31,12 @@ import {
   chunkExplodeEnabled,
   chunkExplodeOffsetFrac,
 } from '@/volume/ChunkExplode'
-import { ChunkResidencyManager } from '@/volume/ChunkResidency'
 import {
-  chunksBackToFront,
+  ChunkResidencyManager,
+  type RetiringChunk,
+} from '@/volume/ChunkResidency'
+import {
+  chunkDrawOrder,
   chunksInFrustum,
   chunksNotClippedOut,
   orderByViewCenter,
@@ -297,7 +300,7 @@ function setChunkBudget(entry: ChunkedTexEntry, bytes: number): void {
 
 type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 
-// 500 bytes of data = 125 floats:
+// 512 bytes of data = 128 floats:
 //   16 mvp + 16 norm + 16 matRAS + 4 volScale + 4 rayDir + 4 (gradient/numVol/cutaway/pad)
 //   + 4 clipPlaneColor + 24 clipPlanes + 4 paqd + 8 scalars (earlyTermination,
 //     clipPlaneOverlay, fadeAlpha, renderMode, cubicFilter, invGamma,
@@ -306,7 +309,8 @@ type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 //     volumeTexDimsFull, so the group is 8 lanes before and after.
 //   + 4 volumeTexDimsFull + 4 chunkSubOrigin + 4 chunkSubSize
 //   + 4 dataOriginTexFrac + 4 dataSizeTexFrac + 4 rayStepTexVox
-//   + 3 trailing f32 (layerGradMode, gradientOpacity, silhouettePower)
+//   + 4 trailing f32 (layerGradMode, gradientOpacity, silhouettePower,
+//     overlayOpacityCorrection)
 // The constant below is the size the BIND GROUP declares, which must be the
 // size WGSL gives the struct, not the byte count we write into it: a trailing
 // f32 leaves the struct 16-byte-aligned at 512, and declaring 508 makes every
@@ -493,6 +497,8 @@ export class VolumeRenderer extends NVRenderer {
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
   layerGradientMode = VOLUME_DEFAULTS.layerGradientMode
+  // Step-size opacity correction for the overlay pass.
+  isOverlayOpacityCorrected = VOLUME_DEFAULTS.isOverlayOpacityCorrected
   // Background-volume gradient opacity and silhouette (Fresnel rim), set by the
   // view each frame from md.volume. Both read the precomputed gradient
   // texture's magnitude/direction, so a non-zero value also means the gradient
@@ -603,6 +609,9 @@ export class VolumeRenderer extends NVRenderer {
   // placeholders). Reused for every missing chunk; reset when the floor or
   // matcap changes. Per-cube geometry differs only via the uniform offset.
   private _floorBindGroup: GPUBindGroup | null = null
+  // Bind groups for retiring bricks, keyed by brick so they die with it;
+  // replaced with the other caches when a shared binding (the matcap) changes.
+  private _retiringBindGroups = new WeakMap<VolumeChunkGPU, GPUBindGroup>()
   private _coarseFloorKey: string | null = null
   // Wall-clock stamp captured once per frame in beginChunkFrame, so every chunk
   // draw in the frame measures fade age against the same instant.
@@ -1225,6 +1234,7 @@ export class VolumeRenderer extends NVRenderer {
     device: GPUDevice,
     vol: NVImage,
     newPlan: ChunkPlan,
+    keepUntilCovered = false,
   ): Promise<void> {
     const cacheKey = volumeCacheKey(vol)
     const entry = cacheKey ? this._texCache.get(cacheKey) : undefined
@@ -1235,7 +1245,13 @@ export class VolumeRenderer extends NVRenderer {
           `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
       )
     }
-    const done = this._swapChunkedEntryPlan(device, vol, entry, newPlan)
+    const done = this._swapChunkedEntryPlan(
+      device,
+      vol,
+      entry,
+      newPlan,
+      keepUntilCovered,
+    )
     const pending = { plan: newPlan, done }
     entry.pendingSwap = pending
     try {
@@ -1250,6 +1266,7 @@ export class VolumeRenderer extends NVRenderer {
     vol: NVImage,
     entry: ChunkedTexEntry,
     newPlan: ChunkPlan,
+    keepUntilCovered: boolean,
   ): Promise<void> {
     // The uploader bakes the display state as it is now, so record that key,
     // not the one current after the await: a colormap change landing in
@@ -1259,8 +1276,8 @@ export class VolumeRenderer extends NVRenderer {
     // Resident bricks bake the display state of the uploader that made them.
     // When that state has changed since (a colormap set but not yet
     // refreshed), keeping them would show the old state, so none carry over.
-    const keepResident =
-      displayKey === entry.displayKey ? oldToNew : new Map<number, number>()
+    const carryOver = displayKey === entry.displayKey
+    const keepResident = carryOver ? oldToNew : new Map<number, number>()
     // Rebind the uploader to the new plan; dispose the old orient resources.
     const newUploader = await createChunkUploaderGPU(
       device,
@@ -1272,7 +1289,13 @@ export class VolumeRenderer extends NVRenderer {
     )
     entry.uploader.dispose()
     entry.uploader = newUploader
-    entry.manager.remap(keepResident, newPlan.chunks.length)
+    entry.manager.remap(
+      keepResident,
+      newPlan.chunks.length,
+      keepUntilCovered && carryOver
+        ? { oldPlan: entry.plan, newPlan }
+        : undefined,
+    )
     // Chunk indices are plan-relative, so the tier is re-keyed by the same
     // content match: a brick the new plan still contains keeps its bytes, and
     // a refocus back to this level finds them.
@@ -1949,6 +1972,7 @@ export class VolumeRenderer extends NVRenderer {
   private _invalidateBindGroupCache(): void {
     this._bindGroupCache.clear()
     this._floorBindGroup = null
+    this._retiringBindGroups = new WeakMap()
     for (const entry of this._texCache.values()) {
       if (entry.kind === 'chunked') {
         for (let i = 0; i < entry.bindGroups.length; i++) {
@@ -2407,6 +2431,8 @@ export class VolumeRenderer extends NVRenderer {
     let total = 0
     let staleDropped = 0
     let predicted = 0
+    let retiring = 0
+    let retiringBytes = 0
     const decoded: DecodedChunkStats = {
       hits: 0,
       misses: 0,
@@ -2425,6 +2451,8 @@ export class VolumeRenderer extends NVRenderer {
       total += entry.manager.chunkCount
       staleDropped += entry.manager.staleDropCount
       predicted += entry.predictedCount
+      retiring += entry.manager.retiringChunks.length
+      retiringBytes += entry.manager.retiringBytes
       const d = entry.decoded.stats
       decoded.hits += d.hits
       decoded.misses += d.misses
@@ -2442,6 +2470,8 @@ export class VolumeRenderer extends NVRenderer {
       total,
       staleDropped,
       predicted,
+      retiring,
+      retiringBytes,
       decoded,
     }
   }
@@ -3214,12 +3244,21 @@ export class VolumeRenderer extends NVRenderer {
 
     const explode = entry.volume.chunkExplode
     const brickOpacity = entry.volume.chunkBrickOpacity
-    const order = chunksBackToFront(
+    const offsets = chunkOffsetFor(entry.plan, explode)
+    const covered = (i: number): boolean => entry.manager.isCoveredByRetiring(i)
+    let order = chunkDrawOrder(
       entry.plan,
+      entry.manager.retiringChunks,
+      covered,
       rayDir,
-      chunkOffsetFor(entry.plan, explode),
+      offsets,
       volScale,
     )
+    // Retiring cubes take uniform slots after the plan's; past the per-tile
+    // cap, draw the plan alone (its uncovered regions fall back to the floor).
+    if (order.length > MAX_CHUNKS_PER_TILE) {
+      order = chunkDrawOrder(entry.plan, [], covered, rayDir, offsets, volScale)
+    }
 
     // MIP: merge chunk draws (and the overlay entry's draws over the base) by
     // component-wise max instead of OVER — matching the shader's own per-layer
@@ -3349,8 +3388,75 @@ export class VolumeRenderer extends NVRenderer {
       pass.drawIndexed(this.cube.indices.length)
     }
 
+    // A retiring brick from a make-before-break swap: its own texture, placed
+    // by its own (older) plan, at full strength, without layers (as the floor
+    // it stands in for).
+    const drawRetiringCube = (
+      ref: RetiringChunk<VolumeChunkGPU>,
+      slot: number,
+    ): void => {
+      const chunk = ref.chunk
+      let bindGroup = this._retiringBindGroups.get(chunk)
+      if (!bindGroup) {
+        bindGroup = device.createBindGroup({
+          layout: bindLayout,
+          entries: [
+            {
+              binding: 0,
+              resource: { buffer: paramsBuffer, size: renderParamsSize },
+            },
+            { binding: 1, resource: chunk.volumeTexture.createView() },
+            { binding: 2, resource: matcapTexture.createView() },
+            { binding: 3, resource: sampler },
+            { binding: 4, resource: chunk.volumeGradientTexture.createView() },
+            { binding: 5, resource: placeholderOverlay.createView() },
+            { binding: 6, resource: placeholderOverlay.createView() },
+            { binding: 7, resource: placeholderOverlay.createView() },
+            { binding: 8, resource: samplerNearest },
+            { binding: 9, resource: paqdLutTex.createView() },
+          ],
+        })
+        this._retiringBindGroups.set(chunk, bindGroup)
+      }
+      const renderOffset =
+        chunkSlotBase +
+        (tileIndex * MAX_CHUNKS_PER_TILE + slot) * alignedRenderSize
+      this._writeRenderParams(
+        device,
+        paramsBuffer,
+        renderOffset,
+        mvpMatrix,
+        normalMatrix,
+        chunkExplodedMatRAS(ref.plan, ref.index, matRAS, null),
+        volScale,
+        rayDir,
+        gradientAmount,
+        volumeCount,
+        isClipCutaway,
+        paqdUniforms,
+        earlyTermination,
+        clipPlaneColor,
+        clipPlanes,
+        {
+          ...chunkUniformsFor(ref.plan, ref.index),
+          // Its own plan's halo decides whether cubic sampling is safe.
+          cubicSafe: entry.cubicSafe && planSupportsCubic(ref.plan),
+        },
+        overlayMode ? 1 : 0,
+        1,
+        backOpacity,
+      )
+      pass.setBindGroup(0, bindGroup, [renderOffset])
+      pass.drawIndexed(this.cube.indices.length)
+    }
+
     for (let slot = 0; slot < order.length; slot++) {
-      const chunkIndex = order[slot]
+      const item = order[slot]
+      if (item.retiring) {
+        drawRetiringCube(item.retiring, slot)
+        continue
+      }
+      const chunkIndex = item.index
       const chunk = entry.manager.getChunk(chunkIndex)
       if (!chunk) {
         if (floorActive) drawFloorCube(chunkIndex, slot)
@@ -3574,6 +3680,8 @@ export class VolumeRenderer extends NVRenderer {
         // alpha modulation from the precomputed gradient. 0 is a no-op for both.
         this.gradientOpacity,
         this.silhouette,
+        // overlayOpacityCorrection (508).
+        this.isOverlayOpacityCorrected ? 1 : 0,
       ]),
     )
   }

@@ -51,7 +51,7 @@ export function blendOverlayData(
     const alpha =
       alphaBlend === OVERLAY_ALPHA_BLEND.ADDITIVE
         ? Math.min(sum, 1)
-        : alphaBlend === OVERLAY_ALPHA_BLEND.OVER
+        : alphaBlend === OVERLAY_ALPHA_BLEND.UNION
           ? union
           : max
     const norm =

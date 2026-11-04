@@ -67,6 +67,10 @@ describe('renderVariantKey', () => {
     expect(
       renderVariantConstants(renderVariantKey({ ...idle, renderMode: 2 })),
     ).toMatchObject({ IS_MIP: 0, IS_SLICES: 1 })
+    // CINEMATIC never reaches the classic shader; were it to, it is COMPOSITE.
+    expect(
+      renderVariantConstants(renderVariantKey({ ...idle, renderMode: 3 })),
+    ).toMatchObject({ IS_MIP: 0, IS_SLICES: 0 })
   })
 })
 

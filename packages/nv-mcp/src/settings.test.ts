@@ -6,6 +6,7 @@ import {
   findSetting,
   OVERLAY_ALPHA_BLENDS,
   OVERLAY_COLOR_BLENDS,
+  RENDER_MODES,
   readSetting,
   SETTINGS,
   type Setting,
@@ -37,6 +38,21 @@ describe('the settings table', () => {
     expect(coerceSetting(setting, 'false')).toBe(false)
     expect(() => coerceSetting(setting, 'yes')).toThrow(
       'annotationIsEnabled must be true or false.',
+    )
+  })
+
+  it('refuses a negative layout inset (#494)', () => {
+    const setting = named('layoutInset')
+    expect(coerceSetting(setting, [10, 0, 0, 0])).toEqual([10, 0, 0, 0])
+    expect(() => coerceSetting(setting, [-1, 0, 0, 0])).toThrow('at least 0')
+  })
+
+  it('takes null as the number JSON cannot carry, where a setting has one (#493)', () => {
+    expect(coerceSetting(named('meshThicknessOn2D'), null)).toBe(
+      Number.POSITIVE_INFINITY,
+    )
+    expect(() => coerceSetting(named('crosshairWidth'), null)).toThrow(
+      'crosshairWidth must be a number.',
     )
   })
 
@@ -100,11 +116,11 @@ describe('the settings table', () => {
 
   it('names the overlay blend modes as NiiVue numbers them', () => {
     const alpha = named('volumeOverlayAlphaBlend')
-    expect(settingChoices(alpha)).toEqual(['max', 'additive', 'over'])
+    expect(settingChoices(alpha)).toEqual(['max', 'additive', 'union'])
     expect(coerceSetting(alpha, 'additive')).toBe(OVERLAY_ALPHA_BLENDS.additive)
-    expect(readSetting(alpha, 2)).toBe('over')
+    expect(readSetting(alpha, 2)).toBe('union')
     expect(() => coerceSetting(alpha, 'screen')).toThrow(
-      'volumeOverlayAlphaBlend must be one of max, additive, over.',
+      'volumeOverlayAlphaBlend must be one of max, additive, union.',
     )
     const colour = named('volumeOverlayColorBlend')
     expect(settingChoices(colour)).toEqual(['additive', 'mean', 'over', 'max'])
@@ -159,5 +175,41 @@ describe('the settings table', () => {
       [0, 1, 0, 1],
     ])
     expect(readSetting(named('crosshairWidth'), 2)).toBe(2)
+  })
+
+  it('takes the cinematic render mode by name', () => {
+    const mode = named('volumeRenderMode')
+    expect(coerceSetting(mode, 'cinematic')).toBe(RENDER_MODES.cinematic)
+    expect(readSetting(mode, 3)).toBe('cinematic')
+  })
+
+  it('takes an object as any of its fields, each checked as a setting', () => {
+    const setting = named('volumeCinematic')
+    expect(setting.kind).toBe('object')
+    expect(
+      coerceSetting(setting, { exposure: '1.5', labelMode: 'only' }),
+    ).toEqual({ exposure: 1.5, labelMode: 'only' })
+    expect(() => coerceSetting(setting, { fog: 1 })).toThrow(
+      'volumeCinematic has no field fog: it has lightElevation,',
+    )
+    expect(() => coerceSetting(setting, { labelMode: 'all' })).toThrow(
+      'volumeCinematic.labelMode must be one of only, unlabeled, none.',
+    )
+    expect(() => coerceSetting(setting, { shadow: 2 })).toThrow(
+      'volumeCinematic.shadow must be at most 1.',
+    )
+    expect(() => coerceSetting(setting, { maxFrames: 1.5 })).toThrow(
+      'volumeCinematic.maxFrames must be a whole number.',
+    )
+    expect(() => coerceSetting(setting, { ao: Number.NaN })).toThrow(
+      'volumeCinematic.ao must be a number.',
+    )
+    expect(() => coerceSetting(setting, [1])).toThrow(
+      'volumeCinematic must be an object of any of',
+    )
+    const held = { exposure: 1 }
+    const read = readSetting(setting, held)
+    expect(read).toEqual(held)
+    expect(read).not.toBe(held)
   })
 })

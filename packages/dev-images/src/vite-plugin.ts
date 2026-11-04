@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Plugin } from 'vite'
+import { SYNTHETIC_ZARR_ROOT, syntheticZarrFile } from './syntheticZarr'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const imagesDir = resolve(__dirname, '../images')
@@ -49,6 +50,20 @@ export function devImagesPlugin(options?: DevImagesPluginOptions): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (!req.url || req.url === '/') return next()
+
+        if (req.url.startsWith(SYNTHETIC_ZARR_ROOT)) {
+          const path = req.url.split('?')[0].slice(SYNTHETIC_ZARR_ROOT.length)
+          const body = syntheticZarrFile(path)
+          if (!body) {
+            res.statusCode = 404
+            res.end()
+            return
+          }
+          res.setHeader('Content-Length', body.byteLength)
+          res.setHeader('Content-Type', 'application/octet-stream')
+          res.end(body)
+          return
+        }
 
         const urlPath = req.url.split('?')[0].replace(/^\//, '')
         const filePath = resolve(imagesDir, urlPath)

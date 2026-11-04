@@ -254,6 +254,7 @@ struct Params {
   _pad2: f32,
   _pad3: f32,
   crosscutMM: vec4f,
+  ccPlanes: mat4x4f,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;

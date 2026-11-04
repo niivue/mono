@@ -7,12 +7,14 @@
 // orbit/zoom with the mouse and the slide moves with the brain. Tiles stream in
 // through NVSlide's cache (HTTP range / decode), so the plane sharpens as data
 // arrives. Works on both backends: append `?backend=webgpu` (default WebGL2).
+
 import NiiVue, {
   axialPlaneTransform,
   NVSlide,
   SHOW_RENDER,
   SLICE_TYPE,
 } from '../src/index.ts'
+import { urlParamSelect } from './urlParamSelect.js'
 
 // Approximate MNI152 world extents (mm) for placing the slide plane.
 const MNI = { xmin: -90, xmax: 90, ymin: -126, ymax: 90, zmin: -72, zmax: 108 }
@@ -25,6 +27,13 @@ function backendFromUrl() {
   return raw === 'webgpu' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
 }
 
+// Wired before anything loads, so the menu works even if loading fails (#488).
+urlParamSelect(
+  document.getElementById('backendSelect'),
+  'backend',
+  backendFromUrl(),
+)
+
 async function main() {
   const backend = backendFromUrl()
   const nv = new NiiVue({
@@ -36,6 +45,7 @@ async function main() {
     isOrientCubeVisible: true,
   })
   await nv.attachToCanvas(canvas)
+  document.getElementById('backendSelect').value = nv.backend
   await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
 
   // Load the slide and lay it onto a mid-axial plane spanning the MNI box.

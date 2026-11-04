@@ -59,7 +59,8 @@ public struct SetVolumePayload: Encodable {
     }
 }
 
-public struct VolumeIndexPayload: Encodable {
+/// Index of a volume or mesh (`removeVolume`, `removeMesh`).
+public struct IndexPayload: Encodable {
     public let index: Int
 }
 
@@ -79,6 +80,15 @@ public struct VolumeSummary: Codable, Equatable {
     /// RAS dimensions and voxel size in mm.
     public var dims: [Int]
     public var pixDims: [Double]
+}
+
+/// One loaded mesh (`meshesChange` / `getMeshes`).
+public struct MeshSummary: Codable, Equatable {
+    public var name: String
+}
+
+public struct SignalsChangePayload: Decodable {
+    public let count: Int
 }
 
 public struct LocationValue: Decodable, Equatable {
@@ -116,5 +126,4 @@ public struct LocationChangeEnvelope: Decodable {
 
 public struct ImageLoadedEnvelope: Decodable {
     public let name: String
-    public let kind: String
 }

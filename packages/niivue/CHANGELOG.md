@@ -1,3 +1,579 @@
+## 1.0.0-rc.83 (2026-11-04)
+
+### Fixes
+
+- step over JPEG restart markers when reading the size ([897610ea](https://github.com/niivue/mono/commit/897610ea))
+- give a window set during streaming to the coarse floor and handle too ([931b9fb7](https://github.com/niivue/mono/commit/931b9fb7))
+- size a GIF by its first frame, refuse a JPEG with a DNL height ([2d7aa5f6](https://github.com/niivue/mono/commit/2d7aa5f6))
+- **niivue:** skip 0xff fill bytes in the JPEG size scan ([#534](https://github.com/niivue/mono/issues/534))
+- **niivue:** refuse an oversized image volume before decoding it ([#472](https://github.com/niivue/mono/issues/472), [#511](https://github.com/niivue/mono/issues/511))
+- **niivue:** keep a window set while a chunked volume's sample streams in ([#489](https://github.com/niivue/mono/issues/489))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.82 (2026-11-03)
+
+### Fixes
+
+- **niivue:** FIB/SRC z spacing and MHA without TransformMatrix ([#536](https://github.com/niivue/mono/issues/536))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.81 (2026-11-03)
+
+### Fixes
+
+- **niivue:** map the drawing mask from its own grid ([8789a29d](https://github.com/niivue/mono/commit/8789a29d))
+- **niivue:** getDescriptives masks and drawing on another voxel grid ([#337](https://github.com/niivue/mono/issues/337))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.80 (2026-11-03)
+
+### Fixes
+
+- **niivue:** multi-click contours on oblique volumes stay on their slice ([#469](https://github.com/niivue/mono/issues/469))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.79 (2026-11-03)
+
+### Features
+
+- ⚠️  **niivue:** rename alpha blend OVER to UNION ([#358](https://github.com/niivue/mono/issues/358))
+
+### Fixes
+
+- validate layoutInset in setter, options and documents ([#494](https://github.com/niivue/mono/issues/494))
+- emit change from loadMatcap and report matcap by name in nv-mcp ([#460](https://github.com/niivue/mono/issues/460), [#462](https://github.com/niivue/mono/issues/462))
+
+### Performance
+
+- **niivue:** skip multi-LOD candidates that cannot fit the budget ([#201](https://github.com/niivue/mono/issues/201))
+
+### Breaking Changes
+
+- **niivue:** rename alpha blend OVER to UNION  ([#358](https://github.com/niivue/mono/issues/358))
+  OVERLAY_ALPHA_BLEND.OVER is now OVERLAY_ALPHA_BLEND.UNION,
+  and the nv-mcp volumeOverlayAlphaBlend choice 'over' is now 'union'.
+  Numeric value 2 still works.
+  Claude-Session: https://claude.ai/code/session_01F6ttnQfdKTLt8jfvVRr7i4
+
+### Thank You
+
+- Claude
+- neurolabusc
+
+## 1.0.0-rc.78 (2026-11-03)
+
+### Fixes
+
+- **niivue:** whenUpdatesSettle follows a takeover to the rebuild that replaced its pass ([218bafef](https://github.com/niivue/mono/commit/218bafef))
+- **niivue:** stop a waiting rebuild at destroy; settle the lock holder with its own pass ([9b370f96](https://github.com/niivue/mono/commit/9b370f96))
+- **niivue:** settle each coalesced caller with its own pass ([#466](https://github.com/niivue/mono/issues/466))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.77 (2026-11-03)
+
+### Fixes
+
+- settle post-destroy update callers and document unreported rebuild failures ([1225f424](https://github.com/niivue/mono/commit/1225f424))
+- preserve update waiter ownership and report settings timeouts ([8ea97e22](https://github.com/niivue/mono/commit/8ea97e22))
+- **niivue:** settle queued GPU-update callers on view takeover and destroy ([#466](https://github.com/niivue/mono/issues/466))
+- **nv-mcp:** answer set_options once the GPU rebuild it started settles ([#447](https://github.com/niivue/mono/issues/447))
+- **niivue:** settle a coalesced GPU update with the follow-up that carries it ([#447](https://github.com/niivue/mono/issues/447), [#273](https://github.com/niivue/mono/issues/273))
+
+### Thank You
+
+- Chris Drake
+- Claude
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.76 (2026-11-03)
+
+### Features
+
+- **niivue:** zarrVersion option skips the OME-Zarr format probe ([e0bb3066](https://github.com/niivue/mono/commit/e0bb3066))
+- **niivue:** slide renderers take isNearestInterpolation ([d2cea204](https://github.com/niivue/mono/commit/d2cea204))
+- **niivue:** keepUntilCovered swap policy for streamed volumes ([03a309f3](https://github.com/niivue/mono/commit/03a309f3))
+- **niivue:** slide rulers and contrast box, planeOutlines for a field of view ([180396f3](https://github.com/niivue/mono/commit/180396f3))
+- **niivue:** NVSlideController, primary and secondary gestures for NVSlide ([d5c27040](https://github.com/niivue/mono/commit/d5c27040))
+- **dandi-demo:** link the panes' crosshair depth and colour ([e29833b7](https://github.com/niivue/mono/commit/e29833b7))
+
+### Fixes
+
+- union retiree groups as a disjoint set; audit tidy-ups ([9ee5fead](https://github.com/niivue/mono/commit/9ee5fead))
+- draw the full segment when a slice crosses outline corners ([948d595a](https://github.com/niivue/mono/commit/948d595a))
+- address review findings on slide gestures and streaming ([af729fe9](https://github.com/niivue/mono/commit/af729fe9))
+- **niivue:** dev server app files: 404 for folders and paths outside the app ([e1f12462](https://github.com/niivue/mono/commit/e1f12462))
+- **niivue:** dev server runs NiiVue from source and generates fixtures ([1394c3da](https://github.com/niivue/mono/commit/1394c3da))
+- **niivue:** dev server sends demo app data files as bytes, 404s missing ones ([da0febf6](https://github.com/niivue/mono/commit/da0febf6))
+- final audit nits for plane outlines; demo README names the default ([9dfaf579](https://github.com/niivue/mono/commit/9dfaf579))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.75 (2026-11-02)
+
+### Fixes
+
+- **niivue:** refit the scene after tract/connectome retessellation ([95b54ed5](https://github.com/niivue/mono/commit/95b54ed5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.74 (2026-11-02)
+
+### Fixes
+
+- **niivue:** a resize never collapses a shape to no area ([#504](https://github.com/niivue/mono/issues/504))
+- **niivue:** a resize keeps an erased shape's erasure ([#504](https://github.com/niivue/mono/issues/504))
+- **niivue:** an abandoned resize restores the polygons as drawn ([#504](https://github.com/niivue/mono/issues/504))
+- **niivue:** revert an abandoned control-point resize ([10df76a9](https://github.com/niivue/mono/commit/10df76a9))
+- **ipyniivue:** skip @internal members in codegen ([#476](https://github.com/niivue/mono/issues/476))
+- **niivue:** a scene change also ends a control-point resize drag ([e988b98a](https://github.com/niivue/mono/commit/e988b98a))
+- **niivue:** a scene change ends the annotation drag it abandons ([30764a8b](https://github.com/niivue/mono/commit/30764a8b))
+- **niivue:** volume moves and held strokes drop the half-drawn annotation ([a9f423ce](https://github.com/niivue/mono/commit/a9f423ce))
+- **niivue:** Escape also ends the drag it interrupts ([40feb84f](https://github.com/niivue/mono/commit/40feb84f))
+- **niivue:** drop a half-drawn annotation when the scene is replaced ([#470](https://github.com/niivue/mono/issues/470))
+- **niivue:** annotation screen shapes for every tile that shows them ([#116](https://github.com/niivue/mono/issues/116))
+- **niivue:** Escape mid-drag cancels the annotation drag too ([#471](https://github.com/niivue/mono/issues/471))
+- **niivue:** an erase keeps annotations its brush did not reach ([#486](https://github.com/niivue/mono/issues/486))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.73 (2026-11-02)
+
+### Fixes
+
+- **niivue:** refuse oversized thumbnail and matcap images before decoding ([#385](https://github.com/niivue/mono/issues/385))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.72 (2026-11-02)
+
+### Fixes
+
+- **niivue:** volumeMatcap setter reloads the rendered matcap texture ([#458](https://github.com/niivue/mono/issues/458))
+- **niivue:** resolve matcap names in the volumeMatcap setter and loadMatcap ([#442](https://github.com/niivue/mono/issues/442), [#443](https://github.com/niivue/mono/issues/443))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.71 (2026-11-02)
+
+### Fixes
+
+- **niivue:** fontScale and fontMinSize resize the text at once ([#377](https://github.com/niivue/mono/issues/377))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.70 (2026-11-02)
+
+### Features
+
+- **niivue:** layoutInset; demo toolbars, uikit pages and local site fixes ([#488](https://github.com/niivue/mono/issues/488))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.69 (2026-11-02)
+
+### Features
+
+- **niivue:** cinematic demo extracted-T1 preset, clip colour menu ([e983405e](https://github.com/niivue/mono/commit/e983405e))
+- **niivue:** cinematic cut face takes a negative clipPlaneColor tint ([#482](https://github.com/niivue/mono/issues/482))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.68 (2026-11-02)
+
+### Fixes
+
+- **niivue:** mesh slab follows the displayed voxel plane ([#451](https://github.com/niivue/mono/issues/451))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.67 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** check set_volume's window before changing anything ([e14a4749](https://github.com/niivue/mono/commit/e14a4749))
+- audit fixes for the colormap window paths ([#481](https://github.com/niivue/mono/pull/481))
+- **niivue:** CT colormap window for streamed volumes, one bound and re-sent maps ([#395](https://github.com/niivue/mono/issues/395))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.66 (2026-11-02)
+
+### Fixes
+
+- **niivue:** draw a hidden legend swatch as one bordered panel ([#478](https://github.com/niivue/mono/issues/478))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.65 (2026-11-02)
+
+### Fixes
+
+- **niivue:** annotation screen shapes and stats cover every polygon ([#115](https://github.com/niivue/mono/issues/115))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.64 (2026-11-01)
+
+### Features
+
+- **niivue:** multi-column scrolling legend for large atlases ([36c75924](https://github.com/niivue/mono/commit/36c75924))
+- **niivue:** cinematic isStochasticLighting, one shadow/AO sample per ray ([8ed98530](https://github.com/niivue/mono/commit/8ed98530))
+- **niivue:** cinematic demo sample with streamlines; document mesh and legend limits ([7ebbbef7](https://github.com/niivue/mono/commit/7ebbbef7))
+- **niivue:** cinematicFrameMs GPU timing; cinematic audit fixes ([f99f2a42](https://github.com/niivue/mono/commit/f99f2a42))
+- **niivue:** standard overlays in cinematic mode ([8ad132f5](https://github.com/niivue/mono/commit/8ad132f5))
+- **niivue:** WebGL2 cinematic renderer in the render tile loop ([f2b9131e](https://github.com/niivue/mono/commit/f2b9131e))
+- **niivue:** MNI152 sample in the cinematic demo (default preset) ([091fc389](https://github.com/niivue/mono/commit/091fc389))
+- **niivue:** cinematic demo 'default' preset for scans that are not CT ([3be54ac3](https://github.com/niivue/mono/commit/3be54ac3))
+- **niivue:** cinematic demo on the public API ([6496f7ff](https://github.com/niivue/mono/commit/6496f7ff))
+- **niivue:** WebGL2 draws CINEMATIC as COMPOSITE until its port lands ([f9baa411](https://github.com/niivue/mono/commit/f9baa411))
+- **niivue:** WebGPU cinematic renderer in the render tile loop ([62b25e37](https://github.com/niivue/mono/commit/62b25e37))
+- **niivue:** shared cinematic CPU module ([1c7ebf6f](https://github.com/niivue/mono/commit/1c7ebf6f))
+- **niivue:** VOLUME_RENDER_MODE.CINEMATIC and volumeCinematic settings ([87e4902b](https://github.com/niivue/mono/commit/87e4902b))
+- **niivue:** CT label-modulated preset, default for labelled CTs ([a9ae6205](https://github.com/niivue/mono/commit/a9ae6205))
+- **niivue:** index links for Cinematic CT and Cinematic Labeled MR ([95687a41](https://github.com/niivue/mono/commit/95687a41))
+- **niivue:** legend hides labels in cinematic mode; label-modulated T1 by default ([855c08be](https://github.com/niivue/mono/commit/855c08be))
+- **niivue:** T1 label-modulated preset and CT_AbdoPelvis sample ([16f86c3e](https://github.com/niivue/mono/commit/16f86c3e))
+- **niivue:** MRI (SIAM T1) label rendering with label-median calibration ([c40dcae5](https://github.com/niivue/mono/commit/c40dcae5))
+- **niivue:** per-label visibility toggled from the legend colour box ([307bfa3f](https://github.com/niivue/mono/commit/307bfa3f))
+- **niivue:** darker label albedo, surfaceness floor and stronger AO for labels ([db959e50](https://github.com/niivue/mono/commit/db959e50))
+- **niivue:** label-driven materials in the cinematic demo ([560e4df2](https://github.com/niivue/mono/commit/560e4df2))
+- **niivue:** background color picker in the cinematic demo ([6ec16b14](https://github.com/niivue/mono/commit/6ec16b14))
+- **niivue:** AA checkbox in the cinematic demo (on by default) ([ac6058a8](https://github.com/niivue/mono/commit/ac6058a8))
+- **niivue:** cinematic demo status shows mode (backend) at lower right ([845d4c75](https://github.com/niivue/mono/commit/845d4c75))
+- **niivue:** cinematic demo keeps NiiVue's orientation cube; backend checkbox ([f8780813](https://github.com/niivue/mono/commit/f8780813))
+- **niivue:** cinematic CT rendering prototype (WebGPU example) ([7fedb896](https://github.com/niivue/mono/commit/7fedb896))
+
+### Fixes
+
+- **niivue:** legend scrollbar sits inside its backing ([00ccd4d4](https://github.com/niivue/mono/commit/00ccd4d4))
+- **niivue:** legend layout uses the font it draws with ([144c2b53](https://github.com/niivue/mono/commit/144c2b53))
+- **niivue:** legend scroll resets when its source changes ([2cfab3a9](https://github.com/niivue/mono/commit/2cfab3a9))
+- **niivue:** WebGL2 cinematic detaches its prep framebuffer ([c1dfe1d0](https://github.com/niivue/mono/commit/c1dfe1d0))
+- **niivue:** warn that cinematic render tiles omit the drawing layer ([7838814d](https://github.com/niivue/mono/commit/7838814d))
+- **niivue:** cinematic draws labels over a hidden background ([98770e20](https://github.com/niivue/mono/commit/98770e20))
+- **niivue:** cinematic keeps out-of-range and NaN intensities correct ([f2a4f86c](https://github.com/niivue/mono/commit/f2a4f86c))
+- **niivue:** RGB and RGBA backgrounds draw COMPOSITE in cinematic ([6afe5a80](https://github.com/niivue/mono/commit/6afe5a80))
+- **niivue:** cinematic geometry follows the volume affine ([08737b2e](https://github.com/niivue/mono/commit/08737b2e))
+- **niivue:** cinematic rand() stays below 1 ([9e7861d0](https://github.com/niivue/mono/commit/9e7861d0))
+- **niivue:** cinematic cut faces unlit, like the classic renderer ([a409060e](https://github.com/niivue/mono/commit/a409060e))
+- **niivue:** cinematic demo adopts a volume dropped on the canvas ([eb63dfc8](https://github.com/niivue/mono/commit/eb63dfc8))
+- **niivue:** cinematic view fits NiiVue's render tile; classic fallback without WebGPU ([cc2bc9fb](https://github.com/niivue/mono/commit/cc2bc9fb))
+- **niivue:** legend toggle decides from the live hiddenLabels list ([aea72474](https://github.com/niivue/mono/commit/aea72474))
+- **niivue:** cinematic cutaway with no planes; cut-face lighting only past the face ([c7d8b9d8](https://github.com/niivue/mono/commit/c7d8b9d8))
+- **niivue:** cinematic demo drops CT_Pancreas; AbdoPelvis URLs past a cached 404 ([45359cf9](https://github.com/niivue/mono/commit/45359cf9))
+- **niivue:** draw a hidden legend label as an outline that survives transparent canvases ([a56cf886](https://github.com/niivue/mono/commit/a56cf886))
+- **niivue:** version the WholeBody label URL past a CDN-cached 404 ([f515a569](https://github.com/niivue/mono/commit/f515a569))
+- **niivue:** cinematic demo reports load failures in the status bar ([483bc8ae](https://github.com/niivue/mono/commit/483bc8ae))
+- **niivue:** cinematic demo depth-tests the crosshair; backend-aware status text ([7e25b34f](https://github.com/niivue/mono/commit/7e25b34f))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+- Taylor Hanayik @hanayik
+
+## 1.0.0-rc.63 (2026-11-01)
+
+### Features
+
+- **medgfx:** remove meshes and replace or add on drop ([#109](https://github.com/niivue/mono/issues/109))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.62 (2026-10-31)
+
+### Fixes
+
+- **niivue:** graph double-click keeps its action mid-contour; audit cleanups ([#114](https://github.com/niivue/mono/issues/114), [#111](https://github.com/niivue/mono/issues/111))
+- **niivue:** oblique-safe bidirectional slice test, ignore off-slice dblclick mid-contour, loadDocument clears annotation undo ([#111](https://github.com/niivue/mono/issues/111), [#114](https://github.com/niivue/mono/issues/114), [#113](https://github.com/niivue/mono/issues/113))
+- **niivue:** keep half-drawn annotations on their own slice and scene ([#111](https://github.com/niivue/mono/issues/111), [#112](https://github.com/niivue/mono/issues/112), [#113](https://github.com/niivue/mono/issues/113), [#114](https://github.com/niivue/mono/issues/114))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.61 (2026-10-30)
+
+### Fixes
+
+- **niivue:** validate document byte arrays before copying ([e95be24b](https://github.com/niivue/mono/commit/e95be24b))
+- **niivue:** require a typed array before trusting an embedded image size ([a846faad](https://github.com/niivue/mono/commit/a846faad))
+- **niivue:** bound embedded volume headers, slide drawing pixels, and Set/Map contents ([#463](https://github.com/niivue/mono/issues/463))
+- **niivue:** walk documents without pushing plain values, and update the medgfx debt note ([#463](https://github.com/niivue/mono/issues/463), [#385](https://github.com/niivue/mono/issues/385), [#386](https://github.com/niivue/mono/issues/386))
+- **niivue:** bound document size and drawing allocations in loadDocument ([#383](https://github.com/niivue/mono/issues/383), [#384](https://github.com/niivue/mono/issues/384))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.60 (2026-10-30)
+
+### Features
+
+- **niivue:** expose nv.version and report it in nv-mcp capabilities ([#257](https://github.com/niivue/mono/issues/257))
+
+### Fixes
+
+- **niivue:** keep declaration output rooted at src ([483090b8](https://github.com/niivue/mono/commit/483090b8))
+- **niivue:** 'v' hotkey logs package version instead of hardcoded string ([d76ab7fd](https://github.com/niivue/mono/commit/d76ab7fd))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.59 (2026-10-30)
+
+### Fixes
+
+- **niivue:** apply a forced device pixel ratio to every controller on a canvas ([ad3866a0](https://github.com/niivue/mono/commit/ad3866a0))
+- **niivue:** every resize path rebuilds instance tiles and redraws ([#465](https://github.com/niivue/mono/issues/465))
+- **niivue:** one device pixel ratio rule, and rebuild instance tiles on change ([#200](https://github.com/niivue/mono/issues/200), [#461](https://github.com/niivue/mono/issues/461))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.58 (2026-10-30)
+
+### Fixes
+
+- **niivue:** loadDocument clears volumes and meshes deferred behind a thumbnail ([#388](https://github.com/niivue/mono/issues/388))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.57 (2026-10-30)
+
+### Fixes
+
+- **niivue:** type-check reader registries and fix MGH mesh layers ([#427](https://github.com/niivue/mono/issues/427))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.56 (2026-10-30)
+
+### Fixes
+
+- **niivue:** rebuild overlays when volumeIsBackgroundMasking changes ([#367](https://github.com/niivue/mono/issues/367))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.55 (2026-10-29)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.54 (2026-10-29)
+
+### Features
+
+- **niivue:** draw IMSC channels with baked fluorescence colormaps ([#431](https://github.com/niivue/mono/issues/431))
+- **niivue:** lay out the IMSC example like Allen's 3D Cell Viewer ([45c0322f](https://github.com/niivue/mono/commit/45c0322f))
+- **niivue:** 3D render mode controls in the IMSC example ([0b4614f7](https://github.com/niivue/mono/commit/0b4614f7))
+- **niivue:** clip, clip-overlays and 3D zoom controls in the IMSC example ([e7b9b0a0](https://github.com/niivue/mono/commit/e7b9b0a0))
+- add an Allen Integrated Mitotic Stem Cell gallery example ([d7ff8119](https://github.com/niivue/mono/commit/d7ff8119))
+
+### Fixes
+
+- serialize IMSC backend switches with volume updates ([bbbf0bff](https://github.com/niivue/mono/commit/bbbf0bff))
+- **niivue:** serialize IMSC channel updates and clear an empty selection ([b6bb44bc](https://github.com/niivue/mono/commit/b6bb44bc))
+- **niivue:** keep stale IMSC loads from replacing newer ones ([859ef8b5](https://github.com/niivue/mono/commit/859ef8b5))
+- **examples:** use Allen's IMSC windows in the IMSC gallery ([ed21fdf8](https://github.com/niivue/mono/commit/ed21fdf8))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.53 (2026-10-29)
+
+### Features
+
+- **niivue:** crosscut2 mesh shader and meshCrosscutWidth ([#92](https://github.com/niivue/mono/issues/92), [#91](https://github.com/niivue/mono/issues/91))
+- **niivue:** add oblique crosscut demo for issue #92 ([#92](https://github.com/niivue/mono/issues/92))
+
+### Fixes
+
+- **niivue:** refresh crosscut2 cluster bounds on a data version bump ([ca38b252](https://github.com/niivue/mono/commit/ca38b252))
+- **niivue:** clamp crosscut width on every entry point; guard crosscut2 list buffer size ([70baf55c](https://github.com/niivue/mono/commit/70baf55c))
+
+### Performance
+
+- **niivue:** hash positions on a crosscut2 bounds refresh ([dc2f4a76](https://github.com/niivue/mono/commit/dc2f4a76))
+- **niivue:** reuse the crosscut2 word texture when its size is unchanged ([ddb01515](https://github.com/niivue/mono/commit/ddb01515))
+- **niivue:** refresh crosscut2 bounds on a data bump only when positions changed ([e6b96db5](https://github.com/niivue/mono/commit/e6b96db5))
+- **niivue:** cull crosscut2 triangles by spatial cluster ([15f2a29d](https://github.com/niivue/mono/commit/15f2a29d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.52 (2026-10-29)
+
+### Features
+
+- **niivue:** export COLORMAP_TYPE from all entry points ([#375](https://github.com/niivue/mono/issues/375))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.51 (2026-10-29)
+
+### Fixes
+
+- **niivue:** honour isInteractionEnabled in the single-backend builds ([#317](https://github.com/niivue/mono/issues/317))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.50 (2026-10-29)
+
+### Fixes
+
+- **niivue:** clamp the other range-checked settings from a document ([#387](https://github.com/niivue/mono/issues/387))
+- **niivue:** clamp volume sampleRate and renderMode from a document ([#387](https://github.com/niivue/mono/issues/387))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.49 (2026-10-29)
+
+### Features
+
+- ⚠️  **niivue:** make per-item isLegendVisible work; one legend flag name ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+
+### Fixes
+
+- **niivue:** default a restored mesh's isLegendVisible to true ([ffa19c7a](https://github.com/niivue/mono/commit/ffa19c7a))
+
+### Breaking Changes
+
+- **niivue:** make per-item isLegendVisible work; one legend flag name  ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+  signal display option `showLegend` is renamed
+  `isLegendVisible` (loadSignals, addSignal, setSignal).
+  Closes #350.
+  Closes #376.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.48 (2026-10-28)
+
+### Fixes
+
+- **niivue:** warn on an unknown matcap name and document volumeMatcap ([ff6da670](https://github.com/niivue/mono/commit/ff6da670))
+- **niivue:** keep another host's matcap under an assets/matcaps path ([d812b796](https://github.com/niivue/mono/commit/d812b796))
+- **niivue:** keep an explicit volumeMatcap option at construction ([#225](https://github.com/niivue/mono/issues/225))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.47 (2026-10-28)
+
+### Features
+
+- load the Allen IMSC atlases from niivue-demo-images-lfs ([a9f75d69](https://github.com/niivue/mono/commit/a9f75d69))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.46 (2026-10-28)
+
+### Fixes
+
+- **niivue:** step-size opacity correction for the 3D overlay pass ([#366](https://github.com/niivue/mono/issues/366))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.45 (2026-10-28)
 
 ### Fixes

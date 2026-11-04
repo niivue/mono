@@ -63,8 +63,8 @@ export async function attachToCanvas(
       ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
       await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
     }
-    initInteraction(ctrl)
-    setupDragAndDrop(ctrl)
+    if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
+    if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
     setupResizeHandler(ctrl)
     view.resize()
     return ctrl
@@ -106,8 +106,8 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
     await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
   }
-  initInteraction(ctrl)
-  setupDragAndDrop(ctrl)
+  if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
+  if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
   setupResizeHandler(ctrl)
   await ctrl._rebuildViewResources()
   ctrl.restoreSlidePlaneView()
@@ -152,8 +152,8 @@ export async function reinitializeView(
     if (forceRestart || antiAliasChanged) {
       await recreateView(ctrl)
     } else {
-      if (ctrl.view) ctrl.view.forceDevicePixelRatio = newPixelRatio
-      ctrl.view?.resize()
+      // The setter also updates controllers sharing this canvas.
+      ctrl.devicePixelRatio = newPixelRatio
     }
     return true
   } catch (err) {

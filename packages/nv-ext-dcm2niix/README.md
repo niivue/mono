@@ -1,6 +1,8 @@
 # @niivue/nv-ext-dcm2niix
 
-Browser-side DICOM-to-NIfTI conversion for [NiiVue](https://github.com/niivue), wrapping the [`@niivue/dcm2niix`](https://www.npmjs.com/package/@niivue/dcm2niix) WebAssembly build of Chris Rorden's [`dcm2niix`](https://github.com/rordenlab/dcm2niix). No data leaves the browser.
+Browser-side DICOM-to-NIfTI conversion for [NiiVue](https://github.com/niivue), using the [`@niivue/dcm2niix`](https://www.npmjs.com/package/@niivue/dcm2niix) WebAssembly build of Chris Rorden's [`dcm2niix`](https://github.com/rordenlab/dcm2niix). No data leaves the browser.
+
+Since `@niivue/dcm2niix` 1.4 provides this glue itself (`runDcm2niix`, `traverseDataTransferItems`, plus `convert`, `listSeries` and shipped TypeScript types), this package is a thin re-export kept for existing imports. New code can depend on `@niivue/dcm2niix` directly; see its [README](https://www.npmjs.com/package/@niivue/dcm2niix).
 
 ## Installation
 
@@ -8,7 +10,7 @@ Browser-side DICOM-to-NIfTI conversion for [NiiVue](https://github.com/niivue), 
 bun add @niivue/nv-ext-dcm2niix
 ```
 
-Requires `@niivue/niivue` as a peer dependency.
+Bundlers: exclude `@niivue/dcm2niix` from Vite's dev pre-bundling (`optimizeDeps: { exclude: ['@niivue/dcm2niix'] }`).
 
 ## Usage
 

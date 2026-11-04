@@ -1,6 +1,6 @@
 {
   "name": "@niivue/niivue",
-  "version": "1.0.0-rc.45",
+  "version": "1.0.0-rc.83",
   "type": "module",
   "description": "WebGPU/WebGL2 browser-based medical image visualization",
   "main": "./dist/niivue.js",
@@ -57,6 +57,7 @@
     "preview": "vite preview",
     "e2e:serve": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite --port 5273 --strictPort",
     "test:e2e": "playwright test",
+    "test:e2e:metal": "playwright test --grep-invert \"keeps its modulation|no plane seams\"",
     "convert:legacy": "bun run scripts/convert-legacy-nvd.ts",
     "lint": "bunx biome check src",
     "lint:fix": "bunx biome check src --fix",

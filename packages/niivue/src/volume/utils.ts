@@ -4,6 +4,7 @@
  */
 
 import { mat4, vec3 } from 'gl-matrix'
+import * as nifti from 'nifti-reader-js'
 import { log } from '@/logger'
 import { isPaqd, NiiDataType } from '@/NVConstants'
 import type {
@@ -13,6 +14,14 @@ import type {
   NVImage,
   TypedVoxelArray,
 } from '@/NVTypes'
+
+/** Blank NIfTI-1 header with unit spacing, the starting point of non-NIfTI readers. */
+export function nifti1Header(dims: number[]): NIFTI1 {
+  const hdr = new nifti.NIFTI1() as NIFTI1
+  hdr.dims = dims
+  hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
+  return hdr
+}
 
 /**
  * Scale factor converting the NIfTI temporal pixdim to seconds, decoded from the

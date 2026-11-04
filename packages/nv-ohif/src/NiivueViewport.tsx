@@ -1,4 +1,8 @@
-import type { NiiVueOptions, VectorAnnotation } from '@niivue/niivue'
+import type {
+  NiiVueOptions,
+  VectorAnnotation,
+  VolumeUpdatedDetail,
+} from '@niivue/niivue'
 import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
 import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
@@ -21,6 +25,7 @@ import {
   ohifServices,
   refreshToolbar,
   registerNiivue,
+  type StatusKind,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
@@ -44,11 +49,7 @@ const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   annotationMergesOverlaps: false,
 }
 
-type Status =
-  | { kind: 'idle' }
-  | { kind: 'loading'; message: string }
-  | { kind: 'note'; message: string }
-  | { kind: 'error'; message: string }
+type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
 
 // OHIF's toolbar tools operate on cornerstone viewports; our NiiVue viewport isn't in
 // a cornerstone tool group. Instead we mirror OHIF's active primary mouse tool onto
@@ -154,19 +155,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
       updateNiivueViewport(viewportId, {
-        setStatus: (message) =>
-          setStatus(
-            message === null
-              ? { kind: 'idle' }
-              : {
-                  kind: /failed/i.test(message)
-                    ? 'error'
-                    : /\.\.\./.test(message)
-                      ? 'loading'
-                      : 'note',
-                  message,
-                },
-          ),
+        setStatus: (message, kind = 'note') =>
+          setStatus(message === null ? { kind: 'idle' } : { kind, message }),
       })
       refreshToolbar(servicesManagerRef.current, viewportId)
       setReady(true)
@@ -175,11 +165,12 @@ export function NiivueViewport(props: OhifViewportProps) {
     const ro = new ResizeObserver(() => nv.resize())
     ro.observe(container)
 
-    // Reverse W/L bridge: a manual contrast drag changes the base volume's
-    // window but NiiVue emits no intensity event, so read it on pointer release
-    // and reflect any change back to OHIF (commands.ts). A transient readout
-    // confirms the new window/level; unchanged releases (navigation) are silent.
-    const onPointerUp = () => {
+    // Reverse W/L bridge: core emits volumeUpdated for every base-window change
+    // (windowing/contrast drags, pointercancel, setVolume), so reflect it to OHIF
+    // (commands.ts). The baseline diff there drops unchanged updates, which also
+    // stops an OHIF echo of the same window. A transient readout confirms it.
+    const onVolumeUpdated = (e: CustomEvent<VolumeUpdatedDetail>) => {
+      if (e.detail.volumeIndex !== 0) return
       const wl = syncNiivueWindowLevelToOhif(
         viewportId,
         servicesManagerRef.current,
@@ -189,7 +180,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       const message = `W: ${Math.round(wl.window)}  L: ${Math.round(wl.level)}`
       flashNote(message)
     }
-    canvas.addEventListener('pointerup', onPointerUp)
+    nv.addEventListener('volumeUpdated', onVolumeUpdated)
 
     // Annotations (Length / ROI / arrow): reflect a completed vector annotation
     // into OHIF's measurement panel, remove its row when the annotation is
@@ -256,7 +247,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       clearNiivueAnnotations(viewportId, servicesManagerRef.current)
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
-      canvas.removeEventListener('pointerup', onPointerUp)
+      nv.removeEventListener('volumeUpdated', onVolumeUpdated)
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)

@@ -98,7 +98,8 @@ test('reports per-level downsample, brick counts and shader numbers', async ({
   expect(mid.opacityScale).toBeCloseTo(1 + 0.25 * 1, 10)
 
   expect(coarse.downsample).toBeCloseTo(4, 10)
-  expect(coarse.brightnessExponent).toBeCloseTo(1 - 0.1 * 3, 10)
+  // Brightness grows per pyramid level (log2 of the downsample); opacity is linear.
+  expect(coarse.brightnessExponent).toBeCloseTo(1 - 0.1 * Math.log2(4), 10)
   expect(coarse.opacityScale).toBeCloseTo(1 + 0.25 * 3, 10)
 
   // Every brick in the plan is accounted for by exactly one level.

@@ -1,6 +1,7 @@
 import type {
   AnnotationPoint,
   AnnotationTool,
+  PolygonWithHoles,
   VectorAnnotation,
 } from '@/NVTypes'
 
@@ -252,4 +253,68 @@ function _updateLineArrow(
     }
   }
   return { start: { ...original.start }, end: { ...original.end }, width: w }
+}
+
+/**
+ * Carries a shape's drawn polygons from its original bounds to new ones, so a
+ * resize keeps an erased part erased. Box shapes scale per axis; a line or
+ * arrow maps along and across its axis. null when either frame is degenerate,
+ * so the caller keeps the last valid bounds.
+ */
+export function resizePolygons(
+  shapeType: AnnotationTool,
+  original: ShapeBoundsUpdate,
+  next: ShapeBoundsUpdate,
+  polygons: PolygonWithHoles[],
+): PolygonWithHoles[] | null {
+  const map = isLineShape(shapeType)
+    ? lineMap(original, next)
+    : boxMap(original, next)
+  if (!map) return null
+  return polygons.map((p) => ({
+    outer: p.outer.map(map),
+    holes: p.holes.map((h) => h.map(map)),
+  }))
+}
+
+const isLineShape = (t: AnnotationTool) =>
+  t === 'line' || t === 'arrow' || t === 'measureLine'
+
+type PointMap = (p: AnnotationPoint) => AnnotationPoint
+
+function boxMap(o: ShapeBoundsUpdate, n: ShapeBoundsUpdate): PointMap | null {
+  const ox = Math.min(o.start.x, o.end.x)
+  const oy = Math.min(o.start.y, o.end.y)
+  const ow = Math.abs(o.end.x - o.start.x)
+  const oh = Math.abs(o.end.y - o.start.y)
+  if (ow === 0 || oh === 0) return null
+  const nx = Math.min(n.start.x, n.end.x)
+  const ny = Math.min(n.start.y, n.end.y)
+  const sx = Math.abs(n.end.x - n.start.x) / ow
+  const sy = Math.abs(n.end.y - n.start.y) / oh
+  // A collapsed box could not be expanded again.
+  if (sx === 0 || sy === 0) return null
+  return (p) => ({ x: nx + (p.x - ox) * sx, y: ny + (p.y - oy) * sy })
+}
+
+function lineMap(o: ShapeBoundsUpdate, n: ShapeBoundsUpdate): PointMap | null {
+  const oDirX = o.end.x - o.start.x
+  const oDirY = o.end.y - o.start.y
+  const nDirX = n.end.x - n.start.x
+  const nDirY = n.end.y - n.start.y
+  const oLen = Math.hypot(oDirX, oDirY)
+  const nLen = Math.hypot(nDirX, nDirY)
+  if (oLen === 0 || nLen === 0) return null
+  // The width handle scales the offset across the line.
+  const across = o.width && n.width ? n.width / o.width : 1
+  return (p) => {
+    const rx = p.x - o.start.x
+    const ry = p.y - o.start.y
+    const along = (rx * oDirX + ry * oDirY) / (oLen * oLen)
+    const off = ((rx * -oDirY + ry * oDirX) / oLen) * across
+    return {
+      x: n.start.x + along * nDirX - (off * nDirY) / nLen,
+      y: n.start.y + along * nDirY + (off * nDirX) / nLen,
+    }
+  }
 }

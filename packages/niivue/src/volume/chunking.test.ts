@@ -964,6 +964,33 @@ describe('chunkVolumeMultiLOD', () => {
     expect(sum).toBe(512 * 512 * 512)
   })
 
+  test('an unlit plan (4 B/voxel) keeps more detail for the same budget', () => {
+    const texVoxels = (plan: ChunkPlan): number =>
+      plan.chunks.reduce(
+        (s, c) => s + c.texDims[0] * c.texDims[1] * c.texDims[2],
+        0,
+      )
+    const unbudgeted = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+    })
+    // An eighth of the unbudgeted lit bytes: the plans step coarser in levels,
+    // so the budget must sit between two steps for the pricing to show.
+    const budget = texVoxels(unbudgeted)
+    const lit = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+      budgetBytes: budget,
+    })
+    const unlit = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+      budgetBytes: budget,
+      bytesPerVoxel: 4,
+    })
+    expect(texVoxels(lit) * 8).toBeLessThanOrEqual(budget)
+    expect(texVoxels(unlit) * 4).toBeLessThanOrEqual(budget)
+    expect(texVoxels(unlit)).toBeGreaterThan(texVoxels(lit))
+    expect(unlit.chunks.length).toBeGreaterThan(lit.chunks.length)
+  })
+
   test('minLevel caps the finest level even at the focus', () => {
     const plan = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
       cellEdge: 64,

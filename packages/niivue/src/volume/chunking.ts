@@ -724,12 +724,18 @@ export interface MultiLodOptions {
    */
   minLevel?: number
   /**
-   * GPU byte budget for the resident brick set (rgba + gradient = 8 B/voxel over
-   * each brick's padded texture). When the assignment exceeds it, a global level
+   * GPU byte budget for the resident brick set, priced at `bytesPerVoxel` over
+   * each brick's padded texture. When the assignment exceeds it, a global level
    * floor is raised (coarsening the whole volume uniformly) until it fits.
    * Omit/0 to skip budgeting.
    */
   budgetBytes?: number
+  /**
+   * GPU bytes per padded texture voxel: 8 for rgba + gradient (lit), 4 for an
+   * unlit volume, which holds no full-size gradient (`residentBytesForChunkDesc`).
+   * Default 8.
+   */
+  bytesPerVoxel?: number
   /**
    * Scale-relative detail factor controlling LOD falloff. A cell refines while
    * its distance-beyond-`radius` is below `detail · cellSize`, so the level
@@ -1217,7 +1223,7 @@ export function chunkVolumeMultiLOD(
     return balanced ? balance(chunks, floor) : chunks
   }
 
-  // Budget pass — fit BOTH the GPU byte budget (rgba + gradient = 8 B per padded
+  // Budget pass — fit BOTH the GPU byte budget (`bytesPerVoxel` per padded
   // texture voxel) and an optional brick-count cap (the renderer rejects plans
   // over its per-tile chunk limit, and the resident set must not be evicted):
   // 1) shrink `detail` — cells must be closer to the focus (relative to their
@@ -1232,9 +1238,11 @@ export function chunkVolumeMultiLOD(
     options.maxBricks && options.maxBricks > 0
       ? options.maxBricks
       : Number.POSITIVE_INFINITY
+  const bytesPerVoxel = options.bytesPerVoxel ?? 8
   const bytesOf = (cs: VolumeChunkDesc[]): number =>
     cs.reduce(
-      (sum, c) => sum + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
+      (sum, c) =>
+        sum + c.texDims[0] * c.texDims[1] * c.texDims[2] * bytesPerVoxel,
       0,
     )
   const overBudget = (cs: VolumeChunkDesc[]): boolean =>

@@ -8,10 +8,16 @@ function buf(n: number, fill = 0): Uint8Array {
 
 describe('decodedTierBudgetBytes', () => {
   test('shadows the resident set plus a tail', () => {
-    // uint8 source: a resident chunk is 8 bytes/voxel on the GPU, 1 on the CPU.
-    expect(decodedTierBudgetBytes(800, 1)).toBe(150)
-    // float32 source: half the GPU footprint, so half again the tier.
-    expect(decodedTierBudgetBytes(800, 4)).toBe(600)
+    // uint8 source: an unlit resident chunk is 4 bytes/voxel on the GPU, 1 on the CPU.
+    expect(decodedTierBudgetBytes(800, 1)).toBe(300)
+    // float32 source: the GPU footprint, so the tier is the budget plus the tail.
+    expect(decodedTierBudgetBytes(800, 4)).toBe(1200)
+  })
+
+  test('holds more than the unlit resident set of a uint8 volume (#203)', () => {
+    const gpu = 256 * 1024 * 1024
+    const residentVoxels = gpu / 4
+    expect(decodedTierBudgetBytes(gpu, 1)).toBeGreaterThan(residentVoxels)
   })
 
   test('never exceeds the ceiling', () => {

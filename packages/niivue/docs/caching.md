@@ -204,13 +204,14 @@ the resident set by construction, and the honest question is not how to avoid
 the shadow but what it costs.
 
 It costs less than the framing suggested, because a chunk is much narrower on
-the CPU than on the GPU. A resident chunk carries an RGBA8 color texture plus an
-RGBA8 gradient, 8 bytes per voxel; its source is 1 to 4. Shadowing the whole
-resident set is therefore an eighth to a half of the GPU budget in JS heap, so
-`decodedTierBudgetBytes` sizes the tier at that shadow plus a 50% tail, capped
-at 384 MiB. The size tracks the datatype rather than being a flat fraction of
-the GPU budget, since a uint8 volume shadows for an eighth of what a float32
-volume costs. The tail is the part that pays: it is what a scrub finds when it
+the CPU than on the GPU. A resident chunk carries an RGBA8 color texture, 4
+bytes per voxel, plus an RGBA8 gradient when lit (8 in all); its source is 1 to
+4. `decodedTierBudgetBytes` sizes the tier at the shadow of an unlit resident
+set (the larger one, and the default) plus a 50% tail, capped at 384 MiB: a
+quarter to the whole of the GPU budget before the cap. It is sized once per
+volume, so it does not follow a lighting toggle. The size tracks the datatype
+rather than being a flat fraction of the GPU budget, since a uint8 volume
+shadows for a quarter of what a float32 volume costs. The tail is the part that pays: it is what a scrub finds when it
 turns around.
 
 Eviction is plain LRU, which is what that structure wants. The newest entries

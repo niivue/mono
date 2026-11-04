@@ -89,11 +89,15 @@ export async function convertDisplaySetToNifti(
   // Boot the dcm2niix worker (WASM fetch + compile) while instances download.
   // convert() cannot adopt a pre-booted worker, so drive Dcm2niix directly.
   let dcm2niix: import('@niivue/dcm2niix').Dcm2niix | undefined
+  let finished = false
   const ready = import('@niivue/dcm2niix').then(async ({ Dcm2niix }) => {
     // Assigned in the same tick init() creates the worker, so the finally
     // below never sees an instance without its worker.
     dcm2niix = new Dcm2niix()
-    await dcm2niix.init()
+    const booted = dcm2niix.init()
+    // Fetching ended before the import resolved: stop now, not after the boot.
+    if (finished) dcm2niix.worker?.terminate()
+    await booted
     return dcm2niix
   })
   ready.catch(() => {}) // surfaced below, unless the fetch rejects first
@@ -108,10 +112,8 @@ export async function convertDisplaySetToNifti(
       signal,
     )
   } finally {
-    // Stop the worker now, or once it exists if fetching ended first.
-    const stop = () => dcm2niix?.worker?.terminate()
-    if (dcm2niix) stop()
-    else ready.then(stop, stop)
+    finished = true
+    dcm2niix?.worker?.terminate()
   }
   const nifti = outputs
     .filter((f) => /\.nii(\.gz)?$/i.test(f.name))

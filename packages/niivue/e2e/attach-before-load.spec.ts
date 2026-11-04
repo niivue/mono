@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // niivue/mono#61: loading a volume while attachToCanvas was still initializing threw
 // `createBindGroup ... 'buffer' ... Required member is undefined` and left a random
@@ -10,10 +11,6 @@ import { expect, test } from '@playwright/test'
 // headed run, or a GPU-backed runner). Headless chromium reports no adapter, so init
 // fails at its first step and the WebGL2 fallback serves the load. The view-publishing
 // test holds the invariant in either environment.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // Import NiiVue and expose a factory for throwaway offscreen canvases.
 const setup = `

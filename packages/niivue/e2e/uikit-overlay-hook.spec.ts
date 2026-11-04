@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // The built, self-contained @niivue/uikit bundle (no runtime imports), loaded via
 // Vite's /@fs/ escape hatch. A bare `@niivue/uikit` specifier is not rewritten
@@ -18,10 +19,6 @@ const uikitDist = path.resolve(
 // settled flag), unregister stops it, and a UIKit line overlay can draw into the
 // same frame without throwing. Rendering correctness (pixels) is verified visually
 // via the ruler demo; here we prove the plumbing.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // No volume needed: the hook fires on every frame regardless of scene contents,
 // so skipping the fetch keeps the spec independent of the Git-LFS sample volumes.

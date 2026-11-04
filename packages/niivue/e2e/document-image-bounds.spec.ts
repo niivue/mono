@@ -1,5 +1,6 @@
 import { deflateSync } from 'node:zlib'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // #385, #511: a document's thumbnail, matcap and 2D image volumes are images
 // NiiVue decodes to RGBA.
@@ -42,10 +43,6 @@ function hugePng(side: number): Buffer {
     chunk('IEND', Buffer.alloc(0)),
   ])
 }
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 for (const field of ['thumbnail', 'matcap'] as const) {
   test(`a document whose ${field} declares 20000x20000 still loads`, async ({

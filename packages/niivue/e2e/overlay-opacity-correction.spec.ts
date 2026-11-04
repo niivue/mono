@@ -1,6 +1,7 @@
 import { inflateSync } from 'node:zlib'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // volumeIsOverlayOpacityCorrected (issue #366): the overlay ray-march takes the
 // background's step-size correction, so a translucent overlay's 3D density does
@@ -9,10 +10,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 
 test.use({ launchOptions: webgpuLaunchOptions })
 test.describe.configure({ timeout: 180_000 })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const SIZE = 256
 

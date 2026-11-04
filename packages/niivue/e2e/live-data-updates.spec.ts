@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // updateVolumeData / updateMeshPositions: the in-place fast paths for
 // animating loaded data.
@@ -13,10 +14,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // WebGPU is skipped when the runner has no adapter.
 
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const VOLUME = '/volumes/mni152.nii.gz'
 // On VOLUME's grid, so it can be loaded as an overlay.

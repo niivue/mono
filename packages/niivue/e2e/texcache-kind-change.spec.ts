@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // Issue #145, reported by @stebo85 as stale numbers out of `chunkStreamStats()`.
 //
@@ -20,10 +21,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // Chromium usually has SwiftShader for WebGL2 only).
 
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // A 2x2x2 forced plan: the volume fits in one texture, so the tiling is forced
 // rather than required. Eight bricks is enough to tell "chunked" from "not"

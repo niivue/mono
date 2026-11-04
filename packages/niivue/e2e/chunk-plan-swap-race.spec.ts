@@ -1,6 +1,7 @@
 import { inflateSync } from 'node:zlib'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // A chunk-plan swap (multi-LOD refocus) must survive a texture refresh that
 // lands while it is in flight.
@@ -21,10 +22,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // cache hit.
 
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const GRID = 2
 

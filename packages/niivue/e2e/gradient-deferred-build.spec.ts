@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // The gradient texture is built at upload time, and NONE of its three consumers
 // -- matcap illumination, gradientOpacity, silhouettePower -- is on by default.
@@ -23,10 +24,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // lazy fill are mirrored in gl/render.ts and wgpu/render.ts.
 
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const ILLUM = 0.7
 

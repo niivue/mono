@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // Regression coverage for the pointerup `finally` in `control/interactions.ts`.
 // A stroke finalize can throw (a lost GPU device is the realistic cause). When it
@@ -8,10 +9,6 @@ import { expect, test } from '@playwright/test'
 //
 // This needs a real instance + a real canvas hit-test, so it lives in the e2e
 // tier: the Bun unit runner cannot import NiiVue's `import.meta.glob` graph.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // Attach a visible instance with an open drawing, then drag a pen stroke on the
 // axial slice WITHOUT releasing. Leaves the pointer mid-drag.

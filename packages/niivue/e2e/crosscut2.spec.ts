@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // crosscut2 outlines a mesh where it meets the displayed voxel plane.
 // - #92: on an oblique volume, moving the crosshair within the axial slice
@@ -10,10 +11,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // WebGPU is skipped when the runner has no adapter.
 
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // Shared page-side setup: a NiiVue on a 256x256 canvas plus a readback that
 // returns the indices of clearly green (mesh) pixels.

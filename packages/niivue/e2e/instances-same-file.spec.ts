@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // Issue #346: two volumes loaded from one file drew the same texture in the
 // instance layout.
@@ -15,10 +16,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // WebGPU is skipped when the runner has no adapter.
 
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const VOLUME = '/volumes/mni152.nii.gz'
 

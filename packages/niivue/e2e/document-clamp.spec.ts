@@ -1,11 +1,8 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // loadDocument writes settings straight into the model, past the setters, so it
 // must apply their clamps itself (#387).
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('a document cannot set an out-of-range sampleRate or renderMode', async ({
   page,

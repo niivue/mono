@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // A legend too tall for the canvas scrolls: the wheel honours every
 // WheelEvent.deltaMode, and a press on the scrollbar thumb is the legend's,
@@ -7,10 +8,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 
 test.use({ launchOptions: webgpuLaunchOptions })
 test.describe.configure({ timeout: 180_000 })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const SIZE = 400
 // WheelEvent.deltaMode values (WheelEvent is browser-only).

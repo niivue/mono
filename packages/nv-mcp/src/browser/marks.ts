@@ -5,10 +5,11 @@
  * per kind rather than one per verb.
  */
 
-import { MAX_BOXES } from '../limits'
+import { MAX_BOXES, MAX_PLANE_OUTLINES } from '../limits'
 import { nameFor, SLICE_TYPES } from '../views'
 import {
   choice,
+  color,
   flag,
   integer,
   number,
@@ -24,6 +25,7 @@ import type {
   Measurement,
   MeasurementOptions,
   NiiVueHost,
+  PlaneOutline,
 } from './view'
 
 const DRAWING_ACTIONS = ['create', 'load', 'undo', 'close', 'svg'] as const
@@ -69,6 +71,22 @@ function boxFrom(given: unknown, what: string): FocusBox {
   if (!(thickness > 0))
     throw new Error(`${what}: thickness must be above 0 pixels.`)
   return { min, max, color, thickness }
+}
+
+function outlineFrom(given: unknown, what: string): PlaneOutline {
+  if (!given || typeof given !== 'object' || Array.isArray(given))
+    throw new Error(`${what} must be {corners, color?, width?}.`)
+  const o = given as Params
+  if (!Array.isArray(o.corners) || o.corners.length !== 4)
+    throw new Error(`${what}: corners must be four [x, y, z] points.`)
+  const cornersMM = o.corners.map((c, j) => {
+    const key = `${what}.corners[${j}]`
+    return point({ [key]: c }, key)
+  })
+  const width = number(o, 'width')
+  if (width !== undefined && !(width > 0))
+    throw new Error(`${what}: width must be above 0 pixels.`)
+  return { cornersMM, color: color(o, 'color'), width }
 }
 
 const MEASUREMENT_ACTIONS = [
@@ -365,6 +383,21 @@ export function markHandlers(host: NiiVueHost): Handlers {
       if (list !== undefined) view.lodBoxes = many?.length ? many : null
       view.drawScene()
       return { focus: view.focusBox, boxes: view.lodBoxes?.length ?? 0 }
+    },
+
+    set_plane_outlines(params: Params) {
+      host.beforeAnswer?.()
+      if (view.planeOutlines === undefined)
+        throw new Error("This page's NiiVue cannot outline rectangles.")
+      const list = params?.outlines ?? []
+      if (!Array.isArray(list))
+        throw new Error('outlines must be a list of rectangles, or null.')
+      if (list.length > MAX_PLANE_OUTLINES)
+        throw new Error(`At most ${MAX_PLANE_OUTLINES} outlines at once.`)
+      // Every outline is read before NiiVue is touched, so a refused call
+      // leaves the scene as it was. NiiVue's setter redraws.
+      view.planeOutlines = list.map((o, i) => outlineFrom(o, `outlines[${i}]`))
+      return { outlines: view.planeOutlines.length }
     },
 
     list_measurements() {

@@ -1,10 +1,10 @@
 import { mat3, mat4, vec3 } from 'gl-matrix'
-import * as nifti from 'nifti-reader-js'
 import { decompress } from '@/codecs/NVGz'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import { nifti1Header } from '@/volume/utils'
 
 export const extensions = ['nrrd', 'nhdr']
 export const type = 'nii'
@@ -14,9 +14,7 @@ export async function read(
   _name?: string,
   pairedImgData: ArrayBuffer | null = null,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
-  const hdr = new nifti.NIFTI1() as NIFTI1
-  hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
-  hdr.dims = [0, 0, 0, 0, 0, 0, 0, 0]
+  const hdr = nifti1Header([0, 0, 0, 0, 0, 0, 0, 0])
 
   const bytes = new Uint8Array(buffer)
   let headerText: string | null = null

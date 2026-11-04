@@ -189,7 +189,7 @@ export type NVImage = {
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
-  /** Whether to show legend for label colormaps (default: false) */
+  /** Whether this volume's labels join the legend (default: true; `nv.isLegendVisible` hides the combined volume/mesh legend) */
   isLegendVisible?: boolean
   v1?: Float32Array
   gpu?: Record<string, unknown>
@@ -228,6 +228,12 @@ export type NVImage = {
    * {@link colormap} is a label colormap. See {@link NiiVue.setAtlasOutline}.
    */
   atlasOutline?: number
+  /**
+   * Label values (calibrated IDs, not LUT rows) drawn transparent in 2D and 3D
+   * on both backends. They stay listed in the legend, drawn as an outlined box.
+   * Ignored unless {@link colormap} is a label colormap.
+   */
+  hiddenLabels?: number[]
   /** Whether this volume has imaginary data (complex) */
   isImaginary?: boolean
   /**
@@ -355,6 +361,27 @@ export type ColorMap = {
   min?: number
   max?: number
   labels?: string[]
+  // Optional cinematic keys (VOLUME_RENDER_MODE.CINEMATIC); arrays share `I`.
+  /** Alpha at high gradient (surfaces), 0-255; `A` is then the interior alpha. */
+  E?: number[]
+  /** Specular strength at surfaces, 0-255. A label table: per-label specular. */
+  S?: number[]
+  /** Gradient ramp (intensity units per mm) from interior to surface. */
+  gradient?: { lo: number; hi: number }
+  /** Gradient magnitude at the top transfer-function row. */
+  gMax?: number
+  /** Blinn-Phong exponent. */
+  shininess?: number
+  /** 0-1: labelled tissue keeps this table, tinted by the label colour by this fraction. */
+  labelBlend?: number
+  /** Label table: intensity where each structure's surface ramp starts. */
+  lo?: number[]
+  /** Label table: intensity where each structure's surface ramp ends. */
+  hi?: number[]
+  /** Label table: surfaceness floor per label, 0-255. */
+  surface?: number[]
+  /** Label table: `[[labelIds, target], ...]` maps each label set's median intensity to a target, piecewise linearly. */
+  normalize?: [number[], number][]
 }
 
 export type LUT = {
@@ -589,7 +616,7 @@ export type NVMesh = {
   color: [number, number, number, number]
   /** Whether to show colorbar (default: true) */
   isColorbarVisible: boolean
-  /** Whether to show legend for label layers (default: false) */
+  /** Whether this mesh's labels join the legend (default: true; `nv.isLegendVisible` hides the combined volume/mesh legend) */
   isLegendVisible?: boolean
   /** Source URL or filename */
   url?: string
@@ -700,6 +727,12 @@ export type LayoutConfig = {
   isEqualSize: boolean
   isMosaicCentered: boolean
   margin: number
+  /**
+   * Canvas kept clear of tiles, colorbar, legend and graph: [left, top, right,
+   * bottom] in CSS px. Overlay renderers still get the whole canvas, so an
+   * in-canvas control panel can sit in the reserved strip.
+   */
+  inset: [number, number, number, number]
   isRadiological: boolean
   /** Let a single 2D slice tile fill the canvas instead of letterboxing it. */
   isSingleViewFillCanvas: boolean
@@ -799,7 +832,7 @@ export type VolumeRenderConfig = {
   matcap: string
   paqdUniforms: [number, number, number, number]
   transmittanceCutoff: number
-  /** How the 3D ray-march combines samples. VOLUME_RENDER_MODE.COMPOSITE | MAXIMUM */
+  /** How the 3D render draws the volume. VOLUME_RENDER_MODE.COMPOSITE | MAXIMUM | SLICES | CINEMATIC */
   renderMode: number
   /**
    * Which stencil estimates the in-shader LAYER gradient in the overlay and
@@ -832,6 +865,14 @@ export type VolumeRenderConfig = {
    * defaults to a halo of 1; pass `halo: [2, 2, 2]` (or wider) when enabling this.
    */
   isCubicInterpolation: boolean
+  /**
+   * Apply the background's step-size opacity correction to the overlay pass
+   * of the 3D render, so overlay density no longer depends on `sampleRate`.
+   * Default true; false restores the uncorrected, sample-rate-dependent look.
+   * An independent hi-res overlay (`chunkOverlayOf`) marches through the
+   * background pass, so it is always corrected and ignores this flag.
+   */
+  isOverlayOpacityCorrected: boolean
   /**
    * Coefficient for the per-level brightness compensation applied to bricks
    * fetched from a coarse pyramid level of a multi-LOD chunked volume. 0
@@ -921,6 +962,54 @@ export type VolumeRenderConfig = {
    * background volume and does nothing to overlays or 2D slices).
    */
   silhouette: number
+  /** Settings of `VOLUME_RENDER_MODE.CINEMATIC`. See {@link CinematicOptions}. */
+  cinematic: CinematicOptions
+}
+
+/**
+ * Settings of the cinematic render mode (`VOLUME_RENDER_MODE.CINEMATIC`).
+ * Angles in degrees, distances in mm. The transfer function is the background
+ * volume's colormap (with the optional cinematic keys `E`, `S`, `gradient`,
+ * `gMax`, `shininess`, `labelBlend`) mapped across its calMin..calMax; a label
+ * volume on the same grid supplies per-label materials (label-table keys `S`,
+ * `surface`, `lo`, `hi`, `normalize`).
+ */
+export type CinematicOptions = {
+  /** Light elevation above the view direction. */
+  lightElevation: number
+  /** Light azimuth about the view direction. */
+  lightAzimuth: number
+  /** Light cone (soft shadow penumbra) half angle. */
+  lightConeDeg: number
+  lightIntensity: number
+  ambient: number
+  /** Shadow strength, 0-1. */
+  shadow: number
+  /** Ambient occlusion strength, 0-1. */
+  ao: number
+  aoRadiusMM: number
+  aoConeDeg: number
+  /** Diffuse term of normal-free (volumetric) samples, 0-1. */
+  volumetricDiffuse: number
+  exposure: number
+  /** Ray step in voxels. */
+  stepVoxels: number
+  /** Frames accumulated before the image is final. */
+  maxFrames: number
+  /** Specular scale. */
+  specular: number
+  /**
+   * How a label volume colours the render: 'only' hides unlabeled tissue,
+   * 'unlabeled' also draws it with the base transfer function, 'none' ignores
+   * the labels.
+   */
+  labelMode: 'only' | 'unlabeled' | 'none'
+  /**
+   * Trace shadow and ambient occlusion from one sample per ray per frame,
+   * picked by its contribution, instead of from every visible sample: about
+   * 2.5x faster per frame, noisier per frame, same converged image.
+   */
+  isStochasticLighting: boolean
 }
 
 /**
@@ -989,7 +1078,10 @@ export type LodCompensationReport = {
 /** Mesh rendering config: global settings for mesh display */
 export type MeshRenderConfig = {
   xRay: number
+  /** 2D slices: draw only mesh within this many mm of the displayed plane. 0 or Infinity: no slab. */
   thicknessOn2D: number
+  /** Line width in device pixels of the crosscut and crosscut2 mesh shaders. */
+  crosscutWidth: number
 }
 
 /** Drawing/annotation config */
@@ -1032,6 +1124,8 @@ export type InteractionConfig = {
   wheelZoomAnchor: WheelZoomAnchor
   // V key cycles sliceType (NiiVue 0.6 had this always on; opt-in here).
   isViewModeHotKeyEnabled: boolean
+  // See NiiVue.isLegendToggleEnabled.
+  isLegendToggleEnabled: boolean
   // Opt-in: when the 2D views are zoomed in (pan2Dxyzmm[3] > 1) and the
   // crosshair moves on its own (keyboard, API, linked instance), pan just
   // enough to keep it inside every tile's visible window. Off by default: the
@@ -1208,6 +1302,13 @@ export type NiiVueOptions = {
   // Scene
   azimuth?: number
   elevation?: number
+  /**
+   * Initial crosshair position as a scene fraction in [0,1] per axis across the
+   * scene bounding box (default `[0.5, 0.5, 0.5]`, the centre), not millimetres.
+   * Same units as the `crosshairPos` property; to place the crosshair at a
+   * world-mm point after loading, call `setCrosshairPos(mm)`.
+   * @example new NiiVue({ crosshairPos: [0.5, 0.5, 0.5] })
+   */
   crosshairPos?: [number, number, number]
   pan2Dxyzmm?: [number, number, number, number]
   scaleMultiplier?: number
@@ -1229,6 +1330,7 @@ export type NiiVueOptions = {
   isEqualSize?: boolean
   isMosaicCentered?: boolean
   tileMargin?: number
+  layoutInset?: [number, number, number, number]
   isRadiological?: boolean
   isSingleViewFillCanvas?: boolean
   customLayout?: CustomLayoutTile[] | null
@@ -1284,10 +1386,11 @@ export type NiiVueOptions = {
   volumeIsV1SliceShader?: boolean
   volumeOverlayAlphaBlend?: OVERLAY_ALPHA_BLEND
   volumeOverlayColorBlend?: OVERLAY_COLOR_BLEND
+  /** Matcap image for the 3D render: a URL, or a name from `matcaps` (case-insensitive). An unknown name falls back to the first matcap with a warning. */
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
   volumeTransmittanceCutoff?: number
-  /** VOLUME_RENDER_MODE.COMPOSITE (default) | MAXIMUM */
+  /** VOLUME_RENDER_MODE.COMPOSITE (default) | MAXIMUM | SLICES | CINEMATIC */
   volumeRenderMode?: number
   /** Layer-gradient stencil for the overlay/drawing passes. LAYER_GRADIENT_MODE.CENTRAL (default) | BLOB | SOBEL8. See VolumeRenderConfig.layerGradientMode. */
   volumeLayerGradientMode?: number
@@ -1295,6 +1398,8 @@ export type NiiVueOptions = {
   volumeSampleRate?: number
   /** Tricubic B-spline reconstruction in the 3D ray-march. See VolumeRenderConfig.isCubicInterpolation. */
   volumeIsCubicInterpolation?: boolean
+  /** Step-size opacity correction for the 3D overlay pass. See VolumeRenderConfig.isOverlayOpacityCorrected. */
+  volumeIsOverlayOpacityCorrected?: boolean
   /** Per-level brightness compensation for coarse multi-LOD bricks, [0, 0.2]; 0 disables. See VolumeRenderConfig.lodBrightnessCompensation. */
   volumeLodBrightnessCompensation?: number
   /** Per-level opacity compensation for coarse multi-LOD bricks in the 3D ray-march, [0, 1]; 0 disables (default). See VolumeRenderConfig.lodOpacityCompensation. */
@@ -1303,10 +1408,13 @@ export type NiiVueOptions = {
   volumeGradientOpacity?: number
   /** Silhouette (Fresnel rim) enhancement for the background 3D ray-march, [0, 1]; 0 disables (default). See VolumeRenderConfig.silhouette. */
   volumeSilhouette?: number
+  /** Cinematic render settings, merged over the defaults. See CinematicOptions. */
+  volumeCinematic?: Partial<CinematicOptions>
 
   // Mesh (prefixed)
   meshXRay?: number
   meshThicknessOn2D?: number
+  meshCrosscutWidth?: number
 
   // Draw (prefixed)
   drawIsEnabled?: boolean
@@ -1326,6 +1434,7 @@ export type NiiVueOptions = {
   wheelZoomAnchor?: WheelZoomAnchor
   isViewModeHotKeyEnabled?: boolean
   isPanFollowingCrosshair?: boolean
+  isLegendToggleEnabled?: boolean
 
   // Annotation (prefixed)
   annotationIsEnabled?: boolean
@@ -1376,6 +1485,22 @@ export type DragOverlay = {
     anchorY: number
     backColor?: number[]
   }>
+}
+
+/**
+ * A rectangle outlined in world space, e.g. the field of view of an NVSlide
+ * pane on the volume it was cut from. Drawn as a frame in the 3D render. On a
+ * 2D slice it lies in (within half the largest voxel size) it draws as the
+ * whole rectangle, on a slice that cuts it as the crossing segment, and on a
+ * slice it misses not at all; clipped to the tile.
+ */
+export type PlaneOutline = {
+  /** The four corners in world mm, in order around the rectangle. */
+  cornersMM: [number, number, number][]
+  /** RGBA 0..1. Default: the crosshair colour. */
+  color?: number[]
+  /** Line width in canvas pixels on 2D slices. Default 2. */
+  width?: number
 }
 
 export type CompletedMeasurement = {
@@ -1447,7 +1572,11 @@ export type CompletedAngle = {
 export type ImageFromUrlOptions = {
   /** URL or File pointing to the volume */
   url: string | File
-  /** URL or File for detached image data (e.g., AFNI .HEAD/.BRIK) */
+  /**
+   * URL or File for detached image data (e.g., AFNI .HEAD/.BRIK). Optional for
+   * an AFNI `.HEAD` URL: when omitted, the `.BRIK` or `.BRIK.gz` beside it is
+   * used, whichever exists first.
+   */
   urlImageData?: string | File
   /** Display name for this volume */
   name?: string
@@ -1464,11 +1593,13 @@ export type ImageFromUrlOptions = {
   isColormapInverted?: boolean
   /** Outline width for a label/atlas volume, in its own voxels (default 0 = filled) */
   atlasOutline?: number
+  /** Label values of a label/atlas volume to hide (default: none) */
+  hiddenLabels?: number[]
   /** Minimum intensity for negative color mapping (default: NaN = symmetric) */
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */
   calMaxNeg?: number
-  /** Colormap type: 0=min-to-max, 1=zero-to-max (transparent below), 2=zero-to-max (translucent below) */
+  /** Colormap type (`COLORMAP_TYPE`): 0=min-to-max, 1=zero-to-max (transparent below), 2=zero-to-max (translucent below). Default: 0. */
   colormapType?: number
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean
@@ -1491,14 +1622,22 @@ export type ImageFromUrlOptions = {
   /** Whether the volume is drawn (default: true). Hidden volumes keep their
    * opacity; `setVolume(i, { visible: false })` is the hide toggle. */
   visible?: boolean
-  /** Minimum intensity for color mapping */
+  /**
+   * Minimum intensity for color mapping. Unset: a CT colormap's window, else
+   * the image's default. NaN (or null) asks for the image's default.
+   */
   calMin?: number
-  /** Maximum intensity for color mapping */
+  /**
+   * Maximum intensity for color mapping. Unset: a CT colormap's window, else
+   * the image's default. NaN (or null) asks for the image's default.
+   */
   calMax?: number
   /** Alpha modulation amount */
   modulateAlpha?: number
   /** Whether to show colorbar for this volume (default: true) */
   isColorbarVisible?: boolean
+  /** Whether this volume's labels join the legend (default: true) */
+  isLegendVisible?: boolean
   /**
    * 2D slice sampling: true = nearest-neighbour, false = linear. Unset (the
    * default) picks nearest for categorical data (NIFTI_INTENT_LABEL or a label
@@ -1560,7 +1699,7 @@ export type MeshFromUrlOptions = {
   rgba255?: [number, number, number, number]
   /** Whether to show colorbar (default: true) */
   isColorbarVisible?: boolean
-  /** Whether to show legend (default: false) */
+  /** Whether this mesh's labels join the legend (default: true) */
   isLegendVisible?: boolean
   /** Shader type (default: 'phong'). Used for the 3D render view and, unless
    * `sliceShaderType` is set, for 2D slice views too. */
@@ -1806,11 +1945,22 @@ export type VectorAnnotation = {
  */
 export type AnnotationScreenShape = {
   id: string
+  /**
+   * The tile this copy is drawn in: an index into `nv.getScreenTiles()`. An
+   * annotation shown in several tiles (mosaic, hero) has one shape per tile,
+   * each with the annotation's `id`.
+   */
+  tileIndex?: number
   tool: AnnotationTool
-  /** Outer boundary projected to canvas px (the outline for closed shapes). */
+  /** Outer boundary of the first polygon, projected to canvas px. */
   outer: AnnotationPoint[]
-  /** Hole boundaries projected to canvas px (freehand with holes). */
+  /** Hole boundaries of the first polygon, projected to canvas px. */
   holes: AnnotationPoint[][]
+  /**
+   * Every polygon projected to canvas px; more than one after the eraser
+   * splits an ROI. `polygons[0]` holds the same rings as `outer`/`holes`.
+   */
+  polygons: PolygonWithHoles[]
   /** Shape endpoints projected to canvas px (line/arrow path, ellipse bbox). */
   start?: AnnotationPoint
   end?: AnnotationPoint
@@ -2016,5 +2166,6 @@ export type NVSignalDisplay = {
   /** indices of columns to show; null shows all */
   selectedColumns: number[] | null
   // shared
-  showLegend: boolean
+  /** Whether the graph draws its series legend */
+  isLegendVisible: boolean
 }

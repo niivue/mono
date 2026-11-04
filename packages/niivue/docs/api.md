@@ -27,6 +27,7 @@ Never use bare adjectives or nouns for booleans:
   - NOT `isVolumeAlphaClipDark`, `isDrawEnabled`
 - The `graph` sub-object is flattened: `graphNormalizeValues`, `graphIsRangeCalMinMax`
 - `tileMargin` (flat) maps to `layout.margin` (internal model)
+- `layoutInset` (flat) maps to `layout.inset` (internal model)
 
 ### Method Names
 - camelCase: `loadVolumes`, `setVolume`, `drawUndo`
@@ -66,13 +67,19 @@ nv1.isColorbarVisible = true
 nv1.drawPenValue = 3
 ```
 
+A few setters (such as `volumeIsBackgroundMasking`) also start a GPU rebuild
+they cannot return. Before reading pixels or calling `saveBitmap()`, wait for it
+with `await nv1.whenUpdatesSettle()`, which resolves once the GPU updates
+running or queued at the call have finished, not later ones, so a stream of
+updates does not hold it (it does not report a failed one).
+
 ### Prefix Rules
 
 | Domain | Prefix | Examples |
 |--------|--------|---------|
 | Scene, layout, UI, interaction | None | `nv1.azimuth`, `nv1.sliceType`, `nv1.isColorbarVisible`, `nv1.primaryDragMode` |
 | Volume | `volume` | `nv1.volumeIllumination`, `nv1.volumeIsAlphaClipDark`, `nv1.volumeIsNearestInterpolation` |
-| Mesh | `mesh` | `nv1.meshXRay`, `nv1.meshThicknessOn2D` |
+| Mesh | `mesh` | `nv1.meshXRay`, `nv1.meshThicknessOn2D`, `nv1.meshCrosscutWidth` |
 | Draw | `draw` | `nv1.drawPenValue`, `nv1.drawOpacity`, `nv1.drawIsEnabled` |
 | Annotation | `annotation` | `nv1.annotationIsEnabled`, `nv1.annotationTool`, `nv1.annotationBrushRadius` |
 
@@ -81,14 +88,37 @@ nv1.drawPenValue = 3
 **Scene** (no prefix -- delegate to `model.scene`):
 `azimuth`, `elevation`, `crosshairPos`, `pan2Dxyzmm`, `scaleMultiplier`, `gamma`, `backgroundColor`, `clipPlaneColor`, `isClipPlaneCutaway`
 
+#### Crosshair units
+
+The crosshair has two APIs in different units:
+
+| API | Units | Snapping / clamping |
+|-----|-------|---------------------|
+| `crosshairPos` property, `NiiVueOptions.crosshairPos` | scene fraction, [0,1] per axis across the scene bounding box (union of all volume and mesh extents); `[0.5, 0.5, 0.5]` is the centre | none: the value is stored as given |
+| `setCrosshairPos(mm)` / `getCrosshairPos()` | RAS world millimetres (x = right, y = anterior, z = superior) | `setCrosshairPos` snaps to the nearest background-volume voxel centre when `isSnapToVoxelCenters` is true, then clamps to the scene bounding box |
+
+`vox2frac(vox)` converts RAS voxel indices to the fraction `crosshairPos`
+takes. `AnimationTarget.crosshairMM` (used by `animate`) is in world mm, like
+`setCrosshairPos`.
+
+Porting from 0.6x: `nv.scene.crosshairPos = nv.mm2frac(mm)` becomes
+`nv.setCrosshairPos(mm)`, and `nv.frac2mm(nv.scene.crosshairPos)` becomes
+`nv.getCrosshairPos()`.
+
+```ts
+nv1.setCrosshairPos([0, -18, 12]) // world mm
+const mm = nv1.getCrosshairPos() // world mm
+nv1.crosshairPos = [0.5, 0.5, 0.5] // scene fraction: centre of the scene
+```
+
 **Layout** (no prefix -- delegate to `model.layout`):
-`sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `isRadiological`, `isSingleViewFillCanvas`
+`sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `layoutInset`, `isRadiological`, `isSingleViewFillCanvas`
 
 **UI** (no prefix -- delegate to `model.ui`):
 `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible`, `is3DCrosshairVisible`, `isGraphVisible`, `isRulerVisible`, `isCrossLinesVisible`, `isLegendVisible`, `isMeasureUnitsVisible`, `isThumbnailVisible`, `thumbnailUrl`, `placeholderText`, `crosshairColor`, `crosshairGap`, `crosshairWidth`, `fontColor`, `fontScale`, `fontMinSize`, `selectionBoxColor`, `measureLineColor`, `measureTextColor`, `rulerWidth`, `graphNormalizeValues`, `graphIsRangeCalMinMax`
 
 **Volume** (prefix `volume` -- delegate to `model.volume`):
-`volumeIllumination`, `volumeRenderMode`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeOverlayAlphaBlend`, `volumeOverlayColorBlend`, `volumeMatcap`, `volumePaqdUniforms`
+`volumeIllumination`, `volumeRenderMode`, `volumeCinematic`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeOverlayAlphaBlend`, `volumeOverlayColorBlend`, `volumeMatcap`, `volumePaqdUniforms`
 
 `volumeRenderMode` takes a `VOLUME_RENDER_MODE` and applies to the 3D render only:
 
@@ -97,19 +127,53 @@ nv1.drawPenValue = 3
 | `COMPOSITE` (0, default) | emission-absorption OVER | a solid, depth-ordered object |
 | `MAXIMUM` (1) | maximum-intensity projection | the brightest sample per ray, through everything in front of it |
 | `SLICES` (2) | orthogonal slices | the three crosshair planes, composited front to back |
+| `CINEMATIC` (3) | progressive path tracing | anatomy with soft shadows and ambient occlusion, plus statistical overlays or a label volume |
 
 `SLICES` does not ray-march: it takes at most three samples per ray, so it is
 the cheapest 3D view. Overlays, PAQD and the drawing are sampled on the planes
 the way the 2D tiles blend them; clip planes and all lighting are ignored.
 
+`CINEMATIC` refines over `volumeCinematic.maxFrames` frames, redrawing itself
+until done. Its transfer function is volume 0's colormap mapped across its
+calMin..calMax; the optional colormap keys `E` (edge alpha), `S` (specular),
+`gradient` `{lo, hi}`, `gMax`, `shininess` and `labelBlend` (see `ColorMap`)
+make it 2D (intensity x gradient), and `addColormap` keeps them. The first drawn
+label volume on volume 0's grid supplies per-label materials (`S`, `lo`/`hi`
+surface ramp, `surface`, and `normalize` to calibrate uncalibrated intensities;
+calibrated volumes use the colormap's own `min`/`max`), and its `hiddenLabels`
+hide structures. Without visible label, PAQD or streamed overlays, standard overlays use the same
+registration, colormaps, positive/negative thresholds, opacity and visibility
+as the other render modes (`loadVolumes` / `setVolume`). They are unlit volumes,
+mixed by depth; `clipPlaneOverlay` clips them with the anatomy when enabled;
+`gamma` and `isOverlayOpacityCorrected` (per overlay voxel, so anisotropic
+voxels match `COMPOSITE`) apply. They reuse the existing overlay texture and do
+not cast anatomical shadows. A hidden background (`opacity: 0` or
+`visible: false`) still shows the overlays. Not drawn: statistics mixed with a
+visible label volume (the labels draw, one warning), PAQD and streamed overlays
+(one warning) and channel stacks. Meshes and the crosshair composite by depth. A
+chunked background draws `COMPOSITE` (one warning). Memory:
+a duplicate r16float intensity texture, an rgba16float gradient and a half-res
+extinction texture. Both backends; WebGL2 needs `EXT_color_buffer_float` (else
+`COMPOSITE`, one warning). `volumeCinematic.isStochasticLighting` (default
+false) traces shadow and AO from one sample per ray per frame: about 2.5x
+faster per frame, noisier early frames, nearly the same converged image.
+`nv.cinematicFrameMs` reads the mean GPU ms per
+refinement frame (first 10 frames after a change; null without GPU timers).
+Demo: `examples/cinematic.html`.
+
+```js
+nv.volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC
+nv.volumeCinematic = { shadow: 0.8, ao: 0.6, labelMode: 'only' } // merged
+```
+
 **Mesh** (prefix `mesh` -- delegate to `model.mesh`):
-`meshXRay`, `meshThicknessOn2D`
+`meshXRay`, `meshThicknessOn2D`, `meshCrosscutWidth`
 
 **Draw** (prefix `draw` -- delegate to `model.draw`):
 `drawIsEnabled`, `drawPenValue`, `drawPenSize`, `drawIsFillOverwriting`, `drawOpacity`, `drawRimOpacity`, `drawColormap`
 
 **Interaction** (no prefix -- delegate to `model.interaction`):
-`primaryDragMode`, `secondaryDragMode`, `isSnapToVoxelCenters`, `isYoked3DTo2DZoom`, `isViewModeHotKeyEnabled`, `isDragDropEnabled`, `wheelZoomAnchor`, `isPanFollowingCrosshair`
+`primaryDragMode`, `secondaryDragMode`, `isSnapToVoxelCenters`, `isYoked3DTo2DZoom`, `isViewModeHotKeyEnabled`, `isLegendToggleEnabled`, `isDragDropEnabled`, `wheelZoomAnchor`, `isPanFollowingCrosshair`
 
 **Annotation** (prefix `annotation` -- delegate to `model.annotation`):
 `annotationIsEnabled`, `annotationActiveLabel`, `annotationActiveGroup`, `annotationBrushRadius`, `annotationIsErasing`, `annotationIsVisibleIn3D`, `annotationStyle`, `annotationTool`
@@ -126,8 +190,8 @@ Use **methods** for:
 - Multi-target operations (need to specify which item): `setVolume(idx, opts)`, `setFrame4D(id, frame)`
 - Special formats: `setClipPlane([depth, azimuth, elevation])`
 - String-to-number mapping: `setDragMode('contrast')`
-- IO: `saveDocument()`, `loadDocument()`, `saveBitmap()`
-- Remote assets: `setFont(font)` / `setFontFromUrl({ atlas, metrics })`, `addColormap(name, cmap)` / `addColormapFromUrl(url, name?)` / `hasColormap(name)` / `colormapNames(kind?)`, `loadMatcap(nameOrUrl)`. `addColormapFromUrl` derives `name` from the filename (stripping `.json.gz`/`.gz`/`.json`) if omitted, and dispatches `colormapAdded` after registration. A colormap with a `labels` array (even empty) is a label table; `setVolume(i, { colormap })` selects either kind, so atlases need no separate call.
+- IO: `saveDocument()`, `loadDocument()`, `saveBitmap()`, `loadFiles(files, { add })` (what a canvas drop does: `.nvd` via `loadDocument`, `.json` sidecars paired by basename, else `addImage` / `loadImage`; per-file failures are logged)
+- Remote assets: `setFont(font)` / `setFontFromUrl({ atlas, metrics })`, `addColormap(name, cmap)` / `addColormapFromUrl(url, name?)` / `hasColormap(name)` / `colormapWindow(name)` / `colormapNames(kind?)`, `loadMatcap(nameOrUrl)`. `addColormapFromUrl` derives `name` from the filename (stripping `.json.gz`/`.gz`/`.json`) if omitted, and dispatches `colormapAdded` after registration. A colormap with a `labels` array (even empty) is a label table; `setVolume(i, { colormap })` selects either kind, so atlases need no separate call.
 
 ### Batch Updates for Per-Item Config
 Use the same option type for loading and updating:
@@ -240,16 +304,17 @@ Note: `setDragMode(v)` still exists as a method (for string-to-number mapping).
 Used by `loadVolumes()`, `addVolume()`, and `setVolume()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
 - Behavior: `isTransparentBelowCalMin`, `opacity`, `visible` (hide without changing `opacity`), `modulateAlpha`, `isNearestInterpolation` (2D sampling; unset = nearest for label data, linear otherwise)
-- UI: `isColorbarVisible`, `isLegendVisible`
+- UI: `isColorbarVisible`, `isLegendVisible` (default true; `nv.isLegendVisible` gates the combined legend; a large table wraps into columns at a fixed font, then scrolls: wheel over the legend, or click the scrollbar track to page)
+- Labels: `atlasOutline`, `hiddenLabels` (label values drawn transparent; `nv.isLegendToggleEnabled` lets a legend colour-box click toggle them; hidden labels show as an outlined legend box)
 - 4D: `frame4D`, `limitFrames4D`
 
 ### Mesh Options
 Used by `loadMeshes()`, `addMesh()`, and `setMesh()`:
 - Display: `opacity`, `visible` (hide without changing `opacity`), `color`, `shaderType`
-- UI: `isColorbarVisible`, `isLegendVisible`
+- UI: `isColorbarVisible`, `isLegendVisible` (default true; `nv.isLegendVisible` gates the combined legend)
 
 ### Layer Options
-Used by `addMeshLayer()` and `setMeshLayer()`:
+Used by `addMeshLayer()` and `setMeshLayerProperty()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
 - Behavior: `isTransparentBelowCalMin`, `isAdditiveBlend`, `isColormapInverted`, `opacity`
 - UI: `isColorbarVisible`, `outlineWidth`

@@ -64,7 +64,7 @@ export type GraphData = {
   series?: GraphSeries[]
   xAxis?: GraphAxis
   /** legend toggle for signal mode (default true when more than one series) */
-  showLegend?: boolean
+  isLegendVisible?: boolean
   /**
    * Signal mode only: when true (no spatial data in the scene), the graph
    * expands to fill the whole instance area instead of the right-hand strip.
@@ -647,6 +647,23 @@ function computeSignalGraphLayout(
   }
 }
 
+/** Move a graph layout by (dx, dy) canvas px, e.g. into a `layout.inset` area. */
+export function translateGraphLayout(
+  layout: GraphLayout,
+  dx: number,
+  dy: number,
+): GraphLayout {
+  if (dx === 0 && dy === 0) return layout
+  const [l, t, w, h] = layout.plotLTWH
+  return {
+    ...layout,
+    x: layout.x + dx,
+    y: layout.y + dy,
+    plotLTWH: [l + dx, t + dy, w, h],
+    controls: layout.controls?.map((c) => ({ ...c, x: c.x + dx, y: c.y + dy })),
+  }
+}
+
 /**
  * Compute graph layout including the plot area. `totalWidthOverride` lets the
  * caller widen the graph beyond its base width (e.g. when a single narrow slice
@@ -1105,8 +1122,8 @@ function buildSignalGraphElements(
   // 6) Legend (top-right inside plot). Capped so a high-cardinality series set
   // (e.g. non-averaged spectroscopy with many transients) cannot overflow the
   // plot; the overflow is summarized as a final "+N more" row.
-  const showLegend = data.showLegend ?? series.length > 1
-  if (showLegend && fontSize > 6) {
+  const isLegendVisible = data.isLegendVisible ?? series.length > 1
+  if (isLegendVisible && fontSize > 6) {
     const swatch = fontSize * 1.2
     const rowH = fontSize * 1.3
     const maxRows = Math.max(1, Math.floor((pH - fontSize) / rowH))

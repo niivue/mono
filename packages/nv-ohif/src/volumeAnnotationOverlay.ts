@@ -43,7 +43,12 @@ export class VolumeAnnotationOverlay implements UIKitOverlayRenderer {
     let sig = `${dpr}`
     for (const s of shapes) {
       sig += `|${s.id};`
-      for (const p of s.outer) sig += `${p.x | 0},${p.y | 0};`
+      for (const poly of s.polygons) {
+        for (const ring of [poly.outer, ...poly.holes]) {
+          for (const p of ring) sig += `${p.x | 0},${p.y | 0};`
+          sig += '/'
+        }
+      }
       if (s.start) sig += `s${s.start.x | 0},${s.start.y | 0};`
       if (s.end) sig += `e${s.end.x | 0},${s.end.y | 0};`
       if (s.start2) sig += `S${s.start2.x | 0},${s.start2.y | 0};`

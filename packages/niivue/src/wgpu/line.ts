@@ -14,10 +14,12 @@ export class LineRenderer extends NVRenderer {
     this.paramsBuffer = null
   }
 
+  /** `depthFormat` null: for a pass with no depth attachment (the slide pane). */
   async init(
     device: GPUDevice,
     format: GPUTextureFormat,
     msaaCount: number,
+    depthFormat: GPUTextureFormat | null = 'depth24plus',
   ): Promise<void> {
     if (this.isReady) return
     // Uniforms for canvas
@@ -63,11 +65,13 @@ export class LineRenderer extends NVRenderer {
           },
         ],
       },
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
-      },
+      ...(depthFormat && {
+        depthStencil: {
+          depthWriteEnabled: false,
+          depthCompare: 'always',
+          format: depthFormat,
+        },
+      }),
       primitive: { topology: 'triangle-strip' },
     })
     this.isReady = true
@@ -106,15 +110,13 @@ export class LineRenderer extends NVRenderer {
   ): void {
     if (!this.isReady || lines.length === 0 || !bindGroup || !this.pipeline)
       return
+    const n = Math.min(lines.length, maxLines)
     const allLineData = new Float32Array(maxLines * 12)
-    for (let i = 0; i < lines.length; i++) {
-      if (i >= maxLines) break
-      allLineData.set(lines[i].data, i * 12)
-    }
+    for (let i = 0; i < n; i++) allLineData.set(lines[i].data, i * 12)
     device.queue.writeBuffer(lineStorageBuffer, 0, allLineData)
     pass.setPipeline(this.pipeline)
     pass.setBindGroup(0, bindGroup)
-    pass.draw(4, lines.length)
+    pass.draw(4, n)
   }
 
   destroy(): void {

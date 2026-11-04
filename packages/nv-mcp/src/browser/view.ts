@@ -50,6 +50,7 @@ export interface VolumeToLoad {
   calMinNeg?: number
   calMaxNeg?: number
   isColorbarVisible?: boolean
+  isLegendVisible?: boolean
 }
 
 /** What `View.setVolume` can change about a volume: NiiVue's `VolumeUpdate`. */
@@ -66,8 +67,10 @@ export interface VolumeUpdate {
   frame4D?: number
   isColormapInverted?: boolean
   isColorbarVisible?: boolean
+  isLegendVisible?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  hiddenLabels?: number[]
   modulateAlpha?: number
 }
 
@@ -86,6 +89,9 @@ export interface ShownVolume {
   calMax?: number
   calMinNeg?: number
   calMaxNeg?: number
+  /** The image's default window, which a NaN bound asks for. */
+  robustMin?: number
+  robustMax?: number
   /** The intensities the volume actually spans. */
   globalMin?: number
   globalMax?: number
@@ -97,8 +103,10 @@ export interface ShownVolume {
   colormapType?: number
   isTransparentBelowCalMin?: boolean
   isColorbarVisible?: boolean
+  isLegendVisible?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  hiddenLabels?: number[]
   modulateAlpha?: number
   /** The label table it is drawn with, when it is a label map. */
   colormapLabel?: unknown
@@ -224,7 +232,7 @@ export interface SignalDisplay {
   phase0?: number
   phase1Ms?: number
   selectedColumns?: number[] | null
-  showLegend?: boolean
+  isLegendVisible?: boolean
 }
 
 /** A note on a signal's graph: NiiVue's `SignalAnnotation`. */
@@ -296,6 +304,13 @@ export interface FocusBox {
   max: [number, number, number]
   color: number[]
   thickness: number
+}
+
+/** A rectangle NiiVue outlines: four corners in mm, colour 0 to 1, edges in pixels. */
+export interface PlaneOutline {
+  cornersMM: [number, number, number][]
+  color?: number[]
+  width?: number
 }
 
 /** A vector annotation as NiiVue keeps it: `VectorAnnotation`. Passed through as JSON. */
@@ -398,6 +413,8 @@ export interface Instance {
 export interface InfrastructureOptions {
   instances?: Instance[]
   globalCamera?: GlobalCamera
+  /** Matcap name to URL, so a matcap is reported by name. */
+  matcaps?: Record<string, string>
 }
 
 /** The 2D pan and zoom of the canvas: NiiVue's `CanvasViewport`. */
@@ -538,6 +555,8 @@ export interface View {
   drawScene(): unknown
   /** Fits the canvas's drawing buffer to its box; NiiVue 1.0 has it. */
   resize?(): void
+  /** The pixel ratio NiiVue sizes the canvas by, honouring forceDevicePixelRatio. */
+  effectiveDevicePixelRatio?: number
   /**
    * NiiVue 1.0's render backend, whose `render()` draws a frame now, and
    * which skips frames while `isBusy`: during an async texture upload, as
@@ -699,6 +718,8 @@ export interface View {
   colormapNames?(kind?: 'continuous' | 'label'): string[]
   drawingColormaps?: readonly string[]
   hasColormap?(name: string): boolean
+  /** The window a colormap brings (the CT maps), which `setVolume` fills a left-out bound from. */
+  colormapWindow?(name: string): [number, number] | null
   addColormap?(name: string, colormap: ColormapToAdd): string
   addColormapFromUrl?(url: string, name?: string): Promise<unknown>
   setFontFromUrl?(urls: { atlas: string; metrics: string }): Promise<boolean>
@@ -730,6 +751,7 @@ export interface View {
   // Boxes outlined on the render.
   focusBox?: FocusBox | null
   lodBoxes?: FocusBox[] | null
+  planeOutlines?: PlaneOutline[]
 
   // Measurements.
   getMeasurements?(): readonly Measurement[]
@@ -787,6 +809,8 @@ export interface View {
     index: number,
     opacity: ArrayLike<number> | null,
   ): unknown
+  /** Resolves once the GPU rebuilds running or queued at the call have finished; NiiVue 1.0 has it. */
+  whenUpdatesSettle?(): Promise<unknown>
   /** Resolves once every brick the render asked for is resident and drawn. */
   whenChunkStreamSettles?(): Promise<unknown>
   // Each report is NiiVue's own snapshot object, passed through as it is.
@@ -798,6 +822,7 @@ export interface View {
 
   // What the page's NiiVue is.
   backend?: string
+  version?: string
   volumeExtensions?: readonly string[]
   meshExtensions?: readonly string[]
   volumeWriteExtensions?: readonly string[]

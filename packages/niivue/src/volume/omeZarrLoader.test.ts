@@ -173,6 +173,23 @@ describe('openOmeZarr', () => {
     ).toEqual(['green', 'red'])
   })
 
+  test('a known zarrVersion skips the v3 probe', async () => {
+    const map = makeTczyxStore()
+    const asked: string[] = []
+    const spy = {
+      get: (key: string) => {
+        asked.push(key)
+        return map.get(key)
+      },
+    }
+    await openOmeZarr(spy)
+    expect(asked).toContain('/zarr.json')
+    asked.length = 0
+    const source = await openOmeZarr(spy, { zarrVersion: 2 })
+    expect(source.levels).toHaveLength(2)
+    expect(asked.some((key) => key.endsWith('zarr.json'))).toBe(false)
+  })
+
   test('rejects a store whose root is an array', async () => {
     const store = new Map<string, Uint8Array>()
     store.set('/.zarray', zarray([2, 2], '<u2'))

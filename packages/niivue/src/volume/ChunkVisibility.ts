@@ -494,3 +494,52 @@ export function unionChunkSets(sets: readonly number[][]): number[] {
   }
   return [...seen].sort((a, b) => a - b)
 }
+
+/** One cube in a chunked draw: a plan chunk, or a retiring one from a swap. */
+export type ChunkDrawItem<TRetiring> = { index: number; retiring?: TRetiring }
+
+/**
+ * Back-to-front draw list while a make-before-break swap is in progress: the
+ * plan's chunks not hidden behind a retiring chunk, plus the retiring chunks
+ * themselves, sorted together so mixed brick sizes composite in order. A
+ * retiring item's `index` is its index in its own (older) plan. Without
+ * retiring chunks this is `chunksBackToFront` unchanged.
+ */
+export function chunkDrawOrder<
+  TRetiring extends { plan: ChunkPlan; index: number },
+>(
+  plan: ChunkPlan,
+  retiring: readonly TRetiring[],
+  isCovered: (index: number) => boolean,
+  rayDir: ArrayLike<number>,
+  chunkOffsetFor?: ChunkOffsetFor,
+  volScale?: ArrayLike<number>,
+): ChunkDrawItem<TRetiring>[] {
+  if (retiring.length === 0) {
+    return chunksBackToFront(plan, rayDir, chunkOffsetFor, volScale).map(
+      (index) => ({ index }),
+    )
+  }
+  const items: ChunkDrawItem<TRetiring>[] = []
+  for (let i = 0; i < plan.chunks.length; i++) {
+    if (!isCovered(i)) items.push({ index: i })
+  }
+  for (const t of retiring) items.push({ index: t.index, retiring: t })
+  const union: ChunkPlan = {
+    ...plan,
+    chunks: items.map((it) =>
+      it.retiring ? it.retiring.plan.chunks[it.index] : plan.chunks[it.index],
+    ),
+  }
+  // Explode offsets belong to the current plan's indices; retiring cubes
+  // draw unexploded for the moment they are on screen.
+  const offsetFor: ChunkOffsetFor | undefined = chunkOffsetFor
+    ? (u) => {
+        const it = items[u]
+        return it.retiring ? [0, 0, 0] : chunkOffsetFor(it.index)
+      }
+    : undefined
+  return chunksBackToFront(union, rayDir, offsetFor, volScale).map(
+    (u) => items[u],
+  )
+}

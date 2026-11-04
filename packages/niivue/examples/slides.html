@@ -81,14 +81,15 @@
       header input[type='checkbox'] {
         margin: 0 3px 0 0;
       }
-      header .links {
-        margin-left: auto;
-      }
-      header .links a {
+      header .back {
         color: var(--cyan);
-        margin-left: 12px;
         text-decoration: none;
         font-size: 0.85rem;
+        padding-right: 14px;
+        border-right: 1px solid var(--line);
+      }
+      header .backend {
+        margin-left: auto;
       }
       main {
         position: relative;
@@ -199,6 +200,7 @@
   </head>
   <body>
     <header>
+      <a class="back" href="./index.html">&lsaquo; Examples</a>
       <h1>NiiVue Slides &mdash; NVSlide tile viewer</h1>
       <span class="control">
         <label for="source">Source</label>
@@ -251,11 +253,13 @@
       <button id="drawUndo" type="button" title="Undo last stroke">Undo</button>
       <button id="drawClear" type="button" title="Clear annotation">Clear</button>
       <button id="exportSvg" type="button" title="Export vector annotations as SVG">SVG</button>
-      <div class="links">
-        <a href="./index.html">Examples</a>
-        <a href="?backend=webgpu">WebGPU</a>
-        <a href="?backend=webgl2">WebGL2</a>
-      </div>
+      <span class="control backend">
+        <label for="backendSelect">Backend</label>
+        <select id="backendSelect">
+          <option value="webgl2">WebGL2</option>
+          <option value="webgpu">WebGPU</option>
+        </select>
+      </span>
     </header>
     <main>
       <canvas id="tileCanvas" tabindex="0"></canvas>

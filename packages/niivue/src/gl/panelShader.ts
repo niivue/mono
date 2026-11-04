@@ -3,11 +3,11 @@ precision highp float;
 uniform vec2 canvasSize;
 in vec4 panelRect;
 in vec4 panelColor;
-in float panelRadius;
+in vec2 panelShape; // radius, border
 out vec4 vColor;
 out vec2 vLocalPos;
 out vec2 vSize;
-out float vRadius;
+out vec2 vShape;
 
 void main() {
   int vIdx = gl_VertexID;
@@ -21,7 +21,7 @@ void main() {
   vColor = panelColor;
   vLocalPos = pos * panelRect.zw;
   vSize = panelRect.zw;
-  vRadius = panelRadius;
+  vShape = panelShape;
 }
 `
 
@@ -30,7 +30,7 @@ precision highp float;
 in vec4 vColor;
 in vec2 vLocalPos;
 in vec2 vSize;
-in float vRadius;
+in vec2 vShape;
 out vec4 fragColor;
 
 float roundedRectDistance(vec2 localPos, vec2 size, float radius) {
@@ -41,9 +41,11 @@ float roundedRectDistance(vec2 localPos, vec2 size, float radius) {
 }
 
 void main() {
-  float dist = roundedRectDistance(vLocalPos, vSize, vRadius);
+  float dist = roundedRectDistance(vLocalPos, vSize, vShape.x);
   float aa = fwidth(dist);
   float alpha = 1.0 - smoothstep(-aa, aa, dist);
+  // A border keeps one antialiased ring, so its corners blend once (#478).
+  if (vShape.y > 0.0) alpha *= smoothstep(-aa, aa, dist + vShape.y);
   if (alpha <= 0.0) { discard; }
   fragColor = vec4(vColor.rgb, vColor.a * alpha);
 }

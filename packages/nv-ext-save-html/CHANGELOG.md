@@ -1,3 +1,242 @@
+## 1.0.0-rc.84 (2026-11-04)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.83
+
+## 1.0.0-rc.83 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.82
+
+## 1.0.0-rc.82 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.81
+
+## 1.0.0-rc.81 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.80
+
+## 1.0.0-rc.80 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.79
+
+## 1.0.0-rc.79 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.78
+
+## 1.0.0-rc.78 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.77
+
+## 1.0.0-rc.77 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.76
+
+## 1.0.0-rc.76 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.75
+
+## 1.0.0-rc.75 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.74
+
+## 1.0.0-rc.74 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.73
+
+## 1.0.0-rc.73 (2026-11-02)
+
+### Fixes
+
+- **nv-ext-save-html:** keep the scene's matcap in exported HTML ([#393](https://github.com/niivue/mono/issues/393), [#394](https://github.com/niivue/mono/issues/394))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.72 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.72
+
+## 1.0.0-rc.71 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.71
+
+## 1.0.0-rc.70 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.70
+
+## 1.0.0-rc.69 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.69
+
+## 1.0.0-rc.68 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.68
+
+## 1.0.0-rc.67 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.67
+
+## 1.0.0-rc.66 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.66
+
+## 1.0.0-rc.65 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.65
+
+## 1.0.0-rc.64 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.64
+
+## 1.0.0-rc.63 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.63
+
+## 1.0.0-rc.62 (2026-10-31)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.62
+
+## 1.0.0-rc.61 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.61
+
+## 1.0.0-rc.60 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.60
+
+## 1.0.0-rc.59 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.59
+
+## 1.0.0-rc.58 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.58
+
+## 1.0.0-rc.57 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.57
+
+## 1.0.0-rc.56 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.56
+
+## 1.0.0-rc.55 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.55
+
+## 1.0.0-rc.54 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.54
+
+## 1.0.0-rc.53 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.53
+
+## 1.0.0-rc.52 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.52
+
+## 1.0.0-rc.51 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.51
+
+## 1.0.0-rc.50 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.50
+
+## 1.0.0-rc.49 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.49
+
+## 1.0.0-rc.48 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.48
+
+## 1.0.0-rc.47 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.47
+
+## 1.0.0-rc.46 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.46
+
 ## 1.0.0-rc.45 (2026-10-28)
 
 ### Updated Dependencies

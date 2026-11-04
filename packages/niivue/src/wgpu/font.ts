@@ -7,6 +7,7 @@ import {
   FLOATS_PER_PANEL,
   type FontMetrics,
   type GlyphBatch,
+  measureTextWidth,
 } from '@/view/NVFont'
 import { NVRenderer } from '@/view/NVRenderer'
 import fontShaderCode from './font.wgsl?raw'
@@ -41,11 +42,13 @@ export class FontRenderer extends NVRenderer {
     this.fontPx = 16
   }
 
+  /** `depthFormat` null: for a pass with no depth attachment (the slide pane). */
   async init(
     device: GPUDevice,
     format: GPUTextureFormat,
     msaaCount: number,
     fontData?: NVFontData,
+    depthFormat: GPUTextureFormat | null = 'depth24plus',
   ): Promise<void> {
     if (this.isReady) return
     if (!fontData) return
@@ -76,11 +79,13 @@ export class FontRenderer extends NVRenderer {
         color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
         alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
       }
-      const depthStencil: GPUDepthStencilState = {
-        depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
-      }
+      const depthStencil: GPUDepthStencilState | undefined = depthFormat
+        ? {
+            depthWriteEnabled: false,
+            depthCompare: 'always',
+            format: depthFormat,
+          }
+        : undefined
       this.pipeline = device.createRenderPipeline({
         layout: device.createPipelineLayout({
           bindGroupLayouts: [this.bindLayout],
@@ -203,6 +208,12 @@ export class FontRenderer extends NVRenderer {
     )
   }
 
+  /** Width of `str` in px at `scale`, as buildText draws it; 0 before init. */
+  measureText(str: string, scale: number): number {
+    if (!this.fontMets) return 0
+    return measureTextWidth(str, this.fontPx, scale, this.fontMets)
+  }
+
   buildText(
     str: string,
     x: number,
@@ -254,6 +265,7 @@ export class FontRenderer extends NVRenderer {
           panelData.set(item.backRect, off)
           panelData.set(item.backColor, off + 4)
           panelData[off + 8] = item.backRadius
+          panelData[off + 9] = item.backBorder ?? 0
           idx++
         }
         device.queue.writeBuffer(this.panelBuffer, 0, panelData)

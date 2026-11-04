@@ -20,6 +20,7 @@ import NiiVue, {
   parseOmeZarrAttrs,
   SLICE_TYPE,
 } from '../src/index.ts'
+import { urlParamSelect } from './urlParamSelect.js'
 
 const backend =
   new URLSearchParams(location.search).get('backend') === 'webgpu'
@@ -499,6 +500,9 @@ const els = {
   loadingFill: el('loadingFill'),
   fallback: el('fallback'),
 }
+
+// Wired before anything loads, so the menu works even if loading fails (#488).
+urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
 
 let nv = null
 let activeSource = null
@@ -2059,6 +2063,7 @@ async function main() {
     maxChunkResidencyBytes: DEFAULT_RESIDENCY_BYTES,
   })
   await nv.attachToCanvas(els.canvas)
+  document.getElementById('backendSelect').value = nv.backend
   // Browsers restore a range input's value across a reload, so push the slider's
   // current position into the fresh instance rather than assuming the default.
   applySampleRate()

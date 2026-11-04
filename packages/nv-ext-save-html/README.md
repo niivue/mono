@@ -30,6 +30,10 @@ await saveHTML(nv, 'scene.html', {
 })
 ```
 
+The scene's matcap is kept in the exported HTML. A matcap registered only in
+the exporting app (not in the standalone bundle's `opts.matcaps`) loads as the
+bundle's default.
+
 ## Development
 
 ```bash

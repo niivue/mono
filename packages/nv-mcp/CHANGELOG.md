@@ -1,3 +1,474 @@
+## 1.0.0-rc.69 (2026-11-04)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.83
+- Updated uikit to 1.0.0-rc.77
+
+## 1.0.0-rc.68 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.82
+- Updated uikit to 1.0.0-rc.76
+
+## 1.0.0-rc.67 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.75
+
+## 1.0.0-rc.66 (2026-11-03)
+
+### Fixes
+
+- **niivue:** getDescriptives masks and drawing on another voxel grid ([#337](https://github.com/niivue/mono/issues/337))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.81
+- Updated uikit to 1.0.0-rc.74
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.65 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.80
+- Updated uikit to 1.0.0-rc.73
+
+## 1.0.0-rc.64 (2026-11-03)
+
+### Features
+
+- ⚠️  **niivue:** rename alpha blend OVER to UNION ([#358](https://github.com/niivue/mono/issues/358))
+
+### Fixes
+
+- validate layoutInset in setter, options and documents ([#494](https://github.com/niivue/mono/issues/494))
+- emit change from loadMatcap and report matcap by name in nv-mcp ([#460](https://github.com/niivue/mono/issues/460), [#462](https://github.com/niivue/mono/issues/462))
+
+### Breaking Changes
+
+- **niivue:** rename alpha blend OVER to UNION  ([#358](https://github.com/niivue/mono/issues/358))
+  OVERLAY_ALPHA_BLEND.OVER is now OVERLAY_ALPHA_BLEND.UNION,
+  and the nv-mcp volumeOverlayAlphaBlend choice 'over' is now 'union'.
+  Numeric value 2 still works.
+  Claude-Session: https://claude.ai/code/session_01F6ttnQfdKTLt8jfvVRr7i4
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.79
+- Updated uikit to 1.0.0-rc.72
+
+### Thank You
+
+- Claude
+- neurolabusc
+
+## 1.0.0-rc.63 (2026-11-03)
+
+### Fixes
+
+- **niivue:** stop a waiting rebuild at destroy; settle the lock holder with its own pass ([9b370f96](https://github.com/niivue/mono/commit/9b370f96))
+- **niivue:** settle each coalesced caller with its own pass ([#466](https://github.com/niivue/mono/issues/466))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.78
+- Updated uikit to 1.0.0-rc.71
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.62 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.70
+
+## 1.0.0-rc.61 (2026-11-03)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.69
+
+## 1.0.0-rc.60 (2026-11-03)
+
+### Fixes
+
+- settle post-destroy update callers and document unreported rebuild failures ([1225f424](https://github.com/niivue/mono/commit/1225f424))
+- preserve update waiter ownership and report settings timeouts ([8ea97e22](https://github.com/niivue/mono/commit/8ea97e22))
+- **niivue:** settle queued GPU-update callers on view takeover and destroy ([#466](https://github.com/niivue/mono/issues/466))
+- **nv-mcp:** answer set_options once the GPU rebuild it started settles ([#447](https://github.com/niivue/mono/issues/447))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.77
+- Updated uikit to 1.0.0-rc.68
+
+### Thank You
+
+- Chris Drake
+- Claude
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.59 (2026-11-03)
+
+### Features
+
+- **nv-mcp:** set_plane_outlines drives nv.planeOutlines ([b487c135](https://github.com/niivue/mono/commit/b487c135))
+
+### Fixes
+
+- union retiree groups as a disjoint set; audit tidy-ups ([9ee5fead](https://github.com/niivue/mono/commit/9ee5fead))
+- final audit nits for plane outlines; demo README names the default ([9dfaf579](https://github.com/niivue/mono/commit/9dfaf579))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.76
+- Updated uikit to 1.0.0-rc.67
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.58 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** review fixes for non-finite states ([c21a45b5](https://github.com/niivue/mono/commit/c21a45b5))
+- **nv-mcp:** carry NiiVue's non-finite states over JSON ([#493](https://github.com/niivue/mono/issues/493))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.57 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.75
+- Updated uikit to 1.0.0-rc.66
+
+## 1.0.0-rc.56 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** drawNow sizes the canvas by NiiVue's pixel ratio ([#464](https://github.com/niivue/mono/issues/464))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.74
+- Updated uikit to 1.0.0-rc.65
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.55 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.73
+- Updated uikit to 1.0.0-rc.64
+
+## 1.0.0-rc.54 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.72
+- Updated uikit to 1.0.0-rc.63
+
+## 1.0.0-rc.53 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.71
+- Updated uikit to 1.0.0-rc.62
+
+## 1.0.0-rc.52 (2026-11-02)
+
+### Features
+
+- **niivue:** layoutInset; demo toolbars, uikit pages and local site fixes ([#488](https://github.com/niivue/mono/issues/488))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.70
+- Updated uikit to 1.0.0-rc.61
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.51 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.69
+- Updated uikit to 1.0.0-rc.60
+
+## 1.0.0-rc.50 (2026-11-02)
+
+### Fixes
+
+- **niivue:** mesh slab follows the displayed voxel plane ([#451](https://github.com/niivue/mono/issues/451))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.68
+- Updated uikit to 1.0.0-rc.59
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.49 (2026-11-02)
+
+### Fixes
+
+- **nv-mcp:** check set_volume's window before changing anything ([e14a4749](https://github.com/niivue/mono/commit/e14a4749))
+- audit fixes for the colormap window paths ([#481](https://github.com/niivue/mono/pull/481))
+- **niivue:** CT colormap window for streamed volumes, one bound and re-sent maps ([#395](https://github.com/niivue/mono/issues/395))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.67
+- Updated uikit to 1.0.0-rc.58
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.48 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.66
+- Updated uikit to 1.0.0-rc.57
+
+## 1.0.0-rc.47 (2026-11-02)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.65
+- Updated uikit to 1.0.0-rc.56
+
+## 1.0.0-rc.46 (2026-11-01)
+
+### Features
+
+- **niivue:** cinematic isStochasticLighting, one shadow/AO sample per ray ([8ed98530](https://github.com/niivue/mono/commit/8ed98530))
+- **niivue:** cinematicFrameMs GPU timing; cinematic audit fixes ([f99f2a42](https://github.com/niivue/mono/commit/f99f2a42))
+- **niivue:** standard overlays in cinematic mode ([8ad132f5](https://github.com/niivue/mono/commit/8ad132f5))
+- **nv-mcp:** cinematic render mode and volumeCinematic setting ([7cd777f4](https://github.com/niivue/mono/commit/7cd777f4))
+- **nv-mcp:** set_volume hidden_labels and isLegendToggleEnabled setting ([bc425897](https://github.com/niivue/mono/commit/bc425897))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.64
+- Updated uikit to 1.0.0-rc.55
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.45 (2026-11-01)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.63
+- Updated uikit to 1.0.0-rc.54
+
+## 1.0.0-rc.44 (2026-10-31)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.62
+- Updated uikit to 1.0.0-rc.53
+
+## 1.0.0-rc.43 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.61
+- Updated uikit to 1.0.0-rc.52
+
+## 1.0.0-rc.42 (2026-10-30)
+
+### Features
+
+- **niivue:** expose nv.version and report it in nv-mcp capabilities ([#257](https://github.com/niivue/mono/issues/257))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.60
+- Updated uikit to 1.0.0-rc.51
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.41 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.59
+- Updated uikit to 1.0.0-rc.50
+
+## 1.0.0-rc.40 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.58
+- Updated uikit to 1.0.0-rc.49
+
+## 1.0.0-rc.39 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.57
+- Updated uikit to 1.0.0-rc.48
+
+## 1.0.0-rc.38 (2026-10-30)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.56
+- Updated uikit to 1.0.0-rc.47
+
+## 1.0.0-rc.37 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.55
+- Updated uikit to 1.0.0-rc.46
+
+## 1.0.0-rc.36 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.54
+- Updated uikit to 1.0.0-rc.45
+
+## 1.0.0-rc.35 (2026-10-29)
+
+### Features
+
+- **niivue:** crosscut2 mesh shader and meshCrosscutWidth ([#92](https://github.com/niivue/mono/issues/92), [#91](https://github.com/niivue/mono/issues/91))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.53
+- Updated uikit to 1.0.0-rc.44
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.34 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.43
+
+## 1.0.0-rc.33 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.52
+- Updated uikit to 1.0.0-rc.42
+
+## 1.0.0-rc.32 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.51
+- Updated uikit to 1.0.0-rc.41
+
+## 1.0.0-rc.31 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.50
+- Updated uikit to 1.0.0-rc.40
+
+## 1.0.0-rc.30 (2026-10-29)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.39
+
+## 1.0.0-rc.29 (2026-10-29)
+
+### Features
+
+- ⚠️  **niivue:** make per-item isLegendVisible work; one legend flag name ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+
+### Breaking Changes
+
+- **niivue:** make per-item isLegendVisible work; one legend flag name  ([#350](https://github.com/niivue/mono/issues/350), [#376](https://github.com/niivue/mono/issues/376))
+  signal display option `showLegend` is renamed
+  `isLegendVisible` (loadSignals, addSignal, setSignal).
+  Closes #350.
+  Closes #376.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.49
+- Updated uikit to 1.0.0-rc.38
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.28 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.48
+- Updated uikit to 1.0.0-rc.37
+
+## 1.0.0-rc.27 (2026-10-28)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.47
+- Updated uikit to 1.0.0-rc.36
+
+## 1.0.0-rc.26 (2026-10-28)
+
+### Fixes
+
+- **niivue:** step-size opacity correction for the 3D overlay pass ([#366](https://github.com/niivue/mono/issues/366))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.46
+- Updated uikit to 1.0.0-rc.35
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.25 (2026-10-28)
 
 ### Updated Dependencies

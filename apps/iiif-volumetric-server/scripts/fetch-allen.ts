@@ -11,8 +11,11 @@
 //   bun run scripts/fetch-allen.ts --url=https://host/path/foo_atlas.json
 //   bun run scripts/fetch-allen.ts --out=/tmp/allen --force
 //
-// Fixtures are NOT committed (see .gitignore) — the licence on the published
-// Allen data is unconfirmed and this repo deploys publicly.
+// Fixtures are NOT committed (see .gitignore): the Allen data is under the
+// Allen Institute's noncommercial terms, not this repo's BSD licence. The
+// default copy lives in niivue/niivue-demo-images-lfs (Allen/IMSC, with its
+// own LICENSE), which also serves it with CORS; Allen's own host,
+// imsc.allencell.org, has the same files.
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -20,9 +23,9 @@ import url from 'node:url'
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
 
-// The IMSC 3D viewer's sample dataset: 32 channels, 256x256x58, ~11 atlases.
+// An interphase cell from the IMSC 3D viewer: 32 channels, 256x256x58, 11 atlases.
 const DEFAULT_URL =
-  'https://imsc.allencell.org/assets/COMP_crop_M1-M2_atlas.json'
+  'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/Allen/IMSC/COMP_crop_Interphase_atlas.json'
 
 interface Options {
   sidecarUrl: string

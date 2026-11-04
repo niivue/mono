@@ -324,51 +324,21 @@ function computeScenarios(iter) {
       category: 'computation',
       dataSize: '400x400',
       iter: iter * 10,
-      fn: () =>
-        calculateMvpMatrix2D(
-          [0, 0, 400, 400],
-          mn,
-          mx,
-          Infinity,
-          undefined,
-          0,
-          0,
-          false,
-        ),
+      fn: () => calculateMvpMatrix2D([0, 0, 400, 400], mn, mx, 0, 0, false),
     },
     {
       name: 'calculateMvpMatrix2D',
       category: 'computation',
       dataSize: '1024x768',
       iter: iter * 10,
-      fn: () =>
-        calculateMvpMatrix2D(
-          [0, 0, 1024, 768],
-          mn,
-          mx,
-          Infinity,
-          undefined,
-          0,
-          0,
-          false,
-        ),
+      fn: () => calculateMvpMatrix2D([0, 0, 1024, 768], mn, mx, 0, 0, false),
     },
     {
       name: 'calculateMvpMatrix2D',
       category: 'computation',
       dataSize: '1920x1080',
       iter: iter * 10,
-      fn: () =>
-        calculateMvpMatrix2D(
-          [0, 0, 1920, 1080],
-          mn,
-          mx,
-          Infinity,
-          undefined,
-          0,
-          0,
-          false,
-        ),
+      fn: () => calculateMvpMatrix2D([0, 0, 1920, 1080], mn, mx, 0, 0, false),
     },
 
     {

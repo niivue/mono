@@ -12,6 +12,7 @@ import type {
   BudgetPlanSpec,
   PlanShapeOptions,
   ResolvedOptions,
+  SwapPolicy,
 } from './budgetPlans'
 import { resolveBudgetPlan } from './budgetPlans'
 import type { ChunkedVolumeSource } from './ChunkedVolumeSource'
@@ -35,15 +36,26 @@ import {
  * {@link BudgetPlanOptions} (`budgetPlan` plus the individual knobs it layers
  * under); everything here is display state for the streamed volume itself.
  */
+/** `v` when it is a finite number, else `fallback` (unset, NaN or null). */
+function windowOr(v: number | null | undefined, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+
 function sameRadius(a: number | Vec3f, b: number | Vec3f): boolean {
   if (typeof a === 'number' || typeof b === 'number') return a === b
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
 }
 
 export interface ChunkedVolumeOptions extends BudgetPlanOptions {
-  /** Display window minimum (default 0). */
+  /**
+   * Display window minimum. Unset: a CT colormap's window, else the sampled
+   * data's robust minimum. NaN (or null): the sampled robust minimum.
+   */
   calMin?: number
-  /** Display window maximum (default 1). */
+  /**
+   * Display window maximum. Unset: a CT colormap's window, else the sampled
+   * data's robust maximum. NaN (or null): the sampled robust maximum.
+   */
   calMax?: number
   /** Colormap name (default 'gray'). */
   colormap?: string
@@ -417,9 +429,9 @@ export class NVChunkedVolume {
   private floorVolume: NVImage | null = null
   private floorBuilt = false
   /**
-   * True when the caller passed NEITHER `calMin` nor `calMax`, so the window is
-   * ours to derive from the data. Passing either one is taken as "I know this
-   * store", and nothing is derived.
+   * False only when the caller passed both `calMin` and `calMax` as finite
+   * numbers; otherwise the data is sampled for robust/global and for any bound
+   * neither given nor filled by a CT colormap.
    */
   private readonly wantsAutoWindow: boolean
   private windowResolved = false
@@ -441,14 +453,18 @@ export class NVChunkedVolume {
     }
     this.host = host
     this.source = source
+    // Decided before the colormap fills the bounds: a CT window sets the
+    // display, not the robust/global range a reset or a contrast drag needs.
+    this.wantsAutoWindow =
+      !Number.isFinite(options.calMin) || !Number.isFinite(options.calMax)
+    // A CT colormap brings its window, as for a URL load (#395).
+    options = NVCmaps.withColormapWindow(options)
     this.loadOptions = options
     // The plan-shaping options are folded by resolveBudgetPlan, so a preset, an
     // explicit plan, and the individual knobs all land in one place with one
     // precedence rule (knobs win). Passing no plan reproduces the pre-plan
     // defaults exactly.
     this.o = resolveBudgetPlan(options, this.planContext())
-    this.wantsAutoWindow =
-      options.calMin === undefined && options.calMax === undefined
     this.followCrosshair = this.o.focus === 'crosshair'
     this.focusFrac = Array.isArray(this.o.focus)
       ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
@@ -472,8 +488,8 @@ export class NVChunkedVolume {
       shape: finest.shape,
       spacing: finest.spacing,
       datatypeCode: source.datatypeCode,
-      calMin: options.calMin ?? 0,
-      calMax: options.calMax ?? 1,
+      calMin: windowOr(options.calMin, 0),
+      calMax: windowOr(options.calMax, 1),
       colormap: options.colormap,
       opacity: options.opacity,
       isTransparentBelowCalMin: options.isTransparentBelowCalMin,
@@ -703,7 +719,12 @@ export class NVChunkedVolume {
   setBudgetPlan(plan: BudgetPlanSpec): Promise<void> {
     if (this.disposed) return Promise.resolve()
     const next = resolveBudgetPlan(
-      { ...this.loadOptions, budgetPlan: plan, minLevel: this.o.minLevel },
+      {
+        ...this.loadOptions,
+        budgetPlan: plan,
+        minLevel: this.o.minLevel,
+        swapPolicy: this.o.swapPolicy,
+      },
       this.planContext(),
     )
     // The halo is raise-only (see raiseHaloTo): a plan switch must not undercut
@@ -722,6 +743,20 @@ export class NVChunkedVolume {
     // so switching back to a crosshair plan does not plan around a stale focus.
     if (this.followCrosshair) this.handleLocationChange()
     return this.refocus()
+  }
+
+  /** What a refocus does with replaced bricks; see {@link setSwapPolicy}. */
+  get swapPolicy(): SwapPolicy {
+    return this.o.swapPolicy
+  }
+
+  /**
+   * Choose what the next refocus does with bricks the new plan replaces (see
+   * {@link BudgetPlanOptions.swapPolicy}). Takes effect at the next swap; no
+   * re-plan.
+   */
+  setSwapPolicy(policy: SwapPolicy): void {
+    this.o.swapPolicy = policy
   }
 
   /** The halo the current plan is being built with. */
@@ -986,7 +1021,9 @@ export class NVChunkedVolume {
       this.plan = plan
       this.volume.chunkPlan = plan
       try {
-        await this.host.swapVolumeChunkPlan(this.id, plan)
+        await this.host.swapVolumeChunkPlan(this.id, plan, {
+          keepUntilCovered: this.o.swapPolicy === 'keepUntilCovered',
+        })
       } catch (err) {
         log.warn('NVChunkedVolume: refocus swap failed', err)
       }
@@ -1122,15 +1159,28 @@ export class NVChunkedVolume {
     const scene = this.host.volumes?.find((v) => v.id === this.volumeId)
     const targets = new Set<NVImage>([this.volume, sample])
     if (scene) targets.add(scene)
+    const { calMin, calMax } = this.loadOptions
+    const windowLo = windowOr(calMin, lo)
+    const windowHi = windowOr(calMax, hi)
+    // A scene window that left the placeholder was set while the sample was
+    // in flight (setVolume, UIKit, nv-mcp); keep it (#489), and give it to the
+    // floor and the handle too, or the floor bakes the auto window into its
+    // texture and the shared hdr saves it.
+    const userSet =
+      scene &&
+      (scene.calMin !== windowOr(calMin, 0) ||
+        scene.calMax !== windowOr(calMax, 1))
+    const keepLo = userSet ? windowOr(scene.calMin, windowLo) : windowLo
+    const keepHi = userSet ? windowOr(scene.calMax, windowHi) : windowHi
     for (const vol of targets) {
-      vol.calMin = lo
-      vol.calMax = hi
+      vol.calMin = keepLo
+      vol.calMax = keepHi
+      vol.hdr.cal_min = keepLo
+      vol.hdr.cal_max = keepHi
       vol.robustMin = lo
       vol.robustMax = hi
       vol.globalMin = globalMin
       vol.globalMax = globalMax
-      vol.hdr.cal_min = lo
-      vol.hdr.cal_max = hi
       // The generated label palette was sized to the placeholder range.
       const grown = NVCmaps.grownLabelLut(vol.colormap, vol.colormapLabel, [
         globalMin,

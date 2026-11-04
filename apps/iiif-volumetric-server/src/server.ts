@@ -145,10 +145,9 @@ async function main(): Promise<void> {
     )
   }
 
-  // Raw Allen JSON+PNG atlas files (fetch-allen output). The live Allen host
-  // sends no CORS headers, so browser demos of the library's atlas loader
-  // (e.g. niivue's allen.atlas.html) can only fetch the format from this
-  // local mirror; the global cors() above is what makes that possible.
+  // Raw Allen JSON+PNG atlas files (fetch-allen output). niivue's
+  // allen.atlas.html starts on this local mirror when it is running; the
+  // global cors() above is what lets the page fetch from it.
   if (fs.existsSync(ALLEN_FIXTURES_DIR)) {
     console.log(`Mounting Allen atlas fixtures from ${ALLEN_FIXTURES_DIR}`)
     app.use('/allen', express.static(ALLEN_FIXTURES_DIR))

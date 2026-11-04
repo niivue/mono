@@ -70,6 +70,23 @@ const SPEC: TextAreaSpec = {
 const TEXT = 'abc def ghij'
 
 describe('wrapRows', () => {
+  it('never breaks inside a cluster', () => {
+    const t = 'a\u{1F1EF}\u{1F1F5}e\u0301' // a, flag, e plus acute
+    const adv = [7, 7, 0, 0, 0, 7, 0]
+    expect(wrapRows(t, adv, 7)).toEqual([
+      { start: 0, end: 1, hard: false },
+      { start: 1, end: 5, hard: false },
+      { start: 5, end: 7, hard: true },
+    ])
+    // A forced break of a too-wide cluster keeps it whole.
+    expect(wrapRows(t, [7, 9, 0, 0, 0, 7, 0], 8)[1]).toEqual({
+      start: 1,
+      end: 5,
+      hard: false,
+    })
+    expect(caretInRow(t, adv, { start: 5, end: 7, hard: true }, 5)).toBe(7)
+  })
+
   it('breaks after the last space that fits and keeps the final row hard', () => {
     expect(wrapRows(TEXT, SEVENS(TEXT.length), 40)).toEqual([
       { start: 0, end: 4, hard: false },
@@ -104,6 +121,22 @@ describe('wrapRows', () => {
       { start: 3, end: 3, hard: true },
     ])
     expect(wrapRows('', [], 100)).toEqual([{ start: 0, end: 0, hard: true }])
+  })
+})
+
+describe('wrapRows on long text', () => {
+  it('segments once per wrap: a long emoji text wraps quickly, never inside a cluster', () => {
+    // Segmenting per row made this quadratic (seconds at this size).
+    const text = 'wo\u{1F600} '.repeat(4000)
+    const t0 = performance.now()
+    const rows = wrapRows(text, Array(text.length).fill(7), 280)
+    expect(performance.now() - t0).toBeLessThan(500)
+    expect(rows.length).toBeGreaterThan(100)
+    for (const r of rows) {
+      // A row never starts on the low surrogate of the emoji.
+      const c = text.charCodeAt(r.start)
+      expect(c >= 0xdc00 && c <= 0xdfff).toBe(false)
+    }
   })
 })
 
@@ -156,7 +189,7 @@ describe('textAreaKey', () => {
     s: ReturnType<typeof textEditState>,
     k: UIKitKeyEvent,
     goalX: number | null = null,
-  ) => textAreaKey(s, k, rows, advances, goalX, 2)
+  ) => textAreaKey(s, k, rows, advances, goalX, false, 2)
 
   it('inserts a newline on Enter and leaves Meta plus Enter to the widget', () => {
     expect(press(textEditState(TEXT, 3), key('Enter'))?.state.text).toBe(
@@ -192,6 +225,135 @@ describe('textAreaKey', () => {
     expect(press(s, key('x'))?.state.text).toBe('abc dxef ghij')
     expect(press(s, key('Backspace'))?.state.text).toBe('abc ef ghij')
     expect(press(s, key('Tab'))).toBeNull()
+  })
+})
+
+describe('soft-break caret affinity', () => {
+  // One unbroken word wrapped mid-word: rows [0, 5), [5, 10), [10, 15).
+  const WORD = 'abcdefghijabcde'
+  const advances = SEVENS(WORD.length)
+  const rows = wrapRows(WORD, advances, 40)
+  const press = (
+    caret: number,
+    k: UIKitKeyEvent,
+    upstream = false,
+    goalX: number | null = null,
+  ) =>
+    textAreaKey(
+      textEditState(WORD, caret),
+      k,
+      rows,
+      advances,
+      goalX,
+      upstream,
+      2,
+    )
+
+  it('keeps an upstream caret at a soft break on the upper row', () => {
+    expect(rows.map((r) => r.end)).toEqual([5, 10, 15])
+    expect(rowOfCaret(rows, 5)).toBe(1)
+    expect(rowOfCaret(rows, 5, true)).toBe(0)
+  })
+
+  it('sends End on a mid-word soft break to the end of the same row', () => {
+    const end = press(7, key('End'))
+    expect(end?.state.caret).toBe(10)
+    expect(end?.upstream).toBe(true)
+    expect(press(10, key('Home'), true)?.state.caret).toBe(5)
+    expect(press(10, key('Home'), true)?.upstream).toBe(false)
+    expect(press(10, key('End'), true)?.state.caret).toBe(10)
+  })
+
+  it('aims vertical moves from an upstream caret at the upper row end', () => {
+    const up = press(10, key('ArrowUp'), true)
+    expect(up?.goalX).toBe(35)
+    expect(up?.state.caret).toBe(5)
+    expect(up?.upstream).toBe(true)
+    // Without affinity the caret sits at the start of the lower row.
+    expect(press(10, key('ArrowUp'))?.state.caret).toBe(5)
+    expect(press(10, key('ArrowUp'))?.goalX).toBe(0)
+    const down = press(10, key('ArrowDown'), true)
+    expect(down?.state.caret).toBe(15)
+    expect(down?.upstream).toBe(false)
+  })
+
+  it('clears it on typing and horizontal moves', () => {
+    expect(press(10, key('x'), true)?.upstream).toBe(false)
+    expect(press(10, key('ArrowLeft'), true)?.upstream).toBe(false)
+    expect(press(10, key('ArrowRight'), true)?.upstream).toBe(false)
+  })
+
+  it('keeps it through a rejected key, so the next vertical move is right', () => {
+    const digitsOnly = (ch: string) => ch >= '0' && ch <= '9'
+    const rejected = textAreaKey(
+      textEditState(WORD, 10),
+      key('x'),
+      rows,
+      advances,
+      35,
+      true,
+      2,
+      digitsOnly,
+    )
+    expect(rejected?.state.text).toBe(WORD)
+    expect(rejected?.upstream).toBe(true)
+    expect(rejected?.goalX).toBe(35)
+    // Still on row two's end: ArrowUp lands on row one's end, not its start.
+    const up = press(10, key('ArrowUp'), rejected?.upstream, rejected?.goalX)
+    expect(up?.state.caret).toBe(5)
+    expect(up?.goalX).toBe(35)
+    expect(up?.upstream).toBe(true)
+  })
+
+  it('keeps End before a trailing space and leaves hard newlines alone', () => {
+    const t = wrapRows(TEXT, SEVENS(TEXT.length), 40)
+    const end = textAreaKey(
+      textEditState(TEXT, 5),
+      key('End'),
+      t,
+      SEVENS(TEXT.length),
+      null,
+      false,
+      2,
+    )
+    expect(end?.state.caret).toBe(7)
+    expect(end?.upstream).toBe(false)
+    const hard = wrapRows('ab\ncd', SEVENS(5), 40)
+    expect(rowOfCaret(hard, 2, true)).toBe(0)
+    expect(rowOfCaret(hard, 3, true)).toBe(1)
+    const hardEnd = textAreaKey(
+      textEditState('ab\ncd', 0),
+      key('End'),
+      hard,
+      SEVENS(5),
+      null,
+      false,
+      2,
+    )
+    expect(hardEnd?.state.caret).toBe(2)
+    expect(hardEnd?.upstream).toBe(false)
+  })
+
+  it('lands a click past a mid-word soft row end upstream and draws it there', () => {
+    const layout = layoutTextArea(SPEC, STYLE, METRICS)
+    const at = (x: number, y: number) =>
+      textAreaCaretAt(layout, STYLE, METRICS, WORD, 0, x, y)
+    expect(at(300, 75)).toEqual({ caret: 5, upstream: true })
+    expect(at(106, 95)).toEqual({ caret: 5, upstream: false })
+    expect(textAreaCaretAt(layout, STYLE, METRICS, TEXT, 0, 300, 75)).toEqual({
+      caret: 3,
+      upstream: false,
+    })
+    const geo = buildTextArea(SPEC, STYLE, layout, METRICS, {
+      text: WORD,
+      edit: textEditState(WORD, 5),
+      firstRow: 0,
+      upstream: true,
+      hover: false,
+      enabled: true,
+    })
+    const caret = geo.rects[1].data
+    expect([caret[0], caret[1]]).toEqual([106 + 35, 70])
   })
 })
 
@@ -250,7 +412,7 @@ describe('hit testing, windows and caret mapping', () => {
 
   it('maps a canvas point to a caret on the row under it, clamped to the rows shown', () => {
     const at = (x: number, y: number, first = 0) =>
-      textAreaCaretAt(layout, STYLE, METRICS, TEXT, first, x, y)
+      textAreaCaretAt(layout, STYLE, METRICS, TEXT, first, x, y).caret
     expect(at(116, 75)).toBe(1)
     expect(at(106, 95)).toBe(4)
     expect(at(300, 200)).toBe(7)

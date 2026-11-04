@@ -1,6 +1,11 @@
 import { decode, encode } from 'cbor-x'
 import * as NVCmaps from '@/cmap/NVCmaps'
 import {
+  assertDocumentFitsInput,
+  copyDocumentBytes,
+  isEmbeddedImageComplete,
+} from '@/documentBounds'
+import {
   type LegacyLabelLut,
   shownLabelColormap,
   upgradeColormaps,
@@ -10,6 +15,7 @@ import {
   encodeDocumentJSON,
   looksLikeJSON,
 } from '@/documentJson'
+import { upgradeLegendFlags } from '@/documentLegend'
 import { isTransientStreamedVolume, shouldLinkVolume } from '@/documentLinkData'
 import { matcapToName } from '@/documentMatcap'
 import { selectUrlMeshLayers } from '@/documentMeshLayers'
@@ -80,6 +86,9 @@ import { uniqueVolumeId } from '@/volume/volumeIds'
 // (continuous or label) and `colormaps` embeds every runtime-registered
 // colormap. `upgradeColormaps` converts older label LUTs and renames the
 // `_`-prefixed drawing colormaps.
+//
+// v11: per-item `isLegendVisible` now works and defaults to true; signal
+// `display.showLegend` is `isLegendVisible`. See `upgradeLegendFlags`.
 const DOCUMENT_VERSION = NVConstants.NVD_DOCUMENT_VERSION
 
 /**
@@ -104,6 +113,9 @@ export type NVDocumentVolume = {
   isColormapInverted?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  /** Hidden label values; written only when non-empty. Additive, no version
+   * bump: an older reader just shows every label. */
+  hiddenLabels?: number[]
   opacity?: number
   /** The explicit hide toggle (`setVolume(i, { visible: false })`); written
    * only when false, so documents without hidden volumes are unchanged. */
@@ -422,6 +434,7 @@ export function serialize(
         frame4D: v.frame4D,
       }
       if (v.visible === false) vol.visible = false
+      if (v.hiddenLabels?.length) vol.hiddenLabels = [...v.hiddenLabels]
 
       // Embed volume data for a self-contained document, UNLESS linkData is set
       // and this volume has a fetchable URL (then the loader refetches it). A
@@ -705,6 +718,7 @@ export function deserialize(data: Uint8Array): NVDocumentData {
   const doc = looksLikeJSON(data)
     ? (decodeDocumentJSON(new TextDecoder().decode(data)) as NVDocumentData)
     : (decode(data) as NVDocumentData)
+  assertDocumentFitsInput(doc, data.byteLength)
 
   // Version check
   if (typeof doc.version !== 'number') {
@@ -730,6 +744,7 @@ export function deserialize(data: Uint8Array): NVDocumentData {
     const known = NVCmaps.lookupColorMap(name)
     return !!known && JSON.stringify(known) !== JSON.stringify(cm)
   })
+  upgradeLegendFlags(doc)
 
   return doc
 }
@@ -772,7 +787,11 @@ export function applyDocumentToModel(
     sd.scaleMultiplier,
     model.scene.scaleMultiplier,
   )
-  model.scene.gamma = scalar('gamma', s.gamma, sd.gamma, model.scene.gamma)
+  model.scene.gamma = NVConstants.clampFinite(
+    scalar('gamma', s.gamma, sd.gamma, model.scene.gamma),
+    NVConstants.GAMMA_RANGE,
+    sd.gamma,
+  )
   model.scene.isClipPlaneCutaway = scalar(
     'isClipPlaneCutaway',
     s.isClipPlaneCutaway,
@@ -838,10 +857,40 @@ export function applyDocumentToModel(
     model.volume,
     fillGroup('volume', model.volume, C.VOLUME_DEFAULTS, doc.volume, fill),
   )
+  // A document bypasses the setters, so apply their clamps here.
+  model.layout.inset = C.normalizeInset(model.layout.inset)
+  model.volume.sampleRate = C.clampSampleRate(model.volume.sampleRate)
+  model.volume.renderMode = C.normalizeVolumeRenderMode(model.volume.renderMode)
+  const v = model.volume
+  v.lodBrightnessCompensation = C.clampFinite(
+    v.lodBrightnessCompensation,
+    C.LOD_BRIGHTNESS_RANGE,
+    C.VOLUME_DEFAULTS.lodBrightnessCompensation,
+  )
+  v.lodOpacityCompensation = C.clampFinite(
+    v.lodOpacityCompensation,
+    C.LOD_OPACITY_RANGE,
+    C.VOLUME_DEFAULTS.lodOpacityCompensation,
+  )
+  v.gradientOpacity = C.clampFinite(
+    v.gradientOpacity,
+    [0, 1],
+    C.VOLUME_DEFAULTS.gradientOpacity,
+  )
+  v.silhouette = C.clampFinite(
+    v.silhouette,
+    [0, 1],
+    C.VOLUME_DEFAULTS.silhouette,
+  )
+  // A document from another release may lack newer keys.
+  v.cinematic = C.clampCinematicOptions(v.cinematic)
   Object.assign(
     model.mesh,
     fillGroup('mesh', model.mesh, C.MESH_DEFAULTS, doc.mesh, fill),
   )
+  // A document bypasses the setters, so apply their clamp here.
+  model.mesh.xRay = C.clampFinite(model.mesh.xRay, [0, 1], C.MESH_DEFAULTS.xRay)
+  model.mesh.crosscutWidth = C.clampCrosscutWidth(model.mesh.crosscutWidth)
   Object.assign(
     model.draw,
     fillGroup('draw', model.draw, C.DRAW_DEFAULTS, doc.draw, fill),
@@ -904,6 +953,9 @@ export async function reconstructVolume(
   const before = model.volumes.length
   try {
     if (v.data) {
+      if (!isEmbeddedImageComplete(v.data.hdr.dims, v.data.img)) {
+        throw new Error('its header claims more voxels than its image holds')
+      }
       // Reconstruct volume from embedded data
       // Convert to proper ArrayBuffer (Uint8Array.buffer could be SharedArrayBuffer)
       const imgBuffer = v.data.img.buffer.slice(
@@ -925,6 +977,7 @@ export async function reconstructVolume(
       if (v.isNearestInterpolation !== undefined)
         base.isNearestInterpolation = v.isNearestInterpolation
       if (v.atlasOutline !== undefined) base.atlasOutline = v.atlasOutline
+      if (v.hiddenLabels !== undefined) base.hiddenLabels = v.hiddenLabels
       if (v.opacity !== undefined) base.opacity = v.opacity
       if (v.visible !== undefined) base.visible = v.visible
       if (v.calMin !== undefined) base.calMin = v.calMin
@@ -989,28 +1042,16 @@ export async function reconstructMesh(
     if (m.data) {
       // Reconstruct mesh from embedded data
       // Create copies to ensure proper alignment (CBOR may give unaligned views)
-      const posBuffer = m.data.positions.buffer.slice(
-        m.data.positions.byteOffset,
-        m.data.positions.byteOffset + m.data.positions.byteLength,
-      )
-      const idxBuffer = m.data.indices.buffer.slice(
-        m.data.indices.byteOffset,
-        m.data.indices.byteOffset + m.data.indices.byteLength,
-      )
-      const colBuffer = m.data.colors.buffer.slice(
-        m.data.colors.byteOffset,
-        m.data.colors.byteOffset + m.data.colors.byteLength,
-      )
+      const posBuffer = copyDocumentBytes(m.data.positions)
+      const idxBuffer = copyDocumentBytes(m.data.indices)
+      const colBuffer = copyDocumentBytes(m.data.colors)
       const positions = new Float32Array(posBuffer)
       const indices = new Uint32Array(idxBuffer)
       const colors = new Uint32Array(colBuffer)
       // Restore perVertexColors if present (only for meshes with file colors)
       let perVertexColors: Uint32Array | null = null
       if (m.data.perVertexColors) {
-        const pvcBuffer = m.data.perVertexColors.buffer.slice(
-          m.data.perVertexColors.byteOffset,
-          m.data.perVertexColors.byteOffset + m.data.perVertexColors.byteLength,
-        ) as ArrayBuffer
+        const pvcBuffer = copyDocumentBytes(m.data.perVertexColors)
         perVertexColors = new Uint32Array(pvcBuffer)
       }
       // Restore layers from embedded data
@@ -1019,10 +1060,7 @@ export async function reconstructMesh(
         const nVert = positions.length / 3
         for (const docLayer of m.layers) {
           if (docLayer.data) {
-            const valBuffer = docLayer.data.buffer.slice(
-              docLayer.data.byteOffset,
-              docLayer.data.byteOffset + docLayer.data.byteLength,
-            )
+            const valBuffer = copyDocumentBytes(docLayer.data)
             const values = new Float32Array(valBuffer)
             const layer = NVMeshLayers.createLayer(values, nVert, {
               url: docLayer.url,
@@ -1047,11 +1085,7 @@ export async function reconstructMesh(
             if (docLayer.colormapLabel) {
               const lutData = docLayer.colormapLabel.lut
               layer.colormapLabel = {
-                lut: new Uint8ClampedArray(
-                  lutData.buffer,
-                  lutData.byteOffset,
-                  lutData.byteLength,
-                ),
+                lut: new Uint8ClampedArray(copyDocumentBytes(lutData)),
                 min: docLayer.colormapLabel.min,
                 max: docLayer.colormapLabel.max,
                 labels: docLayer.colormapLabel.labels,
@@ -1074,7 +1108,8 @@ export async function reconstructMesh(
         sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
-        isLegendVisible: m.isLegendVisible,
+        // Unset after upgradeLegendFlags; keep createMesh's default.
+        isLegendVisible: m.isLegendVisible ?? true,
         perVertexColors,
         layers,
       }
@@ -1083,40 +1118,24 @@ export async function reconstructMesh(
       if (kind === 'tract' && m.tractData) {
         const td = m.tractData
         const trx: NVTractData = {
-          vertices: new Float32Array(
-            td.vertices.buffer.slice(
-              td.vertices.byteOffset,
-              td.vertices.byteOffset + td.vertices.byteLength,
-            ),
-          ),
-          offsets: new Uint32Array(
-            td.offsets.buffer.slice(
-              td.offsets.byteOffset,
-              td.offsets.byteOffset + td.offsets.byteLength,
-            ),
-          ),
+          vertices: new Float32Array(copyDocumentBytes(td.vertices)),
+          offsets: new Uint32Array(copyDocumentBytes(td.offsets)),
           dpv: Object.fromEntries(
             Object.entries(td.dpv).map(([k, v]) => [
               k,
-              new Float32Array(
-                v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength),
-              ),
+              new Float32Array(copyDocumentBytes(v)),
             ]),
           ),
           dps: Object.fromEntries(
             Object.entries(td.dps).map(([k, v]) => [
               k,
-              new Float32Array(
-                v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength),
-              ),
+              new Float32Array(copyDocumentBytes(v)),
             ]),
           ),
           groups: Object.fromEntries(
             Object.entries(td.groups).map(([k, v]) => [
               k,
-              new Uint32Array(
-                v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength),
-              ),
+              new Uint32Array(copyDocumentBytes(v)),
             ]),
           ),
           dpvMeta: Object.fromEntries(
@@ -1159,7 +1178,7 @@ export async function reconstructMesh(
         sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
-        isLegendVisible: m.isLegendVisible,
+        isLegendVisible: m.isLegendVisible ?? true,
         layers,
       })
     }

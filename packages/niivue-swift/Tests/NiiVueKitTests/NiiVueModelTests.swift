@@ -264,4 +264,37 @@ final class NiiVueModelTests: XCTestCase {
         XCTAssertEqual(h.model.volumes.map(\.name), ["mni152.nii.gz"])
         XCTAssertEqual(h.model.volumes.first?.dims, [207, 256, 215])
     }
+
+    // MARK: meshes
+
+    func testMeshesChangeReplacesMeshList() async throws {
+        let h = await makeHarness()
+        h.bridge.receive(rawBody: [
+            "kind": "event",
+            "name": "meshesChange",
+            "payload": [["name": "lh.pial"], ["name": "rh.pial"]],
+        ])
+        try await Task.sleep(nanoseconds: 10_000_000)
+        XCTAssertEqual(h.model.meshes.map(\.name), ["lh.pial", "rh.pial"])
+    }
+
+    func testRemoveMeshSendsIndex() async throws {
+        let h = await makeHarness()
+        Task { await h.model.removeMesh(at: 1) }
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        let call = h.captured()
+            .compactMap { parseEnvelope($0) }
+            .first { ($0["method"] as? String) == "removeMesh" }
+        XCTAssertEqual((call?["payload"] as? [String: Any])?["index"] as? Int, 1)
+    }
+
+    func testSignalsChangeTracksSignalPresence() async throws {
+        let h = await makeHarness()
+        for count in [1, 0] {
+            h.bridge.receive(rawBody: ["kind": "event", "name": "signalsChange", "payload": ["count": count]])
+            try await Task.sleep(nanoseconds: 10_000_000)
+            XCTAssertEqual(h.model.hasSignal, count > 0)
+        }
+    }
 }

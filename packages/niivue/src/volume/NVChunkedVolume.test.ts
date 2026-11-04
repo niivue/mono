@@ -547,7 +547,11 @@ const mgrSource: ChunkedVolumeSource = {
  * exercise the view-derived `'auto'` radius.
  */
 function makeHost(
-  swap: (id: string, plan: ChunkPlan) => Promise<void>,
+  swap: (
+    id: string,
+    plan: ChunkPlan,
+    options?: { keepUntilCovered?: boolean },
+  ) => Promise<void>,
   extra: Record<string, unknown> = {},
 ): NiiVue {
   return {
@@ -574,6 +578,25 @@ describe('NVChunkedVolume id + plan-swap routing', () => {
     const vols: NVImage[] = [a.volume, b.volume]
     expect(vols.find((v) => v.id === b.id || v.name === b.id)).toBe(b.volume)
     expect(vols.find((v) => v.id === a.id || v.name === a.id)).toBe(a.volume)
+  })
+  test('the swap policy rides every plan swap', async () => {
+    const seen: unknown[] = []
+    const host = makeHost(async (_id, _plan, options) => {
+      seen.push(options)
+    })
+    const cv = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      focus: 'none',
+      swapPolicy: 'keepUntilCovered',
+    })
+    await (cv as unknown as Refocusable).doRefocus()
+    cv.setSwapPolicy('replace')
+    expect(cv.swapPolicy).toBe('replace')
+    await (cv as unknown as Refocusable).doRefocus()
+    expect(seen).toEqual([
+      { keepUntilCovered: true },
+      { keepUntilCovered: false },
+    ])
   })
 
   test('an explicit id the scene already uses follows the suffixed scene id', async () => {
@@ -1541,7 +1564,7 @@ describe('NVChunkedVolume automatic display window', () => {
     expect(updateGLCalls()).toBe(0)
   })
 
-  test('supplying only one bound still counts as caller-owned', async () => {
+  test('a single given bound is kept while the other is sampled', async () => {
     const { host } = makeWindowHost()
     const mgr = new NVChunkedVolume(host, rampSource(), {
       radius: 16,
@@ -1549,6 +1572,57 @@ describe('NVChunkedVolume automatic display window', () => {
     })
     await mgr.init()
     expect(mgr.volume.calMax).toBe(90)
+    // calMin came from the sample, not the 0 placeholder (the ramp's 2% is > 0).
+    expect(mgr.volume.calMin).toBe(mgr.volume.robustMin)
+    expect(mgr.volume.calMin).toBeGreaterThan(0)
+  })
+
+  test('a CT colormap sets the window but the data range is still sampled', async () => {
+    const { host, sceneVolume } = makeWindowHost()
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      radius: 16,
+      colormap: 'ct_kidneys',
+    })
+    await mgr.init()
+    // The display window is the colormap's Hounsfield window...
+    expect(mgr.volume.calMin).toBe(114)
+    expect(mgr.volume.calMax).toBe(302)
+    // ...but a NaN reset and contrast drag need the data's own range, not the
+    // window seeded into robust/global at construction.
+    expect(mgr.volume.robustMax).toBeLessThan(255)
+    expect(mgr.volume.robustMax).not.toBe(302)
+    expect(mgr.volume.globalMax).toBe(255)
+    expect(sceneVolume()?.robustMax).toBe(mgr.volume.robustMax)
+  })
+
+  test('a window set while the floor streams in is not overwritten', async () => {
+    const { host, sceneVolume } = makeWindowHost()
+    const installed: { floor: NVImage | null } = { floor: null }
+    ;(host as unknown as { setBaseCoarseFloor: unknown }).setBaseCoarseFloor =
+      async (f: NVImage | null) => {
+        installed.floor = f
+      }
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      radius: 16,
+      colormap: 'ct_kidneys',
+    })
+    const pending = mgr.init()
+    // init() has added the volume; the floor fetch has not landed yet.
+    const scene = sceneVolume()
+    if (!scene) throw new Error('volume not added')
+    scene.calMin = 0
+    scene.calMax = 50
+    await pending
+    expect(scene.calMin).toBe(0)
+    expect(scene.calMax).toBe(50)
+    // The floor bakes its window into its texture, and the handle shares the
+    // scene's hdr (saved documents and exports read hdr.cal_*).
+    expect([installed.floor?.calMin, installed.floor?.calMax]).toEqual([0, 50])
+    expect([mgr.volume.calMin, mgr.volume.calMax]).toEqual([0, 50])
+    expect([scene.hdr.cal_min, scene.hdr.cal_max]).toEqual([0, 50])
+    // The data range still arrives for reset and contrast drag.
+    expect(scene.globalMax).toBe(255)
+    expect(scene.robustMax).toBe(mgr.volume.robustMax)
   })
 
   test('falls back to a bounded probe when there is no coarse floor', async () => {

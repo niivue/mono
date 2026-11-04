@@ -12,7 +12,7 @@ export default defineConfig({
       fileName: 'nv-ext-dcm2niix',
     },
     rollupOptions: {
-      external: ['@niivue/niivue', '@niivue/dcm2niix'],
+      external: ['@niivue/dcm2niix'],
     },
   },
 })

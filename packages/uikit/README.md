@@ -742,9 +742,10 @@ and `urlParamSelect.js` are shared by the pages.
   `SelectSpec` into a menu spec, and its overlay wraps a menu overlay.)
 - **Overlays share the primitives.** Draw through `UIKitRectOverlay`,
   `UIKitLineOverlay` and `UIKitTextOverlay` (and the `render/` renderers under
-  them); a composite widget composes another overlay (the file picker holds a
-  button overlay, the color control a slider overlay, the select a menu
-  overlay) rather than redrawing it.
+  them); widget overlays draw them through `UIKitDrawBundle` and keep specs in
+  `UIKitEntryMap` (`overlayParts.ts`); a composite widget composes another
+  overlay (the file picker holds a button overlay, the color control a slider
+  overlay, the select a menu overlay) rather than redrawing it.
 - **Shared behaviour lives in shared models.** Row scrolling is `scroll.ts`,
   single-line editing `textEdit.ts` and `textField.ts`, multi-line editing
   `textArea.ts`, text wrapping `wrapText` in `dialog.ts`. Extend those before

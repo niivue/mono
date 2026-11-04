@@ -5,7 +5,7 @@
 
 import { mixColor } from './button'
 import { buildLine, type LineData } from './line'
-import { buildRect, type RectData } from './rect'
+import { buildRect, type RectData, rectContains } from './rect'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -320,10 +320,5 @@ export function toggleContains(
   px: number,
   py: number,
 ): boolean {
-  return (
-    px >= layout.x &&
-    px < layout.x + layout.width &&
-    py >= layout.y &&
-    py < layout.y + layout.height
-  )
+  return rectContains(layout, px, py)
 }

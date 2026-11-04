@@ -699,12 +699,20 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       // Masking off again: the overlay's own voxels come back, so a texture
       // masking edited in place (WebGL2) is not mistaken for current.
       nv.volumeIsBackgroundMasking = false
+      // The masking setter rebuilds without being awaited.
+      await nv.whenUpdatesSettle()
+      // The setter alone rebuilds the overlay (issue #367).
+      const ovUnmaskedBySetter = await litPixels()
       await nv.setVolume(1, { opacity: 1 })
       const ovUnmasked = await litPixels()
 
       // ---- scalar overlay under masking ----
       // The WebGPU mask pass also freed the scalar orient cache's output.
       nv.volumeIsBackgroundMasking = true
+      // The masking setter rebuilds without being awaited.
+      await nv.whenUpdatesSettle()
+      // The background is still black, so the setter alone masks it out.
+      const ovMaskedBySetter = await litPixels()
       await nv.loadVolumes([
         { url: '${VOLUME}' },
         { url: '${OVERLAY}', colormap: 'red', calMin: 0, calMax: 1 },
@@ -748,6 +756,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         maskRestored,
         maskKept,
         ovMasked,
+        ovUnmaskedBySetter,
+        ovMaskedBySetter,
         ovUnmasked,
         scalarBefore,
         scalarZeroed,
@@ -800,6 +810,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.ovMasked).toBeLessThan(r.ovBefore * 0.05)
     // (Not exactly ovBefore: the background is black now, not dim.)
     expect(r.ovUnmasked).toBeGreaterThan(r.ovBefore * 0.9)
+    expect(r.ovUnmaskedBySetter).toBeGreaterThan(r.ovBefore * 0.9)
+    expect(r.ovMaskedBySetter).toBeLessThan(r.ovBefore * 0.05)
 
     // A scalar overlay keeps working under masking too.
     expect(r.scalarBefore).toBeGreaterThan(1000)

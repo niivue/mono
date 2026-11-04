@@ -236,8 +236,10 @@ describe('core tool schemas', () => {
       'colormap_negative',
       'colormap_type',
       'frame',
+      'hidden_labels',
       'invert',
       'labels',
+      'legend',
       'load_all_frames',
       'modulate',
       'modulate_alpha',
@@ -367,6 +369,11 @@ describe('core tool schemas', () => {
       }),
     ).toMatch(/thickness/)
     expect(
+      await refused('set_plane_outlines', {
+        outlines: [{ corners: [[0, 0, 0]] }],
+      }),
+    ).toMatch(/corners/)
+    expect(
       await refused('edit_annotations', {
         action: 'set_style',
         style: { strokeColor: [1, 0, 0] },
@@ -445,6 +452,7 @@ describe('core tool schemas', () => {
       'colormap',
       'colormap_negative',
       'labels',
+      'legend',
       'name',
       'opacity',
       'tab',

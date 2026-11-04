@@ -8,6 +8,8 @@ export type GlyphBatch = {
   backColor: number[]
   backRect: number[]
   backRadius: number
+  /** Draw only a ring this many px wide inside backRect; 0 or absent fills it. */
+  backBorder?: number
 }
 
 export type BuildTextFn = (
@@ -66,6 +68,25 @@ export function calculateFontSizePx(
   const normalizedArea = Math.max(screenAreaPts / refAreaPts, 1)
   const scale = normalizedArea ** fontSizeScaling
   return fontMinPx * scale * dpi
+}
+
+/** Widest line of `str` as buildTextLayout draws it, in px. */
+export function measureTextWidth(
+  str: string,
+  fontPx: number,
+  scale: number,
+  fontMets: FontMetrics,
+): number {
+  let maxWidth = 0
+  for (const line of str.split('\n')) {
+    let w = 0
+    for (const ch of line) {
+      const m = fontMets.mets[ch.codePointAt(0) ?? 0]
+      if (m) w += fontPx * scale * m.xadv
+    }
+    if (w > maxWidth) maxWidth = w
+  }
+  return maxWidth
 }
 
 export function buildTextLayout(

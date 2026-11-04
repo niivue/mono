@@ -58,6 +58,7 @@ import {
   put,
   record,
   text,
+  windowBound,
 } from './params'
 import { pickIndex } from './pick'
 import { settingHandlers } from './settings'
@@ -82,6 +83,7 @@ import type {
   VolumeUpdate,
 } from './view'
 import { viewportHandlers } from './viewport'
+import { within } from './wait'
 
 /** The default width a screenshot is scaled down to. */
 export const SCREENSHOT_WIDTH = 1024
@@ -281,17 +283,10 @@ function flipsFrom(params: Params, volume: ShownVolume): boolean[] {
   }
   return flip as boolean[]
 }
-/** A volume's voxel grid as `nx×ny×nz`, or undefined when it reports none. */
-function gridOf(volume: ShownVolume): string | undefined {
-  const dims = volume.dims
-  if (!dims || dims.length < 4) return undefined
-  return [dims[1], dims[2], dims[3]].join('×')
-}
-
 /**
  * Why NiiVue computed no statistics for `index` with these options. NiiVue
  * gives its reason only to the browser console, so the common causes are
- * worked out again here from the volumes and the drawing's base.
+ * worked out again here from the volumes.
  */
 function noStatsReason(
   volumes: readonly ShownVolume[],
@@ -305,22 +300,15 @@ function noStatsReason(
   const streamed = (v: ShownVolume) => !v.img && Boolean(v.chunkPlan)
   if (streamed(volume))
     return `${volume.name} is streamed in bricks, so there are no whole-volume voxels to count.`
-  const grid = gridOf(volume)
+  // A mask or the drawing on another voxel grid is looked up at each voxel of
+  // the measured volume, so a grid mismatch is not a reason.
   for (const entry of options.masks ?? []) {
     const mask = volumes[typeof entry === 'number' ? entry : entry.index]
     if (streamed(mask))
       return `The mask ${mask.name} is streamed in bricks, so there are no whole-volume voxels to mask with.`
-    const maskGrid = gridOf(mask)
-    if (grid && maskGrid && grid !== maskGrid)
-      return `${volume.name} is ${grid} voxels and the mask ${mask.name} is ${maskGrid}: a mask must be on the same voxel grid as the volume it restricts.`
   }
-  if (options.isDrawingMask) {
-    const base = volumes[0]
-    const baseGrid = gridOf(base)
-    if (index !== 0 && grid && baseGrid && grid !== baseGrid)
-      return `The drawing lies over the base volume ${base.name} (${baseGrid} voxels) and ${volume.name} is ${grid}: ask for the base volume's statistics within the drawing, or use a mask volume on ${volume.name}'s grid.`
+  if (options.isDrawingMask)
     return 'There is no drawing to count within. Create or load one with edit_drawing first.'
-  }
   return `NiiVue could not compute statistics for ${volume.name}${options.masks?.length ? ' with that mask' : ''}.`
 }
 
@@ -407,8 +395,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ? { transparentBelowCalMin: true }
         : {}),
       ...(volume.isColorbarVisible ? { colorbar: true } : {}),
+      ...(volume.isLegendVisible === false ? { legend: false } : {}),
       ...(volume.isNearestInterpolation ? { nearest: true } : {}),
       ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
+      ...(volume.hiddenLabels?.length
+        ? { hiddenLabels: [...volume.hiddenLabels] }
+        : {}),
       ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
       ...(volume.chunkPlan
         ? { chunkGrid: Array.from(volume.chunkPlan.gridDims) }
@@ -639,10 +631,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       )
       const colormap = text(params, 'colormap') ?? 'warm'
       const toLoad: VolumeToLoad = { url, name, colormap, opacity }
-      put(toLoad, 'calMin', number(params, 'cal_min'))
-      put(toLoad, 'calMax', number(params, 'cal_max'))
-      put(toLoad, 'calMinNeg', number(params, 'cal_min_neg'))
-      put(toLoad, 'calMaxNeg', number(params, 'cal_max_neg'))
+      put(toLoad, 'calMin', windowBound(params, 'cal_min'))
+      put(toLoad, 'calMax', windowBound(params, 'cal_max'))
+      put(toLoad, 'calMinNeg', windowBound(params, 'cal_min_neg'))
+      put(toLoad, 'calMaxNeg', windowBound(params, 'cal_max_neg'))
       put(toLoad, 'colormapNegative', text(params, 'colormap_negative'))
       // A label map has no window to show on a colorbar.
       put(
@@ -650,12 +642,16 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         'isColorbarVisible',
         flag(params, 'colorbar') ?? (labels ? false : undefined),
       )
+      put(toLoad, 'isLegendVisible', flag(params, 'legend'))
       if (
         labels &&
-        (toLoad.calMin !== undefined || toLoad.calMax !== undefined)
+        (toLoad.calMin !== undefined ||
+          toLoad.calMax !== undefined ||
+          toLoad.calMinNeg !== undefined ||
+          toLoad.calMaxNeg !== undefined)
       )
         throw new Error(
-          'A label overlay has no display window: leave cal_min and cal_max out.',
+          'A label overlay has no display window: leave cal_min, cal_max, cal_min_neg and cal_max_neg out.',
         )
       const couldNotLoad = (error: unknown) => {
         const why = error instanceof Error ? error.message : String(error)
@@ -957,19 +953,39 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(update, 'colormapNegative', clearable(params, 'colormap_negative'))
       const opacity = number(params, 'opacity')
       if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
-      const calMin = number(params, 'cal_min')
-      const calMax = number(params, 'cal_max')
+      const calMin = windowBound(params, 'cal_min')
+      const calMax = windowBound(params, 'cal_max')
       put(update, 'calMin', calMin)
       put(update, 'calMax', calMax)
-      const low = calMin ?? volume.calMin
-      const high = calMax ?? volume.calMax
+      // The window NiiVue will apply, checked before anything changes: a
+      // NaN bound takes the image's default, and a new colormap fills a bound
+      // left out from its own window (the CT maps).
+      // A label table replaces the colormap later, and carries no window.
+      const ctWindow =
+        text(params, 'labels') === undefined &&
+        update.colormap !== undefined &&
+        update.colormap !== volume.colormap
+          ? view.colormapWindow?.(update.colormap)
+          : null
+      const low = effectiveBound(
+        calMin,
+        ctWindow?.[0],
+        volume.calMin,
+        volume.robustMin,
+      )
+      const high = effectiveBound(
+        calMax,
+        ctWindow?.[1],
+        volume.calMax,
+        volume.robustMax,
+      )
       if (low !== undefined && high !== undefined && low > high) {
         throw new Error(
           `cal_min (${low}) must not be above cal_max (${high}); the window would be empty.`,
         )
       }
-      put(update, 'calMinNeg', number(params, 'cal_min_neg'))
-      put(update, 'calMaxNeg', number(params, 'cal_max_neg'))
+      put(update, 'calMinNeg', windowBound(params, 'cal_min_neg'))
+      put(update, 'calMaxNeg', windowBound(params, 'cal_max_neg'))
       const type = text(params, 'colormap_type')?.toLowerCase()
       if (type !== undefined) {
         if (!Object.hasOwn(COLORMAP_TYPES, type)) {
@@ -1001,9 +1017,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       put(update, 'isColormapInverted', flag(params, 'invert'))
       put(update, 'isColorbarVisible', flag(params, 'colorbar'))
+      put(update, 'isLegendVisible', flag(params, 'legend'))
       put(update, 'isNearestInterpolation', flag(params, 'nearest'))
       const outline = number(params, 'atlas_outline')
       if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
+      const hiddenLabels = numbers(params, 'hidden_labels')
+      if (hiddenLabels !== undefined) update.hiddenLabels = hiddenLabels
       const modulateAlpha = number(params, 'modulate_alpha')
       if (modulateAlpha !== undefined)
         update.modulateAlpha = clamp(modulateAlpha, 0, 1)
@@ -1611,23 +1630,6 @@ const SETTLE_WAIT_MS = 8_000
 /** How long a screenshot waits for the render backend to finish an upload. */
 const BUSY_WAIT_MS = 4_000
 
-/** `promise`, or nothing once `ms` have passed, whichever is first. */
-function within(promise: Promise<unknown>, ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    promise.then(
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-    )
-  })
-}
-
 /** Waits a frame at a time, up to `ms`, while the render backend is busy. */
 async function untilIdle(view: View, ms: number): Promise<void> {
   const until = Date.now() + ms
@@ -1716,10 +1718,24 @@ export function planeIsCut(plane: readonly [number, number, number]): boolean {
 function drawNow(view: View, canvas: HTMLCanvasElement): void {
   const box = canvas.getBoundingClientRect?.()
   if (box && box.width > 0 && view.resize) {
-    const scale = globalThis.devicePixelRatio || 1
+    // NiiVue's own ratio: with forceDevicePixelRatio the window's would never
+    // match, and every read-back would resize again (#464).
+    const scale =
+      view.effectiveDevicePixelRatio ?? (globalThis.devicePixelRatio || 1)
     const wanted = Math.max(1, Math.floor(box.width * scale))
     if (canvas.width !== wanted) view.resize()
   }
   view.drawScene()
   view.view?.render()
+}
+
+/** A bound as NiiVue resolves it: given, filled by the colormap, kept, or NaN for the default. */
+function effectiveBound(
+  given: number | undefined,
+  filled: number | undefined,
+  now: number | undefined,
+  robust: number | undefined,
+): number | undefined {
+  if (given === undefined) return filled ?? now
+  return Number.isFinite(given) ? given : robust
 }

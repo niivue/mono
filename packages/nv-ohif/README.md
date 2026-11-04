@@ -51,13 +51,14 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 - Loads a display set whose URL is a NiiVue-readable volume (`.nii/.nii.gz`, `.nrrd`,
   `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in multiplanar.
 - Loads a **DICOM** series by fetching it and converting to NIfTI with
-  `@niivue/dcm2niix` (see [DICOM support](#dicom-support) for the dependency caveat).
+  `@niivue/dcm2niix` (see [DICOM support](#dicom-support)).
 - Renders **whole-slide (SM)** series with **NVSlide** (tiled deep-zoom) on its own
   canvas: **JPEG, TILED_FULL** slides are supported; **JPEG 2000** and **TILED_SPARSE**
   are declined with an explanatory note (see [Whole-slide imaging](#whole-slide-imaging)).
 - Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
-  and reflects a manual NiiVue window/level drag onto any sibling OHIF viewport
-  showing the same series (`setViewportWindowLevel`).
+  and reflects a NiiVue window/level change (drag or `setVolume`) onto any sibling OHIF
+  viewport showing the same series (`setViewportWindowLevel`). Auto window/level
+  (`recalculateCalMinMax`) does not emit `volumeUpdated`, so it is not reflected.
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
   sagittal / multiplanar / 3D render), a **clip-plane** dropdown (off / anterior /
   posterior / left / right / superior / inferior), a **window/level** dropdown
@@ -126,14 +127,18 @@ row in OHIF's **Measurements** panel with its stats.
 | Bidirectional | `measureBidirectional` | two drags | long + short diameter (mm) |
 | ArrowAnnotate | `arrow` | drag | label only |
 
-PlanarFreehandROI panel reflection currently requires exactly one contour without
-holes. Multi-part or holed freehand annotations remain visible in NiiVue but are
-not reflected into OHIF, whose measurement schema exposes only one polyline.
+PlanarFreehandROI, SplineROI and LivewireContour panel reflection requires exactly
+one contour without holes. Multi-part (eraser-split) or holed contours remain
+visible and measured in NiiVue but are not reflected into OHIF, whose measurement
+schema exposes only one polyline.
 
 **Gestures.** Drag tools press-drag-release on a 2D slice. The multi-click tools
-(SplineROI, LivewireContour) click to place each vertex, double-click to close the
-contour, and Escape to cancel an in-progress contour. Bidirectional takes two
-drags: the long axis first, then the perpendicular short axis.
+(SplineROI, LivewireContour) click to place each vertex, double-click on a 2D slice
+to close the contour (a double-click on the 3D render is ignored), and
+Escape to cancel an in-progress contour. Bidirectional takes two drags on the
+same slice: the long axis first, then the perpendicular short axis. A second drag
+on a different slice starts the measurement over. Loading a document drops any
+half-drawn contour or bidirectional axis.
 
 **Intensity stats** are sampled from the base volume in the series' modality unit
 (HU for CT, SUV for PT, unitless otherwise); area is in mm2 and voxel-spacing
@@ -158,19 +163,11 @@ the canvas, but it is not reflected into the panel.
 DICOM series are rendered by fetching the instances and converting them to NIfTI
 in-browser with `@niivue/dcm2niix` (a WASM build of dcm2niix). This is verified
 working end-to-end in a real OHIF app for both uncompressed and JPEG-LS studies,
-and it now works for `npm`-install consumers too.
-
-> **History (resolved):** older `@niivue/dcm2niix` releases aborted every
-> in-browser conversion. Emscripten's `exit()` *throws* inside a Web Worker (it
-> returns the code under Node), and the worker did `const exitCode =
-> mod.callMain(args)` and let that throw hit its catch, so it never read `/output`.
-> The fix wraps `callMain` in try/catch and reads `err.status`. It is merged upstream
-> (`rordenlab/dcm2niix`, commit `aae72ac`, both `js/src/worker.js` and
-> `worker.jpeg.js`) and **published** in `@niivue/dcm2niix 1.3.20260724` (the
-> calendar-versioned npm `latest`). This package pins `@niivue/dcm2niix` at
-> `^1.3.20260724`, so `npm install @niivue/nv-ohif` pulls a dcm2niix that has the
-> fix and DICOM conversion works out of the box. (Versions `1.2.0` and the
-> `1.3.0-dev.0` prerelease predate the fix and are excluded by the pin.)
+and it works for `npm`-install consumers too. The package requires
+`@niivue/dcm2niix` `^1.4.20261029`, whose `convert()` owns the worker lifetime and
+reports dcm2niix's log when a conversion fails; it also ships its own TypeScript
+declarations. Releases before `1.3.20260724` aborted every in-browser conversion
+(an Emscripten `exit()` throw inside the Web Worker) and are excluded.
 
 ## Whole-slide imaging
 

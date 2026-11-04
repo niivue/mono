@@ -305,7 +305,7 @@ auto-generated command methods or hand-written helpers in
 
 The walker also skips methods that require browser-only handles or
 function-bearing JS objects: `attachToCanvas`, `createExtensionContext`,
-`registerVolumeTransform`, and `useLoader`. The JS template's
+`loadFiles`, `registerVolumeTransform`, and `useLoader`. The JS template's
 `render(model, el)` calls `nv.attachToCanvas(...)` directly on the
 canvas it creates, so no Python entry point is needed. Extension
 features are exposed through hand-written wrappers in

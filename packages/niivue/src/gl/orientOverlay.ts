@@ -787,7 +787,7 @@ function labelColormapId(colormapLabel: object): number {
 }
 
 function overlayColormapKey(nvimage: NVImage): string {
-  const label = nvimage.colormapLabel
+  const label = NVCmaps.shownLabelLut(nvimage)
   if (label) {
     return `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
   }
@@ -976,7 +976,7 @@ export function prepareOverlayTextureCache(
   if (isLabelVol) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-    const labelLut = nvimage.colormapLabel?.lut
+    const labelLut = NVCmaps.shownLabelLut(nvimage)?.lut
     if (!labelLut) throw new Error('Label colormap LUT is undefined')
     const texels = labelLutTexels(labelLut)
     gl.texImage2D(
@@ -1336,7 +1336,7 @@ export function overlay2Texture(
     // Label colormap: variable-width LUT with nearest filtering
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-    const labelLut = nvimage.colormapLabel?.lut
+    const labelLut = NVCmaps.shownLabelLut(nvimage)?.lut
     if (!labelLut) {
       throw new Error('Label colormap LUT is undefined')
     }
@@ -1708,7 +1708,7 @@ export function orientChunkToTexture(
   if (isLabelVol) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-    const labelLut = nvimage.colormapLabel?.lut
+    const labelLut = NVCmaps.shownLabelLut(nvimage)?.lut
     if (!labelLut) throw new Error('Label colormap LUT is undefined')
     const texels = labelLutTexels(labelLut)
     gl.texImage2D(

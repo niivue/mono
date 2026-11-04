@@ -18,6 +18,7 @@ export class ColorbarRenderer extends NVRenderer {
   private _canvasWidth = 1
   private _canvasHeight = 1
   private _fontPx = 0
+  private _content: number[] | null = null
   private _opacity = 1
   private _margin = 20
   private _heightRatio = 1.2
@@ -39,6 +40,14 @@ export class ColorbarRenderer extends NVRenderer {
     this._canvasWidth = width
     this._canvasHeight = height
     this._fontPx = fontPx
+  }
+
+  /**
+   * The part of the canvas the colorbars lay out in ([x, y, width, height]
+   * device px, from `layout.inset`); the whole canvas when null.
+   */
+  setContentRect(rect: number[] | null): void {
+    this._content = rect
   }
 
   setOpacity(_gl: WebGL2RenderingContext, opacity: number): void {
@@ -97,10 +106,12 @@ export class ColorbarRenderer extends NVRenderer {
       margin: this._margin,
       heightRatio: this._heightRatio,
       gap: COLORBAR_GAP,
-      canvasWidth: this._canvasWidth,
-      canvasHeight: this._canvasHeight,
+      canvasWidth: this._content?.[2] ?? this._canvasWidth,
+      canvasHeight: this._content?.[3] ?? this._canvasHeight,
       borderColor: [...this._borderColor],
       fontPx: this._fontPx,
+      originX: this._content?.[0] ?? 0,
+      originY: this._content?.[1] ?? 0,
     }
   }
 

@@ -20,6 +20,7 @@
 // Add `?backend=webgpu` to the URL for the WebGPU renderer.
 
 import NiiVue, { SHOW_RENDER, SLICE_TYPE } from '../src/index.ts'
+import { urlParamSelect } from './urlParamSelect.js'
 
 const backend =
   new URLSearchParams(location.search).get('backend') === 'webgpu'
@@ -46,6 +47,9 @@ const els = {
   abBadge: el('ab-badge'),
   status: el('status'),
 }
+
+// Wired before anything loads, so the menu works even if loading fails (#488).
+urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
 
 let nv = null
 let busy = false
@@ -394,6 +398,7 @@ async function main() {
     showRender: SHOW_RENDER.ALWAYS,
   })
   await nv.attachToCanvas(els.canvas)
+  document.getElementById('backendSelect').value = nv.backend
   await nv.loadVolumes([{ url: els.volume.value }])
   setStatus(describeVolume())
 

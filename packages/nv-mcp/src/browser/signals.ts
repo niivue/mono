@@ -40,8 +40,34 @@ export function describeSignal(signal: ShownSignal, index: number) {
     ...(signal.display ? { display: signal.display } : {}),
     ...(signal.attachedToId ? { attachedTo: signal.attachedToId } : {}),
     ...(signal.followsCrosshair ? { followsCrosshair: true } : {}),
-    ...(signal.annotations?.length ? { annotations: signal.annotations } : {}),
+    ...(signal.annotations?.length
+      ? { annotations: signal.annotations.map(reportNote) }
+      : {}),
   }
+}
+
+// A note pinned to an edge has y = ±Infinity, which JSON cannot carry, so the
+// edge travels as a word, read and reported through this one table.
+const NOTE_PINS: Record<string, number> = {
+  top: Number.POSITIVE_INFINITY,
+  bottom: Number.NEGATIVE_INFINITY,
+}
+
+function reportNote(note: SignalAnnotation) {
+  const pin = Object.keys(NOTE_PINS).find((word) => NOTE_PINS[word] === note.y)
+  return pin ? { ...note, y: pin } : note
+}
+
+function noteY(fields: Params, i: number): number | undefined {
+  const y = fields.y
+  if (typeof y !== 'string' || y.trim() === '' || Number.isFinite(Number(y)))
+    return number(fields, 'y')
+  const pin = NOTE_PINS[y.trim().toLowerCase()]
+  if (pin === undefined)
+    throw new Error(
+      `Annotation ${i} y must be a number, or top or bottom (got '${y}').`,
+    )
+  return pin
 }
 
 /** How a signal is drawn, read off a `display` object. */
@@ -73,7 +99,7 @@ function displayFields(params: Params): SignalDisplay {
       if (list) display.selectedColumns = list
     }
   }
-  put(display, 'showLegend', flag(params, 'legend'))
+  put(display, 'isLegendVisible', flag(params, 'legend'))
   return display
 }
 
@@ -86,7 +112,7 @@ function annotationList(params: Params): SignalAnnotation[] | undefined {
     const fields = record({ note }, 'note') ?? {}
     const label = text(fields, 'text')
     const x = number(fields, 'x')
-    const y = number(fields, 'y')
+    const y = noteY(fields, i)
     if (!label || x === undefined || y === undefined)
       throw new Error(`Annotation ${i} needs text, x and y.`)
     const made: SignalAnnotation = { text: label, x, y }

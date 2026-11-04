@@ -13,6 +13,7 @@ import {
   identityChunkSampleTransform,
   type MultiLodBounds,
   matchChunksByContent,
+  multiLodBuildCount,
   needsChunking,
   type Vec3f,
   type Vec3i,
@@ -1005,6 +1006,71 @@ describe('chunkVolumeMultiLOD', () => {
     // Coarsening the root never drops coverage.
     const sum = capped.chunks.reduce((s, c) => s + brickVolume(c), 0)
     expect(sum).toBe(512 * 512 * 512)
+  })
+})
+
+describe('chunkVolumeMultiLOD — floor search', () => {
+  // Slide-shaped 8-level pyramid (issue #201): the level-0 lattice is ~132k
+  // bricks, and only level 5 (128 bricks) fits maxBricks 240.
+  const slide: Vec3i[] = Array.from(
+    { length: 8 },
+    (_, i) => [16821, 7494, 2070].map((d) => Math.ceil(d / 2 ** i)) as Vec3i,
+  )
+  const opts = { cellEdge: 128, maxBricks: 240 }
+  const plan = (focus: Parameters<typeof chunkVolumeMultiLOD>[1]) => {
+    const before = multiLodBuildCount()
+    const p = chunkVolumeMultiLOD(slide, focus, 2048, opts)
+    return { builds: multiLodBuildCount() - before, chunks: p.chunks }
+  }
+
+  test('a covering focus builds only the floor that fits', () => {
+    const { builds, chunks } = plan({
+      center: [8410, 3747, 1035],
+      radius: 20000,
+    })
+    expect(builds).toBe(1)
+    expect(chunks.length).toBe(128)
+    expect(chunks.every((c) => c.sourceLevel === 5)).toBe(true)
+  })
+
+  test('skips floors whose reserved slab alone is over the cap', () => {
+    const { builds, chunks } = plan({
+      center: [8410, 3747, 1035],
+      radius: 500,
+      reserveBounds: [{ min: [0, 0, 1000], max: [16821, 7494, 1001] }],
+    })
+    // Floors 0-3: the slab alone is over 240 bricks, so no build. Floor 4
+    // builds and is rejected; floor 5 fits.
+    expect(builds).toBe(2)
+    expect(chunks.length).toBeLessThanOrEqual(240)
+  })
+
+  test('a byte budget alone also skips floors that cannot fit', () => {
+    const before = multiLodBuildCount()
+    const p = chunkVolumeMultiLOD(
+      slide,
+      { center: [8410, 3747, 1035], radius: 20000 },
+      2048,
+      { cellEdge: 128, budgetBytes: 64 * 1024 ** 2 },
+    )
+    expect(multiLodBuildCount() - before).toBe(1)
+    const bytes = p.chunks.reduce(
+      (sum, c) => sum + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
+      0,
+    )
+    expect(bytes).toBeLessThanOrEqual(64 * 1024 ** 2)
+  })
+
+  test('a non-covering focus keeps its mixed-level plan', () => {
+    const cube: Vec3i[] = [301, 151, 76, 38].map((d) => [d, d, d] as Vec3i)
+    const p = chunkVolumeMultiLOD(
+      cube,
+      { center: [40, 40, 40], radius: 128 },
+      2048,
+      opts,
+    )
+    expect(p.chunks.length).toBe(218)
+    expect(p.chunks.filter((c) => c.sourceLevel === 0).length).toBe(184)
   })
 })
 

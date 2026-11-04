@@ -11,13 +11,13 @@ import NiiVue, {
 // packing three independent channels into its R/G/B planes. See
 // docs/allen-atlas-format.md.
 //
-// The default URL is the live Integrated Mitotic Stem Cell dataset. That host
-// sends no Access-Control-Allow-Origin header, so a browser will refuse the
-// fetch from this page — download the sidecar and its PNGs and use the file
-// picker instead, or point the URL at a CORS-enabled copy. The volumetric
-// server is exactly such a copy: when it is running (bunx nx dev
-// iiif-volumetric-server, after fetch-allen) this page starts on its /allen
-// mirror automatically.
+// The default URL is a copy of the Integrated Mitotic Stem Cell dataset in
+// niivue/niivue-demo-images-lfs (Allen/IMSC, under the Allen Institute's
+// noncommercial terms; see the LICENSE there). Allen's own host,
+// imsc.allencell.org, sends no Access-Control-Allow-Origin header, so a page
+// cannot fetch from it directly. When the volumetric server is running
+// (bunx nx dev iiif-volumetric-server, after fetch-allen) this page starts on
+// its /allen mirror instead.
 
 const urlInput = document.getElementById('url')
 const filesInput = document.getElementById('files')
@@ -249,10 +249,10 @@ loadButton.onclick = async () => {
   }
 }
 
-// Start on the volumetric server's /allen fixture mirror when one is running:
-// the only host a browser can actually fetch this format from (see the header
+// Start on the volumetric server's /allen fixture mirror when one is running
+// (local, so it loads faster than the hosted default; see the header
 // comment). Probe quietly and briefly — on the public demo site there is no
-// localhost server and the page just keeps the live-URL default + file picker.
+// localhost server and the page loads the hosted default instead.
 const LOCAL_MIRROR =
   'http://localhost:8080/allen/COMP_crop_Interphase_atlas.json'
 async function startOnLocalMirror() {
@@ -261,7 +261,7 @@ async function startOnLocalMirror() {
   // The catch below would swallow the rejection, but the error still reaches
   // the console of every visitor to the public demo site, so skip the probe
   // outright when the page itself is not on http:.
-  if (window.location.protocol !== 'http:') return
+  if (window.location.protocol !== 'http:') return false
   try {
     const probe = new AbortController()
     const timer = setTimeout(() => probe.abort(), 1500)
@@ -270,12 +270,13 @@ async function startOnLocalMirror() {
       signal: probe.signal,
     })
     clearTimeout(timer)
-    if (!res.ok) return
+    if (!res.ok) return false
   } catch {
-    return
+    return false
   }
   urlInput.value = LOCAL_MIRROR
-  await describe(urlSource(LOCAL_MIRROR))
-  if (source) await loadButton.onclick()
+  return true
 }
 await startOnLocalMirror()
+await describe(urlSource(urlInput.value.trim()))
+if (source) await loadButton.onclick()

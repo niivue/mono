@@ -53,10 +53,13 @@ the list by URL: it adds new volumes, removes ones that are gone, and calls
 `setVolume` when `colormap`, `calMin`, `calMax` or `opacity` changes. Other
 volume options are read only when a volume is first added.
 
-`options` holds NiiVue constructor options, merged over the package's
-`defaultViewerOptions`. A new `options` object creates a new viewer, so keep
-it stable: define it outside the component, as above, or wrap it in
-`useMemo`. An inline `options={{ ... }}` rebuilds the viewer on every render.
+`options` holds NiiVue options, merged over the package's
+`defaultViewerOptions`. It is compared by value, so an inline
+`options={{ ... }}` is fine. Options with a NiiVue setter update the live
+viewer (a removed one reverts to its default). Construction-only options, such
+as `backend`, `isAntiAlias`, `bounds`, `matcaps` or `logLevel`, rebuild the
+viewer and reload its volumes. `options.sliceType` is only an initial value:
+the `sliceType` prop always wins.
 
 ## Several viewers
 

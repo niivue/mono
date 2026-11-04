@@ -17,6 +17,8 @@ function stats(over: Partial<ChunkStreamDetail> = {}): ChunkStreamDetail {
     total: 0,
     staleDropped: 0,
     predicted: 0,
+    retiring: 0,
+    retiringBytes: 0,
     decoded: {
       hits: 0,
       misses: 0,

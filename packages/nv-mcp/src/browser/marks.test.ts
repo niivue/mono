@@ -598,3 +598,46 @@ describe('set_boxes', () => {
     ).toThrow('cannot outline boxes')
   })
 })
+
+describe('set_plane_outlines', () => {
+  const square: [number, number, number][] = [
+    [0, 0, 0],
+    [1, 0, 0],
+    [1, 1, 0],
+    [0, 1, 0],
+  ]
+
+  it('outlines rectangles and takes them down with null', () => {
+    const view = baseView({ planeOutlines: [] })
+    const { set_plane_outlines } = markHandlers(hostOf(view))
+    expect(
+      set_plane_outlines({
+        outlines: [{ corners: square, color: [0, 1, 1], width: 3 }],
+      }),
+    ).toEqual({ outlines: 1 })
+    expect(view.planeOutlines).toEqual([
+      { cornersMM: square, color: [0, 1, 1, 1], width: 3 },
+    ])
+    expect(set_plane_outlines({ outlines: null })).toEqual({ outlines: 0 })
+  })
+
+  it('refuses a bad rectangle, leaving the scene as it was', () => {
+    const view = baseView({ planeOutlines: [] })
+    const { set_plane_outlines } = markHandlers(hostOf(view))
+    expect(() =>
+      set_plane_outlines({ outlines: [{ corners: square.slice(0, 3) }] }),
+    ).toThrow('four [x, y, z] points')
+    expect(() =>
+      set_plane_outlines({
+        outlines: [{ corners: [...square.slice(0, 3), [0, 'a', 0]] }],
+      }),
+    ).toThrow('outlines[0].corners[3]')
+    expect(() =>
+      set_plane_outlines({ outlines: [{ corners: square, width: 0 }] }),
+    ).toThrow('width must be above 0')
+    expect(view.planeOutlines).toEqual([])
+    expect(() =>
+      markHandlers(hostOf(baseView())).set_plane_outlines({ outlines: [] }),
+    ).toThrow('cannot outline rectangles')
+  })
+})

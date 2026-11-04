@@ -607,6 +607,10 @@ describe('set_volume', () => {
     expect(view.setVolume).toHaveBeenLastCalledWith(1, {
       isColormapInverted: false,
     })
+    await handlers.set_volume({ volume: 1, legend: false })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      isLegendVisible: false,
+    })
     expect(
       await handlers.set_volume({ volume: '2', opacity: 0 }),
     ).toMatchObject({ volume: { index: 2, opacity: 0 } })
@@ -682,6 +686,88 @@ describe('set_volume', () => {
     ).rejects.toThrow(
       'afni_v1 was removed while its vectors were drawn as colours',
     )
+  })
+
+  it("passes a null bound as NaN, NiiVue's request for the image's default", async () => {
+    const view = settableView()
+    await coreHandlers(host(view)).set_volume({ volume: 1, cal_max: null })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, { calMax: Number.NaN })
+  })
+
+  it('passes a null negative bound as NaN, mirroring the positive window (#493)', async () => {
+    const view = settableView()
+    await coreHandlers(host(view)).set_volume({
+      volume: 1,
+      cal_min_neg: null,
+      cal_max_neg: null,
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      calMinNeg: Number.NaN,
+      calMaxNeg: Number.NaN,
+    })
+  })
+
+  it('checks the window a CT colormap fills in, before anything changes', async () => {
+    const view = settableView()
+    view.colormapWindow = (name: string) =>
+      name === 'ct_kidneys' ? [114, 302] : null
+    view.volumes[0].colormap = 'gray'
+    const handlers = coreHandlers(host(view))
+    // bold is warm 10..90: cal_min 95 is above the old high but under 302.
+    await handlers.set_volume({
+      volume: 1,
+      colormap: 'ct_kidneys',
+      cal_min: 95,
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      colormap: 'ct_kidneys',
+      calMin: 95,
+    })
+    // mni152 is 0..100: cal_min 500 is above the map's 302. The whole
+    // request is refused before NiiVue sees it, opacity included.
+    ;(view.setVolume as ReturnType<typeof mock>).mockClear()
+    await expect(
+      handlers.set_volume({
+        volume: 0,
+        colormap: 'ct_kidneys',
+        cal_min: 500,
+        opacity: 0,
+      }),
+    ).rejects.toThrow('cal_min (500) must not be above cal_max (302)')
+    expect(view.setVolume).not.toHaveBeenCalled()
+    // The same map re-sent fills nothing: a fill (114) would refuse cal_max 100.
+    await handlers.set_volume({
+      volume: 1,
+      colormap: 'ct_kidneys',
+      cal_max: 100,
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, {
+      colormap: 'ct_kidneys',
+      calMax: 100,
+    })
+    // A label table replaces the colormap, so ct_bones' 180..600 is not
+    // filled: bold keeps cal_max 100, and cal_min 150 would empty it.
+    view.colormapWindow = (name: string) =>
+      name === 'ct_bones' ? [180, 600] : null
+    await expect(
+      handlers.set_volume({
+        volume: 1,
+        colormap: 'ct_bones',
+        labels: 'freesurfer',
+        cal_min: 150,
+      }),
+    ).rejects.toThrow('cal_min (150) must not be above cal_max (100)')
+  })
+
+  it('checks a NaN bound against the image default it stands for', async () => {
+    const view = settableView()
+    Object.assign(view.volumes[1], { robustMin: 0, robustMax: 60 })
+    const handlers = coreHandlers(host(view))
+    // bold is 10..90; a null cal_max means robustMax 60, under cal_min 70.
+    await expect(
+      handlers.set_volume({ volume: 1, cal_min: 70, cal_max: null }),
+    ).rejects.toThrow('cal_min (70) must not be above cal_max (60)')
+    expect(view.setVolume).not.toHaveBeenCalled()
   })
 
   it('refuses an empty window, a frame the volume does not have, and nothing to set', async () => {
@@ -1114,6 +1200,26 @@ describe('screenshot', () => {
     )
   })
 
+  it("sizes the canvas by NiiVue's own pixel ratio, so a forced ratio does not resize every time (#464)", async () => {
+    // A box 320 CSS px wide drawn at a forced ratio of 2 is 640 px: sized.
+    const canvas = {
+      width: 640,
+      height: 480,
+      getBoundingClientRect: () => ({ width: 320, height: 240 }),
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    } as unknown as HTMLCanvasElement
+    const resize = mock(() => {})
+    const previous = globalThis.devicePixelRatio
+    globalThis.devicePixelRatio = 1
+    try {
+      const view = fakeView({ canvas, resize, effectiveDevicePixelRatio: 2 })
+      await coreHandlers(host(view)).screenshot({})
+    } finally {
+      globalThis.devicePixelRatio = previous
+    }
+    expect(resize).not.toHaveBeenCalled()
+  })
+
   it('waits for the bricks of a chunked volume to arrive before drawing', async () => {
     const calls: string[] = []
     const canvas = {
@@ -1522,6 +1628,7 @@ describe('add_overlay', () => {
       cal_min_neg: -6,
       cal_max_neg: -2.3,
       colorbar: true,
+      legend: false,
     })) as { volumes: Record<string, unknown>[] }
     expect(view.addVolume).toHaveBeenCalledWith({
       url: 'http://h/stats/zstat1.nii.gz',
@@ -1534,6 +1641,7 @@ describe('add_overlay', () => {
       calMaxNeg: -2.3,
       colormapNegative: 'cool',
       isColorbarVisible: true,
+      isLegendVisible: false,
     })
     expect(result.volumes[1]).toMatchObject({
       name: 'zstat1.nii.gz',
@@ -1566,6 +1674,33 @@ describe('add_overlay', () => {
     })
   })
 
+  it('passes a null negative bound as NaN, mirroring the positive window (#493)', async () => {
+    const view = fakeView()
+    await coreHandlers(host(view)).add_overlay({
+      url: 'http://h/stats/zstat1.nii.gz',
+      cal_min_neg: null,
+      cal_max_neg: null,
+    })
+    expect(view.addVolume).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calMinNeg: Number.NaN,
+        calMaxNeg: Number.NaN,
+      }),
+    )
+  })
+
+  it('refuses a negative window on a label map too', async () => {
+    const view = fakeView()
+    await expect(
+      coreHandlers(host(view)).add_overlay({
+        url: 'http://h/labels/synthseg.nii.gz',
+        labels: 'freesurfer',
+        cal_min_neg: null,
+      }),
+    ).rejects.toThrow('A label overlay has no display window')
+    expect(view.addVolume).not.toHaveBeenCalled()
+  })
+
   it('refuses a display window on a label map, which has none', async () => {
     const view = fakeView()
     const handlers = coreHandlers(host(view))
@@ -1576,7 +1711,7 @@ describe('add_overlay', () => {
         cal_min: 1,
       }),
     ).rejects.toThrow(
-      'A label overlay has no display window: leave cal_min and cal_max out.',
+      'A label overlay has no display window: leave cal_min, cal_max, cal_min_neg and cal_max_neg out.',
     )
     expect(view.addVolume).not.toHaveBeenCalled()
   })
@@ -1970,8 +2105,9 @@ describe('describe_volume', () => {
       mask_labels: [1],
     }) as Record<string, unknown>
     expect(masked.stats).toBeUndefined()
+    // A mask on another grid is no reason by itself (NiiVue looks it up).
     expect(masked.statsError).toBe(
-      'spmMotor.nii.gz is 79×95×79 voxels and the mask aal.nii.gz is 181×217×181: a mask must be on the same voxel grid as the volume it restricts.',
+      'NiiVue could not compute statistics for spmMotor.nii.gz with that mask.',
     )
     // The description is still there.
     expect(masked.dims).toEqual([79, 95, 79])
@@ -1989,7 +2125,7 @@ describe('describe_volume', () => {
         >
       ).statsError,
     ).toBe(
-      "The drawing lies over the base volume spmMotor.nii.gz (79×95×79 voxels) and aal.nii.gz is 181×217×181: ask for the base volume's statistics within the drawing, or use a mask volume on aal.nii.gz's grid.",
+      'There is no drawing to count within. Create or load one with edit_drawing first.',
     )
     expect(
       (handlers.describe_volume({ mask: 2 }) as Record<string, unknown>)

@@ -48,6 +48,23 @@ describe('shouldStartFreshMultiClickContour', () => {
     expect(shouldStartFreshMultiClickContour(true, 0, 12, 0, 13)).toBe(true)
   })
 
+  it('takes a tolerance, such as half a slice in texture depth (#469)', () => {
+    // 1 / 256 voxels of texture depth apart, half-slice tolerance 0.5 / 256.
+    expect(
+      shouldStartFreshMultiClickContour(true, 0, 0.5, 0, 0.501, 0.5 / 256),
+    ).toBe(false)
+    expect(
+      shouldStartFreshMultiClickContour(
+        true,
+        0,
+        0.5,
+        0,
+        0.5 + 1 / 256,
+        0.5 / 256,
+      ),
+    ).toBe(true)
+  })
+
   it('keeps the contour on the same slice within numeric tolerance', () => {
     expect(shouldStartFreshMultiClickContour(true, 0, 12, 0, 12.0005)).toBe(
       false,

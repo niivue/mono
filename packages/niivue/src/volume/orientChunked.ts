@@ -4,7 +4,7 @@
 // image buffer. They are shared by both GPU backends' chunked upload paths
 // (wgpu/orientChunked.ts and gl/orientChunked.ts) and have no GPU dependency.
 
-import { colormapKey } from '@/cmap/NVCmaps'
+import { colormapKey, shownLabelLut } from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
 import { rgbaTextureKey } from '@/view/NVOrient'
 import { isRgbaDatatype } from '@/view/NVRenderVolumeData'
@@ -49,7 +49,7 @@ export function chunkedDisplayKey(
   nvimage: NVImage,
   modulation: ModulationTextureParams | null = null,
 ): string {
-  const label = nvimage.colormapLabel
+  const label = shownLabelLut(nvimage)
   const labelKey = label
     ? `${displayObjectId(label)}:${label.lut ? displayObjectId(label.lut) : ''}`
     : ''

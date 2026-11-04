@@ -8,17 +8,26 @@ const style = {
   strokeWidth: 2,
 }
 
+// `polygons` defaults to the single polygon given by `outer`/`holes`.
 function shape(over: Partial<AnnotationScreenShape>): AnnotationScreenShape {
-  return {
+  const s = {
     id: 'a',
-    tool: 'measureEllipse',
+    tool: 'measureEllipse' as const,
     outer: [],
     holes: [],
     isClosed: true,
     style,
     ...over,
   }
+  return { polygons: [{ outer: s.outer, holes: s.holes }], ...s }
 }
+
+const square = (x: number, y: number, size: number) => [
+  { x, y },
+  { x: x + size, y },
+  { x: x + size, y: y + size },
+  { x, y: y + size },
+]
 
 describe('buildAnnotationGeometry', () => {
   it('draws a closed shape as an outline loop (one segment per edge)', () => {
@@ -33,6 +42,24 @@ describe('buildAnnotationGeometry', () => {
     })
     const { lines } = buildAnnotationGeometry([rect])
     expect(lines).toHaveLength(4) // closed loop over 4 points
+  })
+
+  it('outlines every piece of a split ROI and labels below all of them', () => {
+    const split = shape({
+      outer: square(0, 0, 4),
+      polygons: [
+        { outer: square(0, 0, 4), holes: [square(1, 1, 2)] },
+        { outer: square(10, 6, 4), holes: [] },
+      ],
+      label: { lines: ['Area'], x: 30, y: 5, align: 'left' },
+    })
+    const { lines, text } = buildAnnotationGeometry([split], {
+      dpr: 1,
+      labelCssPx: 10,
+    })
+    expect(lines).toHaveLength(12) // 3 rings x 4 edges
+    expect(text[0]?.x).toBe(7) // centre of x 0..14
+    expect(text[0]?.y).toBeCloseTo(10 + 4 + 10 * 0.8, 5) // below maxY 10
   })
 
   it('draws an arrow with an arrowhead (more than the bare shaft)', () => {

@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import { executablePathOverride } from './e2e/launchOptions'
+import { defaultLaunchOptions } from './e2e/launchOptions'
 
 // End-to-end tests that need a real browser: NiiVue's module graph uses Vite's
 // `import.meta.glob` (so it can't be imported under the Bun unit-test runner) and
@@ -15,16 +15,18 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  // The JSON report feeds .github/scripts/check-no-skipped-tests.ts.
+  reporter: process.env.CI
+    ? [
+        ['list'],
+        ['html', { open: 'never' }],
+        ['json', { outputFile: 'test-results/results.json' }],
+      ]
+    : 'list',
   use: {
     baseURL: BASE_URL,
     trace: 'on-first-retry',
-    // Headless Chromium renders WebGL2 through SwiftShader; recent Chrome gates
-    // that software path behind this flag.
-    launchOptions: {
-      args: ['--enable-unsafe-swiftshader'],
-      ...executablePathOverride,
-    },
+    launchOptions: defaultLaunchOptions,
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

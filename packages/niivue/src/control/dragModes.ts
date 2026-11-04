@@ -3,11 +3,16 @@ import {
   emitPan2DChange,
   emitScaleMultiplierChange,
 } from '@/control/cameraEvents'
+import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
-import { rulerSegments, rulerTickLabels } from '@/view/NVMeasurement'
+import {
+  measureTextBack,
+  rulerSegments,
+  rulerTickLabels,
+} from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 
 /**
@@ -210,10 +215,7 @@ export function updateDragOverlay(ctrl: NiiVue): void {
   const lineColor = ui.measureLineColor
   const lineWidth = ui.rulerWidth
   const textColor = ui.measureTextColor
-  const textBack =
-    textColor[0] + textColor[1] + textColor[2] > 0.8
-      ? [0, 0, 0, 0.5]
-      : [1, 1, 1, 0.5]
+  const textBack = measureTextBack(textColor)
 
   if (
     mode === DRAG_MODE.contrast ||
@@ -428,7 +430,9 @@ export function handleDragRelease(ctrl: NiiVue): void {
             volume: vol,
             changes: { calMin: range.calMin, calMax: range.calMax },
           })
-          ctrl._updateGLChanged()
+          ctrl
+            ._updateGLChanged()
+            .catch((e) => log.error('contrast drag failed', e))
         }
       }
     }
@@ -557,7 +561,7 @@ export function dragForWindowing(
     volume: vol,
     changes: { calMin: vol.calMin, calMax: vol.calMax },
   })
-  ctrl._updateGLChanged()
+  ctrl._updateGLChanged().catch((e) => log.error('contrast drag failed', e))
 }
 
 /** Helper: pick mm coordinates at a canvas pixel position using cached slice tiles. */

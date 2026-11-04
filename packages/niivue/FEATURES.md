@@ -71,7 +71,7 @@ NPY/NPZ. DICOM/Zarr/MINC/TIFF require external plugins.
 | `setTractOptions(meshIndex, NVTractOptions)` | Method | Yes | Radius, sides, decimation, scalars |
 | `getTractGroups(meshIndex)` | Method | No | `string[]` |
 | `setConnectomeOptions(meshIndex, NVConnectomeOptions)` | Method | Yes | Node/edge scale, thresholds |
-| `getMeshShader(meshIndex)` | Method | No | `'phong' \| 'flat' \| 'matte' \| 'toon' \| 'outline' \| 'rim' \| 'silhouette' \| 'crevice' \| 'vertexColor' \| 'crosscut'` |
+| `getMeshShader(meshIndex)` | Method | No | `'phong' \| 'flat' \| 'matte' \| 'toon' \| 'outline' \| 'rim' \| 'silhouette' \| 'crevice' \| 'vertexColor' \| 'crosscut' \| 'crosscut2'` |
 | `meshes` | Prop (get) | No | `readonly NVMesh[]` |
 | `meshShaders` | Prop (get) | No | Available shader names |
 | `meshExtensions` / `meshWriteExtensions` | Prop (get) | No | Supported file formats |
@@ -98,6 +98,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `setClipPlaneDepthAziElev(i, d, a, e)` | Method | No | |
 | `activeClipPlaneIndex`, `currentClipPlaneIndex` | Prop | No | |
 | `focusBox` | Prop (get/set) | No | `FocusBox \| null`; world-mm AABB outlined as 12 edges on the 3D render tile(s). Assigning redraws; `null` clears. Not serialized |
+| `planeOutlines` | Prop (get/set) | No | `PlaneOutline[]`: world-mm rectangles (e.g. an NVSlide pane's field of view), a frame in 3D and projected onto each 2D slice. Entries without four finite corners are dropped. Not serialized |
 | `lodBoxes` | Prop (get/set) | No | `FocusBox[] \| null`; the same outline for a set of boxes, e.g. one per streamed LOD brick coloured by level |
 | `animateTo(target, options)` | Method | Yes | Tweens camera, pan/zoom, crosshair, clip planes, volume window/opacity/4D frame and mesh opacity to an `AnimationTarget`. Resolves an `AnimationResult` (`finished`, `stalled`, `failed`, `superseded`, `input`, `stopped`, `destroyed`); the target lands on a finish or stall, and a setter that throws or rejects while writing it ends the run as `failed` with the parts named in `failed`. Azimuth turns the short way unless `angles: 'literal'`. Volume window/opacity steps rebuild GPU state each frame, so they are paced rather than queued |
 | `stopAnimation()` | Method | No | Stops the running animation where it is |
@@ -150,8 +151,8 @@ TRX, TT, TSF (scalars), VTK lines.
 | `volumeIsAlphaClipDark` | Prop | |
 | `volumeIsNearestInterpolation` | Prop | Force nearest 2D sampling for all volumes; otherwise per-volume `isNearestInterpolation` (default: nearest for label intent/colormap) |
 | `volumeIsV1SliceShader` | Prop | Treat overlay as fiber direction |
-| `volumeOverlayAlphaBlend` | Prop | `OVERLAY_ALPHA_BLEND`: `MAX` (0, default), `ADDITIVE` (1, opacities sum capped at 1; for fractions summing to 1, e.g. tissue maps), `OVER` (2, 1-prod(1-a)). Only with 2+ overlays |
-| `volumeOverlayColorBlend` | Prop | `OVERLAY_COLOR_BLEND`: `ADDITIVE` (0, default, opacity-weighted sum), `MEAN` (1, opacity-weighted average), `OVER` (2, composited in volume order, later overlays on top; with alpha `OVER` this is source-over), `MAX` (3, per-component max of the opacity-weighted colours; with alpha `MAX` this is Vol-E's channel fusion). Only with 2+ overlays |
+| `volumeOverlayAlphaBlend` | Prop | `OVERLAY_ALPHA_BLEND`: `MAX` (0, default), `ADDITIVE` (1, opacities sum capped at 1; for fractions summing to 1, e.g. tissue maps), `UNION` (2, 1-prod(1-a), order-free). Only with 2+ overlays |
+| `volumeOverlayColorBlend` | Prop | `OVERLAY_COLOR_BLEND`: `ADDITIVE` (0, default, opacity-weighted sum), `MEAN` (1, opacity-weighted average), `OVER` (2, composited in volume order, later overlays on top; with alpha `UNION` this is source-over), `MAX` (3, per-component max of the opacity-weighted colours; with alpha `MAX` this is Vol-E's channel fusion). Only with 2+ overlays |
 | `volumeIsChannelStack` | Prop | Blend volumes[0] with the overlays as an equal channel instead of an opaque base (default false); pair with colour `MAX` for fluorescence fusion. Stacked channels keep their colormap alpha ramp; 3D density follows each channel's opacity. Ignored while volumes[0] is chunked |
 | `volumeMatcap` | Prop | Matcap image URL (`loadMatcap` resolves an `opts.matcaps` name to it). An image that fails to load draws the instance default (first `matcaps` entry), then plain white, with a console warning |
 | `volumePaqdUniforms` | Prop | PAQD atlas tuning |
@@ -163,6 +164,7 @@ TRX, TT, TSF (scalars), VTK lines.
 |---|---|---|
 | `meshXRay` | Prop | 0–1 opacity in 3D |
 | `meshThicknessOn2D` | Prop | Clip to ±N mm of slice plane |
+| `meshCrosscutWidth` | Prop | Line width (device px) of crosscut/crosscut2 |
 
 ## 9. Drawing / Segmentation
 
@@ -226,9 +228,11 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `isSnapToVoxelCenters` | Prop | |
 | `isYoked3DTo2DZoom` | Prop | |
 | `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |
+| `isLegendToggleEnabled` | Prop | Legend colour-box click hides/shows a volume label (`hiddenLabels`); hidden labels show as a colour outline; name click still moves the crosshair; off by default |
 | `moveCrosshairInVox(di, dj, dk)` | Method | Keyboard/button navigation |
 | `getCrosshairPos()` / `setCrosshairPos([x,y,z])` | Method | |
 | `vox2frac([i,j,k])` | Method | |
+| `vox2mm([i,j,k])` | Method | Base-volume RAS voxel to world mm; `null` without a volume |
 | `createOnLocationChange(axCorSag?)` | Method | Emit location event |
 
 **Note for touch devices:** There is currently no public
@@ -265,7 +269,8 @@ All flat keys; mirrors the prop list above. Grouping (from source):
 | `setFontFromUrl({ atlas, metrics })` | Method | Yes | Remote atlas + JSON metrics |
 | `colormaps` | Prop (get) | No | Registered names (`string[]`) |
 | `hasColormap(name)` | Method | No | |
-| `lookupColorMap(name)` | Method | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, not auto-applied — pass to `setVolume` as `calMin`/`calMax` |
+| `colormapWindow(name)` | Method | No | `[min, max]` display window a map brings (e.g. `ct_bones` 180..600), else `null` |
+| `lookupColorMap(name)` | Export | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, applied on load and when `setVolume` changes the colormap |
 | `addColormap(name, ColorMap)` | Method | No | `{ R, G, B, A?, I?, labels? }` |
 | `addColormapFromUrl(url, name?)` | Method | Yes | |
 | `colormapNames(kind?)` | Method | No | `'continuous'` / `'label'` filter |

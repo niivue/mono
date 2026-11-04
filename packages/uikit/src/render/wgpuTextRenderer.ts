@@ -32,6 +32,10 @@ export class WgpuTextRenderer {
   private capacityBytes = 0
   private uniformCapacity = 0
   private key = ''
+  // CPU staging reused across frames (grown on demand) so a static label layer
+  // drawing every frame does not allocate per frame.
+  private uniforms = new Float32Array(0)
+  private readonly vertexOffsets: number[] = []
 
   private ensurePipeline(
     device: GPUDevice,
@@ -198,13 +202,17 @@ export class WgpuTextRenderer {
     width: number,
     height: number,
   ): void {
-    const drawn = runs.filter((r) => r.count > 0)
-    if (drawn.length === 0) return
-    this.ensurePipeline(device, colorFormat, sampleCount, depthFormat)
-    this.ensureUniformBuffer(device, drawn.length * UNIFORM_STRIDE)
-    this.ensureTexture(device, image)
+    let drawn = 0
     let totalBytes = 0
-    for (const r of drawn) totalBytes += r.vertices.byteLength
+    for (const r of runs) {
+      if (r.count === 0) continue
+      drawn++
+      totalBytes += r.vertices.byteLength
+    }
+    if (drawn === 0) return
+    this.ensurePipeline(device, colorFormat, sampleCount, depthFormat)
+    this.ensureUniformBuffer(device, drawn * UNIFORM_STRIDE)
+    this.ensureTexture(device, image)
     this.ensureVertexBuffer(device, totalBytes)
     this.ensureBindGroup(device)
     if (
@@ -216,35 +224,45 @@ export class WgpuTextRenderer {
       return
 
     // Pack uniforms (one 256-byte slot each) and vertices (contiguous).
-    const uniforms = new Float32Array(drawn.length * (UNIFORM_STRIDE / 4))
-    const vertexOffsets: number[] = []
+    const slotFloats = UNIFORM_STRIDE / 4
+    const need = drawn * slotFloats
+    if (this.uniforms.length < need) {
+      this.uniforms = new Float32Array(Math.max(need, this.uniforms.length * 2))
+    }
+    const uniforms = this.uniforms
+    const offsets = this.vertexOffsets
+    offsets.length = 0
     let vByte = 0
-    for (let i = 0; i < drawn.length; i++) {
-      const base = i * (UNIFORM_STRIDE / 4)
+    for (const r of runs) {
+      if (r.count === 0) continue
+      const base = offsets.length * slotFloats
       uniforms[base] = width
       uniforms[base + 1] = height
-      uniforms[base + 2] = drawn[i].screenPxRange
+      uniforms[base + 2] = r.screenPxRange
       uniforms[base + 3] = 0
-      vertexOffsets.push(vByte)
+      offsets.push(vByte)
       device.queue.writeBuffer(
         this.vertexBuffer,
         vByte,
-        drawn[i].vertices as Float32Array<ArrayBuffer>,
+        r.vertices as Float32Array<ArrayBuffer>,
       )
-      vByte += drawn[i].vertices.byteLength
+      vByte += r.vertices.byteLength
     }
-    device.queue.writeBuffer(this.uniformBuffer, 0, uniforms)
+    device.queue.writeBuffer(this.uniformBuffer, 0, uniforms, 0, need)
 
     pass.setPipeline(this.pipeline)
-    for (let i = 0; i < drawn.length; i++) {
-      pass.setBindGroup(0, this.bindGroup, [i * UNIFORM_STRIDE])
+    let slot = 0
+    for (const r of runs) {
+      if (r.count === 0) continue
+      pass.setBindGroup(0, this.bindGroup, [slot * UNIFORM_STRIDE])
       pass.setVertexBuffer(
         0,
         this.vertexBuffer,
-        vertexOffsets[i],
-        drawn[i].vertices.byteLength,
+        offsets[slot],
+        r.vertices.byteLength,
       )
-      pass.draw(drawn[i].count)
+      pass.draw(r.count)
+      slot++
     }
   }
 

@@ -34,6 +34,10 @@ import type {
   NiiVueHost,
   View,
 } from './view'
+import { within } from './wait'
+
+/** How long `set_options` waits for the GPU rebuild a setter started, inside the server's limit on a call. */
+const UPDATE_WAIT_MS = 8_000
 
 /** The slice types a layout tile can show: every one but `none`. */
 const TILE_SLICES = Object.keys(SLICE_TYPES).filter((name) => name !== 'none')
@@ -47,11 +51,20 @@ function describeSetting(setting: Setting): Record<string, unknown> {
   const bounds = {
     ...(setting.min === undefined ? {} : { min: setting.min }),
     ...(setting.max === undefined ? {} : { max: setting.max }),
+    ...(setting.nullAs === undefined ? {} : { nullable: true }),
   }
+  const fields = setting.fields
+    ? {
+        fields: Object.fromEntries(
+          setting.fields.map((f) => [f.name, describeSetting(f)]),
+        ),
+      }
+    : {}
   return {
     kind: setting.kind,
     ...choices,
     ...bounds,
+    ...fields,
     description: setting.description,
   }
 }
@@ -169,7 +182,10 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
 }
 
 /** The handlers for the settings, capability, colormap, font and layout tools. */
-export function settingHandlers(host: NiiVueHost): Handlers {
+export function settingHandlers(
+  host: NiiVueHost,
+  updateWaitMs = UPDATE_WAIT_MS,
+): Handlers {
   const { view } = host
   // The settings are plain properties of the instance; the table says
   // which names are settings, so nothing else on it can be reached.
@@ -180,6 +196,13 @@ export function settingHandlers(host: NiiVueHost): Handlers {
     for (const setting of names) {
       if (!(setting.name in bag)) continue
       out[setting.name] = readSetting(setting, bag[setting.name])
+    }
+    // A bundled matcap's URL is a data URL of many KB: report its name (#462).
+    if (typeof out.volumeMatcap === 'string') {
+      const named = Object.entries(view.opts?.matcaps ?? {}).find(
+        ([, url]) => url === out.volumeMatcap,
+      )
+      if (named) out.volumeMatcap = named[0]
     }
     return out
   }
@@ -228,7 +251,22 @@ export function settingHandlers(host: NiiVueHost): Handlers {
       }
       for (const [setting, value] of checked) bag[setting.name] = value
       view.drawScene()
-      return { options: readAll(checked.map(([setting]) => setting)) }
+      const answer = () => ({
+        options: readAll(checked.map(([setting]) => setting)),
+      })
+      // Some setters start a GPU rebuild without returning it (#447): wait, so
+      // a screenshot taken next shows the change, but not past the call's limit.
+      // The values are already set, so a slow rebuild is a note, not an error.
+      return view.whenUpdatesSettle
+        ? within(view.whenUpdatesSettle(), updateWaitMs).then((settled) =>
+            settled
+              ? answer()
+              : {
+                  ...answer(),
+                  note: `The GPU rebuild had not finished after ${updateWaitMs} ms; the scene may still be applying these settings.`,
+                },
+          )
+        : answer()
     },
 
     capabilities() {
@@ -246,6 +284,7 @@ export function settingHandlers(host: NiiVueHost): Handlers {
       })
       return {
         ...(view.backend ? { backend: view.backend } : {}),
+        ...(view.version ? { niivueVersion: view.version } : {}),
         features,
         settings: SETTINGS.filter((s) => s.name in bag).map((s) => s.name),
         ...(view.colormaps ? { colormaps: view.colormaps } : {}),

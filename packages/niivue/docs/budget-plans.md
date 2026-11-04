@@ -97,6 +97,36 @@ existing call changes behavior. Precedence, lowest first:
 
 `resolveBudgetPlan({})` must produce byte-identical `ResolvedOptions` to today.
 
+### Swap policy
+
+A plan decides which bricks to hold; `swapPolicy` decides what a refocus does
+with the bricks the new plan replaces. It is a separate knob because it trades
+memory for continuity, independent of where the detail goes.
+
+| `swapPolicy` | Replaced bricks | Cost |
+| --- | --- | --- |
+| `'replace'` (default) | freed at once; their regions draw from the coarse floor until the new bricks stream in | no extra memory, visible blur on every large refocus |
+| `'keepUntilCovered'` | drawn until every new brick over their region is resident, then freed | the replaced bricks' bytes, only during the swap |
+
+`ChunkResidencyManager.remap(..., retain)` holds them as retiring bricks; the
+renderers draw each in place of the new bricks it covers (`chunkDrawOrder`
+sorts both together back to front) and hide those new bricks until all are
+resident, so no region is drawn twice. A brick the working set stops asking
+for (off-screen, clipped, past the brick cap) no longer counts as a cover, so
+a retiree never outlives the bricks that will actually stream. Retiring bytes
+count against the budget first, so a tight budget degrades the policy to
+`'replace'`. Limits: the 3D render only (2D slices keep the floor fallback);
+a retiring brick draws without overlay, drawing or PAQD layers, as the floor
+does. Switch at runtime with
+`NVChunkedVolume.setSwapPolicy`; `chunkStreamStats()` reports `retiring` and
+`retiringBytes`.
+
+Measured on the 106 MB DANDI OCT (dandi-demo, a refocus from the centre to
+(28, 277, 150), 64 -> 232 bricks): the worst frame during streaming differed
+from the settled image by 35k px with `'replace'` and by 7k px with
+`'keepUntilCovered'` (the 7k is the gain in detail itself), holding 23 bricks
+(5.7 MB) at the start of the swap and none when it settled.
+
 ## Stages
 
 ### Stage 1 - name what already exists (no behavior change) - DONE

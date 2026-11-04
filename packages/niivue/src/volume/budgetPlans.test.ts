@@ -23,6 +23,7 @@ describe('resolveBudgetPlan', () => {
       renderCentering: 'none',
       debounceMs: 150,
       coarseFloor: true,
+      swapPolicy: 'replace',
     })
   })
 

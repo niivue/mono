@@ -42,7 +42,11 @@ bunx nx lint niivue
 
 `bun run dev` serves `examples/` from source (the pages `import '../src/index.ts'`), so dev and the examples build run the same files.
 
+`bunx nx dev niivue` (same steps as `bun run dev`, including `gen-fixtures`, but on `vite.config.js`'s port 8080) also serves the `SITE_APPS` demo apps under `/<app>/`, with `@niivue/niivue` and its subpath entries aliased to `src/`, so an app never runs a stale `dist`. A missing app file is a 404, not the SPA fallback, and an extensionless one (zarr metadata, chunks) is sent as bytes.
+
 Library packaging: `bun run build` emits `dist/niivue.js` (both backends), `dist/niivue.webgpu.js` (WebGPU-only), and `dist/niivue.webgl2.js` (WebGL2-only), exported as `@niivue/niivue`, `@niivue/niivue/webgpu`, and `@niivue/niivue/webgl2`.
+
+It then runs `build:standalone` (`vite.config.standalone.ts`), which writes a self-contained copy of the same entries to `dist/standalone/` with every dependency bundled in, for pages with no bundler (see README "Without a bundler"). `scripts/check-standalone.ts` fails the build if any non-relative import or `import.meta.url` asset reference appears there (for example an `external` added to that config, or an asset emitted as a file instead of inlined). `bun run examples:standalone` serves `examples/standalone/index.html` against it on port 5403.
 
 ## Testing
 
@@ -67,12 +71,19 @@ round-trips need a GPU context. Use these for anything needing a real instance.
 
 ```bash
 bun run test:e2e         # playwright test (config: playwright.config.ts)
+bun run test:e2e:metal   # full suite minus real-Metal-only failures (issue #453); add PLAYWRIGHT_CHROMIUM_CHANNEL=chromium for the GPU
 bunx nx e2e niivue       # via Nx
 ```
 
 `playwright.config.ts` starts a no-`--open` dev server (`bun run e2e:serve`) and
-reuses an already-running one locally (`reuseExistingServer` off in CI). These are
-kept OUT of the hermetic unit `test` target and the PR gate (they need a browser).
+reuses an already-running one locally (`reuseExistingServer` off in CI). The
+port (5273) is fixed, so a dev server from ANOTHER checkout on that port is
+silently reused and the tests run its code; check `lsof -iTCP:5273` first. A
+machine without Playwright's pinned browser can set `PLAYWRIGHT_CHROMIUM_PATH`
+to any installed `chrome-headless-shell`. `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` runs full
+Chromium on the real GPU instead of SwiftShader (the macos-15 CI job does). These are
+kept OUT of the hermetic unit `test` target and `pr_gate.yml` (they need a browser);
+`niivue-e2e.yml` runs them instead.
 Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
 canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
@@ -80,14 +91,14 @@ canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 ### What's tested
 
 - **Drawing tools** (`src/drawing/`) — RLE codec, pen/line/flood-fill, undo stack
-- **Annotations** (`src/annotation/`) — undo/redo, point-in-polygon, slice projection, shape selection and control points
+- **Annotations** (`src/annotation/`, `src/view/NVAnnotation.ts`) — undo/redo, point-in-polygon, slice projection, shape selection and control points, stats and screen shapes over split ROIs
 - **GPU rebuild planning** (`src/view/volumeUpdateScope.ts`, `src/view/meshGpuSync.ts`) — which volumes and meshes a rebuild redoes
-- **Math/transforms** (`src/math/`) — vox↔mm, spherical coordinates, slice plane equations, screen unprojection
+- **Math/transforms** (`src/math/`) — vox↔mm, spherical coordinates, slice plane equations, screen unprojection, mesh slab MVP
 - **Volume utilities** (`src/volume/`) — intensity range, NIfTI header creation, voxel lookup, reorientation, modulation
 - **Colormaps** (`src/cmap/`) — LUT generation, label colormap construction
 - **Constants** (`src/NVConstants.ts`) — PAQD detection, slice type dimension mapping
 - **Mesh I/O** (`src/mesh/`) — STL/OBJ writers, STL/OFF readers (roundtrip tests); vertex normals and their per-mesh cache
-- **View utilities** (`src/view/`) — mm-to-canvas projection
+- **View utilities** (`src/view/`) — mm-to-canvas projection; legend columns, scrolling and hit tests
 
 ### What's NOT yet covered by unit tests
 
@@ -164,7 +175,7 @@ unit-tested under the Bun harness.)
 | `NVModel.ts` | Data model — 8 config groups, volumes, meshes, clip planes |
 | `NVTypes.ts` | TypeScript interfaces (`NVImage`, `NVMesh`, config group types, `NiiVueOptions`) |
 | `NVConstants.ts` | Runtime constants/enums + group defaults (`LAYOUT_DEFAULTS`, `UI_DEFAULTS`, etc.) |
-| `NVDocument.ts` | Document save/load (NVD format v7, CBOR-encoded) |
+| `NVDocument.ts` | Document save/load (NVD format, `NVD_DOCUMENT_VERSION`, CBOR-encoded) |
 | `control/view.ts` | View lifecycle (attach, recreate, reinitialize) |
 | `control/interactions.ts` | Event handling (mouse, keyboard, drag-drop, resize) |
 | `control/dragModes.ts` | Drag mode handlers — contrast, measurement, angle, pan, windowing |
@@ -198,7 +209,7 @@ Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (
 - `src/view/NVFont.ts` parses atlases sparsely by Unicode code point, and `buildTextLayout` iterates strings by code point (not UTF-8 bytes), so CJK and other non-Latin glyphs render correctly when present in the atlas. Swap the active font at runtime via `nv1.setFont(nextFont)` for an in-memory atlas, or `nv1.setFontFromUrl({ atlas, metrics })` to fetch a PNG+JSON pair from URLs — both rebuild the view because the atlas texture is GPU-owned.
 - The only bundled font is `ubuntu` (ASCII), re-exported from `src/assets/fonts/index.ts` and used as the default by `NVControlBase`. Community atlases (including CJK-capable fonts like Poem) live at `https://github.com/niivue/fonts` and are fetched on demand via `setFontFromUrl` — see `examples/font.html`. `scripts/generate-assets.js` writes one wrapper per `*.json` + `*.png` pair in `src/assets/fonts/` and regenerates the barrel.
 
-**Remote assets (fonts, colormaps, matcaps):** The controller exposes URL-aware loaders so apps can pull assets from CDNs at runtime: `nv1.setFontFromUrl({ atlas, metrics })` (options-object — atlas/metrics can't transpose silently), `nv1.addColormap(name, cmap)` / `nv1.addColormapFromUrl(url, name?)` (registers a `{ R, G, B, A?, I?, labels? }` LUT visible to volumes, mesh layers, colorbars, connectomes, tracts; name derived from filename if omitted, dispatches `colormapAdded`), and the existing `nv1.loadMatcap(nameOrUrl)`. `model.volume.matcap` holds a URL, but `NVDocument` saves a matcap found in `opts.matcaps` by its name and `loadDocument` looks the name up again (`src/documentMatcap.ts`): a dev server serves a bundled JPG as a page path that 404s elsewhere, and a production build inlines it as a data URL that bloats every document. A matcap image that fails to load draws the instance default (first `opts.matcaps` entry), then white, with a warning. Cross-origin image loads go through `applyCORS(img)` in `src/NVLoader.ts`, which unconditionally sets `img.crossOrigin = 'anonymous'` before `img.src =` in the four image loaders (WebGPU `bitmap2texture`, WebGL2 matcap/thumbnail/font). This is spec-safe for same-origin, `blob:`, and `data:`, and enables GPU texture uploads from hosts like `raw.githubusercontent.com` — provided the server sends `Access-Control-Allow-Origin`.
+**Remote assets (fonts, colormaps, matcaps):** The controller exposes URL-aware loaders so apps can pull assets from CDNs at runtime: `nv1.setFontFromUrl({ atlas, metrics })` (options-object — atlas/metrics can't transpose silently), `nv1.addColormap(name, cmap)` / `nv1.addColormapFromUrl(url, name?)` (registers a `{ R, G, B, A?, I?, labels? }` LUT visible to volumes, mesh layers, colorbars, connectomes, tracts; name derived from filename if omitted, dispatches `colormapAdded`), and the existing `nv1.loadMatcap(nameOrUrl)`. `model.volume.matcap` holds a URL, but `NVDocument` saves a matcap found in `opts.matcaps` by its name and `loadDocument` looks the name up again (`src/documentMatcap.ts`; the constructor, the `volumeMatcap` setter and `loadMatcap` use the same case-insensitive `matcapFromName`): a dev server serves a bundled JPG as a page path that 404s elsewhere, and a production build inlines it as a data URL that bloats every document. A matcap image that fails to load draws the instance default (first `opts.matcaps` entry), then white, with a warning. Cross-origin image loads go through `applyCORS(img)` in `src/NVLoader.ts`, which unconditionally sets `img.crossOrigin = 'anonymous'` before `img.src =` in the four image loaders (WebGPU `bitmap2texture`, WebGL2 matcap/thumbnail/font). This is spec-safe for same-origin, `blob:`, and `data:`, and enables GPU texture uploads from hosts like `raw.githubusercontent.com` — provided the server sends `Access-Control-Allow-Origin`.
 
 **Multi-instance isolation:** Shared GPU modules use `WeakMap<GPUDevice|WebGL2RenderingContext, ...>` to cache resources per device/context. Their `destroy(device)` / `destroy(gl)` functions take the device/context parameter to clean up per-instance resources.
 
@@ -207,6 +218,8 @@ Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (
 **Shared canvas (bounds):** Multiple instances can share a `<canvas>` via normalized `[[x1,y1],[x2,y2]]` bounds (`NVBounds` type, y=0 bottom, y=1 top). WebGL2 uses scissor-based clipping with `preserveDrawingBuffer: true`. WebGPU renders to intermediate textures then copies to canvas at bounds offset, with `SharedGPUContext` sharing device across instances. `canvasInstances` WeakMap in `viewBoth.ts` tracks siblings. `clientToBoundsPixel()` transforms full-canvas coords to bounds-local for hit testing.
 
 **Future opportunity — WebGPU `clip-distances`:** a commented-out block in `src/wgpu/NVViewGPU.ts` (just above `requestDevice`) sketches a hardware-accelerated mesh clip plane path gated on the `clip-distances` feature. Adapter support is still patchy (notably Safari), so the code is parked. Activation guidance lives next to the block.
+
+**Known issue — Safari WebGPU with MSAA:** WebKit's WebGPU (Safari, every iOS browser) runs the fragment shader once per MSAA sample, so `isAntiAlias: true` makes the volume ray-march about 4x slower (#381). It is still present in Safari Technology Preview 255 (November 2026). We work around it rather than splitting the volume into a single-sample pass: `isAntiAlias` defaults to `false`, most live demos default to the WebGL2 backend, and `apps/dandi-demo/src/dandi.js` turns anti-aliasing off on WebKit. Retest every couple of months, comparing `isAntiAlias: true` against `false` on the WebGPU backend; once Safari is fixed, remove the dandi-demo check.
 
 ## API conventions
 
@@ -778,7 +791,7 @@ transport). A healthy worker that fails on the payload tags the error
 file paid for its whole fetch + inflate + parse twice, the second time on the UI
 thread.
 
-**Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL.
+**Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL. For an AFNI `.HEAD` URL with no `urlImageData`, `NVModel.prepareVolume` probes for the `.BRIK`, then `.BRIK.gz`, beside it (`volume/pairedImage.ts`; GET with the body cancelled once the status is known, an HTML 200 counts as missing) and stashes the result in `_urlImageData` exactly like an explicit one. An explicit `urlImageData` is never probed. File loads are not paired.
 
 ### V1 RGB vector volumes
 
@@ -881,8 +894,11 @@ volumes[0] is chunked, and in multi-instance mode. Hidden (or opacity 0) and
 PAQD volumes do not join as channels. Stacked channels keep their colormap's
 alpha ramp in the orient bake (`modFlags.z` in `orient.wgsl`,
 `keepColormapAlpha` in `gl/orientOverlay.ts`);
-other overlays get `step(0.00001, a)`. The overlay ray-march has no step-size
-correction, so 3D density follows each channel's opacity steeply.
+other overlays get `step(0.00001, a)`. The overlay ray-march takes the
+background's step-size correction (`volumeIsOverlayOpacityCorrected`, default
+on), so 3D density is independent of `sampleRate`; the drawing and PAQD passes
+are not corrected, and a `chunkOverlayOf` overlay (marched by the background
+pass) is always corrected. `e2e/overlay-opacity-correction.spec.ts` pins it.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
 `calMin` 0: the alpha weight is `(f-calMin)/(calMax-calMin)`, so a nonzero
 `calMin` breaks alpha == fraction and ADDITIVE no longer sums to 1.
@@ -1027,8 +1043,8 @@ a rebuild.
   `_ensureChunkedVolumeEntry` on its first render, so it is rejected from then
   on; a call before that first render is not refreshed. Neither method emits an
   event (`volumeUpdated`/`meshUpdated` are for display-option changes, and these
-  run per frame). A coalesced `updateVolumeData` resolves when queued, before
-  its follow-up upload runs.
+  run per frame). A coalesced `updateVolumeData` settles when its follow-up
+  upload finishes (#447).
 - **`isDirty` reports an in-place edit to the ordinary path.** A caller that
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
@@ -1083,6 +1099,24 @@ a rebuild.
   one, sets; without it the follow-up rebuilds only `_pendingVolumes`, which
   is empty when only mesh setters queued). `_pendingFull` makes an
   affine-only rerun yield to a queued full update.
+  A caller queued behind the lock gets a promise from `_queueBehindUpdate`
+  that `_runFollowUp` settles with the follow-up's outcome, so its failure
+  reaches the queued callers, not the update that started it. The pass calls
+  its `settle` callback in its own `finally`, before chaining the next
+  follow-up, so no caller, queued or the one that took the lock, is held by
+  follow-ups chained after its own pass (updates that coalesce into its queued
+  follow-up before it starts do ride along). A new path that takes the lock
+  must accept a `settle` callback and call it in its `finally` before chaining.
+  A takeover wakes `_updateIdle` before its rebuild finishes, so
+  `whenUpdatesSettle()` follows `_takenOverBy` from the pass it waited on to
+  the rebuild that replaced it, and stops at a pass that ends normally. Setters
+  that do not return their rebuild (e.g. `volumeIsBackgroundMasking`) are
+  waited for with the public `whenUpdatesSettle()`, which joins the next
+  follow-up when one is queued, else waits for the running pass, and does not
+  report a failure. A view takeover (`_rebuildViewResources`) adopts callers
+  only while a follow-up still holds the lock on the old view, and settles
+  them with its own rebuild; `destroy()` resolves every queued or running
+  caller, and later callers at once, and no follow-up runs after it.
 
 ## Mesh layers (scalar overlays)
 
@@ -1106,6 +1140,86 @@ the array or call `updateMeshPositions`.
 
 **Crosscut shader** (`shaderType: 'crosscut'`): Renders crosshair-aligned ribbons using `fwidth()`-based screen-space line width. Unique render state: **no depth test, no face culling**. `crosscutMM` uniform computed by `view/NVCrosscut.ts`.
 
+**Crosscut2 shader** (`shaderType: 'crosscut2'`): outlines the mesh where it
+meets the DISPLAYED voxel plane (`tile.planeNormal`/`planePoint`, oblique when
+the background volume is), not a world plane, so the contour holds still while
+the crosshair moves within an oblique slice (#92). Built in the vertex stage,
+not fragments, because an edge-on surface (the medial wall on an axial slice)
+rasterizes to nothing: one instance per triangle of each crossing cluster, six
+vertices; the vertex stage intersects the triangle with the plane and expands
+the segment into a screen-space quad, or collapses it when the triangle misses.
+Planes come from `view/NVCrosscut.crosscutPlanes` as a mat4 uniform (columns
+0-2 `[n, d]`, column 3 `[tileW, tileH, widthPx, count]`; 2D tile: its plane; render tile: the
+three voxel planes through the crosshair; no volume: world axes). Width is
+`mesh.crosscutWidth` (`meshCrosscutWidth`) device px, which also sets the old
+`crosscut` ribbon width (#91); width <= 0 draws nothing on both shaders.
+`clampCrosscutWidth` clamps it in the setter, the constructor and document
+load.
+
+Culling (`mesh/triangleClusters.ts`): triangles are sorted along a Morton curve
+of their centroids and grouped `CLUSTER_SIZE` (64) at a time, one bounding box
+each; per tile the CPU lists the clusters each plane crosses
+(`cluster | plane << PLANE_SHIFT`) and only those are drawn. Why 64: on a pial
+surface a plane crosses ~11% of clusters (21% at 256, 7% at 32), and the CPU
+bounds test is linear in cluster count.
+
+Data: `mesh.indices` in the model keeps file order; the CPU keeps only a
+permutation (4 B/tri) plus bounds. Both backends upload a separate
+cluster-ordered index copy (12 B/tri) and never rewrite the mesh's own index
+buffer: translucent 3D blending depends on triangle order (an audit caught
+WebGPU rewriting it in place; pinned by `e2e/crosscut2.spec.ts` 'leaves a
+translucent 3D view unchanged'). The copy is padded to whole clusters with
+degenerate triangles, so shaders need no bounds check. `meshClusters` cache:
+new `indices`/`positions` arrays rebuild; a `_dataVersion` change rebuilds only
+if an FNV-1a hash of the indices changed (color/layer edits bump it too);
+`_positionsVersion` refreshes bounds only; any other in-place `positions`
+edit is unsupported (call `updateMeshPositions` or `updateGLVolume`). `updateGLVolume()` drops every
+mesh's clusters (`clearMeshClusters`), since its callers edit in place without
+bumping either token (a second audit caught stale bounds there).
+
+WebGPU: group 1 binds the vertex buffer (created with STORAGE usage), the index
+copy and the cluster list, which has one 256-aligned region per tile slot
+selected by dynamic offset (all `writeBuffer`s land before the pass runs).
+`crosscut2Gpu` builds these lazily inside the draw; safe because clusters and
+tile count are fixed within a frame, so only a mesh's first draw of a frame can
+replace buffers. `override clusterSize/planeShift` are set from the TS
+constants. WebGL2: vertex words in an R32UI texture copied GPU-side from the
+vertex buffer via PIXEL_UNPACK_BUFFER, indices in another R32UI texture (one
+helper, `uploadWordTexture`; NEAREST required or `texelFetch` reads 0); the
+cluster list is attribute 0 with divisor `CLUSTER_SIZE` (attribute 0 must be
+enabled or desktop GL emulates it and Firefox warns). GLSL ES 3.00 lacks
+`unpackUnorm4x8`, so colors are unpacked by hand. Drawn with the tile's full
+MVP (it outlines the voxel plane itself, so a slab would only clip it),
+no depth test, skipped in the x-ray pass.
+
+Limits: a mesh too large warns once and draws nothing. On WebGPU the cluster
+list (one region per tile) must also fit `maxBufferSize`; a mesh that does not
+fit this many tiles warns once ('crosscut2: mesh is too large for this many
+tiles') and skips its outline until the tile count drops. WebGPU is bounded by
+`maxStorageBufferBindingSize` (default 128 MiB, ~4.8M vertices), WebGL2 by
+MAX_TEXTURE_SIZE^2 words (~38M vertices at 16384, ~2.4M at 4096), so the
+backends can differ on huge meshes.
+
+Cost (M4 Pro, 3 slice tiles 1024^2, 8x rh.pial = 2.4M tris): WebGL2 26.3 ms
+unculled -> 2.4 ms culled (old crosscut 4.4); WebGPU 19.3 -> 1.9 ms (old
+crosscut 4.7). Memory, only for meshes drawn with crosscut2: WebGPU +12 B/tri
+index copy; WebGL2 vertex copy 28 B/vertex + index copy 12 B/tri.
+
+Tests: `e2e/crosscut2.spec.ts` (oblique stability, edge-on surface,
+in-place index edit + `updateGLVolume`, translucent 3D unchanged, width clamp
+in constructor and document), `src/mesh/triangleClusters.test.ts`,
+`src/NVConstants.test.ts` (`clampCrosscutWidth`).
+
+Known follow-ups:
+- WebGPU per-tile mesh uniform offset `i * 256` has no `MAX_TILES` (128)
+  guard: a mosaic with >128 tiles (>64 with x-ray) fails `writeBuffer`
+  validation for every mesh shader. Pre-existing; needs an issue.
+- `e2e/live-data-updates.spec.ts` "isDirty edits of a chunked volume re-stream
+  its bricks (webgpu)" flakes under parallel Playwright workers (~2/6 on main
+  too; passes serially). Needs an issue.
+- Optional: bundle `drawWithGpu`'s per-tile crosscut args into one object next
+  time a parameter is added.
+
 **Per-mesh slice shader split** (`sliceShaderType`, default `''`): selects the mesh
 shader for 2D slice tiles independently of the 3D render view. Empty string means
 "inherit `shaderType`" (slices yoked to the render shader); a non-empty name (e.g.
@@ -1120,7 +1234,7 @@ is checked against `getAvailableShaders()`), the view layer falls back to
 `gl/meshShader.ts`) so the single per-mesh VAO is safe to draw with any mesh
 program (slice override, x-ray, depth pick) by construction.
 
-**Mesh clipping on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): Constrains near/far clip planes to show only mesh geometry within `±thicknessOn2D` mm of the slice plane. Uses `clipSpaceZeroToOne` parameter on `calculateMvpMatrix2D()`: `orthoZO` for WebGPU ([0,1] NDC), `ortho` for WebGL2 ([-1,1] NDC). `sliceTypeDim()` in `NVConstants.ts` maps AXIAL→2, CORONAL→1, SAGITTAL→0.
+**Mesh slab on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): a finite positive value draws only mesh within that many mm of the DISPLAYED voxel plane (`tile.planeNormal`/`planePoint`, oblique when the volume is; a world plane through the crosshair without a volume), over the slice. 0 or Infinity draws the tile MVP: everything in front of the slice, the slice hiding the rest. `NVSliceLayout.meshSlabMvp` builds it: `NVTransforms.slabMvp` keeps the tile MVP's x/y rows and replaces its depth row with signed distance from the plane, so near/far clip at ±T along the plane normal (one affine matrix, no shader change). Both views draw it into the depth range [0, `SLAB_DEPTH_MAX`] (`gl.depthRange` / `setViewport`): clipping precedes that mapping, and the slice's own depth is >= 0.16, so the slab lands over it while meshes still occlude each other; the mesh x-ray pass draws in the same range. Issue #451. Demo `examples/tract.shear.html`; tests `e2e/mesh-slab.spec.ts`, `src/math/NVTransforms.test.ts` (`slabMvp`).
 
 ## Signal data class
 
@@ -1278,7 +1392,9 @@ Second audit round (all landed):
 - Derived plots are memoized per signal by display state
   (`NVModel.derivePlotCached`, WeakMap); dense series render a per-pixel-column
   min/max envelope (`drawDecimatedSeries`) so the line buffer is bounded by plot
-  width; the legend is capped (`LEGEND_MAX_ROWS`, overflow -> "+N more").
+  width; the legend is capped (`LEGEND_MAX_ROWS`, overflow -> "+N more") and
+  toggled by `display.isLegendVisible` (was `showLegend` before NVD v11), not
+  by `nv.isLegendVisible`.
 - `collectSignalGraphData` only merges signals whose axis (label + reversed)
   matches the first, so ppm and time-axis signals never share one axis.
 - Signal types exported from the `webgpu`/`webgl2` subpath entries too.
@@ -1343,7 +1459,10 @@ overridden by a reset, and a plot double-click just scrubs. Any graph hit still
 consumes the dblclick so it does not fall through to depth-pick (nothing to pick
 on the 2-D plot). This is the one-click way back from a deep zoom; zooming out
 past the full extent still auto-resets too. A double-click on a spatial slice is
-unaffected (still depth-picks).
+unaffected (still depth-picks), except that while a spline/livewire contour is
+in progress a double-click on a 2D slice tile closes the contour instead, and
+one on the 3D render tile is ignored (#114). The graph check runs first, so a
+graph double-click keeps its action mid-contour.
 
 Marker vs window: explicit zoom/pan may leave the cursor marker off-window (zoom
 only re-centres on the marker when it is already visible; the pan buttons can
@@ -1681,7 +1800,7 @@ the BSD-3 upstream. The MRS API is exported from all three entry subpaths
 
 ## Colormap conventions
 
-**Colormap display window (`min`/`max`):** Some bundled LUTs (the `ct_*` maps, e.g. `ct_bones` 180..600 HU) declare a suggested `cal_min`/`cal_max` window in their JSON, and `lookupColorMap(name)` returns it on the `ColorMap`. `NVCmaps.withColormapWindow` applies it when a colormap is set without `calMin` or `calMax`: in `setVolume`, and when `NVModel.prepareVolume` loads a volume by URL. Passing either bound skips the window, so the other bound keeps its current value. A volume added as an `NVImage` and a streamed volume (`loadChunkedVolume`, which picks its own window from the data) do not get it.
+**Colormap display window (`min`/`max`):** Some bundled LUTs (the `ct_*` maps, e.g. `ct_bones` 180..600 HU) declare a suggested `cal_min`/`cal_max` window in their JSON, and `lookupColorMap(name)` returns it on the `ColorMap`. `NVCmaps.withColormapWindow` fills whichever of `calMin`/`calMax` is not given from it: when `NVModel.prepareVolume` loads a volume by URL, in the `NVChunkedVolume` constructor (`loadChunkedVolume`; the streamed volume still samples its robust/global range unless both bounds were given, and the auto window fills only bounds still unset), and in `setVolume` only when the colormap differs from the volume's current one (callers such as nv-mcp `set_volume` and the UIKit bridge re-send the colormap with every update, which must not reset the user's window). A given bound wins; a non-finite one (NaN, or null from JSON callers such as nv-mcp) means the image's default and `NVCmaps.resolveDefaultWindow` replaces it with `robustMin`/`robustMax` (the header cal_min/cal_max, else the 2-98% data range; a streamed volume samples it even when a CT map sets the window). A volume added as an `NVImage` keeps its own window: it always carries both bounds, so none is left for the map (#395).
 
 **Negative colormaps:** Enabled by setting `colormapNegative` to a non-empty string. `calMinNeg`/`calMaxNeg` default to mirroring `calMin`/`calMax`.
 
@@ -1692,7 +1811,11 @@ the BSD-3 upstream. The MRS API is exported from all three entry subpaths
 
 Volumes apply in GPU shader. Mesh layers apply during CPU compositing (`mesh/layers/index.ts`).
 
-**Label colormaps (one colormap per volume, issue #69):** A colormap is a label table iff its definition has a `labels` array (an empty one counts); there is no other classifier (`_` name prefixes are gone: `draw`, `itksnap`, `slicer3d`). `setVolume(i, { colormap })` and the load options are the only entry point for both kinds; `NVModel.applyColormap` derives `NVImage.colormapLabel` from `colormap` at load and on every `colormap` change (null for a continuous map), so treat `colormapLabel` as read-only. A NIFTI_INTENT_LABEL volume loaded without a colormap gets `Random`, which is generated, not read from JSON: `labelLutFor('Random', [globalMin, globalMax])` hashes each ID to a colour over the volume's whole range and always at least IDs 0..255 (ID 0 transparent; capped at 256x8192 IDs, dropping far negative IDs first so 0..255 stays; non-finite range ends and voxels are ignored), so the same ID matches across volumes. `NVModel.growLabelRange` widens (never shrinks) a generated LUT to the values the volume now holds, scanning every frame of `img` (`globalMin`/`globalMax` describe frame 0 only); `applyColormap`, `updateVolumeData`, `isDirty` commits (`_commitDirtyVolumes`), `recalculateCalMinMax` and `loadDeferred4DVolumes` call it, `NVChunkedVolume.applyAutoWindow` grows a streamed volume's LUT to its sampled range via `NVCmaps.grownLabelLut`, and a table colormap is left as defined. A streamed volume also grows per decoded brick, independent of the display window: the source loader's `onChunk` hook hands each decoded region to `NVChunkedVolume.growLabelsFromChunk`, which records its finite range (`NVCmaps.finiteLabelRange`) under any colormap, coalesces bricks that arrive together, and only when an ID falls outside a generated LUT assigns the grown LUT and calls `_updateGLChanged()` (the new LUT changes `chunkedDisplayKey`, so resident bricks re-stream with the new colours). The renderer's decoded tier re-serves held bricks without decoding them again, so `setVolume({ colormap })` calls `growLabelsToObserved()` on each chunked volume to cover IDs decoded under an earlier colormap. Label LUTs are dense over min..max and **wrap into rows of 256** (`LABEL_LUT_WIDTH`, `labelLutTexels` in `view/NVOrient.ts`; the shaders `texelFetch`/`textureLoad` at `(i % 256, i / 256)`), so ranges past the GPU's max texture width (8192 under SwiftShader) still upload. Orient shader uses nearest LUT lookup; `calMin`/`calMax`/`colormapType`/`colormapNegative` are ignored for label volumes. `addColormap` with `labels` defaults `I` to 0..n-1 and allows one entry; re-registering a name rebuilds the label LUT of volumes using it. `colormapNames(kind?)` filters by kind; `drawColormap` accepts only label maps whose IDs all lie in 0..255, none negative (`isDrawingColormap`, throws otherwise), and `drawingColormaps` lists them. Documents (v10) save the colormap by name and embed runtime-registered definitions (`colormaps`); the registry is page-wide but a volume keeps the LUT compiled when its colormap was applied, so when another viewer has since re-registered that name, `serialize` embeds the table the volume shows under `<Name> 2`, `3`, ... (`documentColormaps.shownLabelColormap`); `documentColormaps.upgradeColormaps` turns a v9 compiled `colormapLabel` into a document colormap named `<volume> labels` and maps `_draw`/`_itksnap`/`_slicer3d`. When a label colormap has names (e.g. the built-in `draw` colormap), the drawing volume surfaces the human-readable label (e.g. `"11bladder"`) in the `locationChange` event's `string` field instead of a numeric fallback like `"draw:11"`. Mesh layers keep their reader-set `colormapLabel` and are out of this model.
+**Label colormaps (one colormap per volume, issue #69):** A colormap is a label table iff its definition has a `labels` array (an empty one counts); there is no other classifier (`_` name prefixes are gone: `draw`, `itksnap`, `slicer3d`). `setVolume(i, { colormap })` and the load options are the only entry point for both kinds; `NVModel.applyColormap` derives `NVImage.colormapLabel` from `colormap` at load and on every `colormap` change (null for a continuous map), so treat `colormapLabel` as read-only. A NIFTI_INTENT_LABEL volume loaded without a colormap gets `Random`, which is generated, not read from JSON: `labelLutFor('Random', [globalMin, globalMax])` hashes each ID to a colour over the volume's whole range and always at least IDs 0..255 (ID 0 transparent; capped at 256x8192 IDs, dropping far negative IDs first so 0..255 stays; non-finite range ends and voxels are ignored), so the same ID matches across volumes. `NVModel.growLabelRange` widens (never shrinks) a generated LUT to the values the volume now holds, scanning every frame of `img` (`globalMin`/`globalMax` describe frame 0 only); `applyColormap`, `updateVolumeData`, `isDirty` commits (`_commitDirtyVolumes`), `recalculateCalMinMax` and `loadDeferred4DVolumes` call it, `NVChunkedVolume.applyAutoWindow` grows a streamed volume's LUT to its sampled range via `NVCmaps.grownLabelLut`, and a table colormap is left as defined. A streamed volume also grows per decoded brick, independent of the display window: the source loader's `onChunk` hook hands each decoded region to `NVChunkedVolume.growLabelsFromChunk`, which records its finite range (`NVCmaps.finiteLabelRange`) under any colormap, coalesces bricks that arrive together, and only when an ID falls outside a generated LUT assigns the grown LUT and calls `_updateGLChanged()` (the new LUT changes `chunkedDisplayKey`, so resident bricks re-stream with the new colours). The renderer's decoded tier re-serves held bricks without decoding them again, so `setVolume({ colormap })` calls `growLabelsToObserved()` on each chunked volume to cover IDs decoded under an earlier colormap. Label LUTs are dense over min..max and **wrap into rows of 256** (`LABEL_LUT_WIDTH`, `labelLutTexels` in `view/NVOrient.ts`; the shaders `texelFetch`/`textureLoad` at `(i % 256, i / 256)`), so ranges past the GPU's max texture width (8192 under SwiftShader) still upload. Orient shader uses nearest LUT lookup; `calMin`/`calMax`/`colormapType`/`colormapNegative` are ignored for label volumes. `addColormap` with `labels` defaults `I` to 0..n-1 and allows one entry; re-registering a name rebuilds the label LUT of volumes using it. `colormapNames(kind?)` filters by kind; `drawColormap` accepts only label maps whose IDs all lie in 0..255, none negative (`isDrawingColormap`, throws otherwise), and `drawingColormaps` lists them. Documents (v10+) save the colormap by name and embed runtime-registered definitions (`colormaps`); the registry is page-wide but a volume keeps the LUT compiled when its colormap was applied, so when another viewer has since re-registered that name, `serialize` embeds the table the volume shows under `<Name> 2`, `3`, ... (`documentColormaps.shownLabelColormap`); `documentColormaps.upgradeColormaps` turns a v9 compiled `colormapLabel` into a document colormap named `<volume> labels` and maps `_draw`/`_itksnap`/`_slicer3d`. When a label colormap has names (e.g. the built-in `draw` colormap), the drawing volume surfaces the human-readable label (e.g. `"11bladder"`) in the `locationChange` event's `string` field instead of a numeric fallback like `"draw:11"`. Mesh layers keep their reader-set `colormapLabel` and are out of this model.
+
+**Legend visibility (issue #350):** a volume or mesh lists its labels when `nv.isLegendVisible && item.isLegendVisible !== false` (`NVModel.collectLegendEntries`, `view/NVLegend.ts`); the per-item flag defaults to true. Volume and mesh entries share one flat legend, volumes first, no heading. Until v11 the legend read a `showLegend` nothing set, which compiled because `NVImage` and `NVMesh` carry a `[key: string]: unknown` index signature (follow-up issue); `documentLegend.upgradeLegendFlags` drops the per-item flag from v10 and older documents and renames signal `display.showLegend`. Large atlases: the font never shrinks; entries wrap into columns of contiguous labels (`legendGrid`, up to 40% of the canvas width), then all columns scroll together. When rows overflow, the wheel over the legend backing (`isInLegend`) scrolls it instead of the slice/zoom: `WheelEvent.deltaMode` sets the unit (pixel deltas are CSS px, times `effectiveDevicePixelRatio` over `layout.pitch`; a line is one row, a page `visibleRows`) and accumulates fractionally in `model._legendScrollRow` (transient, not saved) so small trackpad deltas add up; `computeLegendLayout` clamps and floors it to whole rows, and `scrollLegend` starts from the shown row (a value left from a longer legend would swallow the first scroll). A pointer-down on the scrollbar track pages (`legendScrollHit`; the only scroll on touch screens) and one on the thumb is consumed, so neither starts a camera drag. Each view computes the layout once per frame, reserves its `width`, then sets `x`; drawing, hit tests and the wheel area share its geometry (`backingRect`, `scrollTrack`). The scrollbar sits inside the backing, so the wheel works over all of it. Sizes come from the font it draws with (`LegendFont`: `fontRenderer.fontPx`, which holds `fontMinSize`, `fontScale` and DPR, and `measureText`), so a larger font cannot overlap columns. `NVModel.legendScrollRow` returns to row 0 when `legendSources` changes (identity of the listed volumes and meshes, plus the colormap key): a load, removal, colormap change or `loadDocument`. A redraw, a label toggle or a streamed table growing keeps the position. Grouped tables (collapsible bones/organs/vessels, one-click toggles) are deferred. See `examples/legend.html` (AAL, 116 labels).
+
+**Hidden labels.** `NVImage.hiddenLabels` (label values, not LUT rows; per-item option, saved in NVD without a version bump) hides regions on both backends. `colormapLabel` stays pristine (the legend, centroids and document colormap embedding read it); the GPU reads `NVCmaps.shownLabelLut(vol)` instead, a copy with alpha 0 at each hidden value, memoized per volume so its identity changes only with the LUT or hidden set. Every label-LUT upload and key (`orientColormapKey`, `overlayColormapKey`, `chunkedDisplayKey`, PAQD `lut256`) goes through it, so a toggle re-uploads like a colormap change. Hidden labels stay in the legend as an outline in the label colour, drawn as one panel with `backBorder` (the panel shaders keep a single antialiased ring, so there are no seams and a translucent colour blends once; separate bars left seams, #478). With `interaction.isLegendToggleEnabled` (default false) a click on a volume entry's colour box toggles it (`legendHitTest` in `view/NVLegend.ts` reports `isOnBox`); a name click still moves the crosshair. Mesh and connectome entries do not toggle. Known limit: a streamed volume's coarse floor is a separate NVImage built once, so it keeps drawing hidden labels in 3D until bricks cover it (it ignores later colormap changes the same way). See `examples/vox.atlas.html`.
 
 **Legend centroids are lazy.** Nothing computes label centroids at load (a label `colormap`, document load, mesh layer load); `LegendEntry.centroid` is a function that `view/legendCentroids.ts` evaluates on the first legend click and memoizes in a `WeakMap` keyed on the data array: `volume.img` for volumes, with `[colormapLabel, matRAS, _dataVersion]` as dependencies, and `layer.values` for mesh layers, with `[mesh.positions, layer.colormapLabel, mesh._positionsVersion]` as dependencies. A dependency is compared by identity, so replace these objects, never mutate them in place (the version counters cover the in-place edits `updateVolumeData` / `updateMeshPositions` make); `applyVolumeTransform` and `resetVolumeAffine` assign a new `volume.matRAS` without touching `img` or the LUT, which is why `matRAS` is a dependency. Volume centroids are means of RAS voxel coordinates mapped through `matRAS` once; mesh centroids are means of vertex positions, already in mm. `LUT.centroids` no longer exists. A 256³ scan is ~60 ms (Chrome), down from 515-850 ms when it ran eagerly on every label load.
 
@@ -1716,7 +1839,7 @@ Voxel-level drawing/annotation on 2D slices, visible in both 2D and 3D views. Mo
 
 **`moveCrosshairInVox(di, dj, dk)`**: Steps crosshair by discrete voxels in RAS-resampled ijk space. Snaps to voxel centers via mm→vox (rounded)→mm round-trip.
 
-**Scroll wheel**: Steps one voxel in depth direction (AXIAL→k, CORONAL→j, SAGITTAL→i). Mesh-only: 1% of scene extent.
+**Scroll wheel**: Steps one voxel in depth direction (AXIAL→k, CORONAL→j, SAGITTAL→i). Mesh-only: 1% of scene extent. Over a legend with more rows than fit, the wheel scrolls the legend instead (see Legend visibility).
 
 **Keyboard**: H/L/J/K step crosshair in RAS axes on 2D slices; rotate azimuth/elevation in render-only mode.
 
@@ -1739,6 +1862,20 @@ Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` 
 Pure-data layout engine in `view/NVSliceLayout.ts`. Computes `SliceTile[]` from `SliceLayoutConfig`. Both backends call `screenSlicesLayout()` once per frame.
 
 Priority: mosaic string > render-only > single slice > hero layout > multiplanar.
+
+**Layout inset** (`layoutInset`, model `layout.inset`, [left, top, right,
+bottom] CSS px, default zeros): tiles, colorbar, legend, graph and the header
+label lay out inside the canvas minus the inset, so an in-canvas control panel
+(the uikit controls demo's "Own panel") owns that strip. Both views compute
+the rect once per frame with `NVSliceLayout.insetRect` (times `_dpr`; a bad
+side counts as 0), pass its size where the canvas size went, and shift the
+results: `fitSlicesFromModel(..., origin)` moves the tiles, `legendLayout.y` /
+`.x` take the offset, `translateGraphLayout` moves the graph, and the colorbar
+renderers' `setContentRect` sets `ColorbarLayout.originX/Y` (they keep the full
+size for NDC). In `instances` mode a tile without `bounds` takes the inset
+rect too; an instance's own `bounds` are left alone (the caller placed it). Overlay renderers still get the whole view, and picking needs
+nothing (it reads tile rects). Not `bounds`: a bounded view clips its overlay
+and drops pointer events outside, and on WebGPU renders to an offscreen copy.
 
 The scale ruler (`view/NVRuler.ts`) takes px-per-mm from `mmPerPixel2D` so it
 tracks the 2D zoom (`pan2Dxyzmm` is threaded in by both renderers), and reads
@@ -1813,7 +1950,9 @@ Render modes: `renderMode` is one field holding a `VOLUME_RENDER_MODE`, so
 always test it for EQUALITY (`isRenderMode()` in the shader preambles,
 `=== VOLUME_RENDER_MODE.X` on the CPU). A `> 0.5` test reads `SLICES` as
 `MAXIMUM` — which picks the MIP shader variant and, on a chunked volume, the MAX
-blend equation.
+blend equation. `CINEMATIC` never reaches the classic shaders: both views hand
+the volume renderer COMPOSITE in that mode (used by its fallbacks), see
+"Cinematic render mode".
 
 `SLICES` does not march at all. It intersects the ray with the three crosshair
 planes, samples the whole layer stack at each hit with `sampleSlice()` (the
@@ -1925,6 +2064,206 @@ entries or leave it internal, but the doc should not promise it.
 **Protocol:** Messages include `_wbId`. Reply with `{ _wbId, ...result }` or `{ _wbId, _wbError }`. Transfer output ArrayBuffers.
 
 **Serialization:** Strip non-cloneable properties (class instances) via `JSON.parse(JSON.stringify())` before `postMessage`.
+
+## Cinematic render mode
+
+`volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC` (3): progressive path
+tracing of volumes[0] plus either one label volume or standard overlays, in the render tiles of both
+view tile loops. Settings: `model.volume.cinematic` (`CinematicOptions`,
+defaults in `VOLUME_DEFAULTS.cinematic`), controller `volumeCinematic` (setter
+merges a partial object), constructor `volumeCinematic`, saved in NVD with the
+volume group; setter, constructor and `loadDocument` pass it through
+`clampCinematicOptions` (a zero `stepVoxels` never advances the ray, so its
+floor is 0.05). nv-mcp exposes it as an object setting; ipyniivue's generator
+skips it (no object types). `cinematicFrameMs` (read-only) is the mean GPU time
+of the march, summed over tiles, for the first 10 frames after any tile
+restarts (`CinematicFrameTimer`): WebGPU timestamp queries ('timestamp-query'
+requested when the adapter has it), WebGL2 `EXT_disjoint_timer_query_webgl2`;
+null without either. volumes[0] (and the label volume) are read at their
+`frame4D`. Intensities upload as half-float bits (`halfFloatBits`, hand-rounded
+where `Float16Array` is missing). Half floats stop at 65504, so `CinematicCpuCache`
+first replaces non-finite voxels (`sanitizeIntensities`: NaN becomes the lower
+of 0 and the finite minimum, Inf the finite extreme), then multiplies by a power
+of two when needed (`halfFloatScale`). The TF window, `gMax` and label `lo`/`hi`
+carry the same factor (no shader change), so gradient thresholds stay in data
+units and the image matches a float pipeline. Precision is half float's:
+about 1/1024 of the value, so a narrow window on top of a large offset bands.
+
+**Files:** `view/NVCinematic.ts` (shared CPU side, unit-tested: TF bake, label
+materials, dilation, calibration, clip rescale, light, uniform packing, and
+`CinematicCpuCache`, which rebuilds only on version tokens: `_dataVersion`,
+`colormapKey`, calMin/calMax, label volume identity + `hiddenLabels`, label
+mode, `frac2mm` identity; `calculateRAS` clones it per affine, and only a changed
+voxel order re-uploads intensities). `wgpu/cinematic.ts` + `cinematic*.wgsl` (`cinematicCommon` is prepended
+to the march and extinction so primary and shadow rays classify identically).
+`gl/cinematic.ts` + `gl/cinematicShader.ts` mirror them method for method and
+statement for statement.
+
+**Frame structure (WebGPU):** `beginFrame`; on the first cinematic tile
+`prepare` (CPU cache update, uploads, gradient and extinction prep passes when
+dirty) records into a SEPARATE command encoder; each RENDER tile calls `draw`,
+which records one march dispatch (unless converged) into that encoder and draws
+a triangle in the tile viewport of the main pass that resolves the mean colour
+and writes `frag_depth` (pipeline: view sample count, `depth24plus`,
+`depthCompare: 'always'`), so meshes and the crosshair drawn after it
+depth-test against the volume. `queue.submit([cinematic, main])`. `endFrame`
+frees tiles not drawn (and every volume resource when no tile was, e.g. after
+leaving CINEMATIC) and reports whether a tile still refines; the view then
+schedules one `render()` after `onSubmittedWorkDone` (one frame in flight), not
+while `_isDragging` (each camera change draws one restarted frame). Each tile
+(keyed by tile index, sized to it in device px; multiplanar and mosaic render
+tiles each get one) restarts on any change of options, cache version, viewport,
+MVP, clip planes, clip colour, cutaway, background or affine. First-hit depth is set on frame 0
+(first sample with table alpha >= 0.01, as the classic march), not
+min-accumulated. The light comes from each tile's own model matrix (mosaic
+tiles use `calculateMvpMatrix2D`'s). The march assumes an orthographic camera.
+
+**Frame structure (WebGL2):** same calls and tile keys; `init` leaves the
+renderer not ready without `EXT_color_buffer_float` or when its shaders fail
+to compile (the view then draws COMPOSITE with one warning). Compute becomes fragment passes drawing a
+fullscreen triangle: prep passes one per 3D layer (`framebufferTextureLayer`,
+detached afterwards: a framebuffer that is not bound keeps a deleted texture alive),
+extinction mips by rendering each level while `TEXTURE_BASE/MAX_LEVEL` pin
+sampling to the previous one (no feedback loop), `LINEAR_MIPMAP_NEAREST` to
+match WebGPU's default nearest mip filter. Uniforms are std140 blocks fed the
+same `pack*Params` arrays. The march blends a running MEAN into a per-tile
+RGBA16F target (`CONSTANT_ALPHA`, alpha 1/(n+1); an fp16 sum bands and RGBA32F
+blending needs `EXT_float_blend`), so the display gets frames = 1. Frame 0
+draws unblended into accum + an R32F depth target; later frames bind an
+accum-only framebuffer. The march unprojects GL NDC z -1..1, so its depth is
+window depth for both `orthoZO` (render tile) and `ortho` (mosaic tile) MVPs.
+Integer and float32 textures are `NEAREST` (else incomplete: `texelFetch`
+reads 0). Every pass saves and restores framebuffer, viewport, program, VAO,
+blend, depth, scissor and cull state. Refinement waits on a fence
+(`fenceSync`, polled each rAF) before the next frame, like WebGPU's
+`onSubmittedWorkDone`: queued behind a 20-60 ms march, plain rAF blocked the
+main thread (26 long tasks up to 99 ms in 8 s) and tripled the timed cost.
+
+**Inputs:** transfer function = volumes[0]'s colormap mapped across its
+calMin..calMax (scaled units: HU for CT). Optional colormap keys, kept by
+`addColormap` (as are `min`/`max`): `E` (alpha at high gradient; `A` becomes
+interior alpha), `S` (specular), `gradient {lo, hi}` (HU/mm interior-to-surface
+ramp), `gMax`, `shininess`, `labelBlend`. Label volume: the first volume after
+volumes[0] with a label colormap that is drawn and shares volumes[0]'s grid
+(dims, frac2mm within 1e-3); values must be 0-254 (warned otherwise). Its label
+colormap is the material table (`R G B A I labels` plus per-label `S`,
+`surface`, `lo`/`hi`, `normalize`); `hiddenLabels` (legend toggle) hide labels.
+In cinematic tiles the classic volume draw is skipped, so the label volume is
+drawn only by cinematic; 2D tiles are unchanged. Calibration (`normalize`) maps
+label medians piecewise linearly on the CPU; a calibrated volume's TF window is
+the colormap's own `min`/`max` (else the calibrated calMin..calMax).
+
+**Standard overlays:** without a visible label, PAQD or streamed overlay
+(`canUseCinematicOverlays`), both cinematic
+renderers borrow `volumeRenderer.overlayTexture`, whose prep path owns
+registration, colormaps, asymmetric thresholds, opacity, visibility and stack
+blending. A separate unlit march (no anatomical shadows/extinction) is mixed
+with the anatomy by depth, as in the classic shader; clip planes apply only with
+`clipPlaneOverlay`; gamma applies; opacity correction is per overlay voxel
+crossed (`overlayStep * length(df * overlayDims)`), so anisotropic overlays
+match classic. A hidden background (opacity 0 or `visible: false`) still draws
+the overlays: the view passes `isBackgroundVisible` and the shader skips the
+anatomy march (`labelInfo.w`). A visible label volume over a hidden background
+draws as labelMode 'only' (`cinematicOptionsForFrame`): it needs the anatomy
+march, since intensities shape its surfaces, but no unlabeled tissue shows or
+casts shadows. The view bumps `_cinematicOverlayVersion` after
+stack/affine updates so an in-place texture rewrite restarts accumulation; the
+cinematic renderer never frees the borrowed texture.
+
+**Limits:** not drawn, with one `log.warn`: standard overlays mixed with a
+visible label volume (the same-grid label volume draws alone), and any visible
+PAQD, streamed or off-grid label overlay (all standard overlays omitted).
+Channel stacks draw no overlays. Chunked
+(streamed) and RGB/RGBA backgrounds (no scalar intensity for the TF,
+`hasScalarIntensity`) draw COMPOSITE (one `log.warn` each). The drawing layer is
+not drawn in cinematic render tiles (one `log.warn`; 2D tiles still show it, and
+no drawing pass exists yet). Memory per
+cinematic volume: a duplicate r16float intensity texture, an rgba16float
+gradient (8 B/voxel), a half-res rgba16float extinction mip chain, and an r8uint
+label id texture; all freed when no tile is cinematic. Depth picking uses the
+classic march. The TotalSegmentator tables (66-113 labels) fill a
+multi-column, scrolling legend (see Legend visibility; grouping deferred). Meshes (streamlines too) keep their own shaders and only depth-composite:
+they get no cinematic shadow or AO and cast none on the volume (deferred). Gradient thresholds (HU/mm) were tuned on ~1.5 mm data and are
+not resolution invariant (fix: fixed-mm smoothing before Sobel). Extinction
+classifies at voxel centres while the march interpolates, so a narrow band-pass
+TF can be skipped where an edge crosses the band between voxels (fix if seen:
+per-block min/max). Angio presets on non-contrast CT colour low-density bone
+red (cancellous bone and contrast blood share 150-400 HU; a gradient probe was
+tried and reverted 2026-10-31; research on branch `cinematic-blood-vs-bone`).
+
+**Rendering details worth keeping:** 2D TF lookup is HU x sqrt-spaced gradient
+magnitude. Shading blends volumetric (normal-free) and Blinn-Phong surface
+terms by surfaceness; Bannerman normal reuse. Shadows and AO cone-trace the
+extinction mips; empty-space skip reads mip `SKIP_LOD`. `isStochasticLighting` (default off,
+demo "Fast light") moves the cones out of the march loop: lit = A x AO +
+B x shadow per sample, the march sums A + B, and one sample per ray, picked
+with probability proportional to weight x luminance(A + B), traces both cones
+after the loop and subtracts its loss scaled by sum/share (unbiased). Cones
+nested in the march were 60-75% of a frame and WebGL2 ran them ~2x slower than
+WebGPU; CT_Abdo 900 px: WebGPU 16.8 -> 6.5, WebGL2 24.6 -> 9.4 ms/frame;
+converged images match (mean |d| 0.3/255; the classic path skips samples
+below weight 0.002 for secondary rays, the stochastic one does not, so a very
+hazy table can converge slightly darker). Early frames speckle where the
+picked sample's colour differs from the pixel's (white bone behind red tissue
+tints a frame grey-green). Mip downsample reads 3
+texels along odd axes (2 drops the last texel and coarse data drifts, so the
+skip jumps over tissue). Secondary rays start 1.5 extinction voxels off the
+surface (from the surface they show wood-grain self-shadow rings). Clip planes
+are rescaled to mm and clip each ray to an interval (solid: march inside,
+cutaway: jump over); cone traces skip clipped material. Samples within 1.5
+voxels past a cut face use the TF's maximum-gradient row for opacity (edge
+alpha), so a cut through translucent, low-gradient tissue (white matter, CSF)
+reads as a solid face instead of wrinkled interior noise, and are unlit like
+the classic clip surface: albedo x AO x 0.6, no direct light, shadow or
+specular (lit, the plane normal often faced the light and tone-mapped grey and
+white matter to near white; 0.6 keeps albedos off the ACES shoulder). A
+negative `clipPlaneColor` alpha tints that albedo toward the clip colour by
+|alpha| (`clipTint`, uniform `clipColor`), as the classic `shading` mode does;
+a positive alpha draws nothing, since the classic translucent sheet over
+empty space would be an unlit plane in a path-traced scene; in air
+`E` is 0, so a cut through empty space only starts the ray. A label sample is the nearest voxel at a point jittered up to
+half a voxel per frame, so boundaries average like trilinear weights. Each
+visible label spreads one voxel (6-neighbours) into unlabeled/hidden voxels, so
+the intensity ramp, not the categorical boundary, ends a surface; hidden labels
+become id 255. Label 0 uses the base TF scaled by the label mode ('only' 0,
+'unlabeled' 1). With `labelBlend` > 0 the intensity TF shapes labelled tissue
+and the label tints it by that fraction and gates it; otherwise label material
+ramps shape it (harder, mesh-like). ACES tone map in the display pass.
+
+**Demo** (`examples/cinematic.html`, public API only): presets `cr_skin_bone`,
+`cr_bone`, `cr_angio`, `cr_angio_1d`, `cr_t1`, label-modulated `cr_ct_mod`/
+`cr_t1_mod` (defaults for labelled samples), and two built per volume
+(`VOLUME_PRESETS`): `cr_default` (greyscale over the robust range, for any
+non-CT scan) and `cr_t1_extracted` ("extracted T1", the MNI152 samples'
+default: a three-class Otsu split of the above-background histogram places
+flesh-toned grey and white matter; brain-extracted T1 only, since scalp and
+skull join the classes otherwise; both are disabled on label-calibrated samples,
+whose table units a raw-intensity fit cannot match); in `cr_angio` the gradient
+suppresses bone-edge partial volume in the vessel band (CT_Abdo: vessel-band
+voxels near bone median 159 HU/mm vs 38 away). Label tables `ts_wholebody.json`
+(TotalSegmentator, CC BY 4.0; v1 has no forearm/hand bones), `ts_abdopelvis.json`
+(same numbering, alpha 0 for absent structures, which also drops them from the
+legend), `siam_t1.json` (MR, BSD-2: `normalize` CSF 0, GM 100, WM 200; cortex
+ramp 30-70; structures without reliable T1 contrast use an always-on ramp, `lo`
+-1000 `hi` -999). The MNI152 sample loads `spmMotor.nii.gz` statistics
+(`redyell` / `winter`, +3..+6 / -3..-6, as in `vox.stats.html`). `mr-mni152-tract` adds `TR_S_R.tt.gz` streamlines (`fiberRadius` 0.5) with clip plane 1 and `meshXRay` 0.05 (samples may set `meshes`, `clip`, `meshXRay`; `?clip=` wins). "Fast light" (`?fastlight=1`) sets `isStochasticLighting`. "Clip color" (`?clipcolor=`, default `transparent`) sets the alpha of `clipPlaneColor` as `vox.clip.html` does. A table's `settings` key (slider values) is demo-only. For
+label-calibrated MR the classic view keeps the grey window. Samples by id
+(`?sample=`: `ct-abdo`, `ct-philips`, `ct-electrodes`, `ct-wholebody`,
+`ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-mni152`, `mr-mni152-tract`, `mr-t1-scalp` (`chris_t1.nii.gz`, not brain extracted, on `cr_default`), `mr-siam`); `index.html` links
+"Cinematic CT" and "Cinematic Labeled MR", and under Tract Scenes "Cinematic streamlines" (`mr-mni152-tract`). Data: niivue-demo-images-lfs; LFS
+objects load via `media.githubusercontent.com` with `?v=` (raw returns
+pointers). Add a sample only after its LFS PR merges: requesting a media URL
+before the file exists makes GitHub's CDN cache the 404 for that exact URL
+(query included), and only a new `?v=` escapes it. LFS PR #7 (cleaned MR
+segmentation) is pending: after it merges, move the MR URLs to `?v=2`, never
+before. CT_AVM and CT_pitch are uint8, not HU: excluded. `window.nv1` is exposed
+for scripted checks.
+
+**Performance** (measured on the removed example prototype, march GPU time per frame, ~1400x605, M4 Pro,
+azimuth 150 / elevation 15): CT_Philips bone 6 ms, CT_WholeBody skin+bone 37
+ms, CT_Abdo angio 15 ms. Cone tracing replaced per-sample shadow rays (~10-17x
+on translucent scenes). Light scenes can read ~3x slower in some sessions (GPU
+clock scaling).
 
 ## Demo conventions
 

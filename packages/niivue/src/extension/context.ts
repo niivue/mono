@@ -392,9 +392,7 @@ export function computeSlicePointerEvent(
   if (!vol?.matRAS || !vol.dimsRAS) return null
 
   const rect = nv.canvas.getBoundingClientRect()
-  let dpr = window.devicePixelRatio || 1
-  const forcedDpr = nv.opts?.forceDevicePixelRatio ?? -1
-  if (forcedDpr > 0) dpr = forcedDpr
+  const dpr = nv.effectiveDevicePixelRatio
   const canvasX = (evt.clientX - rect.left) * dpr
   const canvasY = (evt.clientY - rect.top) * dpr
 

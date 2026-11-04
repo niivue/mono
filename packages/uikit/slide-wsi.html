@@ -11,34 +11,40 @@
       header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
         display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
       header b { color: #ffd500; }
-      nav a { color: #9cf; margin-right: 10px; }
       button { background: #333; color: #eee; border: 1px solid #555;
         border-radius: 4px; padding: 3px 9px; cursor: pointer; }
       #canvasHolder { flex: 1; position: relative; }
       canvas { position: absolute; inset: 0; width: 100%; height: 100%;
         touch-action: none; }
       a { color: #ffd500; }
-      #status { color: #ffd500; }
     </style>
+    <link rel="stylesheet" href="/demo.css" />
   </head>
   <body>
     <div id="wrap">
       <header>
-        <b>UIKit ruler / WSI viewer</b>
-        <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide (3D)</a><a href="/slide-wsi.html">WSI</a><a href="/buttons.html">buttons</a><a href="/controls.html">controls</a></nav>
-        <span>Drag to pan, wheel to zoom. Click two points to measure.</span>
+        <b>UIKit</b>
+        <nav><a href="/index.html">controls</a><a href="/ruler.html">ruler</a><a href="/volume.html">volume</a><a href="/slide.html">slide (3D)</a><a href="/slide-wsi.html" aria-current="page">WSI</a><a href="/buttons.html">buttons</a></nav>
         <button id="fit" type="button">Fit</button>
         <label>font <input id="fontSize" type="range" min="12" max="72" value="24" style="vertical-align:middle" /></label>
-        <span>slide: <a href="?src=cptac">tissue</a> | <a href="?src=dzi">demo</a></span>
-        <span><a href="?backend=webgl2">webgl2</a> | <a href="?backend=webgpu">webgpu</a></span>
-        <span id="status">loading slide...</span>
+        <label>slide <select id="srcSelect">
+          <option value="cptac">tissue</option>
+          <option value="dzi">demo</option>
+        </select></label>
+        <label class="backend">backend <select id="backendSelect">
+          <option value="webgl2">webgl2</option>
+          <option value="webgpu">webgpu</option>
+        </select></label>
       </header>
       <div id="canvasHolder"><canvas id="gl"></canvas></div>
+      <footer><span id="help">Drag to pan, wheel to zoom. Click two points to measure.</span><span id="status" data-state="wait">Loading slide...</span></footer>
     </div>
 
     <script type="module">
       import { DziSource, NVSlide, SlideRenderer, SlideRendererGPU } from '@niivue/niivue'
       import { loadDefaultFont, UIKitRulerOverlay } from './src/index.ts'
+      import { setStatus } from './statusBar.js'
+      import { urlParamSelect } from './urlParamSelect.js'
 
       // Real tissue from NiiVue's test-images repo (hosted live on GitHub Pages,
       // which serves HTTP Range + CORS), plus a CORS-enabled Deep Zoom fallback.
@@ -53,8 +59,10 @@
       const params = new URLSearchParams(location.search)
       const src = params.get('src') || 'cptac'
       const wantGpu = params.get('backend') === 'webgpu' && 'gpu' in navigator
+      // Wired before the slide loads, so both menus work even if it fails.
+      urlParamSelect(document.getElementById('srcSelect'), 'src', src === 'dzi' ? 'dzi' : 'cptac')
+      urlParamSelect(document.getElementById('backendSelect'), 'backend', wantGpu ? 'webgpu' : 'webgl2')
       const canvas = document.getElementById('gl')
-      const status = document.getElementById('status')
       const COLOR = [1, 0.85, 0, 1]
 
       // --- standalone slide viewer plumbing (mirrors examples/slides.js) --------
@@ -129,8 +137,10 @@
           sizePx: labelSizePx, thickness: 3, showTicks: m.ticks, showTickNumbers: m.ticks,
           lineColor: COLOR, textColor: COLOR,
         })
-        status.textContent = `${m.length.toFixed(m.decimals)} ${m.units}` +
-          (ruleB ? ' (click to start over)' : ' (click to fix)')
+        setStatus(
+          `${m.length.toFixed(m.decimals)} ${m.units}${ruleB ? '' : ' (click to fix)'}`,
+          ruleB ? 'ok' : 'wait',
+        )
       }
 
       let hasFit = false
@@ -155,13 +165,15 @@
           ? NVSlide.fromSource(await DziSource.fromUrl(DZI), opts)
           : await NVSlide.fromManifestUrl(manifestUrl, opts)
       view = await createView()
+      document.getElementById('backendSelect').value = view.kind === 'gpu' ? 'webgpu' : 'webgl2'
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)
       view.renderer.overlayDraw = (f) => ruler.drawOverlay(f)
       slide.addEventListener('change', requestRender)
-      status.textContent = spacing()
-        ? 'click two points to measure (mm)...'
-        : 'click two points to measure (slide px)...'
+      setStatus(
+        `Waiting for first click (${spacing() ? 'mm' : 'slide px'})`,
+        'wait',
+      )
       requestRender()
 
       // --- interaction ----------------------------------------------------------

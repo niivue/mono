@@ -37,6 +37,9 @@ describe('get_options and set_options', () => {
     // A setting the page lacks is described without a value.
     expect(options.gamma.value).toBeUndefined()
     expect(options.gamma.kind).toBe('number')
+    // A number JSON cannot carry travels as null, and the description says so.
+    expect(options.meshThicknessOn2D.nullable).toBe(true)
+    expect(options.crosshairWidth.nullable).toBeUndefined()
   })
 
   it('reads named settings as plain values, described when asked', () => {
@@ -109,12 +112,109 @@ describe('get_options and set_options', () => {
     )
     expect(view.drawScene).not.toHaveBeenCalled()
   })
+
+  it('reports a known matcap by name, any other by its address', () => {
+    const shiny = 'data:image/jpeg;base64,AAAA'
+    const view = settingsView({ opts: { matcaps: { shiny } } })
+    view.volumeMatcap = shiny
+    const { get_options } = settingHandlers(hostOf(view))
+    const read = () =>
+      (
+        get_options({ names: ['volumeMatcap'], describe: false }) as {
+          options: Record<string, unknown>
+        }
+      ).options.volumeMatcap
+    expect(read()).toBe('shiny')
+    view.volumeMatcap = 'https://x.org/a.jpg'
+    expect(read()).toBe('https://x.org/a.jpg')
+  })
+
+  it('answers once the GPU rebuild a setter started has settled', async () => {
+    let settle = () => {}
+    const view = settingsView({
+      whenUpdatesSettle: mock(
+        () => new Promise<void>((resolve) => (settle = resolve)),
+      ),
+    })
+    const { set_options } = settingHandlers(hostOf(view))
+    let answered = false
+    const answer = Promise.resolve(
+      set_options({ options: { crosshairWidth: 2 } }),
+    ).then((r) => {
+      answered = true
+      return r
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(answered).toBe(false)
+    settle()
+    expect(await answer).toEqual({ options: { crosshairWidth: 2 } })
+  })
+})
+
+describe('volumeCinematic', () => {
+  it('sets a partial object through NiiVue merging setter and reads back the whole', () => {
+    const view = settingsView()
+    // As NiiVue keeps it: the setter merges a partial object over the current one.
+    let cinematic: Record<string, unknown> = {
+      exposure: 1,
+      shadow: 1,
+      labelMode: 'unlabeled',
+    }
+    const set = mock((v: Record<string, unknown>) => {
+      cinematic = { ...cinematic, ...v }
+    })
+    Object.defineProperty(view, 'volumeCinematic', {
+      get: () => cinematic,
+      set,
+    })
+    const { get_options, set_options } = settingHandlers(hostOf(view))
+    expect(
+      set_options({ options: { volumeCinematic: { exposure: '2' } } }),
+    ).toEqual({
+      options: {
+        volumeCinematic: { exposure: 2, shadow: 1, labelMode: 'unlabeled' },
+      },
+    })
+    expect(set).toHaveBeenCalledWith({ exposure: 2 })
+    expect(() =>
+      set_options({ options: { volumeCinematic: { labelMode: 'all' } } }),
+    ).toThrow('volumeCinematic.labelMode must be one of')
+    expect(set).toHaveBeenCalledTimes(1)
+    const described = get_options({
+      names: ['volumeCinematic'],
+      describe: true,
+    }) as {
+      options: Record<
+        string,
+        { fields: Record<string, Record<string, unknown>> }
+      >
+    }
+    expect(described.options.volumeCinematic.fields.labelMode).toEqual({
+      kind: 'choice',
+      choices: ['only', 'unlabeled', 'none'],
+      description: expect.any(String),
+    })
+    expect(described.options.volumeCinematic.fields.maxFrames.min).toBe(1)
+  })
+})
+
+it('answers with a note when a settings rebuild does not settle', async () => {
+  const view = settingsView({ whenUpdatesSettle: () => new Promise(() => {}) })
+  const { set_options } = settingHandlers(hostOf(view), 5)
+  expect(
+    await Promise.resolve(set_options({ options: { crosshairWidth: 2 } })),
+  ).toEqual({
+    options: { crosshairWidth: 2 },
+    note: expect.stringContaining('had not finished after 5 ms'),
+  })
+  expect(view.crosshairWidth).toBe(2)
 })
 
 describe('capabilities', () => {
   it('says which optional members, settings, colormaps and transforms the page has', () => {
     const view = settingsView({
       backend: 'webgpu',
+      version: '1.2.3',
       setVolume: mock(),
       meshes: [],
       addMesh: mock(async () => {}),
@@ -144,6 +244,7 @@ describe('capabilities', () => {
     const { capabilities } = settingHandlers(hostOf(view))
     const got = capabilities({}) as Record<string, unknown>
     expect(got.backend).toBe('webgpu')
+    expect(got.niivueVersion).toBe('1.2.3')
     const features = got.features as Record<string, string[]>
     expect(features.volumes).toEqual(['setVolume'])
     expect(features.meshes).toEqual(['meshes', 'addMesh'])

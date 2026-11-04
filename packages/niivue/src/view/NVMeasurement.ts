@@ -4,6 +4,7 @@ import type NVModel from '@/NVModel'
 import type { CompletedMeasurement } from '@/NVTypes'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { projectMMToCanvas } from '@/view/sliceUtils'
+import { sceneUnit } from '@/volume/utils'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
 import type { BuildLineFn, LineData } from './NVLine'
 import type { SliceTile } from './NVSliceLayout'
@@ -131,13 +132,17 @@ export function rulerTickLabels(
   return out
 }
 
-/** Format distance with smart decimals. */
-function formatDistance(dist: number, showUnits: boolean): string {
+/** Format distance with smart decimals, suffixed with `unit` when shown. */
+export function formatDistance(
+  dist: number,
+  showUnits: boolean,
+  unit = 'mm',
+): string {
   let decimals = 2
   if (dist > 9) decimals = 1
   if (dist > 99) decimals = 0
   let label = dist.toFixed(decimals)
-  if (showUnits) label += ' mm'
+  if (showUnits) label += ` ${unit}`
   return label
 }
 
@@ -148,7 +153,7 @@ export function measureTextBack(textColor: number[]): number[] {
     : [1, 1, 1, 0.5]
 }
 
-/** A ruler between two canvas points, `distance` mm long (0: no ticks). */
+/** A ruler between two canvas points, `distance` units long (0: no ticks). */
 export type ScreenRuler = {
   sx: number
   sy: number
@@ -175,6 +180,7 @@ export function buildRulers(
   buildText: BuildTextFn,
   buildLine: BuildLineFn,
   numberPx = 12,
+  unit = 'mm',
 ): MeasurementResult {
   const lineColor = style.measureLineColor
   const lineWidth = style.rulerWidth
@@ -197,7 +203,8 @@ export function buildRulers(
       const b = buildText(t.str, t.x, t.y, 0.5, textColor, 0.5, 0.5)
       if (b.count > 0) labels.push(b)
     }
-    const label = text ?? formatDistance(distance, style.isMeasureUnitsVisible)
+    const label =
+      text ?? formatDistance(distance, style.isMeasureUnitsVisible, unit)
     const batch = buildText(
       label,
       (sx + ex) * 0.5,
@@ -337,6 +344,7 @@ export function buildPersistedMeasurements(
         buildText,
         buildLine,
         numberPx,
+        sceneUnit(model).label,
       )
     : { lines: [] as LineData[], labels: [] as GlyphBatch[] }
 

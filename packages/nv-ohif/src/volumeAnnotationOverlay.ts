@@ -54,6 +54,7 @@ export class VolumeAnnotationOverlay implements UIKitOverlayRenderer {
       if (s.start2) sig += `S${s.start2.x | 0},${s.start2.y | 0};`
       if (s.end2) sig += `E${s.end2.x | 0},${s.end2.y | 0};`
       if (s.label) sig += `t${s.label.lines.join('')};`
+      if (s.length !== undefined) sig += `l${s.length}${s.unit ?? ''};`
     }
     if (sig !== this.lastSig) {
       this.lastSig = sig

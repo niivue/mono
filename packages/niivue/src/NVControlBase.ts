@@ -997,7 +997,8 @@ export default class NiiVue extends EventTarget {
    * convention and the CSS-pixel/devicePixelRatio conversion.
    *
    * Returns null when the point misses every tile, lands on a 3D render tile,
-   * or no volume is loaded.
+   * or no volume is loaded. World coordinates are scene units as loaded:
+   * micrometers on a micrometer volume (`xyzt_units` MICRON), not converted.
    */
   canvasToMM(
     canvasX: number,
@@ -5100,6 +5101,8 @@ export default class NiiVue extends EventTarget {
    * Crosshair position in **RAS world millimetres** (x = right, y = anterior,
    * z = superior), converted from the scene-fraction {@link crosshairPos}.
    * Pairs with {@link setCrosshairPos}, which takes the same units.
+   * World coordinates are scene units as loaded: micrometers on a micrometer
+   * volume (`xyzt_units` MICRON, e.g. OME-TIFF/OME-Zarr), not converted.
    * @example const [x, y, z] = nv1.getCrosshairPos() // mm
    */
   getCrosshairPos(): [number, number, number] {
@@ -5117,6 +5120,8 @@ export default class NiiVue extends EventTarget {
    *
    * Replaces the 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)`: pass the mm
    * directly. To set a fraction instead, assign {@link crosshairPos}.
+   * World coordinates are scene units as loaded: micrometers on a micrometer
+   * volume (`xyzt_units` MICRON, e.g. OME-TIFF/OME-Zarr), not converted.
    * @param pos - [x, y, z] in world mm
    * @example nv1.setCrosshairPos([0, -18, 12]) // mm
    */
@@ -5598,6 +5603,7 @@ export default class NiiVue extends EventTarget {
    * the camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you
    * zoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's
    * cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
+   * The built-in scale ruler draws on 2D tiles only, never over this plane.
    */
   setSlidePlane(
     slide: NVSlide,

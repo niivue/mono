@@ -38,6 +38,7 @@ function measure(
   fill: boolean,
   zoom: number,
   over: Partial<SliceLayoutConfig> = {},
+  mmPerUnit = 1,
 ): { pxPerMM: number; barPx: number; label: string } {
   const tiles = screenSlicesLayout(
     cfg({ sliceType, isSingleViewFillCanvas: fill, ...over }),
@@ -56,6 +57,7 @@ function measure(
     },
     [1, 1, 1, 1],
     [0, 0, 0, zoom],
+    mmPerUnit,
   )
   const m = /^(\d+) (cm|mm|um)$/.exec(label)
   if (!m) throw new Error(`no ruler drawn (label: "${label}")`)
@@ -153,5 +155,22 @@ describe('buildRuler', () => {
         }
       }
     }
+  })
+
+  test('micrometerVolume_isLabelledInTissueMm_notSceneUnits', () => {
+    // A 5000-unit FOV on a um volume is 5 mm of tissue: same bar as a 5 mm volume.
+    const um = measure(
+      0,
+      false,
+      1,
+      { extentsMax: vec3.fromValues(5000, 5000, 5000) },
+      1e-3,
+    )
+    const mm = measure(0, false, 1, {
+      extentsMax: vec3.fromValues(5, 5, 5),
+    })
+    expect(um.label).toBe('2 mm')
+    expect(um.label).toBe(mm.label)
+    expect(um.barPx).toBeCloseTo(mm.barPx, 6)
   })
 })

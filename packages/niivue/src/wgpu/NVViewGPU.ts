@@ -74,6 +74,7 @@ import {
 } from '@/volume/chunking'
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
+import { sceneUnit } from '@/volume/utils'
 import { WGPUBench } from './bench'
 import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
@@ -1922,6 +1923,7 @@ export default class NVView {
           buildLine,
           md.ui.fontColor,
           md.scene.pan2Dxyzmm,
+          sceneUnit(md).mm,
         )
         if (rulerResult) {
           labels.push(...rulerResult.labels)

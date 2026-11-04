@@ -9,11 +9,13 @@ import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
 import {
+  formatDistance,
   measureTextBack,
   rulerSegments,
   rulerTickLabels,
 } from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { sceneUnit } from '@/volume/utils'
 
 /**
  * Movement (in CSS pixels) a `crosshairPan` gesture must reach (>=) before it
@@ -279,11 +281,11 @@ export function updateDragOverlay(ctrl: NiiVue): void {
     }
     // Distance text at line midpoint
     if (startMM && endMM) {
-      let decimals = 2
-      if (dist > 9) decimals = 1
-      if (dist > 99) decimals = 0
-      let label = dist.toFixed(decimals)
-      if (ui.isMeasureUnitsVisible) label += ' mm'
+      const label = formatDistance(
+        dist,
+        ui.isMeasureUnitsVisible,
+        sceneUnit(ctrl.model).label,
+      )
       const mx = (sx + ex) * 0.5
       const my = (sy + ey) * 0.5
       overlay.text?.push({

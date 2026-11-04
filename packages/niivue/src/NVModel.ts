@@ -37,7 +37,12 @@ import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import { loadVolumePrepared } from '@/volume/loadBridge'
 import { resolvePairedImage } from '@/volume/pairedImage'
-import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
+import {
+  extractVoxelFid,
+  getVoxelValue,
+  spatialUnit,
+  volumeTR,
+} from '@/volume/utils'
 import { assignUniqueVolumeIds } from '@/volume/volumeIds'
 
 export default class NVModel {
@@ -1588,10 +1593,24 @@ export default class NVModel {
    * (`<id>-2`, `<id>-3`, ... for a repeat, e.g. the same URL loaded twice);
    * `name` is left as given. Resolved after the async prepare, so concurrent
    * adds cannot both claim a free id.
+   *
+   * Labels (scale ruler, measurements) use the base volume's `xyzt_units`;
+   * mixing units across layers (e.g. a um overlay on a mm base) is
+   * unsupported and logs a warning.
    */
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {
     const prepared = await NVModel.prepareVolume(volume)
     assignUniqueVolumeIds([prepared], this.volumes)
+    const base = this.volumes[0]
+    if (base) {
+      const baseUnit = spatialUnit(base.hdr.xyzt_units).label
+      const unit = spatialUnit(prepared.hdr.xyzt_units).label
+      if (unit !== baseUnit) {
+        log.warn(
+          `Volume '${prepared.name}' is in ${unit} but the base volume is in ${baseUnit}; mixed units are unsupported`,
+        )
+      }
+    }
     this.volumes.push(prepared)
     this._setupPivot3D()
     this.invalidateGraphCache()

@@ -75,6 +75,11 @@ describe('isAnnotationErased', () => {
     expect(isAnnotationErased(rect(cut))).toBe(true)
   })
 
+  test('a tool generateShape cannot rebuild is never erased', () => {
+    const spline = { ...rect(), shape: { type: 'measureSpline', start, end } }
+    expect(isAnnotationErased(spline as VectorAnnotation)).toBe(false)
+  })
+
   test('a freehand annotation has no shape to compare', () => {
     const ann = { ...rect(), shape: undefined }
     expect(isAnnotationErased(ann)).toBe(false)

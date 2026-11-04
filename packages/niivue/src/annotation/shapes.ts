@@ -221,7 +221,9 @@ export function generateShape(
 
 /**
  * True when the eraser has cut into a drawn shape: its polygons no longer match
- * the outline its bounds generate. False for a shape-less (freehand) annotation.
+ * the outline its bounds generate. Only shapes generateShape can rebuild
+ * (rect, ellipse, circle, line, arrow) are judged; contours, bidirectional and
+ * freehand annotations return false.
  */
 export function isAnnotationErased(
   ann: VectorAnnotation,
@@ -235,5 +237,7 @@ export function isAnnotationErased(
     shape.end,
     shape.width ?? strokeWidth,
   )
-  return JSON.stringify(intact) !== JSON.stringify(ann.polygons)
+  return (
+    intact.length > 0 && JSON.stringify(intact) !== JSON.stringify(ann.polygons)
+  )
 }

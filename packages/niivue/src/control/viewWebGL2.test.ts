@@ -1,4 +1,4 @@
-import { expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import type NiiVue from '@/NVControlBase'
 import {
   getCanvasInstances,
@@ -7,13 +7,21 @@ import {
   setCanvasViewport,
 } from './canvasRegistry'
 
-mock.module('@/gl/NVViewGL', () => ({
-  default: class {
-    async init() {}
-    resize() {}
-    destroy() {}
-  },
-}))
+globalThis.HTMLCanvasElement ??= class {} as unknown as typeof HTMLCanvasElement
+// Spy on the real view rather than mock.module, which would leak a stub into
+// every later test file in the same bun run.
+const { default: NVViewGL } = await import('@/gl/NVViewGL')
+const viewCanvases: unknown[] = []
+beforeEach(() => {
+  spyOn(NVViewGL.prototype, 'init').mockImplementation(async function (
+    this: InstanceType<typeof NVViewGL>,
+  ) {
+    viewCanvases.push(this.canvas)
+  })
+  spyOn(NVViewGL.prototype, 'resize').mockImplementation(() => {})
+  spyOn(NVViewGL.prototype, 'destroy').mockImplementation(() => {})
+})
+afterEach(() => mock.restore())
 const { recreateView } = await import('./viewWebGL2')
 
 globalThis.ResizeObserver ??= class {
@@ -23,14 +31,14 @@ globalThis.ResizeObserver ??= class {
 
 function fakeCanvas(attached = true): HTMLCanvasElement {
   const parent = { replaceChild() {} }
-  const canvas = {
+  // NVViewGL checks instanceof, so build on the real prototype.
+  return Object.assign(Object.create(HTMLCanvasElement.prototype), {
     parentNode: attached ? parent : null,
     style: {},
     cloneNode: () => fakeCanvas(),
     addEventListener() {},
     removeEventListener() {},
-  }
-  return canvas as unknown as HTMLCanvasElement
+  }) as HTMLCanvasElement
 }
 
 function fakeCtrl(canvas: HTMLCanvasElement, bounds?: number[][]): NiiVue {
@@ -80,4 +88,32 @@ test('recreateView keeps the canvas viewport and registry', async () => {
   const lone = fakeCtrl(detached)
   await recreateView(lone)
   expect(lone.canvas).not.toBe(detached)
+})
+
+test('recreateView keeps a full-frame canvas shared with a bounded sibling', async () => {
+  const shared = fakeCanvas()
+  const full = fakeCtrl(shared)
+  const inset = fakeCtrl(shared, [
+    [0.6, 0.6],
+    [1, 1],
+  ])
+  registerCanvasInstance(full, shared)
+  registerCanvasInstance(inset, shared)
+  await recreateView(full)
+  // Cloning would move the inset onto a canvas its live view never drew to.
+  expect(full.canvas).toBe(shared)
+  expect(inset.canvas).toBe(shared)
+  expect(viewCanvases.at(-1)).toBe(shared)
+})
+
+test('recreateView clones a lone bounded canvas so antialias can change', async () => {
+  const old = fakeCanvas()
+  const lone = fakeCtrl(old, [
+    [0, 0],
+    [0.5, 1],
+  ])
+  registerCanvasInstance(lone, old)
+  await recreateView(lone)
+  expect(lone.canvas).not.toBe(old)
+  expect(viewCanvases.at(-1)).toBe(lone.canvas)
 })

@@ -1,30 +1,30 @@
-import { expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import type NiiVue from '@/NVControlBase'
 
+globalThis.HTMLCanvasElement ??= class {} as unknown as typeof HTMLCanvasElement
+// Spy on the real views rather than mock.module, which would leak stubs into
+// every later test file in the same bun run.
+const { default: NVViewGL } = await import('@/gl/NVViewGL')
+const { default: NVViewGPU } = await import('@/wgpu/NVViewGPU')
 const glCanvases: unknown[] = []
-mock.module('@/gl/NVViewGL', () => ({
-  default: class {
-    constructor(canvas: unknown) {
-      glCanvases.push(canvas)
-    }
-    async init() {}
-    resize() {}
-    destroy() {}
-  },
-}))
-mock.module('@/wgpu/NVViewGPU', () => ({
-  default: class {
-    async init() {
-      throw new Error('requestAdapter returned null')
-    }
-    destroy() {}
-  },
-}))
+beforeEach(() => {
+  spyOn(NVViewGL.prototype, 'init').mockImplementation(async function (
+    this: InstanceType<typeof NVViewGL>,
+  ) {
+    glCanvases.push(this.canvas)
+  })
+  spyOn(NVViewGL.prototype, 'resize').mockImplementation(() => {})
+  spyOn(NVViewGL.prototype, 'destroy').mockImplementation(() => {})
+  spyOn(NVViewGPU.prototype, 'init').mockRejectedValue(
+    new Error('requestAdapter returned null'),
+  )
+  spyOn(NVViewGPU.prototype, 'destroy').mockImplementation(() => {})
+})
+afterEach(() => mock.restore())
 globalThis.ResizeObserver ??= class {
   observe() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver
-globalThis.HTMLCanvasElement ??= class {} as unknown as typeof HTMLCanvasElement
 const { attachToCanvas } = await import('./viewBoth')
 
 test('a webgpu to webgl2 fallback on a detached canvas keeps the caller canvas', async () => {

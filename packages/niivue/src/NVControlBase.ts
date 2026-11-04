@@ -5498,10 +5498,6 @@ export default class NiiVue extends EventTarget {
       return {
         leftTopWidthHeight: [rect.left, rect.top, rect.width, rect.height],
         axCorSag: 4,
-        azimuth: inst.rotation ? inst.rotation[0] : undefined,
-        elevation: inst.rotation ? inst.rotation[1] : undefined,
-        pan: inst.viewport ? inst.viewport.pan : undefined,
-        zoom: inst.viewport ? inst.viewport.zoom : undefined,
         volumeId: inst.volumeId,
       }
     })

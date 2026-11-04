@@ -21,8 +21,8 @@ export function applyCORS(img: HTMLImageElement): void {
 
 /**
  * Largest width or height accepted for an image NiiVue decodes for display
- * (thumbnail, matcap): a few-kilobyte PNG can declare a size that decodes to
- * gigabytes (#385).
+ * (thumbnail, matcap, 2D image volume): a few-kilobyte PNG can declare a size
+ * that decodes to gigabytes (#385, #511).
  */
 export const MAX_IMAGE_SIDE = 8192
 

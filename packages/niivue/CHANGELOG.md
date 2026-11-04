@@ -1,3 +1,15 @@
+## 1.0.0-rc.84 (2026-11-04)
+
+### Features
+
+- **niivue:** ship a self-contained ESM build for bundler-free use ([e75292bf](https://github.com/niivue/mono/commit/e75292bf))
+- **niivue:** find the .BRIK for a .HEAD URL automatically ([3717a339](https://github.com/niivue/mono/commit/3717a339))
+
+### Thank You
+
+- Claude Opus 5.5
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.83 (2026-11-04)
 
 ### Fixes

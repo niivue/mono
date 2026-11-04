@@ -71,7 +71,7 @@ round-trips need a GPU context. Use these for anything needing a real instance.
 
 ```bash
 bun run test:e2e         # playwright test (config: playwright.config.ts)
-bun run test:e2e:metal   # full suite minus real-Metal-only failures (issue #453); add PLAYWRIGHT_CHROMIUM_CHANNEL=chromium for the GPU
+bun run test:e2e:metal   # full suite, minus any Metal-only exclusions (none at present); add PLAYWRIGHT_CHROMIUM_CHANNEL=chromium for the GPU
 bunx nx e2e niivue       # via Nx
 ```
 

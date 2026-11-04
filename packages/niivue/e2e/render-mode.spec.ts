@@ -99,7 +99,10 @@ const GRID: [number, number][] = [
   [0.5, 0.5],
   [0.4, 0.35],
   [0.6, 0.35],
-  [0.5, 0.7],
+  // Off u = 0.5: below the axial plane that column is the crosshair line, a
+  // depth tie with the sagittal plane that real GPUs resolve a pixel apart
+  // for whole and chunked volumes (#453).
+  [0.55, 0.7],
   [0.35, 0.55],
   [0.65, 0.55],
 ]

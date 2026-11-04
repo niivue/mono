@@ -33,6 +33,14 @@ const isLocal = (url: string) => url.includes('localhost:5273')
 const QUIET_MS = 250
 const MAX_WAIT_MS = 6000
 
+// vox.modulate.afni.html passes only .HEAD URLs, so NiiVue probes for the
+// paired data file: a GET for .BRIK (a 404, the dev images ship .BRIK.gz),
+// then .BRIK.gz. Each probe is aborted once its status arrives, and the
+// worker then fetches .BRIK.gz for real.
+const isAfniProbe = (demo: string, url: string) =>
+  demo === 'vox.modulate.afni.html' &&
+  /^\/volumes\/afni\/[^/]+\.BRIK(\.gz)?$/.test(new URL(url).pathname)
+
 // vox.4d.html loads this volume with limitFrames4D, a partial 4D load that
 // cancels its fetch once it has the frames. Any other abort is a real failure.
 const isExpectedAbort = (
@@ -40,9 +48,14 @@ const isExpectedAbort = (
   url: string,
   errorText: string | undefined,
 ) =>
-  demo === 'vox.4d.html' &&
-  new URL(url).pathname === '/volumes/mpld_asl.nii.gz' &&
-  errorText === 'net::ERR_ABORTED'
+  errorText === 'net::ERR_ABORTED' &&
+  ((demo === 'vox.4d.html' &&
+    new URL(url).pathname === '/volumes/mpld_asl.nii.gz') ||
+    isAfniProbe(demo, url))
+
+// The AFNI .BRIK probe above is the only expected error status.
+const isExpectedStatus = (demo: string, url: string, status: number) =>
+  status === 404 && isAfniProbe(demo, url) && url.endsWith('.BRIK')
 
 test.describe('demo pages load cleanly', () => {
   for (const name of pages) {
@@ -97,6 +110,7 @@ test.describe('demo pages load cleanly', () => {
       })
       page.on('response', (res) => {
         if (res.status() < 400) return
+        if (isExpectedStatus(name, res.url(), res.status())) return
         const line = `HTTP ${res.status()}: ${res.url()}`
         if (isLocal(res.url())) problems.push(line)
         else remote.push(line)

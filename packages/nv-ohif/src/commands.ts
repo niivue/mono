@@ -2,6 +2,7 @@ import {
   type AnnotationPoint,
   type AnnotationScreenShape,
   type AnnotationStats,
+  isAnnotationErased,
   SLICE_TYPE,
   slice2DToMM,
   type VectorAnnotation,
@@ -822,6 +823,9 @@ function buildAnnotationDisplay(
  * Intensity stats are the NiiVue volume's sampled values in the base modality's
  * unit; area is in mm^2 (voxel-spacing aware, from NiiVue's annotation stats).
  */
+// Tools exported from their shape bounds rather than their polygons.
+const BOUNDS_TOOLS = new Set(['measureRect', 'measureEllipse', 'measureCircle'])
+
 type ReflectionResult =
   | { status: 'success' }
   | { status: 'permanentlyUnsupported' }
@@ -871,6 +875,10 @@ function reflectNiivueAnnotationResult(
     | undefined
   const points = annotationPointsLps(annotation)
   if (points.length < (mapping.minPoints ?? 0))
+    return { status: 'permanentlyUnsupported' }
+  // An eraser cut leaves the bounds intact, so OHIF would draw the whole shape
+  // beside stats for what is left. Drop the row instead.
+  if (BOUNDS_TOOLS.has(toolType ?? '') && isAnnotationErased(annotation))
     return { status: 'permanentlyUnsupported' }
   const unit = modalityUnit(entry)
   const { primary, data } = buildAnnotationDisplay(

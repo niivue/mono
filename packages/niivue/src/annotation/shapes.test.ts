@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { AnnotationPoint } from '@/NVTypes'
-import { generateSplineFromPoints } from './shapes'
+import type { AnnotationPoint, VectorAnnotation } from '@/NVTypes'
+import {
+  generateShape,
+  generateSplineFromPoints,
+  isAnnotationErased,
+} from './shapes'
 
 describe('generateSplineFromPoints', () => {
   test('returns no polygon for fewer than 3 control points', () => {
@@ -49,5 +53,30 @@ describe('generateSplineFromPoints', () => {
       expect(p.y).toBeGreaterThanOrEqual(-5)
       expect(p.y).toBeLessThanOrEqual(25)
     }
+  })
+})
+
+describe('isAnnotationErased', () => {
+  const start = { x: 0, y: 0 }
+  const end = { x: 10, y: 5 }
+  const rect = (polygons = generateShape('measureRect', start, end, 1)) =>
+    ({
+      polygons,
+      style: { strokeWidth: 1 },
+      shape: { type: 'measureRect', start, end },
+    }) as unknown as VectorAnnotation
+
+  test('an intact shape is not erased', () => {
+    expect(isAnnotationErased(rect())).toBe(false)
+  })
+
+  test('a shape whose polygons were cut is erased', () => {
+    const cut = [{ outer: [start, { x: 10, y: 0 }, end], holes: [] }]
+    expect(isAnnotationErased(rect(cut))).toBe(true)
+  })
+
+  test('a freehand annotation has no shape to compare', () => {
+    const ann = { ...rect(), shape: undefined }
+    expect(isAnnotationErased(ann)).toBe(false)
   })
 })

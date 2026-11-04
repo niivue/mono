@@ -16,12 +16,7 @@
 import * as NVLoader from '@/NVLoader'
 import { hdrToTransferable } from '@/volume/hdrTransfer'
 import { loadVolume, nii2volume } from '@/volume/NVVolume'
-
-const post = (
-  self as unknown as {
-    postMessage: (msg: unknown, transfer?: Transferable[]) => void
-  }
-).postMessage.bind(self) as (msg: unknown, transfer?: Transferable[]) => void
+import { post } from './workerPost'
 
 interface LoadRequest {
   _wbId: number

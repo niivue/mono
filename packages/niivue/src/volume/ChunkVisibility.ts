@@ -241,26 +241,10 @@ export function chunksInFrustum(
             pz + (offset?.[2] ?? 0),
             1,
           ]
-      const cx =
-        mvp[0] * model[0] +
-        mvp[4] * model[1] +
-        mvp[8] * model[2] +
-        mvp[12] * model[3]
-      const cy =
-        mvp[1] * model[0] +
-        mvp[5] * model[1] +
-        mvp[9] * model[2] +
-        mvp[13] * model[3]
-      const cz =
-        mvp[2] * model[0] +
-        mvp[6] * model[1] +
-        mvp[10] * model[2] +
-        mvp[14] * model[3]
-      const cw =
-        mvp[3] * model[0] +
-        mvp[7] * model[1] +
-        mvp[11] * model[2] +
-        mvp[15] * model[3]
+      const cx = clipRow(mvp, model, 0)
+      const cy = clipRow(mvp, model, 1)
+      const cz = clipRow(mvp, model, 2)
+      const cw = clipRow(mvp, model, 3)
       if (cw <= 1e-6) {
         nearCamera = true
         break
@@ -277,6 +261,20 @@ export function chunksInFrustum(
     }
   }
   return out
+}
+
+// Row `row` of column-major `mvp` applied to homogeneous `model`: one clip coord.
+function clipRow(
+  mvp: Float32Array | number[],
+  model: ArrayLike<number>,
+  row: number,
+): number {
+  return (
+    mvp[row] * model[0] +
+    mvp[4 + row] * model[1] +
+    mvp[8 + row] * model[2] +
+    mvp[12 + row] * model[3]
+  )
 }
 
 function chunkCornerToModel(
@@ -336,30 +334,39 @@ export function orderByViewCenter(
     const model = matRAS
       ? chunkCornerToModel(cx, cy, cz, vx, vy, vz, matRAS)
       : [cx, cy, cz, 1]
-    const cw =
-      mvp[3] * model[0] +
-      mvp[7] * model[1] +
-      mvp[11] * model[2] +
-      mvp[15] * model[3]
+    const cw = clipRow(mvp, model, 3)
     if (cw <= 1e-6) {
       score.set(ci, Number.POSITIVE_INFINITY)
       continue
     }
-    const ndcX =
-      (mvp[0] * model[0] +
-        mvp[4] * model[1] +
-        mvp[8] * model[2] +
-        mvp[12] * model[3]) /
-      cw
-    const ndcY =
-      (mvp[1] * model[0] +
-        mvp[5] * model[1] +
-        mvp[9] * model[2] +
-        mvp[13] * model[3]) /
-      cw
+    const ndcX = clipRow(mvp, model, 0) / cw
+    const ndcY = clipRow(mvp, model, 1) / cw
     score.set(ci, ndcX * ndcX + ndcY * ndcY)
   }
   return [...indices].sort((a, b) => (score.get(a) ?? 0) - (score.get(b) ?? 0))
+}
+
+// Parse clip planes into active half-spaces [nx,ny,nz,a] in [0,1]^3 object space
+// (kept side is dot(n,p-0.5)-a >= 0), skipping the [0,0,0,2] "no clip" sentinel
+// and degenerate normals. Cutaway carves an interior slab, not a half-space, so
+// it yields none (culling or skipping against it would be unsafe).
+export function activeClipPlanes(
+  clipPlanes: ArrayLike<number> | undefined,
+  isCutaway: boolean | undefined,
+): number[][] {
+  if (!clipPlanes || isCutaway) return []
+  const out: number[][] = []
+  const count = Math.floor(clipPlanes.length / 4)
+  for (let p = 0; p < count; p++) {
+    const nx = clipPlanes[p * 4 + 0]
+    const ny = clipPlanes[p * 4 + 1]
+    const nz = clipPlanes[p * 4 + 2]
+    const a = clipPlanes[p * 4 + 3]
+    if (a > 1 || a < -1) continue
+    if (nx * nx + ny * ny + nz * nz < 1e-12) continue
+    out.push([nx, ny, nz, a])
+  }
+  return out
 }
 
 /**
@@ -392,19 +399,7 @@ export function chunksNotClippedOut(
   isCutaway: boolean,
   chunkOffsetFor?: ChunkOffsetFor,
 ): number[] {
-  if (isCutaway) return [...indices]
-  // Collect the active planes once (skip the [0,0,0,2] sentinel + degenerates).
-  const planes: number[][] = []
-  const planeCount = Math.floor(clipPlanes.length / 4)
-  for (let p = 0; p < planeCount; p++) {
-    const nx = clipPlanes[p * 4 + 0]
-    const ny = clipPlanes[p * 4 + 1]
-    const nz = clipPlanes[p * 4 + 2]
-    const a = clipPlanes[p * 4 + 3]
-    if (a > 1 || a < -1) continue // sentinel: no clip
-    if (nx * nx + ny * ny + nz * nz < 1e-12) continue // degenerate normal
-    planes.push([nx, ny, nz, a])
-  }
+  const planes = activeClipPlanes(clipPlanes, isCutaway)
   if (planes.length === 0) return [...indices]
 
   const [vx, vy, vz] = plan.volumeDims

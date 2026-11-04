@@ -29,8 +29,11 @@ function splitUrlSuffix(url: string): { path: string; suffix: string } {
  *
  * `x+orig.HEAD` -> `x+orig.BRIK`, `x+orig.BRIK.gz`. The extension match is
  * case-insensitive; a lowercase `.head` pairs with `.brik` and anything else
- * with AFNI's own uppercase `.BRIK`. A `?query` or `#fragment` (a signed or
- * cache-busted URL) is carried over to each candidate unchanged.
+ * with AFNI's own uppercase `.BRIK`. A `?query` or `#fragment` (an access token
+ * or cache buster) is carried over to each candidate unchanged. That does not
+ * keep a presigned URL (for example S3) valid: its signature covers the path,
+ * so it fails once `.HEAD` becomes `.BRIK`. Callers with presigned URLs must
+ * pass a separately signed `urlImageData`.
  */
 export function pairedImageUrlCandidates(url: string): string[] {
   const { path, suffix } = splitUrlSuffix(url)
@@ -44,8 +47,7 @@ export function pairedImageUrlCandidates(url: string): string[] {
 /**
  * Whether `url` answers a GET with a success status. The body is cancelled as
  * soon as the status is known, so a large data file is not downloaded twice.
- * GET rather than HEAD: some servers reject HEAD, a presigned URL is signed for
- * one method, and a cross-origin HEAD needs a CORS preflight a GET does not.
+ * GET rather than HEAD because some servers reject HEAD requests.
  * An HTML page is not a data file: an SPA host or dev server can answer a
  * missing path with its index page and a 200.
  */

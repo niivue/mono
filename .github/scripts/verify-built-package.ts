@@ -75,12 +75,26 @@ const existsWithContent = (relativePath: string): boolean => {
   return entries.some((entry) => entry.isFile())
 }
 
+// A subpath pattern target ("./dist/standalone/*") names no single file, so
+// it passes when at least one file it can resolve to exists with content.
+const patternHasContent = (pattern: string): boolean => {
+  const glob = new Bun.Glob(pattern.replace(/^\.\//, ''))
+  for (const match of glob.scanSync({ cwd: pkgDir })) {
+    if (existsWithContent(match)) {
+      return true
+    }
+  }
+  return false
+}
+
 const verifyPath = (label: string, value: unknown) => {
-  if (
-    typeof value === 'string' &&
-    value.startsWith('./') &&
-    !existsWithContent(value)
-  ) {
+  if (typeof value !== 'string' || !value.startsWith('./')) {
+    return
+  }
+  const present = value.includes('*')
+    ? patternHasContent(value)
+    : existsWithContent(value)
+  if (!present) {
     missing.push(`${label}: ${value}`)
   }
 }

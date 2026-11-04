@@ -127,6 +127,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Orient cube visibility | ✅ | `isOrientCubeVisible` |
 | 3D crosshair visibility | ✅ | `is3DCrosshairVisible` |
 | Radiological convention | ✅ | `isRadiological` |
+| Sagittal nose left (`sagittalNoseLeft`) | ✅ | `isSagittalNoseLeft`, independent of `isRadiological` as in the old package. Default `null` follows `isRadiological` (radiological: nose left), so unset scenes and documents render as before; `true`/`false` override. Classic NVD `opts.sagittalNoseLeft` is mapped |
 | Nearest interpolation | ✅ | `volumeIsNearestInterpolation` |
 | Multiplanar equal size | ✅ | `isEqualSize` |
 | Mosaic string | ✅ | `mosaicString` property |

@@ -238,3 +238,46 @@ describe('layout.customLayout document round-trip', () => {
     expect(restored.customLayout).toEqual(current.customLayout)
   })
 })
+
+describe('layout.isSagittalNoseLeft document round-trip', () => {
+  test('unset (null) is the default and is omitted from a sparse document', () => {
+    expect(LAYOUT_DEFAULTS.isSagittalNoseLeft).toBeNull()
+    const sparse = sparsifyGroup(
+      'layout',
+      { ...LAYOUT_DEFAULTS },
+      LAYOUT_DEFAULTS,
+    )
+    expect(sparse).not.toHaveProperty('isSagittalNoseLeft')
+    // A document without the key (every pre-existing NVD) loads as null, so
+    // sagittal keeps following isRadiological.
+    const restored = fillGroup(
+      'layout',
+      { ...LAYOUT_DEFAULTS, isSagittalNoseLeft: true },
+      LAYOUT_DEFAULTS,
+      {},
+      undefined,
+    )
+    expect(restored.isSagittalNoseLeft).toBeNull()
+  })
+
+  test('true and false both survive sparsify then fill', () => {
+    for (const isSagittalNoseLeft of [true, false]) {
+      const current: LayoutConfig = {
+        ...LAYOUT_DEFAULTS,
+        isRadiological: true,
+        isSagittalNoseLeft,
+      }
+      const sparse = sparsifyGroup('layout', current, LAYOUT_DEFAULTS)
+      expect(sparse).toEqual({ isRadiological: true, isSagittalNoseLeft })
+      const restored = fillGroup(
+        'layout',
+        { ...LAYOUT_DEFAULTS },
+        LAYOUT_DEFAULTS,
+        sparse,
+        undefined,
+      )
+      expect(restored.isSagittalNoseLeft).toBe(isSagittalNoseLeft)
+      expect(restored.isRadiological).toBe(true)
+    }
+  })
+})

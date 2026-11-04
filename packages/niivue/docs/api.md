@@ -112,7 +112,7 @@ nv1.crosshairPos = [0.5, 0.5, 0.5] // scene fraction: centre of the scene
 ```
 
 **Layout** (no prefix -- delegate to `model.layout`):
-`sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `layoutInset`, `isRadiological`, `isSingleViewFillCanvas`
+`sliceType`, `mosaicString`, `showRender`, `multiplanarType`, `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`, `tileMargin`, `layoutInset`, `isRadiological`, `isSagittalNoseLeft`, `isSingleViewFillCanvas`
 
 **UI** (no prefix -- delegate to `model.ui`):
 `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible`, `is3DCrosshairVisible`, `isGraphVisible`, `isRulerVisible`, `isCrossLinesVisible`, `isLegendVisible`, `isMeasureUnitsVisible`, `isThumbnailVisible`, `thumbnailUrl`, `placeholderText`, `crosshairColor`, `crosshairGap`, `crosshairWidth`, `fontColor`, `fontScale`, `fontMinSize`, `selectionBoxColor`, `measureLineColor`, `measureTextColor`, `rulerWidth`, `graphNormalizeValues`, `graphIsRangeCalMinMax`

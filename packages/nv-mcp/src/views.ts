@@ -47,6 +47,27 @@ export const SLICE_NAMES = names(SLICE_TYPES)
 export const LAYOUT_NAMES = names(LAYOUTS)
 export const SHOW_RENDER_NAMES = names(SHOW_RENDER)
 
+/**
+ * Which way the nose points on sagittal slices, by NiiVue's
+ * `isSagittalNoseLeft`: `left` is true, `right` false, and `auto` null, which
+ * follows the radiological switch (radiological puts the nose left).
+ */
+export const SAGITTAL_NOSES = { left: true, right: false, auto: null } as const
+
+export type SagittalNoseName = keyof typeof SAGITTAL_NOSES
+
+export const SAGITTAL_NOSE_NAMES = Object.keys(SAGITTAL_NOSES) as [
+  SagittalNoseName,
+  ...SagittalNoseName[],
+]
+
+/** The name for NiiVue's `isSagittalNoseLeft`. */
+export function sagittalNoseName(value: boolean | null): SagittalNoseName {
+  if (value === true) return 'left'
+  if (value === false) return 'right'
+  return 'auto'
+}
+
 /** The name for one of NiiVue's numbers, or `other` for one the table does not have. */
 export function nameFor<T extends Record<string, number>>(
   table: T,
@@ -64,5 +85,7 @@ export interface ViewState {
   mosaic?: string
   showRender: ShowRenderName | 'other'
   radiological: boolean
+  /** Which way the sagittal nose points, when the page's NiiVue can say. */
+  sagittalNose?: SagittalNoseName
   colorbar: boolean
 }

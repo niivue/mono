@@ -416,6 +416,7 @@ export const LAYOUT_DEFAULTS: LayoutConfig = {
   margin: 0,
   inset: [0, 0, 0, 0],
   isRadiological: false,
+  isSagittalNoseLeft: null,
   isSingleViewFillCanvas: true,
   customLayout: null,
 }

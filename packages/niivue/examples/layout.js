@@ -85,6 +85,11 @@ gl1.ondblclick = (e) => {
 radioCheck.onclick = function () {
   nv1.isRadiological = this.checked
 }
+// Independent of Radiological: AFNI sets left/right and the sagittal nose
+// separately. 'auto' (null) keeps sagittal following the radiological switch.
+sagNose.onchange = function () {
+  nv1.isSagittalNoseLeft = this.value === 'auto' ? null : this.value === 'left'
+}
 rulerCheck.onclick = function () {
   nv1.isRulerVisible = this.checked
 }

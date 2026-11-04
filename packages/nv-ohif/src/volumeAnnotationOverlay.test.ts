@@ -17,6 +17,13 @@ const shape = (dx = 0, label = 'ROI #1'): AnnotationScreenShape =>
     ],
     start: { x: 10 + dx, y: 10 },
     end: { x: 20 + dx, y: 20 },
+    tool: 'measureLine',
+    isClosed: false,
+    style: {
+      fillColor: [1, 0, 0, 0.2],
+      strokeColor: [1, 0, 0, 1],
+      strokeWidth: 2,
+    },
     label: { lines: [label], x: 0, y: 0, align: 'left' },
   }) as unknown as AnnotationScreenShape
 
@@ -35,5 +42,52 @@ describe('shapesSignature (#124)', () => {
     expect(shapesSignature([{ ...shape(), length: 10.3 }])).not.toBe(
       shapesSignature([{ ...shape(), length: 10.4 }]),
     )
+  })
+
+  it('changes on a hundredth-mm ruler length the ruler can show', () => {
+    expect(shapesSignature([{ ...shape(), length: 3.41 }])).not.toBe(
+      shapesSignature([{ ...shape(), length: 3.44 }]),
+    )
+  })
+
+  it('tags length and label so one cannot alias the other', () => {
+    const noLabel = { ...shape(), label: undefined }
+    // Untagged, length 0 and one empty label line both hash as mix(0).
+    const withLength = { ...noLabel, length: 0 }
+    const withLabel = {
+      ...noLabel,
+      label: { lines: [''], x: 0, y: 0, align: 'left' as const },
+    }
+    expect(shapesSignature([withLength])).not.toBe(shapesSignature([withLabel]))
+  })
+
+  it('changes on a style, label anchor, tool, or tile change', () => {
+    const base = shapesSignature([shape()])
+    const s = shape()
+    expect(
+      shapesSignature([
+        { ...s, style: { ...s.style, strokeColor: [0, 1, 0, 1] } },
+      ]),
+    ).not.toBe(base)
+    expect(
+      shapesSignature([{ ...s, style: { ...s.style, strokeWidth: 3 } }]),
+    ).not.toBe(base)
+    expect(
+      shapesSignature([
+        { ...s, style: { ...s.style, fillColor: [1, 0, 0, 0.5] } },
+      ]),
+    ).not.toBe(base)
+    expect(
+      shapesSignature([
+        { ...s, label: { lines: ['ROI #1'], x: 40, y: 0, align: 'left' } },
+      ]),
+    ).not.toBe(base)
+    expect(
+      shapesSignature([
+        { ...s, label: { lines: ['ROI #1'], x: 0, y: 0, align: 'center' } },
+      ]),
+    ).not.toBe(base)
+    expect(shapesSignature([{ ...s, tool: 'arrow' }])).not.toBe(base)
+    expect(shapesSignature([{ ...s, tileIndex: 1 }])).not.toBe(base)
   })
 })

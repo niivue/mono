@@ -647,19 +647,31 @@ export function matchChunksByContent(
 
 /**
  * The GPU bricks a plan swap keeps: the content matches, minus bricks uploaded
- * lit when the new plan is unlit. An unlit plan budgets 4 B/voxel, a lit brick
- * still holds its 8 B gradient, and nothing re-streams it in that direction.
- * Returns a new map; `oldToNew` stays whole for the decoded tier, whose source
- * bytes are valid either way.
+ * lit when the new plan is unlit and would no longer fit `budgetBytes` with
+ * them. An unlit plan budgets 4 B/voxel, a lit brick still holds its 8 B
+ * gradient, and nothing re-streams it in that direction. Lit bricks that fit
+ * (an unchanged plan, say) stay, so the swap does not re-stream them for
+ * nothing. Returns a new map; `oldToNew` stays whole for the decoded tier,
+ * whose source bytes are valid either way.
  */
 export function chunksToKeepResident(
   oldToNew: ReadonlyMap<number, number>,
   unlit: boolean,
   hasGradient: (oldIndex: number) => boolean | undefined,
+  newPlan: ChunkPlan,
+  budgetBytes: number,
 ): Map<number, number> {
   const keep = new Map(oldToNew)
-  if (unlit)
-    for (const ci of oldToNew.keys()) if (hasGradient(ci)) keep.delete(ci)
+  if (!unlit) return keep
+  const litNew = new Set<number>()
+  for (const [oi, ni] of oldToNew) if (hasGradient(oi)) litNew.add(ni)
+  let bytes = 0
+  for (let i = 0; i < newPlan.chunks.length; i++) {
+    const [tx, ty, tz] = newPlan.chunks[i].texDims
+    bytes += tx * ty * tz * (litNew.has(i) ? 8 : 4)
+  }
+  if (bytes <= budgetBytes) return keep
+  for (const ci of oldToNew.keys()) if (hasGradient(ci)) keep.delete(ci)
   return keep
 }
 
@@ -1321,7 +1333,7 @@ export function chunkVolumeMultiLOD(
   const lattice = (f: number, b?: MultiLodBounds): [number, number] => {
     const rootSpan = rootSpanOf(1)
     let count = 1
-    let bytes = 8
+    let bytes = bytesPerVoxel
     for (let a = 0; a < 3; a++) {
       const ld = levelDims[f][a]
       const scale = ld / commonDims[a]

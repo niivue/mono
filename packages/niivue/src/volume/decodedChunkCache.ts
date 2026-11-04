@@ -68,8 +68,9 @@ const GPU_BYTES_PER_VOXEL = 4
 /**
  * How much tier is bought beyond the shadow of the resident set, as a fraction
  * of that shadow. This is the entire point of the tier -- the shadow alone
- * only breaks even -- so it buys real depth, while staying small enough that
- * the tier cannot approach the GPU budget in JS heap.
+ * only breaks even -- so it buys real depth. Before the cap that is up to
+ * 1.5x the GPU budget for float32 (3x for complex64), so the JS-heap ceiling
+ * below is what keeps it in check.
  */
 const DECODED_TIER_TAIL = 0.5
 

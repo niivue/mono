@@ -1283,6 +1283,8 @@ export class VolumeRenderer extends NVRenderer {
           oldToNew,
           !this._needsGradient(),
           (ci) => entry.manager.getChunk(ci)?.hasGradient,
+          newPlan,
+          entry.manager.budgetBytes,
         )
       : new Map<number, number>()
     // Rebind the uploader to the new plan; dispose the old orient resources.

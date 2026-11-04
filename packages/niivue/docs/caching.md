@@ -207,8 +207,10 @@ It costs less than the framing suggested, because a chunk is much narrower on
 the CPU than on the GPU. A resident chunk carries an RGBA8 color texture, 4
 bytes per voxel, plus an RGBA8 gradient when lit (8 in all); its source is 1 to
 4. `decodedTierBudgetBytes` sizes the tier at the shadow of an unlit resident
-set (the larger one, and the default) plus a 50% tail, capped at 384 MiB: a
-quarter to the whole of the GPU budget before the cap. It is sized once per
+set (the larger one, and the default) plus a 50% tail, capped at 384 MiB. The
+shadow is a quarter to the whole of the GPU budget (source bytes 1 to 4 per
+voxel; complex64, at 8, is twice it), so before the cap the tier is 0.375x to
+1.5x the GPU budget, 3x for complex64. It is sized once per
 volume, so it does not follow a lighting toggle. The size tracks the datatype
 rather than being a flat fraction of the GPU budget, since a uint8 volume
 shadows for a quarter of what a float32 volume costs. The tail is the part that pays: it is what a scrub finds when it

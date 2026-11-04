@@ -87,7 +87,7 @@ const DECODED_TIER_MAX_BYTES = 384 * 1024 * 1024
  * A tier smaller than the shadow of the resident set holds no evicted chunk at
  * all (see the module note), so this is deliberately not a flat fraction of
  * the GPU budget: it tracks the datatype, because a uint8 volume shadows for
- * an eighth of what a float32 volume costs.
+ * a quarter of what a float32 volume costs.
  */
 export function decodedTierBudgetBytes(
   gpuBudgetBytes: number,

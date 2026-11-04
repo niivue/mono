@@ -1449,14 +1449,8 @@ function applyInterp() {
 // doing its job). Once lit, moving any of the three within the non-zero range
 // costs nothing extra: the gate is already true, so nothing re-streams.
 //
-// Dropping all three back to 0 does NOT free the gradients or re-stream. The
-// bricks stay as they are and the shader simply stops sampling them.
-//
-// Budget note: the residency accounting (`chunkResidentBytes`) charges every
-// brick 8 bytes/voxel -- RGBA plus gradient -- whether or not a gradient was
-// built, so an unlit stream is charged for memory it is not holding and the
-// resident brick count does not change when you turn lighting on. The VRAM is
-// genuinely saved; the budget just does not credit it yet.
+// Dropping all three back to 0 re-plans at 4 bytes/voxel. When that plan
+// changes, lit bricks re-stream without gradients so the larger plan fits.
 function applyIllumination() {
   const v = Number(els.illum.value) || 0
   els.illumVal.textContent = v.toFixed(2)

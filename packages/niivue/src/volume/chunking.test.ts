@@ -6,6 +6,7 @@ import {
   chunkOwnedTexBox,
   chunkSampleTransform,
   chunksCrossingSlice,
+  chunksToKeepResident,
   chunkVolume,
   chunkVolumeGrid,
   chunkVolumeMultiLOD,
@@ -1525,5 +1526,22 @@ describe('chunkOwnedTexBox', () => {
       }
     }
     expect(shared).toBeGreaterThan(0)
+  })
+})
+
+describe('chunksToKeepResident', () => {
+  const oldToNew = new Map([
+    [0, 0],
+    [1, 2],
+  ])
+  const lit = (ci: number) => ci === 1
+
+  test('keeps every match while lit', () => {
+    expect(chunksToKeepResident(oldToNew, false, lit)).toEqual(oldToNew)
+  })
+
+  test('drops lit bricks when unlit but leaves the decoded-tier map whole', () => {
+    expect(chunksToKeepResident(oldToNew, true, lit)).toEqual(new Map([[0, 0]]))
+    expect(oldToNew.size).toBe(2)
   })
 })

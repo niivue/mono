@@ -228,7 +228,8 @@ ray-march ground truth) and reproduces the trivial order for equal-size grids.
 ### Residency must match the plan budget
 
 The plan budget (how many bricks the octree makes) and the `ChunkResidencyManager`
-budget (what stays GPU-resident) both measure `texDims·8` and **must agree** —
+budget (what stays GPU-resident) both measure `texDims·bytesPerVoxel` (4 unlit,
+8 lit) and **must agree** —
 otherwise the manager evicts bricks the plan included and blocks stop rendering.
 A consumer sets `maxChunkResidencyBytes` to the same value it passes as the plan's
 `budgetBytes`.

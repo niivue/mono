@@ -646,6 +646,24 @@ export function matchChunksByContent(
 }
 
 /**
+ * The GPU bricks a plan swap keeps: the content matches, minus bricks uploaded
+ * lit when the new plan is unlit. An unlit plan budgets 4 B/voxel, a lit brick
+ * still holds its 8 B gradient, and nothing re-streams it in that direction.
+ * Returns a new map; `oldToNew` stays whole for the decoded tier, whose source
+ * bytes are valid either way.
+ */
+export function chunksToKeepResident(
+  oldToNew: ReadonlyMap<number, number>,
+  unlit: boolean,
+  hasGradient: (oldIndex: number) => boolean | undefined,
+): Map<number, number> {
+  const keep = new Map(oldToNew)
+  if (unlit)
+    for (const ci of oldToNew.keys()) if (hasGradient(ci)) keep.delete(ci)
+  return keep
+}
+
+/**
  * An axis-aligned box in COMMON (finest, level-0) voxel coordinates. `min` is
  * inclusive and `max` exclusive, so a one-voxel-thin slab at depth z is
  * `{ min: [0, 0, z], max: [w, h, z + 1] }` (any positive thickness works: a

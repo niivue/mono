@@ -368,6 +368,34 @@ function drawCrosscut2(
   gl.enable(gl.CULL_FACE)
 }
 
+/**
+ * Look up and bind a mesh shader and set the uniforms every mesh draw shares.
+ * Returns null when the context has no cache or the shader type is unknown.
+ */
+function bindMeshShader(
+  gl: WebGL2RenderingContext,
+  shaderType: string,
+  mvpMatrix: Float32Array,
+  normalMatrix: Float32Array,
+  opacity: number,
+  crosscutMM?: number[],
+  ccPlanes?: Float32Array,
+): Shader | null {
+  const shader = _contextCache.get(gl)?.shaders[shaderType]
+  if (!shader) return null
+  shader.use(gl)
+  if (shader.uniforms.mvpMtx)
+    gl.uniformMatrix4fv(shader.uniforms.mvpMtx, false, mvpMatrix)
+  if (shader.uniforms.normMtx)
+    gl.uniformMatrix4fv(shader.uniforms.normMtx, false, normalMatrix)
+  if (shader.uniforms.opacity) gl.uniform1f(shader.uniforms.opacity, opacity)
+  if (shader.uniforms.crosscutMM && crosscutMM)
+    gl.uniform4fv(shader.uniforms.crosscutMM, crosscutMM)
+  if (shader.uniforms.ccPlanes && ccPlanes)
+    gl.uniformMatrix4fv(shader.uniforms.ccPlanes, false, ccPlanes)
+  return shader
+}
+
 export function useShader(
   gl: WebGL2RenderingContext,
   shaderType: string,
@@ -375,16 +403,7 @@ export function useShader(
   normalMatrix: Float32Array,
   opacity = 1.0,
 ): void {
-  const cache = _contextCache.get(gl)
-  if (!cache) return
-  const shader = cache.shaders[shaderType]
-  if (!shader) return
-  shader.use(gl)
-  if (shader.uniforms.mvpMtx)
-    gl.uniformMatrix4fv(shader.uniforms.mvpMtx, false, mvpMatrix)
-  if (shader.uniforms.normMtx)
-    gl.uniformMatrix4fv(shader.uniforms.normMtx, false, normalMatrix)
-  if (shader.uniforms.opacity) gl.uniform1f(shader.uniforms.opacity, opacity)
+  bindMeshShader(gl, shaderType, mvpMatrix, normalMatrix, opacity)
 }
 
 export function drawWithGpu(
@@ -398,25 +417,21 @@ export function drawWithGpu(
   crosscutMM?: number[],
   ccPlanes?: Float32Array,
 ): void {
-  const cache = _contextCache.get(gl)
-  if (!cache) return
   const shaderType = shaderTypeOverride || mesh.shaderType || 'phong'
-  const shader = cache.shaders[shaderType]
+  const shader = bindMeshShader(
+    gl,
+    shaderType,
+    mvpMatrix,
+    normalMatrix,
+    opacity,
+    crosscutMM,
+    ccPlanes,
+  )
   if (!shader) {
-    log.warn(`Unknown mesh shader type: ${shaderType}`)
+    if (_contextCache.has(gl))
+      log.warn(`Unknown mesh shader type: ${shaderType}`)
     return
   }
-  shader.use(gl)
-  // Set uniforms
-  if (shader.uniforms.mvpMtx)
-    gl.uniformMatrix4fv(shader.uniforms.mvpMtx, false, mvpMatrix)
-  if (shader.uniforms.normMtx)
-    gl.uniformMatrix4fv(shader.uniforms.normMtx, false, normalMatrix)
-  if (shader.uniforms.opacity) gl.uniform1f(shader.uniforms.opacity, opacity)
-  if (shader.uniforms.crosscutMM && crosscutMM)
-    gl.uniform4fv(shader.uniforms.crosscutMM, crosscutMM)
-  if (shader.uniforms.ccPlanes && ccPlanes)
-    gl.uniformMatrix4fv(shader.uniforms.ccPlanes, false, ccPlanes)
   if (shaderType === 'crosscut2') {
     if (ccPlanes) drawCrosscut2(gl, mesh, gpu, shader, ccPlanes)
     return
@@ -455,23 +470,19 @@ export function drawXRay(
   crosscutMM?: number[],
   ccPlanes?: Float32Array,
 ): void {
-  const cache = _contextCache.get(gl)
-  if (!cache) return
   const shaderType = shaderTypeOverride || mesh.shaderType || 'phong'
   // crosscut2 ignores depth, so the main pass already drew all of it.
   if (shaderType === 'crosscut2') return
-  const shader = cache.shaders[shaderType]
+  const shader = bindMeshShader(
+    gl,
+    shaderType,
+    mvpMatrix,
+    normalMatrix,
+    opacity,
+    crosscutMM,
+    ccPlanes,
+  )
   if (!shader) return
-  shader.use(gl)
-  if (shader.uniforms.mvpMtx)
-    gl.uniformMatrix4fv(shader.uniforms.mvpMtx, false, mvpMatrix)
-  if (shader.uniforms.normMtx)
-    gl.uniformMatrix4fv(shader.uniforms.normMtx, false, normalMatrix)
-  if (shader.uniforms.opacity) gl.uniform1f(shader.uniforms.opacity, opacity)
-  if (shader.uniforms.crosscutMM && crosscutMM)
-    gl.uniform4fv(shader.uniforms.crosscutMM, crosscutMM)
-  if (shader.uniforms.ccPlanes && ccPlanes)
-    gl.uniformMatrix4fv(shader.uniforms.ccPlanes, false, ccPlanes)
   const isCrosscut = shaderType === 'crosscut'
   if (isCrosscut) {
     gl.disable(gl.DEPTH_TEST)

@@ -639,6 +639,29 @@ test('json format: saves portable JSON that loadDocument reads back (linked + em
   expect(r.embeddedCalMinNegIsNaN).toBe(true) // and on the embedded path
 })
 
+test('matcap: constructor preserves explicit options and defaults when omitted', async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const matcaps = { cortex: '/m/Cortex.jpg', gold: '/m/Gold.jpg' }
+    return [
+      undefined,
+      'https://example.org/custom.jpg',
+      'https://example.org/assets/matcaps/Cortex.jpg',
+      '',
+      'gold',
+    ].map((volumeMatcap) => new NiiVue({ matcaps, volumeMatcap }).volumeMatcap)
+  })
+  expect(result).toEqual([
+    '/m/Cortex.jpg',
+    'https://example.org/custom.jpg',
+    'https://example.org/assets/matcaps/Cortex.jpg',
+    '',
+    '/m/Gold.jpg',
+  ])
+})
+
 test('matcap: saved by name, loads back as its URL, custom URLs are kept', async ({
   page,
 }) => {

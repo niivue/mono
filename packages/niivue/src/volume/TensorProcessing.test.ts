@@ -1,22 +1,22 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import type { NVImage } from '@/NVTypes'
-
-// NVVolume pulls in the writers' import.meta.glob, which bun cannot load, so
-// its converter is stood in for: one voxel, x's sign in alpha's lowest bit,
-// as the real one encodes it.
-mock.module('./NVVolume', () => ({
-  convertFloat32RGBVector: (hdr: unknown, v1: Float32Array) => ({
-    hdr: { ...(hdr as object), dims: [3, 1, 1, 1, 1, 1, 1, 1] },
-    img: new Uint8Array([0, 0, 0, 248 + (v1[0] > 0 ? 1 : 0)]),
-  }),
-}))
-const { loadImgV1 } = await import('./TensorProcessing')
+import { loadImgV1 } from './TensorProcessing'
 
 /** One voxel whose direction points along +x, as a tensor reader keeps it. */
 function vectorVolume(stored: boolean): NVImage {
   const v1 = new Float32Array([2, 0, 0])
   return {
-    hdr: { dims: [4, 1, 1, 1, 3, 1, 1, 1], scl_slope: 1, scl_inter: 0 },
+    hdr: {
+      dims: [4, 1, 1, 1, 3, 1, 1, 1],
+      scl_slope: 1,
+      scl_inter: 0,
+      affine: [
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+      ],
+    },
     img: v1.slice(),
     v1: stored ? v1 : undefined,
     nVox3D: 1,

@@ -24,6 +24,7 @@ export class ColorbarRenderer extends NVRenderer {
   canvasWidth: number
   canvasHeight: number
   private _fontPx: number
+  private _content: number[] | null = null
   private _opacity: number
   private _margin: number
   private _heightRatio: number
@@ -107,6 +108,18 @@ export class ColorbarRenderer extends NVRenderer {
     this.isReady = true
   }
 
+  /**
+   * The part of the canvas the colorbars lay out in ([x, y, width, height]
+   * device px, from `layout.inset`); the whole canvas when null.
+   */
+  setContentRect(device: GPUDevice, rect: number[] | null): void {
+    const old = this._content
+    if (old === rect || (old && rect && old.every((v, i) => v === rect[i])))
+      return
+    this._content = rect
+    this._writeAllParams(device)
+  }
+
   resize(device: GPUDevice, width: number, height: number, fontPx = 0): void {
     this.canvasWidth = width
     this.canvasHeight = height
@@ -149,10 +162,12 @@ export class ColorbarRenderer extends NVRenderer {
       margin: this._margin,
       heightRatio: this._heightRatio,
       gap: COLORBAR_GAP,
-      canvasWidth: this.canvasWidth,
-      canvasHeight: this.canvasHeight,
+      canvasWidth: this._content?.[2] ?? this.canvasWidth,
+      canvasHeight: this._content?.[3] ?? this.canvasHeight,
       borderColor: [...this._borderColor],
       fontPx: this._fontPx,
+      originX: this._content?.[0] ?? 0,
+      originY: this._content?.[1] ?? 0,
     }
   }
 

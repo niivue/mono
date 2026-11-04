@@ -260,15 +260,7 @@ export function buildMultiIfd(
     }
     const single = new Uint8Array(
       buildTiff({
-        entries: [
-          { tag: TIFF_TAG.imageWidth, type: 3, values: [width] },
-          { tag: TIFF_TAG.imageLength, type: 3, values: [height] },
-          { tag: TIFF_TAG.bitsPerSample, type: 3, values: [8] },
-          { tag: TIFF_TAG.compression, type: 3, values: [1] },
-          { tag: TIFF_TAG.samplesPerPixel, type: 3, values: [1] },
-          { tag: TIFF_TAG.rowsPerStrip, type: 3, values: [height] },
-          ...extra,
-        ],
+        entries: baseEntries(width, height, 8, extra),
         blocks: [new Uint8Array(width * height).fill(i)],
       }),
     )

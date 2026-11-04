@@ -163,6 +163,11 @@ export interface OpenOmeZarrOptions {
    * mirror) instead of throwing. At least one level must open.
    */
   ignoreMissingLevels?: boolean
+  /**
+   * The store's Zarr format, when the caller knows it. Unset, the root is
+   * probed as v3 then v2, which logs a 404 for `zarr.json` on every v2 store.
+   */
+  zarrVersion?: 2 | 3
 }
 
 /**
@@ -170,21 +175,31 @@ export interface OpenOmeZarrOptions {
  * array can be opened version-pinned. The version-agnostic `zarr.open` probes
  * v3 then v2 PER NODE, which costs a 404 per level on every v2 store.
  */
-async function openStoreRoot(store: zarr.Readable): Promise<{
+async function openStoreRoot(
+  store: zarr.Readable,
+  known?: 2 | 3,
+): Promise<{
   group: zarr.Group<zarr.Readable>
   openArray: (path: string) => Promise<zarr.Array<zarr.DataType, zarr.Readable>>
 }> {
   const root = zarr.root(store)
   let node: zarr.Group<zarr.Readable> | zarr.Array<zarr.DataType, zarr.Readable>
-  let version: 2 | 3 = 3
-  try {
-    node = await zarr.open.v3(root)
-  } catch (err) {
-    if (!zarr.isZarritaError(err, 'NotFoundError')) {
-      throw err
+  let version: 2 | 3 = known ?? 3
+  // A known version also skips the array probe: an OME-Zarr root is a group.
+  if (known) {
+    node = await (known === 2 ? zarr.open.v2 : zarr.open.v3)(root, {
+      kind: 'group',
+    })
+  } else {
+    try {
+      node = await zarr.open.v3(root)
+    } catch (err) {
+      if (!zarr.isZarritaError(err, 'NotFoundError')) {
+        throw err
+      }
+      node = await zarr.open.v2(root)
+      version = 2
     }
-    node = await zarr.open.v2(root)
-    version = 2
   }
   if (node.kind !== 'group') {
     throw new Error('OME-Zarr: the store root is a Zarr array, not a group')
@@ -206,7 +221,7 @@ export async function openOmeZarr(
   store: zarr.Readable,
   options: OpenOmeZarrOptions = {},
 ): Promise<OmeZarrSource> {
-  const { group, openArray } = await openStoreRoot(store)
+  const { group, openArray } = await openStoreRoot(store, options.zarrVersion)
   const info = parseOmeZarrAttrs(group.attrs)
 
   const wanted = options.levels ?? info.datasets.map((_dataset, index) => index)

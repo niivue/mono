@@ -121,7 +121,7 @@ struct ContentView: View {
                     .padding(12)
                     .allowsHitTesting(false)
 
-                Label("Drop to add as overlay", systemImage: "square.3.layers.3d")
+                Label(dropHint, systemImage: "square.and.arrow.down")
                     .font(.headline)
                     .padding()
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -131,14 +131,25 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .dropDestination(for: URL.self) { urls, _ in
             guard !urls.isEmpty, !isLoading else { return false }
-            Task { await loadFiles(urls, addingToCurrent: hasImage) }
+            Task { await loadFiles(urls, addingToCurrent: isAddModifierHeld) }
             return true
         } isTargeted: { isTargeted in
             isDropTargeted = isTargeted
         }
     }
 
-    private var hasImage: Bool { !model.volumes.isEmpty || model.hasNonVolumeContent }
+    #if os(macOS)
+    private let dropHint = "Drop to replace · hold ⌘ to add"
+    private var isAddModifierHeld: Bool {
+        !NSEvent.modifierFlags.isDisjoint(with: [.command, .control])
+    }
+    #else
+    // SwiftUI drops carry no modifier state on iOS; Add Overlay… adds there.
+    private let dropHint = "Drop to replace"
+    private let isAddModifierHeld = false
+    #endif
+
+    private var hasImage: Bool { !model.volumes.isEmpty || !model.meshes.isEmpty || model.hasSignal }
 
     private var emptyState: some View {
         ZStack {

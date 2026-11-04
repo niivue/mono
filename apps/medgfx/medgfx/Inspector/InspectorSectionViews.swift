@@ -18,10 +18,14 @@ struct LayersInspectorSection: View {
             Text("Layers")
                 .font(.headline)
 
-            // Topmost layer first, as it draws over the ones below.
+            // Topmost layer first, as it draws over the ones below. Meshes
+            // have no display controls here, so their rows only offer Remove.
             VStack(spacing: 2) {
+                ForEach(model.meshes.indices, id: \.self) { index in
+                    meshRow(index)
+                }
                 ForEach(model.volumes.indices.reversed(), id: \.self) { index in
-                    layerRow(index)
+                    volumeRow(index)
                 }
             }
 
@@ -39,31 +43,20 @@ struct LayersInspectorSection: View {
         .padding(.top, 4)
     }
 
-    private func layerRow(_ index: Int) -> some View {
+    private func volumeRow(_ index: Int) -> some View {
         let volume = model.volumes[index]
         let isSelected = index == selection
         return Button {
             selection = index
         } label: {
-            HStack(spacing: 8) {
+            LayerRowLabel(
+                title: volume.title,
+                kind: index == 0 ? "Base" : "Overlay",
+                isDimmed: volume.opacity <= 0,
+                isSelected: isSelected
+            ) {
                 ColormapSwatch(stops: volume.colormapStops)
-                    .frame(width: 22, height: 14)
-                Text(volume.title)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .opacity(volume.opacity > 0 ? 1 : 0.45)
-                Spacer(minLength: 4)
-                Text(index == 0 ? "Base" : "Overlay")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 8)
-            .frame(height: 28)
-            .background(
-                isSelected ? Color.accentColor.opacity(0.2) : .clear,
-                in: RoundedRectangle(cornerRadius: 6)
-            )
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -72,6 +65,49 @@ struct LayersInspectorSection: View {
                 Task { await model.removeVolume(at: index) }
             }
         }
+    }
+
+    private func meshRow(_ index: Int) -> some View {
+        let title = imageTitle(model.meshes[index].name)
+        return LayerRowLabel(title: title, kind: "Mesh", isDimmed: false, isSelected: false) {
+            Image(systemName: "cube")
+                .foregroundStyle(.secondary)
+        }
+        .contextMenu {
+            Button("Remove \(title)", role: .destructive) {
+                Task { await model.removeMesh(at: index) }
+            }
+        }
+    }
+}
+
+private struct LayerRowLabel<Icon: View>: View {
+    let title: String
+    let kind: String
+    let isDimmed: Bool
+    let isSelected: Bool
+    @ViewBuilder let icon: Icon
+
+    var body: some View {
+        HStack(spacing: 8) {
+            icon
+                .frame(width: 22, height: 14)
+            Text(title)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .opacity(isDimmed ? 0.45 : 1)
+            Spacer(minLength: 4)
+            Text(kind)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.2) : .clear,
+            in: RoundedRectangle(cornerRadius: 6)
+        )
+        .contentShape(Rectangle())
     }
 }
 

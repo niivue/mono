@@ -24,4 +24,14 @@ export default {
 // → /volumes/mni152.nii.gz is now served automatically
 ```
 
+Pass `devImagesPlugin({ emit: false })` to serve without emitting, when the build gets its images elsewhere.
+
+The dev server also serves procedural OME-Zarr stores under `/tiles/` (`src/syntheticZarr.ts`): `synthetic-v1.ome.zarr` (301^3) and `synthetic-oct-v1.ome.zarr` (1716 x 1470 x 561), float32 Zarr v2 with 64^3 chunks, the geometry of the DANDI 000722 OCT stores. Each chunk is generated on request, so no bytes are in the repository; a build does not emit them. Bump a store's version when the field changes, since clients may cache chunks.
+
+## Tests
+
+```bash
+bunx nx test dev-images
+```
+
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

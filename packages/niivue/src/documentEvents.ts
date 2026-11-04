@@ -43,6 +43,7 @@ const UNPREFIXED_GROUPS: ReadonlySet<string> = new Set([
 // Keys whose setter does not follow the rule.
 const RENAMED: Readonly<Record<string, string>> = {
   'layout.margin': 'tileMargin',
+  'layout.inset': 'layoutInset',
 }
 
 // Nested objects set as a whole (one `change` for the object), unlike ui.graph,

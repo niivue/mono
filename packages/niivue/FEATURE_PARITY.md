@@ -30,7 +30,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `loadVolumes(list)` | ✅ | |
 | `addVolume(volume)` | ✅ | |
-| `loadImages()` (mixed volumes+meshes) | ✅ | `loadImage` / `addImage` |
+| `loadImages()` (mixed volumes+meshes) | ✅ | `loadImage` / `addImage`; `loadFiles(files, { add })` for local `File`s as a drop loads them |
 | `loadFromUrl/File/ArrayBuffer` generic loaders | ✅ | Via `useLoader` plugin system |
 | DICOM loading | ✅ | Provided by `@niivue/nv-ext-dcm2niix` extension (browser-side dcm2niix/WASM conversion) |
 | `loadDeferred4DVolumes()` | ✅ | |
@@ -113,7 +113,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `colormapInvert` | ✅ | Per-volume `isColormapInverted` (also a load/`setVolume` option); reverses the LUT where it is built, so 2D slices, the ray-march, and the colorbar all follow. Mesh layers already had `isColormapInverted` |
 | `setDrawColormap` | ✅ | `drawColormap` property |
 | Custom colormap format `{R,G,B,A,I}` | ✅ | |
-| Colormap-specified display window (`min`/`max`, e.g. `ct_bones` 180..600 HU) | ⚠️ | Old package auto-applied a colormap's `min`/`max` to `cal_min`/`cal_max` on selection (`calMinMax`). New package exposes the window via `lookupColorMap(name)` but does not auto-apply it — pass `calMin`/`calMax` explicitly to `setVolume` |
+| Colormap-specified display window (`min`/`max`, e.g. `ct_bones` 180..600 HU) | ✅ | Applied when a URL or streamed load names the colormap, and by `setVolume` when the colormap changes; a given bound wins, the map fills the other (#395). Also returned by `lookupColorMap(name)` |
 
 ## 9. Display Options
 
@@ -152,6 +152,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Corner orientation text | ❌ | No `setCornerOrientationText` |
 | Show all orientation markers | ❌ | |
 | Tile margin/padding | ✅ | `tileMargin` |
+| Reserved canvas strip for in-canvas controls | ✅ | New, no old-package equivalent: `layoutInset` ([left, top, right, bottom] CSS px); overlays keep the whole canvas |
 | HiDPI/retina support | ✅ | Built-in |
 | Multi-instance scenes (`opts.instances`, `setInstances`) | ✅ | Per-tile `volumeId` / `bounds` / `viewport`. Supported on both WebGL2 and WebGPU backends. |
 | Shared-camera 3D space (`tile.space === 'global3d'`, `globalCamera`, `setGlobalCamera`) | ✅ | One camera spans every tile so adjacent volumes line up in world space. Supported on both backends; WebGPU uses a per-volume texture cache to keep multi-volume draws cheap. |
@@ -179,6 +180,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | MatCap texture | ✅ | `loadMatcap()` / `volumeMatcap`. A document saves a matcap from `opts.matcaps` by name and resolves it against the loading instance's `matcaps` (an older saved path to a built-in in `assets/matcaps/` by its file name; an unknown bare name loads as the instance default; any other URL is kept). A document that sets no matcap leaves the current one. An image that fails to load draws the default matcap, then white, instead of blanking the volume |
 | Maximum-intensity projection | ✅ | `volumeRenderMode = VOLUME_RENDER_MODE.MAXIMUM` (both backends). Not the old `setAdditiveBlend` API — the ray-march combines samples with a component-wise max instead of OVER, and it applies to every volume pass (base, overlay, PAQD, drawing) |
 | Orthogonal slices in the 3D render | ✅ | `volumeRenderMode = VOLUME_RENDER_MODE.SLICES` (both backends). The old package reached the same view through a negative `setVolumeRenderIllumination` (`fragRenderSliceShader`, niivue issue 679); this is an explicit enum member. Two deliberate differences: the up-to-three plane hits are COMPOSITED front to back rather than only the nearest one being drawn, and overlays, PAQD and the drawing are sampled ON the planes rather than ray-marched volumetrically over them — which is what keeps it at three samples per ray with layers loaded. Whether a plane is a solid slab or a cutout follows `volumeIsAlphaClipDark`, exactly as the 2D tiles do: off (the default) air is painted and the nearest plane wins, which is what 0.6 always drew; on, only tissue is drawn and the planes behind show through. Clip planes are ignored, as in 0.6. Demo: `examples/rendermode.html`. Follow-ups: overlay outlines, drawing rim opacity, V1 fiber lines, `volumeIsColormapAlphaOn2D`, tricubic sampling on the planes |
+| Cinematic rendering | ✅ | New, no old-package equivalent: `volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC` with `volumeCinematic` settings (both backends; WebGL2 needs `EXT_color_buffer_float`, else COMPOSITE with one warning). Progressive path tracing (2D transfer function from the volume's colormap, soft shadows, ambient occlusion (optional `isStochasticLighting`: one shadow/AO sample per ray per frame), label materials from a same-grid label volume, or standard statistical overlays: classic overlay texture, colormaps/thresholds/opacity, depth-aware unlit march, `clipPlaneOverlay`, gamma, per-voxel opacity correction; drawn even when the background is hidden; a negative `clipPlaneColor` alpha tints the cut face, a positive one, the classic translucent sheet, is not drawn); meshes composite by depth. Not drawn: overlays mixed with a label volume, PAQD and streamed overlays, channel stacks, and the drawing layer in render tiles (one warning; 2D tiles still show it); chunked and RGB/RGBA backgrounds fall back to COMPOSITE. Demo: `examples/cinematic.html` |
 | Gamma correction | ✅ | `gamma` property (both backends), applied to the 3D ray-march AND the 2D slice tiles. Scope differs from the old package: the shaders raise the classified RGB to `1/gamma` at draw time (alpha untouched, so `gamma > 1` brightens) instead of baking the exponent into the colormap LUT, so a slider retunes a streaming volume with no re-upload. It reaches intensity-derived layers only (background + colormapped overlay); categorical label colour (the drawing layer, PAQD) and V1 fiber directions are left alone |
 | Volume alpha shader | ✅ | `volumeAlphaShader` |
 
@@ -245,7 +247,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `clearMeasurements()` | ✅ | |
 | Angle measurements | ✅ | `DRAG_MODE.angle`; completed angles stored on model |
 | `clearAngles()` | ✅ | `clearAngles()` and `clearDistanceMeasurements()` clear one kind each; `clearMeasurements()` still clears both |
-| `getDescriptives()` — ROI statistics | ✅ | `getDescriptives({ volumeIndex, masks, isDrawingMask, drawPenValues })`; a mask is a volume index (non-zero voxels) or `{ index, values }` (only those calibrated label values, e.g. one atlas region); calibrated values, non-finite voxels excluded, `null` on a mask/grid mismatch or an empty label list |
+| `getDescriptives()` — ROI statistics | ✅ | `getDescriptives({ volumeIndex, masks, isDrawingMask, drawPenValues })`; a mask is a volume index (non-zero voxels) or `{ index, values }` (only those calibrated label values, e.g. one atlas region); calibrated values, non-finite voxels excluded; masks and the drawing may be on another voxel grid (looked up at each target voxel, nearest neighbour); `null` on an empty label list |
 
 ## 18. Registration / Affine Transforms
 
@@ -310,7 +312,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `setCustomMeshShader()` / `setCustomMeshShaderFromUrl()` | ❌ | |
 | `setMeshShader()` | ❌ | |
 | `meshShaderNames()` | ❌ | |
-| Built-in mesh shaders + per-mesh selection | ✅ | phong/flat/matte/toon/outline/rim/silhouette/crevice/vertexColor/crosscut, chosen per-mesh via `shaderType`; `sliceShaderType` (default `''` = inherit) selects a different shader for 2D slice tiles than the 3D render view |
+| Built-in mesh shaders + per-mesh selection | ✅ | phong/flat/matte/toon/outline/rim/silhouette/crevice/vertexColor/crosscut/crosscut2, chosen per-mesh via `shaderType`; `sliceShaderType` (default `''` = inherit) selects a different shader for 2D slice tiles than the 3D render view |
 | Built-in volume render shaders | ✅ | `volumeAlphaShader` |
 
 ## 24. Gestures / Input Configuration
@@ -349,7 +351,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | Voxel-based atlas labels | ✅ | A label `colormap` |
 | PAQD probabilistic atlas | ✅ | `volumePaqdUniforms` |
-| Mesh-based atlases | ⚠️ | No annot/GIfTI layer readers found |
+| Mesh-based atlases | ⚠️ | GIfTI and MZ3 label tables load as layers (`colormapLabel`); FreeSurfer `.annot` has no reader |
 | `addLabel()` | ❌ | No 3D labels in the viewer. `@niivue/uikit`'s `UIKitPointLabelOverlay` draws a text label with a leader line to a world-mm point on the render tile via `mmToRenderCanvas()` / `explodedMM()` |
 
 ## 28. Plugin System
@@ -435,9 +437,9 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | FreeSurfer CURV | ✅ |
 | SMP | ✅ |
 | STC | ✅ |
-| GIfTI overlay | ❌ |
+| GIfTI overlay | ✅ |
 | CIfTI-2 | ❌ |
-| MZ3 overlay | ❌ |
+| MZ3 overlay | ✅ |
 | FreeSurfer ANNOT | ❌ |
 
 ### Tractography
@@ -458,7 +460,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `MULTIPLANAR_TYPE` | ✅ | |
 | `SHOW_RENDER` | ✅ | |
 | `NiiDataType` | ✅ | |
-| `OVERLAY_ALPHA_BLEND`, `OVERLAY_COLOR_BLEND` | ✅ | New in the rewrite; `volumeOverlayAlphaBlend` / `volumeOverlayColorBlend` (old NiiVue: MAX alpha + additive colour only); alpha `OVER` + colour `OVER` gives ordered source-over stacking; alpha `MAX` + colour `MAX` gives fluorescence channel fusion, and `volumeIsChannelStack` fuses volumes[0] too |
+| `OVERLAY_ALPHA_BLEND`, `OVERLAY_COLOR_BLEND` | ✅ | New in the rewrite; `volumeOverlayAlphaBlend` / `volumeOverlayColorBlend` (old NiiVue: MAX alpha + additive colour only); alpha `UNION` + colour `OVER` gives ordered source-over stacking; alpha `MAX` + colour `MAX` gives fluorescence channel fusion, and `volumeIsChannelStack` fuses volumes[0] too |
 | `NiiIntentCode` | ❌ | In NVConstants (not exported from index) |
 
 ## 33. Miscellaneous
@@ -473,7 +475,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `niftiArray2NVImage()` | ❌ | |
 | `decimateHierarchicalMesh()` on Niivue | ❌ | |
 | Thumbnail / placeholder | ✅ | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` |
-| Legend visibility | ✅ | `isLegendVisible` |
+| Legend visibility | ✅ | `isLegendVisible`; large tables wrap into columns, then scroll (wheel, scrollbar track click); per-label hide/show via volume `hiddenLabels` and the opt-in `isLegendToggleEnabled` legend click (volume entries only) |
 | Annotation system (vector) | ✅ | New feature not in old package |
 
 ---
@@ -494,7 +496,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
 | Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache; on-graph pan/zoom buttons with wheel/frame follow (`graphZoom`/`graphPan`), relative line width/opacity (`graphLineWidth`/`graphLineAlpha`), and a missing-data rug for NaN gaps |
 | Annotations (`SignalAnnotation`) | ✅ | Data-space text labels (`{text,x,y,color?}`) that pan/zoom with the window and hide when out of range; `y` of `±Infinity` pins to plot bottom/top; set via load options or `setSignal`, persisted in NVD. Render on the signal graph only (not the volume+physio association view) |
-| Persistence (NVD) | ✅ | Document version 10 (`NVConstants.NVD_DOCUMENT_VERSION`); v9 documents are converted on load |
+| Persistence (NVD) | ✅ | Document version 11 (`NVConstants.NVD_DOCUMENT_VERSION`); v10 and older documents are converted on load |
 | Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
 | Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`); per-trace show/hide — BOLD via `graphShowVolumeTimecourse`, physio via `setSignal` `selectedColumns` |
 
@@ -544,7 +546,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 | Per-brick ray step + opacity correction | ✅ | `rayStepTexVox` uniform + `1 − pow(1−a, stepRatio)`; coarse bricks step at their own density without rendering dimmer. Both backends (`render.wgsl` / `renderShader.ts`) |
 | Per-level LOD brightness/opacity compensation | ✅ | `lodGammaExponent` (colour, default `0.08` per level) folds into the display-gamma exponent per brick; `lodOpacityScale` (alpha, default `0` — measured worse on dense structure) scales the step-size opacity exponent. Both backends; colour also on 2D slice tiles, opacity is ray-march only. Neither applies in `VOLUME_RENDER_MODE.SLICES`, which takes one sample per plane whatever the level. `lodCompensation()` reports whether either applies, why not, and the exact per-level numbers |
 | Mixed-size back-to-front order | ✅ | `chunksBackToFront` BSP clean-plane recursive sort — exact compositing order for mixed brick sizes at any angle (`depthFunc ALWAYS` relies on it); a pairwise comparator left rare mis-ordered opaque bricks as stray bright blocks |
-| In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch |
+| In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch. `swapPolicy: 'keepUntilCovered'` draws replaced bricks until their replacements are resident (3D render only; drawn without overlay/drawing/PAQD layers, like the coarse floor); see `docs/budget-plans.md` |
 | Focus box / per-brick LOD boxes | ✅ | `nv.focusBox` (single AABB) and `nv.lodBoxes` (set, e.g. coloured per level) drawn on 3D render tiles, both backends |
 | Cross-LOD blending (geomorph) | ⛔ Deferred | Different-level boundaries show a one-level brightness/blockiness step; smooth fade between a brick's level and the next coarser is the real fix (needs a 2nd texture bound per brick, both shaders) |
 
@@ -553,7 +555,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 ## Summary of Key Missing Features
 
 ### High Priority (Core Functionality)
-1. **Mesh overlay formats**: GIfTI, CIfTI-2, MZ3, FreeSurfer ANNOT layer readers
+1. **Mesh overlay formats**: CIfTI-2 and FreeSurfer ANNOT layer readers
 
 ### Medium Priority
 2. **3D rendering**: `setGradientOpacity`, custom gradient textures (MIP is now covered by `volumeRenderMode`)

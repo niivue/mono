@@ -4,11 +4,78 @@
 // pointer x to a caret, and the whole-glyph horizontal scrolling that keeps
 // the caret in view (through the shared scroll model, so an overflowing field
 // draws only the glyphs that fit and needs no GPU scissor). No GPU and no DOM
-// here. Caret indices are UTF-16 code unit offsets into `text`.
+// here. Caret indices are UTF-16 code unit offsets into `text`, always on a
+// grapheme cluster boundary so an emoji, flag or accented letter edits as one.
 
 import type { UIKitKeyEvent } from './controls'
 import { revealRow, type ScrollWindow, scrollWindow } from './scroll'
 import type { UIKitFontMetrics } from './text/font'
+import { measureWidth } from './text/layout'
+
+const segmenter =
+  typeof Intl.Segmenter === 'function'
+    ? new Intl.Segmenter('und', { granularity: 'grapheme' })
+    : null
+
+/** The grapheme clusters of `text` (code points where Intl.Segmenter is missing). */
+function clusters(text: string): Iterable<string> {
+  return segmenter
+    ? Array.from(segmenter.segment(text), (g) => g.segment)
+    : text
+}
+
+/**
+ * Which offsets 0..text.length are cluster boundaries, from one segmentation
+ * pass, for callers that snap many indices of one text (null: all are, as in
+ * ASCII text without a CR, so no segmentation is needed).
+ */
+export function clusterBoundaries(text: string): Uint8Array | null {
+  let simple = true
+  for (let k = 0; k < text.length && simple; k++) {
+    const c = text.charCodeAt(k)
+    // CR is excluded: CR LF is one cluster.
+    simple = c < 0x80 && c !== 13
+  }
+  if (simple) return null
+  const out = new Uint8Array(text.length + 1)
+  let i = 0
+  out[0] = 1
+  for (const c of clusters(text)) {
+    i += c.length
+    out[i] = 1
+  }
+  return out
+}
+
+/** [start, end) of the cluster holding code unit `i` (0 <= i < text.length). */
+// ponytail: linear scan per lookup, fine for field-sized text. Not
+// Segments.containing(): Bun's returns a merged segment for a fresh Segments.
+function clusterAt(text: string, i: number): [number, number] {
+  let start = 0
+  for (const c of clusters(text)) {
+    const end = start + c.length
+    if (end > i) return [start, end]
+    start = end
+  }
+  return [start, start]
+}
+
+/** The cluster boundary before `i`. */
+export function prevBoundary(text: string, i: number): number {
+  return i <= 0 ? 0 : clusterAt(text, Math.min(i, text.length) - 1)[0]
+}
+
+/** The cluster boundary after `i`. */
+export function nextBoundary(text: string, i: number): number {
+  return i >= text.length ? text.length : clusterAt(text, Math.max(0, i))[1]
+}
+
+/** `i` moved to the start (or with `up`, the end) of the cluster it splits. */
+export function snapToBoundary(text: string, i: number, up = false): number {
+  if (i <= 0 || i >= text.length) return i
+  const [start, end] = clusterAt(text, i)
+  return start === i ? i : up ? end : start
+}
 
 export interface TextEditState {
   text: string
@@ -29,7 +96,7 @@ export function textEditState(
 }
 
 function clampIndex(i: number, text: string): number {
-  return Math.max(0, Math.min(text.length, Math.floor(i)))
+  return snapToBoundary(text, Math.max(0, Math.min(text.length, Math.floor(i))))
 }
 
 /** The selected span as [start, end) (empty when start equals end). */
@@ -59,7 +126,7 @@ export function setCaret(
 export function insertText(s: TextEditState, str: string): TextEditState {
   const [a, b] = selectionOf(s)
   const text = s.text.slice(0, a) + str + s.text.slice(b)
-  const caret = a + str.length
+  const caret = snapToBoundary(text, a + str.length, true)
   return { text, caret, anchor: caret }
 }
 
@@ -67,16 +134,14 @@ export function insertText(s: TextEditState, str: string): TextEditState {
 export function deleteBackward(s: TextEditState): TextEditState {
   if (hasSelection(s)) return insertText(s, '')
   if (s.caret === 0) return s
-  const text = s.text.slice(0, s.caret - 1) + s.text.slice(s.caret)
-  return { text, caret: s.caret - 1, anchor: s.caret - 1 }
+  return insertText({ ...s, anchor: prevBoundary(s.text, s.caret) }, '')
 }
 
 /** Delete the selection, or the character after the caret. */
 export function deleteForward(s: TextEditState): TextEditState {
   if (hasSelection(s)) return insertText(s, '')
   if (s.caret >= s.text.length) return s
-  const text = s.text.slice(0, s.caret) + s.text.slice(s.caret + 1)
-  return { text, caret: s.caret, anchor: s.caret }
+  return insertText({ ...s, anchor: nextBoundary(s.text, s.caret) }, '')
 }
 
 /**
@@ -97,12 +162,12 @@ export function editKey(
     case 'ArrowLeft': {
       if (jump) return setCaret(s, 0, e.shiftKey)
       if (hasSelection(s) && !e.shiftKey) return setCaret(s, selectionOf(s)[0])
-      return setCaret(s, s.caret - 1, e.shiftKey)
+      return setCaret(s, prevBoundary(s.text, s.caret), e.shiftKey)
     }
     case 'ArrowRight': {
       if (jump) return setCaret(s, s.text.length, e.shiftKey)
       if (hasSelection(s) && !e.shiftKey) return setCaret(s, selectionOf(s)[1])
-      return setCaret(s, s.caret + 1, e.shiftKey)
+      return setCaret(s, nextBoundary(s.text, s.caret), e.shiftKey)
     }
     case 'Home':
       return setCaret(s, 0, e.shiftKey)
@@ -169,7 +234,7 @@ export function truncateText(
   maxLength: number | undefined,
 ): string {
   const max = maxLengthOf(maxLength)
-  return max === undefined ? text : text.slice(0, max)
+  return max === undefined ? text : text.slice(0, snapToBoundary(text, max))
 }
 
 /**
@@ -205,21 +270,26 @@ export function pasteText(
   if (maxLength !== undefined) {
     const [a, b] = selectionOf(s)
     const room = Math.max(0, maxLength - (s.text.length - (b - a)))
-    kept = kept.slice(0, room)
+    kept = kept.slice(0, snapToBoundary(kept, room))
   }
   return kept === '' && !hasSelection(s) ? s : insertText(s, kept)
 }
 
-/** The advance of each code unit of `text` at `sizePx` (0 for a glyph the font lacks). */
+/**
+ * The advance of each code unit of `text` at `sizePx`: a cluster's whole
+ * width (its code points' glyphs, as layoutText draws them; 0 for glyphs the
+ * font lacks) on its first unit and 0 on the rest, so scrolling and wrapping
+ * by advance never stop inside a cluster.
+ */
 export function glyphAdvances(
   metrics: UIKitFontMetrics,
   text: string,
   sizePx: number,
 ): number[] {
   const out: number[] = []
-  for (let i = 0; i < text.length; i++) {
-    const g = metrics.glyphs.get(text[i])
-    out.push(g ? g.xadv * sizePx : 0)
+  for (const c of clusters(text)) {
+    out.push(measureWidth(metrics, c, sizePx))
+    for (let k = 1; k < c.length; k++) out.push(0)
   }
   return out
 }
@@ -242,13 +312,15 @@ export function advanceBetween(
  * at `first`: a point past the middle of a glyph lands after it.
  */
 export function caretIndexAt(
+  text: string,
   advances: readonly number[],
   first: number,
   px: number,
 ): number {
   let x = 0
   for (let i = Math.max(0, first); i < advances.length; i++) {
-    if (px < x + advances[i] / 2) return i
+    // A cluster's trailing units are zero-width: reaching one means past its middle.
+    if (px < x + advances[i] / 2) return snapToBoundary(text, i, true)
     x += advances[i]
   }
   return advances.length
@@ -261,19 +333,20 @@ export function caretIndexAt(
  * and the glyph before the caret becomes the last shown when it lies after.
  */
 export function textWindow(
+  text: string,
   advances: readonly number[],
   viewport: number,
   first: number,
   caret: number,
 ): ScrollWindow {
-  const w = scrollWindow(advances, viewport, first)
-  if (caret < w.first) return scrollWindow(advances, viewport, caret)
-  if (caret > w.end) {
-    return scrollWindow(
-      advances,
-      viewport,
-      revealRow(advances, viewport, w, caret - 1),
-    )
+  // Skipping a cluster's zero-width trailing units changes no width, so only
+  // `first` moves; `end` already stops at a cluster start.
+  const fit = (f: number): ScrollWindow => {
+    const w = scrollWindow(advances, viewport, snapToBoundary(text, f, true))
+    return { ...w, first: snapToBoundary(text, w.first, true) }
   }
+  const w = fit(first)
+  if (caret < w.first) return fit(caret)
+  if (caret > w.end) return fit(revealRow(advances, viewport, w, caret - 1))
   return w
 }

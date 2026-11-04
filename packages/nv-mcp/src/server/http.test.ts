@@ -62,6 +62,7 @@ const CORE_TOOLS = [
   'list_measurements',
   'edit_measurements',
   'set_boxes',
+  'set_plane_outlines',
   'add_control',
   'list_controls',
   'set_control',

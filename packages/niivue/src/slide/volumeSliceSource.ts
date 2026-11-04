@@ -252,6 +252,52 @@ export class VolumeSliceSource implements SlideTileSource {
     }
   }
 
+  /**
+   * Min and max raw voxel value inside a box of the plane, given in base
+   * pixels (any corner order) and read at manifest level `levelIndex`, where a
+   * coarser level is cheaper. The NVSlide contrast gesture uses it, as NiiVue's
+   * contrast drag does on a slice. null for an empty box or a flat region.
+   */
+  async intensityRange(
+    box: { x0: number; y0: number; x1: number; y1: number },
+    levelIndex = 0,
+  ): Promise<[number, number] | null> {
+    const level = this.manifest.levels[levelIndex]
+    const plane = this.planeForLevel[levelIndex]
+    if (!level || plane === undefined) return null
+    const sx = level.width / this.manifest.width
+    const sy = level.height / this.manifest.height
+    const clampTo = (v: number, n: number) =>
+      Math.max(0, Math.min(n, Math.floor(v)))
+    const u0 = clampTo(Math.min(box.x0, box.x1) * sx, level.width)
+    const u1 = clampTo(Math.max(box.x0, box.x1) * sx + 1, level.width)
+    const v0 = clampTo(Math.min(box.y0, box.y1) * sy, level.height)
+    const v1 = clampTo(Math.max(box.y0, box.y1) * sy + 1, level.height)
+    if (!(u1 > u0 && v1 > v0)) return null
+    const [uAxis, vAxis] = this.planeAxes
+    const texOrigin: Vec3i = [0, 0, 0]
+    const texDims: Vec3i = [1, 1, 1]
+    texOrigin[AXIS_OF[this.axis]] = plane
+    texOrigin[uAxis] = u0
+    texOrigin[vAxis] = v0
+    texDims[uAxis] = u1 - u0
+    texDims[vAxis] = v1 - v0
+    const voxels = await this.volume.fetchChunk({
+      levelIndex,
+      texOrigin,
+      texDims,
+      bytesPerVoxel: this.bytesPerVoxel,
+    })
+    const values = this.scalars(voxels, (u1 - u0) * (v1 - v0))
+    let lo = Number.POSITIVE_INFINITY
+    let hi = Number.NEGATIVE_INFINITY
+    for (const v of values) {
+      if (v < lo) lo = v
+      if (v > hi) hi = v
+    }
+    return lo < hi ? [lo, hi] : null
+  }
+
   /** The same plane orientation and appearance at another position. */
   withIndex(index: number): VolumeSliceSource {
     return new VolumeSliceSource(this.volume, { ...this.options, index })
@@ -311,12 +357,8 @@ export class VolumeSliceSource implements SlideTileSource {
     return this.toRgba(voxels, tile.width * tile.height)
   }
 
-  /**
-   * Window the region's scalar voxels through the LUT. The region is laid out
-   * x-fastest then y then z with a single voxel along the plane normal, so the
-   * pixel at (u, v) is always at `v * width + u` whichever axis is fixed.
-   */
-  private toRgba(voxels: Uint8Array, count: number): Uint8Array {
+  /** The region's bytes as the volume's own scalar type. */
+  private scalars(voxels: Uint8Array, count: number) {
     const expected = count * this.bytesPerVoxel
     if (voxels.byteLength !== expected) {
       throw new Error(
@@ -338,6 +380,16 @@ export class VolumeSliceSource implements SlideTileSource {
       aligned.byteOffset,
       count,
     )
+    return values
+  }
+
+  /**
+   * Window the region's scalar voxels through the LUT. The region is laid out
+   * x-fastest then y then z with a single voxel along the plane normal, so the
+   * pixel at (u, v) is always at `v * width + u` whichever axis is fixed.
+   */
+  private toRgba(voxels: Uint8Array, count: number): Uint8Array {
+    const values = this.scalars(voxels, count)
     const out = new Uint8Array(count * 4)
     const lut = this.lut
     const windowMin = this.windowMin

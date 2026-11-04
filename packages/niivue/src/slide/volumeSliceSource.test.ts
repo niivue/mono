@@ -334,3 +334,39 @@ describe('VolumeSliceSource tiles', () => {
     expect(events.map((e) => e.status)).toEqual(['pending', 'failed'])
   })
 })
+
+describe('VolumeSliceSource.intensityRange', () => {
+  test('reads the raw range inside a base-pixel box, any corner order', async () => {
+    // value = x + 10 y + 100 z; plane z = 2 of an 8 x 8 x 4 volume.
+    const source = new VolumeSliceSource(fakeVolume([[8, 8, 4]]), {
+      axis: 'z',
+      index: 2,
+    })
+    expect(await source.intensityRange({ x0: 5, y0: 3, x1: 1, y1: 1 })).toEqual(
+      [1 + 10 + 200, 5 + 30 + 200],
+    )
+  })
+
+  test('reads a coarser level in its own pixels; null for a flat box', async () => {
+    const calls: ChunkedVolumeFetch[] = []
+    const source = new VolumeSliceSource(
+      fakeVolume(
+        [
+          [8, 8, 4],
+          [4, 4, 2],
+        ],
+        { calls },
+      ),
+      { axis: 'z', index: 2, tileSize: 2 },
+    )
+    await source.intensityRange({ x0: 0, y0: 0, x1: 7, y1: 7 }, 1)
+    expect(calls[0]).toMatchObject({
+      levelIndex: 1,
+      texOrigin: [0, 0, 1],
+      texDims: [4, 4, 1],
+    })
+    expect(
+      await source.intensityRange({ x0: 2, y0: 2, x1: 2, y1: 2 }),
+    ).toBeNull()
+  })
+})

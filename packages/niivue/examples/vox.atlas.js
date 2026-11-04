@@ -16,6 +16,11 @@ opacitySlider.oninput = function () {
 legendCheck.onchange = async function () {
   await nv1.setVolume(1, { isLegendVisible: this.checked })
 }
+// On: a legend colour box hides/shows its region; the name still moves the
+// crosshair.
+legendToggleCheck.onchange = function () {
+  nv1.isLegendToggleEnabled = this.checked
+}
 outlineSlider.oninput = function () {
   // 0 fills each region; a positive value is the neighbour probe distance in
   // the atlas' own voxels, so a wider setting draws a thicker border.

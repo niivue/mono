@@ -112,8 +112,8 @@ describe('buildRuler', () => {
     expect(r.pxPerMM).toBeCloseTo(400 / 0.4, 3)
   })
 
-  test('umLadderWalksTheSubMmDecades_notJustOne', () => {
-    // A single pass of NICE_VALUES spans one decade; without the decade walk
+  test('umLadderWalksTheSubMmScales_notJustOne', () => {
+    // A single pass of NICE_VALUES spans one factor of ten; without the walk
     // a few-hundred-micron slide window would get a 10 um sliver of a bar.
     // maxMM = 0.65 * 0.3 = 0.195, so the ladder picks 100 um.
     const r = measure(0, false, 1, {

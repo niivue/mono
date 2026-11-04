@@ -92,6 +92,9 @@ uniform float layerGradMode;
 // params.gradientOpacity / params.silhouettePower in wgpu/volumeShaderLib.ts.
 uniform float gradientOpacity;
 uniform float silhouettePower;
+// 1.0 applies the background's step-size opacity correction to the overlay
+// pass. Mirrors params.overlayOpacityCorrection in wgpu/volumeShaderLib.ts.
+uniform float overlayOpacityCorrection;
 
 // In-shader layer-gradient constants, used by the overlay and drawing passes
 // (neither has a precomputed gradient texture the way the background does).
@@ -334,7 +337,9 @@ RayResult rayMarchPass(
     // Display-gamma exponent for this layer's classified colour. Intensity-
     // derived layers pass invGamma; the drawing layer passes 1.0, because its
     // colours are categorical label swatches, not brightness.
-    float gammaExp, bool mip
+    float gammaExp,
+    // Step-size opacity exponent (see stepCorrectAlpha); 1.0 leaves alpha as is.
+    float alphaExp, bool mip
 ) {
     RayResult result;
     result.color = vec4(0.0);
@@ -383,7 +388,8 @@ RayResult rayMarchPass(
                 // product below alpha once it is multiplied in.
                 rgb = min(rgb * layerShade(tex, samplePos.xyz, shadeAmount), vec3(1.0));
             }
-            vec4 premultiplied = vec4(rgb * colorSample.a, colorSample.a);
+            float a = stepCorrectAlpha(colorSample.a, alphaExp);
+            vec4 premultiplied = vec4(rgb * a, a);
             if (mip) {
                 result.color = max(result.color, premultiplied);
             } else {
@@ -950,7 +956,10 @@ void main() {
   // drag, so a cached gradient would thrash), so lighting comes from the
   // in-shader stencil — per sample, since an overlay stack is translucent.
   if (HAS_OVERLAY && textureSize(overlay, 0).x > 2) {
-    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode, gradientAmount, invGamma, mip);
+    // Same reference density as the background: one sample per finest voxel.
+    // MIP reads each sample independently, so it takes no correction.
+    float ovAlphaExp = (overlayOpacityCorrection > 0.5 && !mip) ? stepSize * refPerLen : 1.0;
+    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode, gradientAmount, invGamma, ovAlphaExp, mip);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor, mip);
   }
   // PAQD pass (raw data with GPU-side LUT lookup + easing)
@@ -960,7 +969,7 @@ void main() {
   }
   // Drawing pass (nearest-neighbor sampling — NEAREST filter set by CPU)
   if (HAS_DRAWING && textureSize(drawing, 0).x > 2) {
-    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode, 0.0, 1.0, mip);
+    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode, 0.0, 1.0, 1.0, mip);
     // Matcap lighting at FIRST HIT only (unlike the overlay, which shades every
     // sample): a drawing is a label mask read as an opaque surface, so one
     // shade for the whole ray is both correct and far cheaper. The gradient is

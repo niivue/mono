@@ -13,7 +13,7 @@ import {
   VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
-import { applyCORS } from '@/NVLoader'
+import { loadImageElement } from '@/NVLoader'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { loadMatcapOrDefault } from '@/view/matcapFallback'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -33,9 +33,12 @@ import {
   chunkExplodeEnabled,
   chunkExplodeOffsetFrac,
 } from '@/volume/ChunkExplode'
-import { ChunkResidencyManager } from '@/volume/ChunkResidency'
 import {
-  chunksBackToFront,
+  ChunkResidencyManager,
+  type RetiringChunk,
+} from '@/volume/ChunkResidency'
+import {
+  chunkDrawOrder,
   chunksInFrustum,
   chunksNotClippedOut,
   orderByViewCenter,
@@ -458,6 +461,8 @@ export class VolumeRenderer extends NVRenderer {
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
   layerGradientMode = VOLUME_DEFAULTS.layerGradientMode
+  // Step-size opacity correction for the overlay pass.
+  isOverlayOpacityCorrected = VOLUME_DEFAULTS.isOverlayOpacityCorrected
   // Background-volume gradient opacity and silhouette (Fresnel rim), set by the
   // view each frame from md.volume. Both read the precomputed gradient
   // texture's magnitude/direction, so a non-zero value also means the gradient
@@ -686,35 +691,17 @@ export class VolumeRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     imageSrc: string,
   ): Promise<WebGLTexture> {
-    return new Promise((resolve, reject) => {
-      const image = new Image()
-      image.onload = () => {
-        const texture = gl.createTexture()
-        if (!texture) {
-          reject(new Error('Failed to create texture'))
-          return
-        }
-        gl.bindTexture(gl.TEXTURE_2D, texture)
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGBA,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
-          image,
-        )
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-        gl.bindTexture(gl.TEXTURE_2D, null)
-        resolve(texture)
-      }
-      image.onerror = () =>
-        reject(new Error(`Failed to load image ${imageSrc.slice(0, 80)}`))
-      applyCORS(image)
-      image.src = imageSrc
-    })
+    const image = await loadImageElement(imageSrc)
+    const texture = gl.createTexture()
+    if (!texture) throw new Error('Failed to create texture')
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.bindTexture(gl.TEXTURE_2D, null)
+    return texture
   }
 
   private async _loadTexture2DOrFallback(
@@ -1065,6 +1052,7 @@ export class VolumeRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     vol: NVImage,
     newPlan: ChunkPlan,
+    keepUntilCovered = false,
   ): Promise<void> {
     const cacheKey = volumeCacheKey(vol)
     const entry = cacheKey ? this._texCache.get(cacheKey) : undefined
@@ -1080,8 +1068,8 @@ export class VolumeRenderer extends NVRenderer {
     // Resident bricks bake the display state of the uploader that made them.
     // When that state has changed since (a colormap set but not yet
     // refreshed), keeping them would show the old state, so none carry over.
-    const keepResident =
-      displayKey === entry.displayKey ? oldToNew : new Map<number, number>()
+    const carryOver = displayKey === entry.displayKey
+    const keepResident = carryOver ? oldToNew : new Map<number, number>()
     const newUploader = createChunkUploaderGL(
       gl,
       vol,
@@ -1092,7 +1080,13 @@ export class VolumeRenderer extends NVRenderer {
     )
     entry.uploader.dispose()
     entry.uploader = newUploader
-    entry.manager.remap(keepResident, newPlan.chunks.length)
+    entry.manager.remap(
+      keepResident,
+      newPlan.chunks.length,
+      keepUntilCovered && carryOver
+        ? { oldPlan: entry.plan, newPlan }
+        : undefined,
+    )
     // Chunk indices are plan-relative, so the tier is re-keyed by the same
     // content match: a brick the new plan still contains keeps its bytes, and
     // a refocus back to this level finds them.
@@ -2303,6 +2297,8 @@ export class VolumeRenderer extends NVRenderer {
     let total = 0
     let staleDropped = 0
     let predicted = 0
+    let retiring = 0
+    let retiringBytes = 0
     const decoded: DecodedChunkStats = {
       hits: 0,
       misses: 0,
@@ -2321,6 +2317,8 @@ export class VolumeRenderer extends NVRenderer {
       total += entry.manager.chunkCount
       staleDropped += entry.manager.staleDropCount
       predicted += entry.predictedCount
+      retiring += entry.manager.retiringChunks.length
+      retiringBytes += entry.manager.retiringBytes
       const d = entry.decoded.stats
       decoded.hits += d.hits
       decoded.misses += d.misses
@@ -2338,6 +2336,8 @@ export class VolumeRenderer extends NVRenderer {
       total,
       staleDropped,
       predicted,
+      retiring,
+      retiringBytes,
       decoded,
     }
   }
@@ -2853,6 +2853,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.gradientOpacity, this.gradientOpacity)
     if (shader.uniforms.silhouettePower)
       gl.uniform1f(shader.uniforms.silhouettePower, this.silhouette)
+    if (shader.uniforms.overlayOpacityCorrection)
+      gl.uniform1f(
+        shader.uniforms.overlayOpacityCorrection,
+        this.isOverlayOpacityCorrected ? 1 : 0,
+      )
     const cubic =
       this.isCubicInterpolation &&
       this._cubicVolumeSafe &&
@@ -2925,10 +2930,13 @@ export class VolumeRenderer extends NVRenderer {
     if (mip) gl.blendEquation(gl.MAX)
     const explode = entry.volume.chunkExplode
     const brickOpacity = entry.volume.chunkBrickOpacity
-    const order = chunksBackToFront(
+    const offsets = chunkOffsetFor(entry.plan, explode)
+    const order = chunkDrawOrder(
       entry.plan,
+      entry.manager.retiringChunks,
+      (i) => entry.manager.isCoveredByRetiring(i),
       rayDir,
-      chunkOffsetFor(entry.plan, explode),
+      offsets,
       volScale,
     )
     // Per-chunk drawing/overlay/PAQD textures align 1:1 with the volume chunks
@@ -2978,6 +2986,29 @@ export class VolumeRenderer extends NVRenderer {
     // coarse texture), full strength (fadeAlpha = 1). Restores the shared
     // overlay/paqd/drawing bindings afterward so a following fine chunk that has
     // no per-chunk layer texture still reads the caller's shared layers.
+    // Floor and retiring cubes are not plan chunks, so per-chunk layer textures
+    // do not line up with them: they draw the volume alone, then the caller's
+    // shared layer bindings go back for the chunks that follow.
+    const bindLayerPlaceholders = (): void => {
+      for (const unit of [gl.TEXTURE3, gl.TEXTURE4, gl.TEXTURE5, gl.TEXTURE7]) {
+        gl.activeTexture(unit)
+        gl.bindTexture(gl.TEXTURE_3D, this.placeholderOverlay)
+      }
+    }
+    const restoreSharedLayers = (): void => {
+      gl.activeTexture(gl.TEXTURE3)
+      gl.bindTexture(
+        gl.TEXTURE_3D,
+        this.overlayTexture || this.placeholderOverlay,
+      )
+      gl.activeTexture(gl.TEXTURE4)
+      gl.bindTexture(gl.TEXTURE_3D, this.paqdTexture || this.placeholderOverlay)
+      const drawTex = this.drawingTexture || this.placeholderOverlay
+      gl.activeTexture(gl.TEXTURE5)
+      gl.bindTexture(gl.TEXTURE_3D, drawTex)
+      gl.activeTexture(gl.TEXTURE7)
+      gl.bindTexture(gl.TEXTURE_3D, drawTex)
+    }
     const drawFloorCube = (chunkIndex: number): void => {
       const floorTex = this.coarseFloorTexture
       if (!floorTex) return
@@ -2985,10 +3016,7 @@ export class VolumeRenderer extends NVRenderer {
       gl.bindTexture(gl.TEXTURE_3D, floorTex)
       gl.activeTexture(gl.TEXTURE2)
       gl.bindTexture(gl.TEXTURE_3D, this.coarseFloorGradientTexture ?? floorTex)
-      for (const unit of [gl.TEXTURE3, gl.TEXTURE4, gl.TEXTURE5, gl.TEXTURE7]) {
-        gl.activeTexture(unit)
-        gl.bindTexture(gl.TEXTURE_3D, this.placeholderOverlay)
-      }
+      bindLayerPlaceholders()
       const cu = chunkUniformsFor(entry.plan, chunkIndex)
       this._setChunkUniforms(gl, shader, {
         volumeTexDimsFull: cu.volumeTexDimsFull,
@@ -3029,21 +3057,41 @@ export class VolumeRenderer extends NVRenderer {
         )
       }
       gl.drawElements(gl.TRIANGLE_STRIP, indexCount, gl.UNSIGNED_SHORT, 0)
-      // Restore the shared layer bindings the caller set before the loop.
-      gl.activeTexture(gl.TEXTURE3)
-      gl.bindTexture(
-        gl.TEXTURE_3D,
-        this.overlayTexture || this.placeholderOverlay,
-      )
-      gl.activeTexture(gl.TEXTURE4)
-      gl.bindTexture(gl.TEXTURE_3D, this.paqdTexture || this.placeholderOverlay)
-      const drawTex = this.drawingTexture || this.placeholderOverlay
-      gl.activeTexture(gl.TEXTURE5)
-      gl.bindTexture(gl.TEXTURE_3D, drawTex)
-      gl.activeTexture(gl.TEXTURE7)
-      gl.bindTexture(gl.TEXTURE_3D, drawTex)
+      restoreSharedLayers()
     }
-    for (const chunkIndex of order) {
+    // A retiring brick from a make-before-break swap: its own texture, placed
+    // by its own (older) plan, at full strength, without layers (as the floor
+    // it stands in for).
+    const drawRetiringCube = (ref: RetiringChunk<VolumeChunkGL>): void => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_3D, ref.chunk.volumeTexture)
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_3D, ref.chunk.volumeGradientTexture)
+      bindLayerPlaceholders()
+      this._setChunkUniforms(gl, shader, {
+        ...chunkUniformsFor(ref.plan, ref.index),
+        // Its own plan's halo decides whether cubic sampling is safe.
+        cubicSafe: entry.cubicSafe && planSupportsCubic(ref.plan),
+      })
+      if (shader.uniforms.fadeAlpha) gl.uniform1f(shader.uniforms.fadeAlpha, 1)
+      if (shader.uniforms.backOpacity)
+        gl.uniform1f(shader.uniforms.backOpacity, backOpacity)
+      if (shader.uniforms.matRAS) {
+        gl.uniformMatrix4fv(
+          shader.uniforms.matRAS,
+          false,
+          chunkExplodedMatRAS(ref.plan, ref.index, matRAS, null),
+        )
+      }
+      gl.drawElements(gl.TRIANGLE_STRIP, indexCount, gl.UNSIGNED_SHORT, 0)
+      restoreSharedLayers()
+    }
+    for (const item of order) {
+      if (item.retiring) {
+        drawRetiringCube(item.retiring)
+        continue
+      }
+      const chunkIndex = item.index
       const chunk = entry.manager.getChunk(chunkIndex)
       if (!chunk) {
         if (floorActive) drawFloorCube(chunkIndex)

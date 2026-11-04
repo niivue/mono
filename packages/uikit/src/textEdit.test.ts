@@ -12,11 +12,14 @@ import {
   hasSelection,
   insertText,
   maxLengthOf,
+  nextBoundary,
   pasteText,
+  prevBoundary,
   selectAll,
   selectedText,
   selectionOf,
   setCaret,
+  snapToBoundary,
   textEditState,
   textWindow,
   truncateEdit,
@@ -257,24 +260,122 @@ describe('glyph arithmetic', () => {
 
   it('puts the caret on the nearer side of a glyph', () => {
     const adv = [5, 10, 5]
-    expect(caretIndexAt(adv, 0, 0)).toBe(0)
-    expect(caretIndexAt(adv, 0, 2.4)).toBe(0)
-    expect(caretIndexAt(adv, 0, 2.5)).toBe(1)
-    expect(caretIndexAt(adv, 0, 9)).toBe(1)
-    expect(caretIndexAt(adv, 0, 11)).toBe(2)
-    expect(caretIndexAt(adv, 0, 99)).toBe(3)
+    expect(caretIndexAt('awa', adv, 0, 0)).toBe(0)
+    expect(caretIndexAt('awa', adv, 0, 2.4)).toBe(0)
+    expect(caretIndexAt('awa', adv, 0, 2.5)).toBe(1)
+    expect(caretIndexAt('awa', adv, 0, 9)).toBe(1)
+    expect(caretIndexAt('awa', adv, 0, 11)).toBe(2)
+    expect(caretIndexAt('awa', adv, 0, 99)).toBe(3)
     // Measured from the first shown glyph when the text is scrolled.
-    expect(caretIndexAt(adv, 1, 6)).toBe(2)
+    expect(caretIndexAt('awa', adv, 1, 6)).toBe(2)
   })
 
   it('scrolls whole glyphs the least distance that keeps the caret in view', () => {
     const adv = [5, 5, 5, 5, 5, 5] // six glyphs, a 12 px field shows two
-    expect(textWindow(adv, 12, 0, 0)).toMatchObject({ first: 0, end: 2 })
-    expect(textWindow(adv, 12, 0, 2)).toMatchObject({ first: 0, end: 2 }) // caret at the right edge
-    expect(textWindow(adv, 12, 0, 3)).toMatchObject({ first: 1, end: 3 })
-    expect(textWindow(adv, 12, 0, 6)).toMatchObject({ first: 4, end: 6 })
-    expect(textWindow(adv, 12, 4, 1)).toMatchObject({ first: 1, end: 3 })
-    expect(textWindow(adv, 12, 4, 4)).toMatchObject({ first: 4, end: 6 })
-    expect(textWindow(adv, 99, 3, 0)).toMatchObject({ first: 0, end: 6 })
+    expect(textWindow('abcdef', adv, 12, 0, 0)).toMatchObject({
+      first: 0,
+      end: 2,
+    })
+    expect(textWindow('abcdef', adv, 12, 0, 2)).toMatchObject({
+      first: 0,
+      end: 2,
+    }) // caret at the right edge
+    expect(textWindow('abcdef', adv, 12, 0, 3)).toMatchObject({
+      first: 1,
+      end: 3,
+    })
+    expect(textWindow('abcdef', adv, 12, 0, 6)).toMatchObject({
+      first: 4,
+      end: 6,
+    })
+    expect(textWindow('abcdef', adv, 12, 4, 1)).toMatchObject({
+      first: 1,
+      end: 3,
+    })
+    expect(textWindow('abcdef', adv, 12, 4, 4)).toMatchObject({
+      first: 4,
+      end: 6,
+    })
+    expect(textWindow('abcdef', adv, 99, 3, 0)).toMatchObject({
+      first: 0,
+      end: 6,
+    })
+  })
+})
+
+describe('grapheme clusters', () => {
+  const EMOJI = '\u{1F600}'
+  const ACUTE = 'e\u0301'
+  const FLAG = '\u{1F1EF}\u{1F1F5}'
+  const TEXT = `a${EMOJI}${ACUTE}${FLAG}b` // clusters at 0, 1, 3, 5, 9, 10
+
+  it('finds boundaries around a cluster', () => {
+    expect(nextBoundary(TEXT, 1)).toBe(3)
+    expect(nextBoundary(TEXT, 5)).toBe(9)
+    expect(prevBoundary(TEXT, 9)).toBe(5)
+    expect(prevBoundary(TEXT, 5)).toBe(3)
+    expect(snapToBoundary(TEXT, 2)).toBe(1)
+    expect(snapToBoundary(TEXT, 7, true)).toBe(9)
+    expect(snapToBoundary(TEXT, 3, true)).toBe(3)
+  })
+
+  it('deletes a whole cluster backward and forward', () => {
+    for (const c of [EMOJI, ACUTE, FLAG]) {
+      const t = `x${c}y`
+      expect(deleteBackward(textEditState(t, 1 + c.length))).toEqual(
+        textEditState('xy', 1),
+      )
+      expect(deleteForward(textEditState(t, 1))).toEqual(textEditState('xy', 1))
+    }
+  })
+
+  it('moves and extends the caret over a cluster', () => {
+    const at = (caret: number) => textEditState(TEXT, caret)
+    expect(editKey(at(1), key('ArrowRight'))?.caret).toBe(3)
+    expect(editKey(at(9), key('ArrowLeft'))?.caret).toBe(5)
+    expect(editKey(at(3), key('ArrowRight', { shiftKey: true }))).toEqual({
+      text: TEXT,
+      caret: 5,
+      anchor: 3,
+    })
+    expect(selectedText(textEditState(TEXT, 9, 5))).toBe(FLAG)
+    // A caret set inside a cluster snaps to its start.
+    expect(setCaret(at(0), 7).caret).toBe(5)
+  })
+
+  it('never cuts a cluster on maxLength or paste', () => {
+    expect(truncateText(`a${EMOJI}`, 2)).toBe('a')
+    expect(truncateText(`a${FLAG}`, 4)).toBe('a')
+    expect(pasteText(textEditState(''), `a${ACUTE}`, undefined, 2).text).toBe(
+      'a',
+    )
+    // Typing a base before a lone combining mark puts the caret after both.
+    expect(insertText(textEditState('\u0301', 0), 'e').caret).toBe(2)
+  })
+
+  it('measures and hit-tests a cluster as one glyph', () => {
+    const METRICS: UIKitFontMetrics = {
+      distanceRange: 2,
+      size: 50,
+      textureSize: [64, 64],
+      glyphs: new Map([
+        ['a', { plane: [0, 0, 0.5, 0.7], uv: [0, 0, 1, 1], xadv: 0.5 }],
+        ['e', { plane: [0, 0, 0.5, 0.7], uv: [0, 0, 1, 1], xadv: 0.5 }],
+        [EMOJI, { plane: [0, 0, 1, 0.7], uv: [0, 0, 1, 1], xadv: 1 }],
+      ]),
+    }
+    const t = `a${EMOJI}${ACUTE}`
+    const adv = glyphAdvances(METRICS, t, 10)
+    expect(adv).toEqual([5, 10, 0, 5, 0])
+    expect(caretIndexAt(t, adv, 0, 8)).toBe(1)
+    expect(caretIndexAt(t, adv, 0, 12)).toBe(3) // past the emoji's middle
+    expect(caretIndexAt(t, adv, 0, 18.5)).toBe(5)
+  })
+
+  it('scrolls without starting inside a cluster', () => {
+    const t = `${EMOJI}${EMOJI}${EMOJI}` // 10 px each, a 15 px field shows one
+    const adv = [10, 0, 10, 0, 10, 0]
+    expect(textWindow(t, adv, 15, 0, 6)).toMatchObject({ first: 4, end: 6 })
+    expect(textWindow(t, adv, 15, 1, 2)).toMatchObject({ first: 2, end: 4 })
   })
 })

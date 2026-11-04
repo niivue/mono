@@ -18,6 +18,7 @@ import {
   ohifCommandsManager,
   ohifServices,
   refreshToolbar,
+  type StatusKind,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
 
@@ -140,9 +141,13 @@ const statusTokens = new WeakMap<NiivueViewportEntry, number>()
 // Write a status message (or null to clear) through the viewport's sink,
 // invalidating any pending flash clear (no-op if the viewport did not register
 // a status sink).
-function writeStatus(entry: NiivueViewportEntry, message: string | null): void {
+function writeStatus(
+  entry: NiivueViewportEntry,
+  message: string | null,
+  kind?: StatusKind,
+): void {
   statusTokens.set(entry, (statusTokens.get(entry) ?? 0) + 1)
-  entry.setStatus?.(message)
+  entry.setStatus?.(message, kind)
 }
 
 // Show a transient message in the viewport. The deferred clear is dropped when
@@ -151,9 +156,10 @@ function writeStatus(entry: NiivueViewportEntry, message: string | null): void {
 export function flashStatus(
   entry: NiivueViewportEntry,
   message: string,
+  kind: StatusKind = 'note',
   ms = 4000,
 ): void {
-  writeStatus(entry, message)
+  writeStatus(entry, message, kind)
   const token = statusTokens.get(entry)
   setTimeout(() => {
     if (statusTokens.get(entry) === token) writeStatus(entry, null)
@@ -232,19 +238,6 @@ export function readBaseWindowLevel(
   return { window: calMax - calMin, level: (calMin + calMax) / 2 }
 }
 
-/** Record a calMin/calMax pair as the entry's window/level (width + center). */
-function recordWindowLevel(
-  entry: NiivueViewportEntry | undefined,
-  calMin: number,
-  calMax: number,
-): void {
-  if (entry)
-    entry.windowLevel = {
-      window: calMax - calMin,
-      level: (calMin + calMax) / 2,
-    }
-}
-
 // Two window/level pairs are the same if within this fraction of the width — a
 // contrast drag moves them well beyond this, crosshair navigation not at all.
 function sameWindowLevel(
@@ -319,7 +312,7 @@ function syncWindowLevelToSiblings(
 }
 
 /**
- * Reverse W/L bridge: after a manual contrast drag, record the base volume's new
+ * Reverse W/L bridge: on a base-volume volumeUpdated, record the new
  * window/level on the entry and reflect it onto any other OHIF viewport showing
  * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
  * window/level when it changed (for a viewport readout), else undefined.
@@ -515,6 +508,13 @@ function niivueMeasurementSource(
   return source
 }
 
+// OHIF tools whose points come from annotation.polygons, not shape endpoints.
+const CONTOUR_TOOLS = new Set([
+  'PlanarFreehandROI',
+  'SplineROI',
+  'LivewireContour',
+])
+
 let niivueMeasurementCounter = 0
 
 /**
@@ -611,11 +611,10 @@ function annotationPointsLps(
       break
     case 'measureSpline':
     case 'measureLivewire':
-    case 'freehand': {
-      const outer = annotation.polygons[0]?.outer
-      points = outer && outer.length >= 2 ? outer : [start, end]
+    case 'freehand':
+      // Exactly one ring, enforced by the CONTOUR_TOOLS guard.
+      points = annotation.polygons[0]?.outer ?? []
       break
-    }
     case 'measureLine':
       points = [start, end]
       break
@@ -648,6 +647,55 @@ interface ReflectedRow {
   hash: string
 }
 const reflectedAnnotations = new Map<string, Map<string, ReflectedRow>>()
+
+// Thrown OHIF add/remove errors per annotation, keyed on the content hash so an
+// edit retries afresh. Only thrown errors count: a not-yet-loaded backing series
+// is a normal wait and keeps retrying every reconcile.
+const MAX_MAPPING_ATTEMPTS = 3
+const mappingFailures = new Map<
+  string,
+  Map<string, { hash: string; attempts: number }>
+>()
+
+function recordMappingFailure(
+  viewportId: string,
+  annotationId: string,
+  hash: string,
+  action: string,
+  err: unknown,
+): void {
+  let byView = mappingFailures.get(viewportId)
+  if (!byView) {
+    byView = new Map()
+    mappingFailures.set(viewportId, byView)
+  }
+  const prev = byView.get(annotationId)
+  // Warn once per failing change (hash), so a later remove failure is still logged.
+  if (prev?.hash !== hash)
+    console.warn(
+      `[nv-ohif] measurement ${action} failed for annotation ${annotationId} (retrying up to ${MAX_MAPPING_ATTEMPTS} attempts)`,
+      err,
+    )
+  byView.set(annotationId, {
+    hash,
+    attempts: prev?.hash === hash ? prev.attempts + 1 : 1,
+  })
+}
+
+function mappingExhausted(
+  viewportId: string,
+  annotationId: string,
+  hash: string,
+): boolean {
+  const f = mappingFailures.get(viewportId)?.get(annotationId)
+  return f?.hash === hash && f.attempts >= MAX_MAPPING_ATTEMPTS
+}
+
+function clearMappingFailure(viewportId: string, annotationId: string): void {
+  const byView = mappingFailures.get(viewportId)
+  byView?.delete(annotationId)
+  if (byView?.size === 0) mappingFailures.delete(viewportId)
+}
 
 /**
  * A stable fingerprint of everything reflected into the panel row (stats, free
@@ -801,11 +849,11 @@ function reflectNiivueAnnotationResult(
   const toolType = annotationToolType(annotation)
   const mapping = toolType ? ANNOTATION_TO_OHIF[toolType] : undefined
   if (!mapping) return { status: 'permanentlyUnsupported' }
-  // OHIF's PlanarFreehandROI measurement schema carries one polyline and has no
-  // representation for disconnected components or holes. Do not silently export
-  // only the first outer ring while reporting stats for different geometry.
+  // OHIF's contour measurements carry one polyline and cannot represent an
+  // eraser-split ROI or holes. Do not export only the first ring while the
+  // stats cover every piece (#484).
   if (
-    toolType === 'freehand' &&
+    CONTOUR_TOOLS.has(mapping.toolName) &&
     (annotation.polygons.length !== 1 ||
       (annotation.polygons[0]?.holes.length ?? 0) > 0)
   )
@@ -835,6 +883,9 @@ function reflectNiivueAnnotationResult(
   // fallback for empty text: reflecting that fallback would echo it back through
   // the label sync onto the canvas, making a user-cleared label impossible.
   const rowLabel = annotation.text ?? ''
+  const hash = annotationContentHash(annotation)
+  if (mappingExhausted(viewportId, annotation.id, hash))
+    return { status: 'retryableFailure' }
 
   let acceptedUid: string | undefined
   try {
@@ -862,20 +913,19 @@ function reflectNiivueAnnotationResult(
       },
       (d) => d.measurement,
     )
-  } catch {
+  } catch (err) {
+    recordMappingFailure(viewportId, annotation.id, hash, 'add', err)
     return { status: 'retryableFailure' }
   }
   if (!acceptedUid) return { status: 'retryableFailure' }
+  clearMappingFailure(viewportId, annotation.id)
 
   let byView = reflectedAnnotations.get(viewportId)
   if (!byView) {
     byView = new Map()
     reflectedAnnotations.set(viewportId, byView)
   }
-  byView.set(annotation.id, {
-    uid: acceptedUid,
-    hash: annotationContentHash(annotation),
-  })
+  byView.set(annotation.id, { uid: acceptedUid, hash })
   measurementToAnnotation.set(acceptedUid, {
     viewportId,
     annotationId: annotation.id,
@@ -1130,17 +1180,26 @@ export function removeNiivueAnnotation(
 ): boolean {
   const byView = reflectedAnnotations.get(viewportId)
   const row = byView?.get(annotationId)
-  if (!byView || !row) return true
+  if (!byView || !row) {
+    clearMappingFailure(viewportId, annotationId)
+    return true
+  }
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
   if (row.uid) {
-    if (measurementService?.remove) {
+    // After the retry cap, fall through and drop the bookkeeping: the OHIF row
+    // is orphaned, but the maps stop growing and reconcile stops retrying.
+    if (
+      measurementService?.remove &&
+      !mappingExhausted(viewportId, annotationId, row.hash)
+    ) {
       removingUids.add(row.uid)
       try {
         measurementService.remove(row.uid)
-      } catch {
+      } catch (err) {
         // A THROWN remove is transient — keep the bookkeeping so the next
         // reconcile retries the OHIF-side removal.
+        recordMappingFailure(viewportId, annotationId, row.hash, 'remove', err)
         return false
       } finally {
         removingUids.delete(row.uid)
@@ -1153,6 +1212,7 @@ export function removeNiivueAnnotation(
   }
   byView.delete(annotationId)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
+  clearMappingFailure(viewportId, annotationId)
   // Only drop the hidden flag when the annotation is actually gone from NiiVue.
   // removeNiivueAnnotation also runs on reconcile's permanently-unsupported path,
   // which drops the OHIF row while the annotation is still alive; clearing there
@@ -1172,6 +1232,8 @@ export function clearNiivueAnnotations(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
 ): void {
+  // A viewport whose every add failed has no rows but may still hold failures.
+  mappingFailures.delete(viewportId)
   const byView = reflectedAnnotations.get(viewportId)
   if (!byView) return
   const measurementService = ohifServices(servicesManager)
@@ -1242,6 +1304,12 @@ export function reconcileNiivueAnnotations(
           removeNiivueAnnotation(viewportId, servicesManager, annotationId)
       }
     }
+    // Failures for vanished annotations with no row left (erase / undo). A row
+    // still present is a pending removal whose attempt count must survive.
+    const rows = reflectedAnnotations.get(viewportId)
+    for (const annotationId of mappingFailures.get(viewportId)?.keys() ?? [])
+      if (!liveIds.has(annotationId) && !rows?.has(annotationId))
+        clearMappingFailure(viewportId, annotationId)
 
     // Add new annotations and update changed rows in place.
     for (const annotation of live) {
@@ -1477,7 +1545,7 @@ export function getNiivueCommandsModule({
             opacity: OVERLAY_OPACITY,
           })
         } else {
-          writeStatus(entry, `Fetching overlay: ${label}...`)
+          writeStatus(entry, `Fetching overlay: ${label}...`, 'loading')
           const niftiFile = await convertDisplaySetToNifti(candidate, {
             headers: authHeaders(servicesManager),
             onProgress: (phase, loaded, total) => {
@@ -1486,6 +1554,7 @@ export function getNiivueCommandsModule({
                 phase === 'fetching'
                   ? `Fetching overlay: ${label}... ${loaded}/${total}`
                   : `Converting overlay: ${label} (dcm2niix)...`,
+                'loading',
               )
             },
           })
@@ -1504,7 +1573,11 @@ export function getNiivueCommandsModule({
       } catch (err) {
         console.error('[nv-ohif] overlay load failed', err)
         const message = err instanceof Error ? err.message : String(err)
-        flashStatus(entry, `Overlay load failed: ${message || 'unknown error'}`)
+        flashStatus(
+          entry,
+          `Overlay load failed: ${message || 'unknown error'}`,
+          'error',
+        )
       } finally {
         // Only clear the loading flag if this load still owns the entry: a swap
         // may have started a NEWER overlay load on the reused entry, whose
@@ -1539,8 +1612,10 @@ export function getNiivueCommandsModule({
       // A zero-width window (PT/SUV) is a level-only clamp: show 0..level.
       const [calMin, calMax] =
         window === 0 ? [0, level] : [level - window / 2, level + window / 2]
-      nv.setVolume(0, { calMin, calMax })
-      recordWindowLevel(getActiveNiivueEntry(servicesManager), calMin, calMax)
+      // A queued GPU update can reject; log it rather than leave it unhandled (#467).
+      nv.setVolume(0, { calMin, calMax }).catch((err: unknown) =>
+        console.error('[nv-ohif] window/level update failed', err),
+      )
     },
 
     /**
@@ -1564,25 +1639,35 @@ export function getNiivueCommandsModule({
         presetIndex,
       )
       if (!range) return
-      entry.nv.setVolume(0, { calMin: range[0], calMax: range[1] })
-      recordWindowLevel(entry, range[0], range[1])
+      entry.nv
+        .setVolume(0, { calMin: range[0], calMax: range[1] })
+        .catch((err: unknown) =>
+          console.error('[nv-ohif] window/level preset failed', err),
+        )
     },
 
     /** Recompute the base volume's robust (2-98%) auto window. */
     niivueAutoWindowLevel: () => {
       const entry = getActiveNiivueEntry(servicesManager)
       if (!entry || entry.nv.volumes.length === 0) return
-      entry.nv.recalculateCalMinMax(0).then(() => {
-        const wl = readBaseWindowLevel(entry.nv)
-        if (wl) entry.windowLevel = wl
-      })
+      entry.nv
+        .recalculateCalMinMax(0)
+        .then(() => {
+          const wl = readBaseWindowLevel(entry.nv)
+          if (wl) entry.windowLevel = wl
+        })
+        .catch((err: unknown) =>
+          console.error('[nv-ohif] auto window/level failed', err),
+        )
     },
 
     /** Set the base volume's colormap (e.g. gray / hot / viridis). */
     niivueSetColormap: ({ colormap }: { colormap?: string } = {}) => {
       const nv = getActiveNiivue(servicesManager)
       if (!nv || nv.volumes.length === 0 || !colormap) return
-      nv.setVolume(0, { colormap })
+      nv.setVolume(0, { colormap }).catch((err: unknown) =>
+        console.error('[nv-ohif] colormap update failed', err),
+      )
     },
 
     /** Toggle the colormap legend (colorbar) on the viewport. */

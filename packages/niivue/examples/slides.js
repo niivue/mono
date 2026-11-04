@@ -22,6 +22,7 @@ import {
 } from '../src/index.ts'
 import { decodeJp2 } from './openjpeg-decoder.js'
 import { createTiffSource } from './tiff-source.js'
+import { urlParamSelect } from './urlParamSelect.js'
 
 // DZI sources construct via NVSlide.fromSource(DziSource.fromUrl(...)) rather
 // than a manifest URL. This OpenSeadragon example (overlap 2) is CORS-enabled.
@@ -31,8 +32,7 @@ const DZI_URLS = {
 }
 
 // TIFF/SVS sources build a geotiff-backed SlideTileSource. The OpenSlide server
-// has no CORS, so local development uses public/svs/ and Pages uses the Git LFS
-// media base configured by VITE_STREAMING_MEDIA_BASE.
+// has no CORS, so the file is served from the streaming media base below.
 const TIFF_URLS = {
   'tiff-cmu1': 'svs/CMU-1-Small-Region.svs',
 }
@@ -44,7 +44,7 @@ NVSlide.registerTileDecoder('image/jp2', decodeJp2)
 const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
 // DICOM-WSI manifests use dicom-wsi-range-v1: per-level JPEG tiles addressed
 // by byte offset, which NVSlide fetches over HTTP Range and decodes in-browser.
-// Production manifests resolve from the hosted streaming-data repository.
+// Manifests and binaries resolve from the streaming bases below.
 const DICOM_WSI_PATH = 'dicom-wsi/cptac-brca/manifest.json'
 // Manifest path per source-dropdown value. The OpenSlide DICOM-WSI archives
 // and manifests are hosted with Git LFS; only JPEG TILED_FULL sources are
@@ -68,6 +68,7 @@ function el(id) {
 }
 
 const els = {
+  backendSelect: el('backendSelect'),
   source: el('source'),
   levelMode: el('levelMode'),
   zoomOut: el('zoomOut'),
@@ -87,6 +88,9 @@ const els = {
   rangeLog: el('rangeLog'),
   fallback: el('fallback'),
 }
+
+// Wired before anything loads, so the menu works even if loading fails (#488).
+urlParamSelect(els.backendSelect, 'backend', backendFromUrl())
 
 let view = null
 let slide = null
@@ -127,19 +131,29 @@ function resolveDemoUrl(path) {
   return new URL(`${normalized}${path}`, window.location.href).toString()
 }
 
+// Streaming slides (DICOM-WSI, OpenSlide DICOM, SVS) come from the Git LFS
+// repository the Pages build uses, so `bun run dev` loads them with no fetch
+// step: manifests from raw, binaries from the LFS media endpoint (raw returns
+// LFS pointers). VITE_STREAMING_ASSET_BASE=/ serves local copies instead
+// (scripts/fetch-dicom-wsi.ts, scripts/fetch-openslide-dicom.ts, public/svs/).
+const STREAMING_REPO = 'niivue/niivue-demo-images-lfs/main/streaming/'
+const STREAMING_ASSET_BASE =
+  import.meta.env.VITE_STREAMING_ASSET_BASE ||
+  `https://raw.githubusercontent.com/${STREAMING_REPO}`
+const STREAMING_MEDIA_BASE =
+  import.meta.env.VITE_STREAMING_MEDIA_BASE ||
+  import.meta.env.VITE_STREAMING_ASSET_BASE ||
+  `https://media.githubusercontent.com/media/${STREAMING_REPO}`
+const isLocalStreaming = !/^https?:/.test(STREAMING_ASSET_BASE)
+
 function resolveStreamingUrl(path) {
-  const base =
-    import.meta.env.VITE_STREAMING_ASSET_BASE || import.meta.env.BASE_URL || '/'
+  const base = STREAMING_ASSET_BASE
   const normalized = base.endsWith('/') ? base : `${base}/`
   return new URL(`${normalized}${path}`, window.location.href).toString()
 }
 
 function resolveStreamingMediaUrl(path) {
-  const base =
-    import.meta.env.VITE_STREAMING_MEDIA_BASE ||
-    import.meta.env.VITE_STREAMING_ASSET_BASE ||
-    import.meta.env.BASE_URL ||
-    '/'
+  const base = STREAMING_MEDIA_BASE
   const normalized = base.endsWith('/') ? base : `${base}/`
   return new URL(`${normalized}${path}`, window.location.href).toString()
 }
@@ -786,16 +800,19 @@ let loadSeq = 0
 // gitignored fixture fetched by a script, or an external host to be reachable;
 // without this a missing SVS or an offline DZI shows only a raw fetch error.
 function hintForSource(src) {
-  if (import.meta.env.VITE_STREAMING_ASSET_BASE) return ''
+  if (src === 'dzi-highsmith') {
+    return ` Fetched from ${new URL(DZI_URLS[src]).host}; check your network/CORS (this external DZI must be online).`
+  }
+  if (src === 'synthetic') return ''
+  if (!isLocalStreaming) {
+    return ` Fetched from ${new URL(STREAMING_ASSET_BASE, location.href).host}; check your network.`
+  }
   if (src.startsWith('openslide-')) {
     return ` Did you run scripts/fetch-openslide-dicom.ts --slide=${src.replace('openslide-', '')}?`
   }
   if (src === 'dicom-wsi') return ' Did you run scripts/fetch-dicom-wsi.ts?'
   if (src === 'tiff-cmu1') {
     return ` Serve ${TIFF_URLS[src]} same-origin under public/ (the .svs is gitignored; the OpenSlide host has no CORS).`
-  }
-  if (src === 'dzi-highsmith') {
-    return ` Fetched from ${new URL(DZI_URLS[src]).host}; check your network/CORS (this external DZI must be online).`
   }
   return ''
 }
@@ -856,6 +873,7 @@ async function loadSlide() {
 async function main() {
   makeDraggable(els.hud)
   view = await createView()
+  els.backendSelect.value = view.kind === 'gpu' ? 'webgpu' : 'webgl2'
   await loadSlide()
 }
 

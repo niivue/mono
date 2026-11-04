@@ -181,6 +181,49 @@ describe('NvViewer', () => {
       )
     })
 
+    test('a rejected setVolume reaches onError (#467)', async () => {
+      const onError = mock((_err: unknown) => {})
+      const volumes1 = [{ url: 'brain.nii', calMin: 0, calMax: 255 }]
+      const { rerender } = render(
+        <NvViewer volumes={volumes1} onError={onError} />,
+      )
+      const nv = mockInstances[0]!
+      nv.volumes = [
+        {
+          url: 'brain.nii',
+          name: 'brain.nii',
+          colormap: 'gray',
+          calMin: 0,
+          calMax: 255,
+          opacity: 1.0,
+        },
+      ]
+      const failure = new Error('device lost')
+      nv.setVolume.mockImplementation(() => Promise.reject(failure))
+      rerender(
+        <NvViewer
+          volumes={[{ url: 'brain.nii', calMin: 50, calMax: 200 }]}
+          onError={onError}
+        />,
+      )
+      await new Promise((r) => setTimeout(r, 0))
+      expect(onError).toHaveBeenCalledWith(failure)
+    })
+
+    test('a rejected removeVolume reaches onError (#467)', async () => {
+      const onError = mock((_err: unknown) => {})
+      const { rerender } = render(
+        <NvViewer volumes={[{ url: 'brain.nii' }]} onError={onError} />,
+      )
+      const nv = mockInstances[0]!
+      nv.volumes = [{ url: 'brain.nii', name: 'brain.nii' }]
+      const failure = new Error('device lost')
+      nv.removeVolume.mockImplementation(() => Promise.reject(failure))
+      rerender(<NvViewer volumes={[]} onError={onError} />)
+      await new Promise((r) => setTimeout(r, 0))
+      expect(onError).toHaveBeenCalledWith(failure)
+    })
+
     test('changing opacity calls setVolume with new opacity', () => {
       const volumes1 = [{ url: 'brain.nii', opacity: 1.0 }]
       const { rerender } = render(<NvViewer volumes={volumes1} />)
@@ -262,6 +305,102 @@ describe('NvViewer', () => {
 
       // Should NOT re-add the volume
       expect(nv.addVolume).not.toHaveBeenCalled()
+    })
+  })
+
+  // --- options (#378) ---
+
+  describe('options', () => {
+    test('an inline object with equal values does not recreate or set', () => {
+      const { rerender } = render(
+        <NvViewer
+          options={{ backgroundColor: [1, 0, 0, 1], crosshairGap: 3 }}
+        />,
+      )
+      rerender(
+        <NvViewer
+          options={{ crosshairGap: 3, backgroundColor: [1, 0, 0, 1] }}
+        />,
+      )
+      expect(mockInstances.length).toBe(1)
+      const nv = mockInstances[0]!
+      expect(nv.destroy).not.toHaveBeenCalled()
+      // the sliceType effect sets sliceType on mount
+      expect(nv.optionSets.map(([key]) => key)).toEqual(['sliceType'])
+    })
+
+    test('a changed live option calls its setter without recreating', () => {
+      const { rerender } = render(
+        <NvViewer options={{ backgroundColor: [1, 0, 0, 1] }} />,
+      )
+      rerender(<NvViewer options={{ backgroundColor: [0, 1, 0, 1] }} />)
+      const nv = mockInstances[0]!
+      expect(nv.destroy).not.toHaveBeenCalled()
+      expect(nv.optionSets).toContainEqual(['backgroundColor', [0, 1, 0, 1]])
+      expect(nv.optionSets.map(([key]) => key)).toEqual([
+        'sliceType',
+        'backgroundColor',
+      ])
+    })
+
+    test('a changed construction-only option recreates and reloads volumes', () => {
+      const volumes = [{ url: 'brain.nii' }]
+      const { rerender } = render(
+        <NvViewer volumes={volumes} options={{ isAntiAlias: false }} />,
+      )
+      rerender(<NvViewer volumes={volumes} options={{ isAntiAlias: true }} />)
+      expect(mockInstances[0]!.destroy).toHaveBeenCalled()
+      const nv = mockInstances[1]!
+      expect(nv.constructorOptions.isAntiAlias).toBe(true)
+      expect(nv.addVolume).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'brain.nii' }),
+      )
+    })
+
+    test('a removed option resets to its default', () => {
+      const { rerender } = render(
+        <NvViewer
+          options={{ backgroundColor: [1, 0, 0, 1], crosshairGap: 3 }}
+        />,
+      )
+      rerender(<NvViewer options={{}} />)
+      const nv = mockInstances[0]!
+      expect(nv.destroy).not.toHaveBeenCalled()
+      expect(nv.backgroundColor).toEqual([0, 0, 0, 1]) // NiiVue default
+      expect(nv.crosshairGap).toBe(5) // defaultViewerOptions
+    })
+
+    test('an option never supplied keeps its runtime value', () => {
+      const { rerender } = render(
+        <NvViewer options={{ backgroundColor: [1, 0, 0, 1] }} />,
+      )
+      const nv = mockInstances[0]!
+      nv.primaryDragMode = 3
+      nv.optionSets.length = 0
+      rerender(<NvViewer options={{}} />)
+      expect(nv.optionSets.map(([key]) => key)).toEqual(['backgroundColor'])
+      expect(nv.primaryDragMode).toBe(3)
+    })
+
+    test('the sliceType prop wins over options.sliceType', () => {
+      const { rerender } = render(
+        <NvViewer sliceType={2} options={{ sliceType: 0 }} />,
+      )
+      const nv = mockInstances[0]!
+      rerender(<NvViewer sliceType={2} options={{ sliceType: 1 }} />)
+      expect(nv.sliceType).toBe(2)
+      rerender(<NvViewer sliceType={2} options={{}} />)
+      expect(nv.sliceType).toBe(2)
+      expect(nv.destroy).not.toHaveBeenCalled()
+    })
+
+    test('a sliceType change does not recreate', () => {
+      const { rerender } = render(<NvViewer sliceType={0} />)
+      rerender(<NvViewer sliceType={2} />)
+      expect(mockInstances.length).toBe(1)
+      const nv = mockInstances[0]!
+      expect(nv.destroy).not.toHaveBeenCalled()
+      expect(nv.sliceType).toBe(2)
     })
   })
 })

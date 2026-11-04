@@ -427,8 +427,8 @@ export async function reinitializeView(
       await recreateView(ctrl, backendChanged)
     } else {
       // Only pixelRatio changed — resize without recreating
-      if (ctrl.view) ctrl.view.forceDevicePixelRatio = newPixelRatio
-      ctrl.view?.resize()
+      // The setter also updates controllers sharing this canvas.
+      ctrl.devicePixelRatio = newPixelRatio
     }
     return true
   } catch (err) {

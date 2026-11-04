@@ -50,13 +50,15 @@ function App() {
 | Prop | Type | Description |
 |------|------|-------------|
 | `volumes` | `ImageFromUrlOptions[]` | Volumes to load (diffed automatically) |
-| `options` | `Partial<NVConfigOptions>` | Niivue config overrides |
+| `options` | `Partial<NiiVueOptions>` | Niivue config overrides |
 | `sliceType` | `number` | Slice type (default: `SLICE_TYPE.AXIAL`) |
 | `className` | `string` | CSS class for the container div |
 | `style` | `CSSProperties` | Inline styles for the container div |
 | `onLocationChange` | `(data) => void` | Crosshair location callback |
 | `onImageLoaded` | `(volume: NVImage) => void` | Volume loaded callback |
 | `onError` | `(error) => void` | Error callback |
+
+`options` is compared by value, so an inline object is fine; memoising it only saves the comparison. Options with a NiiVue setter update the live viewer (a removed one reverts to its default), while construction-only options (those without a setter, such as `backend`, `isAntiAlias`, `isInteractionEnabled`, `bounds`, `matcaps`, `font` or `logLevel`) rebuild the viewer and reload its volumes. `options.sliceType` is only an initial value: the `sliceType` prop always wins.
 
 ## Hooks
 
@@ -112,6 +114,9 @@ useSceneEvent(scene, "locationChange", (viewerIndex, data) => {
 | `error` | `(viewerIndex: number, error: unknown) => void` |
 | `volumeAdded` | `(viewerIndex: number, imageOptions, image: NVImage) => void` |
 | `volumeRemoved` | `(viewerIndex: number, url: string) => void` |
+| `colormapChanged` | `(viewerIndex: number, volumeIndex: number, colormap: string) => void` |
+| `intensityChanged` | `(viewerIndex: number, volumeIndex: number, cal_min: number, cal_max: number) => void` |
+| `opacityChanged` | `(viewerIndex: number, volumeIndex: number, opacity: number) => void` |
 
 ## Context
 
@@ -211,7 +216,6 @@ scene.removeVolume(0, "https://example.com/brain.nii.gz");
 - **`defaultLayouts`** — grid layout presets (1x1, 1x2, 2x2, etc.)
 - **`defaultSliceLayouts`** — per-viewer slice layout presets
 - **`defaultViewerOptions`** — default Niivue config
-- **`defaultMouseConfig`** — default mouse interaction config
 
 ## Build (local)
 

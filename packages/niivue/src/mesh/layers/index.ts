@@ -3,9 +3,16 @@ import { log } from '@/logger'
 import { meshReaderModules } from '@/mesh/readers/_registry'
 import { COLORMAP_TYPE } from '@/NVConstants'
 import * as NVLoader from '@/NVLoader'
-import type { LUT, MeshLayerFromUrlOptions, NVMeshLayer } from '@/NVTypes'
+import type {
+  LUT,
+  MeshLayerFromUrlOptions,
+  MZ3,
+  NVMeshLayer,
+  TypedVoxelArray,
+} from '@/NVTypes'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import { volumeReaderModules } from '@/volume/readers/_registry'
+import { toTypedViewOrU8 } from '@/volume/utils'
 import { layerReaderModules } from './readers/_registry'
 
 // --- Layer readers ---
@@ -41,16 +48,10 @@ for (const mod of Object.values(layerModules)) {
 // Read from the readers' registry to avoid a circular dependency with NVMesh.ts
 type MeshReader = {
   extensions?: string[]
-  read: (
-    buffer: ArrayBufferLike,
-    n_vert?: number,
-  ) => Promise<{ scalars?: Float32Array; colormapLabel?: unknown }>
+  read: (buffer: ArrayBuffer, n_vert?: number) => Promise<MZ3>
 }
-// The readers' signatures don't all match this type; the cast keeps the
-// unchecked assertion import.meta.glob<T> made.
-const meshReaderByExt = NVLoader.buildExtensionMap(
-  meshReaderModules as unknown as Record<string, MeshReader>,
-)
+const meshModules: Record<string, MeshReader> = meshReaderModules
+const meshReaderByExt = NVLoader.buildExtensionMap(meshModules)
 
 // Volume readers for NII/MGH as vertex scalars
 type VolumeReader = {
@@ -58,21 +59,19 @@ type VolumeReader = {
   read: (
     buffer: ArrayBuffer,
     name?: string,
-  ) => Promise<{
-    hdr: {
-      dims: number[]
-      scl_slope: number
-      scl_inter: number
-      datatypeCode: number
-    }
-    img: ArrayBuffer | Float32Array
-  }>
+  ) => VolumeReadResult | Promise<VolumeReadResult>
 }
-// The readers' signatures don't all match this type; the cast keeps the
-// unchecked assertion import.meta.glob<T> made.
-const volumeReaderByExt = NVLoader.buildExtensionMap(
-  volumeReaderModules as unknown as Record<string, VolumeReader>,
-)
+type VolumeReadResult = {
+  hdr: {
+    dims: number[]
+    scl_slope: number
+    scl_inter: number
+    datatypeCode: number
+  }
+  img: ArrayBuffer | TypedVoxelArray
+}
+const volumeModules: Record<string, VolumeReader> = volumeReaderModules
+const volumeReaderByExt = NVLoader.buildExtensionMap(volumeModules)
 
 /** Extensions supported for layer loading (scalar-only + mesh scalar + volume) */
 export function layerExtensions(): string[] {
@@ -156,6 +155,7 @@ async function readLayerFile(
   buffer: ArrayBuffer,
   ext: string,
   nVert: number,
+  name: string,
 ): Promise<LayerReadResult> {
   ext = ext.toUpperCase()
 
@@ -183,7 +183,7 @@ async function readLayerFile(
   // 3. Volume readers (NII, MGH) — treat voxel data as per-vertex scalars
   const volReader = volumeReaderByExt.get(ext)
   if (volReader) {
-    const volResult = await volReader.read(buffer)
+    const volResult = await volReader.read(buffer, name)
     const hdr = volResult.hdr
     const nVox = hdr.dims[1] * hdr.dims[2] * hdr.dims[3]
     if (nVox !== nVert) {
@@ -191,13 +191,9 @@ async function readLayerFile(
     }
     const nFrame = hdr.dims[0] >= 4 ? Math.max(1, hdr.dims[4]) : 1
     // Convert to Float32Array with slope/intercept scaling
-    const rawImg = volResult.img
-    let f32: Float32Array
-    if (rawImg instanceof Float32Array) {
-      f32 = rawImg
-    } else {
-      f32 = new Float32Array(rawImg)
-    }
+    // A raw ArrayBuffer holds hdr.datatypeCode voxels, not float32 bits.
+    const rawImg = toTypedViewOrU8(volResult.img, hdr.datatypeCode)
+    let f32 = rawImg instanceof Float32Array ? rawImg : new Float32Array(rawImg)
     // Apply slope/intercept if needed
     const slope = hdr.scl_slope || 1
     const inter = hdr.scl_inter || 0
@@ -228,7 +224,7 @@ export async function loadLayerFromUrl(
 ): Promise<LayerReadResult> {
   const buffer = await NVLoader.fetchFile(url)
   const ext = NVLoader.getFileExt(url)
-  return readLayerFile(buffer, ext, nVert)
+  return readLayerFile(buffer, ext, nVert, NVLoader.getName(url))
 }
 
 /**

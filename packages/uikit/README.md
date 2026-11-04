@@ -25,7 +25,8 @@ proven, core's overlays cut over onto it and the duplicate in core is removed.
 
 Each widget is a pure geometry builder (spec in, plain line + text draw data out,
 unit-testable without a GPU) paired with an overlay that owns the GPU resources
-and draws that data through the lifecycle hook. The overlays are the API. Of
+and draws that data through the lifecycle hook (`buildAnnotationGeometry` is
+the exception: it has no overlay of its own). The overlays are the API. Of
 the builders, only the measuring widgets' and the primitives' (`buildRuler`,
 `buildCrosshair`, `buildAnnotationGeometry`, `buildRect`, `buildLine`,
 `buildTerminatedLine`) are exported; the control widgets' models are
@@ -35,7 +36,7 @@ package-private (see "Conventions for contributors").
 | --- | --- | --- |
 | `buildRuler` | `UIKitRulerOverlay` | A measuring ruler with graduated ticks and a distance label |
 | `buildCrosshair` | `UIKitCrosshairOverlay` | A screen-space cross marking a point, optionally graduated and numbered |
-| `buildAnnotationGeometry` | `UIKitAnnotationOverlay` | Free-form annotation lines |
+| `buildAnnotationGeometry` | none (draw it with `UIKitLineOverlay` + `UIKitTextOverlay`) | Annotation ROI outlines, arrows, rulers and stats labels |
 | `buildRect` | `UIKitRectOverlay` | Filled rounded rectangles with an optional border ring (the first filled primitive) |
 | `buildButton` | `UIKitButtonOverlay` | Clickable, stylable push buttons with a text label and a press animation |
 | `buildToggle` | `UIKitToggleOverlay` | Check boxes with a label: pointer or Space/Enter flips them |
@@ -403,6 +404,11 @@ buttons and the wheel over a focused field. A committed value is clamped to
 `[min, max]` (either end optional) and snapped to `step` (counted from `min`,
 or 0), and `onChange` fires once per committed change. The field shows only
 the glyphs that fit, scrolled by whole glyphs to keep the caret in view.
+Meta or Ctrl plus C, X and V copy, cut and paste as in a text input (the
+`clipboard` option names the bridge); a paste, or `paste(text)` from a host
+that handles the DOM paste event, is trimmed and maps a Unicode minus to `-`;
+anything still holding a character other than digits, sign, decimal point and
+exponent (`1,5`, `12 px`), or an empty clipboard, leaves the field unchanged.
 
 ```ts
 const numbers = new UIKitNumberInputOverlay(font, units)
@@ -594,9 +600,9 @@ and `createBrowserClipboard()` are the browser implementations (a hidden
 `navigator.clipboard`); each takes the browser object as a parameter so a
 test or another host can supply its own. Browsers only open a chooser or
 grant the clipboard inside a user activation, so call a bridge synchronously
-from a click, menu or key handler, as the widgets do. The text input and
-text area create the browser clipboard on first use unless their `clipboard`
-option names another bridge.
+from a click, menu or key handler, as the widgets do. The number input,
+text input and text area create the browser clipboard on first use unless
+their `clipboard` option names another bridge.
 
 `UIKitFilePickerOverlay` is the canvas half of `<input type="file">`: a push
 button ("Choose file...") composed from a button overlay beside a readout of
@@ -705,16 +711,20 @@ overrides of the button style.
 
 `bunx nx dev uikit` serves the package's own demo pages with Vite; the dev
 server also mounts `@niivue/dev-images`, so the pages can load real volumes
-from `/volumes/...`. Each page's nav links to the others.
+from `/volumes/...`. Each page's nav links to the others and marks the current
+one; a backend menu reloads it on WebGL2 or WebGPU, and a status bar at the
+bottom shows help on the left and the page's state on the right (yellow while
+it waits, green for a result, red for an error). `demo.css`, `statusBar.js`
+and `urlParamSelect.js` are shared by the pages.
 
 | Page | Shows |
 | --- | --- |
-| `index.html` | The ruler on a blank pane |
+| `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
+| `ruler.html` | The ruler on a blank pane |
 | `volume.html` | The ruler over a NiiVue volume, measuring in millimetres from the slice pick |
 | `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile, measuring in screen pixels |
 | `slide-wsi.html` | The ruler on the standalone WSI viewer with a DICOM whole-slide image |
 | `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |
-| `controls.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog |
 
 ## Conventions for contributors
 
@@ -755,4 +765,4 @@ from `/volumes/...`. Each page's nav links to the others.
   default style from `src/index.ts`** (the one permitted barrel). The pure
   model (layout, build, hit-test and state helpers) stays package-private:
   it is exercised by the widget's own tests and is not an API. Add the widget
-  to the table at the top of this file and to `controls.html`.
+  to the table at the top of this file and to the controls demo (`index.html`).

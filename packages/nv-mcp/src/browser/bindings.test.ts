@@ -53,6 +53,7 @@ function settingsView(): View & Record<string, unknown> {
     drawPenSize: 1,
     volumeIllumination: 0,
     volumePaqdUniforms: [0, 0, 0, 0],
+    volumeCinematic: { exposure: 1 },
   }
   return Object.assign(view, settings) as unknown as View &
     Record<string, unknown>
@@ -190,6 +191,17 @@ describe('bindControls: binding a control', () => {
         bind: 'volumePaqdUniforms',
       }),
     ).toThrow('which no control holds')
+    expect(() =>
+      add_control({
+        id: 'x',
+        kind: 'slider',
+        x: 0,
+        y: 0,
+        bind: 'volumeCinematic',
+      }),
+    ).toThrow(
+      'volumeCinematic takes an object of fields, which no control holds.',
+    )
     expect(() =>
       add_control({
         id: 'x',

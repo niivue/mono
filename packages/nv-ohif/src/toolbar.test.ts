@@ -70,6 +70,59 @@ describe('toolbar definitions', () => {
 })
 
 describe('toolbar evaluators', () => {
+  const volumeEvaluators = [
+    'evaluate.niivue.sliceType',
+    'evaluate.niivue.clipPlane',
+    'evaluate.niivue.overlay',
+    'evaluate.niivue.windowLevelPreset',
+    'evaluate.niivue.colormap',
+    'evaluate.niivue.colorbar',
+    'evaluate.niivue.interpolation',
+    'evaluate.niivue.crosshair',
+    'evaluate.niivue.measurement',
+  ]
+
+  it('volume evaluators: missing viewport, no volume, ordinary volume', () => {
+    for (const name of volumeEvaluators) {
+      const evaluate = evaluator(name)
+      expect(evaluate({ viewportId: 'vp-1' })).toEqual({
+        disabled: true,
+        disabledText: 'Available on NiiVue viewports',
+      })
+      registerNiivue('vp-1', { volumes: [] } as unknown as NiiVue)
+      expect(evaluate({ viewportId: 'vp-1' })).toEqual({
+        disabled: true,
+        disabledText: 'Available for NiiVue volume viewports',
+      })
+      registerNiivue('vp-1', { volumes: [{}] } as unknown as NiiVue)
+      expect(evaluate({ viewportId: 'vp-1' })?.disabled).toBe(false)
+      unregisterNiivue('vp-1')
+    }
+  })
+
+  it('W/L preset: modality message on a volume, volume message otherwise', () => {
+    const evaluate = evaluator('evaluate.niivue.windowLevelPreset')
+    const ptButton = NIIVUE_TOOLBAR_BUTTONS.find(
+      (b) => b.id === 'NiivueWLPtSuv5',
+    )
+    registerNiivue('vp-1', { volumes: [] } as unknown as NiiVue)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1', Modality: 'CT' }],
+    })
+    expect(evaluate({ viewportId: 'vp-1', button: ptButton })).toEqual({
+      disabled: true,
+      disabledText: 'Available for NiiVue volume viewports',
+    })
+    registerNiivue('vp-1', { volumes: [{}] } as unknown as NiiVue)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1', Modality: 'CT' }],
+    })
+    expect(evaluate({ viewportId: 'vp-1', button: ptButton })).toEqual({
+      disabled: true,
+      disabledText: 'Applies to PT series',
+    })
+  })
+
   it('disable when the viewport has no NiiVue instance', () => {
     expect(evaluator('evaluate.niivue')({ viewportId: 'vp-1' })?.disabled).toBe(
       true,

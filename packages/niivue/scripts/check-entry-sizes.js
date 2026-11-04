@@ -28,9 +28,18 @@ const BASELINE_PATH = resolve(
   'benchmarks/baselines/bundle-sizes-baseline.json',
 )
 const DIST_DIR = resolve(process.cwd(), 'dist')
-const DEFAULT_ENTRIES = ['niivue.js', 'niivue.webgpu.js', 'niivue.webgl2.js']
+// The standalone/ entries are the self-contained build (vite.config.standalone.ts):
+// their reachable total is what a bundler-free page fetches before any lazy chunk.
+const DEFAULT_ENTRIES = [
+  'niivue.js',
+  'niivue.webgpu.js',
+  'niivue.webgl2.js',
+  'standalone/niivue.js',
+  'standalone/niivue.webgpu.js',
+  'standalone/niivue.webgl2.js',
+]
 
-const importRe = /(?:import|export)\s+(?:[^'"`]*?from\s+)?["'](\.[^"']+)["']/g
+const importRe = /(?:import|export)\s*(?:[^'"`]*?from\s*)?["'](\.[^"']+)["']/g
 
 function collectDeps(entryFile) {
   const seen = new Set()
@@ -40,11 +49,11 @@ function collectDeps(entryFile) {
     seen.add(absPath)
     const code = readFileSync(absPath, 'utf8')
     const baseDir = dirname(absPath)
-    let m = importRe.exec(code)
-    while (m !== null) {
+    // matchAll, not a shared exec loop: the recursive walk would otherwise
+    // resume the global regex at the parent's lastIndex and skip imports.
+    for (const m of code.matchAll(importRe)) {
       const depAbs = resolve(baseDir, m[1])
       if (depAbs.startsWith(DIST_DIR)) walk(depAbs.slice(DIST_DIR.length + 1))
-      m = importRe.exec(code)
     }
   }
   walk(entryFile)
@@ -81,7 +90,14 @@ try {
   }
 }
 
-const targetEntries = baseline?.entries.map((b) => b.name) ?? DEFAULT_ENTRIES
+// Check every baseline entry plus any default entry the baseline predates
+// (reported as new until the baseline is refreshed with --update).
+const targetEntries = [
+  ...new Set([
+    ...(baseline?.entries.map((b) => b.name) ?? []),
+    ...DEFAULT_ENTRIES,
+  ]),
+]
 const currentEntries = targetEntries.map(summarize)
 
 let failed = false

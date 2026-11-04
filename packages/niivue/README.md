@@ -14,7 +14,7 @@ NiiVue is a tool for visualizing volumes, meshes, and tractography streamlines c
 ```bash
 bun install          # Install dependencies
 bun run dev          # Hot-reload dev server
-bun run build        # Library build to ./dist (published npm package)
+bun run build        # Library build to ./dist (published npm package), incl. dist/standalone
 bun run deploy       # Production examples-site build to ./dist (GitHub Pages)
 bun run demo         # Build examples site and serve locally
 bun run lint         # Biome check
@@ -104,6 +104,87 @@ import NiiVueWebGL2 from '@niivue/niivue/webgl2' // WebGL2-only
 ```
 
 In backend-only builds, selecting the missing backend throws an explicit error.
+
+### Without a bundler (standalone ES modules)
+
+The entry points above import `cbor-x`, `gl-matrix`, `nifti-reader-js` and
+`zarrita` by bare name, which only a bundler (or an import map listing every
+dependency) can resolve. For pages with no JavaScript toolchain, such as static
+HTML reports or pages served by a small Python server, the package also ships a
+self-contained build in `dist/standalone/`:
+
+```
+dist/standalone/
+  niivue.js              # same API as @niivue/niivue (both backends)
+  niivue.webgl2.js       # same API as @niivue/niivue/webgl2
+  niivue.webgpu.js       # same API as @niivue/niivue/webgpu
+  viewport.js            # same API as @niivue/niivue/viewport
+  assets/fonts/index.js
+  assets/matcaps/index.js
+  chunks/                # shared code and lazily loaded chunks
+```
+
+Every dependency is bundled in, workers and images are inlined, and chunks
+import each other by relative path, so the folder has no external references
+and works from any base URL. Optional heavy code (the OME-Zarr codecs and
+worker pool) stays in chunks that are fetched only when used; a page showing a
+NIfTI volume loads about 1.6 MB of JavaScript (about 0.5 MB gzipped). The build
+fails if any bare import appears in the folder (`scripts/check-standalone.ts`).
+
+Copy the folder next to your page (here as `niivue/`) and map the package name
+once:
+
+```html
+<script type="importmap">
+  { "imports": { "@niivue/niivue": "./niivue/niivue.js" } }
+</script>
+<canvas id="gl1"></canvas>
+<script type="module">
+  import NiiVue from '@niivue/niivue'
+
+  const nv = new NiiVue()
+  await nv.attachToCanvas(document.getElementById('gl1'))
+  await nv.loadVolumes([{ url: './mni152.nii.gz' }])
+</script>
+```
+
+The import map is optional; `import NiiVue from './niivue/niivue.js'` works
+too. Load only one copy of NiiVue per page: the standalone folder and a bundled
+copy are separate module instances.
+
+To vendor a pinned release without Node, download the npm tarball, check it
+against the registry's `dist.integrity`, and copy the folder out:
+
+```bash
+VERSION=1.0.0-rc.45
+curl -sO "https://registry.npmjs.org/@niivue/niivue/-/niivue-$VERSION.tgz"
+curl -s "https://registry.npmjs.org/@niivue/niivue/$VERSION" # read dist.integrity
+echo "sha512-$(openssl dgst -sha512 -binary "niivue-$VERSION.tgz" | openssl base64 -A)"
+tar -xzf "niivue-$VERSION.tgz" package/dist/standalone
+cp -R package/dist/standalone ./niivue
+```
+
+Or point the import map at a CDN copy of the same folder:
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@niivue/niivue": "https://cdn.jsdelivr.net/npm/@niivue/niivue@1.0.0-rc.45/dist/standalone/niivue.js"
+    }
+  }
+</script>
+```
+
+Node tools that need the folder's location can resolve it through the package
+exports: `import.meta.resolve('@niivue/niivue/standalone')` returns the URL of
+`dist/standalone/niivue.js`.
+
+`bun run build` produces the folder (`bun run build:standalone` rebuilds just
+this part). To try it locally, run `bun run examples:standalone` after a build
+and open http://localhost:5403/. That serves `examples/standalone/index.html`
+with a plain static server, the built folder as `niivue/`, and the sample
+volumes, with no Vite in between.
 
 ### Load a mesh
 

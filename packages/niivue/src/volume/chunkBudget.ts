@@ -175,14 +175,23 @@ export interface ResidentBudgetView {
  * its own resident chunks, and the result fits every one of them, so no
  * mirror is handed a needed-this-frame set it cannot hold (and therefore
  * cannot evict from).
+ *
+ * `alreadyRequested` is what earlier tiles of this frame asked for. Those
+ * chunks are protected from eviction too, so a multiplanar frame must fit the
+ * union: they are charged first, and only the new indices are returned.
  */
 export function chunkIndicesForAllBudgets(
   plan: ChunkPlan,
   orderedChunkIndices: readonly number[],
   managers: readonly ResidentBudgetView[],
   hasGradient = true,
+  alreadyRequested: readonly number[] = [],
 ): number[] {
-  let capped: readonly number[] = orderedChunkIndices
+  const prior = new Set(alreadyRequested)
+  let capped: readonly number[] = [
+    ...prior,
+    ...orderedChunkIndices.filter((ci) => !prior.has(ci)),
+  ]
   for (const m of managers) {
     capped = chunkIndicesForResidentBudget(
       plan,
@@ -192,7 +201,7 @@ export function chunkIndicesForAllBudgets(
       (ci) => m.getChunk(ci)?.hasGradient,
     )
   }
-  return [...capped]
+  return capped.filter((ci) => !prior.has(ci))
 }
 
 export function formatBytes(n: number): string {

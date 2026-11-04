@@ -1392,13 +1392,15 @@ export class VolumeRenderer extends NVRenderer {
       ordered,
       [entry.manager, ...mirrors],
       this._needsGradient(),
+      entry.requestedThisFrame,
     )
     for (const ci of capped) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }
     // Accumulate rather than replace: a multiplanar layout drives this volume
-    // from several tiles per frame, and the union is what travels.
+    // from several tiles per frame, and the union is what travels and what
+    // later tiles are capped against.
     for (const ci of capped) entry.requestedThisFrame.push(ci)
   }
 
@@ -1469,6 +1471,7 @@ export class VolumeRenderer extends NVRenderer {
       ordered,
       [entry.manager, ...mirrors],
       this._needsGradient(),
+      entry.requestedThisFrame,
     )
     for (const ci of capped) {
       entry.manager.requestUpload(ci)

@@ -317,6 +317,36 @@ describe('chunkIndicesForAllBudgets (#188)', () => {
     )
   })
 
+  test('later tiles in one frame are capped against the union', () => {
+    const base = residency(8, 4 * unlitChunk)
+    const mirror = residency(8, 2 * unlitChunk)
+    const managers = [base, mirror]
+    for (const m of managers) m.beginFrame()
+    const requested: number[] = []
+    const tile = (ordered: number[]) => {
+      const capped = chunkIndicesForAllBudgets(
+        plan,
+        ordered,
+        managers,
+        false,
+        requested,
+      )
+      for (const ci of capped) {
+        requested.push(ci)
+        for (const m of managers) {
+          m.requestUpload(ci)
+          m.admit(ci, { bytes: unlitChunk, hasGradient: false })
+        }
+      }
+      return capped
+    }
+    expect(tile([0])).toEqual([0])
+    // The shared chunk 0 is charged once.
+    expect(tile([0, 1])).toEqual([1])
+    expect(tile([2, 3])).toEqual([])
+    expect(mirror.residentBytes).toBeLessThanOrEqual(mirror.budgetBytes)
+  })
+
   test('each manager prices its own lit-resident chunks', () => {
     const base = residency(8, 8 * unlitChunk)
     const mirror = residency(8, 4 * unlitChunk)

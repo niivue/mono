@@ -44,7 +44,7 @@
       "options": {
         "cwd": "{projectRoot}",
         "commands": [
-          "bunx biome check scripts",
+          "bunx biome check scripts tests",
           "bun scripts/pixi-or-skip.ts ruff check src scripts examples",
           "bun scripts/pixi-or-skip.ts ruff format --check src"
         ],
@@ -90,9 +90,18 @@
       ]
     },
     "test": {
-      "command": "bun scripts/pixi-or-skip.ts pytest",
-      "options": { "cwd": "{projectRoot}" },
-      "inputs": ["python", "{projectRoot}/pyproject.toml"]
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "commands": ["bun test tests", "bun scripts/pixi-or-skip.ts pytest"],
+        "parallel": false
+      },
+      "inputs": [
+        "python",
+        "{projectRoot}/pyproject.toml",
+        "{projectRoot}/tests/**/*.ts",
+        "{projectRoot}/src/ipyniivue/static/_widget.template.js"
+      ]
     },
     "smoke": {
       "command": "bun scripts/pixi-or-skip.ts smoke",

@@ -1257,6 +1257,16 @@ function emitJs(api: ApiDescriptor): string {
     lines.push(`  "${e}",`)
   }
   lines.push('])')
+  lines.push(
+    '// Commands whose promise lives until a later command ends it (an',
+  )
+  lines.push(
+    '// animation runs until stopAnimation or a superseding animateTo).',
+  )
+  lines.push(
+    '// They reply when they settle but do not hold the command queue.',
+  )
+  lines.push('const RELEASE_QUEUE_EARLY = new Set(["animateTo"])')
   lines.push('const EVENTS = [')
   for (const e of events) {
     lines.push(`  ${jsString(e)},`)
@@ -1750,23 +1760,33 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      else console.warn("ipyniivue: " + errMsg)')
   lines.push('      return')
   lines.push('    }')
-  lines.push('    try {')
-  lines.push('      const args = coerceCommandArgs(msg.args)')
-  lines.push('      let result = fn.apply(nv, args)')
-  lines.push('      if (result && typeof result.then === "function") {')
-  lines.push('        result = await result')
-  lines.push('      }')
+  lines.push('    const finish = (result) => {')
   lines.push('      syncReadOnlyProperties()')
   lines.push('      if (reqId !== null) {')
   lines.push('        let safe = null')
   lines.push('        try { safe = toResponseSafe(result ?? null) } catch {}')
   lines.push('        respond(true, safe)')
   lines.push('      }')
-  lines.push('    } catch (err) {')
+  lines.push('    }')
+  lines.push('    const fail = (err) => {')
   lines.push('      if (reqId !== null) respond(false, err)')
   lines.push(
     '      else console.error("ipyniivue: command " + msg.cmd + " threw:", err)',
   )
+  lines.push('    }')
+  lines.push('    try {')
+  lines.push('      const args = coerceCommandArgs(msg.args)')
+  lines.push('      let result = fn.apply(nv, args)')
+  lines.push('      if (result && typeof result.then === "function") {')
+  lines.push('        if (RELEASE_QUEUE_EARLY.has(msg.cmd)) {')
+  lines.push('          result.then(finish, fail)')
+  lines.push('          return')
+  lines.push('        }')
+  lines.push('        result = await result')
+  lines.push('      }')
+  lines.push('      finish(result)')
+  lines.push('    } catch (err) {')
+  lines.push('      fail(err)')
   lines.push('    }')
   lines.push('  }')
   lines.push('  const cmdHandler = (msg, buffers) => {')

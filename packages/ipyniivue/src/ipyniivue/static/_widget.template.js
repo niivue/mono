@@ -180,6 +180,10 @@ const SKIP_EVENT_FORWARDING = new Set([
   "viewAttached",
   "viewDestroyed",
 ])
+// Commands whose promise lives until a later command ends it (an
+// animation runs until stopAnimation or a superseding animateTo).
+// They reply when they settle but do not hold the command queue.
+const RELEASE_QUEUE_EARLY = new Set(["animateTo"])
 const EVENTS = [
   "angleCompleted",
   "annotationAdded",
@@ -570,21 +574,31 @@ async function initialize({ model }) {
       else console.warn("ipyniivue: " + errMsg)
       return
     }
-    try {
-      const args = coerceCommandArgs(msg.args)
-      let result = fn.apply(nv, args)
-      if (result && typeof result.then === "function") {
-        result = await result
-      }
+    const finish = (result) => {
       syncReadOnlyProperties()
       if (reqId !== null) {
         let safe = null
         try { safe = toResponseSafe(result ?? null) } catch {}
         respond(true, safe)
       }
-    } catch (err) {
+    }
+    const fail = (err) => {
       if (reqId !== null) respond(false, err)
       else console.error("ipyniivue: command " + msg.cmd + " threw:", err)
+    }
+    try {
+      const args = coerceCommandArgs(msg.args)
+      let result = fn.apply(nv, args)
+      if (result && typeof result.then === "function") {
+        if (RELEASE_QUEUE_EARLY.has(msg.cmd)) {
+          result.then(finish, fail)
+          return
+        }
+        result = await result
+      }
+      finish(result)
+    } catch (err) {
+      fail(err)
     }
   }
   const cmdHandler = (msg, buffers) => {

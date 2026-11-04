@@ -17,6 +17,9 @@ import examples from './vite.config.examples'
 // is most of a test's time on a slow runner. Specs also import source by URL
 // (`import('/src/index.ts')`), so each such module is built as its own entry at
 // `src/<path>.js`, sharing chunks (and so module state) with the pages.
+// The preview server runs on Node, not Bun: Bun's HTTP server died with
+// "write after end" when a page aborted a streamed response, failing every
+// later test. `--configLoader runner` lets Node load the TypeScript plugins.
 
 const root = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(root, '../..')

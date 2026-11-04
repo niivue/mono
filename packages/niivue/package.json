@@ -56,7 +56,7 @@
     "demo": "bun run build:examples && bunx http-server dist/ --cors -o",
     "preview": "vite preview",
     "e2e:serve": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite --port 5273 --strictPort",
-    "e2e:serve:bundle": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite build --config vite.config.e2e.ts --logLevel warn && bunx --bun vite preview --config vite.config.e2e.ts",
+    "e2e:serve:bundle": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite build --config vite.config.e2e.ts --logLevel warn && bunx vite preview --config vite.config.e2e.ts --configLoader runner",
     "test:e2e": "playwright test",
     "test:e2e:metal": "playwright test",
     "convert:legacy": "bun run scripts/convert-legacy-nvd.ts",

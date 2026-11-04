@@ -200,7 +200,11 @@ export type NVImage = {
   nFrame4D?: number
   /** Total number of 4D frames in the source file (may exceed nFrame4D when limitFrames4D was used) */
   nTotalFrame4D?: number
-  /** Unique identifier for this volume */
+  /**
+   * Unique identifier for this volume within its NiiVue instance. Defaults to
+   * `name` (the URL); a repeat gets a `-2`, `-3`, ... suffix when the volume is
+   * added, so the same file loaded twice has two ids. `name` is not changed.
+   */
   id?: string
   /**
    * Compiled label LUT, derived from {@link colormap} when it names a label

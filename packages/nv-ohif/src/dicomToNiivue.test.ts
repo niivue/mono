@@ -9,6 +9,7 @@ let initStarted: boolean
 class FakeDcm2niix {
   worker: { terminate: () => void } | null = null
   init() {
+    created++
     initStarted = true
     this.worker = { terminate: () => terminated++ }
     return initGate.promise
@@ -17,7 +18,14 @@ class FakeDcm2niix {
     return { run: () => runGate.promise }
   }
 }
-mock.module('@niivue/dcm2niix', () => ({ Dcm2niix: FakeDcm2niix }))
+let created = 0
+// Holds the first dynamic import open, so a test can fail the fetch before the
+// module lands. The import is cached afterwards, so that test must run first.
+const importGate = Promise.withResolvers<void>()
+mock.module('@niivue/dcm2niix', async () => {
+  await importGate.promise
+  return { Dcm2niix: FakeDcm2niix }
+})
 const { convertDisplaySetToNifti } = await import('./dicomToNiivue')
 
 const frames = 'https://h/dicomweb/studies/1/series/2/instances/3/frames/1'
@@ -48,6 +56,18 @@ afterEach(() => {
 })
 
 describe('convertDisplaySetToNifti (#121)', () => {
+  // Must stay first: later tests see the cached import.
+  it('terminates a worker whose import lands after the fetch failed', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('offline')
+    }) as unknown as typeof fetch
+    await expect(convertDisplaySetToNifti(ds)).rejects.toThrow('offline')
+    importGate.resolve()
+    for (let i = 0; i < 5; i++) await flush()
+    expect(created).toBe(1)
+    expect(terminated).toBe(1)
+  })
+
   it('boots dcm2niix while fetching, converts, then terminates', async () => {
     const out = convertDisplaySetToNifti(ds)
     await flush()

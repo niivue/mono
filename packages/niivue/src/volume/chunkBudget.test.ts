@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { ChunkResidencyManager } from './ChunkResidency'
 import {
   bytesPerSourceVoxel,
+  chunkIndicesForAllBudgets,
   chunkIndicesForResidentBudget,
   estimateChunkedBytes,
   formatBytes,
@@ -242,5 +244,86 @@ describe('resident chunk budget helpers', () => {
     expect(bytes).toBeLessThanOrEqual(budget)
     // Centre-first: the head of the order is never traded away for the tail.
     expect(picked[0]).toBe(0)
+  })
+})
+
+describe('chunkIndicesForAllBudgets (#188)', () => {
+  type Chunk = { bytes: number; hasGradient: boolean }
+  const residency = (count: number, budget: number) =>
+    new ChunkResidencyManager<Chunk>(count, budget, {
+      bytesOf: (c) => c.bytes,
+      destroy: () => {},
+    })
+  // One frame: request the set from every manager, then admit it all, as the
+  // upload pump does. Every requested chunk is stamped this frame, so the
+  // same-frame guard keeps all of them resident.
+  const frame = (
+    plan: ChunkPlan,
+    managers: ChunkResidencyManager<Chunk>[],
+    indices: number[],
+  ) => {
+    for (const m of managers) m.beginFrame()
+    for (const ci of indices) {
+      for (const m of managers) {
+        m.requestUpload(ci)
+        const desc = plan.chunks[ci]
+        if (desc) {
+          m.admit(ci, {
+            bytes: residentBytesForChunkDesc(desc, false),
+            hasGradient: false,
+          })
+        }
+      }
+    }
+  }
+  const plan = testPlan(
+    Array.from({ length: 8 }, () => testChunk([10, 10, 10])),
+  )
+  const ordered = [0, 1, 2, 3, 4, 5, 6, 7]
+  const unlitChunk = 10 * 10 * 10 * 4
+
+  test('a mirror with a quarter of the base budget never exceeds it', () => {
+    const base = residency(8, 8 * unlitChunk)
+    const mirror = residency(8, 2 * unlitChunk)
+    const capped = chunkIndicesForAllBudgets(
+      plan,
+      ordered,
+      [base, mirror],
+      false,
+    )
+    expect(capped).toEqual([0, 1])
+    frame(plan, [base, mirror], capped)
+    expect(mirror.residentBytes).toBeLessThanOrEqual(mirror.budgetBytes)
+  })
+
+  test('capping against the base alone overfills the mirror', () => {
+    // The pre-#188 behaviour, kept as the counterexample the fix answers.
+    const base = residency(8, 8 * unlitChunk)
+    const mirror = residency(8, 2 * unlitChunk)
+    const baseOnly = chunkIndicesForResidentBudget(
+      plan,
+      ordered,
+      base.budgetBytes,
+      false,
+    )
+    frame(plan, [base, mirror], baseOnly)
+    expect(mirror.residentBytes).toBeGreaterThan(mirror.budgetBytes)
+  })
+
+  test('with no mirrors it matches the single-budget cap', () => {
+    const base = residency(8, 3 * unlitChunk)
+    expect(chunkIndicesForAllBudgets(plan, ordered, [base], false)).toEqual(
+      chunkIndicesForResidentBudget(plan, ordered, base.budgetBytes, false),
+    )
+  })
+
+  test('each manager prices its own lit-resident chunks', () => {
+    const base = residency(8, 8 * unlitChunk)
+    const mirror = residency(8, 4 * unlitChunk)
+    // Chunk 0 is resident lit in the mirror only: 8000 B there, 4000 B in base.
+    mirror.admit(0, { bytes: 2 * unlitChunk, hasGradient: true })
+    expect(
+      chunkIndicesForAllBudgets(plan, ordered, [base, mirror], false),
+    ).toEqual([0, 1, 2])
   })
 })

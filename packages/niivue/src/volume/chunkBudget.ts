@@ -162,6 +162,39 @@ export function chunkIndicesForResidentBudget(
   return selected
 }
 
+/** The residency facts {@link chunkIndicesForAllBudgets} reads from a manager. */
+export interface ResidentBudgetView {
+  readonly budgetBytes: number
+  getChunk(chunkIndex: number): { hasGradient: boolean } | null
+}
+
+/**
+ * Cap a working set against several residency managers that will all be asked
+ * for the same indices: a chunked base and its combined-overlay mirrors, which
+ * share the base grid but get a fraction of its budget. Each manager prices
+ * its own resident chunks, and the result fits every one of them, so no
+ * mirror is handed a needed-this-frame set it cannot hold (and therefore
+ * cannot evict from).
+ */
+export function chunkIndicesForAllBudgets(
+  plan: ChunkPlan,
+  orderedChunkIndices: readonly number[],
+  managers: readonly ResidentBudgetView[],
+  hasGradient = true,
+): number[] {
+  let capped: readonly number[] = orderedChunkIndices
+  for (const m of managers) {
+    capped = chunkIndicesForResidentBudget(
+      plan,
+      capped,
+      m.budgetBytes,
+      hasGradient,
+      (ci) => m.getChunk(ci)?.hasGradient,
+    )
+  }
+  return [...capped]
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`

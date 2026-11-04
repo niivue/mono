@@ -43,7 +43,7 @@ import {
 } from '@/volume/ChunkVisibility'
 import {
   bytesPerSourceVoxel,
-  chunkIndicesForResidentBudget,
+  chunkIndicesForAllBudgets,
   estimateChunkedBytes,
   formatBytes,
 } from '@/volume/chunkBudget'
@@ -1596,16 +1596,16 @@ export class VolumeRenderer extends NVRenderer {
     // view-central chunks that fit keeps memory bounded — the coarse floor
     // covers the rest. Unlit chunks carry no full-size gradient texture, so
     // the cap prices them at 4 bytes/voxel instead of 8.
-    const capped = chunkIndicesForResidentBudget(
+    // Mirrors get the same indices but a fraction of the budget, so the set
+    // must fit the tightest of them too. A chunk uploaded lit keeps its 8-byte
+    // gradient footprint until it re-streams, so each manager prices its
+    // resident chunks by their actual gradient state; non-resident chunks fall
+    // back to the current lighting state.
+    const capped = chunkIndicesForAllBudgets(
       entry.plan,
       ordered,
-      entry.manager.budgetBytes,
+      [entry.manager, ...mirrors],
       this._needsGradient(),
-      // A chunk uploaded lit keeps its 8-byte gradient footprint until it
-      // re-streams, so a resident chunk is priced by its actual gradient state,
-      // not the current lighting; non-resident chunks (undefined) fall back to
-      // the current lighting state above.
-      (ci) => entry.manager.getChunk(ci)?.hasGradient,
     )
     for (const ci of capped) {
       entry.manager.requestUpload(ci)
@@ -1677,14 +1677,12 @@ export class VolumeRenderer extends NVRenderer {
     // Stream the centre of the view first, then spiral outward, capped to what
     // the residency budget can hold (see _requestChunksInFrustum).
     const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS, offset)
-    const capped = chunkIndicesForResidentBudget(
+    // Fits the base and every mirror; see _requestChunksInFrustum.
+    const capped = chunkIndicesForAllBudgets(
       entry.plan,
       ordered,
-      entry.manager.budgetBytes,
+      [entry.manager, ...mirrors],
       this._needsGradient(),
-      // Price already-resident chunks by their real gradient footprint (see
-      // _requestChunksInFrustum); non-resident chunks fall back to lighting.
-      (ci) => entry.manager.getChunk(ci)?.hasGradient,
     )
     for (const ci of capped) {
       entry.manager.requestUpload(ci)

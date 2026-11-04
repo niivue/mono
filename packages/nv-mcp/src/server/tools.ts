@@ -120,15 +120,17 @@ export const CORE_SCHEMAS = {
       .describe('0 to 1; 0.5 for labels and 0.7 otherwise.'),
     cal_min: z
       .number()
+      .nullable()
       .optional()
       .describe(
-        'The display window: the intensity drawn as the darkest colour; set_volume changes it later. Not for a label overlay.',
+        "The display window: the intensity drawn as the darkest colour; set_volume changes it later. A CT colormap fills a bound left out from its own window; null takes the image's default. Not for a label overlay.",
       ),
     cal_max: z
       .number()
+      .nullable()
       .optional()
       .describe(
-        'The intensity drawn as the brightest colour. Not for a label overlay.',
+        "The intensity drawn as the brightest colour; null takes the image's default. Not for a label overlay.",
       ),
     colormap_negative: z
       .string()
@@ -138,16 +140,23 @@ export const CORE_SCHEMAS = {
       ),
     cal_min_neg: z
       .number()
+      .nullable()
       .optional()
       .describe(
-        'With colormap_negative: the window for the negative values, mirrored from cal_min and cal_max otherwise.',
+        'With colormap_negative: the window for the negative values, mirrored from cal_min and cal_max otherwise or when null.',
       ),
-    cal_max_neg: z.number().optional(),
+    cal_max_neg: z.number().nullable().optional(),
     colorbar: z
       .boolean()
       .optional()
       .describe(
         'Whether this overlay gets a colorbar when the view shows them; off for a label overlay otherwise.',
+      ),
+    legend: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether a label overlay lists its labels in the legend (default true).',
       ),
   },
   where_am_i: { ...TAB_ARG },
@@ -296,24 +305,34 @@ export const CORE_SCHEMAS = {
       .describe('0 (hidden) to 1 (opaque).'),
     cal_min: z
       .number()
+      .nullable()
       .optional()
       .describe(
-        "The low end of the display window: the intensity drawn as the colormap's darkest colour.",
+        "The low end of the display window: the intensity drawn as the colormap's darkest colour. " +
+          "null takes the image's default. A new CT colormap fills a bound left out from its own window.",
       ),
     cal_max: z
       .number()
+      .nullable()
       .optional()
       .describe(
-        "The high end of the display window: the intensity drawn as the colormap's brightest colour.",
+        "The high end of the display window: the intensity drawn as the colormap's brightest colour. " +
+          "null takes the image's default.",
       ),
     cal_min_neg: z
       .number()
+      .nullable()
       .optional()
-      .describe('The low end of the negative window.'),
+      .describe(
+        'The low end of the negative window; null on either bound mirrors the positive window.',
+      ),
     cal_max_neg: z
       .number()
+      .nullable()
       .optional()
-      .describe('The high end of the negative window.'),
+      .describe(
+        'The high end of the negative window; null on either bound mirrors the positive window.',
+      ),
     colormap_type: z
       .enum([
         'min_to_max',
@@ -342,6 +361,10 @@ export const CORE_SCHEMAS = {
       .boolean()
       .optional()
       .describe('Whether a colorbar is drawn for it.'),
+    legend: z
+      .boolean()
+      .optional()
+      .describe('Whether its labels are listed in the legend.'),
     nearest: z
       .boolean()
       .optional()
@@ -355,6 +378,12 @@ export const CORE_SCHEMAS = {
       .optional()
       .describe(
         'For a label map: how strongly region outlines are drawn, 0 for none.',
+      ),
+    hidden_labels: z
+      .array(z.number().int())
+      .optional()
+      .describe(
+        'For a label map: the label values to hide, replacing the current list; [] shows every label.',
       ),
     modulate_alpha: z
       .number()

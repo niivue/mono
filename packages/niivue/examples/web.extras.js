@@ -16,7 +16,6 @@ webgpuCheck.onclick = function () {
 }
 fontSlide.oninput = function () {
   nv1.fontScale = Number(this.value) * 0.01
-  nv1.resize()
 }
 async function fetchManifest(baseUrl) {
   const resp = await fetch(`${baseUrl}manifest.json`)

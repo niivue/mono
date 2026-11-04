@@ -32,6 +32,8 @@ export type SettingKind =
   | 'enum'
   /** One of a few strings NiiVue takes as they are. */
   | 'choice'
+  /** An object of named fields, each a setting of its own; a partial one is merged over the current one. */
+  | 'object'
 
 export interface Setting {
   name: string
@@ -41,6 +43,10 @@ export interface Setting {
   /** Bounds a number is clamped to, when NiiVue has them. */
   min?: number
   max?: number
+  /** For an object, its fields. */
+  fields?: readonly Setting[]
+  /** What null stands for, for a number JSON cannot carry (e.g. Infinity). */
+  nullAs?: number
   description: string
 }
 
@@ -63,13 +69,21 @@ export const DRAG_MODES = {
 export const PEN_SHAPES = { rectangle: 0, circle: 1 } as const
 
 /** NiiVue's `VOLUME_RENDER_MODE`. */
-export const RENDER_MODES = { composite: 0, maximum: 1, slices: 2 } as const
+export const RENDER_MODES = {
+  composite: 0,
+  maximum: 1,
+  slices: 2,
+  cinematic: 3,
+} as const
+
+/** The labelMode words of NiiVue's `CinematicOptions`. */
+export const CINEMATIC_LABEL_MODES = ['only', 'unlabeled', 'none'] as const
 
 /** NiiVue's `LAYER_GRADIENT_MODE`. */
 export const GRADIENT_MODES = { central: 0, blob: 1, sobel8: 2 } as const
 
 /** NiiVue's `OVERLAY_ALPHA_BLEND`: how overlapping overlays combine their opacities. */
-export const OVERLAY_ALPHA_BLENDS = { max: 0, additive: 1, over: 2 } as const
+export const OVERLAY_ALPHA_BLENDS = { max: 0, additive: 1, union: 2 } as const
 
 /** NiiVue's `OVERLAY_COLOR_BLEND`: how overlapping overlays combine their colours. */
 export const OVERLAY_COLOR_BLENDS = {
@@ -182,6 +196,12 @@ export const SETTINGS: readonly Setting[] = [
   num('tileMargin', 'The gap between multiplanar tiles, in pixels.', {
     min: 0,
   }),
+  setting(
+    'layoutInset',
+    'vec4',
+    'Canvas kept clear of the views, colorbar, legend and graph: left, top, right and bottom, in CSS pixels; for a control panel drawn in the canvas.',
+    { min: 0 },
+  ),
   num('rulerWidth', 'The width of the ruler line, in pixels.', { min: 0 }),
 
   // Switches for what is drawn
@@ -223,6 +243,10 @@ export const SETTINGS: readonly Setting[] = [
   bool('isYoked3DTo2DZoom', 'Whether zooming a 2D tile zooms the render too.'),
   bool('isDragDropEnabled', 'Whether files dropped on the canvas are loaded.'),
   bool('isViewModeHotKeyEnabled', 'Whether the V key cycles the view mode.'),
+  bool(
+    'isLegendToggleEnabled',
+    'Whether clicking a legend colour box hides or shows that label.',
+  ),
   num(
     'meshXRay',
     'How see-through meshes are drawn in the render, 0 (solid) to 1.',
@@ -233,7 +257,15 @@ export const SETTINGS: readonly Setting[] = [
   ),
   num(
     'meshThicknessOn2D',
-    'How thick a mesh slab is drawn on a 2D slice, in millimetres.',
+    'On 2D slices, draw only mesh within this many millimetres of the slice, over it; 0 or null draws all mesh in front of the slice, and null in a report means that.',
+    {
+      min: 0,
+      nullAs: Number.POSITIVE_INFINITY,
+    },
+  ),
+  num(
+    'meshCrosscutWidth',
+    'Line width, in device pixels, of the crosscut and crosscut2 mesh shaders.',
     {
       min: 0,
     },
@@ -364,9 +396,64 @@ export const SETTINGS: readonly Setting[] = [
   setting(
     'volumeRenderMode',
     'enum',
-    'How the render composes the volume: front to back, maximum intensity, or slices.',
+    'How the render composes the volume: front to back, maximum intensity, slices, or cinematic (a progressive path tracer of the background volume, set by volumeCinematic).',
     {
       values: RENDER_MODES,
+    },
+  ),
+  setting(
+    'volumeCinematic',
+    'object',
+    'The cinematic render mode: light, shadows, ambient occlusion, exposure, ray step, frames and labels. Give any of its fields; the rest keep their values.',
+    {
+      fields: [
+        num(
+          'lightElevation',
+          'Light elevation above the view direction, in degrees.',
+        ),
+        num(
+          'lightAzimuth',
+          'Light azimuth about the view direction, in degrees.',
+        ),
+        num(
+          'lightConeDeg',
+          'Half angle of the light cone (soft shadow penumbra), in degrees.',
+          { min: 0 },
+        ),
+        num('lightIntensity', 'Light intensity.', { min: 0 }),
+        num('ambient', 'Ambient light, 0 to 1.', { min: 0, max: 1 }),
+        num('shadow', 'Shadow strength, 0 to 1.', { min: 0, max: 1 }),
+        num('ao', 'Ambient occlusion strength, 0 to 1.', { min: 0, max: 1 }),
+        num('aoRadiusMM', 'Ambient occlusion reach, in millimetres.', {
+          min: 0,
+        }),
+        num('aoConeDeg', 'Ambient occlusion cone half angle, in degrees.', {
+          min: 0,
+        }),
+        num(
+          'volumetricDiffuse',
+          'Diffuse light on samples without a surface, 0 to 1.',
+          { min: 0, max: 1 },
+        ),
+        num('exposure', 'Exposure of the tone-mapped image.', { min: 0 }),
+        num('stepVoxels', 'Ray step, in voxels; smaller is finer and slower.', {
+          min: 0.05,
+        }),
+        int('maxFrames', 'Frames accumulated before the image is final.', {
+          min: 1,
+        }),
+        num('specular', 'Specular scale.', { min: 0 }),
+        setting(
+          'labelMode',
+          'choice',
+          'How a label volume colours the render: only (unlabeled tissue hidden), unlabeled (drawn too, with the base colormap), or none (labels ignored).',
+          { values: CINEMATIC_LABEL_MODES },
+        ),
+        bool(
+          'isStochasticLighting',
+          'Trace shadow and ambient occlusion from one sample per ray per frame: about 2.5x faster per frame, noisier per frame, same converged image.',
+        ),
+      ],
     },
   ),
   num(
@@ -422,7 +509,7 @@ export const SETTINGS: readonly Setting[] = [
   setting(
     'volumeOverlayAlphaBlend',
     'enum',
-    'How overlapping overlays combine their opacities: max (no more opaque than either), additive (fractions that sum to 1, as tissue maps do), or over (stacked like transparencies).',
+    'How overlapping overlays combine their opacities: max (no more opaque than either), additive (fractions that sum to 1, as tissue maps do), or union (stacked like transparencies, 1 - (1-a1)(1-a2)...).',
     {
       values: OVERLAY_ALPHA_BLENDS,
     },
@@ -430,7 +517,7 @@ export const SETTINGS: readonly Setting[] = [
   setting(
     'volumeOverlayColorBlend',
     'enum',
-    'How overlapping overlays combine their colours: additive (red and green make yellow, may clip), mean (their average, never clips), over (in volume order, later overlays cover earlier ones), or max (the brightest value of each colour, as fluorescence viewers fuse channels; a faint channel never dims a bright one).',
+    'How overlapping overlays combine their colours: additive (red and green make yellow, may clip), mean (their average, never clips), over (in volume order, later overlays cover earlier ones; pair with alpha union), or max (the brightest value of each colour, as fluorescence viewers fuse channels; a faint channel never dims a bright one).',
     {
       values: OVERLAY_COLOR_BLENDS,
     },
@@ -476,6 +563,10 @@ export const SETTINGS: readonly Setting[] = [
     'Whether the render samples with a cubic filter.',
   ),
   bool(
+    'volumeIsOverlayOpacityCorrected',
+    "Whether the 3D overlay pass takes the background's step-size opacity correction.",
+  ),
+  bool(
     'volumeIsNearestInterpolation',
     'Whether slices sample nearest-neighbour rather than linear.',
   ),
@@ -513,6 +604,7 @@ export function coerceSetting(setting: Setting, value: unknown): unknown {
       throw fail(setting, 'true or false')
     case 'number':
     case 'integer': {
+      if (value === null && setting.nullAs !== undefined) return setting.nullAs
       const n = Number(value)
       if (value === '' || value === null || !Number.isFinite(n))
         throw fail(setting, 'a number')
@@ -538,6 +630,9 @@ export function coerceSetting(setting: Setting, value: unknown): unknown {
       const length = Number(setting.kind.slice(3))
       if (!numbers(value) || value.length !== length)
         throw fail(setting, `${length} numbers`)
+      const { min } = setting
+      if (min !== undefined && value.some((v) => Number(v) < min))
+        throw fail(setting, `${length} numbers, each at least ${min}`)
       return value.map(Number)
     }
     case 'mm-or-null':
@@ -557,6 +652,25 @@ export function coerceSetting(setting: Setting, value: unknown): unknown {
       const choices = setting.values as readonly string[]
       if (typeof value === 'string' && choices.includes(value)) return value
       throw fail(setting, `one of ${choices.join(', ')}`)
+    }
+    case 'object': {
+      const fields = setting.fields ?? []
+      const names = fields.map((f) => f.name).join(', ')
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw fail(setting, `an object of any of ${names}`)
+      const out: Record<string, unknown> = {}
+      for (const [key, v] of Object.entries(value)) {
+        const field = fields.find((f) => f.name === key)
+        if (!field)
+          throw new Error(
+            `${setting.name} has no field ${key}: it has ${names}.`,
+          )
+        out[key] = coerceSetting(
+          { ...field, name: `${setting.name}.${key}` },
+          v,
+        )
+      }
+      return out
     }
   }
 }
@@ -584,6 +698,9 @@ export function readSetting(setting: Setting, value: unknown): unknown {
     for (const [name, n] of Object.entries(table)) if (n === value) return name
     return value
   }
+  // A copy, so an answer never holds NiiVue's own object.
+  if (setting.kind === 'object' && value && typeof value === 'object')
+    return { ...value }
   if (ArrayBuffer.isView(value)) return plainArray(value)
   if (Array.isArray(value))
     return value.map((v) => (ArrayBuffer.isView(v) ? plainArray(v) : v))

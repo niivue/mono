@@ -1,8 +1,8 @@
-import * as nifti from 'nifti-reader-js'
 import { decompress } from '@/codecs/NVGz'
 import { log } from '@/logger'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import { nifti1Header } from '@/volume/utils'
 
 export const extensions = ['mif', 'mih']
 export const type = 'nii'
@@ -23,9 +23,7 @@ export async function read(
   _name?: string,
   pairedImgData: ArrayBuffer | null = null,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
-  const hdr = new nifti.NIFTI1() as NIFTI1
-  hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
-  hdr.dims = [1, 1, 1, 1, 1, 1, 1, 1]
+  const hdr = nifti1Header([1, 1, 1, 1, 1, 1, 1, 1])
 
   let len = buffer.byteLength
   if (len < 20) {

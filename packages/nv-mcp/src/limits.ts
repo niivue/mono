@@ -9,6 +9,9 @@ export const MAX_INSTANCES = 100
 /** The most boxes one set_boxes call outlines. */
 export const MAX_BOXES = 1000
 
+/** The most rectangles one set_plane_outlines call outlines. */
+export const MAX_PLANE_OUTLINES = 100
+
 /**
  * The longest transition an animate call may ask for, in milliseconds:
  * with the page's grace for a stalled transition it stays inside the

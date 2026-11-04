@@ -1,37 +1,23 @@
-import * as nifti from 'nifti-reader-js'
 import { readMatV4 } from '@/codecs/NVMatlab'
 import { NiiDataType } from '@/NVConstants'
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import type {
+  NIFTI1,
+  NIFTI2,
+  TypedNumberArray,
+  TypedVoxelArray,
+} from '@/NVTypes'
+import { nifti1Header } from '@/volume/utils'
 
 export const extensions = ['fz', 'gqi', 'qsdr', 'fib']
 export const type = 'nii'
 
-export async function read(
-  buffer: ArrayBuffer,
-  _name?: string,
-  _pairedImgData: ArrayBuffer | null = null,
-): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
-  const hdr = new nifti.NIFTI1() as NIFTI1
-  hdr.littleEndian = false
-  hdr.dims = [3, 1, 1, 1, 0, 0, 0, 0]
-  hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
-
-  const mat = await readMatV4(buffer, true)
-  if (!('dimension' in mat) || !('dti_fa' in mat)) {
-    throw new Error('Not a valid DSI Studio FIB file')
-  }
-  const hasV1 =
-    'index0' in mat &&
-    'index1' in mat &&
-    'index2' in mat &&
-    'odf_vertices' in mat
-
-  hdr.numBitsPerVoxel = 32
-  hdr.datatypeCode = NiiDataType.DT_FLOAT32
-  hdr.dims[1] = mat.dimension[0]
-  hdr.dims[2] = mat.dimension[1]
-  hdr.dims[3] = mat.dimension[2]
-  hdr.dims[4] = 1
+/** Geometry and report shared by DSI Studio FIB and SRC (MAT v4) files. */
+export function dsiStudioHeader(
+  mat: Record<string, TypedNumberArray>,
+  nVols: number,
+): NIFTI1 {
+  const [nx, ny, nz] = mat.dimension
+  const hdr = nifti1Header([nVols > 1 ? 4 : 3, nx, ny, nz, nVols, 0, 0, 0])
   hdr.pixDims[1] = mat.voxel_size[0]
   hdr.pixDims[2] = mat.voxel_size[1]
   hdr.pixDims[3] = mat.voxel_size[2]
@@ -42,10 +28,36 @@ export async function read(
   hdr.affine = [
     [hdr.pixDims[1], 0, 0, -xmm],
     [0, -hdr.pixDims[2], 0, ymm],
-    [0, 0, hdr.pixDims[2], -zmm],
+    [0, 0, hdr.pixDims[3], -zmm],
     [0, 0, 0, 1],
   ]
   hdr.littleEndian = true
+  if ('report' in mat) {
+    hdr.description = new TextDecoder().decode(
+      mat.report.subarray(0, Math.min(79, mat.report.byteLength)),
+    )
+  }
+  return hdr
+}
+
+export async function read(
+  buffer: ArrayBuffer,
+  _name?: string,
+  _pairedImgData: ArrayBuffer | null = null,
+): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
+  const mat = await readMatV4(buffer, true)
+  if (!('dimension' in mat) || !('dti_fa' in mat)) {
+    throw new Error('Not a valid DSI Studio FIB file')
+  }
+  const hasV1 =
+    'index0' in mat &&
+    'index1' in mat &&
+    'index2' in mat &&
+    'odf_vertices' in mat
+
+  const hdr = dsiStudioHeader(mat, 1)
+  hdr.numBitsPerVoxel = 32
+  hdr.datatypeCode = NiiDataType.DT_FLOAT32
 
   const nVox3D = hdr.dims[1] * hdr.dims[2] * hdr.dims[3]
   const nBytes3D = nVox3D * Math.ceil(hdr.numBitsPerVoxel / 8)
@@ -75,11 +87,6 @@ export async function read(
     buff8v1.set(
       new Uint8Array(dir2.buffer, dir2.byteOffset, dir2.byteLength),
       2 * nBytes3D,
-    )
-  }
-  if ('report' in mat) {
-    hdr.description = new TextDecoder().decode(
-      mat.report.subarray(0, Math.min(79, mat.report.byteLength)),
     )
   }
 

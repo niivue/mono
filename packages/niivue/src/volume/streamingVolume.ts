@@ -130,7 +130,7 @@ export function createStreamingNVImage(spec: StreamingVolumeSpec): NVImage {
     isTransparentBelowCalMin: spec.isTransparentBelowCalMin ?? true,
     opacity: spec.opacity ?? 1,
     isColorbarVisible: false,
-    isLegendVisible: false,
+    isLegendVisible: true,
     frame4D: 0,
     nFrame4D: 1,
     nTotalFrame4D: 1,

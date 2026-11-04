@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { ClipboardBridge } from './host'
 import { UIKitNumberInputOverlay } from './numberInputOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 
@@ -17,12 +18,13 @@ const METRICS: UIKitFontMetrics = {
 }
 const FONT: UIKitFont = { metrics: METRICS, image: {} as ImageBitmap }
 
-function make() {
+function make(clipboard?: ClipboardBridge) {
   const inputs: number[] = []
   const changes: number[] = []
   let redraws = 0
   const overlay = new UIKitNumberInputOverlay(FONT, {
     requestRedraw: () => redraws++,
+    clipboard,
   })
   // Label 'Hi' then an 80x20 field at (122,50): text from x 128, spinner at x 185.
   overlay.addNumberInput({
@@ -42,6 +44,22 @@ function make() {
 
 function key(k: string, shiftKey = false) {
   return { key: k, shiftKey, ctrlKey: false, altKey: false, metaKey: false }
+}
+
+function cmd(k: string) {
+  return { ...key(k), metaKey: true }
+}
+
+/** A clipboard that remembers what was written and hands back `held` on read. */
+function fakeClipboard(held = '') {
+  const written: string[] = []
+  const clipboard: ClipboardBridge = {
+    write: (text) => {
+      written.push(text)
+    },
+    read: () => Promise.resolve(held),
+  }
+  return { clipboard, written }
 }
 
 function type(overlay: UIKitNumberInputOverlay, chars: string): void {
@@ -317,5 +335,93 @@ describe('UIKitNumberInputOverlay', () => {
     overlay.setNumberInputs([{ id: 'u', x: 0, y: 0, value: 0 }])
     expect(overlay.ids).toEqual(['u'])
     expect(overlay.focusedInput).toBeNull()
+  })
+
+  it('copies and cuts the selection through the clipboard bridge', () => {
+    const { clipboard, written } = fakeClipboard()
+    const { overlay, inputs } = make(clipboard)
+    overlay.setValue('n', 7)
+    overlay.focus('n')
+    overlay.keyDown(cmd('c'))
+    expect(written).toEqual(['7'])
+    expect(overlay.keyDown({ ...key('x'), ctrlKey: true })).toBe(true)
+    expect(written).toEqual(['7', '7'])
+    expect(overlay.getText('n')).toBe('')
+    expect(inputs).toEqual([])
+    // Nothing selected: the key is consumed but the clipboard untouched.
+    overlay.keyDown(cmd('c'))
+    expect(written).toHaveLength(2)
+  })
+
+  it('pastes a trimmed number', async () => {
+    const { clipboard } = fakeClipboard(' 8\n')
+    const { overlay, inputs, changes } = make(clipboard)
+    overlay.focus('n')
+    expect(overlay.keyDown(cmd('v'))).toBe(true)
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('8')
+    expect(inputs).toEqual([8])
+    overlay.keyDown(key('Enter'))
+    expect(changes).toEqual([8])
+    expect(overlay.paste('-1e0')).toBe(true)
+    expect(overlay.getText('n')).toBe('-1e0')
+  })
+
+  it('ignores a paste that is not a number instead of filtering it', () => {
+    const { overlay, inputs } = make()
+    overlay.focus('n')
+    for (const text of ['', '   ', '1,5', '12.5 meters', 'abc']) {
+      expect(overlay.paste(text)).toBe(true)
+      expect(overlay.getText('n')).toBe('5')
+    }
+    expect(inputs).toEqual([])
+    // A Unicode minus (U+2212) is a minus sign.
+    overlay.paste('\u22123')
+    expect(overlay.getText('n')).toBe('-3')
+    expect(inputs).toHaveLength(1) // reported clamped to this field's min
+  })
+
+  it('keeps the field when the clipboard read is refused or rejects', async () => {
+    const { clipboard } = fakeClipboard('')
+    const { overlay, inputs } = make(clipboard)
+    overlay.focus('n')
+    expect(overlay.keyDown({ ...key('v'), ctrlKey: true })).toBe(true)
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('5')
+    clipboard.read = () => Promise.reject(new Error('denied'))
+    overlay.keyDown(cmd('v'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('5')
+    expect(inputs).toEqual([])
+  })
+
+  it('drops a paste that arrives after the field lost focus or was refocused', async () => {
+    const { clipboard } = fakeClipboard('3')
+    const { overlay, inputs } = make(clipboard)
+    overlay.focus('n')
+    overlay.keyDown(cmd('v'))
+    overlay.blur()
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('5')
+    expect(overlay.paste('3')).toBe(false)
+    overlay.focus('n')
+    overlay.keyDown(cmd('v'))
+    overlay.blur()
+    overlay.focus('n') // a new session with everything selected
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('5')
+    expect(inputs).toEqual([])
+  })
+
+  it('drops a paste that arrives after the overlay was destroyed', async () => {
+    const { clipboard } = fakeClipboard('3')
+    const { overlay, inputs } = make(clipboard)
+    overlay.focus('n')
+    overlay.keyDown(cmd('v'))
+    overlay.destroy()
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('5')
+    expect(inputs).toEqual([])
   })
 })

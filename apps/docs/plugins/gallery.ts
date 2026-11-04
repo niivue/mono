@@ -8,10 +8,8 @@ import path from 'node:path'
 
 export const EXAMPLES_DIR = 'packages/niivue/examples'
 
-// Pages left out of the gallery. allen.atlas.html reads its default dataset
-// from imsc.allencell.org, which sends no CORS header, so it shows nothing on
-// the published site.
-const HIDDEN = new Set(['allen.atlas.html'])
+// Pages left out of the gallery.
+const HIDDEN = new Set<string>()
 
 export type GalleryFile = { name: string; code: string }
 

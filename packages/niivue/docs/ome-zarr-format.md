@@ -44,7 +44,8 @@ whose array is absent); each opened level keeps its `datasetIndex` so labels
 and telemetry match the store's own numbering. The store root is opened once
 to learn the Zarr format version, and every level array is opened
 version-pinned; the version-agnostic probe would cost a 404 per level on
-every v2 store.
+every v2 store. `zarrVersion: 2 | 3` (also on `fetchOmeZarrChunkedSource`)
+skips that root probe, and the `zarr.json` 404 it logs on a v2 store.
 
 ## What is supported
 

@@ -12,6 +12,7 @@ import {
   signalFracAtXValue,
   signalValuesAt,
   signalXValueAtFrac,
+  translateGraphLayout,
 } from './NVGraph'
 import type { LineData } from './NVLine'
 
@@ -631,7 +632,7 @@ describe('signal-mode performance bounds', () => {
     for (let j = 0; j < 30; j++) {
       series.push({ label: `S${j}`, x: null, y: [1, 2, 3] })
     }
-    const data = signalData(series, { showLegend: true })
+    const data = signalData(series, { isLegendVisible: true })
     const layout = computeGraphLayout(data, W, H, 0, 1)
     if (!layout) throw new Error('no layout')
     const { texts, buildText, buildLine } = makeStubs()
@@ -836,5 +837,39 @@ describe('clipSegmentX (edge interpolation)', () => {
   })
   test('verticalInRange_kept', () => {
     expect(clipSegmentX(5, 0, 5, 9, 0, 10)).toEqual([5, 0, 5, 9])
+  })
+})
+
+describe('translateGraphLayout', () => {
+  test('movesTheAreaPlotAndControls', () => {
+    const layout = {
+      x: 10,
+      y: 0,
+      width: 100,
+      height: 50,
+      plotLTWH: [20, 5, 80, 40],
+      nFrames: 2,
+      hasDeferred: false,
+      isSignal: true,
+      fontScale: 1,
+      fontSize: 12,
+      dpr: 1,
+      controls: [
+        {
+          id: 'zoomIn' as const,
+          label: '+',
+          x: 30,
+          y: 45,
+          w: 8,
+          h: 8,
+          disabled: false,
+        },
+      ],
+    }
+    const moved = translateGraphLayout(layout, 200, 30)
+    expect([moved.x, moved.y]).toEqual([210, 30])
+    expect(moved.plotLTWH).toEqual([220, 35, 80, 40])
+    expect([moved.controls?.[0]?.x, moved.controls?.[0]?.y]).toEqual([230, 75])
+    expect(translateGraphLayout(layout, 0, 0)).toBe(layout)
   })
 })

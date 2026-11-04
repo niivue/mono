@@ -46,6 +46,7 @@ export function textFieldWindow(
 ): ScrollWindow {
   const advances = glyphAdvances(metrics, text, style.textSizePx)
   return textWindow(
+    text,
     advances,
     textFieldViewport(area, style.caretWidth),
     firstGlyph,
@@ -63,7 +64,7 @@ export function textFieldCaretAt(
   px: number,
 ): number {
   const advances = glyphAdvances(metrics, text, style.textSizePx)
-  return caretIndexAt(advances, firstGlyph, px - area.x)
+  return caretIndexAt(text, advances, firstGlyph, px - area.x)
 }
 
 /**
@@ -87,6 +88,7 @@ export function buildTextFieldContent(
   const advances = glyphAdvances(metrics, text, style.textSizePx)
   const caret = edit ? edit.caret : 0
   const shown = textWindow(
+    text,
     advances,
     textFieldViewport(area, style.caretWidth),
     firstGlyph,

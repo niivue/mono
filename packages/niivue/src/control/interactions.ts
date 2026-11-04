@@ -4,6 +4,7 @@ import {
   shouldAppendMultiClickPoint,
   shouldStartFreshMultiClickContour,
 } from '@/annotation/multiClick'
+import type { ShapeBoundsUpdate } from '@/annotation/selection'
 import {
   emitOrientationChange,
   emitPan2DChange,
@@ -37,10 +38,15 @@ import type {
   VectorAnnotation,
   ViewHitTest,
 } from '@/NVTypes'
-import { parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
-import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
+import {
+  isInLegend,
+  isLegendScrollable,
+  type LegendLayout,
+  legendHitTest,
+  legendScrollHit,
+} from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import {
@@ -57,6 +63,10 @@ import {
 } from '@/volume/ChunkExplode'
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
 import { getImageDataRAS } from '@/volume/utils'
+
+/** Texture-space coordinate `d` of a world-mm point: its slice along `d`. */
+const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
+  m[d] * p[0] + m[4 + d] * p[1] + m[8 + d] * p[2] + m[12 + d]
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -223,15 +233,6 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   return true
 }
 
-// Abandon the in-progress contour (Escape, or a tool/slice change).
-function cancelMultiClickContour(ctrl: NiiVue): void {
-  if (!ctrl._annotationPolyPoints) return
-  ctrl._annotationPolyPoints = null
-  ctrl.model._annotationPreview = null
-  resetLivewire(ctrl)
-  ctrl.drawScene()
-}
-
 // --- Bidirectional (two perpendicular measured axes) ------------------------
 
 type Axis = { start: AnnotationPoint; end: AnnotationPoint }
@@ -332,11 +333,7 @@ function clientToCanvasPixel(
   if (!rect) {
     return [0, 0]
   }
-  let dpr = window.devicePixelRatio || 1
-  const forcedDpr = ctrl.opts.forceDevicePixelRatio ?? -1
-  if (forcedDpr > 0) {
-    dpr = forcedDpr
-  }
+  const dpr = ctrl.effectiveDevicePixelRatio
   const x = (clientX - rect.left) * dpr
   const y = (clientY - rect.top) * dpr
   return [x, y]
@@ -419,36 +416,6 @@ function handleGraphHitTest(ctrl: NiiVue, x: number, y: number): boolean {
   return hit.type === 'frame'
 }
 
-function legendHitTest(
-  x: number,
-  y: number,
-  layout: LegendLayout | null,
-): LegendEntry | null {
-  if (!layout || layout.entries.length === 0) return null
-
-  // Check if click is within legend horizontal bounds
-  if (x < layout.x || x > layout.x + layout.width) return null
-
-  // Check if click is within legend vertical bounds
-  const entryHeight = layout.boxSize * 1.2 // LINE_HEIGHT_RATIO
-  const totalHeight =
-    layout.entries.length * entryHeight +
-    (layout.entries.length - 1) * layout.gap
-
-  if (y < layout.y || y > layout.y + totalHeight) return null
-
-  // Determine which entry was clicked based on Y coordinate
-  let yPos = layout.y
-  for (const entry of layout.entries) {
-    if (y >= yPos && y < yPos + entryHeight) {
-      return entry
-    }
-    yPos += entryHeight + layout.gap
-  }
-
-  return null
-}
-
 function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   // composedPath reaches a focused field inside a shadow root.
   const active = e.composedPath()[0]
@@ -465,17 +432,18 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   if (key === 'ESCAPE') {
     // Abandon an in-progress multi-click contour (spline / livewire) or a
     // half-placed bidirectional measurement.
-    if (ctrl._annotationPolyPoints) cancelMultiClickContour(ctrl)
-    if (ctrl._bidirectionalLong) {
-      ctrl._bidirectionalLong = null
-      ctrl.model._annotationPreview = null
+    if (ctrl._annotationPolyPoints || ctrl._bidirectionalLong) {
+      ctrl._abandonAnnotationInProgress()
+      // End a drag in progress too, or the moves before release fall through
+      // to the camera orbit (#471).
+      if (ctrl.isDragging) resetDragState(ctrl)
       ctrl.drawScene()
     }
     return
   }
   if (key === 'V') {
     if (!ctrl.model.interaction.isViewModeHotKeyEnabled) {
-      log.info(`NIIVUE VERSION: 0.1.20260122`)
+      log.info(`NIIVUE VERSION: ${ctrl.version}`)
     } else if (
       !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat)
     ) {
@@ -1115,7 +1083,29 @@ function pinchPointer(
   return true
 }
 
-function resetDragState(ctrl: NiiVue): void {
+/**
+ * A resized shape's polygons at `box`: an erased shape carries what is left
+ * of it there; an intact one is drawn afresh. Empty when `box` is degenerate.
+ */
+function resizedPolygons(
+  ctrl: NiiVue,
+  type: AnnotationTool,
+  box: ShapeBoundsUpdate,
+): PolygonWithHoles[] {
+  const original = ctrl._resizeOriginalShape
+  if (original?.isErased)
+    return (
+      Annotation.resizePolygons(type, original, box, original.polygons) ?? []
+    )
+  return Annotation.generateShape(
+    type,
+    box.start,
+    box.end,
+    box.width ?? ctrl.model.annotation.style.strokeWidth,
+  )
+}
+
+export function resetDragState(ctrl: NiiVue): void {
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
@@ -1258,10 +1248,42 @@ export function initInteraction(ctrl: NiiVue): void {
     warnIfBothEditModes(ctrl)
 
     // Check for legend click first
-    const legendEntry = legendHitTest(px, py, ctrl.view?.legendLayout ?? null)
-    if (legendEntry) {
-      log.info(`Legend clicked: ${legendEntry.label}`)
-      const centroid = legendEntry.centroid?.()
+    const legendLayout = ctrl.view?.legendLayout ?? null
+    const page = legendScrollHit(px, py, legendLayout)
+    if (page !== null && legendLayout) {
+      // Clicking the track pages (the only scroll on touch screens); the
+      // thumb is consumed too, so a drag on it never moves the camera.
+      if (page !== 0)
+        scrollLegend(
+          ctrl,
+          legendLayout,
+          page * Math.max(1, legendLayout.visibleRows - 1),
+        )
+      return
+    }
+    const legendHit = legendHitTest(px, py, legendLayout)
+    if (legendHit) {
+      const { entry, isOnBox } = legendHit
+      log.info(`Legend clicked: ${entry.label}`)
+      if (
+        isOnBox &&
+        ctrl.model.interaction.isLegendToggleEnabled &&
+        entry.volumeIndex !== undefined &&
+        entry.labelValue !== undefined
+      ) {
+        const value = entry.labelValue
+        const hidden = ctrl.volumes[entry.volumeIndex]?.hiddenLabels ?? []
+        // Decide from the live list: the legend's isHidden lags a frame, so
+        // a quick double-click would otherwise add the value twice.
+        const hiddenLabels = hidden.includes(value)
+          ? hidden.filter((v) => v !== value)
+          : [...hidden, value]
+        ctrl
+          .setVolume(entry.volumeIndex, { hiddenLabels })
+          .catch((e) => log.error('legend label toggle failed', e))
+        return
+      }
+      const centroid = entry.centroid?.()
       if (centroid) ctrl.setCrosshairPos(centroid)
       return // Don't process tile interactions if legend was clicked
     }
@@ -1463,6 +1485,25 @@ export function initInteraction(ctrl: NiiVue): void {
           mm as [number, number, number],
           sliceType,
         )
+        // A bidirectional long axis belongs to the slice it was drawn on; a
+        // press on another slice starts the measurement over (#111). Compare
+        // texture depths: on an oblique volume the mm depth varies across one
+        // slice.
+        const mm2tex = ctrl.model.mm2tex
+        const dims = ctrl.volumes[0]?.dimsRAS
+        if (
+          ctrl._bidirectionalLong &&
+          (ctrl._annotationSliceType !== sliceType ||
+            (mm2tex &&
+              dims &&
+              Math.abs(
+                texDepth(ctrl._annotationAnchorMM, depthDim, mm2tex) -
+                  texDepth(mm, depthDim, mm2tex),
+              ) >
+                0.5 / dims[depthDim + 1]))
+        ) {
+          ctrl._abandonAnnotationInProgress()
+        }
         ctrl._annotationSliceType = sliceType
         ctrl._annotationSlicePosition = slicePosition
         ctrl._annotationAnchorMM = mm as [number, number, number]
@@ -1474,12 +1515,23 @@ export function initInteraction(ctrl: NiiVue): void {
         // control point; the contour is closed on double-click (see the dblclick
         // handler) or cancelled with Escape. Do NOT start a drag.
         if (isMultiClickTool(tool) && !cfg.isErasing) {
+          // The same slice test as the bidirectional axis above, measured from
+          // the contour's first click (mm without a volume).
+          const sliceTest: [number, number, number] =
+            mm2tex && dims
+              ? [
+                  texDepth(ctrl._annotationPolyAnchorMM, depthDim, mm2tex),
+                  texDepth(mm, depthDim, mm2tex),
+                  0.5 / dims[depthDim + 1],
+                ]
+              : [ctrl._annotationPolySlicePosition, slicePosition, 1e-3]
           const fresh = shouldStartFreshMultiClickContour(
             Boolean(ctrl._annotationPolyPoints),
             ctrl._annotationPolySliceType,
-            ctrl._annotationPolySlicePosition,
+            sliceTest[0],
             sliceType,
-            slicePosition,
+            sliceTest[1],
+            sliceTest[2],
           )
           if (fresh) {
             // Start a fresh contour (first point, or the user moved to a new
@@ -1539,10 +1591,19 @@ export function initInteraction(ctrl: NiiVue): void {
               if (ann?.shape) {
                 ctrl._annotationUndoStack.push(ctrl.model.annotations)
                 ctrl._resizingControlPoint = cpIdx
+                const intact = Annotation.generateShape(
+                  ann.shape.type,
+                  ann.shape.start,
+                  ann.shape.end,
+                  ann.shape.width ?? ctrl.model.annotation.style.strokeWidth,
+                )
                 ctrl._resizeOriginalShape = {
                   start: { ...ann.shape.start },
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
+                  polygons: ann.polygons,
+                  isErased:
+                    JSON.stringify(intact) !== JSON.stringify(ann.polygons),
                 }
                 ctrl._resizingAnnotation = ann
                 startAnnotationDrag(ctrl, evt)
@@ -1695,18 +1756,7 @@ export function initInteraction(ctrl: NiiVue): void {
         if (sel) {
           const ann = ctrl._resizingAnnotation
           if (ann?.shape) {
-            const cfg = ctrl.model.annotation
-            const shapeWidth = ann.shape.width ?? cfg.style.strokeWidth
-            const polygons = Annotation.generateShape(
-              ann.shape.type,
-              ann.shape.start,
-              ann.shape.end,
-              shapeWidth,
-            )
-            if (polygons.length > 0) {
-              ann.polygons = polygons
-              sel.controlPoints = Annotation.getControlPoints(ann.shape)
-            }
+            // The last move already set the polygons and control points.
             if (Annotation.isMeasureTool(ann.shape.type)) {
               const vol = ctrl.model.getVolumes()[0]
               if (vol)
@@ -1824,8 +1874,25 @@ export function initInteraction(ctrl: NiiVue): void {
           const cfg = ctrl.model.annotation
           if (cfg.isErasing) {
             // Commit the erase preview (already computed during pointermove)
-            if (ctrl.model._annotationErasePreview) {
-              ctrl.model.annotations = ctrl.model._annotationErasePreview
+            const preview = ctrl.model._annotationErasePreview
+            if (preview) {
+              // An erased measurement re-measures what is left (#115); the
+              // preview keeps untouched annotations by identity.
+              const vol = ctrl.model.getVolumes()[0]
+              const before = new Set(ctrl.model.annotations)
+              ctrl.model.annotations = preview.map((ann) =>
+                vol &&
+                !before.has(ann) &&
+                ann.shape &&
+                Annotation.isMeasureTool(ann.shape.type)
+                  ? {
+                      ...ann,
+                      stats:
+                        Annotation.computeAnnotationStats(ann, vol) ??
+                        undefined,
+                    }
+                  : ann,
+              )
             }
             ctrl.emit('annotationChanged', { action: 'erase' })
           } else {
@@ -2143,18 +2210,12 @@ export function initInteraction(ctrl: NiiVue): void {
             ctrl._resizingControlPoint,
             pt2d,
           )
-          ann.shape.start = newBox.start
-          ann.shape.end = newBox.end
-          if (newBox.width !== undefined) ann.shape.width = newBox.width
-          const shapeWidth =
-            ann.shape.width ?? ctrl.model.annotation.style.strokeWidth
-          const polygons = Annotation.generateShape(
-            ann.shape.type,
-            newBox.start,
-            newBox.end,
-            shapeWidth,
-          )
+          const polygons = resizedPolygons(ctrl, ann.shape.type, newBox)
+          // A degenerate box keeps the last valid bounds and polygons.
           if (polygons.length > 0) {
+            ann.shape.start = newBox.start
+            ann.shape.end = newBox.end
+            if (newBox.width !== undefined) ann.shape.width = newBox.width
             ann.polygons = polygons
             ctrl.model._annotationSelection.controlPoints =
               Annotation.getControlPoints(ann.shape)
@@ -2282,6 +2343,21 @@ export function initInteraction(ctrl: NiiVue): void {
                   ctrl.activeTileHit?.tileIndex
                 ]
                 const eraseTolerance = computeTolerance(ctrl.model)
+                // The brush reaches its path's bounds plus its radius. A
+                // polygon beyond that is not clipped, and an annotation with
+                // none clipped keeps its identity, so the commit does not
+                // re-measure it (#486).
+                const reach = pointsBounds(ctrl._annotationBrushPath)
+                const r = cfg.brushRadius
+                const isOutOfReach = (ring: readonly AnnotationPoint[]) => {
+                  const b = pointsBounds(ring)
+                  return (
+                    b.start.x > reach.end.x + r ||
+                    b.end.x < reach.start.x - r ||
+                    b.start.y > reach.end.y + r ||
+                    b.end.y < reach.start.y - r
+                  )
+                }
                 for (const ann of ctrl.model.annotations) {
                   const anchor = ann.anchorMM
                   const onSlice =
@@ -2300,7 +2376,13 @@ export function initInteraction(ctrl: NiiVue): void {
                     continue
                   }
                   const newPolys = []
+                  let isClipped = false
                   for (const poly of ann.polygons) {
+                    if (isOutOfReach(poly.outer)) {
+                      newPolys.push(poly)
+                      continue
+                    }
+                    isClipped = true
                     newPolys.push(
                       ...Annotation.clipperSubtractBrush(
                         poly,
@@ -2308,6 +2390,10 @@ export function initInteraction(ctrl: NiiVue): void {
                         cfg.brushRadius,
                       ),
                     )
+                  }
+                  if (!isClipped) {
+                    erasePreview.push(ann)
+                    continue
                   }
                   if (newPolys.length > 0) {
                     erasePreview.push({ ...ann, polygons: newPolys })
@@ -2455,6 +2541,24 @@ export function initInteraction(ctrl: NiiVue): void {
     setNextActionTag('wheel')
     evt.preventDefault()
     const [px, py] = wheelHit
+    const legendLayout = ctrl.view?.legendLayout ?? null
+    if (
+      legendLayout &&
+      isLegendScrollable(legendLayout) &&
+      isInLegend(px, py, legendLayout)
+    ) {
+      // The position keeps fractional rows (the layout shows whole ones), so
+      // small trackpad deltas add up instead of being lost. Pixel deltas are
+      // CSS px; line and page deltas (Firefox, some mice) are not.
+      const rows =
+        evt.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? evt.deltaY
+          : evt.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? evt.deltaY * legendLayout.visibleRows
+            : (evt.deltaY * ctrl.effectiveDevicePixelRatio) / legendLayout.pitch
+      scrollLegend(ctrl, legendLayout, rows)
+      return
+    }
     // Wheel over the 4D timeline graph: step to previous/next frame
     const graphLayout = ctrl.view?.graphLayout as GraphLayout | null
     if (graphLayout && graphHitTest(px, py, graphLayout)) {
@@ -2562,20 +2666,6 @@ export function initInteraction(ctrl: NiiVue): void {
     const dblHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
-    // Close an in-progress multi-click contour (spline / livewire) instead of
-    // depth-picking. The two clicks of the double-click already added their
-    // points via the pointerdown handler; commit the accumulated contour.
-    if (
-      ctrl._annotationPolyPoints &&
-      isMultiClickTool(ctrl.model.annotation.tool)
-    ) {
-      commitMultiClickContour(ctrl)
-      ctrl._annotationPolyPoints = null
-      ctrl.model._annotationPreview = null
-      resetLivewire(ctrl)
-      ctrl.drawScene()
-      return
-    }
     const [px, py] = dblHit
     // Double-clicking the zoom-out ("-") button jumps straight to the full view
     // (the one-click way back from a deep zoom). The reset is restricted to that
@@ -2591,9 +2681,25 @@ export function initInteraction(ctrl: NiiVue): void {
       }
       return
     }
+    // Close an in-progress multi-click contour (spline / livewire) instead of
+    // depth-picking. The two clicks of the double-click already added their
+    // points via the pointerdown handler; commit the accumulated contour. A
+    // double-click off the slices (the 3D render) is ignored: it must neither
+    // close the contour nor depth-pick it off its slice (#114).
+    if (
+      ctrl._annotationPolyPoints &&
+      isMultiClickTool(ctrl.model.annotation.tool)
+    ) {
+      const dblTile = ctrl.view?.hitTest(px, py)
+      if (!dblTile || dblTile.isRender) return
+      commitMultiClickContour(ctrl)
+      ctrl._abandonAnnotationInProgress()
+      ctrl.drawScene()
+      return
+    }
     const mm = (await ctrl.view?.depthPick(px, py)) ?? null
     if (mm) {
-      ctrl.setCrosshairPos(mm)
+      ctrl._setCrosshairPos(mm, NVConstants.SLICE_TYPE.RENDER)
     } else {
       // Redraw to fix any pixel artifacts from the depth-pick shader
       ctrl.drawScene()
@@ -2703,38 +2809,7 @@ export function setupDragAndDrop(ctrl: NiiVue): void {
     if (!ctrl.opts.isDragDropEnabled) return
     const files = evt.dataTransfer?.files
     if (!files || files.length === 0) return
-    const fileList = Array.from(files)
-    // Pair BIDS/MRS JSON sidecars with their data file by basename, so a
-    // dropped data+json pair loads with the sidecar applied (sandbox-safe:
-    // the browser cannot fetch a sibling .json we were not given).
-    // Keyed by lowercased sidecar filename so pairing is case-insensitive.
-    const sidecars = new Map<string, ReturnType<typeof parseSidecar>>()
-    for (const f of fileList) {
-      if (f.name.toLowerCase().endsWith('.json')) {
-        try {
-          sidecars.set(
-            f.name.toLowerCase(),
-            parseSidecar(JSON.parse(await f.text())),
-          )
-        } catch (err) {
-          log.error('Failed to parse sidecar:', f.name, err)
-        }
-      }
-    }
-    for (const file of fileList) {
-      const lower = file.name.toLowerCase()
-      if (lower.endsWith('.json')) continue
-      try {
-        if (lower.endsWith('.nvd')) {
-          await ctrl.loadDocument(file)
-          continue
-        }
-        const sidecar = sidecars.get(siblingJsonUrl(lower))
-        await ctrl.loadImage(file, sidecar ? { sidecar } : {})
-      } catch (err) {
-        log.error('Failed to load dropped file:', err)
-      }
-    }
+    await ctrl.loadFiles(Array.from(files))
   }
 
   ctrl.canvas?.addEventListener('dragover', ctrl._eventListeners.dragover)
@@ -2747,7 +2822,7 @@ export function setupResizeHandler(ctrl: NiiVue): void {
   }
   const onResize = () => {
     setNextActionTag('resize')
-    ctrl.view?.resize()
+    ctrl.resize()
     if (ctrl.canvas) {
       ctrl.emit('canvasResize', {
         width: ctrl.canvas.clientWidth,
@@ -2874,4 +2949,13 @@ export function pickExplodedBlock(
     }
   }
   return null
+}
+
+function scrollLegend(ctrl: NiiVue, layout: LegendLayout, rows: number): void {
+  // Start from the shown position: a value left over from a longer legend
+  // would otherwise swallow the first scroll back.
+  const max = layout.rows - layout.visibleRows
+  const from = Math.min(ctrl.model._legendScrollRow, max)
+  ctrl.model._legendScrollRow = Math.max(0, Math.min(max, from + rows))
+  ctrl.drawScene()
 }

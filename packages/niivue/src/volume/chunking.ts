@@ -702,6 +702,10 @@ export interface MultiLodFocus {
   reserveCenter?: Vec3f
 }
 
+let multiLodBuilds = 0
+/** @internal Octree builds `chunkVolumeMultiLOD` has run, for planner tests. */
+export const multiLodBuildCount = (): number => multiLodBuilds
+
 export interface MultiLodOptions {
   /**
    * Target brick texture edge, in the brick's OWN level voxels. A level-ℓ brick
@@ -1138,6 +1142,17 @@ export function chunkVolumeMultiLOD(
     return list
   }
 
+  // Root: tile the volume into level-maxLevel bricks, each bounded to a
+  // `cellEdge`-level-voxel texture, then refine each toward the focus.
+  const rootSpanOf = (rootScale: number): Vec3i => {
+    const rootSpan: Vec3i = [0, 0, 0]
+    for (let a = 0; a < 3; a++) {
+      const scale = commonDims[a] / levelDims[maxLevel][a] // common voxels / level voxel
+      rootSpan[a] = Math.max(1, Math.round(cellEdge * rootScale * scale))
+    }
+    return rootSpan
+  }
+
   // Recursive octree: a node at `level` covers a common-grid box. If a finer
   // level is desired for its region (and it is divisible), split into octants
   // and recurse one level finer; otherwise emit it as a brick.
@@ -1147,6 +1162,7 @@ export function chunkVolumeMultiLOD(
     rootScale = 1,
     balanced = true,
   ): VolumeChunkDesc[] => {
+    multiLodBuilds++
     const chunks: VolumeChunkDesc[] = []
     const subdivide = (originC: Vec3i, sizeC: Vec3i, level: number): void => {
       const divisible = sizeC[0] > 1 || sizeC[1] > 1 || sizeC[2] > 1
@@ -1184,13 +1200,7 @@ export function chunkVolumeMultiLOD(
         }
       }
     }
-    // Root: tile the volume into level-maxLevel bricks, each bounded to a
-    // `cellEdge`-level-voxel texture, then refine each toward the focus.
-    const rootSpan: Vec3i = [0, 0, 0]
-    for (let a = 0; a < 3; a++) {
-      const scale = commonDims[a] / levelDims[maxLevel][a] // common voxels / level voxel
-      rootSpan[a] = Math.max(1, Math.round(cellEdge * rootScale * scale))
-    }
+    const rootSpan = rootSpanOf(rootScale)
     for (let z = 0; z < commonDims[2]; z += rootSpan[2]) {
       for (let y = 0; y < commonDims[1]; y += rootSpan[1]) {
         for (let x = 0; x < commonDims[0]; x += rootSpan[0]) {
@@ -1260,14 +1270,79 @@ export function chunkVolumeMultiLOD(
     const octree = build(detail, floor, 1, false)
     return overBudget(octree) ? null : reserve(balance(octree, floor), floor)
   }
-  let chunks = candidate()
+  // Skip candidates the loops below would only build to reject, so the plan is
+  // unchanged (issue #201). Every brick of a candidate at floor f is a node of one octree
+  // hierarchy (root grid, ceil-halved maxLevel - f times), a product set over
+  // the axes. If even the far corner is within `radius`, every box has
+  // `beyond` 0 (rounding is monotone), so for any detail > 0 the octree is that
+  // whole lattice: every detail builds the same candidate and its brick count
+  // is the lattice count. Otherwise `reserve` still leaves every lattice node
+  // a bound touches as its own brick, a lower bound for any detail.
+  let minDetail = BASE_DETAIL
+  for (let i = 0; i < 16; i++) minDetail /= 1.6
+  const corner: Vec3i = [0, 0, 0]
+  for (let a = 0; a < 3; a++) {
+    const c = focus.center[a]
+    corner[a] = c < commonDims[a] - c ? commonDims[a] : 0
+  }
+  const covers = minDetail > 0 && distanceToBox(corner, [0, 0, 0]) <= radius
+  // The lattice at floor `f` (the nodes overlapping `b`, all when omitted, by
+  // `intersectsBounds`' test per axis) is a product of per-axis segments, so
+  // its brick count and a lower bound on its bytes are per-axis products. A
+  // segment longer than 1 belongs to a brick at level `f`, so its texture
+  // extent is `emitBrick`'s; a 1-long segment counts 1, at most its extent at
+  // any level (a brick stops above the floor only when it is 1 on every axis).
+  const lattice = (f: number, b?: MultiLodBounds): [number, number] => {
+    const rootSpan = rootSpanOf(1)
+    let count = 1
+    let bytes = 8
+    for (let a = 0; a < 3; a++) {
+      const ld = levelDims[f][a]
+      const scale = ld / commonDims[a]
+      let n = 0
+      let voxels = 0
+      const walk = (lo: number, size: number, depth: number): void => {
+        if (depth > 0 && size > 1) {
+          const half = Math.ceil(size / 2)
+          walk(lo, half, depth - 1)
+          walk(lo + half, size - half, depth - 1)
+        } else if (!b || !(lo >= b.max[a] || lo + size <= b.min[a])) {
+          n++
+          if (size > 1) {
+            const loL = Math.max(0, Math.floor(lo * scale))
+            const hiL = Math.min(ld, Math.ceil((lo + size) * scale))
+            const dataL = Math.max(1, hiL - loL)
+            const hLow = loL > 0 ? halo[a] : 0
+            const hHigh = loL + dataL < ld ? halo[a] : 0
+            voxels += Math.min(deviceLimit, dataL + hLow + hHigh)
+          } else voxels += 1
+        }
+      }
+      for (let lo = 0; lo < commonDims[a]; lo += rootSpan[a]) {
+        walk(lo, Math.min(rootSpan[a], commonDims[a] - lo), maxLevel - f)
+      }
+      count *= n
+      bytes *= voxels
+    }
+    return [count, bytes]
+  }
+  const overLimit = ([count, bytes]: [number, number]): boolean =>
+    count > maxBricks || (budget > 0 && bytes > budget)
+  const hopeless = (f: number): boolean =>
+    covers
+      ? overLimit(lattice(f))
+      : reserveBounds.some((b) => overLimit(lattice(f, b)))
+  const stuck = hopeless(floor)
+  // A covering focus rebuilds the first candidate at every detail.
+  const rebuild = !covers && !stuck
+  let chunks = stuck ? null : candidate()
   for (let i = 0; i < 16 && (chunks === null || overBudget(chunks)); i++) {
     detail /= 1.6
-    chunks = candidate()
+    if (rebuild) chunks = candidate()
   }
   while ((chunks === null || overBudget(chunks)) && floor < maxLevel) {
     floor++
-    chunks = candidate()
+    chunks = hopeless(floor) ? null : candidate()
   }
   // Over budget at every detail and floor: the plan is the maxLevel one.
   if (chunks === null) chunks = reserve(build(detail, floor), floor)

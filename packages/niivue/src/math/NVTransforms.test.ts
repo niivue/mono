@@ -22,6 +22,7 @@ import {
   rayBoxEntryMM,
   rayMarchFirstVisibleMM,
   rayPlaneFirstVisibleMM,
+  slabMvp,
   slicePlaneEquation,
   stepClipDepth,
   stepZoom2D,
@@ -811,8 +812,6 @@ function projectThroughSlice(
     [0, 0, 100, 100],
     mn,
     mx,
-    Infinity,
-    undefined,
     rot.azimuth,
     rot.elevation,
     isRadiological,
@@ -1237,8 +1236,6 @@ describe('mmPerPixel2D', () => {
       ltwh,
       mn,
       mx,
-      Infinity,
-      undefined,
       0,
       0,
       false,
@@ -1318,5 +1315,57 @@ describe('mmPerPixelRender', () => {
 
   test('is 0 for a tile with no area', () => {
     expect(mmPerPixelRender([0, 0, 600, 0], 100, 1)).toBe(0)
+  })
+})
+
+describe('slabMvp', () => {
+  // Axial tile looking down -z; a plane tilted 30 degrees about x.
+  const axialMvp = (zeroToOne: boolean) =>
+    calculateMvpMatrix2D(
+      [0, 0, 100, 100],
+      [-100, -100, -100],
+      [100, 100, 100],
+      0,
+      90,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      zeroToOne,
+    )[0]
+  const tilt = deg2rad(30)
+  const n = [0, -Math.sin(tilt), Math.cos(tilt)]
+  const q = [5, 0, 10]
+  const clip = (m: mat4, p: number[]) =>
+    vec4.transformMat4(vec4.create(), vec4.fromValues(p[0], p[1], p[2], 1), m)
+  const along = (p: number[], d: number) => p.map((v, i) => v + d * n[i])
+
+  test('depth is distance from the plane, near and far at -T and +T', () => {
+    for (const zeroToOne of [true, false]) {
+      const mvp = axialMvp(zeroToOne)
+      const slab = slabMvp(mvp, n, q, 3, zeroToOne)
+      const lo = zeroToOne ? 0 : -1
+      const mid = zeroToOne ? 0.5 : 0
+      // Points on the tilted plane at different world z share one depth.
+      const onPlane = [q, [40, 30 * Math.cos(tilt), 10 + 30 * Math.sin(tilt)]]
+      for (const p of onPlane) expect(clip(slab, p)[2]).toBeCloseTo(mid, 6)
+      const nearer = clip(slab, along(q, 3))[2]
+      const further = clip(slab, along(q, -3))[2]
+      // The camera looks down -z, so +n (up, toward it) is nearer.
+      expect(nearer).toBeCloseTo(lo, 6)
+      expect(further).toBeCloseTo(1, 6)
+      // Screen position is unchanged.
+      const a = clip(mvp, along(q, 2))
+      const b = clip(slab, along(q, 2))
+      expect([b[0], b[1], b[3]]).toEqual([a[0], a[1], a[3]])
+    }
+  })
+
+  test('the sign of the normal does not matter', () => {
+    const mvp = axialMvp(true)
+    const p = along(q, 1.5)
+    const flipped = n.map((v) => -v)
+    const z = (normal: number[]) => clip(slabMvp(mvp, normal, q, 3, true), p)[2]
+    expect(z(flipped)).toBeCloseTo(z(n), 6)
   })
 })

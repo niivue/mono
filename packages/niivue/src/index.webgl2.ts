@@ -65,6 +65,7 @@ export {
 } from './mrs/MrsScene'
 // Enums
 export {
+  COLORMAP_TYPE,
   DRAG_MODE,
   LAYER_GRADIENT_MODE,
   MULTIPLANAR_TYPE,
@@ -105,12 +106,14 @@ export type {
   AnnotationTool,
   BackendType,
   CanvasViewport,
+  CinematicOptions,
   ColorMap,
   CompletedAngle,
   CompletedMeasurement,
   CustomLayoutTile,
   DragReleaseInfo,
   FocusBox,
+  PlaneOutline,
   ImageFromUrlOptions,
   LodCompensationLevel,
   LodCompensationReport,
@@ -221,6 +224,18 @@ export type {
   Vec3 as SlideVec3,
 } from './slide/slidePlane'
 export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
+export type {
+  NVSlideControllerOptions,
+  NVSlideMeasurement,
+  NVSlidePoint,
+} from './slide/slideController'
+export { NVSlideController } from './slide/slideController'
+export type {
+  SlideOverlayContent,
+  SlideOverlaySource,
+  SlideOverlayStyle,
+} from './slide/slideOverlay'
+export { slideOverlayContent } from './slide/slideOverlay'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export type {
@@ -325,6 +340,7 @@ export {
   type BudgetPlanName,
   type BudgetPlanOptions,
   type BudgetPlanSpec,
+  type SwapPolicy,
   BUDGET_PLANS,
   resolveBudgetPlan,
   type ResolvedOptions as ResolvedBudgetOptions,

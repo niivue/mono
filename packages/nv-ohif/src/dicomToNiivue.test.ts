@@ -5,6 +5,7 @@ import type { OhifDisplaySet } from './ohif-types'
 let initGate: PromiseWithResolvers<true>
 let runGate: PromiseWithResolvers<File[]>
 let terminated: number
+let runs: number
 let initStarted: boolean
 class FakeDcm2niix {
   worker: { terminate: () => void } | null = null
@@ -15,7 +16,12 @@ class FakeDcm2niix {
     return initGate.promise
   }
   input(_files: File[]) {
-    return { run: () => runGate.promise }
+    return {
+      run: () => {
+        runs++
+        return runGate.promise
+      },
+    }
   }
 }
 let created = 0
@@ -48,6 +54,7 @@ beforeEach(() => {
   runGate = Promise.withResolvers()
   fetchGate = Promise.withResolvers()
   terminated = 0
+  runs = 0
   initStarted = false
   stubFetch()
 })
@@ -124,6 +131,21 @@ describe('convertDisplaySetToNifti (#121)', () => {
     await flush()
     abort.abort(new Error('cancelled'))
     await expect(out).rejects.toThrow('cancelled')
+    expect(terminated).toBe(1)
+  })
+  it('never runs dcm2niix when the converting callback aborts', async () => {
+    const abort = new AbortController()
+    const out = convertDisplaySetToNifti(ds, {
+      signal: abort.signal,
+      onProgress: (stage) => {
+        if (stage === 'converting') abort.abort(new Error('cancelled'))
+      },
+    })
+    fetchGate.resolve()
+    await expect(out).rejects.toThrow('cancelled')
+    initGate.resolve(true)
+    for (let i = 0; i < 5; i++) await flush()
+    expect(runs).toBe(0)
     expect(terminated).toBe(1)
   })
 })

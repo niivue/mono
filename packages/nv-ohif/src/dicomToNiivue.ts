@@ -68,10 +68,10 @@ function untilAborted<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return p
   return new Promise((resolve, reject) => {
     const onAbort = () => reject(signal.reason)
-    if (signal.aborted) return onAbort()
     signal.addEventListener('abort', onAbort, { once: true })
     const done = () => signal.removeEventListener('abort', onAbort)
-    p.finally(done).then(resolve, reject)
+    p.finally(done).then(resolve, reject) // handles p even if already aborted
+    if (signal.aborted) onAbort()
   })
 }
 
@@ -108,7 +108,12 @@ export async function convertDisplaySetToNifti(
     options.onProgress?.('converting', 0, 1)
     // run() rejects unless dcm2niix exits 0, with the log tail.
     outputs = await untilAborted(
-      ready.then((d) => d.input(files).run()),
+      ready.then((d) => {
+        // An abort in the 'converting' callback must not start a run on the
+        // worker the finally below has already terminated.
+        signal?.throwIfAborted()
+        return d.input(files).run()
+      }),
       signal,
     )
   } finally {

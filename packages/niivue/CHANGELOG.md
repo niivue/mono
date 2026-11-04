@@ -1,3 +1,15 @@
+## 1.0.0-rc.86 (2026-11-04)
+
+### Fixes
+
+- **niivue:** apply a document volume's id and links only to a volume it added ([71f07944](https://github.com/niivue/mono/commit/71f07944))
+- **niivue:** give volumes loaded from the same URL distinct ids ([4928ef52](https://github.com/niivue/mono/commit/4928ef52))
+
+### Thank You
+
+- Claude Opus 5.5
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.85 (2026-11-04)
 
 ### Features

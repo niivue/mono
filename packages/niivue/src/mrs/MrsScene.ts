@@ -543,9 +543,10 @@ export class MrsScene {
   ): Promise<NVImage> {
     const mrs = this.mrs
     if (!mrs) throw new Error('MrsScene.makeMap: no MRSI volume loaded')
-    // Uniquify the overlay id so repeating a band doesn't collide with an
-    // earlier map (addVolume does not dedupe ids, and find-by-id would then
-    // style the OLD map). Suffix " (n)" until the id is free.
+    // Uniquify the overlay name so repeating a band gets a distinct label and
+    // the id addVolume keeps matches `map.id` (addVolume would otherwise
+    // suffix a colliding id with "-n", and find-by-id below would miss the new
+    // map). Suffix " (n)" until the id is free.
     const lo = Math.min(band[0], band[1]).toFixed(1)
     const hi = Math.max(band[0], band[1]).toFixed(1)
     let name = opts.name ?? `SpecSum_${lo}_${hi}`

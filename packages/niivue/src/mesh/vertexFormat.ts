@@ -17,18 +17,31 @@ export function packColor(rgba: number[]): number {
   return (a << 24) | (b << 16) | (g << 8) | r
 }
 
+/** Byte offset of each field within a vertex. */
+export const VERTEX_OFFSET = { position: 0, normal: 12, color: 24 } as const
+
+/** The WebGPU vertex buffer layout of this format (shader locations 0, 1, 2). */
+export const VERTEX_BUFFER_LAYOUT: GPUVertexBufferLayout = {
+  arrayStride: BYTES_PER_VERTEX,
+  attributes: [
+    { format: 'float32x3', offset: VERTEX_OFFSET.position, shaderLocation: 0 },
+    { format: 'float32x3', offset: VERTEX_OFFSET.normal, shaderLocation: 1 },
+    { format: 'unorm8x4', offset: VERTEX_OFFSET.color, shaderLocation: 2 },
+  ],
+}
+
 /**
- * Interleave a mesh's positions, normals (cached per geometry by `meshNormals`)
- * and packed colors into the vertex layout both backends draw (BYTES_PER_VERTEX
- * bytes per vertex). Writes into `target` when it is exactly the right size (a
- * reused staging buffer), else allocates.
+ * Interleave positions, normals and packed colors (one per vertex, or one for
+ * all) into this layout. Writes into `target` when it is exactly the right
+ * size (a reused staging buffer), else allocates.
  */
-export function packMeshVertices(
-  meshData: NVMesh,
+export function packVertices(
+  positions: ArrayLike<number>,
+  normals: ArrayLike<number>,
+  colors: ArrayLike<number> | number,
   target?: ArrayBuffer,
 ): ArrayBuffer {
-  const normals = meshNormals(meshData)
-  const numVerts = meshData.positions.length / 3
+  const numVerts = Math.floor(positions.length / 3)
   const bytes = numVerts * BYTES_PER_VERTEX
   const vertexData =
     target && target.byteLength === bytes ? target : new ArrayBuffer(bytes)
@@ -36,16 +49,30 @@ export function packMeshVertices(
   const u32 = new Uint32Array(vertexData)
   for (let i = 0; i < numVerts; i++) {
     const offset = (i * BYTES_PER_VERTEX) / 4
-    f32[offset] = meshData.positions[i * 3] ?? 0
-    f32[offset + 1] = meshData.positions[i * 3 + 1] ?? 0
-    f32[offset + 2] = meshData.positions[i * 3 + 2] ?? 0
+    f32[offset] = positions[i * 3] ?? 0
+    f32[offset + 1] = positions[i * 3 + 1] ?? 0
+    f32[offset + 2] = positions[i * 3 + 2] ?? 0
     f32[offset + 3] = normals[i * 3] ?? 0
     f32[offset + 4] = normals[i * 3 + 1] ?? 0
     f32[offset + 5] = normals[i * 3 + 2] ?? 0
-    u32[offset + 6] =
-      meshData.colors instanceof Uint32Array
-        ? meshData.colors[i]
-        : meshData.colors
+    u32[offset + 6] = typeof colors === 'number' ? colors : colors[i]
   }
   return vertexData
+}
+
+/**
+ * Interleave a mesh's positions, normals (cached per geometry by `meshNormals`)
+ * and packed colors into the vertex layout both backends draw. Writes into
+ * `target` when it is exactly the right size (a reused staging buffer).
+ */
+export function packMeshVertices(
+  meshData: NVMesh,
+  target?: ArrayBuffer,
+): ArrayBuffer {
+  return packVertices(
+    meshData.positions,
+    meshNormals(meshData),
+    meshData.colors,
+    target,
+  )
 }

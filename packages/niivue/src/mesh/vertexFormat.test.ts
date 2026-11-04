@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVMesh } from '@/NVTypes'
 import { generateNormals, meshNormals } from './normals'
-import { BYTES_PER_VERTEX, packMeshVertices } from './vertexFormat'
+import {
+  BYTES_PER_VERTEX,
+  packMeshVertices,
+  packVertices,
+  VERTEX_BUFFER_LAYOUT,
+  VERTEX_OFFSET,
+} from './vertexFormat'
 
 // Two triangles sharing an edge, bent along it so every normal is distinct.
 function bentQuad(): NVMesh {
@@ -51,5 +57,37 @@ describe('packMeshVertices', () => {
       Array.from(generateNormals(mesh.positions, mesh.indices)),
     )
     expect(Array.from(packedNormals(fresh))).not.toEqual(Array.from(original))
+  })
+})
+
+describe('packVertices', () => {
+  const positions = [1, 2, 3, 4, 5, 6]
+  const normals = [0, 0, 1, 0, 1, 0]
+
+  test('writes each field where the GPU layouts read it', () => {
+    const buf = packVertices(positions, normals, [0xff0000ff, 0x00ff00ff])
+    const view = new DataView(buf)
+    const at = (v: number, field: keyof typeof VERTEX_OFFSET, k = 0) =>
+      v * BYTES_PER_VERTEX + VERTEX_OFFSET[field] + k * 4
+    expect(buf.byteLength).toBe(2 * BYTES_PER_VERTEX)
+    expect(view.getFloat32(at(1, 'position', 2), true)).toBe(6)
+    expect(view.getFloat32(at(1, 'normal', 1), true)).toBe(1)
+    expect(view.getUint32(at(1, 'color'), true)).toBe(0x00ff00ff)
+  })
+
+  test('one packed color fills every vertex', () => {
+    const u32 = new Uint32Array(packVertices(positions, normals, 7))
+    const c = VERTEX_OFFSET.color / 4
+    const stride = BYTES_PER_VERTEX / 4
+    expect([u32[c], u32[stride + c]]).toEqual([7, 7])
+  })
+
+  test('the WebGPU layout matches the offsets', () => {
+    expect(VERTEX_BUFFER_LAYOUT.arrayStride).toBe(BYTES_PER_VERTEX)
+    expect([...VERTEX_BUFFER_LAYOUT.attributes].map((a) => a.offset)).toEqual([
+      VERTEX_OFFSET.position,
+      VERTEX_OFFSET.normal,
+      VERTEX_OFFSET.color,
+    ])
   })
 })

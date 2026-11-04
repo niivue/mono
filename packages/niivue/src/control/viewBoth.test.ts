@@ -25,7 +25,10 @@ globalThis.ResizeObserver ??= class {
   observe() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver
-const { attachToCanvas } = await import('./viewBoth')
+const { attachToCanvas, recreateView } = await import('./viewBoth')
+const { getCanvasInstances, registerCanvasInstance } = await import(
+  './canvasRegistry'
+)
 
 test('a webgpu to webgl2 fallback on a detached canvas keeps the caller canvas', async () => {
   // attachToCanvas checks instanceof, so build on the real prototype.
@@ -48,4 +51,41 @@ test('a webgpu to webgl2 fallback on a detached canvas keeps the caller canvas',
   expect(ctrl.opts.backend).toBe('webgl2')
   expect(glCanvases.at(-1)).toBe(userCanvas)
   expect(ctrl.canvas).toBe(userCanvas)
+})
+
+test('a backend switch on a shared canvas moves every sibling view to the new canvas', async () => {
+  const fakeCanvas = (): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode: { replaceChild() {} },
+      style: {},
+      cloneNode: () => fakeCanvas(),
+      addEventListener() {},
+      removeEventListener() {},
+    }) as HTMLCanvasElement
+  const fakeCtrl = (canvas: HTMLCanvasElement) =>
+    ({
+      canvas,
+      view: { destroy() {} },
+      opts: { backend: 'webgpu', isInteractionEnabled: false },
+      model: { clearAllGPUResources() {}, ui: {} },
+      _eventListeners: {},
+      _wireViewHooks() {},
+      async _rebuildViewResources() {},
+      restoreSlidePlaneView() {},
+      drawScene() {},
+      emit() {},
+    }) as unknown as NiiVue
+  const old = fakeCanvas()
+  const left = fakeCtrl(old)
+  const right = fakeCtrl(old)
+  registerCanvasInstance(left, old)
+  registerCanvasInstance(right, old)
+  left.opts.backend = 'webgl2'
+  await recreateView(left, true)
+  expect(left.canvas).not.toBe(old)
+  expect(right.canvas).toBe(left.canvas)
+  expect(right.opts.backend).toBe('webgl2')
+  // Both live views draw to the new canvas, not the detached old one.
+  expect(glCanvases.slice(-2)).toEqual([left.canvas, left.canvas])
+  expect(getCanvasInstances(left.canvas)).toEqual(new Set([left, right]))
 })

@@ -155,12 +155,9 @@ export async function reinitializeView(
   ctrl.opts.forceDevicePixelRatio = newPixelRatio
 
   try {
-    if (forceRestart || antiAliasChanged) {
-      await recreateView(ctrl)
-    } else {
-      // The setter also updates controllers sharing this canvas.
-      ctrl.devicePixelRatio = newPixelRatio
-    }
+    if (forceRestart || antiAliasChanged) await recreateView(ctrl)
+    // The setter also updates controllers sharing this canvas.
+    if (pixelRatioChanged) ctrl.devicePixelRatio = newPixelRatio
     return true
   } catch (err) {
     log.error('Failed to reinitialize view:', err)

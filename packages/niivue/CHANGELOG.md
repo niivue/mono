@@ -1,3 +1,20 @@
+## 1.0.0-rc.83 (2026-11-04)
+
+### Fixes
+
+- step over JPEG restart markers when reading the size ([897610ea](https://github.com/niivue/mono/commit/897610ea))
+- give a window set during streaming to the coarse floor and handle too ([931b9fb7](https://github.com/niivue/mono/commit/931b9fb7))
+- size a GIF by its first frame, refuse a JPEG with a DNL height ([2d7aa5f6](https://github.com/niivue/mono/commit/2d7aa5f6))
+- **niivue:** skip 0xff fill bytes in the JPEG size scan ([#534](https://github.com/niivue/mono/issues/534))
+- **niivue:** refuse an oversized image volume before decoding it ([#472](https://github.com/niivue/mono/issues/472), [#511](https://github.com/niivue/mono/issues/511))
+- **niivue:** keep a window set while a chunked volume's sample streams in ([#489](https://github.com/niivue/mono/issues/489))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.82 (2026-11-03)
 
 ### Fixes

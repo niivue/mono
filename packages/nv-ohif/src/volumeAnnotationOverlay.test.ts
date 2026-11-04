@@ -26,11 +26,14 @@ describe('shapesSignature (#124)', () => {
     expect(shapesSignature([shape(0.4)])).toBe(shapesSignature([shape()]))
   })
 
-  it('changes on a 1px move, a label edit, or an added shape', () => {
+  it('changes on a 1px move, a label edit, a ruler length, or an added shape', () => {
     const base = shapesSignature([shape()])
     expect(shapesSignature([shape(1)])).not.toBe(base)
     expect(shapesSignature([shape(0, 'ROI #2')])).not.toBe(base)
     expect(shapesSignature([shape(), shape()])).not.toBe(base)
     expect(shapesSignature([])).not.toBe(base)
+    expect(shapesSignature([{ ...shape(), length: 10.3 }])).not.toBe(
+      shapesSignature([{ ...shape(), length: 10.4 }]),
+    )
   })
 })

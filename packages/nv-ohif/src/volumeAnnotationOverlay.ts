@@ -58,6 +58,8 @@ export function shapesSignature(
     pt(2, s.end)
     pt(3, s.start2)
     pt(4, s.end2)
+    // The ruler label reads length to 0.1 mm, which a sub-pixel move can change.
+    if (s.length !== undefined) mix(Math.round(s.length * 10))
     if (s.label) for (const line of s.label.lines) str(line)
   }
   return h

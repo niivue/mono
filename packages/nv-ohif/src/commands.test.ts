@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import {
@@ -470,6 +470,40 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(0)
   })
 
+  it('does not reflect an eraser-split or holed spline/livewire ROI (#484)', () => {
+    const ring = (o: number) => [
+      { x: o, y: o },
+      { x: o + 2, y: o },
+      { x: o + 1, y: o + 2 },
+    ]
+    for (const type of ['measureSpline', 'measureLivewire'] as const) {
+      const viewportId = `vp-split-${type}`
+      const svc = setup(viewportId)
+      const annotation = ellipse(type)
+      annotation.shape = { type, start: { x: 0, y: 0 }, end: { x: 7, y: 7 } }
+      annotation.polygons = [{ outer: ring(0), holes: [] }]
+      expect(
+        reflectNiivueAnnotation(viewportId, svc.servicesManager, annotation),
+      ).toBe(true)
+      expect(
+        (svc.added[0]?.data.schema as { points: number[][] }).points,
+      ).toHaveLength(3)
+
+      annotation.polygons = [
+        { outer: ring(0), holes: [] },
+        { outer: ring(4), holes: [] },
+      ]
+      expect(
+        reflectNiivueAnnotation(viewportId, svc.servicesManager, annotation),
+      ).toBe(false)
+      annotation.polygons = [{ outer: ring(0), holes: [ring(0.5)] }]
+      expect(
+        reflectNiivueAnnotation(viewportId, svc.servicesManager, annotation),
+      ).toBe(false)
+      expect(svc.added).toHaveLength(1)
+    }
+  })
+
   it('reflects arrow endpoints tip-first (arrowhead at points[0])', () => {
     const svc = setup('vp-arrow')
     const annotation = ellipse('arrow')
@@ -682,6 +716,130 @@ describe('reflectNiivueAnnotation', () => {
     reconcileNiivueAnnotations('vp-remove-retry', svc.servicesManager)
     expect(attempts).toBe(2)
     expect(svc.removed).toHaveLength(1)
+  })
+
+  describe('thrown mapping errors (#118)', () => {
+    function throwingAdd(viewportId: string) {
+      const nv = stubNiivue()
+      register(viewportId, nv)
+      updateNiivueViewport(viewportId, {
+        displaySets: backing as unknown as Parameters<
+          typeof updateNiivueViewport
+        >[1]['displaySets'],
+      })
+      const svc = measurementServices(viewportId, backing)
+      const ms = (
+        svc.servicesManager as NonNullable<
+          OhifExtensionParams['servicesManager']
+        >
+      ).services.measurementService as {
+        addRawMeasurement: (...args: unknown[]) => unknown
+      }
+      const realAdd = ms.addRawMeasurement
+      const state = { attempts: 0, fail: true }
+      ms.addRawMeasurement = (...args) => {
+        state.attempts += 1
+        if (state.fail) throw new Error('mapping failed')
+        return realAdd(...args)
+      }
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      const reconcile = () =>
+        reconcileNiivueAnnotations(viewportId, svc.servicesManager)
+      return { nv, svc, state, warn, reconcile }
+    }
+
+    it('logs the first failure once and stops after the cap', () => {
+      const t = throwingAdd('vp-cap')
+      t.nv.annotations = [ellipse('cap')]
+      for (let i = 0; i < 5; i++) t.reconcile()
+      expect(t.state.attempts).toBe(3)
+      expect(t.warn).toHaveBeenCalledTimes(1)
+      t.warn.mockRestore()
+    })
+
+    it('retries an edited annotation (new revision)', () => {
+      const t = throwingAdd('vp-cap-edit')
+      t.nv.annotations = [ellipse('e')]
+      for (let i = 0; i < 4; i++) t.reconcile()
+      expect(t.state.attempts).toBe(3)
+      t.nv.annotations = [{ ...ellipse('e'), text: 'edited' }]
+      t.state.fail = false
+      t.reconcile()
+      expect(t.state.attempts).toBe(4)
+      expect(t.svc.added).toHaveLength(1)
+      t.warn.mockRestore()
+    })
+
+    it('a success clears the failure state', () => {
+      const t = throwingAdd('vp-cap-ok')
+      t.nv.annotations = [ellipse('ok')]
+      t.reconcile()
+      t.state.fail = false
+      t.reconcile()
+      expect(t.svc.added).toHaveLength(1)
+      // Fail again on a fresh revision: the uid logs anew and gets 3 attempts.
+      t.state.fail = true
+      t.nv.annotations = [{ ...ellipse('ok'), text: 'v2' }]
+      for (let i = 0; i < 5; i++) t.reconcile()
+      expect(t.state.attempts).toBe(2 + 3)
+      expect(t.warn).toHaveBeenCalledTimes(2)
+      t.warn.mockRestore()
+    })
+
+    it('removal clears the failure state', () => {
+      const t = throwingAdd('vp-cap-rm')
+      t.nv.annotations = [ellipse('rm')]
+      for (let i = 0; i < 3; i++) t.reconcile()
+      t.nv.annotations = []
+      t.reconcile()
+      // Same id and content again: a fresh uid with no cap carried over.
+      t.nv.annotations = [ellipse('rm')]
+      t.reconcile()
+      expect(t.state.attempts).toBe(4)
+      expect(t.warn).toHaveBeenCalledTimes(2)
+      t.warn.mockRestore()
+    })
+
+    it('clearing a viewport with no rows still clears its failures', () => {
+      const t = throwingAdd('vp-cap-clear')
+      t.nv.annotations = [ellipse('cl')]
+      for (let i = 0; i < 3; i++) t.reconcile()
+      clearNiivueAnnotations('vp-cap-clear', t.svc.servicesManager)
+      t.reconcile()
+      expect(t.state.attempts).toBe(4)
+      t.warn.mockRestore()
+    })
+
+    it('caps a throwing row removal and drops its bookkeeping', () => {
+      const nv = stubNiivue()
+      register('vp-cap-remove', nv)
+      updateNiivueViewport('vp-cap-remove', {
+        displaySets: backing as unknown as Parameters<
+          typeof updateNiivueViewport
+        >[1]['displaySets'],
+      })
+      const svc = measurementServices('vp-cap-remove', backing)
+      let attempts = 0
+      const ms = (
+        svc.servicesManager as NonNullable<
+          OhifExtensionParams['servicesManager']
+        >
+      ).services.measurementService as { remove: (uid: string) => void }
+      ms.remove = () => {
+        attempts += 1
+        throw new Error('remove failed')
+      }
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      const annotation = ellipse('gone')
+      nv.annotations = [annotation]
+      reflectNiivueAnnotation('vp-cap-remove', svc.servicesManager, annotation)
+      nv.annotations = []
+      for (let i = 0; i < 5; i++)
+        reconcileNiivueAnnotations('vp-cap-remove', svc.servicesManager)
+      expect(attempts).toBe(3)
+      expect(warn).toHaveBeenCalledTimes(1)
+      warn.mockRestore()
+    })
   })
 
   it('clearNiivueAnnotations removes every reflected row for the viewport', () => {
@@ -1611,6 +1769,29 @@ describe('niivueSetWindowLevel', () => {
   })
 })
 
+describe('a rejected volume update (#467)', () => {
+  it('is logged, not left unhandled', async () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    nv.setVolume = async () => {
+      throw new Error('device lost')
+    }
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    const logged = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      definitions.niivueSetWindowLevel({ window: 80, level: 40 })
+      definitions.niivueSetColormap({ colormap: 'hot' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(logged).toHaveBeenCalledTimes(2)
+    } finally {
+      logged.mockRestore()
+    }
+  })
+})
+
 describe('niivueSetWindowLevelPreset', () => {
   it("applies OHIF's preset resolved for the base modality", () => {
     const nv = stubNiivue()
@@ -1728,6 +1909,36 @@ describe('syncNiivueWindowLevelToOhif', () => {
 
     // Unchanged release: no sync, no readout.
     expect(syncNiivueWindowLevelToOhif('vp-1', sm, cm)).toBeUndefined()
+    expect(ran).toHaveLength(1)
+  })
+
+  it('does not echo a window OHIF pushes back through niivueSetWindowLevel', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ calMin: 0, calMax: 100 })
+    register('vp-1', nv)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1' }],
+    })
+    const ran: string[] = []
+    const cm = { runCommand: (name: string) => ran.push(name) }
+    const grid = gridServices().services.viewportGridService
+    const sm = {
+      services: {
+        viewportGridService: { ...grid, getActiveViewportId: () => 'vp-1' },
+      },
+    }
+    // Like core: setVolume applies the window and emits volumeUpdated, which
+    // the viewport routes to syncNiivueWindowLevelToOhif.
+    nv.setVolume = async (_index: number, opts: Record<string, unknown>) => {
+      Object.assign(nv.volumes[0] as object, opts)
+      syncNiivueWindowLevelToOhif('vp-1', sm, cm)
+    }
+    syncNiivueWindowLevelToOhif('vp-1', sm, cm) // seed
+    nv.volumes[0] = { calMin: 200, calMax: 600 }
+    syncNiivueWindowLevelToOhif('vp-1', sm, cm)
+    expect(ran).toEqual(['setViewportWindowLevel'])
+    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
+    definitions.niivueSetWindowLevel({ window: 400, level: 400 })
     expect(ran).toHaveLength(1)
   })
 
@@ -1880,6 +2091,29 @@ describe('niivueToggleOverlay', () => {
     expect(entry.overlayUIDs).toEqual([])
   })
 
+  it('reports a failed load as an error status (#130)', async () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    nv.addVolume = async () => {
+      throw new Error('boom')
+    }
+    register('vp-1', nv)
+    const statuses: Array<[string | null, string | undefined]> = []
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-base' }],
+      setStatus: (message, kind) => statuses.push([message, kind]),
+    })
+    const sm = services('vp-1', [
+      { displaySetInstanceUID: 'ds-base' },
+      { displaySetInstanceUID: 'ds-2', url: 'https://x/perf.nii.gz' },
+    ])
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
+    await definitions.niivueToggleOverlay()
+    errorSpy.mockRestore()
+    expect(statuses).toEqual([['Overlay load failed: boom', 'error']])
+  })
+
   it('does nothing without a loaded base volume', async () => {
     const nv = stubNiivue()
     register('vp-1', nv)
@@ -1905,7 +2139,7 @@ describe('flashStatus', () => {
 
   it('clears its own message after the flash duration', async () => {
     const { entry, writes } = statusEntry()
-    flashStatus(entry, 'No other loadable series in this study.', 10)
+    flashStatus(entry, 'No other loadable series in this study.', 'note', 10)
     expect(writes).toEqual(['No other loadable series in this study.'])
     await sleep(30)
     expect(writes).toEqual(['No other loadable series in this study.', null])
@@ -1913,9 +2147,9 @@ describe('flashStatus', () => {
 
   it('does not blank a newer status when its timer fires late', async () => {
     const { entry, writes } = statusEntry()
-    flashStatus(entry, 'Overlay load failed: boom', 10)
+    flashStatus(entry, 'Overlay load failed: boom', 'error', 10)
     // A retried load writes fresh progress before the failure flash expires.
-    flashStatus(entry, 'Fetching overlay: PERFUSION... 3/10', 1000)
+    flashStatus(entry, 'Fetching overlay: PERFUSION... 3/10', 'loading', 1000)
     await sleep(30)
     // The stale timer must not clear the live progress readout.
     expect(writes).toEqual([

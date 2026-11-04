@@ -1,9 +1,9 @@
 import { mat3, vec3 } from 'gl-matrix'
-import * as nifti from 'nifti-reader-js'
 import { decompress } from '@/codecs/NVGz'
 import { log } from '@/logger'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import { nifti1Header } from '@/volume/utils'
 
 export const extensions = ['mha', 'mhd']
 export const type = 'nii'
@@ -29,13 +29,11 @@ export async function read(
   }
 
   let line = readStr()
-  const hdr = new nifti.NIFTI1() as NIFTI1
-  hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
-  hdr.dims = [1, 1, 1, 1, 1, 1, 1, 1]
+  const hdr = nifti1Header([1, 1, 1, 1, 1, 1, 1, 1])
   hdr.littleEndian = true
   let isGz = false
   let isDetached = false
-  const mat33 = mat3.fromValues(NaN, 0, 0, 0, 1, 0, 0, 0, 1)
+  const mat33 = mat3.fromValues(1, 0, 0, 0, 1, 0, 0, 0, 1)
   const offset = vec3.fromValues(0, 0, 0)
 
   while (line !== '') {

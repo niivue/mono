@@ -28,7 +28,7 @@ async function show(view) {
       // (the measure's event trigger)]. selectedColumns [0] plots just the
       // recording line; the <k>_trigger events are drawn as a top tick rug and
       // the plain volume "trigger" is ignored (both handled by the reader).
-      display: { selectedColumns: [0], showLegend: legendCheck.checked },
+      display: { selectedColumns: [0], isLegendVisible: legendCheck.checked },
     })),
   )
 }
@@ -36,7 +36,7 @@ async function show(view) {
 viewSelect.onchange = () => show(viewSelect.value)
 legendCheck.onchange = () => {
   for (let i = 0; i < nv1.signals.length; i++) {
-    nv1.setSignal(i, { display: { showLegend: legendCheck.checked } })
+    nv1.setSignal(i, { display: { isLegendVisible: legendCheck.checked } })
   }
 }
 colorBtn.addEventListener('input', (event) => {

@@ -119,6 +119,10 @@ struct Params {
     // this struct but never reads them -- a pick reads geometry, not opacity.
     gradientOpacity: f32,
     silhouettePower: f32,
+    // 1.0 applies the background's step-size opacity correction to the overlay
+    // pass. The last trailing lane before 512, so nothing moves. Mirrors
+    // overlayOpacityCorrection in gl/renderShader.ts.
+    overlayOpacityCorrection: f32,
 }
 
 // Volume render modes, mirroring VOLUME_RENDER_MODE in NVConstants.ts.

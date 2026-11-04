@@ -2,8 +2,13 @@ import { baseModality, NIIVUE_COLORMAPS, NIIVUE_SLICE_TYPES } from './commands'
 import {
   getNiivueEntryForViewport,
   getNiivueForViewport,
+  type NiivueViewportEntry,
 } from './niivueRegistry'
-import type { OhifToolbarButton, OhifToolbarModuleEntry } from './ohif-types'
+import type {
+  OhifToolbarButton,
+  OhifToolbarEvaluation,
+  OhifToolbarModuleEntry,
+} from './ohif-types'
 
 // Toolbar button + section ids (referenced from a mode's toolbar sections).
 export const NIIVUE_VIEWS_SECTION = 'NiivueViews'
@@ -379,9 +384,23 @@ const VOLUME_DISABLED = {
   disabledText: 'Available for NiiVue volume viewports',
 }
 
-function volumeDisabled(viewportId: string | undefined) {
-  const nv = getNiivueForViewport(viewportId)
-  return !nv || !Array.isArray(nv.volumes) || nv.volumes.length === 0
+type ToolbarEvaluate = NonNullable<OhifToolbarModuleEntry['evaluate']>
+
+// Shared guard for the volume-only buttons: disabled off NiiVue, and on a
+// NiiVue viewport without volumes (e.g. NVSlide).
+function volumeEvaluator(
+  evaluate: (
+    entry: NiivueViewportEntry,
+    button: OhifToolbarButton | undefined,
+  ) => OhifToolbarEvaluation,
+): ToolbarEvaluate {
+  return ({ viewportId, button }) => {
+    const entry = getNiivueEntryForViewport(viewportId)
+    if (!entry) return DISABLED
+    const { volumes } = entry.nv
+    if (!Array.isArray(volumes) || volumes.length === 0) return VOLUME_DISABLED
+    return evaluate(entry, button)
+  }
 }
 
 /**
@@ -397,24 +416,18 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
     },
     {
       name: SLICE_TYPE_EVALUATOR,
-      evaluate: ({ viewportId, button }) => {
-        const nv = getNiivueForViewport(viewportId)
-        if (!nv) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
+      evaluate: volumeEvaluator(({ nv }, button) => {
         const name = buttonCommandOption(button, 'sliceType')
         const target = name === undefined ? undefined : NIIVUE_SLICE_TYPES[name]
         return {
           disabled: false,
           isActive: target !== undefined && nv.sliceType === target,
         }
-      },
+      }),
     },
     {
       name: CLIP_PLANE_EVALUATOR,
-      evaluate: ({ viewportId, button }) => {
-        const entry = getNiivueEntryForViewport(viewportId)
-        if (!entry) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
+      evaluate: volumeEvaluator((entry, button) => {
         const plane = buttonCommandOption(button, 'plane')
         return {
           disabled: false,
@@ -423,23 +436,18 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
             plane !== 'none' &&
             entry.clipPlane === plane,
         }
-      },
+      }),
     },
     {
       name: OVERLAY_EVALUATOR,
-      evaluate: ({ viewportId }) => {
-        const entry = getNiivueEntryForViewport(viewportId)
-        if (!entry) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
-        return { disabled: false, isActive: entry.overlayUIDs.length > 0 }
-      },
+      evaluate: volumeEvaluator((entry) => ({
+        disabled: false,
+        isActive: entry.overlayUIDs.length > 0,
+      })),
     },
     {
       name: WL_PRESET_EVALUATOR,
-      evaluate: ({ viewportId, button }) => {
-        const entry = getNiivueEntryForViewport(viewportId)
-        if (!entry) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
+      evaluate: volumeEvaluator((entry, button) => {
         // Gray out presets whose modality does not match the base series.
         const modality = buttonCommandOption(button, 'modality')
         if (modality !== undefined && modality !== baseModality(entry)) {
@@ -449,14 +457,11 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
           }
         }
         return { disabled: false }
-      },
+      }),
     },
     {
       name: COLORMAP_EVALUATOR,
-      evaluate: ({ viewportId, button }) => {
-        const nv = getNiivueForViewport(viewportId)
-        if (!nv) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
+      evaluate: volumeEvaluator(({ nv }, button) => {
         const name = buttonCommandOption(button, 'colormap')
         const current = nv.volumes[0]?.colormap
         return {
@@ -466,55 +471,41 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
             typeof current === 'string' &&
             current.toLowerCase() === name.toLowerCase(),
         }
-      },
+      }),
     },
     {
       name: COLORBAR_EVALUATOR,
-      evaluate: ({ viewportId }) => {
-        const nv = getNiivueForViewport(viewportId)
-        if (!nv) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
-        return { disabled: false, isActive: nv.isColorbarVisible === true }
-      },
+      evaluate: volumeEvaluator(({ nv }) => ({
+        disabled: false,
+        isActive: nv.isColorbarVisible === true,
+      })),
     },
     {
       name: INTERPOLATION_EVALUATOR,
-      evaluate: ({ viewportId }) => {
-        const nv = getNiivueForViewport(viewportId)
-        if (!nv) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
-        // Active = nearest-neighbor (crisp voxels); off = smooth (default).
-        return {
-          disabled: false,
-          isActive: nv.volumeIsNearestInterpolation === true,
-        }
-      },
+      // Active = nearest-neighbor (crisp voxels); off = smooth (default).
+      evaluate: volumeEvaluator(({ nv }) => ({
+        disabled: false,
+        isActive: nv.volumeIsNearestInterpolation === true,
+      })),
     },
     {
       name: CROSSHAIR_EVALUATOR,
-      evaluate: ({ viewportId }) => {
-        const nv = getNiivueForViewport(viewportId)
-        if (!nv) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
-        // Active = crosshair currently shown (width 0 means hidden).
-        return { disabled: false, isActive: nv.crosshairWidth > 0 }
-      },
+      // Active = crosshair currently shown (width 0 means hidden).
+      evaluate: volumeEvaluator(({ nv }) => ({
+        disabled: false,
+        isActive: nv.crosshairWidth > 0,
+      })),
     },
     {
       name: MEASUREMENT_EVALUATOR,
-      evaluate: ({ viewportId }) => {
-        const nv = getNiivueForViewport(viewportId)
-        if (!nv) return DISABLED
-        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
-        // Length is annotation-backed (toolBridge maps it to 'measureLine');
-        // nothing in this package ever sets DRAG_MODE.measurement.
-        return {
-          disabled: false,
-          isActive:
-            nv.annotationIsEnabled === true &&
-            nv.annotationTool === 'measureLine',
-        }
-      },
+      // Length is annotation-backed (toolBridge maps it to 'measureLine');
+      // nothing in this package ever sets DRAG_MODE.measurement.
+      evaluate: volumeEvaluator(({ nv }) => ({
+        disabled: false,
+        isActive:
+          nv.annotationIsEnabled === true &&
+          nv.annotationTool === 'measureLine',
+      })),
     },
   ]
 }

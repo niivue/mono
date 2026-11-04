@@ -80,7 +80,7 @@ Fired when the crosshair position changes (user click, keyboard navigation, or p
 | `vox` | `[number, number, number]` | Rounded voxel indices |
 | `frac` | `[number, number, number]` | Scene fraction [0..1] |
 | `xy` | `[number, number]` | Mouse position on canvas |
-| `axCorSag` | `number` | Slice orientation (0=sagittal, 1=coronal, 2=axial) |
+| `axCorSag` | `number` | Slice orientation (0=sagittal, 1=coronal, 2=axial); `SLICE_TYPE.RENDER` for a 3D render depth pick |
 | `values` | `NiiVueLocationValue[]` | Per-volume data (name, value, label) |
 | `string` | `string` | Human-readable location with values |
 
@@ -196,7 +196,7 @@ Fired after a mesh is removed — by `removeMesh(index)`, or once per mesh in re
 | `index` | `number` | Index in the meshes array |
 
 #### `documentLoaded`
-Fired after `loadDocument()` completes. No detail payload — the loaded state is reflected in the model.
+Fired after `loadDocument()` completes. No detail payload — the loaded state is reflected in the model. By then any half-drawn annotation, the annotation selection, and the `annotationUndo()` history from the previous scene have been cleared.
 
 ```js
 nv.addEventListener('documentLoaded', () => {
@@ -280,7 +280,7 @@ frame) without changing any display option.
 |-------|------|-------------|
 | `volumeIndex` | `number` | Index of the updated volume |
 | `volume` | `NVImage` | The volume (after update) |
-| `changes` | `VolumeUpdate` | The options that were applied |
+| `changes` | `VolumeUpdate` | The options that were applied; `calMin`/`calMax`, when present, are the resolved window (a NaN request reports the image default, a CT map's fill its window) |
 
 ```js
 nv.addEventListener('volumeUpdated', (e) => {
@@ -332,6 +332,8 @@ carry a `ChunkStreamDetail` — the same shape as the non-null return of
 | `total` | `number` | Bricks in the plan |
 | `staleDropped` | `number` | Cumulative queued uploads retired because the view moved on |
 | `predicted` | `number` | Cumulative speculative source reads |
+| `retiring` | `number` | Replaced bricks a `keepUntilCovered` swap still draws |
+| `retiringBytes` | `number` | GPU bytes those bricks hold |
 | `decoded` | `DecodedChunkStats` | Decoded-chunk (CPU byte) tier counters |
 
 #### `chunkStreamProgress`
@@ -452,7 +454,7 @@ nv.addEventListener('change', (e) => {
 })
 ```
 
-Properties that emit `change` include all controller setters: `azimuth`, `elevation`, `crosshairPos`, `sliceType`, `backgroundColor`, `isColorbarVisible`, `volumeIllumination`, `meshXRay`, `drawPenValue`, `primaryDragMode`, and all others. Some setters also emit a more specific event (e.g. `azimuthElevationChange`, `sliceTypeChange`).
+Properties that emit `change` include all controller setters: `azimuth`, `elevation`, `crosshairPos`, `sliceType`, `backgroundColor`, `isColorbarVisible`, `volumeIllumination`, `meshXRay`, `drawPenValue`, `primaryDragMode`, and all others. Some setters also emit a more specific event (e.g. `azimuthElevationChange`, `sliceTypeChange`). Setting `annotationTool` to its current value is a no-op: it emits no `change` and keeps the selection and any half-drawn shape.
 
 ---
 

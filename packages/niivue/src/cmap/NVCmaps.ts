@@ -124,7 +124,23 @@ type LutDef = {
   // Suggested display window, e.g. the Hounsfield range a CT colormap targets.
   min?: number
   max?: number
-}
+} & Pick<ColorMap, (typeof CINEMATIC_KEYS)[number]>
+
+// Optional cinematic transfer-function and label-material keys that
+// addColormap keeps (see ColorMap). Deep-copied so later edits to the
+// caller's object do not reach the registry.
+const CINEMATIC_KEYS = [
+  'E',
+  'S',
+  'gradient',
+  'gMax',
+  'shininess',
+  'labelBlend',
+  'lo',
+  'hi',
+  'surface',
+  'normalize',
+] as const
 let _lutIndex: Map<string, LutDef> | null = null
 
 function buildLutIndex(): Map<string, LutDef> {
@@ -183,6 +199,40 @@ function buildLutIndex(): Map<string, LutDef> {
 
 /** A colormap is a label table when it carries a `labels` array (even empty). */
 export type ColormapKind = 'continuous' | 'label'
+
+type HiddenLabelSource = {
+  colormapLabel?: LUT | null
+  hiddenLabels?: number[]
+}
+
+const _shownLabelLuts = new WeakMap<
+  HiddenLabelSource,
+  { source: LUT; key: string; shown: LUT }
+>()
+
+/**
+ * The label LUT the GPU draws: `colormapLabel` with each `hiddenLabels` value
+ * made transparent (alpha 0, RGB kept). Memoized per volume, so the result is
+ * a new object only when the LUT or the hidden set changes: the orient caches
+ * and `chunkedDisplayKey` key on its identity and re-upload exactly then.
+ */
+export function shownLabelLut(vol: HiddenLabelSource): LUT | null {
+  const source = vol.colormapLabel ?? null
+  const hidden = vol.hiddenLabels
+  if (!source || !hidden?.length) return source
+  const key = hidden.join(',')
+  const hit = _shownLabelLuts.get(vol)
+  if (hit?.source === source && hit.key === key) return hit.shown
+  const lut = source.lut.slice()
+  const min = source.min ?? 0
+  for (const value of hidden) {
+    const i = value - min
+    if (Number.isInteger(i) && i >= 0 && i * 4 < lut.length) lut[i * 4 + 3] = 0
+  }
+  const shown = { ...source, lut }
+  _shownLabelLuts.set(vol, { source, key, shown })
+  return shown
+}
 
 /**
  * Registered colormap names, sorted. Both kinds unless `kind` narrows the list.
@@ -360,7 +410,8 @@ export function customColormaps(): Record<string, ColorMap> {
  * LUT fills the full range instead of collapsing to the first N slots).
  *
  * A `labels` array (empty is fine) makes it a label table: `I` then defaults
- * to 0..n-1 and a single entry is allowed.
+ * to 0..n-1 and a single entry is allowed. `min`/`max` (min < max) and the
+ * cinematic keys (CINEMATIC_KEYS) are kept.
  *
  * @returns The canonical name under which the colormap was stored, so
  *   callers can emit events or round-trip the value without re-applying
@@ -371,7 +422,7 @@ export function customColormaps(): Record<string, ColorMap> {
 export function addColormap(
   name: string,
   cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
-    Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
+    Partial<Omit<ColorMap, 'R' | 'G' | 'B'>>,
 ): string {
   const R = cmap.R.map(Number)
   const G = cmap.G.map(Number)
@@ -421,6 +472,20 @@ export function addColormap(
   const map = buildLutIndex()
   const entry: LutDef = { R, G, B, A, I }
   if (Array.isArray(cmap.labels)) entry.labels = cmap.labels.slice()
+  // Same rule as bundled LUTs: min = max means "no window".
+  if (
+    typeof cmap.min === 'number' &&
+    typeof cmap.max === 'number' &&
+    cmap.min < cmap.max
+  ) {
+    entry.min = cmap.min
+    entry.max = cmap.max
+  }
+  for (const key of CINEMATIC_KEYS) {
+    if (cmap[key] !== undefined) {
+      Object.assign(entry, { [key]: structuredClone(cmap[key]) })
+    }
+  }
   map.set(canonical, entry)
   _revisions.set(canonical, (_revisions.get(canonical) ?? 0) + 1)
   return canonical
@@ -468,21 +533,45 @@ export function lookupColorMap(name: string): ColorMap | null {
 
 /**
  * CT colormaps are designed for one Hounsfield window (ct_kidneys is 114..302),
- * stored as min/max in the LUT. Setting such a colormap without calMin/calMax
- * applies that window; an explicit calMin or calMax always wins.
+ * stored as min/max in the LUT. Setting such a colormap fills whichever of
+ * calMin/calMax is not given from that window; a given bound always wins, and
+ * a non-finite one (NaN, or null from JSON) stays, meaning the image's own
+ * default (`resolveDefaultWindow`).
  */
 export function withColormapWindow<
   T extends { colormap?: string; calMin?: number; calMax?: number },
 >(opts: T): T {
   if (
     opts.colormap === undefined ||
-    opts.calMin !== undefined ||
-    opts.calMax !== undefined
+    (opts.calMin !== undefined && opts.calMax !== undefined)
   )
     return opts
-  const lut = lookupColorMap(opts.colormap)
-  if (lut?.min === undefined || lut.max === undefined) return opts
-  return { ...opts, calMin: lut.min, calMax: lut.max }
+  const window = colormapWindow(opts.colormap)
+  if (!window) return opts
+  return {
+    ...opts,
+    calMin: opts.calMin === undefined ? window[0] : opts.calMin,
+    calMax: opts.calMax === undefined ? window[1] : opts.calMax,
+  }
+}
+
+/** The display window a colormap brings (the `ct_*` maps), or null. */
+export function colormapWindow(name: string): [number, number] | null {
+  const lut = lookupColorMap(name)
+  return lut?.min === undefined || lut.max === undefined
+    ? null
+    : [lut.min, lut.max]
+}
+
+/** A non-finite (or null) calMin/calMax means the image's default (robust) window. */
+export function resolveDefaultWindow(vol: {
+  calMin: number
+  calMax: number
+  robustMin: number
+  robustMax: number
+}): void {
+  if (!Number.isFinite(vol.calMin)) vol.calMin = vol.robustMin
+  if (!Number.isFinite(vol.calMax)) vol.calMax = vol.robustMax
 }
 
 /**

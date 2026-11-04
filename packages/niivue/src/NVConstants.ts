@@ -49,6 +49,13 @@ export enum DRAG_MODE {
  * lighting (illumination, gradient opacity, silhouette) are ignored: a plane
  * has no surface to shade.
  *
+ * CINEMATIC is a progressive path tracer for the background volume: a 2D
+ * (intensity x gradient) transfer function baked from the volume's colormap,
+ * soft shadows and ambient occlusion, refined over `cinematic.maxFrames`
+ * frames. A label volume on the same grid supplies per-label materials;
+ * without one, standard overlays draw unlit. A chunked background falls back
+ * to COMPOSITE. See `VolumeRenderConfig.cinematic`.
+ *
  * Applies to the 3D render only; a 2D slice draws one plane, where the modes
  * are identical.
  *
@@ -65,19 +72,20 @@ export enum VOLUME_RENDER_MODE {
   COMPOSITE = 0,
   MAXIMUM = 1,
   SLICES = 2,
+  CINEMATIC = 3,
 }
 
 /**
  * How overlapping overlays combine their opacities before being drawn over the
  * background. MAX suits independent thresholded maps (overlap is no more
  * opaque than its parts); ADDITIVE suits fractions that sum to 1 (tissue or
- * probability maps), so a voxel split between two maps is fully opaque; OVER
- * stacks them like transparencies, 1 - (1-a1)(1-a2)...
+ * probability maps), so a voxel split between two maps is fully opaque; UNION
+ * stacks them like transparencies, 1 - (1-a1)(1-a2)..., in any order.
  */
 export enum OVERLAY_ALPHA_BLEND {
   MAX = 0,
   ADDITIVE = 1,
-  OVER = 2,
+  UNION = 2,
 }
 
 /**
@@ -85,8 +93,9 @@ export enum OVERLAY_ALPHA_BLEND {
  * opacity-weighted colours (red + green = yellow, may clip); MEAN takes their
  * opacity-weighted average (red + green = dark yellow, never clips); OVER
  * composites them in volume order, each overlay over the ones before it (an
- * opaque green over red is green). Pair OVER with OVERLAY_ALPHA_BLEND.OVER for
- * classic source-over stacking, e.g. segmentations. MAX keeps each colour
+ * opaque green over red is green). Pair OVER with OVERLAY_ALPHA_BLEND.UNION for
+ * classic source-over stacking, e.g. segmentations; other alpha modes change
+ * only the opacity. MAX keeps each colour
  * component's brightest opacity-weighted value (red + green = yellow, never
  * clips, and a faint overlay never dims a bright one); with
  * OVERLAY_ALPHA_BLEND.MAX it is the channel fusion of fluorescence viewers
@@ -114,7 +123,8 @@ export function normalizeVolumeRenderMode(v: number): VOLUME_RENDER_MODE {
   if (!Number.isFinite(v)) return VOLUME_RENDER_MODE.COMPOSITE
   const mode = Math.round(v)
   return mode === VOLUME_RENDER_MODE.MAXIMUM ||
-    mode === VOLUME_RENDER_MODE.SLICES
+    mode === VOLUME_RENDER_MODE.SLICES ||
+    mode === VOLUME_RENDER_MODE.CINEMATIC
     ? mode
     : VOLUME_RENDER_MODE.COMPOSITE
 }
@@ -363,6 +373,7 @@ export function nextSliceType(sliceType: number): number {
 
 import type {
   AnnotationConfig,
+  CinematicOptions,
   DrawConfig,
   InteractionConfig,
   LayoutConfig,
@@ -374,7 +385,7 @@ import type {
 // NVD document format version. Lives here (pure, importable everywhere) so the
 // legacy converter can stamp it without importing NVDocument's Vite module graph.
 // See NVDocument for the version history / migration notes.
-export const NVD_DOCUMENT_VERSION = 10
+export const NVD_DOCUMENT_VERSION = 11
 
 // Default scene values. The scene group is built with gl-matrix vec types in
 // NVModel, so this holds the plain-value defaults (used both to construct the
@@ -403,6 +414,7 @@ export const LAYOUT_DEFAULTS: LayoutConfig = {
   isEqualSize: false,
   isMosaicCentered: true,
   margin: 0,
+  inset: [0, 0, 0, 0],
   isRadiological: false,
   isSagittalNoseLeft: null,
   isSingleViewFillCanvas: true,
@@ -465,15 +477,106 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   layerGradientMode: LAYER_GRADIENT_MODE.CENTRAL,
   sampleRate: 2,
   isCubicInterpolation: false,
+  isOverlayOpacityCorrected: true,
   lodBrightnessCompensation: 0.08,
   lodOpacityCompensation: 0,
   gradientOpacity: 0,
   silhouette: 0,
+  cinematic: {
+    lightElevation: 20,
+    lightAzimuth: 0,
+    lightConeDeg: 4,
+    lightIntensity: 1.2,
+    ambient: 0.3,
+    shadow: 1,
+    ao: 0.6,
+    aoRadiusMM: 12,
+    aoConeDeg: 30,
+    volumetricDiffuse: 0.5,
+    exposure: 1,
+    stepVoxels: 0.5,
+    maxFrames: 256,
+    specular: 1,
+    labelMode: 'unlabeled',
+    isStochasticLighting: false,
+  },
+}
+
+type CinematicNumberKey = {
+  [K in keyof CinematicOptions]: CinematicOptions[K] extends number ? K : never
+}[keyof CinematicOptions]
+
+// Lower bound of every numeric setting; angles are unbounded. A zero step
+// never advances the ray.
+const CINEMATIC_MIN: Record<CinematicNumberKey, number> = {
+  lightElevation: -Infinity,
+  lightAzimuth: -Infinity,
+  lightConeDeg: 0,
+  lightIntensity: 0,
+  ambient: 0,
+  shadow: 0,
+  ao: 0,
+  aoRadiusMM: 0,
+  aoConeDeg: 0,
+  volumetricDiffuse: 0,
+  exposure: 0,
+  stepVoxels: 0.05,
+  maxFrames: 1,
+  specular: 0,
+}
+
+/** Cinematic settings with bad values replaced by their defaults or bounds. */
+export function clampCinematicOptions(
+  o: Partial<CinematicOptions>,
+): CinematicOptions {
+  const d = VOLUME_DEFAULTS.cinematic
+  const out = { ...d, ...o }
+  out.isStochasticLighting = out.isStochasticLighting === true
+  for (const k of Object.keys(CINEMATIC_MIN) as CinematicNumberKey[]) {
+    const v = Number(out[k])
+    out[k] = Number.isFinite(v) ? Math.max(v, CINEMATIC_MIN[k]) : d[k]
+  }
+  out.maxFrames = Math.round(out.maxFrames)
+  if (!['only', 'unlabeled', 'none'].includes(out.labelMode))
+    out.labelMode = d.labelMode
+  return out
+}
+
+/** `v` clamped to `range`; non-finite gives `fallback`. */
+export function clampFinite(
+  v: number,
+  range: readonly [number, number],
+  fallback: number,
+): number {
+  return Number.isFinite(v)
+    ? Math.min(Math.max(v, range[0]), range[1])
+    : fallback
+}
+
+/** A layout inset as four finite, non-negative CSS px; anything else side becomes 0. */
+export function normalizeInset(v: unknown): [number, number, number, number] {
+  const a = Array.isArray(v) ? v : []
+  const side = (i: number) =>
+    Number.isFinite(a[i]) && a[i] > 0 ? (a[i] as number) : 0
+  return [side(0), side(1), side(2), side(3)]
+}
+
+/** Ray-march samples per voxel, clamped to [1, 4]; non-finite gives the default. */
+export function clampSampleRate(v: number): number {
+  return Number.isFinite(v)
+    ? Math.min(4, Math.max(1, v))
+    : VOLUME_DEFAULTS.sampleRate
 }
 
 export const MESH_DEFAULTS: MeshRenderConfig = {
   xRay: 0,
   thicknessOn2D: Infinity,
+  crosscutWidth: 4,
+}
+
+/** Crosscut line width, at least 0; non-finite gives the default. */
+export function clampCrosscutWidth(v: number): number {
+  return Number.isFinite(v) ? Math.max(0, v) : MESH_DEFAULTS.crosscutWidth
 }
 
 export const DRAW_DEFAULTS: DrawConfig = {
@@ -499,6 +602,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   wheelZoomAnchor: 'crosshair',
   isViewModeHotKeyEnabled: false,
   isPanFollowingCrosshair: false,
+  isLegendToggleEnabled: false,
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

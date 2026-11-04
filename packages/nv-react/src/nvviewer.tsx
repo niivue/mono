@@ -3,6 +3,8 @@ import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef } from 'react'
 import { defaultViewerOptions } from './nvscene-controller'
+import type { OptionValues } from './nvviewer-options'
+import { applyLiveOptions, signature, splitOptions } from './nvviewer-options'
 import type { ImageFromUrlOptions } from './types'
 
 /** Tracked visual properties for a loaded volume */
@@ -55,8 +57,23 @@ export const NvViewer = ({
   onImageLoadedRef.current = onImageLoaded
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
+  const sliceTypeRef = useRef(sliceType)
+  sliceTypeRef.current = sliceType
 
-  // Initialize NiiVue instance
+  // Effects key on option values, not identity, so an inline object is free.
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+  const { live, construction } = splitOptions(NiiVue.prototype, options)
+  const liveRef = useRef(live)
+  liveRef.current = live
+  const constructionRef = useRef(construction)
+  constructionRef.current = construction
+  const liveKey = signature(live)
+  const constructionKey = signature(construction)
+  const appliedRef = useRef<OptionValues>({})
+
+  // Initialize NiiVue instance; recreated only when a construction-only option changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: constructionKey is the trigger
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -72,21 +89,24 @@ export const NvViewer = ({
 
     const mergedOptions: Partial<NiiVueOptions> = {
       ...defaultViewerOptions,
-      ...options,
+      ...optionsRef.current,
     }
 
     const nv = new NiiVue(mergedOptions)
+    appliedRef.current = liveRef.current
 
+    // A load still in flight when this viewer is replaced settles late; only
+    // the current viewer reports.
     nv.addEventListener('locationChange', (evt) => {
-      onLocationChangeRef.current?.(evt.detail)
+      if (nvRef.current === nv) onLocationChangeRef.current?.(evt.detail)
     })
     nv.addEventListener('volumeLoaded', (evt) => {
-      onImageLoadedRef.current?.(evt.detail.volume)
+      if (nvRef.current === nv) onImageLoadedRef.current?.(evt.detail.volume)
     })
 
     // attachToCanvas is async in the new API
     nv.attachToCanvas(canvas).then(() => {
-      nv.sliceType = sliceType
+      nv.sliceType = sliceTypeRef.current
     })
     nvRef.current = nv
 
@@ -104,7 +124,22 @@ export const NvViewer = ({
       nvRef.current = null
       loadedVolumesRef.current.clear()
     }
-  }, [sliceType, options]) // intentionally stable — options changes don't recreate the instance
+  }, [constructionKey])
+
+  // Apply live option changes to the existing instance
+  // biome-ignore lint/correctness/useExhaustiveDependencies: liveKey is the trigger
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv) return
+    applyLiveOptions(
+      nv,
+      appliedRef.current,
+      liveRef.current,
+      (err) => onErrorRef.current?.(err),
+      constructionRef.current,
+    )
+    appliedRef.current = liveRef.current
+  }, [liveKey])
 
   // Handle sliceType changes
   useEffect(() => {
@@ -114,7 +149,8 @@ export const NvViewer = ({
     }
   }, [sliceType])
 
-  // Handle volume diffing (add/remove/update visual props)
+  // Handle volume diffing (add/remove/update visual props); a recreated viewer reloads them
+  // biome-ignore lint/correctness/useExhaustiveDependencies: constructionKey marks a new instance
   useEffect(() => {
     const nv = nvRef.current
     if (!nv) return
@@ -133,7 +169,9 @@ export const NvViewer = ({
           (v: NVImage) => v.url === url || v.name === url,
         )
         if (volIdx >= 0) {
-          nv.removeVolume(volIdx)
+          nv.removeVolume(volIdx).catch((err: unknown) => {
+            onErrorRef.current?.(err)
+          })
         }
         currentVolumes.delete(url)
       }
@@ -146,6 +184,9 @@ export const NvViewer = ({
         const props = extractVisualProps(opts)
         currentVolumes.set(urlKey, props)
         nv.addVolume(opts).catch((err: unknown) => {
+          // A rebuilt viewer owns the map now; a late failure from the old
+          // one must not drop the new viewer's entry or report.
+          if (nvRef.current !== nv) return
           currentVolumes.delete(urlKey)
           onErrorRef.current?.(err)
         })
@@ -174,13 +215,16 @@ export const NvViewer = ({
         }
 
         if (Object.keys(updates).length > 0) {
-          nv.setVolume(volIdx, updates)
+          // A queued GPU update can reject (#467).
+          nv.setVolume(volIdx, updates).catch((err: unknown) => {
+            onErrorRef.current?.(err)
+          })
         }
 
         currentVolumes.set(urlKey, next)
       }
     }
-  }, [volumes])
+  }, [volumes, constructionKey])
 
   return (
     <div

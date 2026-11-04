@@ -29,6 +29,8 @@
  * `NVSlide` has always done this for tiles; this is the volume-path equivalent.
  */
 
+import type { ChunkPlan, VolumeChunkDesc } from './chunking'
+
 /**
  * How many frames a queued chunk may go unrequested before the drain drops it.
  *
@@ -88,6 +90,28 @@ interface ResidentChunk<TChunk> {
   admittedAt: number
 }
 
+/**
+ * A superseded chunk still drawn, from its own (older) plan, until the new
+ * chunks in `covers` are resident.
+ */
+export interface RetiringChunk<TChunk> {
+  chunk: TChunk
+  plan: ChunkPlan
+  index: number
+  bytes: number
+  /** New-plan indices overlapping this chunk's region. */
+  covers: number[]
+}
+
+/** Whether two chunks' data regions (common-grid voxels, no halo) overlap. */
+function chunksOverlap(a: VolumeChunkDesc, b: VolumeChunkDesc): boolean {
+  for (let i = 0; i < 3; i++) {
+    if (a.voxelOrigin[i] >= b.voxelOrigin[i] + b.voxelDims[i]) return false
+    if (b.voxelOrigin[i] >= a.voxelOrigin[i] + a.voxelDims[i]) return false
+  }
+  return true
+}
+
 export class ChunkResidencyManager<TChunk> {
   /** Total chunks in the volume's plan, resident or not. */
   private _chunkCount: number
@@ -103,6 +127,12 @@ export class ChunkResidencyManager<TChunk> {
   private readonly _uploadQueue = new Map<number, number>()
   private readonly _inFlightUploads = new Set<number>()
   private _residentBytes = 0
+  private _retiring: RetiringChunk<TChunk>[] = []
+  private _retiringBytes = 0
+  /** New-plan indices hidden while a retiring chunk still covers them. */
+  private _covered = new Set<number>()
+  /** Whether a working set has been requested since the last `remap`. */
+  private _requestedSinceRemap = false
   private _budgetBytes: number
   private _frame = 0
   private _generation = 0
@@ -128,18 +158,51 @@ export class ChunkResidencyManager<TChunk> {
    * index of the content-identical chunk (see `matchChunksByContent`): those
    * resident chunks are re-keyed, keeping their GPU handle, byte total, and
    * fade-in stamp (so unchanged bricks don't re-stream or re-fade). Resident
-   * chunks absent from the map are evicted (destroyed). The pending-upload
-   * queue is cleared — the next frame's working set re-requests what it needs.
+   * chunks absent from the map are evicted (destroyed), or with `retain` (the
+   * plans being swapped) kept drawable as retiring chunks until every new
+   * chunk over their region is resident: make-before-break. Without `retain`,
+   * earlier retiring chunks go too.
+   * The pending-upload queue is cleared — the next frame's working set
+   * re-requests what it needs.
    */
-  remap(oldToNew: ReadonlyMap<number, number>, newChunkCount: number): void {
+  remap(
+    oldToNew: ReadonlyMap<number, number>,
+    newChunkCount: number,
+    retain?: { oldPlan: ChunkPlan; newPlan: ChunkPlan },
+  ): void {
     const next = new Map<number, ResidentChunk<TChunk>>()
+    if (!retain) this._dropRetiring(this._retiring, false)
+    // A brick still hidden under an earlier retiree never showed; retiring it
+    // too would draw that region twice.
+    const hidden = this._covered
     for (const [oldIndex, r] of this._resident) {
       const newIndex = oldToNew.get(oldIndex)
       if (newIndex === undefined || next.has(newIndex)) {
-        this._hooks.destroy(r.chunk)
         this._residentBytes -= r.bytes
+        if (retain && !hidden.has(oldIndex)) {
+          this._retiring.push({
+            chunk: r.chunk,
+            plan: retain.oldPlan,
+            index: oldIndex,
+            bytes: r.bytes,
+            covers: [],
+          })
+          this._retiringBytes += r.bytes
+        } else {
+          this._hooks.destroy(r.chunk)
+        }
       } else {
         next.set(newIndex, r)
+      }
+    }
+    if (retain) {
+      const fresh = retain.newPlan.chunks
+      for (const t of this._retiring) {
+        const desc = t.plan.chunks[t.index]
+        t.covers = []
+        fresh.forEach((d, i) => {
+          if (chunksOverlap(desc, d)) t.covers.push(i)
+        })
       }
     }
     this._resident.clear()
@@ -152,6 +215,92 @@ export class ChunkResidencyManager<TChunk> {
     // index. The pump captures `generation` before its await and discards a
     // result whose generation no longer matches (see `discardUpload`).
     this._generation++
+    this._requestedSinceRemap = false
+    this._sweepRetiring()
+    this._evictToFit(-1)
+  }
+
+  /**
+   * Chunks a make-before-break `remap` kept drawable. The backend draws each in
+   * place of the new chunks in its `covers` (see {@link isCoveredByRetiring}).
+   */
+  get retiringChunks(): readonly RetiringChunk<TChunk>[] {
+    return this._retiring
+  }
+
+  /** GPU bytes held by retiring chunks, on top of `residentBytes`. */
+  get retiringBytes(): number {
+    return this._retiringBytes
+  }
+
+  /**
+   * Whether a new-plan chunk is still hidden behind a retiring chunk: drawing
+   * both would show that region twice.
+   */
+  isCoveredByRetiring(chunkIndex: number): boolean {
+    return this._covered.has(chunkIndex)
+  }
+
+  /**
+   * Retire chunks whose covers are all resident or, with `unwanted`, no longer
+   * on their way (the working set stopped asking); refresh `_covered`.
+   */
+  private _sweepRetiring(unwanted = false): void {
+    const settled = (i: number): boolean =>
+      this._resident.has(i) ||
+      (unwanted && !this._uploadQueue.has(i) && !this._inFlightUploads.has(i))
+    // Retire overlap-connected groups together: with non-nested grids a new
+    // brick can straddle two retirees, and dropping one while the other still
+    // hides that brick would leave the first one's region undrawn.
+    const done = this._retiringGroups()
+      .filter((g) => g.every((t) => t.covers.every(settled)))
+      .flat()
+    if (done.length > 0) this._dropRetiring(done)
+    else this._covered = new Set(this._retiring.flatMap((t) => t.covers))
+  }
+
+  /** Retiring chunks partitioned into groups linked by a shared cover. */
+  private _retiringGroups(): RetiringChunk<TChunk>[][] {
+    const parent = this._retiring.map((_, k) => k)
+    const find = (k: number): number => {
+      while (parent[k] !== k) k = parent[k]
+      return k
+    }
+    const owner = new Map<number, number>()
+    for (const [k, t] of this._retiring.entries()) {
+      for (const i of t.covers) {
+        const o = owner.get(i)
+        if (o === undefined) owner.set(i, k)
+        else parent[find(o)] = find(k)
+      }
+    }
+    const groups = new Map<number, RetiringChunk<TChunk>[]>()
+    for (const [k, t] of this._retiring.entries()) {
+      const root = find(k)
+      const g = groups.get(root)
+      if (g) g.push(t)
+      else groups.set(root, [t])
+    }
+    return [...groups.values()]
+  }
+
+  private _dropRetiring(
+    list: readonly RetiringChunk<TChunk>[],
+    reveal = true,
+  ): void {
+    const gone = new Set(list)
+    for (const t of gone) {
+      // The bricks a retiring one hid replace it outright: a fade-in from here
+      // would be over the coarse floor, which is the drop this policy avoids.
+      for (const i of reveal ? t.covers : []) {
+        const r = this._resident.get(i)
+        if (r) r.admittedAt = Number.NEGATIVE_INFINITY
+      }
+      this._hooks.destroy(t.chunk)
+      this._retiringBytes -= t.bytes
+    }
+    this._retiring = this._retiring.filter((t) => !gone.has(t))
+    this._covered = new Set(this._retiring.flatMap((t) => t.covers))
   }
 
   /**
@@ -173,6 +322,11 @@ export class ChunkResidencyManager<TChunk> {
    * staleness itself, so correctness does not depend on this running.
    */
   beginFrame(): void {
+    // A cover last frame's working set did not ask for (off-screen, clipped,
+    // past the brick cap) will never stream, so it must not keep a retiree.
+    if (this._requestedSinceRemap && this._retiring.length > 0) {
+      this._sweepRetiring(true)
+    }
     this._frame++
     for (const [chunkIndex, frame] of this._uploadQueue) {
       if (this._isStale(frame)) this._dropQueued(chunkIndex)
@@ -215,6 +369,7 @@ export class ChunkResidencyManager<TChunk> {
     this._residentBytes += bytes
     this._inFlightUploads.delete(chunkIndex)
     this._removeQueuedUpload(chunkIndex)
+    if (this._covered.has(chunkIndex)) this._sweepRetiring()
     this._evictToFit(chunkIndex)
     this._hooks.onAdmit?.(chunkIndex)
   }
@@ -289,6 +444,7 @@ export class ChunkResidencyManager<TChunk> {
    * Drained by the backend via `takePendingUploads`.
    */
   requestUpload(chunkIndex: number): void {
+    this._requestedSinceRemap = true
     const resident = this._resident.get(chunkIndex)
     if (resident) {
       resident.lastFrame = this._frame
@@ -446,6 +602,23 @@ export class ChunkResidencyManager<TChunk> {
    * exceeds the budget, and rendering over budget beats punching a hole.
    */
   private _evictToFit(keepIndex: number): void {
+    // Retiring chunks are a transition luxury: past the budget they go, a
+    // whole overlap group at a time, nearest-done first, only until it fits.
+    if (this._residentBytes + this._retiringBytes > this._budgetBytes) {
+      const missing = (g: RetiringChunk<TChunk>[]): number =>
+        g.reduce(
+          (n, t) => n + t.covers.filter((i) => !this._resident.has(i)).length,
+          0,
+        )
+      const groups = this._retiringGroups().sort(
+        (a, b) => missing(a) - missing(b),
+      )
+      for (const g of groups) {
+        if (this._residentBytes + this._retiringBytes <= this._budgetBytes)
+          break
+        this._dropRetiring(g)
+      }
+    }
     if (this._residentBytes <= this._budgetBytes) return
     const candidates = [...this._resident.entries()]
       .filter(
@@ -463,6 +636,7 @@ export class ChunkResidencyManager<TChunk> {
 
   /** Destroy every resident chunk's GPU resources and reset all state. */
   destroy(): void {
+    this._dropRetiring(this._retiring, false)
     for (const r of this._resident.values()) this._hooks.destroy(r.chunk)
     this._resident.clear()
     this._residentBytes = 0

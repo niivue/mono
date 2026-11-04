@@ -1,4 +1,5 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
+import * as Annotation from '@/annotation'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
 import { getAnnotationSelection } from '@/annotation/selection'
@@ -21,6 +22,7 @@ import {
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
+  resetDragState,
 } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
 import type { AddMeasurementOptions } from '@/control/measurements'
@@ -35,6 +37,7 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import {
   type SettingsSnapshot,
   settingsChangeEvents,
@@ -58,15 +61,22 @@ import { type LogLevel, log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
+import { clearMeshClusters } from '@/mesh/triangleClusters'
 import type { WriteOptions } from '@/mesh/writers'
 import {
+  clampCinematicOptions,
+  clampCrosscutWidth,
+  clampFinite,
+  clampSampleRate,
   DRAG_MODE,
   GAMMA_RANGE,
   LOD_BRIGHTNESS_RANGE,
   LOD_OPACITY_RANGE,
   lodGammaExponent,
   lodOpacityScale,
+  MESH_DEFAULTS,
   NUM_CLIP_PLANE,
+  normalizeInset,
   normalizeVolumeRenderMode,
   type OVERLAY_ALPHA_BLEND,
   type OVERLAY_COLOR_BLEND,
@@ -74,6 +84,7 @@ import {
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
+  VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
@@ -97,6 +108,7 @@ import type {
   AnnotationTool,
   BackendType,
   CanvasViewport,
+  CinematicOptions,
   ColorMap,
   CompletedMeasurement,
   CustomLayoutTile,
@@ -122,6 +134,7 @@ import type {
   NVSignal as NVSignalType,
   NVTractOptions,
   OrientationTextPosition,
+  PlaneOutline,
   SaveVolumeOptions,
   SignalAnnotation,
   SignalSidecar,
@@ -136,9 +149,13 @@ import { niftiBufferIsSignal } from '@/signal/detect'
 import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
-import { fetchSidecar } from '@/signal/sidecar'
+import { fetchSidecar, parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import { NVSlide } from '@/slide/NVSlide'
-import { SlideDrawing } from '@/slide/slideDrawing'
+import {
+  isSlideDrawingSizeValid,
+  SlideDrawing,
+  slideDrawingSize,
+} from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
@@ -167,6 +184,7 @@ import {
 import type { CanvasTilePoint, SliceTile } from '@/view/NVSliceLayout'
 import {
   cloneSliceTile,
+  insetRect,
   projectMMToNearestTile,
   projectMMToRenderTile,
   screenSlicePick,
@@ -215,6 +233,7 @@ import {
   reorientDrawingToRAS,
   volumeTR,
 } from '@/volume/utils'
+import { version } from '../package.json'
 
 /** MeshUpdate options read only while drawing: setMesh just redraws. */
 const MESH_REDRAW_OPTIONS = new Set(['name', 'opacity', 'visible'])
@@ -244,7 +263,11 @@ type ViewBackend = {
   updateMeshVertices: (mesh: NVMeshType) => boolean
   updateAffineOverlays?: () => Promise<boolean>
   setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
-  swapChunkedVolumePlan?: (vol: NVImage, plan: ChunkPlan) => Promise<void>
+  swapChunkedVolumePlan?: (
+    vol: NVImage,
+    plan: ChunkPlan,
+    keepUntilCovered?: boolean,
+  ) => Promise<void>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -270,6 +293,7 @@ type ViewBackend = {
    * `plan.chunks`), surfaced so `lodCompensation()` can report it.
    */
   coarseFloorDims: () => [number, number, number] | null
+  cinematicRenderer: { frameMs: number | null }
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
   onContextLost: (() => void) | null
   onChunkStream:
@@ -372,6 +396,11 @@ function sameRange(
   return a[0] === b[0] && a[1] === b[1]
 }
 
+/** A caller queued behind the GPU update lock. */
+type UpdateWaiter = { resolve: () => void; reject: (err: unknown) => void }
+/** Settles a follow-up's callers once its own pass is done (see `_runFollowUp`). */
+type SettlePass = (failed: boolean, err?: unknown) => void
+
 export default class NiiVue extends EventTarget {
   activeClipPlaneIndex: number
   currentClipPlaneIndex: number
@@ -457,7 +486,13 @@ export default class NiiVue extends EventTarget {
   /** Resolves when the update holding `_updating` releases it. */
   private _updateIdle: Promise<void> = Promise.resolve()
   private _resolveUpdateIdle: (() => void) | null = null
+  /** A taken-over lock token mapped to the token of the rebuild that took it. */
+  private _takenOverBy = new WeakMap<object, object>()
   private _pendingUpdate = false
+  /** Callers queued behind `_updating`, settled by the follow-up carrying their change. */
+  private _pendingWaiters: UpdateWaiter[] = []
+  /** Callers whose follow-up is running (see `_rebuildViewResources`). */
+  private _servingWaiters = new Map<UpdateWaiter, object>()
   /** A full (not affine-only) update is queued behind `_updating`. */
   private _pendingFull = false
   /** The mesh rebuild covering every update queued behind `_updating`. */
@@ -592,6 +627,9 @@ export default class NiiVue extends EventTarget {
     start: AnnotationPoint
     end: AnnotationPoint
     width?: number
+    // Kept as drawn: an erased shape's polygons differ from its bounds.
+    polygons: VectorAnnotation['polygons']
+    isErased: boolean
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   // Sync/broadcast state
@@ -661,9 +699,11 @@ export default class NiiVue extends EventTarget {
     this._distributionBackend = distributionBackend
     // Instances
     this.model = new NVModel(options)
-    // Auto-apply first matcap URL if matcaps provided
-    const firstUrl = defaultMatcap(this.opts.matcaps)
-    if (firstUrl) this.model.volume.matcap = firstUrl
+    // An explicit volumeMatcap (a name or URL) wins over the first matcap.
+    this.model.volume.matcap =
+      options.volumeMatcap === undefined
+        ? defaultMatcap(this.opts.matcaps)
+        : matcapFromName(options.volumeMatcap, this.opts.matcaps)
     this.resizeObserver = null
   }
 
@@ -764,6 +804,19 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Crosshair position as a **scene fraction**, not millimetres: each
+   * component is in [0,1] across the scene bounding box (the union of all
+   * loaded volume and mesh extents, in RAS world space), so `[0.5, 0.5, 0.5]`
+   * is the scene centre. Setting it moves the crosshair as given: no voxel
+   * snapping and no clamping. It still emits `change` and `locationChange` and
+   * redraws. The getter returns the live vector; assign a new value rather than
+   * mutating it.
+   *
+   * To work in world millimetres use {@link setCrosshairPos} /
+   * {@link getCrosshairPos}; for voxel indices use {@link vox2frac}.
+   * @example nv1.crosshairPos = [0.5, 0.5, 0.5] // scene centre
+   */
   get crosshairPos(): vec3 {
     return this.model.scene.crosshairPos
   }
@@ -900,9 +953,9 @@ export default class NiiVue extends EventTarget {
    * {@link getScreenTiles} use. This is the exact conversion the built-in
    * pointer handlers apply, so a caller never has to reproduce it:
    * `(client - canvas rect origin) * dpr`, where `dpr` is
-   * `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
-   * then, for an instance sharing a canvas via `bounds`, minus the origin of
-   * this instance's post-viewport pixel rect.
+   * {@link effectiveDevicePixelRatio}; then, for an instance sharing a
+   * canvas via `bounds`, minus the origin of this instance's post-viewport
+   * pixel rect.
    *
    * Returns null when the instance has no canvas or, for a `bounds` instance,
    * when the point is outside this instance's rect (a sibling's area) or the
@@ -922,8 +975,8 @@ export default class NiiVue extends EventTarget {
    * the top-left, y down. These are NOT CSS pixels, and for an instance
    * sharing one canvas via `bounds` they are bounds-local (the instance's own
    * pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
-   * event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
-   * the bounds offset exactly as the built-in pointer handlers do.
+   * event; it applies {@link effectiveDevicePixelRatio} and the bounds
+   * offset exactly as the built-in pointer handlers do.
    *
    * Returns the tile index, its slice type, whether it is a 3D render tile,
    * and the position normalized to the tile rect (half-open [0,1), y down);
@@ -969,7 +1022,7 @@ export default class NiiVue extends EventTarget {
    * those).
    *
    * The returned x/y are canvas backing-store pixels (see {@link hitTest});
-   * divide by the effective devicePixelRatio to position CSS-pixel-sized
+   * divide by {@link effectiveDevicePixelRatio} to position CSS-pixel-sized
    * overlay elements. The point may project outside the winning tile's rect
    * when panned/zoomed out of view — clip against the tile's
    * `leftTopWidthHeight` if needed. Returns null before the first render or
@@ -1008,9 +1061,7 @@ export default class NiiVue extends EventTarget {
     return this.model.scene.gamma
   }
   set gamma(v: number) {
-    this.model.scene.gamma = Number.isFinite(v)
-      ? Math.min(Math.max(v, GAMMA_RANGE[0]), GAMMA_RANGE[1])
-      : 1
+    this.model.scene.gamma = clampFinite(v, GAMMA_RANGE, 1)
     this.emit('change', { property: 'gamma', value: this.model.scene.gamma })
     this.drawScene()
   }
@@ -1132,6 +1183,26 @@ export default class NiiVue extends EventTarget {
   set tileMargin(v: number) {
     this.model.layout.margin = v
     this.emit('change', { property: 'tileMargin', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Canvas kept clear of tiles, colorbar, legend and graph: [left, top, right,
+   * bottom] in CSS px. Overlay renderers (e.g. @niivue/uikit controls) still
+   * draw on the whole canvas, so they can own the reserved strip. A missing,
+   * non-finite or negative side is stored as 0.
+   * @default `[0, 0, 0, 0]`
+   * @example nv1.layoutInset = [340, 0, 0, 0] // a 340 px panel on the left
+   */
+  get layoutInset(): [number, number, number, number] {
+    // A copy: an edit in place would change the layout with no redraw.
+    const [l, t, r, b] = this.model.layout.inset
+    return [l, t, r, b]
+  }
+  set layoutInset(v: [number, number, number, number]) {
+    this.model.layout.inset = normalizeInset(v)
+    this.emit('change', { property: 'layoutInset', value: this.layoutInset })
+    if (this.opts.instances) this.updateTilesFromInstances()
     this.drawScene()
   }
 
@@ -1396,6 +1467,28 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Rectangles outlined in world mm, e.g. an NVSlide pane's field of view:
+   * a frame in the 3D render; on a 2D slice, the whole rectangle where it lies
+   * in the slice, the crossing segment where the slice cuts it, nothing where
+   * it misses. An outline needs four finite corners; one without is dropped.
+   */
+  get planeOutlines(): PlaneOutline[] {
+    return this.model.planeOutlines
+  }
+  set planeOutlines(v: PlaneOutline[]) {
+    this.model.planeOutlines = v.filter(
+      (o) =>
+        o.cornersMM.length === 4 &&
+        o.cornersMM.every((c) => c.length === 3 && c.every(Number.isFinite)),
+    )
+    this.emit('change', {
+      property: 'planeOutlines',
+      value: this.model.planeOutlines,
+    })
+    this.drawScene()
+  }
+
   get crosshairColorPerAxis(): number[][] {
     return this.model.ui.crosshairColorPerAxis
   }
@@ -1444,7 +1537,8 @@ export default class NiiVue extends EventTarget {
   set fontScale(v: number) {
     this.model.ui.fontScale = v
     this.emit('change', { property: 'fontScale', value: v })
-    this.drawScene()
+    // The views size their font in resize(); a redraw alone keeps the old size (#377).
+    this.resize()
   }
 
   get fontMinSize(): number {
@@ -1453,7 +1547,7 @@ export default class NiiVue extends EventTarget {
   set fontMinSize(v: number) {
     this.model.ui.fontMinSize = v
     this.emit('change', { property: 'fontMinSize', value: v })
-    this.drawScene()
+    this.resize()
   }
 
   get selectionBoxColor(): number[] {
@@ -1607,11 +1701,14 @@ export default class NiiVue extends EventTarget {
   /**
    * What the 3D render tile draws: `VOLUME_RENDER_MODE.COMPOSITE` (default, the
    * OVER ray-march), `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity
-   * projection), or `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
+   * projection), `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
    * crosshair planes, composited front to back, with overlays sampled on them
-   * as the 2D tiles do). 2D slices draw a single plane and are unaffected.
+   * as the 2D tiles do), or `VOLUME_RENDER_MODE.CINEMATIC` (progressive path
+   * tracing of the background volume with either one label volume or standard
+   * overlays, see
+   * {@link volumeCinematic}). 2D slices draw a single plane and are unaffected.
    *
-   * Only those three values are stored: a fractional value rounds to the
+   * Only those four values are stored: a fractional value rounds to the
    * nearest mode and anything else falls back to COMPOSITE (see
    * {@link normalizeVolumeRenderMode}), because the shaders test the mode by
    * proximity while the CPU tests it exactly, and a value in between would have
@@ -1646,6 +1743,19 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /** See VolumeRenderConfig.isOverlayOpacityCorrected. */
+  get volumeIsOverlayOpacityCorrected(): boolean {
+    return this.model.volume.isOverlayOpacityCorrected
+  }
+  set volumeIsOverlayOpacityCorrected(v: boolean) {
+    this.model.volume.isOverlayOpacityCorrected = v
+    this.emit('change', {
+      property: 'volumeIsOverlayOpacityCorrected',
+      value: v,
+    })
+    this.drawScene()
+  }
+
   /**
    * Samples per voxel along the ray in the 3D render. Higher values converge the
    * ray integral at a proportional fragment cost. Clamped to [1, 4]. This does
@@ -1656,7 +1766,7 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.sampleRate
   }
   set volumeSampleRate(v: number) {
-    this.model.volume.sampleRate = Math.min(4, Math.max(1, v))
+    this.model.volume.sampleRate = clampSampleRate(v)
     this.emit('change', {
       property: 'volumeSampleRate',
       value: this.model.volume.sampleRate,
@@ -1733,9 +1843,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.lodBrightnessCompensation
   }
   set volumeLodBrightnessCompensation(v: number) {
-    this.model.volume.lodBrightnessCompensation = Number.isFinite(v)
-      ? Math.min(Math.max(v, LOD_BRIGHTNESS_RANGE[0]), LOD_BRIGHTNESS_RANGE[1])
-      : VOLUME_DEFAULTS.lodBrightnessCompensation
+    this.model.volume.lodBrightnessCompensation = clampFinite(
+      v,
+      LOD_BRIGHTNESS_RANGE,
+      VOLUME_DEFAULTS.lodBrightnessCompensation,
+    )
     this._warnIfLodCompensationInert(
       'volumeLodBrightnessCompensation',
       this.model.volume.lodBrightnessCompensation,
@@ -1772,9 +1884,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.lodOpacityCompensation
   }
   set volumeLodOpacityCompensation(v: number) {
-    this.model.volume.lodOpacityCompensation = Number.isFinite(v)
-      ? Math.min(Math.max(v, LOD_OPACITY_RANGE[0]), LOD_OPACITY_RANGE[1])
-      : VOLUME_DEFAULTS.lodOpacityCompensation
+    this.model.volume.lodOpacityCompensation = clampFinite(
+      v,
+      LOD_OPACITY_RANGE,
+      VOLUME_DEFAULTS.lodOpacityCompensation,
+    )
     this._warnIfLodCompensationInert(
       'volumeLodOpacityCompensation',
       this.model.volume.lodOpacityCompensation,
@@ -1804,9 +1918,11 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.gradientOpacity
   }
   set volumeGradientOpacity(v: number) {
-    this.model.volume.gradientOpacity = Number.isFinite(v)
-      ? Math.min(Math.max(v, 0), 1)
-      : VOLUME_DEFAULTS.gradientOpacity
+    this.model.volume.gradientOpacity = clampFinite(
+      v,
+      [0, 1],
+      VOLUME_DEFAULTS.gradientOpacity,
+    )
     this.emit('change', {
       property: 'volumeGradientOpacity',
       value: this.model.volume.gradientOpacity,
@@ -1828,14 +1944,49 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.silhouette
   }
   set volumeSilhouette(v: number) {
-    this.model.volume.silhouette = Number.isFinite(v)
-      ? Math.min(Math.max(v, 0), 1)
-      : VOLUME_DEFAULTS.silhouette
+    this.model.volume.silhouette = clampFinite(
+      v,
+      [0, 1],
+      VOLUME_DEFAULTS.silhouette,
+    )
     this.emit('change', {
       property: 'volumeSilhouette',
       value: this.model.volume.silhouette,
     })
     this.drawScene()
+  }
+
+  /**
+   * Settings of `VOLUME_RENDER_MODE.CINEMATIC` (light, shadows, ambient
+   * occlusion, exposure, step, frame count, label mode). The setter merges a
+   * partial object over the current settings and restarts refinement.
+   */
+  get volumeCinematic(): CinematicOptions {
+    return this.model.volume.cinematic
+  }
+  set volumeCinematic(v: Partial<CinematicOptions>) {
+    // Replace, never mutate: the initial object may be shared with a document.
+    this.model.volume.cinematic = clampCinematicOptions({
+      ...this.model.volume.cinematic,
+      ...v,
+    })
+    this.emit('change', {
+      property: 'volumeCinematic',
+      value: this.model.volume.cinematic,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Mean GPU time (ms) of a cinematic refinement frame, over the first 10
+   * frames after the last restart. Null until measured, outside CINEMATIC, or
+   * when the GPU offers no timer (WebGPU 'timestamp-query',
+   * EXT_disjoint_timer_query_webgl2).
+   */
+  get cinematicFrameMs(): number | null {
+    if (this.model.volume.renderMode !== VOLUME_RENDER_MODE.CINEMATIC)
+      return null
+    return this.view?.cinematicRenderer.frameMs ?? null
   }
 
   get volumeOutlineWidth(): number {
@@ -1862,7 +2013,10 @@ export default class NiiVue extends EventTarget {
   set volumeIsBackgroundMasking(v: boolean) {
     this.model.volume.isBackgroundMasking = v
     this.emit('change', { property: 'volumeIsBackgroundMasking', value: v })
-    this.drawScene()
+    // The mask is applied while the overlays are baked, so rebuild them.
+    this._updateGLChanged().catch((e) =>
+      log.error('volumeIsBackgroundMasking failed', e),
+    )
   }
 
   get volumeIsAlphaClipDark(): boolean {
@@ -1940,7 +2094,8 @@ export default class NiiVue extends EventTarget {
   /**
    * How overlapping overlays combine opacity: `OVERLAY_ALPHA_BLEND.MAX`
    * (default), `ADDITIVE` (for maps whose values sum to 1, e.g. tissue
-   * fractions), or `OVER`. Only matters with two or more overlays.
+   * fractions), or `UNION` (1 - prod(1 - a)). Only matters with two or more
+   * overlays.
    */
   get volumeOverlayAlphaBlend(): OVERLAY_ALPHA_BLEND {
     return this.model.volume.overlayAlphaBlend
@@ -1978,7 +2133,8 @@ export default class NiiVue extends EventTarget {
    * How overlapping overlays combine colour: `OVERLAY_COLOR_BLEND.ADDITIVE`
    * (default), `MEAN`, `OVER` (later overlays cover earlier ones), or `MAX`
    * (each component's brightest weighted value, as fluorescence viewers fuse
-   * channels). Only matters with two or more overlays.
+   * channels). Only matters with two or more overlays. `OVER` sets the colour
+   * only: pair it with alpha `UNION` for source-over opacity.
    */
   get volumeOverlayColorBlend(): OVERLAY_COLOR_BLEND {
     return this.model.volume.overlayColorBlend
@@ -2004,9 +2160,12 @@ export default class NiiVue extends EventTarget {
     return this.model.volume.matcap
   }
   set volumeMatcap(v: string) {
-    this.model.volume.matcap = v
-    this.emit('change', { property: 'volumeMatcap', value: v })
-    this.drawScene()
+    // A matcap name resolves to its URL, as in the constructor and documents.
+    const url = matcapFromName(v, this.opts.matcaps)
+    this.model.volume.matcap = url
+    this.emit('change', { property: 'volumeMatcap', value: url })
+    // The renderer loads the matcap texture in a GPU update, not on draw.
+    this._updateGLChanged().catch((e) => log.error('volumeMatcap failed', e))
   }
 
   get volumePaqdUniforms(): [number, number, number, number] {
@@ -2024,12 +2183,17 @@ export default class NiiVue extends EventTarget {
     return this.model.mesh.xRay
   }
   set meshXRay(v: number) {
-    const clamped = Math.max(0, Math.min(1, v))
+    const clamped = clampFinite(v, [0, 1], MESH_DEFAULTS.xRay)
     this.model.mesh.xRay = clamped
     this.emit('change', { property: 'meshXRay', value: clamped })
     this.drawScene()
   }
 
+  /**
+   * On 2D slices, draw only mesh within this distance (mm, either side) of the displayed
+   * voxel plane, over the slice. 0 or Infinity (the default) draws all mesh
+   * in front of the slice.
+   */
   get meshThicknessOn2D(): number {
     return this.model.mesh.thicknessOn2D
   }
@@ -2037,6 +2201,17 @@ export default class NiiVue extends EventTarget {
     const val = v <= 0 ? Infinity : v
     this.model.mesh.thicknessOn2D = val
     this.emit('change', { property: 'meshThicknessOn2D', value: val })
+    this.drawScene()
+  }
+
+  /** Line width, in device pixels, of the `crosscut` and `crosscut2` mesh shaders. */
+  get meshCrosscutWidth(): number {
+    return this.model.mesh.crosscutWidth
+  }
+  set meshCrosscutWidth(v: number) {
+    const val = clampCrosscutWidth(v)
+    this.model.mesh.crosscutWidth = val
+    this.emit('change', { property: 'meshCrosscutWidth', value: val })
     this.drawScene()
   }
 
@@ -2260,6 +2435,20 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'isViewModeHotKeyEnabled', value: v })
   }
 
+  /**
+   * Opt-in: clicking a volume legend entry's colour box hides or shows that
+   * label (the volume's `hiddenLabels`); clicking its name still moves the
+   * crosshair to the label. Default false: every click moves the crosshair.
+   * Mesh and connectome legend entries do not toggle.
+   */
+  get isLegendToggleEnabled(): boolean {
+    return this.model.interaction.isLegendToggleEnabled
+  }
+  set isLegendToggleEnabled(v: boolean) {
+    this.model.interaction.isLegendToggleEnabled = v
+    this.emit('change', { property: 'isLegendToggleEnabled', value: v })
+  }
+
   get isPanFollowingCrosshair(): boolean {
     return this.model.interaction.isPanFollowingCrosshair
   }
@@ -2294,14 +2483,7 @@ export default class NiiVue extends EventTarget {
     this.model.annotation.isEnabled = v
     // Leaving annotation mode abandons any half-drawn multi-click contour so its
     // preview does not linger.
-    if (!v) {
-      this._annotationPolyPoints = null
-      this._bidirectionalLong = null
-      this.model._annotationPreview = null
-      this._livewireSlice = null
-      this._livewireField = null
-      this._livewireSeed = null
-    }
+    if (!v) this._abandonAnnotationInProgress()
     this.emit('change', { property: 'annotationIsEnabled', value: v })
     this.drawScene()
   }
@@ -2369,19 +2551,67 @@ export default class NiiVue extends EventTarget {
     return this.model.annotation.tool
   }
   set annotationTool(v: AnnotationTool) {
+    // Re-selecting the current tool (e.g. an app mirroring its toolbar) must
+    // not wipe a half-drawn contour (#112).
+    if (v === this.model.annotation.tool) return
     this.model.annotation.tool = v
     this.model._annotationSelection = null
     // Switching tools abandons any half-drawn multi-click / bidirectional shape.
-    if (this._annotationPolyPoints || this._bidirectionalLong) {
-      this._annotationPolyPoints = null
-      this._bidirectionalLong = null
-      this.model._annotationPreview = null
-      this._livewireSlice = null
-      this._livewireField = null
-      this._livewireSeed = null
-    }
+    if (this._annotationPolyPoints || this._bidirectionalLong)
+      this._abandonAnnotationInProgress()
     this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()
+  }
+
+  /** Drop a half-drawn multi-click contour or bidirectional measurement. */
+  _abandonAnnotationInProgress(): void {
+    // A drag in progress too: pointer-up would otherwise commit it, e.g. a
+    // half-dragged bidirectional short axis as a new long axis (#471).
+    this._annotationShapeStart = null
+    // A freehand or 3D stroke held mid-drag would commit on pointer-up (#470).
+    this._annotationBrushPath = []
+    this._frozenLoopPoints = null
+    this._annotation3DActive = false
+    this._annotation3DMMPath = []
+    this._annotation3DFace = null
+    // A control-point resize drag would write into the old annotation; put
+    // the shape back, since pointer-up's stats recompute will not run.
+    this._revertResize()
+    this._resizingControlPoint = -1
+    this._resizingAnnotation = null
+    this._resizeOriginalShape = null
+    this._annotationPolyPoints = null
+    this._bidirectionalLong = null
+    this.model._annotationPreview = null
+    this._livewireSlice = null
+    this._livewireField = null
+    this._livewireSeed = null
+  }
+  private _revertResize(): void {
+    const shape = this._resizingAnnotation?.shape
+    const original = this._resizeOriginalShape
+    if (!shape || !original || !this._resizingAnnotation) return
+    shape.start = original.start
+    shape.end = original.end
+    shape.width = original.width
+    this._resizingAnnotation.polygons = original.polygons
+    const sel = this.model._annotationSelection
+    if (sel) sel.controlPoints = Annotation.getControlPoints(shape)
+  }
+  /**
+   * A change that replaces the scene's geometry drops the annotation in
+   * progress and, when it was being dragged, ends that drag too, so moves
+   * before the release do not fall through to the camera orbit (#470). Other
+   * drags (crosshair, contrast) are left alone.
+   */
+  private _abandonForNewScene(): void {
+    const isAnnotationDrag =
+      this._annotationShapeStart !== null ||
+      this._annotationBrushPath.length > 0 ||
+      this._annotation3DActive ||
+      this._resizingControlPoint >= 0
+    this._abandonAnnotationInProgress()
+    if (isAnnotationDrag && this.isDragging) resetDragState(this)
   }
 
   get selectedAnnotation(): string | null {
@@ -2494,6 +2724,9 @@ export default class NiiVue extends EventTarget {
 
   loadAnnotationsJSON(json: string): void {
     this.model.annotations = JSON.parse(json) as VectorAnnotation[]
+    // A half-drawn shape and the selection belong to the replaced set (#470).
+    this._abandonForNewScene()
+    this.model._annotationSelection = null
     this._annotationUndoStack.clear()
     this.drawScene()
   }
@@ -2591,7 +2824,33 @@ export default class NiiVue extends EventTarget {
    * other stale on screen.
    */
   async updateGLVolume() {
+    for (const mesh of this.model.getMeshes()) clearMeshClusters(mesh)
     await this._updateGL('all')
+  }
+
+  /**
+   * Resolves once the GPU updates running or queued at the call have
+   * finished. Setters that rebuild
+   * GPU resources (such as `volumeIsBackgroundMasking`) start the rebuild
+   * without returning it, so a screenshot taken straight after one can show
+   * the old scene. It waits for the updates running or queued at the call,
+   * not for later ones, so updates that keep arriving (a drag, live data) do
+   * not hold it. A failed update is not reported here.
+   */
+  async whenUpdatesSettle(): Promise<void> {
+    if (!this._updating || this._destroyed) return
+    // Queued changes ride the next follow-up: settle with that pass.
+    if (this._pendingUpdate)
+      return new Promise((resolve) => {
+        this._pendingWaiters.push({ resolve, reject: () => resolve() })
+      })
+    // A takeover wakes _updateIdle before its rebuild finishes: follow it to
+    // the rebuild that replaced the pass, but not to later follow-ups.
+    let token = this._updateToken
+    while (token && !this._destroyed) {
+      if (this._updateToken === token) await this._updateIdle
+      token = this._takenOverBy.get(token) ?? null
+    }
   }
 
   /**
@@ -2626,6 +2885,7 @@ export default class NiiVue extends EventTarget {
     meshes: MeshRebuild,
     volumes?: readonly NVImage[],
     colorbars = !volumes,
+    settle?: SettlePass,
   ): Promise<void> {
     const dirty = this._commitDirtyVolumes()
     const changed = volumes && [
@@ -2639,16 +2899,25 @@ export default class NiiVue extends EventTarget {
       this._pendingColorbars ||= colorbars
       if (changed) for (const v of changed) this._pendingVolumes.add(v)
       else this._pendingAllVolumes = true
-      return
+      return this._queueBehindUpdate()
     }
     const token = this._beginUpdate()
+    let failed = false
+    let error: unknown
     try {
       this._computeModulationData()
       if (!this.view) return
       await this.view.updateBindGroups({ meshes, volumes: changed, colorbars })
       this.drawScene()
+    } catch (err) {
+      failed = true
+      error = err
+      throw err
     } finally {
-      if (this._endUpdate(token)) await this._runPendingUpdate()
+      // This pass's callers settle now, not after the follow-ups chained below.
+      settle?.(failed, error)
+      // Not awaited: the caller is not held by follow-ups (they never throw).
+      if (this._endUpdate(token)) void this._runPendingUpdate()
     }
   }
 
@@ -2661,6 +2930,7 @@ export default class NiiVue extends EventTarget {
     // Wake any waiter on the previous holder (only non-null on a takeover).
     this._resolveUpdateIdle?.()
     const token = {}
+    if (this._updateToken) this._takenOverBy.set(this._updateToken, token)
     this._updateToken = token
     this._updatingView = this.view
     this._updating = true
@@ -2687,7 +2957,8 @@ export default class NiiVue extends EventTarget {
 
   /** Run the single follow-up for updates coalesced while the lock was held. */
   private async _runPendingUpdate(): Promise<void> {
-    if (!this._pendingUpdate) return
+    // After destroy the view is gone; destroy() already released the waiters.
+    if (!this._pendingUpdate || this._destroyed) return
     const pendingMeshes = this._pendingMeshes
     // Only scoped updates were queued: rebuild just the volumes whose data
     // changed (none for mesh-only updates).
@@ -2701,7 +2972,47 @@ export default class NiiVue extends EventTarget {
     this._pendingAllVolumes = false
     this._pendingVolumes.clear()
     this._pendingColorbars = false
-    await this._updateGL(pendingMeshes, pendingVolumes, pendingColorbars)
+    await this._runFollowUp((settle) =>
+      this._updateGL(pendingMeshes, pendingVolumes, pendingColorbars, settle),
+    )
+  }
+
+  /** A promise for a caller queued behind `_updating`: it settles with the follow-up. */
+  private _queueBehindUpdate(): Promise<void> {
+    // After destroy no follow-up runs, so a queued caller would never settle.
+    if (this._destroyed) return Promise.resolve()
+    return new Promise((resolve, reject) => {
+      this._pendingWaiters.push({ resolve, reject })
+    })
+  }
+
+  /**
+   * Run a follow-up and settle the callers queued for it with its outcome. Its
+   * failure goes to them, not to the update whose `finally` started it. `run`
+   * calls `settle` once its own pass is done, before the follow-ups it chains,
+   * so a caller is not held while later updates keep arriving.
+   */
+  private async _runFollowUp(
+    run: (settle: SettlePass) => Promise<void>,
+  ): Promise<void> {
+    const waiters = this._pendingWaiters
+    this._pendingWaiters = []
+    const owner = {}
+    for (const w of waiters) this._servingWaiters.set(w, owner)
+    const settle: SettlePass = (failed, err) => {
+      for (const w of waiters) {
+        if (this._servingWaiters.get(w) !== owner) continue
+        this._servingWaiters.delete(w)
+        if (failed) w.reject(err)
+        else w.resolve()
+      }
+    }
+    try {
+      await run(settle)
+      settle(false)
+    } catch (err) {
+      settle(true, err)
+    }
   }
 
   /**
@@ -2717,17 +3028,37 @@ export default class NiiVue extends EventTarget {
    * for. Updates arriving during the rebuild queue behind it.
    */
   async _rebuildViewResources(): Promise<void> {
-    while (this._updating && this._updatingView === this.view) {
+    // destroy() resolves _updateIdle but leaves _updating set: stop, or spin.
+    while (
+      this._updating &&
+      this._updatingView === this.view &&
+      !this._destroyed
+    ) {
       await this._updateIdle
     }
+    if (this._destroyed) return
+    // Callers of a follow-up still running on a replaced view settle with this
+    // rebuild, which takes ownership so the old view cannot settle them. With
+    // the lock free, any left are settled by their own finished pass.
+    const adopted = this._updating ? [...this._servingWaiters.keys()] : []
     this._commitDirtyVolumes()
     const token = this._beginUpdate()
+    for (const w of adopted) this._servingWaiters.set(w, token)
     try {
       // A modulator committed just above must not bake its old weights.
       this._computeModulationData()
       if (this.view) await this.view.updateBindGroups()
+      for (const w of adopted)
+        if (this._servingWaiters.get(w) === token) w.resolve()
+    } catch (err) {
+      for (const w of adopted)
+        if (this._servingWaiters.get(w) === token) w.reject(err)
+      throw err
     } finally {
-      if (this._endUpdate(token)) await this._runPendingUpdate()
+      for (const w of adopted)
+        if (this._servingWaiters.get(w) === token)
+          this._servingWaiters.delete(w)
+      if (this._endUpdate(token)) void this._runPendingUpdate()
     }
   }
 
@@ -2741,7 +3072,7 @@ export default class NiiVue extends EventTarget {
     return dirty
   }
 
-  private async updateVolumeAffineOnly(): Promise<void> {
+  private async updateVolumeAffineOnly(settle?: SettlePass): Promise<void> {
     // An isDirty volume needs its voxels re-uploaded, which the overlay-only
     // affine fast path below may not do (it can skip the background).
     const hasDirty = this._commitDirtyVolumes().length > 0
@@ -2750,9 +3081,11 @@ export default class NiiVue extends EventTarget {
       // A moved volume needs every volume resliced, not a data-only scope.
       this._pendingAllVolumes = true
       if (hasDirty) this._pendingFull = true
-      return
+      return this._queueBehindUpdate()
     }
     const token = this._beginUpdate()
+    let failed = false
+    let error: unknown
     try {
       if (!this.view) return
       const handled = !hasDirty && (await this.view.updateAffineOverlays?.())
@@ -2764,17 +3097,22 @@ export default class NiiVue extends EventTarget {
       // A moved volume leaves mesh buffers valid; only pick up mesh changes.
       await this.view.updateBindGroups({ meshes: 'changed' })
       this.drawScene()
+    } catch (err) {
+      failed = true
+      error = err
+      throw err
     } finally {
+      settle?.(failed, error)
       // A takeover (false) leaves the follow-up to the new holder.
-      if (this._endUpdate(token)) {
+      if (this._endUpdate(token) && !this._destroyed) {
         if (this._pendingFull) {
           // A full update queued behind this one is a superset of the
           // affine-only rerun; an affine rerun alone would drop it.
-          await this._runPendingUpdate()
+          void this._runPendingUpdate()
         } else if (this._pendingUpdate) {
           this._pendingUpdate = false
           this._pendingAllVolumes = false
-          await this.updateVolumeAffineOnly()
+          void this._runFollowUp((next) => this.updateVolumeAffineOnly(next))
         }
       }
     }
@@ -2865,6 +3203,11 @@ export default class NiiVue extends EventTarget {
     return this.opts.backend
   }
 
+  /** The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`. */
+  get version(): string {
+    return version
+  }
+
   get isAntiAlias(): boolean {
     return this.opts.isAntiAlias ?? false
   }
@@ -2886,11 +3229,25 @@ export default class NiiVue extends EventTarget {
     return this.devicePixelRatio
   }
 
+  /**
+   * The device pixel ratio the canvas renders at: the `devicePixelRatio`
+   * option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
+   * pixels times this are canvas pixels.
+   */
+  get effectiveDevicePixelRatio(): number {
+    return effectiveDevicePixelRatio(this.opts.forceDevicePixelRatio)
+  }
+
   set devicePixelRatio(dpr: number) {
-    this.opts.forceDevicePixelRatio = dpr
-    if (!this.view) return
-    this.view.forceDevicePixelRatio = dpr
-    this.view.resize()
+    // Controllers sharing a canvas render it at one ratio, so all follow.
+    const ctrls = new Set([this, ...(getCanvasInstances(this.canvas) ?? [])])
+    for (const ctrl of ctrls) {
+      ctrl.opts.forceDevicePixelRatio = dpr
+      if (!ctrl.view) continue
+      ctrl.view.forceDevicePixelRatio = dpr
+      // resize() also rebuilds instance tiles for the new canvas pixel size.
+      ctrl.resize()
+    }
   }
 
   /** @deprecated Use devicePixelRatio */
@@ -3030,9 +3387,9 @@ export default class NiiVue extends EventTarget {
   }
 
   async loadMatcap(matcapName: string): Promise<void> {
-    const matcaps = this.opts.matcaps
-    const url = matcaps?.[matcapName] ?? matcapName
+    const url = matcapFromName(matcapName, this.opts.matcaps)
     this.model.volume.matcap = url
+    this.emit('change', { property: 'volumeMatcap', value: url })
     await this._updateGLChanged()
   }
 
@@ -3080,6 +3437,8 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: previous[i], index: i })
     }
     this.model.volumes = loaded
+    // A half-drawn shape's points belong to the old background (#470).
+    this._abandonForNewScene()
     this.model._setupPivot3D()
     // The volume set changed: drop the associated-graph memo so a same-named 4D
     // reload doesn't reuse the previous volume's sampled BOLD time-course (the
@@ -3516,6 +3875,53 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Load local files as a drag and drop does: an `.nvd` opens as a document,
+   * and a `.json` is not loaded itself but applied as the sidecar of the data
+   * file sharing its basename. Each other file is loaded with
+   * {@link addImage} when `add`, else {@link loadImage}. A file that fails is
+   * logged and the rest still load.
+   * @example
+   * await nv1.loadFiles(Array.from(event.dataTransfer.files), { add: true })
+   */
+  async loadFiles(
+    files: readonly File[],
+    { add = false }: { add?: boolean } = {},
+  ): Promise<void> {
+    // Keyed by lowercased name so pairing is case-insensitive; the browser
+    // cannot fetch a sibling .json it was not given.
+    const sidecars = new Map<string, ReturnType<typeof parseSidecar>>()
+    for (const f of files) {
+      if (f.name.toLowerCase().endsWith('.json')) {
+        try {
+          sidecars.set(
+            f.name.toLowerCase(),
+            parseSidecar(JSON.parse(await f.text())),
+          )
+        } catch (err) {
+          log.error('Failed to parse sidecar:', f.name, err)
+        }
+      }
+    }
+    for (const file of files) {
+      const lower = file.name.toLowerCase()
+      if (lower.endsWith('.json')) continue
+      try {
+        if (lower.endsWith('.nvd')) {
+          await this.loadDocument(file)
+          continue
+        }
+        const sidecar = sidecars.get(siblingJsonUrl(lower))
+        const options = sidecar ? { sidecar } : {}
+        await (add
+          ? this.addImage(file, options)
+          : this.loadImage(file, options))
+      } catch (err) {
+        log.error('Failed to load file:', file.name, err)
+      }
+    }
+  }
+
+  /**
    * Route a file/URL to the signal, mesh, or volume loader.
    *
    * - Signal-only extensions (e.g. TSV) and `asSignal: true` go to signals.
@@ -3616,6 +4022,7 @@ export default class NiiVue extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = [...this.model.getVolumes()]
     await this.model.removeAllVolumes()
+    this._abandonForNewScene()
     // One event per volume, after the removal, in reverse index order (so
     // each detail's index was valid at the time that volume was removed).
     for (let i = vols.length - 1; i >= 0; i--) {
@@ -3635,6 +4042,8 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
     this.model.removeVolume(volumeIndex)
+    // Removing the background changes the geometry a half-drawn shape used.
+    if (volumeIndex === 0) this._abandonForNewScene()
     // Emit after the removal, like every other mutation event: the detail
     // carries the removed volume and its former index; the collection no
     // longer holds it.
@@ -3658,11 +4067,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeUp(0) // move the background image up one position
    */
   async moveVolumeUp(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, volumeIndex + 1)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, volumeIndex + 1)
   }
 
   /**
@@ -3672,11 +4077,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeDown(1) // move the second image down to the background position
    */
   async moveVolumeDown(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, volumeIndex - 1)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, volumeIndex - 1)
   }
 
   /**
@@ -3686,12 +4087,15 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeToTop(0) // move the background image to the top layer
    */
   async moveVolumeToTop(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(
-      volumeIndex,
-      this.model.volumes.length - 1,
-    )
-    if (!changed) return
+    await this._moveVolume(volumeIndex, this.model.volumes.length - 1)
+  }
+
+  private async _moveVolume(from: number, to: number): Promise<void> {
+    if (!this._checkBounds(this.model.volumes, from, 'Volume')) return
+    const background = this.model.volumes[0]
+    if (!this.model.moveVolume(from, to)) return
+    // A new background changes the geometry a half-drawn shape used (#470).
+    if (this.model.volumes[0] !== background) this._abandonForNewScene()
     this.emit('volumeOrderChanged', { volumes: this.model.volumes })
     await this._updateGLChanged()
   }
@@ -3703,11 +4107,7 @@ export default class NiiVue extends EventTarget {
    * await nv1.moveVolumeToBottom(3) // move the 4th volume to the background position
    */
   async moveVolumeToBottom(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
-    const changed = this.model.moveVolume(volumeIndex, 0)
-    if (!changed) return
-    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
-    await this._updateGLChanged()
+    await this._moveVolume(volumeIndex, 0)
   }
 
   getMeshShader(meshIndex: number): string | undefined {
@@ -3815,23 +4215,34 @@ export default class NiiVue extends EventTarget {
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
-    options = NVCmaps.withColormapWindow(options)
+    // Only a colormap change applies its window: callers that re-send the
+    // current colormap with every update keep the user's window (#395).
+    if (options.colormap !== volumes[volumeIndex].colormap)
+      options = NVCmaps.withColormapWindow(options)
     // Clamp frame4D to valid range
     if (options.frame4D !== undefined) {
       const maxFrame = (volumes[volumeIndex].nFrame4D ?? 1) - 1
       options.frame4D = Math.max(0, Math.min(options.frame4D, maxFrame))
     }
     Object.assign(volumes[volumeIndex], options)
+    NVCmaps.resolveDefaultWindow(volumes[volumeIndex])
     if (options.colormap !== undefined) {
       NVModel.applyColormap(volumes[volumeIndex], options.colormap)
       // A streamed volume has no img to scan; its bricks may already be
       // decoded, so its generated palette takes the range they held.
       for (const chunked of this._chunkedVolumes) chunked.growLabelsToObserved()
     }
+    // Report the window as resolved (a NaN/null request as the default it
+    // took, a colormap's fill included), not as requested.
+    const changes = { ...options }
+    if (changes.calMin !== undefined)
+      changes.calMin = volumes[volumeIndex].calMin
+    if (changes.calMax !== undefined)
+      changes.calMax = volumes[volumeIndex].calMax
     this.emit('volumeUpdated', {
       volumeIndex,
       volume: volumes[volumeIndex],
-      changes: options,
+      changes,
     })
     await this._updateGLChanged()
   }
@@ -3840,10 +4251,11 @@ export default class NiiVue extends EventTarget {
    * Region-of-interest statistics for a loaded volume.
    *
    * Values are calibrated (`scl_slope`/`scl_inter` applied) and non-finite
-   * voxels are excluded. Every mask must sit on the same RAS grid as the
-   * target volume — overlays are resliced to the background grid, so masks
-   * drawn from the loaded volume list satisfy that by construction, but a mask
-   * on a different grid returns `null` rather than silently wrong numbers.
+   * voxels are excluded. Statistics use the target volume's own samples on its
+   * own grid, never the resliced display copy. A mask (or the drawing) on
+   * another grid is looked up at each target voxel centre through both
+   * affines (nearest neighbour, so labels stay exact); target voxels outside
+   * it are excluded.
    *
    * @param options.volumeIndex - which volume to measure (default 0, the background)
    * @param options.masks - the volumes that define the region. A volume index
@@ -3855,8 +4267,8 @@ export default class NiiVue extends EventTarget {
    * @param options.drawPenValues - when masking by the drawing, restrict to these
    *   pen values (default: any non-zero voxel)
    * @returns the statistics, or `null` when the volume has no data, a mask
-   *   index is out of bounds, a label list is empty, or a mask does not match
-   *   the target grid
+   *   index is out of bounds, a label list is empty, or a mask on another grid
+   *   has no affine
    *
    * @example
    * const roi = nv1.getDescriptives({ volumeIndex: 0, isDrawingMask: true })
@@ -3875,7 +4287,10 @@ export default class NiiVue extends EventTarget {
     const drawingVol = this.model.drawingVolume
     return regionDescriptives(
       this.model.getVolumes(),
-      () => (drawingVol ? getDrawingBitmap(drawingVol) : null),
+      () =>
+        drawingVol
+          ? { bitmap: getDrawingBitmap(drawingVol), grid: drawingVol }
+          : null,
       options,
     )
   }
@@ -4293,7 +4708,7 @@ export default class NiiVue extends EventTarget {
    * Add a scalar overlay layer to a mesh.
    *
    * @example
-   * await nv1.addMeshLayer(0, { url: 'brain.curv', colormap: 'gray', cal_min: 0.3, cal_max: 0.5 })
+   * await nv1.addMeshLayer(0, { url: 'brain.curv', colormap: 'gray', calMin: 0.3, calMax: 0.5 })
    */
   async addMeshLayer(
     meshIndex: number,
@@ -4355,7 +4770,7 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).
+   * Update properties of a mesh layer (colormap, calMin, calMax, opacity, etc.).
    * Triggers recompositing and GPU update.
    *
    * @example
@@ -4420,6 +4835,8 @@ export default class NiiVue extends EventTarget {
       m.isColorbarVisible = cb.startsWith('dpv:') || cb.startsWith('dps:')
     }
     NVMesh.retessellateTract(m)
+    // new geometry changes the mesh bounds, so refit the scene to them
+    this.model._setupPivot3D()
     markMeshDataChanged(m)
     await this._updateGLMeshes()
   }
@@ -4455,6 +4872,8 @@ export default class NiiVue extends EventTarget {
     }
     Object.assign(m.connectomeOptions, options)
     NVMesh.reextrudeConnectome(m)
+    // new geometry changes the mesh bounds, so refit the scene to them
+    this.model._setupPivot3D()
     markMeshDataChanged(m)
     await this._updateGLMeshes()
   }
@@ -4648,9 +5067,21 @@ export default class NiiVue extends EventTarget {
     }
   }
 
+  /** A RAS voxel of the base volume in world mm (null without a volume). */
+  vox2mm(vox: [number, number, number]): [number, number, number] | null {
+    const vol = this.volumes[0]
+    if (!vol?.matRAS) return null
+    const mm = NVTransforms.vox2mm(null, vox, vol.matRAS)
+    return [mm[0], mm[1], mm[2]]
+  }
+
   /**
    * Convert RAS voxel coordinates to scene fraction [0,1].
    * Uses the background volume's matRAS for the vox→mm conversion.
+   * The result is in the units of the {@link crosshairPos} property, so it can
+   * be assigned there directly. Returns the scene centre when no volume (or no
+   * matRAS) is loaded.
+   * @example nv1.crosshairPos = nv1.vox2frac([64, 64, 32])
    */
   vox2frac(vox: [number, number, number]): [number, number, number] {
     if (this.volumes.length === 0) return [0.5, 0.5, 0.5]
@@ -4661,12 +5092,40 @@ export default class NiiVue extends EventTarget {
     return [frac[0], frac[1], frac[2]]
   }
 
+  /**
+   * Crosshair position in **RAS world millimetres** (x = right, y = anterior,
+   * z = superior), converted from the scene-fraction {@link crosshairPos}.
+   * Pairs with {@link setCrosshairPos}, which takes the same units.
+   * @example const [x, y, z] = nv1.getCrosshairPos() // mm
+   */
   getCrosshairPos(): [number, number, number] {
     const pos = this.model.scene2mm(this.model.scene.crosshairPos)
     return [pos[0], pos[1], pos[2]]
   }
 
+  /**
+   * Move the crosshair to a point given in **RAS world millimetres**
+   * (x = right, y = anterior, z = superior), not a scene fraction. The point
+   * is converted to the scene-fraction {@link crosshairPos} and clamped to the
+   * scene bounding box. When `isSnapToVoxelCenters` is true and a volume is
+   * loaded, it is first snapped to the nearest voxel centre of the background
+   * volume (`volumes[0]`). Emits `locationChange` and redraws.
+   *
+   * Replaces the 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)`: pass the mm
+   * directly. To set a fraction instead, assign {@link crosshairPos}.
+   * @param pos - [x, y, z] in world mm
+   * @example nv1.setCrosshairPos([0, -18, 12]) // mm
+   */
   setCrosshairPos(pos: [number, number, number]): void {
+    this._setCrosshairPos(pos)
+  }
+
+  /**
+   * `setCrosshairPos`, reporting the view that placed it as the
+   * `locationChange` `axCorSag` (a 3D render depth pick passes
+   * `SLICE_TYPE.RENDER`, so a listener can tell it from a slice click).
+   */
+  _setCrosshairPos(pos: [number, number, number], axCorSag = NaN): void {
     let mm: [number, number, number] = pos
     // Snap to voxel centers if enabled and volumes are loaded
     if (
@@ -4690,7 +5149,7 @@ export default class NiiVue extends EventTarget {
     }
     this.model.scene.crosshairPos = frac
     applyPanFollowsCrosshair(this)
-    this.createOnLocationChange()
+    this.createOnLocationChange(axCorSag)
     this.drawScene()
   }
 
@@ -4956,15 +5415,25 @@ export default class NiiVue extends EventTarget {
    * multi-LOD refocus). Unchanged bricks keep their resident GPU textures; only
    * changed/new bricks stream. Far cheaper than reloading the volume, and it
    * doesn't reset the camera/crosshair. The volume must already be loaded with a
-   * `chunkSource`; otherwise this is a no-op.
+   * `chunkSource`; otherwise this is a no-op. With `keepUntilCovered`, replaced
+   * bricks keep drawing until the bricks covering them are resident (see
+   * `swapPolicy` on {@link loadChunkedVolume}'s options).
    */
-  async swapVolumeChunkPlan(volumeId: string, plan: ChunkPlan): Promise<void> {
+  async swapVolumeChunkPlan(
+    volumeId: string,
+    plan: ChunkPlan,
+    options: { keepUntilCovered?: boolean } = {},
+  ): Promise<void> {
     const vol = this.model.volumes.find(
       (v) => v.id === volumeId || v.name === volumeId,
     )
     if (!vol) return
     vol.chunkPlan = plan
-    await this.view?.swapChunkedVolumePlan?.(vol, plan)
+    await this.view?.swapChunkedVolumePlan?.(
+      vol,
+      plan,
+      options.keepUntilCovered ?? false,
+    )
     this.drawScene()
   }
 
@@ -5070,14 +5539,20 @@ export default class NiiVue extends EventTarget {
   /** @internal Rebuild the tiles from `opts.instances`; called by {@link applyInstances}. */
   updateTilesFromInstances(): void {
     if (!this.view || !this.opts.instances || !this.canvas) return
-    const cw = this.canvas.width
-    const ch = this.canvas.height
     const canvas = this.canvas
+    // A tile without bounds takes the canvas minus layoutInset, as the
+    // colorbar and legend do; bounds are the caller's own placement.
+    const full = insetRect(
+      canvas.width,
+      canvas.height,
+      this.model.layout.inset,
+      this.effectiveDevicePixelRatio,
+    )
 
     const tiles: SliceTile[] = this.opts.instances.map((inst) => {
       if (inst.space === 'global3d' || inst.position) {
         return {
-          leftTopWidthHeight: [0, 0, cw, ch],
+          leftTopWidthHeight: [...full],
           axCorSag: 4,
           volumeId: inst.volumeId,
           space: 'global3d',
@@ -5090,7 +5565,7 @@ export default class NiiVue extends EventTarget {
       const b = inst.bounds
       if (!b) {
         return {
-          leftTopWidthHeight: [0, 0, cw, ch],
+          leftTopWidthHeight: [...full],
           axCorSag: 4,
           volumeId: inst.volumeId,
         }
@@ -5209,9 +5684,9 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Re-push the registered slide plane (and its annotation) to a freshly
-   * (re)created view — called from the view-lifecycle recreate paths so a
-   * backend switch / reinitialize doesn't drop the slide. Internal.
+   * @internal Re-push the registered slide plane (and its annotation) to a
+   * freshly (re)created view — called from the view-lifecycle recreate paths
+   * so a backend switch / reinitialize doesn't drop the slide.
    */
   restoreSlidePlaneView(): void {
     if (this.view) this.view.slidePlane = this._slidePlane
@@ -5220,7 +5695,8 @@ export default class NiiVue extends EventTarget {
   /**
    * Create a drawing surface in *slide* space for the registered slide plane.
    * The annotation is a label raster covering the whole slide (sized to the
-   * slide aspect, long edge capped at `maxRaster`, default 4096) and is painted
+   * slide aspect, long edge capped at `maxRaster`, default 4096, and at most
+   * 4096 x 4096 pixels in total so a saved drawing always loads) and is painted
    * with the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,
    * drawLine and the RLE undo stack), so it stays in slide coordinates and is
    * compatible with the volume drawing functions. Requires {@link setSlidePlane}.
@@ -5231,16 +5707,12 @@ export default class NiiVue extends EventTarget {
       log.warn('createSlideDrawing: no slide plane registered')
       return
     }
-    const sw = sp.slide.manifest.width
-    const sh = sp.slide.manifest.height
-    const cap = opts?.maxRaster ?? 4096
-    const scale = Math.min(1, cap / Math.max(1, sw, sh))
-    this._attachSlideDrawing(
-      new SlideDrawing(
-        Math.max(1, Math.round(sw * scale)),
-        Math.max(1, Math.round(sh * scale)),
-      ),
+    const [w, h] = slideDrawingSize(
+      sp.slide.manifest.width,
+      sp.slide.manifest.height,
+      opts?.maxRaster ?? 4096,
     )
+    this._attachSlideDrawing(new SlideDrawing(w, h))
   }
 
   // Wire a SlideDrawing into the active plane: build its annotation overlay
@@ -5268,14 +5740,7 @@ export default class NiiVue extends EventTarget {
   /** Map a canvas CSS pixel to slide base-pixel coords, or null off-plane. */
   slidePlanePick(cssX: number, cssY: number): { x: number; y: number } | null {
     if (!this._slidePlane) return null
-    // forceDevicePixelRatio is -1 ("auto") unless explicitly pinned.
-    const forced = this.view?.forceDevicePixelRatio ?? -1
-    const dpr =
-      forced > 0
-        ? forced
-        : typeof window !== 'undefined'
-          ? window.devicePixelRatio || 1
-          : 1
+    const dpr = this.effectiveDevicePixelRatio
     return pickSlidePixel(this._slidePlane, cssX * dpr, cssY * dpr)
   }
 
@@ -5733,6 +6198,15 @@ export default class NiiVue extends EventTarget {
     if (!name) return false
     const canonical = name.charAt(0).toUpperCase() + name.slice(1)
     return NVCmaps.lookupColorMap(canonical) !== null
+  }
+
+  /**
+   * The display window a colormap brings with it (the `ct_*` maps, e.g.
+   * `ct_bones` 180..600), or null. A load naming the colormap, and `setVolume`
+   * when the colormap changes, fill a bound left out from it.
+   */
+  colormapWindow(name: string): [number, number] | null {
+    return NVCmaps.colormapWindow(name)
   }
 
   get meshExtensions(): string[] {
@@ -6230,14 +6704,14 @@ export default class NiiVue extends EventTarget {
       if (opts.calMin && this.volumes.length > 0 && target.volumes.length > 0) {
         if (this.volumes[0].calMin !== target.volumes[0].calMin) {
           target.volumes[0].calMin = this.volumes[0].calMin
-          target._updateGLChanged()
+          target._updateGLChanged().catch((e) => log.error('sync failed', e))
           changed = true
         }
       }
       if (opts.calMax && this.volumes.length > 0 && target.volumes.length > 0) {
         if (this.volumes[0].calMax !== target.volumes[0].calMax) {
           target.volumes[0].calMax = this.volumes[0].calMax
-          target._updateGLChanged()
+          target._updateGLChanged().catch((e) => log.error('sync failed', e))
           changed = true
         }
       }
@@ -6497,7 +6971,11 @@ export default class NiiVue extends EventTarget {
   resize(): void {
     if (!this.view) return
     this.view.resize()
-    if (this.opts.instances) this.updateTilesFromInstances()
+    if (this.opts.instances) {
+      // view.resize() drew with the old tiles; draw again with the new ones.
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
   }
 
   /**
@@ -6538,6 +7016,13 @@ export default class NiiVue extends EventTarget {
     this._chunkStreamWiredView = null
     // Release any settle waiter now: no frame will follow.
     for (const waiter of this._chunkFrameWaiters) waiter(true)
+    // Nor will a queued GPU update run.
+    this._pendingUpdate = false
+    for (const w of [...this._pendingWaiters, ...this._servingWaiters.keys()])
+      w.resolve()
+    this._pendingWaiters = []
+    this._servingWaiters.clear()
+    this._resolveUpdateIdle?.()
     // Clear any "graphics unavailable" overlay left by a failed attach.
     if (this.canvas) clearCanvasMessage(this.canvas)
     this._viewLifecycle.unregister?.(this)
@@ -6620,6 +7105,12 @@ export default class NiiVue extends EventTarget {
    * shows it. Other viewers keep the old colours until their volume is
    * given the colormap again (`setVolume`).
    *
+   * `min`/`max` (with `min < max`) give a suggested display window, applied
+   * when a volume is given this colormap without calMin/calMax. The optional
+   * cinematic keys (`E`, `S`, `gradient`, `gMax`, `shininess`, `labelBlend`;
+   * label tables: `S`, `lo`, `hi`, `surface`, `normalize`) are kept for
+   * `VOLUME_RENDER_MODE.CINEMATIC`; see {@link ColorMap}.
+   *
    * @returns The canonical name under which the colormap was stored
    *   (first letter upper-cased), which is the form visible in `nv1.colormaps`
    *   and the `colormapAdded` event detail.
@@ -6633,7 +7124,7 @@ export default class NiiVue extends EventTarget {
   addColormap(
     name: string,
     cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
-      Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
+      Partial<Omit<ColorMap, 'R' | 'G' | 'B'>>,
   ): string {
     const canonical = NVCmaps.addColormap(name, cmap)
     const def = NVCmaps.lookupColorMap(canonical)
@@ -6782,7 +7273,16 @@ export default class NiiVue extends EventTarget {
       pixelToWorld: sp.pixelToWorld,
       levelIndex: sp.levelIndex,
     })
-    if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
+    if (
+      sp.drawingRLE &&
+      sp.drawingWidth &&
+      sp.drawingHeight &&
+      !isSlideDrawingSizeValid(sp.drawingWidth, sp.drawingHeight)
+    ) {
+      log.warn(
+        `loadDocument: slide drawing size ${sp.drawingWidth}x${sp.drawingHeight} is not valid; drawing not loaded`,
+      )
+    } else if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
       const drawing = new SlideDrawing(sp.drawingWidth, sp.drawingHeight)
       const decoded = decodeRLE(
         sp.drawingRLE,
@@ -6869,6 +7369,14 @@ export default class NiiVue extends EventTarget {
     this.clearSlidePlane()
     await this.removeAllVolumes()
     await this.removeAllMeshes()
+    // Loads deferred behind an earlier thumbnail would replace the document.
+    this._deferredVolumes = null
+    this._deferredMeshes = null
+    // A half-drawn shape, the selection and annotation undo belong to the old
+    // scene (#113).
+    this._abandonAnnotationInProgress()
+    this.model._annotationSelection = null
+    this._annotationUndoStack.clear()
 
     // Apply non-data state (scene, config, display settings). Settings the
     // document omits are filled per the fill policy (default: reset to defaults).
@@ -6958,6 +7466,8 @@ export default class NiiVue extends EventTarget {
 
     // Update GPU resources and render
     await this._updateGLChanged()
+    // A document's fontScale/fontMinSize take effect at resize (#377).
+    this.resize()
 
     // Restore drawing from RLE-encoded bitmap in document. It is drawn on the
     // document's first volume; if resolveUrl skipped that one, volumes[0] is
@@ -6968,13 +7478,13 @@ export default class NiiVue extends EventTarget {
       const back = this.model.getVolumes()[0]
       if (back) {
         const dv = createDrawingVolume(back)
-        const decoded = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
-        if (decoded.length !== dv.nVox3D) {
+        // Check the claimed length before decodeRLE allocates it.
+        if (doc.drawingBitmapLength !== dv.nVox3D) {
           log.warn(
-            `loadDocument: decoded drawing length ${decoded.length} does not match volume ${dv.nVox3D}`,
+            `loadDocument: drawing length ${doc.drawingBitmapLength} does not match volume ${dv.nVox3D}`,
           )
         } else {
-          dv.img = decoded
+          dv.img = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
         }
         this.model.drawingVolume = dv
         this.model.draw.isEnabled = true

@@ -37,7 +37,7 @@ bridge.emit('ready', { backend: nv.backend })
 Each module is a named subpath export (no barrel file):
 
 - `@niivue/web-bridge/bridge` -- `Bridge`, `createBridge(options)`, wire types (`Envelope`, `BridgeOptions`).
-- `@niivue/web-bridge/niivue-controller` -- `wireNiiVueToBridge(nv, bridge, options?)`. Registers `loadVolume`, `setBackend`, the generic prop-bridge, and forwards `locationChange`.
+- `@niivue/web-bridge/niivue-controller` -- `wireNiiVueToBridge(nv, bridge, options?)`. Registers `loadVolume`, `setBackend`, `getVolumes` / `setVolume` / `removeVolume`, `getMeshes` / `removeMesh`, `getSignalCount`, `getColormaps` and the generic prop-bridge; emits `imageLoaded`, `volumesChange`, `meshesChange`, `signalsChange` and `locationChange`. Also exports `loadFile(nv, file, add)` (`addImage`, then unless `add` remove every volume, mesh and signal loaded before; throws and keeps the scene when nothing loads) and `loadDroppedFiles(nv, files, add)` (same, via `nv.loadFiles(files, { add: true })`; logs failures).
 - `@niivue/web-bridge/prop-bridge` -- `wirePropBridge(nv, bridge, options?)`. Generic `setProp` / `getProps` / `propChange` path. Called by `wireNiiVueToBridge`; exported for hosts that don't want the rest.
 - `@niivue/web-bridge/prop-allowlist` -- `DEFAULT_PROP_ALLOWLIST`, `PropAllowlist`, `PropKind`, `coerce`.
 

@@ -21,15 +21,15 @@ describe('blendOverlayData', () => {
       blend(OVERLAY_ALPHA_BLEND.ADDITIVE, OVERLAY_COLOR_BLEND.ADDITIVE),
     ).toEqual([153, 102, 0, 255])
   })
-  test('OVER alpha is the union 1 - (1-a)(1-b)', () => {
+  test('UNION alpha is 1 - (1-a)(1-b)', () => {
     // 1 - 0.4 * 0.6 = 0.76; MEAN colour = (0.6, 0.4)
-    expect(blend(OVERLAY_ALPHA_BLEND.OVER, OVERLAY_COLOR_BLEND.MEAN)).toEqual([
+    expect(blend(OVERLAY_ALPHA_BLEND.UNION, OVERLAY_COLOR_BLEND.MEAN)).toEqual([
       153, 102, 0, 194,
     ])
   })
   test('OVER colour composites later overlays over earlier ones', () => {
     // P = (0.6, 0, 0) * 0.6 + (0, 0.4, 0) = (0.36, 0.4, 0); rgb = P / 0.76
-    expect(blend(OVERLAY_ALPHA_BLEND.OVER, OVERLAY_COLOR_BLEND.OVER)).toEqual([
+    expect(blend(OVERLAY_ALPHA_BLEND.UNION, OVERLAY_COLOR_BLEND.OVER)).toEqual([
       121, 134, 0, 194,
     ])
     // Colour is independent of the alpha mode
@@ -42,7 +42,7 @@ describe('blendOverlayData', () => {
         blendOverlayData(
           [green, red],
           [1, 1, 1],
-          OVERLAY_ALPHA_BLEND.OVER,
+          OVERLAY_ALPHA_BLEND.UNION,
           OVERLAY_COLOR_BLEND.OVER,
         ),
       ),
@@ -56,7 +56,7 @@ describe('blendOverlayData', () => {
         blendOverlayData(
           [opaqueRed, opaqueGreen],
           [1, 1, 1],
-          OVERLAY_ALPHA_BLEND.OVER,
+          OVERLAY_ALPHA_BLEND.UNION,
           OVERLAY_COLOR_BLEND.OVER,
         ),
       ),

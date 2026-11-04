@@ -1,5 +1,6 @@
 import { mat4 } from 'gl-matrix'
 import { getCanvasViewport } from '@/control/viewBoth'
+import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import { defaultMatcap } from '@/documentMatcap'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
@@ -27,8 +28,14 @@ import {
   stampAfterVertexWrite,
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
+import {
+  canUseCinematicOverlays,
+  cinematicOptionsForFrame,
+  findLabelVolume,
+  hasScalarIntensity,
+} from '@/view/NVCinematic'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
-import { crosscutMM } from '@/view/NVCrosscut'
+import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
 import { resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
@@ -38,6 +45,11 @@ import * as NVMeasurement from '@/view/NVMeasurement'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
+import {
+  buildPlaneOutline3DRenderData,
+  buildPlaneOutlineLines,
+  mergeRenderData,
+} from '@/view/NVPlaneOutline'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
@@ -63,6 +75,7 @@ import {
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
 import { WGPUBench } from './bench'
+import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import * as depthPick from './depthPick'
@@ -167,6 +180,7 @@ export default class NVView {
   sliceRenderer: SliceRenderer
   volumeRenderer: VolumeRenderer
   meshBindGroupLayout: GPUBindGroupLayout | null
+  crosscut2BindGroupLayout: GPUBindGroupLayout | null = null
   meshPipelines: Record<string, GPURenderPipeline> | null
   meshXRayPipelines: Record<string, GPURenderPipeline> | null
   lineBindGroup: GPUBindGroup | null
@@ -177,6 +191,12 @@ export default class NVView {
   orientCubeGpu: WebGPUMeshGPU | null
   thumbnailRenderer: ThumbnailRenderer
   slidePlaneRenderer: SlidePlaneRendererGPU
+  cinematicRenderer = new CinematicRenderer()
+  // VOLUME_RENDER_MODE.CINEMATIC: one warning per cause, and at most one
+  // self-scheduled refinement frame in flight.
+  private _cinematicWarned = new Set<string>()
+  private _cinematicScheduled = false
+  private _cinematicOverlayVersion = 0
   /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
   slidePlane: SlidePlaneState | null = null
   // Bounds: pixel rect for sub-canvas rendering
@@ -306,7 +326,20 @@ export default class NVView {
     await this._initWebGPU()
     await this._createResources()
     await this._createPipelines()
+    if (this.device) {
+      this.cinematicRenderer.init(
+        this.device,
+        this.isAntiAlias ? 4 : 1,
+        this.preferredCanvasFormat,
+      )
+    }
     await this.updateBindGroups()
+  }
+
+  private _warnCinematic(message: string): void {
+    if (this._cinematicWarned.has(message)) return
+    this._cinematicWarned.add(message)
+    log.warn(`cinematic: ${message}`)
   }
 
   async _createPipelines(): Promise<void> {
@@ -331,6 +364,28 @@ export default class NVView {
     const layoutBGL = this.meshBindGroupLayout
     const meshPipelineLayout = device.createPipelineLayout({
       bindGroupLayouts: [layoutBGL],
+    })
+    this.crosscut2BindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage', hasDynamicOffset: true },
+        },
+      ],
+    })
+    const crosscut2PipelineLayout = device.createPipelineLayout({
+      bindGroupLayouts: [layoutBGL, this.crosscut2BindGroupLayout],
     })
     this.meshPipelines = {
       phong: mesh.createMeshPipeline(
@@ -358,6 +413,12 @@ export default class NVView {
         'always',
         false,
         'none',
+      ),
+      crosscut2: mesh.createCrosscut2Pipeline(
+        device,
+        format,
+        msaa,
+        crosscut2PipelineLayout,
       ),
       flat: mesh.createMeshPipeline(
         device,
@@ -615,10 +676,19 @@ export default class NVView {
     await this.volumeRenderer.setCoarseFloor(device, coarseVol)
   }
 
-  async swapChunkedVolumePlan(vol: NVImage, plan: ChunkPlan): Promise<void> {
+  async swapChunkedVolumePlan(
+    vol: NVImage,
+    plan: ChunkPlan,
+    keepUntilCovered = false,
+  ): Promise<void> {
     const device = this.device
     if (!device) return
-    await this.volumeRenderer.swapChunkedVolumePlan(device, vol, plan)
+    await this.volumeRenderer.swapChunkedVolumePlan(
+      device,
+      vol,
+      plan,
+      keepUntilCovered,
+    )
   }
 
   async updateAffineOverlays(): Promise<boolean> {
@@ -638,6 +708,7 @@ export default class NVView {
       overlay,
     )
     if (!handled) return false
+    this._cinematicOverlayVersion++
     this.volumeRenderer.updateBindGroup(device)
     if (this.volumeRenderer.volumeTexture) {
       this.sliceRenderer.updateBindGroup(
@@ -775,8 +846,13 @@ export default class NVView {
     this.volumeRenderer.gradientAmount = md.volume.illumination
     // Composite (OVER) vs maximum-intensity projection vs orthogonal slices, for
     // every volume pass this frame (base, overlay, PAQD, drawing, and the
-    // independent hi-res overlay cube).
-    this.volumeRenderer.renderMode = md.volume.renderMode
+    // independent hi-res overlay cube). CINEMATIC tiles skip the classic
+    // march; where it falls back (chunked volume) it draws COMPOSITE.
+    const isCinematicMode =
+      md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.CINEMATIC
+    this.volumeRenderer.renderMode = isCinematicMode
+      ? NVConstants.VOLUME_RENDER_MODE.COMPOSITE
+      : md.volume.renderMode
     // The crosshair planes SLICES draws, in the base volume's texture fraction —
     // the same conversion the 2D tiles use, so sheared and oblique volumes line
     // up with them.
@@ -791,6 +867,8 @@ export default class NVView {
     // Stencil for the overlay/drawing passes' own gradient (the background's is
     // precomputed into a texture and unaffected).
     this.volumeRenderer.layerGradientMode = md.volume.layerGradientMode
+    this.volumeRenderer.isOverlayOpacityCorrected =
+      md.volume.isOverlayOpacityCorrected
     // Background-only alpha modulation from that precomputed gradient: suppress
     // homogeneous interior (gradientOpacity) and fade view-aligned material into
     // a rim (silhouette). Set before chunk work, like gradientAmount, because a
@@ -882,6 +960,18 @@ export default class NVView {
     // Use bounds dimensions as effective canvas size
     const canvasWidth = bw
     const canvasHeight = bh
+    // Tiles, colorbar, legend and graph lay out inside layout.inset; the
+    // overlay hook still gets the whole view.
+    const [ix, iy, iw, ih] = NVSliceLayout.insetRect(
+      canvasWidth,
+      canvasHeight,
+      md.layout.inset,
+      this._dpr,
+    )
+    this.colorbarRenderer.setContentRect(
+      device,
+      iw === canvasWidth && ih === canvasHeight ? null : [ix, iy, iw, ih],
+    )
     const commandEncoder = device.createCommandEncoder()
     const renderPassDesc: GPURenderPassDescriptor = {
       colorAttachments: [
@@ -902,6 +992,60 @@ export default class NVView {
     }
     const pass = commandEncoder.beginRenderPass(renderPassDesc)
     const volumes = md.getVolumes()
+    // Cinematic compute (prep passes, one march per tile) is recorded into its
+    // own encoder during the tile loop and submitted before the main pass.
+    let cinematicEncoder: GPUCommandEncoder | null = null
+    let cinematicLabels: NVImage | null = null
+    let isCinematic = false
+    // Statistics stay visible when the anatomy is hidden, as in COMPOSITE.
+    let hasCinematicOverlay = false
+    // False when the background is hidden and no label volume keeps it marched.
+    let isCinematicBackgroundVisible = false
+    this.cinematicRenderer.beginFrame()
+    const base = volumes[0]
+    if (isCinematicMode && base && this.cinematicRenderer.isReady) {
+      if (base.chunkPlan || base.chunkSource) {
+        this._warnCinematic(
+          'chunked (streamed) volumes are not supported; drawing COMPOSITE',
+        )
+      } else if (!hasScalarIntensity(base)) {
+        this._warnCinematic(
+          'RGB/RGBA volumes have no scalar intensity; drawing COMPOSITE',
+        )
+      } else {
+        cinematicLabels = findLabelVolume(volumes)
+        const useOverlays =
+          !this._isChannelStack(volumes) && canUseCinematicOverlays(volumes)
+        const overlay = useOverlays ? this.volumeRenderer.overlayTexture : null
+        hasCinematicOverlay =
+          !!overlay && volumes.slice(1).some((v) => drawnOpacity(v) > 0)
+        cinematicEncoder = device.createCommandEncoder()
+        isCinematic = this.cinematicRenderer.prepare(
+          cinematicEncoder,
+          base,
+          cinematicLabels,
+          cinematicOptionsForFrame(base, cinematicLabels, md.volume.cinematic),
+          overlay,
+          this._cinematicOverlayVersion,
+        )
+        isCinematicBackgroundVisible =
+          drawnOpacity(base) > 0 || this.cinematicRenderer.hasLabels
+        if (this.cinematicRenderer.labelProblem) {
+          this._warnCinematic(
+            `labels ignored: ${this.cinematicRenderer.labelProblem}`,
+          )
+        }
+        if (
+          !useOverlays &&
+          volumes.slice(1).filter(isVolumeDrawn).length >
+            (cinematicLabels ? 1 : 0)
+        ) {
+          this._warnCinematic(
+            'overlays not drawn: cinematic draws standard overlays or one same-grid label volume, not a mix, PAQD, streamed overlays or a channel stack',
+          )
+        }
+      }
+    }
     const channelStack = this._isChannelStack(volumes)
     const interpolation = sliceInterpolation(
       volumes,
@@ -916,13 +1060,26 @@ export default class NVView {
       : 0
     // Reserve horizontal space for legend and graph on the right side
     const legendEntries = md.collectLegendEntries()
-    const legendWidth =
+    const legendLayout =
       md.ui.isLegendVisible && legendEntries.length > 0
-        ? NVLegend.legendTotalWidth(legendEntries, canvasWidth, canvasHeight)
-        : 0
+        ? NVLegend.computeLegendLayout(
+            legendEntries,
+            iw,
+            ih,
+            cbHeight,
+            md.legendScrollRow(),
+            {
+              fontPx: this.fontRenderer.fontPx,
+              measure: (label, scale) =>
+                this.fontRenderer.measureText(label, scale),
+            },
+          )
+        : null
+    if (legendLayout) legendLayout.y += iy
+    const legendWidth = legendLayout?.width ?? 0
     const graphData = md.collectGraphData()
     const baseGraphWidth = graphData
-      ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
+      ? NVGraph.graphTotalWidth(graphData, iw, ih)
       : 0
     let graphWidth: number
     let screenSlices: NVSliceLayout.SliceTile[]
@@ -935,8 +1092,9 @@ export default class NVView {
     } else {
       const fit = NVSliceLayout.fitSlicesFromModel(
         md,
-        [canvasWidth - legendWidth - baseGraphWidth, canvasHeight - cbHeight],
+        [iw - legendWidth - baseGraphWidth, ih - cbHeight],
         baseGraphWidth,
+        [ix, iy],
       )
       graphWidth = fit.graphWidth
       screenSlices = fit.screenSlices
@@ -946,9 +1104,12 @@ export default class NVView {
     // radius is a screen weight, so it depends on the tile's mm-per-pixel. Each
     // tile that draws one claims the next vertex slot.
     let crosshairSlot = 0
-    const ann3DData = md.annotation.isVisibleIn3D
-      ? NVAnnotation.buildAnnotation3DRenderData(md)
-      : null
+    const ann3DData = mergeRenderData(
+      md.annotation.isVisibleIn3D
+        ? NVAnnotation.buildAnnotation3DRenderData(md)
+        : null,
+      buildPlaneOutline3DRenderData(md.planeOutlines, md.ui.crosshairColor),
+    )
     const crossLinesList: ReturnType<typeof buildLine>[] = []
     for (let i = 0; i < screenSlices.length; i++) {
       const tile = screenSlices[i]
@@ -957,16 +1118,17 @@ export default class NVView {
         volumes.find(
           (v) => v.name === tile.volumeId || v.url === tile.volumeId,
         ) ?? volumes[0]
-      let [mvpMatrix, , normalMatrix, rayDir] = NVTransforms.calculateMvpMatrix(
-        ltwh,
-        md.scene.azimuth,
-        md.scene.elevation,
-        md._renderPivotMM ?? md.pivot3D,
-        md.furthestFromPivot,
-        md.scene.scaleMultiplier,
-        md.volumes[0]?.obliqueRAS,
-        md.scene.renderPan,
-      )
+      let [mvpMatrix, modelMatrix, normalMatrix, rayDir] =
+        NVTransforms.calculateMvpMatrix(
+          ltwh,
+          md.scene.azimuth,
+          md.scene.elevation,
+          md._renderPivotMM ?? md.pivot3D,
+          md.furthestFromPivot,
+          md.scene.scaleMultiplier,
+          md.volumes[0]?.obliqueRAS,
+          md.scene.renderPan,
+        )
       if (tile.space === 'global3d' && tileVol) {
         const mvp3d = NVTransforms.calculateGlobalVolumeMvp(
           ltwh,
@@ -994,8 +1156,6 @@ export default class NVView {
           ltwh,
           screen.mnMM,
           screen.mxMM,
-          Infinity,
-          undefined,
           tile.azimuth as number,
           tile.elevation as number,
           NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
@@ -1031,8 +1191,6 @@ export default class NVView {
           ltwh,
           screen.mnMM,
           screen.mxMM,
-          Infinity,
-          undefined,
           tile.azimuth as number,
           tile.elevation as number,
           NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
@@ -1040,6 +1198,7 @@ export default class NVView {
           md.pivot3D,
         )
         mvpMatrix = mvp2d[0]
+        modelMatrix = mvp2d[1]
         normalMatrix = mvp2d[2]
         rayDir = mvp2d[3]
         // Cross-lines on mosaic render tiles
@@ -1253,6 +1412,32 @@ export default class NVView {
               md.volume.isV1SliceShader,
             )
           }
+        } else if (
+          cinematicEncoder &&
+          isCinematic &&
+          tile.space !== 'global3d'
+        ) {
+          if (md.drawingVolume) {
+            this._warnCinematic(
+              'the drawing layer is not drawn in cinematic render tiles (2D tiles still show it)',
+            )
+          }
+          // Cinematic draws its own label or standard-overlay pass.
+          if (isCinematicBackgroundVisible || hasCinematicOverlay)
+            this.cinematicRenderer.draw(cinematicEncoder, pass, {
+              index: i,
+              rect: ltwh,
+              mvp: mvpMatrix as Float32Array,
+              model: modelMatrix as Float32Array,
+              clipPlanes: md.clipPlanes,
+              clipPlaneColor: md.scene.clipPlaneColor,
+              isClipCutaway: md.scene.isClipPlaneCutaway,
+              clipPlaneOverlay: md.scene.clipPlaneOverlay,
+              isBackgroundVisible: isCinematicBackgroundVisible,
+              gamma: md.scene.gamma,
+              isOverlayOpacityCorrected: md.volume.isOverlayOpacityCorrected,
+              background: md.scene.backgroundColor,
+            })
         } else {
           // Phase 3c: frustum-cull this 3D render tile to drive streamed
           // upload — no-op unless the active volume is chunked.
@@ -1382,35 +1567,14 @@ export default class NVView {
           : (md.getMeshes() as NVMesh[]).filter(isMeshDrawn)
       // Compute crosscut uniform for this tile (crosshair mm with axis masking for 2D)
       const ccMM = crosscutMM(md, tile.axCorSag)
-      // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
-      let meshMvp = mvpMatrix
-      let meshNorm = normalMatrix
-      if (
-        tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER &&
-        md.mesh.thicknessOn2D !== Infinity
-      ) {
-        const clipMM = md.scene2mm(md.scene.crosshairPos)
-        if (tile.sliceMM !== undefined) {
-          clipMM[NVConstants.sliceTypeDim(tile.axCorSag)] = tile.sliceMM
-        }
-        const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
-        const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
-        const meshMvp2d = NVTransforms.calculateMvpMatrix2D(
-          ltwh,
-          screen.mnMM,
-          screen.mxMM,
-          md.mesh.thicknessOn2D,
-          clipMM,
-          tile.azimuth as number,
-          tile.elevation as number,
-          NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
-          md.volumes[0]?.obliqueRAS,
-          undefined,
-          pan,
-        )
-        meshMvp = meshMvp2d[0]
-        meshNorm = meshMvp2d[2]
-      }
+      const ccPlanes = crosscutPlanes(md, tile, md.mesh.crosscutWidth)
+      // A finite meshThicknessOn2D slab follows the displayed voxel plane and
+      // is drawn over the slice (SLAB_DEPTH_MAX), not depth-tested against it.
+      const slabMvp = NVSliceLayout.meshSlabMvp(md, tile, mvpMatrix, true)
+      const meshMvp = slabMvp ?? mvpMatrix
+      const setDepthMax = (z: number) =>
+        pass.setViewport(ltwh[0], ltwh[1], ltwh[2], ltwh[3], 0, z)
+      if (slabMvp) setDepthMax(NVTransforms.SLAB_DEPTH_MAX)
       if (meshes.length > 0 && this.meshPipelines) {
         for (let meshIdx = 0; meshIdx < meshes.length; meshIdx++) {
           const m = meshes[meshIdx]
@@ -1424,27 +1588,44 @@ export default class NVView {
           if (!Number.isFinite(dynamicOffset)) {
             continue
           }
+          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+          const shaderType =
+            (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
+          const isCrosscut2 = shaderType === 'crosscut2'
           const s = this._uniformScratch
-          s.set(meshMvp as ArrayLike<number>, 0)
-          s.set(meshNorm as ArrayLike<number>, 16)
+          // crosscut2 outlines the voxel plane itself: a slab would only clip it.
+          s.set((isCrosscut2 ? mvpMatrix : meshMvp) as ArrayLike<number>, 0)
+          s.set(normalMatrix as ArrayLike<number>, 16)
           s.set(m.clipPlane as ArrayLike<number>, 32)
           s[36] = m.opacity ?? 1.0
           // s[37-39] = 0 (pad, zero-initialized at allocation, never written non-zero)
           s.set(ccMM as ArrayLike<number>, 40)
+          s.set(ccPlanes, 44)
           device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
-          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
-          const shaderType =
-            (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
           const pipeline = this.meshPipelines[shaderType]
           if (pipeline) {
             pass.setPipeline(pipeline)
             pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
-            pass.setVertexBuffer(0, mGpu.vertexBuffer)
-            pass.setIndexBuffer(mGpu.indexBuffer, 'uint32')
-            pass.drawIndexed(mGpu.indexCount)
+            if (!isCrosscut2) {
+              pass.setVertexBuffer(0, mGpu.vertexBuffer)
+              pass.setIndexBuffer(mGpu.indexBuffer, 'uint32')
+              pass.drawIndexed(mGpu.indexCount)
+            } else if (this.crosscut2BindGroupLayout) {
+              mesh.drawCrosscut2(
+                device,
+                pass,
+                this.crosscut2BindGroupLayout,
+                m,
+                mGpu,
+                ccPlanes,
+                i,
+                screenSlices.length,
+              )
+            }
           }
         }
       }
+      if (slabMvp) setDepthMax(1)
       // Layer 2b-xray: Mesh X-ray pass (depth greater, reduced opacity)
       // Use offset tile slots (i + screenSlices.length) so writeBuffer doesn't
       // overwrite the normal-pass uniforms before the GPU executes them.
@@ -1470,8 +1651,9 @@ export default class NVView {
             )
           }
         }
-        // Re-draw meshes with xray
+        // Re-draw meshes with xray (in the slab's depth range, if any)
         if (meshes.length > 0) {
+          if (slabMvp) setDepthMax(NVTransforms.SLAB_DEPTH_MAX)
           for (let meshIdx = 0; meshIdx < meshes.length; meshIdx++) {
             const m = meshes[meshIdx]
             const mGpu = this._getMeshGpu(m)
@@ -1483,10 +1665,11 @@ export default class NVView {
             if (!Number.isFinite(dynamicOffset)) continue
             const s = this._uniformScratch
             s.set(meshMvp as ArrayLike<number>, 0)
-            s.set(meshNorm as ArrayLike<number>, 16)
+            s.set(normalMatrix as ArrayLike<number>, 16)
             s.set(m.clipPlane as ArrayLike<number>, 32)
             s[36] = (m.opacity ?? 1.0) * xrayAlpha
             s.set(ccMM as ArrayLike<number>, 40)
+            s.set(ccPlanes, 44)
             device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
             const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
             const shaderType =
@@ -1500,6 +1683,7 @@ export default class NVView {
               pass.drawIndexed(mGpu.indexCount)
             }
           }
+          if (slabMvp) setDepthMax(1)
         }
       }
       // Layer 2b-ann: 3D annotations (RENDER tiles only, skipped on global3d)
@@ -1668,8 +1852,8 @@ export default class NVView {
         labels.push(
           this.fontRenderer.buildText(
             headerStr,
-            canvasWidth * 0.5,
-            0,
+            ix + iw * 0.5,
+            iy,
             1.5,
             [0, 0, 0, 1],
             0.5,
@@ -1689,40 +1873,31 @@ export default class NVView {
         labels.push(...colorbarLabels)
       }
       // Legend labels for label colormaps
-      if (md.ui.isLegendVisible && legendEntries.length > 0) {
-        this.legendLayout = NVLegend.computeLegendLayout(
-          legendEntries,
-          canvasWidth,
-          canvasHeight,
-          cbHeight,
-          canvasWidth - legendWidth - graphWidth,
+      this.legendLayout = legendLayout
+      if (legendLayout) {
+        // Placed once the graph's width is known.
+        legendLayout.x = ix + iw - legendWidth - graphWidth
+        const legendLabels = NVLegend.buildLegendLabels(
+          legendLayout,
+          (s, x, y, sc, c, ax, ay, bc) =>
+            this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
+          md.scene.backgroundColor,
         )
-        if (this.legendLayout) {
-          const legendLabels = NVLegend.buildLegendLabels(
-            this.legendLayout,
-            (s, x, y, sc, c, ax, ay, bc) =>
-              this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-            md.scene.backgroundColor,
-          )
-          labels.push(...legendLabels)
-        }
-      } else {
-        this.legendLayout = null
+        labels.push(...legendLabels)
       }
       // Graph labels and lines for 4D frame intensity
       if (graphData && graphWidth > 0) {
-        const graphDpr =
-          this.forceDevicePixelRatio > 0
-            ? this.forceDevicePixelRatio
-            : window.devicePixelRatio || 1
-        this.graphLayout = NVGraph.computeGraphLayout(
+        const graphDpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
+        const graphLayout = NVGraph.computeGraphLayout(
           graphData,
-          canvasWidth,
-          canvasHeight,
+          iw,
+          ih,
           cbHeight,
           graphDpr,
           graphWidth,
         )
+        this.graphLayout =
+          graphLayout && NVGraph.translateGraphLayout(graphLayout, ix, iy)
         if (this.graphLayout) {
           const graphElements = NVGraph.buildGraphElements(
             graphData,
@@ -1847,6 +2022,15 @@ export default class NVView {
         )
       }
     }
+    allLines.push(
+      ...buildPlaneOutlineLines(
+        md.planeOutlines,
+        screenSlices,
+        buildLine,
+        md.ui.crosshairColor,
+        NVAnnotation.computeTolerance(md),
+      ),
+    )
     // Bounds border
     if (this._isSubCanvasBounds && this.options.showBoundsBorder) {
       const bc = (this.options.boundsBorderColor as number[]) ?? [1, 1, 1, 1]
@@ -1922,8 +2106,32 @@ export default class NVView {
       this._copyBoundsToCanvas(commandEncoder, canvasTexture)
     }
     markSubmitStart()
-    device.queue.submit([commandEncoder.finish()])
+    device.queue.submit(
+      cinematicEncoder
+        ? [cinematicEncoder.finish(), commandEncoder.finish()]
+        : [commandEncoder.finish()],
+    )
     markEnd()
+    // Progressive cinematic refinement drives itself, one frame in flight.
+    // While dragging, each camera change draws one (restarted) frame instead.
+    if (
+      this.cinematicRenderer.endFrame() &&
+      !this.model._isDragging &&
+      !this._cinematicScheduled
+    ) {
+      this._cinematicScheduled = true
+      device.queue
+        .onSubmittedWorkDone()
+        .then(() => {
+          requestAnimationFrame(() => {
+            this._cinematicScheduled = false
+            if (!this._destroyed) this.render()
+          })
+        })
+        .catch(() => {
+          this._cinematicScheduled = false
+        })
+    }
     // Chunk-streaming observer: one observation per drawn frame, after this
     // frame's draw has been submitted, carrying the verdict on whether the
     // frame is complete. Idle can then only fire for a frame that shows every
@@ -2088,6 +2296,10 @@ export default class NVView {
       `WebGPU via ${arch} maxTexture 2D:${this.maxTextureDimension2D} 3D:${this.maxTextureDimension3D} maxBuffer:${maxBufferSize} antiAlias:${this.isAntiAlias}`,
     )
     this.device = await adapter.requestDevice({
+      // Cinematic frame timing (cinematicFrameMs); optional.
+      requiredFeatures: adapter.features.has('timestamp-query')
+        ? ['timestamp-query']
+        : [],
       requiredLimits: {
         maxBufferSize,
         maxStorageBufferBindingSize,
@@ -2140,8 +2352,7 @@ export default class NVView {
     if (!this.device) return
     const msaaCount = this.isAntiAlias ? 4 : 1
     // Initialize render layer modules
-    let dpr = window.devicePixelRatio || 1
-    if (this.forceDevicePixelRatio > 0) dpr = this.forceDevicePixelRatio
+    const dpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
     await this.lineRenderer.init(
       this.device,
       this.preferredCanvasFormat,
@@ -2261,8 +2472,7 @@ export default class NVView {
   resize(): void {
     if (!this.device || !this.context) return
     if (!this.canvas.parentNode) return
-    let dpr = window.devicePixelRatio || 1
-    if (this.forceDevicePixelRatio > 0) dpr = this.forceDevicePixelRatio
+    const dpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
     const rect = this.canvas.getBoundingClientRect()
     const newW = Math.max(1, Math.floor(rect.width * dpr))
     const newH = Math.max(1, Math.floor(rect.height * dpr))
@@ -2506,6 +2716,7 @@ export default class NVView {
     if (this.model.volume.isBackgroundMasking) {
       await this.volumeRenderer.maskOverlayByBackground(device)
     }
+    this._cinematicOverlayVersion++
   }
 
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
@@ -2717,8 +2928,6 @@ export default class NVView {
         ltwh,
         screen.mnMM,
         screen.mxMM,
-        Infinity,
-        undefined,
         tile.azimuth as number,
         tile.elevation as number,
         NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
@@ -2750,8 +2959,6 @@ export default class NVView {
         ltwh,
         screen.mnMM,
         screen.mxMM,
-        Infinity,
-        undefined,
         tile.azimuth as number,
         tile.elevation as number,
         NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
@@ -3130,6 +3337,7 @@ export default class NVView {
     this.fontRenderer.destroy()
     this.colorbarRenderer.destroy()
     this.thumbnailRenderer.destroy()
+    this.cinematicRenderer.destroy()
     this.sliceRenderer.destroy()
     this.volumeRenderer.destroy()
     if (this.device) {

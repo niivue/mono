@@ -18,7 +18,7 @@ import dts from 'vite-plugin-dts'
  * below), so inlining them does not bloat the main bundle — only code that
  * actually imports them pays the base64 overhead.
  */
-function inlineImageAssets(): Plugin {
+export function inlineImageAssets(): Plugin {
   const MIME: Record<string, string> = {
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
@@ -49,6 +49,8 @@ export default defineConfig({
     inlineImageAssets(),
     dts({
       tsconfigPath: './tsconfig.json',
+      // Keep dist/index.d.ts flat: src imports package.json from outside src.
+      entryRoot: 'src',
       exclude: ['**/*.test.ts'],
       pathsToAliases: true,
       beforeWriteFile(filePath, content) {

@@ -164,6 +164,42 @@ export function slicePanUV(
 }
 
 /**
+ * The mesh MVP for a 2D tile when `meshThicknessOn2D` is finite and positive:
+ * a slab about the displayed voxel plane (oblique when the volume is), or a
+ * world plane through the crosshair when no volume is loaded. Null otherwise:
+ * meshes then use the tile MVP, and the slice hides what lies behind it.
+ */
+export function meshSlabMvp(
+  model: NVModel,
+  tile: SliceTile,
+  mvp: mat4,
+  clipSpaceZeroToOne: boolean,
+): mat4 | null {
+  const thickness = model.mesh.thicknessOn2D
+  if (
+    tile.axCorSag === NVConstants.SLICE_TYPE.RENDER ||
+    !(thickness > 0 && Number.isFinite(thickness))
+  ) {
+    return null
+  }
+  if (tile.planeNormal && tile.planePoint) {
+    return NVTransforms.slabMvp(
+      mvp,
+      tile.planeNormal,
+      tile.planePoint,
+      thickness,
+      clipSpaceZeroToOne,
+    )
+  }
+  const dim = NVConstants.sliceTypeDim(tile.axCorSag)
+  const axis = [0, 0, 0]
+  axis[dim] = 1
+  const point = model.scene2mm(model.scene.crosshairPos)
+  if (tile.sliceMM !== undefined) point[dim] = tile.sliceMM
+  return NVTransforms.slabMvp(mvp, axis, point, thickness, clipSpaceZeroToOne)
+}
+
+/**
  * World-mm cylinder radius that makes the crosshair `ui.crosshairWidth` canvas
  * pixels thick on this tile.
  *
@@ -952,11 +988,12 @@ export function fitSlicesFromModel(
   model: NVModel,
   paneWH: [number, number],
   baseGraphWidth: number,
+  origin: [number, number] = [0, 0],
 ): { screenSlices: SliceTile[]; graphWidth: number } {
   if (model.isSpatialViewHidden()) {
     return { screenSlices: [], graphWidth: baseGraphWidth }
   }
-  return fitSlicesAndGraph(
+  const fit = fitSlicesAndGraph(
     {
       canvasWH: paneWH,
       sliceType: model.layout.sliceType,
@@ -978,6 +1015,42 @@ export function fitSlicesFromModel(
     },
     baseGraphWidth,
   )
+  if (origin[0] !== 0 || origin[1] !== 0) {
+    for (const tile of fit.screenSlices) {
+      const ltwh = tile.leftTopWidthHeight
+      if (ltwh) {
+        ltwh[0] += origin[0]
+        ltwh[1] += origin[1]
+      }
+    }
+  }
+  return fit
+}
+
+/**
+ * The part of a `width` x `height` view left by `layout.inset` ([left, top,
+ * right, bottom] CSS px, times `dpr`): [x, y, width, height] in device px.
+ * A non-finite or negative side counts as 0, and at least 1 px is left
+ * (none on a 0 px canvas).
+ */
+export function insetRect(
+  width: number,
+  height: number,
+  inset: ArrayLike<number>,
+  dpr: number,
+): [number, number, number, number] {
+  const side = (i: number) => {
+    const v = inset[i] * dpr
+    return Number.isFinite(v) && v > 0 ? Math.round(v) : 0
+  }
+  const x = Math.max(0, Math.min(side(0), width - 1))
+  const y = Math.max(0, Math.min(side(1), height - 1))
+  return [
+    x,
+    y,
+    Math.max(Math.min(1, width), width - x - side(2)),
+    Math.max(Math.min(1, height), height - y - side(3)),
+  ]
 }
 
 export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
@@ -1095,8 +1168,6 @@ export function screenSlicePick(
     ltwh,
     screen.mnMM,
     screen.mxMM,
-    Infinity,
-    undefined,
     tile.azimuth as number,
     tile.elevation as number,
     isSliceMirrored(tile.axCorSag, model.layout),

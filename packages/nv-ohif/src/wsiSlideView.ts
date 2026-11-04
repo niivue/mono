@@ -1,5 +1,6 @@
 import type { NVSlide, NVSlideScreen } from '@niivue/niivue'
 import { SlideRenderer } from '@niivue/niivue'
+import type { RulerSpec } from '@niivue/uikit'
 import { loadDefaultFont, UIKitRulerOverlay } from '@niivue/uikit'
 
 export interface WsiSlideViewOptions {
@@ -57,6 +58,33 @@ function measure(
 }
 
 /**
+ * Returns a ruler updater that pushes geometry only when the drawn spec
+ * changes, and the host readout only when its text does: render() runs on
+ * every tile arrival, and a pan moves the device-space endpoints while the
+ * length stays the same. `null` clears the ruler and the readout.
+ */
+export function createRulerSync(
+  ruler: Pick<UIKitRulerOverlay, 'setRuler' | 'clear'>,
+  onMeasure?: (text: string | null) => void,
+): (spec: RulerSpec | null, text?: string) => void {
+  let lastSpec = ''
+  let lastText: string | null = null
+  return (spec, text = '') => {
+    const sig = spec ? JSON.stringify(spec) : ''
+    if (sig !== lastSpec) {
+      lastSpec = sig
+      if (spec) ruler.setRuler(spec)
+      else ruler.clear()
+    }
+    const shown = spec ? text : null
+    if (shown !== lastText) {
+      lastText = shown
+      onMeasure?.(shown)
+    }
+  }
+}
+
+/**
  * Mount a standalone NVSlide deep-zoom view on a canvas: WebGL2 + SlideRenderer,
  * an on-demand render loop (redraw only when tiles stream in or the user
  * interacts), and pointer pan / wheel zoom. This is independent of NiiVue's
@@ -104,6 +132,7 @@ export function mountWsiSlideView(
   // click-drag (press = start, drag = extend, release = fix), matching the
   // volume viewport.
   let ruler: UIKitRulerOverlay | null = null
+  let syncRuler: ReturnType<typeof createRulerSync> | null = null
   let ruleA: { x: number; y: number } | null = null
   let ruleB: { x: number; y: number } | null = null
   const onMeasure = options.onMeasure
@@ -126,16 +155,15 @@ export function mountWsiSlideView(
   const clearMeasurement = (): void => {
     ruleA = null
     ruleB = null
-    ruler?.clear()
-    onMeasure?.(null)
+    syncRuler?.(null)
   }
 
   const updateRuler = (screen: NVSlideScreen): void => {
-    if (!ruler) return
+    if (!syncRuler) return
     const a = ruleA
     const b = ruleB
     if (!a || !b) {
-      ruler.clear()
+      syncRuler(null)
       return
     }
     const m = measure(a, b, slide.manifest.pixelSpacingMM)
@@ -143,21 +171,23 @@ export function mountWsiSlideView(
     // the label/line sizes must scale by dpr too, otherwise a CSS-px value looks
     // half-size on a 2x (retina) display.
     const dpr = screen.devicePixelRatio ?? 1
-    ruler.setRuler({
-      a: slideToDevice(a, screen),
-      b: slideToDevice(b, screen),
-      length: m.length,
-      units: m.units,
-      decimals: m.decimals,
-      sizePx: RULER_LABEL_CSS_PX * dpr,
-      thickness: RULER_THICKNESS_CSS_PX * dpr,
-      tickLength: RULER_TICK_CSS_PX * dpr,
-      showTicks: m.ticks,
-      showTickNumbers: m.ticks,
-      lineColor: RULER_COLOR,
-      textColor: RULER_COLOR,
-    })
-    onMeasure?.(`${m.length.toFixed(m.decimals)} ${m.units}`)
+    syncRuler(
+      {
+        a: slideToDevice(a, screen),
+        b: slideToDevice(b, screen),
+        length: m.length,
+        units: m.units,
+        decimals: m.decimals,
+        sizePx: RULER_LABEL_CSS_PX * dpr,
+        thickness: RULER_THICKNESS_CSS_PX * dpr,
+        tickLength: RULER_TICK_CSS_PX * dpr,
+        showTicks: m.ticks,
+        showTickNumbers: m.ticks,
+        lineColor: RULER_COLOR,
+        textColor: RULER_COLOR,
+      },
+      `${m.length.toFixed(m.decimals)} ${m.units}`,
+    )
   }
 
   const syncCanvasSize = (screen: NVSlideScreen): void => {
@@ -214,6 +244,7 @@ export function mountWsiSlideView(
     .then((font) => {
       if (disposed) return
       ruler = new UIKitRulerOverlay(font)
+      syncRuler = createRulerSync(ruler, onMeasure)
       renderer.overlayDraw = (frame) => ruler?.drawOverlay(frame)
       scheduleRender()
     })

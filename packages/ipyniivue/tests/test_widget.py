@@ -35,6 +35,11 @@ def test_non_json_serializable_overlay_hooks_are_not_exposed() -> None:
     assert not hasattr(NiiVue, "unregister_overlay_renderer")
 
 
+def test_internal_members_are_not_exposed() -> None:
+    assert not hasattr(NiiVue, "update_tiles_from_instances")
+    assert not hasattr(NiiVue, "restore_slide_plane_view")
+
+
 def test_binary_response_payload_decodes_to_bytes() -> None:
     payload = {
         "__ipyniivue_binary__": True,

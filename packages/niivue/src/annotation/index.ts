@@ -22,6 +22,7 @@ import { pointInRing } from './pointInRing'
 import {
   getControlPoints,
   hitTestControlPoint,
+  resizePolygons,
   updateShapeBounds,
 } from './selection'
 import {
@@ -51,6 +52,7 @@ export {
   livewireBacktrack,
   livewireField,
   mmToSlice2D,
+  resizePolygons,
   slice2DToGrid,
   updateShapeBounds,
 }

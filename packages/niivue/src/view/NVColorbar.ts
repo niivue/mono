@@ -26,6 +26,9 @@ export type ColorbarLayout = {
    * is >= actual) preserves the pre-existing visual.
    */
   fontPx: number
+  /** Top-left of the area canvasWidth x canvasHeight describes (layout inset); 0 otherwise. */
+  originX?: number
+  originY?: number
 }
 
 export type ColorbarRect = { x: number; y: number; w: number; h: number }
@@ -143,8 +146,9 @@ export function colorbarGridLayout(
   for (let i = 0; i < colorbars.length; i++) {
     const col = i % columns
     const row = Math.floor(i / columns)
-    const x = margin + leftPad + col * (barWidth + colGap)
-    const y = yBase + margin + row * (barHeight + gap)
+    const x =
+      (layout.originX ?? 0) + margin + leftPad + col * (barWidth + colGap)
+    const y = (layout.originY ?? 0) + yBase + margin + row * (barHeight + gap)
     rects.push({ x, y, w: barWidth, h: barHeight })
   }
   return { columns, rows, rects }

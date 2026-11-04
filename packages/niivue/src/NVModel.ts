@@ -24,6 +24,7 @@ import type {
   NVImage,
   NVMesh as NVMeshType,
   NVSignal,
+  PlaneOutline,
   SceneConfig,
   UIConfig,
   VectorAnnotation,
@@ -35,6 +36,7 @@ import * as NVLegend from '@/view/NVLegend'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import { loadVolumePrepared } from '@/volume/loadBridge'
+import { resolvePairedImage } from '@/volume/pairedImage'
 import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
 
 export default class NVModel {
@@ -87,6 +89,9 @@ export default class NVModel {
    * Controller-owned, not serialized.
    */
   _isDragging = false
+  /** Legend scroll position in rows (transient; the layout clamps it). */
+  _legendScrollRow = 0
+  private _legendSources: unknown[] = []
   /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
   _focusBox: FocusBox | null = null
   /**
@@ -123,6 +128,7 @@ export default class NVModel {
     | import('@/annotation/selection').AnnotationSelection
     | null = null
   completedMeasurements: CompletedMeasurement[] = []
+  planeOutlines: PlaneOutline[] = []
   completedAngles: CompletedAngle[] = []
   // Measurements projected to the current frame's canvas pixels, for an external
   // overlay renderer (see NVControlBase.measurementScreenLines). Persisted lines
@@ -157,6 +163,8 @@ export default class NVModel {
     // Layout — flat options mapped to layout group
     this.layout = {
       ...NVConstants.LAYOUT_DEFAULTS,
+      // Its own array: the defaults are shared by every instance.
+      inset: [...NVConstants.LAYOUT_DEFAULTS.inset],
       ...(options.sliceType !== undefined && { sliceType: options.sliceType }),
       ...(options.mosaicString !== undefined && {
         mosaicString: options.mosaicString,
@@ -180,6 +188,9 @@ export default class NVModel {
         isMosaicCentered: options.isMosaicCentered,
       }),
       ...(options.tileMargin !== undefined && { margin: options.tileMargin }),
+      ...(options.layoutInset !== undefined && {
+        inset: NVConstants.normalizeInset(options.layoutInset),
+      }),
       ...(options.isRadiological !== undefined && {
         isRadiological: options.isRadiological,
       }),
@@ -347,6 +358,9 @@ export default class NVModel {
       ...(options.volumeSampleRate !== undefined && {
         sampleRate: options.volumeSampleRate,
       }),
+      ...(options.volumeIsOverlayOpacityCorrected !== undefined && {
+        isOverlayOpacityCorrected: options.volumeIsOverlayOpacityCorrected,
+      }),
       ...(options.volumeIsCubicInterpolation !== undefined && {
         isCubicInterpolation: options.volumeIsCubicInterpolation,
       }),
@@ -362,6 +376,10 @@ export default class NVModel {
       ...(options.volumeSilhouette !== undefined && {
         silhouette: options.volumeSilhouette,
       }),
+      // A copy: setters replace it, but never alias the defaults constant.
+      cinematic: NVConstants.clampCinematicOptions(
+        options.volumeCinematic ?? {},
+      ),
     }
     // Mesh — flat options mapped to mesh group
     this.mesh = {
@@ -369,6 +387,11 @@ export default class NVModel {
       ...(options.meshXRay !== undefined && { xRay: options.meshXRay }),
       ...(options.meshThicknessOn2D !== undefined && {
         thicknessOn2D: options.meshThicknessOn2D,
+      }),
+      ...(options.meshCrosscutWidth !== undefined && {
+        crosscutWidth: NVConstants.clampCrosscutWidth(
+          options.meshCrosscutWidth,
+        ),
       }),
     }
     // Draw — flat options mapped to draw group
@@ -413,6 +436,9 @@ export default class NVModel {
       }),
       ...(options.isViewModeHotKeyEnabled !== undefined && {
         isViewModeHotKeyEnabled: options.isViewModeHotKeyEnabled,
+      }),
+      ...(options.isLegendToggleEnabled !== undefined && {
+        isLegendToggleEnabled: options.isLegendToggleEnabled,
       }),
       ...(options.isDragDropEnabled !== undefined && {
         isDragDropEnabled: options.isDragDropEnabled,
@@ -811,6 +837,16 @@ export default class NVModel {
     return bars
   }
 
+  /** The scroll position, back at the top once the legend lists something else. */
+  legendScrollRow(): number {
+    const sources = NVLegend.legendSources(this.meshes, this.volumes)
+    if (!NVLegend.isSameLegendSource(sources, this._legendSources)) {
+      this._legendSources = sources
+      this._legendScrollRow = 0
+    }
+    return this._legendScrollRow
+  }
+
   collectLegendEntries(): NVLegend.LegendEntry[] {
     if (!this.ui.isLegendVisible) return []
     return NVLegend.collectLegendEntries(this.meshes, this.volumes)
@@ -968,7 +1004,7 @@ export default class NVModel {
       graphConfig: this.ui.graph,
       series,
       xAxis: axis,
-      showLegend: lead.sig.display.showLegend,
+      isLegendVisible: lead.sig.display.isLegendVisible,
       // No spatial view (signal-only scene, or SLICE_TYPE.NONE) -> the plot fills
       // the whole instance area; otherwise it's a side strip beside the slices.
       fullCanvas: this.isSpatialViewHidden(),
@@ -1136,7 +1172,7 @@ export default class NVModel {
       graphConfig: this.ui.graph,
       series,
       xAxis: { label: 'Time (s)', reversed: false, min: 0, max: tMax },
-      showLegend: true,
+      isLegendVisible: true,
       // Side strip beside the slices by default; full canvas when the user hides
       // the spatial view with SLICE_TYPE.NONE (the volume stays loaded for the
       // time-course).
@@ -1497,11 +1533,12 @@ export default class NVModel {
   static async prepareVolume(
     volume: ImageFromUrlOptions | NVImage,
   ): Promise<NVImage> {
+    // An NVImage keeps its own window, CT colormap or not: it always carries
+    // calMin/calMax, so there is no unset bound for the map to fill (#395).
     if ('hdr' in volume && volume.hdr) {
-      return NVModel.applyColormap(
-        { ...NVModel.volumeDefaults, ...volume },
-        volume.colormap,
-      )
+      const image = { ...NVModel.volumeDefaults, ...volume }
+      NVCmaps.resolveDefaultWindow(image)
+      return NVModel.applyColormap(image, volume.colormap)
     }
     const opts = volume as ImageFromUrlOptions
     const { url, urlImageData, limitFrames4D, ...overrides } =
@@ -1519,12 +1556,11 @@ export default class NVModel {
         : Math.max(1, Math.floor(limitFrames4D))
     const urlString = typeof url === 'string' ? url : url.name
     const name = overrides.name ?? urlString
-    const base = await loadVolumePrepared(
-      url,
-      urlImageData ?? null,
-      frameLimit,
-      name,
-    )
+    // A `.HEAD` URL with no explicit `urlImageData` is paired with the `.BRIK`
+    // (or `.BRIK.gz`) beside it, as the original NiiVue did. The resolved value
+    // is stashed below exactly like an explicit one.
+    const pairedImage = await resolvePairedImage(url, urlImageData)
+    const base = await loadVolumePrepared(url, pairedImage, frameLimit, name)
     const prepared: NVImage = {
       ...base,
       url: urlString,
@@ -1540,8 +1576,9 @@ export default class NVModel {
       // this stash a deferred 4D reload would re-issue loadVolume with only
       // the header URL/File. Runtime-only, same allowlist contract as
       // _sourceFile above.
-      ...(urlImageData != null ? { _urlImageData: urlImageData } : {}),
+      ...(pairedImage != null ? { _urlImageData: pairedImage } : {}),
     }
+    NVCmaps.resolveDefaultWindow(prepared)
     return NVModel.applyColormap(prepared, overrides.colormap)
   }
 

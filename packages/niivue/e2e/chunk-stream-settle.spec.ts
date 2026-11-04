@@ -1,6 +1,7 @@
 import { inflateSync } from 'node:zlib'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // whenChunkStreamSettles (and setVolumeChunkGrid, which awaits it) must resolve
 // once the stream is idle, not only once every brick is resident, and not
@@ -19,10 +20,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // screenshot after setVolumeChunkGrid must show every brick.
 
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // A third of the 30 s timeout; a SwiftShader WebGPU 3D fill takes 2-4 s.
 const SETTLE_BUDGET_MS = 10_000
@@ -85,6 +82,7 @@ const mount = (backend: string, sliceType: string, opts = ''): string => `
     return { skip: 'WebGPU init fell back to ' + nv.backend }
   }
   await nv.loadVolumes([{ url: file, name: 'synth.nii' }])
+  window.__nv = nv
   const timed = async (fn) => {
     const t0 = performance.now()
     await fn()
@@ -283,7 +281,13 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.afterGrid.pending + r.afterGrid.inFlight).toBe(0)
     expect(r.afterGrid.resident).toBeLessThan(r.afterGrid.total)
     // What the call resolved on is what stays on screen once the fade is over.
-    await page.waitForTimeout(FADE_MS + 500)
+    // Read the renderer's own fade flag, not the API under test: an early
+    // resolve leaves it set until the fade's last frame.
+    await page.waitForFunction(
+      '!window.__nv.view.volumeRenderer.fadeActive',
+      null,
+      { timeout: FADE_MS + SETTLE_BUDGET_MS },
+    )
     expect(atResolve).toEqual(await probe(page, 128, 128))
     // The fade starts when the brick is admitted, inside the call.
     expect(r.gridMs).toBeGreaterThan(FADE_MS * 0.9)

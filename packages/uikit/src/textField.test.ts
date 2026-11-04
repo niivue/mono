@@ -99,7 +99,10 @@ describe('buildTextFieldContent', () => {
     expect(c.rects).toHaveLength(1)
     const [x, , w] = box(c.rects[0])
     expect([x, w]).toEqual([130, STYLE.caretWidth])
-    expect(box(c.rects[0])[3]).toBeGreaterThan(0)
+    // Cap height 14 px: ink box from baseline - 1.15 cap, 1.4 cap tall.
+    const [, y, , h] = box(c.rects[0])
+    expect(y).toBeCloseTo(BASELINE - 14 * 1.15, 4)
+    expect(h).toBeCloseTo(14 * 1.4, 4)
   })
 
   it('hides the caret when disabled', () => {
@@ -112,6 +115,14 @@ describe('buildTextFieldContent', () => {
     expect([c.shown.first, c.shown.end]).toEqual([2, 7])
     expect(c.text[0].str).toBe('23456')
     expect(c.rects).toHaveLength(1)
+    const [x, , w] = box(c.rects[0])
+    expect([x, w]).toEqual([100, 50])
+  })
+
+  it('clips a selection running past the right edge of the shown run', () => {
+    // Caret 0 shows [0, 5); selection [0, 9) is clipped to five glyphs.
+    const c = content(textEditState(TEXT, 0, 9))
+    expect([c.shown.first, c.shown.end]).toEqual([0, 5])
     const [x, , w] = box(c.rects[0])
     expect([x, w]).toEqual([100, 50])
   })

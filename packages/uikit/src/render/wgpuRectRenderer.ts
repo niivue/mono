@@ -134,9 +134,10 @@ export class WgpuRectRenderer {
     for (let i = 0; i < rects.length; i++) {
       const rect = rects[i]
       const off = i * FLOATS_PER_RECT
-      // A zeroed slot is a zero-size (invisible) rect, matching a fresh alloc.
+      // Zero the slot first: a hole or a short record must not keep a prior frame's
+      // rect from the reused scratch. A zeroed slot is a zero-size (invisible) rect.
+      data.fill(0, off, off + FLOATS_PER_RECT)
       if (rect) data.set(rect.data, off)
-      else data.fill(0, off, off + FLOATS_PER_RECT)
     }
     device.queue.writeBuffer(this.storageBuffer, 0, data, 0, need)
     pass.setPipeline(this.pipeline)

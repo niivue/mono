@@ -211,6 +211,18 @@ describe('WgpuRectRenderer staging', () => {
       100 * FLOATS_PER_RECT * 4,
     )
   })
+
+  it('zeroes the tail of a short record instead of keeping the prior frame', () => {
+    const gpu = fakeGpu()
+    const r = new WgpuRectRenderer()
+    draw(r, gpu, [rect(1)])
+    gpu.reset()
+    draw(r, gpu, [{ data: new Float32Array(FLOATS_PER_RECT - 1).fill(2) }])
+    expect(gpu.writes[1].data).toEqual([
+      ...Array(FLOATS_PER_RECT - 1).fill(2),
+      0,
+    ])
+  })
 })
 
 const run = (v: number, verts: number, screenPxRange = v): TextRun => ({

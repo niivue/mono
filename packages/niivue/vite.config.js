@@ -17,6 +17,7 @@ const SITE_APPS = [
   'demo-ext-save-html',
   'demo-ext-dcm2niix',
   'demo-ext-niimath',
+  'demo-ext-tiff',
 ]
 
 // Lay the dev server out like the GitHub Pages site, so the landing page and

@@ -364,7 +364,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | External reader registration | ✅ | `registerExternalReader` on NVVolume |
 | DICOM loader plugin | ✅ | `@niivue/nv-ext-dcm2niix` extension |
 | Other loader plugins (itkwasm, minc, vox, cbor) | ❌ | Must be provided externally |
-| TIFF loader | ✅ | Built in, not a plugin — see `docs/ome-tiff-format.md` |
+| TIFF loader | ✅ | Built in, not a plugin — see `docs/ome-tiff-format.md`. Streaming tiled/pyramidal slides (SVS, OME-TIFF, JPEG tiles) into `NVSlide`: `@niivue/nv-ext-tiff` |
 
 ## 29. NVImage Public API
 

@@ -175,6 +175,10 @@ export async function recreateView(
   // 5. Replace the canvas element (required because canvas context is locked)
   //    For shared canvases: only replace if backend changed (context type is locked to canvas)
   //    When replacing a shared canvas, all siblings' references are updated too.
+  // Siblings' views are bound to the old canvas, so a backend switch moves them too.
+  const siblings = backendChanged
+    ? [...(getCanvasInstances(ctrl.canvas) ?? [])].filter((c) => c !== ctrl)
+    : []
   if (!isSharedCanvas(ctrl) || backendChanged) {
     replaceCanvasElement(ctrl)
   }
@@ -213,6 +217,11 @@ export async function recreateView(
     canvas: ctrl.canvas as HTMLCanvasElement,
     backend: (ctrl.opts.backend ?? 'webgl2') as 'webgpu' | 'webgl2',
   })
+  // 13. Rebuild siblings on the new canvas with the new backend
+  for (const sib of siblings) {
+    sib.opts.backend = ctrl.opts.backend
+    if (sib.view) await recreateView(sib)
+  }
 }
 
 export async function reinitializeView(
@@ -270,11 +279,9 @@ export async function reinitializeView(
     if (forceRestart || backendChanged || antiAliasChanged) {
       // Canvas recreation needed
       await recreateView(ctrl, backendChanged)
-    } else {
-      // Only pixelRatio changed — resize without recreating
-      // The setter also updates controllers sharing this canvas.
-      ctrl.devicePixelRatio = newPixelRatio
     }
+    // The setter also updates controllers sharing this canvas.
+    if (pixelRatioChanged) ctrl.devicePixelRatio = newPixelRatio
     return true
   } catch (err) {
     log.error('Failed to reinitialize view:', err)

@@ -22,7 +22,7 @@ beforeEach(() => {
   spyOn(NVViewGL.prototype, 'destroy').mockImplementation(() => {})
 })
 afterEach(() => mock.restore())
-const { recreateView } = await import('./viewWebGL2')
+const { recreateView, reinitializeView } = await import('./viewWebGL2')
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -116,4 +116,21 @@ test('recreateView clones a lone bounded canvas so antialias can change', async 
   await recreateView(lone)
   expect(lone.canvas).not.toBe(old)
   expect(viewCanvases.at(-1)).toBe(lone.canvas)
+})
+
+test('a forced restart with a new ratio goes through the sibling-updating setter', async () => {
+  const ctrl = fakeCtrl(fakeCanvas())
+  let applied: number | undefined
+  Object.defineProperty(ctrl, 'devicePixelRatio', {
+    set: (dpr: number) => {
+      applied = dpr
+    },
+  })
+  ctrl.opts.forceDevicePixelRatio = 1
+  await reinitializeView(ctrl, {
+    backend: 'webgl2',
+    forceDevicePixelRatio: 2,
+    forceRestart: true,
+  })
+  expect(applied).toBe(2)
 })

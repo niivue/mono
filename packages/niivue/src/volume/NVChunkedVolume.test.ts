@@ -1564,6 +1564,36 @@ describe('NVChunkedVolume automatic display window', () => {
     expect(sceneVolume()?.robustMax).toBe(mgr.volume.robustMax)
   })
 
+  test('a window set while the floor streams in is not overwritten', async () => {
+    const { host, sceneVolume } = makeWindowHost()
+    const installed: { floor: NVImage | null } = { floor: null }
+    ;(host as unknown as { setBaseCoarseFloor: unknown }).setBaseCoarseFloor =
+      async (f: NVImage | null) => {
+        installed.floor = f
+      }
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      radius: 16,
+      colormap: 'ct_kidneys',
+    })
+    const pending = mgr.init()
+    // init() has added the volume; the floor fetch has not landed yet.
+    const scene = sceneVolume()
+    if (!scene) throw new Error('volume not added')
+    scene.calMin = 0
+    scene.calMax = 50
+    await pending
+    expect(scene.calMin).toBe(0)
+    expect(scene.calMax).toBe(50)
+    // The floor bakes its window into its texture, and the handle shares the
+    // scene's hdr (saved documents and exports read hdr.cal_*).
+    expect([installed.floor?.calMin, installed.floor?.calMax]).toEqual([0, 50])
+    expect([mgr.volume.calMin, mgr.volume.calMax]).toEqual([0, 50])
+    expect([scene.hdr.cal_min, scene.hdr.cal_max]).toEqual([0, 50])
+    // The data range still arrives for reset and contrast drag.
+    expect(scene.globalMax).toBe(255)
+    expect(scene.robustMax).toBe(mgr.volume.robustMax)
+  })
+
   test('falls back to a bounded probe when there is no coarse floor', async () => {
     const { host } = makeWindowHost()
     const mgr = new NVChunkedVolume(host, rampSource(), {

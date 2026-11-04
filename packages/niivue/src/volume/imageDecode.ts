@@ -100,6 +100,12 @@ export function imageSize(buffer: ArrayBuffer): {
         continue
       }
       const marker = b[i + 1]
+      // TEM and RST0-7 stand alone: no length follows. Reading one would land
+      // the walk inside a later segment, where a planted SOF could hide the size.
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+        i += 2
+        continue
+      }
       // SOF0-SOF15, less DHT (C4), JPG (C8) and DAC (CC).
       if (
         marker >= 0xc0 &&
@@ -110,7 +116,9 @@ export function imageSize(buffer: ArrayBuffer): {
       ) {
         const height = v.getUint16(i + 5)
         // Height 0 defers it to a DNL marker after the scan: size unknown.
-        if (height === 0) break
+        if (height === 0) {
+          throw new Error('JPEG height in a DNL marker is not supported')
+        }
         return { width: v.getUint16(i + 7), height }
       }
       i += 2 + v.getUint16(i + 2)
@@ -132,7 +140,7 @@ function gifSize(
   let height = v.getUint16(8, true)
   // Skip the global color table, then extension blocks, to the first frame.
   let i = 13
-  if (b.length > 10 && b[10] & 0x80) i += 3 * 2 ** ((b[10] & 7) + 1)
+  if (b[10] & 0x80) i += 3 * 2 ** ((b[10] & 7) + 1)
   while (i < b.length) {
     if (b[i] === 0x2c) {
       if (i + 9 > b.length) break

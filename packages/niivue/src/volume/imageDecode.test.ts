@@ -300,7 +300,21 @@ describe('imageSize', () => {
       [0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x00, 0x03, 0x20],
       14,
     )
-    expect(() => imageSize(buffer)).toThrow('Unrecognized')
+    expect(() => imageSize(buffer)).toThrow('DNL')
+  })
+
+  test('steps over a JPEG restart marker, which has no length', () => {
+    // SOI, RST0, COM whose length bytes would read as a fake SOF if RST0 were
+    // given a length, then SOF0: height 600, width 800
+    const buffer = header(
+      [
+        0xff, 0xd8, 0xff, 0xd0, 0xff, 0xfe, 0x00, 0x0b, 0xff, 0xc0, 0x00, 0x11,
+        0x08, 0x00, 0x01, 0x00, 0x01, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x02, 0x58,
+        0x03, 0x20,
+      ],
+      30,
+    )
+    expect(imageSize(buffer)).toEqual({ width: 800, height: 600 })
   })
 
   test('reads a BMP info header, top-down height made positive', () => {

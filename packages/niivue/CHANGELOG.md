@@ -1,3 +1,18 @@
+## 1.0.0-rc.85 (2026-11-04)
+
+### Features
+
+- **niivue:** add isSagittalNoseLeft, independent of isRadiological ([93debd5d](https://github.com/niivue/mono/commit/93debd5d))
+
+### Fixes
+
+- **niivue:** pin classic NVD sagittal nose to classic's default ([b07d1dad](https://github.com/niivue/mono/commit/b07d1dad))
+
+### Thank You
+
+- Claude Opus 5.5
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.84 (2026-11-04)
 
 ### Features

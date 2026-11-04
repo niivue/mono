@@ -6998,6 +6998,8 @@ export default class NiiVue extends EventTarget {
   }
 
   destroy(): void {
+    // A second call would reach renderers whose GPU device is already gone.
+    if (this._destroyed) return
     this._destroyed = true
     this._animation?.stop('destroyed')
     this.emit('viewDestroyed')

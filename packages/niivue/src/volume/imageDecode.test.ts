@@ -281,6 +281,28 @@ describe('imageSize', () => {
     expect(imageSize(buffer)).toEqual({ width: 300, height: 200 })
   })
 
+  test('grows the GIF size to a first frame past the logical screen', () => {
+    // 1x1 screen with a 2-color table, a graphic control extension, then a
+    // frame at (10, 20) of 65535x40000.
+    const b = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0, 0x80, 0, 0]
+    b.push(0, 0, 0, 255, 255, 255)
+    b.push(0x21, 0xf9, 4, 0, 0, 0, 0, 0)
+    b.push(0x2c, 10, 0, 20, 0, 0xff, 0xff, 0x40, 0x9c, 0)
+    expect(imageSize(new Uint8Array(b).buffer)).toEqual({
+      width: 65545,
+      height: 40020,
+    })
+  })
+
+  test('refuses a JPEG whose height is deferred to a DNL marker', () => {
+    // SOI, SOF0 with height 0, width 800
+    const buffer = header(
+      [0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x00, 0x03, 0x20],
+      14,
+    )
+    expect(() => imageSize(buffer)).toThrow('Unrecognized')
+  })
+
   test('reads a BMP info header, top-down height made positive', () => {
     const buffer = header([0x42, 0x4d], 26)
     const v = new DataView(buffer)

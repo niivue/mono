@@ -78,8 +78,7 @@ export function imageSize(buffer: ArrayBuffer): {
     return { width: v.getUint32(16), height: v.getUint32(20) }
   }
   if (b.length >= 10 && v.getUint32(0) === 0x47494638) {
-    // GIF: frames are clipped to the logical screen.
-    return { width: v.getUint16(6, true), height: v.getUint16(8, true) }
+    return gifSize(b, v)
   }
   if (b.length >= 26 && b[0] === 0x42 && b[1] === 0x4d) {
     // OS/2 BITMAPCOREHEADER (12 bytes) stores 16-bit sizes.
@@ -109,12 +108,51 @@ export function imageSize(buffer: ArrayBuffer): {
         marker !== 0xc8 &&
         marker !== 0xcc
       ) {
-        return { width: v.getUint16(i + 7), height: v.getUint16(i + 5) }
+        const height = v.getUint16(i + 5)
+        // Height 0 defers it to a DNL marker after the scan: size unknown.
+        if (height === 0) break
+        return { width: v.getUint16(i + 7), height }
       }
       i += 2 + v.getUint16(i + 2)
     }
   }
   throw new Error('Unrecognized or truncated image header')
+}
+
+/**
+ * GIF size: the logical screen, grown to the first frame's bounds. Chromium
+ * decodes a frame that overflows the screen at the frame's size, so a 1x1
+ * screen alone does not bound the allocation.
+ */
+function gifSize(
+  b: Uint8Array,
+  v: DataView,
+): { width: number; height: number } {
+  let width = v.getUint16(6, true)
+  let height = v.getUint16(8, true)
+  // Skip the global color table, then extension blocks, to the first frame.
+  let i = 13
+  if (b.length > 10 && b[10] & 0x80) i += 3 * 2 ** ((b[10] & 7) + 1)
+  while (i < b.length) {
+    if (b[i] === 0x2c) {
+      if (i + 9 > b.length) break
+      width = Math.max(
+        width,
+        v.getUint16(i + 1, true) + v.getUint16(i + 5, true),
+      )
+      height = Math.max(
+        height,
+        v.getUint16(i + 3, true) + v.getUint16(i + 7, true),
+      )
+      break
+    }
+    if (b[i] !== 0x21) break
+    // Extension: introducer, label, then sub-blocks up to a zero length.
+    i += 2
+    while (i < b.length && b[i] !== 0) i += b[i] + 1
+    i++
+  }
+  return { width, height }
 }
 
 export async function decodeImageRGBA(

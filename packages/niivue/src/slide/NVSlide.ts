@@ -660,12 +660,16 @@ export class NVSlide extends EventTarget {
     const halfHeight = screen.heightCss / (2 * this.viewport.scale)
     const padX = Math.max(this.manifest.width * 0.08, halfWidth * 0.25)
     const padY = Math.max(this.manifest.height * 0.08, halfHeight * 0.25)
-    this.viewport.centerX = clamp(
+    // When the view is wider than the padded slide on an axis the range
+    // inverts; centre on the slide rather than pinning to the low bound.
+    const clampAxis = (value: number, min: number, max: number) =>
+      min > max ? (min + max) / 2 : clamp(value, min, max)
+    this.viewport.centerX = clampAxis(
       this.viewport.centerX,
       -padX + halfWidth,
       this.manifest.width + padX - halfWidth,
     )
-    this.viewport.centerY = clamp(
+    this.viewport.centerY = clampAxis(
       this.viewport.centerY,
       -padY + halfHeight,
       this.manifest.height + padY - halfHeight,

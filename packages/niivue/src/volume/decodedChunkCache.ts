@@ -27,7 +27,10 @@
  * whole of the GPU budget in JS heap, before the cap; see `decodedTierBudgetBytes`, which sizes the tier at the shadow
  * plus a tail, so the tier holds every resident chunk AND the most recently
  * evicted ones. The tail is the part that actually pays: it is what a scrub
- * finds when it turns around.
+ * finds when it turns around. That holds only below the cap: past a 256 MiB
+ * shadow the tail shrinks, and past 384 MiB (float32 above a ~403 MB GPU
+ * budget, int16 above ~805 MB) the tier holds only the most recently used part
+ * of the resident set, so a chunk evicted outside it is read from the source.
  *
  * Eviction is plain LRU, which is what that structure wants. The newest
  * entries are the chunks still on the GPU (whose copies cost nothing to lose)

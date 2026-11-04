@@ -214,7 +214,11 @@ voxel; complex64, at 8, is twice it), so before the cap the tier is 0.375x to
 volume, so it does not follow a lighting toggle. The size tracks the datatype
 rather than being a flat fraction of the GPU budget, since a uint8 volume
 shadows for a quarter of what a float32 volume costs. The tail is the part that pays: it is what a scrub finds when it
-turns around.
+turns around. That holds only below the cap. Past a 256 MiB shadow the tail
+shrinks; past 384 MiB (float32 above a ~403 MB GPU budget, int16 above ~805 MB,
+so both at the default 1.5 GB) the tier holds only the most recently used part
+of the resident set, and a chunk evicted outside it is read from the source
+again.
 
 Eviction is plain LRU, which is what that structure wants. The newest entries
 are the chunks still on the GPU, whose copies cost nothing to lose, and the

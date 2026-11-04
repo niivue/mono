@@ -48,10 +48,11 @@ queue with viewports the user has already left.
 a brick's return into an upload alone, with no network, no codec, and no
 multi-chunk assemble. It necessarily SHADOWS the resident set rather than
 holding only evicted chunks (section 7 explains why that is not a choice), and
-it is affordable because a chunk is 1 to 4 bytes per voxel on the CPU against 8
-on the GPU. `decodedTierBudgetBytes` sizes it at that shadow plus a 50 percent
-tail, and the tail is the part that pays: it is what a scrub finds when it
-turns around. Eviction is plain LRU, which for this shape is exactly right,
+it is affordable because a chunk is 1 to 4 bytes per voxel on the CPU against 4
+on the GPU (8 when lit). `decodedTierBudgetBytes` sizes it at that shadow plus a
+50 percent tail, capped at 384 MB, and the tail is the part that pays: it is
+what a scrub finds when it turns around. Past a 384 MB shadow the cap leaves
+the tier covering only the most recently used part of the resident set. Eviction is plain LRU, which for this shape is exactly right,
 since the newest entries are the chunks still on the GPU (free to lose) and the
 oldest are the ones evicted longest ago.
 

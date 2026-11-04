@@ -149,18 +149,12 @@ export function moveCanvasRegistration(
   }
 }
 
-/** True when the controller draws into sub-canvas bounds (shares its canvas) */
+/** True when another controller is registered on this controller's canvas.
+ *  Bounds alone are not enough: a lone bounded controller owns its canvas, and
+ *  a full-frame one can share with a bounded sibling. */
 export function isSharedCanvas(ctrl: NiiVue): boolean {
-  const bounds = ctrl.opts.bounds
-  return (
-    !!bounds &&
-    !(
-      bounds[0][0] === 0 &&
-      bounds[0][1] === 0 &&
-      bounds[1][0] === 1 &&
-      bounds[1][1] === 1
-    )
-  )
+  const instances = getCanvasInstances(ctrl.canvas)
+  return !!instances && [...instances].some((c) => c !== ctrl)
 }
 
 /** Swap the controller's canvas for a context-free clone, repointing its

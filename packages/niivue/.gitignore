@@ -12,3 +12,4 @@ test-results
 playwright-report
 blob-report
 playwright/.cache
+dist-e2e

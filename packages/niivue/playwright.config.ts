@@ -30,7 +30,10 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'bun run e2e:serve',
+    // E2E_BUNDLE=1 tests a build; much faster per test, see vite.config.e2e.ts.
+    command: process.env.E2E_BUNDLE
+      ? 'bun run e2e:serve:bundle'
+      : 'bun run e2e:serve',
     url: `${BASE_URL}/examples/index.html`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

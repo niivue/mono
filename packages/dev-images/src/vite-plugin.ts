@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Plugin } from 'vite'
+import type { Connect, Plugin } from 'vite'
 import { SYNTHETIC_ZARR_ROOT, syntheticZarrFile } from './syntheticZarr'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -26,6 +26,41 @@ function walkDir(dir: string, base: string): string[] {
   return results
 }
 
+const serveImage: Connect.NextHandleFunction = (req, res, next) => {
+  if (!req.url || req.url === '/') return next()
+
+  if (req.url.startsWith(SYNTHETIC_ZARR_ROOT)) {
+    const path = req.url.split('?')[0].slice(SYNTHETIC_ZARR_ROOT.length)
+    const body = syntheticZarrFile(path)
+    if (!body) {
+      res.statusCode = 404
+      res.end()
+      return
+    }
+    res.setHeader('Content-Length', body.byteLength)
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.end(body)
+    return
+  }
+
+  const urlPath = req.url.split('?')[0].replace(/^\//, '')
+  const filePath = resolve(imagesDir, urlPath)
+
+  // Prevent path traversal
+  if (!filePath.startsWith(imagesDir)) return next()
+
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(filePath)
+  } catch {
+    return next()
+  }
+  if (!stat.isFile()) return next()
+  res.setHeader('Content-Length', stat.size)
+  res.setHeader('Content-Type', 'application/octet-stream')
+  fs.createReadStream(filePath).pipe(res)
+}
+
 export interface DevImagesPluginOptions {
   /**
    * Whether to emit image files into the build output.
@@ -47,41 +82,13 @@ export function devImagesPlugin(options?: DevImagesPluginOptions): Plugin {
   return {
     name: 'niivue-dev-images',
 
+    // Preview too: the e2e suite runs against a build that does not emit images.
+    configurePreviewServer(server) {
+      server.middlewares.use(serveImage)
+    },
+
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        if (!req.url || req.url === '/') return next()
-
-        if (req.url.startsWith(SYNTHETIC_ZARR_ROOT)) {
-          const path = req.url.split('?')[0].slice(SYNTHETIC_ZARR_ROOT.length)
-          const body = syntheticZarrFile(path)
-          if (!body) {
-            res.statusCode = 404
-            res.end()
-            return
-          }
-          res.setHeader('Content-Length', body.byteLength)
-          res.setHeader('Content-Type', 'application/octet-stream')
-          res.end(body)
-          return
-        }
-
-        const urlPath = req.url.split('?')[0].replace(/^\//, '')
-        const filePath = resolve(imagesDir, urlPath)
-
-        // Prevent path traversal
-        if (!filePath.startsWith(imagesDir)) return next()
-
-        let stat: fs.Stats
-        try {
-          stat = fs.statSync(filePath)
-        } catch {
-          return next()
-        }
-        if (!stat.isFile()) return next()
-        res.setHeader('Content-Length', stat.size)
-        res.setHeader('Content-Type', 'application/octet-stream')
-        fs.createReadStream(filePath).pipe(res)
-      })
+      server.middlewares.use(serveImage)
     },
 
     generateBundle() {

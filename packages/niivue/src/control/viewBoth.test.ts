@@ -25,7 +25,9 @@ globalThis.ResizeObserver ??= class {
   observe() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver
-const { attachToCanvas, recreateView } = await import('./viewBoth')
+const { attachToCanvas, recreateView, reinitializeView } = await import(
+  './viewBoth'
+)
 const { initInteraction, setupDragAndDrop } = await import('./interactions')
 const { getCanvasInstances, registerCanvasInstance } = await import(
   './canvasRegistry'
@@ -486,6 +488,68 @@ test('a failing thumbnail does not abort attach', async () => {
     await attachToCanvas(ctrl, canvas)
     expect(ctrl.view).toBeInstanceOf(NVViewGL)
     expect(events).toEqual(['viewAttached'])
+  } finally {
+    if (!hadWindow) delete g.window
+  }
+})
+
+test('an antialias change clones a detached canvas and publishes the clone', async () => {
+  const fake = (parentNode: unknown): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode,
+      style: {},
+      cloneNode: () => fake(null),
+      addEventListener() {},
+      removeEventListener() {},
+    }) as HTMLCanvasElement
+  const detached = fake(null)
+  const attached: unknown[] = []
+  const ctrl = {
+    canvas: detached,
+    view: { destroy() {} },
+    opts: {
+      backend: 'webgl2',
+      isAntiAlias: false,
+      isInteractionEnabled: false,
+    },
+    model: { clearAllGPUResources() {}, ui: {} },
+    _eventListeners: {},
+    _wireViewHooks() {},
+    async _rebuildViewResources() {},
+    restoreSlidePlaneView() {},
+    drawScene() {},
+    emit(name: string, detail?: { canvas: unknown }) {
+      if (name === 'viewAttached') attached.push(detail?.canvas)
+    },
+  } as unknown as NiiVue
+  Object.defineProperty(ctrl, 'isAntiAlias', {
+    get: () => ctrl.opts.isAntiAlias,
+  })
+  const g = globalThis as { window?: unknown }
+  const hadWindow = 'window' in g
+  g.window ??= {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+    matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+  }
+  try {
+    expect(
+      await reinitializeView(ctrl, { isAntiAlias: true, forceRestart: false }),
+    ).toBe(true)
+    expect(ctrl.canvas).not.toBe(detached)
+    expect(glCanvases.at(-1)).toBe(ctrl.canvas)
+    expect(attached).toEqual([ctrl.canvas])
+
+    // Shared canvas: siblings hold the context, so the change is refused.
+    const shared = fake({ replaceChild() {} })
+    const sib = { ...ctrl, canvas: shared } as unknown as NiiVue
+    ctrl.canvas = shared
+    registerCanvasInstance(ctrl, shared)
+    registerCanvasInstance(sib, shared)
+    expect(await reinitializeView(ctrl, { isAntiAlias: false })).toBe(false)
+    expect(ctrl.opts.isAntiAlias).toBe(true)
+    expect(ctrl.canvas).toBe(shared)
   } finally {
     if (!hadWindow) delete g.window
   }

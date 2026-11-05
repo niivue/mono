@@ -151,9 +151,9 @@ export async function attachToCanvas(
 
 /**
  * Replace the canvas DOM element and update all registered siblings'
- * references. `cloneDetached` is for a backend switch: the old context type is
- * locked to the canvas, so even a detached one must be swapped (the clone is
- * published as `ctrl.canvas` and through `viewAttached`).
+ * references. `cloneDetached` is for a backend or antialias change: both are
+ * locked into the canvas's context, so even a detached one must be swapped (the
+ * clone is published as `ctrl.canvas` and through `viewAttached`).
  */
 function replaceCanvasElement(ctrl: NiiVue, cloneDetached = false): void {
   const canvas = ctrl.canvas as HTMLCanvasElement
@@ -187,6 +187,7 @@ function restoreSharedCanvas(
 export async function recreateView(
   ctrl: NiiVue,
   backendChanged = false,
+  antiAliasChanged = false,
 ): Promise<void> {
   // 1. Destroy current view
   ctrl.emit('viewDestroyed')
@@ -211,7 +212,7 @@ export async function recreateView(
   for (const sib of siblings) removeInteractionListeners(sib)
   const oldCanvas = ctrl.canvas as HTMLCanvasElement
   if (!isSharedCanvas(ctrl) || backendChanged) {
-    replaceCanvasElement(ctrl, backendChanged)
+    replaceCanvasElement(ctrl, backendChanged || antiAliasChanged)
   }
   // 6. Create new view with current settings
   let view: NVViewGL | NVViewGPU
@@ -333,6 +334,11 @@ export async function reinitializeView(
     return true
   }
 
+  // Antialias is fixed when a context is created, and siblings share this one.
+  if (antiAliasChanged && !backendChanged && isSharedCanvas(ctrl)) {
+    log.warn('Cannot change antialiasing on a canvas shared by other views.')
+    return false
+  }
   // Update options
   ctrl.opts.backend = newBackend
   ctrl.opts.isAntiAlias = Boolean(newAntiAlias)
@@ -341,7 +347,7 @@ export async function reinitializeView(
   try {
     if (forceRestart || backendChanged || antiAliasChanged) {
       // Canvas recreation needed
-      await recreateView(ctrl, backendChanged)
+      await recreateView(ctrl, backendChanged, antiAliasChanged)
     }
     // The setter also updates controllers sharing this canvas.
     if (pixelRatioChanged) ctrl.devicePixelRatio = newPixelRatio

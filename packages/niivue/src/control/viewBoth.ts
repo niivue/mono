@@ -261,8 +261,13 @@ async function finishViewRebuild(ctrl: NiiVue): Promise<void> {
   // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
   ctrl._wireViewHooks()
   // 7b. Reload thumbnail if it was active before recreation
+  // A bad thumbnail is cosmetic: it must not leave the view without handlers.
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
-    await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
+    try {
+      await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
+    } catch (error) {
+      log.warn('Failed to reload the thumbnail:', error)
+    }
   }
   // 8. Reinstall event handlers on new canvas
   if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)

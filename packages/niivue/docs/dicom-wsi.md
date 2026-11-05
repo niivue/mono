@@ -63,6 +63,11 @@ NVSlide (`assertSingleSlidePlane`) then refuses any `dicom-wsi*` level unless:
 Unknown is never treated as 1.
 
 **Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
+**ICC profiles are kept, not yet applied.** Manifests record the optical path's ICC
+profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0
+file (`fetch-dicom-wsi.ts`, the IIIF server route) or a DICOMweb bulk-data URL (nv-ohif), plus
+`colorSpace` when stated. NVSlide does not apply it yet, so slide colour is not colour-managed;
+applying it is release 1.1 (plan P5).
 
 **JPEG 2000 colour follows the codestream.** With MCT (ICT/RCT) the codec has already
 produced RGB, so a `YBR_ICT`/`YBR_RCT` label must not trigger a second conversion

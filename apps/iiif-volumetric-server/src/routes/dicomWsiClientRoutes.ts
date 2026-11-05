@@ -87,7 +87,28 @@ interface DicomWsiClientManifest {
   displayYAxis: 'down'
   dtype: 'uint8'
   channels: 'encoded-rgb'
+  /** The optical path's ICC profile, (0048,0105) > (0028,2000), as a byte range. */
+  iccProfile?: {
+    url: string
+    offset: number
+    length: number
+    colorSpace?: string
+  }
   levels: DicomWsiClientLevel[]
+}
+
+function iccProfileRange(
+  ds: DataSet,
+): { offset: number; length: number; colorSpace?: string } | undefined {
+  const item = ds.elements.x00480105?.items?.[0]?.dataSet
+  const icc = item?.elements.x00282000
+  if (!item || !icc) return undefined
+  const colorSpace = item.string('x00282002')
+  return {
+    offset: icc.dataOffset,
+    length: icc.length,
+    ...(colorSpace ? { colorSpace } : {}),
+  }
 }
 
 let parserPromise: Promise<DicomParserModule> | null = null
@@ -312,6 +333,8 @@ async function buildClientManifest(
     }
     return levelManifest(level, parsedLevel, l0)
   })
+  const l0Parsed = parsedByFile.get(l0.file)
+  const icc = l0Parsed && iccProfileRange(l0Parsed.dataSet)
   return {
     id: entry.id,
     name: `${entry.id} DICOM-WSI range manifest`,
@@ -323,6 +346,9 @@ async function buildClientManifest(
     displayYAxis: 'down', // DICOM row 0 is the top, as OpenSlide and other viewers show it
     dtype: 'uint8',
     channels: 'encoded-rgb',
+    ...(icc && l0Parsed
+      ? { iccProfile: { url: fileUrl(l0Parsed.fileName), ...icc } }
+      : {}),
     levels: clientLevels,
   }
 }

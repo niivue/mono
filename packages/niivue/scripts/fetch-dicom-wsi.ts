@@ -222,6 +222,7 @@ interface WsiMeta {
   bitsStored?: number
   flavor: WsiFlavor
   spacingMM: [number, number]
+  iccProfile?: { offset: number; length: number; colorSpace?: string }
   /** Tag values, unset when absent; NVSlide checks them against the frames. */
   opticalPaths?: number
   focalPlanes?: number
@@ -260,6 +261,22 @@ function classifyImageType(imageType: string): WsiFlavor {
   return 'other'
 }
 
+// The first optical path's ICC profile, (0048,0105) > (0028,2000), as a byte
+// range in the file, kept in the manifest for colour management.
+function iccProfileRange(
+  ds: dicomParser.DataSet,
+): WsiMeta['iccProfile'] | undefined {
+  const item = ds.elements.x00480105?.items?.[0]?.dataSet
+  const icc = item?.elements.x00282000
+  if (!item || !icc) return undefined
+  const colorSpace = item.string('x00282002')
+  return {
+    offset: icc.dataOffset,
+    length: icc.length,
+    ...(colorSpace ? { colorSpace } : {}),
+  }
+}
+
 function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
   const imageType = ds.string(TAG.imageType) ?? ''
   const width =
@@ -284,6 +301,7 @@ function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
     ? [psX as number, psY as number]
     : [ivw && width ? ivw / width : 1, ivh && height ? ivh / height : 1]
   return {
+    iccProfile: iccProfileRange(ds),
     opticalPaths: ds.uint32(TAG.numberOfOpticalPaths),
     focalPlanes: ds.uint32(TAG.totalPixelMatrixFocalPlanes),
     file,
@@ -527,6 +545,11 @@ export async function buildManifest(
     // Physical size of one base (level-0) pixel in mm [x, y]; consumed by
     // NVSlideManifest.pixelSpacingMM so a viewer can measure in real units.
     pixelSpacingMM: levels[0]?.spacingMM,
+    ...(volumes[0]?.meta.iccProfile && levels[0]
+      ? {
+          iccProfile: { url: levels[0].fileUrl, ...volumes[0].meta.iccProfile },
+        }
+      : {}),
     levels,
   }
 }

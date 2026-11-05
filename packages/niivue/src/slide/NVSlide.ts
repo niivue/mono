@@ -90,6 +90,20 @@ export interface NVSlideLevelManifest {
   tiles: NVSlideTileManifest[]
 }
 
+/**
+ * A slide's ICC profile, kept for colour management. NVSlide does not apply it
+ * yet, so slide colour is not colour-managed.
+ */
+export interface NVSlideIccProfile {
+  /** Resolved like a level's `fileUrl`, or absolute (e.g. DICOMweb bulk data). */
+  url: string
+  /** Byte range of the profile within `url`; absent when `url` is just the profile. */
+  offset?: number
+  length?: number
+  /** DICOM ColorSpace (0028,2002), e.g. 'SRGB', when stated. */
+  colorSpace?: string
+}
+
 export interface NVSlideManifest {
   id: string
   name: string
@@ -113,6 +127,8 @@ export interface NVSlideManifest {
    * base-pixel distance x this spacing.
    */
   pixelSpacingMM?: readonly [number, number]
+  /** DICOM-WSI: the optical path's ICC profile, (0048,0105) > (0028,2000). */
+  iccProfile?: NVSlideIccProfile
 }
 
 export interface NVSlideViewport {

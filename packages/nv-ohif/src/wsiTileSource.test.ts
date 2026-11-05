@@ -421,6 +421,27 @@ describe('buildWsiManifest', () => {
     })
   })
 
+  it('keeps the optical path ICC profile link from bulk data', () => {
+    const ds = smDisplaySet()
+    const instances = ds.instances?.map((inst) => ({
+      ...inst,
+      OpticalPathSequence: [
+        {
+          ICCProfile: { BulkDataURI: 'https://h/bulk/icc' },
+          ColorSpace: 'SRGB',
+        },
+      ],
+    }))
+    const built = buildWsiManifest({ ...ds, instances })
+    expect(built?.manifest.iccProfile).toEqual({
+      url: 'https://h/bulk/icc',
+      colorSpace: 'SRGB',
+    })
+    expect(
+      buildWsiManifest(smDisplaySet())?.manifest.iccProfile,
+    ).toBeUndefined()
+  })
+
   it('maps a JPEG 2000 slide to image/jp2', () => {
     const ds = smDisplaySet()
     const instances = ds.instances?.map((inst) => ({

@@ -1,4 +1,5 @@
 import type {
+  NVSlideIccProfile,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileManifest,
@@ -133,7 +134,23 @@ function deriveSpacingMM(
 }
 
 // A whole-slide pyramid level read from one OHIF SM instance.
+// The optical path's ICC profile, when the metadata links it as bulk data
+// (DICOMweb returns large binary values as a BulkDataURI, not inline).
+function iccProfileOf(
+  inst: Record<string, unknown>,
+): NVSlideIccProfile | undefined {
+  const path = first(inst.OpticalPathSequence) as
+    | Record<string, unknown>
+    | undefined
+  const icc = first(path?.ICCProfile) as { BulkDataURI?: unknown } | undefined
+  const url = str(icc?.BulkDataURI)
+  if (!url) return undefined
+  const colorSpace = str(first(path?.ColorSpace))
+  return { url, ...(colorSpace ? { colorSpace } : {}) }
+}
+
 interface WsiLevel {
+  iccProfile?: NVSlideIccProfile
   matrixColumns: number
   matrixRows: number
   tileColumns: number
@@ -244,6 +261,7 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
         ? CODEC_BY_TRANSFER_SYNTAX[transferSyntax]
         : 'image/jpeg',
       spacingMM: deriveSpacingMM(inst, matrixColumns, matrixRows),
+      iccProfile: iccProfileOf(inst),
       // Only decline when the layout is EXPLICITLY non-full; absent = assume
       // TILED_FULL (the common case, and what levelTiles maps). Unwrap any array
       // nesting (`['TILED_SPARSE']`, `[['TILED_SPARSE']]`) to the scalar.
@@ -360,6 +378,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     // Physical spacing from the finest tier, so the ruler measures in real
     // microns / millimetres; omitted (ruler falls back to pixels) when absent.
     ...(level0.spacingMM ? { pixelSpacingMM: level0.spacingMM } : {}),
+    ...(level0.iccProfile ? { iccProfile: level0.iccProfile } : {}),
     levels,
   }
   return {

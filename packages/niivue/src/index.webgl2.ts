@@ -214,6 +214,7 @@ export type {
   NVSlideViewport,
   NVSlideVisibleTile,
   NVSlideVisibleTiles,
+  NVSlideIccProfile,
   NVSlideWindow,
   NVSlideYAxis,
   SlideSourceHost,

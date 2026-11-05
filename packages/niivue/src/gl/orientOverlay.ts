@@ -25,6 +25,7 @@ import {
   chunkModulationParams,
   chunkOverlayMatrix,
 } from '@/volume/orientChunked'
+import { createUnitQuad } from './glUtil'
 
 type ShaderPrograms = {
   uint: WebGLProgram
@@ -203,7 +204,7 @@ export function rgba2TextureChunk(
 // Vertex shader - renders a full-screen quad for each output slice
 const vertShader = `#version 300 es
 precision highp float;
-in vec3 vPos;
+layout(location = 0) in vec3 vPos;
 out vec2 TexCoord;
 void main() {
     TexCoord = vPos.xy;
@@ -620,36 +621,6 @@ function bindModulation(
 }
 
 /**
- * Create the full-screen quad geometry
- * @param {WebGL2RenderingContext} gl - WebGL2 context
- * @param {WebGLProgram} program - Shader program to get attribute location from
- * @returns {Object} Object containing VAO and VBO
- */
-function createQuadGeometry(gl: WebGL2RenderingContext, program: WebGLProgram) {
-  // Full-screen quad vertices (x, y, z) covering 0..1 in UV space
-  const vertices = new Float32Array([
-    0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-  ])
-  const vao = gl.createVertexArray()
-  if (!vao) {
-    throw new Error('orientOverlay: failed to create VAO')
-  }
-  gl.bindVertexArray(vao)
-  const vbo = gl.createBuffer()
-  if (!vbo) {
-    gl.bindVertexArray(null)
-    throw new Error('orientOverlay: failed to create VBO')
-  }
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW)
-  const posLoc = gl.getAttribLocation(program, 'vPos')
-  gl.enableVertexAttribArray(posLoc)
-  gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0)
-  gl.bindVertexArray(null)
-  return { vao, vbo }
-}
-
-/**
  * Determine WebGL texture format and shader type based on NIfTI datatype code
  * @param {number} datatypeCode - NIfTI datatype code
  * @returns {Object} Object with internalFormat, format, type, shaderType, and TypedArrayConstructor
@@ -935,7 +906,7 @@ export function prepareOverlayTextureCache(
   const programs = getOrCreatePrograms(gl)
   const program = programs[texConfig.shaderType]
   const uniforms = getUniformLocations(gl, program)
-  const { vao, vbo } = createQuadGeometry(gl, program)
+  const { vao, vbo } = createUnitQuad(gl)
   const glAny = gl as WebGL2RenderingContext & Record<string, number>
   const inputTexture = gl.createTexture()
   const colormapTexture = gl.createTexture()
@@ -1236,7 +1207,7 @@ export function overlay2Texture(
   // Get uniform locations
   const uniforms = getUniformLocations(gl, program)
   // Create quad geometry
-  const { vao, vbo } = createQuadGeometry(gl, program)
+  const { vao, vbo } = createUnitQuad(gl)
   // --- Create input 3D texture ---
   const inputTexture = gl.createTexture()
   if (!inputTexture) {
@@ -1651,7 +1622,7 @@ export function orientChunkToTexture(
   const program = programs[texConfig.shaderType]
   gl.useProgram(program)
   const uniforms = getUniformLocations(gl, program)
-  const { vao, vbo } = createQuadGeometry(gl, program)
+  const { vao, vbo } = createUnitQuad(gl)
   const glAny = gl as WebGL2RenderingContext & Record<string, number>
   const inputTexture = gl.createTexture()
   const colormapTexture = gl.createTexture()

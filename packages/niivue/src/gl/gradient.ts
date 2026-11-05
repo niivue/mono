@@ -11,6 +11,7 @@ import {
   GRAD_SHIFT,
   SOBEL_RADIUS,
 } from '@/view/NVGradient'
+import { createUnitQuad, setTexParams } from './glUtil'
 
 interface Programs {
   blur: WebGLProgram
@@ -154,11 +155,7 @@ function createTexture3D(
   const tex = gl.createTexture()
   if (!tex) throw new Error('Gradient texture creation failed')
   gl.bindTexture(gl.TEXTURE_3D, tex)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  setTexParams(gl, gl.TEXTURE_3D, gl.LINEAR)
   gl.texStorage3D(gl.TEXTURE_3D, 1, format, ...dims)
   return tex
 }
@@ -196,32 +193,6 @@ function renderSlices(
 }
 
 /**
- * Create the full-screen quad geometry
- */
-function createQuadGeometry(gl: WebGL2RenderingContext) {
-  const vertices = new Float32Array([
-    0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-  ])
-  const vao = gl.createVertexArray()
-  if (!vao) {
-    throw new Error('Gradient VAO creation failed')
-  }
-  gl.bindVertexArray(vao)
-  const vbo = gl.createBuffer()
-  if (!vbo) {
-    gl.bindVertexArray(null)
-    throw new Error('Gradient VBO creation failed')
-  }
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW)
-  // vPos is pinned to location 0 in vertShader, so one VAO serves both programs.
-  gl.enableVertexAttribArray(0)
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
-  gl.bindVertexArray(null)
-  return { vao, vbo }
-}
-
-/**
  * Compute the gradient texture of an RGBA8 volume texture: RGB = unit normal
  * encoded to [0, 1], A = log-encoded magnitude. See view/NVGradient.ts.
  */
@@ -232,7 +203,8 @@ export function volume2TextureGradientRGBA(
 ): WebGLTexture {
   const [vx, vy] = dims
   const programs = getOrCreatePrograms(gl)
-  const { vao, vbo } = createQuadGeometry(gl)
+  // vPos is pinned to location 0 in vertShader, so one VAO serves both programs.
+  const { vao, vbo } = createUnitQuad(gl)
 
   // LINEAR + clamp-to-edge on the INPUT, matching the sampler wgpu/wgpu.ts
   // hands to sobel.wgsl. The wrap decides what a tap reads outside the volume:
@@ -241,11 +213,7 @@ export function volume2TextureGradientRGBA(
   // backends agree by construction rather than by the caller's good behaviour.
   gl.activeTexture(gl.TEXTURE0)
   gl.bindTexture(gl.TEXTURE_3D, textureRGBA)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  setTexParams(gl, gl.TEXTURE_3D, gl.LINEAR)
 
   const blurred = createTexture3D(gl, gl.R8, dims)
   const outputTexture = createTexture3D(gl, gl.RGBA8, dims)

@@ -1,5 +1,6 @@
 import { loadImageElement } from '@/NVLoader'
 import { NVRenderer } from '@/view/NVRenderer'
+import { setTexParams } from './glUtil'
 import { Shader } from './shader'
 
 const vertShader = `#version 300 es
@@ -76,10 +77,7 @@ export class ThumbnailRenderer extends NVRenderer {
     this._texture = gl.createTexture()
     if (!this._texture) return
     gl.bindTexture(gl.TEXTURE_2D, this._texture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
   }
 
@@ -91,20 +89,11 @@ export class ThumbnailRenderer extends NVRenderer {
   draw(gl: WebGL2RenderingContext): void {
     if (!this.isReady || !this._shader || !this._texture) return
 
+    const { uniforms } = this._shader
     this._shader.use(gl)
-
-    if (this._shader.uniforms.canvasSize)
-      gl.uniform2f(
-        this._shader.uniforms.canvasSize,
-        this._canvasWidth,
-        this._canvasHeight,
-      )
-    if (this._shader.uniforms.texSize)
-      gl.uniform2f(
-        this._shader.uniforms.texSize,
-        this._texWidth,
-        this._texHeight,
-      )
+    // A null location (uniform optimised out) is a no-op in WebGL.
+    gl.uniform2f(uniforms.canvasSize, this._canvasWidth, this._canvasHeight)
+    gl.uniform2f(uniforms.texSize, this._texWidth, this._texHeight)
 
     gl.depthMask(false)
     gl.disable(gl.DEPTH_TEST)
@@ -114,8 +103,7 @@ export class ThumbnailRenderer extends NVRenderer {
 
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this._texture)
-    if (this._shader.uniforms.thumbTex)
-      gl.uniform1i(this._shader.uniforms.thumbTex, 0)
+    gl.uniform1i(uniforms.thumbTex, 0)
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
 

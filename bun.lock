@@ -92,6 +92,7 @@
     "apps/demo-ext-wsi": {
       "name": "demo-ext-wsi",
       "dependencies": {
+        "@niivue/dcm2niix": "^1.4.20261105-rc.1",
         "@niivue/niivue": "workspace:*",
         "@niivue/nv-ext-wsi": "workspace:*",
         "geotiff": "^3.0.5",

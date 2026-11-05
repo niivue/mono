@@ -169,3 +169,30 @@ test('WebGPU changes antialias per view, even on a shared canvas', async () => {
   expect(await gpu.reinitializeView(solo, options)).toBe(true)
   expect(solo.canvas).toBe(detached)
 })
+
+test('a failed attach leaves the canvas unregistered', async () => {
+  class FailingView extends FakeView {
+    async init() {
+      throw new Error('no context')
+    }
+  }
+  const failing = singleBackendLifecycle(
+    'webgl2',
+    FailingView as unknown as typeof NVViewGL,
+  )
+  // Not laid out, so the failure message has nothing to cover.
+  const canvas = Object.assign(
+    Object.create(HTMLCanvasElement.prototype),
+    fakeCanvas(),
+    { getBoundingClientRect: () => ({ width: 0, height: 0 }) },
+  ) as HTMLCanvasElement
+  const hadDocument = 'document' in globalThis
+  globalThis.document ??= {
+    createElement: () => ({ setAttribute() {}, style: {} }),
+  } as unknown as Document
+  await expect(
+    failing.attachToCanvas(fakeCtrl(canvas), canvas),
+  ).rejects.toThrow('no context')
+  if (!hadDocument) Reflect.deleteProperty(globalThis, 'document')
+  expect(getCanvasInstances(canvas)?.size ?? 0).toBe(0)
+})

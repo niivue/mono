@@ -116,6 +116,8 @@ export function singleBackendLifecycle(
         // a view that failed mid-init may not destroy cleanly; ignore
       }
       ctrl.view = null
+      // Don't leave it registered, or later controllers see a shared canvas.
+      unregister(ctrl)
       // No other backend to fall back to, so surface guidance on-canvas.
       showCanvasMessage(canvas, GRAPHICS_UNAVAILABLE_MESSAGE)
       throw error

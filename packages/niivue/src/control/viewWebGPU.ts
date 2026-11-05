@@ -90,7 +90,10 @@ export async function attachToCanvas(
   }
 }
 
-export async function recreateView(ctrl: NiiVue): Promise<void> {
+export async function recreateView(
+  ctrl: NiiVue,
+  cloneDetached = false,
+): Promise<void> {
   ctrl.view?.destroy()
   ctrl.view = null
   ctrl.model.clearAllGPUResources()
@@ -100,10 +103,12 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   }
   // Same backend, so a canvas shared through bounds keeps its context (as in
   // viewBoth); an unshared one is cloned, since antialias is fixed at context
-  // creation. A detached canvas stays put: the caller holds it and may attach
-  // it later, so a clone would draw where nobody looks.
+  // creation. A detached canvas stays put unless antialias changes: the caller
+  // holds it, so the clone reaches them only through viewAttached.
   const canvas = ctrl.canvas as HTMLCanvasElement
-  if (!isSharedCanvas(ctrl) && canvas.parentNode) replaceCanvas(ctrl)
+  if (!isSharedCanvas(ctrl) && (canvas.parentNode || cloneDetached)) {
+    replaceCanvas(ctrl)
+  }
   const view = new NVViewGPU(
     ctrl.canvas as HTMLCanvasElement,
     ctrl.model,
@@ -158,13 +163,19 @@ export async function reinitializeView(
   if (!forceRestart && !antiAliasChanged && !pixelRatioChanged) {
     return true
   }
+  // Antialias is fixed when a context is created, and siblings share this one.
+  if (antiAliasChanged && isSharedCanvas(ctrl)) {
+    log.warn('Cannot change antialiasing on a canvas shared by other views.')
+    return false
+  }
 
   ctrl.opts.backend = 'webgpu'
   ctrl.opts.isAntiAlias = Boolean(newAntiAlias)
   ctrl.opts.forceDevicePixelRatio = newPixelRatio
 
   try {
-    if (forceRestart || antiAliasChanged) await recreateView(ctrl)
+    if (forceRestart || antiAliasChanged)
+      await recreateView(ctrl, antiAliasChanged)
     // The setter also updates controllers sharing this canvas.
     if (pixelRatioChanged) ctrl.devicePixelRatio = newPixelRatio
     return true

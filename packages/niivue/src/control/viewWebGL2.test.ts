@@ -157,3 +157,31 @@ test('a failing thumbnail neither aborts attach nor a rebuild', async () => {
   await recreateView(ctrl)
   expect(rebuilt).toBe(true)
 })
+
+test('an antialias change clones a detached canvas', async () => {
+  const detached = fakeCanvas(false)
+  const ctrl = fakeCtrl(detached)
+  ctrl.opts.isAntiAlias = false
+  expect(
+    await reinitializeView(ctrl, {
+      backend: 'webgl2',
+      isAntiAlias: true,
+      forceRestart: false,
+    }),
+  ).toBe(true)
+  expect(ctrl.canvas).not.toBe(detached)
+  expect(viewCanvases.at(-1)).toBe(ctrl.canvas)
+})
+
+test('an antialias change on a shared canvas is refused', async () => {
+  const shared = fakeCanvas()
+  const [a, b] = [fakeCtrl(shared), fakeCtrl(shared)]
+  registerCanvasInstance(a, shared)
+  registerCanvasInstance(b, shared)
+  a.opts.isAntiAlias = false
+  expect(
+    await reinitializeView(a, { backend: 'webgl2', isAntiAlias: true }),
+  ).toBe(false)
+  expect(a.opts.isAntiAlias).toBe(false)
+  expect(a.canvas).toBe(shared)
+})

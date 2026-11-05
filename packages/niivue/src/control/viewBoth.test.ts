@@ -89,3 +89,34 @@ test('a backend switch on a shared canvas moves every sibling view to the new ca
   expect(glCanvases.slice(-2)).toEqual([left.canvas, left.canvas])
   expect(getCanvasInstances(left.canvas)).toEqual(new Set([left, right]))
 })
+
+test('a detached canvas is cloned on a backend switch, kept on a same-backend recreate', async () => {
+  const fakeCanvas = (): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode: null,
+      style: {},
+      cloneNode: () => fakeCanvas(),
+      addEventListener() {},
+      removeEventListener() {},
+    }) as HTMLCanvasElement
+  const userCanvas = fakeCanvas()
+  const ctrl = {
+    canvas: userCanvas,
+    view: { destroy() {} },
+    opts: { backend: 'webgl2', isInteractionEnabled: false },
+    model: { clearAllGPUResources() {}, ui: {} },
+    _eventListeners: {},
+    _wireViewHooks() {},
+    async _rebuildViewResources() {},
+    restoreSlidePlaneView() {},
+    drawScene() {},
+    emit() {},
+  } as unknown as NiiVue
+  registerCanvasInstance(ctrl, userCanvas)
+  await recreateView(ctrl)
+  expect(ctrl.canvas).toBe(userCanvas)
+  // A webgpu-locked canvas cannot hand out a webgl2 context.
+  await recreateView(ctrl, true)
+  expect(ctrl.canvas).not.toBe(userCanvas)
+  expect(glCanvases.at(-1)).toBe(ctrl.canvas)
+})

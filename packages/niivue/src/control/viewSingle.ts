@@ -127,8 +127,10 @@ export function singleBackendLifecycle(
     }
     // Same backend, so a canvas shared through bounds keeps its context (as in
     // viewBoth); an unshared one is cloned, since antialias is fixed at context
-    // creation.
-    if (!isSharedCanvas(ctrl)) replaceCanvas(ctrl)
+    // creation. A detached canvas stays put: the caller holds it and may attach
+    // it later, so a clone would draw where nobody looks.
+    const canvas = ctrl.canvas as HTMLCanvasElement
+    if (!isSharedCanvas(ctrl) && canvas.parentNode) replaceCanvas(ctrl)
     const view = new View(
       ctrl.canvas as HTMLCanvasElement,
       ctrl.model,

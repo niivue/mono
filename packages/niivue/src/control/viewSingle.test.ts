@@ -78,9 +78,9 @@ test('recreateView keeps the canvas viewport and registry', async () => {
   expect(getCanvasInstances(ctrl.canvas)).toEqual(new Set([ctrl]))
   expect(getCanvasInstances(old)).toBeNull()
 
-  // A detached canvas is cloned too, so a new antialias setting takes effect.
+  // A detached canvas stays the caller's: they may attach it later.
   const detached = fakeCanvas(false)
   const lone = fakeCtrl(detached)
   await recreateView(lone)
-  expect(lone.canvas).not.toBe(detached)
+  expect(lone.canvas).toBe(detached)
 })

@@ -158,8 +158,9 @@ export function isSharedCanvas(ctrl: NiiVue): boolean {
 }
 
 /** Swap the controller's canvas for a context-free clone, repointing its
- *  siblings, registry and viewport. A detached canvas is cloned too, since a
- *  context option such as antialias is fixed at creation. */
+ *  siblings, registry and viewport. Callers decide whether a detached canvas
+ *  is swapped: only a backend switch needs it, since the old context type is
+ *  locked to the canvas. */
 export function replaceCanvas(ctrl: NiiVue): HTMLCanvasElement {
   const oldCanvas = ctrl.canvas as HTMLCanvasElement
   // cloneNode(false) copies all attributes (id, class, style, width/height,

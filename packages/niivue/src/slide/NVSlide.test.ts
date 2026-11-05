@@ -735,3 +735,18 @@ describe('NVSlide tile decoder context', () => {
     slide.dispose()
   })
 })
+
+describe('NVSlide tile-cache budget', () => {
+  it('shows the finest coarser level whose visible tiles fit the cache', () => {
+    // 128 decoded bytes per tile: L0 needs 16 tiles (2048 B), L1 4 (512 B).
+    const slide = NVSlide.fromSource(new CountingSource(makePyramid()), {
+      maxCacheBytes: 600,
+    })
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    const visible = slide.visibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(visible.level?.index).toBe(1)
+    expect(visible.tiles.length).toBe(4)
+    slide.dispose()
+  })
+})

@@ -489,17 +489,23 @@ function updateHud(screen) {
     els.hud.innerHTML = '<div class="title">Loading tile manifest</div>'
     return
   }
-  const level = slide.selectLevel()
+  // The drawn level: a pinned level too large for the tile cache shows a coarser one.
+  const { level, tiles: visibleTiles } = slide.visibleTiles(screen)
   if (!level) {
     els.hud.innerHTML = '<div class="title">Loading tile manifest</div>'
     return
   }
   const s = slide.stats
-  const mode = slide.levelChoice === 'auto' ? 'auto' : 'fixed'
+  const mode =
+    slide.levelChoice === 'auto'
+      ? 'auto'
+      : slide.levelChoice === level.index
+        ? 'fixed'
+        : `(L${slide.levelChoice} exceeds the tile cache)`
   const scale = slide.viewport.scale
   const zoom =
     scale >= 1 ? `${scale.toFixed(2)}x` : `1:${(1 / scale).toFixed(1)}`
-  const visible = slide.visibleTiles(screen).tiles.length
+  const visible = visibleTiles.length
   const codec = level.codec ?? 'raw-rgba'
   const backendLabel = view?.kind === 'gpu' ? 'WebGPU' : 'WebGL2'
   els.hud.innerHTML = `

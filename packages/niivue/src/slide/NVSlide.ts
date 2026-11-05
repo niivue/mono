@@ -301,7 +301,7 @@ class NVSlideTileCache {
   private readonly entries = new Map<string, TileBitmap>()
   bytes = 0
 
-  constructor(private readonly maxBytes: number) {}
+  constructor(readonly maxBytes: number) {}
 
   get(key: string): TileBitmap | undefined {
     const entry = this.entries.get(key)
@@ -851,10 +851,35 @@ export class NVSlide extends EventTarget {
    * target tile is still missing, so a settled view pays nothing for it.
    */
   visibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
-    const level = this.selectLevel()
+    let level = this.selectLevel()
     if (!level) return { level: null, tiles: [], fallback: [] }
-    const tiles = this.tilesForLevel(level, screen)
+    let tiles = this.tilesForLevel(level, screen)
+    // A level whose visible tiles cannot all stay decoded thrashes: each load
+    // evicts a visible tile, which is requested again. Show the finest coarser
+    // level that fits (e.g. a pinned L0 viewed whole).
+    const levels = this.manifest.levels
+    for (
+      let pos = levels.indexOf(level) + 1;
+      pos < levels.length && !this.fitsCache(tiles);
+      pos++
+    ) {
+      level = levels[pos] as NVSlideLevelManifest
+      tiles = this.tilesForLevel(level, screen)
+    }
+    if (!this.fitsCache(tiles) && !this._warnedTileFlood) {
+      this._warnedTileFlood = true
+      console.warn(
+        `NVSlide ${this.id}: even L${level.index} needs ${tiles.length} tiles in view, more than the tile cache (maxCacheBytes) or the ${MAX_VISIBLE_TILES}-tile cap holds; tiles will reload. Check the manifest's tile size / level dimensions, or raise maxCacheBytes.`,
+      )
+    }
     return { level, tiles, fallback: this.fallbackTiles(level, tiles, screen) }
+  }
+
+  private fitsCache(tiles: readonly NVSlideVisibleTile[]): boolean {
+    if (tiles.length >= MAX_VISIBLE_TILES) return false // truncated
+    let bytes = 0
+    for (const { tile } of tiles) bytes += tile.width * tile.height * 4
+    return bytes <= this._cache.maxBytes
   }
 
   /**
@@ -947,14 +972,6 @@ export class NVSlide extends EventTarget {
     )
     const screenScale = this.viewport.scale * dpr
     const tiles: NVSlideVisibleTile[] = []
-    const spanCount = (lastX - firstX + 1) * (lastY - firstY + 1)
-    if (spanCount > MAX_VISIBLE_TILES && !this._warnedTileFlood) {
-      this._warnedTileFlood = true
-      console.warn(
-        `NVSlide ${this.id}: ${spanCount} tiles in view at L${level.index} exceeds the ${MAX_VISIBLE_TILES}-tile safety cap; drawing a truncated set. Check the manifest's tile size / level dimensions.`,
-      )
-    }
-
     outer: for (let y = firstY; y <= lastY; y++) {
       for (let x = firstX; x <= lastX; x++) {
         if (tiles.length >= MAX_VISIBLE_TILES) break outer

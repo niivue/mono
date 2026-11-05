@@ -26,7 +26,11 @@ import {
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
-import type { ReinitializeOptions, ViewLifecycle } from './viewLifecycle'
+import {
+  loadThumbnailSafely,
+  type ReinitializeOptions,
+  type ViewLifecycle,
+} from './viewLifecycle'
 
 type SingleBackend = 'webgl2' | 'webgpu'
 type ViewClass = typeof NVViewGL | typeof NVViewGPU
@@ -94,7 +98,7 @@ export function singleBackendLifecycle(
       if (ctrl.opts.thumbnail) {
         ctrl.model.ui.isThumbnailVisible = true
         ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
-        await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+        await loadThumbnailSafely(view, ctrl.model.ui.thumbnailUrl)
       }
       if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
       if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
@@ -143,13 +147,8 @@ export function singleBackendLifecycle(
     // Hooks go on before the resize() below draws the first frame: a preloaded
     // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
     ctrl._wireViewHooks()
-    // A bad thumbnail is cosmetic: it must not leave the view without handlers.
     if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
-      try {
-        await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
-      } catch (error) {
-        log.warn('Failed to reload the thumbnail:', error)
-      }
+      await loadThumbnailSafely(ctrl.view, ctrl.opts.thumbnail as string)
     }
     if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
     if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)

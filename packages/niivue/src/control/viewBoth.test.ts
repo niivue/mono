@@ -26,6 +26,7 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 } as unknown as typeof ResizeObserver
 const { attachToCanvas, recreateView } = await import('./viewBoth')
+const { initInteraction, setupDragAndDrop } = await import('./interactions')
 const { getCanvasInstances, registerCanvasInstance } = await import(
   './canvasRegistry'
 )
@@ -230,4 +231,62 @@ test('a backend switch takes sibling handlers off the old shared canvas', async 
   left.opts.backend = 'webgl2'
   await recreateView(left, true)
   expect(listeners.size).toBe(0)
+})
+
+test('a failed backend switch leaves siblings on the old shared canvas', async () => {
+  spyOn(NVViewGL.prototype, 'init').mockRejectedValue(
+    new Error('WebGL2 context unavailable'),
+  )
+  const listeners = new Set<unknown>()
+  const parent = {
+    child: null as unknown,
+    replaceChild(next: unknown) {
+      this.child = next
+    },
+  }
+  const canvas = (): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode: parent,
+      style: {},
+      cloneNode: canvas,
+      addEventListener(_t: string, f: unknown) {
+        listeners.add(f)
+      },
+      removeEventListener(_t: string, f: unknown) {
+        listeners.delete(f)
+      },
+    }) as HTMLCanvasElement
+  const old = canvas()
+  parent.child = old
+  const fakeCtrl = () =>
+    ({
+      canvas: old,
+      view: { destroy() {} },
+      opts: { backend: 'webgpu' },
+      model: { clearAllGPUResources() {}, ui: {} },
+      _eventListeners: {},
+      emit() {},
+    }) as unknown as NiiVue
+  const left = fakeCtrl()
+  const right = fakeCtrl()
+  registerCanvasInstance(left, old)
+  registerCanvasInstance(right, old)
+  // initInteraction also binds keydown on window, which bun lacks.
+  const g = globalThis as { window?: unknown }
+  const hadWindow = 'window' in g
+  g.window ??= { addEventListener() {}, removeEventListener() {} }
+  try {
+    initInteraction(right)
+    setupDragAndDrop(right)
+    const installed = listeners.size
+    expect(installed).toBeGreaterThan(0)
+    left.opts.backend = 'webgl2'
+    await expect(recreateView(left, true)).rejects.toThrow('WebGL2')
+    expect(right.canvas).toBe(old)
+    expect(left.canvas).toBe(old)
+    expect(parent.child).toBe(old)
+    expect(listeners.size).toBe(installed)
+  } finally {
+    if (!hadWindow) delete g.window
+  }
 })

@@ -119,10 +119,12 @@ const LAYER_DEFAULTS: Omit<NVMeshLayer, 'values' | 'globalMin' | 'globalMax'> =
  * carried.
  */
 export function applyLayerColormap(layer: NVMeshLayer): NVMeshLayer {
-  layer.colormapLabel = NVCmaps.labelLutFor(layer.colormap, [
-    layer.globalMin,
-    layer.globalMax,
-  ])
+  // finiteLabelRange skips NaN vertices; globalMin/globalMax are NaN when the
+  // first vertex is NaN, which would shrink a generated palette to 0..255.
+  layer.colormapLabel = NVCmaps.labelLutFor(
+    layer.colormap,
+    NVCmaps.finiteLabelRange(layer.values, 1, 0) ?? [0, 0],
+  )
   return layer
 }
 
@@ -450,7 +452,10 @@ export async function loadLayersFromOptions(
       url: urlString,
       name: opts.name ?? urlString,
     })
-    if (opts.colormap !== undefined) applyLayerColormap(layer)
+    // A label colormap replaces a file's label table. A continuous one does
+    // not: documents name the default 'warm' for a layer read with its own
+    // table, so it would otherwise clear the table on reload.
+    if (NVCmaps.isLabelColormap(opts.colormap)) applyLayerColormap(layer)
     layers.push(layer)
   }
   return layers

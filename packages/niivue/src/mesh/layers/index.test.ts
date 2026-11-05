@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { addColormap, makeLabelLut } from '@/cmap/NVCmaps'
@@ -35,18 +35,6 @@ describe('loadLayerFromUrl', () => {
   })
 })
 
-// Test-only colormaps for applyLayerColormap.
-log.setLogLevel('silent')
-addColormap('layerRamp', { R: [0, 255], G: [0, 255], B: [0, 255] })
-// IDs 0..3, with 0 (background) transparent.
-addColormap('layerAtlas', {
-  R: [0, 255, 0, 0],
-  G: [0, 0, 255, 0],
-  B: [0, 0, 0, 255],
-  A: [0, 255, 255, 255],
-  labels: ['bg', 'a', 'b', 'c'],
-})
-
 function layer(
   colormap: string,
   values: number[],
@@ -77,6 +65,24 @@ function layer(
 }
 
 describe('applyLayerColormap', () => {
+  // Test-only colormaps, registered under names no other test uses (the
+  // registry is page-wide and has no removal). The log is silenced only while
+  // they register.
+  beforeAll(() => {
+    const logLevel = log.level
+    log.setLogLevel('silent')
+    addColormap('layerRamp', { R: [0, 255], G: [0, 255], B: [0, 255] })
+    // IDs 0..3, with 0 (background) transparent.
+    addColormap('layerAtlas', {
+      R: [0, 255, 0, 0],
+      G: [0, 0, 255, 0],
+      B: [0, 0, 0, 255],
+      A: [0, 255, 255, 255],
+      labels: ['bg', 'a', 'b', 'c'],
+    })
+    log.setLogLevel(logLevel)
+  })
+
   test('aLabelTableGivesALabelLut', () => {
     const l = applyLayerColormap(layer('layerAtlas', [0, 1, 2, 3]))
     expect(l.colormapLabel).not.toBeNull()
@@ -94,6 +100,12 @@ describe('applyLayerColormap', () => {
     expect(lut.min).toBe(0)
     expect(lut.max).toBeGreaterThanOrEqual(359)
     expect(lut.lut[3]).toBe(0)
+  })
+
+  test('aNaNFirstVertexDoesNotShrinkTheGeneratedPalette', () => {
+    // globalMin/globalMax start from values[0], so a NaN there makes both NaN.
+    const l = applyLayerColormap(layer('Random', [Number.NaN, 0, 17, 359]))
+    expect((l.colormapLabel as LUT).max).toBeGreaterThanOrEqual(359)
   })
 
   test('aContinuousColormapClearsTheLabelLut', () => {

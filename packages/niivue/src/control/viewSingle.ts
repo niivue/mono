@@ -135,8 +135,8 @@ export function singleBackendLifecycle(
       ctrl.resizeObserver.disconnect()
     }
     // Same backend, so a canvas shared through bounds keeps its context (as in
-    // viewBoth); an unshared one is cloned, since antialias is fixed at context
-    // creation. A detached canvas stays put unless WebGL2 antialias changes: the
+    // viewBoth); an unshared one is cloned for a fresh context. A detached canvas
+    // stays put unless WebGL2 antialias changes (WebGPU sets MSAA per view): the
     // caller holds it, so the clone reaches them only through viewAttached.
     const canvas = ctrl.canvas as HTMLCanvasElement
     if (!isSharedCanvas(ctrl) && (canvas.parentNode || cloneDetached)) {

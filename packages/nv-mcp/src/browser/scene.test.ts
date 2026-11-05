@@ -933,6 +933,7 @@ describe('set_labels', () => {
         { text: 'Insula', mm: [38, 6, 2], region: 'Insula_R' },
         { text: 'here', mm: [1, 2, 3] },
       ],
+      unit: 'mm',
     })
     expect(view.drawScene).toHaveBeenCalled()
   })
@@ -968,6 +969,7 @@ describe('set_labels', () => {
         { text: 'outside', mm: [500, 0, 0] },
       ],
       dimOthers: 0.2,
+      unit: 'mm',
     })
     expect(labels).toHaveBeenCalledWith([
       {
@@ -1036,7 +1038,10 @@ describe('set_labels', () => {
   it('clears with an empty list, and refuses nothing to do', async () => {
     const labels = mock()
     const handlers = coreHandlers(host(fakeView(), { labels }))
-    expect(await handlers.set_labels({ clear: true })).toEqual({ labels: [] })
+    expect(await handlers.set_labels({ clear: true })).toEqual({
+      labels: [],
+      unit: 'mm',
+    })
     expect(labels).toHaveBeenCalledWith([])
     await expect(handlers.set_labels({})).rejects.toThrow(/needs labels/)
     await expect(handlers.set_labels({ labels: [] })).rejects.toThrow(

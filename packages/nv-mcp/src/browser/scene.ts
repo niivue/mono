@@ -732,7 +732,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       if (frac.some((f) => !Number.isFinite(f) || f < 0 || f > 1)) {
         throw new Error(
-          `${vox ? `Voxel [${vox.join(', ')}]` : `[${mm.join(', ')}] mm`} lies outside the loaded volume.`,
+          `${vox ? `Voxel [${vox.join(', ')}]` : `[${mm.join(', ')}] ${worldUnit(view)}`} lies outside the loaded volume.`,
         )
       }
       const depth = moveTo(frac, plane)
@@ -914,7 +914,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           )
         if (!view.centerRenderOnMM(centre))
           throw new Error(
-            `The render could not be centred on [${centre.join(', ')}] mm.`,
+            `The render could not be centred on [${centre.join(', ')}] ${worldUnit(view)}.`,
           )
         changed = true
       }
@@ -936,6 +936,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ...(view.renderPivotMM
           ? { pivot: Array.from(view.renderPivotMM) }
           : {}),
+        unit: worldUnit(view),
         ...(view.opts?.globalCamera
           ? { globalCamera: reportedCamera(view.opts.globalCamera) }
           : {}),
@@ -1288,6 +1289,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       view.drawScene()
       return {
         labels: placed.map(({ boxMM: _box, ...label }) => label),
+        unit: worldUnit(view),
         ...(dimOthers !== undefined && placed.length > 0 ? { dimOthers } : {}),
       }
     },

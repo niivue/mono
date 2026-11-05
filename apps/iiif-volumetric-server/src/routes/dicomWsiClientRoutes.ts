@@ -68,6 +68,8 @@ interface DicomWsiClientLevel {
   codec: 'image/jpeg'
   transferSyntaxUid: string
   photometric: string
+  /** DICOM BitsStored; sets the default monochrome window. */
+  bitsStored?: number
   /** Tag values, unset when absent; NVSlide checks them against the frames. */
   opticalPaths?: number
   focalPlanes?: number
@@ -252,6 +254,7 @@ function levelManifest(
     codec: 'image/jpeg',
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
+    bitsStored: parsed.dataSet.uint16('x00280101'), // BitsStored
     opticalPaths: parsed.dataSet.uint32('x00480302'), // NumberOfOpticalPaths
     focalPlanes: parsed.dataSet.uint32('x00480303'), // TotalPixelMatrixFocalPlanes
     spacingMM: level.spacingMM,

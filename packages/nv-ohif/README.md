@@ -180,17 +180,21 @@ DICOM tile pyramid (`buildWsiManifest`) and tiles are fetched on demand
 
 Support boundary:
 
-- **Supported:** **JPEG** and **JPEG 2000** tiles with **TILED_FULL** frame organization,
-  one optical path and one focal plane. JPEG 2000 frames are requested untranscoded
-  (`transfer-syntax=*`) and decoded by `@niivue/dcm2niix`'s WASM worker pool
-  (`createFrameDecoder`, loaded on the first JPEG 2000 tile); a decoder the host app
-  registered with `NVSlide.registerTileDecoder('image/jp2', ...)` is kept. A server that
-  transcodes the frame anyway is refused rather than mis-decoded.
+- **Supported:** **JPEG**, **JPEG 2000** and **JPEG-LS** tiles with **TILED_FULL** frame
+  organization, one optical path and one focal plane, 8-16-bit unsigned samples.
+  - JPEG 2000 and JPEG-LS frames are requested untranscoded (`transfer-syntax=*`) and
+    decoded by `@niivue/dcm2niix`'s WASM worker pool (`createFrameDecoder`, loaded on the
+    first such tile).
+  - A decoder the host app registered with `NVSlide.registerTileDecoder('image/jp2' |
+    'image/jls', ...)` is kept.
+  - A server that transcodes the frame anyway is refused rather than mis-decoded.
+  - Monochrome slides keep their samples; OHIF's window/level (`niivueSetWindowLevel`)
+    sets the slide's display window, which defaults to the full BitsStored range.
 - **Declined (with an in-viewport note, not a crash):**
   - Several **optical paths** or **focal planes**, or levels whose metadata cannot prove
     one of each (NumberOfOpticalPaths, TotalPixelMatrixFocalPlanes, NumberOfFrames):
     their frames would land in the wrong tile positions.
-  - Other transfer syntaxes (JPEG-LS, JPEG Lossless, RLE, uncompressed, HTJ2K): the
+  - Other transfer syntaxes (JPEG Lossless, RLE, uncompressed, HTJ2K): the
     note names the syntax.
   - **TILED_SPARSE** frame organization (the tile grid assumes row-major
     TILED_FULL order, so a sparse slide would render scrambled).

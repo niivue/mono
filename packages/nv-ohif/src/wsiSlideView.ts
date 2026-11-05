@@ -15,6 +15,8 @@ export interface WsiSlideViewOptions {
 export interface WsiSlideView {
   setTool(tool: string | undefined): void
   resetView(): void
+  /** Monochrome display window (stored sample values); colour slides ignore it. */
+  setWindow(calMin: number, calMax: number): void
   saveBitmap(filename?: string): Promise<void>
   dispose(): void
 }
@@ -368,6 +370,10 @@ export function mountWsiSlideView(
       clearMeasurement()
       scheduleRender()
     },
+    setWindow(calMin: number, calMax: number): void {
+      slide.setWindow(calMin, calMax)
+    },
+
     async saveBitmap(filename = 'niivue-slide.png'): Promise<void> {
       const blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, 'image/png'),

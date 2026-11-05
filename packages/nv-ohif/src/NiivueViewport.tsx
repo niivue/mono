@@ -32,8 +32,8 @@ import {
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
-import { registerJp2TileDecoder } from './wsiJp2Decoder'
 import { mountWsiSlideView } from './wsiSlideView'
+import { registerWsiTileDecoders } from './wsiTileDecoders'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
@@ -386,7 +386,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         })
         return
       }
-      registerJp2TileDecoder() // lazy: loads nothing until a JPEG 2000 tile
+      registerWsiTileDecoders() // lazy: loads nothing until a JPEG 2000 or JPEG-LS tile
       if (!built.tiledFull) {
         // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
         // slide would render scrambled, so decline rather than mislead.

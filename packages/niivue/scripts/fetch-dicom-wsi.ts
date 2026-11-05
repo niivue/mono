@@ -39,6 +39,7 @@ const DEFAULT_SERIES = '37cb2625-cd6b-40f8-9c95-e0168ce52d0f'
 const TAG = {
   imageType: 'x00080008',
   photometric: 'x00280004',
+  bitsStored: 'x00280101',
   rows: 'x00280010', // tile height
   columns: 'x00280011', // tile width
   pixelSpacing: 'x00280030',
@@ -217,6 +218,8 @@ interface WsiMeta {
   tiledFull: boolean
   encapsulated: boolean
   photometric: string
+  /** DICOM BitsStored; sets the default monochrome window. */
+  bitsStored?: number
   flavor: WsiFlavor
   spacingMM: [number, number]
   /** Tag values, unset when absent; NVSlide checks them against the frames. */
@@ -231,15 +234,21 @@ function isEncapsulated(uid: string): boolean {
   return u.startsWith('1.2.840.10008.1.2.4') || u === '1.2.840.10008.1.2.5'
 }
 
-// NVSlide tile codec for a transfer syntax. JPEG 2000 (.90/.91) needs an
-// image/jp2 tile decoder registered in the browser (slides.js uses dcm2niix's
-// createFrameDecoder); everything else encapsulated here
-// is baseline/extended JPEG the browser decodes natively.
-function codecForTransferSyntax(uid: string): 'image/jpeg' | 'image/jp2' {
-  const u = uid.trim()
-  return u === '1.2.840.10008.1.2.4.90' || u === '1.2.840.10008.1.2.4.91'
-    ? 'image/jp2'
-    : 'image/jpeg'
+// NVSlide tile codec for a transfer syntax. JPEG 2000 and JPEG-LS need a tile
+// decoder registered in the browser (slides.js uses dcm2niix's
+// createFrameDecoder); everything else encapsulated here is baseline/extended
+// JPEG the browser decodes natively.
+const CODEC_BY_TRANSFER_SYNTAX: Record<string, 'image/jp2' | 'image/jls'> = {
+  '1.2.840.10008.1.2.4.80': 'image/jls', // JPEG-LS lossless
+  '1.2.840.10008.1.2.4.81': 'image/jls', // JPEG-LS near-lossless
+  '1.2.840.10008.1.2.4.90': 'image/jp2', // JPEG 2000 lossless
+  '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
+}
+
+function codecForTransferSyntax(
+  uid: string,
+): 'image/jpeg' | 'image/jp2' | 'image/jls' {
+  return CODEC_BY_TRANSFER_SYNTAX[uid.trim()] ?? 'image/jpeg'
 }
 
 function classifyImageType(imageType: string): WsiFlavor {
@@ -287,6 +296,7 @@ function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
     tiledFull: org.includes('TILED_FULL'),
     encapsulated,
     photometric: (ds.string(TAG.photometric) ?? '').toUpperCase(),
+    bitsStored: ds.uint16(TAG.bitsStored),
     flavor: classifyImageType(imageType),
     spacingMM,
   }
@@ -474,6 +484,7 @@ function levelManifest(
     codec: codecForTransferSyntax(parsed.transferSyntaxUid),
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
+    bitsStored: level.bitsStored,
     opticalPaths: level.opticalPaths,
     focalPlanes: level.focalPlanes,
     spacingMM: level.spacingMM,

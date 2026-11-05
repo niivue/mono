@@ -432,14 +432,14 @@ describe('buildWsiManifest', () => {
     expect(built?.unsupported).toBeUndefined()
   })
 
-  it('names a transfer syntax no codec decodes (JPEG-LS)', () => {
+  it('names a transfer syntax no codec decodes (RLE)', () => {
     const ds = smDisplaySet()
     const instances = ds.instances?.map((inst) => ({
       ...inst,
-      TransferSyntaxUID: '1.2.840.10008.1.2.4.80',
+      TransferSyntaxUID: '1.2.840.10008.1.2.5',
     }))
     const built = buildWsiManifest({ ...ds, instances })
-    expect(built?.unsupported).toBe('1.2.840.10008.1.2.4.80')
+    expect(built?.unsupported).toBe('1.2.840.10008.1.2.5')
   })
 })
 
@@ -624,5 +624,40 @@ describe('JPEG 2000 levels', () => {
     await expect(
       new DicomWsiTileSource(built).fetchTileBytes(level, tile, 'l'),
     ).rejects.toThrow(/transcoded/)
+  })
+
+  // A monochrome 12-bit JPEG-LS slide.
+  const jlsDisplaySet = () =>
+    jp2DisplaySet({
+      TransferSyntaxUID: '1.2.840.10008.1.2.4.80',
+      PhotometricInterpretation: 'MONOCHROME2',
+      BitsStored: 12,
+    })
+
+  it('map JPEG-LS to image/jls and carry BitsStored', () => {
+    const built = buildWsiManifest(jlsDisplaySet())
+    const level = built?.manifest.levels[0]
+    expect(built?.unsupported).toBeUndefined()
+    expect(level?.codec).toBe('image/jls')
+    expect(level?.bitsStored).toBe(12)
+  })
+
+  it('fetch JPEG-LS untranscoded and refuse a transcoded frame', async () => {
+    const built = buildWsiManifest(jlsDisplaySet())
+    if (!built) throw new Error('expected a manifest')
+    const level = built.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('expected a tile')
+    const jls = new Uint8Array([0xff, 0xd8, 0xff, 0xf7, 0, 0x0b])
+    const accept = respond(jls)
+    const source = new DicomWsiTileSource(built)
+    expect(Array.from(await source.fetchTileBytes(level, tile, 'l'))).toEqual(
+      Array.from(jls),
+    )
+    expect(accept()).toContain('transfer-syntax=*')
+    respond(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10])) // baseline JPEG
+    await expect(source.fetchTileBytes(level, tile, 'l')).rejects.toThrow(
+      /not JPEG-LS/,
+    )
   })
 })

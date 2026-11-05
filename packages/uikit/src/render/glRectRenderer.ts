@@ -96,9 +96,10 @@ export class GlRectRenderer {
     for (let i = 0; i < rects.length; i++) {
       const rect = rects[i]
       const off = i * FLOATS_PER_RECT
-      // A zeroed slot is a zero-size (invisible) rect, matching a fresh alloc.
+      // Zero the slot first: a hole or a short record must not keep a prior frame's
+      // rect from the reused scratch. A zeroed slot is a zero-size (invisible) rect.
+      data.fill(0, off, off + FLOATS_PER_RECT)
       if (rect) data.set(rect.data, off)
-      else data.fill(0, off, off + FLOATS_PER_RECT)
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer)
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW, 0, need)

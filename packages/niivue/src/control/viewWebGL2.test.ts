@@ -52,6 +52,7 @@ function fakeCtrl(canvas: HTMLCanvasElement, bounds?: number[][]): NiiVue {
     async _rebuildViewResources() {},
     restoreSlidePlaneView() {},
     drawScene() {},
+    emit() {},
   } as unknown as NiiVue
 }
 

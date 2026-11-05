@@ -9,12 +9,14 @@ import {
 } from './canvasRegistry'
 import { singleBackendLifecycle } from './viewSingle'
 
+globalThis.HTMLCanvasElement ??= class {} as unknown as typeof HTMLCanvasElement
+
 class FakeView {
   async init() {}
   resize() {}
   destroy() {}
 }
-const { recreateView } = singleBackendLifecycle(
+const { attachToCanvas, recreateView } = singleBackendLifecycle(
   'webgl2',
   FakeView as unknown as typeof NVViewGL,
 )
@@ -47,6 +49,7 @@ function fakeCtrl(canvas: HTMLCanvasElement, bounds?: number[][]): NiiVue {
     async _rebuildViewResources() {},
     restoreSlidePlaneView() {},
     drawScene() {},
+    emit() {},
   } as unknown as NiiVue
 }
 
@@ -83,4 +86,32 @@ test('recreateView keeps the canvas viewport and registry', async () => {
   const lone = fakeCtrl(detached)
   await recreateView(lone)
   expect(lone.canvas).toBe(detached)
+})
+
+test('recreateView restores the drawing and reports the view swap', async () => {
+  const ctrl = fakeCtrl(fakeCanvas())
+  const events: string[] = []
+  let refreshes = 0
+  Object.assign(ctrl, {
+    emit: (name: string) => events.push(name),
+    refreshDrawing: () => refreshes++,
+  })
+  Object.assign(ctrl.model, { drawingVolume: {} })
+  await recreateView(ctrl)
+  expect(refreshes).toBe(1)
+  expect(events).toEqual(['viewDestroyed', 'viewAttached'])
+})
+
+test('attachToCanvas reports the attached view', async () => {
+  const canvas = Object.assign(
+    Object.create(HTMLCanvasElement.prototype),
+    fakeCanvas(),
+  ) as HTMLCanvasElement
+  const ctrl = fakeCtrl(canvas)
+  const events: unknown[] = []
+  Object.assign(ctrl, {
+    emit: (...args: unknown[]) => events.push(args),
+  })
+  await attachToCanvas(ctrl, canvas)
+  expect(events).toEqual([['viewAttached', { canvas, backend: 'webgl2' }]])
 })

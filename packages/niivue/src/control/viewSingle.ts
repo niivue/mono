@@ -100,6 +100,7 @@ export function singleBackendLifecycle(
       if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
       setupResizeHandler(ctrl)
       view.resize()
+      ctrl.emit('viewAttached', { canvas, backend })
       return ctrl
     } catch (error) {
       log.error('Failed to initialize view:', error)
@@ -118,6 +119,7 @@ export function singleBackendLifecycle(
   }
 
   async function recreateView(ctrl: NiiVue): Promise<void> {
+    ctrl.emit('viewDestroyed')
     ctrl.view?.destroy()
     ctrl.view = null
     ctrl.model.clearAllGPUResources()
@@ -148,9 +150,14 @@ export function singleBackendLifecycle(
     if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
     setupResizeHandler(ctrl)
     await ctrl._rebuildViewResources()
+    if (ctrl.model.drawingVolume) ctrl.refreshDrawing()
     ctrl.restoreSlidePlaneView()
     ctrl.view.resize()
     ctrl.drawScene()
+    ctrl.emit('viewAttached', {
+      canvas: ctrl.canvas as HTMLCanvasElement,
+      backend,
+    })
   }
 
   async function reinitializeView(

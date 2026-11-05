@@ -14,7 +14,7 @@ export default defineConfig({
       fileName: 'nv-ext-wsi',
     },
     rollupOptions: {
-      external: ['@niivue/niivue', 'geotiff'],
+      external: ['@niivue/niivue', '@niivue/dcm2niix', 'geotiff'],
     },
   },
 })

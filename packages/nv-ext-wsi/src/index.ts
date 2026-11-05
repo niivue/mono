@@ -18,6 +18,20 @@ import {
   GeoTIFFImage,
 } from 'geotiff'
 
+// biome-ignore lint/performance/noBarrelFile: package entry point
+export { registerDcm2niixDecoders } from './dcm2niixDecoders'
+export type {
+  SlideIndex,
+  SlideIndexFrames,
+  SlideIndexInstance,
+  SlideIndexLevel,
+  SlideIndexSkipped,
+  SlideIndexSkipReason,
+  SlideIndexSlide,
+} from './dicomIndex'
+export { indexDicomWsi } from './dicomIndex'
+export { DicomWsiSource } from './dicomWsiSource'
+
 export interface TiffSlideOptions {
   /** Manifest id; defaults to the file name. */
   id?: string

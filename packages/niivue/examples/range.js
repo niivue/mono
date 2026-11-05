@@ -3,7 +3,8 @@
 // Streams a chunked volume into NiiVue over plain HTTP, with no backend or data
 // server -- only static file serving (the synthetic source uses HTTP 206 range
 // requests on a single shard; the OME-Zarr source reads per-chunk objects via
-// zarrita). Add `?backend=webgpu` to the URL to use the WebGPU renderer.
+// zarrita). WebGPU by default; add `?backend=webgl2` for WebGL2, `?aa=on|off`
+// to override the anti-aliasing default.
 //
 // Two static-hosted source types:
 //   - synthetic: a bundled shard streamed one chunk at a time over Range
@@ -23,9 +24,16 @@ import NiiVue, {
 import { urlParamSelect } from './urlParamSelect.js'
 
 const backend =
-  new URLSearchParams(location.search).get('backend') === 'webgpu'
-    ? 'webgpu'
-    : 'webgl2'
+  new URLSearchParams(location.search).get('backend') === 'webgl2'
+    ? 'webgl2'
+    : 'webgpu'
+// WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
+// on, so it defaults off there and on elsewhere.
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg/.test(navigator.userAgent)
+const aaParam = new URLSearchParams(location.search).get('aa')
+const isAntiAlias = aaParam ? aaParam === 'on' : !isWebKit
 
 // The coarse whole-volume floor is ON by default: a single coarse pyramid level
 // rendered behind the octree so regions whose fine bricks have not streamed yet
@@ -482,6 +490,7 @@ const els = {
   lodOpacity: el('lodOpacity'),
   lodOpacityVal: el('lodOpacityVal'),
   interp: el('interp'),
+  sliceFilter: el('sliceFilter'),
   illum: el('illum'),
   illumVal: el('illumVal'),
   gradOpacity: el('gradOpacity'),
@@ -503,6 +512,7 @@ const els = {
 
 // Wired before anything loads, so the menu works even if loading fails (#488).
 urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
+urlParamSelect(el('aaSelect'), 'aa', isAntiAlias ? 'on' : 'off')
 
 let nv = null
 let activeSource = null
@@ -1420,6 +1430,10 @@ function applyLodOpacity() {
 // bytes per request and has no way to stitch neighbours. On that source the
 // renderer declines cubic and logs why, rather than reconstructing from
 // clamp-to-edge data at every brick face.
+function applySliceFilter() {
+  nv.volumeIsNearestInterpolation = els.sliceFilter.value === 'nearest'
+}
+
 function applyInterp() {
   if (!nv) return
   // Pure render-time setting: no re-stream, and the setter already redraws.
@@ -2056,6 +2070,7 @@ async function main() {
 
   nv = new NiiVue({
     backend,
+    isAntiAlias,
     backgroundColor: [0.02, 0.03, 0.03, 1],
     isColorbarVisible: true,
     sliceType: SLICE_TYPE.MULTIPLANAR,
@@ -2071,6 +2086,7 @@ async function main() {
   applyLodCompensation()
   applyLodOpacity()
   applyInterp()
+  applySliceFilter()
   applyIllumination()
   applyGradientOpacity()
   applySilhouette()
@@ -2104,6 +2120,7 @@ async function main() {
   els.lodComp.addEventListener('input', applyLodCompensation)
   els.lodOpacity.addEventListener('input', applyLodOpacity)
   els.interp.addEventListener('change', applyInterp)
+  els.sliceFilter.addEventListener('change', applySliceFilter)
   // Render-time settings, but the first step off 0 re-streams the working set
   // (see applyIllumination). 'input' is still right: the re-stream happens once
   // on the crossing, not per slider tick.

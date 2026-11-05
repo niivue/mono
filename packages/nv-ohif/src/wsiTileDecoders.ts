@@ -1,27 +1,5 @@
+import type { FrameDecoder } from '@niivue/dcm2niix'
 import { NVSlide, type SlideTileDecoder } from '@niivue/niivue'
-
-// The @niivue/dcm2niix decode API from 1.4.20261105-rc.1 (samples output, bitsStored).
-// ponytail: local type until the dependency is rc.1; then use its FrameDecoder.
-type DecodeOptions = {
-  photometric?: string
-  bitsStored?: number
-  signal?: AbortSignal
-}
-interface FrameDecoder {
-  decode(
-    bytes: Uint8Array,
-    options: DecodeOptions & { output: 'samples' },
-  ): Promise<{
-    width: number
-    height: number
-    samples: Uint8Array | Uint16Array
-    bitsStored: number
-  }>
-  decode(
-    bytes: Uint8Array,
-    options: DecodeOptions,
-  ): Promise<{ width: number; height: number; rgba: Uint8ClampedArray }>
-}
 
 let decoder: Promise<FrameDecoder> | null = null
 
@@ -29,9 +7,7 @@ let decoder: Promise<FrameDecoder> | null = null
 // tiles return RGBA8, with more than 8 bits scaled by DICOM BitsStored.
 const decodeTile: SlideTileDecoder = async (bytes, { level, signal }) => {
   decoder ??= import('@niivue/dcm2niix')
-    .then(
-      (m) => m.createFrameDecoder({ workers: 2 }) as unknown as FrameDecoder,
-    )
+    .then((m) => m.createFrameDecoder({ workers: 2 }))
     .catch((err) => {
       decoder = null // a failed chunk load retries on the next tile
       throw err

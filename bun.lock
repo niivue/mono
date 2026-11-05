@@ -222,7 +222,7 @@
         "zarrita": "^0.7.3",
       },
       "devDependencies": {
-        "@niivue/dcm2niix": "^1.4.20261105-rc.0",
+        "@niivue/dcm2niix": "^1.4.20261105-rc.1",
         "@niivue/dev-images": "workspace:*",
         "@playwright/test": "1.59.1",
         "@types/bun": "^1.3.12",
@@ -367,7 +367,7 @@
       "name": "@niivue/nv-ohif",
       "version": "1.0.0-rc.89",
       "dependencies": {
-        "@niivue/dcm2niix": "^1.4.20261105-rc.0",
+        "@niivue/dcm2niix": "^1.4.20261105-rc.1",
         "@niivue/uikit": "workspace:*",
         "dcmjs": "^0.49.0",
       },
@@ -1028,7 +1028,7 @@
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@0.2.4", "", { "dependencies": { "@emnapi/core": "^1.1.0", "@emnapi/runtime": "^1.1.0", "@tybys/wasm-util": "^0.9.0" } }, "sha512-9zESzOO5aDByvhIAsOy9TbpZ0Ur2AJbUI7UT73kcUTS2mxAMHOBaa1st/jAymNoCtvrit99kkzT1FZuXVcgfIQ=="],
 
-    "@niivue/dcm2niix": ["@niivue/dcm2niix@1.4.20261105-rc.0", "", {}, "sha512-nyjYLeiYrCBF1CQgE4AxKawMPHUWkJbEjd+I98rDlwf91qadzskWCsXIF4MZd+mZB1pFjHQ4ArThTvWTVy0aMQ=="],
+    "@niivue/dcm2niix": ["@niivue/dcm2niix@1.4.20261105-rc.1", "", {}, "sha512-D748fBBQ6hGBOwWZH8QECYt/t1ixUrN/h7Rhd8Y1IGoAohcQZQeHSEkB0TNmlzJn2QybiQqmA3H+aWdLmomTtA=="],
 
     "@niivue/dev-images": ["@niivue/dev-images@workspace:packages/dev-images"],
 

@@ -1098,7 +1098,7 @@ export class VolumeRenderer extends NVRenderer {
     const limit = this.maxTextureDimension3D
     // A combined mirror streams on its base's grid (basePlan) without taking
     // it as its own: the overlay may later become the base or stream alone.
-    const plan =
+    let plan =
       basePlan ?? vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
     if (!basePlan) vol.chunkPlan = plan
     const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
@@ -1123,13 +1123,19 @@ export class VolumeRenderer extends NVRenderer {
     const displayKey = chunkedDisplayKey(vol, modulation)
     const sourceKey = volumeSourceKey(vol)
     let existing = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (
+    // A swap to this very plan is in flight; let it land, then reuse it. A
+    // later swap can supersede it before it runs: follow that one too, since
+    // its plan is the one the volume streams on now.
+    let waited = false
+    while (
       existing?.kind === 'chunked' &&
       existing.plan !== plan &&
-      existing.pendingSwap?.plan === plan
+      existing.pendingSwap &&
+      (waited || existing.pendingSwap.plan === plan)
     ) {
-      // A swap to this very plan is in flight; let it land, then reuse it.
+      plan = existing.pendingSwap.plan
       await existing.pendingSwap.done.catch(() => undefined)
+      waited = true
       existing = cacheKey ? this._texCache.get(cacheKey) : undefined
     }
     // A cached entry built for a different plan object (the caller set a new

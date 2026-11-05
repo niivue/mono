@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { VolumeRenderer as GLRenderer } from '@/gl/render'
 import type { NVImage } from '@/NVTypes'
+import { chunkedDisplayKey, volumeSourceKey } from '@/volume/orientChunked'
 import { VolumeRenderer as GPURenderer } from '@/wgpu/render'
 
 type Method = (...args: unknown[]) => Promise<void>
@@ -211,5 +212,54 @@ for (const [name, Renderer] of [
       C,
     ])
     expect(swapped.filter(([e, p]) => e === mirror && p === C).length).toBe(1)
+  })
+
+  test(`${name}: a refresh waiting on a superseded swap keeps the entry`, async () => {
+    const plan = () => ({
+      chunks: [{ texDims: [4, 4, 4] }],
+      gridDims: [1, 1, 1],
+    })
+    const [old, A, B] = [plan(), plan(), plan()]
+    const vol = {
+      name: 'v',
+      hdr: { dims: [3, 4, 4, 4], datatypeCode: 2, scl_slope: 1, scl_inter: 0 },
+      chunkPlan: old,
+    } as unknown as NVImage
+    const entry = {
+      kind: 'chunked',
+      plan: old as unknown,
+      volume: vol,
+      displayKey: chunkedDisplayKey(vol, null),
+      sourceKey: volumeSourceKey(vol),
+    }
+    const self = {
+      max3D: 8,
+      maxTextureDimension3D: 8,
+      _texCache: { get: () => entry },
+      _activeChunked: entry,
+      _combinedOverlayEntries: [],
+      _queueEntrySwap: method(Renderer, '_queueEntrySwap'),
+      _evictTexEntry() {
+        throw new Error('entry evicted')
+      },
+      async _swapChunkedEntryPlan(
+        _dev: unknown,
+        _vol: unknown,
+        e: { plan: unknown },
+        p: unknown,
+      ) {
+        e.plan = p
+      },
+    }
+    const swap = method(Renderer, 'swapChunkedVolumePlan')
+    // Queue A, refresh on A, then supersede A with B in the same turn.
+    const first = swap.call(self, {}, vol, A, false)
+    const refresh = method(Renderer, '_ensureChunkedVolumeEntry')
+      .call(self, {}, vol, 1000, null)
+      .catch((e: Error) => e.message)
+    const second = swap.call(self, {}, vol, B, false)
+    expect(await refresh).toBe(entry)
+    await Promise.all([first, second])
+    expect(entry.plan).toBe(B)
   })
 }

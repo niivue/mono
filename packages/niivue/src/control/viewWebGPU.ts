@@ -100,9 +100,9 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
     ctrl.resizeObserver.disconnect()
   }
   // Same backend, so a canvas shared through bounds keeps its context (as in
-  // viewBoth); an unshared one is cloned, since antialias is fixed at context
-  // creation. A detached canvas stays put: WebGPU sets MSAA per view, so even
-  // an antialias change needs no new context.
+  // viewBoth); an unshared one is cloned for a fresh context. A detached canvas
+  // stays put: WebGPU sets MSAA per view, so even an antialias change needs no
+  // new context.
   const canvas = ctrl.canvas as HTMLCanvasElement
   if (!isSharedCanvas(ctrl) && canvas.parentNode) replaceCanvas(ctrl)
   const view = new NVViewGPU(

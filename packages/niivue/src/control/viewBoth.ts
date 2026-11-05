@@ -151,9 +151,10 @@ export async function attachToCanvas(
 
 /**
  * Replace the canvas DOM element and update all registered siblings'
- * references. `cloneDetached` is for a backend or antialias change: both are
- * locked into the canvas's context, so even a detached one must be swapped (the
- * clone is published as `ctrl.canvas` and through `viewAttached`).
+ * references. `cloneDetached` is for a backend change or a WebGL2 antialias
+ * change: both are locked into the canvas's context, so even a detached one
+ * must be swapped (the clone is published as `ctrl.canvas` and through
+ * `viewAttached`).
  */
 function replaceCanvasElement(ctrl: NiiVue, cloneDetached = false): void {
   const canvas = ctrl.canvas as HTMLCanvasElement

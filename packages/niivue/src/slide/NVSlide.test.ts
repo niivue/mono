@@ -741,7 +741,7 @@ describe('NVSlide tile-cache budget', () => {
   it('shows the finest coarser level whose visible tiles fit the cache', () => {
     // 128 decoded bytes per tile: L0 needs 16 tiles (2048 B), L1 4 (512 B).
     const slide = NVSlide.fromSource(new CountingSource(makePyramid()), {
-      maxCacheBytes: 600,
+      maxCacheBytes: 700, // 75% budget: 525 B
     })
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     slide.setLevelChoice(0)
@@ -763,7 +763,7 @@ describe('NVSlide tile-cache budget', () => {
     const manifest = makePyramid()
     for (const tile of manifest.levels[0]?.tiles ?? []) tile.width = 1
     const slide = NVSlide.fromSource(new CountingSource(manifest), {
-      maxCacheBytes: 600,
+      maxCacheBytes: 700, // 75% budget: 525 B
     })
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     slide.setLevelChoice(0)

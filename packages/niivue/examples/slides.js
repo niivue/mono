@@ -75,7 +75,7 @@ const RANGE_LOG_LENGTH = 24
 // on, so it defaults off there and on elsewhere.
 const isWebKit =
   /AppleWebKit/.test(navigator.userAgent) &&
-  !/Chrome|Chromium|Edg/.test(navigator.userAgent)
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 const aaParam = new URLSearchParams(location.search).get('aa')
 const isAntiAlias = aaParam ? aaParam === 'on' : !isWebKit
 
@@ -242,7 +242,8 @@ function resizeCanvas(screen) {
 
 async function createView() {
   if (backendFromUrl() === 'webgpu' && 'gpu' in navigator) {
-    const renderer = await SlideRendererGPU.create(els.canvas)
+    // create() resolves null without an adapter but rejects if the device request fails.
+    const renderer = await SlideRendererGPU.create(els.canvas).catch(() => null)
     if (renderer) return { kind: 'gpu', renderer }
     console.warn('WebGPU unavailable; falling back to WebGL2')
   }
@@ -908,11 +909,13 @@ async function main() {
   makeDraggable(els.hud)
   view = await createView()
   els.backendSelect.value = view.kind === 'gpu' ? 'webgpu' : 'webgl2'
-  view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'
-  els.slideFilter.addEventListener('change', () => {
+  els.aaSelect.disabled = view.kind === 'gpu' // SlideRendererGPU has no MSAA
+  const applySlideFilter = () => {
     view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'
     requestRender()
-  })
+  }
+  applySlideFilter()
+  els.slideFilter.addEventListener('change', applySlideFilter)
   await loadSlide()
 }
 

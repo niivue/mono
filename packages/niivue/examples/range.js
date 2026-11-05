@@ -23,15 +23,18 @@ import NiiVue, {
 } from '../src/index.ts'
 import { urlParamSelect } from './urlParamSelect.js'
 
+// Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
+// which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).
 const backend =
-  new URLSearchParams(location.search).get('backend') === 'webgl2'
-    ? 'webgl2'
-    : 'webgpu'
+  new URLSearchParams(location.search).get('backend') !== 'webgl2' &&
+  (await navigator.gpu?.requestAdapter().catch(() => null))
+    ? 'webgpu'
+    : 'webgl2'
 // WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
 // on, so it defaults off there and on elsewhere.
 const isWebKit =
   /AppleWebKit/.test(navigator.userAgent) &&
-  !/Chrome|Chromium|Edg/.test(navigator.userAgent)
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 const aaParam = new URLSearchParams(location.search).get('aa')
 const isAntiAlias = aaParam ? aaParam === 'on' : !isWebKit
 
@@ -1430,14 +1433,14 @@ function applyLodOpacity() {
 // bytes per request and has no way to stitch neighbours. On that source the
 // renderer declines cubic and logs why, rather than reconstructing from
 // clamp-to-edge data at every brick face.
-function applySliceFilter() {
-  nv.volumeIsNearestInterpolation = els.sliceFilter.value === 'nearest'
-}
-
 function applyInterp() {
   if (!nv) return
   // Pure render-time setting: no re-stream, and the setter already redraws.
   nv.volumeIsCubicInterpolation = els.interp.value === 'cubic'
+}
+
+function applySliceFilter() {
+  nv.volumeIsNearestInterpolation = els.sliceFilter.value === 'nearest'
 }
 
 // The three settings that consume the PRECOMPUTED gradient texture: matcap
@@ -1712,7 +1715,7 @@ function renderHud() {
     stats.cancelled > 0 ? ` (+${stats.cancelled} cancelled)` : ''
   els.hud.innerHTML = `
     <div class="title">${html(source.name)}</div>
-    <div class="row"><span class="key">backend</span><span>${backend === 'webgpu' ? 'WebGPU' : 'WebGL2'}</span></div>
+    <div class="row"><span class="key">backend</span><span>${nv?.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'}</span></div>
     <div class="row"><span class="key">source</span><span>${html(source.sourceUrl)}</span></div>
     <div class="row"><span class="key">shape</span><span>${source.shape.join(' x ')} ${source.dtype}</span></div>
     <div class="row"><span class="key">viewer chunks</span><span>${gridDims.join(' x ')} @ ${planChunkShape.join(' x ')}</span></div>

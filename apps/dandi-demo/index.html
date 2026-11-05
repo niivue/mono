@@ -547,7 +547,7 @@
         toggle.onclick = () => setHud(!document.body.classList.contains('hud-off'))
         // I (info): NiiVue already binds V, A, C, H/J/K/L, U and D.
         addEventListener('keydown', (e) => {
-          if (e.key.toUpperCase() !== 'I' || e.ctrlKey || e.metaKey || e.altKey) return
+          if (e.repeat || e.key?.toUpperCase() !== 'I' || e.ctrlKey || e.metaKey || e.altKey) return
           if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return
           toggle.click()
         })

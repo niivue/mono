@@ -23,6 +23,8 @@ Options:
   omits them and opens on the OCT.
 - The `Slide` menu beside Backend switches the deep-zoom tiles between linear
   and nearest sampling (`isNearestInterpolation` on the slide renderers).
+- `HUD: on|off` (or the `I` key) hides the overlay panels; the choice is kept
+  per page in `localStorage`.
 - `?dataset=<key>` opens that Dandiset: `oct-small` (default, the 106 MB human
   brain OCT), `oct`, `neun`, `hipct` or `spim`.
 - `?local` reads `public/zarr/<zarrId>` instead of S3 (gitignored). Fetch

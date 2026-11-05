@@ -40,12 +40,18 @@ import NiiVue, {
 import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
 
 const params = new URLSearchParams(location.search)
-const backend = params.get('backend') === 'webgl2' ? 'webgl2' : 'webgpu'
+// Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
+// which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).
+const backend =
+  params.get('backend') !== 'webgl2' &&
+  (await navigator.gpu?.requestAdapter().catch(() => null))
+    ? 'webgpu'
+    : 'webgl2'
 // WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
 // on, so it defaults off there and on elsewhere.
 const isWebKit =
   /AppleWebKit/.test(navigator.userAgent) &&
-  !/Chrome|Chromium|Edg/.test(navigator.userAgent)
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 const isAntiAlias = params.has('aa') ? params.get('aa') === 'on' : !isWebKit
 
 // DANDI serves every zarr asset from one public, CORS-enabled bucket, keyed by
@@ -806,7 +812,7 @@ function updateVolumeHud() {
   els.volHud.innerHTML = `
     <div class="title">${def.label}</div>
     <div class="row"><span class="key">backend</span><span>${
-      backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
+      nv?.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
     }</span></div>
     <div class="row"><span class="key">store</span><span>${def.size}, ${
       chunkSource.levels.length

@@ -188,3 +188,46 @@ test('a fallback clones a detached canvas once webgpu has locked it', async () =
   expect(glCanvases.at(-1)).toBe(clone)
   expect(ctrl.canvas as unknown).toBe(clone)
 })
+
+test('a backend switch takes sibling handlers off the old shared canvas', async () => {
+  const listeners = new Set<unknown>()
+  const old = Object.assign(Object.create(HTMLCanvasElement.prototype), {
+    parentNode: { replaceChild() {} },
+    style: {},
+    cloneNode: () =>
+      Object.assign(Object.create(HTMLCanvasElement.prototype), {
+        parentNode: { replaceChild() {} },
+        style: {},
+        addEventListener() {},
+        removeEventListener() {},
+      }),
+    addEventListener(_t: string, f: unknown) {
+      listeners.add(f)
+    },
+    removeEventListener(_t: string, f: unknown) {
+      listeners.delete(f)
+    },
+  }) as HTMLCanvasElement
+  const onDown = () => {}
+  const fakeCtrl = (eventListeners: object) =>
+    ({
+      canvas: old,
+      view: { destroy() {} },
+      opts: { backend: 'webgpu', isInteractionEnabled: false },
+      model: { clearAllGPUResources() {}, ui: {} },
+      _eventListeners: eventListeners,
+      _wireViewHooks() {},
+      async _rebuildViewResources() {},
+      restoreSlidePlaneView() {},
+      drawScene() {},
+      emit() {},
+    }) as unknown as NiiVue
+  const left = fakeCtrl({})
+  const right = fakeCtrl({ pointerdown: onDown })
+  old.addEventListener('pointerdown', onDown)
+  registerCanvasInstance(left, old)
+  registerCanvasInstance(right, old)
+  left.opts.backend = 'webgl2'
+  await recreateView(left, true)
+  expect(listeners.size).toBe(0)
+})

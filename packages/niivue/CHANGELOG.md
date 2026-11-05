@@ -1,3 +1,13 @@
+## 1.0.0-rc.88 (2026-11-05)
+
+### Fixes
+
+- make destroy() idempotent ([dc41eef8](https://github.com/niivue/mono/commit/dc41eef8))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.87 (2026-11-04)
 
 ### Features

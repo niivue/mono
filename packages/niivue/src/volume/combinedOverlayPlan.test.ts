@@ -28,6 +28,7 @@ for (const [name, Renderer] of [
       sourceBytesPerVoxel: 1,
     }
     const self = {
+      _catchUpToPlan: method(Renderer, '_catchUpToPlan'),
       _chunkResidencyBytes: 1000,
       _activeChunked: null,
       _combinedOverlayEntries: [],
@@ -55,6 +56,7 @@ for (const [name, Renderer] of [
     const mirror = { kind: 'chunked', volume: overlayVol }
     const swapped: unknown[][] = []
     const self = {
+      _catchUpToPlan: method(Renderer, '_catchUpToPlan'),
       _texCache: { get: () => baseEntry },
       _activeChunked: baseEntry,
       _combinedOverlayEntries: [mirror],
@@ -65,6 +67,7 @@ for (const [name, Renderer] of [
         p: unknown,
       ) {
         swapped.push([vol, e, p])
+        ;(e as { plan: unknown }).plan = p
       },
     }
     await method(Renderer, 'swapChunkedVolumePlan').call(
@@ -94,6 +97,7 @@ for (const [name, Renderer] of [
       sourceBytesPerVoxel: 1,
     }
     const self = {
+      _catchUpToPlan: method(Renderer, '_catchUpToPlan'),
       _chunkResidencyBytes: 1000,
       _activeChunked: null,
       _combinedOverlayEntries: [] as unknown[],
@@ -120,5 +124,40 @@ for (const [name, Renderer] of [
     )
     expect(entry.plan).toBe(newPlan)
     expect(self._combinedOverlayEntries).toEqual([entry])
+  })
+
+  test(`${name}: overlapping base swaps leave the mirrors on the newest plan`, async () => {
+    const A = { label: 'A', chunks: [{}] }
+    const B = { label: 'B', chunks: [{}, {}] }
+    const base = { chunkPlan: null } as unknown as NVImage
+    const baseEntry = { kind: 'chunked', plan: null }
+    const mirror = { kind: 'chunked', volume: {}, plan: null }
+    let release = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const self = {
+      _catchUpToPlan: method(Renderer, '_catchUpToPlan'),
+      _texCache: { get: () => baseEntry },
+      _activeChunked: baseEntry,
+      _combinedOverlayEntries: [mirror],
+      async _swapChunkedEntryPlan(
+        _dev: unknown,
+        _vol: unknown,
+        e: { plan: unknown },
+        p: unknown,
+      ) {
+        // The mirror's swap to A lands late, after B has finished.
+        if (e === mirror && p === A) await gate
+        e.plan = p
+      },
+    }
+    const swap = method(Renderer, 'swapChunkedVolumePlan')
+    const first = swap.call(self, {}, base, A, false)
+    await swap.call(self, {}, base, B, false)
+    release()
+    await first
+    expect(baseEntry.plan as unknown).toBe(B)
+    expect(mirror.plan as unknown).toBe(B)
   })
 }

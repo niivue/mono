@@ -1069,6 +1069,7 @@ export class VolumeRenderer extends NVRenderer {
     }
     vol.chunkPlan = newPlan
     await this._swapChunkedEntryPlan(gl, vol, entry, newPlan, keepUntilCovered)
+    await this._catchUpToPlan(gl, vol, entry, vol, keepUntilCovered)
     // Combined mirrors are indexed by the base's chunks, so they move with it.
     if (entry !== this._activeChunked) return
     for (const mirror of this._combinedOverlayEntries) {
@@ -1079,6 +1080,29 @@ export class VolumeRenderer extends NVRenderer {
         newPlan,
         keepUntilCovered,
       )
+      await this._catchUpToPlan(
+        gl,
+        mirror.volume,
+        mirror,
+        vol,
+        keepUntilCovered,
+      )
+    }
+  }
+
+  /**
+   * Swap `entry` again while `base.chunkPlan` moved on during the last await,
+   * so overlapping swaps leave it on the newest plan, not the last to finish.
+   */
+  private async _catchUpToPlan(
+    gl: WebGL2RenderingContext,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    base: NVImage,
+    keepUntilCovered: boolean,
+  ): Promise<void> {
+    for (let p = base.chunkPlan; p && entry.plan !== p; p = base.chunkPlan) {
+      await this._swapChunkedEntryPlan(gl, vol, entry, p, keepUntilCovered)
     }
   }
 
@@ -2266,12 +2290,8 @@ export class VolumeRenderer extends NVRenderer {
       )
       // A base swap during the await could not see this mirror yet (it is
       // not listed), so bring it to the base's current plan before listing it.
-      for (
-        let p = volumes[0]?.chunkPlan;
-        p && entry.plan !== p;
-        p = volumes[0]?.chunkPlan
-      ) {
-        await this._swapChunkedEntryPlan(gl, vol, entry, p, false)
+      if (volumes[0]) {
+        await this._catchUpToPlan(gl, vol, entry, volumes[0], false)
       }
       setChunkBudget(entry, overlayBudget)
       this._combinedOverlayEntries.push(entry)

@@ -1255,13 +1255,14 @@ export class VolumeRenderer extends NVRenderer {
       entry,
       ...(entry === this._activeChunked ? this._combinedOverlayEntries : []),
     ].map(async (e) => {
+      const ev = e === entry ? vol : e.volume
       const done = this._swapChunkedEntryPlan(
         device,
-        e === entry ? vol : e.volume,
+        ev,
         e,
         newPlan,
         keepUntilCovered,
-      )
+      ).then(() => this._catchUpToPlan(device, ev, e, vol, keepUntilCovered))
       const pending = { plan: newPlan, done }
       e.pendingSwap = pending
       try {
@@ -1271,6 +1272,22 @@ export class VolumeRenderer extends NVRenderer {
       }
     })
     await Promise.all(swaps)
+  }
+
+  /**
+   * Swap `entry` again while `base.chunkPlan` moved on during the last await,
+   * so overlapping swaps leave it on the newest plan, not the last to finish.
+   */
+  private async _catchUpToPlan(
+    device: GPUDevice,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    base: NVImage,
+    keepUntilCovered: boolean,
+  ): Promise<void> {
+    for (let p = base.chunkPlan; p && entry.plan !== p; p = base.chunkPlan) {
+      await this._swapChunkedEntryPlan(device, vol, entry, p, keepUntilCovered)
+    }
   }
 
   private async _swapChunkedEntryPlan(
@@ -2382,12 +2399,8 @@ export class VolumeRenderer extends NVRenderer {
       )
       // A base swap during the await could not see this mirror yet (it is
       // not listed), so bring it to the base's current plan before listing it.
-      for (
-        let p = volumes[0]?.chunkPlan;
-        p && entry.plan !== p;
-        p = volumes[0]?.chunkPlan
-      ) {
-        await this._swapChunkedEntryPlan(device, vol, entry, p, false)
+      if (volumes[0]) {
+        await this._catchUpToPlan(device, vol, entry, volumes[0], false)
       }
       setChunkBudget(entry, overlayBudget)
       this._combinedOverlayEntries.push(entry)

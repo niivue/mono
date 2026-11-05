@@ -4,6 +4,10 @@
 Licence-clean: no image data. Each frame's payload is a recognisable byte
 string, FF D8 + a label + FF D9, so tests can check exact bytes and spans
 without a decoder. Run from this directory: python3 make_fixtures.py
+
+colors.dcm is the exception: a sparse slide whose tiles are
+real solid-colour JPEGs (encoded by cjpeg), for the browser e2e test in
+apps/demo-ext-wsi.
 """
 
 import pydicom
@@ -154,6 +158,20 @@ for part, (sop, lo, hi) in enumerate((('1.2.3.61', 0, 4), ('1.2.3.62', 4, 6)), s
     d.InConcatenationTotalNumber = 2
     d.ConcatenationFrameOffsetNumber = lo
     save(d, fr[lo:hi], f'concat-{part}.dcm')
+
+# Browser e2e: TILED_SPARSE 3 x 2 with real JPEG tiles, one colour each, two holes.
+import subprocess
+COLORS = {(0, 0): (220, 30, 30), (2, 0): (30, 160, 40), (1, 1): (40, 60, 220), (2, 1): (230, 200, 30)}
+
+
+def jpeg(rgb: tuple[int, int, int]) -> bytes:
+    ppm = b'P6 %d %d 255\n' % (TILE, TILE) + bytes(rgb) * (TILE * TILE)
+    return subprocess.run(['cjpeg', '-quality', '95'], input=ppm, capture_output=True, check=True).stdout
+
+
+ds, _ = sparse('colors', '1.2.3.80', list(COLORS))
+ds.SeriesInstanceUID = series_uid('colors')
+save(ds, [jpeg(c) for c in COLORS.values()], 'colors.dcm')
 
 # Refused transfer syntaxes, and a file that is not DICOM.
 for name, ts in (('implicit', '1.2.840.10008.1.2'), ('bigendian', '1.2.840.10008.1.2.2'), ('deflated', '1.2.840.10008.1.2.1.99')):

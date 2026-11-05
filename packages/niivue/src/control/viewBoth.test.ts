@@ -290,3 +290,61 @@ test('a failed backend switch leaves siblings on the old shared canvas', async (
     if (!hadWindow) delete g.window
   }
 })
+
+test('a sibling that fails to rebuild does not strand the siblings after it', async () => {
+  let calls = 0
+  spyOn(NVViewGL.prototype, 'init').mockImplementation(async () => {
+    calls++
+    if (calls === 2) throw new Error('second context unavailable')
+  })
+  const parent = { replaceChild() {} }
+  const canvas = (): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode: parent,
+      style: {},
+      cloneNode: canvas,
+      addEventListener() {},
+      removeEventListener() {},
+    }) as HTMLCanvasElement
+  const old = canvas()
+  const fakeCtrl = () =>
+    ({
+      canvas: old,
+      view: { destroy() {} },
+      opts: { backend: 'webgpu', isInteractionEnabled: false },
+      model: { clearAllGPUResources() {}, ui: {} },
+      _eventListeners: {},
+      emit() {},
+      resize() {},
+      _wireViewHooks() {},
+      async _rebuildViewResources() {},
+      restoreSlidePlaneView() {},
+      drawScene() {},
+    }) as unknown as NiiVue
+  const [a, b, c] = [fakeCtrl(), fakeCtrl(), fakeCtrl()]
+  for (const n of [a, b, c]) registerCanvasInstance(n, old)
+  const g = globalThis as { window?: unknown }
+  const hadWindow = 'window' in g
+  g.window ??= {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+    matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+  }
+  try {
+    a.opts.backend = 'webgl2'
+    await expect(recreateView(a, true)).rejects.toThrow('second context')
+    expect(a.view).not.toBeNull()
+    expect(b.view).toBeNull()
+    expect(c.view).not.toBeNull()
+    expect(c.canvas).toBe(a.canvas)
+    expect(b.opts.backend).toBe('webgl2')
+    expect(c.opts.backend).toBe('webgl2')
+    // The failed sibling retries on its own, on the already switched canvas.
+    await recreateView(b)
+    expect(b.view).not.toBeNull()
+    expect(b.canvas).toBe(a.canvas)
+  } finally {
+    if (!hadWindow) delete g.window
+  }
+})

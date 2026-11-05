@@ -54,6 +54,7 @@ function fakeCtrl(canvas: HTMLCanvasElement, bounds?: number[][]): NiiVue {
     async _rebuildViewResources() {},
     restoreSlidePlaneView() {},
     drawScene() {},
+    emit() {},
   } as unknown as NiiVue
 }
 
@@ -162,6 +163,10 @@ test('an antialias change clones a detached canvas', async () => {
   const detached = fakeCanvas(false)
   const ctrl = fakeCtrl(detached)
   ctrl.opts.isAntiAlias = false
+  const attached: unknown[] = []
+  ctrl.emit = ((name: string, detail?: { canvas?: unknown }) => {
+    if (name === 'viewAttached') attached.push(detail?.canvas)
+  }) as NiiVue['emit']
   expect(
     await reinitializeView(ctrl, {
       backend: 'webgl2',
@@ -171,6 +176,7 @@ test('an antialias change clones a detached canvas', async () => {
   ).toBe(true)
   expect(ctrl.canvas).not.toBe(detached)
   expect(viewCanvases.at(-1)).toBe(ctrl.canvas)
+  expect(attached).toEqual([ctrl.canvas])
 })
 
 test('an antialias change on a shared canvas is refused', async () => {

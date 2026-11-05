@@ -94,6 +94,7 @@ export async function recreateView(
   ctrl: NiiVue,
   cloneDetached = false,
 ): Promise<void> {
+  ctrl.emit('viewDestroyed')
   ctrl.view?.destroy()
   ctrl.view = null
   ctrl.model.clearAllGPUResources()
@@ -129,6 +130,10 @@ export async function recreateView(
   ctrl.restoreSlidePlaneView()
   ctrl.view.resize()
   ctrl.drawScene()
+  ctrl.emit('viewAttached', {
+    canvas: ctrl.canvas as HTMLCanvasElement,
+    backend: 'webgpu',
+  })
 }
 
 export async function reinitializeView(

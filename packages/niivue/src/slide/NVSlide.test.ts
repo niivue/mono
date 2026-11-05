@@ -840,3 +840,30 @@ describe('NVSlide padded frames', () => {
     slide.dispose()
   })
 })
+
+describe('NVSlide failed tiles', () => {
+  it('back off instead of re-requesting a failing tile on every render', async () => {
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    tile.frame = -1 // CountingSource rejects it
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    let now = performance.now()
+    const clock = spyOn(performance, 'now').mockImplementation(() => now)
+    slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.failures === 1)
+    for (let i = 0; i < 5; i++) slide.requestTile(level, tile) // renders
+    expect(slide.stats.requested).toBe(1)
+    now += 1001 // past the 1 s backoff
+    slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.failures === 2)
+    now += 1001 // the second wait is 2 s
+    slide.requestTile(level, tile)
+    expect(slide.stats.requested).toBe(2)
+    clock.mockRestore()
+    error.mockRestore()
+    slide.dispose()
+  })
+})

@@ -564,6 +564,14 @@ export class NVSlide extends EventTarget {
   private readonly _rangeLogLength = DEFAULT_RANGE_LOG_LENGTH
   private readonly _cache: NVSlideTileCache
   private readonly _pending = new Set<string>()
+  // A failed tile waits before it is requested again (1 s, doubling to 30 s):
+  // every render re-requests missing tiles, so a persistent failure (HTTP
+  // error, bad frame) would otherwise be fetched in a tight loop.
+  private readonly _failed = new Map<
+    string,
+    { retryAt: number; delay: number }
+  >()
+  private readonly _retryTimers = new Set<ReturnType<typeof setTimeout>>()
   private readonly _source: SlideTileSource
   private readonly _maxConcurrentLoads: number
   private _activeLoads = 0
@@ -1090,6 +1098,9 @@ export class NVSlide extends EventTarget {
     for (const controller of this._inflight.values()) controller.abort()
     this._inflight.clear()
     this._pending.clear()
+    for (const timer of this._retryTimers) clearTimeout(timer)
+    this._retryTimers.clear()
+    this._failed.clear()
   }
 
   private levelTileWidth(level: NVSlideLevelManifest): number {
@@ -1185,6 +1196,7 @@ export class NVSlide extends EventTarget {
   ): void {
     const key = this.tileKey(level, tile)
     if (this._cache.has(key) || this._pending.has(key)) return
+    if ((this._failed.get(key)?.retryAt ?? 0) > performance.now()) return
     if (fromViewport) this._viewportKeys.add(key)
     else this._viewportKeys.delete(key)
     this._pending.add(key)
@@ -1232,6 +1244,7 @@ export class NVSlide extends EventTarget {
       this._cache.set(key, { bitmap, bytes: decodedBytes })
       this.stats.cacheBytes = this._cache.bytes
       this.stats.completed++
+      this._failed.delete(key)
     } catch (err) {
       if (signal.aborted || isAbortError(err)) {
         // An abort is not a failure: nothing was wrong with the tile. It is
@@ -1242,6 +1255,16 @@ export class NVSlide extends EventTarget {
         this.stats.failures++
         this.updateRangeEvent(label, 'failed')
         console.error(`Failed to load slide tile ${this.id}/${key}`, err)
+        const delay = Math.min(
+          30_000,
+          (this._failed.get(key)?.delay ?? 500) * 2,
+        )
+        this._failed.set(key, { retryAt: performance.now() + delay, delay })
+        const timer = setTimeout(() => {
+          this._retryTimers.delete(timer)
+          this._emitChange() // the view re-requests the tile if still wanted
+        }, delay)
+        this._retryTimers.add(timer)
       }
     } finally {
       this._activeLoads--

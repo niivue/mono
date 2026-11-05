@@ -392,15 +392,27 @@ export class TiffSlideSource implements SlideTileSource {
         interleave: true,
         pool: this.pool,
         signal: abort,
+        enableAlpha: true,
       })
       abort.throwIfAborted()
       const pixels = tile.width * tile.height
+      // enableAlpha returns every sample of an RGB image with ExtraSamples;
+      // the first extra sample is the alpha, any further ones are skipped.
+      const stride = rgb.length / pixels
+      const extra = img.fileDirectory.getValue('ExtraSamples')
+      const premultiplied = stride > 3 && extra?.[0] === 1
       const rgba = new Uint8Array(pixels * 4)
       for (let i = 0; i < pixels; i++) {
-        rgba[i * 4] = rgb[i * 3] ?? 0
-        rgba[i * 4 + 1] = rgb[i * 3 + 1] ?? 0
-        rgba[i * 4 + 2] = rgb[i * 3 + 2] ?? 0
-        rgba[i * 4 + 3] = 255
+        const a = stride > 3 ? (rgb[i * stride + 3] ?? 0) : 255
+        // Associated alpha is premultiplied; NVSlide takes straight alpha.
+        const k = premultiplied ? (a ? 255 / a : 0) : 1
+        for (let c = 0; c < 3; c++) {
+          rgba[i * 4 + c] = Math.min(
+            255,
+            Math.round((rgb[i * stride + c] ?? 0) * k),
+          )
+        }
+        rgba[i * 4 + 3] = a
       }
       this.host?.updateRangeEvent(label, 'hit')
       return rgba

@@ -24,6 +24,7 @@ interface Level {
   tiles: Uint8Array[] // row-major, each a full (padded) tile
   bits?: number // per sample, default 8
   sampleFormat?: number // 1 uint (default), 2 int, 3 float
+  extraSamples?: number // adds a 4th sample: 1 associated, 2 unassociated alpha
   edit?: (entries: number[][]) => void // tamper with IFD entries
 }
 
@@ -80,7 +81,9 @@ function writeTiff(levels: Level[], subIfds = false): ArrayBuffer {
   for (const [i, lv] of levels.entries()) {
     const offsets = lv.tiles.map(append)
     const b = lv.bits ?? 8
-    const bps = append([b, 0, b, 0, b, 0])
+    const spp = lv.extraSamples ? 4 : 3
+    const perSample = (v: number) => append(Array(spp).fill([v, 0]).flat())
+    const bps = perSample(b)
     const n = lv.tiles.length
     const tileOffsets = n > 1 ? longs(offsets) : (offsets[0] ?? 0)
     const tileCounts =
@@ -89,10 +92,10 @@ function writeTiff(levels: Level[], subIfds = false): ArrayBuffer {
     const entries: number[][] = [
       [256, 4, 1, lv.width],
       [257, 4, 1, lv.height],
-      [258, 3, 3, bps],
+      [258, 3, spp, bps],
       [259, 3, 1, lv.compression],
       [262, 3, 1, lv.photometric],
-      [277, 3, 1, 3],
+      [277, 3, 1, spp],
       [284, 3, 1, 1],
       [322, 3, 1, lv.tile],
       [323, 3, 1, lv.tile],
@@ -101,8 +104,9 @@ function writeTiff(levels: Level[], subIfds = false): ArrayBuffer {
     ]
     if (lv.sampleFormat) {
       const f = lv.sampleFormat
-      entries.push([339, 3, 3, append([f, 0, f, 0, f, 0])])
+      entries.push([339, 3, spp, perSample(f)])
     }
+    if (lv.extraSamples) entries.push([338, 3, 1, lv.extraSamples])
     lv.edit?.(entries)
     if (subIfds && i === 0) entries.push([330, 4, levels.length - 1, 0])
     const at = append(new Uint8Array(2 + entries.length * 12 + 4))
@@ -269,6 +273,38 @@ describe('TiffSlideSource', () => {
     expect(pixel(rgba, 116, 115, 93)).toEqual([...rgbAt(1, 499, 349), 255])
     expect(pixel(rgba, 116, 0, 0)).toEqual([...rgbAt(1, 384, 256), 255])
     expect(events.get('edge')).toBe('hit')
+  })
+
+  test('keeps the alpha of RGBA tiles, unpremultiplying associated alpha', async () => {
+    // Pixel 0 transparent red, pixel 1 half-opaque grey (premultiplied 64).
+    const rgbaTile = (first: number[], second: number[]) => {
+      const t = new Uint8Array(16 * 16 * 4).fill(255)
+      t.set(first, 0)
+      t.set(second, 4)
+      return t
+    }
+    const level = (extraSamples: number, second: number[]): Level => ({
+      width: 16,
+      height: 16,
+      tile: 16,
+      compression: 1,
+      photometric: 2,
+      extraSamples,
+      tiles: [rgbaTile([255, 0, 0, 0], second)],
+    })
+    const read = async (lv: Level) => {
+      const { source } = await open(writeTiff([lv]))
+      const l = source.manifest.levels[0]
+      const t = l?.tiles[0]
+      if (!l || !t) throw new Error('missing tile')
+      return source.fetchTileBytes(l, t, 'alpha')
+    }
+    const straight = await read(level(2, [128, 128, 128, 128]))
+    expect(pixel(straight, 16, 0, 0)).toEqual([255, 0, 0, 0])
+    expect(pixel(straight, 16, 1, 0)).toEqual([128, 128, 128, 128])
+    expect(pixel(straight, 16, 2, 0)).toEqual([255, 255, 255, 255])
+    const associated = await read(level(1, [64, 64, 64, 128]))
+    expect(pixel(associated, 16, 1, 0)).toEqual([128, 128, 128, 128])
   })
 
   test('one tile reads a bounded byte range, not the file', async () => {

@@ -118,7 +118,7 @@ export interface OhifToolbarModuleEntry {
 // they register under.
 export interface OhifCommandsModule {
   actions: Record<string, (...args: never[]) => unknown>
-  definitions: Record<string, (...args: never[]) => unknown>
+  definitions: Record<string, { commandFn: (...args: never[]) => unknown }>
   defaultContext?: string
 }
 

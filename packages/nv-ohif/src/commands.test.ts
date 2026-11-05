@@ -157,11 +157,11 @@ describe('niivueSetMeasurementMode', () => {
         ran.push({ name, opts })
       },
     }
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
       commandsManager,
     })
-    definitions.niivueSetMeasurementMode()
+    actions.niivueSetMeasurementMode()
     expect(ran).toEqual([
       { name: 'setToolActiveToolbar', opts: { toolName: 'Length' } },
     ])
@@ -170,10 +170,10 @@ describe('niivueSetMeasurementMode', () => {
   it('falls back to the measureLine annotation when no commandsManager exists', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetMeasurementMode()
+    actions.niivueSetMeasurementMode()
     expect(nv.annotationTool).toBe('measureLine')
     expect(nv.annotationIsEnabled).toBe(true)
   })
@@ -1599,29 +1599,29 @@ describe('niivueSetSliceType', () => {
   it('sets the mapped slice type on the active viewport instance', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetSliceType({ sliceType: 'render' })
+    actions.niivueSetSliceType({ sliceType: 'render' })
     expect(nv.sliceType).toBe(SLICE_TYPE.RENDER)
-    definitions.niivueSetSliceType({ sliceType: 'axial' })
+    actions.niivueSetSliceType({ sliceType: 'axial' })
     expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL)
   })
 
   it('ignores unknown slice types and missing instances', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetSliceType({ sliceType: 'mosaic' })
-    definitions.niivueSetSliceType()
+    actions.niivueSetSliceType({ sliceType: 'mosaic' })
+    actions.niivueSetSliceType()
     expect(nv.sliceType).toBe(SLICE_TYPE.MULTIPLANAR)
     // No registered instance at all: must not throw.
     unregisterNiivue('vp-1')
     registered.length = 0
     expect(() =>
-      definitions.niivueSetSliceType({ sliceType: 'axial' }),
+      actions.niivueSetSliceType({ sliceType: 'axial' }),
     ).not.toThrow()
   })
 })
@@ -1630,10 +1630,10 @@ describe('niivueResetView', () => {
   it('restores camera, zoom, pan, and crosshair defaults', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueResetView()
+    actions.niivueResetView()
     expect(nv.azimuth).toBe(110)
     expect(nv.elevation).toBe(10)
     expect(nv.scaleMultiplier).toBe(1)
@@ -1656,10 +1656,10 @@ describe('niivueResetView', () => {
         dispose() {},
       },
     })
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueResetView()
+    actions.niivueResetView()
     expect(resets).toBe(1)
     expect(nv.azimuth).toBe(42)
   })
@@ -1669,14 +1669,14 @@ describe('niivueSetClipPlane', () => {
   it('applies the preset and records it on the entry', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetClipPlane({ plane: 'right' })
+    actions.niivueSetClipPlane({ plane: 'right' })
     expect(nv.clipPlanes).toEqual([NIIVUE_CLIP_PLANES.right ?? []])
     expect(getNiivueEntryForViewport('vp-1')?.clipPlane).toBe('right')
 
-    definitions.niivueSetClipPlane({ plane: 'none' })
+    actions.niivueSetClipPlane({ plane: 'none' })
     expect(nv.clipPlanes[1]?.[0]).toBeGreaterThan(1) // depth > 1 disables
     expect(getNiivueEntryForViewport('vp-1')?.clipPlane).toBe('none')
   })
@@ -1684,11 +1684,11 @@ describe('niivueSetClipPlane', () => {
   it('ignores unknown presets', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetClipPlane({ plane: 'diagonal' })
-    definitions.niivueSetClipPlane()
+    actions.niivueSetClipPlane({ plane: 'diagonal' })
+    actions.niivueSetClipPlane()
     expect(nv.clipPlanes).toEqual([])
     expect(getNiivueEntryForViewport('vp-1')?.clipPlane).toBe('none')
   })
@@ -1747,25 +1747,39 @@ describe('niivueSetWindowLevel', () => {
     const nv = stubNiivue()
     nv.volumes.push({ name: 'base' })
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetWindowLevel({ window: 80, level: 40 })
+    actions.niivueSetWindowLevel({ window: 80, level: 40 })
+    // A zero-width window (PT/SUV) clamps 0..level.
+    actions.niivueSetWindowLevel({ window: 0, level: 5 })
     expect(nv.volumeUpdates).toEqual([
       { index: 0, opts: { calMin: 0, calMax: 80 } },
+      { index: 0, opts: { calMin: 0, calMax: 5 } },
     ])
   })
 
   it('ignores missing values and empty volumes', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetWindowLevel({ window: 80 })
+    actions.niivueSetWindowLevel({ window: 80 })
     nv.volumes.push({ name: 'base' })
-    definitions.niivueSetWindowLevel()
+    actions.niivueSetWindowLevel()
     expect(nv.volumeUpdates).toEqual([])
+  })
+})
+
+describe('command definitions (#134)', () => {
+  it('wrap every action as an OHIF commandFn', () => {
+    const { actions, definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    expect(Object.keys(definitions)).toEqual(Object.keys(actions))
+    for (const [name, def] of Object.entries(definitions))
+      expect(def.commandFn).toBe(actions[name as keyof typeof actions])
   })
 })
 
@@ -1777,13 +1791,13 @@ describe('a rejected volume update (#467)', () => {
       throw new Error('device lost')
     }
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
     const logged = spyOn(console, 'error').mockImplementation(() => {})
     try {
-      definitions.niivueSetWindowLevel({ window: 80, level: 40 })
-      definitions.niivueSetColormap({ colormap: 'hot' })
+      actions.niivueSetWindowLevel({ window: 80, level: 40 })
+      actions.niivueSetColormap({ colormap: 'hot' })
       await new Promise((r) => setTimeout(r, 0))
       expect(logged).toHaveBeenCalledTimes(2)
     } finally {
@@ -1803,8 +1817,8 @@ describe('niivueSetWindowLevelPreset', () => {
     const sm = services('vp-1', [], {
       CT: [{ id: 'ct-brain', window: '80', level: '40' }],
     })
-    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
-    definitions.niivueSetWindowLevelPreset({
+    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+    actions.niivueSetWindowLevelPreset({
       presetId: 'ct-brain',
       presetIndex: 0,
     })
@@ -1823,8 +1837,8 @@ describe('niivueSetWindowLevelPreset', () => {
     const sm = services('vp-1', [], {
       CT: [{ id: 'ct-brain', window: '80', level: '40' }],
     })
-    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
-    definitions.niivueSetWindowLevelPreset({
+    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+    actions.niivueSetWindowLevelPreset({
       presetId: 'ct-brain',
       presetIndex: 0,
     })
@@ -1937,8 +1951,8 @@ describe('syncNiivueWindowLevelToOhif', () => {
     nv.volumes[0] = { calMin: 200, calMax: 600 }
     syncNiivueWindowLevelToOhif('vp-1', sm, cm)
     expect(ran).toEqual(['setViewportWindowLevel'])
-    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
-    definitions.niivueSetWindowLevel({ window: 400, level: 400 })
+    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+    actions.niivueSetWindowLevel({ window: 400, level: 400 })
     expect(ran).toHaveLength(1)
   })
 
@@ -1962,10 +1976,10 @@ describe('niivueSetColormap', () => {
     const nv = stubNiivue()
     nv.volumes.push({ name: 'base' })
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetColormap({ colormap: 'viridis' })
+    actions.niivueSetColormap({ colormap: 'viridis' })
     expect(nv.volumeUpdates).toEqual([
       { index: 0, opts: { colormap: 'viridis' } },
     ])
@@ -1974,12 +1988,12 @@ describe('niivueSetColormap', () => {
   it('ignores a missing colormap or empty volumes', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueSetColormap({ colormap: 'hot' }) // no volume yet
+    actions.niivueSetColormap({ colormap: 'hot' }) // no volume yet
     nv.volumes.push({ name: 'base' })
-    definitions.niivueSetColormap() // no colormap
+    actions.niivueSetColormap() // no colormap
     expect(nv.volumeUpdates).toEqual([])
   })
 })
@@ -1988,12 +2002,12 @@ describe('niivueToggleColorbar', () => {
   it('flips the colorbar visibility on the active viewport', () => {
     const nv = { ...stubNiivue(), isColorbarVisible: false }
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueToggleColorbar()
+    actions.niivueToggleColorbar()
     expect(nv.isColorbarVisible).toBe(true)
-    definitions.niivueToggleColorbar()
+    actions.niivueToggleColorbar()
     expect(nv.isColorbarVisible).toBe(false)
   })
 })
@@ -2002,12 +2016,12 @@ describe('niivueToggleInterpolation', () => {
   it('flips nearest-neighbor interpolation on the active viewport', () => {
     const nv = { ...stubNiivue(), volumeIsNearestInterpolation: false }
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueToggleInterpolation()
+    actions.niivueToggleInterpolation()
     expect(nv.volumeIsNearestInterpolation).toBe(true)
-    definitions.niivueToggleInterpolation()
+    actions.niivueToggleInterpolation()
     expect(nv.volumeIsNearestInterpolation).toBe(false)
   })
 })
@@ -2024,13 +2038,13 @@ describe('niivueToggleCrosshair', () => {
       },
     }
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueToggleCrosshair()
+    actions.niivueToggleCrosshair()
     expect(nv.crosshairWidth).toBe(0)
     expect(nv.is3DCrosshairVisible).toBe(false)
-    definitions.niivueToggleCrosshair()
+    actions.niivueToggleCrosshair()
     expect(nv.crosshairWidth).toBe(1)
     expect(nv.is3DCrosshairVisible).toBe(true)
     expect(drawn).toBe(2)
@@ -2042,10 +2056,10 @@ describe('niivueAutoWindowLevel', () => {
     const nv = stubNiivue()
     nv.volumes.push({ name: 'base' })
     register('vp-1', nv)
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    definitions.niivueAutoWindowLevel()
+    actions.niivueAutoWindowLevel()
     expect(nv.recalculated).toEqual([0])
   })
 })
@@ -2066,8 +2080,8 @@ describe('niivueToggleOverlay', () => {
         SeriesDescription: 'PERFUSION',
       },
     ])
-    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
-    await definitions.niivueToggleOverlay()
+    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+    await actions.niivueToggleOverlay()
 
     expect(nv.added).toHaveLength(1)
     expect(nv.added[0]?.colormap).toBe(OVERLAY_COLORMAP)
@@ -2083,10 +2097,10 @@ describe('niivueToggleOverlay', () => {
     if (!entry) throw new Error('entry missing')
     entry.overlayUIDs = ['ds-2']
 
-    const { definitions } = getNiivueCommandsModule({
+    const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    await definitions.niivueToggleOverlay()
+    await actions.niivueToggleOverlay()
     expect(nv.volumes).toHaveLength(1)
     expect(entry.overlayUIDs).toEqual([])
   })
@@ -2108,8 +2122,8 @@ describe('niivueToggleOverlay', () => {
       { displaySetInstanceUID: 'ds-2', url: 'https://x/perf.nii.gz' },
     ])
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
-    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
-    await definitions.niivueToggleOverlay()
+    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+    await actions.niivueToggleOverlay()
     errorSpy.mockRestore()
     expect(statuses).toEqual([['Overlay load failed: boom', 'error']])
   })
@@ -2120,8 +2134,8 @@ describe('niivueToggleOverlay', () => {
     const sm = services('vp-1', [
       { displaySetInstanceUID: 'ds-2', url: 'https://x/perf.nii.gz' },
     ])
-    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
-    await definitions.niivueToggleOverlay()
+    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+    await actions.niivueToggleOverlay()
     expect(nv.added).toHaveLength(0)
   })
 })

@@ -783,3 +783,60 @@ describe('NVSlide tile-cache budget', () => {
     slide.dispose()
   })
 })
+
+describe('NVSlide padded frames', () => {
+  const originalCreate = globalThis.createImageBitmap
+  afterEach(() => {
+    globalThis.createImageBitmap = originalCreate
+  })
+
+  it('crops padding beyond the tile, at the right and bottom', async () => {
+    // A small level stored as one whole frame: 3 x 2 of image in an 8 x 4 frame.
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    Object.assign(tile, { width: 3, height: 2 })
+    let closedPadded = false
+    NVSlide.registerTileDecoder('image/jpeg', async () => {
+      const padded = fakeBitmap()
+      padded.close = () => {
+        closedPadded = true
+      }
+      return padded
+    })
+    const crops: number[][] = []
+    globalThis.createImageBitmap = (async (
+      _src: unknown,
+      ...rect: number[]
+    ) => {
+      crops.push(rect)
+      const [, , width, height] = rect
+      return { width, height, close() {} }
+    }) as unknown as typeof createImageBitmap
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.completed === 1)
+    expect(crops).toEqual([[0, 0, 3, 2]])
+    expect(closedPadded).toBe(true)
+    expect(slide.stats.cacheBytes).toBe(3 * 2 * 4) // the crop, not the 8 x 4 frame
+    slide.dispose()
+  })
+
+  it('leaves a frame that fits its tile alone', async () => {
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    let cropped = false
+    globalThis.createImageBitmap = (async () => {
+      cropped = true
+    }) as unknown as typeof createImageBitmap
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.completed === 1)
+    expect(cropped).toBe(false)
+    slide.dispose()
+  })
+})

@@ -897,8 +897,8 @@ export class NVSlide extends EventTarget {
     screen: NVSlideScreen,
   ): boolean {
     const { count } = this.tileSpan(level, screen)
-    // Full tiles, not clipped edge extents: the cache charges the decoded
-    // bitmap, and a DICOM edge frame decodes padded to the full tile size.
+    // Full tiles, not clipped edge extents: an upper bound, since a padded
+    // edge frame is held whole until decodeTileBitmap crops it.
     const tileBytes =
       this.levelTileWidth(level) * this.levelTileHeight(level) * 4
     return (
@@ -1154,12 +1154,28 @@ export class NVSlide extends EventTarget {
           '(e.g. @niivue/dcm2niix createFrameDecoder for image/jp2).',
       )
     }
-    return decoder(tileBytes, {
+    const bitmap = await decoder(tileBytes, {
       width: tile.width,
       height: tile.height,
       level,
       signal,
     })
+    // Formats that store whole tiles (DICOM) pad edge frames, and every frame of
+    // a level smaller than one tile, at the right and bottom. Padding is not
+    // slide: crop it, or the level's image shrinks into one corner.
+    if (bitmap.width <= tile.width && bitmap.height <= tile.height)
+      return bitmap
+    try {
+      return await createImageBitmap(
+        bitmap,
+        0,
+        0,
+        Math.min(bitmap.width, tile.width),
+        Math.min(bitmap.height, tile.height),
+      )
+    } finally {
+      bitmap.close()
+    }
   }
 
   private loadTile(

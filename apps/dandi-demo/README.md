@@ -11,7 +11,10 @@ bunx nx build dandi-demo
 
 Options:
 
-- `?backend=webgl2` runs both panes on WebGL2 (WebGPU is the default).
+- `?backend=webgl2` runs both panes on WebGL2 (WebGPU is the default). The
+  backend is resolved (WebGPU adapter probe) before the streaming budget is
+  chosen, so a fallback to WebGL2 gets WebGL2's budget; the HUD names the
+  running backend.
 - `?aa=on|off` sets anti-aliasing for the volume pane (default on, but off in
   Safari and other WebKit browsers, whose WebGPU misrenders with it).
 - On the dev server the menu also offers two synthetic stores

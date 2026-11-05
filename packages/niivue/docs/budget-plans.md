@@ -77,8 +77,9 @@ Presets:
 **Every preset carries the same `budgetBytes`.** How much VRAM a machine can
 spare is a property of the DEVICE; how to spend it is the use case. So an app
 pins the ceiling once as an individual option (which wins over the plan) and
-still switches plans freely. `examples/range.js` does exactly that with its
-2 GB ceiling.
+still switches plans freely. `examples/range.js` does exactly that: 8 GB on
+WebGPU, 1.25 GB on WebGL2, picked after an adapter probe so a WebGPU fallback
+gets the WebGL2 ceiling.
 
 **Why 128 and not 96.** Measured on the HOA heart pyramid at `cellEdge` 128:
 the octree coarsens a whole shell at a time, so plans come in steps -- a 4x4x4

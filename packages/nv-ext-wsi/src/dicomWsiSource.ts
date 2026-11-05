@@ -19,7 +19,7 @@ const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
   '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
 }
 
-const fileKey = (f: File): string => f.webkitRelativePath || f.name
+export const fileKey = (f: File): string => f.webkitRelativePath || f.name
 
 /**
  * A SlideTileSource for one slide of a {@link SlideIndex}, reading each tile
@@ -100,7 +100,7 @@ function payload(span: Uint8Array, what: string): Uint8Array {
   return out
 }
 
-function manifestOf(slide: SlideIndexSlide): NVSlideManifest {
+export function manifestOf(slide: SlideIndexSlide): NVSlideManifest {
   const l0 = slide.levels[0]
   if (!l0) throw new Error('the slide has no levels')
   const inst0 = slide.instances[l0.instances[0] as number]

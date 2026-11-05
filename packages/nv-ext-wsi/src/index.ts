@@ -31,6 +31,7 @@ export type {
 } from './dicomIndex'
 export { indexDicomWsi } from './dicomIndex'
 export { DicomWsiSource } from './dicomWsiSource'
+export { manifestFromIndex } from './hostedManifest'
 
 export interface TiffSlideOptions {
   /** Manifest id; defaults to the file name. */

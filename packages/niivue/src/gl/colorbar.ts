@@ -8,6 +8,7 @@ import {
 } from '@/view/NVColorbar'
 import { NVRenderer } from '@/view/NVRenderer'
 import { colorbarFragShader, colorbarVertShader } from './colorbarShader'
+import { setTexParams } from './glUtil'
 import { Shader } from './shader'
 
 export class ColorbarRenderer extends NVRenderer {
@@ -78,10 +79,7 @@ export class ColorbarRenderer extends NVRenderer {
       const tex = gl.createTexture()
       if (!tex) continue
       gl.bindTexture(gl.TEXTURE_2D, tex)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,

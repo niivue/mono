@@ -26,6 +26,7 @@ import {
   cinematicMarchShader,
   cinematicVertexShader,
 } from './cinematicShader'
+import { setTexParams } from './glUtil'
 import { Shader } from './shader'
 
 /** Per-tile accumulation, keyed by tile index. */
@@ -191,15 +192,12 @@ export class CinematicRenderer extends NVRenderer {
     const gl = this.gl
     if (!gl) return
     gl.bindTexture(target, tex)
-    gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, filter)
-    gl.texParameteri(
+    setTexParams(
+      gl,
       target,
-      gl.TEXTURE_MAG_FILTER,
+      filter,
       filter === gl.NEAREST ? gl.NEAREST : gl.LINEAR,
     )
-    gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(target, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
   }
 
   private _texture2D(

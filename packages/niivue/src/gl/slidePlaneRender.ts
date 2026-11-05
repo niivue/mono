@@ -5,6 +5,7 @@ import {
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
+import { setTexParams } from './glUtil'
 import { Shader } from './shader'
 
 // Draws an NVSlide as a textured plane in the 3D render tile. Each tile of the
@@ -80,12 +81,36 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl.bindTexture(gl.TEXTURE_2D, tex)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
     this._textures.set(key, tex, bitmap.width * bitmap.height * 4)
     return tex
+  }
+
+  /** Bind the program and uniforms, and set the plane's depth/blend state. */
+  private _begin(
+    gl: WebGL2RenderingContext,
+    shader: Shader,
+    mvpMatrix: Float32Array,
+    opacity: number,
+  ): void {
+    shader.use(gl)
+    if (shader.uniforms.mvpMtx) {
+      gl.uniformMatrix4fv(shader.uniforms.mvpMtx, false, mvpMatrix)
+    }
+    if (shader.uniforms.opacity) {
+      gl.uniform1f(shader.uniforms.opacity, opacity)
+    }
+    if (shader.uniforms.tileTex) {
+      gl.uniform1i(shader.uniforms.tileTex, 0)
+    }
+    // Depth-test so volume in front occludes the plane, but don't write depth
+    // (the plane is a thin overlay; let later layers blend over it too).
+    gl.enable(gl.DEPTH_TEST)
+    gl.depthMask(false)
+    // The plane is two-sided — show it from either face.
+    gl.disable(gl.CULL_FACE)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
   }
 
   draw(
@@ -99,25 +124,8 @@ export class SlidePlaneRenderer extends NVRenderer {
     // Evict BEFORE beginFrame so the previous frame's working set is exempt.
     this._textures.evictToBudget()
     this._textures.beginFrame()
-    this._shader.use(gl)
-    if (this._shader.uniforms.mvpMtx) {
-      gl.uniformMatrix4fv(this._shader.uniforms.mvpMtx, false, mvpMatrix)
-    }
-    if (this._shader.uniforms.opacity) {
-      gl.uniform1f(this._shader.uniforms.opacity, opacity)
-    }
-    if (this._shader.uniforms.tileTex) {
-      gl.uniform1i(this._shader.uniforms.tileTex, 0)
-    }
     gl.activeTexture(gl.TEXTURE0)
-    // Depth-test so volume in front occludes the plane, but don't write depth
-    // (the plane is a thin overlay; let later layers blend over it too).
-    gl.enable(gl.DEPTH_TEST)
-    gl.depthMask(false)
-    // The plane is two-sided — show it from either face.
-    gl.disable(gl.CULL_FACE)
-    gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    this._begin(gl, this._shader, mvpMatrix, opacity)
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vbo)
     for (const tile of tiles) {
@@ -125,31 +133,7 @@ export class SlidePlaneRenderer extends NVRenderer {
       if (!bitmap) continue
       const tex = this._textureFor(gl, tile.key, bitmap)
       if (!tex) continue
-      const [tl, tr, bl, br] = tile.corners
-      // TRIANGLE_STRIP order TL, TR, BL, BR; UV origin top-left.
-      const v = new Float32Array([
-        tl[0],
-        tl[1],
-        tl[2],
-        0,
-        0,
-        tr[0],
-        tr[1],
-        tr[2],
-        1,
-        0,
-        bl[0],
-        bl[1],
-        bl[2],
-        0,
-        1,
-        br[0],
-        br[1],
-        br[2],
-        1,
-        1,
-      ])
-      gl.bufferData(gl.ARRAY_BUFFER, v, gl.DYNAMIC_DRAW)
+      gl.bufferData(gl.ARRAY_BUFFER, cornerQuad(tile.corners), gl.DYNAMIC_DRAW)
       gl.bindTexture(gl.TEXTURE_2D, tex)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     }
@@ -182,52 +166,13 @@ export class SlidePlaneRenderer extends NVRenderer {
         gl.UNSIGNED_BYTE,
         ann.rgba,
       )
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR, gl.NEAREST)
       this._annVersion = ann.version
     }
-    this._shader.use(gl)
-    if (this._shader.uniforms.mvpMtx) {
-      gl.uniformMatrix4fv(this._shader.uniforms.mvpMtx, false, mvpMatrix)
-    }
-    if (this._shader.uniforms.opacity) {
-      gl.uniform1f(this._shader.uniforms.opacity, opacity)
-    }
-    if (this._shader.uniforms.tileTex)
-      gl.uniform1i(this._shader.uniforms.tileTex, 0)
-    gl.enable(gl.DEPTH_TEST)
-    gl.depthMask(false)
-    gl.disable(gl.CULL_FACE)
-    gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-    const [tl, tr, bl, br] = ann.corners
-    const v = new Float32Array([
-      tl[0],
-      tl[1],
-      tl[2],
-      0,
-      0,
-      tr[0],
-      tr[1],
-      tr[2],
-      1,
-      0,
-      bl[0],
-      bl[1],
-      bl[2],
-      0,
-      1,
-      br[0],
-      br[1],
-      br[2],
-      1,
-      1,
-    ])
+    this._begin(gl, this._shader, mvpMatrix, opacity)
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vbo)
-    gl.bufferData(gl.ARRAY_BUFFER, v, gl.DYNAMIC_DRAW)
+    gl.bufferData(gl.ARRAY_BUFFER, cornerQuad(ann.corners), gl.DYNAMIC_DRAW)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     gl.bindVertexArray(null)
     gl.depthMask(true)
@@ -248,4 +193,10 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._annTex = null
     this._gl = null
   }
+}
+
+/** Interleaved [pos.xyz, uv.xy], TRIANGLE_STRIP order TL, TR, BL, BR; UV origin top-left. */
+function cornerQuad(corners: SlidePlaneTile['corners']): Float32Array {
+  const [tl, tr, bl, br] = corners
+  return new Float32Array([...tl, 0, 0, ...tr, 1, 0, ...bl, 0, 1, ...br, 1, 1])
 }

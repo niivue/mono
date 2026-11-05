@@ -21,6 +21,7 @@ import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { NVRenderer } from '@/view/NVRenderer'
 import { timeChunkPhase } from '@/volume/chunkTiming'
 import { FontRenderer } from './font'
+import { setTexParams } from './glUtil'
 import { LineRenderer } from './line'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
@@ -96,10 +97,7 @@ export class SlideRenderer extends NVRenderer {
       throw new Error('Failed to create slide placeholder texture')
     }
     gl.bindTexture(gl.TEXTURE_2D, this._placeholderTexture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -325,10 +323,7 @@ export class SlideRenderer extends NVRenderer {
     const texture = gl.createTexture()
     if (!texture) return null
     gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
     const bytes = bitmap.width * bitmap.height * 4
     // Timed as `upload` alongside the volume path's brick uploads: a slide tile

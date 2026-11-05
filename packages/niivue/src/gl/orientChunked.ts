@@ -32,6 +32,7 @@ import {
   isIdentityPermutation,
   isRGBAChunkDatatype,
 } from '@/volume/orientChunked'
+import { setTexParams } from './glUtil'
 import * as gradient from './gradient'
 import {
   createModTexture,
@@ -75,11 +76,7 @@ function emptyGradientTexture(gl: WebGL2RenderingContext): WebGLTexture {
   if (!tex)
     throw new Error('orientChunkedGL: failed to allocate gradient texture')
   gl.bindTexture(gl.TEXTURE_3D, tex)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  setTexParams(gl, gl.TEXTURE_3D, gl.LINEAR)
   gl.texImage3D(
     gl.TEXTURE_3D,
     0,

@@ -189,6 +189,17 @@ describe('NVSlide tile loading', () => {
 describe('NVSlide screen<->slide projection', () => {
   const screen = { widthCss: 800, heightCss: 600, devicePixelRatio: 2 }
 
+  it('clampViewport keeps a fitted slide centred on its loose axis', () => {
+    // 48x4 slide on an 800x600 screen: fit is width-bound, so the view is far
+    // taller than the slide and the vertical clamp range inverts.
+    const slide = NVSlide.fromSource(new CountingSource(makeManifest(6)))
+    slide.fitToScreen(screen)
+    slide.clampViewport(screen)
+    expect(slide.viewport.centerX).toBeCloseTo(24, 6)
+    expect(slide.viewport.centerY).toBeCloseTo(2, 6)
+    slide.dispose()
+  })
+
   for (const displayYAxis of ['down', 'up'] as const) {
     it(`slideToScreen is the inverse of screenToSlide (yAxis ${displayYAxis})`, () => {
       const manifest = makeManifest(6)

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue - tiled TIFF slide demo</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { margin: 0; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; background: #1c1c1f; color: #e8e8ea; }
+      header { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 1rem; flex-wrap: wrap; }
+      header input[type="url"] { flex: 1; min-width: 16rem; }
+      canvas { flex: 1; width: 100%; min-height: 0; touch-action: none; }
+      #status { font-size: 0.85rem; opacity: 0.8; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>nv-ext-tiff</strong>
+      <input id="file" type="file" accept=".tif,.tiff,.svs,.btf" />
+      <input id="url" type="url" placeholder="https://... tiled TIFF / SVS (server must support Range + CORS)" />
+      <button id="open" type="button">Open URL</button>
+      <span id="status">Pick a local tiled TIFF/SVS or enter a URL.</span>
+    </header>
+    <canvas id="canvas"></canvas>
+    <script type="module" src="src/main.ts"></script>
+  </body>
+</html>

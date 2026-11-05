@@ -146,11 +146,18 @@ function copyBoundsRect(
   )
 }
 
+/** Depth format of every depth attachment and depth-tested pipeline this view owns. */
+const DEPTH_FORMAT: GPUTextureFormat = 'depth24plus'
+
 export default class NVView {
   canvas: HTMLCanvasElement
   model: NVModel
   options: NVViewOptions
   isAntiAlias: boolean
+  /** MSAA sample count of the color and depth attachments (4 when anti-aliased). */
+  private get sampleCount(): 1 | 4 {
+    return this.isAntiAlias ? 4 : 1
+  }
   forceDevicePixelRatio: number
   device: GPUDevice | null
   /** Set when the GPU device is lost (e.g. GPU OOM); halts the render loop. */
@@ -329,7 +336,7 @@ export default class NVView {
     if (this.device) {
       this.cinematicRenderer.init(
         this.device,
-        this.isAntiAlias ? 4 : 1,
+        this.sampleCount,
         this.preferredCanvasFormat,
       )
     }
@@ -360,7 +367,7 @@ export default class NVView {
       ],
     })
     const format = this.preferredCanvasFormat
-    const msaa = this.isAntiAlias ? 4 : 1
+    const msaa = this.sampleCount
     const layoutBGL = this.meshBindGroupLayout
     const meshPipelineLayout = device.createPipelineLayout({
       bindGroupLayouts: [layoutBGL],
@@ -408,7 +415,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_crosscut',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'always',
         false,
@@ -426,7 +433,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_flat',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_flat',
       ),
       matte: mesh.createMeshPipeline(
@@ -477,7 +484,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_vertexColor',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'always',
         false,
@@ -491,7 +498,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_phong',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'greater',
         false,
@@ -502,7 +509,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_crevice',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'greater',
         false,
@@ -513,7 +520,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_crosscut',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'always',
         false,
@@ -525,7 +532,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_flat',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_flat',
         'greater',
         false,
@@ -536,7 +543,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_matte',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'greater',
         false,
@@ -547,7 +554,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_outline',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'greater',
         false,
@@ -558,7 +565,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_rim',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'greater',
         false,
@@ -569,7 +576,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_silhouette',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'greater',
         false,
@@ -580,7 +587,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_toon',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'greater',
         false,
@@ -591,7 +598,7 @@ export default class NVView {
         msaa,
         meshPipelineLayout,
         'fragment_vertexColor',
-        'depth24plus',
+        DEPTH_FORMAT,
         'vertex_main',
         'greater',
         false,
@@ -2087,8 +2094,8 @@ export default class NVView {
           device,
           pass,
           colorFormat: this.preferredCanvasFormat,
-          sampleCount: this.isAntiAlias ? 4 : 1,
-          depthFormat: 'depth24plus',
+          sampleCount: this.sampleCount,
+          depthFormat: DEPTH_FORMAT,
         },
         bounds: {
           x: this._boundsOffsetX,
@@ -2350,7 +2357,7 @@ export default class NVView {
 
   async _createResources(): Promise<void> {
     if (!this.device) return
-    const msaaCount = this.isAntiAlias ? 4 : 1
+    const msaaCount = this.sampleCount
     // Initialize render layer modules
     const dpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
     await this.lineRenderer.init(
@@ -2605,7 +2612,7 @@ export default class NVView {
         this._msaaTextureView = null
         this.msaaTexture = this.device.createTexture({
           size: [tw, th],
-          sampleCount: 4,
+          sampleCount: this.sampleCount,
           format: this.preferredCanvasFormat,
           usage: GPUTextureUsage.RENDER_ATTACHMENT,
         })
@@ -2646,7 +2653,7 @@ export default class NVView {
     if (!this.device) return
     const tw = this._boundsWidth || this.canvas.width
     const th = this._boundsHeight || this.canvas.height
-    const samples = this.isAntiAlias ? 4 : 1
+    const samples = this.sampleCount
     if (
       this.depthTexture &&
       this.depthTexture.width === tw &&
@@ -2659,7 +2666,7 @@ export default class NVView {
     this._depthTextureView = null
     this.depthTexture = this.device.createTexture({
       size: [tw, th],
-      format: 'depth24plus',
+      format: DEPTH_FORMAT,
       sampleCount: samples,
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     })

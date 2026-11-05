@@ -11,6 +11,7 @@ import {
 import {
   getCanvasInstances,
   isSharedCanvas,
+  moveCanvasRegistration,
   registerCanvasInstance,
   replaceCanvas,
   unregister,
@@ -160,6 +161,28 @@ function replaceCanvasElement(ctrl: NiiVue, cloneDetached = false): void {
   replaceCanvas(ctrl)
 }
 
+/**
+ * Undo a failed backend switch on a shared canvas: the siblings' views still
+ * live on the old canvas, so put it back and reinstall their handlers.
+ */
+function restoreSharedCanvas(
+  ctrl: NiiVue,
+  oldCanvas: HTMLCanvasElement,
+  siblings: NiiVue[],
+): void {
+  const current = ctrl.canvas as HTMLCanvasElement
+  if (current !== oldCanvas) {
+    current.parentNode?.replaceChild(oldCanvas, current)
+    for (const c of getCanvasInstances(current) ?? []) c.canvas = oldCanvas
+    moveCanvasRegistration(current, oldCanvas)
+  }
+  for (const sib of siblings) {
+    if (sib.opts.isInteractionEnabled === false) continue
+    initInteraction(sib)
+    setupDragAndDrop(sib)
+  }
+}
+
 export async function recreateView(
   ctrl: NiiVue,
   backendChanged = false,
@@ -185,16 +208,23 @@ export async function recreateView(
     : []
   // Their handlers must come off the old canvas before it is swapped out.
   for (const sib of siblings) removeInteractionListeners(sib)
+  const oldCanvas = ctrl.canvas as HTMLCanvasElement
   if (!isSharedCanvas(ctrl) || backendChanged) {
     replaceCanvasElement(ctrl, backendChanged)
   }
   // 6. Create new view with current settings
-  const view =
-    ctrl.opts.backend === 'webgl2'
-      ? new NVViewGL(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
-      : new NVViewGPU(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
-  // 7. Initialize the new view, publishing it only once init() resolves
-  await view.init()
+  let view: NVViewGL | NVViewGPU
+  try {
+    view =
+      ctrl.opts.backend === 'webgl2'
+        ? new NVViewGL(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
+        : new NVViewGPU(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
+    // 7. Initialize the new view, publishing it only once init() resolves
+    await view.init()
+  } catch (error) {
+    if (siblings.length > 0) restoreSharedCanvas(ctrl, oldCanvas, siblings)
+    throw error
+  }
   ctrl.view = view
   // Hooks go on before the resize() below draws the first frame: a preloaded
   // chunked volume starts streaming on it (see NiiVue._wireViewHooks).

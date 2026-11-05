@@ -1,6 +1,6 @@
 {
   "name": "@niivue/uikit",
-  "version": "1.0.0-rc.86",
+  "version": "1.0.0-rc.87",
   "private": false,
   "type": "module",
   "description": "UIKit: controls and widgets integrated into the NiiVue rendering lifecycle",

@@ -1,3 +1,31 @@
+## 1.0.0-rc.92 (2026-11-05)
+
+### Fixes
+
+- **niivue:** still give a viewless sibling the new backend ([6cf8d971](https://github.com/niivue/mono/commit/6cf8d971))
+- **niivue:** limit the antialias refusal to WebGL2, skip destroyed siblings ([d25fada2](https://github.com/niivue/mono/commit/d25fada2))
+- **niivue:** publish the recreated single-backend view ([39c19a1e](https://github.com/niivue/mono/commit/39c19a1e))
+- **niivue:** recreate the canvas when antialiasing changes ([ca8f605e](https://github.com/niivue/mono/commit/ca8f605e))
+- **niivue:** never let a bad thumbnail abort attach or a view rebuild ([1d6bbbd1](https://github.com/niivue/mono/commit/1d6bbbd1))
+- **niivue:** keep a failed thumbnail reload from aborting a view rebuild ([faf0f611](https://github.com/niivue/mono/commit/faf0f611))
+- **niivue:** finish a shared-canvas backend switch for every controller ([0c9fbb2d](https://github.com/niivue/mono/commit/0c9fbb2d))
+- **niivue:** keep rebuilding siblings after one fails on a backend switch ([4a066f0b](https://github.com/niivue/mono/commit/4a066f0b))
+- restore siblings when a shared-canvas backend switch fails ([ee90a2b9](https://github.com/niivue/mono/commit/ee90a2b9))
+- take sibling handlers off the old shared canvas on a backend switch ([4d8a5f54](https://github.com/niivue/mono/commit/4d8a5f54))
+- keep same-backend recreates cloning, and clone a detached canvas WebGPU locked before failing ([fb4410ce](https://github.com/niivue/mono/commit/fb4410ce))
+- **niivue:** keep a detached canvas on same-backend recreation, clone it on a backend switch ([5af39862](https://github.com/niivue/mono/commit/5af39862))
+- **niivue:** keep shared-canvas siblings in step on backend and ratio restarts ([8cccb858](https://github.com/niivue/mono/commit/8cccb858))
+- **niivue:** decide canvas sharing from the registry, not bounds ([067d9838](https://github.com/niivue/mono/commit/067d9838))
+- **niivue:** keep a detached canvas on the universal fallback ([c8270aee](https://github.com/niivue/mono/commit/c8270aee))
+- **niivue:** keep the canvas viewport and registry across view recreation ([ff250a97](https://github.com/niivue/mono/commit/ff250a97))
+- **niivue:** keep the webgl2 and webgpu subpath builds backend-isolated ([#175](https://github.com/niivue/mono/issues/175))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.91 (2026-11-05)
 
 ### Fixes

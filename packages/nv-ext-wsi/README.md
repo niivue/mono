@@ -1,6 +1,6 @@
 # @niivue/nv-ext-wsi
 
-Formerly `@niivue/nv-ext-tiff`; the API is unchanged.
+Formerly `@niivue/nv-ext-tiff`, whose TIFF API is unchanged. It also opens local DICOM-WSI folders (see [Local DICOM-WSI folders](#local-dicom-wsi-folders)).
 
 Stream large tiled/pyramidal TIFF, BigTIFF, OME-TIFF and Aperio SVS whole-slide images into NiiVue's `NVSlide`, one tile at a time, using [geotiff](https://github.com/geotiffjs/geotiff.js).
 
@@ -48,6 +48,38 @@ pool.destroy()
 - **Decoders trust the compressed stream.** A tile whose JPEG header claims 30000x30000 px can exhaust memory: geotiff offers no bound on decoded size. Only open files you trust, or decode in workers with a `Pool`, so the damage stays in a worker rather than the tab.
 
 Not supported yet: 16-bit and multichannel fluorescence planes (only 8-bit RGB/gray displays correctly), choosing an OME plane other than the first, TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
+
+## Local DICOM-WSI folders
+
+```ts
+import { DicomWsiSource, indexDicomWsi, registerDcm2niixDecoders } from '@niivue/nv-ext-wsi'
+
+registerDcm2niixDecoders() // JPEG 2000 and JPEG-LS tiles; needs @niivue/dcm2niix
+const files = [...folderInput.files] // <input type="file" webkitdirectory>
+const index = await indexDicomWsi(files)
+const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
+```
+
+- `indexDicomWsi` reads only headers and item tags (`File.slice`), never pixel data.
+  It uses the Basic or Extended Offset Table when present, and otherwise walks the items.
+- It handles multi-fragment frames, TILED_SPARSE (holes stay empty), and
+  concatenations.
+- Each optical path and focal plane becomes its own slide.
+- Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
+  `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
+  `not-tiled`.
+- `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
+  that changed since indexing fails rather than decoding garbage.
+- Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
+  (`registerDcm2niixDecoders`, with `@niivue/dcm2niix` as an optional peer dependency).
+- Index speed for the 8 OpenSlide DICOM-WSI test sets (Bun, local SSD):
+
+  | Case | Time |
+  |---|---|
+  | With offset tables | 2–65 ms |
+  | Item walks (up to 28k frames) | 0.1–0.45 s |
+
+- Test fixtures: `fixtures/dicom-wsi` (synthetic, with the generator `make_fixtures.py`).
 
 ## Range, CORS and full downloads
 

@@ -538,7 +538,7 @@ async function frameSpans(
       )
     const starts =
       (h[8] === 0xff && h[9] === 0xd8) || // JPEG and JPEG-LS SOI
-      (h[8] === 0xff && h[9] === 0x4f && h[10] === 0xff && h[11] === 0x51) || // J2K SOC SIZ
+      (h[8] === 0xff && h[9] === 0x4f && h[10] === 0xff && h[11] === 0x51) || // J2K start-of-codestream + image-size markers
       (h[8] === 0 && h[9] === 0 && h[10] === 0 && h[11] === 0x0c) // JP2 signature box
     if (starts && f + 1 < frameCount) offset[++f] = p + 8
     if (f < 0)

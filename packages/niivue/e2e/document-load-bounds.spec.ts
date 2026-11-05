@@ -23,7 +23,9 @@ test('a document that repeats one embedded volume through shared references is r
   const doc = decodeDocumentJSON(json) as { volumes: unknown[] }
   // One embedded volume, listed 20 times; tags 28/29 store it once.
   doc.volumes = Array.from({ length: 20 }, () => doc.volumes[0])
-  const bytes = Array.from(new Encoder({ structuredClone: true }).encode(doc))
+  const bytes = Array.from(
+    new Encoder({ structuredClone: true, useRecords: false }).encode(doc),
+  )
 
   const r = await page.evaluate(async (bytes) => {
     const { default: NiiVue } = await import('/src/index.ts')

@@ -10,7 +10,8 @@ import { decodeDocumentJSON, encodeDocumentJSON } from './documentJson'
 
 // The encoder `saveDocument` never uses, but a hostile file can: it writes
 // tags 28/29, so a repeated or cyclic value is stored once.
-const sharing = new Encoder({ structuredClone: true })
+// Shared references (tags 28/29) without cbor-x records, which serialize never emits.
+const sharing = new Encoder({ structuredClone: true, useRecords: false })
 
 const honestDoc = () => ({
   version: 9,
@@ -119,9 +120,7 @@ describe('assertCborFitsInput', () => {
       annotations: [{ polygons: [{ outer: [{ x: 1, y: 2 }], holes: [] }] }],
     }
     expect(() => assertCborFitsInput(encode(doc))).not.toThrow()
-    // Shared references (tags 28/29) without cbor-x records, which serialize never emits.
-    const shared = new Encoder({ structuredClone: true, useRecords: false })
-    expect(() => assertCborFitsInput(shared.encode(doc))).not.toThrow()
+    expect(() => assertCborFitsInput(sharing.encode(doc))).not.toThrow()
   })
 
   test('refuses nested array headers that claim more items than the file', () => {

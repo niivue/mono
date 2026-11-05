@@ -28,6 +28,7 @@ import {
   stampAfterVertexWrite,
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
+import { type BoxTile, packBoxEdges } from '@/view/NVBoxEdges'
 import {
   canUseCinematicOverlays,
   cinematicOptionsForFrame,
@@ -75,6 +76,7 @@ import {
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
 import { WGPUBench } from './bench'
+import { BoxLineRenderer } from './boxLine'
 import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -180,6 +182,7 @@ export default class NVView {
   maxTextureDimension2D: number
   maxTextureDimension3D: number
   lineRenderer: LineRenderer
+  boxLineRenderer: BoxLineRenderer
   polygonRenderer: PolygonRenderer
   polygon3DRenderer: Polygon3DRenderer
   fontRenderer: FontRenderer
@@ -310,6 +313,7 @@ export default class NVView {
     this.maxTextureDimension3D = 0
     // Render layer instances
     this.lineRenderer = new LineRenderer()
+    this.boxLineRenderer = new BoxLineRenderer()
     this.polygonRenderer = new PolygonRenderer()
     this.polygon3DRenderer = new Polygon3DRenderer()
     this.fontRenderer = new FontRenderer()
@@ -1105,6 +1109,8 @@ export default class NVView {
       buildPlaneOutline3DRenderData(md.planeOutlines, md.ui.crosshairColor),
     )
     const crossLinesList: ReturnType<typeof buildLine>[] = []
+    const boxEdges = packBoxEdges(md)
+    const boxTiles: BoxTile[] = []
     for (let i = 0; i < screenSlices.length; i++) {
       const tile = screenSlices[i]
       const ltwh = tile.leftTopWidthHeight as number[]
@@ -1220,45 +1226,8 @@ export default class NVView {
       ) {
         tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
       }
-      // Outline the focus box on 3D render tiles (project its 8 corners through
-      // this tile's MVP; drawn with the crosshair/overlay lines below).
-      if (md._focusBox && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
-        crossLinesList.push(
-          ...NVSliceLayout.buildFocusBoxLines(
-            md._focusBox,
-            mvpMatrix as mat4,
-            ltwh,
-            buildLine,
-          ),
-        )
-      }
-      // Debug: outline every LOD brick (colored per level) on render tiles.
-      if (md._lodBoxes && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
-        for (const lodBox of md._lodBoxes) {
-          crossLinesList.push(
-            ...NVSliceLayout.buildFocusBoxLines(
-              lodBox,
-              mvpMatrix as mat4,
-              ltwh,
-              buildLine,
-            ),
-          )
-        }
-      }
-      // Outline the block a 3D vector stroke is drawing on (pick hint).
-      if (
-        md._pickedBlockBox &&
-        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER
-      ) {
-        crossLinesList.push(
-          ...NVSliceLayout.buildFocusBoxLines(
-            md._pickedBlockBox,
-            mvpMatrix as mat4,
-            ltwh,
-            buildLine,
-          ),
-        )
-      }
+      if (boxEdges && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER)
+        boxTiles.push({ mvp: mvpMatrix as mat4, rect: ltwh })
       // each tile is drawn to a unique screen region
       pass.setViewport(ltwh[0], ltwh[1], ltwh[2], ltwh[3], 0.0, 1.0)
       if (this.volumeRenderer.hasVolume() && volumes.length > 0) {
@@ -2060,6 +2029,14 @@ export default class NVView {
         this.maxLines,
       )
     }
+    if (boxEdges) {
+      // The scissor must stay inside the attachment.
+      const tw = isSub ? bw : canvasTexture.width
+      const th = isSub ? bh : canvasTexture.height
+      this.boxLineRenderer.draw(device, pass, boxEdges, boxTiles, tw, th)
+      pass.setViewport(0, 0, bw, bh, 0, 1)
+      pass.setScissorRect(0, 0, tw, th)
+    }
     // Is the frame just drawn complete? Nothing queued or mid-upload for the
     // working set this draw requested, no cross-fade still animating, no drag
     // in progress. Shared by the overlay hook and the chunk-streaming observer
@@ -2348,6 +2325,11 @@ export default class NVView {
     // Initialize render layer modules
     const dpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
     await this.lineRenderer.init(
+      this.device,
+      this.preferredCanvasFormat,
+      msaaCount,
+    )
+    await this.boxLineRenderer.init(
       this.device,
       this.preferredCanvasFormat,
       msaaCount,
@@ -3326,6 +3308,7 @@ export default class NVView {
 
     // Destroy render layer modules
     this.lineRenderer.destroy()
+    this.boxLineRenderer.destroy()
     this.polygonRenderer.destroy()
     this.polygon3DRenderer.destroy()
     this.fontRenderer.destroy()

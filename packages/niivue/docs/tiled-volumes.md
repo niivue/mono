@@ -235,9 +235,11 @@ and are evicted first (see `budget-plans.md`).
 
 ### Focus indicators
 
-`NVModel._focusBox` (`nv.focusBox`) outlines a world-space AABB on 3D render tiles
-via `buildFocusBoxLines`; `NVModel._lodBoxes` (`nv.lodBoxes`) draws a set of them,
-e.g. one per brick coloured by level for debugging. Both backends loop-draw them.
+`NVModel._focusBox` (`nv.focusBox`) outlines a world-space AABB on 3D render tiles;
+`NVModel._lodBoxes` (`nv.lodBoxes`) draws a set of them, e.g. one per brick
+coloured by level for debugging. `packBoxEdges` (`view/NVBoxEdges.ts`) packs their
+edges once per frame; the box-line renderers (`gl/boxLine.ts`, `wgpu/boxLine.ts`)
+project them on the GPU per render tile, scissored to the tile.
 
 ### Known limitation
 

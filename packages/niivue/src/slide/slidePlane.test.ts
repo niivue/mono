@@ -199,6 +199,23 @@ describe('resolveSlidePlaneTiles', () => {
     expect(again.tiles).toHaveLength(4)
   })
 
+  test('skips the holes of a sparse level and requests the right tiles', () => {
+    // 2x2 with the top-right and bottom-left tiles missing: the culled plane
+    // tiles must still map to their own manifest tiles, not by array position.
+    const sparse = pyramidLevel(0, 1, 2, 2)
+    sparse.tiles[1] = null
+    sparse.tiles[2] = null
+    const { slide, requested } = fakeSlide([sparse], 512, 512)
+    const state: SlidePlaneState = {
+      slide,
+      pixelToWorld: unitTransform(512, 512),
+      tilesByLevel: new Map(),
+    }
+    const { tiles } = resolveSlidePlaneTiles(state, IDENTITY, 512, 512)
+    expect(tiles.map((t) => t.key)).toEqual(['L0/0/0', 'L0/1/1'])
+    expect(requested).toEqual(['L0/0/0', 'L0/1/1'])
+  })
+
   test('culls every tile when the plane is off-screen', () => {
     const levels = [pyramidLevel(0, 1, 2, 2)]
     const { slide, requested } = fakeSlide(levels, 512, 512)

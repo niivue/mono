@@ -506,6 +506,7 @@ function buildWandReference() {
   c.height = drawing.height
   const cx = c.getContext('2d')
   for (const t of level.tiles) {
+    if (!t) continue // a sparse slide's hole
     slide.requestTile(level, t) // prime for a sharper re-click
     const bmp = slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
     if (!bmp) continue

@@ -86,7 +86,13 @@ export interface NVSlideLevelManifest {
   frames?: number
   opticalPaths?: number
   focalPlanes?: number
-  tiles: NVSlideTileManifest[]
+  /**
+   * DICOM TILED_SPARSE: frames are placed by their per-frame position, so the
+   * frame count says nothing about paths or planes; the producer states both.
+   */
+  sparse?: true
+  /** Row-major, `columns * rows`; `null` is a hole (no tile: nothing is drawn). */
+  tiles: Array<NVSlideTileManifest | null>
 }
 
 /**
@@ -646,6 +652,12 @@ export class ManifestRangeSource implements SlideTileSource {
 export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
   if (!manifest.format?.startsWith('dicom-wsi')) return
   for (const level of manifest.levels) {
+    if (level.sparse) {
+      if (level.opticalPaths === 1 && level.focalPlanes === 1) continue
+      throw new Error(
+        `Slide level ${level.index} is sparse but does not state one optical path and one focal plane`,
+      )
+    }
     const { frames } = level
     const grid = level.columns * level.rows
     const paths = level.opticalPaths ?? (frames === grid ? 1 : undefined)

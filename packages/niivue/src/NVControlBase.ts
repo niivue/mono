@@ -5633,7 +5633,8 @@ export default class NiiVue extends EventTarget {
     // camera-driven level resolves; NVSlide dedupes already-resident keys.
     const coarsest = levels[levels.length - 1]
     if (coarsest) {
-      for (const tile of coarsest.tiles) slide.requestTile(coarsest, tile)
+      for (const tile of coarsest.tiles)
+        if (tile) slide.requestTile(coarsest, tile)
     }
     this._slidePlane = state
     // A fresh plane registration drops any prior slide drawing (it was sized
@@ -5963,6 +5964,7 @@ export default class NiiVue extends EventTarget {
     const ctx = oc.getContext('2d')
     if (!ctx) return null
     for (const t of level.tiles) {
+      if (!t) continue // a sparse slide's hole
       sp.slide.requestTile(level, t)
       const bmp = sp.slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
       if (bmp)

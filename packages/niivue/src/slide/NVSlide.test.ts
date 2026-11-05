@@ -968,6 +968,24 @@ describe('NVSlide monochrome window', () => {
     slide.dispose()
   })
 
+  it('crops a padded sample frame to its tile', async () => {
+    const slide = monoSlide(4095)
+    // A 16 x 8 frame for an 8 x 4 tile: the padding (0) must not reach the bitmap.
+    NVSlide.registerTileDecoder('image/jls', async () => {
+      const samples = new Uint16Array(16 * 8)
+      for (let y = 0; y < TILE_H; y++)
+        samples.fill(4095, y * 16, y * 16 + TILE_W)
+      return { samples, width: 16, height: 8, components: 1, bitsStored: 16 }
+    })
+    await loadLevel(slide, 2)
+    const bitmap = slide.cachedTileBitmap('L2/0/0') as unknown as FakeBitmap
+    expect([bitmap.width, bitmap.height]).toEqual([TILE_W, TILE_H])
+    expect(new Set(bitmap.data.filter((_, i) => i % 4 === 0))).toEqual(
+      new Set([255]),
+    )
+    slide.dispose()
+  })
+
   it('re-windows cached tiles and windows later arrivals the same way', async () => {
     const slide = monoSlide(500)
     await loadLevel(slide, 2)

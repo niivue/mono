@@ -1,6 +1,12 @@
 import type { LineData } from '@/view/NVLine'
 import { NVRenderer } from '@/view/NVRenderer'
 import lineShaderCode from './line.wgsl?raw'
+import {
+  alphaPipelineDesc,
+  overlayDepth,
+  uniformBuffer,
+  uniformStorageEntries,
+} from './pipeline'
 
 export class LineRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
@@ -22,58 +28,19 @@ export class LineRenderer extends NVRenderer {
     depthFormat: GPUTextureFormat | null = 'depth24plus',
   ): Promise<void> {
     if (this.isReady) return
-    // Uniforms for canvas
-    this.paramsBuffer = device.createBuffer({
-      size: 16,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
+    this.paramsBuffer = uniformBuffer(device, 16)
     this.bindLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX,
-          buffer: { type: 'uniform' },
-        },
-        {
-          binding: 1,
-          visibility: GPUShaderStage.VERTEX,
-          buffer: { type: 'read-only-storage' },
-        },
-      ],
+      entries: uniformStorageEntries(GPUShaderStage.VERTEX),
     })
-
-    const lineModule = device.createShaderModule({ code: lineShaderCode })
-    this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
+    this.pipeline = device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: lineShaderCode }),
         bindGroupLayouts: [this.bindLayout],
+        format,
+        msaaCount,
+        depthStencil: depthFormat ? overlayDepth(depthFormat) : undefined,
       }),
-      multisample: { count: msaaCount },
-      vertex: { module: lineModule, entryPoint: 'vertex_main' },
-      fragment: {
-        module: lineModule,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format: format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      ...(depthFormat && {
-        depthStencil: {
-          depthWriteEnabled: false,
-          depthCompare: 'always',
-          format: depthFormat,
-        },
-      }),
-      primitive: { topology: 'triangle-strip' },
-    })
+    )
     this.isReady = true
   }
 

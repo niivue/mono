@@ -12,6 +12,12 @@ import {
 import { NVRenderer } from '@/view/NVRenderer'
 import fontShaderCode from './font.wgsl?raw'
 import panelShaderCode from './panel.wgsl?raw'
+import {
+  alphaPipelineDesc,
+  overlayDepth,
+  uniformBuffer,
+  uniformStorageEntries,
+} from './pipeline'
 import * as wgpu from './wgpu'
 
 export class FontRenderer extends NVRenderer {
@@ -59,82 +65,41 @@ export class FontRenderer extends NVRenderer {
       // 2. Define Bind Group Layout
       this.bindLayout = device.createBindGroupLayout({
         entries: [
-          {
-            binding: 0,
-            visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-            buffer: { type: 'uniform' },
-          },
-          {
-            binding: 1,
-            visibility: GPUShaderStage.VERTEX,
-            buffer: { type: 'read-only-storage' },
-          },
+          ...uniformStorageEntries(
+            GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          ),
           { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
           { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
         ],
       })
       // 3. Create Render Pipeline
-      const fontModule = device.createShaderModule({ code: fontShaderCode })
-      const blendState: GPUBlendState = {
-        color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
-        alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-      }
-      const depthStencil: GPUDepthStencilState | undefined = depthFormat
-        ? {
-            depthWriteEnabled: false,
-            depthCompare: 'always',
-            format: depthFormat,
-          }
-        : undefined
-      this.pipeline = device.createRenderPipeline({
-        layout: device.createPipelineLayout({
+      const depthStencil = depthFormat ? overlayDepth(depthFormat) : undefined
+      this.pipeline = device.createRenderPipeline(
+        alphaPipelineDesc(device, {
+          module: device.createShaderModule({ code: fontShaderCode }),
           bindGroupLayouts: [this.bindLayout],
+          format,
+          msaaCount,
+          depthStencil,
         }),
-        multisample: { count: msaaCount },
-        vertex: { module: fontModule, entryPoint: 'vertex_main' },
-        fragment: {
-          module: fontModule,
-          entryPoint: 'fragment_main',
-          targets: [{ format, blend: blendState }],
-        },
-        depthStencil,
-        primitive: { topology: 'triangle-strip' },
-      })
+      )
       // Space for uniforms (canvasSize)
-      this.paramsBuffer = device.createBuffer({
-        size: 32,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      })
+      this.paramsBuffer = uniformBuffer(device, 32)
       // 4. Panel pipeline for label backing rects
       this.panelBindLayout = device.createBindGroupLayout({
-        entries: [
-          {
-            binding: 0,
-            visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-            buffer: { type: 'uniform' },
-          },
-          {
-            binding: 1,
-            visibility: GPUShaderStage.VERTEX,
-            buffer: { type: 'read-only-storage' },
-          },
-        ],
+        entries: uniformStorageEntries(
+          GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        ),
       })
-      const panelModule = device.createShaderModule({ code: panelShaderCode })
-      this.panelPipeline = device.createRenderPipeline({
-        layout: device.createPipelineLayout({
+      this.panelPipeline = device.createRenderPipeline(
+        alphaPipelineDesc(device, {
+          module: device.createShaderModule({ code: panelShaderCode }),
           bindGroupLayouts: [this.panelBindLayout],
+          format,
+          msaaCount,
+          depthStencil,
         }),
-        multisample: { count: msaaCount },
-        vertex: { module: panelModule, entryPoint: 'vertex_main' },
-        fragment: {
-          module: panelModule,
-          entryPoint: 'fragment_main',
-          targets: [{ format, blend: blendState }],
-        },
-        depthStencil,
-        primitive: { topology: 'triangle-strip' },
-      })
+      )
       this._growPanelBuffer(device, 128)
       this.isReady = true
     } catch (err) {

@@ -20,6 +20,7 @@ import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { timeChunkPhase } from '@/volume/chunkTiming'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
+import { alphaPipelineDesc, linearSampler, texturedLayout } from './pipeline'
 
 const shaderCode = /* wgsl */ `
 struct SlideUniforms {
@@ -193,49 +194,19 @@ export class SlideRendererGPU {
     const format = navigator.gpu.getPreferredCanvasFormat()
     context.configure({ device, format, alphaMode: 'opaque' })
 
-    const sampler = device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-      addressModeU: 'clamp-to-edge',
-      addressModeV: 'clamp-to-edge',
-    })
-
-    const bindLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          buffer: { type: 'uniform' },
-        },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-      ],
-    })
-
-    const module = device.createShaderModule({ code: shaderCode })
-    const pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
+    const sampler = linearSampler(device)
+    const bindLayout = texturedLayout(
+      device,
+      GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+    )
+    // No depth attachment, single-sample canvas.
+    const pipeline = device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: shaderCode }),
         bindGroupLayouts: [bindLayout],
+        format,
       }),
-      vertex: { module, entryPoint: 'vertex_main' },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      primitive: { topology: 'triangle-strip' },
-    })
+    )
 
     const placeholderTexture = device.createTexture({
       size: [1, 1],

@@ -129,10 +129,11 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
       }
     }
   } // while reading all lines of header
+  // NaN from a malformed count also fails these tests
+  if (!(nvert >= 1 && nface >= 1)) {
+    throw new Error(`Malformed PLY: ${nvert} vertices, ${nface} faces`)
+  }
   if (isAscii) {
-    if (nface < 1) {
-      log.error(`Malformed ply format: faces ${nface} `)
-    }
     const positions = new Float32Array(nvert * 3)
     let colors: Float32Array | undefined
     // find ascii token indices for x,y,z and rgb if present
@@ -206,9 +207,9 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     }
     return out
   } // if isAscii
-  if (vertStride < 12 || indexCountBytes < 1 || indexBytes < 1 || nface < 1) {
+  if (vertStride < 12 || indexCountBytes < 1 || indexBytes < 1) {
     log.warn(
-      `Malformed ply format: stride ${vertStride} count ${indexCountBytes} iBytes ${indexBytes} iStrideBytes ${indexStrideBytes} iPadBytes ${indexPaddingBytes} faces ${nface}`,
+      `Malformed ply format: stride ${vertStride} count ${indexCountBytes} iBytes ${indexBytes} iStrideBytes ${indexStrideBytes} iPadBytes ${indexPaddingBytes}`,
     )
   }
   const reader = new DataView(buffer)

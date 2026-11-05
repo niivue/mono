@@ -1,3 +1,14 @@
+## 1.0.0-rc.83 (2026-11-05)
+
+### Fixes
+
+- **uikit:** zero rect and GL line slots before packing a record ([d844633c](https://github.com/niivue/mono/commit/d844633c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.82 (2026-11-05)
 
 ### Updated Dependencies

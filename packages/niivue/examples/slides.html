@@ -55,6 +55,9 @@
         color: var(--muted);
         font-size: 0.78rem;
       }
+      .control[hidden] {
+        display: none;
+      }
       header select {
         background: #171d1b;
         border: 1px solid #2f3d38;
@@ -224,6 +227,10 @@
         <select id="levelMode">
           <option value="auto" selected>auto LOD</option>
         </select>
+      </span>
+      <span class="control" id="windowControl" hidden>
+        <label for="window">Window</label>
+        <input id="window" type="text" title="calMin,calMax (monochrome slides)" size="10" />
       </span>
       <button id="zoomOut" type="button" title="Zoom out">-</button>
       <button id="zoomIn" type="button" title="Zoom in">+</button>

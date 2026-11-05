@@ -615,7 +615,10 @@ test('a sibling destroyed during a backend switch is left alone', async () => {
       const ctrl = fakeCtrl(old, [])
       const gone = fakeCtrl(old, events)
       const live = fakeCtrl(old, [])
-      for (const c of [ctrl, gone, live]) registerCanvasInstance(c, old)
+      // A sibling whose own rebuild failed earlier: no view, still registered.
+      const idle = fakeCtrl(old, [])
+      idle.view = null
+      for (const c of [ctrl, gone, live, idle]) registerCanvasInstance(c, old)
       const goneView = gone.view
       ctrl.opts.backend = 'webgl2'
       ctrl.opts.isAntiAlias = true
@@ -625,9 +628,10 @@ test('a sibling destroyed during a backend switch is left alone', async () => {
       if (fails) {
         settle?.(new Error('WebGL2 context unavailable'))
         await expect(switching).rejects.toThrow('WebGL2')
-        // Only the live sibling's handlers go back on the old canvas.
+        // Only the registered siblings' handlers go back on the old canvas.
         expect(listeners.size).toBeGreaterThan(0)
         removeInteractionListeners(live)
+        removeInteractionListeners(idle)
         expect(listeners.size).toBe(0)
       } else {
         settle?.()
@@ -635,11 +639,12 @@ test('a sibling destroyed during a backend switch is left alone', async () => {
         expect(live.view).toBeInstanceOf(NVViewGL)
         // One WebGL2 context, so siblings take its antialias setting.
         expect(live.opts.isAntiAlias).toBe(true)
+        // It still takes the new backend, so a retry is not a switch.
+        expect(idle.opts.backend as string).toBe('webgl2')
       }
       expect(gone.view).toBe(goneView)
       expect(events).toEqual([])
-      unregister(ctrl)
-      unregister(live)
+      for (const c of [ctrl, live, idle]) unregister(c)
     }
   } finally {
     if (!hadWindow) delete g.window

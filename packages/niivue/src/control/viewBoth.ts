@@ -251,12 +251,13 @@ export async function recreateView(
   // backend and can be retried on its own.
   for (const sib of siblings) {
     // Skip a sibling destroyed while the new view initialized.
-    if (!sib.view || !getCanvasInstances(ctrl.canvas)?.has(sib)) continue
+    if (!getCanvasInstances(ctrl.canvas)?.has(sib)) continue
     sib.opts.backend = ctrl.opts.backend
     // A WebGL2 context, and so its antialias, is shared by every view on it.
     if (ctrl.opts.backend === 'webgl2') {
       sib.opts.isAntiAlias = ctrl.opts.isAntiAlias
     }
+    if (!sib.view) continue
     try {
       await recreateView(sib)
     } catch (error) {

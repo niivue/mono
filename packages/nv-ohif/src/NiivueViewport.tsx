@@ -382,7 +382,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (built.unsupported) {
         setStatus({
           kind: 'note',
-          message: `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG and JPEG 2000 slides are supported).`,
+          message: `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG, JPEG 2000 and JPEG-LS slides are supported).`,
         })
         return
       }

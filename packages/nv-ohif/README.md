@@ -53,9 +53,9 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 - Loads a **DICOM** series by fetching it and converting to NIfTI with
   `@niivue/dcm2niix` (see [DICOM support](#dicom-support)).
 - Renders **whole-slide (SM)** series with **NVSlide** (tiled deep-zoom) on its own
-  canvas: **JPEG and JPEG 2000, TILED_FULL** slides are supported; **TILED_SPARSE** and
-  slides with several optical paths or focal planes are declined with an explanatory note
-  (see [Whole-slide imaging](#whole-slide-imaging)).
+  canvas: **JPEG, JPEG 2000 and JPEG-LS, TILED_FULL** slides (colour or monochrome) are
+  supported; **TILED_SPARSE** and slides with several optical paths or focal planes are
+  declined with an explanatory note (see [Whole-slide imaging](#whole-slide-imaging)).
 - Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
   and reflects a NiiVue window/level change (drag or `setVolume`) onto any sibling OHIF
   viewport showing the same series (`setViewportWindowLevel`). Auto window/level
@@ -190,6 +190,9 @@ Support boundary:
   - A server that transcodes the frame anyway is refused rather than mis-decoded.
   - Monochrome slides keep their samples; OHIF's window/level (`niivueSetWindowLevel`)
     sets the slide's display window, which defaults to the full BitsStored range.
+    MONOCHROME1 is inverted after windowing. Colour above 8 bits is scaled to 8 by BitsStored.
+  - The optical path's ICC profile (a DICOMweb bulk-data URL) is kept in the manifest
+    (`iccProfile`) but not applied, so slide colour is not colour-managed.
 - **Tile-cache limit:** when the requested level's visible tiles exceed NVSlide's tile cache,
   the viewer draws the finest coarser level that fits and shows a brief note (zoom in for full
   resolution).
@@ -219,7 +222,7 @@ The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path f
 See `PLAN.md`. Landed: NIfTI + DICOM rendering, a toolbar for views / clip plane /
 overlay / window-level (both directions) / colormap, the full **Measurement** tool
 group (see [Measurement tools](#measurement-tools)), and **NVSlide whole-slide (SM)
-rendering** for JPEG and JPEG 2000 TILED_FULL slides (see [Whole-slide imaging](#whole-slide-imaging)).
+rendering** for JPEG, JPEG 2000 and JPEG-LS TILED_FULL slides (see [Whole-slide imaging](#whole-slide-imaging)).
 Next: segmentation overlays, mesh/surface overlay, TILED_SPARSE slide
 support, and **NVSlide for 2-D** single-frame series (see the
 `## TODO — NVSlide for 2D` section in `PLAN.md`).

@@ -115,7 +115,7 @@ issues a fetch of its own. This is what makes a zoom fade in rather than flash
 empty, and it is the slide-side equivalent of the volume path's coarse floor.
 
 The selected level must also fit: if its visible tiles, at full tile size, exceed
-`maxCacheBytes` or the 4096-tile cap, `visibleTiles` draws the finest coarser
+3/4 of `maxCacheBytes` or the 4096-tile cap, `visibleTiles` draws the finest coarser
 level that fits and reports the asked-for one as `requestedLevel` (details in
 `caching.md`, slide path).
 

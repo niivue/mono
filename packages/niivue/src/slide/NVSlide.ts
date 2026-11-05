@@ -14,7 +14,6 @@ export interface NVSlideTileSamples {
   samples: Uint8Array | Uint16Array
   width: number
   height: number
-  components: 1
   /** The codestream's precision; the level's DICOM `bitsStored` wins when set. */
   bitsStored: number
 }
@@ -251,10 +250,11 @@ export interface NVSlideStats {
 type TileBitmap = {
   bitmap: ImageBitmap
   bytes: number
+  level: NVSlideLevelManifest
   /** Kept for monochrome tiles, so a new window re-renders them. */
   samples?: NVSlideTileSamples
-  level?: NVSlideLevelManifest
 }
+type SampleTile = TileBitmap & { samples: NVSlideTileSamples }
 
 const DEFAULT_CACHE_BYTES = 96 * 1024 * 1024
 const DEFAULT_TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
@@ -300,19 +300,38 @@ function freshStats(): NVSlideStats {
 }
 
 /** Monochrome samples to RGBA8 through `window`; MONOCHROME1 inverts after windowing. */
-export function windowSamples(
-  samples: Uint8Array | Uint16Array,
+// One table per window: setWindow re-windows every cached tile with the same one.
+let lastLut: { key: string; lut: Uint8Array } | null = null
+
+function windowLut(
+  size: number,
   { calMin, calMax }: NVSlideWindow,
   invert: boolean,
-): Uint8ClampedArray<ArrayBuffer> {
-  // One lookup per pixel: the table holds every possible sample value.
-  const lut = new Uint8Array(samples instanceof Uint8Array ? 256 : 65536)
+): Uint8Array {
+  const key = `${size},${calMin},${calMax},${invert}`
+  if (lastLut?.key === key) return lastLut.lut
+  const lut = new Uint8Array(size)
   const width = calMax - calMin
-  for (let v = 0; v < lut.length; v++) {
+  for (let v = 0; v < size; v++) {
     // Multiply before dividing, so a midpoint like 127.5 is exact and rounds up.
     const g = Math.round(clamp(((v - calMin) * 255) / width, 0, 255))
     lut[v] = invert ? 255 - g : g
   }
+  lastLut = { key, lut }
+  return lut
+}
+
+export function windowSamples(
+  samples: Uint8Array | Uint16Array,
+  window: NVSlideWindow,
+  invert: boolean,
+): Uint8ClampedArray<ArrayBuffer> {
+  // One lookup per pixel: the table holds every possible sample value.
+  const lut = windowLut(
+    samples instanceof Uint8Array ? 256 : 65536,
+    window,
+    invert,
+  )
   const out = new Uint8ClampedArray(samples.length * 4)
   for (let i = 0, o = 0; i < samples.length; i++, o += 4) {
     const g = lut[samples[i]]
@@ -330,14 +349,17 @@ const isMonochrome = (level: NVSlideLevelManifest): boolean =>
 /** A grey bitmap's red channel as 8-bit samples; closes the bitmap. */
 function greySamples(bitmap: ImageBitmap): NVSlideTileSamples {
   const { width, height } = bitmap
-  const ctx = new OffscreenCanvas(width, height).getContext('2d')
-  if (!ctx) throw new Error('OffscreenCanvas 2D context unavailable')
-  ctx.drawImage(bitmap, 0, 0)
-  bitmap.close()
-  const rgba = ctx.getImageData(0, 0, width, height).data
-  const samples = new Uint8Array(width * height)
-  for (let i = 0; i < samples.length; i++) samples[i] = rgba[i * 4] as number
-  return { samples, width, height, components: 1, bitsStored: 8 }
+  try {
+    const ctx = new OffscreenCanvas(width, height).getContext('2d')
+    if (!ctx) throw new Error('OffscreenCanvas 2D context unavailable')
+    ctx.drawImage(bitmap, 0, 0)
+    const rgba = ctx.getImageData(0, 0, width, height).data
+    const samples = new Uint8Array(width * height)
+    for (let i = 0; i < samples.length; i++) samples[i] = rgba[i * 4] as number
+    return { samples, width, height, bitsStored: 8 }
+  } finally {
+    bitmap.close()
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -425,8 +447,9 @@ class NVSlideTileCache {
     return this.entries.get(key)
   }
 
-  *sampleEntries(): Generator<[string, TileBitmap]> {
-    for (const pair of this.entries) if (pair[1].samples) yield pair
+  *sampleEntries(): Generator<[string, SampleTile]> {
+    for (const pair of this.entries)
+      if (pair[1].samples) yield pair as [string, SampleTile]
   }
 
   clear(): void {
@@ -814,9 +837,7 @@ export class NVSlide extends EventTarget {
     this._window = { calMin, calMax }
     const gen = ++this._windowGen
     for (const [key, entry] of this._cache.sampleEntries()) {
-      const { samples, level } = entry
-      if (!samples || !level) continue
-      this.windowedBitmap(samples, level)
+      this.windowedBitmap(entry.samples, entry.level)
         .then((bitmap) => {
           // Superseded by a later window, or evicted/disposed meanwhile.
           if (gen !== this._windowGen || this._cache.peek(key) !== entry) {
@@ -1080,11 +1101,9 @@ export class NVSlide extends EventTarget {
     // Full tiles, not clipped edge extents: an upper bound, since a padded
     // edge frame is held whole until decodeTileBitmap crops it.
     // Monochrome tiles also keep their samples (1 or 2 bytes each).
-    const sampleBytes = isMonochrome(level)
-      ? (level.bitsStored ?? 8) > 8
-        ? 2
-        : 1
-      : 0
+    // Without bitsStored, JPEG 2000 and JPEG-LS may decode 16-bit samples.
+    const bits = level.bitsStored ?? (level.codec === 'image/jpeg' ? 8 : 16)
+    const sampleBytes = isMonochrome(level) ? (bits > 8 ? 2 : 1) : 0
     const tileBytes =
       this.levelTileWidth(level) *
       this.levelTileHeight(level) *
@@ -1353,7 +1372,12 @@ export class NVSlide extends EventTarget {
     })
     // A decoder that returns only a bitmap (the browser's JPEG) still windows:
     // a monochrome tile's grey level comes back as 8-bit samples.
-    if (isMonochrome(level) && !('samples' in decoded))
+    // Without a 2D OffscreenCanvas (Safari < 16.4) such a tile shows unwindowed.
+    if (
+      isMonochrome(level) &&
+      !('samples' in decoded) &&
+      typeof OffscreenCanvas !== 'undefined'
+    )
       decoded = greySamples(decoded)
     // Formats that store whole tiles (DICOM) pad edge frames, and every frame of
     // a level smaller than one tile, at the right and bottom. Padding is not
@@ -1446,12 +1470,7 @@ export class NVSlide extends EventTarget {
       const decodedBytes =
         bitmap.width * bitmap.height * 4 + (samples?.samples.byteLength ?? 0)
       this.stats.decodedBytes += decodedBytes
-      this._cache.set(
-        key,
-        samples
-          ? { bitmap, bytes: decodedBytes, samples, level }
-          : { bitmap, bytes: decodedBytes },
-      )
+      this._cache.set(key, { bitmap, bytes: decodedBytes, samples, level })
       this.stats.cacheBytes = this._cache.bytes
       this.stats.completed++
       this._failed.delete(key)

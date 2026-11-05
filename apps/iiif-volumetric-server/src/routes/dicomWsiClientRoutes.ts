@@ -65,7 +65,7 @@ interface DicomWsiClientLevel {
   fileName: string
   fileUrl: string
   fileSize: number
-  codec: 'image/jpeg'
+  codec: 'image/jpeg' | 'image/jp2' | 'image/jls'
   transferSyntaxUid: string
   photometric: string
   /** DICOM BitsStored; sets the default monochrome window. */
@@ -95,6 +95,13 @@ interface DicomWsiClientManifest {
     colorSpace?: string
   }
   levels: DicomWsiClientLevel[]
+}
+
+// JPEG 2000 and JPEG-LS need the viewer's registered decoder; anything else is sent as JPEG.
+function codecFor(uid: string): DicomWsiClientLevel['codec'] {
+  if (/^1\.2\.840\.10008\.1\.2\.4\.9[01]$/.test(uid)) return 'image/jp2'
+  if (/^1\.2\.840\.10008\.1\.2\.4\.8[01]$/.test(uid)) return 'image/jls'
+  return 'image/jpeg'
 }
 
 function iccProfileRange(
@@ -272,7 +279,7 @@ function levelManifest(
     fileName: parsed.fileName,
     fileUrl: fileUrl(parsed.fileName),
     fileSize: parsed.fileSize,
-    codec: 'image/jpeg',
+    codec: codecFor(parsed.transferSyntaxUid),
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
     bitsStored: parsed.dataSet.uint16('x00280101'), // BitsStored

@@ -1,7 +1,7 @@
 // Whole-slide-image tile viewer built on the NVSlide core class.
 //
 // NVSlide owns the manifest/levels/tiles model, the viewport (pan/zoom), HTTP
-// Range-request tile streaming, the ImageBitmap cache and request stats. This
+// Range-request tile streaming, the tile cache (bitmaps, plus samples for monochrome) and request stats. This
 // demo just wires DOM controls to it and draws it with a backend-selected
 // renderer: SlideRenderer (WebGL2) or SlideRendererGPU (WebGPU). WebGPU by
 // default; add `?backend=webgl2` for WebGL2, `?aa=on|off` to override the
@@ -51,11 +51,7 @@ async function decodeDicomTile(bytes, { level, signal }) {
     signal,
   }
   if (level.photometric?.startsWith('MONOCHROME')) {
-    const f = await frameDecoder.decode(bytes, {
-      ...options,
-      output: 'samples',
-    })
-    return { ...f, components: 1 }
+    return frameDecoder.decode(bytes, { ...options, output: 'samples' })
   }
   const f = await frameDecoder.decode(bytes, options)
   return createImageBitmap(new ImageData(f.rgba, f.width, f.height))

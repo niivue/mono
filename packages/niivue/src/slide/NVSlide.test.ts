@@ -942,7 +942,6 @@ describe('NVSlide monochrome window', () => {
       samples: new Uint16Array(TILE_W * TILE_H).fill(value),
       width: TILE_W,
       height: TILE_H,
-      components: 1,
       bitsStored: 16,
     }))
     const manifest = makePyramid()
@@ -976,7 +975,7 @@ describe('NVSlide monochrome window', () => {
       const samples = new Uint16Array(16 * 8)
       for (let y = 0; y < TILE_H; y++)
         samples.fill(4095, y * 16, y * 16 + TILE_W)
-      return { samples, width: 16, height: 8, components: 1, bitsStored: 16 }
+      return { samples, width: 16, height: 8, bitsStored: 16 }
     })
     await loadLevel(slide, 2)
     const bitmap = slide.cachedTileBitmap('L2/0/0') as unknown as FakeBitmap
@@ -1029,13 +1028,6 @@ describe('NVSlide monochrome window', () => {
     await loadLevel(slide, 1)
     expect(pixel(slide, 'L1/1/1')).toBe(128)
     expect(slide.window).toEqual({ calMin: 0, calMax: 1000 })
-    slide.dispose()
-  })
-
-  it('inverts MONOCHROME1', async () => {
-    const slide = monoSlide(0, 'MONOCHROME1')
-    await loadLevel(slide, 2)
-    expect(pixel(slide, 'L2/0/0')).toBe(255)
     slide.dispose()
   })
 

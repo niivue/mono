@@ -19,8 +19,7 @@ const decodeTile: SlideTileDecoder = async (bytes, { level, signal }) => {
     signal,
   }
   if (level.photometric?.startsWith('MONOCHROME')) {
-    const f = await d.decode(bytes, { ...options, output: 'samples' })
-    return { ...f, components: 1 }
+    return d.decode(bytes, { ...options, output: 'samples' })
   }
   const f = await d.decode(bytes, options)
   // The pixels arrive in a transferred ArrayBuffer (never shared memory).

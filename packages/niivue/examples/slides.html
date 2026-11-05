@@ -196,6 +196,12 @@
       .fallback[aria-hidden='false'] {
         display: flex;
       }
+      body.hud-off .hud,
+      body.hud-off .range-log {
+        /* opacity, not visibility, so scripts can still read the HUD innerText */
+        opacity: 0;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
@@ -253,6 +259,7 @@
       <button id="drawUndo" type="button" title="Undo last stroke">Undo</button>
       <button id="drawClear" type="button" title="Clear annotation">Clear</button>
       <button id="exportSvg" type="button" title="Export vector annotations as SVG">SVG</button>
+      <button id="hudToggle" type="button" aria-pressed="true" title="Show or hide the overlay panels (I)">HUD: on</button>
       <span class="control backend">
         <label for="backendSelect">Backend</label>
         <select id="backendSelect">
@@ -271,6 +278,30 @@
       <div id="rangeLog" class="range-log" aria-hidden="true"></div>
       <div id="fallback" class="fallback" aria-hidden="true"></div>
     </main>
+    <script>
+      {
+        const toggle = document.getElementById('hudToggle')
+        const key = `hud-off:${location.pathname}`
+        const setHud = (off) => {
+          document.body.classList.toggle('hud-off', off)
+          toggle.setAttribute('aria-pressed', String(!off))
+          toggle.textContent = off ? 'HUD: off' : 'HUD: on'
+          try {
+            localStorage.setItem(key, off ? '1' : '')
+          } catch {}
+        }
+        try {
+          setHud(localStorage.getItem(key) === '1')
+        } catch {}
+        toggle.onclick = () => setHud(!document.body.classList.contains('hud-off'))
+        // I (info): NiiVue already binds V, A, C, H/J/K/L, U and D.
+        addEventListener('keydown', (e) => {
+          if (e.key.toUpperCase() !== 'I' || e.ctrlKey || e.metaKey || e.altKey) return
+          if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return
+          toggle.click()
+        })
+      }
+    </script>
     <script type="module" src="slides.js"></script>
   </body>
 </html>

@@ -306,6 +306,11 @@
           font-size: 0.64rem;
         }
       }
+      body.hud-off .hud {
+        /* opacity, not visibility, so scripts can still read the HUD innerText */
+        opacity: 0;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
@@ -480,6 +485,7 @@
         <input id="window" type="text" value="" title="calMin,calMax" />
       </span>
       <button id="fit" type="button" title="Fit the slide to its pane">fit slide</button>
+      <button id="hudToggle" type="button" aria-pressed="true" title="Show or hide the overlay panels (I)">HUD: on</button>
       <span class="control backend">
         <label for="backendSelect">Backend</label>
         <select id="backendSelect">
@@ -523,6 +529,30 @@
       Data streamed directly from the
       <a href="https://dandiarchive.org" target="_blank" rel="noopener noreferrer">DANDI Archive</a>.
     </footer>
+    <script>
+      {
+        const toggle = document.getElementById('hudToggle')
+        const key = `hud-off:${location.pathname}`
+        const setHud = (off) => {
+          document.body.classList.toggle('hud-off', off)
+          toggle.setAttribute('aria-pressed', String(!off))
+          toggle.textContent = off ? 'HUD: off' : 'HUD: on'
+          try {
+            localStorage.setItem(key, off ? '1' : '')
+          } catch {}
+        }
+        try {
+          setHud(localStorage.getItem(key) === '1')
+        } catch {}
+        toggle.onclick = () => setHud(!document.body.classList.contains('hud-off'))
+        // I (info): NiiVue already binds V, A, C, H/J/K/L, U and D.
+        addEventListener('keydown', (e) => {
+          if (e.key.toUpperCase() !== 'I' || e.ctrlKey || e.metaKey || e.altKey) return
+          if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return
+          toggle.click()
+        })
+      }
+    </script>
     <script type="module" src="/src/dandi.js"></script>
   </body>
 </html>

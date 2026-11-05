@@ -157,7 +157,8 @@ function manifestOf(slide: SlideIndexSlide): NVSlideManifest {
     format: 'dicom-wsi-index-v1',
     width: l0.width,
     height: l0.height,
-    displayYAxis: 'up',
+    // Row 0 at the top, as OpenSlide and the TIFF/DZI sources show a slide.
+    displayYAxis: 'down',
     tileSize: l0.tileWidth,
     dtype: 'uint8',
     channels: 'encoded-rgb',

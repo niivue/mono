@@ -1,3 +1,4 @@
+import { log } from '@/logger'
 export type NVSlideTileCodec = 'raw-rgba' | 'image/jpeg' | 'image/jp2'
 
 /**
@@ -160,6 +161,12 @@ export interface NVSlideVisibleTiles {
    * Empty whenever every target tile is cached. See {@link NVSlide.visibleTiles}.
    */
   fallback: NVSlideVisibleTile[]
+  /**
+   * Set when `level` is coarser than the level asked for (pinned or auto),
+   * because the requested level's visible tiles exceed the tile cache
+   * (`maxCacheBytes`) or the visible-tile cap. Hosts can show this to the user.
+   */
+  requestedLevel?: NVSlideLevelManifest
 }
 
 export interface NVSlideScreenRect {
@@ -230,6 +237,10 @@ function clampTileLoadCap(value: number): number {
 // to 1px tiles): never enumerate more visible tiles than this per frame. A
 // sane pyramid level never exceeds a few hundred on screen.
 const MAX_VISIBLE_TILES = 4096
+
+// tilesForLevel stops counting at the cap.
+const tileCount = (n: number): string =>
+  n >= MAX_VISIBLE_TILES ? `${MAX_VISIBLE_TILES}+` : String(n)
 
 function freshStats(): NVSlideStats {
   return {
@@ -582,7 +593,7 @@ export class NVSlide extends EventTarget {
   // a pan/zoom must not cancel it -- it completes and populates the cache.
   // dispose() still aborts every in-flight load regardless of origin.
   private readonly _viewportKeys = new Set<string>()
-  private _warnedTileFlood = false
+  private _budgetWarned = '' // last budget outcome logged by visibleTiles
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
@@ -851,9 +862,11 @@ export class NVSlide extends EventTarget {
    * target tile is still missing, so a settled view pays nothing for it.
    */
   visibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
-    let level = this.selectLevel()
-    if (!level) return { level: null, tiles: [], fallback: [] }
+    const requested = this.selectLevel()
+    if (!requested) return { level: null, tiles: [], fallback: [] }
+    let level = requested
     let tiles = this.tilesForLevel(level, screen)
+    const requestedTiles = tiles.length
     // A level whose visible tiles cannot all stay decoded thrashes: each load
     // evicts a visible tile, which is requested again. Show the finest coarser
     // level that fits (e.g. a pinned L0 viewed whole).
@@ -866,13 +879,27 @@ export class NVSlide extends EventTarget {
       level = levels[pos] as NVSlideLevelManifest
       tiles = this.tilesForLevel(level, screen)
     }
-    if (!this.fitsCache(tiles) && !this._warnedTileFlood) {
-      this._warnedTileFlood = true
-      console.warn(
-        `NVSlide ${this.id}: even L${level.index} needs ${tiles.length} tiles in view, more than the tile cache (maxCacheBytes) or the ${MAX_VISIBLE_TILES}-tile cap holds; tiles will reload. Check the manifest's tile size / level dimensions, or raise maxCacheBytes.`,
-      )
+    // Warn once per change of outcome; this runs every frame.
+    const fits = this.fitsCache(tiles)
+    const budget =
+      level === requested && fits ? '' : `${requested.index}>${level.index}`
+    if (budget !== this._budgetWarned) {
+      this._budgetWarned = budget
+      if (!fits)
+        log.warn(
+          `NVSlide ${this.id}: even L${level.index} needs ${tileCount(tiles.length)} tiles in view, more than the tile cache (maxCacheBytes) or the ${MAX_VISIBLE_TILES}-tile cap holds; tiles will reload. Check the manifest's tile size / level dimensions, or raise maxCacheBytes.`,
+        )
+      else if (level !== requested)
+        log.warn(
+          `NVSlide ${this.id}: L${requested.index} needs ${tileCount(requestedTiles)} tiles in view, more than the tile cache (maxCacheBytes) or the ${MAX_VISIBLE_TILES}-tile cap holds; showing L${level.index}. Zoom in or raise maxCacheBytes.`,
+        )
     }
-    return { level, tiles, fallback: this.fallbackTiles(level, tiles, screen) }
+    return {
+      level,
+      tiles,
+      fallback: this.fallbackTiles(level, tiles, screen),
+      ...(level === requested ? {} : { requestedLevel: requested }),
+    }
   }
 
   private fitsCache(tiles: readonly NVSlideVisibleTile[]): boolean {

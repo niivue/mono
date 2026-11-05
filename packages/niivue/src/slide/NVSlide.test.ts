@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
+import { log } from '@/logger'
 import type {
   NVSlideLevelManifest,
   NVSlideManifest,
@@ -744,9 +745,25 @@ describe('NVSlide tile-cache budget', () => {
     })
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     slide.setLevelChoice(0)
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
     const visible = slide.visibleTiles(WHOLE_SLIDE_SCREEN)
+    slide.visibleTiles(WHOLE_SLIDE_SCREEN) // the next frame does not warn again
     expect(visible.level?.index).toBe(1)
+    expect(visible.requestedLevel?.index).toBe(0)
     expect(visible.tiles.length).toBe(4)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]?.[0])).toContain('showing L1')
+    warn.mockRestore()
+    slide.dispose()
+  })
+
+  it('reports no requested level when the requested one fits', () => {
+    const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    expect(
+      slide.visibleTiles(WHOLE_SLIDE_SCREEN).requestedLevel,
+    ).toBeUndefined()
     slide.dispose()
   })
 })

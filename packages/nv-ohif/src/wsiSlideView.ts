@@ -10,6 +10,11 @@ export interface WsiSlideViewOptions {
    * the reading into its own status UI.
    */
   onMeasure?: (text: string | null) => void
+  /**
+   * Called when the view starts or stops drawing a coarser level than requested
+   * because the requested one exceeds the tile cache: a message, or null.
+   */
+  onLevelLimit?: (text: string | null) => void
 }
 
 export interface WsiSlideView {
@@ -138,6 +143,7 @@ export function mountWsiSlideView(
   let ruleA: { x: number; y: number } | null = null
   let ruleB: { x: number; y: number } | null = null
   const onMeasure = options.onMeasure
+  let levelLimit: string | null = null
 
   const screenOf = (): NVSlideScreen => ({
     widthCss: canvas.clientWidth || 1,
@@ -219,6 +225,15 @@ export function mountWsiSlideView(
     // overlay hook at the end of its own draw).
     updateRuler(screen)
     renderer.draw(gl, [slide], screen)
+    const { level, requestedLevel } = slide.visibleTiles(screen)
+    const limit =
+      requestedLevel && level
+        ? `L${requestedLevel.index} needs more tile memory than the cache holds; showing L${level.index}. Zoom in for full resolution.`
+        : null
+    if (limit !== levelLimit) {
+      levelLimit = limit
+      options.onLevelLimit?.(limit)
+    }
   }
 
   // Event-driven rendering rather than a continuous RAF loop: the slide is static

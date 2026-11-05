@@ -190,6 +190,9 @@ Support boundary:
   - A server that transcodes the frame anyway is refused rather than mis-decoded.
   - Monochrome slides keep their samples; OHIF's window/level (`niivueSetWindowLevel`)
     sets the slide's display window, which defaults to the full BitsStored range.
+- **Tile-cache limit:** when the requested level's visible tiles exceed NVSlide's tile cache,
+  the viewer draws the finest coarser level that fits and shows a brief note (zoom in for full
+  resolution).
 - **Declined (with an in-viewport note, not a crash):**
   - Several **optical paths** or **focal planes**, or levels whose metadata cannot prove
     one of each (NumberOfOpticalPaths, TotalPixelMatrixFocalPlanes, NumberOfFrames):

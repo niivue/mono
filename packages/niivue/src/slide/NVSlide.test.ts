@@ -1,12 +1,4 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  spyOn,
-} from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { log } from '@/logger'
 import type {
   NVSlideLevelManifest,
@@ -912,7 +904,7 @@ describe('NVSlide monochrome window', () => {
     ImageData: g.ImageData,
     createImageBitmap: g.createImageBitmap,
   }
-  beforeAll(() => {
+  beforeEach(() => {
     g.ImageData = class {
       constructor(
         readonly data: Uint8ClampedArray,
@@ -937,10 +929,9 @@ describe('NVSlide monochrome window', () => {
       return bitmap
     }
   })
-  afterAll(() => Object.assign(g, saved))
   afterEach(() => {
-    const original = originalJls
-    if (original) NVSlide.registerTileDecoder('image/jls', original)
+    Object.assign(g, saved)
+    if (originalJls) NVSlide.registerTileDecoder('image/jls', originalJls)
   })
   const originalJls = NVSlide.tileDecoder('image/jls')
 

@@ -72,14 +72,28 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   that changed since indexing fails rather than decoding garbage.
 - Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
   (`registerDcm2niixDecoders`, with `@niivue/dcm2niix` as an optional peer dependency).
-- Index speed for the 8 OpenSlide DICOM-WSI test sets (Bun, local SSD):
+- Slides are shown with row 0 of the total pixel matrix at the top (`displayYAxis: 'down'`),
+  as OpenSlide shows them.
+- Index speed for the 8 OpenSlide DICOM-WSI test sets (local SSD; Chrome reads through
+  the `webkitdirectory` input in the demo):
 
-  | Case | Time |
-  |---|---|
-  | With offset tables | 2–65 ms |
-  | Item walks (up to 28k frames) | 0.1–0.45 s |
+  | Set | Frames | Holes | Bun | Chrome |
+  |---|---|---|---|---|
+  | Hamamatsu-2 (EOT) | 6,199 | 0 | 2 ms | 12 ms |
+  | 3DHISTECH-2 (BOT, sparse, split L0) | 56,233 | 449,040 | 65 ms | 102 ms |
+  | Leica-4 (sparse) | 8,546 | 0 | 73 ms | 323 ms |
+  | 3DHISTECH-1 | 4,434 | 0 | 100 ms | 643 ms |
+  | JP2K-33003-1 (item walk) | 4,569 | 0 | 93 ms | 600 ms |
+  | CMU-1-JP2K-ICT (item walk) | 24,813 | 0 | 159 ms | 952 ms |
+  | CMU-1-JP2K-33005 (item walk) | 28,284 | 0 | 280 ms | 1.74 s |
+  | CMU-1-JP2K-RCT (item walk) | 24,813 | 0 | 429 ms | 2.78 s |
 
-- Test fixtures: `fixtures/dicom-wsi` (synthetic, with the generator `make_fixtures.py`).
+  Indexing awaits `File.slice` reads, so the page stays responsive; a folder without
+  offset tables just takes longer in the browser.
+
+- Test fixtures: `fixtures/dicom-wsi` (synthetic, about 70 KB, with the generator
+  `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's
+  browser check).
 
 ## Range, CORS and full downloads
 

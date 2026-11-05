@@ -1,5 +1,9 @@
 import type { NVSlide } from '@/slide/NVSlide'
-import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
+import {
+  cornerQuad,
+  type SlidePlaneAnnotation,
+  type SlidePlaneTile,
+} from '@/slide/slidePlane'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -193,10 +197,4 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._annTex = null
     this._gl = null
   }
-}
-
-/** Interleaved [pos.xyz, uv.xy], TRIANGLE_STRIP order TL, TR, BL, BR; UV origin top-left. */
-function cornerQuad(corners: SlidePlaneTile['corners']): Float32Array {
-  const [tl, tr, bl, br] = corners
-  return new Float32Array([...tl, 0, 0, ...tr, 1, 0, ...bl, 0, 1, ...br, 1, 1])
 }

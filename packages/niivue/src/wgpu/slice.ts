@@ -5,16 +5,15 @@ import {
   VOLUME_DEFAULTS,
 } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
+import { drawingChunkUploads } from '@/view/NVDrawingTexture'
 import { NVRenderer } from '@/view/NVRenderer'
 import { drawnOpacity } from '@/view/NVVolumeVisibility'
 import {
   type ChunkPlan,
   type ChunkSampleTransform,
   identityChunkSampleTransform,
-  type Vec3i,
 } from '@/volume/chunking'
 import type { SliceInterpolation } from '@/volume/interpolation'
-import { extractChunkBytes } from '@/volume/orientChunked'
 import { alphaPipelineDesc } from './pipeline'
 import sliceShaderCode from './slice.wgsl?raw'
 
@@ -446,7 +445,6 @@ export class SliceRenderer extends NVRenderer {
       this.drawingTexture.destroy()
       this.drawingTexture = null
     }
-    const volumeDims: Vec3i = [dims[0], dims[1], dims[2]]
     const reuse =
       this.drawingChunks !== null &&
       this.drawingChunks.length === plan.chunks.length
@@ -455,21 +453,13 @@ export class SliceRenderer extends NVRenderer {
       this.drawingChunks = []
     }
     const chunks = this.drawingChunks ?? []
-    // Reusing textures: re-upload only the chunks a pen stroke dirtied.
-    const indices =
-      reuse && dirtyChunks
-        ? dirtyChunks
-        : Array.from({ length: plan.chunks.length }, (_, i) => i)
-    for (const i of indices) {
-      const desc = plan.chunks[i]
-      const bytes = extractChunkBytes(
-        rgba,
-        volumeDims,
-        4,
-        desc.texOrigin,
-        desc.texDims,
-      )
-      const [tx, ty, tz] = desc.texDims
+    for (const [i, bytes, [tx, ty, tz]] of drawingChunkUploads(
+      rgba,
+      dims,
+      plan,
+      reuse,
+      dirtyChunks,
+    )) {
       let tex = reuse ? chunks[i] : null
       if (!tex) {
         tex = device.createTexture({

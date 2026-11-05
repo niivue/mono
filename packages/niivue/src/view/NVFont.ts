@@ -27,6 +27,32 @@ export const FLOATS_PER_PANEL = 12
 const BACK_PADDING = 0.3
 const BACK_RADIUS = 0.25
 
+/**
+ * The backing panels of `textList` packed FLOATS_PER_PANEL floats each
+ * (rect, color, radius, border), or null when no batch has a visible one.
+ */
+export function packPanels(
+  textList: GlyphBatch[],
+): Float32Array<ArrayBuffer> | null {
+  let panelCount = 0
+  for (const item of textList) {
+    if (item.backColor && item.backColor[3] > 0) panelCount++
+  }
+  if (panelCount === 0) return null
+  const panelData = new Float32Array(panelCount * FLOATS_PER_PANEL)
+  let idx = 0
+  for (const item of textList) {
+    if (!item.backColor || item.backColor[3] <= 0) continue
+    const off = idx * FLOATS_PER_PANEL
+    panelData.set(item.backRect, off)
+    panelData.set(item.backColor, off + 4)
+    panelData[off + 8] = item.backRadius
+    panelData[off + 9] = item.backBorder ?? 0
+    idx++
+  }
+  return panelData
+}
+
 export function emptyBatch(): GlyphBatch {
   return {
     data: new Float32Array(0),

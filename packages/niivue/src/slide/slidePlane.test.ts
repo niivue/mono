@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { NVSlide, NVSlideLevelManifest } from './NVSlide'
 import {
   axialPlaneTransform,
+  cornerQuad,
   pickSlidePixel,
   resolveSlidePlaneTiles,
   type SlidePlaneState,
@@ -255,5 +256,19 @@ describe('pickSlidePixel', () => {
     const noFrame = state()
     noFrame.pickFrame = null
     expect(pickSlidePixel(noFrame, 50, 50)).toBeNull()
+  })
+})
+
+describe('cornerQuad', () => {
+  test('interleaves corners with top-left-origin UVs in strip order', () => {
+    const quad = cornerQuad([
+      [0, 1, 2],
+      [3, 4, 5],
+      [6, 7, 8],
+      [9, 10, 11],
+    ])
+    expect(Array.from(quad)).toEqual([
+      0, 1, 2, 0, 0, 3, 4, 5, 1, 0, 6, 7, 8, 0, 1, 9, 10, 11, 1, 1,
+    ])
   })
 })

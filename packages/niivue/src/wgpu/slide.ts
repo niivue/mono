@@ -11,6 +11,7 @@ import {
   SLIDE_OVERLAY_MAX_LINES,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
+import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -294,7 +295,8 @@ export class SlideRendererGPU {
   }
 
   render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
-    if (!this._placeholderTexture) return
+    const placeholder = this._placeholderTexture
+    if (!placeholder) return
     const dpr = screen.devicePixelRatio ?? 1
     const width = Math.max(1, Math.floor(screen.widthCss * dpr))
     const height = Math.max(1, Math.floor(screen.heightCss * dpr))
@@ -320,7 +322,7 @@ export class SlideRendererGPU {
     for (const slide of slides) {
       if (!slide.visible || slide.opacity <= 0) continue
       const bounds = slide.screenRectForSlide(screen)
-      this.drawQuad(pass, width, height, bounds, this._placeholderTexture, {
+      this.drawQuad(pass, width, height, bounds, placeholder, {
         uvTop: 0,
         uvBottom: 1,
         opacity: slide.opacity,
@@ -330,68 +332,26 @@ export class SlideRendererGPU {
         gridColor: slide.gridColor,
       })
 
-      const visible = slide.requestVisibleTiles(screen)
-      // Coarser levels first, painted UNDER the target level. Non-empty only
-      // while target tiles are still arriving, so the previous resolution stays
-      // on screen and is overpainted tile by tile as the finer data lands.
-      // No tile grid here: the grid describes the target level.
-      for (const item of visible.fallback) {
-        const bitmap = slide.cachedTileBitmap(item.key)
-        if (!bitmap) continue
-        const texture = this.textureForBitmap(item.key, bitmap)
-        if (!texture) continue
-        this.drawQuad(
-          pass,
-          width,
-          height,
-          {
-            x: item.screenX,
-            y: item.screenY,
-            width: item.screenWidth,
-            height: item.screenHeight,
-          },
-          texture.texture,
-          {
-            uvTop: item.flipY ? 1 : 0,
-            uvBottom: item.flipY ? 0 : 1,
-            opacity: slide.opacity,
-            isPlaceholder: false,
-            showGrid: false,
-            placeholderColor: slide.placeholderColor,
-            gridColor: slide.gridColor,
-          },
-        )
-      }
-      for (const item of visible.tiles) {
-        const bitmap = slide.cachedTileBitmap(item.key)
-        // A missing tile draws a flat placeholder ONLY when nothing coarser is
-        // behind it; otherwise the placeholder would hide the very fallback
-        // layer that is standing in for it.
-        if (!bitmap && visible.fallback.length > 0) continue
+      forEachSlideTile(slide, screen, (item, bitmap, rect, isFallback) => {
         const texture = bitmap ? this.textureForBitmap(item.key, bitmap) : null
-        const rect: NVSlideScreenRect = {
-          x: item.screenX,
-          y: item.screenY,
-          width: item.screenWidth,
-          height: item.screenHeight,
-        }
+        if (isFallback && !texture) return
         this.drawQuad(
           pass,
           width,
           height,
           rect,
-          texture?.texture ?? this._placeholderTexture,
+          texture?.texture ?? placeholder,
           {
             uvTop: item.flipY ? 1 : 0,
             uvBottom: item.flipY ? 0 : 1,
             opacity: slide.opacity,
             isPlaceholder: !texture,
-            showGrid: slide.showTileGrid,
+            showGrid: !isFallback && slide.showTileGrid,
             placeholderColor: slide.placeholderColor,
             gridColor: slide.gridColor,
           },
         )
-      }
+      })
     }
 
     this._drawOverlay(pass, width, height, dpr)
@@ -507,21 +467,9 @@ export class SlideRendererGPU {
     texture: GPUTexture,
     options: QuadOptions,
   ): void {
-    if (
-      rect.width <= 0 ||
-      rect.height <= 0 ||
-      rect.x + rect.width < 0 ||
-      rect.y + rect.height < 0 ||
-      rect.x > width ||
-      rect.y > height
-    ) {
-      return
-    }
-
-    const x0 = (rect.x / width) * 2 - 1
-    const x1 = ((rect.x + rect.width) / width) * 2 - 1
-    const y0 = 1 - (rect.y / height) * 2
-    const y1 = 1 - ((rect.y + rect.height) / height) * 2
+    const ndc = slideRectNdc(rect, width, height)
+    if (!ndc) return
+    const [x0, y0, x1, y1] = ndc
 
     const data = new Float32Array(UNIFORM_FLOAT_COUNT)
     // corners[0] = (v0.xy, v1.xy), corners[1] = (v2.xy, v3.xy)

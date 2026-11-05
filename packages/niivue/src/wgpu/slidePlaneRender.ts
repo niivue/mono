@@ -1,5 +1,9 @@
 import type { NVSlide } from '@/slide/NVSlide'
-import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
+import {
+  cornerQuad,
+  type SlidePlaneAnnotation,
+  type SlidePlaneTile,
+} from '@/slide/slidePlane'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -139,12 +143,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._entries = []
     let o = 0
     tiles.forEach((tile, i) => {
-      const [tl, tr, bl, br] = tile.corners
-      // TRIANGLE_STRIP order TL, TR, BL, BR; UV origin top-left.
-      data.set([tl[0], tl[1], tl[2], 0, 0], o)
-      data.set([tr[0], tr[1], tr[2], 1, 0], o + 5)
-      data.set([bl[0], bl[1], bl[2], 0, 1], o + 10)
-      data.set([br[0], br[1], br[2], 1, 1], o + 15)
+      data.set(cornerQuad(tile.corners), o)
       o += 20
       this._entries.push({ key: tile.key, firstVertex: i * 4 })
     })
@@ -279,29 +278,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     }
     if (!this._annGroup) return
     // One quad over the slide extent (rebuilt each call; just 4 verts).
-    const [tl, tr, bl, br] = ann.corners
-    const data = new Float32Array([
-      tl[0],
-      tl[1],
-      tl[2],
-      0,
-      0,
-      tr[0],
-      tr[1],
-      tr[2],
-      1,
-      0,
-      bl[0],
-      bl[1],
-      bl[2],
-      0,
-      1,
-      br[0],
-      br[1],
-      br[2],
-      1,
-      1,
-    ])
+    const data = cornerQuad(ann.corners)
     if (!this._annVertexBuffer) {
       this._annVertexBuffer = device.createBuffer({
         size: data.byteLength,

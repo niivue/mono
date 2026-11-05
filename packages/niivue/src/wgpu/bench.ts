@@ -1,3 +1,4 @@
+import { BenchGuard } from '@/view/NVBench'
 import type NVView from './NVViewGPU'
 
 /**
@@ -16,31 +17,23 @@ export class WGPUBench {
    */
   targetOverride: GPUTexture | null = null
   private _offscreen: GPUTexture | null = null
-  private _inProgress = false
-  // Set by destroy(). Checked after every await so a bench call that was
-  // mid-await when the view tore down its bench exits cleanly rather than
-  // allocating orphan GPU resources on a disposed view.
-  private _disposed = false
+  private _guard: BenchGuard
 
-  constructor(private view: NVView) {}
+  constructor(private view: NVView) {
+    this._guard = new BenchGuard(
+      view,
+      () => !view.isBusy && view.fontRenderer.isReady,
+      'renderAndFlush: view not ready (isBusy or font atlas not loaded)',
+    )
+  }
 
   /** Render to the canvas and await GPU completion. */
   async renderAndFlush(): Promise<void> {
-    if (this._disposed) return
-    if (this._inProgress) {
-      throw new Error('renderAndFlush: concurrent call not allowed')
-    }
-    this._inProgress = true
-    try {
-      const view = this.view
-      if (view.boundsWidth === 0 || view.boundsHeight === 0) view.resize()
-      await this._waitForReady()
-      if (this._disposed) return
+    const view = this.view
+    await this._guard.run('renderAndFlush', async () => {
       view.render()
       if (view.device) await view.device.queue.onSubmittedWorkDone()
-    } finally {
-      this._inProgress = false
-    }
+    })
   }
 
   /**
@@ -49,17 +42,10 @@ export class WGPUBench {
    * benchmarks measure pure render cost.
    */
   async renderAndFlushOffscreen(): Promise<void> {
-    if (this._disposed) return
     const view = this.view
-    if (!view.device) return
-    if (this._inProgress) {
-      throw new Error('renderAndFlushOffscreen: concurrent call not allowed')
-    }
-    this._inProgress = true
-    try {
-      if (view.boundsWidth === 0 || view.boundsHeight === 0) view.resize()
-      await this._waitForReady()
-      if (this._disposed) return
+    const device = view.device
+    if (!device) return
+    await this._guard.run('renderAndFlushOffscreen', async () => {
       const w = view.boundsWidth
       const h = view.boundsHeight
       if (
@@ -68,7 +54,7 @@ export class WGPUBench {
         this._offscreen.height !== h
       ) {
         this._offscreen?.destroy()
-        this._offscreen = view.device.createTexture({
+        this._offscreen = device.createTexture({
           size: { width: w, height: h },
           format: view.preferredCanvasFormat,
           usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
@@ -80,39 +66,19 @@ export class WGPUBench {
       this.targetOverride = this._offscreen
       try {
         view.render()
-        await view.device.queue.onSubmittedWorkDone()
+        await device.queue.onSubmittedWorkDone()
       } finally {
         this.targetOverride = null
         restoreSubCanvas()
       }
-    } finally {
-      this._inProgress = false
-    }
+    })
   }
 
   /** Release all GPU resources owned by this bench. */
   destroy(): void {
-    this._disposed = true
+    this._guard.disposed = true
     if (this._offscreen) this._offscreen.destroy()
     this._offscreen = null
     this.targetOverride = null
-  }
-
-  private async _waitForReady(): Promise<void> {
-    const view = this.view
-    const MAX_WAIT_FRAMES = 300
-    let tries = 0
-    while (
-      (view.isBusy || !view.fontRenderer.isReady) &&
-      tries < MAX_WAIT_FRAMES
-    ) {
-      await new Promise<void>((r) => requestAnimationFrame(() => r()))
-      tries++
-    }
-    if (view.isBusy || !view.fontRenderer.isReady) {
-      throw new Error(
-        'renderAndFlush: view not ready (isBusy or font atlas not loaded)',
-      )
-    }
   }
 }

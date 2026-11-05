@@ -12,6 +12,7 @@ import {
   SLIDE_OVERLAY_MAX_LINES,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
+import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -128,6 +129,7 @@ export class SlideRenderer extends NVRenderer {
     ) {
       return
     }
+    const placeholder = this._placeholderTexture
     const width = Math.max(
       1,
       Math.floor(screen.widthCss * (screen.devicePixelRatio ?? 1)),
@@ -172,64 +174,25 @@ export class SlideRenderer extends NVRenderer {
         slide.opacity,
         false,
       )
-      const visible = slide.requestVisibleTiles(screen)
-      // Coarser levels first, painted UNDER the target level. Non-empty only
-      // while target tiles are still arriving, so the previous resolution stays
-      // on screen and is overpainted tile by tile as the finer data lands.
-      // No tile grid here: the grid describes the target level.
-      for (const item of visible.fallback) {
-        const bitmap = slide.cachedTileBitmap(item.key)
-        if (!bitmap) continue
-        const texture = this.textureForBitmap(gl, item.key, bitmap)
-        if (!texture) continue
-        this.drawTile(
-          gl,
-          width,
-          height,
-          {
-            x: item.screenX,
-            y: item.screenY,
-            width: item.screenWidth,
-            height: item.screenHeight,
-          },
-          texture.texture,
-          slide.placeholderColor,
-          slide.gridColor,
-          slide.opacity,
-          item,
-          false,
-          false,
-        )
-      }
-      for (const item of visible.tiles) {
-        const bitmap = slide.cachedTileBitmap(item.key)
-        // A missing tile draws a flat placeholder ONLY when nothing coarser is
-        // behind it; otherwise the placeholder would hide the very fallback
-        // layer that is standing in for it.
-        if (!bitmap && visible.fallback.length > 0) continue
+      forEachSlideTile(slide, screen, (item, bitmap, rect, isFallback) => {
         const texture = bitmap
           ? this.textureForBitmap(gl, item.key, bitmap)
           : null
-        const rect = {
-          x: item.screenX,
-          y: item.screenY,
-          width: item.screenWidth,
-          height: item.screenHeight,
-        }
+        if (isFallback && !texture) return
         this.drawTile(
           gl,
           width,
           height,
           rect,
-          texture?.texture ?? this._placeholderTexture,
+          texture?.texture ?? placeholder,
           slide.placeholderColor,
           slide.gridColor,
           slide.opacity,
           item,
           !bitmap,
-          slide.showTileGrid,
+          !isFallback && slide.showTileGrid,
         )
-      }
+      })
     }
 
     // The overlay's font atlas keeps its own (linear) filtering.
@@ -413,21 +376,9 @@ export class SlideRenderer extends NVRenderer {
     },
   ): void {
     if (!this._shader) return
-    if (
-      rect.width <= 0 ||
-      rect.height <= 0 ||
-      rect.x + rect.width < 0 ||
-      rect.y + rect.height < 0 ||
-      rect.x > width ||
-      rect.y > height
-    ) {
-      return
-    }
-
-    const x0 = (rect.x / width) * 2 - 1
-    const x1 = ((rect.x + rect.width) / width) * 2 - 1
-    const y0 = 1 - (rect.y / height) * 2
-    const y1 = 1 - ((rect.y + rect.height) / height) * 2
+    const ndc = slideRectNdc(rect, width, height)
+    if (!ndc) return
+    const [x0, y0, x1, y1] = ndc
     const vertices = new Float32Array([
       x0,
       y0,

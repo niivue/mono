@@ -401,3 +401,53 @@ test('siblings still move when the switching controller fails after init', async
     if (!hadWindow) delete g.window
   }
 })
+
+test('a failing thumbnail reload still finishes the rebuild', async () => {
+  spyOn(NVViewGL.prototype, 'loadThumbnail').mockRejectedValue(
+    new Error('thumbnail 404'),
+  )
+  const fake = (): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode: { replaceChild() {} },
+      style: {},
+      cloneNode: fake,
+      addEventListener() {},
+      removeEventListener() {},
+    }) as HTMLCanvasElement
+  const canvas = fake()
+  const events: string[] = []
+  let rebuilt = false
+  const ctrl = {
+    canvas,
+    view: { destroy() {} },
+    opts: { backend: 'webgl2', thumbnail: 'bad.png' },
+    model: { clearAllGPUResources() {}, ui: { isThumbnailVisible: true } },
+    _eventListeners: {},
+    _wireViewHooks() {},
+    async _rebuildViewResources() {
+      rebuilt = true
+    },
+    restoreSlidePlaneView() {},
+    drawScene() {},
+    emit(name: string) {
+      events.push(name)
+    },
+  } as unknown as NiiVue
+  registerCanvasInstance(ctrl, canvas)
+  const g = globalThis as { window?: unknown }
+  const hadWindow = 'window' in g
+  g.window ??= {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+    matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+  }
+  try {
+    await recreateView(ctrl)
+    expect(rebuilt).toBe(true)
+    expect(events).toContain('viewAttached')
+    expect(ctrl.view).toBeInstanceOf(NVViewGL)
+  } finally {
+    if (!hadWindow) delete g.window
+  }
+})

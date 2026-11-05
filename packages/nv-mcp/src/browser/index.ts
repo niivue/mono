@@ -125,4 +125,5 @@ export type {
   VolumeTransform,
   VolumeUpdate,
 } from './view'
+export { worldUnit } from './view'
 export { viewportHandlers } from './viewport'

@@ -68,8 +68,27 @@ interface DicomWsiClientLevel {
   codec: 'image/jpeg'
   transferSyntaxUid: string
   photometric: string
+  /** Unset when unknown: NVSlide refuses such a level rather than guess one. */
+  opticalPaths?: number
+  focalPlanes?: number
   spacingMM: readonly [number, number]
   tiles: DicomWsiTileEntry[]
+}
+
+// Optical paths and focal planes of a TILED_FULL level. Its frames cover every
+// column x row for each path and plane, so the frame count confirms the tags and,
+// when they are absent, proves one of each only if it equals the grid.
+function planeCounts(
+  frames: number,
+  grid: number,
+  paths: number | undefined,
+  planes: number | undefined,
+): { opticalPaths?: number; focalPlanes?: number } {
+  const opticalPaths = paths ?? (frames === grid ? 1 : undefined)
+  const focalPlanes = planes ?? (frames === grid ? 1 : undefined)
+  if (opticalPaths === undefined || focalPlanes === undefined) return {}
+  if (frames !== grid * opticalPaths * focalPlanes) return {}
+  return { opticalPaths, focalPlanes }
 }
 
 interface DicomWsiClientManifest {
@@ -249,6 +268,12 @@ function levelManifest(
     codec: 'image/jpeg',
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
+    ...planeCounts(
+      level.frames,
+      columns * rows,
+      parsed.dataSet.uint32('x00480302'), // NumberOfOpticalPaths
+      parsed.dataSet.uint32('x00480303'), // TotalPixelMatrixFocalPlanes
+    ),
     spacingMM: level.spacingMM,
     tiles,
   }

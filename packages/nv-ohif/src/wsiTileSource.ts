@@ -16,6 +16,19 @@ const JPEG_TRANSFER_SYNTAXES = new Set([
   '1.2.840.10008.1.2.4.51', // JPEG Extended (Process 2 & 4)
 ])
 
+// A J2K codestream (start-of-codestream + image-size markers) or a JP2 file (signature box).
+function isJpeg2000(b: Uint8Array): boolean {
+  if (b[0] === 0xff && b[1] === 0x4f && b[2] === 0xff && b[3] === 0x51)
+    return true
+  return (
+    b[3] === 0x0c &&
+    b[4] === 0x6a &&
+    b[5] === 0x50 &&
+    b[6] === 0x20 &&
+    b[7] === 0x20
+  )
+}
+
 function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
@@ -115,6 +128,11 @@ interface WsiLevel {
   /** Query string (with leading `?`) to re-append after the frame index, or ''. */
   frameQuery: string
   isJpeg: boolean
+  transferSyntax?: string
+  photometric?: string
+  /** Unset when unknown: NVSlide refuses such a level rather than guess one. */
+  opticalPaths?: number
+  focalPlanes?: number
   /** Physical spacing `[dx, dy]` in mm for this tier, when the SM metadata carries it. */
   spacingMM?: readonly [number, number]
   /**
@@ -124,6 +142,22 @@ interface WsiLevel {
    * (e.g. TILED_SPARSE), where frame positions come from PlanePositionSlide.
    */
   tiledFull: boolean
+}
+
+// Optical paths and focal planes of a TILED_FULL level. Its frames cover every
+// column x row for each path and plane, so the frame count confirms the tags and,
+// when they are absent, proves one of each only if it equals the grid.
+export function planeCounts(
+  frames: number | undefined,
+  grid: number,
+  paths: number | undefined,
+  planes: number | undefined,
+): { opticalPaths?: number; focalPlanes?: number } {
+  const opticalPaths = paths ?? (frames === grid ? 1 : undefined)
+  const focalPlanes = planes ?? (frames === grid ? 1 : undefined)
+  if (opticalPaths === undefined || focalPlanes === undefined) return {}
+  if (frames !== grid * opticalPaths * focalPlanes) return {}
+  return { opticalPaths, focalPlanes }
 }
 
 // A DICOM-WSI instance is a real pyramid tier only when its ImageType flavor is
@@ -189,6 +223,8 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
     ).replace(/\/\d+$/, '')
     const transferSyntax =
       str(inst.TransferSyntaxUID) ?? str(inst.AvailableTransferSyntaxUID)
+    const grid =
+      Math.ceil(matrixColumns / tileColumns) * Math.ceil(matrixRows / tileRows)
     levels.push({
       matrixColumns,
       matrixRows,
@@ -196,6 +232,14 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
       tileRows,
       frameBaseUrl,
       frameQuery,
+      transferSyntax,
+      photometric: str(first(inst.PhotometricInterpretation)),
+      ...planeCounts(
+        toNum(first(inst.NumberOfFrames)),
+        grid,
+        toNum(first(inst.NumberOfOpticalPaths)),
+        toNum(first(inst.TotalPixelMatrixFocalPlanes)),
+      ),
       // Default to JPEG when the syntax is unknown (v1 targets JPEG WSI).
       isJpeg: transferSyntax
         ? JPEG_TRANSFER_SYNTAXES.has(transferSyntax)
@@ -290,6 +334,10 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
       columns,
       rows,
       codec: level.isJpeg ? 'image/jpeg' : 'image/jp2',
+      transferSyntaxUid: level.transferSyntax,
+      photometric: level.photometric,
+      opticalPaths: level.opticalPaths,
+      focalPlanes: level.focalPlanes,
       tiles,
     })
     levelBaseUrls[index] = level.frameBaseUrl
@@ -351,9 +399,14 @@ export class DicomWsiTileSource implements SlideTileSource {
       throw new Error('WSI tile has no frame number')
     // Re-append any query (e.g. a DICOMweb access_token) after the frame index.
     const query = this.levelQueries[level.index] ?? ''
+    const isJp2 = level.codec === 'image/jp2'
     const response = await fetch(`${base}/${tile.frame}${query}`, {
       headers: {
-        Accept: 'multipart/related; type="image/jpeg"',
+        // JPEG 2000: ask for the stored bytes untranscoded; the check below
+        // refuses a server that transcodes anyway rather than mis-decoding.
+        Accept: isJp2
+          ? 'multipart/related; type="application/octet-stream"; transfer-syntax=*'
+          : 'multipart/related; type="image/jpeg"',
         ...this.headers,
       },
       signal,
@@ -362,8 +415,10 @@ export class DicomWsiTileSource implements SlideTileSource {
     const contentType = response.headers.get('content-type') ?? ''
     const body = new Uint8Array(await response.arrayBuffer())
     const parts = parseMultipartRelated(body, contentType)
-    const jpeg = parts[0]
-    if (!jpeg || jpeg.length === 0) throw new Error('empty WSI tile body')
-    return jpeg
+    const frame = parts[0]
+    if (!frame || frame.length === 0) throw new Error('empty WSI tile body')
+    if (isJp2 && !isJpeg2000(frame))
+      throw new Error('WSI tile is not JPEG 2000 (the server transcoded it)')
+    return frame
   }
 }

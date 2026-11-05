@@ -8,7 +8,8 @@ export type NVSlideTileCodec = 'raw-rgba' | 'image/jpeg' | 'image/jp2'
  */
 export type SlideTileDecoder = (
   bytes: Uint8Array,
-  ctx: { width: number; height: number },
+  /** `level` carries what a codec may need beyond the bytes (e.g. `photometric`). */
+  ctx: { width: number; height: number; level: NVSlideLevelManifest },
 ) => Promise<ImageBitmap>
 export type NVSlideYAxis = 'down' | 'up'
 export type NVSlideLevelChoice = 'auto' | number
@@ -41,6 +42,17 @@ export interface NVSlideLevelManifest {
   rows: number
   fileUrl?: string
   codec?: NVSlideTileCodec
+  /** DICOM transfer syntax of the level's frames, when the source is DICOM. */
+  transferSyntaxUid?: string
+  /** DICOM PhotometricInterpretation, e.g. 'YBR_FULL_422'; passed to the tile decoder. */
+  photometric?: string
+  /**
+   * DICOM-WSI only: optical paths and focal planes the level's frames span. A tile
+   * grid holds one of each, so a DICOM manifest must state both as 1 (see
+   * {@link assertSingleSlidePlane}); unknown is not one.
+   */
+  opticalPaths?: number
+  focalPlanes?: number
   tiles: NVSlideTileManifest[]
 }
 
@@ -489,6 +501,25 @@ export class ManifestRangeSource implements SlideTileSource {
   }
 }
 
+/**
+ * Refuse a DICOM-WSI manifest whose levels are not known to hold a single optical
+ * path and focal plane: their frames would otherwise be laid out as one tile grid,
+ * putting tiles from other channels or depths in the wrong places. Other formats
+ * (DZI, TIFF, synthetic) have no such dimensions.
+ */
+export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
+  if (!manifest.format?.startsWith('dicom-wsi')) return
+  for (const level of manifest.levels) {
+    const { opticalPaths, focalPlanes } = level
+    if (opticalPaths === 1 && focalPlanes === 1) continue
+    const what =
+      opticalPaths === undefined || focalPlanes === undefined
+        ? 'does not state its optical paths and focal planes (regenerate the manifest)'
+        : `holds ${opticalPaths} optical paths and ${focalPlanes} focal planes; only one of each is supported`
+    throw new Error(`Slide level ${level.index} ${what}`)
+  }
+}
+
 export class NVSlide extends EventTarget {
   readonly id: string
   readonly name: string
@@ -538,6 +569,7 @@ export class NVSlide extends EventTarget {
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
+    assertSingleSlidePlane(manifest)
     this.manifest = manifest
     this.manifestUrl = options.manifestUrl ?? ''
     this.id = options.id ?? manifest.id
@@ -1050,7 +1082,7 @@ export class NVSlide extends EventTarget {
           '(e.g. an OpenJPEG WASM decoder for image/jp2).',
       )
     }
-    return decoder(tileBytes, { width: tile.width, height: tile.height })
+    return decoder(tileBytes, { width: tile.width, height: tile.height, level })
   }
 
   private loadTile(

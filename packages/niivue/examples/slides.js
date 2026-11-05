@@ -9,6 +9,8 @@
 // The synthetic pyramid (public/tile-range-poc/) streams one tile's worth of
 // bytes at a time over HTTP 206 range requests, so a multi-gigabyte slide never
 // has to be downloaded whole.
+
+import { createFrameDecoder } from '@niivue/dcm2niix'
 import {
   buildDrawingLut,
   DziSource,
@@ -20,7 +22,6 @@ import {
   SlideRendererGPU,
   SlideVectorLayer,
 } from '../src/index.ts'
-import { decodeJp2 } from './openjpeg-decoder.js'
 import { createTiffSource } from './tiff-source.js'
 import { urlParamSelect } from './urlParamSelect.js'
 
@@ -37,9 +38,14 @@ const TIFF_URLS = {
   'tiff-cmu1': 'svs/CMU-1-Small-Region.svs',
 }
 
-// NVSlide core ships no JPEG 2000 codec; register an OpenJPEG WASM decoder so
-// image/jp2 tiles (OpenSlide DICOM JP2K archives) decode in-browser.
-NVSlide.registerTileDecoder('image/jp2', decodeJp2)
+// NVSlide core ships no JPEG 2000 codec: dcm2niix's WASM worker pool decodes
+// image/jp2 tiles, following each level's photometric. Started on the first tile.
+let jp2Decoder = null
+NVSlide.registerTileDecoder('image/jp2', async (bytes, { level }) => {
+  jp2Decoder ??= createFrameDecoder({ workers: 2 })
+  const f = await jp2Decoder.decode(bytes, { photometric: level.photometric })
+  return createImageBitmap(new ImageData(f.rgba, f.width, f.height))
+})
 
 const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
 // DICOM-WSI manifests use dicom-wsi-range-v1: per-level JPEG tiles addressed

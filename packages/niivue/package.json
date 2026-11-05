@@ -99,7 +99,7 @@
     "zarrita": "^0.7.3"
   },
   "devDependencies": {
-    "@cornerstonejs/codec-openjpeg": "^1.3.0",
+    "@niivue/dcm2niix": "^1.4.20261029",
     "@niivue/dev-images": "workspace:*",
     "@playwright/test": "1.59.1",
     "@types/bun": "^1.3.12",

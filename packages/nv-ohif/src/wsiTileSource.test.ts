@@ -3,6 +3,7 @@ import type { OhifDisplaySet } from './ohif-types'
 import {
   buildWsiManifest,
   DicomWsiTileSource,
+  planeCounts,
   wsiVolumeLevels,
 } from './wsiTileSource'
 
@@ -502,5 +503,119 @@ describe('DicomWsiTileSource.fetchTileBytes', () => {
     await expect(source.fetchTileBytes(level, tile, 'label')).rejects.toThrow(
       '404',
     )
+  })
+})
+
+describe('planeCounts', () => {
+  it('takes the tags when the frame count confirms them', () => {
+    expect(planeCounts(24, 8, 3, 1)).toEqual({
+      opticalPaths: 3,
+      focalPlanes: 1,
+    })
+  })
+  it('proves one of each from the frame count when the tags are absent', () => {
+    expect(planeCounts(8, 8, undefined, undefined)).toEqual({
+      opticalPaths: 1,
+      focalPlanes: 1,
+    })
+  })
+  it('leaves dimensions unknown when nothing proves them', () => {
+    expect(planeCounts(undefined, 8, undefined, undefined)).toEqual({})
+    expect(planeCounts(16, 8, undefined, undefined)).toEqual({})
+    expect(planeCounts(16, 8, 1, 1)).toEqual({}) // tags contradict the frames
+  })
+})
+
+// The smDisplaySet slide as JPEG 2000 YBR_FULL_422 with its frame counts stated.
+function jp2DisplaySet(extra: Record<string, unknown> = {}): OhifDisplaySet {
+  const ds = smDisplaySet()
+  for (const inst of ds.instances ?? []) {
+    const cols = Math.ceil(
+      Number(inst.TotalPixelMatrixColumns) / Number(inst.Columns),
+    )
+    const rows = Math.ceil(
+      Number(inst.TotalPixelMatrixRows) / Number(inst.Rows),
+    )
+    Object.assign(inst, {
+      TransferSyntaxUID: JP2,
+      PhotometricInterpretation: 'YBR_FULL_422',
+      NumberOfFrames: cols * rows,
+      ...extra,
+    })
+  }
+  return ds
+}
+
+describe('JPEG 2000 levels', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('carry codec, photometric and plane counts into the manifest', () => {
+    const built = buildWsiManifest(jp2DisplaySet())
+    const level = built?.manifest.levels[0]
+    expect(built?.allJpeg).toBe(false)
+    expect(level?.codec).toBe('image/jp2')
+    expect(level?.photometric).toBe('YBR_FULL_422')
+    expect(level?.transferSyntaxUid).toBe(JP2)
+    expect([level?.opticalPaths, level?.focalPlanes]).toEqual([1, 1])
+  })
+
+  it('record several optical paths, which NVSlide then refuses', () => {
+    const built = buildWsiManifest(jp2DisplaySet({ NumberOfOpticalPaths: 3 }))
+    expect(built?.manifest.levels[0]?.opticalPaths).toBeUndefined() // frames do not cover 3 paths
+  })
+
+  const respond = (part: Uint8Array) => {
+    const boundary = 'b'
+    const enc = new TextEncoder()
+    const head = enc.encode(
+      `--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`,
+    )
+    const tail = enc.encode(`\r\n--${boundary}--\r\n`)
+    const body = new Uint8Array([...head, ...part, ...tail])
+    let accept = ''
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      accept = ((init?.headers ?? {}) as Record<string, string>).Accept ?? ''
+      return Promise.resolve(
+        new Response(body, {
+          status: 200,
+          headers: {
+            'content-type': `multipart/related; type="application/octet-stream"; boundary=${boundary}`,
+          },
+        }),
+      )
+    }) as typeof fetch
+    return () => accept
+  }
+
+  it('fetch the stored codestream untranscoded', async () => {
+    const built = buildWsiManifest(jp2DisplaySet())
+    if (!built) throw new Error('expected a manifest')
+    const level = built.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('expected a tile')
+    const j2k = new Uint8Array([0xff, 0x4f, 0xff, 0x51, 0, 0x29])
+    const accept = respond(j2k)
+    const bytes = await new DicomWsiTileSource(built).fetchTileBytes(
+      level,
+      tile,
+      'l',
+    )
+    expect(accept()).toContain('transfer-syntax=*')
+    expect(Array.from(bytes)).toEqual(Array.from(j2k))
+  })
+
+  it('refuse a frame the server transcoded', async () => {
+    const built = buildWsiManifest(jp2DisplaySet())
+    if (!built) throw new Error('expected a manifest')
+    const level = built.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('expected a tile')
+    respond(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10])) // baseline JPEG
+    await expect(
+      new DicomWsiTileSource(built).fetchTileBytes(level, tile, 'l'),
+    ).rejects.toThrow(/transcoded/)
   })
 })

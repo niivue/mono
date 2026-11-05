@@ -6,7 +6,7 @@ import type {
   NVSlideTileManifest,
   SlideTileSource,
 } from './NVSlide'
-import { ManifestRangeSource, NVSlide } from './NVSlide'
+import { assertSingleSlidePlane, ManifestRangeSource, NVSlide } from './NVSlide'
 
 const TILE_W = 8
 const TILE_H = 4
@@ -655,5 +655,63 @@ describe('ManifestRangeSource range telemetry', () => {
       'network down',
     )
     expect(events).toEqual([{ label: 'L0/0/0 0-15', status: 'failed' }])
+  })
+})
+
+describe('NVSlide DICOM-WSI dimensions', () => {
+  const dicom = (paths?: number, planes?: number): NVSlideManifest => {
+    const m = makeManifest(2)
+    m.format = 'dicom-wsi-range-v1'
+    for (const level of m.levels) {
+      level.opticalPaths = paths
+      level.focalPlanes = planes
+    }
+    return m
+  }
+
+  it('accepts one optical path and one focal plane', () => {
+    expect(() => assertSingleSlidePlane(dicom(1, 1))).not.toThrow()
+  })
+
+  it('refuses unknown dimensions: absence is not one', () => {
+    expect(() => assertSingleSlidePlane(dicom())).toThrow(/does not state/)
+  })
+
+  it('refuses several optical paths or focal planes, before any layout', () => {
+    expect(() => assertSingleSlidePlane(dicom(3, 1))).toThrow(/3 optical paths/)
+    expect(() => NVSlide.fromSource(new CountingSource(dicom(1, 5)))).toThrow(
+      /5 focal planes/,
+    )
+  })
+
+  it('leaves formats without these dimensions alone', () => {
+    expect(() => assertSingleSlidePlane(makeManifest(2))).not.toThrow()
+  })
+})
+
+describe('NVSlide tile decoder context', () => {
+  const originalJp2 = NVSlide.tileDecoder('image/jp2')
+  afterEach(() => {
+    if (originalJp2) NVSlide.registerTileDecoder('image/jp2', originalJp2)
+  })
+
+  it('passes the level, so a codec sees its photometric', async () => {
+    const seen: string[] = []
+    NVSlide.registerTileDecoder('image/jp2', async (_bytes, { level }) => {
+      seen.push(level.photometric ?? '')
+      return fakeBitmap()
+    })
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    level.codec = 'image/jp2'
+    level.photometric = 'YBR_FULL_422'
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const tile = level.tiles[0]
+    if (!tile) throw new Error('level has no tile')
+    slide.requestTile(slide.manifest.levels[0] ?? level, tile)
+    await waitFor(() => slide.stats.completed === 1)
+    expect(seen).toEqual(['YBR_FULL_422'])
+    slide.dispose()
   })
 })

@@ -46,6 +46,8 @@ const TAG = {
   dimensionOrganizationType: 'x00209311',
   totalPixelMatrixColumns: 'x00480006', // level width
   totalPixelMatrixRows: 'x00480007', // level height
+  numberOfOpticalPaths: 'x00480302',
+  totalPixelMatrixFocalPlanes: 'x00480303',
   imagedVolumeWidth: 'x00480001', // physical width (mm), FL
   imagedVolumeHeight: 'x00480002', // physical height (mm), FL
   transferSyntaxUid: 'x00020010',
@@ -217,6 +219,25 @@ interface WsiMeta {
   photometric: string
   flavor: WsiFlavor
   spacingMM: [number, number]
+  /** Unset when unknown: NVSlide refuses such a level rather than guess one. */
+  opticalPaths?: number
+  focalPlanes?: number
+}
+
+// Optical paths and focal planes a TILED_FULL level's frames span. Its frames
+// cover every column x row for each path and plane, so the frame count confirms
+// the tags and, when they are absent, proves one of each only if it equals the grid.
+export function planeCounts(
+  frames: number,
+  grid: number,
+  paths: number | undefined,
+  planes: number | undefined,
+): { opticalPaths?: number; focalPlanes?: number } {
+  const opticalPaths = paths ?? (frames === grid ? 1 : undefined)
+  const focalPlanes = planes ?? (frames === grid ? 1 : undefined)
+  if (opticalPaths === undefined || focalPlanes === undefined) return {}
+  if (frames !== grid * opticalPaths * focalPlanes) return {}
+  return { opticalPaths, focalPlanes }
 }
 
 // JPEG family is 1.2.840.10008.1.2.4.*, RLE is 1.2.840.10008.1.2.5; the
@@ -268,7 +289,15 @@ function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
   const spacingMM: [number, number] = hasPs
     ? [psX as number, psY as number]
     : [ivw && width ? ivw / width : 1, ivh && height ? ivh / height : 1]
+  const grid =
+    Math.ceil(width / (tileWidth || 1)) * Math.ceil(height / (tileHeight || 1))
   return {
+    ...planeCounts(
+      frames,
+      grid,
+      ds.uint32(TAG.numberOfOpticalPaths),
+      ds.uint32(TAG.totalPixelMatrixFocalPlanes),
+    ),
     file,
     fileName: path.basename(file),
     width,
@@ -466,6 +495,8 @@ function levelManifest(
     codec: codecForTransferSyntax(parsed.transferSyntaxUid),
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
+    opticalPaths: level.opticalPaths,
+    focalPlanes: level.focalPlanes,
     spacingMM: level.spacingMM,
     tiles,
   }

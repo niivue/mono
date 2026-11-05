@@ -32,6 +32,7 @@ import {
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
+import { registerJp2TileDecoder } from './wsiJp2Decoder'
 import { mountWsiSlideView } from './wsiSlideView'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
@@ -378,14 +379,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         })
         return
       }
-      if (!built.allJpeg) {
-        setStatus({
-          kind: 'note',
-          message:
-            'This slide is JPEG 2000, which the viewer cannot decode yet (JPEG slides are supported).',
-        })
-        return
-      }
+      if (!built.allJpeg) registerJp2TileDecoder()
       if (!built.tiledFull) {
         // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
         // slide would render scrambled, so decline rather than mislead.
@@ -403,7 +397,17 @@ export function NiivueViewport(props: OhifViewportProps) {
         'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none'
       container.appendChild(slideCanvas)
       const source = new DicomWsiTileSource(built, authHeaders(servicesManager))
-      const slide = NVSlide.fromSource(source)
+      let slide: NVSlide
+      try {
+        slide = NVSlide.fromSource(source) // refuses several optical paths or focal planes
+      } catch (err) {
+        slideCanvas.remove()
+        setStatus({
+          kind: 'note',
+          message: `This slide cannot be shown: ${err instanceof Error ? err.message : String(err)}.`,
+        })
+        return
+      }
       let view: ReturnType<typeof mountWsiSlideView> | null = null
       try {
         // The ruler draws its length label on the slide itself, so we do NOT

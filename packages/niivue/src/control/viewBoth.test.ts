@@ -286,6 +286,8 @@ test('a failed backend switch leaves siblings on the old shared canvas', async (
     expect(left.canvas).toBe(old)
     expect(parent.child).toBe(old)
     expect(listeners.size).toBe(installed)
+    // The restored canvas is still WebGPU's, so a retry must target that.
+    expect(left.opts.backend).toBe('webgpu')
   } finally {
     if (!hadWindow) delete g.window
   }
@@ -344,6 +346,57 @@ test('a sibling that fails to rebuild does not strand the siblings after it', as
     await recreateView(b)
     expect(b.view).not.toBeNull()
     expect(b.canvas).toBe(a.canvas)
+  } finally {
+    if (!hadWindow) delete g.window
+  }
+})
+
+test('siblings still move when the switching controller fails after init', async () => {
+  const parent = { replaceChild() {} }
+  const canvas = (): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode: parent,
+      style: {},
+      cloneNode: canvas,
+      addEventListener() {},
+      removeEventListener() {},
+    }) as HTMLCanvasElement
+  const old = canvas()
+  const fakeCtrl = () =>
+    ({
+      canvas: old,
+      view: { destroy() {} },
+      opts: { backend: 'webgpu', isInteractionEnabled: false },
+      model: { clearAllGPUResources() {}, ui: {} },
+      _eventListeners: {},
+      emit() {},
+      resize() {},
+      _wireViewHooks() {},
+      async _rebuildViewResources() {},
+      restoreSlidePlaneView() {},
+      drawScene() {},
+    }) as unknown as NiiVue
+  const [a, b] = [fakeCtrl(), fakeCtrl()]
+  a._rebuildViewResources = async () => {
+    throw new Error('resource rebuild failed')
+  }
+  for (const n of [a, b]) registerCanvasInstance(n, old)
+  const g = globalThis as { window?: unknown }
+  const hadWindow = 'window' in g
+  g.window ??= {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+    matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+  }
+  try {
+    a.opts.backend = 'webgl2'
+    await expect(recreateView(a, true)).rejects.toThrow('resource rebuild')
+    expect(a.canvas).not.toBe(old)
+    expect(b.canvas).toBe(a.canvas)
+    expect(b.opts.backend).toBe('webgl2')
+    expect(glCanvases.at(-1)).toBe(a.canvas)
+    expect(b.view).toBeInstanceOf(NVViewGL)
   } finally {
     if (!hadWindow) delete g.window
   }

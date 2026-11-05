@@ -222,10 +222,41 @@ export async function recreateView(
     // 7. Initialize the new view, publishing it only once init() resolves
     await view.init()
   } catch (error) {
-    if (siblings.length > 0) restoreSharedCanvas(ctrl, oldCanvas, siblings)
+    if (siblings.length > 0) {
+      restoreSharedCanvas(ctrl, oldCanvas, siblings)
+      // The old canvas is locked to the siblings' backend: retry on that one.
+      ctrl.opts.backend = siblings[0]?.opts.backend
+    }
     throw error
   }
   ctrl.view = view
+  // From here the new canvas holds the shared context, so siblings are moved
+  // onto it even if the rest of this controller's rebuild fails.
+  let failure: { error: unknown } | undefined
+  try {
+    await finishViewRebuild(ctrl)
+  } catch (error) {
+    failure = { error }
+  }
+  // 13. Rebuild siblings on the new canvas with the new backend. One failure
+  // must not strand the siblings after it; a failed sibling keeps the new
+  // backend and can be retried on its own.
+  for (const sib of siblings) {
+    sib.opts.backend = ctrl.opts.backend
+    if (!sib.view) continue
+    try {
+      await recreateView(sib)
+    } catch (error) {
+      log.error('Failed to rebuild a sibling view on the shared canvas:', error)
+      failure ??= { error }
+    }
+  }
+  if (failure) throw failure.error
+}
+
+/** Steps 7b-12 of recreateView, once the new view has initialized. */
+async function finishViewRebuild(ctrl: NiiVue): Promise<void> {
+  if (!ctrl.view) return
   // Hooks go on before the resize() below draws the first frame: a preloaded
   // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
   ctrl._wireViewHooks()
@@ -253,21 +284,6 @@ export async function recreateView(
     canvas: ctrl.canvas as HTMLCanvasElement,
     backend: (ctrl.opts.backend ?? 'webgl2') as 'webgpu' | 'webgl2',
   })
-  // 13. Rebuild siblings on the new canvas with the new backend. The canvas is
-  // already locked to it, so one failure must not strand the siblings after it;
-  // a failed sibling keeps the new backend and can be retried on its own.
-  let siblingError: unknown
-  for (const sib of siblings) {
-    sib.opts.backend = ctrl.opts.backend
-    if (!sib.view) continue
-    try {
-      await recreateView(sib)
-    } catch (error) {
-      log.error('Failed to rebuild a sibling view on the shared canvas:', error)
-      siblingError ??= error
-    }
-  }
-  if (siblingError) throw siblingError
 }
 
 export async function reinitializeView(

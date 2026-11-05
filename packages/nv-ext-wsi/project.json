@@ -1,5 +1,5 @@
 {
-  "name": "nv-ext-tiff",
+  "name": "nv-ext-wsi",
   "projectType": "library",
   "tags": ["type:lib", "lang:typescript"],
   "targets": {

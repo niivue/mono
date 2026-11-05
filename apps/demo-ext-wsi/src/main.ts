@@ -1,6 +1,6 @@
 import type { NVSlideScreen } from '@niivue/niivue'
 import { NVSlide, SlideRenderer } from '@niivue/niivue'
-import { TiffSlideSource } from '@niivue/nv-ext-tiff'
+import { TiffSlideSource } from '@niivue/nv-ext-wsi'
 import { fromBlob, Pool } from 'geotiff'
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement

@@ -1,4 +1,6 @@
-# @niivue/nv-ext-tiff
+# @niivue/nv-ext-wsi
+
+Formerly `@niivue/nv-ext-tiff`; the API is unchanged.
 
 Stream large tiled/pyramidal TIFF, BigTIFF, OME-TIFF and Aperio SVS whole-slide images into NiiVue's `NVSlide`, one tile at a time, using [geotiff](https://github.com/geotiffjs/geotiff.js).
 
@@ -7,7 +9,7 @@ Core NiiVue already reads TIFF volumes (strips, tiles, LZW, Deflate, PackBits) w
 ## Installation
 
 ```bash
-bun add @niivue/nv-ext-tiff
+bun add @niivue/nv-ext-wsi
 ```
 
 Requires `@niivue/niivue` as a peer dependency.
@@ -16,7 +18,7 @@ Requires `@niivue/niivue` as a peer dependency.
 
 ```ts
 import { NVSlide, SlideRenderer } from '@niivue/niivue'
-import { TiffSlideSource } from '@niivue/nv-ext-tiff'
+import { TiffSlideSource } from '@niivue/nv-ext-wsi'
 import { fromBlob, Pool } from 'geotiff'
 
 const pool = new Pool() // optional: decode in web workers
@@ -55,14 +57,14 @@ A remote server **must** support HTTP Range (`206 Partial Content`). If it answe
 
 ## Demo
 
-[`apps/demo-ext-tiff`](../../apps/demo-ext-tiff): `bunx nx dev demo-ext-tiff`.
+[`apps/demo-ext-wsi`](../../apps/demo-ext-wsi): `bunx nx dev demo-ext-wsi`.
 
 ## Development
 
 ```bash
-bunx nx test nv-ext-tiff
-bunx nx build nv-ext-tiff
-bunx nx typecheck nv-ext-tiff
+bunx nx test nv-ext-wsi
+bunx nx build nv-ext-wsi
+bunx nx typecheck nv-ext-wsi
 ```
 
 Tests write small tiled TIFFs in memory (pyramid, SubIFDs, JPEG/YCbCr) and serve them through a fake Range server that records every request.

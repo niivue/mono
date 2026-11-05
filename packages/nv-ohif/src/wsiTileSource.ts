@@ -338,7 +338,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     format: 'dicom-wsi-ohif',
     width: level0.matrixColumns,
     height: level0.matrixRows,
-    displayYAxis: 'up',
+    displayYAxis: 'down', // DICOM row 0 is the top, as OpenSlide and other viewers show it
     tileSize: level0.tileColumns,
     dtype: 'uint8',
     channels: 'encoded-rgb',

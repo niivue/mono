@@ -258,7 +258,7 @@ describe('buildWsiManifest', () => {
     expect(manifest.width).toBe(2000)
     expect(manifest.height).toBe(1000)
     expect(manifest.channels).toBe('encoded-rgb')
-    expect(manifest.displayYAxis).toBe('up')
+    expect(manifest.displayYAxis).toBe('down')
     expect(manifest.levels).toHaveLength(2)
 
     const [fine, coarse] = manifest.levels

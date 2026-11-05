@@ -82,7 +82,7 @@ interface DicomWsiClientManifest {
   description: string
   width: number
   height: number
-  displayYAxis: 'up'
+  displayYAxis: 'down'
   dtype: 'uint8'
   channels: 'encoded-rgb'
   levels: DicomWsiClientLevel[]
@@ -317,7 +317,7 @@ async function buildClientManifest(
       'Precomputed DICOM-WSI frame directory for browser-only tile loading with HTTP Range requests.',
     width: l0.width,
     height: l0.height,
-    displayYAxis: 'up',
+    displayYAxis: 'down', // DICOM row 0 is the top, as OpenSlide and other viewers show it
     dtype: 'uint8',
     channels: 'encoded-rgb',
     levels: clientLevels,

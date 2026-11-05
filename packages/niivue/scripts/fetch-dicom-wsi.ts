@@ -510,7 +510,7 @@ export async function buildManifest(
       'Precomputed DICOM-WSI frame directory for browser-only tile loading with HTTP Range requests.',
     width: volumes[0]?.meta.width ?? 0,
     height: volumes[0]?.meta.height ?? 0,
-    displayYAxis: 'up',
+    displayYAxis: 'down', // DICOM row 0 is the top, as OpenSlide and other viewers show it
     dtype: 'uint8',
     channels: 'encoded-rgb',
     // Physical size of one base (level-0) pixel in mm [x, y]; consumed by

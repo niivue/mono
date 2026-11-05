@@ -62,6 +62,8 @@ NVSlide (`assertSingleSlidePlane`) then refuses any `dicom-wsi*` level unless:
 
 Unknown is never treated as 1.
 
+**Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
+
 **JPEG 2000 colour follows the codestream.** With MCT (ICT/RCT) the codec has already
 produced RGB, so a `YBR_ICT`/`YBR_RCT` label must not trigger a second conversion
 (OpenSlide 4.0.0 does, and renders those slides magenta). Without MCT, `YBR_FULL[_422]`

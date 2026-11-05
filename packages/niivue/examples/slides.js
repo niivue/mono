@@ -41,9 +41,12 @@ const TIFF_URLS = {
 // NVSlide core ships no JPEG 2000 codec: dcm2niix's WASM worker pool decodes
 // image/jp2 tiles, following each level's photometric. Started on the first tile.
 let jp2Decoder = null
-NVSlide.registerTileDecoder('image/jp2', async (bytes, { level }) => {
+NVSlide.registerTileDecoder('image/jp2', async (bytes, { level, signal }) => {
   jp2Decoder ??= createFrameDecoder({ workers: 2 })
-  const f = await jp2Decoder.decode(bytes, { photometric: level.photometric })
+  const f = await jp2Decoder.decode(bytes, {
+    photometric: level.photometric,
+    signal,
+  })
   return createImageBitmap(new ImageData(f.rgba, f.width, f.height))
 })
 

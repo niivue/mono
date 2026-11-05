@@ -379,6 +379,13 @@ export function NiivueViewport(props: OhifViewportProps) {
         })
         return
       }
+      if (built.unsupported) {
+        setStatus({
+          kind: 'note',
+          message: `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG and JPEG 2000 slides are supported).`,
+        })
+        return
+      }
       if (!built.allJpeg) registerJp2TileDecoder()
       if (!built.tiledFull) {
         // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
@@ -421,6 +428,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         refreshToolbar(servicesManager, viewportId)
         setStatus({ kind: 'idle' })
       } catch (err) {
+        slide.dispose()
         slideCanvas.remove()
         console.error('[nv-ohif] WSI view failed', err)
         setStatus({

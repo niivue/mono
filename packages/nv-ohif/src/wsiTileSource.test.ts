@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'bun:test'
+import { NVSlide } from '@niivue/niivue'
 import type { OhifDisplaySet } from './ohif-types'
 import {
   buildWsiManifest,
   DicomWsiTileSource,
-  planeCounts,
   wsiVolumeLevels,
 } from './wsiTileSource'
 
@@ -431,6 +431,17 @@ describe('buildWsiManifest', () => {
     const built = buildWsiManifest({ ...ds, instances })
     expect(built?.allJpeg).toBe(false)
     expect(built?.manifest.levels[0]?.codec).toBe('image/jp2')
+    expect(built?.unsupported).toBeUndefined()
+  })
+
+  it('names a transfer syntax no codec decodes (JPEG-LS)', () => {
+    const ds = smDisplaySet()
+    const instances = ds.instances?.map((inst) => ({
+      ...inst,
+      TransferSyntaxUID: '1.2.840.10008.1.2.4.80',
+    }))
+    const built = buildWsiManifest({ ...ds, instances })
+    expect(built?.unsupported).toBe('1.2.840.10008.1.2.4.80')
   })
 })
 
@@ -506,26 +517,6 @@ describe('DicomWsiTileSource.fetchTileBytes', () => {
   })
 })
 
-describe('planeCounts', () => {
-  it('takes the tags when the frame count confirms them', () => {
-    expect(planeCounts(24, 8, 3, 1)).toEqual({
-      opticalPaths: 3,
-      focalPlanes: 1,
-    })
-  })
-  it('proves one of each from the frame count when the tags are absent', () => {
-    expect(planeCounts(8, 8, undefined, undefined)).toEqual({
-      opticalPaths: 1,
-      focalPlanes: 1,
-    })
-  })
-  it('leaves dimensions unknown when nothing proves them', () => {
-    expect(planeCounts(undefined, 8, undefined, undefined)).toEqual({})
-    expect(planeCounts(16, 8, undefined, undefined)).toEqual({})
-    expect(planeCounts(16, 8, 1, 1)).toEqual({}) // tags contradict the frames
-  })
-})
-
 // The smDisplaySet slide as JPEG 2000 YBR_FULL_422 with its frame counts stated.
 function jp2DisplaySet(extra: Record<string, unknown> = {}): OhifDisplaySet {
   const ds = smDisplaySet()
@@ -559,12 +550,31 @@ describe('JPEG 2000 levels', () => {
     expect(level?.codec).toBe('image/jp2')
     expect(level?.photometric).toBe('YBR_FULL_422')
     expect(level?.transferSyntaxUid).toBe(JP2)
-    expect([level?.opticalPaths, level?.focalPlanes]).toEqual([1, 1])
+    expect(level?.frames).toBe((level?.columns ?? 0) * (level?.rows ?? 0))
   })
 
   it('record several optical paths, which NVSlide then refuses', () => {
+    const ds = jp2DisplaySet({
+      NumberOfOpticalPaths: 3,
+      TotalPixelMatrixFocalPlanes: 1,
+    })
+    for (const inst of ds.instances ?? [])
+      inst.NumberOfFrames = 3 * Number(inst.NumberOfFrames)
+    const built = buildWsiManifest(ds)
+    if (!built) throw new Error('expected a manifest')
+    expect(built.manifest.levels[0]?.opticalPaths).toBe(3)
+    expect(() => NVSlide.fromSource(new DicomWsiTileSource(built, {}))).toThrow(
+      /3 optical paths/,
+    )
+  })
+
+  it('carry the raw tags, which NVSlide checks against the frames', () => {
     const built = buildWsiManifest(jp2DisplaySet({ NumberOfOpticalPaths: 3 }))
-    expect(built?.manifest.levels[0]?.opticalPaths).toBeUndefined() // frames do not cover 3 paths
+    if (!built) throw new Error('expected a manifest')
+    expect(built.manifest.levels[0]?.opticalPaths).toBe(3)
+    expect(() => NVSlide.fromSource(new DicomWsiTileSource(built, {}))).toThrow(
+      /disagree with its frame count/,
+    )
   })
 
   const respond = (part: Uint8Array) => {

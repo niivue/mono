@@ -482,6 +482,8 @@ NVSlide API surfaced (packages/niivue/src/slide/):
 - **Codecs**: JPEG WSI -> `image/jpeg` decodes natively in-browser. JPEG-2000 WSI ->
   `image/jp2` needs `NVSlide.registerTileDecoder('image/jp2', decodeJp2)` with an
   OpenJPEG WASM decoder (heavy) -> defer; v1 handles JPEG-transfer-syntax WSI only.
+  (Done since: `wsiJp2Decoder.ts` registers `@niivue/dcm2niix`'s `createFrameDecoder`,
+  loaded on the first JPEG 2000 tile.)
 - **The existing DICOM-WSI demo is OFFLINE-PREBUILT**: `scripts/fetch-dicom-wsi.ts`
   downloads a series and repackages it into a `dicom-wsi-range-v1` byte-range manifest
   (`ManifestRangeSource`). That does NOT apply to OHIF (live DICOMweb) — we need a NEW
@@ -538,6 +540,7 @@ So the manifest mapping and data path are fully determined; implementation is me
 - The `<canvas>` lifecycle: NiivueViewport currently assumes one `Niivue` per canvas;
   the WSI branch swaps in a `SlideRenderer` instead — make create/teardown handle both.
 - JP2 transfer-syntax WSI (defer; needs the OpenJPEG decoder). v1 is JPEG-only.
+  Done since: decoded by `@niivue/dcm2niix` (see the README).
 - Exclude LABEL/OVERVIEW/THUMBNAIL instances from the pyramid (keep VOLUME levels).
 
 **Plain 2D (PNG/JPEG/single-frame):** separate, smaller follow-up — a small

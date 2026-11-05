@@ -3,13 +3,19 @@ export type NVSlideTileCodec = 'raw-rgba' | 'image/jpeg' | 'image/jp2'
 /**
  * Decodes one tile's encoded bytes into an ImageBitmap. The built-in registry
  * handles `raw-rgba` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
- * decoder, so a consumer must register one (e.g. an OpenJPEG WASM build) via
+ * decoder, so a consumer must register one (e.g. @niivue/dcm2niix createFrameDecoder) via
  * {@link NVSlide.registerTileDecoder} — keeping the heavy codec out of the core.
  */
 export type SlideTileDecoder = (
   bytes: Uint8Array,
   /** `level` carries what a codec may need beyond the bytes (e.g. `photometric`). */
-  ctx: { width: number; height: number; level: NVSlideLevelManifest },
+  /** `signal` aborts when the tile is no longer wanted. */
+  ctx: {
+    width: number
+    height: number
+    level: NVSlideLevelManifest
+    signal?: AbortSignal
+  },
 ) => Promise<ImageBitmap>
 export type NVSlideYAxis = 'down' | 'up'
 export type NVSlideLevelChoice = 'auto' | number
@@ -47,10 +53,11 @@ export interface NVSlideLevelManifest {
   /** DICOM PhotometricInterpretation, e.g. 'YBR_FULL_422'; passed to the tile decoder. */
   photometric?: string
   /**
-   * DICOM-WSI only: optical paths and focal planes the level's frames span. A tile
-   * grid holds one of each, so a DICOM manifest must state both as 1 (see
-   * {@link assertSingleSlidePlane}); unknown is not one.
+   * DICOM-WSI only: NumberOfFrames, NumberOfOpticalPaths (0048,0302) and
+   * TotalPixelMatrixFocalPlanes (0048,0303), copied from the tags (unset when
+   * absent). {@link assertSingleSlidePlane} checks them against the tile grid.
    */
+  frames?: number
   opticalPaths?: number
   focalPlanes?: number
   tiles: NVSlideTileManifest[]
@@ -268,7 +275,7 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
 }
 
 // Tile-codec registry. Built-ins cover the browser-native paths; additional
-// codecs (e.g. image/jp2 via an OpenJPEG WASM decoder) are registered by the
+// codecs (e.g. image/jp2 via @niivue/dcm2niix) are registered by the
 // consumer with NVSlide.registerTileDecoder, so the core ships no heavy codec.
 const tileDecoders = new Map<string, SlideTileDecoder>([
   [
@@ -506,16 +513,26 @@ export class ManifestRangeSource implements SlideTileSource {
  * path and focal plane: their frames would otherwise be laid out as one tile grid,
  * putting tiles from other channels or depths in the wrong places. Other formats
  * (DZI, TIFF, synthetic) have no such dimensions.
+ *
+ * A TILED_FULL level's frames cover the grid once per path and plane, so the frame
+ * count confirms the tags and, when one is absent, proves it is 1 only if the
+ * frames equal the grid.
  */
 export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
   if (!manifest.format?.startsWith('dicom-wsi')) return
   for (const level of manifest.levels) {
-    const { opticalPaths, focalPlanes } = level
-    if (opticalPaths === 1 && focalPlanes === 1) continue
-    const what =
-      opticalPaths === undefined || focalPlanes === undefined
-        ? 'does not state its optical paths and focal planes (regenerate the manifest)'
-        : `holds ${opticalPaths} optical paths and ${focalPlanes} focal planes; only one of each is supported`
+    const { frames } = level
+    const grid = level.columns * level.rows
+    const paths = level.opticalPaths ?? (frames === grid ? 1 : undefined)
+    const planes = level.focalPlanes ?? (frames === grid ? 1 : undefined)
+    const known =
+      paths !== undefined &&
+      planes !== undefined &&
+      frames === grid * paths * planes
+    if (known && paths === 1 && planes === 1) continue
+    const what = known
+      ? `holds ${paths} optical paths and ${planes} focal planes; only one of each is supported`
+      : 'has optical paths or focal planes that are unknown or disagree with its frame count'
     throw new Error(`Slide level ${level.index} ${what}`)
   }
 }
@@ -1055,7 +1072,7 @@ export class NVSlide extends EventTarget {
   }
 
   /**
-   * Register a tile decoder for a codec (e.g. `image/jp2` via OpenJPEG WASM).
+   * Register a tile decoder for a codec (e.g. `image/jp2` via @niivue/dcm2niix).
    * Lets a consumer add codecs the browser can't decode natively without
    * bundling them into the core. Overrides any existing decoder for that codec.
    */
@@ -1072,6 +1089,7 @@ export class NVSlide extends EventTarget {
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     tileBytes: Uint8Array,
+    signal: AbortSignal,
   ): Promise<ImageBitmap> {
     const codec = level.codec ?? 'raw-rgba'
     const decoder = tileDecoders.get(codec)
@@ -1079,10 +1097,15 @@ export class NVSlide extends EventTarget {
       throw new Error(
         `No decoder for tile codec "${codec}". ` +
           'Register one with NVSlide.registerTileDecoder() ' +
-          '(e.g. an OpenJPEG WASM decoder for image/jp2).',
+          '(e.g. @niivue/dcm2niix createFrameDecoder for image/jp2).',
       )
     }
-    return decoder(tileBytes, { width: tile.width, height: tile.height, level })
+    return decoder(tileBytes, {
+      width: tile.width,
+      height: tile.height,
+      level,
+      signal,
+    })
   }
 
   private loadTile(
@@ -1124,7 +1147,7 @@ export class NVSlide extends EventTarget {
       // A source that cannot stop a read in progress may still resolve after
       // the abort; the tile is no longer wanted either way.
       signal.throwIfAborted()
-      const bitmap = await this.decodeTileBitmap(level, tile, tileBytes)
+      const bitmap = await this.decodeTileBitmap(level, tile, tileBytes, signal)
       if (signal.aborted) {
         // Disposed (or dropped) while decoding. Caching now would leave a
         // bitmap in a cache that was already cleared, with nobody to close it.

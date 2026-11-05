@@ -8,12 +8,16 @@ let decoder: Promise<import('@niivue/dcm2niix').FrameDecoder> | null = null
  */
 export function registerJp2TileDecoder(): void {
   if (NVSlide.tileDecoder('image/jp2')) return
-  NVSlide.registerTileDecoder('image/jp2', async (bytes, { level }) => {
-    decoder ??= import('@niivue/dcm2niix').then((m) =>
-      m.createFrameDecoder({ workers: 2 }),
-    )
+  NVSlide.registerTileDecoder('image/jp2', async (bytes, { level, signal }) => {
+    decoder ??= import('@niivue/dcm2niix')
+      .then((m) => m.createFrameDecoder({ workers: 2 }))
+      .catch((err) => {
+        decoder = null // a failed chunk load retries on the next tile
+        throw err
+      })
     const frame = await (await decoder).decode(bytes, {
       photometric: level.photometric,
+      signal,
     })
     // The pixels arrive in a transferred ArrayBuffer (never shared memory).
     const rgba = frame.rgba as Uint8ClampedArray<ArrayBuffer>

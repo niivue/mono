@@ -190,6 +190,8 @@ Support boundary:
   - Several **optical paths** or **focal planes**, or levels whose metadata cannot prove
     one of each (NumberOfOpticalPaths, TotalPixelMatrixFocalPlanes, NumberOfFrames):
     their frames would land in the wrong tile positions.
+  - Other transfer syntaxes (JPEG-LS, JPEG Lossless, RLE, uncompressed, HTJ2K): the
+    note names the syntax.
   - **TILED_SPARSE** frame organization (the tile grid assumes row-major
     TILED_FULL order, so a sparse slide would render scrambled).
   - A slide with no tiled (VOLUME) pyramid levels.

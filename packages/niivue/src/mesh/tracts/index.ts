@@ -96,18 +96,10 @@ export function tessellate(
   if (options.colorBy !== '' && options.calMin === 0 && options.calMax === 0) {
     const arr = getScalarArray(data, options.colorBy)
     if (arr) {
-      let mn = Infinity,
-        mx = -Infinity
-      for (let i = 0; i < arr.length; i++) {
-        const v = arr[i]
-        if (!Number.isFinite(v)) continue
-        if (v < mn) mn = v
-        if (v > mx) mx = v
-      }
-      if (Number.isFinite(mn) && Number.isFinite(mx)) {
-        options.calMin = mn
-        options.calMax = mx
-      }
+      // All-non-finite data yields 0/0, which leaves calMin/calMax unchanged.
+      const { globalMin, globalMax } = computeScalarMeta(arr)
+      options.calMin = globalMin
+      options.calMax = globalMax
     }
   }
 

@@ -1,6 +1,25 @@
+import { LineReader } from '@/NVLoader'
 import type { NVTractData } from '@/NVTypes'
 
 export const extensions = ['TCK']
+
+/** MRtrix (TCK/TSF) header lines up to END; `dataOffset` is -1 without a `file:` entry. */
+export function readMRtrixHeader(lines: LineReader): {
+  header: string[]
+  dataOffset: number
+} {
+  const header: string[] = []
+  let dataOffset = -1
+  let line = ''
+  while (lines.pos < lines.bytes.length && !line.includes('END')) {
+    line = lines.readLine()
+    header.push(line)
+    if (line.toLowerCase().startsWith('file:')) {
+      dataOffset = parseInt(line.split(' ').pop() as string, 10)
+    }
+  }
+  return { header, dataOffset }
+}
 
 /**
  * Read MRtrix TCK (tracks) format.
@@ -12,35 +31,19 @@ export const extensions = ['TCK']
 export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   const len = buffer.byteLength
   if (len < 20) throw new Error('File too small to be TCK')
-  const bytes = new Uint8Array(buffer)
-  let pos = 0
-
-  function readLine(): string {
-    while (pos < len && bytes[pos] === 10) pos++ // skip blank lines
-    const start = pos
-    while (pos < len && bytes[pos] !== 10) pos++
-    pos++ // skip newline
-    return new TextDecoder().decode(buffer.slice(start, pos - 1))
-  }
+  const lines = new LineReader(buffer)
 
   // Parse header
-  const sig = readLine()
+  const sig = lines.readLine()
   if (!sig.includes('mrtrix tracks')) throw new Error('Not a valid TCK file')
 
-  let dataOffset = -1
-  let line = ''
-  while (pos < len && !line.includes('END')) {
-    line = readLine()
-    if (line.toLowerCase().startsWith('file:')) {
-      dataOffset = parseInt(line.split(' ').pop() as string, 10)
-    }
-  }
+  const { dataOffset } = readMRtrixHeader(lines)
   if (dataOffset < 20)
     throw new Error('Not a valid TCK file (missing file offset)')
 
   // Parse binary data
   const reader = new DataView(buffer as ArrayBuffer)
-  pos = dataOffset
+  let pos = dataOffset
   // Over-provision arrays
   let vertices = new Float32Array(len / 4)
   let offsets = new Uint32Array(len / (4 * 4))

@@ -757,6 +757,22 @@ describe('NVSlide tile-cache budget', () => {
     slide.dispose()
   })
 
+  it('charges full decoded tiles, not clipped edge extents', () => {
+    // DICOM edge frames decode padded to the full tile: clipped to 1 px wide,
+    // L0's 16 tiles would seem to need 256 B, but decode to 2048 B.
+    const manifest = makePyramid()
+    for (const tile of manifest.levels[0]?.tiles ?? []) tile.width = 1
+    const slide = NVSlide.fromSource(new CountingSource(manifest), {
+      maxCacheBytes: 600,
+    })
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    expect(slide.visibleTiles(WHOLE_SLIDE_SCREEN).level?.index).toBe(1)
+    warn.mockRestore()
+    slide.dispose()
+  })
+
   it('reports no requested level when the requested one fits', () => {
     const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })

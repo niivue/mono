@@ -873,14 +873,14 @@ export class NVSlide extends EventTarget {
     const levels = this.manifest.levels
     for (
       let pos = levels.indexOf(level) + 1;
-      pos < levels.length && !this.fitsCache(tiles);
+      pos < levels.length && !this.fitsCache(level, tiles);
       pos++
     ) {
       level = levels[pos] as NVSlideLevelManifest
       tiles = this.tilesForLevel(level, screen)
     }
     // Warn once per change of outcome; this runs every frame.
-    const fits = this.fitsCache(tiles)
+    const fits = this.fitsCache(level, tiles)
     const budget =
       level === requested && fits ? '' : `${requested.index}>${level.index}`
     if (budget !== this._budgetWarned) {
@@ -902,11 +902,16 @@ export class NVSlide extends EventTarget {
     }
   }
 
-  private fitsCache(tiles: readonly NVSlideVisibleTile[]): boolean {
+  private fitsCache(
+    level: NVSlideLevelManifest,
+    tiles: readonly NVSlideVisibleTile[],
+  ): boolean {
     if (tiles.length >= MAX_VISIBLE_TILES) return false // truncated
-    let bytes = 0
-    for (const { tile } of tiles) bytes += tile.width * tile.height * 4
-    return bytes <= this._cache.maxBytes
+    // Full tiles, not the clipped edge extents: the cache charges the decoded
+    // bitmap, and a DICOM edge frame decodes padded to the full tile size.
+    const tileBytes =
+      this.levelTileWidth(level) * this.levelTileHeight(level) * 4
+    return tiles.length * tileBytes <= this._cache.maxBytes
   }
 
   /**

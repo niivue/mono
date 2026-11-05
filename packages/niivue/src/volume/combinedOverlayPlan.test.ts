@@ -57,6 +57,7 @@ for (const [name, Renderer] of [
     const swapped: unknown[][] = []
     const self = {
       _catchUpToPlan: method(Renderer, '_catchUpToPlan'),
+      _queueEntrySwap: method(Renderer, '_queueEntrySwap'),
       _texCache: { get: () => baseEntry },
       _activeChunked: baseEntry,
       _combinedOverlayEntries: [mirror],
@@ -138,6 +139,7 @@ for (const [name, Renderer] of [
     })
     const self = {
       _catchUpToPlan: method(Renderer, '_catchUpToPlan'),
+      _queueEntrySwap: method(Renderer, '_queueEntrySwap'),
       _texCache: { get: () => baseEntry },
       _activeChunked: baseEntry,
       _combinedOverlayEntries: [mirror],
@@ -147,17 +149,67 @@ for (const [name, Renderer] of [
         e: { plan: unknown },
         p: unknown,
       ) {
-        // The mirror's swap to A lands late, after B has finished.
+        // The mirror's swap to A is still in flight when B is asked for.
         if (e === mirror && p === A) await gate
         e.plan = p
       },
     }
     const swap = method(Renderer, 'swapChunkedVolumePlan')
     const first = swap.call(self, {}, base, A, false)
-    await swap.call(self, {}, base, B, false)
+    await Promise.resolve()
+    const second = swap.call(self, {}, base, B, false)
     release()
-    await first
+    await Promise.all([first, second])
     expect(baseEntry.plan as unknown).toBe(B)
     expect(mirror.plan as unknown).toBe(B)
+  })
+
+  test(`${name}: swaps on one entry run one at a time, skipping superseded ones`, async () => {
+    const [A, B, C] = ['A', 'B', 'C'].map((label) => ({ label, chunks: [{}] }))
+    const base = { chunkPlan: null } as unknown as NVImage
+    const baseEntry = { kind: 'chunked', plan: null }
+    const mirror = { kind: 'chunked', volume: {}, plan: null }
+    let release = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const running = new Set<unknown>()
+    const swapped: [unknown, unknown][] = []
+    const self = {
+      _catchUpToPlan: method(Renderer, '_catchUpToPlan'),
+      _queueEntrySwap: method(Renderer, '_queueEntrySwap'),
+      _texCache: { get: () => baseEntry },
+      _activeChunked: baseEntry,
+      _combinedOverlayEntries: [mirror],
+      async _swapChunkedEntryPlan(
+        _dev: unknown,
+        _vol: unknown,
+        e: { plan: unknown },
+        p: unknown,
+      ) {
+        // Each swap reads the entry, awaits, then rewrites it: two at once
+        // would re-key the same residency twice.
+        expect(running.has(e)).toBe(false)
+        running.add(e)
+        swapped.push([e, p])
+        if (e === baseEntry && p === A) await gate
+        await Promise.resolve()
+        e.plan = p
+        running.delete(e)
+      },
+    }
+    const swap = method(Renderer, 'swapChunkedVolumePlan')
+    const first = swap.call(self, {}, base, A, false)
+    await Promise.resolve()
+    const later = [B, C].map((p) => swap.call(self, {}, base, p, false))
+    release()
+    await Promise.all([first, ...later])
+    expect(baseEntry.plan as unknown).toBe(C)
+    expect(mirror.plan as unknown).toBe(C)
+    expect(swapped.filter(([e]) => e === baseEntry).map(([, p]) => p)).toEqual([
+      A,
+      C,
+    ])
+    expect(swapped.filter(([e, p]) => e === mirror && p === C).length).toBe(1)
   })
 }

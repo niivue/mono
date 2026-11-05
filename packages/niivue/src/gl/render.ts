@@ -275,6 +275,18 @@ interface ChunkedTexEntry {
   decoded: DecodedChunkCache
   /** Source bytes per voxel, which sets what the decoded tier costs to hold. */
   sourceBytesPerVoxel: number
+  /**
+   * The plan swapChunkedVolumePlan is moving this entry to, while the swap is
+   * queued or awaits its uploader. A refresh that lands in that window waits
+   * for it instead of evicting the entry as built for a different plan.
+   */
+  pendingSwap?: { plan: ChunkPlan; done: Promise<void> }
+  /**
+   * The last swap queued on this entry. Swaps run one at a time in call order
+   * (each reads the plan and residency, awaits, then rewrites them), and one
+   * that a later swap supersedes is skipped.
+   */
+  swapTail?: Promise<void>
 }
 
 /**
@@ -941,7 +953,16 @@ export class VolumeRenderer extends NVRenderer {
     const cacheKey = volumeCacheKey(vol)
     const displayKey = chunkedDisplayKey(vol, modulation)
     const sourceKey = volumeSourceKey(vol)
-    const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    let existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    if (
+      existing?.kind === 'chunked' &&
+      existing.plan !== plan &&
+      existing.pendingSwap?.plan === plan
+    ) {
+      // A swap to this very plan is in flight; let it land, then reuse it.
+      await existing.pendingSwap.done.catch(() => undefined)
+      existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    }
     // A cached entry built for a different plan object (the caller set a new
     // `vol.chunkPlan`, as setVolumeChunkGrid does) cannot be reused: its
     // uploader, manager and brick textures are laid out for the old grid.
@@ -1068,26 +1089,41 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
     vol.chunkPlan = newPlan
-    await this._swapChunkedEntryPlan(gl, vol, entry, newPlan, keepUntilCovered)
-    await this._catchUpToPlan(gl, vol, entry, vol, keepUntilCovered)
     // Combined mirrors are indexed by the base's chunks, so they move with it.
-    if (entry !== this._activeChunked) return
-    for (const mirror of this._combinedOverlayEntries) {
-      await this._swapChunkedEntryPlan(
-        gl,
-        mirror.volume,
-        mirror,
-        newPlan,
-        keepUntilCovered,
-      )
-      await this._catchUpToPlan(
-        gl,
-        mirror.volume,
-        mirror,
-        vol,
-        keepUntilCovered,
-      )
-    }
+    const entries = [
+      entry,
+      ...(entry === this._activeChunked ? this._combinedOverlayEntries : []),
+    ]
+    const swaps = entries.map(async (e) => {
+      const ev = e === entry ? vol : e.volume
+      const done = this._queueEntrySwap(gl, ev, e, newPlan, keepUntilCovered)
+      const pending = { plan: newPlan, done }
+      e.pendingSwap = pending
+      try {
+        await done
+      } finally {
+        if (e.pendingSwap === pending) e.pendingSwap = undefined
+      }
+    })
+    await Promise.all(swaps)
+  }
+
+  /** Queue a plan swap on `entry` behind any swap already queued on it. */
+  private _queueEntrySwap(
+    gl: WebGL2RenderingContext,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    newPlan: ChunkPlan,
+    keepUntilCovered: boolean,
+  ): Promise<void> {
+    const run: Promise<void> = (entry.swapTail ?? Promise.resolve()).then(() =>
+      entry.swapTail === tail
+        ? this._swapChunkedEntryPlan(gl, vol, entry, newPlan, keepUntilCovered)
+        : undefined,
+    )
+    const tail = run.catch(() => undefined)
+    entry.swapTail = tail
+    return run
   }
 
   /**

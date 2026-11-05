@@ -284,6 +284,12 @@ interface ChunkedTexEntry {
    * instead of evicting the entry as built for a different plan.
    */
   pendingSwap?: { plan: ChunkPlan; done: Promise<void> }
+  /**
+   * The last swap queued on this entry. Swaps run one at a time in call order
+   * (each reads the plan and residency, awaits, then rewrites them), and one
+   * that a later swap supersedes is skipped.
+   */
+  swapTail?: Promise<void>
 }
 
 /**
@@ -1256,13 +1262,13 @@ export class VolumeRenderer extends NVRenderer {
       ...(entry === this._activeChunked ? this._combinedOverlayEntries : []),
     ].map(async (e) => {
       const ev = e === entry ? vol : e.volume
-      const done = this._swapChunkedEntryPlan(
+      const done = this._queueEntrySwap(
         device,
         ev,
         e,
         newPlan,
         keepUntilCovered,
-      ).then(() => this._catchUpToPlan(device, ev, e, vol, keepUntilCovered))
+      )
       const pending = { plan: newPlan, done }
       e.pendingSwap = pending
       try {
@@ -1272,6 +1278,30 @@ export class VolumeRenderer extends NVRenderer {
       }
     })
     await Promise.all(swaps)
+  }
+
+  /** Queue a plan swap on `entry` behind any swap already queued on it. */
+  private _queueEntrySwap(
+    device: GPUDevice,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    newPlan: ChunkPlan,
+    keepUntilCovered: boolean,
+  ): Promise<void> {
+    const run: Promise<void> = (entry.swapTail ?? Promise.resolve()).then(() =>
+      entry.swapTail === tail
+        ? this._swapChunkedEntryPlan(
+            device,
+            vol,
+            entry,
+            newPlan,
+            keepUntilCovered,
+          )
+        : undefined,
+    )
+    const tail = run.catch(() => undefined)
+    entry.swapTail = tail
+    return run
   }
 
   /**

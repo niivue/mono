@@ -41,10 +41,7 @@ export function getControlPoints(shape: {
   switch (shape.type) {
     case 'rectangle':
     case 'measureRect': {
-      const minX = Math.min(shape.start.x, shape.end.x)
-      const maxX = Math.max(shape.start.x, shape.end.x)
-      const minY = Math.min(shape.start.y, shape.end.y)
-      const maxY = Math.max(shape.start.y, shape.end.y)
+      const { minX, maxX, minY, maxY } = _bounds(shape)
       const midX = (minX + maxX) / 2
       const midY = (minY + maxY) / 2
       return [
@@ -131,7 +128,7 @@ export function updateShapeBounds(
       return _updateRectangle(original, controlPointIndex, newPosition)
     case 'ellipse':
     case 'measureEllipse':
-      return _updateEllipse(original, controlPointIndex, newPosition)
+      return _updateEdge(original, controlPointIndex, newPosition)
     case 'circle':
     case 'measureCircle':
       return _updateCircle(original, controlPointIndex, newPosition)
@@ -144,15 +141,21 @@ export function updateShapeBounds(
   }
 }
 
+function _bounds(original: { start: AnnotationPoint; end: AnnotationPoint }) {
+  return {
+    minX: Math.min(original.start.x, original.end.x),
+    maxX: Math.max(original.start.x, original.end.x),
+    minY: Math.min(original.start.y, original.end.y),
+    maxY: Math.max(original.start.y, original.end.y),
+  }
+}
+
 function _updateRectangle(
   original: { start: AnnotationPoint; end: AnnotationPoint },
   idx: number,
   pos: AnnotationPoint,
 ): ShapeBoundsUpdate {
-  const minX = Math.min(original.start.x, original.end.x)
-  const maxX = Math.max(original.start.x, original.end.x)
-  const minY = Math.min(original.start.y, original.end.y)
-  const maxY = Math.max(original.start.y, original.end.y)
+  const { minX, maxX, minY, maxY } = _bounds(original)
   switch (idx) {
     case 0:
       return { start: { x: maxX, y: maxY }, end: pos }
@@ -162,28 +165,18 @@ function _updateRectangle(
       return { start: { x: minX, y: minY }, end: pos }
     case 3:
       return { start: { x: maxX, y: minY }, end: pos }
-    case 4:
-      return { start: { x: minX, y: pos.y }, end: { x: maxX, y: maxY } }
-    case 5:
-      return { start: { x: minX, y: minY }, end: { x: pos.x, y: maxY } }
-    case 6:
-      return { start: { x: minX, y: minY }, end: { x: maxX, y: pos.y } }
-    case 7:
-      return { start: { x: pos.x, y: minY }, end: { x: maxX, y: maxY } }
     default:
-      return { start: { ...original.start }, end: { ...original.end } }
+      return _updateEdge(original, idx - 4, pos)
   }
 }
 
-function _updateEllipse(
+/** Move one edge (0 minY, 1 maxX, 2 maxY, 3 minX): rectangle sides and ellipse cardinals. */
+function _updateEdge(
   original: { start: AnnotationPoint; end: AnnotationPoint },
   idx: number,
   pos: AnnotationPoint,
 ): ShapeBoundsUpdate {
-  const minX = Math.min(original.start.x, original.end.x)
-  const maxX = Math.max(original.start.x, original.end.x)
-  const minY = Math.min(original.start.y, original.end.y)
-  const maxY = Math.max(original.start.y, original.end.y)
+  const { minX, maxX, minY, maxY } = _bounds(original)
   switch (idx) {
     case 0:
       return { start: { x: minX, y: pos.y }, end: { x: maxX, y: maxY } }

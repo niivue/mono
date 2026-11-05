@@ -128,6 +128,39 @@ export function phaseCorrection(
   }
 }
 
+/**
+ * FID (`re`/`im`, nFFT long, transformed in place) to a phase-corrected
+ * spectrum in `sre`/`sim`, in fftshift (ascending Hz) order so phase correction
+ * sees bins matching `hzShift`. FSL-MRS order: apodize, then halve first point.
+ */
+function fidToSpectrum(
+  re: Float64Array,
+  im: Float64Array,
+  sre: Float64Array,
+  sim: Float64Array,
+  dwell: number,
+  hzShift: Float64Array,
+  opts: Omit<PpmBandOptions, 'mode'>,
+): void {
+  apodize(re, im, dwell, opts.apodizeHz ?? 0)
+  if (opts.halveFirstPoint) halveFirstPoint(re, im)
+  fft(re, im)
+  const nFFT = re.length
+  const shift = Math.ceil(nFFT / 2)
+  for (let i = 0; i < nFFT; i++) {
+    const src = (i + shift) % nFFT
+    sre[i] = re[src]
+    sim[i] = im[src]
+  }
+  phaseCorrection(
+    sre,
+    sim,
+    hzShift,
+    opts.phase0 ?? 0,
+    (opts.phase1Ms ?? 0) / 1000,
+  )
+}
+
 // ---------------------------------------------------------------------------
 // FFT (forward, numpy `fft` sign convention: exp(-2*pi*i*k*n/N))
 // ---------------------------------------------------------------------------
@@ -294,7 +327,6 @@ export function deriveSpectroscopySeries(
   // `hzShift` keeps the Hz bins regardless of the display axis; phase
   // correction is defined in Hz so it needs them even when ppm is shown.
   const half = Math.floor(nFFT / 2)
-  const shift = Math.ceil(nFFT / 2)
   const xShift = new Float32Array(nFFT)
   const hzShift = new Float64Array(nFFT)
   for (let i = 0; i < nFFT; i++) {
@@ -305,23 +337,10 @@ export function deriveSpectroscopySeries(
   const reverse = !useHz // ppm descends with Hz; reverse to keep x ascending
   const x = reverse ? reversedF32(xShift) : xShift
 
-  const p1sec = (display.phase1Ms ?? 0) / 1000
-  const p0deg = display.phase0 ?? 0
-  const apodizeHz = display.apodizeHz ?? 0
   const series: SignalSeries[] = inputs.map(({ re, im, label }) => {
-    // Time-domain processing (FSL-MRS order: apodize, then halve first point).
-    apodize(re, im, dwell, apodizeHz)
-    if (display.halveFirstPoint) halveFirstPoint(re, im)
-    fft(re, im)
-    // fftshift into ascending-Hz order so phase correction sees matching bins.
     const sre = new Float64Array(nFFT)
     const sim = new Float64Array(nFFT)
-    for (let i = 0; i < nFFT; i++) {
-      const src = (i + shift) % nFFT
-      sre[i] = re[src]
-      sim[i] = im[src]
-    }
-    phaseCorrection(sre, sim, hzShift, p0deg, p1sec)
+    fidToSpectrum(re, im, sre, sim, dwell, hzShift, display)
     const y = new Float32Array(nFFT)
     for (let i = 0; i < nFFT; i++) {
       y[i] = projectComponent(sre[i], sim[i], display.mode)
@@ -393,7 +412,6 @@ export function integratePpmBandMap(
   }
   const nFFT = nextPow2(nPoints)
   const half = Math.floor(nFFT / 2)
-  const shift = Math.ceil(nFFT / 2)
   const ref = PPM_SHIFT[nucleus] ?? 0
   const lo = Math.min(band[0], band[1])
   const hi = Math.max(band[0], band[1])
@@ -406,10 +424,6 @@ export function integratePpmBandMap(
     if (ppm >= lo && ppm <= hi) bandIdx.push(i)
   }
   if (bandIdx.length === 0) return out
-  const p1sec = (opts.phase1Ms ?? 0) / 1000
-  const p0deg = opts.phase0 ?? 0
-  const apoHz = opts.apodizeHz ?? 0
-  const halveFP = opts.halveFirstPoint ?? false
   const re = new Float64Array(nFFT)
   const im = new Float64Array(nFFT)
   const sre = new Float64Array(nFFT)
@@ -432,15 +446,7 @@ export function integratePpmBandMap(
         im[p] /= nTransients
       }
     }
-    apodize(re, im, dwell, apoHz)
-    if (halveFP) halveFirstPoint(re, im)
-    fft(re, im)
-    for (let i = 0; i < nFFT; i++) {
-      const src = (i + shift) % nFFT
-      sre[i] = re[src]
-      sim[i] = im[src]
-    }
-    phaseCorrection(sre, sim, hzShift, p0deg, p1sec)
+    fidToSpectrum(re, im, sre, sim, dwell, hzShift, opts)
     let s = 0
     for (const i of bandIdx) s += useMag ? Math.hypot(sre[i], sim[i]) : sre[i]
     out[v] = s

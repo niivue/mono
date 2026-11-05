@@ -178,6 +178,8 @@ function restoreSharedCanvas(
     moveCanvasRegistration(current, oldCanvas)
   }
   for (const sib of siblings) {
+    // A sibling destroyed during the switch has left the registry.
+    if (!getCanvasInstances(oldCanvas)?.has(sib)) continue
     if (sib.opts.isInteractionEnabled === false) continue
     initInteraction(sib)
     setupDragAndDrop(sib)
@@ -212,7 +214,11 @@ export async function recreateView(
   for (const sib of siblings) removeInteractionListeners(sib)
   const oldCanvas = ctrl.canvas as HTMLCanvasElement
   if (!isSharedCanvas(ctrl) || backendChanged) {
-    replaceCanvasElement(ctrl, backendChanged || antiAliasChanged)
+    // WebGPU sets MSAA per view; only a WebGL2 context locks antialias.
+    replaceCanvasElement(
+      ctrl,
+      backendChanged || (antiAliasChanged && ctrl.opts.backend === 'webgl2'),
+    )
   }
   // 6. Create new view with current settings
   let view: NVViewGL | NVViewGPU
@@ -244,7 +250,13 @@ export async function recreateView(
   // must not strand the siblings after it; a failed sibling keeps the new
   // backend and can be retried on its own.
   for (const sib of siblings) {
+    // Skip a sibling destroyed while the new view initialized.
+    if (!getCanvasInstances(ctrl.canvas)?.has(sib)) continue
     sib.opts.backend = ctrl.opts.backend
+    // A WebGL2 context, and so its antialias, is shared by every view on it.
+    if (ctrl.opts.backend === 'webgl2') {
+      sib.opts.isAntiAlias = ctrl.opts.isAntiAlias
+    }
     if (!sib.view) continue
     try {
       await recreateView(sib)
@@ -334,8 +346,13 @@ export async function reinitializeView(
     return true
   }
 
-  // Antialias is fixed when a context is created, and siblings share this one.
-  if (antiAliasChanged && !backendChanged && isSharedCanvas(ctrl)) {
+  // A WebGL2 context fixes antialias at creation, and siblings share this one.
+  if (
+    antiAliasChanged &&
+    !backendChanged &&
+    newBackend === 'webgl2' &&
+    isSharedCanvas(ctrl)
+  ) {
     log.warn('Cannot change antialiasing on a canvas shared by other views.')
     return false
   }

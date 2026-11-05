@@ -28,8 +28,9 @@ globalThis.ResizeObserver ??= class {
 const { attachToCanvas, recreateView, reinitializeView } = await import(
   './viewBoth'
 )
-const { initInteraction, setupDragAndDrop } = await import('./interactions')
-const { getCanvasInstances, registerCanvasInstance } = await import(
+const { initInteraction, removeInteractionListeners, setupDragAndDrop } =
+  await import('./interactions')
+const { getCanvasInstances, registerCanvasInstance, unregister } = await import(
   './canvasRegistry'
 )
 
@@ -550,6 +551,101 @@ test('an antialias change clones a detached canvas and publishes the clone', asy
     expect(await reinitializeView(ctrl, { isAntiAlias: false })).toBe(false)
     expect(ctrl.opts.isAntiAlias).toBe(true)
     expect(ctrl.canvas).toBe(shared)
+
+    // WebGPU sets MSAA per view, so a shared WebGPU canvas allows it.
+    spyOn(NVViewGPU.prototype, 'init').mockImplementation(async () => {})
+    spyOn(NVViewGPU.prototype, 'resize').mockImplementation(() => {})
+    ctrl.opts.backend = 'webgpu'
+    expect(await reinitializeView(ctrl, { isAntiAlias: false })).toBe(true)
+    expect(ctrl.opts.isAntiAlias).toBe(false)
+    expect(ctrl.canvas).toBe(shared)
+    expect(ctrl.view).toBeInstanceOf(NVViewGPU)
+  } finally {
+    if (!hadWindow) delete g.window
+  }
+})
+
+test('a sibling destroyed during a backend switch is left alone', async () => {
+  const listeners = new Set<unknown>()
+  const parent = { replaceChild() {} }
+  const canvas = (): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode: parent,
+      style: {},
+      cloneNode: canvas,
+      addEventListener(_t: string, f: unknown) {
+        listeners.add(f)
+      },
+      removeEventListener(_t: string, f: unknown) {
+        listeners.delete(f)
+      },
+    }) as HTMLCanvasElement
+  const fakeCtrl = (c: HTMLCanvasElement, events: string[]) =>
+    ({
+      canvas: c,
+      view: { destroy() {} },
+      opts: { backend: 'webgpu', isAntiAlias: false },
+      model: { clearAllGPUResources() {}, ui: {} },
+      _eventListeners: {},
+      _wireViewHooks() {},
+      async _rebuildViewResources() {},
+      restoreSlidePlaneView() {},
+      drawScene() {},
+      emit(name: string) {
+        events.push(name)
+      },
+    }) as unknown as NiiVue
+  const g = globalThis as { window?: unknown }
+  const hadWindow = 'window' in g
+  g.window ??= { addEventListener() {}, removeEventListener() {} }
+  try {
+    for (const fails of [false, true]) {
+      let settle: ((error?: Error) => void) | undefined
+      // Only the switching view's init waits; sibling rebuilds resolve.
+      spyOn(NVViewGL.prototype, 'init').mockImplementation(() =>
+        settle
+          ? Promise.resolve()
+          : new Promise<void>((resolve, reject) => {
+              settle = (error) => (error ? reject(error) : resolve())
+            }),
+      )
+      listeners.clear()
+      const old = canvas()
+      const events: string[] = []
+      const ctrl = fakeCtrl(old, [])
+      const gone = fakeCtrl(old, events)
+      const live = fakeCtrl(old, [])
+      // A sibling whose own rebuild failed earlier: no view, still registered.
+      const idle = fakeCtrl(old, [])
+      idle.view = null
+      for (const c of [ctrl, gone, live, idle]) registerCanvasInstance(c, old)
+      const goneView = gone.view
+      ctrl.opts.backend = 'webgl2'
+      ctrl.opts.isAntiAlias = true
+      const switching = recreateView(ctrl, true)
+      await Promise.resolve()
+      unregister(gone)
+      if (fails) {
+        settle?.(new Error('WebGL2 context unavailable'))
+        await expect(switching).rejects.toThrow('WebGL2')
+        // Only the registered siblings' handlers go back on the old canvas.
+        expect(listeners.size).toBeGreaterThan(0)
+        removeInteractionListeners(live)
+        removeInteractionListeners(idle)
+        expect(listeners.size).toBe(0)
+      } else {
+        settle?.()
+        await switching
+        expect(live.view).toBeInstanceOf(NVViewGL)
+        // One WebGL2 context, so siblings take its antialias setting.
+        expect(live.opts.isAntiAlias).toBe(true)
+        // It still takes the new backend, so a retry is not a switch.
+        expect(idle.opts.backend as string).toBe('webgl2')
+      }
+      expect(gone.view).toBe(goneView)
+      expect(events).toEqual([])
+      for (const c of [ctrl, live, idle]) unregister(c)
+    }
   } finally {
     if (!hadWindow) delete g.window
   }

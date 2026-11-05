@@ -141,3 +141,31 @@ test('a failing thumbnail reload still finishes the rebuild', async () => {
   expect(rebuilt).toBe(true)
   expect(events).toEqual(['viewDestroyed', 'viewAttached'])
 })
+
+test('WebGPU changes antialias per view, even on a shared canvas', async () => {
+  const gpu = singleBackendLifecycle(
+    'webgpu',
+    FakeView as unknown as typeof NVViewGL,
+  )
+  const ctrlFor = (canvas: HTMLCanvasElement) => {
+    const ctrl = fakeCtrl(canvas)
+    ctrl.opts.isAntiAlias = false
+    Object.defineProperty(ctrl, 'isAntiAlias', {
+      get: () => ctrl.opts.isAntiAlias,
+    })
+    return ctrl
+  }
+  const options = { backend: 'webgpu', isAntiAlias: true } as const
+  const shared = fakeCanvas()
+  const [a, b] = [ctrlFor(shared), ctrlFor(shared)]
+  registerCanvasInstance(a, shared)
+  registerCanvasInstance(b, shared)
+  expect(await gpu.reinitializeView(a, options)).toBe(true)
+  expect(a.opts.isAntiAlias).toBe(true)
+  expect(a.canvas).toBe(shared)
+
+  const detached = fakeCanvas(false)
+  const solo = ctrlFor(detached)
+  expect(await gpu.reinitializeView(solo, options)).toBe(true)
+  expect(solo.canvas).toBe(detached)
+})

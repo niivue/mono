@@ -150,10 +150,12 @@ pre-init `enforceBackendAvailability` check isn't enough). The failed attempt ma
 the canvas's context type, so the fallback swaps in a fresh canvas via
 `replaceCanvasElement` (now `oldCanvas.cloneNode(false)`, preserving width/height/
 data-*/aria/tabindex; external listeners on the original canvas are NOT preserved).
-A detached canvas (no `parentNode`) is kept, since nothing could swap a clone in.
+A detached canvas (no `parentNode`) is kept unless the failed WebGPU attempt
+locked its context; then it is cloned and the clone is published via `viewAttached`.
+A backend switch, or an antialias change under WebGL2, clones a detached canvas too.
 The fallback is declined for a SHARED canvas (`getCanvasInstances` size > 1) — replacing
 it would desync sibling controllers — surfacing the overlay instead. Only `init()` is
-fallback-eligible; post-init failures (thumbnail, etc.) rethrow. On all-backends-fail,
+fallback-eligible; post-init failures rethrow (a failed thumbnail only logs). On all-backends-fail,
 `attachToCanvas` `unregister`s the controller and restores the originally requested
 backend (so a later retry starts fresh), then `control/canvasMessage.ts`
 (`showCanvasMessage` / `GRAPHICS_UNAVAILABLE_MESSAGE`) overlays a centered DOM message

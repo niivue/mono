@@ -136,8 +136,8 @@ export function singleBackendLifecycle(
     }
     // Same backend, so a canvas shared through bounds keeps its context (as in
     // viewBoth); an unshared one is cloned, since antialias is fixed at context
-    // creation. A detached canvas stays put unless antialias changes: the caller
-    // holds it, so the clone reaches them only through viewAttached.
+    // creation. A detached canvas stays put unless WebGL2 antialias changes: the
+    // caller holds it, so the clone reaches them only through viewAttached.
     const canvas = ctrl.canvas as HTMLCanvasElement
     if (!isSharedCanvas(ctrl) && (canvas.parentNode || cloneDetached)) {
       replaceCanvas(ctrl)
@@ -195,8 +195,9 @@ export function singleBackendLifecycle(
     if (!forceRestart && !antiAliasChanged && !pixelRatioChanged) {
       return true
     }
-    // Antialias is fixed when a context is created, and siblings share this one.
-    if (antiAliasChanged && isSharedCanvas(ctrl)) {
+    // A WebGL2 context fixes antialias at creation, and siblings share this one.
+    // WebGPU sets MSAA per view, so it needs no new context.
+    if (antiAliasChanged && backend === 'webgl2' && isSharedCanvas(ctrl)) {
       log.warn('Cannot change antialiasing on a canvas shared by other views.')
       return false
     }
@@ -207,7 +208,7 @@ export function singleBackendLifecycle(
 
     try {
       if (forceRestart || antiAliasChanged) {
-        await recreateView(ctrl, antiAliasChanged)
+        await recreateView(ctrl, antiAliasChanged && backend === 'webgl2')
       }
       // The setter also updates controllers sharing this canvas.
       if (pixelRatioChanged) ctrl.devicePixelRatio = newPixelRatio

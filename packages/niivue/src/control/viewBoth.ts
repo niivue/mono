@@ -146,13 +146,18 @@ export async function attachToCanvas(
   return ctrl
 }
 
-/** Replace the canvas DOM element and update all registered siblings' references */
-function replaceCanvasElement(ctrl: NiiVue): void {
+/**
+ * Replace the canvas DOM element and update all registered siblings'
+ * references. `cloneDetached` is for a backend switch: the old context type is
+ * locked to the canvas, so even a detached one must be swapped (the clone is
+ * published as `ctrl.canvas` and through `viewAttached`).
+ */
+function replaceCanvasElement(ctrl: NiiVue, cloneDetached = false): void {
   const canvas = ctrl.canvas as HTMLCanvasElement
   // If canvas was freshly created by a sibling for the same backend, skip (no context conflict)
   if (freshCanvasBackend.get(canvas) === ctrl.opts.backend) return
   // A detached canvas stays put: the caller holds it and nothing can swap it in.
-  if (!canvas.parentNode) return
+  if (!canvas.parentNode && !cloneDetached) return
   freshCanvasBackend.set(replaceCanvas(ctrl), ctrl.opts.backend ?? 'webgl2')
 }
 
@@ -180,7 +185,7 @@ export async function recreateView(
     ? [...(getCanvasInstances(ctrl.canvas) ?? [])].filter((c) => c !== ctrl)
     : []
   if (!isSharedCanvas(ctrl) || backendChanged) {
-    replaceCanvasElement(ctrl)
+    replaceCanvasElement(ctrl, backendChanged)
   }
   // 6. Create new view with current settings
   const view =

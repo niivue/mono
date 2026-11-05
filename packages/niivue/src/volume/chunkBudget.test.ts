@@ -386,6 +386,20 @@ describe('chunkIndicesForAllBudgets (#188)', () => {
     )
   })
 
+  test('a tile keeps its central chunk over a smaller edge one that fits', () => {
+    // Costs 4000, 8000, 4000 against an 8000 budget with chunk 0 charged:
+    // the central chunk 1 does not fit, but edge chunk 2 would.
+    const sized = testPlan([
+      testChunk([10, 10, 10]),
+      testChunk([10, 10, 20]),
+      testChunk([10, 10, 10]),
+    ])
+    const base = residency(3, 2 * unlitChunk)
+    expect(
+      chunkIndicesForAllBudgets(sized, [1, 2], [base], false, [0]),
+    ).toEqual([1])
+  })
+
   test('each manager prices its own lit-resident chunks', () => {
     const base = residency(8, 8 * unlitChunk)
     const mirror = residency(8, 4 * unlitChunk)

@@ -208,8 +208,11 @@ export function chunkIndicesForAllBudgets(
   // it keeps that chunk. The bound is budget + one chunk per such tile: an
   // N-tile mosaic can sit N chunks over a mirror's budget, which beats N holed
   // tiles (docs/tiled-volumes-handoff.md, "Over-budget is allowed").
+  // The central chunk wins over smaller edge chunks that happened to fit.
   const first = orderedChunkIndices.find((ci) => plan.chunks[ci])
-  if (added.length > 0 || first === undefined || prior.has(first)) return added
+  if (first === undefined || prior.has(first) || added.includes(first)) {
+    return added
+  }
   return [first]
 }
 

@@ -908,14 +908,18 @@ export class VolumeRenderer extends NVRenderer {
     vol: NVImage,
     budgetBytes: number,
     modulation: ModulationTextureParams | null,
+    basePlan?: ChunkPlan,
   ): Promise<ChunkedTexEntry> {
     const srcDims: Vec3i = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
     const rasDims: Vec3i = vol.dimsRAS
       ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
       : srcDims
     const limit = this.max3D
-    const plan = vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
-    vol.chunkPlan = plan
+    // A combined mirror streams on its base's grid (basePlan) without taking
+    // it as its own: the overlay may later become the base or stream alone.
+    const plan =
+      basePlan ?? vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
+    if (!basePlan) vol.chunkPlan = plan
     const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
     const budget = estimateChunkedBytes(plan, bpv)
     log.warn(
@@ -1063,6 +1067,28 @@ export class VolumeRenderer extends NVRenderer {
           `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
       )
     }
+    vol.chunkPlan = newPlan
+    await this._swapChunkedEntryPlan(gl, vol, entry, newPlan, keepUntilCovered)
+    // Combined mirrors are indexed by the base's chunks, so they move with it.
+    if (entry !== this._activeChunked) return
+    for (const mirror of this._combinedOverlayEntries) {
+      await this._swapChunkedEntryPlan(
+        gl,
+        mirror.volume,
+        mirror,
+        newPlan,
+        keepUntilCovered,
+      )
+    }
+  }
+
+  private async _swapChunkedEntryPlan(
+    gl: WebGL2RenderingContext,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    newPlan: ChunkPlan,
+    keepUntilCovered: boolean,
+  ): Promise<void> {
     const displayKey = chunkedDisplayKey(vol, entry.modulation)
     const oldToNew = matchChunksByContent(entry.plan, newPlan)
     // Resident bricks bake the display state of the uploader that made them.
@@ -1106,7 +1132,6 @@ export class VolumeRenderer extends NVRenderer {
     entry.volume = vol
     entry.displayKey = displayKey
     entry.sourceKey = volumeSourceKey(vol)
-    vol.chunkPlan = newPlan
     if (entry.manager.residentCount === 0) {
       const chunk0 = await entry.uploader.uploadChunk(0)
       if (!chunk0.hasGradient) this._uploadedUnlit = true
@@ -2227,10 +2252,9 @@ export class VolumeRenderer extends NVRenderer {
     // the base's view is capped by the smallest mirror: split evenly.
     const overlayBudget = this._chunkResidencyBytes / (vols.length + 1)
     // Mirrors are asked for the base's chunk indices and priced by its plan,
-    // so each must use the base's grid, not one set on the overlay itself.
+    // so each streams on the base's grid, not one set on the overlay itself.
     const basePlan = volumes[0]?.chunkPlan
     for (const vol of vols) {
-      if (basePlan) vol.chunkPlan = basePlan
       // Co-registered at the base grid, so resolving against the overlay's
       // own grid is the base-grid matrix the whole-volume path would use.
       const entry = await this._ensureChunkedVolumeEntry(
@@ -2238,6 +2262,7 @@ export class VolumeRenderer extends NVRenderer {
         vol,
         overlayBudget,
         buildModulationParams(vol, vol, volumes),
+        basePlan,
       )
       setChunkBudget(entry, overlayBudget)
       this._combinedOverlayEntries.push(entry)

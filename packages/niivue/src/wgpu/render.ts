@@ -1083,14 +1083,18 @@ export class VolumeRenderer extends NVRenderer {
     budgetBytes: number,
     modulation: ModulationTextureParams | null,
     onResidencyChange?: (chunkIndex: number) => void,
+    basePlan?: ChunkPlan,
   ): Promise<ChunkedTexEntry> {
     const srcDims: Vec3i = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
     const rasDims: Vec3i = vol.dimsRAS
       ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
       : srcDims
     const limit = this.maxTextureDimension3D
-    const plan = vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
-    vol.chunkPlan = plan
+    // A combined mirror streams on its base's grid (basePlan) without taking
+    // it as its own: the overlay may later become the base or stream alone.
+    const plan =
+      basePlan ?? vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
+    if (!basePlan) vol.chunkPlan = plan
     const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
     const budget = estimateChunkedBytes(plan, bpv)
     log.warn(
@@ -1245,20 +1249,28 @@ export class VolumeRenderer extends NVRenderer {
           `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
       )
     }
-    const done = this._swapChunkedEntryPlan(
-      device,
-      vol,
+    vol.chunkPlan = newPlan
+    // Combined mirrors are indexed by the base's chunks, so they move with it.
+    const swaps = [
       entry,
-      newPlan,
-      keepUntilCovered,
-    )
-    const pending = { plan: newPlan, done }
-    entry.pendingSwap = pending
-    try {
-      await done
-    } finally {
-      if (entry.pendingSwap === pending) entry.pendingSwap = undefined
-    }
+      ...(entry === this._activeChunked ? this._combinedOverlayEntries : []),
+    ].map(async (e) => {
+      const done = this._swapChunkedEntryPlan(
+        device,
+        e === entry ? vol : e.volume,
+        e,
+        newPlan,
+        keepUntilCovered,
+      )
+      const pending = { plan: newPlan, done }
+      e.pendingSwap = pending
+      try {
+        await done
+      } finally {
+        if (e.pendingSwap === pending) e.pendingSwap = undefined
+      }
+    })
+    await Promise.all(swaps)
   }
 
   private async _swapChunkedEntryPlan(
@@ -1316,7 +1328,6 @@ export class VolumeRenderer extends NVRenderer {
     entry.volume = vol
     entry.displayKey = displayKey
     entry.sourceKey = volumeSourceKey(vol)
-    vol.chunkPlan = newPlan
     // Keep at least one chunk resident for the first post-swap frame; the pump
     // streams the rest from the next working set.
     if (entry.manager.residentCount === 0) {
@@ -2353,10 +2364,9 @@ export class VolumeRenderer extends NVRenderer {
     // the base's view is capped by the smallest mirror: split evenly.
     const overlayBudget = this._chunkResidencyBytes / (vols.length + 1)
     // Mirrors are asked for the base's chunk indices and priced by its plan,
-    // so each must use the base's grid, not one set on the overlay itself.
+    // so each streams on the base's grid, not one set on the overlay itself.
     const basePlan = volumes[0]?.chunkPlan
     for (const vol of vols) {
-      if (basePlan) vol.chunkPlan = basePlan
       // Co-registered at the base grid, so resolving against the overlay's
       // own grid is the base-grid matrix the whole-volume path would use.
       const entry = await this._ensureChunkedVolumeEntry(
@@ -2368,6 +2378,7 @@ export class VolumeRenderer extends NVRenderer {
           const base = this._activeChunked
           if (base) base.bindGroups[ci] = null
         },
+        basePlan,
       )
       setChunkBudget(entry, overlayBudget)
       this._combinedOverlayEntries.push(entry)

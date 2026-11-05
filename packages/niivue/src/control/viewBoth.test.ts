@@ -120,3 +120,71 @@ test('a detached canvas is cloned on a backend switch, kept on a same-backend re
   expect(ctrl.canvas).not.toBe(userCanvas)
   expect(glCanvases.at(-1)).toBe(ctrl.canvas)
 })
+
+test('a canvas made by a backend switch is still cloned on a later same-backend recreate', async () => {
+  const clones: HTMLCanvasElement[] = []
+  const fakeCanvas = (): HTMLCanvasElement =>
+    Object.assign(Object.create(HTMLCanvasElement.prototype), {
+      parentNode: { replaceChild() {} },
+      style: {},
+      cloneNode: () => {
+        const c = fakeCanvas()
+        clones.push(c)
+        return c
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    }) as HTMLCanvasElement
+  const ctrl = {
+    canvas: fakeCanvas(),
+    view: { destroy() {} },
+    opts: { backend: 'webgl2', isInteractionEnabled: false },
+    model: { clearAllGPUResources() {}, ui: {} },
+    _eventListeners: {},
+    _wireViewHooks() {},
+    async _rebuildViewResources() {},
+    restoreSlidePlaneView() {},
+    drawScene() {},
+    emit() {},
+  } as unknown as NiiVue
+  registerCanvasInstance(ctrl, ctrl.canvas as HTMLCanvasElement)
+  await recreateView(ctrl, true)
+  // An antialias change needs a fresh context on the same backend too.
+  await recreateView(ctrl)
+  expect(clones.length).toBe(2)
+  expect(ctrl.canvas).toBe(clones[1])
+})
+
+test('a fallback clones a detached canvas once webgpu has locked it', async () => {
+  spyOn(NVViewGPU.prototype, 'init').mockImplementation(async function (
+    this: InstanceType<typeof NVViewGPU>,
+  ) {
+    ;(this as { context: unknown }).context = {}
+    throw new Error('device lost during init')
+  })
+  const clone = Object.assign(Object.create(HTMLCanvasElement.prototype), {
+    parentNode: null,
+    style: {},
+    addEventListener() {},
+    removeEventListener() {},
+  }) as HTMLCanvasElement
+  const userCanvas = Object.assign(Object.create(HTMLCanvasElement.prototype), {
+    parentNode: null,
+    style: {},
+    cloneNode: () => clone,
+    addEventListener() {},
+    removeEventListener() {},
+  }) as HTMLCanvasElement
+  const ctrl = {
+    canvas: null,
+    view: null,
+    opts: { backend: 'webgpu', isInteractionEnabled: false },
+    model: { ui: {} },
+    _wireViewHooks() {},
+    emit() {},
+  } as unknown as NiiVue
+  await attachToCanvas(ctrl, userCanvas)
+  expect(ctrl.opts.backend).toBe('webgl2')
+  expect(glCanvases.at(-1)).toBe(clone)
+  expect(ctrl.canvas as unknown).toBe(clone)
+})

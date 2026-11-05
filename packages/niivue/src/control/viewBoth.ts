@@ -25,10 +25,6 @@ import {
 // Part of the ViewLifecycle this module is (NVControl imports it whole).
 export { unregister }
 
-/** Tracks which backend a freshly-created canvas was made for, to prevent double-replacement
- *  within a batch while still allowing replacement on a future different-backend switch */
-const freshCanvasBackend = new WeakMap<HTMLCanvasElement, BackendType>()
-
 export async function attachTo(
   ctrl: NiiVue,
   id: string,
@@ -67,6 +63,8 @@ export async function attachToCanvas(
   const order: ('webgpu' | 'webgl2')[] =
     ctrl.opts.backend === 'webgl2' ? ['webgl2'] : ['webgpu', 'webgl2']
   let lastError: unknown
+  // Whether the failed attempt locked the canvas to its context type.
+  let contextLocked = false
   // ctrl.view is the readiness signal every GPU-touching path tests
   // (`if (!this.view) return`), so it is published only once init() resolves.
   // Exposing it earlier lets a concurrent load reach half-built buffers (#61).
@@ -84,7 +82,7 @@ export async function attachToCanvas(
         log.warn('Cannot fall back to webgl2 on a shared canvas; aborting')
         break
       }
-      replaceCanvasElement(ctrl)
+      replaceCanvasElement(ctrl, contextLocked)
       canvas = ctrl.canvas as HTMLCanvasElement
       registerCanvasInstance(ctrl, canvas)
       log.warn(
@@ -102,6 +100,9 @@ export async function attachToCanvas(
     } catch (error) {
       lastError = error
       log.error(`Failed to initialize ${backend} view:`, error)
+      // A WebGPU view that got its context before failing leaves the canvas
+      // unable to give WebGL2 one; destroy() clears the field, so read it first.
+      contextLocked = candidate instanceof NVViewGPU && !!candidate.context
       try {
         candidate.destroy()
       } catch {
@@ -154,11 +155,9 @@ export async function attachToCanvas(
  */
 function replaceCanvasElement(ctrl: NiiVue, cloneDetached = false): void {
   const canvas = ctrl.canvas as HTMLCanvasElement
-  // If canvas was freshly created by a sibling for the same backend, skip (no context conflict)
-  if (freshCanvasBackend.get(canvas) === ctrl.opts.backend) return
   // A detached canvas stays put: the caller holds it and nothing can swap it in.
   if (!canvas.parentNode && !cloneDetached) return
-  freshCanvasBackend.set(replaceCanvas(ctrl), ctrl.opts.backend ?? 'webgl2')
+  replaceCanvas(ctrl)
 }
 
 export async function recreateView(

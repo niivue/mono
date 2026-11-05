@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { decode, Encoder, encode } from 'cbor-x'
 import {
+  assertCborFitsInput,
   assertDocumentFitsInput,
   copyDocumentBytes,
   isEmbeddedImageComplete,
@@ -110,6 +111,55 @@ describe('assertDocumentFitsInput', () => {
   })
 })
 
+describe('assertCborFitsInput', () => {
+  test('accepts an honest document, including plain arrays and maps', () => {
+    const doc = {
+      ...honestDoc(),
+      colormaps: { c: { R: [0, 255], G: [0, 128], B: [0, 64], A: [0, 1] } },
+      annotations: [{ polygons: [{ outer: [{ x: 1, y: 2 }], holes: [] }] }],
+    }
+    expect(() => assertCborFitsInput(encode(doc))).not.toThrow()
+    // Shared references (tags 28/29) without cbor-x records, which serialize never emits.
+    const shared = new Encoder({ structuredClone: true, useRecords: false })
+    expect(() => assertCborFitsInput(shared.encode(doc))).not.toThrow()
+  })
+
+  test('refuses nested array headers that claim more items than the file', () => {
+    // 20 nested headers each claiming 100M items: cbor-x would allocate each
+    // array before finding the data missing.
+    const bytes = new Uint8Array(100)
+    for (let i = 0; i < 20; i++) bytes.set([0x9a, 0x06, 0, 0, 0], i * 5)
+    expect(() => assertCborFitsInput(bytes)).toThrow(/declare more items/)
+  })
+
+  test('refuses many map headers that together claim more than the file', () => {
+    // Each map (128 entries, 256 items) alone fits the file; their sum does not.
+    const bytes = new Uint8Array(300)
+    for (let i = 0; i < 300; i += 2) bytes.set([0xb8, 0x80], i)
+    expect(() => assertCborFitsInput(bytes)).toThrow(/declare more items/)
+  })
+
+  test('refuses cbor-x tags that hide array heads from the scan', () => {
+    // 0xdfff makes cbor-x read the next 8 bytes as CBOR, which the scan skips
+    // as an argument: here three hidden 100M-item array heads.
+    const head = [0xd9, 0xdf, 0xff, 0x1b, 0x9a, 0x06, 0, 0, 0]
+    const bytes = new Uint8Array([
+      ...head,
+      ...head,
+      ...head,
+      ...new Array(16).fill(0),
+    ])
+    expect(() => assertCborFitsInput(bytes)).toThrow(/unsupported CBOR tag/)
+  })
+
+  test('refuses packed-value prefixes, which copy arrays inside decode', () => {
+    const bytes = new Uint8Array([
+      0xd8, 0x33, 0x84, 0x81, 0, 0x82, 0, 0x80, 0x80, 0x80,
+    ])
+    expect(() => assertCborFitsInput(bytes)).toThrow(/unsupported CBOR tag/)
+  })
+})
+
 describe('isEmbeddedImageComplete', () => {
   test('accepts an image with a byte per voxel or more', () => {
     expect(isEmbeddedImageComplete([3, 4, 4, 4], new Uint8Array(64))).toBe(true)
@@ -134,6 +184,18 @@ describe('isEmbeddedImageComplete', () => {
     expect(isEmbeddedImageComplete([3, 4.5, 4, 4], new Uint8Array(64))).toBe(
       false,
     )
+  })
+
+  test('refuses a JSON image stored as a plain array, however long', () => {
+    // Far more numbers than the 4x4x4 header implies, but not a typed array,
+    // so it is never copied into one.
+    const text = `{"version":9,"volumes":[{"data":{"hdr":{"dims":[3,4,4,4]},"img":[${new Array(100_000).fill(0).join(',')}]}}]}`
+    const doc = decodeDocumentJSON(text) as {
+      volumes: { data: { hdr: { dims: number[] }; img: unknown } }[]
+    }
+    const { hdr, img } = doc.volumes[0].data
+    expect(Array.isArray(img)).toBe(true)
+    expect(isEmbeddedImageComplete(hdr.dims, img)).toBe(false)
   })
 
   test('refuses an image that only claims a byteLength', () => {

@@ -143,8 +143,13 @@ export function singleBackendLifecycle(
     // Hooks go on before the resize() below draws the first frame: a preloaded
     // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
     ctrl._wireViewHooks()
+    // A bad thumbnail is cosmetic: it must not leave the view without handlers.
     if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
-      await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
+      try {
+        await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
+      } catch (error) {
+        log.warn('Failed to reload the thumbnail:', error)
+      }
     }
     if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
     if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)

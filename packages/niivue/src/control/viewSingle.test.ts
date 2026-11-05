@@ -115,3 +115,29 @@ test('attachToCanvas reports the attached view', async () => {
   await attachToCanvas(ctrl, canvas)
   expect(events).toEqual([['viewAttached', { canvas, backend: 'webgl2' }]])
 })
+
+test('a failing thumbnail reload still finishes the rebuild', async () => {
+  class BadThumbnailView extends FakeView {
+    async loadThumbnail() {
+      throw new Error('thumbnail 404')
+    }
+  }
+  const lifecycle = singleBackendLifecycle(
+    'webgl2',
+    BadThumbnailView as unknown as typeof NVViewGL,
+  )
+  const ctrl = fakeCtrl(fakeCanvas())
+  const events: string[] = []
+  let rebuilt = false
+  Object.assign(ctrl, {
+    emit: (name: string) => events.push(name),
+    _rebuildViewResources: async () => {
+      rebuilt = true
+    },
+  })
+  Object.assign(ctrl.opts, { thumbnail: 'bad.png' })
+  Object.assign(ctrl.model.ui, { isThumbnailVisible: true })
+  await lifecycle.recreateView(ctrl)
+  expect(rebuilt).toBe(true)
+  expect(events).toEqual(['viewDestroyed', 'viewAttached'])
+})

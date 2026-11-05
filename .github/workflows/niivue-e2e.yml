@@ -30,11 +30,14 @@ name: niivue browser contracts
 on:
   push:
     branches: [main]
+    # Markdown (READMEs, docs/, CHANGELOGs) changes no tested code, so a
+    # docs-only change does not queue the macOS job. Negations must come last.
     paths:
       - 'packages/niivue/**'
       - 'packages/uikit/**'
       - 'packages/dev-images/**'
       - '.github/workflows/niivue-e2e.yml'
+      - '!**/*.md'
   pull_request:
     # labeled/unlabeled let the skip-metal label cancel or restore the Metal job.
     # Adding or removing any label restarts the run (cancel-in-progress below).
@@ -44,6 +47,7 @@ on:
       - 'packages/uikit/**'
       - 'packages/dev-images/**'
       - '.github/workflows/niivue-e2e.yml'
+      - '!**/*.md'
 
 permissions:
   contents: read
@@ -143,11 +147,6 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-
       - run: bun install --frozen-lockfile
 
       # Keyed on the lockfile, which pins the Playwright (and so Chromium) version.
@@ -178,6 +177,14 @@ jobs:
       # by test:e2e:metal are not run and so are not counted here.
       - name: Fail on skipped tests
         run: bun .github/scripts/check-no-skipped-tests.ts packages/niivue/test-results/results.json
+
+      # Per-test timings on every run, for comparing CI speed across changes.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results-metal
+          path: packages/niivue/test-results/results.json
+          retention-days: 30
 
       - uses: actions/upload-artifact@v4
         if: failure()

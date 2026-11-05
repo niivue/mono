@@ -162,7 +162,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     key: string,
     bitmap: ImageBitmap,
   ): GPUBindGroup | null {
-    const existing = this._textures.get(key)
+    const existing = this._textures.get(key, bitmap)
     if (existing) return existing.group
     if (!this._textureBGL) return null
     const texture = device.createTexture({
@@ -185,6 +185,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       key,
       { texture, group },
       bitmap.width * bitmap.height * 4,
+      bitmap,
     )
     return group
   }

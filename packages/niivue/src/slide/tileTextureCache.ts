@@ -21,6 +21,7 @@ interface TileTextureEntry<T> {
   value: T
   bytes: number
   frame: number
+  source?: object
 }
 
 export class TileTextureCache<T> {
@@ -42,10 +43,14 @@ export class TileTextureCache<T> {
     this._frame++
   }
 
-  /** Look up a texture, marking it used this frame (refreshes LRU order). */
-  get(key: string): T | undefined {
+  /**
+   * Look up a texture, marking it used this frame (refreshes LRU order). A
+   * texture uploaded from another `source` (e.g. a re-windowed tile bitmap) is
+   * a miss; the caller's `set` then replaces it.
+   */
+  get(key: string, source?: object): T | undefined {
     const entry = this._entries.get(key)
-    if (!entry) return undefined
+    if (!entry || entry.source !== source) return undefined
     this._entries.delete(key)
     entry.frame = this._frame
     this._entries.set(key, entry)
@@ -53,9 +58,9 @@ export class TileTextureCache<T> {
   }
 
   /** Register a texture (destroying any previous entry under the same key). */
-  set(key: string, value: T, bytes: number): void {
+  set(key: string, value: T, bytes: number, source?: object): void {
     this.delete(key)
-    this._entries.set(key, { value, bytes, frame: this._frame })
+    this._entries.set(key, { value, bytes, frame: this._frame, source })
     this.bytes += bytes
   }
 

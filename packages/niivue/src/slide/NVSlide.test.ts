@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, it, spyOn } from 'bun:test'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  spyOn,
+} from 'bun:test'
 import { log } from '@/logger'
 import type {
   NVSlideLevelManifest,
@@ -7,7 +15,12 @@ import type {
   NVSlideTileManifest,
   SlideTileSource,
 } from './NVSlide'
-import { assertSingleSlidePlane, ManifestRangeSource, NVSlide } from './NVSlide'
+import {
+  assertSingleSlidePlane,
+  ManifestRangeSource,
+  NVSlide,
+  windowSamples,
+} from './NVSlide'
 
 const TILE_W = 8
 const TILE_H = 4
@@ -864,6 +877,137 @@ describe('NVSlide failed tiles', () => {
     expect(slide.stats.requested).toBe(2)
     clock.mockRestore()
     error.mockRestore()
+    slide.dispose()
+  })
+})
+
+describe('windowSamples', () => {
+  const w = { calMin: 100, calMax: 300 }
+  it('maps the window to 0..255, clamping outside it', () => {
+    const rgba = windowSamples(
+      new Uint16Array([50, 100, 200, 300, 400]),
+      w,
+      false,
+    )
+    expect([0, 4, 8, 12, 16].map((i) => rgba[i])).toEqual([0, 0, 128, 255, 255])
+    expect([rgba[9], rgba[10], rgba[11]]).toEqual([128, 128, 255]) // grey, opaque
+  })
+  it('inverts MONOCHROME1 after windowing', () => {
+    const rgba = windowSamples(new Uint8Array([100, 200, 255]), w, true)
+    expect([rgba[0], rgba[4], rgba[8]]).toEqual([255, 127, 57]) // 255 - round(155 * 255 / 200)
+  })
+})
+
+describe('NVSlide monochrome window', () => {
+  // Bun has no ImageData/createImageBitmap: a stand-in bitmap carries its pixels.
+  type FakeBitmap = {
+    width: number
+    height: number
+    data: Uint8ClampedArray
+    closed: boolean
+    close(): void
+  }
+  const g = globalThis as Record<string, unknown>
+  const saved = {
+    ImageData: g.ImageData,
+    createImageBitmap: g.createImageBitmap,
+  }
+  beforeAll(() => {
+    g.ImageData = class {
+      constructor(
+        readonly data: Uint8ClampedArray,
+        readonly width: number,
+        readonly height: number,
+      ) {}
+    }
+    g.createImageBitmap = async (img: {
+      data: Uint8ClampedArray
+      width: number
+      height: number
+    }) => {
+      const bitmap: FakeBitmap = {
+        width: img.width,
+        height: img.height,
+        data: img.data,
+        closed: false,
+        close() {
+          bitmap.closed = true
+        },
+      }
+      return bitmap
+    }
+  })
+  afterAll(() => Object.assign(g, saved))
+  afterEach(() => {
+    const original = originalJls
+    if (original) NVSlide.registerTileDecoder('image/jls', original)
+  })
+  const originalJls = NVSlide.tileDecoder('image/jls')
+
+  // Every tile holds `value`; 12-bit DICOM BitsStored in a 16-bit codestream.
+  function monoSlide(value: number, photometric = 'MONOCHROME2'): NVSlide {
+    NVSlide.registerTileDecoder('image/jls', async () => ({
+      samples: new Uint16Array(TILE_W * TILE_H).fill(value),
+      width: TILE_W,
+      height: TILE_H,
+      components: 1,
+      bitsStored: 16,
+    }))
+    const manifest = makePyramid()
+    for (const level of manifest.levels)
+      Object.assign(level, { codec: 'image/jls', photometric, bitsStored: 12 })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    return slide
+  }
+  const pixel = (slide: NVSlide, key: string) =>
+    (slide.cachedTileBitmap(key) as unknown as FakeBitmap | null)?.data[0]
+
+  it('defaults to the level bitsStored range, the same in every tile and level', async () => {
+    const slide = monoSlide(4095)
+    await loadLevel(slide, 0)
+    await loadLevel(slide, 1)
+    const values = [
+      ...slide.manifest.levels[0].tiles,
+      ...slide.manifest.levels[1].tiles,
+    ].map((t, i) => pixel(slide, `L${i < 16 ? 0 : 1}/${t.x}/${t.y}`))
+    expect(new Set(values)).toEqual(new Set([255]))
+    // 8x4 RGBA plus 8x4 uint16 samples per tile.
+    expect(slide.cacheBytes).toBe(20 * (TILE_W * TILE_H * 6))
+    slide.dispose()
+  })
+
+  it('re-windows cached tiles and windows later arrivals the same way', async () => {
+    const slide = monoSlide(500)
+    await loadLevel(slide, 2)
+    const before = slide.cachedTileBitmap('L2/0/0') as unknown as FakeBitmap
+    expect(before.data[0]).toBe(31) // round(500 * 255 / 4095)
+    slide.setWindow(0, 1000)
+    await waitFor(() => pixel(slide, 'L2/0/0') === 128)
+    expect(before.closed).toBe(true)
+    await loadLevel(slide, 1)
+    expect(pixel(slide, 'L1/1/1')).toBe(128)
+    expect(slide.window).toEqual({ calMin: 0, calMax: 1000 })
+    slide.dispose()
+  })
+
+  it('inverts MONOCHROME1', async () => {
+    const slide = monoSlide(0, 'MONOCHROME1')
+    await loadLevel(slide, 2)
+    expect(pixel(slide, 'L2/0/0')).toBe(255)
+    slide.dispose()
+  })
+
+  it('rejects a window that is not finite with calMin < calMax', () => {
+    const slide = monoSlide(0)
+    for (const [lo, hi] of [
+      [5, 5],
+      [6, 5],
+      [Number.NaN, 1],
+      [0, Number.POSITIVE_INFINITY],
+    ] as const)
+      expect(() => slide.setWindow(lo, hi)).toThrow(RangeError)
+    expect(slide.window).toBeNull()
     slide.dispose()
   })
 })

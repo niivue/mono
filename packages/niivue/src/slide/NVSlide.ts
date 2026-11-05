@@ -1,5 +1,29 @@
 import { log } from '@/logger'
-export type NVSlideTileCodec = 'raw-rgba' | 'image/jpeg' | 'image/jp2'
+export type NVSlideTileCodec =
+  | 'raw-rgba'
+  | 'image/jpeg'
+  | 'image/jp2'
+  | 'image/jls'
+
+/**
+ * Monochrome samples a tile decoder may return instead of a bitmap. NVSlide
+ * windows them with the slide's {@link NVSlideWindow} and keeps them, so a new
+ * window re-renders cached tiles without re-decoding (D16).
+ */
+export interface NVSlideTileSamples {
+  samples: Uint8Array | Uint16Array
+  width: number
+  height: number
+  components: 1
+  /** The codestream's precision; the level's DICOM `bitsStored` wins when set. */
+  bitsStored: number
+}
+
+/** Display window over stored sample values, shared by every tile and level. */
+export interface NVSlideWindow {
+  calMin: number
+  calMax: number
+}
 
 /**
  * Decodes one tile's encoded bytes into an ImageBitmap. The built-in registry
@@ -17,7 +41,7 @@ export type SlideTileDecoder = (
     /** Aborts when the tile is no longer wanted. */
     signal?: AbortSignal
   },
-) => Promise<ImageBitmap>
+) => Promise<ImageBitmap | NVSlideTileSamples>
 export type NVSlideYAxis = 'down' | 'up'
 export type NVSlideLevelChoice = 'auto' | number
 export type NVSlideColor = [number, number, number, number]
@@ -53,6 +77,8 @@ export interface NVSlideLevelManifest {
   transferSyntaxUid?: string
   /** DICOM PhotometricInterpretation, e.g. 'YBR_FULL_422'; passed to the tile decoder. */
   photometric?: string
+  /** DICOM BitsStored (0028,0101); sets the default monochrome window. */
+  bitsStored?: number
   /**
    * DICOM-WSI only: NumberOfFrames, NumberOfOpticalPaths (0048,0302) and
    * TotalPixelMatrixFocalPlanes (0048,0303), copied from the tags (unset when
@@ -209,6 +235,9 @@ export interface NVSlideStats {
 type TileBitmap = {
   bitmap: ImageBitmap
   bytes: number
+  /** Kept for monochrome tiles, so a new window re-renders them. */
+  samples?: NVSlideTileSamples
+  level?: NVSlideLevelManifest
 }
 
 const DEFAULT_CACHE_BYTES = 96 * 1024 * 1024
@@ -253,6 +282,34 @@ function freshStats(): NVSlideStats {
     lastRequests: [],
   }
 }
+
+/** Monochrome samples to RGBA8 through `window`; MONOCHROME1 inverts after windowing. */
+export function windowSamples(
+  samples: Uint8Array | Uint16Array,
+  { calMin, calMax }: NVSlideWindow,
+  invert: boolean,
+): Uint8ClampedArray<ArrayBuffer> {
+  // One lookup per pixel: the table holds every possible sample value.
+  const lut = new Uint8Array(samples instanceof Uint8Array ? 256 : 65536)
+  const width = calMax - calMin
+  for (let v = 0; v < lut.length; v++) {
+    // Multiply before dividing, so a midpoint like 127.5 is exact and rounds up.
+    const g = Math.round(clamp(((v - calMin) * 255) / width, 0, 255))
+    lut[v] = invert ? 255 - g : g
+  }
+  const out = new Uint8ClampedArray(samples.length * 4)
+  for (let i = 0, o = 0; i < samples.length; i++, o += 4) {
+    const g = lut[samples[i]]
+    out[o] = g
+    out[o + 1] = g
+    out[o + 2] = g
+    out[o + 3] = 255
+  }
+  return out
+}
+
+const isMonochrome = (level: NVSlideLevelManifest): boolean =>
+  level.photometric?.startsWith('MONOCHROME') ?? false
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -332,6 +389,15 @@ class NVSlideTileCache {
 
   has(key: string): boolean {
     return this.entries.has(key)
+  }
+
+  /** Like get, without refreshing LRU order. */
+  peek(key: string): TileBitmap | undefined {
+    return this.entries.get(key)
+  }
+
+  *sampleEntries(): Generator<[string, TileBitmap]> {
+    for (const pair of this.entries) if (pair[1].samples) yield pair
   }
 
   clear(): void {
@@ -544,6 +610,26 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
   }
 }
 
+/** The top-left `width` x `height` of a padded monochrome frame. */
+function cropSamples(
+  frame: NVSlideTileSamples,
+  width: number,
+  height: number,
+): NVSlideTileSamples {
+  const w = Math.min(frame.width, width)
+  const h = Math.min(frame.height, height)
+  const samples =
+    frame.samples instanceof Uint16Array
+      ? new Uint16Array(w * h)
+      : new Uint8Array(w * h)
+  for (let y = 0; y < h; y++)
+    samples.set(
+      frame.samples.subarray(y * frame.width, y * frame.width + w),
+      y * w,
+    )
+  return { ...frame, samples, width: w, height: h }
+}
+
 export class NVSlide extends EventTarget {
   readonly id: string
   readonly name: string
@@ -598,6 +684,8 @@ export class NVSlide extends EventTarget {
   // dispose() still aborts every in-flight load regardless of origin.
   private readonly _viewportKeys = new Set<string>()
   private _budgetWarned = '' // last budget outcome logged by visibleTiles
+  private _window: NVSlideWindow | null = null // null: each level's full bitsStored range
+  private _windowGen = 0
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
@@ -673,6 +761,61 @@ export class NVSlide extends EventTarget {
 
   get cacheBytes(): number {
     return this._cache.bytes
+  }
+
+  /** The monochrome display window; null shows each level's full `bitsStored` range. */
+  get window(): NVSlideWindow | null {
+    return this._window
+  }
+
+  /**
+   * Set the monochrome display window (stored sample values) for every tile and
+   * level. Cached tiles re-render from their kept samples; tiles still loading
+   * take the window current when they finish. Colour tiles are unaffected.
+   */
+  setWindow(calMin: number, calMax: number): void {
+    if (
+      !Number.isFinite(calMin) ||
+      !Number.isFinite(calMax) ||
+      calMax <= calMin
+    )
+      throw new RangeError(
+        `NVSlide window needs finite calMin < calMax, got ${calMin}, ${calMax}`,
+      )
+    this._window = { calMin, calMax }
+    const gen = ++this._windowGen
+    for (const [key, entry] of this._cache.sampleEntries()) {
+      const { samples, level } = entry
+      if (!samples || !level) continue
+      this.windowedBitmap(samples, level)
+        .then((bitmap) => {
+          // Superseded by a later window, or evicted/disposed meanwhile.
+          if (gen !== this._windowGen || this._cache.peek(key) !== entry) {
+            bitmap.close()
+            return
+          }
+          entry.bitmap.close()
+          entry.bitmap = bitmap
+          this._emitChange()
+        })
+        .catch((err: unknown) =>
+          log.warn(`NVSlide ${this.id}: re-window failed`, err),
+        )
+    }
+    this._emitChange()
+  }
+
+  private windowedBitmap(
+    s: NVSlideTileSamples,
+    level: NVSlideLevelManifest,
+  ): Promise<ImageBitmap> {
+    const max = 2 ** (level.bitsStored ?? s.bitsStored) - 1
+    const rgba = windowSamples(
+      s.samples,
+      this._window ?? { calMin: 0, calMax: max },
+      level.photometric === 'MONOCHROME1',
+    )
+    return createImageBitmap(new ImageData(rgba, s.width, s.height))
   }
 
   setViewport(viewport: NVSlideViewport): void {
@@ -907,8 +1050,16 @@ export class NVSlide extends EventTarget {
     const { count } = this.tileSpan(level, screen)
     // Full tiles, not clipped edge extents: an upper bound, since a padded
     // edge frame is held whole until decodeTileBitmap crops it.
+    // Monochrome tiles also keep their samples (1 or 2 bytes each).
+    const sampleBytes = isMonochrome(level)
+      ? (level.bitsStored ?? 8) > 8
+        ? 2
+        : 1
+      : 0
     const tileBytes =
-      this.levelTileWidth(level) * this.levelTileHeight(level) * 4
+      this.levelTileWidth(level) *
+      this.levelTileHeight(level) *
+      (4 + sampleBytes)
     return (
       count <= MAX_VISIBLE_TILES &&
       count * tileBytes <= 0.75 * this._cache.maxBytes
@@ -1155,7 +1306,7 @@ export class NVSlide extends EventTarget {
     tile: NVSlideTileManifest,
     tileBytes: Uint8Array,
     signal: AbortSignal,
-  ): Promise<ImageBitmap> {
+  ): Promise<ImageBitmap | NVSlideTileSamples> {
     const codec = level.codec ?? 'raw-rgba'
     const decoder = tileDecoders.get(codec)
     if (!decoder) {
@@ -1165,7 +1316,7 @@ export class NVSlide extends EventTarget {
           '(e.g. @niivue/dcm2niix createFrameDecoder for image/jp2).',
       )
     }
-    const bitmap = await decoder(tileBytes, {
+    const decoded = await decoder(tileBytes, {
       width: tile.width,
       height: tile.height,
       level,
@@ -1174,8 +1325,11 @@ export class NVSlide extends EventTarget {
     // Formats that store whole tiles (DICOM) pad edge frames, and every frame of
     // a level smaller than one tile, at the right and bottom. Padding is not
     // slide: crop it, or the level's image shrinks into one corner.
-    if (bitmap.width <= tile.width && bitmap.height <= tile.height)
-      return bitmap
+    if (decoded.width <= tile.width && decoded.height <= tile.height)
+      return decoded
+    if ('samples' in decoded)
+      return cropSamples(decoded, tile.width, tile.height)
+    const bitmap = decoded
     try {
       return await createImageBitmap(
         bitmap,
@@ -1229,7 +1383,24 @@ export class NVSlide extends EventTarget {
       // A source that cannot stop a read in progress may still resolve after
       // the abort; the tile is no longer wanted either way.
       signal.throwIfAborted()
-      const bitmap = await this.decodeTileBitmap(level, tile, tileBytes, signal)
+      const decoded = await this.decodeTileBitmap(
+        level,
+        tile,
+        tileBytes,
+        signal,
+      )
+      let bitmap: ImageBitmap
+      let samples: NVSlideTileSamples | undefined
+      if ('samples' in decoded) {
+        samples = decoded
+        // Re-window if the window changed while this one rendered.
+        let gen: number
+        do {
+          gen = this._windowGen
+          bitmap = await this.windowedBitmap(samples, level)
+          if (gen !== this._windowGen) bitmap.close()
+        } while (gen !== this._windowGen)
+      } else bitmap = decoded
       if (signal.aborted) {
         // Disposed (or dropped) while decoding. Caching now would leave a
         // bitmap in a cache that was already cleared, with nobody to close it.
@@ -1239,9 +1410,15 @@ export class NVSlide extends EventTarget {
       // Account the cache in DECODED bytes (RGBA), not encoded/wire bytes: the
       // cached resource is the ImageBitmap (often GPU-backed), which is 10-20x
       // the JPEG size — encoded accounting silently blew maxCacheBytes.
-      const decodedBytes = bitmap.width * bitmap.height * 4
+      const decodedBytes =
+        bitmap.width * bitmap.height * 4 + (samples?.samples.byteLength ?? 0)
       this.stats.decodedBytes += decodedBytes
-      this._cache.set(key, { bitmap, bytes: decodedBytes })
+      this._cache.set(
+        key,
+        samples
+          ? { bitmap, bytes: decodedBytes, samples, level }
+          : { bitmap, bytes: decodedBytes },
+      )
       this.stats.cacheBytes = this._cache.bytes
       this.stats.completed++
       this._failed.delete(key)

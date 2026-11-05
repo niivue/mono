@@ -460,15 +460,9 @@ export class SlideRendererGPU {
     key: string,
     bitmap: ImageBitmap,
   ): SlideTexture | null {
-    const existing = this._textures.get(key)
-    if (
-      existing &&
-      existing.width === bitmap.width &&
-      existing.height === bitmap.height
-    ) {
-      return existing
-    }
-    if (existing) this._textures.delete(key)
+    // Keyed by the bitmap too: a re-windowed tile is a new bitmap (set() replaces).
+    const existing = this._textures.get(key, bitmap)
+    if (existing) return existing
     const texture = this._device.createTexture({
       size: [bitmap.width, bitmap.height],
       format: 'rgba8unorm',
@@ -495,7 +489,7 @@ export class SlideRendererGPU {
       width: bitmap.width,
       height: bitmap.height,
     }
-    this._textures.set(key, entry, bitmap.width * bitmap.height * 4)
+    this._textures.set(key, entry, bitmap.width * bitmap.height * 4, bitmap)
     return entry
   }
 

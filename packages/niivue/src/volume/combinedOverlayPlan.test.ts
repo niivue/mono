@@ -258,7 +258,7 @@ for (const [name, Renderer] of [
       .call(self, {}, vol, 1000, null)
       .catch((e: Error) => e.message)
     const second = swap.call(self, {}, vol, B, false)
-    expect(await refresh).toBe(entry)
+    expect((await refresh) as unknown).toBe(entry)
     await Promise.all([first, second])
     expect(entry.plan).toBe(B)
   })

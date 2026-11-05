@@ -66,8 +66,8 @@ Unknown is never treated as 1.
 produced RGB, so a `YBR_ICT`/`YBR_RCT` label must not trigger a second conversion
 (OpenSlide 4.0.0 does, and renders those slides magenta). Without MCT, `YBR_FULL[_422]`
 is converted after decoding, with subsampled chroma repeated. NVSlide passes each
-level (and so its `photometric`) to the registered `image/jp2` decoder; the demo and
-nv-ohif use `@niivue/dcm2niix`'s `createFrameDecoder`.
+level (and so its `photometric`) to the registered `image/jp2` decoder; `examples/slides.js`
+and nv-ohif use `@niivue/dcm2niix`'s `createFrameDecoder`.
 
 ---
 

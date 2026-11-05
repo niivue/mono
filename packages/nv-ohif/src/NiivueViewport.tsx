@@ -386,7 +386,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         })
         return
       }
-      if (!built.allJpeg) registerJp2TileDecoder()
+      registerJp2TileDecoder() // lazy: loads nothing until a JPEG 2000 tile
       if (!built.tiledFull) {
         // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
         // slide would render scrambled, so decline rather than mislead.

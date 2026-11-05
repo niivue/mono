@@ -8,12 +8,12 @@ export type NVSlideTileCodec = 'raw-rgba' | 'image/jpeg' | 'image/jp2'
  */
 export type SlideTileDecoder = (
   bytes: Uint8Array,
-  /** `level` carries what a codec may need beyond the bytes (e.g. `photometric`). */
-  /** `signal` aborts when the tile is no longer wanted. */
   ctx: {
     width: number
     height: number
+    /** What a codec may need beyond the bytes (e.g. `photometric`). */
     level: NVSlideLevelManifest
+    /** Aborts when the tile is no longer wanted. */
     signal?: AbortSignal
   },
 ) => Promise<ImageBitmap>

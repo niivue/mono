@@ -253,9 +253,8 @@ describe('buildWsiManifest', () => {
   it('builds a finest-first pyramid with a row-major tile grid', () => {
     const built = buildWsiManifest(smDisplaySet())
     if (!built) throw new Error('expected a manifest')
-    const { manifest, levelBaseUrls, allJpeg } = built
+    const { manifest, levelBaseUrls } = built
 
-    expect(allJpeg).toBe(true)
     expect(manifest.width).toBe(2000)
     expect(manifest.height).toBe(1000)
     expect(manifest.channels).toBe('encoded-rgb')
@@ -422,14 +421,13 @@ describe('buildWsiManifest', () => {
     })
   })
 
-  it('flags a JPEG 2000 slide as not all-JPEG', () => {
+  it('maps a JPEG 2000 slide to image/jp2', () => {
     const ds = smDisplaySet()
     const instances = ds.instances?.map((inst) => ({
       ...inst,
       TransferSyntaxUID: JP2,
     }))
     const built = buildWsiManifest({ ...ds, instances })
-    expect(built?.allJpeg).toBe(false)
     expect(built?.manifest.levels[0]?.codec).toBe('image/jp2')
     expect(built?.unsupported).toBeUndefined()
   })
@@ -546,7 +544,6 @@ describe('JPEG 2000 levels', () => {
   it('carry codec, photometric and plane counts into the manifest', () => {
     const built = buildWsiManifest(jp2DisplaySet())
     const level = built?.manifest.levels[0]
-    expect(built?.allJpeg).toBe(false)
     expect(level?.codec).toBe('image/jp2')
     expect(level?.photometric).toBe('YBR_FULL_422')
     expect(level?.transferSyntaxUid).toBe(JP2)

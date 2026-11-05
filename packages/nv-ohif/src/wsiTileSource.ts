@@ -282,8 +282,6 @@ export interface BuiltWsiManifest {
   levelBaseUrls: string[]
   /** Query string (with leading `?`, or '') by level.index, re-appended per tile. */
   levelQueries: string[]
-  /** True when every kept level is JPEG (v1-renderable). */
-  allJpeg: boolean
   /** The first transfer syntax no level codec decodes (JPEG-LS, RLE, raw...). */
   unsupported?: string
   /**
@@ -307,7 +305,6 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
   const levels: NVSlideLevelManifest[] = []
   const levelBaseUrls: string[] = []
   const levelQueries: string[] = []
-  let allJpeg = true
   let unsupported: string | undefined
   let tiledFull = true
   volumeLevels.forEach((level, index) => {
@@ -331,7 +328,6 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     })
     levelBaseUrls[index] = level.frameBaseUrl
     levelQueries[index] = level.frameQuery
-    if (level.codec !== 'image/jpeg') allJpeg = false
     if (!level.codec) unsupported ??= level.transferSyntax
     if (!level.tiledFull) tiledFull = false
   })
@@ -355,7 +351,6 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     manifest,
     levelBaseUrls,
     levelQueries,
-    allJpeg,
     unsupported,
     tiledFull,
   }

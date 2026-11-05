@@ -287,7 +287,7 @@ test('a failed backend switch leaves siblings on the old shared canvas', async (
     expect(parent.child).toBe(old)
     expect(listeners.size).toBe(installed)
     // The restored canvas is still WebGPU's, so a retry must target that.
-    expect(left.opts.backend).toBe('webgpu')
+    expect(left.opts.backend as string).toBe('webgpu')
   } finally {
     if (!hadWindow) delete g.window
   }

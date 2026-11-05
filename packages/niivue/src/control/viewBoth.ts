@@ -22,6 +22,7 @@ import {
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
+import { loadThumbnailSafely } from './viewLifecycle'
 
 // Part of the ViewLifecycle this module is (NVControl imports it whole).
 export { unregister }
@@ -135,7 +136,7 @@ export async function attachToCanvas(
   if (ctrl.opts.thumbnail) {
     ctrl.model.ui.isThumbnailVisible = true
     ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
-    await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+    await loadThumbnailSafely(view, ctrl.model.ui.thumbnailUrl)
   }
   if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
   if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
@@ -261,13 +262,8 @@ async function finishViewRebuild(ctrl: NiiVue): Promise<void> {
   // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
   ctrl._wireViewHooks()
   // 7b. Reload thumbnail if it was active before recreation
-  // A bad thumbnail is cosmetic: it must not leave the view without handlers.
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
-    try {
-      await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
-    } catch (error) {
-      log.warn('Failed to reload the thumbnail:', error)
-    }
+    await loadThumbnailSafely(ctrl.view, ctrl.opts.thumbnail as string)
   }
   // 8. Reinstall event handlers on new canvas
   if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)

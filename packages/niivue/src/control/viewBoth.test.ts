@@ -451,3 +451,42 @@ test('a failing thumbnail reload still finishes the rebuild', async () => {
     if (!hadWindow) delete g.window
   }
 })
+
+test('a failing thumbnail does not abort attach', async () => {
+  spyOn(NVViewGL.prototype, 'loadThumbnail').mockRejectedValue(
+    new Error('thumbnail 404'),
+  )
+  const canvas = Object.assign(Object.create(HTMLCanvasElement.prototype), {
+    parentNode: null,
+    style: {},
+    addEventListener() {},
+    removeEventListener() {},
+  }) as HTMLCanvasElement
+  const events: string[] = []
+  const ctrl = {
+    canvas: null,
+    view: null,
+    opts: { backend: 'webgl2', thumbnail: 'bad.png' },
+    model: { ui: {} },
+    _eventListeners: {},
+    _wireViewHooks() {},
+    emit(name: string) {
+      events.push(name)
+    },
+  } as unknown as NiiVue
+  const g = globalThis as { window?: unknown }
+  const hadWindow = 'window' in g
+  g.window ??= {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+    matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+  }
+  try {
+    await attachToCanvas(ctrl, canvas)
+    expect(ctrl.view).toBeInstanceOf(NVViewGL)
+    expect(events).toEqual(['viewAttached'])
+  } finally {
+    if (!hadWindow) delete g.window
+  }
+})

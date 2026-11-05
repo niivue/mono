@@ -22,7 +22,9 @@ beforeEach(() => {
   spyOn(NVViewGL.prototype, 'destroy').mockImplementation(() => {})
 })
 afterEach(() => mock.restore())
-const { recreateView, reinitializeView } = await import('./viewWebGL2')
+const { attachToCanvas, recreateView, reinitializeView } = await import(
+  './viewWebGL2'
+)
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -133,4 +135,25 @@ test('a forced restart with a new ratio goes through the sibling-updating setter
     forceRestart: true,
   })
   expect(applied).toBe(2)
+})
+
+test('a failing thumbnail neither aborts attach nor a rebuild', async () => {
+  spyOn(NVViewGL.prototype, 'loadThumbnail').mockRejectedValue(
+    new Error('thumbnail 404'),
+  )
+  const canvas = fakeCanvas()
+  const ctrl = fakeCtrl(canvas)
+  let rebuilt = false
+  Object.assign(ctrl, {
+    emit() {},
+    _rebuildViewResources: async () => {
+      rebuilt = true
+    },
+  })
+  ctrl.opts.thumbnail = 'bad.png'
+  await attachToCanvas(ctrl, canvas)
+  expect(ctrl.view).toBeInstanceOf(NVViewGL)
+  expect(ctrl.model.ui.isThumbnailVisible).toBe(true)
+  await recreateView(ctrl)
+  expect(rebuilt).toBe(true)
 })

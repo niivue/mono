@@ -19,6 +19,7 @@ import {
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
+import { loadThumbnailSafely } from './viewLifecycle'
 
 export async function attachTo(
   ctrl: NiiVue,
@@ -66,7 +67,7 @@ export async function attachToCanvas(
     if (ctrl.opts.thumbnail) {
       ctrl.model.ui.isThumbnailVisible = true
       ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
-      await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+      await loadThumbnailSafely(view, ctrl.model.ui.thumbnailUrl)
     }
     if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
     if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
@@ -114,7 +115,7 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
   ctrl._wireViewHooks()
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
-    await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
+    await loadThumbnailSafely(ctrl.view, ctrl.opts.thumbnail as string)
   }
   if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
   if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)

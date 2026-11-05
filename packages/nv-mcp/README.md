@@ -176,6 +176,8 @@ Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`). Vite's WebSoc
 
 ## The core tools
 
+Coordinates called millimetres below are the scene's world units as loaded: millimetres for most volumes, micrometres for a volume whose header says micrometres (NIfTI `xyzt_units`). NiiVue does not convert them, and neither do the tools; every crosshair, landing point and extent they return carries a `unit` (`mm`, `um` or `m`).
+
 | Tool | Input | What it does |
 |---|---|---|
 | `list_tabs` | | The connected tabs: id, title, address, when each connected and which one answers |

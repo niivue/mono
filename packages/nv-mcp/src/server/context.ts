@@ -177,7 +177,8 @@ function brief(key: string, value: unknown): string {
   if (key === 'plane' && isRecord(value) && typeof value.name === 'string')
     return value.name
   if (key === 'crosshair' && isRecord(value) && Array.isArray(value.mm)) {
-    return `[${(value.mm as number[]).map((n) => Math.round(n)).join(', ')}] mm`
+    const unit = typeof value.unit === 'string' ? value.unit : 'mm'
+    return `[${(value.mm as number[]).map((n) => Math.round(n)).join(', ')}] ${unit}`
   }
   return typeof value === 'string' ? value : JSON.stringify(value)
 }

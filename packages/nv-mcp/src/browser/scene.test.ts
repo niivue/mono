@@ -129,9 +129,23 @@ describe('sceneState', () => {
     const h = host(view, { extraState: () => ({ sounding: true }) })
     expect(sceneState(h)).toEqual({
       volume: 'mni152.nii.gz',
-      crosshair: { mm: [-50, 0, 0] },
+      crosshair: { mm: [-50, 0, 0], unit: 'mm' },
       plane: { name: 'off', depth: PLANE_NONE, azimuth: 0, elevation: 0 },
       sounding: true,
+    })
+  })
+
+  it('names the unit of a micrometre volume, whose coordinates are not converted', async () => {
+    const view = fakeView({
+      volumes: [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }],
+    })
+    expect(sceneState(host(view)).crosshair).toEqual({
+      mm: [0, 0, 0],
+      unit: 'um',
+    })
+    expect(await coreHandlers(host(view)).where_am_i({})).toMatchObject({
+      crosshair: { unit: 'um' },
+      description: 'Crosshair at 0, 0, 0 um.',
     })
   })
 
@@ -336,7 +350,7 @@ describe('where_am_i', () => {
     expect(await coreHandlers(h).where_am_i({})).toEqual({
       volume: 'mni152.nii.gz',
       volumes: [{ index: 0, name: 'mni152.nii.gz' }],
-      crosshair: { mm: [0, 0, 50], frac: [0.5, 0.5, 0.75] },
+      crosshair: { mm: [0, 0, 50], unit: 'mm', frac: [0.5, 0.5, 0.75] },
       plane: { name: 'off', depth: PLANE_NONE, azimuth: 0, elevation: 0 },
       camera: { azimuth: 110, elevation: 15 },
       description: 'up.',

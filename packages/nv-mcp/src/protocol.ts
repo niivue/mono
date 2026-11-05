@@ -92,7 +92,7 @@ export interface Welcome {
  */
 export interface TabState {
   volume: string | null
-  crosshair: { mm: number[] } | null
+  crosshair: { mm: number[]; unit?: string } | null
   plane: PlaneState | null
   [extra: string]: unknown
 }

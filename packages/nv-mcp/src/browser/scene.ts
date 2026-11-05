@@ -84,6 +84,7 @@ import type {
   VolumeToLoad,
   VolumeUpdate,
 } from './view'
+import { worldUnit } from './view'
 import { viewportHandlers } from './viewport'
 import { within } from './wait'
 
@@ -96,7 +97,9 @@ export function sceneState(host: NiiVueHost): TabState {
   const volume = view.volumes[0]?.name ?? null
   return {
     volume,
-    crosshair: volume ? { mm: Array.from(view.getCrosshairPos()) } : null,
+    crosshair: volume
+      ? { mm: Array.from(view.getCrosshairPos()), unit: worldUnit(view) }
+      : null,
     plane: volume ? planeState(host) : null,
     ...(host.controls
       ? { controls: host.controls.list().map((c) => c.id) }
@@ -481,7 +484,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   const describe = async (): Promise<string> => {
     if (host.describe) return await host.describe()
     const mm = Array.from(view.getCrosshairPos()).map((v) => Math.round(v))
-    return `Crosshair at ${mm.join(', ')} mm.`
+    return `Crosshair at ${mm.join(', ')} ${worldUnit(view)}.`
   }
 
   const handlers: Handlers = {
@@ -515,8 +518,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       return {
         name: view.volumes[0]?.name ?? name,
         mni,
-        bounds: { mm: { min, max } },
-        crosshair: { mm: Array.from(view.getCrosshairPos()) },
+        bounds: { mm: { min, max }, unit: worldUnit(view) },
+        crosshair: {
+          mm: Array.from(view.getCrosshairPos()),
+          unit: worldUnit(view),
+        },
       }
     },
 
@@ -535,7 +541,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       return {
         volume,
         volumes: volumesShown(),
-        crosshair: { mm, frac },
+        crosshair: { mm, unit: worldUnit(view), frac },
         plane: planeState(host),
         camera: camera(view),
         ...(hasLayout(view) ? { view: viewState(view) } : {}),
@@ -602,7 +608,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       host.announce?.(description)
       return {
         region: summary(region),
-        landed: { mm: target, frac },
+        landed: { mm: target, unit: worldUnit(view), frac },
         snapped,
         plane: {
           name: plane.name,
@@ -695,7 +701,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       view.drawScene()
       return {
         volumes: volumesShown(),
-        crosshair: { mm: Array.from(view.getCrosshairPos()) },
+        crosshair: {
+          mm: Array.from(view.getCrosshairPos()),
+          unit: worldUnit(view),
+        },
       }
     },
 
@@ -732,7 +741,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const description = label ? `${label}. ${place}` : place
       host.announce?.(description)
       return {
-        landed: { mm, frac, ...(vox ? { vox } : {}) },
+        landed: { mm, unit: worldUnit(view), frac, ...(vox ? { vox } : {}) },
         plane: {
           name: plane.name,
           depth,
@@ -762,7 +771,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const frac = Array.from(view.crosshairPos)
       host.moved?.(frac)
       return {
-        crosshair: { mm: Array.from(view.getCrosshairPos()), frac },
+        crosshair: {
+          mm: Array.from(view.getCrosshairPos()),
+          unit: worldUnit(view),
+          frac,
+        },
       }
     },
 

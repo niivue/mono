@@ -232,6 +232,7 @@ import {
   reorientDrawingToNative,
   reorientDrawingToRAS,
   volumeTR,
+  warnMixedUnits,
 } from '@/volume/utils'
 import { assignUniqueVolumeIds } from '@/volume/volumeIds'
 import { version } from '../package.json'
@@ -3432,6 +3433,7 @@ export default class NiiVue extends EventTarget {
     // The new set replaces the old one, so ids only need to be unique within it
     // (the same URL listed twice gets `<id>` and `<id>-2`).
     assignUniqueVolumeIds(loaded)
+    warnMixedUnits(loaded[0], loaded.slice(1))
     // Atomic swap: keep refs to the old volumes so we can release their GPU
     // resources AFTER the new bind groups are live. Replace the model's
     // volume array in place — the view's bind groups still point at the old

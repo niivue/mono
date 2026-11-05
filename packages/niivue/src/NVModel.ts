@@ -40,8 +40,8 @@ import { resolvePairedImage } from '@/volume/pairedImage'
 import {
   extractVoxelFid,
   getVoxelValue,
-  spatialUnit,
   volumeTR,
+  warnMixedUnits,
 } from '@/volume/utils'
 import { assignUniqueVolumeIds } from '@/volume/volumeIds'
 
@@ -1601,16 +1601,7 @@ export default class NVModel {
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {
     const prepared = await NVModel.prepareVolume(volume)
     assignUniqueVolumeIds([prepared], this.volumes)
-    const base = this.volumes[0]
-    if (base) {
-      const baseUnit = spatialUnit(base.hdr.xyzt_units).label
-      const unit = spatialUnit(prepared.hdr.xyzt_units).label
-      if (unit !== baseUnit) {
-        log.warn(
-          `Volume '${prepared.name}' is in ${unit} but the base volume is in ${baseUnit}; mixed units are unsupported`,
-        )
-      }
-    }
+    warnMixedUnits(this.volumes[0], [prepared])
     this.volumes.push(prepared)
     this._setupPivot3D()
     this.invalidateGraphCache()

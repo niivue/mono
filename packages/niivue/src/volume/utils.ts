@@ -66,6 +66,40 @@ export function spatialUnit(xyztUnits: number): { label: string; mm: number } {
   }
 }
 
+/**
+ * Warn for each of `volumes` whose spatial units differ from `base`'s: labels
+ * follow the base volume, so mixed units are unsupported.
+ */
+export function warnMixedUnits(
+  base: { hdr: { xyzt_units: number } } | undefined,
+  volumes: readonly { name: string; hdr: { xyzt_units: number } }[],
+): void {
+  if (!base) return
+  const baseUnit = spatialUnit(base.hdr.xyzt_units).label
+  for (const v of volumes) {
+    const unit = spatialUnit(v.hdr.xyzt_units).label
+    if (unit !== baseUnit) {
+      log.warn(
+        `Volume '${v.name}' is in ${unit} but the base volume is in ${baseUnit}; mixed units are unsupported`,
+      )
+    }
+  }
+}
+
+/**
+ * Voxel size along RAS x, y, z in mm: `pixDimsRAS` scaled by the volume's
+ * `xyzt_units` (um spacing is 1e-3 mm). Null when the RAS dims are unset.
+ */
+export function voxelSizeMM(vol: {
+  pixDimsRAS?: number[]
+  hdr: { xyzt_units: number }
+}): [number, number, number] | null {
+  const p = vol.pixDimsRAS
+  if (!p) return null
+  const mm = spatialUnit(vol.hdr.xyzt_units).mm
+  return [p[1] * mm, p[2] * mm, p[3] * mm]
+}
+
 /** Scene units of a model's base volume (mm when none is loaded). */
 export function sceneUnit(model: {
   getVolumes(): readonly { hdr: { xyzt_units: number } }[]

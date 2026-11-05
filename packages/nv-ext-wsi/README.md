@@ -95,6 +95,15 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's
   browser check).
 
+## Hosting an indexed slide
+
+`manifestFromIndex(slide, files, fileUrlFor)` turns an indexed slide into a `dicom-wsi-range-v1` manifest that NVSlide reads by HTTP Range, as the hosted demo slides are served:
+- Each tile has its offset and length, or `fragments` for a frame split across fragments.
+- Sparse levels list only their present tiles; NVSlide places them by `x`, `y`.
+- A level split across files (a concatenation) names each tile's `fileUrl`.
+
+`bun scripts/build-manifest.ts <slide-dir> <id>` indexes `<slide-dir>/files` and writes `<slide-dir>/manifest.json`, with tiles read from `files/<name>`.
+
 ## Range, CORS and full downloads
 
 Reads go through geotiff's 64 KiB block cache: the header and each level's tile offset table cost a few blocks, and a tile costs its compressed size rounded out to block boundaries.

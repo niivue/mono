@@ -222,7 +222,7 @@
         "zarrita": "^0.7.3",
       },
       "devDependencies": {
-        "@niivue/dcm2niix": "^1.4.20261029",
+        "@niivue/dcm2niix": "^1.4.20261105-rc.0",
         "@niivue/dev-images": "workspace:*",
         "@playwright/test": "1.59.1",
         "@types/bun": "^1.3.12",
@@ -367,7 +367,7 @@
       "name": "@niivue/nv-ohif",
       "version": "1.0.0-rc.89",
       "dependencies": {
-        "@niivue/dcm2niix": "^1.4.20261029",
+        "@niivue/dcm2niix": "^1.4.20261105-rc.0",
         "@niivue/uikit": "workspace:*",
         "dcmjs": "^0.49.0",
       },
@@ -1028,7 +1028,7 @@
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@0.2.4", "", { "dependencies": { "@emnapi/core": "^1.1.0", "@emnapi/runtime": "^1.1.0", "@tybys/wasm-util": "^0.9.0" } }, "sha512-9zESzOO5aDByvhIAsOy9TbpZ0Ur2AJbUI7UT73kcUTS2mxAMHOBaa1st/jAymNoCtvrit99kkzT1FZuXVcgfIQ=="],
 
-    "@niivue/dcm2niix": ["@niivue/dcm2niix@1.4.20261029", "", {}, "sha512-qmFDNNhwAXDzRC0Nn/aYjDpLYJ74mRjPHpbibmUR7DKFmo36867wdHONLBngv4dllb4yJmGSbhV8ILR163kjZQ=="],
+    "@niivue/dcm2niix": ["@niivue/dcm2niix@1.4.20261105-rc.0", "", {}, "sha512-nyjYLeiYrCBF1CQgE4AxKawMPHUWkJbEjd+I98rDlwf91qadzskWCsXIF4MZd+mZB1pFjHQ4ArThTvWTVy0aMQ=="],
 
     "@niivue/dev-images": ["@niivue/dev-images@workspace:packages/dev-images"],
 
@@ -3465,6 +3465,8 @@
     "@niivue/niivue/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
     "@niivue/niivue/vite": ["vite@7.3.2", "", { "dependencies": { "esbuild": "^0.27.0", "fdir": "^6.5.0", "picomatch": "^4.0.3", "postcss": "^8.5.6", "rollup": "^4.43.0", "tinyglobby": "^0.2.15" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "jiti": ">=1.21.0", "less": "^4.0.0", "lightningcss": "^1.21.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "jiti", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-Bby3NOsna2jsjfLVOHKes8sGwgl4TT0E6vvpYgnAYDIF/tie7MRaFthmKuHx1NSXjiTueXH3do80FMQgvEktRg=="],
+
+    "@niivue/nv-ext-dcm2niix/@niivue/dcm2niix": ["@niivue/dcm2niix@1.4.20261029", "", {}, "sha512-qmFDNNhwAXDzRC0Nn/aYjDpLYJ74mRjPHpbibmUR7DKFmo36867wdHONLBngv4dllb4yJmGSbhV8ILR163kjZQ=="],
 
     "@niivue/nv-ext-dcm2niix/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 

@@ -1037,6 +1037,7 @@ function meshView(writeWait?: number) {
         fiberRadius: 0.5,
         colorBy: 'fixed',
         fixedColor: [255, 0, 0, 128],
+        visibleGroups: null,
       },
       trx: {
         groups: { CST: [], AF: [] },
@@ -1108,7 +1109,7 @@ describe('bindControls: meshes', () => {
     expect(meshes[1].tractOptions?.colorBy).toBe('dps:z_score')
   })
 
-  it('shows one group of a tract alone, or all of them', () => {
+  it('shows one group of a tract alone, or all of them, keeping its colouring', () => {
     const { add_control, memory, meshes, list_controls } = meshView()
     const got = add_control({
       id: 'g',
@@ -1118,16 +1119,17 @@ describe('bindControls: meshes', () => {
     expect(
       (got.control.options as Array<{ id: string }>).map((o) => o.id),
     ).toEqual(['all', 'CST', 'AF'])
+    expect(got.control.value).toBe('all')
     memory.simulate({ id: 'g', type: 'change', value: 'AF' })
-    expect(meshes[1].tractOptions?.groupColors).toEqual({
-      AF: [230, 25, 75, 255],
-    })
-    memory.simulate({ id: 'g', type: 'change', value: 'all' })
+    expect(meshes[1].tractOptions?.visibleGroups).toEqual(['AF'])
+    expect(meshes[1].tractOptions?.colorBy).toBe('fixed')
     expect(meshes[1].tractOptions?.groupColors).toBeNull()
+    memory.simulate({ id: 'g', type: 'change', value: 'all' })
+    expect(meshes[1].tractOptions?.visibleGroups).toBeNull()
     // A change made elsewhere shows on the select.
     meshes[1].tractOptions = {
       ...meshes[1].tractOptions,
-      groupColors: { CST: [0, 0, 0, 255] },
+      visibleGroups: ['CST'],
     }
     const listed = list_controls({}) as {
       controls: Array<{ id: string; value: unknown }>
@@ -1383,7 +1385,7 @@ describe('bindControls: meshes', () => {
   it('reads no named groups as all of them shown', () => {
     const { add_control, meshes, list_controls } = meshView()
     add_control({ id: 'g', kind: 'select', bind: 'mesh.1.tract.group' })
-    meshes[1].tractOptions = { ...meshes[1].tractOptions, groupColors: {} }
+    meshes[1].tractOptions = { ...meshes[1].tractOptions, visibleGroups: [] }
     const listed = list_controls({}) as {
       controls: Array<{ id: string; value: unknown }>
     }

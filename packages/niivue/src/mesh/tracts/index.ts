@@ -62,6 +62,7 @@ export const defaultTractOptions: NVTractOptions = {
   calMaxNeg: 0,
   fixedColor: [255, 255, 255, 255],
   groupColors: null,
+  visibleGroups: null,
 }
 
 export type TessellationResult = {
@@ -104,8 +105,25 @@ export function tessellate(
   }
 
   const { vertices, offsets } = data
-  const { fiberRadius, fiberSides, minLength, decimation, groupColors } =
-    options
+  const {
+    fiberRadius,
+    fiberSides,
+    minLength,
+    decimation,
+    groupColors,
+    visibleGroups,
+  } = options
+
+  // 1 = streamline is in a visible group
+  let visible: Uint8Array | null = null
+  if (visibleGroups && visibleGroups.length > 0) {
+    visible = new Uint8Array(offsets.length - 1)
+    for (const groupName of visibleGroups) {
+      const members = data.groups[groupName]
+      if (!members) continue
+      for (let i = 0; i < members.length; i++) visible[members[i]] = 1
+    }
+  }
 
   // When groupColors is active, build a per-streamline color map and filter by group membership
   let groupColorMap: Map<number, number> | null = null
@@ -129,6 +147,7 @@ export function tessellate(
   for (let s = 0; s < nStreamlines; s++) {
     // Group filtering: skip streamlines not in any visible group
     if (groupColorMap && !groupColorMap.has(s)) continue
+    if (visible && !visible[s]) continue
     if (decimation > 1 && s % decimation !== 0) continue
     const start = offsets[s]
     const end = offsets[s + 1]
@@ -153,6 +172,7 @@ export function tessellate(
   if (eligible.length === 0 && nStreamlines > 0) {
     for (let s = 0; s < nStreamlines; s++) {
       if (groupColorMap && !groupColorMap.has(s)) continue
+      if (visible && !visible[s]) continue
       const nPts = offsets[s + 1] - offsets[s]
       if (nPts >= 2) {
         eligible.push(s)

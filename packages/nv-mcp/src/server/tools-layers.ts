@@ -204,8 +204,10 @@ export const LAYER_SCHEMAS = {
       .describe(
         'For a tract, only what changes: fiberRadius, fiberSides, minLength, decimation, ' +
           'colormap, colormapNegative, colorBy, calMin, calMax, calMinNeg, calMaxNeg, ' +
-          'fixedColor, groupColors. Any other key is refused. colorBy takes direction, ' +
-          'global, fixed, or one of the scalars list_meshes reports (dpv:<name>, dps:<name>).',
+          'fixedColor, groupColors, visibleGroups. Any other key is refused. colorBy takes direction, ' +
+          'global, fixed, or one of the scalars list_meshes reports (dpv:<name>, dps:<name>). ' +
+          'visibleGroups lists the groups to show (null for all) and keeps the colouring; ' +
+          'groupColors shows its groups in flat colours.',
       ),
     connectome: z
       .record(z.string(), z.unknown())

@@ -67,6 +67,17 @@ await nv.setTractOptions(0, { groupColors: { [first]: [230, 25, 75, 255] } })
 await nv.setTractOptions(0, { groupColors: null })
 ```
 
+To show some groups but keep the current `colorBy` coloring (direction or a
+scalar), use `visibleGroups` instead. `null` shows every group:
+
+```js
+await nv.setTractOptions(0, { visibleGroups: ['AF_L', 'AF_R'] })
+await nv.setTractOptions(0, { visibleGroups: null })
+```
+
+If both are set, a streamline must be in `visibleGroups` and in `groupColors`
+to be shown.
+
 See [Single group](/gallery/tract-group) and
 [Multiple groups](/gallery/tract-groups).
 

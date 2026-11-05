@@ -108,6 +108,27 @@ function niivueColorBy(value: unknown, mesh: ShownMesh): string {
   )
 }
 
+/**
+ * Refuses a `visibleGroups` NiiVue would take without complaint but draw
+ * wrongly: not a list, or naming a group the tract does not have (NiiVue
+ * skips it, so a list of only unknown names shows nothing).
+ */
+function checkVisibleGroups(value: unknown, mesh: ShownMesh): void {
+  if (value === null) return
+  // Without the tract's data there is nothing to check a group against.
+  const groups = mesh.trx ? tractData(mesh).groups : undefined
+  if (
+    Array.isArray(value) &&
+    value.every((g) => typeof g === 'string' && (!groups || groups.includes(g)))
+  )
+    return
+  throw new Error(
+    `${mesh.name ?? 'The tract'} takes visibleGroups as null or a list of its groups${
+      groups ? `: ${groups.join(', ') || '(it has no groups)'}` : ''
+    }, not ${JSON.stringify(value)}.`,
+  )
+}
+
 /** A tract's groups and scalars, read off the data it was loaded with. */
 export function tractData(mesh: ShownMesh): {
   groups: string[]
@@ -350,6 +371,8 @@ export function meshHandlers(host: NiiVueHost): Handlers {
             `${mesh.name ?? 'The mesh'} is a ${mesh.kind}, not a connectome.`,
           )
       }
+      if (tract && 'visibleGroups' in tract)
+        checkVisibleGroups(tract.visibleGroups, mesh)
       const tractOptions =
         tract && 'colorBy' in tract
           ? { ...tract, colorBy: niivueColorBy(tract.colorBy, mesh) }
@@ -530,6 +553,7 @@ const TRACT_OPTIONS = [
   'calMaxNeg',
   'fixedColor',
   'groupColors',
+  'visibleGroups',
 ] as const
 
 /** NiiVue 1.0's `NVConnectomeOptions` keys: how a connectome's nodes and edges are drawn. */

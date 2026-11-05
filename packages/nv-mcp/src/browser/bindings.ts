@@ -316,12 +316,9 @@ const TRACT_PROPS: Record<string, MeshOption> = {
   calMinNeg: { shape: 'number' },
   calMaxNeg: { shape: 'number' },
   fixedColor: { shape: 'color', bytes: true },
-  // Not an option of NiiVue's: the one group shown, through groupColors.
+  // Not an option of NiiVue's: the one group shown, through visibleGroups.
   group: { shape: 'string' },
 }
-
-/** The colour a group shown alone is drawn in: the first of NiiVue's tract.group example palette. */
-const GROUP_COLOR = [230, 25, 75, 255]
 
 /** NiiVue's `NVConnectomeOptions` a control can hold, by the names `set_mesh` takes. */
 const CONNECTOME_PROPS: Record<string, MeshOption> = {
@@ -433,7 +430,7 @@ const FORMS: BindingVocabulary['forms'] = [
       .filter((k) => k !== 'group')
       .join(
         ', ',
-      )}. A select bound to colorBy takes direction, global, fixed and the tract's scalars (list_meshes reports them); one bound to group shows all groups or one alone, drawn in one flat colour.`,
+      )}. A select bound to colorBy takes direction, global, fixed and the tract's scalars (list_meshes reports them); one bound to group shows all groups or one alone, keeping its colouring (it sets visibleGroups).`,
   },
   {
     form: 'mesh.<index>.connectome.<option>',
@@ -860,7 +857,7 @@ function layerTarget(
 /**
  * A tract's colour mode or its one group shown, as a select holds them:
  * the choices come from the tract, `direction` standing for NiiVue's ''
- * colour mode and `all` for every group shown (groupColors null).
+ * colour mode and `all` for every group shown (visibleGroups null).
  */
 function tractChoice(
   bind: string,
@@ -904,20 +901,25 @@ function tractChoice(
     shape: 'string',
     choices,
     read: () => {
-      const shown = options()?.groupColors
-      if (shown === undefined) return undefined
-      const keys = shown === null ? [] : Object.keys(shown as object)
+      const opts = options()
+      // groupColors also filters, so no one choice of the select is shown.
+      const painted = opts?.groupColors
+      if (painted && Object.keys(painted).length > 0) return undefined
+      const shown = opts?.visibleGroups
       // NiiVue shows every group when none is named.
-      if (keys.length === 0) return 'all'
+      if (shown === null || (Array.isArray(shown) && shown.length === 0))
+        return 'all'
       // Several groups shown is no one choice of the select.
-      return keys.length === 1 ? keys[0] : undefined
+      return Array.isArray(shown) && shown.length === 1 ? shown[0] : undefined
     },
     write: (value) => {
       gone()
       if (typeof value !== 'string' || !choices.includes(value))
         throw new Error(`${bind} takes one of: ${choices.join(', ')}.`)
       return setOptions(index, {
-        groupColors: value === 'all' ? null : { [value]: GROUP_COLOR },
+        visibleGroups: value === 'all' ? null : [value],
+        // A leftover groupColors would hide or flat-paint the chosen group.
+        groupColors: null,
       })
     },
   }

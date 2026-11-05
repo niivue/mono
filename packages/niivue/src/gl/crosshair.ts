@@ -92,13 +92,7 @@ export class CrosshairRenderer extends NVRenderer {
         gl.DYNAMIC_DRAW,
       )
 
-      // Set up vertex attributes (interleaved, 28 bytes stride)
-      gl.enableVertexAttribArray(aPosition)
-      gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 28, 0)
-      gl.enableVertexAttribArray(aNormal)
-      gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 28, 12)
-      gl.enableVertexAttribArray(aColor)
-      gl.vertexAttribPointer(aColor, 4, gl.UNSIGNED_BYTE, true, 28, 24)
+      mesh.setVertexAttribs(gl, aPosition, aNormal, aColor)
 
       // Create index buffer (static, same topology)
       const indexBuffer = gl.createBuffer()

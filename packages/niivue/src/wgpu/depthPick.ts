@@ -4,6 +4,7 @@
 
 import { mat4 } from 'gl-matrix'
 import { log } from '@/logger'
+import { VERTEX_BUFFER_LAYOUT } from '@/mesh/vertexFormat'
 import { volumeShaderPreamble } from './volumeShaderLib'
 
 // --- Volume depth-pick WGSL ---
@@ -383,28 +384,7 @@ export function init(
       vertex: {
         module: shaderModule,
         entryPoint: 'vertex_main',
-        buffers: [
-          {
-            arrayStride: 28,
-            attributes: [
-              {
-                format: 'float32x3' as GPUVertexFormat,
-                offset: 0,
-                shaderLocation: 0,
-              },
-              {
-                format: 'float32x3' as GPUVertexFormat,
-                offset: 12,
-                shaderLocation: 1,
-              },
-              {
-                format: 'unorm8x4' as GPUVertexFormat,
-                offset: 24,
-                shaderLocation: 2,
-              },
-            ],
-          },
-        ],
+        buffers: [VERTEX_BUFFER_LAYOUT],
       },
       fragment: {
         module: shaderModule,

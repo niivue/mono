@@ -7,7 +7,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
 import { generateNormals } from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
-import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
+import { packVertices } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type NVModel from '@/NVModel'
@@ -624,20 +624,7 @@ export default class NVView {
     const positions = new Float32Array(cubeData.positions)
     const indices = new Uint32Array(cubeData.indices)
     const normals = generateNormals(positions, indices)
-    const numVerts = positions.length / 3
-    const vertexData = new ArrayBuffer(numVerts * BYTES_PER_VERTEX)
-    const f32 = new Float32Array(vertexData)
-    const u32 = new Uint32Array(vertexData)
-    for (let v = 0; v < numVerts; v++) {
-      const off = (v * BYTES_PER_VERTEX) / 4
-      f32[off] = positions[v * 3]
-      f32[off + 1] = positions[v * 3 + 1]
-      f32[off + 2] = positions[v * 3 + 2]
-      f32[off + 3] = normals[v * 3]
-      f32[off + 4] = normals[v * 3 + 1]
-      f32[off + 5] = normals[v * 3 + 2]
-      u32[off + 6] = cubeData.colors[v]
-    }
+    const vertexData = packVertices(positions, normals, cubeData.colors)
     const vertexBuffer = device.createBuffer({
       size: vertexData.byteLength,
       usage: GPUBufferUsage.VERTEX,

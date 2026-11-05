@@ -1,3 +1,17 @@
+## 1.0.0-rc.89 (2026-11-05)
+
+### Features
+
+- **nv-ext-tiff:** stream tiled/pyramidal TIFF and SVS slides via geotiff ([#179](https://github.com/niivue/mono/issues/179))
+
+### Fixes
+
+- **niivue:** centre a slide when the view is larger than it ([d323d37b](https://github.com/niivue/mono/commit/d323d37b))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.88 (2026-11-05)
 
 ### Fixes

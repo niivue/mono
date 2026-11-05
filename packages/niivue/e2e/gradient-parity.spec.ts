@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // The gradient texture (RGB = encoded unit normal, A = log-encoded magnitude)
 // feeds three features -- matcap illumination, gradientOpacity and
@@ -26,10 +27,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // SwiftShader, which is enough to run a compute pass; scoped to this file so the
 // rest of the suite keeps the config's plain WebGL2-on-SwiftShader setup.
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const harness = `
   const { volume2TextureGradientRGBA: glGrad } = await import('/src/gl/gradient.ts')

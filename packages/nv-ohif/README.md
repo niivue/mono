@@ -164,10 +164,11 @@ DICOM series are rendered by fetching the instances and converting them to NIfTI
 in-browser with `@niivue/dcm2niix` (a WASM build of dcm2niix). This is verified
 working end-to-end in a real OHIF app for both uncompressed and JPEG-LS studies,
 and it works for `npm`-install consumers too. The package requires
-`@niivue/dcm2niix` `^1.4.20261029`, whose `convert()` owns the worker lifetime and
-reports dcm2niix's log when a conversion fails; it also ships its own TypeScript
-declarations. Releases before `1.3.20260724` aborted every in-browser conversion
-(an Emscripten `exit()` throw inside the Web Worker) and are excluded.
+`@niivue/dcm2niix` `^1.4.20261029`, which reports dcm2niix's log when a conversion
+fails and ships its own TypeScript declarations. Its worker boots while the
+instances download, and is terminated on success, failure or abort. Releases
+before `1.3.20260724` aborted every in-browser conversion (an Emscripten
+`exit()` throw inside the Web Worker) and are excluded.
 
 ## Whole-slide imaging
 

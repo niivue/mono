@@ -1,15 +1,12 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // VOLUME_RENDER_MODE.CINEMATIC settings: the setter merges, documents keep
 // them, and an older document's partial object is filled from the defaults.
 
 test.use({ launchOptions: webgpuLaunchOptions })
 test.describe.configure({ timeout: 180_000 })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('volumeCinematic merges and survives a document round trip', async ({
   page,

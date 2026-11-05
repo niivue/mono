@@ -102,6 +102,58 @@ export function buildExtensionMap<T extends { extensions?: string[] }>(
   return map
 }
 
+type ReaderModule<A extends unknown[], R> = {
+  extensions?: string[]
+  read: (buffer: ArrayBuffer, ...args: A) => R | Promise<R>
+}
+
+/** Register `fromExt` as `converter` followed by the built-in reader for `toExt`. */
+export function registerConvertedReader<A extends unknown[], R>(
+  readerByExt: Map<string, ReaderModule<A, R>>,
+  kind: string,
+  fromExt: string,
+  toExt: string,
+  converter: (
+    buffer: ArrayBuffer,
+  ) => ArrayBuffer | Uint8Array | Promise<ArrayBuffer | Uint8Array>,
+): void {
+  const targetReader = readerByExt.get(toExt.toUpperCase())
+  if (!targetReader) {
+    throw new Error(`No built-in ${kind} reader for target format "${toExt}"`)
+  }
+  readerByExt.set(fromExt.toUpperCase(), {
+    extensions: [fromExt.toUpperCase()],
+    read: async (buffer, ...args) => {
+      const converted = await converter(buffer)
+      const ab =
+        converted instanceof ArrayBuffer
+          ? converted
+          : (new Uint8Array(converted).buffer as ArrayBuffer)
+      return targetReader.read(ab, ...args)
+    },
+  })
+}
+
+/** Newline-delimited text lines of a binary file; `pos` is the byte after the last line read. */
+export class LineReader {
+  pos = 0
+  readonly bytes: Uint8Array
+  constructor(buffer: ArrayBufferLike) {
+    this.bytes = new Uint8Array(buffer)
+  }
+  readLine(skipBlank = true): string {
+    const { bytes } = this
+    const len = bytes.length
+    if (skipBlank) {
+      while (this.pos < len && bytes[this.pos] === 10) this.pos++
+    }
+    const start = this.pos
+    while (this.pos < len && bytes[this.pos] !== 10) this.pos++
+    this.pos++ // skip EOLN
+    return new TextDecoder().decode(bytes.subarray(start, this.pos - 1))
+  }
+}
+
 export async function fetchFile(input: string | File): Promise<ArrayBuffer> {
   let buf: ArrayBuffer
   if (input instanceof File) {

@@ -15,6 +15,12 @@ import {
   GRAPHICS_RECOVERING_MESSAGE,
   showCanvasMessage,
 } from '@/control/canvasMessage'
+import {
+  computeBoundsPixelRect,
+  getCanvasInstances,
+  getCanvasViewport,
+  setCanvasViewport,
+} from '@/control/canvasRegistry'
 import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
 import { applyInstances } from '@/control/instances'
 import {
@@ -27,12 +33,6 @@ import {
 import { buildLocationMessage } from '@/control/locationTracking'
 import type { AddMeasurementOptions } from '@/control/measurements'
 import * as measurementApi from '@/control/measurements'
-import {
-  computeBoundsPixelRect,
-  getCanvasInstances,
-  getCanvasViewport,
-  setCanvasViewport,
-} from '@/control/viewBoth'
 import type {
   ReinitializeOptions,
   ViewLifecycle,
@@ -7004,6 +7004,8 @@ export default class NiiVue extends EventTarget {
   }
 
   destroy(): void {
+    // A second call would reach renderers whose GPU device is already gone.
+    if (this._destroyed) return
     this._destroyed = true
     this._animation?.stop('destroyed')
     this.emit('viewDestroyed')

@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // `crosshairColorPerAxis` tints each crosshair segment by the world axis it
 // extends along, and the mapping is only observable in the rendered pixels: the
@@ -23,10 +24,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // Dawn on SwiftShader and carries the config's PLAYWRIGHT_CHROMIUM_PATH escape
 // hatch, which `test.use({ launchOptions })` would otherwise drop.
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // The real mni152 from packages/dev-images, so this spec loads the same single
 // LFS object niivue-e2e.yml already pulls for texcache-kind-change. An unpulled

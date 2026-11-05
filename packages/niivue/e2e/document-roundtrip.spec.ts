@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // End-to-end coverage for the two NVDocument save/reload behaviors that can only
 // be exercised in a real browser (NiiVue's Vite module graph + a GPU context):
@@ -7,10 +8,6 @@ import { expect, test } from '@playwright/test'
 //     (default resets to defaults, 'current' keeps the instance value).
 // The page just provides the dev-server origin so `import('/src/index.ts')` and
 // `/volumes/...` resolve; the work happens inside page.evaluate.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('linkData: a linked document omits volume bytes and refetches from the URL', async ({
   page,

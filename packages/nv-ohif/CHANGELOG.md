@@ -1,3 +1,81 @@
+## 1.0.0-rc.89 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.93
+- Updated uikit to 1.0.0-rc.88
+
+## 1.0.0-rc.88 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.92
+- Updated uikit to 1.0.0-rc.87
+
+## 1.0.0-rc.87 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.91
+- Updated uikit to 1.0.0-rc.86
+
+## 1.0.0-rc.86 (2026-11-05)
+
+### Fixes
+
+- **nv-ohif:** drop the OHIF row for an erased line, arrow or bidirectional ([8bdf0225](https://github.com/niivue/mono/commit/8bdf0225))
+- leave a shape untouched when the eraser misses it ([7f2b0a50](https://github.com/niivue/mono/commit/7f2b0a50))
+- **nv-ohif:** drop the row for an erased rect, ellipse or circle ([8d8e684b](https://github.com/niivue/mono/commit/8d8e684b))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.90
+- Updated uikit to 1.0.0-rc.85
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.85 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.89
+- Updated uikit to 1.0.0-rc.84
+
+## 1.0.0-rc.84 (2026-11-05)
+
+### Fixes
+
+- **nv-ohif:** do not run dcm2niix after an abort in the converting callback ([71605e31](https://github.com/niivue/mono/commit/71605e31))
+- **nv-ohif:** hash ruler length to 0.01 mm, tag fields, cover style ([a9ccd062](https://github.com/niivue/mono/commit/a9ccd062))
+- **nv-ohif:** stop the dcm2niix worker without waiting for its boot ([5e019d91](https://github.com/niivue/mono/commit/5e019d91))
+- **nv-ohif:** redraw the ruler when its length label changes ([5a5d2f39](https://github.com/niivue/mono/commit/5a5d2f39))
+
+### Performance
+
+- **nv-ohif:** hash annotation overlay shapes instead of building a string ([#124](https://github.com/niivue/mono/issues/124))
+- **nv-ohif:** boot the dcm2niix worker while DICOM instances download ([#121](https://github.com/niivue/mono/issues/121))
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.83
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.83 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.88
+- Updated uikit to 1.0.0-rc.82
+
 ## 1.0.0-rc.82 (2026-11-04)
 
 ### Updated Dependencies

@@ -348,8 +348,8 @@ export interface SlideSourceHost {
  * bytes for one tile. NVSlide owns decoding (per `level.codec`), caching, stats
  * and the viewport; a source varies by FORMAT. {@link ManifestRangeSource} (the
  * default) addresses tiles as byte ranges in a per-level file (dicom-wsi-range-v1
- * and the synthetic pyramid); DZI (per-tile URLs) and TIFF (IFD tile offsets) are
- * future sources implementing this same contract.
+ * and the synthetic pyramid); `DziSource` (per-tile URLs) and
+ * `TiffSlideSource` in `@niivue/nv-ext-tiff` (geotiff) implement the same contract.
  */
 export interface SlideTileSource {
   readonly manifest: NVSlideManifest
@@ -660,12 +660,16 @@ export class NVSlide extends EventTarget {
     const halfHeight = screen.heightCss / (2 * this.viewport.scale)
     const padX = Math.max(this.manifest.width * 0.08, halfWidth * 0.25)
     const padY = Math.max(this.manifest.height * 0.08, halfHeight * 0.25)
-    this.viewport.centerX = clamp(
+    // When the view is wider than the padded slide on an axis the range
+    // inverts; centre on the slide rather than pinning to the low bound.
+    const clampAxis = (value: number, min: number, max: number) =>
+      min > max ? (min + max) / 2 : clamp(value, min, max)
+    this.viewport.centerX = clampAxis(
       this.viewport.centerX,
       -padX + halfWidth,
       this.manifest.width + padX - halfWidth,
     )
-    this.viewport.centerY = clamp(
+    this.viewport.centerY = clampAxis(
       this.viewport.centerY,
       -padY + halfHeight,
       this.manifest.height + padY - halfHeight,

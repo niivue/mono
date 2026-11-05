@@ -1,3 +1,51 @@
+## 1.0.0-rc.80 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.93
+- Updated uikit to 1.0.0-rc.88
+
+## 1.0.0-rc.79 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.92
+- Updated uikit to 1.0.0-rc.87
+
+## 1.0.0-rc.78 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.91
+- Updated uikit to 1.0.0-rc.86
+
+## 1.0.0-rc.77 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.90
+- Updated uikit to 1.0.0-rc.85
+
+## 1.0.0-rc.76 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.89
+- Updated uikit to 1.0.0-rc.84
+
+## 1.0.0-rc.75 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.83
+
+## 1.0.0-rc.74 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.88
+- Updated uikit to 1.0.0-rc.82
+
 ## 1.0.0-rc.73 (2026-11-04)
 
 ### Features

@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // A `.HEAD` URL given without `urlImageData` is paired with the `.BRIK` or
 // `.BRIK.gz` beside it in `NVModel.prepareVolume`. The URL derivation and the
@@ -6,10 +7,6 @@ import { expect, test } from '@playwright/test'
 // fetch; this holds the wiring through the real controller, load worker and
 // AFNI reader, which the Bun runner cannot import. The dev images ship only
 // `DT_*+orig.BRIK.gz`, so every inferred load here takes the `.gz` fallback.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const setup = `
   const { default: NiiVue } = await import('/src/index.ts')

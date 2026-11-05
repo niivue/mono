@@ -1,13 +1,10 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // An edit made through the extension context (`ctx.drawing.update`) used to be
 // invisible to Undo: nothing public could push a snapshot. `pushUndo()` /
 // `drawAddUndoBitmap()` close that gap. Needs a real instance (drawing volume,
 // GPU refresh), so this is an e2e test rather than a Bun unit test.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('pushUndo before ctx.drawing.update makes the edit undoable', async ({
   page,

@@ -1,4 +1,11 @@
 import { NVRenderer } from '@/view/NVRenderer'
+import {
+  alphaPipelineDesc,
+  linearSampler,
+  overlayDepth,
+  texturedLayout,
+  uniformBuffer,
+} from './pipeline'
 import * as wgpu from './wgpu'
 
 const shaderCode = /* wgsl */ `
@@ -66,58 +73,19 @@ export class ThumbnailRenderer extends NVRenderer {
   ): Promise<void> {
     if (this.isReady) return
 
-    this._sampler = device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-    })
-
-    this._bindLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX,
-          buffer: { type: 'uniform' },
-        },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-      ],
-    })
-
-    const module = device.createShaderModule({ code: shaderCode })
-    this._pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
+    this._sampler = linearSampler(device)
+    this._bindLayout = texturedLayout(device, GPUShaderStage.VERTEX)
+    this._pipeline = device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: shaderCode }),
         bindGroupLayouts: [this._bindLayout],
+        format,
+        msaaCount,
+        depthStencil: overlayDepth(),
       }),
-      multisample: { count: msaaCount },
-      vertex: { module, entryPoint: 'vertex_main' },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
-      },
-      primitive: { topology: 'triangle-strip' },
-    })
-
-    this._paramsBuffer = device.createBuffer({
-      size: 16, // 4 floats: canvasW, canvasH, texW, texH
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
+    )
+    // 4 floats: canvasW, canvasH, texW, texH
+    this._paramsBuffer = uniformBuffer(device, 16)
 
     this.isReady = true
   }

@@ -1,6 +1,7 @@
 import { inflateSync } from 'node:zlib'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // VOLUME_RENDER_MODE.SLICES draws the three crosshair planes inside the 3D tile
 // instead of ray-marching. It is selected by the same `volumeRenderMode` field
@@ -17,10 +18,6 @@ test.use({ launchOptions: webgpuLaunchOptions })
 
 // Every test here loads a volume and compiles shaders on SwiftShader.
 test.describe.configure({ timeout: 180_000 })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const SIZE = 256
 const MODES = { COMPOSITE: 0, MAXIMUM: 1, SLICES: 2 } as const
@@ -93,6 +90,19 @@ const mount = (
   }
   return { ok: true, backend: nv.backend }
 })()`
+
+/**
+ * Wait for `window[nv]` to draw a settled frame, then require the stream idle:
+ * whenChunkStreamSettles gives up quietly on timeout.
+ */
+async function settle(page: Page, nv: string): Promise<void> {
+  const s = await page.evaluate(`(async () => {
+    const nv = window.${nv}
+    await nv.whenChunkStreamSettles()
+    return nv.chunkStreamStats()
+  })()`)
+  expect(s.pending + s.inFlight, JSON.stringify(s)).toBe(0)
+}
 
 /** Points spread over the tile, as page coordinates for a canvas at `left`. */
 const GRID: [number, number][] = [
@@ -234,7 +244,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       await page.evaluate('window.__nv.view.volumeRenderer.hasChunkedVolume'),
     ).toBe(true)
     // Let the bricks settle, or the planes are empty for a different reason.
-    await page.waitForTimeout(4000)
+    await settle(page, '__nv')
 
     const swept = await page.evaluate(`(async () => {
       await window.__setMode(${MODES.SLICES})
@@ -286,7 +296,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     ])`)
     // Streaming settles asynchronously; the bricks have to be resident before
     // the two pictures can be compared.
-    await page.waitForTimeout(4000)
+    await settle(page, '__nvB')
     await page.evaluate(`window.__setModeB(${MODES.SLICES})`)
 
     expectProbesClose(
@@ -352,7 +362,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
           await window.__nextFrame()
         })()`)
         // Let the floor and the bricks settle.
-        await page.waitForTimeout(4000)
+        await settle(page, '__nv')
       }
       expect(
         await page.evaluate('window.__nv.view.volumeRenderer.hasChunkedVolume'),

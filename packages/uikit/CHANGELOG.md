@@ -1,3 +1,50 @@
+## 1.0.0-rc.88 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.93
+
+## 1.0.0-rc.87 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.92
+
+## 1.0.0-rc.86 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.91
+
+## 1.0.0-rc.85 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.90
+
+## 1.0.0-rc.84 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.89
+
+## 1.0.0-rc.83 (2026-11-05)
+
+### Fixes
+
+- **uikit:** zero rect and GL line slots before packing a record ([d844633c](https://github.com/niivue/mono/commit/d844633c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.82 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.88
+
 ## 1.0.0-rc.81 (2026-11-04)
 
 ### Updated Dependencies

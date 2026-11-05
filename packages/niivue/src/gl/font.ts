@@ -12,6 +12,7 @@ import {
 } from '@/view/NVFont'
 import { NVRenderer } from '@/view/NVRenderer'
 import { fontFragShader, fontVertShader } from './fontShader'
+import { setTexParams } from './glUtil'
 import { panelFragShader, panelVertShader } from './panelShader'
 import { Shader } from './shader'
 
@@ -30,10 +31,7 @@ async function loadFontTexture(
         return
       }
       gl.bindTexture(gl.TEXTURE_2D, texture)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img)
       resolve({ texture, width: img.width, height: img.height })
     }

@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // animateTo writes through the controller's public setters on real animation
 // frames, so whether a transition lands on its target, and stops where it is
@@ -6,10 +7,6 @@ import { expect, test } from '@playwright/test'
 // timing are unit-tested in src/control/animate.test.ts against a fake clock;
 // this holds the wiring: the setters it calls, the canvas listeners it adds
 // and removes, and the handover between transitions.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // A visible canvas: a hidden page stops animation frames, which would turn
 // every transition into a 'stalled' jump and test nothing in between.

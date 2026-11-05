@@ -10,9 +10,9 @@ import {
   emitPan2DChange,
   emitScaleMultiplierChange,
 } from '@/control/cameraEvents'
+import { computeBoundsPixelRect } from '@/control/canvasRegistry'
 import * as DragModes from '@/control/dragModes'
 import { type Pinch, pinchCamera } from '@/control/pinchZoom'
-import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import {
@@ -1588,19 +1588,15 @@ export function initInteraction(ctrl: NiiVue): void {
               if (ann?.shape) {
                 ctrl._annotationUndoStack.push(ctrl.model.annotations)
                 ctrl._resizingControlPoint = cpIdx
-                const intact = Annotation.generateShape(
-                  ann.shape.type,
-                  ann.shape.start,
-                  ann.shape.end,
-                  ann.shape.width ?? ctrl.model.annotation.style.strokeWidth,
-                )
                 ctrl._resizeOriginalShape = {
                   start: { ...ann.shape.start },
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
                   polygons: ann.polygons,
-                  isErased:
-                    JSON.stringify(intact) !== JSON.stringify(ann.polygons),
+                  isErased: Annotation.isAnnotationErased(
+                    ann,
+                    ctrl.model.annotation.style.strokeWidth,
+                  ),
                 }
                 ctrl._resizingAnnotation = ann
                 startAnnotationDrag(ctrl, evt)

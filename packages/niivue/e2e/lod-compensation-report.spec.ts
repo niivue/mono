@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // nv.lodCompensation() exists because both LOD compensation settings are exact
 // no-ops on anything that is not a multi-LOD chunked volume, with nothing on
@@ -9,10 +10,6 @@ import { expect, test } from '@playwright/test'
 // This is an e2e rather than a Bun unit test because the report reads through
 // the controller (whose module graph uses import.meta.glob) and asks the
 // attached view for its coarse-floor dims.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const setup = `
   const { default: NiiVue } = await import('/src/index.ts')

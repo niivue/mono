@@ -1,6 +1,7 @@
 import { inflateSync } from 'node:zlib'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // An overlay's modulation (setModulationImage) must survive the chunked path.
 // The non-chunked overlay orient pass has always received the modulator; the
@@ -27,10 +28,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 
 test.use({ launchOptions: webgpuLaunchOptions })
 test.describe.configure({ timeout: 180_000 })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const SIZE = 256
 // VOLUME_RENDER_MODE.SLICES: three crosshair planes, the one render that is
@@ -97,6 +94,10 @@ const mount = (
   await nextFrame()
   window.__nv${id} = nv
   window.__settle${id} = async () => {
+    await nv.whenChunkStreamSettles()
+    // whenChunkStreamSettles gives up quietly on timeout.
+    const s = nv.chunkStreamStats()
+    if (s.pending + s.inFlight > 0) throw new Error('stream not idle: ' + JSON.stringify(s))
     // Re-commit the render mode after the bricks stream in; same recipe as
     // render-mode.spec.ts for a chunked instance.
     nv.volumeRenderMode = ${SLICES}
@@ -193,7 +194,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     ).toBe(true)
     // Streaming settles asynchronously; the bricks have to be resident before
     // the two pictures can be compared.
-    await page.waitForTimeout(4000)
     await page.evaluate('window.__settleB()')
 
     const whole = await gridProbes(page, 0)
@@ -223,7 +223,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     // that fell back to whole reslicing would add none.
     expect(counts.before).toBeGreaterThan(1)
     expect(counts.after).toBe(2 * counts.before)
-    await page.waitForTimeout(4000)
     await page.evaluate('window.__settleC()')
 
     const whole = await gridProbes(page, 0)

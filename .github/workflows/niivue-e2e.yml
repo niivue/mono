@@ -73,10 +73,13 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # Only chromium, and only its deps: the specs pin one project.
+      # Only the headless shell: these specs never launch full Chromium. No
+      # --with-deps: the runner image already has Chromium's libraries, and the
+      # fonts it would add (one run spent 5 min on a slow apt mirror) are not
+      # used. A missing library fails the launch with Playwright's own message.
       - name: Install Playwright chromium
         working-directory: packages/niivue
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install --only-shell chromium
 
       - name: Browser contracts
         working-directory: packages/niivue
@@ -127,6 +130,8 @@ jobs:
     timeout-minutes: 45
     env:
       PLAYWRIGHT_CHROMIUM_CHANNEL: chromium
+      # Serve a build, not the dev server: see packages/niivue/vite.config.e2e.ts.
+      E2E_BUNDLE: '1'
     steps:
       # All of dev-images, unlike the job above: the full suite reads ~17
       # assets and an include list would rot as specs are added.
@@ -138,14 +143,30 @@ jobs:
         with:
           bun-version-file: .bun-version
 
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
       - run: bun install --frozen-lockfile
 
+      # Keyed on the lockfile, which pins the Playwright (and so Chromium) version.
+      - uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      # --no-shell: Metal launches full Chromium only (PLAYWRIGHT_CHROMIUM_CHANNEL).
       - name: Install Playwright chromium
         working-directory: packages/niivue
-        run: bunx playwright install chromium
+        run: bunx playwright install --no-shell chromium
 
-      # e2e/uikit-overlay-hook.spec.ts imports the built bundle.
-      - run: bunx nx build uikit
+      # e2e/uikit-overlay-hook.spec.ts imports the built bundle. Vite directly,
+      # not `nx build uikit`, which builds niivue first (~25 s) for nothing:
+      # the bundle keeps @niivue/niivue external.
+      - name: Build uikit
+        working-directory: packages/uikit
+        run: bunx --bun vite build
 
       - name: Full e2e suite
         working-directory: packages/niivue

@@ -3,8 +3,10 @@
 
 import { beforeAll, describe, expect, it } from 'bun:test'
 import { FLOATS_PER_LINE, type LineData } from '../line'
+import { FLOATS_PER_RECT, type RectData } from '../rect'
 import { FLOATS_PER_VERTEX } from '../text/layout'
 import { WgpuLineRenderer } from './wgpuLineRenderer'
+import { WgpuRectRenderer } from './wgpuRectRenderer'
 import { type TextRun, WgpuTextRenderer } from './wgpuTextRenderer'
 
 type Write = {
@@ -148,6 +150,78 @@ describe('WgpuLineRenderer staging', () => {
     draw(r, gpu, many)
     expect(gpu.writes[1].data).toHaveLength(100 * FLOATS_PER_LINE)
     expect(gpu.writes[1].data.at(-1)).toBe(99)
+    expect(gpu.buffers.at(-1)?.size).toBeGreaterThanOrEqual(
+      100 * FLOATS_PER_LINE * 4,
+    )
+  })
+})
+
+const rect = (v: number): RectData => ({
+  data: new Float32Array(FLOATS_PER_RECT).fill(v),
+})
+
+describe('WgpuRectRenderer staging', () => {
+  const draw = (
+    r: WgpuRectRenderer,
+    gpu: ReturnType<typeof fakeGpu>,
+    rects: RectData[],
+  ) => r.draw(gpu.device, gpu.pass, 'bgra8unorm', 1, undefined, rects, 640, 480)
+
+  it('uploads exactly the active range across grow, shrink and holes', () => {
+    const gpu = fakeGpu()
+    const r = new WgpuRectRenderer()
+    draw(r, gpu, [rect(1), rect(2), rect(3)])
+    const staging = gpu.writes[1].src
+    expect(gpu.writes[0].data.slice(0, 2)).toEqual([640, 480])
+    expect(gpu.writes[1].data).toHaveLength(3 * FLOATS_PER_RECT)
+    expect(gpu.calls.at(-1)?.args).toEqual([4, 3])
+
+    gpu.reset()
+    draw(r, gpu, [rect(7)])
+    expect(gpu.writes[1].data).toEqual(Array(FLOATS_PER_RECT).fill(7))
+    expect(gpu.writes[1].src).toBe(staging)
+    expect(gpu.calls.at(-1)?.args).toEqual([4, 1])
+
+    // A hole after a larger frame is zeroed, not left holding the old rect.
+    gpu.reset()
+    const holed = [rect(5), rect(6)]
+    delete holed[1]
+    draw(r, gpu, holed)
+    expect(gpu.writes[1].data.slice(FLOATS_PER_RECT)).toEqual(
+      Array(FLOATS_PER_RECT).fill(0),
+    )
+
+    gpu.reset()
+    draw(r, gpu, [])
+    expect(gpu.writes).toHaveLength(0)
+    expect(gpu.calls).toHaveLength(0)
+  })
+
+  it('grows past the initial storage capacity', () => {
+    const gpu = fakeGpu()
+    const r = new WgpuRectRenderer()
+    draw(
+      r,
+      gpu,
+      Array.from({ length: 100 }, (_, i) => rect(i)),
+    )
+    expect(gpu.writes[1].data).toHaveLength(100 * FLOATS_PER_RECT)
+    expect(gpu.writes[1].data.at(-1)).toBe(99)
+    expect(gpu.buffers.at(-1)?.size).toBeGreaterThanOrEqual(
+      100 * FLOATS_PER_RECT * 4,
+    )
+  })
+
+  it('zeroes the tail of a short record instead of keeping the prior frame', () => {
+    const gpu = fakeGpu()
+    const r = new WgpuRectRenderer()
+    draw(r, gpu, [rect(1)])
+    gpu.reset()
+    draw(r, gpu, [{ data: new Float32Array(FLOATS_PER_RECT - 1).fill(2) }])
+    expect(gpu.writes[1].data).toEqual([
+      ...Array(FLOATS_PER_RECT - 1).fill(2),
+      0,
+    ])
   })
 })
 

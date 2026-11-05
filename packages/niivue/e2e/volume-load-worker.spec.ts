@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // The volume-load worker exists to keep the main thread responsive during gzip
 // decompression + NIfTI parse. It never actually ran: nifti-reader-js declares
@@ -9,10 +10,6 @@ import { expect, test } from '@playwright/test'
 // `hdrTransfer` sends a data-only header snapshot and rebuilds the instance on
 // receipt. These tests pin both halves: the worker is used (no fallback warning),
 // and the rehydrated header still behaves like a NIFTI1.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const loadVolume = `
   const { default: NiiVue } = await import('/src/index.ts')

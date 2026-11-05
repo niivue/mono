@@ -1,3 +1,18 @@
+## 1.0.0-rc.93 (2026-11-05)
+
+### Fixes
+
+- **niivue:** unregister a controller whose single-backend attach failed ([c748c527](https://github.com/niivue/mono/commit/c748c527))
+- **niivue:** keep a failed thumbnail reload from aborting a single-backend rebuild ([1dcfe5ce](https://github.com/niivue/mono/commit/1dcfe5ce))
+- single-backend views restore the drawing and emit viewDestroyed/viewAttached like viewBoth ([8471289a](https://github.com/niivue/mono/commit/8471289a))
+- **niivue:** keep the canvas viewport and registry across view recreation ([b596fd2b](https://github.com/niivue/mono/commit/b596fd2b))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.92 (2026-11-05)
 
 ### Fixes

@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-tiff",
-  "version": "1.0.0-rc.4",
+  "version": "1.0.0-rc.5",
   "type": "module",
   "description": "Stream pyramidal/tiled (OME-)TIFF and SVS whole-slide images into NiiVue's NVSlide by HTTP Range, decoded with geotiff",
   "main": "./dist/nv-ext-tiff.js",

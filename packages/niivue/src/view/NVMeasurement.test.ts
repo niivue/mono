@@ -80,3 +80,12 @@ describe('formatDistance', () => {
     expect(formatDistance(4.5, false, 'um')).toBe('4.50')
   })
 })
+
+describe('ruler tick thinning', () => {
+  it('a long ruler steps 1/2/5 so majors stay on round values', () => {
+    // 500 units: 200-tick cap gives raw step 2.5, rounded to 5, not 3.
+    const nums = rulerTickLabels(0, 0, 5000, 0, 500, 6, 1).map((t) => t.str)
+    expect(nums[0]).toBe('5')
+    expect(nums.every((n) => Number(n) % 5 === 0)).toBe(true)
+  })
+})

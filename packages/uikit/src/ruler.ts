@@ -5,6 +5,7 @@
 // overlay (rulerOverlay.ts) just draws it. Ported from the old niivue/niivue uikit
 // `drawRuler`.
 
+import { decimation } from './crosshair'
 import { buildLine, type LineData } from './line'
 import { readableAngle } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -51,9 +52,6 @@ export interface RulerGeometry {
   lines: LineData[]
   text: UIKitTextItem[]
 }
-
-// Cap the tick count so an enormous measurement can't emit thousands of lines.
-const MAX_TICKS = 200
 
 const YELLOW: RGBA = [1, 1, 0, 1]
 
@@ -122,7 +120,7 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
   // Tick marks every unit, longer (and optionally numbered) every fifth.
   if (showTicks && length > 0) {
     const marks = Math.floor(length)
-    const step = Math.max(1, Math.ceil(marks / MAX_TICKS))
+    const step = decimation(marks)
     // Minimum along-ruler gap between graduation numbers so they never collide;
     // a long ruler thus labels only every few majors (e.g. 20/40/60) instead of
     // running every fifth value into an unreadable smear.

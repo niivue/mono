@@ -5,7 +5,7 @@ import {
   computeDescriptiveStats,
   type DescriptiveStats,
 } from '@/volume/descriptives'
-import { getImageDataRAS } from '@/volume/utils'
+import { getImageDataRAS, spatialUnit } from '@/volume/utils'
 
 /**
  * One mask for getDescriptives: a volume index, whose non-zero voxels count,
@@ -162,7 +162,11 @@ export function regionDescriptives(
       if (!keep) m[i] = 0
     }
   }
+  // pixDims are in the volume's own units (um for OME); stats report mm3.
   const voxelVolumeMM3 =
-    vol.pixDimsRAS[1] * vol.pixDimsRAS[2] * vol.pixDimsRAS[3]
+    vol.pixDimsRAS[1] *
+    vol.pixDimsRAS[2] *
+    vol.pixDimsRAS[3] *
+    spatialUnit(vol.hdr.xyzt_units).mm ** 3
   return computeDescriptiveStats(values, voxelVolumeMM3, mask)
 }

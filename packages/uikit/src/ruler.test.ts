@@ -100,3 +100,19 @@ describe('buildRuler', () => {
     expect(label.liftPx).toBeLessThan(0)
   })
 })
+
+describe('buildRuler tick thinning', () => {
+  it('a long ruler steps 1/2/5 so numbered ticks stay on round values', () => {
+    // 500 units: the 200-tick cap needs a step of 2.5, rounded to 5, not 3.
+    const g = buildRuler({
+      a: [0, 0],
+      b: [5000, 0],
+      length: 500,
+      sizePx: 2,
+      showTickNumbers: true,
+    })
+    const nums = g.text.map((t) => Number(t.str)).filter(Number.isInteger)
+    expect(nums[0]).toBe(5)
+    expect(nums.every((n) => n % 5 === 0)).toBe(true)
+  })
+})

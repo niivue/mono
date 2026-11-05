@@ -19,6 +19,20 @@ export type RulerSegment = readonly [number, number, number, number]
 const MAX_RULER_TICKS = 200
 
 /**
+ * Thin the ticks to at most MAX_RULER_TICKS in 1/2/5 steps, as @niivue/uikit's
+ * `decimation`: an arbitrary step (7, say) would number ticks 35, 70, ...
+ */
+function tickStep(marks: number): number {
+  if (marks <= MAX_RULER_TICKS) return 1
+  const raw = marks / MAX_RULER_TICKS
+  const decade = 10 ** Math.floor(Math.log10(raw))
+  for (const m of [1, 2, 5]) {
+    if (m * decade >= raw) return m * decade
+  }
+  return 10 * decade
+}
+
+/**
  * Screen-pixel line segments for a graduated ruler between two canvas points: a
  * plain baseline, long perpendicular end caps marking the exact start and end,
  * plus perpendicular tick marks — one per unit of `units`, longer every fifth —
@@ -68,7 +82,7 @@ export function rulerSegments(
   if (units <= 0) return segs
 
   const marks = Math.floor(units)
-  const step = Math.max(1, Math.ceil(marks / MAX_RULER_TICKS))
+  const step = tickStep(marks)
   for (let i = step; i <= marks; i += step) {
     const t = i / units
     const cx = sx + t * dx
@@ -112,7 +126,7 @@ export function rulerTickLabels(
   const py = dx / len
   const off = tickLength * 2 + tickLength
   const marks = Math.floor(units)
-  const step = Math.max(1, Math.ceil(marks / MAX_RULER_TICKS))
+  const step = tickStep(marks)
   // Minimum along-ruler gap between numbers so they never collide (matches
   // @niivue/uikit's buildRuler); derived from the number size and digit count.
   const maxDigits = `${marks}`.length

@@ -223,3 +223,14 @@ describe('regionDescriptives masks on another grid (#337)', () => {
     expect(descriptives([map2mm, volume([1, 1])], { masks: [1] })).toBeNull()
   })
 })
+
+describe('regionDescriptives voxel volume units', () => {
+  test('converts micrometer voxels to mm3', () => {
+    const um = volume([5, 5, 5, 5])
+    um.pixDimsRAS = [3, 1000, 1000, 1000]
+    um.hdr.xyzt_units = 11 // um + sec
+    const stats = descriptives([um], {})
+    // Four 1 mm voxels, not 4e9.
+    expect(stats?.volumeMM3).toBeCloseTo(4)
+  })
+})

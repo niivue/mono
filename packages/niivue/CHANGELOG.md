@@ -1,3 +1,13 @@
+## 1.0.0-rc.91 (2026-11-05)
+
+### Fixes
+
+- **niivue:** throw on a PLY header with no vertices or faces ([010005b6](https://github.com/niivue/mono/commit/010005b6))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.90 (2026-11-05)
 
 ### Features

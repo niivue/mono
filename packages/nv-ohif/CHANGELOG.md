@@ -1,3 +1,22 @@
+## 1.0.0-rc.86 (2026-11-05)
+
+### Fixes
+
+- **nv-ohif:** drop the OHIF row for an erased line, arrow or bidirectional ([8bdf0225](https://github.com/niivue/mono/commit/8bdf0225))
+- leave a shape untouched when the eraser misses it ([7f2b0a50](https://github.com/niivue/mono/commit/7f2b0a50))
+- **nv-ohif:** drop the row for an erased rect, ellipse or circle ([8d8e684b](https://github.com/niivue/mono/commit/8d8e684b))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.90
+- Updated uikit to 1.0.0-rc.85
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.85 (2026-11-05)
 
 ### Updated Dependencies

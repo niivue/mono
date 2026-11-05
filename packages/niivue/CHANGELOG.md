@@ -1,3 +1,20 @@
+## 1.0.0-rc.90 (2026-11-05)
+
+### Features
+
+- **niivue:** export isAnnotationErased and generateShape ([b331f27b](https://github.com/niivue/mono/commit/b331f27b))
+
+### Fixes
+
+- leave a shape untouched when the eraser misses it ([7f2b0a50](https://github.com/niivue/mono/commit/7f2b0a50))
+- **niivue:** judge only rebuildable shapes in isAnnotationErased ([f3c9f363](https://github.com/niivue/mono/commit/f3c9f363))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.89 (2026-11-05)
 
 ### Features

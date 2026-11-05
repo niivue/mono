@@ -903,6 +903,7 @@ describe('NVSlide monochrome window', () => {
   const saved = {
     ImageData: g.ImageData,
     createImageBitmap: g.createImageBitmap,
+    OffscreenCanvas: g.OffscreenCanvas,
   }
   beforeEach(() => {
     g.ImageData = class {
@@ -983,6 +984,37 @@ describe('NVSlide monochrome window', () => {
     expect(new Set(bitmap.data.filter((_, i) => i % 4 === 0))).toEqual(
       new Set([255]),
     )
+    slide.dispose()
+  })
+
+  it('windows a monochrome JPEG from its bitmap, MONOCHROME1 inverted', async () => {
+    // The browser's JPEG decoder yields only a grey bitmap: NVSlide reads it back.
+    g.OffscreenCanvas = class {
+      getContext() {
+        let drawn: FakeBitmap | null = null
+        return {
+          drawImage: (b: FakeBitmap) => {
+            drawn = b
+          },
+          getImageData: () => ({ data: drawn?.data }),
+        }
+      }
+    }
+    let jpeg: FakeBitmap | null = null
+    NVSlide.registerTileDecoder('image/jpeg', async () => {
+      const data = new Uint8ClampedArray(TILE_W * TILE_H * 4).fill(60)
+      jpeg = { width: TILE_W, height: TILE_H, data, closed: false, close() {} }
+      return jpeg as unknown as ImageBitmap
+    })
+    const manifest = makePyramid()
+    for (const level of manifest.levels)
+      Object.assign(level, { photometric: 'MONOCHROME1', bitsStored: 8 })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    await loadLevel(slide, 2)
+    expect(pixel(slide, 'L2/0/0')).toBe(195) // 255 - 60, the default 0..255 window
+    slide.setWindow(0, 120)
+    await waitFor(() => pixel(slide, 'L2/0/0') === 127) // 255 - round(60 * 255 / 120)
     slide.dispose()
   })
 

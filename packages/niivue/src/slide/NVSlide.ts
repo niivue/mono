@@ -327,6 +327,19 @@ export function windowSamples(
 const isMonochrome = (level: NVSlideLevelManifest): boolean =>
   level.photometric?.startsWith('MONOCHROME') ?? false
 
+/** A grey bitmap's red channel as 8-bit samples; closes the bitmap. */
+function greySamples(bitmap: ImageBitmap): NVSlideTileSamples {
+  const { width, height } = bitmap
+  const ctx = new OffscreenCanvas(width, height).getContext('2d')
+  if (!ctx) throw new Error('OffscreenCanvas 2D context unavailable')
+  ctx.drawImage(bitmap, 0, 0)
+  bitmap.close()
+  const rgba = ctx.getImageData(0, 0, width, height).data
+  const samples = new Uint8Array(width * height)
+  for (let i = 0; i < samples.length; i++) samples[i] = rgba[i * 4] as number
+  return { samples, width, height, components: 1, bitsStored: 8 }
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
@@ -1332,12 +1345,16 @@ export class NVSlide extends EventTarget {
           '(e.g. @niivue/dcm2niix createFrameDecoder for image/jp2).',
       )
     }
-    const decoded = await decoder(tileBytes, {
+    let decoded = await decoder(tileBytes, {
       width: tile.width,
       height: tile.height,
       level,
       signal,
     })
+    // A decoder that returns only a bitmap (the browser's JPEG) still windows:
+    // a monochrome tile's grey level comes back as 8-bit samples.
+    if (isMonochrome(level) && !('samples' in decoded))
+      decoded = greySamples(decoded)
     // Formats that store whole tiles (DICOM) pad edge frames, and every frame of
     // a level smaller than one tile, at the right and bottom. Padding is not
     // slide: crop it, or the level's image shrinks into one corner.

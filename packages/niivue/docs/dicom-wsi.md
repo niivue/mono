@@ -83,6 +83,10 @@ by the same dcm2niix pool. Samples are 8-16-bit unsigned; manifests carry DICOM 
   `{ calMin, calMax }` for the whole slide (`slide.setWindow`; default `0..2^bitsStored - 1`),
   inverts MONOCHROME1 after windowing, and keeps the samples so a new window re-renders
   cached tiles without re-decoding (2 more bytes per pixel in the tile cache at 16 bits).
+  A decoder that returns only a bitmap (the browser's baseline JPEG) is read back to 8-bit
+  samples for monochrome levels, so monochrome JPEG windows and inverts the same way.
+- Not in nv-mcp yet: `set_slide` drives the controller's slide plane, which has no window
+  setter; a window parameter needs `setSlidePlaneWindow` first.
 - The slides demo shows a `calMin,calMax` field for monochrome slides; in OHIF,
   `niivueSetWindowLevel` sets it.
 

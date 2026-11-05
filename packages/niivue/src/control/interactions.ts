@@ -10,9 +10,9 @@ import {
   emitPan2DChange,
   emitScaleMultiplierChange,
 } from '@/control/cameraEvents'
+import { computeBoundsPixelRect } from '@/control/canvasRegistry'
 import * as DragModes from '@/control/dragModes'
 import { type Pinch, pinchCamera } from '@/control/pinchZoom'
-import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import {

@@ -1,3 +1,4 @@
+import { log } from '@/logger'
 import type NiiVue from '@/NVControlBase'
 import type { BackendType } from '@/NVTypes'
 
@@ -25,4 +26,19 @@ export type ViewLifecycle = {
     options?: ReinitializeOptions,
   ) => Promise<boolean>
   unregister?: (ctrl: NiiVue) => void
+}
+
+/**
+ * Load the optional thumbnail without letting a bad image abort attach or
+ * rebuild: a rejection there would skip handlers and leave a dead view.
+ */
+export async function loadThumbnailSafely(
+  view: { loadThumbnail: (url: string) => Promise<void> },
+  url: string,
+): Promise<void> {
+  try {
+    await view.loadThumbnail(url)
+  } catch (error) {
+    log.warn('Failed to load the thumbnail:', error)
+  }
 }

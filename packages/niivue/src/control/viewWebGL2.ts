@@ -8,12 +8,18 @@ import {
   showCanvasMessage,
 } from './canvasMessage'
 import {
+  isSharedCanvas,
+  registerCanvasInstance,
+  replaceCanvas,
+  unregister,
+} from './canvasRegistry'
+import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
-import { registerCanvasInstance } from './viewBoth'
+import { loadThumbnailSafely } from './viewLifecycle'
 
 export async function attachTo(
   ctrl: NiiVue,
@@ -61,7 +67,7 @@ export async function attachToCanvas(
     if (ctrl.opts.thumbnail) {
       ctrl.model.ui.isThumbnailVisible = true
       ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
-      await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+      await loadThumbnailSafely(view, ctrl.model.ui.thumbnailUrl)
     }
     if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
     if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
@@ -82,7 +88,11 @@ export async function attachToCanvas(
   }
 }
 
-export async function recreateView(ctrl: NiiVue): Promise<void> {
+export async function recreateView(
+  ctrl: NiiVue,
+  cloneDetached = false,
+): Promise<void> {
+  ctrl.emit('viewDestroyed')
   ctrl.view?.destroy()
   ctrl.view = null
   ctrl.model.clearAllGPUResources()
@@ -90,21 +100,26 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   if (ctrl.resizeObserver) {
     ctrl.resizeObserver.disconnect()
   }
-  const oldCanvas = ctrl.canvas as HTMLCanvasElement
-  const parent = oldCanvas.parentNode
-  // cloneNode(false) preserves all attributes (width/height/data-*/aria/tabindex);
-  // it carries no rendering context, so the clone can getContext a fresh backend.
-  const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
-  parent?.replaceChild(newCanvas, oldCanvas)
-  ctrl.canvas = newCanvas
-  const view = new NVViewGL(ctrl.canvas, ctrl.model, ctrl.opts)
+  // Same backend, so a canvas shared through bounds keeps its context (as in
+  // viewBoth); an unshared one is cloned, since antialias is fixed at context
+  // creation. A detached canvas stays put unless antialias changes: the caller
+  // holds it, so the clone reaches them only through viewAttached.
+  const canvas = ctrl.canvas as HTMLCanvasElement
+  if (!isSharedCanvas(ctrl) && (canvas.parentNode || cloneDetached)) {
+    replaceCanvas(ctrl)
+  }
+  const view = new NVViewGL(
+    ctrl.canvas as HTMLCanvasElement,
+    ctrl.model,
+    ctrl.opts,
+  )
   await view.init()
   ctrl.view = view
   // Hooks go on before the resize() below draws the first frame: a preloaded
   // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
   ctrl._wireViewHooks()
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
-    await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
+    await loadThumbnailSafely(ctrl.view, ctrl.opts.thumbnail as string)
   }
   if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
   if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
@@ -113,6 +128,10 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   ctrl.restoreSlidePlaneView()
   ctrl.view.resize()
   ctrl.drawScene()
+  ctrl.emit('viewAttached', {
+    canvas: ctrl.canvas as HTMLCanvasElement,
+    backend: 'webgl2',
+  })
 }
 
 export async function reinitializeView(
@@ -143,21 +162,27 @@ export async function reinitializeView(
   if (!forceRestart && !antiAliasChanged && !pixelRatioChanged) {
     return true
   }
+  // Antialias is fixed when a context is created, and siblings share this one.
+  if (antiAliasChanged && isSharedCanvas(ctrl)) {
+    log.warn('Cannot change antialiasing on a canvas shared by other views.')
+    return false
+  }
 
   ctrl.opts.backend = 'webgl2'
   ctrl.opts.isAntiAlias = Boolean(newAntiAlias)
   ctrl.opts.forceDevicePixelRatio = newPixelRatio
 
   try {
-    if (forceRestart || antiAliasChanged) {
-      await recreateView(ctrl)
-    } else {
-      // The setter also updates controllers sharing this canvas.
-      ctrl.devicePixelRatio = newPixelRatio
-    }
+    if (forceRestart || antiAliasChanged)
+      await recreateView(ctrl, antiAliasChanged)
+    // The setter also updates controllers sharing this canvas.
+    if (pixelRatioChanged) ctrl.devicePixelRatio = newPixelRatio
     return true
   } catch (err) {
     log.error('Failed to reinitialize view:', err)
     return false
   }
 }
+
+// ViewLifecycle.unregister: drop a destroyed controller from the canvas registry.
+export { unregister }

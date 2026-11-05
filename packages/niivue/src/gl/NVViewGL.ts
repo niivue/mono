@@ -1,5 +1,5 @@
 import { mat4 } from 'gl-matrix'
-import { getCanvasViewport } from '@/control/viewBoth'
+import { getCanvasViewport } from '@/control/canvasRegistry'
 import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import { defaultMatcap } from '@/documentMatcap'
 import { log } from '@/logger'

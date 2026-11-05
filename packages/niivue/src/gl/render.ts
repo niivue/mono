@@ -2264,6 +2264,15 @@ export class VolumeRenderer extends NVRenderer {
         buildModulationParams(vol, vol, volumes),
         basePlan,
       )
+      // A base swap during the await could not see this mirror yet (it is
+      // not listed), so bring it to the base's current plan before listing it.
+      for (
+        let p = volumes[0]?.chunkPlan;
+        p && entry.plan !== p;
+        p = volumes[0]?.chunkPlan
+      ) {
+        await this._swapChunkedEntryPlan(gl, vol, entry, p, false)
+      }
       setChunkBudget(entry, overlayBudget)
       this._combinedOverlayEntries.push(entry)
     }

@@ -22,6 +22,7 @@ for (const [name, Renderer] of [
     const overlay = { chunkPlan: ownPlan } as unknown as NVImage
     const plansSeen: unknown[] = []
     const entry = {
+      plan: basePlan,
       manager: { setBudgetBytes() {} },
       decoded: { setMaxBytes() {} },
       sourceBytesPerVoxel: 1,
@@ -79,5 +80,45 @@ for (const [name, Renderer] of [
     ])
     expect(base.chunkPlan as unknown).toBe(newPlan)
     expect(overlayVol.chunkPlan).toBeNull()
+  })
+
+  test(`${name}: a base swap during a mirror rebuild still reaches the mirror`, async () => {
+    const oldPlan = { chunks: [{}] }
+    const newPlan = { chunks: [{}, {}] }
+    const base = { chunkPlan: oldPlan } as unknown as NVImage
+    const overlay = { chunkPlan: null } as unknown as NVImage
+    const entry = {
+      plan: oldPlan as unknown,
+      manager: { setBudgetBytes() {} },
+      decoded: { setMaxBytes() {} },
+      sourceBytesPerVoxel: 1,
+    }
+    const self = {
+      _chunkResidencyBytes: 1000,
+      _activeChunked: null,
+      _combinedOverlayEntries: [] as unknown[],
+      _invalidateBindGroupCache() {},
+      async _ensureChunkedVolumeEntry() {
+        // The base swaps while the mirror entry is being built.
+        ;(base as { chunkPlan: unknown }).chunkPlan = newPlan
+        return entry
+      },
+      async _swapChunkedEntryPlan(
+        _d: unknown,
+        _v: unknown,
+        e: typeof entry,
+        p: unknown,
+      ) {
+        e.plan = p
+      },
+    }
+    await method(Renderer, '_updateCombinedOverlayChunked').call(
+      self,
+      {},
+      [overlay],
+      [base, overlay],
+    )
+    expect(entry.plan).toBe(newPlan)
+    expect(self._combinedOverlayEntries).toEqual([entry])
   })
 }

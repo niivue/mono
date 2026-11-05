@@ -308,8 +308,14 @@ async function readHeader(
   size: number,
 ): Promise<{ b: Uint8Array; pixel: number; elements: Element[] }> {
   let want = Math.min(size, 1 << 20)
+  let b: Uint8Array = new Uint8Array(0)
   for (;;) {
-    const b = await readAt(0, want)
+    // Grow the prefix by reading only the new bytes.
+    const more = await readAt(b.length, want - b.length)
+    const grown = new Uint8Array(want)
+    grown.set(b)
+    grown.set(more, b.length)
+    b = grown
     const elements: Element[] = []
     try {
       if (String.fromCharCode(...b.subarray(128, 132)) !== 'DICM')
@@ -330,7 +336,7 @@ async function readHeader(
         )
       if (!(err instanceof NeedMore)) throw err
       if (want >= size)
-        throw new Skip('malformed', 'the header runs past the end of the file')
+        throw new Skip('not-tiled', 'no Pixel Data (e.g. a DICOMDIR)')
       want = Math.min(size, want * 4)
     }
   }
@@ -503,16 +509,28 @@ async function frameSpans(
   }
   // No table: walk the items. A frame starts at a fragment that starts a
   // codestream (several fragments may make one frame; never assume item == frame).
-  // ponytail: one 12-byte read per item; batch reads if a walk is too slow.
+  // After a small fragment, the next headers are read as one 64 KiB block;
+  // after a large one, just the 12 bytes, so a walk never reads the payloads.
+  let block: Uint8Array = new Uint8Array(0)
+  let blockStart = 0
+  let last = 0 // the previous fragment's length
+  const header = async (at: number): Promise<Uint8Array> => {
+    if (at < blockStart || at + 12 > blockStart + block.length) {
+      blockStart = at
+      block = await readAt(at, Math.min(last < 4096 ? 1 << 16 : 12, size - at))
+    }
+    return block.subarray(at - blockStart, at - blockStart + 12)
+  }
   let p = first
   let f = -1
   for (;;) {
-    const h = await readAt(p, 12)
+    const h = await header(p)
     const tag = tagOf(u16(h, 0), u16(h, 2))
     if (tag === T.sequenceEnd) break
     if (tag !== T.item)
       throw new Skip('malformed', `no fragment item at byte ${p}`)
     const n = u32(h, 4)
+    last = n
     if (p + 8 + n > size)
       throw new Skip(
         'malformed',

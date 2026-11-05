@@ -78,6 +78,9 @@ const MANIFEST_PATHS = {
   // hamamatsu-2 omitted: dicom-parser raises a buffer overrun building its
   // manifest (see scripts/fetch-openslide-dicom.ts), so it never loads.
   'openslide-jp2k-33003-1': 'dicom-wsi/jp2k-33003-1/manifest.json',
+  // Monochrome JPEG-LS test slides (3dhistech-1 luminance): window, BitsStored, MONOCHROME1.
+  'mono12-jls': 'dicom-wsi/mono12-jls/manifest.json',
+  'mono8-jls-m1': 'dicom-wsi/mono8-jls-m1/manifest.json',
 }
 const MAX_CACHE_BYTES = 96 * 1024 * 1024
 const TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75

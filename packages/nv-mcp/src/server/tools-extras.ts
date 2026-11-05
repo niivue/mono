@@ -1,6 +1,6 @@
 /**
  * The tools on the canvas as a whole: its 2D pan and zoom, mapping
- * points between pixels, millimetres and voxels, the slide plane of a
+ * points between pixels, world units and voxels, the slide plane of a
  * whole-slide image, the statistics of chunked streaming, and saving or
  * loading the scene and its parts.
  */
@@ -40,13 +40,13 @@ export const EXTRA_SCHEMAS = {
       .length(2)
       .optional()
       .describe(
-        'A pixel on the canvas, [x, y]: says what tile is there and where it is in millimetres.',
+        'A pixel on the canvas, [x, y]: says what tile is there and where it is in world units.',
       ),
     mm: triple(
-      'A point in millimetres: says where it lands on the canvas.',
+      'A point in world units: says where it lands on the canvas.',
     ).optional(),
     vox: triple(
-      'A voxel of the base volume, [i, j, k]: says where it is in millimetres and on the canvas.',
+      'A voxel of the base volume, [i, j, k]: says where it is in world units and on the canvas.',
     ).optional(),
   },
   set_slide: {
@@ -153,8 +153,8 @@ export function registerExtraTools(
   registerSimple(server, context, 'map_point', {
     title: 'Map a point',
     description:
-      'Maps a point between the canvas, millimetres and voxels: a pixel says what tile is under ' +
-      'it and where that is in the volume; a point in millimetres or a voxel says where it lands ' +
+      'Maps a point between the canvas, world units and voxels: a pixel says what tile is under ' +
+      'it and where that is in the volume; a point in world units or a voxel says where it lands ' +
       'on the canvas.',
     inputSchema: EXTRA_SCHEMAS.map_point,
     readOnly: true,

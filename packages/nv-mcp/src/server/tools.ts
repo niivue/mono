@@ -275,14 +275,14 @@ export const CORE_SCHEMAS = {
       .length(2)
       .optional()
       .describe('The render pan, [x, y].'),
-    pivot: triple('The point in millimetres the render turns about.')
+    pivot: triple('The point in world units the render turns about.')
       .nullable()
       .optional()
       .describe(
-        'The point in millimetres the render turns about; null for the centre.',
+        'The point in world units the render turns about; null for the centre.',
       ),
     center_on: triple(
-      'Centre the render on this point in millimetres.',
+      'Centre the render on this point in world units.',
     ).optional(),
     global: GLOBAL_CAMERA_ARG.optional().describe(
       'Place the global camera that looks at the global3d instances set_instances lays out. It shows nothing without them.',
@@ -487,7 +487,7 @@ export const CORE_SCHEMAS = {
             .describe(
               'An atlas region, a label (Insula_L) or a spoken name; the label points at its centroid.',
             ),
-          mm: triple('The labelled point in world millimetres.').optional(),
+          mm: triple('The labelled point in world units.').optional(),
         }),
       )
       .optional()
@@ -857,7 +857,7 @@ export function registerCoreTools(
       description:
         'Draws text labels on the scene, each tied by a line to a point: an atlas region, ' +
         'whose centroid the line reaches and whose spoken name is the text unless `text` is ' +
-        'given, or a point in world millimetres with its own text. The labels follow the ' +
+        'given, or a point in world units with its own text. The labels follow the ' +
         'render as it turns and a spread volume as its bricks move. On a volume tiled into ' +
         'bricks each label outlines the brick holding its point, and `dim_others` fades the ' +
         'bricks holding none. Each call replaces the labels drawn before, and the fading; ' +

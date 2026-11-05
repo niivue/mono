@@ -263,6 +263,7 @@ function stateOf(host: NiiVueHost) {
       elevation,
     },
     crosshairMM: Array.from(view.getCrosshairPos(), (v) => round(v)),
+    unit: worldUnit(view),
   }
 }
 

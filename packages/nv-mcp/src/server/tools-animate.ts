@@ -40,10 +40,10 @@ export const ANIMATE_SCHEMAS = {
       .length(4)
       .optional()
       .describe(
-        "The 2D slices' pan and zoom to end at, NiiVue's [x, y, z, zoom] with x, y and z in millimetres.",
+        "The 2D slices' pan and zoom to end at, NiiVue's [x, y, z, zoom] with x, y and z in world units.",
       ),
     crosshair_mm: triple(
-      'Where the crosshair ends, in world millimetres.',
+      'Where the crosshair ends, in world units.',
     ).optional(),
     clip_planes: z
       .array(

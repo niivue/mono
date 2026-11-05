@@ -103,7 +103,7 @@ export const SETTING_SCHEMAS = {
             .number()
             .optional()
             .describe(
-              'The slice position in millimetres. The crosshair otherwise.',
+              'The slice position in world units. The crosshair otherwise.',
             ),
           fill: z
             .boolean()

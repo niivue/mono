@@ -183,6 +183,8 @@ export async function recreateView(
   const siblings = backendChanged
     ? [...(getCanvasInstances(ctrl.canvas) ?? [])].filter((c) => c !== ctrl)
     : []
+  // Their handlers must come off the old canvas before it is swapped out.
+  for (const sib of siblings) removeInteractionListeners(sib)
   if (!isSharedCanvas(ctrl) || backendChanged) {
     replaceCanvasElement(ctrl, backendChanged)
   }

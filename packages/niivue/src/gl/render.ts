@@ -1095,6 +1095,9 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
     vol.chunkPlan = newPlan
+    // A combined mirror streams on the base's grid. Its own plan applies once
+    // it streams alone or as the base, which rebuilds the entry for it.
+    if (this._combinedOverlayEntries.includes(entry)) return
     // Combined mirrors are indexed by the base's chunks, so they move with it.
     const entries = [
       entry,

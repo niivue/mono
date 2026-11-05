@@ -262,4 +262,33 @@ for (const [name, Renderer] of [
     await Promise.all([first, second])
     expect(entry.plan).toBe(B)
   })
+
+  test(`${name}: swapping a combined mirror's own plan leaves it on the base grid`, async () => {
+    const [basePlan, ownPlan] = [1, 2].map((n) => ({
+      chunks: Array.from({ length: n }, () => ({})),
+    }))
+    const overlay = { chunkPlan: null } as unknown as NVImage
+    const baseEntry = { kind: 'chunked', plan: basePlan }
+    const mirror = { kind: 'chunked', volume: overlay, plan: basePlan }
+    const swapped: unknown[] = []
+    const self = {
+      _queueEntrySwap: method(Renderer, '_queueEntrySwap'),
+      _texCache: { get: () => mirror },
+      _activeChunked: baseEntry,
+      _combinedOverlayEntries: [mirror],
+      async _swapChunkedEntryPlan(_d: unknown, _v: unknown, e: unknown) {
+        swapped.push(e)
+      },
+    }
+    await method(Renderer, 'swapChunkedVolumePlan').call(
+      self,
+      {},
+      overlay,
+      ownPlan,
+      false,
+    )
+    expect(mirror.plan).toBe(basePlan)
+    expect(swapped).toEqual([])
+    expect(overlay.chunkPlan as unknown).toBe(ownPlan)
+  })
 }

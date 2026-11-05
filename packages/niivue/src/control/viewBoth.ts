@@ -253,11 +253,21 @@ export async function recreateView(
     canvas: ctrl.canvas as HTMLCanvasElement,
     backend: (ctrl.opts.backend ?? 'webgl2') as 'webgpu' | 'webgl2',
   })
-  // 13. Rebuild siblings on the new canvas with the new backend
+  // 13. Rebuild siblings on the new canvas with the new backend. The canvas is
+  // already locked to it, so one failure must not strand the siblings after it;
+  // a failed sibling keeps the new backend and can be retried on its own.
+  let siblingError: unknown
   for (const sib of siblings) {
     sib.opts.backend = ctrl.opts.backend
-    if (sib.view) await recreateView(sib)
+    if (!sib.view) continue
+    try {
+      await recreateView(sib)
+    } catch (error) {
+      log.error('Failed to rebuild a sibling view on the shared canvas:', error)
+      siblingError ??= error
+    }
   }
+  if (siblingError) throw siblingError
 }
 
 export async function reinitializeView(

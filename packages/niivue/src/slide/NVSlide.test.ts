@@ -664,6 +664,62 @@ describe('ManifestRangeSource range telemetry', () => {
   })
 })
 
+describe('ManifestRangeSource per-tile file', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('reads a tile from its own fileUrl (a DICOM concatenation)', async () => {
+    const manifest = makeRangeManifest()
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    tile.fileUrl = 'https://example.test/part2.bin'
+    const source = new ManifestRangeSource(manifest)
+    source.bind({
+      resolveUrl: (url) => url,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+    })
+    const urls: string[] = []
+    globalThis.fetch = ((url: string) => {
+      urls.push(url)
+      return Promise.resolve(
+        new Response(new Uint8Array(16), {
+          status: 206,
+          headers: { 'content-range': 'bytes 0-15/100' },
+        }),
+      )
+    }) as unknown as typeof fetch
+    await source.fetchTileBytes(level, tile, 'L0/0/0')
+    expect(urls).toEqual(['https://example.test/part2.bin'])
+  })
+})
+
+describe('NVSlide listed tiles', () => {
+  it('places a level that lists only its present tiles, holes null', () => {
+    const manifest = makePyramid()
+    const l0 = manifest.levels[0]
+    if (!l0) throw new Error('no level')
+    const a = { x: 1, y: 0, width: TILE_W, height: TILE_H, frame: 1 }
+    const b = { x: 3, y: 2, width: TILE_W, height: TILE_H, frame: 2 }
+    Object.assign(l0, { tiles: [b, a], sparse: true })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    expect(l0.tiles.length).toBe(16)
+    expect(l0.tiles[1]).toBe(a)
+    expect(l0.tiles[2 * 4 + 3]).toBe(b)
+    expect(l0.tiles.filter((t) => t === null).length).toBe(14)
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    expect(slide.visibleTiles(WHOLE_SLIDE_SCREEN).tiles.length).toBe(2)
+    slide.dispose()
+  })
+})
+
 describe('NVSlide DICOM-WSI dimensions', () => {
   // `grids`: frames as a multiple of the level's tile grid (undefined = no count).
   const dicom = (

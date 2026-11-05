@@ -59,6 +59,8 @@ export interface NVSlideTileManifest {
   offset?: number
   length?: number
   fragments?: NVSlideTileFragment[]
+  /** The tile's own file, when a level spans several (a DICOM concatenation). */
+  fileUrl?: string
 }
 
 export interface NVSlideLevelManifest {
@@ -91,7 +93,11 @@ export interface NVSlideLevelManifest {
    * frame count says nothing about paths or planes; the producer states both.
    */
   sparse?: true
-  /** Row-major, `columns * rows`; `null` is a hole (no tile: nothing is drawn). */
+  /**
+   * Row-major, `columns * rows`; `null` is a hole (no tile: nothing is drawn).
+   * A sparse level may instead list only its present tiles, which NVSlide places
+   * by `x`, `y` when it opens the slide.
+   */
   tiles: Array<NVSlideTileManifest | null>
 }
 
@@ -628,7 +634,9 @@ export class ManifestRangeSource implements SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const sourceUrl = this.tileSourceUrl(level)
+    const sourceUrl = tile.fileUrl
+      ? this.requireHost().resolveUrl(tile.fileUrl)
+      : this.tileSourceUrl(level)
     const fragments = this.tileFragments(tile)
     const parts = await Promise.all(
       fragments.map((fragment) =>
@@ -672,6 +680,16 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
       : 'has optical paths or focal planes that are unknown or disagree with its frame count'
     throw new Error(`Slide level ${level.index} ${what}`)
   }
+}
+
+/** A level that lists only its present tiles becomes the dense row-major grid, holes null. */
+function placeListedTiles(level: NVSlideLevelManifest): void {
+  const n = level.columns * level.rows
+  if (level.tiles.length === n) return
+  const grid: Array<NVSlideTileManifest | null> = new Array(n).fill(null)
+  for (const tile of level.tiles)
+    if (tile) grid[tile.y * level.columns + tile.x] = tile
+  level.tiles = grid
 }
 
 /** The top-left `width` x `height` of a padded monochrome frame. */
@@ -754,6 +772,7 @@ export class NVSlide extends EventTarget {
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
     assertSingleSlidePlane(manifest)
+    for (const level of manifest.levels) placeListedTiles(level)
     this.manifest = manifest
     this.manifestUrl = options.manifestUrl ?? ''
     this.id = options.id ?? manifest.id

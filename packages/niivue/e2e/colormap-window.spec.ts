@@ -1,14 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // CT scans are calibrated in Hounsfield units, so each CT colormap is designed for
 // one window (ct_kidneys 114..302, ct_bones 180..600) stored as min/max in its LUT.
 // Setting such a colormap fills any bound not given from that window; a given
 // bound wins, NaN means the image's own default, generic colormaps (e.g. gray)
 // never change the window, and re-sending the current colormap keeps it (#395).
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const mount = `
   const { default: NiiVue } = await import('/src/index.ts')

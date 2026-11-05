@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // A caller-supplied `name` must reach `reader.read`, because several readers are
 // filename-sensitive: MGH infers label volumes from it (readers/mgh.ts), and VMR
@@ -15,10 +16,6 @@ import { expect, test } from '@playwright/test'
 //   v16 reads dims at offsets 0/2/4 and 16-bit voxels
 //   vmr reads a version at 0, dims at 2/4/6, and 8-bit voxels
 // so `numBitsPerVoxel` alone says which branch ran.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const setup = `
   const { default: NiiVue } = await import('/src/index.ts')

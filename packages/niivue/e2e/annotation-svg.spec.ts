@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // End-to-end coverage for `nv.annotationsToSVG()` — specifically the controller
 // wiring that picks the plane(s) to export, which the Bun unit tests cannot reach
@@ -8,10 +9,6 @@ import { expect, test } from '@playwright/test'
 // The behavior under test: in a view with no single slice plane on screen
 // (render / multiplanar), every plane exports. Previously the controller fell back
 // to `annotations[0].sliceType` and silently dropped shapes on other planes.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // Build an instance holding one square annotation on each of the three planes.
 const setup = `

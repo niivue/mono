@@ -1,13 +1,10 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // Issues #442 and #443: the constructor, the volumeMatcap setter and
 // loadMatcap resolve a matcap name the same way, case-insensitively, to the
 // URL in opts.matcaps. A bare name stored unresolved fails to load and draws
 // the default matcap instead.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('setter and loadMatcap resolve mixed-case matcap names to their URL', async ({
   page,

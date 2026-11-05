@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // The pointerup `finally` now clears `_annotationShapeStart`, `_resizingControlPoint`,
 // `_resizingAnnotation` and `_resizeOriginalShape` unconditionally. Those fields are
@@ -6,10 +7,6 @@ import { expect, test } from '@playwright/test'
 // break the normal draw / select / resize flow. These tests pin that down; they also
 // pin that clearing them does NOT clear the annotation SELECTION, which must survive
 // a pointerup so the control points stay grabbable.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const setup = `
   const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')

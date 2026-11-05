@@ -1,5 +1,6 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // A finite meshThicknessOn2D slab follows the displayed voxel plane (#451):
 // on an oblique volume, a click inside a slice keeps the slice and must keep
@@ -8,10 +9,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 
 test.use({ launchOptions: webgpuLaunchOptions })
 test.describe.configure({ timeout: 180_000 })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const SIZE = 500
 

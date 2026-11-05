@@ -1,14 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // The crosshair API mixes units: setCrosshairPos / getCrosshairPos are RAS
 // world mm, while the crosshairPos property and NiiVueOptions.crosshairPos are
 // a scene fraction across the scene bounding box. Both live on the controller,
 // whose module graph the Bun runner cannot import, so the units are pinned here
 // through the public API of a real instance.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const setup = `
   const { default: NiiVue } = await import('/src/index.ts')

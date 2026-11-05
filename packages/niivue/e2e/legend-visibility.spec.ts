@@ -1,11 +1,8 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // Regression for #350: the legend read a `showLegend` nothing set, so the
 // per-volume and per-mesh `isLegendVisible` never hid anything.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('per-item isLegendVisible picks the voxel atlas, the mesh atlas, both or neither', async ({
   page,

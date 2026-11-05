@@ -1,14 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { Encoder } from 'cbor-x'
 import { decodeDocumentJSON } from '../src/documentJson'
+import { test } from './sharedPage'
 
 // A hostile .nvd must not make loadDocument allocate far more than the file
 // holds: shared CBOR references (#383) and drawing sizes decoded before they
 // are checked (#384).
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('a document that repeats one embedded volume through shared references is refused', async ({
   page,

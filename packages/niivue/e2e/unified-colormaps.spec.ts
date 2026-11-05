@@ -1,6 +1,7 @@
 import { inflateSync } from 'node:zlib'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // One colormap per volume (issue #69): a label colormap (one with a `labels`
 // array) set through `setVolume({ colormap })` colours each integer ID; a
@@ -11,10 +12,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 
 test.use({ launchOptions: webgpuLaunchOptions })
 test.describe.configure({ timeout: 180_000 })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 async function probe(page: Page, x: number, y: number): Promise<number[]> {
   const png = await page.screenshot({ clip: { x, y, width: 1, height: 1 } })

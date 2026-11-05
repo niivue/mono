@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // `limitFrames4D` bounded RETENTION, not DECODING. Both load paths fetched and
 // inflated every frame and then discarded them in nii2volume:
@@ -19,10 +20,6 @@ import { expect, test } from '@playwright/test'
 // truncates the gzip stream after frame 0. A bounded read succeeds; a full
 // decode cannot, because inflating to the end of the member hits the cut. The
 // outcome is therefore a direct statement about how much was decoded.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // Build a 4D NIfTI-1 in the page, gzip it with CompressionStream, and cut it.
 const fixture = `

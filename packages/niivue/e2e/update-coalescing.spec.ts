@@ -1,12 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // A GPU update that arrives while another holds the update lock is coalesced
 // into one follow-up. Its caller must settle with that follow-up (#447), and a
 // follow-up failure must reach its own callers, not the first one (#273).
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('a queued update settles with the follow-up that carries it', async ({
   page,

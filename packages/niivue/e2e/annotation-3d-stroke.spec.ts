@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // A freehand 3D vector stroke (drawn on exploded blocks) lives only in the
 // `_annotation3DMMPath` accumulator until it is committed. `pointerup` commits it
@@ -11,10 +12,6 @@ import { expect, test } from '@playwright/test'
 // These tests seed the accumulator directly rather than reproducing the exploded-
 // block pick (which needs a tiled chunkPlan): the behavior under test is the
 // pointercancel handler and the degeneracy guard, not the picking.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 // No volume is loaded: nothing on this path reads voxels, and skipping the fetch
 // keeps the spec independent of the Git-LFS sample volumes.

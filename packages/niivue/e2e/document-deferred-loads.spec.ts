@@ -1,12 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // Issue #388: loadVolumes while a thumbnail is visible is deferred until the
 // thumbnail is dismissed. loadDocument replaces all data, so a load deferred
 // before it must not replace the document's volumes on dismissal.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('loadDocument drops volumes deferred behind an earlier thumbnail', async ({
   page,

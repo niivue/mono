@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // GPU rebuilds re-upload only the meshes that changed. Each mesh's GPU entry
 // (view._getMeshGpu) is a new object only when that mesh was re-uploaded, so
@@ -10,10 +11,6 @@ import { webgpuLaunchOptions } from './launchOptions'
 // WebGPU is skipped when the runner has no adapter.
 
 test.use({ launchOptions: webgpuLaunchOptions })
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const VOLUME = '/volumes/mni152.nii.gz'
 const MESH_A = '/meshes/BrainMesh_ICBM152.lh.mz3'

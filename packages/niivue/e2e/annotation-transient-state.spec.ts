@@ -1,12 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // A half-drawn annotation (bidirectional long axis, multi-click contour) must
 // stay on its own slice and scene: #111 (slice change), #112 (re-selecting the
 // same tool), #113 (loadDocument), #114 (double-click on the 3D render tile).
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const setup = (
   sliceType: string,

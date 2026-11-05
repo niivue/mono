@@ -1,12 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // addMesh emits meshLoaded for the mesh it added, and only when it added one.
 // The model logs a mesh it cannot read and adds nothing; a removal made while
 // a load is in flight must not hide the mesh that load adds.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 const MESH_A = '/meshes/BrainMesh_ICBM152.lh.mz3'
 const MESH_B = '/meshes/cortex_5124.mz3'

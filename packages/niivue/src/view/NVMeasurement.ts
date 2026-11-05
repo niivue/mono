@@ -132,7 +132,7 @@ export function rulerTickLabels(
 }
 
 /** Format distance with smart decimals. */
-function formatDistance(dist: number, showUnits: boolean): string {
+export function formatDistance(dist: number, showUnits: boolean): string {
   let decimals = 2
   if (dist > 9) decimals = 1
   if (dist > 99) decimals = 0

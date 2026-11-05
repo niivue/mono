@@ -11,6 +11,7 @@ export {
   lookupColorMap,
   makeLabelLut,
 } from './cmap/NVCmaps'
+export { generateShape, isAnnotationErased } from './annotation/shapes'
 export { slice2DToMM } from './annotation/sliceProjection'
 // Viewport controller (OpenSeadragon-style smooth pan/zoom on the shared canvas).
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.

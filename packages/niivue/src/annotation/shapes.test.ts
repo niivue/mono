@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import type { AnnotationPoint } from '@/NVTypes'
-import { generateSplineFromPoints } from './shapes'
+import type { AnnotationPoint, VectorAnnotation } from '@/NVTypes'
+import { clipperSubtractBrush } from './clipper'
+import {
+  generateShape,
+  generateSplineFromPoints,
+  isAnnotationErased,
+} from './shapes'
 
 describe('generateSplineFromPoints', () => {
   test('returns no polygon for fewer than 3 control points', () => {
@@ -49,5 +54,52 @@ describe('generateSplineFromPoints', () => {
       expect(p.y).toBeGreaterThanOrEqual(-5)
       expect(p.y).toBeLessThanOrEqual(25)
     }
+  })
+})
+
+describe('isAnnotationErased', () => {
+  const start = { x: 0, y: 0 }
+  const end = { x: 10, y: 5 }
+  const rect = (polygons = generateShape('measureRect', start, end, 1)) =>
+    ({
+      polygons,
+      style: { strokeWidth: 1 },
+      shape: { type: 'measureRect', start, end },
+    }) as unknown as VectorAnnotation
+
+  test('an intact shape is not erased', () => {
+    expect(isAnnotationErased(rect())).toBe(false)
+  })
+
+  test('a shape whose polygons were cut is erased', () => {
+    const cut = [{ outer: [start, { x: 10, y: 0 }, end], holes: [] }]
+    expect(isAnnotationErased(rect(cut))).toBe(true)
+  })
+
+  test('a brush that passes near a shape without touching it does not erase it', () => {
+    // Inside the ellipse's bounds plus the brush radius, but clear of the
+    // curve: the eraser clips it, and the clip must leave it untouched.
+    const ellipse = {
+      ...rect(generateShape('measureEllipse', start, end, 1)),
+      shape: { type: 'measureEllipse', start, end },
+    } as VectorAnnotation
+    const brush = [
+      { x: 9.8, y: 4.8 },
+      { x: 9.9, y: 4.9 },
+    ]
+    const polygons = ellipse.polygons.flatMap((p) =>
+      clipperSubtractBrush(p, brush, 0.5),
+    )
+    expect(isAnnotationErased({ ...ellipse, polygons })).toBe(false)
+  })
+
+  test('a tool generateShape cannot rebuild is never erased', () => {
+    const spline = { ...rect(), shape: { type: 'measureSpline', start, end } }
+    expect(isAnnotationErased(spline as VectorAnnotation)).toBe(false)
+  })
+
+  test('a freehand annotation has no shape to compare', () => {
+    const ann = { ...rect(), shape: undefined }
+    expect(isAnnotationErased(ann)).toBe(false)
   })
 })

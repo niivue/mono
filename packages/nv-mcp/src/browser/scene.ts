@@ -567,7 +567,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       requireVolume()
       host.beforeAnswer?.()
       const loaded = await requireAtlas()
-      if (host.atlasApplies && !host.atlasApplies()) {
+      if (
+        (host.atlasApplies && !host.atlasApplies()) ||
+        worldUnit(view) !== 'mm'
+      ) {
         throw new Error(
           'The loaded volume is not in MNI space, so the atlas does not apply to it. Load one that is.',
         )
@@ -1232,7 +1235,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         const given = text(label, 'text')
         if (region) {
           const loaded = await requireAtlas()
-          if (host.atlasApplies && !host.atlasApplies()) {
+          if (
+            (host.atlasApplies && !host.atlasApplies()) ||
+            worldUnit(view) !== 'mm'
+          ) {
             throw new Error(
               'The loaded volume is not in MNI space, so the atlas does not apply to it. Load one that is.',
             )

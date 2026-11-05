@@ -288,6 +288,15 @@ describe('go_to_region', () => {
       ).go_to_region({ region: 'Insula_L' }),
     ).rejects.toThrow('not in MNI space')
     await expect(
+      coreHandlers(
+        host(
+          fakeView({
+            volumes: [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }],
+          }),
+        ),
+      ).go_to_region({ region: 'Insula_L' }),
+    ).rejects.toThrow('not in MNI space')
+    await expect(
       coreHandlers({ view: fakeView() }).go_to_region({ region: 'Insula_L' }),
     ).rejects.toThrow('no atlas')
     const small = fakeView({
@@ -1074,6 +1083,18 @@ describe('set_labels', () => {
       coreHandlers(
         host(fakeView(), { labels, atlasApplies: () => false }),
       ).set_labels({ labels: [{ region: 'Insula_L' }] }),
+    ).rejects.toThrow(/MNI/)
+    await expect(
+      coreHandlers(
+        host(
+          fakeView({
+            volumes: [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }],
+          }),
+          { labels },
+        ),
+      ).set_labels({
+        labels: [{ region: 'Insula_L' }],
+      }),
     ).rejects.toThrow(/MNI/)
   })
 })

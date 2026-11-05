@@ -1,5 +1,6 @@
 import type { Annotation3DRenderData } from '@/view/NVAnnotation'
 import { NVRenderer } from '@/view/NVRenderer'
+import { alphaPipelineDesc, uniformBuffer, uniformEntry } from './pipeline'
 import shaderCode from './polygon3d.wgsl?raw'
 
 // Uniform: mat4x4f (64 bytes) + f32 opacityMultiplier (4 bytes) + 12 bytes padding = 80 bytes
@@ -27,24 +28,11 @@ export class Polygon3DRenderer extends NVRenderer {
   ): Promise<void> {
     if (this.isReady) return
 
-    this._uniformBuffer = device.createBuffer({
-      size: UNIFORM_SIZE,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
-
-    this._xrayUniformBuffer = device.createBuffer({
-      size: UNIFORM_SIZE,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
+    this._uniformBuffer = uniformBuffer(device, UNIFORM_SIZE)
+    this._xrayUniformBuffer = uniformBuffer(device, UNIFORM_SIZE)
 
     this._bindGroupLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX,
-          buffer: { type: 'uniform' },
-        },
-      ],
+      entries: [uniformEntry(GPUShaderStage.VERTEX)],
     })
 
     this._bindGroup = device.createBindGroup({
@@ -57,78 +45,35 @@ export class Polygon3DRenderer extends NVRenderer {
       entries: [{ binding: 0, resource: { buffer: this._xrayUniformBuffer } }],
     })
 
-    const module = device.createShaderModule({ code: shaderCode })
-    const layout = device.createPipelineLayout({
+    const desc = alphaPipelineDesc(device, {
+      module: device.createShaderModule({ code: shaderCode }),
       bindGroupLayouts: [this._bindGroupLayout],
-    })
-
-    const vertexState: GPUVertexState = {
-      module,
-      entryPoint: 'vertex_main',
+      format,
+      msaaCount,
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
       buffers: [
         {
           arrayStride: 28, // 7 floats: x, y, z, r, g, b, a
           attributes: [
-            {
-              shaderLocation: 0,
-              offset: 0,
-              format: 'float32x3' as GPUVertexFormat,
-            },
-            {
-              shaderLocation: 1,
-              offset: 12,
-              format: 'float32x4' as GPUVertexFormat,
-            },
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            { shaderLocation: 1, offset: 12, format: 'float32x4' },
           ],
         },
       ],
-    }
-
-    const fragmentState: GPUFragmentState = {
-      module,
-      entryPoint: 'fragment_main',
-      targets: [
-        {
-          format,
-          blend: {
-            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
-            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-          },
-        },
-      ],
-    }
-
-    const primitive: GPUPrimitiveState = {
-      topology: 'triangle-list',
-      cullMode: 'none',
-    }
-
-    // Normal pass: depth less, no depth write
-    this._pipeline = device.createRenderPipeline({
-      layout,
-      multisample: { count: msaaCount },
-      vertex: vertexState,
-      fragment: fragmentState,
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'less',
-        format: 'depth24plus',
-      },
-      primitive,
     })
-
-    // X-ray pass: depth greater (only occluded fragments), no depth write
+    const depth = (depthCompare: GPUCompareFunction): GPUDepthStencilState => ({
+      depthWriteEnabled: false,
+      depthCompare,
+      format: 'depth24plus',
+    })
+    // Normal pass: depth less; x-ray pass: depth greater (only occluded fragments)
+    this._pipeline = device.createRenderPipeline({
+      ...desc,
+      depthStencil: depth('less'),
+    })
     this._xrayPipeline = device.createRenderPipeline({
-      layout,
-      multisample: { count: msaaCount },
-      vertex: vertexState,
-      fragment: fragmentState,
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'greater',
-        format: 'depth24plus',
-      },
-      primitive,
+      ...desc,
+      depthStencil: depth('greater'),
     })
 
     this.isReady = true

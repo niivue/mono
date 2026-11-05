@@ -7,6 +7,12 @@ import {
 } from '@/view/NVColorbar'
 import { NVRenderer } from '@/view/NVRenderer'
 import colorbarShaderCode from './colorbar.wgsl?raw'
+import {
+  alphaPipelineDesc,
+  linearSampler,
+  overlayDepth,
+  texturedLayout,
+} from './pipeline'
 import * as wgpu from './wgpu'
 
 type ColorbarGPU = {
@@ -53,57 +59,20 @@ export class ColorbarRenderer extends NVRenderer {
   ): Promise<void> {
     if (this.isReady) return
 
-    // Create sampler
-    this.sampler = device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-    })
-
-    // Create bind group layout
-    this.bindLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          buffer: { type: 'uniform' },
-        },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-      ],
-    })
-    // Create pipeline
-    const colorbarModule = device.createShaderModule({
-      code: colorbarShaderCode,
-    })
-    this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
+    this.sampler = linearSampler(device)
+    this.bindLayout = texturedLayout(
+      device,
+      GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+    )
+    this.pipeline = device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: colorbarShaderCode }),
         bindGroupLayouts: [this.bindLayout],
+        format,
+        msaaCount,
+        depthStencil: overlayDepth(),
       }),
-      multisample: { count: msaaCount },
-      vertex: { module: colorbarModule, entryPoint: 'vertex_main' },
-      fragment: {
-        module: colorbarModule,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format: format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
-      },
-      primitive: { topology: 'triangle-strip' },
-    })
+    )
 
     this.isReady = true
   }

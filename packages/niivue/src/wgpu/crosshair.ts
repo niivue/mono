@@ -163,25 +163,17 @@ export class CrosshairRenderer extends NVRenderer {
     sliceType: number,
     slot = 0,
   ): void {
-    if (!this.isReady) return
-    const crosshairs = this.cylinders
-    const vertexOffset = crosshairSlotOffset(slot)
-    const s = this._uniformScratch
-    s.set(mvpMatrix as ArrayLike<number>, 0)
-    s.set(normalMatrix as ArrayLike<number>, 16)
-    s[36] = 1.0
-    pass.setPipeline(pipeline)
-    for (let cylIdx = 0; cylIdx < crosshairs.length; cylIdx++) {
-      if (shouldCullCylinder(cylIdx, sliceType)) continue
-      const cyl = crosshairs[cylIdx]
-      if (!cyl.bindGroup || !cyl.vertexBuffer || !cyl.indexBuffer) continue
-      const dynamicOffset = Math.trunc(tileIndex * cyl.alignedMeshSize)
-      device.queue.writeBuffer(cyl.uniformBuffer, dynamicOffset, s)
-      pass.setBindGroup(0, cyl.bindGroup, [dynamicOffset])
-      pass.setVertexBuffer(0, cyl.vertexBuffer, vertexOffset)
-      pass.setIndexBuffer(cyl.indexBuffer, 'uint32')
-      pass.drawIndexed(cyl.indexCount)
-    }
+    this.drawXRay(
+      device,
+      pass,
+      pipeline,
+      mvpMatrix,
+      normalMatrix,
+      tileIndex,
+      sliceType,
+      1.0,
+      slot,
+    )
   }
 
   drawXRay(
@@ -202,13 +194,13 @@ export class CrosshairRenderer extends NVRenderer {
     s.set(mvpMatrix as ArrayLike<number>, 0)
     s.set(normalMatrix as ArrayLike<number>, 16)
     s[36] = xrayAlpha
+    pass.setPipeline(xrayPipeline)
     for (let cylIdx = 0; cylIdx < crosshairs.length; cylIdx++) {
       if (shouldCullCylinder(cylIdx, sliceType)) continue
       const cyl = crosshairs[cylIdx]
       if (!cyl.bindGroup || !cyl.vertexBuffer || !cyl.indexBuffer) continue
       const dynamicOffset = Math.trunc(tileIndex * cyl.alignedMeshSize)
       device.queue.writeBuffer(cyl.uniformBuffer, dynamicOffset, s)
-      pass.setPipeline(xrayPipeline)
       pass.setBindGroup(0, cyl.bindGroup, [dynamicOffset])
       pass.setVertexBuffer(0, cyl.vertexBuffer, vertexOffset)
       pass.setIndexBuffer(cyl.indexBuffer, 'uint32')

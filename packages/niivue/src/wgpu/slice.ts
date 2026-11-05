@@ -15,6 +15,7 @@ import {
 } from '@/volume/chunking'
 import type { SliceInterpolation } from '@/volume/interpolation'
 import { extractChunkBytes } from '@/volume/orientChunked'
+import { alphaPipelineDesc } from './pipeline'
 import sliceShaderCode from './slice.wgsl?raw'
 
 const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
@@ -214,36 +215,17 @@ export class SliceRenderer extends NVRenderer {
     })
 
     // Create pipeline
-    const sliceModule = device.createShaderModule({ code: sliceShaderCode })
-    const pipelineDesc: GPURenderPipelineDescriptor = {
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [this.bindLayout],
-      }),
-      multisample: { count: msaaCount },
-      vertex: { module: sliceModule, entryPoint: 'vertex_main' },
-      fragment: {
-        module: sliceModule,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format: format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
+    const pipelineDesc = alphaPipelineDesc(device, {
+      module: device.createShaderModule({ code: sliceShaderCode }),
+      bindGroupLayouts: [this.bindLayout],
+      format,
+      msaaCount,
       depthStencil: {
         depthWriteEnabled: true,
         depthCompare: 'less',
         format: 'depth24plus',
       },
-      primitive: { topology: 'triangle-strip' },
-    }
+    })
     this.pipeline = device.createRenderPipeline(pipelineDesc)
     // Floor variant: a coarse-LOD backdrop quad covers the whole slice, so it
     // must NOT write depth — otherwise the coplanar fine chunk quads drawn after

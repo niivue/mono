@@ -796,6 +796,72 @@ describe("NVChunkedVolume 'auto' radius", () => {
     expect(listeners.get('change')?.size ?? 0).toBe(0)
   })
 
+  test('re-plans at 8 B/voxel when lighting turns on (#203)', async () => {
+    const listeners = new Map<string, Set<(e: Event) => void>>()
+    const swaps: ChunkPlan[] = []
+    const lighting = {
+      volumeIllumination: 0,
+      volumeGradientOpacity: 0,
+      volumeSilhouette: 0,
+    }
+    const host = makeHost(
+      async (_id, plan) => {
+        swaps.push(plan)
+      },
+      {
+        ...lighting,
+        addVolume: async () => {},
+        addEventListener: (t: string, l: (e: Event) => void) => {
+          const set = listeners.get(t) ?? new Set<(e: Event) => void>()
+          set.add(l)
+          listeners.set(t, set)
+        },
+        removeEventListener: (t: string, l: (e: Event) => void) => {
+          listeners.get(t)?.delete(l)
+        },
+      },
+    )
+    const set = (property: keyof typeof lighting, value: number): void => {
+      ;(host as unknown as typeof lighting)[property] = value
+      for (const l of listeners.get('change') ?? []) {
+        l(new CustomEvent('change', { detail: { property, value } }))
+      }
+    }
+    const texVoxels = (plan: ChunkPlan): number =>
+      plan.chunks.reduce(
+        (sum, c) => sum + c.texDims[0] * c.texDims[1] * c.texDims[2],
+        0,
+      )
+    const budget = 16 * 1024 * 1024
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 64,
+      focus: 'none',
+      budgetBytes: budget,
+      debounceMs: 0,
+      coarseFloor: false,
+      calMin: 0,
+      calMax: 1,
+    })
+    await mgr.init()
+    const unlit = mgr.currentPlan
+    expect(texVoxels(unlit) * 4).toBeLessThanOrEqual(budget)
+    expect(texVoxels(unlit) * 8).toBeGreaterThan(budget)
+    // A lighting knob that leaves the volume unlit is not worth a plan.
+    set('volumeIllumination', 0)
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(0)
+    set('volumeSilhouette', 0.5)
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(1)
+    expect(texVoxels(mgr.currentPlan) * 8).toBeLessThanOrEqual(budget)
+    // Still lit: another knob does not re-plan.
+    set('volumeIllumination', 1)
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(1)
+    mgr.dispose()
+    expect(listeners.get('change')?.size ?? 0).toBe(0)
+  })
+
   test('render view and pinned shapes stay as before', () => {
     const render = new NVChunkedVolume(
       makeHost(async () => {}, { sliceType: SLICE_TYPE.RENDER }),

@@ -22,12 +22,15 @@
  *
  * That shadow is affordable because a chunk is much narrower on the CPU than
  * on the GPU: source voxels are 1-4 bytes, while a resident chunk carries an
- * RGBA8 color texture plus an RGBA8 gradient, 8 bytes per voxel. Shadowing the
- * whole resident set therefore costs an eighth to a half of the GPU budget in
- * JS heap; see `decodedTierBudgetBytes`, which sizes the tier at the shadow
+ * RGBA8 color texture (4 bytes per voxel) plus, when lit, an RGBA8 gradient (8).
+ * Shadowing the whole resident set therefore costs at most a quarter to the
+ * whole of the GPU budget in JS heap, before the cap; see `decodedTierBudgetBytes`, which sizes the tier at the shadow
  * plus a tail, so the tier holds every resident chunk AND the most recently
  * evicted ones. The tail is the part that actually pays: it is what a scrub
- * finds when it turns around.
+ * finds when it turns around. That holds only below the cap: past a 256 MiB
+ * shadow the tail shrinks, and past 384 MiB (float32 above a ~403 MB GPU
+ * budget, int16 above ~805 MB) the tier holds only the most recently used part
+ * of the resident set, so a chunk evicted outside it is read from the source.
  *
  * Eviction is plain LRU, which is what that structure wants. The newest
  * entries are the chunks still on the GPU (whose copies cost nothing to lose)
@@ -57,18 +60,20 @@ export interface DecodedChunkStats {
 }
 
 /**
- * GPU bytes one voxel of a resident chunk occupies: an RGBA8 color texel plus
- * an RGBA8 gradient texel. Matches each backend's `bytesOf` residency hook
- * (`residentBytesForChunkDesc`), so the two budgets are measured in the same
- * currency.
+ * GPU bytes one voxel of a resident chunk occupies when unlit: an RGBA8 color
+ * texel and no gradient (`residentBytesForChunkDesc`). A lit chunk costs 8, so
+ * the same budget holds half the voxels; pricing at 4 sizes the tier for the
+ * larger (unlit, default) resident set. The tier is sized once per entry, so it
+ * cannot follow a lighting toggle; erring large keeps it effective either way.
  */
-const GPU_BYTES_PER_VOXEL = 8
+const GPU_BYTES_PER_VOXEL = 4
 
 /**
  * How much tier is bought beyond the shadow of the resident set, as a fraction
  * of that shadow. This is the entire point of the tier -- the shadow alone
- * only breaks even -- so it buys real depth, while staying small enough that
- * the tier cannot approach the GPU budget in JS heap.
+ * only breaks even -- so it buys real depth. Before the cap that is up to
+ * 1.5x the GPU budget for float32 (3x for complex64), so the JS-heap ceiling
+ * below is what keeps it in check.
  */
 const DECODED_TIER_TAIL = 0.5
 
@@ -86,7 +91,7 @@ const DECODED_TIER_MAX_BYTES = 384 * 1024 * 1024
  * A tier smaller than the shadow of the resident set holds no evicted chunk at
  * all (see the module note), so this is deliberately not a flat fraction of
  * the GPU budget: it tracks the datatype, because a uint8 volume shadows for
- * an eighth of what a float32 volume costs.
+ * a quarter of what a float32 volume costs.
  */
 export function decodedTierBudgetBytes(
   gpuBudgetBytes: number,

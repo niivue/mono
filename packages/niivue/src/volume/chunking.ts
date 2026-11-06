@@ -646,6 +646,36 @@ export function matchChunksByContent(
 }
 
 /**
+ * The GPU bricks a plan swap keeps: the content matches, minus bricks uploaded
+ * lit when the new plan is unlit and would no longer fit `budgetBytes` with
+ * them. An unlit plan budgets 4 B/voxel, a lit brick still holds its 8 B
+ * gradient, and nothing re-streams it in that direction. Lit bricks that fit
+ * (an unchanged plan, say) stay, so the swap does not re-stream them for
+ * nothing. Returns a new map; `oldToNew` stays whole for the decoded tier,
+ * whose source bytes are valid either way.
+ */
+export function chunksToKeepResident(
+  oldToNew: ReadonlyMap<number, number>,
+  unlit: boolean,
+  hasGradient: (oldIndex: number) => boolean | undefined,
+  newPlan: ChunkPlan,
+  budgetBytes: number,
+): Map<number, number> {
+  const keep = new Map(oldToNew)
+  if (!unlit) return keep
+  const litNew = new Set<number>()
+  for (const [oi, ni] of oldToNew) if (hasGradient(oi)) litNew.add(ni)
+  let bytes = 0
+  for (let i = 0; i < newPlan.chunks.length; i++) {
+    const [tx, ty, tz] = newPlan.chunks[i].texDims
+    bytes += tx * ty * tz * (litNew.has(i) ? 8 : 4)
+  }
+  if (bytes <= budgetBytes) return keep
+  for (const ci of oldToNew.keys()) if (hasGradient(ci)) keep.delete(ci)
+  return keep
+}
+
+/**
  * An axis-aligned box in COMMON (finest, level-0) voxel coordinates. `min` is
  * inclusive and `max` exclusive, so a one-voxel-thin slab at depth z is
  * `{ min: [0, 0, z], max: [w, h, z + 1] }` (any positive thickness works: a
@@ -724,12 +754,18 @@ export interface MultiLodOptions {
    */
   minLevel?: number
   /**
-   * GPU byte budget for the resident brick set (rgba + gradient = 8 B/voxel over
-   * each brick's padded texture). When the assignment exceeds it, a global level
+   * GPU byte budget for the resident brick set, priced at `bytesPerVoxel` over
+   * each brick's padded texture. When the assignment exceeds it, a global level
    * floor is raised (coarsening the whole volume uniformly) until it fits.
    * Omit/0 to skip budgeting.
    */
   budgetBytes?: number
+  /**
+   * GPU bytes per padded texture voxel: 8 for rgba + gradient (lit), 4 for an
+   * unlit volume, which holds no full-size gradient (`residentBytesForChunkDesc`).
+   * Default 8.
+   */
+  bytesPerVoxel?: number
   /**
    * Scale-relative detail factor controlling LOD falloff. A cell refines while
    * its distance-beyond-`radius` is below `detail · cellSize`, so the level
@@ -1217,7 +1253,7 @@ export function chunkVolumeMultiLOD(
     return balanced ? balance(chunks, floor) : chunks
   }
 
-  // Budget pass — fit BOTH the GPU byte budget (rgba + gradient = 8 B per padded
+  // Budget pass — fit BOTH the GPU byte budget (`bytesPerVoxel` per padded
   // texture voxel) and an optional brick-count cap (the renderer rejects plans
   // over its per-tile chunk limit, and the resident set must not be evicted):
   // 1) shrink `detail` — cells must be closer to the focus (relative to their
@@ -1232,9 +1268,11 @@ export function chunkVolumeMultiLOD(
     options.maxBricks && options.maxBricks > 0
       ? options.maxBricks
       : Number.POSITIVE_INFINITY
+  const bytesPerVoxel = options.bytesPerVoxel ?? 8
   const bytesOf = (cs: VolumeChunkDesc[]): number =>
     cs.reduce(
-      (sum, c) => sum + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
+      (sum, c) =>
+        sum + c.texDims[0] * c.texDims[1] * c.texDims[2] * bytesPerVoxel,
       0,
     )
   const overBudget = (cs: VolumeChunkDesc[]): boolean =>
@@ -1295,7 +1333,7 @@ export function chunkVolumeMultiLOD(
   const lattice = (f: number, b?: MultiLodBounds): [number, number] => {
     const rootSpan = rootSpanOf(1)
     let count = 1
-    let bytes = 8
+    let bytes = bytesPerVoxel
     for (let a = 0; a < 3; a++) {
       const ld = levelDims[f][a]
       const scale = ld / commonDims[a]

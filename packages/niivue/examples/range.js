@@ -275,7 +275,9 @@ const ZARR_BYTE_CACHE_BYTES = 512 * 1024 * 1024
 // resident VRAM ~this regardless of the level the user picks. On WebGPU it stays
 // below DEFAULT_RESIDENCY_BYTES so no planned brick evicts; on WebGL2 the GPU
 // budget is deliberately lower than this, so the LRU keeps the visible bricks
-// and evicts the rest.
+// and evicts the rest. That includes the default unlit uniform plan: priced at
+// 4 B/voxel it can plan more than WebGL2 holds, and the bricks past residency
+// stay on the coarse floor (which ones follows the view as it rotates).
 const MULTILOD_BUDGET_BYTES = 2048 * 1024 * 1024
 // Start-up budget plan; ?plan=focus|interactive|uniform preselects one.
 const INITIAL_BUDGET_PLAN =
@@ -1464,16 +1466,11 @@ function applySliceFilter() {
 // requested/completed, cache and decoded rows show where the bytes came from
 // (usually the decoded-chunk tier rather than the network, which is the tier
 // doing its job). Once lit, moving any of the three within the non-zero range
-// costs nothing extra: the gate is already true, so nothing re-streams.
+// costs nothing extra: the gate is already true, so nothing re-streams. The
+// flip also re-plans at 8 bytes/voxel, so a plan the budget binds goes coarser.
 //
-// Dropping all three back to 0 does NOT free the gradients or re-stream. The
-// bricks stay as they are and the shader simply stops sampling them.
-//
-// Budget note: the residency accounting (`chunkResidentBytes`) charges every
-// brick 8 bytes/voxel -- RGBA plus gradient -- whether or not a gradient was
-// built, so an unlit stream is charged for memory it is not holding and the
-// resident brick count does not change when you turn lighting on. The VRAM is
-// genuinely saved; the budget just does not credit it yet.
+// Dropping all three back to 0 re-plans at 4 bytes/voxel. When that plan
+// changes, lit bricks re-stream without gradients so the larger plan fits.
 function applyIllumination() {
   const v = Number(els.illum.value) || 0
   els.illumVal.textContent = v.toFixed(2)

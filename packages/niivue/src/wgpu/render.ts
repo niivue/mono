@@ -51,6 +51,7 @@ import {
   type ChunkPlan,
   chunkLodDownsample,
   chunkOwnedTexBox,
+  chunksToKeepResident,
   chunkVolume,
   dimsDownsample,
   matchChunksByContent,
@@ -1345,7 +1346,15 @@ export class VolumeRenderer extends NVRenderer {
     // When that state has changed since (a colormap set but not yet
     // refreshed), keeping them would show the old state, so none carry over.
     const carryOver = displayKey === entry.displayKey
-    const keepResident = carryOver ? oldToNew : new Map<number, number>()
+    const keepResident = carryOver
+      ? chunksToKeepResident(
+          oldToNew,
+          !this._needsGradient(),
+          (ci) => entry.manager.getChunk(ci)?.hasGradient,
+          newPlan,
+          entry.manager.budgetBytes,
+        )
+      : new Map<number, number>()
     // Rebind the uploader to the new plan; dispose the old orient resources.
     const newUploader = await createChunkUploaderGPU(
       device,

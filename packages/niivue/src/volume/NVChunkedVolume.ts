@@ -98,6 +98,13 @@ const COARSE_FLOOR_MAX_EDGE = 512
  */
 const WINDOW_PROBE_MAX_EDGE = 64
 
+/** Host settings that decide whether chunks carry a gradient texture. */
+const LIGHTING_PROPERTIES = new Set([
+  'volumeIllumination',
+  'volumeGradientOpacity',
+  'volumeSilhouette',
+])
+
 // --- pure helpers (unit-tested; no controller needed) -----------------------
 
 /**
@@ -168,6 +175,7 @@ export function planForFocus(
   radius: number | Vec3f,
   o: PlanShapeOptions & Partial<Pick<ResolvedOptions, 'focus'>>,
   focusBounds?: MultiLodBounds[],
+  bytesPerVoxel = 8,
 ): ChunkPlan {
   const levelDims = source.levels.map((l) => l.shape)
   const common = levelDims[0]
@@ -199,6 +207,7 @@ export function planForFocus(
       detail: o.detail,
       minLevel: o.minLevel,
       budgetBytes: o.budgetBytes,
+      bytesPerVoxel,
       maxBricks: o.maxBricks,
     },
   )
@@ -397,6 +406,9 @@ export class NVChunkedVolume {
   private readonly onViewChange: (e: Event) => void
   /** The radius the current plan was built with; see {@link handleViewChange}. */
   private planRadius: number | Vec3f = 0
+  private readonly onLightingChange: (e: Event) => void
+  /** Whether the current plan was priced lit (8 B/voxel) or unlit (4). */
+  private planLit = false
   private readonly onViewDestroyed: () => void
 
   private focusFrac: Vec3f
@@ -473,6 +485,7 @@ export class NVChunkedVolume {
     host._registerChunkedVolume(this)
     this.onLocationChange = () => this.handleLocationChange()
     this.onViewChange = (e) => this.handleViewChange(e)
+    this.onLightingChange = (e) => this.handleLightingChange(e)
     // Only self-dispose on a REAL controller teardown. `viewDestroyed` also fires
     // on a transient view recreation (backend switch / init fallback), where the
     // controller and this volume stay alive and the locationChange listener (on
@@ -529,6 +542,7 @@ export class NVChunkedVolume {
     // this handle, so the locationChange listener + host reference don't leak
     // (and can't fire against a torn-down view).
     this.host.addEventListener('viewDestroyed', this.onViewDestroyed)
+    this.host.addEventListener('change', this.onLightingChange)
     this.applyRenderCentering()
     await this.applyCoarseFloor()
     // The floor path resolves the window for free when a floor was built. When
@@ -874,6 +888,7 @@ export class NVChunkedVolume {
     this.syncCrosshairSubscription()
     this.syncViewSubscription()
     this.host.removeEventListener('viewDestroyed', this.onViewDestroyed)
+    this.host.removeEventListener('change', this.onLightingChange)
   }
 
   /**
@@ -958,13 +973,33 @@ export class NVChunkedVolume {
   private buildPlan(): ChunkPlan {
     const radius = this.currentRadius()
     this.planRadius = radius
+    this.planLit = this.hostNeedsGradient()
     return planForFocus(
       this.source,
       this.focusFrac,
       radius,
       this.o,
       this.focusBounds,
+      this.planLit ? 8 : 4,
     )
+  }
+
+  /** The renderers' `_needsGradient` test, read from the host's settings. */
+  private hostNeedsGradient(): boolean {
+    const h = this.host
+    return (
+      h.volumeIllumination > 0 ||
+      h.volumeGradientOpacity > 0 ||
+      h.volumeSilhouette > 0
+    )
+  }
+
+  /** Re-plan when lighting flips, so the plan is priced as the GPU holds it. */
+  private handleLightingChange(e: Event): void {
+    const property = (e as CustomEvent<PropertyChangeDetail>).detail?.property
+    if (!property || !LIGHTING_PROPERTIES.has(property)) return
+    if (this.hostNeedsGradient() === this.planLit) return
+    void this.refocus()
   }
 
   private currentRadius(): number | Vec3f {

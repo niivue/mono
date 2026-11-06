@@ -195,7 +195,9 @@ level finer, guaranteeing face-adjacent bricks differ by at most one level (smoo
 LOD transitions, no fine-next-to-very-coarse walls). The budget pass first shrinks
 `detail` (coarsens while staying balanced), then raises a global level `floor`, and
 finally respects `maxBricks` so a plan never exceeds the renderer's
-`MAX_CHUNKS_PER_TILE` cap. Budget is estimated as `Σ texDims·8` (rgba + gradient).
+`MAX_CHUNKS_PER_TILE` cap. Budget is estimated as `Σ texDims·bytesPerVoxel`: 8
+(rgba + gradient) when the volume is lit, 4 when unlit. `NVChunkedVolume` re-plans
+when illumination, gradient opacity or silhouette turns the gradient on or off.
 
 ### Per-brick ray step + opacity correction
 
@@ -226,7 +228,8 @@ ray-march ground truth) and reproduces the trivial order for equal-size grids.
 ### Residency must match the plan budget
 
 The plan budget (how many bricks the octree makes) and the `ChunkResidencyManager`
-budget (what stays GPU-resident) both measure `texDims·8` and **must agree** —
+budget (what stays GPU-resident) both measure `texDims·bytesPerVoxel` (4 unlit,
+8 lit) and **must agree** —
 otherwise the manager evicts bricks the plan included and blocks stop rendering.
 A consumer sets `maxChunkResidencyBytes` to the same value it passes as the plan's
 `budgetBytes`.

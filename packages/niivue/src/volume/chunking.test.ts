@@ -6,6 +6,7 @@ import {
   chunkOwnedTexBox,
   chunkSampleTransform,
   chunksCrossingSlice,
+  chunksToKeepResident,
   chunkVolume,
   chunkVolumeGrid,
   chunkVolumeMultiLOD,
@@ -964,6 +965,58 @@ describe('chunkVolumeMultiLOD', () => {
     expect(sum).toBe(512 * 512 * 512)
   })
 
+  test('an unlit plan (4 B/voxel) keeps more detail for the same budget', () => {
+    const texVoxels = (plan: ChunkPlan): number =>
+      plan.chunks.reduce(
+        (s, c) => s + c.texDims[0] * c.texDims[1] * c.texDims[2],
+        0,
+      )
+    const unbudgeted = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+    })
+    // An eighth of the unbudgeted lit bytes: the plans step coarser in levels,
+    // so the budget must sit between two steps for the pricing to show.
+    const budget = texVoxels(unbudgeted)
+    const lit = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+      budgetBytes: budget,
+    })
+    const unlit = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+      budgetBytes: budget,
+      bytesPerVoxel: 4,
+    })
+    expect(texVoxels(lit) * 8).toBeLessThanOrEqual(budget)
+    expect(texVoxels(unlit) * 4).toBeLessThanOrEqual(budget)
+    expect(texVoxels(unlit)).toBeGreaterThan(texVoxels(lit))
+    expect(unlit.chunks.length).toBeGreaterThan(lit.chunks.length)
+  })
+
+  test('an unlit plan with a covering focus prices its lower bound at 4 B/voxel', () => {
+    // A covering radius (range.js's uniform plan) reaches the lattice lower
+    // bound, which must use the same per-voxel price as the budget pass.
+    const covering = { center: [352, 352, 352] as Vec3i, radius: 2000 }
+    const big: Vec3i[] = [
+      [704, 704, 704],
+      [352, 352, 352],
+      [176, 176, 176],
+      [88, 88, 88],
+    ]
+    const opts = { cellEdge: 128, budgetBytes: 2048 * 1024 * 1024 }
+    const lit = chunkVolumeMultiLOD(big, covering, 2048, opts)
+    const unlit = chunkVolumeMultiLOD(big, covering, 2048, {
+      ...opts,
+      bytesPerVoxel: 4,
+    })
+    // L0 is 1412 MiB at 4 B/voxel: it fits unlit, not lit.
+    expect(new Set(lit.chunks.map((c) => c.sourceLevel ?? 0))).toEqual(
+      new Set([1]),
+    )
+    expect(new Set(unlit.chunks.map((c) => c.sourceLevel ?? 0))).toEqual(
+      new Set([0]),
+    )
+  })
+
   test('minLevel caps the finest level even at the focus', () => {
     const plan = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
       cellEdge: 64,
@@ -1498,5 +1551,37 @@ describe('chunkOwnedTexBox', () => {
       }
     }
     expect(shared).toBeGreaterThan(0)
+  })
+})
+
+describe('chunksToKeepResident', () => {
+  const oldToNew = new Map([
+    [0, 0],
+    [1, 2],
+  ])
+  const lit = (ci: number) => ci === 1
+  // Three 10^3 bricks: 4000 B each unlit, 8000 B lit.
+  const newPlan = {
+    chunks: [0, 1, 2].map(() => ({ texDims: [10, 10, 10] })),
+  } as unknown as ChunkPlan
+
+  test('keeps every match while lit', () => {
+    expect(chunksToKeepResident(oldToNew, false, lit, newPlan, 0)).toEqual(
+      oldToNew,
+    )
+  })
+
+  test('drops lit bricks when unlit and over budget, leaving the decoded-tier map whole', () => {
+    // 4000 + 4000 + 8000 > 15000.
+    expect(chunksToKeepResident(oldToNew, true, lit, newPlan, 15000)).toEqual(
+      new Map([[0, 0]]),
+    )
+    expect(oldToNew.size).toBe(2)
+  })
+
+  test('keeps lit bricks when unlit and they still fit', () => {
+    expect(chunksToKeepResident(oldToNew, true, lit, newPlan, 16000)).toEqual(
+      oldToNew,
+    )
   })
 })

@@ -16,7 +16,7 @@ import type {
   VectorAnnotation,
 } from '@/NVTypes'
 import type { BuildTextFn, GlyphBatch } from '@/view/NVFont'
-import { projectMMToCanvas } from '@/view/sliceUtils'
+import { projectMMToCanvas, tilePlane } from '@/view/sliceUtils'
 import {
   chunkExplodeEnabled,
   explodeOffsetMMAtFrac,
@@ -75,19 +75,11 @@ function buildBrushCursor(
   const strokeW = cfg.style.strokeWidth
 
   for (const tile of screenSlices) {
-    if (tile.axCorSag === SLICE_TYPE.RENDER) continue
     if (tile.axCorSag !== sliceType) continue
-    if (
-      !tile.mvpMatrix ||
-      !tile.planeNormal ||
-      !tile.planePoint ||
-      !tile.leftTopWidthHeight
-    )
-      continue
-    if (!isOnSlice(mm, tile.planeNormal, tile.planePoint, tolerance)) continue
-
-    const mvp = tile.mvpMatrix
-    const ltwh = tile.leftTopWidthHeight
+    const plane = tilePlane(tile)
+    if (!plane) continue
+    const { mvp, ltwh, pn, pp } = plane
+    if (!isOnSlice(mm, pn, pp, tolerance)) continue
 
     // Generate circle points in mm-space on the slice plane
     const circleCanvas: [number, number][] = []
@@ -140,22 +132,11 @@ function buildSelectionHandles(
   if (!anchor) return startOffset
 
   for (const tile of screenSlices) {
-    if (tile.axCorSag === SLICE_TYPE.RENDER) continue
     if (tile.axCorSag !== ann.sliceType) continue
-    if (
-      !tile.mvpMatrix ||
-      !tile.planeNormal ||
-      !tile.planePoint ||
-      !tile.leftTopWidthHeight
-    )
-      continue
-    if (!isOnSlice(anchor, tile.planeNormal, tile.planePoint, tolerance))
-      continue
-
-    const mvp = tile.mvpMatrix
-    const ltwh = tile.leftTopWidthHeight
-    const pn = tile.planeNormal
-    const pp = tile.planePoint
+    const plane = tilePlane(tile)
+    if (!plane) continue
+    const { mvp, ltwh, pn, pp } = plane
+    if (!isOnSlice(anchor, pn, pp, tolerance)) continue
 
     // Project control points to canvas using plane-aware depth
     const cpCanvas: [number, number][] = sel.controlPoints.map((cp) => {
@@ -455,18 +436,9 @@ function projectAnnotations(
   const tolerance = computeTolerance(model)
   const anchors = annotations.map(getAnchorMM)
   for (const [tileIndex, tile] of screenSlices.entries()) {
-    if (tile.axCorSag === SLICE_TYPE.RENDER) continue
-    if (
-      !tile.mvpMatrix ||
-      !tile.planeNormal ||
-      !tile.planePoint ||
-      !tile.leftTopWidthHeight
-    )
-      continue
-    const mvp = tile.mvpMatrix
-    const ltwh = tile.leftTopWidthHeight
-    const pn = tile.planeNormal
-    const pp = tile.planePoint
+    const plane = tilePlane(tile)
+    if (!plane) continue
+    const { mvp, ltwh, pn, pp } = plane
     const project = (
       pt: AnnotationPoint,
       sliceType: number,

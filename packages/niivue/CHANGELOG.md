@@ -1,3 +1,13 @@
+## 1.0.0-rc.102 (2026-11-06)
+
+### Features
+
+- **niivue:** visibleGroups shows a subset of tract groups, keeping colorBy ([#340](https://github.com/niivue/mono/issues/340))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.101 (2026-11-06)
 
 ### Features

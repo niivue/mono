@@ -2,20 +2,38 @@ import { expect, test } from 'bun:test'
 import { encodeDocumentJSON } from '@/documentJson'
 import NiiVue from '@/index'
 import { deserialize } from '@/NVDocument'
-import { devImageUrl, documentFile } from '@/testing/headless'
+import { devImageUrl, documentFile, niftiBytes } from '@/testing/headless'
 
 // Regression for #350: the legend read a `showLegend` nothing set, so the
 // per-volume and per-mesh `isLegendVisible` never hid anything. A small
-// background stands in for mni152: only the atlas volume and mesh list labels.
+// background stands in for mni152 and a small synthetic atlas for the aal
+// volume (whose 16 MB embedded document made these tests slow): only the atlas
+// volume and mesh list labels.
 
 const BACKGROUND = devImageUrl('volumes/hippo.nii.gz')
-const ATLAS = devImageUrl('volumes/aal.nii.gz')
-const ATLAS_TABLE = devImageUrl('volumes/aal.json')
 const MESH_ATLAS = devImageUrl('meshes/atl-Anatom_space-MNI.mz3')
+
+/** NIFTI_INTENT_LABEL holding IDs 0 (Air), 1, 2 and 3. */
+const ATLAS = () =>
+  new File(
+    [
+      niftiBytes({
+        dims: [8, 8, 4],
+        datatype: 'uint8',
+        intentCode: 1002,
+        voxel: (i) => i % 4,
+      }),
+    ],
+    'atlas.nii',
+  )
+
+// The aal table, fetched by URL so addColormapFromUrl's fetch path runs; it
+// names IDs 1-3 (Precentral_L, Precentral_R, Frontal_Sup_L).
+const ATLAS_TABLE = devImageUrl('volumes/aal.json')
 
 test('per-item isLegendVisible picks the voxel atlas, the mesh atlas, both or neither', async () => {
   const nv = new NiiVue({ backend: 'webgl2' })
-  await nv.loadVolumes([{ url: BACKGROUND }, { url: ATLAS }])
+  await nv.loadVolumes([{ url: BACKGROUND }, { url: ATLAS() }])
   await nv.addColormapFromUrl(ATLAS_TABLE)
   await nv.setVolume(1, { colormap: 'aal' })
   await nv.loadMeshes([{ url: MESH_ATLAS }])
@@ -52,7 +70,7 @@ test('load options hide an item, and a v10 document drops its stale false', asyn
   await nv.addColormapFromUrl(ATLAS_TABLE)
   await nv.loadVolumes([
     { url: BACKGROUND },
-    { url: ATLAS, colormap: 'aal', isLegendVisible: false },
+    { url: ATLAS(), colormap: 'aal', isLegendVisible: false },
   ])
   await nv.loadMeshes([{ url: MESH_ATLAS, isLegendVisible: false }])
   const fromOptions = nv.model.collectLegendEntries().length

@@ -257,7 +257,7 @@ describe('createSourceChunkLoader', () => {
       fetchChunk: async () => {
         active++
         peak = Math.max(peak, active)
-        await new Promise((r) => setTimeout(r, 15))
+        await new Promise((r) => setTimeout(r, 2))
         active--
         return new Uint8Array(8)
       },
@@ -280,7 +280,7 @@ describe('createSourceChunkLoader', () => {
       levels: [{ level: 0, shape: [64, 64, 64], spacing: [1, 1, 1] }],
       fetchChunk: async () => {
         calls++
-        await new Promise((r) => setTimeout(r, 10))
+        await new Promise((r) => setTimeout(r, 2))
         return new Uint8Array(8)
       },
     }
@@ -308,6 +308,7 @@ describe('createSourceChunkLoader', () => {
     const load = createSourceChunkLoader(source, {
       maxConcurrentLoads: 4,
       retryAttempts: 3,
+      retryDelayMs: 1, // not the real 80 ms backoff
     })
     const out = await load(req(0, [0, 0, 0], [1, 1, 1]))
     expect(attempts).toBe(2)
@@ -347,7 +348,7 @@ describe('createSourceChunkLoader', () => {
       fetchChunk: async () => {
         active++
         peak = Math.max(peak, active)
-        await new Promise((r) => setTimeout(r, 15))
+        await new Promise((r) => setTimeout(r, 2))
         active--
         return new Uint8Array(8)
       },
@@ -1004,7 +1005,9 @@ const waitFor = async (
   }
 }
 
-const DEBOUNCE = 20
+// Short so the refocus tests do not wait out a real debounce; every wait on
+// it is a waitFor on observable state or a negative check after tick().
+const DEBOUNCE = 2
 
 describe('NVChunkedVolume refocus promise', () => {
   test('setFocus resolves only after the host swap has applied', async () => {

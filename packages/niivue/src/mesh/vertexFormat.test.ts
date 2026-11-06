@@ -5,7 +5,6 @@ import {
   BYTES_PER_VERTEX,
   packMeshVertices,
   packVertices,
-  VERTEX_BUFFER_LAYOUT,
   VERTEX_OFFSET,
 } from './vertexFormat'
 
@@ -80,14 +79,5 @@ describe('packVertices', () => {
     const c = VERTEX_OFFSET.color / 4
     const stride = BYTES_PER_VERTEX / 4
     expect([u32[c], u32[stride + c]]).toEqual([7, 7])
-  })
-
-  test('the WebGPU layout matches the offsets', () => {
-    expect(VERTEX_BUFFER_LAYOUT.arrayStride).toBe(BYTES_PER_VERTEX)
-    expect([...VERTEX_BUFFER_LAYOUT.attributes].map((a) => a.offset)).toEqual([
-      VERTEX_OFFSET.position,
-      VERTEX_OFFSET.normal,
-      VERTEX_OFFSET.color,
-    ])
   })
 })

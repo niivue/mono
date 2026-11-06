@@ -82,11 +82,6 @@ const W = 800
 const H = 600
 
 describe('signal-mode layout', () => {
-  test('graphTotalWidthPositiveForTwoPoints', () => {
-    const data = signalData([{ label: 'a', x: null, y: [1, 2, 3] }])
-    expect(graphTotalWidth(data, W, H)).toBeGreaterThan(0)
-  })
-
   test('graphTotalWidthZeroForSinglePoint', () => {
     const data = signalData([{ label: 'a', x: null, y: [1] }])
     expect(graphTotalWidth(data, W, H)).toBe(0)

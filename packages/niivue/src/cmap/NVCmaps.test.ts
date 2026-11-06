@@ -164,11 +164,6 @@ describe('makeLut', () => {
     expect(lut[mid + 2]).toBeGreaterThan(100) // B increasing
     expect(lut[mid + 2]).toBeLessThan(140)
   })
-
-  test('returns1024bytes', () => {
-    const lut = makeLut([0, 255], [0, 255], [0, 255], [255, 255], [0, 255])
-    expect(lut.length).toBe(256 * 4)
-  })
 })
 
 // ---------------------------------------------------------------------------

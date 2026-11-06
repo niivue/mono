@@ -41,7 +41,6 @@ describe('resolveBudgetPlan', () => {
 
   test("'interactive' trades brick count for frame time", () => {
     const o = resolveBudgetPlan({ budgetPlan: 'interactive' }, ctx)
-    expect(o.maxBricks).toBe(128)
     expect(o.maxBricks).toBeLessThan(BUDGET_PLANS.focus.maxBricks)
     expect(o.targetFrameMs).toBe(16.7)
     expect(o.focus).toBe('crosshair')

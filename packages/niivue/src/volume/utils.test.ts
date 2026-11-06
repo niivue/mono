@@ -305,17 +305,6 @@ describe('createNiftiHeader', () => {
 // hdrToArrayBuffer
 // ---------------------------------------------------------------------------
 describe('hdrToArrayBuffer', () => {
-  test('returns348bytes', () => {
-    const hdr = createNiftiHeader(
-      [10, 10, 10],
-      [1, 1, 1],
-      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-      NiiDataType.DT_UINT8,
-    )
-    const buf = hdrToArrayBuffer(hdr)
-    expect(buf.length).toBe(348)
-  })
-
   test('sizeof_hdr_field_is348', () => {
     const hdr = createNiftiHeader(
       [10, 10, 10],

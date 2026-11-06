@@ -453,7 +453,8 @@ async function initialize({ model }) {
     }
     // OME-Zarr (nv-ext-tile/zarr): one pyramid level whole, or streamed.
     if (msg.cmd === "__ext_load_ome_zarr") {
-      const [url, opts = {}] = coerceCommandArgs(msg.args)
+      const [rawUrl, opts = {}] = coerceCommandArgs(msg.args)
+      const url = new URL(rawUrl, location.href).href // zarrita needs an absolute URL
       try {
         if (opts.stream) {
           // Replaces, like loadVolumes, once the store has opened; the helper frees its manager and workers when the volume goes.

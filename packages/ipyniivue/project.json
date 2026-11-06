@@ -1,41 +1,16 @@
 {
   "name": "ipyniivue",
   "projectType": "library",
-  "tags": [
-    "type:lib",
-    "lang:python"
-  ],
+  "tags": ["type:lib", "lang:python"],
   "targets": {
     "codegen": {
       "command": "bun run scripts/codegen.ts",
-      "options": {
-        "cwd": "{projectRoot}"
-      },
+      "options": { "cwd": "{projectRoot}" },
       "dependsOn": [
-        {
-          "projects": [
-            "niivue"
-          ],
-          "target": "build"
-        },
-        {
-          "projects": [
-            "nv-ext-image-processing"
-          ],
-          "target": "build"
-        },
-        {
-          "projects": [
-            "nv-ext-drawing"
-          ],
-          "target": "build"
-        },
-        {
-          "projects": [
-            "nv-ext-tile"
-          ],
-          "target": "build"
-        }
+        { "projects": ["niivue"], "target": "build" },
+        { "projects": ["nv-ext-image-processing"], "target": "build" },
+        { "projects": ["nv-ext-drawing"], "target": "build" },
+        { "projects": ["nv-ext-tile"], "target": "build" }
       ],
       "inputs": [
         "{projectRoot}/scripts/**/*",
@@ -57,20 +32,14 @@
     },
     "build": {
       "command": "bun scripts/pixi-or-skip.ts python -m build --wheel --sdist --outdir dist .",
-      "options": {
-        "cwd": "{projectRoot}"
-      },
-      "dependsOn": [
-        "codegen"
-      ],
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["codegen"],
       "inputs": [
         "{projectRoot}/pyproject.toml",
         "{projectRoot}/src/**/*",
         "{projectRoot}/README.md"
       ],
-      "outputs": [
-        "{projectRoot}/dist"
-      ]
+      "outputs": ["{projectRoot}/dist"]
     },
     "lint": {
       "executor": "nx:run-commands",
@@ -114,10 +83,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "commands": [
-          "bunx tsc --noEmit",
-          "bun scripts/pixi-or-skip.ts mypy"
-        ],
+        "commands": ["bunx tsc --noEmit", "bun scripts/pixi-or-skip.ts mypy"],
         "parallel": false
       },
       "inputs": [
@@ -131,10 +97,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "commands": [
-          "bun test tests",
-          "bun scripts/pixi-or-skip.ts pytest"
-        ],
+        "commands": ["bun test tests", "bun scripts/pixi-or-skip.ts pytest"],
         "parallel": false
       },
       "inputs": [
@@ -146,12 +109,8 @@
     },
     "smoke": {
       "command": "bun scripts/pixi-or-skip.ts smoke",
-      "options": {
-        "cwd": "{projectRoot}"
-      },
-      "dependsOn": [
-        "codegen"
-      ],
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["codegen"],
       "inputs": [
         "{projectRoot}/examples/**/*.ipynb",
         "{projectRoot}/src/**/*",
@@ -160,9 +119,7 @@
     },
     "nx-release-publish": {
       "executor": "nx:noop",
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false
     }
   }

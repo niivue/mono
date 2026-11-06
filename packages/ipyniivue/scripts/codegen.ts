@@ -1572,7 +1572,10 @@ function emitJs(api: ApiDescriptor): string {
     '    // OME-Zarr (nv-ext-tile/zarr): one pyramid level whole, or streamed.',
   )
   lines.push('    if (msg.cmd === "__ext_load_ome_zarr") {')
-  lines.push('      const [url, opts = {}] = coerceCommandArgs(msg.args)')
+  lines.push('      const [rawUrl, opts = {}] = coerceCommandArgs(msg.args)')
+  lines.push(
+    '      const url = new URL(rawUrl, location.href).href // zarrita needs an absolute URL',
+  )
   lines.push('      try {')
   lines.push('        if (opts.stream) {')
   lines.push(

@@ -1,5 +1,5 @@
 import { colorLutGlsl } from '@/slide/colorLutShader'
-import { IDENTITY_COLOR_LUT, type NVSlide } from '@/slide/NVSlide'
+import type { NVSlide } from '@/slide/NVSlide'
 import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
@@ -109,8 +109,9 @@ export class SlidePlaneRenderer extends NVRenderer {
     if (shader.uniforms.tileTex) {
       gl.uniform1i(shader.uniforms.tileTex, 0)
     }
-    if (shader === this._lutShader)
-      gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
+    if (shader === this._lutShader && shader.uniforms.colorLut) {
+      gl.uniform1i(shader.uniforms.colorLut, 1)
+    }
     // Depth-test so volume in front occludes the plane, but don't write depth
     // (the plane is a thin overlay; let later layers blend over it too).
     gl.enable(gl.DEPTH_TEST)
@@ -135,7 +136,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl.activeTexture(gl.TEXTURE0)
     const lut = slide.displayColorLut
     let shader = this._shader
-    if (lut !== IDENTITY_COLOR_LUT && this._lutShader) {
+    if (lut && this._lutShader) {
       shader = this._lutShader
       this._luts.bind(gl, lut)
     }
@@ -151,6 +152,7 @@ export class SlidePlaneRenderer extends NVRenderer {
       gl.bindTexture(gl.TEXTURE_2D, tex)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     }
+    if (lut) this._luts.bind(gl, null)
     gl.bindVertexArray(null)
     gl.depthMask(true)
   }

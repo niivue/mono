@@ -1,5 +1,5 @@
 import { colorLutWgsl } from '@/slide/colorLutShader'
-import { IDENTITY_COLOR_LUT, type NVSlide } from '@/slide/NVSlide'
+import type { NVSlide } from '@/slide/NVSlide'
 import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
@@ -239,7 +239,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._scratch[16] = opacity
     device.queue.writeBuffer(this._uniformBuffer, 0, this._scratch)
     const lut = slide.displayColorLut
-    if (lut !== IDENTITY_COLOR_LUT && this._luts && this._lutPipeline) {
+    if (lut && this._luts && this._lutPipeline) {
       pass.setPipeline(this._lutPipeline)
       pass.setBindGroup(2, this._luts.group(lut))
     } else pass.setPipeline(this._pipeline)

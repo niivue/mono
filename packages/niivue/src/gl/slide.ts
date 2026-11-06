@@ -1,11 +1,10 @@
 import { ubuntu } from '@/assets/fonts'
-import {
-  IDENTITY_COLOR_LUT,
-  type NVSlide,
-  type NVSlideColor,
-  type NVSlideScreen,
-  type NVSlideScreenRect,
-  type NVSlideVisibleTile,
+import type {
+  NVSlide,
+  NVSlideColor,
+  NVSlideScreen,
+  NVSlideScreenRect,
+  NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
   buildSlideOverlay,
@@ -275,13 +274,12 @@ export class SlideRenderer extends NVRenderer {
   // The plain shader unless the slide has a colour table to apply.
   private useShader(gl: WebGL2RenderingContext, slide: NVSlide): void {
     const lut = slide.displayColorLut
-    const shader =
-      lut === IDENTITY_COLOR_LUT ? this._plainShader : this._lutShader
+    const shader = lut ? this._lutShader : this._plainShader
     if (!shader) return
     this._shader = shader
     shader.use(gl)
     gl.uniform1i(shader.uniforms.slideTexture, 0)
-    if (shader === this._lutShader) {
+    if (lut) {
       gl.uniform1i(shader.uniforms.colorLut, 1)
       this._luts.bind(gl, lut)
     }

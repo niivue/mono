@@ -1,11 +1,10 @@
 import { ubuntu } from '@/assets/fonts'
 import { colorLutWgsl } from '@/slide/colorLutShader'
-import {
-  IDENTITY_COLOR_LUT,
-  type NVSlide,
-  type NVSlideColor,
-  type NVSlideScreen,
-  type NVSlideScreenRect,
+import type {
+  NVSlide,
+  NVSlideColor,
+  NVSlideScreen,
+  NVSlideScreenRect,
 } from '@/slide/NVSlide'
 import {
   buildSlideOverlay,
@@ -345,11 +344,10 @@ export class SlideRendererGPU {
       if (!slide.visible || slide.opacity <= 0) continue
       // The plain pipeline unless the slide has a colour table to apply.
       const lut = slide.displayColorLut
-      if (lut === IDENTITY_COLOR_LUT) pass.setPipeline(this._pipeline)
-      else {
+      if (lut) {
         pass.setPipeline(this._lutPipeline)
         pass.setBindGroup(1, this._luts.group(lut))
-      }
+      } else pass.setPipeline(this._pipeline)
       const bounds = slide.screenRectForSlide(screen)
       this.drawQuad(pass, width, height, bounds, this._placeholderTexture, {
         uvTop: 0,

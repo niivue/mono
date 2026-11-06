@@ -10,7 +10,6 @@ import type {
 } from './NVSlide'
 import {
   assertSingleSlidePlane,
-  IDENTITY_COLOR_LUT,
   ManifestRangeSource,
   NVSlide,
   windowSamples,
@@ -1219,13 +1218,13 @@ describe('NVSlide colour management', () => {
     expect(slide.displayColorLut).toBe(lut)
   })
 
-  it('shows identity while off, or with no profile, transform or usable table', async () => {
+  it('shows no table while off, or with no profile, transform or usable table', async () => {
     NVSlide.registerIccTransform(async () => lut)
     const off = NVSlide.fromSource(withProfile(profile), {
       colorManagement: false,
     })
     await changed(off)
-    expect(off.displayColorLut).toBe(IDENTITY_COLOR_LUT)
+    expect(off.displayColorLut).toBeNull()
     off.colorManagement = true
     expect(off.displayColorLut).toBe(lut)
 
@@ -1236,10 +1235,7 @@ describe('NVSlide colour management', () => {
     const unregistered = NVSlide.fromSource(withProfile(profile))
     await new Promise((r) => setTimeout(r, 0))
     for (const s of [none, unusable, unregistered])
-      expect([s.colorLut, s.displayColorLut]).toEqual([
-        null,
-        IDENTITY_COLOR_LUT,
-      ])
+      expect([s.colorLut, s.displayColorLut]).toEqual([null, null])
   })
 
   it('skips a profile the manifest says is sRGB', async () => {
@@ -1277,15 +1273,36 @@ describe('NVSlide colour management', () => {
     expect(calls).toBe(0)
   })
 
-  it('the identity table maps each corner to itself', () => {
-    const d = IDENTITY_COLOR_LUT.data
-    for (let e = 0; e < 8; e++)
-      expect([...d.subarray(4 * e, 4 * e + 4)]).toEqual([
-        e & 1 ? 255 : 0,
-        e & 2 ? 255 : 0,
-        e & 4 ? 255 : 0,
-        255,
-      ])
+  it('rejects a table of the wrong length, and keeps none', async () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    NVSlide.registerIccTransform(async () => ({
+      size: 2,
+      data: new Uint8Array(24),
+    })) // RGB, not RGBA
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(slide.colorLut).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('dispose during a bake aborts it and keeps no table', async () => {
+    let seen: AbortSignal | undefined
+    let finish: (lut: NVSlideColorLut) => void = () => {}
+    NVSlide.registerIccTransform((_p, signal) => {
+      seen = signal
+      return new Promise((resolve) => {
+        finish = resolve
+      })
+    })
+    expect(NVSlide.iccTransform()).not.toBeNull()
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    slide.dispose()
+    expect(seen?.aborted).toBe(true)
+    finish(lut)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(slide.colorLut).toBeNull()
   })
 
   it('the default source reads a manifest profile by Range from its file', async () => {
@@ -1317,7 +1334,7 @@ describe('NVSlide colour management', () => {
     })
     const slide = NVSlide.fromSource(withProfile(profile))
     await new Promise((r) => setTimeout(r, 0))
-    expect(slide.displayColorLut).toBe(IDENTITY_COLOR_LUT)
+    expect(slide.displayColorLut).toBeNull()
     expect(warn).toHaveBeenCalledTimes(1)
     warn.mockRestore()
   })

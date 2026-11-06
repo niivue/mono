@@ -123,15 +123,17 @@ export class ColorLutTexturesGPU {
 
   group(lut: NVSlideColorLut): GPUBindGroup {
     const existing = this._entries.get(lut)
-    if (existing) return existing.group
-    // A few slides at a time: drop the oldest table. Earlier frames are
-    // submitted, so destroying its texture cannot pull it from under a pass.
+    if (existing) {
+      // Least recently used goes first: re-insert on every hit.
+      this._entries.delete(lut)
+      this._entries.set(lut, existing)
+      return existing.group
+    }
+    // A few slides at a time: forget the least recently used table. Its texture
+    // is left to garbage collection, not destroyed: a pass still open this
+    // frame may have bound it (many managed slides in one frame).
     if (this._entries.size >= MAX_COLOR_LUTS) {
-      const [oldest, entry] = this._entries.entries().next().value as [
-        NVSlideColorLut,
-        { texture: GPUTexture },
-      ]
-      entry.texture.destroy()
+      const oldest = this._entries.keys().next().value as NVSlideColorLut
       this._entries.delete(oldest)
     }
     const n = lut.size

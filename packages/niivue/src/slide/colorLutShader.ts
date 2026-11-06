@@ -26,7 +26,8 @@ export const colorLutWgsl = (group: number, lut: boolean): string =>
 @group(${group}) @binding(1) var colorLutSampler: sampler;
 fn applyColorLut(c: vec3f) -> vec3f {
   let n = f32(textureDimensions(colorLut).x);
-  return textureSample(colorLut, colorLutSampler, c * ((n - 1.0) / n) + 0.5 / n).rgb;
+  // The table has no mips: sample level 0, independent of control-flow uniformity.
+  return textureSampleLevel(colorLut, colorLutSampler, c * ((n - 1.0) / n) + 0.5 / n, 0.0).rgb;
 }
 `
     : `

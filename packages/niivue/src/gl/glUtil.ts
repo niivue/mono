@@ -45,11 +45,20 @@ const MAX_COLOR_LUTS = 8
 export class ColorLutTexturesGL {
   private readonly _textures = new Map<NVSlideColorLut, WebGLTexture>()
 
-  get(gl: WebGL2RenderingContext, lut: NVSlideColorLut): WebGLTexture | null {
+  // Uploads on the active unit: only bind() calls it, with unit 1 active.
+  private get(
+    gl: WebGL2RenderingContext,
+    lut: NVSlideColorLut,
+  ): WebGLTexture | null {
     const existing = this._textures.get(lut)
-    if (existing) return existing
-    // A few slides at a time: drop the oldest table (renderers without a
-    // clearTextures hook would otherwise keep one per slide ever shown).
+    if (existing) {
+      // Least recently used goes first: re-insert on every hit.
+      this._textures.delete(lut)
+      this._textures.set(lut, existing)
+      return existing
+    }
+    // A few slides at a time: drop the least recently used table (renderers
+    // without a clearTextures hook would otherwise keep one per slide shown).
     if (this._textures.size >= MAX_COLOR_LUTS) {
       const [oldest, tex] = this._textures.entries().next().value as [
         NVSlideColorLut,
@@ -79,10 +88,10 @@ export class ColorLutTexturesGL {
     return texture
   }
 
-  /** Bind `lut` on texture unit 1 (the shaders' `colorLut`), leaving unit 0 active. */
-  bind(gl: WebGL2RenderingContext, lut: NVSlideColorLut): void {
+  /** Bind `lut` (or nothing) on texture unit 1, the shaders' `colorLut`, leaving unit 0 active. */
+  bind(gl: WebGL2RenderingContext, lut: NVSlideColorLut | null): void {
     gl.activeTexture(gl.TEXTURE1)
-    gl.bindTexture(gl.TEXTURE_3D, this.get(gl, lut))
+    gl.bindTexture(gl.TEXTURE_3D, lut ? this.get(gl, lut) : null)
     gl.activeTexture(gl.TEXTURE0)
   }
 

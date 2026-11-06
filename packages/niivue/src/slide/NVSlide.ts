@@ -121,14 +121,6 @@ export interface NVSlideColorLut {
   data: Uint8Array
 }
 
-/** The 2^3 table that maps every colour to itself under trilinear lookup. */
-export const IDENTITY_COLOR_LUT: NVSlideColorLut = {
-  size: 2,
-  data: Uint8Array.from({ length: 32 }, (_, i) =>
-    i % 4 === 3 ? 255 : ((i >> 2) >> (i % 4)) & 1 ? 255 : 0,
-  ),
-}
-
 /**
  * Bakes an ICC profile into an {@link NVSlideColorLut}, or resolves null for a
  * profile it cannot use. Registered with {@link NVSlide.registerIccTransform}
@@ -886,9 +878,9 @@ export class NVSlide extends EventTarget {
     return this._colorLut
   }
 
-  /** The table renderers apply: {@link colorLut} while colour management is on, else identity. */
-  get displayColorLut(): NVSlideColorLut {
-    return (this._colorManagement && this._colorLut) || IDENTITY_COLOR_LUT
+  /** The table renderers apply: {@link colorLut} while colour management is on, else null. */
+  get displayColorLut(): NVSlideColorLut | null {
+    return this._colorManagement ? this._colorLut : null
   }
 
   /** Whether renderers apply {@link colorLut}. Toggling only redraws: tiles are kept as decoded. */
@@ -904,21 +896,25 @@ export class NVSlide extends EventTarget {
 
   private async _loadColorLut(): Promise<void> {
     const transform = iccTransform
-    const fetchProfile = this._source.fetchIccProfile
     // DICOM ColorSpace SRGB means the profile is the display space already;
     // a grey slide's display mapping is its window, whatever profile it carries.
     if (
       !transform ||
-      !fetchProfile ||
+      !this._source.fetchIccProfile ||
       this.manifest.iccProfile?.colorSpace?.toUpperCase() === 'SRGB' ||
       this.manifest.levels.some((l) => l.photometric?.startsWith('MONOCHROME'))
     )
       return
     const signal = this._colorAbort.signal
     try {
-      const profile = await fetchProfile.call(this._source, signal)
+      const profile = await this._source.fetchIccProfile(signal)
       const lut = profile && (await transform(profile, signal))
       if (!lut || signal.aborted) return
+      // Renderers upload it as an RGBA8 3D texture; a wrong length would fail there.
+      if (lut.size < 2 || lut.data.length !== lut.size ** 3 * 4)
+        throw new Error(
+          `colour table of size ${lut.size} has ${lut.data.length} bytes`,
+        )
       this._colorLut = lut
       this.dispatchEvent(new Event('change'))
     } catch (err) {
@@ -1487,10 +1483,16 @@ export class NVSlide extends EventTarget {
 
   /**
    * Register the ICC transform that bakes slide profiles into sRGB lookup tables
-   * (null removes it). Slides created afterwards apply their profile.
+   * (null removes it). Only slides created afterwards apply their profile, so
+   * register before opening slides.
    */
   static registerIccTransform(transform: SlideIccTransform | null): void {
     iccTransform = transform
+  }
+
+  /** The registered ICC transform, or null. */
+  static iccTransform(): SlideIccTransform | null {
+    return iccTransform
   }
 
   /** The decoder registered for a codec, or undefined. */

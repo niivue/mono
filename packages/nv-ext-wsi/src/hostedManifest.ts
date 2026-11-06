@@ -3,7 +3,11 @@ import type {
   NVSlideTileFragment,
   NVSlideTileManifest,
 } from '@niivue/niivue'
-import type { SlideIndexInstance, SlideIndexSlide } from './dicomIndex'
+import type {
+  SlideIndexInstance,
+  SlideIndexLevel,
+  SlideIndexSlide,
+} from './dicomIndex'
 import { filesFor, fragmentsOf, manifestOf, slotOf } from './dicomWsiSource'
 
 /**
@@ -24,8 +28,8 @@ export async function manifestFromIndex(
     fileUrl: fileUrlFor,
   })
   for (const [i, level] of manifest.levels.entries()) {
-    const indexed = slide.levels[i]
-    if (!indexed) continue
+    // manifestOf builds one manifest level per indexed level.
+    const indexed = slide.levels[i] as SlideIndexLevel
     const { frames } = indexed
     const split = indexed.instances.length > 1
     if (!split)

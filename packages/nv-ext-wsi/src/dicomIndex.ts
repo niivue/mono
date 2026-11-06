@@ -72,7 +72,8 @@ export interface SlideIndexSlide {
   container?: string
   /** OpticalPathIdentifier; several paths make several slides. */
   opticalPath: string
-  /** ZOffsetInSlideCoordinateSystem (µm) when stated, else the focal-plane index. */
+  /** Focal-plane rank within its instance (0 = the lowest ZOffset), so levels
+   * that state ZOffset and levels that don't still form one slide. */
   focalPlane: number
   /** Level-0 pixel spacing in mm, [column, row]. */
   pixelSpacingMM?: [number, number]
@@ -363,7 +364,6 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   const colorSpaces: (string | undefined)[] = []
   let sharedSpacing: string | undefined
   let sharedPath: string | undefined
-  let sharedZ: number | undefined
   let perFrame = 0
   for (const e of elements) {
     if (e.depth === 0) top.set(e.tag, e)
@@ -375,7 +375,6 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     } else if (e.root === T.shared) {
       if (e.tag === T.spacing) sharedSpacing = text(b, e)
       if (e.tag === T.opticalPathId) sharedPath = text(b, e)
-      if (e.tag === T.zOffset) sharedZ = numberOf(b, e)
     } else if (e.root === T.perFrame) perFrame = Math.max(perFrame, e.item + 1)
   }
   icc.forEach((v, i) => {
@@ -451,12 +450,16 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       'malformed',
       `${perFrame} per-frame items for ${frameCount} frames`,
     )
+  // A shared OpticalPathIdentifier names every frame's path.
+  const sharedPathIndex =
+    sharedPath === undefined
+      ? undefined
+      : Math.max(0, pathIds.indexOf(sharedPath))
   if (sparse) {
     // Placed only by the per-frame positions below; a frame without one stays -1.
     column.fill(-1)
     row.fill(-1)
-    z.fill(sharedZ ?? 0)
-    path.fill(Math.max(0, pathIds.indexOf(sharedPath ?? '')))
+    path.fill(sharedPathIndex ?? 0)
   } else {
     // TILED_FULL orders frames by column, row, focal plane, then optical path.
     // Per-frame items may hold only other metadata; positions they do give win.
@@ -466,28 +469,30 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       column[f] = t % columns
       row[f] = Math.floor(t / columns)
       z[f] = Math.floor(g / grid) % focalPlaneCount
-      path[f] = Math.floor(g / (grid * focalPlaneCount))
+      path[f] = sharedPathIndex ?? Math.floor(g / (grid * focalPlaneCount))
     }
   }
-  if (perFrame) {
-    // A position must name a tile's top-left pixel (1-based); anything else is
-    // -1, an error buildLevel counts, never a tile placed at 0.
-    const place = (pos: number, size: number): number =>
-      Number.isInteger(pos) && pos >= 1 && (pos - 1) % size === 0
-        ? (pos - 1) / size
-        : -1
-    for (const e of elements) {
-      if (e.root !== T.perFrame) continue
-      const f = e.item
-      if (e.tag === T.columnPosition)
-        column[f] = place(numberOf(b, e), tileWidth)
-      else if (e.tag === T.rowPosition)
-        row[f] = place(numberOf(b, e), tileHeight)
-      else if (e.tag === T.zOffset) z[f] = numberOf(b, e)
-      else if (e.tag === T.opticalPathId)
-        path[f] = Math.max(0, pathIds.indexOf(text(b, e)))
-    }
+  // A position must name a tile's top-left pixel (1-based); anything else is
+  // -1, an error buildLevel counts, never a tile placed at 0.
+  const place = (pos: number, size: number): number =>
+    Number.isInteger(pos) && pos >= 1 && (pos - 1) % size === 0
+      ? (pos - 1) / size
+      : -1
+  let zCount = 0
+  for (const e of elements) {
+    if (e.root !== T.perFrame) continue
+    const f = e.item
+    if (e.tag === T.columnPosition) column[f] = place(numberOf(b, e), tileWidth)
+    else if (e.tag === T.rowPosition) row[f] = place(numberOf(b, e), tileHeight)
+    else if (e.tag === T.zOffset) {
+      z[f] = numberOf(b, e)
+      zCount++
+    } else if (e.tag === T.opticalPathId)
+      path[f] = Math.max(0, pathIds.indexOf(text(b, e)))
   }
+  // Otherwise µm and implicit plane indices would mix.
+  if (zCount && zCount !== frameCount)
+    throw new Skip('malformed', `ZOffset on ${zCount} of ${frameCount} frames`)
   // Each (optical path, focal plane) becomes a slide with its own grid-sized
   // tile map, so a small file naming thousands of planes must not reach groupSlides.
   const planes: Set<number>[] = []
@@ -504,6 +509,11 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     if (++pairs * grid > MAX_SLOTS)
       throw new Skip('malformed', `over ${MAX_SLOTS} tile slots across planes`)
   }
+  // Rank planes so slides group by plane order, not by whether a level states µm.
+  const rank = new Map(
+    [...new Set(z)].sort((a, c) => a - c).map((v, k) => [v, k]),
+  )
+  for (let f = 0; f < frameCount; f++) z[f] = rank.get(z[f] as number) as number
   await frameSpans(info, b, pixel, top, readAt)
   return info
 }

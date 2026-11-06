@@ -12,7 +12,7 @@ Core NiiVue already reads TIFF volumes (strips, tiles, LZW, Deflate, PackBits) w
 bun add @niivue/nv-ext-wsi
 ```
 
-Requires `@niivue/niivue` as a peer dependency.
+Requires `@niivue/niivue` >= 1.0.0-rc.107 as a peer dependency: the first release with sparse slide levels and per-tile `fileUrl`, which DICOM-WSI slides need.
 
 ## Usage
 
@@ -63,8 +63,12 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - `indexDicomWsi` reads only headers and item tags (`File.slice`), never pixel data.
   It uses the Basic or Extended Offset Table when present, and otherwise walks the items.
 - It handles multi-fragment frames, TILED_SPARSE (holes stay empty), and
-  concatenations.
-- Each optical path and focal plane becomes its own slide.
+  concatenations. TILED_FULL frames keep their implicit order; per-frame
+  positions, when given, win (items holding only other metadata, such as Frame
+  Content, do not change the order).
+- Each optical path and focal plane becomes its own slide. Planes are matched across
+  levels by rank (lowest ZOffset first), so a level that omits ZOffset still joins
+  its slide; ZOffset on only some of a file's frames is `malformed`.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.

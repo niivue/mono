@@ -73,7 +73,9 @@ count says nothing about paths or planes: a level with `sparse: true` must state
 - A tile's `fileUrl` overrides the level's, for a level split across files (a concatenation).
 
 Producers: nv-ext-wsi's `DicomWsiSource` (local folders) and `manifestFromIndex` (hosted
-`dicom-wsi-range-v1`); see `packages/nv-ext-wsi/README.md`.
+`dicom-wsi-range-v1`); see `packages/nv-ext-wsi/README.md`. Both need a core with sparse levels
+and per-tile `fileUrl` (nv-ext-wsi's peer floor). Their index places TILED_FULL frames
+in implicit order unless per-frame positions are given.
 
 **Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
 **ICC profiles are kept, not yet applied.** Manifests record the optical path's ICC

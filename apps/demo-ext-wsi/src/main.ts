@@ -87,8 +87,8 @@ async function open(
     needsFit = true
     requestRender()
   } catch (err) {
-    console.error(err)
     if (id !== openCount) return
+    console.error(err)
     status.textContent = err instanceof Error ? err.message : String(err)
   }
 }
@@ -96,6 +96,7 @@ async function open(
 fileInput.addEventListener('change', () => {
   const file = fileInput.files?.[0]
   indexNote = ''
+  status.title = ''
   if (file) {
     void open(async () =>
       TiffSlideSource.fromGeoTIFF(await fromBlob(file), {
@@ -131,11 +132,19 @@ folderInput.addEventListener('change', async () => {
   if (!files.length) return
   // Indexing takes an open generation, so a newer folder or file wins.
   const id = ++openCount
+  opening?.abort()
+  // The old list would start an open that cancels this index.
+  slideSelect.hidden = true
+  indexNote = ''
+  status.title = ''
   status.textContent = `Indexing ${files.length} files...`
   try {
     const t0 = performance.now()
     const index = await indexDicomWsi(files)
-    if (id !== openCount) return
+    if (id !== openCount) {
+      folderInput.value = ''
+      return
+    }
     const ms = performance.now() - t0
     folder = { index, files }
     slideSelect.replaceChildren(
@@ -174,6 +183,7 @@ slideSelect.addEventListener('change', () =>
 
 const openUrl = (url: string) => {
   indexNote = ''
+  status.title = ''
   return open((signal) => TiffSlideSource.fromUrl(url, { pool, signal }))
 }
 openButton.addEventListener('click', () => {

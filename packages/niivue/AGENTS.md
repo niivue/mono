@@ -59,7 +59,13 @@ bun test --watch         # Watch mode
 bunx nx test niivue      # From monorepo root, via Nx
 ```
 
-Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, output at `coverage/`). The `coverage/` directory is gitignored. No coverage thresholds are configured.
+Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, output at `coverage/`, gitignored). Test infrastructure (`scripts/bunTestPreload.ts`, `src/testing/**`) is excluded with `coveragePathIgnorePatterns`. Bun reports only line and function coverage, and only for files some test loads. Its text table's `All files` row is a mean of per-file percentages, not the aggregate.
+
+```bash
+bun test && bun run coverage:check   # aggregate totals, files no test loaded, floor check
+```
+
+`coverage:check` runs `.github/scripts/lcov-to-summary.ts` on `coverage/lcov.info`. It prints the exact aggregate for loaded files and an estimated total that counts every `src/**/*.ts` file no test loaded as 0%, with the list of those files. It exits 1 when loaded-file coverage drops below its `--min-lines` / `--min-functions` floors. CI runs it after the tests (the "Coverage summary (niivue)" step in `pr_gate.yml`), so a coverage drop fails the PR gate. When coverage rises, raise the floors in the `coverage:check` script in `package.json` to about one point below the new numbers. Do not use Bun's `coverageThreshold` for this: Bun checks it against each file separately, so any file below it fails the run.
 
 ### End-to-end tests (Playwright)
 
@@ -168,7 +174,7 @@ Look at every changed PNG before committing it: an update accepts whatever was d
 The following modules require a browser or GPU context and are not covered by the Bun unit test suite. Their output is covered by the Playwright e2e suite (`e2e/`, see above).
 
 - `gl/`, `wgpu/` — GPU shader/rendering code
-- `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies
+- `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies (the state paths of `NVControlBase.ts` are now partly reached through `src/testing/headless.ts`)
 - `control/` — Mouse/keyboard interaction handlers
 - `view/NVRenderer.ts`, `view/NVFont.ts` — Rendering pipeline
 - `workers/` — Web Worker code

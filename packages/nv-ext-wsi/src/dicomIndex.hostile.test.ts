@@ -436,4 +436,139 @@ describe('indexDicomWsi on hostile input', () => {
     const f = dicom({ perFrame: sq(0x5200, 0x9230, [z55, z55, other, other]) })
     expect(await reasons(f)).toEqual(['malformed'])
   })
+  test('implicit planes placed in µm by origin and spacing rank with stated ones', async () => {
+    // Level 0: implicit planes at 0 and 2 µm (origin Z 0, spacing 0.002 mm);
+    // level 1 states only 2 µm.
+    const l0 = dicom({
+      sop: el(0x0008, 0x0018, 'UI', str('1.2.9.80', '\0')),
+      totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+      focalPlanes: el(0x0048, 0x0303, 'UL', le(2, 4)),
+      origin: sq(0x0048, 0x0008, [item(el(0x0040, 0x074a, 'DS', str('0')))]),
+      shared: sq(0x5200, 0x9229, [
+        item(
+          sq(0x0028, 0x9110, [item(el(0x0018, 0x0088, 'DS', str('0.002')))]),
+        ),
+      ]),
+    })
+    const l1 = dicom(
+      {
+        sop: el(0x0008, 0x0018, 'UI', str('1.2.9.81', '\0')),
+        frames: el(0x0028, 0x0008, 'IS', str('1')),
+        totalColumns: el(0x0048, 0x0006, 'UL', le(16, 4)),
+        totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+        perFrame: sq(0x5200, 0x9230, [item(zSeq('2'))]),
+      },
+      pixelData([payload(9)]),
+    )
+    expect(planesOf(await indexDicomWsi([l0, l1]))).toEqual([
+      [0, [[32, 2, 0]]],
+      [
+        1,
+        [
+          [32, 2, 0],
+          [16, 1, 0],
+        ],
+      ],
+    ])
+  })
+  test('one shared ZOffset does not collapse several implicit planes', async () => {
+    const f = dicom({
+      totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+      focalPlanes: el(0x0048, 0x0303, 'UL', le(2, 4)),
+      shared: sq(0x5200, 0x9229, [item(zSeq('5'))]),
+    })
+    expect(planesOf(await indexDicomWsi([f]))).toEqual([
+      [0, [[32, 2, 0]]],
+      [1, [[32, 2, 0]]],
+    ])
+  })
+  test('many files each naming a full-size plane stop at the tile-slot budget', async () => {
+    // 2048 x 2048 one-pixel tiles (4M slots) per file; the budget holds 16.
+    const plane = (k: number) =>
+      dicom(
+        {
+          sop: el(0x0008, 0x0018, 'UI', str(`1.2.9.9${k}`, '\0')),
+          org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+          frames: el(0x0028, 0x0008, 'IS', str('1')),
+          rows: el(0x0028, 0x0010, 'US', le(1, 2)),
+          columns: el(0x0028, 0x0011, 'US', le(1, 2)),
+          totalColumns: el(0x0048, 0x0006, 'UL', le(2048, 4)),
+          totalRows: el(0x0048, 0x0007, 'UL', le(2048, 4)),
+          shared: sq(0x5200, 0x9229, [item(zSeq(String(k)))]),
+          perFrame: sq(0x5200, 0x9230, [
+            item(
+              sq(0x0048, 0x021a, [
+                item(
+                  el(0x0048, 0x021e, 'SL', le(1, 4)),
+                  el(0x0048, 0x021f, 'SL', le(1, 4)),
+                ),
+              ]),
+            ),
+          ]),
+        },
+        pixelData([payload(k)]),
+      )
+    const idx = await indexDicomWsi(
+      Array.from({ length: 20 }, (_, k) => plane(k)),
+    )
+    expect(idx.slides).toHaveLength(16)
+    expect(idx.skipped.map((s) => s.reason)).toEqual(Array(4).fill('malformed'))
+  })
+
+  test('levels stating nearly equal ZOffsets share a plane', async () => {
+    const level = (uid: string, z: string, frames = 4, size = 32) =>
+      dicom(
+        {
+          sop: el(0x0008, 0x0018, 'UI', str(uid, '\0')),
+          frames: el(0x0028, 0x0008, 'IS', str(String(frames))),
+          totalColumns: el(0x0048, 0x0006, 'UL', le(size, 4)),
+          totalRows: el(0x0048, 0x0007, 'UL', le(size, 4)),
+          shared: sq(0x5200, 0x9229, [item(zSeq(z))]),
+        },
+        pixelData(Array.from({ length: frames }, (_, k) => payload(k))),
+      )
+    const idx = await indexDicomWsi([
+      level('1.2.9.95', '0.5'),
+      level('1.2.9.96', '0.5000001', 1, 16),
+    ])
+    expect(planesOf(idx)).toEqual([
+      [
+        0,
+        [
+          [32, 4, 0],
+          [16, 1, 0],
+        ],
+      ],
+    ])
+  })
+  test('a file naming hundreds of optical paths is refused quickly', async () => {
+    const N = 300
+    const frame = (k: number) =>
+      item(
+        sq(0x0048, 0x0207, [item(el(0x0048, 0x0106, 'SH', str(`p${k}`)))]),
+        sq(0x0048, 0x021a, [
+          item(
+            el(0x0048, 0x021e, 'SL', le(1, 4)),
+            el(0x0048, 0x021f, 'SL', le(1, 4)),
+          ),
+        ]),
+      )
+    const f = dicom(
+      {
+        org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+        frames: el(0x0028, 0x0008, 'IS', str(String(N))),
+        perFrame: sq(
+          0x5200,
+          0x9230,
+          Array.from({ length: N }, (_, k) => frame(k)),
+        ),
+      },
+      pixelData(Array.from({ length: N }, (_, k) => payload(k & 255))),
+    )
+    const t0 = performance.now()
+    expect((await indexDicomWsi([f])).skipped.map((k) => k.message)).toEqual([
+      'over 256 planes or 67108864 tile slots',
+    ])
+    expect(performance.now() - t0).toBeLessThan(1000)
+  })
 })

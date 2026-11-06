@@ -69,16 +69,20 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Each optical path and focal plane becomes its own slide. A shared
   OpticalPathIdentifier assigns every frame to that path; an identifier missing
   from OpticalPathSequence is its own path. `focalPlane` is a plane index, not µm:
-  stated ZOffsets (shared or per frame) are ranked across the slide's levels
-  (lowest first), so a lower level holding only some planes joins the right ones;
-  a level stating none uses its implicit TILED_FULL index. ZOffset on only some of
-  a file's frames is `malformed`.
+  stated ZOffsets (shared or per frame, to the nm) are ranked across the slide's
+  levels (lowest first), so a lower level holding only some planes joins the right
+  ones. A TILED_FULL level stating none is placed in µm from its origin's ZOffset
+  and SpacingBetweenSlices when given, else keeps its implicit plane index; such a
+  level is matched by index, so it may join the wrong plane if other levels hold a
+  different set of planes. A single shared ZOffset in a multi-plane TILED_FULL file is
+  ignored. ZOffset on only some of a file's frames is `malformed`.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.
 - Hostile input is bounded: the header read stops at 64 MiB, sequences at 8 levels,
-  a level at 2^22 tiles, and counts and offsets are checked against the file size
-  (`malformed` otherwise).
+  a level at 2^22 tiles, a file at 256 (optical path, focal plane) pairs, tile maps
+  at 2^26 slots across all files, and counts and offsets are checked against the
+  file size (`malformed` otherwise).
 - `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
   that changed since indexing fails rather than decoding garbage.
 - Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS

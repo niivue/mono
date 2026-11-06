@@ -100,9 +100,12 @@ const UNDEFINED_LENGTH = 0xffffffff
 const MAX_DEPTH = 8
 const MAX_HEADER = 64 << 20
 const MAX_GRID = 1 << 22
-// Tile-map slots (grid x optical paths x focal planes) in one instance: 256 MB of
-// Int32 maps, about 177 planes on the largest corpus grid.
+// Tile-map slots (grid x optical paths x focal planes) across all files: 256 MB
+// of Int32 maps, about 177 planes on the largest corpus grid.
 const MAX_SLOTS = 1 << 26
+// (Optical path, focal plane) pairs in one file; each is a slide whose levels
+// rescan the file's frames. Real slides have a few paths and tens of planes.
+const MAX_PAIRS = 256
 const NUMERIC_BYTES: Record<string, number> = { US: 2, UL: 4, SL: 4 }
 const tagOf = (g: number, e: number): number => ((g << 16) | e) >>> 0
 const T = {
@@ -125,6 +128,8 @@ const T = {
   colorSpace: tagOf(0x0028, 0x2002),
   container: tagOf(0x0040, 0x0512),
   zOffset: tagOf(0x0040, 0x074a),
+  sliceSpacing: tagOf(0x0018, 0x0088),
+  origin: tagOf(0x0048, 0x0008),
   totalColumns: tagOf(0x0048, 0x0006),
   totalRows: tagOf(0x0048, 0x0007),
   opticalPathSeq: tagOf(0x0048, 0x0105),
@@ -294,10 +299,14 @@ interface InstanceInfo {
   /** Per frame: tile column and row (-1 when its position is invalid), optical path index, focal plane. */
   column: Int32Array
   row: Int32Array
-  path: Uint16Array
+  path: Uint32Array
   /** µm when `zStated`, else the implicit TILED_FULL plane; groupSlides makes it a rank. */
   z: Float64Array
   zStated: boolean
+  /** Per path index, its distinct `z` values (ranked with `z`). */
+  planes: Set<number>[]
+  /** Tile-map slots its planes need: distinct (path, plane) pairs x grid. */
+  slots: number
   offset: Float64Array
   length: Uint32Array
 }
@@ -367,6 +376,8 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   let sharedSpacing: string | undefined
   let sharedPath: string | undefined
   let sharedZ: number | undefined
+  let sliceSpacingMM: number | undefined
+  let originZ: number | undefined
   let perFrame = 0
   for (const e of elements) {
     if (e.depth === 0) top.set(e.tag, e)
@@ -379,6 +390,9 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       if (e.tag === T.spacing) sharedSpacing = text(b, e)
       if (e.tag === T.opticalPathId) sharedPath = text(b, e)
       if (e.tag === T.zOffset) sharedZ = numberOf(b, e)
+      if (e.tag === T.sliceSpacing) sliceSpacingMM = numberOf(b, e)
+    } else if (e.root === T.origin) {
+      if (e.tag === T.zOffset) originZ = numberOf(b, e)
     } else if (e.root === T.perFrame) perFrame = Math.max(perFrame, e.item + 1)
   }
   icc.forEach((v, i) => {
@@ -437,9 +451,11 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     icc,
     column: new Int32Array(frameCount),
     row: new Int32Array(frameCount),
-    path: new Uint16Array(frameCount),
+    path: new Uint32Array(frameCount),
     z: new Float64Array(frameCount),
     zStated: false,
+    planes: [],
+    slots: 0,
     offset: new Float64Array(frameCount),
     length: new Uint32Array(frameCount),
   }
@@ -471,14 +487,19 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       path[f] = Math.floor(g / (grid * focalPlaneCount))
     }
   }
-  // A shared OpticalPathIdentifier names every frame's path.
   // An identifier missing from OpticalPathSequence is its own path, not path 0.
+  // The tile-slot cap below bounds how many paths a file can name.
+  const pathIndex = new Map<string, number>()
+  pathIds.forEach((id, i) => {
+    if (!pathIndex.has(id)) pathIndex.set(id, i)
+  })
   const pathOf = (id: string): number => {
-    let i = pathIds.indexOf(id)
-    if (i < 0) i = pathIds.push(id) - 1
-    if (i > 0xffff) throw new Skip('malformed', 'over 65536 optical paths')
-    return i
+    const known = pathIndex.get(id)
+    if (known !== undefined) return known
+    pathIndex.set(id, pathIds.length)
+    return pathIds.push(id) - 1
   }
+  // A shared OpticalPathIdentifier names every frame's path.
   if (sharedPath !== undefined) path.fill(pathOf(sharedPath))
   // A position must name a tile's top-left pixel (1-based); anything else is
   // -1, an error buildLevel counts, never a tile placed at 0.
@@ -502,24 +523,46 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   // Otherwise µm and implicit plane indices would mix.
   if (zCount && zCount !== frameCount)
     throw new Skip('malformed', `ZOffset on ${zCount} of ${frameCount} frames`)
-  if (!zCount && sharedZ !== undefined) z.fill(sharedZ)
-  info.zStated = zCount > 0 || sharedZ !== undefined
+  // One shared ZOffset cannot place several implicit planes; they keep their indices.
+  const useSharedZ =
+    !zCount && sharedZ !== undefined && (sparse || focalPlaneCount === 1)
+  if (useSharedZ) z.fill(sharedZ as number)
+  info.zStated = zCount > 0 || useSharedZ
+  // Implicit planes in µm from the origin's Z and the plane spacing, so they
+  // rank with levels that state ZOffset (an overview often holds one plane).
+  if (
+    !info.zStated &&
+    !sparse &&
+    originZ !== undefined &&
+    (focalPlaneCount === 1 || sliceSpacingMM !== undefined)
+  ) {
+    const stepUM = (sliceSpacingMM ?? 0) * 1000
+    for (let f = 0; f < frameCount; f++)
+      z[f] = originZ + (z[f] as number) * stepUM
+    info.zStated = true
+  }
   // Each (optical path, focal plane) becomes a slide with its own grid-sized
   // tile map, so a small file naming thousands of planes must not reach groupSlides.
-  const planes: Set<number>[] = []
+  const { planes } = info
   let pairs = 0
   for (let f = 0; f < frameCount; f++) {
-    const zf = z[f] as number
+    // To the nanometre, so 0.5 and 0.50001 µm are one plane; implicit indices are whole.
+    const zf = Math.round((z[f] as number) * 1000) / 1000
     if (!Number.isFinite(zf))
       throw new Skip('malformed', `frame ${f + 1} has no finite focal plane`)
+    z[f] = zf
     const p = path[f] as number
     planes[p] ??= new Set()
     const seen = planes[p] as Set<number>
     if (seen.has(zf)) continue
     seen.add(zf)
-    if (++pairs * grid > MAX_SLOTS)
-      throw new Skip('malformed', `over ${MAX_SLOTS} tile slots across planes`)
+    if (++pairs > MAX_PAIRS || pairs * grid > MAX_SLOTS)
+      throw new Skip(
+        'malformed',
+        `over ${MAX_PAIRS} planes or ${MAX_SLOTS} tile slots`,
+      )
   }
+  info.slots = pairs * grid
   await frameSpans(info, b, pixel, top, readAt)
   return info
 }
@@ -661,9 +704,15 @@ export async function indexDicomWsi(
 ): Promise<SlideIndex> {
   const infos: InstanceInfo[] = []
   const skipped: SlideIndexSkipped[] = []
+  let slots = 0
   for (const file of files) {
     try {
-      infos.push(await indexInstance(file))
+      const info = await indexInstance(file)
+      // Many small files can each name a full-size plane.
+      if (slots + info.slots > MAX_SLOTS)
+        throw new Skip('malformed', `over ${MAX_SLOTS} tile slots across files`)
+      slots += info.slots
+      infos.push(info)
     } catch (err) {
       skipped.push({
         file: fileKey(file),
@@ -685,7 +734,10 @@ interface Member {
   pathIndex: number
 }
 
-/** Contract 2: a slide is study + series + frame of reference + container + optical path + focal plane. */
+// TILED_FULL can derive a path index past the sequence's items.
+const pathName = (info: InstanceInfo, pathIndex: number): string =>
+  info.pathIds[pathIndex] ?? String(pathIndex)
+
 /** A slide's identity short of its focal plane. */
 const slideBase = (info: InstanceInfo, pathIndex: number): string =>
   [
@@ -693,7 +745,7 @@ const slideBase = (info: InstanceInfo, pathIndex: number): string =>
     info.series,
     info.frameOfReference,
     info.container ?? '',
-    info.pathIds[pathIndex] ?? String(pathIndex),
+    pathName(info, pathIndex),
   ].join('|')
 
 /** Stated ZOffsets (µm) become ranks across all of a slide's levels, so a lower
@@ -701,67 +753,71 @@ const slideBase = (info: InstanceInfo, pathIndex: number): string =>
  * indices already are ranks. */
 function rankStatedPlanes(infos: InstanceInfo[]): void {
   const stated = infos.filter((info) => info.volume && info.zStated)
-  const planes = new Map<string, Set<number>>()
-  const each = (fn: (info: InstanceInfo, f: number, base: string) => void) => {
-    for (const info of stated) {
-      const bases: string[] = []
-      for (let f = 0; f < info.frameCount; f++) {
-        const p = info.path[f] as number
-        bases[p] ??= slideBase(info, p)
-        fn(info, f, bases[p] as string)
-      }
-    }
-  }
-  each((info, f, base) => {
-    const set = planes.get(base) ?? new Set()
-    planes.set(base, set.add(info.z[f] as number))
-  })
+  const all = new Map<string, Set<number>>()
+  for (const info of stated)
+    info.planes.forEach((set, p) => {
+      const base = slideBase(info, p)
+      const into = all.get(base) ?? new Set<number>()
+      for (const v of set) into.add(v)
+      all.set(base, into)
+    })
   const ranks = new Map(
-    [...planes].map(([base, set]) => [
+    [...all].map(([base, set]) => [
       base,
       new Map([...set].sort((a, c) => a - c).map((v, k) => [v, k])),
     ]),
   )
-  each((info, f, base) => {
-    info.z[f] = ranks.get(base)?.get(info.z[f] as number) as number
-  })
+  for (const info of stated) {
+    const byPath = info.planes.map(
+      (_, p) => ranks.get(slideBase(info, p)) as Map<number, number>,
+    )
+    const { z, path } = info
+    for (let f = 0; f < info.frameCount; f++) {
+      const rank = byPath[path[f] as number] as Map<number, number>
+      z[f] = rank.get(z[f] as number) as number
+    }
+    info.planes = info.planes.map(
+      (set, p) =>
+        new Set(
+          [...set].map(
+            (v) => (byPath[p] as Map<number, number>).get(v) as number,
+          ),
+        ),
+    )
+  }
 }
 
+/** Contract 2: a slide is study + series + frame of reference + container + optical path + focal plane. */
 function groupSlides(infos: InstanceInfo[]): SlideIndexSlide[] {
   rankStatedPlanes(infos)
   const slides = new Map<string, { slide: SlideIndexSlide; own: Member[] }>()
   for (const info of infos) {
     if (!info.volume) continue
-    const combos = new Set<string>()
-    for (let f = 0; f < info.frameCount; f++)
-      combos.add(`${info.path[f]}|${info.z[f]}`)
-    for (const combo of combos) {
-      const [pathIndex, plane] = combo.split('|').map(Number) as [
-        number,
-        number,
-      ]
-      const opticalPath = info.pathIds[pathIndex] ?? String(pathIndex)
-      const key = `${slideBase(info, pathIndex)}|${plane}`
-      let entry = slides.get(key)
-      if (!entry) {
-        const { study, series, frameOfReference, container } = info
-        entry = {
-          slide: {
-            study,
-            series,
-            frameOfReference,
-            container,
-            opticalPath,
-            focalPlane: plane,
-            instances: [],
-            levels: [],
-          },
-          own: [],
+    info.planes.forEach((set, pathIndex) => {
+      for (const plane of set) {
+        const opticalPath = pathName(info, pathIndex)
+        const key = `${slideBase(info, pathIndex)}|${plane}`
+        let entry = slides.get(key)
+        if (!entry) {
+          const { study, series, frameOfReference, container } = info
+          entry = {
+            slide: {
+              study,
+              series,
+              frameOfReference,
+              container,
+              opticalPath,
+              focalPlane: plane,
+              instances: [],
+              levels: [],
+            },
+            own: [],
+          }
+          slides.set(key, entry)
         }
-        slides.set(key, entry)
+        entry.own.push({ info, pathIndex })
       }
-      entry.own.push({ info, pathIndex })
-    }
+    })
   }
   return [...slides.values()].map(({ slide, own }) => {
     // Finest first; a concatenation's parts in order.

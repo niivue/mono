@@ -112,7 +112,18 @@ describe('buildRuler tick thinning', () => {
       showTickNumbers: true,
     })
     const nums = g.text.map((t) => Number(t.str)).filter(Number.isInteger)
-    expect(nums[0]).toBe(5)
-    expect(nums.every((n) => n % 5 === 0)).toBe(true)
+    // Numbers sit on every fifth drawn tick: 25, 50, ...
+    expect(nums[0]).toBe(25)
+    expect(nums.every((n) => n % 25 === 0)).toBe(true)
+  })
+
+  it('keeps majors every fifth drawn tick once the step reaches 5', () => {
+    // 1000 units: 200 ticks at step 5, so 40 majors (every 25 units).
+    const g = buildRuler({ a: [0, 0], b: [1000, 0], length: 1000 })
+    const lengths = g.lines
+      .slice(3)
+      .map((l) => Math.abs((l.data?.[3] ?? 0) - (l.data?.[1] ?? 0)))
+    expect(lengths).toHaveLength(200)
+    expect(lengths.filter((l) => l === 24)).toHaveLength(40)
   })
 })

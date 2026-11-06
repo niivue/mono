@@ -132,7 +132,7 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
       const t = i / length
       const cx = a[0] + t * dx
       const cy = a[1] + t * dy
-      const major = i % 5 === 0
+      const major = (i / step) % 5 === 0 // every fifth drawn tick
       const half = major ? tickLength * 2 : tickLength
       lines.push(
         buildLine(

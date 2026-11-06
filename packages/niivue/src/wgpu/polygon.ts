@@ -3,8 +3,9 @@ import { NVRenderer } from '@/view/NVRenderer'
 import {
   alphaPipelineDesc,
   overlayDepth,
+  uniformBindGroup,
   uniformBuffer,
-  uniformEntry,
+  uniformOnlyLayout,
 } from './pipeline'
 import shaderCode from './polygon.wgsl?raw'
 
@@ -27,14 +28,12 @@ export class PolygonRenderer extends NVRenderer {
 
     this._uniformBuffer = uniformBuffer(device, 16)
 
-    this._bindGroupLayout = device.createBindGroupLayout({
-      entries: [uniformEntry(GPUShaderStage.VERTEX)],
-    })
-
-    this._bindGroup = device.createBindGroup({
-      layout: this._bindGroupLayout,
-      entries: [{ binding: 0, resource: { buffer: this._uniformBuffer } }],
-    })
+    this._bindGroupLayout = uniformOnlyLayout(device, GPUShaderStage.VERTEX)
+    this._bindGroup = uniformBindGroup(
+      device,
+      this._bindGroupLayout,
+      this._uniformBuffer,
+    )
 
     this._pipeline = device.createRenderPipeline(
       alphaPipelineDesc(device, {
@@ -117,18 +116,12 @@ export class PolygonRenderer extends NVRenderer {
   }
 
   destroy(): void {
-    if (this._vertexBuffer) {
-      this._vertexBuffer.destroy()
-      this._vertexBuffer = null
-    }
-    if (this._indexBuffer) {
-      this._indexBuffer.destroy()
-      this._indexBuffer = null
-    }
-    if (this._uniformBuffer) {
-      this._uniformBuffer.destroy()
-      this._uniformBuffer = null
-    }
+    this._vertexBuffer?.destroy()
+    this._indexBuffer?.destroy()
+    this._uniformBuffer?.destroy()
+    this._vertexBuffer = null
+    this._indexBuffer = null
+    this._uniformBuffer = null
     this._pipeline = null
     this._bindGroupLayout = null
     this._bindGroup = null

@@ -30,6 +30,25 @@ export function uniformEntry(
   return { binding: 0, visibility, buffer: { type: 'uniform' } }
 }
 
+/** Layout and group with a single uniform buffer at binding 0. */
+export function uniformOnlyLayout(
+  device: GPUDevice,
+  visibility: GPUShaderStageFlags,
+): GPUBindGroupLayout {
+  return device.createBindGroupLayout({ entries: [uniformEntry(visibility)] })
+}
+
+export function uniformBindGroup(
+  device: GPUDevice,
+  layout: GPUBindGroupLayout,
+  buffer: GPUBuffer,
+): GPUBindGroup {
+  return device.createBindGroup({
+    layout,
+    entries: [{ binding: 0, resource: { buffer } }],
+  })
+}
+
 /** Bindings: 0 uniform, 1 2D texture, 2 sampler. */
 export function texturedLayout(
   device: GPUDevice,

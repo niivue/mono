@@ -1,3 +1,22 @@
+## 1.0.0-rc.7 (2026-11-06)
+
+### Features
+
+- ⚠️  **nv-ext-wsi:** rename @niivue/nv-ext-tiff to @niivue/nv-ext-wsi ([14e8bbfc](https://github.com/niivue/mono/commit/14e8bbfc))
+
+### Breaking Changes
+
+- **nv-ext-wsi:** rename @niivue/nv-ext-tiff to @niivue/nv-ext-wsi  ([14e8bbfc](https://github.com/niivue/mono/commit/14e8bbfc))
+  install @niivue/nv-ext-wsi instead of @niivue/nv-ext-tiff.
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.95
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.6 (2026-11-06)
 
 ### Updated Dependencies

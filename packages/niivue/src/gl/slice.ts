@@ -14,7 +14,7 @@ import {
   identityChunkSampleTransform,
 } from '@/volume/chunking'
 import type { SliceInterpolation } from '@/volume/interpolation'
-import { createUnitQuad, setTexParams } from './glUtil'
+import { createUnitQuad, deleteGLObjects, setTexParams } from './glUtil'
 import { Shader } from './shader'
 import { sliceFragShader, sliceVertShader } from './sliceShader'
 
@@ -448,15 +448,13 @@ export class SliceRenderer extends NVRenderer {
   destroy(): void {
     const gl = this._gl
     if (!gl) return
-    if (this._vao) gl.deleteVertexArray(this._vao)
-    if (this._vertexBuffer) gl.deleteBuffer(this._vertexBuffer)
+    deleteGLObjects(gl, this._shader, this._vao, this._vertexBuffer)
     if (this._placeholderOverlay) gl.deleteTexture(this._placeholderOverlay)
     if (this._placeholderDrawing) gl.deleteTexture(this._placeholderDrawing)
     if (this._placeholderPaqd) gl.deleteTexture(this._placeholderPaqd)
     if (this._placeholderLut2D) gl.deleteTexture(this._placeholderLut2D)
     if (this._drawingTexture) gl.deleteTexture(this._drawingTexture)
     this._destroyDrawingChunks(gl)
-    if (this._shader?.program) gl.deleteProgram(this._shader.program)
     gl.deleteSampler(this._samplerLinear)
     gl.deleteSampler(this._samplerNearest)
 

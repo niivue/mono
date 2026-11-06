@@ -1,3 +1,5 @@
+import type { Shader } from './shader'
+
 /** Set filtering and clamp-to-edge wrapping on the texture bound to `target`. */
 export function setTexParams(
   gl: WebGL2RenderingContext,
@@ -36,4 +38,58 @@ export function createUnitQuad(gl: WebGL2RenderingContext): {
   gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
   gl.bindVertexArray(null)
   return { vao, vbo }
+}
+
+/** Delete a renderer's program, VAO and buffers. GL ignores null handles. */
+export function deleteGLObjects(
+  gl: WebGL2RenderingContext,
+  shader: Shader | null,
+  vao: WebGLVertexArrayObject | null,
+  ...buffers: (WebGLBuffer | null)[]
+): void {
+  if (shader) gl.deleteProgram(shader.program)
+  gl.deleteVertexArray(vao)
+  for (const buffer of buffers) gl.deleteBuffer(buffer)
+}
+
+export type IndexedGeometry = {
+  vao: WebGLVertexArrayObject
+  vbo: WebGLBuffer
+  ibo: WebGLBuffer
+}
+
+/** VAO over one interleaved float buffer: attribute i is `sizes[i]` floats at location i. */
+export function createIndexedGeometry(
+  gl: WebGL2RenderingContext,
+  sizes: number[],
+): IndexedGeometry {
+  const vao = gl.createVertexArray()
+  const vbo = gl.createBuffer()
+  const ibo = gl.createBuffer()
+  if (!vao || !vbo || !ibo) throw new Error('Failed to create indexed geometry')
+  gl.bindVertexArray(vao)
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
+  const stride = sizes.reduce((sum, size) => sum + size, 0) * 4
+  let offset = 0
+  sizes.forEach((size, loc) => {
+    gl.enableVertexAttribArray(loc)
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset)
+    offset += size * 4
+  })
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo)
+  gl.bindVertexArray(null)
+  return { vao, vbo, ibo }
+}
+
+/** Re-upload an indexed geometry's vertices and indices. */
+export function uploadIndexed(
+  gl: WebGL2RenderingContext,
+  geom: IndexedGeometry,
+  vertices: Float32Array,
+  indices: Uint32Array,
+): void {
+  gl.bindBuffer(gl.ARRAY_BUFFER, geom.vbo)
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW)
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, geom.ibo)
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW)
 }

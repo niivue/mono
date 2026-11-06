@@ -1,18 +1,15 @@
 import { expect } from '@playwright/test'
-import { webgpuUse } from './launchOptions'
+import { channel, webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
 // Guards the macos-15 full-suite job (issue #199). Most GPU specs skip when no
 // adapter is available, so a runner image or Chromium build that quietly falls
 // back to SwiftShader would leave that job green while testing almost nothing.
-// Only meaningful in hardware mode; the default SwiftShader runs skip it.
+// Only meaningful in hardware mode; SwiftShader runs skip it.
 test.use(webgpuUse)
 
 test.beforeEach(() => {
-  test.skip(
-    !process.env.PLAYWRIGHT_CHROMIUM_CHANNEL,
-    'PLAYWRIGHT_CHROMIUM_CHANNEL unset: SwiftShader by design',
-  )
+  test.skip(!channel, 'SwiftShader mode (no Chromium channel) by design')
 })
 
 test('hardware mode reaches a real GPU on both backends', async ({ page }) => {

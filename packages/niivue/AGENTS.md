@@ -94,9 +94,12 @@ bunx nx e2e niivue       # fast tier via Nx
 
 The tiers are Playwright projects: `chromium` (fast) and `demo-smoke`; a bare
 `bunx playwright test` runs both. Use the fast tier while developing and the
-full one before pushing a change to the demos or to anything they load. On a
-Mac, add `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` (real GPU): the fast tier takes
-about 8 s on an M3 Max, against more than a minute on SwiftShader. A
+full one before pushing a change to the demos or to anything they load. A
+local run on macOS uses full Chromium on the real GPU by default (needs
+`bunx playwright install chromium`): the fast tier takes about 8 s on an M3
+Max, against more than a minute on SwiftShader. CI and other platforms stay on
+SwiftShader unless `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` is set; on a Mac,
+`PLAYWRIGHT_CHROMIUM_CHANNEL=` (empty) forces SwiftShader. A
 `launchOptions` or other worker-option `test.use()` gives its specs their own
 workers, each a second browser launch and NiiVue load; GPU specs use
 `test.use(webgpuUse)` (`e2e/launchOptions.ts`), which is empty in hardware mode.

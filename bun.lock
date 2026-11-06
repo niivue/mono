@@ -340,7 +340,7 @@
       },
       "peerDependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.1",
-        "@niivue/niivue": ">=1.0.0-rc.87 <2",
+        "@niivue/niivue": ">=1.0.0-rc.107 <2",
       },
       "optionalPeers": [
         "@niivue/dcm2niix",

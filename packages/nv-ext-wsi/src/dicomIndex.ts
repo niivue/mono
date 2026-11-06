@@ -444,19 +444,34 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     info.pixelSpacingMM = [column as number, row as number]
   }
   const { column, row, path, z } = info
-  if (perFrame) {
-    // Per-frame positions: TILED_SPARSE always, TILED_FULL sometimes.
-    if (perFrame !== frameCount)
-      throw new Skip(
-        'malformed',
-        `${perFrame} per-frame items for ${frameCount} frames`,
-      )
+  if (sparse && !perFrame)
+    throw new Skip('malformed', 'TILED_SPARSE without per-frame positions')
+  if (perFrame && perFrame !== frameCount)
+    throw new Skip(
+      'malformed',
+      `${perFrame} per-frame items for ${frameCount} frames`,
+    )
+  if (sparse) {
+    // Placed only by the per-frame positions below; a frame without one stays -1.
     column.fill(-1)
     row.fill(-1)
     z.fill(sharedZ ?? 0)
     path.fill(Math.max(0, pathIds.indexOf(sharedPath ?? '')))
-    // A position must name a tile's top-left pixel (1-based); anything else
-    // stays -1, an error buildLevel counts, never a tile placed at 0.
+  } else {
+    // TILED_FULL orders frames by column, row, focal plane, then optical path.
+    // Per-frame items may hold only other metadata; positions they do give win.
+    for (let f = 0; f < frameCount; f++) {
+      const g = concatOffset + f
+      const t = g % grid
+      column[f] = t % columns
+      row[f] = Math.floor(t / columns)
+      z[f] = Math.floor(g / grid) % focalPlaneCount
+      path[f] = Math.floor(g / (grid * focalPlaneCount))
+    }
+  }
+  if (perFrame) {
+    // A position must name a tile's top-left pixel (1-based); anything else is
+    // -1, an error buildLevel counts, never a tile placed at 0.
     const place = (pos: number, size: number): number =>
       Number.isInteger(pos) && pos >= 1 && (pos - 1) % size === 0
         ? (pos - 1) / size
@@ -471,18 +486,6 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       else if (e.tag === T.zOffset) z[f] = numberOf(b, e)
       else if (e.tag === T.opticalPathId)
         path[f] = Math.max(0, pathIds.indexOf(text(b, e)))
-    }
-  } else if (sparse)
-    throw new Skip('malformed', 'TILED_SPARSE without per-frame positions')
-  else {
-    // TILED_FULL orders frames by column, row, focal plane, then optical path.
-    for (let f = 0; f < frameCount; f++) {
-      const g = concatOffset + f
-      const t = g % grid
-      column[f] = t % columns
-      row[f] = Math.floor(t / columns)
-      z[f] = Math.floor(g / grid) % focalPlaneCount
-      path[f] = Math.floor(g / (grid * focalPlaneCount))
     }
   }
   // Each (optical path, focal plane) becomes a slide with its own grid-sized

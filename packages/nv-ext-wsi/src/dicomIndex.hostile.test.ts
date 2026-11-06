@@ -282,4 +282,15 @@ describe('indexDicomWsi on hostile input', () => {
       0, 1, 2, 3,
     ])
   })
+  test('TILED_FULL with per-frame metadata but no positions keeps its implicit order', async () => {
+    // Frame Content (0020,9111) > Frame Acquisition Number (0020,9156) only.
+    const content = (k: number) =>
+      item(sq(0x0020, 0x9111, [item(el(0x0020, 0x9156, 'US', le(k, 2)))]))
+    const f = dicom({ perFrame: sq(0x5200, 0x9230, [0, 1, 2, 3].map(content)) })
+    const idx = await indexDicomWsi([f])
+    expect(idx.skipped).toEqual([])
+    const slide = idx.slides[0] as SlideIndexSlide
+    expect(slide.levels[0]?.duplicates).toBe(0)
+    expect(await tileLabels(slide, [f])).toEqual([0, 1, 2, 3])
+  })
 })

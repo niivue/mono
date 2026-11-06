@@ -129,10 +129,13 @@ function openIndexed(i: number): void {
 folderInput.addEventListener('change', async () => {
   const files = [...(folderInput.files ?? [])]
   if (!files.length) return
+  // Indexing takes an open generation, so a newer folder or file wins.
+  const id = ++openCount
   status.textContent = `Indexing ${files.length} files...`
   try {
     const t0 = performance.now()
     const index = await indexDicomWsi(files)
+    if (id !== openCount) return
     const ms = performance.now() - t0
     folder = { index, files }
     slideSelect.replaceChildren(
@@ -160,6 +163,7 @@ folderInput.addEventListener('change', async () => {
     indexNote = `Indexed in ${ms.toFixed(0)} ms (${skipped.length} files skipped). `
     openIndexed(0)
   } catch (err) {
+    if (id !== openCount) return
     console.error(err)
     status.textContent = err instanceof Error ? err.message : String(err)
   }

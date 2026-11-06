@@ -15,10 +15,10 @@
   "files": [
     "dist"
   ],
-  "comment:niivue-peer": "A literal range, not workspace:* (which bun publish pins to the exact current rc), so one release accepts later niivue rcs and 1.x. devDependencies keeps workspace:* for local dev. rc.87 adds the signal argument to fetchTileBytes; raise the floor when this package needs a newer niivue API.",
+  "comment:niivue-peer": "A literal range, not workspace:* (which bun publish pins to the exact current rc), so one release accepts later niivue rcs and 1.x. devDependencies keeps workspace:* for local dev. The floor is the first niivue release with sparse slide levels and per-tile fileUrl (#581), which the DICOM-WSI index and its sparse slides need; raise it when this package needs a newer niivue API.",
   "peerDependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.1",
-    "@niivue/niivue": ">=1.0.0-rc.87 <2"
+    "@niivue/niivue": ">=1.0.0-rc.107 <2"
   },
   "peerDependenciesMeta": {
     "@niivue/dcm2niix": {

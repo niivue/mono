@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import { channelColormapsFor } from '@niivue/niivue'
 import {
   defaultOmeZarrLevel,
+  fetchOmeZarr,
   omeZarrBlockToDisplay,
   omeZarrChannelName,
+  omeZarrFetchStore,
   omeZarrVolumesFrom,
   openOmeZarr,
 } from './omeZarrLoader'
@@ -234,6 +236,32 @@ describe('openOmeZarr level selection', () => {
     await openOmeZarr(counting)
     // The root pays one v3 probe; the level arrays must not.
     expect(reads.filter((k) => k.endsWith('zarr.json'))).toEqual(['/zarr.json'])
+  })
+  test('an HTML fallback page reads as a missing key', async () => {
+    const store = makeTczyxStore()
+    // A dev server answers every missing path with its index page.
+    const fetchImpl = async (request: Request) => {
+      const bytes = store.get(
+        new URL(request.url).pathname.slice(2) as `/${string}`,
+      )
+      return bytes
+        ? new Response(bytes)
+        : new Response('<!doctype html>', {
+            headers: { 'content-type': 'text/html' },
+          })
+    }
+    const source = await fetchOmeZarr('http://x/s', { fetchImpl })
+    expect(source.levels.length).toBeGreaterThan(0)
+    // An HTML error page is still an error, not a missing key.
+    const outage = omeZarrFetchStore(
+      'http://x/s',
+      async () =>
+        new Response('<h1>503</h1>', {
+          status: 503,
+          headers: { 'content-type': 'Text/HTML; charset=utf-8' },
+        }),
+    )
+    await expect(outage.get('/zarr.json')).rejects.toThrow()
   })
 })
 

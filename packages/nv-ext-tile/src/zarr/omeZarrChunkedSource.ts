@@ -39,6 +39,7 @@ import {
   type OmeZarrLoadOptions,
   type OmeZarrSource,
   type OpenOmeZarrOptions,
+  omeZarrFetchStore,
   omeZarrNiftiDatatype,
   openOmeZarr,
 } from './omeZarrLoader'
@@ -497,9 +498,7 @@ export async function openOmeZarrChunkedSource(
   options: FetchOmeZarrChunkedSourceOptions = {},
 ): Promise<OmeZarrChunkedSource> {
   const cacheBytes = options.cacheBytes ?? OME_ZARR_CHUNK_CACHE_BYTES
-  const base = options.fetchImpl
-    ? new zarr.FetchStore(url, { fetch: options.fetchImpl })
-    : new zarr.FetchStore(url)
+  const base = omeZarrFetchStore(url, options.fetchImpl)
   // Innermost of the three tiers: below memory, above the network. A read
   // reaches it only when the byte LRU could not answer, and what it hands back
   // is what the network would have -- raw, still-compressed store bytes.

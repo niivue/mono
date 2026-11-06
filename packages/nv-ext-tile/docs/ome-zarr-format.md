@@ -46,7 +46,7 @@ and telemetry match the store's own numbering. The store root is opened once
 to learn the Zarr format version, and every level array is opened
 version-pinned; the version-agnostic probe would cost a 404 per level on
 every v2 store. `zarrVersion: 2 | 3` (also on `fetchOmeZarrChunkedSource`)
-skips that root probe, and the `zarr.json` 404 it logs on a v2 store.
+skips that root probe, and the `zarr.json` 404 it logs on a v2 store. A successful `text/html` answer reads as a missing key: Vite's dev server and SPA hosts answer any missing path with their index page and 200, which would otherwise break the v3-to-v2 fallback.
 
 ## What is supported
 

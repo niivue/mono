@@ -221,37 +221,31 @@ describe('decodeImageRGBA', () => {
     expect(urls.revoked).toEqual(urls.created)
   })
 
-  test('DOM path decode failure rejects and revokes the URL', async () => {
-    installDomPath({ fate: 'error' })
+  test.each([
+    {
+      name: 'DOM path decode failure rejects and revokes the URL',
+      options: { fate: 'error' },
+      error: 'Failed to load image',
+    },
+    {
+      name: 'DOM path with no 2D context rejects and revokes the URL',
+      options: { fate: 'load', context: null },
+      error: 'Unable to create 2D context',
+    },
+    {
+      name: 'DOM path readback failure rejects and revokes the URL',
+      options: { fate: 'load', getImageDataThrows: true },
+      error: 'readback exploded',
+    },
+    {
+      name: 'a synchronous source assignment failure still revokes the URL',
+      options: { fate: 'load', srcThrows: true },
+      error: 'source assignment exploded',
+    },
+  ] as const)('$name', async ({ options, error }) => {
+    installDomPath(options)
     const urls = trackObjectUrls()
-    await expect(decodeImageRGBA(BUFFER)).rejects.toThrow(
-      'Failed to load image',
-    )
-    expect(urls.revoked).toEqual(urls.created)
-  })
-
-  test('DOM path with no 2D context rejects and revokes the URL', async () => {
-    installDomPath({ fate: 'load', context: null })
-    const urls = trackObjectUrls()
-    await expect(decodeImageRGBA(BUFFER)).rejects.toThrow(
-      'Unable to create 2D context',
-    )
-    expect(urls.revoked).toEqual(urls.created)
-  })
-
-  test('DOM path readback failure rejects and revokes the URL', async () => {
-    installDomPath({ fate: 'load', getImageDataThrows: true })
-    const urls = trackObjectUrls()
-    await expect(decodeImageRGBA(BUFFER)).rejects.toThrow('readback exploded')
-    expect(urls.revoked).toEqual(urls.created)
-  })
-
-  test('a synchronous source assignment failure still revokes the URL', async () => {
-    installDomPath({ fate: 'load', srcThrows: true })
-    const urls = trackObjectUrls()
-    await expect(decodeImageRGBA(BUFFER)).rejects.toThrow(
-      'source assignment exploded',
-    )
+    await expect(decodeImageRGBA(BUFFER)).rejects.toThrow(error)
     expect(urls.revoked).toEqual(urls.created)
   })
 

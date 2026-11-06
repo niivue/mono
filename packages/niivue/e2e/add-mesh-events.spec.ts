@@ -5,7 +5,7 @@ import { test } from './sharedPage'
 // The model logs a mesh it cannot read and adds nothing; a removal made while
 // a load is in flight must not hide the mesh that load adds.
 
-const MESH_A = '/meshes/BrainMesh_ICBM152.lh.mz3'
+const MESH_A = '/meshes/scalp.mz3'
 const MESH_B = '/meshes/cortex_5124.mz3'
 
 test('addMesh emits meshLoaded only for a mesh it added', async ({ page }) => {

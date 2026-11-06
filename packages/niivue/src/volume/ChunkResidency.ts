@@ -333,11 +333,6 @@ export class ChunkResidencyManager<TChunk> {
     }
   }
 
-  /** Current LRU frame counter. */
-  get frame(): number {
-    return this._frame
-  }
-
   /**
    * Register an already-uploaded chunk as resident. Replacing an existing
    * resident chunk destroys the old handle and adjusts the byte total. Once

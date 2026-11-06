@@ -3,6 +3,11 @@ root = "./src"
 preload = ["./scripts/bunTestPreload.ts"]
 coverage = true
 coverageReporter = ["text", "lcov"]
+# Test infrastructure, not product source: keep it out of the report.
+coveragePathIgnorePatterns = ["scripts/bunTestPreload.ts", "src/testing/**"]
+# No coverageThreshold here: Bun applies it to every file separately (any
+# file below it fails the run), and many loaded files sit at 0% functions.
+# The aggregate floor lives in the coverage:check script in package.json.
 
 [resolve]
 paths = { "@/*" = ["./src/*"] }

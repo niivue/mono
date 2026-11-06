@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
+import { syntheticVolume } from './syntheticVolume'
 
 // Issue #145, reported by @stebo85 as stale numbers out of `chunkStreamStats()`.
 //
@@ -20,7 +21,7 @@ import { test } from './sharedPage'
 // wgpu/render.ts. WebGPU is skipped when the runner has no adapter (headless
 // Chromium usually has SwiftShader for WebGL2 only).
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 
 // A 2x2x2 forced plan: the volume fits in one texture, so the tiling is forced
 // rather than required. Eight bricks is enough to tell "chunked" from "not"
@@ -28,12 +29,10 @@ test.use({ launchOptions: webgpuLaunchOptions })
 const GRID = 2
 const EXPECTED_CHUNKS = GRID * GRID * GRID
 
-// The real mni152 from packages/dev-images, which is what the issue's manual
-// repro uses -- one scenario for a reader to follow rather than two. It is Git
-// LFS, so this workflow's checkout pulls that single object (see
-// niivue-e2e.yml); an unpulled pointer parses as "not NIFTI" and fails loudly
-// rather than silently testing nothing.
-const VOLUME = '/volumes/mni152.nii.gz'
+// The issue's manual repro used mni152; any volume that fits one texture shows
+// the leak. A synthetic 64^3 one built in the page needs no Git LFS object on
+// the Ubuntu job that runs this spec.
+const VOLUME = `(${syntheticVolume})()`
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
   test(`a volume that stops being chunked drops its bricks (${backend})`, async ({
@@ -75,7 +74,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
         return { skip: 'WebGPU init fell back to ' + nv.backend }
       }
-      await nv.loadVolumes([{ url: '${VOLUME}' }])
+      await nv.loadVolumes([{ url: ${VOLUME} }])
       await nextFrame()
 
       const vol = nv.volumes[0]
@@ -170,7 +169,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
         return { skip: 'WebGPU init fell back to ' + nv.backend }
       }
-      await nv.loadVolumes([{ url: '${VOLUME}' }])
+      await nv.loadVolumes([{ url: ${VOLUME} }])
       const vol = nv.volumes[0]
       const d = vol.dimsRAS
       vol.chunkPlan = chunkVolumeGrid(

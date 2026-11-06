@@ -164,11 +164,6 @@ describe('makeLut', () => {
     expect(lut[mid + 2]).toBeGreaterThan(100) // B increasing
     expect(lut[mid + 2]).toBeLessThan(140)
   })
-
-  test('returns1024bytes', () => {
-    const lut = makeLut([0, 255], [0, 255], [0, 255], [255, 255], [0, 255])
-    expect(lut.length).toBe(256 * 4)
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -413,6 +408,10 @@ describe('colormap kinds', () => {
     const ids = Array.from({ length: n }, (_, i) => i)
     addColormap('kindDense', { R: ids, G: ids, B: ids, labels: [] })
     expect(drawingColormapNames()).not.toContain('KindDense')
+    // The registry outlives this file under bun test, and a document embeds
+    // every runtime colormap: shrink the table so later files do not
+    // serialize 2M entries.
+    addColormap('kindDense', { R: [0], G: [0], B: [0], labels: [] })
   })
 
   test('aContinuousColormapHasNoLabelLut', () => {

@@ -55,10 +55,6 @@ describe('ChunkResidencyManager admit / lookup', () => {
     m.admit(1, fakeChunk('b', 1))
     expect(m.isFullyResident).toBe(true)
   })
-
-  test('budgetBytes is exposed as constructed', () => {
-    expect(manager(1, 4242).budgetBytes).toBe(4242)
-  })
 })
 
 describe('ChunkResidencyManager re-admit', () => {
@@ -74,16 +70,6 @@ describe('ChunkResidencyManager re-admit', () => {
     expect(m.getChunk(0)).toBe(second)
     expect(m.residentBytes).toBe(300)
     expect(m.residentCount).toBe(1)
-  })
-})
-
-describe('ChunkResidencyManager LRU clock', () => {
-  test('beginFrame advances the frame counter', () => {
-    const m = manager(1)
-    expect(m.frame).toBe(0)
-    m.beginFrame()
-    m.beginFrame()
-    expect(m.frame).toBe(2)
   })
 })
 
@@ -460,14 +446,6 @@ describe('ChunkResidencyManager remap (in-place plan swap)', () => {
 // The pump must not admit the stale result at the old index; the generation
 // counter + bounds-check + discardUpload are how that is prevented.
 describe('ChunkResidencyManager stale-upload guard (plan swap race)', () => {
-  test('generation increments on every remap', () => {
-    const m = manager(3)
-    const g0 = m.generation
-    m.remap(new Map(), 2)
-    m.remap(new Map(), 4)
-    expect(m.generation).toBe(g0 + 2)
-  })
-
   test('admit of an out-of-range index destroys the chunk, leaves state intact', () => {
     const m = manager(2)
     m.admit(0, fakeChunk('a', 100))

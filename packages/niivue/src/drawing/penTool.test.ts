@@ -307,8 +307,11 @@ describe('magicWand3D', () => {
 // ---------------------------------------------------------------------------
 describe('voxelIndex', () => {
   test('computes_flatIndex', () => {
-    // x + y * dx + z * dx * dy
-    expect(voxelIndex(2, 3, 1, 10, 10)).toBe(2 + 3 * 10 + 1 * 10 * 10)
+    // A 10 x 7 slice (non-square, so swapping the x and y strides fails):
+    // rows are 10 voxels long and a slice holds 70.
+    expect(voxelIndex(2, 3, 1, 10, 7)).toBe(102) // 70 + 30 + 2
+    expect(voxelIndex(9, 6, 0, 10, 7)).toBe(69) // last voxel of slice 0
+    expect(voxelIndex(0, 0, 1, 10, 7)).toBe(70) // first voxel of slice 1
   })
 
   test('origin_returnsZero', () => {

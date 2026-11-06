@@ -1,21 +1,28 @@
-import { expect, test } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { expect } from '@playwright/test'
+import { webgpuUse } from './launchOptions'
+import { test } from './sharedPage'
+import { syntheticVolume } from './syntheticVolume'
 
 // fontScale and fontMinSize resize the text at once, from the setter and from
 // a loaded document, without an explicit resize() (#377).
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 test.describe.configure({ timeout: 120_000 })
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
   test(`font size follows the setters and documents (${backend})`, async ({
     page,
   }) => {
-    await page.goto('/examples/index.html', { waitUntil: 'load' })
-    const r = await page.evaluate(async (backend) => {
+    type Sizes = Record<
+      'base' | 'scaled' | 'reset' | 'loaded' | 'minSized',
+      number
+    >
+    const r: Sizes | null = await page.evaluate(`(async () => {
+      const backend = '${backend}'
       if (backend === 'webgpu' && !(await navigator.gpu?.requestAdapter()))
         return null
       const { default: NiiVue } = await import('/src/index.ts')
+      const synth = ${syntheticVolume}
       // fontScale is an exponent on the canvas area over 800x600, which has no
       // effect below that size.
       const c = document.createElement('canvas')
@@ -27,7 +34,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         forceDevicePixelRatio: 1,
       })
       await nv.attachToCanvas(c)
-      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+      await nv.loadVolumes([{ url: synth() }])
       const px = () => nv.view.fontRenderer.fontPx
       const scale0 = nv.fontScale
       const base = px()
@@ -41,7 +48,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       nv.fontScale = scale0
       nv.fontMinSize = 60
       return { base, scaled, reset, loaded, minSized: px() }
-    }, backend)
+    })()`)
     test.skip(!r, 'no WebGPU adapter')
     expect(r?.scaled).toBeGreaterThan(r?.base ?? 0)
     expect(r?.reset).toBe(r?.base)

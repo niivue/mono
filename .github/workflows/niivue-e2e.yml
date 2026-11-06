@@ -1,9 +1,7 @@
 name: niivue browser contracts
 
-# Contracts that only a real browser can hold, and that unit tests cannot
-# reach: NiiVue's module graph uses Vite's `import.meta.glob`, so it will not
-# import under the Bun runner, and the behaviour under test lives in a Web
-# Worker or on the GPU.
+# Contracts that only a real browser can hold: the behaviour under test lives
+# in a Web Worker or on the GPU, which the Bun unit runner does not have.
 #
 #   partial-decode-4d   `limitFrames4D` must bound DECODING, not just retention.
 #                       It was retention-only on both load paths, and a 4D
@@ -13,12 +11,19 @@ name: niivue browser contracts
 #   texcache-kind-change  a volume that stops being chunked must drop its
 #                       bricks. The entry used to leak for the life of the
 #                       renderer, holding every brick texture (issue #145).
-#                       This one loads mni152, so the checkout pulls that
-#                       single LFS object.
+#                       All three build their data in the page: no LFS.
+#   render-*            every scene matches its committed reference PNGs
+#                       (render-reference and the feature groups beside it).
+#                       The references are shared by all platforms, so running
+#                       them here on SwiftShader as well as on Metal below is
+#                       what keeps one set valid for both renderers. Synthetic
+#                       data only, no LFS. Their WebGPU cases skip, not fail,
+#                       if the software device is lost. They run in their own
+#                       job, split into 3 groups of spec files.
 #
 # Narrow on purpose. The rest of the e2e suite needs a GPU adapter that the
 # Ubuntu runners do not have; it runs in full-suite-metal below instead.
-# These three are deterministic without one: the first two never touch
+# These are deterministic without one: the first two never touch
 # the GPU, and texcache-kind-change forces `--use-angle=swiftshader` for its
 # WebGL2 case, which is the case that was proven to fail on main. Its WebGPU
 # case skips here. `requestAdapter()` does succeed on the runner, but the GPU
@@ -64,12 +69,8 @@ jobs:
   browser-contracts:
     runs-on: ubuntu-latest
     steps:
+      # No LFS: these specs build their volumes in the page.
       - uses: actions/checkout@v4
-
-      # Not `lfs: true`: that pulls every object under packages/dev-images
-      # (~93 MB) when one spec needs one 4.3 MB volume.
-      - name: Fetch the one LFS volume the specs need
-        run: git lfs pull --include=packages/dev-images/images/volumes/mni152.nii.gz
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -94,6 +95,44 @@ jobs:
             e2e/texcache-kind-change.spec.ts \
             --workers=1 \
             --reporter=line
+
+  # The render-* reference specs on SwiftShader (see the header). Sharded so
+  # the single-worker run stays short; synthetic data, so no LFS pull.
+  render-references:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        working-directory: packages/niivue
+        run: bunx playwright install --only-shell chromium
+
+      # Grouped by spec file, balanced on measured SwiftShader time (each group
+      # ~45-52 s with one worker); --shard splits by test count, and the slow
+      # WebGPU scenes cluster in a few files. Group 3 takes every render spec
+      # not pinned to groups 1 and 2, so a new spec still runs.
+      - name: Render references (group ${{ matrix.group }}/3)
+        working-directory: packages/niivue
+        run: |
+          pinned1="e2e/render-volume.spec.ts"
+          pinned2="e2e/render-cinematic.spec.ts e2e/render-mesh.spec.ts e2e/render-colormaps.spec.ts"
+          case "${{ matrix.group }}" in
+            1) specs="$pinned1" ;;
+            2) specs="$pinned2" ;;
+            3) specs=$(ls e2e/render-*.spec.ts | grep -vxF $(printf -- '-e %s ' $pinned1 $pinned2)) ;;
+          esac
+          echo "Specs: $specs"
+          bunx playwright test $specs --workers=1 --reporter=line
 
   # The full suite on real Metal (issue #199). Free macOS runners expose a
   # paravirtual GPU, but only full Chromium reaches it; the headless shell stays
@@ -167,10 +206,28 @@ jobs:
         working-directory: packages/uikit
         run: bunx --bun vite build
 
+      # E2E_COVERAGE: browser JS coverage to coverage-e2e/lcov.info (e2e/coverage.ts).
+      # About +30% on the suite's time locally (most of it in demo-smoke).
       - name: Full e2e suite
         working-directory: packages/niivue
+        env:
+          E2E_COVERAGE: '1'
         # test:e2e:metal is where Metal-only exclusions go (none at present).
         run: bun run test:e2e:metal --workers=2
+
+      # Bun's unit coverage (~6 s) for the merged report below. pr_gate.yml is
+      # the gate for these tests; a failure here only loses the unit column.
+      - name: Unit coverage for the merged report
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        working-directory: packages/niivue
+        run: bun test > /dev/null
+
+      # Report only, no threshold. Skipped with the job when local-metal stands in.
+      - name: Coverage summary (unit + browser)
+        if: ${{ !cancelled() }}
+        working-directory: packages/niivue
+        run: bun run coverage:merge
 
       # GPU specs skip rather than fail when an adapter or backend is missing,
       # so a green run with skips may have tested very little. Tests excluded
@@ -184,6 +241,16 @@ jobs:
         with:
           name: playwright-results-metal
           path: packages/niivue/test-results/results.json
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-metal
+          path: |
+            packages/niivue/coverage-e2e/lcov.info
+            packages/niivue/coverage-merged/lcov.info
+          if-no-files-found: ignore
           retention-days: 30
 
       - uses: actions/upload-artifact@v4

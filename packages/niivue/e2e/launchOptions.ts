@@ -23,8 +23,16 @@ const executablePathOverride: LaunchOptions = process.env
  * because `--use-angle=swiftshader` would force software rendering anyway.
  * `PLAYWRIGHT_CHROMIUM_PATH` is ignored here: `channel` and `executablePath`
  * conflict.
+ *
+ * A local run on macOS defaults to this mode: the fast tier takes seconds on
+ * the real GPU and over a minute on SwiftShader. CI and other platforms keep
+ * SwiftShader unless the variable is set. Set it to an empty string
+ * (`PLAYWRIGHT_CHROMIUM_CHANNEL=`) to run SwiftShader on a Mac, e.g. to check
+ * reference images against the renderer CI's Ubuntu job uses.
  */
-const channel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL
+export const channel =
+  process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ??
+  (process.platform === 'darwin' && !process.env.CI ? 'chromium' : undefined)
 const hardwareGpuLaunchOptions: LaunchOptions = {
   channel,
   args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'],
@@ -57,3 +65,14 @@ export const webgpuLaunchOptions: LaunchOptions = channel
       ],
       ...executablePathOverride,
     }
+
+/**
+ * What a spec that needs a GPU adapter passes to `test.use()`. Empty in
+ * hardware mode, where the default options already reach the GPU: any
+ * `launchOptions` override, even an identical one, puts those specs in their
+ * own workers, so every worker launches a second browser and loads NiiVue
+ * again partway through the run (about 1.5 s of an 8-worker run).
+ */
+export const webgpuUse: { launchOptions?: LaunchOptions } = channel
+  ? {}
+  : { launchOptions: webgpuLaunchOptions }

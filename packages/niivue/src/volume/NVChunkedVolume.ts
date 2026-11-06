@@ -217,9 +217,13 @@ async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** Base of withRetry's exponential backoff: 80, 160, 320 ms, ... */
+const RETRY_BASE_DELAY_MS = 80
+
 async function withRetry<T>(
   fn: () => Promise<T>,
   attempts: number,
+  baseDelayMs = RETRY_BASE_DELAY_MS,
 ): Promise<T> {
   let lastErr: unknown
   for (let i = 0; i < attempts; i++) {
@@ -236,7 +240,7 @@ async function withRetry<T>(
         err instanceof TypeError ||
         (err instanceof Error && /failed to fetch/i.test(err.message))
       if (!transient || i === attempts - 1) throw err
-      await delay(80 * 2 ** i)
+      await delay(baseDelayMs * 2 ** i)
     }
   }
   throw lastErr
@@ -274,6 +278,11 @@ export function createSourceChunkLoader(
   opts: {
     maxConcurrentLoads: number
     retryAttempts: number
+    /**
+     * Base of the retry backoff in ms (default RETRY_BASE_DELAY_MS). Only
+     * tests pass it, so a retry does not wait out the real backoff.
+     */
+    retryDelayMs?: number
     /** Called once per decoded region, however many requests share it. */
     onChunk?: (bytes: Uint8Array, bytesPerVoxel: number) => void
   },
@@ -331,6 +340,7 @@ export function createSourceChunkLoader(
               signal: controller.signal,
             }),
           totalAttempts,
+          opts.retryDelayMs,
         ),
       )
       .finally(() => release())

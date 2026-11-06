@@ -14,10 +14,10 @@ import type { ImageFromUrlOptions } from '@/NVTypes'
  * fields here lets those computed defaults survive — matching how the
  * embedded-data branch guards each field with `!== undefined`.
  *
- * Extracted as a standalone leaf for Bun-testability: `reconstructVolume`'s
- * module evaluates Vite's `import.meta.glob` transitively, which the Bun test
- * runner can't load. Uses `!== undefined` (not a truthy check) so legitimate
- * falsy values (`calMin: 0`, `opacity: 0`, `isColorbarVisible: false`) are kept.
+ * A standalone leaf so the rule is unit-tested on its own, apart from
+ * `reconstructVolume`'s fetch and decode. Uses `!== undefined` (not a truthy
+ * check) so legitimate falsy values (`calMin: 0`, `opacity: 0`,
+ * `isColorbarVisible: false`) are kept.
  */
 export function urlVolumeOptions(v: NVDocumentVolume): ImageFromUrlOptions {
   if (v.url === undefined) {

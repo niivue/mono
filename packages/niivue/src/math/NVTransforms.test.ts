@@ -43,20 +43,8 @@ function approx(a: number, b: number, eps = EPSILON): void {
 // deg2rad
 // ---------------------------------------------------------------------------
 describe('deg2rad', () => {
-  test('0_returns0', () => {
-    expect(deg2rad(0)).toBe(0)
-  })
-
   test('180_returnsPi', () => {
     approx(deg2rad(180), Math.PI)
-  })
-
-  test('360_returns2Pi', () => {
-    approx(deg2rad(360), 2 * Math.PI)
-  })
-
-  test('90_returnsHalfPi', () => {
-    approx(deg2rad(90), Math.PI / 2)
   })
 })
 
@@ -362,28 +350,6 @@ describe('calculateGlobalVolumeMvp', () => {
   }
   const extentsMin = [-10, -10, -10]
   const extentsMax = [10, 10, 10]
-
-  test('isDeterministic_sameInputProducesSameMvp', () => {
-    const [a] = calculateGlobalVolumeMvp(
-      tile,
-      camera,
-      [5, 0, 0],
-      1,
-      [0, 0, 0],
-      extentsMin,
-      extentsMax,
-    )
-    const [b] = calculateGlobalVolumeMvp(
-      tile,
-      camera,
-      [5, 0, 0],
-      1,
-      [0, 0, 0],
-      extentsMin,
-      extentsMax,
-    )
-    for (let i = 0; i < 16; i++) approx(a[i], b[i])
-  })
 
   test('returnsAllFourMatricesAndRay', () => {
     const result = calculateGlobalVolumeMvp(

@@ -90,7 +90,7 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   many slides indexes in memory proportional to its headers. Each level reports
   `duplicates` and `holes`; its grid-sized tile map is built only when
   a slide is opened (`DicomWsiSource`) or a manifest is written.
-- **ICC colour management.** `DicomWsiSource` and `TiffSlideSource` serve the slide's ICC profile (the optical path's (0028,2000), or TIFF tag 34675). `registerDcm2niixDecoders` also registers @niivue/dcm2niix's LittleCMS as NVSlide's ICC transform (unless the host registered one), so a slide with a profile is shown in sRGB unless `colorManagement` is off. Call it before opening slides: a slide bakes its profile when it is created. This needs @niivue/dcm2niix 1.4.20261105-rc.3 or later (`iccLut`), the peer floor.
+- **ICC colour management.** `DicomWsiSource` and `TiffSlideSource` serve the slide's ICC profile (the optical path's (0028,2000), or TIFF tag 34675). `registerDcm2niixDecoders` also registers @niivue/dcm2niix's LittleCMS as NVSlide's ICC transform (unless the host registered one), so a slide with a profile is shown in sRGB unless `colorManagement` is off. Call it before opening slides: a slide bakes its profile when it is created. This needs @niivue/dcm2niix 1.4.20261105-rc.3 or later (`iccLut`), the peer floor. `fetchIccProfile(signal)` stops waiting on abort; `source.dispose()` cancels the read.
 - `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
   that changed since indexing fails rather than decoding garbage.
 - Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS

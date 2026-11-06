@@ -248,6 +248,35 @@ describe('TiffSlideSource', () => {
     expect(await plain.source.fetchIccProfile()).toBeNull()
   })
 
+  test('dispose cancels a deferred ICC profile read; abort stops the wait', async () => {
+    // 200 KB: past geotiff's first block, so the profile needs its own Range read.
+    const icc = new Uint8Array(200_000).fill(42)
+    const [l0, ...rest] = PYRAMID as [Level, ...Level[]]
+    const { source, server } = await open(writeTiff([{ ...l0, icc }, ...rest]))
+    server.hold = true
+    const caller = new AbortController()
+    let settled = ''
+    const fetched = source.fetchIccProfile(caller.signal).then(
+      () => (settled = 'resolved'),
+      () => (settled = 'rejected'),
+    )
+    await new Promise((r) => setTimeout(r, 20))
+    expect(server.requests.length).toBeGreaterThan(0)
+    caller.abort()
+    await fetched
+    expect(settled).toBe('rejected')
+    // The read itself: dispose aborts the request the server is still holding
+    // (held requests settle only when their signal fires).
+    const second = source.fetchIccProfile().then(
+      () => 'settled',
+      () => 'settled',
+    )
+    await new Promise((r) => setTimeout(r, 20))
+    source.dispose()
+    const pending = new Promise((r) => setTimeout(() => r('pending'), 200))
+    expect(await Promise.race([second, pending])).toBe('settled')
+  })
+
   test('reads OME-style SubIFD pyramids', async () => {
     const { source } = await open(writeTiff(PYRAMID, true))
     expect(source.manifest.levels.map((l) => l.width)).toEqual([1000, 500, 250])

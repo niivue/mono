@@ -829,22 +829,22 @@ export default class NVView {
     }
   }
 
-  render(): void {
+  render(): boolean {
     const md = this.model
-    if (!this.device || !this.context || !this.depthTexture) return
+    if (!this.device || !this.context || !this.depthTexture) return false
     // A lost device (GPU OOM) cannot be drawn to; bail so we don't spin the
     // streaming loop against a dead device.
-    if (this._deviceLost) return
+    if (this._deviceLost) return false
     // Skip render if canvas is detached (e.g., replaced during backend switch)
-    if (!this.canvas.parentNode) return
+    if (!this.canvas.parentNode) return false
     const device = this.device
     if (this.isBusy || !this.fontRenderer.isReady) {
       requestAnimationFrame(() => this.render())
-      return
+      return false
     }
     // Off-screen after viewport transform: skip render pass entirely. Sibling instances
     // still copy their own textures to the canvas in their own render() calls.
-    if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
+    if (this._isSubCanvasBounds && this._isBoundsOffscreen) return false
     // Publish the current lighting to the volume renderer BEFORE any chunk work
     // (entry creation, request, pump) so chunk uploaders can skip the gradient
     // pass when unlit. Matches the gradientAmount passed to the volume draw.
@@ -914,7 +914,7 @@ export default class NVView {
       ? this._boundsColorTexture?.createView()
       : canvasTexture.createView()
     if (!colorTarget) {
-      return
+      return false
     }
     const resolveTarget =
       this.isAntiAlias && this.msaaTexture ? colorTarget : undefined
@@ -957,7 +957,7 @@ export default class NVView {
       markSubmitStart()
       device.queue.submit([commandEncoder.finish()])
       markEnd()
-      return
+      return true
     }
     // Clear labels at start of each render
     const labels: ReturnType<typeof this.fontRenderer.buildText>[] = []
@@ -2155,6 +2155,7 @@ export default class NVView {
           }
         })
     }
+    return true
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

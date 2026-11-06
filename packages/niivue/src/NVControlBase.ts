@@ -260,7 +260,8 @@ function markMeshDataChanged(m: NVMeshType): void {
 type ViewBackend = {
   init: () => Promise<void>
   resize: () => void
-  render: () => void
+  /** Draw a frame; false when none was drawn (not ready, busy, lost, detached). */
+  render: () => boolean
   /** Drawn rect in canvas pixels (top-left origin), after bounds and viewport. */
   readonly boundsOffsetX: number
   readonly boundsOffsetY: number
@@ -6103,7 +6104,8 @@ export default class NiiVue extends EventTarget {
   }
 
   // One controller-driven frame, also run synchronously by canvas capture.
-  private _renderNow(): void {
+  // False when the view drew nothing.
+  private _renderNow(): boolean {
     if (this._drawingDirty) {
       this._drawingDirty = false
       this._flushDrawing()
@@ -6115,8 +6117,9 @@ export default class NiiVue extends EventTarget {
       // removed) is picked up. Self-driven frames (streaming/fade) keep the
       // last-set values on the same view instance.
       this._wireViewHooks()
-      this.view.render()
+      return this.view.render()
     }
+    return false
   }
 
   /**
@@ -6262,8 +6265,8 @@ export default class NiiVue extends EventTarget {
    * work on WebGPU and on WebGL2 without `preserveDrawingBuffer`. It shows
    * whatever is resident now, so wait for streaming or GPU uploads first
    * (`whenChunkStreamSettles`, `whenUpdatesSettle`). Null without a canvas or
-   * view, after `destroy()`, while the view is busy, or for a rect panned
-   * off-canvas; after a lost GPU context it returns the last canvas content.
+   * view, after `destroy()`, when the view cannot draw a frame now (busy, GPU
+   * context lost, canvas detached), or for a rect panned off-canvas.
    * Do not call it from an overlay renderer: it draws a frame, which calls the
    * overlay again.
    */
@@ -6276,11 +6279,12 @@ export default class NiiVue extends EventTarget {
   // task. Null when no frame can be drawn, rather than a blank image.
   private _captureCanvas(): CanvasRenderingContext2D | null {
     const view = this.view
-    if (!this.canvas || !view || this._destroyed || view.isBusy) {
+    // The canvas would otherwise still hold an older frame (WebGPU skips a
+    // detached canvas, and both backends skip while busy or lost).
+    if (!this.canvas || !view || this._destroyed || !this._renderNow()) {
       log.warn('canvas capture: no view ready to draw')
       return null
     }
-    this._renderNow()
 
     // The view's rect already applies bounds and the canvas viewport; clip it.
     const { width: cw, height: ch } = this.canvas

@@ -61,3 +61,4 @@ export {
   type PersistentCacheStats,
   withPersistentBytes,
 } from './zarr/persistentByteCache'
+export { streamOmeZarr } from './zarr/streamOmeZarr'

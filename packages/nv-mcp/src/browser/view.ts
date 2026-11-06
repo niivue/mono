@@ -527,8 +527,6 @@ export interface View {
   setClipPlane(plane: number[]): void
   /** Replaces every volume on show with these. */
   loadVolumes(volumes: VolumeToLoad[]): Promise<unknown>
-  /** Replaces every volume on show with one streamed brick by brick from `source` (a NiiVue `ChunkedVolumeSource`). */
-  loadChunkedVolume?(source: unknown): Promise<unknown>
   /** Adds one volume over those on show, keeping them: one to fetch, or one a transform made. */
   addVolume(volume: VolumeToLoad | TransformedVolume): Promise<unknown>
   /** Fetches a volume without adding it, for `addVolume` to take later. */
@@ -909,8 +907,9 @@ export interface OmeZarrLoaders {
     url: string,
     options?: { level?: number; channels?: number[]; timepoint?: number },
   ): Promise<unknown[]>
-  /** A chunked source for `loadChunkedVolume`. */
-  fetchOmeZarrChunkedSource(
+  /** Streams the store into `view`, freeing its workers once the volume is removed or the view destroyed. */
+  streamOmeZarr(
+    view: View,
     url: string,
     options?: { channel?: number; timepoint?: number },
   ): Promise<unknown>

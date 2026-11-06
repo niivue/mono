@@ -9,7 +9,7 @@
 import NiiVue from '@niivue/niivue'
 import { conform, connectedLabel, otsu, removeHaze } from '@niivue/nv-ext-image-processing'
 import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'
-import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
+import { loadOmeZarrVolumes, streamOmeZarr } from '@niivue/nv-ext-tile/zarr'
 
 // Image-processing transforms bundled from @niivue/nv-ext-*.
 // Registered with NiiVue in initialize() so Python can apply them
@@ -459,10 +459,9 @@ async function initialize({ model }) {
       const [url, opts = {}] = coerceCommandArgs(msg.args)
       try {
         if (opts.stream) {
-          const source = await fetchOmeZarrChunkedSource(url, { channel: opts.channel, timepoint: opts.timepoint })
-          // loadChunkedVolume adds; this replaces, like loadVolumes.
+          // Replaces, like loadVolumes; streamOmeZarr frees its manager and workers once the volume goes.
           await state.nv.removeAllVolumes()
-          await state.nv.loadChunkedVolume(source)
+          await streamOmeZarr(state.nv, url, { channel: opts.channel, timepoint: opts.timepoint })
         } else {
           const channels = opts.channel == null ? undefined : [opts.channel]
           await state.nv.loadVolumes(await loadOmeZarrVolumes(url, { level: opts.level, channels, timepoint: opts.timepoint }))

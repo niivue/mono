@@ -59,8 +59,8 @@ mock.module('@niivue/nv-ext-drawing', () => ({
   interpolateMaskSlices: () => null,
 }))
 mock.module('@niivue/nv-ext-tile/zarr', () => ({
-  fetchOmeZarrChunkedSource: async () => ({}),
   loadOmeZarrVolumes: async () => [],
+  streamOmeZarr: async () => ({}),
 }))
 
 const g = globalThis as Record<string, unknown>

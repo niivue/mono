@@ -1213,7 +1213,7 @@ function emitJs(api: ApiDescriptor): string {
     `import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'`,
   )
   lines.push(
-    `import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'`,
+    `import { loadOmeZarrVolumes, streamOmeZarr } from '@niivue/nv-ext-tile/zarr'`,
   )
   lines.push('')
   lines.push('// Image-processing transforms bundled from @niivue/nv-ext-*.')
@@ -1585,13 +1585,12 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      try {')
   lines.push('        if (opts.stream) {')
   lines.push(
-    '          const source = await fetchOmeZarrChunkedSource(url, { channel: opts.channel, timepoint: opts.timepoint })',
-  )
-  lines.push(
-    '          // loadChunkedVolume adds; this replaces, like loadVolumes.',
+    '          // Replaces, like loadVolumes; streamOmeZarr frees its manager and workers once the volume goes.',
   )
   lines.push('          await state.nv.removeAllVolumes()')
-  lines.push('          await state.nv.loadChunkedVolume(source)')
+  lines.push(
+    '          await streamOmeZarr(state.nv, url, { channel: opts.channel, timepoint: opts.timepoint })',
+  )
   lines.push('        } else {')
   lines.push(
     '          const channels = opts.channel == null ? undefined : [opts.channel]',

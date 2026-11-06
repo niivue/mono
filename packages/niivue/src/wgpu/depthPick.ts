@@ -305,6 +305,32 @@ interface DepthPickResources {
 
 const _deviceCache = new WeakMap<GPUDevice, DepthPickResources>()
 
+/** Opaque packed-depth pipeline into the 1x1 rgba8unorm + depth24plus target. */
+function pickPipeline(
+  device: GPUDevice,
+  layout: GPUBindGroupLayout,
+  code: string,
+  buffer: GPUVertexBufferLayout,
+  primitive: GPUPrimitiveState,
+): GPURenderPipeline {
+  const module = device.createShaderModule({ code })
+  return device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    vertex: { module, entryPoint: 'vertex_main', buffers: [buffer] },
+    fragment: {
+      module,
+      entryPoint: 'fragment_main',
+      targets: [{ format: 'rgba8unorm' }],
+    },
+    depthStencil: {
+      depthWriteEnabled: true,
+      depthCompare: 'less',
+      format: 'depth24plus',
+    },
+    primitive,
+  })
+}
+
 export function init(
   device: GPUDevice,
   volumeBindLayout: GPUBindGroupLayout | null,
@@ -329,80 +355,32 @@ export function init(
   })
 
   // Volume depth-pick pipeline (reuses volumeRenderer's bind group layout)
-  let volumePipeline: GPURenderPipeline | null = null
-  if (volumeBindLayout) {
-    const shaderModule = device.createShaderModule({
-      code: volumeShaderPreamble + volumeDepthPickFragment,
-    })
-    volumePipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [volumeBindLayout],
-      }),
-      vertex: {
-        module: shaderModule,
-        entryPoint: 'vertex_main',
-        buffers: [
-          {
-            arrayStride: 12,
-            attributes: [
-              {
-                format: 'float32x3' as GPUVertexFormat,
-                offset: 0,
-                shaderLocation: 0,
-              },
-            ],
-          },
-        ],
-      },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fragment_main',
-        targets: [{ format: 'rgba8unorm' as GPUTextureFormat }],
-      },
-      depthStencil: {
-        depthWriteEnabled: true,
-        depthCompare: 'less',
-        format: 'depth24plus',
-      },
-      primitive: {
-        topology: 'triangle-strip',
-        stripIndexFormat: 'uint16',
-        cullMode: 'back',
-      },
-      multisample: { count: 1 },
-    })
-  }
-
+  const volumePipeline = volumeBindLayout
+    ? pickPipeline(
+        device,
+        volumeBindLayout,
+        volumeShaderPreamble + volumeDepthPickFragment,
+        {
+          arrayStride: 12,
+          attributes: [{ format: 'float32x3', offset: 0, shaderLocation: 0 }],
+        },
+        {
+          topology: 'triangle-strip',
+          stripIndexFormat: 'uint16',
+          cullMode: 'back',
+        },
+      )
+    : null
   // Mesh depth-pick pipeline (reuses mesh bind group layout)
-  let meshPipeline: GPURenderPipeline | null = null
-  if (meshBindLayout) {
-    const shaderModule = device.createShaderModule({ code: meshDepthPickWGSL })
-    meshPipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [meshBindLayout],
-      }),
-      vertex: {
-        module: shaderModule,
-        entryPoint: 'vertex_main',
-        buffers: [VERTEX_BUFFER_LAYOUT],
-      },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fragment_main',
-        targets: [{ format: 'rgba8unorm' as GPUTextureFormat }],
-      },
-      depthStencil: {
-        depthWriteEnabled: true,
-        depthCompare: 'less',
-        format: 'depth24plus',
-      },
-      primitive: {
-        topology: 'triangle-list',
-        cullMode: 'back',
-      },
-      multisample: { count: 1 },
-    })
-  }
+  const meshPipeline = meshBindLayout
+    ? pickPipeline(
+        device,
+        meshBindLayout,
+        meshDepthPickWGSL,
+        VERTEX_BUFFER_LAYOUT,
+        { topology: 'triangle-list', cullMode: 'back' },
+      )
+    : null
 
   _deviceCache.set(device, {
     colorTexture,

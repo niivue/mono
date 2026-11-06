@@ -229,9 +229,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     // while a command encoder that references it is still in flight.
     this._textures.evictToBudget()
     this._textures.beginFrame()
-    this._scratch.set(mvpMatrix, 0)
-    this._scratch[16] = opacity
-    device.queue.writeBuffer(this._uniformBuffer, 0, this._scratch)
+    this._writeUniform(device, this._uniformBuffer, mvpMatrix, opacity)
     const lut = slide.displayColorLut
     if (lut && this._luts && this._lutPipeline) {
       pass.setPipeline(this._lutPipeline)
@@ -307,14 +305,23 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       })
     }
     device.queue.writeBuffer(this._annVertexBuffer, 0, data)
-    this._scratch.set(mvpMatrix, 0)
-    this._scratch[16] = opacity
-    device.queue.writeBuffer(this._uniformBuffer, 0, this._scratch)
+    this._writeUniform(device, this._uniformBuffer, mvpMatrix, opacity)
     pass.setPipeline(this._pipeline)
     pass.setBindGroup(0, this._uniformGroup)
     pass.setBindGroup(1, this._annGroup)
     pass.setVertexBuffer(0, this._annVertexBuffer)
     pass.draw(4)
+  }
+
+  private _writeUniform(
+    device: GPUDevice,
+    buffer: GPUBuffer,
+    mvpMatrix: Float32Array,
+    opacity: number,
+  ): void {
+    this._scratch.set(mvpMatrix, 0)
+    this._scratch[16] = opacity
+    device.queue.writeBuffer(buffer, 0, this._scratch)
   }
 
   destroy(): void {

@@ -30,6 +30,7 @@ import type {
   ShownVolume,
   View,
 } from './view'
+import { worldUnit } from './view'
 
 const DEG = Math.PI / 180
 
@@ -117,6 +118,7 @@ export function instancesState(view: View): Record<string, unknown> {
   return {
     instances: reportedInstances(view),
     ...(cam ? { globalCamera: reportedCamera(cam) } : {}),
+    unit: worldUnit(view),
   }
 }
 

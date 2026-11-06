@@ -10,6 +10,7 @@ import {
   tiffTimepointCount,
   tiffVolumeAffine,
 } from '../tiffVolume'
+import { NIFTI_UNITS_MICRON, withSpatialUnits } from '../utils'
 
 export const extensions = ['tif', 'tiff']
 export const type = 'nii'
@@ -54,6 +55,7 @@ export async function read(
     0,
     0,
   ]
+  hdr.xyzt_units = withSpatialUnits(hdr.xyzt_units, NIFTI_UNITS_MICRON)
   hdr.affine = tiffVolumeAffine(volume)
   hdr.datatypeCode = volume.datatypeCode
   hdr.numBitsPerVoxel = volume.bitsPerVoxel

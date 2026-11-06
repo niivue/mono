@@ -84,6 +84,7 @@ import type {
   VolumeToLoad,
   VolumeUpdate,
 } from './view'
+import { worldUnit } from './view'
 import { viewportHandlers } from './viewport'
 import { within } from './wait'
 
@@ -96,7 +97,9 @@ export function sceneState(host: NiiVueHost): TabState {
   const volume = view.volumes[0]?.name ?? null
   return {
     volume,
-    crosshair: volume ? { mm: Array.from(view.getCrosshairPos()) } : null,
+    crosshair: volume
+      ? { mm: Array.from(view.getCrosshairPos()), unit: worldUnit(view) }
+      : null,
     plane: volume ? planeState(host) : null,
     ...(host.controls
       ? { controls: host.controls.list().map((c) => c.id) }
@@ -481,7 +484,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
   const describe = async (): Promise<string> => {
     if (host.describe) return await host.describe()
     const mm = Array.from(view.getCrosshairPos()).map((v) => Math.round(v))
-    return `Crosshair at ${mm.join(', ')} mm.`
+    return `Crosshair at ${mm.join(', ')} ${worldUnit(view)}.`
   }
 
   const handlers: Handlers = {
@@ -515,8 +518,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       return {
         name: view.volumes[0]?.name ?? name,
         mni,
-        bounds: { mm: { min, max } },
-        crosshair: { mm: Array.from(view.getCrosshairPos()) },
+        bounds: { mm: { min, max }, unit: worldUnit(view) },
+        crosshair: {
+          mm: Array.from(view.getCrosshairPos()),
+          unit: worldUnit(view),
+        },
       }
     },
 
@@ -535,7 +541,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       return {
         volume,
         volumes: volumesShown(),
-        crosshair: { mm, frac },
+        crosshair: { mm, unit: worldUnit(view), frac },
         plane: planeState(host),
         camera: camera(view),
         ...(hasLayout(view) ? { view: viewState(view) } : {}),
@@ -561,7 +567,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       requireVolume()
       host.beforeAnswer?.()
       const loaded = await requireAtlas()
-      if (host.atlasApplies && !host.atlasApplies()) {
+      if (
+        (host.atlasApplies && !host.atlasApplies()) ||
+        worldUnit(view) !== 'mm'
+      ) {
         throw new Error(
           'The loaded volume is not in MNI space, so the atlas does not apply to it. Load one that is.',
         )
@@ -602,7 +611,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       host.announce?.(description)
       return {
         region: summary(region),
-        landed: { mm: target, frac },
+        landed: { mm: target, unit: worldUnit(view), frac },
         snapped,
         plane: {
           name: plane.name,
@@ -695,7 +704,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       view.drawScene()
       return {
         volumes: volumesShown(),
-        crosshair: { mm: Array.from(view.getCrosshairPos()) },
+        crosshair: {
+          mm: Array.from(view.getCrosshairPos()),
+          unit: worldUnit(view),
+        },
       }
     },
 
@@ -723,7 +735,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       if (frac.some((f) => !Number.isFinite(f) || f < 0 || f > 1)) {
         throw new Error(
-          `${vox ? `Voxel [${vox.join(', ')}]` : `[${mm.join(', ')}] mm`} lies outside the loaded volume.`,
+          `${vox ? `Voxel [${vox.join(', ')}]` : `[${mm.join(', ')}] ${worldUnit(view)}`} lies outside the loaded volume.`,
         )
       }
       const depth = moveTo(frac, plane)
@@ -732,7 +744,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const description = label ? `${label}. ${place}` : place
       host.announce?.(description)
       return {
-        landed: { mm, frac, ...(vox ? { vox } : {}) },
+        landed: { mm, unit: worldUnit(view), frac, ...(vox ? { vox } : {}) },
         plane: {
           name: plane.name,
           depth,
@@ -762,7 +774,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const frac = Array.from(view.crosshairPos)
       host.moved?.(frac)
       return {
-        crosshair: { mm: Array.from(view.getCrosshairPos()), frac },
+        crosshair: {
+          mm: Array.from(view.getCrosshairPos()),
+          unit: worldUnit(view),
+          frac,
+        },
       }
     },
 
@@ -901,7 +917,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           )
         if (!view.centerRenderOnMM(centre))
           throw new Error(
-            `The render could not be centred on [${centre.join(', ')}] mm.`,
+            `The render could not be centred on [${centre.join(', ')}] ${worldUnit(view)}.`,
           )
         changed = true
       }
@@ -923,6 +939,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ...(view.renderPivotMM
           ? { pivot: Array.from(view.renderPivotMM) }
           : {}),
+        unit: worldUnit(view),
         ...(view.opts?.globalCamera
           ? { globalCamera: reportedCamera(view.opts.globalCamera) }
           : {}),
@@ -1218,7 +1235,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         const given = text(label, 'text')
         if (region) {
           const loaded = await requireAtlas()
-          if (host.atlasApplies && !host.atlasApplies()) {
+          if (
+            (host.atlasApplies && !host.atlasApplies()) ||
+            worldUnit(view) !== 'mm'
+          ) {
             throw new Error(
               'The loaded volume is not in MNI space, so the atlas does not apply to it. Load one that is.',
             )
@@ -1275,6 +1295,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       view.drawScene()
       return {
         labels: placed.map(({ boxMM: _box, ...label }) => label),
+        unit: worldUnit(view),
         ...(dimOthers !== undefined && placed.length > 0 ? { dimOthers } : {}),
       }
     },

@@ -18,7 +18,13 @@ import {
   pointIfGiven,
 } from './params'
 import { pickIndex } from './pick'
-import type { AnimationTarget, Handlers, NiiVueHost, View } from './view'
+import {
+  type AnimationTarget,
+  type Handlers,
+  type NiiVueHost,
+  type View,
+  worldUnit,
+} from './view'
 
 const EASINGS = ['linear', 'easeIn', 'easeOut', 'easeInOut'] as const
 const ANGLES = ['shortest', 'literal'] as const
@@ -172,7 +178,7 @@ export function animateHandlers(host: NiiVueHost): Handlers {
         said.push(
           host.describe
             ? await host.describe()
-            : `Crosshair at ${mm.join(', ')} mm.`,
+            : `Crosshair at ${mm.join(', ')} ${worldUnit(view)}.`,
         )
       }
     } catch {
@@ -257,6 +263,7 @@ function stateOf(host: NiiVueHost) {
       elevation,
     },
     crosshairMM: Array.from(view.getCrosshairPos(), (v) => round(v)),
+    unit: worldUnit(view),
   }
 }
 

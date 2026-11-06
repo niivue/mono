@@ -83,7 +83,9 @@ export type RulerResult = { lines: LineData[]; labels: GlyphBatch[] }
 
 /**
  * Build a checkerboard scale ruler on the best 2D tile.
- * Returns lines and labels in canvas-pixel coordinates, or null if no ruler should be drawn.
+ * `mmPerUnit` converts scene units to mm (1e-3 for a micrometer volume, see
+ * `spatialUnit`). Returns lines and labels in canvas-pixel coordinates, or null
+ * if no ruler should be drawn.
  */
 export function buildRuler(
   tiles: SliceTile[],
@@ -91,6 +93,7 @@ export function buildRuler(
   buildLine: BuildLineFn,
   fontColor: number[],
   pan2Dxyzmm: ArrayLike<number>,
+  mmPerUnit = 1,
 ): RulerResult | null {
   const tile = selectRulerTile(tiles)
   if (!tile?.screen || !tile.leftTopWidthHeight) return null
@@ -99,18 +102,19 @@ export function buildRuler(
 
   // Size against what is on screen: the 2D zoom narrows the ortho window, so
   // tileWidth / fovMM would mislabel the bar by the zoom factor.
-  const mmPerPx = mmPerPixel2D(
-    tile.screen.mnMM,
-    tile.screen.mxMM,
-    tile.leftTopWidthHeight,
-    slicePanUV(pan2Dxyzmm, tile.axCorSag),
-  )
+  const mmPerPx =
+    mmPerPixel2D(
+      tile.screen.mnMM,
+      tile.screen.mxMM,
+      tile.leftTopWidthHeight,
+      slicePanUV(pan2Dxyzmm, tile.axCorSag),
+    ) * mmPerUnit
   if (!(mmPerPx > 0)) return null
 
   // Cap by the DATA span too: a filled tile is the whole canvas, so sizing on
   // it alone grows the bar past the image whenever the volume is small.
   const ruler = chooseRulerSize(
-    Math.min(tileWidth * mmPerPx, Math.abs(tile.screen.fovMM[0])),
+    Math.min(tileWidth * mmPerPx, Math.abs(tile.screen.fovMM[0]) * mmPerUnit),
   )
   if (!ruler) return null
 

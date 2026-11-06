@@ -34,6 +34,15 @@ const run = (view: View, params: Record<string, unknown>) =>
   >
 
 describe('set_instances', () => {
+  it('names the unit of the positions it reports', async () => {
+    const { view } = instView()
+    view.volumes = [{ name: 'mni152.nii.gz', hdr: { xyzt_units: 11 } }]
+    const out = await run(view, {
+      instances: [{ id: 'a', volume: 0, position: [1000, 0, 0] }],
+    })
+    expect(out).toMatchObject({ unit: 'um' })
+  })
+
   it('lays out global3d instances in radians and reports them in degrees', async () => {
     const { view } = instView()
     const out = await run(view, {

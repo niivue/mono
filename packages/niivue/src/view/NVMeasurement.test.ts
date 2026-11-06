@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { rulerSegments, rulerTickLabels } from './NVMeasurement'
+import { formatDistance, rulerSegments, rulerTickLabels } from './NVMeasurement'
 
 // A plain baseline (1 segment) plus two long perpendicular end caps.
 const BASELINE_SEGS = 3
@@ -70,5 +70,22 @@ describe('rulerTickLabels', () => {
     expect(labels.length).toBeGreaterThan(0)
     expect(labels.length).toBeLessThan(30)
     for (const l of labels) expect(Number(l.str) % 5).toBe(0)
+  })
+})
+
+describe('formatDistance', () => {
+  it('suffixes the scene unit', () => {
+    expect(formatDistance(1234, true, 'um')).toBe('1234 um')
+    expect(formatDistance(4.5, true)).toBe('4.50 mm')
+    expect(formatDistance(4.5, false, 'um')).toBe('4.50')
+  })
+})
+
+describe('ruler tick thinning', () => {
+  it('a long ruler steps 1/2/5 so majors stay on round values', () => {
+    // 500 units: 200-tick cap gives raw step 2.5, rounded to 5, not 3.
+    const nums = rulerTickLabels(0, 0, 5000, 0, 500, 6, 1).map((t) => t.str)
+    expect(nums[0]).toBe('5')
+    expect(nums.every((n) => Number(n) % 5 === 0)).toBe(true)
   })
 })

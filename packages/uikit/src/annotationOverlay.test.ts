@@ -113,6 +113,20 @@ describe('buildAnnotationGeometry', () => {
     expect(text.some((t) => t.str.includes('20'))).toBe(true)
   })
 
+  it('labels a micrometre measured line in um', () => {
+    const ruler = shape({
+      tool: 'measureLine',
+      isClosed: false,
+      start: { x: 0, y: 0 },
+      end: { x: 20, y: 0 },
+      length: 20,
+      unit: 'um',
+    })
+    const { text } = buildAnnotationGeometry([ruler])
+    expect(text.some((t) => t.str.includes('um'))).toBe(true)
+    expect(text.some((t) => t.str.includes('mm'))).toBe(false)
+  })
+
   it('centers a closed ROI label below its bounding box (ignores seam anchor)', () => {
     const el = shape({
       outer: [

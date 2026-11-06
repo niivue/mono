@@ -181,6 +181,7 @@ describe('list_annotations', () => {
         expect.objectContaining({ id: 'a2', text: 'two', polygonCount: 1 }),
       ],
       selected: null,
+      unit: 'mm',
     })
     const full = list_annotations({
       polygons: true,
@@ -208,7 +209,10 @@ describe('list_annotations', () => {
       "This page's NiiVue has no annotations.",
     )
     const partial = markHandlers(hostOf(baseView({ annotations: [] })))
-    expect(partial.list_annotations({})).toEqual({ annotations: [] })
+    expect(partial.list_annotations({})).toEqual({
+      annotations: [],
+      unit: 'mm',
+    })
     expect(() => partial.list_annotations({ json: true })).toThrow(
       "This page's NiiVue cannot give its annotations as JSON.",
     )
@@ -465,10 +469,19 @@ describe('list_measurements and edit_measurements', () => {
           slicePosition: 0.5,
         },
       ],
+      unit: 'mm',
     })
     expect(() =>
       markHandlers(hostOf(baseView())).list_measurements({}),
     ).toThrow("This page's NiiVue keeps no measurements.")
+  })
+
+  it('names the unit of a micrometre volume beside the ends and distance', () => {
+    const view = markView()
+    view.volumes = [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }]
+    expect(markHandlers(hostOf(view)).list_measurements({})).toMatchObject({
+      unit: 'um',
+    })
   })
 
   it('adds a measurement between two points, removes one, and clears', () => {
@@ -511,10 +524,11 @@ describe('list_measurements and edit_measurements', () => {
     expect(edit_measurements({ action: 'clear' })).toEqual({
       action: 'clear',
       measurements: [],
+      unit: 'mm',
     })
     expect(() =>
       edit_measurements({ action: 'add', start_mm: [0, 0, 0] }),
-    ).toThrow('end_mm must be three numbers, [x, y, z] in millimetres.')
+    ).toThrow('end_mm must be three numbers, [x, y, z] in world units.')
     expect(() => edit_measurements({})).toThrow(
       'edit_measurements needs an action: one of add, remove, clear, clear_angles, clear_distances.',
     )
@@ -558,6 +572,7 @@ describe('set_boxes', () => {
         thickness: 2,
       },
       boxes: 2,
+      unit: 'mm',
     })
     expect(view.lodBoxes?.[0].color).toEqual([1, 0, 0, 1])
     expect(view.drawScene).toHaveBeenCalled()
@@ -569,7 +584,11 @@ describe('set_boxes', () => {
     const box = { min: [0, 0, 0], max: [1, 1, 1] }
     set_boxes({ focus: box, boxes: [box] })
     expect(set_boxes({ focus: null })).toMatchObject({ focus: null, boxes: 1 })
-    expect(set_boxes({ boxes: [] })).toEqual({ focus: null, boxes: 0 })
+    expect(set_boxes({ boxes: [] })).toEqual({
+      focus: null,
+      boxes: 0,
+      unit: 'mm',
+    })
     expect(view.lodBoxes).toBeNull()
   })
 

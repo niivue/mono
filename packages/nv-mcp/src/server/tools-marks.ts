@@ -19,8 +19,8 @@ const SLICE_ARG = z
   .describe('The slice orientation. The one shown otherwise.')
 
 const BOX_ARG = z.strictObject({
-  min: triple('The corner with the lowest x, y and z, in millimetres.'),
-  max: triple('The opposite corner, in millimetres.'),
+  min: triple('The corner with the lowest x, y and z, in world units.'),
+  max: triple('The opposite corner, in world units.'),
   color: rgba('The edge colour. A yellow otherwise.').optional(),
   thickness: z
     .number()
@@ -31,7 +31,7 @@ const BOX_ARG = z.strictObject({
 
 const OUTLINE_ARG = z.strictObject({
   corners: z
-    .array(triple('A corner, in millimetres.'))
+    .array(triple('A corner, in world units.'))
     .length(4)
     .describe('The four corners in order around the rectangle.'),
   color: rgba('The edge colour. The crosshair colour otherwise.').optional(),
@@ -122,11 +122,11 @@ export const MARK_SCHEMAS = {
       .optional()
       .describe(
         'For add: a NiiVue VectorAnnotation as JSON, with id, sliceType (0 axial, 1 coronal, ' +
-          '2 sagittal), slicePosition (where the slice is in mm along its own axis: the ' +
+          '2 sagittal), slicePosition (where the slice is in world units along its own axis: the ' +
           "crosshair's z for an axial slice, as where_am_i reports it) and polygons; and, if " +
           'wanted, label (a number), group, text and style ({fillColor, strokeColor} as ' +
           '[r, g, b, a] 0 to 1, strokeWidth in pixels; red otherwise). Each polygon is a list ' +
-          'of at least three [x, y] points in mm on the slice plane (axial x and y, coronal x ' +
+          'of at least three [x, y] points in world units on the slice plane (axial x and y, coronal x ' +
           'and z, sagittal y and z), or {outer, holes} with such lists.',
       ),
     json: z
@@ -156,9 +156,9 @@ export const MARK_SCHEMAS = {
         'add a distance between two points, remove one by index, or clear all, the angles or the distances.',
       ),
     start_mm: triple(
-      'For add: where the measurement starts, in millimetres.',
+      'For add: where the measurement starts, in world units.',
     ).optional(),
-    end_mm: triple('For add: where it ends, in millimetres.').optional(),
+    end_mm: triple('For add: where it ends, in world units.').optional(),
     slice: SLICE_ARG,
     slice_index: z.number().int().min(0).optional(),
     slice_position: z.number().optional(),
@@ -235,7 +235,7 @@ export function registerMarkTools(
   registerSimple(server, context, 'list_measurements', {
     title: 'List the measurements',
     description:
-      'Lists the distance measurements drawn on the slices: each with its ends in millimetres, its length, and its slice.',
+      'Lists the distance measurements drawn on the slices: each with its ends in world units, its length, and its slice.',
     inputSchema: MARK_SCHEMAS.list_measurements,
     readOnly: true,
   })
@@ -243,7 +243,7 @@ export function registerMarkTools(
   registerSimple(server, context, 'edit_measurements', {
     title: 'Edit the measurements',
     description:
-      'Adds a distance measurement between two points in millimetres, removes one by index, or ' +
+      'Adds a distance measurement between two points in world units, removes one by index, or ' +
       'clears them: all, the angles, or the distances. Reports the measurements afterwards.',
     inputSchema: MARK_SCHEMAS.edit_measurements,
   })
@@ -252,7 +252,7 @@ export function registerMarkTools(
     title: 'Outline boxes on the render',
     description:
       'Outlines boxes on the 3D render (not the slices), each from its two corners in ' +
-      'millimetres: one focus box, a set of boxes, or both. They are not saved with the ' +
+      'world units: one focus box, a set of boxes, or both. They are not saved with the ' +
       'document. Reports the focus box and how many boxes the set has.',
     inputSchema: MARK_SCHEMAS.set_boxes,
   })
@@ -260,7 +260,7 @@ export function registerMarkTools(
   registerSimple(server, context, 'set_plane_outlines', {
     title: 'Outline rectangles in the scene',
     description:
-      'Outlines rectangles given by four corners in millimetres: on a 2D slice a rectangle ' +
+      'Outlines rectangles given by four corners in world units: on a 2D slice a rectangle ' +
       'lies in as the whole rectangle, on one that cuts it as the crossing segment, on one ' +
       'it misses not at all; on the 3D render as a thin frame. They are not saved with the ' +
       'document. Reports how many are shown.',

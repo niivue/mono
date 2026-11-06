@@ -93,12 +93,14 @@ describe('map_point', () => {
         tileIndex: 0,
       },
       mm: [20, 40, 0],
+      unit: 'mm',
       frac: [0.6, 0.7, 0.5],
     })
     expect(map_point({ canvas: [-1, 0] })).toEqual({
       canvas: [-1, 0],
       hit: null,
       mm: null,
+      unit: 'mm',
     })
   })
 
@@ -106,6 +108,7 @@ describe('map_point', () => {
     const { map_point } = viewportHandlers(hostOf(mapping()))
     expect(map_point({ mm: [10, 20, 30] })).toEqual({
       mm: [10, 20, 30],
+      unit: 'mm',
       frac: [0.55, 0.6, 0.65],
       canvas: { tileIndex: 0, x: 10, y: 20 },
     })
@@ -113,8 +116,16 @@ describe('map_point', () => {
       vox: [50, 50, 50],
       frac: [0.5, 0.5, 0.5],
       mm: [0, 0, 0],
+      unit: 'mm',
       canvas: { tileIndex: 0, x: 0, y: 0 },
     })
+  })
+
+  it('names the unit of a micrometre volume', () => {
+    const view = mapping()
+    view.volumes = [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }]
+    const { map_point } = viewportHandlers(hostOf(view))
+    expect(map_point({ vox: [50, 50, 50] })).toMatchObject({ unit: 'um' })
   })
 
   it('refuses no point and a page that cannot map', () => {

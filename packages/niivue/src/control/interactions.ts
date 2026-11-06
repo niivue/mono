@@ -62,7 +62,7 @@ import {
   rayBlockFacePointMM,
 } from '@/volume/ChunkExplode'
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
-import { getImageDataRAS } from '@/volume/utils'
+import { getImageDataRAS, voxelSizeMM } from '@/volume/utils'
 
 /** Texture-space coordinate `d` of a world-mm point: its slice along `d`. */
 const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
@@ -868,8 +868,8 @@ function magicWandFill(
   // Report the segmented region so a host can show its size without walking
   // the bitmap itself. Voxel volume comes from the segmented volume's own RAS
   // grid (the drawing shares that grid).
-  const pix = vol.pixDimsRAS
-  const mm3 = pix ? result.filled * pix[1] * pix[2] * pix[3] : 0
+  const v = voxelSizeMM(vol)
+  const mm3 = v ? result.filled * v[0] * v[1] * v[2] : 0
   ctrl.emit('clickToSegment', {
     seed,
     penValue: ctrl.model.draw.penValue,

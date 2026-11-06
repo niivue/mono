@@ -281,6 +281,13 @@ describe('animate', () => {
     expect(await run(view, { stop: true })).toMatchObject({ stopped: false })
   })
 
+  it('names the unit of the crosshair it reports', async () => {
+    const { view } = animView({ isAnimating: true })
+    expect(await run(view, { stop: true })).toMatchObject({ unit: 'mm' })
+    view.volumes = [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }]
+    expect(await run(view, { stop: true })).toMatchObject({ unit: 'um' })
+  })
+
   it('moves the camera and fades a mesh with no volume loaded', async () => {
     const { view, calls } = animView({ volumes: [] })
     expect(

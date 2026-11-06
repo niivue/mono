@@ -579,6 +579,17 @@ describe('NVChunkedVolume id + plan-swap routing', () => {
     expect(vols.find((v) => v.id === b.id || v.name === b.id)).toBe(b.volume)
     expect(vols.find((v) => v.id === a.id || v.name === a.id)).toBe(a.volume)
   })
+  test("the streamed volume's header carries the source's xyzt_units", () => {
+    const host = makeHost(async () => {})
+    const mm = new NVChunkedVolume(host, mgrSource, { radius: 16 })
+    const um = new NVChunkedVolume(
+      host,
+      { ...mgrSource, xyztUnits: 3 | 16 },
+      { radius: 16 },
+    )
+    expect(mm.volume.hdr.xyzt_units).toBe(10)
+    expect(um.volume.hdr.xyzt_units).toBe(3 | 16)
+  })
   test('the swap policy rides every plan swap', async () => {
     const seen: unknown[] = []
     const host = makeHost(async (_id, _plan, options) => {

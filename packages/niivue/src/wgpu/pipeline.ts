@@ -106,6 +106,8 @@ export function colorLutLayout(device: GPUDevice): GPUBindGroupLayout {
   })
 }
 
+const MAX_COLOR_LUTS = 8
+
 /** One 3D texture and bind group per slide colour table, uploaded on first use. */
 export class ColorLutTexturesGPU {
   private readonly _entries = new Map<
@@ -122,6 +124,16 @@ export class ColorLutTexturesGPU {
   group(lut: NVSlideColorLut): GPUBindGroup {
     const existing = this._entries.get(lut)
     if (existing) return existing.group
+    // A few slides at a time: drop the oldest table. Earlier frames are
+    // submitted, so destroying its texture cannot pull it from under a pass.
+    if (this._entries.size >= MAX_COLOR_LUTS) {
+      const [oldest, entry] = this._entries.entries().next().value as [
+        NVSlideColorLut,
+        { texture: GPUTexture },
+      ]
+      entry.texture.destroy()
+      this._entries.delete(oldest)
+    }
     const n = lut.size
     const texture = this.device.createTexture({
       size: [n, n, n],

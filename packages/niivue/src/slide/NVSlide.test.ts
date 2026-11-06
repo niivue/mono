@@ -1258,6 +1258,25 @@ describe('NVSlide colour management', () => {
     expect(calls).toBe(0)
   })
 
+  it('skips a monochrome slide: its window is the display mapping', async () => {
+    let calls = 0
+    NVSlide.registerIccTransform(async () => {
+      calls++
+      return lut
+    })
+    const source = withProfile(profile)
+    const manifest = {
+      ...source.manifest,
+      levels: source.manifest.levels.map((l) => ({
+        ...l,
+        photometric: 'MONOCHROME2',
+      })),
+    }
+    NVSlide.fromSource({ ...source, manifest })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toBe(0)
+  })
+
   it('the identity table maps each corner to itself', () => {
     const d = IDENTITY_COLOR_LUT.data
     for (let e = 0; e < 8; e++)

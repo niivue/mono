@@ -39,6 +39,8 @@ export function createUnitQuad(gl: WebGL2RenderingContext): {
   return { vao, vbo }
 }
 
+const MAX_COLOR_LUTS = 8
+
 /** One 3D texture per slide colour table, uploaded on first use; `clear` deletes them. */
 export class ColorLutTexturesGL {
   private readonly _textures = new Map<NVSlideColorLut, WebGLTexture>()
@@ -46,6 +48,16 @@ export class ColorLutTexturesGL {
   get(gl: WebGL2RenderingContext, lut: NVSlideColorLut): WebGLTexture | null {
     const existing = this._textures.get(lut)
     if (existing) return existing
+    // A few slides at a time: drop the oldest table (renderers without a
+    // clearTextures hook would otherwise keep one per slide ever shown).
+    if (this._textures.size >= MAX_COLOR_LUTS) {
+      const [oldest, tex] = this._textures.entries().next().value as [
+        NVSlideColorLut,
+        WebGLTexture,
+      ]
+      gl.deleteTexture(tex)
+      this._textures.delete(oldest)
+    }
     const texture = gl.createTexture()
     if (!texture) return null
     gl.bindTexture(gl.TEXTURE_3D, texture)

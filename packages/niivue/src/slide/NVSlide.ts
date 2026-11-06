@@ -905,11 +905,13 @@ export class NVSlide extends EventTarget {
   private async _loadColorLut(): Promise<void> {
     const transform = iccTransform
     const fetchProfile = this._source.fetchIccProfile
-    // DICOM ColorSpace SRGB means the profile is the display space already.
+    // DICOM ColorSpace SRGB means the profile is the display space already;
+    // a grey slide's display mapping is its window, whatever profile it carries.
     if (
       !transform ||
       !fetchProfile ||
-      this.manifest.iccProfile?.colorSpace?.toUpperCase() === 'SRGB'
+      this.manifest.iccProfile?.colorSpace?.toUpperCase() === 'SRGB' ||
+      this.manifest.levels.some((l) => l.photometric?.startsWith('MONOCHROME'))
     )
       return
     const signal = this._colorAbort.signal

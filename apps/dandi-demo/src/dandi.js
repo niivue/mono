@@ -244,10 +244,11 @@ const els = {
 // loading fails.
 // Anti-aliasing is a context attribute, fixed when the view is created, so it
 // reloads the same way.
-function reloadWith(key, value) {
+function reloadWith(key, value, replace = false) {
   const url = new URL(location.href)
   url.searchParams.set(key, value)
-  location.href = url.href
+  if (replace) location.replace(url.href)
+  else location.href = url.href
 }
 els.backendSelect.value = backend
 els.backendSelect.onchange = () =>
@@ -1308,7 +1309,8 @@ async function main() {
   await nv.attachToCanvas(els.canvas)
   // A WebGPU adapter whose device request fails inside attach leaves WebGL2
   // with WebGPU's residency budget; reload once so the budget matches.
-  if (nv.backend !== backend) return reloadWith('backend', nv.backend)
+  // Replace, not push: Back must not land on the page that falls back again.
+  if (nv.backend !== backend) return reloadWith('backend', nv.backend, true)
   // Show the backend running, after any fallback.
   els.backendSelect.value = nv.backend
   nv.addEventListener('locationChange', onLocationChange)

@@ -9,11 +9,11 @@
  * (which dimension is channel? which spatial axis is display x?). It never
  * touches the network, so the Bun unit tests exercise it directly; store
  * access and chunk decoding live in `omeZarrLoader.ts`.
- * See `docs/ome-zarr-format.md`.
+ * See `packages/nv-ext-tile/docs/ome-zarr-format.md`.
  */
 
-import type { TypedVoxelArray } from '@/NVTypes'
-import { omeLengthToMicrons } from './omeTiff'
+import type { TypedVoxelArray } from '@niivue/niivue'
+import { omeLengthToMicrons } from '@niivue/niivue'
 
 /**
  * A zero-filled typed array of `source`'s concrete type. Shared by the

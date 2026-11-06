@@ -23,14 +23,14 @@
  * several reads land out of order.
  */
 
-import type { ChunkedVolumeFetch } from '@/volume/ChunkedVolumeSource'
-import { chunkTimingSnapshot } from '@/volume/chunkTiming'
+import type { ChunkedVolumeFetch } from '@niivue/niivue'
+import { chunkTimingSnapshot } from '@niivue/niivue'
 import {
   type FetchOmeZarrChunkedSourceOptions,
   OME_ZARR_CHUNK_ERROR,
   type OmeZarrChunkedSource,
   openOmeZarrChunkedSource,
-} from '@/volume/omeZarrChunkedSource'
+} from './omeZarrChunkedSource'
 import { post } from './workerPost'
 
 /** Opened sources, keyed by URL + open options. One store, many reads. */

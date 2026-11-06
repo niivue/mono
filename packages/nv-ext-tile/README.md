@@ -3,8 +3,9 @@
 Tiled image formats for NiiVue's `NVSlide`, one subpath per format, so a page loads only the format it uses:
 - `@niivue/nv-ext-tile/tiff`: tiled TIFF (below).
 - `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders and hosted manifests ([Local DICOM-WSI folders](#local-dicom-wsi-folders)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
+- `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick ([OME-Zarr](#ome-zarr)).
 
-Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`; the APIs are unchanged, only the import paths differ.
+Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`, and core's OME-Zarr exports; the APIs are unchanged, only the import paths differ.
 
 ## Installation
 
@@ -125,6 +126,17 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Test fixtures: `fixtures/dicom-wsi` (synthetic, about 70 KB, with the generator
   `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's
   browser check).
+
+## OME-Zarr
+
+```ts
+import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
+
+await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one whole level
+await nv.loadChunkedVolume(await fetchOmeZarrChunkedSource(storeUrl)) // or stream bricks
+```
+
+The same names core exported before 1.0 (`fetchOmeZarr`, `openOmeZarr`, `omeZarrChunkedSource`, `ByteLruCache`, `withChunkTiming`, the persistent byte cache, ...). Reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 
 ## Hosting an indexed slide
 

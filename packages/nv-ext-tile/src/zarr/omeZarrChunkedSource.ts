@@ -17,20 +17,23 @@
  * chunked volume), and the declared spatial axis order is honoured: bricks
  * from an `x y z`-ordered store (the Human Organ Atlas) are transposed to the
  * x-fastest layout the contract requires, so the anatomy presents identically
- * to a conventional `z y x` store. See `docs/ome-zarr-format.md`.
+ * to a conventional `z y x` store. See `packages/nv-ext-tile/docs/ome-zarr-format.md`.
  */
 
-import * as zarr from 'zarrita'
-import type { TypedVoxelArray } from '@/NVTypes'
 import type {
   ChunkedVolumeFetch,
   ChunkedVolumeSource,
-} from './ChunkedVolumeSource'
+  TypedVoxelArray,
+} from '@niivue/niivue'
 import {
+  getBitsPerVoxel,
+  NIFTI_UNITS_MICRON,
   recordChunkPhase,
   timeChunkNetAsync,
   timeChunkPhaseAsync,
-} from './chunkTiming'
+  withSpatialUnits,
+} from '@niivue/niivue'
+import * as zarr from 'zarrita'
 import { allocTypedArrayLike, checkOmeZarrIndex } from './omeZarr'
 import {
   type OmeZarrLoadOptions,
@@ -47,7 +50,6 @@ import {
   type PersistentCacheStats,
   withPersistentBytes,
 } from './persistentByteCache'
-import { getBitsPerVoxel, NIFTI_UNITS_MICRON, withSpatialUnits } from './utils'
 
 /** What a {@link ByteLruCache} has done since it was created or reset. */
 export interface ByteCacheStats {

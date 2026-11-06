@@ -1,5 +1,10 @@
 # How NiiVue Caching Works
 
+> The OME-Zarr code (store adapter, chunk worker pool, byte caches) moved to
+> `@niivue/nv-ext-tile/zarr` (`packages/nv-ext-tile/src/zarr/`); names and
+> behaviour are unchanged. Paths under `volume/` below for those modules are
+> historical.
+
 Reference for the caching and prefetch machinery in the streaming paths: what
 each tier holds, what bounds it, who owns its lifetime, and how to watch it
 work. It describes the code as it stands after the staged work of August 2026.

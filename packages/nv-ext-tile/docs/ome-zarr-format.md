@@ -4,16 +4,17 @@ OME-Zarr is the cloud-native container of the OME-NGFF specification: a Zarr
 group whose attributes describe a resolution pyramid over up to five named
 dimensions, with the pixels chunked into separately-fetchable objects. It is
 the format the Allen Institute's IMSC viewer, IDR, and the Human Organ Atlas
-publish, and the fourth microscopy container this package reads (after the
-Allen JSON+PNG atlas, plain TIFF stacks and OME-TIFF).
+publish. `@niivue/nv-ext-tile/zarr` reads it (formerly part of
+`@niivue/niivue`); core reads the other microscopy containers (the Allen JSON+PNG
+atlas, plain TIFF stacks and OME-TIFF) itself.
 
 Three modules, in layers:
 
 | Module | Responsibility |
 | --- | --- |
-| `volume/omeZarr.ts` | The metadata. Parses a group's attributes into axes, pyramid datasets and omero channels, and answers the axis questions (which dimension is channel? which spatial axis is display x?). Pure JSON in, no network, Bun-testable. |
-| `volume/omeZarrLoader.ts` | The pixels, whole levels at a time. Opens a store with zarrita, picks a pyramid level, pins time and channel, and assembles each requested channel into a NIfTI `File` for `loadVolumes`. |
-| `volume/omeZarrChunkedSource.ts` | The pixels, brick by brick. Adapts an opened pyramid to the core `ChunkedVolumeSource` seam for `nv.loadChunkedVolume`, which streams multi-LOD bricks of stores far too large to load whole. |
+| `src/zarr/omeZarr.ts` | The metadata. Parses a group's attributes into axes, pyramid datasets and omero channels, and answers the axis questions (which dimension is channel? which spatial axis is display x?). Pure JSON in, no network, Bun-testable. |
+| `src/zarr/omeZarrLoader.ts` | The pixels, whole levels at a time. Opens a store with zarrita, picks a pyramid level, pins time and channel, and assembles each requested channel into a NIfTI `File` for `loadVolumes`. |
+| `src/zarr/omeZarrChunkedSource.ts` | The pixels, brick by brick. Adapts an opened pyramid to the core `ChunkedVolumeSource` seam for `nv.loadChunkedVolume`, which streams multi-LOD bricks of stores far too large to load whole. |
 
 Unlike TIFF, the container itself is NOT hand-parsed: chunk layout, codecs
 (blosc, gzip, zstd) and both Zarr format versions come from `zarrita`, a

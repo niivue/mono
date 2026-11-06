@@ -1,5 +1,10 @@
 # Caching and Prefetch
 
+> The OME-Zarr code (store adapter, chunk worker pool, byte caches) moved to
+> `@niivue/nv-ext-tile/zarr` (`packages/nv-ext-tile/src/zarr/`); names and
+> behaviour are unchanged. Paths under `volume/` below for those modules are
+> historical.
+
 What NiiVue caches today when it streams a remote pyramid, where Neuroglancer
 is ahead of us, and the order we should close the gap. Written for the
 2026-08-26 discussion following Stephan Bollmann's DANDI demo, where Daniel

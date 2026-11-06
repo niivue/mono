@@ -1,3 +1,24 @@
+## 1.0.0-rc.97 (2026-11-06)
+
+### Features
+
+- **niivue,nv-ohif:** keep the slide ICC profile in DICOM-WSI manifests ([c60bc6d3](https://github.com/niivue/mono/commit/c60bc6d3))
+- **nv-ohif:** note when a slide shows a coarser level than requested ([73f27c94](https://github.com/niivue/mono/commit/73f27c94))
+- **nv-ohif,niivue:** JPEG-LS and monochrome DICOM-WSI levels ([93ce9bb0](https://github.com/niivue/mono/commit/93ce9bb0))
+
+### Fixes
+
+- **niivue,nv-ohif:** audit fixes for monochrome slide windowing ([992b53e6](https://github.com/niivue/mono/commit/992b53e6))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.101
+- Updated uikit to 1.0.0-rc.96
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.96 (2026-11-06)
 
 ### Updated Dependencies

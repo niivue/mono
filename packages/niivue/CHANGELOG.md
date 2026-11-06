@@ -1,3 +1,23 @@
+## 1.0.0-rc.101 (2026-11-06)
+
+### Features
+
+- **examples:** monochrome JPEG-LS test slides in the slides demo ([15df284d](https://github.com/niivue/mono/commit/15df284d))
+- **niivue,nv-ohif:** keep the slide ICC profile in DICOM-WSI manifests ([c60bc6d3](https://github.com/niivue/mono/commit/c60bc6d3))
+- **examples:** JPEG-LS and a monochrome window in the slides demo ([9c4ac1cf](https://github.com/niivue/mono/commit/9c4ac1cf))
+- **nv-ohif,niivue:** JPEG-LS and monochrome DICOM-WSI levels ([93ce9bb0](https://github.com/niivue/mono/commit/93ce9bb0))
+- **niivue:** window monochrome slide tiles from kept samples ([5c496bc2](https://github.com/niivue/mono/commit/5c496bc2))
+
+### Fixes
+
+- **niivue,nv-ohif:** audit fixes for monochrome slide windowing ([992b53e6](https://github.com/niivue/mono/commit/992b53e6))
+- **niivue:** window and invert monochrome tiles from bitmap-only decoders ([9ebf5f80](https://github.com/niivue/mono/commit/9ebf5f80))
+- **niivue:** crop padded monochrome sample frames to their tile ([d02e4b5c](https://github.com/niivue/mono/commit/d02e4b5c))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.100 (2026-11-06)
 
 ### Features

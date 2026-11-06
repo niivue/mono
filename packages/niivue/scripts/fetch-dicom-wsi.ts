@@ -39,6 +39,7 @@ const DEFAULT_SERIES = '37cb2625-cd6b-40f8-9c95-e0168ce52d0f'
 const TAG = {
   imageType: 'x00080008',
   photometric: 'x00280004',
+  bitsStored: 'x00280101',
   rows: 'x00280010', // tile height
   columns: 'x00280011', // tile width
   pixelSpacing: 'x00280030',
@@ -217,8 +218,11 @@ interface WsiMeta {
   tiledFull: boolean
   encapsulated: boolean
   photometric: string
+  /** DICOM BitsStored; sets the default monochrome window. */
+  bitsStored?: number
   flavor: WsiFlavor
   spacingMM: [number, number]
+  iccProfile?: { offset: number; length: number; colorSpace?: string }
   /** Tag values, unset when absent; NVSlide checks them against the frames. */
   opticalPaths?: number
   focalPlanes?: number
@@ -231,15 +235,21 @@ function isEncapsulated(uid: string): boolean {
   return u.startsWith('1.2.840.10008.1.2.4') || u === '1.2.840.10008.1.2.5'
 }
 
-// NVSlide tile codec for a transfer syntax. JPEG 2000 (.90/.91) needs an
-// image/jp2 tile decoder registered in the browser (slides.js uses dcm2niix's
-// createFrameDecoder); everything else encapsulated here
-// is baseline/extended JPEG the browser decodes natively.
-function codecForTransferSyntax(uid: string): 'image/jpeg' | 'image/jp2' {
-  const u = uid.trim()
-  return u === '1.2.840.10008.1.2.4.90' || u === '1.2.840.10008.1.2.4.91'
-    ? 'image/jp2'
-    : 'image/jpeg'
+// NVSlide tile codec for a transfer syntax. JPEG 2000 and JPEG-LS need a tile
+// decoder registered in the browser (slides.js uses dcm2niix's
+// createFrameDecoder); everything else encapsulated here is baseline/extended
+// JPEG the browser decodes natively.
+const CODEC_BY_TRANSFER_SYNTAX: Record<string, 'image/jp2' | 'image/jls'> = {
+  '1.2.840.10008.1.2.4.80': 'image/jls', // JPEG-LS lossless
+  '1.2.840.10008.1.2.4.81': 'image/jls', // JPEG-LS near-lossless
+  '1.2.840.10008.1.2.4.90': 'image/jp2', // JPEG 2000 lossless
+  '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
+}
+
+function codecForTransferSyntax(
+  uid: string,
+): 'image/jpeg' | 'image/jp2' | 'image/jls' {
+  return CODEC_BY_TRANSFER_SYNTAX[uid.trim()] ?? 'image/jpeg'
 }
 
 function classifyImageType(imageType: string): WsiFlavor {
@@ -249,6 +259,22 @@ function classifyImageType(imageType: string): WsiFlavor {
   if (t.includes('THUMBNAIL')) return 'thumbnail'
   if (t.includes('VOLUME')) return 'volume'
   return 'other'
+}
+
+// The first optical path's ICC profile, (0048,0105) > (0028,2000), as a byte
+// range in the file, kept in the manifest for colour management.
+function iccProfileRange(
+  ds: dicomParser.DataSet,
+): WsiMeta['iccProfile'] | undefined {
+  const item = ds.elements.x00480105?.items?.[0]?.dataSet
+  const icc = item?.elements.x00282000
+  if (!item || !icc) return undefined
+  const colorSpace = item.string('x00282002')
+  return {
+    offset: icc.dataOffset,
+    length: icc.length,
+    ...(colorSpace ? { colorSpace } : {}),
+  }
 }
 
 function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
@@ -275,6 +301,7 @@ function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
     ? [psX as number, psY as number]
     : [ivw && width ? ivw / width : 1, ivh && height ? ivh / height : 1]
   return {
+    iccProfile: iccProfileRange(ds),
     opticalPaths: ds.uint32(TAG.numberOfOpticalPaths),
     focalPlanes: ds.uint32(TAG.totalPixelMatrixFocalPlanes),
     file,
@@ -287,6 +314,7 @@ function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
     tiledFull: org.includes('TILED_FULL'),
     encapsulated,
     photometric: (ds.string(TAG.photometric) ?? '').toUpperCase(),
+    bitsStored: ds.uint16(TAG.bitsStored),
     flavor: classifyImageType(imageType),
     spacingMM,
   }
@@ -474,6 +502,7 @@ function levelManifest(
     codec: codecForTransferSyntax(parsed.transferSyntaxUid),
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
+    bitsStored: level.bitsStored,
     opticalPaths: level.opticalPaths,
     focalPlanes: level.focalPlanes,
     spacingMM: level.spacingMM,
@@ -516,6 +545,11 @@ export async function buildManifest(
     // Physical size of one base (level-0) pixel in mm [x, y]; consumed by
     // NVSlideManifest.pixelSpacingMM so a viewer can measure in real units.
     pixelSpacingMM: levels[0]?.spacingMM,
+    ...(volumes[0]?.meta.iccProfile && levels[0]
+      ? {
+          iccProfile: { url: levels[0].fileUrl, ...volumes[0].meta.iccProfile },
+        }
+      : {}),
     levels,
   }
 }

@@ -71,8 +71,10 @@ A level whose visible tiles cannot all stay decoded would thrash: each load
 evicts a visible tile, which is requested again (a pinned L0 of a 61x69-tile
 JPEG 2000 slide is ~1 GB decoded against 96 MB). So `visibleTiles` draws the
 finest level, at or coarser than the selected one (`setLevelChoice` or auto),
-whose visible tiles fit: counted at full tile size x 4 bytes, since a DICOM edge
-frame decodes padded, against `maxCacheBytes`, and fewer than the 4096-tile cap.
+whose visible tiles fit: counted at full tile size (a DICOM edge frame decodes
+padded) x 4 bytes, plus 1 or 2 for a monochrome level's kept samples, against 3/4
+of `maxCacheBytes` (the rest stays free for the coarse fallback and `requestTile`
+users), and at most the 4096-tile cap.
 When it steps down the result carries `requestedLevel`, and `log.warn` fires
 once per change of outcome; it also warns if even the coarsest level does not
 fit. The slides demo HUD shows e.g. "L1 (L0 exceeds the tile cache)".

@@ -65,9 +65,11 @@ interface DicomWsiClientLevel {
   fileName: string
   fileUrl: string
   fileSize: number
-  codec: 'image/jpeg'
+  codec: 'image/jpeg' | 'image/jp2' | 'image/jls'
   transferSyntaxUid: string
   photometric: string
+  /** DICOM BitsStored; sets the default monochrome window. */
+  bitsStored?: number
   /** Tag values, unset when absent; NVSlide checks them against the frames. */
   opticalPaths?: number
   focalPlanes?: number
@@ -85,7 +87,35 @@ interface DicomWsiClientManifest {
   displayYAxis: 'down'
   dtype: 'uint8'
   channels: 'encoded-rgb'
+  /** The optical path's ICC profile, (0048,0105) > (0028,2000), as a byte range. */
+  iccProfile?: {
+    url: string
+    offset: number
+    length: number
+    colorSpace?: string
+  }
   levels: DicomWsiClientLevel[]
+}
+
+// JPEG 2000 and JPEG-LS need the viewer's registered decoder; anything else is sent as JPEG.
+function codecFor(uid: string): DicomWsiClientLevel['codec'] {
+  if (/^1\.2\.840\.10008\.1\.2\.4\.9[01]$/.test(uid)) return 'image/jp2'
+  if (/^1\.2\.840\.10008\.1\.2\.4\.8[01]$/.test(uid)) return 'image/jls'
+  return 'image/jpeg'
+}
+
+function iccProfileRange(
+  ds: DataSet,
+): { offset: number; length: number; colorSpace?: string } | undefined {
+  const item = ds.elements.x00480105?.items?.[0]?.dataSet
+  const icc = item?.elements.x00282000
+  if (!item || !icc) return undefined
+  const colorSpace = item.string('x00282002')
+  return {
+    offset: icc.dataOffset,
+    length: icc.length,
+    ...(colorSpace ? { colorSpace } : {}),
+  }
 }
 
 let parserPromise: Promise<DicomParserModule> | null = null
@@ -249,9 +279,10 @@ function levelManifest(
     fileName: parsed.fileName,
     fileUrl: fileUrl(parsed.fileName),
     fileSize: parsed.fileSize,
-    codec: 'image/jpeg',
+    codec: codecFor(parsed.transferSyntaxUid),
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
+    bitsStored: parsed.dataSet.uint16('x00280101'), // BitsStored
     opticalPaths: parsed.dataSet.uint32('x00480302'), // NumberOfOpticalPaths
     focalPlanes: parsed.dataSet.uint32('x00480303'), // TotalPixelMatrixFocalPlanes
     spacingMM: level.spacingMM,
@@ -309,6 +340,8 @@ async function buildClientManifest(
     }
     return levelManifest(level, parsedLevel, l0)
   })
+  const l0Parsed = parsedByFile.get(l0.file)
+  const icc = l0Parsed && iccProfileRange(l0Parsed.dataSet)
   return {
     id: entry.id,
     name: `${entry.id} DICOM-WSI range manifest`,
@@ -320,6 +353,9 @@ async function buildClientManifest(
     displayYAxis: 'down', // DICOM row 0 is the top, as OpenSlide and other viewers show it
     dtype: 'uint8',
     channels: 'encoded-rgb',
+    ...(icc && l0Parsed
+      ? { iccProfile: { url: fileUrl(l0Parsed.fileName), ...icc } }
+      : {}),
     levels: clientLevels,
   }
 }

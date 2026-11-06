@@ -1527,7 +1527,8 @@ export function getNiivueCommandsModule({
 
     /**
      * Apply a window/level (width + center) to the base volume as NiiVue
-     * calMin/calMax. Bridges OHIF's W/L model onto NiiVue's calibration range.
+     * calMin/calMax, or to a monochrome whole-slide image's display window.
+     * Bridges OHIF's W/L model onto NiiVue's calibration range.
      */
     niivueSetWindowLevel: ({
       window,
@@ -1536,8 +1537,6 @@ export function getNiivueCommandsModule({
       window?: number
       level?: number
     } = {}) => {
-      const nv = getActiveNiivue(servicesManager)
-      if (!nv || nv.volumes.length === 0) return
       if (
         window === undefined ||
         level === undefined ||
@@ -1546,6 +1545,13 @@ export function getNiivueCommandsModule({
       )
         return
       const [calMin, calMax] = windowToRange(window, level)
+      const slideView = getActiveNiivueEntry(servicesManager)?.slideView
+      if (slideView) {
+        if (calMax > calMin) slideView.setWindow(calMin, calMax)
+        return
+      }
+      const nv = getActiveNiivue(servicesManager)
+      if (!nv || nv.volumes.length === 0) return
       // A queued GPU update can reject; log it rather than leave it unhandled (#467).
       nv.setVolume(0, { calMin, calMax }).catch((err: unknown) =>
         console.error('[nv-ohif] window/level update failed', err),

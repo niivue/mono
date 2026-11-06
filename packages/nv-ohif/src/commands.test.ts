@@ -1751,6 +1751,7 @@ describe('niivueResetView', () => {
         resetView() {
           resets++
         },
+        setWindow() {},
         async saveBitmap() {},
         dispose() {},
       },
@@ -1761,6 +1762,31 @@ describe('niivueResetView', () => {
     actions.niivueResetView()
     expect(resets).toBe(1)
     expect(nv.azimuth).toBe(42)
+  })
+})
+
+describe('niivueSetWindowLevel on a slide', () => {
+  it('sets the monochrome slide window instead of the hidden volume', () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    const windows: number[][] = []
+    updateNiivueViewport('vp-1', {
+      slideView: {
+        setTool() {},
+        resetView() {},
+        setWindow(calMin, calMax) {
+          windows.push([calMin, calMax])
+        },
+        async saveBitmap() {},
+        dispose() {},
+      },
+    })
+    const { actions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    actions.niivueSetWindowLevel({ window: 1000, level: 2000 })
+    actions.niivueSetWindowLevel({ window: 0, level: -5 }) // empty: ignored
+    expect(windows).toEqual([[1500, 2500]])
   })
 })
 

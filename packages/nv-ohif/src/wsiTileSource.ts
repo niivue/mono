@@ -1,4 +1,5 @@
 import type {
+  NVSlideIccProfile,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileManifest,
@@ -9,16 +10,27 @@ import { parseMultipartRelated } from './dicomWadoRs'
 import type { OhifDisplaySet } from './ohif-types'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs. JPEG Baseline/Extended decode
-// natively in the browser; JPEG 2000 goes to the image/jp2 decoder that
-// wsiJp2Decoder.ts registers (dcm2niix WASM).
-const CODEC_BY_TRANSFER_SYNTAX: Record<string, 'image/jpeg' | 'image/jp2'> = {
+// natively in the browser; JPEG 2000 and JPEG-LS go to the decoders that
+// wsiTileDecoders.ts registers (dcm2niix WASM).
+type WsiCodec = 'image/jpeg' | 'image/jp2' | 'image/jls'
+const CODEC_BY_TRANSFER_SYNTAX: Record<string, WsiCodec> = {
   '1.2.840.10008.1.2.4.50': 'image/jpeg', // JPEG Baseline (Process 1)
   '1.2.840.10008.1.2.4.51': 'image/jpeg', // JPEG Extended (Process 2 & 4)
+  '1.2.840.10008.1.2.4.80': 'image/jls', // JPEG-LS lossless
+  '1.2.840.10008.1.2.4.81': 'image/jls', // JPEG-LS near-lossless
   '1.2.840.10008.1.2.4.90': 'image/jp2', // JPEG 2000 lossless
   '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
 }
 
 const MAX_TILE_BYTES = 64 * 1024 * 1024 // matches the dcm2niix decoder's input cap
+
+// A JPEG-LS frame: SOI, then its SOF55 marker (FFF7) before any scan.
+function isJpegLs(b: Uint8Array): boolean {
+  if (b[0] !== 0xff || b[1] !== 0xd8) return false
+  for (let i = 2; i + 1 < Math.min(b.length, 4096); i++)
+    if (b[i] === 0xff && b[i + 1] === 0xf7) return true
+  return false
+}
 
 // A J2K codestream (start-of-codestream + image-size markers) or a JP2 file (signature box).
 function isJpeg2000(b: Uint8Array): boolean {
@@ -122,7 +134,23 @@ function deriveSpacingMM(
 }
 
 // A whole-slide pyramid level read from one OHIF SM instance.
+// The optical path's ICC profile, when the metadata links it as bulk data
+// (DICOMweb returns large binary values as a BulkDataURI, not inline).
+function iccProfileOf(
+  inst: Record<string, unknown>,
+): NVSlideIccProfile | undefined {
+  const path = first(inst.OpticalPathSequence) as
+    | Record<string, unknown>
+    | undefined
+  const icc = first(path?.ICCProfile) as { BulkDataURI?: unknown } | undefined
+  const url = str(icc?.BulkDataURI)
+  if (!url) return undefined
+  const colorSpace = str(first(path?.ColorSpace))
+  return { url, ...(colorSpace ? { colorSpace } : {}) }
+}
+
 interface WsiLevel {
+  iccProfile?: NVSlideIccProfile
   matrixColumns: number
   matrixRows: number
   tileColumns: number
@@ -132,9 +160,11 @@ interface WsiLevel {
   /** Query string (with leading `?`) to re-append after the frame index, or ''. */
   frameQuery: string
   /** Tile codec; undefined for a transfer syntax the viewer cannot decode. */
-  codec: 'image/jpeg' | 'image/jp2' | undefined
+  codec: WsiCodec | undefined
   transferSyntax?: string
   photometric?: string
+  /** DICOM BitsStored; sets the default monochrome window. */
+  bitsStored?: number
   /** Tag values, unset when absent; NVSlide checks them against the frames. */
   frames?: number
   opticalPaths?: number
@@ -222,6 +252,7 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
       frameQuery,
       transferSyntax,
       photometric: str(first(inst.PhotometricInterpretation)),
+      bitsStored: toNum(first(inst.BitsStored)),
       frames: toNum(first(inst.NumberOfFrames)),
       opticalPaths: toNum(first(inst.NumberOfOpticalPaths)),
       focalPlanes: toNum(first(inst.TotalPixelMatrixFocalPlanes)),
@@ -230,6 +261,7 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
         ? CODEC_BY_TRANSFER_SYNTAX[transferSyntax]
         : 'image/jpeg',
       spacingMM: deriveSpacingMM(inst, matrixColumns, matrixRows),
+      iccProfile: iccProfileOf(inst),
       // Only decline when the layout is EXPLICITLY non-full; absent = assume
       // TILED_FULL (the common case, and what levelTiles maps). Unwrap any array
       // nesting (`['TILED_SPARSE']`, `[['TILED_SPARSE']]`) to the scalar.
@@ -282,7 +314,7 @@ export interface BuiltWsiManifest {
   levelBaseUrls: string[]
   /** Query string (with leading `?`, or '') by level.index, re-appended per tile. */
   levelQueries: string[]
-  /** The first transfer syntax no level codec decodes (JPEG-LS, RLE, raw...). */
+  /** The first transfer syntax no level codec decodes (RLE, raw, HTJ2K...). */
   unsupported?: string
   /**
    * True when every kept level is TILED_FULL (row-major) — the only frame layout
@@ -321,6 +353,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
       codec: level.codec ?? 'image/jpeg', // unused: `unsupported` declines the slide
       transferSyntaxUid: level.transferSyntax,
       photometric: level.photometric,
+      bitsStored: level.bitsStored,
       frames: level.frames,
       opticalPaths: level.opticalPaths,
       focalPlanes: level.focalPlanes,
@@ -345,6 +378,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     // Physical spacing from the finest tier, so the ruler measures in real
     // microns / millimetres; omitted (ruler falls back to pixels) when absent.
     ...(level0.spacingMM ? { pixelSpacingMM: level0.spacingMM } : {}),
+    ...(level0.iccProfile ? { iccProfile: level0.iccProfile } : {}),
     levels,
   }
   return {
@@ -392,13 +426,15 @@ export class DicomWsiTileSource implements SlideTileSource {
     // Re-append any query (e.g. a DICOMweb access_token) after the frame index.
     const query = this.levelQueries[level.index] ?? ''
     const isJp2 = level.codec === 'image/jp2'
+    const isJls = level.codec === 'image/jls'
     const response = await fetch(`${base}/${tile.frame}${query}`, {
       headers: {
-        // JPEG 2000: ask for the stored bytes untranscoded; the check below
-        // refuses a server that transcodes anyway rather than mis-decoding.
-        Accept: isJp2
-          ? 'multipart/related; type="application/octet-stream"; transfer-syntax=*'
-          : 'multipart/related; type="image/jpeg"',
+        // JPEG 2000 / JPEG-LS: ask for the stored bytes untranscoded; the checks
+        // below refuse a server that transcodes anyway rather than mis-decoding.
+        Accept:
+          isJp2 || isJls
+            ? 'multipart/related; type="application/octet-stream"; transfer-syntax=*'
+            : 'multipart/related; type="image/jpeg"',
         ...this.headers,
       },
       signal,
@@ -415,6 +451,8 @@ export class DicomWsiTileSource implements SlideTileSource {
     if (!frame || frame.length === 0) throw new Error('empty WSI tile body')
     if (isJp2 && !isJpeg2000(frame))
       throw new Error('WSI tile is not JPEG 2000 (the server transcoded it)')
+    if (isJls && !isJpegLs(frame))
+      throw new Error('WSI tile is not JPEG-LS (the server transcoded it)')
     return frame
   }
 }

@@ -1,7 +1,7 @@
 // Whole-slide-image tile viewer built on the NVSlide core class.
 //
 // NVSlide owns the manifest/levels/tiles model, the viewport (pan/zoom), HTTP
-// Range-request tile streaming, the ImageBitmap cache and request stats. This
+// Range-request tile streaming, the tile cache (bitmaps, plus samples for monochrome) and request stats. This
 // demo just wires DOM controls to it and draws it with a backend-selected
 // renderer: SlideRenderer (WebGL2) or SlideRendererGPU (WebGPU). WebGPU by
 // default; add `?backend=webgl2` for WebGL2, `?aa=on|off` to override the
@@ -39,17 +39,25 @@ const TIFF_URLS = {
   'tiff-cmu1': 'svs/CMU-1-Small-Region.svs',
 }
 
-// NVSlide core ships no JPEG 2000 codec: dcm2niix's WASM worker pool decodes
-// image/jp2 tiles, following each level's photometric. Started on the first tile.
-let jp2Decoder = null
-NVSlide.registerTileDecoder('image/jp2', async (bytes, { level, signal }) => {
-  jp2Decoder ??= createFrameDecoder({ workers: 2 })
-  const f = await jp2Decoder.decode(bytes, {
+// NVSlide core ships no JPEG 2000 or JPEG-LS codec: dcm2niix's WASM worker pool
+// decodes those tiles, following each level's photometric and BitsStored.
+// Monochrome tiles return samples, which NVSlide windows. Started on the first tile.
+let frameDecoder = null
+async function decodeDicomTile(bytes, { level, signal }) {
+  frameDecoder ??= createFrameDecoder({ workers: 2 })
+  const options = {
     photometric: level.photometric,
+    bitsStored: level.bitsStored,
     signal,
-  })
+  }
+  if (level.photometric?.startsWith('MONOCHROME')) {
+    return frameDecoder.decode(bytes, { ...options, output: 'samples' })
+  }
+  const f = await frameDecoder.decode(bytes, options)
   return createImageBitmap(new ImageData(f.rgba, f.width, f.height))
-})
+}
+NVSlide.registerTileDecoder('image/jp2', decodeDicomTile)
+NVSlide.registerTileDecoder('image/jls', decodeDicomTile)
 
 const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
 // DICOM-WSI manifests use dicom-wsi-range-v1: per-level JPEG tiles addressed
@@ -66,6 +74,9 @@ const MANIFEST_PATHS = {
   // hamamatsu-2 omitted: dicom-parser raises a buffer overrun building its
   // manifest (see scripts/fetch-openslide-dicom.ts), so it never loads.
   'openslide-jp2k-33003-1': 'dicom-wsi/jp2k-33003-1/manifest.json',
+  // Monochrome JPEG-LS test slides (3dhistech-1 luminance): window, BitsStored, MONOCHROME1.
+  'mono12-jls': 'dicom-wsi/mono12-jls/manifest.json',
+  'mono8-jls-m1': 'dicom-wsi/mono8-jls-m1/manifest.json',
 }
 const MAX_CACHE_BYTES = 96 * 1024 * 1024
 const TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
@@ -91,6 +102,8 @@ const els = {
   slideFilter: el('slideFilter'),
   source: el('source'),
   levelMode: el('levelMode'),
+  windowControl: el('windowControl'),
+  window: el('window'),
   zoomOut: el('zoomOut'),
   zoomIn: el('zoomIn'),
   fit: el('fit'),
@@ -852,6 +865,28 @@ function hintForSource(src) {
   return ''
 }
 
+// Monochrome slides get a calMin,calMax window, shared by every tile and level.
+function showWindowControl(s) {
+  const level = s.manifest.levels[0]
+  const mono = level?.photometric?.startsWith('MONOCHROME') ?? false
+  els.windowControl.hidden = !mono
+  if (mono)
+    els.window.value =
+      els.window.defaultValue = `0,${2 ** (level.bitsStored ?? 8) - 1}`
+}
+
+els.window.addEventListener('change', () => {
+  if (!slide) return
+  const [lo, hi] = els.window.value.split(',').map(Number)
+  try {
+    slide.setWindow(lo, hi)
+  } catch {
+    // Not finite or not lo < hi: restore the window in force.
+    const w = slide.window
+    els.window.value = w ? `${w.calMin},${w.calMax}` : els.window.defaultValue
+  }
+})
+
 async function loadSlide() {
   const seq = ++loadSeq
   els.fallback.setAttribute('aria-hidden', 'true')
@@ -894,6 +929,7 @@ async function loadSlide() {
     slide = next
     ensureDrawing()
     populateLevels(slide.manifest)
+    showWindowControl(slide)
     requestRender()
   } catch (err) {
     if (seq !== loadSeq) return

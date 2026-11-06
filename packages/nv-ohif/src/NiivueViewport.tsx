@@ -32,8 +32,8 @@ import {
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
-import { registerJp2TileDecoder } from './wsiJp2Decoder'
 import { mountWsiSlideView } from './wsiSlideView'
+import { registerWsiTileDecoders } from './wsiTileDecoders'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
@@ -382,11 +382,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (built.unsupported) {
         setStatus({
           kind: 'note',
-          message: `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG and JPEG 2000 slides are supported).`,
+          message: `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG, JPEG 2000 and JPEG-LS slides are supported).`,
         })
         return
       }
-      registerJp2TileDecoder() // lazy: loads nothing until a JPEG 2000 tile
+      registerWsiTileDecoders() // lazy: loads nothing until a JPEG 2000 or JPEG-LS tile
       if (!built.tiledFull) {
         // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
         // slide would render scrambled, so decline rather than mislead.
@@ -416,12 +416,29 @@ export function NiivueViewport(props: OhifViewportProps) {
         return
       }
       let view: ReturnType<typeof mountWsiSlideView> | null = null
+      let limitTimeout: number | undefined
+      let limitNote: Status | null = null
       try {
         // The ruler draws its length label on the slide itself, so we do NOT
         // reflect it into the centered status overlay (that produced a floating
         // duplicate of the reading). The onMeasure hook stays available for a
         // future push into OHIF's MeasurementService.
-        view = mountWsiSlideView(slideCanvas, slide)
+        view = mountWsiSlideView(slideCanvas, slide, {
+          // A brief note, cleared early when the requested level fits again.
+          onLevelLimit: (message) => {
+            window.clearTimeout(limitTimeout)
+            const shown = limitNote
+            setStatus((s) => (s === shown ? { kind: 'idle' } : s))
+            limitNote = message ? { kind: 'note', message } : null
+            if (!limitNote) return
+            const note = limitNote
+            setStatus(note)
+            limitTimeout = window.setTimeout(
+              () => setStatus((s) => (s === note ? { kind: 'idle' } : s)),
+              3000,
+            )
+          },
+        })
         slideViewRef.current = view
         view.setTool(activeOhifToolRef.current)
         updateNiivueViewport(viewportId, { slideView: view })
@@ -439,6 +456,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       }
       return () => {
         cancelled = true
+        window.clearTimeout(limitTimeout)
         updateNiivueViewport(viewportId, { slideView: undefined })
         slideViewRef.current = null
         view?.dispose()

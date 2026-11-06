@@ -63,6 +63,11 @@ NVSlide (`assertSingleSlidePlane`) then refuses any `dicom-wsi*` level unless:
 Unknown is never treated as 1.
 
 **Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
+**ICC profiles are kept, not yet applied.** Manifests record the optical path's ICC
+profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0
+file (`fetch-dicom-wsi.ts`, the IIIF server route) or a DICOMweb bulk-data URL (nv-ohif), plus
+`colorSpace` when stated. NVSlide does not apply it yet, so slide colour is not colour-managed;
+applying it is release 1.1 (plan P5).
 
 **JPEG 2000 colour follows the codestream.** With MCT (ICT/RCT) the codec has already
 produced RGB, so a `YBR_ICT`/`YBR_RCT` label must not trigger a second conversion
@@ -70,6 +75,22 @@ produced RGB, so a `YBR_ICT`/`YBR_RCT` label must not trigger a second conversio
 is converted after decoding, with subsampled chroma repeated. NVSlide passes each
 level (and so its `photometric`) to the registered `image/jp2` decoder; `examples/slides.js`
 and nv-ohif use `@niivue/dcm2niix`'s `createFrameDecoder`.
+
+**JPEG-LS and monochrome.** JPEG-LS (`.4.80`/`.4.81`) levels use the `image/jls` codec, decoded
+by the same dcm2niix pool. Samples are 8-16-bit unsigned; manifests carry DICOM `bitsStored`.
+- Colour above 8 bits is scaled to 8 by `round(v * 255 / (2^bitsStored - 1))`.
+- Monochrome tiles are decoded to samples, not RGBA. NVSlide windows them with one
+  `{ calMin, calMax }` for the whole slide (`slide.setWindow`; default `0..2^bitsStored - 1`),
+  inverts MONOCHROME1 after windowing, and keeps the samples so a new window re-renders
+  cached tiles without re-decoding (2 more bytes per pixel in the tile cache at 16 bits).
+  A decoder that returns only a bitmap (the browser's baseline JPEG) is read back to 8-bit
+  samples for monochrome levels, so monochrome JPEG windows and inverts the same way. The
+  read-back needs a 2D OffscreenCanvas (without one, Safari < 16.4, such tiles show
+  unwindowed), and anti-fingerprinting browsers may perturb it by about 1 grey level.
+- Not in nv-mcp yet: `set_slide` drives the controller's slide plane, which has no window
+  setter; a window parameter needs `setSlidePlaneWindow` first.
+- The slides demo shows a `calMin,calMax` field for monochrome slides; in OHIF,
+  `niivueSetWindowLevel` sets it.
 
 ---
 

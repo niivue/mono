@@ -74,7 +74,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     key: string,
     bitmap: ImageBitmap,
   ): WebGLTexture | null {
-    const existing = this._textures.get(key)
+    const existing = this._textures.get(key, bitmap)
     if (existing) return existing
     const tex = gl.createTexture()
     if (!tex) return null
@@ -82,7 +82,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
     setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
-    this._textures.set(key, tex, bitmap.width * bitmap.height * 4)
+    this._textures.set(key, tex, bitmap.width * bitmap.height * 4, bitmap)
     return tex
   }
 

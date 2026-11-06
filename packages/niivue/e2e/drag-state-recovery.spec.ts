@@ -7,8 +7,8 @@ import { test } from './sharedPage'
 // chunked-volume streaming pump is gated on it), and clear the accumulated stroke
 // so the NEXT pointerup does not re-commit a stroke the user never drew.
 //
-// This needs a real instance + a real canvas hit-test, so it lives in the e2e
-// tier: the Bun unit runner cannot import NiiVue's `import.meta.glob` graph.
+// This needs a real canvas, its pointer events and a hit-test against the
+// rendered view, so it lives in the e2e tier.
 
 // Attach a visible instance with an open drawing, then drag a pen stroke on the
 // axial slice WITHOUT releasing. Leaves the pointer mid-drag.

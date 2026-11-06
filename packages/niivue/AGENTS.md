@@ -64,10 +64,14 @@ Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, ou
 ### End-to-end tests (Playwright)
 
 Browser-based e2e tests live in `e2e/*.spec.ts` and run in real headless Chromium
-against the Vite dev server. They exist because some code can't be reached by the
-Bun unit runner: the controller (`NVControlBase`) imports Vite `?worker&inline`
-and `?raw` modules, so it can't be imported under Bun, and rendering / document
-round-trips need a GPU context. Use these for anything needing a real instance.
+against the Vite dev server. Keep them for what needs a browser: rendering (pixels
+from a real GPU context), real Workers, DOM image decoding and pointer input.
+
+Everything else runs under Bun with a real controller and no canvas: the preload
+(`scripts/bunTestPreload.ts`) maps the Vite `?raw` / `?worker` imports and stands
+in for `requestAnimationFrame`, and `src/testing/headless.ts` gives `file://` URLs
+into dev-images. Document round-trips, loading, state and events belong there
+(see `src/loadDocument.*.test.ts`), not in `e2e/`.
 
 ```bash
 bun run test:e2e         # playwright test (config: playwright.config.ts)
@@ -102,7 +106,7 @@ canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 
 ### What's NOT yet covered by unit tests
 
-The following modules require a browser or GPU context and are not covered by the Bun unit test suite. A Playwright e2e suite (`e2e/`, see above) now covers document save/reload round-trips end-to-end; broader rendering/visual coverage is still to come.
+The following modules require a browser or GPU context and are not covered by the Bun unit test suite. Their output is covered by the Playwright e2e suite (`e2e/`, see above).
 
 - `gl/`, `wgpu/` — GPU shader/rendering code
 - `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies

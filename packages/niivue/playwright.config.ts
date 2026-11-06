@@ -1,11 +1,12 @@
 import { defineConfig, devices } from '@playwright/test'
 import { defaultLaunchOptions } from './e2e/launchOptions'
 
-// End-to-end tests that need a real browser: NiiVue's module graph uses Vite's
-// `import.meta.glob` (so it can't be imported under the Bun unit-test runner) and
-// its rendering/document round-trips need a GPU context. These run against the
-// Vite dev server (source is served directly, same as the demos). Kept OUT of the
-// hermetic unit `test` target — run with `bun run test:e2e` (or `nx e2e niivue`).
+// End-to-end tests that need a real browser: rendering, a GPU context, DOM
+// image decoding, real Workers and canvas input. State and logic tests drive a
+// headless controller under bun test instead (src/testing/headless.ts). These
+// run against the Vite dev server (source is served directly, same as the
+// demos). Kept OUT of the hermetic unit `test` target — run with
+// `bun run test:e2e` (or `nx e2e niivue`).
 
 const PORT = 5273
 const BASE_URL = `http://localhost:${PORT}`

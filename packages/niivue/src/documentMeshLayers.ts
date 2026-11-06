@@ -12,9 +12,8 @@ import type { MeshLayerFromUrlOptions } from './NVTypes'
  * also narrows the optional `url` to a required `string`, matching
  * `MeshLayerFromUrlOptions`.
  *
- * Extracted as a pure function because the document-reconstruction module is
- * not unit-testable under the bun test runner (its transitive imports evaluate
- * Vite's `import.meta.glob`).
+ * A pure function, so the rule is unit-tested apart from document
+ * reconstruction (which fetches and decodes; see loadDocument.*.test.ts).
  */
 export function selectUrlMeshLayers(
   layers?: NVDocumentMeshLayer[],

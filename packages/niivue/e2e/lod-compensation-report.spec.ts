@@ -7,9 +7,8 @@ import { test } from './sharedPage'
 // inactive case must name its reason, and the active case must report the
 // SAME numbers the shader is given.
 //
-// This is an e2e rather than a Bun unit test because the report reads through
-// the controller (whose module graph uses import.meta.glob) and asks the
-// attached view for its coarse-floor dims.
+// This is an e2e rather than a Bun unit test because the report asks the
+// attached view (a real GPU context) for its coarse-floor dims.
 
 const setup = `
   const { default: NiiVue } = await import('/src/index.ts')

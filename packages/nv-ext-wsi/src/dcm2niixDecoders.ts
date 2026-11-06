@@ -19,15 +19,8 @@ const frameDecoder = (): Promise<FrameDecoder> => {
 
 const LUT_SIZE = 33 // the standard device-link grid; exact to 0.5 at its nodes
 
-// FrameDecoder.iccLut is newer than @niivue/dcm2niix rc.1; without it nothing is baked.
-type IccLut = (
-  profile: Uint8Array,
-  options: { size: number; signal?: AbortSignal },
-) => Promise<Uint8Array | null>
-
 const bakeProfile: SlideIccTransform = async (profile, signal) => {
-  const d = (await frameDecoder()) as FrameDecoder & { iccLut?: IccLut }
-  if (!d.iccLut) return null
+  const d = await frameDecoder()
   const data = await d.iccLut(profile, { size: LUT_SIZE, signal })
   return data && { size: LUT_SIZE, data }
 }

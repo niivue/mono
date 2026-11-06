@@ -500,9 +500,54 @@ async function renderScene(
     is3DCrosshairVisible: false,
     ...args.options,
   })
-  await nv.attachToCanvas(canvas)
-  if (nv.backend !== backend)
+  // Share one GPUDevice across scenes on this page. A new device per scene
+  // costs ~0.5 s of setup on SwiftShader (CI's Ubuntu job), and each scene
+  // still gets its own NiiVue. The override is installed only while a scene
+  // runs, so other specs on the shared page keep real devices; the shared
+  // device ignores destroy() and leaves the cache once it is lost.
+  type DeviceCache = Map<string, Promise<GPUDevice>>
+  const gpu = navigator.gpu as
+    | (GPU & { __e2eDevices?: DeviceCache })
+    | undefined
+  const realRequestAdapter = gpu?.requestAdapter
+  if (gpu && realRequestAdapter && backend === 'webgpu') {
+    const cache: DeviceCache = gpu.__e2eDevices ?? new Map()
+    gpu.__e2eDevices = cache
+    gpu.requestAdapter = async (options?: GPURequestAdapterOptions) => {
+      const adapter = await realRequestAdapter.call(gpu, options)
+      if (!adapter) return adapter
+      const realRequestDevice = adapter.requestDevice.bind(adapter)
+      adapter.requestDevice = (descriptor?: GPUDeviceDescriptor) => {
+        const key = JSON.stringify(descriptor ?? {})
+        let device = cache.get(key)
+        if (!device) {
+          device = realRequestDevice(descriptor).then((d) => {
+            d.destroy = () => {}
+            d.lost.then(() => {
+              if (cache.get(key) === device) cache.delete(key)
+            })
+            return d
+          })
+          cache.set(key, device)
+        }
+        return device
+      }
+      return adapter
+    }
+  }
+  const restoreGpu = () => {
+    if (gpu && realRequestAdapter) gpu.requestAdapter = realRequestAdapter
+  }
+  try {
+    await nv.attachToCanvas(canvas)
+  } catch (e) {
+    restoreGpu()
+    throw e
+  }
+  if (nv.backend !== backend) {
+    restoreGpu()
     return { skip: `${backend} fell back to ${nv.backend}` }
+  }
 
   const view = () => nv.view as unknown as SceneView
   const nextFrame = () => new Promise((r) => requestAnimationFrame(r))
@@ -579,6 +624,7 @@ async function renderScene(
     return await Promise.race([runScene(), lost])
   } finally {
     done = true
+    restoreGpu()
   }
 }
 

@@ -25,9 +25,8 @@ world sub-box and frames it.
    the camera never enters the cube → fixes the empty-space/holes that appeared
    when zooming past ~1.4x. Byte-identical at zoom 1. Both backends (shared fn).
 4. **niivue: focus/LOD box lines clipped to the render tile**
-   (`view/NVSliceLayout.ts` `buildFocusBoxLines` + `clipSegmentToRect`): the line
-   renderer draws full-canvas, so a magnified box used to bleed its edges across
-   the 2D slice tiles. Now Liang-Barsky-clipped to the tile rect.
+   (`gl/boxLine.ts`, `wgpu/boxLine.ts`): a magnified box used to bleed its edges
+   across the 2D slice tiles. Now each render tile is scissored to its rect.
 
 ## REMAINING (the committed caveat)
 

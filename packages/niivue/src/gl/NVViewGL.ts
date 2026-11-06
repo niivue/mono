@@ -28,6 +28,7 @@ import {
   stampAfterVertexWrite,
 } from '@/view/meshGpuSync'
 import * as NVAnnotation from '@/view/NVAnnotation'
+import { type BoxTile, packBoxEdges } from '@/view/NVBoxEdges'
 import {
   canUseCinematicOverlays,
   cinematicOptionsForFrame,
@@ -76,6 +77,7 @@ import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
 import { sceneUnit } from '@/volume/utils'
 import { GLBench } from './bench'
+import { BoxLineRenderer } from './boxLine'
 import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -127,6 +129,7 @@ export default class NVGlview {
   meshPipelines: Record<string, boolean>
   volumeRenderer: VolumeRenderer
   lineRenderer: LineRenderer
+  boxLineRenderer: BoxLineRenderer
   polygonRenderer: PolygonRenderer
   polygon3DRenderer: Polygon3DRenderer
   fontRenderer: FontRenderer
@@ -236,6 +239,7 @@ export default class NVGlview {
     // Render layer instances
     this.volumeRenderer = new VolumeRenderer(defaultMatcap(options.matcaps))
     this.lineRenderer = new LineRenderer()
+    this.boxLineRenderer = new BoxLineRenderer()
     this.polygonRenderer = new PolygonRenderer()
     this.polygon3DRenderer = new Polygon3DRenderer()
     this.fontRenderer = new FontRenderer()
@@ -320,6 +324,7 @@ export default class NVGlview {
       `WebGL2 ${renderer} :: ${vendor} - maxTexture 2D:${this.max2D} 3D:${this.max3D} antiAlias:${this.isAntiAlias}`,
     )
     this.lineRenderer.init(gl)
+    this.boxLineRenderer.init(gl)
     this.polygonRenderer.init(gl)
     this.polygon3DRenderer.init(gl)
     this.colorbarRenderer.init(gl)
@@ -834,6 +839,8 @@ export default class NVGlview {
       buildPlaneOutline3DRenderData(md.planeOutlines, md.ui.crosshairColor),
     )
     const crossLinesList: ReturnType<typeof buildLine>[] = []
+    const boxEdges = packBoxEdges(md)
+    const boxTiles: BoxTile[] = []
     // Render each tile
     for (let i = 0; i < screenSlices.length; i++) {
       const tile = screenSlices[i]
@@ -950,51 +957,15 @@ export default class NVGlview {
       ) {
         tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
       }
-      // Outline the focus box on 3D render tiles (project its 8 corners through
-      // this tile's MVP; drawn with the crosshair/overlay lines below).
-      if (md._focusBox && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
-        crossLinesList.push(
-          ...NVSliceLayout.buildFocusBoxLines(
-            md._focusBox,
-            mvpMatrix as mat4,
-            ltwh,
-            buildLine,
-          ),
-        )
-      }
-      // Debug: outline every LOD brick (colored per level) on render tiles.
-      if (md._lodBoxes && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
-        for (const lodBox of md._lodBoxes) {
-          crossLinesList.push(
-            ...NVSliceLayout.buildFocusBoxLines(
-              lodBox,
-              mvpMatrix as mat4,
-              ltwh,
-              buildLine,
-            ),
-          )
-        }
-      }
-      // Outline the block a 3D vector stroke is drawing on (pick hint).
-      if (
-        md._pickedBlockBox &&
-        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER
-      ) {
-        crossLinesList.push(
-          ...NVSliceLayout.buildFocusBoxLines(
-            md._pickedBlockBox,
-            mvpMatrix as mat4,
-            ltwh,
-            buildLine,
-          ),
-        )
-      }
-      gl.viewport(
+      const glRect = [
         bx + ltwh[0],
         fullCanvasH - by - ltwh[1] - ltwh[3],
         ltwh[2],
         ltwh[3],
-      )
+      ]
+      if (boxEdges && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER)
+        boxTiles.push({ mvp: mvpMatrix as mat4, rect: glRect })
+      gl.viewport(glRect[0], glRect[1], glRect[2], glRect[3])
       // Layer 1: Volume rendering
       if (this.volumeRenderer.hasVolume() && volumes.length > 0) {
         // For global3d tiles, render the per-tile resolved volume (tileVol)
@@ -1676,6 +1647,12 @@ export default class NVGlview {
     if (allLines.length > 0 && this.lineRenderer.isReady) {
       if (allLines.length > this.maxLines) this.maxLines = allLines.length
       this.lineRenderer.draw(gl, null, null, null, allLines, this.maxLines)
+    }
+    if (boxEdges) {
+      this.boxLineRenderer.draw(gl, boxEdges, boxTiles, [bx, glBoundsY, bw, bh])
+      gl.viewport(bx, glBoundsY, bw, bh)
+      if (this._isSubCanvasBounds) gl.scissor(bx, glBoundsY, bw, bh)
+      else gl.disable(gl.SCISSOR_TEST)
     }
     // Is the frame just drawn complete? Nothing queued or mid-upload for the
     // working set this draw requested, no cross-fade still animating, no drag
@@ -2384,6 +2361,7 @@ export default class NVGlview {
     // Destroy render layer instances
     this.volumeRenderer.destroy()
     this.lineRenderer.destroy()
+    this.boxLineRenderer.destroy()
     this.polygonRenderer.destroy()
     this.polygon3DRenderer.destroy()
     this.fontRenderer.destroy()

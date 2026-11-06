@@ -173,7 +173,7 @@ Fired after a volume is successfully added (via `addVolume()` or `loadVolumes()`
 | `volume` | `NVImage` | The newly loaded volume |
 
 #### `meshLoaded`
-Fired after a mesh is successfully added (via `addMesh()` or `loadMeshes()`). Fires once per mesh.
+Fired after a mesh is successfully added (via `addMesh()` or `loadMeshes()`). Fires once per mesh added; a mesh the model cannot read is logged and fires nothing. `detail.mesh` is the added mesh, not the last entry of `nv.meshes`.
 
 | Field | Type | Description |
 |-------|------|-------------|

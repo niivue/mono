@@ -257,7 +257,7 @@ export const SETTINGS: readonly Setting[] = [
   ),
   num(
     'meshThicknessOn2D',
-    'On 2D slices, draw only mesh within this many millimetres of the slice, over it; 0 or null draws all mesh in front of the slice, and null in a report means that.',
+    'On 2D slices, draw only mesh within this distance of the slice, in world units (mm, or um on a micrometre volume), over it; 0 or null draws all mesh in front of the slice, and null in a report means that.',
     {
       min: 0,
       nullAs: Number.POSITIVE_INFINITY,

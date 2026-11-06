@@ -77,6 +77,8 @@ export interface VolumeUpdate {
 /** A volume as NiiVue keeps it once loaded, in the part the tools read. */
 export interface ShownVolume {
   name: string
+  /** The NIfTI header; `xyzt_units` says what world coordinates are measured in. */
+  hdr?: { xyzt_units?: number }
   /** NiiVue's id for it, which `setModulationImage` and the 4D loaders take. */
   id?: string
   /** Where it was fetched from; absent for a file the person dropped in. */
@@ -901,3 +903,12 @@ export interface NiiVueHost {
 
 export type Handler = (params: Record<string, unknown>) => unknown
 export type Handlers = Record<string, Handler>
+
+/**
+ * The unit of the scene's world coordinates: NiiVue keeps them as loaded, so a
+ * micrometre volume answers in micrometres (NIfTI xyzt_units, low 3 bits).
+ */
+export function worldUnit(view: Pick<View, 'volumes'>): 'mm' | 'um' | 'm' {
+  const code = (view.volumes[0]?.hdr?.xyzt_units ?? 0) & 7
+  return code === 3 ? 'um' : code === 1 ? 'm' : 'mm'
+}

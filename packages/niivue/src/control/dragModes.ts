@@ -15,6 +15,7 @@ import {
   rulerTickLabels,
 } from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { sceneUnit } from '@/volume/utils'
 
 /**
  * Movement (in CSS pixels) a `crosshairPan` gesture must reach (>=) before it
@@ -280,7 +281,11 @@ export function updateDragOverlay(ctrl: NiiVue): void {
     }
     // Distance text at line midpoint
     if (startMM && endMM) {
-      const label = formatDistance(dist, ui.isMeasureUnitsVisible)
+      const label = formatDistance(
+        dist,
+        ui.isMeasureUnitsVisible,
+        sceneUnit(ctrl.model).label,
+      )
       const mx = (sx + ex) * 0.5
       const my = (sy + ey) * 0.5
       overlay.text?.push({

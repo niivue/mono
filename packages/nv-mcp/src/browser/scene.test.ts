@@ -129,9 +129,23 @@ describe('sceneState', () => {
     const h = host(view, { extraState: () => ({ sounding: true }) })
     expect(sceneState(h)).toEqual({
       volume: 'mni152.nii.gz',
-      crosshair: { mm: [-50, 0, 0] },
+      crosshair: { mm: [-50, 0, 0], unit: 'mm' },
       plane: { name: 'off', depth: PLANE_NONE, azimuth: 0, elevation: 0 },
       sounding: true,
+    })
+  })
+
+  it('names the unit of a micrometre volume, whose coordinates are not converted', async () => {
+    const view = fakeView({
+      volumes: [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }],
+    })
+    expect(sceneState(host(view)).crosshair).toEqual({
+      mm: [0, 0, 0],
+      unit: 'um',
+    })
+    expect(await coreHandlers(host(view)).where_am_i({})).toMatchObject({
+      crosshair: { unit: 'um' },
+      description: 'Crosshair at 0, 0, 0 um.',
     })
   })
 
@@ -274,6 +288,15 @@ describe('go_to_region', () => {
       ).go_to_region({ region: 'Insula_L' }),
     ).rejects.toThrow('not in MNI space')
     await expect(
+      coreHandlers(
+        host(
+          fakeView({
+            volumes: [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }],
+          }),
+        ),
+      ).go_to_region({ region: 'Insula_L' }),
+    ).rejects.toThrow('not in MNI space')
+    await expect(
       coreHandlers({ view: fakeView() }).go_to_region({ region: 'Insula_L' }),
     ).rejects.toThrow('no atlas')
     const small = fakeView({
@@ -336,7 +359,7 @@ describe('where_am_i', () => {
     expect(await coreHandlers(h).where_am_i({})).toEqual({
       volume: 'mni152.nii.gz',
       volumes: [{ index: 0, name: 'mni152.nii.gz' }],
-      crosshair: { mm: [0, 0, 50], frac: [0.5, 0.5, 0.75] },
+      crosshair: { mm: [0, 0, 50], unit: 'mm', frac: [0.5, 0.5, 0.75] },
       plane: { name: 'off', depth: PLANE_NONE, azimuth: 0, elevation: 0 },
       camera: { azimuth: 110, elevation: 15 },
       description: 'up.',
@@ -919,6 +942,7 @@ describe('set_labels', () => {
         { text: 'Insula', mm: [38, 6, 2], region: 'Insula_R' },
         { text: 'here', mm: [1, 2, 3] },
       ],
+      unit: 'mm',
     })
     expect(view.drawScene).toHaveBeenCalled()
   })
@@ -954,6 +978,7 @@ describe('set_labels', () => {
         { text: 'outside', mm: [500, 0, 0] },
       ],
       dimOthers: 0.2,
+      unit: 'mm',
     })
     expect(labels).toHaveBeenCalledWith([
       {
@@ -1022,7 +1047,10 @@ describe('set_labels', () => {
   it('clears with an empty list, and refuses nothing to do', async () => {
     const labels = mock()
     const handlers = coreHandlers(host(fakeView(), { labels }))
-    expect(await handlers.set_labels({ clear: true })).toEqual({ labels: [] })
+    expect(await handlers.set_labels({ clear: true })).toEqual({
+      labels: [],
+      unit: 'mm',
+    })
     expect(labels).toHaveBeenCalledWith([])
     await expect(handlers.set_labels({})).rejects.toThrow(/needs labels/)
     await expect(handlers.set_labels({ labels: [] })).rejects.toThrow(
@@ -1055,6 +1083,18 @@ describe('set_labels', () => {
       coreHandlers(
         host(fakeView(), { labels, atlasApplies: () => false }),
       ).set_labels({ labels: [{ region: 'Insula_L' }] }),
+    ).rejects.toThrow(/MNI/)
+    await expect(
+      coreHandlers(
+        host(
+          fakeView({
+            volumes: [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }],
+          }),
+          { labels },
+        ),
+      ).set_labels({
+        labels: [{ region: 'Insula_L' }],
+      }),
     ).rejects.toThrow(/MNI/)
   })
 })

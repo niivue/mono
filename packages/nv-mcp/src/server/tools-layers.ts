@@ -225,7 +225,7 @@ export const LAYER_SCHEMAS = {
       .array(z.number())
       .optional()
       .describe(
-        'The new vertex positions in millimetres, x, y and z for each vertex in order; the vertex ' +
+        'The new vertex positions in world units, x, y and z for each vertex in order; the vertex ' +
           'count and triangles stay as they are. A call is capped at 4 MB, so send a large mesh with `url`.',
       ),
     url: z

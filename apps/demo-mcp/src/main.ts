@@ -34,6 +34,7 @@ import {
   type PageAction,
   type PointLabel,
   sceneState,
+  worldUnit,
 } from '@niivue/nv-mcp/browser'
 import { uikitControls } from '@niivue/nv-mcp/uikit'
 import { loadDefaultFont, UIKitPointLabelOverlay } from '@niivue/uikit'
@@ -76,7 +77,7 @@ function requireAtlas(): Promise<AtlasLike> {
 }
 
 function mmText(mm: ArrayLike<number>): string {
-  return `${mm[0].toFixed(0)}, ${mm[1].toFixed(0)}, ${mm[2].toFixed(0)} mm`
+  return `${mm[0].toFixed(0)}, ${mm[1].toFixed(0)}, ${mm[2].toFixed(0)} ${worldUnit(nv)}`
 }
 
 /** The place in words: the crosshair, and the region under it once the atlas is here. */
@@ -84,7 +85,7 @@ async function describe(): Promise<string> {
   if (!nv.volumes[0]) return 'No volume is loaded yet.'
   const mm = nv.getCrosshairPos()
   let place = `Crosshair at ${mmText(mm)} in ${nv.volumes[0].name}`
-  if (isMni && atlas) {
+  if (isMni && atlas && worldUnit(nv) === 'mm') {
     const region = (await atlas).regionAt(mm)
     place += region ? `, in the ${region}` : ', outside any labelled region'
   }
@@ -183,7 +184,7 @@ const host: NiiVueHost = {
   data: dataPalette(CATALOG),
   atlas: requireAtlas,
   labels: showLabels,
-  atlasApplies: () => isMni,
+  atlasApplies: () => isMni && worldUnit(nv) === 'mm',
   loaded: ({ mni }) => {
     isMni = mni
     void refreshWhere()

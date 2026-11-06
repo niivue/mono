@@ -1,3 +1,17 @@
+## 1.0.0-rc.94 (2026-11-06)
+
+### Fixes
+
+- report micrometer voxels in mm for extensions and clickToSegment; warn on mixed units in loadVolumes ([20c8db12](https://github.com/niivue/mono/commit/20c8db12))
+- report micrometer voxel volumes in mm3 and thin ruler ticks in 1/2/5 steps ([532fb356](https://github.com/niivue/mono/commit/532fb356))
+- **niivue:** read the world unit from xyzt_units for ruler and labels ([#202](https://github.com/niivue/mono/issues/202))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.93 (2026-11-05)
 
 ### Fixes

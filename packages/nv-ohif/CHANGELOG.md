@@ -1,3 +1,18 @@
+## 1.0.0-rc.90 (2026-11-06)
+
+### Fixes
+
+- **niivue:** read the world unit from xyzt_units for ruler and labels ([#202](https://github.com/niivue/mono/issues/202))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.94
+- Updated uikit to 1.0.0-rc.89
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.89 (2026-11-05)
 
 ### Updated Dependencies

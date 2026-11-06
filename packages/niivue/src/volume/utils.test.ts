@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
+import { log } from '@/logger'
 import { calculateRAS } from '@/math/NVTransforms'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTIHeader, NVImage } from '@/NVTypes'
@@ -21,6 +22,8 @@ import {
   toTypedView,
   toTypedViewOrU8,
   volumeTR,
+  voxelSizeMM,
+  warnMixedUnits,
 } from './utils'
 
 // ---------------------------------------------------------------------------
@@ -715,5 +718,32 @@ describe('robustDisplayWindow', () => {
     // The outliers pull globalMax past the robust high.
     expect(hi).toBeLessThan(globalMax)
     expect(lo).toBeGreaterThanOrEqual(globalMin)
+  })
+})
+
+describe('voxelSizeMM', () => {
+  test('scales micrometer spacing to mm', () => {
+    const hdr = { xyzt_units: 11 } // um + sec
+    expect(voxelSizeMM({ pixDimsRAS: [3, 1000, 500, 2], hdr })).toEqual([
+      1, 0.5, 0.002,
+    ])
+  })
+  test('keeps mm spacing and is null without RAS dims', () => {
+    const hdr = { xyzt_units: 10 }
+    expect(voxelSizeMM({ pixDimsRAS: [3, 2, 2, 3], hdr })).toEqual([2, 2, 3])
+    expect(voxelSizeMM({ hdr })).toBeNull()
+  })
+})
+
+describe('warnMixedUnits', () => {
+  test('warns only for volumes whose units differ from the base', () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const mm = { name: 'mm', hdr: { xyzt_units: 10 } }
+    const um = { name: 'um', hdr: { xyzt_units: 11 } }
+    warnMixedUnits(mm, [mm, um])
+    warnMixedUnits(undefined, [um])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]?.[0])).toContain("'um' is in um")
+    warn.mockRestore()
   })
 })

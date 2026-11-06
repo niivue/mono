@@ -5,7 +5,7 @@ import {
   computeDescriptiveStats,
   type DescriptiveStats,
 } from '@/volume/descriptives'
-import { getImageDataRAS } from '@/volume/utils'
+import { getImageDataRAS, voxelSizeMM } from '@/volume/utils'
 
 /**
  * One mask for getDescriptives: a volume index, whose non-zero voxels count,
@@ -162,7 +162,7 @@ export function regionDescriptives(
       if (!keep) m[i] = 0
     }
   }
-  const voxelVolumeMM3 =
-    vol.pixDimsRAS[1] * vol.pixDimsRAS[2] * vol.pixDimsRAS[3]
+  const v = voxelSizeMM(vol) // non-null: pixDimsRAS checked above
+  const voxelVolumeMM3 = v ? v[0] * v[1] * v[2] : 0
   return computeDescriptiveStats(values, voxelVolumeMM3, mask)
 }

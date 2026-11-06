@@ -184,4 +184,17 @@ describe('allenAtlasChannelFile', () => {
     expect(file.name).toBe('DNA.nii')
     expect(file.size).toBe(352 + img.length)
   })
+
+  test('converts sidecar spacing to the micrometres it labels', async () => {
+    const mm = parseAllenAtlasInfo({
+      ...SIDECAR,
+      pixel_size_unit: 'mm',
+      pixel_size_z: 0.003,
+    })
+    const file = allenAtlasChannelFile(mm, new Uint8Array(12), 'DNA')
+    const hdr = new DataView(await file.arrayBuffer())
+    // pixdim[1..3] at bytes 80/84/88; tile_width is half of width, so x and y double.
+    expect(hdr.getFloat32(80, true)).toBeCloseTo(2000)
+    expect(hdr.getFloat32(88, true)).toBeCloseTo(3)
+  })
 })

@@ -9,7 +9,7 @@
  */
 
 import type { TypedVoxelArray } from '@/NVTypes'
-import { createNiftiArray } from './utils'
+import { createNiftiArray, NIFTI_UNITS_MICRON, withSpatialUnits } from './utils'
 
 /** The origin-centred affine (flat row-major 4x4) for a `dims` voxel grid. */
 export function centeredAffine(
@@ -38,7 +38,10 @@ export function centeredAffine(
   ]
 }
 
-/** One channel's voxels as an origin-centred NIfTI named `${name}.nii`. */
+/**
+ * One channel's voxels as an origin-centred NIfTI named `${name}.nii`, with
+ * `spacing` in micrometers and `xyzt_units` saying so.
+ */
 export function channelVolumeFile(
   dims: readonly [number, number, number],
   spacing: readonly [number, number, number],
@@ -52,6 +55,7 @@ export function channelVolumeFile(
     centeredAffine(dims, spacing),
     datatypeCode,
     img,
+    withSpatialUnits(10, NIFTI_UNITS_MICRON), // um + sec
   )
   return new File([bytes], `${name}.nii`, { type: 'application/octet-stream' })
 }

@@ -50,6 +50,13 @@ describe('shapesSignature (#124)', () => {
     )
   })
 
+  it('changes when the ruler unit changes', () => {
+    const ruler = { ...shape(), length: 2 }
+    expect(shapesSignature([{ ...ruler, unit: 'um' }])).not.toBe(
+      shapesSignature([ruler]),
+    )
+  })
+
   it('tags length and label so one cannot alias the other', () => {
     const noLabel = { ...shape(), label: undefined }
     // Untagged, length 0 and one empty label line both hash as mix(0).

@@ -70,6 +70,10 @@ export function shapesSignature(
       mix(5)
       mix(Math.round(s.length * 100))
     }
+    if (s.unit !== undefined) {
+      mix(7)
+      str(s.unit)
+    }
     if (s.label) {
       mix(6)
       mix(s.label.x | 0)

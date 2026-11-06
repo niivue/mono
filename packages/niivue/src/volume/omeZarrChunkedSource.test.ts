@@ -158,6 +158,7 @@ describe('omeZarrChunkedSource', () => {
       { level: 1, shape: [2, 2, 2], spacing: [2, 2, 1] },
     ])
     expect(source.zarr.channelCount).toBe(2)
+    expect(source.xyztUnits).toBe(3 | 8) // um + sec
   })
 
   test('reads an interior brick across chunk boundaries', async () => {

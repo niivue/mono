@@ -102,9 +102,10 @@ const UNDEFINED_LENGTH = 0xffffffff
 const MAX_DEPTH = 8
 const MAX_HEADER = 64 << 20
 const MAX_GRID = 1 << 22
-// (Optical path, focal plane) pairs in one file; each is a slide whose levels
-// rescan the file's frames. Real slides have a few paths and tens of planes.
-const MAX_PAIRS = 256
+const MAX_SLIDE_TILES = 2 * MAX_GRID
+// (Optical path, focal plane) pairs in one file, each a slide. Real files have
+// a few paths and tens of planes; a multiplexed z-stack a few hundred.
+const MAX_PAIRS = 4096
 const NUMERIC_BYTES: Record<string, number> = { US: 2, UL: 4, SL: 4 }
 const tagOf = (g: number, e: number): number => ((g << 16) | e) >>> 0
 const T = {
@@ -127,8 +128,6 @@ const T = {
   colorSpace: tagOf(0x0028, 0x2002),
   container: tagOf(0x0040, 0x0512),
   zOffset: tagOf(0x0040, 0x074a),
-  sliceSpacing: tagOf(0x0018, 0x0088),
-  origin: tagOf(0x0048, 0x0008),
   totalColumns: tagOf(0x0048, 0x0006),
   totalRows: tagOf(0x0048, 0x0007),
   opticalPathSeq: tagOf(0x0048, 0x0105),
@@ -373,8 +372,6 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   let sharedSpacing: string | undefined
   let sharedPath: string | undefined
   let sharedZ: number | undefined
-  let sliceSpacingMM: number | undefined
-  let originZ: number | undefined
   let perFrame = 0
   for (const e of elements) {
     if (e.depth === 0) top.set(e.tag, e)
@@ -387,9 +384,6 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       if (e.tag === T.spacing) sharedSpacing = text(b, e)
       if (e.tag === T.opticalPathId) sharedPath = text(b, e)
       if (e.tag === T.zOffset) sharedZ = numberOf(b, e)
-      if (e.tag === T.sliceSpacing) sliceSpacingMM = numberOf(b, e)
-    } else if (e.root === T.origin) {
-      if (e.tag === T.zOffset) originZ = numberOf(b, e)
     } else if (e.root === T.perFrame) perFrame = Math.max(perFrame, e.item + 1)
   }
   icc.forEach((v, i) => {
@@ -422,6 +416,14 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   const focalPlaneCount = int(T.focalPlanes, 1, 1, 0xffff)
   const concatOffset = int(T.concatOffset, 0, 0, 0xffffffff)
   const sparse = str(T.organization) === 'TILED_SPARSE'
+  // TILED_FULL frames enumerate tiles x planes x paths, so none lies past them;
+  // a huge concatenation offset would otherwise derive a huge path index.
+  const pathCount = int(T.opticalPaths, 1, 1, 0xffff)
+  if (!sparse && concatOffset + frameCount > grid * focalPlaneCount * pathCount)
+    throw new Skip(
+      'malformed',
+      `frames past ${grid} tiles x ${focalPlaneCount} planes x ${pathCount} paths`,
+    )
   const info: InstanceInfo = {
     instance: {
       id: str(T.sop),
@@ -484,7 +486,7 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     }
   }
   // An identifier missing from OpticalPathSequence is its own path, not path 0.
-  // The tile-slot cap below bounds how many paths a file can name.
+  // MAX_PAIRS below bounds how many paths a file can name.
   const pathIndex = new Map<string, number>()
   pathIds.forEach((id, i) => {
     if (!pathIndex.has(id)) pathIndex.set(id, i)
@@ -524,19 +526,6 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     !zCount && sharedZ !== undefined && (sparse || focalPlaneCount === 1)
   if (useSharedZ) z.fill(sharedZ as number)
   info.zStated = zCount > 0 || useSharedZ
-  // Implicit planes in µm from the origin's Z and the plane spacing, so they
-  // rank with levels that state ZOffset (an overview often holds one plane).
-  if (
-    !info.zStated &&
-    !sparse &&
-    originZ !== undefined &&
-    (focalPlaneCount === 1 || sliceSpacingMM !== undefined)
-  ) {
-    const stepUM = (sliceSpacingMM ?? 0) * 1000
-    for (let f = 0; f < frameCount; f++)
-      z[f] = originZ + (z[f] as number) * stepUM
-    info.zStated = true
-  }
   // Each (optical path, focal plane) becomes a slide with its own grid-sized
   // tile map, so a small file naming thousands of planes must not reach groupSlides.
   const { planes } = info
@@ -713,7 +702,7 @@ export async function indexDicomWsi(
   return {
     version: 1,
     producer: 'nv-ext-wsi/indexDicomWsi',
-    slides: groupSlides(infos),
+    slides: groupSlides(infos, skipped),
     skipped,
   }
 }
@@ -721,6 +710,8 @@ export async function indexDicomWsi(
 interface Member {
   info: InstanceInfo
   pathIndex: number
+  /** The file's frames on this slide's path and plane. */
+  frames: number[]
 }
 
 // TILED_FULL can derive a path index past the sequence's items.
@@ -777,13 +768,27 @@ function rankStatedPlanes(infos: InstanceInfo[]): void {
 }
 
 /** Contract 2: a slide is study + series + frame of reference + container + optical path + focal plane. */
-function groupSlides(infos: InstanceInfo[]): SlideIndexSlide[] {
+function groupSlides(
+  infos: InstanceInfo[],
+  skipped: SlideIndexSkipped[],
+): SlideIndexSlide[] {
   rankStatedPlanes(infos)
   const slides = new Map<string, { slide: SlideIndexSlide; own: Member[] }>()
   for (const info of infos) {
     if (!info.volume) continue
-    info.planes.forEach((set, pathIndex) => {
-      for (const plane of set) {
+    // One pass buckets the frames, so each slide walks only its own.
+    const buckets: Map<number, number[]>[] = []
+    for (let f = 0; f < info.frameCount; f++) {
+      const p = info.path[f] as number
+      buckets[p] ??= new Map()
+      const byPlane = buckets[p] as Map<number, number[]>
+      const z = info.z[f] as number
+      const list = byPlane.get(z)
+      if (list) list.push(f)
+      else byPlane.set(z, [f])
+    }
+    buckets.forEach((byPlane, pathIndex) => {
+      for (const [plane, frames] of byPlane) {
         const opticalPath = pathName(info, pathIndex)
         const key = `${slideBase(info, pathIndex)}|${plane}`
         let entry = slides.get(key)
@@ -804,7 +809,7 @@ function groupSlides(infos: InstanceInfo[]): SlideIndexSlide[] {
           }
           slides.set(key, entry)
         }
-        entry.own.push({ info, pathIndex })
+        entry.own.push({ info, pathIndex, frames })
       }
     })
   }
@@ -822,8 +827,25 @@ function groupSlides(infos: InstanceInfo[]): SlideIndexSlide[] {
       const key = `${info.totalColumns}x${info.totalRows}`
       byMatrix.set(key, [...(byMatrix.get(key) ?? []), k])
     })
-    for (const ks of byMatrix.values())
-      slide.levels.push(buildLevel(slide, ks, own))
+    // Opening a slide builds a map per level; a real pyramid totals about 4/3 of
+    // level 0, so near-equal levels past this are dropped, not built.
+    let slots = 0
+    for (const ks of byMatrix.values()) {
+      const { info } = own[ks[0] as number] as Member
+      slots +=
+        Math.ceil(info.totalColumns / info.tileWidth) *
+        Math.ceil(info.totalRows / info.tileHeight)
+      if (slots > MAX_SLIDE_TILES) {
+        for (const k of ks)
+          skipped.push({
+            file: (own[k] as Member).info.instance.file,
+            reason: 'malformed',
+            message: `level ${info.totalColumns}x${info.totalRows} takes its slide past ${MAX_SLIDE_TILES} tiles`,
+          })
+        continue
+      }
+      slide.levels.push(buildLevel(ks, own))
+    }
     const l0 = own[0] as Member
     slide.pixelSpacingMM = l0.info.pixelSpacingMM
     slide.iccProfile = l0.info.icc[l0.pathIndex]
@@ -831,22 +853,11 @@ function groupSlides(infos: InstanceInfo[]): SlideIndexSlide[] {
   })
 }
 
-function buildLevel(
-  slide: SlideIndexSlide,
-  ks: number[],
-  own: Member[],
-): SlideIndexLevel {
+function buildLevel(ks: number[], own: Member[]): SlideIndexLevel {
   const i0 = (own[ks[0] as number] as Member).info
   const columns = Math.ceil(i0.totalColumns / i0.tileWidth)
   const rows = Math.ceil(i0.totalRows / i0.tileHeight)
-  const mine = (f: number, m: Member): boolean =>
-    m.info.path[f] === m.pathIndex && m.info.z[f] === slide.focalPlane
-  // Count first, so the frame arrays are sized once.
-  let total = 0
-  for (const k of ks) {
-    const m = own[k] as Member
-    for (let f = 0; f < m.info.frameCount; f++) if (mine(f, m)) total++
-  }
+  const total = ks.reduce((n, k) => n + (own[k] as Member).frames.length, 0)
   const frames: SlideIndexFrames = {
     instance: new Uint32Array(total),
     frame: new Uint32Array(total),
@@ -858,8 +869,7 @@ function buildLevel(
   for (const k of ks) {
     const m = own[k] as Member
     const { info } = m
-    for (let f = 0; f < info.frameCount; f++) {
-      if (!mine(f, m)) continue
+    for (const f of m.frames) {
       const x = info.column[f] as number
       const y = info.row[f] as number
       frames.instance[slot] = k
@@ -873,11 +883,14 @@ function buildLevel(
   }
   // Counted by sorting the frames' tiles, so indexing never allocates a grid-sized map.
   const sorted = frames.tile.slice().sort()
+  // -1 (invalid) sorts first, so one compare skips it and repeats.
   let placed = 0
-  for (let s = 0; s < total; s++) {
-    const t = sorted[s] as number
-    if (t >= 0 && t !== sorted[s - 1]) placed++
-  }
+  let prev = -1
+  for (const t of sorted)
+    if (t > prev) {
+      placed++
+      prev = t
+    }
   const holes = columns * rows - placed
   return {
     width: i0.totalColumns,
@@ -902,9 +915,10 @@ function buildLevel(
 export function tileMap(level: SlideIndexLevel): Int32Array {
   const map = new Int32Array(level.columns * level.rows).fill(-1)
   const { tile } = level.frames
-  for (let slot = 0; slot < tile.length; slot++) {
+  // Backwards, so the first frame for a tile is written last and wins.
+  for (let slot = tile.length - 1; slot >= 0; slot--) {
     const t = tile[slot] as number
-    if (t >= 0 && map[t] === -1) map[t] = slot
+    if (t >= 0) map[t] = slot
   }
   return map
 }

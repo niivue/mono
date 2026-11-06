@@ -71,16 +71,15 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   from OpticalPathSequence is its own path. `focalPlane` is a plane index, not µm:
   stated ZOffsets (shared or per frame, to the nm) are ranked across the slide's
   levels (lowest first), so a lower level holding only some planes joins the right
-  ones. A TILED_FULL level stating none is placed in µm from its origin's ZOffset
-  and SpacingBetweenSlices when given, else keeps its implicit plane index; such a
-  level is matched by index, so it may join the wrong plane if other levels hold a
-  different set of planes. A single shared ZOffset in a multi-plane TILED_FULL file is
-  ignored. ZOffset on only some of a file's frames is `malformed`.
+  ones. A multi-plane TILED_FULL level stating no ZOffset keeps its implicit plane
+  index (scanners give TotalPixelMatrixOriginSequence no Z), so it is matched by
+  index and may join the wrong plane if other levels hold a different set of planes.
+  A single shared ZOffset in a multi-plane TILED_FULL file is ignored. ZOffset on only some of a file's frames is `malformed`.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.
 - Hostile input is bounded: the header read stops at 64 MiB, sequences at 8 levels,
-  a level at 2^22 tiles, a file at 256 (optical path, focal plane) pairs, and counts
+  a level at 2^22 tiles, a file at 4096 (optical path, focal plane) pairs, a slide's levels at 2 x 2^22 tiles in total, TILED_FULL frames at tiles x planes x NumberOfOpticalPaths, and counts
   and offsets are checked against the file size (`malformed` otherwise).
 - The index holds only per-frame data, bounded by the files' sizes, so a folder of
   many slides indexes in memory proportional to its headers. Each level reports

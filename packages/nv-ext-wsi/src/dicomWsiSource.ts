@@ -9,6 +9,7 @@ import type {
 import {
   fileKey,
   type SlideIndexInstance,
+  type SlideIndexLevel,
   type SlideIndexSlide,
   tileMap,
 } from './dicomIndex'
@@ -88,7 +89,7 @@ export class DicomWsiSource implements SlideTileSource {
   ) {
     this.files = filesFor(slide, files)
     this.maps = slide.levels.map(tileMap)
-    this.manifest = manifestOf(slide, { maps: this.maps })
+    this.manifest = manifestOf(slide, this.maps)
   }
 
   bind(host: SlideSourceHost): void {
@@ -101,10 +102,10 @@ export class DicomWsiSource implements SlideTileSource {
     _label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const frames = this.slide.levels[level.index]?.frames
-    const slot = this.maps[level.index]?.[tile.y * level.columns + tile.x] ?? -1
-    if (!frames || slot < 0)
-      throw new Error(`no frame for tile ${tile.x},${tile.y}`)
+    const { frames } = this.slide.levels[level.index] as SlideIndexLevel
+    const map = this.maps[level.index] as Int32Array
+    const slot = map[tile.y * level.columns + tile.x] as number
+    if (slot < 0) throw new Error(`no frame for tile ${tile.x},${tile.y}`)
     const file = this.files[frames.instance[slot] as number] as File
     const offset = frames.offset[slot] as number
     const length = frames.length[slot] as number
@@ -132,15 +133,14 @@ export class DicomWsiSource implements SlideTileSource {
  */
 export function manifestOf(
   slide: SlideIndexSlide,
+  /** Each level's {@link tileMap}. */
+  maps: readonly Int32Array[],
   {
     format = 'dicom-wsi-index-v1',
     fileUrl = (i: SlideIndexInstance) => i.file,
-    maps = slide.levels.map(tileMap),
   }: {
     format?: string
     fileUrl?: (instance: SlideIndexInstance) => string
-    /** Each level's {@link tileMap}, when the caller already built them. */
-    maps?: Int32Array[]
   } = {},
 ): NVSlideManifest {
   const l0 = slide.levels[0]

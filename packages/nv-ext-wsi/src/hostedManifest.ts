@@ -25,10 +25,9 @@ export async function manifestFromIndex(
 ): Promise<NVSlideManifest> {
   const byInstance = filesFor(slide, files)
   const maps = slide.levels.map(tileMap)
-  const manifest = manifestOf(slide, {
+  const manifest = manifestOf(slide, maps, {
     format: 'dicom-wsi-range-v1',
     fileUrl: fileUrlFor,
-    maps,
   })
   for (const [i, level] of manifest.levels.entries()) {
     // manifestOf builds one manifest level per indexed level.
@@ -40,9 +39,10 @@ export async function manifestFromIndex(
         slide.instances[indexed.instances[0] as number] as SlideIndexInstance,
       )
     const tiles: NVSlideTileManifest[] = []
-    for (const t of level.tiles) {
-      if (!t) continue
-      const slot = (maps[i] as Int32Array)[t.y * level.columns + t.x] as number
+    // manifestOf lays level.tiles out like the map: one entry per tile.
+    for (const [ti, slot] of (maps[i] as Int32Array).entries()) {
+      if (slot < 0) continue
+      const t = level.tiles[ti] as NVSlideTileManifest
       const k = frames.instance[slot] as number
       const ranges = await frameRanges(
         byInstance[k] as File,

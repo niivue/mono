@@ -288,7 +288,7 @@ describe('indexDicomWsi on hostile input', () => {
   test('thousands of focal planes are refused, not made into slides', async () => {
     const t0 = performance.now()
     const idx = await indexDicomWsi([
-      planes(Array.from({ length: 3000 }, (_, k) => String(k))),
+      planes(Array.from({ length: 5000 }, (_, k) => String(k))),
     ])
     expect(idx.slides).toEqual([])
     expect(idx.skipped.map((s) => s.reason)).toEqual(['malformed'])
@@ -441,41 +441,6 @@ describe('indexDicomWsi on hostile input', () => {
     const f = dicom({ perFrame: sq(0x5200, 0x9230, [z55, z55, other, other]) })
     expect(await reasons(f)).toEqual(['malformed'])
   })
-  test('implicit planes placed in µm by origin and spacing rank with stated ones', async () => {
-    // Level 0: implicit planes at 0 and 2 µm (origin Z 0, spacing 0.002 mm);
-    // level 1 states only 2 µm.
-    const l0 = dicom({
-      sop: el(0x0008, 0x0018, 'UI', str('1.2.9.80', '\0')),
-      totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
-      focalPlanes: el(0x0048, 0x0303, 'UL', le(2, 4)),
-      origin: sq(0x0048, 0x0008, [item(el(0x0040, 0x074a, 'DS', str('0')))]),
-      shared: sq(0x5200, 0x9229, [
-        item(
-          sq(0x0028, 0x9110, [item(el(0x0018, 0x0088, 'DS', str('0.002')))]),
-        ),
-      ]),
-    })
-    const l1 = dicom(
-      {
-        sop: el(0x0008, 0x0018, 'UI', str('1.2.9.81', '\0')),
-        frames: el(0x0028, 0x0008, 'IS', str('1')),
-        totalColumns: el(0x0048, 0x0006, 'UL', le(16, 4)),
-        totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
-        perFrame: sq(0x5200, 0x9230, [item(zSeq('2'))]),
-      },
-      pixelData([payload(9)]),
-    )
-    expect(planesOf(await indexDicomWsi([l0, l1]))).toEqual([
-      [0, [[32, 2, 0]]],
-      [
-        1,
-        [
-          [32, 2, 0],
-          [16, 1, 0],
-        ],
-      ],
-    ])
-  })
   test('one shared ZOffset does not collapse several implicit planes', async () => {
     const f = dicom({
       totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
@@ -550,8 +515,8 @@ describe('indexDicomWsi on hostile input', () => {
       ],
     ])
   })
-  test('a file naming hundreds of optical paths is refused quickly', async () => {
-    const N = 300
+  test('a file naming thousands of optical paths is refused quickly', async () => {
+    const N = 5000
     const frame = (k: number) =>
       item(
         sq(0x0048, 0x0207, [item(el(0x0048, 0x0106, 'SH', str(`p${k}`)))]),
@@ -576,8 +541,58 @@ describe('indexDicomWsi on hostile input', () => {
     )
     const t0 = performance.now()
     expect((await indexDicomWsi([f])).skipped.map((k) => k.message)).toEqual([
-      'over 256 (optical path, focal plane) pairs',
+      'over 4096 (optical path, focal plane) pairs',
     ])
     expect(performance.now() - t0).toBeLessThan(1000)
+  })
+  test('TILED_FULL frames past tiles x planes x paths are malformed, quickly', async () => {
+    const f = dicom(
+      {
+        frames: el(0x0028, 0x0008, 'IS', str('1')),
+        totalColumns: el(0x0048, 0x0006, 'UL', le(16, 4)),
+        totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+        concatOffset: el(0x0020, 0x9228, 'UL', le(100_000_000, 4)),
+      },
+      pixelData([payload(0)]),
+    )
+    const t0 = performance.now()
+    expect(await reasons(f)).toEqual(['malformed'])
+    expect(performance.now() - t0).toBeLessThan(100)
+  })
+
+  test('near-equal levels past twice the grid cap are dropped from the slide', async () => {
+    // One-pixel tiles: each level is about 4M tiles, so two fit under 2 x 2^22.
+    const level = (k: number) => {
+      const size = 2048 - k
+      return dicom(
+        {
+          sop: el(0x0008, 0x0018, 'UI', str(`1.2.9.7${k}`, '\0')),
+          org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+          frames: el(0x0028, 0x0008, 'IS', str('1')),
+          rows: el(0x0028, 0x0010, 'US', le(1, 2)),
+          columns: el(0x0028, 0x0011, 'US', le(1, 2)),
+          totalColumns: el(0x0048, 0x0006, 'UL', le(size, 4)),
+          totalRows: el(0x0048, 0x0007, 'UL', le(size, 4)),
+          perFrame: sq(0x5200, 0x9230, [
+            item(
+              sq(0x0048, 0x021a, [
+                item(
+                  el(0x0048, 0x021e, 'SL', le(1, 4)),
+                  el(0x0048, 0x021f, 'SL', le(1, 4)),
+                ),
+              ]),
+            ),
+          ]),
+        },
+        pixelData([payload(k)]),
+      )
+    }
+    const idx = await indexDicomWsi(
+      Array.from({ length: 20 }, (_, k) => level(k)),
+    )
+    expect(idx.slides.map((s) => s.levels.map((l) => l.width))).toEqual([
+      [2048, 2047],
+    ])
+    expect(idx.skipped).toHaveLength(18)
   })
 })

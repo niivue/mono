@@ -95,10 +95,14 @@ export const fileKey = (f: File): string => f.webkitRelativePath || f.name
 
 const UNDEFINED_LENGTH = 0xffffffff
 // Hostile-input bounds. No WSI header nests sequences deeper than 4, the
-// largest corpus header is 15 MB, and the largest level grid is 1.5M tiles.
+// largest corpus header is 15 MB, and the largest level grid is 379k tiles.
 const MAX_DEPTH = 8
 const MAX_HEADER = 64 << 20
 const MAX_GRID = 1 << 22
+// Tile-map slots (grid x optical paths x focal planes) in one instance: 256 MB of
+// Int32 maps, about 177 planes on the largest corpus grid.
+const MAX_SLOTS = 1 << 26
+const NUMERIC_BYTES: Record<string, number> = { US: 2, UL: 4, SL: 4 }
 const tagOf = (g: number, e: number): number => ((g << 16) | e) >>> 0
 const T = {
   transferSyntax: tagOf(0x0002, 0x0010),
@@ -256,7 +260,7 @@ const text = (b: Uint8Array, e: Element): string =>
 
 /** A numeric value: binary for US/UL/SL, else the first value of IS/DS text. NaN when it does not parse. */
 function numberOf(b: Uint8Array, e: Element): number {
-  const bytes = { US: 2, UL: 4, SL: 4 }[e.vr]
+  const bytes = NUMERIC_BYTES[e.vr]
   if (!bytes) return Number(text(b, e).split('\\')[0])
   if (e.length < bytes) return Number.NaN
   const v = new DataView(b.buffer, b.byteOffset + e.offset, bytes)
@@ -481,6 +485,22 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       path[f] = Math.floor(g / (grid * focalPlaneCount))
     }
   }
+  // Each (optical path, focal plane) becomes a slide with its own grid-sized
+  // tile map, so a small file naming thousands of planes must not reach groupSlides.
+  const planes: Set<number>[] = []
+  let pairs = 0
+  for (let f = 0; f < frameCount; f++) {
+    const zf = z[f] as number
+    if (!Number.isFinite(zf))
+      throw new Skip('malformed', `frame ${f + 1} has no finite focal plane`)
+    const p = path[f] as number
+    planes[p] ??= new Set()
+    const seen = planes[p] as Set<number>
+    if (seen.has(zf)) continue
+    seen.add(zf)
+    if (++pairs * grid > MAX_SLOTS)
+      throw new Skip('malformed', `over ${MAX_SLOTS} tile slots across planes`)
+  }
   await frameSpans(info, b, pixel, top, readAt)
   return info
 }
@@ -540,7 +560,8 @@ async function frameSpans(
     // last runs to the sequence delimiter. DicomWsiSource verifies the item tag.
     const bot = await readAt(pixel + 20, botLength)
     for (let f = 0; f < frameCount; f++) offset[f] = first + u32(bot, 4 * f) + 8
-    let valid = (offset[frameCount - 1] as number) <= size
+    // PS3.5 A.4: the first entry is 0.
+    let valid = u32(bot, 0) === 0 && (offset[frameCount - 1] as number) <= size
     for (let f = 0; f + 1 < frameCount && valid; f++) {
       const n = (offset[f + 1] as number) - 8 - (offset[f] as number)
       valid = n >= 0
@@ -553,8 +574,11 @@ async function frameSpans(
         if (h.tag !== T.item || p + 8 + h.length > size) break
         p += 8 + h.length
       }
-      length[frameCount - 1] = p - (offset[frameCount - 1] as number)
-      return
+      // A last entry that is not at an item header fails here: walk instead.
+      if (p > (offset[frameCount - 1] as number) - 8) {
+        length[frameCount - 1] = p - (offset[frameCount - 1] as number)
+        return
+      }
     }
   }
   // No table, or a table that is not strictly increasing within the file: walk

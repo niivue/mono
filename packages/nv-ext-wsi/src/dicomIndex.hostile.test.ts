@@ -225,4 +225,61 @@ describe('indexDicomWsi on hostile input', () => {
     expect(slide.levels[0]?.duplicates).toBe(2)
     expect(await tileLabels(slide, [sparse])).toEqual([2, -1, -1, 3])
   })
+  // Per-frame z for a sparse level of 1-px tiles on a 2048 x 2048 grid.
+  const planes = (zs: string[]) =>
+    dicom(
+      {
+        org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+        frames: el(0x0028, 0x0008, 'IS', str(String(zs.length))),
+        rows: el(0x0028, 0x0010, 'US', le(1, 2)),
+        columns: el(0x0028, 0x0011, 'US', le(1, 2)),
+        totalColumns: el(0x0048, 0x0006, 'UL', le(2048, 4)),
+        totalRows: el(0x0048, 0x0007, 'UL', le(2048, 4)),
+        perFrame: sq(
+          0x5200,
+          0x9230,
+          zs.map((z) =>
+            item(
+              sq(0x0048, 0x021a, [
+                item(
+                  el(0x0048, 0x021e, 'SL', le(1, 4)),
+                  el(0x0048, 0x021f, 'SL', le(1, 4)),
+                  el(0x0040, 0x074a, 'DS', str(z)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      },
+      pixelData(zs.map((_, k) => payload(k & 255))),
+    )
+
+  test('thousands of focal planes are refused, not made into slides', async () => {
+    const t0 = performance.now()
+    const idx = await indexDicomWsi([
+      planes(Array.from({ length: 3000 }, (_, k) => String(k))),
+    ])
+    expect(idx.slides).toEqual([])
+    expect(idx.skipped.map((s) => s.reason)).toEqual(['malformed'])
+    expect(performance.now() - t0).toBeLessThan(2000)
+  })
+
+  test('a non-finite focal plane is malformed', async () => {
+    expect(await reasons(planes(['abc']))).toEqual(['malformed'])
+  })
+
+  test('a Basic Offset Table whose last entry misses its item is walked instead', async () => {
+    const step = 14 // item header + 6-byte payload
+    const f = dicom(
+      {},
+      pixelData([0, 1, 2, 3].map(payload), [0, step, 2 * step, 3 * step + 2]),
+    )
+    const idx = await indexDicomWsi([f])
+    expect(idx.skipped).toEqual([])
+    const lengths = [...(idx.slides[0]?.levels[0]?.frames.length ?? [])]
+    expect(lengths).toEqual([6, 6, 6, 6])
+    expect(await tileLabels(idx.slides[0] as SlideIndexSlide, [f])).toEqual([
+      0, 1, 2, 3,
+    ])
+  })
 })

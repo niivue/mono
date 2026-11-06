@@ -69,7 +69,7 @@ async function frameRanges(
   )
   const what = `${file.name} at byte ${offset - 8}`
   const dv = new DataView(head.buffer)
-  if (head.length === 8 && dv.getUint32(4, true) === length) {
+  if (dv.getUint32(4, true) === length) {
     if (dv.getUint32(0, true) !== 0xe000fffe)
       throw new Error(`${what}: no item where the index says`)
     return { offset, length }
@@ -78,7 +78,6 @@ async function frameRanges(
     await file.slice(offset - 8, offset + length).arrayBuffer(),
   )
   const parts = fragmentsOf(span, what)
-  if (parts.length === 1) return { offset, length }
   return {
     fragments: parts.map((p) => ({
       offset: offset - 8 + p.offset,

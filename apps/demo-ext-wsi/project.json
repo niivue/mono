@@ -27,6 +27,12 @@
       ],
       "outputs": ["{projectRoot}/dist"]
     },
+    "e2e": {
+      "command": "node tests/folder.e2e.mjs",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["build"],
+      "inputs": ["typescript", "{projectRoot}/tests/**/*"]
+    },
     "typecheck": {
       "command": "bunx tsc --noEmit",
       "options": {

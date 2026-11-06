@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NiiVue - tiled TIFF slide demo</title>
+    <title>NiiVue - whole-slide demo</title>
     <link rel="icon" href="data:," />
     <style>
       body { margin: 0; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; background: #1c1c1f; color: #e8e8ea; }
@@ -17,9 +17,11 @@
     <header>
       <strong>nv-ext-wsi</strong>
       <input id="file" type="file" accept=".tif,.tiff,.svs,.btf" />
+      <label>DICOM-WSI folder <input id="folder" type="file" webkitdirectory multiple /></label>
+      <select id="slides" hidden></select>
       <input id="url" type="url" placeholder="https://... tiled TIFF / SVS (server must support Range + CORS)" />
       <button id="open" type="button">Open URL</button>
-      <span id="status">Pick a local tiled TIFF/SVS or enter a URL.</span>
+      <span id="status">Pick a local tiled TIFF/SVS or a DICOM-WSI folder, or enter a URL.</span>
     </header>
     <canvas id="canvas"></canvas>
     <script type="module" src="src/main.ts"></script>

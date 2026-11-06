@@ -2,7 +2,7 @@
   "name": "@niivue/nv-ext-wsi",
   "version": "1.0.0-rc.19",
   "type": "module",
-  "description": "Stream pyramidal/tiled (OME-)TIFF and SVS whole-slide images into NiiVue's NVSlide by HTTP Range, decoded with geotiff",
+  "description": "Whole-slide images for NiiVue's NVSlide: pyramidal/tiled (OME-)TIFF and SVS by HTTP Range (geotiff), and local DICOM-WSI folders",
   "main": "./dist/nv-ext-wsi.js",
   "module": "./dist/nv-ext-wsi.js",
   "types": "./dist/index.d.ts",
@@ -15,14 +15,21 @@
   "files": [
     "dist"
   ],
-  "comment:niivue-peer": "A literal range, not workspace:* (which bun publish pins to the exact current rc), so one release accepts later niivue rcs and 1.x. devDependencies keeps workspace:* for local dev. rc.87 adds the signal argument to fetchTileBytes; raise the floor when this package needs a newer niivue API.",
+  "comment:niivue-peer": "A literal range, not workspace:* (which bun publish pins to the exact current rc), so one release accepts later niivue rcs and 1.x. devDependencies keeps workspace:* for local dev. The floor is the first niivue release with sparse slide levels and per-tile fileUrl (#581), which the DICOM-WSI index and its sparse slides need; raise it when this package needs a newer niivue API.",
   "peerDependencies": {
-    "@niivue/niivue": ">=1.0.0-rc.87 <2"
+    "@niivue/dcm2niix": "^1.4.20261105-rc.1",
+    "@niivue/niivue": ">=1.0.0-rc.107 <2"
+  },
+  "peerDependenciesMeta": {
+    "@niivue/dcm2niix": {
+      "optional": true
+    }
   },
   "dependencies": {
     "geotiff": "^3.0.5"
   },
   "devDependencies": {
+    "@niivue/dcm2niix": "^1.4.20261105-rc.1",
     "@niivue/niivue": "workspace:*",
     "@types/bun": "^1.3.12",
     "typescript": "~5.8.3",

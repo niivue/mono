@@ -1,6 +1,6 @@
 # @niivue/nv-ext-wsi
 
-Formerly `@niivue/nv-ext-tiff`; the API is unchanged.
+Formerly `@niivue/nv-ext-tiff`, whose TIFF API is unchanged. It also opens local DICOM-WSI folders (see [Local DICOM-WSI folders](#local-dicom-wsi-folders)).
 
 Stream large tiled/pyramidal TIFF, BigTIFF, OME-TIFF and Aperio SVS whole-slide images into NiiVue's `NVSlide`, one tile at a time, using [geotiff](https://github.com/geotiffjs/geotiff.js).
 
@@ -12,7 +12,7 @@ Core NiiVue already reads TIFF volumes (strips, tiles, LZW, Deflate, PackBits) w
 bun add @niivue/nv-ext-wsi
 ```
 
-Requires `@niivue/niivue` as a peer dependency.
+Requires `@niivue/niivue` >= 1.0.0-rc.107 as a peer dependency: the first release with sparse slide levels and per-tile `fileUrl`, which DICOM-WSI slides need.
 
 ## Usage
 
@@ -48,6 +48,84 @@ pool.destroy()
 - **Decoders trust the compressed stream.** A tile whose JPEG header claims 30000x30000 px can exhaust memory: geotiff offers no bound on decoded size. Only open files you trust, or decode in workers with a `Pool`, so the damage stays in a worker rather than the tab.
 
 Not supported yet: 16-bit and multichannel fluorescence planes (only 8-bit RGB/gray displays correctly), choosing an OME plane other than the first, TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
+
+## Local DICOM-WSI folders
+
+```ts
+import { DicomWsiSource, indexDicomWsi, registerDcm2niixDecoders } from '@niivue/nv-ext-wsi'
+
+registerDcm2niixDecoders() // JPEG 2000 and JPEG-LS tiles; needs @niivue/dcm2niix
+const files = [...folderInput.files] // <input type="file" webkitdirectory>
+const index = await indexDicomWsi(files)
+const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
+```
+
+- `indexDicomWsi` reads only headers and item tags (`File.slice`), never pixel data.
+  It uses the Basic or Extended Offset Table when present, and otherwise walks the items.
+- It handles multi-fragment frames, TILED_SPARSE (holes stay empty), and
+  concatenations. TILED_FULL frames keep their implicit order; per-frame
+  positions, when given, win (items holding only other metadata, such as Frame
+  Content, do not change the order). A file with no DimensionOrganizationType is
+  placed by its per-frame positions (path and plane from per-frame values) when
+  it gives them, else in the implicit order.
+- Each optical path and focal plane becomes its own slide. A shared
+  OpticalPathIdentifier assigns every frame to that path; an identifier missing
+  from OpticalPathSequence is its own path. `focalPlane` is a plane index, not µm:
+  stated ZOffsets (shared or per frame, to the nm) are ranked across the slide's
+  levels (lowest first), so a lower level holding only some planes joins the right
+  ones. A multi-plane TILED_FULL level stating no ZOffset keeps its implicit plane
+  index (scanners give TotalPixelMatrixOriginSequence no Z), so it is matched by
+  index and may join the wrong plane if other levels hold a different set of planes.
+  A single shared ZOffset in a multi-plane TILED_FULL file is ignored. ZOffset on
+  only some of a file's frames is `malformed`.
+- Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
+  `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
+  `not-tiled`.
+- Hostile input is bounded: the header read stops at 64 MiB, sequences at 8 levels,
+  a level at 2^22 tiles, a file at 4096 (optical path, focal plane) pairs, TILED_FULL
+  frames at tiles x planes x NumberOfOpticalPaths, and counts and offsets are checked
+  against the file size (`malformed` otherwise). A slide's levels total at most
+  2 x 2^22 tiles; levels past that are dropped and listed in `skipped`.
+- The index holds only per-frame data, bounded by the files' sizes, so a folder of
+  many slides indexes in memory proportional to its headers. Each level reports
+  `duplicates` and `holes`; its grid-sized tile map is built only when
+  a slide is opened (`DicomWsiSource`) or a manifest is written.
+- `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
+  that changed since indexing fails rather than decoding garbage.
+- Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
+  (`registerDcm2niixDecoders`, with `@niivue/dcm2niix` as an optional peer dependency;
+  a decoder the host already registered wins).
+- Slides are shown with row 0 of the total pixel matrix at the top (`displayYAxis: 'down'`),
+  as OpenSlide shows them.
+- Index speed for the 8 OpenSlide DICOM-WSI test sets (local SSD; Chrome reads through
+  the `webkitdirectory` input in the demo):
+
+  | Set | Frames | Holes | Bun | Chrome |
+  |---|---|---|---|---|
+  | Hamamatsu-2 (EOT) | 6,199 | 0 | 2 ms | 12 ms |
+  | 3DHISTECH-2 (BOT, sparse, split L0) | 56,233 | 449,040 | 65 ms | 102 ms |
+  | Leica-4 (sparse) | 8,546 | 0 | 73 ms | 323 ms |
+  | 3DHISTECH-1 | 4,434 | 0 | 100 ms | 643 ms |
+  | JP2K-33003-1 (item walk) | 4,569 | 0 | 93 ms | 600 ms |
+  | CMU-1-JP2K-ICT (item walk) | 24,813 | 0 | 159 ms | 952 ms |
+  | CMU-1-JP2K-33005 (item walk) | 28,284 | 0 | 280 ms | 1.74 s |
+  | CMU-1-JP2K-RCT (item walk) | 24,813 | 0 | 429 ms | 2.78 s |
+
+  Indexing awaits `File.slice` reads, so the page stays responsive; a folder without
+  offset tables just takes longer in the browser.
+
+- Test fixtures: `fixtures/dicom-wsi` (synthetic, about 70 KB, with the generator
+  `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's
+  browser check).
+
+## Hosting an indexed slide
+
+`manifestFromIndex(slide, files, fileUrlFor)` turns an indexed slide into a `dicom-wsi-range-v1` manifest that NVSlide reads by HTTP Range, as the hosted demo slides are served:
+- Each tile has its offset and length, or `fragments` for a frame split across fragments.
+- Sparse levels list only their present tiles; NVSlide places them by `x`, `y`.
+- A level split across files (a concatenation) names each tile's `fileUrl`.
+
+`bun scripts/build-manifest.ts <slide-dir> <id>` indexes `<slide-dir>/files` and writes `<slide-dir>/manifest.json` for the first slide found, with tiles read from `files/<name>` (URL-encoded). Serve the directory with Range and CORS (see below).
 
 ## Range, CORS and full downloads
 

@@ -112,6 +112,23 @@ const LAYER_DEFAULTS: Omit<NVMeshLayer, 'values' | 'globalMin' | 'globalMax'> =
 // --- Public API ---
 
 /**
+ * Derive a mesh layer's `colormapLabel` from its `colormap`, as volumes do: a
+ * label colormap compiles to a label LUT spanning the layer's values (every
+ * frame), and a continuous one clears it. Call it only when the caller chose
+ * the colormap, so a layer loaded without one keeps the label table its file
+ * carried.
+ */
+export function applyLayerColormap(layer: NVMeshLayer): NVMeshLayer {
+  // finiteLabelRange skips NaN vertices; globalMin/globalMax are NaN when the
+  // first vertex is NaN, which would shrink a generated palette to 0..255.
+  layer.colormapLabel = NVCmaps.labelLutFor(
+    layer.colormap,
+    NVCmaps.finiteLabelRange(layer.values, 1, 0) ?? [0, 0],
+  )
+  return layer
+}
+
+/**
  * Create an NVMeshLayer from scalar values with computed min/max and merged options.
  */
 export function createLayer(
@@ -415,28 +432,31 @@ export async function loadLayersFromOptions(
   for (const opts of layerOptions) {
     const result = await loadLayerFromUrl(opts.url, nVert)
     const urlString = typeof opts.url === 'string' ? opts.url : opts.url.name
-    layers.push(
-      createLayer(result.values, nVert, {
-        nFrame4D: result.nFrame4D,
-        colormapLabel: result.colormapLabel ?? null,
-        colormapType: opts.colormapType ?? result.colormapType,
-        isTransparentBelowCalMin:
-          opts.isTransparentBelowCalMin ?? result.isTransparentBelowCalMin,
-        colormap: opts.colormap,
-        colormapNegative: opts.colormapNegative,
-        calMin: opts.calMin,
-        calMax: opts.calMax,
-        calMinNeg: opts.calMinNeg,
-        calMaxNeg: opts.calMaxNeg,
-        opacity: opts.opacity,
-        isColorbarVisible: opts.isColorbarVisible,
-        isColormapInverted: opts.isColormapInverted,
-        isAdditiveBlend: opts.isAdditiveBlend,
-        outlineWidth: opts.outlineWidth,
-        url: urlString,
-        name: opts.name ?? urlString,
-      }),
-    )
+    const layer = createLayer(result.values, nVert, {
+      nFrame4D: result.nFrame4D,
+      colormapLabel: result.colormapLabel ?? null,
+      colormapType: opts.colormapType ?? result.colormapType,
+      isTransparentBelowCalMin:
+        opts.isTransparentBelowCalMin ?? result.isTransparentBelowCalMin,
+      colormap: opts.colormap,
+      colormapNegative: opts.colormapNegative,
+      calMin: opts.calMin,
+      calMax: opts.calMax,
+      calMinNeg: opts.calMinNeg,
+      calMaxNeg: opts.calMaxNeg,
+      opacity: opts.opacity,
+      isColorbarVisible: opts.isColorbarVisible,
+      isColormapInverted: opts.isColormapInverted,
+      isAdditiveBlend: opts.isAdditiveBlend,
+      outlineWidth: opts.outlineWidth,
+      url: urlString,
+      name: opts.name ?? urlString,
+    })
+    // A label colormap replaces a file's label table. A continuous one does
+    // not: documents name the default 'warm' for a layer read with its own
+    // table, so it would otherwise clear the table on reload.
+    if (NVCmaps.isLabelColormap(opts.colormap)) applyLayerColormap(layer)
+    layers.push(layer)
   }
   return layers
 }

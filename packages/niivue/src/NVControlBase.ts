@@ -4725,29 +4725,11 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return this
     const m = meshes[meshIndex]
     const nVert = m.positions.length / 3
-    const result = await NVMeshLayers.loadLayerFromUrl(layerOpts.url, nVert)
-    const urlString =
-      typeof layerOpts.url === 'string' ? layerOpts.url : layerOpts.url.name
-    const newLayer = NVMeshLayers.createLayer(result.values, nVert, {
-      nFrame4D: result.nFrame4D,
-      colormapLabel: result.colormapLabel ?? null,
-      colormapType: layerOpts.colormapType ?? result.colormapType,
-      isTransparentBelowCalMin:
-        layerOpts.isTransparentBelowCalMin ?? result.isTransparentBelowCalMin,
-      colormap: layerOpts.colormap,
-      colormapNegative: layerOpts.colormapNegative,
-      calMin: layerOpts.calMin,
-      calMax: layerOpts.calMax,
-      calMinNeg: layerOpts.calMinNeg,
-      calMaxNeg: layerOpts.calMaxNeg,
-      opacity: layerOpts.opacity,
-      isColorbarVisible: layerOpts.isColorbarVisible,
-      isColormapInverted: layerOpts.isColormapInverted,
-      isAdditiveBlend: layerOpts.isAdditiveBlend,
-      outlineWidth: layerOpts.outlineWidth,
-      url: urlString,
-      name: layerOpts.name ?? urlString,
-    })
+    // Same option mapping and colormap rule as loadMeshes({ layers }).
+    const [newLayer] = await NVMeshLayers.loadLayersFromOptions(
+      [layerOpts],
+      nVert,
+    )
     m.layers.push(newLayer)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
     markMeshDataChanged(m)
@@ -4792,7 +4774,17 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const m = meshes[meshIndex]
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return
+    const previousColormap = m.layers[layerIndex].colormap
     Object.assign(m.layers[layerIndex], options)
+    // A changed colormap re-derives the label LUT unless one is given with it.
+    // Resending the current colormap (a threshold slider does) keeps the LUT,
+    // which may be the label table the layer's file carried.
+    if (
+      options.colormap !== undefined &&
+      options.colormap !== previousColormap &&
+      options.colormapLabel === undefined
+    )
+      NVMeshLayers.applyLayerColormap(m.layers[layerIndex])
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
     markMeshDataChanged(m)
     // Layer state is structural (not a MeshUpdate option diff); the mesh
@@ -7140,11 +7132,39 @@ export default class NiiVue extends EventTarget {
     cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
       Partial<Omit<ColorMap, 'R' | 'G' | 'B'>>,
   ): string {
+    const wasLabel = NVCmaps.isLabelColormap(name)
     const canonical = NVCmaps.addColormap(name, cmap)
     const def = NVCmaps.lookupColorMap(canonical)
     for (const vol of this.model.getVolumes()) {
       if (vol.colormap && NVCmaps.lookupColorMap(vol.colormap) === def)
         NVModel.applyColormap(vol, vol.colormap)
+    }
+    // A layer using this name took its LUT from it when either the old or the
+    // new definition is a label table, so re-derive it. When both are
+    // continuous, a layer named after it may be drawing its file's labels.
+    if (wasLabel || NVCmaps.isLabelColormap(canonical)) {
+      let isMeshChanged = false
+      for (const m of this.model.getMeshes()) {
+        const uses = (m.layers ?? []).filter(
+          (layer) => NVCmaps.lookupColorMap(layer.colormap) === def,
+        )
+        if (uses.length === 0) continue
+        for (const layer of uses) NVMeshLayers.applyLayerColormap(layer)
+        // Layers bake their colours; recomposite so the surface matches the
+        // legend, which reads colormapLabel.
+        NVMeshLayers.compositeLayers(
+          m.perVertexColors,
+          m.color,
+          m.layers,
+          m.colors,
+        )
+        markMeshDataChanged(m)
+        isMeshChanged = true
+      }
+      if (isMeshChanged)
+        this._updateGLMeshes().catch((e) =>
+          log.error('addColormap mesh update failed', e),
+        )
     }
     this.emit('colormapAdded', { name: canonical })
     return canonical

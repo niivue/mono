@@ -1,3 +1,24 @@
+## 1.0.0-rc.104 (2026-11-06)
+
+### Fixes
+
+- **niivue:** keep a combined mirror on the base grid when its own plan is swapped ([c328093b](https://github.com/niivue/mono/commit/c328093b))
+- **niivue:** follow a superseding swap instead of evicting the chunked entry ([6fa2e3ac](https://github.com/niivue/mono/commit/6fa2e3ac))
+- **niivue:** run chunk plan swaps on one entry one at a time ([847b5ee1](https://github.com/niivue/mono/commit/847b5ee1))
+- leave combined mirrors on the newest plan when base swaps overlap ([dad5733b](https://github.com/niivue/mono/commit/dad5733b))
+- catch a combined mirror up to a base plan swapped during its rebuild ([be4a47dc](https://github.com/niivue/mono/commit/be4a47dc))
+- **niivue:** keep the central chunk over edge fits, move mirrors with base swaps ([f0da60d5](https://github.com/niivue/mono/commit/f0da60d5))
+- **niivue:** keep a tile's central chunk and stream mirrors on the base plan ([8547ef90](https://github.com/niivue/mono/commit/8547ef90))
+- **niivue:** keep a tile's first chunk, split mirror budgets evenly ([a6d5c304](https://github.com/niivue/mono/commit/a6d5c304))
+- **niivue:** cap the frame's union of tile requests, not each tile ([6b355728](https://github.com/niivue/mono/commit/6b355728))
+- **niivue:** cap chunked working sets against combined-overlay mirror budgets ([#188](https://github.com/niivue/mono/issues/188))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.103 (2026-11-06)
 
 ### Performance

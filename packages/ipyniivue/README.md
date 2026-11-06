@@ -77,6 +77,14 @@ nv.add_volume_from_url(
 `loadVolumes(...)`. Keyword arguments are converted from snake_case to
 NiiVue's camelCase option names.
 
+OME-Zarr stores load through `@niivue/nv-ext-tile/zarr`, bundled into the
+widget: one pyramid level whole, or streamed brick by brick:
+
+```python
+await nv.load_ome_zarr(store_url, level=2)       # whole level, each channel a volume
+await nv.load_ome_zarr(store_url, stream=True)   # streamed, finer near the crosshair
+```
+
 The smoke-test notebook is:
 
 ```bash

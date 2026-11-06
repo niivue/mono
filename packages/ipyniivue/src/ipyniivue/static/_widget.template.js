@@ -9,6 +9,7 @@
 import NiiVue from '@niivue/niivue'
 import { conform, connectedLabel, otsu, removeHaze } from '@niivue/nv-ext-image-processing'
 import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'
+import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
 
 // Image-processing transforms bundled from @niivue/nv-ext-*.
 // Registered with NiiVue in initialize() so Python can apply them
@@ -453,6 +454,26 @@ async function initialize({ model }) {
     // Drawing extension: find first/last slices containing drawing data
     // along an axis. Returns { first, last } or null. Reads the live
     // bitmap from ctx.drawing; returns null if no drawing volume exists.
+    // OME-Zarr (nv-ext-tile/zarr): one pyramid level whole, or streamed.
+    if (msg.cmd === "__ext_load_ome_zarr") {
+      const [url, opts = {}] = coerceCommandArgs(msg.args)
+      try {
+        if (opts.stream) {
+          const source = await fetchOmeZarrChunkedSource(url, { channel: opts.channel, timepoint: opts.timepoint })
+          // loadChunkedVolume adds; this replaces, like loadVolumes.
+          await state.nv.removeAllVolumes()
+          await state.nv.loadChunkedVolume(source)
+        } else {
+          const channels = opts.channel == null ? undefined : [opts.channel]
+          await state.nv.loadVolumes(await loadOmeZarrVolumes(url, { level: opts.level, channels, timepoint: opts.timepoint }))
+        }
+        if (reqId !== null) respond(true, { volumes: state.nv.volumes.length, streamed: !!opts.stream })
+      } catch (err) {
+        if (reqId !== null) respond(false, err)
+        else console.error("ipyniivue: __ext_load_ome_zarr threw:", err)
+      }
+      return
+    }
     if (msg.cmd === "__ext_drawing_find_boundaries") {
       const args = coerceCommandArgs(msg.args)
       const axis = args[0] ?? 0

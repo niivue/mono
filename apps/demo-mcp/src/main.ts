@@ -179,9 +179,18 @@ const CATALOG: DataEntry[] = [
   },
 ]
 
+// load_ome_zarr: the extension is fetched on first use, not with the page.
+const omeZarr = () => import('@niivue/nv-ext-tile/zarr')
+
 const host: NiiVueHost = {
   view: nv,
   data: dataPalette(CATALOG),
+  omeZarr: {
+    loadOmeZarrVolumes: async (url, options) =>
+      (await omeZarr()).loadOmeZarrVolumes(url, options),
+    fetchOmeZarrChunkedSource: async (url, options) =>
+      (await omeZarr()).fetchOmeZarrChunkedSource(url, options),
+  },
   atlas: requireAtlas,
   labels: showLabels,
   atlasApplies: () => isMni && worldUnit(nv) === 'mm',

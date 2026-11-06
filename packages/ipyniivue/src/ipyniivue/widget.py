@@ -501,6 +501,48 @@ class NiiVue(_GeneratedNiiVue):
         """
         self.send({"cmd": "saveBitmap", "args": [filename, quality]})
 
+    # OME-Zarr (nv-ext-tile/zarr)
+
+    async def load_ome_zarr(
+        self,
+        url: str,
+        level: int | None = None,
+        channel: int | None = None,
+        timepoint: int | None = None,
+        stream: bool = False,
+    ) -> dict[str, Any]:
+        """Load an OME-Zarr (OME-NGFF) store, replacing the volumes shown.
+
+        Loads one pyramid level whole (each channel a volume), or with
+        ``stream=True`` streams the store brick by brick, finer near the
+        crosshair, for stores too large to load.
+
+        Parameters
+        ----------
+        url : str
+            Address of the store; the browser fetches it.
+        level : int, optional
+            Pyramid level, 0 the finest. Defaults to the finest level that
+            fits NiiVue's budget. Ignored when streaming.
+        channel : int, optional
+            One channel to show. Defaults to every channel (streaming shows
+            the first).
+        timepoint : int, optional
+            Timepoint of a time series. Defaults to the first.
+        stream : bool, optional
+            Stream instead of loading one level. Defaults to False.
+
+        Returns
+        -------
+        dict
+            ``{"volumes": int, "streamed": bool}``.
+        """
+        opts = {"level": level, "channel": channel, "timepoint": timepoint, "stream": stream}
+        return await self._request(
+            "__ext_load_ome_zarr",
+            [url, {k: v for k, v in opts.items() if v is not None}],
+        )
+
     # Drawing extension (nv-ext-drawing)
 
     async def find_drawing_boundary_slices(

@@ -1212,6 +1212,9 @@ function emitJs(api: ApiDescriptor): string {
   lines.push(
     `import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'`,
   )
+  lines.push(
+    `import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'`,
+  )
   lines.push('')
   lines.push('// Image-processing transforms bundled from @niivue/nv-ext-*.')
   lines.push(
@@ -1574,6 +1577,40 @@ function emitJs(api: ApiDescriptor): string {
   lines.push(
     '    // bitmap from ctx.drawing; returns null if no drawing volume exists.',
   )
+  lines.push(
+    '    // OME-Zarr (nv-ext-tile/zarr): one pyramid level whole, or streamed.',
+  )
+  lines.push('    if (msg.cmd === "__ext_load_ome_zarr") {')
+  lines.push('      const [url, opts = {}] = coerceCommandArgs(msg.args)')
+  lines.push('      try {')
+  lines.push('        if (opts.stream) {')
+  lines.push(
+    '          const source = await fetchOmeZarrChunkedSource(url, { channel: opts.channel, timepoint: opts.timepoint })',
+  )
+  lines.push(
+    '          // loadChunkedVolume adds; this replaces, like loadVolumes.',
+  )
+  lines.push('          await state.nv.removeAllVolumes()')
+  lines.push('          await state.nv.loadChunkedVolume(source)')
+  lines.push('        } else {')
+  lines.push(
+    '          const channels = opts.channel == null ? undefined : [opts.channel]',
+  )
+  lines.push(
+    '          await state.nv.loadVolumes(await loadOmeZarrVolumes(url, { level: opts.level, channels, timepoint: opts.timepoint }))',
+  )
+  lines.push('        }')
+  lines.push(
+    '        if (reqId !== null) respond(true, { volumes: state.nv.volumes.length, streamed: !!opts.stream })',
+  )
+  lines.push('      } catch (err) {')
+  lines.push('        if (reqId !== null) respond(false, err)')
+  lines.push(
+    '        else console.error("ipyniivue: __ext_load_ome_zarr threw:", err)',
+  )
+  lines.push('      }')
+  lines.push('      return')
+  lines.push('    }')
   lines.push('    if (msg.cmd === "__ext_drawing_find_boundaries") {')
   lines.push('      const args = coerceCommandArgs(msg.args)')
   lines.push('      const axis = args[0] ?? 0')

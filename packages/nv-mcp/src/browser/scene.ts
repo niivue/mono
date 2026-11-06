@@ -526,6 +526,58 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
     },
 
+    async load_ome_zarr(params) {
+      const url = text(params, 'url')
+      if (!url) throw new Error('load_ome_zarr needs a url.')
+      const zarr = host.omeZarr
+      if (!zarr)
+        throw new Error(
+          'This page cannot open OME-Zarr stores: it did not provide the nv-ext-tile loaders.',
+        )
+      const stream = flag(params, 'stream') ?? false
+      const level = integer(params, 'level')
+      const channel = integer(params, 'channel')
+      const timepoint = integer(params, 'timepoint')
+      try {
+        if (stream) {
+          if (!view.loadChunkedVolume || !view.removeAllVolumes)
+            throw new Error('this page cannot stream volumes')
+          const source = await zarr.fetchOmeZarrChunkedSource(url, {
+            channel,
+            timepoint,
+          })
+          // loadChunkedVolume adds; this tool replaces, like load_volume.
+          await view.removeAllVolumes()
+          await view.loadChunkedVolume(source)
+        } else {
+          const channels = channel === undefined ? undefined : [channel]
+          const volumes = await zarr.loadOmeZarrVolumes(url, {
+            level,
+            channels,
+            timepoint,
+          })
+          await view.loadVolumes(volumes as VolumeToLoad[])
+        }
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `The OME-Zarr store at ${url} could not be loaded: ${why}`,
+        )
+      }
+      const name = view.volumes[0]?.name ?? nameFromUrl(url)
+      host.loaded?.({ url, name, mni: false })
+      host.beforeAnswer?.()
+      view.drawScene()
+      const min = Array.from(view.model.scene2mm([0, 0, 0]))
+      const max = Array.from(view.model.scene2mm([1, 1, 1]))
+      return {
+        name,
+        streamed: stream,
+        volumes: view.volumes.length,
+        bounds: { mm: { min, max }, unit: worldUnit(view) },
+      }
+    },
+
     async where_am_i() {
       host.beforeAnswer?.()
       const volume = view.volumes[0]?.name ?? null

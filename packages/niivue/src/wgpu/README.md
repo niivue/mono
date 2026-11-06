@@ -9,7 +9,7 @@ This project can dynamically switch between two graphics APIs: the mature WebGL2
 * **Strict Memory Alignment:** WebGPU enforces rigorous data layout rules. For example, [copyBufferToTexture](https://developer.mozilla.org/en-US/docs/Web/API/GPUCommandEncoder/copyBufferToTexture) requires `bytesPerRow` to be a multiple of 256, necessitating manual padding and complex offset logic that WebGL2 handles automatically.
 * **Ecosystem Maturity:** Compared to WebGL2, there are fewer debugging tools, smaller community libraries, and less "battle-tested" documentation for edge-case hardware.
 * **Browser/Hardware Reach:** Even with support for some major browsers, older hardware or locked-down corporate environments may only support WebGL.
-* **No `preserveDrawingBuffer`:** WebGPU invalidates the canvas texture after each frame is composited. The browser's built-in "Save Image as…" context menu captures a blank PNG because the pixels are gone by the time the capture occurs. WebGL2 avoids this with `preserveDrawingBuffer: true`. Use `saveBitmap()` (which renders on demand) instead of the browser context menu to save canvas content.
+* **No `preserveDrawingBuffer`:** WebGPU invalidates the canvas texture after each frame is composited. The browser's built-in "Save Image as…" context menu captures a blank PNG because the pixels are gone by the time the capture occurs. NiiVue's WebGL2 view sets `preserveDrawingBuffer` only for a sub-canvas (`bounds`) instance. Use `saveBitmap()` or `getCanvasImage()` (both run a full frame, then copy in the same task) instead of the browser context menu or a later `drawImage` of the canvas.
 
 ### Potential Benefits of WebGPU
 

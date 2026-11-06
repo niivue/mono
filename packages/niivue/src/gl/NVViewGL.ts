@@ -185,13 +185,19 @@ export default class NVGlview {
         snapshot: () => ChunkStreamDetail,
       ) => void)
     | null = null
-  // Narrow public getters for bench.ts to read current render-area size
-  // without making the backing fields public or mutable.
+  // Narrow public getters for bench.ts and canvas capture to read the current
+  // render area without making the backing fields public or mutable.
   get boundsWidth(): number {
     return this._boundsWidth
   }
   get boundsHeight(): number {
     return this._boundsHeight
+  }
+  get boundsOffsetX(): number {
+    return this._boundsOffsetX
+  }
+  get boundsOffsetY(): number {
+    return this._boundsOffsetY
   }
   // Lazily created on first `view.bench` access; see ./bench.ts.
   private _bench: GLBench | null = null

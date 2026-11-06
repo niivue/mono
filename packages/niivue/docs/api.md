@@ -68,7 +68,7 @@ nv1.drawPenValue = 3
 ```
 
 A few setters (such as `volumeIsBackgroundMasking`) also start a GPU rebuild
-they cannot return. Before reading pixels or calling `saveBitmap()`, wait for it
+they cannot return. Before `getCanvasImage()` or `saveBitmap()`, wait for it
 with `await nv1.whenUpdatesSettle()`, which resolves once the GPU updates
 running or queued at the call have finished, not later ones, so a stream of
 updates does not hold it (it does not report a failed one).
@@ -190,7 +190,7 @@ Use **methods** for:
 - Multi-target operations (need to specify which item): `setVolume(idx, opts)`, `setFrame4D(id, frame)`
 - Special formats: `setClipPlane([depth, azimuth, elevation])`
 - String-to-number mapping: `setDragMode('contrast')`
-- IO: `saveDocument()`, `loadDocument()`, `saveBitmap()`, `loadFiles(files, { add })` (what a canvas drop does: `.nvd` via `loadDocument`, `.json` sidecars paired by basename, else `addImage` / `loadImage`; per-file failures are logged)
+- IO: `saveDocument()`, `loadDocument()`, `saveBitmap()`, `getCanvasImage()` (sync `ImageData` of the region the instance draws; null if it cannot draw), `loadFiles(files, { add })` (what a canvas drop does: `.nvd` via `loadDocument`, `.json` sidecars paired by basename, else `addImage` / `loadImage`; per-file failures are logged)
 - Remote assets: `setFont(font)` / `setFontFromUrl({ atlas, metrics })`, `addColormap(name, cmap)` / `addColormapFromUrl(url, name?)` / `hasColormap(name)` / `colormapWindow(name)` / `colormapNames(kind?)`, `loadMatcap(nameOrUrl)`. `addColormapFromUrl` derives `name` from the filename (stripping `.json.gz`/`.gz`/`.json`) if omitted, and dispatches `colormapAdded` after registration. A colormap with a `labels` array (even empty) is a label table; `setVolume(i, { colormap })` selects either kind, so atlases need no separate call. The same holds for mesh layers: `addMeshLayer`, `setMeshLayerProperty` and `loadMeshes` layer options given a label table look colours up by ID (label 0 transparent). At load, a layer keeps the label table its file carried (a GIfTI or CIFTI label file) unless a label colormap replaces it. Changing the colormap later with `setMeshLayerProperty` to a continuous one clears the table.
 
 ### Batch Updates for Per-Item Config

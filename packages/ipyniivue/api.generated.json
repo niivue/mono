@@ -4709,6 +4709,10 @@
         "reason": "return value is not JSON-serializable (JS extension context handle)"
       },
       {
+        "jsName": "getCanvasImage",
+        "reason": "return value is not JSON-serializable (browser ImageData; use save_bitmap)"
+      },
+      {
         "jsName": "getScreenTiles",
         "reason": "return value is not JSON-serializable (SliceTile geometry is gl-matrix Float32Array data; use hitTest, mmToCanvas and canvasToMM instead)"
       },

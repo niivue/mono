@@ -1598,19 +1598,11 @@ describe('load_ome_zarr', () => {
     const view = fakeView()
     const zarr = omeZarr()
     const result = await coreHandlers(
-      host(view, { omeZarr: zarr }),
-    ).load_ome_zarr({
-      url: 'https://x/s.ome.zarr',
-      level: 2,
-      channel: 1,
-    })
+      host(view, { omeZarr: async () => zarr }),
+    ).load_ome_zarr({ url: 'https://x/s.ome.zarr', level: 2, channel: 1 })
     expect(zarr.loadOmeZarrVolumes).toHaveBeenCalledWith(
       'https://x/s.ome.zarr',
-      {
-        level: 2,
-        channels: [1],
-        timepoint: undefined,
-      },
+      { level: 2, channels: [1], timepoint: undefined },
     )
     expect(view.loadVolumes).toHaveBeenCalledWith([
       { url: 'c0' },
@@ -1619,22 +1611,16 @@ describe('load_ome_zarr', () => {
     expect(result).toMatchObject({ streamed: false })
   })
 
-  it('streams through the page helper after removing the volumes shown', async () => {
-    const removeAllVolumes = mock(async () => {})
-    const view = fakeView({ removeAllVolumes })
+  it('streams through the page helper, replacing the scene', async () => {
+    const view = fakeView()
     const zarr = omeZarr()
-    await coreHandlers(host(view, { omeZarr: zarr })).load_ome_zarr({
-      url: 'https://x/s.ome.zarr',
-      stream: true,
-    })
-    expect(removeAllVolumes).toHaveBeenCalled()
+    await coreHandlers(host(view, { omeZarr: async () => zarr })).load_ome_zarr(
+      { url: 'https://x/s.ome.zarr', stream: true },
+    )
     expect(zarr.streamOmeZarr).toHaveBeenCalledWith(
       view,
       'https://x/s.ome.zarr',
-      {
-        channel: undefined,
-        timepoint: undefined,
-      },
+      { channel: undefined, timepoint: undefined, replace: true },
     )
     expect(view.loadVolumes).not.toHaveBeenCalled()
   })

@@ -1569,15 +1569,6 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      return')
   lines.push('    }')
   lines.push(
-    '    // Drawing extension: find first/last slices containing drawing data',
-  )
-  lines.push(
-    '    // along an axis. Returns { first, last } or null. Reads the live',
-  )
-  lines.push(
-    '    // bitmap from ctx.drawing; returns null if no drawing volume exists.',
-  )
-  lines.push(
     '    // OME-Zarr (nv-ext-tile/zarr): one pyramid level whole, or streamed.',
   )
   lines.push('    if (msg.cmd === "__ext_load_ome_zarr") {')
@@ -1585,11 +1576,10 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      try {')
   lines.push('        if (opts.stream) {')
   lines.push(
-    '          // Replaces, like loadVolumes; streamOmeZarr frees its manager and workers once the volume goes.',
+    '          // Replaces, like loadVolumes, once the store has opened; the helper frees its manager and workers when the volume goes.',
   )
-  lines.push('          await state.nv.removeAllVolumes()')
   lines.push(
-    '          await streamOmeZarr(state.nv, url, { channel: opts.channel, timepoint: opts.timepoint })',
+    '          await streamOmeZarr(state.nv, url, { channel: opts.channel, timepoint: opts.timepoint, replace: true })',
   )
   lines.push('        } else {')
   lines.push(
@@ -1610,6 +1600,15 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      }')
   lines.push('      return')
   lines.push('    }')
+  lines.push(
+    '    // Drawing extension: find first/last slices containing drawing data',
+  )
+  lines.push(
+    '    // along an axis. Returns { first, last } or null. Reads the live',
+  )
+  lines.push(
+    '    // bitmap from ctx.drawing; returns null if no drawing volume exists.',
+  )
   lines.push('    if (msg.cmd === "__ext_drawing_find_boundaries") {')
   lines.push('      const args = coerceCommandArgs(msg.args)')
   lines.push('      const axis = args[0] ?? 0')

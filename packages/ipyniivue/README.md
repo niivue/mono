@@ -11,7 +11,7 @@ NiiVue 0.6x; pin `ipyniivue<3` to keep it.
 ## Install for local development
 
 The bundled widget JavaScript (`src/ipyniivue/static/widget.js`,
-~1.3 MB) is gitignored — generate it before installing:
+~5.2 MB) is gitignored — generate it before installing:
 
 ```bash
 bun install                       # from the monorepo root, once

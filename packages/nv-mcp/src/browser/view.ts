@@ -897,21 +897,22 @@ export interface NiiVueHost {
   /** The data the page can load by id; a page without one declines the data tools. */
   data?: DataPalette
   /** The OME-Zarr loaders, `@niivue/nv-ext-tile/zarr` itself; a page without them declines `load_ome_zarr`. */
-  omeZarr?: OmeZarrLoaders
+  /** `@niivue/nv-ext-tile/zarr`, typically `() => import('@niivue/nv-ext-tile/zarr')`; a page without it declines `load_ome_zarr`. */
+  omeZarr?: () => Promise<OmeZarrLoaders>
 }
 
-/** The two `@niivue/nv-ext-tile/zarr` functions `load_ome_zarr` drives, as the page hands them over. */
+/** The two `@niivue/nv-ext-tile/zarr` functions `load_ome_zarr` drives. */
 export interface OmeZarrLoaders {
   /** Volume options for `loadVolumes`, one per channel, from one whole pyramid level. */
   loadOmeZarrVolumes(
     url: string,
     options?: { level?: number; channels?: number[]; timepoint?: number },
   ): Promise<unknown[]>
-  /** Streams the store into `view`, freeing its workers once the volume is removed or the view destroyed. */
+  /** Streams the store into the page's NiiVue (`view`), freeing its workers once the volume is removed or the viewer destroyed. */
   streamOmeZarr(
-    view: View,
+    view: unknown,
     url: string,
-    options?: { channel?: number; timepoint?: number },
+    options?: { channel?: number; timepoint?: number; replace?: boolean },
   ): Promise<unknown>
 }
 

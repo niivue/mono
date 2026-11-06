@@ -42,7 +42,7 @@ src/ipyniivue/widget.py      # Hand-written subclass with on/off, helpers, dispa
 src/ipyniivue/_generated.py  # Auto-generated traitlets + command methods + event names
 src/ipyniivue/static/
   _widget.template.js        # Auto-generated reviewable JS (PROPS_*, EVENTS, lifecycle)
-  widget.js                  # Auto-generated bundled JS (~1.3 MB; includes niivue) (gitignored — `bunx nx codegen ipyniivue` builds it)
+  widget.js                  # Auto-generated bundled JS (~5.2 MB; includes niivue and the bundled extensions) (gitignored — `bunx nx codegen ipyniivue` builds it)
 examples/                    # 01_hello_volume.ipynb + ports of niivue demo HTMLs
 tests/                       # Python smoke tests (bun-run via `bunx nx test ipyniivue`)
 pyproject.toml               # Unified manifest: PEP 621 metadata, hatchling build, pixi env, ruff, mypy, pytest
@@ -82,9 +82,12 @@ After Bun.build produces the bundle, codegen rewrites every
 `new URL("assets/X", import.meta.url)` reference into a base64 `data:`
 URL inlined into `widget.js`. anywidget serves the ESM via a `blob:`
 URL that has no hierarchical base, so `new URL(..., import.meta.url)`
-would throw at module init. This inlining is what pushes `widget.js`
-to ~1.3 MB — fonts, matcaps, and other niivue `dist/assets/*` are
-embedded in the bundle.
+would throw at module init. Fonts, matcaps and other niivue
+`dist/assets/*` are embedded this way. `widget.js` is ~5.2 MB: it also
+inlines the bundled extensions, including `@niivue/nv-ext-tile/zarr`
+(zarrita, its codecs and the inlined chunk worker), for every notebook.
+Bun.build runs without `splitting`, so a lazy `import()` would be
+inlined just the same.
 
 ## Module-boundary exception
 
@@ -100,10 +103,10 @@ artifact, not a runtime call.
 How the dependency surfaces in Nx's graph:
 
 - The generated [_widget.template.js](src/ipyniivue/static/_widget.template.js)
-  contains real `import { ... } from '@niivue/nv-ext-image-processing'`
-  statements that Nx's `@nx/js` plugin picks up as a static project edge.
-- `bunx nx graph` will show `ipyniivue -> nv-ext-image-processing` (and
-  potentially other `nv-ext-*` packages once Phase B.2 / B.3 land).
+  contains real imports from `@niivue/nv-ext-image-processing`,
+  `@niivue/nv-ext-drawing` and `@niivue/nv-ext-tile/zarr`, which Nx's
+  `@nx/js` plugin picks up as static project edges.
+- `bunx nx graph` shows `ipyniivue ->` each of them.
 - The boundary checker accepts this edge because `ipyniivue` is in
   `PY_TO_TS_ALLOWED`.
 
@@ -310,7 +313,9 @@ function-bearing JS objects: `attachToCanvas`, `createExtensionContext`,
 canvas it creates, so no Python entry point is needed. Extension
 features are exposed through hand-written wrappers in
 [widget.py](src/ipyniivue/widget.py) — `apply_image_transform`,
-`interpolate_drawing_slices`, `save_document`, and friends — that
+`interpolate_drawing_slices`, `save_document`, `load_ome_zarr`
+(OME-Zarr through `@niivue/nv-ext-tile/zarr`, a whole level or
+`stream=True`), and friends — that
 construct the extension context inside the JS bundle and call into it.
 External loader and transform registration still need explicit
 browser-side plugin support before they can be exposed safely to
@@ -388,7 +393,7 @@ Three of the four codegen outputs are committed; the bundled
 | `api.generated.json` | ~65 KB | yes | API diffs surface here per niivue release |
 | `src/ipyniivue/_generated.py` | ~34 KB | yes | reviewable Python API surface |
 | `src/ipyniivue/static/_widget.template.js` | ~27 KB | yes | reviewable JS template (lifecycle, command routing) |
-| `src/ipyniivue/static/widget.js` | ~1.3 MB | **no** | bundled, minified, niivue inlined; not reviewable |
+| `src/ipyniivue/static/widget.js` | ~5.2 MB | **no** | bundled, minified, niivue inlined; not reviewable |
 
 **`widget.js` is required at runtime** — anywidget's `_esm` field
 points to it. After cloning, run `bunx nx codegen ipyniivue` once

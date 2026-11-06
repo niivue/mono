@@ -451,17 +451,13 @@ async function initialize({ model }) {
       }
       return
     }
-    // Drawing extension: find first/last slices containing drawing data
-    // along an axis. Returns { first, last } or null. Reads the live
-    // bitmap from ctx.drawing; returns null if no drawing volume exists.
     // OME-Zarr (nv-ext-tile/zarr): one pyramid level whole, or streamed.
     if (msg.cmd === "__ext_load_ome_zarr") {
       const [url, opts = {}] = coerceCommandArgs(msg.args)
       try {
         if (opts.stream) {
-          // Replaces, like loadVolumes; streamOmeZarr frees its manager and workers once the volume goes.
-          await state.nv.removeAllVolumes()
-          await streamOmeZarr(state.nv, url, { channel: opts.channel, timepoint: opts.timepoint })
+          // Replaces, like loadVolumes, once the store has opened; the helper frees its manager and workers when the volume goes.
+          await streamOmeZarr(state.nv, url, { channel: opts.channel, timepoint: opts.timepoint, replace: true })
         } else {
           const channels = opts.channel == null ? undefined : [opts.channel]
           await state.nv.loadVolumes(await loadOmeZarrVolumes(url, { level: opts.level, channels, timepoint: opts.timepoint }))
@@ -473,6 +469,9 @@ async function initialize({ model }) {
       }
       return
     }
+    // Drawing extension: find first/last slices containing drawing data
+    // along an axis. Returns { first, last } or null. Reads the live
+    // bitmap from ctx.drawing; returns null if no drawing volume exists.
     if (msg.cmd === "__ext_drawing_find_boundaries") {
       const args = coerceCommandArgs(msg.args)
       const axis = args[0] ?? 0

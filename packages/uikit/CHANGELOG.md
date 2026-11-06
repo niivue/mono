@@ -1,3 +1,17 @@
+## 1.0.0-rc.91 (2026-11-06)
+
+### Fixes
+
+- **nv-ohif:** declare @niivue/niivue peer as a range ([#106](https://github.com/niivue/mono/issues/106))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.96
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.90 (2026-11-06)
 
 ### Updated Dependencies

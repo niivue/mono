@@ -53,7 +53,9 @@ function render(): void {
   slide.clampViewport(s)
   renderer.draw(gl, [slide], s)
   const { wireBytes, completed, failures } = slide.stats
-  status.textContent = `${indexNote}${slide.name}: ${slide.manifest.levels.length} levels, ${completed} tiles, ${(wireBytes / 1e6).toFixed(1)} MB read, ${failures} failed`
+  // Keep an indexing or index-error message until the next open.
+  if (indexing !== openCount)
+    status.textContent = `${indexNote}${slide.name}: ${slide.manifest.levels.length} levels, ${completed} tiles, ${(wireBytes / 1e6).toFixed(1)} MB read, ${failures} failed`
 }
 
 function requestRender(): void {
@@ -62,6 +64,7 @@ function requestRender(): void {
 
 // Opens can overlap (a slow URL, then a local file); only the latest wins.
 let openCount = 0
+let indexing = 0 // the open generation of the folder being indexed
 let opening: AbortController | null = null
 
 async function open(
@@ -132,6 +135,7 @@ folderInput.addEventListener('change', async () => {
   if (!files.length) return
   // Indexing takes an open generation, so a newer folder or file wins.
   const id = ++openCount
+  indexing = id
   opening?.abort()
   // The old list would start an open that cancels this index.
   slideSelect.hidden = true
@@ -142,7 +146,7 @@ folderInput.addEventListener('change', async () => {
     const t0 = performance.now()
     const index = await indexDicomWsi(files)
     if (id !== openCount) {
-      folderInput.value = ''
+      folderInput.value = '' // so the same folder can be picked again
       return
     }
     const ms = performance.now() - t0

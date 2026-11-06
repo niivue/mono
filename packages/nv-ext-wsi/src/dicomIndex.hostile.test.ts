@@ -99,6 +99,19 @@ function dicom(
   )
 }
 
+/** Plane Position (Slide) Sequence holding these ZOffsets (µm). */
+const zSeq = (...zs: string[]) =>
+  sq(
+    0x0048,
+    0x021a,
+    zs.map((z) => item(el(0x0040, 0x074a, 'DS', str(z)))),
+  )
+const planesOf = (idx: Awaited<ReturnType<typeof indexDicomWsi>>) =>
+  idx.slides.map((s) => [
+    s.focalPlane,
+    s.levels.map((l) => [l.width, l.frames.offset.length, l.duplicates]),
+  ])
+
 const reasons = async (file: File) =>
   (await indexDicomWsi([file])).skipped.map((s) => s.reason)
 
@@ -307,8 +320,6 @@ describe('indexDicomWsi on hostile input', () => {
     expect(await tileLabels(slide, [f])).toEqual([0, 1, 2, 3])
   })
   test('a level stating ZOffset and one that does not form one slide', async () => {
-    const zSeq = (z: string) =>
-      sq(0x0048, 0x021a, [item(el(0x0040, 0x074a, 'DS', str(z)))])
     const l0 = dicom({
       sop: el(0x0008, 0x0018, 'UI', str('1.2.9.10', '\0')),
       shared: sq(0x5200, 0x9229, [item(zSeq('1.5'))]),
@@ -337,6 +348,92 @@ describe('indexDicomWsi on hostile input', () => {
     const f = dicom({
       perFrame: sq(0x5200, 0x9230, [zItem('1'), zItem('2'), zItem(), zItem()]),
     })
+    expect(await reasons(f)).toEqual(['malformed'])
+  })
+  test('a concatenation split across focal planes keeps every plane', async () => {
+    // 2 tiles per plane, 3 planes: part 1 holds frames 0-3, part 2 frames 4-5.
+    const part = (n: number, offset: number, frames: number[]) =>
+      dicom(
+        {
+          sop: el(0x0008, 0x0018, 'UI', str(`1.2.9.2${n}`, '\0')),
+          frames: el(0x0028, 0x0008, 'IS', str(String(frames.length))),
+          totalColumns: el(0x0048, 0x0006, 'UL', le(32, 4)),
+          totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+          concatNumber: el(0x0020, 0x9162, 'US', le(n, 2)),
+          concatOffset: el(0x0020, 0x9228, 'UL', le(offset, 4)),
+          focalPlanes: el(0x0048, 0x0303, 'UL', le(3, 4)),
+        },
+        pixelData(frames.map(payload)),
+      )
+    const idx = await indexDicomWsi([
+      part(1, 0, [0, 1, 2, 3]),
+      part(2, 4, [4, 5]),
+    ])
+    expect(idx.skipped).toEqual([])
+    expect(
+      idx.slides.map((s) => [s.focalPlane, s.levels[0]?.duplicates]),
+    ).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+    ])
+  })
+  test('a lower level holding only some planes joins the planes it holds', async () => {
+    // Level 0: 2 x 1 tiles at 0 and 2 µm; level 1: one tile at 2 µm only.
+    const l0 = dicom({
+      sop: el(0x0008, 0x0018, 'UI', str('1.2.9.40', '\0')),
+      totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+      focalPlanes: el(0x0048, 0x0303, 'UL', le(2, 4)),
+      perFrame: sq(
+        0x5200,
+        0x9230,
+        ['0', '0', '2', '2'].map((z) => item(zSeq(z))),
+      ),
+    })
+    const l1 = dicom(
+      {
+        sop: el(0x0008, 0x0018, 'UI', str('1.2.9.41', '\0')),
+        frames: el(0x0028, 0x0008, 'IS', str('1')),
+        totalColumns: el(0x0048, 0x0006, 'UL', le(16, 4)),
+        totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+        perFrame: sq(0x5200, 0x9230, [item(zSeq('2'))]),
+      },
+      pixelData([payload(9)]),
+    )
+    expect(planesOf(await indexDicomWsi([l0, l1]))).toEqual([
+      [0, [[32, 2, 0]]],
+      [
+        1,
+        [
+          [32, 2, 0],
+          [16, 1, 0],
+        ],
+      ],
+    ])
+  })
+
+  test('one plane per file, stated once per file, stays two slides', async () => {
+    const plane = (uid: string, z: string) =>
+      dicom({
+        sop: el(0x0008, 0x0018, 'UI', str(uid, '\0')),
+        shared: sq(0x5200, 0x9229, [item(zSeq(z))]),
+      })
+    expect(
+      planesOf(
+        await indexDicomWsi([plane('1.2.9.50', '1'), plane('1.2.9.51', '2')]),
+      ),
+    ).toEqual([
+      [0, [[32, 4, 0]]],
+      [1, [[32, 4, 0]]],
+    ])
+  })
+
+  test('a frame repeating ZOffset does not count as two frames', async () => {
+    const other = item(
+      sq(0x0020, 0x9111, [item(el(0x0020, 0x9156, 'US', le(1, 2)))]),
+    )
+    const z55 = item(zSeq('5', '5'))
+    const f = dicom({ perFrame: sq(0x5200, 0x9230, [z55, z55, other, other]) })
     expect(await reasons(f)).toEqual(['malformed'])
   })
 })

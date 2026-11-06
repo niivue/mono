@@ -66,9 +66,13 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   concatenations. TILED_FULL frames keep their implicit order; per-frame
   positions, when given, win (items holding only other metadata, such as Frame
   Content, do not change the order).
-- Each optical path and focal plane becomes its own slide. Planes are matched across
-  levels by rank (lowest ZOffset first), so a level that omits ZOffset still joins
-  its slide; ZOffset on only some of a file's frames is `malformed`.
+- Each optical path and focal plane becomes its own slide. A shared
+  OpticalPathIdentifier assigns every frame to that path; an identifier missing
+  from OpticalPathSequence is its own path. `focalPlane` is a plane index, not µm:
+  stated ZOffsets (shared or per frame) are ranked across the slide's levels
+  (lowest first), so a lower level holding only some planes joins the right ones;
+  a level stating none uses its implicit TILED_FULL index. ZOffset on only some of
+  a file's frames is `malformed`.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.

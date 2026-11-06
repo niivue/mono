@@ -147,19 +147,24 @@ export class SlideDrawing {
     this.version++
   }
 
+  /** Raster index of the pixel nearest (x, y), or -1 when outside the raster. */
+  private pixelIndex(x: number, y: number): number {
+    const px = Math.round(x)
+    const py = Math.round(y)
+    if (px < 0 || py < 0 || px >= this.width || py >= this.height) return -1
+    return py * this.width + px
+  }
+
   /**
    * Bucket fill: flood the connected region of pixels sharing the seed's value
    * (4-connected) with `penValue`. Drawn strokes of a different value bound the
    * fill. With `overwrite` false, only fills into empty (0) regions.
    */
   bucketFill(x: number, y: number, penValue: number, overwrite: boolean): void {
+    const seed = this.pixelIndex(x, y)
+    if (seed < 0) return
     const w = this.width
-    const h = this.height
-    const px = Math.round(x)
-    const py = Math.round(y)
-    if (px < 0 || py < 0 || px >= w || py >= h) return
     const img = this.img
-    const seed = py * w + px
     const target = img[seed]
     if (target === penValue) return
     if (!overwrite && penValue !== 0 && target !== 0) return
@@ -230,14 +235,11 @@ export class SlideDrawing {
     penValue: number,
     overwrite: boolean,
   ): number {
+    const seed = this.pixelIndex(x, y)
     const w = this.width
     const h = this.height
-    const px = Math.round(x)
-    const py = Math.round(y)
-    if (px < 0 || py < 0 || px >= w || py >= h) return 0
-    if (ref.length < w * h * 4) return 0
+    if (seed < 0 || ref.length < w * h * 4) return 0
     const img = this.img
-    const seed = py * w + px
     const sr = ref[seed * 4]
     const sg = ref[seed * 4 + 1]
     const sb = ref[seed * 4 + 2]

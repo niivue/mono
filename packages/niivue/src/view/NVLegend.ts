@@ -1,6 +1,6 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { colormapLookup } from '@/mesh/connectome'
-import type { NVImage, NVMesh } from '@/NVTypes'
+import type { LUT, NVImage, NVMesh } from '@/NVTypes'
 import { meshLabelCentroid, volumeLabelCentroid } from './legendCentroids'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
 import { isMeshDrawn } from './NVMeshVisibility'
@@ -179,6 +179,22 @@ function scrollTrack(layout: LegendLayout): {
   }
 }
 
+/** Yields [index, label, RGBA] for each LUT label, skipping transparent ones (typically index 0 = background). */
+function* opaqueLabels(
+  lut: LUT,
+): Generator<[number, string, LegendEntry['color']]> {
+  const labels = lut.labels ?? []
+  for (let i = 0; i < labels.length; i++) {
+    const o = i * 4
+    if (lut.lut[o + 3] === 0) continue
+    yield [
+      i,
+      labels[i],
+      [lut.lut[o], lut.lut[o + 1], lut.lut[o + 2], lut.lut[o + 3]],
+    ]
+  }
+}
+
 /**
  * Collect legend entries from meshes and volumes with label colormaps.
  * Returns a flat array of label names and their colors.
@@ -196,27 +212,13 @@ export function collectLegendEntries(
     if (!volume.colormapLabel) continue
 
     const lut = volume.colormapLabel
-    const labels = lut.labels ?? []
     const hidden = new Set(volume.hiddenLabels)
 
-    // Extract each label with its color from the LUT
-    for (let i = 0; i < labels.length; i++) {
-      const lutOffset = i * 4
-      const alpha = lut.lut[lutOffset + 3]
-
-      // Skip transparent labels (typically index 0 = background)
-      if (alpha === 0) continue
-
-      const label = labels[i]
+    for (const [i, label, color] of opaqueLabels(lut)) {
       const labelValue = (lut.min ?? 0) + i
       entries.push({
         label,
-        color: [
-          lut.lut[lutOffset],
-          lut.lut[lutOffset + 1],
-          lut.lut[lutOffset + 2],
-          lut.lut[lutOffset + 3],
-        ],
+        color,
         centroid: () => volumeLabelCentroid(volume, label),
         volumeIndex,
         labelValue,
@@ -233,26 +235,10 @@ export function collectLegendEntries(
     for (const layer of mesh.layers) {
       if (!layer.colormapLabel) continue
 
-      const lut = layer.colormapLabel
-      const labels = lut.labels ?? []
-
-      // Extract each label with its color from the LUT
-      for (let i = 0; i < labels.length; i++) {
-        const lutOffset = i * 4
-        const alpha = lut.lut[lutOffset + 3]
-
-        // Skip transparent labels (typically index 0 = background)
-        if (alpha === 0) continue
-
-        const label = labels[i]
+      for (const [, label, color] of opaqueLabels(layer.colormapLabel)) {
         entries.push({
           label,
-          color: [
-            lut.lut[lutOffset],
-            lut.lut[lutOffset + 1],
-            lut.lut[lutOffset + 2],
-            lut.lut[lutOffset + 3],
-          ],
+          color,
           centroid: () => meshLabelCentroid(mesh, layer, label),
         })
       }

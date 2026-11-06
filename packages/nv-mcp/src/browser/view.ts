@@ -565,7 +565,8 @@ export interface View {
    * which skips frames while `isBusy`: during an async texture upload, as
    * after a 4D frame change.
    */
-  view?: { render(): void; isBusy?: boolean } | null
+  /** `render` returns false when it drew nothing (NiiVue before #596 returns nothing). */
+  view?: { render(): unknown; isBusy?: boolean } | null
   model: {
     mm2scene(mm: number[]): Triple
     scene2mm(frac: number[]): Triple

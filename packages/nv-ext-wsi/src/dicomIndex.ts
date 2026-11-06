@@ -287,6 +287,9 @@ interface InstanceInfo {
   totalRows: number
   tileWidth: number
   tileHeight: number
+  /** Tile grid: columns and rows of tiles. */
+  columns: number
+  rows: number
   frameCount: number
   sparse: boolean
   concatNumber: number
@@ -373,6 +376,7 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   let sharedPath: string | undefined
   let sharedZ: number | undefined
   let perFrame = 0
+  let positioned = false // some frame states its position
   for (const e of elements) {
     if (e.depth === 0) top.set(e.tag, e)
     else if (e.root === T.opticalPathSeq && e.depth === 1) {
@@ -384,7 +388,10 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       if (e.tag === T.spacing) sharedSpacing = text(b, e)
       if (e.tag === T.opticalPathId) sharedPath = text(b, e)
       if (e.tag === T.zOffset) sharedZ = numberOf(b, e)
-    } else if (e.root === T.perFrame) perFrame = Math.max(perFrame, e.item + 1)
+    } else if (e.root === T.perFrame) {
+      perFrame = Math.max(perFrame, e.item + 1)
+      if (e.tag === T.columnPosition) positioned = true
+    }
   }
   icc.forEach((v, i) => {
     if (v && colorSpaces[i]) v.colorSpace = colorSpaces[i]
@@ -415,15 +422,21 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     throw new Skip('malformed', `${grid} tiles in one level (over ${MAX_GRID})`)
   const focalPlaneCount = int(T.focalPlanes, 1, 1, 0xffff)
   const concatOffset = int(T.concatOffset, 0, 0, 0xffffffff)
-  const sparse = str(T.organization) === 'TILED_SPARSE'
-  // TILED_FULL frames enumerate tiles x planes x paths, so none lies past them;
-  // a huge concatenation offset would otherwise derive a huge path index.
-  const pathCount = int(T.opticalPaths, 1, 1, 0xffff)
-  if (!sparse && concatOffset + frameCount > grid * focalPlaneCount * pathCount)
-    throw new Skip(
-      'malformed',
-      `frames past ${grid} tiles x ${focalPlaneCount} planes x ${pathCount} paths`,
-    )
+  const organization = str(T.organization)
+  const sparse = organization === 'TILED_SPARSE'
+  // Frames follow the implicit TILED_FULL order when the file says so, or as a
+  // fallback when no frame states its position (3DHISTECH states no type).
+  const implicit = organization === 'TILED_FULL' || (!sparse && !positioned)
+  if (implicit) {
+    // They enumerate tiles x planes x paths, so none lies past them; a huge
+    // concatenation offset would otherwise derive a huge path index.
+    const pathCount = int(T.opticalPaths, 1, 1, 0xffff)
+    if (concatOffset + frameCount > grid * focalPlaneCount * pathCount)
+      throw new Skip(
+        'malformed',
+        `frames past ${grid} tiles x ${focalPlaneCount} planes x ${pathCount} paths`,
+      )
+  }
   const info: InstanceInfo = {
     instance: {
       id: str(T.sop),
@@ -443,6 +456,8 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     totalRows,
     tileWidth,
     tileHeight,
+    columns,
+    rows,
     frameCount,
     sparse,
     concatNumber: int(T.concatNumber, 0, 0, 0xffff),
@@ -469,7 +484,7 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
       'malformed',
       `${perFrame} per-frame items for ${frameCount} frames`,
     )
-  if (sparse) {
+  if (!implicit) {
     // Placed only by the per-frame positions below; a frame without one stays -1.
     column.fill(-1)
     row.fill(-1)
@@ -523,7 +538,7 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     throw new Skip('malformed', `ZOffset on ${zCount} of ${frameCount} frames`)
   // One shared ZOffset cannot place several implicit planes; they keep their indices.
   const useSharedZ =
-    !zCount && sharedZ !== undefined && (sparse || focalPlaneCount === 1)
+    !zCount && sharedZ !== undefined && (!implicit || focalPlaneCount === 1)
   if (useSharedZ) z.fill(sharedZ as number)
   info.zStated = zCount > 0 || useSharedZ
   // Each (optical path, focal plane) becomes a slide with its own grid-sized
@@ -756,14 +771,6 @@ function rankStatedPlanes(infos: InstanceInfo[]): void {
       const rank = byPath[path[f] as number] as Map<number, number>
       z[f] = rank.get(z[f] as number) as number
     }
-    info.planes = info.planes.map(
-      (set, p) =>
-        new Set(
-          [...set].map(
-            (v) => (byPath[p] as Map<number, number>).get(v) as number,
-          ),
-        ),
-    )
   }
 }
 
@@ -788,9 +795,10 @@ function groupSlides(
       else byPlane.set(z, [f])
     }
     buckets.forEach((byPlane, pathIndex) => {
+      const opticalPath = pathName(info, pathIndex)
+      const base = slideBase(info, pathIndex)
       for (const [plane, frames] of byPlane) {
-        const opticalPath = pathName(info, pathIndex)
-        const key = `${slideBase(info, pathIndex)}|${plane}`
+        const key = `${base}|${plane}`
         let entry = slides.get(key)
         if (!entry) {
           const { study, series, frameOfReference, container } = info
@@ -813,39 +821,46 @@ function groupSlides(
       }
     })
   }
-  return [...slides.values()].map(({ slide, own }) => {
+  const reported = new Set<string>()
+  return [...slides.values()].map(({ slide, own: members }) => {
     // Finest first; a concatenation's parts in order.
-    own.sort(
+    members.sort(
       (a, b) =>
         b.info.totalColumns * b.info.totalRows -
           a.info.totalColumns * a.info.totalRows ||
         a.info.concatNumber - b.info.concatNumber,
     )
+    // Opening a slide builds a map per level; a real pyramid totals about 4/3 of
+    // level 0, so near-equal levels past this are dropped, not built.
+    const fits = new Map<string, boolean>()
+    let slots = 0
+    const own = members.filter(({ info }) => {
+      const key = `${info.totalColumns}x${info.totalRows}`
+      let ok = fits.get(key)
+      if (ok === undefined) {
+        slots += info.columns * info.rows
+        ok = slots <= MAX_SLIDE_TILES
+        fits.set(key, ok)
+      }
+      if (!ok && !reported.has(info.instance.file)) {
+        reported.add(info.instance.file)
+        skipped.push({
+          file: info.instance.file,
+          reason: 'malformed',
+          message: `level ${key} takes its slide past ${MAX_SLIDE_TILES} tiles`,
+        })
+      }
+      return ok
+    })
     slide.instances = own.map((m) => m.info.instance)
     const byMatrix = new Map<string, number[]>()
     own.forEach(({ info }, k) => {
       const key = `${info.totalColumns}x${info.totalRows}`
-      byMatrix.set(key, [...(byMatrix.get(key) ?? []), k])
+      const list = byMatrix.get(key)
+      if (list) list.push(k)
+      else byMatrix.set(key, [k])
     })
-    // Opening a slide builds a map per level; a real pyramid totals about 4/3 of
-    // level 0, so near-equal levels past this are dropped, not built.
-    let slots = 0
-    for (const ks of byMatrix.values()) {
-      const { info } = own[ks[0] as number] as Member
-      slots +=
-        Math.ceil(info.totalColumns / info.tileWidth) *
-        Math.ceil(info.totalRows / info.tileHeight)
-      if (slots > MAX_SLIDE_TILES) {
-        for (const k of ks)
-          skipped.push({
-            file: (own[k] as Member).info.instance.file,
-            reason: 'malformed',
-            message: `level ${info.totalColumns}x${info.totalRows} takes its slide past ${MAX_SLIDE_TILES} tiles`,
-          })
-        continue
-      }
-      slide.levels.push(buildLevel(ks, own))
-    }
+    for (const ks of byMatrix.values()) slide.levels.push(buildLevel(ks, own))
     const l0 = own[0] as Member
     slide.pixelSpacingMM = l0.info.pixelSpacingMM
     slide.iccProfile = l0.info.icc[l0.pathIndex]
@@ -855,8 +870,7 @@ function groupSlides(
 
 function buildLevel(ks: number[], own: Member[]): SlideIndexLevel {
   const i0 = (own[ks[0] as number] as Member).info
-  const columns = Math.ceil(i0.totalColumns / i0.tileWidth)
-  const rows = Math.ceil(i0.totalRows / i0.tileHeight)
+  const { columns, rows } = i0
   const total = ks.reduce((n, k) => n + (own[k] as Member).frames.length, 0)
   const frames: SlideIndexFrames = {
     instance: new Uint32Array(total),

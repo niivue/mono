@@ -587,12 +587,86 @@ describe('indexDicomWsi on hostile input', () => {
         pixelData([payload(k)]),
       )
     }
-    const idx = await indexDicomWsi(
-      Array.from({ length: 20 }, (_, k) => level(k)),
+    const files = Array.from(
+      { length: 20 },
+      (_, k) => new File([level(k)], `L${k}.dcm`, { lastModified: 1 }),
     )
+    const idx = await indexDicomWsi(files)
     expect(idx.slides.map((s) => s.levels.map((l) => l.width))).toEqual([
       [2048, 2047],
     ])
-    expect(idx.skipped).toHaveLength(18)
+    expect(idx.skipped.map((k) => k.file)).toEqual(
+      files.slice(2).map((f) => f.name),
+    )
+    // Dropped files are not the slide's, so opening needs only the kept two.
+    expect(idx.slides[0]?.instances.map((i) => i.file)).toEqual([
+      'L0.dcm',
+      'L1.dcm',
+    ])
+  })
+  test('no organization type with per-frame positions is placed by them, not implicitly', async () => {
+    // 2 focal planes x 4 tiles, positions and ZOffset per frame, no counts.
+    const at = (c: number, r: number, z: string) =>
+      item(
+        sq(0x0048, 0x021a, [
+          item(
+            el(0x0048, 0x021e, 'SL', le(c, 4)),
+            el(0x0048, 0x021f, 'SL', le(r, 4)),
+            el(0x0040, 0x074a, 'DS', str(z)),
+          ),
+        ]),
+      )
+    const grid = [
+      [1, 1],
+      [17, 1],
+      [1, 17],
+      [17, 17],
+    ] as const
+    const f = dicom(
+      {
+        org: null,
+        frames: el(0x0028, 0x0008, 'IS', str('8')),
+        perFrame: sq(0x5200, 0x9230, [
+          ...grid.map(([c, r]) => at(c, r, '0')),
+          ...grid.map(([c, r]) => at(c, r, '2')),
+        ]),
+      },
+      pixelData(Array.from({ length: 8 }, (_, k) => payload(k))),
+    )
+    const idx = await indexDicomWsi([f])
+    expect(idx.skipped).toEqual([])
+    expect(idx.slides.map((s) => [s.opticalPath, s.focalPlane])).toEqual([
+      ['0', 0],
+      ['0', 1],
+    ])
+    expect(planesOf(idx)).toEqual([
+      [0, [[32, 4, 0]]],
+      [1, [[32, 4, 0]]],
+    ])
+  })
+
+  test('a TILED_SPARSE file with an empty NumberOfOpticalPaths still indexes', async () => {
+    const pos = (c: number, r: number) =>
+      item(
+        sq(0x0048, 0x021a, [
+          item(
+            el(0x0048, 0x021e, 'SL', le(c, 4)),
+            el(0x0048, 0x021f, 'SL', le(r, 4)),
+          ),
+        ]),
+      )
+    const f = dicom({
+      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+      opticalPaths: el(0x0048, 0x0302, 'UL', new Uint8Array(0)),
+      perFrame: sq(0x5200, 0x9230, [
+        pos(1, 1),
+        pos(17, 1),
+        pos(1, 17),
+        pos(17, 17),
+      ]),
+    })
+    const idx = await indexDicomWsi([f])
+    expect(idx.skipped).toEqual([])
+    expect(idx.slides).toHaveLength(1)
   })
 })

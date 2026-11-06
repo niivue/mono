@@ -65,7 +65,9 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - It handles multi-fragment frames, TILED_SPARSE (holes stay empty), and
   concatenations. TILED_FULL frames keep their implicit order; per-frame
   positions, when given, win (items holding only other metadata, such as Frame
-  Content, do not change the order).
+  Content, do not change the order). A file with no DimensionOrganizationType is
+  placed by its per-frame positions (path and plane from per-frame values) when
+  it gives them, else in the implicit order.
 - Each optical path and focal plane becomes its own slide. A shared
   OpticalPathIdentifier assigns every frame to that path; an identifier missing
   from OpticalPathSequence is its own path. `focalPlane` is a plane index, not µm:
@@ -74,13 +76,16 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   ones. A multi-plane TILED_FULL level stating no ZOffset keeps its implicit plane
   index (scanners give TotalPixelMatrixOriginSequence no Z), so it is matched by
   index and may join the wrong plane if other levels hold a different set of planes.
-  A single shared ZOffset in a multi-plane TILED_FULL file is ignored. ZOffset on only some of a file's frames is `malformed`.
+  A single shared ZOffset in a multi-plane TILED_FULL file is ignored. ZOffset on
+  only some of a file's frames is `malformed`.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.
 - Hostile input is bounded: the header read stops at 64 MiB, sequences at 8 levels,
-  a level at 2^22 tiles, a file at 4096 (optical path, focal plane) pairs, a slide's levels at 2 x 2^22 tiles in total, TILED_FULL frames at tiles x planes x NumberOfOpticalPaths, and counts
-  and offsets are checked against the file size (`malformed` otherwise).
+  a level at 2^22 tiles, a file at 4096 (optical path, focal plane) pairs, TILED_FULL
+  frames at tiles x planes x NumberOfOpticalPaths, and counts and offsets are checked
+  against the file size (`malformed` otherwise). A slide's levels total at most
+  2 x 2^22 tiles; levels past that are dropped and listed in `skipped`.
 - The index holds only per-frame data, bounded by the files' sizes, so a folder of
   many slides indexes in memory proportional to its headers. Each level reports
   `duplicates` and `holes`; its grid-sized tile map is built only when

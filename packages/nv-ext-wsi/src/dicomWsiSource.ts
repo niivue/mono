@@ -105,7 +105,8 @@ export class DicomWsiSource implements SlideTileSource {
     const { frames } = this.slide.levels[level.index] as SlideIndexLevel
     const map = this.maps[level.index] as Int32Array
     const slot = map[tile.y * level.columns + tile.x] as number
-    if (slot < 0) throw new Error(`no frame for tile ${tile.x},${tile.y}`)
+    // Also catches a tile off the map (undefined).
+    if (!(slot >= 0)) throw new Error(`no frame for tile ${tile.x},${tile.y}`)
     const file = this.files[frames.instance[slot] as number] as File
     const offset = frames.offset[slot] as number
     const length = frames.length[slot] as number
@@ -145,10 +146,12 @@ export function manifestOf(
 ): NVSlideManifest {
   const l0 = slide.levels[0]
   if (!l0) throw new Error('the slide has no levels')
-  const inst0 = slide.instances[l0.instances[0] as number]
-  if (!inst0) throw new Error('the slide has no instances')
+  // The index puts each level's first instance in slide.instances.
+  const inst0 = slide.instances[l0.instances[0] as number] as SlideIndexInstance
   const levels = slide.levels.map((level, index): NVSlideLevelManifest => {
-    const inst = slide.instances[level.instances[0] as number] ?? inst0
+    const inst = slide.instances[
+      level.instances[0] as number
+    ] as SlideIndexInstance
     const codec = CODEC_BY_TRANSFER_SYNTAX[inst.transferSyntax]
     if (!codec)
       throw new Error(

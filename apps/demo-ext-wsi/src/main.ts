@@ -56,7 +56,7 @@ function render(): void {
   const { wireBytes, completed, failures } = slide.stats
   // Keep an indexing or index-error message until the next open.
   if (indexing !== openCount)
-    status.textContent = `${indexNote}${slide.name}: ${slide.manifest.levels.length} levels, ${completed} tiles, ${(wireBytes / 1e6).toFixed(1)} MB read, ${failures} failed${slide.colorLut ? ', ICC profile' : ''}`
+    status.textContent = `${indexNote}${slide.name}: ${slide.manifest.levels.length} levels, ${completed} tiles, ${(wireBytes / 1e6).toFixed(1)} MB read, ${failures} failed${slide.colorLut ? `, ICC profile${slide.colorManagement ? '' : ' (off)'}` : ''}`
 }
 
 function requestRender(): void {

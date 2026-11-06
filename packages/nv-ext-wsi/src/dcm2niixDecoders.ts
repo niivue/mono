@@ -53,12 +53,13 @@ const decodeTile: SlideTileDecoder = async (bytes, { level, signal }) => {
 /**
  * Register JPEG 2000 and JPEG-LS tile decoders for NVSlide, backed by dcm2niix's
  * WASM worker pool (loaded on the first such tile), and its LittleCMS ICC
- * transform, so slides with a profile are colour-managed. A decoder the host
- * already registered wins. Needs the optional peer dependency `@niivue/dcm2niix`.
+ * transform, so slides with a profile are colour-managed. A decoder or ICC
+ * transform the host already registered wins. Call it before opening slides.
+ * Needs the optional peer dependency `@niivue/dcm2niix`.
  */
 export function registerDcm2niixDecoders(): void {
   for (const codec of ['image/jp2', 'image/jls'] as const)
     if (!NVSlide.tileDecoder(codec))
       NVSlide.registerTileDecoder(codec, decodeTile)
-  NVSlide.registerIccTransform(bakeProfile)
+  if (!NVSlide.iccTransform()) NVSlide.registerIccTransform(bakeProfile)
 }

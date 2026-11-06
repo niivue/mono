@@ -43,41 +43,46 @@ const mount = (
 })()`
 
 // RGBA of a screen region after two frames, decoded in the page so the spec
-// needs no PNG library.
+// needs no PNG library. With `yellow`, the page returns only the indices of
+// yellow mesh pixels (the grayscale T1 is never yellow): sending all 1M RGBA
+// values of a full canvas back to Node took seconds per call on CI.
 const pixels = async (
   page: Page,
   x: number,
   y: number,
   w: number,
   h: number,
+  yellow = false,
 ): Promise<number[]> => {
   await page.evaluate(
     () =>
       new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
   )
   const png = await page.screenshot({ clip: { x, y, width: w, height: h } })
-  return page.evaluate(async (b64) => {
-    const img = new Image()
-    img.src = `data:image/png;base64,${b64}`
-    await img.decode()
-    const c = document.createElement('canvas')
-    c.width = img.width
-    c.height = img.height
-    const ctx = c.getContext('2d') as CanvasRenderingContext2D
-    ctx.drawImage(img, 0, 0)
-    return Array.from(ctx.getImageData(0, 0, c.width, c.height).data)
-  }, png.toString('base64'))
+  return page.evaluate(
+    async ([b64, mask]) => {
+      const img = new Image()
+      img.src = `data:image/png;base64,${b64}`
+      await img.decode()
+      const c = document.createElement('canvas')
+      c.width = img.width
+      c.height = img.height
+      const ctx = c.getContext('2d') as CanvasRenderingContext2D
+      ctx.drawImage(img, 0, 0)
+      const d = ctx.getImageData(0, 0, c.width, c.height).data
+      if (!mask) return Array.from(d)
+      const hits: number[] = []
+      for (let i = 0; i < d.length / 4; i++) {
+        if (d[4 * i] > 150 && d[4 * i + 1] > 150 && d[4 * i + 2] < 90)
+          hits.push(i)
+      }
+      return hits
+    },
+    [png.toString('base64'), yellow] as const,
+  )
 }
 
-// Indices of yellow mesh pixels (the grayscale T1 is never yellow).
-const meshMask = async (page: Page): Promise<number[]> => {
-  const d = await pixels(page, 0, 0, SIZE, SIZE)
-  const hits: number[] = []
-  for (let i = 0; i < d.length / 4; i++) {
-    if (d[4 * i] > 150 && d[4 * i + 1] > 150 && d[4 * i + 2] < 90) hits.push(i)
-  }
-  return hits
-}
+const meshMask = (page: Page) => pixels(page, 0, 0, SIZE, SIZE, true)
 const changed = (a: number[], b: number[]) => {
   const sa = new Set(a)
   const sb = new Set(b)

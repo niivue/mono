@@ -31,18 +31,11 @@
 import { appendFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { Glob } from 'bun'
+import { estimateSource, type LcovRecord, parseLcov } from './lcov'
 
-type Record = {
-  file: string
-  linesFound: number
-  linesHit: number
-  fnFound: number
-  fnHit: number
-  brFound: number
-  brHit: number
-}
+type Record = LcovRecord
 
-type Totals = Omit<Record, 'file'>
+type Totals = Omit<Record, 'file' | 'lines'>
 
 const usage =
   'usage: lcov-to-summary.ts <lcov-path> [--title <title>] [--sources <dir>] [--root <dir>] [--exclude <glob>]... [--min-lines <pct>] [--min-functions <pct>]\n'
@@ -110,55 +103,7 @@ if (!(await lcovFile.exists())) {
 }
 const lcov = await lcovFile.text()
 
-const records: Record[] = []
-let current: Record | null = null
-for (const rawLine of lcov.split('\n')) {
-  const line = rawLine.trim()
-  if (!line) continue
-  if (line.startsWith('SF:')) {
-    current = {
-      file: line.slice(3),
-      linesFound: 0,
-      linesHit: 0,
-      fnFound: 0,
-      fnHit: 0,
-      brFound: 0,
-      brHit: 0,
-    }
-    continue
-  }
-  if (!current) continue
-  if (line === 'end_of_record') {
-    records.push(current)
-    current = null
-    continue
-  }
-  const colon = line.indexOf(':')
-  if (colon < 0) continue
-  const key = line.slice(0, colon)
-  const value = Number(line.slice(colon + 1))
-  if (Number.isNaN(value)) continue
-  switch (key) {
-    case 'LF':
-      current.linesFound = value
-      break
-    case 'LH':
-      current.linesHit = value
-      break
-    case 'FNF':
-      current.fnFound = value
-      break
-    case 'FNH':
-      current.fnHit = value
-      break
-    case 'BRF':
-      current.brFound = value
-      break
-    case 'BRH':
-      current.brHit = value
-      break
-  }
-}
+const records = parseLcov(lcov)
 
 if (records.length === 0) {
   Bun.stderr.write(`lcov-to-summary: no records parsed from ${lcovPath}\n`)
@@ -190,28 +135,6 @@ const linesPct = pct(totals.linesHit, totals.linesFound)
 const fnPct = pct(totals.fnHit, totals.fnFound)
 const brPct = pct(totals.brHit, totals.brFound)
 
-// Estimate executable lines and functions of a file no test loaded: strip
-// TypeScript-only syntax, then count non-blank lines and function forms.
-const transpiler = new Bun.Transpiler({ loader: 'ts' })
-const functionPattern =
-  /\bfunction\b|=>|^\s*(?:(?:static|async|get|set|public|private|protected)\s+)*(?:constructor|[A-Za-z_$#][\w$]*)\s*\([^)]*\)\s*\{/gm
-const estimate = (code: string): { lines: number; functions: number } => {
-  let js: string
-  try {
-    js = transpiler.transformSync(code)
-  } catch {
-    js = code
-  }
-  const lines = js.split('\n').filter((l) => {
-    const t = l.trim()
-    return t !== '' && !t.startsWith('//')
-  }).length
-  const functions = (js.match(functionPattern) ?? []).filter(
-    (m) => !/^\s*(?:if|for|while|switch|catch|return)\b/.test(m),
-  ).length
-  return { lines, functions }
-}
-
 type Unloaded = { file: string; lines: number; functions: number }
 const unloaded: Unloaded[] = []
 if (sourcesDir) {
@@ -225,7 +148,7 @@ if (sourcesDir) {
     if (loaded.has(abs)) continue
     const fromRoot = relative(sfRoot, abs)
     if (excludeGlobs.some((g) => g.match(fromRoot))) continue
-    const counts = estimate(await Bun.file(abs).text())
+    const counts = estimateSource(await Bun.file(abs).text())
     unloaded.push({ file: fromRoot, ...counts })
   }
   unloaded.sort((a, b) => b.lines - a.lines || a.file.localeCompare(b.file))

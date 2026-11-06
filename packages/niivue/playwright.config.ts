@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { coverageEnabled } from './e2e/coverage'
 import { defaultLaunchOptions } from './e2e/launchOptions'
 
 // End-to-end tests that need a real browser: rendering, a GPU context, DOM
@@ -32,6 +33,9 @@ export default defineConfig({
     // 0.1, a 10% dimmer mesh diffuse term still passed.
     toMatchSnapshot: { threshold: 0.02, maxDiffPixelRatio: 0.0025 },
   },
+  // E2E_COVERAGE=1 (`bun run test:e2e:coverage`): browser JS coverage to
+  // coverage-e2e/lcov.info, see e2e/coverage.ts.
+  globalSetup: coverageEnabled ? './e2e/coverageGlobalSetup.ts' : undefined,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

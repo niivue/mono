@@ -197,10 +197,28 @@ jobs:
         working-directory: packages/uikit
         run: bunx --bun vite build
 
+      # E2E_COVERAGE: browser JS coverage to coverage-e2e/lcov.info (e2e/coverage.ts).
+      # About +30% on the suite's time locally (most of it in demo-smoke).
       - name: Full e2e suite
         working-directory: packages/niivue
+        env:
+          E2E_COVERAGE: '1'
         # test:e2e:metal is where Metal-only exclusions go (none at present).
         run: bun run test:e2e:metal --workers=2
+
+      # Bun's unit coverage (~6 s) for the merged report below. pr_gate.yml is
+      # the gate for these tests; a failure here only loses the unit column.
+      - name: Unit coverage for the merged report
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        working-directory: packages/niivue
+        run: bun test > /dev/null
+
+      # Report only, no threshold. Skipped with the job when local-metal stands in.
+      - name: Coverage summary (unit + browser)
+        if: ${{ !cancelled() }}
+        working-directory: packages/niivue
+        run: bun run coverage:merge
 
       # GPU specs skip rather than fail when an adapter or backend is missing,
       # so a green run with skips may have tested very little. Tests excluded
@@ -214,6 +232,16 @@ jobs:
         with:
           name: playwright-results-metal
           path: packages/niivue/test-results/results.json
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-metal
+          path: |
+            packages/niivue/coverage-e2e/lcov.info
+            packages/niivue/coverage-merged/lcov.info
+          if-no-files-found: ignore
           retention-days: 30
 
       - uses: actions/upload-artifact@v4

@@ -77,6 +77,8 @@ export default mergeConfig(
     build: {
       outDir: 'dist-e2e',
       minify: false,
+      // E2E_COVERAGE=1 maps browser coverage back to src/ (e2e/coverage.ts).
+      sourcemap: process.env.E2E_COVERAGE === '1',
       rollupOptions: {
         // Vite drops entry exports in app builds; the specs import them.
         preserveEntrySignatures: 'exports-only',

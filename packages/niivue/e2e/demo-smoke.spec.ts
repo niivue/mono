@@ -1,6 +1,7 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './coverage'
 
 // Load every demo page and report anything that would greet a visitor as broken:
 // an uncaught exception, a console error, or a missing asset on the dev server.

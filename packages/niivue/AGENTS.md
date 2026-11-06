@@ -117,6 +117,30 @@ Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
 canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 
+**Browser coverage** (opt-in, `e2e/coverage.ts`): which source the e2e suite
+runs in the page, and a report merged with Bun's.
+
+```bash
+bun run test:e2e:coverage   # full suite with E2E_COVERAGE=1 -> coverage-e2e/lcov.info
+bun test                    # unit coverage -> coverage/lcov.info
+bun run coverage:merge      # -> coverage-merged/lcov.info + per-area summary (stdout)
+```
+
+Specs import `test` from `e2e/sharedPage.ts` (or `e2e/coverage.ts` for the
+per-test `page`), which collects Chromium V8 coverage from the shared page,
+the default `page` and pages a spec opens with `browser.newPage()`;
+`monocart-coverage-reports` maps it to `src/**/*.ts` through Vite's source maps
+(dev server or `E2E_BUNDLE=1` build). It costs about 30% of the full suite's
+time (most of it in demo-smoke), nothing when unset. Limits: page JavaScript
+only. Web Worker code (`workers/*.worker.ts` and what only they run) is not
+captured, nor is shader execution, nor a page opened with `context.newPage()`.
+Bun counts every line of a multi-line statement and V8 only its first, so for
+a file both suites load the merge compares the lines both count
+(`.github/scripts/coverage-merge.ts`); the totals are not comparable with
+`coverage:check`'s. Runs vary by under 0.1 pt; there is no threshold. CI's
+macOS job (`niivue-e2e.yml`) collects it and posts the merged summary to the
+job summary, so a PR whose Metal job local-metal skips gets no report.
+
 **Reference images** (`e2e/render-*.spec.ts`, harness `e2e/renderHarness.ts`):
 each scene draws tiny synthetic phantoms (the `Phantoms` built in the page by
 the harness, no dev-images) on a fixed camera, by default a 160 px canvas,
@@ -180,7 +204,7 @@ The following modules require a browser or GPU context and are not covered by th
 - `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies (the state paths of `NVControlBase.ts` are now partly reached through `src/testing/headless.ts`)
 - `control/` — Mouse/keyboard interaction handlers
 - `view/NVRenderer.ts`, `view/NVFont.ts` — Rendering pipeline
-- `workers/` — Web Worker code
+- `workers/` — Web Worker code (also outside browser coverage: see Browser coverage above)
 - `codecs/NVGz.ts`, `codecs/NVZip.ts` — DecompressionStream (browser API)
 
 ### Writing new tests

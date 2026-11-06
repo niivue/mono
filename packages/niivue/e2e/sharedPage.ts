@@ -1,4 +1,5 @@
-import { test as base, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { test as base } from './coverage'
 
 // One page per worker: NiiVue's module graph loads once, not per test. After each test the reset destroys every attached NiiVue,
 // frees its WebGL context (Chrome caps live contexts at ~16), and restores the

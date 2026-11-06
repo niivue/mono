@@ -5,23 +5,31 @@
   "targets": {
     "build": {
       "command": "bunx --bun vite build",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
         "{projectRoot}/vite.config.ts",
-        "{projectRoot}/src/**/*"
+        "{projectRoot}/src/**/*",
+        "{workspaceRoot}/packages/niivue/src/**/*"
       ],
       "outputs": ["{projectRoot}/dist"]
     },
     "test": {
       "command": "bun test",
-      "options": { "cwd": "{projectRoot}" },
-      "inputs": ["typescript"]
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["typescript"],
+      "dependsOn": ["^build"]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["^build"],
       "inputs": ["typescript"]
     },

@@ -38,6 +38,18 @@ export function inlineImageAssets(): Plugin {
   }
 }
 
+/**
+ * Rollup names a shared chunk after one of its modules, which labels the core
+ * chunk (the controller and what every entry needs) after an incidental
+ * helper. Name it for what it is. Shared with vite.config.standalone.ts.
+ */
+export const coreChunkFileNames =
+  (dir: string) =>
+  (chunk: { moduleIds: string[] }): string =>
+    chunk.moduleIds.some((id) => id.endsWith('/src/NVControlBase.ts'))
+      ? `${dir}core-[hash].js`
+      : `${dir}[name]-[hash].js`
+
 export default defineConfig({
   publicDir: false,
   resolve: {
@@ -71,12 +83,6 @@ export default defineConfig({
       },
     }),
   ],
-  // zarrita loads its blosc/lz4/zstd codecs through dynamic imports. Those
-  // would split a worker bundle into chunks, and an inlined worker is a single
-  // blob with nowhere to fetch a chunk from, so fold them into the one output.
-  worker: {
-    rollupOptions: { output: { inlineDynamicImports: true } },
-  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -105,7 +111,8 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      external: ['cbor-x', 'gl-matrix', 'nifti-reader-js', 'zarrita'],
+      external: ['cbor-x', 'gl-matrix', 'nifti-reader-js'],
+      output: { chunkFileNames: coreChunkFileNames('') },
     },
   },
 })

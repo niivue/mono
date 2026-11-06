@@ -19,11 +19,13 @@
  * are zarrita's. See `docs/ome-zarr-format.md`.
  */
 
+import type { ImageFromUrlOptions, TypedVoxelArray } from '@niivue/niivue'
+import {
+  channelColormapsFor,
+  channelVolumeFile,
+  NiiDataType,
+} from '@niivue/niivue'
 import * as zarr from 'zarrita'
-import { NiiDataType } from '@/NVConstants'
-import type { ImageFromUrlOptions, TypedVoxelArray } from '@/NVTypes'
-import { channelColormapsFor } from './channelColormaps'
-import { channelVolumeFile } from './channelVolumeFile'
 import {
   allocTypedArrayLike,
   checkOmeZarrIndex,
@@ -312,10 +314,28 @@ export async function fetchOmeZarr(
   url: string,
   options: OpenOmeZarrOptions & Pick<OmeZarrLoadOptions, 'fetchImpl'> = {},
 ): Promise<OmeZarrSource> {
-  const store = options.fetchImpl
-    ? new zarr.FetchStore(url, { fetch: options.fetchImpl })
-    : new zarr.FetchStore(url)
-  return openOmeZarr(store, options)
+  return openOmeZarr(omeZarrFetchStore(url, options.fetchImpl), options)
+}
+
+/**
+ * A FetchStore that reads a successful HTML answer as a missing key: a dev server's or
+ * SPA host's fallback page (200, for any path) is never store data, and zarrita
+ * only falls back from v3 to v2 metadata on a missing key.
+ */
+export function omeZarrFetchStore(
+  url: string,
+  fetchImpl: (request: Request) => Promise<Response> = (r) => fetch(r),
+): zarr.FetchStore {
+  return new zarr.FetchStore(url, {
+    async fetch(request) {
+      const response = await fetchImpl(request)
+      // Only a success: an HTML error page (502, 429, 403) must still throw.
+      const type = response.headers.get('content-type')?.toLowerCase()
+      if (!response.ok || !type?.startsWith('text/html')) return response
+      await response.body?.cancel()
+      return new Response(null, { status: 404 })
+    },
+  })
 }
 
 /** The number of channels the store's channel axis carries (1 when absent). */

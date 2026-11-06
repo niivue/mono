@@ -45,7 +45,7 @@
   "sideEffects": false,
   "scripts": {
     "codegen:assets": "node scripts/generate-assets.js",
-    "gen-fixtures": "bun scripts/generate-range-poc-fixture.ts && bun scripts/generate-tile-range-poc-fixture.ts",
+    "gen-fixtures": "bun scripts/generate-tile-range-poc-fixture.ts",
     "ensure-samples": "bun scripts/ensure-samples.ts",
     "dev": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite --port 5273 --strictPort --open /examples/index.html",
     "dev:perf": "bun run codegen:assets && bunx --bun vite --port 5273 --strictPort --open /examples/benchmark.html",
@@ -95,8 +95,7 @@
     "clipper2-ts": "^2.0.1-13",
     "earcut": "^3.0.2",
     "gl-matrix": "^3.4.4",
-    "nifti-reader-js": "^0.8.1",
-    "zarrita": "^0.7.3"
+    "nifti-reader-js": "^0.8.1"
   },
   "devDependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.3",

@@ -43,11 +43,12 @@ packages/niivue/perf-report.html
 # at runtime by the save-html demo; regenerated on dev/build).
 apps/demo-ext-save-html/public/niivue-standalone.js
 
-# On-demand OME-Zarr fixtures for the range.html streaming example. Multi-GB,
-# downloaded by scripts/fetch-omezarr.ts. The small `stent` store is bundled
-# (tracked); every other store is ignored.
-packages/niivue/public/omezarr/*.ome.zarr/
-!packages/niivue/public/omezarr/stent.ome.zarr/
+# On-demand OME-Zarr fixtures for demo-ext-tile's range.html. Multi-GB,
+# downloaded by apps/demo-ext-tile/scripts/fetch-omezarr.ts. The small `stent`
+# store is bundled (tracked); every other store is ignored.
+apps/demo-ext-tile/public/omezarr/*.ome.zarr/
+!apps/demo-ext-tile/public/omezarr/stent.ome.zarr/
+apps/demo-ext-tile/public/range-poc/
 
 # DICOM-WSI fixtures for the slides.html tile viewer. Hundreds of MB per series,
 # downloaded + manifest-generated on demand by scripts/fetch-dicom-wsi.ts.

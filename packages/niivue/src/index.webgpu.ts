@@ -307,6 +307,7 @@ export {
   channelColormapFor,
   channelColormapsFor,
 } from './volume/channelColormaps'
+export { channelVolumeFile } from './volume/channelVolumeFile'
 export type {
   ChunkPlan,
   MultiLodBounds,
@@ -327,6 +328,8 @@ export {
   type OffThreadChunkTiming,
   recordChunkPhase,
   resetChunkTiming,
+  timeChunkNetAsync,
+  timeChunkPhaseAsync,
 } from './volume/chunkTiming'
 // Exploded-block picking: resolve a click on an exploded brick, then copy that
 // brick out as a standalone volume that keeps the parent's anatomical frame.
@@ -382,67 +385,6 @@ export {
   omeTiffChannelFile,
   omeTiffVolumesFrom,
 } from './volume/omeTiffLoader'
-// OME-Zarr (OME-NGFF) multiscale microscopy stores
-export {
-  type OmeZarrAxis,
-  type OmeZarrAxisIndices,
-  type OmeZarrChannel,
-  type OmeZarrDataset,
-  type OmeZarrInfo,
-  type OmeZarrSpatialOrder,
-  type OmeZarrWindow,
-  omeZarrAxisIndices,
-  omeZarrResolveAxes,
-  omeZarrSpatialOrder,
-  omeZarrSpatialScaleUm,
-  omeroWindowUsable,
-  parseOmeroColor,
-  parseOmeZarrAttrs,
-} from './volume/omeZarr'
-// OME-Zarr chunk-streaming adapter for nv.loadChunkedVolume
-export { fetchOmeZarrChunkedSource } from './volume/fetchOmeZarrChunkedSource'
-export {
-  type ByteCacheStats,
-  ByteLruCache,
-  type FetchOmeZarrChunkedSourceOptions,
-  OME_ZARR_CHUNK_CACHE_BYTES,
-  OME_ZARR_CHUNK_ERROR,
-  type OmeZarrChunkedSource,
-  type OmeZarrChunkedSourceOptions,
-  omeZarrChunkedSource,
-  openOmeZarrChunkedSource,
-  withChunkTiming,
-} from './volume/omeZarrChunkedSource'
-export type { OmeZarrChunkPoolOptions } from './volume/omeZarrChunkWorkerPool'
-export {
-  clearPersistentByteCaches,
-  OME_ZARR_PERSIST_BYTES,
-  openCacheStorageBacking,
-  openPersistentByteCache,
-  PERSISTENT_CACHE_NAME,
-  PersistentByteCache,
-  type PersistentCacheBacking,
-  type PersistentCacheOptions,
-  type PersistentCacheStats,
-  withPersistentBytes,
-} from './volume/persistentByteCache'
-export {
-  defaultOmeZarrLevel,
-  fetchOmeZarr,
-  loadOmeZarrVolumes,
-  OME_ZARR_LEVEL_BUDGET_BYTES,
-  type OmeZarrLevel,
-  type OmeZarrLoadOptions,
-  type OmeZarrSource,
-  type OpenOmeZarrOptions,
-  omeZarrBlockToDisplay,
-  omeZarrChannelCount,
-  omeZarrChannelFile,
-  omeZarrChannelName,
-  omeZarrNiftiDatatype,
-  omeZarrVolumesFrom,
-  openOmeZarr,
-} from './volume/omeZarrLoader'
 export {
   createStreamingNVImage,
   type StreamingVolumeSpec,
@@ -479,7 +421,13 @@ export type {
   VolumeTransform,
 } from './volume/transforms'
 // Volume utilities for extensions
-export { extractVoxelFid, getImageDataRAS } from './volume/utils'
+export {
+  extractVoxelFid,
+  getBitsPerVoxel,
+  getImageDataRAS,
+  NIFTI_UNITS_MICRON,
+  withSpatialUnits,
+} from './volume/utils'
 // Volume writer options: the third argument to writeVolume
 export type { VolumeWriteOptions } from './volume/writers'
 // Worker bridge for external transform packages

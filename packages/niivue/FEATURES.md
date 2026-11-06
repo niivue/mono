@@ -53,7 +53,7 @@ Source of truth: `packages/niivue/src/index.ts` (package exports),
 
 Supported built-in volume formats: NIfTI (`.nii`/`.nii.gz`), NRRD, MRtrix MIF,
 AFNI HEAD/BRIK, MGH/MGZ, ITK MHD/MHA, ECAT7, DSI Studio FIB/SRC, BMP, V16, VMR,
-NPY/NPZ. DICOM/Zarr/MINC/TIFF require external plugins.
+NPY/NPZ. TIFF (incl. OME-TIFF, ImageJ stacks) is built in. OME-Zarr loads through `@niivue/nv-ext-tile/zarr`, DICOM through `@niivue/dcm2niix`; MINC is not ported.
 
 ## 3. Mesh, Tract & Connectome Loading
 

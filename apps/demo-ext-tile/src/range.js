@@ -11,17 +11,18 @@
 //   - omezarr:   full upstream OME-Zarr stores read with zarrita, in either
 //                0.5 (zarr v3) or 0.4 (zarr v2) form -- see fetchStoreRoot
 
-import * as zarr from 'zarrita'
 import NiiVue, {
-  ByteLruCache,
   chunkVolumeGrid,
   createStreamingNVImage,
+  SLICE_TYPE,
+} from '@niivue/niivue'
+import {
+  ByteLruCache,
   omeZarrChunkedSource,
   openOmeZarr,
   parseOmeZarrAttrs,
-  SLICE_TYPE,
-} from '../src/index.ts'
-import { urlParamSelect } from './urlParamSelect.js'
+} from '@niivue/nv-ext-tile/zarr'
+import * as zarr from 'zarrita'
 
 // Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
 // which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).
@@ -303,6 +304,18 @@ function niftiDatatype(dtype) {
       return { code: 16, bits: 32, displayMin: 0, displayMax: 1 }
     default:
       return { code: 512, bits: 16, displayMin: 0, displayMax: 65535 }
+  }
+}
+
+// A toolbar <select> for a page setting held in the URL (?backend=): it shows
+// the value in effect and reloads with the new one, since a page builds its
+// renderer once.
+function urlParamSelect(select, name, value) {
+  select.value = value
+  select.onchange = () => {
+    const url = new URL(location.href)
+    url.searchParams.set(name, select.value)
+    location.href = url.href
   }
 }
 

@@ -1,3 +1,18 @@
+## 1.0.0-rc.100 (2026-11-06)
+
+### Features
+
+- **examples:** WebGPU, anti-aliasing and interpolation controls in the slide demos ([a2562242](https://github.com/niivue/mono/commit/a2562242))
+- **examples:** toggle the slide demo HUD panels ([989d999d](https://github.com/niivue/mono/commit/989d999d))
+
+### Fixes
+
+- **examples:** audit fixes for the slide demo controls ([47ba79ef](https://github.com/niivue/mono/commit/47ba79ef))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.99 (2026-11-06)
 
 ### Features

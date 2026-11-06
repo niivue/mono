@@ -957,17 +957,26 @@ export class NVSlide extends EventTarget {
     manifestUrl: string,
     options: NVSlideOptions = {},
   ): Promise<NVSlide> {
-    const response = await fetch(manifestUrl)
+    const controller = new AbortController()
+    const response = await fetch(manifestUrl, { signal: controller.signal })
     if (!response.ok) {
       // A server may explain a refusal as JSON `{ error }`; keep its reason, but
       // never let an error body that does not finish hold back the status.
-      const isJson = response.headers.get('content-type')?.includes('json')
+      const isJson = response.headers
+        .get('content-type')
+        ?.toLowerCase()
+        .includes('json')
+      let timer: ReturnType<typeof setTimeout> | undefined
       const body = isJson
         ? ((await Promise.race([
             response.json().catch(() => null),
-            new Promise((resolve) => setTimeout(resolve, 1000, null)),
+            new Promise((resolve) => {
+              timer = setTimeout(resolve, 1000, null)
+            }),
           ])) as { error?: unknown } | null)
         : null
+      clearTimeout(timer)
+      controller.abort() // releases a body read still pending, or never started
       const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
       throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
     }

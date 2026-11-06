@@ -1435,15 +1435,30 @@ describe('NVSlide.fromManifestUrl', () => {
     )
   })
 
-  it('does not wait on a JSON error body that never finishes', async () => {
+  it('does not wait on a JSON error body that never finishes, and aborts it', async () => {
     const stalled = new ReadableStream({ start() {} })
-    globalThis.fetch = (async () =>
-      new Response(stalled, {
+    let signal: AbortSignal | null | undefined
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      signal = init?.signal
+      return new Response(stalled, {
         status: 502,
         headers: { 'content-type': 'application/json' },
-      })) as unknown as typeof fetch
+      })
+    }) as unknown as typeof fetch
     await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
       /^Slide manifest HTTP 502$/,
+    )
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('reads the reason for an uppercase JSON media type', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: 'unsupported syntax' }), {
+        status: 415,
+        headers: { 'content-type': 'Application/JSON; Charset=UTF-8' },
+      })) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      'Slide manifest HTTP 415: unsupported syntax',
     )
   })
 })

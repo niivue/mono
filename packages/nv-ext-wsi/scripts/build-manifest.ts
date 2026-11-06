@@ -35,7 +35,11 @@ const slide = index.slides[0]
 if (!slide) throw new Error(`no tiled slide in ${filesDir}`)
 if (index.slides.length > 1)
   console.warn(`${index.slides.length} slides found; writing the first`)
-const manifest = await manifestFromIndex(slide, files, (i) => `files/${i.file}`)
+const manifest = await manifestFromIndex(
+  slide,
+  files,
+  (i) => `files/${encodeURIComponent(i.file)}`,
+)
 manifest.id = id
 manifest.name = `${id} DICOM-WSI`
 await Bun.write(

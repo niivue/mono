@@ -11,7 +11,7 @@ NiiVue 0.6x; pin `ipyniivue<3` to keep it.
 ## Install for local development
 
 The bundled widget JavaScript (`src/ipyniivue/static/widget.js`,
-~1.3 MB) is gitignored — generate it before installing:
+~5.2 MB) is gitignored — generate it before installing:
 
 ```bash
 bun install                       # from the monorepo root, once
@@ -76,6 +76,14 @@ nv.add_volume_from_url(
 `add_volume_from_url(...)` is a small Python helper around NiiVue's
 `loadVolumes(...)`. Keyword arguments are converted from snake_case to
 NiiVue's camelCase option names.
+
+OME-Zarr stores load through `@niivue/nv-ext-tile/zarr`, bundled into the
+widget: one pyramid level whole, or streamed brick by brick:
+
+```python
+await nv.load_ome_zarr(store_url, level=2)       # whole level, each channel a volume
+await nv.load_ome_zarr(store_url, stream=True)   # streamed, finer near the crosshair
+```
 
 The smoke-test notebook is:
 

@@ -1212,6 +1212,9 @@ function emitJs(api: ApiDescriptor): string {
   lines.push(
     `import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'`,
   )
+  lines.push(
+    `import { loadOmeZarrVolumes, streamOmeZarr } from '@niivue/nv-ext-tile/zarr'`,
+  )
   lines.push('')
   lines.push('// Image-processing transforms bundled from @niivue/nv-ext-*.')
   lines.push(
@@ -1561,6 +1564,41 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('        if (reqId !== null) respond(false, err)')
   lines.push(
     '        else console.error("ipyniivue: __ext_apply_image_transform threw:", err)',
+  )
+  lines.push('      }')
+  lines.push('      return')
+  lines.push('    }')
+  lines.push(
+    '    // OME-Zarr (nv-ext-tile/zarr): one pyramid level whole, or streamed.',
+  )
+  lines.push('    if (msg.cmd === "__ext_load_ome_zarr") {')
+  lines.push('      const [rawUrl, opts = {}] = coerceCommandArgs(msg.args)')
+  lines.push(
+    '      const url = new URL(rawUrl, location.href).href // zarrita needs an absolute URL',
+  )
+  lines.push('      try {')
+  lines.push('        if (opts.stream) {')
+  lines.push(
+    '          // Replaces, like loadVolumes, once the store has opened; the helper frees its manager and workers when the volume goes.',
+  )
+  lines.push(
+    '          await streamOmeZarr(state.nv, url, { channel: opts.channel, timepoint: opts.timepoint, replace: true })',
+  )
+  lines.push('        } else {')
+  lines.push(
+    '          const channels = opts.channel == null ? undefined : [opts.channel]',
+  )
+  lines.push(
+    '          await state.nv.loadVolumes(await loadOmeZarrVolumes(url, { level: opts.level, channels, timepoint: opts.timepoint }))',
+  )
+  lines.push('        }')
+  lines.push(
+    '        if (reqId !== null) respond(true, { volumes: state.nv.volumes.length, streamed: !!opts.stream })',
+  )
+  lines.push('      } catch (err) {')
+  lines.push('        if (reqId !== null) respond(false, err)')
+  lines.push(
+    '        else console.error("ipyniivue: __ext_load_ome_zarr threw:", err)',
   )
   lines.push('      }')
   lines.push('      return')

@@ -9,6 +9,7 @@
 import NiiVue from '@niivue/niivue'
 import { conform, connectedLabel, otsu, removeHaze } from '@niivue/nv-ext-image-processing'
 import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'
+import { loadOmeZarrVolumes, streamOmeZarr } from '@niivue/nv-ext-tile/zarr'
 
 // Image-processing transforms bundled from @niivue/nv-ext-*.
 // Registered with NiiVue in initialize() so Python can apply them
@@ -447,6 +448,25 @@ async function initialize({ model }) {
       } catch (err) {
         if (reqId !== null) respond(false, err)
         else console.error("ipyniivue: __ext_apply_image_transform threw:", err)
+      }
+      return
+    }
+    // OME-Zarr (nv-ext-tile/zarr): one pyramid level whole, or streamed.
+    if (msg.cmd === "__ext_load_ome_zarr") {
+      const [rawUrl, opts = {}] = coerceCommandArgs(msg.args)
+      const url = new URL(rawUrl, location.href).href // zarrita needs an absolute URL
+      try {
+        if (opts.stream) {
+          // Replaces, like loadVolumes, once the store has opened; the helper frees its manager and workers when the volume goes.
+          await streamOmeZarr(state.nv, url, { channel: opts.channel, timepoint: opts.timepoint, replace: true })
+        } else {
+          const channels = opts.channel == null ? undefined : [opts.channel]
+          await state.nv.loadVolumes(await loadOmeZarrVolumes(url, { level: opts.level, channels, timepoint: opts.timepoint }))
+        }
+        if (reqId !== null) respond(true, { volumes: state.nv.volumes.length, streamed: !!opts.stream })
+      } catch (err) {
+        if (reqId !== null) respond(false, err)
+        else console.error("ipyniivue: __ext_load_ome_zarr threw:", err)
       }
       return
     }

@@ -1,5 +1,5 @@
 // OME-Zarr (OME-NGFF) for NiiVue: whole-level loading (loadOmeZarrVolumes) and
-// chunk streaming for nv.loadChunkedVolume (fetchOmeZarrChunkedSource), with
+// chunk streaming for nv.loadChunkedVolume (streamOmeZarr, fetchOmeZarrChunkedSource), with
 // its worker pool and byte caches.
 // biome-ignore lint/performance/noBarrelFile: package entry point
 export { fetchOmeZarrChunkedSource } from './zarr/fetchOmeZarrChunkedSource'
@@ -61,3 +61,4 @@ export {
   type PersistentCacheStats,
   withPersistentBytes,
 } from './zarr/persistentByteCache'
+export { type StreamOmeZarrOptions, streamOmeZarr } from './zarr/streamOmeZarr'

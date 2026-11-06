@@ -58,6 +58,10 @@ mock.module('@niivue/nv-ext-drawing', () => ({
   findDrawingBoundarySlices: () => null,
   interpolateMaskSlices: () => null,
 }))
+mock.module('@niivue/nv-ext-tile/zarr', () => ({
+  loadOmeZarrVolumes: async () => [],
+  streamOmeZarr: async () => ({}),
+}))
 
 const g = globalThis as Record<string, unknown>
 g.document = {

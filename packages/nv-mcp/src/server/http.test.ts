@@ -18,6 +18,7 @@ const CORE_TOOLS = [
   'use_tab',
   'new_tab',
   'load_volume',
+  'load_ome_zarr',
   'add_overlay',
   'where_am_i',
   'list_regions',

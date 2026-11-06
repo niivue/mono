@@ -1,3 +1,13 @@
+## 1.0.0-rc.109 (2026-11-06)
+
+### Features
+
+- **niivue:** getCanvasImage reads the drawn canvas synchronously ([0f6a5679](https://github.com/niivue/mono/commit/0f6a5679))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.108 (2026-11-06)
 
 ### Features

@@ -100,6 +100,14 @@ export default defineConfig({
     },
     rollupOptions: {
       external: ['cbor-x', 'gl-matrix', 'nifti-reader-js'],
+      output: {
+        // Rollup names the shared core chunk after an incidental module (it
+        // was an OME-Zarr helper, then a TIFF loader); name it for what it is.
+        chunkFileNames: (chunk) =>
+          chunk.moduleIds.some((id) => id.endsWith('/src/NVControlBase.ts'))
+            ? 'core-[hash].js'
+            : '[name]-[hash].js',
+      },
     },
   },
 })

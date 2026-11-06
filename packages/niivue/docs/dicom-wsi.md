@@ -62,6 +62,19 @@ NVSlide (`assertSingleSlidePlane`) then refuses any `dicom-wsi*` level unless:
 
 Unknown is never treated as 1.
 
+**Sparse levels (TILED_SPARSE).** Frames are placed by per-frame position, so the frame
+count says nothing about paths or planes: a level with `sparse: true` must state
+`opticalPaths: 1` and `focalPlanes: 1`, or NVSlide refuses it.
+- `tiles` is row-major `columns × rows`, with `null` for a hole.
+- A sparse level may instead list only its present tiles. NVSlide places them by `x`, `y`
+  (listing order is not trusted; off-grid and duplicate tiles are dropped) into a copy;
+  the caller's manifest is not changed.
+- Holes are skipped: nothing is fetched or drawn, as in OpenSlide.
+- A tile's `fileUrl` overrides the level's, for a level split across files (a concatenation).
+
+Producers: nv-ext-wsi's `DicomWsiSource` (local folders) and `manifestFromIndex` (hosted
+`dicom-wsi-range-v1`); see `packages/nv-ext-wsi/README.md`.
+
 **Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
 **ICC profiles are kept, not yet applied.** Manifests record the optical path's ICC
 profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0

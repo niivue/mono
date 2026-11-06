@@ -68,10 +68,14 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.
+- Hostile input is bounded: the header read stops at 64 MiB, sequences at 8 levels,
+  a level at 2^22 tiles, and counts and offsets are checked against the file size
+  (`malformed` otherwise).
 - `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
   that changed since indexing fails rather than decoding garbage.
 - Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
-  (`registerDcm2niixDecoders`, with `@niivue/dcm2niix` as an optional peer dependency).
+  (`registerDcm2niixDecoders`, with `@niivue/dcm2niix` as an optional peer dependency;
+  a decoder the host already registered wins).
 - Slides are shown with row 0 of the total pixel matrix at the top (`displayYAxis: 'down'`),
   as OpenSlide shows them.
 - Index speed for the 8 OpenSlide DICOM-WSI test sets (local SSD; Chrome reads through
@@ -102,7 +106,7 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Sparse levels list only their present tiles; NVSlide places them by `x`, `y`.
 - A level split across files (a concatenation) names each tile's `fileUrl`.
 
-`bun scripts/build-manifest.ts <slide-dir> <id>` indexes `<slide-dir>/files` and writes `<slide-dir>/manifest.json`, with tiles read from `files/<name>`.
+`bun scripts/build-manifest.ts <slide-dir> <id>` indexes `<slide-dir>/files` and writes `<slide-dir>/manifest.json` for the first slide found, with tiles read from `files/<name>` (URL-encoded). Serve the directory with Range and CORS (see below).
 
 ## Range, CORS and full downloads
 

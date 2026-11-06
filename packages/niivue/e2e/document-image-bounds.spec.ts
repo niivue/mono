@@ -68,7 +68,7 @@ for (const field of ['thumbnail', 'matcap'] as const) {
         const nv = new NiiVue({ backend: 'webgl2' })
         await nv.attachToCanvas(canvas)
         nv.sliceType = 4 // render: the view that uploads the matcap
-        await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+        await nv.loadVolumes([{ url: '/volumes/sphere.nii.gz' }])
         const doc = JSON.parse(
           new TextDecoder().decode(nv.serializeDocument({ format: 'json' })),
         )
@@ -79,8 +79,9 @@ for (const field of ['thumbnail', 'matcap'] as const) {
           () => '',
           (e: Error) => e.message,
         )
-        // The matcap is uploaded with the volume after the document resolves.
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+        // The matcap is uploaded with the volume after the document resolves;
+        // the warning it logs is polled for below.
+        await nv.whenUpdatesSettle()
         return {
           error,
           volumes: nv.volumes.length,

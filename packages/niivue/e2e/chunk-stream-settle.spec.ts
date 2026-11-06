@@ -24,9 +24,11 @@ test.use({ launchOptions: webgpuLaunchOptions })
 
 // A third of the 30 s timeout; a SwiftShader WebGPU 3D fill takes 2-4 s.
 const SETTLE_BUDGET_MS = 10_000
-// Long enough that a resolve mid-fade is plain, and longer than the frames a
-// SwiftShader WebGPU view needs before it settles.
-const FADE_MS = 3000
+// The brick fade, set through the `chunkFadeMs` option: many frames long, so a
+// resolve mid-fade is plain (the call returns in under 0.9x of it, and the
+// pixel differs from the settled one), and short enough not to dominate the
+// run.
+const FADE_MS = 500
 // The wait given in the hidden-tab case: long enough that sitting it out is
 // plainly not resolving at once.
 const HIDDEN_TIMEOUT_MS = 6000

@@ -11,8 +11,7 @@ name: niivue browser contracts
 #   texcache-kind-change  a volume that stops being chunked must drop its
 #                       bricks. The entry used to leak for the life of the
 #                       renderer, holding every brick texture (issue #145).
-#                       This one loads mni152, so the checkout pulls that
-#                       single LFS object.
+#                       All three build their data in the page: no LFS.
 #   render-*            every scene matches its committed reference PNGs
 #                       (render-reference and the feature groups beside it).
 #                       The references are shared by all platforms, so running
@@ -70,12 +69,8 @@ jobs:
   browser-contracts:
     runs-on: ubuntu-latest
     steps:
+      # No LFS: these specs build their volumes in the page.
       - uses: actions/checkout@v4
-
-      # Not `lfs: true`: that pulls every object under packages/dev-images
-      # (~93 MB) when one spec needs one 4.3 MB volume.
-      - name: Fetch the one LFS volume the specs need
-        run: git lfs pull --include=packages/dev-images/images/volumes/mni152.nii.gz
 
       - uses: oven-sh/setup-bun@v2
         with:

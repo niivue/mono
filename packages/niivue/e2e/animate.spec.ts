@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test'
 import { test } from './sharedPage'
+import { syntheticVolume } from './syntheticVolume'
 
 // animateTo stops a transition on a press on the canvas, through listeners it
 // adds to the canvas and removes when the transition ends. The planning,
@@ -10,15 +11,17 @@ import { test } from './sharedPage'
 // every transition into a 'stalled' jump and test nothing in between.
 const setup = `
   const { default: NiiVue } = await import('/src/index.ts')
+  const synth = ${syntheticVolume}
   const canvas = document.createElement('canvas')
   canvas.width = 256; canvas.height = 256
   document.body.appendChild(canvas)
   const nv = new NiiVue({ backend: 'webgl2' })
   await nv.attachToCanvas(canvas)
   await nv.loadVolumes([
-    { url: '/volumes/mni152.nii.gz' },
-    { url: '/volumes/mni152_gm.nii.gz', colormap: 'warm', opacity: 0 },
+    { url: synth() },
+    { url: synth({ name: 'overlay.nii' }), colormap: 'warm', opacity: 0 },
   ])
+  const frame = () => new Promise((r) => requestAnimationFrame(r))
 `
 
 test('pressing on the canvas stops a transition where it is', async ({
@@ -29,11 +32,15 @@ test('pressing on the canvas stops a transition where it is', async ({
     ${setup}
     nv.scaleMultiplier = 1
     const running = nv.animateTo({ scaleMultiplier: 3 }, { duration: 2000, easing: 'linear' })
-    await new Promise((res) => setTimeout(res, 300))
+    // Press once the transition has moved, so it stops part way.
+    while (nv.scaleMultiplier === 1) await frame()
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     const result = await running
     const stoppedAt = nv.scaleMultiplier
-    await new Promise((res) => setTimeout(res, 200))
+    // A stopped transition draws no more steps: the frames it would have
+    // drawn them in leave the value alone.
+    await frame()
+    await frame()
     // Listeners are gone once it ends: a later press does not touch the next one.
     const next = nv.animateTo({ scaleMultiplier: 1 }, { duration: 100, interruptOnInput: false })
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))

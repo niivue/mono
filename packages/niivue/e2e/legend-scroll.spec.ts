@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
 import { test } from './sharedPage'
+import { syntheticVolume } from './syntheticVolume'
 
 // A legend too tall for the canvas scrolls: the wheel honours every
 // WheelEvent.deltaMode, and a press on the scrollbar thumb is the legend's,
@@ -21,8 +22,7 @@ const mount = (backend: string): string => `(async () => {
     if (!(await navigator.gpu.requestAdapter())) return { ok: false, why: 'no WebGPU adapter' }
   }
   const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
-  const nextFrame = () => new Promise((r) =>
-    requestAnimationFrame(() => requestAnimationFrame(r)))
+  const synth = ${syntheticVolume}
   const c = document.createElement('canvas')
   c.width = ${SIZE}; c.height = ${SIZE}
   c.style.cssText = 'position:fixed;top:0;left:0;width:${SIZE}px;height:${SIZE}px'
@@ -36,11 +36,18 @@ const mount = (backend: string): string => `(async () => {
   await nv.attachToCanvas(c)
   await nv.addColormapFromUrl('/volumes/aal.json')
   await nv.loadVolumes([
-    { url: '/volumes/mni152.nii.gz' },
+    { url: synth() },
     { url: '/volumes/aal.nii.gz', colormap: 'aal' },
   ])
   window.__nv = nv
-  window.__frame = async () => { await nextFrame(); await nextFrame() }
+  // Updates settled and a frame drawn after them: the legend layout (and its
+  // scroll row) is computed by the frame that draws it.
+  window.__frame = async () => {
+    await nv.whenUpdatesSettle()
+    do {
+      await new Promise((r) => requestAnimationFrame(r))
+    } while (nv.framePending)
+  }
   await window.__frame()
   return { ok: true, backend: nv.backend }
 })()`
@@ -115,13 +122,10 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     const steps = await page.evaluate(`(async () => {
       const nv = window.__nv
       const row = () => nv.view.legendLayout?.scrollRow ?? -1
-      // A slow renderer may not have drawn yet: wait for the expected reset.
-      const until0 = async () => {
-        for (let i = 0; i < 120 && row() !== 0; i++) await window.__frame()
-        return row()
-      }
+      // The row once the change has been drawn: a reset happens then, so a
+      // row still 5 after it is a kept position.
       const settle = async () => {
-        for (let i = 0; i < 10; i++) await window.__frame()
+        await window.__frame()
         return row()
       }
       const scroll = async () => {
@@ -138,17 +142,17 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       out.afterToggle = await settle()
       await nv.addColormapFromUrl('/volumes/aal.json', 'aal2')
       await nv.setVolume(1, { colormap: 'aal2' })
-      out.afterColormap = await until0()
+      out.afterColormap = await settle()
       await scroll()
       await nv.addVolume({ url: '/volumes/aal.nii.gz', colormap: 'aal', name: 'aal_b.nii.gz' })
-      out.afterLoad = await until0()
+      out.afterLoad = await settle()
       await scroll()
       await nv.removeVolume(2)
-      out.afterRemove = await until0()
+      out.afterRemove = await settle()
       await scroll()
       const doc = nv.serializeDocument()
       await nv.loadDocument(new File([doc], 'd.nvd'))
-      out.afterDocument = await until0()
+      out.afterDocument = await settle()
       return out
     })()`)
     expect(steps).toEqual({

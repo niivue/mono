@@ -53,7 +53,7 @@ test('a volume loaded concurrently with attach still loads', async ({
     const attaching = nv.attachToCanvas(mkCanvas())
     let error = null
     const loading = nv
-      .loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+      .loadVolumes([{ url: '/volumes/sphere.nii.gz' }])
       .catch((e) => { error = e.message })
     await Promise.all([attaching, loading])
     return { error, volumes: nv.volumes.length }

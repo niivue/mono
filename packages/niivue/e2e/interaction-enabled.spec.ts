@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 test.use({ launchOptions: webgpuLaunchOptions })
 
@@ -8,7 +9,6 @@ for (const backend of ['webgl2', 'webgpu']) {
     test(`${backend}: interaction ${isInteractionEnabled} survives reinitialization`, async ({
       page,
     }) => {
-      await page.goto('/examples/index.html', { waitUntil: 'load' })
       const result = await page.evaluate(
         async ({ backend, isInteractionEnabled }) => {
           const { default: NiiVue } = await import(`/src/index.${backend}.ts`)
@@ -27,7 +27,12 @@ for (const backend of ['webgl2', 'webgpu']) {
             const restarted = await nv.reinitializeView({ forceRestart: true })
             return { attached, restarted, reinitialized: listeners() }
           } finally {
+            // The shared page's reset tracks the root entry's class only:
+            // free this context now, as it would.
+            const { gl, device } = nv.view ?? {}
             nv.destroy()
+            gl?.getExtension('WEBGL_lose_context')?.loseContext()
+            device?.destroy()
           }
         },
         { backend, isInteractionEnabled },

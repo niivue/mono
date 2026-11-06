@@ -1,17 +1,22 @@
 import { expect } from '@playwright/test'
 import { test } from './sharedPage'
+import { syntheticVolume } from './syntheticVolume'
 
 // A half-drawn annotation (bidirectional long axis, multi-click contour) must
 // stay on its own slice and scene: #111 (slice change), #112 (re-selecting the
 // same tool), #113 (loadDocument), #114 (double-click on the 3D render tile).
+// The volumes are synthetic (`syntheticVolume`), built in the page.
+
+const OBLIQUE = 'synth({ tilt: [10, 8] })'
 
 const setup = (
   sliceType: string,
   tool: string,
-  volume = '/volumes/mni152.nii.gz',
+  volume = 'synth()',
   width = 400,
 ) => `
   const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+  const synth = ${syntheticVolume}
   const c = document.createElement('canvas')
   c.style.cssText = 'position:fixed;left:0;top:0;width:${width}px;height:400px'
   document.body.appendChild(c)
@@ -21,7 +26,26 @@ const setup = (
     sliceType: SLICE_TYPE.${sliceType},
   })
   await nv.attachToCanvas(c)
-  await nv.loadVolumes([{ url: '${volume}' }])
+  await nv.loadVolumes([{ url: ${volume} }])
+  // Updates settled and the next frame drawn: hit testing reads the drawn
+  // tiles.
+  const drawn = async () => {
+    await nv.whenUpdatesSettle()
+    await nv.whenChunkStreamSettles()
+    do {
+      await new Promise((r) => requestAnimationFrame(r))
+    } while (nv.framePending)
+  }
+  // A double-click that reaches the depth pick moves the crosshair once the
+  // pick resolves: record the pick so a test can wait for it.
+  const depthPick = nv.view.depthPick.bind(nv.view)
+  let lastPick = null
+  nv.view.depthPick = (...a) => (lastPick = depthPick(...a))
+  const picked = async () => {
+    // The handler awaited the pick first, so its continuation has run once
+    // this await of the same promise returns.
+    if (lastPick) await lastPick.catch(() => null)
+  }
   nv.annotationIsEnabled = true
   nv.annotationTool = '${tool}'
 
@@ -96,7 +120,7 @@ test('a bidirectional measurement on one oblique slice still commits', async ({
 }) => {
   test.setTimeout(90_000)
   const count = await page.evaluate(`(async () => {
-    ${setup('AXIAL', 'bidirectional', '/volumes/fs/T1_oblique.nii.gz')}
+    ${setup('AXIAL', 'bidirectional', OBLIQUE)}
     // The axial plane is tilted in mm, so the two drags differ in mm z.
     drag([150, 200], [250, 200])
     drag([200, 120], [200, 280])
@@ -113,7 +137,7 @@ for (const tool of ['spline', 'livewire']) {
   }) => {
     test.setTimeout(90_000)
     const r = await page.evaluate(`(async () => {
-      ${setup('AXIAL', tool, '/volumes/fs/T1_oblique.nii.gz')}
+      ${setup('AXIAL', tool, OBLIQUE)}
       // A fresh contour resets its anchor (the first click); livewire's
       // points are its traced path, so the anchor is what tells.
       const anchor = () => JSON.stringify(nv._annotationPolyAnchorMM)
@@ -123,14 +147,13 @@ for (const tool of ['spline', 'livewire']) {
       click([200, 280])
       const kept = anchor() === first && nv._annotationPolyPoints.length >= 3
       ev('dblclick', 200, 280, 0, MouseEvent)
-      await new Promise((resolve) => setTimeout(resolve, 100))
       const committed = nv.annotations.length
       // A click on another slice still starts over.
       click([150, 140])
       const second = anchor()
       nv.moveCrosshairInVox(0, 0, 8)
       // Hit testing reads the drawn slice, so let it redraw.
-      await new Promise((resolve) => setTimeout(resolve, 200))
+      await drawn()
       click([260, 160])
       return { kept, committed, restarted: anchor() !== second }
     })()`)
@@ -207,7 +230,9 @@ test('a double-click on the 3D render tile does not close a contour (#114)', asy
     click([ax + 3, ay + 6])
     const crosshair = [...nv.crosshairPos]
     ev('dblclick', render[0], render[1], 0, MouseEvent)
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // A depth pick, had the double-click reached one, moves the crosshair
+    // when it resolves.
+    await picked()
     const afterRender = {
       count: nv.annotations.length,
       points: nv._annotationPolyPoints?.length ?? 0,
@@ -216,7 +241,6 @@ test('a double-click on the 3D render tile does not close a contour (#114)', asy
     // The same double-click on the axial tile closes it.
     click([ax + 3, ay + 3])
     ev('dblclick', ax + 3, ay + 3, 0, MouseEvent)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     return { afterRender, count: nv.annotations.length }
   })()`)
   expect(r.afterRender).toEqual({ count: 0, points: 3, crosshairMoved: false })
@@ -233,7 +257,8 @@ test('a double-click on graph zoom-out still resets the graph mid-contour', asyn
     await nv.loadSignals([{ url: '/signals/svs_se_30.nii.gz' }])
     nv.isGraphVisible = true
     nv.graphZoom(2).graphZoom(2)
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // The graph's buttons are laid out by the frame that draws it.
+    await drawn()
     const zoomed = nv.model.signalViewWindow !== null
     const [ax, ay] = tileCentre((t) => !t.isRender)
     click([ax, ay])
@@ -241,7 +266,6 @@ test('a double-click on graph zoom-out still resets the graph mid-contour', asyn
     click([ax + 3, ay + 6])
     const b = nv.view.graphLayout.controls.find((k) => k.id === 'zoomOut')
     ev('dblclick', b.x + b.w / 2, b.y + b.h / 2, 0, MouseEvent)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     return {
       zoomed,
       reset: nv.model.signalViewWindow === null,
@@ -254,10 +278,10 @@ test('a double-click on graph zoom-out still resets the graph mid-contour', asyn
 // The 2D slice check reads texture depth, which chunking and the 3D explode
 // leave alone; the exploded-block 3D stroke is axis-aligned volumes only.
 for (const [volume, oblique] of [
-  ['/volumes/mni152.nii.gz', false],
-  ['/volumes/fs/T1_oblique.nii.gz', true],
+  ['synth()', false],
+  [OBLIQUE, true],
 ] as const) {
-  test(`annotations still draw on exploded blocks (${volume})`, async ({
+  test(`annotations still draw on exploded blocks (${oblique ? 'oblique' : 'axis-aligned'})`, async ({
     page,
   }) => {
     test.setTimeout(90_000)
@@ -265,7 +289,7 @@ for (const [volume, oblique] of [
       ${setup('MULTIPLANAR', 'bidirectional', volume)}
       await nv.setVolumeChunkGrid(0, [2, 2, 2])
       await nv.setVolumeChunkExplode(0, { enabled: true, scale: [1.5, 1.5, 1.5] })
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      await drawn()
       // Overlapping shapes merge, so count additions rather than annotations.
       const added = []
       nv.addEventListener('annotationAdded', (e) =>
@@ -278,7 +302,6 @@ for (const [volume, oblique] of [
       click([ax + 10, ay - 10])
       click([ax, ay + 10])
       ev('dblclick', ax, ay + 10, 0, MouseEvent)
-      await new Promise((resolve) => setTimeout(resolve, 100))
       // A right-drag on a block in the 3D render draws a vector stroke.
       nv.annotationTool = 'freehand'
       const [rx, ry] = tileCentre((t) => t.isRender)
@@ -333,7 +356,7 @@ test('Escape mid-drag cancels a bidirectional short axis (#471)', async ({
 })
 
 for (const [name, call] of [
-  ['loadVolumes', `await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])`],
+  ['loadVolumes', `await nv.loadVolumes([{ url: synth() }])`],
   ['removeAllVolumes', 'await nv.removeAllVolumes()'],
   ['removeVolume(0)', 'await nv.removeVolume(0)'],
   ['loadAnnotationsJSON', `nv.loadAnnotationsJSON('[]')`],
@@ -358,8 +381,8 @@ test('a volume move that changes the background drops a half-drawn measurement (
   const r = await page.evaluate(`(async () => {
     ${setup('AXIAL', 'bidirectional')}
     await nv.loadVolumes([
-      { url: '/volumes/mni152.nii.gz' },
-      { url: '/volumes/fs/T1_oblique.nii.gz' },
+      { url: synth() },
+      { url: ${OBLIQUE} },
     ])
     drag([150, 200], [250, 200])
     const before = nv._bidirectionalLong !== null
@@ -379,7 +402,7 @@ test('a freehand stroke held across loadVolumes does not commit (#470)', async (
     ev('pointerdown', 150, 150, 0)
     ev('pointermove', 200, 160, -1)
     ev('pointermove', 250, 200, -1)
-    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    await nv.loadVolumes([{ url: synth() }])
     // The drag ended with it: a move before release does not turn the camera.
     const view = [nv.azimuth, nv.elevation]
     ev('pointermove', 260, 220, -1)
@@ -412,7 +435,7 @@ test('an abandoned resize keeps the erased part of a shape erased (#470)', async
     click([140, 160]) // select the left half
     ev('pointerdown', 200, 200, 0) // the shape's bottom-right corner
     const resizing = nv._resizingControlPoint >= 0
-    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    await nv.loadVolumes([{ url: synth() }])
     ev('pointerup', 200, 200, 0)
     return { split, resizing, kept: JSON.stringify(nv.annotations[0].polygons) === erased }
   })()`)
@@ -495,7 +518,7 @@ test('loadVolumes ends a control-point resize drag (#470)', async ({
     ev('pointerdown', 200, 200, 0)
     ev('pointermove', 220, 220, -1)
     const resizing = nv._resizingControlPoint >= 0 && geometry() !== original
-    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+    await nv.loadVolumes([{ url: synth() }])
     const ended = nv._resizingControlPoint === -1 && !nv.isDragging
     // The half-done resize is undone, so the shape matches its stats.
     const reverted = geometry() === original

@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test'
 import { test } from './sharedPage'
+import { syntheticVolume } from './syntheticVolume'
 
 // Regression coverage for the pointerup `finally` in `control/interactions.ts`.
 // A stroke finalize can throw (a lost GPU device is the realistic cause). When it
@@ -14,6 +15,7 @@ import { test } from './sharedPage'
 // axial slice WITHOUT releasing. Leaves the pointer mid-drag.
 const setupMidStroke = `
   const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+  const synth = ${syntheticVolume}
   const c = document.createElement('canvas')
   c.width = 300; c.height = 300
   c.style.cssText = 'position:fixed;left:0;top:0;width:300px;height:300px'
@@ -21,7 +23,7 @@ const setupMidStroke = `
 
   const nv = new NiiVue({ backend: 'webgl2', sliceType: SLICE_TYPE.AXIAL })
   await nv.attachToCanvas(c)
-  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+  await nv.loadVolumes([{ url: synth() }])
   nv.createEmptyDrawing()
   nv.drawIsEnabled = true
   nv.drawPenValue = 1

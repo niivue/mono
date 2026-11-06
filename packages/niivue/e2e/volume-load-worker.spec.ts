@@ -19,7 +19,7 @@ const loadVolume = `
   document.body.appendChild(c)
   const nv = new NiiVue({ backend: 'webgl2' })
   await nv.attachToCanvas(c)
-  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+  await nv.loadVolumes([{ url: '/volumes/sphere.nii.gz' }])
 `
 
 test('the volume-load worker is used, not the main-thread fallback', async ({
@@ -37,7 +37,8 @@ test('the volume-load worker is used, not the main-thread fallback', async ({
     return nv.volumes[0].img.length
   })()`)
 
-  expect(voxels).toBeGreaterThan(1_000_000)
+  // sphere.nii.gz: 91 x 109 x 91, gzipped, so the worker inflated it.
+  expect(voxels).toBe(91 * 109 * 91)
   // The tell-tale of the bug. Any structured-clone failure lands here.
   expect(warnings.join('\n')).not.toContain('volumeLoad worker failed')
 })
@@ -71,8 +72,7 @@ test('the header survives the worker round-trip with its methods intact', async 
   expect(r.datatypeStr.length).toBeGreaterThan(0)
   expect(r.formatted).toBeTruthy()
   expect(r.leakedMarker).toBe(false)
-  // mni152 is a 3-D volume with real dims.
-  expect(r.dims[0]).toBe(3)
-  expect(r.dims[1]).toBeGreaterThan(1)
+  // sphere is a 3-D volume with real dims.
+  expect(r.dims).toEqual([3, 91, 109, 91])
   expect(r.datatypeCode).toBeGreaterThan(0)
 })

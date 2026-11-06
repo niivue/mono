@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
+import { test } from './sharedPage'
 
 // Guards the macos-15 full-suite job (issue #199). Most GPU specs skip when no
 // adapter is available, so a runner image or Chromium build that quietly falls
@@ -15,8 +16,8 @@ test.beforeEach(() => {
 })
 
 test('hardware mode reaches a real GPU on both backends', async ({ page }) => {
-  // A served page, not about:blank: navigator.gpu needs a secure context.
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
+  // The shared page is a served one, not about:blank: navigator.gpu needs a
+  // secure context.
   const gpu = await page.evaluate(`(async () => {
     const gl = document.createElement('canvas').getContext('webgl2')
     const ext = gl && gl.getExtension('WEBGL_debug_renderer_info')
@@ -37,7 +38,6 @@ test('hardware mode reaches a real GPU on both backends', async ({ page }) => {
 test('NiiVue asked for WebGPU stays on the WebGPU backend', async ({
   page,
 }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
   const backend = await page.evaluate(`(async () => {
     const { default: NiiVue } = await import('/src/index.ts')
     const canvas = document.createElement('canvas')

@@ -85,7 +85,18 @@ describe('ruler tick thinning', () => {
   it('a long ruler steps 1/2/5 so majors stay on round values', () => {
     // 500 units: 200-tick cap gives raw step 2.5, rounded to 5, not 3.
     const nums = rulerTickLabels(0, 0, 5000, 0, 500, 6, 1).map((t) => t.str)
-    expect(nums[0]).toBe('5')
-    expect(nums.every((n) => Number(n) % 5 === 0)).toBe(true)
+    // Labels sit on every fifth drawn tick: 25, 50, ...
+    expect(nums[0]).toBe('25')
+    expect(nums.every((n) => Number(n) % 25 === 0)).toBe(true)
+  })
+})
+
+describe('ruler majors under decimation', () => {
+  it('keeps majors every fifth drawn tick once the step reaches 5', () => {
+    // 1000 units: 200 ticks at step 5, so 40 majors (every 25 units).
+    const ticks = rulerSegments(0, 0, 1000, 0, 1000).slice(BASELINE_SEGS)
+    const lengths = ticks.map(([, y0, , y1]) => Math.abs(y1 - y0))
+    expect(ticks).toHaveLength(200)
+    expect(lengths.filter((l) => l === 24)).toHaveLength(40)
   })
 })

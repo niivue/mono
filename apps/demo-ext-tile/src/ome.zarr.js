@@ -5,7 +5,7 @@ import NiiVue, {
   omeZarrChannelName,
   omeZarrVolumesFrom,
   SLICE_TYPE,
-} from '../src/index.ts'
+} from '@niivue/niivue'
 
 // OME-Zarr is the fourth of the microscopy containers this package reads (see
 // docs/ome-zarr-format.md). A store is a resolution pyramid over up to five

@@ -386,6 +386,16 @@ export class TiffSlideSource implements SlideTileSource {
     this.client?.bind(host)
   }
 
+  /** The base image's ICC profile (tag 34675, e.g. Aperio SVS); null without one. */
+  async fetchIccProfile(): Promise<Uint8Array | null> {
+    const dir = this.images[0]?.fileDirectory
+    // By number: geotiff 3's name lookup does not resolve 'ICCProfile'.
+    if (!dir?.hasTag(34675)) return null
+    const value: ArrayLike<number> | undefined = await dir.loadValue(34675)
+    if (!value) return null
+    return value instanceof Uint8Array ? value : Uint8Array.from(value)
+  }
+
   async fetchTileBytes(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,

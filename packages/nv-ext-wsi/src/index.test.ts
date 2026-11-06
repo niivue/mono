@@ -26,6 +26,7 @@ interface Level {
   sampleFormat?: number // 1 uint (default), 2 int, 3 float
   extraSamples?: number // adds a 4th sample: 1 associated, 2 unassociated alpha
   edit?: (entries: number[][]) => void // tamper with IFD entries
+  icc?: Uint8Array // an ICC profile (tag 34675)
 }
 
 // Deterministic RGB so an edge-tile crop can be checked pixel-exact.
@@ -107,6 +108,7 @@ function writeTiff(levels: Level[], subIfds = false): ArrayBuffer {
       entries.push([339, 3, spp, perSample(f)])
     }
     if (lv.extraSamples) entries.push([338, 3, 1, lv.extraSamples])
+    if (lv.icc) entries.push([34675, 7, lv.icc.length, append(lv.icc)])
     lv.edit?.(entries)
     if (subIfds && i === 0) entries.push([330, 4, levels.length - 1, 0])
     const at = append(new Uint8Array(2 + entries.length * 12 + 4))
@@ -235,6 +237,15 @@ describe('TiffSlideSource', () => {
     ])
     const l0 = m.levels[0]
     expect(l0?.tiles.at(-1)).toEqual({ x: 7, y: 5, width: 104, height: 60 })
+  })
+
+  test('serves the base image ICC profile (tag 34675), or null', async () => {
+    const icc = Uint8Array.from({ length: 300 }, (_, i) => i & 255)
+    const [l0, ...rest] = PYRAMID as [Level, ...Level[]]
+    const tagged = await open(writeTiff([{ ...l0, icc }, ...rest]))
+    expect(await tagged.source.fetchIccProfile()).toEqual(icc)
+    const plain = await open(writeTiff(PYRAMID))
+    expect(await plain.source.fetchIccProfile()).toBeNull()
   })
 
   test('reads OME-style SubIFD pyramids', async () => {

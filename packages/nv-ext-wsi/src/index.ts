@@ -281,6 +281,48 @@ function buildTiffManifest(
   }
 }
 
+// readRGB with enableAlpha yields 3 samples per pixel, or every sample of an
+// RGB image with ExtraSamples: the first extra is alpha, further ones are
+// skipped. The case is chosen once per tile so each pixel loop stays branch-free.
+function toRgba(
+  rgb: ArrayLike<number>,
+  pixels: number,
+  associatedAlpha: boolean,
+): Uint8Array {
+  const stride = rgb.length / pixels
+  if (stride === 4 && !associatedAlpha && rgb instanceof Uint8Array) return rgb
+  const rgba = new Uint8Array(pixels * 4)
+  const n = pixels * 4
+  if (stride === 3) {
+    for (let i = 0, j = 0; i < n; i += 4, j += 3) {
+      rgba[i] = rgb[j]
+      rgba[i + 1] = rgb[j + 1]
+      rgba[i + 2] = rgb[j + 2]
+      rgba[i + 3] = 255
+    }
+  } else if (!associatedAlpha) {
+    for (let i = 0, j = 0; i < n; i += 4, j += stride) {
+      rgba[i] = rgb[j]
+      rgba[i + 1] = rgb[j + 1]
+      rgba[i + 2] = rgb[j + 2]
+      rgba[i + 3] = rgb[j + 3]
+    }
+  } else {
+    // Associated alpha is premultiplied; NVSlide takes straight alpha. The
+    // clamped view rounds and caps colour > alpha in malformed files.
+    const out = new Uint8ClampedArray(rgba.buffer)
+    for (let i = 0, j = 0; i < n; i += 4, j += stride) {
+      const a = rgb[j + 3]
+      const k = a ? 255 / a : 0
+      out[i] = rgb[j] * k
+      out[i + 1] = rgb[j + 1] * k
+      out[i + 2] = rgb[j + 2] * k
+      out[i + 3] = a
+    }
+  }
+  return rgba
+}
+
 function fileName(url: string): string {
   const last = url.replace(/[?#].*$/, '').replace(/^.*\//, '')
   try {
@@ -395,27 +437,12 @@ export class TiffSlideSource implements SlideTileSource {
         enableAlpha: true,
       })
       abort.throwIfAborted()
-      const pixels = tile.width * tile.height
-      // enableAlpha returns every sample of an RGB image with ExtraSamples;
-      // the first extra sample is the alpha, any further ones are skipped.
-      const stride = rgb.length / pixels
-      const extra = img.fileDirectory.getValue('ExtraSamples')
-      const premultiplied = stride > 3 && extra?.[0] === 1
-      const rgba = new Uint8Array(pixels * 4)
-      for (let i = 0; i < pixels; i++) {
-        const a = stride > 3 ? (rgb[i * stride + 3] ?? 0) : 255
-        // Associated alpha is premultiplied; NVSlide takes straight alpha.
-        const k = premultiplied ? (a ? 255 / a : 0) : 1
-        for (let c = 0; c < 3; c++) {
-          rgba[i * 4 + c] = Math.min(
-            255,
-            Math.round((rgb[i * stride + c] ?? 0) * k),
-          )
-        }
-        rgba[i * 4 + 3] = a
-      }
       this.host?.updateRangeEvent(label, 'hit')
-      return rgba
+      return toRgba(
+        rgb,
+        tile.width * tile.height,
+        img.fileDirectory.getValue('ExtraSamples')?.[0] === 1,
+      )
     } catch (error) {
       this.host?.updateRangeEvent(label, abort.aborted ? 'aborted' : 'failed')
       throw error

@@ -45,7 +45,7 @@ import {
 } from '@/volume/ChunkVisibility'
 import {
   bytesPerSourceVoxel,
-  chunkIndicesForResidentBudget,
+  chunkIndicesForAllBudgets,
   estimateChunkedBytes,
   formatBytes,
 } from '@/volume/chunkBudget'
@@ -275,6 +275,18 @@ interface ChunkedTexEntry {
   decoded: DecodedChunkCache
   /** Source bytes per voxel, which sets what the decoded tier costs to hold. */
   sourceBytesPerVoxel: number
+  /**
+   * The plan swapChunkedVolumePlan is moving this entry to, while the swap is
+   * queued or awaits its uploader. A refresh that lands in that window waits
+   * for it instead of evicting the entry as built for a different plan.
+   */
+  pendingSwap?: { plan: ChunkPlan; done: Promise<void> }
+  /**
+   * The last swap queued on this entry. Swaps run one at a time in call order
+   * (each reads the plan and residency, awaits, then rewrites them), and one
+   * that a later swap supersedes is skipped.
+   */
+  swapTail?: Promise<void>
 }
 
 /**
@@ -908,14 +920,18 @@ export class VolumeRenderer extends NVRenderer {
     vol: NVImage,
     budgetBytes: number,
     modulation: ModulationTextureParams | null,
+    basePlan?: ChunkPlan,
   ): Promise<ChunkedTexEntry> {
     const srcDims: Vec3i = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
     const rasDims: Vec3i = vol.dimsRAS
       ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
       : srcDims
     const limit = this.max3D
-    const plan = vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
-    vol.chunkPlan = plan
+    // A combined mirror streams on its base's grid (basePlan) without taking
+    // it as its own: the overlay may later become the base or stream alone.
+    let plan =
+      basePlan ?? vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
+    if (!basePlan) vol.chunkPlan = plan
     const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
     const budget = estimateChunkedBytes(plan, bpv)
     log.warn(
@@ -937,7 +953,22 @@ export class VolumeRenderer extends NVRenderer {
     const cacheKey = volumeCacheKey(vol)
     const displayKey = chunkedDisplayKey(vol, modulation)
     const sourceKey = volumeSourceKey(vol)
-    const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    let existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    // A swap to this very plan is in flight; let it land, then reuse it. A
+    // later swap can supersede it before it runs: follow that one too, since
+    // its plan is the one the volume streams on now.
+    let waited = false
+    while (
+      existing?.kind === 'chunked' &&
+      existing.plan !== plan &&
+      existing.pendingSwap &&
+      (waited || existing.pendingSwap.plan === plan)
+    ) {
+      plan = existing.pendingSwap.plan
+      await existing.pendingSwap.done.catch(() => undefined)
+      waited = true
+      existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    }
     // A cached entry built for a different plan object (the caller set a new
     // `vol.chunkPlan`, as setVolumeChunkGrid does) cannot be reused: its
     // uploader, manager and brick textures are laid out for the old grid.
@@ -1063,6 +1094,70 @@ export class VolumeRenderer extends NVRenderer {
           `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
       )
     }
+    vol.chunkPlan = newPlan
+    // A combined mirror streams on the base's grid. Its own plan applies once
+    // it streams alone or as the base, which rebuilds the entry for it.
+    if (this._combinedOverlayEntries.includes(entry)) return
+    // Combined mirrors are indexed by the base's chunks, so they move with it.
+    const entries = [
+      entry,
+      ...(entry === this._activeChunked ? this._combinedOverlayEntries : []),
+    ]
+    const swaps = entries.map(async (e) => {
+      const ev = e === entry ? vol : e.volume
+      const done = this._queueEntrySwap(gl, ev, e, newPlan, keepUntilCovered)
+      const pending = { plan: newPlan, done }
+      e.pendingSwap = pending
+      try {
+        await done
+      } finally {
+        if (e.pendingSwap === pending) e.pendingSwap = undefined
+      }
+    })
+    await Promise.all(swaps)
+  }
+
+  /** Queue a plan swap on `entry` behind any swap already queued on it. */
+  private _queueEntrySwap(
+    gl: WebGL2RenderingContext,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    newPlan: ChunkPlan,
+    keepUntilCovered: boolean,
+  ): Promise<void> {
+    const run: Promise<void> = (entry.swapTail ?? Promise.resolve()).then(() =>
+      entry.swapTail === tail
+        ? this._swapChunkedEntryPlan(gl, vol, entry, newPlan, keepUntilCovered)
+        : undefined,
+    )
+    const tail = run.catch(() => undefined)
+    entry.swapTail = tail
+    return run
+  }
+
+  /**
+   * Swap `entry` again while `base.chunkPlan` moved on during the last await,
+   * so overlapping swaps leave it on the newest plan, not the last to finish.
+   */
+  private async _catchUpToPlan(
+    gl: WebGL2RenderingContext,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    base: NVImage,
+    keepUntilCovered: boolean,
+  ): Promise<void> {
+    for (let p = base.chunkPlan; p && entry.plan !== p; p = base.chunkPlan) {
+      await this._swapChunkedEntryPlan(gl, vol, entry, p, keepUntilCovered)
+    }
+  }
+
+  private async _swapChunkedEntryPlan(
+    gl: WebGL2RenderingContext,
+    vol: NVImage,
+    entry: ChunkedTexEntry,
+    newPlan: ChunkPlan,
+    keepUntilCovered: boolean,
+  ): Promise<void> {
     const displayKey = chunkedDisplayKey(vol, entry.modulation)
     const oldToNew = matchChunksByContent(entry.plan, newPlan)
     // Resident bricks bake the display state of the uploader that made them.
@@ -1106,7 +1201,6 @@ export class VolumeRenderer extends NVRenderer {
     entry.volume = vol
     entry.displayKey = displayKey
     entry.sourceKey = volumeSourceKey(vol)
-    vol.chunkPlan = newPlan
     if (entry.manager.residentCount === 0) {
       const chunk0 = await entry.uploader.uploadChunk(0)
       if (!chunk0.hasGradient) this._uploadedUnlit = true
@@ -1382,23 +1476,25 @@ export class VolumeRenderer extends NVRenderer {
     // view-central chunks that fit keeps memory bounded — the coarse floor
     // covers the rest. Unlit chunks carry no full-size gradient texture, so
     // the cap prices them at 4 bytes/voxel instead of 8.
-    const capped = chunkIndicesForResidentBudget(
+    // Mirrors get the same indices but a fraction of the budget, so the set
+    // must fit the tightest of them too. A chunk uploaded lit keeps its 8-byte
+    // gradient footprint until it re-streams, so each manager prices its
+    // resident chunks by their actual gradient state; non-resident chunks fall
+    // back to the current lighting state.
+    const capped = chunkIndicesForAllBudgets(
       entry.plan,
       ordered,
-      entry.manager.budgetBytes,
+      [entry.manager, ...mirrors],
       this._needsGradient(),
-      // A chunk uploaded lit keeps its 8-byte gradient footprint until it
-      // re-streams, so a resident chunk is priced by its actual gradient state,
-      // not the current lighting; non-resident chunks (undefined) fall back to
-      // the current lighting state above.
-      (ci) => entry.manager.getChunk(ci)?.hasGradient,
+      entry.requestedThisFrame,
     )
     for (const ci of capped) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }
     // Accumulate rather than replace: a multiplanar layout drives this volume
-    // from several tiles per frame, and the union is what travels.
+    // from several tiles per frame, and the union is what travels and what
+    // later tiles are capped against.
     for (const ci of capped) entry.requestedThisFrame.push(ci)
   }
 
@@ -1463,14 +1559,13 @@ export class VolumeRenderer extends NVRenderer {
     // Stream the centre of the view first, then spiral outward, capped to what
     // the residency budget can hold (see _requestChunksInFrustum).
     const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS, offset)
-    const capped = chunkIndicesForResidentBudget(
+    // Fits the base and every mirror; see _requestChunksInFrustum.
+    const capped = chunkIndicesForAllBudgets(
       entry.plan,
       ordered,
-      entry.manager.budgetBytes,
+      [entry.manager, ...mirrors],
       this._needsGradient(),
-      // Price already-resident chunks by their real gradient footprint (see
-      // _requestChunksInFrustum); non-resident chunks fall back to lighting.
-      (ci) => entry.manager.getChunk(ci)?.hasGradient,
+      entry.requestedThisFrame,
     )
     for (const ci of capped) {
       entry.manager.requestUpload(ci)
@@ -2222,8 +2317,12 @@ export class VolumeRenderer extends NVRenderer {
   ): Promise<void> {
     this._combinedOverlayEntries = []
     if (vols.length === 0) return
-    const overlayBudget =
-      (this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION) / vols.length
+    // Mirrors share the base grid and are asked for the base's indices, so
+    // the base's view is capped by the smallest mirror: split evenly.
+    const overlayBudget = this._chunkResidencyBytes / (vols.length + 1)
+    // Mirrors are asked for the base's chunk indices and priced by its plan,
+    // so each streams on the base's grid, not one set on the overlay itself.
+    const basePlan = volumes[0]?.chunkPlan
     for (const vol of vols) {
       // Co-registered at the base grid, so resolving against the overlay's
       // own grid is the base-grid matrix the whole-volume path would use.
@@ -2232,15 +2331,18 @@ export class VolumeRenderer extends NVRenderer {
         vol,
         overlayBudget,
         buildModulationParams(vol, vol, volumes),
+        basePlan,
       )
+      // A base swap during the await could not see this mirror yet (it is
+      // not listed), so bring it to the base's current plan before listing it.
+      if (volumes[0]) {
+        await this._catchUpToPlan(gl, vol, entry, volumes[0], false)
+      }
       setChunkBudget(entry, overlayBudget)
       this._combinedOverlayEntries.push(entry)
     }
     if (this._activeChunked) {
-      setChunkBudget(
-        this._activeChunked,
-        this._chunkResidencyBytes * (1 - OVERLAY_RESIDENCY_FRACTION),
-      )
+      setChunkBudget(this._activeChunked, overlayBudget)
     }
   }
 

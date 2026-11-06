@@ -162,6 +162,60 @@ export function chunkIndicesForResidentBudget(
   return selected
 }
 
+/** The residency facts {@link chunkIndicesForAllBudgets} reads from a manager. */
+export interface ResidentBudgetView {
+  readonly budgetBytes: number
+  getChunk(chunkIndex: number): { hasGradient: boolean } | null
+}
+
+/**
+ * Cap a working set against several residency managers that will all be asked
+ * for the same indices: a chunked base and its combined-overlay mirrors, which
+ * share the base grid but get a fraction of its budget. Each manager prices
+ * its own resident chunks, and the result fits every one of them, so no
+ * mirror is handed a needed-this-frame set it cannot hold (and therefore
+ * cannot evict from).
+ *
+ * `alreadyRequested` is what earlier tiles of this frame asked for. Those
+ * chunks are protected from eviction too, so a multiplanar frame must fit the
+ * union: they are charged first, and only the new indices are returned. A
+ * tile whose first (most central) chunk is not among them still gets it.
+ */
+export function chunkIndicesForAllBudgets(
+  plan: ChunkPlan,
+  orderedChunkIndices: readonly number[],
+  managers: readonly ResidentBudgetView[],
+  hasGradient = true,
+  alreadyRequested: readonly number[] = [],
+): number[] {
+  const prior = new Set(alreadyRequested)
+  let capped: readonly number[] = [
+    ...prior,
+    ...orderedChunkIndices.filter((ci) => !prior.has(ci)),
+  ]
+  for (const m of managers) {
+    capped = chunkIndicesForResidentBudget(
+      plan,
+      capped,
+      m.budgetBytes,
+      hasGradient,
+      (ci) => m.getChunk(ci)?.hasGradient,
+    )
+  }
+  const added = capped.filter((ci) => !prior.has(ci))
+  // A tile whose most central chunk nobody requested would render a hole where
+  // it matters most (only an NVChunkedVolume has a coarse floor under it), so
+  // it keeps that chunk. The bound is budget + one chunk per such tile: an
+  // N-tile mosaic can sit N chunks over a mirror's budget, which beats N holed
+  // tiles (docs/tiled-volumes-handoff.md, "Over-budget is allowed").
+  // The central chunk wins over smaller edge chunks that happened to fit.
+  const first = orderedChunkIndices.find((ci) => plan.chunks[ci])
+  if (first === undefined || prior.has(first) || added.includes(first)) {
+    return added
+  }
+  return [first]
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`

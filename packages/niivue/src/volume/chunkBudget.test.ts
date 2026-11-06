@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { ChunkResidencyManager } from './ChunkResidency'
 import {
   bytesPerSourceVoxel,
+  chunkIndicesForAllBudgets,
   chunkIndicesForResidentBudget,
   estimateChunkedBytes,
   formatBytes,
@@ -242,5 +244,169 @@ describe('resident chunk budget helpers', () => {
     expect(bytes).toBeLessThanOrEqual(budget)
     // Centre-first: the head of the order is never traded away for the tail.
     expect(picked[0]).toBe(0)
+  })
+})
+
+describe('chunkIndicesForAllBudgets (#188)', () => {
+  type Chunk = { bytes: number; hasGradient: boolean }
+  const residency = (count: number, budget: number) =>
+    new ChunkResidencyManager<Chunk>(count, budget, {
+      bytesOf: (c) => c.bytes,
+      destroy: () => {},
+    })
+  // One frame: request the set from every manager, then admit it all, as the
+  // upload pump does. Every requested chunk is stamped this frame, so the
+  // same-frame guard keeps all of them resident.
+  const frame = (
+    plan: ChunkPlan,
+    managers: ChunkResidencyManager<Chunk>[],
+    indices: number[],
+  ) => {
+    for (const m of managers) m.beginFrame()
+    for (const ci of indices) {
+      for (const m of managers) {
+        m.requestUpload(ci)
+        const desc = plan.chunks[ci]
+        if (desc) {
+          m.admit(ci, {
+            bytes: residentBytesForChunkDesc(desc, false),
+            hasGradient: false,
+          })
+        }
+      }
+    }
+  }
+  const plan = testPlan(
+    Array.from({ length: 8 }, () => testChunk([10, 10, 10])),
+  )
+  const ordered = [0, 1, 2, 3, 4, 5, 6, 7]
+  const unlitChunk = 10 * 10 * 10 * 4
+
+  test('a mirror with a quarter of the base budget never exceeds it', () => {
+    const base = residency(8, 8 * unlitChunk)
+    const mirror = residency(8, 2 * unlitChunk)
+    const capped = chunkIndicesForAllBudgets(
+      plan,
+      ordered,
+      [base, mirror],
+      false,
+    )
+    expect(capped).toEqual([0, 1])
+    frame(plan, [base, mirror], capped)
+    expect(mirror.residentBytes).toBeLessThanOrEqual(mirror.budgetBytes)
+  })
+
+  test('capping against the base alone overfills the mirror', () => {
+    // The pre-#188 behaviour, kept as the counterexample the fix answers.
+    const base = residency(8, 8 * unlitChunk)
+    const mirror = residency(8, 2 * unlitChunk)
+    const baseOnly = chunkIndicesForResidentBudget(
+      plan,
+      ordered,
+      base.budgetBytes,
+      false,
+    )
+    frame(plan, [base, mirror], baseOnly)
+    expect(mirror.residentBytes).toBeGreaterThan(mirror.budgetBytes)
+  })
+
+  test('with no mirrors it matches the single-budget cap', () => {
+    const base = residency(8, 3 * unlitChunk)
+    expect(chunkIndicesForAllBudgets(plan, ordered, [base], false)).toEqual(
+      chunkIndicesForResidentBudget(plan, ordered, base.budgetBytes, false),
+    )
+  })
+
+  test('later tiles in one frame are capped against the union', () => {
+    const base = residency(8, 4 * unlitChunk)
+    const mirror = residency(8, 2 * unlitChunk)
+    const managers = [base, mirror]
+    for (const m of managers) m.beginFrame()
+    const requested: number[] = []
+    const tile = (ordered: number[]) => {
+      const capped = chunkIndicesForAllBudgets(
+        plan,
+        ordered,
+        managers,
+        false,
+        requested,
+      )
+      for (const ci of capped) {
+        requested.push(ci)
+        for (const m of managers) {
+          m.requestUpload(ci)
+          m.admit(ci, { bytes: unlitChunk, hasGradient: false })
+        }
+      }
+      return capped
+    }
+    expect(tile([0])).toEqual([0])
+    // The shared chunk 0 is charged once.
+    expect(tile([0, 1])).toEqual([1])
+    // A tile sharing a chunk with earlier tiles adds nothing past the budget.
+    expect(tile([1, 2])).toEqual([])
+    expect(mirror.residentBytes).toBeLessThanOrEqual(mirror.budgetBytes)
+  })
+
+  test('a later tile with no chunk in the union still gets its first', () => {
+    // No coarse floor under a plain chunked volume: an empty tile renders
+    // nothing, so one chunk of overrun beats starving it.
+    const base = residency(8, 2 * unlitChunk)
+    const requested = [0, 1]
+    expect(
+      chunkIndicesForAllBudgets(plan, [3, 2], [base], false, requested),
+    ).toEqual([3])
+  })
+
+  test('mosaic tiles overrun by at most their own central chunk each', () => {
+    // The documented bound, not a violation: budget + one chunk per tile whose
+    // first (most central) chunk earlier tiles did not request.
+    const base = residency(8, 8 * unlitChunk)
+    const mirror = residency(8, unlitChunk)
+    const requested: number[] = []
+    for (let t = 0; t < 8; t++) {
+      // Each tile sees its own chunk first, then a neighbour's.
+      const capped = chunkIndicesForAllBudgets(
+        plan,
+        [t, (t + 1) % 8],
+        [base, mirror],
+        false,
+        requested,
+      )
+      expect(capped).toEqual([t])
+      requested.push(...capped)
+    }
+    expect(requested).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  })
+
+  test('a tile sharing only an edge chunk still gets its central one', () => {
+    const base = residency(8, unlitChunk)
+    expect(chunkIndicesForAllBudgets(plan, [1, 0], [base], false, [0])).toEqual(
+      [1],
+    )
+  })
+
+  test('a tile keeps its central chunk over a smaller edge one that fits', () => {
+    // Costs 4000, 8000, 4000 against an 8000 budget with chunk 0 charged:
+    // the central chunk 1 does not fit, but edge chunk 2 would.
+    const sized = testPlan([
+      testChunk([10, 10, 10]),
+      testChunk([10, 10, 20]),
+      testChunk([10, 10, 10]),
+    ])
+    const base = residency(3, 2 * unlitChunk)
+    expect(
+      chunkIndicesForAllBudgets(sized, [1, 2], [base], false, [0]),
+    ).toEqual([1])
+  })
+
+  test('each manager prices its own lit-resident chunks', () => {
+    const base = residency(8, 8 * unlitChunk)
+    const mirror = residency(8, 4 * unlitChunk)
+    // Chunk 0 is resident lit in the mirror only: 8000 B there, 4000 B in base.
+    mirror.admit(0, { bytes: 2 * unlitChunk, hasGradient: true })
+    expect(
+      chunkIndicesForAllBudgets(plan, ordered, [base, mirror], false),
+    ).toEqual([0, 1, 2])
   })
 })

@@ -2130,7 +2130,10 @@ review, mirroring the 3a (skeleton) and 3c-math splits.
 4. **Over-budget is allowed.** If every resident chunk is in this frame's
    working set, no candidate is evictable and the set stays over budget. That
    means the *visible* working set itself exceeds the budget; rendering over
-   budget beats evicting a visible chunk and punching a hole.
+   budget beats evicting a visible chunk and punching a hole. The working-set
+   cap (`chunkIndicesForAllBudgets`) applies the same rule per tile: a tile
+   whose first (most central) chunk earlier tiles did not request keeps it, so
+   a frame can overrun by one chunk per such tile.
 
 ### Frame-ordering contract (consumed in sub-step 2)
 

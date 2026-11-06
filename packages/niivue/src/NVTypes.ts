@@ -1526,6 +1526,10 @@ export type PlaneOutline = {
   width?: number
 }
 
+/**
+ * A completed distance measurement. Endpoints and `distance` are scene units:
+ * micrometers on a micrometer volume (`xyzt_units` MICRON), else mm.
+ */
 export type CompletedMeasurement = {
   startMM: [number, number, number]
   endMM: [number, number, number]
@@ -1865,6 +1869,7 @@ export type NiiVueLocationValue = {
 }
 
 export type NiiVueLocation = {
+  /** World position in scene units: micrometers on a micrometer volume. */
   mm: number[]
   axCorSag: number
   vox: number[]
@@ -1993,11 +1998,13 @@ export type AnnotationScreenShape = {
   /** True for area shapes (ellipse/rect/circle/freehand); false for line/arrow. */
   isClosed: boolean
   /**
-   * Measured length in mm for a single measured line (`measureLine`), so an
-   * external overlay can render it as a graduated ruler (ticks numbered in mm)
+   * Measured length in scene units (`unit`) for a single measured line
+   * (`measureLine`), so an external overlay can render it as a graduated ruler
    * rather than a plain line. Absent for non-measure and multi-segment shapes.
    */
   length?: number
+  /** Unit label of `length` (e.g. 'mm', 'um', 'm'); absent means mm. */
+  unit?: string
   style: AnnotationStyle
   /** Stats label text lines + canvas-px anchor + alignment, for measure tools. */
   label?: {

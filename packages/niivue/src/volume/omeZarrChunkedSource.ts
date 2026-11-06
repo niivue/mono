@@ -47,7 +47,7 @@ import {
   type PersistentCacheStats,
   withPersistentBytes,
 } from './persistentByteCache'
-import { getBitsPerVoxel } from './utils'
+import { getBitsPerVoxel, NIFTI_UNITS_MICRON, withSpatialUnits } from './utils'
 
 /** What a {@link ByteLruCache} has done since it was created or reset. */
 export interface ByteCacheStats {
@@ -400,6 +400,7 @@ export function omeZarrChunkedSource(
   return {
     zarr: source,
     datatypeCode,
+    xyztUnits: withSpatialUnits(10, NIFTI_UNITS_MICRON), // um + sec
     levels: source.levels.map((level) => ({
       level: level.datasetIndex,
       shape: [level.dims[0], level.dims[1], level.dims[2]],

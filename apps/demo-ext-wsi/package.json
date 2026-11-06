@@ -1,5 +1,5 @@
 {
-  "name": "demo-ext-tiff",
+  "name": "demo-ext-wsi",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@niivue/niivue": "workspace:*",
-    "@niivue/nv-ext-tiff": "workspace:*",
+    "@niivue/nv-ext-wsi": "workspace:*",
     "geotiff": "^3.0.5"
   },
   "devDependencies": {

@@ -385,11 +385,12 @@ Known, deliberate, and not blocking. Each is a decision, not an oversight.
   Finder parses any selected `.nvd` unprompted. Core fixes, own branch; a
   content process dying on them shows "ran out of resources". Fixed in core
   (#463): CBOR shared references and cycles (a decoded document may not
-  expand past its input bytes) and drawing sizes (checked before `decodeRLE`).
-  Still open: a small `data:` PNG in `ui.thumbnailUrl` or a matcap can decode
-  to ~1 GiB RGBA (#385); JSON/CBOR number arrays grow ~8× in the JS heap inside
-  `decode`/`JSON.parse`, before any check can run (#386); `volume.sampleRate` skips
-  the setter's 1-4 clamp (not shown exploitable).
+  expand past its input bytes), drawing sizes (checked before `decodeRLE`) and
+  CBOR array headers (their declared items may not exceed the input bytes,
+  checked before `decode`, #386) and oversized thumbnail/matcap PNGs (#385).
+  Still open: plain number arrays take several times their input bytes in the
+  JS heap, bounded by the file cap; `volume.sampleRate` skips the setter's 1-4
+  clamp (not shown exploitable).
 - **The bound must never be waived on a PREDICTION about the browser.** An
   attempt to skip it when a NIfTI header looked like it would be partial-loaded
   was withdrawn: NiiVue does not partial-load from `loadVolumes` at all (the

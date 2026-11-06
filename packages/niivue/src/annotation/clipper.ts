@@ -161,6 +161,20 @@ export function clipperSubtractBrush(
     return [{ outer: [...subject.outer], holes: [...(subject.holes ?? [])] }]
   }
   const subjectPaths = toSubjectPaths([subject])
+  // A brush that misses the subject leaves it as given: a Difference would
+  // still snap every vertex to the clipper grid, and isAnnotationErased would
+  // then read an untouched shape as erased.
+  const hit = new PolyTree64()
+  booleanOpWithPolyTree(
+    ClipType.Intersection,
+    subjectPaths,
+    inflated,
+    hit,
+    FillRule.EvenOdd,
+  )
+  if (hit.count === 0) {
+    return [{ outer: [...subject.outer], holes: [...(subject.holes ?? [])] }]
+  }
   const tree = new PolyTree64()
   booleanOpWithPolyTree(
     ClipType.Difference,

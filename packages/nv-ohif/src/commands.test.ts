@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
-import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
+import { DRAG_MODE, generateShape, SLICE_TYPE } from '@niivue/niivue'
 import {
   applyDefaultAnnotationText,
   applyOhifLabelToAnnotation,
@@ -242,7 +242,12 @@ describe('reflectNiivueAnnotation', () => {
       sliceType: 0,
       slicePosition: 0,
       anchorMM: [10, 20, 30],
-      polygons: [],
+      polygons: generateShape(
+        'measureEllipse',
+        { x: 0, y: 0 },
+        { x: 1, y: 1 },
+        1,
+      ),
       style: {
         fillColor: [1, 1, 1, 1],
         strokeColor: [1, 1, 1, 1],
@@ -325,7 +330,12 @@ describe('reflectNiivueAnnotation', () => {
       sliceType: 1, // CORONAL
       slicePosition: 30,
       anchorMM: [10, 30, 20],
-      polygons: [],
+      polygons: generateShape(
+        'measureLine',
+        { x: 10, y: 20 },
+        { x: 10, y: 25 },
+        1,
+      ),
       style: {
         fillColor: [1, 1, 1, 1],
         strokeColor: [1, 1, 1, 1],
@@ -361,7 +371,12 @@ describe('reflectNiivueAnnotation', () => {
         sliceType: 0,
         slicePosition: 0,
         anchorMM: [10, 20, 30],
-        polygons: [],
+        polygons: generateShape(
+          'measureLine',
+          { x: 0, y: 0 },
+          { x: 3, y: 4 },
+          1,
+        ),
         style: {
           fillColor: [1, 1, 1, 1],
           strokeColor: [1, 1, 1, 1],
@@ -470,6 +485,83 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(0)
   })
 
+  it('does not reflect an erased rect, whose bounds no longer match its stats', () => {
+    const svc = setup('vp-erased-rect')
+    const annotation = ellipse('erased-rect')
+    const start = { x: 0, y: 0 }
+    const end = { x: 4, y: 4 }
+    annotation.shape = { type: 'measureRect', start, end }
+    annotation.polygons = generateShape('measureRect', start, end, 1)
+    expect(
+      reflectNiivueAnnotation(
+        'vp-erased-rect',
+        svc.servicesManager,
+        annotation,
+      ),
+    ).toBe(true)
+    annotation.polygons = [{ outer: [start, { x: 4, y: 0 }, end], holes: [] }]
+    expect(
+      reflectNiivueAnnotation(
+        'vp-erased-rect',
+        svc.servicesManager,
+        annotation,
+      ),
+    ).toBe(false)
+    expect(svc.added).toHaveLength(1)
+  })
+
+  it('does not reflect an erased line, arrow or bidirectional', () => {
+    const start = { x: 0, y: 0 }
+    const end = { x: 8, y: 0 }
+    const start2 = { x: 4, y: -2 }
+    const end2 = { x: 4, y: 2 }
+    const cases = [
+      {
+        type: 'measureLine',
+        polygons: generateShape('measureLine', start, end, 1),
+      },
+      { type: 'arrow', polygons: generateShape('arrow', start, end, 1) },
+      {
+        type: 'measureBidirectional',
+        start2,
+        end2,
+        polygons: [
+          ...generateShape('measureLine', start, end, 1),
+          ...generateShape('measureLine', start2, end2, 1),
+        ],
+      },
+    ] as const
+    for (const { type, polygons, ...axis2 } of cases) {
+      const vp = `vp-erased-${type}`
+      const svc = setup(vp)
+      const annotation = ellipse(`erased-${type}`)
+      annotation.shape = { type, start, end, ...axis2 }
+      annotation.stats = {
+        area: 0,
+        min: 0,
+        mean: 0,
+        max: 0,
+        stdDev: 0,
+        length: 8,
+        shortLength: 4,
+      }
+      annotation.polygons = [...polygons]
+      expect(reflectNiivueAnnotation(vp, svc.servicesManager, annotation)).toBe(
+        true,
+      )
+      // The eraser split the long axis: one more piece, endpoints unchanged.
+      const [first, ...rest] = polygons
+      annotation.polygons = [
+        { outer: first?.outer.slice(0, 3) ?? [], holes: [] },
+        ...rest,
+      ]
+      expect(reflectNiivueAnnotation(vp, svc.servicesManager, annotation)).toBe(
+        false,
+      )
+      expect(svc.added).toHaveLength(1)
+    }
+  })
+
   it('does not reflect an eraser-split or holed spline/livewire ROI (#484)', () => {
     const ring = (o: number) => [
       { x: o, y: o },
@@ -512,6 +604,12 @@ describe('reflectNiivueAnnotation', () => {
       start: { x: 1, y: 2 }, // tail
       end: { x: 4, y: 6 }, // arrowhead / tip
     }
+    annotation.polygons = generateShape(
+      'arrow',
+      { x: 1, y: 2 },
+      { x: 4, y: 6 },
+      1,
+    )
     annotation.stats = undefined
     expect(
       reflectNiivueAnnotation('vp-arrow', svc.servicesManager, annotation),
@@ -992,6 +1090,7 @@ describe('reflectNiivueAnnotation', () => {
     const svc = measurementServices('vp-arrowjump', backing)
     const a = ellipse('aj')
     a.shape = { type: 'arrow', start: { x: 1, y: 2 }, end: { x: 4, y: 6 } }
+    a.polygons = generateShape('arrow', { x: 1, y: 2 }, { x: 4, y: 6 }, 1)
     a.stats = undefined
     nv.annotations = [a]
     reflectNiivueAnnotation('vp-arrowjump', svc.servicesManager, a)

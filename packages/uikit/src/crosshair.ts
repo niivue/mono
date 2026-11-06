@@ -112,7 +112,7 @@ function unitScale(
  * matters as much as the cap: majors are every fifth DRAWN tick, so an
  * arbitrary step (7, say) would leave an arm with no majors and no numbers.
  */
-function decimation(marks: number): number {
+export function decimation(marks: number): number {
   if (marks <= MAX_TICKS) return 1
   const raw = marks / MAX_TICKS
   const decade = 10 ** Math.floor(Math.log10(raw))

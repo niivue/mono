@@ -6,7 +6,11 @@ import {
   sortedIndices,
   type TriangleClusters,
 } from '@/mesh/triangleClusters'
-import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
+import {
+  BYTES_PER_VERTEX,
+  packMeshVertices,
+  VERTEX_OFFSET,
+} from '@/mesh/vertexFormat'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
 import {
   meshDepthPickFragmentShader,
@@ -66,6 +70,43 @@ export function getAttributeLocations(
   }
 }
 
+/** Point the bound VAO's attributes at the shared interleaved vertex format. */
+export function setVertexAttribs(
+  gl: WebGL2RenderingContext,
+  aPosition: number,
+  aNormal: number,
+  aColor: number,
+): void {
+  const stride = BYTES_PER_VERTEX
+  gl.enableVertexAttribArray(aPosition)
+  gl.vertexAttribPointer(
+    aPosition,
+    3,
+    gl.FLOAT,
+    false,
+    stride,
+    VERTEX_OFFSET.position,
+  )
+  gl.enableVertexAttribArray(aNormal)
+  gl.vertexAttribPointer(
+    aNormal,
+    3,
+    gl.FLOAT,
+    false,
+    stride,
+    VERTEX_OFFSET.normal,
+  )
+  gl.enableVertexAttribArray(aColor)
+  gl.vertexAttribPointer(
+    aColor,
+    4,
+    gl.UNSIGNED_BYTE,
+    true,
+    stride,
+    VERTEX_OFFSET.color,
+  )
+}
+
 function createMeshGpu(
   gl: WebGL2RenderingContext,
   meshData: NVMesh,
@@ -100,16 +141,7 @@ function createMeshGpu(
   const aPosition = gl.getAttribLocation(shader.program, 'position')
   const aNormal = gl.getAttribLocation(shader.program, 'normal')
   const aColor = gl.getAttribLocation(shader.program, 'color')
-  // Set up vertex attributes (interleaved, 28 bytes stride)
-  // position: vec3 at offset 0
-  gl.enableVertexAttribArray(aPosition)
-  gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 28, 0)
-  // normal: vec3 at offset 12
-  gl.enableVertexAttribArray(aNormal)
-  gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 28, 12)
-  // color: vec4 (unorm8x4) at offset 24
-  gl.enableVertexAttribArray(aColor)
-  gl.vertexAttribPointer(aColor, 4, gl.UNSIGNED_BYTE, true, 28, 24)
+  setVertexAttribs(gl, aPosition, aNormal, aColor)
   // Create and upload index buffer
   const indexBuffer = gl.createBuffer()
   if (!indexBuffer) {

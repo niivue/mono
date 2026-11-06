@@ -96,7 +96,26 @@
       "types": {
         "feat": { "changelog": { "title": "Features" } },
         "fix": { "changelog": { "title": "Fixes" } },
-        "perf": { "changelog": { "title": "Performance" } }
+        "perf": { "changelog": { "title": "Performance" } },
+        "refactor": {
+          "semverBump": "none",
+          "changelog": { "title": "Refactors" }
+        },
+        "chore": { "semverBump": "none", "changelog": { "title": "Chores" } },
+        "docs": {
+          "semverBump": "none",
+          "changelog": { "title": "Documentation" }
+        },
+        "build": { "semverBump": "none", "changelog": { "title": "Build" } },
+        "types": { "semverBump": "none", "changelog": { "title": "Types" } },
+        "examples": {
+          "semverBump": "none",
+          "changelog": { "title": "Examples" }
+        },
+        "test": { "semverBump": "none", "changelog": { "title": "Tests" } },
+        "style": { "semverBump": "none", "changelog": { "title": "Styles" } },
+        "ci": { "semverBump": "none", "changelog": { "title": "CI" } },
+        "revert": { "semverBump": "none", "changelog": { "title": "Reverts" } }
       }
     }
   },

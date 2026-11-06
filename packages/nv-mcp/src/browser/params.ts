@@ -93,7 +93,7 @@ export function point(params: Params, key: string): [number, number, number] {
     value.length !== 3 ||
     value.some((v) => !Number.isFinite(Number(v)))
   ) {
-    throw new Error(`${key} must be three numbers, [x, y, z] in millimetres.`)
+    throw new Error(`${key} must be three numbers, [x, y, z] in world units.`)
   }
   return [Number(value[0]), Number(value[1]), Number(value[2])]
 }

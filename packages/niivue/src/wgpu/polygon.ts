@@ -1,5 +1,11 @@
 import type { AnnotationRenderData } from '@/view/NVAnnotation'
 import { NVRenderer } from '@/view/NVRenderer'
+import {
+  alphaPipelineDesc,
+  overlayDepth,
+  uniformBuffer,
+  uniformEntry,
+} from './pipeline'
 import shaderCode from './polygon.wgsl?raw'
 
 export class PolygonRenderer extends NVRenderer {
@@ -19,19 +25,10 @@ export class PolygonRenderer extends NVRenderer {
   ): Promise<void> {
     if (this.isReady) return
 
-    this._uniformBuffer = device.createBuffer({
-      size: 16,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
+    this._uniformBuffer = uniformBuffer(device, 16)
 
     this._bindGroupLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX,
-          buffer: { type: 'uniform' },
-        },
-      ],
+      entries: [uniformEntry(GPUShaderStage.VERTEX)],
     })
 
     this._bindGroup = device.createBindGroup({
@@ -39,16 +36,14 @@ export class PolygonRenderer extends NVRenderer {
       entries: [{ binding: 0, resource: { buffer: this._uniformBuffer } }],
     })
 
-    const module = device.createShaderModule({ code: shaderCode })
-
-    this._pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
+    this._pipeline = device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: shaderCode }),
         bindGroupLayouts: [this._bindGroupLayout],
-      }),
-      multisample: { count: msaaCount },
-      vertex: {
-        module,
-        entryPoint: 'vertex_main',
+        format,
+        msaaCount,
+        depthStencil: overlayDepth(),
+        primitive: { topology: 'triangle-list' },
         buffers: [
           {
             arrayStride: 24, // 6 floats: x, y, r, g, b, a
@@ -58,30 +53,8 @@ export class PolygonRenderer extends NVRenderer {
             ],
           },
         ],
-      },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
-      },
-      primitive: { topology: 'triangle-list' },
-    })
+      }),
+    )
 
     this.isReady = true
   }

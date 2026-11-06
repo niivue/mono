@@ -30,6 +30,7 @@ import {
   generatePolygonFromPoints,
   generateShape,
   generateSplineFromPoints,
+  isAnnotationErased,
 } from './shapes'
 import { isOnSlice, mmToSlice2D } from './sliceProjection'
 import { computeAnnotationStats, isCircleTool, isMeasureTool } from './stats'
@@ -46,6 +47,7 @@ export {
   getControlPoints,
   gridToSlice2D,
   hitTestControlPoint,
+  isAnnotationErased,
   isCircleTool,
   isMeasureTool,
   isOnSlice,

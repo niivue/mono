@@ -15,6 +15,12 @@ import {
   GRAPHICS_RECOVERING_MESSAGE,
   showCanvasMessage,
 } from '@/control/canvasMessage'
+import {
+  computeBoundsPixelRect,
+  getCanvasInstances,
+  getCanvasViewport,
+  setCanvasViewport,
+} from '@/control/canvasRegistry'
 import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
 import { applyInstances } from '@/control/instances'
 import {
@@ -27,12 +33,6 @@ import {
 import { buildLocationMessage } from '@/control/locationTracking'
 import type { AddMeasurementOptions } from '@/control/measurements'
 import * as measurementApi from '@/control/measurements'
-import {
-  computeBoundsPixelRect,
-  getCanvasInstances,
-  getCanvasViewport,
-  setCanvasViewport,
-} from '@/control/viewBoth'
 import type {
   ReinitializeOptions,
   ViewLifecycle,
@@ -232,6 +232,7 @@ import {
   reorientDrawingToNative,
   reorientDrawingToRAS,
   volumeTR,
+  warnMixedUnits,
 } from '@/volume/utils'
 import { assignUniqueVolumeIds } from '@/volume/volumeIds'
 import { version } from '../package.json'
@@ -997,7 +998,8 @@ export default class NiiVue extends EventTarget {
    * convention and the CSS-pixel/devicePixelRatio conversion.
    *
    * Returns null when the point misses every tile, lands on a 3D render tile,
-   * or no volume is loaded.
+   * or no volume is loaded. World coordinates are scene units as loaded:
+   * micrometers on a micrometer volume (`xyzt_units` MICRON), not converted.
    */
   canvasToMM(
     canvasX: number,
@@ -3431,6 +3433,7 @@ export default class NiiVue extends EventTarget {
     // The new set replaces the old one, so ids only need to be unique within it
     // (the same URL listed twice gets `<id>` and `<id>-2`).
     assignUniqueVolumeIds(loaded)
+    warnMixedUnits(loaded[0], loaded.slice(1))
     // Atomic swap: keep refs to the old volumes so we can release their GPU
     // resources AFTER the new bind groups are live. Replace the model's
     // volume array in place — the view's bind groups still point at the old
@@ -5100,6 +5103,8 @@ export default class NiiVue extends EventTarget {
    * Crosshair position in **RAS world millimetres** (x = right, y = anterior,
    * z = superior), converted from the scene-fraction {@link crosshairPos}.
    * Pairs with {@link setCrosshairPos}, which takes the same units.
+   * World coordinates are scene units as loaded: micrometers on a micrometer
+   * volume (`xyzt_units` MICRON, e.g. OME-TIFF/OME-Zarr), not converted.
    * @example const [x, y, z] = nv1.getCrosshairPos() // mm
    */
   getCrosshairPos(): [number, number, number] {
@@ -5117,6 +5122,8 @@ export default class NiiVue extends EventTarget {
    *
    * Replaces the 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)`: pass the mm
    * directly. To set a fraction instead, assign {@link crosshairPos}.
+   * World coordinates are scene units as loaded: micrometers on a micrometer
+   * volume (`xyzt_units` MICRON, e.g. OME-TIFF/OME-Zarr), not converted.
    * @param pos - [x, y, z] in world mm
    * @example nv1.setCrosshairPos([0, -18, 12]) // mm
    */
@@ -5598,6 +5605,7 @@ export default class NiiVue extends EventTarget {
    * the camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you
    * zoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's
    * cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
+   * The built-in scale ruler draws on 2D tiles only, never over this plane.
    */
   setSlidePlane(
     slide: NVSlide,

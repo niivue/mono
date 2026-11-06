@@ -7,10 +7,12 @@ import { calculateWorldExtents, createNiftiHeader } from './utils'
 export interface StreamingVolumeSpec {
   /** Volume dims in voxels `[x, y, z]` (the finest level / common grid). */
   shape: Vec3i
-  /** Voxel spacing in mm `[x, y, z]`. */
+  /** Voxel spacing `[x, y, z]` in `xyztUnits`. */
   spacing: Vec3f
   /** NIfTI datatype code (see `NiiDataType`). */
   datatypeCode: number
+  /** NIfTI `xyzt_units` (default 10: mm + sec). */
+  xyztUnits?: number
   /** Display window minimum. */
   calMin: number
   /** Display window maximum. */
@@ -99,7 +101,13 @@ export function createStreamingNVImage(spec: StreamingVolumeSpec): NVImage {
     0,
     1,
   ]
-  const hdr = createNiftiHeader([...shape], [...spacing], affine, datatypeCode)
+  const hdr = createNiftiHeader(
+    [...shape],
+    [...spacing],
+    affine,
+    datatypeCode,
+    spec.xyztUnits,
+  )
   hdr.cal_min = spec.calMin
   hdr.cal_max = spec.calMax
   hdr.description = 'streamed logical volume'

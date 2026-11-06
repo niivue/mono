@@ -1,15 +1,14 @@
 import { maybeDecompress } from '@/codecs/NVGz'
 import { log } from '@/logger'
 import type { MZ3 } from '@/NVTypes'
-import { read as readASC } from './asc'
+import { isASC, read as readASC } from './asc'
 
 export const extensions = ['SRF']
 export const type = 'mz3'
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
-  const bytes = new Uint8Array(buffer)
-  if (bytes[0] === 35 && bytes[1] === 33 && bytes[2] === 97) {
-    // .srf also used for freesurfer "#!ascii version"
+  // .srf also used for freesurfer "#!ascii version"
+  if (isASC(buffer)) {
     return readASC(buffer)
   }
   buffer = await maybeDecompress(buffer)

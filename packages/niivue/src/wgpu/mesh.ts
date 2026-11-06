@@ -7,7 +7,11 @@ import {
   sortedIndices,
   type TriangleClusters,
 } from '@/mesh/triangleClusters'
-import { BYTES_PER_VERTEX, packMeshVertices } from '@/mesh/vertexFormat'
+import {
+  BYTES_PER_VERTEX,
+  packMeshVertices,
+  VERTEX_BUFFER_LAYOUT,
+} from '@/mesh/vertexFormat'
 import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
 import meshShaderWGSL from './mesh.wgsl?raw'
 
@@ -103,16 +107,7 @@ export function createMeshPipeline(
     vertex: {
       module: shaderModule,
       entryPoint: vertexEntryPoint,
-      buffers: [
-        {
-          arrayStride: 28,
-          attributes: [
-            { format: 'float32x3', offset: 0, shaderLocation: 0 }, // pos
-            { format: 'float32x3', offset: 12, shaderLocation: 1 }, // norm
-            { format: 'unorm8x4', offset: 24, shaderLocation: 2 }, // clr
-          ],
-        },
-      ],
+      buffers: [VERTEX_BUFFER_LAYOUT],
     },
     fragment: {
       module: shaderModule,

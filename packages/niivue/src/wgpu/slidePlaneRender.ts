@@ -5,6 +5,7 @@ import {
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
+import { alphaPipelineDesc, linearSampler, uniformBuffer } from './pipeline'
 
 // WebGPU mirror of gl/slidePlaneRender.ts. Draws an NVSlide as a textured plane
 // in the 3D render tile: each level tile is a world-mm quad (from
@@ -76,10 +77,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
 
   init(device: GPUDevice, format: GPUTextureFormat, msaaCount: number): void {
     if (this.isReady) return
-    this._sampler = device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-    })
+    this._sampler = linearSampler(device)
     this._uniformBGL = device.createBindGroupLayout({
       entries: [
         {
@@ -95,15 +93,19 @@ export class SlidePlaneRendererGPU extends NVRenderer {
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       ],
     })
-    const module = device.createShaderModule({ code: shaderCode })
-    this._pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
+    this._pipeline = device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: shaderCode }),
         bindGroupLayouts: [this._uniformBGL, this._textureBGL],
-      }),
-      multisample: { count: msaaCount },
-      vertex: {
-        module,
-        entryPoint: 'vertex_main',
+        format,
+        msaaCount,
+        // Respect volume depth (front geometry occludes the plane) but don't
+        // write depth — the plane is a thin overlay layer.
+        depthStencil: {
+          depthWriteEnabled: false,
+          depthCompare: 'less',
+          format: 'depth24plus',
+        },
         buffers: [
           {
             arrayStride: 20, // pos.xyz (12) + uv.xy (8)
@@ -113,36 +115,10 @@ export class SlidePlaneRendererGPU extends NVRenderer {
             ],
           },
         ],
-      },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      // Respect volume depth (front geometry occludes the plane) but don't
-      // write depth — the plane is a thin overlay layer.
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'less',
-        format: 'depth24plus',
-      },
-      primitive: { topology: 'triangle-strip' },
-    })
-    this._uniformBuffer = device.createBuffer({
-      size: 80, // mat4 (64) + opacity vec4 (16)
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
+      }),
+    )
+    // mat4 (64) + opacity vec4 (16)
+    this._uniformBuffer = uniformBuffer(device, 80)
     this._uniformGroup = device.createBindGroup({
       layout: this._uniformBGL,
       entries: [

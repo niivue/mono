@@ -25,7 +25,7 @@ import { meshWriterModules } from './_registry'
 const writerByExt = buildExtensionMap<MeshWriter>(meshWriterModules)
 
 export function writeExtensions(): string[] {
-  return Array.from(new Set(Array.from(writerByExt.keys()))).sort()
+  return Array.from(writerByExt.keys()).sort()
 }
 
 export async function writeMesh(

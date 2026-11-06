@@ -39,6 +39,74 @@ export function temporalUnitScale(xyztUnits: number): number {
   }
 }
 
+/** NIfTI `xyzt_units` spatial code (low 3 bits) for micrometers. */
+export const NIFTI_UNITS_MICRON = 3
+
+/**
+ * Replace the spatial bits of `xyztUnits` with `spatial`, keeping the temporal
+ * bits (0x38).
+ */
+export function withSpatialUnits(xyztUnits: number, spatial: number): number {
+  return (xyztUnits & 0x38) | (spatial & 0x07)
+}
+
+/**
+ * Scene units of a volume decoded from the spatial bits of `xyztUnits`
+ * (NIFTI_UNITS_METER=1, MM=2, MICRON=3): the label suffix and millimeters per
+ * unit. Unknown or unspecified units are treated as mm.
+ */
+export function spatialUnit(xyztUnits: number): { label: string; mm: number } {
+  switch (xyztUnits & 0x07) {
+    case 1:
+      return { label: 'm', mm: 1000 }
+    case NIFTI_UNITS_MICRON:
+      return { label: 'um', mm: 1e-3 }
+    default:
+      return { label: 'mm', mm: 1 }
+  }
+}
+
+/**
+ * Warn for each of `volumes` whose spatial units differ from `base`'s: labels
+ * follow the base volume, so mixed units are unsupported.
+ */
+export function warnMixedUnits(
+  base: { hdr: { xyzt_units: number } } | undefined,
+  volumes: readonly { name: string; hdr: { xyzt_units: number } }[],
+): void {
+  if (!base) return
+  const baseUnit = spatialUnit(base.hdr.xyzt_units).label
+  for (const v of volumes) {
+    const unit = spatialUnit(v.hdr.xyzt_units).label
+    if (unit !== baseUnit) {
+      log.warn(
+        `Volume '${v.name}' is in ${unit} but the base volume is in ${baseUnit}; mixed units are unsupported`,
+      )
+    }
+  }
+}
+
+/**
+ * Voxel size along RAS x, y, z in mm: `pixDimsRAS` scaled by the volume's
+ * `xyzt_units` (um spacing is 1e-3 mm). Null when the RAS dims are unset.
+ */
+export function voxelSizeMM(vol: {
+  pixDimsRAS?: number[]
+  hdr: { xyzt_units: number }
+}): [number, number, number] | null {
+  const p = vol.pixDimsRAS
+  if (!p) return null
+  const mm = spatialUnit(vol.hdr.xyzt_units).mm
+  return [p[1] * mm, p[2] * mm, p[3] * mm]
+}
+
+/** Scene units of a model's base volume (mm when none is loaded). */
+export function sceneUnit(model: {
+  getVolumes(): readonly { hdr: { xyzt_units: number } }[]
+}): { label: string; mm: number } {
+  return spatialUnit(model.getVolumes()[0]?.hdr.xyzt_units ?? 0)
+}
+
 /**
  * Repetition time in **seconds** for a 4D volume: the NIfTI temporal pixdim
  * (`pixDims[4]`) scaled by its `xyzt_units` (so ms/us headers are not 1000x or
@@ -439,6 +507,7 @@ export function createNiftiHeader(
   pixDims: number[],
   affine: number[],
   datatypeCode: number,
+  xyztUnits = 10, // mm + sec
 ): NIFTIHeader {
   const numBitsPerVoxel = getBitsPerVoxel(datatypeCode)
 
@@ -470,7 +539,7 @@ export function createNiftiHeader(
     scl_inter: 0,
     slice_end: 0,
     slice_code: 0,
-    xyzt_units: 10, // mm + sec
+    xyzt_units: xyztUnits,
     cal_max: 0,
     cal_min: 0,
     slice_duration: 0,
@@ -614,8 +683,9 @@ export function createNiftiArray(
   // literal, so a caller computing a datatype at runtime cannot pass it.
   datatypeCode: number = NiiDataType.DT_UINT8,
   img: TypedVoxelArray | Uint8Array = new Uint8Array(),
+  xyztUnits = 10,
 ): Uint8Array<ArrayBuffer> {
-  const hdr = createNiftiHeader(dims, pixDims, affine, datatypeCode)
+  const hdr = createNiftiHeader(dims, pixDims, affine, datatypeCode, xyztUnits)
   const hdrBytes = hdrToArrayBuffer(hdr, false)
 
   hdr.vox_offset = Math.max(352, hdrBytes.length)

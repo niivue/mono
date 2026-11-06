@@ -193,6 +193,7 @@ export function extractSubVolume(
       affine,
       NiiDataType.DT_FLOAT32,
       img,
+      vol.hdr.xyzt_units,
     ),
   }
 }

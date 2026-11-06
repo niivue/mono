@@ -1,6 +1,6 @@
 {
   "name": "@niivue/uikit",
-  "version": "1.0.0-rc.84",
+  "version": "1.0.0-rc.92",
   "private": false,
   "type": "module",
   "description": "UIKit: controls and widgets integrated into the NiiVue rendering lifecycle",
@@ -43,8 +43,9 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test"
   },
+  "comment:niivue-peer": "A range, not workspace:* (which bun publish pins to the exact rc); see the same note in nv-ohif.",
   "peerDependencies": {
-    "@niivue/niivue": "workspace:*"
+    "@niivue/niivue": ">=1.0.0-rc.87 <2"
   },
   "devDependencies": {
     "@niivue/dev-images": "workspace:*",

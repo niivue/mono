@@ -31,7 +31,7 @@ import { volumeWriterModules } from './_registry'
 const writerByExt = buildExtensionMap<VolumeWriter>(volumeWriterModules)
 
 export function writeExtensions(): string[] {
-  return Array.from(new Set(Array.from(writerByExt.keys()))).sort()
+  return Array.from(writerByExt.keys()).sort()
 }
 
 export async function writeVolume(

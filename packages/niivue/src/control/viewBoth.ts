@@ -1,7 +1,7 @@
 import NVViewGL from '@/gl/NVViewGL'
 import { log } from '@/logger'
 import type NiiVue from '@/NVControlBase'
-import type { BackendType, CanvasViewport, NVBounds } from '@/NVTypes'
+import type { BackendType } from '@/NVTypes'
 import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
   clearCanvasMessage,
@@ -9,112 +9,23 @@ import {
   showCanvasMessage,
 } from './canvasMessage'
 import {
+  getCanvasInstances,
+  isSharedCanvas,
+  moveCanvasRegistration,
+  registerCanvasInstance,
+  replaceCanvas,
+  unregister,
+} from './canvasRegistry'
+import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
+import { loadThumbnailSafely } from './viewLifecycle'
 
-/** Registry of controllers sharing each canvas, for coordinating canvas replacement */
-const canvasInstances = new WeakMap<HTMLCanvasElement, Set<NiiVue>>()
-/** Tracks which backend a freshly-created canvas was made for, to prevent double-replacement
- *  within a batch while still allowing replacement on a future different-backend switch */
-const freshCanvasBackend = new WeakMap<HTMLCanvasElement, BackendType>()
-
-/** Identity viewport: no pan, no zoom — reproduces pre-viewport behavior */
-const IDENTITY_VIEWPORT: Readonly<CanvasViewport> = Object.freeze({
-  pan: [0, 0] as [number, number],
-  zoom: 1,
-})
-
-/** Per-canvas virtual camera: pans/zooms all sibling instances together */
-const canvasViewports = new WeakMap<HTMLCanvasElement, CanvasViewport>()
-
-/** Read the canvas viewport, or the identity transform if none is set */
-export function getCanvasViewport(
-  canvas: HTMLCanvasElement | null | undefined,
-): CanvasViewport {
-  if (!canvas) return { pan: [0, 0], zoom: 1 }
-  const v = canvasViewports.get(canvas)
-  if (!v) return { pan: [0, 0], zoom: 1 }
-  return { pan: [v.pan[0], v.pan[1]], zoom: v.zoom }
-}
-
-/** True when the viewport is the identity transform (fast path skip) */
-export function isIdentityViewport(v: CanvasViewport): boolean {
-  return v.pan[0] === 0 && v.pan[1] === 0 && v.zoom === 1
-}
-
-/** Set the canvas viewport. Returns true if value changed. */
-export function setCanvasViewport(
-  canvas: HTMLCanvasElement | null | undefined,
-  viewport: CanvasViewport,
-): boolean {
-  if (!canvas) return false
-  const cur = canvasViewports.get(canvas)
-  const px = viewport.pan[0]
-  const py = viewport.pan[1]
-  const z = viewport.zoom
-  if (cur && cur.pan[0] === px && cur.pan[1] === py && cur.zoom === z)
-    return false
-  if (isIdentityViewport({ pan: [px, py], zoom: z })) {
-    canvasViewports.delete(canvas)
-  } else {
-    canvasViewports.set(canvas, { pan: [px, py], zoom: z })
-  }
-  return true
-}
-
-/** Iterate all controllers sharing a canvas (for fanning out viewport changes) */
-export function getCanvasInstances(
-  canvas: HTMLCanvasElement | null | undefined,
-): Set<NiiVue> | null {
-  if (!canvas) return null
-  return canvasInstances.get(canvas) ?? null
-}
-
-/** Bounds-pixel rect after viewport transform. Mirrors the math in NVViewGPU/NVViewGL `_computeBoundsPixels`. */
-export type BoundsPixelRect = {
-  left: number
-  top: number
-  width: number
-  height: number
-  isOffscreen: boolean
-}
-
-/** Project normalized world bounds through the canvas viewport into pixel space. */
-export function computeBoundsPixelRect(
-  canvas: HTMLCanvasElement,
-  bounds: NVBounds | null | undefined,
-): BoundsPixelRect {
-  const cw = canvas.width
-  const ch = canvas.height
-  const vp = getCanvasViewport(canvas)
-  const worldX1 = bounds ? bounds[0][0] : 0
-  const worldY1 = bounds ? bounds[0][1] : 0
-  const worldX2 = bounds ? bounds[1][0] : 1
-  const worldY2 = bounds ? bounds[1][1] : 1
-  const z = vp.zoom
-  const px = vp.pan[0]
-  const py = vp.pan[1]
-  const sx1 = (worldX1 - 0.5) * z + 0.5 + px
-  const sx2 = (worldX2 - 0.5) * z + 0.5 + px
-  const sy1 = (worldY1 - 0.5) * z + 0.5 + py
-  const sy2 = (worldY2 - 0.5) * z + 0.5 + py
-  const left = Math.round(sx1 * cw)
-  const right = Math.round(sx2 * cw)
-  const top = Math.round((1 - sy2) * ch)
-  const bottom = Math.round((1 - sy1) * ch)
-  return {
-    left,
-    top,
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top),
-    isOffscreen: right <= 0 || left >= cw || bottom <= 0 || top >= ch,
-  }
-}
-
-export { IDENTITY_VIEWPORT }
+// Part of the ViewLifecycle this module is (NVControl imports it whole).
+export { unregister }
 
 export async function attachTo(
   ctrl: NiiVue,
@@ -154,6 +65,8 @@ export async function attachToCanvas(
   const order: ('webgpu' | 'webgl2')[] =
     ctrl.opts.backend === 'webgl2' ? ['webgl2'] : ['webgpu', 'webgl2']
   let lastError: unknown
+  // Whether the failed attempt locked the canvas to its context type.
+  let contextLocked = false
   // ctrl.view is the readiness signal every GPU-touching path tests
   // (`if (!this.view) return`), so it is published only once init() resolves.
   // Exposing it earlier lets a concurrent load reach half-built buffers (#61).
@@ -167,11 +80,11 @@ export async function attachToCanvas(
       // the context type). Replacing a SHARED canvas would desync sibling controllers
       // (their view + listeners stay on the old canvas), so decline the fallback in
       // that case and let the overlay surface instead.
-      if ((canvasInstances.get(canvas)?.size ?? 0) > 1) {
+      if ((getCanvasInstances(canvas)?.size ?? 0) > 1) {
         log.warn('Cannot fall back to webgl2 on a shared canvas; aborting')
         break
       }
-      replaceCanvasElement(ctrl)
+      replaceCanvasElement(ctrl, contextLocked)
       canvas = ctrl.canvas as HTMLCanvasElement
       registerCanvasInstance(ctrl, canvas)
       log.warn(
@@ -189,6 +102,9 @@ export async function attachToCanvas(
     } catch (error) {
       lastError = error
       log.error(`Failed to initialize ${backend} view:`, error)
+      // A WebGPU view that got its context before failing leaves the canvas
+      // unable to give WebGL2 one; destroy() clears the field, so read it first.
+      contextLocked = candidate instanceof NVViewGPU && !!candidate.context
       try {
         candidate.destroy()
       } catch {
@@ -220,7 +136,7 @@ export async function attachToCanvas(
   if (ctrl.opts.thumbnail) {
     ctrl.model.ui.isThumbnailVisible = true
     ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
-    await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+    await loadThumbnailSafely(view, ctrl.model.ui.thumbnailUrl)
   }
   if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
   if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
@@ -233,87 +149,48 @@ export async function attachToCanvas(
   return ctrl
 }
 
-/** Add a controller to the canvas instance registry. Used by single-backend
- *  lifecycle modules (`viewWebGL2`, `viewWebGPU`) so that `setViewport` fan-out
- *  via `getCanvasInstances` reaches every sibling sharing the canvas. */
-export function registerCanvasInstance(
+/**
+ * Replace the canvas DOM element and update all registered siblings'
+ * references. `cloneDetached` is for a backend change or a WebGL2 antialias
+ * change: both are locked into the canvas's context, so even a detached one
+ * must be swapped (the clone is published as `ctrl.canvas` and through
+ * `viewAttached`).
+ */
+function replaceCanvasElement(ctrl: NiiVue, cloneDetached = false): void {
+  const canvas = ctrl.canvas as HTMLCanvasElement
+  // A detached canvas stays put: the caller holds it and nothing can swap it in.
+  if (!canvas.parentNode && !cloneDetached) return
+  replaceCanvas(ctrl)
+}
+
+/**
+ * Undo a failed backend switch on a shared canvas: the siblings' views still
+ * live on the old canvas, so put it back and reinstall their handlers.
+ */
+function restoreSharedCanvas(
   ctrl: NiiVue,
-  canvas: HTMLCanvasElement,
+  oldCanvas: HTMLCanvasElement,
+  siblings: NiiVue[],
 ): void {
-  let instances = canvasInstances.get(canvas)
-  if (!instances) {
-    instances = new Set()
-    canvasInstances.set(canvas, instances)
+  const current = ctrl.canvas as HTMLCanvasElement
+  if (current !== oldCanvas) {
+    current.parentNode?.replaceChild(oldCanvas, current)
+    for (const c of getCanvasInstances(current) ?? []) c.canvas = oldCanvas
+    moveCanvasRegistration(current, oldCanvas)
   }
-  instances.add(ctrl)
-}
-
-/** Remove a controller from the canvas instance registry (called on destroy) */
-export function unregister(ctrl: NiiVue): void {
-  if (!ctrl.canvas) return
-  const instances = canvasInstances.get(ctrl.canvas)
-  if (instances) {
-    instances.delete(ctrl)
-    if (instances.size === 0) {
-      canvasInstances.delete(ctrl.canvas)
-      canvasViewports.delete(ctrl.canvas)
-    }
-  }
-}
-
-/** Check if this controller is in sub-canvas bounds mode (sharing a canvas) */
-function isSharedCanvas(ctrl: NiiVue): boolean {
-  const bounds = ctrl.opts.bounds
-  return (
-    !!bounds &&
-    !(
-      bounds[0][0] === 0 &&
-      bounds[0][1] === 0 &&
-      bounds[1][0] === 1 &&
-      bounds[1][1] === 1
-    )
-  )
-}
-
-/** Replace the canvas DOM element and update all registered siblings' references */
-function replaceCanvasElement(ctrl: NiiVue): void {
-  const oldCanvas = ctrl.canvas as HTMLCanvasElement
-  // If canvas was freshly created by a sibling for the same backend, skip (no context conflict)
-  if (freshCanvasBackend.get(oldCanvas) === ctrl.opts.backend) return
-  const parent = oldCanvas.parentNode
-  if (!parent) return
-  // cloneNode(false) copies ALL attributes (id, class, style, width/height, data-*,
-  // aria-*, tabindex, ...) but NOT event listeners or the (locked) rendering context
-  // — which is exactly what we need: a clean canvas with the caller's element
-  // contract preserved. NOTE: external listeners on the original canvas are lost.
-  const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
-  parent.replaceChild(newCanvas, oldCanvas)
-  freshCanvasBackend.set(newCanvas, ctrl.opts.backend ?? 'webgl2')
-  // Update this controller
-  ctrl.canvas = newCanvas
-  // Update all siblings sharing the old canvas
-  const siblings = canvasInstances.get(oldCanvas)
-  if (siblings) {
-    for (const sib of siblings) {
-      if (sib !== ctrl) {
-        sib.canvas = newCanvas
-      }
-    }
-    // Move registry to new canvas
-    canvasInstances.delete(oldCanvas)
-    canvasInstances.set(newCanvas, siblings)
-  }
-  // Carry the canvas viewport to the new canvas so backend swaps preserve pan/zoom
-  const oldViewport = canvasViewports.get(oldCanvas)
-  if (oldViewport) {
-    canvasViewports.delete(oldCanvas)
-    canvasViewports.set(newCanvas, oldViewport)
+  for (const sib of siblings) {
+    // A sibling destroyed during the switch has left the registry.
+    if (!getCanvasInstances(oldCanvas)?.has(sib)) continue
+    if (sib.opts.isInteractionEnabled === false) continue
+    initInteraction(sib)
+    setupDragAndDrop(sib)
   }
 }
 
 export async function recreateView(
   ctrl: NiiVue,
   backendChanged = false,
+  antiAliasChanged = false,
 ): Promise<void> {
   // 1. Destroy current view
   ctrl.emit('viewDestroyed')
@@ -330,23 +207,77 @@ export async function recreateView(
   // 5. Replace the canvas element (required because canvas context is locked)
   //    For shared canvases: only replace if backend changed (context type is locked to canvas)
   //    When replacing a shared canvas, all siblings' references are updated too.
+  // Siblings' views are bound to the old canvas, so a backend switch moves them too.
+  const siblings = backendChanged
+    ? [...(getCanvasInstances(ctrl.canvas) ?? [])].filter((c) => c !== ctrl)
+    : []
+  // Their handlers must come off the old canvas before it is swapped out.
+  for (const sib of siblings) removeInteractionListeners(sib)
+  const oldCanvas = ctrl.canvas as HTMLCanvasElement
   if (!isSharedCanvas(ctrl) || backendChanged) {
-    replaceCanvasElement(ctrl)
+    // WebGPU sets MSAA per view; only a WebGL2 context locks antialias.
+    replaceCanvasElement(
+      ctrl,
+      backendChanged || (antiAliasChanged && ctrl.opts.backend === 'webgl2'),
+    )
   }
   // 6. Create new view with current settings
-  const view =
-    ctrl.opts.backend === 'webgl2'
-      ? new NVViewGL(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
-      : new NVViewGPU(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
-  // 7. Initialize the new view, publishing it only once init() resolves
-  await view.init()
+  let view: NVViewGL | NVViewGPU
+  try {
+    view =
+      ctrl.opts.backend === 'webgl2'
+        ? new NVViewGL(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
+        : new NVViewGPU(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
+    // 7. Initialize the new view, publishing it only once init() resolves
+    await view.init()
+  } catch (error) {
+    if (siblings.length > 0) {
+      restoreSharedCanvas(ctrl, oldCanvas, siblings)
+      // The old canvas is locked to the siblings' backend: retry on that one.
+      ctrl.opts.backend = siblings[0]?.opts.backend
+    }
+    throw error
+  }
   ctrl.view = view
+  // From here the new canvas holds the shared context, so siblings are moved
+  // onto it even if the rest of this controller's rebuild fails.
+  let failure: { error: unknown } | undefined
+  try {
+    await finishViewRebuild(ctrl)
+  } catch (error) {
+    failure = { error }
+  }
+  // 13. Rebuild siblings on the new canvas with the new backend. One failure
+  // must not strand the siblings after it; a failed sibling keeps the new
+  // backend and can be retried on its own.
+  for (const sib of siblings) {
+    // Skip a sibling destroyed while the new view initialized.
+    if (!getCanvasInstances(ctrl.canvas)?.has(sib)) continue
+    sib.opts.backend = ctrl.opts.backend
+    // A WebGL2 context, and so its antialias, is shared by every view on it.
+    if (ctrl.opts.backend === 'webgl2') {
+      sib.opts.isAntiAlias = ctrl.opts.isAntiAlias
+    }
+    if (!sib.view) continue
+    try {
+      await recreateView(sib)
+    } catch (error) {
+      log.error('Failed to rebuild a sibling view on the shared canvas:', error)
+      failure ??= { error }
+    }
+  }
+  if (failure) throw failure.error
+}
+
+/** Steps 7b-12 of recreateView, once the new view has initialized. */
+async function finishViewRebuild(ctrl: NiiVue): Promise<void> {
+  if (!ctrl.view) return
   // Hooks go on before the resize() below draws the first frame: a preloaded
   // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
   ctrl._wireViewHooks()
   // 7b. Reload thumbnail if it was active before recreation
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
-    await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
+    await loadThumbnailSafely(ctrl.view, ctrl.opts.thumbnail as string)
   }
   // 8. Reinstall event handlers on new canvas
   if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
@@ -416,6 +347,16 @@ export async function reinitializeView(
     return true
   }
 
+  // A WebGL2 context fixes antialias at creation, and siblings share this one.
+  if (
+    antiAliasChanged &&
+    !backendChanged &&
+    newBackend === 'webgl2' &&
+    isSharedCanvas(ctrl)
+  ) {
+    log.warn('Cannot change antialiasing on a canvas shared by other views.')
+    return false
+  }
   // Update options
   ctrl.opts.backend = newBackend
   ctrl.opts.isAntiAlias = Boolean(newAntiAlias)
@@ -424,12 +365,10 @@ export async function reinitializeView(
   try {
     if (forceRestart || backendChanged || antiAliasChanged) {
       // Canvas recreation needed
-      await recreateView(ctrl, backendChanged)
-    } else {
-      // Only pixelRatio changed — resize without recreating
-      // The setter also updates controllers sharing this canvas.
-      ctrl.devicePixelRatio = newPixelRatio
+      await recreateView(ctrl, backendChanged, antiAliasChanged)
     }
+    // The setter also updates controllers sharing this canvas.
+    if (pixelRatioChanged) ctrl.devicePixelRatio = newPixelRatio
     return true
   } catch (err) {
     log.error('Failed to reinitialize view:', err)

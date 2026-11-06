@@ -81,7 +81,7 @@ export function buildAnnotationGeometry(
           a: [start.x, start.y],
           b: [end.x, end.y],
           length: dist,
-          units: 'mm',
+          units: shape.unit ?? 'mm',
           decimals: dist > 99 ? 0 : dist > 9 ? 1 : 2,
           sizePx: RULER_LABEL_CSS_PX * dpr,
           thickness,

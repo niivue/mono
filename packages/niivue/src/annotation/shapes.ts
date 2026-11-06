@@ -2,6 +2,7 @@ import type {
   AnnotationPoint,
   AnnotationTool,
   PolygonWithHoles,
+  VectorAnnotation,
 } from '@/NVTypes'
 
 const ELLIPSE_SEGMENTS = 64
@@ -216,4 +217,27 @@ export function generateShape(
     default:
       return []
   }
+}
+
+/**
+ * True when the eraser has cut into a drawn shape: its polygons no longer match
+ * the outline its bounds generate. Only shapes generateShape can rebuild
+ * (rect, ellipse, circle, line, arrow) are judged; contours, bidirectional and
+ * freehand annotations return false.
+ */
+export function isAnnotationErased(
+  ann: VectorAnnotation,
+  strokeWidth = ann.style.strokeWidth,
+): boolean {
+  const { shape } = ann
+  if (!shape) return false
+  const intact = generateShape(
+    shape.type,
+    shape.start,
+    shape.end,
+    shape.width ?? strokeWidth,
+  )
+  return (
+    intact.length > 0 && JSON.stringify(intact) !== JSON.stringify(ann.polygons)
+  )
 }

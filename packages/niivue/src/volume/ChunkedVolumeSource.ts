@@ -6,7 +6,7 @@ export interface ChunkedVolumeLevel {
   level: number
   /** Level dims in voxels `[x, y, z]`. */
   shape: Vec3i
-  /** Voxel spacing in mm `[x, y, z]`. */
+  /** Voxel spacing `[x, y, z]` in the source's units (see `xyztUnits`). */
   spacing: Vec3f
 }
 
@@ -47,6 +47,8 @@ export interface ChunkedVolumeSource {
   readonly levels: ChunkedVolumeLevel[]
   /** NIfTI datatype code shared by every level (see `NiiDataType`). */
   readonly datatypeCode: number
+  /** NIfTI `xyzt_units` of `spacing`. Omitted: mm + sec (10). */
+  readonly xyztUnits?: number
   /**
    * Read a voxel region of ONE level. `texOrigin`/`texDims` are in that level's
    * OWN voxel grid (see the multi-LOD coordinate split in `chunking.ts`). MUST

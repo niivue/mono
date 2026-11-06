@@ -10,9 +10,9 @@ import {
   emitPan2DChange,
   emitScaleMultiplierChange,
 } from '@/control/cameraEvents'
+import { computeBoundsPixelRect } from '@/control/canvasRegistry'
 import * as DragModes from '@/control/dragModes'
 import { type Pinch, pinchCamera } from '@/control/pinchZoom'
-import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import {
@@ -62,7 +62,7 @@ import {
   rayBlockFacePointMM,
 } from '@/volume/ChunkExplode'
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
-import { getImageDataRAS } from '@/volume/utils'
+import { getImageDataRAS, voxelSizeMM } from '@/volume/utils'
 
 /** Texture-space coordinate `d` of a world-mm point: its slice along `d`. */
 const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
@@ -868,8 +868,8 @@ function magicWandFill(
   // Report the segmented region so a host can show its size without walking
   // the bitmap itself. Voxel volume comes from the segmented volume's own RAS
   // grid (the drawing shares that grid).
-  const pix = vol.pixDimsRAS
-  const mm3 = pix ? result.filled * pix[1] * pix[2] * pix[3] : 0
+  const v = voxelSizeMM(vol)
+  const mm3 = v ? result.filled * v[0] * v[1] * v[2] : 0
   ctrl.emit('clickToSegment', {
     seed,
     penValue: ctrl.model.draw.penValue,
@@ -1588,19 +1588,15 @@ export function initInteraction(ctrl: NiiVue): void {
               if (ann?.shape) {
                 ctrl._annotationUndoStack.push(ctrl.model.annotations)
                 ctrl._resizingControlPoint = cpIdx
-                const intact = Annotation.generateShape(
-                  ann.shape.type,
-                  ann.shape.start,
-                  ann.shape.end,
-                  ann.shape.width ?? ctrl.model.annotation.style.strokeWidth,
-                )
                 ctrl._resizeOriginalShape = {
                   start: { ...ann.shape.start },
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
                   polygons: ann.polygons,
-                  isErased:
-                    JSON.stringify(intact) !== JSON.stringify(ann.polygons),
+                  isErased: Annotation.isAnnotationErased(
+                    ann,
+                    ctrl.model.annotation.style.strokeWidth,
+                  ),
                 }
                 ctrl._resizingAnnotation = ann
                 startAnnotationDrag(ctrl, evt)

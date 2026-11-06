@@ -21,6 +21,7 @@ import {
   chunkExplodeEnabled,
   explodeOffsetMMAtFrac,
 } from '@/volume/ChunkExplode'
+import { sceneUnit } from '@/volume/utils'
 import type { BuildLineFn, LineData } from './NVLine'
 import type { SliceTile } from './NVSliceLayout'
 
@@ -301,19 +302,19 @@ export function buildAnnotation3DRenderData(
   }
 }
 
-function formatAnnotationStats(stats: AnnotationStats): string[] {
+function formatAnnotationStats(stats: AnnotationStats, unit: string): string[] {
   if (stats.length !== undefined) {
     // Bidirectional carries both axes: long (length) + short (shortLength).
     if (stats.shortLength !== undefined) {
       return [
-        `L: ${stats.length.toFixed(1)} mm`,
-        `W: ${stats.shortLength.toFixed(1)} mm`,
+        `L: ${stats.length.toFixed(1)} ${unit}`,
+        `W: ${stats.shortLength.toFixed(1)} ${unit}`,
       ]
     }
-    return [`${stats.length.toFixed(1)} mm`]
+    return [`${stats.length.toFixed(1)} ${unit}`]
   }
   return [
-    `Area: ${stats.area.toFixed(1)} mm²`,
+    `Area: ${stats.area.toFixed(1)} ${unit}²`,
     `Min: ${stats.min.toFixed(1)}  Max: ${stats.max.toFixed(1)}`,
     `Mean: ${stats.mean.toFixed(1)}  SD: ${stats.stdDev.toFixed(1)}`,
   ]
@@ -418,10 +419,10 @@ const OPEN_ANNOTATION_TOOLS: ReadonlySet<AnnotationTool> = new Set([
 ])
 
 /** Free text above the stats lines: the built-in label of every tool. */
-function annotationLabelLines(ann: VectorAnnotation): string[] {
+function annotationLabelLines(ann: VectorAnnotation, unit: string): string[] {
   return [
     ...(ann.text ? [ann.text] : []),
-    ...(ann.stats ? formatAnnotationStats(ann.stats) : []),
+    ...(ann.stats ? formatAnnotationStats(ann.stats, unit) : []),
   ]
 }
 
@@ -430,10 +431,10 @@ function annotationLabelLines(ann: VectorAnnotation): string[] {
  * a graduated ruler from shape.length, which draws its own mm label, so its
  * label carries ONLY the user's free text, avoiding a duplicate reading.
  */
-function overlayLabelLines(ann: VectorAnnotation): string[] {
+function overlayLabelLines(ann: VectorAnnotation, unit: string): string[] {
   if (ann.shape?.type === 'measureLine' && ann.stats?.length !== undefined)
     return ann.text ? [ann.text] : []
-  return annotationLabelLines(ann)
+  return annotationLabelLines(ann, unit)
 }
 
 /**
@@ -445,11 +446,12 @@ function overlayLabelLines(ann: VectorAnnotation): string[] {
 function projectAnnotations(
   model: NVModel,
   screenSlices: readonly SliceTile[],
-  labelLines: (ann: VectorAnnotation) => string[],
+  labelLines: (ann: VectorAnnotation, unit: string) => string[],
 ): AnnotationScreenShape[] {
   const shapes: AnnotationScreenShape[] = []
   const annotations = resolveAnnotations(model)
   if (annotations.length === 0) return shapes
+  const unit = sceneUnit(model).label
   const tolerance = computeTolerance(model)
   const anchors = annotations.map(getAnchorMM)
   for (const [tileIndex, tile] of screenSlices.entries()) {
@@ -503,8 +505,11 @@ function projectAnnotations(
       }
       const isMeasureLine =
         ann.shape?.type === 'measureLine' && ann.stats?.length !== undefined
-      if (isMeasureLine) shape.length = ann.stats?.length
-      const lines = labelLines(ann)
+      if (isMeasureLine) {
+        shape.length = ann.stats?.length
+        shape.unit = unit
+      }
+      const lines = labelLines(ann, unit)
       if (ann.shape && shape.start && shape.end && lines.length > 0) {
         if (isMeasureLine) {
           const mid = project(

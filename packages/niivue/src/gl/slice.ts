@@ -15,6 +15,7 @@ import {
 } from '@/volume/chunking'
 import type { SliceInterpolation } from '@/volume/interpolation'
 import { extractChunkBytes } from '@/volume/orientChunked'
+import { createUnitQuad, setTexParams } from './glUtil'
 import { Shader } from './shader'
 import { sliceFragShader, sliceVertShader } from './sliceShader'
 
@@ -69,116 +70,22 @@ export class SliceRenderer extends NVRenderer {
     this._samplerLinear = createSampler(gl, gl.LINEAR)
     this._samplerNearest = createSampler(gl, gl.NEAREST)
 
-    // Create VAO and vertex buffer for a unit quad
-    this._vao = gl.createVertexArray()
-    if (!this._vao) {
-      throw new Error('Failed to create slice VAO')
-    }
-    gl.bindVertexArray(this._vao)
+    const quad = createUnitQuad(gl)
+    this._vao = quad.vao
+    this._vertexBuffer = quad.vbo
 
-    // Quad vertices in 0-1 range (triangle strip order)
-    const quadVertices = new Float32Array([
-      0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-    ])
-
-    this._vertexBuffer = gl.createBuffer()
-    if (!this._vertexBuffer) {
-      gl.bindVertexArray(null)
-      throw new Error('Failed to create slice vertex buffer')
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, quadVertices, gl.STATIC_DRAW)
-
-    // Position attribute at location 0
-    gl.enableVertexAttribArray(0)
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
-
-    gl.bindVertexArray(null)
-
-    // Create placeholder 2x2x2 RGBA overlay texture (all zeros)
-    this._placeholderOverlay = gl.createTexture()
+    this._placeholderOverlay = placeholderTexture3D(gl, gl.LINEAR)
     if (!this._placeholderOverlay) {
-      gl.bindVertexArray(null)
       throw new Error('Failed to create slice placeholder texture')
     }
-    gl.bindTexture(gl.TEXTURE_3D, this._placeholderOverlay)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+    this._placeholderDrawing = placeholderTexture3D(gl, gl.NEAREST)
+    this._placeholderPaqd = placeholderTexture3D(gl, gl.NEAREST)
 
-    const emptyData = new Uint8Array(2 * 2 * 2 * 4)
-    gl.texImage3D(
-      gl.TEXTURE_3D,
-      0,
-      gl.RGBA,
-      2,
-      2,
-      2,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      emptyData,
-    )
-    gl.bindTexture(gl.TEXTURE_3D, null)
-
-    // Create placeholder 2x2x2 drawing texture (all zeros - nearest filter)
-    this._placeholderDrawing = gl.createTexture()
-    if (this._placeholderDrawing) {
-      gl.bindTexture(gl.TEXTURE_3D, this._placeholderDrawing)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-      gl.texImage3D(
-        gl.TEXTURE_3D,
-        0,
-        gl.RGBA,
-        2,
-        2,
-        2,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        new Uint8Array(2 * 2 * 2 * 4),
-      )
-      gl.bindTexture(gl.TEXTURE_3D, null)
-    }
-
-    // Create placeholder 2x2x2 PAQD texture (all zeros - nearest filter)
-    this._placeholderPaqd = gl.createTexture()
-    if (this._placeholderPaqd) {
-      gl.bindTexture(gl.TEXTURE_3D, this._placeholderPaqd)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-      gl.texImage3D(
-        gl.TEXTURE_3D,
-        0,
-        gl.RGBA,
-        2,
-        2,
-        2,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        new Uint8Array(2 * 2 * 2 * 4),
-      )
-      gl.bindTexture(gl.TEXTURE_3D, null)
-    }
-
-    // Create placeholder 1x1 2D LUT texture (transparent - nearest filter)
+    // Placeholder 1x1 2D LUT texture (transparent - nearest filter)
     this._placeholderLut2D = gl.createTexture()
     if (this._placeholderLut2D) {
       gl.bindTexture(gl.TEXTURE_2D, this._placeholderLut2D)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      setTexParams(gl, gl.TEXTURE_2D, gl.NEAREST)
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,
@@ -514,11 +421,7 @@ export class SliceRenderer extends NVRenderer {
     const tex = gl.createTexture()
     if (!tex) return null
     gl.bindTexture(gl.TEXTURE_3D, tex)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+    setTexParams(gl, gl.TEXTURE_3D, gl.NEAREST)
     gl.texImage3D(
       gl.TEXTURE_3D,
       0,
@@ -593,4 +496,29 @@ function createSampler(
   for (const wrap of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R])
     gl.samplerParameteri(s, wrap, gl.CLAMP_TO_EDGE)
   return s
+}
+
+/** 2x2x2 all-zero RGBA texture bound when a slot has no data. */
+function placeholderTexture3D(
+  gl: WebGL2RenderingContext,
+  filter: number,
+): WebGLTexture | null {
+  const tex = gl.createTexture()
+  if (!tex) return null
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  setTexParams(gl, gl.TEXTURE_3D, filter)
+  gl.texImage3D(
+    gl.TEXTURE_3D,
+    0,
+    gl.RGBA,
+    2,
+    2,
+    2,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    new Uint8Array(2 * 2 * 2 * 4),
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  return tex
 }

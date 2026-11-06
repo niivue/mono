@@ -171,3 +171,73 @@ describe('annotation label anchors', () => {
     )
   })
 })
+
+describe('annotation stats labels', () => {
+  test('use the base volume unit (um length and area)', () => {
+    const style = {
+      fillColor: [1, 0, 0, 1],
+      strokeColor: [1, 0, 0, 1],
+      strokeWidth: 1,
+    }
+    const base = {
+      label: 1,
+      group: 'g',
+      sliceType: SLICE_TYPE.AXIAL,
+      slicePosition: 0,
+      polygons: [{ outer: square(0, 0, 4), holes: [] }],
+      style,
+    }
+    const stats = { area: 16, min: 0, mean: 1, max: 2, stdDev: 0.5 }
+    const model = {
+      ui: { isAnnotationDrawn: false },
+      annotations: [
+        {
+          ...base,
+          id: 'r',
+          shape: {
+            type: 'rectangle',
+            start: { x: 0, y: 0 },
+            end: { x: 4, y: 4 },
+          },
+          stats,
+        },
+        {
+          ...base,
+          id: 'b',
+          shape: {
+            type: 'bidirectional',
+            start: { x: 0, y: 0 },
+            end: { x: 4, y: 4 },
+          },
+          stats: { ...stats, length: 5, shortLength: 2 },
+        },
+        {
+          ...base,
+          id: 'm',
+          shape: {
+            type: 'measureLine',
+            start: { x: 0, y: 0 },
+            end: { x: 4, y: 4 },
+          },
+          stats: { ...stats, length: 7 },
+        },
+      ],
+      _persistedAnnotationScreenShapes: [],
+      getVolumes: () => [{ hdr: { xyzt_units: 3 | 8 } }],
+    } as unknown as NVModel
+    const tile = {
+      axCorSag: SLICE_TYPE.AXIAL,
+      mvpMatrix: mat4.create(),
+      planeNormal: [0, 0, 1],
+      planePoint: [0, 0, 0],
+      leftTopWidthHeight: [0, 0, 100, 100],
+    } as unknown as SliceTile
+    projectAnnotationScreenShapes(model, [tile])
+    const [rect, bidi, line] = model._persistedAnnotationScreenShapes
+    expect(rect?.label?.lines[0]).toBe('Area: 16.0 um²')
+    expect(bidi?.label?.lines.slice(0, 2)).toEqual(['L: 5.0 um', 'W: 2.0 um'])
+    // External overlays (uikit ruler) label the measured line from these.
+    expect(line?.length).toBe(7)
+    expect(line?.unit).toBe('um')
+  })
+})

@@ -18,7 +18,12 @@ import {
   text,
 } from './params'
 import { pickIndex } from './pick'
-import type { DocumentOptions, Handlers, NiiVueHost } from './view'
+import {
+  type DocumentOptions,
+  type Handlers,
+  type NiiVueHost,
+  worldUnit,
+} from './view'
 
 const SAVES = ['document', 'volume', 'mesh', 'bitmap', 'drawing'] as const
 const SLIDE_DRAWING = ['create', 'clear', 'undo', 'end'] as const
@@ -124,6 +129,7 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
           out.canvas = view.mmToCanvas([at[0], at[1], at[2]])
         }
       }
+      if ('mm' in out) out.unit = worldUnit(view)
       return out
     },
 

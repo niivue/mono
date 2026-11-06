@@ -18,7 +18,7 @@ import * as NVSliceLayout from '@/view/NVSliceLayout'
 import { buildDerivedScalarVolume } from '@/volume/mrsi'
 import { nii2volume } from '@/volume/NVVolume'
 import type { TransformOptions, VolumeTransform } from '@/volume/transforms'
-import { getImageDataRAS } from '@/volume/utils'
+import { getImageDataRAS, voxelSizeMM } from '@/volume/utils'
 import type {
   BackgroundVolumeAccess,
   DrawingAccess,
@@ -92,8 +92,7 @@ export class NVExtensionContext {
         }
       },
       get voxelSizeMM(): [number, number, number] {
-        const p = vol.pixDimsRAS
-        return p ? [p[1], p[2], p[3]] : [1, 1, 1]
+        return voxelSizeMM(vol) ?? [1, 1, 1]
       },
       get calMin() {
         return vol.calMin

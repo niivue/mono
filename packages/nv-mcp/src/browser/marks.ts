@@ -27,6 +27,7 @@ import type {
   NiiVueHost,
   PlaneOutline,
 } from './view'
+import { worldUnit } from './view'
 
 const DRAWING_ACTIONS = ['create', 'load', 'undo', 'close', 'svg'] as const
 const ANNOTATION_ACTIONS = [
@@ -213,6 +214,7 @@ export function markHandlers(host: NiiVueHost): Handlers {
       const full = flag(params, 'polygons') ?? false
       const out: Record<string, unknown> = {
         annotations: all.map((a) => describeAnnotation(a, full)),
+        unit: worldUnit(view),
         ...(view.selectedAnnotation === undefined
           ? {}
           : { selected: view.selectedAnnotation }),
@@ -382,7 +384,11 @@ export function markHandlers(host: NiiVueHost): Handlers {
       if (focus !== undefined) view.focusBox = one
       if (list !== undefined) view.lodBoxes = many?.length ? many : null
       view.drawScene()
-      return { focus: view.focusBox, boxes: view.lodBoxes?.length ?? 0 }
+      return {
+        focus: view.focusBox,
+        boxes: view.lodBoxes?.length ?? 0,
+        unit: worldUnit(view),
+      }
     },
 
     set_plane_outlines(params: Params) {
@@ -402,7 +408,10 @@ export function markHandlers(host: NiiVueHost): Handlers {
 
     list_measurements() {
       host.beforeAnswer?.()
-      return { measurements: measurements().map(describeMeasurement) }
+      return {
+        measurements: measurements().map(describeMeasurement),
+        unit: worldUnit(view),
+      }
     },
 
     edit_measurements(params: Params) {
@@ -468,6 +477,7 @@ export function markHandlers(host: NiiVueHost): Handlers {
           ? { measurement: describeMeasurement(kept[index], index) }
           : {}),
         measurements: kept.map(describeMeasurement),
+        unit: worldUnit(view),
       }
     },
   }

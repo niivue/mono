@@ -1,3 +1,73 @@
+## 1.0.0-rc.84 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.97
+- Updated uikit to 1.0.0-rc.92
+
+## 1.0.0-rc.83 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.96
+- Updated uikit to 1.0.0-rc.91
+
+## 1.0.0-rc.82 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.95
+- Updated uikit to 1.0.0-rc.90
+
+## 1.0.0-rc.81 (2026-11-06)
+
+### Fixes
+
+- **nv-mcp:** name the unit of instance positions ([6992cb16](https://github.com/niivue/mono/commit/6992cb16))
+- **demo-mcp:** name the scene unit and skip the atlas on a micrometre scan ([257f1109](https://github.com/niivue/mono/commit/257f1109))
+- **nv-mcp:** refuse atlas regions on a volume not in millimetres; meshThicknessOn2D is world units ([82d694e0](https://github.com/niivue/mono/commit/82d694e0))
+- **nv-mcp:** name the unit for measurements, boxes, annotations, labels and the camera ([bd707bd2](https://github.com/niivue/mono/commit/bd707bd2))
+- **nv-mcp:** name the unit in map_point and animate, say world units throughout ([08567440](https://github.com/niivue/mono/commit/08567440))
+- **nv-mcp:** report the world unit beside every coordinate ([e2bce052](https://github.com/niivue/mono/commit/e2bce052))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.94
+- Updated uikit to 1.0.0-rc.89
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.80 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.93
+- Updated uikit to 1.0.0-rc.88
+
+## 1.0.0-rc.79 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.92
+- Updated uikit to 1.0.0-rc.87
+
+## 1.0.0-rc.78 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.91
+- Updated uikit to 1.0.0-rc.86
+
+## 1.0.0-rc.77 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.90
+- Updated uikit to 1.0.0-rc.85
+
 ## 1.0.0-rc.76 (2026-11-05)
 
 ### Updated Dependencies

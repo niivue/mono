@@ -1980,7 +1980,7 @@
         }
       ],
       "returns": "[number, number, number] | null",
-      "doc": "Convert a canvas position to a world-mm point by picking on the 2D slice\ntile under it (ray/slice-plane intersection — the same math the built-in\ncrosshair click uses, so the result matches `setCrosshairPos` picking).\n\nInput is canvas backing-store pixels — see {@link hitTest} for the exact\nconvention and the CSS-pixel/devicePixelRatio conversion.\n\nReturns null when the point misses every tile, lands on a 3D render tile,\nor no volume is loaded.",
+      "doc": "Convert a canvas position to a world-mm point by picking on the 2D slice\ntile under it (ray/slice-plane intersection — the same math the built-in\ncrosshair click uses, so the result matches `setCrosshairPos` picking).\n\nInput is canvas backing-store pixels — see {@link hitTest} for the exact\nconvention and the CSS-pixel/devicePixelRatio conversion.\n\nReturns null when the point misses every tile, lands on a 3D render tile,\nor no volume is loaded. World coordinates are scene units as loaded:\nmicrometers on a micrometer volume (`xyzt_units` MICRON), not converted.",
       "returnsDoc": null
     },
     {
@@ -2386,7 +2386,7 @@
       "returnsValue": true,
       "params": [],
       "returns": "[number, number, number]",
-      "doc": "Crosshair position in **RAS world millimetres** (x = right, y = anterior,\nz = superior), converted from the scene-fraction {@link crosshairPos}.\nPairs with {@link setCrosshairPos}, which takes the same units.",
+      "doc": "Crosshair position in **RAS world millimetres** (x = right, y = anterior,\nz = superior), converted from the scene-fraction {@link crosshairPos}.\nPairs with {@link setCrosshairPos}, which takes the same units.\nWorld coordinates are scene units as loaded: micrometers on a micrometer\nvolume (`xyzt_units` MICRON, e.g. OME-TIFF/OME-Zarr), not converted.",
       "returnsDoc": null
     },
     {
@@ -3657,7 +3657,7 @@
         }
       ],
       "returns": "void",
-      "doc": "Move the crosshair to a point given in **RAS world millimetres**\n(x = right, y = anterior, z = superior), not a scene fraction. The point\nis converted to the scene-fraction {@link crosshairPos} and clamped to the\nscene bounding box. When `isSnapToVoxelCenters` is true and a volume is\nloaded, it is first snapped to the nearest voxel centre of the background\nvolume (`volumes[0]`). Emits `locationChange` and redraws.\n\nReplaces the 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)`: pass the mm\ndirectly. To set a fraction instead, assign {@link crosshairPos}.",
+      "doc": "Move the crosshair to a point given in **RAS world millimetres**\n(x = right, y = anterior, z = superior), not a scene fraction. The point\nis converted to the scene-fraction {@link crosshairPos} and clamped to the\nscene bounding box. When `isSnapToVoxelCenters` is true and a volume is\nloaded, it is first snapped to the nearest voxel centre of the background\nvolume (`volumes[0]`). Emits `locationChange` and redraws.\n\nReplaces the 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)`: pass the mm\ndirectly. To set a fraction instead, assign {@link crosshairPos}.\nWorld coordinates are scene units as loaded: micrometers on a micrometer\nvolume (`xyzt_units` MICRON, e.g. OME-TIFF/OME-Zarr), not converted.",
       "returnsDoc": null
     },
     {
@@ -3955,7 +3955,7 @@
         }
       ],
       "returns": "void",
-      "doc": "Register an NVSlide to render as a textured plane in the 3D render view,\nlaid into the loaded volume's world (mm) space. `pixelToWorld` maps slide\nbase pixels -> world mm (build one with `axialPlaneTransform` for an\naxis-aligned plane). By default the pyramid level is chosen per-frame from\nthe camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you\nzoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's\ncache and the view redraws on its `change` event. Call `clearSlidePlane()`.",
+      "doc": "Register an NVSlide to render as a textured plane in the 3D render view,\nlaid into the loaded volume's world (mm) space. `pixelToWorld` maps slide\nbase pixels -> world mm (build one with `axialPlaneTransform` for an\naxis-aligned plane). By default the pyramid level is chosen per-frame from\nthe camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you\nzoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's\ncache and the view redraws on its `change` event. Call `clearSlidePlane()`.\nThe built-in scale ruler draws on 2D tiles only, never over this plane.",
       "returnsDoc": null
     },
     {

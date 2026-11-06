@@ -1,6 +1,7 @@
 import { decode, encode } from 'cbor-x'
 import * as NVCmaps from '@/cmap/NVCmaps'
 import {
+  assertCborFitsInput,
   assertDocumentFitsInput,
   copyDocumentBytes,
   isEmbeddedImageComplete,
@@ -715,7 +716,9 @@ export function serialize(
 
 export function deserialize(data: Uint8Array): NVDocumentData {
   // Accept either encoding: JSON (first non-whitespace byte `{`) or CBOR.
-  const doc = looksLikeJSON(data)
+  const isJSON = looksLikeJSON(data)
+  if (!isJSON) assertCborFitsInput(data)
+  const doc = isJSON
     ? (decodeDocumentJSON(new TextDecoder().decode(data)) as NVDocumentData)
     : (decode(data) as NVDocumentData)
   assertDocumentFitsInput(doc, data.byteLength)

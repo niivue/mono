@@ -1,3 +1,87 @@
+## 1.0.0-rc.93 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.97
+- Updated uikit to 1.0.0-rc.92
+
+## 1.0.0-rc.92 (2026-11-06)
+
+### Fixes
+
+- **nv-ohif:** declare @niivue/niivue peer as a range ([#106](https://github.com/niivue/mono/issues/106))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.96
+- Updated uikit to 1.0.0-rc.91
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.91 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.95
+- Updated uikit to 1.0.0-rc.90
+
+## 1.0.0-rc.90 (2026-11-06)
+
+### Fixes
+
+- **niivue:** read the world unit from xyzt_units for ruler and labels ([#202](https://github.com/niivue/mono/issues/202))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.94
+- Updated uikit to 1.0.0-rc.89
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.89 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.93
+- Updated uikit to 1.0.0-rc.88
+
+## 1.0.0-rc.88 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.92
+- Updated uikit to 1.0.0-rc.87
+
+## 1.0.0-rc.87 (2026-11-05)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.91
+- Updated uikit to 1.0.0-rc.86
+
+## 1.0.0-rc.86 (2026-11-05)
+
+### Fixes
+
+- **nv-ohif:** drop the OHIF row for an erased line, arrow or bidirectional ([8bdf0225](https://github.com/niivue/mono/commit/8bdf0225))
+- leave a shape untouched when the eraser misses it ([7f2b0a50](https://github.com/niivue/mono/commit/7f2b0a50))
+- **nv-ohif:** drop the row for an erased rect, ellipse or circle ([8d8e684b](https://github.com/niivue/mono/commit/8d8e684b))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.90
+- Updated uikit to 1.0.0-rc.85
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.85 (2026-11-05)
 
 ### Updated Dependencies

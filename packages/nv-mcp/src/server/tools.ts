@@ -180,7 +180,8 @@ export const CORE_SCHEMAS = {
   go_to_point: {
     ...TAB_ARG,
     mm: triple(
-      "The point, [x, y, z] in the loaded volume's world millimetres.",
+      "The point, [x, y, z] in the loaded volume's world units (millimetres, or micrometres " +
+        'on a micrometre volume; where_am_i reports the unit).',
     ).optional(),
     vox: z
       .array(z.number().int())
@@ -274,14 +275,14 @@ export const CORE_SCHEMAS = {
       .length(2)
       .optional()
       .describe('The render pan, [x, y].'),
-    pivot: triple('The point in millimetres the render turns about.')
+    pivot: triple('The point in world units the render turns about.')
       .nullable()
       .optional()
       .describe(
-        'The point in millimetres the render turns about; null for the centre.',
+        'The point in world units the render turns about; null for the centre.',
       ),
     center_on: triple(
-      'Centre the render on this point in millimetres.',
+      'Centre the render on this point in world units.',
     ).optional(),
     global: GLOBAL_CAMERA_ARG.optional().describe(
       'Place the global camera that looks at the global3d instances set_instances lays out. It shows nothing without them.',
@@ -486,7 +487,7 @@ export const CORE_SCHEMAS = {
             .describe(
               'An atlas region, a label (Insula_L) or a spoken name; the label points at its centroid.',
             ),
-          mm: triple('The labelled point in world millimetres.').optional(),
+          mm: triple('The labelled point in world units.').optional(),
         }),
       )
       .optional()
@@ -659,7 +660,7 @@ export function registerCoreTools(
       title: 'Load a volume',
       description:
         'Loads a volume into the page from an address it can fetch, replacing what is shown. ' +
-        "Reports the volume's name and its extent in millimetres. An atlas only applies when the " +
+        "Reports the volume's name and its extent in world units, with the unit. An atlas only applies when the " +
         'volume is in MNI space; pass `mni` to say so, or leave it to be guessed from the name. ' +
         "It cannot read a file on the person's computer by its path. When they want to load one, " +
         'look in capabilities controlBindings for an action that opens files, add a file control ' +
@@ -705,7 +706,8 @@ export function registerCoreTools(
     {
       title: 'Where the crosshair is',
       description:
-        'Reports where the crosshair is now: its position in millimetres and as fractions of the ' +
+        'Reports where the crosshair is now: its position in world units (with `unit`: mm, or um ' +
+        'on a micrometre volume) and as fractions of the ' +
         'volume, the volumes shown and how each is drawn, the atlas region there if any, which ' +
         'plane is cut, where the camera looks from, the view layout, which tab answered, and the ' +
         'description a listener would hear.',
@@ -764,7 +766,8 @@ export function registerCoreTools(
     {
       title: 'Go to a point',
       description:
-        "Moves the crosshair to a point given in the loaded volume's world millimetres, or as a " +
+        "Moves the crosshair to a point given in the loaded volume's world units (millimetres, or " +
+        'micrometres on a micrometre volume), or as a ' +
         'voxel of the base volume, and cuts the ' +
         'volume with a plane through it, facing the render camera at the cut, as go_to_region does ' +
         "for an atlas region. Works in any space, so it reaches structures of a subject's own scan, " +
@@ -854,7 +857,7 @@ export function registerCoreTools(
       description:
         'Draws text labels on the scene, each tied by a line to a point: an atlas region, ' +
         'whose centroid the line reaches and whose spoken name is the text unless `text` is ' +
-        'given, or a point in world millimetres with its own text. The labels follow the ' +
+        'given, or a point in world units with its own text. The labels follow the ' +
         'render as it turns and a spread volume as its bricks move. On a volume tiled into ' +
         'bricks each label outlines the brick holding its point, and `dim_others` fades the ' +
         'bricks holding none. Each call replaces the labels drawn before, and the fading; ' +

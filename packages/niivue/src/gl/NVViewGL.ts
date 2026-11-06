@@ -1,5 +1,5 @@
 import { mat4 } from 'gl-matrix'
-import { getCanvasViewport } from '@/control/viewBoth'
+import { getCanvasViewport } from '@/control/canvasRegistry'
 import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import { defaultMatcap } from '@/documentMatcap'
 import { log } from '@/logger'
@@ -7,7 +7,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
 import { generateNormals } from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
-import { BYTES_PER_VERTEX } from '@/mesh/vertexFormat'
+import { packVertices } from '@/mesh/vertexFormat'
 import * as NVConstants from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type NVModel from '@/NVModel'
@@ -74,6 +74,7 @@ import {
 } from '@/volume/chunking'
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
+import { sceneUnit } from '@/volume/utils'
 import { GLBench } from './bench'
 import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
@@ -387,20 +388,7 @@ export default class NVGlview {
     const positions = new Float32Array(cubeData.positions)
     const indices = new Uint32Array(cubeData.indices)
     const normals = generateNormals(positions, indices)
-    const numVerts = positions.length / 3
-    const vertexData = new ArrayBuffer(numVerts * BYTES_PER_VERTEX)
-    const f32 = new Float32Array(vertexData)
-    const u32 = new Uint32Array(vertexData)
-    for (let v = 0; v < numVerts; v++) {
-      const off = (v * BYTES_PER_VERTEX) / 4
-      f32[off] = positions[v * 3]
-      f32[off + 1] = positions[v * 3 + 1]
-      f32[off + 2] = positions[v * 3 + 2]
-      f32[off + 3] = normals[v * 3]
-      f32[off + 4] = normals[v * 3 + 1]
-      f32[off + 5] = normals[v * 3 + 2]
-      u32[off + 6] = cubeData.colors[v]
-    }
+    const vertexData = packVertices(positions, normals, cubeData.colors)
     const vao = gl.createVertexArray()
     if (!vao) return
     gl.bindVertexArray(vao)
@@ -412,18 +400,11 @@ export default class NVGlview {
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW)
     const shaderAttrs = mesh.getAttributeLocations(gl, 'vertexColor')
-    gl.enableVertexAttribArray(shaderAttrs.aPosition)
-    gl.vertexAttribPointer(shaderAttrs.aPosition, 3, gl.FLOAT, false, 28, 0)
-    gl.enableVertexAttribArray(shaderAttrs.aNormal)
-    gl.vertexAttribPointer(shaderAttrs.aNormal, 3, gl.FLOAT, false, 28, 12)
-    gl.enableVertexAttribArray(shaderAttrs.aColor)
-    gl.vertexAttribPointer(
+    mesh.setVertexAttribs(
+      gl,
+      shaderAttrs.aPosition,
+      shaderAttrs.aNormal,
       shaderAttrs.aColor,
-      4,
-      gl.UNSIGNED_BYTE,
-      true,
-      28,
-      24,
     )
     const indexBuffer = gl.createBuffer()
     if (!indexBuffer) {
@@ -1588,6 +1569,7 @@ export default class NVGlview {
           buildLine,
           md.ui.fontColor,
           md.scene.pan2Dxyzmm,
+          sceneUnit(md).mm,
         )
         if (rulerResult) {
           labels.push(...rulerResult.labels)

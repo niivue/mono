@@ -4,6 +4,7 @@ import type NVModel from '@/NVModel'
 import type { CompletedMeasurement } from '@/NVTypes'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { projectMMToCanvas } from '@/view/sliceUtils'
+import { sceneUnit } from '@/volume/utils'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
 import type { BuildLineFn, LineData } from './NVLine'
 import type { SliceTile } from './NVSliceLayout'
@@ -16,6 +17,20 @@ export type RulerSegment = readonly [number, number, number, number]
 // Cap the tick count so an enormous measurement can't emit thousands of lines
 // (matches @niivue/uikit's buildRuler).
 const MAX_RULER_TICKS = 200
+
+/**
+ * Thin the ticks to at most MAX_RULER_TICKS in 1/2/5 steps, as @niivue/uikit's
+ * `decimation`: an arbitrary step (7, say) would number ticks 35, 70, ...
+ */
+function tickStep(marks: number): number {
+  if (marks <= MAX_RULER_TICKS) return 1
+  const raw = marks / MAX_RULER_TICKS
+  const decade = 10 ** Math.floor(Math.log10(raw))
+  for (const m of [1, 2, 5]) {
+    if (m * decade >= raw) return m * decade
+  }
+  return 10 * decade
+}
 
 /**
  * Screen-pixel line segments for a graduated ruler between two canvas points: a
@@ -67,7 +82,7 @@ export function rulerSegments(
   if (units <= 0) return segs
 
   const marks = Math.floor(units)
-  const step = Math.max(1, Math.ceil(marks / MAX_RULER_TICKS))
+  const step = tickStep(marks)
   for (let i = step; i <= marks; i += step) {
     const t = i / units
     const cx = sx + t * dx
@@ -111,7 +126,7 @@ export function rulerTickLabels(
   const py = dx / len
   const off = tickLength * 2 + tickLength
   const marks = Math.floor(units)
-  const step = Math.max(1, Math.ceil(marks / MAX_RULER_TICKS))
+  const step = tickStep(marks)
   // Minimum along-ruler gap between numbers so they never collide (matches
   // @niivue/uikit's buildRuler); derived from the number size and digit count.
   const maxDigits = `${marks}`.length
@@ -131,13 +146,17 @@ export function rulerTickLabels(
   return out
 }
 
-/** Format distance with smart decimals. */
-function formatDistance(dist: number, showUnits: boolean): string {
+/** Format distance with smart decimals, suffixed with `unit` when shown. */
+export function formatDistance(
+  dist: number,
+  showUnits: boolean,
+  unit = 'mm',
+): string {
   let decimals = 2
   if (dist > 9) decimals = 1
   if (dist > 99) decimals = 0
   let label = dist.toFixed(decimals)
-  if (showUnits) label += ' mm'
+  if (showUnits) label += ` ${unit}`
   return label
 }
 
@@ -148,7 +167,7 @@ export function measureTextBack(textColor: number[]): number[] {
     : [1, 1, 1, 0.5]
 }
 
-/** A ruler between two canvas points, `distance` mm long (0: no ticks). */
+/** A ruler between two canvas points, `distance` units long (0: no ticks). */
 export type ScreenRuler = {
   sx: number
   sy: number
@@ -175,6 +194,7 @@ export function buildRulers(
   buildText: BuildTextFn,
   buildLine: BuildLineFn,
   numberPx = 12,
+  unit = 'mm',
 ): MeasurementResult {
   const lineColor = style.measureLineColor
   const lineWidth = style.rulerWidth
@@ -197,7 +217,8 @@ export function buildRulers(
       const b = buildText(t.str, t.x, t.y, 0.5, textColor, 0.5, 0.5)
       if (b.count > 0) labels.push(b)
     }
-    const label = text ?? formatDistance(distance, style.isMeasureUnitsVisible)
+    const label =
+      text ?? formatDistance(distance, style.isMeasureUnitsVisible, unit)
     const batch = buildText(
       label,
       (sx + ex) * 0.5,
@@ -337,6 +358,7 @@ export function buildPersistedMeasurements(
         buildText,
         buildLine,
         numberPx,
+        sceneUnit(model).label,
       )
     : { lines: [] as LineData[], labels: [] as GlyphBatch[] }
 

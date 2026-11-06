@@ -1,6 +1,7 @@
 import { log } from '@/logger'
 import * as NVLoader from '@/NVLoader'
 import type { MeshLayerFromUrlOptions, NVTractData } from '@/NVTypes'
+import { readMRtrixHeader } from './readers/tck'
 
 /** Extensions that provide per-vertex scalar data for tracts. */
 const dpvExtensions = new Set(['TSF'])
@@ -18,40 +19,27 @@ const dpsExtensions = new Set(['TXT'])
 function readTSF(buffer: ArrayBuffer, nVertices: number): Float32Array {
   const len = buffer.byteLength
   if (len < 20) throw new Error('File too small to be TSF')
-  const bytes = new Uint8Array(buffer)
-  let pos = 0
+  const lines = new NVLoader.LineReader(buffer)
 
-  function readLine(): string {
-    while (pos < len && bytes[pos] === 10) pos++
-    const start = pos
-    while (pos < len && bytes[pos] !== 10) pos++
-    pos++
-    return new TextDecoder().decode(buffer.slice(start, pos - 1))
-  }
-
-  const sig = readLine()
+  const sig = lines.readLine()
   if (!sig.includes('mrtrix track scalars')) {
     throw new Error('Not a valid TSF file')
   }
 
-  let dataOffset = -1
-  let line = ''
-  while (pos < len && !line.includes('END')) {
-    line = readLine()
-    if (line.toLowerCase().startsWith('file:')) {
-      dataOffset = parseInt(line.split(' ').pop() as string, 10)
-    }
-    if (
-      line.toLowerCase().startsWith('datatype:') &&
-      !line.endsWith('Float32LE')
-    ) {
-      throw new Error('Only supports TSF files with Float32LE')
-    }
+  const { header, dataOffset } = readMRtrixHeader(lines)
+  if (
+    header.some(
+      (line) =>
+        line.toLowerCase().startsWith('datatype:') &&
+        !line.endsWith('Float32LE'),
+    )
+  ) {
+    throw new Error('Only supports TSF files with Float32LE')
   }
   if (dataOffset < 20)
     throw new Error('Not a valid TSF file (missing file offset)')
 
-  pos = dataOffset
+  let pos = dataOffset
   const reader = new DataView(buffer)
   const vals = new Float32Array(nVertices)
   let npt = 0

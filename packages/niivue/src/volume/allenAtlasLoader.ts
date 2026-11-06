@@ -27,6 +27,7 @@ import {
 import { channelColormapsFor } from './channelColormaps'
 import { channelVolumeFile } from './channelVolumeFile'
 import { type DecodedImage, decodeImageRGBA } from './imageDecode'
+import { omeLengthToMicrons } from './omeTiff'
 
 /**
  * Assemble one deinterleaved channel into a NIfTI `File`, origin-centred like
@@ -37,9 +38,14 @@ export function allenAtlasChannelFile(
   img: Uint8Array,
   name: string,
 ): File {
+  // channelVolumeFile labels spacing as micrometres; the sidecar may not be.
+  // An unrecognised unit keeps the stated numbers (warned by the converter).
+  const spacing = allenAtlasSpacing(info).map(
+    (v) => omeLengthToMicrons(v, info.spacingUnit) || v,
+  ) as [number, number, number]
   return channelVolumeFile(
     allenAtlasVolumeDims(info),
-    allenAtlasSpacing(info),
+    spacing,
     NiiDataType.DT_UINT8,
     img,
     name,

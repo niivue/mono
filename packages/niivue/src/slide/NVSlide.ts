@@ -349,7 +349,7 @@ export interface SlideSourceHost {
  * and the viewport; a source varies by FORMAT. {@link ManifestRangeSource} (the
  * default) addresses tiles as byte ranges in a per-level file (dicom-wsi-range-v1
  * and the synthetic pyramid); `DziSource` (per-tile URLs) and
- * `TiffSlideSource` in `@niivue/nv-ext-tiff` (geotiff) implement the same contract.
+ * `TiffSlideSource` in `@niivue/nv-ext-wsi` (geotiff) implement the same contract.
  */
 export interface SlideTileSource {
   readonly manifest: NVSlideManifest

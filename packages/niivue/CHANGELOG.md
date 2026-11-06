@@ -1,3 +1,15 @@
+## 1.0.0-rc.106 (2026-11-06)
+
+### Fixes
+
+- **niivue:** keep file label tables on mesh layer reload and re-send ([abdb67f6](https://github.com/niivue/mono/commit/abdb67f6))
+- **niivue:** mesh layers look up label colormaps by ID ([5bb425c3](https://github.com/niivue/mono/commit/5bb425c3))
+
+### Thank You
+
+- Brent McPherson @bcmcpher
+- Claude Opus 5.5
+
 ## 1.0.0-rc.105 (2026-11-06)
 
 ### Fixes

@@ -16,7 +16,7 @@
  * stated colour, and windowed to its stated intensity range.
  *
  * The metadata parse lives in `omeZarr.ts`; store access and chunk decoding
- * are zarrita's. See `packages/nv-ext-tile/docs/ome-zarr-format.md`.
+ * are zarrita's. See `docs/ome-zarr-format.md`.
  */
 
 import type { ImageFromUrlOptions, TypedVoxelArray } from '@niivue/niivue'

@@ -1,10 +1,5 @@
 # Chunked Streaming TODOs
 
-> The OME-Zarr code (store adapter, chunk worker pool, byte caches) moved to
-> `@niivue/nv-ext-tile/zarr` (`packages/nv-ext-tile/src/zarr/`); names and
-> behaviour are unchanged. Paths under `volume/` below for those modules are
-> historical.
-
 Open follow-ups for the multi-LOD chunked volume path
 (`src/volume/chunking.ts`, `src/volume/NVChunkedVolume.ts`, the `gl/` and
 `wgpu/` chunk renderers). Design context: `docs/high-res-streaming.md` and
@@ -22,11 +17,11 @@ compensation work"; decode and budget plans wait behind them.
 
       `fetchOmeZarrChunkedSource` opens the store on the calling thread for its
       metadata and puts every chunk read on a pool of workers.
-      `src/workers/omeZarrChunk.worker.ts` opens its own view of the store
+      `packages/nv-ext-tile/src/zarr/omeZarrChunk.worker.ts` opens its own view of the store
       through the same `openOmeZarrChunkedSource` the main thread uses (a
       zarrita array is not structured-cloneable) and runs fetch, decompress,
       dtype convert and the region assemble there, transferring the finished
-      `Uint8Array` back. `src/volume/omeZarrChunkWorkerPool.ts` routes by
+      `Uint8Array` back. `packages/nv-ext-tile/src/zarr/omeZarrChunkWorkerPool.ts` routes by
       hashing the region rather than picking the idlest worker, because each
       worker holds its own byte LRU and a revisited brick must return to the
       worker that already has its bytes. Pool size is half the reported cores,
@@ -276,7 +271,7 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
   boxes and `extractChunkBlock` copies the picked brick out as a standalone
   volume that keeps the parent's anatomy.
 
-  `examples/vox.block.pick.zarr.html` does the multi-LOD half against
+  `apps/demo-ext-tile/vox.block.pick.zarr.html` does the multi-LOD half against
   `hoa_heart` streamed from the public store, which is the part that tests
   `chunkOwnedTexBox`. A streamed volume holds its voxels in GPU brick textures,
   so `extractSubVolume` returns null for one and the right panel cannot be built
@@ -302,10 +297,10 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
 
   OME-NGFF's equivalent of a NIfTI sform/qform is the per-dataset
   `coordinateTransformations` list, which carries a `scale` and a `translation`.
-  `src/volume/omeZarr.ts` already parses BOTH, but only the scale survives the
+  `packages/nv-ext-tile/src/zarr/omeZarr.ts` already parses BOTH, but only the scale survives the
   trip to a volume:
 
-  - `omeZarrChannelFile` / `channelVolumeFile` (`src/volume/omeZarrLoader.ts`)
+  - `omeZarrChannelFile` / `channelVolumeFile` (`packages/nv-ext-tile/src/zarr/omeZarrLoader.ts`)
     build an explicitly origin-centred volume.
   - `ChunkedVolumeLevel` (`src/volume/ChunkedVolumeSource.ts`) carries
     `level` / `shape` / `spacing` and has no origin field.
@@ -330,7 +325,7 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
   still matters for any store that declares a real world origin (or per-level
   translations that are not a pure centre offset), and it is worth fixing for
   the half-voxel alone, but it is not the cause of any brick-alignment artifact
-  seen so far. `examples/vox.block.pick.zarr.html` prints each level's `scale`,
+  seen so far. `apps/demo-ext-tile/vox.block.pick.zarr.html` prints each level's `scale`,
   `translation`, and their ratio so the convention is visible in the demo.
 
   Shape of the fix: add an optional per-level `originMM` (or a full affine) to

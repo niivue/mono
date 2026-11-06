@@ -1,6 +1,6 @@
 # @niivue/nv-ext-tile
 
-Tiled image formats for NiiVue's `NVSlide`, one subpath per format, so a page loads only the format it uses:
+Tiled and chunked image formats for NiiVue (slides and streamed volumes), one subpath per format, so a page loads only the format it uses:
 - `@niivue/nv-ext-tile/tiff`: tiled TIFF (below).
 - `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders and hosted manifests ([Local DICOM-WSI folders](#local-dicom-wsi-folders)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
 - `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick ([OME-Zarr](#ome-zarr)).
@@ -135,7 +135,7 @@ await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one wh
 await nv.loadChunkedVolume(await fetchOmeZarrChunkedSource(storeUrl)) // or stream bricks
 ```
 
-The same names core exported before 1.0 (`fetchOmeZarr`, `openOmeZarr`, `omeZarrChunkedSource`, `ByteLruCache`, `withChunkTiming`, the persistent byte cache, ...). Reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
+Reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 
 ## Hosting an indexed slide
 

@@ -1,10 +1,5 @@
 # How NiiVue Caching Works
 
-> The OME-Zarr code (store adapter, chunk worker pool, byte caches) moved to
-> `@niivue/nv-ext-tile/zarr` (`packages/nv-ext-tile/src/zarr/`); names and
-> behaviour are unchanged. Paths under `volume/` below for those modules are
-> historical.
-
 Reference for the caching and prefetch machinery in the streaming paths: what
 each tier holds, what bounds it, who owns its lifetime, and how to watch it
 work. It describes the code as it stands after the staged work of August 2026.
@@ -37,8 +32,8 @@ the last is the browser's and we simply do not defeat it.
 |---|---|---|---|---|---|
 | GPU bricks | Uploaded 3D textures, color plus gradient | Chunk index in the current plan | 1.5 GB planned, per volume | Render entry | `volume/ChunkResidency.ts` |
 | Decoded chunks | Decoded source bytes, pre-orient | Chunk index in the current plan | `min(384 MB, shadow x 1.5)` | Render entry | `volume/decodedChunkCache.ts` |
-| Store bytes | Raw compressed store responses, plus remembered absences | Store key | 256 MB, split across workers | Page | `omeZarrChunkedSource.ts` (`ByteLruCache`) |
-| Disk bytes | The same raw store responses | Store key, scope-prefixed | 512 MB, opt-in, split across workers | Cross-session | `volume/persistentByteCache.ts` |
+| Store bytes | Raw compressed store responses, plus remembered absences | Store key | 256 MB, split across workers | Page | `packages/nv-ext-tile/src/zarr/omeZarrChunkedSource.ts` (`ByteLruCache`) |
+| Disk bytes | The same raw store responses | Store key, scope-prefixed | 512 MB, opt-in, split across workers | Cross-session | `packages/nv-ext-tile/src/zarr/persistentByteCache.ts` |
 | HTTP cache | Whatever the server allowed | URL | Browser policy | Browser | not ours |
 
 **GPU bricks.** A byte-budgeted LRU with a frame-accurate exemption: a chunk

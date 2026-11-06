@@ -1265,20 +1265,22 @@ describe('screenshot', () => {
     )
   })
 
-  it('refuses a stale picture when the backend draws nothing', async () => {
-    const toDataURL = mock(() => 'data:image/png;base64,iVBORw0KGgo=')
-    const view = fakeView({
-      canvas: {
-        width: 640,
-        height: 480,
-        toDataURL,
-      } as unknown as HTMLCanvasElement,
-      view: { render: () => false },
-    })
-    await expect(coreHandlers(host(view)).screenshot({})).rejects.toThrow(
-      'could not draw a frame',
-    )
-    expect(toDataURL).not.toHaveBeenCalled()
+  it('refuses a stale picture when the backend draws nothing or is not there yet', async () => {
+    for (const backend of [{ render: () => false }, null]) {
+      const toDataURL = mock(() => 'data:image/png;base64,iVBORw0KGgo=')
+      const view = fakeView({
+        canvas: {
+          width: 640,
+          height: 480,
+          toDataURL,
+        } as unknown as HTMLCanvasElement,
+        view: backend,
+      })
+      await expect(coreHandlers(host(view)).screenshot({})).rejects.toThrow(
+        'could not draw a frame',
+      )
+      expect(toDataURL).not.toHaveBeenCalled()
+    }
   })
 
   it("sizes the canvas by NiiVue's own pixel ratio, so a forced ratio does not resize every time (#464)", async () => {

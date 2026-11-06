@@ -1653,7 +1653,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       await untilIdle(view, waits?.busyMs ?? BUSY_WAIT_MS)
       if (!drawNow(view, canvas))
         throw new Error(
-          'NiiVue could not draw a frame (its canvas is detached or its GPU context was lost), so there is no current picture.',
+          'NiiVue could not draw a frame (its canvas is detached, its GPU context was lost, or its renderer is still starting), so there is no current picture.',
         )
       const picture =
         canvas.width > maxWidth ? scaledCopy(canvas, maxWidth) : canvas
@@ -1762,7 +1762,8 @@ export function planeIsCut(plane: readonly [number, number, number]): boolean {
  * buffer does not survive to the next task unless it was asked to; its
  * render backend draws on demand. A canvas whose drawing buffer does not
  * fit its box yet, as one NiiVue has not sized, is sized first. False when
- * the backend drew nothing, so the canvas still holds an older frame.
+ * the backend drew nothing or does not exist yet, so the canvas still holds
+ * an older frame.
  */
 function drawNow(view: View, canvas: HTMLCanvasElement): boolean {
   const box = canvas.getBoundingClientRect?.()
@@ -1775,6 +1776,9 @@ function drawNow(view: View, canvas: HTMLCanvasElement): boolean {
     if (canvas.width !== wanted) view.resize()
   }
   view.drawScene()
+  // NiiVue holds null while it creates or recreates its backend; undefined is
+  // a host with no render backend, whose drawScene draws itself.
+  if (view.view === null) return false
   return view.view?.render() !== false
 }
 

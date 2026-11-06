@@ -709,13 +709,44 @@ describe('NVSlide listed tiles', () => {
     const b = { x: 3, y: 2, width: TILE_W, height: TILE_H, frame: 2 }
     Object.assign(l0, { tiles: [b, a], sparse: true })
     const slide = NVSlide.fromSource(new CountingSource(manifest))
-    expect(l0.tiles.length).toBe(16)
-    expect(l0.tiles[1]).toBe(a)
-    expect(l0.tiles[2 * 4 + 3]).toBe(b)
-    expect(l0.tiles.filter((t) => t === null).length).toBe(14)
+    const placed = slide.manifest.levels[0]
+    if (!placed) throw new Error('no level')
+    expect(placed.tiles.length).toBe(16)
+    expect(placed.tiles[1]).toBe(a)
+    expect(placed.tiles[2 * 4 + 3]).toBe(b)
+    expect(placed.tiles.filter((t) => t === null).length).toBe(14)
+    expect(l0.tiles).toEqual([b, a]) // the caller's manifest is not changed
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     slide.setLevelChoice(0)
     expect(slide.visibleTiles(WHOLE_SLIDE_SCREEN).tiles.length).toBe(2)
+    slide.dispose()
+  })
+
+  it('drops off-grid and duplicate tiles, and places a complete sparse level by x/y', () => {
+    const manifest = makePyramid()
+    const l1 = manifest.levels[1] // 2 x 2 tiles
+    if (!l1) throw new Error('no level')
+    const at = (x: number, y: number, frame: number) => ({
+      x,
+      y,
+      width: TILE_W,
+      height: TILE_H,
+      frame,
+    })
+    // Four tiles, so the count matches the grid, but listed out of order, with
+    // a duplicate cell, an off-grid tile and a non-integer position.
+    Object.assign(l1, {
+      sparse: true,
+      tiles: [at(1, 1, 1), at(1, 1, 2), at(2, 0, 3), at(0.5, 0, 4)],
+    })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const placed = slide.manifest.levels[1]
+    expect(placed?.tiles.map((t) => t?.frame ?? null)).toEqual([
+      null,
+      null,
+      null,
+      1,
+    ])
     slide.dispose()
   })
 })

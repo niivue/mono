@@ -682,14 +682,24 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
   }
 }
 
-/** A level that lists only its present tiles becomes the dense row-major grid, holes null. */
-function placeListedTiles(level: NVSlideLevelManifest): void {
+/**
+ * A level that lists only its present tiles, or is sparse, becomes the dense
+ * row-major grid with null holes, placed by each tile's x/y (a listing's order
+ * is not trusted). Off-grid tiles and second tiles for a cell are dropped.
+ * Returns a new level; the caller's manifest is not changed.
+ */
+function placeListedTiles(level: NVSlideLevelManifest): NVSlideLevelManifest {
   const n = level.columns * level.rows
-  if (level.tiles.length === n) return
+  if (!level.sparse && level.tiles.length === n) return level
   const grid: Array<NVSlideTileManifest | null> = new Array(n).fill(null)
-  for (const tile of level.tiles)
-    if (tile) grid[tile.y * level.columns + tile.x] = tile
-  level.tiles = grid
+  for (const tile of level.tiles) {
+    if (!tile) continue
+    const { x, y } = tile
+    if (!Number.isInteger(x) || !Number.isInteger(y)) continue
+    if (x < 0 || y < 0 || x >= level.columns || y >= level.rows) continue
+    grid[y * level.columns + x] ??= tile
+  }
+  return { ...level, tiles: grid }
 }
 
 /** The top-left `width` x `height` of a padded monochrome frame. */
@@ -772,8 +782,10 @@ export class NVSlide extends EventTarget {
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
     assertSingleSlidePlane(manifest)
-    for (const level of manifest.levels) placeListedTiles(level)
-    this.manifest = manifest
+    const levels = manifest.levels.map(placeListedTiles)
+    this.manifest = levels.every((l, i) => l === manifest.levels[i])
+      ? manifest
+      : { ...manifest, levels }
     this.manifestUrl = options.manifestUrl ?? ''
     this.id = options.id ?? manifest.id
     this.name = options.name ?? manifest.name

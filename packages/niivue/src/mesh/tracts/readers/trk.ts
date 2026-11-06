@@ -159,11 +159,12 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   // Fence-post: final offset
   offsets[noffset] = npt
 
-  const dpv: Record<string, Float32Array> = {}
+  // Names come from the file, so a scalar called `__proto__` must stay an own key.
+  const dpv: Record<string, Float32Array> = Object.create(null)
   for (let i = 0; i < dpvNames.length; i++) {
     dpv[dpvNames[i]] = dpvVals[i]
   }
-  const dps: Record<string, Float32Array> = {}
+  const dps: Record<string, Float32Array> = Object.create(null)
   for (let i = 0; i < dpsNames.length; i++) {
     dps[dpsNames[i]] = dpsVals[i]
   }

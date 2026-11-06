@@ -4834,7 +4834,7 @@ export default class NiiVue extends EventTarget {
       if (!('calMax' in options)) options.calMax = 0
     }
     if (
-      options.visibleGroups !== undefined &&
+      options.visibleGroups != null && // null shows every group
       !Array.isArray(options.visibleGroups)
     ) {
       log.warn('setTractOptions: visibleGroups must be an array of names')

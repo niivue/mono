@@ -56,6 +56,15 @@ describe('setTractOptions input guards', () => {
     )
     expect(nv.model.getMeshes()[0].tractOptions?.visibleGroups).not.toBe('A')
   })
+
+  test('a null visibleGroups shows every group again', async () => {
+    const nv = withTract()
+    warn = spyOn(log, 'warn').mockImplementation(() => {})
+    await nv.setTractOptions(0, { visibleGroups: ['A'] })
+    await nv.setTractOptions(0, { visibleGroups: null })
+    expect(nv.model.getMeshes()[0].tractOptions?.visibleGroups).toBeNull()
+    expect(warn).not.toHaveBeenCalled()
+  })
 })
 
 describe('addColormap input guards', () => {

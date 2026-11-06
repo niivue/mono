@@ -1,5 +1,6 @@
 import { FLOATS_PER_LINE, type LineData } from '@/view/NVLine'
 import { NVRenderer } from '@/view/NVRenderer'
+import { deleteGLObjects } from './glUtil'
 import { lineFragShader, lineVertShader } from './lineShader'
 import { Shader } from './shader'
 
@@ -121,9 +122,7 @@ export class LineRenderer extends NVRenderer {
   destroy(): void {
     const gl = this._gl
     if (!gl) return
-    if (this._vao) gl.deleteVertexArray(this._vao)
-    if (this._lineBuffer) gl.deleteBuffer(this._lineBuffer)
-    if (this._shader?.program) gl.deleteProgram(this._shader.program)
+    deleteGLObjects(gl, this._shader, this._vao, this._lineBuffer)
     this.isReady = false
     this._shader = null
     this._vao = null

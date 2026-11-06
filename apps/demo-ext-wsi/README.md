@@ -1,10 +1,10 @@
-# demo-ext-tiff
+# demo-ext-wsi
 
-Demo app for [`@niivue/nv-ext-tiff`](../../packages/nv-ext-tiff): open a tiled/pyramidal TIFF, BigTIFF, OME-TIFF or Aperio SVS whole-slide image and pan/zoom it with `NVSlide` + `SlideRenderer` (WebGL2). Only the tiles in view are read and decoded.
+Demo app for [`@niivue/nv-ext-wsi`](../../packages/nv-ext-wsi): open a tiled/pyramidal TIFF, BigTIFF, OME-TIFF or Aperio SVS whole-slide image and pan/zoom it with `NVSlide` + `SlideRenderer` (WebGL2). Only the tiles in view are read and decoded.
 
 ```bash
 bun install                    # From monorepo root
-bunx nx dev demo-ext-tiff      # Dev server on port 8092
+bunx nx dev demo-ext-wsi      # Dev server on port 8092
 ```
 
 - **File picker** reads a local file (`fromBlob`), nothing is uploaded.

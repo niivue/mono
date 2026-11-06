@@ -148,13 +148,13 @@ downloading it.
 
 [Live demo](https://niivue.github.io/mono/demo-ext-save-html/)
 
-## Whole-slide TIFF: nv-ext-tiff
+## Whole-slide images: nv-ext-wsi
 
 ```bash
-npm install @niivue/nv-ext-tiff@next
+npm install @niivue/nv-ext-wsi@next
 ```
 
-`@niivue/nv-ext-tiff` streams tiled/pyramidal TIFF, BigTIFF, OME-TIFF and
+`@niivue/nv-ext-wsi` streams tiled/pyramidal TIFF, BigTIFF, OME-TIFF and
 Aperio SVS slides into `NVSlide` over HTTP Range, reading and decoding
 (with [geotiff](https://github.com/geotiffjs/geotiff.js)) only the tiles in
 view. The server must answer Range requests with `206` and allow them
@@ -162,7 +162,7 @@ cross-origin; one that sends the whole file is refused.
 
 ```js
 import { NVSlide } from '@niivue/niivue'
-import { TiffSlideSource } from '@niivue/nv-ext-tiff'
+import { TiffSlideSource } from '@niivue/nv-ext-wsi'
 
 const source = await TiffSlideSource.fromUrl('https://example.org/slide.svs')
 const slide = NVSlide.fromSource(source)
@@ -171,7 +171,7 @@ const slide = NVSlide.fromSource(source)
 
 `TiffSlideSource.fromGeoTIFF(await fromBlob(file))` opens a local file.
 
-[Live demo](https://niivue.github.io/mono/demo-ext-tiff/)
+[Live demo](https://niivue.github.io/mono/demo-ext-wsi/)
 
 ## More demos
 

@@ -1,5 +1,5 @@
 {
-  "name": "demo-ext-tiff",
+  "name": "demo-ext-wsi",
   "projectType": "application",
   "tags": ["type:app", "lang:typescript"],
   "targets": {

@@ -11,7 +11,7 @@ export default defineConfig({
     lib: {
       entry: 'src/index.ts',
       formats: ['es'],
-      fileName: 'nv-ext-tiff',
+      fileName: 'nv-ext-wsi',
     },
     rollupOptions: {
       external: ['@niivue/niivue', 'geotiff'],

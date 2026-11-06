@@ -24,7 +24,7 @@ APPS=(
   demo-ext-save-html
   demo-ext-dcm2niix
   demo-ext-niimath
-  demo-ext-tiff
+  demo-ext-wsi
   demo-nv-web-component
   dandi-demo
 )

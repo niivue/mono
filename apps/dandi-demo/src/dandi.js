@@ -947,7 +947,8 @@ function crosshairLabel() {
 
 function updateSlideHud(screen) {
   if (!slide) return
-  const level = slide.selectLevel()
+  // The drawn level: one over the tile-cache budget shows a coarser one.
+  const { level, tiles } = slide.visibleTiles(screen)
   const stats = slide.stats
   setBusy(
     els.slideBusy,
@@ -956,7 +957,7 @@ function updateSlideHud(screen) {
     slide.pendingCount > 0,
   )
   if (!level) return
-  const visible = slide.visibleTiles(screen).tiles.length
+  const visible = tiles.length
   const spacing = slide.manifest.pixelSpacingMM
   const scale = slide.viewport.scale
   const zoom =
@@ -1182,7 +1183,7 @@ function setWindowText([lo, hi]) {
 async function onSlideContrast(box) {
   const source = sliceSource
   if (!slide || !source) return
-  const level = slide.selectLevel()?.index ?? 0
+  const level = slide.visibleTiles(slideScreen()).level?.index ?? 0
   const range = await source.intensityRange(
     { x0: box.start.x, y0: box.start.y, x1: box.end.x, y1: box.end.y },
     level,

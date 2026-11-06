@@ -185,17 +185,22 @@ function updateHud(screen: NVSlideScreen): void {
     return
   }
   const manifest: NVSlideManifest = slide.manifest
-  const level = slide.selectLevel()
+  // The drawn level: a pinned level over the tile-cache budget shows a coarser one.
+  const { level, tiles, requestedLevel } = slide.visibleTiles(screen)
   if (!level) {
     els.hud.innerHTML = '<div class="title">Loading tile manifest</div>'
     return
   }
   const s = slide.stats
-  const mode = slide.levelChoice === 'auto' ? 'auto' : 'fixed'
+  const mode = requestedLevel
+    ? `(L${requestedLevel.index} exceeds the tile cache)`
+    : slide.levelChoice === 'auto'
+      ? 'auto'
+      : 'fixed'
   const scale = slide.viewport.scale
   const zoom =
     scale >= 1 ? `${scale.toFixed(2)}x` : `1:${(1 / scale).toFixed(1)}`
-  const visible = slide.visibleTiles(screen).tiles.length
+  const visible = tiles.length
   const codec = level.codec ?? 'raw-rgba'
   const backendLabel = view?.kind === 'gpu' ? 'WebGPU' : 'WebGL2'
   els.hud.innerHTML = `

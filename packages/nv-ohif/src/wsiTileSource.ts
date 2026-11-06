@@ -9,12 +9,29 @@ import { parseMultipartRelated } from './dicomWadoRs'
 import type { OhifDisplaySet } from './ohif-types'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs. JPEG Baseline/Extended decode
-// natively in the browser; JPEG-2000 needs a registered OpenJPEG decoder (v1
-// does not ship one, so a JP2 WSI is out of scope for now).
-const JPEG_TRANSFER_SYNTAXES = new Set([
-  '1.2.840.10008.1.2.4.50', // JPEG Baseline (Process 1)
-  '1.2.840.10008.1.2.4.51', // JPEG Extended (Process 2 & 4)
-])
+// natively in the browser; JPEG 2000 goes to the image/jp2 decoder that
+// wsiJp2Decoder.ts registers (dcm2niix WASM).
+const CODEC_BY_TRANSFER_SYNTAX: Record<string, 'image/jpeg' | 'image/jp2'> = {
+  '1.2.840.10008.1.2.4.50': 'image/jpeg', // JPEG Baseline (Process 1)
+  '1.2.840.10008.1.2.4.51': 'image/jpeg', // JPEG Extended (Process 2 & 4)
+  '1.2.840.10008.1.2.4.90': 'image/jp2', // JPEG 2000 lossless
+  '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
+}
+
+const MAX_TILE_BYTES = 64 * 1024 * 1024 // matches the dcm2niix decoder's input cap
+
+// A J2K codestream (start-of-codestream + image-size markers) or a JP2 file (signature box).
+function isJpeg2000(b: Uint8Array): boolean {
+  if (b[0] === 0xff && b[1] === 0x4f && b[2] === 0xff && b[3] === 0x51)
+    return true
+  return (
+    b[3] === 0x0c &&
+    b[4] === 0x6a &&
+    b[5] === 0x50 &&
+    b[6] === 0x20 &&
+    b[7] === 0x20
+  )
+}
 
 function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
@@ -114,7 +131,14 @@ interface WsiLevel {
   frameBaseUrl: string
   /** Query string (with leading `?`) to re-append after the frame index, or ''. */
   frameQuery: string
-  isJpeg: boolean
+  /** Tile codec; undefined for a transfer syntax the viewer cannot decode. */
+  codec: 'image/jpeg' | 'image/jp2' | undefined
+  transferSyntax?: string
+  photometric?: string
+  /** Tag values, unset when absent; NVSlide checks them against the frames. */
+  frames?: number
+  opticalPaths?: number
+  focalPlanes?: number
   /** Physical spacing `[dx, dy]` in mm for this tier, when the SM metadata carries it. */
   spacingMM?: readonly [number, number]
   /**
@@ -196,10 +220,15 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
       tileRows,
       frameBaseUrl,
       frameQuery,
-      // Default to JPEG when the syntax is unknown (v1 targets JPEG WSI).
-      isJpeg: transferSyntax
-        ? JPEG_TRANSFER_SYNTAXES.has(transferSyntax)
-        : true,
+      transferSyntax,
+      photometric: str(first(inst.PhotometricInterpretation)),
+      frames: toNum(first(inst.NumberOfFrames)),
+      opticalPaths: toNum(first(inst.NumberOfOpticalPaths)),
+      focalPlanes: toNum(first(inst.TotalPixelMatrixFocalPlanes)),
+      // Default to JPEG when the syntax is unknown (most WSI is JPEG).
+      codec: transferSyntax
+        ? CODEC_BY_TRANSFER_SYNTAX[transferSyntax]
+        : 'image/jpeg',
       spacingMM: deriveSpacingMM(inst, matrixColumns, matrixRows),
       // Only decline when the layout is EXPLICITLY non-full; absent = assume
       // TILED_FULL (the common case, and what levelTiles maps). Unwrap any array
@@ -253,8 +282,8 @@ export interface BuiltWsiManifest {
   levelBaseUrls: string[]
   /** Query string (with leading `?`, or '') by level.index, re-appended per tile. */
   levelQueries: string[]
-  /** True when every kept level is JPEG (v1-renderable). */
-  allJpeg: boolean
+  /** The first transfer syntax no level codec decodes (JPEG-LS, RLE, raw...). */
+  unsupported?: string
   /**
    * True when every kept level is TILED_FULL (row-major) — the only frame layout
    * the row-major tile grid maps correctly. False for a TILED_SPARSE slide, which
@@ -276,7 +305,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
   const levels: NVSlideLevelManifest[] = []
   const levelBaseUrls: string[] = []
   const levelQueries: string[] = []
-  let allJpeg = true
+  let unsupported: string | undefined
   let tiledFull = true
   volumeLevels.forEach((level, index) => {
     const { columns, rows, tiles } = levelTiles(level)
@@ -289,12 +318,17 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
       tileHeight: level.tileRows,
       columns,
       rows,
-      codec: level.isJpeg ? 'image/jpeg' : 'image/jp2',
+      codec: level.codec ?? 'image/jpeg', // unused: `unsupported` declines the slide
+      transferSyntaxUid: level.transferSyntax,
+      photometric: level.photometric,
+      frames: level.frames,
+      opticalPaths: level.opticalPaths,
+      focalPlanes: level.focalPlanes,
       tiles,
     })
     levelBaseUrls[index] = level.frameBaseUrl
     levelQueries[index] = level.frameQuery
-    if (!level.isJpeg) allJpeg = false
+    if (!level.codec) unsupported ??= level.transferSyntax
     if (!level.tiledFull) tiledFull = false
   })
 
@@ -304,7 +338,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     format: 'dicom-wsi-ohif',
     width: level0.matrixColumns,
     height: level0.matrixRows,
-    displayYAxis: 'up',
+    displayYAxis: 'down', // DICOM row 0 is the top, as OpenSlide and other viewers show it
     tileSize: level0.tileColumns,
     dtype: 'uint8',
     channels: 'encoded-rgb',
@@ -313,7 +347,13 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     ...(level0.spacingMM ? { pixelSpacingMM: level0.spacingMM } : {}),
     levels,
   }
-  return { manifest, levelBaseUrls, levelQueries, allJpeg, tiledFull }
+  return {
+    manifest,
+    levelBaseUrls,
+    levelQueries,
+    unsupported,
+    tiledFull,
+  }
 }
 
 /**
@@ -351,19 +391,30 @@ export class DicomWsiTileSource implements SlideTileSource {
       throw new Error('WSI tile has no frame number')
     // Re-append any query (e.g. a DICOMweb access_token) after the frame index.
     const query = this.levelQueries[level.index] ?? ''
+    const isJp2 = level.codec === 'image/jp2'
     const response = await fetch(`${base}/${tile.frame}${query}`, {
       headers: {
-        Accept: 'multipart/related; type="image/jpeg"',
+        // JPEG 2000: ask for the stored bytes untranscoded; the check below
+        // refuses a server that transcodes anyway rather than mis-decoding.
+        Accept: isJp2
+          ? 'multipart/related; type="application/octet-stream"; transfer-syntax=*'
+          : 'multipart/related; type="image/jpeg"',
         ...this.headers,
       },
       signal,
     })
     if (!response.ok) throw new Error(`WSI tile HTTP ${response.status}`)
+    // A tile is well under 1 MB; refuse a runaway body before buffering it.
+    // ponytail: a chunked body without Content-Length is not capped.
+    if (Number(response.headers.get('content-length')) > MAX_TILE_BYTES)
+      throw new Error('WSI tile body too large')
     const contentType = response.headers.get('content-type') ?? ''
     const body = new Uint8Array(await response.arrayBuffer())
     const parts = parseMultipartRelated(body, contentType)
-    const jpeg = parts[0]
-    if (!jpeg || jpeg.length === 0) throw new Error('empty WSI tile body')
-    return jpeg
+    const frame = parts[0]
+    if (!frame || frame.length === 0) throw new Error('empty WSI tile body')
+    if (isJp2 && !isJpeg2000(frame))
+      throw new Error('WSI tile is not JPEG 2000 (the server transcoded it)')
+    return frame
   }
 }

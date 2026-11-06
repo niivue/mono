@@ -46,6 +46,8 @@ const TAG = {
   dimensionOrganizationType: 'x00209311',
   totalPixelMatrixColumns: 'x00480006', // level width
   totalPixelMatrixRows: 'x00480007', // level height
+  numberOfOpticalPaths: 'x00480302',
+  totalPixelMatrixFocalPlanes: 'x00480303',
   imagedVolumeWidth: 'x00480001', // physical width (mm), FL
   imagedVolumeHeight: 'x00480002', // physical height (mm), FL
   transferSyntaxUid: 'x00020010',
@@ -217,6 +219,9 @@ interface WsiMeta {
   photometric: string
   flavor: WsiFlavor
   spacingMM: [number, number]
+  /** Tag values, unset when absent; NVSlide checks them against the frames. */
+  opticalPaths?: number
+  focalPlanes?: number
 }
 
 // JPEG family is 1.2.840.10008.1.2.4.*, RLE is 1.2.840.10008.1.2.5; the
@@ -227,7 +232,8 @@ function isEncapsulated(uid: string): boolean {
 }
 
 // NVSlide tile codec for a transfer syntax. JPEG 2000 (.90/.91) needs an
-// OpenJPEG decoder registered in the browser; everything else encapsulated here
+// image/jp2 tile decoder registered in the browser (slides.js uses dcm2niix's
+// createFrameDecoder); everything else encapsulated here
 // is baseline/extended JPEG the browser decodes natively.
 function codecForTransferSyntax(uid: string): 'image/jpeg' | 'image/jp2' {
   const u = uid.trim()
@@ -269,6 +275,8 @@ function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
     ? [psX as number, psY as number]
     : [ivw && width ? ivw / width : 1, ivh && height ? ivh / height : 1]
   return {
+    opticalPaths: ds.uint32(TAG.numberOfOpticalPaths),
+    focalPlanes: ds.uint32(TAG.totalPixelMatrixFocalPlanes),
     file,
     fileName: path.basename(file),
     width,
@@ -466,6 +474,8 @@ function levelManifest(
     codec: codecForTransferSyntax(parsed.transferSyntaxUid),
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
+    opticalPaths: level.opticalPaths,
+    focalPlanes: level.focalPlanes,
     spacingMM: level.spacingMM,
     tiles,
   }
@@ -500,7 +510,7 @@ export async function buildManifest(
       'Precomputed DICOM-WSI frame directory for browser-only tile loading with HTTP Range requests.',
     width: volumes[0]?.meta.width ?? 0,
     height: volumes[0]?.meta.height ?? 0,
-    displayYAxis: 'up',
+    displayYAxis: 'down', // DICOM row 0 is the top, as OpenSlide and other viewers show it
     dtype: 'uint8',
     channels: 'encoded-rgb',
     // Physical size of one base (level-0) pixel in mm [x, y]; consumed by

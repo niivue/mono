@@ -1,14 +1,22 @@
+import { log } from '@/logger'
 export type NVSlideTileCodec = 'raw-rgba' | 'image/jpeg' | 'image/jp2'
 
 /**
  * Decodes one tile's encoded bytes into an ImageBitmap. The built-in registry
  * handles `raw-rgba` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
- * decoder, so a consumer must register one (e.g. an OpenJPEG WASM build) via
+ * decoder, so a consumer must register one (e.g. @niivue/dcm2niix createFrameDecoder) via
  * {@link NVSlide.registerTileDecoder} — keeping the heavy codec out of the core.
  */
 export type SlideTileDecoder = (
   bytes: Uint8Array,
-  ctx: { width: number; height: number },
+  ctx: {
+    width: number
+    height: number
+    /** What a codec may need beyond the bytes (e.g. `photometric`). */
+    level: NVSlideLevelManifest
+    /** Aborts when the tile is no longer wanted. */
+    signal?: AbortSignal
+  },
 ) => Promise<ImageBitmap>
 export type NVSlideYAxis = 'down' | 'up'
 export type NVSlideLevelChoice = 'auto' | number
@@ -41,6 +49,18 @@ export interface NVSlideLevelManifest {
   rows: number
   fileUrl?: string
   codec?: NVSlideTileCodec
+  /** DICOM transfer syntax of the level's frames, when the source is DICOM. */
+  transferSyntaxUid?: string
+  /** DICOM PhotometricInterpretation, e.g. 'YBR_FULL_422'; passed to the tile decoder. */
+  photometric?: string
+  /**
+   * DICOM-WSI only: NumberOfFrames, NumberOfOpticalPaths (0048,0302) and
+   * TotalPixelMatrixFocalPlanes (0048,0303), copied from the tags (unset when
+   * absent). {@link assertSingleSlidePlane} checks them against the tile grid.
+   */
+  frames?: number
+  opticalPaths?: number
+  focalPlanes?: number
   tiles: NVSlideTileManifest[]
 }
 
@@ -141,6 +161,12 @@ export interface NVSlideVisibleTiles {
    * Empty whenever every target tile is cached. See {@link NVSlide.visibleTiles}.
    */
   fallback: NVSlideVisibleTile[]
+  /**
+   * Set when `level` is coarser than the level asked for (pinned or auto),
+   * because the requested level's visible tiles exceed the tile cache
+   * (`maxCacheBytes`) or the visible-tile cap. Hosts can show this to the user.
+   */
+  requestedLevel?: NVSlideLevelManifest
 }
 
 export interface NVSlideScreenRect {
@@ -256,7 +282,7 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
 }
 
 // Tile-codec registry. Built-ins cover the browser-native paths; additional
-// codecs (e.g. image/jp2 via an OpenJPEG WASM decoder) are registered by the
+// codecs (e.g. image/jp2 via @niivue/dcm2niix) are registered by the
 // consumer with NVSlide.registerTileDecoder, so the core ships no heavy codec.
 const tileDecoders = new Map<string, SlideTileDecoder>([
   [
@@ -282,7 +308,7 @@ class NVSlideTileCache {
   private readonly entries = new Map<string, TileBitmap>()
   bytes = 0
 
-  constructor(private readonly maxBytes: number) {}
+  constructor(readonly maxBytes: number) {}
 
   get(key: string): TileBitmap | undefined {
     const entry = this.entries.get(key)
@@ -489,6 +515,35 @@ export class ManifestRangeSource implements SlideTileSource {
   }
 }
 
+/**
+ * Refuse a DICOM-WSI manifest whose levels are not known to hold a single optical
+ * path and focal plane: their frames would otherwise be laid out as one tile grid,
+ * putting tiles from other channels or depths in the wrong places. Other formats
+ * (DZI, TIFF, synthetic) have no such dimensions.
+ *
+ * A TILED_FULL level's frames cover the grid once per path and plane, so the frame
+ * count confirms the tags and, when one is absent, proves it is 1 only if the
+ * frames equal the grid.
+ */
+export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
+  if (!manifest.format?.startsWith('dicom-wsi')) return
+  for (const level of manifest.levels) {
+    const { frames } = level
+    const grid = level.columns * level.rows
+    const paths = level.opticalPaths ?? (frames === grid ? 1 : undefined)
+    const planes = level.focalPlanes ?? (frames === grid ? 1 : undefined)
+    const known =
+      paths !== undefined &&
+      planes !== undefined &&
+      frames === grid * paths * planes
+    if (known && paths === 1 && planes === 1) continue
+    const what = known
+      ? `holds ${paths} optical paths and ${planes} focal planes; only one of each is supported`
+      : 'has optical paths or focal planes that are unknown or disagree with its frame count'
+    throw new Error(`Slide level ${level.index} ${what}`)
+  }
+}
+
 export class NVSlide extends EventTarget {
   readonly id: string
   readonly name: string
@@ -509,6 +564,14 @@ export class NVSlide extends EventTarget {
   private readonly _rangeLogLength = DEFAULT_RANGE_LOG_LENGTH
   private readonly _cache: NVSlideTileCache
   private readonly _pending = new Set<string>()
+  // A failed tile waits before it is requested again (1 s, doubling to 30 s):
+  // every render re-requests missing tiles, so a persistent failure (HTTP
+  // error, bad frame) would otherwise be fetched in a tight loop.
+  private readonly _failed = new Map<
+    string,
+    { retryAt: number; delay: number }
+  >()
+  private readonly _retryTimers = new Set<ReturnType<typeof setTimeout>>()
   private readonly _source: SlideTileSource
   private readonly _maxConcurrentLoads: number
   private _activeLoads = 0
@@ -534,10 +597,11 @@ export class NVSlide extends EventTarget {
   // a pan/zoom must not cancel it -- it completes and populates the cache.
   // dispose() still aborts every in-flight load regardless of origin.
   private readonly _viewportKeys = new Set<string>()
-  private _warnedTileFlood = false
+  private _budgetWarned = '' // last budget outcome logged by visibleTiles
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
+    assertSingleSlidePlane(manifest)
     this.manifest = manifest
     this.manifestUrl = options.manifestUrl ?? ''
     this.id = options.id ?? manifest.id
@@ -802,10 +866,53 @@ export class NVSlide extends EventTarget {
    * target tile is still missing, so a settled view pays nothing for it.
    */
   visibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
-    const level = this.selectLevel()
-    if (!level) return { level: null, tiles: [], fallback: [] }
+    const requested = this.selectLevel()
+    if (!requested) return { level: null, tiles: [], fallback: [] }
+    // A level whose visible tiles cannot all stay decoded thrashes: each load
+    // evicts a visible tile, which is requested again. Show the finest coarser
+    // level that fits (e.g. a pinned L0 viewed whole). Counted from the tile
+    // span, so rejected levels cost no tile objects.
+    const levels = this.manifest.levels
+    let level = requested
+    for (
+      let pos = levels.indexOf(level) + 1;
+      pos < levels.length && !this.fitsCache(level, screen);
+      pos++
+    )
+      level = levels[pos] as NVSlideLevelManifest
+    // Warn once per change of outcome; this runs every frame.
+    const fits = this.fitsCache(level, screen)
+    const budget =
+      level === requested && fits ? '' : `${requested.index}>${level.index}`
+    if (budget && budget !== this._budgetWarned)
+      log.warn(
+        `NVSlide ${this.id}: L${requested.index} needs ${this.tileSpan(requested, screen).count} tiles in view, more than the tile cache (maxCacheBytes) or the ${MAX_VISIBLE_TILES}-tile cap holds; ${fits ? `showing L${level.index}` : `even L${level.index} does not fit, so tiles will reload`}. Zoom in or raise maxCacheBytes.`,
+      )
+    this._budgetWarned = budget
     const tiles = this.tilesForLevel(level, screen)
-    return { level, tiles, fallback: this.fallbackTiles(level, tiles, screen) }
+    return {
+      level,
+      tiles,
+      fallback: this.fallbackTiles(level, tiles, screen),
+      requestedLevel: level === requested ? undefined : requested,
+    }
+  }
+
+  // A quarter of the cache stays free for the coarse fallback layer and for
+  // requestTile() users (the wand, the 3D slide plane).
+  private fitsCache(
+    level: NVSlideLevelManifest,
+    screen: NVSlideScreen,
+  ): boolean {
+    const { count } = this.tileSpan(level, screen)
+    // Full tiles, not clipped edge extents: an upper bound, since a padded
+    // edge frame is held whole until decodeTileBitmap crops it.
+    const tileBytes =
+      this.levelTileWidth(level) * this.levelTileHeight(level) * 4
+    return (
+      count <= MAX_VISIBLE_TILES &&
+      count * tileBytes <= 0.75 * this._cache.maxBytes
+    )
   }
 
   /**
@@ -845,12 +952,8 @@ export class NVSlide extends EventTarget {
     return out
   }
 
-  /** The tiles of one pyramid level covering the current viewport. */
-  private tilesForLevel(
-    level: NVSlideLevelManifest,
-    screen: NVSlideScreen,
-  ): NVSlideVisibleTile[] {
-    const dpr = screen.devicePixelRatio ?? 1
+  /** The tile columns/rows of one level covering the viewport, and the view geometry. */
+  private tileSpan(level: NVSlideLevelManifest, screen: NVSlideScreen) {
     const viewLeft =
       this.viewport.centerX - screen.widthCss / (2 * this.viewport.scale)
     const viewTop =
@@ -896,16 +999,24 @@ export class NVSlide extends EventTarget {
       0,
       level.rows - 1,
     )
+    const count = (lastX - firstX + 1) * (lastY - firstY + 1)
+    return {
+      ...{ firstX, lastX, firstY, lastY, count },
+      ...{ dsX, dsY, tileWidth, tileHeight, viewLeft, viewTop, viewBottom },
+    }
+  }
+
+  /** The tiles of one pyramid level covering the current viewport. */
+  private tilesForLevel(
+    level: NVSlideLevelManifest,
+    screen: NVSlideScreen,
+  ): NVSlideVisibleTile[] {
+    const dpr = screen.devicePixelRatio ?? 1
+    const span = this.tileSpan(level, screen)
+    const { firstX, lastX, firstY, lastY, dsX, dsY } = span
+    const { tileWidth, tileHeight, viewLeft, viewTop, viewBottom } = span
     const screenScale = this.viewport.scale * dpr
     const tiles: NVSlideVisibleTile[] = []
-    const spanCount = (lastX - firstX + 1) * (lastY - firstY + 1)
-    if (spanCount > MAX_VISIBLE_TILES && !this._warnedTileFlood) {
-      this._warnedTileFlood = true
-      console.warn(
-        `NVSlide ${this.id}: ${spanCount} tiles in view at L${level.index} exceeds the ${MAX_VISIBLE_TILES}-tile safety cap; drawing a truncated set. Check the manifest's tile size / level dimensions.`,
-      )
-    }
-
     outer: for (let y = firstY; y <= lastY; y++) {
       for (let x = firstX; x <= lastX; x++) {
         if (tiles.length >= MAX_VISIBLE_TILES) break outer
@@ -987,6 +1098,9 @@ export class NVSlide extends EventTarget {
     for (const controller of this._inflight.values()) controller.abort()
     this._inflight.clear()
     this._pending.clear()
+    for (const timer of this._retryTimers) clearTimeout(timer)
+    this._retryTimers.clear()
+    this._failed.clear()
   }
 
   private levelTileWidth(level: NVSlideLevelManifest): number {
@@ -1023,7 +1137,7 @@ export class NVSlide extends EventTarget {
   }
 
   /**
-   * Register a tile decoder for a codec (e.g. `image/jp2` via OpenJPEG WASM).
+   * Register a tile decoder for a codec (e.g. `image/jp2` via @niivue/dcm2niix).
    * Lets a consumer add codecs the browser can't decode natively without
    * bundling them into the core. Overrides any existing decoder for that codec.
    */
@@ -1040,6 +1154,7 @@ export class NVSlide extends EventTarget {
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     tileBytes: Uint8Array,
+    signal: AbortSignal,
   ): Promise<ImageBitmap> {
     const codec = level.codec ?? 'raw-rgba'
     const decoder = tileDecoders.get(codec)
@@ -1047,10 +1162,31 @@ export class NVSlide extends EventTarget {
       throw new Error(
         `No decoder for tile codec "${codec}". ` +
           'Register one with NVSlide.registerTileDecoder() ' +
-          '(e.g. an OpenJPEG WASM decoder for image/jp2).',
+          '(e.g. @niivue/dcm2niix createFrameDecoder for image/jp2).',
       )
     }
-    return decoder(tileBytes, { width: tile.width, height: tile.height })
+    const bitmap = await decoder(tileBytes, {
+      width: tile.width,
+      height: tile.height,
+      level,
+      signal,
+    })
+    // Formats that store whole tiles (DICOM) pad edge frames, and every frame of
+    // a level smaller than one tile, at the right and bottom. Padding is not
+    // slide: crop it, or the level's image shrinks into one corner.
+    if (bitmap.width <= tile.width && bitmap.height <= tile.height)
+      return bitmap
+    try {
+      return await createImageBitmap(
+        bitmap,
+        0,
+        0,
+        Math.min(bitmap.width, tile.width),
+        Math.min(bitmap.height, tile.height),
+      )
+    } finally {
+      bitmap.close()
+    }
   }
 
   private loadTile(
@@ -1060,6 +1196,7 @@ export class NVSlide extends EventTarget {
   ): void {
     const key = this.tileKey(level, tile)
     if (this._cache.has(key) || this._pending.has(key)) return
+    if ((this._failed.get(key)?.retryAt ?? 0) > performance.now()) return
     if (fromViewport) this._viewportKeys.add(key)
     else this._viewportKeys.delete(key)
     this._pending.add(key)
@@ -1092,7 +1229,7 @@ export class NVSlide extends EventTarget {
       // A source that cannot stop a read in progress may still resolve after
       // the abort; the tile is no longer wanted either way.
       signal.throwIfAborted()
-      const bitmap = await this.decodeTileBitmap(level, tile, tileBytes)
+      const bitmap = await this.decodeTileBitmap(level, tile, tileBytes, signal)
       if (signal.aborted) {
         // Disposed (or dropped) while decoding. Caching now would leave a
         // bitmap in a cache that was already cleared, with nobody to close it.
@@ -1107,6 +1244,7 @@ export class NVSlide extends EventTarget {
       this._cache.set(key, { bitmap, bytes: decodedBytes })
       this.stats.cacheBytes = this._cache.bytes
       this.stats.completed++
+      this._failed.delete(key)
     } catch (err) {
       if (signal.aborted || isAbortError(err)) {
         // An abort is not a failure: nothing was wrong with the tile. It is
@@ -1117,6 +1255,16 @@ export class NVSlide extends EventTarget {
         this.stats.failures++
         this.updateRangeEvent(label, 'failed')
         console.error(`Failed to load slide tile ${this.id}/${key}`, err)
+        const delay = Math.min(
+          30_000,
+          (this._failed.get(key)?.delay ?? 500) * 2,
+        )
+        this._failed.set(key, { retryAt: performance.now() + delay, delay })
+        const timer = setTimeout(() => {
+          this._retryTimers.delete(timer)
+          this._emitChange() // the view re-requests the tile if still wanted
+        }, delay)
+        this._retryTimers.add(timer)
       }
     } finally {
       this._activeLoads--

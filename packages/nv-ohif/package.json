@@ -34,7 +34,7 @@
   },
   "comment:uikit-dep": "@niivue/uikit is externalized in build:lib and is a runtime dependency (its ruler/line/text overlays, loadDefaultFont, and the inlined MSDF font are imported at runtime, not bundled). It is published from this monorepo in the same Nx release group, so `npm install @niivue/nv-ohif` resolves it. The workspace range is rewritten to the published version on pack/release. Its only @niivue/niivue import is type-only, so no niivue runtime is duplicated.",
   "dependencies": {
-    "@niivue/dcm2niix": "^1.4.20261029",
+    "@niivue/dcm2niix": "^1.4.20261105-rc.0",
     "@niivue/uikit": "workspace:*",
     "dcmjs": "^0.49.0"
   },

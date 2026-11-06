@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
+import { NVSlide } from '@niivue/niivue'
 import type { OhifDisplaySet } from './ohif-types'
 import {
   buildWsiManifest,
@@ -252,13 +253,12 @@ describe('buildWsiManifest', () => {
   it('builds a finest-first pyramid with a row-major tile grid', () => {
     const built = buildWsiManifest(smDisplaySet())
     if (!built) throw new Error('expected a manifest')
-    const { manifest, levelBaseUrls, allJpeg } = built
+    const { manifest, levelBaseUrls } = built
 
-    expect(allJpeg).toBe(true)
     expect(manifest.width).toBe(2000)
     expect(manifest.height).toBe(1000)
     expect(manifest.channels).toBe('encoded-rgb')
-    expect(manifest.displayYAxis).toBe('up')
+    expect(manifest.displayYAxis).toBe('down')
     expect(manifest.levels).toHaveLength(2)
 
     const [fine, coarse] = manifest.levels
@@ -421,15 +421,25 @@ describe('buildWsiManifest', () => {
     })
   })
 
-  it('flags a JPEG 2000 slide as not all-JPEG', () => {
+  it('maps a JPEG 2000 slide to image/jp2', () => {
     const ds = smDisplaySet()
     const instances = ds.instances?.map((inst) => ({
       ...inst,
       TransferSyntaxUID: JP2,
     }))
     const built = buildWsiManifest({ ...ds, instances })
-    expect(built?.allJpeg).toBe(false)
     expect(built?.manifest.levels[0]?.codec).toBe('image/jp2')
+    expect(built?.unsupported).toBeUndefined()
+  })
+
+  it('names a transfer syntax no codec decodes (JPEG-LS)', () => {
+    const ds = smDisplaySet()
+    const instances = ds.instances?.map((inst) => ({
+      ...inst,
+      TransferSyntaxUID: '1.2.840.10008.1.2.4.80',
+    }))
+    const built = buildWsiManifest({ ...ds, instances })
+    expect(built?.unsupported).toBe('1.2.840.10008.1.2.4.80')
   })
 })
 
@@ -502,5 +512,117 @@ describe('DicomWsiTileSource.fetchTileBytes', () => {
     await expect(source.fetchTileBytes(level, tile, 'label')).rejects.toThrow(
       '404',
     )
+  })
+})
+
+// The smDisplaySet slide as JPEG 2000 YBR_FULL_422 with its frame counts stated.
+function jp2DisplaySet(extra: Record<string, unknown> = {}): OhifDisplaySet {
+  const ds = smDisplaySet()
+  for (const inst of ds.instances ?? []) {
+    const cols = Math.ceil(
+      Number(inst.TotalPixelMatrixColumns) / Number(inst.Columns),
+    )
+    const rows = Math.ceil(
+      Number(inst.TotalPixelMatrixRows) / Number(inst.Rows),
+    )
+    Object.assign(inst, {
+      TransferSyntaxUID: JP2,
+      PhotometricInterpretation: 'YBR_FULL_422',
+      NumberOfFrames: cols * rows,
+      ...extra,
+    })
+  }
+  return ds
+}
+
+describe('JPEG 2000 levels', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('carry codec, photometric and plane counts into the manifest', () => {
+    const built = buildWsiManifest(jp2DisplaySet())
+    const level = built?.manifest.levels[0]
+    expect(level?.codec).toBe('image/jp2')
+    expect(level?.photometric).toBe('YBR_FULL_422')
+    expect(level?.transferSyntaxUid).toBe(JP2)
+    expect(level?.frames).toBe((level?.columns ?? 0) * (level?.rows ?? 0))
+  })
+
+  it('record several optical paths, which NVSlide then refuses', () => {
+    const ds = jp2DisplaySet({
+      NumberOfOpticalPaths: 3,
+      TotalPixelMatrixFocalPlanes: 1,
+    })
+    for (const inst of ds.instances ?? [])
+      inst.NumberOfFrames = 3 * Number(inst.NumberOfFrames)
+    const built = buildWsiManifest(ds)
+    if (!built) throw new Error('expected a manifest')
+    expect(built.manifest.levels[0]?.opticalPaths).toBe(3)
+    expect(() => NVSlide.fromSource(new DicomWsiTileSource(built, {}))).toThrow(
+      /3 optical paths/,
+    )
+  })
+
+  it('carry the raw tags, which NVSlide checks against the frames', () => {
+    const built = buildWsiManifest(jp2DisplaySet({ NumberOfOpticalPaths: 3 }))
+    if (!built) throw new Error('expected a manifest')
+    expect(built.manifest.levels[0]?.opticalPaths).toBe(3)
+    expect(() => NVSlide.fromSource(new DicomWsiTileSource(built, {}))).toThrow(
+      /disagree with its frame count/,
+    )
+  })
+
+  const respond = (part: Uint8Array) => {
+    const boundary = 'b'
+    const enc = new TextEncoder()
+    const head = enc.encode(
+      `--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`,
+    )
+    const tail = enc.encode(`\r\n--${boundary}--\r\n`)
+    const body = new Uint8Array([...head, ...part, ...tail])
+    let accept = ''
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      accept = ((init?.headers ?? {}) as Record<string, string>).Accept ?? ''
+      return Promise.resolve(
+        new Response(body, {
+          status: 200,
+          headers: {
+            'content-type': `multipart/related; type="application/octet-stream"; boundary=${boundary}`,
+          },
+        }),
+      )
+    }) as typeof fetch
+    return () => accept
+  }
+
+  it('fetch the stored codestream untranscoded', async () => {
+    const built = buildWsiManifest(jp2DisplaySet())
+    if (!built) throw new Error('expected a manifest')
+    const level = built.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('expected a tile')
+    const j2k = new Uint8Array([0xff, 0x4f, 0xff, 0x51, 0, 0x29])
+    const accept = respond(j2k)
+    const bytes = await new DicomWsiTileSource(built).fetchTileBytes(
+      level,
+      tile,
+      'l',
+    )
+    expect(accept()).toContain('transfer-syntax=*')
+    expect(Array.from(bytes)).toEqual(Array.from(j2k))
+  })
+
+  it('refuse a frame the server transcoded', async () => {
+    const built = buildWsiManifest(jp2DisplaySet())
+    if (!built) throw new Error('expected a manifest')
+    const level = built.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('expected a tile')
+    respond(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10])) // baseline JPEG
+    await expect(
+      new DicomWsiTileSource(built).fetchTileBytes(level, tile, 'l'),
+    ).rejects.toThrow(/transcoded/)
   })
 })

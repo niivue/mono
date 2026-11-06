@@ -48,6 +48,29 @@ The TILED_FULL invariant (verified against all 4 levels in
 `tilesDown = ceil(H / tileH)`, `tilesAcross * tilesDown == NumberOfFrames`,
 and `frame(col, row) = row * tilesAcross + col`.
 
+That invariant holds only for **one optical path and one focal plane**. TILED_FULL
+frames run through every column × row for each plane and path in turn, so a
+multi-channel or multi-depth level has `paths × planes` times as many frames, and
+laying them out as one grid puts tiles in the wrong places. Manifest producers (the
+`fetch-dicom-wsi.ts` builder, the IIIF server route, nv-ohif) copy each level's
+`NumberOfFrames`, `NumberOfOpticalPaths` (0048,0302) and `TotalPixelMatrixFocalPlanes`
+(0048,0303) as `frames`, `opticalPaths` and `focalPlanes`, leaving absent tags unset.
+NVSlide (`assertSingleSlidePlane`) then refuses any `dicom-wsi*` level unless:
+- an absent tag is inferred as 1 only when `frames` equals the grid
+- `frames == grid × paths × planes`
+- both are 1
+
+Unknown is never treated as 1.
+
+**Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
+
+**JPEG 2000 colour follows the codestream.** With MCT (ICT/RCT) the codec has already
+produced RGB, so a `YBR_ICT`/`YBR_RCT` label must not trigger a second conversion
+(OpenSlide 4.0.0 does, and renders those slides magenta). Without MCT, `YBR_FULL[_422]`
+is converted after decoding, with subsampled chroma repeated. NVSlide passes each
+level (and so its `photometric`) to the registered `image/jp2` decoder; `examples/slides.js`
+and nv-ohif use `@niivue/dcm2niix`'s `createFrameDecoder`.
+
 ---
 
 ## 3. Server implementation (done)

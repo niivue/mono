@@ -68,6 +68,9 @@ interface DicomWsiClientLevel {
   codec: 'image/jpeg'
   transferSyntaxUid: string
   photometric: string
+  /** Tag values, unset when absent; NVSlide checks them against the frames. */
+  opticalPaths?: number
+  focalPlanes?: number
   spacingMM: readonly [number, number]
   tiles: DicomWsiTileEntry[]
 }
@@ -79,7 +82,7 @@ interface DicomWsiClientManifest {
   description: string
   width: number
   height: number
-  displayYAxis: 'up'
+  displayYAxis: 'down'
   dtype: 'uint8'
   channels: 'encoded-rgb'
   levels: DicomWsiClientLevel[]
@@ -249,6 +252,8 @@ function levelManifest(
     codec: 'image/jpeg',
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
+    opticalPaths: parsed.dataSet.uint32('x00480302'), // NumberOfOpticalPaths
+    focalPlanes: parsed.dataSet.uint32('x00480303'), // TotalPixelMatrixFocalPlanes
     spacingMM: level.spacingMM,
     tiles,
   }
@@ -312,7 +317,7 @@ async function buildClientManifest(
       'Precomputed DICOM-WSI frame directory for browser-only tile loading with HTTP Range requests.',
     width: l0.width,
     height: l0.height,
-    displayYAxis: 'up',
+    displayYAxis: 'down', // DICOM row 0 is the top, as OpenSlide and other viewers show it
     dtype: 'uint8',
     channels: 'encoded-rgb',
     levels: clientLevels,

@@ -4,13 +4,13 @@
 // CPTAC-BRCA fetcher produces, so NVSlide / slides.html can stream its JPEG tiles
 // over HTTP Range with no backend.
 //
-// OpenSlide ships these as .zip archives of .dcm files. Only the JPEG +
-// TILED_FULL archives are loadable in-browser today:
-//   - JPEG 2000 archives can't be decoded by createImageBitmap (browsers have no
-//     JPEG 2000 decoder), so they are refused.
-//   - TILED_SPARSE archives need per-frame position parsing the manifest builder
-//     does not implement yet (it assumes TILED_FULL frame ordering), so they are
-//     refused with a note.
+// OpenSlide ships these as .zip archives of .dcm files. TILED_FULL archives are
+// loadable in-browser: JPEG through createImageBitmap, JPEG 2000 through the
+// dcm2niix WASM tile decoder registered in slides.js. The JPEG 2000 entries are
+// OpenSlide's -v2 conversions: the originals carry a wrong PhotometricInterpretation.
+// TILED_SPARSE archives need per-frame position parsing the manifest builder
+// does not implement yet (it assumes TILED_FULL frame ordering), so they are
+// refused with a note.
 // `--list` shows which archives are loadable.
 //
 // The download + manifest are multi-hundred-MB and gitignored (see .gitignore).
@@ -94,35 +94,35 @@ const PRESETS: Preset[] = [
   },
   {
     key: 'cmu-1-jp2k-33005',
-    zip: 'CMU-1-JP2K-33005.zip',
+    zip: 'CMU-1-JP2K-33005-v2.zip',
     codec: 'jpeg2000',
     tiling: 'TILED_FULL',
     approxMB: 121,
-    note: 'JPEG 2000 ICT (decoded by the OpenJPEG WASM codec)',
+    note: 'JPEG 2000 YBR_ICT (decoded by the dcm2niix WASM tile decoder)',
   },
   {
     key: 'cmu-1-jp2k-ict',
-    zip: 'CMU-1-JP2K-ICT.zip',
+    zip: 'CMU-1-JP2K-ICT-v2.zip',
     codec: 'jpeg2000',
     tiling: 'TILED_FULL',
-    approxMB: 729,
-    note: 'JPEG 2000 YBR_ICT (decoded by the OpenJPEG WASM codec)',
+    approxMB: 375,
+    note: 'JPEG 2000 YBR_ICT (decoded by the dcm2niix WASM tile decoder)',
   },
   {
     key: 'cmu-1-jp2k-rct',
-    zip: 'CMU-1-JP2K-RCT.zip',
+    zip: 'CMU-1-JP2K-RCT-v2.zip',
     codec: 'jpeg2000',
     tiling: 'TILED_FULL',
-    approxMB: 729,
-    note: 'JPEG 2000 YBR_RCT (decoded by the OpenJPEG WASM codec)',
+    approxMB: 728,
+    note: 'JPEG 2000 YBR_RCT, lossless (decoded by the dcm2niix WASM tile decoder)',
   },
   {
     key: 'jp2k-33003-1',
-    zip: 'JP2K-33003-1.zip',
+    zip: 'JP2K-33003-1-v2.zip',
     codec: 'jpeg2000',
     tiling: 'TILED_FULL',
     approxMB: 62,
-    note: 'JPEG 2000 (decoded by the OpenJPEG WASM codec)',
+    note: 'JPEG 2000 YBR_FULL_422 (decoded by the dcm2niix WASM tile decoder)',
   },
 ]
 
@@ -140,7 +140,7 @@ function parseArgs(): Map<string, string> {
 
 function supportReason(p: Preset): string | null {
   // JPEG 2000 is loadable: the manifest is tagged image/jp2 and the slides demo
-  // registers an OpenJPEG WASM decoder (examples/openjpeg-decoder.js). Only
+  // registers the dcm2niix WASM tile decoder (createFrameDecoder). Only
   // TILED_SPARSE is still unsupported (the builder assumes TILED_FULL ordering).
   if (p.unsupported) return p.unsupported
   if (p.tiling !== 'TILED_FULL') {

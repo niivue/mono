@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
+import { log } from '@/logger'
 import type {
   NVSlideLevelManifest,
   NVSlideManifest,
@@ -6,7 +7,7 @@ import type {
   NVSlideTileManifest,
   SlideTileSource,
 } from './NVSlide'
-import { ManifestRangeSource, NVSlide } from './NVSlide'
+import { assertSingleSlidePlane, ManifestRangeSource, NVSlide } from './NVSlide'
 
 const TILE_W = 8
 const TILE_H = 4
@@ -655,5 +656,214 @@ describe('ManifestRangeSource range telemetry', () => {
       'network down',
     )
     expect(events).toEqual([{ label: 'L0/0/0 0-15', status: 'failed' }])
+  })
+})
+
+describe('NVSlide DICOM-WSI dimensions', () => {
+  // `grids`: frames as a multiple of the level's tile grid (undefined = no count).
+  const dicom = (
+    grids: number | undefined,
+    paths?: number,
+    planes?: number,
+  ): NVSlideManifest => {
+    const m = makeManifest(2)
+    m.format = 'dicom-wsi-range-v1'
+    for (const level of m.levels) {
+      level.frames =
+        grids === undefined ? undefined : grids * level.columns * level.rows
+      level.opticalPaths = paths
+      level.focalPlanes = planes
+    }
+    return m
+  }
+
+  it('accepts tags of one each that the frame count confirms', () => {
+    expect(() => assertSingleSlidePlane(dicom(1, 1, 1))).not.toThrow()
+  })
+
+  it('proves one of each from the frame count when the tags are absent', () => {
+    expect(() => assertSingleSlidePlane(dicom(1))).not.toThrow()
+  })
+
+  it('refuses dimensions nothing proves', () => {
+    for (const m of [dicom(undefined), dicom(2), dicom(2, 1, 1), dicom(3, 3)])
+      expect(() => assertSingleSlidePlane(m)).toThrow(/unknown or disagree/)
+  })
+
+  it('refuses several optical paths or focal planes, before any layout', () => {
+    expect(() => assertSingleSlidePlane(dicom(3, 3, 1))).toThrow(
+      /3 optical paths/,
+    )
+    expect(() =>
+      NVSlide.fromSource(new CountingSource(dicom(5, 1, 5))),
+    ).toThrow(/5 focal planes/)
+  })
+
+  it('leaves formats without these dimensions alone', () => {
+    expect(() => assertSingleSlidePlane(makeManifest(2))).not.toThrow()
+  })
+})
+
+describe('NVSlide tile decoder context', () => {
+  const originalJp2 = NVSlide.tileDecoder('image/jp2')
+  afterEach(() => {
+    if (originalJp2) NVSlide.registerTileDecoder('image/jp2', originalJp2)
+  })
+
+  it('passes the level and an abort signal', async () => {
+    const seen: string[] = []
+    NVSlide.registerTileDecoder(
+      'image/jp2',
+      async (_bytes, { level, signal }) => {
+        seen.push(
+          level.photometric ?? '',
+          String(signal instanceof AbortSignal),
+        )
+        return fakeBitmap()
+      },
+    )
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    level.codec = 'image/jp2'
+    level.photometric = 'YBR_FULL_422'
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const tile = level.tiles[0]
+    if (!tile) throw new Error('level has no tile')
+    slide.requestTile(slide.manifest.levels[0] ?? level, tile)
+    await waitFor(() => slide.stats.completed === 1)
+    expect(seen).toEqual(['YBR_FULL_422', 'true'])
+    slide.dispose()
+  })
+})
+
+describe('NVSlide tile-cache budget', () => {
+  it('shows the finest coarser level whose visible tiles fit the cache', () => {
+    // 128 decoded bytes per tile: L0 needs 16 tiles (2048 B), L1 4 (512 B).
+    const slide = NVSlide.fromSource(new CountingSource(makePyramid()), {
+      maxCacheBytes: 700, // 75% budget: 525 B
+    })
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const visible = slide.visibleTiles(WHOLE_SLIDE_SCREEN)
+    slide.visibleTiles(WHOLE_SLIDE_SCREEN) // the next frame does not warn again
+    expect(visible.level?.index).toBe(1)
+    expect(visible.requestedLevel?.index).toBe(0)
+    expect(visible.tiles.length).toBe(4)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]?.[0])).toContain('showing L1')
+    warn.mockRestore()
+    slide.dispose()
+  })
+
+  it('charges full decoded tiles, not clipped edge extents', () => {
+    // DICOM edge frames decode padded to the full tile: clipped to 1 px wide,
+    // L0's 16 tiles would seem to need 256 B, but decode to 2048 B.
+    const manifest = makePyramid()
+    for (const tile of manifest.levels[0]?.tiles ?? []) tile.width = 1
+    const slide = NVSlide.fromSource(new CountingSource(manifest), {
+      maxCacheBytes: 700, // 75% budget: 525 B
+    })
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    expect(slide.visibleTiles(WHOLE_SLIDE_SCREEN).level?.index).toBe(1)
+    warn.mockRestore()
+    slide.dispose()
+  })
+
+  it('reports no requested level when the requested one fits', () => {
+    const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    expect(
+      slide.visibleTiles(WHOLE_SLIDE_SCREEN).requestedLevel,
+    ).toBeUndefined()
+    slide.dispose()
+  })
+})
+
+describe('NVSlide padded frames', () => {
+  const originalCreate = globalThis.createImageBitmap
+  afterEach(() => {
+    globalThis.createImageBitmap = originalCreate
+  })
+
+  it('crops padding beyond the tile, at the right and bottom', async () => {
+    // A small level stored as one whole frame: 3 x 2 of image in an 8 x 4 frame.
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    Object.assign(tile, { width: 3, height: 2 })
+    let closedPadded = false
+    NVSlide.registerTileDecoder('image/jpeg', async () => {
+      const padded = fakeBitmap()
+      padded.close = () => {
+        closedPadded = true
+      }
+      return padded
+    })
+    const crops: number[][] = []
+    globalThis.createImageBitmap = (async (
+      _src: unknown,
+      ...rect: number[]
+    ) => {
+      crops.push(rect)
+      const [, , width, height] = rect
+      return { width, height, close() {} }
+    }) as unknown as typeof createImageBitmap
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.completed === 1)
+    expect(crops).toEqual([[0, 0, 3, 2]])
+    expect(closedPadded).toBe(true)
+    expect(slide.stats.cacheBytes).toBe(3 * 2 * 4) // the crop, not the 8 x 4 frame
+    slide.dispose()
+  })
+
+  it('leaves a frame that fits its tile alone', async () => {
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    let cropped = false
+    globalThis.createImageBitmap = (async () => {
+      cropped = true
+    }) as unknown as typeof createImageBitmap
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.completed === 1)
+    expect(cropped).toBe(false)
+    slide.dispose()
+  })
+})
+
+describe('NVSlide failed tiles', () => {
+  it('back off instead of re-requesting a failing tile on every render', async () => {
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    tile.frame = -1 // CountingSource rejects it
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    let now = performance.now()
+    const clock = spyOn(performance, 'now').mockImplementation(() => now)
+    slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.failures === 1)
+    for (let i = 0; i < 5; i++) slide.requestTile(level, tile) // renders
+    expect(slide.stats.requested).toBe(1)
+    now += 1001 // past the 1 s backoff
+    slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.failures === 2)
+    now += 1001 // the second wait is 2 s
+    slide.requestTile(level, tile)
+    expect(slide.stats.requested).toBe(2)
+    clock.mockRestore()
+    error.mockRestore()
+    slide.dispose()
   })
 })

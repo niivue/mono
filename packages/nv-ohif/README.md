@@ -53,8 +53,9 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 - Loads a **DICOM** series by fetching it and converting to NIfTI with
   `@niivue/dcm2niix` (see [DICOM support](#dicom-support)).
 - Renders **whole-slide (SM)** series with **NVSlide** (tiled deep-zoom) on its own
-  canvas: **JPEG, TILED_FULL** slides are supported; **JPEG 2000** and **TILED_SPARSE**
-  are declined with an explanatory note (see [Whole-slide imaging](#whole-slide-imaging)).
+  canvas: **JPEG and JPEG 2000, TILED_FULL** slides are supported; **TILED_SPARSE** and
+  slides with several optical paths or focal planes are declined with an explanatory note
+  (see [Whole-slide imaging](#whole-slide-imaging)).
 - Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
   and reflects a NiiVue window/level change (drag or `setVolume`) onto any sibling OHIF
   viewport showing the same series (`setViewportWindowLevel`). Auto window/level
@@ -179,9 +180,18 @@ DICOM tile pyramid (`buildWsiManifest`) and tiles are fetched on demand
 
 Support boundary:
 
-- **Supported:** **JPEG**-encoded tiles with **TILED_FULL** frame organization.
+- **Supported:** **JPEG** and **JPEG 2000** tiles with **TILED_FULL** frame organization,
+  one optical path and one focal plane. JPEG 2000 frames are requested untranscoded
+  (`transfer-syntax=*`) and decoded by `@niivue/dcm2niix`'s WASM worker pool
+  (`createFrameDecoder`, loaded on the first JPEG 2000 tile); a decoder the host app
+  registered with `NVSlide.registerTileDecoder('image/jp2', ...)` is kept. A server that
+  transcodes the frame anyway is refused rather than mis-decoded.
 - **Declined (with an in-viewport note, not a crash):**
-  - **JPEG 2000** tiles (the viewer cannot decode them yet).
+  - Several **optical paths** or **focal planes**, or levels whose metadata cannot prove
+    one of each (NumberOfOpticalPaths, TotalPixelMatrixFocalPlanes, NumberOfFrames):
+    their frames would land in the wrong tile positions.
+  - Other transfer syntaxes (JPEG-LS, JPEG Lossless, RLE, uncompressed, HTJ2K): the
+    note names the syntax.
   - **TILED_SPARSE** frame organization (the tile grid assumes row-major
     TILED_FULL order, so a sparse slide would render scrambled).
   - A slide with no tiled (VOLUME) pyramid levels.
@@ -202,7 +212,7 @@ The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path f
 See `PLAN.md`. Landed: NIfTI + DICOM rendering, a toolbar for views / clip plane /
 overlay / window-level (both directions) / colormap, the full **Measurement** tool
 group (see [Measurement tools](#measurement-tools)), and **NVSlide whole-slide (SM)
-rendering** for JPEG / TILED_FULL slides (see [Whole-slide imaging](#whole-slide-imaging)).
-Next: segmentation overlays, mesh/surface overlay, JPEG 2000 / TILED_SPARSE slide
+rendering** for JPEG and JPEG 2000 TILED_FULL slides (see [Whole-slide imaging](#whole-slide-imaging)).
+Next: segmentation overlays, mesh/surface overlay, TILED_SPARSE slide
 support, and **NVSlide for 2-D** single-frame series (see the
 `## TODO — NVSlide for 2D` section in `PLAN.md`).

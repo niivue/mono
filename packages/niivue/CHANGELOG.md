@@ -1,3 +1,13 @@
+## 1.0.0-rc.103 (2026-11-06)
+
+### Performance
+
+- **niivue:** project world-space box outlines on the GPU per render tile ([#347](https://github.com/niivue/mono/issues/347))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.102 (2026-11-06)
 
 ### Features

@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-wsi",
-  "version": "1.0.0-rc.14",
+  "version": "1.0.0-rc.15",
   "type": "module",
   "description": "Stream pyramidal/tiled (OME-)TIFF and SVS whole-slide images into NiiVue's NVSlide by HTTP Range, decoded with geotiff",
   "main": "./dist/nv-ext-wsi.js",

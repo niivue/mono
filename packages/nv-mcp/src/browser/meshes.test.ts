@@ -407,6 +407,28 @@ describe('set_mesh', () => {
     expect(describeMesh(tract, 1).tract).toEqual({ colorBy: 'direction' })
   })
 
+  it("takes visibleGroups as null or the tract's groups, and refuses anything else", async () => {
+    const view = meshView()
+    const tract = view.meshes?.[1]
+    if (!tract) throw new Error('the fixture has a tract at index 1')
+    tract.trx = { groups: { AF_L: [], AF_R: [] } }
+    const { set_mesh } = meshHandlers(hostOf(view))
+    await set_mesh({ mesh: 1, tract: { visibleGroups: ['AF_L'] } })
+    expect(view.setTractOptions).toHaveBeenLastCalledWith(1, {
+      visibleGroups: ['AF_L'],
+    })
+    await set_mesh({ mesh: 1, tract: { visibleGroups: null } })
+    await expect(
+      set_mesh({ mesh: 1, tract: { visibleGroups: ['AF_X'] } }),
+    ).rejects.toThrow(
+      'tract.trk takes visibleGroups as null or a list of its groups: AF_L, AF_R, not ["AF_X"].',
+    )
+    await expect(
+      set_mesh({ mesh: 1, tract: { visibleGroups: 'AF_L' } }),
+    ).rejects.toThrow('not "AF_L".')
+    expect(view.setTractOptions).toHaveBeenCalledTimes(2)
+  })
+
   it("takes a scalar colorBy only when the tract has it, and refuses anything else with the tract's choices", async () => {
     const view = meshView()
     const tract = view.meshes?.[1]
@@ -461,7 +483,7 @@ describe('set_mesh', () => {
     await expect(
       set_mesh({ mesh: 1, tract: { dither: 0.5, fiberRadius: 1 } }),
     ).rejects.toThrow(
-      'Unknown tract option "dither". One of: fiberRadius, fiberSides, minLength, decimation, colormap, colormapNegative, colorBy, calMin, calMax, calMinNeg, calMaxNeg, fixedColor, groupColors.',
+      'Unknown tract option "dither". One of: fiberRadius, fiberSides, minLength, decimation, colormap, colormapNegative, colorBy, calMin, calMax, calMinNeg, calMaxNeg, fixedColor, groupColors, visibleGroups.',
     )
     await expect(set_mesh({ mesh: 1, tract: {} })).rejects.toThrow(
       'tract needs at least one option: fiberRadius',

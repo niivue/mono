@@ -4835,6 +4835,10 @@ export default class NiiVue extends EventTarget {
       if (!('calMin' in options)) options.calMin = 0
       if (!('calMax' in options)) options.calMax = 0
     }
+    const unknown = options.visibleGroups?.filter((g) => !m.trx?.groups[g])
+    if (unknown?.length) {
+      log.warn(`setTractOptions: unknown tract groups ${unknown.join(', ')}`)
+    }
     Object.assign(m.tractOptions, options)
     // Auto-toggle colorbar visibility based on scalar coloring mode
     if ('colorBy' in options) {

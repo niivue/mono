@@ -323,6 +323,7 @@ Used by `addMeshLayer()` and `setMeshLayerProperty()`:
 Used by `setTractOptions()`:
 - Geometry: `fiberRadius`, `fiberSides`, `decimation`, `minLength`
 - Color: `colorBy`, `colormap`, `colormapNegative`, `calMin`, `calMax`, `fixedColor`, `groupColors`
+- Visibility: `visibleGroups` (groups shown; keeps `colorBy`)
 
 ### Connectome Options
 Used by `setConnectomeOptions()`:

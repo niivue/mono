@@ -544,6 +544,9 @@ export type NVTractOptions = {
   /** Map of group name -> RGBA [0-255]. When non-null, only streamlines in listed
    *  groups are shown, each colored by their group's color. Overrides colorBy. */
   groupColors: Record<string, [number, number, number, number]> | null
+  /** Group names to show; null or empty shows every streamline. Coloring still
+   *  follows colorBy (or groupColors, whose groups must also be listed here). */
+  visibleGroups: string[] | null
 }
 
 // ============================================================

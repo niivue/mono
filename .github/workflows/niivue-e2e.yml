@@ -19,7 +19,7 @@ name: niivue browser contracts
 #                       what keeps one set valid for both renderers. Synthetic
 #                       data only, no LFS. Their WebGPU cases skip, not fail,
 #                       if the software device is lost. They run in their own
-#                       job, sharded: one worker on SwiftShader takes ~4 min.
+#                       job, split into 3 groups of spec files.
 #
 # Narrow on purpose. The rest of the e2e suite needs a GPU adapter that the
 # Ubuntu runners do not have; it runs in full-suite-metal below instead.
@@ -103,7 +103,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        group: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
@@ -117,13 +117,22 @@ jobs:
         working-directory: packages/niivue
         run: bunx playwright install --only-shell chromium
 
-      - name: Render references (shard ${{ matrix.shard }}/4)
+      # Grouped by spec file, balanced on measured SwiftShader time (each group
+      # ~45-52 s with one worker); --shard splits by test count, and the slow
+      # WebGPU scenes cluster in a few files. Group 3 takes every render spec
+      # not pinned to groups 1 and 2, so a new spec still runs.
+      - name: Render references (group ${{ matrix.group }}/3)
         working-directory: packages/niivue
         run: |
-          bunx playwright test e2e/render- \
-            --shard=${{ matrix.shard }}/4 \
-            --workers=1 \
-            --reporter=line
+          pinned1="e2e/render-volume.spec.ts"
+          pinned2="e2e/render-cinematic.spec.ts e2e/render-mesh.spec.ts e2e/render-colormaps.spec.ts"
+          case "${{ matrix.group }}" in
+            1) specs="$pinned1" ;;
+            2) specs="$pinned2" ;;
+            3) specs=$(ls e2e/render-*.spec.ts | grep -vxF $(printf -- '-e %s ' $pinned1 $pinned2)) ;;
+          esac
+          echo "Specs: $specs"
+          bunx playwright test $specs --workers=1 --reporter=line
 
   # The full suite on real Metal (issue #199). Free macOS runners expose a
   # paravirtual GPU, but only full Chromium reaches it; the headless shell stays

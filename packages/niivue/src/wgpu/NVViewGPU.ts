@@ -260,13 +260,19 @@ export default class NVView {
     | null = null
   // Reusable scratch buffer for mesh uniform writes — avoids per-call Float32Array allocation
   private _uniformScratch = new Float32Array(mesh.MESH_UNIFORM_SIZE / 4)
-  // Narrow public getters for bench.ts to read current render-area size
-  // without making the backing fields public or mutable.
+  // Narrow public getters for bench.ts and canvas capture to read the current
+  // render area without making the backing fields public or mutable.
   get boundsWidth(): number {
     return this._boundsWidth
   }
   get boundsHeight(): number {
     return this._boundsHeight
+  }
+  get boundsOffsetX(): number {
+    return this._boundsOffsetX
+  }
+  get boundsOffsetY(): number {
+    return this._boundsOffsetY
   }
   /**
    * Benchmark-only helper: force _isSubCanvasBounds to false (so render()

@@ -261,6 +261,12 @@ type ViewBackend = {
   init: () => Promise<void>
   resize: () => void
   render: () => void
+  /** Drawn rect in canvas pixels (top-left origin), after bounds and viewport. */
+  readonly boundsOffsetX: number
+  readonly boundsOffsetY: number
+  readonly boundsWidth: number
+  readonly boundsHeight: number
+  readonly isBusy: boolean
   updateBindGroups: (opts?: UpdateBindGroupsOptions) => Promise<void>
   updateMeshVertices: (mesh: NVMeshType) => boolean
   updateAffineOverlays?: () => Promise<boolean>
@@ -6091,20 +6097,25 @@ export default class NiiVue extends EventTarget {
       this._rafId = requestAnimationFrame(() => {
         this._rafId = null
         this.framePending = false
-        if (this._drawingDirty) {
-          this._drawingDirty = false
-          this._flushDrawing()
-        }
-        this._sync()
-        if (this.view) {
-          // Re-wire the view hooks every controller-driven frame so a change
-          // in what they should point at (an overlay renderer registered or
-          // removed) is picked up. Self-driven frames (streaming/fade) keep the
-          // last-set values on the same view instance.
-          this._wireViewHooks()
-          this.view.render()
-        }
+        this._renderNow()
       })
+    }
+  }
+
+  // One controller-driven frame, also run synchronously by canvas capture.
+  private _renderNow(): void {
+    if (this._drawingDirty) {
+      this._drawingDirty = false
+      this._flushDrawing()
+    }
+    this._sync()
+    if (this.view) {
+      // Re-wire the view hooks every controller-driven frame so a change
+      // in what they should point at (an overlay renderer registered or
+      // removed) is picked up. Self-driven frames (streaming/fade) keep the
+      // last-set values on the same view instance.
+      this._wireViewHooks()
+      this.view.render()
     }
   }
 
@@ -6244,60 +6255,59 @@ export default class NiiVue extends EventTarget {
     )
   }
 
-  async saveBitmap(
-    filename = 'myBitmap.png',
-    quality = 0.92,
-  ): Promise<boolean> {
-    if (!this.canvas) {
-      log.warn('saveBitmap: no canvas attached')
-      return false
-    }
+  /**
+   * The drawn canvas as pixels: the region this instance draws (its `bounds`
+   * under the canvas viewport), top-left origin, device pixels. Synchronous:
+   * renders a frame and copies it in the same task, which is what makes it
+   * work on WebGPU and on WebGL2 without `preserveDrawingBuffer`. It shows
+   * whatever is resident now, so wait for streaming or GPU uploads first
+   * (`whenChunkStreamSettles`, `whenUpdatesSettle`). Null without a canvas or
+   * view, after `destroy()`, while the view is busy, or for a rect panned
+   * off-canvas; after a lost GPU context it returns the last canvas content.
+   * Do not call it from an overlay renderer: it draws a frame, which calls the
+   * overlay again.
+   */
+  getCanvasImage(): ImageData | null {
+    const ctx = this._captureCanvas()
+    return ctx?.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height) ?? null
+  }
 
-    if (this._drawingDirty) {
-      this._drawingDirty = false
-      this._flushDrawing()
+  // Render now and copy this instance's drawn rect into a 2D canvas, in one
+  // task. Null when no frame can be drawn, rather than a blank image.
+  private _captureCanvas(): CanvasRenderingContext2D | null {
+    const view = this.view
+    if (!this.canvas || !view || this._destroyed || view.isBusy) {
+      log.warn('canvas capture: no view ready to draw')
+      return null
     }
-    if (this.view) this.view.render()
+    this._renderNow()
 
-    const sourceCanvas = this.canvas
-    const bounds = this.opts.bounds
-    let sx = 0
-    let sy = 0
-    let sw = sourceCanvas.width
-    let sh = sourceCanvas.height
-
-    if (
-      bounds &&
-      !(
-        bounds[0][0] === 0 &&
-        bounds[0][1] === 0 &&
-        bounds[1][0] === 1 &&
-        bounds[1][1] === 1
-      )
-    ) {
-      const x1 = Math.max(0, Math.min(1, Math.min(bounds[0][0], bounds[1][0])))
-      const y1 = Math.max(0, Math.min(1, Math.min(bounds[0][1], bounds[1][1])))
-      const x2 = Math.max(0, Math.min(1, Math.max(bounds[0][0], bounds[1][0])))
-      const y2 = Math.max(0, Math.min(1, Math.max(bounds[0][1], bounds[1][1])))
-      const left = Math.round(x1 * sourceCanvas.width)
-      const right = Math.round(x2 * sourceCanvas.width)
-      const top = Math.round((1 - y2) * sourceCanvas.height)
-      const bottom = Math.round((1 - y1) * sourceCanvas.height)
-      sx = left
-      sy = top
-      sw = Math.max(1, right - left)
-      sh = Math.max(1, bottom - top)
-    }
+    // The view's rect already applies bounds and the canvas viewport; clip it.
+    const { width: cw, height: ch } = this.canvas
+    const sx = Math.max(0, view.boundsOffsetX)
+    const sy = Math.max(0, view.boundsOffsetY)
+    const sw = Math.min(cw, view.boundsOffsetX + view.boundsWidth) - sx
+    const sh = Math.min(ch, view.boundsOffsetY + view.boundsHeight) - sy
+    if (sw <= 0 || sh <= 0) return null
 
     const exportCanvas = document.createElement('canvas')
     exportCanvas.width = sw
     exportCanvas.height = sh
     const context = exportCanvas.getContext('2d')
     if (!context) {
-      log.warn('saveBitmap: failed to create 2D export context')
-      return false
+      log.warn('canvas capture: failed to create 2D context')
+      return null
     }
-    context.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, sw, sh)
+    context.drawImage(this.canvas, sx, sy, sw, sh, 0, 0, sw, sh)
+    return context
+  }
+
+  async saveBitmap(
+    filename = 'myBitmap.png',
+    quality = 0.92,
+  ): Promise<boolean> {
+    const exportCanvas = this._captureCanvas()?.canvas
+    if (!exportCanvas) return false
 
     let outputName = filename.trim() || 'myBitmap.png'
     const lowerName = outputName.toLowerCase()

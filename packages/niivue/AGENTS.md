@@ -133,6 +133,8 @@ NiiVue (controller) - src/NVControl.ts
 
 **Data flow:** User interactions → NiiVue → model updates + `drawScene()` → `requestAnimationFrame` → view.render()
 
+**Pixel readback:** `getCanvasImage()` and `saveBitmap()` run one controller frame (`_renderNow()`: drawing flush, sync, view hooks, render) and copy the rect the view drew (bounds under the canvas viewport) in the same task. A later `drawImage` of the canvas reads blank on WebGPU and on full-canvas WebGL2 (no `preserveDrawingBuffer`).
+
 **Model-View separation:** Model is GPU-agnostic (only data). Views receive model read-only. Controller owns mutations. GPU resources are view-owned. This enables backend switching without data loss.
 
 ### Backend feature parity (hard rule)

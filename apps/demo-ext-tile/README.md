@@ -14,7 +14,7 @@ bunx nx dev demo-ext-tile      # Dev server on port 8092
 
 OME-Zarr pages (moved from core's examples):
 - `ome.zarr.html`: open a multiscale store, pick a level and channels, load it whole.
-- `range.html`: stream a volume brick by brick over HTTP Range (a synthetic shard, written by `scripts/generate-range-poc-fixture.ts` before each dev or build, or an OME-Zarr store). Stores are read from `public/omezarr/` when present, else from the public Open SciVis bucket; `bun scripts/fetch-omezarr.ts --list` shows what can be downloaded there. Only the small `stent` store is in git.
+- `range.html`: stream a volume brick by brick over HTTP Range (a synthetic shard, written by `scripts/generate-range-poc-fixture.ts` before each dev or build, or an OME-Zarr store). Stores are read from `public/omezarr/` when present, else from the public Open SciVis bucket; `bun scripts/fetch-omezarr.ts --list` shows what can be downloaded there. Only the small `stent` store is in git. Serve it with `bunx nx dev demo-ext-tile`: core's dev server (port 8080) serves the app under `/demo-ext-tile/`, but `range.html` looks for its synthetic fixture at the site root.
 - `vox.block.pick.zarr.html`: pick an exploded block of a streamed HiP-CT heart and re-stream it at full resolution.
 
 - `bunx nx e2e demo-ext-tile` (about 1 s, not in CI) builds the demo and checks the folder workflow in headless Chromium on the package's synthetic fixtures.

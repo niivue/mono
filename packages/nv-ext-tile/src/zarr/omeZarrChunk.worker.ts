@@ -31,7 +31,12 @@ import {
   type OmeZarrChunkedSource,
   openOmeZarrChunkedSource,
 } from './omeZarrChunkedSource'
-import { post } from './workerPost'
+
+const post = (
+  self as unknown as {
+    postMessage: (msg: unknown, transfer?: Transferable[]) => void
+  }
+).postMessage.bind(self)
 
 /** Opened sources, keyed by URL + open options. One store, many reads. */
 const sources = new Map<string, Promise<OmeZarrChunkedSource>>()

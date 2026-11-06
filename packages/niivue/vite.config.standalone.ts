@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import type { Plugin } from 'vite'
 import { defineConfig, transformWithEsbuild } from 'vite'
-import { inlineImageAssets } from './vite.config.lib'
+import { coreChunkFileNames, inlineImageAssets } from './vite.config.lib'
 
 /**
  * Self-contained ES module build for bundler-free use (`dist/standalone/`).
@@ -75,15 +75,7 @@ export default defineConfig({
     rollupOptions: {
       // Nothing is external: every dependency is bundled into the folder.
       external: [],
-      output: {
-        // Rollup names a shared chunk after one of its modules, which can
-        // label the core chunk (the controller and everything every entry
-        // needs) after an incidental helper. Name it for what it is.
-        chunkFileNames: (chunk) =>
-          chunk.moduleIds.some((id) => id.endsWith('/src/NVControlBase.ts'))
-            ? 'chunks/core-[hash].js'
-            : 'chunks/[name]-[hash].js',
-      },
+      output: { chunkFileNames: coreChunkFileNames('chunks/') },
     },
   },
 })

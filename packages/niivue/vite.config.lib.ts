@@ -38,6 +38,18 @@ export function inlineImageAssets(): Plugin {
   }
 }
 
+/**
+ * Rollup names a shared chunk after one of its modules, which labels the core
+ * chunk (the controller and what every entry needs) after an incidental
+ * helper. Name it for what it is. Shared with vite.config.standalone.ts.
+ */
+export const coreChunkFileNames =
+  (dir: string) =>
+  (chunk: { moduleIds: string[] }): string =>
+    chunk.moduleIds.some((id) => id.endsWith('/src/NVControlBase.ts'))
+      ? `${dir}core-[hash].js`
+      : `${dir}[name]-[hash].js`
+
 export default defineConfig({
   publicDir: false,
   resolve: {
@@ -100,14 +112,7 @@ export default defineConfig({
     },
     rollupOptions: {
       external: ['cbor-x', 'gl-matrix', 'nifti-reader-js'],
-      output: {
-        // Rollup names the shared core chunk after an incidental module (it
-        // was an OME-Zarr helper, then a TIFF loader); name it for what it is.
-        chunkFileNames: (chunk) =>
-          chunk.moduleIds.some((id) => id.endsWith('/src/NVControlBase.ts'))
-            ? 'core-[hash].js'
-            : '[name]-[hash].js',
-      },
+      output: { chunkFileNames: coreChunkFileNames('') },
     },
   },
 })

@@ -12,7 +12,8 @@
       "inputs": [
         "typescript",
         "{projectRoot}/vite.config.ts",
-        "{projectRoot}/src/**/*"
+        "{projectRoot}/src/**/*",
+        "{workspaceRoot}/packages/niivue/src/**/*"
       ],
       "outputs": ["{projectRoot}/dist"]
     },

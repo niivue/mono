@@ -82,9 +82,15 @@ for app in "${APPS[@]}"; do
   cp -r "apps/$app/dist/"* "_site/$app/"
 done
 
-# Renamed apps: keep old links working (query string kept).
-mkdir -p _site/demo-ext-wsi
-echo '<!doctype html><script>location.replace("../demo-ext-tile/"+location.search)</script>' > _site/demo-ext-wsi/index.html
+# Moved pages: keep old links working (query and hash kept).
+redirect() {
+  mkdir -p "$(dirname "_site/$1")"
+  echo "<!doctype html><script>location.replace(\"$2\"+location.search+location.hash)</script>" > "_site/$1"
+}
+redirect demo-ext-wsi/index.html ../demo-ext-tile/
+for page in ome.zarr range vox.block.pick.zarr; do
+  redirect "examples/$page.html" "../demo-ext-tile/$page.html"
+done
 
 # Documentation site
 mkdir -p _site/docs

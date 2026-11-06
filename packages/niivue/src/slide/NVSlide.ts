@@ -380,7 +380,10 @@ const isMonochrome = (level: NVSlideLevelManifest): boolean =>
 function greySamples(bitmap: ImageBitmap): NVSlideTileSamples {
   const { width, height } = bitmap
   try {
-    const ctx = new OffscreenCanvas(width, height).getContext('2d')
+    // Read once on the CPU: skip a GPU-backed canvas and its readback.
+    const ctx = new OffscreenCanvas(width, height).getContext('2d', {
+      willReadFrequently: true,
+    })
     if (!ctx) throw new Error('OffscreenCanvas 2D context unavailable')
     ctx.drawImage(bitmap, 0, 0)
     const rgba = ctx.getImageData(0, 0, width, height).data
@@ -698,7 +701,8 @@ export class ManifestRangeSource implements SlideTileSource {
  *
  * A TILED_FULL level's frames cover the grid once per path and plane, so the frame
  * count confirms the tags and, when one is absent, proves it is 1 only if the
- * frames equal the grid.
+ * frames equal the grid. With no frame count (NumberOfFrames is Type 1, but a
+ * server may still omit it), tags stating one of each are taken as given.
  */
 export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
   if (!manifest.format?.startsWith('dicom-wsi')) return
@@ -710,6 +714,12 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
       )
     }
     const { frames } = level
+    if (
+      frames === undefined &&
+      level.opticalPaths === 1 &&
+      level.focalPlanes === 1
+    )
+      continue
     const grid = level.columns * level.rows
     const paths = level.opticalPaths ?? (frames === grid ? 1 : undefined)
     const planes = level.focalPlanes ?? (frames === grid ? 1 : undefined)
@@ -819,8 +829,10 @@ export class NVSlide extends EventTarget {
   // dispose() still aborts every in-flight load regardless of origin.
   private readonly _viewportKeys = new Set<string>()
   private _budgetWarned = '' // last budget outcome logged by visibleTiles
+  private _lastVisible: NVSlideVisibleTiles | null = null
   private _window: NVSlideWindow | null = null // null: each level's full bitsStored range
   private _windowGen = 0
+  private _rewindowing = false
   private _colorManagement: boolean
   private _colorLut: NVSlideColorLut | null = null
   private readonly _colorAbort = new AbortController()
@@ -981,24 +993,46 @@ export class NVSlide extends EventTarget {
         `NVSlide window needs finite calMin < calMax, got ${calMin}, ${calMax}`,
       )
     this._window = { calMin, calMax }
-    const gen = ++this._windowGen
-    for (const [key, entry] of this._cache.sampleEntries()) {
-      this.windowedBitmap(entry.samples, entry.level)
-        .then((bitmap) => {
+    this._windowGen++
+    void this._rewindowCached()
+    this._emitChange()
+  }
+
+  // One pass at a time, one tile per step (each awaits createImageBitmap, so
+  // input runs between tiles), newest first: the LRU keeps the tiles drawn
+  // last, the visible ones, at its end. A window set mid-pass restarts it, so
+  // a W/L drag re-windows each tile once for the latest window, not per call.
+  private async _rewindowCached(): Promise<void> {
+    if (this._rewindowing) return
+    this._rewindowing = true
+    try {
+      let gen = -1
+      while (gen !== this._windowGen) {
+        gen = this._windowGen
+        const entries = [...this._cache.sampleEntries()].reverse()
+        for (const [key, entry] of entries) {
+          if (gen !== this._windowGen) break
+          if (this._cache.peek(key) !== entry) continue // evicted meanwhile
+          let bitmap: ImageBitmap
+          try {
+            bitmap = await this.windowedBitmap(entry.samples, entry.level)
+          } catch (err) {
+            log.warn(`NVSlide ${this.id}: re-window failed`, err)
+            continue
+          }
           // Superseded by a later window, or evicted/disposed meanwhile.
           if (gen !== this._windowGen || this._cache.peek(key) !== entry) {
             bitmap.close()
-            return
+            continue
           }
           entry.bitmap.close()
           entry.bitmap = bitmap
           this._emitChange()
-        })
-        .catch((err: unknown) =>
-          log.warn(`NVSlide ${this.id}: re-window failed`, err),
-        )
+        }
+      }
+    } finally {
+      this._rewindowing = false
     }
-    this._emitChange()
   }
 
   private windowedBitmap(
@@ -1390,8 +1424,14 @@ export class NVSlide extends EventTarget {
     return tiles
   }
 
+  /** The tiles the last draw asked for (null before the first), to save a second walk. */
+  get lastVisibleTiles(): NVSlideVisibleTiles | null {
+    return this._lastVisible
+  }
+
   requestVisibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
     const visible = this.visibleTiles(screen)
+    this._lastVisible = visible
     if (!this.visible || !visible.level) return visible
     this._wanted.clear()
     for (const item of visible.tiles) {

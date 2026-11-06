@@ -162,7 +162,11 @@ describe('NVSlide tile loading', () => {
     // ... then the view moves on: only tile 0 remains visible. The screen is
     // sized so exactly one tile is in view at the origin.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
-    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    const last = slide.requestVisibleTiles({
+      widthCss: TILE_W,
+      heightCss: TILE_H,
+    })
+    expect(slide.lastVisibleTiles).toBe(last) // the view reads it, not a second walk
     await waitFor(() => slide.pendingCount === 0)
     // Only the tile already in flight (tile 0, also the visible one) loads;
     // the 29 stale viewport-origin queued tiles are dropped, not fetched.
@@ -774,6 +778,11 @@ describe('NVSlide DICOM-WSI dimensions', () => {
     expect(() => assertSingleSlidePlane(dicom(1, 1, 1))).not.toThrow()
   })
 
+  it('takes tags of one each as given when the frame count is absent', () => {
+    expect(() => assertSingleSlidePlane(dicom(undefined, 1, 1))).not.toThrow()
+    expect(() => assertSingleSlidePlane(dicom(undefined, 2, 1))).toThrow()
+  })
+
   it('proves one of each from the frame count when the tags are absent', () => {
     expect(() => assertSingleSlidePlane(dicom(1))).not.toThrow()
   })
@@ -1116,6 +1125,34 @@ describe('NVSlide monochrome window', () => {
     await loadLevel(slide, 1)
     expect(pixel(slide, 'L1/1/1')).toBe(128)
     expect(slide.window).toEqual({ calMin: 0, calMax: 1000 })
+    slide.dispose()
+  })
+
+  it('coalesces a burst of windows into one pass over the cached tiles', async () => {
+    const slide = monoSlide(500)
+    await loadLevel(slide, 2)
+    await loadLevel(slide, 1)
+    const tiles = [...slide.manifest.levels].reduce(
+      (n, level) =>
+        n + (level.index <= 2 && level.index >= 1 ? level.tiles.length : 0),
+      0,
+    )
+    const create = globalThis.createImageBitmap
+    let calls = 0
+    globalThis.createImageBitmap = ((...args: Parameters<typeof create>) => {
+      calls++
+      return create(...args)
+    }) as typeof createImageBitmap
+    try {
+      for (let hi = 600; hi <= 1000; hi += 100) slide.setWindow(0, hi)
+      await waitFor(
+        () => pixel(slide, 'L2/0/0') === 128 && pixel(slide, 'L1/1/1') === 128,
+      )
+      // One tile may be in flight for the first window when the burst lands.
+      expect(calls).toBeLessThanOrEqual(tiles + 1)
+    } finally {
+      globalThis.createImageBitmap = create
+    }
     slide.dispose()
   })
 

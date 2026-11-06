@@ -97,11 +97,13 @@ interface DicomWsiClientManifest {
   levels: DicomWsiClientLevel[]
 }
 
-// JPEG 2000 and JPEG-LS need the viewer's registered decoder; anything else is sent as JPEG.
-function codecFor(uid: string): DicomWsiClientLevel['codec'] {
+// JPEG 2000 and JPEG-LS need the viewer's registered decoder. Only baseline and
+// extended JPEG decode in the browser; any other syntax (lossless JPEG, HTJ2K) is refused.
+export function codecFor(uid: string): DicomWsiClientLevel['codec'] {
   if (/^1\.2\.840\.10008\.1\.2\.4\.9[01]$/.test(uid)) return 'image/jp2'
   if (/^1\.2\.840\.10008\.1\.2\.4\.8[01]$/.test(uid)) return 'image/jls'
-  return 'image/jpeg'
+  if (/^1\.2\.840\.10008\.1\.2\.4\.5[01]$/.test(uid)) return 'image/jpeg'
+  throw new Error(`Unsupported DICOM-WSI transfer syntax ${uid || '(none)'}`)
 }
 
 function iccProfileRange(

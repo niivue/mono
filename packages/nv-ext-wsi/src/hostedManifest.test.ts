@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVSlideManifest, NVSlideTileManifest } from '@niivue/niivue'
-import { indexDicomWsi } from './dicomIndex'
+import { indexDicomWsi, type SlideIndexLevel, tileMap } from './dicomIndex'
 import { DicomWsiSource } from './dicomWsiSource'
 import { manifestFromIndex } from './hostedManifest'
 
@@ -78,7 +78,9 @@ describe('manifestFromIndex', () => {
   test('a sparse level lists only its present tiles', async () => {
     const { slide, manifest } = await open('sparse.dcm')
     const level = manifest.levels[0]
-    const present = [...(slide.levels[0]?.tile ?? [])].filter((s) => s >= 0)
+    const present = [...tileMap(slide.levels[0] as SlideIndexLevel)].filter(
+      (s) => s >= 0,
+    )
     expect(level?.sparse).toBe(true)
     expect(level?.tiles.length).toBe(present.length)
     expect(present.length).toBeLessThan(

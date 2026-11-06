@@ -155,10 +155,7 @@ folderInput.addEventListener('change', async () => {
       ...index.slides.map((s, i) => {
         const l0 = s.levels[0]
         const frames = s.levels.reduce((n, l) => n + l.frames.offset.length, 0)
-        const holes = s.levels.reduce(
-          (n, l) => n + l.tile.filter((t) => t < 0).length,
-          0,
-        )
+        const holes = s.levels.reduce((n, l) => n + l.holes, 0)
         const syntax = s.instances[0]?.transferSyntax ?? ''
         const option = document.createElement('option')
         option.value = String(i)

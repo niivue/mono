@@ -80,9 +80,12 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.
 - Hostile input is bounded: the header read stops at 64 MiB, sequences at 8 levels,
-  a level at 2^22 tiles, a file at 256 (optical path, focal plane) pairs, tile maps
-  at 2^26 slots across all files, and counts and offsets are checked against the
-  file size (`malformed` otherwise).
+  a level at 2^22 tiles, a file at 256 (optical path, focal plane) pairs, and counts
+  and offsets are checked against the file size (`malformed` otherwise).
+- The index holds only per-frame data, bounded by the files' sizes, so a folder of
+  many slides indexes in memory proportional to its headers. Each level reports
+  `duplicates` and `holes`; its grid-sized tile map is built only when
+  a slide is opened (`DicomWsiSource`) or a manifest is written.
 - `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
   that changed since indexing fails rather than decoding garbage.
 - Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS

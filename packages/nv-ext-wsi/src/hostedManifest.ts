@@ -8,7 +8,8 @@ import type {
   SlideIndexLevel,
   SlideIndexSlide,
 } from './dicomIndex'
-import { filesFor, fragmentsOf, manifestOf, slotOf } from './dicomWsiSource'
+import { tileMap } from './dicomIndex'
+import { filesFor, fragmentsOf, manifestOf } from './dicomWsiSource'
 
 /**
  * A `dicom-wsi-range-v1` manifest for hosting one indexed slide: NVSlide reads
@@ -23,9 +24,11 @@ export async function manifestFromIndex(
   fileUrlFor: (instance: SlideIndexInstance) => string,
 ): Promise<NVSlideManifest> {
   const byInstance = filesFor(slide, files)
+  const maps = slide.levels.map(tileMap)
   const manifest = manifestOf(slide, {
     format: 'dicom-wsi-range-v1',
     fileUrl: fileUrlFor,
+    maps,
   })
   for (const [i, level] of manifest.levels.entries()) {
     // manifestOf builds one manifest level per indexed level.
@@ -39,7 +42,7 @@ export async function manifestFromIndex(
     const tiles: NVSlideTileManifest[] = []
     for (const t of level.tiles) {
       if (!t) continue
-      const slot = slotOf(slide, i, t)
+      const slot = (maps[i] as Int32Array)[t.y * level.columns + t.x] as number
       const k = frames.instance[slot] as number
       const ranges = await frameRanges(
         byInstance[k] as File,

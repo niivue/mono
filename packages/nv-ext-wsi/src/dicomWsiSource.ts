@@ -10,6 +10,7 @@ import {
   fileKey,
   type SlideIndexInstance,
   type SlideIndexSlide,
+  tileMap,
 } from './dicomIndex'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs (JPEG 2000 and JPEG-LS need a
@@ -36,16 +37,6 @@ export function filesFor(
       throw new Error(`${inst.file} changed since it was indexed`)
     return file
   })
-}
-
-/** The frame slot behind a tile, from the level's tile map. */
-export function slotOf(
-  slide: SlideIndexSlide,
-  levelIndex: number,
-  tile: NVSlideTileManifest,
-): number {
-  const level = slide.levels[levelIndex]
-  return level ? (level.tile[tile.y * level.columns + tile.x] ?? -1) : -1
 }
 
 /**
@@ -87,6 +78,8 @@ export function fragmentsOf(
 export class DicomWsiSource implements SlideTileSource {
   readonly manifest: NVSlideManifest
   private readonly files: File[]
+  /** Each level's tile map (frame slot per tile), built here rather than at indexing. */
+  private readonly maps: Int32Array[]
   private host: SlideSourceHost | null = null
 
   constructor(
@@ -94,7 +87,8 @@ export class DicomWsiSource implements SlideTileSource {
     files: readonly File[],
   ) {
     this.files = filesFor(slide, files)
-    this.manifest = manifestOf(slide)
+    this.maps = slide.levels.map(tileMap)
+    this.manifest = manifestOf(slide, { maps: this.maps })
   }
 
   bind(host: SlideSourceHost): void {
@@ -108,7 +102,7 @@ export class DicomWsiSource implements SlideTileSource {
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const frames = this.slide.levels[level.index]?.frames
-    const slot = slotOf(this.slide, level.index, tile)
+    const slot = this.maps[level.index]?.[tile.y * level.columns + tile.x] ?? -1
     if (!frames || slot < 0)
       throw new Error(`no frame for tile ${tile.x},${tile.y}`)
     const file = this.files[frames.instance[slot] as number] as File
@@ -141,9 +135,12 @@ export function manifestOf(
   {
     format = 'dicom-wsi-index-v1',
     fileUrl = (i: SlideIndexInstance) => i.file,
+    maps = slide.levels.map(tileMap),
   }: {
     format?: string
     fileUrl?: (instance: SlideIndexInstance) => string
+    /** Each level's {@link tileMap}, when the caller already built them. */
+    maps?: Int32Array[]
   } = {},
 ): NVSlideManifest {
   const l0 = slide.levels[0]
@@ -159,7 +156,7 @@ export function manifestOf(
       )
     // The index caps a level's grid, so this dense array is bounded.
     const tiles: Array<NVSlideTileManifest | null> = Array.from(
-      level.tile,
+      maps[index] as Int32Array,
       (slot, i) => {
         if (slot < 0) return null
         const x = i % level.columns

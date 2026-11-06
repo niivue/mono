@@ -3,7 +3,9 @@ import type { NVSlideTileManifest } from '@niivue/niivue'
 import {
   indexDicomWsi,
   type SlideIndex,
+  type SlideIndexLevel,
   type SlideIndexSlide,
+  tileMap,
 } from './dicomIndex'
 import { DicomWsiSource } from './dicomWsiSource'
 
@@ -102,9 +104,9 @@ describe('indexDicomWsi', () => {
   test('places TILED_SPARSE frames by position, leaving holes', async () => {
     const { idx, files } = await index('sparse.dcm')
     const slide = only(idx)
-    expect(Array.from(slide.levels[0]?.tile ?? [])).toEqual([
-      0, -1, 1, -1, 2, 3,
-    ])
+    const l0 = slide.levels[0] as SlideIndexLevel
+    expect(Array.from(tileMap(l0))).toEqual([0, -1, 1, -1, 2, 3])
+    expect([l0.holes, l0.duplicates]).toEqual([2, 0])
     expect(await labels(slide, files)).toEqual([
       'sparse x0y0',
       '',

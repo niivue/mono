@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { indexDicomWsi, type SlideIndexSlide } from './dicomIndex'
+import {
+  indexDicomWsi,
+  type SlideIndexLevel,
+  type SlideIndexSlide,
+  tileMap,
+} from './dicomIndex'
 import { DicomWsiSource } from './dicomWsiSource'
 
 // Hostile and malformed inputs, built byte by byte here (explicit VR little
@@ -482,8 +487,8 @@ describe('indexDicomWsi on hostile input', () => {
       [1, [[32, 2, 0]]],
     ])
   })
-  test('many files each naming a full-size plane stop at the tile-slot budget', async () => {
-    // 2048 x 2048 one-pixel tiles (4M slots) per file; the budget holds 16.
+  test('many files each naming a full-size plane index without grid-sized maps', async () => {
+    // 2048 x 2048 one-pixel tiles (4M) per file: a map is built only on open.
     const plane = (k: number) =>
       dicom(
         {
@@ -511,8 +516,12 @@ describe('indexDicomWsi on hostile input', () => {
     const idx = await indexDicomWsi(
       Array.from({ length: 20 }, (_, k) => plane(k)),
     )
-    expect(idx.slides).toHaveLength(16)
-    expect(idx.skipped.map((s) => s.reason)).toEqual(Array(4).fill('malformed'))
+    expect(idx.skipped).toEqual([])
+    expect(idx.slides.map((s) => s.levels[0]?.holes)).toEqual(
+      Array(20).fill(2048 * 2048 - 1),
+    )
+    const map = tileMap(idx.slides[19]?.levels[0] as SlideIndexLevel)
+    expect([map.length, map[0]]).toEqual([2048 * 2048, 0])
   })
 
   test('levels stating nearly equal ZOffsets share a plane', async () => {
@@ -567,7 +576,7 @@ describe('indexDicomWsi on hostile input', () => {
     )
     const t0 = performance.now()
     expect((await indexDicomWsi([f])).skipped.map((k) => k.message)).toEqual([
-      'over 256 planes or 67108864 tile slots',
+      'over 256 (optical path, focal plane) pairs',
     ])
     expect(performance.now() - t0).toBeLessThan(1000)
   })

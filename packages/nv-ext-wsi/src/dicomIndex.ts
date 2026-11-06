@@ -45,6 +45,8 @@ export interface SlideIndexFrames {
    * fragment means item headers inside the span, which DicomWsiSource strips.
    */
   length: Uint32Array
+  /** Row-major tile the frame claims, or -1 when its position is invalid or off the grid. */
+  tile: Int32Array
 }
 
 export interface SlideIndexLevel {
@@ -56,11 +58,11 @@ export interface SlideIndexLevel {
   rows: number
   /** Indices into `SlideIndexSlide.instances`, in concatenation order. */
   instances: number[]
-  /** `columns * rows`, row-major: a frame slot, or -1 for a hole. */
-  tile: Int32Array
   frames: SlideIndexFrames
   /** Frames dropped because another frame already holds their tile, or their position is off the grid (an error). */
   duplicates: number
+  /** Tiles no frame fills. */
+  holes: number
   /** True when tiles are placed by per-frame position (TILED_SPARSE). */
   sparse: boolean
 }
@@ -100,9 +102,6 @@ const UNDEFINED_LENGTH = 0xffffffff
 const MAX_DEPTH = 8
 const MAX_HEADER = 64 << 20
 const MAX_GRID = 1 << 22
-// Tile-map slots (grid x optical paths x focal planes) across all files: 256 MB
-// of Int32 maps, about 177 planes on the largest corpus grid.
-const MAX_SLOTS = 1 << 26
 // (Optical path, focal plane) pairs in one file; each is a slide whose levels
 // rescan the file's frames. Real slides have a few paths and tens of planes.
 const MAX_PAIRS = 256
@@ -305,8 +304,6 @@ interface InstanceInfo {
   zStated: boolean
   /** Per path index, its distinct `z` values (ranked with `z`). */
   planes: Set<number>[]
-  /** Tile-map slots its planes need: distinct (path, plane) pairs x grid. */
-  slots: number
   offset: Float64Array
   length: Uint32Array
 }
@@ -455,7 +452,6 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     z: new Float64Array(frameCount),
     zStated: false,
     planes: [],
-    slots: 0,
     offset: new Float64Array(frameCount),
     length: new Uint32Array(frameCount),
   }
@@ -556,13 +552,12 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     const seen = planes[p] as Set<number>
     if (seen.has(zf)) continue
     seen.add(zf)
-    if (++pairs > MAX_PAIRS || pairs * grid > MAX_SLOTS)
+    if (++pairs > MAX_PAIRS)
       throw new Skip(
         'malformed',
-        `over ${MAX_PAIRS} planes or ${MAX_SLOTS} tile slots`,
+        `over ${MAX_PAIRS} (optical path, focal plane) pairs`,
       )
   }
-  info.slots = pairs * grid
   await frameSpans(info, b, pixel, top, readAt)
   return info
 }
@@ -704,15 +699,9 @@ export async function indexDicomWsi(
 ): Promise<SlideIndex> {
   const infos: InstanceInfo[] = []
   const skipped: SlideIndexSkipped[] = []
-  let slots = 0
   for (const file of files) {
     try {
-      const info = await indexInstance(file)
-      // Many small files can each name a full-size plane.
-      if (slots + info.slots > MAX_SLOTS)
-        throw new Skip('malformed', `over ${MAX_SLOTS} tile slots across files`)
-      slots += info.slots
-      infos.push(info)
+      infos.push(await indexInstance(file))
     } catch (err) {
       skipped.push({
         file: fileKey(file),
@@ -850,7 +839,6 @@ function buildLevel(
   const i0 = (own[ks[0] as number] as Member).info
   const columns = Math.ceil(i0.totalColumns / i0.tileWidth)
   const rows = Math.ceil(i0.totalRows / i0.tileHeight)
-  const tile = new Int32Array(columns * rows).fill(-1)
   const mine = (f: number, m: Member): boolean =>
     m.info.path[f] === m.pathIndex && m.info.z[f] === slide.focalPlane
   // Count first, so the frame arrays are sized once.
@@ -864,9 +852,9 @@ function buildLevel(
     frame: new Uint32Array(total),
     offset: new Float64Array(total),
     length: new Uint32Array(total),
+    tile: new Int32Array(total),
   }
   let slot = 0
-  let duplicates = 0
   for (const k of ks) {
     const m = own[k] as Member
     const { info } = m
@@ -878,14 +866,19 @@ function buildLevel(
       frames.frame[slot] = f + 1
       frames.offset[slot] = info.offset[f] as number
       frames.length[slot] = info.length[f] as number
-      const t = y * columns + x
-      // An invalid position (-1), off the grid, or a second frame for a tile: an error; the first wins.
-      if (x < 0 || y < 0 || x >= columns || y >= rows || tile[t] !== -1)
-        duplicates++
-      else tile[t] = slot
+      frames.tile[slot] =
+        x < 0 || y < 0 || x >= columns || y >= rows ? -1 : y * columns + x
       slot++
     }
   }
+  // Counted by sorting the frames' tiles, so indexing never allocates a grid-sized map.
+  const sorted = frames.tile.slice().sort()
+  let placed = 0
+  for (let s = 0; s < total; s++) {
+    const t = sorted[s] as number
+    if (t >= 0 && t !== sorted[s - 1]) placed++
+  }
+  const holes = columns * rows - placed
   return {
     width: i0.totalColumns,
     height: i0.totalRows,
@@ -894,9 +887,24 @@ function buildLevel(
     columns,
     rows,
     instances: ks,
-    tile,
     frames,
-    duplicates,
-    sparse: ks.some((k) => (own[k] as Member).info.sparse) || tile.includes(-1),
+    duplicates: total - placed,
+    holes,
+    sparse: holes > 0 || ks.some((k) => (own[k] as Member).info.sparse),
   }
+}
+
+/**
+ * A level's `columns * rows` row-major tile map: each tile's frame slot, or -1
+ * for a hole. Grid-sized, so it is built when a slide is opened, not indexed.
+ * An invalid position or a second frame for a tile is an error; the first wins.
+ */
+export function tileMap(level: SlideIndexLevel): Int32Array {
+  const map = new Int32Array(level.columns * level.rows).fill(-1)
+  const { tile } = level.frames
+  for (let slot = 0; slot < tile.length; slot++) {
+    const t = tile[slot] as number
+    if (t >= 0 && map[t] === -1) map[t] = slot
+  }
+  return map
 }

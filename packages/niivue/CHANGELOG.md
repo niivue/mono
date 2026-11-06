@@ -1,3 +1,18 @@
+## 1.0.0-rc.107 (2026-11-06)
+
+### Features
+
+- **niivue:** per-tile slide files and listed sparse levels ([4dca555f](https://github.com/niivue/mono/commit/4dca555f))
+- **niivue:** sparse slide levels with holes ([1558f013](https://github.com/niivue/mono/commit/1558f013))
+
+### Fixes
+
+- **niivue:** place listed sparse tiles by position, without changing the caller's manifest ([3951daf9](https://github.com/niivue/mono/commit/3951daf9))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.106 (2026-11-06)
 
 ### Fixes

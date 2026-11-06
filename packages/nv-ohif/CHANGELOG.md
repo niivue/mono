@@ -1,3 +1,18 @@
+## 1.0.0-rc.103 (2026-11-06)
+
+### Features
+
+- **niivue:** sparse slide levels with holes ([1558f013](https://github.com/niivue/mono/commit/1558f013))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.107
+- Updated uikit to 1.0.0-rc.102
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.102 (2026-11-06)
 
 ### Updated Dependencies

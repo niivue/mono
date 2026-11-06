@@ -71,7 +71,13 @@ Everything else runs under Bun with a real controller and no canvas: the preload
 (`scripts/bunTestPreload.ts`) maps the Vite `?raw` / `?worker` imports and stands
 in for `requestAnimationFrame`, and `src/testing/headless.ts` gives `file://` URLs
 into dev-images. Document round-trips, loading, state and events belong there
-(see `src/loadDocument.*.test.ts`), not in `e2e/`.
+(see `src/loadDocument.*.test.ts`), not in `e2e/`. Bun's `fetch` of a missing
+`file://` URL resolves `ok` and fails only on read, so a test that needs a real
+404 (a probe, a failed load) or a served fixture uses `serveDevImages()`, an
+HTTP server on a free port that also records the paths requested. Timing-driven
+tests (`src/control/animateTo.test.ts`) step frames with `jest.useFakeTimers()`,
+which fakes the rAF stand-in and `performance.now`; `setImmediate` stays real,
+so awaiting it lets each frame's promise work land.
 
 ```bash
 bun run test:e2e         # playwright test (config: playwright.config.ts)
@@ -1228,9 +1234,10 @@ crosscut 4.7). Memory, only for meshes drawn with crosscut2: WebGPU +12 B/tri
 index copy; WebGL2 vertex copy 28 B/vertex + index copy 12 B/tri.
 
 Tests: `e2e/crosscut2.spec.ts` (oblique stability, edge-on surface,
-in-place index edit + `updateGLVolume`, translucent 3D unchanged, width clamp
-in constructor and document), `src/mesh/triangleClusters.test.ts`,
-`src/NVConstants.test.ts` (`clampCrosscutWidth`).
+in-place index edit + `updateGLVolume`, translucent 3D unchanged),
+`src/loadDocument.clamp.test.ts` (width clamp in constructor and document),
+`src/mesh/triangleClusters.test.ts`, `src/NVConstants.test.ts`
+(`clampCrosscutWidth`).
 
 Known follow-ups:
 - WebGPU per-tile mesh uniform offset `i * 256` has no `MAX_TILES` (128)

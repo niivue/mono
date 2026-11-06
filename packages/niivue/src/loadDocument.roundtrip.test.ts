@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import NiiVue, { SLICE_TYPE } from '@/index'
+import NiiVue, { SLICE_TYPE, VOLUME_RENDER_MODE } from '@/index'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { devImageUrl, documentFile } from '@/testing/headless'
 
@@ -636,5 +636,38 @@ describe('volume ids are unique within an instance', () => {
     ])
     expect(attached ? nv2.volumes.indexOf(attached) : -1).toBe(0)
     expect(nv3.volumes.map((v) => v.id)).toEqual([STATS, `${STATS}-2`])
+  })
+})
+
+test('volumeCinematic merges and survives a document round trip', async () => {
+  const nv = new NiiVue({
+    backend: 'webgl2',
+    volumeCinematic: { exposure: 1.5 },
+  })
+  const fromOptions = nv.volumeCinematic.exposure
+  nv.volumeCinematic = { shadow: 0.25, labelMode: 'none' }
+  nv.volumeRenderMode = VOLUME_RENDER_MODE.CINEMATIC
+  const doc = nv.serializeDocument()
+  nv.volumeRenderMode = VOLUME_RENDER_MODE.COMPOSITE
+  nv.volumeCinematic = { exposure: 1, shadow: 1, labelMode: 'only' }
+  await nv.loadDocument(documentFile(doc, 'c.nvd'))
+  const loaded = { mode: nv.volumeRenderMode, ...nv.volumeCinematic }
+  // A document holding only some keys gets the rest from the defaults.
+  nv.model.volume.cinematic = { ao: 0.1 } as typeof nv.volumeCinematic
+  const partial = nv.serializeDocument()
+  await nv.loadDocument(documentFile(partial, 'p.nvd'))
+
+  expect(fromOptions).toBe(1.5)
+  expect(loaded).toMatchObject({
+    mode: VOLUME_RENDER_MODE.CINEMATIC,
+    exposure: 1.5,
+    shadow: 0.25,
+    labelMode: 'none',
+    maxFrames: 256,
+  })
+  expect(nv.volumeCinematic).toMatchObject({
+    ao: 0.1,
+    maxFrames: 256,
+    exposure: 1,
   })
 })

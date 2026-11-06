@@ -1,9 +1,7 @@
 name: niivue browser contracts
 
-# Contracts that only a real browser can hold, and that unit tests cannot
-# reach: NiiVue's module graph uses Vite's `import.meta.glob`, so it will not
-# import under the Bun runner, and the behaviour under test lives in a Web
-# Worker or on the GPU.
+# Contracts that only a real browser can hold: the behaviour under test lives
+# in a Web Worker or on the GPU, which the Bun unit runner does not have.
 #
 #   partial-decode-4d   `limitFrames4D` must bound DECODING, not just retention.
 #                       It was retention-only on both load paths, and a 4D

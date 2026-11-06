@@ -26,7 +26,7 @@ const ROUTES = [
   ['ext/', join(PKG, 'dist', 'standalone')],
   [
     'dcm2niix/',
-    dirname(require.resolve('@niivue/dcm2niix/package.json')) + '/dist',
+    `${dirname(require.resolve('@niivue/dcm2niix/package.json'))}/dist`,
   ],
   ['fixtures/', join(PKG, 'fixtures', 'standalone')],
   ['wsi/', join(PKG, 'fixtures', 'dicom-wsi')],
@@ -165,9 +165,12 @@ PAGES['nomap.html'] = page(
 )
 
 const server = createServer(async (req, res) => {
-  const path = normalize(
-    decodeURIComponent(new URL(req.url, 'http://x').pathname),
-  )
+  let path
+  try {
+    path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname))
+  } catch {
+    return res.writeHead(400).end()
+  }
   if (!path.startsWith(BASE)) return res.writeHead(404).end()
   const rest = path.slice(BASE.length)
   if (PAGES[rest])

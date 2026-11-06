@@ -7,7 +7,7 @@ import dts from 'vite-plugin-dts'
 // would also keep that chunk's top-level code (readers, other workers), about
 // 0.5 MB, so the worker bundle alone reads core from source.
 const coreSrc = fileURLToPath(new URL('../niivue/src/', import.meta.url))
-export const coreFromSource: Plugin = {
+const coreFromSource: Plugin = {
   name: 'worker-core-from-source',
   enforce: 'pre',
   resolveId(id, importer) {
@@ -17,25 +17,29 @@ export const coreFromSource: Plugin = {
   },
 }
 
+// Shared with vite.config.standalone.ts. The Zarr chunk worker is inlined as
+// one blob, which has nowhere to fetch a chunk from, so zarrita's dynamically
+// imported codecs fold into it.
+export const worker = {
+  plugins: () => [coreFromSource],
+  rollupOptions: { output: { inlineDynamicImports: true } },
+}
+export const entry = {
+  tiff: 'src/tiff.ts',
+  dicom: 'src/dicom.ts',
+  zarr: 'src/zarr.ts',
+}
+
 export default defineConfig({
   plugins: [
     dts({ tsconfigPath: './tsconfig.json', exclude: ['src/**/*.test.ts'] }),
   ],
-  // The Zarr chunk worker is inlined as one blob, which has nowhere to fetch a
-  // chunk from, so zarrita's dynamically imported codecs fold into it.
-  worker: {
-    plugins: () => [coreFromSource],
-    rollupOptions: { output: { inlineDynamicImports: true } },
-  },
+  worker,
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     lib: {
-      entry: {
-        tiff: 'src/tiff.ts',
-        dicom: 'src/dicom.ts',
-        zarr: 'src/zarr.ts',
-      },
+      entry,
       formats: ['es'],
     },
     rollupOptions: {

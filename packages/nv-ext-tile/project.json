@@ -36,7 +36,8 @@
       "inputs": [
         "typescript",
         "{projectRoot}/tests/**/*",
-        "{projectRoot}/fixtures/standalone/**/*"
+        "{projectRoot}/fixtures/standalone/**/*",
+        "{workspaceRoot}/packages/niivue/src/**/*"
       ]
     },
     "typecheck": {

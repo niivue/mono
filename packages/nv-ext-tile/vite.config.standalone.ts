@@ -7,24 +7,17 @@
  * verifies the folder.
  */
 import { defineConfig } from 'vite'
-import { coreFromSource } from './vite.config'
+import { entry, worker } from './vite.config'
 
 export default defineConfig({
-  worker: {
-    plugins: () => [coreFromSource],
-    rollupOptions: { output: { inlineDynamicImports: true } },
-  },
+  worker,
   build: {
     outDir: 'dist/standalone',
     emptyOutDir: true,
     target: 'es2022',
     minify: 'esbuild',
     lib: {
-      entry: {
-        tiff: 'src/tiff.ts',
-        dicom: 'src/dicom.ts',
-        zarr: 'src/zarr.ts',
-      },
+      entry,
       formats: ['es'],
     },
     rollupOptions: {

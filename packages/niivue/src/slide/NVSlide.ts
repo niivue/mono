@@ -959,7 +959,10 @@ export class NVSlide extends EventTarget {
   ): Promise<NVSlide> {
     const response = await fetch(manifestUrl)
     if (!response.ok) {
-      throw new Error(`Slide manifest HTTP ${response.status}`)
+      // A server may explain a refusal as JSON `{ error }`; keep its reason.
+      const body = await response.json().catch(() => null)
+      const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
+      throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
     }
     const manifest = (await response.json()) as NVSlideManifest
     return new NVSlide(manifest, { ...options, manifestUrl })

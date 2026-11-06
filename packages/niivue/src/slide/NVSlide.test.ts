@@ -1407,3 +1407,31 @@ describe('NVSlide colour management', () => {
     warn.mockRestore()
   })
 })
+
+describe('NVSlide.fromManifestUrl', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it("reports the server's refusal reason with the status", async () => {
+    globalThis.fetch = (async () =>
+      Response.json(
+        {
+          error: 'Unsupported DICOM-WSI transfer syntax 1.2.840.10008.1.2.4.70',
+        },
+        { status: 415 },
+      )) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      'Slide manifest HTTP 415: Unsupported DICOM-WSI transfer syntax 1.2.840.10008.1.2.4.70',
+    )
+  })
+
+  it('keeps the bare status for a non-JSON error body', async () => {
+    globalThis.fetch = (async () =>
+      new Response('nope', { status: 502 })) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      /^Slide manifest HTTP 502$/,
+    )
+  })
+})

@@ -103,7 +103,10 @@ export function codecFor(uid: string): DicomWsiClientLevel['codec'] {
   if (/^1\.2\.840\.10008\.1\.2\.4\.9[01]$/.test(uid)) return 'image/jp2'
   if (/^1\.2\.840\.10008\.1\.2\.4\.8[01]$/.test(uid)) return 'image/jls'
   if (/^1\.2\.840\.10008\.1\.2\.4\.5[01]$/.test(uid)) return 'image/jpeg'
-  throw new Error(`Unsupported DICOM-WSI transfer syntax ${uid || '(none)'}`)
+  throw new HttpError(
+    415,
+    `Unsupported DICOM-WSI transfer syntax ${uid || '(none)'}`,
+  )
 }
 
 function iccProfileRange(

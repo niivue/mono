@@ -5,8 +5,8 @@ import {
   indexDicomWsi,
   registerDcm2niixDecoders,
   type SlideIndex,
-  TiffSlideSource,
-} from '@niivue/nv-ext-wsi'
+} from '@niivue/nv-ext-tile/dicom'
+import { TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
 import { fromBlob, Pool } from 'geotiff'
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement

@@ -1,5 +1,5 @@
 {
-  "name": "demo-ext-wsi",
+  "name": "demo-ext-tile",
   "projectType": "application",
   "tags": ["type:app", "lang:typescript"],
   "targets": {

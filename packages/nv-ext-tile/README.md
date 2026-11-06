@@ -1,24 +1,30 @@
-# @niivue/nv-ext-wsi
+# @niivue/nv-ext-tile
 
-Formerly `@niivue/nv-ext-tiff`, whose TIFF API is unchanged. It also opens local DICOM-WSI folders (see [Local DICOM-WSI folders](#local-dicom-wsi-folders)).
+Tiled image formats for NiiVue's `NVSlide`, one subpath per format, so a page loads only the format it uses:
+- `@niivue/nv-ext-tile/tiff`: tiled TIFF (below).
+- `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders and hosted manifests ([Local DICOM-WSI folders](#local-dicom-wsi-folders)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
+
+Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`; the APIs are unchanged, only the import paths differ.
+
+## Installation
+
+```bash
+bun add @niivue/nv-ext-tile
+```
+
+Requires `@niivue/niivue` >= 1.0.0-rc.108 as a peer dependency: the first release with `NVSlide.iccTransform`, which `registerDcm2niixDecoders` uses.
+
+## TIFF
 
 Stream large tiled/pyramidal TIFF, BigTIFF, OME-TIFF and Aperio SVS whole-slide images into NiiVue's `NVSlide`, one tile at a time, using [geotiff](https://github.com/geotiffjs/geotiff.js).
 
 Core NiiVue already reads TIFF volumes (strips, tiles, LZW, Deflate, PackBits) with no dependencies, but decodes the whole file. This package is for slides too large to fetch: it reads only the IFDs and the tiles in view, over HTTP Range, and adds the compressions core lacks (JPEG with `JPEGTables`, ZSTD, WebP, LERC). Apps that need it pay for `geotiff`; core users do not.
 
-## Installation
-
-```bash
-bun add @niivue/nv-ext-wsi
-```
-
-Requires `@niivue/niivue` >= 1.0.0-rc.107 as a peer dependency: the first release with sparse slide levels and per-tile `fileUrl`, which DICOM-WSI slides need.
-
-## Usage
+### Usage
 
 ```ts
 import { NVSlide, SlideRenderer } from '@niivue/niivue'
-import { TiffSlideSource } from '@niivue/nv-ext-wsi'
+import { TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
 import { fromBlob, Pool } from 'geotiff'
 
 const pool = new Pool() // optional: decode in web workers
@@ -39,7 +45,7 @@ pool.destroy()
 
 `fromUrl` accepts `fetch` to supply your own fetch (e.g. to add auth headers) and `signal` to abort a superseded open. The manifest id defaults to the decoded file name.
 
-## What it reads
+### What it reads
 
 - **Levels:** OME-TIFF pyramids in `SubIFDs` (first plane only), else every tiled image in the IFD chain, one per width, largest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped.
 - **Pixels:** geotiff's `readRGB` converts RGB, YCbCr, gray, palette and CMYK to 8-bit RGB. Tiles reach `NVSlide` as `raw-rgba`, cropped at the right/bottom edge.
@@ -52,7 +58,7 @@ Not supported yet: 16-bit and multichannel fluorescence planes (only 8-bit RGB/g
 ## Local DICOM-WSI folders
 
 ```ts
-import { DicomWsiSource, indexDicomWsi, registerDcm2niixDecoders } from '@niivue/nv-ext-wsi'
+import { DicomWsiSource, indexDicomWsi, registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
 
 registerDcm2niixDecoders() // JPEG 2000 and JPEG-LS tiles, and ICC colour management; needs @niivue/dcm2niix
 const files = [...folderInput.files] // <input type="file" webkitdirectory>
@@ -136,14 +142,14 @@ A remote server **must** support HTTP Range (`206 Partial Content`). If it answe
 
 ## Demo
 
-[`apps/demo-ext-wsi`](../../apps/demo-ext-wsi): `bunx nx dev demo-ext-wsi`.
+[`apps/demo-ext-tile`](../../apps/demo-ext-tile): `bunx nx dev demo-ext-tile`.
 
 ## Development
 
 ```bash
-bunx nx test nv-ext-wsi
-bunx nx build nv-ext-wsi
-bunx nx typecheck nv-ext-wsi
+bunx nx test nv-ext-tile
+bunx nx build nv-ext-tile
+bunx nx typecheck nv-ext-tile
 ```
 
 Tests write small tiled TIFFs in memory (pyramid, SubIFDs, JPEG/YCbCr) and serve them through a fake Range server that records every request.

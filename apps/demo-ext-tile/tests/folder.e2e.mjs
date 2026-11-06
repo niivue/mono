@@ -1,8 +1,8 @@
 /**
  * Browser check of the DICOM-WSI folder workflow, on the synthetic fixtures only
- * (packages/nv-ext-wsi/fixtures/dicom-wsi, ~70 KB). Seconds, not minutes; not in CI.
+ * (packages/nv-ext-tile/fixtures/dicom-wsi, ~70 KB). Seconds, not minutes; not in CI.
  *
- *   bunx nx e2e demo-ext-wsi      # builds first, via Nx
+ *   bunx nx e2e demo-ext-tile      # builds first, via Nx
  *
  * Opens the fixture folder through the webkitdirectory input, checks the slide
  * list and the skipped files, opens `colors` (TILED_SPARSE 3 x 2, four solid-colour
@@ -24,7 +24,7 @@ const FIXTURES = join(
   '..',
   '..',
   'packages',
-  'nv-ext-wsi',
+  'nv-ext-tile',
   'fixtures',
   'dicom-wsi',
 )

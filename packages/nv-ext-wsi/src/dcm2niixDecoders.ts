@@ -1,18 +1,34 @@
 import type { FrameDecoder } from '@niivue/dcm2niix'
-import { NVSlide, type SlideTileDecoder } from '@niivue/niivue'
+import {
+  NVSlide,
+  type SlideIccTransform,
+  type SlideTileDecoder,
+} from '@niivue/niivue'
 
 let decoder: Promise<FrameDecoder> | null = null
 
-// Monochrome tiles return their samples, which NVSlide windows (D16); colour
-// tiles return RGBA8, with more than 8 bits scaled by DICOM BitsStored.
-const decodeTile: SlideTileDecoder = async (bytes, { level, signal }) => {
+const frameDecoder = (): Promise<FrameDecoder> => {
   decoder ??= import('@niivue/dcm2niix')
     .then((m) => m.createFrameDecoder({ workers: 2 }))
     .catch((err) => {
       decoder = null // a failed chunk load retries on the next tile
       throw err
     })
-  const d = await decoder
+  return decoder
+}
+
+const LUT_SIZE = 33 // the standard device-link grid; exact to 0.5 at its nodes
+
+const bakeProfile: SlideIccTransform = async (profile, signal) => {
+  const d = await frameDecoder()
+  const data = await d.iccLut(profile, { size: LUT_SIZE, signal })
+  return data && { size: LUT_SIZE, data }
+}
+
+// Monochrome tiles return their samples, which NVSlide windows (D16); colour
+// tiles return RGBA8, with more than 8 bits scaled by DICOM BitsStored.
+const decodeTile: SlideTileDecoder = async (bytes, { level, signal }) => {
+  const d = await frameDecoder()
   const options = {
     photometric: level.photometric,
     bitsStored: level.bitsStored,
@@ -29,11 +45,14 @@ const decodeTile: SlideTileDecoder = async (bytes, { level, signal }) => {
 
 /**
  * Register JPEG 2000 and JPEG-LS tile decoders for NVSlide, backed by dcm2niix's
- * WASM worker pool (loaded on the first such tile). A decoder the host already
- * registered wins. Needs the optional peer dependency `@niivue/dcm2niix`.
+ * WASM worker pool (loaded on the first such tile), and its LittleCMS ICC
+ * transform, so slides with a profile are colour-managed. A decoder or ICC
+ * transform the host already registered wins. Call it before opening slides.
+ * Needs the optional peer dependency `@niivue/dcm2niix`.
  */
 export function registerDcm2niixDecoders(): void {
   for (const codec of ['image/jp2', 'image/jls'] as const)
     if (!NVSlide.tileDecoder(codec))
       NVSlide.registerTileDecoder(codec, decodeTile)
+  if (!NVSlide.iccTransform()) NVSlide.registerIccTransform(bakeProfile)
 }

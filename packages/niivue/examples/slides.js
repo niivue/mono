@@ -59,10 +59,9 @@ async function decodeDicomTile(bytes, { level, signal }) {
 NVSlide.registerTileDecoder('image/jp2', decodeDicomTile)
 NVSlide.registerTileDecoder('image/jls', decodeDicomTile)
 // ICC colour management: dcm2niix's LittleCMS bakes each slide's profile into a
-// 33^3 sRGB table (a dcm2niix without iccLut leaves slides unmanaged).
+// 33^3 sRGB table.
 NVSlide.registerIccTransform(async (profile, signal) => {
   frameDecoder ??= createFrameDecoder({ workers: 2 })
-  if (!frameDecoder.iccLut) return null
   const data = await frameDecoder.iccLut(profile, { size: 33, signal })
   return data && { size: 33, data }
 })

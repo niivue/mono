@@ -96,6 +96,19 @@ export class DicomWsiSource implements SlideTileSource {
     this.host = host
   }
 
+  /** The optical path's ICC profile, read from the level-0 file; null without one. */
+  async fetchIccProfile(signal?: AbortSignal): Promise<Uint8Array | null> {
+    const icc = this.slide.iccProfile
+    const l0 = this.slide.levels[0]
+    if (!icc || !l0) return null
+    const file = this.files[l0.instances[0] as number] as File
+    const bytes = new Uint8Array(
+      await file.slice(icc.offset, icc.offset + icc.length).arrayBuffer(),
+    )
+    signal?.throwIfAborted()
+    return bytes
+  }
+
   async fetchTileBytes(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,

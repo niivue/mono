@@ -16,6 +16,7 @@ const slideSelect = document.getElementById('slides') as HTMLSelectElement
 const urlInput = document.getElementById('url') as HTMLInputElement
 const openButton = document.getElementById('open') as HTMLButtonElement
 const status = document.getElementById('status') as HTMLSpanElement
+const iccToggle = document.getElementById('icc') as HTMLInputElement
 
 const gl = canvas.getContext('webgl2', { alpha: false, antialias: false })
 if (!gl) throw new Error('WebGL2 is not available')
@@ -55,7 +56,7 @@ function render(): void {
   const { wireBytes, completed, failures } = slide.stats
   // Keep an indexing or index-error message until the next open.
   if (indexing !== openCount)
-    status.textContent = `${indexNote}${slide.name}: ${slide.manifest.levels.length} levels, ${completed} tiles, ${(wireBytes / 1e6).toFixed(1)} MB read, ${failures} failed`
+    status.textContent = `${indexNote}${slide.name}: ${slide.manifest.levels.length} levels, ${completed} tiles, ${(wireBytes / 1e6).toFixed(1)} MB read, ${failures} failed${slide.colorLut ? `, ICC profile${slide.colorManagement ? '' : ' (off)'}` : ''}`
 }
 
 function requestRender(): void {
@@ -85,7 +86,7 @@ async function open(
     source?.dispose?.()
     renderer.clearTextures()
     source = next
-    slide = NVSlide.fromSource(next)
+    slide = NVSlide.fromSource(next, { colorManagement: iccToggle.checked })
     slide.addEventListener('change', requestRender)
     needsFit = true
     requestRender()
@@ -177,6 +178,9 @@ folderInput.addEventListener('change', async () => {
     console.error(err)
     status.textContent = err instanceof Error ? err.message : String(err)
   }
+})
+iccToggle.addEventListener('change', () => {
+  if (slide) slide.colorManagement = iccToggle.checked // fires 'change', which redraws
 })
 slideSelect.addEventListener('change', () =>
   openIndexed(Number(slideSelect.value)),

@@ -17,7 +17,7 @@
   ],
   "comment:niivue-peer": "A literal range, not workspace:* (which bun publish pins to the exact current rc), so one release accepts later niivue rcs and 1.x. devDependencies keeps workspace:* for local dev. The floor is the first niivue release with sparse slide levels and per-tile fileUrl (#581), which the DICOM-WSI index and its sparse slides need; raise it when this package needs a newer niivue API.",
   "peerDependencies": {
-    "@niivue/dcm2niix": "^1.4.20261105-rc.1",
+    "@niivue/dcm2niix": "^1.4.20261105-rc.3",
     "@niivue/niivue": ">=1.0.0-rc.107 <2"
   },
   "peerDependenciesMeta": {
@@ -29,7 +29,7 @@
     "geotiff": "^3.0.5"
   },
   "devDependencies": {
-    "@niivue/dcm2niix": "^1.4.20261105-rc.1",
+    "@niivue/dcm2niix": "^1.4.20261105-rc.3",
     "@niivue/niivue": "workspace:*",
     "@types/bun": "^1.3.12",
     "typescript": "~5.8.3",

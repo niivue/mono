@@ -669,4 +669,22 @@ describe('indexDicomWsi on hostile input', () => {
     expect(idx.skipped).toEqual([])
     expect(idx.slides).toHaveLength(1)
   })
+  test('DicomWsiSource serves the optical path ICC profile from the level-0 file', async () => {
+    const icc = Uint8Array.from({ length: 200 }, (_, i) => (i * 3) & 255)
+    const f = dicom({
+      opticalPathSeq: sq(0x0048, 0x0105, [
+        item(el(0x0028, 0x2000, 'OB', icc), el(0x0048, 0x0106, 'SH', str('1'))),
+      ]),
+    })
+    const idx = await indexDicomWsi([f])
+    const slide = idx.slides[0] as SlideIndexSlide
+    expect(slide.iccProfile?.length).toBe(200)
+    expect(await new DicomWsiSource(slide, [f]).fetchIccProfile()).toEqual(icc)
+    const plain = dicom()
+    const plainSlide = (await indexDicomWsi([plain]))
+      .slides[0] as SlideIndexSlide
+    expect(
+      await new DicomWsiSource(plainSlide, [plain]).fetchIccProfile(),
+    ).toBeNull()
+  })
 })

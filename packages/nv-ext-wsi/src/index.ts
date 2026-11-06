@@ -93,8 +93,10 @@ class RangeClient extends BaseClient {
   // geotiff's block cache swallows client errors into "Request failed"; keep
   // the last one so opening a slide can report the real cause.
   lastError: unknown = null
-  // Set while opening: geotiff passes a signal only to the header fetch, so
-  // every metadata (IFD) read also listens to the caller's open signal.
+  // geotiff passes a signal only to the header and tile fetches, so every read
+  // also listens to this: the caller's open signal while opening, then the
+  // source's lifetime, which cancels deferred metadata reads (an ICC profile)
+  // on dispose.
   openSignal: AbortSignal | null = null
   constructor(
     url: string,
@@ -396,17 +398,19 @@ export class TiffSlideSource implements SlideTileSource {
       ).catch(fail)
       images = await pyramidImages(tiff).catch(fail)
     } finally {
-      // Tile reads carry their own per-tile signal from NVSlide.
+      // Until the source exists; then its lifetime (below).
       client.openSignal = null
     }
     options.signal?.throwIfAborted()
-    return new TiffSlideSource(
+    const source = new TiffSlideSource(
       tiff,
       images,
       options.id ?? fileName(url),
       options.pool,
       client,
     )
+    client.openSignal = source.closed.signal
+    return source
   }
 
   /** Wrap an already-open GeoTIFF, e.g. `fromBlob(file)` for a local file. */
@@ -426,6 +430,30 @@ export class TiffSlideSource implements SlideTileSource {
   bind(host: SlideSourceHost): void {
     this.host = host
     this.client?.bind(host)
+  }
+
+  /** The base image's ICC profile (tag 34675, e.g. Aperio SVS); null without one. */
+  async fetchIccProfile(signal?: AbortSignal): Promise<Uint8Array | null> {
+    const dir = this.images[0]?.fileDirectory
+    // By number: geotiff 3's name lookup does not resolve 'ICCProfile'.
+    if (!dir?.hasTag(34675)) return null
+    signal?.throwIfAborted()
+    // geotiff's loadValue takes no signal: an abort stops the wait here, and
+    // dispose() cancels the read itself (RangeClient.openSignal).
+    const read: Promise<ArrayLike<number> | undefined> = dir.loadValue(34675)
+    let onAbort = () => {}
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal?.reason)
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
+    let value: ArrayLike<number> | undefined
+    try {
+      value = await (signal ? Promise.race([read, aborted]) : read)
+    } finally {
+      signal?.removeEventListener('abort', onAbort)
+    }
+    if (!value) return null
+    return value instanceof Uint8Array ? value : Uint8Array.from(value)
   }
 
   async fetchTileBytes(

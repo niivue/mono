@@ -109,8 +109,9 @@ Commit messages determine the version bump:
 |---|---|---|
 | `fix:` | Patch (0.1.0 → 0.1.1) | `fix: handle null input in parser` |
 | `feat:` | Minor (0.1.0 → 0.2.0) | `feat: add CSV export` |
-| `feat!:` or `BREAKING CHANGE:` | Major (0.1.0 → 1.0.0) | `feat!: redesign public API` |
-| `chore:`, `docs:`, `refactor:`, etc. | No bump | `docs: update README` |
+| `perf:` | Patch (0.1.0 → 0.1.1) | `perf: cache colormap lookups` |
+| Any type with `!` (`feat!:`, `refactor!:`) or a `BREAKING CHANGE:` footer | Major (0.1.0 → 1.0.0), listed under Breaking Changes | `refactor!: drop legacy loader` |
+| `chore:`, `docs:`, `refactor:`, etc. | No bump, no changelog entry | `docs: update README` |
 
 Only commits that touch files within a package's directory trigger a release for that package. TypeScript and Python packages are versioned independently.
 

@@ -1434,4 +1434,16 @@ describe('NVSlide.fromManifestUrl', () => {
       /^Slide manifest HTTP 502$/,
     )
   })
+
+  it('does not wait on a JSON error body that never finishes', async () => {
+    const stalled = new ReadableStream({ start() {} })
+    globalThis.fetch = (async () =>
+      new Response(stalled, {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      /^Slide manifest HTTP 502$/,
+    )
+  })
 })

@@ -959,8 +959,15 @@ export class NVSlide extends EventTarget {
   ): Promise<NVSlide> {
     const response = await fetch(manifestUrl)
     if (!response.ok) {
-      // A server may explain a refusal as JSON `{ error }`; keep its reason.
-      const body = await response.json().catch(() => null)
+      // A server may explain a refusal as JSON `{ error }`; keep its reason, but
+      // never let an error body that does not finish hold back the status.
+      const isJson = response.headers.get('content-type')?.includes('json')
+      const body = isJson
+        ? ((await Promise.race([
+            response.json().catch(() => null),
+            new Promise((resolve) => setTimeout(resolve, 1000, null)),
+          ])) as { error?: unknown } | null)
+        : null
       const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
       throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
     }

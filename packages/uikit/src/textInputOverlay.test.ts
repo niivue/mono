@@ -250,6 +250,64 @@ describe('UIKitTextInputOverlay', () => {
     expect(changes).toEqual([])
   })
 
+  it('lands a pending paste across a layout patch and an unrelated set change', async () => {
+    const { clipboard } = fakeClipboard('xy')
+    const { overlay } = make(undefined, clipboard)
+    overlay.setValue('t', 'abcdefghabcdefgh')
+    overlay.focus('t')
+    overlay.keyDown(key('End'))
+    overlay.keyDown(key('v', { metaKey: true }))
+    overlay.updateTextInput('t', { x: 101 })
+    const spec = { id: 't', label: 'Hi', x: 101, y: 50, width: 60 }
+    overlay.setTextInputs([
+      { ...spec, value: 'abcdefghabcdefgh' },
+      { id: 'u', x: 0, y: 0, width: 40 },
+    ])
+    overlay.setTextInputs([spec])
+    expect(overlay.ids).toEqual(['t'])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overlay.getText('t')).toBe('abcdefghabcdefghxy')
+    expect(overlay.focusedInput).toBe('t')
+  })
+
+  it('keeps the scroll window across a layout patch', () => {
+    const { overlay } = make()
+    overlay.setValue('t', 'abcdefghabcdefgh')
+    overlay.focus('t')
+    overlay.keyDown(key('End'))
+    overlay.updateTextInput('t', { label: 'Hi' })
+    // Scrolled to the end: a press at the field's left edge lands mid-text,
+    // not on 'a' as it would after a rewind.
+    overlay.pointerDown(130, 60)
+    overlay.pointerUp(130, 60)
+    type(overlay, 'z')
+    expect(overlay.getText('t')?.indexOf('z')).toBeGreaterThan(5)
+  })
+
+  it('drops a pending paste when the input is replaced', async () => {
+    for (const replace of [
+      (o: UIKitTextInputOverlay) =>
+        o.setTextInputs([{ id: 't', x: 100, y: 50, width: 60, value: 'new' }]),
+      (o: UIKitTextInputOverlay) => {
+        o.removeTextInput('t')
+        o.addTextInput({ id: 't', x: 100, y: 50, width: 60, value: 'abc' })
+        o.focus('t')
+      },
+      (o: UIKitTextInputOverlay) => o.updateTextInput('t', { value: 'abc' }),
+    ]) {
+      const { clipboard } = fakeClipboard('late')
+      const { overlay, inputs } = make(undefined, clipboard)
+      overlay.focus('t')
+      overlay.keyDown(key('v', { metaKey: true }))
+      replace(overlay)
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(overlay.getText('t')).not.toContain('late')
+      expect(inputs).toEqual([])
+    }
+  })
+
   it('treats a non-finite or negative maxLength as no limit', () => {
     const { overlay } = make()
     overlay.updateTextInput('t', { maxLength: Number.NaN })
@@ -262,6 +320,18 @@ describe('UIKitTextInputOverlay', () => {
     expect(overlay.getText('t')).toBe('abcd')
     type(overlay, 'e')
     expect(overlay.getText('t')).toBe('abcde')
+  })
+
+  it('drops a paste that arrives after the overlay was destroyed', async () => {
+    const { clipboard } = fakeClipboard('late')
+    const { overlay, inputs } = make(undefined, clipboard)
+    overlay.focus('t')
+    overlay.keyDown(key('v', { metaKey: true }))
+    overlay.destroy()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overlay.getText('t')).toBe('abc')
+    expect(inputs).toEqual([])
   })
 
   it('drops a paste that arrives after a blur and refocus', async () => {

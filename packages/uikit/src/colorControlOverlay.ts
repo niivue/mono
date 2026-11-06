@@ -27,6 +27,7 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
+import { UIKitEntryMap } from './overlayParts'
 import { UIKitRectOverlay } from './rectOverlay'
 import { UIKitSliderOverlay } from './sliderOverlay'
 import type { UIKitFont } from './text/font'
@@ -68,11 +69,9 @@ export class UIKitColorControlOverlay
   private readonly labels: UIKitTextOverlay
   /** The channel sliders of every control, placed in spec units. */
   private readonly sliders: UIKitSliderOverlay
-  private readonly entries = new Map<string, ColorEntry>()
+  private readonly entries: UIKitEntryMap<ColorControlLayout, ColorEntry>
   private baseStyle: ColorControlStyle
-  private readonly cssUnits: boolean
   private requestRedraw: (() => void) | null
-  private scale = 1
   private geometryDirty = true
   /** The control whose slider holds the pointer. */
   private draggingId: string | null = null
@@ -85,11 +84,15 @@ export class UIKitColorControlOverlay
       DEFAULT_COLOR_CONTROL_STYLE,
       options.style,
     )
-    this.cssUnits = options.cssUnits ?? false
+    const cssUnits = options.cssUnits ?? false
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = scaleColorControl(entry.spec, entry.style, scale)
+      return layoutColorControl(spec, style, font.metrics)
+    }, cssUnits)
     this.requestRedraw = options.requestRedraw ?? null
     this.sliders = new UIKitSliderOverlay(font, {
       requestRedraw: () => this.requestRedraw?.(),
-      cssUnits: this.cssUnits,
+      cssUnits,
     })
   }
 
@@ -137,11 +140,11 @@ export class UIKitColorControlOverlay
   }
 
   setColorControls(specs: readonly ColorControlSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeColorControl(id)
-    }
-    for (const spec of specs) this.addColorControl(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => this.addColorControl(spec),
+      (id) => this.removeColorControl(id),
+    )
   }
 
   removeColorControl(id: string): void {
@@ -188,7 +191,7 @@ export class UIKitColorControlOverlay
   }
 
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /** A control's boxes in spec units, or null for an unknown id. */
@@ -240,7 +243,7 @@ export class UIKitColorControlOverlay
     this.sliders.pointerMove(x, y)
     let changed = false
     for (const entry of this.entries.values()) {
-      const layout = this.layoutOf(entry)
+      const layout = this.entries.layoutOf(entry)
       const i = entry.spec.enabled === false ? -1 : colorSwatchAt(layout, x, y)
       if (i !== entry.hoverSwatch) {
         entry.hoverSwatch = i
@@ -280,12 +283,7 @@ export class UIKitColorControlOverlay
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
-      for (const entry of this.entries.values()) entry.layout = null
-      this.geometryDirty = true
-    }
+    if (this.entries.rescale(frame.dpr)) this.geometryDirty = true
     if (this.geometryDirty) this.rebuild()
     this.rects.drawOverlay(frame)
     this.sliders.drawOverlay(frame)
@@ -311,9 +309,9 @@ export class UIKitColorControlOverlay
       const { spec, style } = scaleColorControl(
         entry.spec,
         entry.style,
-        this.scale,
+        this.entries.scale,
       )
-      const geo = buildColorControl(spec, style, this.layoutOf(entry), {
+      const geo = buildColorControl(spec, style, this.entries.layoutOf(entry), {
         value: entry.value,
         hoverSwatch: entry.hoverSwatch,
         enabled: spec.enabled !== false,
@@ -330,25 +328,13 @@ export class UIKitColorControlOverlay
     return [entry.value[0], entry.value[1], entry.value[2], entry.value[3]]
   }
 
-  private layoutOf(entry: ColorEntry): ColorControlLayout {
-    if (!entry.layout) {
-      const { spec, style } = scaleColorControl(
-        entry.spec,
-        entry.style,
-        this.scale,
-      )
-      entry.layout = layoutColorControl(spec, style, this.font.metrics)
-    }
-    return entry.layout
-  }
-
   private swatchHit(
     x: number,
     y: number,
   ): { entry: ColorEntry; index: number } | null {
     for (const entry of this.entries.values()) {
       if (entry.spec.enabled === false) continue
-      const layout = this.layoutOf(entry)
+      const layout = this.entries.layoutOf(entry)
       if (!colorControlContains(layout, x, y)) continue
       const index = colorSwatchAt(layout, x, y)
       if (index >= 0) return { entry, index }

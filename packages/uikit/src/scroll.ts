@@ -8,15 +8,8 @@
 // No GPU and no DOM here.
 
 import { buildLine, type LineData } from './line'
+import type { UIKitBox } from './rect'
 import type { RGBA } from './text/layout'
-
-/** An axis-aligned box in canvas pixels. */
-export interface UIKitBox {
-  x: number
-  y: number
-  width: number
-  height: number
-}
 
 /** The run of rows a viewport shows, by index. */
 export interface ScrollRange {

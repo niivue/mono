@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-wsi",
-  "version": "1.0.0-rc.19",
+  "version": "1.0.0-rc.20",
   "type": "module",
   "description": "Whole-slide images for NiiVue's NVSlide: pyramidal/tiled (OME-)TIFF and SVS by HTTP Range (geotiff), and local DICOM-WSI folders",
   "main": "./dist/nv-ext-wsi.js",

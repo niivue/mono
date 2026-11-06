@@ -1,3 +1,20 @@
+## 1.0.0-rc.108 (2026-11-06)
+
+### Features
+
+- **niivue:** apply slide ICC profiles through a registered colour transform ([4be73dc9](https://github.com/niivue/mono/commit/4be73dc9))
+- **examples:** DICOM-WSI showcase slides in the slides demo ([586c7fe1](https://github.com/niivue/mono/commit/586c7fe1))
+
+### Fixes
+
+- **niivue:** ICC review fixes: null table, size check, LRU caches, no mid-pass destroy ([de7f3a74](https://github.com/niivue/mono/commit/de7f3a74))
+- **niivue:** leave grey slides unmanaged; cap colour-table caches; slides demo bakes profiles ([426fc073](https://github.com/niivue/mono/commit/426fc073))
+- **nv-ext-wsi,demo-ext-wsi:** rank focal planes; linear nesting test ([6c30eca1](https://github.com/niivue/mono/commit/6c30eca1))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.107 (2026-11-06)
 
 ### Features

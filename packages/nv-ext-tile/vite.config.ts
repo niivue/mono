@@ -7,7 +7,7 @@ import dts from 'vite-plugin-dts'
 // would also keep that chunk's top-level code (readers, other workers), about
 // 0.5 MB, so the worker bundle alone reads core from source.
 const coreSrc = fileURLToPath(new URL('../niivue/src/', import.meta.url))
-const coreFromSource: Plugin = {
+export const coreFromSource: Plugin = {
   name: 'worker-core-from-source',
   enforce: 'pre',
   resolveId(id, importer) {

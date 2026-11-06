@@ -4,7 +4,7 @@
   "tags": ["type:lib", "lang:typescript"],
   "targets": {
     "build": {
-      "command": "bunx --bun vite build",
+      "command": "bunx --bun vite build && bunx --bun vite build -c vite.config.standalone.ts && bun scripts/check-standalone.ts",
       "options": {
         "cwd": "{projectRoot}"
       },
@@ -12,6 +12,8 @@
       "inputs": [
         "typescript",
         "{projectRoot}/vite.config.ts",
+        "{projectRoot}/vite.config.standalone.ts",
+        "{projectRoot}/scripts/check-standalone.ts",
         "{projectRoot}/src/**/*",
         "{workspaceRoot}/packages/niivue/src/**/*"
       ],
@@ -24,6 +26,18 @@
       },
       "inputs": ["typescript"],
       "dependsOn": ["^build"]
+    },
+    "e2e": {
+      "command": "node tests/standalone.e2e.mjs",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "dependsOn": ["build", "^build"],
+      "inputs": [
+        "typescript",
+        "{projectRoot}/tests/**/*",
+        "{projectRoot}/fixtures/standalone/**/*"
+      ]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit",

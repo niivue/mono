@@ -16,10 +16,10 @@
   "files": [
     "dist"
   ],
-  "comment:niivue-peer": "A literal range, not workspace:* (which bun publish pins to the exact current rc), so one release accepts later niivue rcs and 1.x. devDependencies keeps workspace:* for local dev. The floor is the first niivue release with NVSlide.iccTransform (#583), which registerDcm2niixDecoders calls; raise it when this package needs a newer niivue API.",
+  "comment:niivue-peer": "workspace:^, not workspace:* (which bun publish pins to the exact rc): published as ^<core version at publish>, so one release accepts later niivue rcs and 1.x, and the floor never predates an API this package uses.",
   "peerDependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.3",
-    "@niivue/niivue": ">=1.0.0-rc.108 <2"
+    "@niivue/niivue": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@niivue/dcm2niix": {

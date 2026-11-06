@@ -328,7 +328,7 @@
       },
       "peerDependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",
-        "@niivue/niivue": ">=1.0.0-rc.108 <2",
+        "@niivue/niivue": "workspace:^",
       },
       "optionalPeers": [
         "@niivue/dcm2niix",

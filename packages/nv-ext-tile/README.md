@@ -12,7 +12,7 @@ Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`; the APIs are unchanged,
 bun add @niivue/nv-ext-tile
 ```
 
-Requires `@niivue/niivue` >= 1.0.0-rc.108 as a peer dependency: the first release with `NVSlide.iccTransform`, which `registerDcm2niixDecoders` uses.
+Requires `@niivue/niivue` as a peer dependency, at least the core version current when this package was published (`workspace:^`, which `bun publish` writes as `^<that version>`).
 
 ## TIFF
 

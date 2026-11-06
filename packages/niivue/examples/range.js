@@ -23,11 +23,18 @@ import NiiVue, {
 } from '../src/index.ts'
 import { urlParamSelect } from './urlParamSelect.js'
 
-// Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
+// Resolved up front: without a WebGPU device NiiVue falls back to WebGL2,
 // which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).
+// An adapter alone is not enough: its requestDevice() can still fail.
+async function hasWebGPUDevice() {
+  const adapter = await navigator.gpu?.requestAdapter().catch(() => null)
+  const device = await adapter?.requestDevice().catch(() => null)
+  device?.destroy()
+  return !!device
+}
 const backend =
   new URLSearchParams(location.search).get('backend') !== 'webgl2' &&
-  (await navigator.gpu?.requestAdapter().catch(() => null))
+  (await hasWebGPUDevice())
     ? 'webgpu'
     : 'webgl2'
 // WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing

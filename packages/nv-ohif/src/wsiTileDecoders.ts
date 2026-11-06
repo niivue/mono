@@ -7,7 +7,8 @@ type Pool = { decoder: Promise<FrameDecoder>; active: number; retired: boolean }
 // codec trap) every decode rejects. Its worker failures are plain Errors; a bad
 // frame (FrameDecodeError), an abort (AbortError), a full queue or a terminated
 // pool ('frame decoder ...') must not replace the pool, nor may an abort
-// whose reason is a plain Error (dcm2niix rejects with the reason as given).
+// whose reason is a plain Error: dcm2niix rejects with that reason itself, so
+// match it by identity (a worker death before a later abort still retires).
 function isWorkerFailure(err: unknown): boolean {
   return (
     err instanceof Error &&
@@ -53,7 +54,7 @@ export function createWsiTileDecoder(
       const rgba = f.rgba as Uint8ClampedArray<ArrayBuffer>
       return createImageBitmap(new ImageData(rgba, f.width, f.height))
     } catch (err) {
-      if (!signal?.aborted && isWorkerFailure(err)) {
+      if (err !== signal?.reason && isWorkerFailure(err)) {
         // Later tiles get a fresh pool; this one is terminated once its other
         // in-flight decodes (on a worker that may still be live) settle.
         p.retired = true

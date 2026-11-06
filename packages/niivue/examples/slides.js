@@ -52,7 +52,7 @@ async function withFrameDecoder(signal, run) {
     return await run(d)
   } catch (err) {
     if (
-      !signal?.aborted &&
+      err !== signal?.reason &&
       err?.name === 'Error' &&
       !err.message.startsWith('frame decoder ')
     ) {

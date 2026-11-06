@@ -67,6 +67,19 @@ describe('createWsiTileDecoder', () => {
     expect(stats.terminated).toEqual([])
   })
 
+  it('retires a pool whose worker died before the tile was aborted', async () => {
+    const { stats, decode } = fakePools(async (id) => {
+      if (id === 0) throw new Error('dcm2niix frame worker trapped: oob')
+      return samples
+    })
+    const controller = new AbortController()
+    const tile = decode(bytes, { ...ctx, signal: controller.signal } as Ctx)
+    controller.abort() // lands after the worker error, before it is handled
+    await expect(tile).rejects.toThrow('trapped')
+    expect(stats.terminated).toEqual([0])
+    expect(await decode(bytes, ctx)).toBe(samples as never)
+  })
+
   it('waits for in-flight decodes before terminating a retired pool', async () => {
     let release: (v: unknown) => void = () => {}
     let call = 0

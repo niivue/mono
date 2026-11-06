@@ -1,5 +1,10 @@
 # Chunked Streaming TODOs
 
+> The OME-Zarr code (store adapter, chunk worker pool, byte caches) moved to
+> `@niivue/nv-ext-tile/zarr` (`packages/nv-ext-tile/src/zarr/`); names and
+> behaviour are unchanged. Paths under `volume/` below for those modules are
+> historical.
+
 Open follow-ups for the multi-LOD chunked volume path
 (`src/volume/chunking.ts`, `src/volume/NVChunkedVolume.ts`, the `gl/` and
 `wgpu/` chunk renderers). Design context: `docs/high-res-streaming.md` and

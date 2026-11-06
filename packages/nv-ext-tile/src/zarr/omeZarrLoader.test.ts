@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { channelColormapsFor } from './channelColormaps'
+import { channelColormapsFor } from '@niivue/niivue'
 import {
   defaultOmeZarrLevel,
   omeZarrBlockToDisplay,

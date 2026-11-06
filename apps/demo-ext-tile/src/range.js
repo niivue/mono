@@ -12,14 +12,16 @@
 //                0.5 (zarr v3) or 0.4 (zarr v2) form -- see fetchStoreRoot
 
 import NiiVue, {
-  ByteLruCache,
   chunkVolumeGrid,
   createStreamingNVImage,
+  SLICE_TYPE,
+} from '@niivue/niivue'
+import {
+  ByteLruCache,
   omeZarrChunkedSource,
   openOmeZarr,
   parseOmeZarrAttrs,
-  SLICE_TYPE,
-} from '@niivue/niivue'
+} from '@niivue/nv-ext-tile/zarr'
 import * as zarr from 'zarrita'
 import { urlParamSelect } from './urlParamSelect.js'
 

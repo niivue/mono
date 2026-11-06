@@ -18,13 +18,12 @@
  * (a missing store, a region that will not decode) come back marked final.
  */
 
-import { NVWorker } from '@/workers/NVWorker'
-import OmeZarrChunkWorker from '@/workers/omeZarrChunk.worker?worker&inline'
-import type { ChunkedVolumeFetch } from './ChunkedVolumeSource'
+import type { ChunkedVolumeFetch } from '@niivue/niivue'
 import {
   type ChunkTimingSnapshot,
   mergeOffThreadChunkTiming,
-} from './chunkTiming'
+  NVWorker,
+} from '@niivue/niivue'
 import {
   chunkRegionKey,
   chunkTimingDelta,
@@ -32,6 +31,7 @@ import {
   sumByteCacheStats,
   sumPersistStats,
 } from './chunkWorkerRouting'
+import OmeZarrChunkWorker from './omeZarrChunk.worker?worker&inline'
 import type {
   ByteCacheStats,
   FetchOmeZarrChunkedSourceOptions,

@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-tile": "workspace:*",
     "@niivue/uikit": "workspace:*"
   },
   "devDependencies": {

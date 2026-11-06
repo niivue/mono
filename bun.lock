@@ -17,6 +17,7 @@
       "name": "dandi-demo",
       "dependencies": {
         "@niivue/niivue": "workspace:*",
+        "@niivue/nv-ext-tile": "workspace:*",
         "@niivue/uikit": "workspace:*",
       },
       "devDependencies": {
@@ -222,7 +223,6 @@
         "earcut": "^3.0.2",
         "gl-matrix": "^3.4.4",
         "nifti-reader-js": "^0.8.1",
-        "zarrita": "^0.7.3",
       },
       "devDependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",
@@ -318,6 +318,7 @@
       "version": "1.0.0-rc.0",
       "dependencies": {
         "geotiff": "^3.0.5",
+        "zarrita": "^0.7.3",
       },
       "devDependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",

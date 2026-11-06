@@ -3,7 +3,7 @@
 
 import { expect, mock, test } from 'bun:test'
 
-for (const w of ['volumeLoad', 'omeZarrChunk', 'transform'])
+for (const w of ['volumeLoad', 'transform'])
   mock.module(`@/workers/${w}.worker?worker&inline`, () => ({
     default: class {},
   }))

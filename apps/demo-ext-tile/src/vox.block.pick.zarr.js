@@ -1,8 +1,9 @@
-import NiiVue, {
+import NiiVue from '@niivue/niivue'
+import {
   ByteLruCache,
   omeZarrChunkedSource,
   openOmeZarr,
-} from '@niivue/niivue'
+} from '@niivue/nv-ext-tile/zarr'
 import * as zarr from 'zarrita'
 
 // Pick one brick out of an exploded STREAMED volume and open that brick, on its

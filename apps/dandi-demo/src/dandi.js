@@ -24,7 +24,6 @@
 // store's own chunk grid so neighbouring tiles at least share decodes.
 
 import NiiVue, {
-  fetchOmeZarrChunkedSource,
   lookupColorMap,
   NVSlide,
   NVSlideController,
@@ -34,6 +33,7 @@ import NiiVue, {
   slideOverlayContent,
   VolumeSliceSource,
 } from '@niivue/niivue'
+import { fetchOmeZarrChunkedSource } from '@niivue/nv-ext-tile/zarr'
 // The crosshair marker is a UIKit widget: the slide renderers expose the same
 // `overlayDraw` hook a NiiVue canvas does, so it composes onto the standalone
 // deep-zoom pane exactly as it does there.

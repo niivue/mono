@@ -16,14 +16,16 @@
  * stated colour, and windowed to its stated intensity range.
  *
  * The metadata parse lives in `omeZarr.ts`; store access and chunk decoding
- * are zarrita's. See `docs/ome-zarr-format.md`.
+ * are zarrita's. See `packages/nv-ext-tile/docs/ome-zarr-format.md`.
  */
 
+import type { ImageFromUrlOptions, TypedVoxelArray } from '@niivue/niivue'
+import {
+  channelColormapsFor,
+  channelVolumeFile,
+  NiiDataType,
+} from '@niivue/niivue'
 import * as zarr from 'zarrita'
-import { NiiDataType } from '@/NVConstants'
-import type { ImageFromUrlOptions, TypedVoxelArray } from '@/NVTypes'
-import { channelColormapsFor } from './channelColormaps'
-import { channelVolumeFile } from './channelVolumeFile'
 import {
   allocTypedArrayLike,
   checkOmeZarrIndex,

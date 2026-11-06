@@ -1,3 +1,17 @@
+## 1.0.0-rc.105 (2026-11-06)
+
+### Fixes
+
+- **niivue:** price the planner's lower bound at the plan's bytes per voxel ([993a8ec9](https://github.com/niivue/mono/commit/993a8ec9))
+- **niivue:** re-stream lit bricks when a plan swap turns unlit ([2692e129](https://github.com/niivue/mono/commit/2692e129))
+- **niivue:** price unlit chunked plans and the decoded tier at 4 bytes per voxel ([#167](https://github.com/niivue/mono/issues/167), [#203](https://github.com/niivue/mono/issues/203))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.104 (2026-11-06)
 
 ### Fixes

@@ -55,6 +55,18 @@ describe('createWsiTileDecoder', () => {
     expect(stats.terminated).toEqual([])
   })
 
+  it('keeps the pool when a tile is aborted with a plain Error reason', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('cancel'))
+    const { stats, decode } = fakePools(async () => {
+      throw controller.signal.reason
+    })
+    const aborted = { ...ctx, signal: controller.signal } as Ctx
+    await expect(decode(bytes, aborted)).rejects.toThrow('cancel')
+    expect(stats.created).toBe(1)
+    expect(stats.terminated).toEqual([])
+  })
+
   it('waits for in-flight decodes before terminating a retired pool', async () => {
     let release: (v: unknown) => void = () => {}
     let call = 0

@@ -13,10 +13,11 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
-import type { LineData } from './line'
-import { UIKitLineOverlay } from './lineOverlay'
-import type { RectData } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
+import {
+  UIKitDrawBundle,
+  UIKitEntryMap,
+  type UIKitGeometry,
+} from './overlayParts'
 import {
   buildSegmented,
   DEFAULT_SEGMENTED_STYLE,
@@ -33,7 +34,6 @@ import {
   stepSegmentValue,
 } from './segmented'
 import type { UIKitFont } from './text/font'
-import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
 export interface UIKitSegmentedOverlayOptions {
   /** Called whenever the overlay needs another frame. A control layer fills it in. */
@@ -61,15 +61,9 @@ export class UIKitSegmentedOverlay
 {
   readonly hoverCursor = 'pointer'
   private readonly font: UIKitFont
-  private readonly rects = new UIKitRectOverlay()
-  private readonly lines = new UIKitLineOverlay()
-  private readonly labels: UIKitTextOverlay
-  private readonly entries = new Map<string, SegmentedEntry>()
+  private readonly bundle: UIKitDrawBundle
+  private readonly entries: UIKitEntryMap<SegmentedLayout, SegmentedEntry>
   private baseStyle: SegmentedStyle
-  private readonly cssUnits: boolean
-  private requestRedraw: (() => void) | null
-  private scale = 1
-  private geometryDirty = true
   private pressedId: string | null = null
   /** Index of the segment the press started on. */
   private pressedIndex = -1
@@ -81,13 +75,15 @@ export class UIKitSegmentedOverlay
 
   constructor(font: UIKitFont, options: UIKitSegmentedOverlayOptions = {}) {
     this.font = font
-    this.labels = new UIKitTextOverlay(font)
+    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = scaleSegmented(entry.spec, entry.style, scale)
+      return layoutSegmented(spec, style, font.metrics)
+    }, options.cssUnits ?? false)
     this.baseStyle = resolveSegmentedStyle(
       DEFAULT_SEGMENTED_STYLE,
       options.style,
     )
-    this.cssUnits = options.cssUnits ?? false
-    this.requestRedraw = options.requestRedraw ?? null
   }
 
   /** Replace the default style for every control (per-spec overrides still win). */
@@ -97,7 +93,7 @@ export class UIKitSegmentedOverlay
       entry.style = resolveSegmentedStyle(this.baseStyle, entry.spec.style)
       entry.layout = null
     }
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   /**
@@ -118,16 +114,16 @@ export class UIKitSegmentedOverlay
     } else {
       this.entries.set(spec.id, { spec, style, layout: null, value, hover: -1 })
     }
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   /** Replace the whole control set. */
   setSegmenteds(specs: readonly SegmentedSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeSegmented(id)
-    }
-    for (const spec of specs) this.addSegmented(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => this.addSegmented(spec),
+      (id) => this.removeSegmented(id),
+    )
   }
 
   removeSegmented(id: string): void {
@@ -135,7 +131,7 @@ export class UIKitSegmentedOverlay
     if (this.pressedId === id) this.pressedId = null
     if (this.hoverId === id) this.hoverId = null
     if (this.focusedId === id) this.focusedId = null
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   /** Patch one control's spec. The value is kept unless the patch sets `value`. */
@@ -170,7 +166,7 @@ export class UIKitSegmentedOverlay
     const next = segmentIndex(entry.spec.segments, value) >= 0 ? value : null
     if (next === entry.value) return
     entry.value = next
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   getValue(id: string): string | null {
@@ -184,21 +180,21 @@ export class UIKitSegmentedOverlay
     const seg = entry.spec.segments.find((s) => s.value === value)
     if (!seg || seg.enabled === false || value === entry.value) return
     entry.value = value
-    this.invalidate()
+    this.bundle.invalidate()
     entry.spec.onChange?.(value, id)
   }
 
   /** The ids of all controls, in draw order. */
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /** A control's track and segments in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
   getLayout(id: string): SegmentedLayout | null {
     const entry = this.entries.get(id)
     if (!entry) return null
-    const l = this.layoutOf(entry)
-    const k = this.scale
+    const l = this.entries.layoutOf(entry)
+    const k = this.entries.scale
     if (k === 1) return l
     const s = (r: { x: number; y: number; width: number; height: number }) => ({
       x: r.x / k,
@@ -219,12 +215,11 @@ export class UIKitSegmentedOverlay
 
   /** Give a control keyboard focus (arrows move the selection), or null to clear. */
   focus(id: string | null): void {
-    const entry = id !== null ? this.entries.get(id) : undefined
-    const next = entry && entry.spec.enabled !== false ? id : null
+    const next = this.entries.enabled(id) ? id : null
     if (next === this.focusedId) return
     this.focusedId = next
     if (next !== null) this.layer?.focus?.(this)
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   hitTest(x: number, y: number): boolean {
@@ -235,12 +230,12 @@ export class UIKitSegmentedOverlay
   pointerDown(x: number, y: number): boolean {
     const entry = this.hitEntry(x, y)
     if (!entry) return false
-    const index = segmentAt(this.layoutOf(entry), x, y)
+    const index = segmentAt(this.entries.layoutOf(entry), x, y)
     this.pressedId = entry.spec.id
     this.pressedIndex = this.segmentEnabled(entry, index) ? index : -1
     this.pressInside = this.pressedIndex >= 0
     this.focus(entry.spec.id)
-    this.invalidate()
+    this.bundle.invalidate()
     return true
   }
 
@@ -249,17 +244,17 @@ export class UIKitSegmentedOverlay
       const entry = this.entries.get(this.pressedId)
       if (entry && this.pressedIndex >= 0) {
         const inside =
-          segmentAt(this.layoutOf(entry), x, y) === this.pressedIndex
+          segmentAt(this.entries.layoutOf(entry), x, y) === this.pressedIndex
         if (inside !== this.pressInside) {
           this.pressInside = inside
-          this.invalidate()
+          this.bundle.invalidate()
         }
       }
       return true
     }
     const hit = this.hitEntry(x, y)
     const id = hit ? hit.spec.id : null
-    const index = hit ? segmentAt(this.layoutOf(hit), x, y) : -1
+    const index = hit ? segmentAt(this.entries.layoutOf(hit), x, y) : -1
     let changed = false
     if (id !== this.hoverId) {
       const prev = this.hoverId ? this.entries.get(this.hoverId) : null
@@ -271,7 +266,7 @@ export class UIKitSegmentedOverlay
       hit.hover = index
       changed = true
     }
-    if (changed) this.invalidate()
+    if (changed) this.bundle.invalidate()
     return false
   }
 
@@ -286,11 +281,11 @@ export class UIKitSegmentedOverlay
     if (
       entry &&
       index >= 0 &&
-      segmentAt(this.layoutOf(entry), x, y) === index
+      segmentAt(this.entries.layoutOf(entry), x, y) === index
     ) {
       this.select(id, entry.spec.segments[index].value)
     }
-    this.invalidate()
+    this.bundle.invalidate()
     this.pointerMove(x, y)
     return true
   }
@@ -299,14 +294,14 @@ export class UIKitSegmentedOverlay
     if (this.pressedId === null) return
     this.pressedId = null
     this.pressedIndex = -1
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   /** Arrows move the focused control's selection (wrapping); Home and End jump to the ends. */
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.focusedId === null) return false
-    const entry = this.entries.get(this.focusedId)
-    if (!entry || entry.spec.enabled === false) return false
+    const entry = this.entries.enabled(this.focusedId)
+    if (!entry) return false
     const segments = entry.spec.segments
     let next: string | null
     switch (e.key) {
@@ -336,34 +331,19 @@ export class UIKitSegmentedOverlay
   }
 
   bindLayer(layer: UIKitRedrawSource): void {
-    this.requestRedraw ??= () => layer.requestRedraw()
+    this.bundle.bind(layer)
     this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
-      for (const entry of this.entries.values()) entry.layout = null
-      this.geometryDirty = true
-    }
-    if (this.geometryDirty) this.rebuild()
-    this.rects.drawOverlay(frame)
-    this.lines.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
+    const rescaled = this.entries.rescale(frame.dpr)
+    this.bundle.draw(frame, () => this.geometry(), rescaled)
   }
 
   /** Release GPU resources on both backends. */
   destroy(): void {
-    this.rects.destroy()
-    this.lines.destroy()
-    this.labels.destroy()
-  }
-
-  private invalidate(): void {
-    this.geometryDirty = true
-    this.requestRedraw?.()
+    this.bundle.destroy()
   }
 
   private segmentEnabled(entry: SegmentedEntry, index: number): boolean {
@@ -371,46 +351,26 @@ export class UIKitSegmentedOverlay
     return seg !== undefined && seg.enabled !== false
   }
 
-  private scaled(entry: SegmentedEntry): {
-    spec: SegmentedSpec
-    style: SegmentedStyle
-  } {
-    return scaleSegmented(entry.spec, entry.style, this.scale)
-  }
-
-  private layoutOf(entry: SegmentedEntry): SegmentedLayout {
-    if (!entry.layout) {
-      const { spec, style } = this.scaled(entry)
-      entry.layout = layoutSegmented(spec, style, this.font.metrics)
-    }
-    return entry.layout
-  }
-
   /** The topmost (last added) enabled control under a canvas point. */
   private hitEntry(x: number, y: number): SegmentedEntry | null {
-    const list = [...this.entries.values()]
-    for (let i = list.length - 1; i >= 0; i--) {
-      const entry = list[i]
-      if (entry.spec.enabled === false) continue
-      if (segmentAt(this.layoutOf(entry), x, y) >= 0) return entry
-    }
-    return null
+    return this.entries.topmost((l, px, py) => segmentAt(l, px, py) >= 0, x, y)
   }
 
-  private rebuild(): void {
-    const rects: RectData[] = []
-    const lines: LineData[] = []
-    const text: UIKitTextItem[] = []
+  private *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = this.scaled(entry)
+      const { spec, style } = scaleSegmented(
+        entry.spec,
+        entry.style,
+        this.entries.scale,
+      )
       const id = entry.spec.id
       const pressed =
         this.pressedId === id && this.pressInside ? this.pressedIndex : -1
-      const geo = buildSegmented(
+      yield buildSegmented(
         spec,
         style,
         this.font.metrics,
-        this.layoutOf(entry),
+        this.entries.layoutOf(entry),
         {
           selected: segmentIndex(entry.spec.segments, entry.value),
           hover: this.pressedId === id ? -1 : entry.hover,
@@ -419,13 +379,6 @@ export class UIKitSegmentedOverlay
           enabled: entry.spec.enabled !== false,
         },
       )
-      rects.push(...geo.rects)
-      lines.push(...geo.lines)
-      text.push(...geo.text)
     }
-    this.rects.setRects(rects)
-    this.lines.setLines(lines)
-    this.labels.setItems(text)
-    this.geometryDirty = false
   }
 }

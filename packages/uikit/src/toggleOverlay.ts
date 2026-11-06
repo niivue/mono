@@ -11,12 +11,12 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
-import type { LineData } from './line'
-import { UIKitLineOverlay } from './lineOverlay'
-import type { RectData } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
+import {
+  UIKitDrawBundle,
+  UIKitEntryMap,
+  type UIKitGeometry,
+} from './overlayParts'
 import type { UIKitFont } from './text/font'
-import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 import {
   buildToggle,
   DEFAULT_TOGGLE_STYLE,
@@ -54,15 +54,9 @@ export class UIKitToggleOverlay
 {
   readonly hoverCursor = 'pointer'
   private readonly font: UIKitFont
-  private readonly rects = new UIKitRectOverlay()
-  private readonly lines = new UIKitLineOverlay()
-  private readonly labels: UIKitTextOverlay
-  private readonly entries = new Map<string, ToggleEntry>()
+  private readonly bundle: UIKitDrawBundle
+  private readonly entries: UIKitEntryMap<ToggleLayout, ToggleEntry>
   private baseStyle: ToggleStyle
-  private readonly cssUnits: boolean
-  private requestRedraw: (() => void) | null
-  private scale = 1
-  private geometryDirty = true
   private pressedId: string | null = null
   /** While pressed: whether the pointer is currently over the pressed toggle. */
   private pressInside = false
@@ -72,10 +66,12 @@ export class UIKitToggleOverlay
 
   constructor(font: UIKitFont, options: UIKitToggleOverlayOptions = {}) {
     this.font = font
-    this.labels = new UIKitTextOverlay(font)
+    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = scaleToggle(entry.spec, entry.style, scale)
+      return layoutToggle(spec, style, font.metrics)
+    }, options.cssUnits ?? false)
     this.baseStyle = resolveToggleStyle(DEFAULT_TOGGLE_STYLE, options.style)
-    this.cssUnits = options.cssUnits ?? false
-    this.requestRedraw = options.requestRedraw ?? null
   }
 
   /** Replace the default style for every toggle (per-spec overrides still win). */
@@ -85,7 +81,7 @@ export class UIKitToggleOverlay
       entry.style = resolveToggleStyle(this.baseStyle, entry.spec.style)
       entry.layout = null
     }
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   /**
@@ -109,16 +105,16 @@ export class UIKitToggleOverlay
         hover: false,
       })
     }
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   /** Replace the whole toggle set. */
   setToggles(specs: readonly ToggleSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeToggle(id)
-    }
-    for (const spec of specs) this.addToggle(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => this.addToggle(spec),
+      (id) => this.removeToggle(id),
+    )
   }
 
   removeToggle(id: string): void {
@@ -126,7 +122,7 @@ export class UIKitToggleOverlay
     if (this.pressedId === id) this.pressedId = null
     if (this.hoverId === id) this.hoverId = null
     if (this.focusedId === id) this.focusedId = null
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   /** Patch one toggle's spec (label, position, style, enabled, checked, callback). */
@@ -149,7 +145,7 @@ export class UIKitToggleOverlay
     const entry = this.entries.get(id)
     if (!entry || entry.checked === checked) return
     entry.checked = checked
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   isChecked(id: string): boolean {
@@ -161,21 +157,21 @@ export class UIKitToggleOverlay
     const entry = this.entries.get(id)
     if (!entry || entry.spec.enabled === false) return
     entry.checked = !entry.checked
-    this.invalidate()
+    this.bundle.invalidate()
     entry.spec.onChange?.(entry.checked, id)
   }
 
   /** The ids of all toggles, in draw order. */
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /** A toggle's box in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
   getLayout(id: string): ToggleLayout | null {
     const entry = this.entries.get(id)
     if (!entry) return null
-    const l = this.layoutOf(entry)
-    const k = this.scale
+    const l = this.entries.layoutOf(entry)
+    const k = this.entries.scale
     if (k === 1) return l
     return {
       x: l.x / k,
@@ -193,12 +189,11 @@ export class UIKitToggleOverlay
 
   /** Give a toggle keyboard focus (Space/Enter flips it), or null to clear. */
   focus(id: string | null): void {
-    const entry = id !== null ? this.entries.get(id) : undefined
-    const next = entry && entry.spec.enabled !== false ? id : null
+    const next = this.entries.enabled(id) ? id : null
     if (next === this.focusedId) return
     this.focusedId = next
     if (next !== null) this.layer?.focus?.(this)
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   hitTest(x: number, y: number): boolean {
@@ -211,7 +206,7 @@ export class UIKitToggleOverlay
     this.pressedId = entry.spec.id
     this.pressInside = true
     this.focus(entry.spec.id)
-    this.invalidate()
+    this.bundle.invalidate()
     return true
   }
 
@@ -219,10 +214,10 @@ export class UIKitToggleOverlay
     if (this.pressedId !== null) {
       const entry = this.entries.get(this.pressedId)
       if (entry) {
-        const inside = toggleContains(this.layoutOf(entry), x, y)
+        const inside = toggleContains(this.entries.layoutOf(entry), x, y)
         if (inside !== this.pressInside) {
           this.pressInside = inside
-          this.invalidate()
+          this.bundle.invalidate()
         }
       }
       return true
@@ -234,7 +229,7 @@ export class UIKitToggleOverlay
       if (prev) prev.hover = false
       if (hit) hit.hover = true
       this.hoverId = id
-      this.invalidate()
+      this.bundle.invalidate()
     }
     return false
   }
@@ -245,10 +240,10 @@ export class UIKitToggleOverlay
     if (id === null) return false
     this.pressedId = null
     const entry = this.entries.get(id)
-    if (entry && toggleContains(this.layoutOf(entry), x, y)) {
+    if (entry && toggleContains(this.entries.layoutOf(entry), x, y)) {
       this.toggle(id)
     } else {
-      this.invalidate()
+      this.bundle.invalidate()
     }
     this.pointerMove(x, y)
     return true
@@ -257,15 +252,14 @@ export class UIKitToggleOverlay
   pointerCancel(): void {
     if (this.pressedId === null) return
     this.pressedId = null
-    this.invalidate()
+    this.bundle.invalidate()
   }
 
   /** Space or Enter flips the focused toggle. */
   keyDown(e: UIKitKeyEvent): boolean {
     if (this.focusedId === null) return false
     if (e.key !== ' ' && e.key !== 'Enter') return false
-    const entry = this.entries.get(this.focusedId)
-    if (!entry || entry.spec.enabled === false) return false
+    if (!this.entries.enabled(this.focusedId)) return false
     this.toggle(this.focusedId)
     return true
   }
@@ -275,71 +269,39 @@ export class UIKitToggleOverlay
   }
 
   bindLayer(layer: UIKitRedrawSource): void {
-    this.requestRedraw ??= () => layer.requestRedraw()
+    this.bundle.bind(layer)
     this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
-      for (const entry of this.entries.values()) entry.layout = null
-      this.geometryDirty = true
-    }
-    if (this.geometryDirty) this.rebuild()
-    this.rects.drawOverlay(frame)
-    this.lines.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
+    const rescaled = this.entries.rescale(frame.dpr)
+    this.bundle.draw(frame, () => this.geometry(), rescaled)
   }
 
   /** Release GPU resources on both backends. */
   destroy(): void {
-    this.rects.destroy()
-    this.lines.destroy()
-    this.labels.destroy()
-  }
-
-  private invalidate(): void {
-    this.geometryDirty = true
-    this.requestRedraw?.()
-  }
-
-  private scaled(entry: ToggleEntry): { spec: ToggleSpec; style: ToggleStyle } {
-    return scaleToggle(entry.spec, entry.style, this.scale)
-  }
-
-  private layoutOf(entry: ToggleEntry): ToggleLayout {
-    if (!entry.layout) {
-      const { spec, style } = this.scaled(entry)
-      entry.layout = layoutToggle(spec, style, this.font.metrics)
-    }
-    return entry.layout
+    this.bundle.destroy()
   }
 
   /** The topmost (last added) enabled toggle under a canvas point. */
   private hitEntry(x: number, y: number): ToggleEntry | null {
-    const list = [...this.entries.values()]
-    for (let i = list.length - 1; i >= 0; i--) {
-      const entry = list[i]
-      if (entry.spec.enabled === false) continue
-      if (toggleContains(this.layoutOf(entry), x, y)) return entry
-    }
-    return null
+    return this.entries.topmost(toggleContains, x, y)
   }
 
-  private rebuild(): void {
-    const rects: RectData[] = []
-    const lines: LineData[] = []
-    const text: UIKitTextItem[] = []
+  private *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = this.scaled(entry)
+      const { spec, style } = scaleToggle(
+        entry.spec,
+        entry.style,
+        this.entries.scale,
+      )
       const id = entry.spec.id
       const geo = buildToggle(
         spec,
         style,
         this.font.metrics,
-        this.layoutOf(entry),
+        this.entries.layoutOf(entry),
         {
           checked: entry.checked,
           hover: entry.hover,
@@ -348,13 +310,7 @@ export class UIKitToggleOverlay
           enabled: entry.spec.enabled !== false,
         },
       )
-      rects.push(...geo.rects)
-      lines.push(...geo.lines)
-      text.push(geo.text)
+      yield { ...geo, text: [geo.text] }
     }
-    this.rects.setRects(rects)
-    this.lines.setLines(lines)
-    this.labels.setItems(text)
-    this.geometryDirty = false
   }
 }

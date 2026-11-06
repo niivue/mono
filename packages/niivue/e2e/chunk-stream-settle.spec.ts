@@ -16,8 +16,9 @@ import { test } from './sharedPage'
 // resolves on the first frame the view itself calls settled.
 //
 // The volume is a synthetic 64^3 NIfTI built in the page, so the spec needs no
-// Git LFS data and no network. The 3D case is the one the wait exists for: a
-// screenshot after setVolumeChunkGrid must show every brick.
+// Git LFS data and no network. The 3D case the wait exists for (a screenshot
+// after setVolumeChunkGrid shows every brick) is the `chunk-grid-3d` scene of
+// render-updates.spec.ts.
 
 test.use({ launchOptions: webgpuLaunchOptions })
 
@@ -169,13 +170,14 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       try {
         ${mount(backend, 'AXIAL')}
         await nv.setVolumeChunkGrid(0, [2, 2, 4])
+        // Let any frame queued before the stub run out, so none is drawn
+        // after it.
+        while (nv.framePending) await new Promise((r) => requestAnimationFrame(r))
         // A hidden tab: the page says so and no frame is drawn. Without the
         // hidden check the wait sits out its whole timeout.
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
         const raf = window.requestAnimationFrame
         window.requestAnimationFrame = () => 0
-        // Let a frame queued before the stub run out, so none is drawn after.
-        await new Promise((r) => setTimeout(r, 300))
         const settleMs = await timed(() => nv.whenChunkStreamSettles(${HIDDEN_TIMEOUT_MS}))
         window.requestAnimationFrame = raf
         delete document.hidden
@@ -196,49 +198,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       return
     }
     expect(r.settleMs).toBeLessThan(HIDDEN_TIMEOUT_MS / 2)
-  })
-
-  test(`setVolumeChunkGrid resolves with every 3D brick resident (${backend})`, async ({
-    page,
-  }) => {
-    test.setTimeout(180_000)
-    const result = await page.evaluate(`(async () => {
-      try {
-        ${mount(backend, 'RENDER')}
-        const gridMs = await timed(() => nv.setVolumeChunkGrid(0, [2, 2, 2]))
-        return { gridMs, afterGrid: counts() }
-      } catch (e) {
-        const m = String(e && e.message ? e.message : e)
-        if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
-          return { skip: 'GPU unavailable: ' + m }
-        }
-        throw e
-      }
-    })()`)
-
-    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
-    const r = result as any
-    if (r.skip) {
-      test.skip(true, r.skip)
-      return
-    }
-    expect(r.afterGrid).toEqual({
-      resident: 8,
-      pending: 0,
-      inFlight: 0,
-      total: 8,
-    })
-    expect(r.gridMs).toBeLessThan(SETTLE_BUDGET_MS)
-    // One probe inside each quadrant of the ball: every one is drawn.
-    const px = await Promise.all(
-      [
-        [108, 108],
-        [148, 108],
-        [108, 148],
-        [148, 148],
-      ].map(([x, y]) => probe(page, x, y)),
-    )
-    for (const [red] of px) expect(red).toBeGreaterThan(40)
   })
 
   test(`setVolumeChunkGrid waits for the first brick to fade in over the coarse floor (${backend})`, async ({

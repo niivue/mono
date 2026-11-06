@@ -98,24 +98,47 @@ Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
 canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 
-**Reference images** (`e2e/render-reference.spec.ts`): each scene in
-`e2e/renderScenes.ts` draws tiny synthetic phantoms (built in the page, no
-dev-images) on a fixed 160 px camera under WebGL2 and WebGPU, and must match
-`e2e/__snapshots__/render-reference.spec.ts/<scene>-<backend>.png`. One set
-serves every platform: the same PNG has to pass on Metal
+**Reference images** (`e2e/render-*.spec.ts`, harness `e2e/renderHarness.ts`):
+each scene draws tiny synthetic phantoms (the `Phantoms` built in the page by
+the harness, no dev-images) on a fixed camera, by default a 160 px canvas,
+under WebGL2 and WebGPU, and every capture must match
+`e2e/__snapshots__/<spec>/<capture>-<backend>.png`. One set serves every
+platform: the same PNG has to pass on Metal
 (`PLAYWRIGHT_CHROMIUM_CHANNEL=chromium`) and SwiftShader (the default shell, as on
-CI's Ubuntu job, which runs this spec too). The single tolerance is
+CI's Ubuntu job, which runs these specs too). The single tolerance is
 `expect.toMatchSnapshot` in `playwright.config.ts`; do not loosen it for one
-scene, make the scene deterministic instead (no text unless it passes, no
-cinematic, no antialiasing). To add a scene, append to `SCENES`: `setup` is sent
-to the page as source, so it may use only its `{ nv, lib, p }` argument (add new
-phantoms to `renderScene` in the spec). To create or update references:
+scene, make the scene deterministic instead (no antialiasing; text, thin lines
+and cinematic only where they pass on both renderers; cinematic needs a fixed
+`maxFrames`, which the harness waits for). Specs group scenes by feature
+(`render-reference` the major render paths in `renderScenes.ts`, `render-mesh`,
+`render-volume`, `render-colormaps`, `render-updates`, `render-cinematic`), so
+they spread across workers.
+
+A scene is `{ name, options?, size?, setup, sameAs?, steps? }`. `setup` and
+each step's `run` are sent to the page as source, so they may use only their
+`SceneContext` argument: `nv`, `lib` (enums, `chunkVolumeGrid`), `p`
+(phantoms; add new ones in the harness), `view()` (the view internals a scene
+may read, typed `SceneView`), `check(ok, message)` (fails the test), `settle()`
+(waits until updates, chunk streams, brick fades and cinematic refinement have
+drawn) and `canvas`. Nothing is awaited with a sleep. The harness captures a
+settled frame after `setup` (`<scene>`) and after each step
+(`<scene>--<step>`), so a **multi-step scene** shows behaviour: load, edit,
+capture, edit again. `check` pins how a result was reached (a GPU entry kept,
+a pass skipped, a warning logged), next to the change that should cause it.
+`sameAs: '<scene>[--<step>]'` compares a capture with another capture's
+reference in the same spec instead of its own: a restored setting, or a second
+code path (chunked vs whole, deferred vs eager) that must draw the same
+picture. State one step hands the next goes on `globalThis` (the shared page's
+reset deletes it). To create or update references:
 
 ```bash
-PLAYWRIGHT_CHROMIUM_CHANNEL=chromium bunx playwright test e2e/render-reference.spec.ts --update-snapshots
-bunx playwright test e2e/render-reference.spec.ts   # then confirm on SwiftShader
+PLAYWRIGHT_CHROMIUM_CHANNEL=chromium bunx playwright test e2e/render-volume.spec.ts --update-snapshots
+bunx playwright test e2e/render-volume.spec.ts   # then confirm on SwiftShader
 ```
 
+An update writes only the references that do not match, so when two captures
+share one through `sameAs` and disagree, the second overwrites the first and
+the next run fails: that is the equivalence failing, not a stale reference.
 Look at every changed PNG before committing it: an update accepts whatever was drawn.
 
 ### What's tested
@@ -926,7 +949,7 @@ other overlays get `step(0.00001, a)`. The overlay ray-march takes the
 background's step-size correction (`volumeIsOverlayOpacityCorrected`, default
 on), so 3D density is independent of `sampleRate`; the drawing and PAQD passes
 are not corrected, and a `chunkOverlayOf` overlay (marched by the background
-pass) is always corrected. `e2e/overlay-opacity-correction.spec.ts` pins it.
+pass) is always corrected. The `overlay-density` scene of `e2e/render-volume.spec.ts` pins it.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
 `calMin` 0: the alpha weight is `(f-calMin)/(calMax-calMin)`, so a nonzero
 `calMin` breaks alpha == fraction and ADDITIVE no longer sums to 1.
@@ -998,7 +1021,7 @@ in step.
   `MESH_REDRAW_OPTIONS` (`opacity`, `visible`, `name`) just calls `drawScene()`.
   `setVolumeAffine`'s fallback rebuild uses meshes `'changed'`; view creation
   (`_rebuildViewResources`) and context restore use the full rebuild.
-- **e2e:** `e2e/scoped-mesh-rebuild.spec.ts` asserts, on both backends, which
+- **e2e:** the `mesh-edits` scene of `e2e/render-mesh.spec.ts` asserts, on both backends, which
   meshes each setter re-uploads (by `view._getMeshGpu(mesh)` identity) and that
   the redraw-only and recolour paths reach the screen.
 
@@ -1195,8 +1218,7 @@ Data: `mesh.indices` in the model keeps file order; the CPU keeps only a
 permutation (4 B/tri) plus bounds. Both backends upload a separate
 cluster-ordered index copy (12 B/tri) and never rewrite the mesh's own index
 buffer: translucent 3D blending depends on triangle order (an audit caught
-WebGPU rewriting it in place; pinned by `e2e/crosscut2.spec.ts` 'leaves a
-translucent 3D view unchanged'). The copy is padded to whole clusters with
+WebGPU rewriting it in place; pinned by the `crosscut2-translucent` scene of `e2e/render-mesh.spec.ts`). The copy is padded to whole clusters with
 degenerate triangles, so shaders need no bounds check. `meshClusters` cache:
 new `indices`/`positions` arrays rebuild; a `_dataVersion` change rebuilds only
 if an FNV-1a hash of the indices changed (color/layer edits bump it too);
@@ -1233,7 +1255,7 @@ unculled -> 2.4 ms culled (old crosscut 4.4); WebGPU 19.3 -> 1.9 ms (old
 crosscut 4.7). Memory, only for meshes drawn with crosscut2: WebGPU +12 B/tri
 index copy; WebGL2 vertex copy 28 B/vertex + index copy 12 B/tri.
 
-Tests: `e2e/crosscut2.spec.ts` (oblique stability, edge-on surface,
+Tests: the `crosscut2-*` scenes of `e2e/render-mesh.spec.ts` (oblique stability, edge-on surface,
 in-place index edit + `updateGLVolume`, translucent 3D unchanged),
 `src/loadDocument.clamp.test.ts` (width clamp in constructor and document),
 `src/mesh/triangleClusters.test.ts`, `src/NVConstants.test.ts`
@@ -1243,9 +1265,11 @@ Known follow-ups:
 - WebGPU per-tile mesh uniform offset `i * 256` has no `MAX_TILES` (128)
   guard: a mosaic with >128 tiles (>64 with x-ray) fails `writeBuffer`
   validation for every mesh shader. Pre-existing; needs an issue.
-- `e2e/live-data-updates.spec.ts` "isDirty edits of a chunked volume re-stream
-  its bricks (webgpu)" flakes under parallel Playwright workers (~2/6 on main
-  too; passes serially). Needs an issue.
+- The old `e2e/live-data-updates.spec.ts` "isDirty edits of a chunked volume
+  re-stream its bricks (webgpu)" flaked under parallel workers: it counted
+  pixels until two frames agreed. Its successor, the `chunked-dirty` scene of
+  `e2e/render-updates.spec.ts`, waits for `whenChunkStreamSettles`; watch it
+  for the same flake.
 - Optional: bundle `drawWithGpu`'s per-tile crosscut args into one object next
   time a parameter is added.
 
@@ -1263,7 +1287,7 @@ is checked against `getAvailableShaders()`), the view layer falls back to
 `gl/meshShader.ts`) so the single per-mesh VAO is safe to draw with any mesh
 program (slice override, x-ray, depth pick) by construction.
 
-**Mesh slab on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): a finite positive value draws only mesh within that many mm of the DISPLAYED voxel plane (`tile.planeNormal`/`planePoint`, oblique when the volume is; a world plane through the crosshair without a volume), over the slice. 0 or Infinity draws the tile MVP: everything in front of the slice, the slice hiding the rest. `NVSliceLayout.meshSlabMvp` builds it: `NVTransforms.slabMvp` keeps the tile MVP's x/y rows and replaces its depth row with signed distance from the plane, so near/far clip at ±T along the plane normal (one affine matrix, no shader change). Both views draw it into the depth range [0, `SLAB_DEPTH_MAX`] (`gl.depthRange` / `setViewport`): clipping precedes that mapping, and the slice's own depth is >= 0.16, so the slab lands over it while meshes still occlude each other; the mesh x-ray pass draws in the same range. Issue #451. Demo `examples/tract.shear.html`; tests `e2e/mesh-slab.spec.ts`, `src/math/NVTransforms.test.ts` (`slabMvp`).
+**Mesh slab on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): a finite positive value draws only mesh within that many mm of the DISPLAYED voxel plane (`tile.planeNormal`/`planePoint`, oblique when the volume is; a world plane through the crosshair without a volume), over the slice. 0 or Infinity draws the tile MVP: everything in front of the slice, the slice hiding the rest. `NVSliceLayout.meshSlabMvp` builds it: `NVTransforms.slabMvp` keeps the tile MVP's x/y rows and replaces its depth row with signed distance from the plane, so near/far clip at ±T along the plane normal (one affine matrix, no shader change). Both views draw it into the depth range [0, `SLAB_DEPTH_MAX`] (`gl.depthRange` / `setViewport`): clipping precedes that mapping, and the slice's own depth is >= 0.16, so the slab lands over it while meshes still occlude each other; the mesh x-ray pass draws in the same range. Issue #451. Demo `examples/tract.shear.html`; tests: the `mesh-slab` and `mesh-xray` scenes of `e2e/render-mesh.spec.ts`, `src/math/NVTransforms.test.ts` (`slabMvp`).
 
 ## Signal data class
 

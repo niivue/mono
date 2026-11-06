@@ -5,7 +5,7 @@ import { devImageUrl, documentFile, niftiBytes } from '@/testing/headless'
 // One colormap per volume (issue #69): a label colormap (one with a `labels`
 // array) set through `setVolume({ colormap })` colours each integer ID;
 // documents name colormaps and embed runtime ones. What the labels look like
-// on screen is pinned by e2e/unified-colormaps.spec.ts.
+// on screen is pinned by the label-* scenes of e2e/render-colormaps.spec.ts.
 
 const [NX, NY, NZ] = [32, 32, 4]
 

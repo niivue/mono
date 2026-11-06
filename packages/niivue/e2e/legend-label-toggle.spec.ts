@@ -1,50 +1,17 @@
-import { expect, type Page } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { webgpuLaunchOptions } from './launchOptions'
 import { test } from './sharedPage'
 
-// Per-label visibility: a volume's hiddenLabels draw transparent in 2D and 3D
-// on both backends, a legend colour-box click toggles one when
-// isLegendToggleEnabled is on (a name click still moves the crosshair), and
-// documents keep the hidden set.
+// Per-label visibility in the legend: a colour-box click toggles a label when
+// isLegendToggleEnabled is on (a name click still moves the crosshair),
+// documents keep the hidden set, and a hidden label's outline has no seams.
+// That hidden labels stop rendering is the `hidden-labels` scene of
+// render-volume.spec.ts.
 
 test.use({ launchOptions: webgpuLaunchOptions })
 test.describe.configure({ timeout: 180_000 })
 
 const SIZE = 256
-
-/**
- * Colourful pixels on a grid over the canvas: the anatomy is gray, so only
- * atlas colour counts. The screenshot is decoded by the page's own 2D canvas.
- */
-async function colourful(page: Page): Promise<number> {
-  const png = await page.screenshot({
-    clip: { x: 0, y: 0, width: SIZE, height: SIZE },
-  })
-  return page.evaluate(async (b64) => {
-    const blob = await (await fetch(`data:image/png;base64,${b64}`)).blob()
-    const bmp = await createImageBitmap(blob)
-    const c = new OffscreenCanvas(bmp.width, bmp.height)
-    const ctx = c.getContext('2d') as OffscreenCanvasRenderingContext2D
-    ctx.drawImage(bmp, 0, 0)
-    const { data, width, height } = ctx.getImageData(
-      0,
-      0,
-      bmp.width,
-      bmp.height,
-    )
-    let n = 0
-    for (let y = 4; y < height; y += 8) {
-      for (let x = 4; x < width; x += 8) {
-        const o = (y * width + x) * 4
-        const r = data[o]
-        const g = data[o + 1]
-        const b = data[o + 2]
-        if (Math.max(r, g, b) - Math.min(r, g, b) > 30) n++
-      }
-    }
-    return n
-  }, png.toString('base64'))
-}
 
 const mount = (backend: string): string => `(async () => {
   if ('${backend}' === 'webgpu') {
@@ -69,48 +36,40 @@ const mount = (backend: string): string => `(async () => {
     crosshairWidth: 0,
   })
   await nv.attachToCanvas(c)
-  await nv.addColormapFromUrl('/volumes/aal.json')
+  // A 32^3 grey ellipsoid and an atlas of its octants, labelled 1..8.
+  const { createNiftiArray } = await import('/src/volume/utils.ts')
+  const N = 32
+  const grid = (f) => {
+    const img = new Uint8Array(N * N * N)
+    for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
+      img[x + N * (y + N * z)] = f(x, y, z)
+    return img
+  }
+  const inside = (x, y, z) =>
+    ((x - 15.5) / 14) ** 2 + ((y - 15.5) / 12) ** 2 + ((z - 15.5) / 10) ** 2 <= 1
+  const affine = [1, 0, 0, -16, 0, 1, 0, -16, 0, 0, 1, -16, 0, 0, 0, 1]
+  const nii = (name, img) =>
+    new File([createNiftiArray([N, N, N], [1, 1, 1], affine, 2, img)], name)
+  nv.addColormap('octants', {
+    R: [0, 230, 0, 0, 230, 230, 0, 255, 128],
+    G: [0, 25, 200, 0, 230, 0, 230, 128, 128],
+    B: [0, 75, 0, 230, 0, 230, 230, 0, 255],
+    I: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    labels: ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'],
+  })
   await nv.loadVolumes([
-    { url: '/volumes/mni152.nii.gz', calMin: 30, calMax: 80 },
-    { url: '/volumes/aal.nii.gz', colormap: 'aal' },
+    { url: nii('anatomy.nii', grid((x, y, z) => (inside(x, y, z) ? 100 : 0))) },
+    {
+      url: nii('octants.nii', grid((x, y, z) =>
+        inside(x, y, z) ? 1 + (x >= 16) + 2 * (y >= 16) + 4 * (z >= 16) : 0)),
+      colormap: 'octants',
+    },
   ])
   await nextFrame()
   window.__nv = nv
   window.__frame = async () => { await nextFrame(); await nextFrame() }
   return { ok: true, backend: nv.backend }
 })()`
-
-for (const backend of ['webgl2', 'webgpu'] as const) {
-  test(`hidden labels stop rendering in 2D and 3D (${backend})`, async ({
-    page,
-  }) => {
-    const ready = await page.evaluate(mount(backend))
-    test.skip(!ready.ok, `backend unavailable: ${ready.why}`)
-    expect(ready.backend).toBe(backend)
-
-    const show = async (hide: boolean, sliceType: number) => {
-      await page.evaluate(
-        `(async () => {
-          const nv = window.__nv
-          nv.sliceType = ${sliceType}
-          const lut = nv.volumes[1].colormapLabel
-          const all = Array.from({ length: lut.lut.length / 4 }, (_, i) => (lut.min ?? 0) + i)
-          await nv.setVolume(1, { hiddenLabels: ${hide} ? all : [] })
-          await window.__frame()
-        })()`,
-      )
-      return colourful(page)
-    }
-    for (const sliceType of [0, 4]) {
-      const shown = await show(false, sliceType)
-      const hidden = await show(true, sliceType)
-      const again = await show(false, sliceType)
-      expect(shown, `sliceType ${sliceType}`).toBeGreaterThan(20)
-      expect(hidden, `sliceType ${sliceType}`).toBe(0)
-      expect(again, `sliceType ${sliceType}`).toBe(shown)
-    }
-  })
-}
 
 test('legend box click toggles a label, name click moves the crosshair, documents keep it', async ({
   page,

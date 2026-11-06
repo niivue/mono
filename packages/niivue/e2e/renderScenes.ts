@@ -1,53 +1,9 @@
-import type NiiVue from '../src/NVControl'
+import type { Scene } from './renderHarness'
 
-// Scenes for the reference-image render tier (render-reference.spec.ts).
-//
-// Each scene renders tiny synthetic data (the Phantoms below, built in the
-// page by renderScene in the spec) on a fixed camera, so a regression in a major render path changes
-// the image. Every scene runs on WebGL2 and WebGPU, against one reference PNG
-// per backend that is shared by every platform (Metal, SwiftShader).
-//
-// `setup` runs IN THE PAGE: it is sent as source text, so it may only use its
-// arguments (no closures over this module). The instance it gets is already
-// attached to a SIZE x SIZE canvas with the deterministic base options in
-// render-reference.spec.ts; `setup` sets the view and loads data.
-
-/** Module exports a scene needs (the subset of `/src/index.ts` it reads). */
-export type SceneLib = {
-  SLICE_TYPE: Record<
-    'AXIAL' | 'CORONAL' | 'SAGITTAL' | 'MULTIPLANAR' | 'RENDER',
-    number
-  >
-  SHOW_RENDER: Record<'NEVER' | 'ALWAYS' | 'AUTO', number>
-  MULTIPLANAR_TYPE: Record<'AUTO' | 'COLUMN' | 'GRID' | 'ROW', number>
-}
-
-/** Synthetic data, built in the page. The 32^3 volumes share one grid. */
-export type Phantoms = {
-  /**
-   * 32^3 uint8, 1 mm: an ellipsoid with an x-gradient (40..164), a bright
-   * sphere (220) off-centre and an anisotropic box (255) to the left, so
-   * every axis and flip shows.
-   */
-  anatomy: () => File
-  /** Same grid: the ellipsoid split into octants labelled 1..8 (uint8). */
-  labels: () => File
-  /** 16^3 float32 at 2 mm, same field of view: a +5 and a -5 Gaussian blob. */
-  stats: () => File
-  /** Icosphere (radius 12 mm, 162 vertices) as OBJ text. */
-  sphereMesh: () => File
-  /** Per-vertex scalar layer for `sphereMesh`: each vertex's z (-12..12). */
-  sphereLayer: () => File
-  /** A drawing on the `anatomy` grid: a 1-box, a 2-disc and a 3-bar. */
-  drawingBitmap: () => Uint8Array
-}
-
-export type SceneContext = { nv: NiiVue; lib: SceneLib; p: Phantoms }
-
-export type Scene = {
-  name: string
-  setup: (ctx: SceneContext) => Promise<void>
-}
+// The basic scenes of the reference-image render tier (render-reference.spec.ts):
+// one per major render path, each on tiny synthetic data (the Phantoms in
+// renderHarness.ts) on a fixed camera. See renderHarness.ts for how a scene
+// runs; the other render-*.spec.ts files hold scenes for narrower features.
 
 export const SCENES: Scene[] = [
   {

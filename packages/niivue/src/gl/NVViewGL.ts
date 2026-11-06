@@ -1308,7 +1308,7 @@ export default class NVGlview {
               isSlice && mGpu.sliceShaderType
                 ? mGpu.sliceShaderType
                 : mGpu.shaderType
-            mesh.drawXRay(
+            mesh.drawWithGpu(
               gl,
               m,
               mGpu,
@@ -1318,6 +1318,7 @@ export default class NVGlview {
               shaderType,
               ccMM,
               ccPlanes,
+              true,
             )
           }
           if (slabMvp) gl.depthRange(0, 1)

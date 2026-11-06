@@ -898,7 +898,6 @@ export interface NiiVueHost {
   controls?: HostedControls
   /** The data the page can load by id; a page without one declines the data tools. */
   data?: DataPalette
-  /** The OME-Zarr loaders, `@niivue/nv-ext-tile/zarr` itself; a page without them declines `load_ome_zarr`. */
   /** `@niivue/nv-ext-tile/zarr`, typically `() => import('@niivue/nv-ext-tile/zarr')`; a page without it declines `load_ome_zarr`. */
   omeZarr?: () => Promise<OmeZarrLoaders>
 }

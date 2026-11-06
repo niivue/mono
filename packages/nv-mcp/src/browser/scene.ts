@@ -527,13 +527,15 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     },
 
     async load_ome_zarr(params) {
-      const url = text(params, 'url')
-      if (!url) throw new Error('load_ome_zarr needs a url.')
+      const raw = text(params, 'url')
+      if (!raw) throw new Error('load_ome_zarr needs a url.')
       const zarr = await host.omeZarr?.()
       if (!zarr)
         throw new Error(
           'This page cannot open OME-Zarr stores: it did not provide the nv-ext-tile loaders.',
         )
+      // zarrita needs an absolute URL; load_volume accepts relative ones.
+      const url = new URL(raw, globalThis.location?.href).href
       const stream = flag(params, 'stream') ?? false
       const level = integer(params, 'level')
       const channel = integer(params, 'channel')

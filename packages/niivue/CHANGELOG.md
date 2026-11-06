@@ -1,3 +1,23 @@
+## 1.0.0-rc.99 (2026-11-06)
+
+### Features
+
+- **niivue:** report when a slide level exceeds the tile-cache budget ([5c56ea7f](https://github.com/niivue/mono/commit/5c56ea7f))
+- **niivue,nv-ohif:** play JPEG 2000 DICOM-WSI through dcm2niix ([f64aca57](https://github.com/niivue/mono/commit/f64aca57))
+
+### Fixes
+
+- **niivue,nv-ohif:** show DICOM-WSI with row 0 at the top ([48d6cf2e](https://github.com/niivue/mono/commit/48d6cf2e))
+- **niivue:** back off before re-requesting a failed slide tile ([121b8393](https://github.com/niivue/mono/commit/121b8393))
+- **niivue:** crop padded slide frames to their tile ([9ef1d363](https://github.com/niivue/mono/commit/9ef1d363))
+- **niivue:** budget slide levels by full decoded tiles ([35e30ca0](https://github.com/niivue/mono/commit/35e30ca0))
+- **niivue:** show a coarser slide level when the chosen one overflows the tile cache ([9fa4143e](https://github.com/niivue/mono/commit/9fa4143e))
+- **niivue,nv-ohif:** audit fixes for JPEG 2000 WSI playback ([5480bf7c](https://github.com/niivue/mono/commit/5480bf7c))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.98 (2026-11-06)
 
 ### Fixes

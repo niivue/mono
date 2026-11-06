@@ -1,3 +1,23 @@
+## 1.0.0-rc.95 (2026-11-06)
+
+### Features
+
+- **niivue,nv-ohif:** play JPEG 2000 DICOM-WSI through dcm2niix ([f64aca57](https://github.com/niivue/mono/commit/f64aca57))
+
+### Fixes
+
+- **niivue,nv-ohif:** show DICOM-WSI with row 0 at the top ([48d6cf2e](https://github.com/niivue/mono/commit/48d6cf2e))
+- **niivue,nv-ohif:** audit fixes for JPEG 2000 WSI playback ([5480bf7c](https://github.com/niivue/mono/commit/5480bf7c))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.99
+- Updated uikit to 1.0.0-rc.94
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.94 (2026-11-06)
 
 ### Updated Dependencies

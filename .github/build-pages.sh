@@ -29,6 +29,8 @@ APPS=(
   dandi-demo
 )
 
+STREAMING_ASSET_BASE="https://raw.githubusercontent.com/niivue/niivue-demo-images-lfs/main/streaming/"
+
 # 1. Build the niivue library (required by all apps)
 echo "==> Building niivue library"
 bunx nx build niivue
@@ -36,7 +38,10 @@ bunx nx build niivue
 # 2. Build demo apps (each gets its own sub-path)
 for app in "${APPS[@]}"; do
   echo "==> Building $app"
-  VITE_BASE="${BASE_PATH}${app}/" VITE_IMAGES_BASE="$BASE_PATH" bunx nx build "$app"
+  VITE_BASE="${BASE_PATH}${app}/" VITE_IMAGES_BASE="$BASE_PATH" \
+    VITE_STREAMING_ASSET_BASE="$STREAMING_ASSET_BASE" \
+    VITE_OMEZARR_ASSET_BASE="https://ome-zarr-scivis.s3.amazonaws.com/v0.5/96x2/" \
+    bunx nx build "$app"
 done
 
 # 3. Build the docs site while the library dist still exists (step 4 deletes it).
@@ -53,9 +58,8 @@ rm -rf packages/niivue/dist
   && bun run codegen:assets \
   && bun run gen-fixtures \
   && VITE_BASE="$BASE_PATH" \
-    VITE_STREAMING_ASSET_BASE="https://raw.githubusercontent.com/niivue/niivue-demo-images-lfs/main/streaming/" \
+    VITE_STREAMING_ASSET_BASE="$STREAMING_ASSET_BASE" \
     VITE_STREAMING_MEDIA_BASE="https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/" \
-    VITE_OMEZARR_ASSET_BASE="https://ome-zarr-scivis.s3.amazonaws.com/v0.5/96x2/" \
     bunx --bun vite build --config vite.config.examples.ts --mode production)
 
 # 5. Assemble site

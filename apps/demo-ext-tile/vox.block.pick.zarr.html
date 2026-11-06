@@ -144,7 +144,7 @@
     </header>
     <div id="hint"></div>
     <div id="help">
-      Same idea as <a href="./vox.block.pick.html" target="_blank" rel="noopener noreferrer">the NIfTI block picker</a>, but the volume is <b>streamed</b>: a 270 Gvoxel HiP-CT human heart read straight from a public OME-Zarr store.
+      Same idea as <a href="../examples/vox.block.pick.html" target="_blank" rel="noopener noreferrer">the NIfTI block picker</a>, but the volume is <b>streamed</b>: a 270 Gvoxel HiP-CT human heart read straight from a public OME-Zarr store.
       &nbsp;|&nbsp;
       A streamed volume has <b>no CPU voxels to copy</b> (they live in GPU brick textures), so the right pane does not extract the block. It opens a <b>second streamed volume over the same store, cropped to the picked brick</b>, and lets the octree pull that box down to level 0 near its crosshair.
       &nbsp;|&nbsp;
@@ -173,6 +173,6 @@
       </section>
     </main>
     <footer id="location">NiiVue::Pick an exploded block (OME-Zarr)&nbsp;</footer>
-    <script type="module" src="vox.block.pick.zarr.js"></script>
+    <script type="module" src="./src/vox.block.pick.zarr.js"></script>
   </body>
 </html>

@@ -45,7 +45,7 @@
   "sideEffects": false,
   "scripts": {
     "codegen:assets": "node scripts/generate-assets.js",
-    "gen-fixtures": "bun scripts/generate-range-poc-fixture.ts && bun scripts/generate-tile-range-poc-fixture.ts",
+    "gen-fixtures": "bun scripts/generate-tile-range-poc-fixture.ts",
     "ensure-samples": "bun scripts/ensure-samples.ts",
     "dev": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite --port 5273 --strictPort --open /examples/index.html",
     "dev:perf": "bun run codegen:assets && bunx --bun vite --port 5273 --strictPort --open /examples/benchmark.html",

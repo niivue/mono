@@ -1,9 +1,9 @@
-import * as zarr from 'zarrita'
 import NiiVue, {
   ByteLruCache,
   omeZarrChunkedSource,
   openOmeZarr,
-} from '../src/index.ts'
+} from '@niivue/niivue'
+import * as zarr from 'zarrita'
 
 // Pick one brick out of an exploded STREAMED volume and open that brick, on its
 // own, beside the whole heart.

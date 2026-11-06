@@ -11,7 +11,6 @@
 //   - omezarr:   full upstream OME-Zarr stores read with zarrita, in either
 //                0.5 (zarr v3) or 0.4 (zarr v2) form -- see fetchStoreRoot
 
-import * as zarr from 'zarrita'
 import NiiVue, {
   ByteLruCache,
   chunkVolumeGrid,
@@ -20,7 +19,8 @@ import NiiVue, {
   openOmeZarr,
   parseOmeZarrAttrs,
   SLICE_TYPE,
-} from '../src/index.ts'
+} from '@niivue/niivue'
+import * as zarr from 'zarrita'
 import { urlParamSelect } from './urlParamSelect.js'
 
 // Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,

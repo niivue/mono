@@ -40,6 +40,9 @@ function computeScalarMeta(arr: Float32Array): TractScalarMeta {
 
 /** Populate dpvMeta/dpsMeta from all scalar arrays in tractData. */
 export function computeAllScalarMeta(data: NVTractData): void {
+  // Scalar names come from the file, so `__proto__` must stay an own key.
+  data.dpvMeta = Object.assign(Object.create(null), data.dpvMeta)
+  data.dpsMeta = Object.assign(Object.create(null), data.dpsMeta)
   for (const [name, arr] of Object.entries(data.dpv)) {
     data.dpvMeta[name] = computeScalarMeta(arr)
   }

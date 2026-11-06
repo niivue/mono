@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { computeAllScalarMeta } from '../index'
 import { read } from './trk'
 
 // A one-streamline, one-point TRK with one scalar and one property name.
@@ -27,5 +28,12 @@ describe('TRK reader', () => {
     expect(Object.keys(t.dps)).toEqual(['constructor'])
     expect(Object.values(t.dpv).map((a) => Array.from(a))).toEqual([[4]])
     expect(Object.values(t.dps).map((a) => Array.from(a))).toEqual([[5]])
+  })
+
+  test('scalar metadata keeps prototype-named scalars', async () => {
+    const t = await read(trk('__proto__', 'constructor'))
+    computeAllScalarMeta(t)
+    expect(Object.keys(t.dpvMeta)).toEqual(['__proto__'])
+    expect(Object.keys(t.dpsMeta)).toEqual(['constructor'])
   })
 })

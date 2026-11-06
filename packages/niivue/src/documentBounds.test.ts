@@ -148,14 +148,14 @@ describe('assertCborFitsInput', () => {
       ...head,
       ...new Array(16).fill(0),
     ])
-    expect(() => assertCborFitsInput(bytes)).toThrow(/unsupported CBOR tag/)
+    expect(() => assertCborFitsInput(bytes)).toThrow(/unsupported tag/)
   })
 
   test('refuses packed-value prefixes, which copy arrays inside decode', () => {
     const bytes = new Uint8Array([
       0xd8, 0x33, 0x84, 0x81, 0, 0x82, 0, 0x80, 0x80, 0x80,
     ])
-    expect(() => assertCborFitsInput(bytes)).toThrow(/unsupported CBOR tag/)
+    expect(() => assertCborFitsInput(bytes)).toThrow(/unsupported tag/)
   })
 })
 

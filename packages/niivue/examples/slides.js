@@ -3,8 +3,9 @@
 // NVSlide owns the manifest/levels/tiles model, the viewport (pan/zoom), HTTP
 // Range-request tile streaming, the ImageBitmap cache and request stats. This
 // demo just wires DOM controls to it and draws it with a backend-selected
-// renderer: SlideRenderer (WebGL2) or SlideRendererGPU (WebGPU). Add
-// `?backend=webgpu` to the URL to use the WebGPU renderer.
+// renderer: SlideRenderer (WebGL2) or SlideRendererGPU (WebGPU). WebGPU by
+// default; add `?backend=webgl2` for WebGL2, `?aa=on|off` to override the
+// anti-aliasing default.
 //
 // The synthetic pyramid (public/tile-range-poc/) streams one tile's worth of
 // bytes at a time over HTTP 206 range requests, so a multi-gigabyte slide never
@@ -70,6 +71,14 @@ const MAX_CACHE_BYTES = 96 * 1024 * 1024
 const TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
 const RANGE_LOG_LENGTH = 24
 
+// WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
+// on, so it defaults off there and on elsewhere.
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+const aaParam = new URLSearchParams(location.search).get('aa')
+const isAntiAlias = aaParam ? aaParam === 'on' : !isWebKit
+
 function el(id) {
   const node = document.getElementById(id)
   if (!node) throw new Error(`Missing #${id}`)
@@ -78,6 +87,8 @@ function el(id) {
 
 const els = {
   backendSelect: el('backendSelect'),
+  aaSelect: el('aaSelect'),
+  slideFilter: el('slideFilter'),
   source: el('source'),
   levelMode: el('levelMode'),
   zoomOut: el('zoomOut'),
@@ -100,6 +111,7 @@ const els = {
 
 // Wired before anything loads, so the menu works even if loading fails (#488).
 urlParamSelect(els.backendSelect, 'backend', backendFromUrl())
+urlParamSelect(els.aaSelect, 'aa', isAntiAlias ? 'on' : 'off')
 
 let view = null
 let slide = null
@@ -131,7 +143,7 @@ const DRAW_OPACITY = 0.85
 
 function backendFromUrl() {
   const raw = new URLSearchParams(window.location.search).get('backend')
-  return raw === 'webgpu' ? 'webgpu' : 'webgl2'
+  return raw === 'webgl2' ? 'webgl2' : 'webgpu'
 }
 
 function resolveDemoUrl(path) {
@@ -230,11 +242,16 @@ function resizeCanvas(screen) {
 
 async function createView() {
   if (backendFromUrl() === 'webgpu' && 'gpu' in navigator) {
-    const renderer = await SlideRendererGPU.create(els.canvas)
+    // create() resolves null without an adapter but rejects if the device request fails.
+    const renderer = await SlideRendererGPU.create(els.canvas).catch(() => null)
     if (renderer) return { kind: 'gpu', renderer }
     console.warn('WebGPU unavailable; falling back to WebGL2')
   }
-  const gl = els.canvas.getContext('webgl2', { alpha: false, antialias: false })
+  // SlideRendererGPU has no MSAA (sampleCount 1), so AA reaches WebGL2 only.
+  const gl = els.canvas.getContext('webgl2', {
+    alpha: false,
+    antialias: isAntiAlias,
+  })
   if (!gl) throw new Error('WebGL2 is not available')
   const renderer = new SlideRenderer()
   renderer.init(gl)
@@ -892,6 +909,13 @@ async function main() {
   makeDraggable(els.hud)
   view = await createView()
   els.backendSelect.value = view.kind === 'gpu' ? 'webgpu' : 'webgl2'
+  els.aaSelect.disabled = view.kind === 'gpu' // SlideRendererGPU has no MSAA
+  const applySlideFilter = () => {
+    view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'
+    requestRender()
+  }
+  applySlideFilter()
+  els.slideFilter.addEventListener('change', applySlideFilter)
   await loadSlide()
 }
 

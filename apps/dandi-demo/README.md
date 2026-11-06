@@ -11,7 +11,10 @@ bunx nx build dandi-demo
 
 Options:
 
-- `?backend=webgl2` runs both panes on WebGL2 (WebGPU is the default).
+- `?backend=webgl2` runs both panes on WebGL2 (WebGPU is the default). The
+  backend is resolved (WebGPU adapter probe) before the streaming budget is
+  chosen, so a fallback to WebGL2 gets WebGL2's budget; the HUD names the
+  running backend.
 - `?aa=on|off` sets anti-aliasing for the volume pane (default on, but off in
   Safari and other WebKit browsers, whose WebGPU misrenders with it).
 - On the dev server the menu also offers two synthetic stores
@@ -23,6 +26,8 @@ Options:
   omits them and opens on the OCT.
 - The `Slide` menu beside Backend switches the deep-zoom tiles between linear
   and nearest sampling (`isNearestInterpolation` on the slide renderers).
+- `HUD: on|off` (or the `I` key) hides the overlay panels; the choice is kept
+  per page in `localStorage`.
 - `?dataset=<key>` opens that Dandiset: `oct-small` (default, the 106 MB human
   brain OCT), `oct`, `neun`, `hipct` or `spim`.
 - `?local` reads `public/zarr/<zarrId>` instead of S3 (gitignored). Fetch

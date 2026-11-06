@@ -3,7 +3,8 @@
 // Streams a chunked volume into NiiVue over plain HTTP, with no backend or data
 // server -- only static file serving (the synthetic source uses HTTP 206 range
 // requests on a single shard; the OME-Zarr source reads per-chunk objects via
-// zarrita). Add `?backend=webgpu` to the URL to use the WebGPU renderer.
+// zarrita). WebGPU by default; add `?backend=webgl2` for WebGL2, `?aa=on|off`
+// to override the anti-aliasing default.
 //
 // Two static-hosted source types:
 //   - synthetic: a bundled shard streamed one chunk at a time over Range
@@ -22,10 +23,20 @@ import NiiVue, {
 } from '../src/index.ts'
 import { urlParamSelect } from './urlParamSelect.js'
 
+// Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
+// which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).
 const backend =
-  new URLSearchParams(location.search).get('backend') === 'webgpu'
+  new URLSearchParams(location.search).get('backend') !== 'webgl2' &&
+  (await navigator.gpu?.requestAdapter().catch(() => null))
     ? 'webgpu'
     : 'webgl2'
+// WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
+// on, so it defaults off there and on elsewhere.
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+const aaParam = new URLSearchParams(location.search).get('aa')
+const isAntiAlias = aaParam ? aaParam === 'on' : !isWebKit
 
 // The coarse whole-volume floor is ON by default: a single coarse pyramid level
 // rendered behind the octree so regions whose fine bricks have not streamed yet
@@ -482,6 +493,7 @@ const els = {
   lodOpacity: el('lodOpacity'),
   lodOpacityVal: el('lodOpacityVal'),
   interp: el('interp'),
+  sliceFilter: el('sliceFilter'),
   illum: el('illum'),
   illumVal: el('illumVal'),
   gradOpacity: el('gradOpacity'),
@@ -503,6 +515,7 @@ const els = {
 
 // Wired before anything loads, so the menu works even if loading fails (#488).
 urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
+urlParamSelect(el('aaSelect'), 'aa', isAntiAlias ? 'on' : 'off')
 
 let nv = null
 let activeSource = null
@@ -1426,6 +1439,10 @@ function applyInterp() {
   nv.volumeIsCubicInterpolation = els.interp.value === 'cubic'
 }
 
+function applySliceFilter() {
+  nv.volumeIsNearestInterpolation = els.sliceFilter.value === 'nearest'
+}
+
 // The three settings that consume the PRECOMPUTED gradient texture: matcap
 // illumination, gradient opacity and silhouette. They share one gate in core
 // (`_needsGradient()` = any of the three above 0), and on a chunked volume that
@@ -1698,7 +1715,7 @@ function renderHud() {
     stats.cancelled > 0 ? ` (+${stats.cancelled} cancelled)` : ''
   els.hud.innerHTML = `
     <div class="title">${html(source.name)}</div>
-    <div class="row"><span class="key">backend</span><span>${backend === 'webgpu' ? 'WebGPU' : 'WebGL2'}</span></div>
+    <div class="row"><span class="key">backend</span><span>${nv?.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'}</span></div>
     <div class="row"><span class="key">source</span><span>${html(source.sourceUrl)}</span></div>
     <div class="row"><span class="key">shape</span><span>${source.shape.join(' x ')} ${source.dtype}</span></div>
     <div class="row"><span class="key">viewer chunks</span><span>${gridDims.join(' x ')} @ ${planChunkShape.join(' x ')}</span></div>
@@ -2056,6 +2073,7 @@ async function main() {
 
   nv = new NiiVue({
     backend,
+    isAntiAlias,
     backgroundColor: [0.02, 0.03, 0.03, 1],
     isColorbarVisible: true,
     sliceType: SLICE_TYPE.MULTIPLANAR,
@@ -2071,6 +2089,7 @@ async function main() {
   applyLodCompensation()
   applyLodOpacity()
   applyInterp()
+  applySliceFilter()
   applyIllumination()
   applyGradientOpacity()
   applySilhouette()
@@ -2104,6 +2123,7 @@ async function main() {
   els.lodComp.addEventListener('input', applyLodCompensation)
   els.lodOpacity.addEventListener('input', applyLodOpacity)
   els.interp.addEventListener('change', applyInterp)
+  els.sliceFilter.addEventListener('change', applySliceFilter)
   // Render-time settings, but the first step off 0 re-streams the working set
   // (see applyIllumination). 'input' is still right: the re-stream happens once
   // on the crossing, not per slider tick.

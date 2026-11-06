@@ -26,7 +26,7 @@ export function packBoxEdges(
     md._focusBox,
     ...(md._lodBoxes ?? []),
     md._pickedBlockBox,
-  ].filter((b): b is FocusBox => b !== null)
+  ].filter((b): b is FocusBox => b != null)
   if (shown.length === 0) return null
   const out = new Float32Array(shown.length * 12 * FLOATS_PER_BOX_EDGE)
   let o = 0

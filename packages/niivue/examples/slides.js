@@ -43,17 +43,33 @@ const TIFF_URLS = {
 // decodes those tiles, following each level's photometric and BitsStored.
 // Monochrome tiles return samples, which NVSlide windows. Started on the first tile.
 let frameDecoder = null
-async function decodeDicomTile(bytes, { level, signal }) {
+// dcm2niix never respawns a dead worker, so a worker failure (a plain Error,
+// unlike a bad frame, an abort or 'frame decoder busy') replaces the pool.
+async function withFrameDecoder(run) {
   frameDecoder ??= createFrameDecoder({ workers: 2 })
+  const d = frameDecoder
+  try {
+    return await run(d)
+  } catch (err) {
+    if (err?.name === 'Error' && !err.message.startsWith('frame decoder ')) {
+      if (frameDecoder === d) frameDecoder = null
+      d.terminate() // shortcut: also cancels its other in-flight tiles, which refetch
+    }
+    throw err
+  }
+}
+async function decodeDicomTile(bytes, { level, signal }) {
   const options = {
     photometric: level.photometric,
     bitsStored: level.bitsStored,
     signal,
   }
   if (level.photometric?.startsWith('MONOCHROME')) {
-    return frameDecoder.decode(bytes, { ...options, output: 'samples' })
+    return withFrameDecoder((d) =>
+      d.decode(bytes, { ...options, output: 'samples' }),
+    )
   }
-  const f = await frameDecoder.decode(bytes, options)
+  const f = await withFrameDecoder((d) => d.decode(bytes, options))
   return createImageBitmap(new ImageData(f.rgba, f.width, f.height))
 }
 NVSlide.registerTileDecoder('image/jp2', decodeDicomTile)
@@ -61,8 +77,9 @@ NVSlide.registerTileDecoder('image/jls', decodeDicomTile)
 // ICC colour management: dcm2niix's LittleCMS bakes each slide's profile into a
 // 33^3 sRGB table.
 NVSlide.registerIccTransform(async (profile, signal) => {
-  frameDecoder ??= createFrameDecoder({ workers: 2 })
-  const data = await frameDecoder.iccLut(profile, { size: 33, signal })
+  const data = await withFrameDecoder((d) =>
+    d.iccLut(profile, { size: 33, signal }),
+  )
   return data && { size: 33, data }
 })
 

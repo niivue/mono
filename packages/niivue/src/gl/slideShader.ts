@@ -17,7 +17,8 @@ export const slideFragShader = (lut: boolean): string => `#version 300 es
 precision highp float;
 
 uniform sampler2D slideTexture;
-${colorLutGlsl(lut)}uniform float opacity;
+${colorLutGlsl(lut)}
+uniform float opacity;
 uniform int isPlaceholder;
 uniform int showGrid;
 uniform vec4 placeholderColor;

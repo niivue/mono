@@ -20,8 +20,9 @@ import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { NVRenderer } from '@/view/NVRenderer'
 import { timeChunkPhase } from '@/volume/chunkTiming'
+import { ColorLutTexturesGL } from './colorLut'
 import { FontRenderer } from './font'
-import { ColorLutTexturesGL, setTexParams } from './glUtil'
+import { setTexParams } from './glUtil'
 import { LineRenderer } from './line'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
@@ -82,6 +83,12 @@ export class SlideRenderer extends NVRenderer {
     void this._font.init(gl, ubuntu)
     this._plainShader = new Shader(gl, slideVertShader, slideFragShader(false))
     this._lutShader = new Shader(gl, slideVertShader, slideFragShader(true))
+    // Sampler units are program state: set once (the lookup table is on unit 1).
+    for (const shader of [this._plainShader, this._lutShader]) {
+      shader.use(gl)
+      gl.uniform1i(shader.uniforms.slideTexture, 0)
+      gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
+    }
     this._shader = this._plainShader
     this._vao = gl.createVertexArray()
     if (!this._vao) throw new Error('Failed to create slide VAO')
@@ -253,9 +260,7 @@ export class SlideRenderer extends NVRenderer {
 
     gl.bindVertexArray(null)
     gl.bindTexture(gl.TEXTURE_2D, null)
-    gl.activeTexture(gl.TEXTURE1)
-    gl.bindTexture(gl.TEXTURE_3D, null)
-    gl.activeTexture(gl.TEXTURE0)
+    this._luts.bind(gl, null)
     gl.enable(gl.CULL_FACE)
     gl.enable(gl.DEPTH_TEST)
   }
@@ -278,11 +283,7 @@ export class SlideRenderer extends NVRenderer {
     if (!shader) return
     this._shader = shader
     shader.use(gl)
-    gl.uniform1i(shader.uniforms.slideTexture, 0)
-    if (lut) {
-      gl.uniform1i(shader.uniforms.colorLut, 1)
-      this._luts.bind(gl, lut)
-    }
+    if (lut) this._luts.bind(gl, lut)
   }
 
   destroy(): void {

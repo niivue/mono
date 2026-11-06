@@ -6,13 +6,8 @@ import {
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
-import {
-  alphaPipelineDesc,
-  ColorLutTexturesGPU,
-  colorLutLayout,
-  linearSampler,
-  uniformBuffer,
-} from './pipeline'
+import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
+import { alphaPipelineDesc, linearSampler, uniformBuffer } from './pipeline'
 
 // WebGPU mirror of gl/slidePlaneRender.ts. Draws an NVSlide as a textured plane
 // in the 3D render tile: each level tile is a world-mm quad (from

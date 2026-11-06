@@ -19,15 +19,10 @@ import {
 import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { timeChunkPhase } from '@/volume/chunkTiming'
+import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
-import {
-  alphaPipelineDesc,
-  ColorLutTexturesGPU,
-  colorLutLayout,
-  linearSampler,
-  texturedLayout,
-} from './pipeline'
+import { alphaPipelineDesc, linearSampler, texturedLayout } from './pipeline'
 
 /** The slide shader, with or without the colour table lookup (bind group 1). */
 const shaderCode = (lut: boolean): string => /* wgsl */ `

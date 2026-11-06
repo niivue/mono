@@ -6,7 +6,8 @@ import {
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
-import { ColorLutTexturesGL, setTexParams } from './glUtil'
+import { ColorLutTexturesGL } from './colorLut'
+import { setTexParams } from './glUtil'
 import { Shader } from './shader'
 
 // Draws an NVSlide as a textured plane in the 3D render tile. Each tile of the
@@ -59,6 +60,12 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._gl = gl
     this._shader = new Shader(gl, vertSrc, fragSrc(false))
     this._lutShader = new Shader(gl, vertSrc, fragSrc(true))
+    // Sampler units are program state: set once (the lookup table is on unit 1).
+    for (const shader of [this._shader, this._lutShader]) {
+      shader.use(gl)
+      gl.uniform1i(shader.uniforms.tileTex ?? null, 0)
+      gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
+    }
     this._vao = gl.createVertexArray()
     this._vbo = gl.createBuffer()
     if (!this._vao || !this._vbo) {
@@ -105,12 +112,6 @@ export class SlidePlaneRenderer extends NVRenderer {
     }
     if (shader.uniforms.opacity) {
       gl.uniform1f(shader.uniforms.opacity, opacity)
-    }
-    if (shader.uniforms.tileTex) {
-      gl.uniform1i(shader.uniforms.tileTex, 0)
-    }
-    if (shader === this._lutShader && shader.uniforms.colorLut) {
-      gl.uniform1i(shader.uniforms.colorLut, 1)
     }
     // Depth-test so volume in front occludes the plane, but don't write depth
     // (the plane is a thin overlay; let later layers blend over it too).

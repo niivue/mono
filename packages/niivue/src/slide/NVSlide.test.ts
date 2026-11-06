@@ -1286,6 +1286,37 @@ describe('NVSlide colour management', () => {
     warn.mockRestore()
   })
 
+  it('refuses a table that is not size^3 RGBA8 bytes, or too large', async () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    for (const bad of [
+      { size: 2, data: new Float32Array(32) as unknown as Uint8Array },
+      { size: 130, data: new Uint8Array(130 ** 3 * 4) },
+    ]) {
+      NVSlide.registerIccTransform(async () => bad)
+      const slide = NVSlide.fromSource(withProfile(profile))
+      await new Promise((r) => setTimeout(r, 0))
+      expect(slide.colorLut).toBeNull()
+    }
+    expect(warn).toHaveBeenCalledTimes(2)
+    warn.mockRestore()
+  })
+
+  it('a manifest profile with only one of offset and length is refused', async () => {
+    const source = new ManifestRangeSource({
+      ...makeManifest(1),
+      iccProfile: { url: 'https://host/f.dcm', offset: 100 },
+    })
+    source.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+    })
+    await expect(source.fetchIccProfile()).rejects.toThrow('only one of')
+  })
+
   it('dispose during a bake aborts it and keeps no table', async () => {
     let seen: AbortSignal | undefined
     let finish: (lut: NVSlideColorLut) => void = () => {}

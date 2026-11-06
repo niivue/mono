@@ -427,8 +427,12 @@ let iccTransform: SlideIccTransform | null = null
 const tileDecoders = new Map<string, SlideTileDecoder>([
   [
     'image/jpeg',
+    // No browser colour conversion: a slide's profile is the source's
+    // (NVSlide.colorLut), not an APP2 segment inside a tile.
     (bytes) =>
-      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' })),
+      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' }), {
+        colorSpaceConversion: 'none',
+      }),
   ],
   [
     'raw-rgba',
@@ -672,13 +676,14 @@ export class ManifestRangeSource implements SlideTileSource {
     const icc = this.manifest.iccProfile
     if (!icc) return null
     const url = this.requireHost().resolveUrl(icc.url)
-    if (icc.offset !== undefined && icc.length !== undefined)
-      return this.fetchFragment(
-        url,
-        { offset: icc.offset, length: icc.length },
-        'icc',
-        signal,
-      )
+    const { offset, length } = icc
+    if ((offset === undefined) !== (length === undefined))
+      throw new Error('ICC profile states only one of offset and length')
+    // 64 MB: far beyond a scanner profile (Leica's is 13 MB), as dcm2niix caps it.
+    if (length !== undefined && length > 64 * 1024 * 1024)
+      throw new Error(`ICC profile of ${length} bytes`)
+    if (offset !== undefined && length !== undefined)
+      return this.fetchFragment(url, { offset, length }, 'icc', signal)
     const response = await fetch(url, { signal })
     if (!response.ok) throw new Error(`ICC profile HTTP ${response.status}`)
     return new Uint8Array(await response.arrayBuffer())
@@ -910,11 +915,16 @@ export class NVSlide extends EventTarget {
       const profile = await this._source.fetchIccProfile(signal)
       const lut = profile && (await transform(profile, signal))
       if (!lut || signal.aborted) return
-      // Renderers upload it as an RGBA8 3D texture; a wrong length would fail there.
-      if (lut.size < 2 || lut.data.length !== lut.size ** 3 * 4)
-        throw new Error(
-          `colour table of size ${lut.size} has ${lut.data.length} bytes`,
-        )
+      // Renderers upload it as an RGBA8 3D texture: anything else fails there,
+      // and 129^3 (8.6 MB, dcm2niix's ceiling) is far beyond any table's need.
+      if (
+        !(lut.data instanceof Uint8Array) ||
+        !Number.isInteger(lut.size) ||
+        lut.size < 2 ||
+        lut.size > 129 ||
+        lut.data.length !== lut.size ** 3 * 4
+      )
+        throw new Error(`colour table of size ${lut.size} is not size^3 RGBA8`)
       this._colorLut = lut
       this.dispatchEvent(new Event('change'))
     } catch (err) {

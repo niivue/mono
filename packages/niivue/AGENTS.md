@@ -92,6 +92,26 @@ Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
 canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 
+**Reference images** (`e2e/render-reference.spec.ts`): each scene in
+`e2e/renderScenes.ts` draws tiny synthetic phantoms (built in the page, no
+dev-images) on a fixed 160 px camera under WebGL2 and WebGPU, and must match
+`e2e/__snapshots__/render-reference.spec.ts/<scene>-<backend>.png`. One set
+serves every platform: the same PNG has to pass on Metal
+(`PLAYWRIGHT_CHROMIUM_CHANNEL=chromium`) and SwiftShader (the default shell, as on
+CI's Ubuntu job, which runs this spec too). The single tolerance is
+`expect.toMatchSnapshot` in `playwright.config.ts`; do not loosen it for one
+scene, make the scene deterministic instead (no text unless it passes, no
+cinematic, no antialiasing). To add a scene, append to `SCENES`: `setup` is sent
+to the page as source, so it may use only its `{ nv, lib, p }` argument (add new
+phantoms to `renderScene` in the spec). To create or update references:
+
+```bash
+PLAYWRIGHT_CHROMIUM_CHANNEL=chromium bunx playwright test e2e/render-reference.spec.ts --update-snapshots
+bunx playwright test e2e/render-reference.spec.ts   # then confirm on SwiftShader
+```
+
+Look at every changed PNG before committing it: an update accepts whatever was drawn.
+
 ### What's tested
 
 - **Drawing tools** (`src/drawing/`) — RLE codec, pen/line/flood-fill, undo stack

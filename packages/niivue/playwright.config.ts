@@ -13,6 +13,18 @@ const BASE_URL = `http://localhost:${PORT}`
 
 export default defineConfig({
   testDir: './e2e',
+  // Reference images (e2e/render-reference.spec.ts) are shared by every
+  // platform and GPU (Metal, SwiftShader): no {platform} in the path.
+  snapshotPathTemplate: '{testDir}/__snapshots__/{testFilePath}/{arg}{ext}',
+  expect: {
+    // The one tolerance for every reference image, Metal and SwiftShader.
+    // Each renderer is bit-stable run to run. Metal against SwiftShader, at
+    // this threshold (about 4 grey levels), differs in at most 21 pixels
+    // (colorbar text), 2 elsewhere (silhouette and crosshair edges); the
+    // ratio allows 64 of 25600. A looser threshold hides real regressions: at
+    // 0.1, a 10% dimmer mesh diffuse term still passed.
+    toMatchSnapshot: { threshold: 0.02, maxDiffPixelRatio: 0.0025 },
+  },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

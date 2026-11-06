@@ -15,10 +15,16 @@ name: niivue browser contracts
 #                       renderer, holding every brick texture (issue #145).
 #                       This one loads mni152, so the checkout pulls that
 #                       single LFS object.
+#   render-reference    every scene matches its committed reference PNG. The
+#                       references are shared by all platforms, so running it
+#                       here on SwiftShader as well as on Metal below is what
+#                       keeps one set valid for both renderers. Synthetic data
+#                       only, no LFS. Its WebGPU cases skip, not fail, if the
+#                       software device is lost.
 #
 # Narrow on purpose. The rest of the e2e suite needs a GPU adapter that the
 # Ubuntu runners do not have; it runs in full-suite-metal below instead.
-# These three are deterministic without one: the first two never touch
+# These are deterministic without one: the first two never touch
 # the GPU, and texcache-kind-change forces `--use-angle=swiftshader` for its
 # WebGL2 case, which is the case that was proven to fail on main. Its WebGPU
 # case skips here. `requestAdapter()` does succeed on the runner, but the GPU
@@ -92,6 +98,7 @@ jobs:
             e2e/partial-decode-4d.spec.ts \
             e2e/reader-name-override.spec.ts \
             e2e/texcache-kind-change.spec.ts \
+            e2e/render-reference.spec.ts \
             --workers=1 \
             --reporter=line
 

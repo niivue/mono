@@ -1,3 +1,13 @@
+## 1.0.0-rc.97 (2026-11-06)
+
+### Fixes
+
+- **niivue:** refuse CBOR documents whose headers declare more items than the file holds ([#386](https://github.com/niivue/mono/issues/386))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.96 (2026-11-06)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

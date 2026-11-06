@@ -28,15 +28,41 @@ const named = (name: string, message: string) =>
   Object.assign(new Error(message), { name })
 
 describe('createWsiTileDecoder', () => {
-  it('replaces a pool whose workers died, and terminates the old one', async () => {
+  it('replaces a pool whose workers died and retries the tile on it', async () => {
     const { stats, decode } = fakePools(async (id) => {
       if (id === 0) throw new Error('dcm2niix WASM failed to load: offline')
       return samples
     })
-    await expect(decode(bytes, ctx)).rejects.toThrow('WASM failed to load')
-    expect(stats.terminated).toEqual([0])
     expect(await decode(bytes, ctx)).toBe(samples as never)
+    expect(stats.terminated).toEqual([0])
     expect(stats.created).toBe(2)
+  })
+
+  it('retries a tile only once', async () => {
+    const { stats, decode } = fakePools(async () => {
+      throw new Error('dcm2niix WASM failed to load: offline')
+    })
+    await expect(decode(bytes, ctx)).rejects.toThrow('WASM failed to load')
+    expect(stats.created).toBe(2)
+    expect(stats.terminated).toEqual([0, 1])
+  })
+
+  it('recovers on the next tile when an abort hid the worker death', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('cancel'))
+    // Pool 0's workers die after the first tile was aborted, which sees only
+    // its abort.
+    let calls = 0
+    const { stats, decode } = fakePools(async (id) => {
+      if (calls++ === 0) throw controller.signal.reason
+      if (id === 0) throw new Error('dcm2niix frame worker trapped: oob')
+      return samples
+    })
+    const aborted = { ...ctx, signal: controller.signal } as Ctx
+    await expect(decode(bytes, aborted)).rejects.toThrow('cancel')
+    expect(stats.created).toBe(1)
+    expect(await decode(bytes, ctx)).toBe(samples as never)
+    expect(stats.terminated).toEqual([0])
   })
 
   it('keeps the pool for a bad frame, an abort, a full queue or a terminated pool', async () => {
@@ -89,9 +115,9 @@ describe('createWsiTileDecoder', () => {
       return Promise.reject(new Error('dcm2niix frame worker trapped: oob'))
     })
     const slow = decode(bytes, ctx)
-    await expect(decode(bytes, ctx)).rejects.toThrow('trapped')
+    // The failed tile retries on a fresh pool; the old one waits for `slow`.
+    expect(await decode(bytes, ctx)).toBe(samples as never)
     expect(stats.terminated).toEqual([])
-    await decode(bytes, ctx) // a fresh pool serves the next tile
     release(samples)
     await slow
     expect(stats.terminated).toEqual([0])

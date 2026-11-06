@@ -44,8 +44,10 @@ const TIFF_URLS = {
 // Monochrome tiles return samples, which NVSlide windows. Started on the first tile.
 let frameDecoder = null
 // dcm2niix never respawns a dead worker, so a worker failure (a plain Error,
-// unlike a bad frame, an abort or 'frame decoder busy') replaces the pool.
-async function withFrameDecoder(signal, run) {
+// unlike a bad frame, an abort or 'frame decoder busy') replaces the pool, and
+// the tile retries once on the new one: a death masked by an earlier abort
+// surfaces only on the next tile.
+async function withFrameDecoder(signal, run, isRetry = false) {
   frameDecoder ??= createFrameDecoder({ workers: 2 })
   const d = frameDecoder
   try {
@@ -58,6 +60,8 @@ async function withFrameDecoder(signal, run) {
     ) {
       if (frameDecoder === d) frameDecoder = null
       d.terminate() // shortcut: also cancels its other in-flight tiles, which refetch
+      if (!isRetry && !signal?.aborted)
+        return withFrameDecoder(signal, run, true)
     }
     throw err
   }

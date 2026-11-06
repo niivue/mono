@@ -40,17 +40,12 @@ import NiiVue, {
 import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
 
 const params = new URLSearchParams(location.search)
-// Resolved up front: without a WebGPU device NiiVue falls back to WebGL2,
+// Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
 // which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).
-// An adapter alone is not enough: its requestDevice() can still fail.
-async function hasWebGPUDevice() {
-  const adapter = await navigator.gpu?.requestAdapter().catch(() => null)
-  const device = await adapter?.requestDevice().catch(() => null)
-  device?.destroy()
-  return !!device
-}
+// A later fallback inside attach reloads the page with ?backend=webgl2.
 const backend =
-  params.get('backend') !== 'webgl2' && (await hasWebGPUDevice())
+  params.get('backend') !== 'webgl2' &&
+  (await navigator.gpu?.requestAdapter().catch(() => null))
     ? 'webgpu'
     : 'webgl2'
 // WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
@@ -1311,6 +1306,9 @@ async function main() {
     secondaryDragMode: Number(els.volumeSecondary.value),
   })
   await nv.attachToCanvas(els.canvas)
+  // A WebGPU adapter whose device request fails inside attach leaves WebGL2
+  // with WebGPU's residency budget; reload once so the budget matches.
+  if (nv.backend !== backend) return reloadWith('backend', nv.backend)
   // Show the backend running, after any fallback.
   els.backendSelect.value = nv.backend
   nv.addEventListener('locationChange', onLocationChange)

@@ -23,18 +23,12 @@ import NiiVue, {
 } from '../src/index.ts'
 import { urlParamSelect } from './urlParamSelect.js'
 
-// Resolved up front: without a WebGPU device NiiVue falls back to WebGL2,
+// Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
 // which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).
-// An adapter alone is not enough: its requestDevice() can still fail.
-async function hasWebGPUDevice() {
-  const adapter = await navigator.gpu?.requestAdapter().catch(() => null)
-  const device = await adapter?.requestDevice().catch(() => null)
-  device?.destroy()
-  return !!device
-}
+// A later fallback inside attach reloads the page with ?backend=webgl2.
 const backend =
   new URLSearchParams(location.search).get('backend') !== 'webgl2' &&
-  (await hasWebGPUDevice())
+  (await navigator.gpu?.requestAdapter().catch(() => null))
     ? 'webgpu'
     : 'webgl2'
 // WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
@@ -2085,6 +2079,14 @@ async function main() {
     maxChunkResidencyBytes: DEFAULT_RESIDENCY_BYTES,
   })
   await nv.attachToCanvas(els.canvas)
+  // A WebGPU adapter whose device request fails inside attach leaves WebGL2
+  // with WebGPU's residency budget; reload once so the budget matches.
+  if (nv.backend !== backend) {
+    const url = new URL(location.href)
+    url.searchParams.set('backend', nv.backend)
+    location.replace(url.href)
+    return
+  }
   document.getElementById('backendSelect').value = nv.backend
   // Browsers restore a range input's value across a reload, so push the slider's
   // current position into the fresh instance rather than assuming the default.

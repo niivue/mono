@@ -31,7 +31,7 @@ import {
   timeChunkNetAsync,
   timeChunkPhaseAsync,
 } from './chunkTiming'
-import { allocTypedArrayLike } from './omeZarr'
+import { allocTypedArrayLike, checkOmeZarrIndex } from './omeZarr'
 import {
   type OmeZarrLoadOptions,
   type OmeZarrSource,
@@ -375,27 +375,9 @@ export function omeZarrChunkedSource(
   const bytesPerVoxel = getBitsPerVoxel(datatypeCode) / 8
 
   const channel = options.channel ?? 0
-  if (
-    !Number.isInteger(channel) ||
-    channel < 0 ||
-    channel >= source.channelCount
-  ) {
-    throw new Error(
-      `OME-Zarr: channel ${channel} is out of range ` +
-        `(store has ${source.channelCount})`,
-    )
-  }
+  checkOmeZarrIndex('channel', channel, source.channelCount)
   const timepoint = options.timepoint ?? 0
-  if (
-    !Number.isInteger(timepoint) ||
-    timepoint < 0 ||
-    timepoint >= source.timepointCount
-  ) {
-    throw new Error(
-      `OME-Zarr: timepoint ${timepoint} is out of range ` +
-        `(store has ${source.timepointCount})`,
-    )
-  }
+  checkOmeZarrIndex('timepoint', timepoint, source.timepointCount)
 
   return {
     zarr: source,

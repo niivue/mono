@@ -26,6 +26,7 @@ import { channelColormapsFor } from './channelColormaps'
 import { channelVolumeFile } from './channelVolumeFile'
 import {
   allocTypedArrayLike,
+  checkOmeZarrIndex,
   type OmeZarrAxis,
   type OmeZarrAxisIndices,
   type OmeZarrInfo,
@@ -411,36 +412,17 @@ export async function omeZarrVolumesFrom(
 ): Promise<ImageFromUrlOptions[]> {
   const level =
     options.level ?? defaultOmeZarrLevel(source, options.levelBudgetBytes)
-  if (!Number.isInteger(level) || level < 0 || level >= source.levels.length) {
-    throw new Error(
-      `OME-Zarr: level ${level} is out of range (store has ${source.levels.length})`,
-    )
-  }
+  checkOmeZarrIndex('level', level, source.levels.length)
   const datatypeCode = omeZarrNiftiDatatype(source.levels[level].dtype)
 
   const timepoint = options.timepoint ?? 0
-  if (
-    !Number.isInteger(timepoint) ||
-    timepoint < 0 ||
-    timepoint >= source.timepointCount
-  ) {
-    throw new Error(
-      `OME-Zarr: timepoint ${timepoint} is out of range ` +
-        `(store has ${source.timepointCount})`,
-    )
-  }
+  checkOmeZarrIndex('timepoint', timepoint, source.timepointCount)
 
   const total = source.channelCount
   const wanted =
     options.channels ?? Array.from({ length: total }, (_unused, i) => i)
   // Validate up front so a bad index fails before any chunk is fetched.
-  for (const channel of wanted) {
-    if (!Number.isInteger(channel) || channel < 0 || channel >= total) {
-      throw new Error(
-        `OME-Zarr: channel ${channel} is out of range (store has ${total})`,
-      )
-    }
-  }
+  for (const channel of wanted) checkOmeZarrIndex('channel', channel, total)
 
   const { indices, order } = source
   const array = source.arrays[level]

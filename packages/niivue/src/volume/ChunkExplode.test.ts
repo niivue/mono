@@ -632,6 +632,14 @@ describe('explodedChunkAABB', () => {
     expect(box?.max[1]).toBeCloseTo(1)
   })
 
+  test('orders min/max per axis when matRAS flips x', () => {
+    // mm x = 10 - voxel x; chunk 2 explodes to voxels x[5,7] -> mm x[3,5].
+    const flipX = [-1, 0, 0, 10, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const box = explodedChunkAABB(plan(), flipX, explode, 2)
+    expect(box?.min[0]).toBeCloseTo(3)
+    expect(box?.max[0]).toBeCloseTo(5)
+  })
+
   test('returns null when explode is off or the chunk is out of range', () => {
     expect(explodedChunkAABB(plan(), IDENTITY_RAS, undefined, 2)).toBeNull()
     expect(explodedChunkAABB(plan(), IDENTITY_RAS, explode, 99)).toBeNull()

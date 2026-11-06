@@ -65,6 +65,12 @@ const IMPORTS = {
 const page = (body, imports = IMPORTS) =>
   `<!doctype html><meta charset="utf-8"><script type="importmap">${JSON.stringify({ imports })}</script>
 <script>addEventListener('unhandledrejection', (e) => { window.unhandled = String(e.reason) })</script>
+<script>{ const W = Worker; window.liveWorkers = 0; window.madeWorkers = 0
+  // Counts workers created while countWorkers is set (the Zarr pool's).
+  window.Worker = class extends W {
+    constructor(...a) { super(...a); this.counted = window.countWorkers; if (this.counted) { liveWorkers++; madeWorkers++ } }
+    terminate() { if (this.counted && !this.ended) { this.ended = true; liveWorkers-- } super.terminate() }
+  } }</script>
 <canvas id="gl" width="64" height="32" style="width:64px;height:32px"></canvas>
 <script type="module">
 try { window.result = await (async () => { ${body} })() }
@@ -91,6 +97,36 @@ const PAGES = {
     const bytes = await source.fetchChunk({ levelIndex: 0, texOrigin: [0, 0, 0], texDims: level.shape, bytesPerVoxel: 1 })
     source.dispose?.()
     return { whole, streamed: [...bytes] }`),
+  // streamOmeZarr owns its manager and workers: replacing the volume or
+  // destroying the viewer releases both (managers, live workers per step).
+  'stream.html': page(`
+    const { default: NiiVue } = await import('@niivue/niivue')
+    const { streamOmeZarr } = await import('@niivue/nv-ext-tile/zarr')
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.attachTo('gl')
+    const url = new URL('./fixtures/tiny.ome.zarr', location.href).href
+    const settle = () => new Promise((r) => setTimeout(r, 300))
+    const stream = async () => {
+      window.countWorkers = true
+      await streamOmeZarr(nv, url)
+      await settle()
+      window.countWorkers = false
+    }
+    const step = () => [nv._chunkedVolumes.size, window.liveWorkers]
+    const steps = []
+    for (let i = 0; i < 3; i++) {
+      await nv.removeAllVolumes()
+      await stream()
+      steps.push(step())
+    }
+    await nv.loadVolumes([{ url: './tiny.nii' }])
+    await settle()
+    steps.push(step())
+    await stream()
+    steps.push(step())
+    nv.destroy()
+    steps.push(step())
+    return { steps, made: window.madeWorkers }`),
   'dicom.html': page(`
     const { NVSlide } = await import('@niivue/niivue/webgpu')
     const { SlideRenderer } = await import('@niivue/niivue/webgl2')
@@ -260,6 +296,16 @@ try {
       nomap.jpeg?.completed === 4 &&
       !nomap.unhandled,
     `no dcm2niix mapping: JPEG 2000 tiles fail visibly, JPEG decodes, nothing unhandled ${JSON.stringify(nomap)}`,
+  )
+
+  const stream = results['stream.html'].result
+  check(
+    JSON.stringify(stream.steps?.map((s) => s[0])) === '[1,1,1,0,1,0]' &&
+      stream.steps.every((s) => s[1] <= 1) &&
+      stream.steps.at(-1)[1] === 0 &&
+      stream.steps[3][1] === 0 &&
+      stream.made > 0,
+    `streamOmeZarr releases its manager and workers on replace and destroy ${JSON.stringify(stream)}`,
   )
 
   const dicom = results['dicom.html'].result

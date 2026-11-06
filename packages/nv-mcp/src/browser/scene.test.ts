@@ -1609,7 +1609,7 @@ describe('set_volume affine', () => {
 describe('load_ome_zarr', () => {
   const omeZarr = () => ({
     loadOmeZarrVolumes: mock(async () => [{ url: 'c0' }, { url: 'c1' }]),
-    fetchOmeZarrChunkedSource: mock(async () => ({ levels: [] })),
+    streamOmeZarr: mock(async () => ({})),
   })
 
   it('loads one level whole through the page loaders', async () => {
@@ -1637,24 +1637,23 @@ describe('load_ome_zarr', () => {
     expect(result).toMatchObject({ streamed: false })
   })
 
-  it('streams through loadChunkedVolume', async () => {
-    const loadChunkedVolume = mock(async () => {})
+  it('streams through the page helper after removing the volumes shown', async () => {
     const removeAllVolumes = mock(async () => {})
-    const view = fakeView({ loadChunkedVolume, removeAllVolumes })
+    const view = fakeView({ removeAllVolumes })
     const zarr = omeZarr()
     await coreHandlers(host(view, { omeZarr: zarr })).load_ome_zarr({
       url: 'https://x/s.ome.zarr',
       stream: true,
     })
-    expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenCalledWith(
+    expect(removeAllVolumes).toHaveBeenCalled()
+    expect(zarr.streamOmeZarr).toHaveBeenCalledWith(
+      view,
       'https://x/s.ome.zarr',
       {
         channel: undefined,
         timepoint: undefined,
       },
     )
-    expect(removeAllVolumes).toHaveBeenCalled()
-    expect(loadChunkedVolume).toHaveBeenCalledWith({ levels: [] })
     expect(view.loadVolumes).not.toHaveBeenCalled()
   })
 

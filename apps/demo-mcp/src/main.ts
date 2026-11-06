@@ -188,8 +188,8 @@ const host: NiiVueHost = {
   omeZarr: {
     loadOmeZarrVolumes: async (url, options) =>
       (await omeZarr()).loadOmeZarrVolumes(url, options),
-    fetchOmeZarrChunkedSource: async (url, options) =>
-      (await omeZarr()).fetchOmeZarrChunkedSource(url, options),
+    streamOmeZarr: async (_view, url, options) =>
+      (await omeZarr()).streamOmeZarr(nv, url, options),
   },
   atlas: requireAtlas,
   labels: showLabels,

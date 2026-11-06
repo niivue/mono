@@ -540,15 +540,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const timepoint = integer(params, 'timepoint')
       try {
         if (stream) {
-          if (!view.loadChunkedVolume || !view.removeAllVolumes)
+          if (!view.removeAllVolumes)
             throw new Error('this page cannot stream volumes')
-          const source = await zarr.fetchOmeZarrChunkedSource(url, {
-            channel,
-            timepoint,
-          })
-          // loadChunkedVolume adds; this tool replaces, like load_volume.
+          // Replaces, like load_volume; streamOmeZarr frees its manager and
+          // workers once the volume is removed or the view destroyed.
           await view.removeAllVolumes()
-          await view.loadChunkedVolume(source)
+          await zarr.streamOmeZarr(view, url, { channel, timepoint })
         } else {
           const channels = channel === undefined ? undefined : [channel]
           const volumes = await zarr.loadOmeZarrVolumes(url, {

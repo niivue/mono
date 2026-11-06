@@ -130,10 +130,12 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
 
   let vertices: Float32Array | null = null
   let rawOffsets: Uint32Array | null = null
-  const dpv: Record<string, Float32Array> = {}
-  const dps: Record<string, Float32Array> = {}
+  // Names come from the file, so a group called `__proto__` must stay an own key.
+  const dpv: Record<string, Float32Array> = Object.create(null)
+  const dps: Record<string, Float32Array> = Object.create(null)
   const groups: { id: string; vals: Uint32Array }[] = []
-  const dpgMap: Record<string, { id: string; vals: Float32Array }[]> = {}
+  const dpgMap: Record<string, { id: string; vals: Float32Array }[]> =
+    Object.create(null)
 
   for (const entry of zip.entries) {
     if (entry.uncompressedSize === 0) continue
@@ -215,7 +217,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   }
 
   // Build groups Record from the collected groups array
-  const groupRecord: Record<string, Uint32Array> = {}
+  const groupRecord: Record<string, Uint32Array> = Object.create(null)
   for (const g of groups) {
     groupRecord[g.id] = g.vals
   }

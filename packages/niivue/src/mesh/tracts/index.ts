@@ -40,6 +40,9 @@ function computeScalarMeta(arr: Float32Array): TractScalarMeta {
 
 /** Populate dpvMeta/dpsMeta from all scalar arrays in tractData. */
 export function computeAllScalarMeta(data: NVTractData): void {
+  // Scalar names come from the file, so `__proto__` must stay an own key.
+  data.dpvMeta = Object.assign(Object.create(null), data.dpvMeta)
+  data.dpsMeta = Object.assign(Object.create(null), data.dpsMeta)
   for (const [name, arr] of Object.entries(data.dpv)) {
     data.dpvMeta[name] = computeScalarMeta(arr)
   }
@@ -119,8 +122,8 @@ export function tessellate(
   if (visibleGroups && visibleGroups.length > 0) {
     visible = new Uint8Array(offsets.length - 1)
     for (const groupName of visibleGroups) {
+      if (!Object.hasOwn(data.groups, groupName)) continue
       const members = data.groups[groupName]
-      if (!members) continue
       for (let i = 0; i < members.length; i++) visible[members[i]] = 1
     }
   }
@@ -130,8 +133,8 @@ export function tessellate(
   if (groupColors && Object.keys(groupColors).length > 0) {
     groupColorMap = new Map()
     for (const [groupName, rgba] of Object.entries(groupColors)) {
+      if (!Object.hasOwn(data.groups, groupName)) continue
       const members = data.groups[groupName]
-      if (!members) continue
       const packed =
         (rgba[3] << 24) | (rgba[2] << 16) | (rgba[1] << 8) | rgba[0]
       for (let i = 0; i < members.length; i++) {

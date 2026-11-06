@@ -720,7 +720,10 @@ export function deserialize(data: Uint8Array): NVDocumentData {
   if (!isJSON) assertCborFitsInput(data)
   const doc = isJSON
     ? (decodeDocumentJSON(new TextDecoder().decode(data)) as NVDocumentData)
-    : (decode(data) as NVDocumentData)
+    : // shortcut: cbor-x renames any `__proto__` key to `__proto_` (its pollution
+      // guard), so a tract scalar or group of that name only round-trips via JSON;
+      // upgrade if a real file ever needs it in CBOR.
+      (decode(data) as NVDocumentData)
   assertDocumentFitsInput(doc, data.byteLength)
 
   // Version check

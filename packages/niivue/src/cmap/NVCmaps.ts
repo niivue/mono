@@ -417,7 +417,8 @@ export function customColormaps(): Record<string, ColorMap> {
  *   callers can emit events or round-trip the value without re-applying
  *   the same casing rule.
  * @throws If `R`/`G`/`B` are empty, a single stop, or if any caller-
- *   supplied `A`/`I` disagree in length.
+ *   supplied `A`/`I` disagree in length, or a label table's `I` holds a
+ *   non-integer ID.
  */
 export function addColormap(
   name: string,
@@ -461,6 +462,10 @@ export function addColormap(
   }
   // A label LUT is dense over min..max, so a few entries could ask for GBs.
   if (isLabel) {
+    // makeLabelLut indexes a typed array by ID, so a fractional ID throws
+    // later; a NaN ID is skipped, as the span check below allows.
+    if (I.some((i) => Number.isFinite(i) && !Number.isInteger(i)))
+      throw new Error(`addColormap('${name}'): label IDs in I must be integers`)
     const [lo, hi] = idSpan(I)
     // Negated so an all-NaN `I` (lo > hi) is rejected too.
     if (!(hi - lo + 1 <= MAX_GENERATED_LABELS && hi >= lo))

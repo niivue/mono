@@ -1,3 +1,4 @@
+import type { NVSlideColorLut } from '@/slide/NVSlide'
 /** Set filtering and clamp-to-edge wrapping on the texture bound to `target`. */
 export function setTexParams(
   gl: WebGL2RenderingContext,
@@ -36,4 +37,45 @@ export function createUnitQuad(gl: WebGL2RenderingContext): {
   gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
   gl.bindVertexArray(null)
   return { vao, vbo }
+}
+
+/** One 3D texture per slide colour table, uploaded on first use; `clear` deletes them. */
+export class ColorLutTexturesGL {
+  private readonly _textures = new Map<NVSlideColorLut, WebGLTexture>()
+
+  get(gl: WebGL2RenderingContext, lut: NVSlideColorLut): WebGLTexture | null {
+    const existing = this._textures.get(lut)
+    if (existing) return existing
+    const texture = gl.createTexture()
+    if (!texture) return null
+    gl.bindTexture(gl.TEXTURE_3D, texture)
+    setTexParams(gl, gl.TEXTURE_3D, gl.LINEAR)
+    const n = lut.size
+    gl.texImage3D(
+      gl.TEXTURE_3D,
+      0,
+      gl.RGBA8,
+      n,
+      n,
+      n,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      lut.data,
+    )
+    this._textures.set(lut, texture)
+    return texture
+  }
+
+  /** Bind `lut` on texture unit 1 (the shaders' `colorLut`), leaving unit 0 active. */
+  bind(gl: WebGL2RenderingContext, lut: NVSlideColorLut): void {
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_3D, this.get(gl, lut))
+    gl.activeTexture(gl.TEXTURE0)
+  }
+
+  clear(gl: WebGL2RenderingContext | null): void {
+    for (const texture of this._textures.values()) gl?.deleteTexture(texture)
+    this._textures.clear()
+  }
 }

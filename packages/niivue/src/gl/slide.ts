@@ -1,10 +1,11 @@
 import { ubuntu } from '@/assets/fonts'
-import type {
-  NVSlide,
-  NVSlideColor,
-  NVSlideScreen,
-  NVSlideScreenRect,
-  NVSlideVisibleTile,
+import {
+  IDENTITY_COLOR_LUT,
+  type NVSlide,
+  type NVSlideColor,
+  type NVSlideScreen,
+  type NVSlideScreenRect,
+  type NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
   buildSlideOverlay,
@@ -21,7 +22,7 @@ import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { NVRenderer } from '@/view/NVRenderer'
 import { timeChunkPhase } from '@/volume/chunkTiming'
 import { FontRenderer } from './font'
-import { setTexParams } from './glUtil'
+import { ColorLutTexturesGL, setTexParams } from './glUtil'
 import { LineRenderer } from './line'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
@@ -33,11 +34,14 @@ type SlideTexture = {
 }
 
 export class SlideRenderer extends NVRenderer {
-  private _shader: Shader | null = null
+  private _shader: Shader | null = null // the variant in use
+  private _plainShader: Shader | null = null
+  private _lutShader: Shader | null = null
   private _vao: WebGLVertexArrayObject | null = null
   private _vertexBuffer: WebGLBuffer | null = null
   private _placeholderTexture: WebGLTexture | null = null
   private _gl: WebGL2RenderingContext | null = null
+  private readonly _luts = new ColorLutTexturesGL()
   // Byte-budgeted: tile textures for scrolled-away regions are evicted each
   // frame instead of accumulating for the life of the renderer.
   private readonly _textures = new TileTextureCache<SlideTexture>(
@@ -77,7 +81,9 @@ export class SlideRenderer extends NVRenderer {
     this._lines.init(gl)
     // The atlas loads asynchronously; labels draw from the frame after.
     void this._font.init(gl, ubuntu)
-    this._shader = new Shader(gl, slideVertShader, slideFragShader)
+    this._plainShader = new Shader(gl, slideVertShader, slideFragShader(false))
+    this._lutShader = new Shader(gl, slideVertShader, slideFragShader(true))
+    this._shader = this._plainShader
     this._vao = gl.createVertexArray()
     if (!this._vao) throw new Error('Failed to create slide VAO')
     this._vertexBuffer = gl.createBuffer()
@@ -148,11 +154,9 @@ export class SlideRenderer extends NVRenderer {
     gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
 
-    this._shader.use(gl)
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
     gl.activeTexture(gl.TEXTURE0)
-    gl.uniform1i(this._shader.uniforms.slideTexture, 0)
     gl.bindSampler(0, this.isNearestInterpolation ? this._nearestSampler : null)
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
@@ -161,6 +165,7 @@ export class SlideRenderer extends NVRenderer {
 
     for (const slide of slides) {
       if (!slide.visible || slide.opacity <= 0) continue
+      this.useShader(gl, slide)
       const bounds = slide.screenRectForSlide(screen)
       this.drawRect(
         gl,
@@ -249,6 +254,9 @@ export class SlideRenderer extends NVRenderer {
 
     gl.bindVertexArray(null)
     gl.bindTexture(gl.TEXTURE_2D, null)
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_3D, null)
+    gl.activeTexture(gl.TEXTURE0)
     gl.enable(gl.CULL_FACE)
     gl.enable(gl.DEPTH_TEST)
   }
@@ -261,10 +269,27 @@ export class SlideRenderer extends NVRenderer {
   // tiles (ghost tiles).
   clearTextures(): void {
     this._textures.clear()
+    this._luts.clear(this._gl)
+  }
+
+  // The plain shader unless the slide has a colour table to apply.
+  private useShader(gl: WebGL2RenderingContext, slide: NVSlide): void {
+    const lut = slide.displayColorLut
+    const shader =
+      lut === IDENTITY_COLOR_LUT ? this._plainShader : this._lutShader
+    if (!shader) return
+    this._shader = shader
+    shader.use(gl)
+    gl.uniform1i(shader.uniforms.slideTexture, 0)
+    if (shader === this._lutShader) {
+      gl.uniform1i(shader.uniforms.colorLut, 1)
+      this._luts.bind(gl, lut)
+    }
   }
 
   destroy(): void {
     this._textures.clear()
+    this._luts.clear(this._gl)
     this._lines.destroy()
     this._font.destroy()
     const gl = this._gl
@@ -279,6 +304,8 @@ export class SlideRenderer extends NVRenderer {
     this._vertexBuffer = null
     this._vao = null
     this._shader = null
+    this._plainShader = null
+    this._lutShader = null
     this._gl = null
     this.isReady = false
   }

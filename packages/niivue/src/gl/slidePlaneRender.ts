@@ -1,11 +1,12 @@
-import type { NVSlide } from '@/slide/NVSlide'
+import { colorLutGlsl } from '@/slide/colorLutShader'
+import { IDENTITY_COLOR_LUT, type NVSlide } from '@/slide/NVSlide'
 import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
-import { setTexParams } from './glUtil'
+import { ColorLutTexturesGL, setTexParams } from './glUtil'
 import { Shader } from './shader'
 
 // Draws an NVSlide as a textured plane in the 3D render tile. Each tile of the
@@ -23,20 +24,23 @@ uniform mat4 mvpMtx;
 out vec2 vUV;
 void main(){ vUV = aUV; gl_Position = mvpMtx * vec4(aPos, 1.0); }`
 
-const fragSrc = `#version 300 es
+/** Fragment shader, with or without the slide's colour table lookup. */
+const fragSrc = (lut: boolean): string => `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D tileTex;
 uniform float opacity;
+${colorLutGlsl(lut)}
 out vec4 outColor;
 void main(){
   vec4 c = texture(tileTex, vUV);
-  outColor = vec4(c.rgb, c.a * opacity);
+  outColor = vec4(applyColorLut(c.rgb), c.a * opacity);
 }`
 
 export class SlidePlaneRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null = null
-  private _shader: Shader | null = null
+  private _shader: Shader | null = null // plain: identity tables and annotations
+  private _lutShader: Shader | null = null
   private _vao: WebGLVertexArrayObject | null = null
   private _vbo: WebGLBuffer | null = null
   // One texture per resident tile, keyed by NVSlide tile key. Byte-budgeted:
@@ -48,11 +52,13 @@ export class SlidePlaneRenderer extends NVRenderer {
   // Annotation overlay (slide-space drawing) texture + uploaded version.
   private _annTex: WebGLTexture | null = null
   private _annVersion = -1
+  private readonly _luts = new ColorLutTexturesGL()
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
     this._gl = gl
-    this._shader = new Shader(gl, vertSrc, fragSrc)
+    this._shader = new Shader(gl, vertSrc, fragSrc(false))
+    this._lutShader = new Shader(gl, vertSrc, fragSrc(true))
     this._vao = gl.createVertexArray()
     this._vbo = gl.createBuffer()
     if (!this._vao || !this._vbo) {
@@ -103,6 +109,8 @@ export class SlidePlaneRenderer extends NVRenderer {
     if (shader.uniforms.tileTex) {
       gl.uniform1i(shader.uniforms.tileTex, 0)
     }
+    if (shader === this._lutShader)
+      gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
     // Depth-test so volume in front occludes the plane, but don't write depth
     // (the plane is a thin overlay; let later layers blend over it too).
     gl.enable(gl.DEPTH_TEST)
@@ -125,7 +133,13 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._textures.evictToBudget()
     this._textures.beginFrame()
     gl.activeTexture(gl.TEXTURE0)
-    this._begin(gl, this._shader, mvpMatrix, opacity)
+    const lut = slide.displayColorLut
+    let shader = this._shader
+    if (lut !== IDENTITY_COLOR_LUT && this._lutShader) {
+      shader = this._lutShader
+      this._luts.bind(gl, lut)
+    }
+    this._begin(gl, shader, mvpMatrix, opacity)
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vbo)
     for (const tile of tiles) {
@@ -182,10 +196,13 @@ export class SlidePlaneRenderer extends NVRenderer {
     const gl = this._gl
     if (!gl) return
     this._textures.clear()
+    this._luts.clear(gl)
     if (this._annTex) gl.deleteTexture(this._annTex)
     if (this._vao) gl.deleteVertexArray(this._vao)
     if (this._vbo) gl.deleteBuffer(this._vbo)
     if (this._shader?.program) gl.deleteProgram(this._shader.program)
+    if (this._lutShader?.program) gl.deleteProgram(this._lutShader.program)
+    this._lutShader = null
     this.isReady = false
     this._shader = null
     this._vao = null

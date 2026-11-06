@@ -1,3 +1,5 @@
+import { colorLutGlsl } from '@/slide/colorLutShader'
+
 export const slideVertShader = `#version 300 es
 layout(location=0) in vec2 pos;
 layout(location=1) in vec2 uvIn;
@@ -10,11 +12,12 @@ void main(void) {
 }
 `
 
-export const slideFragShader = `#version 300 es
+/** The slide fragment shader, with or without the colour table lookup. */
+export const slideFragShader = (lut: boolean): string => `#version 300 es
 precision highp float;
 
 uniform sampler2D slideTexture;
-uniform float opacity;
+${colorLutGlsl(lut)}uniform float opacity;
 uniform int isPlaceholder;
 uniform int showGrid;
 uniform vec4 placeholderColor;
@@ -24,7 +27,11 @@ in vec2 uv;
 out vec4 color;
 
 void main(void) {
-  vec4 base = isPlaceholder == 1 ? placeholderColor : texture(slideTexture, uv);
+  vec4 base = placeholderColor;
+  if (isPlaceholder != 1) {
+    base = texture(slideTexture, uv);
+    base.rgb = applyColorLut(base.rgb);
+  }
   base.a *= opacity;
   if (showGrid == 1) {
     float edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));

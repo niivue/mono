@@ -46,24 +46,28 @@ let frameDecoder = null
 // dcm2niix never respawns a dead worker, so a worker failure (a plain Error,
 // unlike a bad frame, an abort or 'frame decoder busy') replaces the pool, and
 // the tile retries once on the new one: a death masked by an earlier abort
-// surfaces only on the next tile.
+// surfaces only on the next tile. The old pool is terminated once its other
+// in-flight tiles (on a worker that may still be live) settle.
 async function withFrameDecoder(signal, run, isRetry = false) {
-  frameDecoder ??= createFrameDecoder({ workers: 2 })
-  const d = frameDecoder
+  frameDecoder ??= { decoder: createFrameDecoder({ workers: 2 }), active: 0 }
+  const p = frameDecoder
+  p.active++
   try {
-    return await run(d)
+    return await run(p.decoder)
   } catch (err) {
     if (
       err !== signal?.reason &&
       err?.name === 'Error' &&
       !err.message.startsWith('frame decoder ')
     ) {
-      if (frameDecoder === d) frameDecoder = null
-      d.terminate() // shortcut: also cancels its other in-flight tiles, which refetch
+      p.retired = true
+      if (frameDecoder === p) frameDecoder = null
       if (!isRetry && !signal?.aborted)
         return withFrameDecoder(signal, run, true)
     }
     throw err
+  } finally {
+    if (--p.active === 0 && p.retired) p.decoder.terminate()
   }
 }
 async function decodeDicomTile(bytes, { level, signal }) {

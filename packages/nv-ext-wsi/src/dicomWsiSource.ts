@@ -6,7 +6,11 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import type { SlideIndexSlide } from './dicomIndex'
+import {
+  fileKey,
+  type SlideIndexInstance,
+  type SlideIndexSlide,
+} from './dicomIndex'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs (JPEG 2000 and JPEG-LS need a
 // registered decoder, e.g. registerDcm2niixDecoders()).
@@ -19,7 +23,62 @@ const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
   '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
 }
 
-export const fileKey = (f: File): string => f.webkitRelativePath || f.name
+/** The slide's files in `slide.instances` order; each must be the file that was indexed. */
+export function filesFor(
+  slide: SlideIndexSlide,
+  files: readonly File[],
+): File[] {
+  const byKey = new Map(files.map((f) => [fileKey(f), f]))
+  return slide.instances.map((inst) => {
+    const file = byKey.get(inst.file)
+    if (!file) throw new Error(`${inst.file} is not among the files`)
+    if (file.size !== inst.size || String(file.lastModified) !== inst.version)
+      throw new Error(`${inst.file} changed since it was indexed`)
+    return file
+  })
+}
+
+/** The frame slot behind a tile, from the level's tile map. */
+export function slotOf(
+  slide: SlideIndexSlide,
+  levelIndex: number,
+  tile: NVSlideTileManifest,
+): number {
+  const level = slide.levels[levelIndex]
+  return level ? (level.tile[tile.y * level.columns + tile.x] ?? -1) : -1
+}
+
+/**
+ * The fragments of a frame's item-led span (as read from `offset - 8`): each
+ * payload's offset within the span and its length. Throws when the span is not
+ * whole items, e.g. when the file no longer matches the index.
+ */
+export function fragmentsOf(
+  span: Uint8Array,
+  what: string,
+): { offset: number; length: number }[] {
+  const dv = new DataView(span.buffer, span.byteOffset, span.byteLength)
+  const fragments: { offset: number; length: number }[] = []
+  for (let p = 0; p < span.length; ) {
+    if (
+      p + 8 > span.length ||
+      dv.getUint16(p, true) !== 0xfffe ||
+      dv.getUint16(p + 2, true) !== 0xe000
+    )
+      throw new Error(
+        p === 0
+          ? `${what} is not where the index says`
+          : `${what}: no fragment item at byte ${p}`,
+      )
+    const n = dv.getUint32(p + 4, true)
+    if (p + 8 + n > span.length)
+      throw new Error(`${what}: a fragment runs past its span`)
+    fragments.push({ offset: p + 8, length: n })
+    p += 8 + n
+  }
+  if (!fragments.length) throw new Error(`${what}: an empty span`)
+  return fragments
+}
 
 /**
  * A SlideTileSource for one slide of a {@link SlideIndex}, reading each tile
@@ -34,14 +93,7 @@ export class DicomWsiSource implements SlideTileSource {
     readonly slide: SlideIndexSlide,
     files: readonly File[],
   ) {
-    const byKey = new Map(files.map((f) => [fileKey(f), f]))
-    this.files = slide.instances.map((inst) => {
-      const file = byKey.get(inst.file)
-      if (!file) throw new Error(`${inst.file} is not among the files`)
-      if (file.size !== inst.size || String(file.lastModified) !== inst.version)
-        throw new Error(`${inst.file} changed since it was indexed`)
-      return file
-    })
+    this.files = filesFor(slide, files)
     this.manifest = manifestOf(slide)
   }
 
@@ -56,8 +108,8 @@ export class DicomWsiSource implements SlideTileSource {
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const frames = this.slide.levels[level.index]?.frames
-    const slot = tile.frame ?? -1
-    if (!frames || slot < 0 || slot >= frames.offset.length)
+    const slot = slotOf(this.slide, level.index, tile)
+    if (!frames || slot < 0)
       throw new Error(`no frame for tile ${tile.x},${tile.y}`)
     const file = this.files[frames.instance[slot] as number] as File
     const offset = frames.offset[slot] as number
@@ -68,39 +120,32 @@ export class DicomWsiSource implements SlideTileSource {
     )
     signal?.throwIfAborted()
     this.host?.addWireBytes(span.byteLength)
-    return payload(span, `${file.name} frame ${frames.frame[slot]}`)
+    const parts = fragmentsOf(span, `${file.name} frame ${frames.frame[slot]}`)
+    if (parts.length === 1) return span.subarray(8) // one fragment: no copy
+    const out = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0))
+    let o = 0
+    for (const p of parts) {
+      out.set(span.subarray(p.offset, p.offset + p.length), o)
+      o += p.length
+    }
+    return out
   }
 }
 
-/** The frame's payload from its item-led span, stripping inner item headers. */
-function payload(span: Uint8Array, what: string): Uint8Array {
-  const dv = new DataView(span.buffer, span.byteOffset, span.byteLength)
-  const isItem = (p: number): boolean =>
-    p + 8 <= span.length &&
-    dv.getUint16(p, true) === 0xfffe &&
-    dv.getUint16(p + 2, true) === 0xe000
-  if (!isItem(0)) throw new Error(`${what} is not where the index says`)
-  const first = dv.getUint32(4, true)
-  if (8 + first === span.length) return span.subarray(8) // one fragment: no copy
-  const parts: Uint8Array[] = []
-  for (let p = 0; p < span.length; ) {
-    if (!isItem(p)) throw new Error(`${what}: no fragment item at byte ${p}`)
-    const n = dv.getUint32(p + 4, true)
-    if (p + 8 + n > span.length)
-      throw new Error(`${what}: a fragment runs past its span`)
-    parts.push(span.subarray(p + 8, p + 8 + n))
-    p += 8 + n
-  }
-  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
-  let o = 0
-  for (const part of parts) {
-    out.set(part, o)
-    o += part.length
-  }
-  return out
-}
-
-export function manifestOf(slide: SlideIndexSlide): NVSlideManifest {
+/**
+ * The slide's NVSlide manifest. Each tile's `frame` is its DICOM frame number;
+ * `fileUrl` names an instance's file (the ICC profile's location).
+ */
+export function manifestOf(
+  slide: SlideIndexSlide,
+  {
+    format = 'dicom-wsi-index-v1',
+    fileUrl = (i: SlideIndexInstance) => i.file,
+  }: {
+    format?: string
+    fileUrl?: (instance: SlideIndexInstance) => string
+  } = {},
+): NVSlideManifest {
   const l0 = slide.levels[0]
   if (!l0) throw new Error('the slide has no levels')
   const inst0 = slide.instances[l0.instances[0] as number]
@@ -112,6 +157,7 @@ export function manifestOf(slide: SlideIndexSlide): NVSlideManifest {
       throw new Error(
         `transfer syntax ${inst.transferSyntax} cannot be decoded (JPEG, JPEG 2000 and JPEG-LS are supported)`,
       )
+    // The index caps a level's grid, so this dense array is bounded.
     const tiles: Array<NVSlideTileManifest | null> = Array.from(
       level.tile,
       (slot, i) => {
@@ -126,7 +172,7 @@ export function manifestOf(slide: SlideIndexSlide): NVSlideManifest {
             level.tileHeight,
             level.height - y * level.tileHeight,
           ),
-          frame: slot,
+          frame: level.frames.frame[slot] as number,
         }
       },
     )
@@ -154,7 +200,7 @@ export function manifestOf(slide: SlideIndexSlide): NVSlideManifest {
   return {
     id: `${slide.series}/${slide.opticalPath}/${slide.focalPlane}`,
     name: slide.container ?? slide.series,
-    format: 'dicom-wsi-index-v1',
+    format,
     width: l0.width,
     height: l0.height,
     // Row 0 at the top, as OpenSlide and the TIFF/DZI sources show a slide.
@@ -164,7 +210,7 @@ export function manifestOf(slide: SlideIndexSlide): NVSlideManifest {
     channels: 'encoded-rgb',
     ...(slide.pixelSpacingMM ? { pixelSpacingMM: slide.pixelSpacingMM } : {}),
     ...(slide.iccProfile
-      ? { iccProfile: { url: inst0.file, ...slide.iccProfile } }
+      ? { iccProfile: { url: fileUrl(inst0), ...slide.iccProfile } }
       : {}),
     levels,
   }

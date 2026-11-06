@@ -2,13 +2,15 @@
 // Reads only headers and item tags with File.slice, never pixel data, and
 // records each frame's byte span, so DicomWsiSource can read one tile at a time.
 // Explicit VR little endian only, which covers every WSI transfer syntax.
+// Files are untrusted: every size taken from a header is checked against the
+// file before it sizes an allocation or a read.
 
 /** Why an input file was left out of the index. */
 export type SlideIndexSkipReason =
   | 'not-dicom' // no DICM preamble
   | 'transfer-syntax' // implicit VR, big endian or deflated
   | 'uncompressed' // native pixel data: no tile codec reads it
-  | 'malformed' // a header or item that does not parse
+  | 'malformed' // a header or item that does not parse, or a value out of range
   | 'not-tiled' // no tile geometry (not WSI)
 
 export interface SlideIndexSkipped {
@@ -33,7 +35,7 @@ export interface SlideIndexInstance {
 
 export interface SlideIndexFrames {
   /** Index into `SlideIndexSlide.instances`. */
-  instance: Uint16Array
+  instance: Uint32Array
   /** One-based DICOM frame number within that instance. */
   frame: Uint32Array
   /** Absolute byte offset of the frame's first payload (its item header excluded). */
@@ -57,7 +59,7 @@ export interface SlideIndexLevel {
   /** `columns * rows`, row-major: a frame slot, or -1 for a hole. */
   tile: Int32Array
   frames: SlideIndexFrames
-  /** Frames dropped because another frame already holds their tile (an error). */
+  /** Frames dropped because another frame already holds their tile, or their position is off the grid (an error). */
   duplicates: number
   /** True when tiles are placed by per-frame position (TILED_SPARSE). */
   sparse: boolean
@@ -88,7 +90,15 @@ export interface SlideIndex {
   skipped: SlideIndexSkipped[]
 }
 
+/** The key a file is indexed and looked up by: `webkitRelativePath` when set, else `name`. */
+export const fileKey = (f: File): string => f.webkitRelativePath || f.name
+
 const UNDEFINED_LENGTH = 0xffffffff
+// Hostile-input bounds. No WSI header nests sequences deeper than 4, the
+// largest corpus header is 15 MB, and the largest level grid is 1.5M tiles.
+const MAX_DEPTH = 8
+const MAX_HEADER = 64 << 20
+const MAX_GRID = 1 << 22
 const tagOf = (g: number, e: number): number => ((g << 16) | e) >>> 0
 const T = {
   transferSyntax: tagOf(0x0002, 0x0010),
@@ -98,7 +108,6 @@ const T = {
   series: tagOf(0x0020, 0x000e),
   frameOfReference: tagOf(0x0020, 0x0052),
   organization: tagOf(0x0020, 0x9311),
-  concatUID: tagOf(0x0020, 0x9161),
   concatNumber: tagOf(0x0020, 0x9162),
   concatOffset: tagOf(0x0020, 0x9228),
   photometric: tagOf(0x0028, 0x0004),
@@ -115,7 +124,6 @@ const T = {
   totalRows: tagOf(0x0048, 0x0007),
   opticalPathSeq: tagOf(0x0048, 0x0105),
   opticalPathId: tagOf(0x0048, 0x0106),
-  planePosition: tagOf(0x0048, 0x021a),
   columnPosition: tagOf(0x0048, 0x021e),
   rowPosition: tagOf(0x0048, 0x021f),
   opticalPaths: tagOf(0x0048, 0x0302),
@@ -130,21 +138,7 @@ const T = {
   sequenceEnd: tagOf(0xfffe, 0xe0dd),
 }
 // VRs whose length field is 4 bytes after 2 reserved bytes (PS3.5 7.1.2).
-const LONG_VR = new Set([
-  'OB',
-  'OD',
-  'OF',
-  'OL',
-  'OV',
-  'OW',
-  'SQ',
-  'SV',
-  'UC',
-  'UN',
-  'UR',
-  'UT',
-  'UV',
-])
+const LONG_VR = new Set('OB OD OF OL OV OW SQ SV UC UN UR UT UV'.split(' '))
 // Implicit VR little endian, explicit VR big endian, deflated.
 const REFUSED_SYNTAXES = new Set([
   '1.2.840.10008.1.2',
@@ -163,14 +157,19 @@ class Skip extends Error {
 // The header runs past the bytes read so far.
 class NeedMore extends Error {}
 
-/** Where an element sits, for the visitor: its value and the sequence items above it. */
+/**
+ * An element's value, and where it sits: under which top-level sequence and
+ * item (`root`, `item`), how deep. The index needs no more of the path than that.
+ */
 interface Element {
   tag: number
   vr: string
   offset: number
   length: number
-  /** [sequence tag, item index, ...] from the top level down. */
-  path: number[]
+  /** The top-level sequence it is inside (0 at the top level), and that sequence's item index. */
+  root: number
+  item: number
+  depth: number
 }
 
 function u16(b: Uint8Array, o: number): number {
@@ -191,20 +190,21 @@ function u32(b: Uint8Array, o: number): number {
 
 /**
  * Visit every element from `o` until `end`, a delimiter, or (at the top level)
- * Pixel Data, whose offset it returns. Sequences recurse with the item index on
- * the path, so a visitor can tell per-frame values apart without building maps.
+ * Pixel Data, whose offset it returns. `size` is the file's, so a value that
+ * claims to run past the file is malformed, not a reason to read further.
  */
 function walk(
   b: Uint8Array,
   o: number,
   end: number,
-  path: number[],
+  size: number,
+  at: { root: number; item: number; depth: number },
   visit: (e: Element) => void,
 ): number {
   while (o < end) {
     const tag = tagOf(u16(b, o), u16(b, o + 2))
     if (tag === T.itemEnd || tag === T.sequenceEnd) return o + 8
-    if (path.length === 0 && tag === T.pixelData) return o
+    if (at.depth === 0 && tag === T.pixelData) return o
     const vr = String.fromCharCode(b[o + 4] as number, b[o + 5] as number)
     if (!/^[A-Z]{2}$/.test(vr))
       throw new Skip('malformed', `no explicit VR at byte ${o}`)
@@ -212,8 +212,9 @@ function walk(
     const length = long ? u32(b, o + 8) : u16(b, o + 6)
     const value = o + (long ? 12 : 8)
     if (vr === 'SQ' || (vr === 'UN' && length === UNDEFINED_LENGTH)) {
-      const stop =
-        length === UNDEFINED_LENGTH ? Number.POSITIVE_INFINITY : value + length
+      if (at.depth >= MAX_DEPTH)
+        throw new Skip('malformed', `sequences nested deeper than ${MAX_DEPTH}`)
+      const stop = length === UNDEFINED_LENGTH ? size : value + length
       let p = value
       for (let item = 0; p < stop; item++) {
         const itemTag = tagOf(u16(b, p), u16(b, p + 2))
@@ -225,10 +226,12 @@ function walk(
           throw new Skip('malformed', `no item at byte ${p}`)
         const itemLength = u32(b, p + 4)
         const itemEnd =
-          itemLength === UNDEFINED_LENGTH
-            ? Number.POSITIVE_INFINITY
-            : p + 8 + itemLength
-        const after = walk(b, p + 8, itemEnd, [...path, tag, item], visit)
+          itemLength === UNDEFINED_LENGTH ? size : p + 8 + itemLength
+        const inner =
+          at.depth === 0
+            ? { root: tag, item, depth: 1 }
+            : { ...at, depth: at.depth + 1 }
+        const after = walk(b, p + 8, itemEnd, size, inner, visit)
         p = itemLength === UNDEFINED_LENGTH ? after : itemEnd
       }
       o = p
@@ -236,8 +239,10 @@ function walk(
     }
     if (length === UNDEFINED_LENGTH)
       throw new Skip('malformed', `undefined-length ${vr} at byte ${o}`)
+    if (value + length > size)
+      throw new Skip('malformed', `${vr} at byte ${o} runs past the file`)
     if (value + length > b.length) throw new NeedMore()
-    visit({ tag, vr, offset: value, length, path })
+    visit({ tag, vr, offset: value, length, ...at })
     o = value + length
   }
   return o
@@ -249,28 +254,22 @@ const text = (b: Uint8Array, e: Element): string =>
     '',
   )
 
+/** A numeric value: binary for US/UL/SL, else the first value of IS/DS text. NaN when it does not parse. */
 function numberOf(b: Uint8Array, e: Element): number {
-  const v = new DataView(b.buffer, b.byteOffset + e.offset, e.length)
-  switch (e.vr) {
-    case 'US':
-      return v.getUint16(0, true)
-    case 'SS':
-      return v.getInt16(0, true)
-    case 'UL':
-      return v.getUint32(0, true)
-    case 'SL':
-      return v.getInt32(0, true)
-    case 'FL':
-      return v.getFloat32(0, true)
-    case 'FD':
-      return v.getFloat64(0, true)
-    default:
-      return Number(text(b, e).split('\\')[0])
-  }
+  const bytes = { US: 2, UL: 4, SL: 4 }[e.vr]
+  if (!bytes) return Number(text(b, e).split('\\')[0])
+  if (e.length < bytes) return Number.NaN
+  const v = new DataView(b.buffer, b.byteOffset + e.offset, bytes)
+  return e.vr === 'US'
+    ? v.getUint16(0, true)
+    : e.vr === 'UL'
+      ? v.getUint32(0, true)
+      : v.getInt32(0, true)
 }
 
 /** One instance's header and frame spans. Internal: the index regroups these. */
-interface InstanceInfo extends SlideIndexInstance {
+interface InstanceInfo {
+  instance: SlideIndexInstance
   study: string
   series: string
   frameOfReference: string
@@ -282,26 +281,32 @@ interface InstanceInfo extends SlideIndexInstance {
   tileHeight: number
   frameCount: number
   sparse: boolean
-  opticalPathCount: number
-  focalPlaneCount: number
   concatNumber: number
-  concatOffset: number
   pixelSpacingMM?: [number, number]
   /** OpticalPathSequence identifiers, and each path's ICC profile. */
   pathIds: string[]
   icc: ({ offset: number; length: number; colorSpace?: string } | undefined)[]
-  /** Per frame (absent without per-frame positions): tile column/row, path index, Z. */
-  column?: Int32Array
-  row?: Int32Array
-  path?: Uint16Array
-  z?: Float64Array
+  /** Per frame: tile column and row (-1 when its position is invalid), optical path index, focal plane. */
+  column: Int32Array
+  row: Int32Array
+  path: Uint16Array
+  z: Float64Array
   offset: Float64Array
   length: Uint32Array
 }
 
 type ReadAt = (offset: number, length: number) => Promise<Uint8Array>
 
-const fileKey = (f: File): string => f.webkitRelativePath || f.name
+function refuseSyntax(b: Uint8Array, elements: Element[]): void {
+  // The file meta group is always explicit VR little endian, so its transfer
+  // syntax is known even when the data set after it does not parse.
+  const ts = elements.find((e) => e.tag === T.transferSyntax)
+  if (ts && REFUSED_SYNTAXES.has(text(b, ts)))
+    throw new Skip(
+      'transfer-syntax',
+      `transfer syntax ${text(b, ts)} is not explicit VR little endian`,
+    )
+}
 
 async function readHeader(
   readAt: ReadAt,
@@ -320,24 +325,25 @@ async function readHeader(
     try {
       if (String.fromCharCode(...b.subarray(128, 132)) !== 'DICM')
         throw new Skip('not-dicom', 'no DICM preamble')
-      const pixel = walk(b, 132, Number.POSITIVE_INFINITY, [], (e) =>
-        elements.push(e),
+      const pixel = walk(
+        b,
+        132,
+        size,
+        size,
+        { root: 0, item: 0, depth: 0 },
+        (e) => elements.push(e),
       )
       if (pixel + 20 > b.length) throw new NeedMore() // Pixel Data and the BOT item header
+      refuseSyntax(b, elements)
       return { b, pixel, elements }
     } catch (err) {
-      // The file meta group is always explicit VR little endian, so its transfer
-      // syntax is known even when the data set after it does not parse.
-      const ts = elements.find((e) => e.tag === T.transferSyntax)
-      if (ts && REFUSED_SYNTAXES.has(text(b, ts)))
-        throw new Skip(
-          'transfer-syntax',
-          `transfer syntax ${text(b, ts)} is not explicit VR little endian`,
-        )
+      refuseSyntax(b, elements)
       if (!(err instanceof NeedMore)) throw err
       if (want >= size)
         throw new Skip('not-tiled', 'no Pixel Data (e.g. a DICOMDIR)')
-      want = Math.min(size, want * 4)
+      if (want >= MAX_HEADER)
+        throw new Skip('malformed', `header over ${MAX_HEADER >> 20} MiB`)
+      want = Math.min(size, MAX_HEADER, want * 4)
     }
   }
 }
@@ -356,20 +362,17 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   let sharedZ: number | undefined
   let perFrame = 0
   for (const e of elements) {
-    const p = e.path
-    if (p.length === 0) top.set(e.tag, e)
-    else if (p[0] === T.opticalPathSeq && p.length === 2) {
-      const i = p[1] as number
-      if (e.tag === T.opticalPathId) pathIds[i] = text(b, e)
+    if (e.depth === 0) top.set(e.tag, e)
+    else if (e.root === T.opticalPathSeq && e.depth === 1) {
+      if (e.tag === T.opticalPathId) pathIds[e.item] = text(b, e)
       if (e.tag === T.iccProfile)
-        icc[i] = { offset: e.offset, length: e.length }
-      if (e.tag === T.colorSpace) colorSpaces[i] = text(b, e)
-    } else if (p[0] === T.shared) {
+        icc[e.item] = { offset: e.offset, length: e.length }
+      if (e.tag === T.colorSpace) colorSpaces[e.item] = text(b, e)
+    } else if (e.root === T.shared) {
       if (e.tag === T.spacing) sharedSpacing = text(b, e)
       if (e.tag === T.opticalPathId) sharedPath = text(b, e)
       if (e.tag === T.zOffset) sharedZ = numberOf(b, e)
-    } else if (p[0] === T.perFrame)
-      perFrame = Math.max(perFrame, (p[1] as number) + 1)
+    } else if (e.root === T.perFrame) perFrame = Math.max(perFrame, e.item + 1)
   }
   icc.forEach((v, i) => {
     if (v && colorSpaces[i]) v.colorSpace = colorSpaces[i]
@@ -378,46 +381,57 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     const e = top.get(tag)
     return e ? text(b, e) : ''
   }
-  const num = (tag: number): number | undefined => {
+  /** A whole number in [min, max] (`fallback` when absent); else the file is malformed. */
+  const int = (tag: number, fallback: number, min: number, max: number) => {
     const e = top.get(tag)
-    return e ? numberOf(b, e) : undefined
+    const v = e ? numberOf(b, e) : fallback
+    if (!Number.isInteger(v) || v < min || v > max)
+      throw new Skip('malformed', `tag ${tag.toString(16)} is ${v}`)
+    return v
   }
-  const transferSyntax = str(T.transferSyntax)
-  if (REFUSED_SYNTAXES.has(transferSyntax))
-    throw new Skip(
-      'transfer-syntax',
-      `transfer syntax ${transferSyntax} is not explicit VR little endian`,
-    )
-  const frameCount = num(T.frames) ?? 1
-  const tileWidth = num(T.columns) ?? 0
-  const tileHeight = num(T.rows) ?? 0
+  const tileWidth = int(T.columns, 0, 0, 0xffff)
+  const tileHeight = int(T.rows, 0, 0, 0xffff)
   if (!tileWidth || !tileHeight) throw new Skip('not-tiled', 'no Rows/Columns')
+  // Each frame needs at least its 8-byte item header after Pixel Data.
+  const frameCount = int(T.frames, 1, 1, Math.floor((size - pixel) / 8))
+  const totalColumns = int(T.totalColumns, tileWidth, 1, 0xffffffff)
+  const totalRows = int(T.totalRows, tileHeight, 1, 0xffffffff)
+  const columns = Math.ceil(totalColumns / tileWidth)
+  const rows = Math.ceil(totalRows / tileHeight)
+  const grid = columns * rows
+  if (grid > MAX_GRID)
+    throw new Skip('malformed', `${grid} tiles in one level (over ${MAX_GRID})`)
+  const focalPlaneCount = int(T.focalPlanes, 1, 1, 0xffff)
+  const concatOffset = int(T.concatOffset, 0, 0, 0xffffffff)
   const sparse = str(T.organization) === 'TILED_SPARSE'
   const info: InstanceInfo = {
-    id: str(T.sop),
-    file: fileKey(file),
-    size,
-    version: String(file.lastModified),
-    transferSyntax,
-    photometric: str(T.photometric),
-    bitsStored: num(T.bitsStored) ?? 8,
+    instance: {
+      id: str(T.sop),
+      file: fileKey(file),
+      size,
+      version: String(file.lastModified),
+      transferSyntax: str(T.transferSyntax),
+      photometric: str(T.photometric),
+      bitsStored: int(T.bitsStored, 8, 1, 32),
+    },
     study: str(T.study),
     series: str(T.series),
     frameOfReference: str(T.frameOfReference),
     container: str(T.container) || undefined,
     volume: str(T.imageType).includes('VOLUME'),
-    totalColumns: num(T.totalColumns) ?? tileWidth,
-    totalRows: num(T.totalRows) ?? tileHeight,
+    totalColumns,
+    totalRows,
     tileWidth,
     tileHeight,
     frameCount,
     sparse,
-    opticalPathCount: num(T.opticalPaths) ?? 1,
-    focalPlaneCount: num(T.focalPlanes) ?? 1,
-    concatNumber: num(T.concatNumber) ?? 0,
-    concatOffset: num(T.concatOffset) ?? 0,
+    concatNumber: int(T.concatNumber, 0, 0, 0xffff),
     pathIds,
     icc,
+    column: new Int32Array(frameCount),
+    row: new Int32Array(frameCount),
+    path: new Uint16Array(frameCount),
+    z: new Float64Array(frameCount),
     offset: new Float64Array(frameCount),
     length: new Uint32Array(frameCount),
   }
@@ -425,6 +439,7 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     const [row, column] = sharedSpacing.split('\\').map(Number)
     info.pixelSpacingMM = [column as number, row as number]
   }
+  const { column, row, path, z } = info
   if (perFrame) {
     // Per-frame positions: TILED_SPARSE always, TILED_FULL sometimes.
     if (perFrame !== frameCount)
@@ -432,26 +447,40 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
         'malformed',
         `${perFrame} per-frame items for ${frameCount} frames`,
       )
-    const column = new Int32Array(frameCount).fill(-1)
-    const row = new Int32Array(frameCount).fill(-1)
-    const path = new Uint16Array(frameCount)
-    const z = new Float64Array(frameCount).fill(sharedZ ?? 0)
-    const sharedIndex = Math.max(0, pathIds.indexOf(sharedPath ?? ''))
-    path.fill(sharedIndex)
+    column.fill(-1)
+    row.fill(-1)
+    z.fill(sharedZ ?? 0)
+    path.fill(Math.max(0, pathIds.indexOf(sharedPath ?? '')))
+    // A position must name a tile's top-left pixel (1-based); anything else
+    // stays -1, an error buildLevel counts, never a tile placed at 0.
+    const place = (pos: number, size: number): number =>
+      Number.isInteger(pos) && pos >= 1 && (pos - 1) % size === 0
+        ? (pos - 1) / size
+        : -1
     for (const e of elements) {
-      if (e.path[0] !== T.perFrame) continue
-      const f = e.path[1] as number
+      if (e.root !== T.perFrame) continue
+      const f = e.item
       if (e.tag === T.columnPosition)
-        column[f] = (numberOf(b, e) - 1) / tileWidth
+        column[f] = place(numberOf(b, e), tileWidth)
       else if (e.tag === T.rowPosition)
-        row[f] = (numberOf(b, e) - 1) / tileHeight
+        row[f] = place(numberOf(b, e), tileHeight)
       else if (e.tag === T.zOffset) z[f] = numberOf(b, e)
       else if (e.tag === T.opticalPathId)
         path[f] = Math.max(0, pathIds.indexOf(text(b, e)))
     }
-    Object.assign(info, { column, row, path, z })
   } else if (sparse)
     throw new Skip('malformed', 'TILED_SPARSE without per-frame positions')
+  else {
+    // TILED_FULL orders frames by column, row, focal plane, then optical path.
+    for (let f = 0; f < frameCount; f++) {
+      const g = concatOffset + f
+      const t = g % grid
+      column[f] = t % columns
+      row[f] = Math.floor(t / columns)
+      z[f] = Math.floor(g / grid) % focalPlaneCount
+      path[f] = Math.floor(g / (grid * focalPlaneCount))
+    }
+  }
   await frameSpans(info, b, pixel, top, readAt)
   return info
 }
@@ -464,11 +493,19 @@ async function frameSpans(
   top: Map<number, Element>,
   readAt: ReadAt,
 ): Promise<void> {
-  const { frameCount, offset, length, size } = info
+  const { frameCount, offset, length } = info
+  const { size } = info.instance
+  const vr = String.fromCharCode(b[pixel + 4] as number, b[pixel + 5] as number)
+  if (vr !== 'OB' && vr !== 'OW')
+    throw new Skip('malformed', `Pixel Data has VR ${vr}`)
   if (u32(b, pixel + 8) !== UNDEFINED_LENGTH)
     throw new Skip('uncompressed', 'native (uncompressed) pixel data')
+  if (tagOf(u16(b, pixel + 12), u16(b, pixel + 14)) !== T.item)
+    throw new Skip('malformed', 'no Basic Offset Table item')
   const botLength = u32(b, pixel + 16)
   const first = pixel + 20 + botLength // the first fragment's item header
+  if (first > size)
+    throw new Skip('malformed', 'the Basic Offset Table runs past the file')
   const itemHeader = async (
     p: number,
   ): Promise<{ tag: number; length: number }> => {
@@ -477,7 +514,12 @@ async function frameSpans(
   }
   const eot = top.get(T.eot)
   const eotLengths = top.get(T.eotLengths)
-  if (eot && eotLengths) {
+  if (
+    eot &&
+    eotLengths &&
+    eot.length >= 8 * frameCount &&
+    eotLengths.length >= 8 * frameCount
+  ) {
     // Extended Offset Table: one fragment per frame, 64-bit offsets from the first item.
     const o = new DataView(b.buffer, b.byteOffset + eot.offset, eot.length)
     const l = new DataView(
@@ -485,32 +527,41 @@ async function frameSpans(
       b.byteOffset + eotLengths.offset,
       eotLengths.length,
     )
-    for (let f = 0; f < frameCount; f++) {
+    let valid = true
+    for (let f = 0; f < frameCount && valid; f++) {
       offset[f] = first + Number(o.getBigUint64(8 * f, true)) + 8
-      length[f] = Number(l.getBigUint64(8 * f, true))
+      const n = Number(l.getBigUint64(8 * f, true))
+      valid = n <= 0xffffffff && (offset[f] as number) + n <= size
+      length[f] = n
     }
-    return
-  }
-  if (botLength === 4 * frameCount) {
+    if (valid) return
+  } else if (botLength === 4 * frameCount && botLength > 0) {
     // Basic Offset Table: each span runs to the next frame's item header; the
     // last runs to the sequence delimiter. DicomWsiSource verifies the item tag.
     const bot = await readAt(pixel + 20, botLength)
     for (let f = 0; f < frameCount; f++) offset[f] = first + u32(bot, 4 * f) + 8
-    for (let f = 0; f + 1 < frameCount; f++)
-      length[f] = (offset[f + 1] as number) - 8 - (offset[f] as number)
-    let p = (offset[frameCount - 1] as number) - 8
-    for (;;) {
-      const h = await itemHeader(p)
-      if (h.tag !== T.item) break
-      p += 8 + h.length
+    let valid = (offset[frameCount - 1] as number) <= size
+    for (let f = 0; f + 1 < frameCount && valid; f++) {
+      const n = (offset[f + 1] as number) - 8 - (offset[f] as number)
+      valid = n >= 0
+      length[f] = n
     }
-    length[frameCount - 1] = p - (offset[frameCount - 1] as number)
-    return
+    if (valid) {
+      let p = (offset[frameCount - 1] as number) - 8
+      while (p + 8 <= size) {
+        const h = await itemHeader(p)
+        if (h.tag !== T.item || p + 8 + h.length > size) break
+        p += 8 + h.length
+      }
+      length[frameCount - 1] = p - (offset[frameCount - 1] as number)
+      return
+    }
   }
-  // No table: walk the items. A frame starts at a fragment that starts a
-  // codestream (several fragments may make one frame; never assume item == frame).
-  // After a small fragment, the next headers are read as one 64 KiB block;
-  // after a large one, just the 12 bytes, so a walk never reads the payloads.
+  // No table, or a table that is not strictly increasing within the file: walk
+  // the items. A frame starts at a fragment that starts a codestream (several
+  // fragments may make one frame; never assume item == frame). After a small
+  // fragment, the next headers are read as one 64 KiB block; after a large one,
+  // just the 12 bytes, so a walk never reads the payloads.
   let block: Uint8Array = new Uint8Array(0)
   let blockStart = 0
   let last = 0 // the previous fragment's length
@@ -555,9 +606,10 @@ async function frameSpans(
 
 /**
  * Index the DICOM-WSI instances among `files` (e.g. an `<input webkitdirectory>`
- * selection). Files that are not tiled, compressed, explicit-VR DICOM are
- * listed in `skipped`. Only VOLUME instances make levels; each optical path and
- * focal plane is its own slide.
+ * selection). Files that are not tiled, compressed, explicit-VR DICOM, or that
+ * fail to parse, are listed in `skipped`; they never cost the other files their
+ * slides. Only VOLUME instances make levels; each optical path and focal plane
+ * is its own slide.
  * ponytail: main thread with async File.slice reads; move to a worker if a
  * folder without offset tables takes over ~1 s to walk.
  */
@@ -570,9 +622,11 @@ export async function indexDicomWsi(
     try {
       infos.push(await indexInstance(file))
     } catch (err) {
-      if (!(err instanceof Skip || err instanceof NeedMore)) throw err
-      const reason = err instanceof Skip ? err.reason : 'malformed'
-      skipped.push({ file: fileKey(file), reason, message: err.message })
+      skipped.push({
+        file: fileKey(file),
+        reason: err instanceof Skip ? err.reason : 'malformed',
+        message: err instanceof Error ? err.message : String(err),
+      })
     }
   }
   return {
@@ -583,15 +637,19 @@ export async function indexDicomWsi(
   }
 }
 
+interface Member {
+  info: InstanceInfo
+  pathIndex: number
+}
+
 /** Contract 2: a slide is study + series + frame of reference + container + optical path + focal plane. */
 function groupSlides(infos: InstanceInfo[]): SlideIndexSlide[] {
   const slides = new Map<string, { slide: SlideIndexSlide; own: Member[] }>()
   for (const info of infos) {
     if (!info.volume) continue
-    placeFrames(info)
     const combos = new Set<string>()
     for (let f = 0; f < info.frameCount; f++)
-      combos.add(`${info.framePath[f]}|${info.framePlane[f]}`)
+      combos.add(`${info.path[f]}|${info.z[f]}`)
     for (const combo of combos) {
       const [pathIndex, plane] = combo.split('|').map(Number) as [
         number,
@@ -635,27 +693,7 @@ function groupSlides(infos: InstanceInfo[]): SlideIndexSlide[] {
           a.info.totalColumns * a.info.totalRows ||
         a.info.concatNumber - b.info.concatNumber,
     )
-    slide.instances = own.map(
-      ({
-        info: {
-          id,
-          file,
-          size,
-          version,
-          transferSyntax,
-          photometric,
-          bitsStored,
-        },
-      }) => ({
-        id,
-        file,
-        size,
-        version,
-        transferSyntax,
-        photometric,
-        bitsStored,
-      }),
-    )
+    slide.instances = own.map((m) => m.info.instance)
     const byMatrix = new Map<string, number[]>()
     own.forEach(({ info }, k) => {
       const key = `${info.totalColumns}x${info.totalRows}`
@@ -670,32 +708,6 @@ function groupSlides(infos: InstanceInfo[]): SlideIndexSlide[] {
   })
 }
 
-interface Member {
-  info: InstanceInfo & { framePath: Uint16Array; framePlane: Float64Array }
-  pathIndex: number
-}
-
-/**
- * Each frame's optical path index and focal plane. Without per-frame positions,
- * TILED_FULL orders frames by column, row, focal plane, then optical path.
- */
-function placeFrames(info: InstanceInfo): asserts info is Member['info'] {
-  const n = info.frameCount
-  const framePath = info.path ?? new Uint16Array(n)
-  const framePlane = info.z ?? new Float64Array(n)
-  if (!info.path) {
-    const grid =
-      Math.ceil(info.totalColumns / info.tileWidth) *
-      Math.ceil(info.totalRows / info.tileHeight)
-    for (let f = 0; f < n; f++) {
-      const g = info.concatOffset + f
-      framePlane[f] = Math.floor(g / grid) % info.focalPlaneCount
-      framePath[f] = Math.floor(g / (grid * info.focalPlaneCount))
-    }
-  }
-  Object.assign(info, { framePath, framePlane })
-}
-
 function buildLevel(
   slide: SlideIndexSlide,
   ks: number[],
@@ -704,11 +716,9 @@ function buildLevel(
   const i0 = (own[ks[0] as number] as Member).info
   const columns = Math.ceil(i0.totalColumns / i0.tileWidth)
   const rows = Math.ceil(i0.totalRows / i0.tileHeight)
-  const grid = columns * rows
-  const tile = new Int32Array(grid).fill(-1)
+  const tile = new Int32Array(columns * rows).fill(-1)
   const mine = (f: number, m: Member): boolean =>
-    m.info.framePath[f] === m.pathIndex &&
-    m.info.framePlane[f] === slide.focalPlane
+    m.info.path[f] === m.pathIndex && m.info.z[f] === slide.focalPlane
   // Count first, so the frame arrays are sized once.
   let total = 0
   for (const k of ks) {
@@ -716,7 +726,7 @@ function buildLevel(
     for (let f = 0; f < m.info.frameCount; f++) if (mine(f, m)) total++
   }
   const frames: SlideIndexFrames = {
-    instance: new Uint16Array(total),
+    instance: new Uint32Array(total),
     frame: new Uint32Array(total),
     offset: new Float64Array(total),
     length: new Uint32Array(total),
@@ -728,24 +738,15 @@ function buildLevel(
     const { info } = m
     for (let f = 0; f < info.frameCount; f++) {
       if (!mine(f, m)) continue
-      const g = (info.concatOffset + f) % grid
-      const x = info.column ? (info.column[f] as number) : g % columns
-      const y = info.row ? (info.row[f] as number) : Math.floor(g / columns)
+      const x = info.column[f] as number
+      const y = info.row[f] as number
       frames.instance[slot] = k
       frames.frame[slot] = f + 1
       frames.offset[slot] = info.offset[f] as number
       frames.length[slot] = info.length[f] as number
       const t = y * columns + x
-      // Off the grid, or a second frame for a tile: an error; the first wins.
-      if (
-        !Number.isInteger(x) ||
-        !Number.isInteger(y) ||
-        x < 0 ||
-        y < 0 ||
-        x >= columns ||
-        y >= rows ||
-        tile[t] !== -1
-      )
+      // An invalid position (-1), off the grid, or a second frame for a tile: an error; the first wins.
+      if (x < 0 || y < 0 || x >= columns || y >= rows || tile[t] !== -1)
         duplicates++
       else tile[t] = slot
       slot++

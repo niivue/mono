@@ -59,6 +59,8 @@ export interface NVSlideTileManifest {
   offset?: number
   length?: number
   fragments?: NVSlideTileFragment[]
+  /** The tile's own file, when a level spans several (a DICOM concatenation). */
+  fileUrl?: string
 }
 
 export interface NVSlideLevelManifest {
@@ -86,7 +88,17 @@ export interface NVSlideLevelManifest {
   frames?: number
   opticalPaths?: number
   focalPlanes?: number
-  tiles: NVSlideTileManifest[]
+  /**
+   * DICOM TILED_SPARSE: frames are placed by their per-frame position, so the
+   * frame count says nothing about paths or planes; the producer states both.
+   */
+  sparse?: true
+  /**
+   * Row-major, `columns * rows`; `null` is a hole (no tile: nothing is drawn).
+   * A sparse level may instead list only its present tiles, which NVSlide places
+   * by `x`, `y` when it opens the slide.
+   */
+  tiles: Array<NVSlideTileManifest | null>
 }
 
 /**
@@ -622,7 +634,9 @@ export class ManifestRangeSource implements SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const sourceUrl = this.tileSourceUrl(level)
+    const sourceUrl = tile.fileUrl
+      ? this.requireHost().resolveUrl(tile.fileUrl)
+      : this.tileSourceUrl(level)
     const fragments = this.tileFragments(tile)
     const parts = await Promise.all(
       fragments.map((fragment) =>
@@ -646,6 +660,12 @@ export class ManifestRangeSource implements SlideTileSource {
 export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
   if (!manifest.format?.startsWith('dicom-wsi')) return
   for (const level of manifest.levels) {
+    if (level.sparse) {
+      if (level.opticalPaths === 1 && level.focalPlanes === 1) continue
+      throw new Error(
+        `Slide level ${level.index} is sparse but does not state one optical path and one focal plane`,
+      )
+    }
     const { frames } = level
     const grid = level.columns * level.rows
     const paths = level.opticalPaths ?? (frames === grid ? 1 : undefined)
@@ -660,6 +680,26 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
       : 'has optical paths or focal planes that are unknown or disagree with its frame count'
     throw new Error(`Slide level ${level.index} ${what}`)
   }
+}
+
+/**
+ * A level that lists only its present tiles, or is sparse, becomes the dense
+ * row-major grid with null holes, placed by each tile's x/y (a listing's order
+ * is not trusted). Off-grid tiles and second tiles for a cell are dropped.
+ * Returns a new level; the caller's manifest is not changed.
+ */
+function placeListedTiles(level: NVSlideLevelManifest): NVSlideLevelManifest {
+  const n = level.columns * level.rows
+  if (!level.sparse && level.tiles.length === n) return level
+  const grid: Array<NVSlideTileManifest | null> = new Array(n).fill(null)
+  for (const tile of level.tiles) {
+    if (!tile) continue
+    const { x, y } = tile
+    if (!Number.isInteger(x) || !Number.isInteger(y)) continue
+    if (x < 0 || y < 0 || x >= level.columns || y >= level.rows) continue
+    grid[y * level.columns + x] ??= tile
+  }
+  return { ...level, tiles: grid }
 }
 
 /** The top-left `width` x `height` of a padded monochrome frame. */
@@ -742,7 +782,10 @@ export class NVSlide extends EventTarget {
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
     assertSingleSlidePlane(manifest)
-    this.manifest = manifest
+    const levels = manifest.levels.map(placeListedTiles)
+    this.manifest = levels.every((l, i) => l === manifest.levels[i])
+      ? manifest
+      : { ...manifest, levels }
     this.manifestUrl = options.manifestUrl ?? ''
     this.id = options.id ?? manifest.id
     this.name = options.name ?? manifest.name

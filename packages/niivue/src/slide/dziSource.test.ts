@@ -54,6 +54,7 @@ describe('buildDziManifest', () => {
     // Tiles never exceed the tile size, edges are clamped.
     for (const lvl of manifest.levels) {
       for (const t of lvl.tiles) {
+        if (!t) throw new Error('a DZI level has no holes')
         expect(t.width).toBeGreaterThan(0)
         expect(t.width).toBeLessThanOrEqual(256)
         expect(t.height).toBeLessThanOrEqual(256)

@@ -66,6 +66,7 @@ export function slidePlaneTiles(
       : level.downsample
   const out: SlidePlaneTile[] = []
   for (const tile of level.tiles) {
+    if (!tile) continue // a sparse slide's hole
     const baseX = tile.x * tileWidth * dsX
     const baseY = tile.y * tileHeight * dsY
     const baseW = tile.width * dsX
@@ -280,7 +281,6 @@ export function resolveSlidePlaneTiles(
     state.tilesByLevel.set(level.index, all)
   }
   // Cull to the viewport so a deep level only streams/draws on-screen tiles.
-  // `all[i]` is in `level.tiles[i]` order (slidePlaneTiles preserves it).
   const margin = Math.max(w, h) * 0.1
   const tiles: SlidePlaneTile[] = []
   for (let i = 0; i < all.length; i++) {
@@ -307,7 +307,7 @@ export function resolveSlidePlaneTiles(
     ) {
       continue
     }
-    const tm = level.tiles[i]
+    const tm = level.tiles[t.row * level.columns + t.col]
     if (tm) state.slide.requestTile(level, tm)
     tiles.push(t)
   }

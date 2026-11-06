@@ -101,7 +101,7 @@ describe('NVSlide tile loading', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     expect(slide.pendingCount).toBe(tileCount)
     await waitFor(() => slide.stats.completed === tileCount)
     expect(source.peak).toBeLessThanOrEqual(4)
@@ -121,7 +121,7 @@ describe('NVSlide tile loading', () => {
       const slide = NVSlide.fromSource(source, { maxConcurrentLoads: bad })
       const level = slide.manifest.levels[0]
       if (!level) throw new Error('manifest has no level')
-      for (const tile of level.tiles) slide.requestTile(level, tile)
+      for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
       await waitFor(() => slide.stats.completed === tileCount)
       expect(source.peak).toBeLessThanOrEqual(12)
       expect(slide.stats.failures).toBe(0)
@@ -136,7 +136,7 @@ describe('NVSlide tile loading', () => {
     const slide = NVSlide.fromSource(source)
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => slide.stats.completed === tileCount)
     // Encoded payload is 16 bytes/tile; decoded accounting must dominate.
     expect(slide.cacheBytes).toBe(tileCount * DECODED_TILE_BYTES)
@@ -183,7 +183,7 @@ describe('NVSlide tile loading', () => {
     }
     const source = new CountingSource(manifest)
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 2 })
-    for (const tile of level0.tiles) slide.requestTile(level0, tile)
+    for (const tile of level0.tiles) if (tile) slide.requestTile(level0, tile)
     await waitFor(() => slide.stats.completed + slide.stats.failures === 10)
     expect(slide.stats.completed).toBe(7)
     expect(slide.stats.failures).toBe(3)
@@ -382,7 +382,7 @@ describe('NVSlide load cancellation', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => source.signals.length === 4)
     expect(source.signals.every((s) => !s.aborted)).toBe(true)
     slide.dispose()
@@ -433,7 +433,7 @@ describe('NVSlide load cancellation', () => {
     if (!level) throw new Error('manifest has no level')
     // A non-viewport consumer (e.g. setSlidePlane's coarsest-level priming)
     // starts all four loads ...
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => source.signals.length === 4)
     // ... then a 2D viewport pass wants only tile 0. The other three loads
     // were not started by the viewport working set, so they must NOT be
@@ -457,7 +457,7 @@ describe('NVSlide load cancellation', () => {
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
     // A non-viewport consumer requests both: tile 0 in flight, tile 1 queued.
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => source.signals.length === 1)
     // A 2D viewport pass then wants only tile 0. It clears and rebuilds the
     // working set, so the queued tile 1 is no longer "wanted" -- but it was
@@ -515,7 +515,7 @@ describe('NVSlide load cancellation', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 2 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => source.current === 2)
     slide.dispose()
     await waitFor(() => source.current === 0)
@@ -664,6 +664,93 @@ describe('ManifestRangeSource range telemetry', () => {
   })
 })
 
+describe('ManifestRangeSource per-tile file', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('reads a tile from its own fileUrl (a DICOM concatenation)', async () => {
+    const manifest = makeRangeManifest()
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    tile.fileUrl = 'https://example.test/part2.bin'
+    const source = new ManifestRangeSource(manifest)
+    source.bind({
+      resolveUrl: (url) => url,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+    })
+    const urls: string[] = []
+    globalThis.fetch = ((url: string) => {
+      urls.push(url)
+      return Promise.resolve(
+        new Response(new Uint8Array(16), {
+          status: 206,
+          headers: { 'content-range': 'bytes 0-15/100' },
+        }),
+      )
+    }) as unknown as typeof fetch
+    await source.fetchTileBytes(level, tile, 'L0/0/0')
+    expect(urls).toEqual(['https://example.test/part2.bin'])
+  })
+})
+
+describe('NVSlide listed tiles', () => {
+  it('places a level that lists only its present tiles, holes null', () => {
+    const manifest = makePyramid()
+    const l0 = manifest.levels[0]
+    if (!l0) throw new Error('no level')
+    const a = { x: 1, y: 0, width: TILE_W, height: TILE_H, frame: 1 }
+    const b = { x: 3, y: 2, width: TILE_W, height: TILE_H, frame: 2 }
+    Object.assign(l0, { tiles: [b, a], sparse: true })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const placed = slide.manifest.levels[0]
+    if (!placed) throw new Error('no level')
+    expect(placed.tiles.length).toBe(16)
+    expect(placed.tiles[1]).toBe(a)
+    expect(placed.tiles[2 * 4 + 3]).toBe(b)
+    expect(placed.tiles.filter((t) => t === null).length).toBe(14)
+    expect(l0.tiles).toEqual([b, a]) // the caller's manifest is not changed
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    expect(slide.visibleTiles(WHOLE_SLIDE_SCREEN).tiles.length).toBe(2)
+    slide.dispose()
+  })
+
+  it('drops off-grid and duplicate tiles, and places a complete sparse level by x/y', () => {
+    const manifest = makePyramid()
+    const l1 = manifest.levels[1] // 2 x 2 tiles
+    if (!l1) throw new Error('no level')
+    const at = (x: number, y: number, frame: number) => ({
+      x,
+      y,
+      width: TILE_W,
+      height: TILE_H,
+      frame,
+    })
+    // Four tiles, so the count matches the grid, but listed out of order, with
+    // a duplicate cell, an off-grid tile and a non-integer position.
+    Object.assign(l1, {
+      sparse: true,
+      tiles: [at(1, 1, 1), at(1, 1, 2), at(2, 0, 3), at(0.5, 0, 4)],
+    })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const placed = slide.manifest.levels[1]
+    expect(placed?.tiles.map((t) => t?.frame ?? null)).toEqual([
+      null,
+      null,
+      null,
+      1,
+    ])
+    slide.dispose()
+  })
+})
+
 describe('NVSlide DICOM-WSI dimensions', () => {
   // `grids`: frames as a multiple of the level's tile grid (undefined = no count).
   const dicom = (
@@ -766,7 +853,7 @@ describe('NVSlide tile-cache budget', () => {
     // DICOM edge frames decode padded to the full tile: clipped to 1 px wide,
     // L0's 16 tiles would seem to need 256 B, but decode to 2048 B.
     const manifest = makePyramid()
-    for (const tile of manifest.levels[0]?.tiles ?? []) tile.width = 1
+    for (const tile of manifest.levels[0]?.tiles ?? []) if (tile) tile.width = 1
     const slide = NVSlide.fromSource(new CountingSource(manifest), {
       maxCacheBytes: 700, // 75% budget: 525 B
     })
@@ -961,7 +1048,7 @@ describe('NVSlide monochrome window', () => {
     const values = [
       ...slide.manifest.levels[0].tiles,
       ...slide.manifest.levels[1].tiles,
-    ].map((t, i) => pixel(slide, `L${i < 16 ? 0 : 1}/${t.x}/${t.y}`))
+    ].map((t, i) => pixel(slide, `L${i < 16 ? 0 : 1}/${t?.x}/${t?.y}`))
     expect(new Set(values)).toEqual(new Set([255]))
     // 8x4 RGBA plus 8x4 uint16 samples per tile.
     expect(slide.cacheBytes).toBe(20 * (TILE_W * TILE_H * 6))
@@ -1042,5 +1129,57 @@ describe('NVSlide monochrome window', () => {
       expect(() => slide.setWindow(lo, hi)).toThrow(RangeError)
     expect(slide.window).toBeNull()
     slide.dispose()
+  })
+})
+
+describe('NVSlide sparse levels', () => {
+  // TILED_SPARSE: L0 (4 x 4) holds 6 of its 16 tiles; holes are null.
+  function sparseManifest(stated = true): NVSlideManifest {
+    const m = makePyramid()
+    m.format = 'dicom-wsi-index-v1'
+    for (const level of m.levels)
+      Object.assign(level, {
+        sparse: true,
+        ...(stated ? { opticalPaths: 1, focalPlanes: 1 } : {}),
+        frames: level.index === 0 ? 6 : level.tiles.length,
+      })
+    const l0 = m.levels[0]
+    if (!l0) throw new Error('no L0')
+    l0.tiles = l0.tiles.map((t, i) =>
+      [0, 3, 5, 6, 10, 15].includes(i) ? t : null,
+    )
+    return m
+  }
+
+  it('opens, and neither draws nor requests a hole', () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const slide = NVSlide.fromSource(new CountingSource(sparseManifest()))
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    const visible = slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(visible.level?.index).toBe(0)
+    // Only present tiles are visible (so a renderer draws no placeholder for a hole).
+    expect(visible.tiles.map((t) => `${t.tile.x},${t.tile.y}`)).toEqual([
+      '0,0',
+      '3,0',
+      '1,1',
+      '2,1',
+      '2,2',
+      '3,3',
+    ])
+    expect(slide.stats.requested).toBe(6)
+    slide.dispose()
+  })
+
+  it('needs the producer to state one optical path and one focal plane', () => {
+    expect(() =>
+      NVSlide.fromSource(new CountingSource(sparseManifest(false))),
+    ).toThrow(/sparse but does not state/)
+    // Without `sparse`, its 6 frames would contradict the 4 x 4 grid.
+    const unmarked = sparseManifest()
+    for (const level of unmarked.levels) delete level.sparse
+    expect(() => NVSlide.fromSource(new CountingSource(unmarked))).toThrow(
+      /disagree with its frame count/,
+    )
   })
 })

@@ -7,6 +7,7 @@ import type {
   NVSlideLevelManifest,
   NVSlideRangeEvent,
   NVSlideRangeStatus,
+  NVSlideTileManifest,
   SlideSourceHost,
 } from './NVSlide'
 import { VolumeSliceSource } from './volumeSliceSource'
@@ -86,13 +87,17 @@ function recordingHost(events: NVSlideRangeEvent[]): SlideSourceHost & {
   return host
 }
 
+// A volume slice has no holes, so its tiles are all present.
 function levelOf(
   source: VolumeSliceSource,
   index: number,
-): NVSlideLevelManifest {
+): Omit<NVSlideLevelManifest, 'tiles'> & { tiles: NVSlideTileManifest[] } {
   const level = source.manifest.levels[index]
   if (!level) throw new Error(`no level ${index}`)
-  return level
+  if (level.tiles.includes(null)) throw new Error(`level ${index} has a hole`)
+  return level as Omit<NVSlideLevelManifest, 'tiles'> & {
+    tiles: NVSlideTileManifest[]
+  }
 }
 
 describe('VolumeSliceSource manifest', () => {

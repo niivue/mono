@@ -32,7 +32,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `addVolume(volume)` | ✅ | |
 | `loadImages()` (mixed volumes+meshes) | ✅ | `loadImage` / `addImage`; `loadFiles(files, { add })` for local `File`s as a drop loads them |
 | `loadFromUrl/File/ArrayBuffer` generic loaders | ✅ | Via `useLoader` plugin system |
-| DICOM loading | ✅ | Provided by `@niivue/nv-ext-dcm2niix` extension (browser-side dcm2niix/WASM conversion) |
+| DICOM loading | ✅ | Convert in the browser with `@niivue/dcm2niix` (WASM), then load the NIfTI |
 | `loadDeferred4DVolumes()` | ✅ | |
 | Partial 4D load (`limitFrames4D` option) | ✅ | Reads only header + first N frames: a gzip NIfTI-1 via `DecompressionStream` (no fflate), or an uncompressed `.nii` `File` via `Blob.slice`; the only way to open a 4D volume larger than V8's ~2 GiB `ArrayBuffer` cap. Auto-caps to as-many-frames-as-fit on `RangeError`/`NotReadableError` even without the option |
 | `getZarrVolume()` / Zarr format | ✅ | OME-Zarr multiscale stores via `loadOmeZarrVolumes` / `fetchOmeZarr` (whole level) and `omeZarrChunkedSource` (streamed chunks); see `docs/ome-zarr-format.md` |
@@ -362,7 +362,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `useLoader()` — custom format loader | ✅ | |
 | External reader registration | ✅ | `registerExternalReader` on NVVolume |
-| DICOM loader plugin | ✅ | `@niivue/nv-ext-dcm2niix` extension |
+| DICOM loader plugin | ✅ | `@niivue/dcm2niix` (conversion to NIfTI) |
 | Other loader plugins (itkwasm, minc, vox, cbor) | ❌ | Must be provided externally |
 | TIFF loader | ✅ | Built in, not a plugin — see `docs/ome-tiff-format.md`. Streaming tiled/pyramidal slides (SVS, OME-TIFF, JPEG tiles) and local DICOM-WSI folders into `NVSlide`: `@niivue/nv-ext-wsi` |
 
@@ -577,7 +577,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 16. **Standalone `binarize()`** (functionality partly available through different APIs)
 
 ### Covered by New Extensions / Different APIs
-- **DICOM loading**: `@niivue/nv-ext-dcm2niix`
+- **DICOM loading**: `@niivue/dcm2niix`
 - **Drawing helpers**: `findDrawingBoundarySlices`, `interpolateMaskSlices`, magic wand segmentation in `@niivue/nv-ext-drawing`
 - **Image processing**: `otsu`, `removeHaze`, `conform`, `connectedLabel` in `@niivue/nv-ext-image-processing`
 - **HTML export**: `generateHTML`, `saveHTML` in `@niivue/nv-ext-save-html`

@@ -1,6 +1,6 @@
 # demo-ext-dcm2niix
 
-Demo app for [`@niivue/nv-ext-dcm2niix`](../../packages/nv-ext-dcm2niix) — convert a folder of DICOM files to NIfTI in the browser via the dcm2niix WASM build, then view the result with NiiVue. No data leaves the browser.
+Reference app for DICOM in NiiVue: convert a folder of DICOM files to NIfTI in the browser with [`@niivue/dcm2niix`](https://www.npmjs.com/package/@niivue/dcm2niix) (`convert`, `result.series`), then view the chosen series. NiiVue itself only sees NIfTI. No data leaves the browser.
 
 Three input paths are wired up:
 

@@ -1216,8 +1216,6 @@ export type NVInstance = {
   scale?: number | [number, number, number]
   /** Global scene Euler rotation in radians: [x, y, z]. */
   orientation?: [number, number, number]
-  viewport?: CanvasViewport
-  rotation?: [number, number, number, number]
   volumeId?: string
 }
 

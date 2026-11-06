@@ -404,9 +404,6 @@ export interface Instance {
   scale?: number | [number, number, number]
   /** Its rotation about x, y and z, in radians. */
   orientation?: [number, number, number]
-  viewport?: Viewport
-  /** For a canvas tile, its render camera: `[azimuth, elevation, ...]`. */
-  rotation?: [number, number, number, number]
   /** The volume it draws, by name or address; the base when none matches. */
   volumeId?: string
 }

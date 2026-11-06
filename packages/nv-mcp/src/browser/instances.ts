@@ -213,8 +213,8 @@ export function instanceHandlers(host: NiiVueHost): Handlers {
         [bounds[2], bounds[3]],
       ]
     }
-    // NiiVue draws a canvas tile with the scene's own render camera: it
-    // reads a tile's rotation and viewport only for a tile on a screen.
+    // A canvas tile draws with the scene's own render camera: NVInstance has
+    // no per-tile rotation or viewport (#345).
     return inst
   }
 

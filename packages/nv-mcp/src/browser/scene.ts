@@ -529,7 +529,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     async load_ome_zarr(params) {
       const url = text(params, 'url')
       if (!url) throw new Error('load_ome_zarr needs a url.')
-      const zarr = host.omeZarr
+      const zarr = await host.omeZarr?.()
       if (!zarr)
         throw new Error(
           'This page cannot open OME-Zarr stores: it did not provide the nv-ext-tile loaders.',
@@ -540,12 +540,13 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const timepoint = integer(params, 'timepoint')
       try {
         if (stream) {
-          if (!view.removeAllVolumes)
-            throw new Error('this page cannot stream volumes')
-          // Replaces, like load_volume; streamOmeZarr frees its manager and
-          // workers once the volume is removed or the view destroyed.
-          await view.removeAllVolumes()
-          await zarr.streamOmeZarr(view, url, { channel, timepoint })
+          // Replaces, like load_volume, once the store has opened; the
+          // helper frees its manager and workers when the volume goes.
+          await zarr.streamOmeZarr(view, url, {
+            channel,
+            timepoint,
+            replace: true,
+          })
         } else {
           const channels = channel === undefined ? undefined : [channel]
           const volumes = await zarr.loadOmeZarrVolumes(url, {

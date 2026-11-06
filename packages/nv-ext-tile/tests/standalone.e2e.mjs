@@ -124,9 +124,33 @@ const PAGES = {
     steps.push(step())
     await stream()
     steps.push(step())
+    // Removed while it initializes (every read held 500 ms).
+    const slow = new URL('./slow/fixtures/tiny.ome.zarr', location.href).href
+    await nv.removeAllVolumes()
+    window.countWorkers = true
+    const pending = streamOmeZarr(nv, slow, { replace: true })
+    while (!nv.volumes.length) await new Promise((r) => setTimeout(r, 20))
+    await nv.removeAllVolumes()
+    await pending
+    await settle()
+    window.countWorkers = false
+    steps.push(step())
+    await stream()
     nv.destroy()
     steps.push(step())
-    return { steps, made: window.madeWorkers }`),
+    // Destroyed while the store opens: the load rejects and frees its pool.
+    const canvas2 = document.createElement('canvas')
+    canvas2.id = 'gl2'
+    document.body.append(canvas2)
+    const nv2 = new NiiVue({ backend: 'webgl2' })
+    await nv2.attachTo('gl2')
+    window.countWorkers = true
+    const opening = streamOmeZarr(nv2, slow)
+    nv2.destroy()
+    const rejected = await opening.then(() => false, () => true)
+    await settle()
+    window.countWorkers = false
+    return { steps, made: window.madeWorkers, opening: { rejected, managers: nv2._chunkedVolumes.size, workers: window.liveWorkers } }`),
   'dicom.html': page(`
     const { NVSlide } = await import('@niivue/niivue/webgpu')
     const { SlideRenderer } = await import('@niivue/niivue/webgl2')
@@ -208,7 +232,12 @@ const server = createServer(async (req, res) => {
     return res.writeHead(400).end()
   }
   if (!path.startsWith(BASE)) return res.writeHead(404).end()
-  const rest = path.slice(BASE.length)
+  let rest = path.slice(BASE.length)
+  // slow/<path>: the same file, 500 ms later (a store still loading).
+  if (rest.startsWith('slow/')) {
+    await new Promise((r) => setTimeout(r, 500))
+    rest = rest.slice('slow/'.length)
+  }
   if (PAGES[rest])
     return res.writeHead(200, { 'content-type': 'text/html' }).end(PAGES[rest])
   if (rest === 'tiny.nii') return res.writeHead(200).end(tinyNifti())
@@ -300,12 +329,16 @@ try {
 
   const stream = results['stream.html'].result
   check(
-    JSON.stringify(stream.steps?.map((s) => s[0])) === '[1,1,1,0,1,0]' &&
+    JSON.stringify(stream.steps?.map((s) => s[0])) === '[1,1,1,0,1,0,0]' &&
       stream.steps.every((s) => s[1] <= 1) &&
       stream.steps.at(-1)[1] === 0 &&
       stream.steps[3][1] === 0 &&
+      stream.steps[5][1] === 0 &&
+      stream.opening?.rejected &&
+      stream.opening.managers === 0 &&
+      stream.opening.workers === 0 &&
       stream.made > 0,
-    `streamOmeZarr releases its manager and workers on replace and destroy ${JSON.stringify(stream)}`,
+    `streamOmeZarr releases its manager and workers on replace, removal while initializing, destroy, and destroy while opening ${JSON.stringify(stream)}`,
   )
 
   const dicom = results['dicom.html'].result

@@ -208,7 +208,7 @@ export abstract class NVRenderer {
 
 Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (uses stored context), `isReady` (public get, protected set) guards all draw calls.
 
-**Colorbar layout:** The colorbar block allocator reads the actual rasterized font size via `ColorbarLayout.fontPx` (0 = unknown). Each backend's `resize` stores `fontRenderer.fontPx` in the shared `ColorbarState` (`view/NVColorbar.ts`) so `resolveFontSize` can pick `max(actual, legacy)` — defaults keep the pre-audit look while a cranked-up `fontScale` grows the allocation to avoid overflow. Bottom cushion scales as `max(1, 0.1 * fontSize)`, and single-row colorbars no longer allocate a spurious trailing `gap`.
+**Colorbar layout:** The colorbar block allocator reads the actual rasterized font size via `ColorbarLayout.fontPx` (0 = unknown). Each backend's `resize` stores `fontRenderer.fontPx` in `_fontPx` on the shared `NVColorbarRenderer` base (`view/NVColorbarRenderer.ts`), whose `getLayout()` passes it on, so `resolveFontSize` can pick `max(actual, legacy)` — defaults keep the pre-audit look while a cranked-up `fontScale` grows the allocation to avoid overflow. Bottom cushion scales as `max(1, 0.1 * fontSize)`, and single-row colorbars no longer allocate a spurious trailing `gap`.
 
 **Fonts (Unicode):**
 - `src/view/NVFont.ts` parses atlases sparsely by Unicode code point, and `buildTextLayout` iterates strings by code point (not UTF-8 bytes), so CJK and other non-Latin glyphs render correctly when present in the atlas. Swap the active font at runtime via `nv1.setFont(nextFont)` for an in-memory atlas, or `nv1.setFontFromUrl({ atlas, metrics })` to fetch a PNG+JSON pair from URLs — both rebuild the view because the atlas texture is GPU-owned.

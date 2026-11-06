@@ -189,7 +189,7 @@ unit-tested under the Bun harness.)
 | `NVEvents.ts` | Event types — `NVEventMap`, typed `CustomEvent` dispatching |
 | `annotation/` | Vector annotation system — shapes, clipping, undo/redo |
 
-Both backends have matching render layers: `mesh`, `font`, `line`, `colorbar`, `orient`, `crosshair`, `thumbnail` — each in `wgpu/` and `gl/` directories. All render entities extend `NVRenderer` (`src/view/NVRenderer.ts`) with `init()` (stores GPU context, sets `isReady`), `draw()` (guarded by `isReady`), and parameterless `destroy()` (uses stored context). Stateless utilities remain module-level exports.
+Both backends have matching render layers: `mesh`, `font`, `line`, `colorbar`, `orient`, `crosshair`, `thumbnail` — each in `wgpu/` and `gl/` directories. All render entities extend `NVRenderer` (`src/view/NVRenderer.ts`) with `init()` (stores GPU context, sets `isReady`), `draw()` (guarded by `isReady`), and parameterless `destroy()` (uses stored context). Stateless utilities remain module-level exports. Backend-neutral CPU logic (layout, chunk fetch/prefetch, tile walks, bench timing) goes in a shared module under `view/`, `volume/` or `slide/` instead of being copied into `gl/` and `wgpu/`; e.g. `volume/chunkFetch.ts` serves both chunk uploaders.
 
 ```typescript
 // Base class — shared lifecycle contract
@@ -206,7 +206,7 @@ export abstract class NVRenderer {
 
 Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (uses stored context), `isReady` (public get, protected set) guards all draw calls.
 
-**Colorbar layout:** The colorbar block allocator reads the actual rasterized font size via an optional `ColorbarLayout.fontPx` field. Each backend's resize path threads `fontRenderer.fontPx` through so `resolveFontSize` can pick `max(actual, legacy)` — defaults keep the pre-audit look while a cranked-up `fontScale` grows the allocation to avoid overflow. Bottom cushion scales as `max(1, 0.1 * fontSize)`, and single-row colorbars no longer allocate a spurious trailing `gap`.
+**Colorbar layout:** The colorbar block allocator reads the actual rasterized font size via `ColorbarLayout.fontPx` (0 = unknown). Each backend's `resize` stores `fontRenderer.fontPx` in the shared `ColorbarState` (`view/NVColorbar.ts`) so `resolveFontSize` can pick `max(actual, legacy)` — defaults keep the pre-audit look while a cranked-up `fontScale` grows the allocation to avoid overflow. Bottom cushion scales as `max(1, 0.1 * fontSize)`, and single-row colorbars no longer allocate a spurious trailing `gap`.
 
 **Fonts (Unicode):**
 - `src/view/NVFont.ts` parses atlases sparsely by Unicode code point, and `buildTextLayout` iterates strings by code point (not UTF-8 bytes), so CJK and other non-Latin glyphs render correctly when present in the atlas. Swap the active font at runtime via `nv1.setFont(nextFont)` for an in-memory atlas, or `nv1.setFontFromUrl({ atlas, metrics })` to fetch a PNG+JSON pair from URLs — both rebuild the view because the atlas texture is GPU-owned.

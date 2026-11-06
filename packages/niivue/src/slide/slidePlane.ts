@@ -30,6 +30,17 @@ function apply(m: readonly number[], px: number, py: number): Vec3 {
 }
 
 /**
+ * A plane quad's 4 vertices, interleaved [pos.xyz, uv.xy] in TRIANGLE_STRIP
+ * order TL, TR, BL, BR; UV origin top-left.
+ */
+export function cornerQuad(
+  corners: SlidePlaneTile['corners'],
+): Float32Array<ArrayBuffer> {
+  const [tl, tr, bl, br] = corners
+  return new Float32Array([...tl, 0, 0, ...tr, 1, 0, ...bl, 0, 1, ...br, 1, 1])
+}
+
+/**
  * Map every tile of `level` to a world-space quad via `pixelToWorld` (column-major
  * 4x4, slide base pixels -> world mm). Mirrors NVSlide.visibleTiles' base-pixel
  * math, so a tile's plane position lines up with its 2D position. When the base

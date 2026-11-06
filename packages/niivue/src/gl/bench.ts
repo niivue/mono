@@ -1,3 +1,4 @@
+import { BenchGuard } from '@/view/NVBench'
 import type NVGlview from './NVViewGL'
 
 /**
@@ -15,13 +16,15 @@ export class GLBench {
   private _depthRbo: WebGLRenderbuffer | null = null
   private _fboW = 0
   private _fboH = 0
-  private _inProgress = false
-  // Set by destroy(). Checked after every await so a bench call that was
-  // mid-await when the view tore down its bench exits cleanly rather than
-  // allocating orphan GPU resources on a disposed view.
-  private _disposed = false
+  private _guard: BenchGuard
 
-  constructor(private view: NVGlview) {}
+  constructor(private view: NVGlview) {
+    this._guard = new BenchGuard(
+      view,
+      () => !view.isBusy,
+      'renderAndFlush: view still busy after waiting',
+    )
+  }
 
   /** Offscreen FBO sized to the last bench render, or null before first call. */
   get fbo(): WebGLFramebuffer | null {
@@ -36,18 +39,10 @@ export class GLBench {
 
   /** Render to the canvas and block until the GPU finishes. */
   async renderAndFlush(): Promise<void> {
-    if (this._disposed) return
     const view = this.view
     const gl = view.gl
     if (!gl) return
-    if (this._inProgress) {
-      throw new Error('renderAndFlush: concurrent call not allowed')
-    }
-    this._inProgress = true
-    try {
-      if (view.boundsWidth === 0 || view.boundsHeight === 0) view.resize()
-      await this._waitForReady()
-      if (this._disposed) return
+    await this._guard.run('renderAndFlush', () => {
       view.render()
       // Force true GPU sync. gl.finish() is unreliable on some ANGLE/Metal
       // paths (returns after flush, not completion). Reading a single pixel
@@ -56,9 +51,7 @@ export class GLBench {
       // of render(), so (0,0) is always readable.
       const pix = new Uint8Array(4)
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pix)
-    } finally {
-      this._inProgress = false
-    }
+    })
   }
 
   /**
@@ -73,18 +66,10 @@ export class GLBench {
    * exit. A single-flight guard prevents re-entrancy corrupting the shim.
    */
   async renderAndFlushOffscreen(): Promise<void> {
-    if (this._disposed) return
     const view = this.view
     const gl = view.gl
     if (!gl) return
-    if (this._inProgress) {
-      throw new Error('renderAndFlushOffscreen: concurrent call not allowed')
-    }
-    this._inProgress = true
-    try {
-      if (view.boundsWidth === 0 || view.boundsHeight === 0) view.resize()
-      await this._waitForReady()
-      if (this._disposed) return
+    await this._guard.run('renderAndFlushOffscreen', () => {
       const w = view.boundsWidth
       const h = view.boundsHeight
       this._ensureFbo(gl, w, h)
@@ -106,14 +91,12 @@ export class GLBench {
         mutGL.bindFramebuffer = orig
         orig(gl.FRAMEBUFFER, null)
       }
-    } finally {
-      this._inProgress = false
-    }
+    })
   }
 
   /** Release all GPU resources owned by this bench. */
   destroy(): void {
-    this._disposed = true
+    this._guard.disposed = true
     const gl = this.view.gl
     if (gl) {
       if (this._fbo) gl.deleteFramebuffer(this._fbo)
@@ -125,19 +108,6 @@ export class GLBench {
     this._depthRbo = null
     this._fboW = 0
     this._fboH = 0
-  }
-
-  private async _waitForReady(): Promise<void> {
-    const view = this.view
-    const MAX_WAIT_FRAMES = 300
-    let tries = 0
-    while (view.isBusy && tries < MAX_WAIT_FRAMES) {
-      await new Promise<void>((r) => requestAnimationFrame(() => r()))
-      tries++
-    }
-    if (view.isBusy) {
-      throw new Error('renderAndFlush: view still busy after waiting')
-    }
   }
 
   private _ensureFbo(gl: WebGL2RenderingContext, w: number, h: number): void {

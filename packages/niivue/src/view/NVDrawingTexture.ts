@@ -1,5 +1,7 @@
 import { makeLabelLut } from '@/cmap/NVCmaps'
 import type { ColorMap, LUT } from '@/NVTypes'
+import type { ChunkPlan, Vec3i } from '@/volume/chunking'
+import { extractChunkBytes } from '@/volume/orientChunked'
 
 /**
  * Convert a drawing bitmap (label indices) to an RGBA Uint8Array using a label colormap LUT.
@@ -33,4 +35,34 @@ export function drawingBitmapToRGBA(
  */
 export function buildDrawingLut(cm: ColorMap): LUT {
   return makeLabelLut(cm)
+}
+
+/**
+ * The drawing chunks to upload, each with its RGBA bytes cut out of the
+ * whole-volume `rgba`: every chunk, or only `dirtyChunks` when the existing
+ * chunk textures are reused (a pen stroke re-uploads just what it touched).
+ */
+export function* drawingChunkUploads(
+  rgba: Uint8Array,
+  dims: number[],
+  plan: ChunkPlan,
+  reuse: boolean,
+  dirtyChunks: readonly number[] | undefined,
+): Generator<[number, Uint8Array, Vec3i]> {
+  const volumeDims: Vec3i = [dims[0], dims[1], dims[2]]
+  const indices =
+    reuse && dirtyChunks
+      ? dirtyChunks
+      : Array.from({ length: plan.chunks.length }, (_, i) => i)
+  for (const i of indices) {
+    const desc = plan.chunks[i]
+    const bytes = extractChunkBytes(
+      rgba,
+      volumeDims,
+      4,
+      desc.texOrigin,
+      desc.texDims,
+    )
+    yield [i, bytes, desc.texDims]
+  }
 }

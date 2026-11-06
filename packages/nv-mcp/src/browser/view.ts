@@ -563,9 +563,11 @@ export interface View {
   /**
    * NiiVue 1.0's render backend, whose `render()` draws a frame now, and
    * which skips frames while `isBusy`: during an async texture upload, as
-   * after a 4D frame change.
+   * after a 4D frame change. Null while NiiVue creates or recreates it.
+   * `render` returns false when it drew nothing (before #596 it returns
+   * nothing).
    */
-  view?: { render(): void; isBusy?: boolean } | null
+  view?: { render(): unknown; isBusy?: boolean } | null
   model: {
     mm2scene(mm: number[]): Triple
     scene2mm(frac: number[]): Triple

@@ -1651,7 +1651,10 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // The render backend skips frames while it uploads a texture, as
       // after a 4D frame change, and a frame drawn then is blank.
       await untilIdle(view, waits?.busyMs ?? BUSY_WAIT_MS)
-      drawNow(view, canvas)
+      if (!drawNow(view, canvas))
+        throw new Error(
+          'NiiVue could not draw a frame (its canvas is detached, its GPU context was lost, or its renderer is still starting), so there is no current picture.',
+        )
       const picture =
         canvas.width > maxWidth ? scaledCopy(canvas, maxWidth) : canvas
       const dataUrl = picture.toDataURL('image/png')
@@ -1758,9 +1761,11 @@ export function planeIsCut(plane: readonly [number, number, number]): boolean {
  * it. NiiVue 1.0's `drawScene` only schedules one, and a WebGL drawing
  * buffer does not survive to the next task unless it was asked to; its
  * render backend draws on demand. A canvas whose drawing buffer does not
- * fit its box yet, as one NiiVue has not sized, is sized first.
+ * fit its box yet, as one NiiVue has not sized, is sized first. False when
+ * the backend drew nothing or does not exist yet, so the canvas still holds
+ * an older frame.
  */
-function drawNow(view: View, canvas: HTMLCanvasElement): void {
+function drawNow(view: View, canvas: HTMLCanvasElement): boolean {
   const box = canvas.getBoundingClientRect?.()
   if (box && box.width > 0 && view.resize) {
     // NiiVue's own ratio: with forceDevicePixelRatio the window's would never
@@ -1771,7 +1776,10 @@ function drawNow(view: View, canvas: HTMLCanvasElement): void {
     if (canvas.width !== wanted) view.resize()
   }
   view.drawScene()
-  view.view?.render()
+  // NiiVue holds null while it creates or recreates its backend; undefined is
+  // a host with no render backend, whose drawScene draws itself.
+  if (view.view === null) return false
+  return view.view?.render() !== false
 }
 
 /** A bound as NiiVue resolves it: given, filled by the colormap, kept, or NaN for the default. */

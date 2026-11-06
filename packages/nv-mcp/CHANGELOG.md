@@ -1,3 +1,27 @@
+## 1.0.0-rc.85 (2026-11-06)
+
+### Fixes
+
+- **nv-mcp:** drop viewport and rotation from the Instance mirror ([f8afde2d](https://github.com/niivue/mono/commit/f8afde2d))
+- ⚠️  **niivue:** drop rotation and viewport from NVInstance ([#345](https://github.com/niivue/mono/issues/345))
+
+### Breaking Changes
+
+- **niivue:** drop rotation and viewport from NVInstance  ([#345](https://github.com/niivue/mono/issues/345))
+  NVInstance no longer has rotation or viewport. Both were
+  ignored; remove them from setInstances / opts.instances calls.
+  Closes #345
+  Claude-Session: https://claude.ai/code/session_01F6ttnRe1rzpJhKCkc8MraG
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.98
+- Updated uikit to 1.0.0-rc.93
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.84 (2026-11-06)
 
 ### Updated Dependencies

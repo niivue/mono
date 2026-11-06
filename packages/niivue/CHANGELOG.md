@@ -1,3 +1,21 @@
+## 1.0.0-rc.98 (2026-11-06)
+
+### Fixes
+
+- ⚠️  **niivue:** drop rotation and viewport from NVInstance ([#345](https://github.com/niivue/mono/issues/345))
+
+### Breaking Changes
+
+- **niivue:** drop rotation and viewport from NVInstance  ([#345](https://github.com/niivue/mono/issues/345))
+  NVInstance no longer has rotation or viewport. Both were
+  ignored; remove them from setInstances / opts.instances calls.
+  Closes #345
+  Claude-Session: https://claude.ai/code/session_01F6ttnRe1rzpJhKCkc8MraG
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.97 (2026-11-06)
 
 ### Fixes

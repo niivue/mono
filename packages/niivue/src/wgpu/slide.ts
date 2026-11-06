@@ -1,4 +1,5 @@
 import { ubuntu } from '@/assets/fonts'
+import { colorLutWgsl } from '@/slide/colorLutShader'
 import type {
   NVSlide,
   NVSlideColor,
@@ -19,11 +20,13 @@ import {
 import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { timeChunkPhase } from '@/volume/chunkTiming'
+import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import { alphaPipelineDesc, linearSampler, texturedLayout } from './pipeline'
 
-const shaderCode = /* wgsl */ `
+/** The slide shader, with or without the colour table lookup (bind group 1). */
+const shaderCode = (lut: boolean): string => /* wgsl */ `
 struct SlideUniforms {
   // Four NDC corners packed as (x, y) pairs in triangle-strip order.
   corners: array<vec4f, 2>,
@@ -40,7 +43,7 @@ struct SlideUniforms {
 @group(0) @binding(0) var<uniform> u: SlideUniforms;
 @group(0) @binding(1) var slideTex: texture_2d<f32>;
 @group(0) @binding(2) var slideSampler: sampler;
-
+${colorLutWgsl(1, lut)}
 struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
@@ -76,6 +79,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     base = u.placeholderColor;
   } else {
     base = textureSample(slideTex, slideSampler, in.uv);
+    base = vec4f(applyColorLut(base.rgb), base.a);
   }
   base.a = base.a * u.opacity;
   if (u.showGrid == 1.0) {
@@ -121,7 +125,9 @@ export class SlideRendererGPU {
   private readonly _device: GPUDevice
   private readonly _context: GPUCanvasContext
   private readonly _pipeline: GPURenderPipeline
+  private readonly _lutPipeline: GPURenderPipeline
   private readonly _bindLayout: GPUBindGroupLayout
+  private readonly _luts: ColorLutTexturesGPU
   private readonly _sampler: GPUSampler
   private readonly _nearestSampler: GPUSampler
   private _placeholderTexture: GPUTexture | null
@@ -160,15 +166,19 @@ export class SlideRendererGPU {
     device: GPUDevice,
     context: GPUCanvasContext,
     pipeline: GPURenderPipeline,
+    lutPipeline: GPURenderPipeline,
     bindLayout: GPUBindGroupLayout,
+    lutLayout: GPUBindGroupLayout,
     sampler: GPUSampler,
     placeholderTexture: GPUTexture,
     format: GPUTextureFormat,
   ) {
+    this._luts = new ColorLutTexturesGPU(device, lutLayout, sampler)
     this._canvas = canvas
     this._device = device
     this._context = context
     this._pipeline = pipeline
+    this._lutPipeline = lutPipeline
     this._bindLayout = bindLayout
     this._sampler = sampler
     this._nearestSampler = device.createSampler({
@@ -200,11 +210,19 @@ export class SlideRendererGPU {
       device,
       GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
     )
+    const lutLayout = colorLutLayout(device)
     // No depth attachment, single-sample canvas.
     const pipeline = device.createRenderPipeline(
       alphaPipelineDesc(device, {
-        module: device.createShaderModule({ code: shaderCode }),
+        module: device.createShaderModule({ code: shaderCode(false) }),
         bindGroupLayouts: [bindLayout],
+        format,
+      }),
+    )
+    const lutPipeline = device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: shaderCode(true) }),
+        bindGroupLayouts: [bindLayout, lutLayout],
         format,
       }),
     )
@@ -229,7 +247,9 @@ export class SlideRendererGPU {
       device,
       context,
       pipeline,
+      lutPipeline,
       bindLayout,
+      lutLayout,
       sampler,
       placeholderTexture,
       format,
@@ -317,10 +337,14 @@ export class SlideRendererGPU {
         },
       ],
     })
-    pass.setPipeline(this._pipeline)
-
     for (const slide of slides) {
       if (!slide.visible || slide.opacity <= 0) continue
+      // The plain pipeline unless the slide has a colour table to apply.
+      const lut = slide.displayColorLut
+      if (lut) {
+        pass.setPipeline(this._lutPipeline)
+        pass.setBindGroup(1, this._luts.group(lut))
+      } else pass.setPipeline(this._pipeline)
       const bounds = slide.screenRectForSlide(screen)
       this.drawQuad(pass, width, height, bounds, placeholder, {
         uvTop: 0,
@@ -383,10 +407,12 @@ export class SlideRendererGPU {
   // first to avoid inheriting the previous slide's tiles (ghost tiles).
   clearTextures(): void {
     this._textures.clear()
+    this._luts.clear()
   }
 
   destroy(): void {
     this._textures.clear()
+    this._luts.clear()
     this._lines.destroy()
     this._font.destroy()
     this._lineStorage?.destroy()

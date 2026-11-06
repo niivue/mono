@@ -78,11 +78,14 @@ and per-tile `fileUrl` (nv-ext-wsi's peer floor). Their index places TILED_FULL 
 in implicit order unless per-frame positions are given.
 
 **Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
-**ICC profiles are kept, not yet applied.** Manifests record the optical path's ICC
-profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0
-file (`fetch-dicom-wsi.ts`, the IIIF server route) or a DICOMweb bulk-data URL (nv-ohif), plus
-`colorSpace` when stated. NVSlide does not apply it yet, so slide colour is not colour-managed;
-applying it is release 1.1 (plan P5).
+**ICC colour management.** Manifests record the optical path's ICC profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0 file (`fetch-dicom-wsi.ts`, the IIIF server route, nv-ext-wsi), or a DICOMweb bulk-data URL (nv-ohif), plus `colorSpace` when stated.
+- NVSlide asks its source for the profile bytes (`SlideTileSource.fetchIccProfile`). The default source reads the manifest's range.
+- The registered transform (`NVSlide.registerIccTransform`, before slides are opened) bakes the profile into an n^3 RGBA8 sRGB table of any size. nv-ext-wsi registers @niivue/dcm2niix's LittleCMS (perceptual intent, 33^3); the core ships no colour engine.
+- The slide and slide-plane shaders apply the table once per pixel, after decoding and windowing, for every codec.
+- `colorManagement` (option and property, default on) switches the table off without re-decoding. No table applies, and the shader skips the lookup, for: no profile; a `colorSpace` of `SRGB`; a `MONOCHROME*` slide (its window is the display mapping, so its profile is never fetched); no transform; or a profile the transform rejects.
+- Slides without a table use a shader variant with no lookup: the 3D fetch costs about 45% of a full-canvas draw in SwiftShader.
+- Why not the browser's colour engine: Chrome's skcms disagrees with LittleCMS and ColorSync on scanner LUT profiles. Measured on a 17^3 grid: Chrome turns Leica's white glass grey 188, where LittleCMS keeps it white; all three engines agree on matrix profiles such as Hamamatsu's.
+- Effect on corpus profiles: none for sRGB and 3DHISTECH's sRGB-appearance profile; moderate for Aperio ScanScope and Leica; large for Hamamatsu's linear-light profile (grey 128 shows as 188).
 
 **JPEG 2000 colour follows the codestream.** With MCT (ICT/RCT) the codec has already
 produced RGB, so a `YBR_ICT`/`YBR_RCT` label must not trigger a second conversion
@@ -103,7 +106,8 @@ by the same dcm2niix pool. Samples are 8-16-bit unsigned; manifests carry DICOM 
   read-back needs a 2D OffscreenCanvas (without one, Safari < 16.4, such tiles show
   unwindowed), and anti-fingerprinting browsers may perturb it by about 1 grey level.
 - Not in nv-mcp yet: `set_slide` drives the controller's slide plane, which has no window
-  setter; a window parameter needs `setSlidePlaneWindow` first.
+  or colour-management setter; a window or `color_management` parameter needs a NiiVue
+  accessor for the plane's slide (`setSlidePlaneWindow`, `setSlidePlaneColorManagement`) first.
 - The slides demo shows a `calMin,calMax` field for monochrome slides; in OHIF,
   `niivueSetWindowLevel` sets it.
 

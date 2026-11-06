@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { log } from '@/logger'
 import type {
+  NVSlideColorLut,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideRangeEvent,
@@ -1181,5 +1182,191 @@ describe('NVSlide sparse levels', () => {
     expect(() => NVSlide.fromSource(new CountingSource(unmarked))).toThrow(
       /disagree with its frame count/,
     )
+  })
+})
+
+describe('NVSlide colour management', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    NVSlide.registerIccTransform(null)
+    globalThis.fetch = originalFetch
+  })
+  const lut: NVSlideColorLut = { size: 2, data: new Uint8Array(32).fill(7) }
+  const profile = new Uint8Array([1, 2, 3])
+  // A source that serves `profile` (or null) as its ICC profile.
+  const withProfile = (p: Uint8Array | null): SlideTileSource => ({
+    manifest: makeManifest(1),
+    bind() {},
+    fetchTileBytes: async () => new Uint8Array(0),
+    fetchIccProfile: async () => p,
+  })
+  const changed = (slide: NVSlide) =>
+    new Promise<void>((resolve) =>
+      slide.addEventListener('change', () => resolve(), { once: true }),
+    )
+
+  it('bakes the source profile with the registered transform and announces it', async () => {
+    const seen: Uint8Array[] = []
+    NVSlide.registerIccTransform(async (p) => {
+      seen.push(p)
+      return lut
+    })
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await changed(slide)
+    expect(seen).toEqual([profile])
+    expect(slide.colorLut).toBe(lut)
+    expect(slide.displayColorLut).toBe(lut)
+  })
+
+  it('shows no table while off, or with no profile, transform or usable table', async () => {
+    NVSlide.registerIccTransform(async () => lut)
+    const off = NVSlide.fromSource(withProfile(profile), {
+      colorManagement: false,
+    })
+    await changed(off)
+    expect(off.displayColorLut).toBeNull()
+    off.colorManagement = true
+    expect(off.displayColorLut).toBe(lut)
+
+    const none = NVSlide.fromSource(withProfile(null))
+    NVSlide.registerIccTransform(async () => null)
+    const unusable = NVSlide.fromSource(withProfile(profile))
+    NVSlide.registerIccTransform(null)
+    const unregistered = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    for (const s of [none, unusable, unregistered])
+      expect([s.colorLut, s.displayColorLut]).toEqual([null, null])
+  })
+
+  it('skips a profile the manifest says is sRGB', async () => {
+    let calls = 0
+    NVSlide.registerIccTransform(async () => {
+      calls++
+      return lut
+    })
+    const source = withProfile(profile)
+    const manifest = {
+      ...source.manifest,
+      iccProfile: { url: 'p', colorSpace: 'SRGB' },
+    }
+    NVSlide.fromSource({ ...source, manifest })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toBe(0)
+  })
+
+  it('skips a monochrome slide: its window is the display mapping', async () => {
+    let calls = 0
+    NVSlide.registerIccTransform(async () => {
+      calls++
+      return lut
+    })
+    const source = withProfile(profile)
+    const manifest = {
+      ...source.manifest,
+      levels: source.manifest.levels.map((l) => ({
+        ...l,
+        photometric: 'MONOCHROME2',
+      })),
+    }
+    NVSlide.fromSource({ ...source, manifest })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toBe(0)
+  })
+
+  it('rejects a table of the wrong length, and keeps none', async () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    NVSlide.registerIccTransform(async () => ({
+      size: 2,
+      data: new Uint8Array(24),
+    })) // RGB, not RGBA
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(slide.colorLut).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('refuses a table that is not size^3 RGBA8 bytes, or too large', async () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    for (const bad of [
+      { size: 2, data: new Float32Array(32) as unknown as Uint8Array },
+      { size: 130, data: new Uint8Array(130 ** 3 * 4) },
+    ]) {
+      NVSlide.registerIccTransform(async () => bad)
+      const slide = NVSlide.fromSource(withProfile(profile))
+      await new Promise((r) => setTimeout(r, 0))
+      expect(slide.colorLut).toBeNull()
+    }
+    expect(warn).toHaveBeenCalledTimes(2)
+    warn.mockRestore()
+  })
+
+  it('a manifest profile with only one of offset and length is refused', async () => {
+    const source = new ManifestRangeSource({
+      ...makeManifest(1),
+      iccProfile: { url: 'https://host/f.dcm', offset: 100 },
+    })
+    source.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+    })
+    await expect(source.fetchIccProfile()).rejects.toThrow('only one of')
+  })
+
+  it('dispose during a bake aborts it and keeps no table', async () => {
+    let seen: AbortSignal | undefined
+    let finish: (lut: NVSlideColorLut) => void = () => {}
+    NVSlide.registerIccTransform((_p, signal) => {
+      seen = signal
+      return new Promise((resolve) => {
+        finish = resolve
+      })
+    })
+    expect(NVSlide.iccTransform()).not.toBeNull()
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    slide.dispose()
+    expect(seen?.aborted).toBe(true)
+    finish(lut)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(slide.colorLut).toBeNull()
+  })
+
+  it('the default source reads a manifest profile by Range from its file', async () => {
+    const asked: string[] = []
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      asked.push(`${url} ${(init?.headers as Record<string, string>)?.Range}`)
+      return new Response(new Uint8Array([9, 9, 9, 9]), { status: 206 })
+    }) as typeof fetch
+    const source = new ManifestRangeSource({
+      ...makeManifest(1),
+      iccProfile: { url: 'https://host/f.dcm', offset: 100, length: 4 },
+    })
+    source.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+    })
+    expect([...((await source.fetchIccProfile()) ?? [])]).toEqual([9, 9, 9, 9])
+    expect(asked).toEqual(['https://host/f.dcm bytes=100-103'])
+  })
+
+  it('a failed profile is logged and leaves identity', async () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    NVSlide.registerIccTransform(async () => {
+      throw new Error('bad profile')
+    })
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(slide.displayColorLut).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
   })
 })

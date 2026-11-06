@@ -115,6 +115,22 @@ export interface NVSlideIccProfile {
   colorSpace?: string
 }
 
+/** A slide's colour lookup table: `size`^3 RGBA8 entries, red fastest, mapping its RGB to sRGB. */
+export interface NVSlideColorLut {
+  size: number
+  data: Uint8Array
+}
+
+/**
+ * Bakes an ICC profile into an {@link NVSlideColorLut}, or resolves null for a
+ * profile it cannot use. Registered with {@link NVSlide.registerIccTransform}
+ * (e.g. @niivue/dcm2niix's LittleCMS), so the core ships no colour engine.
+ */
+export type SlideIccTransform = (
+  profile: Uint8Array,
+  signal: AbortSignal,
+) => Promise<NVSlideColorLut | null>
+
 export interface NVSlideManifest {
   id: string
   name: string
@@ -183,6 +199,8 @@ export interface NVSlideOptions {
   /** Pluggable tile source. Defaults to a byte-range manifest source; DZI / TIFF
    * adapters supply their own. See {@link SlideTileSource}. */
   source?: SlideTileSource
+  /** Apply the slide's ICC profile when one is known and a transform is registered (default true). */
+  colorManagement?: boolean
 }
 
 export interface NVSlideScreen {
@@ -401,14 +419,20 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
   return out
 }
 
+let iccTransform: SlideIccTransform | null = null
+
 // Tile-codec registry. Built-ins cover the browser-native paths; additional
 // codecs (e.g. image/jp2 via @niivue/dcm2niix) are registered by the
 // consumer with NVSlide.registerTileDecoder, so the core ships no heavy codec.
 const tileDecoders = new Map<string, SlideTileDecoder>([
   [
     'image/jpeg',
+    // No browser colour conversion: a slide's profile is the source's
+    // (NVSlide.colorLut), not an APP2 segment inside a tile.
     (bytes) =>
-      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' })),
+      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' }), {
+        colorSpaceConversion: 'none',
+      }),
   ],
   [
     'raw-rgba',
@@ -527,6 +551,8 @@ export interface SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array>
+  /** The slide's ICC profile bytes, or null when it has none. Optional. */
+  fetchIccProfile?(signal?: AbortSignal): Promise<Uint8Array | null>
 }
 
 function isAbortError(err: unknown): boolean {
@@ -644,6 +670,23 @@ export class ManifestRangeSource implements SlideTileSource {
       ),
     )
     return parts.length === 1 ? (parts[0] as Uint8Array) : concatBytes(parts)
+  }
+
+  async fetchIccProfile(signal?: AbortSignal): Promise<Uint8Array | null> {
+    const icc = this.manifest.iccProfile
+    if (!icc) return null
+    const url = this.requireHost().resolveUrl(icc.url)
+    const { offset, length } = icc
+    if ((offset === undefined) !== (length === undefined))
+      throw new Error('ICC profile states only one of offset and length')
+    // 64 MB: far beyond a scanner profile (Leica's is 13 MB), as dcm2niix caps it.
+    if (length !== undefined && length > 64 * 1024 * 1024)
+      throw new Error(`ICC profile of ${length} bytes`)
+    if (offset !== undefined && length !== undefined)
+      return this.fetchFragment(url, { offset, length }, 'icc', signal)
+    const response = await fetch(url, { signal })
+    if (!response.ok) throw new Error(`ICC profile HTTP ${response.status}`)
+    return new Uint8Array(await response.arrayBuffer())
   }
 }
 
@@ -778,6 +821,9 @@ export class NVSlide extends EventTarget {
   private _budgetWarned = '' // last budget outcome logged by visibleTiles
   private _window: NVSlideWindow | null = null // null: each level's full bitsStored range
   private _windowGen = 0
+  private _colorManagement: boolean
+  private _colorLut: NVSlideColorLut | null = null
+  private readonly _colorAbort = new AbortController()
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
@@ -813,6 +859,7 @@ export class NVSlide extends EventTarget {
     this._maxConcurrentLoads = clampTileLoadCap(
       options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,
     )
+    this._colorManagement = options.colorManagement ?? true
     this._source = options.source ?? new ManifestRangeSource(manifest)
     this._source.bind({
       resolveUrl: (url) => this.resolveUrl(url),
@@ -828,6 +875,62 @@ export class NVSlide extends EventTarget {
       pushRangeEvent: (event) => this.pushRangeEvent(event),
       updateRangeEvent: (label, status) => this.updateRangeEvent(label, status),
     })
+    void this._loadColorLut()
+  }
+
+  /** The slide's sRGB lookup table, once its ICC profile is baked; null without one. */
+  get colorLut(): NVSlideColorLut | null {
+    return this._colorLut
+  }
+
+  /** The table renderers apply: {@link colorLut} while colour management is on, else null. */
+  get displayColorLut(): NVSlideColorLut | null {
+    return this._colorManagement ? this._colorLut : null
+  }
+
+  /** Whether renderers apply {@link colorLut}. Toggling only redraws: tiles are kept as decoded. */
+  get colorManagement(): boolean {
+    return this._colorManagement
+  }
+
+  set colorManagement(on: boolean) {
+    if (on === this._colorManagement) return
+    this._colorManagement = on
+    this.dispatchEvent(new Event('change'))
+  }
+
+  private async _loadColorLut(): Promise<void> {
+    const transform = iccTransform
+    // DICOM ColorSpace SRGB means the profile is the display space already;
+    // a grey slide's display mapping is its window, whatever profile it carries.
+    if (
+      !transform ||
+      !this._source.fetchIccProfile ||
+      this.manifest.iccProfile?.colorSpace?.toUpperCase() === 'SRGB' ||
+      this.manifest.levels.some((l) => l.photometric?.startsWith('MONOCHROME'))
+    )
+      return
+    const signal = this._colorAbort.signal
+    try {
+      const profile = await this._source.fetchIccProfile(signal)
+      const lut = profile && (await transform(profile, signal))
+      if (!lut || signal.aborted) return
+      // Renderers upload it as an RGBA8 3D texture: anything else fails there,
+      // and 129^3 (8.6 MB, dcm2niix's ceiling) is far beyond any table's need.
+      if (
+        !(lut.data instanceof Uint8Array) ||
+        !Number.isInteger(lut.size) ||
+        lut.size < 2 ||
+        lut.size > 129 ||
+        lut.data.length !== lut.size ** 3 * 4
+      )
+        throw new Error(`colour table of size ${lut.size} is not size^3 RGBA8`)
+      this._colorLut = lut
+      this.dispatchEvent(new Event('change'))
+    } catch (err) {
+      if (!signal.aborted && !isAbortError(err))
+        log.warn(`NVSlide ${this.id}: ICC profile not applied`, err)
+    }
   }
 
   /** Build a slide from any tile source (DICOM-WSI/DZI/TIFF adapter). */
@@ -1333,6 +1436,7 @@ export class NVSlide extends EventTarget {
   }
 
   dispose(): void {
+    this._colorAbort.abort()
     this.clearCache()
     this._loadQueue.length = 0
     this._wanted.clear()
@@ -1385,6 +1489,20 @@ export class NVSlide extends EventTarget {
    */
   static registerTileDecoder(codec: string, decoder: SlideTileDecoder): void {
     tileDecoders.set(codec, decoder)
+  }
+
+  /**
+   * Register the ICC transform that bakes slide profiles into sRGB lookup tables
+   * (null removes it). Only slides created afterwards apply their profile, so
+   * register before opening slides.
+   */
+  static registerIccTransform(transform: SlideIccTransform | null): void {
+    iccTransform = transform
+  }
+
+  /** The registered ICC transform, or null. */
+  static iccTransform(): SlideIccTransform | null {
+    return iccTransform
   }
 
   /** The decoder registered for a codec, or undefined. */

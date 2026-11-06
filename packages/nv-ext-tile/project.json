@@ -1,5 +1,5 @@
 {
-  "name": "nv-ext-wsi",
+  "name": "nv-ext-tile",
   "projectType": "library",
   "tags": ["type:lib", "lang:typescript"],
   "targets": {

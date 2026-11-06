@@ -527,6 +527,8 @@ export interface View {
   setClipPlane(plane: number[]): void
   /** Replaces every volume on show with these. */
   loadVolumes(volumes: VolumeToLoad[]): Promise<unknown>
+  /** Replaces every volume on show with one streamed brick by brick from `source` (a NiiVue `ChunkedVolumeSource`). */
+  loadChunkedVolume?(source: unknown): Promise<unknown>
   /** Adds one volume over those on show, keeping them: one to fetch, or one a transform made. */
   addVolume(volume: VolumeToLoad | TransformedVolume): Promise<unknown>
   /** Fetches a volume without adding it, for `addVolume` to take later. */
@@ -898,6 +900,22 @@ export interface NiiVueHost {
   controls?: HostedControls
   /** The data the page can load by id; a page without one declines the data tools. */
   data?: DataPalette
+  /** The OME-Zarr loaders, `@niivue/nv-ext-tile/zarr` itself; a page without them declines `load_ome_zarr`. */
+  omeZarr?: OmeZarrLoaders
+}
+
+/** The two `@niivue/nv-ext-tile/zarr` functions `load_ome_zarr` drives, as the page hands them over. */
+export interface OmeZarrLoaders {
+  /** Volume options for `loadVolumes`, one per channel, from one whole pyramid level. */
+  loadOmeZarrVolumes(
+    url: string,
+    options?: { level?: number; channels?: number[]; timepoint?: number },
+  ): Promise<unknown[]>
+  /** A chunked source for `loadChunkedVolume`. */
+  fetchOmeZarrChunkedSource(
+    url: string,
+    options?: { channel?: number; timepoint?: number },
+  ): Promise<unknown>
 }
 
 export type Handler = (params: Record<string, unknown>) => unknown

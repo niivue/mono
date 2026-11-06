@@ -1606,6 +1606,65 @@ describe('set_volume affine', () => {
   })
 })
 
+describe('load_ome_zarr', () => {
+  const omeZarr = () => ({
+    loadOmeZarrVolumes: mock(async () => [{ url: 'c0' }, { url: 'c1' }]),
+    fetchOmeZarrChunkedSource: mock(async () => ({ levels: [] })),
+  })
+
+  it('loads one level whole through the page loaders', async () => {
+    const view = fakeView()
+    const zarr = omeZarr()
+    const result = await coreHandlers(
+      host(view, { omeZarr: zarr }),
+    ).load_ome_zarr({
+      url: 'https://x/s.ome.zarr',
+      level: 2,
+      channel: 1,
+    })
+    expect(zarr.loadOmeZarrVolumes).toHaveBeenCalledWith(
+      'https://x/s.ome.zarr',
+      {
+        level: 2,
+        channels: [1],
+        timepoint: undefined,
+      },
+    )
+    expect(view.loadVolumes).toHaveBeenCalledWith([
+      { url: 'c0' },
+      { url: 'c1' },
+    ])
+    expect(result).toMatchObject({ streamed: false })
+  })
+
+  it('streams through loadChunkedVolume', async () => {
+    const loadChunkedVolume = mock(async () => {})
+    const removeAllVolumes = mock(async () => {})
+    const view = fakeView({ loadChunkedVolume, removeAllVolumes })
+    const zarr = omeZarr()
+    await coreHandlers(host(view, { omeZarr: zarr })).load_ome_zarr({
+      url: 'https://x/s.ome.zarr',
+      stream: true,
+    })
+    expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenCalledWith(
+      'https://x/s.ome.zarr',
+      {
+        channel: undefined,
+        timepoint: undefined,
+      },
+    )
+    expect(removeAllVolumes).toHaveBeenCalled()
+    expect(loadChunkedVolume).toHaveBeenCalledWith({ levels: [] })
+    expect(view.loadVolumes).not.toHaveBeenCalled()
+  })
+
+  it('declines on a page without the loaders', async () => {
+    await expect(
+      coreHandlers(host()).load_ome_zarr({ url: 'https://x/s.ome.zarr' }),
+    ).rejects.toThrow('did not provide the nv-ext-tile loaders')
+  })
+})
+
 describe('load_volume', () => {
   it('loads by url with a name and colormap, guesses MNI from the name, and reports the extent', async () => {
     const view = fakeView()

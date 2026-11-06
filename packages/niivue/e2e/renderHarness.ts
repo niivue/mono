@@ -553,13 +553,33 @@ async function renderScene(
     pngs.push(url.slice(url.indexOf(',') + 1))
     return true
   }
-  await setup(ctx)
-  if (!(await capture())) return { skip: 'WebGPU device lost' }
-  for (const run of steps) {
-    await run(ctx)
+  const runScene = async (): Promise<Rendered> => {
+    await setup(ctx)
     if (!(await capture())) return { skip: 'WebGPU device lost' }
+    for (const run of steps) {
+      await run(ctx)
+      if (!(await capture())) return { skip: 'WebGPU device lost' }
+    }
+    return { backend: nv.backend, pngs }
   }
-  return { backend: nv.backend, pngs }
+  // A device that dies mid-scene leaves GPU-bound waits (chunk streams,
+  // settle) pending forever, so the loss has to end the scene by itself.
+  // Anything else that never settles still times out.
+  let done = false
+  const lost = new Promise<Rendered>((resolve) => {
+    const poll = () => {
+      if (done) return
+      if ((view() as { _deviceLost?: boolean })._deviceLost)
+        resolve({ skip: 'WebGPU device lost' })
+      else setTimeout(poll, 100)
+    }
+    poll()
+  })
+  try {
+    return await Promise.race([runScene(), lost])
+  } finally {
+    done = true
+  }
 }
 
 /** Defines one test per scene and backend in the calling spec. */

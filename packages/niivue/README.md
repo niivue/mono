@@ -131,6 +131,8 @@ only when used; a page showing a
 NIfTI volume loads about 1.6 MB of JavaScript (about 0.5 MB gzipped). The build
 fails if any bare import appears in the folder (`scripts/check-standalone.ts`).
 
+`@niivue/nv-ext-tile` ships a matching `dist/standalone/` (`tiff.js`, `dicom.js`, `zarr.js`) that maps onto this folder with the same import map; see its README.
+
 Copy the folder next to your page (here as `niivue/`) and map the package name
 once:
 

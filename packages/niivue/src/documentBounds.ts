@@ -55,6 +55,48 @@ export function assertDocumentFitsInput(
 }
 
 /**
+ * Throw when the definite-length arrays and maps in CBOR `data` declare more
+ * items in total than it has bytes. cbor-x allocates a declared array before
+ * reading its items, so nested 5-byte headers each claiming 100M items would
+ * allocate gigabytes before `assertDocumentFitsInput` can run. Every honest
+ * item takes at least one byte and no two containers share one, so an honest
+ * file passes. Heads are read in sequence: each is followed only by its
+ * argument and, for a byte or text string, its bytes. cbor-x tags that break
+ * that rule (0xdff9-0xdfff read their length their own way) or expand data
+ * inside decode (51, packed prefixes) are refused; `serialize` emits neither.
+ */
+export function assertCborFitsInput(data: Uint8Array): void {
+  const n = data.length
+  let items = 0
+  let pos = 0
+  while (pos < n) {
+    const major = data[pos] >> 5
+    const info = data[pos++] & 31
+    // 0-23 is the argument itself; 24-27 a 1, 2, 4 or 8 byte argument; 31 an
+    // indefinite length, whose items cbor-x adds as it reads them.
+    if (info > 27) continue
+    let arg = info
+    if (info >= 24) {
+      arg = 0
+      for (const end = pos + (1 << (info - 24)); pos < end; pos++) {
+        arg = arg * 256 + data[pos]
+      }
+    }
+    if (major === 2 || major === 3) pos += arg
+    else if (major === 4) items += arg
+    else if (major === 5) items += 2 * arg
+    else if (major === 6 && (arg === 51 || arg >= 0xdff9)) {
+      throw new Error(`Invalid NVD file: unsupported CBOR tag ${arg}`)
+    }
+    if (items > n) {
+      throw new Error(
+        `Invalid NVD file: its arrays declare more items than its ${n} bytes hold`,
+      )
+    }
+  }
+}
+
+/**
  * Whether an embedded image is a typed array with at least one byte per voxel
  * its header claims. The header sizes later buffers (a drawing allocates one
  * byte per voxel), and only typed-array bytes are charged against the file: a

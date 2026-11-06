@@ -1,8 +1,8 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 
 for (const backend of ['webgl2', 'webgpu']) {
   for (const isInteractionEnabled of [false, true]) {

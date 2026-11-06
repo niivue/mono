@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import type NiiVue from '../src/NVControl'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
 // The reference-image render tier. A spec lists its scenes and calls
@@ -565,7 +565,7 @@ async function renderScene(
 /** Defines one test per scene and backend in the calling spec. */
 export function registerScenes(scenes: Scene[]): void {
   // SwiftShader WebGPU needs these flags; they also bring up WebGL2.
-  test.use({ launchOptions: webgpuLaunchOptions })
+  test.use(webgpuUse)
   const names = scenes.flatMap((s) => [
     s.name,
     ...(s.steps ?? []).map((t) => `${s.name}--${t.name}`),

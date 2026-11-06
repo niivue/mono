@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 import { syntheticVolume } from './syntheticVolume'
 
@@ -7,7 +7,7 @@ import { syntheticVolume } from './syntheticVolume'
 // WheelEvent.deltaMode, and a press on the scrollbar thumb is the legend's,
 // never a camera drag.
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 test.describe.configure({ timeout: 180_000 })
 
 const SIZE = 400

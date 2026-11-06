@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 import { syntheticVolume } from './syntheticVolume'
 
@@ -21,7 +21,7 @@ import { syntheticVolume } from './syntheticVolume'
 // wgpu/render.ts. WebGPU is skipped when the runner has no adapter (headless
 // Chromium usually has SwiftShader for WebGL2 only).
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 
 // A 2x2x2 forced plan: the volume fits in one texture, so the tiling is forced
 // rather than required. Eight bricks is enough to tell "chunked" from "not"

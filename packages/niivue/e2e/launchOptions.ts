@@ -57,3 +57,14 @@ export const webgpuLaunchOptions: LaunchOptions = channel
       ],
       ...executablePathOverride,
     }
+
+/**
+ * What a spec that needs a GPU adapter passes to `test.use()`. Empty in
+ * hardware mode, where the default options already reach the GPU: any
+ * `launchOptions` override, even an identical one, puts those specs in their
+ * own workers, so every worker launches a second browser and loads NiiVue
+ * again partway through the run (about 1.5 s of an 8-worker run).
+ */
+export const webgpuUse: { launchOptions?: LaunchOptions } = channel
+  ? {}
+  : { launchOptions: webgpuLaunchOptions }

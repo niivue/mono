@@ -1,12 +1,12 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
 // Guards the macos-15 full-suite job (issue #199). Most GPU specs skip when no
 // adapter is available, so a runner image or Chromium build that quietly falls
 // back to SwiftShader would leave that job green while testing almost nothing.
 // Only meaningful in hardware mode; the default SwiftShader runs skip it.
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 
 test.beforeEach(() => {
   test.skip(

@@ -1,12 +1,12 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 import { syntheticVolume } from './syntheticVolume'
 
 // fontScale and fontMinSize resize the text at once, from the setter and from
 // a loaded document, without an explicit resize() (#377).
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 test.describe.configure({ timeout: 120_000 })
 
 for (const backend of ['webgl2', 'webgpu'] as const) {

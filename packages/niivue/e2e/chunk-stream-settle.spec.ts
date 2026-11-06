@@ -1,6 +1,6 @@
 import { inflateSync } from 'node:zlib'
 import { expect, type Page } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
 // whenChunkStreamSettles (and setVolumeChunkGrid, which awaits it) must resolve
@@ -20,7 +20,7 @@ import { test } from './sharedPage'
 // after setVolumeChunkGrid shows every brick) is the `chunk-grid-3d` scene of
 // render-updates.spec.ts.
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 
 // A third of the 30 s timeout; a SwiftShader WebGPU 3D fill takes 2-4 s.
 const SETTLE_BUDGET_MS = 10_000

@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
 // Per-label visibility in the legend: a colour-box click toggles a label when
@@ -8,7 +8,7 @@ import { test } from './sharedPage'
 // That hidden labels stop rendering is the `hidden-labels` scene of
 // render-volume.spec.ts.
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 test.describe.configure({ timeout: 180_000 })
 
 const SIZE = 256

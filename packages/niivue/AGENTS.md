@@ -80,10 +80,20 @@ which fakes the rAF stand-in and `performance.now`; `setImmediate` stays real,
 so awaiting it lets each frame's promise work land.
 
 ```bash
-bun run test:e2e         # playwright test (config: playwright.config.ts)
-bun run test:e2e:metal   # full suite, minus any Metal-only exclusions (none at present); add PLAYWRIGHT_CHROMIUM_CHANNEL=chromium for the GPU
-bunx nx e2e niivue       # via Nx
+bun run test:e2e         # fast tier: every spec but demo-smoke (config: playwright.config.ts)
+bun run test:e2e:full    # full suite: adds demo-smoke, every examples/*.html page (~3x the time)
+bun run test:e2e:metal   # full suite, minus any Metal-only exclusions (none at present); CI and local-metal.ts run this
+bunx nx e2e niivue       # fast tier via Nx
 ```
+
+The tiers are Playwright projects: `chromium` (fast) and `demo-smoke`; a bare
+`bunx playwright test` runs both. Use the fast tier while developing and the
+full one before pushing a change to the demos or to anything they load. On a
+Mac, add `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` (real GPU): the fast tier takes
+about 8 s on an M3 Max, against more than a minute on SwiftShader. A
+`launchOptions` or other worker-option `test.use()` gives its specs their own
+workers, each a second browser launch and NiiVue load; GPU specs use
+`test.use(webgpuUse)` (`e2e/launchOptions.ts`), which is empty in hardware mode.
 
 `playwright.config.ts` starts a no-`--open` dev server (`bun run e2e:serve`) and
 reuses an already-running one locally (`reuseExistingServer` off in CI). The

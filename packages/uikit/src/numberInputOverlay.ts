@@ -20,8 +20,6 @@ import type {
   UIKitRedrawSource,
 } from './controls'
 import { type ClipboardBridge, createBrowserClipboard } from './host'
-import type { LineData } from './line'
-import { UIKitLineOverlay } from './lineOverlay'
 import {
   acceptNumberChar,
   buildNumberInput,
@@ -41,23 +39,24 @@ import {
   snapNumberInput,
   stepNumberInput,
 } from './numberInput'
-import type { RectData } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
+import {
+  UIKitDrawBundle,
+  UIKitEntryMap,
+  type UIKitGeometry,
+} from './overlayParts'
+import { type UIKitBox, unscaleBox } from './rect'
 import { WheelAccumulator } from './scroll'
 import type { UIKitFont } from './text/font'
 import {
+  clipboardEdit,
   clipboardKey,
   editKey,
-  hasSelection,
-  insertText,
   pasteText,
   selectAll,
-  selectedText,
   setCaret,
   type TextEditState,
   textEditState,
 } from './textEdit'
-import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
 export interface UIKitNumberInputOverlayOptions {
   /** Called whenever the overlay needs another frame. A control layer fills it in. */
@@ -96,18 +95,12 @@ export class UIKitNumberInputOverlay
   implements UIKitOverlayRenderer, UIKitInteractive
 {
   private readonly font: UIKitFont
-  private readonly rects = new UIKitRectOverlay()
-  private readonly lines = new UIKitLineOverlay()
-  private readonly labels: UIKitTextOverlay
-  private readonly entries = new Map<string, NumberInputEntry>()
+  private readonly bundle: UIKitDrawBundle
+  private readonly entries: UIKitEntryMap<NumberInputLayout, NumberInputEntry>
   private baseStyle: NumberInputStyle
-  private readonly cssUnits: boolean
   private readonly wheelCarry: WheelAccumulator
-  private requestRedraw: (() => void) | null
   private layer: UIKitRedrawSource | null = null
   private clipboard: ClipboardBridge | null
-  private scale = 1
-  private geometryDirty = true
   private hoverId: string | null = null
   private cursor = 'text'
   private focusedId: string | null = null
@@ -117,13 +110,15 @@ export class UIKitNumberInputOverlay
 
   constructor(font: UIKitFont, options: UIKitNumberInputOverlayOptions = {}) {
     this.font = font
-    this.labels = new UIKitTextOverlay(font)
+    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = scaleNumberInput(entry.spec, entry.style, scale)
+      return layoutNumberInput(spec, style, font.metrics)
+    }, options.cssUnits ?? false)
     this.baseStyle = resolveNumberInputStyle(
       DEFAULT_NUMBER_INPUT_STYLE,
       options.style,
     )
-    this.cssUnits = options.cssUnits ?? false
-    this.requestRedraw = options.requestRedraw ?? null
     this.wheelCarry = new WheelAccumulator(options.wheelStepPx ?? 40)
     this.clipboard = options.clipboard ?? null
   }
@@ -150,40 +145,51 @@ export class UIKitNumberInputOverlay
    */
   addNumberInput(spec: NumberInputSpec): void {
     const existing = this.entries.get(spec.id)
-    const style = resolveNumberInputStyle(this.baseStyle, spec.style)
-    const value = snapNumberInput(spec, spec.value)
     if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
-      existing.value = value
-      existing.lastInput = value
+      // The new spec first: the fresh edit is formatted with it.
+      this.respec(existing, spec)
+      existing.value = snapNumberInput(spec, spec.value)
+      existing.lastInput = existing.value
       existing.firstGlyph = 0
       if (existing.edit) existing.edit = this.freshEdit(existing)
-    } else {
-      this.entries.set(spec.id, {
-        spec,
-        style,
-        layout: null,
-        value,
-        edit: null,
-        session: 0,
-        lastInput: value,
-        firstGlyph: 0,
-        hover: false,
-        spinHover: 0,
-      })
+      return
     }
+    const value = snapNumberInput(spec, spec.value)
+    this.entries.set(spec.id, {
+      spec,
+      style: resolveNumberInputStyle(this.baseStyle, spec.style),
+      layout: null,
+      value,
+      edit: null,
+      session: 0,
+      lastInput: value,
+      firstGlyph: 0,
+      hover: false,
+      spinHover: 0,
+    })
     this.invalidate()
   }
 
-  /** Replace the whole input set. */
+  /**
+   * Replace the whole input set. A kept id whose spec has the same value
+   * (once snapped) keeps any edit in progress, as `updateNumberInput` does; a
+   * different `value` replaces it as `addNumberInput` does.
+   */
   setNumberInputs(specs: readonly NumberInputSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeNumberInput(id)
-    }
-    for (const spec of specs) this.addNumberInput(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => {
+        const entry = this.entries.get(spec.id)
+        if (
+          entry &&
+          snapNumberInput(spec, spec.value) ===
+            snapNumberInput(spec, entry.value)
+        )
+          this.respec(entry, spec)
+        else this.addNumberInput(spec)
+      },
+      (id) => this.removeNumberInput(id),
+    )
   }
 
   removeNumberInput(id: string): void {
@@ -205,19 +211,11 @@ export class UIKitNumberInputOverlay
   ): void {
     const entry = this.entries.get(id)
     if (!entry) return
-    const value = patch.value ?? entry.value
+    const spec = { ...entry.spec, ...patch, id }
     // A patch that leaves the value alone (a host re-laying out on resize)
-    // must not throw away what the user is typing.
-    const edit = patch.value === undefined ? entry.edit : null
-    this.addNumberInput({ ...entry.spec, ...patch, id, value })
-    if (edit && entry.edit) entry.edit = edit
-    if (entry.spec.enabled === false) {
-      if (this.pressId === id) this.pressId = null
-      if (this.focusedId === id) {
-        entry.edit = null
-        this.focusedId = null
-      }
-    }
+    // must not throw away what the user is typing, or a paste on its way.
+    if (patch.value === undefined) this.respec(entry, spec)
+    else this.addNumberInput(spec)
   }
 
   setEnabled(id: string, enabled: boolean): void {
@@ -251,27 +249,17 @@ export class UIKitNumberInputOverlay
 
   /** The ids of all inputs, in draw order. */
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /** An input's boxes in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
   getLayout(id: string): NumberInputLayout | null {
     const entry = this.entries.get(id)
     if (!entry) return null
-    const l = this.layoutOf(entry)
-    const k = this.scale
+    const l = this.entries.layoutOf(entry)
+    const k = this.entries.scale
     if (k === 1) return l
-    const box = (b: {
-      x: number
-      y: number
-      width: number
-      height: number
-    }) => ({
-      x: b.x / k,
-      y: b.y / k,
-      width: b.width / k,
-      height: b.height / k,
-    })
+    const box = (b: UIKitBox) => unscaleBox(b, k)
     return {
       ...box(l),
       field: box(l.field),
@@ -317,7 +305,7 @@ export class UIKitNumberInputOverlay
   pointerDown(x: number, y: number): boolean {
     const entry = this.hitEntry(x, y)
     if (!entry) return false
-    const layout = this.layoutOf(entry)
+    const layout = this.entries.layoutOf(entry)
     const spin = numberInputSpinAt(layout, x, y)
     const wasFocused = this.focusedId === entry.spec.id
     this.pressId = entry.spec.id
@@ -352,7 +340,7 @@ export class UIKitNumberInputOverlay
     }
     const hit = this.hitEntry(x, y)
     const id = hit ? hit.spec.id : null
-    const spin = hit ? numberInputSpinAt(this.layoutOf(hit), x, y) : 0
+    const spin = hit ? numberInputSpinAt(this.entries.layoutOf(hit), x, y) : 0
     const cursor = spin === 0 ? 'text' : 'pointer'
     if (id !== this.hoverId || (hit && hit.spinHover !== spin)) {
       const prev = this.hoverId ? this.entries.get(this.hoverId) : null
@@ -424,7 +412,16 @@ export class UIKitNumberInputOverlay
     }
     const clip = clipboardKey(e)
     if (clip !== null) {
-      this.clipboardAction(entry, clip)
+      this.clipboard ??= createBrowserClipboard()
+      const id = entry.spec.id
+      clipboardEdit(
+        this.clipboard,
+        entry,
+        clip,
+        () => this.entries.get(id) === entry && this.focusedId === id,
+        (text) => this.paste(text),
+        (next) => this.applyEdit(entry, next),
+      )
       return true
     }
     const next = editKey(entry.edit, e, acceptNumberChar)
@@ -467,36 +464,47 @@ export class UIKitNumberInputOverlay
   }
 
   bindLayer(layer: UIKitRedrawSource): void {
-    this.requestRedraw ??= () => layer.requestRedraw()
+    this.bundle.bind(layer)
     this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
-      for (const entry of this.entries.values()) entry.layout = null
-      this.geometryDirty = true
-    }
-    if (this.geometryDirty) this.rebuild()
-    this.rects.drawOverlay(frame)
-    this.lines.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
+    const rescaled = this.entries.rescale(frame.dpr)
+    this.bundle.draw(frame, () => this.geometry(), rescaled)
   }
 
   /** Release GPU resources on both backends. */
   destroy(): void {
     // A clipboard read still in flight must not edit a destroyed overlay.
     this.focusedId = null
-    this.rects.destroy()
-    this.lines.destroy()
-    this.labels.destroy()
+    this.bundle.destroy()
   }
 
   private invalidate(): void {
-    this.geometryDirty = true
-    this.requestRedraw?.()
+    this.bundle.invalidate()
+  }
+
+  /**
+   * Take a new spec, keeping the edit, session, scroll and (mid-edit) the last
+   * `onInput` value; the committed value is re-snapped to its range.
+   * Disabling drops press and focus.
+   */
+  private respec(entry: NumberInputEntry, spec: NumberInputSpec): void {
+    entry.spec = spec
+    entry.style = resolveNumberInputStyle(this.baseStyle, spec.style)
+    entry.layout = null
+    entry.value = snapNumberInput(spec, entry.value)
+    if (spec.enabled === false) {
+      if (this.pressId === spec.id) this.pressId = null
+      if (this.focusedId === spec.id) {
+        entry.edit = null
+        this.focusedId = null
+      }
+    }
+    // A live edit keeps its last reported input so onInput dedup stays right.
+    if (!entry.edit) entry.lastInput = entry.value
+    this.invalidate()
   }
 
   private display(entry: NumberInputEntry): string {
@@ -511,37 +519,6 @@ export class UIKitNumberInputOverlay
     this.firstShown(entry)
     this.invalidate()
     if (textChanged) this.reportInput(entry)
-  }
-
-  /**
-   * Copy or cut the selection to the clipboard, or start a paste: the read
-   * is asynchronous, and its text lands only if the same edit is still in
-   * progress when it arrives.
-   */
-  private clipboardAction(
-    entry: NumberInputEntry,
-    action: 'copy' | 'cut' | 'paste',
-  ): void {
-    this.clipboard ??= createBrowserClipboard()
-    const clipboard = this.clipboard
-    const edit = entry.edit
-    if (!edit) return
-    if (action === 'paste') {
-      const session = entry.session
-      void clipboard
-        .read()
-        .then((text) => {
-          if (this.entries.get(entry.spec.id) !== entry) return
-          if (this.focusedId !== entry.spec.id || entry.session !== session)
-            return
-          this.paste(text)
-        })
-        .catch(() => {}) // a bridge that rejects is treated as an empty clipboard
-      return
-    }
-    if (!hasSelection(edit)) return
-    clipboard.write(selectedText(edit))
-    if (action === 'cut') this.applyEdit(entry, insertText(edit, ''))
   }
 
   /** The edit state for a freshly focused (or reverted) input: all selected. */
@@ -608,7 +585,7 @@ export class UIKitNumberInputOverlay
   private dragCaretAt(entry: NumberInputEntry, x: number): number {
     const caret = this.caretAt(entry, x)
     const first = entry.firstGlyph
-    const pastLeft = first > 0 && x < this.layoutOf(entry).textArea.x
+    const pastLeft = first > 0 && x < this.entries.layoutOf(entry).textArea.x
     return pastLeft && caret === first ? first - 1 : caret
   }
 
@@ -616,7 +593,7 @@ export class UIKitNumberInputOverlay
     const { style } = this.scaled(entry)
     const text = entry.edit ? entry.edit.text : this.display(entry)
     return numberInputCaretAt(
-      this.layoutOf(entry),
+      this.entries.layoutOf(entry),
       style,
       this.font.metrics,
       text,
@@ -636,7 +613,7 @@ export class UIKitNumberInputOverlay
     const { style } = this.scaled(entry)
     const text = entry.edit ? entry.edit.text : this.display(entry)
     entry.firstGlyph = numberInputTextWindow(
-      this.layoutOf(entry),
+      this.entries.layoutOf(entry),
       style,
       this.font.metrics,
       text,
@@ -650,39 +627,22 @@ export class UIKitNumberInputOverlay
     spec: NumberInputSpec
     style: NumberInputStyle
   } {
-    return scaleNumberInput(entry.spec, entry.style, this.scale)
-  }
-
-  private layoutOf(entry: NumberInputEntry): NumberInputLayout {
-    if (!entry.layout) {
-      const { spec, style } = this.scaled(entry)
-      entry.layout = layoutNumberInput(spec, style, this.font.metrics)
-    }
-    return entry.layout
+    return scaleNumberInput(entry.spec, entry.style, this.entries.scale)
   }
 
   /** The topmost (last added) enabled input whose field is under a canvas point. */
   private hitEntry(x: number, y: number): NumberInputEntry | null {
-    const list = [...this.entries.values()]
-    for (let i = list.length - 1; i >= 0; i--) {
-      const entry = list[i]
-      if (entry.spec.enabled === false) continue
-      if (numberInputContains(this.layoutOf(entry), x, y)) return entry
-    }
-    return null
+    return this.entries.topmost(numberInputContains, x, y)
   }
 
-  private rebuild(): void {
-    const rects: RectData[] = []
-    const lines: LineData[] = []
-    const text: UIKitTextItem[] = []
+  private *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
       const { spec, style } = this.scaled(entry)
-      const layout = this.layoutOf(entry)
+      const layout = this.entries.layoutOf(entry)
       const shown = entry.edit ? entry.edit.text : this.display(entry)
       this.firstShown(entry)
       const id = entry.spec.id
-      const geo = buildNumberInput(spec, style, layout, this.font.metrics, {
+      yield buildNumberInput(spec, style, layout, this.font.metrics, {
         text: shown,
         edit: entry.edit,
         firstGlyph: entry.firstGlyph,
@@ -693,13 +653,6 @@ export class UIKitNumberInputOverlay
           this.pressId === id && this.pressPart !== 'text' ? this.pressPart : 0,
         enabled: entry.spec.enabled !== false,
       })
-      rects.push(...geo.rects)
-      lines.push(...geo.lines)
-      text.push(...geo.text)
     }
-    this.rects.setRects(rects)
-    this.lines.setLines(lines)
-    this.labels.setItems(text)
-    this.geometryDirty = false
   }
 }

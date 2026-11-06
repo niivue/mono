@@ -4,7 +4,7 @@
 // No GPU and no DOM here, so all of it is unit-testable; UIKitButtonOverlay wires
 // it to pointer events and the overlay draw hook.
 
-import { buildRect, type RectData } from './rect'
+import { buildRect, type RectData, rectContains } from './rect'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -236,10 +236,5 @@ export function buttonContains(
   px: number,
   py: number,
 ): boolean {
-  return (
-    px >= layout.x &&
-    px < layout.x + layout.width &&
-    py >= layout.y &&
-    py < layout.y + layout.height
-  )
+  return rectContains(layout, px, py)
 }

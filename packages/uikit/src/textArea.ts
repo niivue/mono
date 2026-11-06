@@ -11,13 +11,8 @@
 
 import { mixColor } from './button'
 import type { UIKitKeyEvent } from './controls'
-import { buildRect, type RectData } from './rect'
-import {
-  revealRow,
-  type ScrollWindow,
-  scrollWindow,
-  type UIKitBox,
-} from './scroll'
+import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
+import { revealRow, type ScrollWindow, scrollWindow } from './scroll'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, type RGBA } from './text/layout'
 import {
@@ -32,47 +27,17 @@ import {
   snapToBoundary,
   type TextEditState,
 } from './textEdit'
+import type { FieldStyle } from './textField'
 import type { UIKitTextItem } from './textOverlay'
 
 /** Every visual knob on a text area. All lengths are in canvas pixels. */
-export interface TextAreaStyle {
-  /** Field color at rest. */
-  fill: RGBA
-  /** Field color while the pointer hovers it. */
-  hoverFill: RGBA
-  /** Field color when disabled. */
-  disabledFill: RGBA
-  border: RGBA
-  /** Border color while the field has keyboard focus. */
-  focusBorder: RGBA
-  borderWidth: number
-  radius: number
-  textColor: RGBA
-  disabledTextColor: RGBA
+export interface TextAreaStyle extends FieldStyle {
   /** Color of the placeholder shown while the field is empty. */
   placeholderColor: RGBA
-  /** Label and field text em size. */
-  textSizePx: number
   /** Row height as a multiple of the em size. */
   lineHeight: number
-  /** Halo outline width around the label (it sits on the scene); 0 draws none. */
-  textOutlineWidth: number
-  /** Halo color; null picks black or white for contrast with `textColor`. */
-  textOutlineColor: RGBA | null
-  /** Space between the field's left border and the text. */
-  paddingX: number
-  /** Space between the rows and the field's top and bottom edges. */
-  paddingY: number
-  /** Space between a label and the field. */
-  labelGap: number
-  /** Field width when the spec gives none. */
-  fieldWidth: number
   /** Visible rows when the spec gives none. */
   rows: number
-  caretColor: RGBA
-  caretWidth: number
-  /** Color behind selected text. */
-  selectionFill: RGBA
   /** Width of the scrollbar thumb shown when the rows overflow. */
   scrollbarWidth: number
   /** Space between the text and the scrollbar, and between it and the border. */
@@ -265,8 +230,7 @@ export function textAreaContains(
   px: number,
   py: number,
 ): boolean {
-  const b = layout.field
-  return px >= b.x && px < b.x + b.width && py >= b.y && py < b.y + b.height
+  return rectContains(layout.field, px, py)
 }
 
 /** The track and thumb for an overflowing area's row-based scrollbar. */

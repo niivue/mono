@@ -355,8 +355,8 @@ wheel or a press on a strip, keeps the keyboard highlight in view, and reports
 `scrollable`, `firstRow`, `endRow` and the strip boxes in its popup layout. A
 widget that scrolls implements `wheel(x, y, deltaX, deltaY)` from
 `UIKitInteractive`; the control layer routes the canvas wheel to it. The scroll
-functions are package-private; only the `ScrollRange`, `ScrollWindow`,
-`ScrollStripStyle` and `UIKitBox` types are exported.
+functions are package-private; only the `ScrollRange`, `ScrollWindow` and
+`ScrollStripStyle` types are exported (and `UIKitBox`, from `rect.ts`).
 
 ## Segmented controls
 
@@ -444,8 +444,9 @@ Delete, select-all and typed characters a key means, `caretIndexAt` for the
 pointer, and `textWindow`, which scrolls a field by whole glyphs through the
 scroll model. `textField.ts` turns that state into the selection, text and
 caret geometry of any field. Text inputs reuse both. Like the other widget
-models they are package-private; only the `TextEditState` and
-`TextFieldStyle` types are exported.
+models they are package-private; only the `TextEditState`,
+`TextFieldStyle` and `FieldStyle` types are exported. `FieldStyle` holds the
+keys the number input, text input and text area styles share.
 
 ## Text inputs
 
@@ -544,6 +545,17 @@ scrollbar's `scrollbarWidth`, `scrollbarGap`, `scrollbarColor` and
 `moveCaretRows`, `textAreaKey`) is package-private; hosts that lay out
 multi-line text themselves should ask for it to be exported.
 
+The number input, text input and text area treat a new spec alike.
+`setNumberInputs`, `setTextInputs` and `setTextAreas` keep a retained id's
+edit in progress (caret, selection, scroll and a pending paste) when its spec
+omits `value` or gives the same one (a number input, whose `value` is
+required, compares it after snapping); a different `value` resets the field
+as `add` does. A layout-only `updateNumberInput`, `updateTextInput` or
+`updateTextArea` patch keeps the edit and scroll too; an `add`, an `update`
+that sets `value`, or `setValue` resets them. A number input kept mid-edit
+also keeps its last `onInput` value, so it does not report it again.
+Disabling a field by any path drops its focus.
+
 ## Color controls
 
 `UIKitColorControlOverlay` edits a color the way the legacy demos do, with
@@ -594,8 +606,10 @@ array on cancel; where the browser has no `cancel` event, once the window
 has had focus back for a second with no pick), `DownloadBridge` saves a blob
 under a name (revoking its object URL well after the click), and
 `ClipboardBridge` writes text and reads it back (`read` resolves empty when
-the host refuses). `createBrowserFilePicker()`, `createBrowserDownload()`
-and `createBrowserClipboard()` are the browser implementations (a hidden
+the host refuses; the widgets ignore an empty or rejected read, so a refused
+paste keeps the selection).
+`createBrowserFilePicker()`, `createBrowserDownload()` and
+`createBrowserClipboard()` are the browser implementations (a hidden
 `<input type="file">`, a temporary anchor over an object URL,
 `navigator.clipboard`); each takes the browser object as a parameter so a
 test or another host can supply its own. Browsers only open a chooser or
@@ -746,6 +760,13 @@ and `urlParamSelect.js` are shared by the pages.
   `UIKitEntryMap` (`overlayParts.ts`); a composite widget composes another
   overlay (the file picker holds a button overlay, the color control a slider
   overlay, the select a menu overlay) rather than redrawing it.
+- **Edit widgets share one edit core.** The number input, text input and
+  text area copy, cut and paste through `clipboardEdit`, which uses an
+  `EditSession` to drop a paste that resolves after the edit ended; the text
+  widgets compare respec values with `sameValue` (both in `textEdit.ts`, the
+  number input compares snapped numbers). Each has a private `respec` that
+  takes a new spec while keeping a live edit, session and scroll. Parsing,
+  paste filtering and other widget rules stay in the widget.
 - **Shared behaviour lives in shared models.** Row scrolling is `scroll.ts`,
   single-line editing `textEdit.ts` and `textField.ts`, multi-line editing
   `textArea.ts`, text wrapping `wrapText` in `dialog.ts`. Extend those before

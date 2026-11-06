@@ -16,6 +16,7 @@ import {
   UIKitEntryMap,
   type UIKitGeometry,
 } from './overlayParts'
+import { unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
 import {
   buildToggle,
@@ -174,10 +175,7 @@ export class UIKitToggleOverlay
     const k = this.entries.scale
     if (k === 1) return l
     return {
-      x: l.x / k,
-      y: l.y / k,
-      width: l.width / k,
-      height: l.height / k,
+      ...unscaleBox(l, k),
       box: { x: l.box.x / k, y: l.box.y / k, size: l.box.size / k },
     }
   }

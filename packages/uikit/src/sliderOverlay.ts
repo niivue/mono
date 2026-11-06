@@ -18,6 +18,7 @@ import {
   UIKitEntryMap,
   type UIKitGeometry,
 } from './overlayParts'
+import { unscaleBox } from './rect'
 import {
   buildSlider,
   DEFAULT_SLIDER_STYLE,
@@ -183,16 +184,8 @@ export class UIKitSliderOverlay
     const k = this.entries.scale
     if (k === 1) return l
     return {
-      x: l.x / k,
-      y: l.y / k,
-      width: l.width / k,
-      height: l.height / k,
-      track: {
-        x: l.track.x / k,
-        y: l.track.y / k,
-        width: l.track.width / k,
-        height: l.track.height / k,
-      },
+      ...unscaleBox(l, k),
+      track: unscaleBox(l.track, k),
       rail: { x0: l.rail.x0 / k, x1: l.rail.x1 / k, cy: l.rail.cy / k },
       labelBaseline: l.labelBaseline === null ? null : l.labelBaseline / k,
     }

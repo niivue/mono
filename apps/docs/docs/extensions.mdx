@@ -18,32 +18,34 @@ npm install @niivue/niivue@next
 Most extensions run their work in a Web Worker, so the page stays
 responsive while they compute.
 
-## DICOM: nv-ext-dcm2niix
+## DICOM: dcm2niix
 
 ```bash
-npm install @niivue/nv-ext-dcm2niix@next
+npm install @niivue/dcm2niix@next
 ```
 
-NiiVue does not read DICOM directly. `@niivue/nv-ext-dcm2niix` runs
-dcm2niix (compiled to WebAssembly) in the browser and returns NIfTI files
-you can load:
+NiiVue does not read DICOM directly. `@niivue/dcm2niix` runs dcm2niix
+(compiled to WebAssembly) in the browser and returns NIfTI series you can
+load:
 
 ```js
-import { runDcm2niix } from '@niivue/nv-ext-dcm2niix'
+import { convert } from '@niivue/dcm2niix'
 
 // <input id="dicomFolder" type="file" webkitdirectory multiple />
 input.addEventListener('change', async () => {
-  const niftiFiles = await runDcm2niix(input.files)
-  await nv.loadVolumes([{ url: niftiFiles[0] }])
+  // A nonzero exit still returns the series that converted.
+  const { series } = await convert(input.files)
+  await nv.loadVolumes([{ url: series[0].image }])
 })
 ```
 
-For a dropped folder, `traverseDataTransferItems(e.dataTransfer.items)`
-collects the files first. The `Dcm2niix` class is also exported for full
-control over the dcm2niix flags:
+Each series also carries its `json` sidecar and any `bval`/`bvec`. For a
+dropped folder, `filesFromDataTransfer(e.dataTransfer.items)` collects the
+files first; `listSeries` lists series without converting them. The
+`Dcm2niix` class gives full control over the dcm2niix flags:
 
 ```js
-import { Dcm2niix } from '@niivue/nv-ext-dcm2niix'
+import { Dcm2niix } from '@niivue/dcm2niix'
 
 const dcm2niix = new Dcm2niix()
 await dcm2niix.init()

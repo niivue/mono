@@ -27,8 +27,8 @@
     "apps/demo-ext-dcm2niix": {
       "name": "demo-ext-dcm2niix",
       "dependencies": {
+        "@niivue/dcm2niix": "^1.4.20261105-rc.3",
         "@niivue/niivue": "workspace:*",
-        "@niivue/nv-ext-dcm2niix": "workspace:*",
       },
       "devDependencies": {
         "vite": "^6.3.2",
@@ -251,18 +251,6 @@
       },
       "peerDependencies": {
         "@niivue/niivue": "workspace:*",
-      },
-    },
-    "packages/nv-ext-dcm2niix": {
-      "name": "@niivue/nv-ext-dcm2niix",
-      "version": "1.0.0-rc.59",
-      "dependencies": {
-        "@niivue/dcm2niix": "^1.4.20261029",
-      },
-      "devDependencies": {
-        "typescript": "~5.8.3",
-        "vite": "^6.3.2",
-        "vite-plugin-dts": "^4.5.4",
       },
     },
     "packages/nv-ext-drawing": {
@@ -1044,8 +1032,6 @@
     "@niivue/niimath": ["@niivue/niimath@1.2.0", "", {}, "sha512-Llats13a09Pj9CRn0izLhG0TQ6sJ4ny5ZzQSbO8e4EjSpdLYM+amZA42ZuMAt+5k/N/Mh3mzt8423GcUkl0pig=="],
 
     "@niivue/niivue": ["@niivue/niivue@workspace:packages/niivue"],
-
-    "@niivue/nv-ext-dcm2niix": ["@niivue/nv-ext-dcm2niix@workspace:packages/nv-ext-dcm2niix"],
 
     "@niivue/nv-ext-drawing": ["@niivue/nv-ext-drawing@workspace:packages/nv-ext-drawing"],
 
@@ -3472,10 +3458,6 @@
     "@niivue/niivue/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
     "@niivue/niivue/vite": ["vite@7.3.2", "", { "dependencies": { "esbuild": "^0.27.0", "fdir": "^6.5.0", "picomatch": "^4.0.3", "postcss": "^8.5.6", "rollup": "^4.43.0", "tinyglobby": "^0.2.15" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "jiti": ">=1.21.0", "less": "^4.0.0", "lightningcss": "^1.21.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "jiti", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-Bby3NOsna2jsjfLVOHKes8sGwgl4TT0E6vvpYgnAYDIF/tie7MRaFthmKuHx1NSXjiTueXH3do80FMQgvEktRg=="],
-
-    "@niivue/nv-ext-dcm2niix/@niivue/dcm2niix": ["@niivue/dcm2niix@1.4.20261029", "", {}, "sha512-qmFDNNhwAXDzRC0Nn/aYjDpLYJ74mRjPHpbibmUR7DKFmo36867wdHONLBngv4dllb4yJmGSbhV8ILR163kjZQ=="],
-
-    "@niivue/nv-ext-dcm2niix/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
     "@niivue/nv-ext-drawing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 

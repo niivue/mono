@@ -1,19 +1,20 @@
 /**
- * Demo: convert a folder of DICOM files to NIfTI in the browser via
- * the dcm2niix WASM build, then view the result with NiiVue.
+ * Demo: convert a folder of DICOM files to NIfTI in the browser with
+ * @niivue/dcm2niix, then view the chosen series with NiiVue.
  *
  * Three input paths:
- *   1. <input webkitdirectory>            → runDcm2niix(input.files)
- *   2. drag-drop a folder onto the page   → traverseDataTransferItems → runDcm2niix
- *   3. "Load demo" button                 → fetchDemoManifest → runDcm2niix
+ *   1. <input webkitdirectory>            → convert(input.files)
+ *   2. drag-drop a folder onto the page   → filesFromDataTransfer → convert
+ *   3. "Load demo" button                 → fetchDemoManifest → convert
  */
+
+import { convert, filesFromDataTransfer, type Series } from '@niivue/dcm2niix'
 import NiiVue, {
   DRAG_MODE,
   MULTIPLANAR_TYPE,
   SHOW_RENDER,
   SLICE_TYPE,
 } from '@niivue/niivue'
-import { runDcm2niix, traverseDataTransferItems } from '@niivue/nv-ext-dcm2niix'
 
 const DEMO_MANIFEST_URL =
   'https://niivue.github.io/niivue-demo-images/dicom/niivue-manifest.txt'
@@ -32,7 +33,7 @@ const saveButton = $<HTMLButtonElement>('saveButton')
 const loadManifestBtn = $<HTMLButtonElement>('loadManifestBtn')
 const loadingCircle = $('loadingCircle')
 
-let convertedFiles: File[] = []
+let convertedSeries: Series[] = []
 let currentFile: File | null = null
 let isConverting = false
 
@@ -76,7 +77,7 @@ dropTarget.addEventListener('drop', async (e) => {
   if (!items || items.length === 0) return
   try {
     showLoading('Reading dropped folder…')
-    const files = await traverseDataTransferItems(items)
+    const files = await filesFromDataTransfer(items)
     await convertAndDisplay(files)
   } catch (err) {
     handleError('Drop failed', err)
@@ -94,11 +95,11 @@ loadManifestBtn.addEventListener('click', async () => {
   }
 })
 
-// --- File select dropdown (multiple outputs from one conversion) ---
+// --- Series dropdown (one conversion can yield several series) ---
 fileSelect.addEventListener('change', async () => {
   const idx = Number(fileSelect.value)
   if (Number.isNaN(idx) || idx < 0) return
-  await viewFile(convertedFiles[idx])
+  await viewFile(convertedSeries[idx].image)
 })
 
 // --- Save the currently-viewed file ---
@@ -133,24 +134,28 @@ async function convertAndDisplay(files: FileList | File[]): Promise<void> {
   showLoading('Converting DICOM to NIfTI…')
   try {
     const t0 = performance.now()
-    const niftiFiles = await runDcm2niix(files)
+    // A nonzero exit still returns the series that converted; rejection
+    // means the worker failed.
+    const { series, log } = await convert(files)
     const elapsed = ((performance.now() - t0) / 1000).toFixed(2)
 
-    if (niftiFiles.length === 0) {
+    if (series.length === 0) {
       hideLoading()
-      setStatus('No NIfTI output produced. Are these DICOM images?')
+      setStatus(
+        `No image produced. Are these DICOM images? ${log.at(-1) ?? ''}`,
+      )
       return
     }
 
-    convertedFiles = niftiFiles
-    populateFileSelect(niftiFiles)
+    convertedSeries = series
+    populateFileSelect(series)
     show(fileSelect)
     show(saveButton)
     hideLoading()
-    setStatus(`Converted ${niftiFiles.length} file(s) in ${elapsed} s`)
+    setStatus(`Converted ${series.length} series in ${elapsed} s`)
 
     fileSelect.value = '0'
-    await viewFile(niftiFiles[0])
+    await viewFile(series[0].image)
   } finally {
     isConverting = false
     setInputsDisabled(false)
@@ -159,7 +164,7 @@ async function convertAndDisplay(files: FileList | File[]): Promise<void> {
 
 /**
  * Fetch a newline-delimited manifest of relative DICOM URLs and return
- * them as `File`s ready for `runDcm2niix`. Demo-only — the manifest
+ * them as `File`s ready for `convert`. Demo-only — the manifest
  * URL must be trusted (each line is treated as a fetchable URL).
  */
 async function fetchDemoManifest(manifestUrl: string): Promise<File[]> {
@@ -208,22 +213,13 @@ function setInputsDisabled(disabled: boolean): void {
 
 async function viewFile(file: File): Promise<void> {
   currentFile = file
-  if (!/\.nii(\.gz)?$/i.test(file.name)) {
-    // Non-image (e.g. BIDS sidecar) — keep it available for download but
-    // don't try to render.
-    return
-  }
   await nv.loadVolumes([{ url: file, name: file.name }])
 }
 
-function populateFileSelect(files: File[]): void {
-  fileSelect.innerHTML = ''
-  for (let i = 0; i < files.length; i++) {
-    const option = document.createElement('option')
-    option.value = String(i)
-    option.text = files[i].name
-    fileSelect.appendChild(option)
-  }
+function populateFileSelect(series: Series[]): void {
+  fileSelect.replaceChildren(
+    ...series.map((s, i) => new Option(s.image.name, String(i))),
+  )
 }
 
 function setStatus(text: string): void {

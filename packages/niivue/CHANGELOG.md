@@ -1,3 +1,14 @@
+## 1.0.0-rc.113 (2026-11-07)
+
+### Fixes
+
+- **niivue:** getCanvasImage returns null when no frame was drawn ([4b61b9cf](https://github.com/niivue/mono/commit/4b61b9cf))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.112 (2026-11-07)
 
 ### Fixes

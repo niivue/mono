@@ -1,3 +1,20 @@
+## 1.0.0-rc.100 (2026-11-07)
+
+### Fixes
+
+- **nv-mcp:** refuse a screenshot while NiiVue has no render backend ([b5fee5ce](https://github.com/niivue/mono/commit/b5fee5ce))
+- **nv-mcp:** screenshot refuses a stale canvas when NiiVue draws nothing ([2e66eeb9](https://github.com/niivue/mono/commit/2e66eeb9))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.113
+- Updated uikit to 1.0.0-rc.108
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.99 (2026-11-07)
 
 ### Updated Dependencies

@@ -3491,9 +3491,8 @@ export default class NiiVue extends EventTarget {
     // Load all meshes in parallel, then add in original order
     const loaded = await Promise.all(meshes.map((m) => NVMesh.loadMesh(m)))
     for (const m of loaded) {
-      await this.model.addMesh(m)
-      const allMeshes = this.model.getMeshes()
-      this.emit('meshLoaded', { mesh: allMeshes[allMeshes.length - 1] })
+      const added = await this.model.addMesh(m)
+      if (added) this.emit('meshLoaded', { mesh: added })
     }
     await this._updateGLMeshes()
     return this

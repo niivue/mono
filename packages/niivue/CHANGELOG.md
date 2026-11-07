@@ -1,3 +1,13 @@
+## 1.0.0-rc.112 (2026-11-07)
+
+### Fixes
+
+- **niivue:** bound ITK-Wasm CBOR reads before allocating ([9e313c31](https://github.com/niivue/mono/commit/9e313c31))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.111 (2026-11-07)
 
 ### Fixes

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic DICOM-WSI instances for nv-ext-wsi's index tests (pydicom >= 3).
+"""Synthetic DICOM-WSI instances for nv-ext-tile's index tests (pydicom >= 3).
 
 Licence-clean: no image data. Each frame's payload is a recognisable byte
 string, FF D8 + a label + FF D9, so tests can check exact bytes and spans
@@ -7,7 +7,7 @@ without a decoder. Run from this directory: python3 make_fixtures.py
 
 colors.dcm is the exception: a sparse slide whose tiles are
 real solid-colour JPEGs (encoded by cjpeg), for the browser e2e test in
-apps/demo-ext-wsi.
+apps/demo-ext-tile.
 """
 
 import pydicom

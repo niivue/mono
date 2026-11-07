@@ -72,15 +72,15 @@ count says nothing about paths or planes: a level with `sparse: true` must state
 - Holes are skipped: nothing is fetched or drawn, as in OpenSlide.
 - A tile's `fileUrl` overrides the level's, for a level split across files (a concatenation).
 
-Producers: nv-ext-wsi's `DicomWsiSource` (local folders) and `manifestFromIndex` (hosted
-`dicom-wsi-range-v1`); see `packages/nv-ext-wsi/README.md`. Both need a core with sparse levels
-and per-tile `fileUrl` (nv-ext-wsi's peer floor). Their index places TILED_FULL frames
+Producers: nv-ext-tile/dicom's `DicomWsiSource` (local folders) and `manifestFromIndex` (hosted
+`dicom-wsi-range-v1`); see `packages/nv-ext-tile/README.md`. Both need a core with sparse levels
+and per-tile `fileUrl` (nv-ext-tile's peer floor). Their index places TILED_FULL frames
 in implicit order unless per-frame positions are given.
 
 **Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
-**ICC colour management.** Manifests record the optical path's ICC profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0 file (`fetch-dicom-wsi.ts`, the IIIF server route, nv-ext-wsi), or a DICOMweb bulk-data URL (nv-ohif), plus `colorSpace` when stated.
+**ICC colour management.** Manifests record the optical path's ICC profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0 file (`fetch-dicom-wsi.ts`, the IIIF server route, nv-ext-tile/dicom), or a DICOMweb bulk-data URL (nv-ohif), plus `colorSpace` when stated.
 - NVSlide asks its source for the profile bytes (`SlideTileSource.fetchIccProfile`). The default source reads the manifest's byte range or URL; nv-ohif's source serves none yet, so OHIF slides are not colour-managed.
-- The registered transform (`NVSlide.registerIccTransform`, before slides are opened) bakes the profile into an n^3 RGBA8 sRGB table of any size. nv-ext-wsi registers @niivue/dcm2niix's LittleCMS (perceptual intent, 33^3); the core ships no colour engine.
+- The registered transform (`NVSlide.registerIccTransform`, before slides are opened) bakes the profile into an n^3 RGBA8 sRGB table of any size. nv-ext-tile/dicom registers @niivue/dcm2niix's LittleCMS (perceptual intent, 33^3); the core ships no colour engine.
 - The slide and slide-plane shaders apply the table once per pixel, after decoding and windowing, for every codec.
 - `colorManagement` (option and property, default on) switches the table off without re-decoding. No table applies, and the shader skips the lookup, for: no profile; a `colorSpace` of `SRGB`; a `MONOCHROME*` slide (its window is the display mapping, so its profile is never fetched); no transform; or a profile the transform rejects.
 - Slides without a table use a shader variant with no lookup: the 3D fetch costs about 45% of a full-canvas draw in SwiftShader.

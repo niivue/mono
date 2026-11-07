@@ -5,7 +5,7 @@ import type {
   SlideSourceHost,
 } from '@niivue/niivue'
 import { fromArrayBuffer } from 'geotiff'
-import { TiffSlideSource } from './index'
+import { TiffSlideSource } from './tiff'
 
 // 64x64 baseline JPEG (cjpeg -sample 1x1): left half (200,30,30), right half (30,30,200).
 const JPEG_TILE = Uint8Array.from(

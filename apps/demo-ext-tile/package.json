@@ -1,5 +1,5 @@
 {
-  "name": "demo-ext-wsi",
+  "name": "demo-ext-tile",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
   "dependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.3",
     "@niivue/niivue": "workspace:*",
-    "@niivue/nv-ext-wsi": "workspace:*",
+    "@niivue/nv-ext-tile": "workspace:*",
     "geotiff": "^3.0.5"
   },
   "devDependencies": {

@@ -1,3 +1,13 @@
+## 1.0.0-rc.111 (2026-11-07)
+
+### Fixes
+
+- **niivue:** loadMeshes emits meshLoaded only for meshes the model adds ([9c77b1c0](https://github.com/niivue/mono/commit/9c77b1c0))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.110 (2026-11-07)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

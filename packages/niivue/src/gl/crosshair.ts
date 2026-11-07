@@ -16,6 +16,9 @@ import {
 import { NVRenderer } from '@/view/NVRenderer'
 import * as mesh from './mesh'
 
+// drawWithGpu reads neither field: opacity and 'phong' are passed in.
+const PHONG_MESH = { opacity: 1.0, shaderType: 'phong' } as NVMesh
+
 export type CrosshairResources = WebGLMeshGPU & {
   shaderType: string
 }
@@ -177,21 +180,7 @@ export class CrosshairRenderer extends NVRenderer {
     normalMatrix: Float32Array,
     sliceType: number,
   ): void {
-    if (!this.isReady) return
-    for (let cylIdx = 0; cylIdx < this.cylinders.length; cylIdx++) {
-      if (shouldCullCylinder(cylIdx, sliceType)) continue
-      const cyl = this.cylinders[cylIdx]
-      if (!cyl.vao) continue
-      mesh.drawWithGpu(
-        gl,
-        { opacity: 1.0, shaderType: 'phong' } as NVMesh,
-        cyl,
-        mvpMatrix,
-        normalMatrix,
-        1.0,
-        'phong',
-      )
-    }
+    this._drawCylinders(gl, mvpMatrix, normalMatrix, sliceType, 1.0, false)
   }
 
   drawXRay(
@@ -201,20 +190,24 @@ export class CrosshairRenderer extends NVRenderer {
     sliceType: number,
     xrayAlpha: number,
   ): void {
+    this._drawCylinders(gl, mvpMatrix, normalMatrix, sliceType, xrayAlpha, true)
+  }
+
+  private _drawCylinders(
+    gl: WebGL2RenderingContext,
+    mvpMatrix: Float32Array,
+    normalMatrix: Float32Array,
+    sliceType: number,
+    opacity: number,
+    xray: boolean,
+  ): void {
     if (!this.isReady) return
+    const drawMesh = xray ? mesh.drawXRay : mesh.drawWithGpu
     for (let cylIdx = 0; cylIdx < this.cylinders.length; cylIdx++) {
       if (shouldCullCylinder(cylIdx, sliceType)) continue
       const cyl = this.cylinders[cylIdx]
       if (!cyl.vao) continue
-      mesh.drawXRay(
-        gl,
-        { opacity: 1.0, shaderType: 'phong' } as NVMesh,
-        cyl,
-        mvpMatrix,
-        normalMatrix,
-        xrayAlpha,
-        'phong',
-      )
+      drawMesh(gl, PHONG_MESH, cyl, mvpMatrix, normalMatrix, opacity, 'phong')
     }
   }
 

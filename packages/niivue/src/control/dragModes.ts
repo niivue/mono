@@ -92,13 +92,9 @@ function calculateNewRange(
   if (!vol?.img || !vol.dimsRAS || !vol.img2RASstep || !vol.img2RASstart)
     return null
 
-  const startMM = screenSlicePickAt(
-    ctrl,
-    ctrl.dragStartXY[0],
-    ctrl.dragStartXY[1],
-  )
-  const endMM = screenSlicePickAt(ctrl, ctrl.dragEndXY[0], ctrl.dragEndXY[1])
-  if (!startMM || !endMM) return null
+  const span = dragSpanMM(ctrl)
+  if (!span) return null
+  const [startMM, endMM] = span
 
   const startVox = NVTransforms.mm2vox(vol, startMM)
   const endVox = NVTransforms.mm2vox(vol, endMM)
@@ -163,14 +159,10 @@ function calculateNewRange(
 
 /** Build DragReleaseInfo from current drag state. */
 function buildDragReleaseInfo(ctrl: NiiVue): DragReleaseInfo | null {
-  const startMM = screenSlicePickAt(
-    ctrl,
-    ctrl.dragStartXY[0],
-    ctrl.dragStartXY[1],
-  )
-  const endMM = screenSlicePickAt(ctrl, ctrl.dragEndXY[0], ctrl.dragEndXY[1])
+  const span = dragSpanMM(ctrl)
   const tileHit = ctrl.activeTileHit
-  if (!startMM || !endMM || !tileHit) return null
+  if (!span || !tileHit) return null
+  const [startMM, endMM] = span
 
   const vol = ctrl.model.getVolumes()[0]
   let voxStart: [number, number, number] = [0, 0, 0]
@@ -442,13 +434,9 @@ export function handleDragRelease(ctrl: NiiVue): void {
 
   // Measurement: save completed measurement in mm-space
   if (mode === DRAG_MODE.measurement) {
-    const startMM = screenSlicePickAt(
-      ctrl,
-      ctrl.dragStartXY[0],
-      ctrl.dragStartXY[1],
-    )
-    const endMM = screenSlicePickAt(ctrl, ctrl.dragEndXY[0], ctrl.dragEndXY[1])
-    if (startMM && endMM) {
+    const span = dragSpanMM(ctrl)
+    if (span) {
+      const [startMM, endMM] = span
       const dist = vec3.distance(
         vec3.fromValues(startMM[0], startMM[1], startMM[2]),
         vec3.fromValues(endMM[0], endMM[1], endMM[2]),
@@ -501,13 +489,9 @@ export function dragForPanZoom(ctrl: NiiVue): void {
   const saved = ctrl._pan2DxyzmmAtDragStart
   if (!saved) return
 
-  const startMM = screenSlicePickAt(
-    ctrl,
-    ctrl.dragStartXY[0],
-    ctrl.dragStartXY[1],
-  )
-  const endMM = screenSlicePickAt(ctrl, ctrl.dragEndXY[0], ctrl.dragEndXY[1])
-  if (!startMM || !endMM) return
+  const span = dragSpanMM(ctrl)
+  if (!span) return
+  const [startMM, endMM] = span
 
   ctrl.model.scene.pan2Dxyzmm[0] = saved[0] + (endMM[0] - startMM[0])
   ctrl.model.scene.pan2Dxyzmm[1] = saved[1] + (endMM[1] - startMM[1])
@@ -580,6 +564,19 @@ function screenSlicePickAt(
     py,
     ctrl.activeTileHit,
   )
+}
+
+/** mm coordinates of the drag start and end, or null if either misses a slice. */
+function dragSpanMM(
+  ctrl: NiiVue,
+): [[number, number, number], [number, number, number]] | null {
+  const startMM = screenSlicePickAt(
+    ctrl,
+    ctrl.dragStartXY[0],
+    ctrl.dragStartXY[1],
+  )
+  const endMM = screenSlicePickAt(ctrl, ctrl.dragEndXY[0], ctrl.dragEndXY[1])
+  return startMM && endMM ? [startMM, endMM] : null
 }
 
 /** Get slice info for persisting a measurement/angle. */

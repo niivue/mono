@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { mat4 } from 'gl-matrix'
-import { projectMMToCanvas } from './sliceUtils'
+import { mat4, vec3 } from 'gl-matrix'
+import { SLICE_TYPE } from '@/NVConstants'
+import { projectMMToCanvas, tilePlane } from './sliceUtils'
 
 describe('projectMMToCanvas', () => {
   test('identityMVP_projectsToCenter', () => {
@@ -22,5 +23,29 @@ describe('projectMMToCanvas', () => {
     // NDC y=1 → canvas: 0 + (1-1)*0.5*200 = 0
     expect(cx).toBeCloseTo(200, 5)
     expect(cy).toBeCloseTo(0, 5)
+  })
+})
+
+describe('tilePlane', () => {
+  const drawn = {
+    axCorSag: SLICE_TYPE.AXIAL,
+    mvpMatrix: mat4.create(),
+    leftTopWidthHeight: [0, 0, 10, 10],
+    planeNormal: vec3.fromValues(0, 0, 1),
+    planePoint: vec3.create(),
+  }
+
+  test('drawn2DTile_returnsMatrices', () => {
+    expect(tilePlane(drawn)).toEqual({
+      mvp: drawn.mvpMatrix,
+      ltwh: drawn.leftTopWidthHeight,
+      pn: drawn.planeNormal,
+      pp: drawn.planePoint,
+    })
+  })
+
+  test('renderOrUndrawnTile_returnsNull', () => {
+    expect(tilePlane({ ...drawn, axCorSag: SLICE_TYPE.RENDER })).toBeNull()
+    expect(tilePlane({ ...drawn, planePoint: undefined })).toBeNull()
   })
 })

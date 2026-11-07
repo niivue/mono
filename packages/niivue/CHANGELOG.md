@@ -1,3 +1,15 @@
+## 1.0.0-rc.115 (2026-11-07)
+
+### Fixes
+
+- **examples:** reload with the running backend when attach falls back ([f4ab37ad](https://github.com/niivue/mono/commit/f4ab37ad))
+- **examples:** choose the streaming budget from a WebGPU device, not an adapter ([6ad333f0](https://github.com/niivue/mono/commit/6ad333f0))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.114 (2026-11-07)
 
 ### Fixes

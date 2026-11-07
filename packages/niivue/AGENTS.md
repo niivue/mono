@@ -2273,6 +2273,6 @@ Demos import `import NiiVue from '../dist/niivue.js'` — Vite dev plugin redire
 
 - `nifti-reader-js`: NIfTI parsing
 - `gl-matrix`: Vector/matrix math
-- `cbor-x`: CBOR encoding for NVD documents and ITK-Wasm
+- `cbor-x`: CBOR encoding for NVD documents and ITK-Wasm (`.iwi.cbor`, `.iwm.cbor`). A reader of untrusted CBOR calls `assertCborFitsInput` (`documentBounds.ts`) before `decode`: it rejects heads that declare more items than the input holds ("Invalid CBOR: ..."). Decoded fields are untrusted too: the IWM reader rejects non-array `points`/`cells`, since a map with a huge `length` would size a typed array
 - `earcut`: Polygon triangulation (annotations)
 - `clipper2-ts`: Polygon clipping (annotations)

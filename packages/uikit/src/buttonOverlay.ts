@@ -32,10 +32,13 @@ import {
   type UIKitKeyEvent,
   type UIKitRedrawSource,
 } from './controls'
-import type { RectData } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
+import {
+  UIKitDrawBundle,
+  UIKitEntryMap,
+  type UIKitGeometry,
+} from './overlayParts'
+import { unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
-import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
 /** What `attach` needs from a host: NiiVue satisfies it as-is. */
 export type UIKitButtonHost = UIKitHost
@@ -76,16 +79,10 @@ export class UIKitButtonOverlay
 {
   readonly hoverCursor = 'pointer'
   private readonly font: UIKitFont
-  private readonly rects = new UIKitRectOverlay()
-  private readonly labels: UIKitTextOverlay
-  private readonly entries = new Map<string, ButtonEntry>()
+  private readonly bundle: UIKitDrawBundle
+  private readonly entries: UIKitEntryMap<ButtonLayout, ButtonEntry>
   private baseStyle: ButtonStyle
-  private readonly cssUnits: boolean
   private readonly now: () => number
-  private requestRedraw: (() => void) | null
-  /** Scale from spec units to canvas pixels (the frame dpr when cssUnits). */
-  private scale = 1
-  private geometryDirty = true
   private lastTick = 0
   private pressedId: string | null = null
   private hoverId: string | null = null
@@ -94,11 +91,13 @@ export class UIKitButtonOverlay
 
   constructor(font: UIKitFont, options: UIKitButtonOverlayOptions = {}) {
     this.font = font
-    this.labels = new UIKitTextOverlay(font)
+    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = scaleButton(entry.spec, entry.style, scale)
+      return layoutButton(spec, style, font.metrics)
+    }, options.cssUnits ?? false)
     this.baseStyle = resolveButtonStyle(DEFAULT_BUTTON_STYLE, options.style)
-    this.cssUnits = options.cssUnits ?? false
     this.now = options.now ?? (() => performance.now())
-    this.requestRedraw = options.requestRedraw ?? null
   }
 
   /** Replace the default style for every button (per-spec overrides still win). */
@@ -135,11 +134,11 @@ export class UIKitButtonOverlay
 
   /** Replace the whole button set. */
   setButtons(specs: readonly ButtonSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeButton(id)
-    }
-    for (const spec of specs) this.addButton(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => this.addButton(spec),
+      (id) => this.removeButton(id),
+    )
   }
 
   removeButton(id: string): void {
@@ -167,7 +166,7 @@ export class UIKitButtonOverlay
 
   /** The ids of all buttons, in draw order. */
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /**
@@ -178,10 +177,10 @@ export class UIKitButtonOverlay
   getLayout(id: string): ButtonLayout | null {
     const entry = this.entries.get(id)
     if (!entry) return null
-    const l = this.layoutOf(entry)
-    const k = this.scale
+    const l = this.entries.layoutOf(entry)
+    const k = this.entries.scale
     if (k === 1) return l
-    return { x: l.x / k, y: l.y / k, width: l.width / k, height: l.height / k }
+    return unscaleBox(l, k)
   }
 
   /** True while the pointer is over an enabled button. */
@@ -232,7 +231,7 @@ export class UIKitButtonOverlay
     if (this.pressedId !== null) {
       const entry = this.entries.get(this.pressedId)
       if (entry) {
-        const inside = buttonContains(this.layoutOf(entry), x, y)
+        const inside = buttonContains(this.entries.layoutOf(entry), x, y)
         const target = inside ? 1 : 0
         if (entry.pressTarget !== target) {
           entry.pressTarget = target
@@ -265,7 +264,7 @@ export class UIKitButtonOverlay
     if (!entry) return true
     entry.pressTarget = 0
     this.startAnimation()
-    if (buttonContains(this.layoutOf(entry), x, y)) {
+    if (buttonContains(this.entries.layoutOf(entry), x, y)) {
       entry.spec.onClick?.(id)
     }
     // Re-evaluate hover now that the press no longer owns the pointer.
@@ -300,7 +299,7 @@ export class UIKitButtonOverlay
   }
 
   bindLayer(layer: UIKitRedrawSource): void {
-    this.requestRedraw ??= () => layer.requestRedraw()
+    this.bundle.bind(layer)
   }
 
   /**
@@ -323,15 +322,16 @@ export class UIKitButtonOverlay
    * @internal
    */
   tickForTest(): boolean {
-    return this.tick()
+    return this.tick().animating
   }
 
   /** Advance every running press animation by the wall clock. */
-  private tick(): boolean {
+  private tick(): { animating: boolean; stepped: boolean } {
     const now = this.now()
     const dt = this.lastTick > 0 ? now - this.lastTick : 0
     this.lastTick = now
     let animating = false
+    let stepped = false
     for (const entry of this.entries.values()) {
       if (entry.press === entry.pressTarget) {
         if (entry.pulse && entry.pressTarget === 1) {
@@ -345,36 +345,28 @@ export class UIKitButtonOverlay
           : entry.style.releaseMs
       entry.press = advancePress(entry.press, entry.pressTarget, dt, ms)
       if (entry.press !== entry.pressTarget || entry.pulse) animating = true
-      this.geometryDirty = true
+      stepped = true
     }
     if (!animating) this.lastTick = 0
-    return animating
+    return { animating, stepped }
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
-      for (const entry of this.entries.values()) entry.layout = null
-      this.geometryDirty = true
-    }
-    const animating = this.tick()
-    if (this.geometryDirty) this.rebuild()
-    this.rects.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
-    if (animating) this.requestRedraw?.()
+    const rescaled = this.entries.rescale(frame.dpr)
+    const { animating, stepped } = this.tick()
+    this.bundle.draw(frame, () => this.geometry(), rescaled || stepped)
+    // The next frame steps the animation again, so its rebuild is due anyway.
+    if (animating) this.bundle.invalidate()
   }
 
   /** Release GPU resources on both backends. */
   destroy(): void {
-    this.rects.destroy()
-    this.labels.destroy()
+    this.bundle.destroy()
   }
 
   private invalidate(): void {
-    this.geometryDirty = true
-    this.requestRedraw?.()
+    this.bundle.invalidate()
   }
 
   private startAnimation(): void {
@@ -382,50 +374,30 @@ export class UIKitButtonOverlay
     this.invalidate()
   }
 
-  private scaled(entry: ButtonEntry): { spec: ButtonSpec; style: ButtonStyle } {
-    return scaleButton(entry.spec, entry.style, this.scale)
-  }
-
-  private layoutOf(entry: ButtonEntry): ButtonLayout {
-    if (!entry.layout) {
-      const { spec, style } = this.scaled(entry)
-      entry.layout = layoutButton(spec, style, this.font.metrics)
-    }
-    return entry.layout
-  }
-
   /** The topmost (last added) enabled button under a canvas point. */
   private hitEntry(x: number, y: number): ButtonEntry | null {
-    const list = [...this.entries.values()]
-    for (let i = list.length - 1; i >= 0; i--) {
-      const entry = list[i]
-      if (entry.spec.enabled === false) continue
-      if (buttonContains(this.layoutOf(entry), x, y)) return entry
-    }
-    return null
+    return this.entries.topmost(buttonContains, x, y)
   }
 
-  private rebuild(): void {
-    const rects: RectData[] = []
-    const text: UIKitTextItem[] = []
+  private *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = this.scaled(entry)
+      const { spec, style } = scaleButton(
+        entry.spec,
+        entry.style,
+        this.entries.scale,
+      )
       const geo = buildButton(
         spec,
         style,
         this.font.metrics,
-        this.layoutOf(entry),
+        this.entries.layoutOf(entry),
         {
           hover: entry.hover,
           press: entry.press,
           enabled: entry.spec.enabled !== false,
         },
       )
-      rects.push(geo.rect)
-      text.push(geo.text)
+      yield { rects: [geo.rect], lines: [], text: [geo.text] }
     }
-    this.rects.setRects(rects)
-    this.labels.setItems(text)
-    this.geometryDirty = false
   }
 }

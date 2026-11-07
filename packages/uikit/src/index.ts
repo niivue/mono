@@ -133,7 +133,7 @@ export type {
   PointLabelPlacement,
 } from './pointLabelOverlay'
 export { UIKitPointLabelOverlay } from './pointLabelOverlay'
-export type { RectData, RectSpec } from './rect'
+export type { RectData, RectSpec, UIKitBox } from './rect'
 export { buildRect } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
 export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
@@ -143,7 +143,6 @@ export type {
   ScrollRange,
   ScrollStripStyle,
   ScrollWindow,
-  UIKitBox,
 } from './scroll'
 export type {
   SegmentedLayout,
@@ -194,7 +193,7 @@ export { DEFAULT_TEXT_AREA_STYLE } from './textArea'
 export type { UIKitTextAreaOverlayOptions } from './textAreaOverlay'
 export { UIKitTextAreaOverlay } from './textAreaOverlay'
 export type { TextEditState } from './textEdit'
-export type { TextFieldStyle } from './textField'
+export type { FieldStyle, TextFieldStyle } from './textField'
 export type {
   TextInputLayout,
   TextInputSpec,

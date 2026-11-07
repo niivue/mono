@@ -8,50 +8,24 @@
 
 import { mixColor } from './button'
 import { buildLine, type LineData } from './line'
-import { buildRect, type RectData } from './rect'
-import { buildScrollArrow, type ScrollWindow, type UIKitBox } from './scroll'
+import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
+import { buildScrollArrow, type ScrollWindow } from './scroll'
 import { snapToStep, stepDecimals, usableStep } from './slider'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { TextEditState } from './textEdit'
 import {
   buildTextFieldContent,
+  type FieldStyle,
   textFieldCaretAt,
   textFieldWindow,
 } from './textField'
 import type { UIKitTextItem } from './textOverlay'
 
 /** Every visual knob on a number input. All lengths are in canvas pixels. */
-export interface NumberInputStyle {
-  /** Field color at rest. */
-  fill: RGBA
-  /** Field color while the pointer hovers it. */
-  hoverFill: RGBA
-  /** Field color when disabled. */
-  disabledFill: RGBA
-  border: RGBA
-  /** Border color while the field has keyboard focus. */
-  focusBorder: RGBA
+export interface NumberInputStyle extends FieldStyle {
   /** Border color while the typed text is not a number. */
   invalidBorder: RGBA
-  borderWidth: number
-  radius: number
-  textColor: RGBA
-  disabledTextColor: RGBA
-  /** Label and value em size. */
-  textSizePx: number
-  /** Halo outline width around the label (it sits on the scene); 0 draws none. */
-  textOutlineWidth: number
-  /** Halo color; null picks black or white for contrast with `textColor`. */
-  textOutlineColor: RGBA | null
-  /** Space between the field's left border and the text. */
-  paddingX: number
-  /** Space between the cap-height box and the field's top and bottom edges. */
-  paddingY: number
-  /** Space between a label and the field. */
-  labelGap: number
-  /** Field width when the spec gives none. */
-  fieldWidth: number
   /** Width of the spinner column (the up and down buttons) inside the field. */
   spinnerWidth: number
   spinnerFill: RGBA
@@ -63,10 +37,6 @@ export interface NumberInputStyle {
   arrowSize: number
   arrowWidth: number
   arrowColor: RGBA
-  caretColor: RGBA
-  caretWidth: number
-  /** Color behind selected text. */
-  selectionFill: RGBA
 }
 
 export const DEFAULT_NUMBER_INPUT_STYLE: NumberInputStyle = {
@@ -324,17 +294,13 @@ export function scaleNumberInput(
   }
 }
 
-function boxContains(b: UIKitBox, px: number, py: number): boolean {
-  return px >= b.x && px < b.x + b.width && py >= b.y && py < b.y + b.height
-}
-
 /** True when canvas point (px, py) lies inside the field (the label is not interactive). */
 export function numberInputContains(
   layout: NumberInputLayout,
   px: number,
   py: number,
 ): boolean {
-  return boxContains(layout.field, px, py)
+  return rectContains(layout.field, px, py)
 }
 
 /** The spinner half under a canvas point: 1 up, -1 down, 0 neither. */
@@ -343,8 +309,8 @@ export function numberInputSpinAt(
   px: number,
   py: number,
 ): 1 | -1 | 0 {
-  if (boxContains(layout.spinUp, px, py)) return 1
-  if (boxContains(layout.spinDown, px, py)) return -1
+  if (rectContains(layout.spinUp, px, py)) return 1
+  if (rectContains(layout.spinDown, px, py)) return -1
   return 0
 }
 

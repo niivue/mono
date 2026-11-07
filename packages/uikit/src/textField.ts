@@ -3,8 +3,8 @@
 // caret index for a pointer x, and the draw data for the selection, the
 // visible run of text and the caret. No GPU and no DOM here.
 
-import { buildRect, type RectData } from './rect'
-import type { ScrollWindow, UIKitBox } from './scroll'
+import { buildRect, type RectData, type UIKitBox } from './rect'
+import type { ScrollWindow } from './scroll'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, type RGBA } from './text/layout'
 import {
@@ -25,6 +25,40 @@ export interface TextFieldStyle {
   caretColor: RGBA
   /** Color behind selected text. */
   selectionFill: RGBA
+}
+
+/** The style knobs the text input, text area and number input share. */
+export interface FieldStyle extends TextFieldStyle {
+  /** Field color at rest. */
+  fill: RGBA
+  /** Field color while the pointer hovers it. */
+  hoverFill: RGBA
+  /** Field color when disabled. */
+  disabledFill: RGBA
+  border: RGBA
+  /** Border color while the field has keyboard focus. */
+  focusBorder: RGBA
+  borderWidth: number
+  radius: number
+  textColor: RGBA
+  disabledTextColor: RGBA
+  /** Label and field text em size. */
+  textSizePx: number
+  /** Halo outline width around the label (it sits on the scene); 0 draws none. */
+  textOutlineWidth: number
+  /** Halo color; null picks black or white for contrast with `textColor`. */
+  textOutlineColor: RGBA | null
+  /** Space between the field's left border and the text. */
+  paddingX: number
+  /**
+   * Space between the text (a single line's cap-height box, or a text area's
+   * rows) and the field's top and bottom edges.
+   */
+  paddingY: number
+  /** Space between a label and the field. */
+  labelGap: number
+  /** Field width when the spec gives none. */
+  fieldWidth: number
 }
 
 /** The width a text area has for glyphs, keeping room for the caret. */

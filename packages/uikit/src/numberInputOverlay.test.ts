@@ -367,6 +367,66 @@ describe('UIKitNumberInputOverlay', () => {
     expect(overlay.getText('n')).toBe('-1e0')
   })
 
+  it('lands a pending paste across a layout patch and an unrelated set change', async () => {
+    const { clipboard } = fakeClipboard('8')
+    const { overlay } = make(clipboard)
+    overlay.focus('n')
+    overlay.keyDown(cmd('v'))
+    overlay.updateNumberInput('n', { x: 101 })
+    const spec = { id: 'n', x: 101, y: 50, min: 0, max: 10, step: 1, value: 5 }
+    overlay.setNumberInputs([spec, { id: 'm', x: 0, y: 0, value: 0 }])
+    overlay.setNumberInputs([{ ...spec, value: 5.2 }])
+    expect(overlay.ids).toEqual(['n'])
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('8')
+    expect(overlay.focusedInput).toBe('n')
+  })
+
+  it('keeps onInput history across retained updates', () => {
+    const { overlay, inputs } = make()
+    const spec = {
+      id: 'n',
+      x: 100,
+      y: 50,
+      min: 0,
+      max: 10,
+      step: 1,
+      value: 5,
+      onInput: (v: number) => inputs.push(v),
+    }
+    for (const update of [
+      () => overlay.setNumberInputs([{ ...spec, x: 101 }]),
+      () => overlay.updateNumberInput('n', { x: 102 }),
+    ]) {
+      inputs.length = 0
+      overlay.focus('n')
+      type(overlay, '6')
+      update()
+      overlay.keyDown(cmd('a'))
+      type(overlay, '5')
+      overlay.blur()
+      expect(overlay.getValue('n')).toBe(5)
+      expect(inputs).toEqual([6, 5])
+    }
+  })
+
+  it('formats a replaced focused input with the new spec', () => {
+    const { overlay } = make()
+    overlay.focus('n')
+    overlay.updateNumberInput('n', { step: 0.1, value: 2.5 })
+    expect(overlay.getText('n')).toBe('2.5')
+  })
+
+  it('drops a pending paste when the input gets a new value', async () => {
+    const { clipboard } = fakeClipboard('8')
+    const { overlay } = make(clipboard)
+    overlay.focus('n')
+    overlay.keyDown(cmd('v'))
+    overlay.setNumberInputs([{ id: 'n', x: 100, y: 50, max: 10, value: 3 }])
+    await Promise.resolve()
+    expect(overlay.getText('n')).toBe('3')
+  })
+
   it('ignores a paste that is not a number instead of filtering it', () => {
     const { overlay, inputs } = make()
     overlay.focus('n')

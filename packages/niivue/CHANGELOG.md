@@ -1,3 +1,17 @@
+## 1.0.0-rc.114 (2026-11-07)
+
+### Fixes
+
+- **niivue:** abort a timed-out manifest error body, match JSON case-insensitively ([5e6d1c65](https://github.com/niivue/mono/commit/5e6d1c65))
+- **niivue:** bound the slide manifest error-body read ([5b52e942](https://github.com/niivue/mono/commit/5b52e942))
+- **niivue,iiif-volumetric-server:** refuse an unsupported WSI syntax with 415 and its reason ([7d195c9c](https://github.com/niivue/mono/commit/7d195c9c))
+- **niivue:** coalesce slide rewindowing and tighten WSI codec checks ([434175a4](https://github.com/niivue/mono/commit/434175a4))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.113 (2026-11-07)
 
 ### Fixes

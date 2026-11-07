@@ -438,6 +438,7 @@ export function useShader(
   bindMeshShader(gl, shaderType, mvpMatrix, normalMatrix, opacity)
 }
 
+/** Draw one mesh; `xray` draws only the parts hidden behind nearer geometry. */
 export function drawWithGpu(
   gl: WebGL2RenderingContext,
   mesh: NVMesh,
@@ -448,8 +449,11 @@ export function drawWithGpu(
   shaderTypeOverride?: string,
   crosscutMM?: number[],
   ccPlanes?: Float32Array,
+  xray = false,
 ): void {
   const shaderType = shaderTypeOverride || mesh.shaderType || 'phong'
+  // crosscut2 ignores depth, so the main pass already drew all of it.
+  if (xray && shaderType === 'crosscut2') return
   const shader = bindMeshShader(
     gl,
     shaderType,
@@ -460,7 +464,7 @@ export function drawWithGpu(
     ccPlanes,
   )
   if (!shader) {
-    if (_contextCache.has(gl))
+    if (!xray && _contextCache.has(gl))
       log.warn(`Unknown mesh shader type: ${shaderType}`)
     return
   }
@@ -468,71 +472,26 @@ export function drawWithGpu(
     if (ccPlanes) drawCrosscut2(gl, mesh, gpu, shader, ccPlanes)
     return
   }
-  // Set up state for mesh rendering
   const isCrosscut = shaderType === 'crosscut'
   if (isCrosscut) {
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
   } else {
     gl.enable(gl.DEPTH_TEST)
+    gl.depthFunc(xray ? gl.GREATER : gl.LESS)
+    gl.enable(gl.CULL_FACE)
+    gl.cullFace(gl.BACK)
+  }
+  if (xray) gl.depthMask(false)
+  gl.enable(gl.BLEND)
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+  gl.bindVertexArray(gpu.vao)
+  gl.drawElements(gl.TRIANGLES, gpu.indexCount, gl.UNSIGNED_INT, 0)
+  gl.bindVertexArray(null)
+  if (xray) {
     gl.depthFunc(gl.LESS)
-    gl.enable(gl.CULL_FACE)
-    gl.cullFace(gl.BACK)
+    gl.depthMask(true)
   }
-  gl.enable(gl.BLEND)
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-  // Draw
-  gl.bindVertexArray(gpu.vao)
-  gl.drawElements(gl.TRIANGLES, gpu.indexCount, gl.UNSIGNED_INT, 0)
-  gl.bindVertexArray(null)
-  if (isCrosscut) {
-    gl.enable(gl.DEPTH_TEST)
-    gl.enable(gl.CULL_FACE)
-  }
-}
-
-export function drawXRay(
-  gl: WebGL2RenderingContext,
-  mesh: NVMesh,
-  gpu: WebGLMeshGPU,
-  mvpMatrix: Float32Array,
-  normalMatrix: Float32Array,
-  opacity = 1.0,
-  shaderTypeOverride?: string,
-  crosscutMM?: number[],
-  ccPlanes?: Float32Array,
-): void {
-  const shaderType = shaderTypeOverride || mesh.shaderType || 'phong'
-  // crosscut2 ignores depth, so the main pass already drew all of it.
-  if (shaderType === 'crosscut2') return
-  const shader = bindMeshShader(
-    gl,
-    shaderType,
-    mvpMatrix,
-    normalMatrix,
-    opacity,
-    crosscutMM,
-    ccPlanes,
-  )
-  if (!shader) return
-  const isCrosscut = shaderType === 'crosscut'
-  if (isCrosscut) {
-    gl.disable(gl.DEPTH_TEST)
-    gl.disable(gl.CULL_FACE)
-  } else {
-    gl.enable(gl.DEPTH_TEST)
-    gl.depthFunc(gl.GREATER)
-    gl.enable(gl.CULL_FACE)
-    gl.cullFace(gl.BACK)
-  }
-  gl.depthMask(false)
-  gl.enable(gl.BLEND)
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-  gl.bindVertexArray(gpu.vao)
-  gl.drawElements(gl.TRIANGLES, gpu.indexCount, gl.UNSIGNED_INT, 0)
-  gl.bindVertexArray(null)
-  gl.depthFunc(gl.LESS)
-  gl.depthMask(true)
   if (isCrosscut) {
     gl.enable(gl.DEPTH_TEST)
     gl.enable(gl.CULL_FACE)

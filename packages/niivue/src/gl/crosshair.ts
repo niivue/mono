@@ -202,12 +202,22 @@ export class CrosshairRenderer extends NVRenderer {
     xray: boolean,
   ): void {
     if (!this.isReady) return
-    const drawMesh = xray ? mesh.drawXRay : mesh.drawWithGpu
     for (let cylIdx = 0; cylIdx < this.cylinders.length; cylIdx++) {
       if (shouldCullCylinder(cylIdx, sliceType)) continue
       const cyl = this.cylinders[cylIdx]
       if (!cyl.vao) continue
-      drawMesh(gl, PHONG_MESH, cyl, mvpMatrix, normalMatrix, opacity, 'phong')
+      mesh.drawWithGpu(
+        gl,
+        PHONG_MESH,
+        cyl,
+        mvpMatrix,
+        normalMatrix,
+        opacity,
+        'phong',
+        undefined,
+        undefined,
+        xray,
+      )
     }
   }
 

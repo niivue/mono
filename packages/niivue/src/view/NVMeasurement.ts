@@ -86,7 +86,7 @@ export function rulerSegments(
     const t = i / units
     const cx = sx + t * dx
     const cy = sy + t * dy
-    const half = i % 5 === 0 ? tickLength * 2 : tickLength
+    const half = (i / step) % 5 === 0 ? tickLength * 2 : tickLength
     segs.push([cx - px * half, cy - py * half, cx + px * half, cy + py * half])
   }
   return segs
@@ -133,7 +133,7 @@ export function rulerTickLabels(
   let lastAlongPx = Number.NEGATIVE_INFINITY
   const out: RulerTickLabel[] = []
   for (let i = step; i <= marks; i += step) {
-    if (i % 5 !== 0) continue
+    if ((i / step) % 5 !== 0) continue // majors: every fifth drawn tick
     const t = i / units
     const alongPx = t * len
     if (alongPx - lastAlongPx < minLabelGapPx) continue

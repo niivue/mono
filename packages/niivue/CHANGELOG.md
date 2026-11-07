@@ -1,3 +1,14 @@
+## 1.0.0-rc.116 (2026-11-07)
+
+### Fixes
+
+- **niivue,uikit:** ruler majors every fifth drawn tick under decimation ([c6a0cb48](https://github.com/niivue/mono/commit/c6a0cb48))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.115 (2026-11-07)
 
 ### Fixes

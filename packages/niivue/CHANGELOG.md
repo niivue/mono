@@ -1,3 +1,75 @@
+## 1.0.0-rc.116 (2026-11-07)
+
+### Fixes
+
+- **niivue,uikit:** ruler majors every fifth drawn tick under decimation ([c6a0cb48](https://github.com/niivue/mono/commit/c6a0cb48))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.115 (2026-11-07)
+
+### Fixes
+
+- **examples:** reload with the running backend when attach falls back ([f4ab37ad](https://github.com/niivue/mono/commit/f4ab37ad))
+- **examples:** choose the streaming budget from a WebGPU device, not an adapter ([6ad333f0](https://github.com/niivue/mono/commit/6ad333f0))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.114 (2026-11-07)
+
+### Fixes
+
+- **niivue:** abort a timed-out manifest error body, match JSON case-insensitively ([5e6d1c65](https://github.com/niivue/mono/commit/5e6d1c65))
+- **niivue:** bound the slide manifest error-body read ([5b52e942](https://github.com/niivue/mono/commit/5b52e942))
+- **niivue,iiif-volumetric-server:** refuse an unsupported WSI syntax with 415 and its reason ([7d195c9c](https://github.com/niivue/mono/commit/7d195c9c))
+- **niivue:** coalesce slide rewindowing and tighten WSI codec checks ([434175a4](https://github.com/niivue/mono/commit/434175a4))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.113 (2026-11-07)
+
+### Fixes
+
+- **niivue:** getCanvasImage returns null when no frame was drawn ([4b61b9cf](https://github.com/niivue/mono/commit/4b61b9cf))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.112 (2026-11-07)
+
+### Fixes
+
+- **niivue:** bound ITK-Wasm CBOR reads before allocating ([9e313c31](https://github.com/niivue/mono/commit/9e313c31))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.111 (2026-11-07)
+
+### Fixes
+
+- **niivue:** loadMeshes emits meshLoaded only for meshes the model adds ([9c77b1c0](https://github.com/niivue/mono/commit/9c77b1c0))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.110 (2026-11-07)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
 ## 1.0.0-rc.109 (2026-11-06)
 
 ### Features

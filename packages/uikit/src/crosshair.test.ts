@@ -248,4 +248,23 @@ describe('buildCrosshair', () => {
     })
     expect(thicknessOf(explicit.lines[2])).toBe(5)
   })
+
+  it('keeps majors every fifth drawn tick once the step reaches 5', () => {
+    // 500 units per horizontal arm: 100 ticks each at step 5, so 20 majors
+    // each (every 25 units). Vertical lines off the vertical arm are those ticks.
+    const g = buildCrosshair({
+      at: [500, 40],
+      width: 1000,
+      height: 80,
+      gapPx: 0,
+      showTicks: true,
+      pxPerUnit: 1,
+    })
+    const ticks = g.lines
+      .map(ends)
+      .filter(([sx, , ex]) => sx === ex && sx !== 500)
+    const lengths = ticks.map(([, sy, , ey]) => ey - sy)
+    expect(ticks).toHaveLength(200)
+    expect(lengths.filter((l) => l === 24)).toHaveLength(40)
+  })
 })

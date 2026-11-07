@@ -1,3 +1,61 @@
+## 1.0.0-rc.112 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.116
+- Updated uikit to 1.0.0-rc.111
+
+## 1.0.0-rc.111 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.115
+- Updated uikit to 1.0.0-rc.110
+
+## 1.0.0-rc.110 (2026-11-07)
+
+### Fixes
+
+- **niivue:** coalesce slide rewindowing and tighten WSI codec checks ([434175a4](https://github.com/niivue/mono/commit/434175a4))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.114
+- Updated uikit to 1.0.0-rc.109
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.109 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.113
+- Updated uikit to 1.0.0-rc.108
+
+## 1.0.0-rc.108 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.112
+- Updated uikit to 1.0.0-rc.107
+
+## 1.0.0-rc.107 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.111
+- Updated uikit to 1.0.0-rc.106
+
+## 1.0.0-rc.106 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.110
+- Updated uikit to 1.0.0-rc.105
+
 ## 1.0.0-rc.105 (2026-11-06)
 
 ### Updated Dependencies

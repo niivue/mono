@@ -8,6 +8,7 @@
 // grapheme cluster boundary so an emoji, flag or accented letter edits as one.
 
 import type { UIKitKeyEvent } from './controls'
+import type { ClipboardBridge } from './host'
 import { revealRow, type ScrollWindow, scrollWindow } from './scroll'
 import type { UIKitFontMetrics } from './text/font'
 import { measureWidth } from './text/layout'
@@ -349,4 +350,57 @@ export function textWindow(
   if (caret < w.first) return fit(caret)
   if (caret > w.end) return fit(revealRow(advances, viewport, w, caret - 1))
   return w
+}
+
+/**
+ * Whether a replacement spec leaves a field's committed text alone: it sets
+ * no `value`, or the same one once both are trimmed to its maxLength.
+ */
+export function sameValue(
+  value: string,
+  spec: { value?: string; maxLength?: number },
+): boolean {
+  return (
+    spec.value === undefined ||
+    truncateText(spec.value, spec.maxLength) ===
+      truncateText(value, spec.maxLength)
+  )
+}
+
+/** A field's edit in progress and its session, bumped whenever an edit starts. */
+export interface EditSession {
+  edit: TextEditState | null
+  session: number
+}
+
+/**
+ * Copy or cut the selection, or start a paste. The read is asynchronous: its
+ * text reaches `paste` only while `live()` holds and the edit that asked is
+ * still running (a blur and refocus starts a new, all-selected one that the
+ * old paste must not replace). An empty or rejected read leaves the edit alone.
+ */
+export function clipboardEdit(
+  clipboard: ClipboardBridge,
+  field: EditSession,
+  action: 'copy' | 'cut' | 'paste',
+  live: () => boolean,
+  paste: (text: string) => void,
+  cut: (next: TextEditState) => void,
+): void {
+  const edit = field.edit
+  if (!edit) return
+  if (action === 'paste') {
+    const session = field.session
+    clipboard.read().then(
+      (text) => {
+        if (text && live() && field.edit && field.session === session)
+          paste(text)
+      },
+      () => {},
+    )
+    return
+  }
+  if (!hasSelection(edit)) return
+  clipboard.write(selectedText(edit))
+  if (action === 'cut') cut(insertText(edit, ''))
 }

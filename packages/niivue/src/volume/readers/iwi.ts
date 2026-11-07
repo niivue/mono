@@ -1,5 +1,6 @@
 import { decode } from 'cbor-x'
 import * as nifti from 'nifti-reader-js'
+import { assertCborFitsInput } from '@/documentBounds'
 import type { NIFTI1, TypedVoxelArray } from '@/NVTypes'
 
 // ITK-Wasm image format (.iwi.cbor)
@@ -35,7 +36,9 @@ export async function read(buffer: ArrayBuffer): Promise<{
   hdr: NIFTI1
   img: ArrayBuffer | TypedVoxelArray
 }> {
-  const iwi = decode(new Uint8Array(buffer)) as IWImage
+  const bytes = new Uint8Array(buffer)
+  assertCborFitsInput(bytes)
+  const iwi = decode(bytes) as IWImage
   return iwi2nii(iwi)
 }
 
@@ -62,7 +65,8 @@ function iwi2nii(iwi: IWImage): {
   // set pixDims
   hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
   if (iwi.spacing) {
-    for (let i = 0; i < iwi.spacing.length; i++) {
+    // pixDims holds 7; a crafted `length` must not grow it.
+    for (let i = 0; i < Math.min(iwi.spacing.length, 7); i++) {
       hdr.pixDims[i + 1] = iwi.spacing[i]
     }
   }

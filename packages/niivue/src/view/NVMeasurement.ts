@@ -1,9 +1,8 @@
 import { isOnSlice } from '@/annotation/sliceProjection'
-import { SLICE_TYPE } from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type { CompletedMeasurement } from '@/NVTypes'
 import { computeTolerance } from '@/view/NVAnnotation'
-import { projectMMToCanvas } from '@/view/sliceUtils'
+import { projectMMToCanvas, tilePlane } from '@/view/sliceUtils'
 import { sceneUnit } from '@/volume/utils'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
 import type { BuildLineFn, LineData } from './NVLine'
@@ -87,7 +86,7 @@ export function rulerSegments(
     const t = i / units
     const cx = sx + t * dx
     const cy = sy + t * dy
-    const half = i % 5 === 0 ? tickLength * 2 : tickLength
+    const half = (i / step) % 5 === 0 ? tickLength * 2 : tickLength
     segs.push([cx - px * half, cy - py * half, cx + px * half, cy + py * half])
   }
   return segs
@@ -134,7 +133,7 @@ export function rulerTickLabels(
   let lastAlongPx = Number.NEGATIVE_INFINITY
   const out: RulerTickLabel[] = []
   for (let i = step; i <= marks; i += step) {
-    if (i % 5 !== 0) continue
+    if ((i / step) % 5 !== 0) continue // majors: every fifth drawn tick
     const t = i / units
     const alongPx = t * len
     if (alongPx - lastAlongPx < minLabelGapPx) continue
@@ -268,19 +267,9 @@ export function projectMeasurementLines(
   if (measurements.length === 0) return out
 
   for (const tile of screenSlices) {
-    if (tile.axCorSag === SLICE_TYPE.RENDER) continue
-    if (
-      !tile.mvpMatrix ||
-      !tile.planeNormal ||
-      !tile.planePoint ||
-      !tile.leftTopWidthHeight
-    )
-      continue
-
-    const mvp = tile.mvpMatrix
-    const ltwh = tile.leftTopWidthHeight
-    const pn = tile.planeNormal
-    const pp = tile.planePoint
+    const plane = tilePlane(tile)
+    if (!plane) continue
+    const { mvp, ltwh, pn, pp } = plane
     for (let i = 0; i < measurements.length; i++) {
       const m = measurements[i]
       if (
@@ -364,19 +353,9 @@ export function buildPersistedMeasurements(
 
   // Persisted angles: projected per tile (not exposed to external overlays).
   for (const tile of screenSlices) {
-    if (tile.axCorSag === SLICE_TYPE.RENDER) continue
-    if (
-      !tile.mvpMatrix ||
-      !tile.planeNormal ||
-      !tile.planePoint ||
-      !tile.leftTopWidthHeight
-    )
-      continue
-
-    const mvp = tile.mvpMatrix
-    const ltwh = tile.leftTopWidthHeight
-    const pn = tile.planeNormal
-    const pp = tile.planePoint
+    const plane = tilePlane(tile)
+    if (!plane) continue
+    const { mvp, ltwh, pn, pp } = plane
 
     for (const a of angles) {
       // Test intersection point (end of first line / start of second)

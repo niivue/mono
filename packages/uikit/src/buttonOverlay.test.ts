@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'bun:test'
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
+import type { UIKitOverlayFrame } from '@niivue/niivue'
 import { UIKitButtonOverlay } from './buttonOverlay'
+import { UIKitLineOverlay } from './lineOverlay'
+import { UIKitRectOverlay } from './rectOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
+import { UIKitTextOverlay } from './textOverlay'
 
 // Pointer handling and the press animation never touch the GPU, so the overlay
 // is exercised here headlessly with a stub font (the atlas image is never read)
@@ -186,5 +198,69 @@ describe('UIKitButtonOverlay press animation', () => {
     overlay.pointerUp(110, 60)
     advance(1) // press and release durations are measured from the up, not before
     expect(overlay.pressOf('a')).toBeGreaterThan(0.99)
+  })
+})
+
+describe('UIKitButtonOverlay frames', () => {
+  // Stub the primitives' GPU draws; restored after this file.
+  const rectDraws: unknown[] = []
+  beforeAll(() => {
+    for (const proto of [
+      UIKitRectOverlay.prototype,
+      UIKitLineOverlay.prototype,
+      UIKitTextOverlay.prototype,
+    ])
+      spyOn(proto, 'drawOverlay').mockImplementation(() => {})
+    spyOn(UIKitRectOverlay.prototype, 'setRects').mockImplementation((r) => {
+      rectDraws.push(r)
+    })
+  })
+  afterAll(() => mock.restore())
+  const frame = (dpr: number) => ({ dpr }) as unknown as UIKitOverlayFrame
+
+  it('scales CSS-unit buttons by the frame DPR and hit-tests in canvas pixels', () => {
+    const overlay = new UIKitButtonOverlay(FONT, {
+      cssUnits: true,
+      style: { textSizePx: 20, paddingX: 10, paddingY: 5 },
+    })
+    overlay.addButton({ id: 'a', label: 'Hi', x: 100, y: 50 })
+    overlay.drawOverlay(frame(2))
+    expect(overlay.getLayout('a')).toEqual({
+      x: 100,
+      y: 50,
+      width: 40,
+      height: 24,
+    })
+    expect(overlay.hitTest(210, 110)).toBe(true)
+    expect(overlay.hitTest(130, 60)).toBe(false)
+    overlay.destroy()
+  })
+
+  it('rebuilds and asks for frames while a press animates, then settles', () => {
+    let t = 1000
+    let redraws = 0
+    const overlay = new UIKitButtonOverlay(FONT, {
+      now: () => t,
+      requestRedraw: () => redraws++,
+      style: { textSizePx: 20, paddingX: 10, paddingY: 5 },
+    })
+    overlay.addButton({ id: 'a', label: 'Hi', x: 100, y: 50 })
+    overlay.drawOverlay(frame(1))
+    rectDraws.length = 0
+    overlay.click('a')
+    redraws = 0
+    for (let i = 0; i < 100 && (i === 0 || redraws > 0); i++) {
+      redraws = 0
+      t += 16
+      overlay.drawOverlay(frame(1))
+    }
+    expect(redraws).toBe(0)
+    expect(overlay.pressOf('a')).toBe(0)
+    // Every animated frame rebuilt; the settled frame after it did not.
+    const builds = rectDraws.length
+    expect(builds).toBeGreaterThan(2)
+    t += 16
+    overlay.drawOverlay(frame(1))
+    expect(rectDraws.length).toBe(builds)
   })
 })

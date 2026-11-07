@@ -191,7 +191,7 @@ unit-tested under the Bun harness.)
 | `NVEvents.ts` | Event types — `NVEventMap`, typed `CustomEvent` dispatching |
 | `annotation/` | Vector annotation system — shapes, clipping, undo/redo |
 
-Both backends have matching render layers: `mesh`, `font`, `line`, `colorbar`, `orient`, `crosshair`, `thumbnail` — each in `wgpu/` and `gl/` directories. All render entities extend `NVRenderer` (`src/view/NVRenderer.ts`) with `init()` (stores GPU context, sets `isReady`), `draw()` (guarded by `isReady`), and parameterless `destroy()` (uses stored context). Stateless utilities remain module-level exports. WebGPU bind-group helpers are in `wgpu/pipeline.ts`; a pipeline bound to a single uniform buffer uses `uniformOnlyLayout` + `uniformBindGroup`. Backend-neutral CPU logic (layout, chunk fetch/prefetch, tile walks, bench timing) goes in a shared module under `view/`, `volume/` or `slide/` instead of being copied into `gl/` and `wgpu/`; e.g. `volume/chunkFetch.ts` serves both chunk uploaders.
+Both backends have matching render layers: `mesh`, `font`, `line`, `colorbar`, `orient`, `crosshair`, `thumbnail` — each in `wgpu/` and `gl/` directories. All render entities extend `NVRenderer` (`src/view/NVRenderer.ts`) with `init()` (stores GPU context, sets `isReady`), `draw()` (guarded by `isReady`), and parameterless `destroy()` (uses stored context). Stateless utilities remain module-level exports. WebGPU bind-group helpers are in `wgpu/pipeline.ts`; a pipeline bound to a single uniform buffer uses `uniformOnlyLayout` + `uniformBindGroup`. Shared GL plumbing is in `gl/glUtil.ts`: `createIndexedGeometry`/`uploadIndexed` for one interleaved float buffer plus uint32 indices, and `deleteGLObjects` for `destroy()`. GL mesh x-ray passes call `mesh.drawWithGpu` with `xray = true`; WebGPU bakes the depth test into pipelines, so it draws x-ray meshes with `meshXRayPipelines`. Backend-neutral CPU logic (layout, chunk fetch/prefetch, tile walks, bench timing) goes in a shared module under `view/`, `volume/` or `slide/` instead of being copied into `gl/` and `wgpu/`; e.g. `volume/chunkFetch.ts` serves both chunk uploaders.
 
 ```typescript
 // Base class — shared lifecycle contract
@@ -208,7 +208,7 @@ export abstract class NVRenderer {
 
 Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (uses stored context), `isReady` (public get, protected set) guards all draw calls.
 
-**Colorbar layout:** The colorbar block allocator reads the actual rasterized font size via `ColorbarLayout.fontPx` (0 = unknown). Each backend's `resize` stores `fontRenderer.fontPx` in the shared `ColorbarState` (`view/NVColorbar.ts`) so `resolveFontSize` can pick `max(actual, legacy)` — defaults keep the pre-audit look while a cranked-up `fontScale` grows the allocation to avoid overflow. Bottom cushion scales as `max(1, 0.1 * fontSize)`, and single-row colorbars no longer allocate a spurious trailing `gap`.
+**Colorbar layout:** The colorbar block allocator reads the actual rasterized font size via `ColorbarLayout.fontPx` (0 = unknown). Each backend's `resize` stores `fontRenderer.fontPx` in `_fontPx` on the shared `NVColorbarRenderer` base (`view/NVColorbarRenderer.ts`), whose `getLayout()` passes it on, so `resolveFontSize` can pick `max(actual, legacy)` — defaults keep the pre-audit look while a cranked-up `fontScale` grows the allocation to avoid overflow. Bottom cushion scales as `max(1, 0.1 * fontSize)`, and single-row colorbars no longer allocate a spurious trailing `gap`.
 
 **Fonts (Unicode):**
 - `src/view/NVFont.ts` parses atlases sparsely by Unicode code point, and `buildTextLayout` iterates strings by code point (not UTF-8 bytes), so CJK and other non-Latin glyphs render correctly when present in the atlas. Swap the active font at runtime via `nv1.setFont(nextFont)` for an in-memory atlas, or `nv1.setFontFromUrl({ atlas, metrics })` to fetch a PNG+JSON pair from URLs — both rebuild the view because the atlas texture is GPU-owned.
@@ -2273,6 +2273,6 @@ Demos import `import NiiVue from '../dist/niivue.js'` — Vite dev plugin redire
 
 - `nifti-reader-js`: NIfTI parsing
 - `gl-matrix`: Vector/matrix math
-- `cbor-x`: CBOR encoding for NVD documents and ITK-Wasm
+- `cbor-x`: CBOR encoding for NVD documents and ITK-Wasm (`.iwi.cbor`, `.iwm.cbor`). A reader of untrusted CBOR calls `assertCborFitsInput` (`documentBounds.ts`) before `decode`: it rejects heads that declare more items than the input holds ("Invalid CBOR: ..."). Decoded fields are untrusted too: the IWM reader rejects non-array `points`/`cells`, since a map with a huge `length` would size a typed array
 - `earcut`: Polygon triangulation (annotations)
 - `clipper2-ts`: Polygon clipping (annotations)

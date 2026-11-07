@@ -18,14 +18,13 @@ import {
   scaleButton,
 } from './button'
 import { buildLine, type LineData } from './line'
-import { buildRect, type RectData, rectContains } from './rect'
+import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
 import {
   buildScrollArrow,
   canScrollDown,
   canScrollUp,
   revealRow,
   scrollWindow,
-  type UIKitBox,
 } from './scroll'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
@@ -497,14 +496,7 @@ export function menuRowAt(
   py: number,
 ): number {
   for (const row of layout.rows) {
-    if (
-      px >= row.x &&
-      px < row.x + row.width &&
-      py >= row.y &&
-      py < row.y + row.height
-    ) {
-      return row.index
-    }
+    if (rectContains(row, px, py)) return row.index
   }
   return -1
 }

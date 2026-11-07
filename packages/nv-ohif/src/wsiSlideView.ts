@@ -225,7 +225,8 @@ export function mountWsiSlideView(
     // overlay hook at the end of its own draw).
     updateRuler(screen)
     renderer.draw(gl, [slide], screen)
-    const { level, requestedLevel } = slide.visibleTiles(screen)
+    const { level, requestedLevel } =
+      slide.lastVisibleTiles ?? slide.visibleTiles(screen)
     const limit =
       requestedLevel && level
         ? `L${requestedLevel.index} needs more tile memory than the cache holds; showing L${level.index}. Zoom in for full resolution.`

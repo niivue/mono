@@ -52,8 +52,6 @@ export async function write(
   }
 
   const encoded = encode(iwm)
-  return encoded.slice(
-    encoded.byteOffset,
-    encoded.byteOffset + encoded.byteLength,
-  ).buffer as ArrayBuffer
+  // Copy: encode returns a view (a Node Buffer in Bun) whose slice does not.
+  return new Uint8Array(encoded).buffer
 }

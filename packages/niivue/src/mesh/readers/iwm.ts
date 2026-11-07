@@ -1,4 +1,5 @@
 import { decode } from 'cbor-x'
+import { assertCborFitsInput } from '@/documentBounds'
 
 // ITK-Wasm mesh format (.iwm.cbor)
 // https://docs.itk.org/en/latest/learn/python_quick_start.html
@@ -33,7 +34,9 @@ export async function read(buffer: ArrayBufferLike): Promise<{
   positions: Float32Array
   indices: Uint32Array
 }> {
-  const iwm = decode(new Uint8Array(buffer)) as IWMesh
+  const bytes = new Uint8Array(buffer)
+  assertCborFitsInput(bytes)
+  const iwm = decode(bytes) as IWMesh
   return iwm2mesh(iwm)
 }
 
@@ -54,10 +57,7 @@ function iwm2mesh(iwm: IWMesh): {
     for (let i = 0; i < iwm.cells.length; i++) {
       cells[i] = Number(BigInt(iwm.cells[i]) & BigInt(0xffffffff))
     }
-  } else if (
-    iwm.cells instanceof Uint32Array ||
-    typeof iwm.cells[0] === 'number'
-  ) {
+  } else if (ArrayBuffer.isView(iwm.cells) || Array.isArray(iwm.cells)) {
     cells = new Uint32Array(iwm.cells)
   } else {
     throw new Error('Unsupported data type in iwm.cells')
@@ -70,10 +70,10 @@ function iwm2mesh(iwm: IWMesh): {
     // enum cell type 2=TRIANGLE_CELL 3=QUADRILATERAL_CELL 4=POLYGON_CELL
     const cellType = cells[i]
     const cellNum = cells[i + 1]
-    if (cellType < 2 || cellNum < 3) {
-      throw new Error(
-        `unsupported iwm cell type ${cellType} or cellNum ${cellNum}`,
-      )
+    // Bound cellNum before ntri grows, or a small file sizes a huge index
+    // array. Negated so a header cut short (cellNum undefined) also fails.
+    if (!(cellType >= 2 && cellNum >= 3 && i + 2 + cellNum <= cells.length)) {
+      throw new Error(`invalid iwm cell at ${i}`)
     }
     i += cellNum + 2 // skip cellNum, cellType and elements
     ntri += cellNum - 2 // e.g. TRIANGLE has 1 tri, QUAD has 2
@@ -97,6 +97,10 @@ function iwm2mesh(iwm: IWMesh): {
     i += cellNum + 2 // skip cellNum, cellType and elements
   }
 
+  // A map with a large `length` would size this from a tiny file.
+  if (!(Array.isArray(iwm.points) || ArrayBuffer.isView(iwm.points))) {
+    throw new Error('Unsupported data type in iwm.points')
+  }
   const positions = new Float32Array(iwm.points)
 
   // NIFTI is RAS, IWM is LPS - flip X and Y

@@ -18,21 +18,6 @@ import {
   GeoTIFFImage,
 } from 'geotiff'
 
-// biome-ignore lint/performance/noBarrelFile: package entry point
-export { registerDcm2niixDecoders } from './dcm2niixDecoders'
-export type {
-  SlideIndex,
-  SlideIndexFrames,
-  SlideIndexInstance,
-  SlideIndexLevel,
-  SlideIndexSkipped,
-  SlideIndexSkipReason,
-  SlideIndexSlide,
-} from './dicomIndex'
-export { indexDicomWsi } from './dicomIndex'
-export { DicomWsiSource } from './dicomWsiSource'
-export { manifestFromIndex } from './hostedManifest'
-
 export interface TiffSlideOptions {
   /** Manifest id; defaults to the file name. */
   id?: string
@@ -129,7 +114,7 @@ class RangeClient extends BaseClient {
       await response.body?.cancel()
       throw new Error(
         `${this.url}: server ignored the HTTP Range request (200, not 206). ` +
-          'nv-ext-wsi needs Range support (and CORS allowing Range) to stream a slide. Open a local copy with TiffSlideSource.fromGeoTIFF(await fromBlob(file)).',
+          'nv-ext-tile/tiff needs Range support (and CORS allowing Range) to stream a slide. Open a local copy with TiffSlideSource.fromGeoTIFF(await fromBlob(file)).',
       )
     }
     if (!response.ok) {

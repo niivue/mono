@@ -20,7 +20,10 @@ type Result = {
   bounded?: { width: number; height: number }
   panned?: { width: number; height: number }
   offCanvas?: boolean
+  busy?: { during: boolean; centre: Px }
+  topHalf?: { width: number; height: number; corner: Px }
   overlay?: { calls: number; corner: Px }
+  detachedLater?: boolean
 }
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
@@ -84,6 +87,14 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       nv.backgroundColor = [1, 0, 0, 1]
       const recoloured = pixel(nv.getCanvasImage(), 1, 1)
 
+      // A colormap change rebuilds GPU resources: no frame can be drawn until
+      // it settles, so the read is null rather than the old colours.
+      const recolour = nv.setVolume(0, { colormap: 'red' })
+      const during = nv.getCanvasImage() === null
+      await recolour
+      await nv.whenUpdatesSettle()
+      const busy = { during, centre: pixel(nv.getCanvasImage(), 128, 128) }
+
       // Left half of its canvas: the read is cropped to the bounds.
       const half = new NiiVue({ ...opts, bounds: [[0, 0], [0.5, 1]] })
       await half.attachToCanvas(makeCanvas())
@@ -97,6 +108,24 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       const panned = { width: moved.width, height: moved.height }
       half.setViewport({ pan: [2, 0], zoom: 1 })
       const offCanvas = half.getCanvasImage() === null
+
+      // Two instances stacked on one canvas (bounds have a bottom-left
+      // origin): the top one must read red, not its green neighbour.
+      const stacked = makeCanvas()
+      const top = new NiiVue({ ...opts, backgroundColor: [1, 0, 0, 1],
+        bounds: [[0, 0.5], [1, 1]] })
+      const bottom = new NiiVue({ ...opts, backgroundColor: [0, 1, 0, 1],
+        bounds: [[0, 0], [1, 0.5]] })
+      await top.attachToCanvas(stacked)
+      await bottom.attachToCanvas(stacked)
+      await nextFrame()
+      bottom.getCanvasImage()
+      const topImg = top.getCanvasImage()
+      const topHalf = {
+        width: topImg.width,
+        height: topImg.height,
+        corner: pixel(topImg, 1, 1),
+      }
 
       // A just-registered overlay is drawn by the capture itself, not only
       // by the next animation frame.
@@ -113,6 +142,11 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       const corner = pixel(nv.getCanvasImage(), 1, 1)
       const overlay = { calls, corner }
 
+      // A detached canvas is not drawn (WebGPU), so it must not return the
+      // frame it last held.
+      nv.canvas.remove()
+      const detachedLater = nv.getCanvasImage() === null
+
       return {
         backend: nv.backend,
         detached,
@@ -121,7 +155,10 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         bounded,
         panned,
         offCanvas,
+        busy,
+        topHalf,
         overlay,
+        detachedLater,
       }
     })()`)
 
@@ -142,9 +179,22 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(result.panned).toEqual({ width: 64, height: 256 })
     expect(result.offCanvas).toBe(true)
 
+    expect(result.busy?.during).toBe(true)
+    // Grey brain under the red colormap: red channel above blue.
+    const centre = result.busy?.centre ?? [0, 0, 0, 0]
+    expect(centre[0]).toBeGreaterThan(centre[2])
+
+    expect(result.topHalf).toEqual({
+      width: 256,
+      height: 128,
+      corner: [255, 0, 0, 255],
+    })
+
     expect(result.overlay?.calls).toBeGreaterThan(0)
     if (backend === 'webgl2') {
       expect(result.overlay?.corner).toEqual([0, 255, 0, 255])
     }
+    // WebGL2 can still draw into a detached canvas; WebGPU cannot.
+    if (backend === 'webgpu') expect(result.detachedLater).toBe(true)
   })
 }

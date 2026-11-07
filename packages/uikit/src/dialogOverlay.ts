@@ -49,8 +49,8 @@ import {
   resolveDialogStyle,
   scaleDialog,
 } from './dialog'
+import { type UIKitBox, unscaleBox } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
-import type { UIKitBox } from './scroll'
 import type { UIKitFont } from './text/font'
 import { UIKitTextOverlay } from './textOverlay'
 
@@ -504,12 +504,7 @@ export class UIKitDialogOverlay
 
   private boxesOf(layout: DialogLayout): DialogBoxes {
     const k = this.scale
-    const box = (b: UIKitBox): UIKitBox => ({
-      x: b.x / k,
-      y: b.y / k,
-      width: b.width / k,
-      height: b.height / k,
-    })
+    const box = (b: UIKitBox) => unscaleBox(b, k)
     return { panel: box(layout.panel), content: box(layout.content) }
   }
 
@@ -552,10 +547,7 @@ export class UIKitDialogOverlay
         return {
           id,
           label: b?.label ?? id,
-          x: box.x / k,
-          y: box.y / k,
-          width: box.width / k,
-          height: box.height / k,
+          ...unscaleBox(box, k),
           enabled: b?.enabled,
           style:
             b?.role === 'default'

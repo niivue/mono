@@ -716,7 +716,7 @@ export async function indexDicomWsi(
   }
   return {
     version: 1,
-    producer: 'nv-ext-wsi/indexDicomWsi',
+    producer: 'nv-ext-tile/indexDicomWsi',
     slides: groupSlides(infos, skipped),
     skipped,
   }

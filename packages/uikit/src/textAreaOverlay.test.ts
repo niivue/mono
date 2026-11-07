@@ -206,6 +206,49 @@ describe('UIKitTextAreaOverlay', () => {
     expect(changes).toEqual([])
   })
 
+  it('lands a pending paste and keeps the scroll across a layout patch and an unrelated set change', async () => {
+    const { clipboard } = fakeClipboard('xy')
+    const { overlay } = make({ t: 0 }, 'a\nb\nc\nd\ne', clipboard)
+    overlay.focus('a')
+    overlay.keyDown(key('End', { metaKey: true }))
+    overlay.wheel(130, 80, 0, 20)
+    expect(overlay.getFirstRow('a')).toBe(1)
+    overlay.keyDown(key('v', { metaKey: true }))
+    overlay.updateTextArea('a', { x: 101 })
+    const spec = { id: 'a', label: 'Hi', x: 101, y: 50, width: 60, rows: 2 }
+    overlay.setTextAreas([spec, { id: 'b', x: 0, y: 0, width: 40 }])
+    overlay.setTextAreas([{ ...spec, value: 'a\nb\nc\nd\ne' }])
+    expect(overlay.ids).toEqual(['a'])
+    expect(overlay.getFirstRow('a')).toBe(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overlay.getText('a')).toBe('a\nb\nc\nd\nexy')
+    expect(overlay.focusedArea).toBe('a')
+  })
+
+  it('drops a pending paste when the area is replaced', async () => {
+    for (const replace of [
+      (o: UIKitTextAreaOverlay) =>
+        o.setTextAreas([{ id: 'a', x: 100, y: 50, width: 60, value: 'new' }]),
+      (o: UIKitTextAreaOverlay) => {
+        o.removeTextArea('a')
+        o.addTextArea({ id: 'a', x: 100, y: 50, width: 60, value: 'abc' })
+        o.focus('a')
+      },
+      (o: UIKitTextAreaOverlay) => o.updateTextArea('a', { value: 'abc' }),
+    ]) {
+      const { clipboard } = fakeClipboard('late')
+      const { overlay, inputs } = make({ t: 0 }, 'abc', clipboard)
+      overlay.focus('a')
+      overlay.keyDown(key('v', { metaKey: true }))
+      replace(overlay)
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(overlay.getText('a')).not.toContain('late')
+      expect(inputs).toEqual([])
+    }
+  })
+
   it('keeps a soft-wrap caret on its row across a position-only patch', () => {
     const { overlay } = make({ t: 0 }, 'abcdefghijabcdefghij')
     // Past the end of row 2: the caret sits at 10, the end of that soft row.
@@ -215,6 +258,18 @@ describe('UIKitTextAreaOverlay', () => {
     overlay.keyDown(key('End'))
     type(overlay, 'x')
     expect(overlay.getText('a')).toBe('abcdefghijxabcdefghij')
+  })
+
+  it('drops a paste that arrives after the overlay was destroyed', async () => {
+    const { clipboard } = fakeClipboard('late')
+    const { overlay, inputs } = make({ t: 0 }, 'abc', clipboard)
+    overlay.focus('a')
+    overlay.keyDown(key('v', { metaKey: true }))
+    overlay.destroy()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overlay.getText('a')).toBe('abc')
+    expect(inputs).toEqual([])
   })
 
   it('drops a paste that arrives after a blur and refocus', async () => {

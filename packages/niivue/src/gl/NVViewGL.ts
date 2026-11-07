@@ -604,16 +604,16 @@ export default class NVGlview {
     return this._updateBindings(opts)
   }
 
-  render(): void {
+  render(): boolean {
     const gl = this.gl
     const md = this.model
-    if (!gl) return
+    if (!gl) return false
     // A lost context (GPU OOM) cannot be drawn to; bail so we don't spin the
     // streaming loop against a dead context.
-    if (this._contextLost || gl.isContextLost()) return
+    if (this._contextLost || gl.isContextLost()) return false
     if (this.isBusy) {
       requestAnimationFrame(() => this.render())
-      return
+      return false
     }
     // Publish the current lighting to the volume renderer BEFORE any chunk work
     // (entry creation, request, pump) so chunk uploaders can skip the gradient
@@ -670,7 +670,7 @@ export default class NVGlview {
       md.volume.lodBrightnessCompensation
     // Off-screen after viewport transform: skip the entire render pass — scissor would
     // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
-    if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
+    if (this._isSubCanvasBounds && this._isBoundsOffscreen) return false
     markCpuStart()
     // Phase 3d: advance the chunk-residency LRU clock before the tile loop
     // requests this frame's working set, so eviction protects visible chunks.
@@ -697,7 +697,7 @@ export default class NVGlview {
       if (this._isSubCanvasBounds) gl.disable(gl.SCISSOR_TEST)
       markSubmitStart()
       markEnd()
-      return
+      return true
     }
     // Clear labels at start of each render
     const labels: ReturnType<typeof this.fontRenderer.buildText>[] = []
@@ -1308,7 +1308,7 @@ export default class NVGlview {
               isSlice && mGpu.sliceShaderType
                 ? mGpu.sliceShaderType
                 : mGpu.shaderType
-            mesh.drawXRay(
+            mesh.drawWithGpu(
               gl,
               m,
               mGpu,
@@ -1318,6 +1318,7 @@ export default class NVGlview {
               shaderType,
               ccMM,
               ccPlanes,
+              true,
             )
           }
           if (slabMvp) gl.depthRange(0, 1)
@@ -1765,6 +1766,7 @@ export default class NVGlview {
           }
         })
     }
+    return true
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

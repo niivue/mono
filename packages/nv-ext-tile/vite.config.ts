@@ -9,9 +9,8 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     lib: {
-      entry: 'src/index.ts',
+      entry: { tiff: 'src/tiff.ts', dicom: 'src/dicom.ts' },
       formats: ['es'],
-      fileName: 'nv-ext-wsi',
     },
     rollupOptions: {
       external: ['@niivue/niivue', '@niivue/dcm2niix', 'geotiff'],

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Connect, Plugin } from 'vite'
-import { SYNTHETIC_ZARR_ROOT, syntheticZarrFile } from './syntheticZarr'
+import { SYNTHETIC_ZARR_ROOT, syntheticZarrFile } from './syntheticZarr.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const imagesDir = resolve(__dirname, '../images')

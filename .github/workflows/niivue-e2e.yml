@@ -31,7 +31,8 @@ on:
   push:
     branches: [main]
     # Markdown (READMEs, docs/, CHANGELOGs) changes no tested code, so a
-    # docs-only change does not queue the macOS job. Negations must come last.
+    # docs-only change skips this whole workflow: the browser contracts as well
+    # as the macOS job. Negations must come last.
     paths:
       - 'packages/niivue/**'
       - 'packages/uikit/**'

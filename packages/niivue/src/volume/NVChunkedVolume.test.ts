@@ -1932,6 +1932,23 @@ describe('NVChunkedVolume failed init', () => {
     expect(floors.at(-1)).toBeNull()
   })
 
+  test("a failed init leaves a newer load's floor alone", async () => {
+    const { host, floors } = floorFailHost(null, false)
+    const newer = { id: 'newer floor' } as unknown as NVImage
+    // A second load installs its floor while this one is still settling.
+    host._updateGLChanged = async () => {
+      await host.setBaseCoarseFloor(newer)
+      throw new Error('out of memory')
+    }
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(floors).toHaveLength(2)
+    expect(host._baseCoarseFloor).toBe(newer)
+  })
+
   test('a throw after the floor is installed clears the floor', async () => {
     const { host, volumes, floors } = floorFailHost(null, false)
     const mgr = new NVChunkedVolume(host, rampSource(), {

@@ -568,8 +568,14 @@ export class NVChunkedVolume {
       // this manager or the volume it added (addVolume adds before it can throw).
       this.dispose()
       // Put back the floor this init replaced (an additive reload's, or none):
-      // ours would keep its textures and draw behind a later load.
-      if ((this.host._baseCoarseFloor ?? null) !== priorFloor)
+      // ours would keep its textures and draw behind a later load. Only while
+      // ours is still installed: a newer load's floor is not ours to undo.
+      const current = this.host._baseCoarseFloor ?? null
+      if (
+        this.floorBuilt &&
+        current === this.floorVolume &&
+        current !== priorFloor
+      )
         await this.host
           .setBaseCoarseFloor(priorFloor)
           .catch((e) => log.warn('NVChunkedVolume: floor cleanup failed', e))

@@ -409,7 +409,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | VMR | ✅ |
 | NPY/NPZ | ✅ |
 | Allen JSON+PNG atlas | ✅ |
-| Zarr (OME-Zarr) | ✅ |
+| Zarr (OME-Zarr, extension: `@niivue/nv-ext-tile/zarr`, no longer exported from `@niivue/niivue`) | ✅ |
 | DICOM (extension) | ✅ |
 | MINC (plugin) | ❌ |
 | TIFF / OME-TIFF / ImageJ stack | ✅ |

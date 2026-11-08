@@ -91,7 +91,6 @@
   },
   "homepage": "https://github.com/niivue/niivue",
   "dependencies": {
-    "@webgpu/types": "^0.1.69",
     "cbor-x": "^1.6.0",
     "clipper2-ts": "^2.0.1-13",
     "earcut": "^3.0.2",
@@ -99,12 +98,16 @@
     "nifti-reader-js": "^0.8.1",
     "zarrita": "^0.7.3"
   },
+  "peerDependencies": {
+    "@webgpu/types": ">=0.1.69"
+  },
   "devDependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.1",
     "@niivue/dev-images": "workspace:*",
     "@playwright/test": "1.59.1",
     "@types/bun": "^1.3.12",
     "@types/earcut": "^3.0.0",
+    "@webgpu/types": "^0.1.69",
     "dicom-parser": "^1.8.21",
     "geotiff": "^3.0.5",
     "http-server": "^14.1.1",

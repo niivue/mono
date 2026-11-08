@@ -514,7 +514,7 @@ Linting/formatting is **Biome**, configured in the monorepo root `biome.json`. S
 
 - **Strict mode** is enabled (strict null checks, no implicit any, etc.)
 - **Target**: ESNext with bundler module resolution
-- **WebGPU types**: `@webgpu/types` for GPU API type definitions. A runtime dependency, not a dev one: published declarations reference WebGPU globals
+- **WebGPU types**: `@webgpu/types` for GPU API type definitions. A peer dependency (plus a dev one for the repo): published declarations reference WebGPU globals, and a peer dedupes with the consumer's own copy instead of nesting a second, conflicting one
 - Run `bun run typecheck` to validate — this runs `tsc --noEmit`
 
 ### Logging

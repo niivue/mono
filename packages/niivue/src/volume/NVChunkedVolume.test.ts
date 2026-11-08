@@ -1815,3 +1815,46 @@ describe('NVChunkedVolume focusBounds', () => {
     expect(levelsTouching(mgr.currentPlan, slab).size).toBeGreaterThan(1)
   })
 })
+
+describe('NVChunkedVolume failed init', () => {
+  test('a throw after addVolume removes the volume, releases listeners and rethrows', async () => {
+    const volumes: NVImage[] = []
+    const listeners = new Map<string, number>()
+    const count = (type: string, delta: number): void => {
+      listeners.set(type, (listeners.get(type) ?? 0) + delta)
+    }
+    let registered = 0
+    const host = {
+      swapVolumeChunkPlan: async () => {},
+      _registerChunkedVolume: () => registered++,
+      _unregisterChunkedVolume: () => registered--,
+      volumes,
+      addVolume: async (v: NVImage) => {
+        // The scene holds a shallow copy, as NVModel.prepareVolume does.
+        volumes.push({ ...v })
+      },
+      removeVolume: async (i: number) => {
+        volumes.splice(i, 1)
+      },
+      setBaseCoarseFloor: async () => {
+        throw new Error('out of memory')
+      },
+      sliceType: SLICE_TYPE.MULTIPLANAR,
+      pan2Dxyzmm: [0, 0, 0, 1],
+      getCrosshairPos: () => [0.5, 0.5, 0.5],
+      addEventListener: (type: string) => count(type, 1),
+      removeEventListener: (type: string) => count(type, -1),
+    } as unknown as NiiVue
+    const { source } = floorSource(mgrSource.levels)
+    const mgr = new NVChunkedVolume(host, source, {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(volumes).toHaveLength(0)
+    expect(registered).toBe(0)
+    expect(listeners.size).toBeGreaterThan(0)
+    for (const [type, n] of listeners) expect([type, n]).toEqual([type, 0])
+  })
+})

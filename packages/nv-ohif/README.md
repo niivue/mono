@@ -184,7 +184,7 @@ Support boundary:
   organization, one optical path and one focal plane, 8-16-bit unsigned samples.
   - JPEG 2000 and JPEG-LS frames are requested untranscoded (`transfer-syntax=*`) and
     decoded by `@niivue/dcm2niix`'s WASM worker pool (`createFrameDecoder`, loaded on the
-    first such tile).
+    first such tile). A pool whose workers die is replaced, and the tile retried once.
   - A decoder the host app registered with `NVSlide.registerTileDecoder('image/jp2' |
     'image/jls', ...)` is kept.
   - A server that transcodes the frame anyway is refused rather than mis-decoded.

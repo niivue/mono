@@ -280,6 +280,107 @@ describe('extractChunkBytesReoriented', () => {
   })
 })
 
+describe('extractChunkBytesReoriented matches a byte-wise reference', () => {
+  // The pre-specialization byte loop: every fast path must equal it exactly.
+  function reference(
+    src: Uint8Array,
+    bpv: number,
+    [ox, oy, oz]: Vec3i,
+    [sx, sy, sz]: Vec3i,
+    start: number[],
+    step: number[],
+  ): Uint8Array {
+    const out = new Uint8Array(sx * sy * sz * bpv)
+    let d = 0
+    for (let z = 0; z < sz; z++)
+      for (let y = 0; y < sy; y++)
+        for (let x = 0; x < sx; x++) {
+          const s =
+            (start[0] +
+              start[1] +
+              start[2] +
+              (ox + x) * step[0] +
+              (oy + y) * step[1] +
+              (oz + z) * step[2]) *
+            bpv
+          for (let b = 0; b < bpv; b++) out[d++] = src[s + b]
+        }
+    return out
+  }
+
+  // Signed permutation: RAS axis i reads native axis perm[i], flipped when
+  // flips bit i is set. Native dims are non-cubic and not tile multiples.
+  const nativeDims = [37, 20, 18]
+  const nativeStride = [1, nativeDims[0], nativeDims[0] * nativeDims[1]]
+  const nVox = nativeDims[0] * nativeDims[1] * nativeDims[2]
+  const perms = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
+  ]
+  function mapping(perm: number[], flips: number) {
+    const start = [0, 0, 0]
+    const step = [0, 0, 0]
+    const rasDims: number[] = []
+    for (let i = 0; i < 3; i++) {
+      const n = perm[i]
+      const flip = (flips >> i) & 1
+      rasDims.push(nativeDims[n])
+      step[i] = flip ? -nativeStride[n] : nativeStride[n]
+      start[i] = flip ? (nativeDims[n] - 1) * nativeStride[n] : 0
+    }
+    return { start, step, rasDims }
+  }
+
+  // Random bytes cover every float bit pattern, NaN payloads included.
+  let seed = 12345
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) >>> 0
+    return seed >>> 24
+  }
+
+  for (const bpv of [1, 2, 3, 4, 8]) {
+    for (const byteOffset of [0, 1, bpv]) {
+      test(`all 48 mappings, bpv=${bpv}, byteOffset=${byteOffset}`, () => {
+        const buf = Uint8Array.from(
+          { length: nVox * bpv + byteOffset + 3 },
+          rand,
+        )
+        // A subview, as chunkFetch passes for a 4D frame of img.
+        const src = buf.subarray(byteOffset, byteOffset + nVox * bpv)
+        for (const perm of perms) {
+          for (let flips = 0; flips < 8; flips++) {
+            const { start, step, rasDims } = mapping(perm, flips)
+            // Whole volume, then an interior chunk with partial tiles.
+            const boxes: [Vec3i, Vec3i][] = [
+              [[0, 0, 0], rasDims as Vec3i],
+              [
+                [1, 2, 3],
+                [rasDims[0] - 3, rasDims[1] - 2, rasDims[2] - 4],
+              ],
+            ]
+            for (const [origin, dims] of boxes) {
+              const got = extractChunkBytesReoriented(
+                src,
+                bpv,
+                origin,
+                dims,
+                start,
+                step,
+              )
+              const want = reference(src, bpv, origin, dims, start, step)
+              expect(Buffer.compare(got, want)).toBe(0)
+            }
+          }
+        }
+      })
+    }
+  }
+})
+
 describe('chunkRGBA (color chunk → RGBA8)', () => {
   test('isRGBAChunkDatatype flags 128 and 2304 only', () => {
     expect(isRGBAChunkDatatype(128)).toBe(true)

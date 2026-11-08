@@ -523,6 +523,9 @@ export default class NiiVue extends EventTarget {
    *  halo (currently only `volumeIsCubicInterpolation`) can re-plan them. Each
    *  handle adds itself on construction and removes itself on `dispose()`. */
   private _chunkedVolumes = new Set<NVChunkedVolume>()
+  /** @internal The floor last passed to setBaseCoarseFloor, so a failed
+   *  {@link NVChunkedVolume} init can put back the floor it replaced. */
+  _baseCoarseFloor: NVImage | null = null
 
   /** @internal Registration hook for {@link NVChunkedVolume}. */
   _registerChunkedVolume(chunked: NVChunkedVolume): void {
@@ -5420,6 +5423,7 @@ export default class NiiVue extends EventTarget {
    * first.
    */
   async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    this._baseCoarseFloor = coarseVol
     if (coarseVol?.isDirty) {
       if (this.model.getVolumes().includes(coarseVol)) {
         // A loaded volume: commit its flag through a scoped update, so its

@@ -544,7 +544,7 @@ export class NVChunkedVolume {
    * removing a previously streamed volume before reloading.
    */
   async init(): Promise<void> {
-    let floorInstalled = false
+    const priorFloor = this.host._baseCoarseFloor ?? null
     try {
       await this.host.addVolume(this.volume)
       this.adoptSceneId()
@@ -556,7 +556,7 @@ export class NVChunkedVolume {
       this.host.addEventListener('viewDestroyed', this.onViewDestroyed)
       this.host.addEventListener('change', this.onLightingChange)
       this.applyRenderCentering()
-      floorInstalled = await this.applyCoarseFloor()
+      await this.applyCoarseFloor()
       // The floor path resolves the window for free when a floor was built. When
       // it was not, fall back to a bounded probe so a streamed volume still opens
       // on a window that shows the data rather than on the 0..1 placeholder.
@@ -567,10 +567,11 @@ export class NVChunkedVolume {
       // A failed init hands the caller no handle, so nothing else could release
       // this manager or the volume it added (addVolume adds before it can throw).
       this.dispose()
-      // Our floor would otherwise keep its textures and draw behind a later load.
-      if (floorInstalled)
+      // Put back the floor this init replaced (an additive reload's, or none):
+      // ours would keep its textures and draw behind a later load.
+      if ((this.host._baseCoarseFloor ?? null) !== priorFloor)
         await this.host
-          .setBaseCoarseFloor(null)
+          .setBaseCoarseFloor(priorFloor)
           .catch((e) => log.warn('NVChunkedVolume: floor cleanup failed', e))
       const index = this.host.volumes.findLastIndex(
         (v) => v.chunkSource === this.volume.chunkSource,

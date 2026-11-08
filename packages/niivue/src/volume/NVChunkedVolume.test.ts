@@ -1816,6 +1816,17 @@ describe('NVChunkedVolume focusBounds', () => {
   })
 })
 
+// Non-flat voxels, so the floor resolves the window and init reaches the
+// trailing _updateGLChanged after the floor is installed.
+const rampSource = (): ChunkedVolumeSource => ({
+  datatypeCode: 4,
+  levels: mgrSource.levels,
+  fetchChunk: async (r) => {
+    const n = r.texDims[0] * r.texDims[1] * r.texDims[2] * r.bytesPerVoxel
+    return Uint8Array.from({ length: n }, (_, i) => i % 251)
+  },
+})
+
 describe('NVChunkedVolume failed init', () => {
   test('a throw after addVolume removes the volume, releases listeners and rethrows', async () => {
     const volumes: NVImage[] = []
@@ -1858,10 +1869,14 @@ describe('NVChunkedVolume failed init', () => {
     for (const [type, n] of listeners) expect([type, n]).toEqual([type, 0])
   })
 
-  test('a throw after the floor is installed clears the floor', async () => {
+  const floorFailHost = (
+    prior: NVImage | null,
+    failSetter: boolean,
+  ): { host: NiiVue; volumes: NVImage[]; floors: (NVImage | null)[] } => {
     const volumes: NVImage[] = []
     const floors: (NVImage | null)[] = []
     const host = {
+      _baseCoarseFloor: prior,
       swapVolumeChunkPlan: async () => {},
       _registerChunkedVolume: () => {},
       _unregisterChunkedVolume: () => {},
@@ -1872,8 +1887,14 @@ describe('NVChunkedVolume failed init', () => {
       removeVolume: async (i: number) => {
         volumes.splice(i, 1)
       },
-      setBaseCoarseFloor: async (f: NVImage | null) => {
+      // Like NiiVue: records the floor first, then can still throw (drawScene).
+      async setBaseCoarseFloor(
+        this: { _baseCoarseFloor: NVImage | null },
+        f: NVImage | null,
+      ) {
+        this._baseCoarseFloor = f
         floors.push(f)
+        if (failSetter && floors.length === 1) throw new Error('draw failed')
       },
       _updateGLChanged: async () => {
         throw new Error('out of memory')
@@ -1884,17 +1905,36 @@ describe('NVChunkedVolume failed init', () => {
       addEventListener: () => {},
       removeEventListener: () => {},
     } as unknown as NiiVue
-    // Non-flat voxels, so the floor resolves the window and init reaches the
-    // trailing _updateGLChanged after the floor is installed.
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: mgrSource.levels,
-      fetchChunk: async (r) => {
-        const n = r.texDims[0] * r.texDims[1] * r.texDims[2] * r.bytesPerVoxel
-        return Uint8Array.from({ length: n }, (_, i) => i % 251)
-      },
-    }
-    const mgr = new NVChunkedVolume(host, source, {
+    return { host, volumes, floors }
+  }
+
+  test('a failed additive init puts back the floor it replaced', async () => {
+    const prior = { id: 'old floor' } as unknown as NVImage
+    const { host, floors } = floorFailHost(prior, false)
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(floors[0]).not.toBe(prior)
+    expect(floors.at(-1)).toBe(prior)
+    expect(host._baseCoarseFloor).toBe(prior)
+  })
+
+  test('a floor setter that installs then throws is still undone', async () => {
+    const { host, floors } = floorFailHost(null, true)
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+    await expect(mgr.init()).rejects.toThrow('draw failed')
+    expect(floors).toHaveLength(2)
+    expect(floors.at(-1)).toBeNull()
+  })
+
+  test('a throw after the floor is installed clears the floor', async () => {
+    const { host, volumes, floors } = floorFailHost(null, false)
+    const mgr = new NVChunkedVolume(host, rampSource(), {
       focus: 'crosshair',
       radius: 'auto',
     })

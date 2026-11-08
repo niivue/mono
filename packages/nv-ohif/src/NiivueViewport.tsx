@@ -94,6 +94,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   servicesManagerRef.current = servicesManager
   const commandsManagerRef = useRef(commandsManager)
   commandsManagerRef.current = commandsManager
+  const onElementEnabledRef = useRef(props.onElementEnabled)
+  onElementEnabledRef.current = props.onElementEnabled
   const displaySetsKey = displaySets
     .map((ds) => String(ds.displaySetInstanceUID ?? ds.SeriesInstanceUID ?? ''))
     .join('|')
@@ -128,7 +130,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     nvRef.current = nv
     // Only mark ready once attach resolves — loading before that races the GPU
     // context (and StrictMode double-mounts), which left the volume unloaded.
-    nv.attachToCanvas(canvas).then(() => {
+    // Catching the chained promise also covers a throw in the ready callback.
+    const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
       // Measurements + ROIs are vector annotations (Length is the measureLine
@@ -161,6 +164,13 @@ export function NiivueViewport(props: OhifViewportProps) {
       })
       refreshToolbar(servicesManagerRef.current, viewportId)
       setReady(true)
+      // Without it the grid never reaches VIEWPORTS_READY.
+      onElementEnabledRef.current?.()
+    })
+    started.catch((err) => {
+      if (disposed) return
+      console.error('[nv-ohif] viewer failed to start', err)
+      setStatus({ kind: 'error', message: 'Failed to start the viewer.' })
     })
 
     const ro = new ResizeObserver(() => nv.resize())

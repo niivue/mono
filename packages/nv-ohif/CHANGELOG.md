@@ -1,3 +1,13 @@
+## 1.0.0-rc.115 (2026-11-08)
+
+### Fixes
+
+- **nv-ohif:** build the library with the production JSX runtime ([49022f9d](https://github.com/niivue/mono/commit/49022f9d))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.114 (2026-11-08)
 
 ### Updated Dependencies

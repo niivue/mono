@@ -3,9 +3,6 @@ import type { FrameDecoder } from '@niivue/dcm2niix'
 import type { SlideTileDecoder } from '@niivue/niivue'
 import { createDcm2niixDecoders } from './dcm2niixDecoders'
 
-const createWsiTileDecoder = (create: () => Promise<FrameDecoder>) =>
-  createDcm2niixDecoders(create).decodeTile
-
 type Ctx = Parameters<SlideTileDecoder>[1]
 const ctx = {
   level: { photometric: 'MONOCHROME2', bitsStored: 12 },
@@ -24,7 +21,7 @@ function fakePools(behave: (pool: number) => Promise<unknown>) {
       terminate: () => stats.terminated.push(id),
     } as unknown as FrameDecoder
   }
-  return { stats, decode: createWsiTileDecoder(create) }
+  return { stats, decode: createDcm2niixDecoders(create).decodeTile }
 }
 
 const named = (name: string, message: string) =>
@@ -128,7 +125,7 @@ describe('createDcm2niixDecoders', () => {
 
   it('retries the module load after it fails', async () => {
     let loads = 0
-    const decode = createWsiTileDecoder(async () => {
+    const { decodeTile: decode } = createDcm2niixDecoders(async () => {
       if (loads++ === 0) throw new TypeError('Failed to fetch module')
       return {
         decode: async () => samples,

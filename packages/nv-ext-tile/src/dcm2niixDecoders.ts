@@ -32,11 +32,14 @@ export function createDcm2niixDecoders(
 ): { decodeTile: SlideTileDecoder; bakeProfile: SlideIccTransform } {
   let pool: Pool | null = null
   const startPool = (): Pool => {
-    const p = { active: 0, retired: false } as Pool
-    p.decoder = createDecoder().catch((err) => {
-      if (pool === p) pool = null // a failed chunk load retries on the next tile
-      throw err
-    })
+    const p: Pool = {
+      active: 0,
+      retired: false,
+      decoder: createDecoder().catch((err) => {
+        if (pool === p) pool = null // a failed chunk load retries on the next tile
+        throw err
+      }),
+    }
     return p
   }
   // Run on the current pool; a worker failure retires it (terminated once its

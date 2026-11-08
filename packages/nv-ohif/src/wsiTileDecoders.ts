@@ -28,11 +28,14 @@ export function createWsiTileDecoder(
 ): SlideTileDecoder {
   let pool: Pool | null = null
   const startPool = (): Pool => {
-    const p = { active: 0, retired: false } as Pool
-    p.decoder = createDecoder().catch((err) => {
-      if (pool === p) pool = null // a failed chunk load retries on the next tile
-      throw err
-    })
+    const p: Pool = {
+      active: 0,
+      retired: false,
+      decoder: createDecoder().catch((err) => {
+        if (pool === p) pool = null // a failed chunk load retries on the next tile
+        throw err
+      }),
+    }
     return p
   }
   // Monochrome tiles return their samples, which NVSlide windows (D16); colour
@@ -59,7 +62,7 @@ export function createWsiTileDecoder(
       const f = await d.decode(bytes, options)
       // The pixels arrive in a transferred ArrayBuffer (never shared memory).
       const rgba = f.rgba as Uint8ClampedArray<ArrayBuffer>
-      return createImageBitmap(new ImageData(rgba, f.width, f.height))
+      return await createImageBitmap(new ImageData(rgba, f.width, f.height))
     } catch (err) {
       if (err !== signal?.reason && isWorkerFailure(err)) {
         // Later tiles get a fresh pool; this one is terminated once its other

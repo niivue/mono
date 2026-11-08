@@ -101,7 +101,8 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   that changed since indexing fails rather than decoding garbage.
 - Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
   (`registerDcm2niixDecoders`, with `@niivue/dcm2niix` as an optional peer dependency;
-  a decoder the host already registered wins).
+  a decoder the host already registered wins). A dcm2niix pool whose workers die is
+  replaced, and the tile or profile retried once.
 - Slides are shown with row 0 of the total pixel matrix at the top (`displayYAxis: 'down'`),
   as OpenSlide shows them.
 - Index speed for the 8 OpenSlide DICOM-WSI test sets (local SSD; Chrome reads through

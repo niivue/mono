@@ -159,6 +159,46 @@ for part, (sop, lo, hi) in enumerate((('1.2.3.61', 0, 4), ('1.2.3.62', 4, 6)), s
     d.ConcatenationFrameOffsetNumber = lo
     save(d, fr[lo:hi], f'concat-{part}.dcm')
 
+# Two focal planes by per-frame ZOffset, the higher first, so the stated ZOffsets
+# (not the implicit TILED_FULL plane order) decide which is plane 0; spacing per frame only.
+ds, fr = full('planes', '1.2.3.90')
+ds.SeriesInstanceUID = series_uid('planes')
+ds.TotalPixelMatrixFocalPlanes = 2
+ds.NumberOfFrames = 12
+measures = ds.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence
+del ds.SharedFunctionalGroupsSequence
+items = []
+for f in range(12):
+    pos = Dataset()
+    pos.ZOffsetInSlideCoordinateSystem = 2.5 if f < 6 else 0.0
+    item = Dataset()
+    item.PlanePositionSlideSequence = Sequence([pos])
+    item.PixelMeasuresSequence = measures
+    items.append(item)
+ds.PerFrameFunctionalGroupsSequence = Sequence(items)
+save(ds, [payload(f'planes f{f + 1}') for f in range(12)], 'planes.dcm')
+
+# MONOCHROME2 12-bit JPEG-LS, spacing only from ImagedVolumeWidth/Height (mm), no ICC.
+ds, fr = full('mono12', '1.2.3.91')
+ds.SeriesInstanceUID = series_uid('mono12')
+ds.file_meta.TransferSyntaxUID = UID('1.2.840.10008.1.2.4.80')
+ds.PhotometricInterpretation = 'MONOCHROME2'
+ds.SamplesPerPixel = 1
+ds.BitsAllocated, ds.BitsStored, ds.HighBit = 16, 12, 11
+ds.ImagedVolumeWidth, ds.ImagedVolumeHeight = 0.02, 0.015
+del ds.SharedFunctionalGroupsSequence
+del ds.OpticalPathSequence[0].ICCProfile
+save(ds, fr, 'mono12.dcm')
+
+# No DimensionOrganizationType and no per-frame positions: implicit TILED_FULL;
+# spacing only from the top-level PixelSpacing.
+ds, fr = full('noorg', '1.2.3.92')
+ds.SeriesInstanceUID = series_uid('noorg')
+del ds.DimensionOrganizationType
+del ds.SharedFunctionalGroupsSequence
+ds.PixelSpacing = [0.0005, 0.00025]
+save(ds, fr, 'noorg.dcm')
+
 # Browser e2e: TILED_SPARSE 3 x 2 with real JPEG tiles, one colour each, two holes.
 import subprocess
 COLORS = {(0, 0): (220, 30, 30), (2, 0): (30, 160, 40), (1, 1): (40, 60, 220), (2, 1): (230, 200, 30)}

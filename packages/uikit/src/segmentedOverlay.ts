@@ -18,6 +18,7 @@ import {
   UIKitEntryMap,
   type UIKitGeometry,
 } from './overlayParts'
+import { type UIKitBox, unscaleBox } from './rect'
 import {
   buildSegmented,
   DEFAULT_SEGMENTED_STYLE,
@@ -196,12 +197,7 @@ export class UIKitSegmentedOverlay
     const l = this.entries.layoutOf(entry)
     const k = this.entries.scale
     if (k === 1) return l
-    const s = (r: { x: number; y: number; width: number; height: number }) => ({
-      x: r.x / k,
-      y: r.y / k,
-      width: r.width / k,
-      height: r.height / k,
-    })
+    const s = (r: UIKitBox) => unscaleBox(r, k)
     return {
       ...s(l),
       segments: l.segments.map((seg) => ({ index: seg.index, ...s(seg) })),

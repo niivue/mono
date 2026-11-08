@@ -233,7 +233,7 @@ export function buildCrosshair(spec: CrosshairSpec): CrosshairGeometry {
         // Ticks inside the hole would fill the gap back in.
         if (distPx < gap) continue
         const pos = centre + dir * distPx
-        const major = i % 5 === 0
+        const major = (i / step) % 5 === 0 // every fifth drawn tick
         const half = major ? tickLength * 2 : tickLength
         // The tick is perpendicular to the arm, so it is clipped against the
         // OTHER axis' extent.

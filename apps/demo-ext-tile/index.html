@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue - whole-slide demo</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { margin: 0; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; background: #1c1c1f; color: #e8e8ea; }
+      header { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 1rem; flex-wrap: wrap; }
+      header input[type="url"] { flex: 1; min-width: 16rem; }
+      canvas { flex: 1; width: 100%; min-height: 0; touch-action: none; }
+      #status { font-size: 0.85rem; opacity: 0.8; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>nv-ext-tile</strong>
+      <input id="file" type="file" accept=".tif,.tiff,.svs,.btf" />
+      <label>DICOM-WSI folder <input id="folder" type="file" webkitdirectory multiple /></label>
+      <select id="slides" hidden></select>
+      <input id="url" type="url" placeholder="https://... tiled TIFF / SVS (server must support Range + CORS)" />
+      <button id="open" type="button">Open URL</button>
+      <label title="Apply the slide's ICC profile (sRGB display)"><input id="icc" type="checkbox" checked /> Colour management</label>
+      <span id="status">Pick a local tiled TIFF/SVS or a DICOM-WSI folder, or enter a URL.</span>
+    </header>
+    <canvas id="canvas"></canvas>
+    <script type="module" src="src/main.ts"></script>
+  </body>
+</html>

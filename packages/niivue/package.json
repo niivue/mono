@@ -1,6 +1,6 @@
 {
   "name": "@niivue/niivue",
-  "version": "1.0.0-rc.106",
+  "version": "1.0.0-rc.117",
   "type": "module",
   "description": "WebGPU/WebGL2 browser-based medical image visualization",
   "main": "./dist/niivue.js",
@@ -103,7 +103,7 @@
     "zarrita": "^0.7.3"
   },
   "devDependencies": {
-    "@niivue/dcm2niix": "^1.4.20261105-rc.1",
+    "@niivue/dcm2niix": "^1.4.20261105-rc.3",
     "@niivue/dev-images": "workspace:*",
     "@playwright/test": "1.59.1",
     "@types/bun": "^1.3.12",

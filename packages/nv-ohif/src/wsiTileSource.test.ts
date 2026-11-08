@@ -394,7 +394,7 @@ describe('buildWsiManifest', () => {
     const fine = built?.manifest.levels[0]
     if (!fine) throw new Error('expected level 0')
     // Row 0: frames 1..4 at y=0; row 1: frames 5..8 at y=512.
-    expect(fine.tiles.map((t) => t.frame)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    expect(fine.tiles.map((t) => t?.frame)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
     // x/y are COLUMN/ROW INDICES (not pixel offsets). Third tile of row 0: col 2.
     expect(fine.tiles[2]).toMatchObject({
       x: 2,

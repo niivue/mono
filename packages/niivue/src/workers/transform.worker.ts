@@ -10,16 +10,10 @@
  *   Error:    { _wbId, _wbError: string }
  */
 
-// Worker-scope postMessage with Transferable[] support
-const post = (
-  self as unknown as {
-    postMessage: (msg: unknown, transfer?: Transferable[]) => void
-  }
-).postMessage.bind(self) as (msg: unknown, transfer?: Transferable[]) => void
-
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 import type { TransformOptions } from '@/volume/transforms'
 import { transformModules } from '@/volume/transforms/_registry'
+import { post } from './workerPost'
 
 interface VolumeTransformModule {
   name: string

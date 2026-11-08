@@ -99,7 +99,7 @@ const sfRoot = resolve(option('--root') ?? dirname(dirname(resolve(lcovPath))))
 const lcovFile = Bun.file(lcovPath)
 if (!(await lcovFile.exists())) {
   Bun.stderr.write(`lcov-to-summary: cannot read ${lcovPath}\n`)
-  process.exit(0)
+  process.exit(minLines === null && minFunctions === null ? 0 : 1)
 }
 const lcov = await lcovFile.text()
 
@@ -107,7 +107,7 @@ const records = parseLcov(lcov)
 
 if (records.length === 0) {
   Bun.stderr.write(`lcov-to-summary: no records parsed from ${lcovPath}\n`)
-  process.exit(0)
+  process.exit(minLines === null && minFunctions === null ? 0 : 1)
 }
 
 const sumTotals = (rs: Record[]): Totals =>

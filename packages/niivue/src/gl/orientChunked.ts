@@ -17,7 +17,8 @@
 import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
 import { bytesPerSourceVoxel } from '@/volume/chunkBudget'
-import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
+import { createChunkFetcher } from '@/volume/chunkFetch'
+import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 import { timeChunkPhase } from '@/volume/chunkTiming'
 import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
 import {
@@ -27,9 +28,6 @@ import {
 import {
   chunkModulationForDesc,
   chunkRGBA,
-  extractChunkBytes,
-  extractChunkBytesReoriented,
-  isIdentityPermutation,
   isRGBAChunkDatatype,
 } from '@/volume/orientChunked'
 import { setTexParams } from './glUtil'
@@ -93,12 +91,6 @@ function emptyGradientTexture(gl: WebGL2RenderingContext): WebGLTexture {
   return tex
 }
 
-/** One cached source-byte fetch, with the handle that abandons it. */
-interface ChunkFetch {
-  promise: Promise<Uint8Array>
-  controller: AbortController
-}
-
 /**
  * On-demand chunk uploader for a chunked volume (WebGL2). The renderer keeps
  * one per chunked volume and calls `uploadChunk` to stream chunks in across
@@ -125,37 +117,6 @@ export interface ChunkUploaderGL {
   cancelChunk(index: number): void
   /** Abandon every outstanding source read and free the modulator texture. */
   dispose(): void
-}
-
-/**
- * Max outstanding prefetched (fetched-but-not-yet-uploaded) chunk byte buffers
- * per uploader. Bounds CPU memory held by parallel prefetch (~256^3 * bpv each).
- */
-const MAX_PREFETCHED_CHUNKS = 16
-
-/**
- * Fetch slots reserved for the working set. A speculative (predicted) read may
- * not grow the outstanding set past `MAX_PREFETCHED_CHUNKS` minus this, so a
- * guess can never take the slot of a chunk the view can already see.
- */
-const PREFETCH_SLOTS_RESERVED = 4
-
-function bytesFromChunkSource(
-  data: ArrayBuffer | Uint8Array | NonNullable<NVImage['img']>,
-  expectedBytes: number,
-): Uint8Array {
-  const bytes =
-    data instanceof ArrayBuffer
-      ? new Uint8Array(data)
-      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-  if (bytes.byteLength !== expectedBytes) {
-    throw new Error(
-      `orientChunkedGL: chunk source returned ${bytes.byteLength} bytes, expected ${expectedBytes}`,
-    )
-  }
-  return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
-    ? bytes
-    : new Uint8Array(bytes)
 }
 
 /**
@@ -219,47 +180,8 @@ export function createChunkUploaderGL(
   if (bytesPerVoxel === 0) {
     throw new Error(`orientChunkedGL: unsupported NIfTI datatype ${dt}`)
   }
-  const volumeDims: Vec3i = [
-    nvimage.dimsRAS[1],
-    nvimage.dimsRAS[2],
-    nvimage.dimsRAS[3],
-  ]
-  if (
-    volumeDims[0] !== plan.volumeDims[0] ||
-    volumeDims[1] !== plan.volumeDims[1] ||
-    volumeDims[2] !== plan.volumeDims[2]
-  ) {
-    throw new Error(
-      `orientChunkedGL: plan.volumeDims [${plan.volumeDims}] does not match ` +
-        `nvimage.dimsRAS [${volumeDims}]`,
-    )
-  }
-
-  const frame4D = nvimage.frame4D ?? 0
-  const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
-  const srcBytes = nvimage.img
-    ? new Uint8Array(
-        nvimage.img.buffer,
-        nvimage.img.byteOffset + frameByteOffset,
-        nvimage.nVox3D * bytesPerVoxel,
-      )
-    : null
-
-  const identity = chunkSource ? true : isIdentityPermutation(nvimage)
-  const img2RASstart = nvimage.img2RASstart
-  const img2RASstep = nvimage.img2RASstep
-  if (!chunkSource && !identity && (!img2RASstep || !img2RASstart)) {
-    throw new Error(
-      'orientChunkedGL: source is non-RAS but missing RAS mapping',
-    )
-  }
-
-  // Cache of in-flight / ready source-byte fetches, keyed by chunk index. Only
-  // populated for chunkSource (network-backed) volumes; in-memory extraction is
-  // synchronous and cheap, so it is computed on demand without caching. Each
-  // entry carries the controller that cancels its read, so a chunk the view
-  // stops wanting is abandoned on the wire rather than paid for and dropped.
-  const fetchCache = new Map<number, ChunkFetch>()
+  const { takeChunkBytes, prefetchChunk, cancelChunk, abortAll } =
+    createChunkFetcher(nvimage, plan, bytesPerVoxel, decoded)
 
   // Shared modulator weights, uploaded once for all chunks of this uploader.
   let modTexture: WebGLTexture | null = null
@@ -269,103 +191,8 @@ export function createChunkUploaderGL(
     return modTexture
   }
 
-  function computeBytes(
-    index: number,
-    signal?: AbortSignal,
-  ): Promise<Uint8Array> {
-    const desc = plan.chunks[index]
-    if (!desc) {
-      return Promise.reject(
-        new Error(`orientChunkedGL: chunk index ${index} out of range`),
-      )
-    }
-    const expectedBytes =
-      desc.texDims[0] * desc.texDims[1] * desc.texDims[2] * bytesPerVoxel
-    if (chunkSource) {
-      return Promise.resolve(
-        chunkSource({
-          chunkIndex: index,
-          desc,
-          plan,
-          datatypeCode: dt,
-          bytesPerVoxel,
-          signal,
-        }),
-      ).then((r) => bytesFromChunkSource(r, expectedBytes))
-    }
-    const bytes =
-      identity || !img2RASstart || !img2RASstep
-        ? extractChunkBytes(
-            srcBytes as Uint8Array,
-            volumeDims,
-            bytesPerVoxel,
-            desc.texOrigin,
-            desc.texDims,
-          )
-        : extractChunkBytesReoriented(
-            srcBytes as Uint8Array,
-            bytesPerVoxel,
-            desc.texOrigin,
-            desc.texDims,
-            img2RASstart,
-            img2RASstep,
-          )
-    return Promise.resolve(bytes)
-  }
-
-  function fetchBytes(index: number): Promise<Uint8Array> {
-    if (!chunkSource) return computeBytes(index)
-    const cached = fetchCache.get(index)
-    if (cached) return cached.promise
-    // The decoded tier is consulted AFTER the in-flight map so a read already
-    // on the wire is never duplicated, and before any new read so an evicted
-    // chunk comes back as an upload rather than a fetch + decode.
-    const held = decoded?.get(index)
-    if (held) return Promise.resolve(held)
-    const controller = new AbortController()
-    const promise = computeBytes(index, controller.signal)
-    const entry: ChunkFetch = { promise, controller }
-    fetchCache.set(index, entry)
-    // Don't cache rejections: drop the entry so a re-queued chunk retries fresh.
-    promise.catch(() => {
-      if (fetchCache.get(index) === entry) fetchCache.delete(index)
-    })
-    return promise
-  }
-
-  function prefetchChunk(index: number, speculative = false): void {
-    if (!chunkSource) return
-    if (fetchCache.has(index)) return
-    // Already decoded: there is nothing to warm, and counting the lookup here
-    // would credit the tier for a read the pump never made.
-    if (decoded?.has(index)) return
-    const cap = speculative
-      ? MAX_PREFETCHED_CHUNKS - PREFETCH_SLOTS_RESERVED
-      : MAX_PREFETCHED_CHUNKS
-    if (fetchCache.size >= cap) return
-    // The prefetch is speculative, so nobody is awaiting it. Swallow its
-    // rejection here (including the abort a later cancel raises) rather than
-    // leaving an unobserved promise; a real failure resurfaces when the upload
-    // pump asks for the same chunk and re-fetches it.
-    void fetchBytes(index).catch(() => {})
-  }
-
-  /**
-   * Abandon a chunk's source read. Called when the view stops asking for a
-   * chunk it had queued: the bytes are no longer wanted, so the read is
-   * aborted and the prefetch slot freed for one that is. A later request for
-   * the same chunk simply starts a new read.
-   */
-  function cancelChunk(index: number): void {
-    const entry = fetchCache.get(index)
-    if (!entry) return
-    fetchCache.delete(index)
-    entry.controller.abort()
-  }
-
   function dispose(): void {
-    for (const entry of fetchCache.values()) entry.controller.abort()
-    fetchCache.clear()
+    abortAll()
     if (modTexture) {
       gl.deleteTexture(modTexture)
       modTexture = null
@@ -377,13 +204,7 @@ export function createChunkUploaderGL(
     if (!desc) {
       throw new Error(`orientChunkedGL: chunk index ${index} out of range`)
     }
-    const chunkBytes = await fetchBytes(index)
-    // Consumed — free the CPU buffer reference so prefetch headroom recovers.
-    fetchCache.delete(index)
-    // Hand the decoded bytes to the tier instead of dropping them: this is the
-    // only moment they exist, and holding them through the chunk's residency
-    // is what makes its eventual eviction a demotion rather than a loss.
-    if (chunkSource) decoded?.set(index, chunkBytes)
+    const chunkBytes = await takeChunkBytes(index)
     // Timed as `upload`: this is the texImage3D submission, the part of a
     // chunk's cost that a decode worker could never take off this thread.
     const volumeTexture = timeChunkPhase(

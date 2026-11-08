@@ -25,7 +25,8 @@ const root = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(root, '../..')
 
 const specSources = readdirSync(resolve(root, 'e2e'))
-  .filter((f) => f.endsWith('.spec.ts'))
+  // Helpers (renderHarness.ts) import /src modules too, not only specs.
+  .filter((f) => f.endsWith('.ts'))
   .flatMap((f) =>
     [
       ...readFileSync(resolve(root, 'e2e', f), 'utf8').matchAll(

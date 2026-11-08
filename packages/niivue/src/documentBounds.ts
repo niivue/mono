@@ -64,6 +64,7 @@ export function assertDocumentFitsInput(
  * argument and, for a byte or text string, its bytes. cbor-x tags that break
  * that rule (0xdff9-0xdfff read their length their own way) or expand data
  * inside decode (51, packed prefixes) are refused; `serialize` emits neither.
+ * Also guards the ITK-Wasm `.iwi.cbor` / `.iwm.cbor` readers.
  */
 export function assertCborFitsInput(data: Uint8Array): void {
   const n = data.length
@@ -86,11 +87,11 @@ export function assertCborFitsInput(data: Uint8Array): void {
     else if (major === 4) items += arg
     else if (major === 5) items += 2 * arg
     else if (major === 6 && (arg === 51 || arg >= 0xdff9)) {
-      throw new Error(`Invalid NVD file: unsupported CBOR tag ${arg}`)
+      throw new Error(`Invalid CBOR: unsupported tag ${arg}`)
     }
     if (items > n) {
       throw new Error(
-        `Invalid NVD file: its arrays declare more items than its ${n} bytes hold`,
+        `Invalid CBOR: its arrays declare more items than its ${n} bytes hold`,
       )
     }
   }

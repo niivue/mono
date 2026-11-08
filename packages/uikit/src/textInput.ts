@@ -5,53 +5,23 @@
 // wires it to the pointer, the keyboard and the draw hook.
 
 import { mixColor } from './button'
-import { buildRect, type RectData } from './rect'
-import type { ScrollWindow, UIKitBox } from './scroll'
+import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
+import type { ScrollWindow } from './scroll'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { TextEditState } from './textEdit'
 import {
   buildTextFieldContent,
+  type FieldStyle,
   textFieldCaretAt,
   textFieldWindow,
 } from './textField'
 import type { UIKitTextItem } from './textOverlay'
 
 /** Every visual knob on a text input. All lengths are in canvas pixels. */
-export interface TextInputStyle {
-  /** Field color at rest. */
-  fill: RGBA
-  /** Field color while the pointer hovers it. */
-  hoverFill: RGBA
-  /** Field color when disabled. */
-  disabledFill: RGBA
-  border: RGBA
-  /** Border color while the field has keyboard focus. */
-  focusBorder: RGBA
-  borderWidth: number
-  radius: number
-  textColor: RGBA
-  disabledTextColor: RGBA
+export interface TextInputStyle extends FieldStyle {
   /** Color of the placeholder shown while the field is empty. */
   placeholderColor: RGBA
-  /** Label and field text em size. */
-  textSizePx: number
-  /** Halo outline width around the label (it sits on the scene); 0 draws none. */
-  textOutlineWidth: number
-  /** Halo color; null picks black or white for contrast with `textColor`. */
-  textOutlineColor: RGBA | null
-  /** Space between the field's left border and the text. */
-  paddingX: number
-  /** Space between the cap-height box and the field's top and bottom edges. */
-  paddingY: number
-  /** Space between a label and the field. */
-  labelGap: number
-  /** Field width when the spec gives none. */
-  fieldWidth: number
-  caretColor: RGBA
-  caretWidth: number
-  /** Color behind selected text. */
-  selectionFill: RGBA
 }
 
 export const DEFAULT_TEXT_INPUT_STYLE: TextInputStyle = {
@@ -206,8 +176,7 @@ export function textInputContains(
   px: number,
   py: number,
 ): boolean {
-  const b = layout.field
-  return px >= b.x && px < b.x + b.width && py >= b.y && py < b.y + b.height
+  return rectContains(layout.field, px, py)
 }
 
 /**

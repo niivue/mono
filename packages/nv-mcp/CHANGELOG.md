@@ -1,3 +1,90 @@
+## 1.0.0-rc.104 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.117
+- Updated uikit to 1.0.0-rc.112
+
+## 1.0.0-rc.103 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.116
+- Updated uikit to 1.0.0-rc.111
+
+## 1.0.0-rc.102 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.115
+- Updated uikit to 1.0.0-rc.110
+
+## 1.0.0-rc.101 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.114
+- Updated uikit to 1.0.0-rc.109
+
+## 1.0.0-rc.100 (2026-11-07)
+
+### Fixes
+
+- **nv-mcp:** refuse a screenshot while NiiVue has no render backend ([b5fee5ce](https://github.com/niivue/mono/commit/b5fee5ce))
+- **nv-mcp:** screenshot refuses a stale canvas when NiiVue draws nothing ([2e66eeb9](https://github.com/niivue/mono/commit/2e66eeb9))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.113
+- Updated uikit to 1.0.0-rc.108
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.99 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.112
+- Updated uikit to 1.0.0-rc.107
+
+## 1.0.0-rc.98 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.111
+- Updated uikit to 1.0.0-rc.106
+
+## 1.0.0-rc.97 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.110
+- Updated uikit to 1.0.0-rc.105
+
+## 1.0.0-rc.96 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.109
+- Updated uikit to 1.0.0-rc.104
+
+## 1.0.0-rc.95 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.108
+- Updated uikit to 1.0.0-rc.103
+
+## 1.0.0-rc.94 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.107
+- Updated uikit to 1.0.0-rc.102
+
 ## 1.0.0-rc.93 (2026-11-06)
 
 ### Updated Dependencies

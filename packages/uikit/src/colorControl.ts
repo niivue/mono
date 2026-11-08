@@ -6,8 +6,7 @@
 // keyboard. There is no browser color picker: the legacy demos edit colors
 // through channel sliders and palette choices, and so does this.
 
-import { buildRect, type RectData } from './rect'
-import type { UIKitBox } from './scroll'
+import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
 import type { SliderStyle } from './slider'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
@@ -300,17 +299,13 @@ export function scaleColorControl(
   }
 }
 
-function inBox(b: UIKitBox, px: number, py: number): boolean {
-  return px >= b.x && px < b.x + b.width && py >= b.y && py < b.y + b.height
-}
-
 /** The index of the swatch under canvas point (px, py), or -1. */
 export function colorSwatchAt(
   layout: ColorControlLayout,
   px: number,
   py: number,
 ): number {
-  return layout.swatches.findIndex((b) => inBox(b, px, py))
+  return layout.swatches.findIndex((b) => rectContains(b, px, py))
 }
 
 /** True when canvas point (px, py) lies inside the whole control. */
@@ -319,7 +314,7 @@ export function colorControlContains(
   px: number,
   py: number,
 ): boolean {
-  return inBox(layout, px, py)
+  return rectContains(layout, px, py)
 }
 
 /** Black or white, whichever contrasts more with `color`. */

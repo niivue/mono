@@ -23,8 +23,12 @@ import {
   scaleFilePicker,
 } from './filePicker'
 import { createBrowserFilePicker, type FilePickerBridge } from './host'
+import {
+  UIKitDrawBundle,
+  UIKitEntryMap,
+  type UIKitGeometry,
+} from './overlayParts'
 import type { UIKitFont } from './text/font'
-import { UIKitTextOverlay } from './textOverlay'
 
 export interface UIKitFilePickerOverlayOptions {
   /** Called whenever the overlay needs another frame. A control layer fills it in. */
@@ -58,28 +62,29 @@ export class UIKitFilePickerOverlay
   readonly hoverCursor = 'pointer'
   private readonly font: UIKitFont
   private readonly buttons: UIKitButtonOverlay
-  private readonly labels: UIKitTextOverlay
-  private readonly entries = new Map<string, PickerEntry>()
+  private readonly bundle: UIKitDrawBundle
+  private readonly entries: UIKitEntryMap<FilePickerLayout, PickerEntry>
   private baseStyle: FilePickerStyle
-  private readonly cssUnits: boolean
   private requestRedraw: (() => void) | null
   private pickFiles: FilePickerBridge | null
-  private scale = 1
-  private geometryDirty = true
 
   constructor(font: UIKitFont, options: UIKitFilePickerOverlayOptions = {}) {
     this.font = font
-    this.labels = new UIKitTextOverlay(font)
+    const cssUnits = options.cssUnits ?? false
+    this.bundle = new UIKitDrawBundle(font, () => this.requestRedraw?.())
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = scaleFilePicker(entry.spec, entry.style, scale)
+      return layoutFilePicker(spec, style, font.metrics)
+    }, cssUnits)
     this.baseStyle = resolveFilePickerStyle(
       DEFAULT_FILE_PICKER_STYLE,
       options.style,
     )
-    this.cssUnits = options.cssUnits ?? false
     this.requestRedraw = options.requestRedraw ?? null
     this.pickFiles = options.pickFiles ?? null
     this.buttons = new UIKitButtonOverlay(font, {
       requestRedraw: () => this.requestRedraw?.(),
-      cssUnits: this.cssUnits,
+      cssUnits,
     })
   }
 
@@ -113,11 +118,11 @@ export class UIKitFilePickerOverlay
   }
 
   setFilePickers(specs: readonly FilePickerSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeFilePicker(id)
-    }
-    for (const spec of specs) this.addFilePicker(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => this.addFilePicker(spec),
+      (id) => this.removeFilePicker(id),
+    )
   }
 
   removeFilePicker(id: string): void {
@@ -155,7 +160,7 @@ export class UIKitFilePickerOverlay
   }
 
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /** A picker's boxes in spec units, or null for an unknown id. */
@@ -216,59 +221,37 @@ export class UIKitFilePickerOverlay
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
-      for (const entry of this.entries.values()) entry.layout = null
-      this.geometryDirty = true
-    }
-    if (this.geometryDirty) this.rebuild()
+    const rescaled = this.entries.rescale(frame.dpr)
     this.buttons.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
+    this.bundle.draw(frame, () => this.geometry(), rescaled)
   }
 
   /** Release GPU resources on both backends. */
   destroy(): void {
     this.buttons.destroy()
-    this.labels.destroy()
+    this.bundle.destroy()
   }
 
   private invalidate(): void {
-    this.geometryDirty = true
-    this.requestRedraw?.()
+    this.bundle.invalidate()
   }
 
-  private rebuild(): void {
-    const text = []
+  private *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
       const { spec, style } = scaleFilePicker(
         entry.spec,
         entry.style,
-        this.scale,
+        this.entries.scale,
       )
       const geo = buildFilePicker(
         spec,
         style,
-        this.layoutOf(entry),
+        this.entries.layoutOf(entry),
         this.font.metrics,
         { names: entry.names, enabled: spec.enabled !== false },
       )
-      text.push(...geo.text)
+      yield { rects: [], lines: [], text: geo.text }
     }
-    this.labels.setItems(text)
-    this.geometryDirty = false
-  }
-
-  private layoutOf(entry: PickerEntry): FilePickerLayout {
-    if (!entry.layout) {
-      const { spec, style } = scaleFilePicker(
-        entry.spec,
-        entry.style,
-        this.scale,
-      )
-      entry.layout = layoutFilePicker(spec, style, this.font.metrics)
-    }
-    return entry.layout
   }
 
   /** Create or move a picker's button, in spec units. */

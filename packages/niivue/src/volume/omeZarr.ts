@@ -422,3 +422,16 @@ export function omeZarrSpatialScaleUm(
   }
   return [at(order.x), at(order.y), at(order.z)]
 }
+
+/** Throw unless `index` is an integer in [0, count) of the store's `what`. */
+export function checkOmeZarrIndex(
+  what: string,
+  index: number,
+  count: number,
+): void {
+  if (!Number.isInteger(index) || index < 0 || index >= count) {
+    throw new Error(
+      `OME-Zarr: ${what} ${index} is out of range (store has ${count})`,
+    )
+  }
+}

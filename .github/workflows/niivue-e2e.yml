@@ -36,7 +36,8 @@ on:
   push:
     branches: [main]
     # Markdown (READMEs, docs/, CHANGELOGs) changes no tested code, so a
-    # docs-only change does not queue the macOS job. Negations must come last.
+    # docs-only change skips this whole workflow: the browser contracts as well
+    # as the macOS job. Negations must come last.
     paths:
       - 'packages/niivue/**'
       - 'packages/uikit/**'
@@ -129,7 +130,7 @@ jobs:
           case "${{ matrix.group }}" in
             1) specs="$pinned1" ;;
             2) specs="$pinned2" ;;
-            3) specs=$(ls e2e/render-*.spec.ts | grep -vxF $(printf -- '-e %s ' $pinned1 $pinned2)) ;;
+            3) specs=$(ls e2e/render-*.spec.ts | grep -vxF $(printf -- '-e %s ' $pinned1 $pinned2) || true) ;;
           esac
           echo "Specs: $specs"
           bunx playwright test $specs --workers=1 --reporter=line

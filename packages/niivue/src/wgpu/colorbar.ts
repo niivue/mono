@@ -1,11 +1,9 @@
 import type { ColorbarInfo } from '@/NVTypes'
+import { colorbarGridLayout, deriveBorderColor } from '@/view/NVColorbar'
 import {
-  COLORBAR_GAP,
-  type ColorbarLayout,
-  colorbarGridLayout,
-  deriveBorderColor,
-} from '@/view/NVColorbar'
-import { NVRenderer } from '@/view/NVRenderer'
+  type ColorbarOptions,
+  NVColorbarRenderer,
+} from '@/view/NVColorbarRenderer'
 import colorbarShaderCode from './colorbar.wgsl?raw'
 import {
   alphaPipelineDesc,
@@ -21,20 +19,12 @@ type ColorbarGPU = {
   bindGroup: GPUBindGroup
 }
 
-export class ColorbarRenderer extends NVRenderer {
+export class ColorbarRenderer extends NVColorbarRenderer {
   pipeline: GPURenderPipeline | null
   bindLayout: GPUBindGroupLayout | null
   sampler: GPUSampler | null
   colorbars: ColorbarGPU[]
   private _colorbarInfos: ColorbarInfo[]
-  canvasWidth: number
-  canvasHeight: number
-  private _fontPx: number
-  private _content: number[] | null = null
-  private _opacity: number
-  private _margin: number
-  private _heightRatio: number
-  private _borderColor: [number, number, number, number]
 
   constructor() {
     super()
@@ -43,13 +33,6 @@ export class ColorbarRenderer extends NVRenderer {
     this.sampler = null
     this.colorbars = []
     this._colorbarInfos = []
-    this.canvasWidth = 1
-    this.canvasHeight = 1
-    this._fontPx = 0
-    this._opacity = 1
-    this._margin = 20
-    this._heightRatio = 1.2
-    this._borderColor = [0, 0, 0, 1]
   }
 
   async init(
@@ -90,8 +73,8 @@ export class ColorbarRenderer extends NVRenderer {
   }
 
   resize(device: GPUDevice, width: number, height: number, fontPx = 0): void {
-    this.canvasWidth = width
-    this.canvasHeight = height
+    this._canvasWidth = width
+    this._canvasHeight = height
     this._fontPx = fontPx
     this._writeAllParams(device)
   }
@@ -103,8 +86,8 @@ export class ColorbarRenderer extends NVRenderer {
     h: number
   }): Float32Array {
     return new Float32Array([
-      this.canvasWidth,
-      this.canvasHeight,
+      this._canvasWidth,
+      this._canvasHeight,
       this._opacity,
       rect.h * 0.5,
       rect.x, // rect.x
@@ -124,20 +107,6 @@ export class ColorbarRenderer extends NVRenderer {
       0,
       0, // pad to 5 vec4s (80 bytes)
     ])
-  }
-
-  getLayout(): ColorbarLayout {
-    return {
-      margin: this._margin,
-      heightRatio: this._heightRatio,
-      gap: COLORBAR_GAP,
-      canvasWidth: this._content?.[2] ?? this.canvasWidth,
-      canvasHeight: this._content?.[3] ?? this.canvasHeight,
-      borderColor: [...this._borderColor],
-      fontPx: this._fontPx,
-      originX: this._content?.[0] ?? 0,
-      originY: this._content?.[1] ?? 0,
-    }
   }
 
   private _writeAllParams(device: GPUDevice): void {
@@ -204,21 +173,8 @@ export class ColorbarRenderer extends NVRenderer {
     return this._colorbarInfos
   }
 
-  configure(
-    device: GPUDevice,
-    options: {
-      opacity?: number
-      margin?: number
-      heightRatio?: number
-      borderColor?: [number, number, number, number]
-    } = {},
-  ): void {
-    if (options.opacity !== undefined) this._opacity = options.opacity
-    if (options.margin !== undefined) this._margin = options.margin
-    if (options.heightRatio !== undefined)
-      this._heightRatio = options.heightRatio
-    if (options.borderColor !== undefined)
-      this._borderColor = options.borderColor
+  configure(device: GPUDevice, options: ColorbarOptions = {}): void {
+    this.applyOptions(options)
     this._writeAllParams(device)
   }
 

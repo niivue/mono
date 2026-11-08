@@ -1,3 +1,132 @@
+## 1.0.0-rc.117 (2026-11-08)
+
+### Fixes
+
+- **examples:** slides keeps a failed pool's other tiles decoding ([a516870c](https://github.com/niivue/mono/commit/a516870c))
+- **nv-ohif:** retry a tile once on a fresh pool after a worker failure ([79c27c0c](https://github.com/niivue/mono/commit/79c27c0c))
+- **nv-ohif:** tell an abort rejection from a worker death by its reason ([#595](https://github.com/niivue/mono/issues/595))
+- **nv-ohif:** keep the decoder pool when an aborted tile rejects with a plain Error ([#595](https://github.com/niivue/mono/issues/595))
+- **nv-ohif:** replace the dcm2niix tile decoder pool when its workers die ([25925f7d](https://github.com/niivue/mono/commit/25925f7d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.116 (2026-11-07)
+
+### Fixes
+
+- **niivue,uikit:** ruler majors every fifth drawn tick under decimation ([c6a0cb48](https://github.com/niivue/mono/commit/c6a0cb48))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.115 (2026-11-07)
+
+### Fixes
+
+- **examples:** reload with the running backend when attach falls back ([f4ab37ad](https://github.com/niivue/mono/commit/f4ab37ad))
+- **examples:** choose the streaming budget from a WebGPU device, not an adapter ([6ad333f0](https://github.com/niivue/mono/commit/6ad333f0))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.114 (2026-11-07)
+
+### Fixes
+
+- **niivue:** abort a timed-out manifest error body, match JSON case-insensitively ([5e6d1c65](https://github.com/niivue/mono/commit/5e6d1c65))
+- **niivue:** bound the slide manifest error-body read ([5b52e942](https://github.com/niivue/mono/commit/5b52e942))
+- **niivue,iiif-volumetric-server:** refuse an unsupported WSI syntax with 415 and its reason ([7d195c9c](https://github.com/niivue/mono/commit/7d195c9c))
+- **niivue:** coalesce slide rewindowing and tighten WSI codec checks ([434175a4](https://github.com/niivue/mono/commit/434175a4))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.113 (2026-11-07)
+
+### Fixes
+
+- **niivue:** getCanvasImage returns null when no frame was drawn ([4b61b9cf](https://github.com/niivue/mono/commit/4b61b9cf))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.112 (2026-11-07)
+
+### Fixes
+
+- **niivue:** bound ITK-Wasm CBOR reads before allocating ([9e313c31](https://github.com/niivue/mono/commit/9e313c31))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.111 (2026-11-07)
+
+### Fixes
+
+- **niivue:** loadMeshes emits meshLoaded only for meshes the model adds ([9c77b1c0](https://github.com/niivue/mono/commit/9c77b1c0))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.110 (2026-11-07)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.109 (2026-11-06)
+
+### Features
+
+- **niivue:** getCanvasImage reads the drawn canvas synchronously ([0f6a5679](https://github.com/niivue/mono/commit/0f6a5679))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.108 (2026-11-06)
+
+### Features
+
+- **niivue:** apply slide ICC profiles through a registered colour transform ([4be73dc9](https://github.com/niivue/mono/commit/4be73dc9))
+- **examples:** DICOM-WSI showcase slides in the slides demo ([586c7fe1](https://github.com/niivue/mono/commit/586c7fe1))
+
+### Fixes
+
+- **niivue:** ICC review fixes: null table, size check, LRU caches, no mid-pass destroy ([de7f3a74](https://github.com/niivue/mono/commit/de7f3a74))
+- **niivue:** leave grey slides unmanaged; cap colour-table caches; slides demo bakes profiles ([426fc073](https://github.com/niivue/mono/commit/426fc073))
+- **nv-ext-wsi,demo-ext-wsi:** rank focal planes; linear nesting test ([6c30eca1](https://github.com/niivue/mono/commit/6c30eca1))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.107 (2026-11-06)
+
+### Features
+
+- **niivue:** per-tile slide files and listed sparse levels ([4dca555f](https://github.com/niivue/mono/commit/4dca555f))
+- **niivue:** sparse slide levels with holes ([1558f013](https://github.com/niivue/mono/commit/1558f013))
+
+### Fixes
+
+- **niivue:** place listed sparse tiles by position, without changing the caller's manifest ([3951daf9](https://github.com/niivue/mono/commit/3951daf9))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.106 (2026-11-06)
 
 ### Fixes

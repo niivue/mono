@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { NVSlide, NVSlideLevelManifest } from './NVSlide'
 import {
   axialPlaneTransform,
+  cornerQuad,
   pickSlidePixel,
   resolveSlidePlaneTiles,
   type SlidePlaneState,
@@ -199,6 +200,23 @@ describe('resolveSlidePlaneTiles', () => {
     expect(again.tiles).toHaveLength(4)
   })
 
+  test('skips the holes of a sparse level and requests the right tiles', () => {
+    // 2x2 with the top-right and bottom-left tiles missing: the culled plane
+    // tiles must still map to their own manifest tiles, not by array position.
+    const sparse = pyramidLevel(0, 1, 2, 2)
+    sparse.tiles[1] = null
+    sparse.tiles[2] = null
+    const { slide, requested } = fakeSlide([sparse], 512, 512)
+    const state: SlidePlaneState = {
+      slide,
+      pixelToWorld: unitTransform(512, 512),
+      tilesByLevel: new Map(),
+    }
+    const { tiles } = resolveSlidePlaneTiles(state, IDENTITY, 512, 512)
+    expect(tiles.map((t) => t.key)).toEqual(['L0/0/0', 'L0/1/1'])
+    expect(requested).toEqual(['L0/0/0', 'L0/1/1'])
+  })
+
   test('culls every tile when the plane is off-screen', () => {
     const levels = [pyramidLevel(0, 1, 2, 2)]
     const { slide, requested } = fakeSlide(levels, 512, 512)
@@ -255,5 +273,19 @@ describe('pickSlidePixel', () => {
     const noFrame = state()
     noFrame.pickFrame = null
     expect(pickSlidePixel(noFrame, 50, 50)).toBeNull()
+  })
+})
+
+describe('cornerQuad', () => {
+  test('interleaves corners with top-left-origin UVs in strip order', () => {
+    const quad = cornerQuad([
+      [0, 1, 2],
+      [3, 4, 5],
+      [6, 7, 8],
+      [9, 10, 11],
+    ])
+    expect(Array.from(quad)).toEqual([
+      0, 1, 2, 0, 0, 3, 4, 5, 1, 0, 6, 7, 8, 0, 1, 9, 10, 11, 1, 1,
+    ])
   })
 })

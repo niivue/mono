@@ -4,6 +4,7 @@ import type { UIKitFontMetrics } from './text/font'
 import {
   advanceBetween,
   caretIndexAt,
+  clipboardEdit,
   clipboardKey,
   deleteBackward,
   deleteForward,
@@ -377,5 +378,66 @@ describe('grapheme clusters', () => {
     const adv = [10, 0, 10, 0, 10, 0]
     expect(textWindow(t, adv, 15, 0, 6)).toMatchObject({ first: 4, end: 6 })
     expect(textWindow(t, adv, 15, 1, 2)).toMatchObject({ first: 2, end: 4 })
+  })
+})
+
+describe('clipboardEdit', () => {
+  const field = () => ({ edit: selectAll(textEditState('abc')), session: 1 })
+  const run = (read: () => Promise<string>, f = field(), live = () => true) => {
+    const pasted: string[] = []
+    const written: string[] = []
+    const cuts: string[] = []
+    const bridge = { read, write: (t: string) => void written.push(t) }
+    const act = (a: 'copy' | 'cut' | 'paste') =>
+      clipboardEdit(
+        bridge,
+        f,
+        a,
+        live,
+        (t) => pasted.push(t),
+        (n) => cuts.push(n.text),
+      )
+    return { f, act, pasted, written, cuts }
+  }
+
+  it('copies and cuts the selection', () => {
+    const { act, written, cuts } = run(() => Promise.resolve(''))
+    act('copy')
+    act('cut')
+    expect(written).toEqual(['abc', 'abc'])
+    expect(cuts).toEqual([''])
+  })
+
+  it('pastes only into the live session that asked', async () => {
+    const ok = run(() => Promise.resolve('x'))
+    ok.act('paste')
+    await Promise.resolve()
+    expect(ok.pasted).toEqual(['x'])
+    const refocused = run(() => Promise.resolve('x'))
+    refocused.act('paste')
+    refocused.f.session++
+    await Promise.resolve()
+    expect(refocused.pasted).toEqual([])
+    const gone = run(
+      () => Promise.resolve('x'),
+      field(),
+      () => false,
+    )
+    gone.act('paste')
+    await Promise.resolve()
+    expect(gone.pasted).toEqual([])
+  })
+
+  it('ignores an empty or rejected read', async () => {
+    for (const read of [
+      () => Promise.resolve(''),
+      () => Promise.reject(new Error('denied')),
+    ]) {
+      const { act, pasted } = run(read)
+      act('paste')
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(pasted).toEqual([])
+    }
   })
 })

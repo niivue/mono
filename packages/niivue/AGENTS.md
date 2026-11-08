@@ -164,7 +164,7 @@ each step's `run` are sent to the page as source, so they may use only their
 may read, typed `SceneView`), `check(ok, message)` (fails the test), `settle()`
 (waits until updates, chunk streams, brick fades and cinematic refinement have
 drawn) and `canvas`. Nothing is awaited with a sleep. The harness captures a
-settled frame after `setup` (`<scene>`) and after each step
+settled frame with `nv.getCanvasImage()` after `setup` (`<scene>`) and after each step
 (`<scene>--<step>`), so a **multi-step scene** shows behaviour: load, edit,
 capture, edit again. `check` pins how a result was reached (a GPU entry kept,
 a pass skipped, a warning logged), next to the change that should cause it.
@@ -229,6 +229,8 @@ NiiVue (controller) - src/NVControl.ts
 
 **Data flow:** User interactions → NiiVue → model updates + `drawScene()` → `requestAnimationFrame` → view.render()
 
+**Pixel readback:** `getCanvasImage()` and `saveBitmap()` run one controller frame (`_renderNow()`: drawing flush, sync, view hooks, render) and copy the rect the view drew (bounds under the canvas viewport) in the same task. A later `drawImage` of the canvas reads blank on WebGPU and on full-canvas WebGL2 (no `preserveDrawingBuffer`).
+
 **Model-View separation:** Model is GPU-agnostic (only data). Views receive model read-only. Controller owns mutations. GPU resources are view-owned. This enables backend switching without data loss.
 
 ### Backend feature parity (hard rule)
@@ -285,7 +287,7 @@ unit-tested under the Bun harness.)
 | `NVEvents.ts` | Event types — `NVEventMap`, typed `CustomEvent` dispatching |
 | `annotation/` | Vector annotation system — shapes, clipping, undo/redo |
 
-Both backends have matching render layers: `mesh`, `font`, `line`, `colorbar`, `orient`, `crosshair`, `thumbnail` — each in `wgpu/` and `gl/` directories. All render entities extend `NVRenderer` (`src/view/NVRenderer.ts`) with `init()` (stores GPU context, sets `isReady`), `draw()` (guarded by `isReady`), and parameterless `destroy()` (uses stored context). Stateless utilities remain module-level exports.
+Both backends have matching render layers: `mesh`, `font`, `line`, `colorbar`, `orient`, `crosshair`, `thumbnail` — each in `wgpu/` and `gl/` directories. All render entities extend `NVRenderer` (`src/view/NVRenderer.ts`) with `init()` (stores GPU context, sets `isReady`), `draw()` (guarded by `isReady`), and parameterless `destroy()` (uses stored context). Stateless utilities remain module-level exports. WebGPU bind-group helpers are in `wgpu/pipeline.ts`; a pipeline bound to a single uniform buffer uses `uniformOnlyLayout` + `uniformBindGroup`. Shared GL plumbing is in `gl/glUtil.ts`: `createIndexedGeometry`/`uploadIndexed` for one interleaved float buffer plus uint32 indices, and `deleteGLObjects` for `destroy()`. GL mesh x-ray passes call `mesh.drawWithGpu` with `xray = true`; WebGPU bakes the depth test into pipelines, so it draws x-ray meshes with `meshXRayPipelines`. Backend-neutral CPU logic (layout, chunk fetch/prefetch, tile walks, bench timing) goes in a shared module under `view/`, `volume/` or `slide/` instead of being copied into `gl/` and `wgpu/`; e.g. `volume/chunkFetch.ts` serves both chunk uploaders.
 
 ```typescript
 // Base class — shared lifecycle contract
@@ -302,7 +304,7 @@ export abstract class NVRenderer {
 
 Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (uses stored context), `isReady` (public get, protected set) guards all draw calls.
 
-**Colorbar layout:** The colorbar block allocator reads the actual rasterized font size via an optional `ColorbarLayout.fontPx` field. Each backend's resize path threads `fontRenderer.fontPx` through so `resolveFontSize` can pick `max(actual, legacy)` — defaults keep the pre-audit look while a cranked-up `fontScale` grows the allocation to avoid overflow. Bottom cushion scales as `max(1, 0.1 * fontSize)`, and single-row colorbars no longer allocate a spurious trailing `gap`.
+**Colorbar layout:** The colorbar block allocator reads the actual rasterized font size via `ColorbarLayout.fontPx` (0 = unknown). Each backend's `resize` stores `fontRenderer.fontPx` in `_fontPx` on the shared `NVColorbarRenderer` base (`view/NVColorbarRenderer.ts`), whose `getLayout()` passes it on, so `resolveFontSize` can pick `max(actual, legacy)` — defaults keep the pre-audit look while a cranked-up `fontScale` grows the allocation to avoid overflow. Bottom cushion scales as `max(1, 0.1 * fontSize)`, and single-row colorbars no longer allocate a spurious trailing `gap`.
 
 **Fonts (Unicode):**
 - `src/view/NVFont.ts` parses atlases sparsely by Unicode code point, and `buildTextLayout` iterates strings by code point (not UTF-8 bytes), so CJK and other non-Latin glyphs render correctly when present in the atlas. Swap the active font at runtime via `nv1.setFont(nextFont)` for an in-memory atlas, or `nv1.setFontFromUrl({ atlas, metrics })` to fetch a PNG+JSON pair from URLs — both rebuild the view because the atlas texture is GPU-owned.
@@ -788,9 +790,8 @@ volume is partial AND non-reloadable (`_sourceFile` present) — the document em
 only the loaded frames, so the restored volume correctly presents as complete-at-N
 with no deferred affordance. This is gated strictly on `_sourceFile`, so a partial
 volume from a real URL (e.g. `mpld_asl` with `limitFrames4D`) keeps its full dims and
-still deferred-reloads on restore. (A full NVD round-trip isn't Bun-testable —
-it needs the controller, whose `?worker&inline` imports Bun can't load — so this
-is browser-verified.)
+still deferred-reloads on restore. (Browser-verified; no full NVD round-trip test
+yet. The controller now loads under Bun, so one could join `src/loadDocument.*.test.ts`.)
 
 **Known limitations / follow-ups** (from the 2026-06-16 audit; not yet addressed —
 all are edge cases or pre-existing, the common paths are verified working):
@@ -1771,9 +1772,9 @@ Ninth audit round (second external review; see `audit_response.md`):
   load/remove churn. Initial `loadSignals` is now wrapped (footer error message).
 - **No bare annotation guides**: annotations skip entirely when `fontSize <= 6`
   (guide was previously drawn even when the label was suppressed).
-- Won't-fix (documented): full-`NVDocument` signal round-trip test is not runnable
-  under the Bun harness (the controller's `?worker&inline` imports); the signal path is covered by
-  `persistence.test.ts` (serialize/reconstruct + real CBOR, incl. `-Infinity` y).
+- Signal persistence is covered by `persistence.test.ts` (serialize/reconstruct + real CBOR,
+  incl. `-Infinity` y) and full-`NVDocument` round-trips through the controller in
+  `src/loadDocument.roundtrip.test.ts`.
 
 Deferred (low priority, documented): two-pass/streaming TSV parser;
 annotations render only in the signal-only graph, not the volume+physio
@@ -2369,6 +2370,6 @@ Demos import `import NiiVue from '../dist/niivue.js'` — Vite dev plugin redire
 
 - `nifti-reader-js`: NIfTI parsing
 - `gl-matrix`: Vector/matrix math
-- `cbor-x`: CBOR encoding for NVD documents and ITK-Wasm
+- `cbor-x`: CBOR encoding for NVD documents and ITK-Wasm (`.iwi.cbor`, `.iwm.cbor`). A reader of untrusted CBOR calls `assertCborFitsInput` (`documentBounds.ts`) before `decode`: it rejects heads that declare more items than the input holds ("Invalid CBOR: ..."). Decoded fields are untrusted too: the IWM reader rejects non-array `points`/`cells`, since a map with a huge `length` would size a typed array
 - `earcut`: Polygon triangulation (annotations)
 - `clipper2-ts`: Polygon clipping (annotations)

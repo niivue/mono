@@ -1,3 +1,109 @@
+## 1.0.0-rc.113 (2026-11-08)
+
+### Fixes
+
+- **nv-ohif:** retry a tile once on a fresh pool after a worker failure ([79c27c0c](https://github.com/niivue/mono/commit/79c27c0c))
+- **nv-ohif:** tell an abort rejection from a worker death by its reason ([#595](https://github.com/niivue/mono/issues/595))
+- **nv-ohif:** keep the decoder pool when an aborted tile rejects with a plain Error ([#595](https://github.com/niivue/mono/issues/595))
+- **nv-ohif:** replace the dcm2niix tile decoder pool when its workers die ([25925f7d](https://github.com/niivue/mono/commit/25925f7d))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.117
+- Updated uikit to 1.0.0-rc.112
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.112 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.116
+- Updated uikit to 1.0.0-rc.111
+
+## 1.0.0-rc.111 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.115
+- Updated uikit to 1.0.0-rc.110
+
+## 1.0.0-rc.110 (2026-11-07)
+
+### Fixes
+
+- **niivue:** coalesce slide rewindowing and tighten WSI codec checks ([434175a4](https://github.com/niivue/mono/commit/434175a4))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.114
+- Updated uikit to 1.0.0-rc.109
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.109 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.113
+- Updated uikit to 1.0.0-rc.108
+
+## 1.0.0-rc.108 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.112
+- Updated uikit to 1.0.0-rc.107
+
+## 1.0.0-rc.107 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.111
+- Updated uikit to 1.0.0-rc.106
+
+## 1.0.0-rc.106 (2026-11-07)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.110
+- Updated uikit to 1.0.0-rc.105
+
+## 1.0.0-rc.105 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.109
+- Updated uikit to 1.0.0-rc.104
+
+## 1.0.0-rc.104 (2026-11-06)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.108
+- Updated uikit to 1.0.0-rc.103
+
+## 1.0.0-rc.103 (2026-11-06)
+
+### Features
+
+- **niivue:** sparse slide levels with holes ([1558f013](https://github.com/niivue/mono/commit/1558f013))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.107
+- Updated uikit to 1.0.0-rc.102
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.102 (2026-11-06)
 
 ### Updated Dependencies

@@ -12,6 +12,7 @@ import {
   SLIDE_OVERLAY_MAX_LINES,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
+import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -20,6 +21,7 @@ import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { NVRenderer } from '@/view/NVRenderer'
 import { timeChunkPhase } from '@/volume/chunkTiming'
+import { ColorLutTexturesGL } from './colorLut'
 import { FontRenderer } from './font'
 import { setTexParams } from './glUtil'
 import { LineRenderer } from './line'
@@ -33,11 +35,14 @@ type SlideTexture = {
 }
 
 export class SlideRenderer extends NVRenderer {
-  private _shader: Shader | null = null
+  private _shader: Shader | null = null // the variant in use
+  private _plainShader: Shader | null = null
+  private _lutShader: Shader | null = null
   private _vao: WebGLVertexArrayObject | null = null
   private _vertexBuffer: WebGLBuffer | null = null
   private _placeholderTexture: WebGLTexture | null = null
   private _gl: WebGL2RenderingContext | null = null
+  private readonly _luts = new ColorLutTexturesGL()
   // Byte-budgeted: tile textures for scrolled-away regions are evicted each
   // frame instead of accumulating for the life of the renderer.
   private readonly _textures = new TileTextureCache<SlideTexture>(
@@ -77,7 +82,15 @@ export class SlideRenderer extends NVRenderer {
     this._lines.init(gl)
     // The atlas loads asynchronously; labels draw from the frame after.
     void this._font.init(gl, ubuntu)
-    this._shader = new Shader(gl, slideVertShader, slideFragShader)
+    this._plainShader = new Shader(gl, slideVertShader, slideFragShader(false))
+    this._lutShader = new Shader(gl, slideVertShader, slideFragShader(true))
+    // Sampler units are program state: set once (the lookup table is on unit 1).
+    for (const shader of [this._plainShader, this._lutShader]) {
+      shader.use(gl)
+      gl.uniform1i(shader.uniforms.slideTexture, 0)
+      gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
+    }
+    this._shader = this._plainShader
     this._vao = gl.createVertexArray()
     if (!this._vao) throw new Error('Failed to create slide VAO')
     this._vertexBuffer = gl.createBuffer()
@@ -128,6 +141,7 @@ export class SlideRenderer extends NVRenderer {
     ) {
       return
     }
+    const placeholder = this._placeholderTexture
     const width = Math.max(
       1,
       Math.floor(screen.widthCss * (screen.devicePixelRatio ?? 1)),
@@ -148,11 +162,9 @@ export class SlideRenderer extends NVRenderer {
     gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
 
-    this._shader.use(gl)
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
     gl.activeTexture(gl.TEXTURE0)
-    gl.uniform1i(this._shader.uniforms.slideTexture, 0)
     gl.bindSampler(0, this.isNearestInterpolation ? this._nearestSampler : null)
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
@@ -161,6 +173,7 @@ export class SlideRenderer extends NVRenderer {
 
     for (const slide of slides) {
       if (!slide.visible || slide.opacity <= 0) continue
+      this.useShader(gl, slide)
       const bounds = slide.screenRectForSlide(screen)
       this.drawRect(
         gl,
@@ -172,64 +185,25 @@ export class SlideRenderer extends NVRenderer {
         slide.opacity,
         false,
       )
-      const visible = slide.requestVisibleTiles(screen)
-      // Coarser levels first, painted UNDER the target level. Non-empty only
-      // while target tiles are still arriving, so the previous resolution stays
-      // on screen and is overpainted tile by tile as the finer data lands.
-      // No tile grid here: the grid describes the target level.
-      for (const item of visible.fallback) {
-        const bitmap = slide.cachedTileBitmap(item.key)
-        if (!bitmap) continue
-        const texture = this.textureForBitmap(gl, item.key, bitmap)
-        if (!texture) continue
-        this.drawTile(
-          gl,
-          width,
-          height,
-          {
-            x: item.screenX,
-            y: item.screenY,
-            width: item.screenWidth,
-            height: item.screenHeight,
-          },
-          texture.texture,
-          slide.placeholderColor,
-          slide.gridColor,
-          slide.opacity,
-          item,
-          false,
-          false,
-        )
-      }
-      for (const item of visible.tiles) {
-        const bitmap = slide.cachedTileBitmap(item.key)
-        // A missing tile draws a flat placeholder ONLY when nothing coarser is
-        // behind it; otherwise the placeholder would hide the very fallback
-        // layer that is standing in for it.
-        if (!bitmap && visible.fallback.length > 0) continue
+      forEachSlideTile(slide, screen, (item, bitmap, rect, isFallback) => {
         const texture = bitmap
           ? this.textureForBitmap(gl, item.key, bitmap)
           : null
-        const rect = {
-          x: item.screenX,
-          y: item.screenY,
-          width: item.screenWidth,
-          height: item.screenHeight,
-        }
+        if (isFallback && !texture) return
         this.drawTile(
           gl,
           width,
           height,
           rect,
-          texture?.texture ?? this._placeholderTexture,
+          texture?.texture ?? placeholder,
           slide.placeholderColor,
           slide.gridColor,
           slide.opacity,
           item,
           !bitmap,
-          slide.showTileGrid,
+          !isFallback && slide.showTileGrid,
         )
-      }
+      })
     }
 
     // The overlay's font atlas keeps its own (linear) filtering.
@@ -249,6 +223,7 @@ export class SlideRenderer extends NVRenderer {
 
     gl.bindVertexArray(null)
     gl.bindTexture(gl.TEXTURE_2D, null)
+    this._luts.bind(gl, null)
     gl.enable(gl.CULL_FACE)
     gl.enable(gl.DEPTH_TEST)
   }
@@ -261,10 +236,22 @@ export class SlideRenderer extends NVRenderer {
   // tiles (ghost tiles).
   clearTextures(): void {
     this._textures.clear()
+    this._luts.clear(this._gl)
+  }
+
+  // The plain shader unless the slide has a colour table to apply.
+  private useShader(gl: WebGL2RenderingContext, slide: NVSlide): void {
+    const lut = slide.displayColorLut
+    const shader = lut ? this._lutShader : this._plainShader
+    if (!shader) return
+    this._shader = shader
+    shader.use(gl)
+    if (lut) this._luts.bind(gl, lut)
   }
 
   destroy(): void {
     this._textures.clear()
+    this._luts.clear(this._gl)
     this._lines.destroy()
     this._font.destroy()
     const gl = this._gl
@@ -279,6 +266,8 @@ export class SlideRenderer extends NVRenderer {
     this._vertexBuffer = null
     this._vao = null
     this._shader = null
+    this._plainShader = null
+    this._lutShader = null
     this._gl = null
     this.isReady = false
   }
@@ -407,21 +396,9 @@ export class SlideRenderer extends NVRenderer {
     },
   ): void {
     if (!this._shader) return
-    if (
-      rect.width <= 0 ||
-      rect.height <= 0 ||
-      rect.x + rect.width < 0 ||
-      rect.y + rect.height < 0 ||
-      rect.x > width ||
-      rect.y > height
-    ) {
-      return
-    }
-
-    const x0 = (rect.x / width) * 2 - 1
-    const x1 = ((rect.x + rect.width) / width) * 2 - 1
-    const y0 = 1 - (rect.y / height) * 2
-    const y1 = 1 - ((rect.y + rect.height) / height) * 2
+    const ndc = slideRectNdc(rect, width, height)
+    if (!ndc) return
+    const [x0, y0, x1, y1] = ndc
     const vertices = new Float32Array([
       x0,
       y0,

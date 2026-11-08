@@ -49,16 +49,25 @@ export function buildRect(spec: RectSpec): RectData {
   return { data }
 }
 
-/** True when canvas point (px, py) lies inside the rect's axis-aligned box. */
-export function rectContains(
-  rect: { x: number; y: number; width: number; height: number },
-  px: number,
-  py: number,
-): boolean {
+/** An axis-aligned box, in canvas pixels or spec units. */
+export interface UIKitBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** True when canvas point (px, py) lies inside the box (left/top edges inclusive). */
+export function rectContains(box: UIKitBox, px: number, py: number): boolean {
   return (
-    px >= rect.x &&
-    px < rect.x + rect.width &&
-    py >= rect.y &&
-    py < rect.y + rect.height
+    px >= box.x &&
+    px < box.x + box.width &&
+    py >= box.y &&
+    py < box.y + box.height
   )
+}
+
+/** A canvas-pixel box divided back into spec units by scale `k`. */
+export function unscaleBox(b: UIKitBox, k: number): UIKitBox {
+  return { x: b.x / k, y: b.y / k, width: b.width / k, height: b.height / k }
 }

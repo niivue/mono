@@ -43,21 +43,57 @@ const TIFF_URLS = {
 // decodes those tiles, following each level's photometric and BitsStored.
 // Monochrome tiles return samples, which NVSlide windows. Started on the first tile.
 let frameDecoder = null
+// dcm2niix never respawns a dead worker, so a worker failure (a plain Error,
+// unlike a bad frame, an abort or 'frame decoder busy') replaces the pool, and
+// the tile retries once on the new one: a death masked by an earlier abort
+// surfaces only on the next tile. The old pool is terminated once its other
+// in-flight tiles (on a worker that may still be live) settle.
+async function withFrameDecoder(signal, run, isRetry = false) {
+  frameDecoder ??= { decoder: createFrameDecoder({ workers: 2 }), active: 0 }
+  const p = frameDecoder
+  p.active++
+  try {
+    return await run(p.decoder)
+  } catch (err) {
+    if (
+      err !== signal?.reason &&
+      err?.name === 'Error' &&
+      !err.message.startsWith('frame decoder ')
+    ) {
+      p.retired = true
+      if (frameDecoder === p) frameDecoder = null
+      if (!isRetry && !signal?.aborted)
+        return withFrameDecoder(signal, run, true)
+    }
+    throw err
+  } finally {
+    if (--p.active === 0 && p.retired) p.decoder.terminate()
+  }
+}
 async function decodeDicomTile(bytes, { level, signal }) {
-  frameDecoder ??= createFrameDecoder({ workers: 2 })
   const options = {
     photometric: level.photometric,
     bitsStored: level.bitsStored,
     signal,
   }
   if (level.photometric?.startsWith('MONOCHROME')) {
-    return frameDecoder.decode(bytes, { ...options, output: 'samples' })
+    return withFrameDecoder(signal, (d) =>
+      d.decode(bytes, { ...options, output: 'samples' }),
+    )
   }
-  const f = await frameDecoder.decode(bytes, options)
+  const f = await withFrameDecoder(signal, (d) => d.decode(bytes, options))
   return createImageBitmap(new ImageData(f.rgba, f.width, f.height))
 }
 NVSlide.registerTileDecoder('image/jp2', decodeDicomTile)
 NVSlide.registerTileDecoder('image/jls', decodeDicomTile)
+// ICC colour management: dcm2niix's LittleCMS bakes each slide's profile into a
+// 33^3 sRGB table.
+NVSlide.registerIccTransform(async (profile, signal) => {
+  const data = await withFrameDecoder(signal, (d) =>
+    d.iccLut(profile, { size: 33, signal }),
+  )
+  return data && { size: 33, data }
+})
 
 const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
 // DICOM-WSI manifests use dicom-wsi-range-v1: per-level JPEG tiles addressed
@@ -77,6 +113,11 @@ const MANIFEST_PATHS = {
   // Monochrome JPEG-LS test slides (3dhistech-1 luminance): window, BitsStored, MONOCHROME1.
   'mono12-jls': 'dicom-wsi/mono12-jls/manifest.json',
   'mono8-jls-m1': 'dicom-wsi/mono8-jls-m1/manifest.json',
+  // OpenSlide DICOM test slides showing what the DICOM-WSI index handles.
+  'openslide-3dhistech-2': 'dicom-wsi/3dhistech-2/manifest.json',
+  'openslide-leica-4': 'dicom-wsi/leica-4/manifest.json',
+  'openslide-hamamatsu-2': 'dicom-wsi/hamamatsu-2/manifest.json',
+  'openslide-jp2k-rct': 'dicom-wsi/cmu-1-jp2k-rct/manifest.json',
 }
 const MAX_CACHE_BYTES = 96 * 1024 * 1024
 const TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
@@ -506,6 +547,7 @@ function buildWandReference() {
   c.height = drawing.height
   const cx = c.getContext('2d')
   for (const t of level.tiles) {
+    if (!t) continue // a sparse slide's hole
     slide.requestTile(level, t) // prime for a sharper re-click
     const bmp = slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
     if (!bmp) continue

@@ -1,10 +1,16 @@
+import { colorLutWgsl } from '@/slide/colorLutShader'
 import type { NVSlide } from '@/slide/NVSlide'
-import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
+import {
+  cornerQuad,
+  type SlidePlaneAnnotation,
+  type SlidePlaneTile,
+} from '@/slide/slidePlane'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
+import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { alphaPipelineDesc, linearSampler, uniformBuffer } from './pipeline'
 
 // WebGPU mirror of gl/slidePlaneRender.ts. Draws an NVSlide as a textured plane
@@ -14,7 +20,8 @@ import { alphaPipelineDesc, linearSampler, uniformBuffer } from './pipeline'
 // quads share one vertex buffer (positions known up front); tile bitmaps stream
 // in via NVSlide's cache and upload to per-tile GPU textures on demand.
 
-const shaderCode = /* wgsl */ `
+/** The plane shader, with or without the slide's colour table (bind group 2). */
+const shaderCode = (lut: boolean): string => /* wgsl */ `
 struct U {
   mvp: mat4x4f,
   opacity: vec4f,
@@ -22,6 +29,7 @@ struct U {
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var samp: sampler;
 @group(1) @binding(0) var tileTex: texture_2d<f32>;
+${colorLutWgsl(2, lut)}
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -39,7 +47,7 @@ fn vertex_main(@location(0) pos: vec3f, @location(1) uv: vec2f) -> VertexOutput 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
   let c = textureSample(tileTex, samp, in.uv);
-  return vec4f(c.rgb, c.a * u.opacity.x);
+  return vec4f(applyColorLut(c.rgb), c.a * u.opacity.x);
 }
 `
 
@@ -50,6 +58,7 @@ interface PlaneVertexEntry {
 
 export class SlidePlaneRendererGPU extends NVRenderer {
   private _pipeline: GPURenderPipeline | null = null
+  private _lutPipeline: GPURenderPipeline | null = null
   private _uniformBGL: GPUBindGroupLayout | null = null
   private _textureBGL: GPUBindGroupLayout | null = null
   private _sampler: GPUSampler | null = null
@@ -72,6 +81,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   private _annGroup: GPUBindGroup | null = null
   private _annVertexBuffer: GPUBuffer | null = null
   private _annVersion = -1
+  private _luts: ColorLutTexturesGPU | null = null
   private _annW = 0
   private _annH = 0
 
@@ -93,30 +103,40 @@ export class SlidePlaneRendererGPU extends NVRenderer {
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       ],
     })
-    this._pipeline = device.createRenderPipeline(
-      alphaPipelineDesc(device, {
-        module: device.createShaderModule({ code: shaderCode }),
-        bindGroupLayouts: [this._uniformBGL, this._textureBGL],
-        format,
-        msaaCount,
-        // Respect volume depth (front geometry occludes the plane) but don't
-        // write depth — the plane is a thin overlay layer.
-        depthStencil: {
-          depthWriteEnabled: false,
-          depthCompare: 'less',
-          format: 'depth24plus',
-        },
-        buffers: [
-          {
-            arrayStride: 20, // pos.xyz (12) + uv.xy (8)
-            attributes: [
-              { format: 'float32x3', offset: 0, shaderLocation: 0 },
-              { format: 'float32x2', offset: 12, shaderLocation: 1 },
-            ],
+    const lutLayout = colorLutLayout(device)
+    this._luts = new ColorLutTexturesGPU(device, lutLayout, this._sampler)
+    // The plain variant for identity tables and annotations; the other applies a colour table.
+    const pipelineFor = (lut: boolean): GPURenderPipeline =>
+      device.createRenderPipeline(
+        alphaPipelineDesc(device, {
+          module: device.createShaderModule({ code: shaderCode(lut) }),
+          bindGroupLayouts: [
+            this._uniformBGL as GPUBindGroupLayout,
+            this._textureBGL as GPUBindGroupLayout,
+            ...(lut ? [lutLayout] : []),
+          ],
+          format,
+          msaaCount,
+          // Respect volume depth (front geometry occludes the plane) but don't
+          // write depth — the plane is a thin overlay layer.
+          depthStencil: {
+            depthWriteEnabled: false,
+            depthCompare: 'less',
+            format: 'depth24plus',
           },
-        ],
-      }),
-    )
+          buffers: [
+            {
+              arrayStride: 20, // pos.xyz (12) + uv.xy (8)
+              attributes: [
+                { format: 'float32x3', offset: 0, shaderLocation: 0 },
+                { format: 'float32x2', offset: 12, shaderLocation: 1 },
+              ],
+            },
+          ],
+        }),
+      )
+    this._pipeline = pipelineFor(false)
+    this._lutPipeline = pipelineFor(true)
     // mat4 (64) + opacity vec4 (16)
     this._uniformBuffer = uniformBuffer(device, 80)
     this._uniformGroup = device.createBindGroup({
@@ -139,12 +159,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._entries = []
     let o = 0
     tiles.forEach((tile, i) => {
-      const [tl, tr, bl, br] = tile.corners
-      // TRIANGLE_STRIP order TL, TR, BL, BR; UV origin top-left.
-      data.set([tl[0], tl[1], tl[2], 0, 0], o)
-      data.set([tr[0], tr[1], tr[2], 1, 0], o + 5)
-      data.set([bl[0], bl[1], bl[2], 0, 1], o + 10)
-      data.set([br[0], br[1], br[2], 1, 1], o + 15)
+      data.set(cornerQuad(tile.corners), o)
       o += 20
       this._entries.push({ key: tile.key, firstVertex: i * 4 })
     })
@@ -214,10 +229,12 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     // while a command encoder that references it is still in flight.
     this._textures.evictToBudget()
     this._textures.beginFrame()
-    this._scratch.set(mvpMatrix, 0)
-    this._scratch[16] = opacity
-    device.queue.writeBuffer(this._uniformBuffer, 0, this._scratch)
-    pass.setPipeline(this._pipeline)
+    this._writeUniform(device, this._uniformBuffer, mvpMatrix, opacity)
+    const lut = slide.displayColorLut
+    if (lut && this._luts && this._lutPipeline) {
+      pass.setPipeline(this._lutPipeline)
+      pass.setBindGroup(2, this._luts.group(lut))
+    } else pass.setPipeline(this._pipeline)
     pass.setBindGroup(0, this._uniformGroup)
     pass.setVertexBuffer(0, this._vertexBuffer)
     for (const entry of this._entries) {
@@ -280,29 +297,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     }
     if (!this._annGroup) return
     // One quad over the slide extent (rebuilt each call; just 4 verts).
-    const [tl, tr, bl, br] = ann.corners
-    const data = new Float32Array([
-      tl[0],
-      tl[1],
-      tl[2],
-      0,
-      0,
-      tr[0],
-      tr[1],
-      tr[2],
-      1,
-      0,
-      bl[0],
-      bl[1],
-      bl[2],
-      0,
-      1,
-      br[0],
-      br[1],
-      br[2],
-      1,
-      1,
-    ])
+    const data = cornerQuad(ann.corners)
     if (!this._annVertexBuffer) {
       this._annVertexBuffer = device.createBuffer({
         size: data.byteLength,
@@ -310,9 +305,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       })
     }
     device.queue.writeBuffer(this._annVertexBuffer, 0, data)
-    this._scratch.set(mvpMatrix, 0)
-    this._scratch[16] = opacity
-    device.queue.writeBuffer(this._uniformBuffer, 0, this._scratch)
+    this._writeUniform(device, this._uniformBuffer, mvpMatrix, opacity)
     pass.setPipeline(this._pipeline)
     pass.setBindGroup(0, this._uniformGroup)
     pass.setBindGroup(1, this._annGroup)
@@ -320,8 +313,21 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     pass.draw(4)
   }
 
+  private _writeUniform(
+    device: GPUDevice,
+    buffer: GPUBuffer,
+    mvpMatrix: Float32Array,
+    opacity: number,
+  ): void {
+    this._scratch.set(mvpMatrix, 0)
+    this._scratch[16] = opacity
+    device.queue.writeBuffer(buffer, 0, this._scratch)
+  }
+
   destroy(): void {
     this._textures.clear()
+    this._luts?.clear()
+    this._luts = null
     if (this._vertexBuffer) this._vertexBuffer.destroy()
     if (this._uniformBuffer) this._uniformBuffer.destroy()
     if (this._annTexture) this._annTexture.destroy()
@@ -333,6 +339,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._uniformBuffer = null
     this._uniformGroup = null
     this._pipeline = null
+    this._lutPipeline = null
     this._uniformBGL = null
     this._textureBGL = null
     this._sampler = null

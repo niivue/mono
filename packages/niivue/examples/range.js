@@ -25,6 +25,7 @@ import { urlParamSelect } from './urlParamSelect.js'
 
 // Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
 // which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).
+// A later fallback inside attach reloads the page with ?backend=webgl2.
 const backend =
   new URLSearchParams(location.search).get('backend') !== 'webgl2' &&
   (await navigator.gpu?.requestAdapter().catch(() => null))
@@ -2078,6 +2079,14 @@ async function main() {
     maxChunkResidencyBytes: DEFAULT_RESIDENCY_BYTES,
   })
   await nv.attachToCanvas(els.canvas)
+  // A WebGPU adapter whose device request fails inside attach leaves WebGL2
+  // with WebGPU's residency budget; reload once so the budget matches.
+  if (nv.backend !== backend) {
+    const url = new URL(location.href)
+    url.searchParams.set('backend', nv.backend)
+    location.replace(url.href)
+    return
+  }
   document.getElementById('backendSelect').value = nv.backend
   // Browsers restore a range input's value across a reload, so push the slider's
   // current position into the fresh instance rather than assuming the default.

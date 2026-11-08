@@ -201,16 +201,7 @@ export class NVCanvasViewportController {
       pan: [viewport.pan[0], viewport.pan[1]],
       zoom: this.clampZoom(viewport.zoom),
     }
-    this.clampPanInPlace(this.target.pan)
-    if (!animate) {
-      this.current = {
-        pan: [this.target.pan[0], this.target.pan[1]],
-        zoom: this.target.zoom,
-      }
-      this.applyNow()
-    } else {
-      this.kickRaf()
-    }
+    this.commitTarget(animate)
   }
 
   /** Zoom around a point in normalized canvas coordinates (0..1, GL convention y-up). */
@@ -230,17 +221,8 @@ export class NVCanvasViewportController {
     const newPanY = a[1] - ((worldY - 0.5) * newZoom + 0.5)
     this.target.zoom = newZoom
     this.target.pan = [newPanX, newPanY]
-    this.clampPanInPlace(this.target.pan)
     this.cancelInertia()
-    if (!animate) {
-      this.current = {
-        pan: [this.target.pan[0], this.target.pan[1]],
-        zoom: this.target.zoom,
-      }
-      this.applyNow()
-    } else {
-      this.kickRaf()
-    }
+    this.commitTarget(animate)
   }
 
   /** Read the controller's current viewport. */
@@ -252,6 +234,20 @@ export class NVCanvasViewportController {
   }
 
   // ---- Internal -------------------------------------------------------------
+
+  /** Clamp target pan, then jump to it or animate toward it. */
+  private commitTarget(animate: boolean): void {
+    this.clampPanInPlace(this.target.pan)
+    if (!animate) {
+      this.current = {
+        pan: [this.target.pan[0], this.target.pan[1]],
+        zoom: this.target.zoom,
+      }
+      this.applyNow()
+    } else {
+      this.kickRaf()
+    }
+  }
 
   private clampZoom(z: number): number {
     if (!Number.isFinite(z) || z <= 0) return this.current.zoom

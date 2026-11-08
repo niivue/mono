@@ -30,6 +30,17 @@ function apply(m: readonly number[], px: number, py: number): Vec3 {
 }
 
 /**
+ * A plane quad's 4 vertices, interleaved [pos.xyz, uv.xy] in TRIANGLE_STRIP
+ * order TL, TR, BL, BR; UV origin top-left.
+ */
+export function cornerQuad(
+  corners: SlidePlaneTile['corners'],
+): Float32Array<ArrayBuffer> {
+  const [tl, tr, bl, br] = corners
+  return new Float32Array([...tl, 0, 0, ...tr, 1, 0, ...bl, 0, 1, ...br, 1, 1])
+}
+
+/**
  * Map every tile of `level` to a world-space quad via `pixelToWorld` (column-major
  * 4x4, slide base pixels -> world mm). Mirrors NVSlide.visibleTiles' base-pixel
  * math, so a tile's plane position lines up with its 2D position. When the base
@@ -55,6 +66,7 @@ export function slidePlaneTiles(
       : level.downsample
   const out: SlidePlaneTile[] = []
   for (const tile of level.tiles) {
+    if (!tile) continue // a sparse slide's hole
     const baseX = tile.x * tileWidth * dsX
     const baseY = tile.y * tileHeight * dsY
     const baseW = tile.width * dsX
@@ -269,7 +281,6 @@ export function resolveSlidePlaneTiles(
     state.tilesByLevel.set(level.index, all)
   }
   // Cull to the viewport so a deep level only streams/draws on-screen tiles.
-  // `all[i]` is in `level.tiles[i]` order (slidePlaneTiles preserves it).
   const margin = Math.max(w, h) * 0.1
   const tiles: SlidePlaneTile[] = []
   for (let i = 0; i < all.length; i++) {
@@ -296,7 +307,7 @@ export function resolveSlidePlaneTiles(
     ) {
       continue
     }
-    const tm = level.tiles[i]
+    const tm = level.tiles[t.row * level.columns + t.col]
     if (tm) state.slide.requestTile(level, tm)
     tiles.push(t)
   }

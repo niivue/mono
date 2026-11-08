@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { log } from '@/logger'
 import type {
+  NVSlideColorLut,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideRangeEvent,
@@ -101,7 +102,7 @@ describe('NVSlide tile loading', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     expect(slide.pendingCount).toBe(tileCount)
     await waitFor(() => slide.stats.completed === tileCount)
     expect(source.peak).toBeLessThanOrEqual(4)
@@ -121,7 +122,7 @@ describe('NVSlide tile loading', () => {
       const slide = NVSlide.fromSource(source, { maxConcurrentLoads: bad })
       const level = slide.manifest.levels[0]
       if (!level) throw new Error('manifest has no level')
-      for (const tile of level.tiles) slide.requestTile(level, tile)
+      for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
       await waitFor(() => slide.stats.completed === tileCount)
       expect(source.peak).toBeLessThanOrEqual(12)
       expect(slide.stats.failures).toBe(0)
@@ -136,7 +137,7 @@ describe('NVSlide tile loading', () => {
     const slide = NVSlide.fromSource(source)
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => slide.stats.completed === tileCount)
     // Encoded payload is 16 bytes/tile; decoded accounting must dominate.
     expect(slide.cacheBytes).toBe(tileCount * DECODED_TILE_BYTES)
@@ -161,7 +162,11 @@ describe('NVSlide tile loading', () => {
     // ... then the view moves on: only tile 0 remains visible. The screen is
     // sized so exactly one tile is in view at the origin.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
-    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    const last = slide.requestVisibleTiles({
+      widthCss: TILE_W,
+      heightCss: TILE_H,
+    })
+    expect(slide.lastVisibleTiles).toBe(last) // the view reads it, not a second walk
     await waitFor(() => slide.pendingCount === 0)
     // Only the tile already in flight (tile 0, also the visible one) loads;
     // the 29 stale viewport-origin queued tiles are dropped, not fetched.
@@ -183,7 +188,7 @@ describe('NVSlide tile loading', () => {
     }
     const source = new CountingSource(manifest)
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 2 })
-    for (const tile of level0.tiles) slide.requestTile(level0, tile)
+    for (const tile of level0.tiles) if (tile) slide.requestTile(level0, tile)
     await waitFor(() => slide.stats.completed + slide.stats.failures === 10)
     expect(slide.stats.completed).toBe(7)
     expect(slide.stats.failures).toBe(3)
@@ -382,7 +387,7 @@ describe('NVSlide load cancellation', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => source.signals.length === 4)
     expect(source.signals.every((s) => !s.aborted)).toBe(true)
     slide.dispose()
@@ -433,7 +438,7 @@ describe('NVSlide load cancellation', () => {
     if (!level) throw new Error('manifest has no level')
     // A non-viewport consumer (e.g. setSlidePlane's coarsest-level priming)
     // starts all four loads ...
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => source.signals.length === 4)
     // ... then a 2D viewport pass wants only tile 0. The other three loads
     // were not started by the viewport working set, so they must NOT be
@@ -457,7 +462,7 @@ describe('NVSlide load cancellation', () => {
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
     // A non-viewport consumer requests both: tile 0 in flight, tile 1 queued.
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => source.signals.length === 1)
     // A 2D viewport pass then wants only tile 0. It clears and rebuilds the
     // working set, so the queued tile 1 is no longer "wanted" -- but it was
@@ -515,7 +520,7 @@ describe('NVSlide load cancellation', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 2 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
     await waitFor(() => source.current === 2)
     slide.dispose()
     await waitFor(() => source.current === 0)
@@ -664,6 +669,93 @@ describe('ManifestRangeSource range telemetry', () => {
   })
 })
 
+describe('ManifestRangeSource per-tile file', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('reads a tile from its own fileUrl (a DICOM concatenation)', async () => {
+    const manifest = makeRangeManifest()
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    tile.fileUrl = 'https://example.test/part2.bin'
+    const source = new ManifestRangeSource(manifest)
+    source.bind({
+      resolveUrl: (url) => url,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+    })
+    const urls: string[] = []
+    globalThis.fetch = ((url: string) => {
+      urls.push(url)
+      return Promise.resolve(
+        new Response(new Uint8Array(16), {
+          status: 206,
+          headers: { 'content-range': 'bytes 0-15/100' },
+        }),
+      )
+    }) as unknown as typeof fetch
+    await source.fetchTileBytes(level, tile, 'L0/0/0')
+    expect(urls).toEqual(['https://example.test/part2.bin'])
+  })
+})
+
+describe('NVSlide listed tiles', () => {
+  it('places a level that lists only its present tiles, holes null', () => {
+    const manifest = makePyramid()
+    const l0 = manifest.levels[0]
+    if (!l0) throw new Error('no level')
+    const a = { x: 1, y: 0, width: TILE_W, height: TILE_H, frame: 1 }
+    const b = { x: 3, y: 2, width: TILE_W, height: TILE_H, frame: 2 }
+    Object.assign(l0, { tiles: [b, a], sparse: true })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const placed = slide.manifest.levels[0]
+    if (!placed) throw new Error('no level')
+    expect(placed.tiles.length).toBe(16)
+    expect(placed.tiles[1]).toBe(a)
+    expect(placed.tiles[2 * 4 + 3]).toBe(b)
+    expect(placed.tiles.filter((t) => t === null).length).toBe(14)
+    expect(l0.tiles).toEqual([b, a]) // the caller's manifest is not changed
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    expect(slide.visibleTiles(WHOLE_SLIDE_SCREEN).tiles.length).toBe(2)
+    slide.dispose()
+  })
+
+  it('drops off-grid and duplicate tiles, and places a complete sparse level by x/y', () => {
+    const manifest = makePyramid()
+    const l1 = manifest.levels[1] // 2 x 2 tiles
+    if (!l1) throw new Error('no level')
+    const at = (x: number, y: number, frame: number) => ({
+      x,
+      y,
+      width: TILE_W,
+      height: TILE_H,
+      frame,
+    })
+    // Four tiles, so the count matches the grid, but listed out of order, with
+    // a duplicate cell, an off-grid tile and a non-integer position.
+    Object.assign(l1, {
+      sparse: true,
+      tiles: [at(1, 1, 1), at(1, 1, 2), at(2, 0, 3), at(0.5, 0, 4)],
+    })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const placed = slide.manifest.levels[1]
+    expect(placed?.tiles.map((t) => t?.frame ?? null)).toEqual([
+      null,
+      null,
+      null,
+      1,
+    ])
+    slide.dispose()
+  })
+})
+
 describe('NVSlide DICOM-WSI dimensions', () => {
   // `grids`: frames as a multiple of the level's tile grid (undefined = no count).
   const dicom = (
@@ -684,6 +776,11 @@ describe('NVSlide DICOM-WSI dimensions', () => {
 
   it('accepts tags of one each that the frame count confirms', () => {
     expect(() => assertSingleSlidePlane(dicom(1, 1, 1))).not.toThrow()
+  })
+
+  it('takes tags of one each as given when the frame count is absent', () => {
+    expect(() => assertSingleSlidePlane(dicom(undefined, 1, 1))).not.toThrow()
+    expect(() => assertSingleSlidePlane(dicom(undefined, 2, 1))).toThrow()
   })
 
   it('proves one of each from the frame count when the tags are absent', () => {
@@ -766,7 +863,7 @@ describe('NVSlide tile-cache budget', () => {
     // DICOM edge frames decode padded to the full tile: clipped to 1 px wide,
     // L0's 16 tiles would seem to need 256 B, but decode to 2048 B.
     const manifest = makePyramid()
-    for (const tile of manifest.levels[0]?.tiles ?? []) tile.width = 1
+    for (const tile of manifest.levels[0]?.tiles ?? []) if (tile) tile.width = 1
     const slide = NVSlide.fromSource(new CountingSource(manifest), {
       maxCacheBytes: 700, // 75% budget: 525 B
     })
@@ -961,7 +1058,7 @@ describe('NVSlide monochrome window', () => {
     const values = [
       ...slide.manifest.levels[0].tiles,
       ...slide.manifest.levels[1].tiles,
-    ].map((t, i) => pixel(slide, `L${i < 16 ? 0 : 1}/${t.x}/${t.y}`))
+    ].map((t, i) => pixel(slide, `L${i < 16 ? 0 : 1}/${t?.x}/${t?.y}`))
     expect(new Set(values)).toEqual(new Set([255]))
     // 8x4 RGBA plus 8x4 uint16 samples per tile.
     expect(slide.cacheBytes).toBe(20 * (TILE_W * TILE_H * 6))
@@ -1031,6 +1128,34 @@ describe('NVSlide monochrome window', () => {
     slide.dispose()
   })
 
+  it('coalesces a burst of windows into one pass over the cached tiles', async () => {
+    const slide = monoSlide(500)
+    await loadLevel(slide, 2)
+    await loadLevel(slide, 1)
+    const tiles = [...slide.manifest.levels].reduce(
+      (n, level) =>
+        n + (level.index <= 2 && level.index >= 1 ? level.tiles.length : 0),
+      0,
+    )
+    const create = globalThis.createImageBitmap
+    let calls = 0
+    globalThis.createImageBitmap = ((...args: Parameters<typeof create>) => {
+      calls++
+      return create(...args)
+    }) as typeof createImageBitmap
+    try {
+      for (let hi = 600; hi <= 1000; hi += 100) slide.setWindow(0, hi)
+      await waitFor(
+        () => pixel(slide, 'L2/0/0') === 128 && pixel(slide, 'L1/1/1') === 128,
+      )
+      // One tile may be in flight for the first window when the burst lands.
+      expect(calls).toBeLessThanOrEqual(tiles + 1)
+    } finally {
+      globalThis.createImageBitmap = create
+    }
+    slide.dispose()
+  })
+
   it('rejects a window that is not finite with calMin < calMax', () => {
     const slide = monoSlide(0)
     for (const [lo, hi] of [
@@ -1042,5 +1167,298 @@ describe('NVSlide monochrome window', () => {
       expect(() => slide.setWindow(lo, hi)).toThrow(RangeError)
     expect(slide.window).toBeNull()
     slide.dispose()
+  })
+})
+
+describe('NVSlide sparse levels', () => {
+  // TILED_SPARSE: L0 (4 x 4) holds 6 of its 16 tiles; holes are null.
+  function sparseManifest(stated = true): NVSlideManifest {
+    const m = makePyramid()
+    m.format = 'dicom-wsi-index-v1'
+    for (const level of m.levels)
+      Object.assign(level, {
+        sparse: true,
+        ...(stated ? { opticalPaths: 1, focalPlanes: 1 } : {}),
+        frames: level.index === 0 ? 6 : level.tiles.length,
+      })
+    const l0 = m.levels[0]
+    if (!l0) throw new Error('no L0')
+    l0.tiles = l0.tiles.map((t, i) =>
+      [0, 3, 5, 6, 10, 15].includes(i) ? t : null,
+    )
+    return m
+  }
+
+  it('opens, and neither draws nor requests a hole', () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const slide = NVSlide.fromSource(new CountingSource(sparseManifest()))
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    slide.setLevelChoice(0)
+    const visible = slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(visible.level?.index).toBe(0)
+    // Only present tiles are visible (so a renderer draws no placeholder for a hole).
+    expect(visible.tiles.map((t) => `${t.tile.x},${t.tile.y}`)).toEqual([
+      '0,0',
+      '3,0',
+      '1,1',
+      '2,1',
+      '2,2',
+      '3,3',
+    ])
+    expect(slide.stats.requested).toBe(6)
+    slide.dispose()
+  })
+
+  it('needs the producer to state one optical path and one focal plane', () => {
+    expect(() =>
+      NVSlide.fromSource(new CountingSource(sparseManifest(false))),
+    ).toThrow(/sparse but does not state/)
+    // Without `sparse`, its 6 frames would contradict the 4 x 4 grid.
+    const unmarked = sparseManifest()
+    for (const level of unmarked.levels) delete level.sparse
+    expect(() => NVSlide.fromSource(new CountingSource(unmarked))).toThrow(
+      /disagree with its frame count/,
+    )
+  })
+})
+
+describe('NVSlide colour management', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    NVSlide.registerIccTransform(null)
+    globalThis.fetch = originalFetch
+  })
+  const lut: NVSlideColorLut = { size: 2, data: new Uint8Array(32).fill(7) }
+  const profile = new Uint8Array([1, 2, 3])
+  // A source that serves `profile` (or null) as its ICC profile.
+  const withProfile = (p: Uint8Array | null): SlideTileSource => ({
+    manifest: makeManifest(1),
+    bind() {},
+    fetchTileBytes: async () => new Uint8Array(0),
+    fetchIccProfile: async () => p,
+  })
+  const changed = (slide: NVSlide) =>
+    new Promise<void>((resolve) =>
+      slide.addEventListener('change', () => resolve(), { once: true }),
+    )
+
+  it('bakes the source profile with the registered transform and announces it', async () => {
+    const seen: Uint8Array[] = []
+    NVSlide.registerIccTransform(async (p) => {
+      seen.push(p)
+      return lut
+    })
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await changed(slide)
+    expect(seen).toEqual([profile])
+    expect(slide.colorLut).toBe(lut)
+    expect(slide.displayColorLut).toBe(lut)
+  })
+
+  it('shows no table while off, or with no profile, transform or usable table', async () => {
+    NVSlide.registerIccTransform(async () => lut)
+    const off = NVSlide.fromSource(withProfile(profile), {
+      colorManagement: false,
+    })
+    await changed(off)
+    expect(off.displayColorLut).toBeNull()
+    off.colorManagement = true
+    expect(off.displayColorLut).toBe(lut)
+
+    const none = NVSlide.fromSource(withProfile(null))
+    NVSlide.registerIccTransform(async () => null)
+    const unusable = NVSlide.fromSource(withProfile(profile))
+    NVSlide.registerIccTransform(null)
+    const unregistered = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    for (const s of [none, unusable, unregistered])
+      expect([s.colorLut, s.displayColorLut]).toEqual([null, null])
+  })
+
+  it('skips a profile the manifest says is sRGB', async () => {
+    let calls = 0
+    NVSlide.registerIccTransform(async () => {
+      calls++
+      return lut
+    })
+    const source = withProfile(profile)
+    const manifest = {
+      ...source.manifest,
+      iccProfile: { url: 'p', colorSpace: 'SRGB' },
+    }
+    NVSlide.fromSource({ ...source, manifest })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toBe(0)
+  })
+
+  it('skips a monochrome slide: its window is the display mapping', async () => {
+    let calls = 0
+    NVSlide.registerIccTransform(async () => {
+      calls++
+      return lut
+    })
+    const source = withProfile(profile)
+    const manifest = {
+      ...source.manifest,
+      levels: source.manifest.levels.map((l) => ({
+        ...l,
+        photometric: 'MONOCHROME2',
+      })),
+    }
+    NVSlide.fromSource({ ...source, manifest })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toBe(0)
+  })
+
+  it('rejects a table of the wrong length, and keeps none', async () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    NVSlide.registerIccTransform(async () => ({
+      size: 2,
+      data: new Uint8Array(24),
+    })) // RGB, not RGBA
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(slide.colorLut).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('refuses a table that is not size^3 RGBA8 bytes, or too large', async () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    for (const bad of [
+      { size: 2, data: new Float32Array(32) as unknown as Uint8Array },
+      { size: 130, data: new Uint8Array(130 ** 3 * 4) },
+    ]) {
+      NVSlide.registerIccTransform(async () => bad)
+      const slide = NVSlide.fromSource(withProfile(profile))
+      await new Promise((r) => setTimeout(r, 0))
+      expect(slide.colorLut).toBeNull()
+    }
+    expect(warn).toHaveBeenCalledTimes(2)
+    warn.mockRestore()
+  })
+
+  it('a manifest profile with only one of offset and length is refused', async () => {
+    const source = new ManifestRangeSource({
+      ...makeManifest(1),
+      iccProfile: { url: 'https://host/f.dcm', offset: 100 },
+    })
+    source.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+    })
+    await expect(source.fetchIccProfile()).rejects.toThrow('only one of')
+  })
+
+  it('dispose during a bake aborts it and keeps no table', async () => {
+    let seen: AbortSignal | undefined
+    let finish: (lut: NVSlideColorLut) => void = () => {}
+    NVSlide.registerIccTransform((_p, signal) => {
+      seen = signal
+      return new Promise((resolve) => {
+        finish = resolve
+      })
+    })
+    expect(NVSlide.iccTransform()).not.toBeNull()
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    slide.dispose()
+    expect(seen?.aborted).toBe(true)
+    finish(lut)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(slide.colorLut).toBeNull()
+  })
+
+  it('the default source reads a manifest profile by Range from its file', async () => {
+    const asked: string[] = []
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      asked.push(`${url} ${(init?.headers as Record<string, string>)?.Range}`)
+      return new Response(new Uint8Array([9, 9, 9, 9]), { status: 206 })
+    }) as typeof fetch
+    const source = new ManifestRangeSource({
+      ...makeManifest(1),
+      iccProfile: { url: 'https://host/f.dcm', offset: 100, length: 4 },
+    })
+    source.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+    })
+    expect([...((await source.fetchIccProfile()) ?? [])]).toEqual([9, 9, 9, 9])
+    expect(asked).toEqual(['https://host/f.dcm bytes=100-103'])
+  })
+
+  it('a failed profile is logged and leaves identity', async () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    NVSlide.registerIccTransform(async () => {
+      throw new Error('bad profile')
+    })
+    const slide = NVSlide.fromSource(withProfile(profile))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(slide.displayColorLut).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+})
+
+describe('NVSlide.fromManifestUrl', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it("reports the server's refusal reason with the status", async () => {
+    globalThis.fetch = (async () =>
+      Response.json(
+        {
+          error: 'Unsupported DICOM-WSI transfer syntax 1.2.840.10008.1.2.4.70',
+        },
+        { status: 415 },
+      )) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      'Slide manifest HTTP 415: Unsupported DICOM-WSI transfer syntax 1.2.840.10008.1.2.4.70',
+    )
+  })
+
+  it('keeps the bare status for a non-JSON error body', async () => {
+    globalThis.fetch = (async () =>
+      new Response('nope', { status: 502 })) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      /^Slide manifest HTTP 502$/,
+    )
+  })
+
+  it('does not wait on a JSON error body that never finishes, and aborts it', async () => {
+    const stalled = new ReadableStream({ start() {} })
+    let signal: AbortSignal | null | undefined
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      signal = init?.signal
+      return new Response(stalled, {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      /^Slide manifest HTTP 502$/,
+    )
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('reads the reason for an uppercase JSON media type', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: 'unsupported syntax' }), {
+        status: 415,
+        headers: { 'content-type': 'Application/JSON; Charset=UTF-8' },
+      })) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      'Slide manifest HTTP 415: unsupported syntax',
+    )
   })
 })

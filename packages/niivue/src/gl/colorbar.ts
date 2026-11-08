@@ -1,29 +1,19 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import type { ColorbarInfo } from '@/NVTypes'
+import { colorbarGridLayout, deriveBorderColor } from '@/view/NVColorbar'
 import {
-  COLORBAR_GAP,
-  type ColorbarLayout,
-  colorbarGridLayout,
-  deriveBorderColor,
-} from '@/view/NVColorbar'
-import { NVRenderer } from '@/view/NVRenderer'
+  type ColorbarOptions,
+  NVColorbarRenderer,
+} from '@/view/NVColorbarRenderer'
 import { colorbarFragShader, colorbarVertShader } from './colorbarShader'
 import { setTexParams } from './glUtil'
 import { Shader } from './shader'
 
-export class ColorbarRenderer extends NVRenderer {
+export class ColorbarRenderer extends NVColorbarRenderer {
   private _gl: WebGL2RenderingContext | null = null
   private _shader: Shader | null = null
   private _colorbars: WebGLTexture[] = []
   private _colorbarInfos: ColorbarInfo[] = []
-  private _canvasWidth = 1
-  private _canvasHeight = 1
-  private _fontPx = 0
-  private _content: number[] | null = null
-  private _opacity = 1
-  private _margin = 20
-  private _heightRatio = 1.2
-  private _borderColor: [number, number, number, number] = [0, 0, 0, 1]
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
@@ -99,35 +89,8 @@ export class ColorbarRenderer extends NVRenderer {
     return this._colorbarInfos
   }
 
-  getLayout(): ColorbarLayout {
-    return {
-      margin: this._margin,
-      heightRatio: this._heightRatio,
-      gap: COLORBAR_GAP,
-      canvasWidth: this._content?.[2] ?? this._canvasWidth,
-      canvasHeight: this._content?.[3] ?? this._canvasHeight,
-      borderColor: [...this._borderColor],
-      fontPx: this._fontPx,
-      originX: this._content?.[0] ?? 0,
-      originY: this._content?.[1] ?? 0,
-    }
-  }
-
-  configure(
-    _gl: WebGL2RenderingContext,
-    options: {
-      opacity?: number
-      margin?: number
-      heightRatio?: number
-      borderColor?: [number, number, number, number]
-    } = {},
-  ): void {
-    if (options.opacity !== undefined) this._opacity = options.opacity
-    if (options.margin !== undefined) this._margin = options.margin
-    if (options.heightRatio !== undefined)
-      this._heightRatio = options.heightRatio
-    if (options.borderColor !== undefined)
-      this._borderColor = options.borderColor
+  configure(_gl: WebGL2RenderingContext, options: ColorbarOptions = {}): void {
+    this.applyOptions(options)
   }
 
   draw(gl: WebGL2RenderingContext, _pass: unknown): void {

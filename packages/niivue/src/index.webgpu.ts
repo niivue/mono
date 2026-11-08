@@ -214,11 +214,13 @@ export type {
   NVSlideViewport,
   NVSlideVisibleTile,
   NVSlideVisibleTiles,
+  NVSlideColorLut,
   NVSlideIccProfile,
   NVSlideWindow,
   NVSlideYAxis,
   SlideSourceHost,
   SlideTileDecoder,
+  SlideIccTransform,
   SlideTileSource,
 } from './slide/NVSlide'
 export { ManifestRangeSource, NVSlide } from './slide/NVSlide'

@@ -6,8 +6,7 @@
 // through a button overlay.
 
 import type { ButtonStyle } from './button'
-import { buildRect, type RectData } from './rect'
-import type { UIKitBox } from './scroll'
+import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -279,8 +278,7 @@ export function dialogContains(
   px: number,
   py: number,
 ): boolean {
-  const b = layout.panel
-  return px >= b.x && px < b.x + b.width && py >= b.y && py < b.y + b.height
+  return rectContains(layout.panel, px, py)
 }
 
 /**

@@ -1,15 +1,7 @@
 import { log } from '@/logger'
 import type { NVFontData } from '@/NVTypes'
-import {
-  buildTextLayout,
-  calculateFontSizePx,
-  emptyBatch,
-  FLOATS_PER_PANEL,
-  type FontMetrics,
-  type GlyphBatch,
-  measureTextWidth,
-} from '@/view/NVFont'
-import { NVRenderer } from '@/view/NVRenderer'
+import { FLOATS_PER_PANEL, type GlyphBatch, packPanels } from '@/view/NVFont'
+import { NVFontRenderer } from '@/view/NVFontRenderer'
 import fontShaderCode from './font.wgsl?raw'
 import panelShaderCode from './panel.wgsl?raw'
 import {
@@ -20,32 +12,28 @@ import {
 } from './pipeline'
 import * as wgpu from './wgpu'
 
-export class FontRenderer extends NVRenderer {
+export class FontRenderer extends NVFontRenderer {
   pipeline: GPURenderPipeline | null
   bindLayout: GPUBindGroupLayout | null
   fontTexture: GPUTexture | null
-  fontMets: FontMetrics | null
   paramsBuffer: GPUBuffer | null
   panelPipeline: GPURenderPipeline | null
   panelBindLayout: GPUBindGroupLayout | null
   panelBuffer: GPUBuffer | null
   panelBindGroup: GPUBindGroup | null
   maxPanels: number
-  fontPx: number
 
   constructor() {
     super()
     this.pipeline = null
     this.bindLayout = null
     this.fontTexture = null
-    this.fontMets = null
     this.paramsBuffer = null
     this.panelPipeline = null
     this.panelBindLayout = null
     this.panelBuffer = null
     this.panelBindGroup = null
     this.maxPanels = 0
-    this.fontPx = 16
   }
 
   /** `depthFormat` null: for a pass with no depth attachment (the slide pane). */
@@ -164,44 +152,7 @@ export class FontRenderer extends NVRenderer {
       0,
       new Float32Array([width, height]),
     )
-    this.fontPx = calculateFontSizePx(
-      width,
-      height,
-      dpi,
-      fontSizeScaling,
-      fontMinPx,
-    )
-  }
-
-  /** Width of `str` in px at `scale`, as buildText draws it; 0 before init. */
-  measureText(str: string, scale: number): number {
-    if (!this.fontMets) return 0
-    return measureTextWidth(str, this.fontPx, scale, this.fontMets)
-  }
-
-  buildText(
-    str: string,
-    x: number,
-    y: number,
-    scale: number,
-    color: number[] = [1, 1, 1, 1],
-    anchorX: number = 0,
-    anchorY: number = 0,
-    backColor: number[] = [0, 0, 0, 0],
-  ): GlyphBatch {
-    if (!this.isReady || !this.fontMets) return emptyBatch()
-    return buildTextLayout(
-      str,
-      x,
-      y,
-      this.fontPx,
-      scale,
-      this.fontMets,
-      color,
-      anchorX,
-      anchorY,
-      backColor,
-    )
+    this.resizeFont(width, height, dpi, fontSizeScaling, fontMinPx)
   }
 
   draw(
@@ -215,24 +166,10 @@ export class FontRenderer extends NVRenderer {
     if (!this.isReady || textList.length === 0) return
     // Panel pass: draw backing rectangles first
     if (this.panelPipeline && this.panelBuffer) {
-      // Count panels needed
-      let panelCount = 0
-      for (const item of textList) {
-        if (item.backColor && item.backColor[3] > 0) panelCount++
-      }
-      if (panelCount > 0) {
+      const panelData = packPanels(textList)
+      if (panelData) {
+        const panelCount = panelData.length / FLOATS_PER_PANEL
         this._growPanelBuffer(device, panelCount)
-        const panelData = new Float32Array(panelCount * FLOATS_PER_PANEL)
-        let idx = 0
-        for (const item of textList) {
-          if (!item.backColor || item.backColor[3] <= 0) continue
-          const off = idx * FLOATS_PER_PANEL
-          panelData.set(item.backRect, off)
-          panelData.set(item.backColor, off + 4)
-          panelData[off + 8] = item.backRadius
-          panelData[off + 9] = item.backBorder ?? 0
-          idx++
-        }
         device.queue.writeBuffer(this.panelBuffer, 0, panelData)
         pass.setPipeline(this.panelPipeline)
         pass.setBindGroup(0, this.panelBindGroup as GPUBindGroup)

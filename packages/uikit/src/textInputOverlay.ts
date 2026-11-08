@@ -20,18 +20,21 @@ import type {
   UIKitRedrawSource,
 } from './controls'
 import { type ClipboardBridge, createBrowserClipboard } from './host'
-import type { RectData } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
+import {
+  UIKitDrawBundle,
+  UIKitEntryMap,
+  type UIKitGeometry,
+} from './overlayParts'
+import { type UIKitBox, unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
 import {
+  clipboardEdit,
   clipboardKey,
   editKey,
-  hasSelection,
-  insertText,
   maxLengthOf,
   pasteText,
+  sameValue,
   selectAll,
-  selectedText,
   setCaret,
   type TextEditState,
   textEditState,
@@ -52,7 +55,6 @@ import {
   textInputContains,
   textInputTextWindow,
 } from './textInput'
-import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
 export interface UIKitTextInputOverlayOptions {
   /** Called whenever the overlay needs another frame. A control layer fills it in. */
@@ -90,18 +92,13 @@ export class UIKitTextInputOverlay
   implements UIKitOverlayRenderer, UIKitInteractive
 {
   private readonly font: UIKitFont
-  private readonly rects = new UIKitRectOverlay()
-  private readonly labels: UIKitTextOverlay
-  private readonly entries = new Map<string, TextInputEntry>()
+  private readonly bundle: UIKitDrawBundle
+  private readonly entries: UIKitEntryMap<TextInputLayout, TextInputEntry>
   private baseStyle: TextInputStyle
-  private readonly cssUnits: boolean
   private readonly doubleClickMs: number
   private readonly now: () => number
-  private requestRedraw: (() => void) | null
   private layer: UIKitRedrawSource | null = null
   private clipboard: ClipboardBridge | null
-  private scale = 1
-  private geometryDirty = true
   private hoverId: string | null = null
   private focusedId: string | null = null
   /** The held press, which drags the selection. */
@@ -111,15 +108,17 @@ export class UIKitTextInputOverlay
 
   constructor(font: UIKitFont, options: UIKitTextInputOverlayOptions = {}) {
     this.font = font
-    this.labels = new UIKitTextOverlay(font)
+    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = scaleTextInput(entry.spec, entry.style, scale)
+      return layoutTextInput(spec, style, font.metrics)
+    }, options.cssUnits ?? false)
     this.baseStyle = resolveTextInputStyle(
       DEFAULT_TEXT_INPUT_STYLE,
       options.style,
     )
-    this.cssUnits = options.cssUnits ?? false
     this.doubleClickMs = options.doubleClickMs ?? 400
     this.now = options.now ?? (() => performance.now())
-    this.requestRedraw = options.requestRedraw ?? null
     this.clipboard = options.clipboard ?? null
   }
 
@@ -144,37 +143,42 @@ export class UIKitTextInputOverlay
    */
   addTextInput(spec: TextInputSpec): void {
     const existing = this.entries.get(spec.id)
-    const style = resolveTextInputStyle(this.baseStyle, spec.style)
-    const value = truncateText(spec.value ?? '', spec.maxLength)
     if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
-      existing.value = value
+      this.respec(existing, spec)
+      existing.value = truncateText(spec.value ?? '', spec.maxLength)
       existing.firstGlyph = 0
       if (existing.edit) existing.edit = this.freshEdit(existing)
-    } else {
-      this.entries.set(spec.id, {
-        spec,
-        style,
-        layout: null,
-        value,
-        edit: null,
-        session: 0,
-        firstGlyph: 0,
-        hover: false,
-      })
+      return
     }
+    this.entries.set(spec.id, {
+      spec,
+      style: resolveTextInputStyle(this.baseStyle, spec.style),
+      layout: null,
+      value: truncateText(spec.value ?? '', spec.maxLength),
+      edit: null,
+      session: 0,
+      firstGlyph: 0,
+      hover: false,
+    })
     this.invalidate()
   }
 
-  /** Replace the whole input set. */
+  /**
+   * Replace the whole input set. A kept id whose spec leaves the committed
+   * text alone (no `value`, or the same one) keeps any edit in progress, as
+   * `updateTextInput` does; a different `value` replaces it as `addTextInput`
+   * does.
+   */
   setTextInputs(specs: readonly TextInputSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeTextInput(id)
-    }
-    for (const spec of specs) this.addTextInput(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => {
+        const entry = this.entries.get(spec.id)
+        if (entry && sameValue(entry.value, spec)) this.respec(entry, spec)
+        else this.addTextInput(spec)
+      },
+      (id) => this.removeTextInput(id),
+    )
   }
 
   removeTextInput(id: string): void {
@@ -192,20 +196,11 @@ export class UIKitTextInputOverlay
   updateTextInput(id: string, patch: Partial<Omit<TextInputSpec, 'id'>>): void {
     const entry = this.entries.get(id)
     if (!entry) return
-    const value = patch.value ?? entry.value
+    const spec = { ...entry.spec, ...patch, id }
     // A patch that leaves the value alone (a host re-laying out on resize)
-    // must not throw away what the user is typing.
-    const edit = patch.value === undefined ? entry.edit : null
-    this.addTextInput({ ...entry.spec, ...patch, id, value })
-    if (edit && entry.edit)
-      entry.edit = truncateEdit(edit, entry.spec.maxLength)
-    if (entry.spec.enabled === false) {
-      if (this.pressId === id) this.pressId = null
-      if (this.focusedId === id) {
-        entry.edit = null
-        this.focusedId = null
-      }
-    }
+    // must not throw away what the user is typing, or a paste on its way.
+    if (patch.value === undefined) this.respec(entry, spec)
+    else this.addTextInput(spec)
   }
 
   setEnabled(id: string, enabled: boolean): void {
@@ -238,27 +233,17 @@ export class UIKitTextInputOverlay
 
   /** The ids of all inputs, in draw order. */
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /** An input's boxes in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
   getLayout(id: string): TextInputLayout | null {
     const entry = this.entries.get(id)
     if (!entry) return null
-    const l = this.layoutOf(entry)
-    const k = this.scale
+    const l = this.entries.layoutOf(entry)
+    const k = this.entries.scale
     if (k === 1) return l
-    const box = (b: {
-      x: number
-      y: number
-      width: number
-      height: number
-    }) => ({
-      x: b.x / k,
-      y: b.y / k,
-      width: b.width / k,
-      height: b.height / k,
-    })
+    const box = (b: UIKitBox) => unscaleBox(b, k)
     return {
       ...box(l),
       field: box(l.field),
@@ -387,7 +372,16 @@ export class UIKitTextInputOverlay
     }
     const clip = clipboardKey(e)
     if (clip !== null) {
-      this.clipboardAction(entry, clip)
+      this.clipboard ??= createBrowserClipboard()
+      const id = entry.spec.id
+      clipboardEdit(
+        this.clipboard,
+        entry,
+        clip,
+        () => this.entries.get(id) === entry && this.focusedId === id,
+        (text) => this.paste(text),
+        (next) => this.applyEdit(entry, next),
+      )
       return true
     }
     const next = editKey(entry.edit, e, entry.spec.accept)
@@ -425,32 +419,45 @@ export class UIKitTextInputOverlay
   }
 
   bindLayer(layer: UIKitRedrawSource): void {
-    this.requestRedraw ??= () => layer.requestRedraw()
+    this.bundle.bind(layer)
     this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
-      for (const entry of this.entries.values()) entry.layout = null
-      this.geometryDirty = true
-    }
-    if (this.geometryDirty) this.rebuild()
-    this.rects.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
+    const rescaled = this.entries.rescale(frame.dpr)
+    this.bundle.draw(frame, () => this.geometry(), rescaled)
   }
 
   /** Release GPU resources on both backends. */
   destroy(): void {
-    this.rects.destroy()
-    this.labels.destroy()
+    // A clipboard read still in flight must not edit a destroyed overlay.
+    this.focusedId = null
+    this.bundle.destroy()
   }
 
   private invalidate(): void {
-    this.geometryDirty = true
-    this.requestRedraw?.()
+    this.bundle.invalidate()
+  }
+
+  /**
+   * Take a new spec, keeping the committed text, edit, session and scroll
+   * (trimmed to the spec's maxLength). Disabling drops press and focus.
+   */
+  private respec(entry: TextInputEntry, spec: TextInputSpec): void {
+    entry.spec = spec
+    entry.style = resolveTextInputStyle(this.baseStyle, spec.style)
+    entry.layout = null
+    entry.value = truncateText(entry.value, spec.maxLength)
+    if (entry.edit) entry.edit = truncateEdit(entry.edit, spec.maxLength)
+    if (spec.enabled === false) {
+      if (this.pressId === spec.id) this.pressId = null
+      if (this.focusedId === spec.id) {
+        entry.edit = null
+        this.focusedId = null
+      }
+    }
+    this.invalidate()
   }
 
   /** Take a new edit state, redrawing and firing `onInput` when the text changed. */
@@ -461,36 +468,6 @@ export class UIKitTextInputOverlay
     this.firstShown(entry)
     this.invalidate()
     if (textChanged) entry.spec.onInput?.(next.text, entry.spec.id)
-  }
-
-  /**
-   * Copy or cut the selection to the clipboard, or start a paste: the read
-   * is asynchronous, and its text lands only if the input is still being
-   * edited when it arrives.
-   */
-  private clipboardAction(
-    entry: TextInputEntry,
-    action: 'copy' | 'cut' | 'paste',
-  ): void {
-    this.clipboard ??= createBrowserClipboard()
-    const clipboard = this.clipboard
-    const edit = entry.edit
-    if (!edit) return
-    if (action === 'paste') {
-      const session = entry.session
-      void clipboard.read().then((text) => {
-        if (this.entries.get(entry.spec.id) !== entry) return
-        if (this.focusedId !== entry.spec.id || !entry.edit) return
-        // A blur and refocus in the meantime started a new edit (all
-        // selected): the old paste must not replace the committed text.
-        if (entry.session !== session) return
-        this.paste(text)
-      })
-      return
-    }
-    if (!hasSelection(edit)) return
-    clipboard.write(selectedText(edit))
-    if (action === 'cut') this.applyEdit(entry, insertText(edit, ''))
   }
 
   /** The edit state for a freshly focused (or reverted) input: all selected. */
@@ -518,7 +495,7 @@ export class UIKitTextInputOverlay
   private dragCaretAt(entry: TextInputEntry, x: number): number {
     const caret = this.caretAt(entry, x)
     const first = entry.firstGlyph
-    const pastLeft = first > 0 && x < this.layoutOf(entry).textArea.x
+    const pastLeft = first > 0 && x < this.entries.layoutOf(entry).textArea.x
     return pastLeft && caret === first ? first - 1 : caret
   }
 
@@ -526,7 +503,7 @@ export class UIKitTextInputOverlay
     const { style } = this.scaled(entry)
     const text = entry.edit ? entry.edit.text : entry.value
     return textInputCaretAt(
-      this.layoutOf(entry),
+      this.entries.layoutOf(entry),
       style,
       this.font.metrics,
       text,
@@ -546,7 +523,7 @@ export class UIKitTextInputOverlay
     const { style } = this.scaled(entry)
     const text = entry.edit ? entry.edit.text : entry.value
     entry.firstGlyph = textInputTextWindow(
-      this.layoutOf(entry),
+      this.entries.layoutOf(entry),
       style,
       this.font.metrics,
       text,
@@ -560,34 +537,18 @@ export class UIKitTextInputOverlay
     spec: TextInputSpec
     style: TextInputStyle
   } {
-    return scaleTextInput(entry.spec, entry.style, this.scale)
-  }
-
-  private layoutOf(entry: TextInputEntry): TextInputLayout {
-    if (!entry.layout) {
-      const { spec, style } = this.scaled(entry)
-      entry.layout = layoutTextInput(spec, style, this.font.metrics)
-    }
-    return entry.layout
+    return scaleTextInput(entry.spec, entry.style, this.entries.scale)
   }
 
   /** The topmost (last added) enabled input whose field is under a canvas point. */
   private hitEntry(x: number, y: number): TextInputEntry | null {
-    const list = [...this.entries.values()]
-    for (let i = list.length - 1; i >= 0; i--) {
-      const entry = list[i]
-      if (entry.spec.enabled === false) continue
-      if (textInputContains(this.layoutOf(entry), x, y)) return entry
-    }
-    return null
+    return this.entries.topmost(textInputContains, x, y)
   }
 
-  private rebuild(): void {
-    const rects: RectData[] = []
-    const text: UIKitTextItem[] = []
+  private *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
       const { spec, style } = this.scaled(entry)
-      const layout = this.layoutOf(entry)
+      const layout = this.entries.layoutOf(entry)
       const shown = entry.edit ? entry.edit.text : entry.value
       this.firstShown(entry)
       const visual: TextInputVisual = {
@@ -598,11 +559,7 @@ export class UIKitTextInputOverlay
         enabled: entry.spec.enabled !== false,
       }
       const geo = buildTextInput(spec, style, layout, this.font.metrics, visual)
-      rects.push(...geo.rects)
-      text.push(...geo.text)
+      yield { ...geo, lines: [] }
     }
-    this.rects.setRects(rects)
-    this.labels.setItems(text)
-    this.geometryDirty = false
   }
 }

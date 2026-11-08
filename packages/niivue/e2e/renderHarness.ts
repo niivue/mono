@@ -121,7 +121,6 @@ export type Phantoms = {
  * Not public API: a scene that needs one is checking how a result was reached.
  */
 export type SceneView = {
-  render: () => void
   isBusy: boolean
   _getMeshGpu: (mesh: unknown) => unknown
   updateMeshVertices: (mesh: unknown) => boolean
@@ -584,16 +583,17 @@ async function renderScene(
   const pngs: string[] = []
   const capture = async (): Promise<boolean> => {
     await settle()
-    view().render()
     // A software GPU that dies mid-run (seen on CI's Ubuntu SwiftShader) is
     // the environment going away, not a rendering regression.
     if ((view() as { _deviceLost?: boolean })._deviceLost) return false
+    const img = nv.getCanvasImage()
+    if (!img) throw new Error('getCanvasImage drew no frame')
     const copy = document.createElement('canvas')
-    copy.width = nv.canvas?.width ?? canvas.width
-    copy.height = nv.canvas?.height ?? canvas.height
+    copy.width = img.width
+    copy.height = img.height
     const c2d = copy.getContext('2d')
     if (!c2d) throw new Error('no 2D context')
-    c2d.drawImage(nv.canvas ?? canvas, 0, 0)
+    c2d.putImageData(img, 0, 0)
     const url = copy.toDataURL('image/png')
     pngs.push(url.slice(url.indexOf(',') + 1))
     return true

@@ -1,4 +1,5 @@
 import { ubuntu } from '@/assets/fonts'
+import { colorLutWgsl } from '@/slide/colorLutShader'
 import type {
   NVSlide,
   NVSlideColor,
@@ -11,6 +12,7 @@ import {
   SLIDE_OVERLAY_MAX_LINES,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
+import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -18,11 +20,13 @@ import {
 import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { timeChunkPhase } from '@/volume/chunkTiming'
+import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import { alphaPipelineDesc, linearSampler, texturedLayout } from './pipeline'
 
-const shaderCode = /* wgsl */ `
+/** The slide shader, with or without the colour table lookup (bind group 1). */
+const shaderCode = (lut: boolean): string => /* wgsl */ `
 struct SlideUniforms {
   // Four NDC corners packed as (x, y) pairs in triangle-strip order.
   corners: array<vec4f, 2>,
@@ -39,7 +43,7 @@ struct SlideUniforms {
 @group(0) @binding(0) var<uniform> u: SlideUniforms;
 @group(0) @binding(1) var slideTex: texture_2d<f32>;
 @group(0) @binding(2) var slideSampler: sampler;
-
+${colorLutWgsl(1, lut)}
 struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
@@ -75,6 +79,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     base = u.placeholderColor;
   } else {
     base = textureSample(slideTex, slideSampler, in.uv);
+    base = vec4f(applyColorLut(base.rgb), base.a);
   }
   base.a = base.a * u.opacity;
   if (u.showGrid == 1.0) {
@@ -120,7 +125,9 @@ export class SlideRendererGPU {
   private readonly _device: GPUDevice
   private readonly _context: GPUCanvasContext
   private readonly _pipeline: GPURenderPipeline
+  private readonly _lutPipeline: GPURenderPipeline
   private readonly _bindLayout: GPUBindGroupLayout
+  private readonly _luts: ColorLutTexturesGPU
   private readonly _sampler: GPUSampler
   private readonly _nearestSampler: GPUSampler
   private _placeholderTexture: GPUTexture | null
@@ -159,15 +166,19 @@ export class SlideRendererGPU {
     device: GPUDevice,
     context: GPUCanvasContext,
     pipeline: GPURenderPipeline,
+    lutPipeline: GPURenderPipeline,
     bindLayout: GPUBindGroupLayout,
+    lutLayout: GPUBindGroupLayout,
     sampler: GPUSampler,
     placeholderTexture: GPUTexture,
     format: GPUTextureFormat,
   ) {
+    this._luts = new ColorLutTexturesGPU(device, lutLayout, sampler)
     this._canvas = canvas
     this._device = device
     this._context = context
     this._pipeline = pipeline
+    this._lutPipeline = lutPipeline
     this._bindLayout = bindLayout
     this._sampler = sampler
     this._nearestSampler = device.createSampler({
@@ -199,11 +210,19 @@ export class SlideRendererGPU {
       device,
       GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
     )
+    const lutLayout = colorLutLayout(device)
     // No depth attachment, single-sample canvas.
     const pipeline = device.createRenderPipeline(
       alphaPipelineDesc(device, {
-        module: device.createShaderModule({ code: shaderCode }),
+        module: device.createShaderModule({ code: shaderCode(false) }),
         bindGroupLayouts: [bindLayout],
+        format,
+      }),
+    )
+    const lutPipeline = device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: shaderCode(true) }),
+        bindGroupLayouts: [bindLayout, lutLayout],
         format,
       }),
     )
@@ -228,7 +247,9 @@ export class SlideRendererGPU {
       device,
       context,
       pipeline,
+      lutPipeline,
       bindLayout,
+      lutLayout,
       sampler,
       placeholderTexture,
       format,
@@ -294,7 +315,8 @@ export class SlideRendererGPU {
   }
 
   render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
-    if (!this._placeholderTexture) return
+    const placeholder = this._placeholderTexture
+    if (!placeholder) return
     const dpr = screen.devicePixelRatio ?? 1
     const width = Math.max(1, Math.floor(screen.widthCss * dpr))
     const height = Math.max(1, Math.floor(screen.heightCss * dpr))
@@ -315,12 +337,16 @@ export class SlideRendererGPU {
         },
       ],
     })
-    pass.setPipeline(this._pipeline)
-
     for (const slide of slides) {
       if (!slide.visible || slide.opacity <= 0) continue
+      // The plain pipeline unless the slide has a colour table to apply.
+      const lut = slide.displayColorLut
+      if (lut) {
+        pass.setPipeline(this._lutPipeline)
+        pass.setBindGroup(1, this._luts.group(lut))
+      } else pass.setPipeline(this._pipeline)
       const bounds = slide.screenRectForSlide(screen)
-      this.drawQuad(pass, width, height, bounds, this._placeholderTexture, {
+      this.drawQuad(pass, width, height, bounds, placeholder, {
         uvTop: 0,
         uvBottom: 1,
         opacity: slide.opacity,
@@ -330,68 +356,26 @@ export class SlideRendererGPU {
         gridColor: slide.gridColor,
       })
 
-      const visible = slide.requestVisibleTiles(screen)
-      // Coarser levels first, painted UNDER the target level. Non-empty only
-      // while target tiles are still arriving, so the previous resolution stays
-      // on screen and is overpainted tile by tile as the finer data lands.
-      // No tile grid here: the grid describes the target level.
-      for (const item of visible.fallback) {
-        const bitmap = slide.cachedTileBitmap(item.key)
-        if (!bitmap) continue
-        const texture = this.textureForBitmap(item.key, bitmap)
-        if (!texture) continue
-        this.drawQuad(
-          pass,
-          width,
-          height,
-          {
-            x: item.screenX,
-            y: item.screenY,
-            width: item.screenWidth,
-            height: item.screenHeight,
-          },
-          texture.texture,
-          {
-            uvTop: item.flipY ? 1 : 0,
-            uvBottom: item.flipY ? 0 : 1,
-            opacity: slide.opacity,
-            isPlaceholder: false,
-            showGrid: false,
-            placeholderColor: slide.placeholderColor,
-            gridColor: slide.gridColor,
-          },
-        )
-      }
-      for (const item of visible.tiles) {
-        const bitmap = slide.cachedTileBitmap(item.key)
-        // A missing tile draws a flat placeholder ONLY when nothing coarser is
-        // behind it; otherwise the placeholder would hide the very fallback
-        // layer that is standing in for it.
-        if (!bitmap && visible.fallback.length > 0) continue
+      forEachSlideTile(slide, screen, (item, bitmap, rect, isFallback) => {
         const texture = bitmap ? this.textureForBitmap(item.key, bitmap) : null
-        const rect: NVSlideScreenRect = {
-          x: item.screenX,
-          y: item.screenY,
-          width: item.screenWidth,
-          height: item.screenHeight,
-        }
+        if (isFallback && !texture) return
         this.drawQuad(
           pass,
           width,
           height,
           rect,
-          texture?.texture ?? this._placeholderTexture,
+          texture?.texture ?? placeholder,
           {
             uvTop: item.flipY ? 1 : 0,
             uvBottom: item.flipY ? 0 : 1,
             opacity: slide.opacity,
             isPlaceholder: !texture,
-            showGrid: slide.showTileGrid,
+            showGrid: !isFallback && slide.showTileGrid,
             placeholderColor: slide.placeholderColor,
             gridColor: slide.gridColor,
           },
         )
-      }
+      })
     }
 
     this._drawOverlay(pass, width, height, dpr)
@@ -423,10 +407,12 @@ export class SlideRendererGPU {
   // first to avoid inheriting the previous slide's tiles (ghost tiles).
   clearTextures(): void {
     this._textures.clear()
+    this._luts.clear()
   }
 
   destroy(): void {
     this._textures.clear()
+    this._luts.clear()
     this._lines.destroy()
     this._font.destroy()
     this._lineStorage?.destroy()
@@ -501,21 +487,9 @@ export class SlideRendererGPU {
     texture: GPUTexture,
     options: QuadOptions,
   ): void {
-    if (
-      rect.width <= 0 ||
-      rect.height <= 0 ||
-      rect.x + rect.width < 0 ||
-      rect.y + rect.height < 0 ||
-      rect.x > width ||
-      rect.y > height
-    ) {
-      return
-    }
-
-    const x0 = (rect.x / width) * 2 - 1
-    const x1 = ((rect.x + rect.width) / width) * 2 - 1
-    const y0 = 1 - (rect.y / height) * 2
-    const y1 = 1 - ((rect.y + rect.height) / height) * 2
+    const ndc = slideRectNdc(rect, width, height)
+    if (!ndc) return
+    const [x0, y0, x1, y1] = ndc
 
     const data = new Float32Array(UNIFORM_FLOAT_COUNT)
     // corners[0] = (v0.xy, v1.xy), corners[1] = (v2.xy, v3.xy)

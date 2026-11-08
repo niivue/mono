@@ -59,6 +59,8 @@ export interface NVSlideTileManifest {
   offset?: number
   length?: number
   fragments?: NVSlideTileFragment[]
+  /** The tile's own file, when a level spans several (a DICOM concatenation). */
+  fileUrl?: string
 }
 
 export interface NVSlideLevelManifest {
@@ -86,7 +88,17 @@ export interface NVSlideLevelManifest {
   frames?: number
   opticalPaths?: number
   focalPlanes?: number
-  tiles: NVSlideTileManifest[]
+  /**
+   * DICOM TILED_SPARSE: frames are placed by their per-frame position, so the
+   * frame count says nothing about paths or planes; the producer states both.
+   */
+  sparse?: true
+  /**
+   * Row-major, `columns * rows`; `null` is a hole (no tile: nothing is drawn).
+   * A sparse level may instead list only its present tiles, which NVSlide places
+   * by `x`, `y` when it opens the slide.
+   */
+  tiles: Array<NVSlideTileManifest | null>
 }
 
 /**
@@ -102,6 +114,22 @@ export interface NVSlideIccProfile {
   /** DICOM ColorSpace (0028,2002), e.g. 'SRGB', when stated. */
   colorSpace?: string
 }
+
+/** A slide's colour lookup table: `size`^3 RGBA8 entries, red fastest, mapping its RGB to sRGB. */
+export interface NVSlideColorLut {
+  size: number
+  data: Uint8Array
+}
+
+/**
+ * Bakes an ICC profile into an {@link NVSlideColorLut}, or resolves null for a
+ * profile it cannot use. Registered with {@link NVSlide.registerIccTransform}
+ * (e.g. @niivue/dcm2niix's LittleCMS), so the core ships no colour engine.
+ */
+export type SlideIccTransform = (
+  profile: Uint8Array,
+  signal: AbortSignal,
+) => Promise<NVSlideColorLut | null>
 
 export interface NVSlideManifest {
   id: string
@@ -171,6 +199,8 @@ export interface NVSlideOptions {
   /** Pluggable tile source. Defaults to a byte-range manifest source; DZI / TIFF
    * adapters supply their own. See {@link SlideTileSource}. */
   source?: SlideTileSource
+  /** Apply the slide's ICC profile when one is known and a transform is registered (default true). */
+  colorManagement?: boolean
 }
 
 export interface NVSlideScreen {
@@ -350,7 +380,10 @@ const isMonochrome = (level: NVSlideLevelManifest): boolean =>
 function greySamples(bitmap: ImageBitmap): NVSlideTileSamples {
   const { width, height } = bitmap
   try {
-    const ctx = new OffscreenCanvas(width, height).getContext('2d')
+    // Read once on the CPU: skip a GPU-backed canvas and its readback.
+    const ctx = new OffscreenCanvas(width, height).getContext('2d', {
+      willReadFrequently: true,
+    })
     if (!ctx) throw new Error('OffscreenCanvas 2D context unavailable')
     ctx.drawImage(bitmap, 0, 0)
     const rgba = ctx.getImageData(0, 0, width, height).data
@@ -389,14 +422,20 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
   return out
 }
 
+let iccTransform: SlideIccTransform | null = null
+
 // Tile-codec registry. Built-ins cover the browser-native paths; additional
 // codecs (e.g. image/jp2 via @niivue/dcm2niix) are registered by the
 // consumer with NVSlide.registerTileDecoder, so the core ships no heavy codec.
 const tileDecoders = new Map<string, SlideTileDecoder>([
   [
     'image/jpeg',
+    // No browser colour conversion: a slide's profile is the source's
+    // (NVSlide.colorLut), not an APP2 segment inside a tile.
     (bytes) =>
-      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' })),
+      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' }), {
+        colorSpaceConversion: 'none',
+      }),
   ],
   [
     'raw-rgba',
@@ -493,7 +532,7 @@ export interface SlideSourceHost {
  * and the viewport; a source varies by FORMAT. {@link ManifestRangeSource} (the
  * default) addresses tiles as byte ranges in a per-level file (dicom-wsi-range-v1
  * and the synthetic pyramid); `DziSource` (per-tile URLs) and
- * `TiffSlideSource` in `@niivue/nv-ext-wsi` (geotiff) implement the same contract.
+ * `TiffSlideSource` in `@niivue/nv-ext-tile/tiff` (geotiff) implement the same contract.
  */
 export interface SlideTileSource {
   readonly manifest: NVSlideManifest
@@ -515,6 +554,8 @@ export interface SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array>
+  /** The slide's ICC profile bytes, or null when it has none. Optional. */
+  fetchIccProfile?(signal?: AbortSignal): Promise<Uint8Array | null>
 }
 
 function isAbortError(err: unknown): boolean {
@@ -622,7 +663,9 @@ export class ManifestRangeSource implements SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const sourceUrl = this.tileSourceUrl(level)
+    const sourceUrl = tile.fileUrl
+      ? this.requireHost().resolveUrl(tile.fileUrl)
+      : this.tileSourceUrl(level)
     const fragments = this.tileFragments(tile)
     const parts = await Promise.all(
       fragments.map((fragment) =>
@@ -630,6 +673,23 @@ export class ManifestRangeSource implements SlideTileSource {
       ),
     )
     return parts.length === 1 ? (parts[0] as Uint8Array) : concatBytes(parts)
+  }
+
+  async fetchIccProfile(signal?: AbortSignal): Promise<Uint8Array | null> {
+    const icc = this.manifest.iccProfile
+    if (!icc) return null
+    const url = this.requireHost().resolveUrl(icc.url)
+    const { offset, length } = icc
+    if ((offset === undefined) !== (length === undefined))
+      throw new Error('ICC profile states only one of offset and length')
+    // 64 MB: far beyond a scanner profile (Leica's is 13 MB), as dcm2niix caps it.
+    if (length !== undefined && length > 64 * 1024 * 1024)
+      throw new Error(`ICC profile of ${length} bytes`)
+    if (offset !== undefined && length !== undefined)
+      return this.fetchFragment(url, { offset, length }, 'icc', signal)
+    const response = await fetch(url, { signal })
+    if (!response.ok) throw new Error(`ICC profile HTTP ${response.status}`)
+    return new Uint8Array(await response.arrayBuffer())
   }
 }
 
@@ -641,12 +701,25 @@ export class ManifestRangeSource implements SlideTileSource {
  *
  * A TILED_FULL level's frames cover the grid once per path and plane, so the frame
  * count confirms the tags and, when one is absent, proves it is 1 only if the
- * frames equal the grid.
+ * frames equal the grid. With no frame count (NumberOfFrames is Type 1, but a
+ * server may still omit it), tags stating one of each are taken as given.
  */
 export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
   if (!manifest.format?.startsWith('dicom-wsi')) return
   for (const level of manifest.levels) {
+    if (level.sparse) {
+      if (level.opticalPaths === 1 && level.focalPlanes === 1) continue
+      throw new Error(
+        `Slide level ${level.index} is sparse but does not state one optical path and one focal plane`,
+      )
+    }
     const { frames } = level
+    if (
+      frames === undefined &&
+      level.opticalPaths === 1 &&
+      level.focalPlanes === 1
+    )
+      continue
     const grid = level.columns * level.rows
     const paths = level.opticalPaths ?? (frames === grid ? 1 : undefined)
     const planes = level.focalPlanes ?? (frames === grid ? 1 : undefined)
@@ -660,6 +733,26 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
       : 'has optical paths or focal planes that are unknown or disagree with its frame count'
     throw new Error(`Slide level ${level.index} ${what}`)
   }
+}
+
+/**
+ * A level that lists only its present tiles, or is sparse, becomes the dense
+ * row-major grid with null holes, placed by each tile's x/y (a listing's order
+ * is not trusted). Off-grid tiles and second tiles for a cell are dropped.
+ * Returns a new level; the caller's manifest is not changed.
+ */
+function placeListedTiles(level: NVSlideLevelManifest): NVSlideLevelManifest {
+  const n = level.columns * level.rows
+  if (!level.sparse && level.tiles.length === n) return level
+  const grid: Array<NVSlideTileManifest | null> = new Array(n).fill(null)
+  for (const tile of level.tiles) {
+    if (!tile) continue
+    const { x, y } = tile
+    if (!Number.isInteger(x) || !Number.isInteger(y)) continue
+    if (x < 0 || y < 0 || x >= level.columns || y >= level.rows) continue
+    grid[y * level.columns + x] ??= tile
+  }
+  return { ...level, tiles: grid }
 }
 
 /** The top-left `width` x `height` of a padded monochrome frame. */
@@ -736,13 +829,21 @@ export class NVSlide extends EventTarget {
   // dispose() still aborts every in-flight load regardless of origin.
   private readonly _viewportKeys = new Set<string>()
   private _budgetWarned = '' // last budget outcome logged by visibleTiles
+  private _lastVisible: NVSlideVisibleTiles | null = null
   private _window: NVSlideWindow | null = null // null: each level's full bitsStored range
   private _windowGen = 0
+  private _rewindowing = false
+  private _colorManagement: boolean
+  private _colorLut: NVSlideColorLut | null = null
+  private readonly _colorAbort = new AbortController()
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
     assertSingleSlidePlane(manifest)
-    this.manifest = manifest
+    const levels = manifest.levels.map(placeListedTiles)
+    this.manifest = levels.every((l, i) => l === manifest.levels[i])
+      ? manifest
+      : { ...manifest, levels }
     this.manifestUrl = options.manifestUrl ?? ''
     this.id = options.id ?? manifest.id
     this.name = options.name ?? manifest.name
@@ -770,6 +871,7 @@ export class NVSlide extends EventTarget {
     this._maxConcurrentLoads = clampTileLoadCap(
       options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,
     )
+    this._colorManagement = options.colorManagement ?? true
     this._source = options.source ?? new ManifestRangeSource(manifest)
     this._source.bind({
       resolveUrl: (url) => this.resolveUrl(url),
@@ -785,6 +887,62 @@ export class NVSlide extends EventTarget {
       pushRangeEvent: (event) => this.pushRangeEvent(event),
       updateRangeEvent: (label, status) => this.updateRangeEvent(label, status),
     })
+    void this._loadColorLut()
+  }
+
+  /** The slide's sRGB lookup table, once its ICC profile is baked; null without one. */
+  get colorLut(): NVSlideColorLut | null {
+    return this._colorLut
+  }
+
+  /** The table renderers apply: {@link colorLut} while colour management is on, else null. */
+  get displayColorLut(): NVSlideColorLut | null {
+    return this._colorManagement ? this._colorLut : null
+  }
+
+  /** Whether renderers apply {@link colorLut}. Toggling only redraws: tiles are kept as decoded. */
+  get colorManagement(): boolean {
+    return this._colorManagement
+  }
+
+  set colorManagement(on: boolean) {
+    if (on === this._colorManagement) return
+    this._colorManagement = on
+    this.dispatchEvent(new Event('change'))
+  }
+
+  private async _loadColorLut(): Promise<void> {
+    const transform = iccTransform
+    // DICOM ColorSpace SRGB means the profile is the display space already;
+    // a grey slide's display mapping is its window, whatever profile it carries.
+    if (
+      !transform ||
+      !this._source.fetchIccProfile ||
+      this.manifest.iccProfile?.colorSpace?.toUpperCase() === 'SRGB' ||
+      this.manifest.levels.some((l) => l.photometric?.startsWith('MONOCHROME'))
+    )
+      return
+    const signal = this._colorAbort.signal
+    try {
+      const profile = await this._source.fetchIccProfile(signal)
+      const lut = profile && (await transform(profile, signal))
+      if (!lut || signal.aborted) return
+      // Renderers upload it as an RGBA8 3D texture: anything else fails there,
+      // and 129^3 (8.6 MB, dcm2niix's ceiling) is far beyond any table's need.
+      if (
+        !(lut.data instanceof Uint8Array) ||
+        !Number.isInteger(lut.size) ||
+        lut.size < 2 ||
+        lut.size > 129 ||
+        lut.data.length !== lut.size ** 3 * 4
+      )
+        throw new Error(`colour table of size ${lut.size} is not size^3 RGBA8`)
+      this._colorLut = lut
+      this.dispatchEvent(new Event('change'))
+    } catch (err) {
+      if (!signal.aborted && !isAbortError(err))
+        log.warn(`NVSlide ${this.id}: ICC profile not applied`, err)
+    }
   }
 
   /** Build a slide from any tile source (DICOM-WSI/DZI/TIFF adapter). */
@@ -799,9 +957,28 @@ export class NVSlide extends EventTarget {
     manifestUrl: string,
     options: NVSlideOptions = {},
   ): Promise<NVSlide> {
-    const response = await fetch(manifestUrl)
+    const controller = new AbortController()
+    const response = await fetch(manifestUrl, { signal: controller.signal })
     if (!response.ok) {
-      throw new Error(`Slide manifest HTTP ${response.status}`)
+      // A server may explain a refusal as JSON `{ error }`; keep its reason, but
+      // never let an error body that does not finish hold back the status.
+      const isJson = response.headers
+        .get('content-type')
+        ?.toLowerCase()
+        .includes('json')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const body = isJson
+        ? ((await Promise.race([
+            response.json().catch(() => null),
+            new Promise((resolve) => {
+              timer = setTimeout(resolve, 1000, null)
+            }),
+          ])) as { error?: unknown } | null)
+        : null
+      clearTimeout(timer)
+      controller.abort() // releases a body read still pending, or never started
+      const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
+      throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
     }
     const manifest = (await response.json()) as NVSlideManifest
     return new NVSlide(manifest, { ...options, manifestUrl })
@@ -835,24 +1012,46 @@ export class NVSlide extends EventTarget {
         `NVSlide window needs finite calMin < calMax, got ${calMin}, ${calMax}`,
       )
     this._window = { calMin, calMax }
-    const gen = ++this._windowGen
-    for (const [key, entry] of this._cache.sampleEntries()) {
-      this.windowedBitmap(entry.samples, entry.level)
-        .then((bitmap) => {
+    this._windowGen++
+    void this._rewindowCached()
+    this._emitChange()
+  }
+
+  // One pass at a time, one tile per step (each awaits createImageBitmap, so
+  // input runs between tiles), newest first: the LRU keeps the tiles drawn
+  // last, the visible ones, at its end. A window set mid-pass restarts it, so
+  // a W/L drag re-windows each tile once for the latest window, not per call.
+  private async _rewindowCached(): Promise<void> {
+    if (this._rewindowing) return
+    this._rewindowing = true
+    try {
+      let gen = -1
+      while (gen !== this._windowGen) {
+        gen = this._windowGen
+        const entries = [...this._cache.sampleEntries()].reverse()
+        for (const [key, entry] of entries) {
+          if (gen !== this._windowGen) break
+          if (this._cache.peek(key) !== entry) continue // evicted meanwhile
+          let bitmap: ImageBitmap
+          try {
+            bitmap = await this.windowedBitmap(entry.samples, entry.level)
+          } catch (err) {
+            log.warn(`NVSlide ${this.id}: re-window failed`, err)
+            continue
+          }
           // Superseded by a later window, or evicted/disposed meanwhile.
           if (gen !== this._windowGen || this._cache.peek(key) !== entry) {
             bitmap.close()
-            return
+            continue
           }
           entry.bitmap.close()
           entry.bitmap = bitmap
           this._emitChange()
-        })
-        .catch((err: unknown) =>
-          log.warn(`NVSlide ${this.id}: re-window failed`, err),
-        )
+        }
+      }
+    } finally {
+      this._rewindowing = false
     }
-    this._emitChange()
   }
 
   private windowedBitmap(
@@ -1244,8 +1443,14 @@ export class NVSlide extends EventTarget {
     return tiles
   }
 
+  /** The tiles the last draw asked for (null before the first), to save a second walk. */
+  get lastVisibleTiles(): NVSlideVisibleTiles | null {
+    return this._lastVisible
+  }
+
   requestVisibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
     const visible = this.visibleTiles(screen)
+    this._lastVisible = visible
     if (!this.visible || !visible.level) return visible
     this._wanted.clear()
     for (const item of visible.tiles) {
@@ -1290,6 +1495,7 @@ export class NVSlide extends EventTarget {
   }
 
   dispose(): void {
+    this._colorAbort.abort()
     this.clearCache()
     this._loadQueue.length = 0
     this._wanted.clear()
@@ -1342,6 +1548,20 @@ export class NVSlide extends EventTarget {
    */
   static registerTileDecoder(codec: string, decoder: SlideTileDecoder): void {
     tileDecoders.set(codec, decoder)
+  }
+
+  /**
+   * Register the ICC transform that bakes slide profiles into sRGB lookup tables
+   * (null removes it). Only slides created afterwards apply their profile, so
+   * register before opening slides.
+   */
+  static registerIccTransform(transform: SlideIccTransform | null): void {
+    iccTransform = transform
+  }
+
+  /** The registered ICC transform, or null. */
+  static iccTransform(): SlideIccTransform | null {
+    return iccTransform
   }
 
   /** The decoder registered for a codec, or undefined. */

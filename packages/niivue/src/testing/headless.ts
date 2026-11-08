@@ -81,12 +81,15 @@ export function serveDevImages(
   const root = new URL('../../../dev-images/images', import.meta.url).pathname
   const requests: string[] = []
   const server = Bun.serve({
+    // Loopback only: the handler serves any path under root, unauthenticated.
+    hostname: '127.0.0.1',
     port: 0,
     async fetch(req) {
       const path = decodeURIComponent(new URL(req.url).pathname)
       requests.push(path)
       const body = routes[path]
       if (body !== undefined) return new Response(body)
+      if (path.includes('..')) return new Response('not found', { status: 404 })
       const file = Bun.file(root + path)
       return (await file.exists())
         ? new Response(file)

@@ -26,8 +26,6 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
-import type { LineData } from './line'
-import { UIKitLineOverlay } from './lineOverlay'
 import {
   activateMenuItem,
   buildMenuButton,
@@ -50,11 +48,14 @@ import {
   resolveMenuStyle,
   scaleMenu,
 } from './menu'
-import type { RectData } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
+import {
+  UIKitDrawBundle,
+  UIKitEntryMap,
+  type UIKitGeometry,
+} from './overlayParts'
+import { type UIKitBox, unscaleBox } from './rect'
 import { WheelAccumulator } from './scroll'
 import type { UIKitFont } from './text/font'
-import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
 export interface UIKitMenuOverlayOptions {
   /** Called whenever the overlay needs another frame. A control layer fills it in. */
@@ -85,22 +86,15 @@ export class UIKitMenuOverlay
 {
   readonly hoverCursor = 'pointer'
   private readonly font: UIKitFont
-  private readonly rects = new UIKitRectOverlay()
-  private readonly lines = new UIKitLineOverlay()
-  private readonly labels: UIKitTextOverlay
-  private readonly popupRects = new UIKitRectOverlay()
-  private readonly popupLines = new UIKitLineOverlay()
-  private readonly popupText: UIKitTextOverlay
-  private readonly entries = new Map<string, MenuEntry>()
+  private readonly bar: UIKitDrawBundle
+  /** Never asks for frames itself: `setBounds` dirties it from inside a draw. */
+  private readonly popupBundle: UIKitDrawBundle
+  private readonly entries: UIKitEntryMap<ButtonLayout, MenuEntry>
   private baseButtonStyle: ButtonStyle
   private baseStyle: MenuStyle
-  private readonly cssUnits: boolean
   private requestRedraw: (() => void) | null
   private layer: UIKitRedrawSource | null = null
   private inLayer = false
-  private scale = 1
-  private geometryDirty = true
-  private popupDirty = true
   private bounds: MenuBounds | null = null
   private openId: string | null = null
   private popup: MenuPopupLayout | null = null
@@ -117,14 +111,22 @@ export class UIKitMenuOverlay
 
   constructor(font: UIKitFont, options: UIKitMenuOverlayOptions = {}) {
     this.font = font
-    this.labels = new UIKitTextOverlay(font)
-    this.popupText = new UIKitTextOverlay(font)
+    this.bar = new UIKitDrawBundle(font, () => this.requestRedraw?.())
+    this.popupBundle = new UIKitDrawBundle(font)
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, buttonStyle, style } = scaleMenu(
+        entry.spec,
+        entry.buttonStyle,
+        entry.style,
+        scale,
+      )
+      return layoutMenuButton(spec, buttonStyle, style, font.metrics)
+    }, options.cssUnits ?? false)
     this.baseButtonStyle = resolveButtonStyle(
       DEFAULT_MENU_BUTTON_STYLE,
       options.buttonStyle,
     )
     this.baseStyle = resolveMenuStyle(DEFAULT_MENU_STYLE, options.style)
-    this.cssUnits = options.cssUnits ?? false
     this.requestRedraw = options.requestRedraw ?? null
   }
 
@@ -154,7 +156,7 @@ export class UIKitMenuOverlay
           this.close()
         } else {
           this.popup = null
-          this.popupDirty = true
+          this.popupBundle.invalidate()
           const lit = items[this.highlight]
           if (lit && !isMenuItemSelectable(lit)) this.highlight = -1
         }
@@ -174,11 +176,11 @@ export class UIKitMenuOverlay
 
   /** Replace the whole menu set. */
   setMenus(specs: readonly MenuButtonSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeMenu(id)
-    }
-    for (const spec of specs) this.addMenu(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => this.addMenu(spec),
+      (id) => this.removeMenu(id),
+    )
   }
 
   removeMenu(id: string): void {
@@ -250,32 +252,25 @@ export class UIKitMenuOverlay
 
   /** The ids of all menus, in draw order. */
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /** A menu button's box in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
   getLayout(id: string): ButtonLayout | null {
     const entry = this.entries.get(id)
     if (!entry) return null
-    const l = this.layoutOf(entry)
-    const k = this.scale
-    return k === 1
-      ? l
-      : { x: l.x / k, y: l.y / k, width: l.width / k, height: l.height / k }
+    const l = this.entries.layoutOf(entry)
+    const k = this.entries.scale
+    return k === 1 ? l : unscaleBox(l, k)
   }
 
   /** The open popup's panel and rows in spec units, or null when no menu is open. */
   getPopupLayout(): MenuPopupLayout | null {
     const l = this.popupLayout()
     if (!l) return null
-    const k = this.scale
+    const k = this.entries.scale
     if (k === 1) return l
-    const s = (r: { x: number; y: number; width: number; height: number }) => ({
-      x: r.x / k,
-      y: r.y / k,
-      width: r.width / k,
-      height: r.height / k,
-    })
+    const s = (r: UIKitBox) => unscaleBox(r, k)
     return {
       ...l,
       ...s(l),
@@ -333,7 +328,7 @@ export class UIKitMenuOverlay
     }
     this.bounds = bounds ? { ...bounds } : null
     this.popup = null
-    this.popupDirty = true
+    this.popupBundle.invalidate()
   }
 
   /**
@@ -446,7 +441,8 @@ export class UIKitMenuOverlay
       // The press opened this menu: releasing over the button leaves it open.
       this.pressOpened = false
       const entry = this.entries.get(this.openId)
-      if (entry && buttonContains(this.layoutOf(entry), x, y)) return true
+      if (entry && buttonContains(this.entries.layoutOf(entry), x, y))
+        return true
     }
     const popup = this.popupLayout()
     if (popup && popupContains(popup, x, y)) {
@@ -543,18 +539,12 @@ export class UIKitMenuOverlay
   drawOverlay(frame: UIKitOverlayFrame): void {
     this.setBounds(frame.bounds)
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
-      for (const entry of this.entries.values()) entry.layout = null
+    const rescaled = this.entries.rescale(frame.dpr)
+    if (rescaled) {
       this.popup = null
-      this.geometryDirty = true
-      this.popupDirty = true
+      this.popupBundle.invalidate()
     }
-    if (this.geometryDirty) this.rebuild()
-    this.rects.drawOverlay(frame)
-    this.lines.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
+    this.bar.draw(frame, () => this.geometry(), rescaled)
     if (!this.inLayer) this.drawPopup(frame)
   }
 
@@ -562,26 +552,18 @@ export class UIKitMenuOverlay
   drawPopup(frame: UIKitOverlayFrame): void {
     if (this.openId === null) return
     this.setBounds(frame.bounds)
-    if (this.popupDirty) this.rebuildPopup()
-    this.popupRects.drawOverlay(frame)
-    this.popupLines.drawOverlay(frame)
-    this.popupText.drawOverlay(frame)
+    this.popupBundle.draw(frame, () => this.popupGeometry())
   }
 
   /** Release GPU resources on both backends. */
   destroy(): void {
-    this.rects.destroy()
-    this.lines.destroy()
-    this.labels.destroy()
-    this.popupRects.destroy()
-    this.popupLines.destroy()
-    this.popupText.destroy()
+    this.bar.destroy()
+    this.popupBundle.destroy()
   }
 
   private invalidate(): void {
-    this.geometryDirty = true
-    this.popupDirty = true
-    this.requestRedraw?.()
+    this.popupBundle.invalidate()
+    this.bar.invalidate()
   }
 
   /**
@@ -599,7 +581,7 @@ export class UIKitMenuOverlay
     if (next && highlight >= next.firstRow && highlight < next.endRow) {
       this.highlight = highlight
     }
-    this.popupDirty = true
+    this.popupBundle.invalidate()
     this.requestRedraw?.()
     this.pointerMove(x, y)
   }
@@ -616,7 +598,7 @@ export class UIKitMenuOverlay
     ) {
       this.popup = null
     }
-    this.popupDirty = true
+    this.popupBundle.invalidate()
     this.requestRedraw?.()
   }
 
@@ -636,20 +618,12 @@ export class UIKitMenuOverlay
   }
 
   private scaled(entry: MenuEntry) {
-    return scaleMenu(entry.spec, entry.buttonStyle, entry.style, this.scale)
-  }
-
-  private layoutOf(entry: MenuEntry): ButtonLayout {
-    if (!entry.layout) {
-      const { spec, buttonStyle, style } = this.scaled(entry)
-      entry.layout = layoutMenuButton(
-        spec,
-        buttonStyle,
-        style,
-        this.font.metrics,
-      )
-    }
-    return entry.layout
+    return scaleMenu(
+      entry.spec,
+      entry.buttonStyle,
+      entry.style,
+      this.entries.scale,
+    )
   }
 
   private popupLayout(): MenuPopupLayout | null {
@@ -658,7 +632,7 @@ export class UIKitMenuOverlay
       const entry = this.entries.get(this.openId)
       if (!entry) return null
       const { style } = this.scaled(entry)
-      const button = this.layoutOf(entry)
+      const button = this.entries.layoutOf(entry)
       let popup = layoutMenuPopup(
         entry.items,
         style,
@@ -688,19 +662,10 @@ export class UIKitMenuOverlay
 
   /** The topmost (last added) enabled menu button under a canvas point. */
   private hitEntry(x: number, y: number): MenuEntry | null {
-    const list = [...this.entries.values()]
-    for (let i = list.length - 1; i >= 0; i--) {
-      const entry = list[i]
-      if (entry.spec.enabled === false) continue
-      if (buttonContains(this.layoutOf(entry), x, y)) return entry
-    }
-    return null
+    return this.entries.topmost(buttonContains, x, y)
   }
 
-  private rebuild(): void {
-    const rects: RectData[] = []
-    const lines: LineData[] = []
-    const text: UIKitTextItem[] = []
+  private *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
       const { spec, buttonStyle, style } = this.scaled(entry)
       const id = entry.spec.id
@@ -709,7 +674,7 @@ export class UIKitMenuOverlay
         buttonStyle,
         style,
         this.font.metrics,
-        this.layoutOf(entry),
+        this.entries.layoutOf(entry),
         {
           hover: entry.hover || this.pressedId === id,
           press: 0,
@@ -717,33 +682,23 @@ export class UIKitMenuOverlay
           open: this.openId === id,
         },
       )
-      rects.push(geo.rect)
-      lines.push(...geo.lines)
-      text.push(geo.text)
+      yield { rects: [geo.rect], lines: geo.lines, text: [geo.text] }
     }
-    this.rects.setRects(rects)
-    this.lines.setLines(lines)
-    this.labels.setItems(text)
-    this.geometryDirty = false
   }
 
-  private rebuildPopup(): void {
+  private *popupGeometry(): Generator<UIKitGeometry> {
     const entry =
       this.openId !== null ? this.entries.get(this.openId) : undefined
     const popup = this.popupLayout()
     if (!entry || !popup) return
     const { style } = this.scaled(entry)
-    const geo = buildMenuPopup(
+    yield buildMenuPopup(
       entry.items,
       style,
       this.font.metrics,
       popup,
       this.highlight,
     )
-    this.popupRects.setRects(geo.rects)
-    this.popupLines.setLines(geo.lines)
-    this.popupText.setItems(geo.text)
-    this.popupDirty = false
   }
 }
 

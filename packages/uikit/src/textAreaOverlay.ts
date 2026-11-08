@@ -25,8 +25,12 @@ import type {
   UIKitRedrawSource,
 } from './controls'
 import { type ClipboardBridge, createBrowserClipboard } from './host'
-import type { RectData } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
+import {
+  UIKitDrawBundle,
+  UIKitEntryMap,
+  type UIKitGeometry,
+} from './overlayParts'
+import { type UIKitBox, unscaleBox } from './rect'
 import { scrollWindow, WheelAccumulator } from './scroll'
 import type { UIKitFont } from './text/font'
 import {
@@ -47,21 +51,19 @@ import {
   textAreaWindow,
 } from './textArea'
 import {
+  clipboardEdit,
   clipboardKey,
   glyphAdvances,
-  hasSelection,
-  insertText,
   maxLengthOf,
   pasteText,
+  sameValue,
   selectAll,
-  selectedText,
   setCaret,
   type TextEditState,
   textEditState,
   truncateEdit,
   truncateText,
 } from './textEdit'
-import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
 export interface UIKitTextAreaOverlayOptions {
   /** Called whenever the overlay needs another frame. A control layer fills it in. */
@@ -110,18 +112,13 @@ export class UIKitTextAreaOverlay
   implements UIKitOverlayRenderer, UIKitInteractive
 {
   private readonly font: UIKitFont
-  private readonly rects = new UIKitRectOverlay()
-  private readonly labels: UIKitTextOverlay
-  private readonly entries = new Map<string, TextAreaEntry>()
+  private readonly bundle: UIKitDrawBundle
+  private readonly entries: UIKitEntryMap<TextAreaLayout, TextAreaEntry>
   private baseStyle: TextAreaStyle
-  private readonly cssUnits: boolean
   private readonly doubleClickMs: number
   private readonly now: () => number
-  private requestRedraw: (() => void) | null
   private layer: UIKitRedrawSource | null = null
   private clipboard: ClipboardBridge | null
-  private scale = 1
-  private geometryDirty = true
   private hoverId: string | null = null
   private hoverScrollbarId: string | null = null
   private focusedId: string | null = null
@@ -134,15 +131,17 @@ export class UIKitTextAreaOverlay
 
   constructor(font: UIKitFont, options: UIKitTextAreaOverlayOptions = {}) {
     this.font = font
-    this.labels = new UIKitTextOverlay(font)
+    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = scaleTextArea(entry.spec, entry.style, scale)
+      return layoutTextArea(spec, style, font.metrics)
+    }, options.cssUnits ?? false)
     this.baseStyle = resolveTextAreaStyle(
       DEFAULT_TEXT_AREA_STYLE,
       options.style,
     )
-    this.cssUnits = options.cssUnits ?? false
     this.doubleClickMs = options.doubleClickMs ?? 400
     this.now = options.now ?? (() => performance.now())
-    this.requestRedraw = options.requestRedraw ?? null
     this.clipboard = options.clipboard ?? null
   }
 
@@ -169,41 +168,47 @@ export class UIKitTextAreaOverlay
    */
   addTextArea(spec: TextAreaSpec): void {
     const existing = this.entries.get(spec.id)
-    const style = resolveTextAreaStyle(this.baseStyle, spec.style)
-    const value = truncateText(spec.value ?? '', spec.maxLength)
     if (existing) {
-      existing.spec = spec
-      existing.style = style
-      this.resetLayout(existing)
-      existing.value = value
+      this.respec(existing, spec)
+      existing.value = truncateText(spec.value ?? '', spec.maxLength)
       existing.firstRow = 0
+      existing.manualScroll = false
       if (existing.edit) existing.edit = this.freshEdit(existing)
-    } else {
-      this.entries.set(spec.id, {
-        spec,
-        style,
-        layout: null,
-        value,
-        edit: null,
-        session: 0,
-        firstRow: 0,
-        goalX: null,
-        upstream: false,
-        hover: false,
-        wheelCarry: null,
-        manualScroll: false,
-      })
+      return
     }
+    this.entries.set(spec.id, {
+      spec,
+      style: resolveTextAreaStyle(this.baseStyle, spec.style),
+      layout: null,
+      value: truncateText(spec.value ?? '', spec.maxLength),
+      edit: null,
+      session: 0,
+      firstRow: 0,
+      goalX: null,
+      upstream: false,
+      hover: false,
+      wheelCarry: null,
+      manualScroll: false,
+    })
     this.invalidate()
   }
 
-  /** Replace the whole area set. */
+  /**
+   * Replace the whole area set. A kept id whose spec leaves the committed
+   * text alone (no `value`, or the same one) keeps any edit in progress, as
+   * `updateTextArea` does; a different `value` replaces it as `addTextArea`
+   * does.
+   */
   setTextAreas(specs: readonly TextAreaSpec[]): void {
-    const keep = new Set(specs.map((s) => s.id))
-    for (const id of [...this.entries.keys()]) {
-      if (!keep.has(id)) this.removeTextArea(id)
-    }
-    for (const spec of specs) this.addTextArea(spec)
+    this.entries.replaceAll(
+      specs,
+      (spec) => {
+        const entry = this.entries.get(spec.id)
+        if (entry && sameValue(entry.value, spec)) this.respec(entry, spec)
+        else this.addTextArea(spec)
+      },
+      (id) => this.removeTextArea(id),
+    )
   }
 
   removeTextArea(id: string): void {
@@ -223,24 +228,11 @@ export class UIKitTextAreaOverlay
   updateTextArea(id: string, patch: Partial<Omit<TextAreaSpec, 'id'>>): void {
     const entry = this.entries.get(id)
     if (!entry) return
-    const value = patch.value ?? entry.value
+    const spec = { ...entry.spec, ...patch, id }
     // A patch that leaves the value alone (a host re-laying out on resize)
-    // must not throw away what the user is typing.
-    const edit = patch.value === undefined ? entry.edit : null
-    const upstream = entry.upstream
-    this.addTextArea({ ...entry.spec, ...patch, id, value })
-    if (edit && entry.edit) {
-      entry.edit = truncateEdit(edit, entry.spec.maxLength)
-      // The retained caret keeps its row: affinity only counts at a soft-row end.
-      if (entry.edit.caret === edit.caret) entry.upstream = upstream
-    }
-    if (entry.spec.enabled === false) {
-      if (this.pressId === id) this.pressId = null
-      if (this.focusedId === id) {
-        entry.edit = null
-        this.focusedId = null
-      }
-    }
+    // must not throw away what the user is typing, or a paste on its way.
+    if (patch.value === undefined) this.respec(entry, spec)
+    else this.addTextArea(spec)
   }
 
   setEnabled(id: string, enabled: boolean): void {
@@ -273,27 +265,17 @@ export class UIKitTextAreaOverlay
 
   /** The ids of all areas, in draw order. */
   get ids(): string[] {
-    return [...this.entries.keys()]
+    return this.entries.ids
   }
 
   /** An area's boxes in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
   getLayout(id: string): TextAreaLayout | null {
     const entry = this.entries.get(id)
     if (!entry) return null
-    const l = this.layoutOf(entry)
-    const k = this.scale
+    const l = this.entries.layoutOf(entry)
+    const k = this.entries.scale
     if (k === 1) return l
-    const box = (b: {
-      x: number
-      y: number
-      width: number
-      height: number
-    }) => ({
-      x: b.x / k,
-      y: b.y / k,
-      width: b.width / k,
-      height: b.height / k,
-    })
+    const box = (b: UIKitBox) => unscaleBox(b, k)
     return {
       ...box(l),
       field: box(l.field),
@@ -453,7 +435,7 @@ export class UIKitTextAreaOverlay
   wheel(x: number, y: number, _deltaX: number, deltaY: number): boolean {
     const entry = this.hitEntry(x, y)
     if (!entry) return false
-    const layout = this.layoutOf(entry)
+    const layout = this.entries.layoutOf(entry)
     entry.wheelCarry ??= new WheelAccumulator(layout.rowHeight)
     const steps = entry.wheelCarry.add(deltaY)
     if (steps !== 0) {
@@ -498,11 +480,24 @@ export class UIKitTextAreaOverlay
     }
     const clip = clipboardKey(e)
     if (clip !== null) {
-      this.clipboardAction(entry, clip)
+      this.clipboard ??= createBrowserClipboard()
+      const id = entry.spec.id
+      clipboardEdit(
+        this.clipboard,
+        entry,
+        clip,
+        () => this.entries.get(id) === entry && this.focusedId === id,
+        (text) => this.paste(text),
+        (next) => {
+          entry.goalX = null
+          entry.upstream = false
+          this.applyEdit(entry, next)
+        },
+      )
       return true
     }
     const { style } = this.scaled(entry)
-    const layout = this.layoutOf(entry)
+    const layout = this.entries.layoutOf(entry)
     const advances = glyphAdvances(
       this.font.metrics,
       entry.edit.text,
@@ -558,27 +553,23 @@ export class UIKitTextAreaOverlay
   }
 
   bindLayer(layer: UIKitRedrawSource): void {
-    this.requestRedraw ??= () => layer.requestRedraw()
+    this.bundle.bind(layer)
     this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
-    const scale = this.cssUnits ? frame.dpr : 1
-    if (scale !== this.scale) {
-      this.scale = scale
+    const rescaled = this.entries.rescale(frame.dpr)
+    if (rescaled)
       for (const entry of this.entries.values()) this.resetLayout(entry)
-      this.geometryDirty = true
-    }
-    if (this.geometryDirty) this.rebuild()
-    this.rects.drawOverlay(frame)
-    this.labels.drawOverlay(frame)
+    this.bundle.draw(frame, () => this.geometry(), rescaled)
   }
 
   /** Release GPU resources on both backends. */
   destroy(): void {
-    this.rects.destroy()
-    this.labels.destroy()
+    // A clipboard read still in flight must not edit a destroyed overlay.
+    this.focusedId = null
+    this.bundle.destroy()
   }
 
   /** Take a new edit state, redrawing and firing `onInput` when the text changed. */
@@ -591,43 +582,35 @@ export class UIKitTextAreaOverlay
     if (textChanged) entry.spec.onInput?.(next.text, entry.spec.id)
   }
 
-  /**
-   * Copy or cut the selection to the clipboard, or start a paste: the read
-   * is asynchronous, and its text lands only if the area is still being
-   * edited when it arrives.
-   */
-  private clipboardAction(
-    entry: TextAreaEntry,
-    action: 'copy' | 'cut' | 'paste',
-  ): void {
-    this.clipboard ??= createBrowserClipboard()
-    const clipboard = this.clipboard
-    const edit = entry.edit
-    if (!edit) return
-    if (action === 'paste') {
-      const session = entry.session
-      void clipboard.read().then((text) => {
-        if (this.entries.get(entry.spec.id) !== entry) return
-        if (this.focusedId !== entry.spec.id || !entry.edit) return
-        // A blur and refocus in the meantime started a new edit (all
-        // selected): the old paste must not replace the committed text.
-        if (entry.session !== session) return
-        this.paste(text)
-      })
-      return
-    }
-    if (!hasSelection(edit)) return
-    clipboard.write(selectedText(edit))
-    if (action === 'cut') {
-      entry.goalX = null
-      entry.upstream = false
-      this.applyEdit(entry, insertText(edit, ''))
-    }
+  private invalidate(): void {
+    this.bundle.invalidate()
   }
 
-  private invalidate(): void {
-    this.geometryDirty = true
-    this.requestRedraw?.()
+  /**
+   * Take a new spec, keeping the committed text, edit, session and scroll
+   * (trimmed to the spec's maxLength). Disabling drops press and focus.
+   */
+  private respec(entry: TextAreaEntry, spec: TextAreaSpec): void {
+    entry.spec = spec
+    entry.style = resolveTextAreaStyle(this.baseStyle, spec.style)
+    entry.layout = null
+    entry.wheelCarry = null
+    entry.goalX = null
+    entry.value = truncateText(entry.value, spec.maxLength)
+    if (entry.edit) {
+      const caret = entry.edit.caret
+      entry.edit = truncateEdit(entry.edit, spec.maxLength)
+      // Affinity only counts at a soft-row end the caret still sits on.
+      if (entry.edit.caret !== caret) entry.upstream = false
+    }
+    if (spec.enabled === false) {
+      if (this.pressId === spec.id) this.pressId = null
+      if (this.focusedId === spec.id) {
+        entry.edit = null
+        this.focusedId = null
+      }
+    }
+    this.invalidate()
   }
 
   private resetLayout(entry: TextAreaEntry): void {
@@ -667,7 +650,7 @@ export class UIKitTextAreaOverlay
   private rowsOf(entry: TextAreaEntry) {
     const { style } = this.scaled(entry)
     return textAreaRows(
-      this.layoutOf(entry),
+      this.entries.layoutOf(entry),
       style,
       this.font.metrics,
       this.shownText(entry),
@@ -681,7 +664,7 @@ export class UIKitTextAreaOverlay
   ): { caret: number; upstream: boolean } {
     const { style } = this.scaled(entry)
     return textAreaCaretAt(
-      this.layoutOf(entry),
+      this.entries.layoutOf(entry),
       style,
       this.font.metrics,
       this.shownText(entry),
@@ -694,7 +677,7 @@ export class UIKitTextAreaOverlay
   /** Current thumb geometry, or null when the text fits without scrolling. */
   private scrollbarOf(entry: TextAreaEntry) {
     const { style } = this.scaled(entry)
-    const layout = this.layoutOf(entry)
+    const layout = this.entries.layoutOf(entry)
     const rows = this.rowsOf(entry)
     const shown = textAreaWindow(
       layout,
@@ -745,34 +728,18 @@ export class UIKitTextAreaOverlay
     spec: TextAreaSpec
     style: TextAreaStyle
   } {
-    return scaleTextArea(entry.spec, entry.style, this.scale)
-  }
-
-  private layoutOf(entry: TextAreaEntry): TextAreaLayout {
-    if (!entry.layout) {
-      const { spec, style } = this.scaled(entry)
-      entry.layout = layoutTextArea(spec, style, this.font.metrics)
-    }
-    return entry.layout
+    return scaleTextArea(entry.spec, entry.style, this.entries.scale)
   }
 
   /** The topmost (last added) enabled area whose field is under a canvas point. */
   private hitEntry(x: number, y: number): TextAreaEntry | null {
-    const list = [...this.entries.values()]
-    for (let i = list.length - 1; i >= 0; i--) {
-      const entry = list[i]
-      if (entry.spec.enabled === false) continue
-      if (textAreaContains(this.layoutOf(entry), x, y)) return entry
-    }
-    return null
+    return this.entries.topmost(textAreaContains, x, y)
   }
 
-  private rebuild(): void {
-    const rects: RectData[] = []
-    const text: UIKitTextItem[] = []
+  private *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
       const { spec, style } = this.scaled(entry)
-      const layout = this.layoutOf(entry)
+      const layout = this.entries.layoutOf(entry)
       // Keep the scroll position between frames so the text does not jump,
       // moving it only as far as the caret needs.
       entry.firstRow = textAreaWindow(
@@ -792,11 +759,7 @@ export class UIKitTextAreaOverlay
         enabled: entry.spec.enabled !== false,
       }
       const geo = buildTextArea(spec, style, layout, this.font.metrics, visual)
-      rects.push(...geo.rects)
-      text.push(...geo.text)
+      yield { ...geo, lines: [] }
     }
-    this.rects.setRects(rects)
-    this.labels.setItems(text)
-    this.geometryDirty = false
   }
 }

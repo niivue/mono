@@ -1,16 +1,8 @@
 import { log } from '@/logger'
 import { applyCORS } from '@/NVLoader'
 import type { NVFontData } from '@/NVTypes'
-import {
-  buildTextLayout,
-  calculateFontSizePx,
-  emptyBatch,
-  FLOATS_PER_PANEL,
-  type FontMetrics,
-  type GlyphBatch,
-  measureTextWidth,
-} from '@/view/NVFont'
-import { NVRenderer } from '@/view/NVRenderer'
+import { FLOATS_PER_PANEL, type GlyphBatch, packPanels } from '@/view/NVFont'
+import { NVFontRenderer } from '@/view/NVFontRenderer'
 import { fontFragShader, fontVertShader } from './fontShader'
 import { setTexParams } from './glUtil'
 import { panelFragShader, panelVertShader } from './panelShader'
@@ -41,29 +33,22 @@ async function loadFontTexture(
   })
 }
 
-export class FontRenderer extends NVRenderer {
+export class FontRenderer extends NVFontRenderer {
   private _gl: WebGL2RenderingContext | null = null
   private _shader: Shader | null = null
   private _vao: WebGLVertexArrayObject | null = null
   private _glyphBuffer: WebGLBuffer | null = null
   private _fontTexture: WebGLTexture | null = null
-  private _fontMets: FontMetrics | null = null
   private _canvasWidth = 1
   private _canvasHeight = 1
   private _texWidth = 1
   private _texHeight = 1
-  private _fontPx = 16
   private _panelShader: Shader | null = null
   private _panelVao: WebGLVertexArrayObject | null = null
   private _panelBuffer: WebGLBuffer | null = null
   // Bumped by every init and destroy, so an atlas that loads after either
   // frees itself instead of allocating for a disposed renderer.
   private _initToken = 0
-
-  /** Current rasterized font size in device pixels (post-resize). */
-  get fontPx(): number {
-    return this._fontPx
-  }
 
   async init(gl: WebGL2RenderingContext, fontData?: NVFontData): Promise<void> {
     if (this.isReady) return
@@ -80,7 +65,7 @@ export class FontRenderer extends NVRenderer {
       this._fontTexture = fontResult.texture
       this._texWidth = fontResult.width
       this._texHeight = fontResult.height
-      this._fontMets = fontData.metrics
+      this.fontMets = fontData.metrics
       // Create shader program
       this._shader = new Shader(gl, fontVertShader, fontFragShader)
       // Create VAO
@@ -169,44 +154,7 @@ export class FontRenderer extends NVRenderer {
   ): void {
     this._canvasWidth = width
     this._canvasHeight = height
-    this._fontPx = calculateFontSizePx(
-      width,
-      height,
-      dpi,
-      fontSizeScaling,
-      fontMinPx,
-    )
-  }
-
-  /** Width of `str` in px at `scale`, as buildText draws it; 0 before init. */
-  measureText(str: string, scale: number): number {
-    if (!this._fontMets) return 0
-    return measureTextWidth(str, this._fontPx, scale, this._fontMets)
-  }
-
-  buildText(
-    str: string,
-    x: number,
-    y: number,
-    scale: number,
-    color: number[] = [1, 1, 1, 1],
-    anchorX: number = 0,
-    anchorY: number = 0,
-    backColor: number[] = [0, 0, 0, 0],
-  ): GlyphBatch {
-    if (!this.isReady || !this._fontMets) return emptyBatch()
-    return buildTextLayout(
-      str,
-      x,
-      y,
-      this._fontPx,
-      scale,
-      this._fontMets,
-      color,
-      anchorX,
-      anchorY,
-      backColor,
-    )
+    this.resizeFont(width, height, dpi, fontSizeScaling, fontMinPx)
   }
 
   createBindGroup() {
@@ -236,22 +184,9 @@ export class FontRenderer extends NVRenderer {
     }
     // Panel pass: draw backing rectangles first
     if (this._panelShader && this._panelVao && this._panelBuffer) {
-      let panelCount = 0
-      for (const item of textList) {
-        if (item.backColor && item.backColor[3] > 0) panelCount++
-      }
-      if (panelCount > 0) {
-        const panelData = new Float32Array(panelCount * FLOATS_PER_PANEL)
-        let idx = 0
-        for (const item of textList) {
-          if (!item.backColor || item.backColor[3] <= 0) continue
-          const off = idx * FLOATS_PER_PANEL
-          panelData.set(item.backRect, off)
-          panelData.set(item.backColor, off + 4)
-          panelData[off + 8] = item.backRadius
-          panelData[off + 9] = item.backBorder ?? 0
-          idx++
-        }
+      const panelData = packPanels(textList)
+      if (panelData) {
+        const panelCount = panelData.length / FLOATS_PER_PANEL
         gl.bindBuffer(gl.ARRAY_BUFFER, this._panelBuffer)
         gl.bufferData(gl.ARRAY_BUFFER, panelData, gl.DYNAMIC_DRAW)
         this._panelShader.use(gl)
@@ -335,7 +270,7 @@ export class FontRenderer extends NVRenderer {
     this._vao = null
     this._glyphBuffer = null
     this._fontTexture = null
-    this._fontMets = null
+    this.fontMets = null
     this._panelShader = null
     this._panelVao = null
     this._panelBuffer = null

@@ -24,7 +24,7 @@ APPS=(
   demo-ext-save-html
   demo-ext-dcm2niix
   demo-ext-niimath
-  demo-ext-wsi
+  demo-ext-tile
   demo-nv-web-component
   dandi-demo
 )
@@ -77,6 +77,10 @@ for app in "${APPS[@]}"; do
   mkdir -p "_site/$app"
   cp -r "apps/$app/dist/"* "_site/$app/"
 done
+
+# Renamed apps: keep old links working (query string kept).
+mkdir -p _site/demo-ext-wsi
+echo '<!doctype html><script>location.replace("../demo-ext-tile/"+location.search)</script>' > _site/demo-ext-wsi/index.html
 
 # Documentation site
 mkdir -p _site/docs

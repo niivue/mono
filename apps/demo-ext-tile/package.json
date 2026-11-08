@@ -1,0 +1,19 @@
+{
+  "name": "demo-ext-tile",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx --bun vite --open /index.html",
+    "build": "bunx --bun vite build"
+  },
+  "dependencies": {
+    "@niivue/dcm2niix": "^1.4.20261105-rc.3",
+    "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-tile": "workspace:*",
+    "geotiff": "^3.0.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "vite": "^6.3.2"
+  }
+}

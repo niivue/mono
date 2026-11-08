@@ -1,6 +1,11 @@
 import type { Annotation3DRenderData } from '@/view/NVAnnotation'
 import { NVRenderer } from '@/view/NVRenderer'
-import { alphaPipelineDesc, uniformBuffer, uniformEntry } from './pipeline'
+import {
+  alphaPipelineDesc,
+  uniformBindGroup,
+  uniformBuffer,
+  uniformOnlyLayout,
+} from './pipeline'
 import shaderCode from './polygon3d.wgsl?raw'
 
 // Uniform: mat4x4f (64 bytes) + f32 opacityMultiplier (4 bytes) + 12 bytes padding = 80 bytes
@@ -31,19 +36,17 @@ export class Polygon3DRenderer extends NVRenderer {
     this._uniformBuffer = uniformBuffer(device, UNIFORM_SIZE)
     this._xrayUniformBuffer = uniformBuffer(device, UNIFORM_SIZE)
 
-    this._bindGroupLayout = device.createBindGroupLayout({
-      entries: [uniformEntry(GPUShaderStage.VERTEX)],
-    })
-
-    this._bindGroup = device.createBindGroup({
-      layout: this._bindGroupLayout,
-      entries: [{ binding: 0, resource: { buffer: this._uniformBuffer } }],
-    })
-
-    this._xrayBindGroup = device.createBindGroup({
-      layout: this._bindGroupLayout,
-      entries: [{ binding: 0, resource: { buffer: this._xrayUniformBuffer } }],
-    })
+    this._bindGroupLayout = uniformOnlyLayout(device, GPUShaderStage.VERTEX)
+    this._bindGroup = uniformBindGroup(
+      device,
+      this._bindGroupLayout,
+      this._uniformBuffer,
+    )
+    this._xrayBindGroup = uniformBindGroup(
+      device,
+      this._bindGroupLayout,
+      this._xrayUniformBuffer,
+    )
 
     const desc = alphaPipelineDesc(device, {
       module: device.createShaderModule({ code: shaderCode }),
@@ -184,22 +187,14 @@ export class Polygon3DRenderer extends NVRenderer {
   }
 
   destroy(): void {
-    if (this._vertexBuffer) {
-      this._vertexBuffer.destroy()
-      this._vertexBuffer = null
-    }
-    if (this._indexBuffer) {
-      this._indexBuffer.destroy()
-      this._indexBuffer = null
-    }
-    if (this._uniformBuffer) {
-      this._uniformBuffer.destroy()
-      this._uniformBuffer = null
-    }
-    if (this._xrayUniformBuffer) {
-      this._xrayUniformBuffer.destroy()
-      this._xrayUniformBuffer = null
-    }
+    this._vertexBuffer?.destroy()
+    this._indexBuffer?.destroy()
+    this._uniformBuffer?.destroy()
+    this._xrayUniformBuffer?.destroy()
+    this._vertexBuffer = null
+    this._indexBuffer = null
+    this._uniformBuffer = null
+    this._xrayUniformBuffer = null
     this._pipeline = null
     this._xrayPipeline = null
     this._bindGroupLayout = null

@@ -271,7 +271,7 @@ const SCENES: Scene[] = [
       azimuth: 0,
       elevation: 90,
     },
-    setup: async ({ nv, view, lib, p, check, settle, canvas }) => {
+    setup: async ({ nv, lib, p, check, settle }) => {
       nv.addColormap('cinematic_empty', {
         R: [0, 0],
         G: [0, 0],
@@ -311,14 +311,9 @@ const SCENES: Scene[] = [
       ])
       const centreAlpha = async () => {
         await settle()
-        view().render()
-        const c = document.createElement('canvas')
-        c.width = canvas.width
-        c.height = canvas.height
-        const ctx = c.getContext('2d')
-        if (!ctx) throw new Error('no 2D context')
-        ctx.drawImage(canvas, 0, 0)
-        return ctx.getImageData(80, 80, 1, 1).data[3]
+        const img = nv.getCanvasImage()
+        if (!img) throw new Error('getCanvasImage drew no frame')
+        return img.data[4 * (80 * img.width + 80) + 3]
       }
       const cinematic = await centreAlpha()
       nv.volumeRenderMode = lib.VOLUME_RENDER_MODE.COMPOSITE

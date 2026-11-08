@@ -23,13 +23,6 @@
  * several reads land out of order.
  */
 
-// Worker-scope postMessage with Transferable[] support
-const post = (
-  self as unknown as {
-    postMessage: (msg: unknown, transfer?: Transferable[]) => void
-  }
-).postMessage.bind(self) as (msg: unknown, transfer?: Transferable[]) => void
-
 import type { ChunkedVolumeFetch } from '@/volume/ChunkedVolumeSource'
 import { chunkTimingSnapshot } from '@/volume/chunkTiming'
 import {
@@ -38,6 +31,7 @@ import {
   type OmeZarrChunkedSource,
   openOmeZarrChunkedSource,
 } from '@/volume/omeZarrChunkedSource'
+import { post } from './workerPost'
 
 /** Opened sources, keyed by URL + open options. One store, many reads. */
 const sources = new Map<string, Promise<OmeZarrChunkedSource>>()

@@ -286,7 +286,7 @@ const nv = new NiiVue({
 
 ### Testing
 
-The package includes a unit test suite for non-rendering (server-side) logic using the [Bun test runner](https://bun.sh/docs/cli/test). Tests are co-located with source files as `*.test.ts`.
+The package includes a unit test suite for non-rendering logic, including a headless controller (loading, documents, events), using the [Bun test runner](https://bun.sh/docs/cli/test). Tests are co-located with source files as `*.test.ts`. Rendering, Workers and pointer input are covered by Playwright specs in `e2e/` (see `AGENTS.md`).
 
 ```bash
 bun test                # Run all tests with coverage

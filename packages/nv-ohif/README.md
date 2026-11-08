@@ -10,7 +10,8 @@ overlays, and voxel drawing / vector annotation to your OHIF app.
 > toolbar surfacing NiiVue's views / clip plane / overlay / window-level. Verified
 > mounting inside a full local OHIF Viewer (registered via `pluginConfig.json` + a
 > mode). OHIF production builds need the production JSX runtime, so `build:lib`
-> passes `--production`. See `PLAN.md`.
+> passes `--production`. The build goes to `lib/`, not `dist/`: OHIF's build copies
+> every extension's `dist/` folder into the site root. See `PLAN.md`.
 
 > **Consuming the local build (dev):** install **packed tarballs**, do not symlink.
 > Symlinking the monorepo package into an OHIF app makes its bundler follow the link

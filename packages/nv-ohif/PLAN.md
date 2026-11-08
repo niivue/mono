@@ -136,7 +136,7 @@ hand-copied `.niivue-pkgs`). Findings:
 3. **Clean install is self-contained and correct.** `npm install <bun-packed tgz>` in an
    empty project resolved: nv-ohif 0.0.0 + auto-installed peers niivue 1.0.0-rc.10 &
    react 19.2.7, dep dcmjs 0.49.4, and `@niivue/dcm2niix` **1.2.0**. react is
-   externalized (not bundled). Tarball is dist-only (index.js + types + README), 18
+   externalized (not bundled). Tarball is lib-only (index.js + types + README), 18
    files, no monorepo/src leakage.
 4. **API-compatible with the published niivue.** The packed nv-ohif imports only three
    niivue symbols — `NiiVueGPU` (default), `DRAG_MODE`, `SLICE_TYPE` — and published

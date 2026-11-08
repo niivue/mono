@@ -51,9 +51,13 @@ function idx(A: number, B: number, C: number, DIM: Uint32Array): number {
   return C * DIM[0] * DIM[1] + B * DIM[0] + A
 }
 
-function fill_tratab(tt: Uint32Array, nabo: Uint32Array, nr_set: number): void {
+function fill_tratab(
+  tt: Uint32Array,
+  nabo: Uint32Array,
+  nr_set: number,
+  tn: Uint32Array,
+): void {
   let cntr = 0
-  const tn = new Uint32Array(nr_set + 5).fill(0)
   const INT_MAX = 2147483647
   let ltn = INT_MAX
   for (let i = 0; i < nr_set; i++) {
@@ -81,8 +85,9 @@ function check_previous_slice(
   dim: Uint32Array,
   conn: number,
   tt: Uint32Array,
+  nabo: Uint32Array,
+  tn: Uint32Array,
 ): number {
-  const nabo = new Uint32Array(27)
   let nr_set = 0
   if (!sl) return 0
   const val = bw[idx(r, c, sl, dim)]
@@ -127,7 +132,7 @@ function check_previous_slice(
     }
   }
   if (nr_set) {
-    fill_tratab(tt, nabo, nr_set)
+    fill_tratab(tt, nabo, nr_set, tn)
     return nabo[0]
   }
   return 0
@@ -143,14 +148,27 @@ function do_initial_labelling(
   let ttn = kGrowArrayBy
   let tt = new Uint32Array(ttn).fill(0)
   const il = new Uint32Array(dim[0] * dim[1] * dim[2]).fill(0)
+  // Scratch reused for every voxel.
   const nabo = new Uint32Array(27)
+  const tn = new Uint32Array(27)
   for (let sl = 0; sl < dim[2]; sl++) {
     for (let c = 0; c < dim[1]; c++) {
       for (let r = 0; r < dim[0]; r++) {
         let nr_set = 0
         const val = bw[idx(r, c, sl, dim)]
         if (val === 0) continue
-        nabo[0] = check_previous_slice(bw, il, r, c, sl, dim, conn, tt)
+        nabo[0] = check_previous_slice(
+          bw,
+          il,
+          r,
+          c,
+          sl,
+          dim,
+          conn,
+          tt,
+          nabo,
+          tn,
+        )
         if (nabo[0]) nr_set += 1
         if (conn >= 6) {
           if (r) {
@@ -174,7 +192,7 @@ function do_initial_labelling(
         }
         if (nr_set) {
           il[idx(r, c, sl, dim)] = nabo[0]
-          fill_tratab(tt, nabo, nr_set)
+          fill_tratab(tt, nabo, nr_set, tn)
         } else {
           il[idx(r, c, sl, dim)] = label
           if (label >= ttn) {

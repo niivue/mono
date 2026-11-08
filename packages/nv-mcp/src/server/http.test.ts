@@ -335,6 +335,8 @@ describe('the server, end to end', () => {
       slice: 'multiplanar',
       layout: 'grid',
       colorbar: true,
+      rotation: 270,
+      flip_vertical: true,
     })
     expect(laid.isError).toBeUndefined()
     expect(text(laid)).toMatch(/^View: multiplanar, grid layout\./)
@@ -344,9 +346,14 @@ describe('the server, end to end', () => {
         layout: 'grid',
         showRender: 'auto',
         radiological: false,
+        rotation: 270,
+        flipHorizontal: false,
+        flipVertical: true,
         colorbar: true,
       },
     })
+    const badTurn = await call('set_view', { rotation: 45 })
+    expect(badTurn.isError).toBe(true)
     expect(json(await call('where_am_i'))).toMatchObject({
       volumes: [{ index: 0 }, { index: 1, opacity: 0.4 }],
       view: { slice: 'multiplanar', colorbar: true },

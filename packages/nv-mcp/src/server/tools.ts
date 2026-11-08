@@ -21,6 +21,7 @@ import { TAB_PARAM } from '../protocol'
 import {
   LAYOUT_NAMES,
   ORIENTATION_TEXT_NAMES,
+  ROTATIONS,
   SAGITTAL_NOSE_NAMES,
   SHOW_RENDER_NAMES,
   SLICE_NAMES,
@@ -551,6 +552,24 @@ export const CORE_SCHEMAS = {
       .optional()
       .describe(
         'Where 2D slices draw their orientation letters: edges (a letter mid-left and mid-top) or corner (one label such as RS at the top-left, which keeps the letters off the brain on short, wide tiles).',
+      ),
+    rotation: z
+      .literal(ROTATIONS)
+      .optional()
+      .describe(
+        'Clockwise turn of the 2D slices on screen, in degrees, applied before the flips; the render is not turned. With exactly one flip set, a further clockwise turn on screen lowers this by 90.',
+      ),
+    flip_horizontal: z
+      .boolean()
+      .optional()
+      .describe(
+        'Mirror the 2D slices left-right on screen, after the rotation.',
+      ),
+    flip_vertical: z
+      .boolean()
+      .optional()
+      .describe(
+        'Mirror the 2D slices top-bottom on screen, after the rotation.',
       ),
     colorbar: z.boolean().optional().describe('Whether a colorbar is drawn.'),
   },

@@ -27,6 +27,8 @@ import {
   nameFor,
   ORIENTATION_TEXT_NAMES,
   type OrientationTextName,
+  ROTATIONS,
+  type Rotation,
   SAGITTAL_NOSES,
   SHOW_RENDER,
   SLICE_TYPES,
@@ -140,6 +142,13 @@ export function viewState(view: View): ViewState {
       : {}),
     ...(view.orientationTextPosition !== undefined
       ? { orientationText: view.orientationTextPosition }
+      : {}),
+    ...(view.rotation2D !== undefined
+      ? {
+          rotation: view.rotation2D,
+          flipHorizontal: view.isFlipped2DHorizontal ?? false,
+          flipVertical: view.isFlipped2DVertical ?? false,
+        }
       : {}),
     colorbar: view.isColorbarVisible ?? false,
   }
@@ -1609,6 +1618,29 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         view.orientationTextPosition = orientationText as OrientationTextName
         changed = true
       }
+      const rotation = number(params, 'rotation')
+      const flipH = flag(params, 'flip_horizontal')
+      const flipV = flag(params, 'flip_vertical')
+      if (
+        rotation !== undefined ||
+        flipH !== undefined ||
+        flipV !== undefined
+      ) {
+        if (view.rotation2D === undefined) {
+          throw new Error("This page's NiiVue cannot turn or flip the slices.")
+        }
+        if (rotation !== undefined) {
+          if (!(ROTATIONS as readonly number[]).includes(rotation)) {
+            throw new Error(
+              `Unknown rotation ${rotation}. One of: ${ROTATIONS.join(', ')}.`,
+            )
+          }
+          view.rotation2D = rotation as Rotation
+        }
+        if (flipH !== undefined) view.isFlipped2DHorizontal = flipH
+        if (flipV !== undefined) view.isFlipped2DVertical = flipV
+        changed = true
+      }
       const colorbar = flag(params, 'colorbar')
       if (colorbar !== undefined) {
         view.isColorbarVisible = colorbar
@@ -1616,7 +1648,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       }
       if (!changed) {
         throw new Error(
-          'set_view needs something to set: slice, layout, mosaic, show_render, radiological, sagittal_nose, orientation_text or colorbar.',
+          'set_view needs something to set: slice, layout, mosaic, show_render, radiological, sagittal_nose, orientation_text, rotation, flip_horizontal, flip_vertical or colorbar.',
         )
       }
       view.drawScene()

@@ -1228,6 +1228,38 @@ describe('set_view', () => {
     ).toThrow('cannot move the orientation text')
   })
 
+  it('turns and flips the slices through NiiVue, and reports them', () => {
+    const view = laidOut()
+    view.rotation2D = 0
+    view.isFlipped2DHorizontal = false
+    view.isFlipped2DVertical = false
+    const state = () => [
+      view.rotation2D,
+      view.isFlipped2DHorizontal,
+      view.isFlipped2DVertical,
+    ]
+    const handlers = coreHandlers(host(view))
+    expect(
+      handlers.set_view({ rotation: 90, flip_horizontal: true }),
+    ).toMatchObject({
+      view: { rotation: 90, flipHorizontal: true, flipVertical: false },
+    })
+    expect(state()).toEqual([90, true, false])
+    handlers.set_view({ flip_vertical: true, flip_horizontal: false })
+    expect(state()).toEqual([90, false, true])
+    expect(() => handlers.set_view({ rotation: 45 })).toThrow(
+      'Unknown rotation 45. One of: 0, 90, 180, 270.',
+    )
+  })
+
+  it('leaves rotation out for a NiiVue without it, and refuses to set it', () => {
+    const view = laidOut()
+    expect(viewState(view)).not.toHaveProperty('rotation')
+    expect(() =>
+      coreHandlers(host(view)).set_view({ flip_vertical: true }),
+    ).toThrow('cannot turn or flip the slices')
+  })
+
   it('leaves the sagittal nose out for a NiiVue without it, and refuses to set it', () => {
     const view = laidOut()
     expect(viewState(view)).not.toHaveProperty('sagittalNose')

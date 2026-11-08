@@ -553,6 +553,10 @@ export interface View {
   isSagittalNoseLeft?: boolean | null
   /** Where 2D tiles draw orientation text. Absent before NiiVue had it. */
   orientationTextPosition?: 'edges' | 'corner'
+  /** Clockwise 2D turn (0/90/180/270) and on-screen flips. Absent before NiiVue had them. */
+  rotation2D?: 0 | 90 | 180 | 270
+  isFlipped2DHorizontal?: boolean
+  isFlipped2DVertical?: boolean
   isColorbarVisible?: boolean
   /** Schedules a frame. NiiVue 1.0 draws it on the next animation frame, not now. */
   drawScene(): unknown

@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG = join(HERE, '..')
 const require = createRequire(join(PKG, 'package.json'))
-const { chromium } = require('playwright')
+const { chromium } = require('@playwright/test')
 const BASE = '/a/b/'
 const ROUTES = [
   ['niivue/', join(PKG, '..', 'niivue', 'dist', 'standalone')],

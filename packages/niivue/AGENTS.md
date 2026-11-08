@@ -172,7 +172,14 @@ a pass skipped, a warning logged), next to the change that should cause it.
 reference in the same spec instead of its own: a restored setting, or a second
 code path (chunked vs whole, deferred vs eager) that must draw the same
 picture. State one step hands the next goes on `globalThis` (the shared page's
-reset deletes it). To create or update references:
+reset deletes it). Chunked scenes set brick size with `maxTextureDimension3D`:
+the halo is 3 voxels, so stride = limit - 6; a limit below 7 fails the upload
+(`updateVolume` logs a warning and nothing draws). Both backends stream bricks
+under an 8 ms per-frame budget; WebGPU on SwiftShader fits about two bricks in
+it (WebGL2 all 64 of a 16 limit), so brick count dominates scene time there.
+Use the largest limit that still puts a seam on every axis (24 for the 32^3
+phantom: 2x2x2 bricks).
+To create or update references:
 
 ```bash
 PLAYWRIGHT_CHROMIUM_CHANNEL=chromium bunx playwright test e2e/render-volume.spec.ts --update-snapshots

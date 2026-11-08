@@ -4833,7 +4833,17 @@ export default class NiiVue extends EventTarget {
       if (!('calMin' in options)) options.calMin = 0
       if (!('calMax' in options)) options.calMax = 0
     }
-    const unknown = options.visibleGroups?.filter((g) => !m.trx?.groups[g])
+    if (
+      options.visibleGroups != null && // null shows every group
+      !Array.isArray(options.visibleGroups)
+    ) {
+      log.warn('setTractOptions: visibleGroups must be an array of names')
+      delete options.visibleGroups
+    }
+    const groups = m.trx?.groups ?? {}
+    const unknown = options.visibleGroups?.filter(
+      (g) => !Object.hasOwn(groups, g),
+    )
     if (unknown?.length) {
       log.warn(`setTractOptions: unknown tract groups ${unknown.join(', ')}`)
     }
@@ -7136,7 +7146,8 @@ export default class NiiVue extends EventTarget {
    *   (first letter upper-cased), which is the form visible in `nv1.colormaps`
    *   and the `colormapAdded` event detail.
    * @throws If `R`/`G`/`B` are empty, a single stop, or caller-supplied
-   *   `A`/`I` arrays disagree in length.
+   *   `A`/`I` arrays disagree in length, or a label table's `I` holds a
+   *   non-integer ID.
    *
    * @example
    * const canonical = nv1.addColormap('myCmap', { R: [0, 255], G: [0, 128], B: [0, 0] })
@@ -7161,7 +7172,8 @@ export default class NiiVue extends EventTarget {
       let isMeshChanged = false
       for (const m of this.model.getMeshes()) {
         const uses = (m.layers ?? []).filter(
-          (layer) => NVCmaps.lookupColorMap(layer.colormap) === def,
+          (layer) =>
+            layer.colormap && NVCmaps.lookupColorMap(layer.colormap) === def,
         )
         if (uses.length === 0) continue
         for (const layer of uses) NVMeshLayers.applyLayerColormap(layer)

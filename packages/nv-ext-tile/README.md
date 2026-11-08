@@ -124,9 +124,19 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   Indexing awaits `File.slice` reads, so the page stays responsive; a folder without
   offset tables just takes longer in the browser.
 
-- Test fixtures: `fixtures/dicom-wsi` (synthetic, about 70 KB, with the generator
+- Test fixtures: `fixtures/dicom-wsi` (synthetic, about 60 KB, with the generator
   `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's
-  browser check).
+  browser check). A `.json` is its `.dcm` as DICOM JSON, for the parity test.
+
+## DICOM JSON metadata
+
+`indexDicomWsiMetadata(instances)` indexes DICOM-WSI from metadata alone, as a DICOMweb server returns it: PS3.18 DICOM JSON (`{"00480006": {"vr": "UL", "Value": [40]}}`) or dcmjs-naturalized objects (keyword keys, as OHIF's `displaySet.instances`). It places frames with the same code as `indexDicomWsi`, so slides, levels, sparse holes, focal planes, concatenations, spacing and bounds match; frames have no byte spans (`instance` and `frame` name each one, for WADO-RS `/frames/{n}`).
+
+- Transfer syntax: TransferSyntaxUID, else the first AvailableTransferSyntaxUID a tile codec reads, else `''` for the source to resolve. Native syntaxes are skipped, as for local files.
+- ICC profile: `iccProfile.bulkDataURI` to fetch, or `data` when inline.
+- No DimensionOrganizationType and no per-frame positions (or per-frame groups left as bulk data) means implicit TILED_FULL order, as for local files.
+- One call indexes at most 2 x 2^22 frames; instances past that are skipped.
+- `skipped[].file` holds the instance's name: its SOPInstanceUID, else `instances[k]`.
 
 ## Hosting an indexed slide
 

@@ -67,6 +67,12 @@ export interface SlideIndexLevel {
   sparse: boolean
 }
 
+export interface SlideIndexIccProfile {
+  offset: number
+  length: number
+  colorSpace?: string
+}
+
 export interface SlideIndexSlide {
   study: string
   series: string
@@ -79,8 +85,8 @@ export interface SlideIndexSlide {
   focalPlane: number
   /** Level-0 pixel spacing in mm, [column, row]. */
   pixelSpacingMM?: [number, number]
-  /** The optical path's ICC profile in the level-0 file (not applied yet). */
-  iccProfile?: { offset: number; length: number; colorSpace?: string }
+  /** The optical path's ICC profile in the level-0 file. */
+  iccProfile?: SlideIndexIccProfile
   instances: SlideIndexInstance[]
   /** Finest first. */
   levels: SlideIndexLevel[]
@@ -102,14 +108,15 @@ const UNDEFINED_LENGTH = 0xffffffff
 const MAX_DEPTH = 8
 const MAX_HEADER = 64 << 20
 const MAX_GRID = 1 << 22
-const MAX_SLIDE_TILES = 2 * MAX_GRID
+export const MAX_SLIDE_TILES = 2 * MAX_GRID
 // (Optical path, focal plane) pairs in one file, each a slide. Real files have
 // a few paths and tens of planes; a multiplexed z-stack a few hundred.
 const MAX_PAIRS = 4096
 const VR_BYTES: Record<string, number> = { US: 2, UL: 4, SL: 4, FL: 4, FD: 8 }
 const tagOf = (g: number, e: number): number => ((g << 16) | e) >>> 0
-const T = {
+export const T = {
   transferSyntax: tagOf(0x0002, 0x0010),
+  availableTransferSyntax: tagOf(0x0008, 0x3002),
   imageType: tagOf(0x0008, 0x0008),
   sop: tagOf(0x0008, 0x0018),
   study: tagOf(0x0020, 0x000d),
@@ -125,6 +132,7 @@ const T = {
   spacing: tagOf(0x0028, 0x0030),
   bitsStored: tagOf(0x0028, 0x0101),
   iccProfile: tagOf(0x0028, 0x2000),
+  pixelMeasuresSeq: tagOf(0x0028, 0x9110),
   colorSpace: tagOf(0x0028, 0x2002),
   container: tagOf(0x0040, 0x0512),
   zOffset: tagOf(0x0040, 0x074a),
@@ -134,6 +142,8 @@ const T = {
   totalRows: tagOf(0x0048, 0x0007),
   opticalPathSeq: tagOf(0x0048, 0x0105),
   opticalPathId: tagOf(0x0048, 0x0106),
+  opticalPathIdSeq: tagOf(0x0048, 0x0207),
+  planePositionSeq: tagOf(0x0048, 0x021a),
   columnPosition: tagOf(0x0048, 0x021e),
   rowPosition: tagOf(0x0048, 0x021f),
   opticalPaths: tagOf(0x0048, 0x0302),
@@ -147,16 +157,42 @@ const T = {
   itemEnd: tagOf(0xfffe, 0xe00d),
   sequenceEnd: tagOf(0xfffe, 0xe0dd),
 }
+/** Top-level attributes instanceGeometry reads, by tag: their DICOM JSON keywords. */
+export const TEXT_KEYWORDS: Record<number, string> = {
+  [T.transferSyntax]: 'TransferSyntaxUID',
+  [T.imageType]: 'ImageType',
+  [T.sop]: 'SOPInstanceUID',
+  [T.study]: 'StudyInstanceUID',
+  [T.series]: 'SeriesInstanceUID',
+  [T.frameOfReference]: 'FrameOfReferenceUID',
+  [T.organization]: 'DimensionOrganizationType',
+  [T.photometric]: 'PhotometricInterpretation',
+  [T.container]: 'ContainerIdentifier',
+}
+export const NUMBER_KEYWORDS: Record<number, string> = {
+  [T.concatNumber]: 'InConcatenationNumber',
+  [T.concatOffset]: 'ConcatenationFrameOffsetNumber',
+  [T.frames]: 'NumberOfFrames',
+  [T.rows]: 'Rows',
+  [T.columns]: 'Columns',
+  [T.bitsStored]: 'BitsStored',
+  [T.volumeWidth]: 'ImagedVolumeWidth',
+  [T.volumeHeight]: 'ImagedVolumeHeight',
+  [T.totalColumns]: 'TotalPixelMatrixColumns',
+  [T.totalRows]: 'TotalPixelMatrixRows',
+  [T.opticalPaths]: 'NumberOfOpticalPaths',
+  [T.focalPlanes]: 'TotalPixelMatrixFocalPlanes',
+}
 // VRs whose length field is 4 bytes after 2 reserved bytes (PS3.5 7.1.2).
 const LONG_VR = new Set('OB OD OF OL OV OW SQ SV UC UN UR UT UV'.split(' '))
 // Implicit VR little endian, explicit VR big endian, deflated.
-const REFUSED_SYNTAXES = new Set([
+export const REFUSED_SYNTAXES = new Set([
   '1.2.840.10008.1.2',
   '1.2.840.10008.1.2.2',
   '1.2.840.10008.1.2.1.99',
 ])
 
-class Skip extends Error {
+export class Skip extends Error {
   constructor(
     readonly reason: SlideIndexSkipReason,
     message: string,
@@ -281,9 +317,40 @@ function numberOf(b: Uint8Array, e: Element): number {
           : v.getFloat64(0, true)
 }
 
-/** One instance's header and frame spans. Internal: the index regroups these. */
-interface InstanceInfo {
-  instance: SlideIndexInstance
+/**
+ * What the index needs of one instance, from either reader (header bytes or
+ * DICOM JSON); {@link instanceGeometry} places its frames. `C` is how the
+ * reader locates an ICC profile.
+ */
+export interface WsiAttributes<C> {
+  /** By tag, the attributes in TEXT_KEYWORDS and NUMBER_KEYWORDS that are stated; a number is NaN when it does not parse. */
+  text: Record<number, string>
+  number: Record<number, number>
+  /** PixelSpacing (row, column) candidates, preferred first: shared, the first frame's, top level. */
+  spacing: (number[] | undefined)[]
+  /** OpticalPathSequence identifiers, and each path's ICC profile. */
+  pathIds: string[]
+  icc: (C | undefined)[]
+  sharedPath?: string
+  sharedZ?: number
+  /** Per-frame functional group items. */
+  perFrame: number
+  /** Per frame, when stated: 1-based pixel position, ZOffset (µm), OpticalPathIdentifier. */
+  column: (number | undefined)[]
+  row: (number | undefined)[]
+  z: (number | undefined)[]
+  path: (string | undefined)[]
+}
+
+/** The instance fields both readers state; each adds how it locates the frames. */
+export type InstanceCore = Omit<SlideIndexInstance, 'file' | 'size' | 'version'>
+
+/** One instance's placed frames and, for a local file, their byte spans. Package-internal: the index regroups these. */
+export interface InstanceInfo<
+  I = SlideIndexInstance,
+  C = SlideIndexIccProfile,
+> {
+  instance: I
   study: string
   series: string
   frameOfReference: string
@@ -302,7 +369,7 @@ interface InstanceInfo {
   pixelSpacingMM?: [number, number]
   /** OpticalPathSequence identifiers, and each path's ICC profile. */
   pathIds: string[]
-  icc: ({ offset: number; length: number; colorSpace?: string } | undefined)[]
+  icc: (C | undefined)[]
   /** Per frame: tile column and row (-1 when its position is invalid), optical path index, focal plane. */
   column: Int32Array
   row: Int32Array
@@ -312,6 +379,7 @@ interface InstanceInfo {
   zStated: boolean
   /** Per path index, its distinct `z` values (ranked with `z`). */
   planes: Set<number>[]
+  /** Local files only (zero otherwise): see SlideIndexFrames. */
   offset: Float64Array
   length: Uint32Array
 }
@@ -369,58 +437,86 @@ async function readHeader(
   }
 }
 
-async function indexInstance(file: File): Promise<InstanceInfo> {
-  const size = file.size
-  const readAt: ReadAt = async (offset, length) =>
-    new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
-  const { b, pixel, elements } = await readHeader(readAt, size)
-  const top = new Map<number, Element>()
-  const pathIds: string[] = []
-  const icc: InstanceInfo['icc'] = []
+/** The header's attributes, in the form both readers share. */
+function readAttributes(
+  b: Uint8Array,
+  elements: Element[],
+  top: Map<number, Element>,
+): WsiAttributes<SlideIndexIccProfile> {
+  const a: WsiAttributes<SlideIndexIccProfile> = {
+    text: {},
+    number: {},
+    spacing: [],
+    pathIds: [],
+    icc: [],
+    perFrame: 0,
+    column: [],
+    row: [],
+    z: [],
+    path: [],
+  }
   const colorSpaces: (string | undefined)[] = []
-  // PixelSpacing candidates, preferred first: shared, the first frame's, top level.
   const spacings: (string | undefined)[] = []
-  let sharedPath: string | undefined
-  let sharedZ: number | undefined
-  let perFrame = 0
-  let positioned = false // some frame states its position
   for (const e of elements) {
-    if (e.depth === 0) top.set(e.tag, e)
-    else if (e.root === T.opticalPathSeq && e.depth === 1) {
-      if (e.tag === T.opticalPathId) pathIds[e.item] = text(b, e)
+    if (e.depth === 0) continue
+    if (e.root === T.opticalPathSeq && e.depth === 1) {
+      if (e.tag === T.opticalPathId) a.pathIds[e.item] = text(b, e)
       if (e.tag === T.iccProfile)
-        icc[e.item] = { offset: e.offset, length: e.length }
+        a.icc[e.item] = { offset: e.offset, length: e.length }
       if (e.tag === T.colorSpace) colorSpaces[e.item] = text(b, e)
     } else if (e.root === T.shared) {
       if (e.tag === T.spacing) spacings[0] = text(b, e)
-      if (e.tag === T.opticalPathId) sharedPath = text(b, e)
-      if (e.tag === T.zOffset) sharedZ = numberOf(b, e)
+      if (e.tag === T.opticalPathId) a.sharedPath = text(b, e)
+      if (e.tag === T.zOffset) a.sharedZ = numberOf(b, e)
     } else if (e.root === T.perFrame) {
-      perFrame = Math.max(perFrame, e.item + 1)
-      if (e.tag === T.columnPosition) positioned = true
-      if (e.tag === T.spacing && e.item === 0) spacings[1] = text(b, e)
+      const f = e.item
+      a.perFrame = Math.max(a.perFrame, f + 1)
+      if (e.tag === T.columnPosition) a.column[f] = numberOf(b, e)
+      else if (e.tag === T.rowPosition) a.row[f] = numberOf(b, e)
+      else if (e.tag === T.zOffset) a.z[f] = numberOf(b, e)
+      else if (e.tag === T.opticalPathId) a.path[f] = text(b, e)
+      else if (e.tag === T.spacing && f === 0) spacings[1] = text(b, e)
     }
   }
-  icc.forEach((v, i) => {
+  a.icc.forEach((v, i) => {
     if (v && colorSpaces[i]) v.colorSpace = colorSpaces[i]
   })
-  const str = (tag: number): string => {
+  const topSpacing = top.get(T.spacing)
+  if (topSpacing) spacings[2] = text(b, topSpacing)
+  a.spacing = [0, 1, 2].map((i) => spacings[i]?.split('\\').map(Number))
+  for (const tag of Object.keys(TEXT_KEYWORDS).map(Number)) {
     const e = top.get(tag)
-    return e ? text(b, e) : ''
+    if (e) a.text[tag] = text(b, e)
   }
-  /** A whole number in [min, max] (`fallback` when absent); else the file is malformed. */
-  const int = (tag: number, fallback: number, min: number, max: number) => {
+  for (const tag of Object.keys(NUMBER_KEYWORDS).map(Number)) {
     const e = top.get(tag)
-    const v = e ? numberOf(b, e) : fallback
+    if (e) a.number[tag] = numberOf(b, e)
+  }
+  return a
+}
+
+/**
+ * Place one instance's frames from its attributes: shared by local files and
+ * DICOM JSON, so both index a slide alike. `maxFrames` bounds NumberOfFrames
+ * before anything is sized by it.
+ */
+export function instanceGeometry<C>(
+  a: WsiAttributes<C>,
+  maxFrames: number,
+): InstanceInfo<InstanceCore, C> {
+  const { pathIds } = a
+  const str = (tag: number): string => a.text[tag] ?? ''
+  /** A whole number in [min, max] (`fallback` when absent); else the instance is malformed. */
+  const int = (tag: number, fallback: number, min: number, max: number) => {
+    const v = a.number[tag] ?? fallback
     if (!Number.isInteger(v) || v < min || v > max)
-      throw new Skip('malformed', `tag ${tag.toString(16)} is ${v}`)
+      throw new Skip('malformed', `${NUMBER_KEYWORDS[tag]} is ${v}`)
     return v
   }
   const tileWidth = int(T.columns, 0, 0, 0xffff)
   const tileHeight = int(T.rows, 0, 0, 0xffff)
   if (!tileWidth || !tileHeight) throw new Skip('not-tiled', 'no Rows/Columns')
-  // Each frame needs at least its 8-byte item header after Pixel Data.
-  const frameCount = int(T.frames, 1, 1, Math.floor((size - pixel) / 8))
+  const frameCount = int(T.frames, 1, 1, maxFrames)
   const totalColumns = int(T.totalColumns, tileWidth, 1, 0xffffffff)
   const totalRows = int(T.totalRows, tileHeight, 1, 0xffffffff)
   const columns = Math.ceil(totalColumns / tileWidth)
@@ -432,6 +528,7 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   const concatOffset = int(T.concatOffset, 0, 0, 0xffffffff)
   const organization = str(T.organization)
   const sparse = organization === 'TILED_SPARSE'
+  const positioned = a.column.some((c) => c !== undefined)
   // Frames follow the implicit TILED_FULL order when the file says so, or as a
   // fallback when no frame states its position (3DHISTECH states no type).
   const implicit = organization === 'TILED_FULL' || (!sparse && !positioned)
@@ -445,12 +542,9 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
         `frames past ${grid} tiles x ${focalPlaneCount} planes x ${pathCount} paths`,
       )
   }
-  const info: InstanceInfo = {
+  const info: InstanceInfo<InstanceCore, C> = {
     instance: {
       id: str(T.sop),
-      file: fileKey(file),
-      size,
-      version: String(file.lastModified),
       transferSyntax: str(T.transferSyntax),
       photometric: str(T.photometric),
       bitsStored: int(T.bitsStored, 8, 1, 32),
@@ -470,7 +564,7 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     sparse,
     concatNumber: int(T.concatNumber, 0, 0, 0xffff),
     pathIds,
-    icc,
+    icc: a.icc,
     column: new Int32Array(frameCount),
     row: new Int32Array(frameCount),
     path: new Uint32Array(frameCount),
@@ -480,19 +574,9 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     offset: new Float64Array(frameCount),
     length: new Uint32Array(frameCount),
   }
-  spacings[2] = str(T.spacing)
-  const vol = (tag: number) => {
-    const e = top.get(tag)
-    return e ? numberOf(b, e) : undefined
-  }
-  info.pixelSpacingMM = spacingOf(
-    spacings.map((s) => s?.split('\\').map(Number)),
-    vol(T.volumeWidth),
-    vol(T.volumeHeight),
-    totalColumns,
-    totalRows,
-  )
+  info.pixelSpacingMM = spacingOf(a, totalColumns, totalRows)
   const { column, row, path, z } = info
+  const { perFrame } = a
   if (sparse && !perFrame)
     throw new Skip('malformed', 'TILED_SPARSE without per-frame positions')
   if (perFrame && perFrame !== frameCount)
@@ -525,37 +609,41 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   const pathOf = (id: string): number => {
     const known = pathIndex.get(id)
     if (known !== undefined) return known
+    // Past every sequence item, so an unnamed last item's ICC is not inherited.
+    pathIds.length = Math.max(pathIds.length, a.icc.length)
     pathIndex.set(id, pathIds.length)
     return pathIds.push(id) - 1
   }
   // A shared OpticalPathIdentifier names every frame's path.
-  if (sharedPath !== undefined) path.fill(pathOf(sharedPath))
+  if (a.sharedPath !== undefined) path.fill(pathOf(a.sharedPath))
   // A position must name a tile's top-left pixel (1-based); anything else is
   // -1, an error buildLevel counts, never a tile placed at 0.
   const place = (pos: number, size: number): number =>
     Number.isInteger(pos) && pos >= 1 && (pos - 1) % size === 0
       ? (pos - 1) / size
       : -1
-  let zCount = 0 // frames, not elements: a frame may repeat ZOffset
-  let lastZ = -1
-  for (const e of elements) {
-    if (e.root !== T.perFrame) continue
-    const f = e.item
-    if (e.tag === T.columnPosition) column[f] = place(numberOf(b, e), tileWidth)
-    else if (e.tag === T.rowPosition) row[f] = place(numberOf(b, e), tileHeight)
-    else if (e.tag === T.zOffset) {
-      z[f] = numberOf(b, e)
-      if (f !== lastZ) zCount++
-      lastZ = f
-    } else if (e.tag === T.opticalPathId) path[f] = pathOf(text(b, e))
+  let zCount = 0
+  for (let f = 0; f < perFrame; f++) {
+    const c = a.column[f]
+    const r = a.row[f]
+    const zf = a.z[f]
+    const p = a.path[f]
+    if (c !== undefined) column[f] = place(c, tileWidth)
+    if (r !== undefined) row[f] = place(r, tileHeight)
+    if (zf !== undefined) {
+      z[f] = zf
+      zCount++
+    }
+    if (p !== undefined) path[f] = pathOf(p)
   }
   // Otherwise µm and implicit plane indices would mix.
   if (zCount && zCount !== frameCount)
     throw new Skip('malformed', `ZOffset on ${zCount} of ${frameCount} frames`)
   // One shared ZOffset cannot place several implicit planes; they keep their indices.
+  const { sharedZ } = a
   const useSharedZ =
     !zCount && sharedZ !== undefined && (!implicit || focalPlaneCount === 1)
-  if (useSharedZ) z.fill(sharedZ as number)
+  if (useSharedZ) z.fill(sharedZ)
   info.zStated = zCount > 0 || useSharedZ
   // Each (optical path, focal plane) becomes a slide with its own grid-sized
   // tile map, so a small file naming thousands of planes must not reach groupSlides.
@@ -578,6 +666,28 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
         `over ${MAX_PAIRS} (optical path, focal plane) pairs`,
       )
   }
+  return info
+}
+
+async function indexInstance(file: File): Promise<InstanceInfo> {
+  const size = file.size
+  const readAt: ReadAt = async (offset, length) =>
+    new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
+  const { b, pixel, elements } = await readHeader(readAt, size)
+  const top = new Map<number, Element>()
+  for (const e of elements) if (e.depth === 0) top.set(e.tag, e)
+  // Each frame needs at least its 8-byte item header after Pixel Data.
+  const g = instanceGeometry(
+    readAttributes(b, elements, top),
+    Math.floor((size - pixel) / 8),
+  )
+  const instance = {
+    ...g.instance,
+    file: fileKey(file),
+    size,
+    version: String(file.lastModified),
+  }
+  const info = { ...g, instance }
   await frameSpans(info, b, pixel, top, readAt)
   return info
 }
@@ -590,15 +700,15 @@ const positive = (v: number | undefined): v is number =>
  * (row, column) candidate, else ImagedVolumeWidth/Height (mm) over the total
  * pixel matrix.
  */
-function spacingOf(
-  spacing: (number[] | undefined)[],
-  volumeWidth: number | undefined,
-  volumeHeight: number | undefined,
+function spacingOf<C>(
+  a: WsiAttributes<C>,
   totalColumns: number,
   totalRows: number,
 ): [number, number] | undefined {
-  for (const s of spacing)
+  for (const s of a.spacing)
     if (s && positive(s[0]) && positive(s[1])) return [s[1], s[0]]
+  const volumeWidth = a.number[T.volumeWidth]
+  const volumeHeight = a.number[T.volumeHeight]
   return positive(volumeWidth) && positive(volumeHeight)
     ? [volumeWidth / totalColumns, volumeHeight / totalRows]
     : undefined
@@ -745,34 +855,39 @@ export async function indexDicomWsi(
     try {
       infos.push(await indexInstance(file))
     } catch (err) {
-      skipped.push({
-        file: fileKey(file),
-        reason: err instanceof Skip ? err.reason : 'malformed',
-        message: err instanceof Error ? err.message : String(err),
-      })
+      skipped.push(skipOf(fileKey(file), err))
     }
   }
   return {
     version: 1,
     producer: 'nv-ext-tile/indexDicomWsi',
-    slides: groupSlides(infos, skipped),
+    slides: groupSlides(infos, skipped, (i) => i.file),
     skipped,
   }
 }
 
-interface Member {
-  info: InstanceInfo
+/** A skipped instance, named `file`: why `err` left it out. */
+export const skipOf = (file: string, err: unknown): SlideIndexSkipped => ({
+  file,
+  reason: err instanceof Skip ? err.reason : 'malformed',
+  message: err instanceof Error ? err.message : String(err),
+})
+
+interface Member<I = unknown, C = unknown> {
+  info: InstanceInfo<I, C>
   pathIndex: number
   /** The file's frames on this slide's path and plane. */
   frames: number[]
 }
 
+type Placed = InstanceInfo<unknown, unknown>
+
 // TILED_FULL can derive a path index past the sequence's items.
-const pathName = (info: InstanceInfo, pathIndex: number): string =>
+const pathName = (info: Placed, pathIndex: number): string =>
   info.pathIds[pathIndex] ?? String(pathIndex)
 
 /** A slide's identity short of its focal plane. */
-const slideBase = (info: InstanceInfo, pathIndex: number): string =>
+const slideBase = (info: Placed, pathIndex: number): string =>
   [
     info.study,
     info.series,
@@ -784,7 +899,7 @@ const slideBase = (info: InstanceInfo, pathIndex: number): string =>
 /** Stated ZOffsets (µm) become ranks across all of a slide's levels, so a lower
  * level holding only some planes joins the right ones; implicit TILED_FULL
  * indices already are ranks. */
-function rankStatedPlanes(infos: InstanceInfo[]): void {
+function rankStatedPlanes(infos: Placed[]): void {
   const stated = infos.filter((info) => info.volume && info.zStated)
   const all = new Map<string, Set<number>>()
   for (const info of stated)
@@ -812,13 +927,22 @@ function rankStatedPlanes(infos: InstanceInfo[]): void {
   }
 }
 
+/** A slide as groupSlides makes it, with the reader's instances and ICC profile. */
+type GroupedSlide<I, C> = Omit<SlideIndexSlide, 'instances' | 'iccProfile'> & {
+  instances: I[]
+  iccProfile?: C
+}
+
 /** Contract 2: a slide is study + series + frame of reference + container + optical path + focal plane. */
-function groupSlides(
-  infos: InstanceInfo[],
+export function groupSlides<I, C>(
+  infos: InstanceInfo<I, C>[],
   skipped: SlideIndexSkipped[],
-): SlideIndexSlide[] {
+  /** The name `skipped` gives an instance. */
+  nameOf: (instance: I) => string,
+): GroupedSlide<I, C>[] {
   rankStatedPlanes(infos)
-  const slides = new Map<string, { slide: SlideIndexSlide; own: Member[] }>()
+  type Entry = { slide: GroupedSlide<I, C>; own: Member<I, C>[] }
+  const slides = new Map<string, Entry>()
   for (const info of infos) {
     if (!info.volume) continue
     // One pass buckets the frames, so each slide walks only its own.
@@ -880,10 +1004,11 @@ function groupSlides(
         ok = slots <= MAX_SLIDE_TILES
         fits.set(key, ok)
       }
-      if (!ok && !reported.has(info.instance.file)) {
-        reported.add(info.instance.file)
+      const name = nameOf(info.instance)
+      if (!ok && !reported.has(name)) {
+        reported.add(name)
         skipped.push({
-          file: info.instance.file,
+          file: name,
           reason: 'malformed',
           message: `level ${key} takes its slide past ${MAX_SLIDE_TILES} tiles`,
         })
@@ -899,7 +1024,7 @@ function groupSlides(
       else byMatrix.set(key, [k])
     })
     for (const ks of byMatrix.values()) slide.levels.push(buildLevel(ks, own))
-    const l0 = own[0] as Member
+    const l0 = own[0] as Member<I, C>
     slide.pixelSpacingMM = l0.info.pixelSpacingMM
     slide.iccProfile = l0.info.icc[l0.pathIndex]
     return slide
@@ -964,7 +1089,11 @@ function buildLevel(ks: number[], own: Member[]): SlideIndexLevel {
  * for a hole. Grid-sized, so it is built when a slide is opened, not indexed.
  * An invalid position or a second frame for a tile is an error; the first wins.
  */
-export function tileMap(level: SlideIndexLevel): Int32Array {
+export function tileMap(
+  level: Pick<SlideIndexLevel, 'columns' | 'rows'> & {
+    frames: Pick<SlideIndexFrames, 'tile'>
+  },
+): Int32Array {
   const map = new Int32Array(level.columns * level.rows).fill(-1)
   const { tile } = level.frames
   // Backwards, so the first frame for a tile is written last and wins.

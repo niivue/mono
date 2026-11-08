@@ -1,5 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
+import type { SliceFrames } from './sliceFrames'
 import type { WsiSlideView } from './wsiSlideView'
 
 /**
@@ -28,6 +29,8 @@ export interface NiivueViewportEntry {
   windowLevel?: { window: number; level: number }
   /** OHIF tool group whose primary tool drives this viewport. */
   toolGroupId?: string
+  /** Base volume slice -> DICOM frame, when converted from DICOM. */
+  sliceFrames?: SliceFrames
   /** Visible NVSlide view when this viewport is showing a whole-slide series. */
   slideView?: WsiSlideView
   /** Viewport-provided sink so commands can surface progress text (null = clear). */
@@ -68,6 +71,7 @@ export function updateNiivueViewport(
       | 'overlayUIDs'
       | 'overlayLoading'
       | 'toolGroupId'
+      | 'sliceFrames'
     >
   >,
 ): void {

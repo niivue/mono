@@ -1,7 +1,8 @@
-import { rankOutputs } from './dcm2niixOutputs'
+import { isPart, outputEcho, rankOutputs } from './dcm2niixOutputs'
 import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
 import type { OhifDisplaySet } from './ohif-types'
 import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
+import { buildSliceFrames, type SliceFrames } from './sliceFrames'
 
 // Phase 2 DICOM bridge: turn a DICOMweb display set into a NIfTI volume, then load
 // it with NiiVue. We fetch DICOM Part-10 files (RetrieveInstance, else reconstructed
@@ -66,6 +67,8 @@ export interface DicomConversion {
   image: File
   /** Names the outputs not shown and/or warns of a partial conversion. */
   note?: string
+  /** Slice -> source frame of `image`, for measurement identity. */
+  sliceFrames?: SliceFrames
 }
 
 /**
@@ -111,5 +114,10 @@ export async function convertDisplaySetToNifti(
   return {
     image: shown.image,
     note: notes.length > 0 ? notes.join(' ') : undefined,
+    sliceFrames: buildSliceFrames(
+      await shown.image.slice(0, 348).arrayBuffer(),
+      ds.instances ?? [],
+      { echo: outputEcho(shown), part: isPart(shown) },
+    ),
   }
 }

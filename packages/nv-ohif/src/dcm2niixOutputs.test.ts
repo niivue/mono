@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { OutputFile, Series } from '@niivue/dcm2niix'
-import { niftiVoxels, rankOutputs } from './dcm2niixOutputs'
+import { niftiVoxels, outputEcho, rankOutputs } from './dcm2niixOutputs'
 
 // A NIfTI-1 header (352 bytes) with the given dims; no voxel data.
 function niftiFile(name: string, dims: number[], le = true): OutputFile {
@@ -32,6 +32,14 @@ describe('niftiVoxels', () => {
   it('is 0 for a non-NIfTI-1 header', async () => {
     expect(await niftiVoxels(new File([new Uint8Array(400)], 'a.nii'))).toBe(0)
     expect(await niftiVoxels(new File(['short'], 'a.nii'))).toBe(0)
+  })
+})
+
+describe('outputEcho', () => {
+  it('reads the sidecar, else the _e<N> stem; undefined for single echo', () => {
+    expect(outputEcho(series('t_e2', [1], { EchoNumber: 2 }))).toBe(2)
+    expect(outputEcho(series('t_e1', [1], primary))).toBe(1)
+    expect(outputEcho(series('t', [1], primary))).toBeUndefined()
   })
 })
 

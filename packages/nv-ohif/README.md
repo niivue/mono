@@ -35,7 +35,7 @@ bun add @niivue/nv-ohif
 
 Add it to your OHIF app's `pluginConfig.json` (or `addExtension`) and reference the
 viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name is
-`niivue`.
+`niivue`. List it after the cornerstone extension (see **Jumping to a row** below).
 
 ```js
 // in a mode's viewport config
@@ -175,6 +175,18 @@ sync both directions.
 viewport is backed by a loaded DICOM series with instances (so the row carries a
 resolvable `referenceSeriesUID`). A NIfTI-URL display set still draws the shape on
 the canvas, but it is not reflected into the panel.
+
+**DICOM identity.** Points are LPS mm. When a shape lies on one acquired frame plane of
+a converted series, its row also carries that frame's `SOPInstanceUID`,
+`frameNumber` and `referencedImageId` (matched from each frame's position against
+the converted volume's affine, keeping the shown echo and magnitude/phase part).
+A shape off that plane (across slices, or reformatted), on a slice two frames
+share or none claims (e.g. enhanced multi-echo/4D, oblique frames), or on a volume
+without a sform omits them.
+
+**Jumping to a row.** List `@niivue/nv-ohif` after the cornerstone extension, so
+its `jumpToMeasurementViewport` (which hands non-NiiVue rows to cornerstone) takes
+precedence and a NiiVue row is not re-hung into another viewport.
 
 ## DICOM support
 

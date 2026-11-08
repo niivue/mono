@@ -28,6 +28,7 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
+import { frameAt } from './sliceFrames'
 import { getStandardCommandDefinitions } from './standardCommands'
 import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
 
@@ -747,6 +748,10 @@ function reflectNiivueAnnotationResult(
   // An eraser cut leaves the bounds and endpoints intact, so OHIF would draw the
   // whole shape beside stats for what is left. Drop the row instead.
   if (isErasedForOhif(annotation)) return { status: 'permanentlyUnsupported' }
+  // SOPInstanceUID / frameNumber / referencedImageId when the shape lies on one
+  // acquired frame; MeasurementService rejects keys outside its schema, so an
+  // unmapped shape omits them rather than sending undefined.
+  const frame = entry.sliceFrames && frameAt(entry.sliceFrames, points)
   const unit = modalityUnit(entry)
   const { primary, data } = buildAnnotationDisplay(
     mapping,
@@ -779,6 +784,7 @@ function reflectNiivueAnnotationResult(
           referenceStudyUID: backing.StudyInstanceUID as string | undefined,
           displaySetInstanceUID: backing.displaySetInstanceUID,
           FrameOfReferenceUID: forUID,
+          ...frame,
           points,
           displayText: { primary, secondary: [] },
           data,
@@ -1608,6 +1614,24 @@ export function getNiivueCommandsModule({
       if (!entry) return
       entry.nv.isColorbarVisible = !entry.nv.isColorbarVisible
       refreshToolbar(servicesManager, entry.viewportId)
+    },
+
+    /**
+     * Cornerstone's global JUMP_TO_MEASUREMENT handler runs this command without
+     * a context, so the newest context answers: NIIVUE, when nv-ohif registers
+     * after cornerstone. A NiiVue row is navigated by subscribeOhifLabelSync;
+     * Cornerstone would otherwise re-hang the viewport. Others go to Cornerstone.
+     */
+    jumpToMeasurementViewport: (options: {
+      measurement?: { uid?: string }
+    }) => {
+      const uid = options.measurement?.uid
+      if (uid && measurementToAnnotation.has(uid)) return
+      ohifCommandsManager(commandsManager)?.runCommand?.(
+        'jumpToMeasurementViewport',
+        options,
+        'CORNERSTONE',
+      )
     },
 
     /** Toggle nearest-neighbor vs smooth (linear) volume interpolation. */

@@ -1075,6 +1075,32 @@ describe('reflectNiivueAnnotation', () => {
     expect(texts).toHaveLength(1)
   })
 
+  it('keeps a NiiVue row out of Cornerstone jumpToMeasurementViewport', () => {
+    register('vp-guard', stubNiivue())
+    updateNiivueViewport('vp-guard', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-guard', backing)
+    reflectNiivueAnnotation('vp-guard', svc.servicesManager, ellipse('g'))
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const delegated: unknown[][] = []
+    const { actions } = getNiivueCommandsModule({
+      servicesManager: svc.servicesManager,
+      commandsManager: {
+        runCommand: (...args: unknown[]) => delegated.push(args),
+      },
+    } as unknown as OhifExtensionParams)
+    actions.jumpToMeasurementViewport({ measurement: { uid } })
+    expect(delegated).toEqual([])
+    const other = { measurement: { uid: 'cornerstone-1' } }
+    actions.jumpToMeasurementViewport(other)
+    expect(delegated).toEqual([
+      ['jumpToMeasurementViewport', other, 'CORNERSTONE'],
+    ])
+  })
+
   it('jumps to the owning viewport and selects the reflected annotation', () => {
     const nv = stubNiivue()
     const activated: string[] = []

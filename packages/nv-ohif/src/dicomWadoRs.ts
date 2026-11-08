@@ -12,15 +12,32 @@
 // derive that URL and unpack that body; both are pure so they can be unit-tested.
 
 /**
+ * The http(s) URL a cornerstone imageId names, its loader scheme stripped. A
+ * relative root (OHIF's `wadoRoot: '/dicomweb'` gives `wadors:/dicomweb/...`)
+ * resolves against the page. Null for anything else.
+ */
+export function imageIdUrl(imageId: string): string | null {
+  try {
+    const url = new URL(
+      imageId.replace(/^(wadors|dicomweb|wadouri):/i, ''),
+      globalThis.location?.href,
+    )
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? url.href
+      : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Turn a cornerstone `wadors:`/`dicomweb:` frame imageId into the WADO-RS
  * retrieve-instance URL. Returns null if the id is not an http(s) DICOMweb
  * instance reference.
  */
 export function retrieveInstanceUrlFromImageId(imageId: string): string | null {
-  if (!imageId) return null
-  // cornerstone prefixes the real URL with a loader scheme; strip known ones.
-  const raw = imageId.replace(/^(wadors|dicomweb|wadouri):/i, '')
-  if (!/^https?:\/\//i.test(raw)) return null
+  const raw = imageIdUrl(imageId)
+  if (!raw) return null
   // Keep everything up to and including `/instances/<uid>`, dropping any
   // `/frames/...` (or other sub-resource) suffix.
   const m = raw.match(/^(.*\/instances\/[^/?#]+)(?:[/?#].*)?$/i)

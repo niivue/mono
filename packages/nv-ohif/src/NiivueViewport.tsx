@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
   applyDefaultAnnotationText,
+  centerCrosshair,
   clearNiivueAnnotations,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
@@ -344,6 +345,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // baseline, so the first manual contrast drag is detected as a change.
     const seedWindowLevel = () => {
       if (cancelled) return
+      centerCrosshair(nv)
       updateNiivueViewport(viewportId, { windowLevel: readBaseWindowLevel(nv) })
       // A reflection may have failed while OHIF's backing series or the converted
       // volume was still becoming ready. Retry after the load boundary even when

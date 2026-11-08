@@ -98,6 +98,32 @@ describe('convertDisplaySetToNifti', () => {
     expect(calls).toHaveLength(0)
   })
 
+  it('fetches a relative DICOMweb root from the page origin', async () => {
+    const urls: string[] = []
+    const stub = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      urls.push(url)
+      return stub(url, init)
+    }) as unknown as typeof fetch
+    result = Promise.resolve({ series: [output('rel', 3)] })
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'https://h/viewer/niivue' },
+      configurable: true,
+    })
+    try {
+      await convertDisplaySetToNifti({
+        instances: [
+          {
+            imageId: 'wadors:/dicomweb/studies/1/series/2/instances/3/frames/1',
+          },
+        ],
+      } as OhifDisplaySet)
+    } finally {
+      Reflect.deleteProperty(globalThis, 'location')
+    }
+    expect(urls).toContain(frames)
+  })
+
   it('fetches frames 1..NumberOfFrames of a multi-frame instance into one file', async () => {
     const urls: string[] = []
     const stub = globalThis.fetch

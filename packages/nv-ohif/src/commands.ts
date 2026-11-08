@@ -1284,7 +1284,20 @@ export function resetView(entry: NiivueViewportEntry): void {
   nv.scaleMultiplier = VIEW_DEFAULTS.scaleMultiplier
   nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
   nv.renderPan = [...VIEW_DEFAULTS.renderPan]
-  nv.crosshairPos = [...VIEW_DEFAULTS.crosshairPos]
+  centerCrosshair(nv)
+}
+
+/**
+ * Put the crosshair on the base volume's centre voxel. NiiVue's default, scene
+ * fraction 0.5, falls between two slices when the slice count is even, where
+ * frameAt finds no DICOM frame for a measurement.
+ */
+export function centerCrosshair(nv: NiivueViewportEntry['nv']): void {
+  const dims = nv.volumes[0]?.dimsRAS
+  const mid = (d = 1) => Math.round((d - 1) / 2)
+  nv.crosshairPos = dims
+    ? nv.vox2frac([mid(dims[1]), mid(dims[2]), mid(dims[3])])
+    : [...VIEW_DEFAULTS.crosshairPos]
 }
 
 /** Apply one of OHIF's modality presets (by id, then index) to the base volume. */

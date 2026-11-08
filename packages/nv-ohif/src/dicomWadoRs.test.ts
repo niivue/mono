@@ -23,6 +23,21 @@ describe('retrieveInstanceUrlFromImageId', () => {
     ).toBe(base)
   })
 
+  it('resolves a relative DICOMweb root against the page', () => {
+    const id = 'wadors:/dicomweb/studies/1.2/series/3.4/instances/5.6/frames/1'
+    // No page (Bun has no location): a relative id names nothing.
+    expect(retrieveInstanceUrlFromImageId(id)).toBeNull()
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'https://host/viewer/niivue?StudyInstanceUIDs=1.2' },
+      configurable: true,
+    })
+    try {
+      expect(retrieveInstanceUrlFromImageId(id)).toBe(base)
+    } finally {
+      Reflect.deleteProperty(globalThis, 'location')
+    }
+  })
+
   it('rejects non-http and non-instance ids', () => {
     expect(retrieveInstanceUrlFromImageId('')).toBeNull()
     expect(retrieveInstanceUrlFromImageId('dicomfile:/local/a.dcm')).toBeNull()

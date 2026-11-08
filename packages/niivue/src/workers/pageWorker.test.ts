@@ -111,19 +111,31 @@ test('a NiiVue holds the workers from attach to destroy, once', async () => {
     new NiiVue({}, {} as never).destroy()
     expect(retain).toHaveBeenCalledTimes(0)
     expect(release).toHaveBeenCalledTimes(0)
-    // A failed attach still holds until destroy; a second attach adds nothing.
+    // A failed attach lets its hold go at once, so a viewer dropped without
+    // destroy() (a backend fallback) cannot keep the workers alive.
     const nv = new NiiVue({}, {} as never)
     await nv.attachToCanvas({} as HTMLCanvasElement).catch(() => {})
-    await nv.attachToCanvas({} as HTMLCanvasElement).catch(() => {})
     expect(retain).toHaveBeenCalledTimes(1)
-    nv.destroy()
-    nv.destroy()
     expect(release).toHaveBeenCalledTimes(1)
+    await nv.attachTo('missing-canvas-id').catch(() => {})
+    expect(retain).toHaveBeenCalledTimes(2)
+    expect(release).toHaveBeenCalledTimes(2)
+    nv.destroy()
+    nv.destroy()
+    expect(release).toHaveBeenCalledTimes(2)
+    // A viewer that stays attached holds once, however often it re-attaches,
+    // until destroy.
+    const held = new NiiVue({}, { attachToCanvas: async () => {} } as never)
+    await held.attachToCanvas({} as HTMLCanvasElement)
+    await held.attachToCanvas({} as HTMLCanvasElement)
+    expect(retain).toHaveBeenCalledTimes(3)
+    held.destroy()
+    expect(release).toHaveBeenCalledTimes(3)
     // A backend constructor that refuses (WebGPU build without WebGPU) holds
     // nothing, so a fallback viewer's destroy can end the workers.
     const { default: GPU } = await import('@/NVControlWebGPU')
     expect(() => new GPU()).toThrow()
-    expect(retain).toHaveBeenCalledTimes(1)
+    expect(retain).toHaveBeenCalledTimes(3)
   } finally {
     retain.mockRestore()
     release.mockRestore()

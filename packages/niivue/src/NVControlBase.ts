@@ -2811,8 +2811,14 @@ export default class NiiVue extends EventTarget {
   }
 
   async attachTo(id: string, isAntiAlias = null): Promise<this> {
-    this._holdPageWorkers()
-    await this._viewLifecycle.attachTo(this, id, isAntiAlias)
+    const held = this._holdPageWorkers()
+    try {
+      await this._viewLifecycle.attachTo(this, id, isAntiAlias)
+    } catch (err) {
+      // A failed viewer is often dropped without destroy() (e.g. WebGPU to WebGL2 fallback).
+      if (held) this._releasePageWorkers()
+      throw err
+    }
     return this
   }
 
@@ -2820,18 +2826,31 @@ export default class NiiVue extends EventTarget {
     canvas: HTMLCanvasElement,
     isAntiAlias: boolean | null = null,
   ): Promise<this> {
-    this._holdPageWorkers()
-    await this._viewLifecycle.attachToCanvas(this, canvas, isAntiAlias)
+    const held = this._holdPageWorkers()
+    try {
+      await this._viewLifecycle.attachToCanvas(this, canvas, isAntiAlias)
+    } catch (err) {
+      // A failed viewer is often dropped without destroy() (e.g. WebGPU to WebGL2 fallback).
+      if (held) this._releasePageWorkers()
+      throw err
+    }
     return this
   }
 
   // An attached viewer keeps the page workers alive between its loads; destroy()
   // lets them go. Not taken in the constructor: a constructor that throws (e.g.
   // the WebGPU build without WebGPU) leaves no instance to destroy.
-  private _holdPageWorkers(): void {
-    if (this._holdsPageWorkers || this._destroyed) return
+  private _holdPageWorkers(): boolean {
+    if (this._holdsPageWorkers || this._destroyed) return false
     this._holdsPageWorkers = true
     retainPageWorkers()
+    return true
+  }
+
+  private _releasePageWorkers(): void {
+    if (!this._holdsPageWorkers) return
+    this._holdsPageWorkers = false
+    releasePageWorkers()
   }
 
   /**
@@ -7040,7 +7059,7 @@ export default class NiiVue extends EventTarget {
     // A second call would reach renderers whose GPU device is already gone.
     if (this._destroyed) return
     this._destroyed = true
-    if (this._holdsPageWorkers) releasePageWorkers()
+    this._releasePageWorkers()
     this._animation?.stop('destroyed')
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false

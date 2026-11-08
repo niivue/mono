@@ -450,7 +450,7 @@ export class NVChunkedVolume {
   // repeat call does not re-fetch the coarse level.
   private floorVolume: NVImage | null = null
   private floorBuilt = false
-  // The last floor set this manager made, and the floor it replaced.
+  // The last floor this manager got onto the view, and the floor it replaced.
   private floorSet: { set: number; replaced: NVImage | null } | null = null
   /**
    * False only when the caller passed both `calMin` and `calMax` as finite
@@ -607,12 +607,9 @@ export class NVChunkedVolume {
       this.floorBuilt = true
     }
     if (this.disposed) return false
-    // The setter counts the call before its first await, so this is our set.
-    this.floorSet = {
-      set: (this.host._baseCoarseFloorSets ?? 0) + 1,
-      replaced: this.host._baseCoarseFloor ?? null,
-    }
-    await this.host.setBaseCoarseFloor(this.floorVolume)
+    await this.host._setBaseCoarseFloor(this.floorVolume, (set, replaced) => {
+      this.floorSet = { set, replaced }
+    })
     return this.floorVolume !== null
   }
 

@@ -623,7 +623,7 @@ describe('NVChunkedVolume id + plan-swap routing', () => {
       },
       addEventListener: () => {},
       removeEventListener: () => {},
-      setBaseCoarseFloor: async () => {},
+      _setBaseCoarseFloor: async () => {},
       _updateGLChanged: async () => {},
       isDestroyed: false,
     })
@@ -1309,7 +1309,7 @@ describe('NVChunkedVolume refocus promise', () => {
 // --- manager: automatic coarse floor ---------------------------------------
 
 /**
- * Host stub that records every floor install. `setBaseCoarseFloor` is the only
+ * Host stub that records every floor install. `_setBaseCoarseFloor` is the only
  * host call `applyCoarseFloor` makes, so nothing else needs stubbing.
  */
 function makeFloorHost(): {
@@ -1318,7 +1318,7 @@ function makeFloorHost(): {
 } {
   const installs: Array<NVImage | null> = []
   const host = {
-    setBaseCoarseFloor: async (vol: NVImage | null) => {
+    _setBaseCoarseFloor: async (vol: NVImage | null) => {
       installs.push(vol)
     },
     _registerChunkedVolume: () => {},
@@ -1589,7 +1589,7 @@ describe('NVChunkedVolume automatic display window', () => {
       },
       addEventListener: () => {},
       removeEventListener: () => {},
-      setBaseCoarseFloor: async () => {},
+      _setBaseCoarseFloor: async () => {},
       _updateGLChanged: async () => {
         updateGL++
       },
@@ -1678,7 +1678,7 @@ describe('NVChunkedVolume automatic display window', () => {
   test('a window set while the floor streams in is not overwritten', async () => {
     const { host, sceneVolume } = makeWindowHost()
     const installed: { floor: NVImage | null } = { floor: null }
-    ;(host as unknown as { setBaseCoarseFloor: unknown }).setBaseCoarseFloor =
+    ;(host as unknown as { _setBaseCoarseFloor: unknown })._setBaseCoarseFloor =
       async (f: NVImage | null) => {
         installed.floor = f
       }
@@ -1847,7 +1847,7 @@ describe('NVChunkedVolume failed init', () => {
       removeVolume: async (i: number) => {
         volumes.splice(i, 1)
       },
-      setBaseCoarseFloor: async () => {
+      _setBaseCoarseFloor: async () => {
         throw new Error('out of memory')
       },
       sliceType: SLICE_TYPE.MULTIPLANAR,
@@ -1888,18 +1888,27 @@ describe('NVChunkedVolume failed init', () => {
       removeVolume: async (i: number) => {
         volumes.splice(i, 1)
       },
-      // Like NiiVue: records the floor first, then can still throw (drawScene).
-      async setBaseCoarseFloor(
+      // Like NiiVue: records the floor once it reaches the view, then can
+      // still throw (drawScene).
+      async _setBaseCoarseFloor(
         this: {
           _baseCoarseFloor: NVImage | null
           _baseCoarseFloorSets: number
         },
         f: NVImage | null,
+        onInstall?: (set: number, replaced: NVImage | null) => void,
       ) {
-        this._baseCoarseFloor = f
-        this._baseCoarseFloorSets++
         floors.push(f)
+        this._baseCoarseFloorSets++
+        onInstall?.(this._baseCoarseFloorSets, this._baseCoarseFloor)
+        this._baseCoarseFloor = f
         if (failSetter && floors.length === 1) throw new Error('draw failed')
+      },
+      async setBaseCoarseFloor(
+        this: { _setBaseCoarseFloor: (f: NVImage | null) => Promise<void> },
+        f: NVImage | null,
+      ) {
+        await this._setBaseCoarseFloor(f)
       },
       _updateGLChanged: async () => {
         throw new Error('out of memory')

@@ -526,7 +526,7 @@ export default class NiiVue extends EventTarget {
   /** @internal The floor last passed to setBaseCoarseFloor, so a failed
    *  {@link NVChunkedVolume} init can put back the floor it replaced. */
   _baseCoarseFloor: NVImage | null = null
-  /** @internal Counts setBaseCoarseFloor calls: tells two equal floors (two nulls) apart. */
+  /** @internal Counts floors that reached the view: tells two equal floors (two nulls) apart. */
   _baseCoarseFloorSets = 0
 
   /** @internal Registration hook for {@link NVChunkedVolume}. */
@@ -5425,8 +5425,19 @@ export default class NiiVue extends EventTarget {
    * first.
    */
   async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
-    this._baseCoarseFloor = coarseVol
-    this._baseCoarseFloorSets++
+    await this._setBaseCoarseFloor(coarseVol)
+  }
+
+  /**
+   * @internal {@link setBaseCoarseFloor}, plus `onInstall`: called once the
+   * floor is on the view (a failed upload leaves the old one drawn, so it is not
+   * recorded), before drawing, with this install's number and the floor it
+   * replaced, so a failed {@link NVChunkedVolume} init can undo exactly its own.
+   */
+  async _setBaseCoarseFloor(
+    coarseVol: NVImage | null,
+    onInstall?: (set: number, replaced: NVImage | null) => void,
+  ): Promise<void> {
     if (coarseVol?.isDirty) {
       if (this.model.getVolumes().includes(coarseVol)) {
         // A loaded volume: commit its flag through a scoped update, so its
@@ -5437,6 +5448,10 @@ export default class NiiVue extends EventTarget {
       }
     }
     await this.view?.setCoarseFloor?.(coarseVol)
+    // Not inside `onInstall?.(...)`: an absent callback skips its arguments.
+    this._baseCoarseFloorSets++
+    onInstall?.(this._baseCoarseFloorSets, this._baseCoarseFloor)
+    this._baseCoarseFloor = coarseVol
     this.drawScene()
   }
 

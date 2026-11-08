@@ -332,7 +332,10 @@ describe('evaluate.niivue.unsupported', () => {
       [button('Reset', 'resetViewport'), undefined],
       [button('Fit', ['fitViewportToWindow', 'niivueResetView']), undefined],
       [button('Mixed', ['resetViewport', 'rotateViewportCW']), disabled],
-      [button('Empty', undefined), disabled],
+      // Section lists, menus and the layout selector carry no commands.
+      [button('Empty', undefined), undefined],
+      [button('TagBrowser', 'openDICOMTagViewer'), undefined],
+      [button('Tags', ['openDICOMTagViewer', 'rotateViewportCW']), disabled],
       [
         button('Pan', 'setToolActiveToolbar'),
         { disabled: false, isActive: true },

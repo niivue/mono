@@ -1,7 +1,7 @@
 # @niivue/nv-ohif
 
 A [NiiVue](https://github.com/niivue/niivue) viewport extension for the
-[OHIF Viewer](https://ohif.org) (v3.12). Render series with NiiVue inside OHIF —
+[OHIF Viewer](https://ohif.org) (3.13 and 3.14-beta). Render series with NiiVue inside OHIF —
 bringing 3D volume rendering, mesh/surface overlays, multiplanar with colormapped
 overlays, and voxel drawing / vector annotation to your OHIF app.
 
@@ -9,7 +9,8 @@ overlays, and voxel drawing / vector annotation to your OHIF app.
 > and **DICOM series** (fetched + converted to NIfTI with `@niivue/dcm2niix`), with a
 > toolbar surfacing NiiVue's views / clip plane / overlay / window-level. Verified
 > mounting inside a full local OHIF Viewer (registered via `pluginConfig.json` + a
-> mode). See `PLAN.md`.
+> mode). OHIF production builds need the production JSX runtime, so `build:lib`
+> passes `--production`. See `PLAN.md`.
 
 > **Consuming the local build (dev):** install **packed tarballs**, do not symlink.
 > Symlinking the monorepo package into an OHIF app makes its bundler follow the link
@@ -47,7 +48,7 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 
 ## What it does today
 
-- Registers a **React 18 viewport** that owns a `<canvas>` + a NiiVue instance.
+- Registers a **React viewport** that owns a `<canvas>` + a NiiVue instance.
 - Loads a display set whose URL is a NiiVue-readable volume (`.nii/.nii.gz`, `.nrrd`,
   `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in multiplanar.
 - Loads a **DICOM** series by fetching it and converting to NIfTI with
@@ -260,10 +261,10 @@ The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path f
 
 ## Compatibility
 
-- **OHIF**: `^3.12` (developed against 3.12.6; also exercised against OHIF
-  `master`/3.13-beta in the dev rig).
-- **React**: `^18.3.1` (OHIF is on React 18 — this does not use `@niivue/nvreact`,
-  which targets React 19).
+- **OHIF**: tested on 3.13.14 and 3.14.0-beta.70 (developed against 3.12.6).
+- **React**: `^18.3.1 || ^19`, supplied by the host (OHIF 3.13.14 ships React
+  18.3.1, 3.14.0-beta.70 ships 19.2.7). This does not use `@niivue/nvreact`.
+- **dcmjs**: `^0.49.0 || ^0.52.0` (OHIF 3.13+ pins 0.52.0).
 - **`@niivue/dcm2niix`**: required for DICOM only — see [DICOM support](#dicom-support).
 - **`@niivue/nv-ext-tile`**: a dependency; nv-ohif imports only `/dicom`, so GeoTIFF is installed but never loaded.
 

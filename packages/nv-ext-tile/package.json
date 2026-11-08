@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-tile",
-  "version": "1.0.0-rc.8",
+  "version": "1.0.0-rc.9",
   "type": "module",
   "description": "Tiled image formats for NiiVue's NVSlide: pyramidal TIFF/OME-TIFF/SVS by HTTP Range (/tiff) and DICOM-WSI folders and hosted manifests (/dicom)",
   "exports": {

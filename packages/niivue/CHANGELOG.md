@@ -1,3 +1,17 @@
+## 1.0.0-rc.118 (2026-11-08)
+
+### Fixes
+
+- **niivue:** keep tract scalar metadata for prototype-named scalars ([8d55ef24](https://github.com/niivue/mono/commit/8d55ef24))
+- **niivue:** accept visibleGroups null; keep TRK prototype-named scalars ([939a1669](https://github.com/niivue/mono/commit/939a1669))
+- **niivue:** keep TRX names that collide with Object.prototype as own keys ([07c00f11](https://github.com/niivue/mono/commit/07c00f11))
+- **niivue:** guard tract groups, label IDs, mesh colormaps and focus box ([#572](https://github.com/niivue/mono/issues/572), [#575](https://github.com/niivue/mono/issues/575), [#576](https://github.com/niivue/mono/issues/576))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.117 (2026-11-08)
 
 ### Fixes

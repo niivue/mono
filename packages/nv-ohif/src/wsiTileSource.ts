@@ -11,7 +11,7 @@ import type { OhifDisplaySet } from './ohif-types'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs. JPEG Baseline/Extended decode
 // natively in the browser; JPEG 2000 and JPEG-LS go to the decoders that
-// wsiTileDecoders.ts registers (dcm2niix WASM).
+// registerDcm2niixDecoders (@niivue/nv-ext-tile/dicom) registers (dcm2niix WASM).
 type WsiCodec = 'image/jpeg' | 'image/jp2' | 'image/jls'
 const CODEC_BY_TRANSFER_SYNTAX: Record<string, WsiCodec> = {
   '1.2.840.10008.1.2.4.50': 'image/jpeg', // JPEG Baseline (Process 1)

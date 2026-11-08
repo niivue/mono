@@ -31,7 +31,10 @@
       "command": "bun test",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["^build"],
-      "inputs": ["typescript"]
+      "inputs": [
+        "typescript",
+        { "dependentTasksOutputFiles": "**/*.js", "transitive": false }
+      ]
     }
   }
 }

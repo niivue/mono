@@ -183,10 +183,12 @@ Support boundary:
 - **Supported:** **JPEG**, **JPEG 2000** and **JPEG-LS** tiles with **TILED_FULL** frame
   organization, one optical path and one focal plane, 8-16-bit unsigned samples.
   - JPEG 2000 and JPEG-LS frames are requested untranscoded (`transfer-syntax=*`) and
-    decoded by `@niivue/dcm2niix`'s WASM worker pool (`createFrameDecoder`, loaded on the
-    first such tile). A pool whose workers die is replaced, and the tile retried once.
+    decoded by `@niivue/dcm2niix`'s WASM worker pool, registered by
+    `@niivue/nv-ext-tile/dicom`'s `registerDcm2niixDecoders` (loaded on the first such
+    tile). A pool whose workers die is replaced, and the tile retried once.
   - A decoder the host app registered with `NVSlide.registerTileDecoder('image/jp2' |
-    'image/jls', ...)` is kept.
+    'image/jls', ...)` is kept; so is an ICC transform the host registered first
+    (otherwise dcm2niix's is registered too).
   - A server that transcodes the frame anyway is refused rather than mis-decoded.
   - Monochrome slides keep their samples; OHIF's window/level (`niivueSetWindowLevel`)
     sets the slide's display window, which defaults to the full BitsStored range.
@@ -216,6 +218,7 @@ The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path f
 - **React**: `^18.3.1` (OHIF is on React 18 — this does not use `@niivue/nvreact`,
   which targets React 19).
 - **`@niivue/dcm2niix`**: required for DICOM only — see [DICOM support](#dicom-support).
+- **`@niivue/nv-ext-tile`**: a dependency; nv-ohif imports only `/dicom`, so GeoTIFF is installed but never loaded.
 
 ## Roadmap
 

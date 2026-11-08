@@ -4,6 +4,7 @@ import type {
   VolumeUpdatedDetail,
 } from '@niivue/niivue'
 import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
+import { registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
 import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
@@ -33,7 +34,6 @@ import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { mountWsiSlideView } from './wsiSlideView'
-import { registerWsiTileDecoders } from './wsiTileDecoders'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
@@ -396,7 +396,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         })
         return
       }
-      registerWsiTileDecoders() // lazy: loads nothing until a JPEG 2000 or JPEG-LS tile
+      registerDcm2niixDecoders() // lazy: loads nothing until a JPEG 2000 or JPEG-LS tile
       if (!built.tiledFull) {
         // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
         // slide would render scrambled, so decline rather than mislead.

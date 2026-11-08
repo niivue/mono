@@ -14,6 +14,7 @@ import {
   NiiDataType,
   NiiIntentCode,
   nextSliceType,
+  normalizeRotation2D,
   normalizeVolumeRenderMode,
   SLICE_TYPE,
   sliceTypeDim,
@@ -324,5 +325,21 @@ describe('clampCinematicOptions', () => {
         isStochasticLighting: 'true' as unknown as boolean,
       }).isStochasticLighting,
     ).toBe(false)
+  })
+})
+
+describe('normalizeRotation2D', () => {
+  test('rounds to the nearest quarter turn, as 0, 90, 180 or 270', () => {
+    expect(
+      [0, 90, 180, 270, 360, 450, -90, -180, -630, 45, 44, -44].map(
+        normalizeRotation2D,
+      ),
+    ).toEqual([0, 90, 180, 270, 0, 90, 270, 180, 90, 90, 0, 0])
+  })
+
+  test('huge finite values still give a quarter turn; non-numbers give 0', () => {
+    expect([0, 90, 180, 270]).toContain(normalizeRotation2D(2 ** 60))
+    for (const v of [Number.NaN, Number.POSITIVE_INFINITY, -Infinity, 'x'])
+      expect(normalizeRotation2D(v)).toBe(0)
   })
 })

@@ -3,7 +3,7 @@ import { mat4, vec3, vec4 } from 'gl-matrix'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
-import type { CustomLayoutTile, ViewHitTest } from '@/NVTypes'
+import type { CustomLayoutTile, Rotation2D, ViewHitTest } from '@/NVTypes'
 import {
   type AxisWindowMM,
   cloneSliceTile,
@@ -16,6 +16,7 @@ import {
   projectMMToNearestTile,
   projectMMToRenderTile,
   type SliceLayoutConfig,
+  type SliceOrientationSettings,
   type SliceTile,
   sagittalNoseLeft,
   screenSlicePick,
@@ -1013,6 +1014,233 @@ describe('isSagittalNoseLeft', () => {
       const [px, py] = projectMMToCanvas(mm, mvp, ltwh)
       expect(px).toBeCloseTo(clickX, 4)
       expect(py).toBeCloseTo(clickY, 4)
+    }
+  })
+})
+
+// ---------- rotation2D and 2D flips ----------
+
+const { AXIAL, CORONAL, SAGITTAL, RENDER } = NVConstants.SLICE_TYPE
+const ROTATIONS: Rotation2D[] = [0, 90, 180, 270]
+// Every display state: 4 rotations x 2 horizontal x 2 vertical flips.
+const STATES = ROTATIONS.flatMap((rotation2D) =>
+  [false, true].flatMap((isFlipped2DHorizontal) =>
+    [false, true].map((isFlipped2DVertical) => ({
+      rotation2D,
+      isFlipped2DHorizontal,
+      isFlipped2DVertical,
+    })),
+  ),
+)
+type State = (typeof STATES)[number]
+// Anisotropic, with 0 inside every axis so the pick plane (depth 0) is in range.
+const ROT_MIN = vec3.fromValues(-40, -70, -30)
+const ROT_MAX = vec3.fromValues(60, 50, 50)
+
+const rotCfg = (over: Partial<SliceLayoutConfig> = {}): SliceLayoutConfig => ({
+  canvasWH: [900, 600],
+  extentsMin: ROT_MIN,
+  extentsMax: ROT_MAX,
+  sliceType: NVConstants.SLICE_TYPE.MULTIPLANAR,
+  ...over,
+})
+
+function tileMvp(tile: SliceTile, layout: SliceOrientationSettings): mat4 {
+  const screen = tile.screen as { mnMM: vec3; mxMM: vec3 }
+  return NVTransforms.calculateMvpMatrix2D(
+    tile.leftTopWidthHeight as number[],
+    Array.from(screen.mnMM),
+    Array.from(screen.mxMM),
+    tile.azimuth as number,
+    tile.elevation as number,
+    isSliceMirrored(tile.axCorSag, layout),
+    undefined,
+    undefined,
+    [3, -4, 1.5],
+    true,
+    tile.clipRot,
+  )[0]
+}
+
+// A world point as tile-centred screen coordinates (x right, y down, +-0.5).
+function screenUV(tile: SliceTile, mvp: mat4, mm: number[]): [number, number] {
+  const ltwh = tile.leftTopWidthHeight as number[]
+  const [x, y] = projectMMToCanvas(mm as [number, number, number], mvp, ltwh)
+  return [(x - ltwh[0]) / ltwh[2] - 0.5, (y - ltwh[1]) / ltwh[3] - 0.5]
+}
+
+// displayed = H^h V^v R(theta) base, theta clockwise on screen (y down).
+function expected([x, y]: [number, number], s: State): [number, number] {
+  for (let k = 0; k < s.rotation2D / 90; k++) [x, y] = [-y, x]
+  if (s.isFlipped2DVertical) y = -y
+  if (s.isFlipped2DHorizontal) x = -x
+  return [x, y]
+}
+
+test('render tiles ignore the 2D flips', () => {
+  const layout = { isRadiological: true, isFlipped2DHorizontal: true }
+  expect(isSliceMirrored(RENDER, layout)).toBe(true)
+  expect(isSliceMirrored(AXIAL, layout)).toBe(false)
+})
+
+describe('layout under rotation2D', () => {
+  const paths: Partial<SliceLayoutConfig>[] = [
+    {},
+    { multiplanarLayout: 1 },
+    { multiplanarLayout: 2 },
+    { multiplanarLayout: 3 },
+    { multiplanarShowRender: 1 },
+    { isMultiplanarEqualSize: true },
+    { sliceType: AXIAL },
+    { sliceType: SAGITTAL, isSingleViewFillCanvas: false },
+    { heroImageFraction: 0.4, heroSliceType: CORONAL },
+    { sliceMosaicString: 'A -10 0 10 ; S R X 0 C 5' },
+    {
+      customLayout: [
+        { sliceType: SAGITTAL, position: [0, 0, 0.5, 1] },
+        { sliceType: AXIAL, position: [0.5, 0, 0.5, 1], fill: true },
+      ],
+    },
+  ]
+  const rects = (tiles: SliceTile[]) => tiles.map((t) => t.leftTopWidthHeight)
+
+  test('0 and 180 leave every rect unchanged; flips never move a rect', () => {
+    for (const path of paths) {
+      const base = screenSlicesLayout(rotCfg(path))
+      for (const s of STATES) {
+        const tiles = screenSlicesLayout(rotCfg({ ...path, ...s }))
+        if (s.rotation2D % 180 === 0) expect(rects(tiles)).toEqual(rects(base))
+        else
+          expect(rects(tiles)).toEqual(
+            rects(screenSlicesLayout(rotCfg({ ...path, rotation2D: 90 }))),
+          )
+      }
+    }
+  })
+
+  test('the unturned layout is byte-identical, with no clipRot', () => {
+    for (const path of paths) {
+      const base = screenSlicesLayout(rotCfg(path))
+      expect(screenSlicesLayout(rotCfg({ ...path, rotation2D: 0 }))).toEqual(
+        base,
+      )
+      for (const t of base) expect(t.clipRot).toBeUndefined()
+    }
+  })
+
+  test('quarter turns keep the slice aspect, inside the canvas, without overlap', () => {
+    for (const path of paths) {
+      const tiles = screenSlicesLayout(rotCfg({ ...path, rotation2D: 90 }))
+      for (const t of tiles) {
+        const [l, top, w, h] = t.leftTopWidthHeight as number[]
+        expect(l).toBeGreaterThanOrEqual(-1e-9)
+        expect(top).toBeGreaterThanOrEqual(-1e-9)
+        expect(l + w).toBeLessThanOrEqual(900 + 1e-9)
+        expect(top + h).toBeLessThanOrEqual(600 + 1e-9)
+        if (t.axCorSag === RENDER) {
+          expect(t.clipRot).toBeUndefined()
+          continue
+        }
+        expect(t.clipRot).toBe(90)
+        // Turned: the U span runs down the tile, V across, at one scale.
+        const s = t.screen as { mnMM: vec3; mxMM: vec3 }
+        expect((s.mxMM[0] - s.mnMM[0]) / h).toBeCloseTo(
+          (s.mxMM[1] - s.mnMM[1]) / w,
+          9,
+        )
+      }
+      for (let i = 0; i < tiles.length; i++)
+        for (let j = i + 1; j < tiles.length; j++) {
+          const [a, b] = [tiles[i], tiles[j]].map(
+            (t) => t.leftTopWidthHeight as number[],
+          )
+          const overlap =
+            a[0] < b[0] + b[2] - 1e-9 &&
+            b[0] < a[0] + a[2] - 1e-9 &&
+            a[1] < b[1] + b[3] - 1e-9 &&
+            b[1] < a[1] + a[3] - 1e-9
+          expect(overlap).toBe(false)
+        }
+    }
+  })
+
+  test('mosaic render tiles keep the unflipped view', () => {
+    const mosaic = { sliceMosaicString: 'A R 0' }
+    const [base] = screenSlicesLayout(rotCfg(mosaic))
+    for (const s of STATES) {
+      const [r] = screenSlicesLayout(rotCfg({ ...mosaic, ...s }))
+      expect([r.azimuth, r.elevation, r.leftTopWidthHeight]).toEqual([
+        base.azimuth,
+        base.elevation,
+        base.leftTopWidthHeight,
+      ])
+    }
+  })
+})
+
+describe('display states draw H^h V^v R(theta) of the base view', () => {
+  test('every orientation, base and state; picks invert the projection', () => {
+    for (const sliceType of [AXIAL, CORONAL, SAGITTAL]) {
+      for (const isRadiological of [false, true]) {
+        const config = (s: Partial<State> = {}) =>
+          rotCfg({
+            sliceType,
+            isSingleViewFillCanvas: false,
+            isRadiologicalConvention: isRadiological,
+            ...s,
+          })
+        const [baseTile] = screenSlicesLayout(config())
+        const baseMvp = tileMvp(baseTile, { isRadiological })
+        const dim = [2, 1, 0][sliceType]
+        const points = [
+          [5, 10, 20],
+          [-30, 40, 45],
+          [55, -60, -25],
+        ].map((p) => {
+          const q = [...p]
+          q[dim] = 0
+          return q
+        })
+        for (const s of STATES) {
+          const layout = { isRadiological, ...s }
+          const [tile] = screenSlicesLayout(config(s))
+          const mvp = tileMvp(tile, layout)
+          for (const p of points) {
+            const want = expected(screenUV(baseTile, baseMvp, p), s)
+            const got = screenUV(tile, mvp, p)
+            expect(got[0]).toBeCloseTo(want[0], 9)
+            expect(got[1]).toBeCloseTo(want[1], 9)
+          }
+          // The pick fallback (no cached MVP) must invert the same projection.
+          const model = {
+            volumes: [{}],
+            tex2mm: mat4.create(),
+            layout,
+            scene: { pan2Dxyzmm: [3, -4, 1.5, 1] },
+            getSliceTexFrac: () => 0,
+          } as unknown as NVModel
+          const ltwh = tile.leftTopWidthHeight as number[]
+          const pan = [0, 0, 0, 1.5]
+          pan[[0, 0, 1][sliceType]] = 3
+          pan[[1, 2, 2][sliceType]] = -4
+          model.scene.pan2Dxyzmm = pan
+          const p = points[0]
+          const [cx, cy] = projectMMToCanvas(
+            p as [number, number, number],
+            mvp,
+            ltwh,
+          )
+          const mm = screenSlicePick([tile], model, cx, cy, {
+            tileIndex: 0,
+            isRender: false,
+            sliceType,
+            normalizedX: 0,
+            normalizedY: 0,
+          })
+          expect(mm).not.toBeNull()
+          for (let i = 0; i < 3; i++) expect(mm?.[i]).toBeCloseTo(p[i], 4)
+        }
+      }
     }
   })
 })

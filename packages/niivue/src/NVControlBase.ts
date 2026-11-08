@@ -77,6 +77,7 @@ import {
   MESH_DEFAULTS,
   NUM_CLIP_PLANE,
   normalizeInset,
+  normalizeRotation2D,
   normalizeVolumeRenderMode,
   type OVERLAY_ALPHA_BLEND,
   type OVERLAY_COLOR_BLEND,
@@ -135,6 +136,7 @@ import type {
   NVTractOptions,
   OrientationTextPosition,
   PlaneOutline,
+  Rotation2D,
   SaveVolumeOptions,
   SignalAnnotation,
   SignalSidecar,
@@ -1248,6 +1250,57 @@ export default class NiiVue extends EventTarget {
     const value = v ?? null
     this.model.layout.isSagittalNoseLeft = value
     this.emit('change', { property: 'isSagittalNoseLeft', value })
+    this.drawScene()
+  }
+
+  /**
+   * Clockwise screen rotation of 2D slice tiles in degrees, applied after
+   * `isRadiological` and `isSagittalNoseLeft`. A tile shows H^h V^v R(theta) of
+   * that view (the flips act on screen, after the turn), so (theta, h, v) looks
+   * the same as (theta + 180, !h, !v). Values are rounded to the nearest
+   * quarter turn (-90 is stored as 270). Render tiles and NVSlide are
+   * unaffected; not animated.
+   * @default `0`
+   * @example nv1.rotation2D = 90
+   */
+  get rotation2D(): Rotation2D {
+    return this.model.layout.rotation2D
+  }
+  set rotation2D(v: number) {
+    const value = normalizeRotation2D(v)
+    this.model.layout.rotation2D = value
+    this.emit('change', { property: 'rotation2D', value })
+    this.drawScene()
+  }
+
+  /**
+   * Mirror 2D slice tiles left-right on screen, after `rotation2D` (see there
+   * for the convention). Drawn as the view from behind the slice, so meshes
+   * show their far side, as with `isRadiological`.
+   * @default `false`
+   * @example nv1.isFlipped2DHorizontal = true
+   */
+  get isFlipped2DHorizontal(): boolean {
+    return this.model.layout.isFlipped2DHorizontal
+  }
+  set isFlipped2DHorizontal(v: boolean) {
+    this.model.layout.isFlipped2DHorizontal = v
+    this.emit('change', { property: 'isFlipped2DHorizontal', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Mirror 2D slice tiles top-bottom on screen, after `rotation2D`. Drawn as
+   * the view from behind the slice, so meshes show their far side.
+   * @default `false`
+   * @example nv1.isFlipped2DVertical = true
+   */
+  get isFlipped2DVertical(): boolean {
+    return this.model.layout.isFlipped2DVertical
+  }
+  set isFlipped2DVertical(v: boolean) {
+    this.model.layout.isFlipped2DVertical = v
+    this.emit('change', { property: 'isFlipped2DVertical', value: v })
     this.drawScene()
   }
 

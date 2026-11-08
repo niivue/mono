@@ -235,6 +235,7 @@ import {
   warnMixedUnits,
 } from '@/volume/utils'
 import { assignUniqueVolumeIds } from '@/volume/volumeIds'
+import { releasePageWorkers, retainPageWorkers } from '@/workers/pageWorker'
 import { version } from '../package.json'
 
 /** MeshUpdate options read only while drawing: setMesh just redraws. */
@@ -518,6 +519,8 @@ export default class NiiVue extends EventTarget {
   /** Set once `destroy()` runs, so an in-flight async op (e.g. a deferred reload)
    *  can detect a torn-down controller and not mutate/upload against it. */
   private _destroyed = false
+  /** Holds the page workers while attached (see _holdPageWorkers). */
+  private _holdsPageWorkers = false
   private _contextLossRecoveries = 0
   /** Live streamed-volume handles, so a setting that changes the required brick
    *  halo (currently only `volumeIsCubicInterpolation`) can re-plan them. Each
@@ -2808,6 +2811,7 @@ export default class NiiVue extends EventTarget {
   }
 
   async attachTo(id: string, isAntiAlias = null): Promise<this> {
+    this._holdPageWorkers()
     await this._viewLifecycle.attachTo(this, id, isAntiAlias)
     return this
   }
@@ -2816,8 +2820,18 @@ export default class NiiVue extends EventTarget {
     canvas: HTMLCanvasElement,
     isAntiAlias: boolean | null = null,
   ): Promise<this> {
+    this._holdPageWorkers()
     await this._viewLifecycle.attachToCanvas(this, canvas, isAntiAlias)
     return this
+  }
+
+  // An attached viewer keeps the page workers alive between its loads; destroy()
+  // lets them go. Not taken in the constructor: a constructor that throws (e.g.
+  // the WebGPU build without WebGPU) leaves no instance to destroy.
+  private _holdPageWorkers(): void {
+    if (this._holdsPageWorkers || this._destroyed) return
+    this._holdsPageWorkers = true
+    retainPageWorkers()
   }
 
   /**
@@ -7026,6 +7040,7 @@ export default class NiiVue extends EventTarget {
     // A second call would reach renderers whose GPU device is already gone.
     if (this._destroyed) return
     this._destroyed = true
+    if (this._holdsPageWorkers) releasePageWorkers()
     this._animation?.stop('destroyed')
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false

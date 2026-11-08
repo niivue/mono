@@ -20,6 +20,10 @@ export interface WsiSlideViewOptions {
 export interface WsiSlideView {
   setTool(tool: string | undefined): void
   resetView(): void
+  /** Zoom about the canvas centre (factor > 1 zooms in). */
+  zoom(factor: number): void
+  /** Fit the whole slide, keeping the ruler. */
+  fit(): void
   /** Monochrome display window (stored sample values); colour slides ignore it. */
   setWindow(calMin: number, calMax: number): void
   saveBitmap(filename?: string): Promise<void>
@@ -372,6 +376,14 @@ export function mountWsiSlideView(
 
   scheduleRender()
 
+  // Re-arm render()'s fit-until-first-interaction.
+  const fit = (): void => {
+    userInteracted = false
+    lastFitWidth = 0
+    lastFitHeight = 0
+    scheduleRender()
+  }
+
   return {
     setTool(tool: string | undefined): void {
       // Abandon an in-progress drag when switching away from Length; a completed
@@ -380,12 +392,16 @@ export function mountWsiSlideView(
       activeTool = tool
     },
     resetView(): void {
-      userInteracted = false
-      lastFitWidth = 0
-      lastFitHeight = 0
       clearMeasurement()
+      fit()
+    },
+    zoom(factor: number): void {
+      userInteracted = true
+      const screen = screenOf()
+      slide.zoomBy(factor, screen.widthCss / 2, screen.heightCss / 2, screen)
       scheduleRender()
     },
+    fit,
     setWindow(calMin: number, calMax: number): void {
       slide.setWindow(calMin, calMax)
     },

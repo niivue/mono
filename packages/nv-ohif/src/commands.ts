@@ -22,7 +22,13 @@ import {
   refreshToolbar,
   type StatusKind,
 } from './niivueRegistry'
-import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
+import type {
+  OhifCommandsModule,
+  OhifDisplaySet,
+  OhifExtensionParams,
+  OhifViewportProps,
+} from './ohif-types'
+import { getStandardCommandDefinitions } from './standardCommands'
 import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
 
 // Toolbar-facing slice type names -> NiiVue SLICE_TYPE values. String keys keep
@@ -256,67 +262,6 @@ function sameWindowLevel(
   return (
     Math.abs(a.window - b.window) < eps && Math.abs(a.level - b.level) < eps
   )
-}
-
-interface ViewportGridStateLike {
-  getState?: () => {
-    viewports?:
-      | Map<string, { displaySetInstanceUIDs?: string[] }>
-      | Record<string, { displaySetInstanceUIDs?: string[] }>
-  }
-}
-
-/** [viewportId, displaySetInstanceUIDs] pairs from OHIF's viewport grid state. */
-function viewportEntries(
-  servicesManager: OhifExtensionParams['servicesManager'],
-): Array<[string, string[]]> {
-  const grid = ohifServices(servicesManager)?.viewportGridService as
-    | ViewportGridStateLike
-    | undefined
-  const viewports = grid?.getState?.().viewports
-  if (!viewports) return []
-  const raw =
-    viewports instanceof Map
-      ? [...viewports.entries()]
-      : Object.entries(viewports)
-  return raw.map(([id, vp]) => [id, vp?.displaySetInstanceUIDs ?? []])
-}
-
-/**
- * Reflect a window/level onto every OTHER OHIF viewport showing the same series
- * (e.g. a cornerstone sibling in a multi-viewport layout). Each is targeted by
- * id via `setViewportWindowLevel`, which no-ops on a viewport cornerstone does
- * not own (our NiiVue viewports, stale ids). Do NOT use the `setWindowLevel`
- * command here: it targets the *active* viewport (ours) and throws on our
- * non-cornerstone element.
- */
-function syncWindowLevelToSiblings(
-  entry: NiivueViewportEntry,
-  viewportId: string,
-  wl: { window: number; level: number },
-  servicesManager: OhifExtensionParams['servicesManager'],
-  commandsManager: OhifExtensionParams['commandsManager'],
-): void {
-  const baseUIDs = new Set(
-    entry.displaySets
-      .map((ds) => ds.displaySetInstanceUID)
-      .filter((u): u is string => typeof u === 'string'),
-  )
-  if (baseUIDs.size === 0) return
-  const cm = ohifCommandsManager(commandsManager)
-  if (!cm) return
-  for (const [id, uids] of viewportEntries(servicesManager)) {
-    if (id === viewportId || !uids.some((u) => baseUIDs.has(u))) continue
-    try {
-      cm.runCommand?.('setViewportWindowLevel', {
-        viewportId: id,
-        windowWidth: wl.window,
-        windowCenter: wl.level,
-      })
-    } catch (err) {
-      console.warn('[nv-ohif] setViewportWindowLevel sync failed', err)
-    }
-  }
 }
 
 // The NiiVue annotation tool for an annotation (shape.type, or freehand inferred
@@ -1286,34 +1231,76 @@ export function reconcileNiivueAnnotations(
 }
 
 /**
- * Reverse W/L bridge: on a base-volume volumeUpdated, record the new
- * window/level on the entry and reflect it onto any other OHIF viewport showing
- * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
- * window/level when it changed (for a viewport readout), else undefined.
+ * On a base-volume volumeUpdated, record the new window/level on the entry.
+ * Returns it when it changed (for a viewport readout), else undefined. Windows
+ * stay per viewport, as in OHIF: nothing is pushed to other viewports.
  */
-export function syncNiivueWindowLevelToOhif(
+export function trackNiivueWindowLevel(
   viewportId: string,
-  servicesManager: OhifExtensionParams['servicesManager'],
-  commandsManager: OhifExtensionParams['commandsManager'],
 ): { window: number; level: number } | undefined {
   const entry = getNiivueEntry(viewportId)
   if (!entry) return undefined
   const wl = readBaseWindowLevel(entry.nv)
   if (!wl) return undefined
-  // First observation just seeds the baseline (no readout / no sync).
+  // First observation just seeds the baseline (no readout).
   if (entry.windowLevel && sameWindowLevel(entry.windowLevel, wl))
     return undefined
   const seeded = entry.windowLevel !== undefined
   entry.windowLevel = wl
-  if (!seeded) return undefined
-  syncWindowLevelToSiblings(
-    entry,
-    viewportId,
-    wl,
-    servicesManager,
-    commandsManager,
+  return seeded ? wl : undefined
+}
+
+/** A hanging protocol's initial window (`displaySetOptions[0].options.voi`). */
+export function voiRange(
+  displaySetOptions: OhifViewportProps['displaySetOptions'],
+): { calMin: number; calMax: number } | undefined {
+  // Cornerstone's mapDisplaySetOptions accepts `item.options || item`.
+  const d = displaySetOptions?.[0]
+  const options = (d?.options ?? d) as
+    | { voi?: { windowWidth?: unknown; windowCenter?: unknown } }
+    | undefined
+  const width = Number(options?.voi?.windowWidth)
+  const center = Number(options?.voi?.windowCenter)
+  if (!(width > 0) || !Number.isFinite(center)) return undefined
+  const [calMin, calMax] = windowToRange(width, center)
+  return { calMin, calMax }
+}
+
+/** Reset camera, pan, zoom, and crosshair (or refit a slide). */
+export function resetView(entry: NiivueViewportEntry): void {
+  if (entry.slideView) {
+    entry.slideView.resetView()
+    return
+  }
+  const { nv } = entry
+  nv.azimuth = VIEW_DEFAULTS.azimuth
+  nv.elevation = VIEW_DEFAULTS.elevation
+  nv.scaleMultiplier = VIEW_DEFAULTS.scaleMultiplier
+  nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
+  nv.renderPan = [...VIEW_DEFAULTS.renderPan]
+  nv.crosshairPos = [...VIEW_DEFAULTS.crosshairPos]
+}
+
+/** Apply one of OHIF's modality presets (by id, then index) to the base volume. */
+export function applyWindowLevelPreset(
+  entry: NiivueViewportEntry,
+  servicesManager: OhifExtensionParams['servicesManager'],
+  presetId: string | undefined,
+  presetIndex: number | undefined,
+): void {
+  if (entry.nv.volumes.length === 0) return
+  const range = resolveWindowLevel(
+    windowLevelPresets(servicesManager),
+    baseModality(entry),
+    presetId,
+    presetIndex,
   )
-  return wl
+  if (!range) return
+  entry.nv
+    .setVolume(0, { calMin: range[0], calMax: range[1] })
+    .catch((err: unknown) =>
+      console.error('[nv-ohif] window/level preset failed', err),
+    )
 }
 
 /**
@@ -1361,18 +1348,7 @@ export function getNiivueCommandsModule({
     /** Reset camera, pan, zoom, and crosshair to their defaults. */
     niivueResetView: () => {
       const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry) return
-      if (entry.slideView) {
-        entry.slideView.resetView()
-        return
-      }
-      const { nv } = entry
-      nv.azimuth = VIEW_DEFAULTS.azimuth
-      nv.elevation = VIEW_DEFAULTS.elevation
-      nv.scaleMultiplier = VIEW_DEFAULTS.scaleMultiplier
-      nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
-      nv.renderPan = [...VIEW_DEFAULTS.renderPan]
-      nv.crosshairPos = [...VIEW_DEFAULTS.crosshairPos]
+      if (entry) resetView(entry)
     },
 
     /** Download the visible NiiVue volume or NVSlide canvas as a PNG. */
@@ -1571,19 +1547,8 @@ export function getNiivueCommandsModule({
       presetIndex?: number
     } = {}) => {
       const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry || entry.nv.volumes.length === 0) return
-      const range = resolveWindowLevel(
-        windowLevelPresets(servicesManager),
-        baseModality(entry),
-        presetId,
-        presetIndex,
-      )
-      if (!range) return
-      entry.nv
-        .setVolume(0, { calMin: range[0], calMax: range[1] })
-        .catch((err: unknown) =>
-          console.error('[nv-ohif] window/level preset failed', err),
-        )
+      if (entry)
+        applyWindowLevelPreset(entry, servicesManager, presetId, presetIndex)
     },
 
     /** Recompute the base volume's robust (2-98%) auto window. */
@@ -1646,9 +1611,12 @@ export function getNiivueCommandsModule({
 
   // OHIF command definitions wrap each action, so a new action cannot be left
   // unregistered.
-  const definitions = Object.fromEntries(
-    Object.entries(actions).map(([name, commandFn]) => [name, { commandFn }]),
-  )
+  const definitions: OhifCommandsModule['definitions'] = {
+    ...Object.fromEntries(
+      Object.entries(actions).map(([name, commandFn]) => [name, { commandFn }]),
+    ),
+    ...getStandardCommandDefinitions({ servicesManager, commandsManager }),
+  }
 
   return {
     actions,

@@ -39,7 +39,11 @@ export interface OhifExtensionManager {
   getModuleEntry: (id: string) => unknown
 }
 export interface OhifCommandsManager {
-  runCommand: (name: string, options?: Record<string, unknown>) => unknown
+  runCommand: (
+    name: string,
+    options?: Record<string, unknown>,
+    context?: string,
+  ) => unknown
 }
 
 // Props the OHIF viewport grid passes (ViewportGrid.tsx, 3.13 and 3.14), plus
@@ -49,7 +53,11 @@ export interface OhifViewportProps {
   viewportId: string
   viewportLabel?: string
   dataSource?: unknown
-  viewportOptions?: { orientation?: string; viewportType?: string }
+  viewportOptions?: {
+    orientation?: string
+    viewportType?: string
+    toolGroupId?: string
+  }
   // Per display set, hanging-protocol options (e.g. `options.voi`).
   displaySetOptions?: ReadonlyArray<Record<string, unknown>>
   needsRerendering?: boolean
@@ -97,8 +105,14 @@ export interface OhifToolbarButton {
     label?: string
     tooltip?: string
     buttonSection?: boolean
-    commands?: string | OhifToolbarButtonCommand | OhifToolbarButtonCommand[]
-    evaluate?: string | Record<string, unknown>
+    commands?:
+      | string
+      | OhifToolbarButtonCommand
+      | Array<string | OhifToolbarButtonCommand>
+    evaluate?:
+      | string
+      | Record<string, unknown>
+      | Array<string | Record<string, unknown>>
     [key: string]: unknown
   }
 }
@@ -124,7 +138,13 @@ export interface OhifToolbarModuleEntry {
 // they register under.
 export interface OhifCommandsModule {
   actions: Record<string, (...args: never[]) => unknown>
-  definitions: Record<string, { commandFn: (...args: never[]) => unknown }>
+  definitions: Record<
+    string,
+    {
+      commandFn: (...args: never[]) => unknown
+      options?: Record<string, unknown>
+    }
+  >
   defaultContext?: string
 }
 

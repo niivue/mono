@@ -16,8 +16,9 @@ import {
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   subscribeOhifLabelSync,
-  syncNiivueWindowLevelToOhif,
+  trackNiivueWindowLevel,
   visibleAnnotationScreenShapes,
+  voiRange,
 } from './commands'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
@@ -75,7 +76,8 @@ interface ToolGroupServiceLike {
  * instance directly (React 18) rather than depending on `@niivue/nvreact` (React 19).
  */
 export function NiivueViewport(props: OhifViewportProps) {
-  const { displaySets, viewportId, servicesManager, commandsManager } = props
+  const { displaySets, viewportId, servicesManager } = props
+  const toolGroupId = props.viewportOptions?.toolGroupId ?? 'default'
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVue | null>(null)
   const slideViewRef = useRef<ReturnType<typeof mountWsiSlideView> | null>(null)
@@ -92,8 +94,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   displaySetsRef.current = displaySets
   const servicesManagerRef = useRef(servicesManager)
   servicesManagerRef.current = servicesManager
-  const commandsManagerRef = useRef(commandsManager)
-  commandsManagerRef.current = commandsManager
+  const displaySetOptionsRef = useRef(props.displaySetOptions)
+  displaySetOptionsRef.current = props.displaySetOptions
   const onElementEnabledRef = useRef(props.onElementEnabled)
   onElementEnabledRef.current = props.onElementEnabled
   const displaySetsKey = displaySets
@@ -176,17 +178,12 @@ export function NiivueViewport(props: OhifViewportProps) {
     const ro = new ResizeObserver(() => nv.resize())
     ro.observe(container)
 
-    // Reverse W/L bridge: core emits volumeUpdated for every base-window change
-    // (windowing/contrast drags, pointercancel, setVolume), so reflect it to OHIF
-    // (commands.ts). The baseline diff there drops unchanged updates, which also
-    // stops an OHIF echo of the same window. A transient readout confirms it.
+    // Core emits volumeUpdated for every base-window change (windowing/contrast
+    // drags, pointercancel, setVolume); a transient readout confirms a change
+    // (the baseline diff in commands.ts drops unchanged updates).
     const onVolumeUpdated = (e: CustomEvent<VolumeUpdatedDetail>) => {
       if (e.detail.volumeIndex !== 0) return
-      const wl = syncNiivueWindowLevelToOhif(
-        viewportId,
-        servicesManagerRef.current,
-        commandsManagerRef.current,
-      )
+      const wl = trackNiivueWindowLevel(viewportId)
       if (!wl) return
       const message = `W: ${Math.round(wl.window)}  L: ${Math.round(wl.level)}`
       flashNote(message)
@@ -320,8 +317,10 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     let cancelled = false
     const abort = new AbortController()
+    // The hanging protocol's initial window, if any, replaces NiiVue's robust one.
+    const voi = voiRange(displaySetOptionsRef.current)
 
-    // Record the base volume's initial window/level as the reverse-bridge
+    // Record the base volume's initial window/level as the readout
     // baseline, so the first manual contrast drag is detected as a change.
     const seedWindowLevel = () => {
       if (cancelled) return
@@ -343,7 +342,9 @@ export function NiivueViewport(props: OhifViewportProps) {
       .filter((s): s is NonNullable<typeof s> => s !== null)
     if (directSpecs.length > 0) {
       setStatus({ kind: 'idle' })
-      nv.loadVolumes(directSpecs).then(
+      nv.loadVolumes(
+        directSpecs.map((spec, i) => (i === 0 ? { ...spec, ...voi } : spec)),
+      ).then(
         () => {
           // The slot was swapped away (e.g. to a WSI) while this load was in flight:
           // its dropStaleVolumes() already ran and no-op'd because nv.volumes was
@@ -514,7 +515,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         // Use the converted file's own name (ends in .nii/.nii.gz) so NiiVue sniffs
         // the format correctly; a display name without that extension would not.
         return nv
-          .loadVolumes([{ url: niftiFile, name: niftiFile.name }])
+          .loadVolumes([{ url: niftiFile, name: niftiFile.name, ...voi }])
           .then(() => {
             // Swapped away while this load was in flight: undo the now-stale load
             // (its dropStaleVolumes already ran and no-op'd on an empty array).
@@ -543,18 +544,17 @@ export function NiivueViewport(props: OhifViewportProps) {
 
   // Mirror OHIF's active primary tool onto NiiVue's matching left-drag mode, so
   // windowing, pan, zoom, measurements, angles and ROI tools drive this viewport.
-  // NiiVue already applies a robust 2-98% window on load, so no default-window
-  // wiring is needed here.
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !ready) return
+    updateNiivueViewport(viewportId, { toolGroupId })
     const svc = ohifServices(servicesManager)?.toolGroupService as
       | ToolGroupServiceLike
       | undefined
     if (!svc?.getActivePrimaryMouseButtonTool) return
 
     const apply = () => {
-      const tool = svc.getActivePrimaryMouseButtonTool?.('default')
+      const tool = svc.getActivePrimaryMouseButtonTool?.(toolGroupId)
       activeOhifToolRef.current = tool
       // ROI / arrow tools drive NiiVue's vector-annotation system (measureEllipse
       // etc.); the master gate must be on for a left-drag to draw. Every other
@@ -573,7 +573,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const event = svc.EVENTS?.PRIMARY_TOOL_ACTIVATED
     const sub = event ? svc.subscribe?.(event, apply) : undefined
     return () => sub?.unsubscribe?.()
-  }, [ready, servicesManager])
+  }, [ready, servicesManager, toolGroupId, viewportId])
 
   const overlay = status.kind === 'idle' ? null : status.message
   return (

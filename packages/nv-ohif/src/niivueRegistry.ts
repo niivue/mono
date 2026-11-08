@@ -21,11 +21,11 @@ export interface NiivueViewportEntry {
   clipPlane: string
   /**
    * Last known base-volume window/level ({ window: width, level: center }).
-   * Tracks both directions: forward commands set it; the viewport's
-   * pointer-release observer updates it from a manual contrast drag and pushes
-   * the change to OHIF (see commands.ts syncNiivueWindowLevelToOhif).
+   * The baseline for the change readout (commands.ts trackNiivueWindowLevel).
    */
   windowLevel?: { window: number; level: number }
+  /** OHIF tool group whose primary tool drives this viewport. */
+  toolGroupId?: string
   /** Visible NVSlide view when this viewport is showing a whole-slide series. */
   slideView?: WsiSlideView
   /** Viewport-provided sink so commands can surface progress text (null = clear). */
@@ -64,6 +64,7 @@ export function updateNiivueViewport(
       | 'windowLevel'
       | 'overlayUIDs'
       | 'overlayLoading'
+      | 'toolGroupId'
     >
   >,
 ): void {
@@ -89,40 +90,34 @@ export function ohifServices(
 }
 
 interface ViewportGridServiceLike {
-  getActiveViewportId?: () => string | undefined
+  getActiveViewportId?: () => string | null | undefined
 }
 
 /**
- * The entry for a viewport id, falling back to the sole registered entry
- * (covers layouts where a non-NiiVue viewport holds focus next to a single
- * NiiVue viewport).
+ * The entry for a viewport id. Only a missing id (no viewport grid, as in the
+ * demo harness, or OHIF's grid before a viewport is active) falls back to the
+ * sole registered entry: an id that is not ours means a Cornerstone viewport is
+ * active, which NiiVue must not touch.
  */
 export function getNiivueEntryForViewport(
-  viewportId: string | undefined,
+  viewportId: string | null | undefined,
 ): NiivueViewportEntry | undefined {
-  const exact = getNiivueEntry(viewportId)
-  if (exact) return exact
-  if (instances.size === 1) {
-    for (const entry of instances.values()) return entry
+  const id = viewportId ?? undefined
+  if (id === undefined && instances.size === 1) {
+    return instances.values().next().value
   }
-  return undefined
+  return getNiivueEntry(id)
 }
 
-/** The instance for a viewport id (same fallback as the entry lookup). */
-export function getNiivueForViewport(
-  viewportId: string | undefined,
-): NiiVue | undefined {
-  return getNiivueEntryForViewport(viewportId)?.nv
-}
-
-/** The entry a toolbar command should act on: the active viewport's. */
+/** The entry a command acts on: `viewportId`'s, else the active viewport's. */
 export function getActiveNiivueEntry(
   servicesManager: OhifServicesManager | undefined,
+  viewportId?: string,
 ): NiivueViewportEntry | undefined {
   const grid = ohifServices(servicesManager)?.viewportGridService as
     | ViewportGridServiceLike
     | undefined
-  return getNiivueEntryForViewport(grid?.getActiveViewportId?.())
+  return getNiivueEntryForViewport(viewportId ?? grid?.getActiveViewportId?.())
 }
 
 /** The NiiVue instance a toolbar command should act on: the active viewport's. */
@@ -146,7 +141,11 @@ export function refreshToolbar(
 }
 
 interface CommandsManagerLike {
-  runCommand?: (name: string, options?: Record<string, unknown>) => unknown
+  runCommand?: (
+    name: string,
+    options?: Record<string, unknown>,
+    context?: string,
+  ) => unknown
 }
 
 // As for services: the module params' commandsManager, else

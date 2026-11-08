@@ -65,6 +65,8 @@ A few more properties shape the tiles:
 - `rotation2D` (0, 90, 180 or 270) turns 2D slice tiles clockwise, and
   `isFlipped2DHorizontal` / `isFlipped2DVertical` mirror them on screen,
   after the turn. Render tiles are unaffected.
+- `rotate2D(n)` turns n quarter turns clockwise as seen and `flip2D(axis)`
+  mirrors what is on screen, whatever flips are set.
 
 ```js
 nv.multiplanarType = MULTIPLANAR_TYPE.GRID

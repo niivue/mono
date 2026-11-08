@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4, vec3, vec4 } from 'gl-matrix'
+import NiiVue from '@/index'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
@@ -1241,6 +1242,50 @@ describe('display states draw H^h V^v R(theta) of the base view', () => {
           for (let i = 0; i < 3; i++) expect(mm?.[i]).toBeCloseTo(p[i], 4)
         }
       }
+    }
+  })
+})
+
+describe('rotate2D and flip2D act on screen', () => {
+  const state = (nv: NiiVue): State => ({
+    rotation2D: nv.rotation2D,
+    isFlipped2DHorizontal: nv.isFlipped2DHorizontal,
+    isFlipped2DVertical: nv.isFlipped2DVertical,
+  })
+  // Tile-centred screen position of a world point in a single axial tile.
+  const uv = (s: State, mm: number[]): [number, number] => {
+    const [tile] = screenSlicesLayout(
+      rotCfg({ sliceType: AXIAL, isSingleViewFillCanvas: false, ...s }),
+    )
+    return screenUV(tile, tileMvp(tile, { isRadiological: false, ...s }), mm)
+  }
+  const p = [20, -35, 0]
+  const near = (got: number[], want: number[]) => {
+    expect(got[0]).toBeCloseTo(want[0], 9)
+    expect(got[1]).toBeCloseTo(want[1], 9)
+  }
+
+  test('rotate2D(1) turns clockwise and rotate2D(-1) back, in every state', () => {
+    for (const s of STATES) {
+      const nv = new NiiVue(s)
+      const [x, y] = uv(s, p)
+      nv.rotate2D(1)
+      // Clockwise on a y-down screen: (x, y) -> (-y, x).
+      near(uv(state(nv), p), [-y, x])
+      nv.rotate2D(-1)
+      expect(state(nv)).toEqual(s)
+    }
+  })
+
+  test('rotate then flip mirrors the turned image about the screen axis', () => {
+    for (const s of STATES) {
+      const nv = new NiiVue(s)
+      nv.rotate2D(1)
+      const [x, y] = uv(state(nv), p)
+      nv.flip2D('horizontal')
+      near(uv(state(nv), p), [-x, y])
+      nv.flip2D('vertical')
+      near(uv(state(nv), p), [-x, -y])
     }
   })
 })

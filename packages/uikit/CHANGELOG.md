@@ -1,3 +1,13 @@
+## 1.0.0-rc.114 (2026-11-08)
+
+### Fixes
+
+- **uikit:** run the dev server under Bun ([3c2f09a6](https://github.com/niivue/mono/commit/3c2f09a6))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.113 (2026-11-08)
 
 ### Updated Dependencies

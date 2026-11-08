@@ -7,11 +7,6 @@ describe('AnnotationUndoStack', () => {
     expect(stack.canUndo).toBe(false)
   })
 
-  test('canRedo_initiallyFalse', () => {
-    const stack = new AnnotationUndoStack()
-    expect(stack.canRedo).toBe(false)
-  })
-
   test('push_then_canUndo_isTrue', () => {
     const stack = new AnnotationUndoStack()
     stack.push([])

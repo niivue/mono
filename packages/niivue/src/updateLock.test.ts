@@ -179,3 +179,63 @@ test('whenUpdatesSettle follows a takeover to the rebuild that replaced the pass
   expect(log).toContain('settle ok')
   gates[0].open()
 })
+
+// From e2e/update-coalescing.spec.ts: a setter that starts a rebuild without
+// returning it, against a fake view whose rebuild takes one macrotask. The
+// view recreation cases stay in e2e (they need reinitializeView on a canvas).
+
+/** A fake view that logs each rebuild and fails the `failAt`-th. */
+function loggingView(nv: InstanceType<typeof NiiVue>, failAt = 0) {
+  const internals = nv as unknown as Internals
+  const log: string[] = []
+  let calls = 0
+  internals.view = {
+    updateBindGroups: async () => {
+      const n = ++calls
+      await tick()
+      log.push(`rebuild ${n}`)
+      if (n === failAt) throw new Error(`rebuild ${n} failed`)
+    },
+  }
+  internals.drawScene = () => {}
+  const settled = (name: string, p: Promise<unknown>) =>
+    p.then(
+      () => log.push(`${name} ok`),
+      (e: Error) => log.push(`${name} ${e.message}`),
+    )
+  return { log, settled }
+}
+
+test('a queued update settles with the follow-up that carries it', async () => {
+  const nv = new NiiVue({}, undefined as never)
+  const { log, settled } = loggingView(nv, 4)
+  // A setter that starts a rebuild without being awaited (#447 repro).
+  nv.volumeIsBackgroundMasking = true
+  await settled('queued', nv.updateGLVolume())
+  // Now one update fails while queued behind another (#273).
+  await Promise.all([
+    settled('first', nv.updateGLVolume()),
+    settled('second', nv.updateGLVolume()),
+  ])
+  expect(log).toEqual([
+    'rebuild 1',
+    'rebuild 2',
+    'queued ok',
+    'rebuild 3',
+    // The caller that took the lock settles with its own pass, not the chain.
+    'first ok',
+    'rebuild 4',
+    'second rebuild 4 failed',
+  ])
+})
+
+test('whenUpdatesSettle waits for a rebuild a setter started', async () => {
+  const nv = new NiiVue({}, undefined as never)
+  const { log } = loggingView(nv)
+  // The second setter queues a follow-up behind the first rebuild.
+  nv.volumeIsBackgroundMasking = true
+  nv.volumeIsBackgroundMasking = false
+  await nv.whenUpdatesSettle()
+  log.push('settled')
+  expect(log).toEqual(['rebuild 1', 'rebuild 2', 'settled'])
+})

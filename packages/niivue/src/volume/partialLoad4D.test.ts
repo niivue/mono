@@ -30,42 +30,47 @@ describe('framesInImage', () => {
 })
 
 describe('resolveFrame4DCount', () => {
-  // Signature: resolveFrame4DCount(limitFrames4D, framesInImg, nTotalFrame4D)
-
-  test('loadsAllFramesWhenLimitIsInfinity', () => {
-    expect(resolveFrame4DCount(Infinity, 4, 4)).toBe(4)
-  })
-
-  test('capsToTheRequestedLimit', () => {
-    expect(resolveFrame4DCount(2, 4, 4)).toBe(2)
-  })
-
-  test('floorsAFractionalLimit', () => {
-    // 1.5 must not leak a non-integer nFrame4D (which would mis-align the byte
-    // truncation and the 4D graph / setFrame4D indexing).
-    expect(resolveFrame4DCount(1.5, 4, 4)).toBe(1)
-  })
-
-  test('clampsALimitBelowOneToASingleFrame', () => {
-    expect(resolveFrame4DCount(0, 4, 4)).toBe(1)
-    expect(resolveFrame4DCount(-3, 4, 4)).toBe(1)
-  })
-
-  test('clampsALimitLargerThanTheDataToTheTotalFrameCount', () => {
-    expect(resolveFrame4DCount(10, 3, 3)).toBe(3)
-  })
-
-  test('clampsToFramesActuallyPresentWhenBufferHoldsFewerThanTheHeaderClaims', () => {
-    // Recovery path: a >2 GiB volume was capped by the loader, so the buffer
-    // holds fewer frames (2) than the header declares (4). Even with no explicit
-    // limit, nFrame4D must not claim more frames than the buffer contains.
-    expect(resolveFrame4DCount(Infinity, 2, 4)).toBe(2)
-  })
-
-  test('appliesTheTightestOfAllThreeConstraints', () => {
-    // request 3, but only 2 frames on hand, header says 5 -> 2 wins.
-    expect(resolveFrame4DCount(3, 2, 5)).toBe(2)
-    // request 3, 5 frames on hand, header says 4 -> 3 (the request) wins.
-    expect(resolveFrame4DCount(3, 5, 4)).toBe(3)
+  // Each case: [limitFrames4D, framesInImg, nTotalFrame4D, expected nFrame4D]
+  test.each<{ name: string; cases: [number, number, number, number][] }>([
+    { name: 'loadsAllFramesWhenLimitIsInfinity', cases: [[Infinity, 4, 4, 4]] },
+    { name: 'capsToTheRequestedLimit', cases: [[2, 4, 4, 2]] },
+    {
+      // 1.5 must not leak a non-integer nFrame4D (which would mis-align the
+      // byte truncation and the 4D graph / setFrame4D indexing).
+      name: 'floorsAFractionalLimit',
+      cases: [[1.5, 4, 4, 1]],
+    },
+    {
+      name: 'clampsALimitBelowOneToASingleFrame',
+      cases: [
+        [0, 4, 4, 1],
+        [-3, 4, 4, 1],
+      ],
+    },
+    {
+      name: 'clampsALimitLargerThanTheDataToTheTotalFrameCount',
+      cases: [[10, 3, 3, 3]],
+    },
+    {
+      // Recovery path: a >2 GiB volume was capped by the loader, so the buffer
+      // holds fewer frames (2) than the header declares (4). Even with no
+      // explicit limit, nFrame4D must not claim more frames than the buffer
+      // contains.
+      name: 'clampsToFramesActuallyPresentWhenBufferHoldsFewerThanTheHeaderClaims',
+      cases: [[Infinity, 2, 4, 2]],
+    },
+    {
+      // request 3, but only 2 frames on hand, header says 5 -> 2 wins;
+      // request 3, 5 frames on hand, header says 4 -> 3 (the request) wins.
+      name: 'appliesTheTightestOfAllThreeConstraints',
+      cases: [
+        [3, 2, 5, 2],
+        [3, 5, 4, 3],
+      ],
+    },
+  ])('$name', ({ cases }) => {
+    for (const [limit, inImg, total, expected] of cases) {
+      expect(resolveFrame4DCount(limit, inImg, total)).toBe(expected)
+    }
   })
 })

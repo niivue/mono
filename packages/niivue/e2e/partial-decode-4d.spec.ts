@@ -20,6 +20,8 @@ import { test } from './sharedPage'
 // truncates the gzip stream after frame 0. A bounded read succeeds; a full
 // decode cannot, because inflating to the end of the member hits the cut. The
 // outcome is therefore a direct statement about how much was decoded.
+// The main-thread fallback (loadBridge) is tested the same way under Bun in
+// src/volume/partialDecode4D.test.ts; this spec holds the Worker path.
 
 // Build a 4D NIfTI-1 in the page, gzip it with CompressionStream, and cut it.
 const fixture = `
@@ -55,43 +57,6 @@ const mkNiivue = `
   const nv = new NiiVue({ backend: 'webgl2' })
   await nv.attachToCanvas(c)
 `
-
-test('a 4D request decodes only the frames it asked for', async ({ page }) => {
-  test.setTimeout(120_000)
-
-  const result = await page.evaluate(`(async () => {
-    ${fixture}
-    ${mkNiivue}
-
-    // Control: without a limit these bytes cannot be decoded at all. If this
-    // ever stops throwing, the truncation is not biting and the assertion
-    // below would be vacuous.
-    let unboundedThrew = false
-    try {
-      await nv.loadVolumes([{ url: file, name: 'trunc4d.nii.gz' }])
-    } catch { unboundedThrew = true }
-
-    // The contract: one frame requested, so only vox_offset + one frame is
-    // inflated, and the truncated tail is never touched.
-    await nv.loadVolumes([{ url: file, name: 'trunc4d.nii.gz', limitFrames4D: 1 }])
-    const vol = nv.volumes[0]
-    return {
-      unboundedThrew,
-      voxels: vol.img.length,
-      expectedOneFrame: 16 * 16 * 8,
-      firstVoxel: vol.img[0],
-      totalFrames: vol.nTotalFrame4D,
-      keptFrames: vol.nFrame4D,
-    }
-  })()`)
-
-  expect(result.unboundedThrew).toBe(true)
-  expect(result.voxels).toBe(result.expectedOneFrame)
-  expect(result.firstVoxel).toBe(1234)
-  // The header still describes the whole series; only the read was bounded.
-  expect(result.totalFrames).toBe(400)
-  expect(result.keptFrames).toBe(1)
-})
 
 test('the bounded path is used by the worker, not only the fallback', async ({
   page,

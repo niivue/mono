@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
 // The gradient texture (RGB = encoded unit normal, A = log-encoded magnitude)
@@ -26,7 +26,7 @@ import { test } from './sharedPage'
 // WebGPU is off by default in headless Chromium. These flags bring up Dawn on
 // SwiftShader, which is enough to run a compute pass; scoped to this file so the
 // rest of the suite keeps the config's plain WebGL2-on-SwiftShader setup.
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 
 const harness = `
   const { volume2TextureGradientRGBA: glGrad } = await import('/src/gl/gradient.ts')

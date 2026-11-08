@@ -1,12 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './sharedPage'
 
 // #461: changing the device pixel ratio (or the canvas size) resized the view
 // but kept instance tiles sized for the old canvas. #200:
 // effectiveDevicePixelRatio is the ratio the canvas actually renders at.
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/examples/index.html', { waitUntil: 'load' })
-})
 
 test('instance tiles follow the canvas pixel size', async ({ page }) => {
   const r = await page.evaluate(async () => {
@@ -16,7 +13,12 @@ test('instance tiles follow the canvas pixel size', async ({ page }) => {
     document.body.appendChild(canvas)
     const nv = new NiiVue({ backend: 'webgl2', devicePixelRatio: 1 })
     await nv.attachToCanvas(canvas)
-    await nv.loadVolumes([{ url: '/volumes/sphere.nii.gz', name: 'v' }])
+    // A tiny in-memory volume: the test is about tile sizes, not the data.
+    const { createNiftiArray } = await import('/src/volume/utils.ts')
+    const img = new Uint8Array(8 ** 3).fill(100)
+    const affine = [1, 0, 0, -4, 0, 1, 0, -4, 0, 0, 1, -4, 0, 0, 0, 1]
+    const nii = createNiftiArray([8, 8, 8], [1, 1, 1], affine, 2, img)
+    await nv.loadVolumes([{ url: new File([nii], 'v.nii'), name: 'v' }])
     await nv.setInstances([
       {
         id: 'left',
@@ -93,13 +95,21 @@ test('controllers sharing a canvas follow one ratio', async ({ page }) => {
   expect(r.at).toEqual([100, 100])
 })
 
+// Its own page: the shared one is fixed at 1x. Opened here rather than by
+// `test.use({ deviceScaleFactor })`, which would give this one test a worker of
+// its own, launched last, after the rest of the suite.
 test.describe('on a 2x screen', () => {
-  // At 1x a helper that always returned 1 would pass the auto checks.
-  test.use({ deviceScaleFactor: 2 })
-
   test('effectiveDevicePixelRatio is the ratio the canvas renders at', async ({
-    page,
+    browser,
   }) => {
+    // At 1x a helper that always returned 1 would pass the auto checks.
+    const { baseURL, viewport } = test.info().project.use
+    const page = await browser.newPage({
+      baseURL,
+      viewport,
+      deviceScaleFactor: 2,
+    })
+    await page.goto('/examples/index.html', { waitUntil: 'load' })
     const r = await page.evaluate(async () => {
       const { default: NiiVue } = await import('/src/index.ts')
       const canvas = document.createElement('canvas')
@@ -117,6 +127,7 @@ test.describe('on a 2x screen', () => {
       nv.devicePixelRatio = -1
       return { window: window.devicePixelRatio, auto, forced, back: read() }
     })
+    await page.close()
     expect(r.window).toBe(2)
     expect(r.auto).toEqual([2, 2])
     expect(r.forced).toEqual([3, 3])

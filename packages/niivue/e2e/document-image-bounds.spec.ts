@@ -7,6 +7,10 @@ import { test } from './sharedPage'
 // A small PNG can declare a size that decodes to gigabytes, so one larger than
 // MAX_IMAGE_SIDE is refused before it is decoded and the document still loads.
 // 20000 on a side (1.6 GB of RGBA): Chrome itself rejects images past 2 GB.
+// The thumbnail and matcap are checked by the view as an HTMLImageElement
+// loads them (loadImageElement), so they need a browser and an attached
+// canvas. The image-volume case reads the size from the file header and runs
+// under bun test (src/loadDocument.bounds.test.ts).
 // Headless Chromium has no WebGPU adapter; WebGPU shares the same loader.
 
 /** A 1-bit grayscale PNG of `side` x `side` black pixels. */
@@ -64,7 +68,7 @@ for (const field of ['thumbnail', 'matcap'] as const) {
         const nv = new NiiVue({ backend: 'webgl2' })
         await nv.attachToCanvas(canvas)
         nv.sliceType = 4 // render: the view that uploads the matcap
-        await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+        await nv.loadVolumes([{ url: '/volumes/sphere.nii.gz' }])
         const doc = JSON.parse(
           new TextDecoder().decode(nv.serializeDocument({ format: 'json' })),
         )
@@ -75,8 +79,9 @@ for (const field of ['thumbnail', 'matcap'] as const) {
           () => '',
           (e: Error) => e.message,
         )
-        // The matcap is uploaded with the volume after the document resolves.
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+        // The matcap is uploaded with the volume after the document resolves;
+        // the warning it logs is polled for below.
+        await nv.whenUpdatesSettle()
         return {
           error,
           volumes: nv.volumes.length,
@@ -93,42 +98,3 @@ for (const field of ['thumbnail', 'matcap'] as const) {
       .toBe(true)
   })
 }
-
-test('a document whose image volume declares 20000x20000 loads the rest', async ({
-  page,
-}) => {
-  test.setTimeout(90_000)
-  const warnings: string[] = []
-  page.on('console', (m) => {
-    if (m.type() === 'warning') warnings.push(m.text())
-  })
-  const png = hugePng(20_000)
-  await page.route('**/huge.png', (route) =>
-    route.fulfill({ body: png, contentType: 'image/png' }),
-  )
-  const r = await page.evaluate(async () => {
-    const { default: NiiVue } = await import('/src/index.ts')
-    const canvas = document.createElement('canvas')
-    canvas.width = 256
-    canvas.height = 256
-    document.body.prepend(canvas)
-    const nv = new NiiVue({ backend: 'webgl2' })
-    await nv.attachToCanvas(canvas)
-    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
-    const doc = JSON.parse(
-      new TextDecoder().decode(nv.serializeDocument({ format: 'json' })),
-    )
-    doc.volumes.push({ url: '/huge.png', name: 'huge.png' })
-    const file = new File([JSON.stringify(doc)], 'volume.nvd')
-    const error = await nv.loadDocument(file).then(
-      () => '',
-      (e: Error) => e.message,
-    )
-    return { error, volumes: nv.volumes.length }
-  })
-  expect(r.error).toBe('')
-  expect(r.volumes).toBe(1)
-  expect(warnings.some((w) => /20000x20000, larger than 8192/.test(w))).toBe(
-    true,
-  )
-})

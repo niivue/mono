@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test'
 import { test } from './sharedPage'
+import { syntheticVolume } from './syntheticVolume'
 
 // The pointerup `finally` now clears `_annotationShapeStart`, `_resizingControlPoint`,
 // `_resizingAnnotation` and `_resizeOriginalShape` unconditionally. Those fields are
@@ -10,13 +11,14 @@ import { test } from './sharedPage'
 
 const setup = `
   const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+  const synth = ${syntheticVolume}
   const c = document.createElement('canvas')
   c.width = 400; c.height = 400
   c.style.cssText = 'position:fixed;left:0;top:0;width:400px;height:400px'
   document.body.appendChild(c)
   const nv = new NiiVue({ backend: 'webgl2', sliceType: SLICE_TYPE.AXIAL })
   await nv.attachToCanvas(c)
-  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+  await nv.loadVolumes([{ url: synth() }])
   nv.annotationIsEnabled = true
   nv.annotationTool = 'rectangle'
 

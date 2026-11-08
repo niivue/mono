@@ -2,6 +2,8 @@
 node_modules
 dist
 coverage
+coverage-e2e
+coverage-merged
 
 # Benchmark runs are local artifacts; commit only when documenting a regression/fix.
 benchmarks/runs/*.json

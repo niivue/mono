@@ -59,21 +59,50 @@ bun test --watch         # Watch mode
 bunx nx test niivue      # From monorepo root, via Nx
 ```
 
-Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, output at `coverage/`). The `coverage/` directory is gitignored. No coverage thresholds are configured.
+Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, output at `coverage/`, gitignored). Test infrastructure (`scripts/bunTestPreload.ts`, `src/testing/**`) is excluded with `coveragePathIgnorePatterns`. Bun reports only line and function coverage, and only for files some test loads. Its text table's `All files` row is a mean of per-file percentages, not the aggregate.
+
+```bash
+bun test && bun run coverage:check   # aggregate totals, files no test loaded, floor check
+```
+
+`coverage:check` runs `.github/scripts/lcov-to-summary.ts` on `coverage/lcov.info`. It prints the exact aggregate for loaded files and an estimated total that counts every `src/**/*.ts` file no test loaded as 0%, with the list of those files. It exits 1 when loaded-file coverage drops below its `--min-lines` / `--min-functions` floors. CI runs it after the tests (the "Coverage summary (niivue)" step in `pr_gate.yml`), so a coverage drop fails the PR gate. When coverage rises, raise the floors in the `coverage:check` script in `package.json` to about one point below the new numbers. Do not use Bun's `coverageThreshold` for this: Bun checks it against each file separately, so any file below it fails the run.
 
 ### End-to-end tests (Playwright)
 
 Browser-based e2e tests live in `e2e/*.spec.ts` and run in real headless Chromium
-against the Vite dev server. They exist because some code can't be reached by the
-Bun unit runner: the controller (`NVControlBase`) imports Vite `?worker&inline`
-and `?raw` modules, so it can't be imported under Bun, and rendering / document
-round-trips need a GPU context. Use these for anything needing a real instance.
+against the Vite dev server. Keep them for what needs a browser: rendering (pixels
+from a real GPU context), real Workers, DOM image decoding and pointer input.
+
+Everything else runs under Bun with a real controller and no canvas: the preload
+(`scripts/bunTestPreload.ts`) maps the Vite `?raw` / `?worker` imports and stands
+in for `requestAnimationFrame`, and `src/testing/headless.ts` gives `file://` URLs
+into dev-images. Document round-trips, loading, state and events belong there
+(see `src/loadDocument.*.test.ts`), not in `e2e/`. Bun's `fetch` of a missing
+`file://` URL resolves `ok` and fails only on read, so a test that needs a real
+404 (a probe, a failed load) or a served fixture uses `serveDevImages()`, an
+HTTP server on a free port that also records the paths requested. Timing-driven
+tests (`src/control/animateTo.test.ts`) step frames with `jest.useFakeTimers()`,
+which fakes the rAF stand-in and `performance.now`; `setImmediate` stays real,
+so awaiting it lets each frame's promise work land.
 
 ```bash
-bun run test:e2e         # playwright test (config: playwright.config.ts)
-bun run test:e2e:metal   # full suite, minus any Metal-only exclusions (none at present); add PLAYWRIGHT_CHROMIUM_CHANNEL=chromium for the GPU
-bunx nx e2e niivue       # via Nx
+bun run test:e2e         # fast tier: every spec but demo-smoke (config: playwright.config.ts)
+bun run test:e2e:full    # full suite: adds demo-smoke, every examples/*.html page (~3x the time)
+bun run test:e2e:metal   # full suite, minus any Metal-only exclusions (none at present); CI and local-metal.ts run this
+bunx nx e2e niivue       # fast tier via Nx
 ```
+
+The tiers are Playwright projects: `chromium` (fast) and `demo-smoke`; a bare
+`bunx playwright test` runs both. Use the fast tier while developing and the
+full one before pushing a change to the demos or to anything they load. A
+local run on macOS uses full Chromium on the real GPU by default (needs
+`bunx playwright install chromium`): the fast tier takes about 8 s on an M3
+Max, against more than a minute on SwiftShader. CI and other platforms stay on
+SwiftShader unless `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` is set; on a Mac,
+`PLAYWRIGHT_CHROMIUM_CHANNEL=` (empty) forces SwiftShader. A
+`launchOptions` or other worker-option `test.use()` gives its specs their own
+workers, each a second browser launch and NiiVue load; GPU specs use
+`test.use(webgpuUse)` (`e2e/launchOptions.ts`), which is empty in hardware mode.
 
 `playwright.config.ts` starts a no-`--open` dev server (`bun run e2e:serve`) and
 reuses an already-running one locally (`reuseExistingServer` off in CI). The
@@ -87,6 +116,80 @@ kept OUT of the hermetic unit `test` target and `pr_gate.yml` (they need a brows
 Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
 (`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
 canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
+
+**Browser coverage** (opt-in, `e2e/coverage.ts`): which source the e2e suite
+runs in the page, and a report merged with Bun's.
+
+```bash
+bun run test:e2e:coverage   # full suite with E2E_COVERAGE=1 -> coverage-e2e/lcov.info
+bun test                    # unit coverage -> coverage/lcov.info
+bun run coverage:merge      # -> coverage-merged/lcov.info + per-area summary (stdout)
+```
+
+Specs import `test` from `e2e/sharedPage.ts` (or `e2e/coverage.ts` for the
+per-test `page`), which collects Chromium V8 coverage from the shared page,
+the default `page` and pages a spec opens with `browser.newPage()`;
+`monocart-coverage-reports` maps it to `src/**/*.ts` through Vite's source maps
+(dev server or `E2E_BUNDLE=1` build). It costs about 30% of the full suite's
+time (most of it in demo-smoke), nothing when unset. Limits: page JavaScript
+only. Web Worker code (`workers/*.worker.ts` and what only they run) is not
+captured, nor is shader execution, nor a page opened with `context.newPage()`.
+Bun counts every line of a multi-line statement and V8 only its first, so for
+a file both suites load the merge compares the lines both count
+(`.github/scripts/coverage-merge.ts`); the totals are not comparable with
+`coverage:check`'s. Runs vary by under 0.1 pt; there is no threshold. CI's
+macOS job (`niivue-e2e.yml`) collects it and posts the merged summary to the
+job summary, so a PR whose Metal job local-metal skips gets no report.
+
+**Reference images** (`e2e/render-*.spec.ts`, harness `e2e/renderHarness.ts`):
+each scene draws tiny synthetic phantoms (the `Phantoms` built in the page by
+the harness, no dev-images) on a fixed camera, by default a 160 px canvas,
+under WebGL2 and WebGPU, and every capture must match
+`e2e/__snapshots__/<spec>/<capture>-<backend>.png`. One set serves every
+platform: the same PNG has to pass on Metal
+(`PLAYWRIGHT_CHROMIUM_CHANNEL=chromium`) and SwiftShader (the default shell, as on
+CI's Ubuntu job, which runs these specs too). The single tolerance is
+`expect.toMatchSnapshot` in `playwright.config.ts`; do not loosen it for one
+scene, make the scene deterministic instead (no antialiasing; text, thin lines
+and cinematic only where they pass on both renderers; cinematic needs a fixed
+`maxFrames`, which the harness waits for). Specs group scenes by feature
+(`render-reference` the major render paths in `renderScenes.ts`, `render-mesh`,
+`render-volume`, `render-colormaps`, `render-updates`, `render-cinematic`), so
+they spread across workers.
+
+A scene is `{ name, options?, size?, setup, sameAs?, steps? }`. `setup` and
+each step's `run` are sent to the page as source, so they may use only their
+`SceneContext` argument: `nv`, `lib` (enums, `chunkVolumeGrid`), `p`
+(phantoms; add new ones in the harness), `view()` (the view internals a scene
+may read, typed `SceneView`), `check(ok, message)` (fails the test), `settle()`
+(waits until updates, chunk streams, brick fades and cinematic refinement have
+drawn) and `canvas`. Nothing is awaited with a sleep. The harness captures a
+settled frame with `nv.getCanvasImage()` after `setup` (`<scene>`) and after each step
+(`<scene>--<step>`), so a **multi-step scene** shows behaviour: load, edit,
+capture, edit again. `check` pins how a result was reached (a GPU entry kept,
+a pass skipped, a warning logged), next to the change that should cause it.
+`sameAs: '<scene>[--<step>]'` compares a capture with another capture's
+reference in the same spec instead of its own: a restored setting, or a second
+code path (chunked vs whole, deferred vs eager) that must draw the same
+picture. State one step hands the next goes on `globalThis` (the shared page's
+reset deletes it). Chunked scenes set brick size with `maxTextureDimension3D`:
+the halo is 3 voxels, so stride = limit - 6; a limit below 7 fails the upload
+(`updateVolume` logs a warning and nothing draws). Both backends stream bricks
+under an 8 ms per-frame budget; WebGPU on SwiftShader fits about two bricks in
+it (WebGL2 all 64 of a 16 limit), so brick count dominates scene time there.
+Use the largest limit that still puts a seam on every axis (24 for the 32^3
+phantom: 2x2x2 bricks).
+To create or update references:
+
+```bash
+PLAYWRIGHT_CHROMIUM_CHANNEL=chromium bunx playwright test e2e/render-volume.spec.ts --update-snapshots
+bunx playwright test e2e/render-volume.spec.ts   # then confirm on SwiftShader
+```
+
+An update writes only the references that do not match, so when two captures
+share one through `sameAs` and disagree, the second overwrites the first and
+the next run fails: that is the equivalence failing, not a stale reference.
+Look at every changed PNG before committing it: an update accepts whatever was drawn.
 
 ### What's tested
 
@@ -102,13 +205,13 @@ canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
 
 ### What's NOT yet covered by unit tests
 
-The following modules require a browser or GPU context and are not covered by the Bun unit test suite. A Playwright e2e suite (`e2e/`, see above) now covers document save/reload round-trips end-to-end; broader rendering/visual coverage is still to come.
+The following modules require a browser or GPU context and are not covered by the Bun unit test suite. Their output is covered by the Playwright e2e suite (`e2e/`, see above).
 
 - `gl/`, `wgpu/` — GPU shader/rendering code
-- `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies
+- `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies (the state paths of `NVControlBase.ts` are now partly reached through `src/testing/headless.ts`)
 - `control/` — Mouse/keyboard interaction handlers
 - `view/NVRenderer.ts`, `view/NVFont.ts` — Rendering pipeline
-- `workers/` — Web Worker code
+- `workers/` — Web Worker code (also outside browser coverage: see Browser coverage above)
 - `codecs/NVGz.ts`, `codecs/NVZip.ts` — DecompressionStream (browser API)
 
 ### Writing new tests
@@ -694,9 +797,8 @@ volume is partial AND non-reloadable (`_sourceFile` present) — the document em
 only the loaded frames, so the restored volume correctly presents as complete-at-N
 with no deferred affordance. This is gated strictly on `_sourceFile`, so a partial
 volume from a real URL (e.g. `mpld_asl` with `limitFrames4D`) keeps its full dims and
-still deferred-reloads on restore. (A full NVD round-trip isn't Bun-testable —
-it needs the controller, whose `?worker&inline` imports Bun can't load — so this
-is browser-verified.)
+still deferred-reloads on restore. (Browser-verified; no full NVD round-trip test
+yet. The controller now loads under Bun, so one could join `src/loadDocument.*.test.ts`.)
 
 **Known limitations / follow-ups** (from the 2026-06-16 audit; not yet addressed —
 all are edge cases or pre-existing, the common paths are verified working):
@@ -898,7 +1000,7 @@ other overlays get `step(0.00001, a)`. The overlay ray-march takes the
 background's step-size correction (`volumeIsOverlayOpacityCorrected`, default
 on), so 3D density is independent of `sampleRate`; the drawing and PAQD passes
 are not corrected, and a `chunkOverlayOf` overlay (marched by the background
-pass) is always corrected. `e2e/overlay-opacity-correction.spec.ts` pins it.
+pass) is always corrected. The `overlay-density` scene of `e2e/render-volume.spec.ts` pins it.
 Setters rebuild via `updateGLVolume`. For self-modulated fraction maps (`vox.tissues.html`) set
 `calMin` 0: the alpha weight is `(f-calMin)/(calMax-calMin)`, so a nonzero
 `calMin` breaks alpha == fraction and ADDITIVE no longer sums to 1.
@@ -970,7 +1072,7 @@ in step.
   `MESH_REDRAW_OPTIONS` (`opacity`, `visible`, `name`) just calls `drawScene()`.
   `setVolumeAffine`'s fallback rebuild uses meshes `'changed'`; view creation
   (`_rebuildViewResources`) and context restore use the full rebuild.
-- **e2e:** `e2e/scoped-mesh-rebuild.spec.ts` asserts, on both backends, which
+- **e2e:** the `mesh-edits` scene of `e2e/render-mesh.spec.ts` asserts, on both backends, which
   meshes each setter re-uploads (by `view._getMeshGpu(mesh)` identity) and that
   the redraw-only and recolour paths reach the screen.
 
@@ -1167,8 +1269,7 @@ Data: `mesh.indices` in the model keeps file order; the CPU keeps only a
 permutation (4 B/tri) plus bounds. Both backends upload a separate
 cluster-ordered index copy (12 B/tri) and never rewrite the mesh's own index
 buffer: translucent 3D blending depends on triangle order (an audit caught
-WebGPU rewriting it in place; pinned by `e2e/crosscut2.spec.ts` 'leaves a
-translucent 3D view unchanged'). The copy is padded to whole clusters with
+WebGPU rewriting it in place; pinned by the `crosscut2-translucent` scene of `e2e/render-mesh.spec.ts`). The copy is padded to whole clusters with
 degenerate triangles, so shaders need no bounds check. `meshClusters` cache:
 new `indices`/`positions` arrays rebuild; a `_dataVersion` change rebuilds only
 if an FNV-1a hash of the indices changed (color/layer edits bump it too);
@@ -1205,18 +1306,21 @@ unculled -> 2.4 ms culled (old crosscut 4.4); WebGPU 19.3 -> 1.9 ms (old
 crosscut 4.7). Memory, only for meshes drawn with crosscut2: WebGPU +12 B/tri
 index copy; WebGL2 vertex copy 28 B/vertex + index copy 12 B/tri.
 
-Tests: `e2e/crosscut2.spec.ts` (oblique stability, edge-on surface,
-in-place index edit + `updateGLVolume`, translucent 3D unchanged, width clamp
-in constructor and document), `src/mesh/triangleClusters.test.ts`,
-`src/NVConstants.test.ts` (`clampCrosscutWidth`).
+Tests: the `crosscut2-*` scenes of `e2e/render-mesh.spec.ts` (oblique stability, edge-on surface,
+in-place index edit + `updateGLVolume`, translucent 3D unchanged),
+`src/loadDocument.clamp.test.ts` (width clamp in constructor and document),
+`src/mesh/triangleClusters.test.ts`, `src/NVConstants.test.ts`
+(`clampCrosscutWidth`).
 
 Known follow-ups:
 - WebGPU per-tile mesh uniform offset `i * 256` has no `MAX_TILES` (128)
   guard: a mosaic with >128 tiles (>64 with x-ray) fails `writeBuffer`
   validation for every mesh shader. Pre-existing; needs an issue.
-- `e2e/live-data-updates.spec.ts` "isDirty edits of a chunked volume re-stream
-  its bricks (webgpu)" flakes under parallel Playwright workers (~2/6 on main
-  too; passes serially). Needs an issue.
+- The old `e2e/live-data-updates.spec.ts` "isDirty edits of a chunked volume
+  re-stream its bricks (webgpu)" flaked under parallel workers: it counted
+  pixels until two frames agreed. Its successor, the `chunked-dirty` scene of
+  `e2e/render-updates.spec.ts`, waits for `whenChunkStreamSettles`; watch it
+  for the same flake.
 - Optional: bundle `drawWithGpu`'s per-tile crosscut args into one object next
   time a parameter is added.
 
@@ -1234,7 +1338,7 @@ is checked against `getAvailableShaders()`), the view layer falls back to
 `gl/meshShader.ts`) so the single per-mesh VAO is safe to draw with any mesh
 program (slice override, x-ray, depth pick) by construction.
 
-**Mesh slab on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): a finite positive value draws only mesh within that many mm of the DISPLAYED voxel plane (`tile.planeNormal`/`planePoint`, oblique when the volume is; a world plane through the crosshair without a volume), over the slice. 0 or Infinity draws the tile MVP: everything in front of the slice, the slice hiding the rest. `NVSliceLayout.meshSlabMvp` builds it: `NVTransforms.slabMvp` keeps the tile MVP's x/y rows and replaces its depth row with signed distance from the plane, so near/far clip at ±T along the plane normal (one affine matrix, no shader change). Both views draw it into the depth range [0, `SLAB_DEPTH_MAX`] (`gl.depthRange` / `setViewport`): clipping precedes that mapping, and the slice's own depth is >= 0.16, so the slab lands over it while meshes still occlude each other; the mesh x-ray pass draws in the same range. Issue #451. Demo `examples/tract.shear.html`; tests `e2e/mesh-slab.spec.ts`, `src/math/NVTransforms.test.ts` (`slabMvp`).
+**Mesh slab on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): a finite positive value draws only mesh within that many mm of the DISPLAYED voxel plane (`tile.planeNormal`/`planePoint`, oblique when the volume is; a world plane through the crosshair without a volume), over the slice. 0 or Infinity draws the tile MVP: everything in front of the slice, the slice hiding the rest. `NVSliceLayout.meshSlabMvp` builds it: `NVTransforms.slabMvp` keeps the tile MVP's x/y rows and replaces its depth row with signed distance from the plane, so near/far clip at ±T along the plane normal (one affine matrix, no shader change). Both views draw it into the depth range [0, `SLAB_DEPTH_MAX`] (`gl.depthRange` / `setViewport`): clipping precedes that mapping, and the slice's own depth is >= 0.16, so the slab lands over it while meshes still occlude each other; the mesh x-ray pass draws in the same range. Issue #451. Demo `examples/tract.shear.html`; tests: the `mesh-slab` and `mesh-xray` scenes of `e2e/render-mesh.spec.ts`, `src/math/NVTransforms.test.ts` (`slabMvp`).
 
 ## Signal data class
 
@@ -1675,9 +1779,9 @@ Ninth audit round (second external review; see `audit_response.md`):
   load/remove churn. Initial `loadSignals` is now wrapped (footer error message).
 - **No bare annotation guides**: annotations skip entirely when `fontSize <= 6`
   (guide was previously drawn even when the label was suppressed).
-- Won't-fix (documented): full-`NVDocument` signal round-trip test is not runnable
-  under the Bun harness (the controller's `?worker&inline` imports); the signal path is covered by
-  `persistence.test.ts` (serialize/reconstruct + real CBOR, incl. `-Infinity` y).
+- Signal persistence is covered by `persistence.test.ts` (serialize/reconstruct + real CBOR,
+  incl. `-Infinity` y) and full-`NVDocument` round-trips through the controller in
+  `src/loadDocument.roundtrip.test.ts`.
 
 Deferred (low priority, documented): two-pass/streaming TSV parser;
 annotations render only in the signal-only graph, not the volume+physio

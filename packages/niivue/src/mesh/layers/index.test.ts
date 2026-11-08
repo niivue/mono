@@ -26,7 +26,10 @@ describe('loadLayerFromUrl', () => {
     expect(layer.nFrame4D).toBe(1)
     let max = Number.NEGATIVE_INFINITY
     let sum = 0
-    for (const v of layer.values) {
+    // An indexed loop: for...of over 16.7M values costs ~0.3 s.
+    const values = layer.values
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i]
       if (v > max) max = v
       sum += v
     }

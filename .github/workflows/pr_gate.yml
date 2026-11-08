@@ -74,6 +74,9 @@ jobs:
       - name: Release helper tests
         run: bun test ./.github/scripts/npm-release-projects.test.ts
 
+      # Posts the coverage table (including files no test loaded) and fails
+      # when loaded-file line or function coverage drops below the floors in
+      # the coverage:check script of packages/niivue/package.json.
       - name: Coverage summary (niivue)
         if: always()
-        run: bun .github/scripts/lcov-to-summary.ts packages/niivue/coverage/lcov.info --title "niivue test coverage"
+        run: bun run --cwd packages/niivue coverage:check

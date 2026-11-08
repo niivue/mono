@@ -25,7 +25,8 @@ const root = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(root, '../..')
 
 const specSources = readdirSync(resolve(root, 'e2e'))
-  .filter((f) => f.endsWith('.spec.ts'))
+  // Helpers (renderHarness.ts) import /src modules too, not only specs.
+  .filter((f) => f.endsWith('.ts'))
   .flatMap((f) =>
     [
       ...readFileSync(resolve(root, 'e2e', f), 'utf8').matchAll(
@@ -77,6 +78,8 @@ export default mergeConfig(
     build: {
       outDir: 'dist-e2e',
       minify: false,
+      // E2E_COVERAGE=1 maps browser coverage back to src/ (e2e/coverage.ts).
+      sourcemap: process.env.E2E_COVERAGE === '1',
       rollupOptions: {
         // Vite drops entry exports in app builds; the specs import them.
         preserveEntrySignatures: 'exports-only',

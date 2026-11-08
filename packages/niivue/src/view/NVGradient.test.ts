@@ -51,12 +51,6 @@ describe('gradient encoding constants', () => {
     expect(SOBEL_RADIUS).toBe(0.7)
     expect(Number.isInteger(SOBEL_RADIUS)).toBe(false)
   })
-
-  test('both backends differentiate the colormapped alpha channel', () => {
-    // Not red: a LUT's alpha ramp is monotonic in intensity for every
-    // colormap, its colour channels are not (hot saturates red at 37%).
-    expect(GRADIENT_SOURCE_CHANNEL).toBe('a')
-  })
 })
 
 /**

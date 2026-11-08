@@ -40,9 +40,9 @@ describe('shouldLinkVolume', () => {
   })
 })
 
-// Mirror the per-volume decision + wire shape of NVDocument.serialize (the full
-// module can't be imported under the Bun harness -- its graph uses Vite's
-// import.meta.glob; see slideSerialization.test.ts for the same pattern). This
+// Mirror the per-volume decision + wire shape of NVDocument.serialize, pinned
+// independently of the module (see slideSerialization.test.ts for the same
+// pattern; loadDocument.roundtrip.test.ts drives the real one). This
 // locks the linked-document contract the loader relies on: a linked volume has a
 // URL and NO embedded `data` (reconstructVolume then takes its `else if (v.url)`
 // refetch branch); an embedded volume carries `data`.
@@ -120,8 +120,7 @@ describe('isTransientStreamedVolume', () => {
 // reconstructVolume's branch selector, to prove a document holding a streamed
 // volume alongside a normal one round-trips cleanly: the normal volume restores
 // via its embedded data, and the streamed volume is DROPPED (never written), so
-// reload never drives a `streamed://` fetch. The full NVDocument module can't be
-// imported under the Bun harness (its graph uses Vite's import.meta.glob).
+// reload never drives a `streamed://` fetch.
 type StreamSrcVolume = {
   url?: string
   name: string

@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
 // P5: a slide's ICC lookup table is applied once, in the slide shader, on both
@@ -8,7 +8,7 @@ import { test } from './sharedPage'
 //
 // WebGPU is skipped when the runner has no adapter.
 
-test.use({ launchOptions: webgpuLaunchOptions })
+test.use(webgpuUse)
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
   test(`slide colour table swaps red and blue (${backend})`, async ({

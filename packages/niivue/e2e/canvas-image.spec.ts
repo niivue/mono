@@ -1,14 +1,13 @@
 import { expect } from '@playwright/test'
-import { webgpuLaunchOptions } from './launchOptions'
+import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
+import { syntheticVolume } from './syntheticVolume'
 
 // getCanvasImage() must return the current scene synchronously on both
 // backends: WebGPU discards the canvas texture after compositing, so a read
 // that is not rendered and copied in the same task comes back blank.
 
-test.use({ launchOptions: webgpuLaunchOptions })
-
-const VOLUME = '/volumes/mni152.nii.gz'
+test.use(webgpuUse)
 
 type Px = [number, number, number, number]
 type Result = {
@@ -44,6 +43,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         if (!adapter) return { skip: 'no WebGPU adapter' }
       }
       const { default: NiiVue, SLICE_TYPE } = await import('/src/index.ts')
+      const synth = ${syntheticVolume}
       const nextFrame = () => new Promise((r) =>
         requestAnimationFrame(() => requestAnimationFrame(r)))
       const pixel = (img, x, y) => {
@@ -66,13 +66,15 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         isColorbarVisible: false,
       }
 
-      const nv = new NiiVue(opts)
+      // Zoomed out: the cubic phantom would otherwise fill the square tile,
+      // leaving no background at the corner.
+      const nv = new NiiVue({ ...opts, pan2Dxyzmm: [0, 0, 0, 0.5] })
       const detached = nv.getCanvasImage() === null
       await nv.attachToCanvas(makeCanvas())
       if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
         return { skip: 'WebGPU init fell back to ' + nv.backend }
       }
-      await nv.loadVolumes([{ url: '${VOLUME}' }])
+      await nv.loadVolumes([{ url: synth() }])
       await nextFrame()
 
       const img = nv.getCanvasImage()
@@ -170,7 +172,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     if (!full) throw new Error('no full-canvas read')
     expect([full.width, full.height]).toEqual([256, 256])
     expect(full.corner).toEqual([0, 0, 255, 255])
-    // The brain at the centre is gray, not the blue background.
+    // The phantom at the centre is gray, not the blue background.
     expect(full.centre[0]).toBeGreaterThan(20)
     expect(full.centre[0]).toBe(full.centre[2])
 
@@ -180,7 +182,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(result.offCanvas).toBe(true)
 
     expect(result.busy?.during).toBe(true)
-    // Grey brain under the red colormap: red channel above blue.
+    // Grey phantom under the red colormap: red channel above blue.
     const centre = result.busy?.centre ?? [0, 0, 0, 0]
     expect(centre[0]).toBeGreaterThan(centre[2])
 

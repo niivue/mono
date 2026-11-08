@@ -302,8 +302,11 @@ describe('chunkVolume — input validation', () => {
 
   test('throws when deviceLimit too small for halo', () => {
     // limit must be >= 2*halo + 1
-    expect(() => chunkVolume([100, 100, 100], 2, [1, 1, 1])).toThrow()
-    expect(() => chunkVolume([100, 100, 100], 3, [1, 1, 1])).not.toThrow()
+    // 5^3 keeps the limit-3 plan small (stride 1 plans one chunk per voxel)
+    expect(() => chunkVolume([5, 5, 5], 2, [1, 1, 1])).toThrow(
+      'too small for halo',
+    )
+    expect(() => chunkVolume([5, 5, 5], 3, [1, 1, 1])).not.toThrow()
   })
 })
 
@@ -1312,20 +1315,23 @@ describe('chunkVolumeMultiLOD — budget pass cost', () => {
     // bricks whose 2:1 balance pass is quadratic (7 to 35 s each), and the
     // detail pass used to build sixteen of them before the floor climb threw
     // them all away (236 s end to end). The octree lower bound now rules those
-    // candidates out without balancing them, so the whole plan takes ~0.4 s.
-    // Bun's default per-test timeout (5 s) is the regression guard.
+    // candidates out without balancing them, so the whole plan takes ~0.4 s
+    // (~0.55 s under coverage on an M-series Mac). The 2 s bound below is the
+    // regression guard: over 3x headroom, but a multi-second slowdown fails.
     const levels: Vec3i[] = []
     let d: Vec3i = [8192, 4096, 1024]
     for (let i = 0; i < 7; i++) {
       levels.push([d[0], d[1], d[2]])
       d = [Math.ceil(d[0] / 2), Math.ceil(d[1] / 2), Math.ceil(d[2] / 2)]
     }
+    const t0 = performance.now()
     const plan = chunkVolumeMultiLOD(
       levels,
       { center: [4096.37, 2048.29, 512.41], radius: [4096, 2048, 512] },
       2048,
       { cellEdge: 128, maxBricks: 240 },
     )
+    expect(performance.now() - t0).toBeLessThan(2000)
     expect(plan.chunks.length).toBeLessThanOrEqual(240)
     // Multi-LOD bricks place in the common grid but fetch from their own
     // level, so the single-level tex/voxel identity does not apply; check the

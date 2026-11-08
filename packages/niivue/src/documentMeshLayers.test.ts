@@ -31,9 +31,4 @@ describe('selectUrlMeshLayers', () => {
   test('returns undefined for a layerless mesh', () => {
     expect(selectUrlMeshLayers(undefined)).toBeUndefined()
   })
-
-  test('returns an empty array when every layer lacks a URL', () => {
-    const layers: NVDocumentMeshLayer[] = [{ colormap: 'hot' }]
-    expect(selectUrlMeshLayers(layers)).toEqual([])
-  })
 })

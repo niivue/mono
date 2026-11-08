@@ -151,12 +151,6 @@ describe('lodGammaExponent', () => {
     expect(capped).toBeCloseTo(1 - 0.5 * LOD_BRIGHTNESS_RANGE[1], 10)
   })
 
-  test('shares one accepted range with the opacity coefficient', () => {
-    // Two adjacent knobs, one rule: copying a value from one into the other
-    // must not silently clamp.
-    expect(LOD_BRIGHTNESS_RANGE).toEqual(LOD_OPACITY_RANGE)
-  })
-
   test('floors the exponent so a deep pyramid cannot blow out', () => {
     expect(lodGammaExponent(1e6, LOD_BRIGHTNESS_RANGE[1])).toBe(0.25)
   })

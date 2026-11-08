@@ -4,9 +4,8 @@ import { decode, encode } from 'cbor-x'
 import { decodeRLE, encodeRLE } from '@/drawing/rle'
 
 // Guards the wire contract NVDocument uses to round-trip a slide plane + its
-// slide-space drawing (NVDocumentSlidePlane). Mirrors the shape here rather than
-// importing NVDocument, which pulls a Vite-only `import.meta.glob` barrel that
-// is unavailable under the bun test runner.
+// slide-space drawing (NVDocumentSlidePlane). Mirrors the shape here, so the
+// contract is pinned independently of NVDocument's own encoder.
 
 describe('slide plane document round-trip (CBOR + RLE)', () => {
   test('preserves the manifest reference, transform, level, and drawing raster', () => {

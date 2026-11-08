@@ -131,11 +131,52 @@ test('a NiiVue holds the workers from attach to destroy, once', async () => {
     expect(retain).toHaveBeenCalledTimes(3)
     held.destroy()
     expect(release).toHaveBeenCalledTimes(3)
+    // Overlapping attaches: the first rejects while the second is pending, so
+    // the hold stays until the second settles (here: succeeds) and destroy.
+    let rejectFirst = (_: Error): void => {}
+    let resolveSecond = (): void => {}
+    const pending = [
+      new Promise<void>((_, rej) => {
+        rejectFirst = rej
+      }),
+      new Promise<void>((res) => {
+        resolveSecond = res
+      }),
+    ]
+    const racing = new NiiVue({}, {
+      attachToCanvas: () => pending.shift(),
+    } as never)
+    const first = racing.attachToCanvas({} as HTMLCanvasElement)
+    const second = racing.attachToCanvas({} as HTMLCanvasElement)
+    rejectFirst(new Error('no adapter'))
+    await first.catch(() => {})
+    expect(release).toHaveBeenCalledTimes(3)
+    resolveSecond()
+    await second
+    expect(release).toHaveBeenCalledTimes(3)
+    racing.destroy()
+    expect(retain).toHaveBeenCalledTimes(4)
+    expect(release).toHaveBeenCalledTimes(4)
+    // An attach that fails after an earlier one succeeded keeps the hold.
+    const reattach = new NiiVue({}, {
+      attachToCanvas: (() => {
+        let n = 0
+        return async () => {
+          if (n++ > 0) throw new Error('lost context')
+        }
+      })(),
+    } as never)
+    await reattach.attachToCanvas({} as HTMLCanvasElement)
+    await reattach.attachToCanvas({} as HTMLCanvasElement).catch(() => {})
+    expect(release).toHaveBeenCalledTimes(4)
+    reattach.destroy()
+    expect(retain).toHaveBeenCalledTimes(5)
+    expect(release).toHaveBeenCalledTimes(5)
     // A backend constructor that refuses (WebGPU build without WebGPU) holds
     // nothing, so a fallback viewer's destroy can end the workers.
     const { default: GPU } = await import('@/NVControlWebGPU')
     expect(() => new GPU()).toThrow()
-    expect(retain).toHaveBeenCalledTimes(3)
+    expect(retain).toHaveBeenCalledTimes(5)
   } finally {
     retain.mockRestore()
     release.mockRestore()

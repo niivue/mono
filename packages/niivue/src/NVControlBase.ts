@@ -521,6 +521,8 @@ export default class NiiVue extends EventTarget {
   private _destroyed = false
   /** Holds the page workers while attached (see _holdPageWorkers). */
   private _holdsPageWorkers = false
+  private _attachesPending = 0
+  private _attachSucceeded = false
   private _contextLossRecoveries = 0
   /** Live streamed-volume handles, so a setting that changes the required brick
    *  halo (currently only `volumeIsCubicInterpolation`) can re-plan them. Each
@@ -2811,14 +2813,9 @@ export default class NiiVue extends EventTarget {
   }
 
   async attachTo(id: string, isAntiAlias = null): Promise<this> {
-    const held = this._holdPageWorkers()
-    try {
-      await this._viewLifecycle.attachTo(this, id, isAntiAlias)
-    } catch (err) {
-      // A failed viewer is often dropped without destroy() (e.g. WebGPU to WebGL2 fallback).
-      if (held) this._releasePageWorkers()
-      throw err
-    }
+    await this._attachHoldingWorkers(() =>
+      this._viewLifecycle.attachTo(this, id, isAntiAlias),
+    )
     return this
   }
 
@@ -2826,25 +2823,39 @@ export default class NiiVue extends EventTarget {
     canvas: HTMLCanvasElement,
     isAntiAlias: boolean | null = null,
   ): Promise<this> {
-    const held = this._holdPageWorkers()
-    try {
-      await this._viewLifecycle.attachToCanvas(this, canvas, isAntiAlias)
-    } catch (err) {
-      // A failed viewer is often dropped without destroy() (e.g. WebGPU to WebGL2 fallback).
-      if (held) this._releasePageWorkers()
-      throw err
-    }
+    await this._attachHoldingWorkers(() =>
+      this._viewLifecycle.attachToCanvas(this, canvas, isAntiAlias),
+    )
     return this
   }
 
   // An attached viewer keeps the page workers alive between its loads; destroy()
   // lets them go. Not taken in the constructor: a constructor that throws (e.g.
   // the WebGPU build without WebGPU) leaves no instance to destroy.
-  private _holdPageWorkers(): boolean {
-    if (this._holdsPageWorkers || this._destroyed) return false
+  private _holdPageWorkers(): void {
+    if (this._holdsPageWorkers || this._destroyed) return
     this._holdsPageWorkers = true
     retainPageWorkers()
-    return true
+  }
+
+  // A failed viewer is often dropped without destroy() (e.g. a WebGPU to WebGL2
+  // fallback), so a failed attach lets the hold go, unless an earlier attach
+  // succeeded or another is still running.
+  private async _attachHoldingWorkers(
+    attach: () => Promise<unknown>,
+  ): Promise<void> {
+    this._holdPageWorkers()
+    this._attachesPending++
+    try {
+      await attach()
+      this._attachSucceeded = true
+    } catch (err) {
+      if (this._attachesPending === 1 && !this._attachSucceeded)
+        this._releasePageWorkers()
+      throw err
+    } finally {
+      this._attachesPending--
+    }
   }
 
   private _releasePageWorkers(): void {

@@ -1379,9 +1379,14 @@ export function getNiivueCommandsModule({
     niivueToggleOverlay: async () => {
       const entry = getActiveNiivueEntry(servicesManager)
       if (!entry) return
-      // A second press while loading cancels the load.
+      // A second press while loading cancels the load and releases the entry at
+      // once, so a third press starts a new load while the old one tears down.
       if (entry.overlayLoading) {
         entry.overlayAbort?.abort()
+        entry.overlayAbort = undefined
+        entry.overlayLoading = false
+        writeStatus(entry, null)
+        refreshToolbar(servicesManager, entry.viewportId)
         return
       }
       const { nv, viewportId } = entry
@@ -1430,25 +1435,29 @@ export function getNiivueCommandsModule({
         getNiivueEntry(viewportId) === entry &&
         entry.displaySets === baseDisplaySets
       const abort = new AbortController()
+      // stillLive() alone cannot tell two loads on the same base apart.
+      const owns = () => stillLive() && entry.overlayAbort === abort
 
-      // Add the overlay volume, then reconcile against a swap that may have
-      // invalidated this load DURING the addVolume await: if we no longer own the
-      // viewport's base series, remove the overlay we just added so it doesn't
-      // linger on the wrong anatomy. Count-guarded (only remove when our add is
-      // still the last, untouched volume) so a concurrent swap-load that already
-      // replaced the volume array is left alone. Returns true if the overlay
-      // stuck, false if it was invalidated/undone.
+      // Prepare (fetch + parse) the overlay, add it only if this load still owns
+      // the viewport, then undo the add if it lost ownership DURING addVolume
+      // (cancel press, swap, unmount). Removed by identity, so a newer load's
+      // volume or a swap's replaced array is left alone. Returns true if the
+      // overlay stuck.
       const addOverlayGuarded = async (
-        spec: Parameters<typeof nv.addVolume>[0],
+        spec: Parameters<typeof nv.prepareVolume>[0],
       ): Promise<boolean> => {
-        const before = nv.volumes.length
-        await nv.addVolume(spec)
-        if (stillLive() && !abort.signal.aborted) return true
-        if (nv.volumes.length === before + 1) {
-          nv.model.removeVolume(nv.volumes.length - 1)
-          await nv.updateGLVolume()
+        const image = await nv.prepareVolume(spec)
+        if (stillLive() && !abort.signal.aborted) {
+          await nv.addVolume(image)
+          if (stillLive() && !abort.signal.aborted) return true
+          // addVolume stores a copy of `image` that shares its hdr.
+          const i = nv.volumes.findIndex((v) => v.hdr === image.hdr)
+          if (i >= 0) {
+            nv.model.removeVolume(i)
+            await nv.updateGLVolume()
+          }
         }
-        // Cancelled during addVolume: undone above; the catch clears the status.
+        // Cancelled: the cancel press cleared the status.
         abort.signal.throwIfAborted()
         return false
       }
@@ -1473,6 +1482,7 @@ export function getNiivueCommandsModule({
             headers: authHeaders(servicesManager),
             signal: abort.signal,
             onProgress: (phase, loaded, total) => {
+              if (!owns()) return
               writeStatus(
                 entry,
                 phase === 'fetching'
@@ -1499,10 +1509,8 @@ export function getNiivueCommandsModule({
         if (note) flashStatus(entry, note)
         else writeStatus(entry, null)
       } catch (err) {
-        if (abort.signal.aborted) {
-          if (stillLive()) writeStatus(entry, null)
-          return
-        }
+        // Every abort source (cancel press, base swap, unmount) already let go.
+        if (abort.signal.aborted || !owns()) return
         console.error('[nv-ohif] overlay load failed', err)
         const message = err instanceof Error ? err.message : String(err)
         flashStatus(
@@ -1511,11 +1519,9 @@ export function getNiivueCommandsModule({
           'error',
         )
       } finally {
-        if (entry.overlayAbort === abort) entry.overlayAbort = undefined
-        // Only clear the loading flag if this load still owns the entry: a swap
-        // may have started a NEWER overlay load on the reused entry, whose
-        // overlayLoading=true we must not clobber.
-        if (stillLive()) {
+        // A newer load (after a cancel press or a swap) owns the flags now.
+        if (entry.overlayAbort === abort) {
+          entry.overlayAbort = undefined
           entry.overlayLoading = false
           refreshToolbar(servicesManager, viewportId)
         }

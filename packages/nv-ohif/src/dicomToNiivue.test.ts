@@ -5,9 +5,11 @@ import type { OhifDisplaySet } from './ohif-types'
 // Stands in for dcm2niix's convert(): each test sets the result it resolves to.
 let result: Promise<Partial<ConvertResult>>
 let calls: ConvertOptions[]
+let inputs: File[]
 mock.module('@niivue/dcm2niix', () => ({
   exitCodes: { ok: 0, noValidFiles: 2, someOkSomeBad: 8 },
-  convert: async (_files: File[], options: ConvertOptions) => {
+  convert: async (files: File[], options: ConvertOptions) => {
+    inputs = files
     calls.push(options)
     return { series: [], log: [], exitCode: 0, ...(await result) }
   },
@@ -94,6 +96,28 @@ describe('convertDisplaySetToNifti', () => {
       convertDisplaySetToNifti(ds, { signal: abort.signal }),
     ).rejects.toThrow('cancelled')
     expect(calls).toHaveLength(0)
+  })
+
+  it('fetches frames 1..NumberOfFrames of a multi-frame instance into one file', async () => {
+    const urls: string[] = []
+    const stub = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      urls.push(url)
+      return stub(url, init)
+    }) as unknown as typeof fetch
+    result = Promise.resolve({ series: [output('mf', 3)] })
+    // OHIF's instance imageId is frame 1 even for a multi-frame instance.
+    const mf = {
+      instances: [
+        { imageId: `wadors:${frames}`, NumberOfFrames: 3 },
+        { imageId: `wadors:${frames}`, NumberOfFrames: 3 },
+      ],
+    } as OhifDisplaySet
+    await convertDisplaySetToNifti(mf)
+    expect(urls.filter((u) => u.includes('/frames/')).sort()).toEqual(
+      [1, 2, 3].map((n) => frames.replace(/1$/, String(n))),
+    )
+    expect(inputs.map((f) => f.name)).toEqual(['3.dcm'])
   })
 
   it('is null without instances or reconstructed files', async () => {

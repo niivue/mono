@@ -1,25 +1,19 @@
 import { rankOutputs } from './dcm2niixOutputs'
+import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
 import type { OhifDisplaySet } from './ohif-types'
-import {
-  framesUrlFromImageId,
-  reconstructInstanceFiles,
-} from './reconstructP10'
+import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
 
 // Phase 2 DICOM bridge: turn a DICOMweb display set into a NIfTI volume, then load
-// it with NiiVue. We reconstruct original-style DICOM Part-10 files from what any
-// DICOMweb server exposes (`/metadata` + per-frame pixels) and convert them with the
+// it with NiiVue. We fetch DICOM Part-10 files (RetrieveInstance, else reconstructed
+// from `/metadata` + per-frame pixels; see reconstructP10) and convert them with the
 // `@niivue/dcm2niix` WebAssembly build. dcm2niix owns the DICOM->NIfTI orientation/
-// affine work, so we don't hand-roll LPS->RAS.
-//
-// Reconstruction (rather than WADO-RS RetrieveInstance) is deliberate: it works
-// against static/CloudFront demo servers too, which return 403 for the full-instance
-// P10 resource. dcm2niix is dynamically imported so its WASM only loads on a DICOM
-// series.
+// affine work, so we don't hand-roll LPS->RAS. dcm2niix is dynamically imported so
+// its WASM only loads on a DICOM series.
 
 export interface DicomConvertOptions {
   /** Extra request headers (e.g. an Authorization header from OHIF's auth service). */
   headers?: Record<string, string>
-  /** Called as instances are fetched, then once more when conversion starts. */
+  /** Called as frames are fetched, then once more when conversion starts. */
   onProgress?: (
     phase: 'fetching' | 'converting',
     loaded: number,
@@ -30,33 +24,36 @@ export interface DicomConvertOptions {
   concurrency?: number
 }
 
-/** Ordered, de-duplicated per-instance frame pixel URLs for a display set. */
-function instanceFramesUrls(ds: OhifDisplaySet): string[] {
-  const urls: string[] = []
-  const seen = new Set<string>()
+/**
+ * One ref per SOP instance, in display-set order. OHIF's instance imageId is the
+ * frame-1 URL (`wadors:.../instances/<sop>/frames/1`) even for a multi-frame
+ * instance, so the frame count comes from NumberOfFrames.
+ */
+function instanceRefs(ds: OhifDisplaySet): InstanceRef[] {
+  const refs = new Map<string, InstanceRef>()
   for (const inst of ds.instances ?? []) {
     const id = inst.imageId
-    const url = typeof id === 'string' ? framesUrlFromImageId(id) : null
-    if (url && !seen.has(url)) {
-      seen.add(url)
-      urls.push(url)
-    }
+    const url =
+      typeof id === 'string' ? retrieveInstanceUrlFromImageId(id) : null
+    if (url && !refs.has(url))
+      refs.set(url, {
+        url,
+        frames: Math.max(1, Number(inst.NumberOfFrames) || 1),
+      })
   }
-  return urls
+  return [...refs.values()]
 }
 
 /**
- * Fetch every instance of a DICOMweb display set as a reconstructed DICOM P10 File.
- * Fetches run with bounded concurrency; progress is reported per instance.
+ * Fetch every instance of a DICOMweb display set as a DICOM P10 File.
+ * Fetches run with bounded concurrency; progress is reported per frame.
  */
 export async function fetchDicomInstanceFiles(
   ds: OhifDisplaySet,
   options: DicomConvertOptions = {},
 ): Promise<File[]> {
   const { headers, onProgress, signal, concurrency } = options
-  const framesUrls = instanceFramesUrls(ds)
-  if (framesUrls.length === 0) return []
-  return reconstructInstanceFiles(framesUrls, {
+  return reconstructInstanceFiles(instanceRefs(ds), {
     headers,
     signal,
     concurrency,
@@ -80,7 +77,7 @@ export async function convertDisplaySetToNifti(
   ds: OhifDisplaySet,
   options: DicomConvertOptions = {},
 ): Promise<DicomConversion | null> {
-  if (instanceFramesUrls(ds).length === 0) return null
+  if (instanceRefs(ds).length === 0) return null
   const files = await fetchDicomInstanceFiles(ds, options)
   if (files.length === 0) return null
   options.onProgress?.('converting', 0, 1)

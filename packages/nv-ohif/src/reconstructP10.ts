@@ -1,13 +1,10 @@
 import { parseMultipartRelated } from './dicomWadoRs'
 
-// Reconstruct original-style DICOM Part-10 files from a DICOMweb data source that
-// does NOT expose WADO-RS RetrieveInstance (e.g. a static S3/CloudFront store).
-// Such servers still serve `/metadata` (dicom+json) and per-frame pixel bulkdata,
-// which is everything needed to assemble a valid P10 with dcmjs. dcm2niix then does
-// the DICOM->NIfTI orientation/affine work.
-//
-// This is universal: it works against any DICOMweb server (static or live), unlike
-// RetrieveInstance which many static demo servers reject with 403.
+// Fetch DICOM Part-10 files for dcm2niix from a DICOMweb data source: WADO-RS
+// RetrieveInstance when the server allows it, else reconstruct each instance from
+// `/metadata` (dicom+json) plus its per-frame pixel bulkdata, which every DICOMweb
+// server serves (static S3/CloudFront stores reject RetrieveInstance with 403).
+// dcm2niix then does the DICOM->NIfTI orientation/affine work.
 
 const EXPLICIT_VR_LITTLE_ENDIAN = '1.2.840.10008.1.2.1'
 // Arbitrary ImplementationClassUID under a NiiVue-owned root; identifies the writer.
@@ -60,30 +57,32 @@ function sanitizeDataset(source: JsonDataset): JsonDataset {
   return out
 }
 
-/** Frames pixel URL (absolute) from a cornerstone `wadors:` imageId. */
-export function framesUrlFromImageId(imageId: string): string | null {
-  if (typeof imageId !== 'string') return null
-  const raw = imageId.replace(/^(wadors|dicomweb):/i, '')
-  return /^https?:\/\/.*\/frames\//i.test(raw) ? raw : null
-}
-
-/** Series `/metadata` URL derived from an instance frames URL. */
-export function seriesMetadataUrlFromFramesUrl(
-  framesUrl: string,
-): string | null {
-  const seriesBase = framesUrl.split('/instances/')[0]
+/** Series `/metadata` URL derived from an instance URL. */
+export function seriesMetadataUrl(instanceUrl: string): string | null {
+  const seriesBase = instanceUrl.split('/instances/')[0]
   return seriesBase ? `${seriesBase}/metadata` : null
 }
 
-/** SOP Instance UID embedded in a frames/instance URL. */
-export function sopFromFramesUrl(framesUrl: string): string | null {
-  return framesUrl.split('/instances/')[1]?.split(/[/?#]/)[0] ?? null
+/** SOP Instance UID embedded in an instance URL. */
+export function sopFromInstanceUrl(instanceUrl: string): string | null {
+  return instanceUrl.split('/instances/')[1]?.split(/[/?#]/)[0] ?? null
+}
+
+function concat(parts: Uint8Array[]): Uint8Array {
+  if (parts.length === 1 && parts[0]) return parts[0]
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let o = 0
+  for (const p of parts) {
+    out.set(p, o)
+    o += p.length
+  }
+  return out
 }
 
 /**
  * Assemble a DICOM Part-10 byte buffer from an instance's dicom+json metadata and
- * its raw (uncompressed) pixel bytes. The file-meta group is rebuilt; the dataset
- * is written as Explicit VR Little Endian to match the uncompressed pixels.
+ * its frames' pixel bytes (frame 1 first), written under `transferSyntaxUID`
+ * (default Explicit VR Little Endian). The file-meta group is rebuilt.
  *
  * `DicomDict` is passed in (dcmjs, dynamically imported by the caller) to keep this
  * module free of a static dcmjs import.
@@ -98,27 +97,28 @@ const UNCOMPRESSED_SYNTAXES = new Set([
 export function assemblePart10(
   DicomDict: DcmjsDicomDictCtor,
   metadata: JsonDataset,
-  pixelBytes: Uint8Array,
+  frames: Uint8Array[],
   transferSyntaxUID?: string,
 ): ArrayBuffer {
   const dataset = sanitizeDataset(metadata)
   const syntax = transferSyntaxUID || EXPLICIT_VR_LITTLE_ENDIAN
 
-  // Copy the pixels into a fresh, standalone ArrayBuffer (the fetched bytes may be a
-  // view into a larger buffer, which dcmjs' DataView-based writer rejects).
-  const pixelBuffer = new ArrayBuffer(pixelBytes.byteLength)
-  new Uint8Array(pixelBuffer).set(pixelBytes)
+  // slice(): standalone ArrayBuffers (a fetched frame may be a view into a larger
+  // buffer, which dcmjs' DataView-based writer rejects).
   if (UNCOMPRESSED_SYNTAXES.has(syntax)) {
     const bitsAllocated = firstValue<number>(metadata['00280100']) ?? 16
     dataset['7FE00010'] = {
       vr: bitsAllocated > 8 ? 'OW' : 'OB',
-      Value: [pixelBuffer],
+      Value: [concat(frames).slice().buffer],
     }
   } else {
-    // Compressed pixels stay encapsulated: OB with one fragment per frame. dcmjs
-    // writes the Basic Offset Table + fragment items for a compressed syntax, and
-    // dcm2niix decodes it (it bundles JPEG/JPEG-LS/JPEG2000 decoders).
-    dataset['7FE00010'] = { vr: 'OB', Value: [pixelBuffer] }
+    // Compressed pixels stay encapsulated: OB, one Value per frame. dcmjs writes
+    // the Basic Offset Table (one offset per Value) + fragment items, and dcm2niix
+    // decodes it (it bundles JPEG/JPEG-LS/JPEG2000 decoders).
+    dataset['7FE00010'] = {
+      vr: 'OB',
+      Value: frames.map((f) => f.slice().buffer),
+    }
   }
 
   const meta: JsonDataset = {
@@ -192,26 +192,79 @@ async function fetchFrame(
     },
     signal,
   })
-  if (!resp.ok)
+  if (!resp.ok) {
+    await resp.body?.cancel() // an unread body keeps downloading
     throw new Error(`frame fetch failed (${resp.status} ${resp.statusText})`)
+  }
   const contentType = resp.headers.get('content-type') ?? ''
   const buffer = await resp.arrayBuffer()
   const transferSyntaxUID = transferSyntaxOf(contentType, buffer)
   const parts = parseMultipartRelated(buffer, contentType)
-  // Frame bulkdata may arrive multipart (one part per frame) or raw; concatenate.
-  let bytes: Uint8Array
-  if (parts.length === 0) bytes = new Uint8Array(buffer)
-  else if (parts.length === 1) bytes = parts[0] ?? new Uint8Array()
-  else {
-    const total = parts.reduce((n, p) => n + p.length, 0)
-    bytes = new Uint8Array(total)
-    let o = 0
-    for (const p of parts) {
-      bytes.set(p, o)
-      o += p.length
+  // Frame bulkdata may arrive multipart or raw; concatenate.
+  const bytes = parts.length === 0 ? new Uint8Array(buffer) : concat(parts)
+  return { bytes, transferSyntaxUID }
+}
+
+/** The instance's P10 bytes via WADO-RS RetrieveInstance; null when refused. */
+async function retrieveInstance(
+  url: string,
+  headers: Record<string, string>,
+  signal: AbortSignal | undefined,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        // transfer-syntax=*: the stored syntax, no server-side transcoding.
+        Accept:
+          'multipart/related; type="application/dicom"; transfer-syntax=*',
+        ...headers,
+      },
+      signal,
+    })
+    if (!resp.ok) {
+      await resp.body?.cancel()
+      return null
+    }
+    const buffer = await resp.arrayBuffer()
+    const p10 = parseMultipartRelated(
+      buffer,
+      resp.headers.get('content-type') ?? '',
+    )[0]
+    // A static host may answer 200 with an HTML error page: check the magic.
+    if (!p10 || new TextDecoder().decode(p10.subarray(128, 132)) !== 'DICM')
+      return null
+    // Parts are ArrayBuffer-backed (slices or the response buffer itself).
+    return p10 as Uint8Array<ArrayBuffer>
+  } catch {
+    // Network/CORS failure: reconstruct instead; an abort still rejects.
+    signal?.throwIfAborted()
+    return null
+  }
+}
+
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = []
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i] as T)
     }
   }
-  return { bytes, transferSyntaxUID }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, worker),
+  )
+  return out
+}
+
+/** A WADO-RS instance URL (`.../instances/<sop>`) and its frame count. */
+export interface InstanceRef {
+  url: string
+  frames: number
 }
 
 export interface ReconstructOptions {
@@ -222,84 +275,93 @@ export interface ReconstructOptions {
 }
 
 /**
- * Reconstruct P10 `File`s for every instance identified by `framesUrls`, using one
- * shared series-metadata fetch plus a per-instance pixel fetch.
+ * P10 `File`s for `instances`: RetrieveInstance, probed on the first instance,
+ * else reconstruction from one shared series-metadata fetch plus frames 1..N per
+ * instance. Progress counts frames.
  */
 export async function reconstructInstanceFiles(
-  framesUrls: string[],
+  instances: InstanceRef[],
   options: ReconstructOptions = {},
 ): Promise<File[]> {
   const { headers = {}, onProgress, signal, concurrency = 6 } = options
-  if (framesUrls.length === 0) return []
-
-  const firstUrl = framesUrls[0]
-  if (firstUrl === undefined) return []
-  const metadataUrl = seriesMetadataUrlFromFramesUrl(firstUrl)
-  if (!metadataUrl) throw new Error('Could not derive series metadata URL')
-
-  const [DicomDict, metaResp] = await Promise.all([
-    loadDicomDictCtor(),
-    fetch(metadataUrl, {
-      headers: { Accept: 'application/dicom+json', ...headers },
-      signal,
-    }),
-  ])
-  if (!metaResp.ok) {
-    throw new Error(`series metadata fetch failed (${metaResp.status})`)
-  }
-  const metaJson = (await metaResp.json()) as JsonDataset | JsonDataset[]
-  const metaList = Array.isArray(metaJson) ? metaJson : [metaJson]
-  const metaBySop = new Map<string, JsonDataset>()
-  for (const m of metaList) {
-    const sop = firstValue<string>(m['00080018'])
-    if (sop) metaBySop.set(sop, m)
-  }
-
-  const files: File[] = []
+  const first = instances[0]
+  if (!first) return []
+  const total = instances.reduce((n, inst) => n + inst.frames, 0)
   let done = 0
-  let next = 0
-  const worker = async (): Promise<void> => {
-    while (next < framesUrls.length) {
-      const idx = next++
-      const framesUrl = framesUrls[idx]
-      if (framesUrl === undefined) break
-      const sop = sopFromFramesUrl(framesUrl)
-      const metadata = sop ? metaBySop.get(sop) : undefined
-      if (metadata && sop) {
-        const frame = await fetchFrame(framesUrl, headers, signal)
-        const p10 = assemblePart10(
-          DicomDict,
-          metadata,
-          frame.bytes,
-          frame.transferSyntaxUID ?? undefined,
-        )
-        // Name each file uniquely (per source URL index), not just by SOP: when
-        // several frame URLs share one SOPInstanceUID (a multi-frame/enhanced
-        // instance whose frames arrive separately), a bare `${sop}.dcm` collides
-        // and dcm2niix's in-memory FS silently overwrites all but the last,
-        // dropping frames. dcm2niix groups slices by DICOM header, not filename,
-        // so a unique name is safe. (Full enhanced multi-frame reconstruction —
-        // one P10 carrying all N frames with a matching NumberOfFrames — is a
-        // separate, larger piece; this only prevents the silent overwrite.)
-        files.push(
-          new File([p10], `${sop}-${idx}.dcm`, { type: 'application/dicom' }),
-        )
-      }
-      onProgress?.(++done, framesUrls.length)
-    }
+  const progress = (frames: number) => {
+    done += frames
+    onProgress?.(done, total)
   }
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, framesUrls.length) }, () =>
-      worker(),
-    ),
-  )
-  // Progress counts every URL processed, but instances skipped for missing
-  // metadata produce no file. Surface a partial series (fewer files than URLs)
-  // so a converted-with-missing-slices volume isn't silent.
-  if (files.length < framesUrls.length) {
+
+  type Series = [DcmjsDicomDictCtor, Map<string, JsonDataset>]
+  const loadSeries = async (): Promise<Series> => {
+    const metadataUrl = seriesMetadataUrl(first.url)
+    if (!metadataUrl) throw new Error('Could not derive series metadata URL')
+    const [DicomDict, metaResp] = await Promise.all([
+      loadDicomDictCtor(),
+      fetch(metadataUrl, {
+        headers: { Accept: 'application/dicom+json', ...headers },
+        signal,
+      }),
+    ])
+    if (!metaResp.ok) {
+      await metaResp.body?.cancel()
+      throw new Error(`series metadata fetch failed (${metaResp.status})`)
+    }
+    const metaJson = (await metaResp.json()) as JsonDataset | JsonDataset[]
+    const metaBySop = new Map<string, JsonDataset>()
+    for (const m of Array.isArray(metaJson) ? metaJson : [metaJson]) {
+      const sop = firstValue<string>(m['00080018'])
+      if (sop) metaBySop.set(sop, m)
+    }
+    return [DicomDict, metaBySop]
+  }
+  let series: Promise<Series> | undefined
+
+  let canRetrieve = true
+  const instanceFile = async (inst: InstanceRef): Promise<File | null> => {
+    const sop = sopFromInstanceUrl(inst.url)
+    const name = `${sop}.dcm`
+    const retrieved = canRetrieve
+      ? await retrieveInstance(inst.url, headers, signal)
+      : null
+    if (retrieved) {
+      progress(inst.frames)
+      return new File([retrieved], name, { type: 'application/dicom' })
+    }
+    canRetrieve = false
+    series ??= loadSeries()
+    const [DicomDict, metaBySop] = await series
+    const metadata = sop ? metaBySop.get(sop) : undefined
+    if (!metadata) {
+      progress(inst.frames)
+      return null
+    }
+    const frameNumbers = Array.from({ length: inst.frames }, (_, i) => i + 1)
+    const frames = await mapPool(frameNumbers, concurrency, async (n) => {
+      const frame = await fetchFrame(`${inst.url}/frames/${n}`, headers, signal)
+      progress(1)
+      return frame
+    })
+    const p10 = assemblePart10(
+      DicomDict,
+      metadata,
+      frames.map((f) => f.bytes),
+      frames[0]?.transferSyntaxUID ?? undefined,
+    )
+    return new File([p10], name, { type: 'application/dicom' })
+  }
+
+  // Probe alone, so a refusing server costs one request, not `concurrency`.
+  const firstFile = await instanceFile(first)
+  const rest = await mapPool(instances.slice(1), concurrency, instanceFile)
+  const files = [firstFile, ...rest].filter((f): f is File => f !== null)
+  // Surface a partial series (instances skipped for missing metadata) so a
+  // converted-with-missing-slices volume isn't silent.
+  if (files.length < instances.length) {
     console.warn(
-      `[nv-ohif] reconstructed ${files.length} of ${framesUrls.length} DICOM instances ` +
-        `(${framesUrls.length - files.length} skipped for missing metadata); ` +
+      `[nv-ohif] reconstructed ${files.length} of ${instances.length} DICOM instances ` +
+        `(${instances.length - files.length} skipped for missing metadata); ` +
         'the converted volume may be missing slices.',
     )
   }

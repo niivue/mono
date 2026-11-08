@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build:lib": "NODE_ENV=production bun build ./src/index.ts --outdir=dist --target=browser --format=esm --external react --external react-dom --external @niivue/niivue --external @niivue/uikit --external @niivue/dcm2niix --external dcmjs",
+    "build:lib": "bun build ./src/index.ts --production --outdir=dist --target=browser --format=esm --external react --external react-dom --external @niivue/niivue --external @niivue/uikit --external @niivue/dcm2niix --external dcmjs",
     "build:types": "tsc -p tsconfig.build.json",
     "build:package": "bun run build:lib && bun run build:types",
     "test": "bun test"

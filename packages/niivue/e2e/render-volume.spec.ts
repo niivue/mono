@@ -5,6 +5,9 @@ import { registerScenes, type Scene } from './renderHarness'
 // boxes, layout inset and the crosshair and label colours on 2D slices. See
 // renderHarness.ts for how scenes run and how to update the references.
 
+// 32^3 phantom into 2x2x2 bricks (stride = limit - 6 for the 3-voxel halo):
+// every axis has a seam, and WebGPU streams 8 bricks, not 64.
+const CHUNK_LIMIT = 24
 const RENDER = 4
 
 const SCENES: Scene[] = [
@@ -33,7 +36,7 @@ const SCENES: Scene[] = [
     // must draw exactly like the whole volume.
     name: 'render-slices-chunked',
     sameAs: 'render-modes--slices',
-    options: { sliceType: RENDER, maxTextureDimension3D: 16 },
+    options: { sliceType: RENDER, maxTextureDimension3D: CHUNK_LIMIT },
     setup: async ({ nv, view, lib, p, check }) => {
       await nv.loadVolumes([{ url: p.anatomy(), calMin: 0, calMax: 255 }])
       nv.volumeRenderMode = lib.VOLUME_RENDER_MODE.SLICES
@@ -315,7 +318,7 @@ const SCENES: Scene[] = [
     // the modulation then changes it (so the match was of modulated renders).
     name: 'modulation-chunked',
     sameAs: 'modulation',
-    options: { sliceType: RENDER, maxTextureDimension3D: 16 },
+    options: { sliceType: RENDER, maxTextureDimension3D: CHUNK_LIMIT },
     setup: async ({ nv, view, lib, p, check }) => {
       await nv.loadVolumes([
         { url: p.anatomy(), colormap: 'gray' },
@@ -360,7 +363,7 @@ const SCENES: Scene[] = [
     name: 'slices-pick-chunked',
     options: {
       sliceType: RENDER,
-      maxTextureDimension3D: 16,
+      maxTextureDimension3D: CHUNK_LIMIT,
       volumeIsAlphaClipDark: true,
     },
     setup: async ({ nv, view, lib, p, check, settle }) => {

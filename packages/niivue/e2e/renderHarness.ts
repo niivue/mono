@@ -121,6 +121,7 @@ export type Phantoms = {
  * Not public API: a scene that needs one is checking how a result was reached.
  */
 export type SceneView = {
+  render: () => void
   isBusy: boolean
   _getMeshGpu: (mesh: unknown) => unknown
   updateMeshVertices: (mesh: unknown) => boolean

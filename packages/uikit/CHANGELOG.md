@@ -1,3 +1,13 @@
+## 1.0.0-rc.115 (2026-11-08)
+
+### Fixes
+
+- **uikit:** load the default font without fetching a data: URL ([bc2e4a1e](https://github.com/niivue/mono/commit/bc2e4a1e))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.114 (2026-11-08)
 
 ### Fixes

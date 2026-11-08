@@ -1857,4 +1857,51 @@ describe('NVChunkedVolume failed init', () => {
     expect(listeners.size).toBeGreaterThan(0)
     for (const [type, n] of listeners) expect([type, n]).toEqual([type, 0])
   })
+
+  test('a throw after the floor is installed clears the floor', async () => {
+    const volumes: NVImage[] = []
+    const floors: (NVImage | null)[] = []
+    const host = {
+      swapVolumeChunkPlan: async () => {},
+      _registerChunkedVolume: () => {},
+      _unregisterChunkedVolume: () => {},
+      volumes,
+      addVolume: async (v: NVImage) => {
+        volumes.push({ ...v })
+      },
+      removeVolume: async (i: number) => {
+        volumes.splice(i, 1)
+      },
+      setBaseCoarseFloor: async (f: NVImage | null) => {
+        floors.push(f)
+      },
+      _updateGLChanged: async () => {
+        throw new Error('out of memory')
+      },
+      sliceType: SLICE_TYPE.MULTIPLANAR,
+      pan2Dxyzmm: [0, 0, 0, 1],
+      getCrosshairPos: () => [0.5, 0.5, 0.5],
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as NiiVue
+    // Non-flat voxels, so the floor resolves the window and init reaches the
+    // trailing _updateGLChanged after the floor is installed.
+    const source: ChunkedVolumeSource = {
+      datatypeCode: 4,
+      levels: mgrSource.levels,
+      fetchChunk: async (r) => {
+        const n = r.texDims[0] * r.texDims[1] * r.texDims[2] * r.bytesPerVoxel
+        return Uint8Array.from({ length: n }, (_, i) => i % 251)
+      },
+    }
+    const mgr = new NVChunkedVolume(host, source, {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(volumes).toHaveLength(0)
+    expect(floors[0]).not.toBeNull()
+    expect(floors.at(-1)).toBeNull()
+  })
 })

@@ -20,5 +20,8 @@ export type {
   DicomJsonSlide,
 } from './dicomJson'
 export { indexDicomWsiMetadata } from './dicomJson'
+export type { DicomWebWsiOptions } from './dicomWebWsiSource'
+export { DicomWebWsiSource } from './dicomWebWsiSource'
 export { DicomWsiSource } from './dicomWsiSource'
 export { manifestFromIndex } from './hostedManifest'
+export { parseMultipartRelated } from './multipart'

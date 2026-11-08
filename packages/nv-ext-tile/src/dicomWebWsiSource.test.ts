@@ -1,0 +1,316 @@
+import { afterEach, describe, expect, test } from 'bun:test'
+import type { NVSlideTileManifest } from '@niivue/niivue'
+import { type DicomJsonSlide, indexDicomWsiMetadata } from './dicomJson'
+import { DicomWebWsiSource } from './dicomWebWsiSource'
+import { parseMultipartRelated } from './multipart'
+
+const DIR = `${import.meta.dir}/../fixtures/dicom-wsi`
+const SERIES = 'https://pacs.test/dicomweb/studies/1.2.3.1/series/1.2.3.2'
+
+type Json = Record<string, unknown>
+const json = async (name: string): Promise<Json> =>
+  Bun.file(`${DIR}/${name}.json`).json()
+
+async function slideOf(
+  name: string,
+  edit: (o: Json) => void = () => {},
+): Promise<DicomJsonSlide> {
+  const o = await json(name)
+  edit(o)
+  const slide = indexDicomWsiMetadata([o]).slides[0]
+  if (!slide) throw new Error(`${name} indexed no slide`)
+  return slide
+}
+
+const enc = new TextEncoder()
+function multipart(payload: Uint8Array, boundary = 'B0UND'): Uint8Array {
+  const head = enc.encode(
+    `--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`,
+  )
+  const tail = enc.encode(`\r\n--${boundary}--\r\n`)
+  const out = new Uint8Array(head.length + payload.length + tail.length)
+  out.set(head)
+  out.set(payload, head.length)
+  out.set(tail, head.length + payload.length)
+  return out
+}
+
+const JPEG = new Uint8Array([
+  0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 2, 0xff, 0xd9,
+])
+const JLS = new Uint8Array([0xff, 0xd8, 0xff, 0xf7, 0, 2, 0xff, 0xd9])
+
+interface Call {
+  url: string
+  headers: Record<string, string>
+}
+let calls: Call[] = []
+const realFetch = globalThis.fetch
+afterEach(() => {
+  globalThis.fetch = realFetch
+  calls = []
+})
+
+/** Answers every request with `respond(url)`, recording its URL and headers. */
+function serve(respond: (url: string) => Response) {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    init?.signal?.throwIfAborted()
+    const url = String(input)
+    calls.push({
+      url,
+      headers: { ...(init?.headers as Record<string, string>) },
+    })
+    return respond(url)
+  }) as typeof fetch
+}
+const part = (bytes: Uint8Array) =>
+  new Response(multipart(bytes), {
+    headers: { 'content-type': 'multipart/related; boundary=B0UND' },
+  })
+
+const firstTile = (s: DicomWebWsiSource) => {
+  const level = s.manifest.levels[0]
+  const tile = level?.tiles.find((t): t is NVSlideTileManifest => !!t)
+  if (!level || !tile) throw new Error('no tile')
+  return { level, tile }
+}
+
+describe('DicomWebWsiSource', () => {
+  test('fetches each tile by WADO-RS frame URL with headers read per request', async () => {
+    serve(() => part(JPEG))
+    let token = 'a'
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+      headers: () => ({ Authorization: `Bearer ${token}` }),
+    })
+    expect(calls).toEqual([]) // the syntax is indexed: no probe
+    expect(s.manifest.levels[0]?.codec).toBe('image/jpeg')
+    const { level, tile } = firstTile(s)
+    expect(await s.fetchTileBytes(level, tile, '')).toEqual(JPEG)
+    token = 'b'
+    await s.fetchTileBytes(level, tile, '')
+    expect(calls[0]?.url).toBe(
+      `${SERIES}/instances/1.2.3.10/frames/${tile.frame}`,
+    )
+    expect(calls[0]?.headers.Accept).toBe(
+      'multipart/related; type="image/jpeg"',
+    )
+    expect(calls.map((c) => c.headers.Authorization)).toEqual([
+      'Bearer a',
+      'Bearer b',
+    ])
+  })
+
+  test('keeps a query on the series URL after the frame number', async () => {
+    serve(() => part(JPEG))
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: `${SERIES}?access_token=t`,
+    })
+    const { level, tile } = firstTile(s)
+    await s.fetchTileBytes(level, tile, '')
+    expect(calls[0]?.url).toEndWith(`/frames/${tile.frame}?access_token=t`)
+  })
+
+  test('probes one frame per level when the metadata states no transfer syntax', async () => {
+    serve(() => part(JLS))
+    const slide = await slideOf('bot', (o) => {
+      delete o['00020010']
+    })
+    expect(slide.instances[0]?.transferSyntax).toBe('')
+    const s = await DicomWebWsiSource.open(slide, { seriesUrl: SERIES })
+    expect(calls.length).toBe(slide.levels.length)
+    expect(calls[0]?.headers.Accept).toContain('transfer-syntax=*')
+    expect(s.manifest.levels[0]?.codec).toBe('image/jls')
+    expect(s.manifest.levels[0]?.transferSyntaxUid).toBe(
+      '1.2.840.10008.1.2.4.80',
+    )
+  })
+
+  test('refuses a JPEG-LS tile the server transcoded', async () => {
+    serve(() => part(JPEG))
+    const s = await DicomWebWsiSource.open(await slideOf('mono12'), {
+      seriesUrl: SERIES,
+    })
+    const { level, tile } = firstTile(s)
+    expect(level.codec).toBe('image/jls')
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow(
+      'transcoded',
+    )
+  })
+
+  test('caps a body by Content-Length and while streaming', async () => {
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+    })
+    const { level, tile } = firstTile(s)
+    serve(
+      () =>
+        new Response('x', { headers: { 'content-length': String(65 << 20) } }),
+    )
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
+    const mb = new Uint8Array(1 << 20)
+    let sent = 0
+    serve(
+      () =>
+        new Response(
+          new ReadableStream({
+            pull(c) {
+              if (sent++ < 65) c.enqueue(mb)
+              else c.close()
+            },
+          }),
+        ),
+    )
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
+  })
+
+  test('cancels a refused body', async () => {
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+    })
+    const { level, tile } = firstTile(s)
+    let cancelled = 0
+    const body = () =>
+      new ReadableStream({
+        pull() {},
+        cancel() {
+          cancelled++
+        },
+      })
+    serve(() => new Response(body(), { status: 503 }))
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('HTTP 503')
+    serve(
+      () =>
+        new Response(body(), {
+          headers: { 'content-length': String(65 << 20) },
+        }),
+    )
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
+    expect(cancelled).toBe(2)
+  })
+
+  test('passes the abort signal to fetch', async () => {
+    serve(() => part(JPEG))
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+    })
+    const { level, tile } = firstTile(s)
+    const ac = new AbortController()
+    ac.abort()
+    await expect(s.fetchTileBytes(level, tile, '', ac.signal)).rejects.toThrow()
+    expect(calls).toEqual([])
+  })
+
+  test('serves an inline ICC profile without a request', async () => {
+    serve(() => part(JPEG))
+    const s = await DicomWebWsiSource.open(await slideOf('planes'), {
+      seriesUrl: SERIES,
+    })
+    expect((await s.fetchIccProfile())?.length).toBeGreaterThan(0)
+    expect(calls).toEqual([])
+  })
+
+  test('fetches bulk ICC data relative to the series, with auth only on its origin', async () => {
+    const icc = new Uint8Array([1, 2, 3])
+    serve(() => part(icc))
+    const headers = () => ({ Authorization: 'Bearer a' })
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+      headers,
+    })
+    expect(await s.fetchIccProfile()).toEqual(icc)
+    expect(calls[0]?.url).toBe(`${SERIES}/bulk/1.2.3.10/00282000`)
+    expect(calls[0]?.headers.Authorization).toBe('Bearer a')
+
+    const elsewhere = await DicomWebWsiSource.open(
+      await slideOf('bot', (o) => {
+        const paths = (o['00480105'] as { Value: Json[] }).Value
+        ;(paths[0] as Json)['00282000'] = {
+          vr: 'OB',
+          BulkDataURI: 'https://cdn.test/icc',
+        }
+      }),
+      { seriesUrl: SERIES, headers },
+    )
+    expect(await elsewhere.fetchIccProfile()).toEqual(icc)
+    expect(calls[1]?.url).toBe('https://cdn.test/icc')
+    expect(calls[1]?.headers.Authorization).toBeUndefined()
+  })
+
+  test('carries a series query to same-origin bulk ICC data only', async () => {
+    serve(() => part(new Uint8Array([1])))
+    const withBulk = (uri: string) =>
+      slideOf('bot', (o) => {
+        const paths = (o['00480105'] as { Value: Json[] }).Value
+        ;(paths[0] as Json)['00282000'] = { vr: 'OB', BulkDataURI: uri }
+      })
+    const options = { seriesUrl: `${SERIES}?access_token=t` }
+    for (const uri of ['bulk/icc', 'bulk/icc?v=1', 'https://cdn.test/icc'])
+      await (
+        await DicomWebWsiSource.open(await withBulk(uri), options)
+      ).fetchIccProfile()
+    expect(calls.map((c) => c.url)).toEqual([
+      `${SERIES}/bulk/icc?access_token=t`,
+      `${SERIES}/bulk/icc?v=1`,
+      'https://cdn.test/icc',
+    ])
+  })
+
+  test('resolves a relative series URL against the page', async () => {
+    serve(() => part(JPEG))
+    const g = globalThis as { location?: unknown }
+    const saved = g.location
+    g.location = { href: 'https://pacs.test/viewer/' }
+    try {
+      const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+        seriesUrl: '/dicomweb/s?t=1',
+        headers: () => ({ Authorization: 'Bearer a' }),
+      })
+      const { level, tile } = firstTile(s)
+      await s.fetchTileBytes(level, tile, '')
+      await s.fetchIccProfile()
+    } finally {
+      g.location = saved
+    }
+    expect(calls[0]?.url).toStartWith('https://pacs.test/dicomweb/s/instances/')
+    expect(calls[1]?.url).toBe(
+      'https://pacs.test/dicomweb/s/bulk/1.2.3.10/00282000?t=1',
+    )
+    expect(calls[1]?.headers.Authorization).toBe('Bearer a')
+  })
+
+  test('retrieves bulk ICC data through the host hook when given', async () => {
+    serve(() => part(JPEG))
+    const asked: string[] = []
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+      retrieveBulkData: async (url) => {
+        asked.push(url)
+        return new Uint8Array([7]).buffer
+      },
+    })
+    expect(await s.fetchIccProfile()).toEqual(new Uint8Array([7]))
+    expect(asked).toEqual([`${SERIES}/bulk/1.2.3.10/00282000`])
+    expect(calls).toEqual([])
+  })
+})
+
+describe('parseMultipartRelated', () => {
+  test('extracts parts byte-exact, with or without the boundary in Content-Type', () => {
+    const a = new Uint8Array([0x44, 0x00, 0x0d, 0x0a, 0xff])
+    expect(
+      parseMultipartRelated(
+        multipart(a, 'XY'),
+        'multipart/related; boundary="XY"',
+      ),
+    ).toEqual([a])
+    expect(
+      parseMultipartRelated(multipart(a, 'XY'), 'multipart/related'),
+    ).toEqual([a])
+  })
+
+  test('returns a single-part body whole, and nothing for an empty one', () => {
+    expect(parseMultipartRelated(JPEG, 'image/jpeg')).toEqual([JPEG])
+    expect(parseMultipartRelated(new Uint8Array(), 'image/jpeg')).toEqual([])
+  })
+})

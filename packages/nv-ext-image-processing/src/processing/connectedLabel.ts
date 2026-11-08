@@ -251,22 +251,21 @@ function largest_original_cluster_labels(
     ls2bw[ls[i]] = bw[i]
     sumls[ls[i]]++
   }
-  let mxbw = 0
-  for (let i = 0; i < cl + 1; i++) {
-    const bwVal = ls2bw[i]
-    mxbw = Math.max(mxbw, bwVal)
-    for (let j = 0; j < cl + 1; j++) {
-      if (j === i) continue
-      if (bwVal !== ls2bw[j]) continue
-      if (sumls[i] < sumls[j]) {
-        ls2bw[i] = 0
-      } else if (sumls[i] === sumls[j] && i < j) {
-        ls2bw[i] = 0
-      }
-    }
+  // One winner per original class: largest component, ties to the highest index.
+  // Map keeps storage proportional to observed classes (values can reach 2^32-1).
+  const winner = new Map<number, number>()
+  for (let i = 1; i <= cl; i++) {
+    const best = winner.get(ls2bw[i])
+    if (best === undefined || sumls[i] >= sumls[best]) winner.set(ls2bw[i], i)
   }
-  const vxs = new Uint32Array(nvox).fill(0)
-  for (let i = 0; i < nvox; i++) vxs[i] = ls2bw[ls[i]]
+  const keep = new Uint32Array(cl + 1)
+  let mxbw = 0
+  for (const [bwVal, i] of winner) {
+    keep[i] = bwVal
+    mxbw = Math.max(mxbw, bwVal)
+  }
+  const vxs = new Uint32Array(nvox)
+  for (let i = 0; i < nvox; i++) vxs[i] = keep[ls[i]]
   return [mxbw, vxs]
 }
 

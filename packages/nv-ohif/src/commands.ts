@@ -1378,7 +1378,12 @@ export function getNiivueCommandsModule({
      */
     niivueToggleOverlay: async () => {
       const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry || entry.overlayLoading) return
+      if (!entry) return
+      // A second press while loading cancels the load.
+      if (entry.overlayLoading) {
+        entry.overlayAbort?.abort()
+        return
+      }
       const { nv, viewportId } = entry
 
       if (entry.overlayUIDs.length > 0) {
@@ -1418,11 +1423,13 @@ export function getNiivueCommandsModule({
       // same viewport slot — the entry object is REUSED (so the registry check
       // alone passes), but the load effect replaces entry.displaySets and resets
       // overlayUIDs. Guard on both: same registered entry AND same base series,
-      // so we never overlay onto the wrong anatomy or a destroyed instance.
+      // so we never overlay onto the wrong anatomy or a destroyed instance. Both
+      // also abort the conversion via entry.overlayAbort (see niivueRegistry).
       const baseDisplaySets = entry.displaySets
       const stillLive = () =>
         getNiivueEntry(viewportId) === entry &&
         entry.displaySets === baseDisplaySets
+      const abort = new AbortController()
 
       // Add the overlay volume, then reconcile against a swap that may have
       // invalidated this load DURING the addVolume await: if we no longer own the
@@ -1436,19 +1443,23 @@ export function getNiivueCommandsModule({
       ): Promise<boolean> => {
         const before = nv.volumes.length
         await nv.addVolume(spec)
-        if (stillLive()) return true
+        if (stillLive() && !abort.signal.aborted) return true
         if (nv.volumes.length === before + 1) {
           nv.model.removeVolume(nv.volumes.length - 1)
           await nv.updateGLVolume()
         }
+        // Cancelled during addVolume: undone above; the catch clears the status.
+        abort.signal.throwIfAborted()
         return false
       }
 
+      entry.overlayAbort = abort
       entry.overlayLoading = true
       try {
         // Direct volume-URL display sets skip conversion.
         const direct = displaySetToNiivue(candidate)
         let added: boolean
+        let note: string | undefined
         if (direct) {
           if (!stillLive()) return
           added = await addOverlayGuarded({
@@ -1458,8 +1469,9 @@ export function getNiivueCommandsModule({
           })
         } else {
           writeStatus(entry, `Fetching overlay: ${label}...`, 'loading')
-          const niftiFile = await convertDisplaySetToNifti(candidate, {
+          const converted = await convertDisplaySetToNifti(candidate, {
             headers: authHeaders(servicesManager),
+            signal: abort.signal,
             onProgress: (phase, loaded, total) => {
               writeStatus(
                 entry,
@@ -1470,19 +1482,27 @@ export function getNiivueCommandsModule({
               )
             },
           })
+          // A cancel press after convert resolved but before this resumed.
+          abort.signal.throwIfAborted()
           if (!stillLive()) return
-          if (!niftiFile) throw new Error('conversion produced no volume')
+          if (!converted) throw new Error('conversion produced no volume')
+          note = converted.note
           added = await addOverlayGuarded({
-            url: niftiFile,
-            name: niftiFile.name,
+            url: converted.image,
+            name: converted.image.name,
             colormap: OVERLAY_COLORMAP,
             opacity: OVERLAY_OPACITY,
           })
         }
         if (!added) return
         entry.overlayUIDs.push(uid)
-        writeStatus(entry, null)
+        if (note) flashStatus(entry, note)
+        else writeStatus(entry, null)
       } catch (err) {
+        if (abort.signal.aborted) {
+          if (stillLive()) writeStatus(entry, null)
+          return
+        }
         console.error('[nv-ohif] overlay load failed', err)
         const message = err instanceof Error ? err.message : String(err)
         flashStatus(
@@ -1491,6 +1511,7 @@ export function getNiivueCommandsModule({
           'error',
         )
       } finally {
+        if (entry.overlayAbort === abort) entry.overlayAbort = undefined
         // Only clear the loading flag if this load still owns the entry: a swap
         // may have started a NEWER overlay load on the reused entry, whose
         // overlayLoading=true we must not clobber.

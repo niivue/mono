@@ -7,7 +7,7 @@ import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
 import { registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
 import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
-import { classifyDisplaySet } from './classifyDisplaySet'
+import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
   applyDefaultAnnotationText,
   clearNiivueAnnotations,
@@ -292,8 +292,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     // commands know what is already loaded and W/L-preset buttons can gate on
     // the base modality (see commands.ts). Refresh the toolbar so those
     // modality-gated buttons re-evaluate now that the modality is known.
+    // Only displaySets[0] is shown (owner Q7), so only it counts as the base:
+    // the others stay overlay candidates.
     updateNiivueViewport(viewportId, {
-      displaySets,
+      displaySets: displaySets.slice(0, 1),
       overlayUIDs: [],
       overlayLoading: false,
     })
@@ -309,10 +311,27 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
 
     // If OHIF hung nothing, stay idle.
-    if (displaySets.length === 0) {
+    const ds: OhifDisplaySet | undefined = displaySets[0]
+    if (!ds) {
       dropStaleVolumes()
       setStatus({ kind: 'idle' })
       return
+    }
+
+    // Every outcome names the display sets not shown.
+    const extraNote = extraDisplaySetsNote(displaySets)
+    const withExtra = (message?: string) =>
+      [message, extraNote].filter(Boolean).join(' ')
+    // Loaded: show any notes briefly; the clear never touches a newer status.
+    const loaded = (note?: string) => {
+      const message = withExtra(note)
+      if (!message) return setStatus({ kind: 'idle' })
+      const status: Status = { kind: 'note', message }
+      setStatus(status)
+      window.setTimeout(
+        () => setStatus((s) => (s === status ? { kind: 'idle' } : s)),
+        6000,
+      )
     }
 
     let cancelled = false
@@ -336,15 +355,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       refreshToolbar(servicesManagerRef.current, viewportId)
     }
 
-    // Phase-1 fast path: any display set that is already a NiiVue volume URL.
-    const directSpecs = displaySets
-      .map((ds) => displaySetToNiivue(ds))
-      .filter((s): s is NonNullable<typeof s> => s !== null)
-    if (directSpecs.length > 0) {
-      setStatus({ kind: 'idle' })
-      nv.loadVolumes(
-        directSpecs.map((spec, i) => (i === 0 ? { ...spec, ...voi } : spec)),
-      ).then(
+    // Phase-1 fast path: a display set that is already a NiiVue volume URL.
+    const direct = displaySetToNiivue(ds)
+    if (direct) {
+      loaded()
+      nv.loadVolumes([{ ...direct, ...voi }]).then(
         () => {
           // The slot was swapped away (e.g. to a WSI) while this load was in flight:
           // its dropStaleVolumes() already ran and no-op'd because nv.volumes was
@@ -357,7 +372,10 @@ export function NiivueViewport(props: OhifViewportProps) {
         },
         () => {
           if (!cancelled)
-            setStatus({ kind: 'error', message: 'Failed to load volume.' })
+            setStatus({
+              kind: 'error',
+              message: withExtra('Failed to load volume.'),
+            })
         },
       )
       return () => {
@@ -365,13 +383,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       }
     }
 
-    // Otherwise route the first display set by kind.
-    const ds: OhifDisplaySet | undefined = displaySets[0]
-    if (!ds) {
-      dropStaleVolumes()
-      setStatus({ kind: 'idle' })
-      return
-    }
+    // Otherwise route by kind.
     const kind = classifyDisplaySet(ds)
 
     if (kind === 'wsi') {
@@ -385,15 +397,18 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (!built) {
         setStatus({
           kind: 'note',
-          message:
+          message: withExtra(
             'This slide has no tiled (VOLUME) pyramid levels to display.',
+          ),
         })
         return
       }
       if (built.unsupported) {
         setStatus({
           kind: 'note',
-          message: `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG, JPEG 2000 and JPEG-LS slides are supported).`,
+          message: withExtra(
+            `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG, JPEG 2000 and JPEG-LS slides are supported).`,
+          ),
         })
         return
       }
@@ -403,8 +418,9 @@ export function NiivueViewport(props: OhifViewportProps) {
         // slide would render scrambled, so decline rather than mislead.
         setStatus({
           kind: 'note',
-          message:
+          message: withExtra(
             'This slide uses TILED_SPARSE frame organization, which the viewer cannot render yet (TILED_FULL slides are supported).',
+          ),
         })
         return
       }
@@ -422,7 +438,9 @@ export function NiivueViewport(props: OhifViewportProps) {
         slideCanvas.remove()
         setStatus({
           kind: 'note',
-          message: `This slide cannot be shown: ${err instanceof Error ? err.message : String(err)}.`,
+          message: withExtra(
+            `This slide cannot be shown: ${err instanceof Error ? err.message : String(err)}.`,
+          ),
         })
         return
       }
@@ -454,14 +472,14 @@ export function NiivueViewport(props: OhifViewportProps) {
         view.setTool(activeOhifToolRef.current)
         updateNiivueViewport(viewportId, { slideView: view })
         refreshToolbar(servicesManager, viewportId)
-        setStatus({ kind: 'idle' })
+        loaded()
       } catch (err) {
         slide.dispose()
         slideCanvas.remove()
         console.error('[nv-ohif] WSI view failed', err)
         setStatus({
           kind: 'error',
-          message: 'Failed to start the whole-slide viewer.',
+          message: withExtra('Failed to start the whole-slide viewer.'),
         })
         return
       }
@@ -481,7 +499,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       dropStaleVolumes()
       setStatus({
         kind: 'note',
-        message: "This series isn't something NiiVue can load yet.",
+        message: withExtra("This series isn't something NiiVue can load yet."),
       })
       return
     }
@@ -502,18 +520,19 @@ export function NiivueViewport(props: OhifViewportProps) {
         })
       },
     })
-      .then((niftiFile) => {
+      .then((converted) => {
         if (cancelled) return
-        if (!niftiFile) {
+        if (!converted) {
           setStatus({
             kind: 'error',
-            message: 'DICOM conversion produced no volume.',
+            message: withExtra('DICOM conversion produced no volume.'),
           })
           return
         }
-        setStatus({ kind: 'idle' })
+        loaded(converted.note)
         // Use the converted file's own name (ends in .nii/.nii.gz) so NiiVue sniffs
         // the format correctly; a display name without that extension would not.
+        const niftiFile = converted.image
         return nv
           .loadVolumes([{ url: niftiFile, name: niftiFile.name, ...voi }])
           .then(() => {
@@ -532,7 +551,9 @@ export function NiivueViewport(props: OhifViewportProps) {
         const message = err instanceof Error ? err.message : String(err)
         setStatus({
           kind: 'error',
-          message: `DICOM load failed: ${message || 'unknown error'}`,
+          message: withExtra(
+            `DICOM load failed: ${message || 'unknown error'}`,
+          ),
         })
       })
 

@@ -23,6 +23,7 @@ import {
   trackNiivueWindowLevel,
   visibleAnnotationScreenShapes,
 } from './commands'
+import * as dicomToNiivue from './dicomToNiivue'
 import {
   getActiveNiivueEntry,
   getNiivueEntryForViewport,
@@ -1853,6 +1854,15 @@ describe('findOverlayCandidate', () => {
       base,
       { displaySetInstanceUID: 'ds-loaded', url: 'https://x/a.nii.gz' },
       { displaySetInstanceUID: 'ds-doc', Modality: 'SR' }, // unsupported
+      {
+        displaySetInstanceUID: 'ds-seg', // derived, though WADO-backed
+        Modality: 'SEG',
+        instances: [
+          {
+            imageId: 'wadors:https://h/studies/1/series/2/instances/3/frames/1',
+          },
+        ],
+      },
       { displaySetInstanceUID: 'ds-next', url: 'https://x/b.nii.gz' },
     ]
     expect(findOverlayCandidate(entry, candidates)?.displaySetInstanceUID).toBe(
@@ -2224,6 +2234,103 @@ describe('niivueToggleOverlay', () => {
     await actions.niivueToggleOverlay()
     errorSpy.mockRestore()
     expect(statuses).toEqual([['Overlay load failed: boom', 'error']])
+  })
+
+  describe('cancels a DICOM overlay conversion in flight', () => {
+    const realFetch = globalThis.fetch
+    afterEach(() => {
+      globalThis.fetch = realFetch
+    })
+
+    // Starts a DICOM overlay whose fetch hangs until aborted.
+    async function startOverlay() {
+      globalThis.fetch = ((_url: string, init?: RequestInit) =>
+        new Promise((_, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(init.signal?.reason),
+          )
+        })) as unknown as typeof fetch
+      const nv = stubNiivue()
+      nv.volumes.push({ name: 'base' })
+      register('vp-1', nv)
+      const statuses: Array<[string | null, string | undefined]> = []
+      updateNiivueViewport('vp-1', {
+        displaySets: [{ displaySetInstanceUID: 'ds-base' }],
+        setStatus: (message, kind) => statuses.push([message, kind]),
+      })
+      const sm = services('vp-1', [
+        {
+          displaySetInstanceUID: 'ds-ct',
+          Modality: 'CT',
+          instances: [
+            {
+              imageId:
+                'wadors:https://h/studies/1/series/2/instances/3/frames/1',
+            },
+          ],
+        },
+      ])
+      const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+      const loading = actions.niivueToggleOverlay()
+      const entry = getNiivueEntryForViewport('vp-1')
+      const signal = entry?.overlayAbort?.signal
+      if (!entry || !signal) throw new Error('no overlay load in flight')
+      return { actions, entry, signal, loading, nv, statuses }
+    }
+
+    it('on a second toggle, without an error status', async () => {
+      const { actions, entry, signal, loading, nv, statuses } =
+        await startOverlay()
+      await actions.niivueToggleOverlay()
+      await loading
+      expect(signal.aborted).toBe(true)
+      expect(entry.overlayLoading).toBe(false)
+      expect(entry.overlayAbort).toBeUndefined()
+      expect(nv.added).toHaveLength(0)
+      expect(statuses.at(-1)).toEqual([null, undefined])
+      expect(statuses.some(([, kind]) => kind === 'error')).toBe(false)
+    })
+
+    it('on a toggle after the conversion resolved', async () => {
+      let resolve: (c: dicomToNiivue.DicomConversion) => void = () => {}
+      const convert = spyOn(
+        dicomToNiivue,
+        'convertDisplaySetToNifti',
+      ).mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolve = r
+          }),
+      )
+      try {
+        const { actions, loading, nv, statuses } = await startOverlay()
+        resolve({ image: new File([], 'o.nii') })
+        // Runs before the overlay load resumes from the resolved conversion.
+        await actions.niivueToggleOverlay()
+        await loading
+        expect(nv.added).toHaveLength(0)
+        expect(statuses.at(-1)).toEqual([null, undefined])
+        expect(statuses.some(([, kind]) => kind === 'error')).toBe(false)
+      } finally {
+        convert.mockRestore()
+      }
+    })
+
+    it('on a base swap', async () => {
+      const { signal, loading } = await startOverlay()
+      updateNiivueViewport('vp-1', {
+        displaySets: [{ displaySetInstanceUID: 'ds-new' }],
+      })
+      expect(signal.aborted).toBe(true)
+      await loading
+    })
+
+    it('on unregister', async () => {
+      const { signal, loading } = await startOverlay()
+      unregisterNiivue('vp-1')
+      expect(signal.aborted).toBe(true)
+      await loading
+    })
   })
 
   it('does nothing without a loaded base volume', async () => {

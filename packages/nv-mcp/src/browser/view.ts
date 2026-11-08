@@ -884,7 +884,7 @@ export interface NiiVueHost {
   describe?(): string | Promise<string>
   /** Tells the person something changed that they did not do. */
   announce?(text: string): void
-  /** Called after `load_volume` has loaded one. */
+  /** Called after `load_volume` or `load_ome_zarr` has loaded one. */
   loaded?(volume: LoadedVolume): void
   /** State of the app's own the server should watch between calls. */
   extraState?(): Record<string, unknown>

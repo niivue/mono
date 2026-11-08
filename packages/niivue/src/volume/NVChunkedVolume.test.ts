@@ -1877,6 +1877,7 @@ describe('NVChunkedVolume failed init', () => {
     const floors: (NVImage | null)[] = []
     const host = {
       _baseCoarseFloor: prior,
+      _baseCoarseFloorSets: 0,
       swapVolumeChunkPlan: async () => {},
       _registerChunkedVolume: () => {},
       _unregisterChunkedVolume: () => {},
@@ -1889,10 +1890,14 @@ describe('NVChunkedVolume failed init', () => {
       },
       // Like NiiVue: records the floor first, then can still throw (drawScene).
       async setBaseCoarseFloor(
-        this: { _baseCoarseFloor: NVImage | null },
+        this: {
+          _baseCoarseFloor: NVImage | null
+          _baseCoarseFloorSets: number
+        },
         f: NVImage | null,
       ) {
         this._baseCoarseFloor = f
+        this._baseCoarseFloorSets++
         floors.push(f)
         if (failSetter && floors.length === 1) throw new Error('draw failed')
       },
@@ -1947,6 +1952,31 @@ describe('NVChunkedVolume failed init', () => {
     await expect(mgr.init()).rejects.toThrow('out of memory')
     expect(floors).toHaveLength(2)
     expect(host._baseCoarseFloor).toBe(newer)
+  })
+
+  test("a failed init leaves a newer caller's clear alone", async () => {
+    const prior = { id: 'old floor' } as unknown as NVImage
+    const { host, floors } = floorFailHost(prior, false)
+    // A newer caller clears the floor while this init is still settling.
+    host._updateGLChanged = async () => {
+      await host.setBaseCoarseFloor(null)
+      throw new Error('out of memory')
+    }
+    let fetches = 0
+    const source = rampSource()
+    const fetchChunk = source.fetchChunk
+    // The coarse floor cannot be built, so this init also installs null.
+    source.fetchChunk = async (r) => {
+      if (++fetches === 1) throw new Error('floor fetch failed')
+      return fetchChunk(r)
+    }
+    const mgr = new NVChunkedVolume(host, source, {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(floors).toEqual([null, null])
+    expect(host._baseCoarseFloor).toBeNull()
   })
 
   test('a throw after the floor is installed clears the floor', async () => {

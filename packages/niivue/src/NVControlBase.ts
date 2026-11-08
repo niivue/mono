@@ -526,6 +526,8 @@ export default class NiiVue extends EventTarget {
   /** @internal The floor last passed to setBaseCoarseFloor, so a failed
    *  {@link NVChunkedVolume} init can put back the floor it replaced. */
   _baseCoarseFloor: NVImage | null = null
+  /** @internal Counts setBaseCoarseFloor calls: tells two equal floors (two nulls) apart. */
+  _baseCoarseFloorSets = 0
 
   /** @internal Registration hook for {@link NVChunkedVolume}. */
   _registerChunkedVolume(chunked: NVChunkedVolume): void {
@@ -5424,6 +5426,7 @@ export default class NiiVue extends EventTarget {
    */
   async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
     this._baseCoarseFloor = coarseVol
+    this._baseCoarseFloorSets++
     if (coarseVol?.isDirty) {
       if (this.model.getVolumes().includes(coarseVol)) {
         // A loaded volume: commit its flag through a scoped update, so its

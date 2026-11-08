@@ -450,6 +450,8 @@ export class NVChunkedVolume {
   // repeat call does not re-fetch the coarse level.
   private floorVolume: NVImage | null = null
   private floorBuilt = false
+  // The last floor set this manager made, and the floor it replaced.
+  private floorSet: { set: number; replaced: NVImage | null } | null = null
   /**
    * False only when the caller passed both `calMin` and `calMax` as finite
    * numbers; otherwise the data is sampled for robust/global and for any bound
@@ -544,7 +546,6 @@ export class NVChunkedVolume {
    * removing a previously streamed volume before reloading.
    */
   async init(): Promise<void> {
-    const priorFloor = this.host._baseCoarseFloor ?? null
     try {
       await this.host.addVolume(this.volume)
       this.adoptSceneId()
@@ -569,15 +570,11 @@ export class NVChunkedVolume {
       this.dispose()
       // Put back the floor this init replaced (an additive reload's, or none):
       // ours would keep its textures and draw behind a later load. Only while
-      // ours is still installed: a newer load's floor is not ours to undo.
-      const current = this.host._baseCoarseFloor ?? null
-      if (
-        this.floorBuilt &&
-        current === this.floorVolume &&
-        current !== priorFloor
-      )
+      // our set is still the latest: a newer caller's floor is not ours to undo.
+      const ours = this.floorSet
+      if (ours && (this.host._baseCoarseFloorSets ?? 0) === ours.set)
         await this.host
-          .setBaseCoarseFloor(priorFloor)
+          .setBaseCoarseFloor(ours.replaced)
           .catch((e) => log.warn('NVChunkedVolume: floor cleanup failed', e))
       const index = this.host.volumes.findLastIndex(
         (v) => v.chunkSource === this.volume.chunkSource,
@@ -610,6 +607,11 @@ export class NVChunkedVolume {
       this.floorBuilt = true
     }
     if (this.disposed) return false
+    // The setter counts the call before its first await, so this is our set.
+    this.floorSet = {
+      set: (this.host._baseCoarseFloorSets ?? 0) + 1,
+      replaced: this.host._baseCoarseFloor ?? null,
+    }
     await this.host.setBaseCoarseFloor(this.floorVolume)
     return this.floorVolume !== null
   }

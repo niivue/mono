@@ -6,7 +6,7 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import { parseMultipartRelated } from './dicomWadoRs'
+import { imageIdUrl, parseMultipartRelated } from './dicomWadoRs'
 import type { OhifDisplaySet } from './ohif-types'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs. JPEG Baseline/Extended decode
@@ -219,8 +219,11 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
     const matrixRows = num(inst.TotalPixelMatrixRows)
     const tileColumns = num(inst.Columns)
     const tileRows = num(inst.Rows)
+    // Strip the imageId's loader scheme (any of them, as dicomWadoRs does) and
+    // resolve a relative DICOMweb root against the page.
+    const noScheme = imageId ? imageIdUrl(imageId) : null
     if (
-      !imageId ||
+      !noScheme ||
       !matrixColumns ||
       !matrixRows ||
       !tileColumns ||
@@ -232,10 +235,6 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
     // separately-kept query. Split the query off first (a query left in the base
     // would corrupt the per-tile '.../frames/{n}' URL) and re-append it after the
     // frame index in fetchTileBytes, so a DICOMweb access_token query is preserved.
-    // Strip the same imageId scheme prefixes the other loaders handle (dicomWadoRs,
-    // reconstructP10, wsiThumbnail), not just `wadors:`, so a `dicomweb:`/`wadouri:`
-    // data source's WSI tiles still fetch.
-    const noScheme = imageId.replace(/^(wadors|dicomweb|wadouri):/i, '')
     const qIdx = noScheme.indexOf('?')
     const frameQuery = qIdx >= 0 ? noScheme.slice(qIdx) : ''
     const frameBaseUrl = (

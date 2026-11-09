@@ -12,15 +12,34 @@
 // derive that URL and unpack that body; both are pure so they can be unit-tested.
 
 /**
+ * The http(s) URL a cornerstone imageId names, its loader scheme stripped. A
+ * relative root (OHIF's `wadoRoot: '/dicomweb'` gives `wadors:/dicomweb/...`)
+ * resolves against the document base, as the browser and cornerstone's loader
+ * resolve it (a `<base>` or nested route differs from the page URL). Null for
+ * anything else.
+ */
+export function imageIdUrl(imageId: string): string | null {
+  try {
+    const url = new URL(
+      imageId.replace(/^(wadors|dicomweb|wadouri):/i, ''),
+      globalThis.document?.baseURI ?? globalThis.location?.href,
+    )
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? url.href
+      : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Turn a cornerstone `wadors:`/`dicomweb:` frame imageId into the WADO-RS
  * retrieve-instance URL. Returns null if the id is not an http(s) DICOMweb
  * instance reference.
  */
 export function retrieveInstanceUrlFromImageId(imageId: string): string | null {
-  if (!imageId) return null
-  // cornerstone prefixes the real URL with a loader scheme; strip known ones.
-  const raw = imageId.replace(/^(wadors|dicomweb|wadouri):/i, '')
-  if (!/^https?:\/\//i.test(raw)) return null
+  const raw = imageIdUrl(imageId)
+  if (!raw) return null
   // Keep everything up to and including `/instances/<uid>`, dropping any
   // `/frames/...` (or other sub-resource) suffix.
   const m = raw.match(/^(.*\/instances\/[^/?#]+)(?:[/?#].*)?$/i)
@@ -45,6 +64,8 @@ export function boundaryFromBody(bytes: Uint8Array): string | null {
   let end = 2
   const limit = Math.min(bytes.length, 256)
   while (end < limit && bytes[end] !== 0x0d && bytes[end] !== 0x0a) end++
+  // The delimiter line may carry SP/HTAB padding after the boundary.
+  while (end > 2 && (bytes[end - 1] === 0x20 || bytes[end - 1] === 0x09)) end--
   if (end <= 2) return null
   return new TextDecoder('latin1').decode(bytes.subarray(2, end))
 }
@@ -82,28 +103,47 @@ export function parseMultipartRelated(
     return bytes.length > 0 ? [bytes] : []
   }
 
+  // RFC 2046 5.1.1: a delimiter is CRLF "--" boundary, then "--" (closing)
+  // or optional padding and CRLF. The CRLF belongs to the delimiter, so a
+  // boundary-like run inside binary part data is not one.
   const encoder = new TextEncoder()
-  const delimiter = encoder.encode(`--${boundary}`)
+  const delimiter = encoder.encode(`\r\n--${boundary}`)
   const crlfcrlf = encoder.encode('\r\n\r\n')
+  // Whether the delimiter whose CRLF is at `at` ends as a delimiter must.
+  // Closing: "--", padding, then CRLF or the end of the body. Otherwise:
+  // padding, then CRLF. Anything else is part data.
+  const ends = (at: number): boolean => {
+    let i = at + delimiter.length
+    const closing = bytes[i] === 0x2d && bytes[i + 1] === 0x2d
+    if (closing) i += 2
+    while (bytes[i] === 0x20 || bytes[i] === 0x09) i++
+    if (closing && i === bytes.length) return true
+    return bytes[i] === 0x0d && bytes[i + 1] === 0x0a
+  }
+  const nextDelimiter = (from: number): number => {
+    let i = indexOfSubarray(bytes, delimiter, from)
+    while (i !== -1 && !ends(i)) i = indexOfSubarray(bytes, delimiter, i + 1)
+    return i
+  }
 
   const parts: Uint8Array[] = []
-  let cursor = indexOfSubarray(bytes, delimiter, 0)
-  while (cursor !== -1) {
-    const partStart = cursor + delimiter.length
+  // The first delimiter may open the body, with no CRLF before it.
+  const opens =
+    delimiter.subarray(2).every((b, k) => bytes[k] === b) && ends(-2)
+  let at = opens ? -2 : nextDelimiter(0)
+  while (at !== -1) {
+    const partStart = at + delimiter.length
     // The closing delimiter is `--<boundary>--`; stop there.
     if (bytes[partStart] === 0x2d && bytes[partStart + 1] === 0x2d) break
 
     const headerEnd = indexOfSubarray(bytes, crlfcrlf, partStart)
-    const next = indexOfSubarray(bytes, delimiter, partStart)
-    if (headerEnd === -1 || next === -1) break
-
+    if (headerEnd === -1) break
     const bodyStart = headerEnd + crlfcrlf.length
-    let bodyEnd = next
-    // Strip the CRLF that precedes the next boundary line.
-    if (bytes[bodyEnd - 2] === 0x0d && bytes[bodyEnd - 1] === 0x0a) bodyEnd -= 2
-    if (bodyEnd > bodyStart) parts.push(bytes.slice(bodyStart, bodyEnd))
-
-    cursor = next
+    // The part ends at the next delimiter's CRLF.
+    const next = nextDelimiter(bodyStart)
+    if (next === -1) break
+    if (next > bodyStart) parts.push(bytes.slice(bodyStart, next))
+    at = next
   }
   return parts
 }

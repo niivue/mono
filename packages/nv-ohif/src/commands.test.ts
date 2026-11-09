@@ -1822,6 +1822,24 @@ describe('niivueResetView', () => {
     expect(nv.crosshairPos).toEqual([0.5, 0.5, 0.5])
   })
 
+  it('puts the crosshair on a voxel centre for an even slice count', () => {
+    const shape = [5, 6, 174]
+    const nv = Object.assign(stubNiivue(), {
+      // NiiVue's scene fraction for a single unrotated volume: voxel v spans
+      // [v, v + 1] of the shape, so its centre is (v + 0.5) / dim.
+      vox2frac: (vox: [number, number, number]) =>
+        vox.map((v, i) => (v + 0.5) / (shape[i] ?? 1)),
+    })
+    nv.volumes.push({ dimsRAS: [3, ...shape] })
+    register('vp-1', nv)
+    const { actions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    actions.niivueResetView()
+    const vox = nv.crosshairPos.map((f, i) => f * (shape[i] ?? 1) - 0.5)
+    expect(vox).toEqual([2, 3, 87])
+  })
+
   it('resets the visible NVSlide view instead of the hidden volume view', () => {
     const nv = stubNiivue()
     register('vp-1', nv)

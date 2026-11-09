@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import NiiVue from '@niivue/niivue'
-import { DEFAULT_OPTIONS, snapCrosshair } from './NiivueViewport'
+import { centerCrosshair } from './commands'
+import { DEFAULT_OPTIONS } from './NiivueViewport'
 import { buildSliceFrames, frameAt } from './sliceFrames'
 
 test('the viewport snaps the crosshair to voxel centres', () => {
@@ -50,6 +51,6 @@ test('a loaded volume shows a slice centre, so its plane has a frame', async () 
   const atCrosshair = () => frameAt(sf, [[0, 0, nv.getCrosshairPos()[2]]])
   // Loaded, the crosshair sits between slices 1 and 2.
   expect(atCrosshair()).toBeUndefined()
-  snapCrosshair(nv)
+  centerCrosshair(nv)
   expect(atCrosshair()?.SOPInstanceUID).toMatch(/^ax[12]$/)
 })

@@ -34,6 +34,31 @@ describe('classifyDisplaySet', () => {
     ).toBe('wsi')
   })
 
+  it('routes a relative DICOMweb root (OHIF wadoRoot "/dicomweb")', () => {
+    const relId = (sop: string) =>
+      `wadors:/dicomweb/studies/1.2/series/3.4/instances/${sop}/frames/1`
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'https://host/viewer/niivue' },
+      configurable: true,
+    })
+    try {
+      expect(
+        classifyDisplaySet({
+          Modality: 'CT',
+          instances: [{ imageId: relId('5.1') }],
+        }),
+      ).toBe('dicom-volume')
+      expect(
+        classifyDisplaySet({
+          Modality: 'SM',
+          instances: [{ imageId: relId('9.1') }],
+        }),
+      ).toBe('wsi')
+    } finally {
+      Reflect.deleteProperty(globalThis, 'location')
+    }
+  })
+
   it('returns unsupported when there is nothing loadable', () => {
     expect(classifyDisplaySet({ Modality: 'CT' })).toBe('unsupported')
     expect(classifyDisplaySet({ instances: [{ SOPInstanceUID: '5.1' }] })).toBe(

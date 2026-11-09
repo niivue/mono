@@ -69,3 +69,6 @@ apps/iiif-volumetric-demo/public/tile-range-poc/
 
 # Local scratch: plans, notes, throwaway files. Never checked in.
 /scratch/
+
+# nv-ohif builds to lib/ (OHIF copies a plugin's dist/ into its site root).
+packages/nv-ohif/lib/

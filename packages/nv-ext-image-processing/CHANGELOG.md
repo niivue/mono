@@ -1,3 +1,86 @@
+## 1.0.0-rc.131 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.130
+
+## 1.0.0-rc.130 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.129
+
+## 1.0.0-rc.129 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.128
+
+## 1.0.0-rc.128 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.127
+
+## 1.0.0-rc.127 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.126
+
+## 1.0.0-rc.126 (2026-11-09)
+
+### Performance
+
+- **nv-ext-image-processing:** linear largest-cluster selection ([7aaf6635](https://github.com/niivue/mono/commit/7aaf6635))
+- **nv-ext-image-processing:** reuse connected-label scratch buffers ([01df1200](https://github.com/niivue/mono/commit/01df1200))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.125 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.125
+
+## 1.0.0-rc.124 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.124
+
+## 1.0.0-rc.123 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.123
+
+## 1.0.0-rc.122 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.122
+
+## 1.0.0-rc.121 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.121
+
+## 1.0.0-rc.120 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.120
+
+## 1.0.0-rc.119 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.119
+
 ## 1.0.0-rc.118 (2026-11-08)
 
 ### Updated Dependencies

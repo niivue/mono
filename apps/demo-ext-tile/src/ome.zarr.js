@@ -1,14 +1,13 @@
-import NiiVue, {
+import NiiVue, { OVERLAY_COLOR_BLEND, SLICE_TYPE } from '@niivue/niivue'
+import {
   defaultOmeZarrLevel,
   fetchOmeZarr,
-  OVERLAY_COLOR_BLEND,
   omeZarrChannelName,
   omeZarrVolumesFrom,
-  SLICE_TYPE,
-} from '../src/index.ts'
+} from '@niivue/nv-ext-tile/zarr'
 
 // OME-Zarr is the fourth of the microscopy containers this package reads (see
-// docs/ome-zarr-format.md). A store is a resolution pyramid over up to five
+// packages/nv-ext-tile/docs/ome-zarr-format.md). A store is a resolution pyramid over up to five
 // named dimensions; this page opens one, offers its channels, levels and
 // timepoints, and loads each selected channel as its own volume: named,
 // coloured and windowed by the store's omero display block when it has one.

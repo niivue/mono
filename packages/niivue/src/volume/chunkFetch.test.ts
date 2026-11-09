@@ -49,6 +49,29 @@ describe('createChunkFetcher', () => {
     ])
   })
 
+  test('reorients the selected 4D frame of a 32-bit volume', async () => {
+    // Two frames; frame v holds 1000*v + native index. RAS x is native x flipped.
+    const img = Uint32Array.from(
+      { length: 2 * DIM ** 3 },
+      (_, i) => 1000 * Math.floor(i / DIM ** 3) + (i % DIM ** 3),
+    )
+    const image = makeImage({
+      hdr: { datatypeCode: 768 } as NVImage['hdr'],
+      img,
+      frame4D: 1,
+      img2RASstart: [DIM - 1, 0, 0],
+      img2RASstep: [-1, DIM, DIM * DIM],
+    })
+    const bytes = await createChunkFetcher(image, plan, 4, null).takeChunkBytes(
+      0,
+    )
+    const got = new Uint32Array(bytes.buffer, bytes.byteOffset, 8)
+    // chunk 0 is RAS x 0..1 = native x 7..6
+    expect(Array.from(got)).toEqual([
+      1007, 1006, 1015, 1014, 1071, 1070, 1079, 1078,
+    ])
+  })
+
   test('refuses a plan for other dims', () => {
     const image = makeImage({ dimsRAS: [3, DIM, DIM, DIM + 1] })
     expect(() => createChunkFetcher(image, plan, 1, null)).toThrow(

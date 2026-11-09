@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import * as NVConstants from '@/NVConstants'
+import type { Rotation2D } from '@/NVTypes'
 import {
   orientationTextPlacements,
   type SliceEdgeLabels,
@@ -127,6 +128,59 @@ describe('orientationTextPlacements', () => {
           tile,
         ),
       ).toEqual([])
+    }
+  })
+})
+
+const ROTATIONS: Rotation2D[] = [0, 90, 180, 270]
+// Every display state: 4 rotations x 2 horizontal x 2 vertical flips.
+const STATES = ROTATIONS.flatMap((rotation2D) =>
+  [false, true].flatMap((isFlipped2DHorizontal) =>
+    [false, true].map((isFlipped2DVertical) => ({
+      rotation2D,
+      isFlipped2DHorizontal,
+      isFlipped2DVertical,
+    })),
+  ),
+)
+
+describe('sliceEdgeLabels under rotation and flips', () => {
+  test('spot checks: left, top, right, bottom', () => {
+    const edges = (axCorSag: number, s: Partial<(typeof STATES)[number]>) => {
+      const e = sliceEdgeLabels(axCorSag, { isRadiological: false, ...s })
+      return e && `${e.left}${e.top}${e.right}${e.bottom}`
+    }
+    expect(edges(AXIAL, { rotation2D: 90 })).toBe('PLAR')
+    expect(edges(AXIAL, { rotation2D: 90, isFlipped2DHorizontal: true })).toBe(
+      'ALPR',
+    )
+    expect(edges(SAGITTAL, { rotation2D: 270 })).toBe('SAIP')
+    expect(edges(RENDER, { rotation2D: 90 })).toBeNull()
+  })
+
+  test('every state moves the base letters as H^h V^v R(theta) moves the edges', () => {
+    const at: Record<string, [number, number]> = {
+      left: [-0.5, 0],
+      top: [0, -0.5],
+      right: [0.5, 0],
+      bottom: [0, 0.5],
+    }
+    for (const t of [AXIAL, CORONAL, SAGITTAL]) {
+      const base = sliceEdgeLabels(t, { isRadiological: true })
+      for (const s of STATES) {
+        const got = sliceEdgeLabels(t, { isRadiological: true, ...s })
+        for (const [edge, letter] of Object.entries(base ?? {})) {
+          let [x, y] = at[edge]
+          // Clockwise on screen (y down), then the on-screen flips.
+          for (let k = 0; k < s.rotation2D / 90; k++) [x, y] = [-y, x]
+          if (s.isFlipped2DVertical) y = -y
+          if (s.isFlipped2DHorizontal) x = -x
+          const moved = Object.keys(at).find(
+            (k) => at[k][0] === x + 0 && at[k][1] === y + 0,
+          ) as keyof SliceEdgeLabels
+          expect(got?.[moved]).toBe(letter)
+        }
+      }
     }
   })
 })

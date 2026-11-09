@@ -2,6 +2,7 @@ import { log } from '@/logger'
 import * as NVLoader from '@/NVLoader'
 import type { NVImage } from '@/NVTypes'
 import { NVWorker } from '@/workers/NVWorker'
+import { PageWorker } from '@/workers/pageWorker'
 import VolumeLoadWorker from '@/workers/volumeLoad.worker?worker&inline'
 import { hdrFromTransferable, isTransferableHdr } from './hdrTransfer'
 import {
@@ -11,12 +12,7 @@ import {
   nii2volume,
 } from './NVVolume'
 
-let loadBridge: NVWorker | null = null
-function getLoadBridge(): NVWorker | null {
-  if (!NVWorker.isSupported()) return null
-  if (!loadBridge) loadBridge = new NVWorker(() => new VolumeLoadWorker())
-  return loadBridge
-}
+const loadWorker = new PageWorker(() => new VolumeLoadWorker())
 
 /**
  * Fetch, decode, and run nii2volume — off the main thread when a Worker is
@@ -32,7 +28,8 @@ export async function loadVolumePrepared(
 ): Promise<NVImage> {
   const ext = NVLoader.getFileExt(url)
   const handledByExternalReader = hasReader(ext) && !builtinReaderExts.has(ext)
-  const bridge = handledByExternalReader ? null : getLoadBridge()
+  const bridge =
+    handledByExternalReader || !NVWorker.isSupported() ? null : loadWorker
   if (bridge) {
     // Resolve against the DOCUMENT before handing the URL over. A worker's base
     // is its own script — a blob: URL for `?worker&inline` — so a relative URL
@@ -79,12 +76,4 @@ export async function loadVolumePrepared(
   // 4D request decoded every frame and `nii2volume` merely discarded them.
   const { hdr, img } = await loadVolume(url, pairedImgData, limitFrames4D, name)
   return nii2volume(hdr, img, name ?? NVLoader.getName(url), limitFrames4D)
-}
-
-/** Terminate the volume-load worker. Safe to call if no worker was created. */
-export function terminateLoadWorker(): void {
-  if (loadBridge) {
-    loadBridge.terminate()
-    loadBridge = null
-  }
 }

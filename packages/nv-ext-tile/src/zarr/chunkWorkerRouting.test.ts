@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ChunkPhase, ChunkTimingSnapshot } from './chunkTiming'
+import type { ChunkPhase, ChunkTimingSnapshot } from '@niivue/niivue'
 import {
   chunkRegionKey,
   chunkTimingDelta,

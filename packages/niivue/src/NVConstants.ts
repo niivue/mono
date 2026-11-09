@@ -378,6 +378,7 @@ import type {
   InteractionConfig,
   LayoutConfig,
   MeshRenderConfig,
+  Rotation2D,
   UIConfig,
   VolumeRenderConfig,
 } from '@/NVTypes'
@@ -417,6 +418,9 @@ export const LAYOUT_DEFAULTS: LayoutConfig = {
   inset: [0, 0, 0, 0],
   isRadiological: false,
   isSagittalNoseLeft: null,
+  rotation2D: 0,
+  isFlipped2DHorizontal: false,
+  isFlipped2DVertical: false,
   isSingleViewFillCanvas: true,
   customLayout: null,
 }
@@ -559,6 +563,14 @@ export function normalizeInset(v: unknown): [number, number, number, number] {
   const side = (i: number) =>
     Number.isFinite(a[i]) && a[i] > 0 ? (a[i] as number) : 0
   return [side(0), side(1), side(2), side(3)]
+}
+
+/**
+ * `v` rounded to the nearest quarter turn, as 0, 90, 180 or 270 (-90 is 270).
+ * Non-finite or non-numeric gives 0.
+ */
+export function normalizeRotation2D(v: unknown): Rotation2D {
+  return ((((Math.round(Number(v) / 90) % 4) + 4) % 4) * 90 || 0) as Rotation2D
 }
 
 /** Ray-march samples per voxel, clamped to [1, 4]; non-finite gives the default. */

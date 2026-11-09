@@ -207,7 +207,7 @@ describe('assemblePart10', () => {
       expect(progress.at(-1)).toEqual([3, 3])
     })
 
-    it('probes RetrieveInstance once, then reconstructs a single-frame series', async () => {
+    it('probes RetrieveInstance once, then reconstructs the series', async () => {
       let cancelled = false
       const urls = serve(
         () =>
@@ -228,7 +228,10 @@ describe('assemblePart10', () => {
       expect(urls).toEqual([
         instanceUrl,
         'https://host/dicomweb/studies/1.2/series/3.4/metadata',
+        // The metadata's NumberOfFrames (3) overrides the ref's count.
         `${instanceUrl}/frames/1`,
+        `${instanceUrl}/frames/2`,
+        `${instanceUrl}/frames/3`,
         `${otherUrl}/frames/1`,
       ])
       expect(cancelled).toBe(true) // the refused body is not left downloading
@@ -253,6 +256,51 @@ describe('assemblePart10', () => {
       ])
       expect(urls).toEqual([instanceUrl, otherUrl])
       expect(files.map((f) => f.size)).toEqual([p10.byteLength, p10.byteLength])
+    })
+
+    it('fetches every frame the metadata lists when OHIF omits NumberOfFrames', async () => {
+      const urls = serve(refused)
+      const progress: Array<[number, number]> = []
+      const files = await reconstructInstanceFiles(
+        [{ url: instanceUrl, frames: 1 }],
+        { onProgress: (loaded, total) => progress.push([loaded, total]) },
+      )
+      expect(files).toHaveLength(1)
+      expect(urls.filter((u) => u.includes('/frames/')).sort()).toEqual(
+        [1, 2, 3].map((n) => `${instanceUrl}/frames/${n}`),
+      )
+      expect(progress.at(-1)).toEqual([3, 3])
+    })
+
+    it('bounds in-flight requests across instances and their frames', async () => {
+      const sops = ['5.6', '7.8', '9.1', '9.2']
+      const meta = sops.map((sop) => ({
+        ...enhanced,
+        '00080018': { vr: 'UI', Value: [sop] },
+      }))
+      let inFlight = 0
+      let peak = 0
+      globalThis.fetch = (async (url: string) => {
+        if (url.endsWith('/metadata')) return Response.json(meta)
+        inFlight++
+        peak = Math.max(peak, inFlight)
+        await new Promise((r) => setTimeout(r, 2))
+        inFlight--
+        const frame = /\/frames\/(\d+)$/.exec(url)?.[1]
+        if (!frame) return refused()
+        return new Response(frameBytes(Number(frame)), {
+          headers: { 'content-type': `image/jls; transfer-syntax=${JPEG_LS}` },
+        })
+      }) as unknown as typeof fetch
+      const files = await reconstructInstanceFiles(
+        sops.map((sop) => ({
+          url: instanceUrl.replace('5.6', sop),
+          frames: 3,
+        })),
+        { concurrency: 2 },
+      )
+      expect(files).toHaveLength(4)
+      expect(peak).toBeLessThanOrEqual(2)
     })
 
     it('reconstructs when RetrieveInstance answers 200 without a DICOM body', async () => {

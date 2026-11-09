@@ -96,6 +96,7 @@ export interface OhifExtensionParams {
 export interface OhifToolbarButtonCommand {
   commandName: string
   commandOptions?: Record<string, unknown>
+  context?: string
 }
 export interface OhifToolbarButton {
   id: string

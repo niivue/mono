@@ -226,6 +226,20 @@ describe('frameAt', () => {
     expect(frameAt(sf, [[0, 0, 100]])).toBeUndefined()
   })
 
+  it('takes the displayed (nearest) slice for an off-centre crosshair depth', () => {
+    if (!sf) throw new Error('no map')
+    // Slices at z 30, 32.5, 35, 37.5: z 33.5 shows slice 1, z 31.2 slice 0.
+    const at = (z: number) =>
+      frameAt(sf, [
+        [0, 0, z],
+        [9, 4, z],
+      ])?.SOPInstanceUID
+    expect(at(33.5)).toBe('ax1')
+    expect(at(31.2)).toBe('ax0')
+    expect(at(36.4)).toBe('ax3')
+    expect(at(39)).toBeUndefined() // past the last slice
+  })
+
   it('needs every point on the frame plane, not just its slab', () => {
     if (!sf) throw new Error('no map')
     const coronal: [number, number, number][] = [

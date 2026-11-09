@@ -261,6 +261,22 @@ async function mapPool<T, R>(
   return out
 }
 
+// Bounds in-flight work across nested pools (instances, then their frames).
+function limiter(n: number): <R>(fn: () => Promise<R>) => Promise<R> {
+  let active = 0
+  const waiting: Array<() => void> = []
+  return async (fn) => {
+    while (active >= n) await new Promise<void>((r) => waiting.push(r))
+    active++
+    try {
+      return await fn()
+    } finally {
+      active--
+      waiting.shift()?.()
+    }
+  }
+}
+
 /** A WADO-RS instance URL (`.../instances/<sop>`) and its frame count. */
 export interface InstanceRef {
   url: string
@@ -286,7 +302,7 @@ export async function reconstructInstanceFiles(
   const { headers = {}, onProgress, signal, concurrency = 6 } = options
   const first = instances[0]
   if (!first) return []
-  const total = instances.reduce((n, inst) => n + inst.frames, 0)
+  let total = instances.reduce((n, inst) => n + inst.frames, 0)
   let done = 0
   const progress = (frames: number) => {
     done += frames
@@ -318,12 +334,14 @@ export async function reconstructInstanceFiles(
   }
   let series: Promise<Series> | undefined
 
+  // One bound for every request, so frames nested in instances stay within it.
+  const limit = limiter(concurrency)
   let canRetrieve = true
   const instanceFile = async (inst: InstanceRef): Promise<File | null> => {
     const sop = sopFromInstanceUrl(inst.url)
     const name = `${sop}.dcm`
     const retrieved = canRetrieve
-      ? await retrieveInstance(inst.url, headers, signal)
+      ? await limit(() => retrieveInstance(inst.url, headers, signal))
       : null
     if (retrieved) {
       progress(inst.frames)
@@ -337,9 +355,14 @@ export async function reconstructInstanceFiles(
       progress(inst.frames)
       return null
     }
-    const frameNumbers = Array.from({ length: inst.frames }, (_, i) => i + 1)
+    // OHIF may lack NumberOfFrames (static servers); the metadata has it.
+    const count = Number(firstValue(metadata['00280008'])) || inst.frames
+    total += count - inst.frames
+    const frameNumbers = Array.from({ length: count }, (_, i) => i + 1)
     const frames = await mapPool(frameNumbers, concurrency, async (n) => {
-      const frame = await fetchFrame(`${inst.url}/frames/${n}`, headers, signal)
+      const frame = await limit(() =>
+        fetchFrame(`${inst.url}/frames/${n}`, headers, signal),
+      )
       progress(1)
       return frame
     })

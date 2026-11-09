@@ -345,6 +345,13 @@ describe('parseMultipartRelated', () => {
         'multipart/related; boundary=bound',
       ),
     ).toEqual([enc.encode('three')])
+    // Padding after the opening delimiter is not part of a recovered boundary.
+    expect(
+      parseMultipartRelated(
+        enc.encode('--B \t\r\nX: y\r\n\r\none\r\n--B--\r\n'),
+        'multipart/related',
+      ),
+    ).toEqual([enc.encode('one')])
     // A preamble before the first delimiter, two parts, transport padding.
     const b = enc.encode('two')
     const body = enc.encode(

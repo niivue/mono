@@ -18,8 +18,9 @@ function boundaryFromBody(bytes: Uint8Array): string | null {
   let end = 2
   const limit = Math.min(bytes.length, 256)
   while (end < limit && bytes[end] !== 0x0d && bytes[end] !== 0x0a) end++
-  if (end <= 2) return null
-  return new TextDecoder('latin1').decode(bytes.subarray(2, end))
+  // A boundary never ends in a space (RFC 2046), so trailing SP/HTAB is padding.
+  const b = new TextDecoder('latin1').decode(bytes.subarray(2, end))
+  return b.replace(/[ \t]+$/, '') || null
 }
 
 function indexOfSubarray(

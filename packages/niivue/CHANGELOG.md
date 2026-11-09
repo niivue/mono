@@ -1,3 +1,13 @@
+## 1.0.0-rc.135 (2026-11-09)
+
+### Features
+
+- **niivue:** optional 4x MSAA for SlideRendererGPU ([#638](https://github.com/niivue/mono/issues/638))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.134 (2026-11-09)
 
 ### Fixes

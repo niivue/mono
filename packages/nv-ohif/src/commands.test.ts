@@ -72,9 +72,13 @@ function stubNiivue() {
     setClipPlane(dae: number[]) {
       clipPlanes.push(dae)
     },
+    // Like NiiVue: prepare yields a fresh image; addVolume stores a copy of it.
+    async prepareVolume(spec: Record<string, unknown>) {
+      return { ...spec, hdr: {} }
+    },
     async addVolume(spec: Record<string, unknown>) {
       added.push(spec)
-      volumes.push(spec)
+      volumes.push({ ...spec })
     },
     async setVolume(index: number, opts: Record<string, unknown>) {
       volumeUpdates.push({ index, opts })
@@ -2311,6 +2315,111 @@ describe('niivueToggleOverlay', () => {
         expect(nv.added).toHaveLength(0)
         expect(statuses.at(-1)).toEqual([null, undefined])
         expect(statuses.some(([, kind]) => kind === 'error')).toBe(false)
+      } finally {
+        convert.mockRestore()
+      }
+    })
+
+    it('and a press during its teardown starts a load it cannot clobber', async () => {
+      const resolvers: Array<(c: dicomToNiivue.DicomConversion) => void> = []
+      const convert = spyOn(
+        dicomToNiivue,
+        'convertDisplaySetToNifti',
+      ).mockImplementation((_ds, options) => {
+        options?.onProgress?.('fetching', 0, 1)
+        return new Promise((r) => {
+          resolvers.push(r)
+        })
+      })
+      try {
+        const { actions, entry, loading, nv, statuses } = await startOverlay()
+        await actions.niivueToggleOverlay() // cancel
+        const second = actions.niivueToggleOverlay()
+        const owner = entry.overlayAbort
+        expect(entry.overlayLoading).toBe(true)
+        // The cancelled conversion resolves late; it must not touch load 2.
+        resolvers[0]?.({ image: new File([], 'old.nii') })
+        await loading
+        expect(entry.overlayLoading).toBe(true)
+        expect(entry.overlayAbort).toBe(owner)
+        expect(statuses.at(-1)?.[1]).toBe('loading')
+        resolvers[1]?.({ image: new File([], 'new.nii') })
+        await second
+        expect(nv.added.map((a) => a.name)).toEqual(['new.nii'])
+        expect(entry.overlayUIDs).toEqual(['ds-ct'])
+        expect(entry.overlayLoading).toBe(false)
+      } finally {
+        convert.mockRestore()
+      }
+    })
+
+    it('and undoes its late addVolume by identity, not count', async () => {
+      const resolvers: Array<(c: dicomToNiivue.DicomConversion) => void> = []
+      const convert = spyOn(
+        dicomToNiivue,
+        'convertDisplaySetToNifti',
+      ).mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolvers.push(r)
+          }),
+      )
+      try {
+        const { actions, entry, loading, nv } = await startOverlay()
+        // Load 1's addVolume lands its volume, then hangs until released.
+        let release = () => {}
+        const added = new Promise<void>((r) => {
+          release = r
+        })
+        const addVolume = nv.addVolume
+        let landed = () => {}
+        const hasLanded = new Promise<void>((r) => {
+          landed = r
+        })
+        nv.addVolume = async (spec) => {
+          nv.addVolume = addVolume
+          await addVolume(spec)
+          landed()
+          await added
+        }
+        resolvers[0]?.({ image: new File([], 'old.nii') })
+        await hasLanded
+        await actions.niivueToggleOverlay() // cancel
+        const second = actions.niivueToggleOverlay()
+        resolvers[1]?.({ image: new File([], 'new.nii') })
+        await second
+        release()
+        await loading
+        expect(nv.volumes.map((v) => (v as { name: string }).name)).toEqual([
+          'base',
+          'new.nii',
+        ])
+        expect(entry.overlayUIDs).toEqual(['ds-ct'])
+      } finally {
+        convert.mockRestore()
+      }
+    })
+
+    it('and ignores its late progress', async () => {
+      const progress: Array<
+        dicomToNiivue.DicomConvertOptions['onProgress'] | undefined
+      > = []
+      const convert = spyOn(
+        dicomToNiivue,
+        'convertDisplaySetToNifti',
+      ).mockImplementation((_ds, options) => {
+        progress.push(options?.onProgress)
+        options?.onProgress?.('fetching', 0, 1)
+        return new Promise(() => {})
+      })
+      try {
+        const { actions, statuses } = await startOverlay()
+        await actions.niivueToggleOverlay() // cancel
+        void actions.niivueToggleOverlay()
+        const current = statuses.at(-1)
+        progress[0]?.('converting', 0, 1)
+        expect(statuses.at(-1)).toEqual(current)
+        expect(current?.[0]).toBe('Fetching overlay: overlay... 0/1')
       } finally {
         convert.mockRestore()
       }

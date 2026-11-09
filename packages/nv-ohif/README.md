@@ -193,6 +193,9 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
   phase/real/imaginary (sidecar `ImageType`, else the `_ph`/`_real`/`_imaginary`
   stem), the lowest `EchoNumber`, the most voxels, the stem name. A note names
   the others.
+- **Fetching.** Each instance is retrieved whole (WADO-RS RetrieveInstance) when
+  the server allows it; otherwise it is rebuilt from `/metadata` plus frames
+  1..NumberOfFrames, so enhanced/multi-frame instances convert as one file.
 - **Partial conversions.** A nonzero dcm2niix exit that still produced images
   loads the choice with a note (dcm2niix's last error or warning line); no image
   is an error with dcm2niix's log tail.

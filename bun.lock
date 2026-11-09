@@ -319,7 +319,7 @@
     },
     "packages/nv-ext-tile": {
       "name": "@niivue/nv-ext-tile",
-      "version": "1.0.0-rc.19",
+      "version": "1.0.0-rc.20",
       "dependencies": {
         "geotiff": "^3.0.5",
         "zarrita": "^0.7.3",

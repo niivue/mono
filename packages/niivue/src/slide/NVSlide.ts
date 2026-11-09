@@ -1,4 +1,6 @@
+import { colormapKey, lookupColorMap, lutrgba8 } from '@/cmap/NVCmaps'
 import { log } from '@/logger'
+import { channelColormapsFor } from '@/volume/channelColormaps'
 export type NVSlideTileCodec =
   | 'raw-rgba'
   | 'raw-gray'
@@ -7,22 +9,59 @@ export type NVSlideTileCodec =
   | 'image/jls'
 
 /**
- * Monochrome samples a tile decoder may return instead of a bitmap. NVSlide
- * windows them with the slide's {@link NVSlideWindow} and keeps them, so a new
- * window re-renders cached tiles without re-decoding (D16).
+ * Samples a tile decoder (or {@link SlideTileSource.fetchTileSamples}) may return
+ * instead of a bitmap. NVSlide renders them through its {@link NVSlide.channels}
+ * and keeps them, so a channel change re-renders cached tiles without re-decoding (D16).
  */
 export interface NVSlideTileSamples {
+  /** `planes` planes of `width * height` samples, one after another. */
   samples: Uint8Array | Uint16Array
   width: number
   height: number
   /** The codestream's precision; the level's DICOM `bitsStored` wins when set. */
   bitsStored: number
+  /** Sample planes, one per channel fetched (default 1). */
+  planes?: number
 }
 
 /** Display window over stored sample values, shared by every tile and level. */
 export interface NVSlideWindow {
   calMin: number
   calMax: number
+}
+
+/**
+ * One displayed slide channel. Field names match VolumeUpdate, so volumes and
+ * slides read alike. A non-finite calMin or calMax means the stored range's
+ * end (0 or 2^bitsStored - 1), as a volume's means its default window.
+ */
+export interface NVChannel {
+  name: string
+  /** A NiiVue colormap name ('gray', 'red', ...). */
+  colormap: string
+  calMin: number
+  calMax: number
+  visible: boolean
+}
+
+/** How visible channels combine: per-component maximum, or saturating sum. */
+export type NVSlideChannelBlend = 'max' | 'additive'
+
+/** A source's description of one sample channel (e.g. an OME-Zarr omero channel). */
+export interface NVSlideChannelInfo {
+  name: string
+  /** Stated colour, 0-255; snapped to the nearest channel colormap. */
+  rgb?: readonly [number, number, number]
+  /** A usable display window; omitted, the channel shows its stored range. */
+  window?: NVSlideWindow
+  /** Inactive channels start hidden and are not fetched. */
+  active: boolean
+}
+
+/** A slide's focal plane `z` and time point `t`. Only {z: 0, t: 0} exists yet. */
+export interface NVSlidePlaneIndex {
+  z: number
+  t: number
 }
 
 /**
@@ -157,6 +196,12 @@ export interface NVSlideManifest {
   pixelSpacingMM?: readonly [number, number]
   /** DICOM-WSI: the optical path's ICC profile, (0048,0105) > (0028,2000). */
   iccProfile?: NVSlideIccProfile
+  /**
+   * The sample channels a {@link SlideTileSource.fetchTileSamples} source
+   * serves. Absent: one grey channel for a monochrome slide, else red, green
+   * and blue, added.
+   */
+  channelInfo?: NVSlideChannelInfo[]
 }
 
 export interface NVSlideViewport {
@@ -284,8 +329,10 @@ type TileBitmap = {
   bitmap: ImageBitmap
   bytes: number
   level: NVSlideLevelManifest
-  /** Kept for monochrome tiles, so a new window re-renders them. */
+  /** Kept for sample tiles, so a channel change re-renders them. */
   samples?: NVSlideTileSamples
+  /** The channel each sample plane holds; absent, plane p is channel p. */
+  channels?: readonly number[]
 }
 type SampleTile = TileBitmap & { samples: NVSlideTileSamples }
 
@@ -376,10 +423,103 @@ export function windowSamples(
   return out
 }
 
+/** One channel's table: sample value to RGB (4 bytes each, the 4th unused), window then colormap. */
+function channelLut(
+  size: number,
+  window: NVSlideWindow,
+  invert: boolean,
+  colormap: string,
+): Uint8Array {
+  const grey = windowLut(size, window, invert)
+  const rgba = lutrgba8(colormap)
+  const lut = new Uint8Array(size * 4)
+  for (let v = 0, o = 0; v < size; v++, o += 4) {
+    const g = grey[v] * 4
+    lut[o] = rgba[g]
+    lut[o + 1] = rgba[g + 1]
+    lut[o + 2] = rgba[g + 2]
+  }
+  return lut
+}
+
+/**
+ * Planar samples to opaque RGBA8: each listed plane through its channel table
+ * ({@link channelLut}), combined by per-component max or saturating sum.
+ */
+export function compositeSamples(
+  samples: Uint8Array | Uint16Array,
+  pixels: number,
+  layers: ReadonlyArray<{ plane: number; lut: Uint8Array }>,
+  additive: boolean,
+): Uint8ClampedArray<ArrayBuffer> {
+  const out = new Uint8ClampedArray(pixels * 4)
+  if (layers.length === 0) for (let o = 3; o < out.length; o += 4) out[o] = 255
+  // The first layer writes, later ones combine: one loop per case, no per-pixel branch on blend.
+  layers.forEach(({ plane, lut }, k) => {
+    const base = plane * pixels
+    if (k === 0) {
+      for (let i = 0, o = 0; i < pixels; i++, o += 4) {
+        const j = samples[base + i] * 4
+        out[o] = lut[j]
+        out[o + 1] = lut[j + 1]
+        out[o + 2] = lut[j + 2]
+        out[o + 3] = 255
+      }
+    } else if (additive) {
+      // Uint8ClampedArray saturates the sum at 255.
+      for (let i = 0, o = 0; i < pixels; i++, o += 4) {
+        const j = samples[base + i] * 4
+        out[o] += lut[j]
+        out[o + 1] += lut[j + 1]
+        out[o + 2] += lut[j + 2]
+      }
+    } else {
+      for (let i = 0, o = 0; i < pixels; i++, o += 4) {
+        const j = samples[base + i] * 4
+        out[o] = Math.max(out[o], lut[j])
+        out[o + 1] = Math.max(out[o + 1], lut[j + 1])
+        out[o + 2] = Math.max(out[o + 2], lut[j + 2])
+      }
+    }
+  })
+  return out
+}
+
 // raw-gray tiles are samples whatever the (optional, DICOM) photometric says.
 const isMonochrome = (level: NVSlideLevelManifest): boolean =>
   level.codec === 'raw-gray' ||
   (level.photometric?.startsWith('MONOCHROME') ?? false)
+
+const usableWindow = (w?: NVSlideWindow): w is NVSlideWindow =>
+  !!w &&
+  Number.isFinite(w.calMin) &&
+  Number.isFinite(w.calMax) &&
+  w.calMax > w.calMin
+
+/** The channels a slide opens with: its manifest's `channelInfo`, else grey or RGB. */
+export function defaultSlideChannels(manifest: NVSlideManifest): NVChannel[] {
+  const info = manifest.channelInfo
+  if (info) {
+    const colormaps = channelColormapsFor(info.map((c) => c.rgb))
+    return info.map((c, i) => ({
+      name: c.name,
+      colormap: colormaps[i] as string,
+      calMin: usableWindow(c.window) ? c.window.calMin : Number.NaN,
+      calMax: usableWindow(c.window) ? c.window.calMax : Number.NaN,
+      visible: c.active,
+    }))
+  }
+  const names = manifest.levels.some(isMonochrome)
+    ? ['gray']
+    : ['red', 'green', 'blue']
+  return names.map((name) => ({
+    name,
+    colormap: name,
+    calMin: Number.NaN,
+    calMax: Number.NaN,
+    visible: true,
+  }))
+}
 
 /** A grey bitmap's red channel as 8-bit samples; closes the bitmap. */
 function greySamples(bitmap: ImageBitmap): NVSlideTileSamples {
@@ -504,6 +644,14 @@ class NVSlideTileCache {
     return this.entries.has(key)
   }
 
+  delete(key: string): void {
+    const entry = this.entries.get(key)
+    if (!entry) return
+    entry.bitmap.close()
+    this.bytes -= entry.bytes
+    this.entries.delete(key)
+  }
+
   /** Like get, without refreshing LRU order. */
   peek(key: string): TileBitmap | undefined {
     return this.entries.get(key)
@@ -577,6 +725,20 @@ export interface SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array>
+  /**
+   * Decoded samples for one tile, one plane per entry of `channels` (indices
+   * into {@link NVSlide.channels}, in that order): the visible ones, possibly
+   * none (return `planes: 0`). When present NVSlide calls it instead of
+   * `fetchTileBytes` and composites the planes itself. Such a source states
+   * its channels in `manifest.channelInfo`; without it NVSlide assumes RGB
+   * and asks for 3 planes. Optional.
+   */
+  fetchTileSamples?(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    channels: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<NVSlideTileSamples>
   /** The slide's ICC profile bytes, or null when it has none. Optional. */
   fetchIccProfile?(signal?: AbortSignal): Promise<Uint8Array | null>
 }
@@ -778,7 +940,7 @@ function placeListedTiles(level: NVSlideLevelManifest): NVSlideLevelManifest {
   return { ...level, tiles: grid }
 }
 
-/** The top-left `width` x `height` of a padded monochrome frame. */
+/** The top-left `width` x `height` of each plane of a padded sample frame. */
 function cropSamples(
   frame: NVSlideTileSamples,
   width: number,
@@ -786,15 +948,16 @@ function cropSamples(
 ): NVSlideTileSamples {
   const w = Math.min(frame.width, width)
   const h = Math.min(frame.height, height)
+  const planes = frame.planes ?? 1
   const samples =
     frame.samples instanceof Uint16Array
-      ? new Uint16Array(w * h)
-      : new Uint8Array(w * h)
-  for (let y = 0; y < h; y++)
-    samples.set(
-      frame.samples.subarray(y * frame.width, y * frame.width + w),
-      y * w,
-    )
+      ? new Uint16Array(w * h * planes)
+      : new Uint8Array(w * h * planes)
+  for (let p = 0; p < planes; p++)
+    for (let y = 0; y < h; y++) {
+      const from = (p * frame.height + y) * frame.width
+      samples.set(frame.samples.subarray(from, from + w), (p * h + y) * w)
+    }
   return { ...frame, samples, width: w, height: h }
 }
 
@@ -853,7 +1016,12 @@ export class NVSlide extends EventTarget {
   private readonly _viewportKeys = new Set<string>()
   private _budgetWarned = '' // last budget outcome logged by visibleTiles
   private _lastVisible: NVSlideVisibleTiles | null = null
-  private _window: NVSlideWindow | null = null // null: each level's full bitsStored range
+  private _channels: readonly NVChannel[]
+  private _channelBlend: NVSlideChannelBlend = 'max'
+  // RGB samples only make sense added; their blend is fixed.
+  private readonly _rgb: boolean
+  // Channel tables for the current channel state, shared by every tile it renders.
+  private readonly _luts = new Map<string, Uint8Array>()
   private _windowGen = 0
   private _rewindowing = false
   private _colorManagement: boolean
@@ -895,6 +1063,9 @@ export class NVSlide extends EventTarget {
       options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,
     )
     this._colorManagement = options.colorManagement ?? true
+    this._channels = defaultSlideChannels(this.manifest)
+    this._rgb =
+      !manifest.channelInfo && !this.manifest.levels.some(isMonochrome)
     this._source = options.source ?? new ManifestRangeSource(manifest)
     this._source.bind({
       resolveUrl: (url) => this.resolveUrl(url),
@@ -941,6 +1112,7 @@ export class NVSlide extends EventTarget {
     if (
       !transform ||
       !this._source.fetchIccProfile ||
+      this._source.fetchTileSamples ||
       this.manifest.iccProfile?.colorSpace?.toUpperCase() === 'SRGB' ||
       this.manifest.levels.some(isMonochrome)
     )
@@ -1015,26 +1187,103 @@ export class NVSlide extends EventTarget {
     return this._cache.bytes
   }
 
-  /** The monochrome display window; null shows each level's full `bitsStored` range. */
+  /**
+   * Channel 0's window; null while it shows the full `bitsStored` range.
+   * @deprecated Read `channels[0]`.
+   */
   get window(): NVSlideWindow | null {
-    return this._window
+    const ch = this._channels[0]
+    return ch && usableWindow(ch)
+      ? { calMin: ch.calMin, calMax: ch.calMax }
+      : null
   }
 
   /**
-   * Set the monochrome display window (stored sample values) for every tile and
-   * level. Cached tiles re-render from their kept samples; tiles still loading
-   * take the window current when they finish. Colour tiles are unaffected.
+   * Set channel 0's window (stored sample values) for every tile and level.
+   * @deprecated Use {@link setChannel}: `setChannel(0, { calMin, calMax })`.
    */
   setWindow(calMin: number, calMax: number): void {
-    if (
-      !Number.isFinite(calMin) ||
-      !Number.isFinite(calMax) ||
-      calMax <= calMin
-    )
+    if (!usableWindow({ calMin, calMax }))
       throw new RangeError(
         `NVSlide window needs finite calMin < calMax, got ${calMin}, ${calMax}`,
       )
-    this._window = { calMin, calMax }
+    this.setChannel(0, { calMin, calMax })
+  }
+
+  /** The displayed channels, one per source sample plane (see {@link NVChannel}). */
+  get channels(): readonly Readonly<NVChannel>[] {
+    return this._channels
+  }
+
+  /**
+   * Update channel `c`. Cached sample tiles re-render from their kept planes;
+   * showing a channel they were fetched without refetches them. Tiles a decoder
+   * returned as bitmaps (JPEG, RGBA) are drawn as decoded.
+   */
+  setChannel(c: number, update: Partial<NVChannel>): void {
+    const old = this._channels[c]
+    if (!old) throw new RangeError(`NVSlide has no channel ${c}`)
+    const next = { ...old, ...update }
+    if (
+      Number.isFinite(next.calMin) &&
+      Number.isFinite(next.calMax) &&
+      next.calMax <= next.calMin
+    )
+      throw new RangeError(
+        `NVSlide channel ${c} needs calMin < calMax, got ${next.calMin}, ${next.calMax}`,
+      )
+    if (!lookupColorMap(next.colormap))
+      throw new RangeError(`Unknown colormap "${next.colormap}"`)
+    const channels = [...this._channels]
+    channels[c] = next
+    this._channels = channels
+    if (next.visible && !old.visible && this._source.fetchTileSamples)
+      this._refetchWithout(c)
+    this._rerender()
+  }
+
+  /** How visible channels combine; always 'additive' on an RGB slide. */
+  get channelBlend(): NVSlideChannelBlend {
+    return this._rgb ? 'additive' : this._channelBlend
+  }
+
+  /** Set {@link channelBlend}; ignored on an RGB slide. */
+  setChannelBlend(blend: NVSlideChannelBlend): void {
+    if (blend !== 'max' && blend !== 'additive')
+      throw new RangeError(`Unknown channel blend "${blend}"`)
+    if (this._rgb || blend === this._channelBlend) return
+    this._channelBlend = blend
+    this._rerender()
+  }
+
+  /** The focal plane and time point shown; only {z: 0, t: 0} so far. */
+  get plane(): NVSlidePlaneIndex {
+    return { z: 0, t: 0 }
+  }
+
+  /** Throws unless `plane` is {z: 0, t: 0}: slides hold one plane until focal stacks land. */
+  setPlane(plane: NVSlidePlaneIndex): void {
+    if (plane.z !== 0 || plane.t !== 0)
+      throw new RangeError(
+        `NVSlide has only plane {z: 0, t: 0}, got {z: ${plane.z}, t: ${plane.t}}`,
+      )
+  }
+
+  private _visibleChannels(): number[] {
+    return this._channels.flatMap((ch, i) => (ch.visible ? [i] : []))
+  }
+
+  // ponytail: dropped tiles blank until refetched; refresh in place if the flash bothers.
+  private _refetchWithout(c: number): void {
+    for (const [key, entry] of [...this._cache.sampleEntries()])
+      if (!entry.channels?.includes(c)) this._cache.delete(key)
+    this.stats.cacheBytes = this._cache.bytes
+    // Loads in flight were asked for the old channels; the view re-requests them.
+    for (const controller of this._inflight.values()) controller.abort()
+  }
+
+  private _rerender(): void {
+    this._luts.clear()
     this._windowGen++
     void this._rewindowCached()
     this._emitChange()
@@ -1057,7 +1306,11 @@ export class NVSlide extends EventTarget {
           if (this._cache.peek(key) !== entry) continue // evicted meanwhile
           let bitmap: ImageBitmap
           try {
-            bitmap = await this.windowedBitmap(entry.samples, entry.level)
+            bitmap = await this.windowedBitmap(
+              entry.samples,
+              entry.level,
+              entry.channels,
+            )
           } catch (err) {
             log.warn(`NVSlide ${this.id}: re-window failed`, err)
             continue
@@ -1080,14 +1333,59 @@ export class NVSlide extends EventTarget {
   private windowedBitmap(
     s: NVSlideTileSamples,
     level: NVSlideLevelManifest,
+    held?: readonly number[],
   ): Promise<ImageBitmap> {
     const max = 2 ** (level.bitsStored ?? s.bitsStored) - 1
-    const rgba = windowSamples(
-      s.samples,
-      this._window ?? { calMin: 0, calMax: max },
-      level.photometric === 'MONOCHROME1',
-    )
+    const invert = level.photometric === 'MONOCHROME1'
+    const pixels = s.width * s.height
+    const shown: Array<{ plane: number; ch: NVChannel }> = []
+    for (let plane = 0; plane < (s.planes ?? 1); plane++) {
+      const ch = this._channels[held ? (held[plane] as number) : plane]
+      if (ch?.visible) shown.push({ plane, ch })
+    }
+    const window = (ch: NVChannel): NVSlideWindow => ({
+      calMin: Number.isFinite(ch.calMin) ? ch.calMin : 0,
+      calMax: Number.isFinite(ch.calMax) ? ch.calMax : max,
+    })
+    const one = shown[0]
+    // One grey channel (any monochrome slide by default): the grey-only loop.
+    const rgba =
+      shown.length === 1 && one && one.ch.colormap === 'gray'
+        ? windowSamples(
+            s.samples.subarray(one.plane * pixels, (one.plane + 1) * pixels),
+            window(one.ch),
+            invert,
+          )
+        : compositeSamples(
+            s.samples,
+            pixels,
+            shown.map(({ plane, ch }) => ({
+              plane,
+              lut: this._channelLut(
+                s.samples instanceof Uint8Array ? 256 : 65536,
+                window(ch),
+                invert,
+                ch.colormap,
+              ),
+            })),
+            this.channelBlend === 'additive',
+          )
     return createImageBitmap(new ImageData(rgba, s.width, s.height))
+  }
+
+  private _channelLut(
+    size: number,
+    window: NVSlideWindow,
+    invert: boolean,
+    colormap: string,
+  ): Uint8Array {
+    const key = `${size},${window.calMin},${window.calMax},${invert},${colormapKey(colormap)}`
+    let lut = this._luts.get(key)
+    if (!lut) {
+      lut = channelLut(size, window, invert, colormap)
+      this._luts.set(key, lut)
+    }
+    return lut
   }
 
   setViewport(viewport: NVSlideViewport): void {
@@ -1330,10 +1628,15 @@ export class NVSlide extends EventTarget {
     const { count } = this.tileSpan(level, screen)
     // Full tiles, not clipped edge extents: an upper bound, since a padded
     // edge frame is held whole until decodeTileBitmap crops it.
-    // Monochrome tiles also keep their samples (1 or 2 bytes each).
-    // Without bitsStored, JPEG 2000 and JPEG-LS may decode 16-bit samples.
+    // Sample tiles also keep their samples (1 or 2 bytes each), one plane per
+    // fetched channel. Without bitsStored, JPEG 2000 and JPEG-LS may decode 16-bit samples.
     const bits = level.bitsStored ?? (level.codec === 'image/jpeg' ? 8 : 16)
-    const sampleBytes = isMonochrome(level) ? (bits > 8 ? 2 : 1) : 0
+    const planes = this._source.fetchTileSamples
+      ? this._visibleChannels().length
+      : isMonochrome(level)
+        ? 1
+        : 0
+    const sampleBytes = planes * (bits > 8 ? 2 : 1)
     const tileBytes =
       this.levelTileWidth(level) *
       this.levelTileHeight(level) *
@@ -1682,30 +1985,39 @@ export class NVSlide extends EventTarget {
     const { signal } = controller
     this._inflight.set(key, controller)
     try {
-      const tileBytes = await this._source.fetchTileBytes(
-        level,
-        tile,
-        label,
-        signal,
-      )
-      // A source that cannot stop a read in progress may still resolve after
-      // the abort; the tile is no longer wanted either way.
-      signal.throwIfAborted()
-      const decoded = await this.decodeTileBitmap(
-        level,
-        tile,
-        tileBytes,
-        signal,
-      )
+      let decoded: ImageBitmap | NVSlideTileSamples
+      let held: number[] | undefined
+      if (this._source.fetchTileSamples) {
+        held = this._visibleChannels()
+        decoded = await this._source.fetchTileSamples(level, tile, held, signal)
+        signal.throwIfAborted()
+        if ((decoded.planes ?? 1) !== held.length)
+          throw new Error(
+            `Expected ${held.length} sample planes, received ${decoded.planes ?? 1}`,
+          )
+        if (decoded.width > tile.width || decoded.height > tile.height)
+          decoded = cropSamples(decoded, tile.width, tile.height)
+      } else {
+        const tileBytes = await this._source.fetchTileBytes(
+          level,
+          tile,
+          label,
+          signal,
+        )
+        // A source that cannot stop a read in progress may still resolve after
+        // the abort; the tile is no longer wanted either way.
+        signal.throwIfAborted()
+        decoded = await this.decodeTileBitmap(level, tile, tileBytes, signal)
+      }
       let bitmap: ImageBitmap
       let samples: NVSlideTileSamples | undefined
       if ('samples' in decoded) {
         samples = decoded
-        // Re-window if the window changed while this one rendered.
+        // Re-render if the channels changed while this one rendered.
         let gen: number
         do {
           gen = this._windowGen
-          bitmap = await this.windowedBitmap(samples, level)
+          bitmap = await this.windowedBitmap(samples, level, held)
           if (gen !== this._windowGen) bitmap.close()
         } while (gen !== this._windowGen)
       } else bitmap = decoded
@@ -1721,7 +2033,13 @@ export class NVSlide extends EventTarget {
       const decodedBytes =
         bitmap.width * bitmap.height * 4 + (samples?.samples.byteLength ?? 0)
       this.stats.decodedBytes += decodedBytes
-      this._cache.set(key, { bitmap, bytes: decodedBytes, samples, level })
+      this._cache.set(key, {
+        bitmap,
+        bytes: decodedBytes,
+        samples,
+        level,
+        channels: held,
+      })
       this.stats.cacheBytes = this._cache.bytes
       this.stats.completed++
       this._failed.delete(key)

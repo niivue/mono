@@ -1,7 +1,9 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { decode, encode } from 'cbor-x'
 
 import { decodeRLE, encodeRLE } from '@/drawing/rle'
+import NiiVue from '@/index'
+import { documentFile, parseJsonDocument } from '@/testing/headless'
 
 // Guards the wire contract NVDocument uses to round-trip a slide plane + its
 // slide-space drawing (NVDocumentSlidePlane). Mirrors the shape here, so the
@@ -82,5 +84,72 @@ describe('slide plane document round-trip (CBOR + RLE)', () => {
       [300, 20],
       [300, 240],
     ])
+  })
+})
+
+describe('slide channels in a document', () => {
+  const tile = 8
+  const slidePlane = (extra: Record<string, unknown>) => ({
+    manifest: {
+      id: 's',
+      name: 's',
+      width: tile,
+      height: tile,
+      tileSize: tile,
+      dtype: 'uint16',
+      channels: 'planar',
+      channelInfo: [
+        { name: 'a', rgb: [255, 0, 0], active: true },
+        { name: 'b', active: false },
+      ],
+      levels: [
+        {
+          index: 0,
+          width: tile,
+          height: tile,
+          downsample: 1,
+          columns: 1,
+          rows: 1,
+          tiles: [{ x: 0, y: 0, width: tile, height: tile }],
+        },
+      ],
+    },
+    pixelToWorld: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+    ...extra,
+  })
+
+  // Load a document holding `sp`, then save it again as JSON.
+  async function roundTrip(sp: Record<string, unknown>) {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    const doc = parseJsonDocument(nv.serializeDocument({ format: 'json' }))
+    doc.slidePlane = sp
+    // The manifest names no tile bytes, so the slide logs failed tile fetches.
+    const tileErrors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await nv.loadDocument(documentFile(JSON.stringify(doc), 'channels.nvd'))
+      const out = parseJsonDocument(nv.serializeDocument({ format: 'json' }))
+      return out.slidePlane as Record<string, unknown>
+    } finally {
+      tileErrors.mockRestore()
+    }
+  }
+
+  test('restores and saves changed channels and blend, NaN windows included', async () => {
+    const nan = { $num: 'NaN' } // the document JSON's non-finite tag
+    const channels = [
+      { name: 'a', colormap: 'gray', calMin: 10, calMax: 90, visible: true },
+      { name: 'b', colormap: 'blue', calMin: nan, calMax: nan, visible: true },
+    ]
+    const sp = await roundTrip(
+      slidePlane({ channels, channelBlend: 'additive' }),
+    )
+    expect(sp.channels).toEqual(channels)
+    expect(sp.channelBlend).toBe('additive')
+  })
+
+  test('omits default channels and blend, so older documents load unchanged', async () => {
+    const sp = await roundTrip(slidePlane({}))
+    expect(sp.channels).toBeUndefined()
+    expect(sp.channelBlend).toBeUndefined()
   })
 })

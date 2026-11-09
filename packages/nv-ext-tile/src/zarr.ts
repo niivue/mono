@@ -61,3 +61,8 @@ export {
   type PersistentCacheStats,
   withPersistentBytes,
 } from './zarr/persistentByteCache'
+export {
+  type ZarrSlideOptions,
+  ZarrSlideSource,
+  type ZarrSlideUrlOptions,
+} from './zarr/zarrSlideSource'

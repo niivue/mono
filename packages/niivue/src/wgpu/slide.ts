@@ -132,6 +132,10 @@ export class SlideRendererGPU {
   private readonly _nearestSampler: GPUSampler
   private _placeholderTexture: GPUTexture | null
   private readonly _format: GPUTextureFormat
+  private readonly _sampleCount: number
+  // The multisampled colour target `antialias` draws into, resolved to the
+  // canvas each frame; recreated when the canvas size changes.
+  private _msaaTexture: GPUTexture | null = null
   // Byte-budgeted: tile textures for scrolled-away regions are evicted each
   // frame instead of accumulating for the life of the renderer. Eviction runs
   // before beginFrame (see render), so a texture referenced by the frame just
@@ -145,8 +149,8 @@ export class SlideRendererGPU {
   /**
    * UIKit overlay hook: invoked at the end of every frame (appended to the open
    * pass, before pass.end()) so a widget can draw over the slide. The slide pass
-   * has no depth attachment and no MSAA, so the frame's handle omits depthFormat
-   * and reports sampleCount 1. See view/NVOverlayHook.ts.
+   * has no depth attachment, so the frame's handle omits depthFormat; it reports
+   * the pass's sampleCount (4 with `antialias`, else 1). See view/NVOverlayHook.ts.
    */
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
   /**
@@ -172,6 +176,7 @@ export class SlideRendererGPU {
     sampler: GPUSampler,
     placeholderTexture: GPUTexture,
     format: GPUTextureFormat,
+    sampleCount: number,
   ) {
     this._luts = new ColorLutTexturesGPU(device, lutLayout, sampler)
     this._canvas = canvas
@@ -189,10 +194,17 @@ export class SlideRendererGPU {
     })
     this._placeholderTexture = placeholderTexture
     this._format = format
+    this._sampleCount = sampleCount
   }
 
+  /**
+   * `antialias` draws into a 4x multisample target resolved to the canvas. It
+   * smooths geometry edges (a rotated slide's border, rulers, annotations),
+   * not the tile image, which is already filtered.
+   */
   static async create(
     canvas: HTMLCanvasElement,
+    options: { antialias?: boolean } = {},
   ): Promise<SlideRendererGPU | null> {
     if (!navigator.gpu) return null
     const adapter = await navigator.gpu.requestAdapter()
@@ -211,12 +223,13 @@ export class SlideRendererGPU {
       GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
     )
     const lutLayout = colorLutLayout(device)
-    // No depth attachment, single-sample canvas.
+    const msaaCount = options.antialias ? 4 : 1
     const pipeline = device.createRenderPipeline(
       alphaPipelineDesc(device, {
         module: device.createShaderModule({ code: shaderCode(false) }),
         bindGroupLayouts: [bindLayout],
         format,
+        msaaCount,
       }),
     )
     const lutPipeline = device.createRenderPipeline(
@@ -224,6 +237,7 @@ export class SlideRendererGPU {
         module: device.createShaderModule({ code: shaderCode(true) }),
         bindGroupLayouts: [bindLayout, lutLayout],
         format,
+        msaaCount,
       }),
     )
 
@@ -253,16 +267,17 @@ export class SlideRendererGPU {
       sampler,
       placeholderTexture,
       format,
+      msaaCount,
     )
     await renderer._initOverlay()
     return renderer
   }
 
-  // The slide pass has no depth attachment and no MSAA.
+  // The slide pass has no depth attachment; overlays match its sample count.
   private async _initOverlay(): Promise<void> {
     const device = this._device
-    await this._lines.init(device, this._format, 1, null)
-    await this._font.init(device, this._format, 1, ubuntu, null)
+    await this._lines.init(device, this._format, this._sampleCount, null)
+    await this._font.init(device, this._format, this._sampleCount, ubuntu, null)
     this._lineStorage = device.createBuffer({
       // 48 B a line and 64 B a glyph, as NVViewGPU's.
       size: SLIDE_OVERLAY_MAX_LINES * 48,
@@ -327,13 +342,18 @@ export class SlideRendererGPU {
     this._textures.evictToBudget()
     this._textures.beginFrame()
     const encoder = this._device.createCommandEncoder()
+    const canvasView = this._context.getCurrentTexture().createView()
+    const msaa = this._msaaView(width, height)
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: this._context.getCurrentTexture().createView(),
+          // With antialias, draw into the multisample target and resolve it
+          // to the canvas; the samples themselves need not be kept.
+          view: msaa ?? canvasView,
+          resolveTarget: msaa ? canvasView : undefined,
           loadOp: 'clear',
           clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          storeOp: 'store',
+          storeOp: msaa ? 'discard' : 'store',
         },
       ],
     })
@@ -381,7 +401,7 @@ export class SlideRendererGPU {
     this._drawOverlay(pass, width, height, dpr)
 
     // UIKit overlay hook: append the widget's draws to the open pass. The slide
-    // pass has no depth attachment (depthFormat omitted) and no MSAA.
+    // pass has no depth attachment (depthFormat omitted).
     if (this.overlayDraw) {
       this.overlayDraw({
         handle: {
@@ -389,7 +409,7 @@ export class SlideRendererGPU {
           device: this._device,
           pass,
           colorFormat: this._format,
-          sampleCount: 1,
+          sampleCount: this._sampleCount,
         },
         bounds: { x: 0, y: 0, width, height },
         dpr,
@@ -410,7 +430,24 @@ export class SlideRendererGPU {
     this._luts.clear()
   }
 
+  private _msaaView(width: number, height: number): GPUTextureView | null {
+    if (this._sampleCount === 1) return null
+    let t = this._msaaTexture
+    if (!t || t.width !== width || t.height !== height) {
+      t?.destroy()
+      t = this._msaaTexture = this._device.createTexture({
+        size: [width, height],
+        format: this._format,
+        sampleCount: this._sampleCount,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      })
+    }
+    return t.createView()
+  }
+
   destroy(): void {
+    this._msaaTexture?.destroy()
+    this._msaaTexture = null
     this._textures.clear()
     this._luts.clear()
     this._lines.destroy()

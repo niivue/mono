@@ -1,3 +1,19 @@
+## 1.0.0-rc.139 (2026-11-09)
+
+### Fixes
+
+- **nv-ohif:** strip padding from a boundary recovered from the body ([f28313d6](https://github.com/niivue/mono/commit/f28313d6))
+- **nv-ohif:** a multipart delimiter must end as RFC 2046 says ([2d67bbe3](https://github.com/niivue/mono/commit/2d67bbe3))
+- **nv-ohif:** count a multipart delimiter only after CRLF ([ab6d0bfd](https://github.com/niivue/mono/commit/ab6d0bfd))
+- **nv-ohif:** resolve a relative DICOMweb root against document.baseURI ([d3ee5b1d](https://github.com/niivue/mono/commit/d3ee5b1d))
+- **nv-ohif:** load relative DICOMweb roots; start crosshair on a voxel ([934540af](https://github.com/niivue/mono/commit/934540af))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.138 (2026-11-09)
 
 ### Fixes

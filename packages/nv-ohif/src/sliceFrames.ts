@@ -208,9 +208,8 @@ export function frameAt(
   if (!first || k === undefined) return undefined
   // A reformatted measurement may share the slab but leave the plane: every
   // point on slice k, and within ON_PLANE of one another.
-  const depth = sliceDepth(sf, first)
-  const off = (p: Vec3) =>
-    onSlice(sf, p) !== k || Math.abs(sliceDepth(sf, p) - depth) > ON_PLANE
-  if (points.some(off)) return undefined
+  if (points.some((p) => onSlice(sf, p) !== k)) return undefined
+  const depths = points.map((p) => sliceDepth(sf, p))
+  if (Math.max(...depths) - Math.min(...depths) > ON_PLANE) return undefined
   return sf.frames[k]
 }

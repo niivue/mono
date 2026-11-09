@@ -1,3 +1,25 @@
+## 1.0.0-rc.136 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** DICOM frame identity on NiiVue measurements ([6733efe9](https://github.com/niivue/mono/commit/6733efe9))
+
+### Fixes
+
+- **nv-ohif:** frameAt bounds depth without spreading the contour ([c770c566](https://github.com/niivue/mono/commit/c770c566))
+- **nv-ohif:** frameAt bounds the depth spread of all points ([c3771d9f](https://github.com/niivue/mono/commit/c3771d9f))
+- **nv-ohif:** snap the crosshair once a volume loads ([6cc0d9c5](https://github.com/niivue/mono/commit/6cc0d9c5))
+- **nv-ohif:** frameAt needs the points within ON_PLANE of each other ([c082a5b6](https://github.com/niivue/mono/commit/c082a5b6))
+- **nv-ohif:** re-reflect a row when its slice frame appears ([66042339](https://github.com/niivue/mono/commit/66042339))
+- **nv-ohif:** snap the crosshair to voxel centres, not frameAt ([8b6cc30e](https://github.com/niivue/mono/commit/8b6cc30e))
+- **nv-ohif:** give measurements the displayed slice's identity ([0918b322](https://github.com/niivue/mono/commit/0918b322))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.135 (2026-11-09)
 
 ### Features

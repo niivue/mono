@@ -108,9 +108,15 @@ export function parseMultipartRelated(
   const delimiter = encoder.encode(`\r\n--${boundary}`)
   const crlfcrlf = encoder.encode('\r\n\r\n')
   // Whether the delimiter whose CRLF is at `at` ends as a delimiter must.
+  // Closing: "--", padding, then CRLF or the end of the body. Otherwise:
+  // padding, then CRLF. Anything else is part data.
   const ends = (at: number): boolean => {
-    const c = bytes[at + delimiter.length]
-    return c === 0x2d || c === 0x0d || c === 0x20 || c === 0x09
+    let i = at + delimiter.length
+    const closing = bytes[i] === 0x2d && bytes[i + 1] === 0x2d
+    if (closing) i += 2
+    while (bytes[i] === 0x20 || bytes[i] === 0x09) i++
+    if (closing && i === bytes.length) return true
+    return bytes[i] === 0x0d && bytes[i + 1] === 0x0a
   }
   const nextDelimiter = (from: number): number => {
     let i = indexOfSubarray(bytes, delimiter, from)

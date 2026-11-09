@@ -154,6 +154,32 @@ describe('parseMultipartRelated', () => {
     }
   })
 
+  it('keeps a delimiter line that does not end as one inside part data', () => {
+    const enc = new TextEncoder()
+    // "--" then not CRLF, and padding then not CRLF.
+    const a = enc.encode('one\r\n--BOUNDARY--X\r\ntwo')
+    const b = enc.encode('one\r\n--BOUNDARY \tX\r\ntwo')
+    const body = buildMultipart('BOUNDARY', [a, b])
+    for (const type of [
+      'multipart/related; boundary=BOUNDARY',
+      'multipart/related',
+    ]) {
+      const parts = parseMultipartRelated(body, type)
+      expect(parts.map((p) => new TextDecoder().decode(p))).toEqual([
+        'one\r\n--BOUNDARY--X\r\ntwo',
+        'one\r\n--BOUNDARY \tX\r\ntwo',
+      ])
+    }
+  })
+
+  it('takes a closing delimiter at the end of the body', () => {
+    const full = buildMultipart('BOUNDARY', [new Uint8Array([1, 2, 3])])
+    // Drop the trailing CRLF after "--BOUNDARY--".
+    const body = full.subarray(0, full.length - 2)
+    const parts = parseMultipartRelated(body, 'multipart/related')
+    expect(parts.map((p) => Array.from(p))).toEqual([[1, 2, 3]])
+  })
+
   it('falls back to the whole body when not multipart', () => {
     const raw = new Uint8Array([9, 8, 7])
     const parts = parseMultipartRelated(raw, 'application/dicom')

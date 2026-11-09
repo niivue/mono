@@ -81,6 +81,9 @@
         border-color: var(--cyan);
         outline: none;
       }
+      header .control a {
+        color: var(--cyan);
+      }
       header input[type='checkbox'] {
         margin: 0 3px 0 0;
       }
@@ -225,8 +228,8 @@
           <option value="openslide-hamamatsu-2">OpenSlide Hamamatsu-2 (DICOM, extended offset table)</option>
           <option value="openslide-jp2k-rct">OpenSlide CMU-1 JP2K RCT (DICOM, JPEG 2000 reversible colour)</option>
           <option value="dzi-highsmith">OpenSeadragon highsmith (DZI, web)</option>
-          <option value="tiff-cmu1">OpenSlide CMU-1 (Aperio SVS/TIFF)</option>
         </select>
+        <a href="../demo-ext-tile/" title="TIFF/SVS slides: the tile extension demo">TIFF/SVS</a>
       </span>
       <span class="control">
         <label for="levelMode">Level</label>
@@ -290,6 +293,10 @@
           <option value="nearest">nearest</option>
         </select>
       </span>
+      <label class="control" id="retinaControl" for="retina" title="Draw at the display's native pixel ratio, or in CSS pixels" hidden>
+        <input id="retina" type="checkbox" checked />
+        Retina
+      </label>
     </header>
     <main>
       <canvas id="tileCanvas" tabindex="0"></canvas>

@@ -10,7 +10,7 @@
 // "Backend feature parity"). The toggle is hidden on pages that don't
 // use NiiVue (e.g. stitch.html).
 
-import { backendSwitchUrl, getBackendFromUrl } from './backend'
+import { type Backend, backendSwitchUrl, getBackendFromUrl } from './backend'
 
 type Page = { href: string; label: string }
 
@@ -97,15 +97,14 @@ function makeLink(page: Page, currentPath: string): HTMLAnchorElement {
   if (isActive) {
     a.setAttribute('aria-current', 'page')
   }
-  // Preserve `?backend=` across navigation so the chosen backend sticks
-  // (stitch.html doesn't use NiiVue and ignores the param, but the value
-  // persists so the user lands on the right backend when navigating back).
-  const backend = getBackendFromUrl()
-  if (backend === 'webgpu') {
-    a.href = `${page.href}?backend=webgpu`
-  } else {
-    a.href = page.href
-  }
+  // Carry an explicit `?backend=` choice across navigation so it sticks
+  // (stitch.html ignores it but keeps it for the way back). Without one, each
+  // page uses its own default (tile-range WebGPU, the others WebGL2).
+  const chosen = new URLSearchParams(window.location.search).get('backend')
+  a.href =
+    chosen === 'webgpu' || chosen === 'webgl2'
+      ? `${page.href}?backend=${chosen}`
+      : page.href
   return a
 }
 
@@ -116,9 +115,9 @@ function appendSeparator(slot: HTMLElement): void {
   slot.appendChild(sep)
 }
 
-function buildBackendToggle(): HTMLSpanElement {
+function buildBackendToggle(pageDefault: Backend): HTMLSpanElement {
   const wgpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator
-  const current = getBackendFromUrl()
+  const current = getBackendFromUrl(pageDefault)
   const wrap = document.createElement('span')
   wrap.className = 'backend-toggle'
   const mk = (
@@ -141,7 +140,7 @@ function buildBackendToggle(): HTMLSpanElement {
   return wrap
 }
 
-export function installNav(): void {
+export function installNav(pageDefault: Backend = 'webgl2'): void {
   installActiveStyles()
   const here = window.location.pathname
   const slots = document.querySelectorAll<HTMLElement>('[data-nav-links]')
@@ -156,6 +155,6 @@ export function installNav(): void {
         slot.appendChild(makeLink(page, here))
       }
     }
-    slot.appendChild(buildBackendToggle())
+    slot.appendChild(buildBackendToggle(pageDefault))
   }
 }

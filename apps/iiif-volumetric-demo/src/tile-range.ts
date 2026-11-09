@@ -17,7 +17,17 @@ import {
 import { getBackendFromUrl, isWebGpuAvailable } from './backend'
 import { installNav } from './nav'
 
-installNav()
+// Tiled pages default to WebGPU; the other iiif demos default to WebGL2.
+const backend = getBackendFromUrl('webgpu')
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with anti-aliasing
+// on, so it defaults off there and on elsewhere.
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+const aaParam = new URLSearchParams(location.search).get('aa')
+const isAntiAlias = aaParam ? aaParam === 'on' : !isWebKit
+
+installNav('webgpu')
 
 const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
 const DEFAULT_DICOM_WSI_ID = 'cptac-brca_dicom'
@@ -44,10 +54,23 @@ const els = {
   zoomIn: el<HTMLButtonElement>('zoomIn'),
   fit: el<HTMLButtonElement>('fit'),
   showGrid: el<HTMLInputElement>('showGrid'),
+  aaSelect: el<HTMLSelectElement>('aaSelect'),
+  filter: el<HTMLSelectElement>('filter'),
+  retina: el<HTMLInputElement>('retina'),
+  retinaLabel: el<HTMLLabelElement>('retinaLabel'),
   canvas: el<HTMLCanvasElement>('tileCanvas'),
   hud: el<HTMLDivElement>('hud'),
   rangeLog: el<HTMLDivElement>('rangeLog'),
   fallback: el<HTMLDivElement>('fallback'),
+}
+
+// Anti-aliasing is fixed when the context is made, so the menu reloads with
+// ?aa=. Wired before anything loads.
+els.aaSelect.value = isAntiAlias ? 'on' : 'off'
+els.aaSelect.onchange = () => {
+  const url = new URL(location.href)
+  url.searchParams.set('aa', els.aaSelect.value)
+  location.href = url.href
 }
 
 let view: SlideView | null = null
@@ -120,7 +143,7 @@ function screenForCanvas(): NVSlideScreen {
   return {
     widthCss: rect.width,
     heightCss: rect.height,
-    devicePixelRatio: window.devicePixelRatio || 1,
+    devicePixelRatio: els.retina.checked ? window.devicePixelRatio || 1 : 1,
   }
 }
 
@@ -135,13 +158,17 @@ function resizeCanvas(screen: NVSlideScreen): void {
 }
 
 async function createView(): Promise<SlideView> {
-  const backend = getBackendFromUrl()
   if (backend === 'webgpu' && isWebGpuAvailable()) {
-    const renderer = await SlideRendererGPU.create(els.canvas)
+    const renderer = await SlideRendererGPU.create(els.canvas, {
+      antialias: isAntiAlias,
+    })
     if (renderer) return { kind: 'gpu', renderer }
     console.warn('WebGPU unavailable; falling back to WebGL2')
   }
-  const gl = els.canvas.getContext('webgl2', { alpha: false, antialias: false })
+  const gl = els.canvas.getContext('webgl2', {
+    alpha: false,
+    antialias: isAntiAlias,
+  })
   if (!gl) throw new Error('WebGL2 is not available')
   const renderer = new SlideRenderer()
   renderer.init(gl)
@@ -343,6 +370,26 @@ els.fit.addEventListener('click', () => slide?.fitToScreen(screenForCanvas()))
 els.zoomIn.addEventListener('click', () => zoomCentered(1.45))
 els.zoomOut.addEventListener('click', () => zoomCentered(1 / 1.45))
 window.addEventListener('resize', requestRender)
+els.filter.addEventListener('change', () => {
+  if (!view) return
+  view.renderer.isNearestInterpolation = els.filter.value === 'nearest'
+  requestRender()
+})
+// Retina is offered only on a HiDPI display, re-checked when the window moves
+// to a display with another pixel ratio (or the browser zoom changes).
+function watchPixelRatio(): void {
+  els.retinaLabel.hidden = window.devicePixelRatio <= 1
+  matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
+    'change',
+    () => {
+      watchPixelRatio()
+      requestRender()
+    },
+    { once: true },
+  )
+}
+watchPixelRatio()
+els.retina.addEventListener('change', requestRender)
 
 function zoomCentered(factor: number): void {
   if (!slide) return
@@ -353,6 +400,7 @@ function zoomCentered(factor: number): void {
 async function main(): Promise<void> {
   els.source.value = sourceFromUrl()
   view = await createView()
+  view.renderer.isNearestInterpolation = els.filter.value === 'nearest'
   await loadManifestForCurrentSource()
   requestRender()
 }

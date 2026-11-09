@@ -726,7 +726,8 @@ overrides of the button style.
 `bunx nx dev uikit` serves the package's own demo pages with Vite; the dev
 server also mounts `@niivue/dev-images`, so the pages can load real volumes
 from `/volumes/...`. Each page's nav links to the others and marks the current
-one; a backend menu reloads it on WebGL2 or WebGPU, and a status bar at the
+one; a backend menu reloads it on WebGL2 or WebGPU (`slide-wsi.html` defaults
+to WebGPU, the others to WebGL2), and a status bar at the
 bottom shows help on the left and the page's state on the right (yellow while
 it waits, green for a result, red for an error). `demo.css`, `statusBar.js`
 and `urlParamSelect.js` are shared by the pages.

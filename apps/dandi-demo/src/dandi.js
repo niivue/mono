@@ -208,6 +208,8 @@ const els = {
   backendSelect: document.getElementById('backendSelect'),
   aaSelect: document.getElementById('aaSelect'),
   slideFilter: el('slideFilter'),
+  retina: el('retina'),
+  retinaLabel: el('retinaLabel'),
   dataset: el('dataset'),
   axis: el('axis'),
   plane: el('plane'),
@@ -250,11 +252,14 @@ function reloadWith(key, value, replace = false) {
   if (replace) location.replace(url.href)
   else location.href = url.href
 }
-els.backendSelect.value = backend
-els.backendSelect.onchange = () =>
-  reloadWith('backend', els.backendSelect.value)
-els.aaSelect.value = isAntiAlias ? 'on' : 'off'
-els.aaSelect.onchange = () => reloadWith('aa', els.aaSelect.value)
+// A toolbar <select> for a page setting held in the URL (copied from
+// examples/urlParamSelect.js; an app cannot import it).
+function urlParamSelect(select, name, value) {
+  select.value = value
+  select.onchange = () => reloadWith(name, select.value)
+}
+urlParamSelect(els.backendSelect, 'backend', backend)
+urlParamSelect(els.aaSelect, 'aa', isAntiAlias ? 'on' : 'off')
 
 let nv = null
 let slideView = null
@@ -525,7 +530,7 @@ function slideScreen() {
   return {
     widthCss: Math.max(1, rect.width),
     heightCss: Math.max(1, rect.height),
-    devicePixelRatio: window.devicePixelRatio || 1,
+    devicePixelRatio: els.retina.checked ? window.devicePixelRatio || 1 : 1,
   }
 }
 
@@ -539,13 +544,15 @@ function resizeSlideCanvas(screen) {
 
 async function createSlideView() {
   if (backend === 'webgpu' && 'gpu' in navigator) {
-    const renderer = await SlideRendererGPU.create(els.slideCanvas)
+    const renderer = await SlideRendererGPU.create(els.slideCanvas, {
+      antialias: isAntiAlias,
+    })
     if (renderer) return { kind: 'gpu', renderer }
     console.warn('WebGPU unavailable for the slide pane; using WebGL2')
   }
   const gl = els.slideCanvas.getContext('webgl2', {
     alpha: false,
-    antialias: false,
+    antialias: isAntiAlias,
   })
   if (!gl) throw new Error('WebGL2 is not available')
   const renderer = new SlideRenderer()
@@ -1286,6 +1293,21 @@ els.fit.addEventListener('click', () => {
   requestSlideRender()
 })
 window.addEventListener('resize', requestSlideRender)
+// Retina is offered only on a HiDPI display, re-checked when the window moves
+// to a display with another pixel ratio (or the browser zoom changes).
+function watchPixelRatio() {
+  els.retinaLabel.hidden = window.devicePixelRatio <= 1
+  matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
+    'change',
+    () => {
+      watchPixelRatio()
+      requestSlideRender()
+    },
+    { once: true },
+  )
+}
+watchPixelRatio()
+els.retina.addEventListener('change', requestSlideRender)
 
 async function main() {
   // ?dataset=<key> opens on that Dandiset (e.g. ?dataset=spim), when the menu

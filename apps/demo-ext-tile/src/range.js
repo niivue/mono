@@ -148,7 +148,7 @@ const OMEZARR_STORES = {
   stent: {
     id: 'stent.ome.zarr',
     name: 'Stent OME-Zarr',
-    levels: [2],
+    levels: [2, 1, 0],
   },
   pawpawsaurus: {
     id: 'pawpawsaurus.ome.zarr',

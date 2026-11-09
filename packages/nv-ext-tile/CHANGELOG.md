@@ -1,3 +1,26 @@
+## 1.0.0-rc.25 (2026-11-09)
+
+### Features
+
+- **nv-ext-tile:** DicomWebWsiSource for DICOMweb whole-slide tiles ([fd930f5a](https://github.com/niivue/mono/commit/fd930f5a))
+
+### Fixes
+
+- **nv-ext-tile:** drop padding from a boundary read off the body ([aa7f3b94](https://github.com/niivue/mono/commit/aa7f3b94))
+- **nv-ext-tile:** keep a [1,1] PixelSpacing when no volume size replaces it ([6b432167](https://github.com/niivue/mono/commit/6b432167))
+- **nv-ext-tile:** require a strict multipart delimiter ending ([dfdc3520](https://github.com/niivue/mono/commit/dfdc3520))
+- **nv-ext-tile:** match multipart delimiters per RFC 2046, encode frame URLs ([50e9f1c4](https://github.com/niivue/mono/commit/50e9f1c4))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.131
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.24 (2026-11-09)
 
 ### Features

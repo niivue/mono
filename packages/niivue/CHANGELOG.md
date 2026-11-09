@@ -1,3 +1,13 @@
+## 1.0.0-rc.131 (2026-11-09)
+
+### Features
+
+- **nv-ext-tile:** DicomWebWsiSource for DICOMweb whole-slide tiles ([fd930f5a](https://github.com/niivue/mono/commit/fd930f5a))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.130 (2026-11-09)
 
 ### Features

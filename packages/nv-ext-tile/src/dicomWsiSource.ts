@@ -8,15 +8,16 @@ import type {
 } from '@niivue/niivue'
 import {
   fileKey,
-  type SlideIndexInstance,
+  type InstanceCore,
   type SlideIndexLevel,
   type SlideIndexSlide,
   tileMap,
 } from './dicomIndex'
+import type { DicomJsonSlide } from './dicomJson'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs (JPEG 2000 and JPEG-LS need a
 // registered decoder, e.g. registerDcm2niixDecoders()).
-const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
+export const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
   '1.2.840.10008.1.2.4.50': 'image/jpeg', // JPEG Baseline (Process 1)
   '1.2.840.10008.1.2.4.51': 'image/jpeg', // JPEG Extended (Process 2 & 4)
   '1.2.840.10008.1.2.4.80': 'image/jls', // JPEG-LS lossless
@@ -89,7 +90,7 @@ export class DicomWsiSource implements SlideTileSource {
   ) {
     this.files = filesFor(slide, files)
     this.maps = slide.levels.map(tileMap)
-    this.manifest = manifestOf(slide, this.maps)
+    this.manifest = manifestOf(slide, this.maps, { fileUrl: (i) => i.file })
   }
 
   bind(host: SlideSourceHost): void {
@@ -145,26 +146,28 @@ export class DicomWsiSource implements SlideTileSource {
  * The slide's NVSlide manifest. Each tile's `frame` is its DICOM frame number;
  * `fileUrl` names an instance's file (the ICC profile's location).
  */
-export function manifestOf(
-  slide: SlideIndexSlide,
+export function manifestOf<I extends InstanceCore>(
+  /** A slide from indexDicomWsi or indexDicomWsiMetadata. */
+  slide: Omit<DicomJsonSlide, 'instances' | 'iccProfile'> & {
+    instances: I[]
+    iccProfile?: { offset?: number; length?: number; colorSpace?: string }
+  },
   /** Each level's {@link tileMap}. */
   maps: readonly Int32Array[],
   {
     format = 'dicom-wsi-index-v1',
-    fileUrl = (i: SlideIndexInstance) => i.file,
+    fileUrl,
   }: {
     format?: string
-    fileUrl?: (instance: SlideIndexInstance) => string
-  } = {},
+    fileUrl: (instance: I) => string
+  },
 ): NVSlideManifest {
   const l0 = slide.levels[0]
   if (!l0) throw new Error('the slide has no levels')
   // The index puts each level's first instance in slide.instances.
-  const inst0 = slide.instances[l0.instances[0] as number] as SlideIndexInstance
+  const inst0 = slide.instances[l0.instances[0] as number] as I
   const levels = slide.levels.map((level, index): NVSlideLevelManifest => {
-    const inst = slide.instances[
-      level.instances[0] as number
-    ] as SlideIndexInstance
+    const inst = slide.instances[level.instances[0] as number] as I
     const codec = CODEC_BY_TRANSFER_SYNTAX[inst.transferSyntax]
     if (!codec)
       throw new Error(
@@ -202,7 +205,7 @@ export function manifestOf(
       transferSyntaxUid: inst.transferSyntax,
       photometric: inst.photometric,
       bitsStored: inst.bitsStored,
-      frames: level.frames.offset.length,
+      frames: level.frames.frame.length,
       // The index made one slide per optical path and focal plane.
       opticalPaths: 1,
       focalPlanes: 1,
@@ -223,7 +226,14 @@ export function manifestOf(
     channels: 'encoded-rgb',
     ...(slide.pixelSpacingMM ? { pixelSpacingMM: slide.pixelSpacingMM } : {}),
     ...(slide.iccProfile
-      ? { iccProfile: { url: fileUrl(inst0), ...slide.iccProfile } }
+      ? {
+          iccProfile: {
+            url: fileUrl(inst0),
+            offset: slide.iccProfile.offset,
+            length: slide.iccProfile.length,
+            colorSpace: slide.iccProfile.colorSpace,
+          },
+        }
       : {}),
     levels,
   }

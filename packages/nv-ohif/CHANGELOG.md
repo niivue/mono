@@ -1,3 +1,308 @@
+## 1.0.0-rc.145 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.138
+- Updated nv-ext-tile to 1.0.0-rc.32
+- Updated uikit to 1.0.0-rc.135
+
+## 1.0.0-rc.144 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.137
+- Updated nv-ext-tile to 1.0.0-rc.31
+- Updated uikit to 1.0.0-rc.134
+
+## 1.0.0-rc.143 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.136
+- Updated nv-ext-tile to 1.0.0-rc.30
+- Updated uikit to 1.0.0-rc.133
+
+## 1.0.0-rc.142 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.135
+- Updated nv-ext-tile to 1.0.0-rc.29
+- Updated uikit to 1.0.0-rc.132
+
+## 1.0.0-rc.141 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.134
+- Updated nv-ext-tile to 1.0.0-rc.28
+- Updated uikit to 1.0.0-rc.131
+
+## 1.0.0-rc.140 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** answer OHIF rotate/flip commands on NiiVue viewports ([6bebf88a](https://github.com/niivue/mono/commit/6bebf88a))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.139 (2026-11-09)
+
+### Fixes
+
+- **nv-ohif:** strip padding from a boundary recovered from the body ([f28313d6](https://github.com/niivue/mono/commit/f28313d6))
+- **nv-ohif:** a multipart delimiter must end as RFC 2046 says ([2d67bbe3](https://github.com/niivue/mono/commit/2d67bbe3))
+- **nv-ohif:** count a multipart delimiter only after CRLF ([ab6d0bfd](https://github.com/niivue/mono/commit/ab6d0bfd))
+- **nv-ohif:** resolve a relative DICOMweb root against document.baseURI ([d3ee5b1d](https://github.com/niivue/mono/commit/d3ee5b1d))
+- **nv-ohif:** load relative DICOMweb roots; start crosshair on a voxel ([934540af](https://github.com/niivue/mono/commit/934540af))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.138 (2026-11-09)
+
+### Fixes
+
+- **nv-ohif:** exclude dist from typecheck again ([e96277e2](https://github.com/niivue/mono/commit/e96277e2))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.137 (2026-11-09)
+
+### Fixes
+
+- **nv-ohif:** stop over-disabling host buttons; accept dcmjs 0.52 ([62b9c5a3](https://github.com/niivue/mono/commit/62b9c5a3))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.133
+- Updated nv-ext-tile to 1.0.0-rc.27
+- Updated uikit to 1.0.0-rc.130
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.136 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** DICOM frame identity on NiiVue measurements ([6733efe9](https://github.com/niivue/mono/commit/6733efe9))
+
+### Fixes
+
+- **nv-ohif:** frameAt bounds depth without spreading the contour ([c770c566](https://github.com/niivue/mono/commit/c770c566))
+- **nv-ohif:** frameAt bounds the depth spread of all points ([c3771d9f](https://github.com/niivue/mono/commit/c3771d9f))
+- **nv-ohif:** snap the crosshair once a volume loads ([6cc0d9c5](https://github.com/niivue/mono/commit/6cc0d9c5))
+- **nv-ohif:** frameAt needs the points within ON_PLANE of each other ([c082a5b6](https://github.com/niivue/mono/commit/c082a5b6))
+- **nv-ohif:** re-reflect a row when its slice frame appears ([66042339](https://github.com/niivue/mono/commit/66042339))
+- **nv-ohif:** snap the crosshair to voxel centres, not frameAt ([8b6cc30e](https://github.com/niivue/mono/commit/8b6cc30e))
+- **nv-ohif:** give measurements the displayed slice's identity ([0918b322](https://github.com/niivue/mono/commit/0918b322))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.135 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** convert enhanced/multi-frame DICOMweb instances ([3c35df7a](https://github.com/niivue/mono/commit/3c35df7a))
+
+### Fixes
+
+- **nv-ohif:** take the frame count from series metadata; bound all requests ([bd990802](https://github.com/niivue/mono/commit/bd990802))
+- **nv-ohif:** release the overlay entry on a cancel press ([731c0436](https://github.com/niivue/mono/commit/731c0436))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.134 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** choose the dcm2niix output by policy; cancel overlay conversion; skip derived objects ([07dc11d7](https://github.com/niivue/mono/commit/07dc11d7))
+
+### Fixes
+
+- **nv-ohif:** rank magnitude over R and I parts in dcm2niix outputs ([d3607d5f](https://github.com/niivue/mono/commit/d3607d5f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.133 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** route OHIF's standard commands; independent windows; NiiVue toolbar evaluator ([39a1e8cc](https://github.com/niivue/mono/commit/39a1e8cc))
+
+### Fixes
+
+- **nv-ohif:** explicit context wins over tool commands too ([b5d1733e](https://github.com/niivue/mono/commit/b5d1733e))
+- **nv-ohif:** check every toolbar command; explicit context wins ([c28d55a2](https://github.com/niivue/mono/commit/c28d55a2))
+- **nv-ohif:** refresh the toolbar with the active viewport id ([706a50d4](https://github.com/niivue/mono/commit/706a50d4))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.132 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** depend on nv-ext-tile/dicom for the WSI tile decoders ([49d65cb4](https://github.com/niivue/mono/commit/49d65cb4))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.132
+- Updated nv-ext-tile to 1.0.0-rc.26
+- Updated uikit to 1.0.0-rc.129
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.131 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.131
+- Updated uikit to 1.0.0-rc.128
+
+## 1.0.0-rc.130 (2026-11-09)
+
+### Fixes
+
+- **nv-ohif:** take OHIF's managers from the module params; report viewport ready ([4a4a39ee](https://github.com/niivue/mono/commit/4a4a39ee))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.129 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.130
+- Updated uikit to 1.0.0-rc.127
+
+## 1.0.0-rc.128 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.129
+- Updated uikit to 1.0.0-rc.126
+
+## 1.0.0-rc.127 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.128
+- Updated uikit to 1.0.0-rc.125
+
+## 1.0.0-rc.126 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.127
+- Updated uikit to 1.0.0-rc.124
+
+## 1.0.0-rc.125 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.126
+- Updated uikit to 1.0.0-rc.123
+
+## 1.0.0-rc.124 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.125
+- Updated uikit to 1.0.0-rc.122
+
+## 1.0.0-rc.123 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.124
+- Updated uikit to 1.0.0-rc.121
+
+## 1.0.0-rc.122 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.123
+- Updated uikit to 1.0.0-rc.120
+
+## 1.0.0-rc.121 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.122
+- Updated uikit to 1.0.0-rc.119
+
+## 1.0.0-rc.120 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.121
+- Updated uikit to 1.0.0-rc.118
+
+## 1.0.0-rc.119 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.120
+- Updated uikit to 1.0.0-rc.117
+
+## 1.0.0-rc.118 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.119
+- Updated uikit to 1.0.0-rc.116
+
+## 1.0.0-rc.117 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.115
+
+## 1.0.0-rc.116 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.114
+
+## 1.0.0-rc.115 (2026-11-08)
+
+### Fixes
+
+- **nv-ohif:** build the library with the production JSX runtime ([49022f9d](https://github.com/niivue/mono/commit/49022f9d))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.114 (2026-11-08)
 
 ### Updated Dependencies

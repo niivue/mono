@@ -6,16 +6,17 @@ import { test } from './sharedPage'
 // backends. A pure-red tile with a table that swaps red and blue must draw blue;
 // turning colour management off must draw red again, without re-decoding.
 //
-// WebGPU is skipped when the runner has no adapter.
+// WebGPU is skipped when the runner has no adapter. webgpu-aa also checks that
+// the 4x multisample target validates and resolves to the same colour.
 
 test.use(webgpuUse)
 
-for (const backend of ['webgl2', 'webgpu'] as const) {
+for (const backend of ['webgl2', 'webgpu', 'webgpu-aa'] as const) {
   test(`slide colour table swaps red and blue (${backend})`, async ({
     page,
   }) => {
     const result = await page.evaluate(`(async () => {
-      if ('${backend}' === 'webgpu') {
+      if ('${backend}'.startsWith('webgpu')) {
         if (!navigator.gpu) return { skip: 'no navigator.gpu' }
         const adapter = await navigator.gpu.requestAdapter().catch(() => null)
         if (!adapter) return { skip: 'no WebGPU adapter' }
@@ -48,8 +49,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       const screen = { widthCss: 64, heightCss: 64, devicePixelRatio: 1 }
       slide.fitToScreen(screen, 1)
       let draw
-      if ('${backend}' === 'webgpu') {
-        const r = await SlideRendererGPU.create(canvas)
+      if ('${backend}'.startsWith('webgpu')) {
+        const r = await SlideRendererGPU.create(canvas, { antialias: '${backend}' === 'webgpu-aa' })
         if (!r) return { skip: 'SlideRendererGPU unavailable' }
         draw = () => r.render([slide], screen)
       } else {

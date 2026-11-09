@@ -3,10 +3,16 @@ import type NiiVue from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
 import {
   getNiivueEntryForViewport,
+  refreshToolbar,
   registerNiivue,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
+import {
+  NIIVUE_UNSUPPORTED_EVALUATOR,
+  withNiivueSupport,
+} from './niivueSupport'
+import type { OhifToolbarButton } from './ohif-types'
 import { ohifToolToAnnotationTool } from './toolBridge'
 import {
   getNiivueToolbarModule,
@@ -18,6 +24,7 @@ import {
   NIIVUE_WL_SECTION,
   niivueToolbarCustomization,
 } from './toolbar'
+import type { WsiSlideView } from './wsiSlideView'
 
 afterEach(() => unregisterNiivue('vp-1'))
 
@@ -206,7 +213,11 @@ describe('toolbar evaluators', () => {
     expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
     entry.overlayUIDs = ['ds-2']
     expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
-    expect(evaluate({ viewportId: 'vp-none' })?.isActive).toBe(true) // sole fallback
+    // A non-NiiVue viewport never inherits the NiiVue one's state.
+    expect(evaluate({ viewportId: 'vp-none' })).toEqual({
+      disabled: true,
+      disabledText: 'Available on NiiVue viewports',
+    })
   })
 
   it('gate W/L presets by the base series modality', () => {
@@ -275,5 +286,263 @@ describe('toolbar evaluators', () => {
     expect(evaluator('evaluate.niivue')({ viewportId: 'vp-1' })?.disabled).toBe(
       false,
     )
+  })
+})
+
+describe('evaluate.niivue.unsupported', () => {
+  const button = (
+    id: string,
+    commands: OhifToolbarButton['props']['commands'],
+  ): OhifToolbarButton => ({
+    id,
+    uiType: 'ohif.toolButton',
+    props: { commands },
+  })
+  const evaluate = getNiivueToolbarModule({
+    servicesManager: {
+      services: {
+        toolGroupService: {
+          getActivePrimaryMouseButtonTool: (group: string) =>
+            group === 'mpr' ? 'Pan' : undefined,
+        },
+      },
+    },
+  }).find((e) => e.name === NIIVUE_UNSUPPORTED_EVALUATOR)?.evaluate
+  if (!evaluate) throw new Error('missing evaluator')
+  const disabled = {
+    disabled: true,
+    disabledText: 'Not available on NiiVue viewports',
+  }
+
+  it('leaves non-NiiVue viewports to the other evaluators', () => {
+    registerNiivue('vp-1', { volumes: [{}] } as unknown as NiiVue)
+    expect(
+      evaluate({
+        viewportId: 'cs-1',
+        button: button('Rotate', 'rotateViewportCW'),
+      }),
+    ).toBeUndefined()
+  })
+
+  it('disables what NiiVue cannot do; keeps commands and tools it can', () => {
+    registerNiivue('vp-1', { volumes: [{}] } as unknown as NiiVue)
+    updateNiivueViewport('vp-1', { toolGroupId: 'mpr' })
+    const cases: Array<[OhifToolbarButton, unknown]> = [
+      [button('Rotate', 'rotateViewportCW'), undefined],
+      [button('Flip', 'flipViewportHorizontal'), undefined],
+      [button('Invert', [{ commandName: 'invertViewport' }]), disabled],
+      [button('Reset', 'resetViewport'), undefined],
+      [button('Fit', ['fitViewportToWindow', 'niivueResetView']), undefined],
+      [button('Mixed', ['resetViewport', 'invertViewport']), disabled],
+      // Section lists, menus and the layout selector carry no commands.
+      [button('Empty', undefined), undefined],
+      [button('TagBrowser', 'openDICOMTagViewer'), undefined],
+      [button('Tags', ['openDICOMTagViewer', 'invertViewport']), disabled],
+      // An explicit Cornerstone context bypasses the NIIVUE shadow.
+      [
+        button('CsReset', [
+          { commandName: 'resetViewport', context: 'CORNERSTONE' },
+        ]),
+        disabled,
+      ],
+      [
+        button('NvReset', [
+          { commandName: 'resetViewport', context: 'NIIVUE' },
+        ]),
+        undefined,
+      ],
+      [
+        button('CsNvReset', [
+          { commandName: 'niivueResetView', context: 'CORNERSTONE' },
+        ]),
+        disabled,
+      ],
+      // OHIF runs every command, not just the first.
+      [
+        button('PanRotate', [
+          {
+            commandName: 'setToolActiveToolbar',
+            commandOptions: { toolName: 'Pan' },
+          },
+          'invertViewport',
+        ]),
+        disabled,
+      ],
+      [
+        button('CsPan', [
+          {
+            commandName: 'setToolActiveToolbar',
+            commandOptions: { toolName: 'Pan' },
+            context: 'CORNERSTONE',
+          },
+        ]),
+        disabled,
+      ],
+      [
+        button('Pan', 'setToolActiveToolbar'),
+        { disabled: false, isActive: true },
+      ],
+      [
+        button('Length', 'setToolActiveToolbar'),
+        { disabled: false, isActive: false },
+      ],
+      [
+        button('X', [
+          {
+            commandName: 'setToolActive',
+            commandOptions: { toolName: 'Crosshairs' },
+          },
+        ]),
+        disabled,
+      ],
+      // Without a toolGroupId OHIF targets the active viewport's Cornerstone
+      // tool group, which a NiiVue viewport lacks.
+      [
+        button('Y', [
+          {
+            commandName: 'setToolActive',
+            commandOptions: { toolName: 'EllipticalROI' },
+          },
+        ]),
+        disabled,
+      ],
+      [
+        button('Z', [
+          {
+            commandName: 'setToolActive',
+            commandOptions: { toolName: 'EllipticalROI', toolGroupId: 'mpr' },
+          },
+        ]),
+        { disabled: false, isActive: false },
+      ],
+    ]
+    for (const [b, expected] of cases)
+      expect(evaluate({ viewportId: 'vp-1', button: b })).toEqual(
+        expected as ReturnType<typeof evaluate>,
+      )
+  })
+
+  for (const sliceType of [SLICE_TYPE.RENDER, SLICE_TYPE.NONE])
+    it(`disables rotate and flip without 2D tiles (sliceType ${sliceType})`, () => {
+      registerNiivue('vp-1', {
+        volumes: [{}],
+        sliceType,
+      } as unknown as NiiVue)
+      for (const name of ['rotateViewportCW', 'flipViewportHorizontal'])
+        expect(
+          evaluate({ viewportId: 'vp-1', button: button(name, name) }),
+        ).toEqual(disabled)
+      expect(
+        evaluate({
+          viewportId: 'vp-1',
+          button: button('Reset', 'resetViewport'),
+        }),
+      ).toBeUndefined()
+    })
+
+  it('disables volume-only standard commands on a slide viewport', () => {
+    registerNiivue('vp-1', { volumes: [] } as unknown as NiiVue)
+    updateNiivueViewport('vp-1', {
+      slideView: {} as WsiSlideView,
+    })
+    for (const name of [
+      'setViewportOrientation',
+      'setWindowLevelPreset',
+      'rotateViewportCW',
+      'flipViewportVertical',
+    ])
+      expect(
+        evaluate({ viewportId: 'vp-1', button: button(name, name) }),
+      ).toEqual(disabled)
+    expect(
+      evaluate({
+        viewportId: 'vp-1',
+        button: button('Reset', 'resetViewport'),
+      }),
+    ).toBeUndefined()
+  })
+
+  it('enables only Length, Pan and Zoom on a slide viewport', () => {
+    registerNiivue('vp-1', { volumes: [] } as unknown as NiiVue)
+    updateNiivueViewport('vp-1', { slideView: {} as WsiSlideView })
+    const tool = (toolName: string) =>
+      evaluate({
+        viewportId: 'vp-1',
+        button: button(toolName, [
+          { commandName: 'setToolActiveToolbar', commandOptions: { toolName } },
+        ]),
+      })
+    for (const name of ['RectangleROI', 'Angle', 'CobbAngle', 'WindowLevel'])
+      expect(tool(name)).toEqual(disabled)
+    for (const name of ['Length', 'Pan', 'Zoom'])
+      expect(tool(name)).toMatchObject({ disabled: false })
+  })
+
+  it('withNiivueSupport prepends the evaluator and hoists hideWhenDisabled', () => {
+    const base = button('Rotate', 'rotateViewportCW')
+    expect(withNiivueSupport(base).props.evaluate).toEqual([
+      NIIVUE_UNSUPPORTED_EVALUATOR,
+    ])
+    const named = {
+      ...base,
+      props: { ...base.props, evaluate: 'evaluate.action' },
+    }
+    expect(withNiivueSupport(named).props.evaluate).toEqual([
+      NIIVUE_UNSUPPORTED_EVALUATOR,
+      'evaluate.action',
+    ])
+    const hidden = {
+      ...base,
+      props: {
+        ...base.props,
+        evaluate: { name: 'evaluate.cornerstoneTool', hideWhenDisabled: true },
+      },
+    }
+    const wrapped = withNiivueSupport(hidden)
+    expect(wrapped.props.hideWhenDisabled).toBe(true)
+    expect(wrapped.props.evaluate).toEqual([
+      NIIVUE_UNSUPPORTED_EVALUATOR,
+      { name: 'evaluate.cornerstoneTool', hideWhenDisabled: true },
+    ])
+    const list = { ...base, props: { ...base.props, evaluate: ['a', 'b'] } }
+    expect(withNiivueSupport(list).props.evaluate).toEqual([
+      NIIVUE_UNSUPPORTED_EVALUATOR,
+      'a',
+      'b',
+    ])
+    expect(withNiivueSupport(withNiivueSupport(list)).props.evaluate).toEqual([
+      NIIVUE_UNSUPPORTED_EVALUATOR,
+      'a',
+      'b',
+    ])
+  })
+})
+
+describe('refreshToolbar', () => {
+  const host = (active: string | null) => {
+    const calls: unknown[] = []
+    const servicesManager = {
+      services: {
+        toolbarService: {
+          refreshToolbarState: (props: unknown) => calls.push(props),
+        },
+        viewportGridService: { getActiveViewportId: () => active },
+      },
+    }
+    return { calls, servicesManager }
+  }
+
+  it('evaluates the active viewport, not the refreshing NiiVue one', () => {
+    // A NiiVue pane loading beside an active Cornerstone pane must not
+    // disable the Cornerstone pane's buttons.
+    const { calls, servicesManager } = host('cs-1')
+    refreshToolbar(servicesManager, 'vp-1')
+    expect(calls).toEqual([{ viewportId: 'cs-1' }])
+  })
+
+  it('falls back to the given viewport when none is active', () => {
+    const { calls, servicesManager } = host(null)
+    refreshToolbar(servicesManager, 'vp-1')
+    expect(calls).toEqual([{ viewportId: 'vp-1' }])
   })
 })

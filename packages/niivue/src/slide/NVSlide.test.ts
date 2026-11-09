@@ -293,6 +293,27 @@ async function loadLevel(slide: NVSlide, levelIndex: number): Promise<void> {
   await waitFor(() => slide.stats.completed === before + level.tiles.length)
 }
 
+describe('NVSlide auto level selection', () => {
+  // Default target 0.75 device pixels per tile pixel; makePyramid downsamples 1, 2, 4.
+  const level = (scale: number, devicePixelRatio?: number) => {
+    const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
+    slide.viewport.scale = scale
+    const screen = { widthCss: 32, heightCss: 16, devicePixelRatio }
+    const picked = slide.selectLevel(screen)?.index
+    expect(slide.visibleTiles(screen).level?.index).toBe(picked)
+    slide.dispose()
+    return picked
+  }
+
+  it('picks the level by device pixels (#638)', () => {
+    expect(level(0.5)).toBe(1) // no devicePixelRatio: CSS pixels, as before
+    for (const dpr of [1, 1.5, 2, 3]) {
+      expect(level(0.75 / dpr, dpr)).toBe(0)
+      expect(level(0.74 / dpr, dpr)).toBe(1)
+    }
+  })
+})
+
 describe('NVSlide coarse fallback layer', () => {
   it('offers cached coarser tiles, coarsest first, while the target level loads', async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())

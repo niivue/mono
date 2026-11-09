@@ -132,6 +132,17 @@ export class CinematicRenderer extends NVRenderer {
    * Stays not ready without EXT_color_buffer_float (float render targets) or
    * when its shaders fail to compile.
    */
+  private initTried = false
+
+  /** Builds the renderer on first use, once (as on WebGPU). */
+  ensure(gl: WebGL2RenderingContext): boolean {
+    if (!this.initTried) {
+      this.initTried = true
+      this.init(gl)
+    }
+    return this.isReady
+  }
+
   init(gl: WebGL2RenderingContext): void {
     if (!gl.getExtension('EXT_color_buffer_float')) return
     this.gl = gl

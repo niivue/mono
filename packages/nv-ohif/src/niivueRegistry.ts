@@ -1,5 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
+import type { SliceFrames } from './sliceFrames'
 import type { WsiSlideView } from './wsiSlideView'
 
 /**
@@ -17,15 +18,19 @@ export interface NiivueViewportEntry {
   overlayUIDs: string[]
   /** Guard against concurrent overlay loads. */
   overlayLoading: boolean
+  /** Cancels the overlay load in flight (re-toggle, base swap, unregister). */
+  overlayAbort?: AbortController
   /** Current clip plane preset name ('none' when off). See commands.ts. */
   clipPlane: string
   /**
    * Last known base-volume window/level ({ window: width, level: center }).
-   * Tracks both directions: forward commands set it; the viewport's
-   * pointer-release observer updates it from a manual contrast drag and pushes
-   * the change to OHIF (see commands.ts syncNiivueWindowLevelToOhif).
+   * The baseline for the change readout (commands.ts trackNiivueWindowLevel).
    */
   windowLevel?: { window: number; level: number }
+  /** OHIF tool group whose primary tool drives this viewport. */
+  toolGroupId?: string
+  /** Base volume slice -> DICOM frame, when converted from DICOM. */
+  sliceFrames?: SliceFrames
   /** Visible NVSlide view when this viewport is showing a whole-slide series. */
   slideView?: WsiSlideView
   /** Viewport-provided sink so commands can surface progress text (null = clear). */
@@ -49,6 +54,7 @@ export function registerNiivue(viewportId: string, nv: NiiVue): void {
 }
 
 export function unregisterNiivue(viewportId: string): void {
+  instances.get(viewportId)?.overlayAbort?.abort()
   instances.delete(viewportId)
 }
 
@@ -64,11 +70,17 @@ export function updateNiivueViewport(
       | 'windowLevel'
       | 'overlayUIDs'
       | 'overlayLoading'
+      | 'toolGroupId'
+      | 'sliceFrames'
     >
   >,
 ): void {
   const entry = instances.get(viewportId)
-  if (entry) Object.assign(entry, patch)
+  if (!entry) return
+  // A new base series invalidates an overlay conversion in flight.
+  if (patch.displaySets && patch.displaySets !== entry.displaySets)
+    entry.overlayAbort?.abort()
+  Object.assign(entry, patch)
 }
 
 export function getNiivueEntry(
@@ -77,8 +89,9 @@ export function getNiivueEntry(
   return viewportId === undefined ? undefined : instances.get(viewportId)
 }
 
-// OHIF exposes its services on the manager in some builds and only on
-// `window.services` in others (e.g. the current 3.x app), so read from either.
+// The viewport and commands get the managers from OHIF's module params; the
+// `window.services` fallback covers callers without one (the toolbar module,
+// the demo harness).
 export function ohifServices(
   servicesManager: OhifServicesManager | undefined,
 ): Record<string, unknown> | undefined {
@@ -88,40 +101,34 @@ export function ohifServices(
 }
 
 interface ViewportGridServiceLike {
-  getActiveViewportId?: () => string | undefined
+  getActiveViewportId?: () => string | null | undefined
 }
 
 /**
- * The entry for a viewport id, falling back to the sole registered entry
- * (covers layouts where a non-NiiVue viewport holds focus next to a single
- * NiiVue viewport).
+ * The entry for a viewport id. Only a missing id (no viewport grid, as in the
+ * demo harness, or OHIF's grid before a viewport is active) falls back to the
+ * sole registered entry: an id that is not ours means a Cornerstone viewport is
+ * active, which NiiVue must not touch.
  */
 export function getNiivueEntryForViewport(
-  viewportId: string | undefined,
+  viewportId: string | null | undefined,
 ): NiivueViewportEntry | undefined {
-  const exact = getNiivueEntry(viewportId)
-  if (exact) return exact
-  if (instances.size === 1) {
-    for (const entry of instances.values()) return entry
+  const id = viewportId ?? undefined
+  if (id === undefined && instances.size === 1) {
+    return instances.values().next().value
   }
-  return undefined
+  return getNiivueEntry(id)
 }
 
-/** The instance for a viewport id (same fallback as the entry lookup). */
-export function getNiivueForViewport(
-  viewportId: string | undefined,
-): NiiVue | undefined {
-  return getNiivueEntryForViewport(viewportId)?.nv
-}
-
-/** The entry a toolbar command should act on: the active viewport's. */
+/** The entry a command acts on: `viewportId`'s, else the active viewport's. */
 export function getActiveNiivueEntry(
   servicesManager: OhifServicesManager | undefined,
+  viewportId?: string,
 ): NiivueViewportEntry | undefined {
   const grid = ohifServices(servicesManager)?.viewportGridService as
     | ViewportGridServiceLike
     | undefined
-  return getNiivueEntryForViewport(grid?.getActiveViewportId?.())
+  return getNiivueEntryForViewport(viewportId ?? grid?.getActiveViewportId?.())
 }
 
 /** The NiiVue instance a toolbar command should act on: the active viewport's. */
@@ -133,23 +140,36 @@ export function getActiveNiivue(
 
 // Toolbar buttons are evaluated before our async attach registers the instance
 // and hold state (overlay on/off, clip preset) that commands change after the
-// evaluation, so nudge OHIF to re-evaluate on those transitions.
+// evaluation, so nudge OHIF to re-evaluate on those transitions. Evaluators
+// see this id as the toolbar's viewport, so it must be the active one (as in
+// OHIF's own refreshes): a NiiVue id while a Cornerstone pane is active would
+// disable that pane's buttons. `viewportId` is used only when none is active.
 export function refreshToolbar(
   servicesManager: OhifServicesManager | undefined,
   viewportId: string,
 ): void {
-  const svc = ohifServices(servicesManager)?.toolbarService as
+  const services = ohifServices(servicesManager)
+  const svc = services?.toolbarService as
     | { refreshToolbarState?: (props: Record<string, unknown>) => void }
     | undefined
-  svc?.refreshToolbarState?.({ viewportId })
+  const grid = services?.viewportGridService as
+    | ViewportGridServiceLike
+    | undefined
+  svc?.refreshToolbarState?.({
+    viewportId: grid?.getActiveViewportId?.() ?? viewportId,
+  })
 }
 
 interface CommandsManagerLike {
-  runCommand?: (name: string, options?: Record<string, unknown>) => unknown
+  runCommand?: (
+    name: string,
+    options?: Record<string, unknown>,
+    context?: string,
+  ) => unknown
 }
 
-// OHIF's commandsManager is passed as a viewport prop in some builds and only on
-// `window.commandsManager` in others (set by cornerstone's init), so read either.
+// As for services: the module params' commandsManager, else
+// `window.commandsManager` (set by cornerstone's init).
 export function ohifCommandsManager(
   commandsManager: CommandsManagerLike | undefined,
 ): CommandsManagerLike | undefined {

@@ -23,7 +23,6 @@ legendCheck.onchange = async function () {
 }
 colorbarCheck.onclick = function () {
   nv1.isColorbarVisible = this.checked
-  console.log('bings', this.checked)
 }
 colorBtn.addEventListener('input', (event) => {
   const input = event.target

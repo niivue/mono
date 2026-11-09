@@ -78,12 +78,5 @@ await nv1.loadMeshes([
   },
 ])
 
-// Log scalar ranges from metadata
-const mesh = nv1.meshes[0]
-const dpvMeta = mesh.trx.dpvMeta[dpvName]
-const dpsMeta = mesh.trx.dpsMeta[dpsName]
-if (dpvMeta) console.log('dpv range:', dpvMeta.global_min, dpvMeta.global_max)
-if (dpsMeta) console.log('dps range:', dpsMeta.global_min, dpsMeta.global_max)
-
 // Set initial slider range to match the active dpv overlay
 updateSliderRange()

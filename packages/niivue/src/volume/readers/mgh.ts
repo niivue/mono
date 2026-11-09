@@ -2,7 +2,7 @@ import { mat4 } from 'gl-matrix'
 import * as nifti from 'nifti-reader-js'
 import { decompress } from '@/codecs/NVGz'
 import { log } from '@/logger'
-import { NiiDataType } from '@/NVConstants'
+import { NiiDataType, NiiIntentCode } from '@/NVConstants'
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
 export const extensions = ['mgh', 'mgz']
@@ -247,6 +247,8 @@ export async function read(
     ]
     isLabel = mgLabelFiles.some((label) => filename.includes(label))
   }
+  // The label intent gives the volume a label colormap and nearest sampling.
+  if (isLabel) hdr.intent_code = NiiIntentCode.NIFTI_INTENT_LABEL
   return {
     // Readers must return raw multi-byte data as an ArrayBuffer so nii2volume
     // converts it to the typed array selected by hdr.datatypeCode. Returning

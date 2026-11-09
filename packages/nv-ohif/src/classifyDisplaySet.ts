@@ -13,6 +13,27 @@ export type NiivueLoadKind = 'nifti' | 'dicom-volume' | 'wsi' | 'unsupported'
 // not dcm2niix (dcm2niix is for cross-sectional volumes).
 const WSI_MODALITIES = new Set(['SM'])
 
+// Derived and non-image objects (segmentations, RT structures/plans/records,
+// reports, presentation states, key-object selections, registrations, documents,
+// fiducials, waveforms, audio) that dcm2niix cannot turn into a useful volume.
+// RTDOSE is a dose grid, so it stays on the dcm2niix path (owner Q8).
+const DERIVED_MODALITIES = new Set([
+  'SEG',
+  'RTSTRUCT',
+  'RTPLAN',
+  'RTRECORD',
+  'PLAN',
+  'SR',
+  'PR',
+  'KO',
+  'REG',
+  'DOC',
+  'FID',
+  'ECG',
+  'HD',
+  'AU',
+])
+
 function hasWadoInstances(ds: OhifDisplaySet): boolean {
   const instances = ds.instances
   if (!instances || instances.length === 0) return false
@@ -31,6 +52,7 @@ export function classifyDisplaySet(ds: OhifDisplaySet): NiivueLoadKind {
   if (displaySetToNiivue(ds) !== null) return 'nifti'
 
   const modality = typeof ds.Modality === 'string' ? ds.Modality : undefined
+  if (modality && DERIVED_MODALITIES.has(modality)) return 'unsupported'
   if (modality && WSI_MODALITIES.has(modality) && hasWadoInstances(ds)) {
     return 'wsi'
   }
@@ -39,4 +61,22 @@ export function classifyDisplaySet(ds: OhifDisplaySet): NiivueLoadKind {
   if (hasWadoInstances(ds)) return 'dicom-volume'
 
   return 'unsupported'
+}
+
+/** The viewport shows displaySets[0] only (owner Q7); name the rest. */
+export function extraDisplaySetsNote(
+  displaySets: ReadonlyArray<OhifDisplaySet>,
+): string | undefined {
+  const names = displaySets
+    .slice(1)
+    .map(
+      (ds) =>
+        ds.SeriesDescription ||
+        ds.Modality ||
+        ds.displaySetInstanceUID ||
+        'unnamed series',
+    )
+  return names.length > 0
+    ? `Not shown (one series per viewport): ${names.join(', ')}.`
+    : undefined
 }

@@ -54,6 +54,12 @@ urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
 let nv = null
 let busy = false
 
+// The menu holds bare file names: the Pages build rewrites '/volumes/' in page
+// script to its base path, but not in HTML attributes.
+function volumeUrl() {
+  return `/volumes/${els.volume.value}`
+}
+
 function setStatus(text) {
   els.status.textContent = text
 }
@@ -371,7 +377,7 @@ async function loadSelectedVolume() {
   els.volume.disabled = true
   setStatus('loading...')
   try {
-    await nv.loadVolumes([{ url: els.volume.value }])
+    await nv.loadVolumes([{ url: volumeUrl() }])
     setStatus(describeVolume())
   } catch (err) {
     setStatus(`load failed: ${err?.message ?? err}`)
@@ -399,7 +405,7 @@ async function main() {
   })
   await nv.attachToCanvas(els.canvas)
   document.getElementById('backendSelect').value = nv.backend
-  await nv.loadVolumes([{ url: els.volume.value }])
+  await nv.loadVolumes([{ url: volumeUrl() }])
   setStatus(describeVolume())
 
   // Browsers restore a control's value across a reload, so push the current

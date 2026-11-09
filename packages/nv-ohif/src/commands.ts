@@ -22,7 +22,14 @@ import {
   refreshToolbar,
   type StatusKind,
 } from './niivueRegistry'
-import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
+import type {
+  OhifCommandsModule,
+  OhifDisplaySet,
+  OhifExtensionParams,
+  OhifViewportProps,
+} from './ohif-types'
+import { frameAt, type SliceFrames } from './sliceFrames'
+import { getStandardCommandDefinitions } from './standardCommands'
 import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
 
 // Toolbar-facing slice type names -> NiiVue SLICE_TYPE values. String keys keep
@@ -256,67 +263,6 @@ function sameWindowLevel(
   return (
     Math.abs(a.window - b.window) < eps && Math.abs(a.level - b.level) < eps
   )
-}
-
-interface ViewportGridStateLike {
-  getState?: () => {
-    viewports?:
-      | Map<string, { displaySetInstanceUIDs?: string[] }>
-      | Record<string, { displaySetInstanceUIDs?: string[] }>
-  }
-}
-
-/** [viewportId, displaySetInstanceUIDs] pairs from OHIF's viewport grid state. */
-function viewportEntries(
-  servicesManager: OhifExtensionParams['servicesManager'],
-): Array<[string, string[]]> {
-  const grid = ohifServices(servicesManager)?.viewportGridService as
-    | ViewportGridStateLike
-    | undefined
-  const viewports = grid?.getState?.().viewports
-  if (!viewports) return []
-  const raw =
-    viewports instanceof Map
-      ? [...viewports.entries()]
-      : Object.entries(viewports)
-  return raw.map(([id, vp]) => [id, vp?.displaySetInstanceUIDs ?? []])
-}
-
-/**
- * Reflect a window/level onto every OTHER OHIF viewport showing the same series
- * (e.g. a cornerstone sibling in a multi-viewport layout). Each is targeted by
- * id via `setViewportWindowLevel`, which no-ops on a viewport cornerstone does
- * not own (our NiiVue viewports, stale ids). Do NOT use the `setWindowLevel`
- * command here: it targets the *active* viewport (ours) and throws on our
- * non-cornerstone element.
- */
-function syncWindowLevelToSiblings(
-  entry: NiivueViewportEntry,
-  viewportId: string,
-  wl: { window: number; level: number },
-  servicesManager: OhifExtensionParams['servicesManager'],
-  commandsManager: OhifExtensionParams['commandsManager'],
-): void {
-  const baseUIDs = new Set(
-    entry.displaySets
-      .map((ds) => ds.displaySetInstanceUID)
-      .filter((u): u is string => typeof u === 'string'),
-  )
-  if (baseUIDs.size === 0) return
-  const cm = ohifCommandsManager(commandsManager)
-  if (!cm) return
-  for (const [id, uids] of viewportEntries(servicesManager)) {
-    if (id === viewportId || !uids.some((u) => baseUIDs.has(u))) continue
-    try {
-      cm.runCommand?.('setViewportWindowLevel', {
-        viewportId: id,
-        windowWidth: wl.window,
-        windowCenter: wl.level,
-      })
-    } catch (err) {
-      console.warn('[nv-ohif] setViewportWindowLevel sync failed', err)
-    }
-  }
 }
 
 // The NiiVue annotation tool for an annotation (shape.type, or freehand inferred
@@ -632,6 +578,14 @@ function annotationContentHash(a: VectorAnnotation): string {
   ])
 }
 
+// The row's hash: its content plus the frame it lies on, which appears only once
+// the converted volume's slice map is published, so that re-reflects the row.
+function rowHash(a: VectorAnnotation, sf: SliceFrames | undefined): string {
+  const frame = sf && frameAt(sf, annotationPointsLps(a))
+  const at = frame ? `${frame.SOPInstanceUID}:${frame.frameNumber}` : ''
+  return `${annotationContentHash(a)}|${at}`
+}
+
 // OHIF measurement uid -> the NiiVue annotation it reflects, so an edit of the
 // measurement's label in OHIF's panel can be pushed back as the annotation text.
 const measurementToAnnotation = new Map<
@@ -802,6 +756,10 @@ function reflectNiivueAnnotationResult(
   // An eraser cut leaves the bounds and endpoints intact, so OHIF would draw the
   // whole shape beside stats for what is left. Drop the row instead.
   if (isErasedForOhif(annotation)) return { status: 'permanentlyUnsupported' }
+  // SOPInstanceUID / frameNumber / referencedImageId when the shape lies on one
+  // acquired frame; MeasurementService rejects keys outside its schema, so an
+  // unmapped shape omits them rather than sending undefined.
+  const frame = entry.sliceFrames && frameAt(entry.sliceFrames, points)
   const unit = modalityUnit(entry)
   const { primary, data } = buildAnnotationDisplay(
     mapping,
@@ -813,7 +771,7 @@ function reflectNiivueAnnotationResult(
   // fallback for empty text: reflecting that fallback would echo it back through
   // the label sync onto the canvas, making a user-cleared label impossible.
   const rowLabel = annotation.text ?? ''
-  const hash = annotationContentHash(annotation)
+  const hash = rowHash(annotation, entry.sliceFrames)
   if (mappingExhausted(viewportId, annotation.id, hash))
     return { status: 'retryableFailure' }
 
@@ -834,6 +792,7 @@ function reflectNiivueAnnotationResult(
           referenceStudyUID: backing.StudyInstanceUID as string | undefined,
           displaySetInstanceUID: backing.displaySetInstanceUID,
           FrameOfReferenceUID: forUID,
+          ...frame,
           points,
           displayText: { primary, secondary: [] },
           data,
@@ -1244,7 +1203,7 @@ export function reconcileNiivueAnnotations(
     // Add new annotations and update changed rows in place.
     for (const annotation of live) {
       const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
-      const hash = annotationContentHash(annotation)
+      const hash = rowHash(annotation, entry.sliceFrames)
       if (existing && existing.hash === hash) continue
       const result = reflectNiivueAnnotationResult(
         viewportId,
@@ -1286,34 +1245,93 @@ export function reconcileNiivueAnnotations(
 }
 
 /**
- * Reverse W/L bridge: on a base-volume volumeUpdated, record the new
- * window/level on the entry and reflect it onto any other OHIF viewport showing
- * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
- * window/level when it changed (for a viewport readout), else undefined.
+ * On a base-volume volumeUpdated, record the new window/level on the entry.
+ * Returns it when it changed (for a viewport readout), else undefined. Windows
+ * stay per viewport, as in OHIF: nothing is pushed to other viewports.
  */
-export function syncNiivueWindowLevelToOhif(
+export function trackNiivueWindowLevel(
   viewportId: string,
-  servicesManager: OhifExtensionParams['servicesManager'],
-  commandsManager: OhifExtensionParams['commandsManager'],
 ): { window: number; level: number } | undefined {
   const entry = getNiivueEntry(viewportId)
   if (!entry) return undefined
   const wl = readBaseWindowLevel(entry.nv)
   if (!wl) return undefined
-  // First observation just seeds the baseline (no readout / no sync).
+  // First observation just seeds the baseline (no readout).
   if (entry.windowLevel && sameWindowLevel(entry.windowLevel, wl))
     return undefined
   const seeded = entry.windowLevel !== undefined
   entry.windowLevel = wl
-  if (!seeded) return undefined
-  syncWindowLevelToSiblings(
-    entry,
-    viewportId,
-    wl,
-    servicesManager,
-    commandsManager,
+  return seeded ? wl : undefined
+}
+
+/** A hanging protocol's initial window (`displaySetOptions[0].options.voi`). */
+export function voiRange(
+  displaySetOptions: OhifViewportProps['displaySetOptions'],
+): { calMin: number; calMax: number } | undefined {
+  // Cornerstone's mapDisplaySetOptions accepts `item.options || item`.
+  const d = displaySetOptions?.[0]
+  const options = (d?.options ?? d) as
+    | { voi?: { windowWidth?: unknown; windowCenter?: unknown } }
+    | undefined
+  const width = Number(options?.voi?.windowWidth)
+  const center = Number(options?.voi?.windowCenter)
+  if (!(width > 0) || !Number.isFinite(center)) return undefined
+  const [calMin, calMax] = windowToRange(width, center)
+  return { calMin, calMax }
+}
+
+/** Reset camera, pan, zoom, crosshair, 2D rotation and flips (or refit a slide). */
+export function resetView(entry: NiivueViewportEntry): void {
+  if (entry.slideView) {
+    entry.slideView.resetView()
+    return
+  }
+  const { nv } = entry
+  nv.azimuth = VIEW_DEFAULTS.azimuth
+  nv.elevation = VIEW_DEFAULTS.elevation
+  nv.scaleMultiplier = VIEW_DEFAULTS.scaleMultiplier
+  nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
+  nv.renderPan = [...VIEW_DEFAULTS.renderPan]
+  centerCrosshair(nv)
+  // Cornerstone's reset also clears rotation and flips.
+  nv.rotation2D = 0
+  nv.isFlipped2DHorizontal = false
+  nv.isFlipped2DVertical = false
+}
+
+/**
+ * Put the crosshair on the base volume's centre voxel. NiiVue's default, scene
+ * fraction 0.5, falls between two slices when the slice count is even, where
+ * frameAt finds no DICOM frame for a measurement.
+ */
+export function centerCrosshair(nv: NiivueViewportEntry['nv']): void {
+  const dims = nv.volumes[0]?.dimsRAS
+  const mid = (d = 1) => Math.round((d - 1) / 2)
+  nv.crosshairPos = dims
+    ? nv.vox2frac([mid(dims[1]), mid(dims[2]), mid(dims[3])])
+    : [...VIEW_DEFAULTS.crosshairPos]
+}
+
+/** Apply one of OHIF's modality presets (by id, then index) to the base volume. */
+export function applyWindowLevelPreset(
+  entry: NiivueViewportEntry,
+  servicesManager: OhifExtensionParams['servicesManager'],
+  presetId: string | undefined,
+  presetIndex: number | undefined,
+): void {
+  if (entry.nv.volumes.length === 0) return
+  const range = resolveWindowLevel(
+    windowLevelPresets(servicesManager),
+    baseModality(entry),
+    presetId,
+    presetIndex,
   )
-  return wl
+  if (!range) return
+  entry.nv
+    .setVolume(0, { calMin: range[0], calMax: range[1] })
+    .catch((err: unknown) =>
+      console.error('[nv-ohif] window/level preset failed', err),
+    )
 }
 
 /**
@@ -1358,21 +1376,10 @@ export function getNiivueCommandsModule({
       }
     },
 
-    /** Reset camera, pan, zoom, and crosshair to their defaults. */
+    /** Reset camera, pan, zoom, crosshair, 2D rotation and flips to their defaults. */
     niivueResetView: () => {
       const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry) return
-      if (entry.slideView) {
-        entry.slideView.resetView()
-        return
-      }
-      const { nv } = entry
-      nv.azimuth = VIEW_DEFAULTS.azimuth
-      nv.elevation = VIEW_DEFAULTS.elevation
-      nv.scaleMultiplier = VIEW_DEFAULTS.scaleMultiplier
-      nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
-      nv.renderPan = [...VIEW_DEFAULTS.renderPan]
-      nv.crosshairPos = [...VIEW_DEFAULTS.crosshairPos]
+      if (entry) resetView(entry)
     },
 
     /** Download the visible NiiVue volume or NVSlide canvas as a PNG. */
@@ -1402,7 +1409,17 @@ export function getNiivueCommandsModule({
      */
     niivueToggleOverlay: async () => {
       const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry || entry.overlayLoading) return
+      if (!entry) return
+      // A second press while loading cancels the load and releases the entry at
+      // once, so a third press starts a new load while the old one tears down.
+      if (entry.overlayLoading) {
+        entry.overlayAbort?.abort()
+        entry.overlayAbort = undefined
+        entry.overlayLoading = false
+        writeStatus(entry, null)
+        refreshToolbar(servicesManager, entry.viewportId)
+        return
+      }
       const { nv, viewportId } = entry
 
       if (entry.overlayUIDs.length > 0) {
@@ -1442,37 +1459,47 @@ export function getNiivueCommandsModule({
       // same viewport slot — the entry object is REUSED (so the registry check
       // alone passes), but the load effect replaces entry.displaySets and resets
       // overlayUIDs. Guard on both: same registered entry AND same base series,
-      // so we never overlay onto the wrong anatomy or a destroyed instance.
+      // so we never overlay onto the wrong anatomy or a destroyed instance. Both
+      // also abort the conversion via entry.overlayAbort (see niivueRegistry).
       const baseDisplaySets = entry.displaySets
       const stillLive = () =>
         getNiivueEntry(viewportId) === entry &&
         entry.displaySets === baseDisplaySets
+      const abort = new AbortController()
+      // stillLive() alone cannot tell two loads on the same base apart.
+      const owns = () => stillLive() && entry.overlayAbort === abort
 
-      // Add the overlay volume, then reconcile against a swap that may have
-      // invalidated this load DURING the addVolume await: if we no longer own the
-      // viewport's base series, remove the overlay we just added so it doesn't
-      // linger on the wrong anatomy. Count-guarded (only remove when our add is
-      // still the last, untouched volume) so a concurrent swap-load that already
-      // replaced the volume array is left alone. Returns true if the overlay
-      // stuck, false if it was invalidated/undone.
+      // Prepare (fetch + parse) the overlay, add it only if this load still owns
+      // the viewport, then undo the add if it lost ownership DURING addVolume
+      // (cancel press, swap, unmount). Removed by identity, so a newer load's
+      // volume or a swap's replaced array is left alone. Returns true if the
+      // overlay stuck.
       const addOverlayGuarded = async (
-        spec: Parameters<typeof nv.addVolume>[0],
+        spec: Parameters<typeof nv.prepareVolume>[0],
       ): Promise<boolean> => {
-        const before = nv.volumes.length
-        await nv.addVolume(spec)
-        if (stillLive()) return true
-        if (nv.volumes.length === before + 1) {
-          nv.model.removeVolume(nv.volumes.length - 1)
-          await nv.updateGLVolume()
+        const image = await nv.prepareVolume(spec)
+        if (stillLive() && !abort.signal.aborted) {
+          await nv.addVolume(image)
+          if (stillLive() && !abort.signal.aborted) return true
+          // addVolume stores a copy of `image` that shares its hdr.
+          const i = nv.volumes.findIndex((v) => v.hdr === image.hdr)
+          if (i >= 0) {
+            nv.model.removeVolume(i)
+            await nv.updateGLVolume()
+          }
         }
+        // Cancelled: the cancel press cleared the status.
+        abort.signal.throwIfAborted()
         return false
       }
 
+      entry.overlayAbort = abort
       entry.overlayLoading = true
       try {
         // Direct volume-URL display sets skip conversion.
         const direct = displaySetToNiivue(candidate)
         let added: boolean
+        let note: string | undefined
         if (direct) {
           if (!stillLive()) return
           added = await addOverlayGuarded({
@@ -1482,9 +1509,11 @@ export function getNiivueCommandsModule({
           })
         } else {
           writeStatus(entry, `Fetching overlay: ${label}...`, 'loading')
-          const niftiFile = await convertDisplaySetToNifti(candidate, {
+          const converted = await convertDisplaySetToNifti(candidate, {
             headers: authHeaders(servicesManager),
+            signal: abort.signal,
             onProgress: (phase, loaded, total) => {
+              if (!owns()) return
               writeStatus(
                 entry,
                 phase === 'fetching'
@@ -1494,19 +1523,25 @@ export function getNiivueCommandsModule({
               )
             },
           })
+          // A cancel press after convert resolved but before this resumed.
+          abort.signal.throwIfAborted()
           if (!stillLive()) return
-          if (!niftiFile) throw new Error('conversion produced no volume')
+          if (!converted) throw new Error('conversion produced no volume')
+          note = converted.note
           added = await addOverlayGuarded({
-            url: niftiFile,
-            name: niftiFile.name,
+            url: converted.image,
+            name: converted.image.name,
             colormap: OVERLAY_COLORMAP,
             opacity: OVERLAY_OPACITY,
           })
         }
         if (!added) return
         entry.overlayUIDs.push(uid)
-        writeStatus(entry, null)
+        if (note) flashStatus(entry, note)
+        else writeStatus(entry, null)
       } catch (err) {
+        // Every abort source (cancel press, base swap, unmount) already let go.
+        if (abort.signal.aborted || !owns()) return
         console.error('[nv-ohif] overlay load failed', err)
         const message = err instanceof Error ? err.message : String(err)
         flashStatus(
@@ -1515,10 +1550,9 @@ export function getNiivueCommandsModule({
           'error',
         )
       } finally {
-        // Only clear the loading flag if this load still owns the entry: a swap
-        // may have started a NEWER overlay load on the reused entry, whose
-        // overlayLoading=true we must not clobber.
-        if (stillLive()) {
+        // A newer load (after a cancel press or a swap) owns the flags now.
+        if (entry.overlayAbort === abort) {
+          entry.overlayAbort = undefined
           entry.overlayLoading = false
           refreshToolbar(servicesManager, viewportId)
         }
@@ -1571,19 +1605,8 @@ export function getNiivueCommandsModule({
       presetIndex?: number
     } = {}) => {
       const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry || entry.nv.volumes.length === 0) return
-      const range = resolveWindowLevel(
-        windowLevelPresets(servicesManager),
-        baseModality(entry),
-        presetId,
-        presetIndex,
-      )
-      if (!range) return
-      entry.nv
-        .setVolume(0, { calMin: range[0], calMax: range[1] })
-        .catch((err: unknown) =>
-          console.error('[nv-ohif] window/level preset failed', err),
-        )
+      if (entry)
+        applyWindowLevelPreset(entry, servicesManager, presetId, presetIndex)
     },
 
     /** Recompute the base volume's robust (2-98%) auto window. */
@@ -1618,6 +1641,24 @@ export function getNiivueCommandsModule({
       refreshToolbar(servicesManager, entry.viewportId)
     },
 
+    /**
+     * Cornerstone's global JUMP_TO_MEASUREMENT handler runs this command without
+     * a context, so the newest context answers: NIIVUE, when nv-ohif registers
+     * after cornerstone. A NiiVue row is navigated by subscribeOhifLabelSync;
+     * Cornerstone would otherwise re-hang the viewport. Others go to Cornerstone.
+     */
+    jumpToMeasurementViewport: (options: {
+      measurement?: { uid?: string }
+    }) => {
+      const uid = options.measurement?.uid
+      if (uid && measurementToAnnotation.has(uid)) return
+      ohifCommandsManager(commandsManager)?.runCommand?.(
+        'jumpToMeasurementViewport',
+        options,
+        'CORNERSTONE',
+      )
+    },
+
     /** Toggle nearest-neighbor vs smooth (linear) volume interpolation. */
     niivueToggleInterpolation: () => {
       const entry = getActiveNiivueEntry(servicesManager)
@@ -1646,9 +1687,12 @@ export function getNiivueCommandsModule({
 
   // OHIF command definitions wrap each action, so a new action cannot be left
   // unregistered.
-  const definitions = Object.fromEntries(
-    Object.entries(actions).map(([name, commandFn]) => [name, { commandFn }]),
-  )
+  const definitions: OhifCommandsModule['definitions'] = {
+    ...Object.fromEntries(
+      Object.entries(actions).map(([name, commandFn]) => [name, { commandFn }]),
+    ),
+    ...getStandardCommandDefinitions({ servicesManager, commandsManager }),
+  }
 
   return {
     actions,

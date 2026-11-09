@@ -128,6 +128,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | 3D crosshair visibility | ✅ | `is3DCrosshairVisible` |
 | Radiological convention | ✅ | `isRadiological` |
 | Sagittal nose left (`sagittalNoseLeft`) | ✅ | `isSagittalNoseLeft`, independent of `isRadiological` as in the old package. Default `null` follows `isRadiological` (radiological: nose left), so unset scenes and documents render as before; `true`/`false` override. Classic NVD `opts.sagittalNoseLeft` is mapped |
+| 2D rotate / flip | ✅ | New (not in the old package; for OHIF viewport rotate/flip): `rotation2D`, `isFlipped2DHorizontal`, `isFlipped2DVertical`. `rotate2D(quarterTurns)` / `flip2D(axis)` act on screen. Slice tiles only, both backends; labels, ruler and picking follow |
 | Nearest interpolation | ✅ | `volumeIsNearestInterpolation` |
 | Multiplanar equal size | ✅ | `isEqualSize` |
 | Mosaic string | ✅ | `mosaicString` property |
@@ -409,7 +410,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | VMR | ✅ |
 | NPY/NPZ | ✅ |
 | Allen JSON+PNG atlas | ✅ |
-| Zarr (OME-Zarr) | ✅ |
+| Zarr (OME-Zarr, extension: `@niivue/nv-ext-tile/zarr`, no longer exported from `@niivue/niivue`) | ✅ |
 | DICOM (extension) | ✅ |
 | MINC (plugin) | ❌ |
 | TIFF / OME-TIFF / ImageJ stack | ✅ |

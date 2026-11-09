@@ -1,3 +1,172 @@
+## 1.0.0-rc.128 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.138
+- Updated uikit to 1.0.0-rc.135
+
+## 1.0.0-rc.127 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.137
+- Updated uikit to 1.0.0-rc.134
+
+## 1.0.0-rc.126 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.136
+- Updated uikit to 1.0.0-rc.133
+
+## 1.0.0-rc.125 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.135
+- Updated uikit to 1.0.0-rc.132
+
+## 1.0.0-rc.124 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.134
+- Updated uikit to 1.0.0-rc.131
+
+## 1.0.0-rc.123 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.133
+- Updated uikit to 1.0.0-rc.130
+
+## 1.0.0-rc.122 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.132
+- Updated uikit to 1.0.0-rc.129
+
+## 1.0.0-rc.121 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.131
+- Updated uikit to 1.0.0-rc.128
+
+## 1.0.0-rc.120 (2026-11-09)
+
+### Features
+
+- **nv-mcp:** set_view rotates and flips slice views ([f1524171](https://github.com/niivue/mono/commit/f1524171))
+
+### Fixes
+
+- **nv-mcp:** set_view checks every value before it writes any ([7afba0c5](https://github.com/niivue/mono/commit/7afba0c5))
+- **nv-mcp:** set_view checks rotate and flip before any write ([c2e42b61](https://github.com/niivue/mono/commit/c2e42b61))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.119 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.130
+- Updated uikit to 1.0.0-rc.127
+
+## 1.0.0-rc.118 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.129
+- Updated uikit to 1.0.0-rc.126
+
+## 1.0.0-rc.117 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.128
+- Updated uikit to 1.0.0-rc.125
+
+## 1.0.0-rc.116 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.127
+- Updated uikit to 1.0.0-rc.124
+
+## 1.0.0-rc.115 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.126
+- Updated uikit to 1.0.0-rc.123
+
+## 1.0.0-rc.114 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.125
+- Updated uikit to 1.0.0-rc.122
+
+## 1.0.0-rc.113 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.124
+- Updated uikit to 1.0.0-rc.121
+
+## 1.0.0-rc.112 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.123
+- Updated uikit to 1.0.0-rc.120
+
+## 1.0.0-rc.111 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.122
+- Updated uikit to 1.0.0-rc.119
+
+## 1.0.0-rc.110 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.121
+- Updated uikit to 1.0.0-rc.118
+
+## 1.0.0-rc.109 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.120
+- Updated uikit to 1.0.0-rc.117
+
+## 1.0.0-rc.108 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.119
+- Updated uikit to 1.0.0-rc.116
+
+## 1.0.0-rc.107 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.115
+
+## 1.0.0-rc.106 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.114
+
 ## 1.0.0-rc.105 (2026-11-08)
 
 ### Updated Dependencies

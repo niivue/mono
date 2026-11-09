@@ -16,7 +16,7 @@
 // an encoded frame becomes a Blob URL directly; raw pixels are painted to a
 // canvas and exported.
 
-import { parseMultipartRelated } from './dicomWadoRs'
+import { imageIdUrl, parseMultipartRelated } from './dicomWadoRs'
 import { imageTypeString } from './wsiTileSource'
 
 interface WsiThumbInstance extends Record<string, unknown> {
@@ -229,8 +229,8 @@ export async function fetchWsiThumbnailObjectUrl(
   if (typeof imageId !== 'string') return null
   // The imageId already points at the single-frame preview's frame resource
   // (`.../instances/{sop}/frames/1`); strip the cornerstone loader scheme.
-  const url = imageId.replace(/^(wadors|dicomweb|wadouri):/i, '')
-  if (!/^https?:\/\//i.test(url)) return null
+  const url = imageIdUrl(imageId)
+  if (!url) return null
   try {
     const response = await fetch(url, {
       headers: { Accept: 'multipart/related; type="image/jpeg"', ...headers },

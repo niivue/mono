@@ -865,6 +865,7 @@ export function applyDocumentToModel(
   )
   // A document bypasses the setters, so apply their clamps here.
   model.layout.inset = C.normalizeInset(model.layout.inset)
+  model.layout.rotation2D = C.normalizeRotation2D(model.layout.rotation2D)
   model.volume.sampleRate = C.clampSampleRate(model.volume.sampleRate)
   model.volume.renderMode = C.normalizeVolumeRenderMode(model.volume.renderMode)
   const v = model.volume

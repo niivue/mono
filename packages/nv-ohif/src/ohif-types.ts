@@ -1,9 +1,9 @@
-// Minimal local typings for the slice of the OHIF 3.12 extension API this package
+// Minimal local typings for the slice of the OHIF 3.13/3.14 extension API this package
 // consumes. We intentionally do NOT import from `@ohif/core` here: it pulls OHIF's
 // webpack-oriented dependency graph, and typing only what we use keeps this package
 // buildable/testable in isolation (the host OHIF app provides the real modules at
 // runtime). When wiring into a concrete OHIF app, these can be swapped for the real
-// `@ohif/core` types. Verify field names against the target OHIF version (3.12.x).
+// `@ohif/core` types. Checked against OHIF v3.13.14 and master (3.14 beta).
 
 // An OHIF display set — the unit of data a viewport renders. Only the fields we read
 // are typed; everything else is left open. Real display sets vary by data source
@@ -39,19 +39,33 @@ export interface OhifExtensionManager {
   getModuleEntry: (id: string) => unknown
 }
 export interface OhifCommandsManager {
-  runCommand: (name: string, options?: Record<string, unknown>) => unknown
+  runCommand: (
+    name: string,
+    options?: Record<string, unknown>,
+    context?: string,
+  ) => unknown
 }
 
-// Props OHIF passes to a viewport component (3.12). `displaySets` is the array of
-// display sets hung in this viewport; `viewportOptions` carries layout/orientation.
+// Props the OHIF viewport grid passes (ViewportGrid.tsx, 3.13 and 3.14), plus
+// the managers, which getNiivueViewportModule injects from its params.
 export interface OhifViewportProps {
   displaySets: ReadonlyArray<OhifDisplaySet>
   viewportId: string
-  viewportOptions?: { orientation?: string; viewportType?: string }
+  viewportLabel?: string
+  dataSource?: unknown
+  viewportOptions?: {
+    orientation?: string
+    viewportType?: string
+    toolGroupId?: string
+  }
+  // Per display set, hanging-protocol options (e.g. `options.voi`).
+  displaySetOptions?: ReadonlyArray<Record<string, unknown>>
+  needsRerendering?: boolean
+  isHangingProtocolLayout?: boolean
+  // Marks the viewport ready (viewportGridService.setViewportIsReady).
+  onElementEnabled?: (evt?: unknown) => void
   servicesManager?: OhifServicesManager
-  extensionManager?: OhifExtensionManager
   commandsManager?: OhifCommandsManager
-  children?: unknown
 }
 
 // What getViewportModule returns: a named viewport component entry.
@@ -82,6 +96,7 @@ export interface OhifExtensionParams {
 export interface OhifToolbarButtonCommand {
   commandName: string
   commandOptions?: Record<string, unknown>
+  context?: string
 }
 export interface OhifToolbarButton {
   id: string
@@ -91,8 +106,14 @@ export interface OhifToolbarButton {
     label?: string
     tooltip?: string
     buttonSection?: boolean
-    commands?: string | OhifToolbarButtonCommand | OhifToolbarButtonCommand[]
-    evaluate?: string | Record<string, unknown>
+    commands?:
+      | string
+      | OhifToolbarButtonCommand
+      | Array<string | OhifToolbarButtonCommand>
+    evaluate?:
+      | string
+      | Record<string, unknown>
+      | Array<string | Record<string, unknown>>
     [key: string]: unknown
   }
 }
@@ -118,7 +139,13 @@ export interface OhifToolbarModuleEntry {
 // they register under.
 export interface OhifCommandsModule {
   actions: Record<string, (...args: never[]) => unknown>
-  definitions: Record<string, { commandFn: (...args: never[]) => unknown }>
+  definitions: Record<
+    string,
+    {
+      commandFn: (...args: never[]) => unknown
+      options?: Record<string, unknown>
+    }
+  >
   defaultContext?: string
 }
 

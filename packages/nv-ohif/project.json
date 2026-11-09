@@ -11,7 +11,7 @@
         "{projectRoot}/src/**/*",
         "{projectRoot}/tsconfig.build.json"
       ],
-      "outputs": ["{projectRoot}/dist"]
+      "outputs": ["{projectRoot}/lib"]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit",
@@ -31,7 +31,10 @@
       "command": "bun test",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["^build"],
-      "inputs": ["typescript"]
+      "inputs": [
+        "typescript",
+        { "dependentTasksOutputFiles": "**/*.js", "transitive": false }
+      ]
     }
   }
 }

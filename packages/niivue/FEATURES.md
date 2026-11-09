@@ -119,6 +119,9 @@ TRX, TT, TSF (scalars), VTK lines.
 | `tileMargin` | Prop | No | |
 | `isRadiological` | Prop | No | Flip left/right |
 | `isSagittalNoseLeft` | Prop | No | Sagittal nose direction: `true` left, `false` right, `null` (default) follows `isRadiological` |
+| `rotation2D` | Prop | No | Clockwise turn of 2D slice tiles, rounded to the nearest quarter turn and stored as 0/90/180/270 |
+| `isFlipped2DHorizontal` / `isFlipped2DVertical` | Prop | No | Mirror 2D slice tiles on screen, after `rotation2D` (view from behind: meshes show their far side) |
+| `rotate2D(quarterTurns)` / `flip2D(axis)` | Method | No | Turn (positive = clockwise) or mirror (`'horizontal'` / `'vertical'`) 2D slice tiles relative to the current screen view |
 | `customLayout` | Prop | No | `CustomLayoutTile[]` — explicit tile list. Per tile: `sliceType`, normalized `position`, optional `sliceMM`, optional `fill` (fill the pane instead of letterboxing to the slice aspect; default false) |
 | `clearCustomLayout()` | Method | No | |
 | `setBounds([x1,y1,x2,y2])` | Method | No | Shared-canvas bounds |
@@ -254,7 +257,8 @@ All flat keys; mirrors the prop list above. Grouping (from source):
   `isClipPlaneCutaway`.
 - **Layout**: `sliceType`, `mosaicString`, `showRender`, `multiplanarType`,
   `heroFraction`, `heroSliceType`, `isEqualSize`, `isMosaicCentered`,
-  `tileMargin`, `isRadiological`, `isSagittalNoseLeft`, `customLayout`.
+  `tileMargin`, `isRadiological`, `isSagittalNoseLeft`, `rotation2D`,
+  `isFlipped2DHorizontal`, `isFlipped2DVertical`, `customLayout`.
 - **UI**: all §6 props.
 - **Volume**: all §7 props.
 - **Mesh**: all §8 props.

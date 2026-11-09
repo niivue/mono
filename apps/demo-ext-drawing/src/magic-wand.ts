@@ -2,8 +2,10 @@
  * Example: Magic Wand (click-to-segment) using @niivue/nv-ext-drawing
  * and the NiiVue extension context.
  *
- * Default backend is SharedArrayBuffer (zero-copy). Check "Transfer"
- * to fall back to the transfer-based Web Worker.
+ * Default backend is SharedArrayBuffer (zero-copy). It needs a cross-origin
+ * isolated page (COOP/COEP headers): the dev server sends them, GitHub Pages
+ * cannot, so there the demo uses the transfer-based Web Worker. Check
+ * "Transfer" to use that worker anyway.
  *
  * All coordinate picking is handled by the extension context's
  * slicePointerMove / slicePointerUp events — no manual hit-testing.
@@ -155,8 +157,9 @@ async function initSharedIfNeeded() {
   if (wandShared) return
   if (typeof SharedArrayBuffer === 'undefined') {
     status.textContent =
-      'SharedArrayBuffer not available — using transfer worker.'
+      'Zero-copy needs a cross-origin isolated page (COOP/COEP headers); using the transfer worker.'
     useTransferCb.checked = true
+    useTransferCb.disabled = true
     return
   }
   const dr = ctx.drawing

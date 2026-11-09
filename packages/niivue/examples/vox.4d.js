@@ -78,9 +78,3 @@ await nv1.attachToCanvas(gl1)
 nv1.showRender = 1
 var volumeList = [{ url: '/volumes/mpld_asl.nii.gz', limitFrames4D: 5 }]
 await nv1.loadVolumes(volumeList)
-console.log(
-  'nFrame4D:',
-  nv1.volumes[0].nFrame4D,
-  'nTotalFrame4D:',
-  nv1.volumes[0].nTotalFrame4D,
-)

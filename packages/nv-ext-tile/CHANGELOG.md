@@ -1,3 +1,104 @@
+## 1.0.0-rc.32 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.138
+
+## 1.0.0-rc.31 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.137
+
+## 1.0.0-rc.30 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.136
+
+## 1.0.0-rc.29 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.135
+
+## 1.0.0-rc.28 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.134
+
+## 1.0.0-rc.27 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.133
+
+## 1.0.0-rc.26 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** depend on nv-ext-tile/dicom for the WSI tile decoders ([49d65cb4](https://github.com/niivue/mono/commit/49d65cb4))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.132
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.25 (2026-11-09)
+
+### Features
+
+- **nv-ext-tile:** DicomWebWsiSource for DICOMweb whole-slide tiles ([fd930f5a](https://github.com/niivue/mono/commit/fd930f5a))
+
+### Fixes
+
+- **nv-ext-tile:** drop padding from a boundary read off the body ([aa7f3b94](https://github.com/niivue/mono/commit/aa7f3b94))
+- **nv-ext-tile:** keep a [1,1] PixelSpacing when no volume size replaces it ([6b432167](https://github.com/niivue/mono/commit/6b432167))
+- **nv-ext-tile:** require a strict multipart delimiter ending ([dfdc3520](https://github.com/niivue/mono/commit/dfdc3520))
+- **nv-ext-tile:** match multipart delimiters per RFC 2046, encode frame URLs ([50e9f1c4](https://github.com/niivue/mono/commit/50e9f1c4))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.131
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.24 (2026-11-09)
+
+### Features
+
+- **nv-ext-tile:** index DICOM-WSI from DICOM JSON metadata ([cce33ed6](https://github.com/niivue/mono/commit/cce33ed6))
+
+### Fixes
+
+- **nv-ext-tile:** prefer a decodable AvailableTransferSyntaxUID ([de5dc17d](https://github.com/niivue/mono/commit/de5dc17d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.23 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.130
+
+## 1.0.0-rc.22 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.129
+
 ## 1.0.0-rc.21 (2026-11-06)
 
 ### Updated Dependencies

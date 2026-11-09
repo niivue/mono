@@ -38,7 +38,7 @@ try {
   status.textContent = `Ready — bundle size: ${(bundleSource.length / 1024).toFixed(0)} KB`
   saveBtn.disabled = false
 } catch (err) {
-  status.textContent = `⚠️ Could not load niivue bundle: ${(err as Error).message}`
+  status.textContent = `Could not load niivue bundle: ${(err as Error).message}`
   console.error('Failed to load standalone bundle:', err)
 }
 
@@ -58,7 +58,7 @@ saveBtn.addEventListener('click', async () => {
     })
     status.textContent = 'HTML saved!'
   } catch (err) {
-    status.textContent = `⚠️ Save failed: ${(err as Error).message}`
+    status.textContent = `Save failed: ${(err as Error).message}`
     console.error('Save HTML failed:', err)
   }
 })

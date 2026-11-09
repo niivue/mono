@@ -23,6 +23,43 @@ describe('retrieveInstanceUrlFromImageId', () => {
     ).toBe(base)
   })
 
+  it('resolves a relative DICOMweb root against the page', () => {
+    const id = 'wadors:/dicomweb/studies/1.2/series/3.4/instances/5.6/frames/1'
+    // No page (Bun has no location): a relative id names nothing.
+    expect(retrieveInstanceUrlFromImageId(id)).toBeNull()
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'https://host/viewer/niivue?StudyInstanceUIDs=1.2' },
+      configurable: true,
+    })
+    try {
+      expect(retrieveInstanceUrlFromImageId(id)).toBe(base)
+    } finally {
+      Reflect.deleteProperty(globalThis, 'location')
+    }
+  })
+
+  it('resolves a path-relative root against the document base, not the page', () => {
+    // A nested route: <base href="/viewer/"> on /viewer/studies/1.
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'https://h/viewer/studies/1' },
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, 'document', {
+      value: { baseURI: 'https://h/viewer/' },
+      configurable: true,
+    })
+    try {
+      expect(
+        retrieveInstanceUrlFromImageId(
+          'wadors:dicomweb/studies/1/series/2/instances/3/frames/1',
+        ),
+      ).toBe('https://h/viewer/dicomweb/studies/1/series/2/instances/3')
+    } finally {
+      Reflect.deleteProperty(globalThis, 'location')
+      Reflect.deleteProperty(globalThis, 'document')
+    }
+  })
+
   it('rejects non-http and non-instance ids', () => {
     expect(retrieveInstanceUrlFromImageId('')).toBeNull()
     expect(retrieveInstanceUrlFromImageId('dicomfile:/local/a.dcm')).toBeNull()
@@ -98,6 +135,57 @@ describe('parseMultipartRelated', () => {
     const parts = parseMultipartRelated(body, 'multipart/related')
     expect(parts.length).toBe(1)
     expect(Array.from(parts[0] ?? [])).toEqual(Array.from(a))
+  })
+
+  it('keeps a boundary-like run inside part data', () => {
+    const enc = new TextEncoder()
+    const a = enc.encode('abc--BOUNDARYXYZ')
+    const b = new Uint8Array([1, 2, 3])
+    const body = buildMultipart('BOUNDARY', [a, b])
+    for (const type of [
+      'multipart/related; boundary=BOUNDARY',
+      'multipart/related',
+    ]) {
+      const parts = parseMultipartRelated(body, type)
+      expect(parts.map((p) => Array.from(p))).toEqual([
+        Array.from(a),
+        Array.from(b),
+      ])
+    }
+  })
+
+  it('keeps a delimiter line that does not end as one inside part data', () => {
+    const enc = new TextEncoder()
+    // "--" then not CRLF, and padding then not CRLF.
+    const a = enc.encode('one\r\n--BOUNDARY--X\r\ntwo')
+    const b = enc.encode('one\r\n--BOUNDARY \tX\r\ntwo')
+    const body = buildMultipart('BOUNDARY', [a, b])
+    for (const type of [
+      'multipart/related; boundary=BOUNDARY',
+      'multipart/related',
+    ]) {
+      const parts = parseMultipartRelated(body, type)
+      expect(parts.map((p) => new TextDecoder().decode(p))).toEqual([
+        'one\r\n--BOUNDARY--X\r\ntwo',
+        'one\r\n--BOUNDARY \tX\r\ntwo',
+      ])
+    }
+  })
+
+  it('takes a closing delimiter at the end of the body', () => {
+    const full = buildMultipart('BOUNDARY', [new Uint8Array([1, 2, 3])])
+    // Drop the trailing CRLF after "--BOUNDARY--".
+    const body = full.subarray(0, full.length - 2)
+    const parts = parseMultipartRelated(body, 'multipart/related')
+    expect(parts.map((p) => Array.from(p))).toEqual([[1, 2, 3]])
+  })
+
+  it('recovers a padded boundary from the body', () => {
+    const body = new TextEncoder().encode(
+      '--B \t\r\nContent-Type: application/dicom\r\n\r\none\r\n--B--\r\n',
+    )
+    const parts = parseMultipartRelated(body, 'multipart/related')
+    expect(parts.map((p) => new TextDecoder().decode(p))).toEqual(['one'])
   })
 
   it('falls back to the whole body when not multipart', () => {

@@ -5,6 +5,7 @@ import type {
   AffineTransform,
   NVGlobalCamera,
   NVImage,
+  Rotation2D,
 } from '@/NVTypes'
 
 export function vox2mm(_unused: unknown, XYZ: number[], mtx: mat4): vec3 {
@@ -355,7 +356,7 @@ export function panFollowCrosshair2D(
  * pixel width, so the ratio below is the tile's uniform mm-per-pixel. It is the
  * same in both axes because the layout already gives the tile the aspect ratio
  * of its mm extents. Radiological convention only mirrors the U axis, so it
- * leaves the scale alone.
+ * leaves the scale alone; a quarter `clipRot` lays U along the tile height.
  *
  * Use it to size screen-weight chrome (crosshair thickness, marker radii) that
  * has to be expressed as world geometry.
@@ -364,6 +365,7 @@ export function panFollowCrosshair2D(
  * @param mx - world-mm maximum of the tile's ortho window
  * @param leftTopWidthHeight - the tile's canvas rectangle
  * @param pan - the tile's `[panU, panV, zoom]`, as {@link slicePanUV} returns
+ * @param clipRot - the tile's clockwise clip-space turn in degrees
  * @returns mm per canvas pixel, or 0 for a degenerate tile
  */
 export function mmPerPixel2D(
@@ -371,8 +373,9 @@ export function mmPerPixel2D(
   mx: ArrayLike<number>,
   leftTopWidthHeight: ArrayLike<number>,
   pan?: ArrayLike<number>,
+  clipRot: Rotation2D = 0,
 ): number {
-  const widthPx = leftTopWidthHeight[2]
+  const widthPx = leftTopWidthHeight[clipRot % 180 ? 3 : 2]
   if (!(widthPx > 0)) return 0
   const zoom = pan && pan.length > 2 ? pan[2] : 1
   const span = Math.abs(mx[0] - mn[0]) / (zoom > 0 ? zoom : 1)
@@ -416,6 +419,7 @@ export function calculateMvpMatrix2D(
   origin?: ArrayLike<number>,
   pan?: ArrayLike<number>,
   clipSpaceZeroToOne = true,
+  clipRot: Rotation2D = 0,
 ): [mat4, mat4, mat4, vec3] {
   let left: number, right: number, bottom: number, top: number
   if (origin) {
@@ -482,6 +486,19 @@ export function calculateMvpMatrix2D(
     mat4.orthoZO(projectionMatrix, left, right, bottom, top, near, far)
   } else {
     mat4.ortho(projectionMatrix, left, right, bottom, top, near, far)
+  }
+  // projection = Rz(clipRot) * projection, clockwise on screen (y-up clip
+  // space), as exact row swaps: no trig rounding, and 0 leaves it untouched.
+  const quarter = clipRot / 90
+  if (quarter) {
+    const c = [1, 0, -1, 0][quarter]
+    const s = [0, 1, 0, -1][quarter]
+    for (let i = 0; i < 16; i += 4) {
+      const x = projectionMatrix[i]
+      const y = projectionMatrix[i + 1]
+      projectionMatrix[i] = c * x + s * y
+      projectionMatrix[i + 1] = c * y - s * x
+    }
   }
   const iModelMatrix = mat4.create()
   mat4.invert(iModelMatrix, modelMatrix)

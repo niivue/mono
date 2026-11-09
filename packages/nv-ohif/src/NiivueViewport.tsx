@@ -4,21 +4,24 @@ import type {
   VolumeUpdatedDetail,
 } from '@niivue/niivue'
 import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
+import { registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
 import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
-import { classifyDisplaySet } from './classifyDisplaySet'
+import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
   applyDefaultAnnotationText,
+  centerCrosshair,
   clearNiivueAnnotations,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   subscribeOhifLabelSync,
-  syncNiivueWindowLevelToOhif,
+  trackNiivueWindowLevel,
   visibleAnnotationScreenShapes,
+  voiRange,
 } from './commands'
-import { convertDisplaySetToNifti } from './dicomToNiivue'
+import { convertDisplaySetToNifti, loadConversion } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
   authHeaders,
@@ -33,13 +36,12 @@ import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { mountWsiSlideView } from './wsiSlideView'
-import { registerWsiTileDecoders } from './wsiTileDecoders'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
 // so an OHIF user sees the three orthogonal planes; the toolbar (later) can switch to
 // 3D render etc.
-const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
+export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   backgroundColor: [0, 0, 0, 1],
   // WebGL2 is the robust default for an embedded viewport (broad support; avoids
   // WebGPU device churn when OHIF mounts/unmounts viewports). Revisit once WebGPU
@@ -48,6 +50,9 @@ const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   // OHIF panel measurements are independent records. Never union/cut them when
   // their contours overlap, because that destroys measurement identity/stats.
   annotationMergesOverlaps: false,
+  // A click lands the crosshair on a slice centre, so a measurement drawn there
+  // lies on its DICOM frame (sliceFrames.frameAt).
+  isSnapToVoxelCenters: true,
 }
 
 type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
@@ -75,7 +80,8 @@ interface ToolGroupServiceLike {
  * instance directly (React 18) rather than depending on `@niivue/nvreact` (React 19).
  */
 export function NiivueViewport(props: OhifViewportProps) {
-  const { displaySets, viewportId, servicesManager, commandsManager } = props
+  const { displaySets, viewportId, servicesManager } = props
+  const toolGroupId = props.viewportOptions?.toolGroupId ?? 'default'
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVue | null>(null)
   const slideViewRef = useRef<ReturnType<typeof mountWsiSlideView> | null>(null)
@@ -92,8 +98,10 @@ export function NiivueViewport(props: OhifViewportProps) {
   displaySetsRef.current = displaySets
   const servicesManagerRef = useRef(servicesManager)
   servicesManagerRef.current = servicesManager
-  const commandsManagerRef = useRef(commandsManager)
-  commandsManagerRef.current = commandsManager
+  const displaySetOptionsRef = useRef(props.displaySetOptions)
+  displaySetOptionsRef.current = props.displaySetOptions
+  const onElementEnabledRef = useRef(props.onElementEnabled)
+  onElementEnabledRef.current = props.onElementEnabled
   const displaySetsKey = displaySets
     .map((ds) => String(ds.displaySetInstanceUID ?? ds.SeriesInstanceUID ?? ''))
     .join('|')
@@ -128,7 +136,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     nvRef.current = nv
     // Only mark ready once attach resolves — loading before that races the GPU
     // context (and StrictMode double-mounts), which left the volume unloaded.
-    nv.attachToCanvas(canvas).then(() => {
+    // Catching the chained promise also covers a throw in the ready callback.
+    const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
       // Measurements + ROIs are vector annotations (Length is the measureLine
@@ -161,22 +170,24 @@ export function NiivueViewport(props: OhifViewportProps) {
       })
       refreshToolbar(servicesManagerRef.current, viewportId)
       setReady(true)
+      // Without it the grid never reaches VIEWPORTS_READY.
+      onElementEnabledRef.current?.()
+    })
+    started.catch((err) => {
+      if (disposed) return
+      console.error('[nv-ohif] viewer failed to start', err)
+      setStatus({ kind: 'error', message: 'Failed to start the viewer.' })
     })
 
     const ro = new ResizeObserver(() => nv.resize())
     ro.observe(container)
 
-    // Reverse W/L bridge: core emits volumeUpdated for every base-window change
-    // (windowing/contrast drags, pointercancel, setVolume), so reflect it to OHIF
-    // (commands.ts). The baseline diff there drops unchanged updates, which also
-    // stops an OHIF echo of the same window. A transient readout confirms it.
+    // Core emits volumeUpdated for every base-window change (windowing/contrast
+    // drags, pointercancel, setVolume); a transient readout confirms a change
+    // (the baseline diff in commands.ts drops unchanged updates).
     const onVolumeUpdated = (e: CustomEvent<VolumeUpdatedDetail>) => {
       if (e.detail.volumeIndex !== 0) return
-      const wl = syncNiivueWindowLevelToOhif(
-        viewportId,
-        servicesManagerRef.current,
-        commandsManagerRef.current,
-      )
+      const wl = trackNiivueWindowLevel(viewportId)
       if (!wl) return
       const message = `W: ${Math.round(wl.window)}  L: ${Math.round(wl.level)}`
       flashNote(message)
@@ -285,10 +296,13 @@ export function NiivueViewport(props: OhifViewportProps) {
     // commands know what is already loaded and W/L-preset buttons can gate on
     // the base modality (see commands.ts). Refresh the toolbar so those
     // modality-gated buttons re-evaluate now that the modality is known.
+    // Only displaySets[0] is shown (owner Q7), so only it counts as the base:
+    // the others stay overlay candidates.
     updateNiivueViewport(viewportId, {
-      displaySets,
+      displaySets: displaySets.slice(0, 1),
       overlayUIDs: [],
       overlayLoading: false,
+      sliceFrames: undefined,
     })
     refreshToolbar(servicesManager, viewportId)
 
@@ -302,19 +316,39 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
 
     // If OHIF hung nothing, stay idle.
-    if (displaySets.length === 0) {
+    const ds: OhifDisplaySet | undefined = displaySets[0]
+    if (!ds) {
       dropStaleVolumes()
       setStatus({ kind: 'idle' })
       return
     }
 
+    // Every outcome names the display sets not shown.
+    const extraNote = extraDisplaySetsNote(displaySets)
+    const withExtra = (message?: string) =>
+      [message, extraNote].filter(Boolean).join(' ')
+    // Loaded: show any notes briefly; the clear never touches a newer status.
+    const loaded = (note?: string) => {
+      const message = withExtra(note)
+      if (!message) return setStatus({ kind: 'idle' })
+      const status: Status = { kind: 'note', message }
+      setStatus(status)
+      window.setTimeout(
+        () => setStatus((s) => (s === status ? { kind: 'idle' } : s)),
+        6000,
+      )
+    }
+
     let cancelled = false
     const abort = new AbortController()
+    // The hanging protocol's initial window, if any, replaces NiiVue's robust one.
+    const voi = voiRange(displaySetOptionsRef.current)
 
-    // Record the base volume's initial window/level as the reverse-bridge
+    // Record the base volume's initial window/level as the readout
     // baseline, so the first manual contrast drag is detected as a change.
     const seedWindowLevel = () => {
       if (cancelled) return
+      centerCrosshair(nv)
       updateNiivueViewport(viewportId, { windowLevel: readBaseWindowLevel(nv) })
       // A reflection may have failed while OHIF's backing series or the converted
       // volume was still becoming ready. Retry after the load boundary even when
@@ -327,13 +361,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       refreshToolbar(servicesManagerRef.current, viewportId)
     }
 
-    // Phase-1 fast path: any display set that is already a NiiVue volume URL.
-    const directSpecs = displaySets
-      .map((ds) => displaySetToNiivue(ds))
-      .filter((s): s is NonNullable<typeof s> => s !== null)
-    if (directSpecs.length > 0) {
-      setStatus({ kind: 'idle' })
-      nv.loadVolumes(directSpecs).then(
+    // Phase-1 fast path: a display set that is already a NiiVue volume URL.
+    const direct = displaySetToNiivue(ds)
+    if (direct) {
+      loaded()
+      nv.loadVolumes([{ ...direct, ...voi }]).then(
         () => {
           // The slot was swapped away (e.g. to a WSI) while this load was in flight:
           // its dropStaleVolumes() already ran and no-op'd because nv.volumes was
@@ -346,7 +378,10 @@ export function NiivueViewport(props: OhifViewportProps) {
         },
         () => {
           if (!cancelled)
-            setStatus({ kind: 'error', message: 'Failed to load volume.' })
+            setStatus({
+              kind: 'error',
+              message: withExtra('Failed to load volume.'),
+            })
         },
       )
       return () => {
@@ -354,13 +389,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       }
     }
 
-    // Otherwise route the first display set by kind.
-    const ds: OhifDisplaySet | undefined = displaySets[0]
-    if (!ds) {
-      dropStaleVolumes()
-      setStatus({ kind: 'idle' })
-      return
-    }
+    // Otherwise route by kind.
     const kind = classifyDisplaySet(ds)
 
     if (kind === 'wsi') {
@@ -374,26 +403,30 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (!built) {
         setStatus({
           kind: 'note',
-          message:
+          message: withExtra(
             'This slide has no tiled (VOLUME) pyramid levels to display.',
+          ),
         })
         return
       }
       if (built.unsupported) {
         setStatus({
           kind: 'note',
-          message: `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG, JPEG 2000 and JPEG-LS slides are supported).`,
+          message: withExtra(
+            `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG, JPEG 2000 and JPEG-LS slides are supported).`,
+          ),
         })
         return
       }
-      registerWsiTileDecoders() // lazy: loads nothing until a JPEG 2000 or JPEG-LS tile
+      registerDcm2niixDecoders() // lazy: loads nothing until a JPEG 2000 or JPEG-LS tile
       if (!built.tiledFull) {
         // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
         // slide would render scrambled, so decline rather than mislead.
         setStatus({
           kind: 'note',
-          message:
+          message: withExtra(
             'This slide uses TILED_SPARSE frame organization, which the viewer cannot render yet (TILED_FULL slides are supported).',
+          ),
         })
         return
       }
@@ -411,7 +444,9 @@ export function NiivueViewport(props: OhifViewportProps) {
         slideCanvas.remove()
         setStatus({
           kind: 'note',
-          message: `This slide cannot be shown: ${err instanceof Error ? err.message : String(err)}.`,
+          message: withExtra(
+            `This slide cannot be shown: ${err instanceof Error ? err.message : String(err)}.`,
+          ),
         })
         return
       }
@@ -443,14 +478,14 @@ export function NiivueViewport(props: OhifViewportProps) {
         view.setTool(activeOhifToolRef.current)
         updateNiivueViewport(viewportId, { slideView: view })
         refreshToolbar(servicesManager, viewportId)
-        setStatus({ kind: 'idle' })
+        loaded()
       } catch (err) {
         slide.dispose()
         slideCanvas.remove()
         console.error('[nv-ohif] WSI view failed', err)
         setStatus({
           kind: 'error',
-          message: 'Failed to start the whole-slide viewer.',
+          message: withExtra('Failed to start the whole-slide viewer.'),
         })
         return
       }
@@ -470,7 +505,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       dropStaleVolumes()
       setStatus({
         kind: 'note',
-        message: "This series isn't something NiiVue can load yet.",
+        message: withExtra("This series isn't something NiiVue can load yet."),
       })
       return
     }
@@ -491,29 +526,31 @@ export function NiivueViewport(props: OhifViewportProps) {
         })
       },
     })
-      .then((niftiFile) => {
+      .then((converted) => {
         if (cancelled) return
-        if (!niftiFile) {
+        if (!converted) {
           setStatus({
             kind: 'error',
-            message: 'DICOM conversion produced no volume.',
+            message: withExtra('DICOM conversion produced no volume.'),
           })
           return
         }
-        setStatus({ kind: 'idle' })
-        // Use the converted file's own name (ends in .nii/.nii.gz) so NiiVue sniffs
-        // the format correctly; a display name without that extension would not.
-        return nv
-          .loadVolumes([{ url: niftiFile, name: niftiFile.name }])
-          .then(() => {
-            // Swapped away while this load was in flight: undo the now-stale load
-            // (its dropStaleVolumes already ran and no-op'd on an empty array).
-            if (cancelled) {
-              void nv.removeAllVolumes().catch(() => {})
-              return
-            }
-            seedWindowLevel()
-          })
+        loaded(converted.note)
+        return loadConversion(
+          nv,
+          viewportId,
+          converted,
+          voi,
+          () => cancelled,
+        ).then((shown) => {
+          // Swapped away while this load was in flight: undo the now-stale load
+          // (its dropStaleVolumes already ran and no-op'd on an empty array).
+          if (!shown) {
+            void nv.removeAllVolumes().catch(() => {})
+            return
+          }
+          seedWindowLevel()
+        })
       })
       .catch((err) => {
         if (cancelled || abort.signal.aborted) return
@@ -521,7 +558,9 @@ export function NiivueViewport(props: OhifViewportProps) {
         const message = err instanceof Error ? err.message : String(err)
         setStatus({
           kind: 'error',
-          message: `DICOM load failed: ${message || 'unknown error'}`,
+          message: withExtra(
+            `DICOM load failed: ${message || 'unknown error'}`,
+          ),
         })
       })
 
@@ -533,18 +572,17 @@ export function NiivueViewport(props: OhifViewportProps) {
 
   // Mirror OHIF's active primary tool onto NiiVue's matching left-drag mode, so
   // windowing, pan, zoom, measurements, angles and ROI tools drive this viewport.
-  // NiiVue already applies a robust 2-98% window on load, so no default-window
-  // wiring is needed here.
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !ready) return
+    updateNiivueViewport(viewportId, { toolGroupId })
     const svc = ohifServices(servicesManager)?.toolGroupService as
       | ToolGroupServiceLike
       | undefined
     if (!svc?.getActivePrimaryMouseButtonTool) return
 
     const apply = () => {
-      const tool = svc.getActivePrimaryMouseButtonTool?.('default')
+      const tool = svc.getActivePrimaryMouseButtonTool?.(toolGroupId)
       activeOhifToolRef.current = tool
       // ROI / arrow tools drive NiiVue's vector-annotation system (measureEllipse
       // etc.); the master gate must be on for a left-drag to draw. Every other
@@ -563,7 +601,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const event = svc.EVENTS?.PRIMARY_TOOL_ACTIVATED
     const sub = event ? svc.subscribe?.(event, apply) : undefined
     return () => sub?.unsubscribe?.()
-  }, [ready, servicesManager])
+  }, [ready, servicesManager, toolGroupId, viewportId])
 
   const overlay = status.kind === 'idle' ? null : status.message
   return (

@@ -1,7 +1,7 @@
 # @niivue/nv-ohif
 
 A [NiiVue](https://github.com/niivue/niivue) viewport extension for the
-[OHIF Viewer](https://ohif.org) (v3.12). Render series with NiiVue inside OHIF —
+[OHIF Viewer](https://ohif.org) (3.13 and 3.14-beta). Render series with NiiVue inside OHIF —
 bringing 3D volume rendering, mesh/surface overlays, multiplanar with colormapped
 overlays, and voxel drawing / vector annotation to your OHIF app.
 
@@ -9,7 +9,9 @@ overlays, and voxel drawing / vector annotation to your OHIF app.
 > and **DICOM series** (fetched + converted to NIfTI with `@niivue/dcm2niix`), with a
 > toolbar surfacing NiiVue's views / clip plane / overlay / window-level. Verified
 > mounting inside a full local OHIF Viewer (registered via `pluginConfig.json` + a
-> mode). See `PLAN.md`.
+> mode). OHIF production builds need the production JSX runtime, so `build:lib`
+> sets `NODE_ENV=production`. The build goes to `lib/`, not `dist/`: OHIF's build
+> copies every extension's `dist/` folder into the site root. See `PLAN.md`.
 
 > **Consuming the local build (dev):** install **packed tarballs**, do not symlink.
 > Symlinking the monorepo package into an OHIF app makes its bundler follow the link
@@ -35,7 +37,7 @@ bun add @niivue/nv-ohif
 
 Add it to your OHIF app's `pluginConfig.json` (or `addExtension`) and reference the
 viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name is
-`niivue`.
+`niivue`. List it after the cornerstone extension (see **Jumping to a row** below).
 
 ```js
 // in a mode's viewport config
@@ -47,7 +49,7 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 
 ## What it does today
 
-- Registers a **React 18 viewport** that owns a `<canvas>` + a NiiVue instance.
+- Registers a **React viewport** that owns a `<canvas>` + a NiiVue instance.
 - Loads a display set whose URL is a NiiVue-readable volume (`.nii/.nii.gz`, `.nrrd`,
   `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in multiplanar.
 - Loads a **DICOM** series by fetching it and converting to NIfTI with
@@ -56,10 +58,10 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   canvas: **JPEG, JPEG 2000 and JPEG-LS, TILED_FULL** slides (colour or monochrome) are
   supported; **TILED_SPARSE** and slides with several optical paths or focal planes are
   declined with an explanatory note (see [Whole-slide imaging](#whole-slide-imaging)).
-- Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
-  and reflects a NiiVue window/level change (drag or `setVolume`) onto any sibling OHIF
-  viewport showing the same series (`setViewportWindowLevel`). Auto window/level
-  (`recalculateCalMinMax`) does not emit `volumeUpdated`, so it is not reflected.
+- Mirrors the viewport's tool group's active primary tool (`viewportOptions.toolGroupId`,
+  default `'default'`) onto NiiVue's left-drag. Windows are per viewport, as in OHIF;
+  the initial window comes from the hanging protocol's `displaySetOptions[0].options.voi`
+  when set, else NiiVue's robust 2-98% range.
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
   sagittal / multiplanar / 3D render), a **clip-plane** dropdown (off / anterior /
   posterior / left / right / superior / inferior), a **window/level** dropdown
@@ -85,8 +87,9 @@ The extension registers the commands (`niivueSetSliceType`, `niivueResetView`,
 `niivueSetClipPlane`, `niivueToggleOverlay`, `niivueSetWindowLevel`,
 `niivueSetWindowLevelPreset`, `niivueAutoWindowLevel`, `niivueSetColormap`,
 `niivueToggleColorbar`, `niivueToggleInterpolation`, `niivueToggleCrosshair`), the toolbar evaluators, and a customization pack with the
-button definitions. A mode pulls them in by reference and places them in its
-primary bar:
+button definitions. `niivue*` commands act only when the active viewport is NiiVue.
+
+A mode pulls them in by reference and places them in its primary bar:
 
 ```js
 // in a mode
@@ -108,6 +111,25 @@ toolbarSections: [
               'NiivueCrosshair'] },
 ],
 ```
+
+It also answers OHIF's standard `resetViewport`, `setViewportOrientation`
+(axial / sagittal / coronal / acquisition), `scaleUpViewport`, `scaleDownViewport`,
+`fitViewportToWindow`, `setWindowLevelPreset`, `rotateViewportCW`, `rotateViewportCCW`,
+`rotateViewportCWSet`, `flipViewportHorizontal`, `flipViewportVertical`,
+`setViewportHorizontalFlip` and `setViewportVerticalFlip` on a NiiVue viewport
+(`viewportId`, else the active one; rotate and flip apply to 2D tiles, and reset
+clears them) and hands any other viewport to the `CORNERSTONE` context, so
+standard hotkeys work in mixed layouts. This relies on the extension registering
+after cornerstone (newer command contexts win). The `NIIVUE` context is registered
+app-wide, so these names route through nv-ohif in every mode (delegating to
+`CORNERSTONE` when the viewport is not NiiVue), and a third-party extension that
+registers the same names in a context newer than `CORNERSTONE` is bypassed.
+
+`withNiivueSupport(button)` adds the `evaluate.niivue.unsupported` evaluator to a
+button: on a NiiVue viewport it disables buttons whose commands or tools are not in
+`NIIVUE_STANDARD_COMMANDS` / `NIIVUE_SUPPORTED_TOOLS` (or `niivue*`), and OHIF hides
+them when the button sets `hideWhenDisabled`; other viewports are left to the
+button's own evaluators.
 
 ## Measurement tools
 
@@ -159,17 +181,47 @@ viewport is backed by a loaded DICOM series with instances (so the row carries a
 resolvable `referenceSeriesUID`). A NIfTI-URL display set still draws the shape on
 the canvas, but it is not reflected into the panel.
 
+**DICOM identity.** Points are LPS mm. When a shape lies on one acquired frame plane of
+a converted series, its row also carries that frame's `SOPInstanceUID`,
+`frameNumber` and `referencedImageId` (matched from each frame's position against
+the converted volume's affine, keeping the shown echo and magnitude/phase part).
+A shape off that plane (across slices, or reformatted), on a slice two frames
+share or none claims (e.g. enhanced multi-echo/4D, oblique frames), or on a volume
+without a sform omits them.
+
+**Jumping to a row.** List `@niivue/nv-ohif` after the cornerstone extension, so
+its `jumpToMeasurementViewport` (which hands non-NiiVue rows to cornerstone) takes
+precedence and a NiiVue row is not re-hung into another viewport.
+
 ## DICOM support
 
 DICOM series are rendered by fetching the instances and converting them to NIfTI
 in-browser with `@niivue/dcm2niix` (a WASM build of dcm2niix). This is verified
 working end-to-end in a real OHIF app for both uncompressed and JPEG-LS studies,
 and it works for `npm`-install consumers too. The package requires
-`@niivue/dcm2niix` `^1.4.20261029`, which reports dcm2niix's log when a conversion
-fails and ships its own TypeScript declarations. Its worker boots while the
-instances download, and is terminated on success, failure or abort. Releases
-before `1.3.20260724` aborted every in-browser conversion (an Emscripten
-`exit()` throw inside the Web Worker) and are excluded.
+`@niivue/dcm2niix` `^1.4.20261105-rc.3`, which reports dcm2niix's log when a conversion
+fails and ships its own TypeScript declarations. Conversion uses its `convert()`
+after the instances download; its worker is terminated on success, failure or
+abort. Releases before `1.3.20260724` aborted every in-browser conversion (an
+Emscripten `exit()` throw inside the Web Worker) and are excluded.
+
+- **Output choice.** When a series converts to several NIfTI images, the viewport
+  shows one: ORIGINAL/PRIMARY (sidecar `ImageType`) first, then magnitude over
+  phase/real/imaginary (sidecar `ImageType`, else the `_ph`/`_real`/`_imaginary`
+  stem), the lowest `EchoNumber`, the most voxels, the stem name. A note names
+  the others.
+- **Fetching.** Each instance is retrieved whole (WADO-RS RetrieveInstance) when
+  the server allows it; otherwise it is rebuilt from `/metadata` plus frames
+  1..NumberOfFrames, so enhanced/multi-frame instances convert as one file.
+- **Partial conversions.** A nonzero dcm2niix exit that still produced images
+  loads the choice with a note (dcm2niix's last error or warning line); no image
+  is an error with dcm2niix's log tail.
+- **Not converted:** SEG, RTSTRUCT, RTPLAN, RTRECORD, PLAN, SR, PR, KO, REG,
+  DOC, FID, ECG, HD and AU series (also skipped as overlays). RTDOSE is converted.
+- **One series per viewport.** Only the first display set hung in a viewport
+  loads; a note names the rest.
+- A second Overlay press while an overlay converts cancels it, as do a base
+  swap and unmount.
 
 ## Whole-slide imaging
 
@@ -183,10 +235,12 @@ Support boundary:
 - **Supported:** **JPEG**, **JPEG 2000** and **JPEG-LS** tiles with **TILED_FULL** frame
   organization, one optical path and one focal plane, 8-16-bit unsigned samples.
   - JPEG 2000 and JPEG-LS frames are requested untranscoded (`transfer-syntax=*`) and
-    decoded by `@niivue/dcm2niix`'s WASM worker pool (`createFrameDecoder`, loaded on the
-    first such tile). A pool whose workers die is replaced, and the tile retried once.
+    decoded by `@niivue/dcm2niix`'s WASM worker pool, registered by
+    `@niivue/nv-ext-tile/dicom`'s `registerDcm2niixDecoders` (loaded on the first such
+    tile). A pool whose workers die is replaced, and the tile retried once.
   - A decoder the host app registered with `NVSlide.registerTileDecoder('image/jp2' |
-    'image/jls', ...)` is kept.
+    'image/jls', ...)` is kept; so is an ICC transform the host registered first
+    (otherwise dcm2niix's is registered too).
   - A server that transcodes the frame anyway is refused rather than mis-decoded.
   - Monochrome slides keep their samples; OHIF's window/level (`niivueSetWindowLevel`)
     sets the slide's display window, which defaults to the full BitsStored range.
@@ -211,16 +265,17 @@ The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path f
 
 ## Compatibility
 
-- **OHIF**: `^3.12` (developed against 3.12.6; also exercised against OHIF
-  `master`/3.13-beta in the dev rig).
-- **React**: `^18.3.1` (OHIF is on React 18 — this does not use `@niivue/nvreact`,
-  which targets React 19).
+- **OHIF**: tested on 3.13.14 and 3.14.0-beta.70 (developed against 3.12.6).
+- **React**: `^18.3.1 || ^19`, supplied by the host (OHIF 3.13.14 ships React
+  18.3.1, 3.14.0-beta.70 ships 19.2.7). This does not use `@niivue/nvreact`.
+- **dcmjs**: `^0.49.0 || ^0.52.0` (OHIF 3.13+ pins 0.52.0).
 - **`@niivue/dcm2niix`**: required for DICOM only — see [DICOM support](#dicom-support).
+- **`@niivue/nv-ext-tile`**: a dependency; nv-ohif imports only `/dicom`, so GeoTIFF is installed but never loaded.
 
 ## Roadmap
 
 See `PLAN.md`. Landed: NIfTI + DICOM rendering, a toolbar for views / clip plane /
-overlay / window-level (both directions) / colormap, the full **Measurement** tool
+overlay / window-level / colormap, the full **Measurement** tool
 group (see [Measurement tools](#measurement-tools)), and **NVSlide whole-slide (SM)
 rendering** for JPEG, JPEG 2000 and JPEG-LS TILED_FULL slides (see [Whole-slide imaging](#whole-slide-imaging)).
 Next: segmentation overlays, mesh/surface overlay, TILED_SPARSE slide

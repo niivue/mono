@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import type { Plugin } from 'vite'
-import { defineConfig } from 'vite'
+import { defineConfig, normalizePath } from 'vite'
 import dts from 'vite-plugin-dts'
 
 /**
@@ -50,6 +50,20 @@ export const coreChunkFileNames =
       ? `${dir}core-[hash].js`
       : `${dir}[name]-[hash].js`
 
+// Published declarations reach WebGPU globals (#570), so every exported types
+// file references @webgpu/types. Added here, not in source: dts drops a
+// reference written above a file's leading import.
+const typesEntries = new Set(
+  Object.values(
+    JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+      .exports as Record<string, { types?: string } | string>,
+  ).flatMap((e) =>
+    typeof e === 'object' && e.types
+      ? [normalizePath(fileURLToPath(new URL(e.types, import.meta.url)))]
+      : [],
+  ),
+)
+
 export default defineConfig({
   publicDir: false,
   resolve: {
@@ -74,11 +88,16 @@ export default defineConfig({
           : ''
         const depth = srcRelative ? srcRelative.split('/').length : 0
         const prefix = depth > 0 ? '../'.repeat(depth) : './'
+        const webgpuRef = typesEntries.has(filePath)
+          ? '/// <reference types="@webgpu/types" preserve="true" />\n'
+          : ''
         return {
-          content: content.replace(
-            /from\s+['"]@\/([^'"]+)['"]/g,
-            (_match, p) => `from '${prefix}${p}'`,
-          ),
+          content:
+            webgpuRef +
+            content.replace(
+              /from\s+['"]@\/([^'"]+)['"]/g,
+              (_match, p) => `from '${prefix}${p}'`,
+            ),
         }
       },
     }),

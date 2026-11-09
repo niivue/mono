@@ -4,7 +4,7 @@
     "noEmit": false,
     "emitDeclarationOnly": true,
     "declaration": true,
-    "outDir": "dist/types",
+    "outDir": "lib/types",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx"

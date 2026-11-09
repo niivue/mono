@@ -1,34 +1,21 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import dcmjs from 'dcmjs'
 import {
   assemblePart10,
   type DcmjsDicomDictCtor,
-  framesUrlFromImageId,
-  seriesMetadataUrlFromFramesUrl,
-  sopFromFramesUrl,
+  reconstructInstanceFiles,
+  seriesMetadataUrl,
+  sopFromInstanceUrl,
 } from './reconstructP10'
 
-const framesUrl =
-  'https://host/dicomweb/studies/1.2/series/3.4/instances/5.6/frames/1'
+const instanceUrl = 'https://host/dicomweb/studies/1.2/series/3.4/instances/5.6'
 
-describe('frames URL helpers', () => {
-  it('extracts the absolute frames URL from a wadors imageId', () => {
-    expect(framesUrlFromImageId(`wadors:${framesUrl}`)).toBe(framesUrl)
-    expect(framesUrlFromImageId(framesUrl)).toBe(framesUrl)
-  })
-
-  it('rejects non-frame ids', () => {
-    expect(
-      framesUrlFromImageId('wadors:https://host/dicomweb/studies/1.2'),
-    ).toBeNull()
-    expect(framesUrlFromImageId('dicomfile:/a.dcm')).toBeNull()
-  })
-
+describe('instance URL helpers', () => {
   it('derives the series metadata URL and the sop uid', () => {
-    expect(seriesMetadataUrlFromFramesUrl(framesUrl)).toBe(
+    expect(seriesMetadataUrl(instanceUrl)).toBe(
       'https://host/dicomweb/studies/1.2/series/3.4/metadata',
     )
-    expect(sopFromFramesUrl(framesUrl)).toBe('5.6')
+    expect(sopFromInstanceUrl(instanceUrl)).toBe('5.6')
   })
 })
 
@@ -81,7 +68,7 @@ describe('assemblePart10', () => {
     const buffer = assemblePart10(
       DicomDict as unknown as DcmjsDicomDictCtor,
       metadata,
-      pixels,
+      [pixels],
     )
     // A valid P10 has the 128-byte preamble + "DICM" magic.
     expect(new TextDecoder().decode(new Uint8Array(buffer, 128, 4))).toBe(
@@ -133,7 +120,7 @@ describe('assemblePart10', () => {
     const buffer = assemblePart10(
       DicomDict as unknown as DcmjsDicomDictCtor,
       withBinaries,
-      pixels,
+      [pixels],
     )
     const readBack = DicomMessage.readFile(buffer)
     expect(readBack.dict['00189306']).toBeUndefined()
@@ -149,7 +136,7 @@ describe('assemblePart10', () => {
     const buffer = assemblePart10(
       DicomDict as unknown as DcmjsDicomDictCtor,
       metadata,
-      frame,
+      [frame],
       JPEG_LS,
     )
     const readBack = DicomMessage.readFile(buffer)
@@ -162,5 +149,167 @@ describe('assemblePart10', () => {
     expect(pd.vr).toBe('OB')
     const bytes = new Uint8Array(pd.Value[pd.Value.length - 1] as ArrayBuffer)
     expect(bytes.length).toBe(64)
+  })
+
+  describe('reconstructInstanceFiles', () => {
+    const JPEG_LS = '1.2.840.10008.1.2.4.80'
+    const otherUrl = instanceUrl.replace('5.6', '7.8')
+    const enhanced = {
+      ...metadata,
+      '00080018': { vr: 'UI', Value: ['5.6'] },
+      '00280008': { vr: 'IS', Value: ['3'] },
+    }
+    const other = { ...metadata, '00080018': { vr: 'UI', Value: ['7.8'] } }
+    const frameBytes = (n: number) => new Uint8Array(8).fill(n)
+    const realFetch = globalThis.fetch
+    afterEach(() => {
+      globalThis.fetch = realFetch
+    })
+
+    // Serves `/metadata`, per-frame JPEG-LS bulkdata, and `instance()` for
+    // RetrieveInstance; returns the requested URLs.
+    function serve(instance: () => Response): string[] {
+      const urls: string[] = []
+      globalThis.fetch = (async (url: string) => {
+        urls.push(url)
+        if (url.endsWith('/metadata')) return Response.json([enhanced, other])
+        const frame = /\/frames\/(\d+)$/.exec(url)?.[1]
+        if (!frame) return instance()
+        return new Response(frameBytes(Number(frame)), {
+          headers: { 'content-type': `image/jls; transfer-syntax=${JPEG_LS}` },
+        })
+      }) as unknown as typeof fetch
+      return urls
+    }
+    const refused = () => new Response('', { status: 403 })
+
+    it('reconstructs a 3-frame instance as one P10, one fragment per frame', async () => {
+      const urls = serve(refused)
+      const progress: Array<[number, number]> = []
+      const [file, ...rest] = await reconstructInstanceFiles(
+        [{ url: instanceUrl, frames: 3 }],
+        { onProgress: (loaded, total) => progress.push([loaded, total]) },
+      )
+      if (!file) throw new Error('no file')
+      expect(rest).toHaveLength(0)
+      expect(file.name).toBe('5.6.dcm')
+      expect(urls.filter((u) => u.includes('/frames/')).sort()).toEqual(
+        [1, 2, 3].map((n) => `${instanceUrl}/frames/${n}`),
+      )
+      const readBack = DicomMessage.readFile(await file.arrayBuffer())
+      const pd = readBack.dict['7FE00010'] as { Value: ArrayBuffer[] }
+      // The Basic Offset Table splits the fragments back into frames 1..3.
+      expect(pd.Value.map((v) => [...new Uint8Array(v)])).toEqual(
+        [1, 2, 3].map((n) => [...frameBytes(n)]),
+      )
+      const ds = DicomMetaDictionary.naturalizeDataset(readBack.dict)
+      expect(ds.NumberOfFrames).toBe(3)
+      expect(progress.at(-1)).toEqual([3, 3])
+    })
+
+    it('probes RetrieveInstance once, then reconstructs the series', async () => {
+      let cancelled = false
+      const urls = serve(
+        () =>
+          new Response(
+            new ReadableStream({
+              cancel() {
+                cancelled = true
+              },
+            }),
+            { status: 403 },
+          ),
+      )
+      const files = await reconstructInstanceFiles([
+        { url: instanceUrl, frames: 1 },
+        { url: otherUrl, frames: 1 },
+      ])
+      expect(files.map((f) => f.name)).toEqual(['5.6.dcm', '7.8.dcm'])
+      expect(urls).toEqual([
+        instanceUrl,
+        'https://host/dicomweb/studies/1.2/series/3.4/metadata',
+        // The metadata's NumberOfFrames (3) overrides the ref's count.
+        `${instanceUrl}/frames/1`,
+        `${instanceUrl}/frames/2`,
+        `${instanceUrl}/frames/3`,
+        `${otherUrl}/frames/1`,
+      ])
+      expect(cancelled).toBe(true) // the refused body is not left downloading
+    })
+
+    it('uses RetrieveInstance when the server allows it', async () => {
+      const p10 = assemblePart10(
+        DicomDict as unknown as DcmjsDicomDictCtor,
+        enhanced,
+        [1, 2, 3].map(frameBytes),
+        JPEG_LS,
+      )
+      const urls = serve(
+        () =>
+          new Response(p10, {
+            headers: { 'content-type': 'application/dicom' },
+          }),
+      )
+      const files = await reconstructInstanceFiles([
+        { url: instanceUrl, frames: 3 },
+        { url: otherUrl, frames: 1 },
+      ])
+      expect(urls).toEqual([instanceUrl, otherUrl])
+      expect(files.map((f) => f.size)).toEqual([p10.byteLength, p10.byteLength])
+    })
+
+    it('fetches every frame the metadata lists when OHIF omits NumberOfFrames', async () => {
+      const urls = serve(refused)
+      const progress: Array<[number, number]> = []
+      const files = await reconstructInstanceFiles(
+        [{ url: instanceUrl, frames: 1 }],
+        { onProgress: (loaded, total) => progress.push([loaded, total]) },
+      )
+      expect(files).toHaveLength(1)
+      expect(urls.filter((u) => u.includes('/frames/')).sort()).toEqual(
+        [1, 2, 3].map((n) => `${instanceUrl}/frames/${n}`),
+      )
+      expect(progress.at(-1)).toEqual([3, 3])
+    })
+
+    it('bounds in-flight requests across instances and their frames', async () => {
+      const sops = ['5.6', '7.8', '9.1', '9.2']
+      const meta = sops.map((sop) => ({
+        ...enhanced,
+        '00080018': { vr: 'UI', Value: [sop] },
+      }))
+      let inFlight = 0
+      let peak = 0
+      globalThis.fetch = (async (url: string) => {
+        if (url.endsWith('/metadata')) return Response.json(meta)
+        inFlight++
+        peak = Math.max(peak, inFlight)
+        await new Promise((r) => setTimeout(r, 2))
+        inFlight--
+        const frame = /\/frames\/(\d+)$/.exec(url)?.[1]
+        if (!frame) return refused()
+        return new Response(frameBytes(Number(frame)), {
+          headers: { 'content-type': `image/jls; transfer-syntax=${JPEG_LS}` },
+        })
+      }) as unknown as typeof fetch
+      const files = await reconstructInstanceFiles(
+        sops.map((sop) => ({
+          url: instanceUrl.replace('5.6', sop),
+          frames: 3,
+        })),
+        { concurrency: 2 },
+      )
+      expect(files).toHaveLength(4)
+      expect(peak).toBeLessThanOrEqual(2)
+    })
+
+    it('reconstructs when RetrieveInstance answers 200 without a DICOM body', async () => {
+      const urls = serve(() => new Response('<html>not found</html>'))
+      const files = await reconstructInstanceFiles([
+        { url: instanceUrl, frames: 3 },
+      ])
+      expect(files).toHaveLength(1)
+      expect(urls.filter((u) => u.includes('/frames/'))).toHaveLength(3)
+    })
   })
 })

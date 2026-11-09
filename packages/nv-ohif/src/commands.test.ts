@@ -20,12 +20,13 @@ import {
   removeNiivueAnnotation,
   resolveWindowLevel,
   subscribeOhifLabelSync,
-  syncNiivueWindowLevelToOhif,
+  trackNiivueWindowLevel,
   visibleAnnotationScreenShapes,
 } from './commands'
+import * as dicomToNiivue from './dicomToNiivue'
 import {
+  getActiveNiivueEntry,
   getNiivueEntryForViewport,
-  getNiivueForViewport,
   registerNiivue,
   unregisterNiivue,
   updateNiivueViewport,
@@ -71,9 +72,13 @@ function stubNiivue() {
     setClipPlane(dae: number[]) {
       clipPlanes.push(dae)
     },
+    // Like NiiVue: prepare yields a fresh image; addVolume stores a copy of it.
+    async prepareVolume(spec: Record<string, unknown>) {
+      return { ...spec, hdr: {} }
+    },
     async addVolume(spec: Record<string, unknown>) {
       added.push(spec)
-      volumes.push(spec)
+      volumes.push({ ...spec })
     },
     async setVolume(index: number, opts: Record<string, unknown>) {
       volumeUpdates.push({ index, opts })
@@ -132,18 +137,40 @@ describe('NIIVUE_SLICE_TYPES', () => {
 })
 
 describe('niivueRegistry', () => {
-  it('resolves the exact viewport, and falls back to a sole instance', () => {
+  it('resolves only the exact viewport; a sole instance only without an id', () => {
     const a = stubNiivue()
     register('vp-a', a)
-    expect(getNiivueForViewport('vp-a')).toBe(a as unknown as NiiVue)
-    // A non-NiiVue viewport id still resolves while only one instance exists.
-    expect(getNiivueForViewport('vp-other')).toBe(a as unknown as NiiVue)
+    expect(getNiivueEntryForViewport('vp-a')?.nv).toBe(a as unknown as NiiVue)
+    // A Cornerstone viewport is active: never act on the NiiVue one.
+    expect(getNiivueEntryForViewport('cs-1')).toBeUndefined()
+    expect(getActiveNiivueEntry(services('cs-1'))).toBeUndefined()
+    // No grid (demo harness): the sole instance.
+    expect(getNiivueEntryForViewport(undefined)?.nv).toBe(
+      a as unknown as NiiVue,
+    )
+    expect(getActiveNiivueEntry(undefined)?.nv).toBe(a as unknown as NiiVue)
+    // OHIF's grid starts with activeViewportId null.
+    expect(getNiivueEntryForViewport(null)?.nv).toBe(a as unknown as NiiVue)
 
     const b = stubNiivue()
     register('vp-b', b)
-    // With two instances the fallback is ambiguous: exact matches only.
-    expect(getNiivueForViewport('vp-b')).toBe(b as unknown as NiiVue)
-    expect(getNiivueForViewport('vp-other')).toBeUndefined()
+    expect(getNiivueEntryForViewport(undefined)).toBeUndefined()
+    // An explicit id wins over the active one.
+    expect(getActiveNiivueEntry(services('vp-a'), 'vp-b')?.nv).toBe(
+      b as unknown as NiiVue,
+    )
+  })
+
+  it('leaves niivue* commands inert while a Cornerstone viewport is active', () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    const { actions } = getNiivueCommandsModule({
+      servicesManager: services('cs-1'),
+    })
+    actions.niivueSetSliceType({ sliceType: 'render' })
+    actions.niivueResetView()
+    expect(nv.sliceType).toBe(SLICE_TYPE.MULTIPLANAR)
+    expect(nv.azimuth).toBe(42)
   })
 })
 
@@ -742,6 +769,34 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(1)
   })
 
+  it('re-reflects a row once the slice map gives it a frame', () => {
+    const nv = stubNiivue()
+    register('vp-frame', nv)
+    updateNiivueViewport('vp-frame', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-frame', backing)
+    nv.annotations = [ellipse('frame')]
+    // Reflected while the converted volume is still loading: no frame yet.
+    reconcileNiivueAnnotations('vp-frame', svc.servicesManager)
+    expect(svc.added).toHaveLength(1)
+    updateNiivueViewport('vp-frame', {
+      sliceFrames: {
+        origin: [0, 0, 0],
+        normal: [0, 0, 1],
+        frames: [{ SOPInstanceUID: 'sop-1', frameNumber: 1 }],
+      },
+    })
+    reconcileNiivueAnnotations('vp-frame', svc.servicesManager)
+    expect(svc.added).toHaveLength(2)
+    expect(svc.added[1]?.data.schema).toMatchObject({
+      SOPInstanceUID: 'sop-1',
+      frameNumber: 1,
+    })
+  })
+
   it('does not record a row when OHIF rejects the measurement', () => {
     register('vp-rejected', stubNiivue())
     updateNiivueViewport('vp-rejected', {
@@ -1046,6 +1101,32 @@ describe('reflectNiivueAnnotation', () => {
     // An unknown uid is a no-op.
     applyOhifLabelToAnnotation('not-ours', 'x')
     expect(texts).toHaveLength(1)
+  })
+
+  it('keeps a NiiVue row out of Cornerstone jumpToMeasurementViewport', () => {
+    register('vp-guard', stubNiivue())
+    updateNiivueViewport('vp-guard', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-guard', backing)
+    reflectNiivueAnnotation('vp-guard', svc.servicesManager, ellipse('g'))
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const delegated: unknown[][] = []
+    const { actions } = getNiivueCommandsModule({
+      servicesManager: svc.servicesManager,
+      commandsManager: {
+        runCommand: (...args: unknown[]) => delegated.push(args),
+      },
+    } as unknown as OhifExtensionParams)
+    actions.jumpToMeasurementViewport({ measurement: { uid } })
+    expect(delegated).toEqual([])
+    const other = { measurement: { uid: 'cornerstone-1' } }
+    actions.jumpToMeasurementViewport(other)
+    expect(delegated).toEqual([
+      ['jumpToMeasurementViewport', other, 'CORNERSTONE'],
+    ])
   })
 
   it('jumps to the owning viewport and selects the reflected annotation', () => {
@@ -1741,6 +1822,24 @@ describe('niivueResetView', () => {
     expect(nv.crosshairPos).toEqual([0.5, 0.5, 0.5])
   })
 
+  it('puts the crosshair on a voxel centre for an even slice count', () => {
+    const shape = [5, 6, 174]
+    const nv = Object.assign(stubNiivue(), {
+      // NiiVue's scene fraction for a single unrotated volume: voxel v spans
+      // [v, v + 1] of the shape, so its centre is (v + 0.5) / dim.
+      vox2frac: (vox: [number, number, number]) =>
+        vox.map((v, i) => (v + 0.5) / (shape[i] ?? 1)),
+    })
+    nv.volumes.push({ dimsRAS: [3, ...shape] })
+    register('vp-1', nv)
+    const { actions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    actions.niivueResetView()
+    const vox = nv.crosshairPos.map((f, i) => f * (shape[i] ?? 1) - 0.5)
+    expect(vox).toEqual([2, 3, 87])
+  })
+
   it('resets the visible NVSlide view instead of the hidden volume view', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
@@ -1751,6 +1850,8 @@ describe('niivueResetView', () => {
         resetView() {
           resets++
         },
+        zoom() {},
+        fit() {},
         setWindow() {},
         async saveBitmap() {},
         dispose() {},
@@ -1774,6 +1875,8 @@ describe('niivueSetWindowLevel on a slide', () => {
       slideView: {
         setTool() {},
         resetView() {},
+        zoom() {},
+        fit() {},
         setWindow(calMin, calMax) {
           windows.push([calMin, calMax])
         },
@@ -1827,6 +1930,15 @@ describe('findOverlayCandidate', () => {
       base,
       { displaySetInstanceUID: 'ds-loaded', url: 'https://x/a.nii.gz' },
       { displaySetInstanceUID: 'ds-doc', Modality: 'SR' }, // unsupported
+      {
+        displaySetInstanceUID: 'ds-seg', // derived, though WADO-backed
+        Modality: 'SEG',
+        instances: [
+          {
+            imageId: 'wadors:https://h/studies/1/series/2/instances/3/frames/1',
+          },
+        ],
+      },
       { displaySetInstanceUID: 'ds-next', url: 'https://x/b.nii.gz' },
     ]
     expect(findOverlayCandidate(entry, candidates)?.displaySetInstanceUID).toBe(
@@ -1902,9 +2014,8 @@ describe('command definitions (#134)', () => {
     const { actions, definitions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
-    expect(Object.keys(definitions)).toEqual(Object.keys(actions))
-    for (const [name, def] of Object.entries(definitions))
-      expect(def.commandFn).toBe(actions[name as keyof typeof actions])
+    for (const [name, action] of Object.entries(actions))
+      expect(definitions[name]?.commandFn).toBe(action)
   })
 })
 
@@ -1988,111 +2099,59 @@ describe('readBaseWindowLevel', () => {
   })
 })
 
-describe('syncNiivueWindowLevelToOhif', () => {
-  // A services manager whose viewport grid lists our viewport, a same-series
-  // sibling, and a different-series viewport.
-  function gridServices() {
-    return {
+describe('trackNiivueWindowLevel', () => {
+  it('seeds the baseline silently, then reports changes only', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ calMin: 0, calMax: 100 }) // W 100 / L 50
+    register('vp-1', nv)
+    expect(trackNiivueWindowLevel('vp-1')).toBeUndefined()
+    expect(getNiivueEntryForViewport('vp-1')?.windowLevel).toEqual({
+      window: 100,
+      level: 50,
+    })
+    nv.volumes[0] = { calMin: 200, calMax: 600 }
+    expect(trackNiivueWindowLevel('vp-1')).toEqual({ window: 400, level: 400 })
+    expect(trackNiivueWindowLevel('vp-1')).toBeUndefined()
+    expect(trackNiivueWindowLevel('vp-unknown')).toBeUndefined()
+  })
+
+  it('keeps two viewports of one display set independent (no sibling copy)', () => {
+    const a = stubNiivue()
+    const b = stubNiivue()
+    a.volumes.push({ calMin: 0, calMax: 100 })
+    b.volumes.push({ calMin: 0, calMax: 100 })
+    register('vp-a', a)
+    register('vp-b', b)
+    const ds = [{ displaySetInstanceUID: 'ds-1' }]
+    updateNiivueViewport('vp-a', { displaySets: ds })
+    updateNiivueViewport('vp-b', { displaySets: ds })
+    const ran: string[] = []
+    const sm = {
       services: {
+        ...services('vp-a').services,
         viewportGridService: {
+          getActiveViewportId: () => 'vp-a',
           getState: () => ({
             viewports: new Map([
-              ['vp-1', { displaySetInstanceUIDs: ['ds-1'] }], // ours
-              ['cs-sibling', { displaySetInstanceUIDs: ['ds-1'] }], // same series
-              ['cs-other', { displaySetInstanceUIDs: ['ds-9'] }], // different
+              ['vp-a', { displaySetInstanceUIDs: ['ds-1'] }],
+              ['vp-b', { displaySetInstanceUIDs: ['ds-1'] }],
             ]),
           }),
         },
       },
     }
-  }
-
-  it('seeds the baseline silently, then syncs only same-series siblings', () => {
-    const nv = stubNiivue()
-    nv.volumes.push({ calMin: 0, calMax: 100 }) // W 100 / L 50
-    register('vp-1', nv)
-    updateNiivueViewport('vp-1', {
-      displaySets: [{ displaySetInstanceUID: 'ds-1' }],
+    const { actions } = getNiivueCommandsModule({
+      servicesManager: sm,
+      commandsManager: { runCommand: (name: string) => ran.push(name) },
     })
-    const ran: Array<{ name: string; opts?: Record<string, unknown> }> = []
-    const cm = {
-      runCommand: (name: string, opts?: Record<string, unknown>) => {
-        ran.push({ name, opts })
-      },
-    }
-    const sm = gridServices()
-
-    // First call with no prior baseline: seeds, no sync, no readout.
-    expect(syncNiivueWindowLevelToOhif('vp-1', sm, cm)).toBeUndefined()
+    trackNiivueWindowLevel('vp-a')
+    trackNiivueWindowLevel('vp-b')
+    actions.niivueSetWindowLevel({ window: 400, level: 40 })
+    a.volumes[0] = { calMin: -160, calMax: 240 }
+    expect(trackNiivueWindowLevel('vp-a')).toEqual({ window: 400, level: 40 })
+    expect(a.volumeUpdates).toHaveLength(1)
+    expect(b.volumeUpdates).toEqual([])
     expect(ran).toEqual([])
-    expect(getNiivueEntryForViewport('vp-1')?.windowLevel).toEqual({
-      window: 100,
-      level: 50,
-    })
-
-    // A contrast drag changed the window: sync the same-series sibling only
-    // (never our own viewport, never the different-series one).
-    nv.volumes[0] = { calMin: 200, calMax: 600 } // W 400 / L 400
-    const wl = syncNiivueWindowLevelToOhif('vp-1', sm, cm)
-    expect(wl).toEqual({ window: 400, level: 400 })
-    expect(ran).toEqual([
-      {
-        name: 'setViewportWindowLevel',
-        opts: {
-          viewportId: 'cs-sibling',
-          windowWidth: 400,
-          windowCenter: 400,
-        },
-      },
-    ])
-
-    // Unchanged release: no sync, no readout.
-    expect(syncNiivueWindowLevelToOhif('vp-1', sm, cm)).toBeUndefined()
-    expect(ran).toHaveLength(1)
-  })
-
-  it('does not echo a window OHIF pushes back through niivueSetWindowLevel', () => {
-    const nv = stubNiivue()
-    nv.volumes.push({ calMin: 0, calMax: 100 })
-    register('vp-1', nv)
-    updateNiivueViewport('vp-1', {
-      displaySets: [{ displaySetInstanceUID: 'ds-1' }],
-    })
-    const ran: string[] = []
-    const cm = { runCommand: (name: string) => ran.push(name) }
-    const grid = gridServices().services.viewportGridService
-    const sm = {
-      services: {
-        viewportGridService: { ...grid, getActiveViewportId: () => 'vp-1' },
-      },
-    }
-    // Like core: setVolume applies the window and emits volumeUpdated, which
-    // the viewport routes to syncNiivueWindowLevelToOhif.
-    nv.setVolume = async (_index: number, opts: Record<string, unknown>) => {
-      Object.assign(nv.volumes[0] as object, opts)
-      syncNiivueWindowLevelToOhif('vp-1', sm, cm)
-    }
-    syncNiivueWindowLevelToOhif('vp-1', sm, cm) // seed
-    nv.volumes[0] = { calMin: 200, calMax: 600 }
-    syncNiivueWindowLevelToOhif('vp-1', sm, cm)
-    expect(ran).toEqual(['setViewportWindowLevel'])
-    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
-    actions.niivueSetWindowLevel({ window: 400, level: 400 })
-    expect(ran).toHaveLength(1)
-  })
-
-  it('does not throw without services or a commands manager', () => {
-    const nv = stubNiivue()
-    nv.volumes.push({ calMin: 0, calMax: 10 })
-    register('vp-1', nv)
-    updateNiivueViewport('vp-1', {
-      displaySets: [{ displaySetInstanceUID: 'ds-1' }],
-    })
-    syncNiivueWindowLevelToOhif('vp-1', undefined, undefined) // seed
-    nv.volumes[0] = { calMin: 0, calMax: 40 }
-    expect(() =>
-      syncNiivueWindowLevelToOhif('vp-1', undefined, undefined),
-    ).not.toThrow()
   })
 })
 
@@ -2251,6 +2310,208 @@ describe('niivueToggleOverlay', () => {
     await actions.niivueToggleOverlay()
     errorSpy.mockRestore()
     expect(statuses).toEqual([['Overlay load failed: boom', 'error']])
+  })
+
+  describe('cancels a DICOM overlay conversion in flight', () => {
+    const realFetch = globalThis.fetch
+    afterEach(() => {
+      globalThis.fetch = realFetch
+    })
+
+    // Starts a DICOM overlay whose fetch hangs until aborted.
+    async function startOverlay() {
+      globalThis.fetch = ((_url: string, init?: RequestInit) =>
+        new Promise((_, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(init.signal?.reason),
+          )
+        })) as unknown as typeof fetch
+      const nv = stubNiivue()
+      nv.volumes.push({ name: 'base' })
+      register('vp-1', nv)
+      const statuses: Array<[string | null, string | undefined]> = []
+      updateNiivueViewport('vp-1', {
+        displaySets: [{ displaySetInstanceUID: 'ds-base' }],
+        setStatus: (message, kind) => statuses.push([message, kind]),
+      })
+      const sm = services('vp-1', [
+        {
+          displaySetInstanceUID: 'ds-ct',
+          Modality: 'CT',
+          instances: [
+            {
+              imageId:
+                'wadors:https://h/studies/1/series/2/instances/3/frames/1',
+            },
+          ],
+        },
+      ])
+      const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+      const loading = actions.niivueToggleOverlay()
+      const entry = getNiivueEntryForViewport('vp-1')
+      const signal = entry?.overlayAbort?.signal
+      if (!entry || !signal) throw new Error('no overlay load in flight')
+      return { actions, entry, signal, loading, nv, statuses }
+    }
+
+    it('on a second toggle, without an error status', async () => {
+      const { actions, entry, signal, loading, nv, statuses } =
+        await startOverlay()
+      await actions.niivueToggleOverlay()
+      await loading
+      expect(signal.aborted).toBe(true)
+      expect(entry.overlayLoading).toBe(false)
+      expect(entry.overlayAbort).toBeUndefined()
+      expect(nv.added).toHaveLength(0)
+      expect(statuses.at(-1)).toEqual([null, undefined])
+      expect(statuses.some(([, kind]) => kind === 'error')).toBe(false)
+    })
+
+    it('on a toggle after the conversion resolved', async () => {
+      let resolve: (c: dicomToNiivue.DicomConversion) => void = () => {}
+      const convert = spyOn(
+        dicomToNiivue,
+        'convertDisplaySetToNifti',
+      ).mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolve = r
+          }),
+      )
+      try {
+        const { actions, loading, nv, statuses } = await startOverlay()
+        resolve({ image: new File([], 'o.nii') })
+        // Runs before the overlay load resumes from the resolved conversion.
+        await actions.niivueToggleOverlay()
+        await loading
+        expect(nv.added).toHaveLength(0)
+        expect(statuses.at(-1)).toEqual([null, undefined])
+        expect(statuses.some(([, kind]) => kind === 'error')).toBe(false)
+      } finally {
+        convert.mockRestore()
+      }
+    })
+
+    it('and a press during its teardown starts a load it cannot clobber', async () => {
+      const resolvers: Array<(c: dicomToNiivue.DicomConversion) => void> = []
+      const convert = spyOn(
+        dicomToNiivue,
+        'convertDisplaySetToNifti',
+      ).mockImplementation((_ds, options) => {
+        options?.onProgress?.('fetching', 0, 1)
+        return new Promise((r) => {
+          resolvers.push(r)
+        })
+      })
+      try {
+        const { actions, entry, loading, nv, statuses } = await startOverlay()
+        await actions.niivueToggleOverlay() // cancel
+        const second = actions.niivueToggleOverlay()
+        const owner = entry.overlayAbort
+        expect(entry.overlayLoading).toBe(true)
+        // The cancelled conversion resolves late; it must not touch load 2.
+        resolvers[0]?.({ image: new File([], 'old.nii') })
+        await loading
+        expect(entry.overlayLoading).toBe(true)
+        expect(entry.overlayAbort).toBe(owner)
+        expect(statuses.at(-1)?.[1]).toBe('loading')
+        resolvers[1]?.({ image: new File([], 'new.nii') })
+        await second
+        expect(nv.added.map((a) => a.name)).toEqual(['new.nii'])
+        expect(entry.overlayUIDs).toEqual(['ds-ct'])
+        expect(entry.overlayLoading).toBe(false)
+      } finally {
+        convert.mockRestore()
+      }
+    })
+
+    it('and undoes its late addVolume by identity, not count', async () => {
+      const resolvers: Array<(c: dicomToNiivue.DicomConversion) => void> = []
+      const convert = spyOn(
+        dicomToNiivue,
+        'convertDisplaySetToNifti',
+      ).mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolvers.push(r)
+          }),
+      )
+      try {
+        const { actions, entry, loading, nv } = await startOverlay()
+        // Load 1's addVolume lands its volume, then hangs until released.
+        let release = () => {}
+        const added = new Promise<void>((r) => {
+          release = r
+        })
+        const addVolume = nv.addVolume
+        let landed = () => {}
+        const hasLanded = new Promise<void>((r) => {
+          landed = r
+        })
+        nv.addVolume = async (spec) => {
+          nv.addVolume = addVolume
+          await addVolume(spec)
+          landed()
+          await added
+        }
+        resolvers[0]?.({ image: new File([], 'old.nii') })
+        await hasLanded
+        await actions.niivueToggleOverlay() // cancel
+        const second = actions.niivueToggleOverlay()
+        resolvers[1]?.({ image: new File([], 'new.nii') })
+        await second
+        release()
+        await loading
+        expect(nv.volumes.map((v) => (v as { name: string }).name)).toEqual([
+          'base',
+          'new.nii',
+        ])
+        expect(entry.overlayUIDs).toEqual(['ds-ct'])
+      } finally {
+        convert.mockRestore()
+      }
+    })
+
+    it('and ignores its late progress', async () => {
+      const progress: Array<
+        dicomToNiivue.DicomConvertOptions['onProgress'] | undefined
+      > = []
+      const convert = spyOn(
+        dicomToNiivue,
+        'convertDisplaySetToNifti',
+      ).mockImplementation((_ds, options) => {
+        progress.push(options?.onProgress)
+        options?.onProgress?.('fetching', 0, 1)
+        return new Promise(() => {})
+      })
+      try {
+        const { actions, statuses } = await startOverlay()
+        await actions.niivueToggleOverlay() // cancel
+        void actions.niivueToggleOverlay()
+        const current = statuses.at(-1)
+        progress[0]?.('converting', 0, 1)
+        expect(statuses.at(-1)).toEqual(current)
+        expect(current?.[0]).toBe('Fetching overlay: overlay... 0/1')
+      } finally {
+        convert.mockRestore()
+      }
+    })
+
+    it('on a base swap', async () => {
+      const { signal, loading } = await startOverlay()
+      updateNiivueViewport('vp-1', {
+        displaySets: [{ displaySetInstanceUID: 'ds-new' }],
+      })
+      expect(signal.aborted).toBe(true)
+      await loading
+    })
+
+    it('on unregister', async () => {
+      const { signal, loading } = await startOverlay()
+      unregisterNiivue('vp-1')
+      expect(signal.aborted).toBe(true)
+      await loading
+    })
   })
 
   it('does nothing without a loaded base volume', async () => {

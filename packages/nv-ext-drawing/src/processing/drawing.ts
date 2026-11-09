@@ -331,28 +331,21 @@ export function interpolateMaskSlices(
       smoothSlice(maskHi, w, h)
     }
 
+    // Endpoint intensities are fixed per color interval; extract them once.
+    const guided = opts.useIntensityGuided && imageData
+    const intLo = guided
+      ? extractIntensitySlice(lo, sliceType, imageData, dims, maxVal, rasMap)
+      : null
+    const intHi = guided
+      ? extractIntensitySlice(hi, sliceType, imageData, dims, maxVal, rasMap)
+      : null
+
     for (let z = lo + 1; z < hi; z++) {
       const interp = new Float32Array(w * h)
       const baseFracHi = (z - lo) / (hi - lo)
       const baseFracLo = 1 - baseFracHi
 
-      if (opts.useIntensityGuided && imageData) {
-        const intLo = extractIntensitySlice(
-          lo,
-          sliceType,
-          imageData,
-          dims,
-          maxVal,
-          rasMap,
-        )
-        const intHi = extractIntensitySlice(
-          hi,
-          sliceType,
-          imageData,
-          dims,
-          maxVal,
-          rasMap,
-        )
+      if (intLo && intHi && imageData) {
         const intTarget = extractIntensitySlice(
           z,
           sliceType,

@@ -97,6 +97,33 @@ describe('wsiVolumeLevels', () => {
     expect(levels[0]?.frameBaseUrl).toBe('https://h/instances/fine/frames')
   })
 
+  it('resolves a relative DICOMweb root against the page', () => {
+    const ds: OhifDisplaySet = {
+      instances: [
+        {
+          imageId: 'wadors:/dicomweb/instances/fine/frames/1',
+          ImageType: 'DERIVED\\PRIMARY\\VOLUME\\NONE',
+          TotalPixelMatrixColumns: 2000,
+          TotalPixelMatrixRows: 1000,
+          Columns: 512,
+          Rows: 512,
+          TransferSyntaxUID: JPEG,
+        },
+      ],
+    }
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'https://h/viewer/niivue' },
+      configurable: true,
+    })
+    try {
+      expect(wsiVolumeLevels(ds)[0]?.frameBaseUrl).toBe(
+        'https://h/dicomweb/instances/fine/frames',
+      )
+    } finally {
+      Reflect.deleteProperty(globalThis, 'location')
+    }
+  })
+
   it('splits a trailing query off the frame imageId, preserving it', () => {
     const ds: OhifDisplaySet = {
       instances: [

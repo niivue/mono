@@ -1,3 +1,13 @@
+## 1.0.0-rc.127 (2026-11-09)
+
+### Performance
+
+- **nv-ext-drawing:** extract interpolation endpoint intensities once per interval ([540e7d80](https://github.com/niivue/mono/commit/540e7d80))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.126 (2026-11-09)
 
 ### Updated Dependencies

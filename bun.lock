@@ -260,7 +260,7 @@
     },
     "packages/nv-ext-drawing": {
       "name": "@niivue/nv-ext-drawing",
-      "version": "1.0.0-rc.126",
+      "version": "1.0.0-rc.127",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "~5.8.3",

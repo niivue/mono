@@ -226,18 +226,17 @@ describe('frameAt', () => {
     expect(frameAt(sf, [[0, 0, 100]])).toBeUndefined()
   })
 
-  it('takes the displayed (nearest) slice for an off-centre crosshair depth', () => {
+  it('gives no identity to a depth between slices', () => {
     if (!sf) throw new Error('no map')
-    // Slices at z 30, 32.5, 35, 37.5: z 33.5 shows slice 1, z 31.2 slice 0.
+    // Slices at z 30, 32.5, 35, 37.5. The viewport snaps the crosshair to slice
+    // centres; a ruler at z 31.2 lies on no frame.
     const at = (z: number) =>
       frameAt(sf, [
         [0, 0, z],
         [9, 4, z],
       ])?.SOPInstanceUID
-    expect(at(33.5)).toBe('ax1')
-    expect(at(31.2)).toBe('ax0')
-    expect(at(36.4)).toBe('ax3')
-    expect(at(39)).toBeUndefined() // past the last slice
+    expect(at(32.5)).toBe('ax1')
+    expect(at(31.2)).toBeUndefined()
   })
 
   it('needs every point on the frame plane, not just its slab', () => {

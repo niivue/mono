@@ -1,3 +1,20 @@
+## 1.0.0-rc.120 (2026-11-09)
+
+### Features
+
+- **nv-mcp:** set_view rotates and flips slice views ([f1524171](https://github.com/niivue/mono/commit/f1524171))
+
+### Fixes
+
+- **nv-mcp:** set_view checks every value before it writes any ([7afba0c5](https://github.com/niivue/mono/commit/7afba0c5))
+- **nv-mcp:** set_view checks rotate and flip before any write ([c2e42b61](https://github.com/niivue/mono/commit/c2e42b61))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.119 (2026-11-09)
 
 ### Updated Dependencies

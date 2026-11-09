@@ -42,3 +42,47 @@ describe('NVControlBase under bun test', () => {
     expect(emitted[1]).toBe(b)
   })
 })
+
+describe('2D rotate and flip state', () => {
+  test('constructor options set all three; defaults are unturned and unflipped', () => {
+    const state = (nv: NiiVue) => [
+      nv.rotation2D,
+      nv.isFlipped2DHorizontal,
+      nv.isFlipped2DVertical,
+    ]
+    expect(state(new NiiVue())).toEqual([0, false, false])
+    expect(
+      state(
+        new NiiVue({
+          rotation2D: 180,
+          isFlipped2DHorizontal: true,
+          isFlipped2DVertical: true,
+        }),
+      ),
+    ).toEqual([180, true, true])
+    expect(new NiiVue({ rotation2D: 30 }).rotation2D).toBe(0)
+  })
+
+  test('setters store, round and emit the bare key', () => {
+    const nv = new NiiVue()
+    const seen: [string, unknown][] = []
+    nv.addEventListener('change', (e) =>
+      seen.push([e.detail.property, e.detail.value]),
+    )
+    nv.rotation2D = -90
+    nv.isFlipped2DHorizontal = true
+    nv.isFlipped2DVertical = true
+    nv.rotation2D = 45
+    expect(nv.model.layout).toMatchObject({
+      rotation2D: 90,
+      isFlipped2DHorizontal: true,
+      isFlipped2DVertical: true,
+    })
+    expect(seen).toEqual([
+      ['rotation2D', 270],
+      ['isFlipped2DHorizontal', true],
+      ['isFlipped2DVertical', true],
+      ['rotation2D', 90],
+    ])
+  })
+})

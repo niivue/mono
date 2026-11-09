@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import type { Plugin } from 'vite'
-import { defineConfig } from 'vite'
+import { defineConfig, normalizePath } from 'vite'
 import dts from 'vite-plugin-dts'
 
 /**
@@ -38,6 +38,32 @@ export function inlineImageAssets(): Plugin {
   }
 }
 
+/**
+ * Rollup names a shared chunk after one of its modules, which labels the core
+ * chunk (the controller and what every entry needs) after an incidental
+ * helper. Name it for what it is. Shared with vite.config.standalone.ts.
+ */
+export const coreChunkFileNames =
+  (dir: string) =>
+  (chunk: { moduleIds: string[] }): string =>
+    chunk.moduleIds.some((id) => id.endsWith('/src/NVControlBase.ts'))
+      ? `${dir}core-[hash].js`
+      : `${dir}[name]-[hash].js`
+
+// Published declarations reach WebGPU globals (#570), so every exported types
+// file references @webgpu/types. Added here, not in source: dts drops a
+// reference written above a file's leading import.
+const typesEntries = new Set(
+  Object.values(
+    JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+      .exports as Record<string, { types?: string } | string>,
+  ).flatMap((e) =>
+    typeof e === 'object' && e.types
+      ? [normalizePath(fileURLToPath(new URL(e.types, import.meta.url)))]
+      : [],
+  ),
+)
+
 export default defineConfig({
   publicDir: false,
   resolve: {
@@ -62,21 +88,20 @@ export default defineConfig({
           : ''
         const depth = srcRelative ? srcRelative.split('/').length : 0
         const prefix = depth > 0 ? '../'.repeat(depth) : './'
+        const webgpuRef = typesEntries.has(filePath)
+          ? '/// <reference types="@webgpu/types" preserve="true" />\n'
+          : ''
         return {
-          content: content.replace(
-            /from\s+['"]@\/([^'"]+)['"]/g,
-            (_match, p) => `from '${prefix}${p}'`,
-          ),
+          content:
+            webgpuRef +
+            content.replace(
+              /from\s+['"]@\/([^'"]+)['"]/g,
+              (_match, p) => `from '${prefix}${p}'`,
+            ),
         }
       },
     }),
   ],
-  // zarrita loads its blosc/lz4/zstd codecs through dynamic imports. Those
-  // would split a worker bundle into chunks, and an inlined worker is a single
-  // blob with nowhere to fetch a chunk from, so fold them into the one output.
-  worker: {
-    rollupOptions: { output: { inlineDynamicImports: true } },
-  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -105,7 +130,8 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      external: ['cbor-x', 'gl-matrix', 'nifti-reader-js', 'zarrita'],
+      external: ['cbor-x', 'gl-matrix', 'nifti-reader-js'],
+      output: { chunkFileNames: coreChunkFileNames('') },
     },
   },
 })

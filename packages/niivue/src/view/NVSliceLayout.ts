@@ -2,7 +2,12 @@ import { type mat4, vec3, vec4 } from 'gl-matrix'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
-import type { CustomLayoutTile, NVGlobalCamera, ViewHitTest } from '@/NVTypes'
+import type {
+  CustomLayoutTile,
+  NVGlobalCamera,
+  Rotation2D,
+  ViewHitTest,
+} from '@/NVTypes'
 import { getAxisColor } from '@/view/crosshairColor'
 import type { BuildLineFn, LineData } from './NVLine'
 import { projectMMToCanvas } from './sliceUtils'
@@ -21,6 +26,8 @@ export type SliceTile = {
   renderOrientation?: number
   crossLines?: { axialMM: number[]; coronalMM: number[]; sagittalMM: number[] }
   showLabels?: boolean
+  /** Clockwise clip-space turn of a 2D tile (see {@link slice2DTransform}); absent is 0. */
+  clipRot?: Rotation2D
   // Cached during render loop for fast interactive picking
   mvpMatrix?: mat4
   planeNormal?: vec3
@@ -66,6 +73,9 @@ export type SliceLayoutConfig = {
   isRadiologicalConvention?: boolean
   /** Sagittal nose direction; null/undefined follows `isRadiologicalConvention`. */
   isSagittalNoseLeft?: boolean | null
+  rotation2D?: Rotation2D
+  isFlipped2DHorizontal?: boolean
+  isFlipped2DVertical?: boolean
   multiplanarLayout?: number
   multiplanarShowRender?: number
   sliceMosaicString?: string
@@ -80,11 +90,39 @@ export type SliceLayoutConfig = {
 
 // ---------- Helpers ----------
 
-/** The two layout settings that decide which way a 2D tile faces. */
+/** The layout settings that decide which way a 2D tile faces. */
 export type SliceOrientationSettings = {
   isRadiological: boolean
   isSagittalNoseLeft?: boolean | null
+  rotation2D?: Rotation2D
+  isFlipped2DHorizontal?: boolean
+  isFlipped2DVertical?: boolean
 }
+
+/**
+ * How a 2D tile draws H^h V^v R(rotation2D) of its base (radiological /
+ * nose-left) view: toggle the base mirror and turn clockwise by `clipRot` in
+ * clip space. A flip is drawn as the view from behind the slice, never as a
+ * clip-space mirror, so back-face culling stays valid. Derived from
+ * H R(t) = R(-t) H, V = R(180) H and H V = R(180).
+ */
+export function slice2DTransform(layout: SliceOrientationSettings): {
+  isMirrorToggled: boolean
+  clipRot: Rotation2D
+} {
+  const t = layout.rotation2D ?? 0
+  const h = !!layout.isFlipped2DHorizontal
+  const v = !!layout.isFlipped2DVertical
+  const turn = h ? (v ? t + 180 : -t) : v ? 180 - t : t
+  return {
+    isMirrorToggled: h !== v,
+    clipRot: NVConstants.normalizeRotation2D(turn),
+  }
+}
+
+/** In-plane [u, v] extents as on-screen [width, height]; a quarter turn swaps. */
+const screenWH = (uv: ArrayLike<number>, rotation2D = 0): [number, number] =>
+  rotation2D % 180 ? [uv[1], uv[0]] : [uv[0], uv[1]]
 
 /**
  * Whether sagittal tiles draw the nose (anterior) on the left.
@@ -105,15 +143,19 @@ export function sagittalNoseLeft(layout: SliceOrientationSettings): boolean {
  * the nose points left. This is the flag {@link NVTransforms.calculateMvpMatrix2D}
  * takes as `isRadiological` (it negates the ortho U bounds and pan U), and it has
  * to agree with the tile's azimuth from {@link sliceRotation} or the slice is
- * drawn off-screen.
+ * drawn off-screen. The 2D flips toggle it (see {@link slice2DTransform});
+ * render tiles ignore them.
  */
 export function isSliceMirrored(
   axCorSag: number,
   layout: SliceOrientationSettings,
 ): boolean {
-  if (axCorSag === NVConstants.SLICE_TYPE.SAGITTAL)
-    return sagittalNoseLeft(layout)
-  return layout.isRadiological
+  if (axCorSag === NVConstants.SLICE_TYPE.RENDER) return layout.isRadiological
+  const base =
+    axCorSag === NVConstants.SLICE_TYPE.SAGITTAL
+      ? sagittalNoseLeft(layout)
+      : layout.isRadiological
+  return base !== slice2DTransform(layout).isMirrorToggled
 }
 
 /** Camera azimuth/elevation that puts a 2D slice orientation face-on. */
@@ -121,15 +163,15 @@ export function sliceRotation(
   sliceType: number,
   layout: SliceOrientationSettings,
 ): { azimuth: number; elevation: number } {
-  const isRadiological = layout.isRadiological
+  const mirrored = isSliceMirrored(sliceType, layout)
   if (sliceType === NVConstants.SLICE_TYPE.SAGITTAL)
-    return { azimuth: sagittalNoseLeft(layout) ? 90 : -90, elevation: 0 }
+    return { azimuth: mirrored ? 90 : -90, elevation: 0 }
   if (sliceType === NVConstants.SLICE_TYPE.CORONAL)
-    return { azimuth: isRadiological ? 180 : 0, elevation: 0 }
+    return { azimuth: mirrored ? 180 : 0, elevation: 0 }
   if (sliceType === NVConstants.SLICE_TYPE.AXIAL)
     return {
-      azimuth: isRadiological ? 180 : 0,
-      elevation: isRadiological ? -90 : 90,
+      azimuth: mirrored ? 180 : 0,
+      elevation: mirrored ? -90 : 90,
     }
   return { azimuth: 0, elevation: 0 }
 }
@@ -140,6 +182,9 @@ const orientationOf = (
 ): SliceOrientationSettings => ({
   isRadiological: config.isRadiologicalConvention ?? false,
   isSagittalNoseLeft: config.isSagittalNoseLeft ?? null,
+  rotation2D: config.rotation2D,
+  isFlipped2DHorizontal: config.isFlipped2DHorizontal,
+  isFlipped2DVertical: config.isFlipped2DVertical,
 })
 
 // idxMap maps each orientation to [inPlaneU, inPlaneV, depth] indices into XYZ
@@ -226,6 +271,7 @@ export function crosshairRadiusMM(model: NVModel, tile: SliceTile): number {
       tile.screen.mxMM,
       ltwh,
       slicePanUV(model.scene.pan2Dxyzmm, tile.axCorSag),
+      tile.clipRot,
     )
   }
   return (widthPx * mmPerPixel) / 2
@@ -317,17 +363,17 @@ const fillScreen = (s: ScreenInfo, spans: [number, number]): ScreenInfo => {
   return out
 }
 
-// Tile mm dimensions (in-plane width x height) for an orientation
+// Tile mm dimensions (on-screen width x height) for an orientation
 const tileDimsMM = (
   orient: number,
   range: vec3,
   isEqual: boolean,
   maxDim: number,
+  rotation2D = 0,
 ): [number, number] => {
   if (isEqual) return [maxDim, maxDim]
-  if (orient === NVConstants.SLICE_TYPE.AXIAL) return [range[0], range[1]]
-  if (orient === NVConstants.SLICE_TYPE.CORONAL) return [range[0], range[2]]
-  return [range[1], range[2]] // sagittal
+  const [u, v] = IDX_MAP[orient]
+  return screenWH([range[u], range[v]], rotation2D)
 }
 
 // ---------- Pack helpers ----------
@@ -384,6 +430,12 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
   const isEqual = config.isMultiplanarEqualSize ?? false
   const isCenterMosaic = config.isCenterMosaic ?? true
   const globalCrossLines = config.isCrossLines ?? false
+  // Mosaic render tiles keep the unflipped view: flips are 2D only.
+  const renderOrientation = {
+    ...orientation,
+    isFlipped2DHorizontal: false,
+    isFlipped2DVertical: false,
+  }
 
   const range = vec3.create()
   vec3.sub(range, extentsMax, extentsMin)
@@ -459,7 +511,13 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
     const mm = parseFloat(token)
     if (Number.isNaN(mm)) continue
 
-    const [w, h] = tileDimsMM(orient, range, isEqual, maxDim)
+    const [w, h] = tileDimsMM(
+      orient,
+      range,
+      isEqual,
+      maxDim,
+      isRender ? 0 : config.rotation2D,
+    )
 
     currentRow.push({
       orient,
@@ -536,7 +594,10 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
       const h = desc.h * zoom
       const yOff = (rowHeights[r] * zoom - h) / 2
 
-      const rot = sliceRotation(desc.orient, orientation)
+      const rot = sliceRotation(
+        desc.orient,
+        desc.isRender ? renderOrientation : orientation,
+      )
       let azimuth = rot.azimuth
       if (desc.isRender && (desc.sliceMM < 0 || Object.is(desc.sliceMM, -0))) {
         azimuth += 180
@@ -609,9 +670,10 @@ function heroLayout(config: SliceLayoutConfig): SliceTile[] {
     if (!fov) {
       throw new Error('Missing fovMM for hero slice')
     }
-    const zoom = Math.min(heroW / fov[0], canvasWH[1] / fov[1])
-    const w = fov[0] * zoom
-    const h = fov[1] * zoom
+    const [fw, fh] = screenWH(fov, config.rotation2D)
+    const zoom = Math.min(heroW / fw, canvasWH[1] / fh)
+    const w = fw * zoom
+    const h = fh * zoom
     heroTile = {
       axCorSag: heroType,
       screen: cloneScreen(screen.screen as ScreenInfo),
@@ -662,13 +724,15 @@ function layoutMultiplanar(config: SliceLayoutConfig): SliceTile[] {
     ? buildEqualScreens(extentsMin, extentsMax, orientation, maxDim)
     : buildScreens(extentsMin, extentsMax, orientation)
 
-  // Tile dimensions in mm
-  const wAx = isEqual ? maxDim : range[0]
-  const hAx = isEqual ? maxDim : range[1]
-  const wCor = isEqual ? maxDim : range[0]
-  const hCor = isEqual ? maxDim : range[2]
-  const wSag = isEqual ? maxDim : range[1]
-  const hSag = isEqual ? maxDim : range[2]
+  const { rotation2D } = config
+  const { AXIAL, CORONAL, SAGITTAL } = NVConstants.SLICE_TYPE
+  const [wAx, hAx] = tileDimsMM(AXIAL, range, isEqual, maxDim, rotation2D)
+  const [wCor, hCor] = tileDimsMM(CORONAL, range, isEqual, maxDim, rotation2D)
+  const [wSag, hSag] = tileDimsMM(SAGITTAL, range, isEqual, maxDim, rotation2D)
+  // Grid cells: coronal over axial on the left, sagittal top right. Unturned,
+  // wAx === wCor and hCor === hSag; a quarter turn breaks both.
+  const gridColW = Math.max(wAx, wCor)
+  const gridRowH = Math.max(hCor, hSag)
 
   const rowZoom = Math.min(
     (canvasWH[0] - 2 * tileMargin) / (wAx + wCor + wSag),
@@ -687,8 +751,8 @@ function layoutMultiplanar(config: SliceLayoutConfig): SliceTile[] {
     (canvasWH[1] - 3 * tileMargin) / (hAx + hCor + hSag + maxDim),
   )
   const gridZoom = Math.min(
-    (canvasWH[0] - tileMargin) / (wAx + wSag),
-    (canvasWH[1] - tileMargin) / (hAx + hCor),
+    (canvasWH[0] - tileMargin) / (gridColW + wSag),
+    (canvasWH[1] - tileMargin) / (hAx + gridRowH),
   )
 
   const candidates: Candidate[] = [
@@ -773,25 +837,22 @@ function layoutMultiplanar(config: SliceLayoutConfig): SliceTile[] {
 
   // GRID
   const gridRenderSize = Math.min(sSagittal.w, sAxial.h)
-  const totalW = sAxial.w + sSagittal.w + tileMargin
-  const totalH = sAxial.h + sCoronal.h + tileMargin
+  const colW = gridColW * z
+  const rowH = gridRowH * z
+  const totalW = colW + sSagittal.w + tileMargin
+  const totalH = sAxial.h + rowH + tileMargin
   const offX = (canvasWH[0] - totalW) / 2
   const offY = (canvasWH[1] - totalH) / 2
   const tiles = [
     { ...cor, leftTopWidthHeight: [offX, offY, sCoronal.w, sCoronal.h] },
     {
       ...ax,
-      leftTopWidthHeight: [
-        offX,
-        offY + sCoronal.h + tileMargin,
-        sAxial.w,
-        sAxial.h,
-      ],
+      leftTopWidthHeight: [offX, offY + rowH + tileMargin, sAxial.w, sAxial.h],
     },
     {
       ...sag,
       leftTopWidthHeight: [
-        offX + sCoronal.w + tileMargin,
+        offX + colW + tileMargin,
         offY,
         sSagittal.w,
         sSagittal.h,
@@ -802,8 +863,8 @@ function layoutMultiplanar(config: SliceLayoutConfig): SliceTile[] {
     tiles.push({
       ...ren,
       leftTopWidthHeight: [
-        offX + sCoronal.w + tileMargin,
-        offY + sCoronal.h + tileMargin,
+        offX + colW + tileMargin,
+        offY + rowH + tileMargin,
         gridRenderSize,
         gridRenderSize,
       ],
@@ -884,7 +945,7 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
       const screen = screens[idx]
       if (!screen?.screen) continue
       // Fit the slice's mm aspect ratio within the available tile area
-      const fov = screen.screen.fovMM
+      const fov = screenWH(screen.screen.fovMM, config.rotation2D)
       const zoom = Math.min(pw / fov[0], ph / fov[1])
       // A zero in-plane span gives a zero or infinite fit scale: widening by
       // it puts NaN mm bounds in the projection, and 0 * Infinity is a NaN
@@ -900,7 +961,10 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
         axCorSag: idx,
         // Spans are stored PRE-zoom: calculateMvpMatrix2D divides by it (#68).
         screen: fill
-          ? fillScreen(screen.screen, [fw / zoom, fh / zoom])
+          ? fillScreen(
+              screen.screen,
+              screenWH([fw / zoom, fh / zoom], config.rotation2D),
+            )
           : cloneScreen(screen.screen),
         azimuth: rot.azimuth,
         elevation: rot.elevation,
@@ -997,6 +1061,9 @@ export function fitSlicesFromModel(
       extentsMax: model.extentsMax,
       isRadiologicalConvention: model.layout.isRadiological,
       isSagittalNoseLeft: model.layout.isSagittalNoseLeft,
+      rotation2D: model.layout.rotation2D,
+      isFlipped2DHorizontal: model.layout.isFlipped2DHorizontal,
+      isFlipped2DVertical: model.layout.isFlipped2DVertical,
       multiplanarLayout: model.layout.multiplanarType,
       multiplanarShowRender: model.layout.showRender,
       sliceMosaicString: model.layout.mosaicString,
@@ -1049,6 +1116,15 @@ export function insetRect(
 }
 
 export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
+  const tiles = layoutTiles(config)
+  const { clipRot } = slice2DTransform(orientationOf(config))
+  if (clipRot)
+    for (const t of tiles)
+      if (t.axCorSag !== NVConstants.SLICE_TYPE.RENDER) t.clipRot = clipRot
+  return tiles
+}
+
+function layoutTiles(config: SliceLayoutConfig): SliceTile[] {
   const { canvasWH, extentsMin, extentsMax } = config
   const sliceType = config.sliceType
   const orientation = orientationOf(config)
@@ -1087,10 +1163,11 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
   // Single slice
   if (sliceType !== NVConstants.SLICE_TYPE.MULTIPLANAR) {
     const idx = sliceType // AXIAL=0, CORONAL=1, SAGITTAL=2
-    const fov = screens[idx].screen?.fovMM
-    if (!fov) {
+    const fovMM = screens[idx].screen?.fovMM
+    if (!fovMM) {
       throw new Error('Missing fovMM for slice')
     }
+    const fov = screenWH(fovMM, config.rotation2D)
     const zoom = Math.min(canvasWH[0] / fov[0], canvasWH[1] / fov[1])
     // A zero in-plane span gives a zero or infinite fit scale: widening by it
     // puts NaN mm bounds in the projection, and 0 * Infinity is a NaN rect.
@@ -1105,10 +1182,10 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
         ...screens[idx],
         // Spans are stored PRE-zoom: calculateMvpMatrix2D divides by it (#68).
         ...(fill && {
-          screen: fillScreen(screens[idx].screen as ScreenInfo, [
-            w / zoom,
-            h / zoom,
-          ]),
+          screen: fillScreen(
+            screens[idx].screen as ScreenInfo,
+            screenWH([w / zoom, h / zoom], config.rotation2D),
+          ),
         }),
         leftTopWidthHeight: [
           (canvasWH[0] - w) / 2,
@@ -1169,6 +1246,8 @@ export function screenSlicePick(
     model.volumes[0]?.obliqueRAS,
     undefined,
     pan,
+    true,
+    tile.clipRot,
   )
   const sliceDim = NVConstants.sliceTypeDim(hit.sliceType)
   const sliceFrac =

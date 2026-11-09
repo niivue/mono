@@ -108,13 +108,16 @@ export function buildRuler(
       tile.screen.mxMM,
       tile.leftTopWidthHeight,
       slicePanUV(pan2Dxyzmm, tile.axCorSag),
+      tile.clipRot,
     ) * mmPerUnit
   if (!(mmPerPx > 0)) return null
 
   // Cap by the DATA span too: a filled tile is the whole canvas, so sizing on
-  // it alone grows the bar past the image whenever the volume is small.
+  // it alone grows the bar past the image whenever the volume is small. The
+  // bar is horizontal, so a quarter turn caps it by the V span.
+  const dataSpan = tile.screen.fovMM[(tile.clipRot ?? 0) % 180 ? 1 : 0]
   const ruler = chooseRulerSize(
-    Math.min(tileWidth * mmPerPx, Math.abs(tile.screen.fovMM[0]) * mmPerUnit),
+    Math.min(tileWidth * mmPerPx, Math.abs(dataSpan) * mmPerUnit),
   )
   if (!ruler) return null
 

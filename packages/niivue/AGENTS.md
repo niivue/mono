@@ -327,7 +327,7 @@ Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (
 
 **Future opportunity — WebGPU `clip-distances`:** a commented-out block in `src/wgpu/NVViewGPU.ts` (just above `requestDevice`) sketches a hardware-accelerated mesh clip plane path gated on the `clip-distances` feature. Adapter support is still patchy (notably Safari), so the code is parked. Activation guidance lives next to the block.
 
-**Known issue — Safari WebGPU with MSAA:** WebKit's WebGPU (Safari, every iOS browser) runs the fragment shader once per MSAA sample, so `isAntiAlias: true` makes the volume ray-march about 4x slower (#381). It is still present in Safari Technology Preview 255 (November 2026). We work around it rather than splitting the volume into a single-sample pass: `isAntiAlias` defaults to `false`, and most live demos default to the WebGL2 backend. The demos that default to WebGPU with anti-aliasing on (`examples/slides.js`, `examples/range.js`, `apps/dandi-demo/src/dandi.js`) turn it off on WebKit; `?aa=on|off` overrides. Retest every couple of months, comparing `isAntiAlias: true` against `false` on the WebGPU backend; once Safari is fixed, remove those WebKit checks. Separately, `SlideRendererGPU` (`src/wgpu/slide.ts`) has no MSAA (`sampleCount: 1`), so the slides demo's Anti-alias menu only affects its WebGL2 renderer.
+**Known issue — Safari WebGPU with MSAA:** WebKit's WebGPU (Safari, every iOS browser) runs the fragment shader once per MSAA sample, so `isAntiAlias: true` makes the volume ray-march about 4x slower (#381). It is still present in Safari Technology Preview 255 (November 2026). We work around it rather than splitting the volume into a single-sample pass: `isAntiAlias` defaults to `false`, and most live demos default to the WebGL2 backend. The demos that default to WebGPU with anti-aliasing on (`examples/slides.js`, `apps/demo-ext-tile/src/range.js`, `apps/dandi-demo/src/dandi.js`) turn it off on WebKit; `?aa=on|off` overrides. Retest every couple of months, comparing `isAntiAlias: true` against `false` on the WebGPU backend; once Safari is fixed, remove those WebKit checks. Separately, `SlideRendererGPU` (`src/wgpu/slide.ts`) has no MSAA (`sampleCount: 1`), so the slides demo's Anti-alias menu only affects its WebGL2 renderer.
 
 ## API conventions
 
@@ -447,6 +447,10 @@ The package ships three hand-maintained entry points:
 
 (The other `package.json` subpaths, `./viewport`, `./assets/fonts` and
 `./assets/matcaps`, point straight at a module and have no hand-written index.)
+
+The library build prepends `/// <reference types="@webgpu/types" preserve="true" />` to the
+`types` file of every `package.json` export (`vite.config.lib.ts`), so a new
+export needs no reference of its own; do not write one in source, as dts drops it.
 
 **A new public export goes in all three files.** Adding it to `src/index.ts`
 alone is the standing mistake, and nothing in the toolchain catches it: the
@@ -615,7 +619,7 @@ Linting/formatting is **Biome**, configured in the monorepo root `biome.json`. S
 
 - **Strict mode** is enabled (strict null checks, no implicit any, etc.)
 - **Target**: ESNext with bundler module resolution
-- **WebGPU types**: `@webgpu/types` for GPU API type definitions
+- **WebGPU types**: `@webgpu/types` for GPU API type definitions. A peer dependency (plus a dev one for the repo): published declarations reference WebGPU globals, and a peer dedupes with the consumer's own copy instead of nesting a second, conflicting one
 - Run `bun run typecheck` to validate — this runs `tsc --noEmit`
 
 ### Logging
@@ -2202,6 +2206,11 @@ voxel order re-uploads intensities). `wgpu/cinematic.ts` + `cinematic*.wgsl` (`c
 to the march and extinction so primary and shadow rays classify identically).
 `gl/cinematic.ts` + `gl/cinematicShader.ts` mirror them method for method and
 statement for statement.
+
+Each view builds the renderer (shaders, pipelines) on its first CINEMATIC
+frame through `ensure()`, once, not at view init: WebGPU compiles pipelines at
+creation (~0.5 s GPU per view on SwiftShader). Unsupported volumes (chunked,
+RGB) fall back before it is built.
 
 **Frame structure (WebGPU):** `beginFrame`; on the first cinematic tile
 `prepare` (CPU cache update, uploads, gradient and extinction prep passes when

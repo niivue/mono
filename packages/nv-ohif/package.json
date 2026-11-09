@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ohif",
-  "version": "1.0.0-rc.114",
+  "version": "1.0.0-rc.130",
   "private": false,
   "type": "module",
   "description": "NiiVue viewport extension for the OHIF Viewer (render series with NiiVue: 3D volume rendering, meshes, overlays, multiplanar, drawing).",
@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build:lib": "NODE_ENV=production bun build ./src/index.ts --outdir=dist --target=browser --format=esm --external react --external react-dom --external @niivue/niivue --external @niivue/uikit --external @niivue/dcm2niix --external @niivue/nv-ext-tile --external dcmjs",
+    "build:lib": "bun build ./src/index.ts --production --outdir=dist --target=browser --format=esm --external react --external react-dom --external @niivue/niivue --external @niivue/uikit --external @niivue/dcm2niix --external @niivue/nv-ext-tile --external dcmjs",
     "build:types": "tsc -p tsconfig.build.json",
     "build:package": "bun run build:lib && bun run build:types",
     "test": "bun test"

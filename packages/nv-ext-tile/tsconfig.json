@@ -10,7 +10,8 @@
     "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["vite/client", "bun"]
   },
   "include": ["src"],
   "exclude": ["dist", "node_modules"]

@@ -102,7 +102,8 @@ const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 // bucket second -- see resolveStore, which picks whichever base offers the most
 // levels. `levels` lists the scale indices that may be present, coarsest-first;
 // only those that actually resolve reach the Level control. `stent` is bundled
-// locally (scale2 only); the rest stream from the bucket as-is, and
+// locally (scale2 only), so it streams L1 and L0 from the bucket when online and
+// falls back to the local L2 offline; the rest stream from the bucket as-is, and
 // scripts/fetch-omezarr.ts can mirror any of them to disk.
 //
 // SCREEN EVERY STORE BEFORE ADDING IT HERE. A published pyramid can be broken in
@@ -148,7 +149,7 @@ const OMEZARR_STORES = {
   stent: {
     id: 'stent.ome.zarr',
     name: 'Stent OME-Zarr',
-    levels: [2],
+    levels: [2, 1, 0],
   },
   pawpawsaurus: {
     id: 'pawpawsaurus.ome.zarr',
@@ -408,7 +409,9 @@ async function probeStoreBase(storeDef, storeUrl) {
       const res = await fetch(
         `${storeUrl}/${ds.path}/${arrayMetadataPath(zarrVersion)}`,
       )
-      if (res.ok) levels.push(candidate)
+      // A dev server answers a missing file with a 200 HTML fallback, so a level
+      // counts only when its metadata parses.
+      if (res.ok && (await res.json().catch(() => null))) levels.push(candidate)
     } catch {
       // Unreachable level (offline, blocked); the remaining ones may still be.
     }
@@ -670,6 +673,7 @@ async function presentLevels(storeDef) {
 // the coarsest by default. Returns the selected level (or null for synthetic).
 async function refreshLevelControl() {
   const store = currentStore()
+  els.level.title = 'Pyramid levels present on disk'
   // The synthetic shard is a single-level grid on the legacy streaming path, so
   // it has no octree for a budget plan to shape.
   els.plan.disabled = !store
@@ -693,6 +697,9 @@ async function refreshLevelControl() {
     ...levels.map((lvl) => new Option(`L${lvl}`, String(lvl))),
   )
   els.level.disabled = levels.length < 2
+  if (levels.length < 2) {
+    els.level.title = `Only L${levels[0]} is available for this store (the others are missing or unreachable)`
+  }
   // `levels` is coarsest-first. The Level control is a multi-LOD max-detail cap,
   // so default to the FINEST ("allow full detail at the crosshair") — picking a
   // coarser level caps how fine the octree may go anywhere.

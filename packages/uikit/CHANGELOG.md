@@ -1,3 +1,29 @@
+## 1.0.0-rc.116 (2026-11-08)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.119
+
+## 1.0.0-rc.115 (2026-11-08)
+
+### Fixes
+
+- **uikit:** load the default font without fetching a data: URL ([bc2e4a1e](https://github.com/niivue/mono/commit/bc2e4a1e))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.114 (2026-11-08)
+
+### Fixes
+
+- **uikit:** run the dev server under Bun ([3c2f09a6](https://github.com/niivue/mono/commit/3c2f09a6))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.113 (2026-11-08)
 
 ### Updated Dependencies

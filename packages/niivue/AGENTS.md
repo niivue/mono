@@ -448,6 +448,10 @@ The package ships three hand-maintained entry points:
 (The other `package.json` subpaths, `./viewport`, `./assets/fonts` and
 `./assets/matcaps`, point straight at a module and have no hand-written index.)
 
+The library build prepends `/// <reference types="@webgpu/types" preserve="true" />` to the
+`types` file of every `package.json` export (`vite.config.lib.ts`), so a new
+export needs no reference of its own; do not write one in source, as dts drops it.
+
 **A new public export goes in all three files.** Adding it to `src/index.ts`
 alone is the standing mistake, and nothing in the toolchain catches it: the
 typecheck passes, the build passes, `dist/index.d.ts` has the symbol, and the
@@ -615,7 +619,7 @@ Linting/formatting is **Biome**, configured in the monorepo root `biome.json`. S
 
 - **Strict mode** is enabled (strict null checks, no implicit any, etc.)
 - **Target**: ESNext with bundler module resolution
-- **WebGPU types**: `@webgpu/types` for GPU API type definitions
+- **WebGPU types**: `@webgpu/types` for GPU API type definitions. A peer dependency (plus a dev one for the repo): published declarations reference WebGPU globals, and a peer dedupes with the consumer's own copy instead of nesting a second, conflicting one
 - Run `bun run typecheck` to validate — this runs `tsc --noEmit`
 
 ### Logging

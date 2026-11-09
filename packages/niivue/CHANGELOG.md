@@ -1,3 +1,17 @@
+## 1.0.0-rc.119 (2026-11-08)
+
+### Fixes
+
+- **niivue:** a failed attach keeps the hold while another attach is pending or one succeeded ([3fa6964e](https://github.com/niivue/mono/commit/3fa6964e))
+- **niivue:** a failed attach lets go of its page worker hold ([b415d9c3](https://github.com/niivue/mono/commit/b415d9c3))
+- **niivue:** end page-wide workers when the last viewer is destroyed ([801973b5](https://github.com/niivue/mono/commit/801973b5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.118 (2026-11-08)
 
 ### Fixes

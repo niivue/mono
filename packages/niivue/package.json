@@ -1,6 +1,6 @@
 {
   "name": "@niivue/niivue",
-  "version": "1.0.0-rc.118",
+  "version": "1.0.0-rc.119",
   "type": "module",
   "description": "WebGPU/WebGL2 browser-based medical image visualization",
   "main": "./dist/niivue.js",
@@ -100,6 +100,9 @@
     "earcut": "^3.0.2",
     "gl-matrix": "^3.4.4",
     "nifti-reader-js": "^0.8.1"
+  },
+  "peerDependencies": {
+    "@webgpu/types": ">=0.1.69"
   },
   "devDependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.3",

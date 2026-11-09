@@ -210,6 +210,8 @@ function walk(
   visit: (e: Element) => void,
 ): number {
   while (o < end) {
+    // u16/u32 guard the tag and length, but the VR bytes are read directly.
+    if (o + 8 > b.length) throw new NeedMore()
     const tag = tagOf(u16(b, o), u16(b, o + 2))
     if (tag === T.itemEnd || tag === T.sequenceEnd) return o + 8
     if (at.depth === 0 && tag === T.pixelData) return o

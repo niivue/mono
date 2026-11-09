@@ -1,3 +1,19 @@
+## 1.0.0-rc.132 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** depend on nv-ext-tile/dicom for the WSI tile decoders ([49d65cb4](https://github.com/niivue/mono/commit/49d65cb4))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.132
+- Updated nv-ext-tile to 1.0.0-rc.26
+- Updated uikit to 1.0.0-rc.129
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.131 (2026-11-09)
 
 ### Updated Dependencies

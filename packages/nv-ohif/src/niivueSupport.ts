@@ -97,6 +97,9 @@ export function niivueSupportEvaluator(
         : NIIVUE_SUPPORTED_TOOLS
       // OHIF runs every command of a button, so each must work on NiiVue.
       const runs = (c: OhifToolbarButtonCommand): boolean => {
+        // An explicit other context bypasses the NIIVUE shadow, whatever the
+        // command or tool.
+        if (c.context !== undefined && c.context !== 'NIIVUE') return false
         const toolName = buttonToolName(button, c)
         // setToolActive without a toolGroupId targets the active viewport's
         // Cornerstone tool group, which a NiiVue viewport lacks: the click
@@ -107,9 +110,6 @@ export function niivueSupportEvaluator(
             (c.commandName !== 'setToolActive' ||
               c.commandOptions?.toolGroupId !== undefined)
           )
-        // An explicit other context bypasses the NIIVUE shadow, whatever the
-        // command's name.
-        if (c.context !== undefined && c.context !== 'NIIVUE') return false
         return (
           c.commandName.startsWith('niivue') || answered.includes(c.commandName)
         )

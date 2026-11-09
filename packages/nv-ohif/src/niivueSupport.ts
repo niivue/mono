@@ -24,6 +24,10 @@ const TOOL_COMMANDS = ['setToolActive', 'setToolActiveToolbar']
 const SLIDE_SUPPORTED_TOOLS: readonly string[] = ['Length', 'Pan', 'Zoom']
 // Volume-only standard commands that no-op on an NVSlide viewport.
 const SLIDE_UNSUPPORTED = ['setViewportOrientation', 'setWindowLevelPreset']
+// Host commands that act on display sets or app UI, not the viewport's
+// renderer, so they work on a NiiVue viewport. openDICOMTagViewer: OHIF
+// extensions/default commandsModule reads the grid's displaySetInstanceUIDs.
+const HOST_AGNOSTIC_COMMANDS = ['openDICOMTagViewer']
 
 /**
  * Prepend {@link NIIVUE_UNSUPPORTED_EVALUATOR} to a button's evaluators. OHIF
@@ -89,6 +93,8 @@ export function niivueSupportEvaluator(
       const entry = getNiivueEntry(viewportId)
       if (!entry) return undefined
       const commands = buttonCommands(button)
+      // Section lists, menus and the layout selector carry no commands.
+      if (commands.length === 0) return undefined
       const answered: readonly string[] = entry.slideView
         ? NIIVUE_STANDARD_COMMANDS.filter((c) => !SLIDE_UNSUPPORTED.includes(c))
         : NIIVUE_STANDARD_COMMANDS
@@ -97,6 +103,7 @@ export function niivueSupportEvaluator(
         : NIIVUE_SUPPORTED_TOOLS
       // OHIF runs every command of a button, so each must work on NiiVue.
       const runs = (c: OhifToolbarButtonCommand): boolean => {
+        if (HOST_AGNOSTIC_COMMANDS.includes(c.commandName)) return true
         // An explicit other context bypasses the NIIVUE shadow, whatever the
         // command or tool.
         if (c.context !== undefined && c.context !== 'NIIVUE') return false
@@ -114,7 +121,7 @@ export function niivueSupportEvaluator(
           c.commandName.startsWith('niivue') || answered.includes(c.commandName)
         )
       }
-      const supported = commands.length > 0 && commands.every(runs)
+      const supported = commands.every(runs)
       const toolName = buttonToolName(button, commands[0])
       if (!supported) {
         return {

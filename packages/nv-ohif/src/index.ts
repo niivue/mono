@@ -1,3 +1,4 @@
+import { version } from '../package.json'
 import {
   getNiivueCommandsModule,
   NIIVUE_CLIP_PLANES,
@@ -50,7 +51,7 @@ export const NIIVUE_OHIF_EXTENSION_ID = '@niivue/nv-ohif'
 // extension-loading convention.
 const niivueOhifExtension: OhifExtension = {
   id: NIIVUE_OHIF_EXTENSION_ID,
-  version: '0.0.0',
+  version,
   getViewportModule: (params) => getNiivueViewportModule(params),
   getSopClassHandlerModule: () => getNiivueSopClassHandlerModule(),
   getCommandsModule: (params) => getNiivueCommandsModule(params),

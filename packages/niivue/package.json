@@ -102,6 +102,9 @@
     "nifti-reader-js": "^0.8.1",
     "zarrita": "^0.7.3"
   },
+  "peerDependencies": {
+    "@webgpu/types": ">=0.1.69"
+  },
   "devDependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.3",
     "@niivue/dev-images": "workspace:*",

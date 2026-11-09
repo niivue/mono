@@ -676,7 +676,7 @@ export default class NiiVue extends EventTarget {
     const backend = options.backend ?? 'webgl2'
     this.opts = {
       backend,
-      isAntiAlias: options.isAntiAlias ?? false,
+      isAntiAlias: options.isAntiAlias ?? true,
       isDragDropEnabled: options.isDragDropEnabled ?? true,
       isInteractionEnabled: options.isInteractionEnabled ?? true,
       instances: options.instances,
@@ -3345,7 +3345,7 @@ export default class NiiVue extends EventTarget {
   }
 
   get isAntiAlias(): boolean {
-    return this.opts.isAntiAlias ?? false
+    return this.opts.isAntiAlias ?? true
   }
 
   get isDragDropEnabled(): boolean {

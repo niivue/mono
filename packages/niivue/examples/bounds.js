@@ -1,5 +1,11 @@
 import NiiVue from '../src/index.ts'
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it is off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+
 const nv1 = new NiiVue({
   backgroundColor: [0.3, 0, 0.1, 1],
   bounds: [
@@ -10,6 +16,7 @@ const nv1 = new NiiVue({
   boundsBorderColor: [0.3, 0.3, 0.3, 1],
   boundsBorderThickness: 2,
   backend: 'webgpu',
+  isAntiAlias: !isWebKit,
 })
 const nv2 = new NiiVue({
   backgroundColor: [0.15, 0.15, 0.3, 1],
@@ -21,6 +28,7 @@ const nv2 = new NiiVue({
   boundsBorderColor: [0.3, 0.3, 0.3, 1],
   boundsBorderThickness: 2,
   backend: 'webgpu',
+  isAntiAlias: !isWebKit,
 })
 
 // Both instances share one canvas, so the WebGPU init fallback is declined by

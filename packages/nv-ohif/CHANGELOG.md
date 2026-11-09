@@ -1,3 +1,14 @@
+## 1.0.0-rc.138 (2026-11-09)
+
+### Fixes
+
+- **nv-ohif:** exclude dist from typecheck again ([e96277e2](https://github.com/niivue/mono/commit/e96277e2))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.137 (2026-11-09)
 
 ### Fixes

@@ -1,3 +1,16 @@
+## 1.0.0-rc.138 (2026-11-09)
+
+### Fixes
+
+- **examples:** use isDragDropEnabled in freesurfer.clip ([71434b59](https://github.com/niivue/mono/commit/71434b59))
+- **examples:** pass the option names NiiVue reads ([#586](https://github.com/niivue/mono/issues/586))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.137 (2026-11-09)
 
 ### Fixes

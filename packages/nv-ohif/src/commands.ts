@@ -28,7 +28,7 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
-import { frameAt } from './sliceFrames'
+import { frameAt, type SliceFrames } from './sliceFrames'
 import { getStandardCommandDefinitions } from './standardCommands'
 import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
 
@@ -578,6 +578,14 @@ function annotationContentHash(a: VectorAnnotation): string {
   ])
 }
 
+// The row's hash: its content plus the frame it lies on, which appears only once
+// the converted volume's slice map is published, so that re-reflects the row.
+function rowHash(a: VectorAnnotation, sf: SliceFrames | undefined): string {
+  const frame = sf && frameAt(sf, annotationPointsLps(a))
+  const at = frame ? `${frame.SOPInstanceUID}:${frame.frameNumber}` : ''
+  return `${annotationContentHash(a)}|${at}`
+}
+
 // OHIF measurement uid -> the NiiVue annotation it reflects, so an edit of the
 // measurement's label in OHIF's panel can be pushed back as the annotation text.
 const measurementToAnnotation = new Map<
@@ -763,7 +771,7 @@ function reflectNiivueAnnotationResult(
   // fallback for empty text: reflecting that fallback would echo it back through
   // the label sync onto the canvas, making a user-cleared label impossible.
   const rowLabel = annotation.text ?? ''
-  const hash = annotationContentHash(annotation)
+  const hash = rowHash(annotation, entry.sliceFrames)
   if (mappingExhausted(viewportId, annotation.id, hash))
     return { status: 'retryableFailure' }
 
@@ -1195,7 +1203,7 @@ export function reconcileNiivueAnnotations(
     // Add new annotations and update changed rows in place.
     for (const annotation of live) {
       const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
-      const hash = annotationContentHash(annotation)
+      const hash = rowHash(annotation, entry.sliceFrames)
       if (existing && existing.hash === hash) continue
       const result = reflectNiivueAnnotationResult(
         viewportId,

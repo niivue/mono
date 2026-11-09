@@ -73,10 +73,11 @@ function buttonCommands(
 // ToolbarService.getToolNameForButton; undefined for a command button.
 function buttonToolName(
   button: OhifToolbarButton | undefined,
-  first: OhifToolbarButtonCommand | undefined,
+  command: OhifToolbarButtonCommand | undefined,
 ): string | undefined {
-  if (!first || !TOOL_COMMANDS.includes(first.commandName)) return undefined
-  const name = first.commandOptions?.toolName ?? button?.props.id ?? button?.id
+  if (!command || !TOOL_COMMANDS.includes(command.commandName)) return undefined
+  const name =
+    command.commandOptions?.toolName ?? button?.props.id ?? button?.id
   return typeof name === 'string' ? name : undefined
 }
 
@@ -97,26 +98,31 @@ export function niivueSupportEvaluator(
       const answered: readonly string[] = entry.slideView
         ? NIIVUE_STANDARD_COMMANDS.filter((c) => !SLIDE_UNSUPPORTED.includes(c))
         : NIIVUE_STANDARD_COMMANDS
-      const first = commands[0]
-      const toolName = buttonToolName(button, first)
-      // setToolActive without a toolGroupId targets the active viewport's
-      // Cornerstone tool group, which a NiiVue viewport lacks: the click no-ops.
-      const supported =
-        toolName !== undefined
-          ? (entry.slideView
-              ? SLIDE_SUPPORTED_TOOLS
-              : NIIVUE_SUPPORTED_TOOLS
-            ).includes(toolName) &&
-            (first?.commandName !== 'setToolActive' ||
-              first.commandOptions?.toolGroupId !== undefined)
-          : commands.every(
-              ({ commandName, context }) =>
-                commandName.startsWith('niivue') ||
-                HOST_AGNOSTIC_COMMANDS.includes(commandName) ||
-                // An explicit other context bypasses the NIIVUE shadow.
-                ((context === undefined || context === 'NIIVUE') &&
-                  answered.includes(commandName)),
-            )
+      const supportedTools = entry.slideView
+        ? SLIDE_SUPPORTED_TOOLS
+        : NIIVUE_SUPPORTED_TOOLS
+      // OHIF runs every command of a button, so each must work on NiiVue.
+      const runs = (c: OhifToolbarButtonCommand): boolean => {
+        const toolName = buttonToolName(button, c)
+        // setToolActive without a toolGroupId targets the active viewport's
+        // Cornerstone tool group, which a NiiVue viewport lacks: the click
+        // no-ops.
+        if (toolName !== undefined)
+          return (
+            supportedTools.includes(toolName) &&
+            (c.commandName !== 'setToolActive' ||
+              c.commandOptions?.toolGroupId !== undefined)
+          )
+        if (HOST_AGNOSTIC_COMMANDS.includes(c.commandName)) return true
+        // An explicit other context bypasses the NIIVUE shadow, whatever the
+        // command's name.
+        if (c.context !== undefined && c.context !== 'NIIVUE') return false
+        return (
+          c.commandName.startsWith('niivue') || answered.includes(c.commandName)
+        )
+      }
+      const supported = commands.every(runs)
+      const toolName = buttonToolName(button, commands[0])
       if (!supported) {
         return {
           disabled: true,

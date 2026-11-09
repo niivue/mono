@@ -1,3 +1,13 @@
+## 1.0.0-rc.124 (2026-11-09)
+
+### Features
+
+- **niivue:** 2D rotate and flip for slice views ([4879f84c](https://github.com/niivue/mono/commit/4879f84c))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.123 (2026-11-09)
 
 ### Performance

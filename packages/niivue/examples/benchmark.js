@@ -1150,6 +1150,7 @@ async function tractRegen(iter = 5) {
     calMaxNeg: 0,
     fixedColor: [255, 255, 255, 255],
     groupColors: null,
+    visibleGroups: null,
   }
   for (const scn of TRACT_REGEN_SCENARIOS) {
     await new Promise((r) => setTimeout(r, 0))

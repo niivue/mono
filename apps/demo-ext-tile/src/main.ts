@@ -9,7 +9,7 @@ import {
 import { TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
 import { fromBlob, Pool } from 'geotiff'
 
-const canvas = document.getElementById('canvas') as HTMLCanvasElement
+let canvas = document.getElementById('canvas') as HTMLCanvasElement
 const filesInput = document.getElementById('files') as HTMLInputElement
 const slideSelect = document.getElementById('slides') as HTMLSelectElement
 const seriesLabel = document.getElementById('series') as HTMLLabelElement
@@ -63,11 +63,17 @@ const gpu =
         console.warn('WebGPU unavailable, using WebGL2', err)
         return null
       })
-const gl = gpu ? null : canvas.getContext('webgl2', { alpha: false, antialias })
+const webgl2 = () => canvas.getContext('webgl2', { alpha: false, antialias })
+let gl = gpu ? null : webgl2()
+if (!gpu && !gl) {
+  // A WebGPU failure after getContext('webgpu') leaves this canvas unusable for WebGL2.
+  const fresh = canvas.cloneNode() as HTMLCanvasElement
+  canvas.replaceWith(fresh)
+  canvas = fresh
+  gl = webgl2()
+}
 const renderer = gpu ?? new SlideRenderer()
 if (renderer instanceof SlideRenderer) {
-  // ponytail: a late WebGPU failure leaves the canvas unusable for WebGL2;
-  // swap in a fresh canvas if that is ever seen.
   if (!gl) throw new Error('Neither WebGPU nor WebGL2 is available')
   renderer.init(gl)
 }

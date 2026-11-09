@@ -38,6 +38,28 @@ describe('retrieveInstanceUrlFromImageId', () => {
     }
   })
 
+  it('resolves a path-relative root against the document base, not the page', () => {
+    // A nested route: <base href="/viewer/"> on /viewer/studies/1.
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'https://h/viewer/studies/1' },
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, 'document', {
+      value: { baseURI: 'https://h/viewer/' },
+      configurable: true,
+    })
+    try {
+      expect(
+        retrieveInstanceUrlFromImageId(
+          'wadors:dicomweb/studies/1/series/2/instances/3/frames/1',
+        ),
+      ).toBe('https://h/viewer/dicomweb/studies/1/series/2/instances/3')
+    } finally {
+      Reflect.deleteProperty(globalThis, 'location')
+      Reflect.deleteProperty(globalThis, 'document')
+    }
+  })
+
   it('rejects non-http and non-instance ids', () => {
     expect(retrieveInstanceUrlFromImageId('')).toBeNull()
     expect(retrieveInstanceUrlFromImageId('dicomfile:/local/a.dcm')).toBeNull()

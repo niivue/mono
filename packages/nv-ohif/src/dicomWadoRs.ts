@@ -14,13 +14,15 @@
 /**
  * The http(s) URL a cornerstone imageId names, its loader scheme stripped. A
  * relative root (OHIF's `wadoRoot: '/dicomweb'` gives `wadors:/dicomweb/...`)
- * resolves against the page. Null for anything else.
+ * resolves against the document base, as the browser and cornerstone's loader
+ * resolve it (a `<base>` or nested route differs from the page URL). Null for
+ * anything else.
  */
 export function imageIdUrl(imageId: string): string | null {
   try {
     const url = new URL(
       imageId.replace(/^(wadors|dicomweb|wadouri):/i, ''),
-      globalThis.location?.href,
+      globalThis.document?.baseURI ?? globalThis.location?.href,
     )
     return url.protocol === 'http:' || url.protocol === 'https:'
       ? url.href

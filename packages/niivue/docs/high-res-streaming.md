@@ -117,7 +117,7 @@ The size of the deficit depends on how much intensity varies inside one fine vox
 | `hoa_heart` (HiP-CT) | sparse, thin, low contrast on a high pedestal | about `0.11` per level |
 | `pawpawsaurus` (CT) | dense, opaque, near-saturated | about `0.05` per level |
 
-`0.08` is the default because it splits them and because the dense case is nearly insensitive to the setting anyway: sweeping `pawpawsaurus` from 0 to 0.08 moves its mean brightness about 4% and changes its strongest edge step from `10.1%` to `9.3%`, while the same sweep on `hoa_heart` takes its seam from `-33%` to `-10%`. Spend the range where the artifact is visible. That is also why it stays a tunable render-time setting rather than a baked constant — the range demo (`examples/range.html`) exposes it as a slider next to `gamma` for A/B comparison.
+`0.08` is the default because it splits them and because the dense case is nearly insensitive to the setting anyway: sweeping `pawpawsaurus` from 0 to 0.08 moves its mean brightness about 4% and changes its strongest edge step from `10.1%` to `9.3%`, while the same sweep on `hoa_heart` takes its seam from `-33%` to `-10%`. Spend the range where the artifact is visible. That is also why it stays a tunable render-time setting rather than a baked constant — the range demo (`apps/demo-ext-tile/range.html`) exposes it as a slider next to `gamma` for A/B comparison.
 
 ### Per-level opacity compensation (off by default)
 

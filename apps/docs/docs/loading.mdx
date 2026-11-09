@@ -99,8 +99,8 @@ nv.isDragDropEnabled = false
 
 Volumes: NIfTI (`.nii`, `.nii.gz`), NRRD, MRtrix MIF, AFNI HEAD/BRIK,
 MGH/MGZ, ITK MHD/MHA, ECAT7, DSI Studio FIB/SRC, BMP, V16, VMR, NPY/NPZ,
-TIFF (including OME-TIFF and ImageJ stacks), the Allen JSON+PNG atlas, and
-OME-Zarr.
+TIFF (including OME-TIFF and ImageJ stacks) and the Allen JSON+PNG atlas.
+OME-Zarr loads through `@niivue/nv-ext-tile/zarr`.
 
 Meshes: GIfTI, FreeSurfer, PLY, STL, OBJ, VTK, MZ3, OFF, GEO/BYU, BrainSuite
 DFS, ICO/TRI, BrainNet NV, BrainVoyager SRF, X3D, ASC, WRL and IWM.
@@ -116,20 +116,20 @@ MINC and VOX loader plugins from NiiVue 0.x have not been ported.
 and the first frames only. The [Timeseries](/gallery/vox-4d) example uses it.
 
 OME-Zarr stores load one pyramid level at a time. `loadOmeZarrVolumes`
-returns ordinary volume options for `loadVolumes`:
+(from `@niivue/nv-ext-tile/zarr`) returns ordinary volume options for `loadVolumes`:
 
 ```js
-import { loadOmeZarrVolumes } from '@niivue/niivue'
+import { loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
 
 const volumes = await loadOmeZarrVolumes(storeUrl, { level: 2 })
 await nv.loadVolumes(volumes)
 ```
 
 Stores too large to load whole stream brick by brick through
-`nv.loadChunkedVolume`, with finer levels near the crosshair. These gallery
-pages show the streaming paths:
+`nv.loadChunkedVolume`, with finer levels near the crosshair. These pages
+show the streaming paths:
 
-- [OME-Zarr multiscale stores](/gallery/ome-zarr)
-- [Chunk streaming over HTTP range requests](/gallery/range)
+- [OME-Zarr multiscale stores](https://niivue.github.io/mono/demo-ext-tile/ome.zarr.html)
+- [Chunk streaming over HTTP range requests](https://niivue.github.io/mono/demo-ext-tile/range.html)
 - [Tiled (oversized) volumes](/gallery/vox-tiled)
 - [OME-TIFF and TIFF stacks](/gallery/ome-tiff)

@@ -720,6 +720,9 @@ export type CustomLayoutTile = {
   fill?: boolean
 }
 
+/** Clockwise quarter turns of a 2D slice tile, in degrees. */
+export type Rotation2D = 0 | 90 | 180 | 270
+
 export type LayoutConfig = {
   sliceType: number
   mosaicString: string
@@ -744,6 +747,15 @@ export type LayoutConfig = {
    * their historic orientation until this is set.
    */
   isSagittalNoseLeft: boolean | null
+  /**
+   * Clockwise screen rotation of 2D slice tiles, applied after
+   * `isRadiological` / `isSagittalNoseLeft`. Render tiles are unaffected.
+   */
+  rotation2D: Rotation2D
+  /** Mirror 2D slice tiles left-right on screen (after `rotation2D`). */
+  isFlipped2DHorizontal: boolean
+  /** Mirror 2D slice tiles top-bottom on screen (after `rotation2D`). */
+  isFlipped2DVertical: boolean
   /** Let a single 2D slice tile fill the canvas instead of letterboxing it. */
   isSingleViewFillCanvas: boolean
   customLayout: CustomLayoutTile[] | null
@@ -1355,6 +1367,10 @@ export type NiiVueOptions = {
   layoutInset?: [number, number, number, number]
   isRadiological?: boolean
   isSagittalNoseLeft?: boolean | null
+  /** Degrees, rounded to the nearest quarter turn (0, 90, 180 or 270). */
+  rotation2D?: number
+  isFlipped2DHorizontal?: boolean
+  isFlipped2DVertical?: boolean
   isSingleViewFillCanvas?: boolean
   customLayout?: CustomLayoutTile[] | null
 

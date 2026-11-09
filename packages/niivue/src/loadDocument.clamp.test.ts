@@ -89,3 +89,15 @@ test('a bad layoutInset is stored as zero sides (#494)', async () => {
   expect(fromBad).toEqual([0, 0, 10, 0])
   expect(nv.layoutInset).toEqual([0, 0, 0, 0])
 })
+
+test('a document cannot set an invalid rotation2D', async () => {
+  const out: number[] = []
+  for (const bad of [-90, 45, Number.NaN]) {
+    const nv = new NiiVue()
+    // Bypass the setter to write a document holding the bad value.
+    nv.model.layout.rotation2D = bad as 0
+    await nv.loadDocument(documentFile(nv.serializeDocument(), 'bad.nvd'))
+    out.push(nv.rotation2D)
+  }
+  expect(out).toEqual([270, 90, 0])
+})

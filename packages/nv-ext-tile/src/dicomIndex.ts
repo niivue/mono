@@ -106,7 +106,7 @@ const MAX_SLIDE_TILES = 2 * MAX_GRID
 // (Optical path, focal plane) pairs in one file, each a slide. Real files have
 // a few paths and tens of planes; a multiplexed z-stack a few hundred.
 const MAX_PAIRS = 4096
-const NUMERIC_BYTES: Record<string, number> = { US: 2, UL: 4, SL: 4 }
+const VR_BYTES: Record<string, number> = { US: 2, UL: 4, SL: 4, FL: 4, FD: 8 }
 const tagOf = (g: number, e: number): number => ((g << 16) | e) >>> 0
 const T = {
   transferSyntax: tagOf(0x0002, 0x0010),
@@ -128,6 +128,8 @@ const T = {
   colorSpace: tagOf(0x0028, 0x2002),
   container: tagOf(0x0040, 0x0512),
   zOffset: tagOf(0x0040, 0x074a),
+  volumeWidth: tagOf(0x0048, 0x0001),
+  volumeHeight: tagOf(0x0048, 0x0002),
   totalColumns: tagOf(0x0048, 0x0006),
   totalRows: tagOf(0x0048, 0x0007),
   opticalPathSeq: tagOf(0x0048, 0x0105),
@@ -210,6 +212,8 @@ function walk(
   visit: (e: Element) => void,
 ): number {
   while (o < end) {
+    // u16/u32 guard the tag and length, but the VR bytes are read directly.
+    if (o + 8 > b.length) throw new NeedMore()
     const tag = tagOf(u16(b, o), u16(b, o + 2))
     if (tag === T.itemEnd || tag === T.sequenceEnd) return o + 8
     if (at.depth === 0 && tag === T.pixelData) return o
@@ -262,9 +266,9 @@ const text = (b: Uint8Array, e: Element): string =>
     '',
   )
 
-/** A numeric value: binary for US/UL/SL, else the first value of IS/DS text. NaN when it does not parse. */
+/** A numeric value: binary for US/UL/SL/FL/FD, else the first value of IS/DS text. NaN when it does not parse. */
 function numberOf(b: Uint8Array, e: Element): number {
-  const bytes = NUMERIC_BYTES[e.vr]
+  const bytes = VR_BYTES[e.vr]
   if (!bytes) return Number(text(b, e).split('\\')[0])
   if (e.length < bytes) return Number.NaN
   const v = new DataView(b.buffer, b.byteOffset + e.offset, bytes)
@@ -272,7 +276,11 @@ function numberOf(b: Uint8Array, e: Element): number {
     ? v.getUint16(0, true)
     : e.vr === 'UL'
       ? v.getUint32(0, true)
-      : v.getInt32(0, true)
+      : e.vr === 'SL'
+        ? v.getInt32(0, true)
+        : e.vr === 'FL'
+          ? v.getFloat32(0, true)
+          : v.getFloat64(0, true)
 }
 
 /** One instance's header and frame spans. Internal: the index regroups these. */
@@ -372,7 +380,8 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   const pathIds: string[] = []
   const icc: InstanceInfo['icc'] = []
   const colorSpaces: (string | undefined)[] = []
-  let sharedSpacing: string | undefined
+  // PixelSpacing candidates, preferred first: shared, the first frame's, top level.
+  const spacings: (string | undefined)[] = []
   let sharedPath: string | undefined
   let sharedZ: number | undefined
   let perFrame = 0
@@ -385,12 +394,13 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
         icc[e.item] = { offset: e.offset, length: e.length }
       if (e.tag === T.colorSpace) colorSpaces[e.item] = text(b, e)
     } else if (e.root === T.shared) {
-      if (e.tag === T.spacing) sharedSpacing = text(b, e)
+      if (e.tag === T.spacing) spacings[0] = text(b, e)
       if (e.tag === T.opticalPathId) sharedPath = text(b, e)
       if (e.tag === T.zOffset) sharedZ = numberOf(b, e)
     } else if (e.root === T.perFrame) {
       perFrame = Math.max(perFrame, e.item + 1)
       if (e.tag === T.columnPosition) positioned = true
+      if (e.tag === T.spacing && e.item === 0) spacings[1] = text(b, e)
     }
   }
   icc.forEach((v, i) => {
@@ -472,10 +482,18 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
     offset: new Float64Array(frameCount),
     length: new Uint32Array(frameCount),
   }
-  if (sharedSpacing) {
-    const [row, column] = sharedSpacing.split('\\').map(Number)
-    info.pixelSpacingMM = [column as number, row as number]
+  spacings[2] = str(T.spacing)
+  const vol = (tag: number) => {
+    const e = top.get(tag)
+    return e ? numberOf(b, e) : undefined
   }
+  info.pixelSpacingMM = spacingOf(
+    spacings.map((s) => s?.split('\\').map(Number)),
+    vol(T.volumeWidth),
+    vol(T.volumeHeight),
+    totalColumns,
+    totalRows,
+  )
   const { column, row, path, z } = info
   if (sparse && !perFrame)
     throw new Skip('malformed', 'TILED_SPARSE without per-frame positions')
@@ -564,6 +582,30 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   }
   await frameSpans(info, b, pixel, top, readAt)
   return info
+}
+
+const positive = (v: number | undefined): v is number =>
+  Number.isFinite(v) && (v as number) > 0
+
+/**
+ * Level pixel spacing in mm, [column, row]: the first valid PixelSpacing
+ * (row, column) candidate, else ImagedVolumeWidth/Height (mm) over the total
+ * pixel matrix. WSI files often carry a [1,1] PixelSpacing placeholder, so it
+ * is not a valid candidate (as in niivue's scripts/fetch-dicom-wsi.ts).
+ */
+function spacingOf(
+  spacing: (number[] | undefined)[],
+  volumeWidth: number | undefined,
+  volumeHeight: number | undefined,
+  totalColumns: number,
+  totalRows: number,
+): [number, number] | undefined {
+  for (const s of spacing)
+    if (s && positive(s[0]) && positive(s[1]) && !(s[0] === 1 && s[1] === 1))
+      return [s[1], s[0]]
+  return positive(volumeWidth) && positive(volumeHeight)
+    ? [volumeWidth / totalColumns, volumeHeight / totalRows]
+    : undefined
 }
 
 /** Fill `info.offset`/`info.length` from the encapsulated pixel data. */

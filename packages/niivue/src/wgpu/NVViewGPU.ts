@@ -344,13 +344,6 @@ export default class NVView {
     await this._initWebGPU()
     await this._createResources()
     await this._createPipelines()
-    if (this.device) {
-      this.cinematicRenderer.init(
-        this.device,
-        this.sampleCount,
-        this.preferredCanvasFormat,
-      )
-    }
     await this.updateBindGroups()
   }
 
@@ -1008,7 +1001,7 @@ export default class NVView {
     let isCinematicBackgroundVisible = false
     this.cinematicRenderer.beginFrame()
     const base = volumes[0]
-    if (isCinematicMode && base && this.cinematicRenderer.isReady) {
+    if (isCinematicMode && base) {
       if (base.chunkPlan || base.chunkSource) {
         this._warnCinematic(
           'chunked (streamed) volumes are not supported; drawing COMPOSITE',
@@ -1017,6 +1010,14 @@ export default class NVView {
         this._warnCinematic(
           'RGB/RGBA volumes have no scalar intensity; drawing COMPOSITE',
         )
+      } else if (
+        !this.cinematicRenderer.ensure(
+          device,
+          this.sampleCount,
+          this.preferredCanvasFormat,
+        )
+      ) {
+        this._warnCinematic('cinematic unavailable; drawing COMPOSITE')
       } else {
         cinematicLabels = findLabelVolume(volumes)
         const useOverlays =
@@ -1169,6 +1170,8 @@ export default class NVView {
           md.volumes[0]?.obliqueRAS,
           undefined,
           pan,
+          true,
+          tile.clipRot,
         )
         mvpMatrix = mvp2d[0]
         normalMatrix = mvp2d[2]
@@ -2950,6 +2953,8 @@ export default class NVView {
         md.volumes[0]?.obliqueRAS,
         undefined,
         pan,
+        true,
+        tile.clipRot,
       )
       mvpMatrix = result[0] as mat4
       normalMatrix = result[2] as mat4

@@ -149,6 +149,29 @@ describe('indexDicomWsi', () => {
     )
   })
 
+  test('takes pixel spacing from ImagedVolumeWidth/Height over a [1,1] PixelSpacing placeholder', async () => {
+    const slide = only((await index('mono12.dcm')).idx)
+    // FL in the file: 0.02 mm over 40 columns, 0.015 mm over 30 rows.
+    expect(slide.pixelSpacingMM?.[0]).toBeCloseTo(0.0005, 9)
+    expect(slide.pixelSpacingMM?.[1]).toBeCloseTo(0.0005, 9)
+  })
+
+  test('places frames by focal plane, and in implicit order without an organization', async () => {
+    const planes = await index('planes.dcm')
+    // Plane 0 is the lower ZOffset, which frames 7-12 state.
+    expect(planes.idx.slides.map((s) => s.focalPlane)).toEqual([1, 0])
+    expect(
+      await labels(planes.idx.slides[1] as SlideIndexSlide, planes.files),
+    ).toEqual([7, 8, 9, 10, 11, 12].map((f) => `planes f${f}`))
+    // Spacing per frame (planes) and at the top level (noorg).
+    expect(planes.idx.slides[0]?.pixelSpacingMM).toEqual([0.00025, 0.0005])
+    const noorg = await index('noorg.dcm')
+    expect(await labels(only(noorg.idx), noorg.files)).toEqual(
+      [1, 2, 3, 4, 5, 6].map((f) => `noorg f${f}`),
+    )
+    expect(only(noorg.idx).pixelSpacingMM).toEqual([0.00025, 0.0005])
+  })
+
   test('skips what it cannot index, with a typed reason', async () => {
     const { idx } = await index(
       'implicit.dcm',

@@ -450,6 +450,8 @@ export class NVChunkedVolume {
   // repeat call does not re-fetch the coarse level.
   private floorVolume: NVImage | null = null
   private floorBuilt = false
+  // The last floor this manager got onto the view, and the floor it replaced.
+  private floorSet: { set: number; replaced: NVImage | null } | null = null
   /**
    * False only when the caller passed both `calMin` and `calMax` as finite
    * numbers; otherwise the data is sampled for robust/global and for any bound
@@ -544,23 +546,45 @@ export class NVChunkedVolume {
    * removing a previously streamed volume before reloading.
    */
   async init(): Promise<void> {
-    await this.host.addVolume(this.volume)
-    this.adoptSceneId()
-    this.syncCrosshairSubscription()
-    this.syncViewSubscription()
-    // Self-dispose if the controller is destroyed without the caller disposing
-    // this handle, so the locationChange listener + host reference don't leak
-    // (and can't fire against a torn-down view).
-    this.host.addEventListener('viewDestroyed', this.onViewDestroyed)
-    this.host.addEventListener('change', this.onLightingChange)
-    this.applyRenderCentering()
-    await this.applyCoarseFloor()
-    // The floor path resolves the window for free when a floor was built. When
-    // it was not, fall back to a bounded probe so a streamed volume still opens
-    // on a window that shows the data rather than on the 0..1 placeholder.
-    if (this.wantsAutoWindow && !this.windowResolved) await this.probeWindow()
-    if (this.windowResolved && !this.disposed)
-      await this.host._updateGLChanged()
+    try {
+      await this.host.addVolume(this.volume)
+      this.adoptSceneId()
+      this.syncCrosshairSubscription()
+      this.syncViewSubscription()
+      // Self-dispose if the controller is destroyed without the caller disposing
+      // this handle, so the locationChange listener + host reference don't leak
+      // (and can't fire against a torn-down view).
+      this.host.addEventListener('viewDestroyed', this.onViewDestroyed)
+      this.host.addEventListener('change', this.onLightingChange)
+      this.applyRenderCentering()
+      await this.applyCoarseFloor()
+      // The floor path resolves the window for free when a floor was built. When
+      // it was not, fall back to a bounded probe so a streamed volume still opens
+      // on a window that shows the data rather than on the 0..1 placeholder.
+      if (this.wantsAutoWindow && !this.windowResolved) await this.probeWindow()
+      if (this.windowResolved && !this.disposed)
+        await this.host._updateGLChanged()
+    } catch (err) {
+      // A failed init hands the caller no handle, so nothing else could release
+      // this manager or the volume it added (addVolume adds before it can throw).
+      this.dispose()
+      // Put back the floor this init replaced (an additive reload's, or none):
+      // ours would keep its textures and draw behind a later load. Only while
+      // our set is still the latest: a newer caller's floor is not ours to undo.
+      const ours = this.floorSet
+      if (ours && (this.host._baseCoarseFloorSets ?? 0) === ours.set)
+        await this.host
+          .setBaseCoarseFloor(ours.replaced)
+          .catch((e) => log.warn('NVChunkedVolume: floor cleanup failed', e))
+      const index = this.host.volumes.findLastIndex(
+        (v) => v.chunkSource === this.volume.chunkSource,
+      )
+      if (index >= 0)
+        await this.host
+          .removeVolume(index)
+          .catch((e) => log.warn('NVChunkedVolume: cleanup failed', e))
+      throw err
+    }
   }
 
   /**
@@ -583,7 +607,9 @@ export class NVChunkedVolume {
       this.floorBuilt = true
     }
     if (this.disposed) return false
-    await this.host.setBaseCoarseFloor(this.floorVolume)
+    await this.host._setBaseCoarseFloor(this.floorVolume, (set, replaced) => {
+      this.floorSet = { set, replaced }
+    })
     return this.floorVolume !== null
   }
 

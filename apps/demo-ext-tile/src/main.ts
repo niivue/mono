@@ -295,7 +295,9 @@ function openIndexed(i: number): void {
 
 // Custom files: one tiled TIFF, or the files of a DICOM-WSI slide (or several).
 const isTiff = async (file: File) => {
-  const b = new Uint8Array(await file.slice(0, 4).arrayBuffer())
+  const b = new Uint8Array(await file.slice(0, 132).arrayBuffer())
+  // A dual-personality DICOM-TIFF has TIFF magic in its preamble; DICOM wins.
+  if (new TextDecoder().decode(b.subarray(128, 132)) === 'DICM') return false
   // II*. / MM.* (TIFF) and II+. / MM.+ (BigTIFF)
   return (
     (b[0] === 0x49 && b[1] === 0x49 && b[3] === 0) ||

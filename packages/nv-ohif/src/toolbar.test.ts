@@ -363,6 +363,16 @@ describe('evaluate.niivue.unsupported', () => {
         ]),
         disabled,
       ],
+      [
+        button('CsPan', [
+          {
+            commandName: 'setToolActiveToolbar',
+            commandOptions: { toolName: 'Pan' },
+            context: 'CORNERSTONE',
+          },
+        ]),
+        disabled,
+      ],
       [button('Empty', undefined), disabled],
       [
         button('Pan', 'setToolActiveToolbar'),

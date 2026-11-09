@@ -23,5 +23,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "exclude": ["lib", "node_modules"]
+  "exclude": ["dist", "lib", "node_modules"]
 }

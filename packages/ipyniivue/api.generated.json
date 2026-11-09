@@ -2386,6 +2386,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "flip2D",
+      "pyName": "flip_2d",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "axis",
+          "tsType": "\"horizontal\" | \"vertical\"",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Toggle the on-screen mirror of 2D slice tiles: 'horizontal' swaps left and\nright, 'vertical' top and bottom.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "getAnnotationsJSON",
       "pyName": "get_annotations_json",
       "isAsync": false,
@@ -3359,6 +3376,23 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "rotate2D",
+      "pyName": "rotate_2d",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "quarterTurns",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Turn 2D slice tiles by quarter turns on screen (positive = clockwise),\nwhatever the flips. With exactly one flip set, the stored `rotation2D`\nruns the other way, since the turn applies before the flips.",
       "returnsDoc": null
     },
     {

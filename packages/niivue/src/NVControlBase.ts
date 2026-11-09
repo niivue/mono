@@ -1315,6 +1315,30 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Turn 2D slice tiles by quarter turns on screen (positive = clockwise),
+   * whatever the flips. With exactly one flip set, the stored `rotation2D`
+   * runs the other way, since the turn applies before the flips.
+   * @example nv1.rotate2D(-1) // counterclockwise
+   */
+  rotate2D(quarterTurns: number): void {
+    const step =
+      this.isFlipped2DHorizontal !== this.isFlipped2DVertical ? -90 : 90
+    this.rotation2D = this.rotation2D + step * quarterTurns
+  }
+
+  /**
+   * Toggle the on-screen mirror of 2D slice tiles: 'horizontal' swaps left and
+   * right, 'vertical' top and bottom.
+   * @example nv1.flip2D('vertical')
+   */
+  flip2D(axis: 'horizontal' | 'vertical'): void {
+    if (axis === 'horizontal')
+      this.isFlipped2DHorizontal = !this.isFlipped2DHorizontal
+    else if (axis === 'vertical')
+      this.isFlipped2DVertical = !this.isFlipped2DVertical
+  }
+
+  /**
    * Let a single 2D slice (axial, coronal or sagittal alone) use the whole
    * canvas rather than a tile letterboxed to the slice's aspect ratio. The
    * slice draws at the same scale and position either way; filling only means a

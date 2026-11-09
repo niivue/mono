@@ -814,6 +814,15 @@ and its volumes alive."""
         """
         return await self._request("explodedMM", _make_args(mm))
 
+    def flip_2d(self, axis: Any) -> None:
+        """Toggle the on-screen mirror of 2D slice tiles: 'horizontal' swaps left and right, 'vertical' top and bottom.
+
+        Parameters
+        ----------
+        axis : \"horizontal\" | \"vertical\"
+        """
+        self.send({"cmd": "flip2D", "args": _make_args(axis)})
+
     async def get_annotations_json(self) -> Any:
         return await self._request("getAnnotationsJSON", [])
 
@@ -1441,6 +1450,18 @@ and its volumes alive."""
 
     def resize(self) -> None:
         self.send({"cmd": "resize", "args": []})
+
+    def rotate_2d(self, quarter_turns: Any) -> None:
+        """Turn 2D slice tiles by quarter turns on screen (positive = clockwise), whatever the flips.
+
+        With exactly one flip set, the stored `rotation2D`
+        runs the other way, since the turn applies before the flips.
+
+        Parameters
+        ----------
+        quarter_turns : number
+        """
+        self.send({"cmd": "rotate2D", "args": _make_args(quarter_turns)})
 
     async def save_bitmap(self, filename: Any = _UNSET, quality: Any = _UNSET) -> Any:
         return await self._request("saveBitmap", _make_args(filename, quality))

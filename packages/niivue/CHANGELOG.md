@@ -1,3 +1,13 @@
+## 1.0.0-rc.137 (2026-11-09)
+
+### Fixes
+
+- **niivue:** choose slide levels by device pixels, not CSS pixels ([#638](https://github.com/niivue/mono/issues/638))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.136 (2026-11-09)
 
 ### Fixes

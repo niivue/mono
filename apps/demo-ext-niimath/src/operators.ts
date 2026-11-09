@@ -91,6 +91,6 @@ export const SAMPLE_VOLUMES = [
   { name: 'mni152.nii.gz', label: 'MNI152 (T1 brain)' },
   { name: 'FA.nii.gz', label: 'FA (fractional anisotropy)' },
   { name: 'spmMotor.nii.gz', label: 'spmMotor (statistical map)' },
-  { name: 'visiblehuman.nii.gz', label: 'Visible Human (CT)' },
+  { name: 'visiblehuman.nii.gz', label: 'Visible Human (microtome RGB)' },
   { name: 'torso.nii.gz', label: 'Torso (CT)' },
 ] as const

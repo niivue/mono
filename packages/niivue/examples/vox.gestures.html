@@ -87,7 +87,6 @@
         await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
       }
       function handleDragRelease(info) {
-        console.log('DragRelease', info)
         if (info.tileIdx < 0) {
           document.getElementById('location').innerHTML = 'Invalid drag'
         } else {

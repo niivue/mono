@@ -1,8 +1,8 @@
-import * as NVConstants from '@/NVConstants'
 import type { OrientationTextPosition } from '@/NVTypes'
 import {
+  isSliceMirrored,
   type SliceOrientationSettings,
-  sagittalNoseLeft,
+  slice2DTransform,
 } from './NVSliceLayout'
 
 /**
@@ -19,10 +19,11 @@ export type SliceEdgeLabels = {
 /**
  * Which anatomical direction lies at each edge of a 2D slice tile.
  *
- * Shared by both backends so the letters cannot drift from the geometry: axial
- * and coronal follow `isRadiological` (radiological puts the subject's right on
- * the left of the screen), sagittal follows {@link sagittalNoseLeft}. Returns
- * null for tiles that are not a 2D slice (render tiles).
+ * Shared by both backends so the letters cannot drift from the geometry: the
+ * horizontal pair follows {@link isSliceMirrored} (radiological puts the
+ * subject's right on the left of the screen), then all four turn clockwise
+ * with the tile's `clipRot` ({@link slice2DTransform}). Returns null for tiles
+ * that are not a 2D slice (render tiles).
  *
  * The backends draw `left` and `top` (see {@link orientationTextPlacements});
  * `right` and `bottom` are here so other text can use the same source of truth.
@@ -31,23 +32,20 @@ export function sliceEdgeLabels(
   axCorSag: number,
   layout: SliceOrientationSettings,
 ): SliceEdgeLabels | null {
-  const isRadiological = layout.isRadiological
-  switch (axCorSag) {
-    case NVConstants.SLICE_TYPE.AXIAL:
-      return isRadiological
-        ? { left: 'R', right: 'L', top: 'A', bottom: 'P' }
-        : { left: 'L', right: 'R', top: 'A', bottom: 'P' }
-    case NVConstants.SLICE_TYPE.CORONAL:
-      return isRadiological
-        ? { left: 'R', right: 'L', top: 'S', bottom: 'I' }
-        : { left: 'L', right: 'R', top: 'S', bottom: 'I' }
-    case NVConstants.SLICE_TYPE.SAGITTAL:
-      return sagittalNoseLeft(layout)
-        ? { left: 'A', right: 'P', top: 'S', bottom: 'I' }
-        : { left: 'P', right: 'A', top: 'S', bottom: 'I' }
-    default:
-      return null
-  }
+  // [-U, +U, +V, -V] letters: left, right, top, bottom when unmirrored
+  const letters = [
+    ['L', 'R', 'A', 'P'],
+    ['L', 'R', 'S', 'I'],
+    ['P', 'A', 'S', 'I'],
+  ][axCorSag]
+  if (!letters) return null
+  const [lo, hi, top, bottom] = letters
+  const mirrored = isSliceMirrored(axCorSag, layout)
+  // Clockwise order: top, right, bottom, left; a quarter turn shifts by one.
+  const ring = [top, mirrored ? lo : hi, bottom, mirrored ? hi : lo]
+  const k = slice2DTransform(layout).clipRot / 90
+  const at = (edge: number) => ring[(edge - k + 4) % 4]
+  return { top: at(0), right: at(1), bottom: at(2), left: at(3) }
 }
 
 /** One orientation label to draw: its text, anchor point and anchor. */

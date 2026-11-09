@@ -77,6 +77,7 @@ import {
   MESH_DEFAULTS,
   NUM_CLIP_PLANE,
   normalizeInset,
+  normalizeRotation2D,
   normalizeVolumeRenderMode,
   type OVERLAY_ALPHA_BLEND,
   type OVERLAY_COLOR_BLEND,
@@ -135,6 +136,7 @@ import type {
   NVTractOptions,
   OrientationTextPosition,
   PlaneOutline,
+  Rotation2D,
   SaveVolumeOptions,
   SignalAnnotation,
   SignalSidecar,
@@ -235,6 +237,7 @@ import {
   warnMixedUnits,
 } from '@/volume/utils'
 import { assignUniqueVolumeIds } from '@/volume/volumeIds'
+import { releasePageWorkers, retainPageWorkers } from '@/workers/pageWorker'
 import { version } from '../package.json'
 
 /** MeshUpdate options read only while drawing: setMesh just redraws. */
@@ -518,6 +521,10 @@ export default class NiiVue extends EventTarget {
   /** Set once `destroy()` runs, so an in-flight async op (e.g. a deferred reload)
    *  can detect a torn-down controller and not mutate/upload against it. */
   private _destroyed = false
+  /** Holds the page workers while attached (see _holdPageWorkers). */
+  private _holdsPageWorkers = false
+  private _attachesPending = 0
+  private _attachSucceeded = false
   private _contextLossRecoveries = 0
   /** Live streamed-volume handles, so a setting that changes the required brick
    *  halo (currently only `volumeIsCubicInterpolation`) can re-plan them. Each
@@ -1248,6 +1255,57 @@ export default class NiiVue extends EventTarget {
     const value = v ?? null
     this.model.layout.isSagittalNoseLeft = value
     this.emit('change', { property: 'isSagittalNoseLeft', value })
+    this.drawScene()
+  }
+
+  /**
+   * Clockwise screen rotation of 2D slice tiles in degrees, applied after
+   * `isRadiological` and `isSagittalNoseLeft`. A tile shows H^h V^v R(theta) of
+   * that view (the flips act on screen, after the turn), so (theta, h, v) looks
+   * the same as (theta + 180, !h, !v). Values are rounded to the nearest
+   * quarter turn (-90 is stored as 270). Render tiles and NVSlide are
+   * unaffected; not animated.
+   * @default `0`
+   * @example nv1.rotation2D = 90
+   */
+  get rotation2D(): Rotation2D {
+    return this.model.layout.rotation2D
+  }
+  set rotation2D(v: number) {
+    const value = normalizeRotation2D(v)
+    this.model.layout.rotation2D = value
+    this.emit('change', { property: 'rotation2D', value })
+    this.drawScene()
+  }
+
+  /**
+   * Mirror 2D slice tiles left-right on screen, after `rotation2D` (see there
+   * for the convention). Drawn as the view from behind the slice, so meshes
+   * show their far side, as with `isRadiological`.
+   * @default `false`
+   * @example nv1.isFlipped2DHorizontal = true
+   */
+  get isFlipped2DHorizontal(): boolean {
+    return this.model.layout.isFlipped2DHorizontal
+  }
+  set isFlipped2DHorizontal(v: boolean) {
+    this.model.layout.isFlipped2DHorizontal = v
+    this.emit('change', { property: 'isFlipped2DHorizontal', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Mirror 2D slice tiles top-bottom on screen, after `rotation2D`. Drawn as
+   * the view from behind the slice, so meshes show their far side.
+   * @default `false`
+   * @example nv1.isFlipped2DVertical = true
+   */
+  get isFlipped2DVertical(): boolean {
+    return this.model.layout.isFlipped2DVertical
+  }
+  set isFlipped2DVertical(v: boolean) {
+    this.model.layout.isFlipped2DVertical = v
+    this.emit('change', { property: 'isFlipped2DVertical', value: v })
     this.drawScene()
   }
 
@@ -2808,7 +2866,9 @@ export default class NiiVue extends EventTarget {
   }
 
   async attachTo(id: string, isAntiAlias = null): Promise<this> {
-    await this._viewLifecycle.attachTo(this, id, isAntiAlias)
+    await this._attachHoldingWorkers(() =>
+      this._viewLifecycle.attachTo(this, id, isAntiAlias),
+    )
     return this
   }
 
@@ -2816,8 +2876,45 @@ export default class NiiVue extends EventTarget {
     canvas: HTMLCanvasElement,
     isAntiAlias: boolean | null = null,
   ): Promise<this> {
-    await this._viewLifecycle.attachToCanvas(this, canvas, isAntiAlias)
+    await this._attachHoldingWorkers(() =>
+      this._viewLifecycle.attachToCanvas(this, canvas, isAntiAlias),
+    )
     return this
+  }
+
+  // An attached viewer keeps the page workers alive between its loads; destroy()
+  // lets them go. Not taken in the constructor: a constructor that throws (e.g.
+  // the WebGPU build without WebGPU) leaves no instance to destroy.
+  private _holdPageWorkers(): void {
+    if (this._holdsPageWorkers || this._destroyed) return
+    this._holdsPageWorkers = true
+    retainPageWorkers()
+  }
+
+  // A failed viewer is often dropped without destroy() (e.g. a WebGPU to WebGL2
+  // fallback), so a failed attach lets the hold go, unless an earlier attach
+  // succeeded or another is still running.
+  private async _attachHoldingWorkers(
+    attach: () => Promise<unknown>,
+  ): Promise<void> {
+    this._holdPageWorkers()
+    this._attachesPending++
+    try {
+      await attach()
+      this._attachSucceeded = true
+    } catch (err) {
+      if (this._attachesPending === 1 && !this._attachSucceeded)
+        this._releasePageWorkers()
+      throw err
+    } finally {
+      this._attachesPending--
+    }
+  }
+
+  private _releasePageWorkers(): void {
+    if (!this._holdsPageWorkers) return
+    this._holdsPageWorkers = false
+    releasePageWorkers()
   }
 
   /**
@@ -7026,6 +7123,7 @@ export default class NiiVue extends EventTarget {
     // A second call would reach renderers whose GPU device is already gone.
     if (this._destroyed) return
     this._destroyed = true
+    this._releasePageWorkers()
     this._animation?.stop('destroyed')
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false

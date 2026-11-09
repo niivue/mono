@@ -205,7 +205,8 @@ for f in range(12):
 ds.PerFrameFunctionalGroupsSequence = Sequence(items)
 save(ds, [payload(f'planes f{f + 1}') for f in range(12)], 'planes.dcm', json_bulk=False)
 
-# MONOCHROME2 12-bit JPEG-LS, spacing only from ImagedVolumeWidth/Height (mm), no ICC.
+# MONOCHROME2 12-bit JPEG-LS, spacing only from ImagedVolumeWidth/Height (mm), no ICC;
+# the top-level PixelSpacing is the [1,1] placeholder WSI files often carry.
 ds, fr = full('mono12', '1.2.3.91')
 ds.SeriesInstanceUID = series_uid('mono12')
 ds.file_meta.TransferSyntaxUID = UID('1.2.840.10008.1.2.4.80')
@@ -213,6 +214,7 @@ ds.PhotometricInterpretation = 'MONOCHROME2'
 ds.SamplesPerPixel = 1
 ds.BitsAllocated, ds.BitsStored, ds.HighBit = 16, 12, 11
 ds.ImagedVolumeWidth, ds.ImagedVolumeHeight = 0.02, 0.015
+ds.PixelSpacing = [1, 1]
 del ds.SharedFunctionalGroupsSequence
 del ds.OpticalPathSequence[0].ICCProfile
 # Its frames name the second of two optical paths, per frame.

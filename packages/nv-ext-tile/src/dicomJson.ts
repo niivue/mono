@@ -18,6 +18,7 @@ import {
   TEXT_KEYWORDS,
   type WsiAttributes,
 } from './dicomIndex'
+import { CODEC_BY_TRANSFER_SYNTAX } from './dicomWsiSource'
 
 export type DicomJsonInstance = InstanceCore & {
   /** Index into the array given to {@link indexDicomWsiMetadata}. */
@@ -177,14 +178,18 @@ function readAttributes(o: unknown): WsiAttributes<DicomJsonIccProfile> {
   }
   // A WADO-RS /metadata response states AvailableTransferSyntaxUID, not the
   // file meta TransferSyntaxUID; neither leaves '' for the source to resolve.
-  // A transcoding server may list several: take the first a tile codec reads.
+  // A transcoding server may list several: take the first a tile codec reads,
+  // else the first that is neither refused nor native (open reports it), else
+  // the first (the indexer skips it).
   const available = text(
     get(o, 'AvailableTransferSyntaxUID', T.availableTransferSyntax),
   ).split('\\')
   a.text[T.transferSyntax] ||=
+    available.find((ts) => Object.hasOwn(CODEC_BY_TRANSFER_SYNTAX, ts)) ??
     available.find(
       (ts) => !REFUSED_SYNTAXES.has(ts) && ts !== EXPLICIT_LITTLE,
-    ) ?? (available[0] as string)
+    ) ??
+    (available[0] as string)
   for (const [tag, keyword] of Object.entries(NUMBER_KEYWORDS)) {
     const v = num(get(o, keyword, Number(tag)))
     if (v !== undefined) a.number[Number(tag)] = v

@@ -23,15 +23,20 @@
  * several reads land out of order.
  */
 
-import type { ChunkedVolumeFetch } from '@/volume/ChunkedVolumeSource'
-import { chunkTimingSnapshot } from '@/volume/chunkTiming'
+import type { ChunkedVolumeFetch } from '@niivue/niivue'
+import { chunkTimingSnapshot } from '@niivue/niivue'
 import {
   type FetchOmeZarrChunkedSourceOptions,
   OME_ZARR_CHUNK_ERROR,
   type OmeZarrChunkedSource,
   openOmeZarrChunkedSource,
-} from '@/volume/omeZarrChunkedSource'
-import { post } from './workerPost'
+} from './omeZarrChunkedSource'
+
+const post = (
+  self as unknown as {
+    postMessage: (msg: unknown, transfer?: Transferable[]) => void
+  }
+).postMessage.bind(self)
 
 /** Opened sources, keyed by URL + open options. One store, many reads. */
 const sources = new Map<string, Promise<OmeZarrChunkedSource>>()

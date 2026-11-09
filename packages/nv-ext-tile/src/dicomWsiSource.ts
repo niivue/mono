@@ -17,7 +17,7 @@ import type { DicomJsonSlide } from './dicomJson'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs (JPEG 2000 and JPEG-LS need a
 // registered decoder, e.g. registerDcm2niixDecoders()).
-const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
+export const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
   '1.2.840.10008.1.2.4.50': 'image/jpeg', // JPEG Baseline (Process 1)
   '1.2.840.10008.1.2.4.51': 'image/jpeg', // JPEG Extended (Process 2 & 4)
   '1.2.840.10008.1.2.4.80': 'image/jls', // JPEG-LS lossless

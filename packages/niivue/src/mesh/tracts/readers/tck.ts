@@ -49,7 +49,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   let offsets = new Uint32Array(len / (4 * 4))
   let npt = 0
   let npt3 = 0
-  let noffset = 0
+  let noffset = 1
   offsets[0] = 0
 
   while (pos + 12 <= len) {
@@ -60,8 +60,8 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     const z = reader.getFloat32(pos, true)
     pos += 4
     if (!Number.isFinite(x)) {
-      // NaN = streamline boundary, Infinity = EOF
-      offsets[noffset++] = npt
+      // NaN = streamline boundary, Infinity = EOF; skip empty streamlines
+      if (npt > offsets[noffset - 1]) offsets[noffset++] = npt
       if (!Number.isNaN(x)) break // Infinity = end of file
     } else {
       vertices[npt3++] = x
@@ -70,6 +70,9 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
       npt++
     }
   }
+
+  // A truncated stream (no closing NaN/Infinity) still ends its last streamline
+  if (npt > offsets[noffset - 1]) offsets[noffset++] = npt
 
   // Trim over-provisioned arrays
   vertices = vertices.slice(0, npt3)

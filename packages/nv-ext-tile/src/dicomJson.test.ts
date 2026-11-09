@@ -131,6 +131,14 @@ describe('indexDicomWsiMetadata', () => {
     // A transcoding server listing explicit little endian first.
     avail.Value.reverse()
     expect(ts({ ...meta, '00083002': avail })).toBe('1.2.840.10008.1.2.4.91')
+    // An undecodable compressed syntax listed before a decodable one.
+    for (const [first, ok] of [
+      ['1.2.840.10008.1.2.4.201', '1.2.840.10008.1.2.4.50'],
+      ['1.2.840.10008.1.2.4.57', '1.2.840.10008.1.2.4.80'],
+    ]) {
+      const v = { vr: 'UI', Value: [first, ok] }
+      expect(ts({ ...meta, '00083002': v })).toBe(ok)
+    }
     const native = (uid: string) =>
       indexDicomWsiMetadata([
         { ...meta, '00083002': { vr: 'UI', Value: [uid] } },

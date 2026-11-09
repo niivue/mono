@@ -37,6 +37,7 @@ await ctx.addVolume(segmented)
 ```bash
 bunx nx build nv-ext-image-processing    # Build
 bunx nx typecheck nv-ext-image-processing # Type-check
+bunx nx test nv-ext-image-processing      # Test
 ```
 
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

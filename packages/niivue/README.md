@@ -67,7 +67,7 @@ in production is one well-predicted branch per call site. See
 
 ### Development Workflows
 
-- **`bun run dev`** — Serves the `examples/` pages from source with hot reloading at `localhost:5273`. The pages `import '../src/index.ts'` directly, so dev and the deployed build run the same files. On-demand sample data (OME-Zarr, DICOM-WSI) is downloaded into `public/` if missing.
+- **`bun run dev`** — Serves the `examples/` pages from source with hot reloading at `localhost:5273`. The pages `import '../src/index.ts'` directly, so dev and the deployed build run the same files. On-demand sample data (DICOM-WSI) is downloaded into `public/` if missing.
 - **`bun run demo`** — Builds the examples site to `dist/` and serves it with `http-server`. Use this to test the actual built output or before deploying to GitHub Pages.
 
 ## Usage
@@ -107,8 +107,8 @@ In backend-only builds, selecting the missing backend throws an explicit error.
 
 ### Without a bundler (standalone ES modules)
 
-The entry points above import `cbor-x`, `gl-matrix`, `nifti-reader-js` and
-`zarrita` by bare name, which only a bundler (or an import map listing every
+The entry points above import `cbor-x`, `gl-matrix` and `nifti-reader-js` by
+bare name, which only a bundler (or an import map listing every
 dependency) can resolve. For pages with no JavaScript toolchain, such as static
 HTML reports or pages served by a small Python server, the package also ships a
 self-contained build in `dist/standalone/`:
@@ -126,10 +126,12 @@ dist/standalone/
 
 Every dependency is bundled in, workers and images are inlined, and chunks
 import each other by relative path, so the folder has no external references
-and works from any base URL. Optional heavy code (the OME-Zarr codecs and
-worker pool) stays in chunks that are fetched only when used; a page showing a
+and works from any base URL. Optional code stays in chunks that are fetched
+only when used; a page showing a
 NIfTI volume loads about 1.6 MB of JavaScript (about 0.5 MB gzipped). The build
 fails if any bare import appears in the folder (`scripts/check-standalone.ts`).
+
+`@niivue/nv-ext-tile` ships a matching `dist/standalone/` (`tiff.js`, `dicom.js`, `zarr.js`) that maps onto this folder with the same import map; see its README.
 
 Copy the folder next to your page (here as `niivue/`) and map the package name
 once:

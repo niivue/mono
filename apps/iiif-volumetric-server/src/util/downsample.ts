@@ -50,28 +50,34 @@ export function downsampleVolume(
       }
     }
   } else {
-    const bpcv = colorBytes
+    // No edge checks: n = floor(s / factor) keeps every block inside.
+    const data = volume.data
+    const rgba = colorBytes === 4
+    const sxy = sx * sy
     for (let z = 0; z < nz; z++) {
       for (let y = 0; y < ny; y++) {
         for (let x = 0; x < nx; x++) {
-          const sums = new Float32Array(bpcv)
-          for (let bz = 0; z * factor + bz < sz && bz < factor; bz++) {
-            for (let by = 0; y * factor + by < sy && by < factor; by++) {
-              for (let bx = 0; x * factor + bx < sx && bx < factor; bx++) {
-                const ix = x * factor + bx
-                const iy = y * factor + by
-                const iz = z * factor + bz
-                const off = (ix + iy * sx + iz * sx * sy) * bpcv
-                for (let c = 0; c < bpcv; c++) {
-                  sums[c] += volume.data[off + c] as number
-                }
+          let r = 0
+          let g = 0
+          let b = 0
+          let a = 0
+          for (let bz = 0; bz < factor; bz++) {
+            for (let by = 0; by < factor; by++) {
+              const row = (y * factor + by) * sx + (z * factor + bz) * sxy
+              for (let bx = 0; bx < factor; bx++) {
+                const off = (x * factor + bx + row) * colorBytes
+                r += data[off] as number
+                g += data[off + 1] as number
+                b += data[off + 2] as number
+                if (rgba) a += data[off + 3] as number
               }
             }
           }
-          const dstOff = (x + y * nx + z * nx * ny) * bpcv
-          for (let c = 0; c < bpcv; c++) {
-            out[dstOff + c] = Math.round((sums[c] ?? 0) / f3)
-          }
+          const dstOff = (x + y * nx + z * nx * ny) * colorBytes
+          out[dstOff] = Math.round(r / f3)
+          out[dstOff + 1] = Math.round(g / f3)
+          out[dstOff + 2] = Math.round(b / f3)
+          if (rgba) out[dstOff + 3] = Math.round(a / f3)
         }
       }
     }

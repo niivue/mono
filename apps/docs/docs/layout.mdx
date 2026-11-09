@@ -62,6 +62,9 @@ A few more properties shape the tiles:
   legend and graph: `[left, top, right, bottom]` in CSS pixels. Overlays
   still draw on the whole canvas, so in-canvas controls can sit there.
 - `isRadiological` flips left and right.
+- `rotation2D` (0, 90, 180 or 270) turns 2D slice tiles clockwise, and
+  `isFlipped2DHorizontal` / `isFlipped2DVertical` mirror them on screen,
+  after the turn. Render tiles are unaffected.
 
 ```js
 nv.multiplanarType = MULTIPLANAR_TYPE.GRID

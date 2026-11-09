@@ -248,6 +248,8 @@ function walk(
   visit: (e: Element) => void,
 ): number {
   while (o < end) {
+    // u16/u32 guard the tag and length, but the VR bytes are read directly.
+    if (o + 8 > b.length) throw new NeedMore()
     const tag = tagOf(u16(b, o), u16(b, o + 2))
     if (tag === T.itemEnd || tag === T.sequenceEnd) return o + 8
     if (at.depth === 0 && tag === T.pixelData) return o
@@ -698,7 +700,8 @@ const positive = (v: number | undefined): v is number =>
 /**
  * Level pixel spacing in mm, [column, row]: the first valid PixelSpacing
  * (row, column) candidate, else ImagedVolumeWidth/Height (mm) over the total
- * pixel matrix.
+ * pixel matrix. WSI files often carry a [1,1] PixelSpacing placeholder, so it
+ * is not a valid candidate (as in niivue's scripts/fetch-dicom-wsi.ts).
  */
 function spacingOf<C>(
   a: WsiAttributes<C>,
@@ -706,7 +709,8 @@ function spacingOf<C>(
   totalRows: number,
 ): [number, number] | undefined {
   for (const s of a.spacing)
-    if (s && positive(s[0]) && positive(s[1])) return [s[1], s[0]]
+    if (s && positive(s[0]) && positive(s[1]) && !(s[0] === 1 && s[1] === 1))
+      return [s[1], s[0]]
   const volumeWidth = a.number[T.volumeWidth]
   const volumeHeight = a.number[T.volumeHeight]
   return positive(volumeWidth) && positive(volumeHeight)

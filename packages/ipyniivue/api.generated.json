@@ -614,6 +614,28 @@
       "doc": null
     },
     {
+      "jsName": "isFlipped2DHorizontal",
+      "pyName": "is_flipped_2d_horizontal",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isFlipped2DVertical",
+      "pyName": "is_flipped_2d_vertical",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isGraphVisible",
       "pyName": "is_graph_visible",
       "tsType": "boolean",
@@ -977,6 +999,17 @@
           "kind": "Float"
         },
         "length": 3
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "rotation2D",
+      "pyName": "rotation_2d",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
       },
       "hasGetter": true,
       "hasSetter": true,

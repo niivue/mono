@@ -53,7 +53,10 @@ export function withNiivueSupport(
     props: {
       ...button.props,
       ...(hide ? { hideWhenDisabled: true } : {}),
-      evaluate: [NIIVUE_UNSUPPORTED_EVALUATOR, ...list],
+      evaluate:
+        list[0] === NIIVUE_UNSUPPORTED_EVALUATOR
+          ? list
+          : [NIIVUE_UNSUPPORTED_EVALUATOR, ...list],
     },
   }
 }
@@ -107,10 +110,12 @@ export function niivueSupportEvaluator(
             (first?.commandName !== 'setToolActive' ||
               first.commandOptions?.toolGroupId !== undefined)
           : commands.every(
-              ({ commandName }) =>
+              ({ commandName, context }) =>
                 commandName.startsWith('niivue') ||
-                answered.includes(commandName) ||
-                HOST_AGNOSTIC_COMMANDS.includes(commandName),
+                HOST_AGNOSTIC_COMMANDS.includes(commandName) ||
+                // An explicit other context bypasses the NIIVUE shadow.
+                ((context === undefined || context === 'NIIVUE') &&
+                  answered.includes(commandName)),
             )
       if (!supported) {
         return {

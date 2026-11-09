@@ -1,5 +1,7 @@
+import type NiiVue from '@niivue/niivue'
 import { isPart, outputEcho, rankOutputs } from './dcm2niixOutputs'
 import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
+import { updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
 import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
 import { buildSliceFrames, type SliceFrames } from './sliceFrames'
@@ -120,4 +122,31 @@ export async function convertDisplaySetToNifti(
       { echo: outputEcho(shown), part: isPart(shown) },
     ),
   }
+}
+
+/**
+ * Load `converted` into `nv`, publishing its slice map only once that volume
+ * shows: until then (or after a failed load, which keeps the old volume) a
+ * measurement must not take this series' DICOM identity. False when
+ * `cancelled()` by the time the load resolves; the caller drops the volume.
+ */
+export async function loadConversion(
+  nv: Pick<NiiVue, 'loadVolumes'>,
+  viewportId: string,
+  converted: DicomConversion,
+  spec: { calMin: number; calMax: number } | undefined,
+  cancelled: () => boolean,
+): Promise<boolean> {
+  // The converted file's own name (.nii) lets NiiVue sniff the format.
+  const { image } = converted
+  try {
+    await nv.loadVolumes([{ url: image, name: image.name, ...spec }])
+  } catch (err) {
+    if (!cancelled())
+      updateNiivueViewport(viewportId, { sliceFrames: undefined })
+    throw err
+  }
+  if (cancelled()) return false
+  updateNiivueViewport(viewportId, { sliceFrames: converted.sliceFrames })
+  return true
 }

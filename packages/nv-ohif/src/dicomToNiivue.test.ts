@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { ConvertOptions, ConvertResult, Series } from '@niivue/dcm2niix'
+import type NiiVue from '@niivue/niivue'
+import {
+  getNiivueEntry,
+  registerNiivue,
+  unregisterNiivue,
+} from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
 
 // Stands in for dcm2niix's convert(): each test sets the result it resolves to.
@@ -14,7 +20,9 @@ mock.module('@niivue/dcm2niix', () => ({
     return { series: [], log: [], exitCode: 0, ...(await result) }
   },
 }))
-const { convertDisplaySetToNifti } = await import('./dicomToNiivue')
+const { convertDisplaySetToNifti, loadConversion } = await import(
+  './dicomToNiivue'
+)
 
 // Header-only NIfTI-1 output; the voxel count breaks ties in the policy.
 function output(stem: string, voxels: number): Series {
@@ -125,5 +133,40 @@ describe('convertDisplaySetToNifti', () => {
     stubFetch('other-sop')
     expect(await convertDisplaySetToNifti(ds)).toBeNull()
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('loadConversion', () => {
+  const map = { origin: [0, 0, 0], normal: [0, 0, 1], frames: [] } as never
+  const converted = { image: new File([], 'a.nii'), sliceFrames: map }
+  afterEach(() => unregisterNiivue('vp-lc'))
+
+  it('publishes the slice map only after the volume loads', async () => {
+    registerNiivue('vp-lc', {} as never)
+    let release = () => {}
+    const nv = {
+      loadVolumes: () => new Promise<void>((r) => (release = r)),
+    } as unknown as NiiVue
+    const shown = loadConversion(nv, 'vp-lc', converted, undefined, () => false)
+    expect(getNiivueEntry('vp-lc')?.sliceFrames).toBeUndefined()
+    release()
+    expect(await shown).toBe(true)
+    expect(getNiivueEntry('vp-lc')?.sliceFrames).toBe(map)
+  })
+
+  it('leaves no slice map when the load fails or was cancelled', async () => {
+    registerNiivue('vp-lc', {} as never)
+    const failing = {
+      loadVolumes: () => Promise.reject(new Error('bad')),
+    } as unknown as NiiVue
+    await expect(
+      loadConversion(failing, 'vp-lc', converted, undefined, () => false),
+    ).rejects.toThrow('bad')
+    expect(getNiivueEntry('vp-lc')?.sliceFrames).toBeUndefined()
+    const ok = { loadVolumes: () => Promise.resolve() } as unknown as NiiVue
+    expect(
+      await loadConversion(ok, 'vp-lc', converted, undefined, () => true),
+    ).toBe(false)
+    expect(getNiivueEntry('vp-lc')?.sliceFrames).toBeUndefined()
   })
 })

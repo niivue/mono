@@ -1,3 +1,13 @@
+## 1.0.0-rc.134 (2026-11-09)
+
+### Fixes
+
+- **niivue:** explain chunked volumes accurately in the log ([2e48c660](https://github.com/niivue/mono/commit/2e48c660))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.133 (2026-11-09)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

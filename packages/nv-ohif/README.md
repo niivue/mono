@@ -55,8 +55,8 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 - Loads a **DICOM** series by fetching it and converting to NIfTI with
   `@niivue/dcm2niix` (see [DICOM support](#dicom-support)).
 - Renders **whole-slide (SM)** series with **NVSlide** (tiled deep-zoom) on its own
-  canvas: **JPEG, JPEG 2000 and JPEG-LS, TILED_FULL** slides (colour or monochrome) are
-  supported; **TILED_SPARSE** and slides with several optical paths or focal planes are
+  canvas: **JPEG, JPEG 2000 and JPEG-LS** slides, TILED_FULL or TILED_SPARSE (colour or
+  monochrome), are supported; slides with several optical paths or focal planes are
   declined with an explanatory note (see [Whole-slide imaging](#whole-slide-imaging)).
 - Mirrors the viewport's tool group's active primary tool (`viewportOptions.toolGroupId`,
   default `'default'`) onto NiiVue's left-drag. Windows are per viewport, as in OHIF;
@@ -223,14 +223,16 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
 ## Whole-slide imaging
 
 A whole-slide (SM) series renders with **NVSlide** (tiled deep-zoom) on its own
-WebGL2 canvas, overlaid on the NiiVue viewport. The manifest is built from the
-DICOM tile pyramid (`buildWsiManifest`) and tiles are fetched on demand
-(`DicomWsiTileSource`).
+WebGL2 canvas, overlaid on the NiiVue viewport. `@niivue/nv-ext-tile/dicom` indexes the
+series metadata (`indexDicomWsiMetadata`) and fetches each tile on demand by WADO-RS
+`/frames/{n}` (`DicomWebWsiSource`), sending OHIF's authorization header and keeping
+any query (an access token) on the series URL.
 
 Support boundary:
 
-- **Supported:** **JPEG**, **JPEG 2000** and **JPEG-LS** tiles with **TILED_FULL** frame
-  organization, one optical path and one focal plane, 8-16-bit unsigned samples.
+- **Supported:** **JPEG**, **JPEG 2000** and **JPEG-LS** tiles, **TILED_FULL** or
+  **TILED_SPARSE** (frames placed by their per-frame positions), one optical path and
+  one focal plane, 8-16-bit unsigned samples.
   - JPEG 2000 and JPEG-LS frames are requested untranscoded (`transfer-syntax=*`) and
     decoded by `@niivue/dcm2niix`'s WASM worker pool, registered by
     `@niivue/nv-ext-tile/dicom`'s `registerDcm2niixDecoders` (loaded on the first such
@@ -242,8 +244,9 @@ Support boundary:
   - Monochrome slides keep their samples; OHIF's window/level (`niivueSetWindowLevel`)
     sets the slide's display window, which defaults to the full BitsStored range.
     MONOCHROME1 is inverted after windowing. Colour above 8 bits is scaled to 8 by BitsStored.
-  - The optical path's ICC profile (a DICOMweb bulk-data URL) is kept in the manifest
-    (`iccProfile`) but not applied, so slide colour is not colour-managed.
+  - Colour slides are colour-managed: the optical path's ICC profile (inline, or fetched
+    from its bulk-data URL) is applied through the registered ICC transform
+    (`registerDcm2niixDecoders` registers dcm2niix's), unless its ColorSpace is SRGB.
 - **Tile-cache limit:** when the requested level's visible tiles exceed NVSlide's tile cache,
   the viewer draws the finest coarser level that fits and shows a brief note (zoom in for full
   resolution).
@@ -251,10 +254,9 @@ Support boundary:
   - Several **optical paths** or **focal planes**, or levels whose metadata cannot prove
     one of each (NumberOfOpticalPaths, TotalPixelMatrixFocalPlanes, NumberOfFrames):
     their frames would land in the wrong tile positions.
-  - Other transfer syntaxes (JPEG Lossless, RLE, uncompressed, HTJ2K): the
-    note names the syntax.
-  - **TILED_SPARSE** frame organization (the tile grid assumes row-major
-    TILED_FULL order, so a sparse slide would render scrambled).
+  - Other transfer syntaxes (JPEG Lossless, RLE, HTJ2K): the note names the syntax.
+    Uncompressed levels are not indexed, so the note says the slide has no tiled levels
+    and why.
   - A slide with no tiled (VOLUME) pyramid levels.
 
 The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path for
@@ -274,7 +276,6 @@ The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path f
 See `PLAN.md`. Landed: NIfTI + DICOM rendering, a toolbar for views / clip plane /
 overlay / window-level / colormap, the full **Measurement** tool
 group (see [Measurement tools](#measurement-tools)), and **NVSlide whole-slide (SM)
-rendering** for JPEG, JPEG 2000 and JPEG-LS TILED_FULL slides (see [Whole-slide imaging](#whole-slide-imaging)).
-Next: segmentation overlays, mesh/surface overlay, TILED_SPARSE slide
-support, and **NVSlide for 2-D** single-frame series (see the
+rendering** for JPEG, JPEG 2000 and JPEG-LS slides (see [Whole-slide imaging](#whole-slide-imaging)).
+Next: segmentation overlays, mesh/surface overlay, and **NVSlide for 2-D** single-frame series (see the
 `## TODO — NVSlide for 2D` section in `PLAN.md`).

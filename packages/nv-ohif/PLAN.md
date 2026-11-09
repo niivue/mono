@@ -286,7 +286,7 @@ runs Vite 5 and works. Reconstructed files are byte-valid (magic `DICM`, correct
 data source (WADO-RS retrieve-instance, `Accept: multipart/related;
 type="application/dicom"`), then converts with `@niivue/dcm2niix` (WASM). dcm2niix
 owns the DICOM→NIfTI orientation/affine, so we don't hand-roll LPS→RAS. Pure parts
-(`dicomWadoRs.ts` URL derivation + multipart parsing) and the router
+(`dicomWadoRs.ts` URL derivation; multipart parsing in `@niivue/nv-ext-tile/dicom`) and the router
 (`classifyDisplaySet.ts`) are unit-tested. The viewport routes CT/MR to this path,
 SM (whole-slide) toward NVSlide, NIfTI-URL to the direct path.
 
@@ -483,7 +483,8 @@ NVSlide API surfaced (packages/niivue/src/slide/):
   live source that fetches tiles on demand.
 
 **Plan (v1 = DICOM-WSI, JPEG, standalone):**
-1. **`DicomWsiTileSource implements SlideTileSource`** (new file). `manifest` built from
+1. (Superseded: nv-ohif now uses `@niivue/nv-ext-tile/dicom`'s `DicomWebWsiSource`; see README.)
+   **`DicomWsiTileSource implements SlideTileSource`** (new file). `manifest` built from
    the OHIF SM display set metadata (one pyramid level per WSI instance / per
    TotalPixelMatrix level: `columns/rows` = ceil(TotalPixelMatrixColumns/Rows / tile
    Columns/Rows), `tileSize` = tile Columns/Rows, `codec` from the transfer syntax).

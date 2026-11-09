@@ -7,7 +7,8 @@ import type { Series } from '@niivue/dcm2niix'
 // equidistant resamples) get no preference (owner), so the voxel key may pick one.
 
 const PART_SUFFIX = /_(ph|real|imaginary)(_|$)/
-const PART_TYPES = ['P', 'PHASE', 'REAL', 'IMAGINARY']
+// dcm2niix sidecars spell the parts both ways (P/R/I and PHASE/REAL/IMAGINARY).
+const PART_TYPES = ['P', 'PHASE', 'R', 'REAL', 'I', 'IMAGINARY']
 
 // Voxel count from an uncompressed NIfTI-1 header (we convert with -z n);
 // 0 when unknown, so such outputs rank last on this key.

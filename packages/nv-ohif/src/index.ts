@@ -45,7 +45,7 @@ export const NIIVUE_OHIF_EXTENSION_ID = '@niivue/nv-ohif'
 const niivueOhifExtension: OhifExtension = {
   id: NIIVUE_OHIF_EXTENSION_ID,
   version: '0.0.0',
-  getViewportModule: () => getNiivueViewportModule(),
+  getViewportModule: (params) => getNiivueViewportModule(params),
   getSopClassHandlerModule: () => getNiivueSopClassHandlerModule(),
   getCommandsModule: (params) => getNiivueCommandsModule(params),
   getToolbarModule: () => getNiivueToolbarModule(),

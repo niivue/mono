@@ -77,8 +77,9 @@ export function getNiivueEntry(
   return viewportId === undefined ? undefined : instances.get(viewportId)
 }
 
-// OHIF exposes its services on the manager in some builds and only on
-// `window.services` in others (e.g. the current 3.x app), so read from either.
+// The viewport and commands get the managers from OHIF's module params; the
+// `window.services` fallback covers callers without one (the toolbar module,
+// the demo harness).
 export function ohifServices(
   servicesManager: OhifServicesManager | undefined,
 ): Record<string, unknown> | undefined {
@@ -148,8 +149,8 @@ interface CommandsManagerLike {
   runCommand?: (name: string, options?: Record<string, unknown>) => unknown
 }
 
-// OHIF's commandsManager is passed as a viewport prop in some builds and only on
-// `window.commandsManager` in others (set by cornerstone's init), so read either.
+// As for services: the module params' commandsManager, else
+// `window.commandsManager` (set by cornerstone's init).
 export function ohifCommandsManager(
   commandsManager: CommandsManagerLike | undefined,
 ): CommandsManagerLike | undefined {

@@ -9,7 +9,7 @@
  * then share ONE source, one store cache and one set of bytes:
  *
  * ```ts
- * const volume = await fetchOmeZarrChunkedSource(url)
+ * const volume = await fetchOmeZarrChunkedSource(url) // @niivue/nv-ext-tile/zarr
  * await nv.loadChunkedVolume(volume)
  * const slide = NVSlide.fromSource(
  *   new VolumeSliceSource(volume, { axis: 'z', window: [0, 400] }),

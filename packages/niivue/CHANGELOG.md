@@ -1,3 +1,138 @@
+## 1.0.0-rc.130 (2026-11-09)
+
+### Features
+
+- **niivue:** rotate2D and flip2D turn and mirror slice views on screen ([6165dcb8](https://github.com/niivue/mono/commit/6165dcb8))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.129 (2026-11-09)
+
+### Fixes
+
+- **niivue:** record a coarse floor only once it reaches the view ([83e033fa](https://github.com/niivue/mono/commit/83e033fa))
+- **niivue:** a failed chunked init undoes only its own floor set ([8c2b1638](https://github.com/niivue/mono/commit/8c2b1638))
+- **niivue:** a failed chunked init leaves a newer load's floor alone ([9312a335](https://github.com/niivue/mono/commit/9312a335))
+- **niivue:** a failed chunked init restores the prior coarse floor ([0e5daa4d](https://github.com/niivue/mono/commit/0e5daa4d))
+- **niivue:** a failed chunked init clears the coarse floor it installed ([0bc2a824](https://github.com/niivue/mono/commit/0bc2a824))
+- **niivue:** release a chunked volume whose init fails ([678be3f8](https://github.com/niivue/mono/commit/678be3f8))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.128 (2026-11-09)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.127 (2026-11-09)
+
+### Fixes
+
+- **niivue:** mark MGZ label volumes with the label intent ([0fecc98c](https://github.com/niivue/mono/commit/0fecc98c))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.126 (2026-11-09)
+
+### Performance
+
+- **niivue:** whole-voxel and tiled copies for reoriented chunk extraction ([f9feb6af](https://github.com/niivue/mono/commit/f9feb6af))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.125 (2026-11-09)
+
+### Fixes
+
+- **niivue:** keep the first streamline when reading TCK ([881536a0](https://github.com/niivue/mono/commit/881536a0))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.124 (2026-11-09)
+
+### Features
+
+- **niivue:** 2D rotate and flip for slice views ([4879f84c](https://github.com/niivue/mono/commit/4879f84c))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.123 (2026-11-09)
+
+### Performance
+
+- **niivue:** build the cinematic renderer on first use ([7a5e2b6f](https://github.com/niivue/mono/commit/7a5e2b6f))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.122 (2026-11-09)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.121 (2026-11-09)
+
+### Features
+
+- ⚠️  **niivue:** OME-Zarr exports move to @niivue/nv-ext-tile/zarr ([62b29fdb](https://github.com/niivue/mono/commit/62b29fdb))
+- **niivue,nv-ext-tile:** move OME-Zarr from core to @niivue/nv-ext-tile/zarr ([9b428e29](https://github.com/niivue/mono/commit/9b428e29))
+
+### Breaking Changes
+
+- **niivue:** OME-Zarr exports move to @niivue/nv-ext-tile/zarr  ([62b29fdb](https://github.com/niivue/mono/commit/62b29fdb))
+  the OME-Zarr names (loadOmeZarrVolumes, fetchOmeZarr,
+  fetchOmeZarrChunkedSource, openOmeZarr, omeZarrChunkedSource, ByteLruCache,
+  withChunkTiming, the persistent byte cache, ...) are no longer exported from
+  '@niivue/niivue'. Import them from '@niivue/nv-ext-tile/zarr' instead; names
+  and behaviour are unchanged.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.120 (2026-11-09)
+
+### Fixes
+
+- **niivue:** declare @webgpu/types as a peer dependency ([496ebfda](https://github.com/niivue/mono/commit/496ebfda))
+- **niivue:** ship @webgpu/types for the published declarations ([#570](https://github.com/niivue/mono/issues/570))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.119 (2026-11-08)
+
+### Fixes
+
+- **niivue:** a failed attach keeps the hold while another attach is pending or one succeeded ([3fa6964e](https://github.com/niivue/mono/commit/3fa6964e))
+- **niivue:** a failed attach lets go of its page worker hold ([b415d9c3](https://github.com/niivue/mono/commit/b415d9c3))
+- **niivue:** end page-wide workers when the last viewer is destroyed ([801973b5](https://github.com/niivue/mono/commit/801973b5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.118 (2026-11-08)
 
 ### Fixes

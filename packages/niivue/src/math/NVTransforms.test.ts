@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4, vec3, vec4 } from 'gl-matrix'
-import type { AffineMatrix, NVGlobalCamera, NVImage } from '@/NVTypes'
+import type {
+  AffineMatrix,
+  NVGlobalCamera,
+  NVImage,
+  Rotation2D,
+} from '@/NVTypes'
 import {
   arrayToMat4,
   CLIP_DEPTH_STEP,
@@ -1333,5 +1338,54 @@ describe('slabMvp', () => {
     const flipped = n.map((v) => -v)
     const z = (normal: number[]) => clip(slabMvp(mvp, normal, q, 3, true), p)[2]
     expect(z(flipped)).toBeCloseTo(z(n), 6)
+  })
+})
+
+describe('calculateMvpMatrix2D clipRot', () => {
+  const mvp2D = (clipRot?: Rotation2D) =>
+    calculateMvpMatrix2D(
+      [0, 0, 200, 100],
+      [-10, -5, -8],
+      [30, 15, 8],
+      180,
+      -90,
+      true,
+      undefined,
+      undefined,
+      [2, -3, 1.7],
+      false,
+      clipRot,
+    )
+
+  test('0 is byte-identical to the default', () => {
+    expect(mvp2D(0)).toEqual(mvp2D())
+  })
+
+  test('turns clip xy clockwise about the tile centre, panned and zoomed', () => {
+    const base = mvp2D()[0]
+    const p = vec3.fromValues(7, 3, 0)
+    const b = vec3.transformMat4(vec3.create(), p, base)
+    const cases: [Rotation2D, number, number][] = [
+      [90, b[1], -b[0]],
+      [180, -b[0], -b[1]],
+      [270, -b[1], b[0]],
+    ]
+    for (const [clipRot, x, y] of cases) {
+      const mvp = mvp2D(clipRot)[0]
+      const r = vec3.transformMat4(vec3.create(), p, mvp)
+      expect(r[0]).toBeCloseTo(x, 12)
+      expect(r[1]).toBeCloseTo(y, 12)
+      expect(r[2]).toBe(b[2])
+      // A rotation, never a mirror: culling winding is preserved.
+      expect(mat4.determinant(mvp)).toBeCloseTo(mat4.determinant(base), 9)
+    }
+  })
+
+  test('mmPerPixel2D reads the height for a quarter turn', () => {
+    const ltwh = [0, 0, 200, 100]
+    expect(mmPerPixel2D([0, 0], [40, 20], ltwh)).toBe(0.2)
+    expect(mmPerPixel2D([0, 0], [40, 20], ltwh, [0, 0, 2], 90)).toBe(0.2)
+    expect(mmPerPixel2D([0, 0], [40, 20], ltwh, [0, 0, 1], 180)).toBe(0.2)
+    expect(mmPerPixel2D([0, 0], [40, 20], ltwh, [0, 0, 1], 270)).toBe(0.4)
   })
 })

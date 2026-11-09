@@ -261,7 +261,6 @@ export default class NVGlview {
     await this._initWebGL2()
     await this._createResources()
     await this._createPipelines()
-    if (this.gl) this.cinematicRenderer.init(this.gl)
     await this._updateBindings()
   }
 
@@ -738,17 +737,17 @@ export default class NVGlview {
     this.cinematicRenderer.beginFrame()
     const base = volumes[0]
     if (isCinematicMode && base) {
-      if (!this.cinematicRenderer.isReady) {
-        this._warnCinematic(
-          'WebGL2 lacks EXT_color_buffer_float; drawing COMPOSITE',
-        )
-      } else if (base.chunkPlan || base.chunkSource) {
+      if (base.chunkPlan || base.chunkSource) {
         this._warnCinematic(
           'chunked (streamed) volumes are not supported; drawing COMPOSITE',
         )
       } else if (!hasScalarIntensity(base)) {
         this._warnCinematic(
           'RGB/RGBA volumes have no scalar intensity; drawing COMPOSITE',
+        )
+      } else if (!this.cinematicRenderer.ensure(gl)) {
+        this._warnCinematic(
+          'cinematic unavailable (no EXT_color_buffer_float, or its shaders failed); drawing COMPOSITE',
         )
       } else {
         cinematicLabels = findLabelVolume(volumes)
@@ -903,6 +902,7 @@ export default class NVGlview {
             undefined,
             pan,
             false,
+            tile.clipRot,
           )
         // Cache MVP and plane equation for fast interactive picking
         tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
@@ -2081,6 +2081,7 @@ export default class NVGlview {
         undefined,
         pan,
         false,
+        tile.clipRot,
       )
       mvpMatrix = result[0] as mat4
       rayDir = result[3] as Float32Array

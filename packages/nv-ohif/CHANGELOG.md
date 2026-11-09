@@ -1,3 +1,19 @@
+## 1.0.0-rc.137 (2026-11-09)
+
+### Fixes
+
+- **nv-ohif:** stop over-disabling host buttons; accept dcmjs 0.52 ([62b9c5a3](https://github.com/niivue/mono/commit/62b9c5a3))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.133
+- Updated nv-ext-tile to 1.0.0-rc.27
+- Updated uikit to 1.0.0-rc.130
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.136 (2026-11-09)
 
 ### Features

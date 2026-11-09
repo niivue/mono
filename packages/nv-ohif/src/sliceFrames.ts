@@ -28,12 +28,9 @@ export interface SliceFrames {
   frames: Array<FrameRef | undefined>
 }
 
-// How far, in slices, a frame may sit off a slice and still lie in it: float32
-// sform rounding only.
+// How far, in slices, a point may sit off a slice and still lie in it: float32
+// sform and pick rounding only.
 const ON_PLANE = 0.01
-// A measured point belongs to the slice displayed at its depth: the nearest
-// one, since NiiVue's crosshair depth is not snapped to voxel centres.
-const NEAREST = 0.5
 // Frame and slice normals this parallel (cos; ~0.1 degree) share a plane.
 const PARALLEL = 1 - 1e-6
 
@@ -177,7 +174,7 @@ export function buildSliceFrames(
       )
     )
       continue
-    const k = onSlice(sf, position, ON_PLANE)
+    const k = onSlice(sf, position)
     if (k === undefined) continue
     // Two frames at one position (another echo or image type) stay unmapped.
     sf.frames[k] = claimed.has(k) ? undefined : ref
@@ -192,27 +189,23 @@ const sliceDepth = (sf: SliceFrames, p: Vec3) =>
     sf.normal,
   )
 
-// The slice an LPS point lies in (within `tol` slices of its centre), else
-// undefined.
-function onSlice(sf: SliceFrames, p: Vec3, tol: number): number | undefined {
+// The slice an LPS point lies in (within ON_PLANE of its centre), else undefined.
+function onSlice(sf: SliceFrames, p: Vec3): number | undefined {
   const depth = sliceDepth(sf, p)
   const k = Math.round(depth)
-  return k >= 0 && k < sf.frames.length && Math.abs(depth - k) < tol
+  return k >= 0 && k < sf.frames.length && Math.abs(depth - k) <= ON_PLANE
     ? k
     : undefined
 }
 
-/** The frame of the slice all LPS points lie in, else undefined. */
+/** The frame whose plane all LPS points lie on, else undefined. */
 export function frameAt(
   sf: SliceFrames,
   points: ReadonlyArray<Vec3>,
 ): FrameRef | undefined {
-  const first = points[0]
-  const k = first && onSlice(sf, first, NEAREST)
-  if (!first || k === undefined) return undefined
-  // A reformatted measurement may share the slice but leave the frame plane.
-  const depth = sliceDepth(sf, first)
-  if (points.some((p) => Math.abs(sliceDepth(sf, p) - depth) > ON_PLANE))
+  const k = points[0] && onSlice(sf, points[0])
+  // A reformatted measurement may share the slab but leave the plane.
+  if (k === undefined || points.some((p) => onSlice(sf, p) !== k))
     return undefined
   return sf.frames[k]
 }

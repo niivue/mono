@@ -1,3 +1,16 @@
+## 1.0.0-rc.120 (2026-11-09)
+
+### Fixes
+
+- **niivue:** declare @webgpu/types as a peer dependency ([496ebfda](https://github.com/niivue/mono/commit/496ebfda))
+- **niivue:** ship @webgpu/types for the published declarations ([#570](https://github.com/niivue/mono/issues/570))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.119 (2026-11-08)
 
 ### Fixes

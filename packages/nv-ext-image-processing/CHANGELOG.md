@@ -1,3 +1,14 @@
+## 1.0.0-rc.126 (2026-11-09)
+
+### Performance
+
+- **nv-ext-image-processing:** linear largest-cluster selection ([7aaf6635](https://github.com/niivue/mono/commit/7aaf6635))
+- **nv-ext-image-processing:** reuse connected-label scratch buffers ([01df1200](https://github.com/niivue/mono/commit/01df1200))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.125 (2026-11-09)
 
 ### Updated Dependencies

@@ -273,7 +273,7 @@
     },
     "packages/nv-ext-image-processing": {
       "name": "@niivue/nv-ext-image-processing",
-      "version": "1.0.0-rc.125",
+      "version": "1.0.0-rc.126",
       "dependencies": {
         "gl-matrix": "^3.4.4",
         "nifti-reader-js": "^0.8.0",

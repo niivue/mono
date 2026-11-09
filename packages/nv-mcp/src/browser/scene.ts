@@ -544,7 +544,12 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           'This page cannot open OME-Zarr stores: it did not provide the nv-ext-tile loaders.',
         )
       // zarrita needs an absolute URL; load_volume accepts relative ones.
-      const url = new URL(raw, globalThis.location?.href).href
+      const base = globalThis.location?.href
+      if (!URL.canParse(raw, base))
+        throw new Error(
+          `The OME-Zarr store at ${raw} could not be loaded: it is not a valid URL.`,
+        )
+      const url = new URL(raw, base).href
       const stream = flag(params, 'stream') ?? false
       const level = integer(params, 'level')
       const channel = integer(params, 'channel')

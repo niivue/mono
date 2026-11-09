@@ -1699,6 +1699,16 @@ describe('load_ome_zarr', () => {
     expect(view.loadVolumes).not.toHaveBeenCalled()
   })
 
+  it('names the store when the url cannot be parsed', async () => {
+    const zarr = omeZarr()
+    await expect(
+      coreHandlers(
+        host(fakeView(), { omeZarr: async () => zarr }),
+      ).load_ome_zarr({ url: 'http://a b/x' }),
+    ).rejects.toThrow('The OME-Zarr store at http://a b/x could not be loaded')
+    expect(zarr.loadOmeZarrVolumes).not.toHaveBeenCalled()
+  })
+
   it('declines on a page without the loaders', async () => {
     await expect(
       coreHandlers(host()).load_ome_zarr({ url: 'https://x/s.ome.zarr' }),

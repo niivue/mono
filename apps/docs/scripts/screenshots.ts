@@ -37,7 +37,6 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
 const SLOW: Record<string, number> = {
   benchmark: 12000,
   'vox-block-pick': 8000,
-  'vox-block-pick-zarr': 15000,
 }
 
 const siteDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')

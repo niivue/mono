@@ -90,6 +90,10 @@ radioCheck.onclick = function () {
 sagNose.onchange = function () {
   nv1.isSagittalNoseLeft = this.value === 'auto' ? null : this.value === 'left'
 }
+rotCCW.onclick = () => nv1.rotate2D(-1)
+rotCW.onclick = () => nv1.rotate2D(1)
+flipH.onclick = () => nv1.flip2D('horizontal')
+flipV.onclick = () => nv1.flip2D('vertical')
 // 'corner' draws one label (e.g. RS) at each 2D tile's top-left corner, which
 // keeps the letters off the brain on short, wide multiplanar canvases.
 orientText.onchange = function () {

@@ -14,6 +14,11 @@
       ],
       "outputs": ["{projectRoot}/dist"]
     },
+    "test": {
+      "command": "bun test",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    },
     "typecheck": {
       "command": "bunx tsc --noEmit",
       "options": { "cwd": "{projectRoot}" },

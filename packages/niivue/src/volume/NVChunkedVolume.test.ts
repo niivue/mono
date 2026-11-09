@@ -623,7 +623,7 @@ describe('NVChunkedVolume id + plan-swap routing', () => {
       },
       addEventListener: () => {},
       removeEventListener: () => {},
-      setBaseCoarseFloor: async () => {},
+      _setBaseCoarseFloor: async () => {},
       _updateGLChanged: async () => {},
       isDestroyed: false,
     })
@@ -1309,7 +1309,7 @@ describe('NVChunkedVolume refocus promise', () => {
 // --- manager: automatic coarse floor ---------------------------------------
 
 /**
- * Host stub that records every floor install. `setBaseCoarseFloor` is the only
+ * Host stub that records every floor install. `_setBaseCoarseFloor` is the only
  * host call `applyCoarseFloor` makes, so nothing else needs stubbing.
  */
 function makeFloorHost(): {
@@ -1318,7 +1318,7 @@ function makeFloorHost(): {
 } {
   const installs: Array<NVImage | null> = []
   const host = {
-    setBaseCoarseFloor: async (vol: NVImage | null) => {
+    _setBaseCoarseFloor: async (vol: NVImage | null) => {
       installs.push(vol)
     },
     _registerChunkedVolume: () => {},
@@ -1589,7 +1589,7 @@ describe('NVChunkedVolume automatic display window', () => {
       },
       addEventListener: () => {},
       removeEventListener: () => {},
-      setBaseCoarseFloor: async () => {},
+      _setBaseCoarseFloor: async () => {},
       _updateGLChanged: async () => {
         updateGL++
       },
@@ -1678,7 +1678,7 @@ describe('NVChunkedVolume automatic display window', () => {
   test('a window set while the floor streams in is not overwritten', async () => {
     const { host, sceneVolume } = makeWindowHost()
     const installed: { floor: NVImage | null } = { floor: null }
-    ;(host as unknown as { setBaseCoarseFloor: unknown }).setBaseCoarseFloor =
+    ;(host as unknown as { _setBaseCoarseFloor: unknown })._setBaseCoarseFloor =
       async (f: NVImage | null) => {
         installed.floor = f
       }
@@ -1813,5 +1813,191 @@ describe('NVChunkedVolume focusBounds', () => {
     await mgr.setFocus([0.5, 0.5, 0.5], [])
     expect(boundsOf(mgr)).toEqual([])
     expect(levelsTouching(mgr.currentPlan, slab).size).toBeGreaterThan(1)
+  })
+})
+
+// Non-flat voxels, so the floor resolves the window and init reaches the
+// trailing _updateGLChanged after the floor is installed.
+const rampSource = (): ChunkedVolumeSource => ({
+  datatypeCode: 4,
+  levels: mgrSource.levels,
+  fetchChunk: async (r) => {
+    const n = r.texDims[0] * r.texDims[1] * r.texDims[2] * r.bytesPerVoxel
+    return Uint8Array.from({ length: n }, (_, i) => i % 251)
+  },
+})
+
+describe('NVChunkedVolume failed init', () => {
+  test('a throw after addVolume removes the volume, releases listeners and rethrows', async () => {
+    const volumes: NVImage[] = []
+    const listeners = new Map<string, number>()
+    const count = (type: string, delta: number): void => {
+      listeners.set(type, (listeners.get(type) ?? 0) + delta)
+    }
+    let registered = 0
+    const host = {
+      swapVolumeChunkPlan: async () => {},
+      _registerChunkedVolume: () => registered++,
+      _unregisterChunkedVolume: () => registered--,
+      volumes,
+      addVolume: async (v: NVImage) => {
+        // The scene holds a shallow copy, as NVModel.prepareVolume does.
+        volumes.push({ ...v })
+      },
+      removeVolume: async (i: number) => {
+        volumes.splice(i, 1)
+      },
+      _setBaseCoarseFloor: async () => {
+        throw new Error('out of memory')
+      },
+      sliceType: SLICE_TYPE.MULTIPLANAR,
+      pan2Dxyzmm: [0, 0, 0, 1],
+      getCrosshairPos: () => [0.5, 0.5, 0.5],
+      addEventListener: (type: string) => count(type, 1),
+      removeEventListener: (type: string) => count(type, -1),
+    } as unknown as NiiVue
+    const { source } = floorSource(mgrSource.levels)
+    const mgr = new NVChunkedVolume(host, source, {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(volumes).toHaveLength(0)
+    expect(registered).toBe(0)
+    expect(listeners.size).toBeGreaterThan(0)
+    for (const [type, n] of listeners) expect([type, n]).toEqual([type, 0])
+  })
+
+  const floorFailHost = (
+    prior: NVImage | null,
+    failSetter: boolean,
+  ): { host: NiiVue; volumes: NVImage[]; floors: (NVImage | null)[] } => {
+    const volumes: NVImage[] = []
+    const floors: (NVImage | null)[] = []
+    const host = {
+      _baseCoarseFloor: prior,
+      _baseCoarseFloorSets: 0,
+      swapVolumeChunkPlan: async () => {},
+      _registerChunkedVolume: () => {},
+      _unregisterChunkedVolume: () => {},
+      volumes,
+      addVolume: async (v: NVImage) => {
+        volumes.push({ ...v })
+      },
+      removeVolume: async (i: number) => {
+        volumes.splice(i, 1)
+      },
+      // Like NiiVue: records the floor once it reaches the view, then can
+      // still throw (drawScene).
+      async _setBaseCoarseFloor(
+        this: {
+          _baseCoarseFloor: NVImage | null
+          _baseCoarseFloorSets: number
+        },
+        f: NVImage | null,
+        onInstall?: (set: number, replaced: NVImage | null) => void,
+      ) {
+        floors.push(f)
+        this._baseCoarseFloorSets++
+        onInstall?.(this._baseCoarseFloorSets, this._baseCoarseFloor)
+        this._baseCoarseFloor = f
+        if (failSetter && floors.length === 1) throw new Error('draw failed')
+      },
+      async setBaseCoarseFloor(
+        this: { _setBaseCoarseFloor: (f: NVImage | null) => Promise<void> },
+        f: NVImage | null,
+      ) {
+        await this._setBaseCoarseFloor(f)
+      },
+      _updateGLChanged: async () => {
+        throw new Error('out of memory')
+      },
+      sliceType: SLICE_TYPE.MULTIPLANAR,
+      pan2Dxyzmm: [0, 0, 0, 1],
+      getCrosshairPos: () => [0.5, 0.5, 0.5],
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as NiiVue
+    return { host, volumes, floors }
+  }
+
+  test('a failed additive init puts back the floor it replaced', async () => {
+    const prior = { id: 'old floor' } as unknown as NVImage
+    const { host, floors } = floorFailHost(prior, false)
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(floors[0]).not.toBe(prior)
+    expect(floors.at(-1)).toBe(prior)
+    expect(host._baseCoarseFloor).toBe(prior)
+  })
+
+  test('a floor setter that installs then throws is still undone', async () => {
+    const { host, floors } = floorFailHost(null, true)
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+    await expect(mgr.init()).rejects.toThrow('draw failed')
+    expect(floors).toHaveLength(2)
+    expect(floors.at(-1)).toBeNull()
+  })
+
+  test("a failed init leaves a newer load's floor alone", async () => {
+    const { host, floors } = floorFailHost(null, false)
+    const newer = { id: 'newer floor' } as unknown as NVImage
+    // A second load installs its floor while this one is still settling.
+    host._updateGLChanged = async () => {
+      await host.setBaseCoarseFloor(newer)
+      throw new Error('out of memory')
+    }
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(floors).toHaveLength(2)
+    expect(host._baseCoarseFloor).toBe(newer)
+  })
+
+  test("a failed init leaves a newer caller's clear alone", async () => {
+    const prior = { id: 'old floor' } as unknown as NVImage
+    const { host, floors } = floorFailHost(prior, false)
+    // A newer caller clears the floor while this init is still settling.
+    host._updateGLChanged = async () => {
+      await host.setBaseCoarseFloor(null)
+      throw new Error('out of memory')
+    }
+    let fetches = 0
+    const source = rampSource()
+    const fetchChunk = source.fetchChunk
+    // The coarse floor cannot be built, so this init also installs null.
+    source.fetchChunk = async (r) => {
+      if (++fetches === 1) throw new Error('floor fetch failed')
+      return fetchChunk(r)
+    }
+    const mgr = new NVChunkedVolume(host, source, {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(floors).toEqual([null, null])
+    expect(host._baseCoarseFloor).toBeNull()
+  })
+
+  test('a throw after the floor is installed clears the floor', async () => {
+    const { host, volumes, floors } = floorFailHost(null, false)
+    const mgr = new NVChunkedVolume(host, rampSource(), {
+      focus: 'crosshair',
+      radius: 'auto',
+    })
+
+    await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(volumes).toHaveLength(0)
+    expect(floors[0]).not.toBeNull()
+    expect(floors.at(-1)).toBeNull()
   })
 })

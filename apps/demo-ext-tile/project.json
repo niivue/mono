@@ -4,14 +4,14 @@
   "tags": ["type:app", "lang:typescript"],
   "targets": {
     "dev": {
-      "command": "bunx --bun vite --open /index.html",
+      "command": "bun scripts/generate-range-poc-fixture.ts && bunx --bun vite --open /index.html",
       "options": {
         "cwd": "{projectRoot}"
       },
       "dependsOn": ["^build"]
     },
     "build": {
-      "command": "bunx --bun vite build",
+      "command": "bun scripts/generate-range-poc-fixture.ts && bunx --bun vite build",
       "options": {
         "cwd": "{projectRoot}"
       },
@@ -20,16 +20,26 @@
         "typescript",
         "{projectRoot}/vite.config.js",
         "{projectRoot}/src/**/*",
+        "{projectRoot}/scripts/**/*",
+        "{projectRoot}/public/**/*",
         "{projectRoot}/*.html",
         {
           "env": "VITE_BASE"
+        },
+        {
+          "env": "VITE_OMEZARR_ASSET_BASE"
+        },
+        {
+          "env": "VITE_STREAMING_ASSET_BASE"
         }
       ],
       "outputs": ["{projectRoot}/dist"]
     },
     "e2e": {
       "command": "node tests/folder.e2e.mjs",
-      "options": { "cwd": "{projectRoot}" },
+      "options": {
+        "cwd": "{projectRoot}"
+      },
       "dependsOn": ["build"],
       "inputs": ["typescript", "{projectRoot}/tests/**/*"]
     },

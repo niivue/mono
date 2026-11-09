@@ -939,7 +939,7 @@ export function chunkVolumeMultiLOD(
   // the octree outright: every brick is drawn from `minLevel`, so the plan is
   // one regular grid whose brick COUNT is the caller's rather than a value that
   // falls out of `cellEdge` and the pyramid. That is what a lattice you pick
-  // bricks out of needs -- see `examples/vox.block.pick.zarr.html`, whose block
+  // bricks out of needs -- see `apps/demo-ext-tile/vox.block.pick.zarr.html`, whose block
   // control asks for 4 / 9 / 16 blocks directly. The budget/`maxBricks` passes
   // are skipped (they coarsen by refining less, and there is nothing here to
   // refine); the brick count is small and each brick is bounded by `deviceLimit`,

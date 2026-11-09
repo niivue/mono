@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { vec3 } from 'gl-matrix'
+import type { Rotation2D } from '@/NVTypes'
 import type { GlyphBatch } from './NVFont'
 import type { LineData } from './NVLine'
 import { buildRuler } from './NVRuler'
@@ -172,5 +173,39 @@ describe('buildRuler', () => {
     expect(um.label).toBe('2 mm')
     expect(um.label).toBe(mm.label)
     expect(um.barPx).toBeCloseTo(mm.barPx, 6)
+  })
+})
+
+describe('ruler cap under a quarter turn', () => {
+  test('caps by the horizontal data span', () => {
+    const label = (rotation2D: Rotation2D) => {
+      const tiles = screenSlicesLayout(
+        cfg({
+          canvasWH: [3000, 3000],
+          extentsMax: vec3.fromValues(20, 200, 10),
+          rotation2D,
+        }),
+      )
+      const labels: string[] = []
+      buildRuler(
+        tiles,
+        (text) => {
+          labels.push(text)
+          return {} as GlyphBatch
+        },
+        () => ({}) as LineData,
+        [1, 1, 1, 1],
+        [0, 0, 0, 0.05],
+      )
+      return labels.join(' ')
+    }
+    // Zoomed far out the cap is the data span: X (20 mm) unturned, Y (200 mm)
+    // across a quarter-turned axial tile.
+    expect([label(0), label(90), label(180), label(270)]).toEqual([
+      '10 mm',
+      '10 cm',
+      '10 mm',
+      '10 cm',
+    ])
   })
 })

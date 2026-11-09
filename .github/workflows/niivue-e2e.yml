@@ -67,8 +67,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Linux Playwright jobs pin the Ubuntu image: each Playwright release ships
+  # Chromium only for the images it knows, so bump Playwright before the pin.
   browser-contracts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       # No LFS: these specs build their volumes in the page.
       - uses: actions/checkout@v4
@@ -100,7 +102,7 @@ jobs:
   # The render-* reference specs on SwiftShader (see the header). Sharded so
   # the single-worker run stays short; synthetic data, so no LFS pull.
   render-references:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:

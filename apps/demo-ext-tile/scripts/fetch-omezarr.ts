@@ -73,7 +73,7 @@ const CATALOG: CatalogEntry[] = [
 // upstream in a way no renderer can compensate for -- scale0 is clean but covers
 // only 25% of its declared z extent, and every complete level is Z-banded on the
 // chunk grid (scale1 zeroes local z 54..80 of every 81-deep chunk). See the
-// screening rule at the top of examples/range.js before adding a new store here.
+// screening rule at the top of src/range.js before adding a new store here.
 
 interface Options {
   list: boolean

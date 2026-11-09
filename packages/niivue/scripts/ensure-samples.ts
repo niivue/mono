@@ -1,8 +1,8 @@
 // Ensure the streaming demos' on-demand sample data is present, downloading it
-// if missing. The large real samples (OME-Zarr volumes, DICOM-WSI slides) are
-// NOT checked into git; they are fetched on demand by fetch-omezarr.ts and
-// fetch-dicom-wsi.ts. This orchestrator checks what each demo needs and only
-// downloads what is absent, so it is cheap to run repeatedly (e.g. before
+// if missing. The large real samples (DICOM-WSI slides) are NOT checked into
+// git; fetch-dicom-wsi.ts fetches them on demand (OME-Zarr samples: see
+// apps/demo-ext-tile/scripts/fetch-omezarr.ts). This orchestrator checks what
+// each demo needs and only downloads what is absent, so it is cheap to run repeatedly (e.g. before
 // `dev`) and a no-op once the samples are in place.
 //
 // Usage:
@@ -10,10 +10,10 @@
 //   bun run scripts/ensure-samples.ts --all      # every catalogued sample
 //   bun run scripts/ensure-samples.ts --force    # re-download even if present
 //
-// What "present" means: a sample's marker file exists under public/ (the store
-// root metadata for OME-Zarr, the generated manifest for DICOM-WSI). The
-// per-source fetch scripts are themselves resumable, so a partial download is
-// completed rather than restarted.
+// What "present" means: a sample's marker file exists under public/ (the
+// generated manifest for DICOM-WSI). The per-source fetch scripts are
+// themselves resumable, so a partial download is completed rather than
+// restarted.
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
@@ -28,7 +28,7 @@ interface Sample {
   // File whose existence means the sample is already downloaded.
   marker: string
   // Args passed to the per-source fetch script.
-  script: 'fetch-omezarr.ts' | 'fetch-dicom-wsi.ts'
+  script: 'fetch-dicom-wsi.ts'
   args: string[]
   // Included in the default (no --all) set.
   default: boolean
@@ -38,46 +38,11 @@ interface Sample {
 // root. The fetch scripts handle level/partial completeness themselves.
 const SAMPLES: Sample[] = [
   {
-    label: 'pawpawsaurus OME-Zarr (range.html)',
-    marker: 'omezarr/pawpawsaurus.ome.zarr/zarr.json',
-    script: 'fetch-omezarr.ts',
-    args: ['--name=pawpawsaurus'],
-    default: true,
-  },
-  {
     label: 'CPTAC-BRCA DICOM-WSI (slides.html)',
     marker: 'dicom-wsi/cptac-brca/manifest.json',
     script: 'fetch-dicom-wsi.ts',
     args: [],
     default: true,
-  },
-  {
-    label: 'richtmyer-meshkov OME-Zarr (range.html)',
-    marker: 'omezarr/richtmyer_meshkov.ome.zarr/zarr.json',
-    script: 'fetch-omezarr.ts',
-    args: ['--name=richtmyer_meshkov'],
-    default: false,
-  },
-  {
-    label: 'chameleon OME-Zarr, uint16 (range.html)',
-    marker: 'omezarr/chameleon.ome.zarr/zarr.json',
-    script: 'fetch-omezarr.ts',
-    args: ['--name=chameleon'],
-    default: false,
-  },
-  {
-    label: 'kingsnake OME-Zarr, uint8 (range.html)',
-    marker: 'omezarr/kingsnake.ome.zarr/zarr.json',
-    script: 'fetch-omezarr.ts',
-    args: ['--name=kingsnake'],
-    default: false,
-  },
-  {
-    label: 'stag beetle OME-Zarr, uint16 (range.html)',
-    marker: 'omezarr/stag_beetle.ome.zarr/zarr.json',
-    script: 'fetch-omezarr.ts',
-    args: ['--name=stag_beetle'],
-    default: false,
   },
 ]
 

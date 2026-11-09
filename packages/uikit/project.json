@@ -4,7 +4,7 @@
   "tags": ["type:lib", "lang:typescript"],
   "targets": {
     "dev": {
-      "command": "vite",
+      "command": "bunx --bun vite",
       "options": { "cwd": "{projectRoot}" }
     },
     "build": {

@@ -5,7 +5,11 @@ import type {
   OhifToolbarButtonCommand,
   OhifToolbarModuleEntry,
 } from './ohif-types'
-import { NIIVUE_STANDARD_COMMANDS } from './standardCommands'
+import {
+  NIIVUE_ROTATE_FLIP_COMMANDS,
+  NIIVUE_STANDARD_COMMANDS,
+  noTiles2D,
+} from './standardCommands'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 
 export const NIIVUE_UNSUPPORTED_EVALUATOR = 'evaluate.niivue.unsupported'
@@ -23,7 +27,11 @@ const TOOL_COMMANDS = ['setToolActive', 'setToolActiveToolbar']
 // Slide gestures: Length draws a ruler, Zoom zooms, anything else pans.
 const SLIDE_SUPPORTED_TOOLS: readonly string[] = ['Length', 'Pan', 'Zoom']
 // Volume-only standard commands that no-op on an NVSlide viewport.
-const SLIDE_UNSUPPORTED = ['setViewportOrientation', 'setWindowLevelPreset']
+const SLIDE_UNSUPPORTED = [
+  'setViewportOrientation',
+  'setWindowLevelPreset',
+  ...NIIVUE_ROTATE_FLIP_COMMANDS,
+]
 // Host commands that act on display sets or app UI, not the viewport's
 // renderer, so they work on a NiiVue viewport. openDICOMTagViewer: OHIF
 // extensions/default commandsModule reads the grid's displaySetInstanceUIDs.
@@ -95,9 +103,14 @@ export function niivueSupportEvaluator(
       const commands = buttonCommands(button)
       // Section lists, menus and the layout selector carry no commands.
       if (commands.length === 0) return undefined
-      const answered: readonly string[] = entry.slideView
-        ? NIIVUE_STANDARD_COMMANDS.filter((c) => !SLIDE_UNSUPPORTED.includes(c))
-        : NIIVUE_STANDARD_COMMANDS
+      const unanswered: readonly string[] = entry.slideView
+        ? SLIDE_UNSUPPORTED
+        : noTiles2D(entry)
+          ? NIIVUE_ROTATE_FLIP_COMMANDS
+          : []
+      const answered: readonly string[] = NIIVUE_STANDARD_COMMANDS.filter(
+        (c) => !unanswered.includes(c),
+      )
       const supportedTools = entry.slideView
         ? SLIDE_SUPPORTED_TOOLS
         : NIIVUE_SUPPORTED_TOOLS

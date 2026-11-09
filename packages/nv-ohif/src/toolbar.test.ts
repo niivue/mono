@@ -328,15 +328,16 @@ describe('evaluate.niivue.unsupported', () => {
     registerNiivue('vp-1', { volumes: [{}] } as unknown as NiiVue)
     updateNiivueViewport('vp-1', { toolGroupId: 'mpr' })
     const cases: Array<[OhifToolbarButton, unknown]> = [
-      [button('Rotate', 'rotateViewportCW'), disabled],
+      [button('Rotate', 'rotateViewportCW'), undefined],
+      [button('Flip', 'flipViewportHorizontal'), undefined],
       [button('Invert', [{ commandName: 'invertViewport' }]), disabled],
       [button('Reset', 'resetViewport'), undefined],
       [button('Fit', ['fitViewportToWindow', 'niivueResetView']), undefined],
-      [button('Mixed', ['resetViewport', 'rotateViewportCW']), disabled],
+      [button('Mixed', ['resetViewport', 'invertViewport']), disabled],
       // Section lists, menus and the layout selector carry no commands.
       [button('Empty', undefined), undefined],
       [button('TagBrowser', 'openDICOMTagViewer'), undefined],
-      [button('Tags', ['openDICOMTagViewer', 'rotateViewportCW']), disabled],
+      [button('Tags', ['openDICOMTagViewer', 'invertViewport']), disabled],
       // An explicit Cornerstone context bypasses the NIIVUE shadow.
       [
         button('CsReset', [
@@ -363,7 +364,7 @@ describe('evaluate.niivue.unsupported', () => {
             commandName: 'setToolActiveToolbar',
             commandOptions: { toolName: 'Pan' },
           },
-          'rotateViewportCW',
+          'invertViewport',
         ]),
         disabled,
       ],
@@ -421,12 +422,35 @@ describe('evaluate.niivue.unsupported', () => {
       )
   })
 
+  for (const sliceType of [SLICE_TYPE.RENDER, SLICE_TYPE.NONE])
+    it(`disables rotate and flip without 2D tiles (sliceType ${sliceType})`, () => {
+      registerNiivue('vp-1', {
+        volumes: [{}],
+        sliceType,
+      } as unknown as NiiVue)
+      for (const name of ['rotateViewportCW', 'flipViewportHorizontal'])
+        expect(
+          evaluate({ viewportId: 'vp-1', button: button(name, name) }),
+        ).toEqual(disabled)
+      expect(
+        evaluate({
+          viewportId: 'vp-1',
+          button: button('Reset', 'resetViewport'),
+        }),
+      ).toBeUndefined()
+    })
+
   it('disables volume-only standard commands on a slide viewport', () => {
     registerNiivue('vp-1', { volumes: [] } as unknown as NiiVue)
     updateNiivueViewport('vp-1', {
       slideView: {} as WsiSlideView,
     })
-    for (const name of ['setViewportOrientation', 'setWindowLevelPreset'])
+    for (const name of [
+      'setViewportOrientation',
+      'setWindowLevelPreset',
+      'rotateViewportCW',
+      'flipViewportVertical',
+    ])
       expect(
         evaluate({ viewportId: 'vp-1', button: button(name, name) }),
       ).toEqual(disabled)

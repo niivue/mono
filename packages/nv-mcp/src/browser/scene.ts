@@ -1532,6 +1532,23 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       host.beforeAnswer?.()
       if (!hasLayout(view))
         throw new Error("This page's NiiVue has no view layout to set.")
+      // Checked before any write, so a refused call leaves the view as it was.
+      const rotation = number(params, 'rotation')
+      const flipH = flag(params, 'flip_horizontal')
+      const flipV = flag(params, 'flip_vertical')
+      const turns =
+        rotation !== undefined || flipH !== undefined || flipV !== undefined
+      if (turns && view.rotation2D === undefined) {
+        throw new Error("This page's NiiVue cannot turn or flip the slices.")
+      }
+      if (
+        rotation !== undefined &&
+        !(ROTATIONS as readonly number[]).includes(rotation)
+      ) {
+        throw new Error(
+          `Unknown rotation ${rotation}. One of: ${ROTATIONS.join(', ')}.`,
+        )
+      }
       let changed = false
       const slice = text(params, 'slice')?.toLowerCase()
       if (slice !== undefined) {
@@ -1618,25 +1635,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         view.orientationTextPosition = orientationText as OrientationTextName
         changed = true
       }
-      const rotation = number(params, 'rotation')
-      const flipH = flag(params, 'flip_horizontal')
-      const flipV = flag(params, 'flip_vertical')
-      if (
-        rotation !== undefined ||
-        flipH !== undefined ||
-        flipV !== undefined
-      ) {
-        if (view.rotation2D === undefined) {
-          throw new Error("This page's NiiVue cannot turn or flip the slices.")
-        }
-        if (rotation !== undefined) {
-          if (!(ROTATIONS as readonly number[]).includes(rotation)) {
-            throw new Error(
-              `Unknown rotation ${rotation}. One of: ${ROTATIONS.join(', ')}.`,
-            )
-          }
-          view.rotation2D = rotation as Rotation
-        }
+      if (turns) {
+        if (rotation !== undefined) view.rotation2D = rotation as Rotation
         if (flipH !== undefined) view.isFlipped2DHorizontal = flipH
         if (flipV !== undefined) view.isFlipped2DVertical = flipV
         changed = true

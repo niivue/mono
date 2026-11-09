@@ -1260,6 +1260,18 @@ describe('set_view', () => {
     ).toThrow('cannot turn or flip the slices')
   })
 
+  it('changes nothing when it refuses to turn or flip', () => {
+    const view = laidOut()
+    const before = view.sliceType
+    expect(() =>
+      coreHandlers(host(view)).set_view({
+        slice: 'axial',
+        flip_vertical: true,
+      }),
+    ).toThrow('cannot turn or flip the slices')
+    expect(view.sliceType).toBe(before)
+  })
+
   it('leaves the sagittal nose out for a NiiVue without it, and refuses to set it', () => {
     const view = laidOut()
     expect(viewState(view)).not.toHaveProperty('sagittalNose')

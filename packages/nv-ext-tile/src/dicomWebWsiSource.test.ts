@@ -333,6 +333,18 @@ describe('parseMultipartRelated', () => {
     expect(
       parseMultipartRelated(multipart(a, 'bound'), 'multipart/related'),
     ).toEqual([a])
+    // One '-' or "--" plus other bytes after the boundary is part data.
+    const c = enc.encode('one\r\n--bound--X\r\ntwo\r\n--bound-\r\n')
+    expect(
+      parseMultipartRelated(multipart(c, 'bound'), 'multipart/related'),
+    ).toEqual([c])
+    // A closing delimiter may end the body with no CRLF.
+    expect(
+      parseMultipartRelated(
+        enc.encode('--bound\r\n\r\nthree\r\n--bound--'),
+        'multipart/related; boundary=bound',
+      ),
+    ).toEqual([enc.encode('three')])
     // A preamble before the first delimiter, two parts, transport padding.
     const b = enc.encode('two')
     const body = enc.encode(

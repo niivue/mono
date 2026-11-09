@@ -101,28 +101,41 @@ export function parseMultipartRelated(
     return bytes.length > 0 ? [bytes] : []
   }
 
+  // RFC 2046 5.1.1: a delimiter is CRLF "--" boundary, then "--" (closing)
+  // or optional padding and CRLF. The CRLF belongs to the delimiter, so a
+  // boundary-like run inside binary part data is not one.
   const encoder = new TextEncoder()
-  const delimiter = encoder.encode(`--${boundary}`)
+  const delimiter = encoder.encode(`\r\n--${boundary}`)
   const crlfcrlf = encoder.encode('\r\n\r\n')
+  // Whether the delimiter whose CRLF is at `at` ends as a delimiter must.
+  const ends = (at: number): boolean => {
+    const c = bytes[at + delimiter.length]
+    return c === 0x2d || c === 0x0d || c === 0x20 || c === 0x09
+  }
+  const nextDelimiter = (from: number): number => {
+    let i = indexOfSubarray(bytes, delimiter, from)
+    while (i !== -1 && !ends(i)) i = indexOfSubarray(bytes, delimiter, i + 1)
+    return i
+  }
 
   const parts: Uint8Array[] = []
-  let cursor = indexOfSubarray(bytes, delimiter, 0)
-  while (cursor !== -1) {
-    const partStart = cursor + delimiter.length
+  // The first delimiter may open the body, with no CRLF before it.
+  const opens =
+    delimiter.subarray(2).every((b, k) => bytes[k] === b) && ends(-2)
+  let at = opens ? -2 : nextDelimiter(0)
+  while (at !== -1) {
+    const partStart = at + delimiter.length
     // The closing delimiter is `--<boundary>--`; stop there.
     if (bytes[partStart] === 0x2d && bytes[partStart + 1] === 0x2d) break
 
     const headerEnd = indexOfSubarray(bytes, crlfcrlf, partStart)
-    const next = indexOfSubarray(bytes, delimiter, partStart)
-    if (headerEnd === -1 || next === -1) break
-
+    if (headerEnd === -1) break
     const bodyStart = headerEnd + crlfcrlf.length
-    let bodyEnd = next
-    // Strip the CRLF that precedes the next boundary line.
-    if (bytes[bodyEnd - 2] === 0x0d && bytes[bodyEnd - 1] === 0x0a) bodyEnd -= 2
-    if (bodyEnd > bodyStart) parts.push(bytes.slice(bodyStart, bodyEnd))
-
-    cursor = next
+    // The part ends at the next delimiter's CRLF.
+    const next = nextDelimiter(bodyStart)
+    if (next === -1) break
+    if (next > bodyStart) parts.push(bytes.slice(bodyStart, next))
+    at = next
   }
   return parts
 }

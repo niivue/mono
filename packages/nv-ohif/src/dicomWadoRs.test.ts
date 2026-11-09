@@ -137,6 +137,23 @@ describe('parseMultipartRelated', () => {
     expect(Array.from(parts[0] ?? [])).toEqual(Array.from(a))
   })
 
+  it('keeps a boundary-like run inside part data', () => {
+    const enc = new TextEncoder()
+    const a = enc.encode('abc--BOUNDARYXYZ')
+    const b = new Uint8Array([1, 2, 3])
+    const body = buildMultipart('BOUNDARY', [a, b])
+    for (const type of [
+      'multipart/related; boundary=BOUNDARY',
+      'multipart/related',
+    ]) {
+      const parts = parseMultipartRelated(body, type)
+      expect(parts.map((p) => Array.from(p))).toEqual([
+        Array.from(a),
+        Array.from(b),
+      ])
+    }
+  })
+
   it('falls back to the whole body when not multipart', () => {
     const raw = new Uint8Array([9, 8, 7])
     const parts = parseMultipartRelated(raw, 'application/dicom')

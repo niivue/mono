@@ -1,3 +1,20 @@
+## 1.0.0-rc.135 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** convert enhanced/multi-frame DICOMweb instances ([3c35df7a](https://github.com/niivue/mono/commit/3c35df7a))
+
+### Fixes
+
+- **nv-ohif:** take the frame count from series metadata; bound all requests ([bd990802](https://github.com/niivue/mono/commit/bd990802))
+- **nv-ohif:** release the overlay entry on a cancel press ([731c0436](https://github.com/niivue/mono/commit/731c0436))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.134 (2026-11-09)
 
 ### Features

@@ -54,6 +54,12 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   isSnapToVoxelCenters: true,
 }
 
+// Snapping acts on crosshair moves only, and a load keeps the crosshair where it
+// was: between two slices for an even slice count. Land it on a slice centre.
+export function snapCrosshair(nv: NiiVue): void {
+  nv.setCrosshairPos(nv.getCrosshairPos())
+}
+
 type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
 
 // OHIF's toolbar tools operate on cornerstone viewports; our NiiVue viewport isn't in
@@ -347,6 +353,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // baseline, so the first manual contrast drag is detected as a change.
     const seedWindowLevel = () => {
       if (cancelled) return
+      snapCrosshair(nv)
       updateNiivueViewport(viewportId, { windowLevel: readBaseWindowLevel(nv) })
       // A reflection may have failed while OHIF's backing series or the converted
       // volume was still becoming ready. Retry after the load boundary even when

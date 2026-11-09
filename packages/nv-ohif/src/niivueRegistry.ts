@@ -140,15 +140,24 @@ export function getActiveNiivue(
 
 // Toolbar buttons are evaluated before our async attach registers the instance
 // and hold state (overlay on/off, clip preset) that commands change after the
-// evaluation, so nudge OHIF to re-evaluate on those transitions.
+// evaluation, so nudge OHIF to re-evaluate on those transitions. Evaluators
+// see this id as the toolbar's viewport, so it must be the active one (as in
+// OHIF's own refreshes): a NiiVue id while a Cornerstone pane is active would
+// disable that pane's buttons. `viewportId` is used only when none is active.
 export function refreshToolbar(
   servicesManager: OhifServicesManager | undefined,
   viewportId: string,
 ): void {
-  const svc = ohifServices(servicesManager)?.toolbarService as
+  const services = ohifServices(servicesManager)
+  const svc = services?.toolbarService as
     | { refreshToolbarState?: (props: Record<string, unknown>) => void }
     | undefined
-  svc?.refreshToolbarState?.({ viewportId })
+  const grid = services?.viewportGridService as
+    | ViewportGridServiceLike
+    | undefined
+  svc?.refreshToolbarState?.({
+    viewportId: grid?.getActiveViewportId?.() ?? viewportId,
+  })
 }
 
 interface CommandsManagerLike {

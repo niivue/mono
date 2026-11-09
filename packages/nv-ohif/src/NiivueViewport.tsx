@@ -21,7 +21,7 @@ import {
   visibleAnnotationScreenShapes,
   voiRange,
 } from './commands'
-import { convertDisplaySetToNifti } from './dicomToNiivue'
+import { convertDisplaySetToNifti, loadConversion } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
   authHeaders,
@@ -533,23 +533,21 @@ export function NiivueViewport(props: OhifViewportProps) {
           return
         }
         loaded(converted.note)
-        updateNiivueViewport(viewportId, {
-          sliceFrames: converted.sliceFrames,
+        return loadConversion(
+          nv,
+          viewportId,
+          converted,
+          voi,
+          () => cancelled,
+        ).then((shown) => {
+          // Swapped away while this load was in flight: undo the now-stale load
+          // (its dropStaleVolumes already ran and no-op'd on an empty array).
+          if (!shown) {
+            void nv.removeAllVolumes().catch(() => {})
+            return
+          }
+          seedWindowLevel()
         })
-        // Use the converted file's own name (ends in .nii/.nii.gz) so NiiVue sniffs
-        // the format correctly; a display name without that extension would not.
-        const niftiFile = converted.image
-        return nv
-          .loadVolumes([{ url: niftiFile, name: niftiFile.name, ...voi }])
-          .then(() => {
-            // Swapped away while this load was in flight: undo the now-stale load
-            // (its dropStaleVolumes already ran and no-op'd on an empty array).
-            if (cancelled) {
-              void nv.removeAllVolumes().catch(() => {})
-              return
-            }
-            seedWindowLevel()
-          })
       })
       .catch((err) => {
         if (cancelled || abort.signal.aborted) return

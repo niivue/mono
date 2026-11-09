@@ -1,3 +1,4 @@
+import { rankOutputs } from './dcm2niixOutputs'
 import type { OhifDisplaySet } from './ohif-types'
 import {
   framesUrlFromImageId,
@@ -63,80 +64,55 @@ export async function fetchDicomInstanceFiles(
   })
 }
 
-// Rejects with the signal's reason on abort (Processor.run takes no signal).
-function untilAborted<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return p
-  return new Promise((resolve, reject) => {
-    const onAbort = () => reject(signal.reason)
-    signal.addEventListener('abort', onAbort, { once: true })
-    const done = () => signal.removeEventListener('abort', onAbort)
-    p.finally(done).then(resolve, reject) // handles p even if already aborted
-    if (signal.aborted) onAbort()
-  })
+export interface DicomConversion {
+  /** The output to show, picked by rankOutputs. */
+  image: File
+  /** Names the outputs not shown and/or warns of a partial conversion. */
+  note?: string
 }
 
 /**
- * Convert a DICOMweb display set to a single NIfTI File via dcm2niix. Returns the
- * primary NIfTI output (largest `.nii`/`.nii.gz`), or null if nothing converted.
- * dcm2niix is dynamically imported so its WASM only loads on a DICOM series.
+ * Convert a DICOMweb display set via dcm2niix and pick the output to show by
+ * policy (rankOutputs). Null when there is nothing to fetch; rejects when no
+ * image converted (with dcm2niix's log tail), on fetch failure, or on abort.
  */
 export async function convertDisplaySetToNifti(
   ds: OhifDisplaySet,
   options: DicomConvertOptions = {},
-): Promise<File | null> {
+): Promise<DicomConversion | null> {
   if (instanceFramesUrls(ds).length === 0) return null
-  const { signal } = options
-  // Boot the dcm2niix worker (WASM fetch + compile) while instances download.
-  // convert() cannot adopt a pre-booted worker, so drive Dcm2niix directly.
-  let dcm2niix: import('@niivue/dcm2niix').Dcm2niix | undefined
-  let finished = false
-  const ready = import('@niivue/dcm2niix').then(async ({ Dcm2niix }) => {
-    // Assigned in the same tick init() creates the worker, so the finally
-    // below never sees an instance without its worker.
-    dcm2niix = new Dcm2niix()
-    const booted = dcm2niix.init()
-    // Fetching ended before the import resolved: stop now, not after the boot.
-    if (finished) dcm2niix.worker?.terminate()
-    await booted
-    return dcm2niix
+  const files = await fetchDicomInstanceFiles(ds, options)
+  if (files.length === 0) return null
+  options.onProgress?.('converting', 0, 1)
+  // convert() boots its worker only now. Measured in Chromium: ~10 ms warm; cold
+  // adds the one-time 1.1 MB WASM download, small next to fetching a series.
+  // Unlike Dcm2niix.run(), it keeps the outputs of a nonzero exit.
+  const { convert, exitCodes } = await import('@niivue/dcm2niix')
+  // -z n: rankOutputs reads voxel counts from the uncompressed header.
+  const { series, exitCode, log } = await convert(files, {
+    args: ['-z', 'n'],
+    signal: options.signal,
   })
-  ready.catch(() => {}) // surfaced below, unless the fetch rejects first
-  let outputs: File[]
-  try {
-    const files = await fetchDicomInstanceFiles(ds, options)
-    if (files.length === 0) return null
-    options.onProgress?.('converting', 0, 1)
-    // run() rejects unless dcm2niix exits 0, with the log tail.
-    outputs = await untilAborted(
-      ready.then((d) => {
-        // An abort in the 'converting' callback must not start a run on the
-        // worker the finally below has already terminated.
-        signal?.throwIfAborted()
-        return d.input(files).run()
-      }),
-      signal,
+  const outputs = await rankOutputs(series)
+  const [shown, ...others] = outputs
+  const exitName =
+    Object.entries(exitCodes).find(([, v]) => v === exitCode)?.[0] ?? 'unknown'
+  if (!shown)
+    throw new Error(
+      `dcm2niix produced no image (exit ${exitCode} ${exitName}): ${log.slice(-5).join(' | ')}`,
     )
-  } finally {
-    finished = true
-    dcm2niix?.worker?.terminate()
-  }
-  const nifti = outputs
-    .filter((f) => /\.nii(\.gz)?$/i.test(f.name))
-    .sort((a, b) => b.size - a.size)
-  // dcm2niix legitimately splits some series into several NIfTI outputs
-  // (multi-echo, multiple orientations, scout + acquisition). We show only the
-  // largest as the primary volume; surface the rest so a wrong/partial pick is
-  // diagnosable instead of silently discarded. (Loading/selecting among the
-  // split volumes is a follow-up.)
-  if (nifti.length > 1) {
-    console.warn(
-      `[nv-ohif] dcm2niix produced ${nifti.length} NIfTI volumes for this series; ` +
-        `showing the largest ("${nifti[0]?.name}"). Others not shown: ` +
-        nifti
-          .slice(1)
-          .map((f) => f.name)
-          .join(', '),
+  const notes: string[] = []
+  if (others.length > 0)
+    notes.push(
+      `Showing ${shown.stem}; also converted: ${others.map((s) => s.stem).join(', ')}.`,
     )
+  if (exitCode !== exitCodes.ok) {
+    // The last line is often a summary; the cause is the last error/warning.
+    const cause = log.findLast((l) => /error|warn/i.test(l)) ?? log.at(-1) ?? ''
+    notes.push(`dcm2niix exit ${exitCode} (${exitName}): ${cause}`)
   }
-  return nifti[0] ?? null
+  return {
+    image: shown.image,
+    note: notes.length > 0 ? notes.join(' ') : undefined,
+  }
 }

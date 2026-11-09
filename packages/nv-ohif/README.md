@@ -182,11 +182,26 @@ DICOM series are rendered by fetching the instances and converting them to NIfTI
 in-browser with `@niivue/dcm2niix` (a WASM build of dcm2niix). This is verified
 working end-to-end in a real OHIF app for both uncompressed and JPEG-LS studies,
 and it works for `npm`-install consumers too. The package requires
-`@niivue/dcm2niix` `^1.4.20261029`, which reports dcm2niix's log when a conversion
-fails and ships its own TypeScript declarations. Its worker boots while the
-instances download, and is terminated on success, failure or abort. Releases
-before `1.3.20260724` aborted every in-browser conversion (an Emscripten
-`exit()` throw inside the Web Worker) and are excluded.
+`@niivue/dcm2niix` `^1.4.20261105-rc.3`, which reports dcm2niix's log when a conversion
+fails and ships its own TypeScript declarations. Conversion uses its `convert()`
+after the instances download; its worker is terminated on success, failure or
+abort. Releases before `1.3.20260724` aborted every in-browser conversion (an
+Emscripten `exit()` throw inside the Web Worker) and are excluded.
+
+- **Output choice.** When a series converts to several NIfTI images, the viewport
+  shows one: ORIGINAL/PRIMARY (sidecar `ImageType`) first, then magnitude over
+  phase/real/imaginary (sidecar `ImageType`, else the `_ph`/`_real`/`_imaginary`
+  stem), the lowest `EchoNumber`, the most voxels, the stem name. A note names
+  the others.
+- **Partial conversions.** A nonzero dcm2niix exit that still produced images
+  loads the choice with a note (dcm2niix's last error or warning line); no image
+  is an error with dcm2niix's log tail.
+- **Not converted:** SEG, RTSTRUCT, RTPLAN, RTRECORD, PLAN, SR, PR, KO, REG,
+  DOC, FID, ECG, HD and AU series (also skipped as overlays). RTDOSE is converted.
+- **One series per viewport.** Only the first display set hung in a viewport
+  loads; a note names the rest.
+- A second Overlay press while an overlay converts cancels it, as do a base
+  swap and unmount.
 
 ## Whole-slide imaging
 

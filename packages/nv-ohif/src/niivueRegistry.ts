@@ -17,6 +17,8 @@ export interface NiivueViewportEntry {
   overlayUIDs: string[]
   /** Guard against concurrent overlay loads. */
   overlayLoading: boolean
+  /** Cancels the overlay load in flight (re-toggle, base swap, unregister). */
+  overlayAbort?: AbortController
   /** Current clip plane preset name ('none' when off). See commands.ts. */
   clipPlane: string
   /**
@@ -49,6 +51,7 @@ export function registerNiivue(viewportId: string, nv: NiiVue): void {
 }
 
 export function unregisterNiivue(viewportId: string): void {
+  instances.get(viewportId)?.overlayAbort?.abort()
   instances.delete(viewportId)
 }
 
@@ -69,7 +72,11 @@ export function updateNiivueViewport(
   >,
 ): void {
   const entry = instances.get(viewportId)
-  if (entry) Object.assign(entry, patch)
+  if (!entry) return
+  // A new base series invalidates an overlay conversion in flight.
+  if (patch.displaySets && patch.displaySets !== entry.displaySets)
+    entry.overlayAbort?.abort()
+  Object.assign(entry, patch)
 }
 
 export function getNiivueEntry(

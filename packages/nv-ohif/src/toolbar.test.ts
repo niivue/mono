@@ -3,6 +3,7 @@ import type NiiVue from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
 import {
   getNiivueEntryForViewport,
+  refreshToolbar,
   registerNiivue,
   unregisterNiivue,
   updateNiivueViewport,
@@ -332,6 +333,19 @@ describe('evaluate.niivue.unsupported', () => {
       [button('Reset', 'resetViewport'), undefined],
       [button('Fit', ['fitViewportToWindow', 'niivueResetView']), undefined],
       [button('Mixed', ['resetViewport', 'rotateViewportCW']), disabled],
+      // An explicit Cornerstone context bypasses the NIIVUE shadow.
+      [
+        button('CsReset', [
+          { commandName: 'resetViewport', context: 'CORNERSTONE' },
+        ]),
+        disabled,
+      ],
+      [
+        button('NvReset', [
+          { commandName: 'resetViewport', context: 'NIIVUE' },
+        ]),
+        undefined,
+      ],
       [button('Empty', undefined), disabled],
       [
         button('Pan', 'setToolActiveToolbar'),
@@ -442,5 +456,39 @@ describe('evaluate.niivue.unsupported', () => {
       'a',
       'b',
     ])
+    expect(withNiivueSupport(withNiivueSupport(list)).props.evaluate).toEqual([
+      NIIVUE_UNSUPPORTED_EVALUATOR,
+      'a',
+      'b',
+    ])
+  })
+})
+
+describe('refreshToolbar', () => {
+  const host = (active: string | null) => {
+    const calls: unknown[] = []
+    const servicesManager = {
+      services: {
+        toolbarService: {
+          refreshToolbarState: (props: unknown) => calls.push(props),
+        },
+        viewportGridService: { getActiveViewportId: () => active },
+      },
+    }
+    return { calls, servicesManager }
+  }
+
+  it('evaluates the active viewport, not the refreshing NiiVue one', () => {
+    // A NiiVue pane loading beside an active Cornerstone pane must not
+    // disable the Cornerstone pane's buttons.
+    const { calls, servicesManager } = host('cs-1')
+    refreshToolbar(servicesManager, 'vp-1')
+    expect(calls).toEqual([{ viewportId: 'cs-1' }])
+  })
+
+  it('falls back to the given viewport when none is active', () => {
+    const { calls, servicesManager } = host(null)
+    refreshToolbar(servicesManager, 'vp-1')
+    expect(calls).toEqual([{ viewportId: 'vp-1' }])
   })
 })

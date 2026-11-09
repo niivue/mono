@@ -85,6 +85,8 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   index and may join the wrong plane if other levels hold a different set of planes.
   A single shared ZOffset in a multi-plane TILED_FULL file is ignored. ZOffset on
   only some of a file's frames is `malformed`.
+- `pixelSpacingMM` is the level-0 PixelSpacing: shared PixelMeasures, else the first
+  frame's, else top-level, else ImagedVolumeWidth/Height over the total pixel matrix.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.

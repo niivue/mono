@@ -294,15 +294,16 @@ function openIndexed(i: number): void {
 }
 
 // Custom files: one tiled TIFF, or the files of a DICOM-WSI slide (or several).
-const isTiff = async (file: File) => {
+const sniff = async (file: File) => {
   const b = new Uint8Array(await file.slice(0, 132).arrayBuffer())
-  // A dual-personality DICOM-TIFF has TIFF magic in its preamble; DICOM wins.
-  if (new TextDecoder().decode(b.subarray(128, 132)) === 'DICM') return false
   // II*. / MM.* (TIFF) and II+. / MM.+ (BigTIFF)
-  return (
+  const tiff =
     (b[0] === 0x49 && b[1] === 0x49 && b[3] === 0) ||
     (b[0] === 0x4d && b[1] === 0x4d && b[2] === 0)
-  )
+  // TIFF magic plus DICM at 128 is a dual-personality DICOM-TIFF, or a TIFF
+  // whose padding holds those bytes: try DICOM, fall back to TIFF.
+  const dicm = new TextDecoder().decode(b.subarray(128, 132)) === 'DICM'
+  return tiff ? (dicm ? 'dual' : 'tiff') : 'dicom'
 }
 
 async function openFiles(files: File[]): Promise<void> {
@@ -317,17 +318,16 @@ async function openFiles(files: File[]): Promise<void> {
   const id = ++openCount
   opening?.abort()
   opening = new AbortController()
-  const tiff = files.length === 1 && (await isTiff(first))
+  const kind = files.length === 1 ? await sniff(first) : 'dicom'
   if (id !== openCount) return
-  if (tiff) {
+  const openTiff = () =>
     void open(async () =>
       TiffSlideSource.fromGeoTIFF(await fromBlob(first), {
         id: first.name,
         pool,
       }),
     )
-    return
-  }
+  if (kind === 'tiff') return openTiff()
   status.textContent = `Indexing ${files.length} files...`
   try {
     const t0 = performance.now()
@@ -336,6 +336,7 @@ async function openFiles(files: File[]): Promise<void> {
     const ms = performance.now() - t0
     const skipped = index.skipped.map((k) => `${k.file}: ${k.reason}`)
     if (!index.slides.length) {
+      if (kind === 'dual') return openTiff()
       restoreMenu()
       status.title = skipped.join('\n')
       status.textContent = `No tiled DICOM-WSI slide in ${files.length} files (${skipped.length} skipped).`

@@ -35,7 +35,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | DICOM loading | ✅ | Convert in the browser with `@niivue/dcm2niix` (WASM), then load the NIfTI |
 | `loadDeferred4DVolumes()` | ✅ | |
 | Partial 4D load (`limitFrames4D` option) | ✅ | Reads only header + first N frames: a gzip NIfTI-1 via `DecompressionStream` (no fflate), or an uncompressed `.nii` `File` via `Blob.slice`; the only way to open a 4D volume larger than V8's ~2 GiB `ArrayBuffer` cap. Auto-caps to as-many-frames-as-fit on `RangeError`/`NotReadableError` even without the option |
-| `getZarrVolume()` / Zarr format | ✅ | OME-Zarr multiscale stores via `loadOmeZarrVolumes` / `fetchOmeZarr` (whole level) and `omeZarrChunkedSource` (streamed chunks); see `docs/ome-zarr-format.md` |
+| `getZarrVolume()` / Zarr format | ✅ | `@niivue/nv-ext-tile/zarr`: OME-Zarr multiscale stores via `loadOmeZarrVolumes` / `fetchOmeZarr` (whole level) and `omeZarrChunkedSource` (streamed chunks); see `packages/nv-ext-tile/docs/ome-zarr-format.md` |
 | `NVImage` static loaders (`loadFromUrl/File/Base64`) | ❌ | NVImage is a type, not a class with static methods |
 
 ## 3. Mesh Loading
@@ -128,6 +128,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | 3D crosshair visibility | ✅ | `is3DCrosshairVisible` |
 | Radiological convention | ✅ | `isRadiological` |
 | Sagittal nose left (`sagittalNoseLeft`) | ✅ | `isSagittalNoseLeft`, independent of `isRadiological` as in the old package. Default `null` follows `isRadiological` (radiological: nose left), so unset scenes and documents render as before; `true`/`false` override. Classic NVD `opts.sagittalNoseLeft` is mapped |
+| 2D rotate / flip | ✅ | New (not in the old package; for OHIF viewport rotate/flip): `rotation2D`, `isFlipped2DHorizontal`, `isFlipped2DVertical`. `rotate2D(quarterTurns)` / `flip2D(axis)` act on screen. Slice tiles only, both backends; labels, ruler and picking follow |
 | Nearest interpolation | ✅ | `volumeIsNearestInterpolation` |
 | Multiplanar equal size | ✅ | `isEqualSize` |
 | Mosaic string | ✅ | `mosaicString` property |
@@ -409,7 +410,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | VMR | ✅ |
 | NPY/NPZ | ✅ |
 | Allen JSON+PNG atlas | ✅ |
-| Zarr (OME-Zarr) | ✅ |
+| Zarr (OME-Zarr, extension: `@niivue/nv-ext-tile/zarr`, no longer exported from `@niivue/niivue`) | ✅ |
 | DICOM (extension) | ✅ |
 | MINC (plugin) | ❌ |
 | TIFF / OME-TIFF / ImageJ stack | ✅ |

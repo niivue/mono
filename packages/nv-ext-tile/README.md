@@ -1,10 +1,11 @@
 # @niivue/nv-ext-tile
 
-Tiled image formats for NiiVue's `NVSlide`, one subpath per format, so a page loads only the format it uses:
+Tiled and chunked image formats for NiiVue (slides and streamed volumes), one subpath per format, so a page loads only the format it uses:
 - `@niivue/nv-ext-tile/tiff`: tiled TIFF (below).
 - `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders and hosted manifests ([Local DICOM-WSI folders](#local-dicom-wsi-folders)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
+- `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick ([OME-Zarr](#ome-zarr)).
 
-Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`; the APIs are unchanged, only the import paths differ.
+Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`, and core's OME-Zarr exports; the APIs are unchanged, only the import paths differ.
 
 ## Installation
 
@@ -84,6 +85,8 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   index and may join the wrong plane if other levels hold a different set of planes.
   A single shared ZOffset in a multi-plane TILED_FULL file is ignored. ZOffset on
   only some of a file's frames is `malformed`.
+- `pixelSpacingMM` is the level-0 PixelSpacing: shared PixelMeasures, else the first
+  frame's, else top-level, else ImagedVolumeWidth/Height over the total pixel matrix.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
   `not-tiled`.
@@ -125,6 +128,34 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Test fixtures: `fixtures/dicom-wsi` (synthetic, about 70 KB, with the generator
   `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's
   browser check).
+
+## OME-Zarr
+
+```ts
+import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
+
+await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one whole level
+await nv.loadChunkedVolume(await fetchOmeZarrChunkedSource(storeUrl)) // or stream bricks
+```
+
+Reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
+
+## Without a bundler
+
+`dist/standalone/` holds `tiff.js`, `dicom.js` and `zarr.js` with geotiff and zarrita bundled in and the Zarr worker inlined. Only `@niivue/niivue` stays a bare import, plus `@niivue/dcm2niix` in `/dicom`. Map them with an import map onto core's standalone build, so the page and the extension share one core (one NVSlide decoder registry, one chunk-timing recorder):
+
+```html
+<script type="importmap">
+{ "imports": {
+  "@niivue/niivue": "./niivue/niivue.js",
+  "@niivue/nv-ext-tile/zarr": "./nv-ext-tile/zarr.js",
+  "@niivue/nv-ext-tile/dicom": "./nv-ext-tile/dicom.js",
+  "@niivue/dcm2niix": "./dcm2niix/index.jpeg.js"
+} }
+</script>
+```
+
+Copy `@niivue/niivue`'s `dist/standalone/` to `niivue/`, this package's to `nv-ext-tile/`, and, for JPEG 2000 / JPEG-LS tiles and ICC profiles, `@niivue/dcm2niix`'s `dist/` to `dcm2niix/` (its workers and WASM load relative to `index.jpeg.js`). A page using `@niivue/niivue/webgpu` or `/webgl2` maps those entries too; they share core's chunks with `niivue.js`. Without the dcm2niix mapping, tiles that need it fail (the slide counts them in `stats.failures`) and JPEG tiles still decode. `scripts/check-standalone.ts` runs with the build: it rejects any other bare import and any format reaching another's code. `bunx nx e2e nv-ext-tile` checks NIfTI, Zarr and DICOM pages built this way under a nested base.
 
 ## Hosting an indexed slide
 

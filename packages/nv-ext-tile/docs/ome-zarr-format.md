@@ -4,16 +4,17 @@ OME-Zarr is the cloud-native container of the OME-NGFF specification: a Zarr
 group whose attributes describe a resolution pyramid over up to five named
 dimensions, with the pixels chunked into separately-fetchable objects. It is
 the format the Allen Institute's IMSC viewer, IDR, and the Human Organ Atlas
-publish, and the fourth microscopy container this package reads (after the
-Allen JSON+PNG atlas, plain TIFF stacks and OME-TIFF).
+publish. `@niivue/nv-ext-tile/zarr` reads it (formerly part of
+`@niivue/niivue`); core reads the other microscopy containers (the Allen JSON+PNG
+atlas, plain TIFF stacks and OME-TIFF) itself.
 
 Three modules, in layers:
 
 | Module | Responsibility |
 | --- | --- |
-| `volume/omeZarr.ts` | The metadata. Parses a group's attributes into axes, pyramid datasets and omero channels, and answers the axis questions (which dimension is channel? which spatial axis is display x?). Pure JSON in, no network, Bun-testable. |
-| `volume/omeZarrLoader.ts` | The pixels, whole levels at a time. Opens a store with zarrita, picks a pyramid level, pins time and channel, and assembles each requested channel into a NIfTI `File` for `loadVolumes`. |
-| `volume/omeZarrChunkedSource.ts` | The pixels, brick by brick. Adapts an opened pyramid to the core `ChunkedVolumeSource` seam for `nv.loadChunkedVolume`, which streams multi-LOD bricks of stores far too large to load whole. |
+| `src/zarr/omeZarr.ts` | The metadata. Parses a group's attributes into axes, pyramid datasets and omero channels, and answers the axis questions (which dimension is channel? which spatial axis is display x?). Pure JSON in, no network, Bun-testable. |
+| `src/zarr/omeZarrLoader.ts` | The pixels, whole levels at a time. Opens a store with zarrita, picks a pyramid level, pins time and channel, and assembles each requested channel into a NIfTI `File` for `loadVolumes`. |
+| `src/zarr/omeZarrChunkedSource.ts` | The pixels, brick by brick. Adapts an opened pyramid to the core `ChunkedVolumeSource` seam for `nv.loadChunkedVolume`, which streams multi-LOD bricks of stores far too large to load whole. |
 
 Unlike TIFF, the container itself is NOT hand-parsed: chunk layout, codecs
 (blosc, gzip, zstd) and both Zarr format versions come from `zarrita`, a
@@ -45,7 +46,7 @@ and telemetry match the store's own numbering. The store root is opened once
 to learn the Zarr format version, and every level array is opened
 version-pinned; the version-agnostic probe would cost a 404 per level on
 every v2 store. `zarrVersion: 2 | 3` (also on `fetchOmeZarrChunkedSource`)
-skips that root probe, and the `zarr.json` 404 it logs on a v2 store.
+skips that root probe, and the `zarr.json` 404 it logs on a v2 store. A successful `text/html` answer reads as a missing key: Vite's dev server and SPA hosts answer any missing path with their index page and 200, which would otherwise break the v3-to-v2 fallback.
 
 ## What is supported
 

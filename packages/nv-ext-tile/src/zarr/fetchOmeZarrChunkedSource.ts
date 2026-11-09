@@ -13,8 +13,7 @@
  * worker entry again.
  */
 
-import { log } from '@/logger'
-import type { ChunkedVolumeFetch } from './ChunkedVolumeSource'
+import type { ChunkedVolumeFetch } from '@niivue/niivue'
 import {
   type FetchOmeZarrChunkedSourceOptions,
   OME_ZARR_CHUNK_CACHE_BYTES,
@@ -135,7 +134,7 @@ async function readViaPool(
   } catch (err) {
     const name = err instanceof Error ? err.name : ''
     if (name === 'AbortError' || name === OME_ZARR_CHUNK_ERROR) throw err
-    log.warn(
+    console.warn(
       `OME-Zarr chunk worker failed, reading on the main thread: ${
         err instanceof Error ? err.message : String(err)
       }`,

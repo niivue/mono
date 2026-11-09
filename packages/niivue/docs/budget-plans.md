@@ -3,7 +3,7 @@
 A plan for giving the chunked-volume planner more than one policy.
 
 Status: **Stages 1-3 implemented** (`src/volume/budgetPlans.ts`, exposed by the
-Plan control in `examples/range.html`). Stage 4, the closed-loop frame-time
+Plan control in `apps/demo-ext-tile/range.html`). Stage 4, the closed-loop frame-time
 controller behind `targetFrameMs`, is still design. Tracked from
 `docs/streaming-todos.md`; background on the machinery this builds on:
 `docs/high-res-streaming.md`.
@@ -77,7 +77,7 @@ Presets:
 **Every preset carries the same `budgetBytes`.** How much VRAM a machine can
 spare is a property of the DEVICE; how to spend it is the use case. So an app
 pins the ceiling once as an individual option (which wins over the plan) and
-still switches plans freely. `examples/range.js` does exactly that: 8 GB on
+still switches plans freely. `apps/demo-ext-tile/src/range.js` does exactly that: 8 GB on
 WebGPU, 1.25 GB on WebGL2, picked after an adapter probe so a WebGPU fallback
 gets the WebGL2 ceiling.
 

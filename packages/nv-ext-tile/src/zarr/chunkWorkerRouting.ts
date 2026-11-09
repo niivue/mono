@@ -13,7 +13,7 @@ import type {
   ChunkPhase,
   ChunkTimingSnapshot,
   OffThreadChunkTiming,
-} from './chunkTiming'
+} from '@niivue/niivue'
 import type { ByteCacheStats } from './omeZarrChunkedSource'
 import type { PersistentCacheStats } from './persistentByteCache'
 

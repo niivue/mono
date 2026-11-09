@@ -142,6 +142,9 @@ export function fakePage(options: FakePageOptions): FakePage {
     mosaicString: '',
     showRender: 2,
     isRadiological: false,
+    rotation2D: 0,
+    isFlipped2DHorizontal: false,
+    isFlipped2DVertical: false,
     isColorbarVisible: false,
     drawScene: () => {},
     model: {

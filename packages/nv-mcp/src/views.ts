@@ -77,6 +77,11 @@ export const ORIENTATION_TEXT_NAMES = ['edges', 'corner'] as const
 
 export type OrientationTextName = (typeof ORIENTATION_TEXT_NAMES)[number]
 
+/** NiiVue's `rotation2D`: clockwise screen turns of 2D slice tiles, in degrees. */
+export const ROTATIONS = [0, 90, 180, 270] as const
+
+export type Rotation = (typeof ROTATIONS)[number]
+
 /** The name for one of NiiVue's numbers, or `other` for one the table does not have. */
 export function nameFor<T extends Record<string, number>>(
   table: T,
@@ -98,5 +103,9 @@ export interface ViewState {
   sagittalNose?: SagittalNoseName
   /** Where the orientation text goes, when the page's NiiVue can say. */
   orientationText?: OrientationTextName
+  /** The 2D turn and screen flips, when the page's NiiVue has them. */
+  rotation?: Rotation
+  flipHorizontal?: boolean
+  flipVertical?: boolean
   colorbar: boolean
 }

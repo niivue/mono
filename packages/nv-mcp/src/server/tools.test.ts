@@ -263,10 +263,13 @@ describe('core tool schemas', () => {
     expect(required('set_view')).toEqual([])
     expect(properties('set_view').sort()).toEqual([
       'colorbar',
+      'flip_horizontal',
+      'flip_vertical',
       'layout',
       'mosaic',
       'orientation_text',
       'radiological',
+      'rotation',
       'sagittal_nose',
       'show_render',
       'slice',

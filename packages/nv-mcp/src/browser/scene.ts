@@ -27,6 +27,8 @@ import {
   nameFor,
   ORIENTATION_TEXT_NAMES,
   type OrientationTextName,
+  ROTATIONS,
+  type Rotation,
   SAGITTAL_NOSES,
   SHOW_RENDER,
   SLICE_TYPES,
@@ -140,6 +142,13 @@ export function viewState(view: View): ViewState {
       : {}),
     ...(view.orientationTextPosition !== undefined
       ? { orientationText: view.orientationTextPosition }
+      : {}),
+    ...(view.rotation2D !== undefined
+      ? {
+          rotation: view.rotation2D,
+          flipHorizontal: view.isFlipped2DHorizontal ?? false,
+          flipVertical: view.isFlipped2DVertical ?? false,
+        }
       : {}),
     colorbar: view.isColorbarVisible ?? false,
   }
@@ -1523,57 +1532,47 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       host.beforeAnswer?.()
       if (!hasLayout(view))
         throw new Error("This page's NiiVue has no view layout to set.")
-      let changed = false
+      // Everything is read and checked before the first write, so a refused
+      // call leaves the view as it was.
       const slice = text(params, 'slice')?.toLowerCase()
-      if (slice !== undefined) {
-        const type = Object.hasOwn(SLICE_TYPES, slice)
-          ? SLICE_TYPES[slice as keyof typeof SLICE_TYPES]
-          : undefined
-        if (type === undefined) {
-          throw new Error(
-            `Unknown slice "${slice}". One of: ${Object.keys(SLICE_TYPES).join(', ')}.`,
-          )
-        }
-        view.sliceType = type
-        changed = true
+      const sliceType =
+        slice === undefined
+          ? undefined
+          : Object.hasOwn(SLICE_TYPES, slice)
+            ? SLICE_TYPES[slice as keyof typeof SLICE_TYPES]
+            : undefined
+      if (slice !== undefined && sliceType === undefined) {
+        throw new Error(
+          `Unknown slice "${slice}". One of: ${Object.keys(SLICE_TYPES).join(', ')}.`,
+        )
       }
       const layout = text(params, 'layout')?.toLowerCase()
-      if (layout !== undefined) {
-        const type = Object.hasOwn(LAYOUTS, layout)
-          ? LAYOUTS[layout as keyof typeof LAYOUTS]
-          : undefined
-        if (type === undefined) {
-          throw new Error(
-            `Unknown layout "${layout}". One of: ${Object.keys(LAYOUTS).join(', ')}.`,
-          )
-        }
-        view.multiplanarType = type
-        changed = true
+      const layoutType =
+        layout === undefined
+          ? undefined
+          : Object.hasOwn(LAYOUTS, layout)
+            ? LAYOUTS[layout as keyof typeof LAYOUTS]
+            : undefined
+      if (layout !== undefined && layoutType === undefined) {
+        throw new Error(
+          `Unknown layout "${layout}". One of: ${Object.keys(LAYOUTS).join(', ')}.`,
+        )
       }
       const showRender = text(params, 'show_render')?.toLowerCase()
-      if (showRender !== undefined) {
-        const when = Object.hasOwn(SHOW_RENDER, showRender)
-          ? SHOW_RENDER[showRender as keyof typeof SHOW_RENDER]
-          : undefined
-        if (when === undefined) {
-          throw new Error(
-            `Unknown show_render "${showRender}". One of: ${Object.keys(SHOW_RENDER).join(', ')}.`,
-          )
-        }
-        view.showRender = when
-        changed = true
+      const when =
+        showRender === undefined
+          ? undefined
+          : Object.hasOwn(SHOW_RENDER, showRender)
+            ? SHOW_RENDER[showRender as keyof typeof SHOW_RENDER]
+            : undefined
+      if (showRender !== undefined && when === undefined) {
+        throw new Error(
+          `Unknown show_render "${showRender}". One of: ${Object.keys(SHOW_RENDER).join(', ')}.`,
+        )
       }
       // An empty mosaic clears the one drawn, so this one is read raw.
       const mosaic = params?.mosaic
-      if (mosaic !== undefined && mosaic !== null) {
-        view.mosaicString = String(mosaic).trim()
-        changed = true
-      }
       const radiological = flag(params, 'radiological')
-      if (radiological !== undefined) {
-        view.isRadiological = radiological
-        changed = true
-      }
       const nose = text(params, 'sagittal_nose')?.toLowerCase()
       if (nose !== undefined) {
         if (!Object.hasOwn(SAGITTAL_NOSES, nose)) {
@@ -1586,9 +1585,6 @@ export function coreHandlers(host: NiiVueHost): Handlers {
             "This page's NiiVue cannot set which way the sagittal nose points.",
           )
         }
-        view.isSagittalNoseLeft =
-          SAGITTAL_NOSES[nose as keyof typeof SAGITTAL_NOSES]
-        changed = true
       }
       const orientationText = text(params, 'orientation_text')?.toLowerCase()
       if (orientationText !== undefined) {
@@ -1606,17 +1602,67 @@ export function coreHandlers(host: NiiVueHost): Handlers {
             "This page's NiiVue cannot move the orientation text.",
           )
         }
+      }
+      const rotation = number(params, 'rotation')
+      const flipH = flag(params, 'flip_horizontal')
+      const flipV = flag(params, 'flip_vertical')
+      const turns =
+        rotation !== undefined || flipH !== undefined || flipV !== undefined
+      if (turns && view.rotation2D === undefined) {
+        throw new Error("This page's NiiVue cannot turn or flip the slices.")
+      }
+      if (
+        rotation !== undefined &&
+        !(ROTATIONS as readonly number[]).includes(rotation)
+      ) {
+        throw new Error(
+          `Unknown rotation ${rotation}. One of: ${ROTATIONS.join(', ')}.`,
+        )
+      }
+      const colorbar = flag(params, 'colorbar')
+      let changed = false
+      if (sliceType !== undefined) {
+        view.sliceType = sliceType
+        changed = true
+      }
+      if (layoutType !== undefined) {
+        view.multiplanarType = layoutType
+        changed = true
+      }
+      if (when !== undefined) {
+        view.showRender = when
+        changed = true
+      }
+      if (mosaic !== undefined && mosaic !== null) {
+        view.mosaicString = String(mosaic).trim()
+        changed = true
+      }
+      if (radiological !== undefined) {
+        view.isRadiological = radiological
+        changed = true
+      }
+      if (nose !== undefined) {
+        view.isSagittalNoseLeft =
+          SAGITTAL_NOSES[nose as keyof typeof SAGITTAL_NOSES]
+        changed = true
+      }
+      if (orientationText !== undefined) {
         view.orientationTextPosition = orientationText as OrientationTextName
         changed = true
       }
-      const colorbar = flag(params, 'colorbar')
+      if (turns) {
+        if (rotation !== undefined) view.rotation2D = rotation as Rotation
+        if (flipH !== undefined) view.isFlipped2DHorizontal = flipH
+        if (flipV !== undefined) view.isFlipped2DVertical = flipV
+        changed = true
+      }
       if (colorbar !== undefined) {
         view.isColorbarVisible = colorbar
         changed = true
       }
       if (!changed) {
         throw new Error(
-          'set_view needs something to set: slice, layout, mosaic, show_render, radiological, sagittal_nose, orientation_text or colorbar.',
+          'set_view needs something to set: slice, layout, mosaic, show_render, radiological, sagittal_nose, orientation_text, rotation, flip_horizontal, flip_vertical or colorbar.',
         )
       }
       view.drawScene()

@@ -701,21 +701,25 @@ const positive = (v: number | undefined): v is number =>
  * Level pixel spacing in mm, [column, row]: the first valid PixelSpacing
  * (row, column) candidate, else ImagedVolumeWidth/Height (mm) over the total
  * pixel matrix. WSI files often carry a [1,1] PixelSpacing placeholder, so it
- * is not a valid candidate (as in niivue's scripts/fetch-dicom-wsi.ts).
+ * yields to the volume size (as in niivue's scripts/fetch-dicom-wsi.ts), but
+ * is kept when there is no volume size to replace it.
  */
 function spacingOf<C>(
   a: WsiAttributes<C>,
   totalColumns: number,
   totalRows: number,
 ): [number, number] | undefined {
-  for (const s of a.spacing)
-    if (s && positive(s[0]) && positive(s[1]) && !(s[0] === 1 && s[1] === 1))
-      return [s[1], s[0]]
+  let unit: [number, number] | undefined
+  for (const s of a.spacing) {
+    if (!s || !positive(s[0]) || !positive(s[1])) continue
+    if (s[0] !== 1 || s[1] !== 1) return [s[1], s[0]]
+    unit = [1, 1]
+  }
   const volumeWidth = a.number[T.volumeWidth]
   const volumeHeight = a.number[T.volumeHeight]
   return positive(volumeWidth) && positive(volumeHeight)
     ? [volumeWidth / totalColumns, volumeHeight / totalRows]
-    : undefined
+    : unit
 }
 
 /** Fill `info.offset`/`info.length` from the encapsulated pixel data. */

@@ -2207,6 +2207,11 @@ to the march and extinction so primary and shadow rays classify identically).
 `gl/cinematic.ts` + `gl/cinematicShader.ts` mirror them method for method and
 statement for statement.
 
+Each view builds the renderer (shaders, pipelines) on its first CINEMATIC
+frame through `ensure()`, once, not at view init: WebGPU compiles pipelines at
+creation (~0.5 s GPU per view on SwiftShader). Unsupported volumes (chunked,
+RGB) fall back before it is built.
+
 **Frame structure (WebGPU):** `beginFrame`; on the first cinematic tile
 `prepare` (CPU cache update, uploads, gradient and extinction prep passes when
 dirty) records into a SEPARATE command encoder; each RENDER tile calls `draw`,

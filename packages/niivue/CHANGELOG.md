@@ -1,3 +1,13 @@
+## 1.0.0-rc.126 (2026-11-09)
+
+### Performance
+
+- **niivue:** whole-voxel and tiled copies for reoriented chunk extraction ([f9feb6af](https://github.com/niivue/mono/commit/f9feb6af))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.125 (2026-11-09)
 
 ### Fixes

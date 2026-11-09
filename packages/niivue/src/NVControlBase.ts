@@ -152,7 +152,7 @@ import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar, parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
-import { defaultSlideChannels, NVSlide } from '@/slide/NVSlide'
+import { defaultSlideChannels, isRgbSlide, NVSlide } from '@/slide/NVSlide'
 import {
   isSlideDrawingSizeValid,
   SlideDrawing,
@@ -7452,8 +7452,11 @@ export default class NiiVue extends EventTarget {
         channels === JSON.stringify(defaultSlideChannels(slide.manifest))
           ? undefined
           : slide.channels.map((c) => ({ ...c })),
+      // An RGB slide reports 'additive' whatever was set: not a choice to save.
       channelBlend:
-        slide.channelBlend === 'max' ? undefined : slide.channelBlend,
+        slide.channelBlend === 'max' || isRgbSlide(slide.manifest)
+          ? undefined
+          : slide.channelBlend,
       manifest: sp.slide.manifest,
       manifestUrl: sp.slide.manifestUrl || undefined,
       pixelToWorld: [...sp.pixelToWorld],

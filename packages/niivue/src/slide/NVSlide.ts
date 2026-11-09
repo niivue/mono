@@ -490,6 +490,10 @@ const isMonochrome = (level: NVSlideLevelManifest): boolean =>
   level.codec === 'raw-gray' ||
   (level.photometric?.startsWith('MONOCHROME') ?? false)
 
+/** RGB samples (no channelInfo, not monochrome) only make sense added. */
+export const isRgbSlide = (manifest: NVSlideManifest): boolean =>
+  !manifest.channelInfo && !manifest.levels.some(isMonochrome)
+
 const usableWindow = (w?: NVSlideWindow): w is NVSlideWindow =>
   !!w &&
   Number.isFinite(w.calMin) &&
@@ -1018,7 +1022,6 @@ export class NVSlide extends EventTarget {
   private _lastVisible: NVSlideVisibleTiles | null = null
   private _channels: readonly NVChannel[]
   private _channelBlend: NVSlideChannelBlend = 'max'
-  // RGB samples only make sense added; their blend is fixed.
   private readonly _rgb: boolean
   // Channel tables for the current channel state, shared by every tile it renders.
   private readonly _luts = new Map<string, Uint8Array>()
@@ -1064,8 +1067,7 @@ export class NVSlide extends EventTarget {
     )
     this._colorManagement = options.colorManagement ?? true
     this._channels = defaultSlideChannels(this.manifest)
-    this._rgb =
-      !manifest.channelInfo && !this.manifest.levels.some(isMonochrome)
+    this._rgb = isRgbSlide(this.manifest)
     this._source = options.source ?? new ManifestRangeSource(manifest)
     this._source.bind({
       resolveUrl: (url) => this.resolveUrl(url),
@@ -1188,12 +1190,13 @@ export class NVSlide extends EventTarget {
   }
 
   /**
-   * Channel 0's window; null while it shows the full `bitsStored` range.
+   * Channel 0's window; null while both bounds show the stored range, and a
+   * non-finite bound as in {@link NVChannel}.
    * @deprecated Read `channels[0]`.
    */
   get window(): NVSlideWindow | null {
     const ch = this._channels[0]
-    return ch && usableWindow(ch)
+    return ch && (Number.isFinite(ch.calMin) || Number.isFinite(ch.calMax))
       ? { calMin: ch.calMin, calMax: ch.calMax }
       : null
   }
@@ -1224,6 +1227,9 @@ export class NVSlide extends EventTarget {
     const old = this._channels[c]
     if (!old) throw new RangeError(`NVSlide has no channel ${c}`)
     const next = { ...old, ...update }
+    // An omitted (undefined) bound is the default, as a non-finite one is.
+    next.calMin ??= Number.NaN
+    next.calMax ??= Number.NaN
     if (
       Number.isFinite(next.calMin) &&
       Number.isFinite(next.calMax) &&
@@ -1274,12 +1280,21 @@ export class NVSlide extends EventTarget {
   }
 
   // ponytail: dropped tiles blank until refetched; refresh in place if the flash bothers.
+  // Loads in flight check the channels when they land (_runLoad).
   private _refetchWithout(c: number): void {
+    const dropped = new Set<string>()
     for (const [key, entry] of [...this._cache.sampleEntries()])
-      if (!entry.channels?.includes(c)) this._cache.delete(key)
+      if (!entry.channels?.includes(c)) {
+        this._cache.delete(key)
+        dropped.add(key)
+      }
     this.stats.cacheBytes = this._cache.bytes
-    // Loads in flight were asked for the old channels; the view re-requests them.
-    for (const controller of this._inflight.values()) controller.abort()
+    // The view re-requests its own tiles; nothing re-requests the coarsest
+    // level that setSlidePlane primed (the 3D plane's fallback), so do it here.
+    const coarsest = this.manifest.levels.at(-1)
+    for (const tile of coarsest?.tiles ?? [])
+      if (coarsest && tile && dropped.has(this.tileKey(coarsest, tile)))
+        this.loadTile(coarsest, tile)
   }
 
   private _rerender(): void {
@@ -1343,10 +1358,18 @@ export class NVSlide extends EventTarget {
       const ch = this._channels[held ? (held[plane] as number) : plane]
       if (ch?.visible) shown.push({ plane, ch })
     }
-    const window = (ch: NVChannel): NVSlideWindow => ({
-      calMin: Number.isFinite(ch.calMin) ? ch.calMin : 0,
-      calMax: Number.isFinite(ch.calMax) ? ch.calMax : max,
-    })
+    // A stored-range end never crosses the bound set (calMin 5000 on u8 is black, not inverted).
+    const window = ({ calMin, calMax }: NVChannel): NVSlideWindow => {
+      const lo = Number.isFinite(calMin)
+        ? calMin
+        : Number.isFinite(calMax)
+          ? Math.min(0, calMax - 1)
+          : 0
+      return {
+        calMin: lo,
+        calMax: Number.isFinite(calMax) ? calMax : Math.max(max, lo + 1),
+      }
+    }
     const one = shown[0]
     // One grey channel (any monochrome slide by default): the grey-only loop.
     const rgba =
@@ -1371,6 +1394,20 @@ export class NVSlide extends EventTarget {
             this.channelBlend === 'additive',
           )
     return createImageBitmap(new ImageData(rgba, s.width, s.height))
+  }
+
+  // Re-render if the channels changed while this one rendered.
+  private async _renderCurrent(
+    samples: NVSlideTileSamples,
+    level: NVSlideLevelManifest,
+    held?: readonly number[],
+  ): Promise<ImageBitmap> {
+    for (;;) {
+      const gen = this._windowGen
+      const bitmap = await this.windowedBitmap(samples, level, held)
+      if (gen === this._windowGen) return bitmap
+      bitmap.close()
+    }
   }
 
   private _channelLut(
@@ -1831,6 +1868,7 @@ export class NVSlide extends EventTarget {
   dispose(): void {
     this._colorAbort.abort()
     this.clearCache()
+    this._luts.clear()
     this._loadQueue.length = 0
     this._wanted.clear()
     this._viewportKeys.clear()
@@ -1985,18 +2023,31 @@ export class NVSlide extends EventTarget {
     const { signal } = controller
     this._inflight.set(key, controller)
     try {
-      let decoded: ImageBitmap | NVSlideTileSamples
+      let bitmap: ImageBitmap
+      let samples: NVSlideTileSamples | undefined
       let held: number[] | undefined
       if (this._source.fetchTileSamples) {
-        held = this._visibleChannels()
-        decoded = await this._source.fetchTileSamples(level, tile, held, signal)
-        signal.throwIfAborted()
-        if ((decoded.planes ?? 1) !== held.length)
-          throw new Error(
-            `Expected ${held.length} sample planes, received ${decoded.planes ?? 1}`,
+        for (;;) {
+          const channels = this._visibleChannels()
+          held = channels
+          samples = await this._source.fetchTileSamples(
+            level,
+            tile,
+            channels,
+            signal,
           )
-        if (decoded.width > tile.width || decoded.height > tile.height)
-          decoded = cropSamples(decoded, tile.width, tile.height)
+          signal.throwIfAborted()
+          if ((samples.planes ?? 1) !== channels.length)
+            throw new Error(
+              `Expected ${channels.length} sample planes, received ${samples.planes ?? 1}`,
+            )
+          if (samples.width > tile.width || samples.height > tile.height)
+            samples = cropSamples(samples, tile.width, tile.height)
+          bitmap = await this._renderCurrent(samples, level, channels)
+          // A channel shown while this loaded: load again, never cache a tile without it.
+          if (this._visibleChannels().every((c) => channels.includes(c))) break
+          bitmap.close()
+        }
       } else {
         const tileBytes = await this._source.fetchTileBytes(
           level,
@@ -2007,20 +2058,17 @@ export class NVSlide extends EventTarget {
         // A source that cannot stop a read in progress may still resolve after
         // the abort; the tile is no longer wanted either way.
         signal.throwIfAborted()
-        decoded = await this.decodeTileBitmap(level, tile, tileBytes, signal)
+        const decoded = await this.decodeTileBitmap(
+          level,
+          tile,
+          tileBytes,
+          signal,
+        )
+        if ('samples' in decoded) {
+          samples = decoded
+          bitmap = await this._renderCurrent(samples, level)
+        } else bitmap = decoded
       }
-      let bitmap: ImageBitmap
-      let samples: NVSlideTileSamples | undefined
-      if ('samples' in decoded) {
-        samples = decoded
-        // Re-render if the channels changed while this one rendered.
-        let gen: number
-        do {
-          gen = this._windowGen
-          bitmap = await this.windowedBitmap(samples, level, held)
-          if (gen !== this._windowGen) bitmap.close()
-        } while (gen !== this._windowGen)
-      } else bitmap = decoded
       if (signal.aborted) {
         // Disposed (or dropped) while decoding. Caching now would leave a
         // bitmap in a cache that was already cleared, with nobody to close it.

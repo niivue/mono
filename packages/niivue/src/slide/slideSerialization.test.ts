@@ -152,4 +152,12 @@ describe('slide channels in a document', () => {
     expect(sp.channels).toBeUndefined()
     expect(sp.channelBlend).toBeUndefined()
   })
+
+  test('omits the blend an RGB slide is fixed to', async () => {
+    const sp = slidePlane({})
+    delete (sp.manifest as { channelInfo?: unknown }).channelInfo
+    const out = await roundTrip(sp)
+    expect(out.channels).toBeUndefined()
+    expect(out.channelBlend).toBeUndefined()
+  })
 })

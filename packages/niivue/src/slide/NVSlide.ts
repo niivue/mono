@@ -191,7 +191,7 @@ export interface NVSlideOptions {
   maxConcurrentLoads?: number
   maxScale?: number
   /** 'auto' picks the finest level with at least this many device pixels
-   * per tile pixel (default 0.75). Lower it to fetch fewer, coarser tiles. */
+   * per tile pixel (default 0.75). Raise it to fetch fewer, coarser tiles. */
   targetScreenPixelsPerTilePixel?: number
   showTileGrid?: boolean
   backgroundColor?: NVSlideColor

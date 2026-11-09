@@ -1,3 +1,13 @@
+## 1.0.0-rc.125 (2026-11-09)
+
+### Fixes
+
+- **niivue:** keep the first streamline when reading TCK ([881536a0](https://github.com/niivue/mono/commit/881536a0))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.124 (2026-11-09)
 
 ### Features

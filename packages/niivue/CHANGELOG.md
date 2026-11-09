@@ -1,3 +1,13 @@
+## 1.0.0-rc.127 (2026-11-09)
+
+### Fixes
+
+- **niivue:** mark MGZ label volumes with the label intent ([0fecc98c](https://github.com/niivue/mono/commit/0fecc98c))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.126 (2026-11-09)
 
 ### Performance

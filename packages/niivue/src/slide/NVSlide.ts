@@ -190,6 +190,8 @@ export interface NVSlideOptions {
   /** Max simultaneous tile fetch+decode operations (default 12). */
   maxConcurrentLoads?: number
   maxScale?: number
+  /** 'auto' picks the finest level with at least this many device pixels
+   * per tile pixel (default 0.75). Raise it to fetch fewer, coarser tiles. */
   targetScreenPixelsPerTilePixel?: number
   showTileGrid?: boolean
   backgroundColor?: NVSlideColor
@@ -1201,7 +1203,13 @@ export class NVSlide extends EventTarget {
     this._emitChange()
   }
 
-  selectLevel(): NVSlideLevelManifest | null {
+  /**
+   * The pinned level, or for 'auto' the finest level giving at least
+   * `targetScreenPixelsPerTilePixel` device pixels per tile pixel. Pass the
+   * `screen` drawn: `viewport.scale` is CSS pixels per slide pixel, so without
+   * its devicePixelRatio a 2x display gets half the detail it can show.
+   */
+  selectLevel(screen?: NVSlideScreen): NVSlideLevelManifest | null {
     if (typeof this.levelChoice === 'number') {
       return (
         this.manifest.levels.find(
@@ -1209,9 +1217,11 @@ export class NVSlide extends EventTarget {
         ) ?? null
       )
     }
+    const devicePixelsPerSlidePixel =
+      this.viewport.scale * (screen?.devicePixelRatio ?? 1)
     for (const level of this.manifest.levels) {
       if (
-        this.viewport.scale * level.downsample >=
+        devicePixelsPerSlidePixel * level.downsample >=
         this.targetScreenPixelsPerTilePixel
       ) {
         return level
@@ -1258,7 +1268,7 @@ export class NVSlide extends EventTarget {
    * target tile is still missing, so a settled view pays nothing for it.
    */
   visibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
-    const requested = this.selectLevel()
+    const requested = this.selectLevel(screen)
     if (!requested) return { level: null, tiles: [], fallback: [] }
     // A level whose visible tiles cannot all stay decoded thrashes: each load
     // evicts a visible tile, which is requested again. Show the finest coarser

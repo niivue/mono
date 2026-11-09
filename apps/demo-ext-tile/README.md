@@ -1,22 +1,23 @@
 # demo-ext-tile
 
-Demo app for [`@niivue/nv-ext-tile`](../../packages/nv-ext-tile): open a tiled/pyramidal TIFF, BigTIFF, OME-TIFF or Aperio SVS whole-slide image, or a local DICOM-WSI folder, and pan/zoom it with `NVSlide` + `SlideRenderer` (WebGL2). Only the tiles in view are read and decoded.
+Demo app for [`@niivue/nv-ext-tile`](../../packages/nv-ext-tile): open a tiled/pyramidal TIFF, BigTIFF, OME-TIFF or Aperio SVS whole-slide image, or a DICOM-WSI slide (hosted manifest or local files), and pan/zoom it with `NVSlide` + `SlideRendererGPU` (WebGPU) or `SlideRenderer` (WebGL2). Only the tiles in view are read and decoded.
 
 ```bash
 bun install                    # From monorepo root
 bunx nx dev demo-ext-tile      # Dev server on port 8092
 ```
 
-- **File picker** reads a local file (`fromBlob`), nothing is uploaded.
-- **URL** streams by HTTP Range. The server must answer `206` and allow the request cross-origin (CORS with `Range`); a server that ignores Range is refused after its first response. `?url=<tiff>` opens one on load; without it the demo opens OpenSlide's [CMU-1-Small-Region.svs](https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/svs/CMU-1-Small-Region.svs), served with Range and CORS from GitHub LFS.
-
-- **DICOM-WSI folder** picks a folder (`webkitdirectory`). The demo indexes its headers (`indexDicomWsi`; no pixel data is read), lists each slide (optical path, focal-plane index `z`, levels, transfer syntax, sparse, frames and holes; skipped files are in the status tooltip) in a menu and opens the first; pick another to switch. JPEG 2000 and JPEG-LS tiles decode in `@niivue/dcm2niix` workers. **Colour management** (on by default) applies the slide's ICC profile, for TIFF/SVS too; the status line names a slide's profile, with `(off)` while the box is unticked. Index timings are in the [package README](../../packages/nv-ext-tile#local-dicom-wsi-folders).
+- **Slide menu** streams by HTTP Range: OpenSlide's [CMU-1-Small-Region.svs](https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/svs/CMU-1-Small-Region.svs) (GitHub LFS, opened on load) and the OpenSlide test slides geotiff can stream (no JPEG 2000 SVS), mirrored on Hugging Face (`neurodeskorg/webapps`, pinned commit). **DICOM-WSI** entries are the hosted `dicom-wsi-range-v1` manifests in the same LFS repo (`streaming/dicom-wsi/`); their `.dcm` files are read by Range from GitHub's LFS media endpoint (raw serves LFS pointers). JPEG 2000 and JPEG-LS tiles decode in `@niivue/dcm2niix` workers.
+- **Custom URL...** opens a tiled TIFF/SVS, or a hosted DICOM-WSI manifest when the path ends in `.json` (one DICOM-WSI slide spans several files, so a single `.dcm` URL is not enough). The server must answer `206` and allow the request cross-origin (CORS with `Range`); a TIFF server that ignores Range is refused after its first response, but a manifest's `.dcm` files from such a server are read whole (HTTP 200 in the HUD). `?url=<url>` opens one on load (`?url=` starts empty).
+- **Custom files...** reads local files, nothing is uploaded. One TIFF (sniffed from its first bytes) opens with `fromBlob`; otherwise the files are indexed as DICOM-WSI (`indexDicomWsi`; headers only), each slide (optical path, focal-plane index `z`, levels, transfer syntax, sparse, frames and holes; skipped files are in the status tooltip) is listed in a **Series** menu and the first opens. JPEG 2000 and JPEG-LS tiles decode in `@niivue/dcm2niix` workers. Index timings are in the [package README](../../packages/nv-ext-tile#local-dicom-wsi-folders).
+- **Level** pins a pyramid level (auto LOD by default). **Filter** switches linear and nearest tile sampling. **Colour management** (on by default) applies the slide's ICC profile. **HUD** (or the `I` key) shows the slide, backend, filter, pixel ratio, drawn level, codec, zoom, tiles, requests, wire bytes, cache and failures; tile failures also reach the status line.
+- **Backend** (WebGPU, falling back to WebGL2) and **AA** (WebGL2 only; off by default on WebKit) reload the page with `?backend=` / `?aa=`, keeping a remote slide via `?url=` (local files are dropped). **HiDPI** (on) draws at the display's pixel ratio; off draws one canvas pixel per CSS pixel. It is disabled on a 1x display and re-checked when the pixel ratio changes (another monitor, browser zoom).
 
 OME-Zarr pages (moved from core's examples):
 - `ome.zarr.html`: open a multiscale store, pick a level and channels, load it whole.
 - `range.html`: stream a volume brick by brick over HTTP Range (a synthetic shard, written by `scripts/generate-range-poc-fixture.ts` before each dev or build, or an OME-Zarr store). Stores are read from `public/omezarr/` when present, else from the public Open SciVis bucket; `bun scripts/fetch-omezarr.ts --list` shows what can be downloaded there. Only the small `stent` store is in git. Serve it with `bunx nx dev demo-ext-tile`: core's dev server (port 8080) serves the app under `/demo-ext-tile/`, but `range.html` looks for its synthetic fixture at the site root.
 - `vox.block.pick.zarr.html`: pick an exploded block of a streamed HiP-CT heart and re-stream it at full resolution.
 
-- `bunx nx e2e demo-ext-tile` (about 1 s, not in CI) builds the demo and checks the folder workflow in headless Chromium on the package's synthetic fixtures.
+- `bunx nx e2e demo-ext-tile` (about 1 s, not in CI) builds the demo and checks the DICOM-WSI custom-files workflow, and that a failed Custom URL open keeps the Slide and Series menus, in headless Chromium on the package's synthetic fixtures.
 
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

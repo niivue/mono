@@ -1,18 +1,17 @@
 import { fileURLToPath, URL } from 'node:url'
 import type { Plugin } from 'vite'
 import { defineConfig, transformWithEsbuild } from 'vite'
-import { inlineImageAssets } from './vite.config.lib'
+import { coreChunkFileNames, inlineImageAssets } from './vite.config.lib'
 
 /**
  * Self-contained ES module build for bundler-free use (`dist/standalone/`).
  *
- * The main library build (vite.config.lib.ts) leaves cbor-x, gl-matrix,
- * nifti-reader-js and zarrita as bare imports for the consumer's bundler to
+ * The main library build (vite.config.lib.ts) leaves cbor-x, gl-matrix and
+ * nifti-reader-js as bare imports for the consumer's bundler to
  * resolve. A browser cannot load those from a plain `<script type="module">`
  * without an import map for every dependency, so this build inlines all of
- * them. It keeps code splitting: optional paths (the OME-Zarr blosc/lz4/zstd
- * codecs and the zarr chunk worker pool) stay in lazily imported chunks under
- * `chunks/`, and Rollup writes every chunk import as a relative path, so the
+ * them. It keeps code splitting: optional paths stay in lazily imported chunks
+ * under `chunks/`, and Rollup writes every chunk import as a relative path, so the
  * folder works from any base URL. Workers are already blob-inlined
  * (`?worker&inline`) and images are inlined as data URIs, so the folder has
  * no other runtime files.
@@ -57,11 +56,6 @@ export default defineConfig({
     },
   },
   plugins: [inlineImageAssets(), minifyWhitespace()],
-  // Same reason as the library build: an inlined worker is a single blob and
-  // cannot fetch the codec chunks zarrita imports dynamically.
-  worker: {
-    rollupOptions: { output: { inlineDynamicImports: true } },
-  },
   build: {
     outDir: 'dist/standalone',
     emptyOutDir: true,
@@ -81,15 +75,7 @@ export default defineConfig({
     rollupOptions: {
       // Nothing is external: every dependency is bundled into the folder.
       external: [],
-      output: {
-        // Rollup names a shared chunk after one of its modules, which labels
-        // the core chunk (the controller and everything every entry needs)
-        // after an incidental OME-Zarr helper. Name it for what it is.
-        chunkFileNames: (chunk) =>
-          chunk.moduleIds.some((id) => id.endsWith('/src/NVControlBase.ts'))
-            ? 'chunks/core-[hash].js'
-            : 'chunks/[name]-[hash].js',
-      },
+      output: { chunkFileNames: coreChunkFileNames('chunks/') },
     },
   },
 })

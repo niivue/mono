@@ -94,7 +94,7 @@ const CATALOG: Dataset[] = [
     // 25% of its declared z extent, and every complete level is Z-banded on the
     // chunk grid (scale1 zeroes local z 54..80 of every 81-deep chunk), which
     // renders as venetian striping at any detail setting. See the screening rule
-    // at the top of packages/niivue/examples/range.js.
+    // at the top of apps/demo-ext-tile/src/range.js.
     category: 'CT',
     name: 'pig_heart',
     label: 'microCT, 2048x2048x2612, int16 (BANDED pyramid upstream)',

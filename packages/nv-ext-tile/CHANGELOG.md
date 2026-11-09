@@ -1,3 +1,19 @@
+## 1.0.0-rc.24 (2026-11-09)
+
+### Features
+
+- **nv-ext-tile:** index DICOM-WSI from DICOM JSON metadata ([cce33ed6](https://github.com/niivue/mono/commit/cce33ed6))
+
+### Fixes
+
+- **nv-ext-tile:** prefer a decodable AvailableTransferSyntaxUID ([de5dc17d](https://github.com/niivue/mono/commit/de5dc17d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.23 (2026-11-09)
 
 ### Updated Dependencies

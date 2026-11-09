@@ -252,6 +252,13 @@ describe('frameAt', () => {
         [9, 4, 30],
       ])?.SOPInstanceUID,
     ).toBe('ax0')
+    // Each 0.009 slice (2.5 mm slices) off slice 0, but 0.018 apart: tilted.
+    expect(
+      frameAt(sf, [
+        [0, 0, 30 - 0.0225],
+        [9, 4, 30 + 0.0225],
+      ]),
+    ).toBeUndefined()
   })
 })
 

@@ -1,3 +1,20 @@
+## 1.0.0-rc.129 (2026-11-09)
+
+### Fixes
+
+- **niivue:** record a coarse floor only once it reaches the view ([83e033fa](https://github.com/niivue/mono/commit/83e033fa))
+- **niivue:** a failed chunked init undoes only its own floor set ([8c2b1638](https://github.com/niivue/mono/commit/8c2b1638))
+- **niivue:** a failed chunked init leaves a newer load's floor alone ([9312a335](https://github.com/niivue/mono/commit/9312a335))
+- **niivue:** a failed chunked init restores the prior coarse floor ([0e5daa4d](https://github.com/niivue/mono/commit/0e5daa4d))
+- **niivue:** a failed chunked init clears the coarse floor it installed ([0bc2a824](https://github.com/niivue/mono/commit/0bc2a824))
+- **niivue:** release a chunked volume whose init fails ([678be3f8](https://github.com/niivue/mono/commit/678be3f8))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.128 (2026-11-09)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

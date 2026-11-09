@@ -1260,16 +1260,28 @@ describe('set_view', () => {
     ).toThrow('cannot turn or flip the slices')
   })
 
-  it('changes nothing when it refuses to turn or flip', () => {
-    const view = laidOut()
-    const before = view.sliceType
-    expect(() =>
-      coreHandlers(host(view)).set_view({
-        slice: 'axial',
-        flip_vertical: true,
-      }),
-    ).toThrow('cannot turn or flip the slices')
-    expect(view.sliceType).toBe(before)
+  it('changes nothing when it refuses part of the call', () => {
+    const refusals: [Record<string, unknown>, string, object?][] = [
+      [{ flip_vertical: true }, 'cannot turn or flip the slices'],
+      [{ rotation: 45 }, 'Unknown rotation 45', { rotation2D: 0 }],
+      [{ sagittal_nose: 'left' }, 'cannot set which way the sagittal nose'],
+      [{ sagittal_nose: 'up' }, 'Unknown sagittal_nose "up"'],
+      [{ orientation_text: 'corner' }, 'cannot move the orientation text'],
+      [{ orientation_text: 'nowhere' }, 'Unknown orientation_text "nowhere"'],
+      [{ layout: 'diagonal' }, 'Unknown layout "diagonal"'],
+      [{ show_render: 'sometimes' }, 'Unknown show_render "sometimes"'],
+    ]
+    for (const [bad, message, has] of refusals) {
+      const view = Object.assign(laidOut(), has)
+      expect(() =>
+        coreHandlers(host(view)).set_view({
+          slice: 'axial',
+          radiological: true,
+          ...bad,
+        }),
+      ).toThrow(message)
+      expect([view.sliceType, view.isRadiological]).toEqual([4, false])
+    }
   })
 
   it('leaves the sagittal nose out for a NiiVue without it, and refuses to set it', () => {

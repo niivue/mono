@@ -58,6 +58,7 @@ export interface VolumeUpdate {
   colormap?: string
   colormapNegative?: string
   opacity?: number
+  visible?: boolean
   calMin?: number
   calMax?: number
   calMinNeg?: number
@@ -97,6 +98,7 @@ export interface ShownVolume {
   /** The intensities the volume actually spans. */
   globalMin?: number
   globalMax?: number
+  visible?: boolean
   /** For a 4D volume, the frame shown and how many there are, and how many the file holds. */
   frame4D?: number
   nFrame4D?: number

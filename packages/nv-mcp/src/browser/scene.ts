@@ -389,6 +389,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ? {}
         : { colormap: volume.colormap }),
       ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+      ...(volume.visible === false ? { visible: false } : {}),
       ...(labels ? { labels } : {}),
       ...(windowed ? { calMin: volume.calMin, calMax: volume.calMax } : {}),
       ...(spanned
@@ -984,6 +985,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(update, 'colormapNegative', clearable(params, 'colormap_negative'))
       const opacity = number(params, 'opacity')
       if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
+      put(update, 'visible', flag(params, 'visible'))
       const calMin = windowBound(params, 'cal_min')
       const calMax = windowBound(params, 'cal_max')
       put(update, 'calMin', calMin)

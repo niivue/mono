@@ -13,7 +13,7 @@ The generated graph is local and disposable. It is written to
 bun run graph:build
 bun run graph:query niivue
 bun run graph:query OmeZarr --depth=2 --max-nodes=40
-bun run graph:query packages/niivue/src/volume/omeZarrLoader.ts
+bun run graph:query packages/nv-ext-tile/src/zarr/omeZarrLoader.ts
 bun run graph:query "chunk residency manager"
 ```
 

@@ -175,6 +175,8 @@ const slide = NVSlide.fromSource(source)
 `@niivue/nv-ext-tile/dicom` opens DICOM-WSI folders (`indexDicomWsi`,
 `DicomWsiSource`); `registerDcm2niixDecoders()` adds JPEG 2000 and JPEG-LS
 tiles and ICC colour management through `@niivue/dcm2niix`.
+`@niivue/nv-ext-tile/zarr` loads OME-Zarr volumes (`loadOmeZarrVolumes`) or
+streams them (`fetchOmeZarrChunkedSource`); see [Loading](./loading).
 
 [Live demo](https://niivue.github.io/mono/demo-ext-tile/)
 

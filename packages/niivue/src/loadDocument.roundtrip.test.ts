@@ -671,3 +671,14 @@ test('volumeCinematic merges and survives a document round trip', async () => {
     exposure: 1,
   })
 })
+
+test('2D rotate and flip survive a document round-trip', async () => {
+  const nv = new NiiVue({ rotation2D: 270, isFlipped2DVertical: true })
+  const nv2 = new NiiVue({ isFlipped2DHorizontal: true })
+  await nv2.loadDocument(documentFile(nv.serializeDocument(), 'rot.nvd'))
+  expect([
+    nv2.rotation2D,
+    nv2.isFlipped2DHorizontal,
+    nv2.isFlipped2DVertical,
+  ]).toEqual([270, false, true])
+})

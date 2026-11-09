@@ -3,17 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bunx --bun vite --open /index.html",
-    "build": "bunx --bun vite build"
+    "dev": "bun scripts/generate-range-poc-fixture.ts && bunx --bun vite --open /index.html",
+    "build": "bun scripts/generate-range-poc-fixture.ts && bunx --bun vite build"
   },
   "dependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.3",
     "@niivue/niivue": "workspace:*",
     "@niivue/nv-ext-tile": "workspace:*",
-    "geotiff": "^3.0.5"
+    "geotiff": "^3.0.5",
+    "zarrita": "^0.7.3"
   },
   "devDependencies": {
-    "@playwright/test": "1.59.1",
+    "@playwright/test": "1.64.1",
     "vite": "^6.3.2"
   }
 }

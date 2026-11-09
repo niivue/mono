@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { gzipSync } from 'node:zlib'
-import { NiiDataType } from '@/NVConstants'
+import { NiiDataType, NiiIntentCode } from '@/NVConstants'
 import { calMinMax, toTypedViewOrU8 } from '@/volume/utils'
 import { read } from './mgh'
 
@@ -116,5 +116,18 @@ describe('mgh reader (big-endian INT32)', () => {
     expect((i32 as Int32Array).length).toBe(N_VOX)
     expect((i32 as Int32Array)[EXPECTED.midIndex]).toBe(EXPECTED.midValue)
     expect(raw[raw.length - 1]).toBe(lastVoxelByte)
+  })
+})
+
+describe('mgh reader (label detection)', () => {
+  test('marksLabelVolumesWithLabelIntent', async () => {
+    const byName = await read(gzipSync(mghInt32()), 'sub-01/aparc+aseg.mgz')
+    expect(byName.hdr.intent_code).toBe(NiiIntentCode.NIFTI_INTENT_LABEL)
+    const v257 = mghInt32()
+    new DataView(v257.buffer).setInt32(0, 257, false)
+    const byVersion = await read(v257, 'x.mgh')
+    expect(byVersion.hdr.intent_code).toBe(NiiIntentCode.NIFTI_INTENT_LABEL)
+    const plain = await read(mghInt32(), 'brainmask-int.mgh')
+    expect(plain.hdr.intent_code).not.toBe(NiiIntentCode.NIFTI_INTENT_LABEL)
   })
 })

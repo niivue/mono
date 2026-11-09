@@ -332,4 +332,26 @@ describe('indexDicomWsiMetadata', () => {
     expect(r.skipped).toEqual([])
     expect(r.slides.map((s) => s.focalPlane)).toEqual([0])
   })
+
+  // OHIF's test slide gives each pyramid level its own FrameOfReferenceUID.
+  test('joins levels apart only by frame of reference; a rescan stays apart', async () => {
+    const tagged = (o: Json, sop: string, fr: string): Json => ({
+      ...o,
+      '00080018': { vr: 'UI', Value: [sop] },
+      '00200052': { vr: 'UI', Value: [fr] },
+    })
+    const [bot, l1] = await Promise.all([json('bot'), json('bot-l1')])
+    const levels = indexDicomWsiMetadata([
+      tagged(bot as Json, '9.1', '9.10'),
+      tagged(l1 as Json, '9.2', '9.11'),
+    ])
+    expect(
+      levels.slides.map((s) => [s.levels.length, s.frameOfReference]),
+    ).toEqual([[2, '9.10']])
+    const rescan = indexDicomWsiMetadata([
+      tagged(bot as Json, '9.1', '9.10'),
+      tagged(bot as Json, '9.3', '9.12'),
+    ])
+    expect(rescan.slides.map((s) => s.levels.length)).toEqual([1, 1])
+  })
 })

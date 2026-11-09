@@ -941,7 +941,13 @@ type GroupedSlide<I, C> = Omit<SlideIndexSlide, 'instances' | 'iccProfile'> & {
   iccProfile?: C
 }
 
-/** Contract 2: a slide is study + series + frame of reference + container + optical path + focal plane. */
+/**
+ * Contract 2: a slide is study + series + frame of reference + container +
+ * optical path + focal plane. Slides apart only by frame of reference join
+ * when no level size is in both: some converters give each pyramid level its
+ * own FrameOfReferenceUID (OHIF's test slide does), while a rescan repeats the
+ * sizes and stays its own slide.
+ */
 export function groupSlides<I, C>(
   infos: InstanceInfo<I, C>[],
   skipped: SlideIndexSkipped[],
@@ -991,8 +997,23 @@ export function groupSlides<I, C>(
       }
     })
   }
+  const sizes = (own: Member<I, C>[]) =>
+    new Set(own.map((m) => `${m.info.totalColumns}x${m.info.totalRows}`))
+  const joined = new Map<string, Entry[]>()
+  for (const entry of slides.values()) {
+    const { study, series, container, opticalPath, focalPlane } = entry.slide
+    const key = [study, series, container ?? '', opticalPath, focalPlane].join(
+      '|',
+    )
+    const list = joined.get(key) ?? []
+    const mine = sizes(entry.own)
+    const into = list.find((e) => ![...sizes(e.own)].some((k) => mine.has(k)))
+    if (into) into.own.push(...entry.own)
+    else list.push(entry)
+    joined.set(key, list)
+  }
   const reported = new Set<string>()
-  return [...slides.values()].map(({ slide, own: members }) => {
+  return [...joined.values()].flat().map(({ slide, own: members }) => {
     // Finest first; a concatenation's parts in order.
     members.sort(
       (a, b) =>
@@ -1024,6 +1045,8 @@ export function groupSlides<I, C>(
       return ok
     })
     slide.instances = own.map((m) => m.info.instance)
+    // Joined slides: the finest level's frame of reference names the slide.
+    slide.frameOfReference = (own[0] as Member<I, C>).info.frameOfReference
     const byMatrix = new Map<string, number[]>()
     own.forEach(({ info }, k) => {
       const key = `${info.totalColumns}x${info.totalRows}`

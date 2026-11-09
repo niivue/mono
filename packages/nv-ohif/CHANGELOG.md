@@ -1,3 +1,13 @@
+## 1.0.0-rc.130 (2026-11-09)
+
+### Fixes
+
+- **nv-ohif:** take OHIF's managers from the module params; report viewport ready ([4a4a39ee](https://github.com/niivue/mono/commit/4a4a39ee))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.129 (2026-11-09)
 
 ### Updated Dependencies

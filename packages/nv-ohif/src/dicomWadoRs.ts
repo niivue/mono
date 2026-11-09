@@ -64,6 +64,8 @@ export function boundaryFromBody(bytes: Uint8Array): string | null {
   let end = 2
   const limit = Math.min(bytes.length, 256)
   while (end < limit && bytes[end] !== 0x0d && bytes[end] !== 0x0a) end++
+  // The delimiter line may carry SP/HTAB padding after the boundary.
+  while (end > 2 && (bytes[end - 1] === 0x20 || bytes[end - 1] === 0x09)) end--
   if (end <= 2) return null
   return new TextDecoder('latin1').decode(bytes.subarray(2, end))
 }

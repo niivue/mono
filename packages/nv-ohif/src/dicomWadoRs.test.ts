@@ -180,6 +180,14 @@ describe('parseMultipartRelated', () => {
     expect(parts.map((p) => Array.from(p))).toEqual([[1, 2, 3]])
   })
 
+  it('recovers a padded boundary from the body', () => {
+    const body = new TextEncoder().encode(
+      '--B \t\r\nContent-Type: application/dicom\r\n\r\none\r\n--B--\r\n',
+    )
+    const parts = parseMultipartRelated(body, 'multipart/related')
+    expect(parts.map((p) => new TextDecoder().decode(p))).toEqual(['one'])
+  })
+
   it('falls back to the whole body when not multipart', () => {
     const raw = new Uint8Array([9, 8, 7])
     const parts = parseMultipartRelated(raw, 'application/dicom')

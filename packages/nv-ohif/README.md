@@ -114,8 +114,11 @@ toolbarSections: [
 
 It also answers OHIF's standard `resetViewport`, `setViewportOrientation`
 (axial / sagittal / coronal / acquisition), `scaleUpViewport`, `scaleDownViewport`,
-`fitViewportToWindow` and `setWindowLevelPreset` on a NiiVue viewport (`viewportId`,
-else the active one) and hands any other viewport to the `CORNERSTONE` context, so
+`fitViewportToWindow`, `setWindowLevelPreset`, `rotateViewportCW`, `rotateViewportCCW`,
+`rotateViewportCWSet`, `flipViewportHorizontal`, `flipViewportVertical`,
+`setViewportHorizontalFlip` and `setViewportVerticalFlip` on a NiiVue viewport
+(`viewportId`, else the active one; rotate and flip apply to 2D tiles, and reset
+clears them) and hands any other viewport to the `CORNERSTONE` context, so
 standard hotkeys work in mixed layouts. This relies on the extension registering
 after cornerstone (newer command contexts win). The `NIIVUE` context is registered
 app-wide, so these names route through nv-ohif in every mode (delegating to

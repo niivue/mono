@@ -26,6 +26,27 @@ function stubNiivue() {
     async setVolume(_index: number, opts: Record<string, unknown>) {
       volumeUpdates.push(opts)
     },
+    // Core's 2D turn (NVControlBase): the setter rounds to a quarter turn in
+    // 0..270, and rotate2D steps the other way with exactly one flip.
+    turn: 0,
+    get rotation2D() {
+      return this.turn
+    },
+    set rotation2D(v: number) {
+      this.turn = (((Math.round(v / 90) * 90) % 360) + 360) % 360
+    },
+    isFlipped2DHorizontal: false,
+    isFlipped2DVertical: false,
+    rotate2D(quarterTurns: number) {
+      const step =
+        this.isFlipped2DHorizontal !== this.isFlipped2DVertical ? -90 : 90
+      this.rotation2D = this.rotation2D + step * quarterTurns
+    },
+    flip2D(axis: 'horizontal' | 'vertical') {
+      if (axis === 'horizontal')
+        this.isFlipped2DHorizontal = !this.isFlipped2DHorizontal
+      else this.isFlipped2DVertical = !this.isFlipped2DVertical
+    },
   }
 }
 
@@ -101,6 +122,9 @@ describe('standard commands', () => {
       expect(calls[1]?.name).toBe(name)
       expect(calls[1]?.opts).toEqual(calls[0]?.opts as Record<string, unknown>)
     }
+    // A command without default options passes the call-time options unchanged.
+    calls.length = 0
+    run('resetViewport', { orientation: 'sagittal', presetIndex: 1 })
     expect(calls[1]?.opts).toEqual({ orientation: 'sagittal', presetIndex: 1 })
     expect(nv.sliceType).toBe(SLICE_TYPE.MULTIPLANAR)
     expect(nv.pan2Dxyzmm).toEqual([5, 6, 7, 2])
@@ -202,6 +226,121 @@ describe('standard commands', () => {
     expect(nv.pan2Dxyzmm).toEqual([0, 0, 0, 1])
     run('setWindowLevelPreset', { presetIndex: 1 }) // CT lung: W1500 L-600
     expect(nv.volumeUpdates).toEqual([{ calMin: -1350, calMax: 150 }])
+  })
+})
+
+describe('rotate and flip commands', () => {
+  it('turn clockwise and counterclockwise on screen, with or without a flip', () => {
+    const nv = register('nv-1')
+    const { run } = fakeHost('nv-1')
+    run('rotateViewportCW')
+    expect(nv.rotation2D).toBe(90)
+    run('rotateViewportCCW')
+    run('rotateViewportCCW')
+    expect(nv.rotation2D).toBe(270)
+    // One flip: the stored turn runs the other way, the screen turn does not.
+    run('flipViewportHorizontal')
+    run('rotateViewportCW')
+    expect(nv.rotation2D).toBe(180)
+  })
+
+  it('set an absolute turn as seen, inverting it under one flip (Cornerstone set mode)', () => {
+    const nv = register('nv-1')
+    const { run } = fakeHost('nv-1')
+    run('rotateViewportCWSet')
+    expect(nv.rotation2D).toBe(90)
+    run('setViewportVerticalFlip')
+    run('rotateViewportCWSet', { rotation: 90 })
+    expect(nv.rotation2D).toBe(270) // -90, normalised
+    run('setViewportHorizontalFlip') // two flips: parity restored
+    run('rotateViewportCWSet', { rotation: 180 })
+    expect(nv.rotation2D).toBe(180)
+  })
+
+  it('toggle flips, and set them to an explicit value', () => {
+    const nv = register('nv-1')
+    const { run } = fakeHost('nv-1')
+    run('flipViewportHorizontal')
+    run('flipViewportVertical')
+    expect([nv.isFlipped2DHorizontal, nv.isFlipped2DVertical]).toEqual([
+      true,
+      true,
+    ])
+    run('flipViewportVertical')
+    expect(nv.isFlipped2DVertical).toBe(false)
+    run('setViewportHorizontalFlip', { flipped: false })
+    run('setViewportVerticalFlip')
+    expect([nv.isFlipped2DHorizontal, nv.isFlipped2DVertical]).toEqual([
+      false,
+      true,
+    ])
+  })
+
+  for (const reset of ['resetViewport', 'niivueResetView'])
+    it(`clear the turn and flips on ${reset} (OHIF's and NiiVue's reset)`, () => {
+      const nv = register('nv-1')
+      const { run } = fakeHost('nv-1')
+      run('rotateViewportCW')
+      run('flipViewportHorizontal')
+      run('setViewportVerticalFlip')
+      run(reset)
+      expect([
+        nv.rotation2D,
+        nv.isFlipped2DHorizontal,
+        nv.isFlipped2DVertical,
+      ]).toEqual([0, false, false])
+    })
+
+  for (const [view, sliceType] of [
+    ['render-only', SLICE_TYPE.RENDER],
+    ['graph-only', SLICE_TYPE.NONE],
+  ] as const)
+    it(`leave a ${view} view alone (the turn applies to 2D tiles only)`, () => {
+      const nv = register('nv-1')
+      nv.sliceType = sliceType
+      const { run } = fakeHost('nv-1')
+      for (const name of [
+        'rotateViewportCW',
+        'flipViewportHorizontal',
+        'setViewportVerticalFlip',
+      ])
+        run(name)
+      expect([
+        nv.rotation2D,
+        nv.isFlipped2DHorizontal,
+        nv.isFlipped2DVertical,
+      ]).toEqual([0, false, false])
+    })
+
+  it('leave a slide (WSI) viewport alone', () => {
+    const nv = register('nv-1')
+    let resets = 0
+    updateNiivueViewport('nv-1', {
+      slideView: {
+        setTool() {},
+        resetView: () => resets++,
+        zoom() {},
+        fit() {},
+        setWindow() {},
+        async saveBitmap() {},
+        dispose() {},
+      },
+    })
+    const { run } = fakeHost('nv-1')
+    for (const name of [
+      'rotateViewportCW',
+      'rotateViewportCWSet',
+      'flipViewportHorizontal',
+      'setViewportVerticalFlip',
+    ])
+      run(name)
+    run('resetViewport')
+    expect([
+      nv.rotation2D,
+      nv.isFlipped2DHorizontal,
+      nv.isFlipped2DVertical,
+    ]).toEqual([0, false, false])
+    expect(resets).toBe(1)
   })
 })
 

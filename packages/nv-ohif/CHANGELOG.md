@@ -1,3 +1,19 @@
+## 1.0.0-rc.134 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** choose the dcm2niix output by policy; cancel overlay conversion; skip derived objects ([07dc11d7](https://github.com/niivue/mono/commit/07dc11d7))
+
+### Fixes
+
+- **nv-ohif:** rank magnitude over R and I parts in dcm2niix outputs ([d3607d5f](https://github.com/niivue/mono/commit/d3607d5f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.133 (2026-11-09)
 
 ### Features

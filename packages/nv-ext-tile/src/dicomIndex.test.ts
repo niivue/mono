@@ -149,7 +149,7 @@ describe('indexDicomWsi', () => {
     )
   })
 
-  test('takes pixel spacing from ImagedVolumeWidth/Height without PixelSpacing', async () => {
+  test('takes pixel spacing from ImagedVolumeWidth/Height over a [1,1] PixelSpacing placeholder', async () => {
     const slide = only((await index('mono12.dcm')).idx)
     // FL in the file: 0.02 mm over 40 columns, 0.015 mm over 30 rows.
     expect(slide.pixelSpacingMM?.[0]).toBeCloseTo(0.0005, 9)

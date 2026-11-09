@@ -902,6 +902,7 @@ export default class NVGlview {
             undefined,
             pan,
             false,
+            tile.clipRot,
           )
         // Cache MVP and plane equation for fast interactive picking
         tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
@@ -2080,6 +2081,7 @@ export default class NVGlview {
         undefined,
         pan,
         false,
+        tile.clipRot,
       )
       mvpMatrix = result[0] as mat4
       rayDir = result[3] as Float32Array

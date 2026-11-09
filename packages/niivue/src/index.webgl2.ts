@@ -170,6 +170,7 @@ export type {
   VolumeChunkSourceRequest,
   VolumeUpdate,
   OrientationTextPosition,
+  Rotation2D,
   WheelZoomAnchor,
 } from './NVTypes'
 // Signal load options

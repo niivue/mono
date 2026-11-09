@@ -1170,6 +1170,8 @@ export default class NVView {
           md.volumes[0]?.obliqueRAS,
           undefined,
           pan,
+          true,
+          tile.clipRot,
         )
         mvpMatrix = mvp2d[0]
         normalMatrix = mvp2d[2]
@@ -2951,6 +2953,8 @@ export default class NVView {
         md.volumes[0]?.obliqueRAS,
         undefined,
         pan,
+        true,
+        tile.clipRot,
       )
       mvpMatrix = result[0] as mat4
       normalMatrix = result[2] as mat4

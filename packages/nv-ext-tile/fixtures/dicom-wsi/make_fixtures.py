@@ -8,9 +8,14 @@ without a decoder. Run from this directory: python3 make_fixtures.py
 colors.dcm is the exception: a sparse slide whose tiles are
 real solid-colour JPEGs (encoded by cjpeg), for the browser e2e test in
 apps/demo-ext-tile.
+
+Some instances also get a PS3.18 DICOM JSON sibling (name.json) for the parity
+test, formatted by Biome as the repo is.
 """
 
-import pydicom
+import json
+import subprocess
+
 from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.encaps import encapsulate, encapsulate_extended
 from pydicom.sequence import Sequence
@@ -80,7 +85,7 @@ def base(name: str, width: int, height: int, frames: int, *, sop: str, org='TILE
     return ds
 
 
-def save(ds: Dataset, frames: list[bytes], path: str, *, bot=True, eot=False, per_frame=1) -> None:
+def save(ds: Dataset, frames: list[bytes], path: str, *, bot=True, eot=False, per_frame=1, json_bulk=None) -> None:
     if eot:
         data, offsets, lengths = encapsulate_extended(frames)
         ds.ExtendedOffsetTable = offsets
@@ -91,6 +96,20 @@ def save(ds: Dataset, frames: list[bytes], path: str, *, bot=True, eot=False, pe
     ds['PixelData'].VR = 'OB'
     ds['PixelData'].is_undefined_length = True
     ds.save_as(path, enforce_file_format=True)
+    if json_bulk is not None:
+        save_json(ds, path, json_bulk)
+
+
+def save_json(ds: Dataset, path: str, bulk: bool) -> None:
+    """File meta included for its TransferSyntaxUID. Binary values become
+    BulkDataURIs, or InlineBinary when not `bulk`."""
+    uri = lambda e: f'bulk/{ds.SOPInstanceUID}/{e.tag:08X}'
+    meta = ds.file_meta.to_json_dict()
+    body = ds.to_json_dict(bulk_data_threshold=1 if bulk else 1 << 20, bulk_data_element_handler=uri)
+    out = path.replace('.dcm', '.json')
+    with open(out, 'w') as f:
+        json.dump({**meta, **body}, f, indent=2)
+    subprocess.run(['bunx', 'biome', 'format', '--write', out], capture_output=True, check=True)
 
 
 def full(name: str, sop: str, w=40, h=30, path_count=1) -> tuple[Dataset, list[bytes]]:
@@ -118,11 +137,18 @@ def sparse(name: str, sop: str, positions: list[tuple[int, int]]) -> tuple[Datas
     return ds, [payload(f'{name} x{x}y{y}') for x, y in positions]
 
 
+def second_path(ds: Dataset) -> None:
+    op = Dataset()
+    op.OpticalPathIdentifier = '2'
+    ds.OpticalPathSequence.append(op)
+    ds.NumberOfOpticalPaths = 2
+
+
 # TILED_FULL 3 x 2 (40 x 30 in 16-px tiles), with a 2 x 1 coarser level beside it.
 ds, fr = full('bot', '1.2.3.10')
-save(ds, fr, 'bot.dcm')
+save(ds, fr, 'bot.dcm', json_bulk=True)
 ds, fr = full('bot', '1.2.3.11', w=20, h=15)
-save(ds, fr, 'bot-l1.dcm')
+save(ds, fr, 'bot-l1.dcm', json_bulk=True)
 for name, kw in (('nobot', {'bot': False}), ('eot', {'eot': True, 'bot': False})):
     ds, fr = full(name, f'1.2.3.2{len(name)}')
     ds.SeriesInstanceUID = series_uid(name)
@@ -137,15 +163,15 @@ for name, bot in (('frag-bot', True), ('frag-walk', False)):
 # TILED_SPARSE: 4 of 6 tiles; and one with a duplicated position.
 ds, fr = sparse('sparse', '1.2.3.40', [(0, 0), (2, 0), (1, 1), (2, 1)])
 ds.SeriesInstanceUID = series_uid('sparse')
-save(ds, fr, 'sparse.dcm')
+save(ds, fr, 'sparse.dcm', json_bulk=True)
 ds, fr = sparse('dup', '1.2.3.41', [(0, 0), (1, 0), (1, 0)])
 ds.SeriesInstanceUID = series_uid('dup')
-save(ds, fr, 'dup.dcm')
+save(ds, fr, 'dup.dcm', json_bulk=True)
 
 # Two optical paths, TILED_FULL: frames 1-6 path 1, 7-12 path 2.
 ds, fr = full('paths', '1.2.3.50', path_count=2)
 ds.SeriesInstanceUID = series_uid('paths')
-save(ds, fr, 'paths.dcm')
+save(ds, fr, 'paths.dcm', json_bulk=True)
 
 # One level concatenated across two SOPs: frames 1-4, then 5-6.
 ds, fr = full('concat', '1.2.3.60')
@@ -157,10 +183,11 @@ for part, (sop, lo, hi) in enumerate((('1.2.3.61', 0, 4), ('1.2.3.62', 4, 6)), s
     d.InConcatenationNumber = part
     d.InConcatenationTotalNumber = 2
     d.ConcatenationFrameOffsetNumber = lo
-    save(d, fr[lo:hi], f'concat-{part}.dcm')
+    save(d, fr[lo:hi], f'concat-{part}.dcm', json_bulk=True)
 
 # Two focal planes by per-frame ZOffset, the higher first, so the stated ZOffsets
-# (not the implicit TILED_FULL plane order) decide which is plane 0; spacing per frame only.
+# (not the implicit TILED_FULL plane order) decide which is plane 0; spacing per
+# frame only; and binary values (ICC profile, pixel data) inline in its JSON.
 ds, fr = full('planes', '1.2.3.90')
 ds.SeriesInstanceUID = series_uid('planes')
 ds.TotalPixelMatrixFocalPlanes = 2
@@ -176,7 +203,7 @@ for f in range(12):
     item.PixelMeasuresSequence = measures
     items.append(item)
 ds.PerFrameFunctionalGroupsSequence = Sequence(items)
-save(ds, [payload(f'planes f{f + 1}') for f in range(12)], 'planes.dcm')
+save(ds, [payload(f'planes f{f + 1}') for f in range(12)], 'planes.dcm', json_bulk=False)
 
 # MONOCHROME2 12-bit JPEG-LS, spacing only from ImagedVolumeWidth/Height (mm), no ICC;
 # the top-level PixelSpacing is the [1,1] placeholder WSI files often carry.
@@ -190,19 +217,32 @@ ds.ImagedVolumeWidth, ds.ImagedVolumeHeight = 0.02, 0.015
 ds.PixelSpacing = [1, 1]
 del ds.SharedFunctionalGroupsSequence
 del ds.OpticalPathSequence[0].ICCProfile
-save(ds, fr, 'mono12.dcm')
+# Its frames name the second of two optical paths, per frame.
+second_path(ds)
+items = []
+for f in range(6):
+    item = Dataset()
+    item.OpticalPathIdentificationSequence = Sequence([Dataset()])
+    item.OpticalPathIdentificationSequence[0].OpticalPathIdentifier = '2'
+    items.append(item)
+ds.PerFrameFunctionalGroupsSequence = Sequence(items)
+save(ds, fr, 'mono12.dcm', json_bulk=True)
 
 # No DimensionOrganizationType and no per-frame positions: implicit TILED_FULL;
 # spacing only from the top-level PixelSpacing.
 ds, fr = full('noorg', '1.2.3.92')
 ds.SeriesInstanceUID = series_uid('noorg')
 del ds.DimensionOrganizationType
-del ds.SharedFunctionalGroupsSequence
 ds.PixelSpacing = [0.0005, 0.00025]
-save(ds, fr, 'noorg.dcm')
+# Its frames name the second of two optical paths, in the shared group.
+second_path(ds)
+ident = Dataset()
+ident.OpticalPathIdentifier = '2'
+ds.SharedFunctionalGroupsSequence[0] = Dataset()
+ds.SharedFunctionalGroupsSequence[0].OpticalPathIdentificationSequence = Sequence([ident])
+save(ds, fr, 'noorg.dcm', json_bulk=True)
 
 # Browser e2e: TILED_SPARSE 3 x 2 with real JPEG tiles, one colour each, two holes.
-import subprocess
 COLORS = {(0, 0): (220, 30, 30), (2, 0): (30, 160, 40), (1, 1): (40, 60, 220), (2, 1): (230, 200, 30)}
 
 

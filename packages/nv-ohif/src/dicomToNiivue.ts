@@ -1,7 +1,10 @@
-import { rankOutputs } from './dcm2niixOutputs'
+import type NiiVue from '@niivue/niivue'
+import { isPart, outputEcho, rankOutputs } from './dcm2niixOutputs'
 import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
+import { updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
 import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
+import { buildSliceFrames, type SliceFrames } from './sliceFrames'
 
 // Phase 2 DICOM bridge: turn a DICOMweb display set into a NIfTI volume, then load
 // it with NiiVue. We fetch DICOM Part-10 files (RetrieveInstance, else reconstructed
@@ -66,6 +69,8 @@ export interface DicomConversion {
   image: File
   /** Names the outputs not shown and/or warns of a partial conversion. */
   note?: string
+  /** Slice -> source frame of `image`, for measurement identity. */
+  sliceFrames?: SliceFrames
 }
 
 /**
@@ -111,5 +116,37 @@ export async function convertDisplaySetToNifti(
   return {
     image: shown.image,
     note: notes.length > 0 ? notes.join(' ') : undefined,
+    sliceFrames: buildSliceFrames(
+      await shown.image.slice(0, 348).arrayBuffer(),
+      ds.instances ?? [],
+      { echo: outputEcho(shown), part: isPart(shown) },
+    ),
   }
+}
+
+/**
+ * Load `converted` into `nv`, publishing its slice map only once that volume
+ * shows: until then (or after a failed load, which keeps the old volume) a
+ * measurement must not take this series' DICOM identity. False when
+ * `cancelled()` by the time the load resolves; the caller drops the volume.
+ */
+export async function loadConversion(
+  nv: Pick<NiiVue, 'loadVolumes'>,
+  viewportId: string,
+  converted: DicomConversion,
+  spec: { calMin: number; calMax: number } | undefined,
+  cancelled: () => boolean,
+): Promise<boolean> {
+  // The converted file's own name (.nii) lets NiiVue sniff the format.
+  const { image } = converted
+  try {
+    await nv.loadVolumes([{ url: image, name: image.name, ...spec }])
+  } catch (err) {
+    if (!cancelled())
+      updateNiivueViewport(viewportId, { sliceFrames: undefined })
+    throw err
+  }
+  if (cancelled()) return false
+  updateNiivueViewport(viewportId, { sliceFrames: converted.sliceFrames })
+  return true
 }

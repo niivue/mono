@@ -20,7 +20,7 @@ import {
   visibleAnnotationScreenShapes,
   voiRange,
 } from './commands'
-import { convertDisplaySetToNifti } from './dicomToNiivue'
+import { convertDisplaySetToNifti, loadConversion } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
   authHeaders,
@@ -40,7 +40,7 @@ import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
 // so an OHIF user sees the three orthogonal planes; the toolbar (later) can switch to
 // 3D render etc.
-const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
+export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   backgroundColor: [0, 0, 0, 1],
   // WebGL2 is the robust default for an embedded viewport (broad support; avoids
   // WebGPU device churn when OHIF mounts/unmounts viewports). Revisit once WebGPU
@@ -49,6 +49,15 @@ const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   // OHIF panel measurements are independent records. Never union/cut them when
   // their contours overlap, because that destroys measurement identity/stats.
   annotationMergesOverlaps: false,
+  // A click lands the crosshair on a slice centre, so a measurement drawn there
+  // lies on its DICOM frame (sliceFrames.frameAt).
+  isSnapToVoxelCenters: true,
+}
+
+// Snapping acts on crosshair moves only, and a load keeps the crosshair where it
+// was: between two slices for an even slice count. Land it on a slice centre.
+export function snapCrosshair(nv: NiiVue): void {
+  nv.setCrosshairPos(nv.getCrosshairPos())
 }
 
 type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
@@ -298,6 +307,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       displaySets: displaySets.slice(0, 1),
       overlayUIDs: [],
       overlayLoading: false,
+      sliceFrames: undefined,
     })
     refreshToolbar(servicesManager, viewportId)
 
@@ -343,6 +353,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // baseline, so the first manual contrast drag is detected as a change.
     const seedWindowLevel = () => {
       if (cancelled) return
+      snapCrosshair(nv)
       updateNiivueViewport(viewportId, { windowLevel: readBaseWindowLevel(nv) })
       // A reflection may have failed while OHIF's backing series or the converted
       // volume was still becoming ready. Retry after the load boundary even when
@@ -530,20 +541,21 @@ export function NiivueViewport(props: OhifViewportProps) {
           return
         }
         loaded(converted.note)
-        // Use the converted file's own name (ends in .nii/.nii.gz) so NiiVue sniffs
-        // the format correctly; a display name without that extension would not.
-        const niftiFile = converted.image
-        return nv
-          .loadVolumes([{ url: niftiFile, name: niftiFile.name, ...voi }])
-          .then(() => {
-            // Swapped away while this load was in flight: undo the now-stale load
-            // (its dropStaleVolumes already ran and no-op'd on an empty array).
-            if (cancelled) {
-              void nv.removeAllVolumes().catch(() => {})
-              return
-            }
-            seedWindowLevel()
-          })
+        return loadConversion(
+          nv,
+          viewportId,
+          converted,
+          voi,
+          () => cancelled,
+        ).then((shown) => {
+          // Swapped away while this load was in flight: undo the now-stale load
+          // (its dropStaleVolumes already ran and no-op'd on an empty array).
+          if (!shown) {
+            void nv.removeAllVolumes().catch(() => {})
+            return
+          }
+          seedWindowLevel()
+        })
       })
       .catch((err) => {
         if (cancelled || abort.signal.aborted) return

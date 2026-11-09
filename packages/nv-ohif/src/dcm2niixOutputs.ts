@@ -32,20 +32,24 @@ function isOriginalPrimary(s: Series): boolean {
   )
 }
 
+/** A phase/real/imaginary ImageType (sidecar or DICOM). */
+export const isPartType = (type: unknown): boolean =>
+  Array.isArray(type) && type.some((t) => PART_TYPES.includes(t))
+
 // The sidecar's ImageType, as dcm2niix itself uses; the stem (which includes the
 // protocol name) only without a sidecar.
-function isPart(s: Series): boolean {
+export function isPart(s: Series): boolean {
   const type = s.json?.ImageType
-  return Array.isArray(type)
-    ? type.some((t) => PART_TYPES.includes(t))
-    : PART_SUFFIX.test(s.stem)
+  return Array.isArray(type) ? isPartType(type) : PART_SUFFIX.test(s.stem)
 }
 
-function echo(s: Series): number {
+/** The output's echo; undefined for a single-echo series. */
+export function outputEcho(s: Series): number | undefined {
   const e = s.json?.EchoNumber
   if (typeof e === 'number') return e
-  // No sidecar (-b n): dcm2niix still names echoes _e<N>; single-echo has neither.
-  return Number(/_e(\d+)/.exec(s.stem)?.[1] ?? 1)
+  // dcm2niix names echoes _e<N> even when the sidecar omits EchoNumber.
+  const n = /_e(\d+)/.exec(s.stem)?.[1]
+  return n === undefined ? undefined : Number(n)
 }
 
 /** NIfTI image outputs, best first by the policy above. */
@@ -58,7 +62,7 @@ export async function rankOutputs(series: Series[]): Promise<Series[]> {
         key: [
           isOriginalPrimary(s) ? 0 : 1,
           isPart(s) ? 1 : 0,
-          echo(s),
+          outputEcho(s) ?? 1,
           -(await niftiVoxels(s.image)),
         ],
       })),

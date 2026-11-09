@@ -769,6 +769,34 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(1)
   })
 
+  it('re-reflects a row once the slice map gives it a frame', () => {
+    const nv = stubNiivue()
+    register('vp-frame', nv)
+    updateNiivueViewport('vp-frame', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-frame', backing)
+    nv.annotations = [ellipse('frame')]
+    // Reflected while the converted volume is still loading: no frame yet.
+    reconcileNiivueAnnotations('vp-frame', svc.servicesManager)
+    expect(svc.added).toHaveLength(1)
+    updateNiivueViewport('vp-frame', {
+      sliceFrames: {
+        origin: [0, 0, 0],
+        normal: [0, 0, 1],
+        frames: [{ SOPInstanceUID: 'sop-1', frameNumber: 1 }],
+      },
+    })
+    reconcileNiivueAnnotations('vp-frame', svc.servicesManager)
+    expect(svc.added).toHaveLength(2)
+    expect(svc.added[1]?.data.schema).toMatchObject({
+      SOPInstanceUID: 'sop-1',
+      frameNumber: 1,
+    })
+  })
+
   it('does not record a row when OHIF rejects the measurement', () => {
     register('vp-rejected', stubNiivue())
     updateNiivueViewport('vp-rejected', {
@@ -1073,6 +1101,32 @@ describe('reflectNiivueAnnotation', () => {
     // An unknown uid is a no-op.
     applyOhifLabelToAnnotation('not-ours', 'x')
     expect(texts).toHaveLength(1)
+  })
+
+  it('keeps a NiiVue row out of Cornerstone jumpToMeasurementViewport', () => {
+    register('vp-guard', stubNiivue())
+    updateNiivueViewport('vp-guard', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-guard', backing)
+    reflectNiivueAnnotation('vp-guard', svc.servicesManager, ellipse('g'))
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const delegated: unknown[][] = []
+    const { actions } = getNiivueCommandsModule({
+      servicesManager: svc.servicesManager,
+      commandsManager: {
+        runCommand: (...args: unknown[]) => delegated.push(args),
+      },
+    } as unknown as OhifExtensionParams)
+    actions.jumpToMeasurementViewport({ measurement: { uid } })
+    expect(delegated).toEqual([])
+    const other = { measurement: { uid: 'cornerstone-1' } }
+    actions.jumpToMeasurementViewport(other)
+    expect(delegated).toEqual([
+      ['jumpToMeasurementViewport', other, 'CORNERSTONE'],
+    ])
   })
 
   it('jumps to the owning viewport and selects the reflected annotation', () => {

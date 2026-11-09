@@ -28,6 +28,7 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
+import { frameAt, type SliceFrames } from './sliceFrames'
 import { getStandardCommandDefinitions } from './standardCommands'
 import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
 
@@ -577,6 +578,14 @@ function annotationContentHash(a: VectorAnnotation): string {
   ])
 }
 
+// The row's hash: its content plus the frame it lies on, which appears only once
+// the converted volume's slice map is published, so that re-reflects the row.
+function rowHash(a: VectorAnnotation, sf: SliceFrames | undefined): string {
+  const frame = sf && frameAt(sf, annotationPointsLps(a))
+  const at = frame ? `${frame.SOPInstanceUID}:${frame.frameNumber}` : ''
+  return `${annotationContentHash(a)}|${at}`
+}
+
 // OHIF measurement uid -> the NiiVue annotation it reflects, so an edit of the
 // measurement's label in OHIF's panel can be pushed back as the annotation text.
 const measurementToAnnotation = new Map<
@@ -747,6 +756,10 @@ function reflectNiivueAnnotationResult(
   // An eraser cut leaves the bounds and endpoints intact, so OHIF would draw the
   // whole shape beside stats for what is left. Drop the row instead.
   if (isErasedForOhif(annotation)) return { status: 'permanentlyUnsupported' }
+  // SOPInstanceUID / frameNumber / referencedImageId when the shape lies on one
+  // acquired frame; MeasurementService rejects keys outside its schema, so an
+  // unmapped shape omits them rather than sending undefined.
+  const frame = entry.sliceFrames && frameAt(entry.sliceFrames, points)
   const unit = modalityUnit(entry)
   const { primary, data } = buildAnnotationDisplay(
     mapping,
@@ -758,7 +771,7 @@ function reflectNiivueAnnotationResult(
   // fallback for empty text: reflecting that fallback would echo it back through
   // the label sync onto the canvas, making a user-cleared label impossible.
   const rowLabel = annotation.text ?? ''
-  const hash = annotationContentHash(annotation)
+  const hash = rowHash(annotation, entry.sliceFrames)
   if (mappingExhausted(viewportId, annotation.id, hash))
     return { status: 'retryableFailure' }
 
@@ -779,6 +792,7 @@ function reflectNiivueAnnotationResult(
           referenceStudyUID: backing.StudyInstanceUID as string | undefined,
           displaySetInstanceUID: backing.displaySetInstanceUID,
           FrameOfReferenceUID: forUID,
+          ...frame,
           points,
           displayText: { primary, secondary: [] },
           data,
@@ -1189,7 +1203,7 @@ export function reconcileNiivueAnnotations(
     // Add new annotations and update changed rows in place.
     for (const annotation of live) {
       const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
-      const hash = annotationContentHash(annotation)
+      const hash = rowHash(annotation, entry.sliceFrames)
       if (existing && existing.hash === hash) continue
       const result = reflectNiivueAnnotationResult(
         viewportId,
@@ -1608,6 +1622,24 @@ export function getNiivueCommandsModule({
       if (!entry) return
       entry.nv.isColorbarVisible = !entry.nv.isColorbarVisible
       refreshToolbar(servicesManager, entry.viewportId)
+    },
+
+    /**
+     * Cornerstone's global JUMP_TO_MEASUREMENT handler runs this command without
+     * a context, so the newest context answers: NIIVUE, when nv-ohif registers
+     * after cornerstone. A NiiVue row is navigated by subscribeOhifLabelSync;
+     * Cornerstone would otherwise re-hang the viewport. Others go to Cornerstone.
+     */
+    jumpToMeasurementViewport: (options: {
+      measurement?: { uid?: string }
+    }) => {
+      const uid = options.measurement?.uid
+      if (uid && measurementToAnnotation.has(uid)) return
+      ohifCommandsManager(commandsManager)?.runCommand?.(
+        'jumpToMeasurementViewport',
+        options,
+        'CORNERSTONE',
+      )
     },
 
     /** Toggle nearest-neighbor vs smooth (linear) volume interpolation. */

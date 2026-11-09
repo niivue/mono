@@ -6,6 +6,8 @@ import type {
   NVSlideManifest,
   NVSlideRangeEvent,
   NVSlideTileManifest,
+  NVSlideTileSamples,
+  SlideTileDecoder,
   SlideTileSource,
 } from './NVSlide'
 import {
@@ -1481,5 +1483,54 @@ describe('NVSlide.fromManifestUrl', () => {
     await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
       'Slide manifest HTTP 415: unsupported syntax',
     )
+  })
+})
+
+describe('raw-gray cache budget', () => {
+  it('counts retained samples without a photometric tag', () => {
+    const manifest = makePyramid()
+    for (const l of manifest.levels) {
+      l.codec = 'raw-gray'
+      l.bitsStored = 16
+    }
+    // 75% of 3500 = 2625 B: L0's 16 tiles x 32 px x (4 RGBA + 2 sample) bytes
+    // = 3072 B do not fit, L1's 4 tiles (768 B) do.
+    const slide = NVSlide.fromSource(new CountingSource(manifest), {
+      maxCacheBytes: 3500,
+    })
+    expect(slide.visibleTiles(WHOLE_SLIDE_SCREEN).level?.index).toBe(1)
+    slide.dispose()
+  })
+})
+
+describe('raw-gray tile decoder', () => {
+  const decode = NVSlide.tileDecoder('raw-gray') as SlideTileDecoder
+  const level = (bitsStored?: number) =>
+    ({ ...makePyramid().levels[0], bitsStored }) as NVSlideLevelManifest
+
+  it('reads 16-bit samples, also from an odd byte offset', async () => {
+    const src = new Uint8Array(9)
+    src.set(new Uint8Array(new Uint16Array([1, 2, 3, 65535]).buffer), 1)
+    const out = await decode(src.subarray(1), {
+      width: 2,
+      height: 2,
+      level: level(12),
+    })
+    expect(out).toMatchObject({ width: 2, height: 2, bitsStored: 12 })
+    expect(Array.from((out as NVSlideTileSamples).samples)).toEqual([
+      1, 2, 3, 65535,
+    ])
+  })
+
+  it('reads 8-bit samples and rejects a wrong length', async () => {
+    const out = await decode(new Uint8Array([7, 8]), {
+      width: 2,
+      height: 1,
+      level: level(8),
+    })
+    expect((out as NVSlideTileSamples).samples).toBeInstanceOf(Uint8Array)
+    await expect(
+      decode(new Uint8Array(3), { width: 2, height: 1, level: level(16) }),
+    ).rejects.toThrow('Expected 2x1 16-bit samples')
   })
 })

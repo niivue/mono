@@ -1,6 +1,7 @@
 import { log } from '@/logger'
 export type NVSlideTileCodec =
   | 'raw-rgba'
+  | 'raw-gray'
   | 'image/jpeg'
   | 'image/jp2'
   | 'image/jls'
@@ -26,7 +27,7 @@ export interface NVSlideWindow {
 
 /**
  * Decodes one tile's encoded bytes into an ImageBitmap. The built-in registry
- * handles `raw-rgba` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
+ * handles `raw-rgba`, `raw-gray` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
  * decoder, so a consumer must register one (e.g. @niivue/dcm2niix createFrameDecoder) via
  * {@link NVSlide.registerTileDecoder} — keeping the heavy codec out of the core.
  */
@@ -375,8 +376,10 @@ export function windowSamples(
   return out
 }
 
+// raw-gray tiles are samples whatever the (optional, DICOM) photometric says.
 const isMonochrome = (level: NVSlideLevelManifest): boolean =>
-  level.photometric?.startsWith('MONOCHROME') ?? false
+  level.codec === 'raw-gray' ||
+  (level.photometric?.startsWith('MONOCHROME') ?? false)
 
 /** A grey bitmap's red channel as 8-bit samples; closes the bitmap. */
 function greySamples(bitmap: ImageBitmap): NVSlideTileSamples {
@@ -449,6 +452,24 @@ const tileDecoders = new Map<string, SlideTileDecoder>([
         )
       }
       return createImageBitmap(new ImageData(copyClamped(bytes), width, height))
+    },
+  ],
+  [
+    'raw-gray',
+    // Monochrome samples in platform byte order: 8-bit when the level's
+    // bitsStored is 8 or less, else 16-bit (the default). Windowed by NVSlide
+    // like decoded DICOM monochrome tiles.
+    async (bytes, { width, height, level }) => {
+      const bitsStored = level.bitsStored ?? 16
+      const wide = bitsStored > 8
+      if (bytes.byteLength !== width * height * (wide ? 2 : 1)) {
+        throw new Error(
+          `Expected ${width}x${height} ${wide ? 16 : 8}-bit samples, received ${bytes.byteLength} bytes`,
+        )
+      }
+      const own = copyUint8(bytes)
+      const samples = wide ? new Uint16Array(own.buffer) : own
+      return { samples, width, height, bitsStored }
     },
   ],
 ])
@@ -921,7 +942,7 @@ export class NVSlide extends EventTarget {
       !transform ||
       !this._source.fetchIccProfile ||
       this.manifest.iccProfile?.colorSpace?.toUpperCase() === 'SRGB' ||
-      this.manifest.levels.some((l) => l.photometric?.startsWith('MONOCHROME'))
+      this.manifest.levels.some(isMonochrome)
     )
       return
     const signal = this._colorAbort.signal

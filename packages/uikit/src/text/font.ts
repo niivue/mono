@@ -99,3 +99,9 @@ export function screenPxRange(
 ): number {
   return Math.max((sizePx / metrics.size) * metrics.distanceRange, 1)
 }
+
+/** Bytes of a base64 data: URL, decoded without a (CSP-governed) fetch. */
+export function dataUrlBytes(url: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(url.slice(url.indexOf(',') + 1))
+  return Uint8Array.from(binary, (c) => c.charCodeAt(0))
+}

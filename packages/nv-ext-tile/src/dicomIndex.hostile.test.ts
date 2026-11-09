@@ -198,6 +198,24 @@ describe('indexDicomWsi on hostile input', () => {
     expect(idx.skipped[0]?.message).toMatch(/runs past the file/)
   })
 
+  test('an element header straddling the first 1 MiB read reads more', async () => {
+    const pixelLength = pixelData([0, 1, 2, 3].map(payload)).length
+    const pad = (n: number) => el(0x0009, 0x1010, 'OB', new Uint8Array(n))
+    const next = el(0x0009, 0x1011, 'LO', str('x'))
+    // Where the element after an empty pad starts.
+    const head = dicom({ pad: pad(0), next }).size - pixelLength - next.length
+    // The next header starts 1..7 bytes before the 1 MiB mark: its tag, VR or
+    // length runs past the first read.
+    for (let k = 1; k < 8; k++) {
+      const file = dicom({ pad: pad((1 << 20) - k - head), next })
+      const idx = await indexDicomWsi([file])
+      expect(idx.skipped).toEqual([])
+      expect(
+        await tileLabels(idx.slides[0] as SlideIndexSlide, [file]),
+      ).toEqual([0, 1, 2, 3])
+    }
+  })
+
   test('Pixel Data that is not OB/OW, or lacks its offset-table item, is malformed', async () => {
     const pixel = pixelData([0, 1, 2, 3].map(payload))
     const ow = pixel.slice()

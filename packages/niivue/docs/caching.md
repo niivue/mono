@@ -34,7 +34,7 @@ different resources. Both are byte-budgeted LRUs; neither is persistent.
 
 | Tier | Holds | Where | Default budget |
 |---|---|---|---|
-| Store bytes | RAW compressed store responses, keyed by store path | `ByteLruCache` behind zarrita's `withByteCaching` (`volume/omeZarrChunkedSource.ts`) | 256 MB (`OME_ZARR_CHUNK_CACHE_BYTES`); dandi-demo raises it to 512 MB |
+| Store bytes | RAW compressed store responses, keyed by store path | `ByteLruCache` behind zarrita's `withByteCaching` (`packages/nv-ext-tile/src/zarr/omeZarrChunkedSource.ts`) | 256 MB (`OME_ZARR_CHUNK_CACHE_BYTES`); dandi-demo raises it to 512 MB |
 | GPU bricks | Uploaded 3D brick textures | `ChunkResidencyManager` (`volume/ChunkResidency.ts`) | 1.5 GB (`DEFAULT_CHUNK_RESIDENCY_BYTES`) |
 | Coarse floor | The coarsest pyramid level as ONE whole-volume texture | `gl/render.ts`, `wgpu/render.ts` | always resident |
 
@@ -100,12 +100,12 @@ Stage C moved it. `fetchOmeZarrChunkedSource` now opens the store on the calling
 thread for its metadata and then puts every chunk read on a small pool of
 workers:
 
-- `src/workers/omeZarrChunk.worker.ts` opens its OWN view of the store (a zarrita
+- `packages/nv-ext-tile/src/zarr/omeZarrChunk.worker.ts` opens its OWN view of the store (a zarrita
   array is not structured-cloneable) through the same `openOmeZarrChunkedSource`
   the main thread uses, so the worker is not a reimplementation of the read path.
   It runs store `get`, decompress, dtype convert, and our transpose / zero-pad
   assemble, then transfers the finished `Uint8Array` back.
-- `src/volume/omeZarrChunkWorkerPool.ts` routes a request by hashing its region
+- `packages/nv-ext-tile/src/zarr/omeZarrChunkWorkerPool.ts` routes a request by hashing its region
   (level, texture origin, texture dims) rather than picking the idlest worker.
   Each worker keeps its own byte LRU, so a revisited brick has to come back to
   the worker that already holds its bytes. Sizing is half the reported cores,
@@ -604,7 +604,7 @@ Two places we can be BETTER than Neuroglancer rather than catching up:
 | A | DONE (`1a9d525d`) Stale-drop + per-frame reprioritization in `ChunkResidencyManager` | small | Pure CPU, shared by both backends, testable without a GPU, fixes a felt problem |
 | B | DONE Per-phase timing (`chunkTimingStats`) plus a main-thread stall monitor in the demo | small | Turned stage C from a guess into a measurement |
 | G | DONE Hit / miss / eviction counters on `ByteLruCache`, exposed as `source.byteCache.stats` | small | Measured (2.6): zero evictions on a 1 TB store, so no budget or policy change was needed |
-| C | DONE Worker pool for chunk fetch + decode (`omeZarrChunkWorkerPool.ts`, `workers/omeZarrChunk.worker.ts`) | medium | Measured (2.7): the 8.6 s of lost frame time is gone, 100% of streaming work is off-thread |
+| C | DONE Worker pool for chunk fetch + decode (`omeZarrChunkWorkerPool.ts`, `packages/nv-ext-tile/src/zarr/omeZarrChunk.worker.ts`) | medium | Measured (2.7): the 8.6 s of lost frame time is gone, 100% of streaming work is off-thread |
 | D | DONE (`1281a74b`) Directional prefetch: travel of the working-set centroid, extrapolated and fetched ahead (`chunkPrediction.ts`) | small | One mechanism covers scrub and pan, no camera plumbing, identical on both backends |
 | E | DONE Decoded-chunk demotion tier under GPU eviction (`decodedChunkCache.ts`) | medium | Makes eviction cheap to undo; sized off the GPU budget and the source datatype |
 | F | DONE (`d6037b60`, `eb661670`) Persistent raw-byte cache in Cache Storage (`persistentByteCache.ts`) | medium | The differentiator; measured (2.9): a reload serves 85% of its lookups from disk |

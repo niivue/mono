@@ -100,6 +100,25 @@ export class CinematicRenderer extends NVRenderer {
     return this.timer.meanMs(this.isRefining)
   }
 
+  private initTried = false
+
+  /**
+   * Builds the renderer on first use, once: most views never enter CINEMATIC,
+   * and WebGPU compiles a pipeline when it is created (~0.5 s of GPU time per
+   * view on SwiftShader).
+   */
+  ensure(
+    device: GPUDevice,
+    sampleCount: number,
+    colorFormat: GPUTextureFormat,
+  ): boolean {
+    if (!this.initTried) {
+      this.initTried = true
+      this.init(device, sampleCount, colorFormat)
+    }
+    return this.isReady
+  }
+
   init(
     device: GPUDevice,
     sampleCount: number,
@@ -681,6 +700,8 @@ export class CinematicRenderer extends NVRenderer {
   }
 
   destroy(): void {
+    // Never built (see ensure), or already destroyed.
+    if (!this.device) return
     for (const tile of this.tiles.values()) this._freeTile(tile)
     this.tiles.clear()
     this._freeVolume()

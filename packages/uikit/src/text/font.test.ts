@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { parseFont, screenPxRange } from './font'
+import { dataUrlBytes, parseFont, screenPxRange } from './font'
 
 const RAW = {
   atlas: { width: 100, height: 200, distanceRange: 2, size: 50 },
@@ -55,5 +55,12 @@ describe('screenPxRange', () => {
     expect(screenPxRange(f, 100)).toBeCloseTo(4)
     // Tiny text floors at 1
     expect(screenPxRange(f, 1)).toBe(1)
+  })
+})
+
+describe('dataUrlBytes', () => {
+  it('decodes a base64 data: URL', () => {
+    const bytes = dataUrlBytes('data:image/png;base64,iVBORw0KGgo=')
+    expect([...bytes]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   })
 })

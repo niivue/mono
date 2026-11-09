@@ -259,6 +259,14 @@ describe('frameAt', () => {
         [9, 4, 30 + 0.0225],
       ]),
     ).toBeUndefined()
+    // Each within 0.009 slice of the first, but 0.018 slice end to end.
+    expect(
+      frameAt(sf, [
+        [0, 0, 30],
+        [9, 0, 30 + 0.0225],
+        [0, 4, 30 - 0.0225],
+      ]),
+    ).toBeUndefined()
   })
 })
 

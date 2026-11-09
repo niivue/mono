@@ -669,11 +669,11 @@ async function presentLevels(storeDef) {
 
 // Populate the Level <select> for the current source. Synthetic has no
 // pyramid, so the control is disabled with a single "n/a" entry. For an
-// OME-Zarr store, list the levels present on disk (coarsest-first) and select
+// OME-Zarr store, list the levels the store offers (coarsest-first) and select
 // the coarsest by default. Returns the selected level (or null for synthetic).
 async function refreshLevelControl() {
   const store = currentStore()
-  els.level.title = 'Pyramid levels present on disk'
+  els.level.title = 'Pyramid levels the store offers'
   // The synthetic shard is a single-level grid on the legacy streaming path, so
   // it has no octree for a budget plan to shape.
   els.plan.disabled = !store
@@ -802,6 +802,15 @@ function emptyChunkResponse() {
   return new Response(null, { status: 404, statusText: 'Not Found (cached)' })
 }
 
+// Chunk reads bypass the HTTP cache: Chromium served truncated 206 bodies for
+// identical concurrent ranges, breaking shard decode. In-flight duplicates are
+// not shared via clone(): a clone dies with its source's AbortSignal.
+function chunkRequest(request) {
+  return isZarrMetadataPath(new URL(request.url).pathname)
+    ? request
+    : new Request(request, { cache: 'no-store' })
+}
+
 function createTrackedZarrFetch(serial) {
   const absent = new Set()
   const probing = new Map()
@@ -827,7 +836,7 @@ function createTrackedZarrFetch(serial) {
     )
     let response
     try {
-      response = await fetch(request)
+      response = await fetch(chunkRequest(request))
     } catch (err) {
       // Settle the probe before rethrowing, or every waiter hangs forever.
       probing.delete(absentKey)

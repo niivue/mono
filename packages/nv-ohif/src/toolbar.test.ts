@@ -346,6 +346,23 @@ describe('evaluate.niivue.unsupported', () => {
         ]),
         undefined,
       ],
+      [
+        button('CsNvReset', [
+          { commandName: 'niivueResetView', context: 'CORNERSTONE' },
+        ]),
+        disabled,
+      ],
+      // OHIF runs every command, not just the first.
+      [
+        button('PanRotate', [
+          {
+            commandName: 'setToolActiveToolbar',
+            commandOptions: { toolName: 'Pan' },
+          },
+          'rotateViewportCW',
+        ]),
+        disabled,
+      ],
       [button('Empty', undefined), disabled],
       [
         button('Pan', 'setToolActiveToolbar'),

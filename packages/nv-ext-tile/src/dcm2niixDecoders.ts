@@ -12,7 +12,7 @@ type Pool = { decoder: Promise<FrameDecoder>; active: number; retired: boolean }
 // frame (FrameDecodeError), an abort (AbortError), a full queue or a terminated
 // pool ('frame decoder ...') must not replace the pool, nor may an abort whose
 // reason is a plain Error (dcm2niix rejects with that reason, matched by
-// identity). Same policy as @niivue/nv-ohif's wsiTileDecoders.
+// identity). nv-ohif uses this registration too.
 function isWorkerFailure(err: unknown): boolean {
   return (
     err instanceof Error &&

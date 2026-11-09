@@ -482,7 +482,7 @@ NVSlide API surfaced (packages/niivue/src/slide/):
 - **Codecs**: JPEG WSI -> `image/jpeg` decodes natively in-browser. JPEG-2000 WSI ->
   `image/jp2` needs `NVSlide.registerTileDecoder('image/jp2', decodeJp2)` with an
   OpenJPEG WASM decoder (heavy) -> defer; v1 handles JPEG-transfer-syntax WSI only.
-  (Done since: `wsiTileDecoders.ts` registers `@niivue/dcm2niix`'s `createFrameDecoder`
+  (Done since: `@niivue/nv-ext-tile/dicom`'s `registerDcm2niixDecoders` registers `@niivue/dcm2niix`'s `createFrameDecoder`
   for JPEG 2000 and JPEG-LS, loaded on the first such tile.)
 - **The existing DICOM-WSI demo is OFFLINE-PREBUILT**: `scripts/fetch-dicom-wsi.ts`
   downloads a series and repackages it into a `dicom-wsi-range-v1` byte-range manifest

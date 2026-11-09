@@ -268,6 +268,15 @@ describe('frameAt', () => {
       ]),
     ).toBeUndefined()
   })
+
+  it('handles a contour too large to spread into Math.min', () => {
+    if (!sf) throw new Error('no map')
+    const contour = Array.from(
+      { length: 1e6 },
+      (_, i): [number, number, number] => [i % 97, i % 89, 32.5],
+    )
+    expect(frameAt(sf, contour)?.SOPInstanceUID).toBe('ax1')
+  })
 })
 
 describe('reflected measurement identity', () => {

@@ -208,8 +208,14 @@ export function frameAt(
   if (!first || k === undefined) return undefined
   // A reformatted measurement may share the slab but leave the plane: every
   // point on slice k, and within ON_PLANE of one another.
-  if (points.some((p) => onSlice(sf, p) !== k)) return undefined
-  const depths = points.map((p) => sliceDepth(sf, p))
-  if (Math.max(...depths) - Math.min(...depths) > ON_PLANE) return undefined
-  return sf.frames[k]
+  // A loop, not Math.min(...depths): spreading a large contour overflows the stack.
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  for (const p of points) {
+    if (onSlice(sf, p) !== k) return undefined
+    const d = sliceDepth(sf, p)
+    lo = Math.min(lo, d)
+    hi = Math.max(hi, d)
+  }
+  return hi - lo > ON_PLANE ? undefined : sf.frames[k]
 }

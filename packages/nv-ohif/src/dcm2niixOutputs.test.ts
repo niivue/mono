@@ -68,6 +68,21 @@ describe('rankOutputs (owner Q5)', () => {
       ['fl', 'fl_imaginary', 'fl_ph', 'fl_real'],
     ],
     [
+      'magnitude beats the R and I parts dcm2niix writes in ImageType',
+      [
+        series('scan_R', [9, 9, 9], {
+          ImageType: ['ORIGINAL', 'PRIMARY', 'R'],
+        }),
+        series('scan_I', [9, 9, 9], {
+          ImageType: ['ORIGINAL', 'PRIMARY', 'I'],
+        }),
+        series('scan_M', [9, 9, 9], {
+          ImageType: ['ORIGINAL', 'PRIMARY', 'M'],
+        }),
+      ],
+      ['scan_M', 'scan_I', 'scan_R'],
+    ],
+    [
       'a protocol named *_ph_* is not a phase part when the sidecar says M',
       [series('swi_ph_a', [8, 8, 8], primary), series('swi_ph', [9, 9, 9])],
       ['swi_ph_a', 'swi_ph'],
